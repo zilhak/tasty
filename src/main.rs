@@ -110,14 +110,7 @@ impl App {
     /// Compute the terminal rect without borrowing self (takes gpu ref directly).
     fn compute_terminal_rect_with_sidebar(gpu: &GpuState, sidebar_logical_width: f32) -> Rect {
         let size = gpu.size();
-        let sf = gpu.scale_factor();
-        let sidebar_w = sidebar_logical_width * sf;
-        Rect {
-            x: sidebar_w,
-            y: 0.0,
-            width: (size.width as f32 - sidebar_w).max(1.0),
-            height: size.height as f32,
-        }
+        model::compute_terminal_rect(size.width as f32, size.height as f32, sidebar_logical_width, gpu.scale_factor())
     }
 
     /// Paste clipboard text into the focused terminal.

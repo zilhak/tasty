@@ -376,63 +376,32 @@ impl AppState {
     pub fn collect_events(&mut self) -> Vec<TerminalEvent> {
         let mut all_events = Vec::new();
         for workspace in &mut self.workspaces {
-            Self::collect_events_from_pane_node(workspace.pane_layout_mut(), &mut all_events);
+            workspace.pane_layout_mut().for_each_terminal_mut(&mut |sid, terminal| {
+                let mut events = terminal.take_events();
+                for event in &mut events {
+                    event.surface_id = sid;
+                }
+                all_events.extend(events);
+            });
         }
         all_events
     }
 
-    fn collect_events_from_pane_node(node: &mut crate::model::PaneNode, out: &mut Vec<TerminalEvent>) {
-        match node {
-            crate::model::PaneNode::Leaf(pane) => {
-                for tab in &mut pane.tabs {
-                    Self::collect_events_from_panel(tab.panel_mut(), out);
-                }
-            }
-            crate::model::PaneNode::Split { first, second, .. } => {
-                Self::collect_events_from_pane_node(first, out);
-                Self::collect_events_from_pane_node(second, out);
-            }
-        }
-    }
-
-    fn collect_events_from_panel(panel: &mut crate::model::Panel, out: &mut Vec<TerminalEvent>) {
-        match panel {
-            crate::model::Panel::Terminal(node) => {
-                let sid = node.id;
-                let mut events = node.terminal.take_events();
-                for event in &mut events {
-                    event.surface_id = sid;
-                }
-                out.extend(events);
-            }
-            crate::model::Panel::SurfaceGroup(group) => {
-                Self::collect_events_from_surface_layout(group.layout_mut(), out);
-            }
-        }
-    }
-
-    fn collect_events_from_surface_layout(layout: &mut crate::model::SurfaceGroupLayout, out: &mut Vec<TerminalEvent>) {
-        match layout {
-            crate::model::SurfaceGroupLayout::Single(node) => {
-                let sid = node.id;
-                let mut events = node.terminal.take_events();
-                for event in &mut events {
-                    event.surface_id = sid;
-                }
-                out.extend(events);
-            }
-            crate::model::SurfaceGroupLayout::Split { first, second, .. } => {
-                Self::collect_events_from_surface_layout(first, out);
-                Self::collect_events_from_surface_layout(second, out);
-            }
-        }
-    }
-
     /// Set a read mark on the focused terminal (or a specific surface).
     pub fn set_mark(&mut self, surface_id: Option<u32>) {
-        if let Some(_sid) = surface_id {
-            // Find terminal by surface ID - walk the tree
-            self.set_mark_on_surface(_sid);
+        if let Some(target_sid) = surface_id {
+            for workspace in &mut self.workspaces {
+                let mut found = false;
+                workspace.pane_layout_mut().for_each_terminal_mut(&mut |sid, terminal| {
+                    if sid == target_sid {
+                        terminal.set_mark();
+                        found = true;
+                    }
+                });
+                if found {
+                    return;
+                }
+            }
         } else if let Some(terminal) = self.focused_terminal_mut() {
             terminal.set_mark();
         }
@@ -440,156 +409,23 @@ impl AppState {
 
     /// Read since mark on the focused terminal (or a specific surface).
     pub fn read_since_mark(&mut self, surface_id: Option<u32>, strip_ansi: bool) -> String {
-        if let Some(sid) = surface_id {
-            self.read_since_mark_on_surface(sid, strip_ansi)
-                .unwrap_or_default()
+        if let Some(target_sid) = surface_id {
+            let mut result = None;
+            for workspace in &mut self.workspaces {
+                workspace.pane_layout_mut().for_each_terminal_mut(&mut |sid, terminal| {
+                    if sid == target_sid && result.is_none() {
+                        result = Some(terminal.read_since_mark(strip_ansi));
+                    }
+                });
+                if result.is_some() {
+                    break;
+                }
+            }
+            result.unwrap_or_default()
         } else if let Some(terminal) = self.focused_terminal_mut() {
             terminal.read_since_mark(strip_ansi)
         } else {
             String::new()
-        }
-    }
-
-    /// Set mark on a specific surface by ID.
-    fn set_mark_on_surface(&mut self, surface_id: u32) {
-        for workspace in &mut self.workspaces {
-            if Self::set_mark_in_pane_node(workspace.pane_layout_mut(), surface_id) {
-                return;
-            }
-        }
-    }
-
-    fn set_mark_in_pane_node(
-        node: &mut crate::model::PaneNode,
-        surface_id: u32,
-    ) -> bool {
-        match node {
-            crate::model::PaneNode::Leaf(pane) => {
-                for tab in &mut pane.tabs {
-                    if Self::set_mark_in_panel(tab.panel_mut(), surface_id) {
-                        return true;
-                    }
-                }
-                false
-            }
-            crate::model::PaneNode::Split { first, second, .. } => {
-                Self::set_mark_in_pane_node(first, surface_id)
-                    || Self::set_mark_in_pane_node(second, surface_id)
-            }
-        }
-    }
-
-    fn set_mark_in_panel(
-        panel: &mut crate::model::Panel,
-        surface_id: u32,
-    ) -> bool {
-        match panel {
-            crate::model::Panel::Terminal(node) => {
-                if node.id == surface_id {
-                    node.terminal.set_mark();
-                    return true;
-                }
-                false
-            }
-            crate::model::Panel::SurfaceGroup(group) => {
-                Self::set_mark_in_surface_layout(group.layout_mut(), surface_id)
-            }
-        }
-    }
-
-    fn set_mark_in_surface_layout(
-        layout: &mut crate::model::SurfaceGroupLayout,
-        surface_id: u32,
-    ) -> bool {
-        match layout {
-            crate::model::SurfaceGroupLayout::Single(node) => {
-                if node.id == surface_id {
-                    node.terminal.set_mark();
-                    return true;
-                }
-                false
-            }
-            crate::model::SurfaceGroupLayout::Split { first, second, .. } => {
-                Self::set_mark_in_surface_layout(first, surface_id)
-                    || Self::set_mark_in_surface_layout(second, surface_id)
-            }
-        }
-    }
-
-    /// Read since mark on a specific surface by ID.
-    fn read_since_mark_on_surface(
-        &mut self,
-        surface_id: u32,
-        strip_ansi: bool,
-    ) -> Option<String> {
-        for workspace in &mut self.workspaces {
-            if let Some(text) =
-                Self::read_mark_in_pane_node(workspace.pane_layout_mut(), surface_id, strip_ansi)
-            {
-                return Some(text);
-            }
-        }
-        None
-    }
-
-    fn read_mark_in_pane_node(
-        node: &mut crate::model::PaneNode,
-        surface_id: u32,
-        strip_ansi: bool,
-    ) -> Option<String> {
-        match node {
-            crate::model::PaneNode::Leaf(pane) => {
-                for tab in &mut pane.tabs {
-                    if let Some(text) =
-                        Self::read_mark_in_panel(tab.panel_mut(), surface_id, strip_ansi)
-                    {
-                        return Some(text);
-                    }
-                }
-                None
-            }
-            crate::model::PaneNode::Split { first, second, .. } => {
-                Self::read_mark_in_pane_node(first, surface_id, strip_ansi)
-                    .or_else(|| Self::read_mark_in_pane_node(second, surface_id, strip_ansi))
-            }
-        }
-    }
-
-    fn read_mark_in_panel(
-        panel: &mut crate::model::Panel,
-        surface_id: u32,
-        strip_ansi: bool,
-    ) -> Option<String> {
-        match panel {
-            crate::model::Panel::Terminal(node) => {
-                if node.id == surface_id {
-                    return Some(node.terminal.read_since_mark(strip_ansi));
-                }
-                None
-            }
-            crate::model::Panel::SurfaceGroup(group) => {
-                Self::read_mark_in_surface_layout(group.layout_mut(), surface_id, strip_ansi)
-            }
-        }
-    }
-
-    fn read_mark_in_surface_layout(
-        layout: &mut crate::model::SurfaceGroupLayout,
-        surface_id: u32,
-        strip_ansi: bool,
-    ) -> Option<String> {
-        match layout {
-            crate::model::SurfaceGroupLayout::Single(node) => {
-                if node.id == surface_id {
-                    return Some(node.terminal.read_since_mark(strip_ansi));
-                }
-                None
-            }
-            crate::model::SurfaceGroupLayout::Split { first, second, .. } => {
-                Self::read_mark_in_surface_layout(first, surface_id, strip_ansi).or_else(|| {
-                    Self::read_mark_in_surface_layout(second, surface_id, strip_ansi)
-                })
-            }
         }
     }
 

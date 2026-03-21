@@ -85,7 +85,8 @@ impl Default for GeneralSettings {
 }
 
 impl GeneralSettings {
-    fn detect_shell() -> String {
+    /// Detect the platform default shell from environment variables.
+    pub fn detect_shell() -> String {
         #[cfg(windows)]
         {
             std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".to_string())

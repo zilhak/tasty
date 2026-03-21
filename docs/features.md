@@ -382,6 +382,11 @@ Claude Code를 새 워크스페이스에서 자동으로 실행하는 전용 런
 - 부분 TOML 기본값 폴백
 - 빈 TOML 전체 기본값
 
+### model.rs Visitor 패턴 테스트
+- for_each_terminal: 단일 Pane 순회, 분할된 Pane 순회
+- for_each_terminal_mut: mutable 접근 및 수정
+- compute_terminal_rect: 기본 계산, 스케일 팩터, 사이드바 클램핑, 사이드바 없음
+
 ### ipc/protocol.rs 테스트
 - 요청 직렬화/역직렬화
 - 성공/에러 응답 생성

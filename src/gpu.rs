@@ -151,13 +151,7 @@ impl GpuState {
         // Compute the terminal rect (area after sidebar) in physical pixels
         let surface_w = self.size.width as f32;
         let surface_h = self.size.height as f32;
-        let sidebar_w = (state.sidebar_width * self.scale_factor).min(surface_w - 1.0);
-        let terminal_rect = Rect {
-            x: sidebar_w,
-            y: 0.0,
-            width: (surface_w - sidebar_w).max(1.0),
-            height: surface_h.max(1.0),
-        };
+        let terminal_rect = crate::model::compute_terminal_rect(surface_w, surface_h, state.sidebar_width, self.scale_factor);
 
         // Compute pane rects for per-pane tab bars
         let pane_rects: Vec<(u32, Rect)> = state

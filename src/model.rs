@@ -357,6 +357,42 @@ impl PaneNode {
         changed
     }
 
+    /// Visit all terminals (immutable) in this PaneNode tree, calling `f(surface_id, &terminal)` on each.
+    pub fn for_each_terminal<F>(&self, f: &mut F)
+    where
+        F: FnMut(SurfaceId, &Terminal),
+    {
+        match self {
+            PaneNode::Leaf(pane) => {
+                for tab in &pane.tabs {
+                    tab.panel().for_each_terminal(f);
+                }
+            }
+            PaneNode::Split { first, second, .. } => {
+                first.for_each_terminal(f);
+                second.for_each_terminal(f);
+            }
+        }
+    }
+
+    /// Visit all terminals (mutable) in this PaneNode tree, calling `f(surface_id, &mut terminal)` on each.
+    pub fn for_each_terminal_mut<F>(&mut self, f: &mut F)
+    where
+        F: FnMut(SurfaceId, &mut Terminal),
+    {
+        match self {
+            PaneNode::Leaf(pane) => {
+                for tab in &mut pane.tabs {
+                    tab.panel_mut().for_each_terminal_mut(f);
+                }
+            }
+            PaneNode::Split { first, second, .. } => {
+                first.for_each_terminal_mut(f);
+                second.for_each_terminal_mut(f);
+            }
+        }
+    }
+
     /// Get all pane IDs in order.
     pub fn all_pane_ids(&self) -> Vec<PaneId> {
         match self {
@@ -712,6 +748,28 @@ impl Panel {
         match self {
             Panel::Terminal(node) => out.push(&mut node.terminal),
             Panel::SurfaceGroup(group) => group.layout_mut().collect_terminals_mut(out),
+        }
+    }
+
+    /// Visit all terminals (immutable) in this panel.
+    pub fn for_each_terminal<F>(&self, f: &mut F)
+    where
+        F: FnMut(SurfaceId, &Terminal),
+    {
+        match self {
+            Panel::Terminal(node) => f(node.id, &node.terminal),
+            Panel::SurfaceGroup(group) => group.layout().for_each_terminal(f),
+        }
+    }
+
+    /// Visit all terminals (mutable) in this panel.
+    pub fn for_each_terminal_mut<F>(&mut self, f: &mut F)
+    where
+        F: FnMut(SurfaceId, &mut Terminal),
+    {
+        match self {
+            Panel::Terminal(node) => f(node.id, &mut node.terminal),
+            Panel::SurfaceGroup(group) => group.layout_mut().for_each_terminal_mut(f),
         }
     }
 
@@ -1190,6 +1248,34 @@ impl SurfaceGroupLayout {
         }
     }
 
+    /// Visit all terminals (immutable) in this layout tree.
+    pub fn for_each_terminal<F>(&self, f: &mut F)
+    where
+        F: FnMut(SurfaceId, &Terminal),
+    {
+        match self {
+            SurfaceGroupLayout::Single(node) => f(node.id, &node.terminal),
+            SurfaceGroupLayout::Split { first, second, .. } => {
+                first.for_each_terminal(f);
+                second.for_each_terminal(f);
+            }
+        }
+    }
+
+    /// Visit all terminals (mutable) in this layout tree.
+    pub fn for_each_terminal_mut<F>(&mut self, f: &mut F)
+    where
+        F: FnMut(SurfaceId, &mut Terminal),
+    {
+        match self {
+            SurfaceGroupLayout::Single(node) => f(node.id, &mut node.terminal),
+            SurfaceGroupLayout::Split { first, second, .. } => {
+                first.for_each_terminal_mut(f);
+                second.for_each_terminal_mut(f);
+            }
+        }
+    }
+
     /// Find a divider near the given point within this surface group layout.
     pub fn find_divider_at(&self, x: f32, y: f32, rect: Rect, threshold: f32) -> Option<DividerInfo> {
         match self {
@@ -1252,6 +1338,19 @@ impl SurfaceGroupLayout {
                     .or_else(|| second.find_surface_at(x, y, r2))
             }
         }
+    }
+}
+
+/// Compute the terminal area rectangle (everything right of the sidebar) in physical pixels.
+///
+/// This is the single canonical implementation. Both `main.rs` and `gpu.rs` should use this.
+pub fn compute_terminal_rect(surface_width: f32, surface_height: f32, sidebar_width: f32, scale_factor: f32) -> Rect {
+    let sw = (sidebar_width * scale_factor).min(surface_width - 1.0);
+    Rect {
+        x: sw,
+        y: 0.0,
+        width: (surface_width - sw).max(1.0),
+        height: surface_height.max(1.0),
     }
 }
 
@@ -1592,5 +1691,85 @@ mod tests {
         let rect = Rect { x: 0.0, y: 0.0, width: 100.0, height: 100.0 };
         assert!(rect.contains(50.0, 50.0));
         assert!(!rect.contains(150.0, 50.0));
+    }
+
+    // ---- Visitor pattern tests ----
+
+    #[test]
+    fn for_each_terminal_visits_single_pane() {
+        let waker = noop_waker();
+        let pane = Pane::new_with_shell(1, 1, 100, 80, 24, None, waker).unwrap();
+        let node = PaneNode::Leaf(pane);
+        let mut visited = Vec::new();
+        node.for_each_terminal(&mut |sid, _terminal| {
+            visited.push(sid);
+        });
+        assert_eq!(visited, vec![100]);
+    }
+
+    #[test]
+    fn for_each_terminal_visits_split_panes() {
+        let waker = noop_waker();
+        let p1 = Pane::new_with_shell(1, 1, 101, 80, 24, None, waker.clone()).unwrap();
+        let p2 = Pane::new_with_shell(2, 2, 102, 80, 24, None, waker).unwrap();
+        let node = PaneNode::Split {
+            direction: SplitDirection::Vertical,
+            ratio: 0.5,
+            first: Box::new(PaneNode::Leaf(p1)),
+            second: Box::new(PaneNode::Leaf(p2)),
+        };
+        let mut visited = Vec::new();
+        node.for_each_terminal(&mut |sid, _terminal| {
+            visited.push(sid);
+        });
+        assert_eq!(visited, vec![101, 102]);
+    }
+
+    #[test]
+    fn for_each_terminal_mut_can_modify() {
+        let waker = noop_waker();
+        let pane = Pane::new_with_shell(1, 1, 200, 80, 24, None, waker).unwrap();
+        let mut node = PaneNode::Leaf(pane);
+        let mut count = 0u32;
+        node.for_each_terminal_mut(&mut |_sid, terminal| {
+            terminal.set_mark();
+            count += 1;
+        });
+        assert_eq!(count, 1);
+    }
+
+    // ---- compute_terminal_rect tests ----
+
+    #[test]
+    fn compute_terminal_rect_basic() {
+        let r = super::compute_terminal_rect(1920.0, 1080.0, 200.0, 1.0);
+        assert_eq!(r.x, 200.0);
+        assert_eq!(r.y, 0.0);
+        assert_eq!(r.width, 1720.0);
+        assert_eq!(r.height, 1080.0);
+    }
+
+    #[test]
+    fn compute_terminal_rect_with_scale() {
+        let r = super::compute_terminal_rect(1920.0, 1080.0, 100.0, 2.0);
+        assert_eq!(r.x, 200.0);
+        assert_eq!(r.y, 0.0);
+        assert_eq!(r.width, 1720.0);
+        assert_eq!(r.height, 1080.0);
+    }
+
+    #[test]
+    fn compute_terminal_rect_sidebar_clamped() {
+        // Sidebar wider than surface should be clamped
+        let r = super::compute_terminal_rect(100.0, 100.0, 200.0, 1.0);
+        assert_eq!(r.x, 99.0);
+        assert_eq!(r.width, 1.0);
+    }
+
+    #[test]
+    fn compute_terminal_rect_zero_sidebar() {
+        let r = super::compute_terminal_rect(800.0, 600.0, 0.0, 1.5);
+        assert_eq!(r.x, 0.0);
+        assert_eq!(r.width, 800.0);
     }
 }

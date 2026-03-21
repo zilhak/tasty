@@ -1089,14 +1089,7 @@ impl Terminal {
     }
 
     fn default_shell() -> String {
-        #[cfg(windows)]
-        {
-            std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".to_string())
-        }
-        #[cfg(not(windows))]
-        {
-            std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string())
-        }
+        crate::settings::GeneralSettings::detect_shell()
     }
 }
 

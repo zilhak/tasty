@@ -253,12 +253,13 @@ DECSET/DECRST가 구현되었다. 지원 모드: DECCKM(1), StartBlinkingCursor(
 
 ### P1 (높음) — 코드 품질 개선
 
-| 항목 | 영향 범위 | 예상 작업량 |
-|------|-----------|------------|
-| default_shell() 통합 | terminal.rs, settings.rs | 소 (5줄) |
-| Visitor 패턴으로 트리 순회 통합 | state.rs | 중 (150줄 절감) |
-| AppState pub 필드 → 메서드 접근 | state.rs, main.rs, gpu.rs, ui.rs | 중 (100줄) |
-| 즉시 분리 가능 크레이트 추출 (protocol, hooks, notification) | 프로젝트 구조 | 소 (경로 변경만) |
+| 항목 | 영향 범위 | 예상 작업량 | 상태 |
+|------|-----------|------------|------|
+| default_shell() 통합 | terminal.rs, settings.rs | 소 (5줄) | 완료 |
+| Visitor 패턴으로 트리 순회 통합 | state.rs, model.rs | 중 (150줄 절감) | 완료 |
+| terminal_rect 계산 통합 | model.rs, main.rs, gpu.rs | 소 (10줄) | 완료 |
+| AppState pub 필드 → 메서드 접근 | state.rs, main.rs, gpu.rs, ui.rs | 중 (100줄) | 미착수 |
+| 즉시 분리 가능 크레이트 추출 (protocol, hooks, notification) | 프로젝트 구조 | 소 (경로 변경만) | 미착수 |
 
 ### P2 (중간) — 아키텍처 개선
 
@@ -286,7 +287,8 @@ DECSET/DECRST가 구현되었다. 지원 모드: DECCKM(1), StartBlinkingCursor(
 
 1. **완료**: `font_size`/`font_family`/`theme`/`background_opacity` 설정 반영, 클립보드 구현 (arboard + OSC 52 + 붙여넣기), `startup_command` 실행, `sidebar_width` 실시간 동기화.
 2. **완료된 단기 목표**: DECSET/DECRST 구현, Pane/Tab 삭제 API.
-3. **남은 단기 목표**: `default_shell()` 통합, 즉시 분리 가능 크레이트 추출.
-4. **미구현 설정**: `notification.sound` (사운드 재생), `keybindings.*` (커스텀 단축키 파싱).
-5. **중기 목표**: BinaryTree trait, Visitor 패턴, AppState 분리.
-6. **장기 목표**: Terminal trait 추출, 렌더러 분리, 아틀라스 개선.
+3. **완료된 P1**: `default_shell()` 통합 (terminal.rs → settings.rs 위임), Visitor 패턴으로 state.rs 트리 순회 통합 (~130줄 절감), `compute_terminal_rect` 통합 (model.rs에 단일 정의).
+4. **남은 단기 목표**: 즉시 분리 가능 크레이트 추출.
+5. **미구현 설정**: `notification.sound` (사운드 재생), `keybindings.*` (커스텀 단축키 파싱).
+6. **중기 목표**: BinaryTree trait, AppState 분리.
+7. **장기 목표**: Terminal trait 추출, 렌더러 분리, 아틀라스 개선.
