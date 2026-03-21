@@ -1,0 +1,125 @@
+# Tasty - 기능 계획 문서
+
+cmux의 기능을 크로스 플랫폼(Windows, macOS, Linux) GPU 가속 네이티브 터미널 에뮬레이터로 구현하기 위한 계획 문서.
+
+## 기능 목록
+
+| # | 기능 | 문서 | 우선순위 |
+|---|------|------|----------|
+| 01 | [터미널 엔진](#터미널-엔진) | [plans/01-terminal-engine.md](plans/01-terminal-engine.md) | 핵심 |
+| 02 | [워크스페이스 & 탭](#워크스페이스--탭) | [plans/02-workspace-tabs.md](plans/02-workspace-tabs.md) | 핵심 |
+| 03 | [사이드바 메타데이터](#사이드바-메타데이터) | [plans/03-sidebar-metadata.md](plans/03-sidebar-metadata.md) | 핵심 |
+| 04 | [알림 시스템](#알림-시스템) | [plans/04-notification-system.md](plans/04-notification-system.md) | 핵심 |
+| 05 | [분할 패인](#분할-패인) | [plans/05-split-panes.md](plans/05-split-panes.md) | 핵심 |
+| 06 | [CLI 도구](#cli-도구) | [plans/06-cli-tool.md](plans/06-cli-tool.md) | 핵심 |
+| 07 | [소켓 API](#소켓-api) | [plans/07-socket-api.md](plans/07-socket-api.md) | 핵심 |
+| 08 | [세션 복원](#세션-복원) | [plans/08-session-persistence.md](plans/08-session-persistence.md) | 중요 |
+| 09 | [명령 팔레트](#명령-팔레트) | [plans/09-command-palette.md](plans/09-command-palette.md) | 중요 |
+| 10 | [키보드 단축키](#키보드-단축키) | [plans/10-keyboard-shortcuts.md](plans/10-keyboard-shortcuts.md) | 핵심 |
+| 11 | [검색](#검색) | [plans/11-search.md](plans/11-search.md) | 중요 |
+| 12 | [클립보드 통합](#클립보드-통합) | [plans/12-clipboard.md](plans/12-clipboard.md) | 핵심 |
+| 13 | [IME 지원](#ime-지원) | [plans/13-ime-support.md](plans/13-ime-support.md) | 중요 |
+| 14 | [포트 스캐닝](#포트-스캐닝) | [plans/14-port-scanning.md](plans/14-port-scanning.md) | 부가 |
+| 15 | [원격 SSH](#원격-ssh) | [plans/15-remote-ssh.md](plans/15-remote-ssh.md) | 확장 |
+| 16 | [자동 업데이트](#자동-업데이트) | [plans/16-auto-update.md](plans/16-auto-update.md) | 부가 |
+| 17 | [설정 시스템](#설정-시스템) | [plans/17-settings-system.md](plans/17-settings-system.md) | 핵심 |
+| 18 | [Claude Code 통합](#claude-code-통합) | [plans/18-claude-code-integration.md](plans/18-claude-code-integration.md) | 핵심 |
+| 19 | [마크다운 뷰어](#마크다운-뷰어) | [plans/19-markdown-viewer.md](plans/19-markdown-viewer.md) | 부가 |
+| 20 | [윈도우 관리](#윈도우-관리) | [plans/20-window-management.md](plans/20-window-management.md) | 중요 |
+| 21 | [복사 모드](#복사-모드) | [plans/21-copy-mode.md](plans/21-copy-mode.md) | 부가 |
+
+## 전략 문서
+
+기능 횡단적인 설계 전략 문서.
+
+| 문서 | 설명 |
+|------|------|
+| [GPU 활용 전략](plans/gpu-strategy.md) | 렌더링 아키텍처, 셰이더 설계, 버퍼 전략, 폴백 |
+| [설치 전략](plans/install-strategy.md) | 환경 감지, 설치 스크립트, 하드웨어 프로파일링 |
+| [접근성](plans/accessibility.md) | 키보드 내비게이션, 고대비, 스크린 리더, 색맹 지원 |
+| [에러 처리/로깅](plans/error-logging.md) | 에러 카테고리, tracing 로깅, 크래시 리포팅 |
+| [테스트 전략](plans/testing-strategy.md) | 단위/통합/시각적 회귀 테스트, 벤치마크 |
+
+## 우선순위 정의
+
+- **핵심**: 최소 동작 제품(MVP)에 반드시 포함
+- **중요**: MVP 직후 구현 대상
+- **확장**: 사용자 요구에 따라 구현
+- **부가**: 있으면 좋지만 후순위
+
+## 기술 스택
+
+- **언어**: Rust
+- **윈도우/입력**: winit
+- **GPU 렌더링**: wgpu
+- **UI 위젯**: egui (UI) + 커스텀 셰이더 (터미널)
+- **VTE 파싱**: termwiz
+- **PTY**: portable-pty (Windows: ConPTY)
+- **IPC**: Unix socket / Named pipe
+- **CLI**: clap
+- **라이선스**: MIT
+
+## 기능 요약
+
+### 터미널 엔진
+wgpu 기반 GPU 가속 터미널 렌더링. termwiz(WezTerm)로 VTE 파싱 및 셀 그리드 관리, cosmic-text/swash로 폰트 래스터라이징. cmux는 libghostty(Metal)를 사용하지만, tasty는 wgpu로 크로스 플랫폼 GPU 가속을 달성한다.
+
+### 워크스페이스 & 탭
+GUI 사이드바 기반 수직 탭 워크스페이스 관리. 드래그앤드롭 재정렬, 색상 태깅. 여러 에이전트 세션을 독립적으로 관리.
+
+### 사이드바 메타데이터
+GPU 렌더링된 사이드바에 Git 브랜치, PR 상태, 작업 디렉토리, 리스닝 포트 등의 실시간 정보를 아이콘/색상과 함께 표시.
+
+### 알림 시스템
+인앱 시각 알림 + 시스템 트레이 + OS 네이티브 알림. OSC 시퀀스 감지, 사운드, Claude Code 훅 연동.
+
+### 분할 패인
+GPU 렌더링 분할 패인. 드래그 가능한 디바이더, 비활성 패인 디밍, 줌/최대화.
+
+### CLI 도구
+`tasty` 명령으로 워크스페이스 생성, 알림 전송, 키 입력 등을 자동화. IPC로 실행 중인 GUI 앱과 통신.
+
+### 소켓 API
+외부 프로그램이 tasty를 제어할 수 있는 JSON-RPC IPC 인터페이스. 윈도우/레이아웃/외형 등 풍부한 제어 가능.
+
+### 세션 복원
+앱 재시작 시 워크스페이스 레이아웃, 작업 디렉토리, 스크롤백, 윈도우 위치/크기를 복원.
+
+### 명령 팔레트
+VS Code 스타일 GPU 렌더링 명령 팔레트. 퍼지 검색, 카테고리 필터링, 키보드 단축키 표시.
+
+### 키보드 단축키
+winit 기반 네이티브 키 입력 처리. 커스터마이징 가능한 단축키 시스템.
+
+### 검색
+GPU 렌더링 검색 바 오버레이. 스크롤백 텍스트 검색, 정규식, 결과 하이라이트.
+
+### 클립보드 통합
+OS 클립보드 직접 접근. 텍스트/이미지 복사-붙여넣기, URL/파일 드롭.
+
+### IME 지원
+winit의 IME 이벤트 처리로 CJK (한국어/중국어/일본어) 입력기 직접 지원. 조합 문자 인라인 표시.
+
+### 포트 스캐닝
+셸 프로세스가 리스닝하는 포트를 감지하여 사이드바에 표시.
+
+### 원격 SSH
+SSH를 통한 원격 서버 워크스페이스 연결.
+
+### 자동 업데이트
+GUI 업데이트 다이얼로그. 새 버전 자동 감지, 다운로드 진행률 표시, 원클릭 업데이트.
+
+### 설정 시스템
+TOML 기반 설정 파일 + GUI 설정 윈도우. 라이브 리로드.
+
+### Claude Code 통합
+Claude Code 훅 연동, 활동 상태 추적, 전용 런처, 멀티 에이전트 워크플로우.
+
+### 마크다운 뷰어
+GPU 가속 리치 마크다운 렌더링. 코드 블록 신택스 하이라이팅, 이미지 인라인 표시, 라이브 리로드.
+
+### 윈도우 관리
+다중 OS 윈도우, 전체화면, 윈도우 위치/크기 기억, 포커스 관리, 멀티 모니터 지원.
+
+### 복사 모드
+마우스 드래그 선택 + vi 스타일 키보드 복사 모드. 셀 단위 정밀 선택.
