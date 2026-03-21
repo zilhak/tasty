@@ -80,6 +80,13 @@ impl ApplicationHandler for App {
                 }
                 self.dirty = true;
             }
+            WindowEvent::Focused(true) | WindowEvent::Occluded(false) => {
+                // Resume render loop after system menu or other modal interruption
+                self.dirty = true;
+                if let Some(window) = &self.window {
+                    window.request_redraw();
+                }
+            }
             WindowEvent::KeyboardInput { event, .. } => {
                 if event.state != ElementState::Pressed {
                     return;
