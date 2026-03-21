@@ -59,6 +59,12 @@ pub enum Commands {
     },
     /// Create a new tab in the focused pane
     NewTab,
+    /// Close the active tab in the focused pane
+    CloseTab,
+    /// Close the focused pane (unsplit)
+    ClosePane,
+    /// Close the focused surface within a SurfaceGroup
+    CloseSurface,
     /// List surfaces (terminals) in the active workspace
     Surfaces,
     /// List panes in the active workspace
@@ -184,6 +190,9 @@ fn command_to_request(command: &Commands) -> JsonRpcRequest {
             serde_json::json!({ "direction": direction }),
         ),
         Commands::NewTab => ("tab.create", serde_json::json!({})),
+        Commands::CloseTab => ("tab.close", serde_json::json!({})),
+        Commands::ClosePane => ("pane.close", serde_json::json!({})),
+        Commands::CloseSurface => ("surface.close", serde_json::json!({})),
         Commands::Surfaces => ("surface.list", serde_json::json!({})),
         Commands::Panes => ("pane.list", serde_json::json!({})),
         Commands::SetHook {

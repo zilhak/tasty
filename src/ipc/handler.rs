@@ -19,6 +19,9 @@ pub fn handle(state: &mut AppState, request: &JsonRpcRequest) -> JsonRpcResponse
         "pane.split" => handle_pane_split(state, id, &request.params),
         "tab.list" => handle_tab_list(state, id),
         "tab.create" => handle_tab_create(state, id),
+        "tab.close" => handle_tab_close(state, id),
+        "pane.close" => handle_pane_close(state, id),
+        "surface.close" => handle_surface_close(state, id),
         "surface.list" => handle_surface_list(state, id),
         "surface.send" => handle_surface_send(state, id, &request.params),
         "surface.send_key" => handle_surface_send_key(state, id, &request.params),
@@ -197,6 +200,30 @@ fn handle_tab_create(state: &mut AppState, id: serde_json::Value) -> JsonRpcResp
             )
         }
         Err(e) => JsonRpcResponse::internal_error(id, e.to_string()),
+    }
+}
+
+fn handle_tab_close(state: &mut AppState, id: serde_json::Value) -> JsonRpcResponse {
+    if state.close_active_tab() {
+        JsonRpcResponse::success(id, json!({ "closed": true }))
+    } else {
+        JsonRpcResponse::success(id, json!({ "closed": false, "reason": "cannot close the last tab" }))
+    }
+}
+
+fn handle_pane_close(state: &mut AppState, id: serde_json::Value) -> JsonRpcResponse {
+    if state.close_active_pane() {
+        JsonRpcResponse::success(id, json!({ "closed": true }))
+    } else {
+        JsonRpcResponse::success(id, json!({ "closed": false, "reason": "cannot close the last pane" }))
+    }
+}
+
+fn handle_surface_close(state: &mut AppState, id: serde_json::Value) -> JsonRpcResponse {
+    if state.close_active_surface() {
+        JsonRpcResponse::success(id, json!({ "closed": true }))
+    } else {
+        JsonRpcResponse::success(id, json!({ "closed": false, "reason": "cannot close a single terminal surface" }))
     }
 }
 

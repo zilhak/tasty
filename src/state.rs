@@ -221,6 +221,48 @@ impl AppState {
         Ok(())
     }
 
+    /// Close the active tab in the focused pane. Returns true if a tab was closed.
+    pub fn close_active_tab(&mut self) -> bool {
+        if let Some(pane) = self.focused_pane_mut() {
+            pane.close_active_tab()
+        } else {
+            false
+        }
+    }
+
+    /// Close the focused pane (unsplit). Returns true if a pane was removed.
+    pub fn close_active_pane(&mut self) -> bool {
+        let ws = self.active_workspace_mut();
+        let target_id = ws.focused_pane;
+        let removed = ws.pane_layout_mut().close_pane(target_id);
+        if removed {
+            // Update focus to the first available pane
+            if let Some(first) = ws.pane_layout().first_pane() {
+                ws.focused_pane = first.id;
+            }
+        }
+        removed
+    }
+
+    /// Close the focused surface within a SurfaceGroup. Returns true if a surface was removed.
+    pub fn close_active_surface(&mut self) -> bool {
+        if let Some(pane) = self.focused_pane_mut() {
+            if let Some(panel) = pane.active_panel_mut() {
+                match panel {
+                    crate::model::Panel::SurfaceGroup(group) => {
+                        let target = group.focused_surface;
+                        group.close_surface(target)
+                    }
+                    _ => false,
+                }
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    }
+
     /// Switch to workspace by index (0-based).
     pub fn switch_workspace(&mut self, index: usize) {
         if index < self.workspaces.len() {

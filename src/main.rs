@@ -113,6 +113,18 @@ impl App {
         if ctrl && shift {
             if let Key::Character(c) = key {
                 match c.as_str() {
+                    // Ctrl+Shift+W: Close active pane (unsplit)
+                    "W" | "w" => {
+                        if state.close_active_pane() {
+                            if let Some(gpu) = &self.gpu {
+                                let rect = Self::compute_terminal_rect_with_sidebar(gpu, state.sidebar_width);
+                                state.resize_all(rect, gpu.cell_width(), gpu.cell_height());
+                            }
+                            self.dirty = true;
+                            return true;
+                        }
+                        return false;
+                    }
                     // Ctrl+Shift+N: New workspace
                     "N" | "n" => {
                         let _ = state.add_workspace();
@@ -184,6 +196,20 @@ impl App {
                 state.prev_tab_in_pane();
                 self.dirty = true;
                 return true;
+            }
+        }
+
+        // Ctrl+W: Close active tab (if >1 tabs)
+        if ctrl && !shift && !alt {
+            if let Key::Character(c) = key {
+                let s = c.as_str();
+                if s == "w" || s == "W" || s == "\u{17}" {
+                    if state.close_active_tab() {
+                        self.dirty = true;
+                        return true;
+                    }
+                    return false;
+                }
             }
         }
 
@@ -437,15 +463,28 @@ impl ApplicationHandler<AppEvent> for App {
                             }
                         }
                         // Handle special keys that don't produce text
+                        let app_cursor = terminal.application_cursor_keys();
                         match event.logical_key.as_ref() {
                             Key::Named(NamedKey::Enter) => terminal.send_bytes(b"\r"),
                             Key::Named(NamedKey::Backspace) => terminal.send_bytes(b"\x7f"),
                             Key::Named(NamedKey::Tab) => terminal.send_bytes(b"\t"),
                             Key::Named(NamedKey::Escape) => terminal.send_bytes(b"\x1b"),
-                            Key::Named(NamedKey::ArrowUp) => terminal.send_bytes(b"\x1b[A"),
-                            Key::Named(NamedKey::ArrowDown) => terminal.send_bytes(b"\x1b[B"),
-                            Key::Named(NamedKey::ArrowRight) => terminal.send_bytes(b"\x1b[C"),
-                            Key::Named(NamedKey::ArrowLeft) => terminal.send_bytes(b"\x1b[D"),
+                            Key::Named(NamedKey::ArrowUp) => {
+                                if app_cursor { terminal.send_bytes(b"\x1bOA") }
+                                else { terminal.send_bytes(b"\x1b[A") }
+                            }
+                            Key::Named(NamedKey::ArrowDown) => {
+                                if app_cursor { terminal.send_bytes(b"\x1bOB") }
+                                else { terminal.send_bytes(b"\x1b[B") }
+                            }
+                            Key::Named(NamedKey::ArrowRight) => {
+                                if app_cursor { terminal.send_bytes(b"\x1bOC") }
+                                else { terminal.send_bytes(b"\x1b[C") }
+                            }
+                            Key::Named(NamedKey::ArrowLeft) => {
+                                if app_cursor { terminal.send_bytes(b"\x1bOD") }
+                                else { terminal.send_bytes(b"\x1b[D") }
+                            }
                             Key::Named(NamedKey::Home) => terminal.send_bytes(b"\x1b[H"),
                             Key::Named(NamedKey::End) => terminal.send_bytes(b"\x1b[F"),
                             Key::Named(NamedKey::PageUp) => terminal.send_bytes(b"\x1b[5~"),

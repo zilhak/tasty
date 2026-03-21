@@ -228,20 +228,13 @@ read_mark_in_pane_node → read_mark_in_panel → read_mark_in_surface_layout
 - 동적 아틀라스 크기 (GPU 제한에 맞춰 증가).
 - LRU 캐시로 사용 빈도 낮은 글리프 교체.
 
-### Pane/Tab 삭제 불가
+### Pane/Tab 삭제 — 완료
 
-`model.rs`에 패인이나 탭을 삭제하는 API가 없다. 워크스페이스만 추가 가능하고 삭제도 없다.
+`PaneNode::close_pane()`, `Pane::close_tab()`, `Pane::close_active_tab()`, `SurfaceGroupLayout::close_surface()`, `SurfaceGroupNode::close_surface()` API가 구현되었다. `AppState`에 `close_active_tab()`, `close_active_pane()`, `close_active_surface()` 메서드가 추가되었고, IPC/CLI에 `tab.close`, `pane.close`, `surface.close` 명령이 추가되었다. 키보드 단축키: Ctrl+W(탭 닫기), Ctrl+Shift+W(패인 닫기).
 
-**필요한 API**:
-- `PaneNode::remove_pane(id)`: 리프 삭제 → 부모 Split을 나머지 자식으로 교체.
-- `Pane::remove_tab(index)`: 탭 삭제 → 빈 패인이면 패인도 삭제.
-- `Workspace::remove()`: 워크스페이스 삭제.
+### DECSET / DECRST — 완료
 
-### DECSET / DECRST 미구현
-
-`terminal.rs:224-227` — `CSI::Mode` 처리에 TODO 주석만 있다.
-
-**영향**: 대체 화면 모드 (`?1049h`), 커서 가시성 (`?25l`), 마우스 추적 (`?1000h`) 등이 작동하지 않아 vim, tmux, htop 같은 프로그램이 제대로 동작하지 않는다.
+DECSET/DECRST가 구현되었다. 지원 모드: DECCKM(1), StartBlinkingCursor(12), DECTCEM(25), EnableAlternateScreen(47/1047), ClearAndEnableAlternateScreen(1049), SaveCursor(1048), MouseTracking(1000), ButtonEventMouse(1002), AnyEventMouse(1003), FocusTracking(1004), SGRMouse(1006), BracketedPaste(2004). 대체 화면 버퍼(primary_surface/alternate_surface)가 구현되어 vim, htop, less, nano 등 TUI 앱이 동작한다.
 
 ### 클립보드 미구현
 
@@ -253,11 +246,11 @@ read_mark_in_pane_node → read_mark_in_panel → read_mark_in_surface_layout
 
 ### P0 (긴급) — 기능 정상 작동에 필요
 
-| 항목 | 영향 범위 | 예상 작업량 |
-|------|-----------|------------|
-| DECSET/DECRST 구현 | terminal.rs | 중 (200-300줄) |
-| font_size 설정 반영 | gpu.rs:88 하드코딩 제거 | 소 (10줄) |
-| Pane/Tab 삭제 API | model.rs, state.rs | 중 (150줄) |
+| 항목 | 영향 범위 | 예상 작업량 | 상태 |
+|------|-----------|------------|------|
+| DECSET/DECRST 구현 | terminal.rs | 중 (200-300줄) | 완료 |
+| font_size 설정 반영 | gpu.rs:88 하드코딩 제거 | 소 (10줄) | 미착수 |
+| Pane/Tab 삭제 API | model.rs, state.rs | 중 (150줄) | 완료 |
 
 ### P1 (높음) — 코드 품질 개선
 
@@ -293,6 +286,7 @@ read_mark_in_pane_node → read_mark_in_panel → read_mark_in_surface_layout
 ## 핵심 우선순위 요약
 
 1. **즉시 해결**: `font_size` 하드코딩 제거, `default_shell()` 통합.
-2. **단기 목표**: DECSET/DECRST 구현, Pane/Tab 삭제 API, 즉시 분리 가능 크레이트 추출.
-3. **중기 목표**: BinaryTree trait, Visitor 패턴, AppState 분리.
-4. **장기 목표**: Terminal trait 추출, 렌더러 분리, 아틀라스 개선.
+2. **완료된 단기 목표**: DECSET/DECRST 구현 (완료), Pane/Tab 삭제 API (완료).
+3. **남은 단기 목표**: 즉시 분리 가능 크레이트 추출.
+4. **중기 목표**: BinaryTree trait, Visitor 패턴, AppState 분리.
+5. **장기 목표**: Terminal trait 추출, 렌더러 분리, 아틀라스 개선.

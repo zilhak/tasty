@@ -209,6 +209,57 @@ impl PaneNode {
         }
     }
 
+    /// Remove a pane from the tree by promoting its sibling.
+    /// Returns true if the pane was found and removed.
+    /// Returns false for root leaf (can't close the only pane).
+    pub fn close_pane(&mut self, target_id: PaneId) -> bool {
+        match self {
+            PaneNode::Leaf(_) => false, // Can't close the root pane
+            PaneNode::Split {
+                first, second, ..
+            } => {
+                // Check if first child is the target leaf
+                let first_is_target =
+                    matches!(first.as_ref(), PaneNode::Leaf(p) if p.id == target_id);
+                let second_is_target =
+                    matches!(second.as_ref(), PaneNode::Leaf(p) if p.id == target_id);
+
+                if first_is_target {
+                    // Remove first, promote second
+                    // Take ownership of current self, replace with promoted sibling
+                    let old = std::mem::replace(
+                        self,
+                        PaneNode::Leaf(Pane {
+                            id: 0,
+                            tabs: vec![],
+                            active_tab: 0,
+                        }),
+                    );
+                    if let PaneNode::Split { second, .. } = old {
+                        *self = *second;
+                    }
+                    return true;
+                }
+                if second_is_target {
+                    let old = std::mem::replace(
+                        self,
+                        PaneNode::Leaf(Pane {
+                            id: 0,
+                            tabs: vec![],
+                            active_tab: 0,
+                        }),
+                    );
+                    if let PaneNode::Split { first, .. } = old {
+                        *self = *first;
+                    }
+                    return true;
+                }
+                // Recurse into children
+                first.close_pane(target_id) || second.close_pane(target_id)
+            }
+        }
+    }
+
     /// Return a reference to the first (leftmost/topmost) pane in the tree.
     pub fn first_pane(&self) -> Option<&Pane> {
         match self {
@@ -522,6 +573,28 @@ impl Pane {
         Ok(())
     }
 
+    /// Close the tab at the given index. Returns false if the tab can't be closed
+    /// (e.g., it's the last tab).
+    pub fn close_tab(&mut self, tab_index: usize) -> bool {
+        if self.tabs.len() <= 1 {
+            return false; // Can't close last tab
+        }
+        if tab_index < self.tabs.len() {
+            self.tabs.remove(tab_index);
+            if self.active_tab >= self.tabs.len() {
+                self.active_tab = self.tabs.len() - 1;
+            }
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Close the currently active tab. Returns false if it's the last tab.
+    pub fn close_active_tab(&mut self) -> bool {
+        self.close_tab(self.active_tab)
+    }
+
     /// Get the focused terminal (follows through Panel -> SurfaceGroup).
     pub fn active_terminal(&self) -> Option<&Terminal> {
         self.active_panel()?.focused_terminal()
@@ -747,6 +820,22 @@ impl SurfaceGroupNode {
 }
 
 impl SurfaceGroupNode {
+    /// Close a surface within this group. Returns true if removed.
+    pub fn close_surface(&mut self, target_id: SurfaceId) -> bool {
+        let old_layout = self.take_layout();
+        let (new_layout, found) = old_layout.close_surface(target_id);
+        self.put_layout(new_layout);
+        if found {
+            // If the focused surface was the one we removed, reset focus
+            if self.focused_surface == target_id {
+                if let Some(first_id) = self.layout().first_surface_id() {
+                    self.focused_surface = first_id;
+                }
+            }
+        }
+        found
+    }
+
     /// Split the focused surface.
     pub fn split_surface(
         &mut self,
@@ -903,6 +992,61 @@ impl SurfaceGroupLayout {
                         None,
                     )
                 }
+            }
+        }
+    }
+
+    /// Remove a surface from the tree by promoting its sibling.
+    /// This is a consuming operation that returns a new layout.
+    /// Returns `(new_layout, removed)` where `removed` is true if target was found.
+    pub fn close_surface(self, target_id: SurfaceId) -> (Self, bool) {
+        match self {
+            SurfaceGroupLayout::Single(_) => (self, false), // Can't close the only surface
+            SurfaceGroupLayout::Split {
+                direction,
+                ratio,
+                first,
+                second,
+                focus_second,
+            } => {
+                let first_is_target =
+                    matches!(first.as_ref(), SurfaceGroupLayout::Single(n) if n.id == target_id);
+                let second_is_target =
+                    matches!(second.as_ref(), SurfaceGroupLayout::Single(n) if n.id == target_id);
+
+                if first_is_target {
+                    // Remove first, promote second
+                    return (*second, true);
+                }
+                if second_is_target {
+                    // Remove second, promote first
+                    return (*first, true);
+                }
+                // Recurse into children
+                let (new_first, found_in_first) = first.close_surface(target_id);
+                if found_in_first {
+                    return (
+                        SurfaceGroupLayout::Split {
+                            direction,
+                            ratio,
+                            first: Box::new(new_first),
+                            second,
+                            focus_second,
+                        },
+                        true,
+                    );
+                }
+                let (new_second, found_in_second) = second.close_surface(target_id);
+                (
+                    SurfaceGroupLayout::Split {
+                        direction,
+                        ratio,
+                        first: Box::new(new_first),
+                        second: Box::new(new_second),
+                        focus_second,
+                    },
+                    found_in_second,
+                )
             }
         }
     }
@@ -1355,6 +1499,88 @@ mod tests {
 
         let ids = node.all_pane_ids();
         assert_eq!(ids, vec![1]); // unchanged
+    }
+
+    // ---- Close tab tests ----
+
+    #[test]
+    fn pane_close_tab_removes_tab() {
+        let waker = noop_waker();
+        let mut pane = Pane::new(1, 10, 100, 80, 24, waker.clone()).expect("pane creation");
+        pane.add_tab(11, 101, 80, 24, waker).expect("add tab");
+        assert_eq!(pane.tabs.len(), 2);
+        assert!(pane.close_active_tab());
+        assert_eq!(pane.tabs.len(), 1);
+    }
+
+    #[test]
+    fn pane_close_tab_last_tab_fails() {
+        let waker = noop_waker();
+        let mut pane = Pane::new(1, 10, 100, 80, 24, waker).expect("pane creation");
+        assert_eq!(pane.tabs.len(), 1);
+        assert!(!pane.close_active_tab());
+        assert_eq!(pane.tabs.len(), 1);
+    }
+
+    // ---- Close pane tests ----
+
+    #[test]
+    fn pane_node_close_pane_single_leaf_fails() {
+        let p1 = Pane { id: 1, tabs: vec![], active_tab: 0 };
+        let mut node = PaneNode::Leaf(p1);
+        assert!(!node.close_pane(1));
+    }
+
+    #[test]
+    fn pane_node_close_pane_promotes_sibling() {
+        let p1 = Pane { id: 1, tabs: vec![], active_tab: 0 };
+        let p2 = Pane { id: 2, tabs: vec![], active_tab: 0 };
+        let mut node = PaneNode::Split {
+            direction: SplitDirection::Vertical,
+            ratio: 0.5,
+            first: Box::new(PaneNode::Leaf(p1)),
+            second: Box::new(PaneNode::Leaf(p2)),
+        };
+
+        // Close pane 1 -- pane 2 should be promoted
+        assert!(node.close_pane(1));
+        assert_eq!(node.all_pane_ids(), vec![2]);
+    }
+
+    #[test]
+    fn pane_node_close_pane_nested() {
+        let p1 = Pane { id: 1, tabs: vec![], active_tab: 0 };
+        let p2 = Pane { id: 2, tabs: vec![], active_tab: 0 };
+        let p3 = Pane { id: 3, tabs: vec![], active_tab: 0 };
+        let mut node = PaneNode::Split {
+            direction: SplitDirection::Vertical,
+            ratio: 0.5,
+            first: Box::new(PaneNode::Leaf(p1)),
+            second: Box::new(PaneNode::Split {
+                direction: SplitDirection::Horizontal,
+                ratio: 0.5,
+                first: Box::new(PaneNode::Leaf(p2)),
+                second: Box::new(PaneNode::Leaf(p3)),
+            }),
+        };
+
+        // Close pane 2 -- should promote pane 3 in the nested split
+        assert!(node.close_pane(2));
+        assert_eq!(node.all_pane_ids(), vec![1, 3]);
+    }
+
+    #[test]
+    fn pane_node_close_pane_not_found() {
+        let p1 = Pane { id: 1, tabs: vec![], active_tab: 0 };
+        let p2 = Pane { id: 2, tabs: vec![], active_tab: 0 };
+        let mut node = PaneNode::Split {
+            direction: SplitDirection::Vertical,
+            ratio: 0.5,
+            first: Box::new(PaneNode::Leaf(p1)),
+            second: Box::new(PaneNode::Leaf(p2)),
+        };
+        assert!(!node.close_pane(99));
+        assert_eq!(node.all_pane_ids(), vec![1, 2]);
     }
 
     // ---- SurfaceGroupLayout tests ----

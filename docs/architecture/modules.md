@@ -67,25 +67,25 @@
 - `new()` (84행), `new_with_shell()` (98행), `pane_layout()` (122행), `pane_layout_mut()` (129행), `take_pane_layout()` (136행), `put_pane_layout()` (141행)
 
 **PaneNode:**
-- `split_pane_in_place()` (167행), `first_pane()` (213행), `compute_rects()` (221행), `find_pane()` (239행), `find_pane_mut()` (255행), `all_terminals()` (275행), `all_terminals_mut()` (287행), `process_all()` (299행), `all_pane_ids()` (310행), `next_pane_id()` (322행), `prev_pane_id()` (332행), `find_divider_at()` (343행), `update_ratio_for_rect()` (377행)
+- `split_pane_in_place()`, `close_pane()`, `first_pane()`, `compute_rects()`, `find_pane()`, `find_pane_mut()`, `all_terminals()`, `all_terminals_mut()`, `process_all()`, `all_pane_ids()`, `next_pane_id()`, `prev_pane_id()`, `find_divider_at()`, `update_ratio_for_rect()`
 
 **Pane:**
-- `new()` (402행), `new_with_shell()` (414행), `add_tab()` (440행), `add_tab_with_shell()` (452행), `active_panel()` (476행), `active_panel_mut()` (483행), `split_active_surface()` (490행), `split_active_surface_with_shell()` (502행), `active_terminal()` (526행), `active_terminal_mut()` (531행), `next_tab()` (536행), `prev_tab()` (543행), `all_terminals()` (550행), `all_terminals_mut()` (559행)
+- `new()`, `new_with_shell()`, `add_tab()`, `add_tab_with_shell()`, `close_tab()`, `close_active_tab()`, `active_panel()`, `active_panel_mut()`, `split_active_surface()`, `split_active_surface_with_shell()`, `active_terminal()`, `active_terminal_mut()`, `next_tab()`, `prev_tab()`, `all_terminals()`, `all_terminals_mut()`
 
 **Panel:**
 - `focused_terminal()` (614행), `focused_terminal_mut()` (622행), `collect_terminals()` (630행), `collect_terminals_mut()` (638행), `render_regions()` (646행), `resize_all()` (654행), `split_surface_with_terminal()` (667행)
 
 **SurfaceGroupNode:**
-- `layout()` (725행), `layout_mut()` (732행), `split_surface()` (751행), `compute_rects()` (776행), `focused_terminal()` (781행), `focused_terminal_mut()` (789행), `resize_all()` (802행), `move_focus_forward()` (807행), `move_focus_backward()` (820행)
+- `layout()`, `layout_mut()`, `close_surface()`, `split_surface()`, `compute_rects()`, `focused_terminal()`, `focused_terminal_mut()`, `resize_all()`, `move_focus_forward()`, `move_focus_backward()`
 
 **SurfaceGroupLayout:**
-- `split_with_node()` (849행), `first_terminal()` (911행), `first_surface_id()` (919행), `find_terminal()` (927행), `find_terminal_mut()` (943행), `render_regions()` (963행), `resize_all()` (982행), `all_surface_ids()` (1004행), `collect_terminals()` (1016행), `collect_terminals_mut()` (1027행), `process_all()` (1038행), `find_divider_at()` (1050행), `update_ratio_for_rect()` (1080행), `find_surface_at()` (1096행)
+- `split_with_node()`, `close_surface()`, `first_terminal()`, `first_surface_id()`, `find_terminal()`, `find_terminal_mut()`, `render_regions()`, `resize_all()`, `all_surface_ids()`, `collect_terminals()`, `collect_terminals_mut()`, `process_all()`, `find_divider_at()`, `update_ratio_for_rect()`, `find_surface_at()`
 
 ### 의존 관계
 `terminal::Terminal`, `terminal::Waker`
 
 ### 테스트
-13개 테스트 (1129-1370행): Rect 연산, PaneNode 트리 조작, 디바이더 탐색, 분할 in-place, SurfaceGroupLayout.
+19개 테스트: Rect 연산, PaneNode 트리 조작, 디바이더 탐색, 분할 in-place, 패인 닫기(close_pane), 탭 닫기(close_tab), SurfaceGroupLayout.
 
 ---
 
@@ -113,6 +113,9 @@
 | `add_tab()` | 172 | 포커스 패인에 탭 추가 |
 | `split_pane()` | 187 | 패인 분할 |
 | `split_surface()` | 211 | 서피스 분할 (탭 내부) |
+| `close_active_tab()` | - | 활성 탭 닫기 |
+| `close_active_pane()` | - | 포커스된 패인 닫기 (unsplit) |
+| `close_active_surface()` | - | SurfaceGroup 내 포커스된 서피스 닫기 |
 | `switch_workspace()` | 225 | 워크스페이스 전환 |
 | `next_tab_in_pane()` | 232 | 다음 탭 전환 |
 | `prev_tab_in_pane()` | 239 | 이전 탭 전환 |
@@ -142,55 +145,65 @@
 
 ---
 
-## 4. terminal.rs (646줄)
+## 4. terminal.rs (~1,100줄)
 
 ### 역할
-PTY 기반 터미널 에뮬레이터. portable-pty로 셸 프로세스를 실행하고, termwiz로 VTE 시퀀스를 파싱하여 Surface에 반영한다.
+PTY 기반 터미널 에뮬레이터. portable-pty로 셸 프로세스를 실행하고, termwiz로 VTE 시퀀스를 파싱하여 Surface에 반영한다. DECSET/DECRST 모드 관리, 대체 화면 버퍼, 스크롤 리전을 지원한다.
 
 ### 주요 타입
 - `Waker` (16행): `Arc<dyn Fn() + Send + Sync>` 타입 별칭. PTY 데이터 수신 시 이벤트 루프를 깨운다.
 - `TerminalEvent` (19행): 터미널이 생성하는 이벤트 (surface_id + kind).
 - `TerminalEventKind` (26행): Notification / BellRing / TitleChanged / CwdChanged / ProcessExited.
-- `Terminal` (42행): PTY + 파서 + Surface + 출력 버퍼를 소유하는 핵심 구조체.
+- `MouseTrackingMode`: None / Click(1000) / CellMotion(1002) / AllMotion(1003).
+- `Terminal`: PTY + 파서 + 기본/대체 Surface + 출력 버퍼 + DECSET 상태를 소유하는 핵심 구조체.
 
 ### 공개 API 목록
 
-| 메서드 | 줄 | 역할 |
-|--------|-----|------|
-| `new()` | 65 | 기본 셸로 터미널 생성 |
-| `new_with_shell()` | 74 | 커스텀 셸로 터미널 생성 |
-| `process()` | 137 | PTY 출력 처리, Surface 갱신 |
-| `send_key()` | 554 | 키보드 텍스트를 PTY에 전송 |
-| `send_bytes()` | 560 | 원시 바이트를 PTY에 전송 |
-| `resize()` | 565 | Surface + PTY 리사이즈 |
-| `surface()` | 579 | termwiz Surface 참조 |
-| `cols()` | 583 | 열 수 |
-| `rows()` | 587 | 행 수 |
-| `is_alive()` | 592 | 프로세스 생존 여부 |
-| `check_process_alive()` | 597 | 프로세스 종료 확인 |
-| `take_events()` | 605 | 누적 이벤트 추출 |
-| `set_mark()` | 610 | 읽기 마크 설정 |
-| `read_since_mark()` | 615 | 마크 이후 출력 읽기 |
+| 메서드 | 역할 |
+|--------|------|
+| `new()` | 기본 셸로 터미널 생성 |
+| `new_with_shell()` | 커스텀 셸로 터미널 생성 |
+| `process()` | PTY 출력 처리, Surface 갱신 (DECSET/DECRST 인터셉트) |
+| `send_key()` | 키보드 텍스트를 PTY에 전송 |
+| `send_bytes()` | 원시 바이트를 PTY에 전송 |
+| `resize()` | 기본/대체 Surface + PTY 리사이즈 |
+| `surface()` | 활성(기본 또는 대체) termwiz Surface 참조 |
+| `cols()` / `rows()` | 열/행 수 |
+| `is_alive()` / `check_process_alive()` | 프로세스 생존 여부 |
+| `take_events()` | 누적 이벤트 추출 |
+| `set_mark()` / `read_since_mark()` | 읽기 마크 설정/조회 |
+| `application_cursor_keys()` | DECCKM 모드 조회 |
+| `cursor_visible()` | DECTCEM 모드 조회 |
+| `bracketed_paste()` | 브래킷 붙여넣기 모드 조회 |
+| `mouse_tracking()` | 마우스 트래킹 모드 조회 |
+| `sgr_mouse()` | SGR 마우스 인코딩 조회 |
+| `focus_tracking()` | 포커스 트래킹 조회 |
+| `is_alternate_screen()` | 대체 화면 활성 여부 조회 |
 
 ### 내부 메서드
-| 메서드 | 줄 | 역할 |
-|--------|-----|------|
-| `action_to_changes()` | 182 | VT 액션 → Surface Change 변환 |
-| `map_control()` | 197 | 제어 문자 매핑 (LF, CR, BS, Tab, Bell) |
-| `map_csi()` | 219 | CSI 시퀀스 매핑 (SGR, Cursor, Edit) |
-| `map_sgr()` | 236 | SGR 색상/스타일 매핑 |
-| `map_cursor()` | 269 | 커서 이동 매핑 |
-| `map_edit()` | 360 | 화면 편집 매핑 (EraseInDisplay, EraseInLine, Scroll) |
-| `map_esc()` | 426 | ESC 시퀀스 매핑 (커서 저장/복원, ReverseIndex, FullReset) |
-| `map_osc()` | 462 | OSC 매핑 (타이틀, CWD, 알림) |
-| `default_shell()` | 626 | 플랫폼별 기본 셸 경로 |
-| `strip_ansi_escapes()` | 644 | ANSI 이스케이프 시퀀스 제거 |
+| 메서드 | 역할 |
+|--------|------|
+| `action_to_changes()` | VT 액션 → Surface Change 변환 |
+| `handle_mode()` | DECSET/DECRST CSI::Mode 처리 |
+| `set_dec_mode()` | 개별 DEC 사적 모드 설정/해제 |
+| `surface_mut()` | 활성 Surface 가변 참조 |
+| `scroll_region_params()` | 스크롤 리전 파라미터 계산 |
+| `read_line_from_surface()` | Surface에서 특정 행의 텍스트 읽기 |
+| `map_control()` | 제어 문자 매핑 (LF, CR, BS, Tab, Bell) |
+| `map_csi()` | CSI 시퀀스 매핑 (SGR, Cursor, Edit) |
+| `map_sgr()` | SGR 색상/스타일 매핑 |
+| `map_cursor()` | 커서 이동 매핑 + DECSTBM 스크롤 리전 |
+| `map_edit()` | 화면 편집 매핑 (ED, EL, SU, SD, DCH, ICH, DL, IL, ECH) |
+| `map_esc()` | ESC 시퀀스 매핑 (커서 저장/복원, ReverseIndex, FullReset) |
+| `map_osc()` | OSC 매핑 (타이틀, CWD, 알림) |
+| `default_shell()` | 플랫폼별 기본 셸 경로 |
+| `strip_ansi_escapes()` | ANSI 이스케이프 시퀀스 제거 |
 
 ### 의존 관계
 portable-pty, termwiz, regex
 
 ### 테스트
-없음.
+11개: DECSET/DECRST 모드 토글, 대체 화면 전환/리사이즈, 방향키 모드, 전체 리셋.
 
 ---
 

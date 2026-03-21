@@ -17,12 +17,23 @@
   - **제어 코드**: LF, CR, BS, HT, Bell
   - **SGR (텍스트 속성)**: Reset, Intensity(Bold/Dim), Underline, Italic, Blink, Inverse, Invisible, StrikeThrough, Foreground/Background 색상
   - **커서 이동**: Up/Down/Left/Right, Position(CUP), CharacterAbsolute(CHA), LinePositionAbsolute(VPA), NextLine(CNL), PrecedingLine(CPL), Save/Restore
-  - **화면 편집**: EraseInDisplay(ED), EraseInLine(EL), ScrollUp(SU), ScrollDown(SD), ClearScreen, ClearToEndOfLine, ClearToEndOfScreen
+  - **화면 편집**: EraseInDisplay(ED 0/2/3), EraseInLine(EL 0/1/2), ScrollUp(SU), ScrollDown(SD), ClearScreen, ClearToEndOfLine, ClearToEndOfScreen, EraseToStartOfDisplay, EraseToStartOfLine, DeleteCharacter(DCH), InsertCharacter(ICH), DeleteLine(DL), InsertLine(IL), EraseCharacter(ECH)
   - **ESC 시퀀스**: DECSC/DECRC(커서 저장/복원), RI(역방향 인덱스), RIS(전체 리셋)
+  - **DECSET/DECRST (CSI ? Pm h/l)**: 터미널 모드 전환
+    - DECCKM (모드 1): 애플리케이션 커서 키 — 방향키가 `\x1bO{A..D}` 시퀀스를 전송
+    - DECTCEM (모드 25): 커서 가시성 제어
+    - 대체 화면 버퍼 (모드 47/1047/1049): vim, htop, less, nano 등 TUI 앱 지원. 모드 1049는 커서 저장/복원 및 화면 클리어 포함
+    - 마우스 트래킹 (모드 1000/1002/1003): 클릭/셀 모션/전체 모션 추적
+    - SGR 마우스 (모드 1006): 확장 마우스 좌표 인코딩
+    - 포커스 트래킹 (모드 1004): FocusIn/FocusOut 이벤트
+    - 브래킷 붙여넣기 (모드 2004): 붙여넣기 텍스트를 브래킷으로 감쌈
+    - 커서 저장/복원 (모드 1048)
+  - **스크롤 리전 (DECSTBM)**: `CSI Pt;Pb r`로 스크롤 영역 설정. InsertLine/DeleteLine이 스크롤 리전 내에서 동작
 
 ### 키보드 입력
 - winit `KeyEvent.text`를 활용한 수정자 키 반영 (Ctrl+C 등 제어 문자 자동 처리)
 - 특수 키 매핑: Enter, Backspace, Tab, Escape, 방향키, Home/End, PageUp/PageDown, Insert/Delete, F1~F12
+- DECCKM 모드에 따른 방향키 시퀀스 자동 전환: 일반 모드 `\x1b[{A..D}` / 애플리케이션 모드 `\x1bO{A..D}`
 
 ### GPU 가속 렌더링
 - wgpu 기반 크로스 플랫폼 GPU 렌더링
@@ -106,6 +117,8 @@
 - Ctrl+Shift+D: SurfaceGroup 수직 분할 (탭 내부)
 - Ctrl+Shift+J: SurfaceGroup 수평 분할 (탭 내부)
 - Alt+Arrow: Pane 간 포커스 이동
+- Ctrl+W: 활성 탭 닫기 (탭이 2개 이상일 때)
+- Ctrl+Shift+W: 포커스된 패인 닫기 (unsplit, 패인이 2개 이상일 때)
 - Ctrl+Shift+I: 알림 패널 토글
 - Ctrl+,: 설정 윈도우 토글
 - Ctrl+D: 터미널에 전달 (EOF). 이전에는 Surface 수직 분할이었으나, Ctrl+Shift+D로 변경
@@ -225,6 +238,9 @@
 - `pane.split`: 포커스된 패인 분할 (vertical/horizontal)
 - `tab.list`: 포커스된 패인의 탭 목록
 - `tab.create`: 포커스된 패인에 새 탭 추가
+- `tab.close`: 포커스된 패인의 활성 탭 닫기
+- `pane.close`: 포커스된 패인 닫기 (unsplit)
+- `surface.close`: SurfaceGroup 내 포커스된 서피스 닫기
 - `surface.list`: 활성 워크스페이스의 전체 서피스(터미널) 목록 (cols, rows 포함)
 - `surface.send`: 포커스된 터미널에 텍스트 전송
 - `surface.send_key`: 포커스된 터미널에 키 입력 전송 (enter, tab, escape, 방향키 등 이름 매핑)
@@ -240,7 +256,7 @@
 
 ### CLI 클라이언트 (cli.rs)
 - `tasty` 명령에 서브커맨드가 있으면 CLI 모드, 없으면 GUI 모드로 동작
-- clap 기반 서브커맨드: `list`, `new-workspace`, `select-workspace`, `send`, `send-key`, `notify`, `notifications`, `tree`, `split`, `new-tab`, `surfaces`, `panes`, `info`, `set-hook`, `list-hooks`, `unset-hook`, `set-mark`, `read-since-mark`, `claude`
+- clap 기반 서브커맨드: `list`, `new-workspace`, `select-workspace`, `send`, `send-key`, `notify`, `notifications`, `tree`, `split`, `new-tab`, `close-tab`, `close-pane`, `close-surface`, `surfaces`, `panes`, `info`, `set-hook`, `list-hooks`, `unset-hook`, `set-mark`, `read-since-mark`, `claude`
 - 포트 파일에서 포트 번호를 읽어 TCP 연결 후 JSON-RPC 요청/응답
 - `tree` 커맨드: 워크스페이스/패인/탭 계층을 트리 형태로 표시
 - 에러 시 종료 코드 1 반환
@@ -297,6 +313,12 @@ Claude Code를 새 워크스페이스에서 자동으로 실행하는 전용 런
 
 각 모듈에 `#[cfg(test)] mod tests` 블록으로 인라인 단위 테스트를 포함한다.
 
+### terminal.rs 테스트
+- DECSET/DECRST 모드 토글: 애플리케이션 커서 키(모드 1), 커서 가시성(모드 25), 브래킷 붙여넣기(모드 2004), 마우스 트래킹(모드 1000/1003)
+- 대체 화면 전환: 모드 1049 진입/퇴장, 모드 47 진입/퇴장, 대체 화면 리사이즈
+- 방향키 모드 전환: 일반/애플리케이션 커서 키 모드 확인
+- 전체 리셋(RIS): 모든 모드가 기본값으로 복원
+
 ### model.rs 테스트
 - `Rect::contains`: 내부/외부/경계 포인트 판정
 - `Rect::split`: 수직/수평/불균등 비율 분할
@@ -307,6 +329,8 @@ Claude Code를 새 워크스페이스에서 자동으로 실행하는 전용 런
 - `PaneNode::next_pane_id` / `prev_pane_id`: 순환 포커스 이동
 - `PaneNode::find_divider_at`: 분할 경계선 히트 테스트
 - `PaneNode::split_pane_in_place`: 트리 내부 분할 (성공/실패 케이스)
+- `PaneNode::close_pane`: 단일 리프 닫기 실패, 분할에서 형제 승격, 중첩 분할에서 닫기, 미발견 대상
+- `Pane::close_tab`: 탭 닫기 성공, 마지막 탭 닫기 실패
 
 ### notification.rs 테스트
 - 알림 추가 및 개수 확인
