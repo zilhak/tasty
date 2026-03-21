@@ -1,6 +1,7 @@
 mod cli;
 mod font;
 mod gpu;
+mod hooks;
 mod ipc;
 mod model;
 mod notification;
@@ -400,19 +401,28 @@ impl ApplicationHandler for App {
                     self.dirty = true;
                 }
 
-                // Collect terminal events and process notifications
+                // Collect terminal events and process notifications + hooks
                 if let Some(state) = &mut self.state {
                     let events = state.collect_events();
-                    for event in events {
-                        match event.kind {
+                    for event in &events {
+                        match &event.kind {
                             terminal::TerminalEventKind::Notification { title, body } => {
                                 if !self.window_focused
                                     && state.notifications.should_send_system_notification()
                                 {
-                                    notification::send_system_notification(&title, &body);
+                                    notification::send_system_notification(title, body);
                                 }
                                 let ws_id = state.active_workspace().id;
-                                state.notifications.add(ws_id, 0, title, body);
+                                state.notifications.add(
+                                    ws_id,
+                                    0,
+                                    title.clone(),
+                                    body.clone(),
+                                );
+                                // Fire Notification hooks on all surfaces
+                                let hook_events = vec![hooks::HookEvent::Notification];
+                                // Fire on surface 0 (generic) - in practice hooks are per-surface
+                                state.hook_manager.check_and_fire(0, &hook_events);
                                 self.dirty = true;
                             }
                             terminal::TerminalEventKind::BellRing => {
@@ -428,6 +438,9 @@ impl ApplicationHandler for App {
                                 {
                                     notification::send_system_notification("Tasty", "Bell");
                                 }
+                                // Fire Bell hooks on all surfaces
+                                let hook_events = vec![hooks::HookEvent::Bell];
+                                state.hook_manager.check_and_fire(0, &hook_events);
                                 self.dirty = true;
                             }
                             terminal::TerminalEventKind::TitleChanged(_title) => {

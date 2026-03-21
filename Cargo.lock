@@ -3582,6 +3582,7 @@ dependencies = [
  "notify-rust",
  "pollster",
  "portable-pty",
+ "regex",
  "serde",
  "serde_json",
  "termwiz",

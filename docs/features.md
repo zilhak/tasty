@@ -196,10 +196,61 @@
 - `notification.list`: 최근 50개 알림 목록
 - `notification.create`: 알림 생성
 - `tree`: 전체 워크스페이스/패인/탭 트리 구조 조회
+- `hook.set`: 서피스 훅 등록 (event, command, once)
+- `hook.list`: 등록된 훅 목록 조회 (서피스별 필터 가능)
+- `hook.unset`: 훅 삭제
+- `surface.set_mark`: 터미널 출력 읽기 마크 설정
+- `surface.read_since_mark`: 마크 이후 출력 텍스트 조회 (ANSI 제거 옵션)
+- `claude.launch`: Claude Code 전용 워크스페이스 생성 및 실행
 
 ### CLI 클라이언트 (cli.rs)
 - `tasty` 명령에 서브커맨드가 있으면 CLI 모드, 없으면 GUI 모드로 동작
-- clap 기반 서브커맨드: `list`, `new-workspace`, `select-workspace`, `send`, `send-key`, `notify`, `notifications`, `tree`, `split`, `new-tab`, `surfaces`, `panes`, `info`
+- clap 기반 서브커맨드: `list`, `new-workspace`, `select-workspace`, `send`, `send-key`, `notify`, `notifications`, `tree`, `split`, `new-tab`, `surfaces`, `panes`, `info`, `set-hook`, `list-hooks`, `unset-hook`, `set-mark`, `read-since-mark`, `claude`
 - 포트 파일에서 포트 번호를 읽어 TCP 연결 후 JSON-RPC 요청/응답
 - `tree` 커맨드: 워크스페이스/패인/탭 계층을 트리 형태로 표시
 - 에러 시 종료 코드 1 반환
+
+## 에이전트 자동화
+
+tasty의 핵심 차별점으로, "에이전트가 에이전트를 제어하는 자동화"를 위한 세 가지 기능을 제공한다.
+
+### Surface Hook 시스템 (hooks.rs)
+
+Surface별 이벤트 훅을 등록하여 특정 이벤트 발생 시 셸 명령을 자동 실행한다.
+
+- **HookManager**: 훅 등록/삭제/조회/실행을 관리하는 중앙 매니저
+- **HookEvent 타입**:
+  - `ProcessExit`: 셸 프로세스 종료 시
+  - `OutputMatch(pattern)`: PTY 출력이 정규식 패턴에 매칭될 때
+  - `Bell`: BEL 문자 수신 시
+  - `Notification`: OSC 알림 수신 시
+  - `IdleTimeout(secs)`: N초간 PTY 출력 없을 때
+- **once 옵션**: true로 설정하면 한 번 실행 후 자동 삭제
+- **비동기 실행**: 훅 명령은 백그라운드 스레드에서 실행 (메인 루프 블로킹 없음)
+- **이벤트 루프 통합**: main.rs에서 TerminalEvent 수집 후 Bell/Notification 이벤트에 대해 자동으로 훅 체크 및 실행
+- CLI: `tasty set-hook --event bell --command "notify-send 'bell'" --once`
+- IPC: `hook.set`, `hook.list`, `hook.unset` 메서드
+
+### Read Mark API (terminal.rs)
+
+터미널 출력에 마크를 설정하고, 마크 이후의 새 출력만 효율적으로 읽는 델타 트래킹 API.
+
+- **output_buffer**: PTY에서 수신한 원시 바이트를 최대 1MB까지 순환 버퍼에 저장
+- **read_mark**: 바이트 오프셋 기반 마크 위치 추적
+- **버퍼 관리**: 1MB 초과 시 오래된 데이터 자동 삭제, 마크 오프셋 자동 조정 (`saturating_sub`)
+- **set_mark()**: 현재 버퍼 끝 위치에 마크 설정
+- **read_since_mark(strip_ansi)**: 마크 이후 출력 텍스트 반환. `strip_ansi=true`이면 ANSI 이스케이프 시퀀스 제거
+- **strip_ansi_escapes()**: 정규식 기반 ANSI CSI, OSC BEL, OSC ST 시퀀스 제거
+- **Surface ID로 조회**: AppState에서 전체 워크스페이스/패인/탭/서피스 트리를 재귀 탐색하여 특정 Surface의 마크 설정/읽기 지원
+- CLI: `tasty set-mark`, `tasty read-since-mark --strip-ansi`
+- IPC: `surface.set_mark`, `surface.read_since_mark` 메서드
+
+### Claude Code 런처 (claude.launch)
+
+Claude Code를 새 워크스페이스에서 자동으로 실행하는 전용 런처.
+
+- 새 워크스페이스 자동 생성 및 이름 설정
+- 지정된 디렉토리로 이동 후 `claude` 명령 실행
+- `--task` 옵션으로 작업 설명 전달 가능
+- CLI: `tasty claude --workspace "my-project" --directory "/path/to/project" --task "Fix the bug"`
+- IPC: `claude.launch` 메서드 (workspace, directory, task 파라미터)

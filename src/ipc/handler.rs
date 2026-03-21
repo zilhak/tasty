@@ -1,5 +1,6 @@
 use serde_json::json;
 
+use crate::hooks::HookEvent;
 use crate::ipc::protocol::{JsonRpcRequest, JsonRpcResponse};
 use crate::model::SplitDirection;
 use crate::state::AppState;
@@ -24,6 +25,12 @@ pub fn handle(state: &mut AppState, request: &JsonRpcRequest) -> JsonRpcResponse
         "notification.list" => handle_notification_list(state, id),
         "notification.create" => handle_notification_create(state, id, &request.params),
         "tree" => handle_tree(state, id),
+        "hook.set" => handle_hook_set(state, id, &request.params),
+        "hook.list" => handle_hook_list(state, id, &request.params),
+        "hook.unset" => handle_hook_unset(state, id, &request.params),
+        "surface.set_mark" => handle_set_mark(state, id, &request.params),
+        "surface.read_since_mark" => handle_read_since_mark(state, id, &request.params),
+        "claude.launch" => handle_claude_launch(state, id, &request.params),
         _ => JsonRpcResponse::method_not_found(id, &request.method),
     }
 }
@@ -373,4 +380,171 @@ fn handle_tree(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {
         }));
     }
     JsonRpcResponse::success(id, json!(tree))
+}
+
+// ---- Hook methods ----
+
+fn handle_hook_set(
+    state: &mut AppState,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
+    let surface_id = params
+        .get("surface_id")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32)
+        .unwrap_or(0); // 0 means "focused" - we won't resolve here, hooks fire by surface ID
+
+    let event_str = match params.get("event").and_then(|v| v.as_str()) {
+        Some(e) => e,
+        None => return JsonRpcResponse::invalid_params(id, "Missing 'event' parameter"),
+    };
+
+    let event = match HookEvent::parse(event_str) {
+        Some(e) => e,
+        None => {
+            return JsonRpcResponse::invalid_params(
+                id,
+                format!("Unknown event type: '{}'. Use: process-exit, bell, notification, output-match:PATTERN, idle-timeout:SECS", event_str),
+            )
+        }
+    };
+
+    let command = match params.get("command").and_then(|v| v.as_str()) {
+        Some(c) => c.to_string(),
+        None => return JsonRpcResponse::invalid_params(id, "Missing 'command' parameter"),
+    };
+
+    let once = params
+        .get("once")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    let hook_id = state.hook_manager.add_hook(surface_id, event, command, once);
+    JsonRpcResponse::success(id, json!({ "hook_id": hook_id }))
+}
+
+fn handle_hook_list(
+    state: &AppState,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
+    let surface_id = params
+        .get("surface_id")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32);
+
+    let hooks: Vec<_> = state
+        .hook_manager
+        .list_hooks(surface_id)
+        .iter()
+        .map(|h| {
+            json!({
+                "id": h.id,
+                "surface_id": h.surface_id,
+                "event": h.event.to_display_string(),
+                "command": h.command,
+                "once": h.once,
+            })
+        })
+        .collect();
+
+    JsonRpcResponse::success(id, json!(hooks))
+}
+
+fn handle_hook_unset(
+    state: &mut AppState,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
+    let hook_id = match params.get("hook_id").and_then(|v| v.as_u64()) {
+        Some(h) => h,
+        None => return JsonRpcResponse::invalid_params(id, "Missing 'hook_id' parameter"),
+    };
+
+    let removed = state.hook_manager.remove_hook(hook_id);
+    JsonRpcResponse::success(id, json!({ "removed": removed }))
+}
+
+// ---- Read Mark methods ----
+
+fn handle_set_mark(
+    state: &mut AppState,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
+    let surface_id = params
+        .get("surface_id")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32);
+
+    state.set_mark(surface_id);
+    JsonRpcResponse::success(id, json!({ "ok": true }))
+}
+
+fn handle_read_since_mark(
+    state: &mut AppState,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
+    let surface_id = params
+        .get("surface_id")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32);
+
+    let strip_ansi = params
+        .get("strip_ansi")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    let text = state.read_since_mark(surface_id, strip_ansi);
+    JsonRpcResponse::success(id, json!({ "text": text }))
+}
+
+// ---- Claude Launch ----
+
+fn handle_claude_launch(
+    state: &mut AppState,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
+    let workspace_name = params
+        .get("workspace")
+        .and_then(|v| v.as_str())
+        .unwrap_or("claude");
+    let directory = params.get("directory").and_then(|v| v.as_str());
+    let task = params.get("task").and_then(|v| v.as_str());
+
+    // Create new workspace
+    match state.add_workspace() {
+        Ok(_) => {}
+        Err(e) => return JsonRpcResponse::internal_error(id, e.to_string()),
+    }
+
+    // Rename it
+    let ws_idx = state.active_workspace;
+    state.workspaces[ws_idx].name = workspace_name.to_string();
+
+    // Send cd command if directory specified
+    if let Some(dir) = directory {
+        state
+            .focused_terminal_mut()
+            .send_key(&format!("cd {}\r", dir));
+    }
+
+    // Build and send claude command
+    let mut cmd = "claude".to_string();
+    if let Some(t) = task {
+        cmd.push_str(&format!(" --task '{}'", t));
+    }
+    state.focused_terminal_mut().send_key(&format!("{}\r", cmd));
+
+    let ws_id = state.workspaces[ws_idx].id;
+    JsonRpcResponse::success(
+        id,
+        json!({
+            "workspace_id": ws_id,
+            "workspace_name": workspace_name,
+        }),
+    )
 }

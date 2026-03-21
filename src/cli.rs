@@ -65,6 +65,60 @@ pub enum Commands {
     Panes,
     /// Show system info
     Info,
+    /// Set a hook on a surface
+    SetHook {
+        /// Surface ID to hook (default: focused)
+        #[arg(long)]
+        surface: Option<u32>,
+        /// Event type: process-exit, bell, notification, output-match:PATTERN, idle-timeout:SECS
+        #[arg(long)]
+        event: String,
+        /// Shell command to execute when the event fires
+        #[arg(long)]
+        command: String,
+        /// Remove the hook after it fires once
+        #[arg(long)]
+        once: bool,
+    },
+    /// List hooks
+    ListHooks {
+        /// Filter by surface ID
+        #[arg(long)]
+        surface: Option<u32>,
+    },
+    /// Remove a hook
+    UnsetHook {
+        /// Hook ID to remove
+        #[arg(long)]
+        hook: u64,
+    },
+    /// Set a read mark on a surface
+    SetMark {
+        /// Surface ID (default: focused terminal)
+        #[arg(long)]
+        surface: Option<u32>,
+    },
+    /// Read output since last mark
+    ReadSinceMark {
+        /// Surface ID (default: focused terminal)
+        #[arg(long)]
+        surface: Option<u32>,
+        /// Strip ANSI escape sequences from output
+        #[arg(long)]
+        strip_ansi: bool,
+    },
+    /// Launch Claude Code in a new workspace
+    Claude {
+        /// Workspace name (default: "claude")
+        #[arg(long)]
+        workspace: Option<String>,
+        /// Working directory
+        #[arg(long)]
+        directory: Option<String>,
+        /// Task description to pass to claude
+        #[arg(long)]
+        task: Option<String>,
+    },
 }
 
 /// Run the CLI client: connect to a running tasty instance and execute the command.
@@ -132,6 +186,54 @@ fn command_to_request(command: &Commands) -> JsonRpcRequest {
         Commands::NewTab => ("tab.create", serde_json::json!({})),
         Commands::Surfaces => ("surface.list", serde_json::json!({})),
         Commands::Panes => ("pane.list", serde_json::json!({})),
+        Commands::SetHook {
+            surface,
+            event,
+            command,
+            once,
+        } => (
+            "hook.set",
+            serde_json::json!({
+                "surface_id": surface,
+                "event": event,
+                "command": command,
+                "once": once,
+            }),
+        ),
+        Commands::ListHooks { surface } => (
+            "hook.list",
+            serde_json::json!({ "surface_id": surface }),
+        ),
+        Commands::UnsetHook { hook } => (
+            "hook.unset",
+            serde_json::json!({ "hook_id": hook }),
+        ),
+        Commands::SetMark { surface } => (
+            "surface.set_mark",
+            serde_json::json!({ "surface_id": surface }),
+        ),
+        Commands::ReadSinceMark {
+            surface,
+            strip_ansi,
+        } => (
+            "surface.read_since_mark",
+            serde_json::json!({
+                "surface_id": surface,
+                "strip_ansi": strip_ansi,
+            }),
+        ),
+        Commands::Claude {
+            workspace,
+            directory,
+            task,
+        } => (
+            "claude.launch",
+            serde_json::json!({
+                "workspace": workspace,
+                "directory": directory,
+                "task": task,
+            }),
+        ),
     };
 
     JsonRpcRequest {

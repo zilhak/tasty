@@ -29,6 +29,9 @@ pub enum TerminalEventKind {
     CwdChanged(String),
 }
 
+/// Maximum size of the output buffer (1 MB).
+const OUTPUT_BUFFER_MAX: usize = 1_048_576;
+
 pub struct Terminal {
     surface: Surface,
     parser: Parser,
@@ -43,6 +46,10 @@ pub struct Terminal {
     saved_cursor: Option<(usize, usize)>,
     /// Events accumulated during process(), consumed via take_events().
     events: Vec<TerminalEvent>,
+    /// Raw PTY output history for read-mark API.
+    output_buffer: Vec<u8>,
+    /// Byte offset of the read mark in the output buffer.
+    read_mark: Option<usize>,
 }
 
 impl Terminal {
@@ -98,6 +105,8 @@ impl Terminal {
             rows,
             saved_cursor: None,
             events: Vec::new(),
+            output_buffer: Vec::new(),
+            read_mark: None,
         })
     }
 
@@ -106,6 +115,18 @@ impl Terminal {
         let mut changed = false;
 
         while let Ok(data) = self.action_rx.try_recv() {
+            // Accumulate raw bytes for read-mark API
+            self.output_buffer.extend_from_slice(&data);
+            // Trim to max size
+            if self.output_buffer.len() > OUTPUT_BUFFER_MAX {
+                let excess = self.output_buffer.len() - OUTPUT_BUFFER_MAX;
+                self.output_buffer.drain(..excess);
+                // Adjust mark if it was in the trimmed region
+                if let Some(mark) = &mut self.read_mark {
+                    *mark = mark.saturating_sub(excess);
+                }
+            }
+
             let actions = self.parser.parse_as_vec(&data);
             for action in actions {
                 let changes = self.action_to_changes(action);
@@ -525,14 +546,38 @@ impl Terminal {
     }
 
     /// Check if the child process is still running.
-    #[allow(dead_code)]
     pub fn is_alive(&mut self) -> bool {
         self.child.try_wait().ok().flatten().is_none()
+    }
+
+    /// Check if the child process has exited. Returns false if exited.
+    pub fn check_process_alive(&mut self) -> bool {
+        match self.child.try_wait() {
+            Ok(Some(_status)) => false, // exited
+            _ => true,
+        }
     }
 
     /// Take all accumulated events, leaving the internal buffer empty.
     pub fn take_events(&mut self) -> Vec<TerminalEvent> {
         std::mem::take(&mut self.events)
+    }
+
+    /// Set a read mark at the current end of the output buffer.
+    pub fn set_mark(&mut self) {
+        self.read_mark = Some(self.output_buffer.len());
+    }
+
+    /// Read output since the last mark. If no mark was set, reads from the beginning.
+    pub fn read_since_mark(&self, strip_ansi: bool) -> String {
+        let start = self.read_mark.unwrap_or(0);
+        let bytes = &self.output_buffer[start..];
+        let text = String::from_utf8_lossy(bytes).to_string();
+        if strip_ansi {
+            strip_ansi_escapes(&text)
+        } else {
+            text
+        }
     }
 
     fn default_shell() -> String {
@@ -545,4 +590,13 @@ impl Terminal {
             std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string())
         }
     }
+}
+
+/// Strip ANSI escape sequences from a string using regex.
+fn strip_ansi_escapes(s: &str) -> String {
+    let re = regex::Regex::new(
+        r"\x1b\[[0-9;]*[a-zA-Z]|\x1b\][^\x07]*\x07|\x1b\][^\x1b]*\x1b\\",
+    )
+    .unwrap();
+    re.replace_all(s, "").to_string()
 }

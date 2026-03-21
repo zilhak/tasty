@@ -49,6 +49,9 @@ bytemuck = { version = "1", features = ["derive"] }
 # Notifications
 notify-rust = "4"
 
+# Regex
+regex = "1"
+
 # Utilities
 directories = "6"
 
