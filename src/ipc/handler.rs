@@ -163,31 +163,36 @@ fn handle_pane_split(
 }
 
 fn handle_tab_list(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {
-    let pane = state.focused_pane();
-    let tabs: Vec<_> = pane
-        .tabs
-        .iter()
-        .enumerate()
-        .map(|(i, tab)| {
-            json!({
-                "id": tab.id,
-                "name": tab.name,
-                "active": i == pane.active_tab,
+    let tabs: Vec<_> = if let Some(pane) = state.focused_pane() {
+        pane.tabs
+            .iter()
+            .enumerate()
+            .map(|(i, tab)| {
+                json!({
+                    "id": tab.id,
+                    "name": tab.name,
+                    "active": i == pane.active_tab,
+                })
             })
-        })
-        .collect();
+            .collect()
+    } else {
+        vec![]
+    };
     JsonRpcResponse::success(id, json!(tabs))
 }
 
 fn handle_tab_create(state: &mut AppState, id: serde_json::Value) -> JsonRpcResponse {
     match state.add_tab() {
         Ok(_) => {
-            let pane = state.focused_pane();
+            let (tab_count, active_tab) = state
+                .focused_pane()
+                .map(|p| (p.tabs.len(), p.active_tab))
+                .unwrap_or((0, 0));
             JsonRpcResponse::success(
                 id,
                 json!({
-                    "tab_count": pane.tabs.len(),
-                    "active_tab": pane.active_tab,
+                    "tab_count": tab_count,
+                    "active_tab": active_tab,
                 }),
             )
         }
@@ -263,7 +268,9 @@ fn handle_surface_send(
         None => return JsonRpcResponse::invalid_params(id, "Missing 'text' parameter"),
     };
     // Send to the focused terminal by default
-    state.focused_terminal_mut().send_key(text);
+    if let Some(terminal) = state.focused_terminal_mut() {
+        terminal.send_key(text);
+    }
     JsonRpcResponse::success(id, json!({ "sent": true }))
 }
 
@@ -294,11 +301,15 @@ fn handle_surface_send_key(
         "insert" => b"\x1b[2~",
         other => {
             // Send as-is (handles Ctrl sequences like "\x03" for Ctrl+C)
-            state.focused_terminal_mut().send_key(other);
+            if let Some(terminal) = state.focused_terminal_mut() {
+                terminal.send_key(other);
+            }
             return JsonRpcResponse::success(id, json!({ "sent": true }));
         }
     };
-    state.focused_terminal_mut().send_bytes(bytes);
+    if let Some(terminal) = state.focused_terminal_mut() {
+        terminal.send_bytes(bytes);
+    }
     JsonRpcResponse::success(id, json!({ "sent": true }))
 }
 
@@ -527,9 +538,9 @@ fn handle_claude_launch(
 
     // Send cd command if directory specified
     if let Some(dir) = directory {
-        state
-            .focused_terminal_mut()
-            .send_key(&format!("cd {}\r", dir));
+        if let Some(terminal) = state.focused_terminal_mut() {
+            terminal.send_key(&format!("cd {}\r", dir));
+        }
     }
 
     // Build and send claude command
@@ -537,7 +548,9 @@ fn handle_claude_launch(
     if let Some(t) = task {
         cmd.push_str(&format!(" --task '{}'", t));
     }
-    state.focused_terminal_mut().send_key(&format!("{}\r", cmd));
+    if let Some(terminal) = state.focused_terminal_mut() {
+        terminal.send_key(&format!("{}\r", cmd));
+    }
 
     let ws_id = state.workspaces[ws_idx].id;
     JsonRpcResponse::success(

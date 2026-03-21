@@ -68,7 +68,8 @@ impl GpuState {
             .iter()
             .find(|f| !f.is_srgb())
             .copied()
-            .unwrap_or(surface_caps.formats[0]);
+            .or_else(|| surface_caps.formats.first().copied())
+            .ok_or_else(|| anyhow::anyhow!("no supported surface format found"))?;
 
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
@@ -76,7 +77,7 @@ impl GpuState {
             width: size.width.max(1),
             height: size.height.max(1),
             present_mode: wgpu::PresentMode::Fifo,
-            alpha_mode: surface_caps.alpha_modes[0],
+            alpha_mode: surface_caps.alpha_modes.first().copied().unwrap_or(wgpu::CompositeAlphaMode::Auto),
             view_formats: vec![],
             desired_maximum_frame_latency: 2,
         };
@@ -140,14 +141,15 @@ impl GpuState {
 
     /// Render the full frame: egui UI + terminal surfaces.
     pub fn render(&mut self, state: &mut AppState, window: &Window) -> Result<(), wgpu::SurfaceError> {
-        // Compute the terminal rect (area after sidebar)
-        let screen_rect_egui = self.egui_ctx.screen_rect();
-        let sidebar_w = 180.0 * self.scale_factor;
+        // Compute the terminal rect (area after sidebar) in physical pixels
+        let surface_w = self.size.width as f32;
+        let surface_h = self.size.height as f32;
+        let sidebar_w = (180.0 * self.scale_factor).min(surface_w - 1.0);
         let terminal_rect = Rect {
             x: sidebar_w,
             y: 0.0,
-            width: (screen_rect_egui.width() * self.scale_factor - sidebar_w).max(1.0),
-            height: (screen_rect_egui.height() * self.scale_factor).max(1.0),
+            width: (surface_w - sidebar_w).max(1.0),
+            height: surface_h.max(1.0),
         };
 
         // Compute pane rects for per-pane tab bars
@@ -255,7 +257,7 @@ impl GpuState {
                     occlusion_query_set: None,
                 });
 
-                self.renderer.render_scissored(&mut render_pass, rect);
+                self.renderer.render_scissored(&mut render_pass, rect, self.size.width, self.size.height);
             }
         }
 

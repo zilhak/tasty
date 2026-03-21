@@ -1,5 +1,5 @@
 use std::io::{Read, Write};
-use std::sync::mpsc;
+use std::sync::{LazyLock, mpsc};
 use std::thread;
 
 use anyhow::Result;
@@ -592,11 +592,12 @@ impl Terminal {
     }
 }
 
+static ANSI_ESCAPE_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"\x1b\[[0-9;]*[a-zA-Z]|\x1b\][^\x07]*\x07|\x1b\][^\x1b]*\x1b\\")
+        .expect("static regex is valid")
+});
+
 /// Strip ANSI escape sequences from a string using regex.
 fn strip_ansi_escapes(s: &str) -> String {
-    let re = regex::Regex::new(
-        r"\x1b\[[0-9;]*[a-zA-Z]|\x1b\][^\x07]*\x07|\x1b\][^\x1b]*\x1b\\",
-    )
-    .unwrap();
-    re.replace_all(s, "").to_string()
+    ANSI_ESCAPE_RE.replace_all(s, "").to_string()
 }

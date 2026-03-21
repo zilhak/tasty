@@ -87,38 +87,47 @@ impl AppState {
     }
 
     pub fn active_workspace(&self) -> &Workspace {
-        &self.workspaces[self.active_workspace]
+        let idx = self.active_workspace.min(self.workspaces.len().saturating_sub(1));
+        &self.workspaces[idx]
     }
 
     pub fn active_workspace_mut(&mut self) -> &mut Workspace {
-        &mut self.workspaces[self.active_workspace]
+        let idx = self.active_workspace.min(self.workspaces.len().saturating_sub(1));
+        &mut self.workspaces[idx]
     }
 
-    /// Get the focused pane in the active workspace.
-    pub fn focused_pane(&self) -> &crate::model::Pane {
+    /// Get the focused pane in the active workspace, or the first pane as fallback.
+    pub fn focused_pane(&self) -> Option<&crate::model::Pane> {
         let ws = self.active_workspace();
-        ws.pane_layout()
+        let layout = ws.pane_layout();
+        layout
             .find_pane(ws.focused_pane)
-            .expect("focused pane not found")
+            .or_else(|| layout.first_pane())
     }
 
-    /// Get the focused pane (mutable) in the active workspace.
-    pub fn focused_pane_mut(&mut self) -> &mut crate::model::Pane {
+    /// Get the focused pane (mutable) in the active workspace, or the first pane as fallback.
+    pub fn focused_pane_mut(&mut self) -> Option<&mut crate::model::Pane> {
         let ws = self.active_workspace_mut();
         let focused_id = ws.focused_pane;
-        ws.pane_layout_mut()
-            .find_pane_mut(focused_id)
-            .expect("focused pane not found")
+        // If focused_id is stale, fall back to the first available pane.
+        if ws.pane_layout().find_pane(focused_id).is_none() {
+            let fallback_id = ws.pane_layout().first_pane().map(|p| p.id);
+            if let Some(fid) = fallback_id {
+                ws.focused_pane = fid;
+            }
+        }
+        let focused_id = ws.focused_pane;
+        ws.pane_layout_mut().find_pane_mut(focused_id)
     }
 
     /// Get the ultimately focused terminal.
-    pub fn focused_terminal(&self) -> &Terminal {
-        self.focused_pane().active_terminal()
+    pub fn focused_terminal(&self) -> Option<&Terminal> {
+        self.focused_pane().and_then(|p| p.active_terminal())
     }
 
     /// Get the ultimately focused terminal (mutable).
-    pub fn focused_terminal_mut(&mut self) -> &mut Terminal {
-        self.focused_pane_mut().active_terminal_mut()
+    pub fn focused_terminal_mut(&mut self) -> Option<&mut Terminal> {
+        self.focused_pane_mut().and_then(|p| p.active_terminal_mut())
     }
 
     /// Add a new workspace with one pane, one tab, one terminal.
@@ -149,8 +158,9 @@ impl AppState {
         let surface_id = self.next_ids.next_surface();
         let cols = self.default_cols;
         let rows = self.default_rows;
-        self.focused_pane_mut()
-            .add_tab(tab_id, surface_id, cols, rows)?;
+        if let Some(pane) = self.focused_pane_mut() {
+            pane.add_tab(tab_id, surface_id, cols, rows)?;
+        }
         Ok(())
     }
 
@@ -162,19 +172,15 @@ impl AppState {
         let cols = self.default_cols;
         let rows = self.default_rows;
 
+        // Pre-create the new Pane (PTY allocation) BEFORE any structural mutation.
+        // This way, if PTY creation fails, the layout is untouched.
+        let new_pane =
+            crate::model::Pane::new(new_pane_id, new_tab_id, new_surface_id, cols, rows)?;
+
         let ws = self.active_workspace_mut();
         let target_pane_id = ws.focused_pane;
-        let layout = ws.take_pane_layout();
-        let (new_layout, _) = layout.split_pane_owned(
-            target_pane_id,
-            direction,
-            new_pane_id,
-            new_tab_id,
-            new_surface_id,
-            cols,
-            rows,
-        )?;
-        ws.put_pane_layout(new_layout);
+        ws.pane_layout_mut()
+            .split_pane_in_place(target_pane_id, direction, new_pane);
         // Focus the new pane
         ws.focused_pane = new_pane_id;
         Ok(())
@@ -185,8 +191,9 @@ impl AppState {
         let new_surface_id = self.next_ids.next_surface();
         let cols = self.default_cols;
         let rows = self.default_rows;
-        self.focused_pane_mut()
-            .split_active_surface(direction, new_surface_id, cols, rows)?;
+        if let Some(pane) = self.focused_pane_mut() {
+            pane.split_active_surface(direction, new_surface_id, cols, rows)?;
+        }
         Ok(())
     }
 
@@ -199,12 +206,16 @@ impl AppState {
 
     /// Next tab in the focused pane.
     pub fn next_tab_in_pane(&mut self) {
-        self.focused_pane_mut().next_tab();
+        if let Some(pane) = self.focused_pane_mut() {
+            pane.next_tab();
+        }
     }
 
     /// Previous tab in the focused pane.
     pub fn prev_tab_in_pane(&mut self) {
-        self.focused_pane_mut().prev_tab();
+        if let Some(pane) = self.focused_pane_mut() {
+            pane.prev_tab();
+        }
     }
 
     /// Move focus to the next pane.
@@ -306,8 +317,8 @@ impl AppState {
         if let Some(_sid) = surface_id {
             // Find terminal by surface ID - walk the tree
             self.set_mark_on_surface(_sid);
-        } else {
-            self.focused_terminal_mut().set_mark();
+        } else if let Some(terminal) = self.focused_terminal_mut() {
+            terminal.set_mark();
         }
     }
 
@@ -316,8 +327,10 @@ impl AppState {
         if let Some(sid) = surface_id {
             self.read_since_mark_on_surface(sid, strip_ansi)
                 .unwrap_or_default()
+        } else if let Some(terminal) = self.focused_terminal_mut() {
+            terminal.read_since_mark(strip_ansi)
         } else {
-            self.focused_terminal_mut().read_since_mark(strip_ansi)
+            String::new()
         }
     }
 

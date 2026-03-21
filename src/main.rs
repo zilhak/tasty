@@ -345,44 +345,45 @@ impl ApplicationHandler for App {
                 }
 
                 if let Some(state) = &mut self.state {
-                    let terminal = state.focused_terminal_mut();
-                    // event.text includes modifier transformations (e.g. Ctrl+C -> \x03)
-                    if let Some(text) = &event.text {
-                        let s = text.as_str();
-                        if !s.is_empty() {
-                            terminal.send_key(s);
-                            return;
+                    if let Some(terminal) = state.focused_terminal_mut() {
+                        // event.text includes modifier transformations (e.g. Ctrl+C -> \x03)
+                        if let Some(text) = &event.text {
+                            let s = text.as_str();
+                            if !s.is_empty() {
+                                terminal.send_key(s);
+                                return;
+                            }
                         }
-                    }
-                    // Handle special keys that don't produce text
-                    match event.logical_key.as_ref() {
-                        Key::Named(NamedKey::Enter) => terminal.send_bytes(b"\r"),
-                        Key::Named(NamedKey::Backspace) => terminal.send_bytes(b"\x7f"),
-                        Key::Named(NamedKey::Tab) => terminal.send_bytes(b"\t"),
-                        Key::Named(NamedKey::Escape) => terminal.send_bytes(b"\x1b"),
-                        Key::Named(NamedKey::ArrowUp) => terminal.send_bytes(b"\x1b[A"),
-                        Key::Named(NamedKey::ArrowDown) => terminal.send_bytes(b"\x1b[B"),
-                        Key::Named(NamedKey::ArrowRight) => terminal.send_bytes(b"\x1b[C"),
-                        Key::Named(NamedKey::ArrowLeft) => terminal.send_bytes(b"\x1b[D"),
-                        Key::Named(NamedKey::Home) => terminal.send_bytes(b"\x1b[H"),
-                        Key::Named(NamedKey::End) => terminal.send_bytes(b"\x1b[F"),
-                        Key::Named(NamedKey::PageUp) => terminal.send_bytes(b"\x1b[5~"),
-                        Key::Named(NamedKey::PageDown) => terminal.send_bytes(b"\x1b[6~"),
-                        Key::Named(NamedKey::Insert) => terminal.send_bytes(b"\x1b[2~"),
-                        Key::Named(NamedKey::Delete) => terminal.send_bytes(b"\x1b[3~"),
-                        Key::Named(NamedKey::F1) => terminal.send_bytes(b"\x1bOP"),
-                        Key::Named(NamedKey::F2) => terminal.send_bytes(b"\x1bOQ"),
-                        Key::Named(NamedKey::F3) => terminal.send_bytes(b"\x1bOR"),
-                        Key::Named(NamedKey::F4) => terminal.send_bytes(b"\x1bOS"),
-                        Key::Named(NamedKey::F5) => terminal.send_bytes(b"\x1b[15~"),
-                        Key::Named(NamedKey::F6) => terminal.send_bytes(b"\x1b[17~"),
-                        Key::Named(NamedKey::F7) => terminal.send_bytes(b"\x1b[18~"),
-                        Key::Named(NamedKey::F8) => terminal.send_bytes(b"\x1b[19~"),
-                        Key::Named(NamedKey::F9) => terminal.send_bytes(b"\x1b[20~"),
-                        Key::Named(NamedKey::F10) => terminal.send_bytes(b"\x1b[21~"),
-                        Key::Named(NamedKey::F11) => terminal.send_bytes(b"\x1b[23~"),
-                        Key::Named(NamedKey::F12) => terminal.send_bytes(b"\x1b[24~"),
-                        _ => {}
+                        // Handle special keys that don't produce text
+                        match event.logical_key.as_ref() {
+                            Key::Named(NamedKey::Enter) => terminal.send_bytes(b"\r"),
+                            Key::Named(NamedKey::Backspace) => terminal.send_bytes(b"\x7f"),
+                            Key::Named(NamedKey::Tab) => terminal.send_bytes(b"\t"),
+                            Key::Named(NamedKey::Escape) => terminal.send_bytes(b"\x1b"),
+                            Key::Named(NamedKey::ArrowUp) => terminal.send_bytes(b"\x1b[A"),
+                            Key::Named(NamedKey::ArrowDown) => terminal.send_bytes(b"\x1b[B"),
+                            Key::Named(NamedKey::ArrowRight) => terminal.send_bytes(b"\x1b[C"),
+                            Key::Named(NamedKey::ArrowLeft) => terminal.send_bytes(b"\x1b[D"),
+                            Key::Named(NamedKey::Home) => terminal.send_bytes(b"\x1b[H"),
+                            Key::Named(NamedKey::End) => terminal.send_bytes(b"\x1b[F"),
+                            Key::Named(NamedKey::PageUp) => terminal.send_bytes(b"\x1b[5~"),
+                            Key::Named(NamedKey::PageDown) => terminal.send_bytes(b"\x1b[6~"),
+                            Key::Named(NamedKey::Insert) => terminal.send_bytes(b"\x1b[2~"),
+                            Key::Named(NamedKey::Delete) => terminal.send_bytes(b"\x1b[3~"),
+                            Key::Named(NamedKey::F1) => terminal.send_bytes(b"\x1bOP"),
+                            Key::Named(NamedKey::F2) => terminal.send_bytes(b"\x1bOQ"),
+                            Key::Named(NamedKey::F3) => terminal.send_bytes(b"\x1bOR"),
+                            Key::Named(NamedKey::F4) => terminal.send_bytes(b"\x1bOS"),
+                            Key::Named(NamedKey::F5) => terminal.send_bytes(b"\x1b[15~"),
+                            Key::Named(NamedKey::F6) => terminal.send_bytes(b"\x1b[17~"),
+                            Key::Named(NamedKey::F7) => terminal.send_bytes(b"\x1b[18~"),
+                            Key::Named(NamedKey::F8) => terminal.send_bytes(b"\x1b[19~"),
+                            Key::Named(NamedKey::F9) => terminal.send_bytes(b"\x1b[20~"),
+                            Key::Named(NamedKey::F10) => terminal.send_bytes(b"\x1b[21~"),
+                            Key::Named(NamedKey::F11) => terminal.send_bytes(b"\x1b[23~"),
+                            Key::Named(NamedKey::F12) => terminal.send_bytes(b"\x1b[24~"),
+                            _ => {}
+                        }
                     }
                 }
             }

@@ -604,18 +604,20 @@ impl CellRenderer {
     /// Compute terminal grid size from pixel dimensions.
     pub fn grid_size(&self, width: u32, height: u32) -> (usize, usize) {
         let padding = 8.0; // 4px each side
-        let cols = ((width as f32 - padding) / self.font_config.metrics.cell_width).floor() as usize;
-        let rows = ((height as f32 - padding) / self.font_config.metrics.cell_height).floor() as usize;
+        let cell_w = self.font_config.metrics.cell_width.max(1.0);
+        let cell_h = self.font_config.metrics.cell_height.max(1.0);
+        let cols = ((width as f32 - padding) / cell_w).floor() as usize;
+        let rows = ((height as f32 - padding) / cell_h).floor() as usize;
         (cols.max(1), rows.max(1))
     }
 
     /// Compute terminal grid size from a viewport rect (physical pixels).
     pub fn grid_size_for_rect(&self, rect: &Rect) -> (usize, usize) {
         let padding = 8.0;
-        let cols =
-            ((rect.width - padding) / self.font_config.metrics.cell_width).floor() as usize;
-        let rows =
-            ((rect.height - padding) / self.font_config.metrics.cell_height).floor() as usize;
+        let cell_w = self.font_config.metrics.cell_width.max(1.0);
+        let cell_h = self.font_config.metrics.cell_height.max(1.0);
+        let cols = ((rect.width - padding) / cell_w).floor() as usize;
+        let rows = ((rect.height - padding) / cell_h).floor() as usize;
         (cols.max(1), rows.max(1))
     }
 
@@ -650,13 +652,17 @@ impl CellRenderer {
         &'a self,
         render_pass: &mut wgpu::RenderPass<'a>,
         viewport: &Rect,
+        surface_width: u32,
+        surface_height: u32,
     ) {
-        render_pass.set_scissor_rect(
-            viewport.x.max(0.0) as u32,
-            viewport.y.max(0.0) as u32,
-            viewport.width.max(1.0) as u32,
-            viewport.height.max(1.0) as u32,
-        );
+        // Clamp scissor rect to the render target bounds
+        let x = (viewport.x.max(0.0) as u32).min(surface_width.saturating_sub(1));
+        let y = (viewport.y.max(0.0) as u32).min(surface_height.saturating_sub(1));
+        let max_w = surface_width.saturating_sub(x);
+        let max_h = surface_height.saturating_sub(y);
+        let w = (viewport.width.max(1.0) as u32).min(max_w).max(1);
+        let h = (viewport.height.max(1.0) as u32).min(max_h).max(1);
+        render_pass.set_scissor_rect(x, y, w, h);
 
         // Pass 1: backgrounds
         if self.bg_instance_count > 0 {
