@@ -1,91 +1,152 @@
 # 02. 워크스페이스 & 탭
 
-## cmux 구현 방식
+## 계층 구조
 
-- Swift/AppKit 기반 수직 탭 사이드바
-- 워크스페이스별 독립적인 패인 레이아웃
-- 드래그앤드롭 재정렬
-- 워크스페이스 색상 태깅, 고정(pinning)
-- 크로스 윈도우 워크스페이스 이동
-
-## 크로스 플랫폼 구현 방안
-
-### 핵심 설계
-
-네이티브 GUI 앱이므로 실제 GUI 위젯으로 사이드바와 탭을 구현한다.
-cmux의 AppKit 사이드바와 거의 동일한 UX를 달성할 수 있다.
+cmux 분석을 바탕으로 설계한 tasty의 데이터 모델 계층.
 
 ```
-┌─────────────┬──────────────────────────────┐
-│  Sidebar    │  Active Workspace            │
-│  (GUI)      │                              │
-│ ┌─────────┐ │  ┌────────────┬────────────┐ │
-│ │ 🟢 ws-1 │ │  │  Terminal  │  Terminal  │ │
-│ │ 🔵 ws-2◀│ │  │   Pane 1   │   Pane 2   │ │
-│ │ 🟡 ws-3 │ │  │            │            │ │
-│ │         │ │  └────────────┴────────────┘ │
-│ │  + New  │ │                              │
-│ └─────────┘ │                              │
-└─────────────┴──────────────────────────────┘
+Workspace (사이드바 항목)
+  └── PaneLayout (물리적 화면 분할 - 이진 트리)
+       ├── Pane (독립적인 탭 바를 가진 화면 영역)
+       │    ├── Tab → Panel::Terminal (단일 터미널)
+       │    ├── Tab → Panel::SurfaceGroup (탭 내부 분할)
+       │    │          ├── Panel::Terminal
+       │    │          └── Panel::Terminal
+       │    └── Tab → Panel::Terminal
+       └── Pane (독립적인 탭 바를 가진 화면 영역)
+            └── Tab → Panel::Terminal
 ```
 
-### 구현 요소
+### 핵심 개념
 
-| 요소 | 구현 방법 |
-|------|----------|
-| 사이드바 | egui 패널 (egui-wgpu 통합) |
-| 탭 전환 | 마우스 클릭 + 키보드 단축키 (Ctrl+1~9 등) |
-| 워크스페이스 모델 | 각 워크스페이스가 독립적인 PTY 집합과 레이아웃을 소유 |
-| 드래그앤드롭 재정렬 | winit의 마우스 이벤트로 드래그 구현 |
-| 색상 태깅 | GPU 렌더링으로 자유로운 색상 표현 |
-| 고정(pinning) | 고정된 워크스페이스를 사이드바 상단에 분리 표시 |
-| 크로스 윈도우 이동 | 다중 winit 윈도우 간 워크스페이스 이동 가능 |
+| 개념 | 설명 |
+|------|------|
+| Workspace | 사이드바의 한 항목. PaneLayout을 포함한다. |
+| PaneLayout (PaneNode) | Pane들의 이진 분할 트리. 물리적 화면 분할을 담당한다. |
+| Pane | 자신만의 **독립적인 탭 바**를 가진 화면 영역. 여러 Tab을 포함한다. |
+| Tab | Pane의 탭 바에 있는 하나의 탭. Panel에 매핑된다. |
+| Panel | 콘텐츠 타입 enum. Terminal 또는 SurfaceGroup이다. |
+| SurfaceGroup | 탭 하나 안에서 콘텐츠를 여러 Panel로 분할하는 이진 트리. Pane의 탭 바에서는 **하나의 탭**으로 보이지만, 내부적으로 여러 터미널을 렌더링한다. |
 
-### 사이드바 렌더링
+### 두 가지 분할 유형
 
-GUI 앱이므로 사이드바를 별도 렌더 영역으로 분리:
+1. **Pane 분할** (Ctrl+Shift+E/O): 화면을 물리적으로 나눈다. 각 새 영역은 자체 탭 바를 가진다. 탭이 독립적으로 전환된다.
+2. **SurfaceGroup 분할** (Ctrl+D / Ctrl+Shift+D): 현재 탭 내부에서 나눈다. 탭 바에서는 하나의 탭으로 보인다. 탭을 전환하면 내부 서피스 전체가 함께 전환된다.
 
-- **아이콘**: 시스템 폰트 또는 내장 아이콘 폰트 (Nerd Font/Material Icons)
-- **텍스트**: cosmic-text로 렌더링, 트렁케이션/엘립시스 처리
-- **배경색**: 워크스페이스 색상 태그에 따른 그라데이션/솔리드
-- **호버/선택 효과**: GPU 셰이더로 부드러운 하이라이트 전환
-- **뱃지**: 알림 카운트, 상태 인디케이터
-
-### 워크스페이스 데이터 모델
+## 데이터 모델
 
 ```rust
-struct Workspace {
-    id: WorkspaceId,
-    name: String,
-    color: Color,
-    pinned: bool,
-    layout: SplitTree,       // 패인 레이아웃 트리
-    panes: Vec<Pane>,        // 소유한 패인들
-    metadata: WorkspaceMeta, // Git, CWD, 포트 등
+pub type WorkspaceId = u32;
+pub type PaneId = u32;
+pub type TabId = u32;
+pub type SurfaceId = u32;
+
+/// Workspace - 사이드바 항목 하나
+pub struct Workspace {
+    pub id: WorkspaceId,
+    pub name: String,
+    pub pane_layout: PaneNode,     // Pane들의 이진 분할 트리
+    pub focused_pane: PaneId,      // 현재 포커스된 Pane
+}
+
+/// Pane의 이진 분할 트리 (물리적 화면 분할)
+pub enum PaneNode {
+    Leaf(Pane),
+    Split {
+        direction: SplitDirection,
+        ratio: f32,
+        first: Box<PaneNode>,
+        second: Box<PaneNode>,
+    },
+}
+
+/// 독립적인 탭 바를 가진 화면 영역
+pub struct Pane {
+    pub id: PaneId,
+    pub tabs: Vec<Tab>,
+    pub active_tab: usize,
+}
+
+/// Pane 탭 바의 탭 하나
+pub struct Tab {
+    pub id: TabId,
+    pub name: String,
+    pub panel: Panel,
+}
+
+/// 콘텐츠 타입
+pub enum Panel {
+    Terminal(SurfaceNode),              // 단일 터미널
+    SurfaceGroup(SurfaceGroupNode),     // 탭 내부 분할
+}
+
+/// 단일 터미널 인스턴스
+pub struct SurfaceNode {
+    pub id: SurfaceId,
+    pub terminal: Terminal,
+}
+
+/// 탭 내부 분할 (하나의 탭으로 보이지만 여러 터미널을 렌더링)
+pub struct SurfaceGroupNode {
+    pub layout: SurfaceGroupLayout,
+    pub focused_surface: SurfaceId,
+}
+
+pub enum SurfaceGroupLayout {
+    Single(SurfaceNode),
+    Split {
+        direction: SplitDirection,
+        ratio: f32,
+        first: Box<SurfaceGroupLayout>,
+        second: Box<SurfaceGroupLayout>,
+        focus_second: bool,
+    },
 }
 ```
 
-### OS별 상황
+## 탭 전환 동작
 
-| OS | 가능 여부 | 비고 |
-|----|-----------|------|
-| Windows | ✅ 가능 | winit + wgpu 완전 지원 |
-| macOS | ✅ 가능 | winit + wgpu 완전 지원 |
-| Linux | ✅ 가능 | winit + wgpu 완전 지원 (Wayland/X11) |
+### Pane 수준
+- Ctrl+Tab / Ctrl+Shift+Tab으로 포커스된 Pane의 탭을 전환한다.
+- 각 Pane의 탭은 **독립적으로** 전환된다. Pane A의 탭을 바꿔도 Pane B에 영향 없다.
 
-## 최적화 전략
+### SurfaceGroup 수준
+- SurfaceGroup은 탭 바에서 하나의 탭으로 표시된다.
+- 탭을 전환하면 SurfaceGroup 전체가 표시/숨김된다.
+- SurfaceGroup 내부 서피스 간 포커스 이동은 Alt+Arrow로 한다.
 
-- **비활성 워크스페이스 동결**: 보이지 않는 워크스페이스는 렌더링을 완전 중단하고 PTY 읽기만 유지한다. 전환 시에만 렌더 파이프라인을 재활성화한다.
-- **워크스페이스 전환 지연 로딩**: 워크스페이스 전환 시 이전 프레임을 스냅샷으로 즉시 보여주고, 뒤에서 점진적으로 실제 렌더링을 수행한다. 체감 전환 속도를 높인다.
-- **사이드바 렌더링 분리**: 사이드바는 터미널 셀 그리드와 독립적으로 렌더링하여, 사이드바 변경 시 터미널을 다시 그리지 않는다. 반대도 마찬가지이다.
-- **대량 워크스페이스 가상화**: 사이드바에 수십 개 워크스페이스가 있을 때 보이는 항목만 렌더링한다(가상 스크롤). DOM이 아닌 GPU 렌더링이지만 동일한 원리를 적용한다.
+### Workspace 수준
+- Alt+1~9로 워크스페이스를 전환한다.
+- 각 워크스페이스는 완전히 독립적인 PaneLayout, 포커스 상태를 가진다.
 
-## 구현 가능 여부
+## UI 구현
 
-| OS | 가능 여부 |
-|----|-----------|
-| Windows | ✅ |
-| macOS | ✅ |
-| Linux | ✅ |
+### 사이드바
+egui SidePanel로 워크스페이스 목록을 렌더링한다. 워크스페이스 이름, 활성 표시, 추가 버튼을 포함한다.
 
-네이티브 GUI이므로 cmux와 동등한 수준의 사이드바/탭 UX를 구현할 수 있다.
+### 탭 바
+글로벌 탭 바가 아닌 **Pane별 탭 바**를 렌더링한다. egui Area를 각 Pane의 rect 상단에 배치한다. 탭이 하나뿐인 Pane은 탭 바를 숨긴다.
+
+### 키보드 단축키
+
+| 단축키 | 동작 |
+|--------|------|
+| Ctrl+Shift+N | 새 워크스페이스 |
+| Ctrl+Shift+T | 포커스된 Pane에 새 탭 |
+| Ctrl+Tab | 다음 탭 (포커스된 Pane) |
+| Ctrl+Shift+Tab | 이전 탭 (포커스된 Pane) |
+| Alt+1~9 | 워크스페이스 전환 |
+| Ctrl+Shift+E | Pane 수직 분할 |
+| Ctrl+Shift+O | Pane 수평 분할 |
+| Ctrl+D | SurfaceGroup 수직 분할 |
+| Ctrl+Shift+D | SurfaceGroup 수평 분할 |
+| Alt+Arrow | Pane 간 포커스 이동 |
+
+## 구현 현황
+
+- Workspace / PaneNode / Pane / Tab / Panel / SurfaceGroupNode 계층 데이터 모델 구현 완료
+- egui 사이드바 + Pane별 탭 바 렌더링 구현 완료
+- Pane 분할 (Ctrl+Shift+E/O) 구현 완료
+- SurfaceGroup 분할 (Ctrl+D / Ctrl+Shift+D) 구현 완료
+- 탭 전환 (Ctrl+Tab / Ctrl+Shift+Tab) 구현 완료
+- Pane 간 포커스 이동 (Alt+Arrow) 구현 완료

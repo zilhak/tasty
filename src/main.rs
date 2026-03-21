@@ -40,18 +40,16 @@ impl App {
         }
     }
 
-
     /// Compute the terminal rect without borrowing self (takes gpu ref directly).
     fn compute_terminal_rect(gpu: &GpuState) -> Rect {
         let size = gpu.size();
         let sf = gpu.scale_factor();
         let sidebar_w = 180.0 * sf;
-        let tab_h = 32.0 * sf;
         Rect {
             x: sidebar_w,
-            y: tab_h,
+            y: 0.0,
             width: (size.width as f32 - sidebar_w).max(1.0),
-            height: (size.height as f32 - tab_h).max(1.0),
+            height: size.height as f32,
         }
     }
 
@@ -70,30 +68,44 @@ impl App {
         if ctrl && shift {
             if let Key::Character(c) = key {
                 match c.as_str() {
+                    // Ctrl+Shift+N: New workspace
                     "N" | "n" => {
                         let _ = state.add_workspace();
                         self.dirty = true;
                         return true;
                     }
+                    // Ctrl+Shift+T: New tab in focused pane
                     "T" | "t" => {
-                        let _ = state.add_pane();
+                        let _ = state.add_tab();
                         self.dirty = true;
                         return true;
                     }
+                    // Ctrl+Shift+E: Pane split vertical (new independent tab bar)
                     "E" | "e" => {
-                        let _ = state.split_focused(SplitDirection::Vertical);
+                        let _ = state.split_pane(SplitDirection::Vertical);
                         if let Some(gpu) = &self.gpu {
                             let rect = Self::compute_terminal_rect(gpu);
-                            state.resize_active_pane(rect, gpu.cell_width(), gpu.cell_height());
+                            state.resize_all(rect, gpu.cell_width(), gpu.cell_height());
                         }
                         self.dirty = true;
                         return true;
                     }
+                    // Ctrl+Shift+O: Pane split horizontal (new independent tab bar)
                     "O" | "o" => {
-                        let _ = state.split_focused(SplitDirection::Horizontal);
+                        let _ = state.split_pane(SplitDirection::Horizontal);
                         if let Some(gpu) = &self.gpu {
                             let rect = Self::compute_terminal_rect(gpu);
-                            state.resize_active_pane(rect, gpu.cell_width(), gpu.cell_height());
+                            state.resize_all(rect, gpu.cell_width(), gpu.cell_height());
+                        }
+                        self.dirty = true;
+                        return true;
+                    }
+                    // Ctrl+Shift+D: SurfaceGroup split horizontal (within current tab)
+                    "D" | "d" => {
+                        let _ = state.split_surface(SplitDirection::Horizontal);
+                        if let Some(gpu) = &self.gpu {
+                            let rect = Self::compute_terminal_rect(gpu);
+                            state.resize_all(rect, gpu.cell_width(), gpu.cell_height());
                         }
                         self.dirty = true;
                         return true;
@@ -101,12 +113,34 @@ impl App {
                     _ => {}
                 }
             }
+
+            // Ctrl+Shift+Tab: previous tab in focused pane
+            if let Key::Named(NamedKey::Tab) = key {
+                state.prev_tab_in_pane();
+                self.dirty = true;
+                return true;
+            }
         }
 
-        // Ctrl+Tab: switch pane
+        // Ctrl+D (without shift): SurfaceGroup split vertical (within current tab)
+        if ctrl && !shift && !alt {
+            if let Key::Character(c) = key {
+                if c.as_str() == "d" || c.as_str() == "\x04" {
+                    let _ = state.split_surface(SplitDirection::Vertical);
+                    if let Some(gpu) = &self.gpu {
+                        let rect = Self::compute_terminal_rect(gpu);
+                        state.resize_all(rect, gpu.cell_width(), gpu.cell_height());
+                    }
+                    self.dirty = true;
+                    return true;
+                }
+            }
+        }
+
+        // Ctrl+Tab: next tab in focused pane
         if ctrl && !shift && !alt {
             if let Key::Named(NamedKey::Tab) = key {
-                state.next_pane();
+                state.next_tab_in_pane();
                 self.dirty = true;
                 return true;
             }
@@ -125,16 +159,16 @@ impl App {
             }
         }
 
-        // Alt+Arrow: focus between splits
+        // Alt+Arrow: move focus between panes
         if alt && !ctrl && !shift {
             match key {
                 Key::Named(NamedKey::ArrowRight) | Key::Named(NamedKey::ArrowDown) => {
-                    state.move_focus_forward();
+                    state.move_focus_next_pane();
                     self.dirty = true;
                     return true;
                 }
                 Key::Named(NamedKey::ArrowLeft) | Key::Named(NamedKey::ArrowUp) => {
-                    state.move_focus_backward();
+                    state.move_focus_prev_pane();
                     self.dirty = true;
                     return true;
                 }
@@ -165,16 +199,15 @@ impl ApplicationHandler for App {
         let gpu = pollster::block_on(GpuState::new(window.clone()))
             .expect("failed to initialize GPU");
 
-        // Compute terminal grid size from the terminal area (excluding sidebar + tab bar)
+        // Compute terminal grid size from the terminal area (excluding sidebar)
         let sf = gpu.scale_factor();
         let size = gpu.size();
         let sidebar_w = 180.0 * sf;
-        let tab_h = 32.0 * sf;
         let terminal_rect = Rect {
             x: sidebar_w,
-            y: tab_h,
+            y: 0.0,
             width: (size.width as f32 - sidebar_w).max(1.0),
-            height: (size.height as f32 - tab_h).max(1.0),
+            height: size.height as f32,
         };
         let (cols, rows) = gpu.grid_size_for_rect(&terminal_rect);
         let state = AppState::new(cols, rows).expect("failed to create app state");
@@ -200,14 +233,14 @@ impl ApplicationHandler for App {
                 if let Some(gpu) = &mut self.gpu {
                     gpu.resize(new_size);
 
-                    // Resize terminal grid to match new window (accounting for UI panels)
+                    // Resize terminal grid to match new window (accounting for sidebar)
                     let terminal_rect = Self::compute_terminal_rect(gpu);
                     let (cols, rows) = gpu.grid_size_for_rect(&terminal_rect);
                     let cw = gpu.cell_width();
                     let ch = gpu.cell_height();
                     if let Some(state) = &mut self.state {
                         state.update_grid_size(cols, rows);
-                        state.resize_active_pane(terminal_rect, cw, ch);
+                        state.resize_all(terminal_rect, cw, ch);
                     }
                 }
                 self.dirty = true;

@@ -1,28 +1,66 @@
-use crate::model::{Pane, Rect, SplitDirection, Workspace};
+use crate::model::{PaneId, Rect, SplitDirection, Workspace};
 use crate::terminal::Terminal;
+
+struct IdGenerator {
+    workspace: u32,
+    pane: u32,
+    tab: u32,
+    surface: u32,
+}
+
+impl IdGenerator {
+    fn new() -> Self {
+        Self {
+            workspace: 1,
+            pane: 1,
+            tab: 1,
+            surface: 1,
+        }
+    }
+
+    fn next_workspace(&mut self) -> u32 {
+        let id = self.workspace;
+        self.workspace += 1;
+        id
+    }
+
+    fn next_pane(&mut self) -> u32 {
+        let id = self.pane;
+        self.pane += 1;
+        id
+    }
+
+    fn next_tab(&mut self) -> u32 {
+        let id = self.tab;
+        self.tab += 1;
+        id
+    }
+
+    fn next_surface(&mut self) -> u32 {
+        let id = self.surface;
+        self.surface += 1;
+        id
+    }
+}
 
 pub struct AppState {
     pub workspaces: Vec<Workspace>,
     pub active_workspace: usize,
-    next_workspace_id: u32,
-    next_pane_id: u32,
-    next_surface_id: u32,
-    cols: usize,
-    rows: usize,
+    next_ids: IdGenerator,
+    pub default_cols: usize,
+    pub default_rows: usize,
 }
 
 impl AppState {
-    /// Creates initial state with one workspace, one pane, one surface.
+    /// Creates initial state with one workspace, one pane, one tab, one terminal.
     pub fn new(cols: usize, rows: usize) -> anyhow::Result<Self> {
-        let ws = Workspace::new(0, "Workspace 1".to_string(), cols, rows, 0, 0)?;
+        let ws = Workspace::new(0, "Workspace 1".to_string(), cols, rows, 0, 0, 0)?;
         Ok(Self {
             workspaces: vec![ws],
             active_workspace: 0,
-            next_workspace_id: 1,
-            next_pane_id: 1,
-            next_surface_id: 1,
-            cols,
-            rows,
+            next_ids: IdGenerator::new(),
+            default_cols: cols,
+            default_rows: rows,
         })
     }
 
@@ -34,73 +72,99 @@ impl AppState {
         &mut self.workspaces[self.active_workspace]
     }
 
-    pub fn active_pane(&self) -> &Pane {
-        self.active_workspace().active_pane()
+    /// Get the focused pane in the active workspace.
+    pub fn focused_pane(&self) -> &crate::model::Pane {
+        let ws = self.active_workspace();
+        ws.pane_layout
+            .find_pane(ws.focused_pane)
+            .expect("focused pane not found")
     }
 
-    pub fn active_pane_mut(&mut self) -> &mut Pane {
-        self.active_workspace_mut().active_pane_mut()
+    /// Get the focused pane (mutable) in the active workspace.
+    pub fn focused_pane_mut(&mut self) -> &mut crate::model::Pane {
+        let ws = self.active_workspace_mut();
+        let focused_id = ws.focused_pane;
+        ws.pane_layout
+            .find_pane_mut(focused_id)
+            .expect("focused pane not found")
     }
 
+    /// Get the ultimately focused terminal.
     pub fn focused_terminal(&self) -> &Terminal {
-        self.active_pane().root.focused_terminal()
+        self.focused_pane().active_terminal()
     }
 
+    /// Get the ultimately focused terminal (mutable).
     pub fn focused_terminal_mut(&mut self) -> &mut Terminal {
-        self.active_pane_mut().root.focused_terminal_mut()
+        self.focused_pane_mut().active_terminal_mut()
     }
 
-    /// Add a new workspace with one default pane.
+    /// Add a new workspace with one pane, one tab, one terminal.
     pub fn add_workspace(&mut self) -> anyhow::Result<()> {
-        let ws_id = self.next_workspace_id;
-        self.next_workspace_id += 1;
-        let pane_id = self.next_pane_id;
-        self.next_pane_id += 1;
-        let surface_id = self.next_surface_id;
-        self.next_surface_id += 1;
+        let ws_id = self.next_ids.next_workspace();
+        let pane_id = self.next_ids.next_pane();
+        let tab_id = self.next_ids.next_tab();
+        let surface_id = self.next_ids.next_surface();
 
         let name = format!("Workspace {}", ws_id + 1);
-        let ws = Workspace::new(ws_id, name, self.cols, self.rows, surface_id, pane_id)?;
+        let ws = Workspace::new(
+            ws_id,
+            name,
+            self.default_cols,
+            self.default_rows,
+            pane_id,
+            tab_id,
+            surface_id,
+        )?;
         self.workspaces.push(ws);
         self.active_workspace = self.workspaces.len() - 1;
         Ok(())
     }
 
-    /// Add a new pane to the active workspace.
-    pub fn add_pane(&mut self) -> anyhow::Result<()> {
-        let pane_id = self.next_pane_id;
-        self.next_pane_id += 1;
-        let surface_id = self.next_surface_id;
-        self.next_surface_id += 1;
-
-        let pane = Pane::new(pane_id, "Shell".to_string(), self.cols, self.rows, surface_id)?;
-        self.active_workspace_mut().add_pane(pane);
+    /// Add a new tab in the focused pane.
+    pub fn add_tab(&mut self) -> anyhow::Result<()> {
+        let tab_id = self.next_ids.next_tab();
+        let surface_id = self.next_ids.next_surface();
+        let cols = self.default_cols;
+        let rows = self.default_rows;
+        self.focused_pane_mut()
+            .add_tab(tab_id, surface_id, cols, rows)?;
         Ok(())
     }
 
-    /// Split the focused surface in the active pane.
-    pub fn split_focused(&mut self, direction: SplitDirection) -> anyhow::Result<()> {
-        let surface_id = self.next_surface_id;
-        self.next_surface_id += 1;
-        let cols = self.cols;
-        let rows = self.rows;
+    /// Split the focused pane into two (new independent tab bar).
+    pub fn split_pane(&mut self, direction: SplitDirection) -> anyhow::Result<()> {
+        let new_pane_id = self.next_ids.next_pane();
+        let new_tab_id = self.next_ids.next_tab();
+        let new_surface_id = self.next_ids.next_surface();
+        let cols = self.default_cols;
+        let rows = self.default_rows;
 
-        self.active_pane_mut()
-            .root
-            .split(direction, surface_id, cols, rows)?;
+        let ws = self.active_workspace_mut();
+        let target_pane_id = ws.focused_pane;
+        ws.pane_layout.split_pane(
+            target_pane_id,
+            direction,
+            new_pane_id,
+            new_tab_id,
+            new_surface_id,
+            cols,
+            rows,
+        )?;
+        // Focus the new pane
+        ws.focused_pane = new_pane_id;
         Ok(())
     }
 
-    /// Process all terminals in the active workspace. Returns true if any changed.
-    pub fn process_all(&mut self) -> bool {
-        let ws = &mut self.workspaces[self.active_workspace];
-        let mut changed = false;
-        for pane in &mut ws.panes {
-            if pane.root.process_all() {
-                changed = true;
-            }
-        }
-        changed
+    /// Split within the current tab (SurfaceGroup). Appears as one tab.
+    pub fn split_surface(&mut self, direction: SplitDirection) -> anyhow::Result<()> {
+        let new_surface_id = self.next_ids.next_surface();
+        let cols = self.default_cols;
+        let rows = self.default_rows;
+        self.focused_pane_mut()
+            .active_panel_mut()
+            .split_surface(direction, new_surface_id, cols, rows)?;
+        Ok(())
     }
 
     /// Switch to workspace by index (0-based).
@@ -110,39 +174,87 @@ impl AppState {
         }
     }
 
-    /// Switch to the next pane in the active workspace.
-    pub fn next_pane(&mut self) {
-        let ws = &mut self.workspaces[self.active_workspace];
-        if ws.panes.len() > 1 {
-            ws.active_pane = (ws.active_pane + 1) % ws.panes.len();
+    /// Next tab in the focused pane.
+    pub fn next_tab_in_pane(&mut self) {
+        self.focused_pane_mut().next_tab();
+    }
+
+    /// Previous tab in the focused pane.
+    pub fn prev_tab_in_pane(&mut self) {
+        self.focused_pane_mut().prev_tab();
+    }
+
+    /// Move focus to the next pane.
+    pub fn move_focus_next_pane(&mut self) {
+        let ws = self.active_workspace_mut();
+        ws.focused_pane = ws.pane_layout.next_pane_id(ws.focused_pane);
+    }
+
+    /// Move focus to the previous pane.
+    pub fn move_focus_prev_pane(&mut self) {
+        let ws = self.active_workspace_mut();
+        ws.focused_pane = ws.pane_layout.prev_pane_id(ws.focused_pane);
+    }
+
+    /// Process all terminals in the active workspace. Returns true if any changed.
+    pub fn process_all(&mut self) -> bool {
+        self.active_workspace_mut().pane_layout.process_all()
+    }
+
+    /// Compute all render regions for the active workspace.
+    /// Returns: for each pane, the pane rect and the terminal regions within it.
+    pub fn render_regions(
+        &self,
+        terminal_rect: Rect,
+    ) -> Vec<(PaneId, Rect, Vec<(u32, &Terminal, Rect)>)> {
+        let ws = self.active_workspace();
+        let pane_rects = ws.pane_layout.compute_rects(terminal_rect);
+
+        let mut result = Vec::new();
+        for (pane_id, pane_rect) in pane_rects {
+            if let Some(pane) = ws.pane_layout.find_pane(pane_id) {
+                // Reserve space for tab bar at top of each pane
+                let tab_bar_h = if pane.tabs.len() > 1 { 24.0 } else { 0.0 };
+                let content_rect = Rect {
+                    x: pane_rect.x,
+                    y: pane_rect.y + tab_bar_h,
+                    width: pane_rect.width,
+                    height: (pane_rect.height - tab_bar_h).max(1.0),
+                };
+                let regions = pane.active_panel().render_regions(content_rect);
+                result.push((pane_id, pane_rect, regions));
+            }
+        }
+        result
+    }
+
+    /// Update stored grid dimensions.
+    pub fn update_grid_size(&mut self, cols: usize, rows: usize) {
+        self.default_cols = cols;
+        self.default_rows = rows;
+    }
+
+    /// Resize all terminals in the active workspace to match a given terminal rect.
+    pub fn resize_all(&mut self, terminal_rect: Rect, cell_width: f32, cell_height: f32) {
+        let ws = self.active_workspace_mut();
+        let pane_rects = ws.pane_layout.compute_rects(terminal_rect);
+        for (pane_id, pane_rect) in pane_rects {
+            if let Some(pane) = ws.pane_layout.find_pane_mut(pane_id) {
+                let tab_bar_h = if pane.tabs.len() > 1 { 24.0 } else { 0.0 };
+                let content_rect = Rect {
+                    x: pane_rect.x,
+                    y: pane_rect.y + tab_bar_h,
+                    width: pane_rect.width,
+                    height: (pane_rect.height - tab_bar_h).max(1.0),
+                };
+                pane.active_panel_mut()
+                    .resize_all(content_rect, cell_width, cell_height);
+            }
         }
     }
 
-    /// Move focus forward within the active pane's split tree.
-    pub fn move_focus_forward(&mut self) {
-        self.active_pane_mut().root.move_focus_forward();
-    }
-
-    /// Move focus backward within the active pane's split tree.
-    pub fn move_focus_backward(&mut self) {
-        self.active_pane_mut().root.move_focus_backward();
-    }
-
-    /// Update stored grid dimensions and resize all terminals in the active pane.
-    pub fn update_grid_size(&mut self, cols: usize, rows: usize) {
-        self.cols = cols;
-        self.rows = rows;
-    }
-
-    /// Resize all terminals in the active pane to fit the given terminal rect.
-    pub fn resize_active_pane(&mut self, terminal_rect: Rect, cell_width: f32, cell_height: f32) {
-        self.active_pane_mut()
-            .root
-            .resize_all(terminal_rect, cell_width, cell_height);
-    }
-
-    /// Get render regions for the active pane.
-    pub fn render_regions(&self, terminal_rect: Rect) -> Vec<(u32, &Terminal, Rect)> {
-        self.active_pane().root.render_regions(terminal_rect)
+    /// Get the focused pane ID.
+    pub fn focused_pane_id(&self) -> PaneId {
+        self.active_workspace().focused_pane
     }
 }

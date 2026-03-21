@@ -51,38 +51,47 @@
 
 ## 워크스페이스 & 탭
 
-### 데이터 모델 (Workspace / Pane / SurfaceGroup / SurfaceNode)
-- Workspace: 좌측 사이드바 탭 단위. 복수의 Pane을 포함
-- Pane: 상단 탭 바 단위. 하나의 SurfaceGroup(분할 트리)을 포함
-- SurfaceGroup: 수평/수직 분할 컨테이너. Single(터미널 리프) 또는 재귀적 Split
+### 데이터 모델 (Workspace / PaneNode / Pane / Tab / Panel / SurfaceGroupNode)
+- Workspace: 좌측 사이드바 항목. PaneLayout(PaneNode 이진 트리)을 포함
+- PaneNode: 물리적 화면 분할 이진 트리. Leaf(Pane) 또는 Split
+- Pane: **독립적인 탭 바**를 가진 화면 영역. 여러 Tab을 포함
+- Tab: Pane 탭 바의 탭 하나. Panel에 매핑
+- Panel: 콘텐츠 타입 enum. Terminal(단일) 또는 SurfaceGroup(탭 내부 분할)
+- SurfaceGroupNode: 탭 내부에서 여러 터미널을 분할하는 이진 트리. 탭 바에서는 하나의 탭으로 표시
 - SurfaceNode: 개별 터미널 인스턴스 (PTY + termwiz Surface)
-- AppState: 전체 워크스페이스 목록과 활성 상태를 관리하는 중앙 상태
+- AppState: 전체 워크스페이스 목록과 활성 상태를 관리하는 중앙 상태 (IdGenerator 포함)
 
 ### egui UI 오버레이
 - egui-winit + egui-wgpu를 이용한 wgpu 위 egui 렌더링
 - 좌측 SidePanel: 워크스페이스 목록, 활성 표시, 추가 버튼
-- 상단 TopBottomPanel: 활성 워크스페이스 내 Pane 탭, 추가 버튼
+- Pane별 탭 바: 각 Pane의 rect 상단에 egui Area로 렌더링 (탭 2개 이상일 때만 표시)
+- 글로벌 상단 탭 바 제거, Pane별 독립 탭 바로 전환
 - 다크 테마 적용 (패널 배경색 커스터마이징)
 - 사이드바에 키보드 단축키 안내 표시
 
-### 분할 패인
-- SurfaceGroup 트리 기반 재귀적 수평/수직 분할
+### 두 가지 분할 유형
+- **Pane 분할** (Ctrl+Shift+E/O): 물리적 화면 분할. PaneNode 이진 트리 기반. 각 영역이 독립 탭 바를 가진다
+- **SurfaceGroup 분할** (Ctrl+D / Ctrl+Shift+D): 탭 내부 분할. SurfaceGroupLayout 이진 트리 기반. 탭 바에서는 하나의 탭으로 표시된다
+- Panel::Terminal이 분할 시 자동으로 Panel::SurfaceGroup으로 변환
 - 분할 시 새 터미널 자동 생성 (PTY 포함)
 - 각 Surface를 scissor rect로 독립 렌더링
 - 뷰포트별 유니폼 갱신 (grid_offset을 각 Surface rect에 맞게 조정)
-- 분할 내 포커스 이동 (forward/backward)
 
 ### 키보드 단축키
-- Ctrl+Shift+N: 새 워크스페이스 생성
-- Ctrl+Shift+T: 새 Pane 생성
-- Ctrl+Tab: Pane 전환
+- Ctrl+Shift+N: 새 워크스페이스
+- Ctrl+Shift+T: 포커스된 Pane에 새 탭
+- Ctrl+Tab: 다음 탭 (포커스된 Pane)
+- Ctrl+Shift+Tab: 이전 탭 (포커스된 Pane)
 - Alt+1~9: 워크스페이스 전환
-- Ctrl+Shift+E: 수직 분할
-- Ctrl+Shift+O: 수평 분할
-- Alt+Arrow: 분할 간 포커스 이동
+- Ctrl+Shift+E: Pane 수직 분할 (새 독립 탭 바)
+- Ctrl+Shift+O: Pane 수평 분할 (새 독립 탭 바)
+- Ctrl+D: SurfaceGroup 수직 분할 (탭 내부)
+- Ctrl+Shift+D: SurfaceGroup 수평 분할 (탭 내부)
+- Alt+Arrow: Pane 간 포커스 이동
 - winit ModifiersState를 이용한 수정자 키 추적
 
 ### 터미널 뷰포트 관리
-- egui 패널을 제외한 남은 영역에 터미널 렌더링
-- 리사이즈 시 SurfaceGroup 트리 내 모든 터미널의 행/열 재계산
+- egui 사이드바를 제외한 전체 영역에 PaneLayout 렌더링
+- PaneNode에서 각 Pane의 rect를 계산, 탭 바 높이를 뺀 영역에 터미널 렌더링
+- 리사이즈 시 모든 Pane, 모든 Tab, 모든 Surface의 행/열 재계산
 - wgpu RenderPass의 forget_lifetime()을 이용한 egui-wgpu 호환

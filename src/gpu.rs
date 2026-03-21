@@ -139,32 +139,32 @@ impl GpuState {
 
     /// Render the full frame: egui UI + terminal surfaces.
     pub fn render(&mut self, state: &mut AppState, window: &Window) -> Result<(), wgpu::SurfaceError> {
+        // Compute the terminal rect (area after sidebar)
+        let screen_rect_egui = self.egui_ctx.screen_rect();
+        let sidebar_w = 180.0 * self.scale_factor;
+        let terminal_rect = Rect {
+            x: sidebar_w,
+            y: 0.0,
+            width: (screen_rect_egui.width() * self.scale_factor - sidebar_w).max(1.0),
+            height: (screen_rect_egui.height() * self.scale_factor).max(1.0),
+        };
+
+        // Compute pane rects for per-pane tab bars
+        let pane_rects: Vec<(u32, Rect)> = state
+            .active_workspace()
+            .pane_layout
+            .compute_rects(terminal_rect);
+
         // 1. Begin egui frame
         let raw_input = self.egui_state.take_egui_input(window);
+        let scale_factor = self.scale_factor;
         let full_output = self.egui_ctx.run(raw_input, |ctx| {
-            ui::draw_ui(ctx, state, self.scale_factor);
+            ui::draw_ui(ctx, state, scale_factor);
+            ui::draw_pane_tab_bars(ctx, state, &pane_rects, scale_factor);
         });
 
         self.egui_state
             .handle_platform_output(window, full_output.platform_output);
-
-        // Compute terminal rect from egui layout
-        // Re-run the UI logic to get the terminal rect (egui is immediate mode, this is cheap)
-        let terminal_rect = {
-            // We already ran the UI above. Compute from known panel sizes.
-            // The sidebar is 180 logical pixels, tab bar is 32 logical pixels.
-            let screen_rect = self.egui_ctx.screen_rect();
-            let sidebar_w = 180.0 * self.scale_factor;
-            let tab_h = 32.0 * self.scale_factor;
-            let tw = (screen_rect.width() * self.scale_factor - sidebar_w).max(1.0);
-            let th = (screen_rect.height() * self.scale_factor - tab_h).max(1.0);
-            Rect {
-                x: sidebar_w,
-                y: tab_h,
-                width: tw,
-                height: th,
-            }
-        };
 
         // Tessellate egui shapes
         let paint_jobs = self
@@ -177,7 +177,7 @@ impl GpuState {
             pixels_per_point: full_output.pixels_per_point,
         };
 
-        // 2. Get render regions for terminals
+        // 2. Get render regions for terminals (per-pane)
         let regions = state.render_regions(terminal_rect);
 
         // 3. Get the output texture
@@ -216,31 +216,33 @@ impl GpuState {
         }
 
         // 5. Render each terminal surface in its viewport rect
-        for (_surface_id, terminal, rect) in &regions {
-            self.renderer.prepare_viewport(
-                terminal.surface(),
-                &self.queue,
-                rect,
-                self.size.width,
-                self.size.height,
-            );
+        for (_pane_id, _pane_rect, terminal_regions) in &regions {
+            for (_surface_id, terminal, rect) in terminal_regions {
+                self.renderer.prepare_viewport(
+                    terminal.surface(),
+                    &self.queue,
+                    rect,
+                    self.size.width,
+                    self.size.height,
+                );
 
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("terminal_pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
+                let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("terminal_pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                });
 
-            self.renderer.render_scissored(&mut render_pass, rect);
+                self.renderer.render_scissored(&mut render_pass, rect);
+            }
         }
 
         // 6. Render egui on top
