@@ -22,7 +22,8 @@ egui-winit = "0.31"
 termwiz = "0.22"
 portable-pty = "0.8"
 
-# Async Runtime
+# Async
+pollster = "0.4"
 tokio = { version = "1", features = ["full"] }
 
 # Logging
