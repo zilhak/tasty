@@ -1,7 +1,9 @@
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
-use std::sync::mpsc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc, Arc};
 use std::thread;
+use std::time::Duration;
 
 use anyhow::Result;
 use directories::BaseDirs;
@@ -18,6 +20,8 @@ pub struct IpcCommand {
 pub struct IpcServer {
     command_rx: mpsc::Receiver<IpcCommand>,
     port: u16,
+    /// Shutdown flag to signal the accept thread to stop.
+    shutdown: Arc<AtomicBool>,
 }
 
 impl IpcServer {
@@ -32,19 +36,29 @@ impl IpcServer {
         Self::write_port_file(port)?;
 
         let (cmd_tx, cmd_rx) = mpsc::channel();
+        let shutdown = Arc::new(AtomicBool::new(false));
 
-        // Accept connections in a background thread
+        // Accept connections in a background thread with non-blocking + shutdown check
+        let shutdown_clone = shutdown.clone();
+        listener.set_nonblocking(true)?;
         thread::spawn(move || {
-            for stream in listener.incoming() {
-                match stream {
-                    Ok(stream) => {
+            loop {
+                if shutdown_clone.load(Ordering::Relaxed) {
+                    break;
+                }
+                match listener.accept() {
+                    Ok((stream, _)) => {
                         let cmd_tx = cmd_tx.clone();
                         thread::spawn(move || {
                             Self::handle_connection(stream, cmd_tx);
                         });
                     }
+                    Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                        thread::sleep(Duration::from_millis(100));
+                    }
                     Err(e) => {
                         tracing::warn!("IPC accept error: {}", e);
+                        break;
                     }
                 }
             }
@@ -53,6 +67,7 @@ impl IpcServer {
         Ok(Self {
             command_rx: cmd_rx,
             port,
+            shutdown,
         })
     }
 
@@ -171,6 +186,8 @@ impl IpcServer {
 
 impl Drop for IpcServer {
     fn drop(&mut self) {
+        // Signal the accept thread to stop
+        self.shutdown.store(true, Ordering::Relaxed);
         // Clean up port file
         if let Some(path) = Self::port_file_path() {
             let _ = std::fs::remove_file(path);

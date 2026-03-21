@@ -14,6 +14,8 @@ use termwiz::surface::{Change, CursorVisibility, Position, Surface};
 
 /// Events emitted by the terminal during processing.
 pub struct TerminalEvent {
+    /// The surface ID that generated this event (0 if not yet assigned).
+    pub surface_id: u32,
     pub kind: TerminalEventKind,
 }
 
@@ -27,6 +29,8 @@ pub enum TerminalEventKind {
     TitleChanged(String),
     /// Current working directory changed via OSC 7.
     CwdChanged(String),
+    /// The child process has exited.
+    ProcessExited,
 }
 
 /// Maximum size of the output buffer (1 MB).
@@ -50,10 +54,18 @@ pub struct Terminal {
     output_buffer: Vec<u8>,
     /// Byte offset of the read mark in the output buffer.
     read_mark: Option<usize>,
+    /// Whether we've already emitted a ProcessExited event.
+    process_exit_emitted: bool,
 }
 
 impl Terminal {
     pub fn new(cols: usize, rows: usize) -> Result<Self> {
+        Self::new_with_shell(cols, rows, None)
+    }
+
+    /// Create a terminal with an optional custom shell. If `shell` is `None` or empty,
+    /// the platform default shell is used.
+    pub fn new_with_shell(cols: usize, rows: usize, shell: Option<&str>) -> Result<Self> {
         let pty_system = NativePtySystem::default();
 
         let pair = pty_system.openpty(PtySize {
@@ -63,7 +75,10 @@ impl Terminal {
             pixel_height: 0,
         })?;
 
-        let shell = Self::default_shell();
+        let shell = match shell {
+            Some(s) if !s.is_empty() => s.to_string(),
+            _ => Self::default_shell(),
+        };
         let mut cmd = CommandBuilder::new(&shell);
         cmd.env("TERM", "xterm-256color");
 
@@ -107,6 +122,7 @@ impl Terminal {
             events: Vec::new(),
             output_buffer: Vec::new(),
             read_mark: None,
+            process_exit_emitted: false,
         })
     }
 
@@ -123,7 +139,11 @@ impl Terminal {
                 self.output_buffer.drain(..excess);
                 // Adjust mark if it was in the trimmed region
                 if let Some(mark) = &mut self.read_mark {
-                    *mark = mark.saturating_sub(excess);
+                    if *mark <= excess {
+                        self.read_mark = None; // mark was in trimmed region, invalidate
+                    } else {
+                        *mark -= excess;
+                    }
                 }
             }
 
@@ -137,6 +157,15 @@ impl Terminal {
                     changed = true;
                 }
             }
+        }
+
+        // Check if the child process has exited (emit event once)
+        if !self.process_exit_emitted && !self.check_process_alive() {
+            self.process_exit_emitted = true;
+            self.events.push(TerminalEvent {
+                surface_id: 0,
+                kind: TerminalEventKind::ProcessExited,
+            });
         }
 
         changed
@@ -171,6 +200,7 @@ impl Terminal {
             ControlCode::HorizontalTab => vec![Change::Text("\t".into())],
             ControlCode::Bell => {
                 self.events.push(TerminalEvent {
+                    surface_id: 0,
                     kind: TerminalEventKind::BellRing,
                 });
                 vec![]
@@ -427,6 +457,7 @@ impl Terminal {
             // OSC 0: Set icon name and window title
             OperatingSystemCommand::SetIconNameAndWindowTitle(title) => {
                 self.events.push(TerminalEvent {
+                    surface_id: 0,
                     kind: TerminalEventKind::TitleChanged(title),
                 });
             }
@@ -434,6 +465,7 @@ impl Terminal {
             OperatingSystemCommand::SetWindowTitle(title)
             | OperatingSystemCommand::SetWindowTitleSun(title) => {
                 self.events.push(TerminalEvent {
+                    surface_id: 0,
                     kind: TerminalEventKind::TitleChanged(title),
                 });
             }
@@ -451,12 +483,14 @@ impl Terminal {
                     url.clone()
                 };
                 self.events.push(TerminalEvent {
+                    surface_id: 0,
                     kind: TerminalEventKind::CwdChanged(path),
                 });
             }
             // OSC 9: iTerm2/ConEmu notification
             OperatingSystemCommand::SystemNotification(body) => {
                 self.events.push(TerminalEvent {
+                    surface_id: 0,
                     kind: TerminalEventKind::Notification {
                         title: "Terminal".to_string(),
                         body,
@@ -469,6 +503,7 @@ impl Terminal {
                     let title = parts.get(1).cloned().unwrap_or_default();
                     let body = parts.get(2).cloned().unwrap_or_default();
                     self.events.push(TerminalEvent {
+                        surface_id: 0,
                         kind: TerminalEventKind::Notification { title, body },
                     });
                 }
@@ -498,6 +533,7 @@ impl Terminal {
                             title = "Terminal".to_string();
                         }
                         self.events.push(TerminalEvent {
+                            surface_id: 0,
                             kind: TerminalEventKind::Notification { title, body },
                         });
                     }

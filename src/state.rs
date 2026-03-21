@@ -64,25 +64,35 @@ pub struct AppState {
     pub settings_ui_state: SettingsUiState,
     /// Hook manager for surface event hooks.
     pub hook_manager: HookManager,
+    /// Cached sidebar width from settings (logical pixels).
+    pub sidebar_width: f32,
 }
 
 impl AppState {
     /// Creates initial state with one workspace, one pane, one tab, one terminal.
     pub fn new(cols: usize, rows: usize) -> anyhow::Result<Self> {
         let settings = Settings::load();
-        let ws = Workspace::new(0, "Workspace 1".to_string(), cols, rows, 0, 0, 0)?;
+        let mut next_ids = IdGenerator::new();
+        let ws_id = next_ids.next_workspace();
+        let pane_id = next_ids.next_pane();
+        let tab_id = next_ids.next_tab();
+        let surface_id = next_ids.next_surface();
+        let shell = if settings.general.shell.is_empty() { None } else { Some(settings.general.shell.as_str()) };
+        let ws = Workspace::new_with_shell(ws_id, "Workspace 1".to_string(), cols, rows, pane_id, tab_id, surface_id, shell)?;
+        let sidebar_width = settings.appearance.sidebar_width;
         Ok(Self {
             workspaces: vec![ws],
             active_workspace: 0,
-            next_ids: IdGenerator::new(),
+            next_ids,
             default_cols: cols,
             default_rows: rows,
-            notifications: NotificationStore::new(),
+            notifications: NotificationStore::with_coalesce_ms(settings.notification.coalesce_ms),
             notification_panel_open: false,
             settings,
             settings_open: false,
             settings_ui_state: SettingsUiState::new(),
             hook_manager: HookManager::new(),
+            sidebar_width,
         })
     }
 
@@ -138,7 +148,8 @@ impl AppState {
         let surface_id = self.next_ids.next_surface();
 
         let name = format!("Workspace {}", ws_id + 1);
-        let ws = Workspace::new(
+        let shell = if self.settings.general.shell.is_empty() { None } else { Some(self.settings.general.shell.as_str()) };
+        let ws = Workspace::new_with_shell(
             ws_id,
             name,
             self.default_cols,
@@ -146,6 +157,7 @@ impl AppState {
             pane_id,
             tab_id,
             surface_id,
+            shell,
         )?;
         self.workspaces.push(ws);
         self.active_workspace = self.workspaces.len() - 1;
@@ -158,8 +170,10 @@ impl AppState {
         let surface_id = self.next_ids.next_surface();
         let cols = self.default_cols;
         let rows = self.default_rows;
+        let shell = self.settings.general.shell.clone();
+        let shell_ref = if shell.is_empty() { None } else { Some(shell.as_str()) };
         if let Some(pane) = self.focused_pane_mut() {
-            pane.add_tab(tab_id, surface_id, cols, rows)?;
+            pane.add_tab_with_shell(tab_id, surface_id, cols, rows, shell_ref)?;
         }
         Ok(())
     }
@@ -174,8 +188,10 @@ impl AppState {
 
         // Pre-create the new Pane (PTY allocation) BEFORE any structural mutation.
         // This way, if PTY creation fails, the layout is untouched.
+        let shell = self.settings.general.shell.clone();
+        let shell_ref = if shell.is_empty() { None } else { Some(shell.as_str()) };
         let new_pane =
-            crate::model::Pane::new(new_pane_id, new_tab_id, new_surface_id, cols, rows)?;
+            crate::model::Pane::new_with_shell(new_pane_id, new_tab_id, new_surface_id, cols, rows, shell_ref)?;
 
         let ws = self.active_workspace_mut();
         let target_pane_id = ws.focused_pane;
@@ -191,8 +207,10 @@ impl AppState {
         let new_surface_id = self.next_ids.next_surface();
         let cols = self.default_cols;
         let rows = self.default_rows;
+        let shell = self.settings.general.shell.clone();
+        let shell_ref = if shell.is_empty() { None } else { Some(shell.as_str()) };
         if let Some(pane) = self.focused_pane_mut() {
-            pane.split_active_surface(direction, new_surface_id, cols, rows)?;
+            pane.split_active_surface_with_shell(direction, new_surface_id, cols, rows, shell_ref)?;
         }
         Ok(())
     }
@@ -264,7 +282,10 @@ impl AppState {
                     width: pane_rect.width,
                     height: (pane_rect.height - tab_bar_h).max(1.0),
                 };
-                let regions = pane.active_panel().render_regions(content_rect);
+                let regions = match pane.active_panel() {
+                    Some(panel) => panel.render_regions(content_rect),
+                    None => Vec::new(),
+                };
                 result.push((pane_id, pane_rect, regions));
             }
         }
@@ -290,8 +311,9 @@ impl AppState {
                     width: pane_rect.width,
                     height: (pane_rect.height - tab_bar_h).max(1.0),
                 };
-                pane.active_panel_mut()
-                    .resize_all(content_rect, cell_width, cell_height);
+                if let Some(panel) = pane.active_panel_mut() {
+                    panel.resize_all(content_rect, cell_width, cell_height);
+                }
             }
         }
     }
@@ -302,14 +324,60 @@ impl AppState {
     }
 
     /// Collect events from all terminals in ALL workspaces (not just active).
+    /// Each event includes the surface_id that generated it.
     pub fn collect_events(&mut self) -> Vec<TerminalEvent> {
         let mut all_events = Vec::new();
         for workspace in &mut self.workspaces {
-            for terminal in workspace.pane_layout_mut().all_terminals_mut() {
-                all_events.extend(terminal.take_events());
-            }
+            Self::collect_events_from_pane_node(workspace.pane_layout_mut(), &mut all_events);
         }
         all_events
+    }
+
+    fn collect_events_from_pane_node(node: &mut crate::model::PaneNode, out: &mut Vec<TerminalEvent>) {
+        match node {
+            crate::model::PaneNode::Leaf(pane) => {
+                for tab in &mut pane.tabs {
+                    Self::collect_events_from_panel(tab.panel_mut(), out);
+                }
+            }
+            crate::model::PaneNode::Split { first, second, .. } => {
+                Self::collect_events_from_pane_node(first, out);
+                Self::collect_events_from_pane_node(second, out);
+            }
+        }
+    }
+
+    fn collect_events_from_panel(panel: &mut crate::model::Panel, out: &mut Vec<TerminalEvent>) {
+        match panel {
+            crate::model::Panel::Terminal(node) => {
+                let sid = node.id;
+                let mut events = node.terminal.take_events();
+                for event in &mut events {
+                    event.surface_id = sid;
+                }
+                out.extend(events);
+            }
+            crate::model::Panel::SurfaceGroup(group) => {
+                Self::collect_events_from_surface_layout(group.layout_mut(), out);
+            }
+        }
+    }
+
+    fn collect_events_from_surface_layout(layout: &mut crate::model::SurfaceGroupLayout, out: &mut Vec<TerminalEvent>) {
+        match layout {
+            crate::model::SurfaceGroupLayout::Single(node) => {
+                let sid = node.id;
+                let mut events = node.terminal.take_events();
+                for event in &mut events {
+                    event.surface_id = sid;
+                }
+                out.extend(events);
+            }
+            crate::model::SurfaceGroupLayout::Split { first, second, .. } => {
+                Self::collect_events_from_surface_layout(first, out);
+                Self::collect_events_from_surface_layout(second, out);
+            }
+        }
     }
 
     /// Set a read mark on the focused terminal (or a specific surface).

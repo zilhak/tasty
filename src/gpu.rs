@@ -83,7 +83,10 @@ impl GpuState {
         };
         surface.configure(&device, &config);
 
+        // Font size will be set from settings after GpuState is created.
+        // Default to 14.0, the caller may update via update_font_size() later.
         let renderer = CellRenderer::new(&device, &queue, surface_format, 14.0);
+        // Note: settings.appearance.font_size is wired in main.rs after state construction
 
         // egui setup
         let egui_ctx = egui::Context::default();
@@ -144,7 +147,7 @@ impl GpuState {
         // Compute the terminal rect (area after sidebar) in physical pixels
         let surface_w = self.size.width as f32;
         let surface_h = self.size.height as f32;
-        let sidebar_w = (180.0 * self.scale_factor).min(surface_w - 1.0);
+        let sidebar_w = (state.sidebar_width * self.scale_factor).min(surface_w - 1.0);
         let terminal_rect = Rect {
             x: sidebar_w,
             y: 0.0,
@@ -356,5 +359,12 @@ impl GpuState {
 
     pub fn scale_factor(&self) -> f32 {
         self.scale_factor
+    }
+
+    /// Update the scale factor (e.g., when the window moves between monitors with different DPI).
+    pub fn update_scale_factor(&mut self, new_scale_factor: f32) {
+        self.scale_factor = new_scale_factor;
+        // Reconfigure egui with new scale factor
+        self.egui_ctx.set_pixels_per_point(new_scale_factor);
     }
 }

@@ -55,10 +55,10 @@ impl App {
     }
 
     /// Compute the terminal rect without borrowing self (takes gpu ref directly).
-    fn compute_terminal_rect(gpu: &GpuState) -> Rect {
+    fn compute_terminal_rect_with_sidebar(gpu: &GpuState, sidebar_logical_width: f32) -> Rect {
         let size = gpu.size();
         let sf = gpu.scale_factor();
-        let sidebar_w = 180.0 * sf;
+        let sidebar_w = sidebar_logical_width * sf;
         Rect {
             x: sidebar_w,
             y: 0.0,
@@ -98,7 +98,7 @@ impl App {
                     "E" | "e" => {
                         let _ = state.split_pane(SplitDirection::Vertical);
                         if let Some(gpu) = &self.gpu {
-                            let rect = Self::compute_terminal_rect(gpu);
+                            let rect = Self::compute_terminal_rect_with_sidebar(gpu, state.sidebar_width);
                             state.resize_all(rect, gpu.cell_width(), gpu.cell_height());
                         }
                         self.dirty = true;
@@ -108,18 +108,38 @@ impl App {
                     "O" | "o" => {
                         let _ = state.split_pane(SplitDirection::Horizontal);
                         if let Some(gpu) = &self.gpu {
-                            let rect = Self::compute_terminal_rect(gpu);
+                            let rect = Self::compute_terminal_rect_with_sidebar(gpu, state.sidebar_width);
                             state.resize_all(rect, gpu.cell_width(), gpu.cell_height());
                         }
                         self.dirty = true;
                         return true;
                     }
-                    // Ctrl+Shift+D: SurfaceGroup split horizontal (within current tab)
+                    // Ctrl+Shift+D: SurfaceGroup split vertical (within current tab)
                     "D" | "d" => {
+                        let _ = state.split_surface(SplitDirection::Vertical);
+                        if let Some(gpu) = &self.gpu {
+                            let rect = Self::compute_terminal_rect_with_sidebar(gpu, state.sidebar_width);
+                            state.resize_all(rect, gpu.cell_width(), gpu.cell_height());
+                        }
+                        self.dirty = true;
+                        return true;
+                    }
+                    // Ctrl+Shift+J: SurfaceGroup split horizontal (within current tab)
+                    "J" | "j" => {
                         let _ = state.split_surface(SplitDirection::Horizontal);
                         if let Some(gpu) = &self.gpu {
-                            let rect = Self::compute_terminal_rect(gpu);
+                            let rect = Self::compute_terminal_rect_with_sidebar(gpu, state.sidebar_width);
                             state.resize_all(rect, gpu.cell_width(), gpu.cell_height());
+                        }
+                        self.dirty = true;
+                        return true;
+                    }
+                    // Ctrl+Shift+I: Toggle notification panel
+                    "I" | "i" => {
+                        state.notification_panel_open = !state.notification_panel_open;
+                        // Mark all as read when opening
+                        if state.notification_panel_open {
+                            state.notifications.mark_all_read();
                         }
                         self.dirty = true;
                         return true;
@@ -136,41 +156,11 @@ impl App {
             }
         }
 
-        // Ctrl+I: Toggle notification panel
-        if ctrl && !shift && !alt {
-            if let Key::Character(c) = key {
-                if c.as_str() == "i" || c.as_str() == "\x09" {
-                    state.notification_panel_open = !state.notification_panel_open;
-                    // Mark all as read when opening
-                    if state.notification_panel_open {
-                        state.notifications.mark_all_read();
-                    }
-                    self.dirty = true;
-                    return true;
-                }
-            }
-        }
-
         // Ctrl+,: Toggle settings window
         if ctrl && !shift && !alt {
             if let Key::Character(c) = key {
                 if c.as_str() == "," {
                     state.settings_open = !state.settings_open;
-                    self.dirty = true;
-                    return true;
-                }
-            }
-        }
-
-        // Ctrl+D (without shift): SurfaceGroup split vertical (within current tab)
-        if ctrl && !shift && !alt {
-            if let Key::Character(c) = key {
-                if c.as_str() == "d" || c.as_str() == "\x04" {
-                    let _ = state.split_surface(SplitDirection::Vertical);
-                    if let Some(gpu) = &self.gpu {
-                        let rect = Self::compute_terminal_rect(gpu);
-                        state.resize_all(rect, gpu.cell_width(), gpu.cell_height());
-                    }
                     self.dirty = true;
                     return true;
                 }
@@ -257,10 +247,17 @@ impl ApplicationHandler for App {
         let gpu = pollster::block_on(GpuState::new(window.clone()))
             .expect("failed to initialize GPU");
 
+        // We need settings to determine sidebar width, but state isn't created yet.
+        // Load settings temporarily to get sidebar width for initial grid calculation.
+        let init_settings = crate::settings::Settings::load();
+        let sidebar_logical_width = init_settings.appearance.sidebar_width;
+        let font_size = init_settings.appearance.font_size;
+        drop(init_settings);
+
         // Compute terminal grid size from the terminal area (excluding sidebar)
         let sf = gpu.scale_factor();
         let size = gpu.size();
-        let sidebar_w = 180.0 * sf;
+        let sidebar_w = sidebar_logical_width * sf;
         let terminal_rect = Rect {
             x: sidebar_w,
             y: 0.0,
@@ -269,6 +266,7 @@ impl ApplicationHandler for App {
         };
         let (cols, rows) = gpu.grid_size_for_rect(&terminal_rect);
         let state = AppState::new(cols, rows).expect("failed to create app state");
+        let _ = font_size; // font_size wired via CellRenderer::new in GpuState::new
 
         // Start IPC server
         match IpcServer::start() {
@@ -299,18 +297,22 @@ impl ApplicationHandler for App {
                 event_loop.exit();
             }
             WindowEvent::Resized(new_size) => {
-                if let Some(gpu) = &mut self.gpu {
+                if let (Some(gpu), Some(state)) = (&mut self.gpu, &mut self.state) {
                     gpu.resize(new_size);
 
                     // Resize terminal grid to match new window (accounting for sidebar)
-                    let terminal_rect = Self::compute_terminal_rect(gpu);
+                    let terminal_rect = Self::compute_terminal_rect_with_sidebar(gpu, state.sidebar_width);
                     let (cols, rows) = gpu.grid_size_for_rect(&terminal_rect);
                     let cw = gpu.cell_width();
                     let ch = gpu.cell_height();
-                    if let Some(state) = &mut self.state {
-                        state.update_grid_size(cols, rows);
-                        state.resize_all(terminal_rect, cw, ch);
-                    }
+                    state.update_grid_size(cols, rows);
+                    state.resize_all(terminal_rect, cw, ch);
+                }
+                self.dirty = true;
+            }
+            WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
+                if let Some(gpu) = &mut self.gpu {
+                    gpu.update_scale_factor(scale_factor as f32);
                 }
                 self.dirty = true;
             }
@@ -406,42 +408,50 @@ impl ApplicationHandler for App {
                 if let Some(state) = &mut self.state {
                     let events = state.collect_events();
                     for event in &events {
+                        let surface_id = event.surface_id;
                         match &event.kind {
                             terminal::TerminalEventKind::Notification { title, body } => {
-                                if !self.window_focused
+                                if state.settings.notification.enabled
+                                    && state.settings.notification.system_notification
+                                    && !self.window_focused
                                     && state.notifications.should_send_system_notification()
                                 {
                                     notification::send_system_notification(title, body);
                                 }
-                                let ws_id = state.active_workspace().id;
-                                state.notifications.add(
-                                    ws_id,
-                                    0,
-                                    title.clone(),
-                                    body.clone(),
-                                );
-                                // Fire Notification hooks on all surfaces
+                                if state.settings.notification.enabled {
+                                    let ws_id = state.active_workspace().id;
+                                    state.notifications.add(
+                                        ws_id,
+                                        surface_id,
+                                        title.clone(),
+                                        body.clone(),
+                                    );
+                                }
+                                // Fire Notification hooks on the source surface
                                 let hook_events = vec![hooks::HookEvent::Notification];
-                                // Fire on surface 0 (generic) - in practice hooks are per-surface
-                                state.hook_manager.check_and_fire(0, &hook_events);
+                                state.hook_manager.check_and_fire(surface_id, &hook_events);
                                 self.dirty = true;
                             }
                             terminal::TerminalEventKind::BellRing => {
-                                let ws_id = state.active_workspace().id;
-                                state.notifications.add(
-                                    ws_id,
-                                    0,
-                                    "Bell".to_string(),
-                                    String::new(),
-                                );
-                                if !self.window_focused
+                                if state.settings.notification.enabled {
+                                    let ws_id = state.active_workspace().id;
+                                    state.notifications.add(
+                                        ws_id,
+                                        surface_id,
+                                        "Bell".to_string(),
+                                        String::new(),
+                                    );
+                                }
+                                if state.settings.notification.enabled
+                                    && state.settings.notification.system_notification
+                                    && !self.window_focused
                                     && state.notifications.should_send_system_notification()
                                 {
                                     notification::send_system_notification("Tasty", "Bell");
                                 }
-                                // Fire Bell hooks on all surfaces
+                                // Fire Bell hooks on the source surface
                                 let hook_events = vec![hooks::HookEvent::Bell];
-                                state.hook_manager.check_and_fire(0, &hook_events);
+                                state.hook_manager.check_and_fire(surface_id, &hook_events);
                                 self.dirty = true;
                             }
                             terminal::TerminalEventKind::TitleChanged(_title) => {
@@ -450,6 +460,12 @@ impl ApplicationHandler for App {
                             }
                             terminal::TerminalEventKind::CwdChanged(_path) => {
                                 // Could update sidebar metadata here in the future
+                                self.dirty = true;
+                            }
+                            terminal::TerminalEventKind::ProcessExited => {
+                                // Fire ProcessExit hooks on the source surface
+                                let hook_events = vec![hooks::HookEvent::ProcessExit];
+                                state.hook_manager.check_and_fire(surface_id, &hook_events);
                                 self.dirty = true;
                             }
                         }
@@ -477,6 +493,12 @@ impl ApplicationHandler for App {
                     }
                 }
 
+                // Request next frame. VSync (PresentMode::Fifo) limits to monitor refresh
+                // rate (~60fps) so this is not a true busy-loop CPU-wise. The GPU work only
+                // happens when self.dirty is true. For true event-driven redraw we would need
+                // EventLoopProxy to wake the main thread from the PTY reader, which is a
+                // larger refactor.
+                // TODO: use EventLoopProxy for event-driven redraw instead of continuous request_redraw
                 if let Some(window) = &self.window {
                     window.request_redraw();
                 }

@@ -10,29 +10,41 @@ pub struct SurfaceHook {
     pub event: HookEvent,
     pub command: String,
     pub once: bool,
+    /// Pre-compiled regex for OutputMatch events (cached at registration time).
+    pub compiled_regex: Option<regex::Regex>,
 }
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum HookEvent {
     ProcessExit,
+    /// Output matches a regex pattern.
+    /// TODO: Implement OutputMatch detection in terminal.rs by checking registered patterns
+    /// against accumulated output_buffer after each process() call.
     OutputMatch(String),
     Bell,
     Notification,
+    /// Fire after N seconds of no PTY output.
+    /// TODO: Implement IdleTimeout by tracking last output timestamp per terminal and
+    /// emitting an event when the idle threshold is exceeded.
     IdleTimeout(u64),
 }
 
 impl HookEvent {
-    fn matches(&self, other: &HookEvent) -> bool {
+    fn matches(&self, other: &HookEvent, compiled_regex: Option<&regex::Regex>) -> bool {
         match (self, other) {
             (HookEvent::ProcessExit, HookEvent::ProcessExit) => true,
             (HookEvent::Bell, HookEvent::Bell) => true,
             (HookEvent::Notification, HookEvent::Notification) => true,
-            (HookEvent::OutputMatch(pattern), HookEvent::OutputMatch(text)) => {
-                // pattern is a regex, text is the actual output
-                regex::Regex::new(pattern)
-                    .map(|re| re.is_match(text))
-                    .unwrap_or(false)
+            (HookEvent::OutputMatch(_pattern), HookEvent::OutputMatch(text)) => {
+                // Use pre-compiled regex if available, otherwise compile on-the-fly
+                if let Some(re) = compiled_regex {
+                    re.is_match(text)
+                } else {
+                    regex::Regex::new(_pattern)
+                        .map(|re| re.is_match(text))
+                        .unwrap_or(false)
+                }
             }
             _ => false,
         }
@@ -89,12 +101,19 @@ impl HookManager {
     ) -> HookId {
         let id = self.next_id;
         self.next_id += 1;
+        // Pre-compile regex for OutputMatch events
+        let compiled_regex = if let HookEvent::OutputMatch(ref pattern) = event {
+            regex::Regex::new(pattern).ok()
+        } else {
+            None
+        };
         self.hooks.push(SurfaceHook {
             id,
             surface_id,
             event,
             command,
             once,
+            compiled_regex,
         });
         id
     }
@@ -113,6 +132,11 @@ impl HookManager {
     }
 
     /// Check events and fire matching hooks. Returns fired hook IDs.
+    ///
+    /// SECURITY NOTE: Hook commands are intentionally executed via the system shell.
+    /// Users explicitly register hook commands via the IPC API, and the IPC server
+    /// only listens on localhost (127.0.0.1). IPC callers are responsible for
+    /// validating/sanitizing any user-provided input before registering hooks.
     pub fn check_and_fire(&mut self, surface_id: u32, events: &[HookEvent]) -> Vec<HookId> {
         let mut fired = Vec::new();
 
@@ -121,7 +145,7 @@ impl HookManager {
                 continue;
             }
             for event in events {
-                if hook.event.matches(event) {
+                if hook.event.matches(event, hook.compiled_regex.as_ref()) {
                     // Fire the hook command in background
                     let cmd = hook.command.clone();
                     std::thread::spawn(move || {

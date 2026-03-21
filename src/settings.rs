@@ -164,8 +164,8 @@ impl Default for KeybindingSettings {
             new_tab: "ctrl+shift+t".to_string(),
             split_pane_vertical: "ctrl+shift+e".to_string(),
             split_pane_horizontal: "ctrl+shift+o".to_string(),
-            split_surface_vertical: "ctrl+d".to_string(),
-            split_surface_horizontal: "ctrl+shift+d".to_string(),
+            split_surface_vertical: "ctrl+shift+d".to_string(),
+            split_surface_horizontal: "ctrl+shift+j".to_string(),
         }
     }
 }

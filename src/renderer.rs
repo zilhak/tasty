@@ -208,6 +208,10 @@ pub struct CellRenderer {
     max_instances: usize,
     pub font_config: FontConfig,
     pub atlas: GlyphAtlas,
+    /// Reusable buffer to avoid per-frame allocation.
+    bg_instances: Vec<BgInstance>,
+    /// Reusable buffer to avoid per-frame allocation.
+    glyph_instances: Vec<GlyphInstance>,
 }
 
 impl CellRenderer {
@@ -487,6 +491,8 @@ impl CellRenderer {
             max_instances,
             font_config,
             atlas,
+            bg_instances: Vec::with_capacity(300 * 100),
+            glyph_instances: Vec::with_capacity(300 * 100),
         }
     }
 
@@ -509,8 +515,8 @@ impl CellRenderer {
         let (cols, rows) = surface.dimensions();
         let lines = surface.screen_lines();
 
-        let mut bg_instances: Vec<BgInstance> = Vec::with_capacity(cols * rows);
-        let mut glyph_instances: Vec<GlyphInstance> = Vec::with_capacity(cols * rows);
+        self.bg_instances.clear();
+        self.glyph_instances.clear();
 
         for (row_idx, line) in lines.iter().enumerate() {
             if row_idx >= rows {
@@ -527,7 +533,7 @@ impl CellRenderer {
                 let fg_color = color_attr_to_rgba(&attrs.foreground(), DEFAULT_FG);
 
                 // Background instance for every cell
-                bg_instances.push(BgInstance {
+                self.bg_instances.push(BgInstance {
                     pos: [col_idx as f32, row_idx as f32],
                     bg_color,
                 });
@@ -546,7 +552,7 @@ impl CellRenderer {
 
                 if let Some(entry) = self.atlas.get_or_insert(key, &mut self.font_config, queue) {
                     if entry.width > 0.0 && entry.height > 0.0 {
-                        glyph_instances.push(GlyphInstance {
+                        self.glyph_instances.push(GlyphInstance {
                             pos: [col_idx as f32, row_idx as f32],
                             uv_offset: [entry.uv_x, entry.uv_y],
                             uv_size: [entry.uv_w, entry.uv_h],
@@ -560,21 +566,21 @@ impl CellRenderer {
         }
 
         // Clamp to max
-        let bg_count = bg_instances.len().min(self.max_instances);
-        let glyph_count = glyph_instances.len().min(self.max_instances);
+        let bg_count = self.bg_instances.len().min(self.max_instances);
+        let glyph_count = self.glyph_instances.len().min(self.max_instances);
 
         if bg_count > 0 {
             queue.write_buffer(
                 &self.bg_instance_buffer,
                 0,
-                bytemuck::cast_slice(&bg_instances[..bg_count]),
+                bytemuck::cast_slice(&self.bg_instances[..bg_count]),
             );
         }
         if glyph_count > 0 {
             queue.write_buffer(
                 &self.glyph_instance_buffer,
                 0,
-                bytemuck::cast_slice(&glyph_instances[..glyph_count]),
+                bytemuck::cast_slice(&self.glyph_instances[..glyph_count]),
             );
         }
 

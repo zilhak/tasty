@@ -269,8 +269,40 @@ impl GlyphAtlas {
         }
 
         if self.shelf_y + glyph_height > self.atlas_size {
-            tracing::warn!("glyph atlas full, cannot add glyph '{}'", key.ch);
-            return None;
+            // Atlas full - reset and rebuild. Existing glyphs will be re-rasterized on demand.
+            tracing::warn!("glyph atlas full, resetting ({} cached glyphs cleared)", self.cache.len());
+            self.cache.clear();
+            self.shelf_x = 0;
+            self.shelf_y = 0;
+            self.shelf_height = 0;
+
+            // Clear the texture by uploading zeroes
+            let empty = vec![0u8; (self.atlas_size * self.atlas_size) as usize];
+            queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &self.texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                &empty,
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(self.atlas_size),
+                    rows_per_image: Some(self.atlas_size),
+                },
+                wgpu::Extent3d {
+                    width: self.atlas_size,
+                    height: self.atlas_size,
+                    depth_or_array_layers: 1,
+                },
+            );
+
+            // Try again - if single glyph is too large, give up
+            if glyph_height > self.atlas_size || glyph_width > self.atlas_size {
+                tracing::warn!("glyph '{}' too large for atlas", key.ch);
+                return None;
+            }
         }
 
         // Upload glyph bitmap to texture

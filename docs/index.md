@@ -92,7 +92,7 @@ cmux 분석 기반 계층적 데이터 모델. Workspace → PaneLayout → Pane
 - Workspace / PaneNode / Pane / Tab / Panel / SurfaceGroupNode 계층 데이터 모델
 - egui 좌측 사이드바 (워크스페이스 목록) + Pane별 독립 탭 바
 - 두 가지 분할: Pane 분할(물리적 화면, 독립 탭 바) + SurfaceGroup 분할(탭 내부)
-- 키보드 단축키: Ctrl+Shift+N(워크스페이스), Ctrl+Shift+T(탭), Ctrl+Shift+E/O(Pane분할), Ctrl+D/Ctrl+Shift+D(Surface분할), Alt+1~9(WS전환), Ctrl+Tab/Shift+Tab(탭전환), Alt+Arrow(Pane포커스)
+- 키보드 단축키: Ctrl+Shift+N(워크스페이스), Ctrl+Shift+T(탭), Ctrl+Shift+E/O(Pane분할), Ctrl+Shift+D/Ctrl+Shift+J(Surface분할), Alt+1~9(WS전환), Ctrl+Tab/Shift+Tab(탭전환), Alt+Arrow(Pane포커스), Ctrl+Shift+I(알림)
 - 분할/리사이즈 시 모든 터미널 자동 크기 재조정
 - 상세: [features.md](features.md)
 
@@ -111,7 +111,7 @@ GPU 렌더링된 사이드바에 Git 브랜치, PR 상태, 작업 디렉토리, 
 - 상세: [features.md](features.md)
 
 ### 분할 패인
-두 가지 분할 지원. Pane 분할(Ctrl+Shift+E/O): 물리적 화면 분할, 새 독립 탭 바 생성. SurfaceGroup 분할(Ctrl+D/Ctrl+Shift+D): 탭 내부 분할, 하나의 탭으로 표시. 기본 구현 완료.
+두 가지 분할 지원. Pane 분할(Ctrl+Shift+E/O): 물리적 화면 분할, 새 독립 탭 바 생성. SurfaceGroup 분할(Ctrl+Shift+D/Ctrl+Shift+J): 탭 내부 분할, 하나의 탭으로 표시. 기본 구현 완료.
 
 ### CLI 도구
 `tasty` 명령으로 워크스페이스 생성, 알림 전송, 키 입력 등을 자동화. IPC로 실행 중인 GUI 앱과 통신.

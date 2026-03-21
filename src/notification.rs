@@ -18,24 +18,37 @@ pub struct Notification {
 
 /// Stores and manages terminal notifications with FIFO eviction.
 pub struct NotificationStore {
-    notifications: Vec<Notification>,
+    notifications: std::collections::VecDeque<Notification>,
     max_count: usize,
     next_id: u64,
     /// Rate limiter: last time a system notification was sent.
     last_system_notification: Option<Instant>,
+    /// Coalesce window in milliseconds.
+    coalesce_ms: u64,
 }
 
 impl NotificationStore {
     pub fn new() -> Self {
+        Self::with_coalesce_ms(500)
+    }
+
+    /// Create a notification store with a custom coalesce window.
+    pub fn with_coalesce_ms(coalesce_ms: u64) -> Self {
         Self {
-            notifications: Vec::new(),
+            notifications: std::collections::VecDeque::new(),
             max_count: 100,
             next_id: 1,
             last_system_notification: None,
+            coalesce_ms,
         }
     }
 
-    /// Add a notification, coalescing if the same source sent one within 500ms.
+    /// Update the coalesce window.
+    pub fn set_coalesce_ms(&mut self, ms: u64) {
+        self.coalesce_ms = ms;
+    }
+
+    /// Add a notification, coalescing if the same source sent one within the coalesce window.
     pub fn add(
         &mut self,
         source_workspace: WorkspaceId,
@@ -44,7 +57,7 @@ impl NotificationStore {
         body: String,
     ) {
         let now = Instant::now();
-        let coalesce_window = Duration::from_millis(500);
+        let coalesce_window = Duration::from_millis(self.coalesce_ms);
 
         // Coalesce: if same source sent a notification recently, merge
         if let Some(existing) = self
@@ -73,13 +86,13 @@ impl NotificationStore {
 
         // FIFO eviction
         while self.notifications.len() >= self.max_count {
-            self.notifications.remove(0);
+            self.notifications.pop_front();
         }
 
         let id = self.next_id;
         self.next_id += 1;
 
-        self.notifications.push(Notification {
+        self.notifications.push_back(Notification {
             id,
             source_workspace,
             source_surface,
@@ -104,8 +117,8 @@ impl NotificationStore {
     }
 
     /// Get all notifications (newest last).
-    pub fn all(&self) -> &[Notification] {
-        &self.notifications
+    pub fn all(&self) -> impl DoubleEndedIterator<Item = &Notification> + ExactSizeIterator {
+        self.notifications.iter()
     }
 
     /// Mark a specific notification as read.

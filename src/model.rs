@@ -77,7 +77,21 @@ impl Workspace {
         tab_id: TabId,
         surface_id: SurfaceId,
     ) -> anyhow::Result<Self> {
-        let pane = Pane::new(pane_id, tab_id, surface_id, cols, rows)?;
+        Self::new_with_shell(id, name, cols, rows, pane_id, tab_id, surface_id, None)
+    }
+
+    /// Create a workspace with a custom shell.
+    pub fn new_with_shell(
+        id: WorkspaceId,
+        name: String,
+        cols: usize,
+        rows: usize,
+        pane_id: PaneId,
+        tab_id: TabId,
+        surface_id: SurfaceId,
+        shell: Option<&str>,
+    ) -> anyhow::Result<Self> {
+        let pane = Pane::new_with_shell(pane_id, tab_id, surface_id, cols, rows, shell)?;
         let focused_pane = pane_id;
         Ok(Self {
             id,
@@ -88,18 +102,24 @@ impl Workspace {
     }
 
     /// Access the pane layout (always valid during normal operation).
+    /// Panics if called during a structural mutation (between take/put).
+    #[track_caller]
     pub fn pane_layout(&self) -> &PaneNode {
-        self.pane_layout_opt.as_ref().expect("pane_layout taken")
+        self.pane_layout_opt.as_ref().expect("BUG: pane_layout accessed during structural mutation (between take/put)")
     }
 
     /// Access the pane layout mutably.
+    /// Panics if called during a structural mutation (between take/put).
+    #[track_caller]
     pub fn pane_layout_mut(&mut self) -> &mut PaneNode {
-        self.pane_layout_opt.as_mut().expect("pane_layout taken")
+        self.pane_layout_opt.as_mut().expect("BUG: pane_layout accessed during structural mutation (between take/put)")
     }
 
     /// Temporarily take ownership of the pane layout for structural mutations.
+    /// MUST be followed by `put_pane_layout()`. Panics if already taken.
+    #[track_caller]
     pub fn take_pane_layout(&mut self) -> PaneNode {
-        self.pane_layout_opt.take().expect("pane_layout taken")
+        self.pane_layout_opt.take().expect("BUG: pane_layout already taken")
     }
 
     /// Put the pane layout back after structural mutations.
@@ -320,7 +340,19 @@ impl Pane {
         cols: usize,
         rows: usize,
     ) -> anyhow::Result<Self> {
-        let terminal = Terminal::new(cols, rows)?;
+        Self::new_with_shell(id, tab_id, surface_id, cols, rows, None)
+    }
+
+    /// Create a Pane with a custom shell.
+    pub fn new_with_shell(
+        id: PaneId,
+        tab_id: TabId,
+        surface_id: SurfaceId,
+        cols: usize,
+        rows: usize,
+        shell: Option<&str>,
+    ) -> anyhow::Result<Self> {
+        let terminal = Terminal::new_with_shell(cols, rows, shell)?;
         let tab = Tab {
             id: tab_id,
             name: "Shell".to_string(),
@@ -344,7 +376,19 @@ impl Pane {
         cols: usize,
         rows: usize,
     ) -> anyhow::Result<()> {
-        let terminal = Terminal::new(cols, rows)?;
+        self.add_tab_with_shell(tab_id, surface_id, cols, rows, None)
+    }
+
+    /// Add a new tab with a custom shell.
+    pub fn add_tab_with_shell(
+        &mut self,
+        tab_id: TabId,
+        surface_id: SurfaceId,
+        cols: usize,
+        rows: usize,
+        shell: Option<&str>,
+    ) -> anyhow::Result<()> {
+        let terminal = Terminal::new_with_shell(cols, rows, shell)?;
         let tab = Tab {
             id: tab_id,
             name: format!("Shell {}", self.tabs.len() + 1),
@@ -358,16 +402,18 @@ impl Pane {
         Ok(())
     }
 
-    /// Get the active tab's panel.
-    pub fn active_panel(&self) -> &Panel {
-        let idx = self.active_tab.min(self.tabs.len().saturating_sub(1));
-        self.tabs[idx].panel()
+    /// Get the active tab's panel. Returns None if tabs are empty.
+    pub fn active_panel(&self) -> Option<&Panel> {
+        if self.tabs.is_empty() { return None; }
+        let idx = self.active_tab.min(self.tabs.len() - 1);
+        Some(self.tabs[idx].panel())
     }
 
-    /// Get the active tab's panel (mutable).
-    pub fn active_panel_mut(&mut self) -> &mut Panel {
-        let idx = self.active_tab.min(self.tabs.len().saturating_sub(1));
-        self.tabs[idx].panel_mut()
+    /// Get the active tab's panel (mutable). Returns None if tabs are empty.
+    pub fn active_panel_mut(&mut self) -> Option<&mut Panel> {
+        if self.tabs.is_empty() { return None; }
+        let idx = self.active_tab.min(self.tabs.len() - 1);
+        Some(self.tabs[idx].panel_mut())
     }
 
     /// Split the active panel's focused surface.
@@ -378,10 +424,25 @@ impl Pane {
         cols: usize,
         rows: usize,
     ) -> anyhow::Result<()> {
+        self.split_active_surface_with_shell(direction, new_surface_id, cols, rows, None)
+    }
+
+    /// Split the active panel's focused surface with a custom shell.
+    pub fn split_active_surface_with_shell(
+        &mut self,
+        direction: SplitDirection,
+        new_surface_id: SurfaceId,
+        cols: usize,
+        rows: usize,
+        shell: Option<&str>,
+    ) -> anyhow::Result<()> {
         // Pre-create the new terminal before any structural mutation.
         // If Terminal::new fails, panel is untouched.
-        let new_terminal = Terminal::new(cols, rows)?;
-        let active = self.active_tab.min(self.tabs.len().saturating_sub(1));
+        let new_terminal = Terminal::new_with_shell(cols, rows, shell)?;
+        if self.tabs.is_empty() {
+            return Ok(()); // nothing to split
+        }
+        let active = self.active_tab.min(self.tabs.len() - 1);
         let tab = &mut self.tabs[active];
         // take/put is safe here: split_surface_with_terminal is infallible.
         let old_panel = tab.take_panel();
@@ -389,14 +450,14 @@ impl Pane {
         Ok(())
     }
 
-    /// Get the focused terminal (follows through Panel → SurfaceGroup).
+    /// Get the focused terminal (follows through Panel -> SurfaceGroup).
     pub fn active_terminal(&self) -> Option<&Terminal> {
-        self.active_panel().focused_terminal()
+        self.active_panel()?.focused_terminal()
     }
 
     /// Get the focused terminal (mutable).
     pub fn active_terminal_mut(&mut self) -> Option<&mut Terminal> {
-        self.active_panel_mut().focused_terminal_mut()
+        self.active_panel_mut()?.focused_terminal_mut()
     }
 
     /// Switch to next tab.
@@ -442,18 +503,24 @@ pub struct Tab {
 
 impl Tab {
     /// Access the panel (always valid during normal operation).
+    /// Panics if called during a structural mutation (between take/put).
+    #[track_caller]
     pub fn panel(&self) -> &Panel {
-        self.panel_opt.as_ref().expect("panel taken")
+        self.panel_opt.as_ref().expect("BUG: panel accessed during structural mutation (between take/put)")
     }
 
     /// Access the panel mutably.
+    /// Panics if called during a structural mutation (between take/put).
+    #[track_caller]
     pub fn panel_mut(&mut self) -> &mut Panel {
-        self.panel_opt.as_mut().expect("panel taken")
+        self.panel_opt.as_mut().expect("BUG: panel accessed during structural mutation (between take/put)")
     }
 
     /// Take ownership of the panel for structural mutations.
+    /// MUST be followed by `put_panel()`. Panics if already taken.
+    #[track_caller]
     fn take_panel(&mut self) -> Panel {
-        self.panel_opt.take().expect("panel taken")
+        self.panel_opt.take().expect("BUG: panel already taken")
     }
 
     /// Put the panel back after structural mutations.
@@ -581,18 +648,24 @@ pub struct SurfaceGroupNode {
 
 impl SurfaceGroupNode {
     /// Access the layout (always valid during normal operation).
+    /// Panics if called during a structural mutation (between take/put).
+    #[track_caller]
     pub fn layout(&self) -> &SurfaceGroupLayout {
-        self.layout_opt.as_ref().expect("layout taken")
+        self.layout_opt.as_ref().expect("BUG: layout accessed during structural mutation (between take/put)")
     }
 
     /// Access the layout mutably.
+    /// Panics if called during a structural mutation (between take/put).
+    #[track_caller]
     pub fn layout_mut(&mut self) -> &mut SurfaceGroupLayout {
-        self.layout_opt.as_mut().expect("layout taken")
+        self.layout_opt.as_mut().expect("BUG: layout accessed during structural mutation (between take/put)")
     }
 
     /// Take ownership of the layout for structural mutations.
+    /// MUST be followed by `put_layout()`. Panics if already taken.
+    #[track_caller]
     fn take_layout(&mut self) -> SurfaceGroupLayout {
-        self.layout_opt.take().expect("layout taken")
+        self.layout_opt.take().expect("BUG: layout already taken")
     }
 
     /// Put the layout back.

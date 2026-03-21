@@ -3,17 +3,16 @@ use std::time::Instant;
 use crate::model::Rect;
 use crate::state::AppState;
 
-/// Width of the sidebar in logical pixels.
-const SIDEBAR_WIDTH: f32 = 180.0;
-
 /// Color for notification badge / highlight.
 const NOTIFICATION_COLOR: egui::Color32 = egui::Color32::from_rgb(80, 140, 255);
 
 /// Render the egui UI and return the remaining terminal area rect (in physical pixels).
 pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> Rect {
+    let sidebar_width = state.sidebar_width;
+
     // ---- Left sidebar: workspaces ----
     egui::SidePanel::left("workspace_sidebar")
-        .exact_width(SIDEBAR_WIDTH)
+        .exact_width(sidebar_width)
         .resizable(false)
         .show(ctx, |ui| {
             ui.vertical(|ui| {
@@ -98,10 +97,10 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
                     ("Alt+1~9", "Switch WS"),
                     ("Ctrl+Shift+E", "Pane Split V"),
                     ("Ctrl+Shift+O", "Pane Split H"),
-                    ("Ctrl+D", "Surface Split V"),
-                    ("Ctrl+Shift+D", "Surface Split H"),
+                    ("Ctrl+Shift+D", "Surface Split V"),
+                    ("Ctrl+Shift+J", "Surface Split H"),
                     ("Alt+Arrow", "Focus Pane"),
-                    ("Ctrl+I", "Notifications"),
+                    ("Ctrl+Shift+I", "Notifications"),
                     ("Ctrl+,", "Settings"),
                 ];
 
@@ -122,9 +121,9 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
 
     // Compute remaining terminal area in physical pixels
     let screen_rect = ctx.screen_rect();
-    let terminal_x = SIDEBAR_WIDTH * scale_factor;
+    let terminal_x = sidebar_width * scale_factor;
     let terminal_y = 0.0; // No global tab bar anymore
-    let terminal_width = (screen_rect.width() - SIDEBAR_WIDTH) * scale_factor;
+    let terminal_width = (screen_rect.width() - sidebar_width) * scale_factor;
     let terminal_height = screen_rect.height() * scale_factor;
 
     Rect {
@@ -275,8 +274,8 @@ pub fn draw_notification_panel(ctx: &egui::Context, state: &mut AppState) {
             egui::ScrollArea::vertical()
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
-                    let notifications = state.notifications.all();
-                    if notifications.is_empty() {
+                    let notification_count = state.notifications.all().len();
+                    if notification_count == 0 {
                         ui.centered_and_justified(|ui| {
                             ui.label(
                                 egui::RichText::new("No notifications")
@@ -288,8 +287,7 @@ pub fn draw_notification_panel(ctx: &egui::Context, state: &mut AppState) {
 
                     // Collect notification info for display (iterate in reverse for newest first)
                     let now = Instant::now();
-                    let entries: Vec<_> = notifications
-                        .iter()
+                    let entries: Vec<_> = state.notifications.all()
                         .rev()
                         .map(|n| {
                             let elapsed = now.duration_since(n.timestamp);

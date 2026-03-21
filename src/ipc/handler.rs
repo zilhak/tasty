@@ -317,7 +317,6 @@ fn handle_notification_list(state: &AppState, id: serde_json::Value) -> JsonRpcR
     let notifications: Vec<_> = state
         .notifications
         .all()
-        .iter()
         .rev()
         .take(50)
         .map(|n| {
@@ -536,17 +535,19 @@ fn handle_claude_launch(
     let ws_idx = state.active_workspace;
     state.workspaces[ws_idx].name = workspace_name.to_string();
 
-    // Send cd command if directory specified
+    // Send cd command if directory specified (shell-escape to prevent injection)
     if let Some(dir) = directory {
         if let Some(terminal) = state.focused_terminal_mut() {
-            terminal.send_key(&format!("cd {}\r", dir));
+            let escaped = shell_escape::escape(dir.into());
+            terminal.send_key(&format!("cd {}\r", escaped));
         }
     }
 
-    // Build and send claude command
+    // Build and send claude command (shell-escape task parameter)
     let mut cmd = "claude".to_string();
     if let Some(t) = task {
-        cmd.push_str(&format!(" --task '{}'", t));
+        let escaped = shell_escape::escape(t.into());
+        cmd.push_str(&format!(" --task {}", escaped));
     }
     if let Some(terminal) = state.focused_terminal_mut() {
         terminal.send_key(&format!("{}\r", cmd));
