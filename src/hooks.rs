@@ -168,3 +168,123 @@ impl HookManager {
         fired
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hook_event_parse_process_exit() {
+        assert_eq!(HookEvent::parse("process-exit"), Some(HookEvent::ProcessExit));
+    }
+
+    #[test]
+    fn hook_event_parse_bell() {
+        assert_eq!(HookEvent::parse("bell"), Some(HookEvent::Bell));
+    }
+
+    #[test]
+    fn hook_event_parse_notification() {
+        assert_eq!(HookEvent::parse("notification"), Some(HookEvent::Notification));
+    }
+
+    #[test]
+    fn hook_event_parse_output_match() {
+        match HookEvent::parse("output-match:error.*") {
+            Some(HookEvent::OutputMatch(p)) => assert_eq!(p, "error.*"),
+            _ => panic!("expected OutputMatch"),
+        }
+    }
+
+    #[test]
+    fn hook_event_parse_idle_timeout() {
+        match HookEvent::parse("idle-timeout:30") {
+            Some(HookEvent::IdleTimeout(30)) => {}
+            _ => panic!("expected IdleTimeout(30)"),
+        }
+    }
+
+    #[test]
+    fn hook_event_parse_unknown() {
+        assert!(HookEvent::parse("unknown").is_none());
+    }
+
+    #[test]
+    fn hook_event_display_roundtrip() {
+        let events = vec![
+            HookEvent::ProcessExit,
+            HookEvent::Bell,
+            HookEvent::Notification,
+            HookEvent::OutputMatch("pattern".into()),
+            HookEvent::IdleTimeout(60),
+        ];
+        for ev in &events {
+            let s = ev.to_display_string();
+            let parsed = HookEvent::parse(&s);
+            assert!(parsed.is_some(), "failed to roundtrip: {}", s);
+        }
+    }
+
+    #[test]
+    fn hook_event_matches_same_type() {
+        assert!(HookEvent::ProcessExit.matches(&HookEvent::ProcessExit, None));
+        assert!(HookEvent::Bell.matches(&HookEvent::Bell, None));
+        assert!(HookEvent::Notification.matches(&HookEvent::Notification, None));
+    }
+
+    #[test]
+    fn hook_event_matches_different_type() {
+        assert!(!HookEvent::ProcessExit.matches(&HookEvent::Bell, None));
+        assert!(!HookEvent::Bell.matches(&HookEvent::Notification, None));
+    }
+
+    #[test]
+    fn hook_event_output_match_regex() {
+        let pattern = HookEvent::OutputMatch("error.*".into());
+        let text = HookEvent::OutputMatch("error: something went wrong".into());
+        assert!(pattern.matches(&text, None));
+    }
+
+    #[test]
+    fn hook_manager_add_and_list() {
+        let mut manager = HookManager::new();
+        let id = manager.add_hook(1, HookEvent::Bell, "echo bell".into(), false);
+        let hooks = manager.list_hooks(Some(1));
+        assert_eq!(hooks.len(), 1);
+        assert_eq!(hooks[0].id, id);
+    }
+
+    #[test]
+    fn hook_manager_remove() {
+        let mut manager = HookManager::new();
+        let id = manager.add_hook(1, HookEvent::Bell, "echo bell".into(), false);
+        assert!(manager.remove_hook(id));
+        assert_eq!(manager.list_hooks(None).len(), 0);
+    }
+
+    #[test]
+    fn hook_manager_remove_nonexistent() {
+        let mut manager = HookManager::new();
+        assert!(!manager.remove_hook(999));
+    }
+
+    #[test]
+    fn hook_manager_once_hook_removed_after_fire() {
+        let mut manager = HookManager::new();
+        manager.add_hook(1, HookEvent::Bell, "echo once".into(), true);
+        let fired = manager.check_and_fire(1, &[HookEvent::Bell]);
+        assert_eq!(fired.len(), 1);
+        // Hook should be removed after firing
+        assert_eq!(manager.list_hooks(None).len(), 0);
+    }
+
+    #[test]
+    fn hook_manager_persistent_hook_stays() {
+        let mut manager = HookManager::new();
+        manager.add_hook(1, HookEvent::Bell, "echo persistent".into(), false);
+        let fired = manager.check_and_fire(1, &[HookEvent::Bell]);
+        assert_eq!(fired.len(), 1);
+        // Hook should still be there
+        assert_eq!(manager.list_hooks(None).len(), 1);
+    }
+}

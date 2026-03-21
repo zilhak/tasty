@@ -3,7 +3,7 @@ use crate::model::{DividerInfo, PaneId, Rect, SplitDirection, Workspace};
 use crate::notification::NotificationStore;
 use crate::settings::Settings;
 use crate::settings_ui::SettingsUiState;
-use crate::terminal::{Terminal, TerminalEvent};
+use crate::terminal::{Terminal, TerminalEvent, Waker};
 
 struct IdGenerator {
     workspace: u32,
@@ -66,11 +66,13 @@ pub struct AppState {
     pub hook_manager: HookManager,
     /// Cached sidebar width from settings (logical pixels).
     pub sidebar_width: f32,
+    /// Waker callback to wake the event loop when new PTY data arrives.
+    waker: Waker,
 }
 
 impl AppState {
     /// Creates initial state with one workspace, one pane, one tab, one terminal.
-    pub fn new(cols: usize, rows: usize) -> anyhow::Result<Self> {
+    pub fn new(cols: usize, rows: usize, waker: Waker) -> anyhow::Result<Self> {
         let settings = Settings::load();
         let mut next_ids = IdGenerator::new();
         let ws_id = next_ids.next_workspace();
@@ -78,7 +80,7 @@ impl AppState {
         let tab_id = next_ids.next_tab();
         let surface_id = next_ids.next_surface();
         let shell = if settings.general.shell.is_empty() { None } else { Some(settings.general.shell.as_str()) };
-        let ws = Workspace::new_with_shell(ws_id, "Workspace 1".to_string(), cols, rows, pane_id, tab_id, surface_id, shell)?;
+        let ws = Workspace::new_with_shell(ws_id, "Workspace 1".to_string(), cols, rows, pane_id, tab_id, surface_id, shell, waker.clone())?;
         let sidebar_width = settings.appearance.sidebar_width;
         Ok(Self {
             workspaces: vec![ws],
@@ -93,6 +95,7 @@ impl AppState {
             settings_ui_state: SettingsUiState::new(),
             hook_manager: HookManager::new(),
             sidebar_width,
+            waker,
         })
     }
 
@@ -158,6 +161,7 @@ impl AppState {
             tab_id,
             surface_id,
             shell,
+            self.waker.clone(),
         )?;
         self.workspaces.push(ws);
         self.active_workspace = self.workspaces.len() - 1;
@@ -172,8 +176,9 @@ impl AppState {
         let rows = self.default_rows;
         let shell = self.settings.general.shell.clone();
         let shell_ref = if shell.is_empty() { None } else { Some(shell.as_str()) };
+        let waker = self.waker.clone();
         if let Some(pane) = self.focused_pane_mut() {
-            pane.add_tab_with_shell(tab_id, surface_id, cols, rows, shell_ref)?;
+            pane.add_tab_with_shell(tab_id, surface_id, cols, rows, shell_ref, waker)?;
         }
         Ok(())
     }
@@ -191,7 +196,7 @@ impl AppState {
         let shell = self.settings.general.shell.clone();
         let shell_ref = if shell.is_empty() { None } else { Some(shell.as_str()) };
         let new_pane =
-            crate::model::Pane::new_with_shell(new_pane_id, new_tab_id, new_surface_id, cols, rows, shell_ref)?;
+            crate::model::Pane::new_with_shell(new_pane_id, new_tab_id, new_surface_id, cols, rows, shell_ref, self.waker.clone())?;
 
         let ws = self.active_workspace_mut();
         let target_pane_id = ws.focused_pane;
@@ -209,8 +214,9 @@ impl AppState {
         let rows = self.default_rows;
         let shell = self.settings.general.shell.clone();
         let shell_ref = if shell.is_empty() { None } else { Some(shell.as_str()) };
+        let waker = self.waker.clone();
         if let Some(pane) = self.focused_pane_mut() {
-            pane.split_active_surface_with_shell(direction, new_surface_id, cols, rows, shell_ref)?;
+            pane.split_active_surface_with_shell(direction, new_surface_id, cols, rows, shell_ref, waker)?;
         }
         Ok(())
     }

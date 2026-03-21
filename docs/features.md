@@ -52,6 +52,18 @@
 - DPI 변경 감지: `ScaleFactorChanged` 이벤트 처리로 모니터 간 이동 시 스케일 팩터 자동 갱신
 - 모노스페이스 폰트 기반 셀 그리드 레이아웃 (기본 14pt)
 
+### 이벤트 드리븐 렌더 루프
+- `EventLoopProxy<AppEvent>` 기반 PTY 웨이크업: PTY 리더 스레드에서 데이터 수신 시 `AppEvent::TerminalOutput` 이벤트를 메인 이벤트 루프로 전송
+- 무조건적 `request_redraw()` 제거: 이전에는 매 프레임 끝에 `request_redraw()`를 호출하여 VSync 기반 busy-loop을 실행했으나, 이제는 실제 변경이 있을 때만 redraw 요청
+- 웨이크업 소스:
+  - PTY 출력 → `AppEvent::TerminalOutput` → `user_event()` → `request_redraw()`
+  - 키보드/마우스 입력 → `window_event()` → dirty 플래그 설정 → `request_redraw()`
+  - 윈도우 리사이즈/포커스 → `window_event()` → dirty 플래그 설정 → `request_redraw()`
+  - IPC 명령 → `process_ipc()` → dirty 플래그 설정 → `request_redraw()`
+- `Waker` 타입 (`Arc<dyn Fn() + Send + Sync>`): Terminal 생성 시 전달되어 PTY 리더 스레드가 이벤트 루프를 깨울 수 있게 함
+- Waker 전파 경로: `App` → `AppState` → `Workspace` → `Pane` → `Tab` → `Terminal`
+- CPU 유휴 시 0% 사용: 터미널 출력이 없고 사용자 입력이 없으면 이벤트 루프가 대기 상태로 진입
+
 ## 워크스페이스 & 탭
 
 ### 데이터 모델 (Workspace / PaneNode / Pane / Tab / Panel / SurfaceGroupNode)
@@ -280,3 +292,46 @@ Claude Code를 새 워크스페이스에서 자동으로 실행하는 전용 런
 - `--task` 옵션으로 작업 설명 전달 가능 (shell-escape 적용)
 - CLI: `tasty claude --workspace "my-project" --directory "/path/to/project" --task "Fix the bug"`
 - IPC: `claude.launch` 메서드 (workspace, directory, task 파라미터)
+
+## 단위 테스트
+
+각 모듈에 `#[cfg(test)] mod tests` 블록으로 인라인 단위 테스트를 포함한다.
+
+### model.rs 테스트
+- `Rect::contains`: 내부/외부/경계 포인트 판정
+- `Rect::split`: 수직/수평/불균등 비율 분할
+- `Rect::approx_eq`: 근사 비교 (1px 허용)
+- `PaneNode::compute_rects`: 단일 및 분할 레이아웃
+- `PaneNode::find_pane`: ID 기반 탐색
+- `PaneNode::all_pane_ids`: 순서 보장 ID 수집
+- `PaneNode::next_pane_id` / `prev_pane_id`: 순환 포커스 이동
+- `PaneNode::find_divider_at`: 분할 경계선 히트 테스트
+- `PaneNode::split_pane_in_place`: 트리 내부 분할 (성공/실패 케이스)
+
+### notification.rs 테스트
+- 알림 추가 및 개수 확인
+- 개별 및 전체 읽음 처리
+- 워크스페이스별 필터 카운트
+- 동일 소스 병합(coalescing)
+- 다른 소스 비병합
+- FIFO 최대 100개 제한
+
+### hooks.rs 테스트
+- `HookEvent::parse` 전체 이벤트 타입
+- 디스플레이 문자열 라운드트립
+- 이벤트 매칭 (같은 타입, 다른 타입, 정규식)
+- HookManager: 등록, 삭제, 조회
+- once 훅 실행 후 자동 삭제
+- persistent 훅 실행 후 유지
+
+### settings.rs 테스트
+- 기본 설정 유효성
+- TOML 직렬화/역직렬화 라운드트립
+- 부분 TOML 기본값 폴백
+- 빈 TOML 전체 기본값
+
+### ipc/protocol.rs 테스트
+- 요청 직렬화/역직렬화
+- 성공/에러 응답 생성
+- method_not_found 응답
+- 응답 라운드트립

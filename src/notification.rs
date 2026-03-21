@@ -163,3 +163,77 @@ pub fn send_system_notification(title: &str, body: &str) {
         .appname("Tasty")
         .show();
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn add_and_count() {
+        let mut store = NotificationStore::new();
+        assert_eq!(store.unread_count(), 0);
+        store.add(1, 1, "Title".into(), "Body".into());
+        assert_eq!(store.unread_count(), 1);
+    }
+
+    #[test]
+    fn mark_read() {
+        let mut store = NotificationStore::new();
+        store.add(1, 1, "T".into(), "B".into());
+        assert_eq!(store.unread_count(), 1);
+        let id = store.all().next().unwrap().id;
+        store.mark_read(id);
+        assert_eq!(store.unread_count(), 0);
+    }
+
+    #[test]
+    fn mark_all_read() {
+        let mut store = NotificationStore::new();
+        store.add(1, 1, "A".into(), "".into());
+        store.add(1, 2, "B".into(), "".into());
+        assert_eq!(store.unread_count(), 2);
+        store.mark_all_read();
+        assert_eq!(store.unread_count(), 0);
+    }
+
+    #[test]
+    fn unread_count_for_workspace() {
+        let mut store = NotificationStore::new();
+        store.add(1, 1, "A".into(), "".into());
+        store.add(2, 1, "B".into(), "".into());
+        assert_eq!(store.unread_count_for_workspace(1), 1);
+        assert_eq!(store.unread_count_for_workspace(2), 1);
+        assert_eq!(store.unread_count_for_workspace(99), 0);
+    }
+
+    #[test]
+    fn coalescing() {
+        // With a large coalesce window, notifications from the same source should merge
+        let mut store = NotificationStore::with_coalesce_ms(60000);
+        store.add(1, 1, "Title".into(), "first".into());
+        store.add(1, 1, "Title".into(), "second".into());
+        // Should still be 1 notification (coalesced)
+        assert_eq!(store.all().len(), 1);
+        let n = store.all().next().unwrap();
+        assert!(n.body.contains("first"));
+        assert!(n.body.contains("second"));
+    }
+
+    #[test]
+    fn no_coalescing_different_sources() {
+        let mut store = NotificationStore::with_coalesce_ms(60000);
+        store.add(1, 1, "A".into(), "".into());
+        store.add(1, 2, "B".into(), "".into()); // different surface
+        assert_eq!(store.all().len(), 2);
+    }
+
+    #[test]
+    fn fifo_eviction() {
+        let mut store = NotificationStore::with_coalesce_ms(0);
+        // Default max is 100
+        for i in 0..110 {
+            store.add(1, i as u32, format!("N{}", i), "".into());
+        }
+        assert_eq!(store.all().len(), 100);
+    }
+}

@@ -1,4 +1,4 @@
-use crate::terminal::Terminal;
+use crate::terminal::{Terminal, Waker};
 
 pub type WorkspaceId = u32;
 pub type PaneId = u32;
@@ -89,8 +89,9 @@ impl Workspace {
         pane_id: PaneId,
         tab_id: TabId,
         surface_id: SurfaceId,
+        waker: Waker,
     ) -> anyhow::Result<Self> {
-        Self::new_with_shell(id, name, cols, rows, pane_id, tab_id, surface_id, None)
+        Self::new_with_shell(id, name, cols, rows, pane_id, tab_id, surface_id, None, waker)
     }
 
     /// Create a workspace with a custom shell.
@@ -103,8 +104,9 @@ impl Workspace {
         tab_id: TabId,
         surface_id: SurfaceId,
         shell: Option<&str>,
+        waker: Waker,
     ) -> anyhow::Result<Self> {
-        let pane = Pane::new_with_shell(pane_id, tab_id, surface_id, cols, rows, shell)?;
+        let pane = Pane::new_with_shell(pane_id, tab_id, surface_id, cols, rows, shell, waker)?;
         let focused_pane = pane_id;
         Ok(Self {
             id,
@@ -403,8 +405,9 @@ impl Pane {
         surface_id: SurfaceId,
         cols: usize,
         rows: usize,
+        waker: Waker,
     ) -> anyhow::Result<Self> {
-        Self::new_with_shell(id, tab_id, surface_id, cols, rows, None)
+        Self::new_with_shell(id, tab_id, surface_id, cols, rows, None, waker)
     }
 
     /// Create a Pane with a custom shell.
@@ -415,8 +418,9 @@ impl Pane {
         cols: usize,
         rows: usize,
         shell: Option<&str>,
+        waker: Waker,
     ) -> anyhow::Result<Self> {
-        let terminal = Terminal::new_with_shell(cols, rows, shell)?;
+        let terminal = Terminal::new_with_shell(cols, rows, shell, waker)?;
         let tab = Tab {
             id: tab_id,
             name: "Shell".to_string(),
@@ -439,8 +443,9 @@ impl Pane {
         surface_id: SurfaceId,
         cols: usize,
         rows: usize,
+        waker: Waker,
     ) -> anyhow::Result<()> {
-        self.add_tab_with_shell(tab_id, surface_id, cols, rows, None)
+        self.add_tab_with_shell(tab_id, surface_id, cols, rows, None, waker)
     }
 
     /// Add a new tab with a custom shell.
@@ -451,8 +456,9 @@ impl Pane {
         cols: usize,
         rows: usize,
         shell: Option<&str>,
+        waker: Waker,
     ) -> anyhow::Result<()> {
-        let terminal = Terminal::new_with_shell(cols, rows, shell)?;
+        let terminal = Terminal::new_with_shell(cols, rows, shell, waker)?;
         let tab = Tab {
             id: tab_id,
             name: format!("Shell {}", self.tabs.len() + 1),
@@ -487,8 +493,9 @@ impl Pane {
         new_surface_id: SurfaceId,
         cols: usize,
         rows: usize,
+        waker: Waker,
     ) -> anyhow::Result<()> {
-        self.split_active_surface_with_shell(direction, new_surface_id, cols, rows, None)
+        self.split_active_surface_with_shell(direction, new_surface_id, cols, rows, None, waker)
     }
 
     /// Split the active panel's focused surface with a custom shell.
@@ -499,10 +506,11 @@ impl Pane {
         cols: usize,
         rows: usize,
         shell: Option<&str>,
+        waker: Waker,
     ) -> anyhow::Result<()> {
         // Pre-create the new terminal before any structural mutation.
         // If Terminal::new fails, panel is untouched.
-        let new_terminal = Terminal::new_with_shell(cols, rows, shell)?;
+        let new_terminal = Terminal::new_with_shell(cols, rows, shell, waker)?;
         if self.tabs.is_empty() {
             return Ok(()); // nothing to split
         }
@@ -746,12 +754,13 @@ impl SurfaceGroupNode {
         new_surface_id: SurfaceId,
         cols: usize,
         rows: usize,
+        waker: Waker,
     ) -> anyhow::Result<()> {
         // Pre-create the new terminal BEFORE any structural mutation.
         // If Terminal::new fails, layout_opt is untouched.
         let new_node = SurfaceNode {
             id: new_surface_id,
-            terminal: Terminal::new(cols, rows)?,
+            terminal: Terminal::new(cols, rows, waker)?,
         };
         let target = self.focused_surface;
         // take/put is safe here: split_with_node is infallible (no error path),
@@ -1115,4 +1124,247 @@ pub struct DividerInfo {
 pub enum SplitDirection {
     Horizontal,
     Vertical,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+
+    fn noop_waker() -> Waker {
+        Arc::new(|| {})
+    }
+
+    // ---- Rect tests ----
+
+    #[test]
+    fn rect_contains_inside() {
+        let r = Rect { x: 10.0, y: 20.0, width: 100.0, height: 50.0 };
+        assert!(r.contains(50.0, 40.0));
+    }
+
+    #[test]
+    fn rect_contains_at_origin() {
+        let r = Rect { x: 10.0, y: 20.0, width: 100.0, height: 50.0 };
+        assert!(r.contains(10.0, 20.0));
+    }
+
+    #[test]
+    fn rect_contains_outside_left() {
+        let r = Rect { x: 10.0, y: 20.0, width: 100.0, height: 50.0 };
+        assert!(!r.contains(5.0, 40.0));
+    }
+
+    #[test]
+    fn rect_contains_outside_bottom() {
+        let r = Rect { x: 10.0, y: 20.0, width: 100.0, height: 50.0 };
+        assert!(!r.contains(50.0, 80.0));
+    }
+
+    #[test]
+    fn rect_contains_at_boundary_exclusive() {
+        let r = Rect { x: 0.0, y: 0.0, width: 100.0, height: 100.0 };
+        // Right edge is exclusive
+        assert!(!r.contains(100.0, 50.0));
+        // Bottom edge is exclusive
+        assert!(!r.contains(50.0, 100.0));
+    }
+
+    #[test]
+    fn rect_split_vertical() {
+        let r = Rect { x: 0.0, y: 0.0, width: 200.0, height: 100.0 };
+        let (r1, r2) = r.split(SplitDirection::Vertical, 0.5);
+        assert_eq!(r1.x, 0.0);
+        assert_eq!(r1.width, 100.0);
+        assert_eq!(r2.x, 100.0);
+        assert_eq!(r2.width, 100.0);
+        assert_eq!(r1.height, 100.0);
+        assert_eq!(r2.height, 100.0);
+    }
+
+    #[test]
+    fn rect_split_horizontal() {
+        let r = Rect { x: 0.0, y: 0.0, width: 200.0, height: 100.0 };
+        let (r1, r2) = r.split(SplitDirection::Horizontal, 0.5);
+        assert_eq!(r1.y, 0.0);
+        assert_eq!(r1.height, 50.0);
+        assert_eq!(r2.y, 50.0);
+        assert_eq!(r2.height, 50.0);
+        assert_eq!(r1.width, 200.0);
+        assert_eq!(r2.width, 200.0);
+    }
+
+    #[test]
+    fn rect_split_unequal_ratio() {
+        let r = Rect { x: 0.0, y: 0.0, width: 300.0, height: 100.0 };
+        let (r1, r2) = r.split(SplitDirection::Vertical, 0.3);
+        assert_eq!(r1.width, 90.0);
+        assert_eq!(r2.width, 210.0);
+        assert_eq!(r2.x, 90.0);
+    }
+
+    #[test]
+    fn rect_approx_eq() {
+        let r1 = Rect { x: 10.0, y: 20.0, width: 100.0, height: 50.0 };
+        let r2 = Rect { x: 10.5, y: 20.3, width: 100.2, height: 50.1 };
+        assert!(r1.approx_eq(&r2));
+    }
+
+    #[test]
+    fn rect_not_approx_eq() {
+        let r1 = Rect { x: 10.0, y: 20.0, width: 100.0, height: 50.0 };
+        let r2 = Rect { x: 12.0, y: 20.0, width: 100.0, height: 50.0 };
+        assert!(!r1.approx_eq(&r2));
+    }
+
+    // ---- PaneNode tests ----
+
+    #[test]
+    fn pane_node_compute_rects_single() {
+        let pane = Pane {
+            id: 1,
+            tabs: vec![],
+            active_tab: 0,
+        };
+        let node = PaneNode::Leaf(pane);
+        let rect = Rect { x: 0.0, y: 0.0, width: 800.0, height: 600.0 };
+        let rects = node.compute_rects(rect);
+        assert_eq!(rects.len(), 1);
+        assert_eq!(rects[0].0, 1);
+        assert_eq!(rects[0].1.width, 800.0);
+    }
+
+    #[test]
+    fn pane_node_compute_rects_split() {
+        let p1 = Pane { id: 1, tabs: vec![], active_tab: 0 };
+        let p2 = Pane { id: 2, tabs: vec![], active_tab: 0 };
+        let node = PaneNode::Split {
+            direction: SplitDirection::Vertical,
+            ratio: 0.5,
+            first: Box::new(PaneNode::Leaf(p1)),
+            second: Box::new(PaneNode::Leaf(p2)),
+        };
+        let rect = Rect { x: 0.0, y: 0.0, width: 800.0, height: 600.0 };
+        let rects = node.compute_rects(rect);
+        assert_eq!(rects.len(), 2);
+        assert_eq!(rects[0].0, 1);
+        assert_eq!(rects[1].0, 2);
+        assert_eq!(rects[0].1.width, 400.0);
+        assert_eq!(rects[1].1.width, 400.0);
+    }
+
+    #[test]
+    fn pane_node_find_pane() {
+        let p1 = Pane { id: 1, tabs: vec![], active_tab: 0 };
+        let p2 = Pane { id: 2, tabs: vec![], active_tab: 0 };
+        let node = PaneNode::Split {
+            direction: SplitDirection::Vertical,
+            ratio: 0.5,
+            first: Box::new(PaneNode::Leaf(p1)),
+            second: Box::new(PaneNode::Leaf(p2)),
+        };
+        assert!(node.find_pane(1).is_some());
+        assert!(node.find_pane(2).is_some());
+        assert!(node.find_pane(99).is_none());
+    }
+
+    #[test]
+    fn pane_node_all_pane_ids() {
+        let p1 = Pane { id: 1, tabs: vec![], active_tab: 0 };
+        let p2 = Pane { id: 2, tabs: vec![], active_tab: 0 };
+        let p3 = Pane { id: 3, tabs: vec![], active_tab: 0 };
+        let node = PaneNode::Split {
+            direction: SplitDirection::Vertical,
+            ratio: 0.5,
+            first: Box::new(PaneNode::Leaf(p1)),
+            second: Box::new(PaneNode::Split {
+                direction: SplitDirection::Horizontal,
+                ratio: 0.5,
+                first: Box::new(PaneNode::Leaf(p2)),
+                second: Box::new(PaneNode::Leaf(p3)),
+            }),
+        };
+        assert_eq!(node.all_pane_ids(), vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn pane_node_next_prev_pane_id() {
+        let p1 = Pane { id: 1, tabs: vec![], active_tab: 0 };
+        let p2 = Pane { id: 2, tabs: vec![], active_tab: 0 };
+        let p3 = Pane { id: 3, tabs: vec![], active_tab: 0 };
+        let node = PaneNode::Split {
+            direction: SplitDirection::Vertical,
+            ratio: 0.5,
+            first: Box::new(PaneNode::Leaf(p1)),
+            second: Box::new(PaneNode::Split {
+                direction: SplitDirection::Horizontal,
+                ratio: 0.5,
+                first: Box::new(PaneNode::Leaf(p2)),
+                second: Box::new(PaneNode::Leaf(p3)),
+            }),
+        };
+        assert_eq!(node.next_pane_id(1), 2);
+        assert_eq!(node.next_pane_id(2), 3);
+        assert_eq!(node.next_pane_id(3), 1); // wraps
+        assert_eq!(node.prev_pane_id(1), 3); // wraps
+        assert_eq!(node.prev_pane_id(2), 1);
+    }
+
+    #[test]
+    fn pane_node_find_divider_at_vertical() {
+        let p1 = Pane { id: 1, tabs: vec![], active_tab: 0 };
+        let p2 = Pane { id: 2, tabs: vec![], active_tab: 0 };
+        let node = PaneNode::Split {
+            direction: SplitDirection::Vertical,
+            ratio: 0.5,
+            first: Box::new(PaneNode::Leaf(p1)),
+            second: Box::new(PaneNode::Leaf(p2)),
+        };
+        let rect = Rect { x: 0.0, y: 0.0, width: 800.0, height: 600.0 };
+        // Divider should be at x=400
+        let result = node.find_divider_at(401.0, 300.0, rect, 5.0);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().direction, SplitDirection::Vertical);
+
+        // Far from divider
+        let result = node.find_divider_at(200.0, 300.0, rect, 5.0);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn pane_node_split_pane_in_place() {
+        let p1 = Pane { id: 1, tabs: vec![], active_tab: 0 };
+        let mut node = PaneNode::Leaf(p1);
+
+        let new_pane = Pane { id: 2, tabs: vec![], active_tab: 0 };
+        let result = node.split_pane_in_place(1, SplitDirection::Vertical, new_pane);
+        assert!(result.is_none()); // success
+
+        let ids = node.all_pane_ids();
+        assert_eq!(ids, vec![1, 2]);
+    }
+
+    #[test]
+    fn pane_node_split_pane_in_place_not_found() {
+        let p1 = Pane { id: 1, tabs: vec![], active_tab: 0 };
+        let mut node = PaneNode::Leaf(p1);
+
+        let new_pane = Pane { id: 2, tabs: vec![], active_tab: 0 };
+        let result = node.split_pane_in_place(99, SplitDirection::Vertical, new_pane);
+        assert!(result.is_some()); // not found, pane returned
+
+        let ids = node.all_pane_ids();
+        assert_eq!(ids, vec![1]); // unchanged
+    }
+
+    // ---- SurfaceGroupLayout tests ----
+
+    #[test]
+    fn surface_group_layout_find_surface_at() {
+        // Cannot easily test with real terminals, but we can test the layout structure
+        // This test validates the basic Rect-based lookup
+        let rect = Rect { x: 0.0, y: 0.0, width: 100.0, height: 100.0 };
+        assert!(rect.contains(50.0, 50.0));
+        assert!(!rect.contains(150.0, 50.0));
+    }
 }

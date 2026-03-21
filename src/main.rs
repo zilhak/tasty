@@ -19,7 +19,7 @@ use clap::Parser;
 use tracing_subscriber::EnvFilter;
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
-use winit::event_loop::{ActiveEventLoop, EventLoop};
+use winit::event_loop::{ActiveEventLoop, EventLoop, EventLoopProxy};
 use winit::keyboard::{Key, ModifiersState, NamedKey};
 use winit::window::{CursorIcon, Window, WindowAttributes, WindowId};
 
@@ -27,6 +27,13 @@ use gpu::GpuState;
 use ipc::server::IpcServer;
 use model::{DividerInfo, Rect, SplitDirection};
 use state::AppState;
+
+/// Custom events sent to the winit event loop from background threads.
+#[derive(Debug)]
+enum AppEvent {
+    /// PTY reader thread produced output -- wake up and redraw.
+    TerminalOutput,
+}
 
 /// Tracks an active divider drag operation.
 #[derive(Clone, Copy)]
@@ -58,10 +65,12 @@ struct App {
     cursor_position: Option<winit::dpi::PhysicalPosition<f64>>,
     /// Active divider drag state.
     dragging_divider: Option<DividerDrag>,
+    /// Proxy to send events from background threads to the winit event loop.
+    proxy: EventLoopProxy<AppEvent>,
 }
 
 impl App {
-    fn new() -> Self {
+    fn new(proxy: EventLoopProxy<AppEvent>) -> Self {
         Self {
             gpu: None,
             state: None,
@@ -72,6 +81,7 @@ impl App {
             ipc_server: None,
             cursor_position: None,
             dragging_divider: None,
+            proxy,
         }
     }
 
@@ -230,26 +240,40 @@ impl App {
         false
     }
 
-    /// Process pending IPC commands.
-    fn process_ipc(&mut self) {
+    /// Process pending IPC commands. Returns true if any commands were processed.
+    fn process_ipc(&mut self) -> bool {
         let ipc = match &self.ipc_server {
             Some(ipc) => ipc,
-            None => return,
+            None => return false,
         };
         let state = match &mut self.state {
             Some(s) => s,
-            None => return,
+            None => return false,
         };
 
+        let mut processed = false;
         while let Ok(cmd) = ipc.try_recv() {
             let response = ipc::handler::handle(state, &cmd.request);
             let _ = cmd.response_tx.send(response);
             self.dirty = true;
+            processed = true;
         }
+        processed
     }
 }
 
-impl ApplicationHandler for App {
+impl ApplicationHandler<AppEvent> for App {
+    fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: AppEvent) {
+        match event {
+            AppEvent::TerminalOutput => {
+                self.dirty = true;
+                if let Some(window) = &self.window {
+                    window.request_redraw();
+                }
+            }
+        }
+    }
+
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.window.is_some() {
             return;
@@ -286,7 +310,14 @@ impl ApplicationHandler for App {
             height: size.height as f32,
         };
         let (cols, rows) = gpu.grid_size_for_rect(&terminal_rect);
-        let state = AppState::new(cols, rows).expect("failed to create app state");
+
+        // Create a waker that sends AppEvent::TerminalOutput to wake the event loop.
+        let proxy = self.proxy.clone();
+        let waker: crate::terminal::Waker = Arc::new(move || {
+            let _ = proxy.send_event(AppEvent::TerminalOutput);
+        });
+
+        let state = AppState::new(cols, rows, waker).expect("failed to create app state");
         let _ = font_size; // font_size wired via CellRenderer::new in GpuState::new
 
         // Start IPC server
@@ -312,6 +343,9 @@ impl ApplicationHandler for App {
         } else {
             false
         };
+
+        // Track whether dirty was already set before this event.
+        let was_dirty = self.dirty;
 
         match event {
             WindowEvent::CloseRequested => {
@@ -682,17 +716,22 @@ impl ApplicationHandler for App {
                     }
                 }
 
-                // Request next frame. VSync (PresentMode::Fifo) limits to monitor refresh
-                // rate (~60fps) so this is not a true busy-loop CPU-wise. The GPU work only
-                // happens when self.dirty is true. For true event-driven redraw we would need
-                // EventLoopProxy to wake the main thread from the PTY reader, which is a
-                // larger refactor.
-                // TODO: use EventLoopProxy for event-driven redraw instead of continuous request_redraw
-                if let Some(window) = &self.window {
-                    window.request_redraw();
+                // If events processed during this frame dirtied us again, request
+                // another frame so those changes are rendered promptly.
+                if self.dirty {
+                    if let Some(window) = &self.window {
+                        window.request_redraw();
+                    }
                 }
             }
             _ => {}
+        }
+
+        // If any non-RedrawRequested event made us dirty, request a redraw.
+        if self.dirty && !was_dirty {
+            if let Some(window) = &self.window {
+                window.request_redraw();
+            }
         }
     }
 }
@@ -714,8 +753,9 @@ fn main() -> Result<()> {
     }
 
     // Otherwise, run the GUI
-    let event_loop = EventLoop::new()?;
-    let mut app = App::new();
+    let event_loop = EventLoop::<AppEvent>::with_user_event().build()?;
+    let proxy = event_loop.create_proxy();
+    let mut app = App::new(proxy);
     event_loop.run_app(&mut app)?;
 
     Ok(())

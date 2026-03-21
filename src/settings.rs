@@ -228,3 +228,47 @@ impl Settings {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_settings_valid() {
+        let settings = Settings::default();
+        assert!(!settings.general.shell.is_empty());
+        assert!(settings.appearance.font_size > 0.0);
+        assert!(settings.appearance.sidebar_width > 0.0);
+    }
+
+    #[test]
+    fn settings_serialization_roundtrip() {
+        let settings = Settings::default();
+        let toml_str = toml::to_string_pretty(&settings).unwrap();
+        let parsed: Settings = toml::from_str(&toml_str).unwrap();
+        assert_eq!(parsed.appearance.font_size, settings.appearance.font_size);
+        assert_eq!(parsed.general.shell, settings.general.shell);
+        assert_eq!(parsed.notification.coalesce_ms, settings.notification.coalesce_ms);
+    }
+
+    #[test]
+    fn settings_partial_toml_uses_defaults() {
+        let partial = r#"
+[appearance]
+font_size = 18.0
+"#;
+        let parsed: Settings = toml::from_str(partial).unwrap();
+        assert_eq!(parsed.appearance.font_size, 18.0);
+        // Other fields should be defaults
+        assert!(parsed.notification.enabled);
+        assert!(!parsed.general.shell.is_empty());
+    }
+
+    #[test]
+    fn settings_empty_toml_uses_all_defaults() {
+        let parsed: Settings = toml::from_str("").unwrap();
+        let defaults = Settings::default();
+        assert_eq!(parsed.appearance.font_size, defaults.appearance.font_size);
+        assert_eq!(parsed.notification.coalesce_ms, defaults.notification.coalesce_ms);
+    }
+}

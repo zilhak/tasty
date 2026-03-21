@@ -1,5 +1,5 @@
 use std::io::{Read, Write};
-use std::sync::{LazyLock, mpsc};
+use std::sync::{Arc, LazyLock, mpsc};
 use std::thread;
 
 use anyhow::Result;
@@ -11,6 +11,9 @@ use termwiz::escape::esc::{Esc, EscCode};
 use termwiz::escape::parser::Parser;
 use termwiz::escape::{Action, ControlCode, OperatingSystemCommand};
 use termwiz::surface::{Change, CursorVisibility, Position, Surface};
+
+/// Callback to wake the event loop when PTY data arrives.
+pub type Waker = Arc<dyn Fn() + Send + Sync>;
 
 /// Events emitted by the terminal during processing.
 pub struct TerminalEvent {
@@ -59,13 +62,16 @@ pub struct Terminal {
 }
 
 impl Terminal {
-    pub fn new(cols: usize, rows: usize) -> Result<Self> {
-        Self::new_with_shell(cols, rows, None)
+    pub fn new(cols: usize, rows: usize, waker: Waker) -> Result<Self> {
+        Self::new_with_shell(cols, rows, None, waker)
     }
 
     /// Create a terminal with an optional custom shell. If `shell` is `None` or empty,
     /// the platform default shell is used.
-    pub fn new_with_shell(cols: usize, rows: usize, shell: Option<&str>) -> Result<Self> {
+    ///
+    /// The `waker` callback is invoked from the PTY reader thread whenever new data
+    /// arrives, allowing the main event loop to wake up and process the output.
+    pub fn new_with_shell(cols: usize, rows: usize, shell: Option<&str>, waker: Waker) -> Result<Self> {
         let pty_system = NativePtySystem::default();
 
         let pair = pty_system.openpty(PtySize {
@@ -99,6 +105,7 @@ impl Terminal {
                         if tx.send(buf[..n].to_vec()).is_err() {
                             break;
                         }
+                        waker(); // Wake the event loop
                     }
                     Err(_) => break,
                 }
