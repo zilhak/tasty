@@ -333,18 +333,40 @@ impl ApplicationHandler for App {
                 self.modifiers = modifiers.state();
             }
             WindowEvent::KeyboardInput { event, .. } => {
-                if egui_consumed {
-                    return;
-                }
-
                 if event.state != ElementState::Pressed {
                     return;
                 }
 
-                // Check shortcuts first
+                // Always handle Escape to close overlays (settings, notifications)
+                if event.logical_key == Key::Named(NamedKey::Escape) {
+                    if let Some(state) = &mut self.state {
+                        if state.settings_open {
+                            state.settings_open = false;
+                            state.settings_ui_state = crate::settings_ui::SettingsUiState::new();
+                            self.dirty = true;
+                            return;
+                        }
+                        if state.notification_panel_open {
+                            state.notification_panel_open = false;
+                            self.dirty = true;
+                            return;
+                        }
+                    }
+                }
+
+                // Always handle app-level shortcuts (e.g. Ctrl+, to toggle settings)
+                // even when egui has focus
                 if self.handle_shortcut(&event.logical_key, self.modifiers) {
+                    self.dirty = true;
                     return;
                 }
+
+                // If egui consumed the event (e.g. typing in text field), don't send to terminal
+                if egui_consumed {
+                    return;
+                }
+
+                // Forward to terminal
 
                 if let Some(state) = &mut self.state {
                     if let Some(terminal) = state.focused_terminal_mut() {
