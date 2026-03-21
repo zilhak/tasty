@@ -21,6 +21,7 @@ struct App {
     gpu: Option<GpuState>,
     terminal: Option<Terminal>,
     window: Option<Arc<Window>>,
+    dirty: bool,
 }
 
 impl App {
@@ -29,6 +30,7 @@ impl App {
             gpu: None,
             terminal: None,
             window: None,
+            dirty: true,
         }
     }
 }
@@ -76,6 +78,7 @@ impl ApplicationHandler for App {
                         terminal.resize(cols, rows);
                     }
                 }
+                self.dirty = true;
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 if event.state != ElementState::Pressed {
@@ -130,8 +133,12 @@ impl ApplicationHandler for App {
                     false
                 };
 
-                // Only render when content changed or on first frame
-                if changed || self.gpu.is_some() {
+                if changed {
+                    self.dirty = true;
+                }
+
+                if self.dirty {
+                    self.dirty = false;
                     if let (Some(gpu), Some(terminal)) = (&mut self.gpu, &self.terminal) {
                         match gpu.render(terminal.surface()) {
                             Ok(_) => {}
