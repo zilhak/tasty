@@ -18,15 +18,30 @@ use anyhow::Result;
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
 use winit::application::ApplicationHandler;
-use winit::event::{ElementState, WindowEvent};
+use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::keyboard::{Key, ModifiersState, NamedKey};
-use winit::window::{Window, WindowAttributes, WindowId};
+use winit::window::{CursorIcon, Window, WindowAttributes, WindowId};
 
 use gpu::GpuState;
 use ipc::server::IpcServer;
-use model::{Rect, SplitDirection};
+use model::{DividerInfo, Rect, SplitDirection};
 use state::AppState;
+
+/// Tracks an active divider drag operation.
+#[derive(Clone, Copy)]
+enum DividerDragKind {
+    /// Dragging a pane-level split divider.
+    Pane,
+    /// Dragging a surface-level split divider (within a SurfaceGroup).
+    Surface,
+}
+
+#[derive(Clone, Copy)]
+struct DividerDrag {
+    info: DividerInfo,
+    kind: DividerDragKind,
+}
 
 struct App {
     // gpu must drop before window so the wgpu surface is released first
@@ -39,6 +54,10 @@ struct App {
     window_focused: bool,
     /// IPC server for CLI communication.
     ipc_server: Option<IpcServer>,
+    /// Current cursor position in physical pixels.
+    cursor_position: Option<winit::dpi::PhysicalPosition<f64>>,
+    /// Active divider drag state.
+    dragging_divider: Option<DividerDrag>,
 }
 
 impl App {
@@ -51,6 +70,8 @@ impl App {
             modifiers: ModifiersState::empty(),
             window_focused: true,
             ipc_server: None,
+            cursor_position: None,
+            dragging_divider: None,
         }
     }
 
@@ -361,8 +382,11 @@ impl ApplicationHandler for App {
                     return;
                 }
 
-                // If egui consumed the event (e.g. typing in text field), don't send to terminal
-                if egui_consumed {
+                // If egui consumed the event OR an overlay is open, don't send to terminal
+                let overlay_open = self.state.as_ref()
+                    .map(|s| s.settings_open || s.notification_panel_open)
+                    .unwrap_or(false);
+                if egui_consumed || overlay_open {
                     return;
                 }
 
@@ -407,6 +431,149 @@ impl ApplicationHandler for App {
                             Key::Named(NamedKey::F11) => terminal.send_bytes(b"\x1b[23~"),
                             Key::Named(NamedKey::F12) => terminal.send_bytes(b"\x1b[24~"),
                             _ => {}
+                        }
+                    }
+                }
+            }
+            WindowEvent::CursorMoved { position, .. } => {
+                self.cursor_position = Some(position);
+                let overlay_open = self.state.as_ref()
+                    .map(|s| s.settings_open || s.notification_panel_open)
+                    .unwrap_or(false);
+                if egui_consumed || overlay_open {
+                    // Don't do terminal area mouse handling when overlay is open
+                    return;
+                }
+                if let (Some(gpu), Some(state), Some(window)) = (&self.gpu, &mut self.state, &self.window) {
+                    let terminal_rect = Self::compute_terminal_rect_with_sidebar(gpu, state.sidebar_width);
+                    let x = position.x as f32;
+                    let y = position.y as f32;
+
+                    if let Some(drag) = self.dragging_divider {
+                        // Dragging a divider -- update ratio
+                        let changed = match drag.kind {
+                            DividerDragKind::Pane => state.update_pane_divider(&drag.info, x, y, terminal_rect),
+                            DividerDragKind::Surface => state.update_surface_divider(&drag.info, x, y, terminal_rect),
+                        };
+                        if changed {
+                            let cw = gpu.cell_width();
+                            let ch = gpu.cell_height();
+                            state.resize_all(terminal_rect, cw, ch);
+                            self.dirty = true;
+                        }
+                    } else if !egui_consumed {
+                        // Not dragging -- check for divider hover to set cursor icon
+                        let threshold = 4.0;
+                        let pane_divider = state.find_pane_divider_at(x, y, terminal_rect, threshold);
+                        let surface_divider = state.find_surface_divider_at(x, y, terminal_rect, threshold);
+                        let divider = pane_divider.or(surface_divider);
+                        match divider {
+                            Some(info) => {
+                                let cursor = match info.direction {
+                                    SplitDirection::Vertical => CursorIcon::ColResize,
+                                    SplitDirection::Horizontal => CursorIcon::RowResize,
+                                };
+                                window.set_cursor(cursor);
+                            }
+                            None => {
+                                window.set_cursor(CursorIcon::Default);
+                            }
+                        }
+                    }
+                }
+            }
+            WindowEvent::CursorLeft { .. } => {
+                self.cursor_position = None;
+                if let Some(window) = &self.window {
+                    window.set_cursor(CursorIcon::Default);
+                }
+            }
+            WindowEvent::MouseInput { state: button_state, button, .. } => {
+                let overlay_open = self.state.as_ref()
+                    .map(|s| s.settings_open || s.notification_panel_open)
+                    .unwrap_or(false);
+                if egui_consumed || overlay_open {
+                    // egui handled the click or overlay is open
+                    if button_state == ElementState::Released {
+                        self.dragging_divider = None;
+                    }
+                    return;
+                }
+                if button == MouseButton::Left {
+                    if let (Some(gpu), Some(state)) = (&self.gpu, &mut self.state) {
+                        let terminal_rect = Self::compute_terminal_rect_with_sidebar(gpu, state.sidebar_width);
+
+                        if let Some(pos) = self.cursor_position {
+                            let x = pos.x as f32;
+                            let y = pos.y as f32;
+
+                            if button_state == ElementState::Pressed {
+                                // Check if clicking on a divider to start drag
+                                let threshold = 4.0;
+                                let pane_divider = state.find_pane_divider_at(x, y, terminal_rect, threshold);
+                                let surface_divider = state.find_surface_divider_at(x, y, terminal_rect, threshold);
+
+                                if let Some(info) = pane_divider {
+                                    self.dragging_divider = Some(DividerDrag {
+                                        info,
+                                        kind: DividerDragKind::Pane,
+                                    });
+                                } else if let Some(info) = surface_divider {
+                                    self.dragging_divider = Some(DividerDrag {
+                                        info,
+                                        kind: DividerDragKind::Surface,
+                                    });
+                                } else {
+                                    // Click to focus pane
+                                    if state.focus_pane_at_position(x, y, terminal_rect) {
+                                        self.dirty = true;
+                                    }
+                                    // Click to focus surface within SurfaceGroup
+                                    if state.focus_surface_at_position(x, y, terminal_rect) {
+                                        self.dirty = true;
+                                    }
+                                }
+                            } else if button_state == ElementState::Released {
+                                if self.dragging_divider.is_some() {
+                                    self.dragging_divider = None;
+                                    // Resize terminals after drag ends
+                                    let cw = gpu.cell_width();
+                                    let ch = gpu.cell_height();
+                                    state.resize_all(terminal_rect, cw, ch);
+                                    self.dirty = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            WindowEvent::MouseWheel { delta, .. } => {
+                let overlay_open = self.state.as_ref()
+                    .map(|s| s.settings_open || s.notification_panel_open)
+                    .unwrap_or(false);
+                if !egui_consumed && !overlay_open {
+                    if let Some(state) = &mut self.state {
+                        if let Some(terminal) = state.focused_terminal_mut() {
+                            let lines = match delta {
+                                MouseScrollDelta::LineDelta(_, y) => y as i32,
+                                MouseScrollDelta::PixelDelta(pos) => {
+                                    // Convert pixel delta to approximate line count
+                                    (pos.y / 20.0) as i32
+                                }
+                            };
+                            // Send scroll sequences to the terminal
+                            // Scroll up = arrow up sequences, scroll down = arrow down
+                            if lines > 0 {
+                                // Scroll up
+                                for _ in 0..lines.unsigned_abs() {
+                                    terminal.send_bytes(b"\x1b[A");
+                                }
+                            } else if lines < 0 {
+                                // Scroll down
+                                for _ in 0..lines.unsigned_abs() {
+                                    terminal.send_bytes(b"\x1b[B");
+                                }
+                            }
                         }
                     }
                 }

@@ -93,6 +93,7 @@ cmux 분석 기반 계층적 데이터 모델. Workspace → PaneLayout → Pane
 - egui 좌측 사이드바 (워크스페이스 목록) + Pane별 독립 탭 바
 - 두 가지 분할: Pane 분할(물리적 화면, 독립 탭 바) + SurfaceGroup 분할(탭 내부)
 - 키보드 단축키: Ctrl+Shift+N(워크스페이스), Ctrl+Shift+T(탭), Ctrl+Shift+E/O(Pane분할), Ctrl+Shift+D/Ctrl+Shift+J(Surface분할), Alt+1~9(WS전환), Ctrl+Tab/Shift+Tab(탭전환), Alt+Arrow(Pane포커스), Ctrl+Shift+I(알림)
+- 마우스 인터랙션: 클릭으로 Pane/Surface 포커스, 디바이더 드래그로 분할 비율 조절, 호버 시 리사이즈 커서, 마우스 스크롤
 - 분할/리사이즈 시 모든 터미널 자동 크기 재조정
 - 상세: [features.md](features.md)
 

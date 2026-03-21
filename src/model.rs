@@ -15,6 +15,19 @@ pub struct Rect {
 }
 
 impl Rect {
+    /// Check if a point (x, y) is inside this rectangle.
+    pub fn contains(&self, x: f32, y: f32) -> bool {
+        x >= self.x && x < self.x + self.width && y >= self.y && y < self.y + self.height
+    }
+
+    /// Check if two rects are approximately equal (within 1px tolerance).
+    pub fn approx_eq(&self, other: &Rect) -> bool {
+        (self.x - other.x).abs() < 1.0
+            && (self.y - other.y).abs() < 1.0
+            && (self.width - other.width).abs() < 1.0
+            && (self.height - other.height).abs() < 1.0
+    }
+
     pub fn split(self, direction: SplitDirection, ratio: f32) -> (Rect, Rect) {
         match direction {
             SplitDirection::Vertical => {
@@ -321,6 +334,57 @@ impl PaneNode {
         }
         let pos = ids.iter().position(|&id| id == current).unwrap_or(0);
         ids[(pos + ids.len() - 1) % ids.len()]
+    }
+
+    /// Find a divider near the given point. Returns divider info if the cursor
+    /// is within `threshold` pixels of a split border.
+    pub fn find_divider_at(&self, x: f32, y: f32, rect: Rect, threshold: f32) -> Option<DividerInfo> {
+        match self {
+            PaneNode::Leaf(_) => None,
+            PaneNode::Split { direction, ratio, first, second } => {
+                let (r1, r2) = rect.split(*direction, *ratio);
+                let divider_pos = match direction {
+                    SplitDirection::Vertical => r1.x + r1.width,
+                    SplitDirection::Horizontal => r1.y + r1.height,
+                };
+                let cursor_pos = match direction {
+                    SplitDirection::Vertical => x,
+                    SplitDirection::Horizontal => y,
+                };
+                // Check if cursor is within threshold of this divider
+                // and within the perpendicular bounds
+                let in_bounds = match direction {
+                    SplitDirection::Vertical => y >= rect.y && y < rect.y + rect.height,
+                    SplitDirection::Horizontal => x >= rect.x && x < rect.x + rect.width,
+                };
+                if in_bounds && (cursor_pos - divider_pos).abs() < threshold {
+                    return Some(DividerInfo {
+                        direction: *direction,
+                        split_rect: rect,
+                    });
+                }
+                // Recurse into children
+                first.find_divider_at(x, y, r1, threshold)
+                    .or_else(|| second.find_divider_at(x, y, r2, threshold))
+            }
+        }
+    }
+
+    /// Update the ratio of the split node whose rect approximately matches `split_rect`.
+    /// Returns true if a matching split was found and updated.
+    pub fn update_ratio_for_rect(&mut self, split_rect: Rect, new_ratio: f32, current_rect: Rect) -> bool {
+        match self {
+            PaneNode::Leaf(_) => false,
+            PaneNode::Split { direction, ratio, first, second } => {
+                if current_rect.approx_eq(&split_rect) {
+                    *ratio = new_ratio.clamp(0.1, 0.9);
+                    return true;
+                }
+                let (r1, r2) = current_rect.split(*direction, *ratio);
+                first.update_ratio_for_rect(split_rect, new_ratio, r1)
+                    || second.update_ratio_for_rect(split_rect, new_ratio, r2)
+            }
+        }
     }
 }
 
@@ -972,9 +1036,82 @@ impl SurfaceGroupLayout {
             }
         }
     }
+
+    /// Find a divider near the given point within this surface group layout.
+    pub fn find_divider_at(&self, x: f32, y: f32, rect: Rect, threshold: f32) -> Option<DividerInfo> {
+        match self {
+            SurfaceGroupLayout::Single(_) => None,
+            SurfaceGroupLayout::Split { direction, ratio, first, second, .. } => {
+                let (r1, r2) = rect.split(*direction, *ratio);
+                let divider_pos = match direction {
+                    SplitDirection::Vertical => r1.x + r1.width,
+                    SplitDirection::Horizontal => r1.y + r1.height,
+                };
+                let cursor_pos = match direction {
+                    SplitDirection::Vertical => x,
+                    SplitDirection::Horizontal => y,
+                };
+                let in_bounds = match direction {
+                    SplitDirection::Vertical => y >= rect.y && y < rect.y + rect.height,
+                    SplitDirection::Horizontal => x >= rect.x && x < rect.x + rect.width,
+                };
+                if in_bounds && (cursor_pos - divider_pos).abs() < threshold {
+                    return Some(DividerInfo {
+                        direction: *direction,
+                        split_rect: rect,
+                    });
+                }
+                first.find_divider_at(x, y, r1, threshold)
+                    .or_else(|| second.find_divider_at(x, y, r2, threshold))
+            }
+        }
+    }
+
+    /// Update the ratio of the split node whose rect approximately matches `split_rect`.
+    pub fn update_ratio_for_rect(&mut self, split_rect: Rect, new_ratio: f32, current_rect: Rect) -> bool {
+        match self {
+            SurfaceGroupLayout::Single(_) => false,
+            SurfaceGroupLayout::Split { direction, ratio, first, second, .. } => {
+                if current_rect.approx_eq(&split_rect) {
+                    *ratio = new_ratio.clamp(0.1, 0.9);
+                    return true;
+                }
+                let (r1, r2) = current_rect.split(*direction, *ratio);
+                first.update_ratio_for_rect(split_rect, new_ratio, r1)
+                    || second.update_ratio_for_rect(split_rect, new_ratio, r2)
+            }
+        }
+    }
+
+    /// Find which surface contains the given point.
+    pub fn find_surface_at(&self, x: f32, y: f32, rect: Rect) -> Option<SurfaceId> {
+        match self {
+            SurfaceGroupLayout::Single(node) => {
+                if rect.contains(x, y) {
+                    Some(node.id)
+                } else {
+                    None
+                }
+            }
+            SurfaceGroupLayout::Split { direction, ratio, first, second, .. } => {
+                let (r1, r2) = rect.split(*direction, *ratio);
+                first.find_surface_at(x, y, r1)
+                    .or_else(|| second.find_surface_at(x, y, r2))
+            }
+        }
+    }
 }
 
-#[derive(Clone, Copy, PartialEq)]
+/// Information about a divider (split border) that the cursor is near.
+#[derive(Debug, Clone, Copy)]
+pub struct DividerInfo {
+    /// The direction of the split this divider belongs to.
+    pub direction: SplitDirection,
+    /// The rect of the parent split node that owns this divider.
+    pub split_rect: Rect,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SplitDirection {
     Horizontal,
     Vertical,

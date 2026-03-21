@@ -41,11 +41,10 @@ pub fn draw_settings_window(
 
     egui::Window::new("Settings")
         .open(&mut is_open)
-        .default_width(520.0)
-        .default_height(420.0)
-        .resizable(true)
+        .fixed_size(egui::vec2(520.0, 420.0))
         .collapsible(false)
         .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+        .interactable(true)
         .show(ctx, |ui| {
             // Tab bar
             ui.horizontal(|ui| {

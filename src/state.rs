@@ -1,5 +1,5 @@
 use crate::hooks::HookManager;
-use crate::model::{PaneId, Rect, SplitDirection, Workspace};
+use crate::model::{DividerInfo, PaneId, Rect, SplitDirection, Workspace};
 use crate::notification::NotificationStore;
 use crate::settings::Settings;
 use crate::settings_ui::SettingsUiState;
@@ -563,5 +563,165 @@ impl AppState {
     /// Get the next tab ID.
     pub fn next_tab_id(&mut self) -> u32 {
         self.next_ids.next_tab()
+    }
+
+    /// Focus the pane at the given physical pixel position within the terminal rect.
+    /// Returns true if focus changed.
+    pub fn focus_pane_at_position(&mut self, x: f32, y: f32, terminal_rect: Rect) -> bool {
+        let ws = self.active_workspace();
+        let pane_rects = ws.pane_layout().compute_rects(terminal_rect);
+        for (pane_id, rect) in pane_rects {
+            if rect.contains(x, y) {
+                let old = self.active_workspace().focused_pane;
+                if old != pane_id {
+                    self.active_workspace_mut().focused_pane = pane_id;
+                    return true;
+                }
+                return false;
+            }
+        }
+        false
+    }
+
+    /// Focus the surface (within a SurfaceGroup) at the given physical pixel position.
+    /// This should be called after focus_pane_at_position to also focus within the pane's panel.
+    /// Returns true if focus changed.
+    pub fn focus_surface_at_position(&mut self, x: f32, y: f32, terminal_rect: Rect) -> bool {
+        let ws = self.active_workspace();
+        let focused_id = ws.focused_pane;
+        let pane_rects = ws.pane_layout().compute_rects(terminal_rect);
+
+        // Find the focused pane's rect
+        let pane_rect = pane_rects.into_iter().find(|(id, _)| *id == focused_id);
+        let pane_rect = match pane_rect {
+            Some((_, r)) => r,
+            None => return false,
+        };
+
+        // Account for tab bar height
+        let ws = self.active_workspace();
+        let tab_count = ws.pane_layout().find_pane(focused_id)
+            .map(|p| p.tabs.len())
+            .unwrap_or(0);
+        let tab_bar_h = if tab_count > 1 { 24.0 } else { 0.0 };
+        let content_rect = Rect {
+            x: pane_rect.x,
+            y: pane_rect.y + tab_bar_h,
+            width: pane_rect.width,
+            height: (pane_rect.height - tab_bar_h).max(1.0),
+        };
+
+        let ws = self.active_workspace_mut();
+        let pane = match ws.pane_layout_mut().find_pane_mut(focused_id) {
+            Some(p) => p,
+            None => return false,
+        };
+
+        let panel = match pane.active_panel_mut() {
+            Some(p) => p,
+            None => return false,
+        };
+
+        match panel {
+            crate::model::Panel::SurfaceGroup(group) => {
+                if let Some(surface_id) = group.layout().find_surface_at(x, y, content_rect) {
+                    if group.focused_surface != surface_id {
+                        group.focused_surface = surface_id;
+                        return true;
+                    }
+                }
+                false
+            }
+            _ => false,
+        }
+    }
+
+    /// Find a pane-level divider at the given position.
+    pub fn find_pane_divider_at(&self, x: f32, y: f32, terminal_rect: Rect, threshold: f32) -> Option<DividerInfo> {
+        let ws = self.active_workspace();
+        ws.pane_layout().find_divider_at(x, y, terminal_rect, threshold)
+    }
+
+    /// Find a surface-level divider at the given position (within the focused pane's panel).
+    pub fn find_surface_divider_at(&self, x: f32, y: f32, terminal_rect: Rect, threshold: f32) -> Option<DividerInfo> {
+        let ws = self.active_workspace();
+        let focused_id = ws.focused_pane;
+        let pane_rects = ws.pane_layout().compute_rects(terminal_rect);
+
+        let pane_rect = pane_rects.into_iter().find(|(id, _)| *id == focused_id);
+        let pane_rect = match pane_rect {
+            Some((_, r)) => r,
+            None => return None,
+        };
+
+        let pane = ws.pane_layout().find_pane(focused_id)?;
+        let tab_bar_h = if pane.tabs.len() > 1 { 24.0 } else { 0.0 };
+        let content_rect = Rect {
+            x: pane_rect.x,
+            y: pane_rect.y + tab_bar_h,
+            width: pane_rect.width,
+            height: (pane_rect.height - tab_bar_h).max(1.0),
+        };
+
+        let panel = pane.active_panel()?;
+        match panel {
+            crate::model::Panel::SurfaceGroup(group) => {
+                group.layout().find_divider_at(x, y, content_rect, threshold)
+            }
+            _ => None,
+        }
+    }
+
+    /// Update a pane-level split ratio based on a divider drag.
+    pub fn update_pane_divider(&mut self, divider: &DividerInfo, x: f32, y: f32, terminal_rect: Rect) -> bool {
+        let new_ratio = match divider.direction {
+            SplitDirection::Vertical => (x - divider.split_rect.x) / divider.split_rect.width,
+            SplitDirection::Horizontal => (y - divider.split_rect.y) / divider.split_rect.height,
+        };
+        let ws = self.active_workspace_mut();
+        ws.pane_layout_mut().update_ratio_for_rect(divider.split_rect, new_ratio, terminal_rect)
+    }
+
+    /// Update a surface-level split ratio based on a divider drag.
+    pub fn update_surface_divider(&mut self, divider: &DividerInfo, x: f32, y: f32, terminal_rect: Rect) -> bool {
+        let new_ratio = match divider.direction {
+            SplitDirection::Vertical => (x - divider.split_rect.x) / divider.split_rect.width,
+            SplitDirection::Horizontal => (y - divider.split_rect.y) / divider.split_rect.height,
+        };
+
+        let ws = self.active_workspace_mut();
+        let focused_id = ws.focused_pane;
+        let pane_rects = ws.pane_layout().compute_rects(terminal_rect);
+
+        let pane_rect = pane_rects.into_iter().find(|(id, _)| *id == focused_id);
+        let pane_rect = match pane_rect {
+            Some((_, r)) => r,
+            None => return false,
+        };
+
+        let pane = match ws.pane_layout_mut().find_pane_mut(focused_id) {
+            Some(p) => p,
+            None => return false,
+        };
+
+        let tab_bar_h = if pane.tabs.len() > 1 { 24.0 } else { 0.0 };
+        let content_rect = Rect {
+            x: pane_rect.x,
+            y: pane_rect.y + tab_bar_h,
+            width: pane_rect.width,
+            height: (pane_rect.height - tab_bar_h).max(1.0),
+        };
+
+        let panel = match pane.active_panel_mut() {
+            Some(p) => p,
+            None => return false,
+        };
+
+        match panel {
+            crate::model::Panel::SurfaceGroup(group) => {
+                group.layout_mut().update_ratio_for_rect(divider.split_rect, new_ratio, content_rect)
+            }
+            _ => false,
+        }
     }
 }
