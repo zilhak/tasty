@@ -1,6 +1,9 @@
 use anyhow::Result;
+use termwiz::surface::Surface;
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
+
+use crate::renderer::CellRenderer;
 
 pub struct GpuState {
     surface: wgpu::Surface<'static>,
@@ -8,6 +11,7 @@ pub struct GpuState {
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     size: PhysicalSize<u32>,
+    renderer: CellRenderer,
 }
 
 impl GpuState {
@@ -73,12 +77,15 @@ impl GpuState {
         };
         surface.configure(&device, &config);
 
+        let renderer = CellRenderer::new(&device, &queue, surface_format, 14.0);
+
         Ok(Self {
             surface,
             device,
             queue,
             config,
             size,
+            renderer,
         })
     }
 
@@ -90,9 +97,14 @@ impl GpuState {
         self.config.width = new_size.width;
         self.config.height = new_size.height;
         self.surface.configure(&self.device, &self.config);
+        self.renderer
+            .resize(&self.queue, new_size.width, new_size.height);
     }
 
-    pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
+    pub fn render(&mut self, terminal_surface: &Surface) -> Result<(), wgpu::SurfaceError> {
+        // Prepare cell instance data from terminal content
+        self.renderer.prepare(terminal_surface, &self.queue);
+
         let output = self.surface.get_current_texture()?;
         let view = output
             .texture
@@ -105,16 +117,16 @@ impl GpuState {
             });
 
         {
-            let _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("clear_pass"),
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("terminal_pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.1,
-                            g: 0.1,
-                            b: 0.12,
+                            r: 0.102,
+                            g: 0.102,
+                            b: 0.118,
                             a: 1.0,
                         }),
                         store: wgpu::StoreOp::Store,
@@ -124,12 +136,19 @@ impl GpuState {
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
+
+            self.renderer.render(&mut render_pass);
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
 
         Ok(())
+    }
+
+    /// Compute terminal grid dimensions from current window size.
+    pub fn grid_size(&self) -> (usize, usize) {
+        self.renderer.grid_size(self.size.width, self.size.height)
     }
 
     pub fn device(&self) -> &wgpu::Device {

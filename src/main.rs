@@ -1,4 +1,6 @@
+mod font;
 mod gpu;
+mod renderer;
 mod terminal;
 
 use anyhow::Result;
@@ -45,7 +47,9 @@ impl ApplicationHandler for App {
         let gpu = pollster::block_on(GpuState::new(&window))
             .expect("failed to initialize GPU");
 
-        let terminal = Terminal::new(80, 24).expect("failed to create terminal");
+        // Compute terminal grid size from window dimensions
+        let (cols, rows) = gpu.grid_size();
+        let terminal = Terminal::new(cols, rows).expect("failed to create terminal");
 
         self.window = Some(window);
         self.gpu = Some(gpu);
@@ -60,6 +64,12 @@ impl ApplicationHandler for App {
             WindowEvent::Resized(new_size) => {
                 if let Some(gpu) = &mut self.gpu {
                     gpu.resize(new_size);
+
+                    // Resize terminal grid to match new window
+                    let (cols, rows) = gpu.grid_size();
+                    if let Some(terminal) = &mut self.terminal {
+                        terminal.resize(cols, rows);
+                    }
                 }
             }
             WindowEvent::KeyboardInput { event, .. } => {
@@ -89,8 +99,8 @@ impl ApplicationHandler for App {
                     terminal.process();
                 }
 
-                if let Some(gpu) = &mut self.gpu {
-                    match gpu.render() {
+                if let (Some(gpu), Some(terminal)) = (&mut self.gpu, &self.terminal) {
+                    match gpu.render(terminal.surface()) {
                         Ok(_) => {}
                         Err(wgpu::SurfaceError::Lost) => {
                             if let Some(window) = &self.window {

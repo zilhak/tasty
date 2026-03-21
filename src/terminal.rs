@@ -99,7 +99,7 @@ impl Terminal {
                     Action::CSI(csi) => {
                         use termwiz::escape::csi::CSI;
                         match csi {
-                            CSI::Sgr(sgr) => Some(Change::AllAttributes(
+                            CSI::Sgr(_sgr) => Some(Change::AllAttributes(
                                 termwiz::cell::CellAttributes::default(),
                             )),
                             _ => None,
