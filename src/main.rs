@@ -1,7 +1,10 @@
 mod font;
 mod gpu;
+mod model;
 mod renderer;
+mod state;
 mod terminal;
+mod ui;
 
 use std::sync::Arc;
 
@@ -10,28 +13,136 @@ use tracing_subscriber::EnvFilter;
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
-use winit::keyboard::{Key, NamedKey};
+use winit::keyboard::{Key, ModifiersState, NamedKey};
 use winit::window::{Window, WindowAttributes, WindowId};
 
 use gpu::GpuState;
-use terminal::Terminal;
+use model::{Rect, SplitDirection};
+use state::AppState;
 
 struct App {
     // gpu must drop before window so the wgpu surface is released first
     gpu: Option<GpuState>,
-    terminal: Option<Terminal>,
+    state: Option<AppState>,
     window: Option<Arc<Window>>,
     dirty: bool,
+    modifiers: ModifiersState,
 }
 
 impl App {
     fn new() -> Self {
         Self {
             gpu: None,
-            terminal: None,
+            state: None,
             window: None,
             dirty: true,
+            modifiers: ModifiersState::empty(),
         }
+    }
+
+
+    /// Compute the terminal rect without borrowing self (takes gpu ref directly).
+    fn compute_terminal_rect(gpu: &GpuState) -> Rect {
+        let size = gpu.size();
+        let sf = gpu.scale_factor();
+        let sidebar_w = 180.0 * sf;
+        let tab_h = 32.0 * sf;
+        Rect {
+            x: sidebar_w,
+            y: tab_h,
+            width: (size.width as f32 - sidebar_w).max(1.0),
+            height: (size.height as f32 - tab_h).max(1.0),
+        }
+    }
+
+    /// Handle keyboard shortcuts. Returns true if the event was consumed by a shortcut.
+    fn handle_shortcut(&mut self, key: &Key, mods: ModifiersState) -> bool {
+        let ctrl = mods.control_key();
+        let shift = mods.shift_key();
+        let alt = mods.alt_key();
+
+        let state = match &mut self.state {
+            Some(s) => s,
+            None => return false,
+        };
+
+        // Ctrl+Shift combinations
+        if ctrl && shift {
+            if let Key::Character(c) = key {
+                match c.as_str() {
+                    "N" | "n" => {
+                        let _ = state.add_workspace();
+                        self.dirty = true;
+                        return true;
+                    }
+                    "T" | "t" => {
+                        let _ = state.add_pane();
+                        self.dirty = true;
+                        return true;
+                    }
+                    "E" | "e" => {
+                        let _ = state.split_focused(SplitDirection::Vertical);
+                        if let Some(gpu) = &self.gpu {
+                            let rect = Self::compute_terminal_rect(gpu);
+                            state.resize_active_pane(rect, gpu.cell_width(), gpu.cell_height());
+                        }
+                        self.dirty = true;
+                        return true;
+                    }
+                    "O" | "o" => {
+                        let _ = state.split_focused(SplitDirection::Horizontal);
+                        if let Some(gpu) = &self.gpu {
+                            let rect = Self::compute_terminal_rect(gpu);
+                            state.resize_active_pane(rect, gpu.cell_width(), gpu.cell_height());
+                        }
+                        self.dirty = true;
+                        return true;
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        // Ctrl+Tab: switch pane
+        if ctrl && !shift && !alt {
+            if let Key::Named(NamedKey::Tab) = key {
+                state.next_pane();
+                self.dirty = true;
+                return true;
+            }
+        }
+
+        // Alt+1~9: switch workspace
+        if alt && !ctrl && !shift {
+            if let Key::Character(c) = key {
+                if let Some(digit) = c.chars().next().and_then(|ch| ch.to_digit(10)) {
+                    if digit >= 1 && digit <= 9 {
+                        state.switch_workspace((digit - 1) as usize);
+                        self.dirty = true;
+                        return true;
+                    }
+                }
+            }
+        }
+
+        // Alt+Arrow: focus between splits
+        if alt && !ctrl && !shift {
+            match key {
+                Key::Named(NamedKey::ArrowRight) | Key::Named(NamedKey::ArrowDown) => {
+                    state.move_focus_forward();
+                    self.dirty = true;
+                    return true;
+                }
+                Key::Named(NamedKey::ArrowLeft) | Key::Named(NamedKey::ArrowUp) => {
+                    state.move_focus_backward();
+                    self.dirty = true;
+                    return true;
+                }
+                _ => {}
+            }
+        }
+
+        false
     }
 }
 
@@ -54,16 +165,33 @@ impl ApplicationHandler for App {
         let gpu = pollster::block_on(GpuState::new(window.clone()))
             .expect("failed to initialize GPU");
 
-        // Compute terminal grid size from window dimensions
-        let (cols, rows) = gpu.grid_size();
-        let terminal = Terminal::new(cols, rows).expect("failed to create terminal");
+        // Compute terminal grid size from the terminal area (excluding sidebar + tab bar)
+        let sf = gpu.scale_factor();
+        let size = gpu.size();
+        let sidebar_w = 180.0 * sf;
+        let tab_h = 32.0 * sf;
+        let terminal_rect = Rect {
+            x: sidebar_w,
+            y: tab_h,
+            width: (size.width as f32 - sidebar_w).max(1.0),
+            height: (size.height as f32 - tab_h).max(1.0),
+        };
+        let (cols, rows) = gpu.grid_size_for_rect(&terminal_rect);
+        let state = AppState::new(cols, rows).expect("failed to create app state");
 
         self.window = Some(window);
         self.gpu = Some(gpu);
-        self.terminal = Some(terminal);
+        self.state = Some(state);
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
+        // Let egui handle the event first
+        let egui_consumed = if let (Some(gpu), Some(window)) = (&mut self.gpu, &self.window) {
+            gpu.handle_egui_event(window, &event)
+        } else {
+            false
+        };
+
         match event {
             WindowEvent::CloseRequested => {
                 event_loop.exit();
@@ -72,26 +200,43 @@ impl ApplicationHandler for App {
                 if let Some(gpu) = &mut self.gpu {
                     gpu.resize(new_size);
 
-                    // Resize terminal grid to match new window
-                    let (cols, rows) = gpu.grid_size();
-                    if let Some(terminal) = &mut self.terminal {
-                        terminal.resize(cols, rows);
+                    // Resize terminal grid to match new window (accounting for UI panels)
+                    let terminal_rect = Self::compute_terminal_rect(gpu);
+                    let (cols, rows) = gpu.grid_size_for_rect(&terminal_rect);
+                    let cw = gpu.cell_width();
+                    let ch = gpu.cell_height();
+                    if let Some(state) = &mut self.state {
+                        state.update_grid_size(cols, rows);
+                        state.resize_active_pane(terminal_rect, cw, ch);
                     }
                 }
                 self.dirty = true;
             }
             WindowEvent::Focused(true) | WindowEvent::Occluded(false) => {
-                // Resume render loop after system menu or other modal interruption
                 self.dirty = true;
                 if let Some(window) = &self.window {
                     window.request_redraw();
                 }
             }
+            WindowEvent::ModifiersChanged(modifiers) => {
+                self.modifiers = modifiers.state();
+            }
             WindowEvent::KeyboardInput { event, .. } => {
+                if egui_consumed {
+                    return;
+                }
+
                 if event.state != ElementState::Pressed {
                     return;
                 }
-                if let Some(terminal) = &mut self.terminal {
+
+                // Check shortcuts first
+                if self.handle_shortcut(&event.logical_key, self.modifiers) {
+                    return;
+                }
+
+                if let Some(state) = &mut self.state {
+                    let terminal = state.focused_terminal_mut();
                     // event.text includes modifier transformations (e.g. Ctrl+C -> \x03)
                     if let Some(text) = &event.text {
                         let s = text.as_str();
@@ -134,8 +279,8 @@ impl ApplicationHandler for App {
             }
             WindowEvent::RedrawRequested => {
                 // Process PTY output
-                let changed = if let Some(terminal) = &mut self.terminal {
-                    terminal.process()
+                let changed = if let Some(state) = &mut self.state {
+                    state.process_all()
                 } else {
                     false
                 };
@@ -146,13 +291,13 @@ impl ApplicationHandler for App {
 
                 if self.dirty {
                     self.dirty = false;
-                    if let (Some(gpu), Some(terminal)) = (&mut self.gpu, &self.terminal) {
-                        match gpu.render(terminal.surface()) {
+                    if let (Some(gpu), Some(state), Some(window)) =
+                        (&mut self.gpu, &mut self.state, &self.window)
+                    {
+                        match gpu.render(state, window) {
                             Ok(_) => {}
                             Err(wgpu::SurfaceError::Lost) => {
-                                if let Some(window) = &self.window {
-                                    gpu.resize(window.inner_size());
-                                }
+                                gpu.resize(window.inner_size());
                             }
                             Err(wgpu::SurfaceError::OutOfMemory) => {
                                 tracing::error!("GPU out of memory");

@@ -48,3 +48,41 @@
 - winit 기반 크로스 플랫폼 윈도우 생성
 - 리사이즈 시 뷰포트 유니폼 자동 갱신 및 터미널 그리드 재조정
 - 모노스페이스 폰트 기반 셀 그리드 레이아웃 (기본 14pt)
+
+## 워크스페이스 & 탭
+
+### 데이터 모델 (Workspace / Pane / SurfaceGroup / SurfaceNode)
+- Workspace: 좌측 사이드바 탭 단위. 복수의 Pane을 포함
+- Pane: 상단 탭 바 단위. 하나의 SurfaceGroup(분할 트리)을 포함
+- SurfaceGroup: 수평/수직 분할 컨테이너. Single(터미널 리프) 또는 재귀적 Split
+- SurfaceNode: 개별 터미널 인스턴스 (PTY + termwiz Surface)
+- AppState: 전체 워크스페이스 목록과 활성 상태를 관리하는 중앙 상태
+
+### egui UI 오버레이
+- egui-winit + egui-wgpu를 이용한 wgpu 위 egui 렌더링
+- 좌측 SidePanel: 워크스페이스 목록, 활성 표시, 추가 버튼
+- 상단 TopBottomPanel: 활성 워크스페이스 내 Pane 탭, 추가 버튼
+- 다크 테마 적용 (패널 배경색 커스터마이징)
+- 사이드바에 키보드 단축키 안내 표시
+
+### 분할 패인
+- SurfaceGroup 트리 기반 재귀적 수평/수직 분할
+- 분할 시 새 터미널 자동 생성 (PTY 포함)
+- 각 Surface를 scissor rect로 독립 렌더링
+- 뷰포트별 유니폼 갱신 (grid_offset을 각 Surface rect에 맞게 조정)
+- 분할 내 포커스 이동 (forward/backward)
+
+### 키보드 단축키
+- Ctrl+Shift+N: 새 워크스페이스 생성
+- Ctrl+Shift+T: 새 Pane 생성
+- Ctrl+Tab: Pane 전환
+- Alt+1~9: 워크스페이스 전환
+- Ctrl+Shift+E: 수직 분할
+- Ctrl+Shift+O: 수평 분할
+- Alt+Arrow: 분할 간 포커스 이동
+- winit ModifiersState를 이용한 수정자 키 추적
+
+### 터미널 뷰포트 관리
+- egui 패널을 제외한 남은 영역에 터미널 렌더링
+- 리사이즈 시 SurfaceGroup 트리 내 모든 터미널의 행/열 재계산
+- wgpu RenderPass의 forget_lifetime()을 이용한 egui-wgpu 호환

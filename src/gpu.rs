@@ -1,11 +1,13 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use termwiz::surface::Surface;
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
 
+use crate::model::Rect;
 use crate::renderer::CellRenderer;
+use crate::state::AppState;
+use crate::ui;
 
 pub struct GpuState {
     surface: wgpu::Surface<'static>,
@@ -14,18 +16,23 @@ pub struct GpuState {
     config: wgpu::SurfaceConfiguration,
     size: PhysicalSize<u32>,
     renderer: CellRenderer,
+    egui_ctx: egui::Context,
+    egui_state: egui_winit::State,
+    egui_renderer: egui_wgpu::Renderer,
+    scale_factor: f32,
 }
 
 impl GpuState {
     pub async fn new(window: Arc<Window>) -> Result<Self> {
         let size = window.inner_size();
+        let scale_factor = window.scale_factor() as f32;
 
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
             ..Default::default()
         });
 
-        let surface = instance.create_surface(window)?;
+        let surface = instance.create_surface(window.clone())?;
 
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
@@ -76,6 +83,28 @@ impl GpuState {
 
         let renderer = CellRenderer::new(&device, &queue, surface_format, 14.0);
 
+        // egui setup
+        let egui_ctx = egui::Context::default();
+
+        // Configure dark visuals
+        let mut visuals = egui::Visuals::dark();
+        visuals.panel_fill = egui::Color32::from_rgb(30, 30, 36);
+        visuals.window_fill = egui::Color32::from_rgb(30, 30, 36);
+        visuals.extreme_bg_color = egui::Color32::from_rgb(20, 20, 24);
+        egui_ctx.set_visuals(visuals);
+
+        let egui_state = egui_winit::State::new(
+            egui_ctx.clone(),
+            egui_ctx.viewport_id(),
+            &window,
+            Some(scale_factor),
+            None,
+            Some(2048),
+        );
+
+        let egui_renderer =
+            egui_wgpu::Renderer::new(&device, surface_format, None, 1, false);
+
         Ok(Self {
             surface,
             device,
@@ -83,6 +112,10 @@ impl GpuState {
             config,
             size,
             renderer,
+            egui_ctx,
+            egui_state,
+            egui_renderer,
+            scale_factor,
         })
     }
 
@@ -98,10 +131,56 @@ impl GpuState {
             .resize(&self.queue, new_size.width, new_size.height);
     }
 
-    pub fn render(&mut self, terminal_surface: &Surface) -> Result<(), wgpu::SurfaceError> {
-        // Prepare cell instance data from terminal content
-        self.renderer.prepare(terminal_surface, &self.queue);
+    /// Pass a winit event to egui. Returns true if egui consumed the event.
+    pub fn handle_egui_event(&mut self, window: &Window, event: &winit::event::WindowEvent) -> bool {
+        let response = self.egui_state.on_window_event(window, event);
+        response.consumed
+    }
 
+    /// Render the full frame: egui UI + terminal surfaces.
+    pub fn render(&mut self, state: &mut AppState, window: &Window) -> Result<(), wgpu::SurfaceError> {
+        // 1. Begin egui frame
+        let raw_input = self.egui_state.take_egui_input(window);
+        let full_output = self.egui_ctx.run(raw_input, |ctx| {
+            ui::draw_ui(ctx, state, self.scale_factor);
+        });
+
+        self.egui_state
+            .handle_platform_output(window, full_output.platform_output);
+
+        // Compute terminal rect from egui layout
+        // Re-run the UI logic to get the terminal rect (egui is immediate mode, this is cheap)
+        let terminal_rect = {
+            // We already ran the UI above. Compute from known panel sizes.
+            // The sidebar is 180 logical pixels, tab bar is 32 logical pixels.
+            let screen_rect = self.egui_ctx.screen_rect();
+            let sidebar_w = 180.0 * self.scale_factor;
+            let tab_h = 32.0 * self.scale_factor;
+            let tw = (screen_rect.width() * self.scale_factor - sidebar_w).max(1.0);
+            let th = (screen_rect.height() * self.scale_factor - tab_h).max(1.0);
+            Rect {
+                x: sidebar_w,
+                y: tab_h,
+                width: tw,
+                height: th,
+            }
+        };
+
+        // Tessellate egui shapes
+        let paint_jobs = self
+            .egui_ctx
+            .tessellate(full_output.shapes, full_output.pixels_per_point);
+
+        // Use the proper egui update path
+        let screen_descriptor = egui_wgpu::ScreenDescriptor {
+            size_in_pixels: [self.size.width, self.size.height],
+            pixels_per_point: full_output.pixels_per_point,
+        };
+
+        // 2. Get render regions for terminals
+        let regions = state.render_regions(terminal_rect);
+
+        // 3. Get the output texture
         let output = self.surface.get_current_texture()?;
         let view = output
             .texture
@@ -113,9 +192,10 @@ impl GpuState {
                 label: Some("render_encoder"),
             });
 
+        // 4. Clear pass
         {
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("terminal_pass"),
+            let _clear_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("clear_pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view,
                     resolve_target: None,
@@ -133,11 +213,90 @@ impl GpuState {
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
-
-            self.renderer.render(&mut render_pass);
         }
 
+        // 5. Render each terminal surface in its viewport rect
+        for (_surface_id, terminal, rect) in &regions {
+            self.renderer.prepare_viewport(
+                terminal.surface(),
+                &self.queue,
+                rect,
+                self.size.width,
+                self.size.height,
+            );
+
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("terminal_pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+
+            self.renderer.render_scissored(&mut render_pass, rect);
+        }
+
+        // 6. Render egui on top
+        // Update egui textures and buffers
+        for (id, image_delta) in &full_output.textures_delta.set {
+            self.egui_renderer
+                .update_texture(&self.device, &self.queue, *id, image_delta);
+        }
+
+        // Submit terminal commands first
         self.queue.submit(std::iter::once(encoder.finish()));
+
+        // Create a separate encoder for egui
+        let mut egui_encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("egui_encoder"),
+            });
+
+        self.egui_renderer.update_buffers(
+            &self.device,
+            &self.queue,
+            &mut egui_encoder,
+            &paint_jobs,
+            &screen_descriptor,
+        );
+
+        {
+            let render_pass = egui_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("egui_pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+
+            // egui-wgpu requires RenderPass<'static>; we use forget_lifetime() to opt out
+            // of the compile-time encoder guard since we manage the ordering manually.
+            let mut render_pass = render_pass.forget_lifetime();
+            self.egui_renderer
+                .render(&mut render_pass, &paint_jobs, &screen_descriptor);
+        }
+
+        // Free egui textures
+        for id in &full_output.textures_delta.free {
+            self.egui_renderer.free_texture(id);
+        }
+
+        self.queue.submit(std::iter::once(egui_encoder.finish()));
         output.present();
 
         Ok(())
@@ -146,6 +305,19 @@ impl GpuState {
     /// Compute terminal grid dimensions from current window size.
     pub fn grid_size(&self) -> (usize, usize) {
         self.renderer.grid_size(self.size.width, self.size.height)
+    }
+
+    /// Compute grid size for a given rect.
+    pub fn grid_size_for_rect(&self, rect: &Rect) -> (usize, usize) {
+        self.renderer.grid_size_for_rect(rect)
+    }
+
+    pub fn cell_width(&self) -> f32 {
+        self.renderer.cell_width()
+    }
+
+    pub fn cell_height(&self) -> f32 {
+        self.renderer.cell_height()
     }
 
     pub fn device(&self) -> &wgpu::Device {
@@ -162,5 +334,9 @@ impl GpuState {
 
     pub fn size(&self) -> PhysicalSize<u32> {
         self.size
+    }
+
+    pub fn scale_factor(&self) -> f32 {
+        self.scale_factor
     }
 }

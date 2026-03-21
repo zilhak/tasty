@@ -3,6 +3,7 @@ use termwiz::color::ColorAttribute;
 use termwiz::surface::Surface;
 
 use crate::font::{FontConfig, GlyphAtlas, GlyphKey};
+use crate::model::Rect;
 
 // ---- GPU data types ----
 
@@ -606,5 +607,81 @@ impl CellRenderer {
         let cols = ((width as f32 - padding) / self.font_config.metrics.cell_width).floor() as usize;
         let rows = ((height as f32 - padding) / self.font_config.metrics.cell_height).floor() as usize;
         (cols.max(1), rows.max(1))
+    }
+
+    /// Compute terminal grid size from a viewport rect (physical pixels).
+    pub fn grid_size_for_rect(&self, rect: &Rect) -> (usize, usize) {
+        let padding = 8.0;
+        let cols =
+            ((rect.width - padding) / self.font_config.metrics.cell_width).floor() as usize;
+        let rows =
+            ((rect.height - padding) / self.font_config.metrics.cell_height).floor() as usize;
+        (cols.max(1), rows.max(1))
+    }
+
+    /// Prepare instance data for a terminal surface to be rendered in a specific viewport rect.
+    /// The viewport rect is in physical pixels. The `screen_width`/`screen_height` are full screen dimensions.
+    pub fn prepare_viewport(
+        &mut self,
+        surface: &Surface,
+        queue: &wgpu::Queue,
+        viewport: &Rect,
+        screen_width: u32,
+        screen_height: u32,
+    ) {
+        // Update uniforms with the viewport's grid offset
+        let uniforms = Uniforms {
+            cell_size: [
+                self.font_config.metrics.cell_width,
+                self.font_config.metrics.cell_height,
+            ],
+            grid_offset: [viewport.x + 4.0, viewport.y + 4.0],
+            viewport_size: [screen_width as f32, screen_height as f32],
+            _padding: [0.0; 2],
+        };
+        queue.write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
+
+        // Build instance data using the standard prepare logic
+        self.prepare(surface, queue);
+    }
+
+    /// Render with a scissor rect applied. The rect is in physical pixels.
+    pub fn render_scissored<'a>(
+        &'a self,
+        render_pass: &mut wgpu::RenderPass<'a>,
+        viewport: &Rect,
+    ) {
+        render_pass.set_scissor_rect(
+            viewport.x.max(0.0) as u32,
+            viewport.y.max(0.0) as u32,
+            viewport.width.max(1.0) as u32,
+            viewport.height.max(1.0) as u32,
+        );
+
+        // Pass 1: backgrounds
+        if self.bg_instance_count > 0 {
+            render_pass.set_pipeline(&self.bg_pipeline);
+            render_pass.set_bind_group(0, &self.bg_bind_group, &[]);
+            render_pass.set_vertex_buffer(0, self.bg_instance_buffer.slice(..));
+            render_pass.draw(0..6, 0..self.bg_instance_count);
+        }
+
+        // Pass 2: glyphs
+        if self.glyph_instance_count > 0 {
+            render_pass.set_pipeline(&self.glyph_pipeline);
+            render_pass.set_bind_group(0, &self.glyph_bind_group, &[]);
+            render_pass.set_vertex_buffer(0, self.glyph_instance_buffer.slice(..));
+            render_pass.draw(0..6, 0..self.glyph_instance_count);
+        }
+    }
+
+    /// Get cell width in pixels.
+    pub fn cell_width(&self) -> f32 {
+        self.font_config.metrics.cell_width
+    }
+
+    /// Get cell height in pixels.
+    pub fn cell_height(&self) -> f32 {
+        self.font_config.metrics.cell_height
     }
 }
