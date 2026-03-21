@@ -1,17 +1,21 @@
 mod gpu;
+mod terminal;
 
 use anyhow::Result;
 use tracing_subscriber::EnvFilter;
 use winit::application::ApplicationHandler;
-use winit::event::WindowEvent;
+use winit::event::{ElementState, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
+use winit::keyboard::{Key, NamedKey};
 use winit::window::{Window, WindowAttributes, WindowId};
 
 use gpu::GpuState;
+use terminal::Terminal;
 
 struct App {
     window: Option<Window>,
     gpu: Option<GpuState>,
+    terminal: Option<Terminal>,
 }
 
 impl App {
@@ -19,6 +23,7 @@ impl App {
         Self {
             window: None,
             gpu: None,
+            terminal: None,
         }
     }
 }
@@ -40,8 +45,11 @@ impl ApplicationHandler for App {
         let gpu = pollster::block_on(GpuState::new(&window))
             .expect("failed to initialize GPU");
 
+        let terminal = Terminal::new(80, 24).expect("failed to create terminal");
+
         self.window = Some(window);
         self.gpu = Some(gpu);
+        self.terminal = Some(terminal);
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
@@ -54,7 +62,33 @@ impl ApplicationHandler for App {
                     gpu.resize(new_size);
                 }
             }
+            WindowEvent::KeyboardInput { event, .. } => {
+                if event.state != ElementState::Pressed {
+                    return;
+                }
+                if let Some(terminal) = &mut self.terminal {
+                    match event.logical_key.as_ref() {
+                        Key::Named(NamedKey::Enter) => terminal.send_bytes(b"\r"),
+                        Key::Named(NamedKey::Backspace) => terminal.send_bytes(b"\x7f"),
+                        Key::Named(NamedKey::Tab) => terminal.send_bytes(b"\t"),
+                        Key::Named(NamedKey::Escape) => terminal.send_bytes(b"\x1b"),
+                        Key::Named(NamedKey::ArrowUp) => terminal.send_bytes(b"\x1b[A"),
+                        Key::Named(NamedKey::ArrowDown) => terminal.send_bytes(b"\x1b[B"),
+                        Key::Named(NamedKey::ArrowRight) => terminal.send_bytes(b"\x1b[C"),
+                        Key::Named(NamedKey::ArrowLeft) => terminal.send_bytes(b"\x1b[D"),
+                        Key::Character(c) => {
+                            terminal.send_key(c);
+                        }
+                        _ => {}
+                    }
+                }
+            }
             WindowEvent::RedrawRequested => {
+                // Process PTY output
+                if let Some(terminal) = &mut self.terminal {
+                    terminal.process();
+                }
+
                 if let Some(gpu) = &mut self.gpu {
                     match gpu.render() {
                         Ok(_) => {}
@@ -85,7 +119,7 @@ fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_env("TASTY_LOG")
-                .unwrap_or_else(|_| EnvFilter::new("warn")),
+                .unwrap_or_else(|_| EnvFilter::new("warn,wgpu_hal=error,wgpu_core=error,naga=error")),
         )
         .init();
 
