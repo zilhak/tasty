@@ -45,6 +45,9 @@ clap = { version = "4", features = ["derive"] }
 cosmic-text = "0.18"
 bytemuck = { version = "1", features = ["derive"] }
 
+# Notifications
+notify-rust = "4"
+
 # Utilities
 directories = "6"
 

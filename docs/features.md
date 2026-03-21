@@ -88,7 +88,51 @@
 - Ctrl+D: SurfaceGroup 수직 분할 (탭 내부)
 - Ctrl+Shift+D: SurfaceGroup 수평 분할 (탭 내부)
 - Alt+Arrow: Pane 간 포커스 이동
+- Ctrl+I: 알림 패널 토글
 - winit ModifiersState를 이용한 수정자 키 추적
+
+## 알림 시스템
+
+### OSC 시퀀스 감지
+- termwiz Parser에서 파싱된 OSC 액션을 인터셉트하여 알림 이벤트 생성
+- 지원하는 시퀀스:
+  - **OSC 9**: iTerm2/ConEmu 알림 (`\e]9;message\e\\`)
+  - **OSC 99**: Kitty 알림 (`\e]99;key=value;...\e\\`), Unspecified로 파싱된 것을 수동 처리
+  - **OSC 777**: rxvt-unicode 알림 (`\e]777;notify;title;body\e\\`)
+  - **OSC 7**: 현재 작업 디렉토리 변경 (`\e]7;file://host/path\e\\`)
+  - **OSC 0/2**: 윈도우 타이틀 변경
+  - **BEL** (`\x07`): 벨 알림
+- TerminalEvent / TerminalEventKind enum을 통한 이벤트 전달
+- `take_events()` 메서드로 축적된 이벤트를 소비
+
+### NotificationStore (notification.rs)
+- FIFO 방식 알림 저장소 (최대 100개, 초과 시 오래된 항목 자동 삭제)
+- 알림 병합(coalescing): 같은 소스에서 500ms 이내 연속 알림이 오면 기존 알림에 합침
+- 워크스페이스별 읽지 않은 알림 카운트 제공
+- 개별 알림 또는 전체 읽음 처리
+
+### 시스템 알림 (notify-rust)
+- 윈도우가 비활성 상태일 때 OS 네이티브 알림 전송
+- 초당 1회 제한(rate limiting)으로 알림 폭주 방지
+- Windows/macOS/Linux 크로스 플랫폼 지원
+
+### 사이드바 알림 배지
+- 워크스페이스 이름 옆에 읽지 않은 알림 수 표시 (`[N]`)
+- 읽지 않은 알림이 있는 워크스페이스는 파란색으로 강조
+- 사이드바 헤더에 전체 읽지 않은 알림 수 배지
+
+### 알림 패널 (Ctrl+I)
+- egui Window 오버레이로 구현된 알림 목록
+- 스크롤 가능한 최신순 정렬 알림 표시
+- 각 알림에 워크스페이스 이름, 제목, 본문, 경과 시간 표시
+- "Jump" 버튼으로 해당 워크스페이스로 즉시 전환
+- 패널 열 때 자동으로 전체 읽음 처리
+- "Mark all read" 버튼 제공
+
+### 이벤트 수집 파이프라인
+- AppState.collect_events()가 활성 워크스페이스의 모든 터미널에서 이벤트 수집
+- main.rs 이벤트 루프에서 process_all() 후 이벤트 수집 및 알림 처리
+- 윈도우 포커스 상태 추적으로 시스템 알림 발송 조건 판단
 
 ### 터미널 뷰포트 관리
 - egui 사이드바를 제외한 전체 영역에 PaneLayout 렌더링

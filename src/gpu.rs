@@ -161,6 +161,7 @@ impl GpuState {
         let full_output = self.egui_ctx.run(raw_input, |ctx| {
             ui::draw_ui(ctx, state, scale_factor);
             ui::draw_pane_tab_bars(ctx, state, &pane_rects, scale_factor);
+            ui::draw_notification_panel(ctx, state);
         });
 
         self.egui_state

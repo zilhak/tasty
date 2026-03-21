@@ -9,8 +9,25 @@ use termwiz::color::ColorAttribute;
 use termwiz::escape::csi::{Cursor, Edit, EraseInDisplay, EraseInLine, Sgr, CSI};
 use termwiz::escape::esc::{Esc, EscCode};
 use termwiz::escape::parser::Parser;
-use termwiz::escape::{Action, ControlCode};
+use termwiz::escape::{Action, ControlCode, OperatingSystemCommand};
 use termwiz::surface::{Change, CursorVisibility, Position, Surface};
+
+/// Events emitted by the terminal during processing.
+pub struct TerminalEvent {
+    pub kind: TerminalEventKind,
+}
+
+/// Types of events a terminal can emit.
+pub enum TerminalEventKind {
+    /// A notification from OSC 9 / OSC 99 / OSC 777.
+    Notification { title: String, body: String },
+    /// Bell character received.
+    BellRing,
+    /// Window title changed via OSC 0 / OSC 2.
+    TitleChanged(String),
+    /// Current working directory changed via OSC 7.
+    CwdChanged(String),
+}
 
 pub struct Terminal {
     surface: Surface,
@@ -24,6 +41,8 @@ pub struct Terminal {
     rows: usize,
     /// Saved cursor position for ESC 7 / ESC 8
     saved_cursor: Option<(usize, usize)>,
+    /// Events accumulated during process(), consumed via take_events().
+    events: Vec<TerminalEvent>,
 }
 
 impl Terminal {
@@ -78,6 +97,7 @@ impl Terminal {
             cols,
             rows,
             saved_cursor: None,
+            events: Vec::new(),
         })
     }
 
@@ -117,7 +137,7 @@ impl Terminal {
         }
     }
 
-    fn map_control(&self, code: ControlCode) -> Vec<Change> {
+    fn map_control(&mut self, code: ControlCode) -> Vec<Change> {
         match code {
             ControlCode::LineFeed | ControlCode::VerticalTab | ControlCode::FormFeed => {
                 vec![Change::Text("\n".into())]
@@ -129,7 +149,9 @@ impl Terminal {
             }],
             ControlCode::HorizontalTab => vec![Change::Text("\t".into())],
             ControlCode::Bell => {
-                // TODO: notification
+                self.events.push(TerminalEvent {
+                    kind: TerminalEventKind::BellRing,
+                });
                 vec![]
             }
             _ => vec![],
@@ -379,8 +401,89 @@ impl Terminal {
         }
     }
 
-    fn map_osc(&self, _osc: termwiz::escape::OperatingSystemCommand) {
-        // TODO: handle window title (OSC 0/2), color changes, etc.
+    fn map_osc(&mut self, osc: OperatingSystemCommand) {
+        match osc {
+            // OSC 0: Set icon name and window title
+            OperatingSystemCommand::SetIconNameAndWindowTitle(title) => {
+                self.events.push(TerminalEvent {
+                    kind: TerminalEventKind::TitleChanged(title),
+                });
+            }
+            // OSC 2: Set window title
+            OperatingSystemCommand::SetWindowTitle(title)
+            | OperatingSystemCommand::SetWindowTitleSun(title) => {
+                self.events.push(TerminalEvent {
+                    kind: TerminalEventKind::TitleChanged(title),
+                });
+            }
+            // OSC 7: Current working directory
+            OperatingSystemCommand::CurrentWorkingDirectory(url) => {
+                // url format: file://hostname/path
+                let path = if let Some(stripped) = url.strip_prefix("file://") {
+                    // Skip hostname part (up to next /)
+                    if let Some(slash_pos) = stripped.find('/') {
+                        stripped[slash_pos..].to_string()
+                    } else {
+                        stripped.to_string()
+                    }
+                } else {
+                    url.clone()
+                };
+                self.events.push(TerminalEvent {
+                    kind: TerminalEventKind::CwdChanged(path),
+                });
+            }
+            // OSC 9: iTerm2/ConEmu notification
+            OperatingSystemCommand::SystemNotification(body) => {
+                self.events.push(TerminalEvent {
+                    kind: TerminalEventKind::Notification {
+                        title: "Terminal".to_string(),
+                        body,
+                    },
+                });
+            }
+            // OSC 777: rxvt-unicode extension (notify;title;body)
+            OperatingSystemCommand::RxvtExtension(parts) => {
+                if parts.first().map(|s| s.as_str()) == Some("notify") {
+                    let title = parts.get(1).cloned().unwrap_or_default();
+                    let body = parts.get(2).cloned().unwrap_or_default();
+                    self.events.push(TerminalEvent {
+                        kind: TerminalEventKind::Notification { title, body },
+                    });
+                }
+            }
+            // OSC 99: Kitty notification (arrives as Unspecified since termwiz doesn't parse it)
+            OperatingSystemCommand::Unspecified(params) => {
+                // Check if first param starts with "99"
+                if let Some(first) = params.first() {
+                    if first == b"99" {
+                        // Parse key=value pairs from remaining params
+                        let mut title = String::new();
+                        let mut body = String::new();
+                        for param in params.iter().skip(1) {
+                            let s = String::from_utf8_lossy(param);
+                            if let Some(val) = s.strip_prefix("t=") {
+                                title = val.to_string();
+                            } else if let Some(val) = s.strip_prefix("d=0;") {
+                                body = val.to_string();
+                            } else if let Some(val) = s.strip_prefix("d=1;") {
+                                body = val.to_string();
+                            } else if !s.contains('=') {
+                                // Plain body text
+                                body = s.to_string();
+                            }
+                        }
+                        if title.is_empty() {
+                            title = "Terminal".to_string();
+                        }
+                        self.events.push(TerminalEvent {
+                            kind: TerminalEventKind::Notification { title, body },
+                        });
+                    }
+                }
+            }
+            _ => {}
+        }
     }
 
     /// Send keyboard input to PTY
@@ -425,6 +528,11 @@ impl Terminal {
     #[allow(dead_code)]
     pub fn is_alive(&mut self) -> bool {
         self.child.try_wait().ok().flatten().is_none()
+    }
+
+    /// Take all accumulated events, leaving the internal buffer empty.
+    pub fn take_events(&mut self) -> Vec<TerminalEvent> {
+        std::mem::take(&mut self.events)
     }
 
     fn default_shell() -> String {

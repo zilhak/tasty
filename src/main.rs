@@ -1,6 +1,7 @@
 mod font;
 mod gpu;
 mod model;
+mod notification;
 mod renderer;
 mod state;
 mod terminal;
@@ -27,6 +28,8 @@ struct App {
     window: Option<Arc<Window>>,
     dirty: bool,
     modifiers: ModifiersState,
+    /// Whether the window currently has OS focus.
+    window_focused: bool,
 }
 
 impl App {
@@ -37,6 +40,7 @@ impl App {
             window: None,
             dirty: true,
             modifiers: ModifiersState::empty(),
+            window_focused: true,
         }
     }
 
@@ -119,6 +123,21 @@ impl App {
                 state.prev_tab_in_pane();
                 self.dirty = true;
                 return true;
+            }
+        }
+
+        // Ctrl+I: Toggle notification panel
+        if ctrl && !shift && !alt {
+            if let Key::Character(c) = key {
+                if c.as_str() == "i" || c.as_str() == "\x09" {
+                    state.notification_panel_open = !state.notification_panel_open;
+                    // Mark all as read when opening
+                    if state.notification_panel_open {
+                        state.notifications.mark_all_read();
+                    }
+                    self.dirty = true;
+                    return true;
+                }
             }
         }
 
@@ -245,7 +264,14 @@ impl ApplicationHandler for App {
                 }
                 self.dirty = true;
             }
-            WindowEvent::Focused(true) | WindowEvent::Occluded(false) => {
+            WindowEvent::Focused(focused) => {
+                self.window_focused = focused;
+                self.dirty = true;
+                if let Some(window) = &self.window {
+                    window.request_redraw();
+                }
+            }
+            WindowEvent::Occluded(false) => {
                 self.dirty = true;
                 if let Some(window) = &self.window {
                     window.request_redraw();
@@ -320,6 +346,48 @@ impl ApplicationHandler for App {
 
                 if changed {
                     self.dirty = true;
+                }
+
+                // Collect terminal events and process notifications
+                if let Some(state) = &mut self.state {
+                    let events = state.collect_events();
+                    for event in events {
+                        match event.kind {
+                            terminal::TerminalEventKind::Notification { title, body } => {
+                                if !self.window_focused
+                                    && state.notifications.should_send_system_notification()
+                                {
+                                    notification::send_system_notification(&title, &body);
+                                }
+                                let ws_id = state.active_workspace().id;
+                                state.notifications.add(ws_id, 0, title, body);
+                                self.dirty = true;
+                            }
+                            terminal::TerminalEventKind::BellRing => {
+                                let ws_id = state.active_workspace().id;
+                                state.notifications.add(
+                                    ws_id,
+                                    0,
+                                    "Bell".to_string(),
+                                    String::new(),
+                                );
+                                if !self.window_focused
+                                    && state.notifications.should_send_system_notification()
+                                {
+                                    notification::send_system_notification("Tasty", "Bell");
+                                }
+                                self.dirty = true;
+                            }
+                            terminal::TerminalEventKind::TitleChanged(_title) => {
+                                // Could update tab names here in the future
+                                self.dirty = true;
+                            }
+                            terminal::TerminalEventKind::CwdChanged(_path) => {
+                                // Could update sidebar metadata here in the future
+                                self.dirty = true;
+                            }
+                        }
+                    }
                 }
 
                 if self.dirty {

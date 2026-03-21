@@ -1,5 +1,6 @@
 use crate::model::{PaneId, Rect, SplitDirection, Workspace};
-use crate::terminal::Terminal;
+use crate::notification::NotificationStore;
+use crate::terminal::{Terminal, TerminalEvent};
 
 struct IdGenerator {
     workspace: u32,
@@ -49,6 +50,9 @@ pub struct AppState {
     next_ids: IdGenerator,
     pub default_cols: usize,
     pub default_rows: usize,
+    pub notifications: NotificationStore,
+    /// Whether the notification panel overlay is open.
+    pub notification_panel_open: bool,
 }
 
 impl AppState {
@@ -61,6 +65,8 @@ impl AppState {
             next_ids: IdGenerator::new(),
             default_cols: cols,
             default_rows: rows,
+            notifications: NotificationStore::new(),
+            notification_panel_open: false,
         })
     }
 
@@ -256,5 +262,14 @@ impl AppState {
     /// Get the focused pane ID.
     pub fn focused_pane_id(&self) -> PaneId {
         self.active_workspace().focused_pane
+    }
+
+    /// Collect events from all terminals in the active workspace.
+    pub fn collect_events(&mut self) -> Vec<TerminalEvent> {
+        let mut all_events = Vec::new();
+        for terminal in self.active_workspace_mut().pane_layout.all_terminals_mut() {
+            all_events.extend(terminal.take_events());
+        }
+        all_events
     }
 }

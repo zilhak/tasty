@@ -1,8 +1,13 @@
+use std::time::Instant;
+
 use crate::model::Rect;
 use crate::state::AppState;
 
 /// Width of the sidebar in logical pixels.
 const SIDEBAR_WIDTH: f32 = 180.0;
+
+/// Color for notification badge / highlight.
+const NOTIFICATION_COLOR: egui::Color32 = egui::Color32::from_rgb(80, 140, 255);
 
 /// Render the egui UI and return the remaining terminal area rect (in physical pixels).
 pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> Rect {
@@ -13,7 +18,28 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
         .show(ctx, |ui| {
             ui.vertical(|ui| {
                 ui.add_space(8.0);
-                ui.heading("Workspaces");
+
+                // Header with notification badge
+                ui.horizontal(|ui| {
+                    ui.heading("Workspaces");
+                    let unread = state.notifications.unread_count();
+                    if unread > 0 {
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            let badge_text = if unread > 99 {
+                                "99+".to_string()
+                            } else {
+                                unread.to_string()
+                            };
+                            let badge = egui::RichText::new(badge_text)
+                                .small()
+                                .strong()
+                                .color(egui::Color32::WHITE)
+                                .background_color(NOTIFICATION_COLOR);
+                            ui.label(badge);
+                        });
+                    }
+                });
+
                 ui.add_space(4.0);
                 ui.separator();
                 ui.add_space(4.0);
@@ -24,11 +50,24 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
                 for i in 0..ws_count {
                     let is_active = i == active_ws;
                     let name = state.workspaces[i].name.clone();
+                    let ws_id = state.workspaces[i].id;
+                    let ws_unread = state.notifications.unread_count_for_workspace(ws_id);
+
+                    // Build label with optional unread badge
+                    let display = if ws_unread > 0 {
+                        format!("  {} [{}]", name, ws_unread)
+                    } else if is_active {
+                        format!("  {}", name)
+                    } else {
+                        format!("  {}", name)
+                    };
 
                     let label = if is_active {
-                        egui::RichText::new(format!("  {} ◀", name)).strong()
+                        egui::RichText::new(display).strong()
+                    } else if ws_unread > 0 {
+                        egui::RichText::new(display).color(NOTIFICATION_COLOR)
                     } else {
-                        egui::RichText::new(format!("  {}", name))
+                        egui::RichText::new(display)
                     };
 
                     if ui.selectable_label(is_active, label).clicked() {
@@ -62,6 +101,7 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
                     ("Ctrl+D", "Surface Split V"),
                     ("Ctrl+Shift+D", "Surface Split H"),
                     ("Alt+Arrow", "Focus Pane"),
+                    ("Ctrl+I", "Notifications"),
                 ];
 
                 for (key, desc) in &shortcuts {
@@ -196,6 +236,164 @@ pub fn draw_pane_tab_bars(
             }
         }
     }
+}
+
+/// Draw the notification panel overlay (toggled with Ctrl+I).
+pub fn draw_notification_panel(ctx: &egui::Context, state: &mut AppState) {
+    if !state.notification_panel_open {
+        return;
+    }
+
+    let mut open = state.notification_panel_open;
+
+    egui::Window::new("Notifications")
+        .open(&mut open)
+        .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-8.0, 8.0))
+        .default_width(350.0)
+        .default_height(400.0)
+        .resizable(true)
+        .collapsible(false)
+        .show(ctx, |ui| {
+            // Header with mark-all-read button
+            ui.horizontal(|ui| {
+                let unread = state.notifications.unread_count();
+                ui.label(
+                    egui::RichText::new(format!("{} unread", unread))
+                        .small()
+                        .color(egui::Color32::GRAY),
+                );
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.small_button("Mark all read").clicked() {
+                        state.notifications.mark_all_read();
+                    }
+                });
+            });
+            ui.separator();
+
+            // Scrollable notification list (newest first)
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    let notifications = state.notifications.all();
+                    if notifications.is_empty() {
+                        ui.centered_and_justified(|ui| {
+                            ui.label(
+                                egui::RichText::new("No notifications")
+                                    .color(egui::Color32::GRAY),
+                            );
+                        });
+                        return;
+                    }
+
+                    // Collect notification info for display (iterate in reverse for newest first)
+                    let now = Instant::now();
+                    let entries: Vec<_> = notifications
+                        .iter()
+                        .rev()
+                        .map(|n| {
+                            let elapsed = now.duration_since(n.timestamp);
+                            let time_str = if elapsed.as_secs() < 60 {
+                                format!("{}s ago", elapsed.as_secs())
+                            } else if elapsed.as_secs() < 3600 {
+                                format!("{}m ago", elapsed.as_secs() / 60)
+                            } else {
+                                format!("{}h ago", elapsed.as_secs() / 3600)
+                            };
+
+                            // Find workspace name
+                            let ws_name = state
+                                .workspaces
+                                .iter()
+                                .find(|ws| ws.id == n.source_workspace)
+                                .map(|ws| ws.name.as_str())
+                                .unwrap_or("Unknown");
+
+                            (
+                                n.id,
+                                n.read,
+                                n.title.clone(),
+                                n.body.clone(),
+                                time_str,
+                                ws_name.to_string(),
+                                n.source_workspace,
+                            )
+                        })
+                        .collect();
+
+                    let mut mark_read_id = None;
+                    let mut jump_to_ws = None;
+
+                    for (id, read, title, body, time_str, ws_name, ws_id) in &entries {
+                        let bg = if *read {
+                            egui::Color32::TRANSPARENT
+                        } else {
+                            egui::Color32::from_rgba_premultiplied(80, 140, 255, 20)
+                        };
+
+                        egui::Frame::new()
+                            .fill(bg)
+                            .inner_margin(egui::Margin::same(4))
+                            .corner_radius(4.0)
+                            .show(ui, |ui| {
+                                ui.horizontal(|ui| {
+                                    if !*read {
+                                        ui.label(
+                                            egui::RichText::new("*")
+                                                .color(NOTIFICATION_COLOR)
+                                                .strong(),
+                                        );
+                                    }
+                                    ui.label(egui::RichText::new(title).strong().small());
+                                    ui.with_layout(
+                                        egui::Layout::right_to_left(egui::Align::Center),
+                                        |ui| {
+                                            ui.label(
+                                                egui::RichText::new(time_str)
+                                                    .small()
+                                                    .color(egui::Color32::GRAY),
+                                            );
+                                        },
+                                    );
+                                });
+
+                                if !body.is_empty() {
+                                    ui.label(egui::RichText::new(body).small());
+                                }
+
+                                ui.horizontal(|ui| {
+                                    ui.label(
+                                        egui::RichText::new(ws_name)
+                                            .small()
+                                            .color(egui::Color32::from_rgb(100, 160, 220)),
+                                    );
+
+                                    if ui
+                                        .small_button("Jump")
+                                        .on_hover_text("Switch to this workspace")
+                                        .clicked()
+                                    {
+                                        jump_to_ws = Some(*ws_id);
+                                        mark_read_id = Some(*id);
+                                    }
+                                });
+                            });
+
+                        ui.add_space(2.0);
+                    }
+
+                    // Apply actions
+                    if let Some(id) = mark_read_id {
+                        state.notifications.mark_read(id);
+                    }
+                    if let Some(ws_id) = jump_to_ws {
+                        if let Some(idx) = state.workspaces.iter().position(|ws| ws.id == ws_id) {
+                            state.switch_workspace(idx);
+                        }
+                    }
+                });
+        });
+
+    state.notification_panel_open = open;
 }
 
 enum PaneTabAction {

@@ -97,7 +97,15 @@ cmux 분석 기반 계층적 데이터 모델. Workspace → PaneLayout → Pane
 GPU 렌더링된 사이드바에 Git 브랜치, PR 상태, 작업 디렉토리, 리스닝 포트 등의 실시간 정보를 아이콘/색상과 함께 표시.
 
 ### 알림 시스템
-인앱 시각 알림 + 시스템 트레이 + OS 네이티브 알림. OSC 시퀀스 감지, 사운드, Claude Code 훅 연동.
+인앱 시각 알림 + OS 네이티브 알림. OSC 시퀀스(9/99/777/7) 및 BEL 감지, 알림 병합, 레이트 리미팅.
+
+**현재 구현된 기능:**
+- OSC 9(iTerm2), OSC 99(Kitty), OSC 777(rxvt), OSC 7(CWD), OSC 0/2(타이틀), BEL 감지
+- NotificationStore: FIFO 저장(최대 100개), 500ms 병합, 워크스페이스별 카운트
+- notify-rust를 통한 OS 네이티브 알림 (비활성 윈도우, 초당 1회 제한)
+- 사이드바 알림 배지 및 워크스페이스 하이라이트
+- Ctrl+I 알림 패널: 스크롤 목록, 워크스페이스 점프, 읽음 처리
+- 상세: [features.md](features.md)
 
 ### 분할 패인
 두 가지 분할 지원. Pane 분할(Ctrl+Shift+E/O): 물리적 화면 분할, 새 독립 탭 바 생성. SurfaceGroup 분할(Ctrl+D/Ctrl+Shift+D): 탭 내부 분할, 하나의 탭으로 표시. 기본 구현 완료.
