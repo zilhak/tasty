@@ -271,4 +271,55 @@ font_size = 18.0
         assert_eq!(parsed.appearance.font_size, defaults.appearance.font_size);
         assert_eq!(parsed.notification.coalesce_ms, defaults.notification.coalesce_ms);
     }
+
+    #[test]
+    fn settings_font_family_default() {
+        let settings = Settings::default();
+        assert_eq!(settings.appearance.font_family, "JetBrains Mono");
+    }
+
+    #[test]
+    fn settings_theme_default() {
+        let settings = Settings::default();
+        assert_eq!(settings.appearance.theme, "dark");
+    }
+
+    #[test]
+    fn settings_background_opacity_default() {
+        let settings = Settings::default();
+        assert_eq!(settings.appearance.background_opacity, 1.0);
+    }
+
+    #[test]
+    fn settings_clipboard_platform_defaults() {
+        let settings = Settings::default();
+        #[cfg(target_os = "windows")]
+        assert!(settings.clipboard.windows_style);
+        #[cfg(target_os = "macos")]
+        assert!(settings.clipboard.macos_style);
+        #[cfg(target_os = "linux")]
+        assert!(settings.clipboard.linux_style);
+    }
+
+    #[test]
+    fn settings_custom_appearance_roundtrip() {
+        let mut settings = Settings::default();
+        settings.appearance.font_family = "Fira Code".to_string();
+        settings.appearance.font_size = 18.0;
+        settings.appearance.theme = "light".to_string();
+        settings.appearance.background_opacity = 0.8;
+        let toml_str = toml::to_string_pretty(&settings).unwrap();
+        let parsed: Settings = toml::from_str(&toml_str).unwrap();
+        assert_eq!(parsed.appearance.font_family, "Fira Code");
+        assert_eq!(parsed.appearance.font_size, 18.0);
+        assert_eq!(parsed.appearance.theme, "light");
+        assert_eq!(parsed.appearance.background_opacity, 0.8);
+    }
+
+    #[test]
+    fn settings_keybindings_default() {
+        let settings = Settings::default();
+        assert_eq!(settings.keybindings.new_workspace, "ctrl+shift+n");
+        assert_eq!(settings.keybindings.new_tab, "ctrl+shift+t");
+    }
 }

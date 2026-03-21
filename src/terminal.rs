@@ -37,6 +37,8 @@ pub enum TerminalEventKind {
     CwdChanged(String),
     /// The child process has exited.
     ProcessExited,
+    /// Terminal requested clipboard set via OSC 52.
+    ClipboardSet(String),
 }
 
 /// Maximum size of the output buffer (1 MB).
@@ -748,6 +750,13 @@ impl Terminal {
                         kind: TerminalEventKind::Notification { title, body },
                     });
                 }
+            }
+            // OSC 52: Set clipboard selection — terminal programs request clipboard set
+            OperatingSystemCommand::SetSelection(_selection, data) => {
+                self.events.push(TerminalEvent {
+                    surface_id: 0,
+                    kind: TerminalEventKind::ClipboardSet(data),
+                });
             }
             // OSC 99: Kitty notification (arrives as Unspecified since termwiz doesn't parse it)
             OperatingSystemCommand::Unspecified(params) => {

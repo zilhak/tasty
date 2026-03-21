@@ -6,6 +6,7 @@ use winit::window::Window;
 
 use crate::model::Rect;
 use crate::renderer::CellRenderer;
+use crate::settings::AppearanceSettings;
 use crate::settings_ui;
 use crate::state::AppState;
 use crate::ui;
@@ -24,7 +25,7 @@ pub struct GpuState {
 }
 
 impl GpuState {
-    pub async fn new(window: Arc<Window>) -> Result<Self> {
+    pub async fn new(window: Arc<Window>, appearance: &AppearanceSettings) -> Result<Self> {
         let size = window.inner_size();
         let scale_factor = window.scale_factor() as f32;
 
@@ -83,20 +84,20 @@ impl GpuState {
         };
         surface.configure(&device, &config);
 
-        // Font size will be set from settings after GpuState is created.
-        // Default to 14.0, the caller may update via update_font_size() later.
-        let renderer = CellRenderer::new(&device, &queue, surface_format, 14.0);
-        // Note: settings.appearance.font_size is wired in main.rs after state construction
+        // Create renderer with font settings from config
+        let renderer = CellRenderer::new(
+            &device,
+            &queue,
+            surface_format,
+            appearance.font_size,
+            &appearance.font_family,
+        );
 
         // egui setup
         let egui_ctx = egui::Context::default();
 
-        // Configure dark visuals
-        let mut visuals = egui::Visuals::dark();
-        visuals.panel_fill = egui::Color32::from_rgb(30, 30, 36);
-        visuals.window_fill = egui::Color32::from_rgb(30, 30, 36);
-        visuals.extreme_bg_color = egui::Color32::from_rgb(20, 20, 24);
-        egui_ctx.set_visuals(visuals);
+        // Apply theme from settings
+        Self::apply_theme(&egui_ctx, &appearance.theme);
 
         let egui_state = egui_winit::State::new(
             egui_ctx.clone(),
@@ -144,6 +145,9 @@ impl GpuState {
 
     /// Render the full frame: egui UI + terminal surfaces.
     pub fn render(&mut self, state: &mut AppState, window: &Window) -> Result<(), wgpu::SurfaceError> {
+        // Sync sidebar_width from settings (in case it was changed in settings UI)
+        state.sidebar_width = state.settings.appearance.sidebar_width;
+
         // Compute the terminal rect (area after sidebar) in physical pixels
         let surface_w = self.size.width as f32;
         let surface_h = self.size.height as f32;
@@ -164,6 +168,7 @@ impl GpuState {
         // 1. Begin egui frame
         let raw_input = self.egui_state.take_egui_input(window);
         let scale_factor = self.scale_factor;
+        let prev_theme = state.settings.appearance.theme.clone();
         let full_output = self.egui_ctx.run(raw_input, |ctx| {
             ui::draw_ui(ctx, state, scale_factor);
             ui::draw_pane_tab_bars(ctx, state, &pane_rects, scale_factor);
@@ -181,6 +186,11 @@ impl GpuState {
                 state.settings_open = open;
             }
         });
+
+        // Refresh egui theme if it changed (e.g., after settings save)
+        if state.settings.appearance.theme != prev_theme {
+            self.refresh_theme(&state.settings.appearance.theme);
+        }
 
         self.egui_state
             .handle_platform_output(window, full_output.platform_output);
@@ -211,7 +221,13 @@ impl GpuState {
                 label: Some("render_encoder"),
             });
 
-        // 4. Clear pass
+        // 4. Clear pass (apply background_opacity from settings)
+        let bg_alpha = state.settings.appearance.background_opacity as f64;
+        let (clear_r, clear_g, clear_b) = if state.settings.appearance.theme == "light" {
+            (0.941, 0.941, 0.957) // light theme bg
+        } else {
+            (0.102, 0.102, 0.118) // dark theme bg
+        };
         {
             let _clear_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("clear_pass"),
@@ -220,10 +236,10 @@ impl GpuState {
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.102,
-                            g: 0.102,
-                            b: 0.118,
-                            a: 1.0,
+                            r: clear_r,
+                            g: clear_g,
+                            b: clear_b,
+                            a: bg_alpha,
                         }),
                         store: wgpu::StoreOp::Store,
                     },
@@ -366,5 +382,27 @@ impl GpuState {
         self.scale_factor = new_scale_factor;
         // Reconfigure egui with new scale factor
         self.egui_ctx.set_pixels_per_point(new_scale_factor);
+    }
+
+    /// Apply a theme ("dark" or "light") to the egui context.
+    fn apply_theme(ctx: &egui::Context, theme: &str) {
+        if theme == "light" {
+            let mut visuals = egui::Visuals::light();
+            visuals.panel_fill = egui::Color32::from_rgb(240, 240, 244);
+            visuals.window_fill = egui::Color32::from_rgb(240, 240, 244);
+            visuals.extreme_bg_color = egui::Color32::from_rgb(250, 250, 252);
+            ctx.set_visuals(visuals);
+        } else {
+            let mut visuals = egui::Visuals::dark();
+            visuals.panel_fill = egui::Color32::from_rgb(30, 30, 36);
+            visuals.window_fill = egui::Color32::from_rgb(30, 30, 36);
+            visuals.extreme_bg_color = egui::Color32::from_rgb(20, 20, 24);
+            ctx.set_visuals(visuals);
+        }
+    }
+
+    /// Re-apply the theme from settings. Called after settings are saved.
+    pub fn refresh_theme(&self, theme: &str) {
+        Self::apply_theme(&self.egui_ctx, theme);
     }
 }

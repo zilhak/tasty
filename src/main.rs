@@ -28,6 +28,25 @@ use ipc::server::IpcServer;
 use model::{DividerInfo, Rect, SplitDirection};
 use state::AppState;
 
+/// Wrapper for the system clipboard (arboard).
+struct ClipboardContext {
+    inner: arboard::Clipboard,
+}
+
+impl ClipboardContext {
+    fn new() -> Option<Self> {
+        arboard::Clipboard::new().ok().map(|c| Self { inner: c })
+    }
+
+    fn get_text(&mut self) -> Option<String> {
+        self.inner.get_text().ok()
+    }
+
+    fn set_text(&mut self, text: &str) {
+        let _ = self.inner.set_text(text.to_string());
+    }
+}
+
 /// Custom events sent to the winit event loop from background threads.
 #[derive(Debug)]
 enum AppEvent {
@@ -67,6 +86,8 @@ struct App {
     dragging_divider: Option<DividerDrag>,
     /// Proxy to send events from background threads to the winit event loop.
     proxy: EventLoopProxy<AppEvent>,
+    /// System clipboard for copy/paste.
+    clipboard: Option<ClipboardContext>,
 }
 
 impl App {
@@ -82,6 +103,7 @@ impl App {
             cursor_position: None,
             dragging_divider: None,
             proxy,
+            clipboard: ClipboardContext::new(),
         }
     }
 
@@ -95,6 +117,30 @@ impl App {
             y: 0.0,
             width: (size.width as f32 - sidebar_w).max(1.0),
             height: size.height as f32,
+        }
+    }
+
+    /// Paste clipboard text into the focused terminal.
+    fn paste_to_terminal(&mut self) {
+        let text = match &mut self.clipboard {
+            Some(cb) => cb.get_text(),
+            None => None,
+        };
+        if let Some(text) = text {
+            if text.is_empty() {
+                return;
+            }
+            if let Some(state) = &mut self.state {
+                if let Some(terminal) = state.focused_terminal_mut() {
+                    if terminal.bracketed_paste() {
+                        terminal.send_bytes(b"\x1b[200~");
+                        terminal.send_key(&text);
+                        terminal.send_bytes(b"\x1b[201~");
+                    } else {
+                        terminal.send_key(&text);
+                    }
+                }
+            }
         }
     }
 
@@ -233,6 +279,44 @@ impl App {
             }
         }
 
+        // Clipboard paste shortcuts
+        // Ctrl+Shift+V (Linux style)
+        if ctrl && shift {
+            if let Key::Character(c) = key {
+                if (c.as_str() == "V" || c.as_str() == "v")
+                    && state.settings.clipboard.linux_style
+                {
+                    self.paste_to_terminal();
+                    self.dirty = true;
+                    return true;
+                }
+            }
+        }
+        // Ctrl+V (Windows style) — only when no text selection exists
+        if ctrl && !shift && !alt {
+            if let Key::Character(c) = key {
+                if (c.as_str() == "v" || c.as_str() == "V" || c.as_str() == "\u{16}")
+                    && state.settings.clipboard.windows_style
+                {
+                    self.paste_to_terminal();
+                    self.dirty = true;
+                    return true;
+                }
+            }
+        }
+        // Alt+V (macOS style)
+        if alt && !ctrl && !shift {
+            if let Key::Character(c) = key {
+                if (c.as_str() == "v" || c.as_str() == "V")
+                    && state.settings.clipboard.macos_style
+                {
+                    self.paste_to_terminal();
+                    self.dirty = true;
+                    return true;
+                }
+            }
+        }
+
         // Alt+1~9: switch workspace
         if alt && !ctrl && !shift {
             if let Key::Character(c) = key {
@@ -315,14 +399,14 @@ impl ApplicationHandler<AppEvent> for App {
                 .expect("failed to create window"),
         );
 
-        let gpu = pollster::block_on(GpuState::new(window.clone()))
+        // Load settings before GPU init so font_size/font_family/theme are wired.
+        let init_settings = crate::settings::Settings::load();
+
+        let gpu = pollster::block_on(GpuState::new(window.clone(), &init_settings.appearance))
             .expect("failed to initialize GPU");
 
-        // We need settings to determine sidebar width, but state isn't created yet.
-        // Load settings temporarily to get sidebar width for initial grid calculation.
-        let init_settings = crate::settings::Settings::load();
         let sidebar_logical_width = init_settings.appearance.sidebar_width;
-        let font_size = init_settings.appearance.font_size;
+        let startup_command = init_settings.general.startup_command.clone();
         drop(init_settings);
 
         // Compute terminal grid size from the terminal area (excluding sidebar)
@@ -343,8 +427,15 @@ impl ApplicationHandler<AppEvent> for App {
             let _ = proxy.send_event(AppEvent::TerminalOutput);
         });
 
-        let state = AppState::new(cols, rows, waker).expect("failed to create app state");
-        let _ = font_size; // font_size wired via CellRenderer::new in GpuState::new
+        let mut state = AppState::new(cols, rows, waker).expect("failed to create app state");
+
+        // Execute startup_command if configured
+        if !startup_command.is_empty() {
+            if let Some(terminal) = state.focused_terminal_mut() {
+                terminal.send_key(&startup_command);
+                terminal.send_bytes(b"\r");
+            }
+        }
 
         // Start IPC server
         match IpcServer::start() {
@@ -723,6 +814,12 @@ impl ApplicationHandler<AppEvent> for App {
                             terminal::TerminalEventKind::CwdChanged(_path) => {
                                 // Could update sidebar metadata here in the future
                                 self.dirty = true;
+                            }
+                            terminal::TerminalEventKind::ClipboardSet(data) => {
+                                // Terminal requested clipboard set via OSC 52
+                                if let Some(cb) = &mut self.clipboard {
+                                    cb.set_text(data);
+                                }
                             }
                             terminal::TerminalEventKind::ProcessExited => {
                                 // Fire ProcessExit hooks on the source surface

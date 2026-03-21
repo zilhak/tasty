@@ -143,21 +143,20 @@ pub fn draw_all(ctx: &egui::Context, state: &mut AppState, scale_factor: f32, pa
 
 | 필드 | 줄 | 상태 |
 |------|-----|------|
-| `appearance.font_family` | 28 | UI에 표시만, GPU 렌더러에 미반영 (CellRenderer는 시스템 기본 모노스페이스 사용) |
-| `appearance.font_size` | 29 | GPU 초기화 시 14.0 하드코딩 (`gpu.rs:88`), 설정값 미사용 (`main.rs:321` 주석) |
-| `appearance.theme` | 30 | UI에 라디오 버튼만 있고, 색상 팔레트에 미반영 |
-| `appearance.background_opacity` | 31 | UI 슬라이더만 있고, wgpu clear color에 미반영 |
-| `clipboard.macos_style` | 38 | 클립보드 기능 미구현 |
-| `clipboard.linux_style` | 39 | 클립보드 기능 미구현 |
-| `clipboard.windows_style` | 40 | 클립보드 기능 미구현 |
-| `notification.sound` | 48 | UI 체크박스만 있고, 사운드 재생 미구현 |
-| `keybindings.*` | 55-61 | 모든 6개 필드가 UI에 없고, `main.rs`에서 하드코딩된 단축키 사용 |
-| `general.startup_command` | 22 | UI에 편집 필드만 있고, 시작 시 실행 미구현 |
+| `appearance.font_family` | 28 | 완료 — GpuState 생성 시 CellRenderer에 전달, cosmic-text FamilyOwned로 해석 |
+| `appearance.font_size` | 29 | 완료 — GpuState 생성 시 CellRenderer에 전달 |
+| `appearance.theme` | 30 | 완료 — egui Visuals 및 wgpu clear color에 반영, 설정 저장 시 실시간 전환 |
+| `appearance.background_opacity` | 31 | 완료 — wgpu clear color 알파 값에 반영 |
+| `clipboard.macos_style` | 38 | 완료 — Alt+V 붙여넣기 게이트 |
+| `clipboard.linux_style` | 39 | 완료 — Ctrl+Shift+V 붙여넣기 게이트 |
+| `clipboard.windows_style` | 40 | 완료 — Ctrl+V 붙여넣기 게이트 |
+| `notification.sound` | 48 | 미구현 — UI 체크박스만 있고, 사운드 재생 미구현 (TODO) |
+| `keybindings.*` | 55-61 | 미구현 — 모든 6개 필드가 UI에 없고, `main.rs`에서 하드코딩된 단축키 사용 (TODO: 파싱 복잡도 높음) |
+| `general.startup_command` | 22 | 완료 — 앱 시작 시 첫 터미널에 자동 전송 |
 
 ### 개선안
-1. 미구현 기능의 설정 필드에 `#[serde(skip)]` 또는 주석으로 상태 명시.
-2. 또는 기능 구현과 함께 반영.
-3. `font_size` 하드코딩 (gpu.rs:88)을 설정값으로 교체.
+1. `notification.sound`: 사운드 재생 크레이트 (rodio 등) 도입 필요.
+2. `keybindings.*`: 키 문자열 파서 구현 필요. "ctrl+shift+n" → (ModifiersState, Key) 변환.
 
 ---
 
@@ -249,7 +248,7 @@ DECSET/DECRST가 구현되었다. 지원 모드: DECCKM(1), StartBlinkingCursor(
 | 항목 | 영향 범위 | 예상 작업량 | 상태 |
 |------|-----------|------------|------|
 | DECSET/DECRST 구현 | terminal.rs | 중 (200-300줄) | 완료 |
-| font_size 설정 반영 | gpu.rs:88 하드코딩 제거 | 소 (10줄) | 미착수 |
+| font_size 설정 반영 | gpu.rs:88 하드코딩 제거 | 소 (10줄) | 완료 |
 | Pane/Tab 삭제 API | model.rs, state.rs | 중 (150줄) | 완료 |
 
 ### P1 (높음) — 코드 품질 개선
@@ -272,21 +271,22 @@ DECSET/DECRST가 구현되었다. 지원 모드: DECCKM(1), StartBlinkingCursor(
 
 ### P3 (낮음) — 확장성/성능
 
-| 항목 | 영향 범위 | 예상 작업량 |
-|------|-----------|------------|
-| 다중 아틀라스 페이지 | font.rs | 대 (200줄) |
-| 단일 CellRenderer → 멀티 서피스 최적화 | renderer.rs, gpu.rs | 대 (300줄) |
-| Terminal trait 추출 + model.rs 분리 | model.rs, terminal.rs | 대 (500줄) |
-| TerminalSurface trait 추출 + 렌더러 분리 | renderer.rs, font.rs | 대 (400줄) |
-| 클립보드 구현 | 새 파일 | 중 (200줄) |
-| 키바인딩 커스터마이징 | settings.rs, main.rs | 대 (300줄) |
+| 항목 | 영향 범위 | 예상 작업량 | 상태 |
+|------|-----------|------------|------|
+| 다중 아틀라스 페이지 | font.rs | 대 (200줄) | 미착수 |
+| 단일 CellRenderer → 멀티 서피스 최적화 | renderer.rs, gpu.rs | 대 (300줄) | 미착수 |
+| Terminal trait 추출 + model.rs 분리 | model.rs, terminal.rs | 대 (500줄) | 미착수 |
+| TerminalSurface trait 추출 + 렌더러 분리 | renderer.rs, font.rs | 대 (400줄) | 미착수 |
+| 클립보드 구현 | main.rs, terminal.rs | 중 (200줄) | 완료 (arboard, OSC 52, 붙여넣기 단축키) |
+| 키바인딩 커스터마이징 | settings.rs, main.rs | 대 (300줄) | 미착수 |
 
 ---
 
 ## 핵심 우선순위 요약
 
-1. **즉시 해결**: `font_size` 하드코딩 제거, `default_shell()` 통합.
-2. **완료된 단기 목표**: DECSET/DECRST 구현 (완료), Pane/Tab 삭제 API (완료).
-3. **남은 단기 목표**: 즉시 분리 가능 크레이트 추출.
-4. **중기 목표**: BinaryTree trait, Visitor 패턴, AppState 분리.
-5. **장기 목표**: Terminal trait 추출, 렌더러 분리, 아틀라스 개선.
+1. **완료**: `font_size`/`font_family`/`theme`/`background_opacity` 설정 반영, 클립보드 구현 (arboard + OSC 52 + 붙여넣기), `startup_command` 실행, `sidebar_width` 실시간 동기화.
+2. **완료된 단기 목표**: DECSET/DECRST 구현, Pane/Tab 삭제 API.
+3. **남은 단기 목표**: `default_shell()` 통합, 즉시 분리 가능 크레이트 추출.
+4. **미구현 설정**: `notification.sound` (사운드 재생), `keybindings.*` (커스텀 단축키 파싱).
+5. **중기 목표**: BinaryTree trait, Visitor 패턴, AppState 분리.
+6. **장기 목표**: Terminal trait 추출, 렌더러 분리, 아틀라스 개선.

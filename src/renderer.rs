@@ -220,8 +220,9 @@ impl CellRenderer {
         queue: &wgpu::Queue,
         surface_format: wgpu::TextureFormat,
         font_size: f32,
+        font_family: &str,
     ) -> Self {
-        let font_config = FontConfig::new(font_size);
+        let font_config = FontConfig::new(font_size, font_family);
         let atlas = GlyphAtlas::new(device);
 
         // Max instances for an 80x24 grid (with room for larger)

@@ -214,10 +214,38 @@
 
 ### 설정 연동
 - `settings.general.shell`: Terminal 생성 시 커스텀 셸 경로 사용 (비어있으면 OS 기본 셸)
-- `settings.appearance.sidebar_width`: 사이드바 너비가 UI, GPU 렌더러, 터미널 rect 계산에 반영
+- `settings.general.startup_command`: 첫 터미널 생성 후 자동 실행할 명령. 비어있으면 무시
+- `settings.appearance.font_family`: GPU 렌더러의 cosmic-text FontSystem에 전달. `FamilyOwned::Name`으로 해석되며, 빈 문자열이나 "monospace"이면 시스템 기본 모노스페이스 사용
+- `settings.appearance.font_size`: GpuState 생성 시 CellRenderer에 전달. 기본값 14.0
+- `settings.appearance.theme`: egui Visuals 설정에 반영. "dark" → `Visuals::dark()`, "light" → `Visuals::light()`. wgpu clear color도 테마에 따라 변경. 설정 저장 후 실시간 반영
+- `settings.appearance.background_opacity`: wgpu clear color의 알파 값으로 적용. 0.0(투명)~1.0(불투명)
+- `settings.appearance.sidebar_width`: 사이드바 너비가 UI, GPU 렌더러, 터미널 rect 계산에 반영. 렌더 루프에서 설정값과 자동 동기화
+- `settings.clipboard.windows_style`: Ctrl+V 붙여넣기 활성화
+- `settings.clipboard.linux_style`: Ctrl+Shift+V 붙여넣기 활성화
+- `settings.clipboard.macos_style`: Alt+V 붙여넣기 활성화
 - `settings.notification.enabled`: 알림 활성화/비활성화. 비활성 시 알림 수집 및 시스템 알림 모두 차단
 - `settings.notification.system_notification`: OS 네이티브 알림 개별 제어
 - `settings.notification.coalesce_ms`: NotificationStore 생성 시 병합 간격 전달
+- `settings.notification.sound`: UI 체크박스만 존재. 사운드 재생 미구현 (TODO)
+- `settings.keybindings.*`: UI에 미노출. 현재 main.rs에서 하드코딩된 단축키 사용 (TODO: 파싱 및 적용)
+
+## 클립보드
+
+### arboard 기반 크로스 플랫폼 클립보드
+- `arboard` 크레이트를 사용한 시스템 클립보드 읽기/쓰기
+- 앱 시작 시 `Clipboard` 인스턴스를 생성하여 App 구조체에 보관
+
+### 붙여넣기 (Paste)
+- 설정에 따라 세 가지 단축키 지원:
+  - **Windows**: Ctrl+V (`clipboard.windows_style`)
+  - **Linux**: Ctrl+Shift+V (`clipboard.linux_style`)
+  - **macOS**: Alt+V (`clipboard.macos_style`)
+- 브래킷 붙여넣기 모드(DECSET 2004) 지원: 활성화 시 `\x1b[200~` ... `\x1b[201~`로 감싸서 전송
+- 포커스된 터미널의 PTY에 직접 전송
+
+### OSC 52 클립보드 설정
+- 터미널 프로그램이 OSC 52 시퀀스로 시스템 클립보드에 텍스트를 설정할 수 있음
+- termwiz의 `SetSelection` 파싱을 활용하여 이벤트 발생 → main.rs에서 arboard로 클립보드에 반영
 
 ## CLI 도구 & 소켓 API
 

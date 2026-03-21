@@ -55,6 +55,9 @@ regex = "1"
 # Shell escaping
 shell-escape = "0.1"
 
+# Clipboard
+arboard = "3"
+
 # Utilities
 directories = "6"
 

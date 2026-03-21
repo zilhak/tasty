@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use cosmic_text::{
-    Attrs, Buffer, Family, FontSystem, Metrics, Shaping, SwashCache, SwashContent,
+    Attrs, Buffer, FamilyOwned, FontSystem, Metrics, Shaping, SwashCache, SwashContent,
 };
 
 /// Font metrics for monospace grid layout.
@@ -18,23 +18,36 @@ pub struct FontConfig {
     pub font_system: FontSystem,
     pub swash_cache: SwashCache,
     pub metrics: FontMetrics,
+    /// The font family used for rendering glyphs.
+    pub font_family: FamilyOwned,
 }
 
 impl FontConfig {
-    pub fn new(font_size: f32) -> Self {
+    /// Create a new FontConfig with the given font size and family name.
+    /// If `font_family` is empty or "monospace", the system default monospace font is used.
+    pub fn new(font_size: f32, font_family: &str) -> Self {
         let mut font_system = FontSystem::new();
         let swash_cache = SwashCache::new();
 
-        let metrics = Self::measure_cell(&mut font_system, font_size);
+        let family = if font_family.is_empty()
+            || font_family.eq_ignore_ascii_case("monospace")
+        {
+            FamilyOwned::Monospace
+        } else {
+            FamilyOwned::Name(font_family.to_string().into())
+        };
+
+        let metrics = Self::measure_cell(&mut font_system, font_size, &family);
 
         Self {
             font_system,
             swash_cache,
             metrics,
+            font_family: family,
         }
     }
 
-    fn measure_cell(font_system: &mut FontSystem, font_size: f32) -> FontMetrics {
+    fn measure_cell(font_system: &mut FontSystem, font_size: f32, family: &FamilyOwned) -> FontMetrics {
         let line_height = (font_size * 1.2).ceil();
         let cosmic_metrics = Metrics::new(font_size, line_height);
 
@@ -43,7 +56,7 @@ impl FontConfig {
         buffer.set_text(
             font_system,
             "M",
-            &Attrs::new().family(Family::Monospace),
+            &Attrs::new().family(family.as_family()),
             Shaping::Advanced,
             None,
         );
@@ -184,7 +197,7 @@ impl GlyphAtlas {
             Some(line_height * 2.0),
         );
 
-        let mut attrs = Attrs::new().family(Family::Monospace);
+        let mut attrs = Attrs::new().family(font_config.font_family.as_family());
         if key.bold {
             attrs = attrs.weight(cosmic_text::Weight::BOLD);
         }
@@ -354,5 +367,42 @@ impl GlyphAtlas {
 
         self.cache.insert(key, entry);
         Some(entry)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn font_config_default_monospace() {
+        let config = FontConfig::new(14.0, "");
+        assert!(matches!(config.font_family, FamilyOwned::Monospace));
+        assert_eq!(config.metrics.font_size, 14.0);
+        assert!(config.metrics.cell_width > 0.0);
+        assert!(config.metrics.cell_height > 0.0);
+    }
+
+    #[test]
+    fn font_config_explicit_monospace() {
+        let config = FontConfig::new(14.0, "monospace");
+        assert!(matches!(config.font_family, FamilyOwned::Monospace));
+    }
+
+    #[test]
+    fn font_config_named_family() {
+        let config = FontConfig::new(16.0, "JetBrains Mono");
+        assert!(matches!(config.font_family, FamilyOwned::Name(_)));
+        assert_eq!(config.metrics.font_size, 16.0);
+        // Cell dimensions should be positive regardless of whether the font exists
+        assert!(config.metrics.cell_width > 0.0);
+        assert!(config.metrics.cell_height > 0.0);
+    }
+
+    #[test]
+    fn font_config_different_sizes() {
+        let small = FontConfig::new(10.0, "");
+        let large = FontConfig::new(24.0, "");
+        assert!(large.metrics.cell_height > small.metrics.cell_height);
     }
 }
