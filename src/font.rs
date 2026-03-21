@@ -9,6 +9,8 @@ pub struct FontMetrics {
     pub cell_width: f32,
     pub cell_height: f32,
     pub font_size: f32,
+    /// Baseline position within a cell (distance from cell top to text baseline)
+    pub baseline: f32,
 }
 
 /// Font configuration holding cosmic-text state.
@@ -49,11 +51,14 @@ impl FontConfig {
 
         // Measure the width of 'M' by looking at layout runs
         let mut cell_width = font_size * 0.6; // fallback
+        let mut baseline = line_height * 0.8; // fallback
         for run in buffer.layout_runs() {
             for glyph in run.glyphs.iter() {
                 cell_width = glyph.w;
                 break;
             }
+            // line_y is the baseline position within the layout
+            baseline = run.line_y;
             break;
         }
 
@@ -61,6 +66,7 @@ impl FontConfig {
             cell_width: cell_width.ceil(),
             cell_height: line_height,
             font_size,
+            baseline,
         }
     }
 }
@@ -208,7 +214,7 @@ impl GlyphAtlas {
             }
         }
 
-        let (physical_glyph, line_y) = found_glyph?;
+        let (physical_glyph, _line_y) = found_glyph?;
 
         // Rasterize the glyph using swash
         let image = font_config
@@ -240,13 +246,13 @@ impl GlyphAtlas {
             SwashContent::Mask => image.data.clone(),
             SwashContent::Color => {
                 // RGBA -> take alpha channel
-                image.data.chunks(4).map(|pixel| pixel[3]).collect()
+                image.data.chunks_exact(4).map(|pixel| pixel[3]).collect()
             }
             SwashContent::SubpixelMask => {
                 // RGB subpixel -> average to grayscale
                 image
                     .data
-                    .chunks(3)
+                    .chunks_exact(3)
                     .map(|pixel| {
                         ((pixel[0] as u16 + pixel[1] as u16 + pixel[2] as u16) / 3) as u8
                     })
@@ -292,14 +298,21 @@ impl GlyphAtlas {
             },
         );
 
+        // Glyph offset relative to cell origin:
+        // placement.left is the horizontal bearing (distance from cell left to glyph left)
+        // placement.top is the vertical bearing (distance from baseline to glyph top)
+        // We need: offset from cell top-left to glyph top-left
+        let offset_x = image.placement.left as f32;
+        let offset_y = font_config.metrics.baseline - image.placement.top as f32;
+
         let atlas_f = self.atlas_size as f32;
         let entry = AtlasEntry {
             uv_x: self.shelf_x as f32 / atlas_f,
             uv_y: self.shelf_y as f32 / atlas_f,
             uv_w: glyph_width as f32 / atlas_f,
             uv_h: glyph_height as f32 / atlas_f,
-            offset_x: image.placement.left as f32,
-            offset_y: line_y - image.placement.top as f32,
+            offset_x,
+            offset_y,
             width: glyph_width as f32,
             height: glyph_height as f32,
         };

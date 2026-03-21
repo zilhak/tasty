@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use anyhow::Result;
 use termwiz::surface::Surface;
 use winit::dpi::PhysicalSize;
@@ -15,7 +17,7 @@ pub struct GpuState {
 }
 
 impl GpuState {
-    pub async fn new(window: &Window) -> Result<Self> {
+    pub async fn new(window: Arc<Window>) -> Result<Self> {
         let size = window.inner_size();
 
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
@@ -23,12 +25,7 @@ impl GpuState {
             ..Default::default()
         });
 
-        // SAFETY: surface lives as long as the window
-        let surface = unsafe {
-            instance.create_surface(wgpu::SurfaceTarget::from(
-                std::mem::transmute::<&Window, &'static Window>(window),
-            ))?
-        };
+        let surface = instance.create_surface(window)?;
 
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {

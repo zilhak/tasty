@@ -3,6 +3,8 @@ mod gpu;
 mod renderer;
 mod terminal;
 
+use std::sync::Arc;
+
 use anyhow::Result;
 use tracing_subscriber::EnvFilter;
 use winit::application::ApplicationHandler;
@@ -15,17 +17,18 @@ use gpu::GpuState;
 use terminal::Terminal;
 
 struct App {
-    window: Option<Window>,
+    // gpu must drop before window so the wgpu surface is released first
     gpu: Option<GpuState>,
     terminal: Option<Terminal>,
+    window: Option<Arc<Window>>,
 }
 
 impl App {
     fn new() -> Self {
         Self {
-            window: None,
             gpu: None,
             terminal: None,
+            window: None,
         }
     }
 }
@@ -40,11 +43,13 @@ impl ApplicationHandler for App {
             .with_title("Tasty")
             .with_inner_size(winit::dpi::LogicalSize::new(1280, 720));
 
-        let window = event_loop
-            .create_window(attrs)
-            .expect("failed to create window");
+        let window = Arc::new(
+            event_loop
+                .create_window(attrs)
+                .expect("failed to create window"),
+        );
 
-        let gpu = pollster::block_on(GpuState::new(&window))
+        let gpu = pollster::block_on(GpuState::new(window.clone()))
             .expect("failed to initialize GPU");
 
         // Compute terminal grid size from window dimensions
@@ -77,6 +82,15 @@ impl ApplicationHandler for App {
                     return;
                 }
                 if let Some(terminal) = &mut self.terminal {
+                    // event.text includes modifier transformations (e.g. Ctrl+C -> \x03)
+                    if let Some(text) = &event.text {
+                        let s = text.as_str();
+                        if !s.is_empty() {
+                            terminal.send_key(s);
+                            return;
+                        }
+                    }
+                    // Handle special keys that don't produce text
                     match event.logical_key.as_ref() {
                         Key::Named(NamedKey::Enter) => terminal.send_bytes(b"\r"),
                         Key::Named(NamedKey::Backspace) => terminal.send_bytes(b"\x7f"),
@@ -86,36 +100,57 @@ impl ApplicationHandler for App {
                         Key::Named(NamedKey::ArrowDown) => terminal.send_bytes(b"\x1b[B"),
                         Key::Named(NamedKey::ArrowRight) => terminal.send_bytes(b"\x1b[C"),
                         Key::Named(NamedKey::ArrowLeft) => terminal.send_bytes(b"\x1b[D"),
-                        Key::Character(c) => {
-                            terminal.send_key(c);
-                        }
+                        Key::Named(NamedKey::Home) => terminal.send_bytes(b"\x1b[H"),
+                        Key::Named(NamedKey::End) => terminal.send_bytes(b"\x1b[F"),
+                        Key::Named(NamedKey::PageUp) => terminal.send_bytes(b"\x1b[5~"),
+                        Key::Named(NamedKey::PageDown) => terminal.send_bytes(b"\x1b[6~"),
+                        Key::Named(NamedKey::Insert) => terminal.send_bytes(b"\x1b[2~"),
+                        Key::Named(NamedKey::Delete) => terminal.send_bytes(b"\x1b[3~"),
+                        Key::Named(NamedKey::F1) => terminal.send_bytes(b"\x1bOP"),
+                        Key::Named(NamedKey::F2) => terminal.send_bytes(b"\x1bOQ"),
+                        Key::Named(NamedKey::F3) => terminal.send_bytes(b"\x1bOR"),
+                        Key::Named(NamedKey::F4) => terminal.send_bytes(b"\x1bOS"),
+                        Key::Named(NamedKey::F5) => terminal.send_bytes(b"\x1b[15~"),
+                        Key::Named(NamedKey::F6) => terminal.send_bytes(b"\x1b[17~"),
+                        Key::Named(NamedKey::F7) => terminal.send_bytes(b"\x1b[18~"),
+                        Key::Named(NamedKey::F8) => terminal.send_bytes(b"\x1b[19~"),
+                        Key::Named(NamedKey::F9) => terminal.send_bytes(b"\x1b[20~"),
+                        Key::Named(NamedKey::F10) => terminal.send_bytes(b"\x1b[21~"),
+                        Key::Named(NamedKey::F11) => terminal.send_bytes(b"\x1b[23~"),
+                        Key::Named(NamedKey::F12) => terminal.send_bytes(b"\x1b[24~"),
                         _ => {}
                     }
                 }
             }
             WindowEvent::RedrawRequested => {
                 // Process PTY output
-                if let Some(terminal) = &mut self.terminal {
-                    terminal.process();
-                }
+                let changed = if let Some(terminal) = &mut self.terminal {
+                    terminal.process()
+                } else {
+                    false
+                };
 
-                if let (Some(gpu), Some(terminal)) = (&mut self.gpu, &self.terminal) {
-                    match gpu.render(terminal.surface()) {
-                        Ok(_) => {}
-                        Err(wgpu::SurfaceError::Lost) => {
-                            if let Some(window) = &self.window {
-                                gpu.resize(window.inner_size());
+                // Only render when content changed or on first frame
+                if changed || self.gpu.is_some() {
+                    if let (Some(gpu), Some(terminal)) = (&mut self.gpu, &self.terminal) {
+                        match gpu.render(terminal.surface()) {
+                            Ok(_) => {}
+                            Err(wgpu::SurfaceError::Lost) => {
+                                if let Some(window) = &self.window {
+                                    gpu.resize(window.inner_size());
+                                }
                             }
-                        }
-                        Err(wgpu::SurfaceError::OutOfMemory) => {
-                            tracing::error!("GPU out of memory");
-                            event_loop.exit();
-                        }
-                        Err(e) => {
-                            tracing::warn!("surface error: {e}");
+                            Err(wgpu::SurfaceError::OutOfMemory) => {
+                                tracing::error!("GPU out of memory");
+                                event_loop.exit();
+                            }
+                            Err(e) => {
+                                tracing::warn!("surface error: {e}");
+                            }
                         }
                     }
                 }
+
                 if let Some(window) = &self.window {
                     window.request_redraw();
                 }
