@@ -102,6 +102,7 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
                     ("Ctrl+Shift+D", "Surface Split H"),
                     ("Alt+Arrow", "Focus Pane"),
                     ("Ctrl+I", "Notifications"),
+                    ("Ctrl+,", "Settings"),
                 ];
 
                 for (key, desc) in &shortcuts {

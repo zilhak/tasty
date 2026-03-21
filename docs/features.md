@@ -139,3 +139,31 @@
 - PaneNode에서 각 Pane의 rect를 계산, 탭 바 높이를 뺀 영역에 터미널 렌더링
 - 리사이즈 시 모든 Pane, 모든 Tab, 모든 Surface의 행/열 재계산
 - wgpu RenderPass의 forget_lifetime()을 이용한 egui-wgpu 호환
+
+## 설정 시스템
+
+### TOML 기반 설정 파일
+- 설정 파일 경로: `~/.config/tasty/config.toml` (전 플랫폼 통일)
+- `directories` 크레이트로 플랫폼별 홈 디렉토리 추상화
+- `toml` + `serde` 기반 직렬화/역직렬화
+- 설정 파일이 없거나 파싱 실패 시 기본값으로 폴백
+
+### 설정 카테고리
+- **General**: 셸 경로 (OS별 자동 감지: COMSPEC/SHELL), 시작 명령
+- **Appearance**: 폰트 패밀리, 폰트 크기, 테마 (dark/light), 배경 투명도, 사이드바 너비
+- **Clipboard**: OS별 기본 활성화 (macOS: Alt+C/V, Linux: Ctrl+Shift+C/V, Windows: Ctrl+C/V)
+- **Notifications**: 알림 활성화, 시스템 알림, 사운드, 병합 간격(ms)
+- **Keybindings**: 워크스페이스/탭/패인/서피스 분할 단축키
+
+### GUI 설정 윈도우
+- Ctrl+, 단축키로 설정 윈도우 토글
+- egui Window 기반 탭 인터페이스 (General / Appearance / Clipboard / Notifications)
+- 편집 중 원본 설정을 보존하는 드래프트 패턴
+- Save 버튼: 디스크에 저장 후 즉시 적용
+- Cancel 버튼: 변경 사항 폐기
+
+### 설정 로드/저장
+- `Settings::load()`: 설정 파일 로드, 없으면 기본값 반환
+- `Settings::save()`: 설정 디렉토리 자동 생성 후 TOML 형식으로 저장
+- `Settings::config_path()`: 플랫폼 독립적 설정 파일 경로 반환
+- 앱 시작 시 자동 로드, AppState에 통합

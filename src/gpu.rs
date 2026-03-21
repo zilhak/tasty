@@ -6,6 +6,7 @@ use winit::window::Window;
 
 use crate::model::Rect;
 use crate::renderer::CellRenderer;
+use crate::settings_ui;
 use crate::state::AppState;
 use crate::ui;
 
@@ -162,6 +163,18 @@ impl GpuState {
             ui::draw_ui(ctx, state, scale_factor);
             ui::draw_pane_tab_bars(ctx, state, &pane_rects, scale_factor);
             ui::draw_notification_panel(ctx, state);
+            if state.settings_open {
+                let mut settings = state.settings.clone();
+                let mut open = state.settings_open;
+                settings_ui::draw_settings_window(
+                    ctx,
+                    &mut settings,
+                    &mut open,
+                    &mut state.settings_ui_state,
+                );
+                state.settings = settings;
+                state.settings_open = open;
+            }
         });
 
         self.egui_state

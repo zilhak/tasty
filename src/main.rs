@@ -3,6 +3,8 @@ mod gpu;
 mod model;
 mod notification;
 mod renderer;
+mod settings;
+mod settings_ui;
 mod state;
 mod terminal;
 mod ui;
@@ -135,6 +137,17 @@ impl App {
                     if state.notification_panel_open {
                         state.notifications.mark_all_read();
                     }
+                    self.dirty = true;
+                    return true;
+                }
+            }
+        }
+
+        // Ctrl+,: Toggle settings window
+        if ctrl && !shift && !alt {
+            if let Key::Character(c) = key {
+                if c.as_str() == "," {
+                    state.settings_open = !state.settings_open;
                     self.dirty = true;
                     return true;
                 }

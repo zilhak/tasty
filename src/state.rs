@@ -1,5 +1,7 @@
 use crate::model::{PaneId, Rect, SplitDirection, Workspace};
 use crate::notification::NotificationStore;
+use crate::settings::Settings;
+use crate::settings_ui::SettingsUiState;
 use crate::terminal::{Terminal, TerminalEvent};
 
 struct IdGenerator {
@@ -53,11 +55,18 @@ pub struct AppState {
     pub notifications: NotificationStore,
     /// Whether the notification panel overlay is open.
     pub notification_panel_open: bool,
+    /// Application settings loaded from config file.
+    pub settings: Settings,
+    /// Whether the settings window is open.
+    pub settings_open: bool,
+    /// Persistent UI state for the settings window.
+    pub settings_ui_state: SettingsUiState,
 }
 
 impl AppState {
     /// Creates initial state with one workspace, one pane, one tab, one terminal.
     pub fn new(cols: usize, rows: usize) -> anyhow::Result<Self> {
+        let settings = Settings::load();
         let ws = Workspace::new(0, "Workspace 1".to_string(), cols, rows, 0, 0, 0)?;
         Ok(Self {
             workspaces: vec![ws],
@@ -67,6 +76,9 @@ impl AppState {
             default_rows: rows,
             notifications: NotificationStore::new(),
             notification_panel_open: false,
+            settings,
+            settings_open: false,
+            settings_ui_state: SettingsUiState::new(),
         })
     }
 
