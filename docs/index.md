@@ -116,8 +116,21 @@ GPU 렌더링된 사이드바에 Git 브랜치, PR 상태, 작업 디렉토리, 
 ### CLI 도구
 `tasty` 명령으로 워크스페이스 생성, 알림 전송, 키 입력 등을 자동화. IPC로 실행 중인 GUI 앱과 통신.
 
+**현재 구현된 기능:**
+- clap 기반 서브커맨드: list, new-workspace, select-workspace, send, send-key, notify, notifications, tree, split, new-tab, surfaces, panes, info
+- 포트 파일(`~/.config/tasty/tasty.port`) 기반 자동 연결
+- 서브커맨드 없으면 GUI 모드, 있으면 CLI 모드
+- 상세: [features.md](features.md)
+
 ### 소켓 API
 외부 프로그램이 tasty를 제어할 수 있는 JSON-RPC IPC 인터페이스. 윈도우/레이아웃/외형 등 풍부한 제어 가능.
+
+**현재 구현된 기능:**
+- TCP 기반 JSON-RPC 2.0 서버 (127.0.0.1, 랜덤 포트)
+- 14개 메서드: system.info, workspace.list/create/select, pane.list/split, tab.list/create, surface.list/send/send_key, notification.list/create, tree
+- 메인 스레드 채널 통신으로 스레드 안전한 상태 접근
+- 앱 시작 시 자동 기동, 종료 시 포트 파일 자동 삭제
+- 상세: [features.md](features.md)
 
 ### 세션 복원
 앱 재시작 시 워크스페이스 레이아웃, 작업 디렉토리, 스크롤백, 윈도우 위치/크기를 복원.

@@ -61,7 +61,8 @@ impl Rect {
 pub struct Workspace {
     pub id: WorkspaceId,
     pub name: String,
-    pub pane_layout: PaneNode,
+    /// Always `Some` during normal operation. Temporarily `None` during structural mutations.
+    pane_layout_opt: Option<PaneNode>,
     pub focused_pane: PaneId,
 }
 
@@ -81,9 +82,29 @@ impl Workspace {
         Ok(Self {
             id,
             name,
-            pane_layout: PaneNode::Leaf(pane),
+            pane_layout_opt: Some(PaneNode::Leaf(pane)),
             focused_pane,
         })
+    }
+
+    /// Access the pane layout (always valid during normal operation).
+    pub fn pane_layout(&self) -> &PaneNode {
+        self.pane_layout_opt.as_ref().expect("pane_layout taken")
+    }
+
+    /// Access the pane layout mutably.
+    pub fn pane_layout_mut(&mut self) -> &mut PaneNode {
+        self.pane_layout_opt.as_mut().expect("pane_layout taken")
+    }
+
+    /// Temporarily take ownership of the pane layout for structural mutations.
+    pub fn take_pane_layout(&mut self) -> PaneNode {
+        self.pane_layout_opt.take().expect("pane_layout taken")
+    }
+
+    /// Put the pane layout back after structural mutations.
+    pub fn put_pane_layout(&mut self, layout: PaneNode) {
+        self.pane_layout_opt = Some(layout);
     }
 }
 
@@ -154,10 +175,10 @@ impl PaneNode {
         }
     }
 
-    /// Split a pane into two. The existing pane becomes `first`, a new pane becomes `second`.
-    /// Returns the new pane's ID.
-    pub fn split_pane(
-        &mut self,
+    /// Split a pane into two by taking ownership (no placeholder PTY created).
+    /// Returns the new tree and whether the split was performed.
+    pub fn split_pane_owned(
+        self,
         pane_id: PaneId,
         direction: SplitDirection,
         new_pane_id: PaneId,
@@ -165,28 +186,30 @@ impl PaneNode {
         new_surface_id: SurfaceId,
         cols: usize,
         rows: usize,
-    ) -> anyhow::Result<bool> {
+    ) -> anyhow::Result<(Self, bool)> {
         match self {
             PaneNode::Leaf(pane) => {
                 if pane.id != pane_id {
-                    return Ok(false);
+                    return Ok((PaneNode::Leaf(pane), false));
                 }
                 let new_pane = Pane::new(new_pane_id, new_tab_id, new_surface_id, cols, rows)?;
-                // Replace self: old pane goes to first, new pane goes to second
-                let old = std::mem::replace(
-                    self,
-                    PaneNode::Leaf(Pane::new(0, 0, 0, 1, 1)?), // temporary placeholder
-                );
-                *self = PaneNode::Split {
-                    direction,
-                    ratio: 0.5,
-                    first: Box::new(old),
-                    second: Box::new(PaneNode::Leaf(new_pane)),
-                };
-                Ok(true)
+                Ok((
+                    PaneNode::Split {
+                        direction,
+                        ratio: 0.5,
+                        first: Box::new(PaneNode::Leaf(pane)),
+                        second: Box::new(PaneNode::Leaf(new_pane)),
+                    },
+                    true,
+                ))
             }
-            PaneNode::Split { first, second, .. } => {
-                if first.split_pane(
+            PaneNode::Split {
+                direction: d,
+                ratio,
+                first,
+                second,
+            } => {
+                let (new_first, found) = first.split_pane_owned(
                     pane_id,
                     direction,
                     new_pane_id,
@@ -194,10 +217,19 @@ impl PaneNode {
                     new_surface_id,
                     cols,
                     rows,
-                )? {
-                    return Ok(true);
+                )?;
+                if found {
+                    return Ok((
+                        PaneNode::Split {
+                            direction: d,
+                            ratio,
+                            first: Box::new(new_first),
+                            second,
+                        },
+                        true,
+                    ));
                 }
-                second.split_pane(
+                let (new_second, found) = second.split_pane_owned(
                     pane_id,
                     direction,
                     new_pane_id,
@@ -205,7 +237,16 @@ impl PaneNode {
                     new_surface_id,
                     cols,
                     rows,
-                )
+                )?;
+                Ok((
+                    PaneNode::Split {
+                        direction: d,
+                        ratio,
+                        first: Box::new(new_first),
+                        second: Box::new(new_second),
+                    },
+                    found,
+                ))
             }
         }
     }
@@ -298,10 +339,10 @@ impl Pane {
         let tab = Tab {
             id: tab_id,
             name: "Shell".to_string(),
-            panel: Panel::Terminal(SurfaceNode {
+            panel_opt: Some(Panel::Terminal(SurfaceNode {
                 id: surface_id,
                 terminal,
-            }),
+            })),
         };
         Ok(Self {
             id,
@@ -322,10 +363,10 @@ impl Pane {
         let tab = Tab {
             id: tab_id,
             name: format!("Shell {}", self.tabs.len() + 1),
-            panel: Panel::Terminal(SurfaceNode {
+            panel_opt: Some(Panel::Terminal(SurfaceNode {
                 id: surface_id,
                 terminal,
-            }),
+            })),
         };
         self.tabs.push(tab);
         self.active_tab = self.tabs.len() - 1;
@@ -334,12 +375,26 @@ impl Pane {
 
     /// Get the active tab's panel.
     pub fn active_panel(&self) -> &Panel {
-        &self.tabs[self.active_tab].panel
+        self.tabs[self.active_tab].panel()
     }
 
     /// Get the active tab's panel (mutable).
     pub fn active_panel_mut(&mut self) -> &mut Panel {
-        &mut self.tabs[self.active_tab].panel
+        self.tabs[self.active_tab].panel_mut()
+    }
+
+    /// Split the active panel's focused surface (no placeholder PTY created).
+    pub fn split_active_surface(
+        &mut self,
+        direction: SplitDirection,
+        new_surface_id: SurfaceId,
+        cols: usize,
+        rows: usize,
+    ) -> anyhow::Result<()> {
+        let tab = &mut self.tabs[self.active_tab];
+        let old_panel = tab.take_panel();
+        tab.put_panel(old_panel.split_surface_owned(direction, new_surface_id, cols, rows)?);
+        Ok(())
     }
 
     /// Get the focused terminal (follows through Panel → SurfaceGroup).
@@ -370,7 +425,7 @@ impl Pane {
     pub fn all_terminals(&self) -> Vec<&Terminal> {
         let mut result = Vec::new();
         for tab in &self.tabs {
-            tab.panel.collect_terminals(&mut result);
+            tab.panel().collect_terminals(&mut result);
         }
         result
     }
@@ -379,7 +434,7 @@ impl Pane {
     pub fn all_terminals_mut(&mut self) -> Vec<&mut Terminal> {
         let mut result = Vec::new();
         for tab in &mut self.tabs {
-            tab.panel.collect_terminals_mut(&mut result);
+            tab.panel_mut().collect_terminals_mut(&mut result);
         }
         result
     }
@@ -389,7 +444,30 @@ impl Pane {
 pub struct Tab {
     pub id: TabId,
     pub name: String,
-    pub panel: Panel,
+    /// Always `Some` during normal operation. Temporarily `None` during structural mutations.
+    panel_opt: Option<Panel>,
+}
+
+impl Tab {
+    /// Access the panel (always valid during normal operation).
+    pub fn panel(&self) -> &Panel {
+        self.panel_opt.as_ref().expect("panel taken")
+    }
+
+    /// Access the panel mutably.
+    pub fn panel_mut(&mut self) -> &mut Panel {
+        self.panel_opt.as_mut().expect("panel taken")
+    }
+
+    /// Take ownership of the panel for structural mutations.
+    fn take_panel(&mut self) -> Panel {
+        self.panel_opt.take().expect("panel taken")
+    }
+
+    /// Put the panel back after structural mutations.
+    fn put_panel(&mut self, panel: Panel) {
+        self.panel_opt = Some(panel);
+    }
 }
 
 /// Content type within a Tab.
@@ -421,7 +499,7 @@ impl Panel {
     pub fn collect_terminals<'a>(&'a self, out: &mut Vec<&'a Terminal>) {
         match self {
             Panel::Terminal(node) => out.push(&node.terminal),
-            Panel::SurfaceGroup(group) => group.layout.collect_terminals(out),
+            Panel::SurfaceGroup(group) => group.layout().collect_terminals(out),
         }
     }
 
@@ -429,7 +507,7 @@ impl Panel {
     pub fn collect_terminals_mut<'a>(&'a mut self, out: &mut Vec<&'a mut Terminal>) {
         match self {
             Panel::Terminal(node) => out.push(&mut node.terminal),
-            Panel::SurfaceGroup(group) => group.layout.collect_terminals_mut(out),
+            Panel::SurfaceGroup(group) => group.layout_mut().collect_terminals_mut(out),
         }
     }
 
@@ -453,32 +531,21 @@ impl Panel {
         }
     }
 
-    /// Split the focused surface. If this is a single Terminal, converts to SurfaceGroup.
-    pub fn split_surface(
-        &mut self,
+    /// Split the focused surface by taking ownership (no placeholder PTY created).
+    /// Returns the new Panel.
+    pub fn split_surface_owned(
+        self,
         direction: SplitDirection,
         new_surface_id: SurfaceId,
         cols: usize,
         rows: usize,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<Self> {
         match self {
-            Panel::Terminal(_) => {
-                // Convert Terminal panel to SurfaceGroup
-                let old = std::mem::replace(
-                    self,
-                    Panel::Terminal(SurfaceNode {
-                        id: 0,
-                        terminal: Terminal::new(1, 1)?,
-                    }),
-                );
-                let old_node = match old {
-                    Panel::Terminal(node) => node,
-                    _ => unreachable!(),
-                };
+            Panel::Terminal(old_node) => {
                 let old_surface_id = old_node.id;
                 let new_terminal = Terminal::new(cols, rows)?;
                 let group = SurfaceGroupNode {
-                    layout: SurfaceGroupLayout::Split {
+                    layout_opt: Some(SurfaceGroupLayout::Split {
                         direction,
                         ratio: 0.5,
                         first: Box::new(SurfaceGroupLayout::Single(old_node)),
@@ -487,14 +554,16 @@ impl Panel {
                             terminal: new_terminal,
                         })),
                         focus_second: true,
-                    },
+                    }),
                     focused_surface: new_surface_id,
                     _first_surface: old_surface_id,
                 };
-                *self = Panel::SurfaceGroup(group);
-                Ok(())
+                Ok(Panel::SurfaceGroup(group))
             }
-            Panel::SurfaceGroup(group) => group.split(direction, new_surface_id, cols, rows),
+            Panel::SurfaceGroup(mut group) => {
+                group.split_surface(direction, new_surface_id, cols, rows)?;
+                Ok(Panel::SurfaceGroup(group))
+            }
         }
     }
 }
@@ -507,54 +576,80 @@ pub struct SurfaceNode {
 
 /// Split within a tab (appears as one tab but renders multiple terminals).
 pub struct SurfaceGroupNode {
-    pub layout: SurfaceGroupLayout,
+    /// Always `Some` during normal operation. Temporarily `None` during structural mutations.
+    layout_opt: Option<SurfaceGroupLayout>,
     pub focused_surface: SurfaceId,
     /// First surface ID, stored for focus tracking.
     _first_surface: SurfaceId,
 }
 
 impl SurfaceGroupNode {
-    /// Split the focused surface.
-    pub fn split(
+    /// Access the layout (always valid during normal operation).
+    pub fn layout(&self) -> &SurfaceGroupLayout {
+        self.layout_opt.as_ref().expect("layout taken")
+    }
+
+    /// Access the layout mutably.
+    pub fn layout_mut(&mut self) -> &mut SurfaceGroupLayout {
+        self.layout_opt.as_mut().expect("layout taken")
+    }
+
+    /// Take ownership of the layout for structural mutations.
+    fn take_layout(&mut self) -> SurfaceGroupLayout {
+        self.layout_opt.take().expect("layout taken")
+    }
+
+    /// Put the layout back.
+    fn put_layout(&mut self, layout: SurfaceGroupLayout) {
+        self.layout_opt = Some(layout);
+    }
+}
+
+impl SurfaceGroupNode {
+    /// Split the focused surface (no placeholder PTY created).
+    pub fn split_surface(
         &mut self,
         direction: SplitDirection,
         new_surface_id: SurfaceId,
         cols: usize,
         rows: usize,
     ) -> anyhow::Result<()> {
-        self.layout
-            .split(self.focused_surface, direction, new_surface_id, cols, rows)?;
+        let old_layout = self.take_layout();
+        let (new_layout, _) =
+            old_layout.split_owned(self.focused_surface, direction, new_surface_id, cols, rows)?;
+        self.put_layout(new_layout);
         self.focused_surface = new_surface_id;
         Ok(())
     }
 
     /// Compute render rects for all surfaces.
     pub fn compute_rects(&self, rect: Rect) -> Vec<(SurfaceId, &Terminal, Rect)> {
-        self.layout.render_regions(rect)
+        self.layout().render_regions(rect)
     }
 
     /// Get the focused terminal.
     pub fn focused_terminal(&self) -> &Terminal {
-        self.layout
+        self.layout()
             .find_terminal(self.focused_surface)
             .expect("focused surface not found")
     }
 
     /// Get the focused terminal (mutable).
     pub fn focused_terminal_mut(&mut self) -> &mut Terminal {
-        self.layout
-            .find_terminal_mut(self.focused_surface)
+        let id = self.focused_surface;
+        self.layout_mut()
+            .find_terminal_mut(id)
             .expect("focused surface not found")
     }
 
     /// Resize all surfaces.
     pub fn resize_all(&mut self, rect: Rect, cell_width: f32, cell_height: f32) {
-        self.layout.resize_all(rect, cell_width, cell_height);
+        self.layout_mut().resize_all(rect, cell_width, cell_height);
     }
 
     /// Move focus forward among surfaces.
     pub fn move_focus_forward(&mut self) {
-        let ids = self.layout.all_surface_ids();
+        let ids = self.layout().all_surface_ids();
         if ids.len() <= 1 {
             return;
         }
@@ -567,7 +662,7 @@ impl SurfaceGroupNode {
 
     /// Move focus backward among surfaces.
     pub fn move_focus_backward(&mut self) {
-        let ids = self.layout.all_surface_ids();
+        let ids = self.layout().all_surface_ids();
         if ids.len() <= 1 {
             return;
         }
@@ -592,45 +687,68 @@ pub enum SurfaceGroupLayout {
 }
 
 impl SurfaceGroupLayout {
-    /// Split a specific surface by ID.
-    pub fn split(
-        &mut self,
+    /// Split a specific surface by ID (takes ownership, no placeholder PTY).
+    pub fn split_owned(
+        self,
         target_id: SurfaceId,
         direction: SplitDirection,
         new_surface_id: SurfaceId,
         cols: usize,
         rows: usize,
-    ) -> anyhow::Result<bool> {
+    ) -> anyhow::Result<(Self, bool)> {
         match self {
             SurfaceGroupLayout::Single(node) => {
                 if node.id != target_id {
-                    return Ok(false);
+                    return Ok((SurfaceGroupLayout::Single(node), false));
                 }
-                let old = std::mem::replace(
-                    self,
-                    SurfaceGroupLayout::Single(SurfaceNode {
-                        id: 0,
-                        terminal: Terminal::new(1, 1)?,
-                    }),
-                );
                 let new_terminal = Terminal::new(cols, rows)?;
-                *self = SurfaceGroupLayout::Split {
-                    direction,
-                    ratio: 0.5,
-                    first: Box::new(old),
-                    second: Box::new(SurfaceGroupLayout::Single(SurfaceNode {
-                        id: new_surface_id,
-                        terminal: new_terminal,
-                    })),
-                    focus_second: true,
-                };
-                Ok(true)
+                Ok((
+                    SurfaceGroupLayout::Split {
+                        direction,
+                        ratio: 0.5,
+                        first: Box::new(SurfaceGroupLayout::Single(node)),
+                        second: Box::new(SurfaceGroupLayout::Single(SurfaceNode {
+                            id: new_surface_id,
+                            terminal: new_terminal,
+                        })),
+                        focus_second: true,
+                    },
+                    true,
+                ))
             }
-            SurfaceGroupLayout::Split { first, second, .. } => {
-                if first.split(target_id, direction, new_surface_id, cols, rows)? {
-                    return Ok(true);
+            SurfaceGroupLayout::Split {
+                direction: d,
+                ratio,
+                first,
+                second,
+                focus_second,
+            } => {
+                let (new_first, found) =
+                    first.split_owned(target_id, direction, new_surface_id, cols, rows)?;
+                if found {
+                    return Ok((
+                        SurfaceGroupLayout::Split {
+                            direction: d,
+                            ratio,
+                            first: Box::new(new_first),
+                            second,
+                            focus_second,
+                        },
+                        true,
+                    ));
                 }
-                second.split(target_id, direction, new_surface_id, cols, rows)
+                let (new_second, found) =
+                    second.split_owned(target_id, direction, new_surface_id, cols, rows)?;
+                Ok((
+                    SurfaceGroupLayout::Split {
+                        direction: d,
+                        ratio,
+                        first: Box::new(new_first),
+                        second: Box::new(new_second),
+                        focus_second,
+                    },
+                    found,
+                ))
             }
         }
     }

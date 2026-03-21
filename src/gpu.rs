@@ -153,7 +153,7 @@ impl GpuState {
         // Compute pane rects for per-pane tab bars
         let pane_rects: Vec<(u32, Rect)> = state
             .active_workspace()
-            .pane_layout
+            .pane_layout()
             .compute_rects(terminal_rect);
 
         // 1. Begin egui frame

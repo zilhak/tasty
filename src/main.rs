@@ -1,5 +1,7 @@
+mod cli;
 mod font;
 mod gpu;
+mod ipc;
 mod model;
 mod notification;
 mod renderer;
@@ -12,6 +14,7 @@ mod ui;
 use std::sync::Arc;
 
 use anyhow::Result;
+use clap::Parser;
 use tracing_subscriber::EnvFilter;
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, WindowEvent};
@@ -20,6 +23,7 @@ use winit::keyboard::{Key, ModifiersState, NamedKey};
 use winit::window::{Window, WindowAttributes, WindowId};
 
 use gpu::GpuState;
+use ipc::server::IpcServer;
 use model::{Rect, SplitDirection};
 use state::AppState;
 
@@ -32,6 +36,8 @@ struct App {
     modifiers: ModifiersState,
     /// Whether the window currently has OS focus.
     window_focused: bool,
+    /// IPC server for CLI communication.
+    ipc_server: Option<IpcServer>,
 }
 
 impl App {
@@ -43,6 +49,7 @@ impl App {
             dirty: true,
             modifiers: ModifiersState::empty(),
             window_focused: true,
+            ipc_server: None,
         }
     }
 
@@ -210,6 +217,24 @@ impl App {
 
         false
     }
+
+    /// Process pending IPC commands.
+    fn process_ipc(&mut self) {
+        let ipc = match &self.ipc_server {
+            Some(ipc) => ipc,
+            None => return,
+        };
+        let state = match &mut self.state {
+            Some(s) => s,
+            None => return,
+        };
+
+        while let Ok(cmd) = ipc.try_recv() {
+            let response = ipc::handler::handle(state, &cmd.request);
+            let _ = cmd.response_tx.send(response);
+            self.dirty = true;
+        }
+    }
 }
 
 impl ApplicationHandler for App {
@@ -243,6 +268,17 @@ impl ApplicationHandler for App {
         };
         let (cols, rows) = gpu.grid_size_for_rect(&terminal_rect);
         let state = AppState::new(cols, rows).expect("failed to create app state");
+
+        // Start IPC server
+        match IpcServer::start() {
+            Ok(ipc) => {
+                tracing::info!("IPC server started on port {}", ipc.port());
+                self.ipc_server = Some(ipc);
+            }
+            Err(e) => {
+                tracing::warn!("Failed to start IPC server: {}", e);
+            }
+        }
 
         self.window = Some(window);
         self.gpu = Some(gpu);
@@ -350,6 +386,9 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::RedrawRequested => {
+                // Process IPC commands
+                self.process_ipc();
+
                 // Process PTY output
                 let changed = if let Some(state) = &mut self.state {
                     state.process_all()
@@ -441,6 +480,15 @@ fn main() -> Result<()> {
         )
         .init();
 
+    // Parse CLI arguments
+    let cli = cli::Cli::parse();
+
+    // If a subcommand was provided, run in CLI client mode
+    if let Some(command) = cli.command {
+        return cli::run_client(command);
+    }
+
+    // Otherwise, run the GUI
     let event_loop = EventLoop::new()?;
     let mut app = App::new();
     event_loop.run_app(&mut app)?;

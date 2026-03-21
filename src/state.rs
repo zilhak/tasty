@@ -93,7 +93,7 @@ impl AppState {
     /// Get the focused pane in the active workspace.
     pub fn focused_pane(&self) -> &crate::model::Pane {
         let ws = self.active_workspace();
-        ws.pane_layout
+        ws.pane_layout()
             .find_pane(ws.focused_pane)
             .expect("focused pane not found")
     }
@@ -102,7 +102,7 @@ impl AppState {
     pub fn focused_pane_mut(&mut self) -> &mut crate::model::Pane {
         let ws = self.active_workspace_mut();
         let focused_id = ws.focused_pane;
-        ws.pane_layout
+        ws.pane_layout_mut()
             .find_pane_mut(focused_id)
             .expect("focused pane not found")
     }
@@ -160,7 +160,8 @@ impl AppState {
 
         let ws = self.active_workspace_mut();
         let target_pane_id = ws.focused_pane;
-        ws.pane_layout.split_pane(
+        let layout = ws.take_pane_layout();
+        let (new_layout, _) = layout.split_pane_owned(
             target_pane_id,
             direction,
             new_pane_id,
@@ -169,6 +170,7 @@ impl AppState {
             cols,
             rows,
         )?;
+        ws.put_pane_layout(new_layout);
         // Focus the new pane
         ws.focused_pane = new_pane_id;
         Ok(())
@@ -180,8 +182,7 @@ impl AppState {
         let cols = self.default_cols;
         let rows = self.default_rows;
         self.focused_pane_mut()
-            .active_panel_mut()
-            .split_surface(direction, new_surface_id, cols, rows)?;
+            .split_active_surface(direction, new_surface_id, cols, rows)?;
         Ok(())
     }
 
@@ -205,18 +206,27 @@ impl AppState {
     /// Move focus to the next pane.
     pub fn move_focus_next_pane(&mut self) {
         let ws = self.active_workspace_mut();
-        ws.focused_pane = ws.pane_layout.next_pane_id(ws.focused_pane);
+        ws.focused_pane = ws.pane_layout().next_pane_id(ws.focused_pane);
     }
 
     /// Move focus to the previous pane.
     pub fn move_focus_prev_pane(&mut self) {
         let ws = self.active_workspace_mut();
-        ws.focused_pane = ws.pane_layout.prev_pane_id(ws.focused_pane);
+        ws.focused_pane = ws.pane_layout().prev_pane_id(ws.focused_pane);
     }
 
-    /// Process all terminals in the active workspace. Returns true if any changed.
+    /// Process all terminals in ALL workspaces to drain PTY channels.
+    /// Returns true if the active workspace had any changes (for redraw).
     pub fn process_all(&mut self) -> bool {
-        self.active_workspace_mut().pane_layout.process_all()
+        let active_idx = self.active_workspace;
+        let mut active_changed = false;
+        for (i, workspace) in self.workspaces.iter_mut().enumerate() {
+            let changed = workspace.pane_layout_mut().process_all();
+            if i == active_idx {
+                active_changed = changed;
+            }
+        }
+        active_changed
     }
 
     /// Compute all render regions for the active workspace.
@@ -226,11 +236,11 @@ impl AppState {
         terminal_rect: Rect,
     ) -> Vec<(PaneId, Rect, Vec<(u32, &Terminal, Rect)>)> {
         let ws = self.active_workspace();
-        let pane_rects = ws.pane_layout.compute_rects(terminal_rect);
+        let pane_rects = ws.pane_layout().compute_rects(terminal_rect);
 
         let mut result = Vec::new();
         for (pane_id, pane_rect) in pane_rects {
-            if let Some(pane) = ws.pane_layout.find_pane(pane_id) {
+            if let Some(pane) = ws.pane_layout().find_pane(pane_id) {
                 // Reserve space for tab bar at top of each pane
                 let tab_bar_h = if pane.tabs.len() > 1 { 24.0 } else { 0.0 };
                 let content_rect = Rect {
@@ -255,9 +265,9 @@ impl AppState {
     /// Resize all terminals in the active workspace to match a given terminal rect.
     pub fn resize_all(&mut self, terminal_rect: Rect, cell_width: f32, cell_height: f32) {
         let ws = self.active_workspace_mut();
-        let pane_rects = ws.pane_layout.compute_rects(terminal_rect);
+        let pane_rects = ws.pane_layout().compute_rects(terminal_rect);
         for (pane_id, pane_rect) in pane_rects {
-            if let Some(pane) = ws.pane_layout.find_pane_mut(pane_id) {
+            if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
                 let tab_bar_h = if pane.tabs.len() > 1 { 24.0 } else { 0.0 };
                 let content_rect = Rect {
                     x: pane_rect.x,
@@ -276,11 +286,13 @@ impl AppState {
         self.active_workspace().focused_pane
     }
 
-    /// Collect events from all terminals in the active workspace.
+    /// Collect events from all terminals in ALL workspaces (not just active).
     pub fn collect_events(&mut self) -> Vec<TerminalEvent> {
         let mut all_events = Vec::new();
-        for terminal in self.active_workspace_mut().pane_layout.all_terminals_mut() {
-            all_events.extend(terminal.take_events());
+        for workspace in &mut self.workspaces {
+            for terminal in workspace.pane_layout_mut().all_terminals_mut() {
+                all_events.extend(terminal.take_events());
+            }
         }
         all_events
     }

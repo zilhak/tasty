@@ -66,7 +66,7 @@ impl Terminal {
         let pty_writer = pair.master.take_writer()?;
         let mut pty_reader = pair.master.try_clone_reader()?;
 
-        let (tx, rx) = mpsc::channel();
+        let (tx, rx) = mpsc::sync_channel(32); // 32 * 8KB = 256KB max buffered
 
         let reader_thread = thread::spawn(move || {
             let mut buf = [0u8; 8192];

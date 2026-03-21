@@ -7,6 +7,7 @@
 - `TERM=xterm-256color` 환경 설정
 - PTY 리사이즈 전파: 윈도우 크기 변경 시 자식 프로세스에 새 크기 통보
 - 자식 프로세스 핸들 관리: 생존 여부 확인 가능
+- PTY 채널 백프레셔: `sync_channel(32)`으로 버퍼 크기 제한 (32 * 8KB = 256KB), 버퍼 가득 차면 PTY 리더 스레드 블로킹
 
 ### VTE 파싱 및 터미널 에뮬레이션
 - termwiz `Parser`를 통한 VT 이스케이프 시퀀스 파싱
@@ -73,7 +74,8 @@
 - **Pane 분할** (Ctrl+Shift+E/O): 물리적 화면 분할. PaneNode 이진 트리 기반. 각 영역이 독립 탭 바를 가진다
 - **SurfaceGroup 분할** (Ctrl+D / Ctrl+Shift+D): 탭 내부 분할. SurfaceGroupLayout 이진 트리 기반. 탭 바에서는 하나의 탭으로 표시된다
 - Panel::Terminal이 분할 시 자동으로 Panel::SurfaceGroup으로 변환
-- 분할 시 새 터미널 자동 생성 (PTY 포함)
+- 분할 시 새 터미널 자동 생성 (PTY 포함), 소유권 이동(by-value) 패턴으로 placeholder PTY 좀비 프로세스 방지
+- Workspace/Tab/SurfaceGroupNode 내부 Option 래핑으로 구조적 변경 시 안전한 take/put 패턴 적용
 - 각 Surface를 scissor rect로 독립 렌더링
 - 뷰포트별 유니폼 갱신 (grid_offset을 각 Surface rect에 맞게 조정)
 
@@ -130,7 +132,8 @@
 - "Mark all read" 버튼 제공
 
 ### 이벤트 수집 파이프라인
-- AppState.collect_events()가 활성 워크스페이스의 모든 터미널에서 이벤트 수집
+- AppState.collect_events()가 모든 워크스페이스의 모든 터미널에서 이벤트 수집
+- AppState.process_all()이 모든 워크스페이스의 PTY 채널을 처리 (비활성 워크스페이스 메모리 누수 방지)
 - main.rs 이벤트 루프에서 process_all() 후 이벤트 수집 및 알림 처리
 - 윈도우 포커스 상태 추적으로 시스템 알림 발송 조건 판단
 
@@ -167,3 +170,36 @@
 - `Settings::save()`: 설정 디렉토리 자동 생성 후 TOML 형식으로 저장
 - `Settings::config_path()`: 플랫폼 독립적 설정 파일 경로 반환
 - 앱 시작 시 자동 로드, AppState에 통합
+
+## CLI 도구 & 소켓 API
+
+### JSON-RPC IPC 서버 (ipc/)
+- GUI 모드 시작 시 `127.0.0.1`의 랜덤 포트에 TCP 서버 자동 기동
+- 포트 번호를 `~/.config/tasty/tasty.port` 파일에 기록하여 CLI 클라이언트가 접속 가능
+- 앱 종료 시 포트 파일 자동 삭제 (Drop trait)
+- JSON-RPC 2.0 프로토콜: 줄 단위 JSON 요청/응답
+- 멀티클라이언트: 각 TCP 연결을 별도 스레드에서 처리
+- 메인 스레드 채널 통신: IPC 스레드 -> mpsc 채널 -> 이벤트 루프에서 처리 -> oneshot 응답
+
+### 지원 메서드
+- `system.info`: 버전, 워크스페이스 수, 활성 워크스페이스 인덱스
+- `workspace.list`: 전체 워크스페이스 목록 (이름, 활성 여부, 패인 수)
+- `workspace.create`: 새 워크스페이스 생성 (선택적 이름 지정)
+- `workspace.select`: 인덱스로 워크스페이스 전환
+- `pane.list`: 활성 워크스페이스의 패인 목록 (포커스 여부, 탭 수)
+- `pane.split`: 포커스된 패인 분할 (vertical/horizontal)
+- `tab.list`: 포커스된 패인의 탭 목록
+- `tab.create`: 포커스된 패인에 새 탭 추가
+- `surface.list`: 활성 워크스페이스의 전체 서피스(터미널) 목록 (cols, rows 포함)
+- `surface.send`: 포커스된 터미널에 텍스트 전송
+- `surface.send_key`: 포커스된 터미널에 키 입력 전송 (enter, tab, escape, 방향키 등 이름 매핑)
+- `notification.list`: 최근 50개 알림 목록
+- `notification.create`: 알림 생성
+- `tree`: 전체 워크스페이스/패인/탭 트리 구조 조회
+
+### CLI 클라이언트 (cli.rs)
+- `tasty` 명령에 서브커맨드가 있으면 CLI 모드, 없으면 GUI 모드로 동작
+- clap 기반 서브커맨드: `list`, `new-workspace`, `select-workspace`, `send`, `send-key`, `notify`, `notifications`, `tree`, `split`, `new-tab`, `surfaces`, `panes`, `info`
+- 포트 파일에서 포트 번호를 읽어 TCP 연결 후 JSON-RPC 요청/응답
+- `tree` 커맨드: 워크스페이스/패인/탭 계층을 트리 형태로 표시
+- 에러 시 종료 코드 1 반환

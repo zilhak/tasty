@@ -160,7 +160,7 @@ pub fn draw_pane_tab_bars(
     {
         let ws = state.active_workspace();
         for &(pane_id, pane_rect) in pane_rects {
-            let pane = match ws.pane_layout.find_pane(pane_id) {
+            let pane = match ws.pane_layout().find_pane(pane_id) {
                 Some(p) => p,
                 None => continue,
             };
@@ -226,7 +226,7 @@ pub fn draw_pane_tab_bars(
     for (pane_id, action) in actions {
         match action {
             PaneTabAction::SwitchTab(idx) => {
-                if let Some(pane) = state.active_workspace_mut().pane_layout.find_pane_mut(pane_id) {
+                if let Some(pane) = state.active_workspace_mut().pane_layout_mut().find_pane_mut(pane_id) {
                     pane.active_tab = idx;
                 }
             }
