@@ -165,6 +165,11 @@ impl GpuState {
         let surface_h = self.size.height as f32;
         let terminal_rect = crate::model::compute_terminal_rect(surface_w, surface_h, state.sidebar_width, self.scale_factor);
 
+        // Ensure all panes have correct PTY dimensions for the current layout.
+        // This handles: split via IPC (no resize_all called), window resize race,
+        // and any other case where terminal dimensions are stale.
+        state.resize_all(terminal_rect, self.renderer.cell_width(), self.renderer.cell_height());
+
         // Compute pane rects for per-pane tab bars
         let pane_rects: Vec<(u32, Rect)> = state
             .active_workspace()
