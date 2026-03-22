@@ -27,6 +27,10 @@ pub fn handle(state: &mut AppState, request: &JsonRpcRequest) -> JsonRpcResponse
         "surface.list" => surface::handle_surface_list(state, id),
         "surface.send" => surface::handle_surface_send(state, id, &request.params),
         "surface.send_key" => surface::handle_surface_send_key(state, id, &request.params),
+        "surface.send_combo" => surface::handle_surface_send_combo(state, id, &request.params),
+        "surface.send_to" => surface::handle_surface_send_to(state, id, &request.params),
+        "surface.focus" => surface::handle_surface_focus(state, id, &request.params),
+        "pane.focus" => surface::handle_pane_focus(state, id, &request.params),
         "notification.list" => handle_notification_list(state, id),
         "notification.create" => handle_notification_create(state, id, &request.params),
         "tree" => handle_tree(state, id),
@@ -38,8 +42,26 @@ pub fn handle(state: &mut AppState, request: &JsonRpcRequest) -> JsonRpcResponse
         "surface.screen_text" => surface::handle_screen_text(state, id, &request.params),
         "surface.cursor_position" => surface::handle_cursor_position(state, id, &request.params),
         "claude.launch" => hooks::handle_claude_launch(state, id, &request.params),
+        "ui.state" => handle_ui_state(state, id),
         _ => JsonRpcResponse::method_not_found(id, &request.method),
     }
+}
+
+fn handle_ui_state(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {
+    let ws = state.active_workspace();
+    let pane_count = ws.pane_layout().all_pane_ids().len();
+    let tab_count = state.focused_pane().map(|p| p.tabs.len()).unwrap_or(0);
+    JsonRpcResponse::success(
+        id,
+        json!({
+            "settings_open": state.settings_open,
+            "notification_panel_open": state.notification_panel_open,
+            "active_workspace": state.active_workspace,
+            "workspace_count": state.workspaces.len(),
+            "pane_count": pane_count,
+            "tab_count": tab_count,
+        }),
+    )
 }
 
 fn handle_system_info(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {

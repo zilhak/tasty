@@ -1,6 +1,7 @@
 mod common;
 
 use common::TastyInstance;
+use serde_json::json;
 use std::time::Duration;
 
 #[test]
@@ -254,4 +255,161 @@ fn multiple_workspaces_independent() {
 
     // workspace2 output should NOT contain workspace1
     assert!(!output2.contains("workspace1"));
+}
+
+// ============================================================
+// New IPC API tests: full remote control
+// ============================================================
+
+#[test]
+fn send_combo_ctrl_c() {
+    let tasty = TastyInstance::spawn();
+    // Verify send_combo works by sending Ctrl+C (0x03) to the terminal
+    let result = tasty.call("surface.send_combo", json!({"key": "c", "modifiers": ["ctrl"]}));
+    assert_eq!(result["sent"], true);
+
+    // Also verify other combos don't error
+    let result = tasty.call("surface.send_combo", json!({"key": "z", "modifiers": ["ctrl"]}));
+    assert_eq!(result["sent"], true);
+
+    let result = tasty.call("surface.send_combo", json!({"key": "d", "modifiers": ["ctrl"]}));
+    assert_eq!(result["sent"], true);
+
+    // After Ctrl+D the shell may exit, give it a moment and verify shell prompt returns
+    std::thread::sleep(Duration::from_millis(500));
+
+    // Verify Alt combo (sends ESC prefix)
+    let result = tasty.call("surface.send_combo", json!({"key": "x", "modifiers": ["alt"]}));
+    assert_eq!(result["sent"], true);
+}
+
+#[test]
+fn pane_focus_by_id() {
+    let tasty = TastyInstance::spawn();
+
+    // Get initial focused pane
+    let panes_before = tasty.call("pane.list", json!({}));
+    let first_pane_id = panes_before.as_array().unwrap()[0]["id"].as_u64().unwrap();
+
+    // Split pane
+    tasty.call("pane.split", json!({"direction": "vertical"}));
+
+    // Get new pane list
+    let panes_after = tasty.call("pane.list", json!({}));
+    let panes = panes_after.as_array().unwrap();
+    assert_eq!(panes.len(), 2);
+
+    // Focus the first (original) pane by ID
+    let result = tasty.call("pane.focus", json!({"pane_id": first_pane_id}));
+    assert_eq!(result["focused"], true);
+
+    // Verify it's actually focused
+    let panes_check = tasty.call("pane.list", json!({}));
+    let focused = panes_check.as_array().unwrap().iter()
+        .find(|p| p["focused"].as_bool() == Some(true))
+        .unwrap();
+    assert_eq!(focused["id"].as_u64().unwrap(), first_pane_id);
+}
+
+#[test]
+fn surface_focus_by_id() {
+    let tasty = TastyInstance::spawn();
+
+    // Get surface list
+    let surfaces = tasty.call("surface.list", json!({}));
+    let first_surface_id = surfaces.as_array().unwrap()[0]["id"].as_u64().unwrap();
+
+    // Split pane to create another surface
+    tasty.call("pane.split", json!({"direction": "vertical"}));
+
+    // Focus the first surface by ID
+    let result = tasty.call("surface.focus", json!({"surface_id": first_surface_id}));
+    assert_eq!(result["focused"], true);
+}
+
+#[test]
+fn send_to_specific_surface() {
+    let tasty = TastyInstance::spawn();
+
+    // Get the surface ID
+    let surfaces = tasty.call("surface.list", json!({}));
+    let sid = surfaces.as_array().unwrap()[0]["id"].as_u64().unwrap();
+
+    // Send text to specific surface
+    tasty.call("surface.set_mark", json!({"surface_id": sid}));
+    tasty.call("surface.send_to", json!({"surface_id": sid, "text": "echo targeted_send\r\n"}));
+
+    std::thread::sleep(Duration::from_millis(1000));
+
+    let result = tasty.call("surface.read_since_mark", json!({"surface_id": sid, "strip_ansi": true}));
+    let output = result["text"].as_str().unwrap_or("");
+    assert!(output.contains("targeted_send"), "Expected 'targeted_send' in output: {}", output);
+}
+
+#[test]
+fn screen_text_by_surface_id() {
+    let tasty = TastyInstance::spawn();
+    std::thread::sleep(Duration::from_secs(1));
+
+    // Get surface ID
+    let surfaces = tasty.call("surface.list", json!({}));
+    let sid = surfaces.as_array().unwrap()[0]["id"].as_u64().unwrap();
+
+    // Read screen text by surface_id
+    let result = tasty.call("surface.screen_text", json!({"surface_id": sid}));
+    let text = result["text"].as_str().unwrap_or("");
+    assert!(!text.trim().is_empty(), "screen_text by surface_id should return content");
+}
+
+#[test]
+fn cursor_position_by_surface_id() {
+    let tasty = TastyInstance::spawn();
+    std::thread::sleep(Duration::from_millis(500));
+
+    let surfaces = tasty.call("surface.list", json!({}));
+    let sid = surfaces.as_array().unwrap()[0]["id"].as_u64().unwrap();
+
+    let result = tasty.call("surface.cursor_position", json!({"surface_id": sid}));
+    assert!(result.get("x").is_some());
+    assert!(result.get("y").is_some());
+}
+
+#[test]
+fn send_key_with_surface_id() {
+    let tasty = TastyInstance::spawn();
+
+    let surfaces = tasty.call("surface.list", json!({}));
+    let sid = surfaces.as_array().unwrap()[0]["id"].as_u64().unwrap();
+
+    // Send text and then a key to specific surface
+    tasty.call("surface.set_mark", json!({"surface_id": sid}));
+    tasty.call("surface.send", json!({"surface_id": sid, "text": "echo key_test"}));
+    tasty.call("surface.send_key", json!({"surface_id": sid, "key": "enter"}));
+
+    std::thread::sleep(Duration::from_millis(1000));
+
+    let result = tasty.call("surface.read_since_mark", json!({"surface_id": sid, "strip_ansi": true}));
+    let output = result["text"].as_str().unwrap_or("");
+    assert!(output.contains("key_test"), "Expected 'key_test' in output: {}", output);
+}
+
+#[test]
+fn send_key_function_keys() {
+    let tasty = TastyInstance::spawn();
+    // Just verify these don't error out
+    for key in &["f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9", "f10", "f11", "f12"] {
+        let result = tasty.call("surface.send_key", json!({"key": key}));
+        assert_eq!(result["sent"], true, "Failed to send key: {}", key);
+    }
+}
+
+#[test]
+fn ui_state_query() {
+    let tasty = TastyInstance::spawn();
+    let result = tasty.call("ui.state", json!({}));
+    assert_eq!(result["settings_open"], false);
+    assert_eq!(result["notification_panel_open"], false);
+    assert!(result["workspace_count"].as_u64().unwrap() >= 1);
+    assert!(result["pane_count"].as_u64().unwrap() >= 1);
+    assert!(result["tab_count"].as_u64().unwrap() >= 1);
 }

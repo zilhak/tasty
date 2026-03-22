@@ -431,6 +431,26 @@ impl Pane {
         self.active_panel_mut()?.focused_terminal_mut()
     }
 
+    /// Find a terminal by surface ID across all tabs (immutable).
+    pub fn find_terminal(&self, surface_id: SurfaceId) -> Option<&Terminal> {
+        for tab in &self.tabs {
+            if let Some(t) = tab.panel().find_terminal(surface_id) {
+                return Some(t);
+            }
+        }
+        None
+    }
+
+    /// Find a terminal by surface ID across all tabs (mutable).
+    pub fn find_terminal_mut(&mut self, surface_id: SurfaceId) -> Option<&mut Terminal> {
+        for tab in &mut self.tabs {
+            if let Some(t) = tab.panel_mut().find_terminal_mut(surface_id) {
+                return Some(t);
+            }
+        }
+        None
+    }
+
     /// Switch to next tab.
     pub fn next_tab(&mut self) {
         if self.tabs.len() > 1 {

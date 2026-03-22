@@ -372,6 +372,97 @@ impl AppState {
         result
     }
 
+    /// Find a terminal by its surface ID across all workspaces (immutable).
+    pub fn find_terminal_by_id(&self, surface_id: u32) -> Option<&Terminal> {
+        for workspace in &self.workspaces {
+            let layout = workspace.pane_layout();
+            if let Some(t) = Self::find_terminal_in_layout(layout, surface_id) {
+                return Some(t);
+            }
+        }
+        None
+    }
+
+    /// Find a terminal by its surface ID across all workspaces (mutable).
+    pub fn find_terminal_by_id_mut(&mut self, surface_id: u32) -> Option<&mut Terminal> {
+        for workspace in &mut self.workspaces {
+            let layout = workspace.pane_layout_mut();
+            if let Some(t) = Self::find_terminal_in_layout_mut(layout, surface_id) {
+                return Some(t);
+            }
+        }
+        None
+    }
+
+    fn find_terminal_in_layout(layout: &crate::model::PaneNode, surface_id: u32) -> Option<&Terminal> {
+        match layout {
+            crate::model::PaneNode::Leaf(pane) => pane.find_terminal(surface_id),
+            crate::model::PaneNode::Split { first, second, .. } => {
+                Self::find_terminal_in_layout(first, surface_id)
+                    .or_else(|| Self::find_terminal_in_layout(second, surface_id))
+            }
+        }
+    }
+
+    fn find_terminal_in_layout_mut(layout: &mut crate::model::PaneNode, surface_id: u32) -> Option<&mut Terminal> {
+        match layout {
+            crate::model::PaneNode::Leaf(pane) => pane.find_terminal_mut(surface_id),
+            crate::model::PaneNode::Split { first, second, .. } => {
+                if let Some(t) = Self::find_terminal_in_layout_mut(first, surface_id) {
+                    return Some(t);
+                }
+                Self::find_terminal_in_layout_mut(second, surface_id)
+            }
+        }
+    }
+
+    /// Set the focused pane in the active workspace to the given pane_id.
+    /// Returns true if the pane exists.
+    pub fn focus_pane(&mut self, pane_id: u32) -> bool {
+        let ws = self.active_workspace_mut();
+        if ws.pane_layout().find_pane(pane_id).is_some() {
+            ws.focused_pane = pane_id;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Find which pane contains the surface, focus that pane, and if it's in a SurfaceGroup,
+    /// focus that surface. Returns true if found.
+    pub fn focus_surface(&mut self, surface_id: u32) -> bool {
+        // Find the pane containing the surface in the active workspace.
+        let ws = self.active_workspace_mut();
+        let pane_ids = ws.pane_layout().all_pane_ids();
+        let mut found_pane_id = None;
+        for pid in pane_ids {
+            if let Some(pane) = ws.pane_layout().find_pane(pid) {
+                if pane.find_terminal(surface_id).is_some() {
+                    found_pane_id = Some(pid);
+                    break;
+                }
+            }
+        }
+        let pane_id = match found_pane_id {
+            Some(id) => id,
+            None => return false,
+        };
+        // Focus the pane.
+        let ws = self.active_workspace_mut();
+        ws.focused_pane = pane_id;
+        // If the active panel for that pane is a SurfaceGroup, focus the surface within it.
+        if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
+            if let Some(panel) = pane.active_panel_mut() {
+                if let crate::model::Panel::SurfaceGroup(group) = panel {
+                    if group.layout().find_terminal(surface_id).is_some() {
+                        group.focused_surface = surface_id;
+                    }
+                }
+            }
+        }
+        true
+    }
+
     /// Update stored grid dimensions.
     pub fn update_grid_size(&mut self, cols: usize, rows: usize) {
         self.default_cols = cols;

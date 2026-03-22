@@ -259,31 +259,60 @@
 - 메인 스레드 채널 통신: IPC 스레드 -> mpsc 채널 -> 이벤트 루프에서 처리 -> oneshot 응답
 
 ### 지원 메서드
+
+모든 서피스 관련 메서드는 optional `surface_id` 파라미터를 지원한다. 지정하면 해당 서피스에 직접 접근하고, 생략하면 현재 포커스된 서피스에 작용한다.
+
+#### 시스템
 - `system.info`: 버전, 워크스페이스 수, 활성 워크스페이스 인덱스
+- `system.shutdown`: 헤드리스 모드에서 프로세스를 정상 종료
+- `ui.state`: GUI 오버레이 상태 조회 (settings_open, notification_panel_open, active_workspace, workspace_count, pane_count, tab_count)
+
+#### 워크스페이스
 - `workspace.list`: 전체 워크스페이스 목록 (이름, 활성 여부, 패인 수)
 - `workspace.create`: 새 워크스페이스 생성 (선택적 이름 지정)
 - `workspace.select`: 인덱스로 워크스페이스 전환
+
+#### 패인
 - `pane.list`: 활성 워크스페이스의 패인 목록 (포커스 여부, 탭 수)
 - `pane.split`: 포커스된 패인 분할 (vertical/horizontal)
+- `pane.close`: 포커스된 패인 닫기 (unsplit)
+- `pane.focus`: **pane_id로 특정 패인을 직접 포커스** — 멀티패인 환경에서 원하는 패인으로 전환
+
+#### 탭
 - `tab.list`: 포커스된 패인의 탭 목록
 - `tab.create`: 포커스된 패인에 새 탭 추가
 - `tab.close`: 포커스된 패인의 활성 탭 닫기
-- `pane.close`: 포커스된 패인 닫기 (unsplit)
+
+#### 서피스 (터미널)
+- `surface.list`: 활성 워크스페이스의 전체 서피스 목록 (id, pane_id, tab_index, cols, rows)
+- `surface.focus`: **surface_id로 특정 서피스를 직접 포커스** — 해당 서피스가 속한 패인까지 자동 포커스
 - `surface.close`: SurfaceGroup 내 포커스된 서피스 닫기
-- `surface.list`: 활성 워크스페이스의 전체 서피스(터미널) 목록 (cols, rows 포함)
-- `surface.send`: 포커스된 터미널에 텍스트 전송
-- `surface.send_key`: 포커스된 터미널에 키 입력 전송 (enter, tab, escape, 방향키 등 이름 매핑)
+
+#### 입력
+- `surface.send`: 텍스트 전송 (optional surface_id)
+- `surface.send_key`: 특수키 전송 — enter, tab, escape, backspace, 방향키, home/end, pageup/pagedown, delete/insert, f1~f12 (optional surface_id)
+- `surface.send_combo`: **키 조합 전송** — Ctrl+C (0x03), Ctrl+Z (0x1A), Ctrl+D (0x04), Alt+키 (ESC prefix) 등. 파라미터: `{key, modifiers: ["ctrl"|"shift"|"alt"], surface_id?}`
+- `surface.send_to`: 특정 surface_id에 텍스트 직접 전송 (포커스 변경 없이)
+
+#### 출력 읽기
+- `surface.screen_text`: 화면 텍스트 조회 (optional surface_id)
+- `surface.cursor_position`: 커서 위치 (x, y) 조회 (optional surface_id)
+- `surface.set_mark`: 출력 읽기 마크 설정 (optional surface_id)
+- `surface.read_since_mark`: 마크 이후 출력 텍스트 조회, ANSI 제거 옵션 (optional surface_id)
+
+#### 알림
 - `notification.list`: 최근 50개 알림 목록
 - `notification.create`: 알림 생성
+
+#### 트리
 - `tree`: 전체 워크스페이스/패인/탭 트리 구조 조회
+
+#### 훅
 - `hook.set`: 서피스 훅 등록 (event, command, once)
 - `hook.list`: 등록된 훅 목록 조회 (서피스별 필터 가능)
 - `hook.unset`: 훅 삭제
-- `surface.set_mark`: 터미널 출력 읽기 마크 설정
-- `surface.read_since_mark`: 마크 이후 출력 텍스트 조회 (ANSI 제거 옵션)
-- `surface.screen_text`: 포커스된 터미널의 화면 텍스트 조회
-- `surface.cursor_position`: 포커스된 터미널의 커서 위치 (x, y) 조회
-- `system.shutdown`: 헤드리스 모드에서 프로세스를 정상 종료
+
+#### 에이전트 전용
 - `claude.launch`: Claude Code 전용 워크스페이스 생성 및 실행
 
 ### 헤드리스 모드
@@ -293,12 +322,31 @@
 - `system.shutdown` IPC 메서드로 정상 종료
 - E2E 테스트 및 CI 환경에서의 자동화에 활용
 
-### E2E 테스트 프레임워크
+### E2E 테스트 프레임워크 (헤드리스)
 - `tests/common/mod.rs`의 `TastyInstance` 헬퍼: 헤드리스 모드로 프로세스 스폰, IPC 통신, 자동 정리
 - 포트 파일 기반 프로세스 간 통신으로 테스트 격리
 - `wait_for_output()`: 타임아웃 기반 출력 폴링
 - Drop trait으로 테스트 종료 시 자동 프로세스 정리
 - 14개 E2E 테스트: 앱 시작, 셸 에코, 워크스페이스/탭/패인 CRUD, 훅, 마크, 화면 텍스트, 커서 위치 등
+
+### GUI 통합 테스트 프레임워크
+- `tests/gui_common/mod.rs`의 `GuiTestInstance` 헬퍼: 실제 GUI 모드로 프로세스 스폰
+- `enigo` 크레이트로 키보드/마우스 입력 시뮬레이션 (Windows SendInput API)
+- `windows` 크레이트로 창 탐색(FindWindowW) 및 포커스 전환(SetForegroundWindow)
+- IPC `ui.state` 메서드로 GUI 오버레이 상태 검증
+- `wait_for_ui()`: 조건 기반 UI 상태 폴링 (타임아웃 포함)
+- `measure_ui_latency()`: UI 동작별 응답 속도 측정
+- IPC Waker: IPC 명령 도착 시 `EventLoopProxy`를 통해 이벤트 루프 즉시 깨움
+- 24개 GUI 테스트:
+  - 설정창 열기/닫기 (Ctrl+,, Escape)
+  - 알림 패널 토글 (Ctrl+Shift+I, Escape)
+  - 워크스페이스 생성/전환 (Ctrl+Shift+N, Alt+1~9)
+  - 탭 생성/닫기 (Ctrl+Shift+T, Ctrl+W)
+  - 패인 분할/닫기 (Ctrl+Shift+E/O/W)
+  - 키보드 라우팅: 오버레이 열림 시 터미널 입력 차단 검증
+  - 키보드 라우팅: 오버레이 없을 때 터미널 입력 전달 검증
+  - 전체 워크플로우: 워크스페이스→패인→탭 CRUD 통합 시나리오
+  - 속도 테스트: 설정 토글, 워크스페이스 전환, 탭 전환 반복 측정 (1초 이내 응답 보장)
 
 ### CLI 클라이언트 (cli.rs)
 - `tasty` 명령에 서브커맨드가 있으면 CLI 모드, `--headless`면 헤드리스 모드, 둘 다 없으면 GUI 모드로 동작

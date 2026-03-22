@@ -45,6 +45,26 @@ impl Panel {
         }
     }
 
+    /// Find a terminal by surface ID (immutable).
+    pub fn find_terminal(&self, surface_id: SurfaceId) -> Option<&Terminal> {
+        match self {
+            Panel::Terminal(node) => {
+                if node.id == surface_id { Some(&node.terminal) } else { None }
+            }
+            Panel::SurfaceGroup(group) => group.layout().find_terminal(surface_id),
+        }
+    }
+
+    /// Find a terminal by surface ID (mutable).
+    pub fn find_terminal_mut(&mut self, surface_id: SurfaceId) -> Option<&mut Terminal> {
+        match self {
+            Panel::Terminal(node) => {
+                if node.id == surface_id { Some(&mut node.terminal) } else { None }
+            }
+            Panel::SurfaceGroup(group) => group.layout_mut().find_terminal_mut(surface_id),
+        }
+    }
+
     /// Get render regions for this panel within the given rect.
     pub fn render_regions(&self, rect: Rect) -> Vec<(SurfaceId, &Terminal, Rect)> {
         match self {

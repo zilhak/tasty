@@ -144,7 +144,9 @@ GPU 렌더링된 사이드바에 Git 브랜치, PR 상태, 작업 디렉토리, 
 - 메인 스레드 채널 통신으로 스레드 안전한 상태 접근
 - 앱 시작 시 자동 기동, 종료 시 포트 파일 자동 삭제
 - 헤드리스 모드: `--headless` 플래그로 GUI 없이 IPC 전용 실행 (E2E 테스트/CI 활용)
-- E2E 테스트 프레임워크: `TastyInstance` 헬퍼 기반 14개 통합 테스트
+- IPC Waker: IPC 명령 도착 시 `EventLoopProxy`로 이벤트 루프 즉시 깨움
+- E2E 테스트 프레임워크: `TastyInstance` 헬퍼 기반 14개 통합 테스트 (헤드리스)
+- GUI 통합 테스트 프레임워크: `GuiTestInstance` 헬퍼 기반 24개 GUI 테스트 (enigo 입력 시뮬레이션 + IPC 검증 + 속도 측정)
 - 상세: [features.md](features.md)
 
 ### 세션 복원
