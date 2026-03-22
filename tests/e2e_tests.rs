@@ -209,11 +209,18 @@ fn tree_view() {
 #[test]
 fn screen_text() {
     let tasty = TastyInstance::spawn();
-    // Wait for shell prompt
-    std::thread::sleep(Duration::from_secs(1));
-    let text = tasty.screen_text();
-    // Should have some content (shell prompt)
-    assert!(!text.trim().is_empty());
+    // Poll until shell prompt appears
+    let start = std::time::Instant::now();
+    loop {
+        let text = tasty.screen_text();
+        if !text.trim().is_empty() {
+            return;
+        }
+        if start.elapsed() > Duration::from_secs(5) {
+            panic!("screen_text returned empty after 5s");
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
 }
 
 #[test]
@@ -349,16 +356,24 @@ fn send_to_specific_surface() {
 #[test]
 fn screen_text_by_surface_id() {
     let tasty = TastyInstance::spawn();
-    std::thread::sleep(Duration::from_secs(2));
 
     // Get surface ID
     let surfaces = tasty.call("surface.list", json!({}));
     let sid = surfaces.as_array().unwrap()[0]["id"].as_u64().unwrap();
 
-    // Read screen text by surface_id
-    let result = tasty.call("surface.screen_text", json!({"surface_id": sid}));
-    let text = result["text"].as_str().unwrap_or("");
-    assert!(!text.trim().is_empty(), "screen_text by surface_id should return content");
+    // Poll until screen has content (shell prompt), instead of fixed sleep
+    let start = std::time::Instant::now();
+    loop {
+        let result = tasty.call("surface.screen_text", json!({"surface_id": sid}));
+        let text = result["text"].as_str().unwrap_or("");
+        if !text.trim().is_empty() {
+            return; // PASS
+        }
+        if start.elapsed() > Duration::from_secs(5) {
+            panic!("screen_text by surface_id returned empty after 5s");
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
 }
 
 #[test]
