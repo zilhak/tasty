@@ -54,6 +54,8 @@ impl ClipboardContext {
 enum AppEvent {
     /// PTY reader thread produced output -- wake up and redraw.
     TerminalOutput,
+    /// IPC command arrived -- wake up and process.
+    IpcReady,
 }
 
 /// Tracks an active divider drag operation.
@@ -90,10 +92,12 @@ struct App {
     proxy: EventLoopProxy<AppEvent>,
     /// System clipboard for copy/paste.
     clipboard: Option<ClipboardContext>,
+    /// Custom port file path for IPC (used by GUI tests).
+    port_file: Option<String>,
 }
 
 impl App {
-    fn new(proxy: EventLoopProxy<AppEvent>) -> Self {
+    fn new(proxy: EventLoopProxy<AppEvent>, port_file: Option<String>) -> Self {
         Self {
             gpu: None,
             state: None,
@@ -106,6 +110,15 @@ impl App {
             dragging_divider: None,
             proxy,
             clipboard: ClipboardContext::new(),
+            port_file,
+        }
+    }
+
+    /// Set dirty flag and request a redraw. Call this instead of `self.dirty = true` directly.
+    fn mark_dirty(&mut self) {
+        self.dirty = true;
+        if let Some(window) = &self.window {
+            window.request_redraw();
         }
     }
 
@@ -185,7 +198,7 @@ fn main() -> Result<()> {
     // Otherwise, run the GUI
     let event_loop = EventLoop::<AppEvent>::with_user_event().build()?;
     let proxy = event_loop.create_proxy();
-    let mut app = App::new(proxy);
+    let mut app = App::new(proxy, cli.port_file);
     event_loop.run_app(&mut app)?;
 
     Ok(())
@@ -198,7 +211,7 @@ fn run_headless(port_file: Option<String>) -> Result<()> {
     let waker: terminal::Waker = Arc::new(|| {});
     let mut state = AppState::new(80, 24, waker)?;
 
-    let ipc = IpcServer::start_with_port_file(port_file)?;
+    let ipc = IpcServer::start_with_port_file(port_file, None)?;
     tracing::info!("headless IPC on port {}", ipc.port());
 
     let shutdown = Arc::new(AtomicBool::new(false));

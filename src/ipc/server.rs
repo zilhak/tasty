@@ -16,6 +16,9 @@ pub struct IpcCommand {
     pub response_tx: mpsc::SyncSender<JsonRpcResponse>,
 }
 
+/// Callback to wake the main event loop when an IPC command arrives.
+pub type IpcWaker = Arc<dyn Fn() + Send + Sync>;
+
 /// IPC server that listens for JSON-RPC requests over TCP.
 pub struct IpcServer {
     command_rx: mpsc::Receiver<IpcCommand>,
@@ -27,14 +30,10 @@ pub struct IpcServer {
 }
 
 impl IpcServer {
-    /// Start the IPC server on a random port. Returns the server handle.
-    pub fn start() -> Result<Self> {
-        Self::start_with_port_file(None)
-    }
-
-    /// Start the IPC server with an optional custom port file path.
-    /// If `port_file` is None, uses the default path.
-    pub fn start_with_port_file(port_file: Option<String>) -> Result<Self> {
+    /// Start the IPC server with an optional custom port file path and waker.
+    /// The waker is called whenever an IPC command is enqueued, so the event
+    /// loop can wake up and process it immediately.
+    pub fn start_with_port_file(port_file: Option<String>, waker: Option<IpcWaker>) -> Result<Self> {
         let listener = TcpListener::bind("127.0.0.1:0")?;
         let port = listener.local_addr()?.port();
 
@@ -59,8 +58,9 @@ impl IpcServer {
                 match listener.accept() {
                     Ok((stream, _)) => {
                         let cmd_tx = cmd_tx.clone();
+                        let waker = waker.clone();
                         thread::spawn(move || {
-                            Self::handle_connection(stream, cmd_tx);
+                            Self::handle_connection(stream, cmd_tx, waker);
                         });
                     }
                     Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
@@ -95,6 +95,7 @@ impl IpcServer {
     fn handle_connection(
         stream: std::net::TcpStream,
         cmd_tx: mpsc::Sender<IpcCommand>,
+        waker: Option<IpcWaker>,
     ) {
         let peer = stream.peer_addr().ok();
         tracing::debug!("IPC client connected from {:?}", peer);
@@ -142,6 +143,11 @@ impl IpcServer {
             // Send command to main thread
             if cmd_tx.send(cmd).is_err() {
                 break; // Main thread shut down
+            }
+
+            // Wake the event loop so it processes the command immediately
+            if let Some(ref waker) = waker {
+                waker();
             }
 
             // Wait for response from main thread

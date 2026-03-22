@@ -11,9 +11,11 @@ impl ApplicationHandler<AppEvent> for App {
     fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: AppEvent) {
         match event {
             AppEvent::TerminalOutput => {
-                self.dirty = true;
-                if let Some(window) = &self.window {
-                    window.request_redraw();
+                self.mark_dirty();
+            }
+            AppEvent::IpcReady => {
+                if self.process_ipc() {
+                    self.mark_dirty();
                 }
             }
         }
@@ -75,8 +77,13 @@ impl ApplicationHandler<AppEvent> for App {
             }
         }
 
-        // Start IPC server
-        match crate::ipc::server::IpcServer::start() {
+        // Start IPC server (use port_file for test isolation if provided)
+        // Pass an IPC waker that sends AppEvent::IpcReady to wake the event loop.
+        let ipc_proxy = self.proxy.clone();
+        let ipc_waker: crate::ipc::server::IpcWaker = std::sync::Arc::new(move || {
+            let _ = ipc_proxy.send_event(AppEvent::IpcReady);
+        });
+        match crate::ipc::server::IpcServer::start_with_port_file(self.port_file.take(), Some(ipc_waker)) {
             Ok(ipc) => {
                 tracing::info!("IPC server started on port {}", ipc.port());
                 self.ipc_server = Some(ipc);
@@ -118,26 +125,20 @@ impl ApplicationHandler<AppEvent> for App {
                     state.update_grid_size(cols, rows);
                     state.resize_all(terminal_rect, cw, ch);
                 }
-                self.dirty = true;
+                self.mark_dirty();
             }
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                 if let Some(gpu) = &mut self.gpu {
                     gpu.update_scale_factor(scale_factor as f32);
                 }
-                self.dirty = true;
+                self.mark_dirty();
             }
             WindowEvent::Focused(focused) => {
                 self.window_focused = focused;
-                self.dirty = true;
-                if let Some(window) = &self.window {
-                    window.request_redraw();
-                }
+                self.mark_dirty();
             }
             WindowEvent::Occluded(false) => {
-                self.dirty = true;
-                if let Some(window) = &self.window {
-                    window.request_redraw();
-                }
+                self.mark_dirty();
             }
             WindowEvent::ModifiersChanged(modifiers) => {
                 self.modifiers = modifiers.state();
@@ -153,12 +154,12 @@ impl ApplicationHandler<AppEvent> for App {
                         if state.settings_open {
                             state.settings_open = false;
                             state.settings_ui_state = crate::settings_ui::SettingsUiState::new();
-                            self.dirty = true;
+                            self.mark_dirty();
                             return;
                         }
                         if state.notification_panel_open {
                             state.notification_panel_open = false;
-                            self.dirty = true;
+                            self.mark_dirty();
                             return;
                         }
                     }
@@ -167,7 +168,7 @@ impl ApplicationHandler<AppEvent> for App {
                 // Always handle app-level shortcuts (e.g. Ctrl+, to toggle settings)
                 // even when egui has focus
                 if self.handle_shortcut(&event.logical_key, self.modifiers) {
-                    self.dirty = true;
+                    self.mark_dirty();
                     return;
                 }
 
@@ -176,6 +177,10 @@ impl ApplicationHandler<AppEvent> for App {
                     .map(|s| s.settings_open || s.notification_panel_open)
                     .unwrap_or(false);
                 if egui_consumed || overlay_open {
+                    // egui handled the input — still need to redraw so the UI updates.
+                    if egui_consumed {
+                        self.mark_dirty();
+                    }
                     return;
                 }
 
@@ -243,6 +248,10 @@ impl ApplicationHandler<AppEvent> for App {
                     .map(|s| s.settings_open || s.notification_panel_open)
                     .unwrap_or(false);
                 if egui_consumed || overlay_open {
+                    // egui needs redraws for hover effects (button highlights, etc.)
+                    if egui_consumed {
+                        self.mark_dirty();
+                    }
                     return;
                 }
                 if let (Some(gpu), Some(state), Some(window)) = (&self.gpu, &mut self.state, &self.window) {
@@ -259,7 +268,7 @@ impl ApplicationHandler<AppEvent> for App {
                             let cw = gpu.cell_width();
                             let ch = gpu.cell_height();
                             state.resize_all(terminal_rect, cw, ch);
-                            self.dirty = true;
+                            self.mark_dirty();
                         }
                     } else if !egui_consumed {
                         let threshold = 4.0;
@@ -295,6 +304,10 @@ impl ApplicationHandler<AppEvent> for App {
                     if button_state == ElementState::Released {
                         self.dragging_divider = None;
                     }
+                    // egui handled the click — redraw so UI reflects the change.
+                    if egui_consumed {
+                        self.mark_dirty();
+                    }
                     return;
                 }
                 if button == MouseButton::Left {
@@ -322,6 +335,8 @@ impl ApplicationHandler<AppEvent> for App {
                                     });
                                 } else {
                                     if state.focus_pane_at_position(x, y, terminal_rect) {
+                                        // Can't call self.mark_dirty() — state is mutably borrowed.
+                                        // Catch-all at end of window_event ensures request_redraw.
                                         self.dirty = true;
                                     }
                                     if state.focus_surface_at_position(x, y, terminal_rect) {
@@ -345,6 +360,9 @@ impl ApplicationHandler<AppEvent> for App {
                 let overlay_open = self.state.as_ref()
                     .map(|s| s.settings_open || s.notification_panel_open)
                     .unwrap_or(false);
+                if egui_consumed {
+                    self.mark_dirty();
+                }
                 if !egui_consumed && !overlay_open {
                     if let Some(state) = &mut self.state {
                         if let Some(terminal) = state.focused_terminal_mut() {
@@ -379,10 +397,14 @@ impl ApplicationHandler<AppEvent> for App {
                 };
 
                 if changed {
-                    self.dirty = true;
+                    self.mark_dirty();
                 }
 
                 // Collect terminal events and process notifications + hooks
+                // Collect terminal events and process them.
+                // We borrow self.state mutably here, so we can't call mark_dirty() —
+                // use self.dirty = true instead. The catch-all at the end of
+                // window_event() ensures request_redraw() is called.
                 if let Some(state) = &mut self.state {
                     let events = state.collect_events();
                     for event in &events {
@@ -399,10 +421,7 @@ impl ApplicationHandler<AppEvent> for App {
                                 if state.settings.notification.enabled {
                                     let ws_id = state.active_workspace().id;
                                     state.notifications.add(
-                                        ws_id,
-                                        surface_id,
-                                        title.clone(),
-                                        body.clone(),
+                                        ws_id, surface_id, title.clone(), body.clone(),
                                     );
                                 }
                                 let hook_events = vec![tasty_hooks::HookEvent::Notification];
@@ -413,10 +432,7 @@ impl ApplicationHandler<AppEvent> for App {
                                 if state.settings.notification.enabled {
                                     let ws_id = state.active_workspace().id;
                                     state.notifications.add(
-                                        ws_id,
-                                        surface_id,
-                                        "Bell".to_string(),
-                                        String::new(),
+                                        ws_id, surface_id, "Bell".to_string(), String::new(),
                                     );
                                 }
                                 if state.settings.notification.enabled
@@ -430,10 +446,10 @@ impl ApplicationHandler<AppEvent> for App {
                                 state.hook_manager.check_and_fire(surface_id, &hook_events);
                                 self.dirty = true;
                             }
-                            crate::terminal::TerminalEventKind::TitleChanged(_title) => {
+                            crate::terminal::TerminalEventKind::TitleChanged(_) => {
                                 self.dirty = true;
                             }
-                            crate::terminal::TerminalEventKind::CwdChanged(_path) => {
+                            crate::terminal::TerminalEventKind::CwdChanged(_) => {
                                 self.dirty = true;
                             }
                             crate::terminal::TerminalEventKind::ClipboardSet(data) => {
@@ -485,6 +501,14 @@ impl ApplicationHandler<AppEvent> for App {
             if let Some(window) = &self.window {
                 window.request_redraw();
             }
+        }
+    }
+
+    fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
+        // Process IPC commands outside of RedrawRequested so they respond
+        // even when the window is idle (no redraws happening).
+        if self.process_ipc() {
+            self.mark_dirty();
         }
     }
 }

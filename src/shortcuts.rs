@@ -26,7 +26,7 @@ impl App {
                                 let rect = Self::compute_terminal_rect_with_sidebar(gpu, state.sidebar_width);
                                 state.resize_all(rect, gpu.cell_width(), gpu.cell_height());
                             }
-                            self.dirty = true;
+                            self.mark_dirty();
                             return true;
                         }
                         return false;
@@ -34,13 +34,13 @@ impl App {
                     // Ctrl+Shift+N: New workspace
                     "N" | "n" => {
                         let _ = state.add_workspace();
-                        self.dirty = true;
+                        self.mark_dirty();
                         return true;
                     }
                     // Ctrl+Shift+T: New tab in focused pane
                     "T" | "t" => {
                         let _ = state.add_tab();
-                        self.dirty = true;
+                        self.mark_dirty();
                         return true;
                     }
                     // Ctrl+Shift+E: Pane split vertical (new independent tab bar)
@@ -50,7 +50,7 @@ impl App {
                             let rect = Self::compute_terminal_rect_with_sidebar(gpu, state.sidebar_width);
                             state.resize_all(rect, gpu.cell_width(), gpu.cell_height());
                         }
-                        self.dirty = true;
+                        self.mark_dirty();
                         return true;
                     }
                     // Ctrl+Shift+O: Pane split horizontal (new independent tab bar)
@@ -60,7 +60,7 @@ impl App {
                             let rect = Self::compute_terminal_rect_with_sidebar(gpu, state.sidebar_width);
                             state.resize_all(rect, gpu.cell_width(), gpu.cell_height());
                         }
-                        self.dirty = true;
+                        self.mark_dirty();
                         return true;
                     }
                     // Ctrl+Shift+D: SurfaceGroup split vertical (within current tab)
@@ -70,7 +70,7 @@ impl App {
                             let rect = Self::compute_terminal_rect_with_sidebar(gpu, state.sidebar_width);
                             state.resize_all(rect, gpu.cell_width(), gpu.cell_height());
                         }
-                        self.dirty = true;
+                        self.mark_dirty();
                         return true;
                     }
                     // Ctrl+Shift+J: SurfaceGroup split horizontal (within current tab)
@@ -80,7 +80,7 @@ impl App {
                             let rect = Self::compute_terminal_rect_with_sidebar(gpu, state.sidebar_width);
                             state.resize_all(rect, gpu.cell_width(), gpu.cell_height());
                         }
-                        self.dirty = true;
+                        self.mark_dirty();
                         return true;
                     }
                     // Ctrl+Shift+I: Toggle notification panel
@@ -90,7 +90,7 @@ impl App {
                         if state.notification_panel_open {
                             state.notifications.mark_all_read();
                         }
-                        self.dirty = true;
+                        self.mark_dirty();
                         return true;
                     }
                     _ => {}
@@ -100,7 +100,7 @@ impl App {
             // Ctrl+Shift+Tab: previous tab in focused pane
             if let Key::Named(NamedKey::Tab) = key {
                 state.prev_tab_in_pane();
-                self.dirty = true;
+                self.mark_dirty();
                 return true;
             }
         }
@@ -111,7 +111,7 @@ impl App {
                 let s = c.as_str();
                 if s == "w" || s == "W" || s == "\u{17}" {
                     if state.close_active_tab() {
-                        self.dirty = true;
+                        self.mark_dirty();
                         return true;
                     }
                     return false;
@@ -124,7 +124,7 @@ impl App {
             if let Key::Character(c) = key {
                 if c.as_str() == "," {
                     state.settings_open = !state.settings_open;
-                    self.dirty = true;
+                    self.mark_dirty();
                     return true;
                 }
             }
@@ -134,7 +134,7 @@ impl App {
         if ctrl && !shift && !alt {
             if let Key::Named(NamedKey::Tab) = key {
                 state.next_tab_in_pane();
-                self.dirty = true;
+                self.mark_dirty();
                 return true;
             }
         }
@@ -147,7 +147,7 @@ impl App {
                     && state.settings.clipboard.linux_style
                 {
                     self.paste_to_terminal();
-                    self.dirty = true;
+                    self.mark_dirty();
                     return true;
                 }
             }
@@ -159,7 +159,7 @@ impl App {
                     && state.settings.clipboard.windows_style
                 {
                     self.paste_to_terminal();
-                    self.dirty = true;
+                    self.mark_dirty();
                     return true;
                 }
             }
@@ -171,7 +171,7 @@ impl App {
                     && state.settings.clipboard.macos_style
                 {
                     self.paste_to_terminal();
-                    self.dirty = true;
+                    self.mark_dirty();
                     return true;
                 }
             }
@@ -183,7 +183,7 @@ impl App {
                 if let Some(digit) = c.chars().next().and_then(|ch| ch.to_digit(10)) {
                     if digit >= 1 && digit <= 9 {
                         state.switch_workspace((digit - 1) as usize);
-                        self.dirty = true;
+                        self.mark_dirty();
                         return true;
                     }
                 }
@@ -195,12 +195,12 @@ impl App {
             match key {
                 Key::Named(NamedKey::ArrowRight) | Key::Named(NamedKey::ArrowDown) => {
                     state.move_focus_forward();
-                    self.dirty = true;
+                    self.mark_dirty();
                     return true;
                 }
                 Key::Named(NamedKey::ArrowLeft) | Key::Named(NamedKey::ArrowUp) => {
                     state.move_focus_backward();
-                    self.dirty = true;
+                    self.mark_dirty();
                     return true;
                 }
                 _ => {}
