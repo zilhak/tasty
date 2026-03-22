@@ -169,9 +169,21 @@ impl Drop for TastyInstance {
         let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             self.shutdown();
         }));
-        // Wait briefly, then force kill
+        // Wait briefly, then force kill the entire process tree.
         std::thread::sleep(Duration::from_millis(200));
-        let _ = self.process.kill();
+        #[cfg(target_os = "windows")]
+        {
+            let pid = self.process.id();
+            let _ = Command::new("taskkill")
+                .args(["/F", "/T", "/PID", &pid.to_string()])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status();
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            let _ = self.process.kill();
+        }
         let _ = self.process.wait();
         let _ = std::fs::remove_file(&self.port_file);
     }

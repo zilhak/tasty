@@ -304,7 +304,21 @@ impl GuiTestInstance {
 
 impl Drop for GuiTestInstance {
     fn drop(&mut self) {
-        let _ = self.process.kill();
+        // On Windows, kill the entire process tree (tasty + child shells).
+        // process.kill() only kills the parent, leaving orphan shell processes.
+        #[cfg(target_os = "windows")]
+        {
+            let pid = self.process.id();
+            let _ = std::process::Command::new("taskkill")
+                .args(["/F", "/T", "/PID", &pid.to_string()])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status();
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            let _ = self.process.kill();
+        }
         let _ = self.process.wait();
         let _ = std::fs::remove_file(&self.port_file);
     }
