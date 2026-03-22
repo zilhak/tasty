@@ -4,12 +4,15 @@ use anyhow::Result;
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
 
+use winit::event_loop::EventLoopProxy;
+
 use crate::model::Rect;
 use crate::renderer::CellRenderer;
 use crate::settings::AppearanceSettings;
 use crate::settings_ui;
 use crate::state::AppState;
 use crate::ui;
+use crate::AppEvent;
 
 pub struct GpuState {
     surface: wgpu::Surface<'static>,
@@ -25,7 +28,7 @@ pub struct GpuState {
 }
 
 impl GpuState {
-    pub async fn new(window: Arc<Window>, appearance: &AppearanceSettings) -> Result<Self> {
+    pub async fn new(window: Arc<Window>, appearance: &AppearanceSettings, proxy: EventLoopProxy<AppEvent>) -> Result<Self> {
         let size = window.inner_size();
         let scale_factor = window.scale_factor() as f32;
 
@@ -96,6 +99,15 @@ impl GpuState {
         // egui setup
         let egui_ctx = egui::Context::default();
 
+        // Connect egui's repaint requests to the winit event loop.
+        // Without this, egui's internal repaints (new window registration,
+        // cursor blink, animations) are silently dropped, causing the
+        // Settings window to appear only after the next user input.
+        let repaint_proxy = proxy;
+        egui_ctx.set_request_repaint_callback(move |_| {
+            let _ = repaint_proxy.send_event(AppEvent::EguiRepaint);
+        });
+
         // Apply theme from settings
         Self::apply_theme(&egui_ctx, &appearance.theme);
 
@@ -137,10 +149,10 @@ impl GpuState {
             .resize(&self.queue, new_size.width, new_size.height);
     }
 
-    /// Pass a winit event to egui. Returns true if egui consumed the event.
-    pub fn handle_egui_event(&mut self, window: &Window, event: &winit::event::WindowEvent) -> bool {
+    /// Pass a winit event to egui. Returns (consumed, repaint).
+    pub fn handle_egui_event(&mut self, window: &Window, event: &winit::event::WindowEvent) -> (bool, bool) {
         let response = self.egui_state.on_window_event(window, event);
-        response.consumed
+        (response.consumed, response.repaint)
     }
 
     /// Render the full frame: egui UI + terminal surfaces.

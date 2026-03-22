@@ -349,7 +349,7 @@ fn send_to_specific_surface() {
 #[test]
 fn screen_text_by_surface_id() {
     let tasty = TastyInstance::spawn();
-    std::thread::sleep(Duration::from_secs(1));
+    std::thread::sleep(Duration::from_secs(2));
 
     // Get surface ID
     let surfaces = tasty.call("surface.list", json!({}));

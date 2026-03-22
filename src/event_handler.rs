@@ -18,6 +18,9 @@ impl ApplicationHandler<AppEvent> for App {
                     self.mark_dirty();
                 }
             }
+            AppEvent::EguiRepaint => {
+                self.mark_dirty();
+            }
         }
     }
 
@@ -42,7 +45,7 @@ impl ApplicationHandler<AppEvent> for App {
         // Load settings before GPU init so font_size/font_family/theme are wired.
         let init_settings = crate::settings::Settings::load();
 
-        let gpu = pollster::block_on(crate::gpu::GpuState::new(window.clone(), &init_settings.appearance))
+        let gpu = pollster::block_on(crate::gpu::GpuState::new(window.clone(), &init_settings.appearance, self.proxy.clone()))
             .expect("failed to initialize GPU");
 
         let sidebar_logical_width = init_settings.appearance.sidebar_width;
@@ -100,11 +103,14 @@ impl ApplicationHandler<AppEvent> for App {
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         // Let egui handle the event first
-        let egui_consumed = if let (Some(gpu), Some(window)) = (&mut self.gpu, &self.window) {
+        let (egui_consumed, egui_repaint) = if let (Some(gpu), Some(window)) = (&mut self.gpu, &self.window) {
             gpu.handle_egui_event(window, &event)
         } else {
-            false
+            (false, false)
         };
+        if egui_repaint {
+            self.mark_dirty();
+        }
 
         // Track whether dirty was already set before this event.
         let was_dirty = self.dirty;
@@ -135,6 +141,10 @@ impl ApplicationHandler<AppEvent> for App {
             }
             WindowEvent::Focused(focused) => {
                 self.window_focused = focused;
+                if !focused {
+                    // Reset modifier state to prevent stuck keys after Alt+Tab etc.
+                    self.modifiers = winit::keyboard::ModifiersState::empty();
+                }
                 self.mark_dirty();
             }
             WindowEvent::Occluded(false) => {
@@ -196,7 +206,13 @@ impl ApplicationHandler<AppEvent> for App {
                         match event.logical_key.as_ref() {
                             Key::Named(NamedKey::Enter) => terminal.send_bytes(b"\r"),
                             Key::Named(NamedKey::Backspace) => terminal.send_bytes(b"\x7f"),
-                            Key::Named(NamedKey::Tab) => terminal.send_bytes(b"\t"),
+                            Key::Named(NamedKey::Tab) => {
+                                if self.modifiers.shift_key() {
+                                    terminal.send_bytes(b"\x1b[Z"); // Reverse Tab (CSI Z)
+                                } else {
+                                    terminal.send_bytes(b"\t");
+                                }
+                            }
                             Key::Named(NamedKey::Escape) => terminal.send_bytes(b"\x1b"),
                             Key::Named(NamedKey::ArrowUp) => {
                                 if app_cursor { terminal.send_bytes(b"\x1bOA") }
@@ -477,7 +493,7 @@ impl ApplicationHandler<AppEvent> for App {
                     {
                         match gpu.render(state, window) {
                             Ok(_) => {}
-                            Err(wgpu::SurfaceError::Lost) => {
+                            Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
                                 gpu.resize(window.inner_size());
                             }
                             Err(wgpu::SurfaceError::OutOfMemory) => {

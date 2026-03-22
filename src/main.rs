@@ -56,6 +56,8 @@ enum AppEvent {
     TerminalOutput,
     /// IPC command arrived -- wake up and process.
     IpcReady,
+    /// egui requested a repaint (new window, animation, cursor blink).
+    EguiRepaint,
 }
 
 /// Tracks an active divider drag operation.
