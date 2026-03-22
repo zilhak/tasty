@@ -28,10 +28,6 @@ pub struct NotificationStore {
 }
 
 impl NotificationStore {
-    pub fn new() -> Self {
-        Self::with_coalesce_ms(500)
-    }
-
     /// Create a notification store with a custom coalesce window.
     pub fn with_coalesce_ms(coalesce_ms: u64) -> Self {
         Self {
@@ -41,11 +37,6 @@ impl NotificationStore {
             last_system_notification: None,
             coalesce_ms,
         }
-    }
-
-    /// Update the coalesce window.
-    pub fn set_coalesce_ms(&mut self, ms: u64) {
-        self.coalesce_ms = ms;
     }
 
     /// Add a notification, coalescing if the same source sent one within the coalesce window.
@@ -147,12 +138,6 @@ impl NotificationStore {
         true
     }
 
-    /// Check if a surface has unread notifications.
-    pub fn has_unread_for_surface(&self, surface_id: SurfaceId) -> bool {
-        self.notifications
-            .iter()
-            .any(|n| !n.read && n.source_surface == surface_id)
-    }
 }
 
 /// Send an OS-level desktop notification.
@@ -170,7 +155,7 @@ mod tests {
 
     #[test]
     fn add_and_count() {
-        let mut store = NotificationStore::new();
+        let mut store = NotificationStore::with_coalesce_ms(500);
         assert_eq!(store.unread_count(), 0);
         store.add(1, 1, "Title".into(), "Body".into());
         assert_eq!(store.unread_count(), 1);
@@ -178,7 +163,7 @@ mod tests {
 
     #[test]
     fn mark_read() {
-        let mut store = NotificationStore::new();
+        let mut store = NotificationStore::with_coalesce_ms(500);
         store.add(1, 1, "T".into(), "B".into());
         assert_eq!(store.unread_count(), 1);
         let id = store.all().next().unwrap().id;
@@ -188,7 +173,7 @@ mod tests {
 
     #[test]
     fn mark_all_read() {
-        let mut store = NotificationStore::new();
+        let mut store = NotificationStore::with_coalesce_ms(500);
         store.add(1, 1, "A".into(), "".into());
         store.add(1, 2, "B".into(), "".into());
         assert_eq!(store.unread_count(), 2);
@@ -198,7 +183,7 @@ mod tests {
 
     #[test]
     fn unread_count_for_workspace() {
-        let mut store = NotificationStore::new();
+        let mut store = NotificationStore::with_coalesce_ms(500);
         store.add(1, 1, "A".into(), "".into());
         store.add(2, 1, "B".into(), "".into());
         assert_eq!(store.unread_count_for_workspace(1), 1);

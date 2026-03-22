@@ -1,4 +1,4 @@
-use tasty_terminal::{Terminal, Waker};
+use tasty_terminal::Terminal;
 use super::{DividerInfo, Rect, SplitDirection, SurfaceId};
 
 /// Single terminal instance.
@@ -59,31 +59,6 @@ impl SurfaceGroupNode {
             }
         }
         found
-    }
-
-    /// Split the focused surface.
-    pub fn split_surface(
-        &mut self,
-        direction: SplitDirection,
-        new_surface_id: SurfaceId,
-        cols: usize,
-        rows: usize,
-        waker: Waker,
-    ) -> anyhow::Result<()> {
-        // Pre-create the new terminal BEFORE any structural mutation.
-        // If Terminal::new fails, layout_opt is untouched.
-        let new_node = SurfaceNode {
-            id: new_surface_id,
-            terminal: Terminal::new(cols, rows, waker)?,
-        };
-        let target = self.focused_surface;
-        // take/put is safe here: split_with_node is infallible (no error path),
-        // so put_layout always runs.
-        let old_layout = self.take_layout();
-        let (new_layout, _) = old_layout.split_with_node(target, direction, new_node);
-        self.put_layout(new_layout);
-        self.focused_surface = new_surface_id;
-        Ok(())
     }
 
     /// Compute render rects for all surfaces.
@@ -381,17 +356,6 @@ impl SurfaceGroupLayout {
         }
     }
 
-    /// Collect all terminals.
-    pub fn collect_terminals<'a>(&'a self, out: &mut Vec<&'a Terminal>) {
-        match self {
-            SurfaceGroupLayout::Single(node) => out.push(&node.terminal),
-            SurfaceGroupLayout::Split { first, second, .. } => {
-                first.collect_terminals(out);
-                second.collect_terminals(out);
-            }
-        }
-    }
-
     /// Collect all terminals (mutable).
     pub fn collect_terminals_mut<'a>(&'a mut self, out: &mut Vec<&'a mut Terminal>) {
         match self {
@@ -399,32 +363,6 @@ impl SurfaceGroupLayout {
             SurfaceGroupLayout::Split { first, second, .. } => {
                 first.collect_terminals_mut(out);
                 second.collect_terminals_mut(out);
-            }
-        }
-    }
-
-    /// Process all terminals. Returns true if any changed.
-    pub fn process_all(&mut self) -> bool {
-        match self {
-            SurfaceGroupLayout::Single(node) => node.terminal.process(),
-            SurfaceGroupLayout::Split { first, second, .. } => {
-                let a = first.process_all();
-                let b = second.process_all();
-                a || b
-            }
-        }
-    }
-
-    /// Visit all terminals (immutable) in this layout tree.
-    pub fn for_each_terminal<F>(&self, f: &mut F)
-    where
-        F: FnMut(SurfaceId, &Terminal),
-    {
-        match self {
-            SurfaceGroupLayout::Single(node) => f(node.id, &node.terminal),
-            SurfaceGroupLayout::Split { first, second, .. } => {
-                first.for_each_terminal(f);
-                second.for_each_terminal(f);
             }
         }
     }

@@ -121,11 +121,10 @@ impl TestTerminal {
 // but on the TestTerminal struct directly.
 
 use termwiz::cell::{AttributeChange, CellAttributes};
-use termwiz::color::ColorAttribute;
 use termwiz::escape::csi::{Cursor, Edit, EraseInDisplay, EraseInLine, Sgr};
 use termwiz::escape::esc::{Esc, EscCode};
-use termwiz::escape::{ControlCode, OperatingSystemCommand};
-use termwiz::surface::{Change, CursorVisibility, Position};
+use termwiz::escape::ControlCode;
+use termwiz::surface::{Change, Position};
 
 impl TestTerminal {
     pub fn action_to_changes(&mut self, action: Action) -> Vec<Change> {
@@ -253,7 +252,7 @@ impl TestTerminal {
     }
 
     fn handle_mode(&mut self, mode: &termwiz::escape::csi::Mode) {
-        use termwiz::escape::csi::{Mode as CsiMode, DecPrivateMode, DecPrivateModeCode};
+        use termwiz::escape::csi::{Mode as CsiMode, DecPrivateMode};
         match mode {
             CsiMode::SetDecPrivateMode(DecPrivateMode::Code(code)) => self.set_dec(code.clone(), true),
             CsiMode::ResetDecPrivateMode(DecPrivateMode::Code(code)) => self.set_dec(code.clone(), false),

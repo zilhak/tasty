@@ -284,14 +284,46 @@ impl AppState {
         }
     }
 
-    /// Move focus to the next pane.
-    pub fn move_focus_next_pane(&mut self) {
+    /// Move focus forward: within the active SurfaceGroup first, then between panes.
+    pub fn move_focus_forward(&mut self) {
+        let ws = self.active_workspace_mut();
+        let pane_id = ws.focused_pane;
+
+        // Try to move within a SurfaceGroup first
+        if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
+            if let Some(panel) = pane.active_panel_mut() {
+                if let crate::model::Panel::SurfaceGroup(group) = panel {
+                    if group.layout().all_surface_ids().len() > 1 {
+                        group.move_focus_forward();
+                        return;
+                    }
+                }
+            }
+        }
+
+        // Not in a multi-surface group, move between panes
         let ws = self.active_workspace_mut();
         ws.focused_pane = ws.pane_layout().next_pane_id(ws.focused_pane);
     }
 
-    /// Move focus to the previous pane.
-    pub fn move_focus_prev_pane(&mut self) {
+    /// Move focus backward: within the active SurfaceGroup first, then between panes.
+    pub fn move_focus_backward(&mut self) {
+        let ws = self.active_workspace_mut();
+        let pane_id = ws.focused_pane;
+
+        // Try to move within a SurfaceGroup first
+        if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
+            if let Some(panel) = pane.active_panel_mut() {
+                if let crate::model::Panel::SurfaceGroup(group) = panel {
+                    if group.layout().all_surface_ids().len() > 1 {
+                        group.move_focus_backward();
+                        return;
+                    }
+                }
+            }
+        }
+
+        // Not in a multi-surface group, move between panes
         let ws = self.active_workspace_mut();
         ws.focused_pane = ws.pane_layout().prev_pane_id(ws.focused_pane);
     }
@@ -427,26 +459,6 @@ impl AppState {
         } else {
             String::new()
         }
-    }
-
-    /// Get the next surface ID (for creating new terminals).
-    pub fn next_surface_id(&mut self) -> u32 {
-        self.next_ids.next_surface()
-    }
-
-    /// Get the next workspace ID.
-    pub fn next_workspace_id(&mut self) -> u32 {
-        self.next_ids.next_workspace()
-    }
-
-    /// Get the next pane ID.
-    pub fn next_pane_id(&mut self) -> u32 {
-        self.next_ids.next_pane()
-    }
-
-    /// Get the next tab ID.
-    pub fn next_tab_id(&mut self) -> u32 {
-        self.next_ids.next_tab()
     }
 
     /// Focus the pane at the given physical pixel position within the terminal rect.

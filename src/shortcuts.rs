@@ -194,12 +194,12 @@ impl App {
         if alt && !ctrl && !shift {
             match key {
                 Key::Named(NamedKey::ArrowRight) | Key::Named(NamedKey::ArrowDown) => {
-                    state.move_focus_next_pane();
+                    state.move_focus_forward();
                     self.dirty = true;
                     return true;
                 }
                 Key::Named(NamedKey::ArrowLeft) | Key::Named(NamedKey::ArrowUp) => {
-                    state.move_focus_prev_pane();
+                    state.move_focus_backward();
                     self.dirty = true;
                     return true;
                 }

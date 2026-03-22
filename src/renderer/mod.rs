@@ -400,33 +400,6 @@ impl CellRenderer {
         self.glyph_instance_count = glyph_count as u32;
     }
 
-    /// Record render commands into the given encoder.
-    pub fn render<'a>(&'a self, render_pass: &mut wgpu::RenderPass<'a>) {
-        if self.bg_instance_count > 0 {
-            render_pass.set_pipeline(&self.bg_pipeline);
-            render_pass.set_bind_group(0, &self.bg_bind_group, &[]);
-            render_pass.set_vertex_buffer(0, self.bg_instance_buffer.slice(..));
-            render_pass.draw(0..6, 0..self.bg_instance_count);
-        }
-
-        if self.glyph_instance_count > 0 {
-            render_pass.set_pipeline(&self.glyph_pipeline);
-            render_pass.set_bind_group(0, &self.glyph_bind_group, &[]);
-            render_pass.set_vertex_buffer(0, self.glyph_instance_buffer.slice(..));
-            render_pass.draw(0..6, 0..self.glyph_instance_count);
-        }
-    }
-
-    /// Compute terminal grid size from pixel dimensions.
-    pub fn grid_size(&self, width: u32, height: u32) -> (usize, usize) {
-        let padding = 8.0;
-        let cell_w = self.font_config.metrics.cell_width.max(1.0);
-        let cell_h = self.font_config.metrics.cell_height.max(1.0);
-        let cols = ((width as f32 - padding) / cell_w).floor() as usize;
-        let rows = ((height as f32 - padding) / cell_h).floor() as usize;
-        (cols.max(1), rows.max(1))
-    }
-
     /// Compute terminal grid size from a viewport rect (physical pixels).
     pub fn grid_size_for_rect(&self, rect: &Rect) -> (usize, usize) {
         let padding = 8.0;

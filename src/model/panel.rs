@@ -26,30 +26,11 @@ impl Panel {
         }
     }
 
-    /// Collect all terminals in this panel.
-    pub fn collect_terminals<'a>(&'a self, out: &mut Vec<&'a Terminal>) {
-        match self {
-            Panel::Terminal(node) => out.push(&node.terminal),
-            Panel::SurfaceGroup(group) => group.layout().collect_terminals(out),
-        }
-    }
-
     /// Collect all terminals (mutable) in this panel.
     pub fn collect_terminals_mut<'a>(&'a mut self, out: &mut Vec<&'a mut Terminal>) {
         match self {
             Panel::Terminal(node) => out.push(&mut node.terminal),
             Panel::SurfaceGroup(group) => group.layout_mut().collect_terminals_mut(out),
-        }
-    }
-
-    /// Visit all terminals (immutable) in this panel.
-    pub fn for_each_terminal<F>(&self, f: &mut F)
-    where
-        F: FnMut(SurfaceId, &Terminal),
-    {
-        match self {
-            Panel::Terminal(node) => f(node.id, &node.terminal),
-            Panel::SurfaceGroup(group) => group.layout().for_each_terminal(f),
         }
     }
 

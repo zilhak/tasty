@@ -178,18 +178,6 @@ impl PaneNode {
         }
     }
 
-    /// Collect references to all terminals in this tree.
-    pub fn all_terminals(&self) -> Vec<&Terminal> {
-        match self {
-            PaneNode::Leaf(pane) => pane.all_terminals(),
-            PaneNode::Split { first, second, .. } => {
-                let mut result = first.all_terminals();
-                result.extend(second.all_terminals());
-                result
-            }
-        }
-    }
-
     /// Collect mutable references to all terminals in this tree.
     pub fn all_terminals_mut(&mut self) -> Vec<&mut Terminal> {
         match self {
@@ -211,24 +199,6 @@ impl PaneNode {
             }
         }
         changed
-    }
-
-    /// Visit all terminals (immutable) in this PaneNode tree, calling `f(surface_id, &terminal)` on each.
-    pub fn for_each_terminal<F>(&self, f: &mut F)
-    where
-        F: FnMut(SurfaceId, &Terminal),
-    {
-        match self {
-            PaneNode::Leaf(pane) => {
-                for tab in &pane.tabs {
-                    tab.panel().for_each_terminal(f);
-                }
-            }
-            PaneNode::Split { first, second, .. } => {
-                first.for_each_terminal(f);
-                second.for_each_terminal(f);
-            }
-        }
     }
 
     /// Visit all terminals (mutable) in this PaneNode tree, calling `f(surface_id, &mut terminal)` on each.
@@ -341,18 +311,6 @@ pub struct Pane {
 }
 
 impl Pane {
-    /// Create a Pane with one Tab containing a single terminal.
-    pub fn new(
-        id: PaneId,
-        tab_id: TabId,
-        surface_id: SurfaceId,
-        cols: usize,
-        rows: usize,
-        waker: Waker,
-    ) -> anyhow::Result<Self> {
-        Self::new_with_shell(id, tab_id, surface_id, cols, rows, None, waker)
-    }
-
     /// Create a Pane with a custom shell.
     pub fn new_with_shell(
         id: PaneId,
@@ -377,18 +335,6 @@ impl Pane {
             tabs: vec![tab],
             active_tab: 0,
         })
-    }
-
-    /// Add a new tab with a single terminal.
-    pub fn add_tab(
-        &mut self,
-        tab_id: TabId,
-        surface_id: SurfaceId,
-        cols: usize,
-        rows: usize,
-        waker: Waker,
-    ) -> anyhow::Result<()> {
-        self.add_tab_with_shell(tab_id, surface_id, cols, rows, None, waker)
     }
 
     /// Add a new tab with a custom shell.
@@ -427,18 +373,6 @@ impl Pane {
         if self.tabs.is_empty() { return None; }
         let idx = self.active_tab.min(self.tabs.len() - 1);
         Some(self.tabs[idx].panel_mut())
-    }
-
-    /// Split the active panel's focused surface.
-    pub fn split_active_surface(
-        &mut self,
-        direction: SplitDirection,
-        new_surface_id: SurfaceId,
-        cols: usize,
-        rows: usize,
-        waker: Waker,
-    ) -> anyhow::Result<()> {
-        self.split_active_surface_with_shell(direction, new_surface_id, cols, rows, None, waker)
     }
 
     /// Split the active panel's focused surface with a custom shell.
@@ -509,15 +443,6 @@ impl Pane {
         if self.tabs.len() > 1 {
             self.active_tab = (self.active_tab + self.tabs.len() - 1) % self.tabs.len();
         }
-    }
-
-    /// Collect all terminals from all tabs in this Pane.
-    pub fn all_terminals(&self) -> Vec<&Terminal> {
-        let mut result = Vec::new();
-        for tab in &self.tabs {
-            tab.panel().collect_terminals(&mut result);
-        }
-        result
     }
 
     /// Collect all terminals (mutable) from all tabs in this Pane.

@@ -1,10 +1,10 @@
 use std::io::{Read, Write};
-use std::sync::{Arc, LazyLock, mpsc};
+use std::sync::{LazyLock, mpsc};
 use std::thread;
 
 use anyhow::Result;
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
-use termwiz::escape::csi::{Mode as CsiMode, CSI};
+use termwiz::escape::csi::CSI;
 use termwiz::escape::parser::Parser;
 use termwiz::escape::Action;
 use termwiz::surface::Surface;
@@ -404,7 +404,7 @@ fn strip_ansi_escapes(s: &str) -> String {
 mod tests {
     use super::*;
     use std::sync::Arc;
-    use termwiz::escape::csi::{CSI, Mode as CsiMode};
+    use termwiz::escape::csi::CSI;
     use termwiz::escape::parser::Parser;
 
     fn noop_waker() -> Waker {

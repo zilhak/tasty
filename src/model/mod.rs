@@ -1,5 +1,3 @@
-use tasty_terminal::{Terminal, Waker};
-
 pub type WorkspaceId = u32;
 pub type PaneId = u32;
 pub type TabId = u32;

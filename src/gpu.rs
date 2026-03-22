@@ -333,11 +333,6 @@ impl GpuState {
         Ok(())
     }
 
-    /// Compute terminal grid dimensions from current window size.
-    pub fn grid_size(&self) -> (usize, usize) {
-        self.renderer.grid_size(self.size.width, self.size.height)
-    }
-
     /// Compute grid size for a given rect.
     pub fn grid_size_for_rect(&self, rect: &Rect) -> (usize, usize) {
         self.renderer.grid_size_for_rect(rect)
@@ -349,18 +344,6 @@ impl GpuState {
 
     pub fn cell_height(&self) -> f32 {
         self.renderer.cell_height()
-    }
-
-    pub fn device(&self) -> &wgpu::Device {
-        &self.device
-    }
-
-    pub fn queue(&self) -> &wgpu::Queue {
-        &self.queue
-    }
-
-    pub fn config(&self) -> &wgpu::SurfaceConfiguration {
-        &self.config
     }
 
     pub fn size(&self) -> PhysicalSize<u32> {

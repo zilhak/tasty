@@ -1,4 +1,4 @@
-use tasty_terminal::{Terminal, Waker};
+use tasty_terminal::Waker;
 use super::{PaneId, PaneNode, Pane, SurfaceId, TabId, WorkspaceId};
 
 /// Workspace - one sidebar item. Contains a PaneLayout (binary split tree of Panes).
@@ -11,20 +11,6 @@ pub struct Workspace {
 }
 
 impl Workspace {
-    /// Create a workspace with one default Pane containing one Tab with one Terminal.
-    pub fn new(
-        id: WorkspaceId,
-        name: String,
-        cols: usize,
-        rows: usize,
-        pane_id: PaneId,
-        tab_id: TabId,
-        surface_id: SurfaceId,
-        waker: Waker,
-    ) -> anyhow::Result<Self> {
-        Self::new_with_shell(id, name, cols, rows, pane_id, tab_id, surface_id, None, waker)
-    }
-
     /// Create a workspace with a custom shell.
     pub fn new_with_shell(
         id: WorkspaceId,
@@ -61,15 +47,4 @@ impl Workspace {
         self.pane_layout_opt.as_mut().expect("BUG: pane_layout accessed during structural mutation (between take/put)")
     }
 
-    /// Temporarily take ownership of the pane layout for structural mutations.
-    /// MUST be followed by `put_pane_layout()`. Panics if already taken.
-    #[track_caller]
-    pub fn take_pane_layout(&mut self) -> PaneNode {
-        self.pane_layout_opt.take().expect("BUG: pane_layout already taken")
-    }
-
-    /// Put the pane layout back after structural mutations.
-    pub fn put_pane_layout(&mut self, layout: PaneNode) {
-        self.pane_layout_opt = Some(layout);
-    }
 }

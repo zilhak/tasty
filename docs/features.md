@@ -116,7 +116,7 @@
 - Ctrl+Shift+O: Pane 수평 분할 (새 독립 탭 바)
 - Ctrl+Shift+D: SurfaceGroup 수직 분할 (탭 내부)
 - Ctrl+Shift+J: SurfaceGroup 수평 분할 (탭 내부)
-- Alt+Arrow: Pane 간 포커스 이동
+- Alt+Arrow: 포커스 이동 (SurfaceGroup 내 Surface 간 우선, 단일 Surface면 Pane 간 이동)
 - Ctrl+W: 활성 탭 닫기 (탭이 2개 이상일 때)
 - Ctrl+Shift+W: 포커스된 패인 닫기 (unsplit, 패인이 2개 이상일 때)
 - Ctrl+Shift+I: 알림 패널 토글
@@ -373,6 +373,7 @@ Claude Code를 새 워크스페이스에서 자동으로 실행하는 전용 런
 - `PaneNode::find_pane`: ID 기반 탐색
 - `PaneNode::all_pane_ids`: 순서 보장 ID 수집
 - `PaneNode::next_pane_id` / `prev_pane_id`: 순환 포커스 이동
+- `AppState::move_focus_forward` / `move_focus_backward`: SurfaceGroup 내 Surface 우선 이동, 단일이면 Pane 간 이동
 - `PaneNode::find_divider_at`: 분할 경계선 히트 테스트
 - `PaneNode::split_pane_in_place`: 트리 내부 분할 (성공/실패 케이스)
 - `PaneNode::close_pane`: 단일 리프 닫기 실패, 분할에서 형제 승격, 중첩 분할에서 닫기, 미발견 대상
