@@ -1,5 +1,6 @@
 use std::time::Instant;
 
+use crate::i18n::{t, t_fmt};
 use crate::model::Rect;
 use crate::state::AppState;
 
@@ -20,12 +21,12 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
 
                 // Header with notification badge
                 ui.horizontal(|ui| {
-                    ui.heading("Workspaces");
+                    ui.heading(t("sidebar.workspaces_heading"));
                     let unread = state.notifications.unread_count();
                     if unread > 0 {
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             let badge_text = if unread > 99 {
-                                "99+".to_string()
+                                t("badge.overflow").to_string()
                             } else {
                                 unread.to_string()
                             };
@@ -75,7 +76,7 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
                 }
 
                 ui.add_space(8.0);
-                if ui.button("  + New Workspace").clicked() {
+                if ui.button(t("button.new_workspace")).clicked() {
                     let _ = state.add_workspace();
                 }
 
@@ -83,46 +84,40 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
                 ui.separator();
                 ui.add_space(4.0);
                 ui.label(
-                    egui::RichText::new("Shortcuts")
+                    egui::RichText::new(t("sidebar.shortcuts_heading"))
                         .small()
                         .color(egui::Color32::GRAY),
                 );
                 ui.add_space(2.0);
 
-                let shortcuts = [
-                    ("Ctrl+Shift+N", "New Workspace"),
-                    ("Ctrl+Shift+T", "New Tab"),
-                    ("Ctrl+Tab", "Next Tab"),
-                    ("Ctrl+Shift+Tab", "Prev Tab"),
-                    ("Alt+1~9", "Switch WS"),
-                    ("Ctrl+Shift+E", "Pane Split V"),
-                    ("Ctrl+Shift+O", "Pane Split H"),
-                    ("Ctrl+Shift+D", "Surface Split V"),
-                    ("Ctrl+Shift+J", "Surface Split H"),
-                    ("Alt+Arrow", "Focus Pane"),
-                    ("Ctrl+Shift+I", "Notifications"),
-                    ("Ctrl+,", "Settings"),
+                let shortcut_keys = [
+                    "new_workspace", "new_tab", "next_tab", "prev_tab",
+                    "switch_workspace", "pane_split_vertical", "pane_split_horizontal",
+                    "surface_split_vertical", "surface_split_horizontal",
+                    "focus_pane", "notifications", "settings",
                 ];
 
-                for (key, desc) in &shortcuts {
+                for name in &shortcut_keys {
+                    let key_key = format!("shortcut.key.{}", name);
+                    let desc_key = format!("shortcut.desc.{}", name);
+                    let key_str = t(&key_key).to_string();
+                    let desc_str = t(&desc_key).to_string();
                     ui.horizontal(|ui| {
                         ui.label(
-                            egui::RichText::new(*key)
+                            egui::RichText::new(&key_str)
                                 .small()
                                 .color(egui::Color32::from_rgb(120, 180, 255)),
                         );
-                        ui.label(egui::RichText::new(*desc).small());
+                        ui.label(egui::RichText::new(&desc_str).small());
                     });
                 }
             });
         });
 
-    // No global top panel - tab bars are now per-pane and rendered in gpu.rs
-
     // Compute remaining terminal area in physical pixels
     let screen_rect = ctx.screen_rect();
     let terminal_x = sidebar_width * scale_factor;
-    let terminal_y = 0.0; // No global tab bar anymore
+    let terminal_y = 0.0;
     let terminal_width = (screen_rect.width() - sidebar_width) * scale_factor;
     let terminal_height = screen_rect.height() * scale_factor;
 
@@ -246,7 +241,7 @@ pub fn draw_notification_panel(ctx: &egui::Context, state: &mut AppState) {
 
     let mut open = state.notification_panel_open;
 
-    egui::Window::new("Notifications")
+    egui::Window::new(t("notification_panel.window_title"))
         .open(&mut open)
         .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-8.0, 8.0))
         .default_width(350.0)
@@ -258,12 +253,12 @@ pub fn draw_notification_panel(ctx: &egui::Context, state: &mut AppState) {
             ui.horizontal(|ui| {
                 let unread = state.notifications.unread_count();
                 ui.label(
-                    egui::RichText::new(format!("{} unread", unread))
+                    egui::RichText::new(t_fmt("notification_panel.unread_count", &unread.to_string()))
                         .small()
                         .color(egui::Color32::GRAY),
                 );
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.small_button("Mark all read").clicked() {
+                    if ui.small_button(t("button.mark_all_read")).clicked() {
                         state.notifications.mark_all_read();
                     }
                 });
@@ -278,7 +273,7 @@ pub fn draw_notification_panel(ctx: &egui::Context, state: &mut AppState) {
                     if notification_count == 0 {
                         ui.centered_and_justified(|ui| {
                             ui.label(
-                                egui::RichText::new("No notifications")
+                                egui::RichText::new(t("notification_panel.empty_message"))
                                     .color(egui::Color32::GRAY),
                             );
                         });
@@ -367,8 +362,8 @@ pub fn draw_notification_panel(ctx: &egui::Context, state: &mut AppState) {
                                     );
 
                                     if ui
-                                        .small_button("Jump")
-                                        .on_hover_text("Switch to this workspace")
+                                        .small_button(t("button.jump_to_workspace"))
+                                        .on_hover_text(t("tooltip.jump_to_workspace"))
                                         .clicked()
                                     {
                                         jump_to_ws = Some(*ws_id);

@@ -1,0 +1,100 @@
+# Tasty ターミナルエミュレータ - 日本語 (ja)
+
+[app]
+name = "Tasty"
+
+[button]
+cancel = "キャンセル"
+save = "保存"
+new_workspace = "+ 新しいワークスペース"
+mark_all_read = "すべて既読"
+jump_to_workspace = "移動"
+
+[tooltip]
+jump_to_workspace = "このワークスペースに切り替え"
+
+[badge]
+overflow = "99+"
+
+[settings]
+[settings.window]
+title = "設定"
+
+[settings.tab]
+general = "一般"
+appearance = "外観"
+clipboard = "クリップボード"
+notifications = "通知"
+language = "言語"
+
+[settings.general]
+heading = "一般"
+shell_label = "シェル:"
+startup_command_label = "起動コマンド:"
+
+[settings.appearance]
+heading = "外観"
+font_family_label = "フォント:"
+font_size_label = "フォントサイズ:"
+theme_label = "テーマ:"
+background_opacity_label = "背景透明度:"
+sidebar_width_label = "サイドバー幅:"
+
+[settings.appearance.theme]
+dark = "ダーク"
+light = "ライト"
+
+[settings.clipboard]
+heading = "クリップボード"
+macos_style = "macOS方式 (Alt+C / Alt+V)"
+linux_style = "Linux方式 (Ctrl+Shift+C / Ctrl+Shift+V)"
+windows_style = "Windows方式 (選択時Ctrl+C / Ctrl+V)"
+
+[settings.notifications]
+heading = "通知"
+enabled = "通知を有効化"
+system_notification = "システム通知 (OS標準)"
+sound = "サウンド"
+coalesce_interval_label = "通知統合間隔 (ms):"
+
+[settings.language]
+heading = "言語"
+label = "言語:"
+restart_notice = "言語の変更は再起動後に適用されます。"
+
+[sidebar]
+workspaces_heading = "ワークスペース"
+shortcuts_heading = "ショートカット"
+
+[shortcut.key]
+new_workspace = "Ctrl+Shift+N"
+new_tab = "Ctrl+Shift+T"
+next_tab = "Ctrl+Tab"
+prev_tab = "Ctrl+Shift+Tab"
+switch_workspace = "Alt+1~9"
+pane_split_vertical = "Ctrl+Shift+E"
+pane_split_horizontal = "Ctrl+Shift+O"
+surface_split_vertical = "Ctrl+Shift+D"
+surface_split_horizontal = "Ctrl+Shift+J"
+focus_pane = "Alt+矢印キー"
+notifications = "Ctrl+Shift+I"
+settings = "Ctrl+,"
+
+[shortcut.desc]
+new_workspace = "新しいワークスペース"
+new_tab = "新しいタブ"
+next_tab = "次のタブ"
+prev_tab = "前のタブ"
+switch_workspace = "WS切替"
+pane_split_vertical = "ペイン垂直分割"
+pane_split_horizontal = "ペイン水平分割"
+surface_split_vertical = "サーフェス垂直分割"
+surface_split_horizontal = "サーフェス水平分割"
+focus_pane = "ペインフォーカス"
+notifications = "通知"
+settings = "設定"
+
+[notification_panel]
+window_title = "通知"
+unread_count = "{}件の未読"
+empty_message = "通知はありません"

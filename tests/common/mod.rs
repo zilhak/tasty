@@ -44,14 +44,27 @@ impl TastyInstance {
             std::thread::sleep(Duration::from_millis(100));
         };
 
-        // Wait a bit for the shell to start
-        std::thread::sleep(Duration::from_millis(500));
-
-        Self {
+        let instance = Self {
             process,
             port,
             port_file,
+        };
+
+        // Wait until the shell is actually ready (has screen content),
+        // not a fixed sleep. This guarantees all tests start with a live shell.
+        let start = Instant::now();
+        loop {
+            let text = instance.screen_text();
+            if !text.trim().is_empty() {
+                break;
+            }
+            if start.elapsed() > Duration::from_secs(10) {
+                panic!("shell did not produce output within 10 seconds");
+            }
+            std::thread::sleep(Duration::from_millis(50));
         }
+
+        instance
     }
 
     /// Send a JSON-RPC request and return the result value.

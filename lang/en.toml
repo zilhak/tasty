@@ -1,0 +1,100 @@
+# Tasty Terminal Emulator - English (en)
+
+[app]
+name = "Tasty"
+
+[button]
+cancel = "Cancel"
+save = "Save"
+new_workspace = "+ New Workspace"
+mark_all_read = "Mark all read"
+jump_to_workspace = "Jump"
+
+[tooltip]
+jump_to_workspace = "Switch to this workspace"
+
+[badge]
+overflow = "99+"
+
+[settings]
+[settings.window]
+title = "Settings"
+
+[settings.tab]
+general = "General"
+appearance = "Appearance"
+clipboard = "Clipboard"
+notifications = "Notifications"
+language = "Language"
+
+[settings.general]
+heading = "General"
+shell_label = "Shell:"
+startup_command_label = "Startup command:"
+
+[settings.appearance]
+heading = "Appearance"
+font_family_label = "Font family:"
+font_size_label = "Font size:"
+theme_label = "Theme:"
+background_opacity_label = "Background opacity:"
+sidebar_width_label = "Sidebar width:"
+
+[settings.appearance.theme]
+dark = "Dark"
+light = "Light"
+
+[settings.clipboard]
+heading = "Clipboard"
+macos_style = "macOS style (Alt+C / Alt+V)"
+linux_style = "Linux style (Ctrl+Shift+C / Ctrl+Shift+V)"
+windows_style = "Windows style (Ctrl+C with selection / Ctrl+V)"
+
+[settings.notifications]
+heading = "Notifications"
+enabled = "Notifications enabled"
+system_notification = "System notifications (OS native)"
+sound = "Sound"
+coalesce_interval_label = "Coalesce interval (ms):"
+
+[settings.language]
+heading = "Language"
+label = "Language:"
+restart_notice = "Language change will take effect after restart."
+
+[sidebar]
+workspaces_heading = "Workspaces"
+shortcuts_heading = "Shortcuts"
+
+[shortcut.key]
+new_workspace = "Ctrl+Shift+N"
+new_tab = "Ctrl+Shift+T"
+next_tab = "Ctrl+Tab"
+prev_tab = "Ctrl+Shift+Tab"
+switch_workspace = "Alt+1~9"
+pane_split_vertical = "Ctrl+Shift+E"
+pane_split_horizontal = "Ctrl+Shift+O"
+surface_split_vertical = "Ctrl+Shift+D"
+surface_split_horizontal = "Ctrl+Shift+J"
+focus_pane = "Alt+Arrow"
+notifications = "Ctrl+Shift+I"
+settings = "Ctrl+,"
+
+[shortcut.desc]
+new_workspace = "New Workspace"
+new_tab = "New Tab"
+next_tab = "Next Tab"
+prev_tab = "Prev Tab"
+switch_workspace = "Switch WS"
+pane_split_vertical = "Pane Split V"
+pane_split_horizontal = "Pane Split H"
+surface_split_vertical = "Surface Split V"
+surface_split_horizontal = "Surface Split H"
+focus_pane = "Focus Pane"
+notifications = "Notifications"
+settings = "Settings"
+
+[notification_panel]
+window_title = "Notifications"
+unread_count = "{} unread"
+empty_message = "No notifications"

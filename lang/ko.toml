@@ -1,0 +1,100 @@
+# Tasty 터미널 에뮬레이터 - 한국어 (ko)
+
+[app]
+name = "Tasty"
+
+[button]
+cancel = "취소"
+save = "저장"
+new_workspace = "+ 새 워크스페이스"
+mark_all_read = "모두 읽음"
+jump_to_workspace = "이동"
+
+[tooltip]
+jump_to_workspace = "이 워크스페이스로 전환"
+
+[badge]
+overflow = "99+"
+
+[settings]
+[settings.window]
+title = "설정"
+
+[settings.tab]
+general = "일반"
+appearance = "외관"
+clipboard = "클립보드"
+notifications = "알림"
+language = "언어"
+
+[settings.general]
+heading = "일반"
+shell_label = "셸:"
+startup_command_label = "시작 명령어:"
+
+[settings.appearance]
+heading = "외관"
+font_family_label = "폰트:"
+font_size_label = "글자 크기:"
+theme_label = "테마:"
+background_opacity_label = "배경 투명도:"
+sidebar_width_label = "사이드바 너비:"
+
+[settings.appearance.theme]
+dark = "다크"
+light = "라이트"
+
+[settings.clipboard]
+heading = "클립보드"
+macos_style = "macOS 방식 (Alt+C / Alt+V)"
+linux_style = "Linux 방식 (Ctrl+Shift+C / Ctrl+Shift+V)"
+windows_style = "Windows 방식 (선택 시 Ctrl+C / Ctrl+V)"
+
+[settings.notifications]
+heading = "알림"
+enabled = "알림 활성화"
+system_notification = "시스템 알림 (OS 기본)"
+sound = "소리"
+coalesce_interval_label = "알림 병합 간격 (ms):"
+
+[settings.language]
+heading = "언어"
+label = "언어:"
+restart_notice = "언어 변경은 재시작 후 적용됩니다."
+
+[sidebar]
+workspaces_heading = "워크스페이스"
+shortcuts_heading = "단축키"
+
+[shortcut.key]
+new_workspace = "Ctrl+Shift+N"
+new_tab = "Ctrl+Shift+T"
+next_tab = "Ctrl+Tab"
+prev_tab = "Ctrl+Shift+Tab"
+switch_workspace = "Alt+1~9"
+pane_split_vertical = "Ctrl+Shift+E"
+pane_split_horizontal = "Ctrl+Shift+O"
+surface_split_vertical = "Ctrl+Shift+D"
+surface_split_horizontal = "Ctrl+Shift+J"
+focus_pane = "Alt+방향키"
+notifications = "Ctrl+Shift+I"
+settings = "Ctrl+,"
+
+[shortcut.desc]
+new_workspace = "새 워크스페이스"
+new_tab = "새 탭"
+next_tab = "다음 탭"
+prev_tab = "이전 탭"
+switch_workspace = "워크스페이스 전환"
+pane_split_vertical = "페인 수직 분할"
+pane_split_horizontal = "페인 수평 분할"
+surface_split_vertical = "서피스 수직 분할"
+surface_split_horizontal = "서피스 수평 분할"
+focus_pane = "페인 포커스"
+notifications = "알림"
+settings = "설정"
+
+[notification_panel]
+window_title = "알림"
+unread_count = "{}개 안 읽음"
+empty_message = "알림이 없습니다"

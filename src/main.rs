@@ -2,6 +2,7 @@ mod cli;
 mod event_handler;
 mod font;
 mod gpu;
+mod i18n;
 mod ipc;
 mod model;
 mod notification;
@@ -186,6 +187,10 @@ fn main() -> Result<()> {
 
     // Parse CLI arguments
     let cli = cli::Cli::parse();
+
+    // Initialize i18n
+    let lang_settings = settings::Settings::load();
+    i18n::init(&lang_settings.general.language);
 
     // If a subcommand was provided, run in CLI client mode
     if let Some(command) = cli.command {

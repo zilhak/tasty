@@ -209,24 +209,14 @@ fn tree_view() {
 #[test]
 fn screen_text() {
     let tasty = TastyInstance::spawn();
-    // Poll until shell prompt appears
-    let start = std::time::Instant::now();
-    loop {
-        let text = tasty.screen_text();
-        if !text.trim().is_empty() {
-            return;
-        }
-        if start.elapsed() > Duration::from_secs(5) {
-            panic!("screen_text returned empty after 5s");
-        }
-        std::thread::sleep(Duration::from_millis(100));
-    }
+    // spawn() already guarantees shell is ready
+    let text = tasty.screen_text();
+    assert!(!text.trim().is_empty());
 }
 
 #[test]
 fn cursor_position() {
     let tasty = TastyInstance::spawn();
-    std::thread::sleep(Duration::from_millis(500));
     let result = tasty.call("surface.cursor_position", serde_json::json!({}));
     // Should return x and y fields
     assert!(result.get("x").is_some());
@@ -346,40 +336,26 @@ fn send_to_specific_surface() {
     tasty.call("surface.set_mark", json!({"surface_id": sid}));
     tasty.call("surface.send_to", json!({"surface_id": sid, "text": "echo targeted_send\r\n"}));
 
-    std::thread::sleep(Duration::from_millis(1000));
-
-    let result = tasty.call("surface.read_since_mark", json!({"surface_id": sid, "strip_ansi": true}));
-    let output = result["text"].as_str().unwrap_or("");
-    assert!(output.contains("targeted_send"), "Expected 'targeted_send' in output: {}", output);
+    let output = tasty.wait_for_output("targeted_send", Duration::from_secs(5));
+    assert!(output.contains("targeted_send"));
 }
 
 #[test]
 fn screen_text_by_surface_id() {
     let tasty = TastyInstance::spawn();
+    // spawn() already guarantees shell is ready
 
-    // Get surface ID
     let surfaces = tasty.call("surface.list", json!({}));
     let sid = surfaces.as_array().unwrap()[0]["id"].as_u64().unwrap();
 
-    // Poll until screen has content (shell prompt), instead of fixed sleep
-    let start = std::time::Instant::now();
-    loop {
-        let result = tasty.call("surface.screen_text", json!({"surface_id": sid}));
-        let text = result["text"].as_str().unwrap_or("");
-        if !text.trim().is_empty() {
-            return; // PASS
-        }
-        if start.elapsed() > Duration::from_secs(5) {
-            panic!("screen_text by surface_id returned empty after 5s");
-        }
-        std::thread::sleep(Duration::from_millis(100));
-    }
+    let result = tasty.call("surface.screen_text", json!({"surface_id": sid}));
+    let text = result["text"].as_str().unwrap_or("");
+    assert!(!text.trim().is_empty(), "screen_text by surface_id should return content");
 }
 
 #[test]
 fn cursor_position_by_surface_id() {
     let tasty = TastyInstance::spawn();
-    std::thread::sleep(Duration::from_millis(500));
 
     let surfaces = tasty.call("surface.list", json!({}));
     let sid = surfaces.as_array().unwrap()[0]["id"].as_u64().unwrap();
@@ -401,11 +377,8 @@ fn send_key_with_surface_id() {
     tasty.call("surface.send", json!({"surface_id": sid, "text": "echo key_test"}));
     tasty.call("surface.send_key", json!({"surface_id": sid, "key": "enter"}));
 
-    std::thread::sleep(Duration::from_millis(1000));
-
-    let result = tasty.call("surface.read_since_mark", json!({"surface_id": sid, "strip_ansi": true}));
-    let output = result["text"].as_str().unwrap_or("");
-    assert!(output.contains("key_test"), "Expected 'key_test' in output: {}", output);
+    let output = tasty.wait_for_output("key_test", Duration::from_secs(5));
+    assert!(output.contains("key_test"));
 }
 
 #[test]

@@ -459,3 +459,28 @@ Claude Code를 새 워크스페이스에서 자동으로 실행하는 전용 런
 - 성공/에러 응답 생성
 - method_not_found 응답
 - 응답 라운드트립
+
+## 국제화 (i18n)
+
+### 번역 시스템
+- TOML 기반 번역 파일: 중첩 테이블을 점(dot) 구분 평면 키로 변환
+- 내장 언어: 영어(en), 한국어(ko), 일본어(ja)
+- `include_str!`로 바이너리에 번역 파일 임베드
+- 영어를 기본 베이스로 로드 후, 선택된 언어를 오버레이하는 계층 구조
+- 사용자 커스텀 번역: `~/.config/tasty/lang/{code}.toml` 파일로 개별 키 오버라이드 가능
+- `OnceLock` 기반 글로벌 번역 스토어, 앱 시작 시 1회 초기화
+- `t(key)`: 키로 번역 문자열 조회 (미등록 키는 키 자체를 반환)
+- `t_fmt(key, arg)`: `{}` 플레이스홀더를 인자로 치환
+- `current_language()`: 현재 언어 코드 조회
+- 설정 파일(`config.toml`)의 `general.language` 필드로 언어 지정
+- 언어 변경 시 재시작 필요
+
+### 번역 키 구조
+- `app.*`: 앱 이름
+- `button.*`: 버튼 레이블 (취소, 저장, 새 워크스페이스 등)
+- `tooltip.*`: 툴팁 텍스트
+- `badge.*`: 배지 텍스트
+- `settings.*`: 설정 UI (탭, 일반, 외관, 클립보드, 알림, 언어)
+- `sidebar.*`: 사이드바 헤딩
+- `shortcut.key.*` / `shortcut.desc.*`: 단축키 키/설명
+- `notification_panel.*`: 알림 패널

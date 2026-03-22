@@ -20,6 +20,7 @@ pub struct Settings {
 pub struct GeneralSettings {
     pub shell: String,
     pub startup_command: String,
+    pub language: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -80,6 +81,7 @@ impl Default for GeneralSettings {
         Self {
             shell,
             startup_command: String::new(),
+            language: "en".to_string(),
         }
     }
 }
