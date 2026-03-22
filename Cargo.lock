@@ -3593,6 +3593,8 @@ dependencies = [
  "serde",
  "serde_json",
  "shell-escape",
+ "tasty-hooks",
+ "tasty-terminal",
  "termwiz",
  "thiserror 2.0.18",
  "tokio",
@@ -3601,6 +3603,25 @@ dependencies = [
  "tracing-subscriber",
  "wgpu",
  "winit",
+]
+
+[[package]]
+name = "tasty-hooks"
+version = "0.1.0"
+dependencies = [
+ "regex",
+ "serde",
+]
+
+[[package]]
+name = "tasty-terminal"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "portable-pty",
+ "regex",
+ "termwiz",
+ "tracing",
 ]
 
 [[package]]

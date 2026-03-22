@@ -1,6 +1,6 @@
 # 아키텍처 개요
 
-Tasty는 17개 소스 파일, 약 7,575줄의 Rust 코드로 구성된 크로스 플랫폼 GPU 가속 터미널 에뮬레이터다.
+Tasty는 Cargo 워크스페이스 기반 크로스 플랫폼 GPU 가속 터미널 에뮬레이터다. 2개의 독립 크레이트(tasty-hooks, tasty-terminal)와 메인 바이너리로 구성된다.
 
 ## 기술 스택
 
@@ -17,28 +17,53 @@ Tasty는 17개 소스 파일, 약 7,575줄의 Rust 코드로 구성된 크로스
 | 설정 파일 | toml + directories | - |
 | OS 알림 | notify-rust | - |
 
-## 소스 파일 구성
+## 프로젝트 구조
 
-| 파일 | 줄 수 | 역할 |
-|------|-------|------|
-| `model.rs` | 1,370 | 데이터 모델 (Workspace/Pane/Tab/Panel/Surface 계층) |
-| `main.rs` | 762 | 진입점, winit 이벤트 루프, App 구조체 |
-| `state.rs` | 733 | 애플리케이션 상태 관리 (AppState) |
-| `renderer.rs` | 699 | wgpu 기반 셀 렌더러 (CellRenderer) |
-| `terminal.rs` | 646 | PTY + VTE 파싱 + 터미널 에뮬레이션 |
-| `ipc/handler.rs` | 564 | JSON-RPC 요청 핸들러 (20개 메서드) |
-| `ui.rs` | 401 | egui UI (사이드바, 탭 바, 알림 패널) |
-| `gpu.rs` | 370 | GPU 상태 관리 (GpuState, wgpu 초기화) |
-| `font.rs` | 358 | 폰트 설정, 글리프 아틀라스 |
-| `cli.rs` | 331 | CLI 클라이언트 (clap 서브커맨드) |
-| `hooks.rs` | 290 | 이벤트 훅 시스템 (HookManager) |
-| `settings.rs` | 274 | TOML 설정 파일 로드/저장 |
-| `notification.rs` | 239 | 알림 저장소 + OS 알림 |
-| `settings_ui.rs` | 208 | egui 설정 윈도우 UI |
-| `ipc/server.rs` | 196 | TCP 기반 IPC 서버 |
-| `ipc/protocol.rs` | 131 | JSON-RPC 2.0 프로토콜 타입 |
-| `ipc/mod.rs` | 3 | IPC 모듈 re-export |
-| **합계** | **7,575** | |
+```
+tasty/
+├── Cargo.toml              # 워크스페이스 루트
+├── crates/
+│   ├── tasty-hooks/        # 이벤트 훅 시스템 (독립 크레이트)
+│   │   └── src/lib.rs
+│   └── tasty-terminal/     # PTY + VTE 터미널 에뮬레이터 (독립 크레이트)
+│       └── src/
+│           ├── lib.rs
+│           ├── events.rs
+│           ├── vte_handler.rs
+│           └── modes.rs
+└── src/
+    ├── main.rs             # 진입점, App 구조체
+    ├── event_handler.rs    # winit 이벤트 핸들러 (ApplicationHandler impl)
+    ├── shortcuts.rs        # 키보드 단축키 처리
+    ├── gpu.rs              # GPU 상태 관리 (wgpu 초기화)
+    ├── font.rs             # 폰트 설정, 글리프 아틀라스
+    ├── cli.rs              # CLI 클라이언트
+    ├── notification.rs     # 알림 저장소 + OS 알림
+    ├── settings.rs         # TOML 설정 파일 로드/저장
+    ├── settings_ui.rs      # egui 설정 윈도우 UI
+    ├── state.rs            # 애플리케이션 상태 관리 (AppState)
+    ├── ui.rs               # egui UI (사이드바, 탭 바, 알림 패널)
+    ├── model/              # 데이터 모델 (Workspace/Pane/Tab/Panel/Surface)
+    │   ├── mod.rs          # Rect, SplitDirection, DividerInfo, 공통 타입
+    │   ├── workspace.rs    # Workspace 구조체
+    │   ├── pane.rs         # PaneNode, Pane, Tab 구조체
+    │   ├── panel.rs        # Panel enum
+    │   ├── surface_group.rs # SurfaceGroupNode, SurfaceGroupLayout
+    │   └── tests.rs
+    ├── renderer/           # wgpu 기반 셀 렌더러
+    │   ├── mod.rs          # CellRenderer 구조체
+    │   ├── shaders.rs      # WGSL 셰이더 소스
+    │   ├── palette.rs      # ANSI 컬러 팔레트
+    │   └── types.rs        # GPU 데이터 타입 (Uniforms, BgInstance, GlyphInstance)
+    └── ipc/                # IPC 서버
+        ├── mod.rs
+        ├── protocol.rs     # JSON-RPC 2.0 프로토콜
+        ├── server.rs       # TCP 서버
+        └── handler/        # 요청 핸들러
+            ├── mod.rs      # 라우터 + workspace/pane/tab 핸들러
+            ├── surface.rs  # surface.* 핸들러
+            └── hooks.rs    # hook.* + claude.launch 핸들러
+```
 
 ## 모듈 의존성 다이어그램 (DAG)
 

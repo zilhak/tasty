@@ -1,0 +1,13 @@
+[package]
+name = "tasty-terminal"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "PTY + VTE terminal emulator library"
+
+[dependencies]
+termwiz = "0.22"
+portable-pty = "0.8"
+regex = "1"
+anyhow = "1"
+tracing = "0.1"

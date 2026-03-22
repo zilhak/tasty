@@ -1,9 +1,9 @@
-use crate::hooks::HookManager;
+use tasty_hooks::HookManager;
 use crate::model::{DividerInfo, PaneId, Rect, SplitDirection, Workspace};
 use crate::notification::NotificationStore;
 use crate::settings::Settings;
 use crate::settings_ui::SettingsUiState;
-use crate::terminal::{Terminal, TerminalEvent, Waker};
+use tasty_terminal::{Terminal, TerminalEvent, Waker};
 
 struct IdGenerator {
     workspace: u32,

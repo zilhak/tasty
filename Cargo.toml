@@ -1,3 +1,7 @@
+[workspace]
+members = ["crates/*"]
+resolver = "2"
+
 [package]
 name = "tasty"
 version = "0.1.0"
@@ -7,6 +11,9 @@ description = "Cross-platform GPU-accelerated terminal emulator for AI coding ag
 repository = "https://github.com/zilhak/tasty"
 
 [dependencies]
+# Workspace crates
+tasty-hooks = { path = "crates/tasty-hooks" }
+tasty-terminal = { path = "crates/tasty-terminal" }
 # Window & Input
 winit = "0.30"
 

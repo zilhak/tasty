@@ -1,195 +1,15 @@
-use bytemuck::{Pod, Zeroable};
-use termwiz::color::ColorAttribute;
 use termwiz::surface::Surface;
 
 use crate::font::{FontConfig, GlyphAtlas, GlyphKey};
 use crate::model::Rect;
 
-// ---- GPU data types ----
+mod palette;
+mod shaders;
+mod types;
 
-#[repr(C)]
-#[derive(Copy, Clone, Debug, Pod, Zeroable)]
-struct Uniforms {
-    cell_size: [f32; 2],
-    grid_offset: [f32; 2],
-    viewport_size: [f32; 2],
-    _padding: [f32; 2],
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, Debug, Pod, Zeroable)]
-struct BgInstance {
-    pos: [f32; 2],
-    bg_color: [f32; 4],
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, Debug, Pod, Zeroable)]
-struct GlyphInstance {
-    pos: [f32; 2],
-    uv_offset: [f32; 2],
-    uv_size: [f32; 2],
-    fg_color: [f32; 4],
-    glyph_offset: [f32; 2],
-    glyph_size: [f32; 2],
-}
-
-// ---- Shaders ----
-
-const BG_SHADER: &str = r#"
-struct Uniforms {
-    cell_size: vec2<f32>,
-    grid_offset: vec2<f32>,
-    viewport_size: vec2<f32>,
-    _padding: vec2<f32>,
-};
-
-@group(0) @binding(0) var<uniform> uniforms: Uniforms;
-
-struct BgInstance {
-    @location(0) pos: vec2<f32>,
-    @location(1) bg_color: vec4<f32>,
-};
-
-struct VertexOutput {
-    @builtin(position) position: vec4<f32>,
-    @location(0) color: vec4<f32>,
-};
-
-@vertex
-fn vs_main(@builtin(vertex_index) vi: u32, instance: BgInstance) -> VertexOutput {
-    let quad_pos = array<vec2<f32>, 6>(
-        vec2(0.0, 0.0), vec2(1.0, 0.0), vec2(0.0, 1.0),
-        vec2(1.0, 0.0), vec2(1.0, 1.0), vec2(0.0, 1.0),
-    );
-
-    let p = quad_pos[vi];
-    let pixel_pos = (instance.pos + p) * uniforms.cell_size + uniforms.grid_offset;
-    let ndc = pixel_pos / uniforms.viewport_size * 2.0 - 1.0;
-
-    var out: VertexOutput;
-    out.position = vec4(ndc.x, -ndc.y, 0.0, 1.0);
-    out.color = instance.bg_color;
-    return out;
-}
-
-@fragment
-fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    return in.color;
-}
-"#;
-
-const GLYPH_SHADER: &str = r#"
-struct Uniforms {
-    cell_size: vec2<f32>,
-    grid_offset: vec2<f32>,
-    viewport_size: vec2<f32>,
-    _padding: vec2<f32>,
-};
-
-@group(0) @binding(0) var<uniform> uniforms: Uniforms;
-@group(0) @binding(1) var atlas_texture: texture_2d<f32>;
-@group(0) @binding(2) var atlas_sampler: sampler;
-
-struct GlyphInstance {
-    @location(0) pos: vec2<f32>,
-    @location(1) uv_offset: vec2<f32>,
-    @location(2) uv_size: vec2<f32>,
-    @location(3) fg_color: vec4<f32>,
-    @location(4) glyph_offset: vec2<f32>,
-    @location(5) glyph_size: vec2<f32>,
-};
-
-struct VertexOutput {
-    @builtin(position) position: vec4<f32>,
-    @location(0) uv: vec2<f32>,
-    @location(1) fg_color: vec4<f32>,
-};
-
-@vertex
-fn vs_main(@builtin(vertex_index) vi: u32, instance: GlyphInstance) -> VertexOutput {
-    let quad_pos = array<vec2<f32>, 6>(
-        vec2(0.0, 0.0), vec2(1.0, 0.0), vec2(0.0, 1.0),
-        vec2(1.0, 0.0), vec2(1.0, 1.0), vec2(0.0, 1.0),
-    );
-
-    let p = quad_pos[vi];
-    let pixel_pos = instance.pos * uniforms.cell_size + uniforms.grid_offset
-                    + instance.glyph_offset + p * instance.glyph_size;
-    let ndc = pixel_pos / uniforms.viewport_size * 2.0 - 1.0;
-
-    var out: VertexOutput;
-    out.position = vec4(ndc.x, -ndc.y, 0.0, 1.0);
-    out.uv = instance.uv_offset + p * instance.uv_size;
-    out.fg_color = instance.fg_color;
-    return out;
-}
-
-@fragment
-fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    let alpha = textureSample(atlas_texture, atlas_sampler, in.uv).r;
-    return vec4(in.fg_color.rgb, in.fg_color.a * alpha);
-}
-"#;
-
-// ---- Default terminal colors (xterm-256) ----
-
-const DEFAULT_FG: [f32; 4] = [0.8, 0.8, 0.8, 1.0]; // #cccccc
-const DEFAULT_BG: [f32; 4] = [0.102, 0.102, 0.118, 1.0]; // #1a1a1e
-
-/// Standard 16-color ANSI palette (sRGB, approximate).
-const ANSI_COLORS: [[f32; 3]; 16] = [
-    [0.0, 0.0, 0.0],       // 0: black
-    [0.8, 0.0, 0.0],       // 1: red
-    [0.0, 0.8, 0.0],       // 2: green
-    [0.8, 0.8, 0.0],       // 3: yellow
-    [0.0, 0.0, 0.8],       // 4: blue
-    [0.8, 0.0, 0.8],       // 5: magenta
-    [0.0, 0.8, 0.8],       // 6: cyan
-    [0.75, 0.75, 0.75],    // 7: white
-    [0.5, 0.5, 0.5],       // 8: bright black
-    [1.0, 0.0, 0.0],       // 9: bright red
-    [0.0, 1.0, 0.0],       // 10: bright green
-    [1.0, 1.0, 0.0],       // 11: bright yellow
-    [0.0, 0.0, 1.0],       // 12: bright blue
-    [1.0, 0.0, 1.0],       // 13: bright magenta
-    [0.0, 1.0, 1.0],       // 14: bright cyan
-    [1.0, 1.0, 1.0],       // 15: bright white
-];
-
-fn palette_index_to_rgb(idx: u8) -> [f32; 3] {
-    if idx < 16 {
-        ANSI_COLORS[idx as usize]
-    } else if idx < 232 {
-        // 216-color cube: 6x6x6
-        let idx = idx - 16;
-        let r = (idx / 36) % 6;
-        let g = (idx / 6) % 6;
-        let b = idx % 6;
-        let to_f = |v: u8| if v == 0 { 0.0 } else { (55.0 + 40.0 * v as f32) / 255.0 };
-        [to_f(r), to_f(g), to_f(b)]
-    } else {
-        // 24 grayscale: 232..=255
-        let level = (8 + 10 * (idx - 232) as u16) as f32 / 255.0;
-        [level, level, level]
-    }
-}
-
-fn color_attr_to_rgba(attr: &ColorAttribute, default: [f32; 4]) -> [f32; 4] {
-    match attr {
-        ColorAttribute::Default => default,
-        ColorAttribute::PaletteIndex(idx) => {
-            let [r, g, b] = palette_index_to_rgb(*idx);
-            [r, g, b, 1.0]
-        }
-        ColorAttribute::TrueColorWithPaletteFallback(srgba, _) => {
-            [srgba.0, srgba.1, srgba.2, srgba.3]
-        }
-        ColorAttribute::TrueColorWithDefaultFallback(srgba) => {
-            [srgba.0, srgba.1, srgba.2, srgba.3]
-        }
-    }
-}
+use palette::{color_attr_to_rgba, DEFAULT_BG, DEFAULT_FG};
+use shaders::{BG_SHADER, GLYPH_SHADER};
+use types::{BgInstance, GlyphInstance, Uniforms};
 
 // ---- Cell Renderer ----
 
@@ -408,37 +228,31 @@ impl CellRenderer {
                     array_stride: std::mem::size_of::<GlyphInstance>() as u64,
                     step_mode: wgpu::VertexStepMode::Instance,
                     attributes: &[
-                        // pos
                         wgpu::VertexAttribute {
                             offset: 0,
                             shader_location: 0,
                             format: wgpu::VertexFormat::Float32x2,
                         },
-                        // uv_offset
                         wgpu::VertexAttribute {
                             offset: 8,
                             shader_location: 1,
                             format: wgpu::VertexFormat::Float32x2,
                         },
-                        // uv_size
                         wgpu::VertexAttribute {
                             offset: 16,
                             shader_location: 2,
                             format: wgpu::VertexFormat::Float32x2,
                         },
-                        // fg_color
                         wgpu::VertexAttribute {
                             offset: 24,
                             shader_location: 3,
                             format: wgpu::VertexFormat::Float32x4,
                         },
-                        // glyph_offset
                         wgpu::VertexAttribute {
                             offset: 40,
                             shader_location: 4,
                             format: wgpu::VertexFormat::Float32x2,
                         },
-                        // glyph_size
                         wgpu::VertexAttribute {
                             offset: 48,
                             shader_location: 5,
@@ -533,13 +347,11 @@ impl CellRenderer {
                 let bg_color = color_attr_to_rgba(&attrs.background(), DEFAULT_BG);
                 let fg_color = color_attr_to_rgba(&attrs.foreground(), DEFAULT_FG);
 
-                // Background instance for every cell
                 self.bg_instances.push(BgInstance {
                     pos: [col_idx as f32, row_idx as f32],
                     bg_color,
                 });
 
-                // Glyph instance only for non-empty cells
                 let text = cell_ref.str();
                 if text.is_empty() || text == " " {
                     continue;
@@ -566,7 +378,6 @@ impl CellRenderer {
             }
         }
 
-        // Clamp to max
         let bg_count = self.bg_instances.len().min(self.max_instances);
         let glyph_count = self.glyph_instances.len().min(self.max_instances);
 
@@ -591,7 +402,6 @@ impl CellRenderer {
 
     /// Record render commands into the given encoder.
     pub fn render<'a>(&'a self, render_pass: &mut wgpu::RenderPass<'a>) {
-        // Pass 1: backgrounds
         if self.bg_instance_count > 0 {
             render_pass.set_pipeline(&self.bg_pipeline);
             render_pass.set_bind_group(0, &self.bg_bind_group, &[]);
@@ -599,7 +409,6 @@ impl CellRenderer {
             render_pass.draw(0..6, 0..self.bg_instance_count);
         }
 
-        // Pass 2: glyphs
         if self.glyph_instance_count > 0 {
             render_pass.set_pipeline(&self.glyph_pipeline);
             render_pass.set_bind_group(0, &self.glyph_bind_group, &[]);
@@ -610,7 +419,7 @@ impl CellRenderer {
 
     /// Compute terminal grid size from pixel dimensions.
     pub fn grid_size(&self, width: u32, height: u32) -> (usize, usize) {
-        let padding = 8.0; // 4px each side
+        let padding = 8.0;
         let cell_w = self.font_config.metrics.cell_width.max(1.0);
         let cell_h = self.font_config.metrics.cell_height.max(1.0);
         let cols = ((width as f32 - padding) / cell_w).floor() as usize;
@@ -629,7 +438,6 @@ impl CellRenderer {
     }
 
     /// Prepare instance data for a terminal surface to be rendered in a specific viewport rect.
-    /// The viewport rect is in physical pixels. The `screen_width`/`screen_height` are full screen dimensions.
     pub fn prepare_viewport(
         &mut self,
         surface: &Surface,
@@ -638,7 +446,6 @@ impl CellRenderer {
         screen_width: u32,
         screen_height: u32,
     ) {
-        // Update uniforms with the viewport's grid offset
         let uniforms = Uniforms {
             cell_size: [
                 self.font_config.metrics.cell_width,
@@ -650,11 +457,10 @@ impl CellRenderer {
         };
         queue.write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
 
-        // Build instance data using the standard prepare logic
         self.prepare(surface, queue);
     }
 
-    /// Render with a scissor rect applied. The rect is in physical pixels.
+    /// Render with a scissor rect applied.
     pub fn render_scissored<'a>(
         &'a self,
         render_pass: &mut wgpu::RenderPass<'a>,
@@ -662,7 +468,6 @@ impl CellRenderer {
         surface_width: u32,
         surface_height: u32,
     ) {
-        // Clamp scissor rect to the render target bounds
         let x = (viewport.x.max(0.0) as u32).min(surface_width.saturating_sub(1));
         let y = (viewport.y.max(0.0) as u32).min(surface_height.saturating_sub(1));
         let max_w = surface_width.saturating_sub(x);
@@ -671,7 +476,6 @@ impl CellRenderer {
         let h = (viewport.height.max(1.0) as u32).min(max_h).max(1);
         render_pass.set_scissor_rect(x, y, w, h);
 
-        // Pass 1: backgrounds
         if self.bg_instance_count > 0 {
             render_pass.set_pipeline(&self.bg_pipeline);
             render_pass.set_bind_group(0, &self.bg_bind_group, &[]);
@@ -679,7 +483,6 @@ impl CellRenderer {
             render_pass.draw(0..6, 0..self.bg_instance_count);
         }
 
-        // Pass 2: glyphs
         if self.glyph_instance_count > 0 {
             render_pass.set_pipeline(&self.glyph_pipeline);
             render_pass.set_bind_group(0, &self.glyph_bind_group, &[]);
