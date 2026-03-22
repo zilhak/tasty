@@ -168,6 +168,30 @@ impl App {
 
         let mut processed = false;
         while let Ok(cmd) = ipc.try_recv() {
+            // Special handling for ui.screenshot — needs GPU access
+            if cmd.request.method == "ui.screenshot" {
+                let path = cmd.request.params
+                    .get("path")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("screenshot.ppm")
+                    .to_string();
+                if let Some(gpu) = &mut self.gpu {
+                    gpu.pending_screenshot = Some(std::path::PathBuf::from(&path));
+                    self.dirty = true;
+                    // Mark dirty + redraw so the screenshot is captured on the next frame
+                    if let Some(window) = &self.window {
+                        window.request_redraw();
+                    }
+                }
+                let response = ipc::protocol::JsonRpcResponse::success(
+                    cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
+                    serde_json::json!({"path": path, "scheduled": true}),
+                );
+                let _ = cmd.response_tx.send(response);
+                processed = true;
+                continue;
+            }
+
             let response = ipc::handler::handle(state, &cmd.request);
             let _ = cmd.response_tx.send(response);
             self.dirty = true;

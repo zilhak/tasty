@@ -25,6 +25,8 @@ pub struct GpuState {
     egui_state: egui_winit::State,
     egui_renderer: egui_wgpu::Renderer,
     scale_factor: f32,
+    /// When set, the next render will capture the frame to this path as PNG.
+    pub pending_screenshot: Option<std::path::PathBuf>,
 }
 
 impl GpuState {
@@ -76,7 +78,7 @@ impl GpuState {
             .ok_or_else(|| anyhow::anyhow!("no supported surface format found"))?;
 
         let config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
             format: surface_format,
             width: size.width.max(1),
             height: size.height.max(1),
@@ -134,6 +136,7 @@ impl GpuState {
             egui_state,
             egui_renderer,
             scale_factor,
+            pending_screenshot: None,
         })
     }
 
@@ -345,6 +348,12 @@ impl GpuState {
         }
 
         self.queue.submit(std::iter::once(egui_encoder.finish()));
+
+        // Screenshot capture: copy the rendered frame to a buffer and save as PNG.
+        if let Some(path) = self.pending_screenshot.take() {
+            self.capture_frame_to_png(&output.texture, &path);
+        }
+
         output.present();
 
         Ok(())
@@ -398,5 +407,89 @@ impl GpuState {
     /// Re-apply the theme from settings. Called after settings are saved.
     pub fn refresh_theme(&self, theme: &str) {
         Self::apply_theme(&self.egui_ctx, theme);
+    }
+
+    /// Capture the current frame texture to a PNG file.
+    fn capture_frame_to_png(&self, texture: &wgpu::Texture, path: &std::path::Path) {
+        let width = self.size.width;
+        let height = self.size.height;
+        let bytes_per_pixel = 4u32;
+        // wgpu requires rows to be aligned to 256 bytes
+        let unpadded_bytes_per_row = width * bytes_per_pixel;
+        let padded_bytes_per_row = (unpadded_bytes_per_row + 255) & !255;
+
+        let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("screenshot_buffer"),
+            size: (padded_bytes_per_row * height) as u64,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+
+        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("screenshot_encoder"),
+        });
+
+        encoder.copy_texture_to_buffer(
+            wgpu::TexelCopyTextureInfo {
+                texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyBufferInfo {
+                buffer: &buffer,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(padded_bytes_per_row),
+                    rows_per_image: Some(height),
+                },
+            },
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
+
+        self.queue.submit(std::iter::once(encoder.finish()));
+
+        // Map the buffer and read pixels
+        let buffer_slice = buffer.slice(..);
+        let (tx, rx) = std::sync::mpsc::channel();
+        buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
+            let _ = tx.send(result);
+        });
+        self.device.poll(wgpu::Maintain::Wait);
+
+        if let Ok(Ok(())) = rx.recv() {
+            let data = buffer_slice.get_mapped_range();
+
+            // Write as PPM (simple format, no extra dependency needed)
+            // Format: BGRA -> RGB
+            let mut pixels = Vec::with_capacity((width * height * 3) as usize);
+            for row in 0..height {
+                let offset = (row * padded_bytes_per_row) as usize;
+                for col in 0..width {
+                    let px = offset + (col * bytes_per_pixel) as usize;
+                    // BGRA → RGB
+                    pixels.push(data[px + 2]); // R
+                    pixels.push(data[px + 1]); // G
+                    pixels.push(data[px]);     // B
+                }
+            }
+            drop(data);
+            buffer.unmap();
+
+            // Write as PPM (Portable Pixmap) - universally readable
+            let header = format!("P6\n{} {}\n255\n", width, height);
+            if let Ok(mut file) = std::fs::File::create(path) {
+                use std::io::Write;
+                let _ = file.write_all(header.as_bytes());
+                let _ = file.write_all(&pixels);
+                tracing::info!("screenshot saved to {}", path.display());
+            }
+        } else {
+            tracing::warn!("failed to capture screenshot");
+        }
     }
 }
