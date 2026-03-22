@@ -140,4 +140,5 @@ Tasty는 17개 소스 파일, 약 7,575줄의 Rust 코드로 구성된 크로스
 | [모듈별 상세](modules.md) | 17개 소스 파일 상세 분석 |
 | [데이터 흐름](data-flows.md) | 5가지 주요 데이터 흐름 단계별 설명 |
 | [라이브러리 분리 분석](library-separation/index.md) | 8개 분리 후보를 7개 관점에서 다관점 분석 |
+| [의존성 분리 (파일 분할)](dependency-separation/index.md) | 대형 파일 모듈 분할 계획, 커플링 분석, 실행 로드맵 |
 | [리팩토링 분석](refactoring.md) | 코드 개선점, 리팩토링 로드맵 |
