@@ -11,6 +11,7 @@ use termwiz::surface::Surface;
 
 mod events;
 mod modes;
+pub mod test_helpers;
 mod vte_handler;
 
 pub use events::*;
@@ -193,6 +194,57 @@ impl Terminal {
         }
 
         changed
+    }
+
+    /// Get the visible text content of the screen as a string.
+    /// Each row is on its own line, trailing spaces are trimmed.
+    pub fn screen_text(&self) -> String {
+        let surface = self.surface();
+        let lines = surface.screen_lines();
+        let mut result = String::new();
+        for line in lines {
+            let mut row_text = String::new();
+            for cell in line.visible_cells() {
+                row_text.push_str(cell.str());
+            }
+            result.push_str(row_text.trim_end());
+            result.push('\n');
+        }
+        // Trim trailing empty lines
+        while result.ends_with("\n\n") {
+            result.pop();
+        }
+        result
+    }
+
+    /// Get the text of a specific row (0-indexed), trimmed.
+    pub fn screen_row(&self, row: usize) -> String {
+        let surface = self.surface();
+        let lines = surface.screen_lines();
+        if row >= lines.len() {
+            return String::new();
+        }
+        let mut text = String::new();
+        for cell in lines[row].visible_cells() {
+            text.push_str(cell.str());
+        }
+        text.trim_end().to_string()
+    }
+
+    /// Process raw bytes through the VTE parser and apply to the surface.
+    /// This is useful for testing without a real PTY.
+    pub fn process_bytes(&mut self, data: &[u8]) {
+        let actions = self.parser.parse_as_vec(data);
+        for action in actions {
+            if let Action::CSI(CSI::Mode(ref mode)) = action {
+                self.handle_mode(mode);
+                continue;
+            }
+            let changes = self.action_to_changes(action);
+            for change in changes {
+                self.surface_mut().add_change(change);
+            }
+        }
     }
 
     /// Send keyboard input to PTY
