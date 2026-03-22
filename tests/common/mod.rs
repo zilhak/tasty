@@ -86,6 +86,26 @@ impl TastyInstance {
         resp.get("result").cloned().unwrap_or(Value::Null)
     }
 
+    /// Send a JSON-RPC request and return the full response (including errors).
+    pub fn call_raw(&self, method: &str, params: Value) -> Value {
+        let mut stream = TcpStream::connect(format!("127.0.0.1:{}", self.port))
+            .expect("failed to connect to tasty IPC");
+        stream.set_read_timeout(Some(Duration::from_secs(5))).ok();
+        let request = serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": method,
+            "params": params,
+            "id": 1
+        });
+        let mut msg = serde_json::to_string(&request).unwrap();
+        msg.push('\n');
+        stream.write_all(msg.as_bytes()).expect("failed to send");
+        let mut reader = BufReader::new(&stream);
+        let mut line = String::new();
+        reader.read_line(&mut line).expect("failed to read response");
+        serde_json::from_str(&line).expect("invalid JSON response")
+    }
+
     /// Send text to the focused terminal.
     pub fn send_text(&self, text: &str) {
         self.call("surface.send", serde_json::json!({ "text": text }));

@@ -413,3 +413,91 @@ fn ui_state_query() {
     assert!(result["pane_count"].as_u64().unwrap() >= 1);
     assert!(result["tab_count"].as_u64().unwrap() >= 1);
 }
+
+// Error path tests
+
+#[test]
+fn pane_focus_nonexistent_returns_error() {
+    let tasty = TastyInstance::spawn();
+    let resp = tasty.call_raw("pane.focus", json!({"pane_id": 99999}));
+    assert!(resp.get("error").is_some(), "Should return error for nonexistent pane");
+}
+
+#[test]
+fn surface_focus_nonexistent_returns_error() {
+    let tasty = TastyInstance::spawn();
+    let resp = tasty.call_raw("surface.focus", json!({"surface_id": 99999}));
+    assert!(resp.get("error").is_some(), "Should return error for nonexistent surface");
+}
+
+#[test]
+fn send_to_nonexistent_surface_returns_error() {
+    let tasty = TastyInstance::spawn();
+    let resp = tasty.call_raw("surface.send_to", json!({"surface_id": 99999, "text": "hello"}));
+    assert!(resp.get("error").is_some(), "Should return error for nonexistent surface");
+}
+
+#[test]
+fn send_combo_missing_key_returns_error() {
+    let tasty = TastyInstance::spawn();
+    let resp = tasty.call_raw("surface.send_combo", json!({"modifiers": ["ctrl"]}));
+    assert!(resp.get("error").is_some(), "Should return error when key is missing");
+}
+
+#[test]
+fn pane_focus_missing_id_returns_error() {
+    let tasty = TastyInstance::spawn();
+    let resp = tasty.call_raw("pane.focus", json!({}));
+    assert!(resp.get("error").is_some(), "Should return error when pane_id is missing");
+}
+
+#[test]
+fn surface_focus_missing_id_returns_error() {
+    let tasty = TastyInstance::spawn();
+    let resp = tasty.call_raw("surface.focus", json!({}));
+    assert!(resp.get("error").is_some(), "Should return error when surface_id is missing");
+}
+
+#[test]
+fn send_to_missing_surface_id_returns_error() {
+    let tasty = TastyInstance::spawn();
+    let resp = tasty.call_raw("surface.send_to", json!({"text": "hello"}));
+    assert!(resp.get("error").is_some(), "Should return error when surface_id is missing");
+}
+
+#[test]
+fn send_to_missing_text_returns_error() {
+    let tasty = TastyInstance::spawn();
+    let resp = tasty.call_raw("surface.send_to", json!({"surface_id": 1}));
+    assert!(resp.get("error").is_some(), "Should return error when text is missing");
+}
+
+#[test]
+fn method_not_found_returns_error() {
+    let tasty = TastyInstance::spawn();
+    let resp = tasty.call_raw("nonexistent.method", json!({}));
+    assert!(resp.get("error").is_some(), "Should return error for unknown method");
+    let code = resp["error"]["code"].as_i64().unwrap();
+    assert_eq!(code, -32601, "Should be method_not_found error code");
+}
+
+#[test]
+fn workspace_select_out_of_range_returns_error() {
+    let tasty = TastyInstance::spawn();
+    let resp = tasty.call_raw("workspace.select", json!({"index": 9999}));
+    assert!(resp.get("error").is_some(), "Should return error for out-of-range index");
+}
+
+#[test]
+fn close_last_pane_returns_not_closed() {
+    let tasty = TastyInstance::spawn();
+    let result = tasty.call("pane.close", json!({}));
+    assert_eq!(result["closed"], false, "Should not close the last pane");
+}
+
+#[test]
+fn close_last_tab_returns_not_closed() {
+    let tasty = TastyInstance::spawn();
+    let result = tasty.call("tab.close", json!({}));
+    assert_eq!(result["closed"], false, "Should not close the last tab");
+}
