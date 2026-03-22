@@ -188,15 +188,10 @@ impl ApplicationHandler<AppEvent> for App {
 
                 if let Some(state) = &mut self.state {
                     if let Some(terminal) = state.focused_terminal_mut() {
-                        // event.text includes modifier transformations (e.g. Ctrl+C -> \x03)
-                        if let Some(text) = &event.text {
-                            let s = text.as_str();
-                            if !s.is_empty() {
-                                terminal.send_key(s);
-                                return;
-                            }
-                        }
-                        // Handle special keys that don't produce text
+                        // Handle special keys FIRST — these have well-defined byte
+                        // sequences and must not be intercepted by event.text,
+                        // which can contain unexpected control characters
+                        // (e.g. Backspace → \x7f or \x08 depending on platform).
                         let app_cursor = terminal.application_cursor_keys();
                         match event.logical_key.as_ref() {
                             Key::Named(NamedKey::Enter) => terminal.send_bytes(b"\r"),
@@ -237,7 +232,16 @@ impl ApplicationHandler<AppEvent> for App {
                             Key::Named(NamedKey::F10) => terminal.send_bytes(b"\x1b[21~"),
                             Key::Named(NamedKey::F11) => terminal.send_bytes(b"\x1b[23~"),
                             Key::Named(NamedKey::F12) => terminal.send_bytes(b"\x1b[24~"),
-                            _ => {}
+                            _ => {
+                                // Not a special key — use event.text for regular characters
+                                // (includes Ctrl+key mappings like Ctrl+C → \x03).
+                                if let Some(text) = &event.text {
+                                    let s = text.as_str();
+                                    if !s.is_empty() {
+                                        terminal.send_key(s);
+                                    }
+                                }
+                            }
                         }
                     }
                 }
