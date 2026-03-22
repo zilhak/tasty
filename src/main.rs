@@ -15,6 +15,7 @@ mod ui;
 // Re-export tasty_terminal as terminal for backward compatibility within the crate
 use tasty_terminal as terminal;
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -176,11 +177,78 @@ fn main() -> Result<()> {
         return cli::run_client(command);
     }
 
+    // If headless mode, run without GUI
+    if cli.headless {
+        return run_headless(cli.port_file);
+    }
+
     // Otherwise, run the GUI
     let event_loop = EventLoop::<AppEvent>::with_user_event().build()?;
     let proxy = event_loop.create_proxy();
     let mut app = App::new(proxy);
     event_loop.run_app(&mut app)?;
+
+    Ok(())
+}
+
+/// Run tasty in headless mode: no GUI, IPC only.
+fn run_headless(port_file: Option<String>) -> Result<()> {
+    tracing::info!("starting in headless mode");
+
+    let waker: terminal::Waker = Arc::new(|| {});
+    let mut state = AppState::new(80, 24, waker)?;
+
+    let ipc = IpcServer::start_with_port_file(port_file)?;
+    tracing::info!("headless IPC on port {}", ipc.port());
+
+    let shutdown = Arc::new(AtomicBool::new(false));
+
+    loop {
+        if shutdown.load(Ordering::Relaxed) {
+            break;
+        }
+
+        // Process IPC commands
+        while let Ok(cmd) = ipc.try_recv() {
+            if cmd.request.method == "system.shutdown" {
+                let resp = ipc::protocol::JsonRpcResponse::success(
+                    cmd.request.id.unwrap_or(serde_json::Value::Null),
+                    serde_json::json!({"status": "shutting_down"}),
+                );
+                let _ = cmd.response_tx.send(resp);
+                shutdown.store(true, Ordering::Relaxed);
+                continue;
+            }
+            let response = ipc::handler::handle(&mut state, &cmd.request);
+            let _ = cmd.response_tx.send(response);
+        }
+
+        // Process all terminals
+        state.process_all();
+
+        // Collect events (notifications, hooks)
+        let events = state.collect_events();
+        for event in &events {
+            match &event.kind {
+                terminal::TerminalEventKind::BellRing => {
+                    let hook_events = vec![tasty_hooks::HookEvent::Bell];
+                    state.hook_manager.check_and_fire(event.surface_id, &hook_events);
+                }
+                terminal::TerminalEventKind::Notification { .. } => {
+                    let hook_events = vec![tasty_hooks::HookEvent::Notification];
+                    state.hook_manager.check_and_fire(event.surface_id, &hook_events);
+                }
+                terminal::TerminalEventKind::ProcessExited => {
+                    let hook_events = vec![tasty_hooks::HookEvent::ProcessExit];
+                    state.hook_manager.check_and_fire(event.surface_id, &hook_events);
+                }
+                _ => {}
+            }
+        }
+
+        // Sleep briefly to avoid busy loop
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
 
     Ok(())
 }

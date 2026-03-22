@@ -22,18 +22,28 @@ pub struct IpcServer {
     port: u16,
     /// Shutdown flag to signal the accept thread to stop.
     shutdown: Arc<AtomicBool>,
+    /// Custom port file path (overrides default if set).
+    custom_port_file: Option<std::path::PathBuf>,
 }
 
 impl IpcServer {
     /// Start the IPC server on a random port. Returns the server handle.
     pub fn start() -> Result<Self> {
+        Self::start_with_port_file(None)
+    }
+
+    /// Start the IPC server with an optional custom port file path.
+    /// If `port_file` is None, uses the default path.
+    pub fn start_with_port_file(port_file: Option<String>) -> Result<Self> {
         let listener = TcpListener::bind("127.0.0.1:0")?;
         let port = listener.local_addr()?.port();
 
         tracing::info!("IPC server listening on 127.0.0.1:{}", port);
 
+        let custom_port_file = port_file.map(std::path::PathBuf::from);
+
         // Write port file so CLI clients can find us
-        Self::write_port_file(port)?;
+        Self::write_port_file_to(port, custom_port_file.as_deref())?;
 
         let (cmd_tx, cmd_rx) = mpsc::channel();
         let shutdown = Arc::new(AtomicBool::new(false));
@@ -68,6 +78,7 @@ impl IpcServer {
             command_rx: cmd_rx,
             port,
             shutdown,
+            custom_port_file,
         })
     }
 
@@ -151,15 +162,20 @@ impl IpcServer {
         tracing::debug!("IPC client disconnected from {:?}", peer);
     }
 
-    /// Write the port number to a file so CLI clients can find the server.
-    fn write_port_file(port: u16) -> Result<()> {
-        if let Some(path) = Self::port_file_path() {
-            if let Some(parent) = path.parent() {
-                std::fs::create_dir_all(parent)?;
-            }
-            std::fs::write(&path, port.to_string())?;
-            tracing::info!("Wrote port file: {}", path.display());
+    /// Write the port number to a file. Uses custom path if provided, otherwise default.
+    fn write_port_file_to(port: u16, custom_path: Option<&std::path::Path>) -> Result<()> {
+        let path = match custom_path {
+            Some(p) => p.to_path_buf(),
+            None => match Self::port_file_path() {
+                Some(p) => p,
+                None => return Ok(()),
+            },
+        };
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
         }
+        std::fs::write(&path, port.to_string())?;
+        tracing::info!("Wrote port file: {}", path.display());
         Ok(())
     }
 
@@ -170,8 +186,16 @@ impl IpcServer {
 
     /// Read the port from the port file (used by CLI client).
     pub fn read_port_file() -> Result<u16> {
-        let path = Self::port_file_path()
-            .ok_or_else(|| anyhow::anyhow!("Could not determine config directory"))?;
+        Self::read_port_file_from(None)
+    }
+
+    /// Read the port from a specific port file path, or the default if None.
+    pub fn read_port_file_from(port_file: Option<&str>) -> Result<u16> {
+        let path = match port_file {
+            Some(p) => std::path::PathBuf::from(p),
+            None => Self::port_file_path()
+                .ok_or_else(|| anyhow::anyhow!("Could not determine config directory"))?,
+        };
         let contents = std::fs::read_to_string(&path)
             .map_err(|_| anyhow::anyhow!(
                 "No running tasty instance found (port file not found at {})",
@@ -182,6 +206,11 @@ impl IpcServer {
             .parse::<u16>()
             .map_err(|_| anyhow::anyhow!("Invalid port file contents"))
     }
+
+    /// Get the effective port file path for this instance.
+    fn effective_port_file_path(&self) -> Option<std::path::PathBuf> {
+        self.custom_port_file.clone().or_else(Self::port_file_path)
+    }
 }
 
 impl Drop for IpcServer {
@@ -189,7 +218,7 @@ impl Drop for IpcServer {
         // Signal the accept thread to stop
         self.shutdown.store(true, Ordering::Relaxed);
         // Clean up port file
-        if let Some(path) = Self::port_file_path() {
+        if let Some(path) = self.effective_port_file_path() {
             let _ = std::fs::remove_file(path);
         }
     }

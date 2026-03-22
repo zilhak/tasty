@@ -252,6 +252,7 @@
 ### JSON-RPC IPC 서버 (ipc/)
 - GUI 모드 시작 시 `127.0.0.1`의 랜덤 포트에 TCP 서버 자동 기동
 - 포트 번호를 `~/.config/tasty/tasty.port` 파일에 기록하여 CLI 클라이언트가 접속 가능
+- `--port-file` 옵션으로 커스텀 포트 파일 경로 지정 가능 (테스트 격리용)
 - 앱 종료 시 포트 파일 자동 삭제 (Drop trait)
 - JSON-RPC 2.0 프로토콜: 줄 단위 JSON 요청/응답
 - 멀티클라이언트: 각 TCP 연결을 별도 스레드에서 처리
@@ -280,10 +281,27 @@
 - `hook.unset`: 훅 삭제
 - `surface.set_mark`: 터미널 출력 읽기 마크 설정
 - `surface.read_since_mark`: 마크 이후 출력 텍스트 조회 (ANSI 제거 옵션)
+- `surface.screen_text`: 포커스된 터미널의 화면 텍스트 조회
+- `surface.cursor_position`: 포커스된 터미널의 커서 위치 (x, y) 조회
+- `system.shutdown`: 헤드리스 모드에서 프로세스를 정상 종료
 - `claude.launch`: Claude Code 전용 워크스페이스 생성 및 실행
 
+### 헤드리스 모드
+- `--headless` 플래그로 GUI 없이 IPC 전용 모드로 실행
+- GPU/윈도우 의존 없이 터미널 엔진과 IPC 서버만 구동
+- no-op waker를 사용하여 이벤트 루프 없이 10ms 간격 폴링
+- `system.shutdown` IPC 메서드로 정상 종료
+- E2E 테스트 및 CI 환경에서의 자동화에 활용
+
+### E2E 테스트 프레임워크
+- `tests/common/mod.rs`의 `TastyInstance` 헬퍼: 헤드리스 모드로 프로세스 스폰, IPC 통신, 자동 정리
+- 포트 파일 기반 프로세스 간 통신으로 테스트 격리
+- `wait_for_output()`: 타임아웃 기반 출력 폴링
+- Drop trait으로 테스트 종료 시 자동 프로세스 정리
+- 14개 E2E 테스트: 앱 시작, 셸 에코, 워크스페이스/탭/패인 CRUD, 훅, 마크, 화면 텍스트, 커서 위치 등
+
 ### CLI 클라이언트 (cli.rs)
-- `tasty` 명령에 서브커맨드가 있으면 CLI 모드, 없으면 GUI 모드로 동작
+- `tasty` 명령에 서브커맨드가 있으면 CLI 모드, `--headless`면 헤드리스 모드, 둘 다 없으면 GUI 모드로 동작
 - clap 기반 서브커맨드: `list`, `new-workspace`, `select-workspace`, `send`, `send-key`, `notify`, `notifications`, `tree`, `split`, `new-tab`, `close-tab`, `close-pane`, `close-surface`, `surfaces`, `panes`, `info`, `set-hook`, `list-hooks`, `unset-hook`, `set-mark`, `read-since-mark`, `claude`
 - 포트 파일에서 포트 번호를 읽어 TCP 연결 후 JSON-RPC 요청/응답
 - `tree` 커맨드: 워크스페이스/패인/탭 계층을 트리 형태로 표시

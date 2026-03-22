@@ -153,3 +153,31 @@ pub(crate) fn handle_read_since_mark(
     let text = state.read_since_mark(surface_id, strip_ansi);
     JsonRpcResponse::success(id, json!({ "text": text }))
 }
+
+pub(crate) fn handle_screen_text(
+    state: &AppState,
+    id: serde_json::Value,
+    _params: &serde_json::Value,
+) -> JsonRpcResponse {
+    let text = state
+        .focused_terminal()
+        .map(|t| t.screen_text())
+        .unwrap_or_default();
+    JsonRpcResponse::success(id, json!({ "text": text }))
+}
+
+pub(crate) fn handle_cursor_position(
+    state: &AppState,
+    id: serde_json::Value,
+    _params: &serde_json::Value,
+) -> JsonRpcResponse {
+    if let Some(terminal) = state.focused_terminal() {
+        let (x, y) = terminal.surface().cursor_position();
+        JsonRpcResponse::success(
+            id,
+            json!({ "x": x, "y": y }),
+        )
+    } else {
+        JsonRpcResponse::success(id, json!({ "x": 0, "y": 0 }))
+    }
+}

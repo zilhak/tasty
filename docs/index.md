@@ -140,9 +140,11 @@ GPU 렌더링된 사이드바에 Git 브랜치, PR 상태, 작업 디렉토리, 
 
 **현재 구현된 기능:**
 - TCP 기반 JSON-RPC 2.0 서버 (127.0.0.1, 랜덤 포트)
-- 20개 메서드: system.info, workspace.list/create/select, pane.list/split, tab.list/create, surface.list/send/send_key/set_mark/read_since_mark, notification.list/create, tree, hook.set/list/unset, claude.launch
+- 23개 메서드: system.info/shutdown, workspace.list/create/select, pane.list/split/close, tab.list/create/close, surface.list/close/send/send_key/set_mark/read_since_mark/screen_text/cursor_position, notification.list/create, tree, hook.set/list/unset, claude.launch
 - 메인 스레드 채널 통신으로 스레드 안전한 상태 접근
 - 앱 시작 시 자동 기동, 종료 시 포트 파일 자동 삭제
+- 헤드리스 모드: `--headless` 플래그로 GUI 없이 IPC 전용 실행 (E2E 테스트/CI 활용)
+- E2E 테스트 프레임워크: `TastyInstance` 헬퍼 기반 14개 통합 테스트
 - 상세: [features.md](features.md)
 
 ### 세션 복원
