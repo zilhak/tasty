@@ -57,3 +57,35 @@ Conventional Commits 형식을 따른다.
 - 빌드: cargo
 - 포맷: rustfmt
 - 린트: clippy
+
+## 개발 환경 주의사항
+
+### Python 실행
+
+이 Windows 환경에서 `python3` 명령은 정상 동작하지 않는다 (exit code 49, `-c` 인자 무시). Python이 필요할 때는 반드시 `python`을 사용할 것.
+
+```bash
+# 잘못됨 - 동작하지 않음
+python3 -c "print('hello')"
+
+# 올바름
+python -c "print('hello')"
+```
+
+### TCP 통신 도구
+
+`ncat`, `nc`, `netcat`이 설치되어 있지 않다. IPC 테스트 등에서 TCP 통신이 필요하면 Python socket을 사용할 것.
+
+```python
+import socket, json
+s = socket.socket()
+s.settimeout(5)
+s.connect(('127.0.0.1', PORT))
+s.sendall((json.dumps(request) + '\n').encode())
+data = s.recv(4096)
+s.close()
+```
+
+### Windows 프로세스 정리
+
+`process.kill()`은 Windows에서 자식 프로세스를 종료하지 않는다. 프로세스 트리 전체를 종료하려면 `taskkill /F /T /PID`를 사용해야 한다. 테스트 harness의 Drop에서 이미 적용되어 있다.
