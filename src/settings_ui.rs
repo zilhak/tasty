@@ -8,6 +8,7 @@ enum SettingsTab {
     Appearance,
     Clipboard,
     Notifications,
+    Keybindings,
     Language,
 }
 
@@ -55,6 +56,7 @@ pub fn draw_settings_window(
                     (SettingsTab::Appearance, t("settings.tab.appearance")),
                     (SettingsTab::Clipboard, t("settings.tab.clipboard")),
                     (SettingsTab::Notifications, t("settings.tab.notifications")),
+                    (SettingsTab::Keybindings, t("settings.tab.keybindings")),
                     (SettingsTab::Language, t("settings.tab.language")),
                 ];
                 for (tab, label) in &tabs {
@@ -77,6 +79,7 @@ pub fn draw_settings_window(
                             SettingsTab::Appearance => draw_appearance_tab(ui, draft),
                             SettingsTab::Clipboard => draw_clipboard_tab(ui, draft),
                             SettingsTab::Notifications => draw_notifications_tab(ui, draft),
+                            SettingsTab::Keybindings => draw_keybindings_tab(ui, draft),
                             SettingsTab::Language => draw_language_tab(ui, draft),
                         }
                     });
@@ -207,6 +210,41 @@ fn draw_notifications_tab(ui: &mut egui::Ui, settings: &mut Settings) {
             ui.add(egui::DragValue::new(&mut settings.notification.coalesce_ms)
                 .range(0..=5000)
                 .speed(50));
+            ui.end_row();
+        });
+}
+
+fn draw_keybindings_tab(ui: &mut egui::Ui, settings: &mut Settings) {
+    ui.add_space(8.0);
+    ui.heading(t("settings.keybindings.heading"));
+    ui.add_space(4.0);
+
+    egui::Grid::new("keybindings_grid")
+        .num_columns(2)
+        .spacing([12.0, 8.0])
+        .show(ui, |ui| {
+            ui.label(t("settings.keybindings.new_workspace_label"));
+            ui.text_edit_singleline(&mut settings.keybindings.new_workspace);
+            ui.end_row();
+
+            ui.label(t("settings.keybindings.new_tab_label"));
+            ui.text_edit_singleline(&mut settings.keybindings.new_tab);
+            ui.end_row();
+
+            ui.label(t("settings.keybindings.split_pane_vertical_label"));
+            ui.text_edit_singleline(&mut settings.keybindings.split_pane_vertical);
+            ui.end_row();
+
+            ui.label(t("settings.keybindings.split_pane_horizontal_label"));
+            ui.text_edit_singleline(&mut settings.keybindings.split_pane_horizontal);
+            ui.end_row();
+
+            ui.label(t("settings.keybindings.split_surface_vertical_label"));
+            ui.text_edit_singleline(&mut settings.keybindings.split_surface_vertical);
+            ui.end_row();
+
+            ui.label(t("settings.keybindings.split_surface_horizontal_label"));
+            ui.text_edit_singleline(&mut settings.keybindings.split_surface_horizontal);
             ui.end_row();
         });
 }

@@ -25,6 +25,7 @@ general = "일반"
 appearance = "외관"
 clipboard = "클립보드"
 notifications = "알림"
+keybindings = "단축키"
 language = "언어"
 
 [settings.general]
@@ -56,6 +57,15 @@ enabled = "알림 활성화"
 system_notification = "시스템 알림 (OS 기본)"
 sound = "소리"
 coalesce_interval_label = "알림 병합 간격 (ms):"
+
+[settings.keybindings]
+heading = "단축키"
+new_workspace_label = "새 워크스페이스:"
+new_tab_label = "새 탭:"
+split_pane_vertical_label = "페인 수직 분할:"
+split_pane_horizontal_label = "페인 수평 분할:"
+split_surface_vertical_label = "서피스 수직 분할:"
+split_surface_horizontal_label = "서피스 수평 분할:"
 
 [settings.language]
 heading = "언어"

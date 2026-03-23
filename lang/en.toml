@@ -25,6 +25,7 @@ general = "General"
 appearance = "Appearance"
 clipboard = "Clipboard"
 notifications = "Notifications"
+keybindings = "Keybindings"
 language = "Language"
 
 [settings.general]
@@ -56,6 +57,15 @@ enabled = "Notifications enabled"
 system_notification = "System notifications (OS native)"
 sound = "Sound"
 coalesce_interval_label = "Coalesce interval (ms):"
+
+[settings.keybindings]
+heading = "Keybindings"
+new_workspace_label = "New workspace:"
+new_tab_label = "New tab:"
+split_pane_vertical_label = "Pane split vertical:"
+split_pane_horizontal_label = "Pane split horizontal:"
+split_surface_vertical_label = "Surface split vertical:"
+split_surface_horizontal_label = "Surface split horizontal:"
 
 [settings.language]
 heading = "Language"

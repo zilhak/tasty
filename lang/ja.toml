@@ -25,6 +25,7 @@ general = "一般"
 appearance = "外観"
 clipboard = "クリップボード"
 notifications = "通知"
+keybindings = "キーバインド"
 language = "言語"
 
 [settings.general]
@@ -56,6 +57,15 @@ enabled = "通知を有効化"
 system_notification = "システム通知 (OS標準)"
 sound = "サウンド"
 coalesce_interval_label = "通知統合間隔 (ms):"
+
+[settings.keybindings]
+heading = "キーバインド"
+new_workspace_label = "新しいワークスペース:"
+new_tab_label = "新しいタブ:"
+split_pane_vertical_label = "ペイン垂直分割:"
+split_pane_horizontal_label = "ペイン水平分割:"
+split_surface_vertical_label = "サーフェス垂直分割:"
+split_surface_horizontal_label = "サーフェス水平分割:"
 
 [settings.language]
 heading = "言語"
