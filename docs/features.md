@@ -194,14 +194,15 @@
 
 ### 설정 카테고리
 - **General**: 셸 경로 (OS별 자동 감지: COMSPEC/SHELL), 시작 명령
-- **Appearance**: 폰트 패밀리, 폰트 크기, 테마 (dark/light), 배경 투명도, 사이드바 너비
+- **Appearance**: 폰트 패밀리 (기본값: 시스템 모노스페이스), 폰트 크기, 테마 (dark/light), 배경 투명도, 사이드바 너비
 - **Clipboard**: OS별 기본 활성화 (macOS: Alt+C/V, Linux: Ctrl+Shift+C/V, Windows: Ctrl+C/V)
 - **Notifications**: 알림 활성화, 시스템 알림, 사운드, 병합 간격(ms)
 - **Keybindings**: 워크스페이스/탭/패인/서피스 분할 단축키
 
 ### GUI 설정 윈도우
 - Ctrl+, 단축키로 설정 윈도우 토글
-- egui Window 기반 탭 인터페이스 (General / Appearance / Clipboard / Notifications)
+- egui Window 기반 탭 인터페이스 (General / Appearance / Clipboard / Notifications / Keybindings / Language)
+- egui에 시스템 CJK 폰트 로드: Windows(맑은 고딕), macOS(AppleSDGothicNeo), Linux(Noto Sans CJK)
 - 편집 중 원본 설정을 보존하는 드래프트 패턴
 - Save 버튼: 디스크에 저장 후 즉시 적용
 - Cancel 버튼: 변경 사항 폐기
