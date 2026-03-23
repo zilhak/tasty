@@ -14,7 +14,6 @@ static TRANSLATIONS: OnceLock<Translations> = OnceLock::new();
 
 pub struct Translations {
     strings: HashMap<String, String>,
-    language: String,
 }
 
 impl Translations {
@@ -55,10 +54,7 @@ impl Translations {
             language
         );
 
-        Self {
-            strings,
-            language: language.to_string(),
-        }
+        Self { strings }
     }
 
     /// Parse a TOML string with nested tables into flat dotted keys.
@@ -109,9 +105,6 @@ impl Translations {
         template.replace("{}", arg)
     }
 
-    pub fn language(&self) -> &str {
-        &self.language
-    }
 }
 
 /// Initialize the global translation store. Call once at startup.
@@ -133,7 +126,3 @@ pub fn t_fmt(key: &str, arg: &str) -> String {
         .unwrap_or_else(|| key.replace("{}", arg))
 }
 
-/// Get the current language code.
-pub fn current_language() -> &'static str {
-    TRANSLATIONS.get().map(|tr| tr.language()).unwrap_or("en")
-}
