@@ -103,7 +103,7 @@ impl GeneralSettings {
 impl Default for AppearanceSettings {
     fn default() -> Self {
         Self {
-            font_family: "JetBrains Mono".to_string(),
+            font_family: String::new(),
             font_size: 14.0,
             theme: "dark".to_string(),
             background_opacity: 1.0,
@@ -278,7 +278,7 @@ font_size = 18.0
     #[test]
     fn settings_font_family_default() {
         let settings = Settings::default();
-        assert_eq!(settings.appearance.font_family, "JetBrains Mono");
+        assert_eq!(settings.appearance.font_family, "");
     }
 
     #[test]
