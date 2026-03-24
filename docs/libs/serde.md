@@ -338,7 +338,7 @@ fn save_config(config: &TastyConfig, path: &str) -> Result<(), Box<dyn std::erro
 
 ### TOML 설정 파일 예시
 
-위 구조체에 대응하는 `~/.config/tasty/config.toml`:
+위 구조체에 대응하는 `~/.tasty/config.toml`:
 
 ```toml
 [general]

@@ -6,7 +6,7 @@ use std::thread;
 use std::time::Duration;
 
 use anyhow::Result;
-use directories::BaseDirs;
+use crate::settings::tasty_home;
 
 use crate::ipc::protocol::{JsonRpcRequest, JsonRpcResponse};
 
@@ -185,9 +185,9 @@ impl IpcServer {
         Ok(())
     }
 
-    /// Get the path to the port file: ~/.config/tasty/tasty.port
+    /// Get the path to the port file: ~/.tasty/tasty.port
     pub fn port_file_path() -> Option<std::path::PathBuf> {
-        BaseDirs::new().map(|dirs| dirs.config_dir().join("tasty").join("tasty.port"))
+        tasty_home().map(|dir| dir.join("tasty.port"))
     }
 
     /// Read the port from the port file (used by CLI client).

@@ -560,14 +560,14 @@ $ tasty doctor
 
 | OS | 바이너리 | 설정 | 데이터 | 로그 |
 |----|---------|------|--------|------|
-| Linux | `~/.local/bin/tasty` | `~/.config/tasty/` | `~/.local/share/tasty/` | `~/.local/share/tasty/logs/` |
-| macOS | `/usr/local/bin/tasty` 또는 `/Applications/Tasty.app` | `~/.config/tasty/` | `~/Library/Application Support/tasty/` | `~/Library/Logs/tasty/` |
-| Windows | `%LOCALAPPDATA%\tasty\tasty.exe` | `~/.config/tasty/` | `%LOCALAPPDATA%\tasty\` | `%LOCALAPPDATA%\tasty\logs\` |
+| Linux | `~/.local/bin/tasty` | `~/.tasty/` | `~/.local/share/tasty/` | `~/.local/share/tasty/logs/` |
+| macOS | `/usr/local/bin/tasty` 또는 `/Applications/Tasty.app` | `~/.tasty/` | `~/Library/Application Support/tasty/` | `~/Library/Logs/tasty/` |
+| Windows | `%LOCALAPPDATA%\tasty\tasty.exe` | `~/.tasty/` | `%LOCALAPPDATA%\tasty\` | `%LOCALAPPDATA%\tasty\logs\` |
 
 ### 디렉토리 구조
 
 ```
-~/.config/tasty/               # 설정 (Linux/macOS)
+~/.tasty/               # 설정 (Linux/macOS)
 ├── config.toml                # 메인 설정
 ├── keybindings.toml           # 키바인딩 오버라이드
 ├── themes/                    # 사용자 테마
@@ -695,7 +695,7 @@ $ tasty setup
 [5/10] 셸 감지...        pwsh 7.4.1 (OSC 7 지원)
 [6/10] 하드웨어 감지...   8 cores, 32GB RAM, NVMe SSD
 [7/10] 벤치마크...       2.1ms/frame → High preset
-[8/10] config.toml 생성... ~/.config/tasty/config.toml
+[8/10] config.toml 생성... ~/.tasty/config.toml
 [9/10] 셸 통합 설치...   OSC 7 + 완성 파일
 [10/10] 검증...
 

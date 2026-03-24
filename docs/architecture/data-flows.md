@@ -134,7 +134,7 @@ CLI 또는 외부 프로그램의 JSON-RPC 요청이 처리되는 흐름.
 
 **1단계: 포트 파일 읽기**
 - `ipc/server.rs:172-184` — `IpcServer::read_port_file()`.
-- CLI 클라이언트가 `~/.config/tasty/tasty.port` 파일에서 포트 번호를 읽는다.
+- CLI 클라이언트가 `~/.tasty/tasty.port` 파일에서 포트 번호를 읽는다.
 
 **2단계: TCP 연결**
 - `cli.rs:127-131` — `TcpStream::connect(format!("127.0.0.1:{}", port))`.
@@ -231,7 +231,7 @@ TOML 설정 파일이 로드되어 런타임에 반영되기까지의 흐름.
 **1단계: 경로 결정**
 - `settings.rs:177-178` — `Settings::config_path()`.
 - `BaseDirs::new()?.config_dir().join("tasty").join("config.toml")`.
-- Windows: `%APPDATA%/tasty/config.toml`, macOS: `~/Library/Application Support/tasty/config.toml`, Linux: `~/.config/tasty/config.toml`.
+- Windows: `%APPDATA%/tasty/config.toml`, macOS: `~/Library/Application Support/tasty/config.toml`, Linux: `~/.tasty/config.toml`.
 
 **2단계: TOML 파싱**
 - `settings.rs:192-217` — `Settings::load()`:

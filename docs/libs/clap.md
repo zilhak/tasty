@@ -99,7 +99,7 @@ struct Cli {
     token: Option<String>,
 
     /// 설정 파일 경로
-    #[arg(long, env = "TASTY_CONFIG", default_value = "~/.config/tasty/config.toml")]
+    #[arg(long, env = "TASTY_CONFIG", default_value = "~/.tasty/config.toml")]
     config: String,
 }
 ```

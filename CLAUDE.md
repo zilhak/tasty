@@ -92,12 +92,12 @@ s.close()
 
 ### Tasty IPC를 통한 조작
 
-Tasty는 AI가 조작 가능한 터미널이다. 정상 모드(터미널이 뜬 상태)에서는 IPC 서버가 자동으로 뜨며, 포트 파일(`~/.config/tasty/tasty.port`)을 통해 접속할 수 있다. Claude Code 등 터미널 안에서 동작하는 AI도 IPC로 Tasty를 제어할 수 있다.
+Tasty는 AI가 조작 가능한 터미널이다. 정상 모드(터미널이 뜬 상태)에서는 IPC 서버가 자동으로 뜨며, 포트 파일(`~/.tasty/tasty.port`)을 통해 접속할 수 있다. Claude Code 등 터미널 안에서 동작하는 AI도 IPC로 Tasty를 제어할 수 있다.
 
 **IPC 조작 예시 (Python)**:
 ```python
 import socket, json
-port = int(open(os.path.expanduser("~/.config/tasty/tasty.port")).read().strip())
+port = int(open(os.path.expanduser("~/.tasty/tasty.port")).read().strip())
 s = socket.socket()
 s.connect(('127.0.0.1', port))
 # 스크린샷

@@ -484,7 +484,7 @@ TOML 기반 설정 파일 로드/저장. 5개 섹션 구조체.
 
 | 메서드 | 줄 | 역할 |
 |--------|-----|------|
-| `Settings::config_path()` | 177 | `~/.config/tasty/config.toml` 경로 |
+| `Settings::config_path()` | 177 | `~/.tasty/config.toml` 경로 |
 | `Settings::ensure_config_dir()` | 182 | 설정 디렉토리 생성 |
 | `Settings::load()` | 192 | TOML 로드 (실패 시 기본값) |
 | `Settings::save()` | 220 | TOML 저장 |

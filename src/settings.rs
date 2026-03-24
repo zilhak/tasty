@@ -5,6 +5,12 @@ use anyhow::Result;
 use directories::BaseDirs;
 use serde::{Deserialize, Serialize};
 
+/// Returns the Tasty home directory: ~/.tasty/
+/// Consistent across all platforms for easy AI/agent access.
+pub fn tasty_home() -> Option<PathBuf> {
+    BaseDirs::new().map(|dirs| dirs.home_dir().join(".tasty"))
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
@@ -229,9 +235,9 @@ impl Default for KeybindingSettings {
 // ---- Settings file operations ----
 
 impl Settings {
-    /// Returns the config file path: ~/.config/tasty/config.toml
+    /// Returns the config file path: ~/.tasty/config.toml
     pub fn config_path() -> Option<PathBuf> {
-        BaseDirs::new().map(|dirs| dirs.config_dir().join("tasty").join("config.toml"))
+        tasty_home().map(|dir| dir.join("config.toml"))
     }
 
     /// Ensure the config directory exists.

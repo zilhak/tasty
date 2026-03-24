@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
-use directories::BaseDirs;
+use crate::settings::tasty_home;
 
 /// Global translation store, initialized once at startup.
 static TRANSLATIONS: OnceLock<Translations> = OnceLock::new();
@@ -19,7 +19,7 @@ pub struct Translations {
 impl Translations {
     /// Load translations for the given language code (e.g., "en", "ko").
     /// Looks for files in:
-    /// 1. ~/.config/tasty/lang/{code}.toml (user override)
+    /// 1. ~/.tasty/lang/{code}.toml (user override)
     /// 2. Built-in defaults (embedded in binary)
     fn load(language: &str) -> Self {
         let mut strings = HashMap::new();
@@ -86,12 +86,7 @@ impl Translations {
     }
 
     fn user_lang_path(language: &str) -> Option<PathBuf> {
-        BaseDirs::new().map(|dirs| {
-            dirs.config_dir()
-                .join("tasty")
-                .join("lang")
-                .join(format!("{}.toml", language))
-        })
+        tasty_home().map(|dir| dir.join("lang").join(format!("{}.toml", language)))
     }
 
     /// Get a translated string by key. Falls back to the key itself if not found.

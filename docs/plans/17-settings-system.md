@@ -62,11 +62,11 @@ split_horizontal = "ctrl+shift+d"
 
 | OS | 경로 |
 |----|------|
-| **Linux** | `~/.config/tasty/config.toml` |
-| **macOS** | `~/.config/tasty/config.toml` |
-| **Windows** | `~/.config/tasty/config.toml` |
+| **Linux** | `~/.tasty/config.toml` |
+| **macOS** | `~/.tasty/config.toml` |
+| **Windows** | `~/.tasty/config.toml` |
 
-모든 플랫폼에서 `~/.config/tasty/config.toml`로 통일한다 (XDG 스타일).
+모든 플랫폼에서 `~/.tasty/config.toml`로 통일한다 (XDG 스타일).
 `directories` 크레이트로 홈 디렉토리를 추상화.
 
 ### GUI 설정 윈도우
@@ -115,7 +115,7 @@ GUI 설정 윈도우에서 변경한 내용도 즉시 미리보기.
 ### 테마 시스템
 
 ```toml
-# ~/.config/tasty/themes/monokai.toml
+# ~/.tasty/themes/monokai.toml
 [colors]
 background = "#272822"
 foreground = "#f8f8f2"

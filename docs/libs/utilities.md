@@ -365,7 +365,7 @@ use directories::ProjectDirs;
 if let Some(proj_dirs) = ProjectDirs::from("com", "zilhak", "tasty") {
     // 앱 전용 설정 디렉토리
     let config_dir = proj_dirs.config_dir();
-    // Linux:   ~/.config/tasty/
+    // Linux:   ~/.tasty/
     // macOS:   ~/Library/Application Support/com.zilhak.tasty/
     // Windows: C:\Users\user\AppData\Roaming\zilhak\tasty\config\
 
@@ -446,9 +446,5 @@ fn main() {
 
 ## 플랫폼별 경로 요약
 
-| 디렉토리 | Linux | macOS | Windows |
-|---------|-------|-------|---------|
-| `config_dir` | `~/.config/tasty` | `~/Library/Application Support/…` | `%APPDATA%\zilhak\tasty\config` |
-| `data_dir` | `~/.local/share/tasty` | `~/Library/Application Support/…` | `%APPDATA%\zilhak\tasty\data` |
-| `cache_dir` | `~/.cache/tasty` | `~/Library/Caches/…` | `%LOCALAPPDATA%\zilhak\tasty\cache` |
-| `runtime_dir` | `/run/user/1000/tasty` | (없음) | (없음) |
+Tasty는 `directories` 크레이트의 OS별 경로 대신 모든 플랫폼에서 `~/.tasty/`를 사용한다.
+`BaseDirs::home_dir().join(".tasty")`로 통일하여 AI/에이전트가 쉽게 접근할 수 있도록 한다.
