@@ -129,6 +129,25 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
     }
 }
 
+/// Draw pane dividers (borders between split panes).
+pub fn draw_pane_dividers(ctx: &egui::Context, dividers: &[Rect], scale_factor: f32) {
+    if dividers.is_empty() {
+        return;
+    }
+    let painter = ctx.layer_painter(egui::LayerId::new(
+        egui::Order::Foreground,
+        egui::Id::new("pane_dividers"),
+    ));
+    let border_color = egui::Color32::from_rgb(80, 80, 100);
+    for div in dividers {
+        let rect = egui::Rect::from_min_size(
+            egui::pos2(div.x / scale_factor, div.y / scale_factor),
+            egui::vec2(div.width / scale_factor, div.height / scale_factor),
+        );
+        painter.rect_filled(rect, 0.0, border_color);
+    }
+}
+
 /// Draw per-pane tab bars using egui Areas positioned at each pane's top.
 /// This is called during the egui frame (from gpu.rs render).
 pub fn draw_pane_tab_bars(

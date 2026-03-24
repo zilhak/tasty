@@ -64,123 +64,19 @@ Conventional Commits 형식을 따른다.
 - 포맷: rustfmt
 - 린트: clippy
 
-## 개발 환경 주의사항
+## AI 자체 검증 지침 (필수)
 
-### Python 실행
+**작업 결과를 스스로 확인할 때, 반드시 `docs/ai-verification/` 폴더의 모든 문서를 먼저 읽고 진행할 것.**
 
-이 Windows 환경에서 `python3` 명령은 정상 동작하지 않는다 (exit code 49, `-c` 인자 무시). Python이 필요할 때는 반드시 `python`을 사용할 것.
+이 폴더에는 과거 AI가 자체 검증 시 실패했던 사례와 환경별 주의사항이 항목별로 정리되어 있다. 특히 UI/렌더링 변경 시에는 `visual-verification.md`의 체크리스트를 반드시 따를 것.
 
-```bash
-# 잘못됨 - 동작하지 않음
-python3 -c "print('hello')"
-
-# 올바름
-python -c "print('hello')"
-```
-
-### TCP 통신 도구
-
-`ncat`, `nc`, `netcat`이 설치되어 있지 않다. IPC 테스트 등에서 TCP 통신이 필요하면 Python socket을 사용할 것.
-
-```python
-import socket, json
-s = socket.socket()
-s.settimeout(5)
-s.connect(('127.0.0.1', PORT))
-s.sendall((json.dumps(request) + '\n').encode())
-data = s.recv(4096)
-s.close()
-```
-
-### Windows 프로세스 정리
-
-`process.kill()`은 Windows에서 자식 프로세스를 종료하지 않는다. 프로세스 트리 전체를 종료하려면 `taskkill /F /T /PID`를 사용해야 한다. 테스트 harness의 Drop에서 이미 적용되어 있다.
-
-### Tasty IPC를 통한 조작
-
-Tasty는 AI가 조작 가능한 터미널이다. 정상 모드(터미널이 뜬 상태)에서는 IPC 서버가 자동으로 뜨며, 포트 파일(`~/.tasty/tasty.port`)을 통해 접속할 수 있다. Claude Code 등 터미널 안에서 동작하는 AI도 IPC로 Tasty를 제어할 수 있다.
-
-**IPC 조작 예시 (Python)**:
-```python
-import socket, json
-port = int(open(os.path.expanduser("~/.tasty/tasty.port")).read().strip())
-s = socket.socket()
-s.connect(('127.0.0.1', port))
-# 스크린샷
-s.sendall((json.dumps({"jsonrpc":"2.0","id":1,"method":"ui.screenshot","params":{"path":"capture.png"}}) + '\n').encode())
-# 키 입력
-s.sendall((json.dumps({"jsonrpc":"2.0","id":2,"method":"surface.send_key","params":{"key":"ls\r"}}) + '\n').encode())
-```
-
-**CLI 조작 예시**:
-```bash
-tasty list                          # 워크스페이스 목록
-tasty send "hello"                  # 텍스트 전송
-tasty send-key "enter"              # 키 입력
-tasty notify --title "Done"         # 알림
-```
-
-### GUI 테스트 시 스크린샷 방법
-
-| 상태 | 방법 |
+| 문서 | 내용 |
 |------|------|
-| 정상 모드 (IPC 사용 가능) | `ui.screenshot` IPC 호출 — Tasty 자체 렌더링만 캡처 |
-| 셸 설정 모드 (IPC 없음) | PowerShell `CopyFromScreen` — OS 전체 화면 캡처 |
-
-**방법 1: IPC `ui.screenshot` (정상 모드, 권장)**
-```bash
-# CLI로 한 줄
-tasty screenshot --path ./capture.png
-```
-
-**방법 2: PowerShell OS 캡처 (IPC 없을 때 폴백)**
-
-1. **프로세스 종료**: bash의 `taskkill`은 `/F` 플래그가 경로와 충돌한다. PowerShell을 사용할 것.
-   ```bash
-   powershell -Command "Get-Process tasty -ErrorAction SilentlyContinue | Stop-Process -Force"
-   ```
-
-2. **빌드 → 실행**: tasty.exe가 실행 중이면 cargo build가 exe를 덮어쓸 수 없다 (access denied). 반드시 프로세스를 먼저 종료한 후 빌드할 것.
-
-3. **스크린샷 캡처**: PowerShell 스크립트 파일을 만들어 실행한다. bash에서 `$` 변수가 먹히므로 인라인 PowerShell은 동작하지 않는다.
-   ```powershell
-   # take_screenshot.ps1
-   Add-Type -AssemblyName System.Windows.Forms, System.Drawing
-   $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-   $bmp = New-Object System.Drawing.Bitmap($bounds.Width, $bounds.Height)
-   $g = [System.Drawing.Graphics]::FromImage($bmp)
-   $g.CopyFromScreen(0, 0, 0, 0, $bmp.Size)
-   $bmp.Save("E:\workspace\tasty\screenshot.png")
-   $g.Dispose(); $bmp.Dispose()
-   ```
-   ```bash
-   powershell -NoProfile -ExecutionPolicy Bypass -File take_screenshot.ps1
-   ```
-
-4. **윈도우 포커스/최대화**: `Win32::ShowWindow` + `SetForegroundWindow`로 Tasty 창을 최대화한 후 찍어야 전체가 보인다.
-
-### state가 None일 때의 이벤트 처리
-
-`AppState`가 아직 초기화되지 않은 상태(셸 설정 모드 등)에서도 `gpu.resize()`, `gpu.handle_egui_event()` 등 GPU/UI 관련 처리는 동작해야 한다. 기존 코드에서 `if let (Some(gpu), Some(state)) = ...` 패턴으로 묶여 있으면 state가 None일 때 gpu 호출도 함께 스킵된다. state 없이도 필요한 GPU 호출은 별도로 분리할 것.
-
-```rust
-// 잘못됨 — state가 None이면 gpu.resize()도 스킵
-if let (Some(gpu), Some(state)) = (&mut self.gpu, &mut self.state) {
-    gpu.resize(new_size);
-    // ... state 관련 처리
-}
-
-// 올바름 — gpu.resize()는 항상 호출
-if let Some(gpu) = &mut self.gpu {
-    gpu.resize(new_size);
-}
-if let (Some(gpu), Some(state)) = (&self.gpu, &mut self.state) {
-    // ... state 관련 처리
-}
-```
-
-### egui 레이아웃 주의사항
-
-- `CentralPanel` 안에서 `add_space`로 수동 중앙 배치하면 자식 Frame이 부모 너비를 무시하고 넘칠 수 있다.
-- 정중앙 배치가 필요하면 `egui::Window`에 `.anchor(Align2::CENTER_CENTER, vec2(0,0))`을 쓰는 것이 안정적이다.
-- wgpu 24에서 egui render pass에 `forget_lifetime()`이 필요하다 (`'static` 라이프타임 요구).
+| `visual-verification.md` | UI 변경 시 색상 대비, 레이어 순서, 픽셀 수치 검증 규칙 |
+| `screenshot-methods.md` | GUI 테스트 시 스크린샷 촬영 방법 (IPC / PowerShell) |
+| `egui-layout.md` | egui 레이아웃, 레이어 순서 주의사항 |
+| `state-none-gpu-separation.md` | state가 None일 때 GPU 호출 분리 패턴 |
+| `ipc-usage.md` | IPC를 통한 Tasty 조작 방법 |
+| `python-execution.md` | Windows에서 python3 대신 python 사용 |
+| `tcp-communication.md` | ncat 없이 Python socket으로 TCP 통신 |
+| `windows-process-cleanup.md` | Windows 프로세스 트리 종료 방법 |

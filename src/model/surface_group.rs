@@ -1,5 +1,5 @@
 use tasty_terminal::Terminal;
-use super::{DividerInfo, Rect, SplitDirection, SurfaceId};
+use super::{DividerInfo, Rect, SplitDirection, SurfaceId, SURFACE_BORDER_WIDTH};
 
 /// Single terminal instance.
 pub struct SurfaceNode {
@@ -314,7 +314,7 @@ impl SurfaceGroupLayout {
                 second,
                 ..
             } => {
-                let (r1, r2) = rect.split(*direction, *ratio);
+                let (r1, r2) = rect.split_with_gap(*direction, *ratio, SURFACE_BORDER_WIDTH);
                 let mut result = first.render_regions(r1);
                 result.extend(second.render_regions(r2));
                 result
@@ -337,7 +337,7 @@ impl SurfaceGroupLayout {
                 second,
                 ..
             } => {
-                let (r1, r2) = rect.split(*direction, *ratio);
+                let (r1, r2) = rect.split_with_gap(*direction, *ratio, SURFACE_BORDER_WIDTH);
                 first.resize_all(r1, cell_width, cell_height);
                 second.resize_all(r2, cell_width, cell_height);
             }
@@ -381,12 +381,41 @@ impl SurfaceGroupLayout {
         }
     }
 
+    /// Collect divider rectangles for surface splits.
+    pub fn collect_dividers(&self, rect: Rect) -> Vec<Rect> {
+        match self {
+            SurfaceGroupLayout::Single(_) => vec![],
+            SurfaceGroupLayout::Split { direction, ratio, first, second, .. } => {
+                let gap = SURFACE_BORDER_WIDTH;
+                let (r1, r2) = rect.split_with_gap(*direction, *ratio, gap);
+                let divider = match direction {
+                    SplitDirection::Vertical => Rect {
+                        x: r1.x + r1.width,
+                        y: rect.y,
+                        width: gap,
+                        height: rect.height,
+                    },
+                    SplitDirection::Horizontal => Rect {
+                        x: rect.x,
+                        y: r1.y + r1.height,
+                        width: rect.width,
+                        height: gap,
+                    },
+                };
+                let mut result = vec![divider];
+                result.extend(first.collect_dividers(r1));
+                result.extend(second.collect_dividers(r2));
+                result
+            }
+        }
+    }
+
     /// Find a divider near the given point within this surface group layout.
     pub fn find_divider_at(&self, x: f32, y: f32, rect: Rect, threshold: f32) -> Option<DividerInfo> {
         match self {
             SurfaceGroupLayout::Single(_) => None,
             SurfaceGroupLayout::Split { direction, ratio, first, second, .. } => {
-                let (r1, r2) = rect.split(*direction, *ratio);
+                let (r1, r2) = rect.split_with_gap(*direction, *ratio, SURFACE_BORDER_WIDTH);
                 let divider_pos = match direction {
                     SplitDirection::Vertical => r1.x + r1.width,
                     SplitDirection::Horizontal => r1.y + r1.height,
@@ -420,7 +449,7 @@ impl SurfaceGroupLayout {
                     *ratio = new_ratio.clamp(0.1, 0.9);
                     return true;
                 }
-                let (r1, r2) = current_rect.split(*direction, *ratio);
+                let (r1, r2) = current_rect.split_with_gap(*direction, *ratio, SURFACE_BORDER_WIDTH);
                 first.update_ratio_for_rect(split_rect, new_ratio, r1)
                     || second.update_ratio_for_rect(split_rect, new_ratio, r2)
             }
@@ -438,7 +467,7 @@ impl SurfaceGroupLayout {
                 }
             }
             SurfaceGroupLayout::Split { direction, ratio, first, second, .. } => {
-                let (r1, r2) = rect.split(*direction, *ratio);
+                let (r1, r2) = rect.split_with_gap(*direction, *ratio, SURFACE_BORDER_WIDTH);
                 first.find_surface_at(x, y, r1)
                     .or_else(|| second.find_surface_at(x, y, r2))
             }

@@ -81,10 +81,12 @@ impl AppState {
         let surface_id = next_ids.next_surface();
 
         let shell = if settings.general.shell.is_empty() { None } else { Some(settings.general.shell.as_str()) };
-        let ws = Workspace::new_with_shell(ws_id, "Workspace 1".to_string(), cols, rows, pane_id, tab_id, surface_id, shell, waker.clone())?;
+        let shell_args_owned = settings.general.effective_shell_args();
+        let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
+        let ws = Workspace::new_with_shell(ws_id, "Workspace 1".to_string(), cols, rows, pane_id, tab_id, surface_id, shell, &shell_args, waker.clone())?;
 
         let sidebar_width = settings.appearance.sidebar_width;
-        Ok(Self {
+        let mut state = Self {
             workspaces: vec![ws],
             active_workspace: 0,
             next_ids,
@@ -98,7 +100,9 @@ impl AppState {
             hook_manager: HookManager::new(),
             sidebar_width,
             waker,
-        })
+        };
+        state.send_fast_init(surface_id);
+        Ok(state)
     }
 
     pub fn active_workspace(&self) -> &Workspace {
@@ -135,6 +139,25 @@ impl AppState {
         ws.pane_layout_mut().find_pane_mut(focused_id)
     }
 
+    /// Get the focused surface ID (the terminal that currently receives input).
+    pub fn focused_surface_id(&self) -> Option<u32> {
+        let pane = self.focused_pane()?;
+        let panel = pane.active_panel()?;
+        match panel {
+            crate::model::Panel::Terminal(node) => Some(node.id),
+            crate::model::Panel::SurfaceGroup(group) => Some(group.focused_surface),
+        }
+    }
+
+    /// Send fast-mode init command to a terminal by surface ID.
+    fn send_fast_init(&mut self, surface_id: u32) {
+        if let Some(cmd) = self.settings.general.fast_mode_init_command() {
+            if let Some(terminal) = self.find_terminal_by_id_mut(surface_id) {
+                terminal.send_key(&cmd);
+            }
+        }
+    }
+
     /// Get the ultimately focused terminal.
     pub fn focused_terminal(&self) -> Option<&Terminal> {
         self.focused_pane().and_then(|p| p.active_terminal())
@@ -154,6 +177,8 @@ impl AppState {
 
         let name = format!("Workspace {}", ws_id + 1);
         let shell = if self.settings.general.shell.is_empty() { None } else { Some(self.settings.general.shell.as_str()) };
+        let shell_args_owned = self.settings.general.effective_shell_args();
+        let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
         let ws = Workspace::new_with_shell(
             ws_id,
             name,
@@ -163,10 +188,12 @@ impl AppState {
             tab_id,
             surface_id,
             shell,
+            &shell_args,
             self.waker.clone(),
         )?;
         self.workspaces.push(ws);
         self.active_workspace = self.workspaces.len() - 1;
+        self.send_fast_init(surface_id);
         Ok(())
     }
 
@@ -178,10 +205,13 @@ impl AppState {
         let rows = self.default_rows;
         let shell = self.settings.general.shell.clone();
         let shell_ref = if shell.is_empty() { None } else { Some(shell.as_str()) };
+        let shell_args_owned = self.settings.general.effective_shell_args();
+        let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
         let waker = self.waker.clone();
         if let Some(pane) = self.focused_pane_mut() {
-            pane.add_tab_with_shell(tab_id, surface_id, cols, rows, shell_ref, waker)?;
+            pane.add_tab_with_shell(tab_id, surface_id, cols, rows, shell_ref, &shell_args, waker)?;
         }
+        self.send_fast_init(surface_id);
         Ok(())
     }
 
@@ -197,8 +227,10 @@ impl AppState {
         // This way, if PTY creation fails, the layout is untouched.
         let shell = self.settings.general.shell.clone();
         let shell_ref = if shell.is_empty() { None } else { Some(shell.as_str()) };
+        let shell_args_owned = self.settings.general.effective_shell_args();
+        let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
         let new_pane =
-            crate::model::Pane::new_with_shell(new_pane_id, new_tab_id, new_surface_id, cols, rows, shell_ref, self.waker.clone())?;
+            crate::model::Pane::new_with_shell(new_pane_id, new_tab_id, new_surface_id, cols, rows, shell_ref, &shell_args, self.waker.clone())?;
 
         let ws = self.active_workspace_mut();
         let target_pane_id = ws.focused_pane;
@@ -206,6 +238,7 @@ impl AppState {
             .split_pane_in_place(target_pane_id, direction, new_pane);
         // Focus the new pane
         ws.focused_pane = new_pane_id;
+        self.send_fast_init(new_surface_id);
         Ok(())
     }
 
@@ -216,10 +249,13 @@ impl AppState {
         let rows = self.default_rows;
         let shell = self.settings.general.shell.clone();
         let shell_ref = if shell.is_empty() { None } else { Some(shell.as_str()) };
+        let shell_args_owned = self.settings.general.effective_shell_args();
+        let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
         let waker = self.waker.clone();
         if let Some(pane) = self.focused_pane_mut() {
-            pane.split_active_surface_with_shell(direction, new_surface_id, cols, rows, shell_ref, waker)?;
+            pane.split_active_surface_with_shell(direction, new_surface_id, cols, rows, shell_ref, &shell_args, waker)?;
         }
+        self.send_fast_init(new_surface_id);
         Ok(())
     }
 

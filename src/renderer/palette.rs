@@ -1,7 +1,7 @@
 use termwiz::color::ColorAttribute;
 
 pub(crate) const DEFAULT_FG: [f32; 4] = [0.8, 0.8, 0.8, 1.0]; // #cccccc
-pub(crate) const DEFAULT_BG: [f32; 4] = [0.102, 0.102, 0.118, 1.0]; // #1a1a1e
+pub const DEFAULT_BG: [f32; 4] = [0.102, 0.102, 0.118, 1.0]; // #1a1a1e
 
 /// Standard 16-color ANSI palette (sRGB, approximate).
 pub(crate) const ANSI_COLORS: [[f32; 3]; 16] = [

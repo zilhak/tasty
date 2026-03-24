@@ -443,10 +443,28 @@ impl GpuState {
         state.resize_all(terminal_rect, self.renderer.cell_width(), self.renderer.cell_height());
 
         // Compute pane rects for per-pane tab bars
-        let pane_rects: Vec<(u32, Rect)> = state
-            .active_workspace()
-            .pane_layout()
-            .compute_rects(terminal_rect);
+        let pane_layout = state.active_workspace().pane_layout();
+        let pane_rects: Vec<(u32, Rect)> = pane_layout.compute_rects(terminal_rect);
+        let mut dividers: Vec<Rect> = pane_layout.collect_dividers(terminal_rect);
+
+        // Collect surface dividers
+        let focused_surface_id = state.focused_surface_id();
+        for (pane_id, pane_rect) in &pane_rects {
+            if let Some(pane) = pane_layout.find_pane(*pane_id) {
+                let tab_bar_h = if pane.tabs.len() > 1 { 24.0 } else { 0.0 };
+                let content_rect = Rect {
+                    x: pane_rect.x,
+                    y: pane_rect.y + tab_bar_h,
+                    width: pane_rect.width,
+                    height: (pane_rect.height - tab_bar_h).max(1.0),
+                };
+                if let Some(panel) = pane.active_panel() {
+                    if let crate::model::Panel::SurfaceGroup(group) = panel {
+                        dividers.extend(group.layout().collect_dividers(content_rect));
+                    }
+                }
+            }
+        }
 
         // 1. Begin egui frame
         let raw_input = self.egui_state.take_egui_input(window);
@@ -454,6 +472,7 @@ impl GpuState {
         let prev_theme = state.settings.appearance.theme.clone();
         let full_output = self.egui_ctx.run(raw_input, |ctx| {
             ui::draw_ui(ctx, state, scale_factor);
+            ui::draw_pane_dividers(ctx, &dividers, scale_factor);
             ui::draw_pane_tab_bars(ctx, state, &pane_rects, scale_factor);
             ui::draw_notification_panel(ctx, state);
             if state.settings_open {
@@ -533,33 +552,54 @@ impl GpuState {
             });
         }
 
-        // 5. Render each terminal surface in its viewport rect
+        // 5. Render each terminal surface in its viewport rect.
+        // Each surface must be submitted separately because prepare_viewport()
+        // overwrites the shared uniform/instance buffers via queue.write_buffer().
+        // If all render passes were batched into one encoder, only the last
+        // surface's data would be visible when the GPU executes the passes.
+        self.queue.submit(std::iter::once(encoder.finish()));
+
         for (_pane_id, _pane_rect, terminal_regions) in &regions {
-            for (_surface_id, terminal, rect) in terminal_regions {
-                self.renderer.prepare_viewport(
+            for (surface_id, terminal, rect) in terminal_regions {
+                let is_focused = focused_surface_id == Some(*surface_id);
+                let bg = if is_focused {
+                    [0.0, 0.0, 0.0, 1.0]
+                } else {
+                    crate::renderer::DEFAULT_BG
+                };
+                self.renderer.prepare_viewport_with_bg(
                     terminal.surface(),
                     &self.queue,
                     rect,
                     self.size.width,
                     self.size.height,
+                    bg,
                 );
 
-                let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("terminal_pass"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Load,
-                            store: wgpu::StoreOp::Store,
-                        },
-                    })],
-                    depth_stencil_attachment: None,
-                    timestamp_writes: None,
-                    occlusion_query_set: None,
-                });
+                let mut term_encoder = self.device.create_command_encoder(
+                    &wgpu::CommandEncoderDescriptor {
+                        label: Some("terminal_pass"),
+                    },
+                );
+                {
+                    let mut render_pass = term_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                        label: Some("terminal_pass"),
+                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                            view: &view,
+                            resolve_target: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Load,
+                                store: wgpu::StoreOp::Store,
+                            },
+                        })],
+                        depth_stencil_attachment: None,
+                        timestamp_writes: None,
+                        occlusion_query_set: None,
+                    });
 
-                self.renderer.render_scissored(&mut render_pass, rect, self.size.width, self.size.height);
+                    self.renderer.render_scissored(&mut render_pass, rect, self.size.width, self.size.height);
+                }
+                self.queue.submit(std::iter::once(term_encoder.finish()));
             }
         }
 
@@ -569,9 +609,6 @@ impl GpuState {
             self.egui_renderer
                 .update_texture(&self.device, &self.queue, *id, image_delta);
         }
-
-        // Submit terminal commands first
-        self.queue.submit(std::iter::once(encoder.finish()));
 
         // Create a separate encoder for egui
         let mut egui_encoder = self

@@ -3,6 +3,12 @@ pub type PaneId = u32;
 pub type TabId = u32;
 pub type SurfaceId = u32;
 
+/// Gap in physical pixels between split panes (rendered as a visible border).
+/// Gap in physical pixels between split panes.
+pub const PANE_BORDER_WIDTH: f32 = 2.0;
+/// Gap in physical pixels between split surfaces (within a tab).
+pub const SURFACE_BORDER_WIDTH: f32 = 1.0;
+
 /// A pixel rectangle used for viewport/scissor calculations.
 #[derive(Debug, Clone, Copy)]
 pub struct Rect {
@@ -27,10 +33,15 @@ impl Rect {
     }
 
     pub fn split(self, direction: SplitDirection, ratio: f32) -> (Rect, Rect) {
+        self.split_with_gap(direction, ratio, PANE_BORDER_WIDTH)
+    }
+
+    pub fn split_with_gap(self, direction: SplitDirection, ratio: f32, gap: f32) -> (Rect, Rect) {
         match direction {
             SplitDirection::Vertical => {
-                let first_w = (self.width * ratio).floor();
-                let second_w = self.width - first_w;
+                let usable = (self.width - gap).max(0.0);
+                let first_w = (usable * ratio).floor();
+                let second_w = usable - first_w;
                 (
                     Rect {
                         x: self.x,
@@ -39,7 +50,7 @@ impl Rect {
                         height: self.height,
                     },
                     Rect {
-                        x: self.x + first_w,
+                        x: self.x + first_w + gap,
                         y: self.y,
                         width: second_w,
                         height: self.height,
@@ -47,8 +58,9 @@ impl Rect {
                 )
             }
             SplitDirection::Horizontal => {
-                let first_h = (self.height * ratio).floor();
-                let second_h = self.height - first_h;
+                let usable = (self.height - gap).max(0.0);
+                let first_h = (usable * ratio).floor();
+                let second_h = usable - first_h;
                 (
                     Rect {
                         x: self.x,
@@ -58,7 +70,7 @@ impl Rect {
                     },
                     Rect {
                         x: self.x,
-                        y: self.y + first_h,
+                        y: self.y + first_h + gap,
                         width: self.width,
                         height: second_h,
                     },

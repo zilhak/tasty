@@ -45,10 +45,12 @@ fn rect_contains_at_boundary_exclusive() {
 fn rect_split_vertical() {
     let r = Rect { x: 0.0, y: 0.0, width: 200.0, height: 100.0 };
     let (r1, r2) = r.split(SplitDirection::Vertical, 0.5);
+    let gap = PANE_BORDER_WIDTH;
+    let usable = 200.0 - gap;
     assert_eq!(r1.x, 0.0);
-    assert_eq!(r1.width, 100.0);
-    assert_eq!(r2.x, 100.0);
-    assert_eq!(r2.width, 100.0);
+    assert_eq!(r1.width, (usable * 0.5).floor());
+    assert_eq!(r2.x, r1.width + gap);
+    assert_eq!(r2.width, usable - r1.width);
     assert_eq!(r1.height, 100.0);
     assert_eq!(r2.height, 100.0);
 }
@@ -57,10 +59,12 @@ fn rect_split_vertical() {
 fn rect_split_horizontal() {
     let r = Rect { x: 0.0, y: 0.0, width: 200.0, height: 100.0 };
     let (r1, r2) = r.split(SplitDirection::Horizontal, 0.5);
+    let gap = PANE_BORDER_WIDTH;
+    let usable = 100.0 - gap;
     assert_eq!(r1.y, 0.0);
-    assert_eq!(r1.height, 50.0);
-    assert_eq!(r2.y, 50.0);
-    assert_eq!(r2.height, 50.0);
+    assert_eq!(r1.height, (usable * 0.5).floor());
+    assert_eq!(r2.y, r1.height + gap);
+    assert_eq!(r2.height, usable - r1.height);
     assert_eq!(r1.width, 200.0);
     assert_eq!(r2.width, 200.0);
 }
@@ -69,9 +73,11 @@ fn rect_split_horizontal() {
 fn rect_split_unequal_ratio() {
     let r = Rect { x: 0.0, y: 0.0, width: 300.0, height: 100.0 };
     let (r1, r2) = r.split(SplitDirection::Vertical, 0.3);
-    assert_eq!(r1.width, 90.0);
-    assert_eq!(r2.width, 210.0);
-    assert_eq!(r2.x, 90.0);
+    let gap = PANE_BORDER_WIDTH;
+    let usable = 300.0 - gap;
+    assert_eq!(r1.width, (usable * 0.3).floor());
+    assert_eq!(r2.width, usable - r1.width);
+    assert_eq!(r2.x, r1.width + gap);
 }
 
 #[test]
@@ -120,8 +126,10 @@ fn pane_node_compute_rects_split() {
     assert_eq!(rects.len(), 2);
     assert_eq!(rects[0].0, 1);
     assert_eq!(rects[1].0, 2);
-    assert_eq!(rects[0].1.width, 400.0);
-    assert_eq!(rects[1].1.width, 400.0);
+    let gap = PANE_BORDER_WIDTH;
+    let usable = 800.0 - gap;
+    assert_eq!(rects[0].1.width, (usable * 0.5).floor());
+    assert_eq!(rects[1].1.width, usable - rects[0].1.width);
 }
 
 #[test]
@@ -233,8 +241,8 @@ fn pane_node_split_pane_in_place_not_found() {
 #[test]
 fn pane_close_tab_removes_tab() {
     let waker = noop_waker();
-    let mut pane = Pane::new_with_shell(1, 10, 100, 80, 24, None, waker.clone()).expect("pane creation");
-    pane.add_tab_with_shell(11, 101, 80, 24, None, waker).expect("add tab");
+    let mut pane = Pane::new_with_shell(1, 10, 100, 80, 24, None, &[], waker.clone()).expect("pane creation");
+    pane.add_tab_with_shell(11, 101, 80, 24, None, &[], waker).expect("add tab");
     assert_eq!(pane.tabs.len(), 2);
     assert!(pane.close_active_tab());
     assert_eq!(pane.tabs.len(), 1);
@@ -243,7 +251,7 @@ fn pane_close_tab_removes_tab() {
 #[test]
 fn pane_close_tab_last_tab_fails() {
     let waker = noop_waker();
-    let mut pane = Pane::new_with_shell(1, 10, 100, 80, 24, None, waker).expect("pane creation");
+    let mut pane = Pane::new_with_shell(1, 10, 100, 80, 24, None, &[], waker).expect("pane creation");
     assert_eq!(pane.tabs.len(), 1);
     assert!(!pane.close_active_tab());
     assert_eq!(pane.tabs.len(), 1);
@@ -326,7 +334,7 @@ fn surface_group_layout_find_surface_at() {
 #[test]
 fn for_each_terminal_visits_single_pane() {
     let waker = noop_waker();
-    let pane = Pane::new_with_shell(1, 1, 100, 80, 24, None, waker).unwrap();
+    let pane = Pane::new_with_shell(1, 1, 100, 80, 24, None, &[], waker).unwrap();
     let mut node = PaneNode::Leaf(pane);
     let mut visited = Vec::new();
     node.for_each_terminal_mut(&mut |sid, _terminal| {
@@ -338,8 +346,8 @@ fn for_each_terminal_visits_single_pane() {
 #[test]
 fn for_each_terminal_visits_split_panes() {
     let waker = noop_waker();
-    let p1 = Pane::new_with_shell(1, 1, 101, 80, 24, None, waker.clone()).unwrap();
-    let p2 = Pane::new_with_shell(2, 2, 102, 80, 24, None, waker).unwrap();
+    let p1 = Pane::new_with_shell(1, 1, 101, 80, 24, None, &[], waker.clone()).unwrap();
+    let p2 = Pane::new_with_shell(2, 2, 102, 80, 24, None, &[], waker).unwrap();
     let mut node = PaneNode::Split {
         direction: SplitDirection::Vertical,
         ratio: 0.5,
@@ -356,7 +364,7 @@ fn for_each_terminal_visits_split_panes() {
 #[test]
 fn for_each_terminal_mut_can_modify() {
     let waker = noop_waker();
-    let pane = Pane::new_with_shell(1, 1, 200, 80, 24, None, waker).unwrap();
+    let pane = Pane::new_with_shell(1, 1, 200, 80, 24, None, &[], waker).unwrap();
     let mut node = PaneNode::Leaf(pane);
     let mut count = 0u32;
     node.for_each_terminal_mut(&mut |_sid, terminal| {

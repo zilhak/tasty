@@ -73,6 +73,10 @@ impl Terminal {
     /// The `waker` callback is invoked from the PTY reader thread whenever new data
     /// arrives, allowing the main event loop to wake up and process the output.
     pub fn new_with_shell(cols: usize, rows: usize, shell: Option<&str>, waker: Waker) -> Result<Self> {
+        Self::new_with_shell_args(cols, rows, shell, &[], waker)
+    }
+
+    pub fn new_with_shell_args(cols: usize, rows: usize, shell: Option<&str>, args: &[&str], waker: Waker) -> Result<Self> {
         let pty_system = NativePtySystem::default();
 
         let pair = pty_system.openpty(PtySize {
@@ -87,6 +91,11 @@ impl Terminal {
             _ => Self::default_shell(),
         };
         let mut cmd = CommandBuilder::new(&shell);
+        for arg in args {
+            if !arg.is_empty() {
+                cmd.arg(arg);
+            }
+        }
         cmd.env("TERM", "xterm-256color");
 
         let child = pair.slave.spawn_command(cmd)?;

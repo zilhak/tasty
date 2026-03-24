@@ -7,7 +7,8 @@ mod palette;
 mod shaders;
 mod types;
 
-use palette::{color_attr_to_rgba, DEFAULT_BG, DEFAULT_FG};
+pub use palette::DEFAULT_BG;
+use palette::{color_attr_to_rgba, DEFAULT_FG};
 use shaders::{BG_SHADER, GLYPH_SHADER};
 use types::{BgInstance, GlyphInstance, Uniforms};
 
@@ -325,8 +326,8 @@ impl CellRenderer {
         queue.write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
     }
 
-    /// Build instance data from the terminal surface.
-    pub fn prepare(&mut self, surface: &Surface, queue: &wgpu::Queue) {
+    /// Build instance data from the terminal surface with a custom default background.
+    pub fn prepare_with_bg(&mut self, surface: &Surface, queue: &wgpu::Queue, default_bg: [f32; 4]) {
         let (cols, rows) = surface.dimensions();
         let lines = surface.screen_lines();
 
@@ -344,7 +345,7 @@ impl CellRenderer {
                 }
 
                 let attrs = cell_ref.attrs();
-                let bg_color = color_attr_to_rgba(&attrs.background(), DEFAULT_BG);
+                let bg_color = color_attr_to_rgba(&attrs.background(), default_bg);
                 let fg_color = color_attr_to_rgba(&attrs.foreground(), DEFAULT_FG);
 
                 self.bg_instances.push(BgInstance {
@@ -410,6 +411,11 @@ impl CellRenderer {
         (cols.max(1), rows.max(1))
     }
 
+    /// Build instance data from the terminal surface (uses default palette bg).
+    pub fn prepare(&mut self, surface: &Surface, queue: &wgpu::Queue) {
+        self.prepare_with_bg(surface, queue, DEFAULT_BG);
+    }
+
     /// Prepare instance data for a terminal surface to be rendered in a specific viewport rect.
     pub fn prepare_viewport(
         &mut self,
@@ -418,6 +424,19 @@ impl CellRenderer {
         viewport: &Rect,
         screen_width: u32,
         screen_height: u32,
+    ) {
+        self.prepare_viewport_with_bg(surface, queue, viewport, screen_width, screen_height, DEFAULT_BG);
+    }
+
+    /// Prepare instance data with a custom default background color.
+    pub fn prepare_viewport_with_bg(
+        &mut self,
+        surface: &Surface,
+        queue: &wgpu::Queue,
+        viewport: &Rect,
+        screen_width: u32,
+        screen_height: u32,
+        default_bg: [f32; 4],
     ) {
         let uniforms = Uniforms {
             cell_size: [
@@ -430,7 +449,7 @@ impl CellRenderer {
         };
         queue.write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
 
-        self.prepare(surface, queue);
+        self.prepare_with_bg(surface, queue, default_bg);
     }
 
     /// Render with a scissor rect applied.

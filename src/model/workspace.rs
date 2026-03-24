@@ -21,9 +21,10 @@ impl Workspace {
         tab_id: TabId,
         surface_id: SurfaceId,
         shell: Option<&str>,
+        shell_args: &[&str],
         waker: Waker,
     ) -> anyhow::Result<Self> {
-        let pane = Pane::new_with_shell(pane_id, tab_id, surface_id, cols, rows, shell, waker)?;
+        let pane = Pane::new_with_shell(pane_id, tab_id, surface_id, cols, rows, shell, shell_args, waker)?;
         let focused_pane = pane_id;
         Ok(Self {
             id,

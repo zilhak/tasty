@@ -142,6 +142,42 @@ impl PaneNode {
         }
     }
 
+    /// Collect divider rectangles (the gap between split panes).
+    /// Each returned Rect is the thin strip that should be drawn as a border.
+    pub fn collect_dividers(&self, rect: Rect) -> Vec<Rect> {
+        match self {
+            PaneNode::Leaf(_) => vec![],
+            PaneNode::Split {
+                direction,
+                ratio,
+                first,
+                second,
+            } => {
+                let gap = super::PANE_BORDER_WIDTH;
+                let (r1, r2) = rect.split(*direction, *ratio);
+                // The divider sits in the gap between r1 and r2
+                let divider = match direction {
+                    SplitDirection::Vertical => Rect {
+                        x: r1.x + r1.width,
+                        y: rect.y,
+                        width: gap,
+                        height: rect.height,
+                    },
+                    SplitDirection::Horizontal => Rect {
+                        x: rect.x,
+                        y: r1.y + r1.height,
+                        width: rect.width,
+                        height: gap,
+                    },
+                };
+                let mut result = vec![divider];
+                result.extend(first.collect_dividers(r1));
+                result.extend(second.collect_dividers(r2));
+                result
+            }
+        }
+    }
+
     /// Find a Pane by ID (immutable).
     pub fn find_pane(&self, id: PaneId) -> Option<&Pane> {
         match self {
@@ -319,9 +355,10 @@ impl Pane {
         cols: usize,
         rows: usize,
         shell: Option<&str>,
+        shell_args: &[&str],
         waker: Waker,
     ) -> anyhow::Result<Self> {
-        let terminal = Terminal::new_with_shell(cols, rows, shell, waker)?;
+        let terminal = Terminal::new_with_shell_args(cols, rows, shell, shell_args, waker)?;
         let tab = Tab {
             id: tab_id,
             name: "Shell".to_string(),
@@ -345,9 +382,10 @@ impl Pane {
         cols: usize,
         rows: usize,
         shell: Option<&str>,
+        shell_args: &[&str],
         waker: Waker,
     ) -> anyhow::Result<()> {
-        let terminal = Terminal::new_with_shell(cols, rows, shell, waker)?;
+        let terminal = Terminal::new_with_shell_args(cols, rows, shell, shell_args, waker)?;
         let tab = Tab {
             id: tab_id,
             name: format!("Shell {}", self.tabs.len() + 1),
@@ -383,11 +421,12 @@ impl Pane {
         cols: usize,
         rows: usize,
         shell: Option<&str>,
+        shell_args: &[&str],
         waker: Waker,
     ) -> anyhow::Result<()> {
         // Pre-create the new terminal before any structural mutation.
         // If Terminal::new fails, panel is untouched.
-        let new_terminal = Terminal::new_with_shell(cols, rows, shell, waker)?;
+        let new_terminal = Terminal::new_with_shell_args(cols, rows, shell, shell_args, waker)?;
         if self.tabs.is_empty() {
             return Ok(()); // nothing to split
         }
