@@ -48,14 +48,23 @@ impl ApplicationHandler<AppEvent> for App {
         let gpu = pollster::block_on(crate::gpu::GpuState::new(window.clone(), &init_settings.appearance, self.proxy.clone()))
             .expect("failed to initialize GPU");
 
-        // Check if bash is available — if not, enter shell setup mode
+        // If configured shell is invalid, try auto-detect before showing setup dialog
+        let mut init_settings = init_settings;
         if !init_settings.general.is_shell_valid() {
-            tracing::warn!("bash not found; entering shell setup mode");
-            self.shell_setup_mode = true;
-            self.shell_setup_path = init_settings.general.shell.clone();
-            self.window = Some(window);
-            self.gpu = Some(gpu);
-            return;
+            if let Some(detected) = crate::settings::GeneralSettings::detect_bash() {
+                tracing::info!("configured shell invalid; auto-detected bash at {detected}");
+                init_settings.general.shell = detected;
+                if let Err(e) = init_settings.save() {
+                    tracing::warn!("failed to save auto-detected shell: {e}");
+                }
+            } else {
+                tracing::warn!("bash not found; entering shell setup mode");
+                self.shell_setup_mode = true;
+                self.shell_setup_path = String::new();
+                self.window = Some(window);
+                self.gpu = Some(gpu);
+                return;
+            }
         }
 
         self.init_app_state(window, gpu, init_settings);
