@@ -108,7 +108,9 @@ pub(crate) fn handle_claude_launch(
 
     if let Some(dir) = directory {
         if let Some(terminal) = state.focused_terminal_mut() {
-            let escaped = shell_escape::escape(dir.into());
+            // Normalize backslashes to forward slashes for bash compatibility
+            let normalized = dir.replace('\\', "/");
+            let escaped = shell_escape::escape(normalized.into());
             terminal.send_key(&format!("cd {}\r", escaped));
         }
     }
