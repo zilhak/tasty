@@ -89,3 +89,37 @@ s.close()
 ### Windows 프로세스 정리
 
 `process.kill()`은 Windows에서 자식 프로세스를 종료하지 않는다. 프로세스 트리 전체를 종료하려면 `taskkill /F /T /PID`를 사용해야 한다. 테스트 harness의 Drop에서 이미 적용되어 있다.
+
+### GUI 수동 테스트 (스크린샷 캡처)
+
+GUI를 직접 확인하려면 앱을 백그라운드 실행 후 PowerShell로 스크린샷을 찍는다.
+
+1. **프로세스 종료**: bash의 `taskkill`은 `/F` 플래그가 경로와 충돌한다. PowerShell을 사용할 것.
+   ```bash
+   powershell -Command "Get-Process tasty -ErrorAction SilentlyContinue | Stop-Process -Force"
+   ```
+
+2. **빌드 → 실행**: tasty.exe가 실행 중이면 cargo build가 exe를 덮어쓸 수 없다 (access denied). 반드시 프로세스를 먼저 종료한 후 빌드할 것.
+
+3. **스크린샷 캡처**: PowerShell 스크립트 파일을 만들어 실행한다. bash에서 `$` 변수가 먹히므로 인라인 PowerShell은 동작하지 않는다.
+   ```powershell
+   # take_screenshot.ps1
+   Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+   $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+   $bmp = New-Object System.Drawing.Bitmap($bounds.Width, $bounds.Height)
+   $g = [System.Drawing.Graphics]::FromImage($bmp)
+   $g.CopyFromScreen(0, 0, 0, 0, $bmp.Size)
+   $bmp.Save("E:\workspace\tasty\screenshot.png")
+   $g.Dispose(); $bmp.Dispose()
+   ```
+   ```bash
+   powershell -NoProfile -ExecutionPolicy Bypass -File take_screenshot.ps1
+   ```
+
+4. **윈도우 포커스/최대화**: `Win32::ShowWindow` + `SetForegroundWindow`로 Tasty 창을 최대화한 후 찍어야 전체가 보인다.
+
+### egui 레이아웃 주의사항
+
+- `CentralPanel` 안에서 `add_space`로 수동 중앙 배치하면 자식 Frame이 부모 너비를 무시하고 넘칠 수 있다.
+- 정중앙 배치가 필요하면 `egui::Window`에 `.anchor(Align2::CENTER_CENTER, vec2(0,0))`을 쓰는 것이 안정적이다.
+- wgpu 24에서 egui render pass에 `forget_lifetime()`이 필요하다 (`'static` 라이프타임 요구).
