@@ -97,6 +97,11 @@ struct App {
     clipboard: Option<ClipboardContext>,
     /// Custom port file path for IPC (used by GUI tests).
     port_file: Option<String>,
+    /// When true, the app is in shell-setup mode: no terminal, just a dialog
+    /// asking the user to provide a bash path. Set when bash is not found.
+    shell_setup_mode: bool,
+    /// The shell path being edited in the setup dialog.
+    shell_setup_path: String,
 }
 
 impl App {
@@ -114,7 +119,63 @@ impl App {
             proxy,
             clipboard: ClipboardContext::new(),
             port_file,
+            shell_setup_mode: false,
+            shell_setup_path: String::new(),
         }
+    }
+
+    /// Initialize the full app state (terminal, IPC server, etc.) after shell is confirmed.
+    fn init_app_state(
+        &mut self,
+        window: Arc<Window>,
+        gpu: GpuState,
+        settings: crate::settings::Settings,
+    ) {
+        let sidebar_logical_width = settings.appearance.sidebar_width;
+        let startup_command = settings.general.startup_command.clone();
+
+        let sf = gpu.scale_factor();
+        let size = gpu.size();
+        let sidebar_w = sidebar_logical_width * sf;
+        let terminal_rect = crate::model::Rect {
+            x: sidebar_w,
+            y: 0.0,
+            width: (size.width as f32 - sidebar_w).max(1.0),
+            height: size.height as f32,
+        };
+        let (cols, rows) = gpu.grid_size_for_rect(&terminal_rect);
+
+        let proxy = self.proxy.clone();
+        let waker: crate::terminal::Waker = Arc::new(move || {
+            let _ = proxy.send_event(AppEvent::TerminalOutput);
+        });
+
+        let mut state = crate::state::AppState::new(cols, rows, waker).expect("failed to create app state");
+
+        if !startup_command.is_empty() {
+            if let Some(terminal) = state.focused_terminal_mut() {
+                terminal.send_key(&startup_command);
+                terminal.send_bytes(b"\r");
+            }
+        }
+
+        let ipc_proxy = self.proxy.clone();
+        let ipc_waker: crate::ipc::server::IpcWaker = std::sync::Arc::new(move || {
+            let _ = ipc_proxy.send_event(AppEvent::IpcReady);
+        });
+        match crate::ipc::server::IpcServer::start_with_port_file(self.port_file.take(), Some(ipc_waker)) {
+            Ok(ipc) => {
+                tracing::info!("IPC server started on port {}", ipc.port());
+                self.ipc_server = Some(ipc);
+            }
+            Err(e) => {
+                tracing::warn!("Failed to start IPC server: {}", e);
+            }
+        }
+
+        self.window = Some(window);
+        self.gpu = Some(gpu);
+        self.state = Some(state);
     }
 
     /// Set dirty flag and request a redraw. Call this instead of `self.dirty = true` directly.

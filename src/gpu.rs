@@ -6,6 +6,7 @@ use winit::window::Window;
 
 use winit::event_loop::EventLoopProxy;
 
+use crate::i18n::t;
 use crate::model::Rect;
 use crate::renderer::CellRenderer;
 use crate::settings::AppearanceSettings;
@@ -13,6 +14,13 @@ use crate::settings_ui;
 use crate::state::AppState;
 use crate::ui;
 use crate::AppEvent;
+
+/// Actions returned by the shell setup dialog.
+pub enum ShellSetupAction {
+    None,
+    Confirmed,
+    Exit,
+}
 
 pub struct GpuState {
     surface: wgpu::Surface<'static>,
@@ -163,6 +171,111 @@ impl GpuState {
     pub fn handle_egui_event(&mut self, window: &Window, event: &winit::event::WindowEvent) -> (bool, bool) {
         let response = self.egui_state.on_window_event(window, event);
         (response.consumed, response.repaint)
+    }
+
+    /// Render the shell setup dialog (no terminal, just egui).
+    pub fn render_shell_setup(
+        &mut self,
+        window: &Window,
+        shell_path: &mut String,
+    ) -> Result<ShellSetupAction, wgpu::SurfaceError> {
+        let output = self.surface.get_current_texture()?;
+        let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        let raw_input = self.egui_state.take_egui_input(window);
+        let mut action = ShellSetupAction::None;
+
+        let full_output = self.egui_ctx.run(raw_input, |ctx| {
+            let is_valid = !shell_path.is_empty() && std::path::Path::new(shell_path.as_str()).exists();
+
+            egui::CentralPanel::default().show(ctx, |ui| {
+                ui.vertical_centered(|ui| {
+                    ui.add_space(ui.available_height() * 0.3);
+
+                    ui.heading(
+                        egui::RichText::new("Tasty")
+                            .size(28.0)
+                            .strong(),
+                    );
+                    ui.add_space(16.0);
+
+                    ui.label(
+                        egui::RichText::new(t("settings.general.shell_not_found"))
+                            .size(14.0)
+                            .color(egui::Color32::from_rgb(220, 160, 60)),
+                    );
+                    ui.add_space(16.0);
+
+                    ui.label(t("settings.general.shell_label"));
+                    let response = ui.add_sized(
+                        [400.0, 24.0],
+                        egui::TextEdit::singleline(shell_path)
+                            .hint_text("C:/Program Files/Git/bin/bash.exe"),
+                    );
+
+                    ui.add_space(12.0);
+                    ui.horizontal(|ui| {
+                        let confirm = ui.add_enabled(is_valid, egui::Button::new("OK"));
+                        if confirm.clicked() || (response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) && is_valid) {
+                            action = ShellSetupAction::Confirmed;
+                        }
+                        if ui.button(t("button.cancel")).clicked() {
+                            action = ShellSetupAction::Exit;
+                        }
+                    });
+                });
+            });
+        });
+
+        self.egui_state
+            .handle_platform_output(window, full_output.platform_output);
+
+        let screen_descriptor = egui_wgpu::ScreenDescriptor {
+            size_in_pixels: [self.size.width, self.size.height],
+            pixels_per_point: self.scale_factor,
+        };
+        let tris = self.egui_ctx.tessellate(full_output.shapes, self.scale_factor);
+        for (id, delta) in &full_output.textures_delta.set {
+            self.egui_renderer.update_texture(&self.device, &self.queue, *id, delta);
+        }
+
+        let mut update_encoder = self.device.create_command_encoder(
+            &wgpu::CommandEncoderDescriptor { label: Some("egui_update") },
+        );
+        self.egui_renderer.update_buffers(
+            &self.device, &self.queue, &mut update_encoder, &tris, &screen_descriptor,
+        );
+        self.queue.submit(std::iter::once(update_encoder.finish()));
+
+        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("shell_setup_encoder"),
+        });
+        {
+            let render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("shell_setup_pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.12, g: 0.12, b: 0.14, a: 1.0 }),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+            let mut render_pass = render_pass.forget_lifetime();
+            self.egui_renderer.render(&mut render_pass, &tris, &screen_descriptor);
+        }
+        self.queue.submit(std::iter::once(encoder.finish()));
+        output.present();
+
+        for id in &full_output.textures_delta.free {
+            self.egui_renderer.free_texture(id);
+        }
+
+        Ok(action)
     }
 
     /// Render the full frame: egui UI + terminal surfaces.

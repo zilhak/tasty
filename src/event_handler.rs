@@ -48,57 +48,17 @@ impl ApplicationHandler<AppEvent> for App {
         let gpu = pollster::block_on(crate::gpu::GpuState::new(window.clone(), &init_settings.appearance, self.proxy.clone()))
             .expect("failed to initialize GPU");
 
-        let sidebar_logical_width = init_settings.appearance.sidebar_width;
-        let startup_command = init_settings.general.startup_command.clone();
-        drop(init_settings);
-
-        // Compute terminal grid size from the terminal area (excluding sidebar)
-        let sf = gpu.scale_factor();
-        let size = gpu.size();
-        let sidebar_w = sidebar_logical_width * sf;
-        let terminal_rect = crate::model::Rect {
-            x: sidebar_w,
-            y: 0.0,
-            width: (size.width as f32 - sidebar_w).max(1.0),
-            height: size.height as f32,
-        };
-        let (cols, rows) = gpu.grid_size_for_rect(&terminal_rect);
-
-        // Create a waker that sends AppEvent::TerminalOutput to wake the event loop.
-        let proxy = self.proxy.clone();
-        let waker: crate::terminal::Waker = Arc::new(move || {
-            let _ = proxy.send_event(AppEvent::TerminalOutput);
-        });
-
-        let mut state = crate::state::AppState::new(cols, rows, waker).expect("failed to create app state");
-
-        // Execute startup_command if configured
-        if !startup_command.is_empty() {
-            if let Some(terminal) = state.focused_terminal_mut() {
-                terminal.send_key(&startup_command);
-                terminal.send_bytes(b"\r");
-            }
+        // Check if bash is available — if not, enter shell setup mode
+        if !init_settings.general.is_shell_valid() {
+            tracing::warn!("bash not found; entering shell setup mode");
+            self.shell_setup_mode = true;
+            self.shell_setup_path = init_settings.general.shell.clone();
+            self.window = Some(window);
+            self.gpu = Some(gpu);
+            return;
         }
 
-        // Start IPC server (use port_file for test isolation if provided)
-        // Pass an IPC waker that sends AppEvent::IpcReady to wake the event loop.
-        let ipc_proxy = self.proxy.clone();
-        let ipc_waker: crate::ipc::server::IpcWaker = std::sync::Arc::new(move || {
-            let _ = ipc_proxy.send_event(AppEvent::IpcReady);
-        });
-        match crate::ipc::server::IpcServer::start_with_port_file(self.port_file.take(), Some(ipc_waker)) {
-            Ok(ipc) => {
-                tracing::info!("IPC server started on port {}", ipc.port());
-                self.ipc_server = Some(ipc);
-            }
-            Err(e) => {
-                tracing::warn!("Failed to start IPC server: {}", e);
-            }
-        }
-
-        self.window = Some(window);
-        self.gpu = Some(gpu);
-        self.state = Some(state);
+        self.init_app_state(window, gpu, init_settings);
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
@@ -406,6 +366,39 @@ impl ApplicationHandler<AppEvent> for App {
                 }
             }
             WindowEvent::RedrawRequested => {
+                // Shell setup mode: render only the setup dialog
+                if self.shell_setup_mode {
+                    if let (Some(gpu), Some(window)) = (&mut self.gpu, &self.window) {
+                        let result = gpu.render_shell_setup(
+                            window,
+                            &mut self.shell_setup_path,
+                        );
+                        match result {
+                            Ok(crate::gpu::ShellSetupAction::None) => {}
+                            Ok(crate::gpu::ShellSetupAction::Confirmed) => {
+                                // Save the shell path and initialize app
+                                let mut settings = crate::settings::Settings::load();
+                                settings.general.shell = self.shell_setup_path.clone();
+                                if let Err(e) = settings.save() {
+                                    tracing::error!("failed to save settings: {e}");
+                                }
+                                self.shell_setup_mode = false;
+                                let window = self.window.take().unwrap();
+                                let gpu = self.gpu.take().unwrap();
+                                self.init_app_state(window, gpu, settings);
+                                self.mark_dirty();
+                            }
+                            Ok(crate::gpu::ShellSetupAction::Exit) => {
+                                event_loop.exit();
+                            }
+                            Err(e) => {
+                                tracing::warn!("shell setup render error: {e}");
+                            }
+                        }
+                    }
+                    return;
+                }
+
                 // Process IPC commands
                 self.process_ipc();
 
