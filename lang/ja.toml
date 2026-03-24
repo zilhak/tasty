@@ -31,6 +31,7 @@ language = "言語"
 [settings.general]
 heading = "一般"
 shell_label = "シェル:"
+shell_not_found = "⚠ Git Bashが見つかりません。Git for Windowsをインストールするか、bashのパスを手動で設定してください。"
 startup_command_label = "起動コマンド:"
 
 [settings.appearance]

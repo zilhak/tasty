@@ -31,6 +31,7 @@ language = "Language"
 [settings.general]
 heading = "General"
 shell_label = "Shell:"
+shell_not_found = "⚠ Git Bash not found. Please install Git for Windows or set the path to bash manually."
 startup_command_label = "Startup command:"
 
 [settings.appearance]

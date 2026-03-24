@@ -31,6 +31,7 @@ language = "언어"
 [settings.general]
 heading = "일반"
 shell_label = "셸:"
+shell_not_found = "⚠ Git Bash를 찾을 수 없습니다. Git for Windows를 설치하거나 bash 경로를 직접 설정해 주세요."
 startup_command_label = "시작 명령어:"
 
 [settings.appearance]

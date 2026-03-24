@@ -79,8 +79,18 @@ impl AppState {
         let pane_id = next_ids.next_pane();
         let tab_id = next_ids.next_tab();
         let surface_id = next_ids.next_surface();
-        let shell = if settings.general.shell.is_empty() { None } else { Some(settings.general.shell.as_str()) };
-        let ws = Workspace::new_with_shell(ws_id, "Workspace 1".to_string(), cols, rows, pane_id, tab_id, surface_id, shell, waker.clone())?;
+
+        // If the configured shell is missing, fall back to system default
+        // but force the settings dialog open so the user can fix it.
+        let shell_missing = !settings.general.is_shell_valid();
+        let effective_shell = if shell_missing {
+            tracing::warn!("bash not found; falling back to system shell and opening settings");
+            None // Terminal::new_with_shell(None) uses platform default
+        } else {
+            Some(settings.general.shell.as_str())
+        };
+        let ws = Workspace::new_with_shell(ws_id, "Workspace 1".to_string(), cols, rows, pane_id, tab_id, surface_id, effective_shell, waker.clone())?;
+
         let sidebar_width = settings.appearance.sidebar_width;
         Ok(Self {
             workspaces: vec![ws],
@@ -91,7 +101,7 @@ impl AppState {
             notifications: NotificationStore::with_coalesce_ms(settings.notification.coalesce_ms),
             notification_panel_open: false,
             settings,
-            settings_open: false,
+            settings_open: shell_missing,
             settings_ui_state: SettingsUiState::new(),
             hook_manager: HookManager::new(),
             sidebar_width,
