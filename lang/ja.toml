@@ -32,6 +32,9 @@ language = "言語"
 heading = "一般"
 shell_label = "シェル:"
 shell_not_found = "⚠ Git Bashが見つかりません。Git for Windowsをインストールするか、bashのパスを手動で設定してください。"
+shell_invalid_path = "✗  パスが見つからないか、bash/zsh実行ファイルではありません"
+shell_valid = "✓  有効なシェルが検出されました"
+setup_subtitle = "ターミナル設定"
 startup_command_label = "起動コマンド:"
 
 [settings.appearance]

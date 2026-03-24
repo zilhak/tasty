@@ -32,6 +32,9 @@ language = "Language"
 heading = "General"
 shell_label = "Shell:"
 shell_not_found = "⚠ Git Bash not found. Please install Git for Windows or set the path to bash manually."
+shell_invalid_path = "✗  Path not found or not a bash/zsh executable"
+shell_valid = "✓  Valid shell detected"
+setup_subtitle = "Terminal Setup"
 startup_command_label = "Startup command:"
 
 [settings.appearance]

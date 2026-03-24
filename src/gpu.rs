@@ -186,45 +186,207 @@ impl GpuState {
         let mut action = ShellSetupAction::None;
 
         let full_output = self.egui_ctx.run(raw_input, |ctx| {
-            let is_valid = !shell_path.is_empty() && std::path::Path::new(shell_path.as_str()).exists();
+            let path_obj = std::path::Path::new(shell_path.as_str());
+            let file_name = path_obj
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("")
+                .to_ascii_lowercase();
+            let is_valid = !shell_path.is_empty()
+                && path_obj.exists()
+                && (file_name.contains("bash") || file_name.contains("zsh"));
+            let show_error = !shell_path.is_empty() && !is_valid;
 
-            egui::CentralPanel::default().show(ctx, |ui| {
-                ui.vertical_centered(|ui| {
-                    ui.add_space(ui.available_height() * 0.3);
+            // Palette
+            let bg_panel   = egui::Color32::from_rgb(18, 18, 22);
+            let bg_card    = egui::Color32::from_rgb(26, 26, 32);
+            let border     = egui::Color32::from_rgb(52, 52, 64);
+            let text_dim   = egui::Color32::from_rgb(140, 140, 160);
+            let amber      = egui::Color32::from_rgb(230, 170, 60);
+            let red_err    = egui::Color32::from_rgb(220, 80, 80);
+            let accent_ok  = egui::Color32::from_rgb(80, 180, 120);
+            let accent_dis = egui::Color32::from_rgb(55, 65, 75);
 
-                    ui.heading(
-                        egui::RichText::new("Tasty")
-                            .size(28.0)
-                            .strong(),
-                    );
-                    ui.add_space(16.0);
+            let mut style = (*ctx.style()).clone();
+            style.visuals.panel_fill = bg_panel;
+            style.visuals.window_fill = bg_card;
+            style.visuals.window_stroke = egui::Stroke::new(1.0, border);
+            style.visuals.widgets.inactive.bg_fill   = egui::Color32::from_rgb(36, 36, 44);
+            style.visuals.widgets.inactive.bg_stroke  = egui::Stroke::new(1.0, border);
+            style.visuals.widgets.hovered.bg_fill    = egui::Color32::from_rgb(44, 44, 56);
+            style.visuals.widgets.hovered.bg_stroke   = egui::Stroke::new(1.0, egui::Color32::from_rgb(80, 80, 100));
+            style.visuals.widgets.active.bg_fill     = egui::Color32::from_rgb(50, 50, 64);
+            style.visuals.override_text_color = Some(egui::Color32::from_rgb(220, 220, 230));
+            style.spacing.item_spacing = egui::vec2(8.0, 6.0);
+            ctx.set_style(style);
 
-                    ui.label(
-                        egui::RichText::new(t("settings.general.shell_not_found"))
-                            .size(14.0)
-                            .color(egui::Color32::from_rgb(220, 160, 60)),
-                    );
-                    ui.add_space(16.0);
+            egui::CentralPanel::default()
+                .frame(egui::Frame::new().fill(bg_panel))
+                .show(ctx, |ui| {
+                    // Center the card both axes
+                    let card_w = 480.0_f32;
+                    let card_h_approx = 280.0_f32;
+                    let available = ui.available_size();
+                    let x_offset = ((available.x - card_w) * 0.5).max(0.0);
+                    let y_offset = ((available.y - card_h_approx) * 0.5).max(0.0);
 
-                    ui.label(t("settings.general.shell_label"));
-                    let response = ui.add_sized(
-                        [400.0, 24.0],
-                        egui::TextEdit::singleline(shell_path)
-                            .hint_text("C:/Program Files/Git/bin/bash.exe"),
-                    );
-
-                    ui.add_space(12.0);
+                    ui.add_space(y_offset);
                     ui.horizontal(|ui| {
-                        let confirm = ui.add_enabled(is_valid, egui::Button::new("OK"));
-                        if confirm.clicked() || (response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) && is_valid) {
-                            action = ShellSetupAction::Confirmed;
-                        }
-                        if ui.button(t("button.cancel")).clicked() {
-                            action = ShellSetupAction::Exit;
-                        }
+                        ui.add_space(x_offset);
+
+                        egui::Frame::new()
+                            .fill(bg_card)
+                            .stroke(egui::Stroke::new(1.0, border))
+                            .corner_radius(egui::CornerRadius::same(10))
+                            .inner_margin(egui::Margin::symmetric(32, 28))
+                            .shadow(egui::Shadow {
+                                offset: [0, 8],
+                                blur: 24,
+                                spread: 0,
+                                color: egui::Color32::from_black_alpha(80),
+                            })
+                            .show(ui, |ui| {
+                                ui.set_width(card_w - 64.0); // subtract inner_margin * 2
+
+                                // ── Title ──────────────────────────────────────
+                                ui.vertical_centered(|ui| {
+                                    ui.label(
+                                        egui::RichText::new("Tasty")
+                                            .size(30.0)
+                                            .strong()
+                                            .color(egui::Color32::from_rgb(240, 240, 248)),
+                                    );
+                                    ui.add_space(2.0);
+                                    ui.label(
+                                        egui::RichText::new(t("settings.general.setup_subtitle"))
+                                            .size(11.0)
+                                            .color(text_dim),
+                                    );
+                                });
+
+                                ui.add_space(20.0);
+                                ui.add(egui::Separator::default().shrink(0.0));
+                                ui.add_space(16.0);
+
+                                // ── Warning ────────────────────────────────────
+                                egui::Frame::new()
+                                    .fill(egui::Color32::from_rgb(40, 32, 18))
+                                    .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(80, 60, 20)))
+                                    .corner_radius(egui::CornerRadius::same(6))
+                                    .inner_margin(egui::Margin::symmetric(12, 10))
+                                    .show(ui, |ui| {
+                                        ui.label(
+                                            egui::RichText::new(t("settings.general.shell_not_found"))
+                                                .size(12.5)
+                                                .color(amber),
+                                        );
+                                    });
+
+                                ui.add_space(18.0);
+
+                                // ── Input row ──────────────────────────────────
+                                ui.label(
+                                    egui::RichText::new(t("settings.general.shell_label"))
+                                        .size(12.0)
+                                        .color(text_dim),
+                                );
+                                ui.add_space(4.0);
+
+                                let input_w = card_w - 64.0;
+                                let response = ui.add_sized(
+                                    [input_w, 32.0],
+                                    egui::TextEdit::singleline(shell_path)
+                                        .hint_text("C:/Program Files/Git/bin/bash.exe")
+                                        .font(egui::TextStyle::Monospace),
+                                );
+
+                                // ── Error / success hint ───────────────────────
+                                if show_error {
+                                    ui.add_space(4.0);
+                                    ui.label(
+                                        egui::RichText::new(t("settings.general.shell_invalid_path"))
+                                            .size(11.5)
+                                            .color(red_err),
+                                    );
+                                } else if is_valid {
+                                    ui.add_space(4.0);
+                                    ui.label(
+                                        egui::RichText::new(t("settings.general.shell_valid"))
+                                            .size(11.5)
+                                            .color(accent_ok),
+                                    );
+                                } else {
+                                    ui.add_space(4.0 + 16.0); // reserve same vertical space
+                                }
+
+                                ui.add_space(20.0);
+
+                                // ── Buttons ────────────────────────────────────
+                                ui.vertical_centered(|ui| {
+                                    ui.horizontal(|ui| {
+                                        let btn_w = 110.0;
+                                        let btn_h = 34.0;
+                                        let gap   = 10.0;
+                                        let total  = btn_w * 2.0 + gap;
+                                        let side   = ((input_w - total) * 0.5).max(0.0);
+                                        ui.add_space(side);
+
+                                        // Cancel
+                                        let cancel_btn = egui::Button::new(
+                                            egui::RichText::new(t("button.cancel"))
+                                                .size(13.0)
+                                                .color(text_dim),
+                                        )
+                                        .min_size(egui::vec2(btn_w, btn_h))
+                                        .fill(egui::Color32::from_rgb(34, 34, 42))
+                                        .stroke(egui::Stroke::new(1.0, border))
+                                        .corner_radius(egui::CornerRadius::same(6));
+
+                                        if ui.add(cancel_btn).clicked() {
+                                            action = ShellSetupAction::Exit;
+                                        }
+
+                                        ui.add_space(gap);
+
+                                        // OK
+                                        let (ok_fill, ok_stroke, ok_text_color) = if is_valid {
+                                            (
+                                                egui::Color32::from_rgb(50, 130, 90),
+                                                egui::Stroke::new(1.0, egui::Color32::from_rgb(70, 160, 110)),
+                                                egui::Color32::from_rgb(220, 248, 230),
+                                            )
+                                        } else {
+                                            (
+                                                accent_dis,
+                                                egui::Stroke::new(1.0, egui::Color32::from_rgb(60, 70, 80)),
+                                                egui::Color32::from_rgb(100, 110, 120),
+                                            )
+                                        };
+
+                                        let ok_btn = egui::Button::new(
+                                            egui::RichText::new("OK")
+                                                .size(13.0)
+                                                .strong()
+                                                .color(ok_text_color),
+                                        )
+                                        .min_size(egui::vec2(btn_w, btn_h))
+                                        .fill(ok_fill)
+                                        .stroke(ok_stroke)
+                                        .corner_radius(egui::CornerRadius::same(6));
+
+                                        let ok_resp = ui.add_enabled(is_valid, ok_btn);
+                                        if ok_resp.clicked()
+                                            || (response.lost_focus()
+                                                && ui.input(|i| i.key_pressed(egui::Key::Enter))
+                                                && is_valid)
+                                        {
+                                            action = ShellSetupAction::Confirmed;
+                                        }
+                                    });
+                                });
+                            });
                     });
                 });
-            });
         });
 
         self.egui_state

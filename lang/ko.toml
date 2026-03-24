@@ -32,6 +32,9 @@ language = "언어"
 heading = "일반"
 shell_label = "셸:"
 shell_not_found = "⚠ Git Bash를 찾을 수 없습니다. Git for Windows를 설치하거나 bash 경로를 직접 설정해 주세요."
+shell_invalid_path = "✗  경로를 찾을 수 없거나 bash/zsh 실행파일이 아닙니다"
+shell_valid = "✓  유효한 셸이 감지되었습니다"
+setup_subtitle = "터미널 설정"
 startup_command_label = "시작 명령어:"
 
 [settings.appearance]
