@@ -80,10 +80,10 @@ impl ApplicationHandler<AppEvent> for App {
                 event_loop.exit();
             }
             WindowEvent::Resized(new_size) => {
-                if let (Some(gpu), Some(state)) = (&mut self.gpu, &mut self.state) {
+                if let Some(gpu) = &mut self.gpu {
                     gpu.resize(new_size);
-
-                    // Resize terminal grid to match new window (accounting for sidebar)
+                }
+                if let (Some(gpu), Some(state)) = (&self.gpu, &mut self.state) {
                     let terminal_rect = Self::compute_terminal_rect_with_sidebar(gpu, state.sidebar_width);
                     let (cols, rows) = gpu.grid_size_for_rect(&terminal_rect);
                     let cw = gpu.cell_width();
