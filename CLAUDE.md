@@ -90,9 +90,44 @@ s.close()
 
 `process.kill()`은 Windows에서 자식 프로세스를 종료하지 않는다. 프로세스 트리 전체를 종료하려면 `taskkill /F /T /PID`를 사용해야 한다. 테스트 harness의 Drop에서 이미 적용되어 있다.
 
-### GUI 수동 테스트 (스크린샷 캡처)
+### Tasty IPC를 통한 조작
 
-GUI를 직접 확인하려면 앱을 백그라운드 실행 후 PowerShell로 스크린샷을 찍는다.
+Tasty는 AI가 조작 가능한 터미널이다. 정상 모드(터미널이 뜬 상태)에서는 IPC 서버가 자동으로 뜨며, 포트 파일(`~/.config/tasty/tasty.port`)을 통해 접속할 수 있다. Claude Code 등 터미널 안에서 동작하는 AI도 IPC로 Tasty를 제어할 수 있다.
+
+**IPC 조작 예시 (Python)**:
+```python
+import socket, json
+port = int(open(os.path.expanduser("~/.config/tasty/tasty.port")).read().strip())
+s = socket.socket()
+s.connect(('127.0.0.1', port))
+# 스크린샷
+s.sendall((json.dumps({"jsonrpc":"2.0","id":1,"method":"ui.screenshot","params":{"path":"capture.png"}}) + '\n').encode())
+# 키 입력
+s.sendall((json.dumps({"jsonrpc":"2.0","id":2,"method":"surface.send_key","params":{"key":"ls\r"}}) + '\n').encode())
+```
+
+**CLI 조작 예시**:
+```bash
+tasty list                          # 워크스페이스 목록
+tasty send "hello"                  # 텍스트 전송
+tasty send-key "enter"              # 키 입력
+tasty notify --title "Done"         # 알림
+```
+
+### GUI 테스트 시 스크린샷 방법
+
+| 상태 | 방법 |
+|------|------|
+| 정상 모드 (IPC 사용 가능) | `ui.screenshot` IPC 호출 — Tasty 자체 렌더링만 캡처 |
+| 셸 설정 모드 (IPC 없음) | PowerShell `CopyFromScreen` — OS 전체 화면 캡처 |
+
+**방법 1: IPC `ui.screenshot` (정상 모드, 권장)**
+```bash
+# CLI로 한 줄
+tasty screenshot --path ./capture.png
+```
+
+**방법 2: PowerShell OS 캡처 (IPC 없을 때 폴백)**
 
 1. **프로세스 종료**: bash의 `taskkill`은 `/F` 플래그가 경로와 충돌한다. PowerShell을 사용할 것.
    ```bash
