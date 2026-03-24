@@ -224,8 +224,8 @@ impl GpuState {
                 .frame(egui::Frame::new().fill(bg_panel))
                 .show(ctx, |ui| {
                     // Center the card both axes
-                    let card_w = 480.0_f32;
-                    let card_h_approx = 280.0_f32;
+                    let card_w = 520.0_f32;
+                    let card_h_approx = 300.0_f32;
                     let available = ui.available_size();
                     let x_offset = ((available.x - card_w) * 0.5).max(0.0);
                     let y_offset = ((available.y - card_h_approx) * 0.5).max(0.0);
@@ -246,7 +246,9 @@ impl GpuState {
                                 color: egui::Color32::from_black_alpha(80),
                             })
                             .show(ui, |ui| {
-                                ui.set_width(card_w - 64.0); // subtract inner_margin * 2
+                                let content_w = card_w - 64.0;
+                                ui.set_min_width(content_w);
+                                ui.set_max_width(content_w);
 
                                 // ── Title ──────────────────────────────────────
                                 ui.vertical_centered(|ui| {
@@ -275,10 +277,13 @@ impl GpuState {
                                     .corner_radius(egui::CornerRadius::same(6))
                                     .inner_margin(egui::Margin::symmetric(12, 10))
                                     .show(ui, |ui| {
-                                        ui.label(
-                                            egui::RichText::new(t("settings.general.shell_not_found"))
-                                                .size(12.5)
-                                                .color(amber),
+                                        ui.set_max_width(content_w - 24.0); // subtract Frame inner_margin
+                                        ui.add(
+                                            egui::Label::new(
+                                                egui::RichText::new(t("settings.general.shell_not_found"))
+                                                    .size(12.5)
+                                                    .color(amber),
+                                            ).wrap(),
                                         );
                                     });
 
@@ -292,7 +297,7 @@ impl GpuState {
                                 );
                                 ui.add_space(4.0);
 
-                                let input_w = card_w - 64.0;
+                                let input_w = content_w;
                                 let response = ui.add_sized(
                                     [input_w, 32.0],
                                     egui::TextEdit::singleline(shell_path)
