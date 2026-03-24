@@ -126,9 +126,30 @@ impl GeneralSettings {
         }
     }
 
-    /// Returns true if the configured shell path is valid.
+    /// Returns true if the configured shell path points to an existing bash-compatible shell.
+    /// On Windows, the filename must contain "bash" (e.g. bash.exe).
+    /// On Unix, any existing shell is accepted (zsh, bash, fish, sh).
     pub fn is_shell_valid(&self) -> bool {
-        !self.shell.is_empty() && std::path::Path::new(&self.shell).exists()
+        if self.shell.is_empty() {
+            return false;
+        }
+        let path = std::path::Path::new(&self.shell);
+        if !path.exists() {
+            return false;
+        }
+        #[cfg(windows)]
+        {
+            // On Windows, only accept bash-compatible shells
+            let filename = path.file_name()
+                .and_then(|f| f.to_str())
+                .unwrap_or("")
+                .to_ascii_lowercase();
+            filename.contains("bash") || filename.contains("zsh")
+        }
+        #[cfg(not(windows))]
+        {
+            true
+        }
     }
 }
 
