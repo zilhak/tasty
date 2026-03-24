@@ -87,16 +87,74 @@ impl Default for GeneralSettings {
 }
 
 impl GeneralSettings {
-    /// Detect the platform default shell from environment variables.
+    /// Detect the best available shell. Prefers Git Bash over cmd.exe on Windows.
     pub fn detect_shell() -> String {
+        let shells = Self::detect_available_shells();
+        shells.into_iter().next().map(|(_, path)| path).unwrap_or_else(|| "cmd.exe".to_string())
+    }
+
+    /// Return all detected shells as (display_name, path) pairs, ordered by preference.
+    pub fn detect_available_shells() -> Vec<(String, String)> {
+        let mut shells = Vec::new();
+
         #[cfg(windows)]
         {
-            std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".to_string())
+            // Git Bash — check common install paths
+            let git_bash_candidates = [
+                std::env::var("ProgramFiles")
+                    .map(|p| format!("{}/Git/bin/bash.exe", p))
+                    .unwrap_or_default(),
+                "C:/Program Files/Git/bin/bash.exe".to_string(),
+                "C:/Program Files (x86)/Git/bin/bash.exe".to_string(),
+            ];
+            for path in &git_bash_candidates {
+                if !path.is_empty() && std::path::Path::new(path).exists() {
+                    shells.push(("Git Bash".to_string(), path.clone()));
+                    break;
+                }
+            }
+
+            // PowerShell (pwsh = PowerShell 7+, fallback to Windows PowerShell)
+            if let Ok(output) = std::process::Command::new("where").arg("pwsh.exe").output() {
+                if output.status.success() {
+                    let path = String::from_utf8_lossy(&output.stdout).lines().next().unwrap_or("").trim().to_string();
+                    if !path.is_empty() {
+                        shells.push(("PowerShell".to_string(), path));
+                    }
+                }
+            }
+            let ps_path = "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe";
+            if std::path::Path::new(ps_path).exists() && !shells.iter().any(|(n, _)| n == "PowerShell") {
+                shells.push(("PowerShell".to_string(), ps_path.to_string()));
+            }
+
+            // cmd.exe
+            let cmd = std::env::var("COMSPEC").unwrap_or_else(|_| "C:/Windows/System32/cmd.exe".to_string());
+            shells.push(("CMD".to_string(), cmd));
         }
+
         #[cfg(not(windows))]
         {
-            std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string())
+            // Check common Unix shells
+            for (name, path) in &[
+                ("Zsh", "/bin/zsh"),
+                ("Bash", "/bin/bash"),
+                ("Fish", "/usr/bin/fish"),
+                ("Sh", "/bin/sh"),
+            ] {
+                if std::path::Path::new(path).exists() {
+                    shells.push((name.to_string(), path.to_string()));
+                }
+            }
+            // Also include $SHELL if not already listed
+            if let Ok(user_shell) = std::env::var("SHELL") {
+                if !shells.iter().any(|(_, p)| p == &user_shell) {
+                    shells.insert(0, ("Default".to_string(), user_shell));
+                }
+            }
         }
+
+        shells
     }
 }
 

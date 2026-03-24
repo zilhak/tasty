@@ -1,5 +1,5 @@
 use crate::i18n::t;
-use crate::settings::Settings;
+use crate::settings::{GeneralSettings, Settings};
 
 /// Active tab in the settings window.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -130,12 +130,28 @@ fn draw_general_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     ui.heading(t("settings.general.heading"));
     ui.add_space(4.0);
 
+    let available_shells = GeneralSettings::detect_available_shells();
+
     egui::Grid::new("general_grid")
         .num_columns(2)
         .spacing([12.0, 8.0])
         .show(ui, |ui| {
             ui.label(t("settings.general.shell_label"));
-            ui.text_edit_singleline(&mut settings.general.shell);
+            let current_display = available_shells
+                .iter()
+                .find(|(_, path)| path == &settings.general.shell)
+                .map(|(name, _)| name.as_str())
+                .unwrap_or_else(|| {
+                    if settings.general.shell.is_empty() { "Default" } else { &settings.general.shell }
+                });
+            egui::ComboBox::from_id_salt("shell_select")
+                .selected_text(current_display)
+                .show_ui(ui, |ui| {
+                    for (name, path) in &available_shells {
+                        let label = format!("{} ({})", name, path);
+                        ui.selectable_value(&mut settings.general.shell, path.clone(), label);
+                    }
+                });
             ui.end_row();
 
             ui.label(t("settings.general.startup_command_label"));
