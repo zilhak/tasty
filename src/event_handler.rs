@@ -173,6 +173,20 @@ impl ApplicationHandler<AppEvent> for App {
                         // which can contain unexpected control characters
                         // (e.g. Backspace → \x7f or \x08 depending on platform).
                         let app_cursor = terminal.application_cursor_keys();
+                        let is_alt_screen = terminal.is_alternate_screen();
+
+                        // Check if this key will be used for scrollback (not sent to PTY)
+                        let is_scrollback_key = !is_alt_screen && matches!(
+                            event.logical_key.as_ref(),
+                            Key::Named(NamedKey::PageUp) | Key::Named(NamedKey::PageDown)
+                        );
+
+                        // Any keyboard input that goes to PTY resets scroll to bottom
+                        if !is_scrollback_key && terminal.scroll_offset > 0 {
+                            terminal.scroll_to_bottom();
+                            self.dirty = true;
+                        }
+
                         match event.logical_key.as_ref() {
                             Key::Named(NamedKey::Enter) => terminal.send_bytes(b"\r"),
                             Key::Named(NamedKey::Backspace) => terminal.send_bytes(b"\x7f"),
@@ -202,8 +216,22 @@ impl ApplicationHandler<AppEvent> for App {
                             }
                             Key::Named(NamedKey::Home) => terminal.send_bytes(b"\x1b[H"),
                             Key::Named(NamedKey::End) => terminal.send_bytes(b"\x1b[F"),
-                            Key::Named(NamedKey::PageUp) => terminal.send_bytes(b"\x1b[5~"),
-                            Key::Named(NamedKey::PageDown) => terminal.send_bytes(b"\x1b[6~"),
+                            Key::Named(NamedKey::PageUp) => {
+                                if terminal.is_alternate_screen() {
+                                    terminal.send_bytes(b"\x1b[5~");
+                                } else {
+                                    terminal.scroll_up(terminal.rows());
+                                    self.dirty = true;
+                                }
+                            }
+                            Key::Named(NamedKey::PageDown) => {
+                                if terminal.is_alternate_screen() {
+                                    terminal.send_bytes(b"\x1b[6~");
+                                } else {
+                                    terminal.scroll_down(terminal.rows());
+                                    self.dirty = true;
+                                }
+                            }
                             Key::Named(NamedKey::Insert) => terminal.send_bytes(b"\x1b[2~"),
                             Key::Named(NamedKey::Delete) => terminal.send_bytes(b"\x1b[3~"),
                             Key::Named(NamedKey::F1) => terminal.send_bytes(b"\x1bOP"),
@@ -362,14 +390,25 @@ impl ApplicationHandler<AppEvent> for App {
                                     (pos.y / 20.0) as i32
                                 }
                             };
-                            if lines > 0 {
-                                for _ in 0..lines.unsigned_abs() {
-                                    terminal.send_bytes(b"\x1b[A");
+                            if terminal.is_alternate_screen() {
+                                // In alternate screen (vim, less, etc.) - send to PTY
+                                if lines > 0 {
+                                    for _ in 0..lines.unsigned_abs() {
+                                        terminal.send_bytes(b"\x1b[A");
+                                    }
+                                } else if lines < 0 {
+                                    for _ in 0..lines.unsigned_abs() {
+                                        terminal.send_bytes(b"\x1b[B");
+                                    }
                                 }
-                            } else if lines < 0 {
-                                for _ in 0..lines.unsigned_abs() {
-                                    terminal.send_bytes(b"\x1b[B");
+                            } else {
+                                // Normal mode - scroll the scrollback buffer
+                                if lines > 0 {
+                                    terminal.scroll_up(lines as usize);
+                                } else if lines < 0 {
+                                    terminal.scroll_down((-lines) as usize);
                                 }
+                                self.dirty = true;
                             }
                         }
                     }

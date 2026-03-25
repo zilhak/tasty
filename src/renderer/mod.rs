@@ -1,3 +1,4 @@
+use termwiz::cell::CellAttributes;
 use termwiz::surface::Surface;
 
 use crate::font::{FontConfig, GlyphAtlas, GlyphKey};
@@ -450,6 +451,195 @@ impl CellRenderer {
         queue.write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
 
         self.prepare_with_bg(surface, queue, default_bg);
+    }
+
+    /// Prepare instance data for a terminal with scrollback support.
+    /// When scroll_offset > 0, mixes scrollback lines with surface lines.
+    pub fn prepare_terminal_viewport(
+        &mut self,
+        terminal: &tasty_terminal::Terminal,
+        queue: &wgpu::Queue,
+        viewport: &Rect,
+        screen_width: u32,
+        screen_height: u32,
+        default_bg: [f32; 4],
+    ) {
+        let uniforms = Uniforms {
+            cell_size: [
+                self.font_config.metrics.cell_width,
+                self.font_config.metrics.cell_height,
+            ],
+            grid_offset: [viewport.x + 4.0, viewport.y + 4.0],
+            viewport_size: [screen_width as f32, screen_height as f32],
+            _padding: [0.0; 2],
+        };
+        queue.write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
+
+        if terminal.scroll_offset == 0 {
+            // No scrollback active - use normal surface rendering
+            self.prepare_with_bg(terminal.surface(), queue, default_bg);
+            return;
+        }
+
+        // Scrolled back - mix scrollback buffer + surface lines
+        let (cols, rows) = terminal.surface().dimensions();
+        let scroll_offset = terminal.scroll_offset;
+        let scrollback_len = terminal.scrollback_len();
+        let surface_lines = terminal.surface().screen_lines();
+
+        self.bg_instances.clear();
+        self.glyph_instances.clear();
+
+        for row_idx in 0..rows {
+            // Which source line to show at this display row?
+            // source_line indexes into: [scrollback_0 .. scrollback_N-1, surface_0 .. surface_M-1]
+            let source_line = scrollback_len as isize - scroll_offset as isize + row_idx as isize;
+
+            if source_line < 0 {
+                // Before start of scrollback - render empty row with default bg
+                for col_idx in 0..cols {
+                    self.bg_instances.push(BgInstance {
+                        pos: [col_idx as f32, row_idx as f32],
+                        bg_color: default_bg,
+                    });
+                }
+                continue;
+            }
+            let source_line = source_line as usize;
+
+            if source_line < scrollback_len {
+                // From scrollback buffer
+                if let Some(line) = terminal.scrollback_line(source_line) {
+                    self.render_scrollback_line(line, row_idx, cols, default_bg, queue);
+                }
+            } else {
+                // From current surface
+                let surface_row = source_line - scrollback_len;
+                if surface_row < surface_lines.len() {
+                    self.render_surface_line(&surface_lines[surface_row], row_idx, cols, default_bg, queue);
+                }
+            }
+        }
+
+        let bg_count = self.bg_instances.len().min(self.max_instances);
+        let glyph_count = self.glyph_instances.len().min(self.max_instances);
+
+        if bg_count > 0 {
+            queue.write_buffer(
+                &self.bg_instance_buffer,
+                0,
+                bytemuck::cast_slice(&self.bg_instances[..bg_count]),
+            );
+        }
+        if glyph_count > 0 {
+            queue.write_buffer(
+                &self.glyph_instance_buffer,
+                0,
+                bytemuck::cast_slice(&self.glyph_instances[..glyph_count]),
+            );
+        }
+
+        self.bg_instance_count = bg_count as u32;
+        self.glyph_instance_count = glyph_count as u32;
+    }
+
+    /// Render a single scrollback line (stored as Vec<(String, CellAttributes)>).
+    fn render_scrollback_line(
+        &mut self,
+        line: &[(String, CellAttributes)],
+        row_idx: usize,
+        cols: usize,
+        default_bg: [f32; 4],
+        queue: &wgpu::Queue,
+    ) {
+        for (col_idx, (text, attrs)) in line.iter().enumerate() {
+            if col_idx >= cols {
+                break;
+            }
+            let bg_color = color_attr_to_rgba(&attrs.background(), default_bg);
+            let fg_color = color_attr_to_rgba(&attrs.foreground(), DEFAULT_FG);
+
+            self.bg_instances.push(BgInstance {
+                pos: [col_idx as f32, row_idx as f32],
+                bg_color,
+            });
+
+            if text.is_empty() || text == " " {
+                continue;
+            }
+
+            let ch = match text.chars().next() {
+                Some(c) => c,
+                None => continue,
+            };
+            let bold = attrs.intensity() == termwiz::cell::Intensity::Bold;
+            let italic = attrs.italic();
+
+            let key = GlyphKey { ch, bold, italic };
+
+            if let Some(entry) = self.atlas.get_or_insert(key, &mut self.font_config, queue) {
+                if entry.width > 0.0 && entry.height > 0.0 {
+                    self.glyph_instances.push(GlyphInstance {
+                        pos: [col_idx as f32, row_idx as f32],
+                        uv_offset: [entry.uv_x, entry.uv_y],
+                        uv_size: [entry.uv_w, entry.uv_h],
+                        fg_color,
+                        glyph_offset: [entry.offset_x, entry.offset_y],
+                        glyph_size: [entry.width, entry.height],
+                    });
+                }
+            }
+        }
+    }
+
+    /// Render a single surface line (from termwiz screen_lines).
+    fn render_surface_line(
+        &mut self,
+        line: &termwiz::surface::line::Line,
+        row_idx: usize,
+        cols: usize,
+        default_bg: [f32; 4],
+        queue: &wgpu::Queue,
+    ) {
+        for cell_ref in line.visible_cells() {
+            let col_idx = cell_ref.cell_index();
+            if col_idx >= cols {
+                break;
+            }
+
+            let attrs = cell_ref.attrs();
+            let bg_color = color_attr_to_rgba(&attrs.background(), default_bg);
+            let fg_color = color_attr_to_rgba(&attrs.foreground(), DEFAULT_FG);
+
+            self.bg_instances.push(BgInstance {
+                pos: [col_idx as f32, row_idx as f32],
+                bg_color,
+            });
+
+            let text = cell_ref.str();
+            if text.is_empty() || text == " " {
+                continue;
+            }
+
+            let ch = text.chars().next().unwrap();
+            let bold = attrs.intensity() == termwiz::cell::Intensity::Bold;
+            let italic = attrs.italic();
+
+            let key = GlyphKey { ch, bold, italic };
+
+            if let Some(entry) = self.atlas.get_or_insert(key, &mut self.font_config, queue) {
+                if entry.width > 0.0 && entry.height > 0.0 {
+                    self.glyph_instances.push(GlyphInstance {
+                        pos: [col_idx as f32, row_idx as f32],
+                        uv_offset: [entry.uv_x, entry.uv_y],
+                        uv_size: [entry.uv_w, entry.uv_h],
+                        fg_color,
+                        glyph_offset: [entry.offset_x, entry.offset_y],
+                        glyph_size: [entry.width, entry.height],
+                    });
+                }
+            }
+        }
     }
 
     /// Render with a scissor rect applied.

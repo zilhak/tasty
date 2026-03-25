@@ -220,6 +220,12 @@ fn draw_general_tab(ui: &mut egui::Ui, settings: &mut Settings) {
             ui.label(t("settings.general.startup_command_label"));
             ui.text_edit_singleline(&mut settings.general.startup_command);
             ui.end_row();
+
+            ui.label(t("settings.general.scrollback_lines_label"));
+            ui.add(egui::DragValue::new(&mut settings.general.scrollback_lines)
+                .range(0..=100000)
+                .speed(100));
+            ui.end_row();
         });
 }
 

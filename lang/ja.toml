@@ -42,6 +42,7 @@ shell_mode_fast = "高速起動 (Tasty rc)"
 shell_mode_custom = "カスタム"
 shell_args_label = "シェル引数:"
 startup_command_label = "起動コマンド:"
+scrollback_lines_label = "スクロールバック行数:"
 
 [settings.appearance]
 heading = "外観"

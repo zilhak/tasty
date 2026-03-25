@@ -588,8 +588,8 @@ impl GpuState {
                 } else {
                     crate::renderer::DEFAULT_BG
                 };
-                self.renderer.prepare_viewport_with_bg(
-                    terminal.surface(),
+                self.renderer.prepare_terminal_viewport(
+                    terminal,
                     &self.queue,
                     rect,
                     self.size.width,

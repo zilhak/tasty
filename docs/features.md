@@ -35,6 +35,16 @@
 - 특수 키 매핑: Enter, Backspace, Tab, Escape, 방향키, Home/End, PageUp/PageDown, Insert/Delete, F1~F12
 - DECCKM 모드에 따른 방향키 시퀀스 자동 전환: 일반 모드 `\x1b[{A..D}` / 애플리케이션 모드 `\x1bO{A..D}`
 
+### 스크롤백 버퍼
+- 화면 위로 스크롤된 줄을 `VecDeque`에 보관하여 이전 출력을 다시 볼 수 있음
+- 기본 10,000줄, 설정에서 0~100,000줄까지 조절 가능 (`scrollback_lines`)
+- 마우스 휠로 스크롤백 탐색 (일반 모드), PageUp/PageDown으로 페이지 단위 이동
+- 대체 화면(vim, less, htop 등)에서는 스크롤백 비활성 — 모든 입력이 PTY로 전달됨
+- 키보드 입력(타이핑) 시 자동으로 최하단(라이브 뷰)으로 복귀
+- 새 PTY 출력이 도착하면 자동으로 최하단으로 복귀
+- 스크롤 시 GPU 렌더러가 스크롤백 라인과 현재 화면 라인을 혼합하여 표시
+- `ScrollRegionUp`(전체 화면 스크롤)과 `\n`(커서가 하단에 있을 때) 발생 시 최상단 줄 캡처
+
 ### GPU 가속 렌더링
 - wgpu 기반 크로스 플랫폼 GPU 렌더링
 - `Arc<Window>` 기반 안전한 surface 생명주기 관리 (unsafe transmute 제거)
@@ -129,7 +139,7 @@
 - **클릭으로 Surface 포커스**: SurfaceGroup 내에서 특정 터미널을 클릭하면 해당 Surface가 포커스됨. `focus_surface_at_position()`으로 클릭 좌표에서 Surface ID를 찾아 전환
 - **디바이더 드래그로 분할 비율 조절**: Pane 또는 SurfaceGroup 분할 경계선을 마우스 드래그하여 비율 조정 (0.1~0.9 범위 클램프). `DividerDrag` 상태 머신으로 드래그 시작/이동/종료를 추적. 드래그 중 실시간 리사이즈 적용
 - **디바이더 호버 시 커서 변경**: 분할 경계선에 4px 이내로 마우스를 가져가면 커서가 리사이즈 아이콘으로 변경 (수직 분할: ColResize, 수평 분할: RowResize). 벗어나면 Default로 복귀
-- **마우스 스크롤**: 터미널 영역에서 마우스 휠을 사용하면 방향키 시퀀스(`\x1b[A`/`\x1b[B`)로 변환하여 터미널에 전달. LineDelta와 PixelDelta 모두 지원
+- **마우스 스크롤**: 일반 모드에서 마우스 휠은 스크롤백 버퍼를 탐색함. 대체 화면(vim, less 등)에서는 방향키 시퀀스(`\x1b[A`/`\x1b[B`)를 PTY에 전달. LineDelta와 PixelDelta 모두 지원
 - **egui와의 이벤트 충돌 방지**: egui가 이벤트를 소비한 경우 (사이드바, 설정 윈도우 등) 터미널에는 전달하지 않음
 - 관련 모델 메서드: `Rect::contains()`, `PaneNode::find_divider_at()`, `PaneNode::update_ratio_for_rect()`, `SurfaceGroupLayout::find_divider_at()`, `SurfaceGroupLayout::update_ratio_for_rect()`, `SurfaceGroupLayout::find_surface_at()`
 
@@ -193,7 +203,7 @@
 - 설정 파일이 없거나 파싱 실패 시 기본값으로 폴백
 
 ### 설정 카테고리
-- **General**: 셸 경로 (OS별 자동 감지: COMSPEC/SHELL), 시작 명령
+- **General**: 셸 경로 (OS별 자동 감지: COMSPEC/SHELL), 시작 명령, 스크롤백 줄 수 (기본 10,000)
 - **Appearance**: 폰트 패밀리 (기본값: 시스템 모노스페이스), 폰트 크기, 테마 (dark/light), 배경 투명도, 사이드바 너비
 - **Clipboard**: OS별 기본 활성화 (macOS: Alt+C/V, Linux: Ctrl+Shift+C/V, Windows: Ctrl+C/V)
 - **Notifications**: 알림 활성화, 시스템 알림, 사운드, 병합 간격(ms)

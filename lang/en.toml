@@ -42,6 +42,7 @@ shell_mode_fast = "Fast (Tasty rc)"
 shell_mode_custom = "Custom"
 shell_args_label = "Shell arguments:"
 startup_command_label = "Startup command:"
+scrollback_lines_label = "Scrollback lines:"
 
 [settings.appearance]
 heading = "Appearance"

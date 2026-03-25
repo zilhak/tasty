@@ -42,6 +42,7 @@ shell_mode_fast = "빠른 시작 (Tasty rc)"
 shell_mode_custom = "커스텀"
 shell_args_label = "셸 인자:"
 startup_command_label = "시작 명령어:"
+scrollback_lines_label = "스크롤백 줄 수:"
 
 [settings.appearance]
 heading = "외관"

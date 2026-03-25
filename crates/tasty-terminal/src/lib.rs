@@ -1,13 +1,15 @@
+use std::collections::VecDeque;
 use std::io::{Read, Write};
 use std::sync::{LazyLock, mpsc};
 use std::thread;
 
 use anyhow::Result;
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
+use termwiz::cell::CellAttributes;
 use termwiz::escape::csi::CSI;
 use termwiz::escape::parser::Parser;
 use termwiz::escape::Action;
-use termwiz::surface::Surface;
+use termwiz::surface::{Change, Surface};
 
 mod events;
 mod modes;
@@ -60,6 +62,13 @@ pub struct Terminal {
     pub(crate) focus_tracking: bool,
     /// Scroll region top/bottom (1-based inclusive, None = full screen).
     pub(crate) scroll_region: Option<(usize, usize)>,
+    /// Scrollback buffer: stores lines that scrolled off the top of the screen.
+    /// Each line is a vector of (character, CellAttributes) pairs.
+    scrollback: VecDeque<Vec<(String, CellAttributes)>>,
+    /// Maximum number of scrollback lines.
+    scrollback_limit: usize,
+    /// Current scroll offset (0 = at bottom/live, >0 = scrolled up).
+    pub scroll_offset: usize,
 }
 
 impl Terminal {
@@ -150,14 +159,19 @@ impl Terminal {
             sgr_mouse: false,
             focus_tracking: false,
             scroll_region: None,
+            scrollback: VecDeque::new(),
+            scrollback_limit: 10000,
+            scroll_offset: 0,
         })
     }
 
     /// Process pending PTY output. Returns true if surface changed.
     pub fn process(&mut self) -> bool {
         let mut changed = false;
+        let mut had_data = false;
 
         while let Ok(data) = self.action_rx.try_recv() {
+            had_data = true;
             // Accumulate raw bytes for read-mark API
             self.output_buffer.extend_from_slice(&data);
             // Trim to max size
@@ -186,11 +200,20 @@ impl Terminal {
                 let changes = self.action_to_changes(action);
                 if !changes.is_empty() {
                     for change in changes {
+                        // Capture lines before scroll (only on primary screen)
+                        if !self.use_alternate {
+                            self.capture_before_scroll(&change);
+                        }
                         self.surface_mut().add_change(change);
                     }
                     changed = true;
                 }
             }
+        }
+
+        // New output resets scroll to bottom
+        if had_data {
+            self.scroll_offset = 0;
         }
 
         // Check if the child process has exited (emit event once)
@@ -385,6 +408,86 @@ impl Terminal {
     /// Whether the alternate screen is active.
     pub fn is_alternate_screen(&self) -> bool {
         self.use_alternate
+    }
+
+    // ---- Scrollback buffer methods ----
+
+    /// Set the scrollback buffer limit.
+    pub fn set_scrollback_limit(&mut self, limit: usize) {
+        self.scrollback_limit = limit;
+        while self.scrollback.len() > self.scrollback_limit {
+            self.scrollback.pop_front();
+        }
+    }
+
+    /// Scroll up (towards older content).
+    pub fn scroll_up(&mut self, lines: usize) {
+        let max = self.scrollback.len();
+        self.scroll_offset = (self.scroll_offset + lines).min(max);
+    }
+
+    /// Scroll down (towards newer/live content).
+    pub fn scroll_down(&mut self, lines: usize) {
+        self.scroll_offset = self.scroll_offset.saturating_sub(lines);
+    }
+
+    /// Reset scroll position to the bottom (live view).
+    pub fn scroll_to_bottom(&mut self) {
+        self.scroll_offset = 0;
+    }
+
+    /// Number of lines in the scrollback buffer.
+    pub fn scrollback_len(&self) -> usize {
+        self.scrollback.len()
+    }
+
+    /// Get a specific scrollback line by index.
+    pub fn scrollback_line(&self, index: usize) -> Option<&Vec<(String, CellAttributes)>> {
+        self.scrollback.get(index)
+    }
+
+    /// Capture the top line(s) from the surface before a scroll change is applied.
+    fn capture_top_lines(&self, count: usize) -> Vec<Vec<(String, CellAttributes)>> {
+        let surface = self.surface();
+        let lines = surface.screen_lines();
+        let mut result = Vec::new();
+        for i in 0..count.min(lines.len()) {
+            let line: Vec<(String, CellAttributes)> = lines[i]
+                .visible_cells()
+                .map(|cell| (cell.str().to_string(), cell.attrs().clone()))
+                .collect();
+            result.push(line);
+        }
+        result
+    }
+
+    /// Inspect a change and capture scrollback lines before it's applied.
+    fn capture_before_scroll(&mut self, change: &Change) {
+        match change {
+            Change::ScrollRegionUp { first_row, scroll_count, .. } if *first_row == 0 => {
+                let captured = self.capture_top_lines(*scroll_count);
+                for line in captured {
+                    self.scrollback.push_back(line);
+                }
+                while self.scrollback.len() > self.scrollback_limit {
+                    self.scrollback.pop_front();
+                }
+            }
+            Change::Text(t) if t == "\n" => {
+                let (_, cy) = self.surface().cursor_position();
+                let bottom = self.scroll_region.map(|(_, b)| b).unwrap_or(self.rows - 1);
+                if cy >= bottom {
+                    let captured = self.capture_top_lines(1);
+                    for line in captured {
+                        self.scrollback.push_back(line);
+                    }
+                    while self.scrollback.len() > self.scrollback_limit {
+                        self.scrollback.pop_front();
+                    }
+                }
+            }
+            _ => {}
+        }
     }
 
     fn default_shell() -> String {

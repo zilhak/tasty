@@ -31,6 +31,8 @@ pub struct GeneralSettings {
     pub shell_args: String,
     pub startup_command: String,
     pub language: String,
+    /// Number of scrollback lines to keep.
+    pub scrollback_lines: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -129,6 +131,7 @@ impl Default for GeneralSettings {
             shell_args: String::new(),
             startup_command: String::new(),
             language: "en".to_string(),
+            scrollback_lines: 10000,
         }
     }
 }

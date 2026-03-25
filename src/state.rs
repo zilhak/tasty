@@ -159,8 +159,12 @@ impl AppState {
         }
     }
 
-    /// Send fast-mode init command to a terminal by surface ID.
+    /// Send fast-mode init command to a terminal by surface ID and apply scrollback limit.
     fn send_fast_init(&mut self, surface_id: u32) {
+        let scrollback_limit = self.settings.general.scrollback_lines;
+        if let Some(terminal) = self.find_terminal_by_id_mut(surface_id) {
+            terminal.set_scrollback_limit(scrollback_limit);
+        }
         if let Some(cmd) = self.settings.general.fast_mode_init_command() {
             if let Some(terminal) = self.find_terminal_by_id_mut(surface_id) {
                 terminal.send_key(&cmd);
