@@ -71,6 +71,29 @@ pub struct KeybindingSettings {
     pub split_surface_horizontal: String,
 }
 
+impl KeybindingSettings {
+    /// Format a binding string for display (e.g. "ctrl+shift+n" → "Ctrl+Shift+N").
+    pub fn format_display(binding: &str) -> String {
+        if binding.is_empty() {
+            return String::new();
+        }
+        binding
+            .split('+')
+            .map(|part| {
+                let mut chars = part.chars();
+                match chars.next() {
+                    Some(first) => {
+                        let upper = first.to_uppercase().to_string();
+                        format!("{}{}", upper, chars.as_str())
+                    }
+                    None => String::new(),
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("+")
+    }
+}
+
 // ---- Default implementations ----
 
 impl Default for Settings {

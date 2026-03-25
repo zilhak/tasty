@@ -175,7 +175,7 @@ impl AppState {
         let tab_id = self.next_ids.next_tab();
         let surface_id = self.next_ids.next_surface();
 
-        let name = format!("Workspace {}", ws_id + 1);
+        let name = format!("Workspace {}", self.workspaces.len() + 1);
         let shell = if self.settings.general.shell.is_empty() { None } else { Some(self.settings.general.shell.as_str()) };
         let shell_args_owned = self.settings.general.effective_shell_args();
         let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
@@ -319,6 +319,15 @@ impl AppState {
     pub fn prev_tab_in_pane(&mut self) {
         if let Some(pane) = self.focused_pane_mut() {
             pane.prev_tab();
+        }
+    }
+
+    /// Go to tab by index (0-based) in the focused pane.
+    pub fn goto_tab_in_pane(&mut self, index: usize) -> bool {
+        if let Some(pane) = self.focused_pane_mut() {
+            pane.goto_tab(index)
+        } else {
+            false
         }
     }
 

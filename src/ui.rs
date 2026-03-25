@@ -2,6 +2,7 @@ use std::time::Instant;
 
 use crate::i18n::{t, t_fmt};
 use crate::model::Rect;
+use crate::settings::KeybindingSettings;
 use crate::state::AppState;
 
 /// Color for notification badge / highlight.
@@ -90,18 +91,33 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
                 );
                 ui.add_space(2.0);
 
-                let shortcut_keys = [
-                    "new_workspace", "new_tab", "next_tab", "prev_tab",
-                    "switch_workspace", "pane_split_vertical", "pane_split_horizontal",
-                    "surface_split_vertical", "surface_split_horizontal",
-                    "focus_pane", "notifications", "settings",
+                let kb = &state.settings.keybindings;
+                // Configurable bindings: show from settings
+                let configurable_shortcuts: Vec<(&str, &str)> = vec![
+                    (&kb.new_workspace, "shortcut.desc.new_workspace"),
+                    (&kb.new_tab, "shortcut.desc.new_tab"),
+                    (&kb.split_pane_vertical, "shortcut.desc.pane_split_vertical"),
+                    (&kb.split_pane_horizontal, "shortcut.desc.pane_split_horizontal"),
+                    (&kb.split_surface_vertical, "shortcut.desc.surface_split_vertical"),
+                    (&kb.split_surface_horizontal, "shortcut.desc.surface_split_horizontal"),
+                ];
+                // Fixed shortcuts
+                let fixed_shortcuts: Vec<(&str, &str)> = vec![
+                    ("shortcut.key.next_tab", "shortcut.desc.next_tab"),
+                    ("shortcut.key.prev_tab", "shortcut.desc.prev_tab"),
+                    ("shortcut.key.switch_tab", "shortcut.desc.switch_tab"),
+                    ("shortcut.key.switch_workspace", "shortcut.desc.switch_workspace"),
+                    ("shortcut.key.focus_pane", "shortcut.desc.focus_pane"),
+                    ("shortcut.key.notifications", "shortcut.desc.notifications"),
+                    ("shortcut.key.settings", "shortcut.desc.settings"),
                 ];
 
-                for name in &shortcut_keys {
-                    let key_key = format!("shortcut.key.{}", name);
-                    let desc_key = format!("shortcut.desc.{}", name);
-                    let key_str = t(&key_key).to_string();
-                    let desc_str = t(&desc_key).to_string();
+                for (binding, desc_key) in &configurable_shortcuts {
+                    if binding.is_empty() {
+                        continue;
+                    }
+                    let key_str = KeybindingSettings::format_display(binding);
+                    let desc_str = t(desc_key).to_string();
                     ui.horizontal(|ui| {
                         ui.label(
                             egui::RichText::new(&key_str)
@@ -111,6 +127,30 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
                         ui.label(egui::RichText::new(&desc_str).small());
                     });
                 }
+                for (key_key, desc_key) in &fixed_shortcuts {
+                    let key_str = t(key_key).to_string();
+                    let desc_str = t(desc_key).to_string();
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            egui::RichText::new(&key_str)
+                                .small()
+                                .color(egui::Color32::from_rgb(120, 180, 255)),
+                        );
+                        ui.label(egui::RichText::new(&desc_str).small());
+                    });
+                }
+
+                // Fill remaining space and place settings button at bottom
+                let available = ui.available_height() - 32.0;
+                if available > 0.0 {
+                    ui.add_space(available);
+                }
+                ui.separator();
+                ui.add_space(4.0);
+                if ui.button(t("button.settings")).clicked() {
+                    state.settings_open = true;
+                }
+                ui.add_space(4.0);
             });
         });
 
@@ -135,7 +175,7 @@ pub fn draw_pane_dividers(ctx: &egui::Context, dividers: &[Rect], scale_factor: 
         return;
     }
     let painter = ctx.layer_painter(egui::LayerId::new(
-        egui::Order::Foreground,
+        egui::Order::Middle,
         egui::Id::new("pane_dividers"),
     ));
     let border_color = egui::Color32::from_rgb(80, 80, 100);

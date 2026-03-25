@@ -144,17 +144,18 @@ impl ApplicationHandler<AppEvent> for App {
                     }
                 }
 
-                // Always handle app-level shortcuts (e.g. Ctrl+, to toggle settings)
-                // even when egui has focus
-                if self.handle_shortcut(&event.logical_key, self.modifiers) {
-                    self.mark_dirty();
-                    return;
-                }
-
-                // If egui consumed the event OR an overlay is open, don't send to terminal
+                // If an overlay is open, skip shortcuts so key events
+                // stay within the overlay (e.g. keybinding capture).
                 let overlay_open = self.state.as_ref()
                     .map(|s| s.settings_open || s.notification_panel_open)
                     .unwrap_or(false);
+
+                if !overlay_open {
+                    if self.handle_shortcut(&event.logical_key, self.modifiers) {
+                        self.mark_dirty();
+                        return;
+                    }
+                }
                 if egui_consumed || overlay_open {
                     // egui handled the input — still need to redraw so the UI updates.
                     if egui_consumed {

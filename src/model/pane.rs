@@ -490,6 +490,16 @@ impl Pane {
         None
     }
 
+    /// Switch to tab by index (0-based). Returns true if switched.
+    pub fn goto_tab(&mut self, index: usize) -> bool {
+        if index < self.tabs.len() && index != self.active_tab {
+            self.active_tab = index;
+            true
+        } else {
+            false
+        }
+    }
+
     /// Switch to next tab.
     pub fn next_tab(&mut self) {
         if self.tabs.len() > 1 {

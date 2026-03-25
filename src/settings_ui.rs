@@ -17,6 +17,8 @@ pub struct SettingsUiState {
     active_tab: SettingsTab,
     /// Working copy of settings being edited.
     draft: Option<Settings>,
+    /// Which keybinding field is currently recording input (None = not recording).
+    recording_field: Option<String>,
 }
 
 impl SettingsUiState {
@@ -24,6 +26,7 @@ impl SettingsUiState {
         Self {
             active_tab: SettingsTab::General,
             draft: None,
+            recording_field: None,
         }
     }
 }
@@ -42,11 +45,34 @@ pub fn draw_settings_window(
 
     let mut is_open = *open;
 
+    // Modal overlay: covers entire screen, blocks clicks from reaching panes behind
+    let screen_rect = ctx.screen_rect();
+    egui::Area::new(egui::Id::new("settings_modal_overlay"))
+        .order(egui::Order::Middle)
+        .fixed_pos(screen_rect.min)
+        .show(ctx, |ui| {
+            let response = ui.allocate_rect(screen_rect, egui::Sense::click());
+            ui.painter().rect_filled(
+                screen_rect,
+                0.0,
+                egui::Color32::from_black_alpha(120),
+            );
+            let _ = response;
+        });
+
+    let center = screen_rect.center();
+    let window_size = egui::vec2(520.0, 420.0);
+    let default_pos = egui::pos2(
+        center.x - window_size.x / 2.0,
+        center.y - window_size.y / 2.0,
+    );
+
     egui::Window::new(t("settings.window.title"))
         .open(&mut is_open)
-        .fixed_size(egui::vec2(520.0, 420.0))
+        .fixed_size(window_size)
         .collapsible(false)
-        .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+        .default_pos(default_pos)
+        .movable(true)
         .interactable(true)
         .show(ctx, |ui| {
             // Tab bar
@@ -69,20 +95,23 @@ pub fn draw_settings_window(
             ui.separator();
 
             {
-                let draft = ui_state.draft.as_mut().unwrap();
+                let mut draft = ui_state.draft.take().unwrap();
+                let active_tab = ui_state.active_tab;
 
                 egui::ScrollArea::vertical()
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
-                        match ui_state.active_tab {
-                            SettingsTab::General => draw_general_tab(ui, draft),
-                            SettingsTab::Appearance => draw_appearance_tab(ui, draft),
-                            SettingsTab::Clipboard => draw_clipboard_tab(ui, draft),
-                            SettingsTab::Notifications => draw_notifications_tab(ui, draft),
-                            SettingsTab::Keybindings => draw_keybindings_tab(ui, draft),
-                            SettingsTab::Language => draw_language_tab(ui, draft),
+                        match active_tab {
+                            SettingsTab::General => draw_general_tab(ui, &mut draft),
+                            SettingsTab::Appearance => draw_appearance_tab(ui, &mut draft),
+                            SettingsTab::Clipboard => draw_clipboard_tab(ui, &mut draft),
+                            SettingsTab::Notifications => draw_notifications_tab(ui, &mut draft),
+                            SettingsTab::Keybindings => draw_keybindings_tab(ui, &mut draft, &mut ui_state.recording_field),
+                            SettingsTab::Language => draw_language_tab(ui, &mut draft),
                         }
                     });
+
+                ui_state.draft = Some(draft);
             }
 
             ui.separator();
@@ -110,10 +139,12 @@ pub fn draw_settings_window(
                     tracing::error!("failed to save settings: {e}");
                 }
                 ui_state.draft = None;
+                ui_state.recording_field = None;
                 *open = false;
             }
             if do_cancel {
                 ui_state.draft = None;
+                ui_state.recording_field = None;
                 *open = false;
             }
         });
@@ -121,6 +152,7 @@ pub fn draw_settings_window(
     if !is_open {
         // Window was closed via X button
         ui_state.draft = None;
+        ui_state.recording_field = None;
         *open = false;
     }
 }
@@ -249,39 +281,228 @@ fn draw_notifications_tab(ui: &mut egui::Ui, settings: &mut Settings) {
         });
 }
 
-fn draw_keybindings_tab(ui: &mut egui::Ui, settings: &mut Settings) {
+fn draw_keybindings_tab(ui: &mut egui::Ui, settings: &mut Settings, recording_field: &mut Option<String>) {
     ui.add_space(8.0);
     ui.heading(t("settings.keybindings.heading"));
     ui.add_space(4.0);
+
+    // If recording, capture key events from egui input
+    let captured = capture_key_combo(ui.ctx(), recording_field.is_some());
 
     egui::Grid::new("keybindings_grid")
         .num_columns(2)
         .spacing([12.0, 8.0])
         .show(ui, |ui| {
-            ui.label(t("settings.keybindings.new_workspace_label"));
-            ui.text_edit_singleline(&mut settings.keybindings.new_workspace);
-            ui.end_row();
+            let bindings: Vec<(&str, &str, &mut String)> = vec![
+                ("new_workspace", "settings.keybindings.new_workspace_label", &mut settings.keybindings.new_workspace),
+                ("new_tab", "settings.keybindings.new_tab_label", &mut settings.keybindings.new_tab),
+                ("split_pane_vertical", "settings.keybindings.split_pane_vertical_label", &mut settings.keybindings.split_pane_vertical),
+                ("split_pane_horizontal", "settings.keybindings.split_pane_horizontal_label", &mut settings.keybindings.split_pane_horizontal),
+                ("split_surface_vertical", "settings.keybindings.split_surface_vertical_label", &mut settings.keybindings.split_surface_vertical),
+                ("split_surface_horizontal", "settings.keybindings.split_surface_horizontal_label", &mut settings.keybindings.split_surface_horizontal),
+            ];
 
-            ui.label(t("settings.keybindings.new_tab_label"));
-            ui.text_edit_singleline(&mut settings.keybindings.new_tab);
-            ui.end_row();
+            for (field_id, label_key, value) in bindings {
+                ui.label(t(label_key));
 
-            ui.label(t("settings.keybindings.split_pane_vertical_label"));
-            ui.text_edit_singleline(&mut settings.keybindings.split_pane_vertical);
-            ui.end_row();
+                let is_recording = recording_field.as_deref() == Some(field_id);
 
-            ui.label(t("settings.keybindings.split_pane_horizontal_label"));
-            ui.text_edit_singleline(&mut settings.keybindings.split_pane_horizontal);
-            ui.end_row();
+                if is_recording {
+                    // Apply captured key combo
+                    match &captured {
+                        KeyCapture::Combo(combo) => {
+                            *value = combo.clone();
+                            *recording_field = None;
+                        }
+                        KeyCapture::Clear => {
+                            value.clear();
+                            *recording_field = None;
+                        }
+                        KeyCapture::None => {}
+                    }
+                }
 
-            ui.label(t("settings.keybindings.split_surface_vertical_label"));
-            ui.text_edit_singleline(&mut settings.keybindings.split_surface_vertical);
-            ui.end_row();
+                let display_text = if is_recording {
+                    t("settings.keybindings.hint_press_key").to_string()
+                } else if value.is_empty() {
+                    t("settings.keybindings.hint_none").to_string()
+                } else {
+                    value.clone()
+                };
 
-            ui.label(t("settings.keybindings.split_surface_horizontal_label"));
-            ui.text_edit_singleline(&mut settings.keybindings.split_surface_horizontal);
-            ui.end_row();
+                let bg_color = if is_recording {
+                    egui::Color32::from_rgb(60, 80, 120)
+                } else {
+                    egui::Color32::from_rgb(45, 45, 55)
+                };
+                let text_color = if is_recording || value.is_empty() {
+                    egui::Color32::from_rgb(160, 160, 180)
+                } else {
+                    egui::Color32::from_rgb(220, 220, 230)
+                };
+
+                let button = egui::Button::new(
+                    egui::RichText::new(&display_text).color(text_color).monospace()
+                )
+                    .fill(bg_color)
+                    .min_size(egui::vec2(200.0, 24.0));
+
+                if ui.add(button).clicked() {
+                    *recording_field = Some(field_id.to_string());
+                }
+                ui.end_row();
+            }
         });
+
+    ui.add_space(8.0);
+    ui.label(
+        egui::RichText::new(t("settings.keybindings.hint_esc_to_clear"))
+            .small()
+            .color(egui::Color32::from_rgb(150, 150, 170)),
+    );
+}
+
+/// Result of key capture attempt.
+enum KeyCapture {
+    /// No key pressed yet.
+    None,
+    /// User pressed Escape — clear the binding.
+    Clear,
+    /// A valid key combination was captured.
+    Combo(String),
+}
+
+/// Read egui input events and build a key combo string like "ctrl+shift+n".
+fn capture_key_combo(ctx: &egui::Context, active: bool) -> KeyCapture {
+    if !active {
+        return KeyCapture::None;
+    }
+
+    ctx.input(|input| {
+        for event in &input.events {
+            if let egui::Event::Key { key, pressed, modifiers, .. } = event {
+                if !pressed {
+                    continue;
+                }
+
+                // Escape clears the binding
+                if *key == egui::Key::Escape {
+                    return KeyCapture::Clear;
+                }
+
+                // Ignore modifier-only keys
+                if matches!(key,
+                    egui::Key::Tab // allow Tab as a valid key
+                    ) || !is_modifier_only_key(key)
+                {
+                    let mut parts = Vec::new();
+                    if modifiers.ctrl {
+                        parts.push("ctrl");
+                    }
+                    if modifiers.alt {
+                        parts.push("alt");
+                    }
+                    if modifiers.shift {
+                        parts.push("shift");
+                    }
+
+                    let key_name = egui_key_to_string(key);
+                    if !key_name.is_empty() {
+                        parts.push(&key_name);
+                        return KeyCapture::Combo(parts.join("+"));
+                    }
+                }
+            }
+        }
+        KeyCapture::None
+    })
+}
+
+/// Returns true if the key is a modifier key only (no actual key).
+fn is_modifier_only_key(_key: &egui::Key) -> bool {
+    false
+}
+
+/// Convert an egui::Key to a lowercase string representation.
+fn egui_key_to_string(key: &egui::Key) -> String {
+    match key {
+        egui::Key::A => "a".into(),
+        egui::Key::B => "b".into(),
+        egui::Key::C => "c".into(),
+        egui::Key::D => "d".into(),
+        egui::Key::E => "e".into(),
+        egui::Key::F => "f".into(),
+        egui::Key::G => "g".into(),
+        egui::Key::H => "h".into(),
+        egui::Key::I => "i".into(),
+        egui::Key::J => "j".into(),
+        egui::Key::K => "k".into(),
+        egui::Key::L => "l".into(),
+        egui::Key::M => "m".into(),
+        egui::Key::N => "n".into(),
+        egui::Key::O => "o".into(),
+        egui::Key::P => "p".into(),
+        egui::Key::Q => "q".into(),
+        egui::Key::R => "r".into(),
+        egui::Key::S => "s".into(),
+        egui::Key::T => "t".into(),
+        egui::Key::U => "u".into(),
+        egui::Key::V => "v".into(),
+        egui::Key::W => "w".into(),
+        egui::Key::X => "x".into(),
+        egui::Key::Y => "y".into(),
+        egui::Key::Z => "z".into(),
+        egui::Key::Num0 => "0".into(),
+        egui::Key::Num1 => "1".into(),
+        egui::Key::Num2 => "2".into(),
+        egui::Key::Num3 => "3".into(),
+        egui::Key::Num4 => "4".into(),
+        egui::Key::Num5 => "5".into(),
+        egui::Key::Num6 => "6".into(),
+        egui::Key::Num7 => "7".into(),
+        egui::Key::Num8 => "8".into(),
+        egui::Key::Num9 => "9".into(),
+        egui::Key::Tab => "tab".into(),
+        egui::Key::Space => "space".into(),
+        egui::Key::Enter => "enter".into(),
+        egui::Key::Backspace => "backspace".into(),
+        egui::Key::Delete => "delete".into(),
+        egui::Key::Insert => "insert".into(),
+        egui::Key::Home => "home".into(),
+        egui::Key::End => "end".into(),
+        egui::Key::PageUp => "pageup".into(),
+        egui::Key::PageDown => "pagedown".into(),
+        egui::Key::ArrowUp => "up".into(),
+        egui::Key::ArrowDown => "down".into(),
+        egui::Key::ArrowLeft => "left".into(),
+        egui::Key::ArrowRight => "right".into(),
+        egui::Key::F1 => "f1".into(),
+        egui::Key::F2 => "f2".into(),
+        egui::Key::F3 => "f3".into(),
+        egui::Key::F4 => "f4".into(),
+        egui::Key::F5 => "f5".into(),
+        egui::Key::F6 => "f6".into(),
+        egui::Key::F7 => "f7".into(),
+        egui::Key::F8 => "f8".into(),
+        egui::Key::F9 => "f9".into(),
+        egui::Key::F10 => "f10".into(),
+        egui::Key::F11 => "f11".into(),
+        egui::Key::F12 => "f12".into(),
+        egui::Key::Minus => "minus".into(),
+        egui::Key::Plus => "plus".into(),
+        egui::Key::Comma => ",".into(),
+        egui::Key::Period => ".".into(),
+        egui::Key::Semicolon => ";".into(),
+        egui::Key::Colon => ":".into(),
+        egui::Key::Pipe => "|".into(),
+        egui::Key::Questionmark => "?".into(),
+        egui::Key::OpenBracket => "[".into(),
+        egui::Key::CloseBracket => "]".into(),
+        egui::Key::Backslash => "\\".into(),
+        egui::Key::Backtick => "`".into(),
+        egui::Key::Equals => "=".into(),
+        _ => String::new(),
+    }
 }
 
 fn draw_language_tab(ui: &mut egui::Ui, settings: &mut Settings) {
