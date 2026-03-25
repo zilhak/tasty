@@ -12,6 +12,15 @@ enum SettingsTab {
     Language,
 }
 
+/// Sub-tab within the Keybindings tab.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum KeybindingsSubTab {
+    General,
+    Workspace,
+    Pane,
+    Surface,
+}
+
 /// Persistent state for the settings UI between frames.
 pub struct SettingsUiState {
     active_tab: SettingsTab,
@@ -19,6 +28,8 @@ pub struct SettingsUiState {
     draft: Option<Settings>,
     /// Which keybinding field is currently recording input (None = not recording).
     recording_field: Option<String>,
+    /// Active sub-tab within keybindings.
+    keybindings_sub_tab: KeybindingsSubTab,
 }
 
 impl SettingsUiState {
@@ -27,6 +38,7 @@ impl SettingsUiState {
             active_tab: SettingsTab::General,
             draft: None,
             recording_field: None,
+            keybindings_sub_tab: KeybindingsSubTab::General,
         }
     }
 }
@@ -106,7 +118,7 @@ pub fn draw_settings_window(
                             SettingsTab::Appearance => draw_appearance_tab(ui, &mut draft),
                             SettingsTab::Clipboard => draw_clipboard_tab(ui, &mut draft),
                             SettingsTab::Notifications => draw_notifications_tab(ui, &mut draft),
-                            SettingsTab::Keybindings => draw_keybindings_tab(ui, &mut draft, &mut ui_state.recording_field),
+                            SettingsTab::Keybindings => draw_keybindings_tab(ui, &mut draft, &mut ui_state.recording_field, &mut ui_state.keybindings_sub_tab),
                             SettingsTab::Language => draw_language_tab(ui, &mut draft),
                         }
                     });
@@ -281,37 +293,141 @@ fn draw_notifications_tab(ui: &mut egui::Ui, settings: &mut Settings) {
         });
 }
 
-fn draw_keybindings_tab(ui: &mut egui::Ui, settings: &mut Settings, recording_field: &mut Option<String>) {
+fn draw_keybindings_tab(
+    ui: &mut egui::Ui,
+    settings: &mut Settings,
+    recording_field: &mut Option<String>,
+    sub_tab: &mut KeybindingsSubTab,
+) {
     ui.add_space(8.0);
     ui.heading(t("settings.keybindings.heading"));
     ui.add_space(4.0);
 
-    // If recording, capture key events from egui input
-    let captured = capture_key_combo(ui.ctx(), recording_field.is_some());
+    // Sub-tab layout: left menu + right content
+    ui.columns(2, |columns| {
+        // Left column: sub-tab menu (narrow)
+        columns[0].set_min_width(120.0);
+        columns[0].set_max_width(140.0);
 
+        let sub_tabs = [
+            (KeybindingsSubTab::General, t("settings.keybindings.subtab.general")),
+            (KeybindingsSubTab::Workspace, t("settings.keybindings.subtab.workspace")),
+            (KeybindingsSubTab::Pane, t("settings.keybindings.subtab.pane")),
+            (KeybindingsSubTab::Surface, t("settings.keybindings.subtab.surface")),
+        ];
+
+        for (tab, label) in &sub_tabs {
+            let selected = *sub_tab == *tab;
+            if columns[0].selectable_label(selected, *label).clicked() {
+                *sub_tab = *tab;
+                *recording_field = None;
+            }
+        }
+
+        // Right column: bindings for selected sub-tab
+        let ui = &mut columns[1];
+
+        // If recording, capture key events from egui input
+        let captured = capture_key_combo(ui.ctx(), recording_field.is_some());
+
+        match *sub_tab {
+            KeybindingsSubTab::General => {
+                draw_keybinding_entries(ui, recording_field, &captured, &mut [
+                    ("toggle_settings", "settings.keybindings.toggle_settings_label", &mut settings.keybindings.toggle_settings),
+                    ("toggle_notifications", "settings.keybindings.toggle_notifications_label", &mut settings.keybindings.toggle_notifications),
+                ]);
+            }
+            KeybindingsSubTab::Workspace => {
+                draw_keybinding_entries(ui, recording_field, &captured, &mut [
+                    ("new_workspace", "settings.keybindings.new_workspace_label", &mut settings.keybindings.new_workspace),
+                ]);
+
+                ui.add_space(8.0);
+                ui.separator();
+                ui.add_space(4.0);
+
+                // Tab switch modifier: ComboBox
+                egui::Grid::new("tab_ws_modifier_grid")
+                    .num_columns(2)
+                    .spacing([12.0, 8.0])
+                    .show(ui, |ui| {
+                        ui.label(t("settings.keybindings.tab_switch_modifier_label"));
+                        egui::ComboBox::from_id_salt("tab_switch_modifier")
+                            .selected_text(modifier_display(&settings.keybindings.tab_switch_modifier))
+                            .show_ui(ui, |ui| {
+                                ui.selectable_value(&mut settings.keybindings.tab_switch_modifier, "ctrl".to_string(), "Ctrl");
+                                ui.selectable_value(&mut settings.keybindings.tab_switch_modifier, "alt".to_string(), "Alt");
+                            });
+                        ui.end_row();
+
+                        ui.label(t("settings.keybindings.workspace_switch_modifier_label"));
+                        egui::ComboBox::from_id_salt("workspace_switch_modifier")
+                            .selected_text(modifier_display(&settings.keybindings.workspace_switch_modifier))
+                            .show_ui(ui, |ui| {
+                                ui.selectable_value(&mut settings.keybindings.workspace_switch_modifier, "ctrl".to_string(), "Ctrl");
+                                ui.selectable_value(&mut settings.keybindings.workspace_switch_modifier, "alt".to_string(), "Alt");
+                            });
+                        ui.end_row();
+                    });
+            }
+            KeybindingsSubTab::Pane => {
+                draw_keybinding_entries(ui, recording_field, &captured, &mut [
+                    ("new_tab", "settings.keybindings.new_tab_label", &mut settings.keybindings.new_tab),
+                    ("split_pane_vertical", "settings.keybindings.split_pane_vertical_label", &mut settings.keybindings.split_pane_vertical),
+                    ("split_pane_horizontal", "settings.keybindings.split_pane_horizontal_label", &mut settings.keybindings.split_pane_horizontal),
+                    ("focus_pane_next", "settings.keybindings.focus_pane_next_label", &mut settings.keybindings.focus_pane_next),
+                    ("focus_pane_prev", "settings.keybindings.focus_pane_prev_label", &mut settings.keybindings.focus_pane_prev),
+                    ("close_pane", "settings.keybindings.close_pane_label", &mut settings.keybindings.close_pane),
+                ]);
+            }
+            KeybindingsSubTab::Surface => {
+                draw_keybinding_entries(ui, recording_field, &captured, &mut [
+                    ("split_surface_vertical", "settings.keybindings.split_surface_vertical_label", &mut settings.keybindings.split_surface_vertical),
+                    ("split_surface_horizontal", "settings.keybindings.split_surface_horizontal_label", &mut settings.keybindings.split_surface_horizontal),
+                    ("focus_surface_next", "settings.keybindings.focus_surface_next_label", &mut settings.keybindings.focus_surface_next),
+                    ("focus_surface_prev", "settings.keybindings.focus_surface_prev_label", &mut settings.keybindings.focus_surface_prev),
+                    ("close_surface", "settings.keybindings.close_surface_label", &mut settings.keybindings.close_surface),
+                ]);
+            }
+        }
+
+        ui.add_space(8.0);
+        ui.label(
+            egui::RichText::new(t("settings.keybindings.hint_esc_to_clear"))
+                .small()
+                .color(egui::Color32::from_rgb(150, 150, 170)),
+        );
+    });
+}
+
+/// Display modifier name for ComboBox.
+fn modifier_display(modifier: &str) -> &str {
+    match modifier.to_lowercase().as_str() {
+        "alt" => "Alt",
+        _ => "Ctrl",
+    }
+}
+
+/// Draw a list of keybinding capture entries in a grid.
+fn draw_keybinding_entries(
+    ui: &mut egui::Ui,
+    recording_field: &mut Option<String>,
+    captured: &KeyCapture,
+    bindings: &mut [(&str, &str, &mut String)],
+) {
     egui::Grid::new("keybindings_grid")
         .num_columns(2)
         .spacing([12.0, 8.0])
         .show(ui, |ui| {
-            let bindings: Vec<(&str, &str, &mut String)> = vec![
-                ("new_workspace", "settings.keybindings.new_workspace_label", &mut settings.keybindings.new_workspace),
-                ("new_tab", "settings.keybindings.new_tab_label", &mut settings.keybindings.new_tab),
-                ("split_pane_vertical", "settings.keybindings.split_pane_vertical_label", &mut settings.keybindings.split_pane_vertical),
-                ("split_pane_horizontal", "settings.keybindings.split_pane_horizontal_label", &mut settings.keybindings.split_pane_horizontal),
-                ("split_surface_vertical", "settings.keybindings.split_surface_vertical_label", &mut settings.keybindings.split_surface_vertical),
-                ("split_surface_horizontal", "settings.keybindings.split_surface_horizontal_label", &mut settings.keybindings.split_surface_horizontal),
-            ];
-
-            for (field_id, label_key, value) in bindings {
+            for (field_id, label_key, value) in bindings.iter_mut() {
                 ui.label(t(label_key));
 
-                let is_recording = recording_field.as_deref() == Some(field_id);
+                let is_recording = recording_field.as_deref() == Some(*field_id);
 
                 if is_recording {
-                    // Apply captured key combo
-                    match &captured {
+                    match captured {
                         KeyCapture::Combo(combo) => {
-                            *value = combo.clone();
+                            **value = combo.clone();
                             *recording_field = None;
                         }
                         KeyCapture::Clear => {
@@ -327,7 +443,7 @@ fn draw_keybindings_tab(ui: &mut egui::Ui, settings: &mut Settings, recording_fi
                 } else if value.is_empty() {
                     t("settings.keybindings.hint_none").to_string()
                 } else {
-                    value.clone()
+                    (**value).clone()
                 };
 
                 let bg_color = if is_recording {
@@ -353,13 +469,6 @@ fn draw_keybindings_tab(ui: &mut egui::Ui, settings: &mut Settings, recording_fi
                 ui.end_row();
             }
         });
-
-    ui.add_space(8.0);
-    ui.label(
-        egui::RichText::new(t("settings.keybindings.hint_esc_to_clear"))
-            .small()
-            .color(egui::Color32::from_rgb(150, 150, 170)),
-    );
 }
 
 /// Result of key capture attempt.

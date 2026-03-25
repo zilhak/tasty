@@ -143,16 +143,28 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
                     (&kb.split_pane_horizontal, "shortcut.desc.pane_split_horizontal"),
                     (&kb.split_surface_vertical, "shortcut.desc.surface_split_vertical"),
                     (&kb.split_surface_horizontal, "shortcut.desc.surface_split_horizontal"),
+                    (&kb.toggle_settings, "shortcut.desc.settings"),
+                    (&kb.toggle_notifications, "shortcut.desc.notifications"),
+                    (&kb.close_pane, "shortcut.desc.close_pane"),
+                    (&kb.focus_pane_next, "shortcut.desc.focus_pane_next"),
+                    (&kb.focus_pane_prev, "shortcut.desc.focus_pane_prev"),
+                    (&kb.focus_surface_next, "shortcut.desc.focus_surface_next"),
+                    (&kb.focus_surface_prev, "shortcut.desc.focus_surface_prev"),
+                    (&kb.close_surface, "shortcut.desc.close_surface"),
                 ];
+
+                // Dynamic modifier-based shortcuts
+                let tab_mod = if kb.tab_switch_modifier == "alt" { "Alt" } else { "Ctrl" };
+                let ws_mod = if kb.workspace_switch_modifier == "alt" { "Alt" } else { "Ctrl" };
+                let switch_tab_display = format!("{}+1~0", tab_mod);
+                let switch_ws_display = format!("{}+1~9", ws_mod);
+
                 // Fixed shortcuts
-                let fixed_shortcuts: Vec<(&str, &str)> = vec![
-                    ("shortcut.key.next_tab", "shortcut.desc.next_tab"),
-                    ("shortcut.key.prev_tab", "shortcut.desc.prev_tab"),
-                    ("shortcut.key.switch_tab", "shortcut.desc.switch_tab"),
-                    ("shortcut.key.switch_workspace", "shortcut.desc.switch_workspace"),
-                    ("shortcut.key.focus_pane", "shortcut.desc.focus_pane"),
-                    ("shortcut.key.notifications", "shortcut.desc.notifications"),
-                    ("shortcut.key.settings", "shortcut.desc.settings"),
+                let fixed_shortcuts: Vec<(String, &str)> = vec![
+                    ("Ctrl+Tab".to_string(), "shortcut.desc.next_tab"),
+                    ("Ctrl+Shift+Tab".to_string(), "shortcut.desc.prev_tab"),
+                    (switch_tab_display, "shortcut.desc.switch_tab"),
+                    (switch_ws_display, "shortcut.desc.switch_workspace"),
                 ];
 
                 for (binding, desc_key) in &configurable_shortcuts {
@@ -170,12 +182,11 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
                         ui.label(egui::RichText::new(&desc_str).small());
                     });
                 }
-                for (key_key, desc_key) in &fixed_shortcuts {
-                    let key_str = t(key_key).to_string();
+                for (key_str, desc_key) in &fixed_shortcuts {
                     let desc_str = t(desc_key).to_string();
                     ui.horizontal(|ui| {
                         ui.label(
-                            egui::RichText::new(&key_str)
+                            egui::RichText::new(key_str)
                                 .small()
                                 .color(egui::Color32::from_rgb(120, 180, 255)),
                         );

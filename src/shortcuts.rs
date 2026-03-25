@@ -148,39 +148,78 @@ impl App {
             return true;
         }
 
+        // --- Configurable shortcuts (previously hardcoded) ---
+
+        // Toggle settings window
+        if matches_binding(&kb.toggle_settings, key, mods) {
+            state.settings_open = !state.settings_open;
+            self.mark_dirty();
+            return true;
+        }
+
+        // Toggle notification panel
+        if matches_binding(&kb.toggle_notifications, key, mods) {
+            state.notification_panel_open = !state.notification_panel_open;
+            if state.notification_panel_open {
+                state.notifications.mark_all_read();
+            }
+            self.mark_dirty();
+            return true;
+        }
+
+        // Close active pane
+        if matches_binding(&kb.close_pane, key, mods) {
+            if state.close_active_pane() {
+                if let Some(gpu) = &self.gpu {
+                    let rect =
+                        Self::compute_terminal_rect_with_sidebar(gpu, state.sidebar_width);
+                    state.resize_all(rect, gpu.cell_width(), gpu.cell_height());
+                }
+                self.mark_dirty();
+                return true;
+            }
+            return false;
+        }
+
+        // Close active surface
+        if matches_binding(&kb.close_surface, key, mods) {
+            if state.close_active_surface() {
+                if let Some(gpu) = &self.gpu {
+                    let rect =
+                        Self::compute_terminal_rect_with_sidebar(gpu, state.sidebar_width);
+                    state.resize_all(rect, gpu.cell_width(), gpu.cell_height());
+                }
+                self.mark_dirty();
+                return true;
+            }
+            return false;
+        }
+
+        // Focus pane next/prev
+        if matches_binding(&kb.focus_pane_next, key, mods) {
+            state.move_pane_focus_forward();
+            self.mark_dirty();
+            return true;
+        }
+        if matches_binding(&kb.focus_pane_prev, key, mods) {
+            state.move_pane_focus_backward();
+            self.mark_dirty();
+            return true;
+        }
+
+        // Focus surface next/prev
+        if matches_binding(&kb.focus_surface_next, key, mods) {
+            state.move_surface_focus_forward();
+            self.mark_dirty();
+            return true;
+        }
+        if matches_binding(&kb.focus_surface_prev, key, mods) {
+            state.move_surface_focus_backward();
+            self.mark_dirty();
+            return true;
+        }
+
         // --- Hardcoded shortcuts (not user-configurable) ---
-
-        // Ctrl+Shift+W: Close active pane
-        if ctrl && shift {
-            if let Key::Character(c) = key {
-                if c.as_str() == "W" || c.as_str() == "w" {
-                    if state.close_active_pane() {
-                        if let Some(gpu) = &self.gpu {
-                            let rect =
-                                Self::compute_terminal_rect_with_sidebar(gpu, state.sidebar_width);
-                            state.resize_all(rect, gpu.cell_width(), gpu.cell_height());
-                        }
-                        self.mark_dirty();
-                        return true;
-                    }
-                    return false;
-                }
-            }
-        }
-
-        // Ctrl+Shift+I: Toggle notification panel
-        if ctrl && shift {
-            if let Key::Character(c) = key {
-                if c.as_str() == "I" || c.as_str() == "i" {
-                    state.notification_panel_open = !state.notification_panel_open;
-                    if state.notification_panel_open {
-                        state.notifications.mark_all_read();
-                    }
-                    self.mark_dirty();
-                    return true;
-                }
-            }
-        }
 
         // Ctrl+Shift+Tab: previous tab in focused pane
         if ctrl && shift {
@@ -205,17 +244,6 @@ impl App {
             }
         }
 
-        // Ctrl+,: Toggle settings window
-        if ctrl && !shift && !alt {
-            if let Key::Character(c) = key {
-                if c.as_str() == "," {
-                    state.settings_open = !state.settings_open;
-                    self.mark_dirty();
-                    return true;
-                }
-            }
-        }
-
         // Ctrl+Tab: next tab in focused pane
         if ctrl && !shift && !alt {
             if let Key::Named(NamedKey::Tab) = key {
@@ -225,18 +253,43 @@ impl App {
             }
         }
 
-        // Ctrl+1~0: switch to tab 1~10 in focused pane
-        if ctrl && !shift && !alt {
+        // Configurable modifier+1~0: switch tab in focused pane
+        // Configurable modifier+1~9: switch workspace
+        {
+            let tab_mod = kb.tab_switch_modifier.to_lowercase();
+            let ws_mod = kb.workspace_switch_modifier.to_lowercase();
+
             if let Key::Character(c) = key {
                 let ch = c.chars().next().unwrap_or('\0');
                 if ch.is_ascii_digit() {
-                    // '1' -> index 0, '2' -> index 1, ..., '0' -> index 9
-                    let index = if ch == '0' { 9 } else { (ch as usize) - ('1' as usize) };
-                    if state.goto_tab_in_pane(index) {
-                        self.mark_dirty();
-                        return true;
+                    // Tab switch: modifier + number
+                    let tab_mod_matches = match tab_mod.as_str() {
+                        "alt" => alt && !ctrl && !shift,
+                        _ => ctrl && !shift && !alt,  // default: ctrl
+                    };
+                    if tab_mod_matches {
+                        let index = if ch == '0' { 9 } else { (ch as usize) - ('1' as usize) };
+                        if state.goto_tab_in_pane(index) {
+                            self.mark_dirty();
+                            return true;
+                        }
+                        return false;
                     }
-                    return false;
+
+                    // Workspace switch: modifier + number (1~9)
+                    let ws_mod_matches = match ws_mod.as_str() {
+                        "ctrl" => ctrl && !shift && !alt,
+                        _ => alt && !ctrl && !shift,  // default: alt
+                    };
+                    if ws_mod_matches {
+                        if let Some(digit) = ch.to_digit(10) {
+                            if digit >= 1 && digit <= 9 {
+                                state.switch_workspace((digit - 1) as usize);
+                                self.mark_dirty();
+                                return true;
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -273,36 +326,6 @@ impl App {
                     self.mark_dirty();
                     return true;
                 }
-            }
-        }
-
-        // Alt+1~9: switch workspace
-        if alt && !ctrl && !shift {
-            if let Key::Character(c) = key {
-                if let Some(digit) = c.chars().next().and_then(|ch| ch.to_digit(10)) {
-                    if digit >= 1 && digit <= 9 {
-                        state.switch_workspace((digit - 1) as usize);
-                        self.mark_dirty();
-                        return true;
-                    }
-                }
-            }
-        }
-
-        // Alt+Arrow: move focus between panes
-        if alt && !ctrl && !shift {
-            match key {
-                Key::Named(NamedKey::ArrowRight) | Key::Named(NamedKey::ArrowDown) => {
-                    state.move_focus_forward();
-                    self.mark_dirty();
-                    return true;
-                }
-                Key::Named(NamedKey::ArrowLeft) | Key::Named(NamedKey::ArrowUp) => {
-                    state.move_focus_backward();
-                    self.mark_dirty();
-                    return true;
-                }
-                _ => {}
             }
         }
 

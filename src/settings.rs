@@ -69,6 +69,18 @@ pub struct KeybindingSettings {
     pub split_pane_horizontal: String,
     pub split_surface_vertical: String,
     pub split_surface_horizontal: String,
+    pub toggle_settings: String,
+    pub toggle_notifications: String,
+    pub close_pane: String,
+    pub close_surface: String,
+    pub focus_pane_next: String,
+    pub focus_pane_prev: String,
+    pub focus_surface_next: String,
+    pub focus_surface_prev: String,
+    /// Modifier for tab switch (number keys): "ctrl" or "alt"
+    pub tab_switch_modifier: String,
+    /// Modifier for workspace switch (number keys): "ctrl" or "alt"
+    pub workspace_switch_modifier: String,
 }
 
 impl KeybindingSettings {
@@ -329,6 +341,16 @@ impl Default for KeybindingSettings {
             split_pane_horizontal: "ctrl+shift+o".to_string(),
             split_surface_vertical: "ctrl+shift+d".to_string(),
             split_surface_horizontal: "ctrl+shift+j".to_string(),
+            toggle_settings: "ctrl+,".to_string(),
+            toggle_notifications: "ctrl+shift+i".to_string(),
+            close_pane: "ctrl+shift+w".to_string(),
+            close_surface: String::new(),
+            focus_pane_next: "alt+right".to_string(),
+            focus_pane_prev: "alt+left".to_string(),
+            focus_surface_next: "alt+down".to_string(),
+            focus_surface_prev: "alt+up".to_string(),
+            tab_switch_modifier: "ctrl".to_string(),
+            workspace_switch_modifier: "alt".to_string(),
         }
     }
 }

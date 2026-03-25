@@ -385,6 +385,46 @@ impl AppState {
         ws.focused_pane = ws.pane_layout().prev_pane_id(ws.focused_pane);
     }
 
+    /// Move focus to the next pane only (skip surface group logic).
+    pub fn move_pane_focus_forward(&mut self) {
+        let ws = self.active_workspace_mut();
+        ws.focused_pane = ws.pane_layout().next_pane_id(ws.focused_pane);
+    }
+
+    /// Move focus to the previous pane only (skip surface group logic).
+    pub fn move_pane_focus_backward(&mut self) {
+        let ws = self.active_workspace_mut();
+        ws.focused_pane = ws.pane_layout().prev_pane_id(ws.focused_pane);
+    }
+
+    /// Move focus to the next surface within the current pane's SurfaceGroup.
+    /// Does nothing if not in a multi-surface group.
+    pub fn move_surface_focus_forward(&mut self) {
+        let ws = self.active_workspace_mut();
+        let pane_id = ws.focused_pane;
+        if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
+            if let Some(panel) = pane.active_panel_mut() {
+                if let crate::model::Panel::SurfaceGroup(group) = panel {
+                    group.move_focus_forward();
+                }
+            }
+        }
+    }
+
+    /// Move focus to the previous surface within the current pane's SurfaceGroup.
+    /// Does nothing if not in a multi-surface group.
+    pub fn move_surface_focus_backward(&mut self) {
+        let ws = self.active_workspace_mut();
+        let pane_id = ws.focused_pane;
+        if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
+            if let Some(panel) = pane.active_panel_mut() {
+                if let crate::model::Panel::SurfaceGroup(group) = panel {
+                    group.move_focus_backward();
+                }
+            }
+        }
+    }
+
     /// Process all terminals in ALL workspaces to drain PTY channels.
     /// Returns true if the active workspace had any changes (for redraw).
     pub fn process_all(&mut self) -> bool {
