@@ -119,6 +119,12 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
                     ui.add_space(2.0);
                 }
 
+                ui.add_space(4.0);
+                let full_width = ui.available_width();
+                if ui.add_sized([full_width, 28.0], egui::Button::new(t("button.new_workspace"))).clicked() {
+                    let _ = state.add_workspace();
+                }
+
                 ui.add_space(8.0);
                 ui.separator();
                 ui.add_space(4.0);
@@ -189,17 +195,14 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
                     });
                 }
 
-                // Place action buttons centered in remaining space
-                let button_area_height = 80.0; // approximate height for 2 buttons + spacing
-                let available = ui.available_height() - button_area_height;
-                let top_space = (available / 2.0).max(8.0);
-                ui.add_space(top_space);
-
-                let full_width = ui.available_width();
-                if ui.add_sized([full_width, 28.0], egui::Button::new(t("button.new_workspace"))).clicked() {
-                    let _ = state.add_workspace();
+                // Settings button pinned to bottom
+                let available = ui.available_height() - 36.0;
+                if available > 0.0 {
+                    ui.add_space(available);
                 }
+                ui.separator();
                 ui.add_space(4.0);
+                let full_width = ui.available_width();
                 if ui.add_sized([full_width, 28.0], egui::Button::new(t("button.settings"))).clicked() {
                     state.settings_open = true;
                 }
