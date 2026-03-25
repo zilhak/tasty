@@ -303,9 +303,11 @@ fn draw_keybindings_tab(
     ui.heading(t("settings.keybindings.heading"));
     ui.add_space(4.0);
 
-    // Sub-tab layout: left menu (fixed 100px) + right content
+    // Sub-tab layout: left menu + right content
+    let available_height = ui.available_height() - 8.0;
+
     ui.horizontal_top(|ui| {
-        // Left menu with bordered frame
+        // Left menu with bordered frame, full height
         egui::Frame::new()
             .fill(egui::Color32::from_rgb(18, 18, 22))
             .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(60, 60, 70)))
@@ -313,27 +315,29 @@ fn draw_keybindings_tab(
             .inner_margin(egui::Margin::symmetric(6, 6))
             .show(ui, |ui| {
                 ui.set_width(88.0);
+                ui.set_min_height(available_height);
 
-                let sub_tabs = [
-                    (KeybindingsSubTab::General, t("settings.keybindings.subtab.general")),
-                    (KeybindingsSubTab::Workspace, t("settings.keybindings.subtab.workspace")),
-                    (KeybindingsSubTab::Pane, t("settings.keybindings.subtab.pane")),
-                    (KeybindingsSubTab::Surface, t("settings.keybindings.subtab.surface")),
-                ];
+                ui.vertical(|ui| {
+                    let sub_tabs = [
+                        (KeybindingsSubTab::General, t("settings.keybindings.subtab.general")),
+                        (KeybindingsSubTab::Workspace, t("settings.keybindings.subtab.workspace")),
+                        (KeybindingsSubTab::Pane, t("settings.keybindings.subtab.pane")),
+                        (KeybindingsSubTab::Surface, t("settings.keybindings.subtab.surface")),
+                    ];
 
-                for (tab, label) in &sub_tabs {
-                    let selected = *sub_tab == *tab;
-                    if ui.selectable_label(selected, *label).clicked() {
-                        *sub_tab = *tab;
-                        *recording_field = None;
+                    for (tab, label) in &sub_tabs {
+                        let selected = *sub_tab == *tab;
+                        if ui.selectable_label(selected, *label).clicked() {
+                            *sub_tab = *tab;
+                            *recording_field = None;
+                        }
                     }
-                }
+                });
             });
 
         ui.add_space(8.0);
 
         // Right content area
-        let ui = ui;
 
         // If recording, capture key events from egui input
         let captured = capture_key_combo(ui.ctx(), recording_field.is_some());
