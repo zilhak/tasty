@@ -16,6 +16,7 @@ pub fn handle(state: &mut AppState, request: &JsonRpcRequest) -> JsonRpcResponse
         "system.info" => handle_system_info(state, id),
         "workspace.list" => handle_workspace_list(state, id),
         "workspace.create" => handle_workspace_create(state, id, &request.params),
+        "workspace.update" => handle_workspace_update(state, id, &request.params),
         "workspace.select" => handle_workspace_select(state, id, &request.params),
         "pane.list" => handle_pane_list(state, id),
         "pane.split" => handle_pane_split(state, id, &request.params),
@@ -84,6 +85,8 @@ fn handle_workspace_list(state: &AppState, id: serde_json::Value) -> JsonRpcResp
             json!({
                 "id": ws.id,
                 "name": ws.name,
+                "subtitle": ws.subtitle,
+                "description": ws.description,
                 "active": i == state.active_workspace,
                 "pane_count": ws.pane_layout().all_pane_ids().len(),
             })
@@ -99,13 +102,17 @@ fn handle_workspace_create(
 ) -> JsonRpcResponse {
     match state.add_workspace() {
         Ok(_) => {
-            let name = params
-                .get("name")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            if !name.is_empty() {
-                let idx = state.active_workspace;
-                state.workspaces[idx].name = name.to_string();
+            let idx = state.active_workspace;
+            if let Some(name) = params.get("name").and_then(|v| v.as_str()) {
+                if !name.is_empty() {
+                    state.workspaces[idx].name = name.to_string();
+                }
+            }
+            if let Some(subtitle) = params.get("subtitle").and_then(|v| v.as_str()) {
+                state.workspaces[idx].subtitle = subtitle.to_string();
+            }
+            if let Some(desc) = params.get("description").and_then(|v| v.as_str()) {
+                state.workspaces[idx].description = desc.to_string();
             }
             let ws = state.active_workspace();
             JsonRpcResponse::success(
@@ -113,12 +120,61 @@ fn handle_workspace_create(
                 json!({
                     "id": ws.id,
                     "name": ws.name,
+                    "subtitle": ws.subtitle,
+                    "description": ws.description,
                     "index": state.active_workspace,
                 }),
             )
         }
         Err(e) => JsonRpcResponse::internal_error(id, e.to_string()),
     }
+}
+
+fn handle_workspace_update(
+    state: &mut AppState,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
+    // Find workspace by index or id; default to active
+    let idx = if let Some(i) = params.get("index").and_then(|v| v.as_u64()) {
+        i as usize
+    } else if let Some(ws_id) = params.get("id").and_then(|v| v.as_u64()) {
+        match state.workspaces.iter().position(|ws| ws.id == ws_id as u32) {
+            Some(i) => i,
+            None => return JsonRpcResponse::invalid_params(id, format!("Workspace id {} not found", ws_id)),
+        }
+    } else {
+        state.active_workspace
+    };
+
+    if idx >= state.workspaces.len() {
+        return JsonRpcResponse::invalid_params(
+            id,
+            format!("Workspace index {} out of range (0..{})", idx, state.workspaces.len()),
+        );
+    }
+
+    let ws = &mut state.workspaces[idx];
+    if let Some(name) = params.get("name").and_then(|v| v.as_str()) {
+        ws.name = name.to_string();
+    }
+    if let Some(subtitle) = params.get("subtitle").and_then(|v| v.as_str()) {
+        ws.subtitle = subtitle.to_string();
+    }
+    if let Some(desc) = params.get("description").and_then(|v| v.as_str()) {
+        ws.description = desc.to_string();
+    }
+
+    JsonRpcResponse::success(
+        id,
+        json!({
+            "id": ws.id,
+            "name": ws.name,
+            "subtitle": ws.subtitle,
+            "description": ws.description,
+            "index": idx,
+        }),
+    )
 }
 
 fn handle_workspace_select(

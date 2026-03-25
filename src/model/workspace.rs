@@ -5,6 +5,8 @@ use super::{PaneId, PaneNode, Pane, SurfaceId, TabId, WorkspaceId};
 pub struct Workspace {
     pub id: WorkspaceId,
     pub name: String,
+    pub subtitle: String,
+    pub description: String,
     /// Always `Some` during normal operation. Temporarily `None` during structural mutations.
     pane_layout_opt: Option<PaneNode>,
     pub focused_pane: PaneId,
@@ -29,6 +31,8 @@ impl Workspace {
         Ok(Self {
             id,
             name,
+            subtitle: String::new(),
+            description: String::new(),
             pane_layout_opt: Some(PaneNode::Leaf(pane)),
             focused_pane,
         })

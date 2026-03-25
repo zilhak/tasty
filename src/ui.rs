@@ -18,31 +18,6 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
         .resizable(false)
         .show(ctx, |ui| {
             ui.vertical(|ui| {
-                ui.add_space(8.0);
-
-                // Header with notification badge
-                ui.horizontal(|ui| {
-                    ui.heading(t("sidebar.workspaces_heading"));
-                    let unread = state.notifications.unread_count();
-                    if unread > 0 {
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            let badge_text = if unread > 99 {
-                                t("badge.overflow").to_string()
-                            } else {
-                                unread.to_string()
-                            };
-                            let badge = egui::RichText::new(badge_text)
-                                .small()
-                                .strong()
-                                .color(egui::Color32::WHITE)
-                                .background_color(NOTIFICATION_COLOR);
-                            ui.label(badge);
-                        });
-                    }
-                });
-
-                ui.add_space(4.0);
-                ui.separator();
                 ui.add_space(4.0);
 
                 let active_ws = state.active_workspace;
@@ -51,32 +26,86 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
                 for i in 0..ws_count {
                     let is_active = i == active_ws;
                     let name = state.workspaces[i].name.clone();
+                    let subtitle = state.workspaces[i].subtitle.clone();
+                    let description = state.workspaces[i].description.clone();
                     let ws_id = state.workspaces[i].id;
                     let ws_unread = state.notifications.unread_count_for_workspace(ws_id);
 
-                    // Build label with optional unread badge
-                    let display = if ws_unread > 0 {
-                        format!("  {} [{}]", name, ws_unread)
-                    } else if is_active {
-                        format!("  {}", name)
+                    let bg = if is_active {
+                        egui::Color32::from_rgb(45, 50, 65)
                     } else {
-                        format!("  {}", name)
+                        egui::Color32::TRANSPARENT
+                    };
+                    let border = if is_active {
+                        egui::Color32::from_rgb(80, 140, 255)
+                    } else {
+                        egui::Color32::from_rgb(60, 60, 70)
                     };
 
-                    let label = if is_active {
-                        egui::RichText::new(display).strong()
-                    } else if ws_unread > 0 {
-                        egui::RichText::new(display).color(NOTIFICATION_COLOR)
-                    } else {
-                        egui::RichText::new(display)
-                    };
+                    let frame = egui::Frame::new()
+                        .fill(bg)
+                        .stroke(egui::Stroke::new(1.0, border))
+                        .corner_radius(4.0)
+                        .inner_margin(egui::Margin::symmetric(8, 6));
 
-                    if ui.selectable_label(is_active, label).clicked() {
+                    let response = frame.show(ui, |ui| {
+                        ui.set_min_width(ui.available_width());
+
+                        // Title row with optional unread badge
+                        ui.horizontal(|ui| {
+                            let title_text = if is_active {
+                                egui::RichText::new(&name).strong()
+                            } else {
+                                egui::RichText::new(&name)
+                            };
+                            ui.label(title_text);
+
+                            if ws_unread > 0 {
+                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                    let badge_text = if ws_unread > 99 {
+                                        "99+".to_string()
+                                    } else {
+                                        ws_unread.to_string()
+                                    };
+                                    ui.label(
+                                        egui::RichText::new(badge_text)
+                                            .small()
+                                            .strong()
+                                            .color(egui::Color32::WHITE)
+                                            .background_color(NOTIFICATION_COLOR),
+                                    );
+                                });
+                            }
+                        });
+
+                        // Subtitle
+                        if !subtitle.is_empty() {
+                            ui.label(
+                                egui::RichText::new(&subtitle)
+                                    .small()
+                                    .color(egui::Color32::from_rgb(140, 160, 200)),
+                            );
+                        }
+
+                        // Description
+                        if !description.is_empty() {
+                            ui.label(
+                                egui::RichText::new(&description)
+                                    .small()
+                                    .color(egui::Color32::from_rgb(130, 130, 150)),
+                            );
+                        }
+                    });
+
+                    // Make the entire card clickable
+                    if response.response.interact(egui::Sense::click()).clicked() {
                         state.switch_workspace(i);
                     }
+
+                    ui.add_space(2.0);
                 }
 
-                ui.add_space(8.0);
+                ui.add_space(4.0);
                 if ui.button(t("button.new_workspace")).clicked() {
                     let _ = state.add_workspace();
                 }
