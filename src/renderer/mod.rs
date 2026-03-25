@@ -483,6 +483,73 @@ impl CellRenderer {
         }
     }
 
+    /// Update font configuration (font size and/or family changed).
+    /// Resets the glyph atlas and re-measures cell metrics.
+    pub fn update_font(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, font_size: f32, font_family: &str) {
+        self.font_config = FontConfig::new(font_size, font_family);
+        self.atlas = GlyphAtlas::new(device);
+
+        // Rebuild the glyph bind group with the new atlas texture
+        let glyph_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("glyph_bind_group_layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
+        self.glyph_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("glyph_bind_group"),
+            layout: &glyph_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: self.uniform_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&self.atlas.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(&self.atlas.sampler),
+                },
+            ],
+        });
+
+        // Update uniform buffer with new cell size
+        let uniforms = Uniforms {
+            cell_size: [self.font_config.metrics.cell_width, self.font_config.metrics.cell_height],
+            grid_offset: [0.0, 0.0],
+            viewport_size: [0.0, 0.0], // will be updated on next resize
+            _padding: [0.0, 0.0],
+        };
+        queue.write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
+    }
+
     /// Get cell width in pixels.
     pub fn cell_width(&self) -> f32 {
         self.font_config.metrics.cell_width

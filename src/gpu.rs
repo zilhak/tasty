@@ -495,6 +495,26 @@ impl GpuState {
             self.refresh_theme(&state.settings.appearance.theme);
         }
 
+        // Refresh font if font_size or font_family changed
+        let current_font_size = self.renderer.font_config.metrics.font_size;
+        let current_font_family = match &self.renderer.font_config.font_family {
+            cosmic_text::FamilyOwned::Monospace => String::new(),
+            cosmic_text::FamilyOwned::Name(name) => name.to_string(),
+            _ => String::new(),
+        };
+        if state.settings.appearance.font_size != current_font_size
+            || state.settings.appearance.font_family != current_font_family
+        {
+            self.renderer.update_font(
+                &self.device,
+                &self.queue,
+                state.settings.appearance.font_size,
+                &state.settings.appearance.font_family,
+            );
+            // Resize viewport with new cell metrics
+            self.renderer.resize(&self.queue, self.size.width, self.size.height);
+        }
+
         self.egui_state
             .handle_platform_output(window, full_output.platform_output);
 
