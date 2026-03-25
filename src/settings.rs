@@ -217,6 +217,10 @@ impl GeneralSettings {
 # Minimal shell configuration for fast pane/tab creation.
 # Edit this file to customize. Tasty will not overwrite it.
 
+# UTF-8
+export LANG=en_US.UTF-8
+export LC_ALL=en_US.UTF-8
+
 # Inherit Windows PATH
 ORIGINAL_PATH="${ORIGINAL_PATH:-${PATH}}"
 export PATH="/usr/local/bin:/usr/bin:/bin:${ORIGINAL_PATH}"
