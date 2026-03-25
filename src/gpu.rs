@@ -472,6 +472,7 @@ impl GpuState {
         let prev_theme = state.settings.appearance.theme.clone();
         let full_output = self.egui_ctx.run(raw_input, |ctx| {
             ui::draw_ui(ctx, state, scale_factor);
+            ui::draw_ws_rename_dialog(ctx, state);
             ui::draw_pane_dividers(ctx, &dividers, scale_factor);
             ui::draw_pane_tab_bars(ctx, state, &pane_rects, scale_factor);
             ui::draw_notification_panel(ctx, state);

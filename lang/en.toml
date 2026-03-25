@@ -89,6 +89,14 @@ restart_notice = "Language change will take effect after restart."
 workspaces_heading = "Workspaces"
 shortcuts_heading = "Shortcuts"
 
+[context_menu]
+rename_title = "Rename"
+rename_subtitle = "Change Subtitle"
+
+[rename_dialog]
+title_heading = "Rename Workspace"
+subtitle_heading = "Change Subtitle"
+
 [shortcut.key]
 new_workspace = "Ctrl+Shift+N"
 new_tab = "Ctrl+Shift+T"

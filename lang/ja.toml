@@ -89,6 +89,14 @@ restart_notice = "言語の変更は再起動後に適用されます。"
 workspaces_heading = "ワークスペース"
 shortcuts_heading = "ショートカット"
 
+[context_menu]
+rename_title = "名前の変更"
+rename_subtitle = "サブタイトルの変更"
+
+[rename_dialog]
+title_heading = "ワークスペース名の変更"
+subtitle_heading = "サブタイトルの変更"
+
 [shortcut.key]
 new_workspace = "Ctrl+Shift+N"
 new_tab = "Ctrl+Shift+T"

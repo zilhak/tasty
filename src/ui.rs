@@ -3,7 +3,7 @@ use std::time::Instant;
 use crate::i18n::{t, t_fmt};
 use crate::model::Rect;
 use crate::settings::KeybindingSettings;
-use crate::state::AppState;
+use crate::state::{AppState, WsRenameField};
 
 /// Color for notification badge / highlight.
 const NOTIFICATION_COLOR: egui::Color32 = egui::Color32::from_rgb(80, 140, 255);
@@ -97,10 +97,24 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
                         }
                     });
 
-                    // Make the entire card clickable
-                    if response.response.interact(egui::Sense::click()).clicked() {
+                    let card_response = response.response.interact(egui::Sense::click());
+
+                    // Left click: select workspace
+                    if card_response.clicked() {
                         state.switch_workspace(i);
                     }
+
+                    // Right click: context menu
+                    card_response.context_menu(|ui| {
+                        if ui.button(t("context_menu.rename_title")).clicked() {
+                            state.ws_rename = Some((i, WsRenameField::Name, state.workspaces[i].name.clone()));
+                            ui.close_menu();
+                        }
+                        if ui.button(t("context_menu.rename_subtitle")).clicked() {
+                            state.ws_rename = Some((i, WsRenameField::Subtitle, state.workspaces[i].subtitle.clone()));
+                            ui.close_menu();
+                        }
+                    });
 
                     ui.add_space(2.0);
                 }
@@ -195,6 +209,75 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
         y: terminal_y,
         width: terminal_width.max(1.0),
         height: terminal_height.max(1.0),
+    }
+}
+
+/// Draw the workspace rename dialog (if active).
+pub fn draw_ws_rename_dialog(ctx: &egui::Context, state: &mut AppState) {
+    let Some((ws_idx, field, ref mut buffer)) = state.ws_rename else {
+        return;
+    };
+
+    if ws_idx >= state.workspaces.len() {
+        state.ws_rename = None;
+        return;
+    }
+
+    let heading = match field {
+        WsRenameField::Name => t("rename_dialog.title_heading"),
+        WsRenameField::Subtitle => t("rename_dialog.subtitle_heading"),
+    };
+
+    let mut do_apply = false;
+    let mut do_cancel = false;
+
+    egui::Window::new(heading)
+        .fixed_size(egui::vec2(280.0, 60.0))
+        .collapsible(false)
+        .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+        .show(ctx, |ui| {
+            let response = ui.text_edit_singleline(buffer);
+            // Auto-focus the text field on first frame
+            if !response.has_focus() {
+                response.request_focus();
+            }
+            // Enter to confirm, Escape to cancel
+            if response.lost_focus() {
+                if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                    do_apply = true;
+                } else if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                    do_cancel = true;
+                }
+            }
+
+            ui.horizontal(|ui| {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.button(t("button.cancel")).clicked() {
+                        do_cancel = true;
+                    }
+                    if ui.button(t("button.save")).clicked() {
+                        do_apply = true;
+                    }
+                });
+            });
+        });
+
+    if do_apply {
+        let (ws_idx, field, buffer) = state.ws_rename.take().unwrap();
+        if ws_idx < state.workspaces.len() {
+            match field {
+                WsRenameField::Name => {
+                    if !buffer.is_empty() {
+                        state.workspaces[ws_idx].name = buffer;
+                    }
+                }
+                WsRenameField::Subtitle => {
+                    state.workspaces[ws_idx].subtitle = buffer;
+                }
+            }
+        }
+    } else if do_cancel {
+        state.ws_rename = None;
     }
 }
 

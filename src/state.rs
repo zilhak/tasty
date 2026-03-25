@@ -68,6 +68,15 @@ pub struct AppState {
     pub sidebar_width: f32,
     /// Waker callback to wake the event loop when new PTY data arrives.
     waker: Waker,
+    /// Workspace rename dialog state: (workspace_index, field, edit_buffer)
+    pub ws_rename: Option<(usize, WsRenameField, String)>,
+}
+
+/// Which workspace field is being renamed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WsRenameField {
+    Name,
+    Subtitle,
 }
 
 impl AppState {
@@ -100,6 +109,7 @@ impl AppState {
             hook_manager: HookManager::new(),
             sidebar_width,
             waker,
+            ws_rename: None,
         };
         state.send_fast_init(surface_id);
         Ok(state)
