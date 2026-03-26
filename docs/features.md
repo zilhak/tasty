@@ -323,6 +323,12 @@
 - `hook.list`: 등록된 훅 목록 조회 (서피스별 필터 가능)
 - `hook.unset`: 훅 삭제
 
+#### 메시지 패싱
+- `message.send`: `to_surface_id`, `content`, `from_surface_id?` — 다른 서피스의 메시지 큐에 메시지 추가. 응답: `{ id: N }`
+- `message.read`: `surface_id?`, `from_surface_id?`, `peek?` — 메시지 큐 읽기. 기본적으로 소비(consume), `peek: true`이면 읽기만 하고 큐에서 제거하지 않음. `from_surface_id`로 발신자 필터 가능
+- `message.count`: `surface_id?` — 대기 중인 메시지 수. 응답: `{ count: N }`
+- `message.clear`: `surface_id?` — 메시지 큐 전체 삭제. 응답: `{ cleared: true }`
+
 #### 에이전트 전용
 - `claude.launch`: Claude Code 전용 워크스페이스 생성 및 실행
 
@@ -361,7 +367,7 @@
 
 ### CLI 클라이언트 (cli.rs)
 - `tasty` 명령에 서브커맨드가 있으면 CLI 모드, `--headless`면 헤드리스 모드, 둘 다 없으면 GUI 모드로 동작
-- clap 기반 서브커맨드: `list`, `new-workspace`, `select-workspace`, `send`, `send-key`, `notify`, `notifications`, `tree`, `split`, `new-tab`, `close-tab`, `close-pane`, `close-surface`, `surfaces`, `panes`, `info`, `set-hook`, `list-hooks`, `unset-hook`, `set-mark`, `read-since-mark`, `claude`
+- clap 기반 서브커맨드: `list`, `new-workspace`, `select-workspace`, `send`, `send-key`, `notify`, `notifications`, `tree`, `split`, `new-tab`, `close-tab`, `close-pane`, `close-surface`, `surfaces`, `panes`, `info`, `set-hook`, `list-hooks`, `unset-hook`, `set-mark`, `read-since-mark`, `claude`, `message-send`, `message-read`, `message-count`, `message-clear`
 - 포트 파일에서 포트 번호를 읽어 TCP 연결 후 JSON-RPC 요청/응답
 - `tree` 커맨드: 워크스페이스/패인/탭 계층을 트리 형태로 표시
 - 에러 시 종료 코드 1 반환

@@ -179,6 +179,42 @@ pub enum Commands {
         #[arg(long)]
         prompt: Option<String>,
     },
+    /// Send a message to a surface's message queue
+    MessageSend {
+        /// Target surface ID
+        #[arg(long)]
+        to: u32,
+        /// Message content
+        #[arg()]
+        content: String,
+        /// Sender surface ID (default: focused)
+        #[arg(long)]
+        from: Option<u32>,
+    },
+    /// Read messages from a surface's message queue (consumes by default)
+    MessageRead {
+        /// Surface ID (default: focused)
+        #[arg(long)]
+        surface: Option<u32>,
+        /// Filter by sender surface ID
+        #[arg(long)]
+        from: Option<u32>,
+        /// Peek without consuming
+        #[arg(long)]
+        peek: bool,
+    },
+    /// Count messages in a surface's message queue
+    MessageCount {
+        /// Surface ID (default: focused)
+        #[arg(long)]
+        surface: Option<u32>,
+    },
+    /// Clear all messages in a surface's message queue
+    MessageClear {
+        /// Surface ID (default: focused)
+        #[arg(long)]
+        surface: Option<u32>,
+    },
     /// Claude Code hook integration (called by Claude Code's hook system)
     ClaudeHook {
         /// Hook event type: stop, notification, prompt-submit, session-start
@@ -450,6 +486,30 @@ fn command_to_request(command: &Commands) -> JsonRpcRequest {
                 "nickname": nickname,
                 "prompt": prompt,
             }),
+        ),
+        Commands::MessageSend { to, content, from } => (
+            "message.send",
+            serde_json::json!({
+                "to_surface_id": to,
+                "content": content,
+                "from_surface_id": from,
+            }),
+        ),
+        Commands::MessageRead { surface, from, peek } => (
+            "message.read",
+            serde_json::json!({
+                "surface_id": surface,
+                "from_surface_id": from,
+                "peek": peek,
+            }),
+        ),
+        Commands::MessageCount { surface } => (
+            "message.count",
+            serde_json::json!({ "surface_id": surface }),
+        ),
+        Commands::MessageClear { surface } => (
+            "message.clear",
+            serde_json::json!({ "surface_id": surface }),
         ),
         // ClaudeHook is handled separately in run_client before reaching here
         Commands::ClaudeHook { .. } => unreachable!("ClaudeHook is handled in run_client"),

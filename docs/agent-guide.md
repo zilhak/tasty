@@ -76,6 +76,12 @@ tasty notifications
 # 트리 (전체 구조 출력)
 tasty tree
 
+# 메시지 패싱
+tasty message-send --to SURFACE_ID "내용"           # 서피스에 메시지 전송
+tasty message-read [--surface ID] [--from ID] [--peek]  # 메시지 읽기 (기본: 소비)
+tasty message-count [--surface ID]                  # 대기 메시지 수 확인
+tasty message-clear [--surface ID]                  # 메시지 큐 삭제
+
 # Claude 실행
 tasty claude [--workspace NAME] [--directory PATH] [--task "설명"]
 
@@ -166,6 +172,15 @@ tasty claude-hook stop --surface 5  # 특정 surface 지정 (또는 TASTY_SURFAC
 |--------|---------|------|
 | `notification.list` | 없음 | 최근 50개 알림 |
 | `notification.create` | `title?, body?` | 알림 생성 |
+
+### 메시지 패싱 (Surface 간 통신)
+
+| 메서드 | 파라미터 | 설명 |
+|--------|---------|------|
+| `message.send` | `to_surface_id: number, content: string, from_surface_id?: number` | 다른 서피스에 메시지 전송. 응답: `{ id: N }` |
+| `message.read` | `surface_id?: number, from_surface_id?: number, peek?: bool` | 메시지 읽기 (기본: 소비). `peek: true`이면 큐에서 제거하지 않음. `from_surface_id`로 발신자 필터 가능 |
+| `message.count` | `surface_id?: number` | 대기 중인 메시지 수. 응답: `{ count: N }` |
+| `message.clear` | `surface_id?: number` | 메시지 큐 전체 삭제. 응답: `{ cleared: true }` |
 
 ### Claude 전용
 
