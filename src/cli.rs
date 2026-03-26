@@ -264,6 +264,12 @@ pub enum Commands {
         #[arg(long)]
         hook: u32,
     },
+    /// Check if a surface is currently typing (received key input within 5 seconds)
+    IsTyping {
+        /// Surface ID (default: focused)
+        #[arg(long)]
+        surface: Option<u32>,
+    },
 }
 
 /// Send a single JSON-RPC request and read the response.
@@ -590,6 +596,10 @@ fn command_to_request(command: &Commands) -> JsonRpcRequest {
         Commands::GlobalHookUnset { hook } => (
             "global_hook.unset",
             serde_json::json!({ "hook_id": hook }),
+        ),
+        Commands::IsTyping { surface } => (
+            "surface.is_typing",
+            serde_json::json!({ "surface_id": surface }),
         ),
     };
 

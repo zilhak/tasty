@@ -167,6 +167,8 @@ impl ApplicationHandler<AppEvent> for App {
                 // Forward to terminal
 
                 if let Some(state) = &mut self.state {
+                    // Record typing before borrowing terminal mutably
+                    let typing_surface_id = state.focused_surface_id();
                     if let Some(terminal) = state.focused_terminal_mut() {
                         // Handle special keys FIRST — these have well-defined byte
                         // sequences and must not be intercepted by event.text,
@@ -257,6 +259,10 @@ impl ApplicationHandler<AppEvent> for App {
                                 }
                             }
                         }
+                    }
+                    // After terminal borrow ends, record typing for the surface
+                    if let Some(sid) = typing_surface_id {
+                        state.record_typing(sid);
                     }
                 }
             }

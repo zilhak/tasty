@@ -42,6 +42,8 @@ pub fn handle(state: &mut AppState, request: &JsonRpcRequest) -> JsonRpcResponse
         "surface.read_since_mark" => surface::handle_read_since_mark(state, id, &request.params),
         "surface.screen_text" => surface::handle_screen_text(state, id, &request.params),
         "surface.cursor_position" => surface::handle_cursor_position(state, id, &request.params),
+        "surface.is_typing" => handle_is_typing(state, id, &request.params),
+        "surface.send_wait_idle" => handle_send_wait_idle(state, id, &request.params),
         "claude.launch" => hooks::handle_claude_launch(state, id, &request.params),
         "claude.spawn" => hooks::handle_claude_spawn(state, id, &request.params),
         "claude.children" => hooks::handle_claude_children(state, id, &request.params),
@@ -425,6 +427,66 @@ fn handle_tree(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {
         }));
     }
     JsonRpcResponse::success(id, json!(tree))
+}
+
+fn handle_is_typing(
+    state: &AppState,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
+    let surface_id = params
+        .get("surface_id")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32)
+        .or_else(|| state.focused_surface_id())
+        .unwrap_or(0);
+    let typing = state.is_typing(surface_id);
+    let idle_seconds = if let Some(last) = state.last_key_input.get(&surface_id) {
+        last.elapsed().as_secs_f64()
+    } else {
+        f64::MAX
+    };
+    let idle_seconds_capped = if idle_seconds == f64::MAX { -1.0 } else { idle_seconds };
+    JsonRpcResponse::success(
+        id,
+        json!({
+            "typing": typing,
+            "idle_seconds": idle_seconds_capped,
+        }),
+    )
+}
+
+fn handle_send_wait_idle(
+    state: &mut AppState,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
+    let surface_id = params
+        .get("surface_id")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32)
+        .or_else(|| state.focused_surface_id())
+        .unwrap_or(0);
+    let text = match params.get("text").and_then(|v| v.as_str()) {
+        Some(t) => t.to_string(),
+        None => return JsonRpcResponse::invalid_params(id, "Missing 'text' parameter"),
+    };
+    if state.is_typing(surface_id) {
+        return JsonRpcResponse::success(
+            id,
+            json!({ "sent": false, "reason": "typing" }),
+        );
+    }
+    // Surface is idle — send text
+    if let Some(terminal) = state.find_terminal_by_id_mut(surface_id) {
+        terminal.send_key(&text);
+        JsonRpcResponse::success(id, json!({ "sent": true }))
+    } else {
+        JsonRpcResponse::invalid_params(
+            id,
+            format!("Surface {} not found", surface_id),
+        )
+    }
 }
 
 fn handle_message_send(

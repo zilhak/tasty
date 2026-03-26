@@ -321,6 +321,10 @@
 - `surface.set_mark`: 출력 읽기 마크 설정 (optional surface_id)
 - `surface.read_since_mark`: 마크 이후 출력 텍스트 조회, ANSI 제거 옵션 (optional surface_id)
 
+#### 타이핑 감지
+- `surface.is_typing`: 서피스가 최근 5초 내 키 입력을 받았는지 조회. 반환: `{ typing: bool, idle_seconds: f64 }` (idle_seconds가 -1이면 입력 기록 없음). optional surface_id
+- `surface.send_wait_idle`: 서피스가 유휴 상태일 때만 텍스트 전송. 타이핑 중이면 `{ sent: false, reason: "typing" }` 반환, 유휴면 전송 후 `{ sent: true }` 반환. CLI에서 폴링하여 대기 구현 가능. optional surface_id, 필수 text
+
 #### 알림
 - `notification.list`: 최근 50개 알림 목록
 - `notification.create`: 알림 생성

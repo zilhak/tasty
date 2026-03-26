@@ -107,6 +107,8 @@ pub struct AppState {
     surface_next_message_id: u32,
     /// Global hook manager for timer-based and file-watching hooks.
     pub global_hook_manager: GlobalHookManager,
+    /// Last key input time per surface (for typing detection).
+    pub last_key_input: HashMap<u32, std::time::Instant>,
 }
 
 /// Which workspace field is being renamed.
@@ -156,6 +158,7 @@ impl AppState {
             surface_messages: HashMap::new(),
             surface_next_message_id: 0,
             global_hook_manager: GlobalHookManager::new(),
+            last_key_input: HashMap::new(),
         };
         state.send_fast_init(surface_id);
         Ok(state)
@@ -202,6 +205,20 @@ impl AppState {
         match panel {
             crate::model::Panel::Terminal(node) => Some(node.id),
             crate::model::Panel::SurfaceGroup(group) => Some(group.focused_surface),
+        }
+    }
+
+    /// Record that the user typed on the given surface (updates last_key_input timestamp).
+    pub fn record_typing(&mut self, surface_id: u32) {
+        self.last_key_input.insert(surface_id, std::time::Instant::now());
+    }
+
+    /// Returns true if the surface received key input within the last 5 seconds.
+    pub fn is_typing(&self, surface_id: u32) -> bool {
+        if let Some(last) = self.last_key_input.get(&surface_id) {
+            last.elapsed().as_secs_f64() < 5.0
+        } else {
+            false
         }
     }
 

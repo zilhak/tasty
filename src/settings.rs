@@ -33,6 +33,8 @@ pub struct GeneralSettings {
     pub language: String,
     /// Number of scrollback lines to keep.
     pub scrollback_lines: usize,
+    /// Show confirmation dialog when closing a surface with a running process.
+    pub confirm_close_running: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -132,6 +134,7 @@ impl Default for GeneralSettings {
             startup_command: String::new(),
             language: "en".to_string(),
             scrollback_lines: 10000,
+            confirm_close_running: true,
         }
     }
 }

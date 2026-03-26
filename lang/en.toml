@@ -43,6 +43,7 @@ shell_mode_custom = "Custom"
 shell_args_label = "Shell arguments:"
 startup_command_label = "Startup command:"
 scrollback_lines_label = "Scrollback lines:"
+confirm_close_label = "Confirm close running process:"
 
 [settings.appearance]
 heading = "Appearance"

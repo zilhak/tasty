@@ -43,6 +43,7 @@ shell_mode_custom = "カスタム"
 shell_args_label = "シェル引数:"
 startup_command_label = "起動コマンド:"
 scrollback_lines_label = "スクロールバック行数:"
+confirm_close_label = "実行中プロセスの終了確認:"
 
 [settings.appearance]
 heading = "外観"

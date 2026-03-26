@@ -226,6 +226,10 @@ fn draw_general_tab(ui: &mut egui::Ui, settings: &mut Settings) {
                 .range(0..=100000)
                 .speed(100));
             ui.end_row();
+
+            ui.label(t("settings.general.confirm_close_label"));
+            ui.checkbox(&mut settings.general.confirm_close_running, "");
+            ui.end_row();
         });
 }
 
