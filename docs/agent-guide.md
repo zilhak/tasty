@@ -64,6 +64,10 @@ tasty set-mark                # 출력 마크 설정
 tasty read-since-mark [--strip-ansi]  # 마크 이후 출력 읽기
 tasty close-surface
 
+# 비터미널 패널
+tasty open-markdown /path/to/file.md     # 마크다운 뷰어 탭 열기
+tasty open-explorer [--path /dir]        # 파일 탐색기 탭 열기
+
 # 포커스 이동
 tasty focus-direction left    # 왼쪽 패인/서피스로 포커스 이동
 tasty focus-direction right   # 오른쪽
@@ -142,6 +146,8 @@ tasty claude-wait --child 42 --timeout 60 # 타임아웃 60초로 대기
 | `tab.list` | 없음 | 포커스된 패인의 탭 목록 |
 | `tab.create` | 없음 | 새 탭 생성 |
 | `tab.close` | 없음 | 활성 탭 닫기 |
+| `tab.open_markdown` | `file_path`, `pane_id?` | 마크다운 뷰어 탭 열기 |
+| `tab.open_explorer` | `path?`, `pane_id?` | 파일 탐색기 탭 열기 (path 생략 시 홈 디렉토리) |
 
 ### Surface (터미널 상호작용)
 

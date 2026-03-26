@@ -573,6 +573,210 @@ pub fn draw_notification_panel(ctx: &egui::Context, state: &mut AppState) {
     state.notification_panel_open = open;
 }
 
+/// Render non-terminal panels (Markdown, Explorer) using egui.
+/// These panels don't have a wgpu terminal renderer; they are fully egui-based.
+pub fn draw_non_terminal_panels(
+    ctx: &egui::Context,
+    state: &mut AppState,
+    pane_rects: &[(u32, Rect)],
+    scale_factor: f32,
+) {
+    // First pass: gather info about non-terminal panels (read-only).
+    struct NonTerminalInfo {
+        pane_id: u32,
+        logical_x: f32,
+        logical_y: f32,
+        logical_w: f32,
+        logical_h: f32,
+    }
+
+    let mut infos = Vec::new();
+    {
+        let ws = state.active_workspace();
+        for &(pane_id, pane_rect) in pane_rects {
+            let pane = match ws.pane_layout().find_pane(pane_id) {
+                Some(p) => p,
+                None => continue,
+            };
+            let panel = match pane.active_panel() {
+                Some(p) => p,
+                None => continue,
+            };
+            if !panel.is_non_terminal() {
+                continue;
+            }
+            let tab_bar_h = if pane.tabs.len() > 1 { 24.0 } else { 0.0 };
+            infos.push(NonTerminalInfo {
+                pane_id,
+                logical_x: pane_rect.x / scale_factor,
+                logical_y: (pane_rect.y + tab_bar_h) / scale_factor,
+                logical_w: pane_rect.width / scale_factor,
+                logical_h: (pane_rect.height - tab_bar_h).max(1.0) / scale_factor,
+            });
+        }
+    }
+
+    // Second pass: render each non-terminal panel.
+    for info in &infos {
+        let ws = state.active_workspace_mut();
+        let pane = match ws.pane_layout_mut().find_pane_mut(info.pane_id) {
+            Some(p) => p,
+            None => continue,
+        };
+        let tab = match pane.active_tab_mut() {
+            Some(t) => t,
+            None => continue,
+        };
+
+        match tab.panel_mut() {
+            crate::model::Panel::Markdown(md_panel) => {
+                egui::Area::new(egui::Id::new(format!("md_panel_{}", info.pane_id)))
+                    .fixed_pos(egui::pos2(info.logical_x, info.logical_y))
+                    .order(egui::Order::Background)
+                    .show(ctx, |ui| {
+                        ui.set_min_size(egui::vec2(info.logical_w, info.logical_h));
+                        ui.set_max_size(egui::vec2(info.logical_w, info.logical_h));
+                        egui::Frame::new()
+                            .fill(egui::Color32::from_rgb(25, 25, 30))
+                            .inner_margin(egui::Margin::same(8))
+                            .show(ui, |ui| {
+                                egui::ScrollArea::vertical()
+                                    .id_salt(format!("md_scroll_{}", info.pane_id))
+                                    .show(ui, |ui| {
+                                        // Clone content to avoid borrow issues
+                                        let content = md_panel.content.clone();
+                                        crate::markdown_ui::render_markdown(ui, &content);
+                                    });
+                            });
+                    });
+            }
+            crate::model::Panel::Explorer(exp_panel) => {
+                egui::Area::new(egui::Id::new(format!("explorer_{}", info.pane_id)))
+                    .fixed_pos(egui::pos2(info.logical_x, info.logical_y))
+                    .order(egui::Order::Background)
+                    .show(ctx, |ui| {
+                        ui.set_min_size(egui::vec2(info.logical_w, info.logical_h));
+                        ui.set_max_size(egui::vec2(info.logical_w, info.logical_h));
+                        egui::Frame::new()
+                            .fill(egui::Color32::from_rgb(25, 25, 30))
+                            .inner_margin(egui::Margin::same(4))
+                            .show(ui, |ui| {
+                                crate::explorer_ui::draw_explorer(ui, exp_panel);
+                            });
+                    });
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Render the pane right-click context menu.
+pub fn draw_pane_context_menu(
+    ctx: &egui::Context,
+    state: &mut AppState,
+    _scale_factor: f32,
+) {
+    let menu = match &state.pane_context_menu {
+        Some(m) => m.clone(),
+        None => return,
+    };
+
+    let mut close_menu = false;
+    let mut open_markdown_dialog = false;
+    let mut open_explorer = false;
+
+    egui::Area::new(egui::Id::new("pane_context_menu"))
+        .fixed_pos(egui::pos2(menu.x, menu.y))
+        .order(egui::Order::Foreground)
+        .show(ctx, |ui| {
+            egui::Frame::new()
+                .fill(egui::Color32::from_rgb(40, 40, 50))
+                .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(70, 70, 85)))
+                .corner_radius(4.0)
+                .inner_margin(egui::Margin::same(4))
+                .show(ui, |ui| {
+                    ui.set_min_width(160.0);
+                    if ui.button("Open Markdown...").clicked() {
+                        open_markdown_dialog = true;
+                        close_menu = true;
+                    }
+                    if ui.button("Open Explorer").clicked() {
+                        open_explorer = true;
+                        close_menu = true;
+                    }
+                    ui.separator();
+                    if ui.button("Cancel").clicked() {
+                        close_menu = true;
+                    }
+                });
+        });
+
+    // Close menu if clicked outside
+    if ctx.input(|i| i.pointer.any_click()) && !open_markdown_dialog && !open_explorer {
+        close_menu = true;
+    }
+
+    if open_markdown_dialog {
+        state.markdown_path_dialog = Some((menu.pane_id, String::new()));
+        state.pane_context_menu = None;
+    } else if open_explorer {
+        // Open explorer at home directory as default
+        let home = directories::BaseDirs::new()
+            .map(|d| d.home_dir().to_string_lossy().to_string())
+            .unwrap_or_else(|| ".".to_string());
+        // Focus the target pane
+        state.active_workspace_mut().focused_pane = menu.pane_id;
+        let _ = state.add_explorer_tab(home);
+        state.pane_context_menu = None;
+    } else if close_menu {
+        state.pane_context_menu = None;
+    }
+}
+
+/// Render the markdown file path dialog.
+pub fn draw_markdown_path_dialog(
+    ctx: &egui::Context,
+    state: &mut AppState,
+) {
+    let (pane_id, mut path_buf) = match state.markdown_path_dialog.take() {
+        Some(d) => d,
+        None => return,
+    };
+
+    let mut keep_open = true;
+    let mut confirm = false;
+
+    egui::Window::new("Open Markdown File")
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .show(ctx, |ui| {
+            ui.label("Enter file path:");
+            let response = ui.text_edit_singleline(&mut path_buf);
+            if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                confirm = true;
+            }
+            // Request focus on first frame
+            response.request_focus();
+            ui.horizontal(|ui| {
+                if ui.button("OK").clicked() {
+                    confirm = true;
+                }
+                if ui.button("Cancel").clicked() {
+                    keep_open = false;
+                }
+            });
+        });
+
+    if confirm && !path_buf.is_empty() {
+        state.active_workspace_mut().focused_pane = pane_id;
+        let _ = state.add_markdown_tab(path_buf);
+        // Don't keep dialog open
+    } else if keep_open && !confirm {
+        state.markdown_path_dialog = Some((pane_id, path_buf));
+    }
+}
+
 enum PaneTabAction {
     SwitchTab(usize),
     AddTab,

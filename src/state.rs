@@ -109,6 +109,18 @@ pub struct AppState {
     pub global_hook_manager: GlobalHookManager,
     /// Last key input time per surface (for typing detection).
     pub last_key_input: HashMap<u32, std::time::Instant>,
+    /// Pane right-click context menu state: (pane_id, logical_x, logical_y).
+    pub pane_context_menu: Option<PaneContextMenu>,
+    /// Markdown file path dialog state: (pane_id, path_buffer).
+    pub markdown_path_dialog: Option<(u32, String)>,
+}
+
+/// State for the pane right-click context menu.
+#[derive(Debug, Clone)]
+pub struct PaneContextMenu {
+    pub pane_id: u32,
+    pub x: f32,
+    pub y: f32,
 }
 
 /// Which workspace field is being renamed.
@@ -159,6 +171,8 @@ impl AppState {
             surface_next_message_id: 0,
             global_hook_manager: GlobalHookManager::new(),
             last_key_input: HashMap::new(),
+            pane_context_menu: None,
+            markdown_path_dialog: None,
         };
         state.send_fast_init(surface_id);
         Ok(state)
@@ -205,6 +219,7 @@ impl AppState {
         match panel {
             crate::model::Panel::Terminal(node) => Some(node.id),
             crate::model::Panel::SurfaceGroup(group) => Some(group.focused_surface),
+            crate::model::Panel::Markdown(_) | crate::model::Panel::Explorer(_) => None,
         }
     }
 
@@ -290,6 +305,26 @@ impl AppState {
             pane.add_tab_with_shell(tab_id, surface_id, cols, rows, shell_ref, &shell_args, waker)?;
         }
         self.send_fast_init(surface_id);
+        Ok(())
+    }
+
+    /// Add a Markdown viewer tab in the focused pane.
+    pub fn add_markdown_tab(&mut self, file_path: String) -> anyhow::Result<()> {
+        let tab_id = self.next_ids.next_tab();
+        let panel_id = self.next_ids.next_surface(); // reuse surface id counter
+        if let Some(pane) = self.focused_pane_mut() {
+            pane.add_markdown_tab(tab_id, panel_id, file_path);
+        }
+        Ok(())
+    }
+
+    /// Add a file explorer tab in the focused pane.
+    pub fn add_explorer_tab(&mut self, root_path: String) -> anyhow::Result<()> {
+        let tab_id = self.next_ids.next_tab();
+        let panel_id = self.next_ids.next_surface();
+        if let Some(pane) = self.focused_pane_mut() {
+            pane.add_explorer_tab(tab_id, panel_id, root_path);
+        }
         Ok(())
     }
 

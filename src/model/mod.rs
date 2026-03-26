@@ -112,11 +112,15 @@ mod workspace;
 mod pane;
 mod panel;
 mod surface_group;
+mod markdown_panel;
+mod explorer_panel;
 
 pub use workspace::*;
 pub use pane::*;
 pub use panel::*;
 pub use surface_group::*;
+pub use markdown_panel::*;
+pub use explorer_panel::*;
 
 #[cfg(test)]
 mod tests;

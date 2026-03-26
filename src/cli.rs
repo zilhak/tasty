@@ -270,6 +270,18 @@ pub enum Commands {
         #[arg(long)]
         surface: Option<u32>,
     },
+    /// Open a Markdown file viewer tab
+    OpenMarkdown {
+        /// Path to the markdown file
+        #[arg()]
+        path: String,
+    },
+    /// Open a file explorer tab
+    OpenExplorer {
+        /// Root directory path (default: home directory)
+        #[arg(long)]
+        path: Option<String>,
+    },
     /// Broadcast text to all children of a parent Claude instance
     ClaudeBroadcast {
         /// Text to send to all children
@@ -668,6 +680,14 @@ fn command_to_request(command: &Commands) -> JsonRpcRequest {
         Commands::IsTyping { surface } => (
             "surface.is_typing",
             serde_json::json!({ "surface_id": surface }),
+        ),
+        Commands::OpenMarkdown { path } => (
+            "tab.open_markdown",
+            serde_json::json!({ "file_path": path }),
+        ),
+        Commands::OpenExplorer { path } => (
+            "tab.open_explorer",
+            serde_json::json!({ "path": path }),
         ),
     };
 

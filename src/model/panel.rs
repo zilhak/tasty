@@ -1,5 +1,5 @@
 use tasty_terminal::Terminal;
-use super::{Rect, SplitDirection, SurfaceGroupLayout, SurfaceGroupNode, SurfaceId, SurfaceNode};
+use super::{ExplorerPanel, MarkdownPanel, Rect, SplitDirection, SurfaceGroupLayout, SurfaceGroupNode, SurfaceId, SurfaceNode};
 
 /// Content type within a Tab.
 pub enum Panel {
@@ -7,6 +7,10 @@ pub enum Panel {
     Terminal(SurfaceNode),
     /// A split within a tab - appears as ONE tab but renders multiple terminals.
     SurfaceGroup(SurfaceGroupNode),
+    /// A Markdown file viewer (rendered with egui, no PTY).
+    Markdown(MarkdownPanel),
+    /// A file explorer (rendered with egui, no PTY).
+    Explorer(ExplorerPanel),
 }
 
 impl Panel {
@@ -15,6 +19,7 @@ impl Panel {
         match self {
             Panel::Terminal(node) => Some(&node.terminal),
             Panel::SurfaceGroup(group) => group.focused_terminal(),
+            Panel::Markdown(_) | Panel::Explorer(_) => None,
         }
     }
 
@@ -23,6 +28,7 @@ impl Panel {
         match self {
             Panel::Terminal(node) => Some(&mut node.terminal),
             Panel::SurfaceGroup(group) => group.focused_terminal_mut(),
+            Panel::Markdown(_) | Panel::Explorer(_) => None,
         }
     }
 
@@ -31,6 +37,7 @@ impl Panel {
         match self {
             Panel::Terminal(node) => out.push(&mut node.terminal),
             Panel::SurfaceGroup(group) => group.layout_mut().collect_terminals_mut(out),
+            Panel::Markdown(_) | Panel::Explorer(_) => {}
         }
     }
 
@@ -42,6 +49,7 @@ impl Panel {
         match self {
             Panel::Terminal(node) => f(node.id, &mut node.terminal),
             Panel::SurfaceGroup(group) => group.layout_mut().for_each_terminal_mut(f),
+            Panel::Markdown(_) | Panel::Explorer(_) => {}
         }
     }
 
@@ -52,6 +60,7 @@ impl Panel {
                 if node.id == surface_id { Some(&node.terminal) } else { None }
             }
             Panel::SurfaceGroup(group) => group.layout().find_terminal(surface_id),
+            Panel::Markdown(_) | Panel::Explorer(_) => None,
         }
     }
 
@@ -62,15 +71,23 @@ impl Panel {
                 if node.id == surface_id { Some(&mut node.terminal) } else { None }
             }
             Panel::SurfaceGroup(group) => group.layout_mut().find_terminal_mut(surface_id),
+            Panel::Markdown(_) | Panel::Explorer(_) => None,
         }
     }
 
     /// Get render regions for this panel within the given rect.
+    /// Markdown and Explorer panels return empty since they are rendered by egui.
     pub fn render_regions(&self, rect: Rect) -> Vec<(SurfaceId, &Terminal, Rect)> {
         match self {
             Panel::Terminal(node) => vec![(node.id, &node.terminal, rect)],
             Panel::SurfaceGroup(group) => group.compute_rects(rect),
+            Panel::Markdown(_) | Panel::Explorer(_) => vec![],
         }
+    }
+
+    /// Returns true if this panel is a non-terminal panel (Markdown or Explorer).
+    pub fn is_non_terminal(&self) -> bool {
+        matches!(self, Panel::Markdown(_) | Panel::Explorer(_))
     }
 
     /// Resize all terminals in this panel.
@@ -82,6 +99,7 @@ impl Panel {
                 node.terminal.resize(cols, rows);
             }
             Panel::SurfaceGroup(group) => group.resize_all(rect, cell_width, cell_height),
+            Panel::Markdown(_) | Panel::Explorer(_) => {}
         }
     }
 
@@ -122,6 +140,8 @@ impl Panel {
                 group.focused_surface = new_surface_id;
                 Panel::SurfaceGroup(group)
             }
+            // Non-terminal panels cannot be split (they have no surfaces).
+            Panel::Markdown(_) | Panel::Explorer(_) => self,
         }
     }
 }

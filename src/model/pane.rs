@@ -1,6 +1,7 @@
 use tasty_terminal::{Terminal, Waker};
 use super::{
-    DividerInfo, PaneId, Panel, Rect, SplitDirection, SurfaceId, SurfaceNode, TabId,
+    DividerInfo, ExplorerPanel, MarkdownPanel, PaneId, Panel, Rect, SplitDirection, SurfaceId,
+    SurfaceNode, TabId,
 };
 
 /// Directional focus movement.
@@ -613,6 +614,49 @@ impl Pane {
         if self.tabs.len() > 1 {
             self.active_tab = (self.active_tab + self.tabs.len() - 1) % self.tabs.len();
         }
+    }
+
+    /// Add a Markdown viewer tab.
+    pub fn add_markdown_tab(&mut self, tab_id: TabId, panel_id: u32, file_path: String) {
+        let name = file_path
+            .split(['/', '\\'])
+            .last()
+            .unwrap_or("Markdown")
+            .to_string();
+        let panel = Panel::Markdown(MarkdownPanel::new(panel_id, file_path));
+        let tab = Tab {
+            id: tab_id,
+            name,
+            panel_opt: Some(panel),
+        };
+        self.tabs.push(tab);
+        self.active_tab = self.tabs.len() - 1;
+    }
+
+    /// Add a file explorer tab.
+    pub fn add_explorer_tab(&mut self, tab_id: TabId, panel_id: u32, root_path: String) {
+        let name = root_path
+            .split(['/', '\\'])
+            .last()
+            .unwrap_or("Explorer")
+            .to_string();
+        let panel = Panel::Explorer(ExplorerPanel::new(panel_id, root_path));
+        let tab = Tab {
+            id: tab_id,
+            name,
+            panel_opt: Some(panel),
+        };
+        self.tabs.push(tab);
+        self.active_tab = self.tabs.len() - 1;
+    }
+
+    /// Get the active tab (mutable). Returns None if tabs are empty.
+    pub fn active_tab_mut(&mut self) -> Option<&mut Tab> {
+        if self.tabs.is_empty() {
+            return None;
+        }
+        let idx = self.active_tab.min(self.tabs.len() - 1);
+        Some(&mut self.tabs[idx])
     }
 
     /// Collect all terminals (mutable) from all tabs in this Pane.

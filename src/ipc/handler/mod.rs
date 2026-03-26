@@ -63,6 +63,8 @@ pub fn handle(state: &mut AppState, request: &JsonRpcRequest) -> JsonRpcResponse
         "surface.meta_unset" => handle_surface_meta_unset(state, id, &request.params),
         "surface.meta_list" => handle_surface_meta_list(state, id, &request.params),
         "focus.direction" => handle_focus_direction(state, id, &request.params),
+        "tab.open_markdown" => handle_open_markdown(state, id, &request.params),
+        "tab.open_explorer" => handle_open_explorer(state, id, &request.params),
         "ui.state" => handle_ui_state(state, id),
         "message.send" => handle_message_send(state, id, &request.params),
         "message.read" => handle_message_read(state, id, &request.params),
@@ -98,6 +100,65 @@ fn handle_focus_direction(
             "focused_pane": ws.focused_pane,
         }),
     )
+}
+
+fn handle_open_markdown(
+    state: &mut AppState,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
+    let file_path = match params.get("file_path").and_then(|v| v.as_str()) {
+        Some(p) => p.to_string(),
+        None => return JsonRpcResponse::invalid_params(id, "Missing 'file_path' parameter"),
+    };
+
+    // Optionally focus a specific pane
+    if let Some(pane_id) = params.get("pane_id").and_then(|v| v.as_u64()) {
+        state.focus_pane(pane_id as u32);
+    }
+
+    match state.add_markdown_tab(file_path.clone()) {
+        Ok(_) => JsonRpcResponse::success(
+            id,
+            json!({
+                "ok": true,
+                "file_path": file_path,
+            }),
+        ),
+        Err(e) => JsonRpcResponse::internal_error(id, format!("Failed to open markdown: {}", e)),
+    }
+}
+
+fn handle_open_explorer(
+    state: &mut AppState,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
+    let path = params
+        .get("path")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| {
+            directories::BaseDirs::new()
+                .map(|d| d.home_dir().to_string_lossy().to_string())
+                .unwrap_or_else(|| ".".to_string())
+        });
+
+    // Optionally focus a specific pane
+    if let Some(pane_id) = params.get("pane_id").and_then(|v| v.as_u64()) {
+        state.focus_pane(pane_id as u32);
+    }
+
+    match state.add_explorer_tab(path.clone()) {
+        Ok(_) => JsonRpcResponse::success(
+            id,
+            json!({
+                "ok": true,
+                "path": path,
+            }),
+        ),
+        Err(e) => JsonRpcResponse::internal_error(id, format!("Failed to open explorer: {}", e)),
+    }
 }
 
 fn handle_ui_state(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {

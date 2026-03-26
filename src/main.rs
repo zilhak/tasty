@@ -1,10 +1,12 @@
 mod cli;
 mod event_handler;
+mod explorer_ui;
 mod font;
 mod global_hooks;
 mod gpu;
 mod i18n;
 mod ipc;
+mod markdown_ui;
 mod model;
 mod notification;
 mod renderer;

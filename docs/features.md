@@ -92,7 +92,7 @@
 - PaneNode: 물리적 화면 분할 이진 트리. Leaf(Pane) 또는 Split
 - Pane: **독립적인 탭 바**를 가진 화면 영역. 여러 Tab을 포함
 - Tab: Pane 탭 바의 탭 하나. Panel에 매핑
-- Panel: 콘텐츠 타입 enum. Terminal(단일) 또는 SurfaceGroup(탭 내부 분할)
+- Panel: 콘텐츠 타입 enum. Terminal(단일), SurfaceGroup(탭 내부 분할), Markdown(마크다운 뷰어), Explorer(파일 탐색기)
 - SurfaceGroupNode: 탭 내부에서 여러 터미널을 분할하는 이진 트리. 탭 바에서는 하나의 탭으로 표시
 - SurfaceNode: 개별 터미널 인스턴스 (PTY + termwiz Surface)
 - AppState: 전체 워크스페이스 목록과 활성 상태를 관리하는 중앙 상태 (IdGenerator 포함)
@@ -152,6 +152,36 @@
 - **마우스 스크롤**: 일반 모드에서 마우스 휠은 스크롤백 버퍼를 탐색함. 대체 화면(vim, less 등)에서는 방향키 시퀀스(`\x1b[A`/`\x1b[B`)를 PTY에 전달. LineDelta와 PixelDelta 모두 지원
 - **egui와의 이벤트 충돌 방지**: egui가 이벤트를 소비한 경우 (사이드바, 설정 윈도우 등) 터미널에는 전달하지 않음
 - 관련 모델 메서드: `Rect::contains()`, `PaneNode::find_divider_at()`, `PaneNode::update_ratio_for_rect()`, `SurfaceGroupLayout::find_divider_at()`, `SurfaceGroupLayout::update_ratio_for_rect()`, `SurfaceGroupLayout::find_surface_at()`
+
+### 비터미널 패널 (Markdown Viewer / Explorer)
+- Panel enum에 `Markdown(MarkdownPanel)`과 `Explorer(ExplorerPanel)` 변형 추가
+- PTY가 없는 순수 egui 렌더링 패널. 터미널 관련 메서드(focused_terminal, render_regions 등)는 None/empty 반환
+- egui Area로 해당 패인 rect에 오버레이 렌더링
+
+#### Markdown Viewer
+- 마크다운 파일을 egui로 렌더링하는 읽기 전용 뷰어
+- 지원 문법: 제목(#, ##, ###), 목록(-, *), 인용(>), 수평선(---), 코드 블록(```), 테이블(|), 인라인 서식(**볼드**, *이탤릭*, \`코드\`)
+- 파일 경로를 지정하여 열기 (IPC/CLI/우클릭 메뉴)
+- 탭으로 열리며 파일명이 탭 이름이 됨
+
+#### Explorer
+- 디렉토리 트리와 파일 미리보기를 제공하는 파일 탐색기
+- 왼쪽 트리 + 오른쪽 뷰어의 2-컬럼 레이아웃
+- 디렉토리 확장/축소, 파일 클릭 시 내용 미리보기
+- .md 파일 선택 시 마크다운 렌더링, 기타 파일은 모노스페이스 텍스트 표시
+- 숨김 파일 기본 제외 (.env, .gitignore, .claude는 표시)
+- 디렉토리 우선, 대소문자 무시 이름순 정렬
+
+#### 패인 우클릭 컨텍스트 메뉴
+- 터미널 영역에서 마우스 우클릭 시 컨텍스트 메뉴 표시
+- "Open Markdown..." → 파일 경로 입력 다이얼로그 → 마크다운 탭 열기
+- "Open Explorer" → 홈 디렉토리를 루트로 하는 탐색기 탭 열기
+- 좌클릭 또는 Cancel로 메뉴 닫기
+
+#### IPC/CLI 지원
+- `tab.open_markdown`: `file_path` 파라미터로 마크다운 탭 열기 (`pane_id` 옵션)
+- `tab.open_explorer`: `path` 파라미터로 탐색기 탭 열기 (생략 시 홈 디렉토리, `pane_id` 옵션)
+- CLI: `tasty open-markdown <path>`, `tasty open-explorer [--path <dir>]`
 
 ## 알림 시스템
 

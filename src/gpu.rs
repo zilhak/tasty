@@ -475,6 +475,9 @@ impl GpuState {
             ui::draw_ws_rename_dialog(ctx, state);
             ui::draw_pane_dividers(ctx, &dividers, scale_factor);
             ui::draw_pane_tab_bars(ctx, state, &pane_rects, scale_factor);
+            ui::draw_non_terminal_panels(ctx, state, &pane_rects, scale_factor);
+            ui::draw_pane_context_menu(ctx, state, scale_factor);
+            ui::draw_markdown_path_dialog(ctx, state);
             ui::draw_notification_panel(ctx, state);
             if state.settings_open {
                 let mut settings = state.settings.clone();

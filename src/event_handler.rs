@@ -335,6 +335,13 @@ impl ApplicationHandler<AppEvent> for App {
                     return;
                 }
                 if button == MouseButton::Left {
+                    // Dismiss context menu on left click
+                    if let Some(state) = &mut self.state {
+                        if state.pane_context_menu.is_some() {
+                            state.pane_context_menu = None;
+                            self.dirty = true;
+                        }
+                    }
                     if let (Some(gpu), Some(state)) = (&self.gpu, &mut self.state) {
                         let terminal_rect = Self::compute_terminal_rect_with_sidebar(gpu, state.sidebar_width);
 
@@ -374,6 +381,32 @@ impl ApplicationHandler<AppEvent> for App {
                                     let ch = gpu.cell_height();
                                     state.resize_all(terminal_rect, cw, ch);
                                     self.dirty = true;
+                                }
+                            }
+                        }
+                    }
+                } else if button == MouseButton::Right && button_state == ElementState::Pressed {
+                    // Right-click: show context menu on the terminal area
+                    if let (Some(gpu), Some(state)) = (&self.gpu, &mut self.state) {
+                        let terminal_rect = Self::compute_terminal_rect_with_sidebar(gpu, state.sidebar_width);
+                        if let Some(pos) = self.cursor_position {
+                            let x = pos.x as f32;
+                            let y = pos.y as f32;
+                            if terminal_rect.contains(x, y) {
+                                // Find which pane was right-clicked
+                                let ws = state.active_workspace();
+                                let pane_rects = ws.pane_layout().compute_rects(terminal_rect);
+                                let scale = gpu.scale_factor();
+                                for (pane_id, rect) in pane_rects {
+                                    if rect.contains(x, y) {
+                                        state.pane_context_menu = Some(crate::state::PaneContextMenu {
+                                            pane_id,
+                                            x: x / scale,
+                                            y: y / scale,
+                                        });
+                                        self.dirty = true;
+                                        break;
+                                    }
                                 }
                             }
                         }
