@@ -414,6 +414,22 @@ Claude Code를 새 워크스페이스에서 자동으로 실행하는 전용 런
 - CLI: `tasty claude --workspace "my-project" --directory "/path/to/project" --task "Fix the bug"`
 - IPC: `claude.launch` 메서드 (workspace, directory, task 파라미터)
 
+### Claude Parent-Child 관계 관리
+
+부모 Claude 인스턴스가 자식 Claude 인스턴스를 생성하고 관리하는 시스템. AI 에이전트가 멀티 에이전트 워크플로우를 구성할 때 사용한다.
+
+- **ClaudeChildEntry**: 자식 surface ID, 인덱스, cwd, role, nickname을 추적하는 데이터 구조
+- **부모-자식 매핑**: `HashMap<u32, Vec<ClaudeChildEntry>>`로 부모별 자식 목록 관리, `HashMap<u32, u32>`로 자식에서 부모 역참조
+- **자동 정리**: 부모 또는 자식 surface가 닫힐 때 관계를 자동으로 정리. 부모가 먼저 닫혀도 자식이 살아있는 동안 관계 유지 (ghost cleanup)
+- **claude.spawn**: 부모 pane을 분할하여 새 터미널 생성 후 `claude` 명령 자동 실행. cwd, role, nickname, prompt 파라미터 지원
+- **claude.children**: 부모 surface의 자식 목록 조회. 각 자식의 surface ID, 인덱스, 메타데이터 반환
+- **claude.parent**: 자식 surface의 부모 조회. 부모의 surface ID와 상태(active/closed) 반환
+- **claude.kill**: 자식 surface를 종료하고 관계를 정리
+- **claude.respawn**: 기존 자식을 종료하고 같은 인덱스로 새 자식을 생성. cwd, role, nickname, prompt 재설정 가능
+- CLI: `tasty claude-spawn --direction vertical --cwd /path --role worker --nickname "agent-1" --prompt "Fix bugs"`
+- CLI: `tasty claude-children`, `tasty claude-parent`, `tasty claude-kill --child 5`, `tasty claude-respawn --child 5`
+- IPC: `claude.spawn`, `claude.children`, `claude.parent`, `claude.kill`, `claude.respawn` 메서드
+
 ## 단위 테스트
 
 각 모듈에 `#[cfg(test)] mod tests` 블록으로 인라인 단위 테스트를 포함한다.

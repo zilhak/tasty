@@ -133,6 +133,52 @@ pub enum Commands {
         #[arg(long)]
         task: Option<String>,
     },
+    /// Spawn a child Claude instance in a new pane
+    ClaudeSpawn {
+        /// Split direction: vertical (default) or horizontal
+        #[arg(long)]
+        direction: Option<String>,
+        /// Working directory for the child
+        #[arg(long)]
+        cwd: Option<String>,
+        /// Role label for the child
+        #[arg(long)]
+        role: Option<String>,
+        /// Nickname for the child
+        #[arg(long)]
+        nickname: Option<String>,
+        /// Initial prompt to send to claude
+        #[arg(long)]
+        prompt: Option<String>,
+    },
+    /// List children of the focused (or specified) Claude parent
+    ClaudeChildren,
+    /// Show the parent of the focused (or specified) Claude child
+    ClaudeParent,
+    /// Kill a child Claude instance by surface ID
+    ClaudeKill {
+        /// Child surface ID to kill
+        #[arg(long)]
+        child: u32,
+    },
+    /// Respawn a child Claude instance
+    ClaudeRespawn {
+        /// Child surface ID to respawn
+        #[arg(long)]
+        child: u32,
+        /// Working directory for the new child
+        #[arg(long)]
+        cwd: Option<String>,
+        /// Role label for the new child
+        #[arg(long)]
+        role: Option<String>,
+        /// Nickname for the new child
+        #[arg(long)]
+        nickname: Option<String>,
+        /// Initial prompt to send to claude
+        #[arg(long)]
+        prompt: Option<String>,
+    },
 }
 
 /// Run the CLI client: connect to a running tasty instance and execute the command.
@@ -249,6 +295,44 @@ fn command_to_request(command: &Commands) -> JsonRpcRequest {
                 "workspace": workspace,
                 "directory": directory,
                 "task": task,
+            }),
+        ),
+        Commands::ClaudeSpawn {
+            direction,
+            cwd,
+            role,
+            nickname,
+            prompt,
+        } => (
+            "claude.spawn",
+            serde_json::json!({
+                "direction": direction,
+                "cwd": cwd,
+                "role": role,
+                "nickname": nickname,
+                "prompt": prompt,
+            }),
+        ),
+        Commands::ClaudeChildren => ("claude.children", serde_json::json!({})),
+        Commands::ClaudeParent => ("claude.parent", serde_json::json!({})),
+        Commands::ClaudeKill { child } => (
+            "claude.kill",
+            serde_json::json!({ "child_surface_id": child }),
+        ),
+        Commands::ClaudeRespawn {
+            child,
+            cwd,
+            role,
+            nickname,
+            prompt,
+        } => (
+            "claude.respawn",
+            serde_json::json!({
+                "child_surface_id": child,
+                "cwd": cwd,
+                "role": role,
+                "nickname": nickname,
+                "prompt": prompt,
             }),
         ),
     };

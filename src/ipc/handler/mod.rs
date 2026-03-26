@@ -43,6 +43,11 @@ pub fn handle(state: &mut AppState, request: &JsonRpcRequest) -> JsonRpcResponse
         "surface.screen_text" => surface::handle_screen_text(state, id, &request.params),
         "surface.cursor_position" => surface::handle_cursor_position(state, id, &request.params),
         "claude.launch" => hooks::handle_claude_launch(state, id, &request.params),
+        "claude.spawn" => hooks::handle_claude_spawn(state, id, &request.params),
+        "claude.children" => hooks::handle_claude_children(state, id, &request.params),
+        "claude.parent" => hooks::handle_claude_parent(state, id, &request.params),
+        "claude.kill" => hooks::handle_claude_kill(state, id, &request.params),
+        "claude.respawn" => hooks::handle_claude_respawn(state, id, &request.params),
         "ui.state" => handle_ui_state(state, id),
         _ => JsonRpcResponse::method_not_found(id, &request.method),
     }

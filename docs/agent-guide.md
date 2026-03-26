@@ -163,6 +163,11 @@ tasty claude [--workspace NAME] [--directory PATH] [--task "설명"]
 | 메서드 | 파라미터 | 설명 |
 |--------|---------|------|
 | `claude.launch` | `workspace?, directory?, task?` | 새 워크스페이스에서 Claude 실행 |
+| `claude.spawn` | `surface_id?, direction?, cwd?, role?, nickname?, prompt?` | 부모 pane을 분할하여 자식 Claude 인스턴스 생성 |
+| `claude.children` | `surface_id?` | 부모 surface의 자식 목록 조회 |
+| `claude.parent` | `surface_id?` | 자식 surface의 부모 조회 |
+| `claude.kill` | `child_surface_id` | 자식 Claude 인스턴스 종료 |
+| `claude.respawn` | `child_surface_id, cwd?, role?, nickname?, prompt?` | 자식 Claude 인스턴스 재시작 |
 
 ## 일반적인 사용 패턴
 

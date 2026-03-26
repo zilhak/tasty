@@ -1,9 +1,20 @@
+use std::collections::{HashMap, HashSet};
+
 use tasty_hooks::HookManager;
 use crate::model::{DividerInfo, PaneId, Rect, SplitDirection, Workspace};
 use crate::notification::NotificationStore;
 use crate::settings::Settings;
 use crate::settings_ui::SettingsUiState;
 use tasty_terminal::{Terminal, TerminalEvent, Waker};
+
+#[derive(Debug, Clone)]
+pub struct ClaudeChildEntry {
+    pub child_surface_id: u32,
+    pub index: u32,
+    pub cwd: Option<String>,
+    pub role: Option<String>,
+    pub nickname: Option<String>,
+}
 
 struct IdGenerator {
     workspace: u32,
@@ -70,6 +81,14 @@ pub struct AppState {
     waker: Waker,
     /// Workspace rename dialog state: (workspace_index, field, edit_buffer)
     pub ws_rename: Option<(usize, WsRenameField, String)>,
+    /// Claude parent-child relationships: parent_surface_id -> children
+    pub claude_parent_children: HashMap<u32, Vec<ClaudeChildEntry>>,
+    /// Claude child -> parent mapping
+    pub claude_child_parent: HashMap<u32, u32>,
+    /// Set of parent surfaces that have been closed but still have live children
+    pub claude_closed_parents: HashSet<u32>,
+    /// Next child index counter per parent
+    claude_next_child_index: HashMap<u32, u32>,
 }
 
 /// Which workspace field is being renamed.
@@ -110,6 +129,10 @@ impl AppState {
             sidebar_width,
             waker,
             ws_rename: None,
+            claude_parent_children: HashMap::new(),
+            claude_child_parent: HashMap::new(),
+            claude_closed_parents: HashSet::new(),
+            claude_next_child_index: HashMap::new(),
         };
         state.send_fast_init(surface_id);
         Ok(state)
@@ -286,11 +309,27 @@ impl AppState {
     pub fn close_active_pane(&mut self) -> bool {
         let ws = self.active_workspace_mut();
         let target_id = ws.focused_pane;
+
+        // Collect all surface IDs in the pane being closed for claude cleanup
+        let mut surface_ids = Vec::new();
+        if let Some(pane) = ws.pane_layout_mut().find_pane_mut(target_id) {
+            for tab in &mut pane.tabs {
+                tab.panel_mut().for_each_terminal_mut(&mut |sid, _| {
+                    surface_ids.push(sid);
+                });
+            }
+        }
+
         let removed = ws.pane_layout_mut().close_pane(target_id);
         if removed {
             // Update focus to the first available pane
             if let Some(first) = ws.pane_layout().first_pane() {
                 ws.focused_pane = first.id;
+            }
+            // Claude parent-child cleanup
+            for sid in surface_ids {
+                self.unregister_child(sid);
+                self.mark_parent_closed(sid);
             }
         }
         removed
@@ -298,21 +337,138 @@ impl AppState {
 
     /// Close the focused surface within a SurfaceGroup. Returns true if a surface was removed.
     pub fn close_active_surface(&mut self) -> bool {
+        let surface_id;
         if let Some(pane) = self.focused_pane_mut() {
             if let Some(panel) = pane.active_panel_mut() {
                 match panel {
                     crate::model::Panel::SurfaceGroup(group) => {
-                        let target = group.focused_surface;
-                        group.close_surface(target)
+                        surface_id = group.focused_surface;
+                        if !group.close_surface(surface_id) {
+                            return false;
+                        }
                     }
-                    _ => false,
+                    _ => return false,
                 }
             } else {
-                false
+                return false;
             }
         } else {
-            false
+            return false;
         }
+        // Claude parent-child cleanup
+        self.unregister_child(surface_id);
+        self.mark_parent_closed(surface_id);
+        true
+    }
+
+    // ---- Claude parent-child management ----
+
+    /// Get the next child index for a parent, incrementing the counter.
+    pub fn next_child_index(&mut self, parent_id: u32) -> u32 {
+        let idx = self.claude_next_child_index.entry(parent_id).or_insert(0);
+        *idx += 1;
+        *idx
+    }
+
+    /// Register a child entry under a parent surface.
+    pub fn register_child(&mut self, parent_id: u32, entry: ClaudeChildEntry) {
+        self.claude_child_parent.insert(entry.child_surface_id, parent_id);
+        self.claude_parent_children.entry(parent_id).or_default().push(entry);
+    }
+
+    /// Unregister a child surface. Cleans up parent tracking if parent is closed and has no more children.
+    pub fn unregister_child(&mut self, child_surface_id: u32) {
+        if let Some(parent_id) = self.claude_child_parent.remove(&child_surface_id) {
+            if let Some(children) = self.claude_parent_children.get_mut(&parent_id) {
+                children.retain(|c| c.child_surface_id != child_surface_id);
+                if children.is_empty() && self.claude_closed_parents.contains(&parent_id) {
+                    self.claude_parent_children.remove(&parent_id);
+                    self.claude_closed_parents.remove(&parent_id);
+                    self.claude_next_child_index.remove(&parent_id);
+                }
+            }
+        }
+    }
+
+    /// Mark a parent surface as closed. If it has no children, clean up immediately.
+    pub fn mark_parent_closed(&mut self, parent_surface_id: u32) {
+        if self.claude_parent_children.contains_key(&parent_surface_id) {
+            let children_empty = self.claude_parent_children
+                .get(&parent_surface_id)
+                .map(|c| c.is_empty())
+                .unwrap_or(true);
+            if children_empty {
+                self.claude_parent_children.remove(&parent_surface_id);
+                self.claude_next_child_index.remove(&parent_surface_id);
+            } else {
+                self.claude_closed_parents.insert(parent_surface_id);
+            }
+        }
+    }
+
+    /// Get all children of a parent surface.
+    pub fn children_of(&self, parent_id: u32) -> &[ClaudeChildEntry] {
+        self.claude_parent_children.get(&parent_id).map(|v| v.as_slice()).unwrap_or(&[])
+    }
+
+    /// Get the parent of a child surface.
+    pub fn parent_of(&self, child_id: u32) -> Option<u32> {
+        self.claude_child_parent.get(&child_id).copied()
+    }
+
+    /// Split the focused pane and return the new surface ID.
+    /// This is like `split_pane` but returns the new surface_id for callers that need it.
+    pub fn split_pane_get_surface(&mut self, direction: SplitDirection) -> anyhow::Result<u32> {
+        let new_pane_id = self.next_ids.next_pane();
+        let new_tab_id = self.next_ids.next_tab();
+        let new_surface_id = self.next_ids.next_surface();
+        let cols = self.default_cols;
+        let rows = self.default_rows;
+
+        let shell = self.settings.general.shell.clone();
+        let shell_ref = if shell.is_empty() { None } else { Some(shell.as_str()) };
+        let shell_args_owned = self.settings.general.effective_shell_args();
+        let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
+        let new_pane =
+            crate::model::Pane::new_with_shell(new_pane_id, new_tab_id, new_surface_id, cols, rows, shell_ref, &shell_args, self.waker.clone())?;
+
+        let ws = self.active_workspace_mut();
+        let target_pane_id = ws.focused_pane;
+        ws.pane_layout_mut()
+            .split_pane_in_place(target_pane_id, direction, new_pane);
+        ws.focused_pane = new_pane_id;
+        self.send_fast_init(new_surface_id);
+        Ok(new_surface_id)
+    }
+
+    /// Close a specific pane by its ID (across the active workspace).
+    /// Returns true if the pane was found and removed.
+    pub fn close_pane_by_id(&mut self, pane_id: u32) -> bool {
+        let ws = self.active_workspace_mut();
+        let removed = ws.pane_layout_mut().close_pane(pane_id);
+        if removed {
+            if ws.focused_pane == pane_id {
+                if let Some(first) = ws.pane_layout().first_pane() {
+                    ws.focused_pane = first.id;
+                }
+            }
+        }
+        removed
+    }
+
+    /// Find the pane ID that contains a given surface ID.
+    pub fn find_pane_for_surface(&self, surface_id: u32) -> Option<u32> {
+        for workspace in &self.workspaces {
+            let pane_ids = workspace.pane_layout().all_pane_ids();
+            for pid in pane_ids {
+                if let Some(pane) = workspace.pane_layout().find_pane(pid) {
+                    if pane.find_terminal(surface_id).is_some() {
+                        return Some(pid);
+                    }
+                }
+            }
+        }
+        None
     }
 
     /// Switch to workspace by index (0-based).
