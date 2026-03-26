@@ -343,7 +343,8 @@ fn draw_keybindings_tab(
 
         ui.add_space(8.0);
 
-        // Right content area
+        // Right content area (vertical layout)
+        ui.vertical(|ui| {
 
         // If recording, capture key events from egui input
         let captured = capture_key_combo(ui.ctx(), recording_field.is_some());
@@ -415,7 +416,9 @@ fn draw_keybindings_tab(
                 .small()
                 .color(egui::Color32::from_rgb(150, 150, 170)),
         );
-    });
+
+        }); // end vertical
+    }); // end horizontal_top
 }
 
 /// Display modifier name for ComboBox.
