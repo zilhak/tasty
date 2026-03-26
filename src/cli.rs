@@ -179,6 +179,50 @@ pub enum Commands {
         #[arg(long)]
         prompt: Option<String>,
     },
+    /// Claude Code hook integration (called by Claude Code's hook system)
+    ClaudeHook {
+        /// Hook event type: stop, notification, prompt-submit, session-start
+        #[arg()]
+        event: String,
+        /// Surface ID (auto-detected from TASTY_SURFACE_ID env var if not provided)
+        #[arg(long)]
+        surface: Option<u32>,
+    },
+}
+
+/// Send a single JSON-RPC request and read the response.
+fn send_request(stream: &mut TcpStream, request: &JsonRpcRequest) -> Result<serde_json::Value> {
+    let json = serde_json::to_string(request)?;
+    writeln!(stream, "{}", json)?;
+    stream.flush()?;
+
+    let mut reader = BufReader::new(stream.try_clone()?);
+    loop {
+        let mut line = String::new();
+        reader.read_line(&mut line)?;
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        let response: JsonRpcResponse = serde_json::from_str(trimmed)?;
+
+        if let Some(error) = response.error {
+            anyhow::bail!("Error ({}): {}", error.code, error.message);
+        }
+
+        return Ok(response.result.unwrap_or(serde_json::Value::Null));
+    }
+}
+
+/// Build a JSON-RPC request from method and params.
+fn make_request(method: &str, params: serde_json::Value) -> JsonRpcRequest {
+    JsonRpcRequest {
+        jsonrpc: "2.0".to_string(),
+        method: method.to_string(),
+        params,
+        id: Some(serde_json::json!(1)),
+    }
 }
 
 /// Run the CLI client: connect to a running tasty instance and execute the command.
@@ -189,6 +233,12 @@ pub fn run_client(command: Commands) -> Result<()> {
             "Could not connect to tasty instance on port {}: {}. Is tasty running?",
             port, e
         ))?;
+
+    // ClaudeHook is special: it may send multiple requests
+    if let Commands::ClaudeHook { ref event, ref surface } = command {
+        run_claude_hook(&mut stream, event, *surface)?;
+        return Ok(());
+    }
 
     let request = command_to_request(&command);
     let json = serde_json::to_string(&request)?;
@@ -214,6 +264,72 @@ pub fn run_client(command: Commands) -> Result<()> {
             format_output(&command, &result);
         }
         break;
+    }
+
+    Ok(())
+}
+
+/// Handle the claude-hook subcommand, which maps Claude Code hook events to IPC calls.
+fn run_claude_hook(stream: &mut TcpStream, event: &str, surface_arg: Option<u32>) -> Result<()> {
+    // Resolve surface_id: --surface arg > TASTY_SURFACE_ID env var > null (server uses focused)
+    let surface_id = surface_arg.or_else(|| {
+        std::env::var("TASTY_SURFACE_ID")
+            .ok()
+            .and_then(|s| s.parse::<u32>().ok())
+    });
+
+    let surface_param = match surface_id {
+        Some(sid) => serde_json::json!(sid),
+        None => serde_json::Value::Null,
+    };
+
+    match event {
+        "stop" => {
+            // Claude stopped → set idle, then fire claude-idle hook
+            let req1 = make_request(
+                "claude.set_idle_state",
+                serde_json::json!({ "surface_id": surface_param, "idle": true }),
+            );
+            send_request(stream, &req1)?;
+
+            let req2 = make_request(
+                "surface.fire_hook",
+                serde_json::json!({ "surface_id": surface_param, "event": "claude-idle" }),
+            );
+            let result = send_request(stream, &req2)?;
+            println!("{}", serde_json::to_string_pretty(&result)?);
+        }
+        "notification" => {
+            // Claude needs input → set needs_input, then fire needs-input hook
+            let req1 = make_request(
+                "claude.set_needs_input",
+                serde_json::json!({ "surface_id": surface_param, "needs_input": true }),
+            );
+            send_request(stream, &req1)?;
+
+            let req2 = make_request(
+                "surface.fire_hook",
+                serde_json::json!({ "surface_id": surface_param, "event": "needs-input" }),
+            );
+            let result = send_request(stream, &req2)?;
+            println!("{}", serde_json::to_string_pretty(&result)?);
+        }
+        "prompt-submit" | "session-start" | "active" => {
+            // Claude became active → clear idle/needs_input
+            let req = make_request(
+                "claude.set_idle_state",
+                serde_json::json!({ "surface_id": surface_param, "idle": false }),
+            );
+            let result = send_request(stream, &req)?;
+            println!("{}", serde_json::to_string_pretty(&result)?);
+        }
+        _ => {
+            eprintln!(
+                "Unknown claude-hook event: '{}'. Use: stop, notification, prompt-submit, session-start",
+                event
+            );
+            std::process::exit(1);
+        }
     }
 
     Ok(())
@@ -335,6 +451,8 @@ fn command_to_request(command: &Commands) -> JsonRpcRequest {
                 "prompt": prompt,
             }),
         ),
+        // ClaudeHook is handled separately in run_client before reaching here
+        Commands::ClaudeHook { .. } => unreachable!("ClaudeHook is handled in run_client"),
     };
 
     JsonRpcRequest {

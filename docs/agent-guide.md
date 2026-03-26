@@ -78,6 +78,13 @@ tasty tree
 
 # Claude 실행
 tasty claude [--workspace NAME] [--directory PATH] [--task "설명"]
+
+# Claude Hook 통합 (Claude Code의 훅 시스템에서 호출)
+tasty claude-hook stop              # Claude 작업 완료 → idle 상태 설정 + claude-idle 훅 실행
+tasty claude-hook notification      # Claude 입력 필요 → needs-input 상태 설정 + needs-input 훅 실행
+tasty claude-hook prompt-submit     # 사용자 입력 전송 → active 상태로 전환
+tasty claude-hook session-start     # 세션 시작 → active 상태로 전환
+tasty claude-hook stop --surface 5  # 특정 surface 지정 (또는 TASTY_SURFACE_ID 환경변수)
 ```
 
 ## IPC 메서드 레퍼런스
@@ -150,6 +157,8 @@ tasty claude [--workspace NAME] [--directory PATH] [--task "설명"]
 | `notification` | OSC 알림 시퀀스 수신 |
 | `output-match:PATTERN` | 출력이 정규식에 매칭 |
 | `idle-timeout:SECS` | N초간 출력 없음 |
+| `claude-idle` | Claude Code 작업 완료 (idle 상태 전환) |
+| `needs-input` | Claude Code 사용자 입력 필요 |
 
 ### 알림
 
@@ -168,6 +177,9 @@ tasty claude [--workspace NAME] [--directory PATH] [--task "설명"]
 | `claude.parent` | `surface_id?` | 자식 surface의 부모 조회 |
 | `claude.kill` | `child_surface_id` | 자식 Claude 인스턴스 종료 |
 | `claude.respawn` | `child_surface_id, cwd?, role?, nickname?, prompt?` | 자식 Claude 인스턴스 재시작 |
+| `claude.set_idle_state` | `surface_id?, idle: bool` | Claude idle 상태 설정 (idle=false 시 needs_input도 해제) |
+| `claude.set_needs_input` | `surface_id?, needs_input: bool` | Claude needs-input 상태 설정 |
+| `surface.fire_hook` | `surface_id?, event: string` | 특정 이벤트의 등록된 훅 수동 실행 |
 
 ## 일반적인 사용 패턴
 

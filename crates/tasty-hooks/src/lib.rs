@@ -28,6 +28,10 @@ pub enum HookEvent {
     /// TODO: Implement IdleTimeout by tracking last output timestamp per terminal and
     /// emitting an event when the idle threshold is exceeded.
     IdleTimeout(u64),
+    /// Claude Code became idle (finished processing).
+    ClaudeIdle,
+    /// Claude Code needs user input.
+    NeedsInput,
 }
 
 impl HookEvent {
@@ -36,6 +40,8 @@ impl HookEvent {
             (HookEvent::ProcessExit, HookEvent::ProcessExit) => true,
             (HookEvent::Bell, HookEvent::Bell) => true,
             (HookEvent::Notification, HookEvent::Notification) => true,
+            (HookEvent::ClaudeIdle, HookEvent::ClaudeIdle) => true,
+            (HookEvent::NeedsInput, HookEvent::NeedsInput) => true,
             (HookEvent::OutputMatch(_pattern), HookEvent::OutputMatch(text)) => {
                 // Use pre-compiled regex if available, otherwise compile on-the-fly
                 if let Some(re) = compiled_regex {
@@ -62,6 +68,10 @@ impl HookEvent {
             Some(HookEvent::OutputMatch(pattern.to_string()))
         } else if let Some(secs) = s.strip_prefix("idle-timeout:") {
             secs.parse::<u64>().ok().map(HookEvent::IdleTimeout)
+        } else if s == "claude-idle" {
+            Some(HookEvent::ClaudeIdle)
+        } else if s == "needs-input" {
+            Some(HookEvent::NeedsInput)
         } else {
             None
         }
@@ -75,6 +85,8 @@ impl HookEvent {
             HookEvent::Notification => "notification".to_string(),
             HookEvent::OutputMatch(pattern) => format!("output-match:{}", pattern),
             HookEvent::IdleTimeout(secs) => format!("idle-timeout:{}", secs),
+            HookEvent::ClaudeIdle => "claude-idle".to_string(),
+            HookEvent::NeedsInput => "needs-input".to_string(),
         }
     }
 }

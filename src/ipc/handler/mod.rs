@@ -48,6 +48,9 @@ pub fn handle(state: &mut AppState, request: &JsonRpcRequest) -> JsonRpcResponse
         "claude.parent" => hooks::handle_claude_parent(state, id, &request.params),
         "claude.kill" => hooks::handle_claude_kill(state, id, &request.params),
         "claude.respawn" => hooks::handle_claude_respawn(state, id, &request.params),
+        "claude.set_idle_state" => hooks::handle_claude_set_idle_state(state, id, &request.params),
+        "claude.set_needs_input" => hooks::handle_claude_set_needs_input(state, id, &request.params),
+        "surface.fire_hook" => hooks::handle_surface_fire_hook(state, id, &request.params),
         "ui.state" => handle_ui_state(state, id),
         _ => JsonRpcResponse::method_not_found(id, &request.method),
     }

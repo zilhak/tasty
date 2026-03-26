@@ -26,7 +26,7 @@ pub(crate) fn handle_hook_set(
         None => {
             return JsonRpcResponse::invalid_params(
                 id,
-                format!("Unknown event type: '{}'. Use: process-exit, bell, notification, output-match:PATTERN, idle-timeout:SECS", event_str),
+                format!("Unknown event type: '{}'. Use: process-exit, bell, notification, output-match:PATTERN, idle-timeout:SECS, claude-idle, needs-input", event_str),
             )
         }
     };
@@ -240,7 +240,7 @@ pub(crate) fn handle_claude_children(
                 "cwd": c.cwd,
                 "role": c.role,
                 "nickname": c.nickname,
-                "state": "active",
+                "state": state.claude_state_of(c.child_surface_id),
             })
         })
         .collect();
@@ -401,4 +401,91 @@ pub(crate) fn handle_claude_respawn(
             "parent_surface_id": parent_id,
         }),
     )
+}
+
+pub(crate) fn handle_claude_set_idle_state(
+    state: &mut AppState,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
+    let surface_id = params
+        .get("surface_id")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32)
+        .or_else(|| state.focused_surface_id());
+
+    let surface_id = match surface_id {
+        Some(sid) => sid,
+        None => return JsonRpcResponse::internal_error(id, "No focused surface".to_string()),
+    };
+
+    let idle = match params.get("idle").and_then(|v| v.as_bool()) {
+        Some(b) => b,
+        None => return JsonRpcResponse::invalid_params(id, "Missing 'idle' parameter (bool)"),
+    };
+
+    state.set_claude_idle(surface_id, idle);
+    JsonRpcResponse::success(id, json!({ "ok": true }))
+}
+
+pub(crate) fn handle_claude_set_needs_input(
+    state: &mut AppState,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
+    let surface_id = params
+        .get("surface_id")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32)
+        .or_else(|| state.focused_surface_id());
+
+    let surface_id = match surface_id {
+        Some(sid) => sid,
+        None => return JsonRpcResponse::internal_error(id, "No focused surface".to_string()),
+    };
+
+    let needs_input = match params.get("needs_input").and_then(|v| v.as_bool()) {
+        Some(b) => b,
+        None => {
+            return JsonRpcResponse::invalid_params(id, "Missing 'needs_input' parameter (bool)")
+        }
+    };
+
+    state.set_claude_needs_input(surface_id, needs_input);
+    JsonRpcResponse::success(id, json!({ "ok": true }))
+}
+
+pub(crate) fn handle_surface_fire_hook(
+    state: &mut AppState,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
+    let surface_id = params
+        .get("surface_id")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32)
+        .or_else(|| state.focused_surface_id());
+
+    let surface_id = match surface_id {
+        Some(sid) => sid,
+        None => return JsonRpcResponse::internal_error(id, "No focused surface".to_string()),
+    };
+
+    let event_str = match params.get("event").and_then(|v| v.as_str()) {
+        Some(e) => e,
+        None => return JsonRpcResponse::invalid_params(id, "Missing 'event' parameter"),
+    };
+
+    let event = match HookEvent::parse(event_str) {
+        Some(e) => e,
+        None => {
+            return JsonRpcResponse::invalid_params(
+                id,
+                format!("Unknown event type: '{}'", event_str),
+            )
+        }
+    };
+
+    let fired = state.hook_manager.check_and_fire(surface_id, &[event]);
+    JsonRpcResponse::success(id, json!({ "fired": fired.len() }))
 }

@@ -89,6 +89,10 @@ pub struct AppState {
     pub claude_closed_parents: HashSet<u32>,
     /// Next child index counter per parent
     claude_next_child_index: HashMap<u32, u32>,
+    /// Claude idle state per surface (true = idle)
+    pub claude_idle_state: HashMap<u32, bool>,
+    /// Claude needs-input state per surface (true = needs input)
+    pub claude_needs_input_state: HashMap<u32, bool>,
 }
 
 /// Which workspace field is being renamed.
@@ -133,6 +137,8 @@ impl AppState {
             claude_child_parent: HashMap::new(),
             claude_closed_parents: HashSet::new(),
             claude_next_child_index: HashMap::new(),
+            claude_idle_state: HashMap::new(),
+            claude_needs_input_state: HashMap::new(),
         };
         state.send_fast_init(surface_id);
         Ok(state)
@@ -378,6 +384,8 @@ impl AppState {
 
     /// Unregister a child surface. Cleans up parent tracking if parent is closed and has no more children.
     pub fn unregister_child(&mut self, child_surface_id: u32) {
+        self.claude_idle_state.remove(&child_surface_id);
+        self.claude_needs_input_state.remove(&child_surface_id);
         if let Some(parent_id) = self.claude_child_parent.remove(&child_surface_id) {
             if let Some(children) = self.claude_parent_children.get_mut(&parent_id) {
                 children.retain(|c| c.child_surface_id != child_surface_id);
@@ -392,6 +400,8 @@ impl AppState {
 
     /// Mark a parent surface as closed. If it has no children, clean up immediately.
     pub fn mark_parent_closed(&mut self, parent_surface_id: u32) {
+        self.claude_idle_state.remove(&parent_surface_id);
+        self.claude_needs_input_state.remove(&parent_surface_id);
         if self.claude_parent_children.contains_key(&parent_surface_id) {
             let children_empty = self.claude_parent_children
                 .get(&parent_surface_id)
@@ -414,6 +424,30 @@ impl AppState {
     /// Get the parent of a child surface.
     pub fn parent_of(&self, child_id: u32) -> Option<u32> {
         self.claude_child_parent.get(&child_id).copied()
+    }
+
+    /// Set the Claude idle state for a surface. When becoming non-idle, also clears needs_input.
+    pub fn set_claude_idle(&mut self, surface_id: u32, idle: bool) {
+        self.claude_idle_state.insert(surface_id, idle);
+        if !idle {
+            self.claude_needs_input_state.remove(&surface_id);
+        }
+    }
+
+    /// Set the Claude needs-input state for a surface.
+    pub fn set_claude_needs_input(&mut self, surface_id: u32, needs_input: bool) {
+        self.claude_needs_input_state.insert(surface_id, needs_input);
+    }
+
+    /// Get the Claude state string for a surface: "needs_input", "idle", or "active".
+    pub fn claude_state_of(&self, surface_id: u32) -> &str {
+        if self.claude_needs_input_state.get(&surface_id).copied().unwrap_or(false) {
+            "needs_input"
+        } else if self.claude_idle_state.get(&surface_id).copied().unwrap_or(false) {
+            "idle"
+        } else {
+            "active"
+        }
     }
 
     /// Split the focused pane and return the new surface ID.
