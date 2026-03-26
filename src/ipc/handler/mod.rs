@@ -52,6 +52,8 @@ pub fn handle(state: &mut AppState, request: &JsonRpcRequest) -> JsonRpcResponse
         "claude.respawn" => hooks::handle_claude_respawn(state, id, &request.params),
         "claude.set_idle_state" => hooks::handle_claude_set_idle_state(state, id, &request.params),
         "claude.set_needs_input" => hooks::handle_claude_set_needs_input(state, id, &request.params),
+        "claude.broadcast" => hooks::handle_claude_broadcast(state, id, &request.params),
+        "claude.wait" => hooks::handle_claude_wait(state, id, &request.params),
         "surface.fire_hook" => hooks::handle_surface_fire_hook(state, id, &request.params),
         "global_hook.set" => hooks::handle_global_hook_set(state, id, &request.params),
         "global_hook.list" => hooks::handle_global_hook_list(state, id),

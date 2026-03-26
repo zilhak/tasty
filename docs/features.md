@@ -395,7 +395,7 @@
 
 ### CLI 클라이언트 (cli.rs)
 - `tasty` 명령에 서브커맨드가 있으면 CLI 모드, `--headless`면 헤드리스 모드, 둘 다 없으면 GUI 모드로 동작
-- clap 기반 서브커맨드: `list`, `new-workspace`, `select-workspace`, `send`, `send-key`, `notify`, `notifications`, `tree`, `split`, `new-tab`, `close-tab`, `close-pane`, `close-surface`, `surfaces`, `panes`, `info`, `set-hook`, `list-hooks`, `unset-hook`, `set-mark`, `read-since-mark`, `claude`, `message-send`, `message-read`, `message-count`, `message-clear`
+- clap 기반 서브커맨드: `list`, `new-workspace`, `select-workspace`, `send`, `send-key`, `notify`, `notifications`, `tree`, `split`, `new-tab`, `close-tab`, `close-pane`, `close-surface`, `surfaces`, `panes`, `info`, `set-hook`, `list-hooks`, `unset-hook`, `set-mark`, `read-since-mark`, `claude`, `message-send`, `message-read`, `message-count`, `message-clear`, `claude-broadcast`, `claude-wait`
 - 포트 파일에서 포트 번호를 읽어 TCP 연결 후 JSON-RPC 요청/응답
 - `tree` 커맨드: 워크스페이스/패인/탭 계층을 트리 형태로 표시
 - 에러 시 종료 코드 1 반환
@@ -462,9 +462,12 @@ Claude Code를 새 워크스페이스에서 자동으로 실행하는 전용 런
 - **claude.parent**: 자식 surface의 부모 조회. 부모의 surface ID와 상태(active/closed) 반환
 - **claude.kill**: 자식 surface를 종료하고 관계를 정리
 - **claude.respawn**: 기존 자식을 종료하고 같은 인덱스로 새 자식을 생성. cwd, role, nickname, prompt 재설정 가능
+- **claude.broadcast**: 부모의 모든 자식에게 텍스트를 동시에 전송. `role` 파라미터로 특정 역할의 자식에만 필터링 가능. 반환: `{ sent_count, children }`
+- **claude.wait**: 자식 surface의 현재 상태를 조회. surface가 존재하지 않으면 "exited" 반환. 반환: `{ state: "idle"|"needs_input"|"active"|"exited" }`. CLI에서 폴링 루프로 대기 구현
 - CLI: `tasty claude-spawn --direction vertical --cwd /path --role worker --nickname "agent-1" --prompt "Fix bugs"`
 - CLI: `tasty claude-children`, `tasty claude-parent`, `tasty claude-kill --child 5`, `tasty claude-respawn --child 5`
-- IPC: `claude.spawn`, `claude.children`, `claude.parent`, `claude.kill`, `claude.respawn` 메서드
+- CLI: `tasty claude-broadcast "text\r" [--role ROLE]`, `tasty claude-wait --child ID [--timeout SECS]`
+- IPC: `claude.spawn`, `claude.children`, `claude.parent`, `claude.kill`, `claude.respawn`, `claude.broadcast`, `claude.wait` 메서드
 
 ### Claude Hook 통합
 

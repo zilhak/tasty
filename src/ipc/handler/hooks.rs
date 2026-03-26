@@ -456,6 +456,80 @@ pub(crate) fn handle_claude_set_needs_input(
     JsonRpcResponse::success(id, json!({ "ok": true }))
 }
 
+pub(crate) fn handle_claude_broadcast(
+    state: &mut AppState,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
+    let parent_surface_id = params
+        .get("surface_id")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32)
+        .or_else(|| state.focused_surface_id());
+
+    let parent_surface_id = match parent_surface_id {
+        Some(sid) => sid,
+        None => return JsonRpcResponse::internal_error(id, "No focused surface".to_string()),
+    };
+
+    let text = match params.get("text").and_then(|v| v.as_str()) {
+        Some(t) => t.to_string(),
+        None => return JsonRpcResponse::invalid_params(id, "Missing 'text' parameter"),
+    };
+
+    let role_filter = params.get("role").and_then(|v| v.as_str()).map(|s| s.to_string());
+
+    // Collect child surface IDs to send to (with optional role filter)
+    let child_ids: Vec<u32> = state
+        .children_of(parent_surface_id)
+        .iter()
+        .filter(|c| {
+            if let Some(ref role) = role_filter {
+                c.role.as_deref() == Some(role.as_str())
+            } else {
+                true
+            }
+        })
+        .map(|c| c.child_surface_id)
+        .collect();
+
+    let mut sent_count = 0usize;
+    for child_id in &child_ids {
+        if let Some(terminal) = state.find_terminal_by_id_mut(*child_id) {
+            terminal.send_key(&text);
+            sent_count += 1;
+        }
+    }
+
+    JsonRpcResponse::success(
+        id,
+        json!({
+            "sent_count": sent_count,
+            "children": child_ids,
+        }),
+    )
+}
+
+pub(crate) fn handle_claude_wait(
+    state: &AppState,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
+    let child_surface_id = match params.get("child_surface_id").and_then(|v| v.as_u64()) {
+        Some(sid) => sid as u32,
+        None => return JsonRpcResponse::invalid_params(id, "Missing 'child_surface_id' parameter"),
+    };
+
+    // Check if the surface exists
+    let exists = state.find_pane_for_surface(child_surface_id).is_some();
+    if !exists {
+        return JsonRpcResponse::success(id, json!({ "state": "exited" }));
+    }
+
+    let claude_state = state.claude_state_of(child_surface_id);
+    JsonRpcResponse::success(id, json!({ "state": claude_state }))
+}
+
 pub(crate) fn handle_global_hook_set(
     state: &mut AppState,
     id: serde_json::Value,

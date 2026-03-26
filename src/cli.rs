@@ -270,6 +270,24 @@ pub enum Commands {
         #[arg(long)]
         surface: Option<u32>,
     },
+    /// Broadcast text to all children of a parent Claude instance
+    ClaudeBroadcast {
+        /// Text to send to all children
+        #[arg()]
+        text: String,
+        /// Filter children by role
+        #[arg(long)]
+        role: Option<String>,
+    },
+    /// Wait for a specific child Claude instance to become idle/needs_input/exited
+    ClaudeWait {
+        /// Child surface ID to wait for
+        #[arg(long)]
+        child: u32,
+        /// Timeout in seconds (default: 30)
+        #[arg(long, default_value = "30")]
+        timeout: u64,
+    },
 }
 
 /// Send a single JSON-RPC request and read the response.
@@ -319,6 +337,12 @@ pub fn run_client(command: Commands) -> Result<()> {
     // ClaudeHook is special: it may send multiple requests
     if let Commands::ClaudeHook { ref event, ref surface } = command {
         run_claude_hook(&mut stream, event, *surface)?;
+        return Ok(());
+    }
+
+    // ClaudeWait is special: it polls until the child reaches a terminal state
+    if let Commands::ClaudeWait { child, timeout } = command {
+        run_claude_wait(&mut stream, child, timeout)?;
         return Ok(());
     }
 
@@ -415,6 +439,41 @@ fn run_claude_hook(stream: &mut TcpStream, event: &str, surface_arg: Option<u32>
     }
 
     Ok(())
+}
+
+/// Handle the claude-wait subcommand: poll until child is idle/needs_input/exited or timeout.
+fn run_claude_wait(stream: &mut TcpStream, child: u32, timeout: u64) -> Result<()> {
+    use std::time::{Duration, Instant};
+
+    let deadline = Instant::now() + Duration::from_secs(timeout);
+
+    loop {
+        let req = make_request(
+            "claude.wait",
+            serde_json::json!({ "child_surface_id": child }),
+        );
+        let result = send_request(stream, &req)?;
+
+        let state = result
+            .get("state")
+            .and_then(|v| v.as_str())
+            .unwrap_or("active")
+            .to_string();
+
+        match state.as_str() {
+            "idle" | "needs_input" | "exited" => {
+                println!("{}", serde_json::to_string_pretty(&result)?);
+                return Ok(());
+            }
+            _ => {
+                if Instant::now() >= deadline {
+                    eprintln!("Timeout: child {} did not reach a terminal state within {}s", child, timeout);
+                    std::process::exit(1);
+                }
+                std::thread::sleep(Duration::from_secs(2));
+            }
+        }
+    }
 }
 
 fn command_to_request(command: &Commands) -> JsonRpcRequest {
@@ -578,8 +637,17 @@ fn command_to_request(command: &Commands) -> JsonRpcRequest {
                 }),
             )
         }
+        Commands::ClaudeBroadcast { text, role } => (
+            "claude.broadcast",
+            serde_json::json!({
+                "text": text,
+                "role": role,
+            }),
+        ),
         // ClaudeHook is handled separately in run_client before reaching here
         Commands::ClaudeHook { .. } => unreachable!("ClaudeHook is handled in run_client"),
+        // ClaudeWait is handled separately in run_client before reaching here
+        Commands::ClaudeWait { .. } => unreachable!("ClaudeWait is handled in run_client"),
         Commands::GlobalHookSet {
             condition,
             command,
