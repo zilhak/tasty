@@ -220,6 +220,21 @@ pub enum Commands {
         /// Direction to move focus: left, right, up, down
         direction: String,
     },
+    /// Manage per-surface metadata (set, get, unset, list)
+    SurfaceMeta {
+        /// Action: set, get, unset, list
+        #[arg()]
+        action: String,
+        /// Surface ID (default: focused)
+        #[arg(long)]
+        surface: Option<u32>,
+        /// Key name
+        #[arg(long)]
+        key: Option<String>,
+        /// Value (for set action)
+        #[arg(long)]
+        value: Option<String>,
+    },
     /// Claude Code hook integration (called by Claude Code's hook system)
     ClaudeHook {
         /// Hook event type: stop, notification, prompt-submit, session-start
@@ -520,6 +535,23 @@ fn command_to_request(command: &Commands) -> JsonRpcRequest {
             "focus.direction",
             serde_json::json!({ "direction": direction }),
         ),
+        Commands::SurfaceMeta { action, surface, key, value } => {
+            let method = match action.as_str() {
+                "set" => "surface.meta_set",
+                "get" => "surface.meta_get",
+                "unset" => "surface.meta_unset",
+                "list" => "surface.meta_list",
+                _ => "surface.meta_list",
+            };
+            (
+                method,
+                serde_json::json!({
+                    "surface_id": surface,
+                    "key": key,
+                    "value": value,
+                }),
+            )
+        }
         // ClaudeHook is handled separately in run_client before reaching here
         Commands::ClaudeHook { .. } => unreachable!("ClaudeHook is handled in run_client"),
     };

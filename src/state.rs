@@ -203,6 +203,7 @@ impl AppState {
 
     /// Send fast-mode init command to a terminal by surface ID and apply scrollback limit.
     fn send_fast_init(&mut self, surface_id: u32) {
+        crate::surface_meta::SurfaceMetaStore::ensure_created(surface_id);
         let scrollback_limit = self.settings.general.scrollback_lines;
         if let Some(terminal) = self.find_terminal_by_id_mut(surface_id) {
             terminal.set_scrollback_limit(scrollback_limit);
@@ -317,11 +318,27 @@ impl AppState {
 
     /// Close the active tab in the focused pane. Returns true if a tab was closed.
     pub fn close_active_tab(&mut self) -> bool {
+        // Collect surface IDs in the active tab before closing
+        let mut surface_ids = Vec::new();
         if let Some(pane) = self.focused_pane_mut() {
+            let active = pane.active_tab;
+            if let Some(tab) = pane.tabs.get_mut(active) {
+                tab.panel_mut().for_each_terminal_mut(&mut |sid, _| {
+                    surface_ids.push(sid);
+                });
+            }
+        }
+        let closed = if let Some(pane) = self.focused_pane_mut() {
             pane.close_active_tab()
         } else {
             false
+        };
+        if closed {
+            for sid in surface_ids {
+                crate::surface_meta::SurfaceMetaStore::remove(sid);
+            }
         }
+        closed
     }
 
     /// Close the focused pane (unsplit). Returns true if a pane was removed.
@@ -345,10 +362,11 @@ impl AppState {
             if let Some(first) = ws.pane_layout().first_pane() {
                 ws.focused_pane = first.id;
             }
-            // Claude parent-child cleanup
+            // Claude parent-child cleanup + surface meta cleanup
             for sid in surface_ids {
                 self.unregister_child(sid);
                 self.mark_parent_closed(sid);
+                crate::surface_meta::SurfaceMetaStore::remove(sid);
             }
         }
         removed
@@ -374,9 +392,10 @@ impl AppState {
         } else {
             return false;
         }
-        // Claude parent-child cleanup
+        // Claude parent-child cleanup + surface meta cleanup
         self.unregister_child(surface_id);
         self.mark_parent_closed(surface_id);
+        crate::surface_meta::SurfaceMetaStore::remove(surface_id);
         true
     }
 

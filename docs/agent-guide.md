@@ -153,6 +153,27 @@ tasty claude-hook stop --surface 5  # 특정 surface 지정 (또는 TASTY_SURFAC
 | `surface.read_since_mark` | `surface_id?, strip_ansi?: bool` | 마크 이후 새 출력 반환 |
 | `surface.cursor_position` | `surface_id?` | 커서 위치 (x, y) 반환 |
 
+### Surface 메타데이터
+
+파일 기반 키-값 스토어. 어떤 프로세스(Claude Code 포함)든 서피스별 메타데이터를 읽고 쓸 수 있다. Windows에서는 `%TEMP%\tasty-surfaces\<surface_id>\meta.json`에 저장된다.
+
+| 메서드 | 파라미터 | 설명 |
+|--------|---------|------|
+| `surface.meta_set` | `surface_id?, key: string, value: string` | 키-값 설정. 응답: `{ ok: true }` |
+| `surface.meta_get` | `surface_id?, key: string` | 값 조회. 응답: `{ value: "..." }` 또는 `{ value: null }` |
+| `surface.meta_unset` | `surface_id?, key: string` | 키 삭제. 응답: `{ ok: true }` |
+| `surface.meta_list` | `surface_id?` | 전체 메타데이터 객체 반환 |
+
+**CLI 사용 예시:**
+
+```bash
+tasty surface-meta set --key role --value orchestrator
+tasty surface-meta get --key role
+tasty surface-meta unset --key role
+tasty surface-meta list
+tasty surface-meta list --surface 3   # 특정 서피스 지정
+```
+
 ### 훅
 
 | 메서드 | 파라미터 | 설명 |
