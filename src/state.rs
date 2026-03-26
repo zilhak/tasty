@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use tasty_hooks::HookManager;
-use crate::model::{DividerInfo, PaneId, Rect, SplitDirection, Workspace};
+use crate::model::{DividerInfo, FocusDirection, PaneId, Rect, SplitDirection, Workspace};
 use crate::notification::NotificationStore;
 use crate::settings::Settings;
 use crate::settings_ui::SettingsUiState;
@@ -590,6 +590,31 @@ impl AppState {
         // Not in a multi-surface group, move between panes
         let ws = self.active_workspace_mut();
         ws.focused_pane = ws.pane_layout().prev_pane_id(ws.focused_pane);
+    }
+
+    /// Move focus in a spatial direction (left/right/up/down).
+    /// First tries to move within a SurfaceGroup, then moves between panes.
+    pub fn move_focus_direction(&mut self, direction: FocusDirection) {
+        let ws = self.active_workspace_mut();
+        let pane_id = ws.focused_pane;
+
+        // Try to move within a SurfaceGroup first
+        if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
+            if let Some(panel) = pane.active_panel_mut() {
+                if let crate::model::Panel::SurfaceGroup(group) = panel {
+                    if let Some(new_surface_id) = group.directional_focus(direction) {
+                        group.focused_surface = new_surface_id;
+                        return;
+                    }
+                }
+            }
+        }
+
+        // Try to move between panes
+        let ws = self.active_workspace_mut();
+        if let Some(target_pane_id) = ws.pane_layout().directional_focus(ws.focused_pane, direction) {
+            ws.focused_pane = target_pane_id;
+        }
     }
 
     /// Move focus to the next pane only (skip surface group logic).

@@ -1,7 +1,7 @@
 use serde_json::json;
 
 use crate::ipc::protocol::{JsonRpcRequest, JsonRpcResponse};
-use crate::model::SplitDirection;
+use crate::model::{FocusDirection, SplitDirection};
 use crate::state::AppState;
 
 mod hooks;
@@ -51,6 +51,7 @@ pub fn handle(state: &mut AppState, request: &JsonRpcRequest) -> JsonRpcResponse
         "claude.set_idle_state" => hooks::handle_claude_set_idle_state(state, id, &request.params),
         "claude.set_needs_input" => hooks::handle_claude_set_needs_input(state, id, &request.params),
         "surface.fire_hook" => hooks::handle_surface_fire_hook(state, id, &request.params),
+        "focus.direction" => handle_focus_direction(state, id, &request.params),
         "ui.state" => handle_ui_state(state, id),
         "message.send" => handle_message_send(state, id, &request.params),
         "message.read" => handle_message_read(state, id, &request.params),
@@ -58,6 +59,34 @@ pub fn handle(state: &mut AppState, request: &JsonRpcRequest) -> JsonRpcResponse
         "message.clear" => handle_message_clear(state, id, &request.params),
         _ => JsonRpcResponse::method_not_found(id, &request.method),
     }
+}
+
+fn handle_focus_direction(
+    state: &mut AppState,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
+    let direction = match params.get("direction").and_then(|v| v.as_str()) {
+        Some("left") => FocusDirection::Left,
+        Some("right") => FocusDirection::Right,
+        Some("up") => FocusDirection::Up,
+        Some("down") => FocusDirection::Down,
+        Some(other) => {
+            return JsonRpcResponse::invalid_params(
+                id,
+                format!("Invalid direction '{}'. Use: left, right, up, down", other),
+            )
+        }
+        None => return JsonRpcResponse::invalid_params(id, "Missing 'direction' parameter"),
+    };
+    state.move_focus_direction(direction);
+    let ws = state.active_workspace();
+    JsonRpcResponse::success(
+        id,
+        json!({
+            "focused_pane": ws.focused_pane,
+        }),
+    )
 }
 
 fn handle_ui_state(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {

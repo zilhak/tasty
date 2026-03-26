@@ -215,6 +215,11 @@ pub enum Commands {
         #[arg(long)]
         surface: Option<u32>,
     },
+    /// Move focus in a spatial direction (left, right, up, down)
+    FocusDirection {
+        /// Direction to move focus: left, right, up, down
+        direction: String,
+    },
     /// Claude Code hook integration (called by Claude Code's hook system)
     ClaudeHook {
         /// Hook event type: stop, notification, prompt-submit, session-start
@@ -510,6 +515,10 @@ fn command_to_request(command: &Commands) -> JsonRpcRequest {
         Commands::MessageClear { surface } => (
             "message.clear",
             serde_json::json!({ "surface_id": surface }),
+        ),
+        Commands::FocusDirection { direction } => (
+            "focus.direction",
+            serde_json::json!({ "direction": direction }),
         ),
         // ClaudeHook is handled separately in run_client before reaching here
         Commands::ClaudeHook { .. } => unreachable!("ClaudeHook is handled in run_client"),

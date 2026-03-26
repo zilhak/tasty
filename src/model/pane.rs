@@ -3,6 +3,22 @@ use super::{
     DividerInfo, PaneId, Panel, Rect, SplitDirection, SurfaceId, SurfaceNode, TabId,
 };
 
+/// Directional focus movement.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FocusDirection {
+    Left,
+    Right,
+    Up,
+    Down,
+}
+
+/// Which side of a split we descended into while building a path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PathSide {
+    First,
+    Second,
+}
+
 /// Binary tree of Panes - physical screen splits.
 /// Each leaf is a Pane with its own independent tab bar.
 pub enum PaneNode {
@@ -319,6 +335,91 @@ impl PaneNode {
                     .or_else(|| second.find_divider_at(x, y, r2, threshold))
             }
         }
+    }
+
+    /// Move focus in a direction based on the split tree structure.
+    /// Returns the pane_id to focus, or None if movement is not possible.
+    pub fn directional_focus(&self, current_pane_id: PaneId, direction: FocusDirection) -> Option<PaneId> {
+        // path entries: (split_direction, side_we_went, sibling_subtree)
+        let mut path: Vec<(SplitDirection, PathSide, &PaneNode)> = Vec::new();
+        if !self.build_path_to(current_pane_id, &mut path) {
+            return None;
+        }
+
+        // Walk the path backwards looking for a split that can be crossed
+        for (split_dir, side, sibling) in path.iter().rev() {
+            if Self::direction_matches_split(*split_dir, direction) {
+                let want_first = Self::direction_wants_first(direction);
+                let currently_first = *side == PathSide::First;
+                // We can cross if we're on the opposite side from where we want to go
+                if currently_first != want_first {
+                    return Some(sibling.edge_leaf(direction));
+                }
+            }
+        }
+        None
+    }
+
+    /// Build the path from root to the pane with the given id.
+    /// Returns true if found, populating `path` with (split_dir, side, sibling) entries.
+    fn build_path_to<'a>(
+        &'a self,
+        target_id: PaneId,
+        path: &mut Vec<(SplitDirection, PathSide, &'a PaneNode)>,
+    ) -> bool {
+        match self {
+            PaneNode::Leaf(pane) => pane.id == target_id,
+            PaneNode::Split { direction, first, second, .. } => {
+                // Try first subtree
+                path.push((*direction, PathSide::First, second.as_ref()));
+                if first.build_path_to(target_id, path) {
+                    return true;
+                }
+                path.pop();
+
+                // Try second subtree
+                path.push((*direction, PathSide::Second, first.as_ref()));
+                if second.build_path_to(target_id, path) {
+                    return true;
+                }
+                path.pop();
+
+                false
+            }
+        }
+    }
+
+    /// Find the edge leaf in the direction of movement within this subtree.
+    /// - Moving Left  → rightmost leaf (closest to the left edge we're crossing from)
+    /// - Moving Right → leftmost leaf
+    /// - Moving Up    → bottommost leaf
+    /// - Moving Down  → topmost leaf
+    fn edge_leaf(&self, direction: FocusDirection) -> PaneId {
+        match self {
+            PaneNode::Leaf(pane) => pane.id,
+            PaneNode::Split { first, second, .. } => match direction {
+                // Left/Up: we want the "far" end of the sibling, so go to second (right/bottom)
+                FocusDirection::Left | FocusDirection::Up => second.edge_leaf(direction),
+                // Right/Down: we want the near end, so go to first (left/top)
+                FocusDirection::Right | FocusDirection::Down => first.edge_leaf(direction),
+            },
+        }
+    }
+
+    /// Returns true if this split direction is relevant for the given movement direction.
+    /// Vertical split (left|right children) → relevant for Left/Right.
+    /// Horizontal split (top|bottom children) → relevant for Up/Down.
+    fn direction_matches_split(split: SplitDirection, dir: FocusDirection) -> bool {
+        match dir {
+            FocusDirection::Left | FocusDirection::Right => split == SplitDirection::Vertical,
+            FocusDirection::Up | FocusDirection::Down => split == SplitDirection::Horizontal,
+        }
+    }
+
+    /// Returns true if this direction targets the "first" child of a split.
+    /// Left/Up target first (left/top). Right/Down target second (right/bottom).
+    fn direction_wants_first(dir: FocusDirection) -> bool {
+        matches!(dir, FocusDirection::Left | FocusDirection::Up)
     }
 
     /// Update the ratio of the split node whose rect approximately matches `split_rect`.

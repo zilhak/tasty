@@ -126,7 +126,17 @@
 - Ctrl+Shift+O: Pane 수평 분할 (새 독립 탭 바)
 - Ctrl+Shift+D: SurfaceGroup 수직 분할 (탭 내부)
 - Ctrl+Shift+J: SurfaceGroup 수평 분할 (탭 내부)
-- Alt+Arrow: 포커스 이동 (SurfaceGroup 내 Surface 간 우선, 단일 Surface면 Pane 간 이동)
+- Alt+Arrow: 포커스 순환 이동 (SurfaceGroup 내 Surface 간 우선, 단일 Surface면 Pane 간 이동)
+
+### 방향성 포커스 이동 (IPC/CLI)
+- `focus.direction` IPC 메서드: `direction` 파라미터 (`"left"`, `"right"`, `"up"`, `"down"`)로 분할 트리 구조 기반 방향성 포커스 이동
+- `tasty focus-direction <방향>` CLI 커맨드로도 동일하게 사용 가능
+- 알고리즘: SplitDirection 트리를 역방향으로 탐색하여 이동 방향에 맞는 분할을 찾고, 시블링 서브트리의 엣지 리프로 포커스 이동
+  - `SplitDirection::Vertical`(좌우 경계) → Left/Right 방향에 대응
+  - `SplitDirection::Horizontal`(상하 경계) → Up/Down 방향에 대응
+  - Left/Up: 시블링의 rightmost/bottommost 리프로 이동 (인접한 엣지)
+  - Right/Down: 시블링의 leftmost/topmost 리프로 이동 (인접한 엣지)
+- SurfaceGroup 내부 서피스 간 이동 우선, 이동 불가 시 Pane 간 이동
 - Ctrl+W: 활성 탭 닫기 (탭이 2개 이상일 때)
 - Ctrl+Shift+W: 포커스된 패인 닫기 (unsplit, 패인이 2개 이상일 때)
 - Ctrl+Shift+I: 알림 패널 토글

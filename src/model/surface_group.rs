@@ -1,5 +1,13 @@
 use tasty_terminal::Terminal;
 use super::{DividerInfo, Rect, SplitDirection, SurfaceId, SURFACE_BORDER_WIDTH};
+use super::pane::FocusDirection;
+
+/// Which side of a split we descended into while building a path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PathSide {
+    First,
+    Second,
+}
 
 /// Single terminal instance.
 pub struct SurfaceNode {
@@ -116,6 +124,12 @@ impl SurfaceGroupNode {
             .position(|&id| id == self.focused_surface)
             .unwrap_or(0);
         self.focused_surface = ids[(pos + ids.len() - 1) % ids.len()];
+    }
+
+    /// Move focus in a direction within this surface group.
+    /// Returns Some(new_surface_id) if movement was possible, None otherwise.
+    pub fn directional_focus(&self, direction: FocusDirection) -> Option<SurfaceId> {
+        self.layout().directional_focus(self.focused_surface, direction)
     }
 }
 
@@ -454,6 +468,72 @@ impl SurfaceGroupLayout {
                     || second.update_ratio_for_rect(split_rect, new_ratio, r2)
             }
         }
+    }
+
+    /// Move focus in a direction based on the split tree structure.
+    /// Returns the surface_id to focus, or None if movement is not possible.
+    pub fn directional_focus(&self, current_id: SurfaceId, direction: FocusDirection) -> Option<SurfaceId> {
+        let mut path: Vec<(SplitDirection, PathSide, &SurfaceGroupLayout)> = Vec::new();
+        if !self.build_path_to(current_id, &mut path) {
+            return None;
+        }
+
+        for (split_dir, side, sibling) in path.iter().rev() {
+            if Self::direction_matches_split(*split_dir, direction) {
+                let want_first = Self::direction_wants_first(direction);
+                let currently_first = *side == PathSide::First;
+                if currently_first != want_first {
+                    return Some(sibling.edge_leaf(direction));
+                }
+            }
+        }
+        None
+    }
+
+    fn build_path_to<'a>(
+        &'a self,
+        target_id: SurfaceId,
+        path: &mut Vec<(SplitDirection, PathSide, &'a SurfaceGroupLayout)>,
+    ) -> bool {
+        match self {
+            SurfaceGroupLayout::Single(node) => node.id == target_id,
+            SurfaceGroupLayout::Split { direction, first, second, .. } => {
+                path.push((*direction, PathSide::First, second.as_ref()));
+                if first.build_path_to(target_id, path) {
+                    return true;
+                }
+                path.pop();
+
+                path.push((*direction, PathSide::Second, first.as_ref()));
+                if second.build_path_to(target_id, path) {
+                    return true;
+                }
+                path.pop();
+
+                false
+            }
+        }
+    }
+
+    fn edge_leaf(&self, direction: FocusDirection) -> SurfaceId {
+        match self {
+            SurfaceGroupLayout::Single(node) => node.id,
+            SurfaceGroupLayout::Split { first, second, .. } => match direction {
+                FocusDirection::Left | FocusDirection::Up => second.edge_leaf(direction),
+                FocusDirection::Right | FocusDirection::Down => first.edge_leaf(direction),
+            },
+        }
+    }
+
+    fn direction_matches_split(split: SplitDirection, dir: FocusDirection) -> bool {
+        match dir {
+            FocusDirection::Left | FocusDirection::Right => split == SplitDirection::Vertical,
+            FocusDirection::Up | FocusDirection::Down => split == SplitDirection::Horizontal,
+        }
+    }
+
+    fn direction_wants_first(dir: FocusDirection) -> bool {
+        matches!(dir, FocusDirection::Left | FocusDirection::Up)
     }
 
     /// Find which surface contains the given point.
