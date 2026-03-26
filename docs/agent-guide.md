@@ -194,6 +194,58 @@ tasty surface-meta list --surface 3   # 특정 서피스 지정
 | `claude-idle` | Claude Code 작업 완료 (idle 상태 전환) |
 | `needs-input` | Claude Code 사용자 입력 필요 |
 
+### 글로벌 훅 (타이머 / 파일 감시)
+
+서피스에 종속되지 않는 전역 훅. 타이머나 파일 변경을 조건으로 셸 명령을 실행한다.
+
+| 메서드 | 파라미터 | 설명 |
+|--------|---------|------|
+| `global_hook.set` | `condition, command, label?` | 글로벌 훅 등록. 반환: `{ hook_id }` |
+| `global_hook.list` | 없음 | 등록된 글로벌 훅 목록 |
+| `global_hook.unset` | `hook_id` | 글로벌 훅 제거. 반환: `{ removed }` |
+
+**condition 포맷**:
+
+| 형식 | 설명 |
+|------|------|
+| `interval:SECS` | 매 N초마다 반복 실행 |
+| `once:SECS` | N초 후 1회 실행 후 자동 삭제 |
+| `file:/path/to/watch` | 파일 수정 시 실행 |
+
+**CLI**:
+
+```bash
+tasty global-hook-set --condition interval:30 --command "echo tick" --label "heartbeat"
+tasty global-hook-set --condition once:5 --command "notify-send done"
+tasty global-hook-set --condition "file:/tmp/trigger" --command "bash /tmp/trigger"
+tasty global-hook-list
+tasty global-hook-unset --hook HOOK_ID
+```
+
+**IPC 예시**:
+
+```python
+# 30초마다 반복 실행
+result = call("global_hook.set", {
+    "condition": "interval:30",
+    "command": "echo heartbeat >> /tmp/tasty.log",
+    "label": "heartbeat",
+})
+hook_id = result["result"]["hook_id"]
+
+# 파일 변경 감지
+call("global_hook.set", {
+    "condition": "file:/tmp/build_done",
+    "command": "notify-send 'Build complete'",
+})
+
+# 목록 조회
+call("global_hook.list")
+
+# 제거
+call("global_hook.unset", {"hook_id": hook_id})
+```
+
 ### 알림
 
 | 메서드 | 파라미터 | 설명 |

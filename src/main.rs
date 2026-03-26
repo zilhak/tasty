@@ -1,6 +1,7 @@
 mod cli;
 mod event_handler;
 mod font;
+mod global_hooks;
 mod gpu;
 mod i18n;
 mod ipc;

@@ -333,6 +333,14 @@
 - `hook.list`: 등록된 훅 목록 조회 (서피스별 필터 가능)
 - `hook.unset`: 훅 삭제
 
+#### 글로벌 훅
+- `global_hook.set`: 글로벌 훅 등록. 파라미터: `condition` (타입별 포맷), `command`, `label?`. 반환: `{ hook_id: N }`
+  - `interval:SECS` — 매 N초마다 반복 실행
+  - `once:SECS` — N초 후 1회 실행 후 자동 삭제
+  - `file:/path` — 파일 수정 감지 시 실행
+- `global_hook.list`: 등록된 글로벌 훅 전체 목록. 각 항목: `{ id, condition, command, label }`
+- `global_hook.unset`: `hook_id`로 글로벌 훅 삭제. 반환: `{ removed: bool }`
+
 #### 메시지 패싱
 - `message.send`: `to_surface_id`, `content`, `from_surface_id?` — 다른 서피스의 메시지 큐에 메시지 추가. 응답: `{ id: N }`
 - `message.read`: `surface_id?`, `from_surface_id?`, `peek?` — 메시지 큐 읽기. 기본적으로 소비(consume), `peek: true`이면 읽기만 하고 큐에서 제거하지 않음. `from_surface_id`로 발신자 필터 가능

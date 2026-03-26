@@ -244,6 +244,26 @@ pub enum Commands {
         #[arg(long)]
         surface: Option<u32>,
     },
+    /// Set a global hook (timer or file-watching)
+    GlobalHookSet {
+        /// Condition: interval:SECS, once:SECS, file:/path/to/watch
+        #[arg(long)]
+        condition: String,
+        /// Shell command to execute when the condition fires
+        #[arg(long)]
+        command: String,
+        /// Optional human-readable label
+        #[arg(long)]
+        label: Option<String>,
+    },
+    /// List all global hooks
+    GlobalHookList,
+    /// Remove a global hook by ID
+    GlobalHookUnset {
+        /// Hook ID to remove
+        #[arg(long)]
+        hook: u32,
+    },
 }
 
 /// Send a single JSON-RPC request and read the response.
@@ -554,6 +574,23 @@ fn command_to_request(command: &Commands) -> JsonRpcRequest {
         }
         // ClaudeHook is handled separately in run_client before reaching here
         Commands::ClaudeHook { .. } => unreachable!("ClaudeHook is handled in run_client"),
+        Commands::GlobalHookSet {
+            condition,
+            command,
+            label,
+        } => (
+            "global_hook.set",
+            serde_json::json!({
+                "condition": condition,
+                "command": command,
+                "label": label,
+            }),
+        ),
+        Commands::GlobalHookList => ("global_hook.list", serde_json::json!({})),
+        Commands::GlobalHookUnset { hook } => (
+            "global_hook.unset",
+            serde_json::json!({ "hook_id": hook }),
+        ),
     };
 
     JsonRpcRequest {

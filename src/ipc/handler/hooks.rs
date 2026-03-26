@@ -1,6 +1,7 @@
 use serde_json::json;
 use tasty_hooks::HookEvent;
 
+use crate::global_hooks::HookCondition;
 use crate::ipc::protocol::JsonRpcResponse;
 use crate::model::SplitDirection;
 use crate::state::{AppState, ClaudeChildEntry};
@@ -453,6 +454,77 @@ pub(crate) fn handle_claude_set_needs_input(
 
     state.set_claude_needs_input(surface_id, needs_input);
     JsonRpcResponse::success(id, json!({ "ok": true }))
+}
+
+pub(crate) fn handle_global_hook_set(
+    state: &mut AppState,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
+    let condition_str = match params.get("condition").and_then(|v| v.as_str()) {
+        Some(c) => c,
+        None => return JsonRpcResponse::invalid_params(id, "Missing 'condition' parameter"),
+    };
+
+    let condition = match HookCondition::parse(condition_str) {
+        Some(c) => c,
+        None => {
+            return JsonRpcResponse::invalid_params(
+                id,
+                format!(
+                    "Invalid condition '{}'. Use: interval:SECS, once:SECS, file:/path",
+                    condition_str
+                ),
+            )
+        }
+    };
+
+    let command = match params.get("command").and_then(|v| v.as_str()) {
+        Some(c) => c.to_string(),
+        None => return JsonRpcResponse::invalid_params(id, "Missing 'command' parameter"),
+    };
+
+    let label = params
+        .get("label")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+
+    let hook_id = state.global_hook_manager.add(condition, command, label);
+    JsonRpcResponse::success(id, json!({ "hook_id": hook_id }))
+}
+
+pub(crate) fn handle_global_hook_list(
+    state: &AppState,
+    id: serde_json::Value,
+) -> JsonRpcResponse {
+    let hooks: Vec<_> = state
+        .global_hook_manager
+        .list()
+        .iter()
+        .map(|h| {
+            json!({
+                "id": h.id,
+                "condition": h.condition.to_display_string(),
+                "command": h.command,
+                "label": h.label,
+            })
+        })
+        .collect();
+    JsonRpcResponse::success(id, json!(hooks))
+}
+
+pub(crate) fn handle_global_hook_unset(
+    state: &mut AppState,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
+    let hook_id = match params.get("hook_id").and_then(|v| v.as_u64()) {
+        Some(h) => h as u32,
+        None => return JsonRpcResponse::invalid_params(id, "Missing 'hook_id' parameter"),
+    };
+
+    let removed = state.global_hook_manager.remove(hook_id);
+    JsonRpcResponse::success(id, json!({ "removed": removed }))
 }
 
 pub(crate) fn handle_surface_fire_hook(

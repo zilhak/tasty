@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use tasty_hooks::HookManager;
+use crate::global_hooks::GlobalHookManager;
 use crate::model::{DividerInfo, FocusDirection, PaneId, Rect, SplitDirection, Workspace};
 use crate::notification::NotificationStore;
 use crate::settings::Settings;
@@ -104,6 +105,8 @@ pub struct AppState {
     pub surface_messages: HashMap<u32, Vec<SurfaceMessage>>,
     /// Next message ID counter
     surface_next_message_id: u32,
+    /// Global hook manager for timer-based and file-watching hooks.
+    pub global_hook_manager: GlobalHookManager,
 }
 
 /// Which workspace field is being renamed.
@@ -152,6 +155,7 @@ impl AppState {
             claude_needs_input_state: HashMap::new(),
             surface_messages: HashMap::new(),
             surface_next_message_id: 0,
+            global_hook_manager: GlobalHookManager::new(),
         };
         state.send_fast_init(surface_id);
         Ok(state)
