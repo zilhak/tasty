@@ -145,10 +145,10 @@ GUI 모드에서만 동작한다. 헤드리스 모드에서는 사용 불가.
 ### IPC
 
 ```python
-call("ui.screenshot", {"path": "/tmp/tasty-capture.ppm"})
+call("ui.screenshot", {"path": "/tmp/tasty-capture.png"})
 ```
 
-결과는 PPM 형식으로 저장된다.
+결과는 PNG 형식으로 저장된다.
 
 ## 6. 빌드 후 재시작
 

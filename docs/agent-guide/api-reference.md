@@ -117,7 +117,7 @@ tasty claude-wait --child 42 --timeout 60 # 타임아웃 60초로 대기
 |--------|---------|------|
 | `system.info` | 없음 | 버전, 워크스페이스 수 |
 | `ui.state` | 없음 | 현재 UI 상태 (설정창/알림패널 열림 여부, 패인 수 등) |
-| `ui.screenshot` | `path?: string` | 스크린샷 저장 (GUI 모드 전용, 비동기) |
+| `ui.screenshot` | `path?: string` | 스크린샷을 PNG로 저장 (GUI 모드 전용, 비동기) |
 
 ### 워크스페이스
 

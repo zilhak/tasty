@@ -2,10 +2,13 @@
 
 | 상태 | 방법 |
 |------|------|
-| 정상 모드 (IPC 사용 가능) | `ui.screenshot` IPC 호출 — Tasty 자체 렌더링만 캡처 |
+| 정상 모드 (IPC 사용 가능) | `ui.screenshot` IPC 호출 — Tasty 자체 렌더링을 PNG로 캡처 |
 | 셸 설정 모드 (IPC 없음) | PowerShell `CopyFromScreen` — OS 전체 화면 캡처 |
 
 **방법 1: IPC `ui.screenshot` (정상 모드, 권장)**
+
+GUI 모드 전용. 헤드리스 모드에서는 사용 불가. 결과는 PNG 형식으로 저장된다.
+
 ```bash
 # CLI로 한 줄
 tasty screenshot --path ./capture.png
