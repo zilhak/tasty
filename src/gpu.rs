@@ -598,6 +598,7 @@ impl GpuState {
                     self.size.width,
                     self.size.height,
                     bg,
+                    is_focused,
                 );
 
                 let mut term_encoder = self.device.create_command_encoder(

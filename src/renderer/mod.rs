@@ -328,7 +328,8 @@ impl CellRenderer {
     }
 
     /// Build instance data from the terminal surface with a custom default background.
-    pub fn prepare_with_bg(&mut self, surface: &Surface, queue: &wgpu::Queue, default_bg: [f32; 4]) {
+    /// If `cursor` is Some((col, row)), that cell's fg/bg are swapped to show the cursor.
+    pub fn prepare_with_bg(&mut self, surface: &Surface, queue: &wgpu::Queue, default_bg: [f32; 4], cursor: Option<(usize, usize)>) {
         let (cols, rows) = surface.dimensions();
         let lines = surface.screen_lines();
 
@@ -346,8 +347,17 @@ impl CellRenderer {
                 }
 
                 let attrs = cell_ref.attrs();
-                let bg_color = color_attr_to_rgba(&attrs.background(), default_bg);
-                let fg_color = color_attr_to_rgba(&attrs.foreground(), DEFAULT_FG);
+                let is_cursor = cursor == Some((col_idx, row_idx));
+                let (bg_color, fg_color) = if is_cursor {
+                    let fg = color_attr_to_rgba(&attrs.foreground(), DEFAULT_FG);
+                    let bg = color_attr_to_rgba(&attrs.background(), default_bg);
+                    (fg, bg)
+                } else {
+                    (
+                        color_attr_to_rgba(&attrs.background(), default_bg),
+                        color_attr_to_rgba(&attrs.foreground(), DEFAULT_FG),
+                    )
+                };
 
                 self.bg_instances.push(BgInstance {
                     pos: [col_idx as f32, row_idx as f32],
@@ -414,7 +424,7 @@ impl CellRenderer {
 
     /// Build instance data from the terminal surface (uses default palette bg).
     pub fn prepare(&mut self, surface: &Surface, queue: &wgpu::Queue) {
-        self.prepare_with_bg(surface, queue, DEFAULT_BG);
+        self.prepare_with_bg(surface, queue, DEFAULT_BG, None);
     }
 
     /// Prepare instance data for a terminal surface to be rendered in a specific viewport rect.
@@ -450,11 +460,12 @@ impl CellRenderer {
         };
         queue.write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
 
-        self.prepare_with_bg(surface, queue, default_bg);
+        self.prepare_with_bg(surface, queue, default_bg, None);
     }
 
     /// Prepare instance data for a terminal with scrollback support.
     /// When scroll_offset > 0, mixes scrollback lines with surface lines.
+    /// If `show_cursor` is true, the cursor cell's fg/bg colors are swapped.
     pub fn prepare_terminal_viewport(
         &mut self,
         terminal: &tasty_terminal::Terminal,
@@ -463,6 +474,7 @@ impl CellRenderer {
         screen_width: u32,
         screen_height: u32,
         default_bg: [f32; 4],
+        show_cursor: bool,
     ) {
         let uniforms = Uniforms {
             cell_size: [
@@ -475,9 +487,16 @@ impl CellRenderer {
         };
         queue.write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
 
+        let cursor = if show_cursor && terminal.cursor_visible() && terminal.scroll_offset == 0 {
+            let (cx, cy) = terminal.surface().cursor_position();
+            Some((cx, cy as usize))
+        } else {
+            None
+        };
+
         if terminal.scroll_offset == 0 {
             // No scrollback active - use normal surface rendering
-            self.prepare_with_bg(terminal.surface(), queue, default_bg);
+            self.prepare_with_bg(terminal.surface(), queue, default_bg, cursor);
             return;
         }
 
