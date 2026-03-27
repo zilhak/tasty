@@ -1,4 +1,4 @@
-# Tasty Agent Guide — AI 에이전트를 위한 터미널 조작 가이드
+# Tasty API 레퍼런스 — IPC/CLI 공통
 
 ## 접속 방법
 
@@ -167,7 +167,7 @@ tasty claude-wait --child 42 --timeout 60 # 타임아웃 60초로 대기
 
 ### Surface 메타데이터
 
-파일 기반 키-값 스토어. 어떤 프로세스(Claude Code 포함)든 서피스별 메타데이터를 읽고 쓸 수 있다. Windows에서는 `%TEMP%\tasty-surfaces\<surface_id>\meta.json`에 저장된다.
+파일 기반 키-값 스토어. 어떤 프로세스(Claude Code 포함)든 서피스별 메타데이터를 읽고 쓸 수 있다.
 
 | 메서드 | 파라미터 | 설명 |
 |--------|---------|------|
@@ -232,30 +232,6 @@ tasty global-hook-set --condition once:5 --command "notify-send done"
 tasty global-hook-set --condition "file:/tmp/trigger" --command "bash /tmp/trigger"
 tasty global-hook-list
 tasty global-hook-unset --hook HOOK_ID
-```
-
-**IPC 예시**:
-
-```python
-# 30초마다 반복 실행
-result = call("global_hook.set", {
-    "condition": "interval:30",
-    "command": "echo heartbeat >> /tmp/tasty.log",
-    "label": "heartbeat",
-})
-hook_id = result["result"]["hook_id"]
-
-# 파일 변경 감지
-call("global_hook.set", {
-    "condition": "file:/tmp/build_done",
-    "command": "notify-send 'Build complete'",
-})
-
-# 목록 조회
-call("global_hook.list")
-
-# 제거
-call("global_hook.unset", {"hook_id": hook_id})
 ```
 
 ### 알림
