@@ -166,10 +166,19 @@ impl GeneralSettings {
         }
         #[cfg(not(windows))]
         {
-            // Prefer $SHELL, then common paths
-            if let Ok(shell) = std::env::var("SHELL") {
-                return Some(shell);
+            // 1. Check /etc/passwd for the user's login shell (most authoritative after chsh)
+            if let Some(login_shell) = Self::login_shell_from_passwd() {
+                if std::path::Path::new(&login_shell).exists() {
+                    return Some(login_shell);
+                }
             }
+            // 2. Fall back to $SHELL env var
+            if let Ok(shell) = std::env::var("SHELL") {
+                if std::path::Path::new(&shell).exists() {
+                    return Some(shell);
+                }
+            }
+            // 3. Common paths
             for path in &["/bin/zsh", "/bin/bash", "/bin/sh"] {
                 if std::path::Path::new(path).exists() {
                     return Some(path.to_string());
@@ -177,6 +186,26 @@ impl GeneralSettings {
             }
             None
         }
+    }
+
+    /// Read the user's login shell from /etc/passwd.
+    #[cfg(not(windows))]
+    fn login_shell_from_passwd() -> Option<String> {
+        use std::io::BufRead;
+        let uid = unsafe { libc::getuid() };
+        let file = std::fs::File::open("/etc/passwd").ok()?;
+        for line in std::io::BufReader::new(file).lines() {
+            let line = line.ok()?;
+            let fields: Vec<&str> = line.split(':').collect();
+            if fields.len() >= 7 {
+                if let Ok(entry_uid) = fields[2].parse::<u32>() {
+                    if entry_uid == uid {
+                        return Some(fields[6].to_string());
+                    }
+                }
+            }
+        }
+        None
     }
 
     /// Returns true if the configured shell path points to an existing bash-compatible shell.

@@ -100,6 +100,8 @@ impl Terminal {
             _ => Self::default_shell(),
         };
         let mut cmd = CommandBuilder::new(&shell);
+        // Launch as interactive login shell so .zshrc/.bashrc and themes are loaded
+        cmd.arg("-li");
         for arg in args {
             if !arg.is_empty() {
                 cmd.arg(arg);

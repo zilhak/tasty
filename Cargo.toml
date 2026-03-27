@@ -68,6 +68,9 @@ arboard = "3"
 # PNG encoding (screenshots)
 png = "0.18"
 
+# Platform
+libc = "0.2"
+
 # Utilities
 directories = "6"
 

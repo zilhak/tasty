@@ -3641,6 +3641,7 @@ dependencies = [
  "egui-wgpu",
  "egui-winit",
  "enigo",
+ "libc",
  "notify-rust",
  "png",
  "pollster",
