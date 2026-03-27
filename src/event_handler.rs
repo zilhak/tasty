@@ -147,11 +147,12 @@ impl ApplicationHandler<AppEvent> for App {
 
                 // If an overlay is open, skip shortcuts so key events
                 // stay within the overlay (e.g. keybinding capture).
-                let overlay_open = self.state.as_ref()
-                    .map(|s| s.settings_open || s.notification_panel_open)
-                    .unwrap_or(false);
+                // Exception: toggle shortcuts (settings, notifications) can close their own overlay.
+                let settings_open = self.state.as_ref().map(|s| s.settings_open).unwrap_or(false);
+                let notification_open = self.state.as_ref().map(|s| s.notification_panel_open).unwrap_or(false);
+                let overlay_open = settings_open || notification_open;
 
-                if !overlay_open {
+                if !overlay_open || (notification_open && !settings_open) {
                     if self.handle_shortcut(&event.logical_key, self.modifiers) {
                         self.mark_dirty();
                         return;
