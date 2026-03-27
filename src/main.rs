@@ -15,6 +15,7 @@ mod settings_ui;
 mod shortcuts;
 mod state;
 mod surface_meta;
+pub mod theme;
 mod ui;
 
 // Re-export tasty_terminal as terminal for backward compatibility within the crate

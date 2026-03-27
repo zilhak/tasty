@@ -197,28 +197,22 @@ impl GpuState {
                 && (file_name.contains("bash") || file_name.contains("zsh"));
             let show_error = !shell_path.is_empty() && !is_valid;
 
-            // Palette
-            let bg_panel   = egui::Color32::from_rgb(18, 18, 22);
-            let bg_card    = egui::Color32::from_rgb(26, 26, 32);
-            let border     = egui::Color32::from_rgb(52, 52, 64);
-            let text_dim   = egui::Color32::from_rgb(140, 140, 160);
-            let amber      = egui::Color32::from_rgb(230, 170, 60);
-            let red_err    = egui::Color32::from_rgb(220, 80, 80);
-            let accent_ok  = egui::Color32::from_rgb(80, 180, 120);
-            let accent_dis = egui::Color32::from_rgb(55, 65, 75);
-
+            // Apply theme from theme module
+            let th = crate::theme::theme();
+            th.apply_to_egui(ctx);
             let mut style = (*ctx.style()).clone();
-            style.visuals.panel_fill = bg_panel;
-            style.visuals.window_fill = bg_card;
-            style.visuals.window_stroke = egui::Stroke::new(1.0, border);
-            style.visuals.widgets.inactive.bg_fill   = egui::Color32::from_rgb(36, 36, 44);
-            style.visuals.widgets.inactive.bg_stroke  = egui::Stroke::new(1.0, border);
-            style.visuals.widgets.hovered.bg_fill    = egui::Color32::from_rgb(44, 44, 56);
-            style.visuals.widgets.hovered.bg_stroke   = egui::Stroke::new(1.0, egui::Color32::from_rgb(80, 80, 100));
-            style.visuals.widgets.active.bg_fill     = egui::Color32::from_rgb(50, 50, 64);
-            style.visuals.override_text_color = Some(egui::Color32::from_rgb(220, 220, 230));
             style.spacing.item_spacing = egui::vec2(8.0, 6.0);
             ctx.set_style(style);
+
+            // Local aliases for this function
+            let bg_panel   = th.crust;
+            let bg_card    = th.mantle;
+            let border     = th.surface0;
+            let text_dim   = th.subtext0;
+            let amber      = th.yellow;
+            let red_err    = th.red;
+            let accent_ok  = th.green;
+            let accent_dis = th.surface1;
 
             // Dark background panel
             egui::CentralPanel::default()
@@ -797,11 +791,7 @@ impl GpuState {
             visuals.extreme_bg_color = egui::Color32::from_rgb(250, 250, 252);
             ctx.set_visuals(visuals);
         } else {
-            let mut visuals = egui::Visuals::dark();
-            visuals.panel_fill = egui::Color32::from_rgb(30, 30, 36);
-            visuals.window_fill = egui::Color32::from_rgb(30, 30, 36);
-            visuals.extreme_bg_color = egui::Color32::from_rgb(20, 20, 24);
-            ctx.set_visuals(visuals);
+            crate::theme::theme().apply_to_egui(ctx);
         }
     }
 

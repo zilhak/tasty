@@ -1,26 +1,41 @@
 use termwiz::color::ColorAttribute;
 
-pub(crate) const DEFAULT_FG: [f32; 4] = [0.8, 0.8, 0.8, 1.0]; // #cccccc
-pub const DEFAULT_BG: [f32; 4] = [0.102, 0.102, 0.118, 1.0]; // #1a1a1e
+use crate::theme;
 
-/// Standard 16-color ANSI palette (sRGB, approximate).
+pub(crate) fn default_fg() -> [f32; 4] {
+    theme::theme().terminal_fg
+}
+
+pub fn default_bg() -> [f32; 4] {
+    theme::theme().terminal_bg
+}
+
+pub(crate) fn ansi_colors() -> &'static [[f32; 3]; 16] {
+    &theme::theme().ansi_colors
+}
+
+// Keep the old constants as aliases for backward compatibility in other modules
+pub(crate) const DEFAULT_FG: [f32; 4] = [0.804, 0.839, 0.957, 1.0]; // Text #cdd6f4
+pub const DEFAULT_BG: [f32; 4] = [0.118, 0.118, 0.180, 1.0]; // Base #1e1e2e
+
+/// Catppuccin Mocha 16-color ANSI palette.
 pub(crate) const ANSI_COLORS: [[f32; 3]; 16] = [
-    [0.0, 0.0, 0.0],       // 0: black
-    [0.8, 0.0, 0.0],       // 1: red
-    [0.0, 0.8, 0.0],       // 2: green
-    [0.8, 0.8, 0.0],       // 3: yellow
-    [0.0, 0.0, 0.8],       // 4: blue
-    [0.8, 0.0, 0.8],       // 5: magenta
-    [0.0, 0.8, 0.8],       // 6: cyan
-    [0.75, 0.75, 0.75],    // 7: white
-    [0.5, 0.5, 0.5],       // 8: bright black
-    [1.0, 0.0, 0.0],       // 9: bright red
-    [0.0, 1.0, 0.0],       // 10: bright green
-    [1.0, 1.0, 0.0],       // 11: bright yellow
-    [0.0, 0.0, 1.0],       // 12: bright blue
-    [1.0, 0.0, 1.0],       // 13: bright magenta
-    [0.0, 1.0, 1.0],       // 14: bright cyan
-    [1.0, 1.0, 1.0],       // 15: bright white
+    [0.176, 0.176, 0.271],  // 0: black      (Surface1 #45475a)
+    [0.953, 0.545, 0.659],  // 1: red         (#f38ba8)
+    [0.651, 0.890, 0.631],  // 2: green       (#a6e3a1)
+    [0.976, 0.886, 0.686],  // 3: yellow      (#f9e2af)
+    [0.537, 0.706, 0.980],  // 4: blue        (#89b4fa)
+    [0.796, 0.651, 0.969],  // 5: magenta     (#cba6f7)
+    [0.580, 0.886, 0.835],  // 6: cyan        (#94e2d5)
+    [0.729, 0.761, 0.882],  // 7: white       (Subtext1 #bac2de)
+    [0.424, 0.439, 0.537],  // 8: bright black(Overlay0 #6c7086)
+    [0.953, 0.545, 0.659],  // 9: bright red  (#f38ba8)
+    [0.651, 0.890, 0.631],  // 10: bright green(#a6e3a1)
+    [0.976, 0.886, 0.686],  // 11: bright yellow(#f9e2af)
+    [0.537, 0.706, 0.980],  // 12: bright blue(#89b4fa)
+    [0.796, 0.651, 0.969],  // 13: bright magenta(#cba6f7)
+    [0.537, 0.784, 0.922],  // 14: bright cyan(Sky #89dceb)
+    [0.804, 0.839, 0.957],  // 15: bright white(Text #cdd6f4)
 ];
 
 pub(crate) fn palette_index_to_rgb(idx: u8) -> [f32; 3] {

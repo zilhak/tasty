@@ -4,12 +4,11 @@ use crate::i18n::{t, t_fmt};
 use crate::model::Rect;
 use crate::settings::KeybindingSettings;
 use crate::state::{AppState, WsRenameField};
-
-/// Color for notification badge / highlight.
-const NOTIFICATION_COLOR: egui::Color32 = egui::Color32::from_rgb(80, 140, 255);
+use crate::theme;
 
 /// Render the egui UI and return the remaining terminal area rect (in physical pixels).
 pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> Rect {
+    let th = theme::theme();
     let sidebar_width = state.sidebar_width;
 
     // ---- Left sidebar: workspaces ----
@@ -32,14 +31,14 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
                     let ws_unread = state.notifications.unread_count_for_workspace(ws_id);
 
                     let bg = if is_active {
-                        egui::Color32::from_rgb(45, 50, 65)
+                        th.surface0
                     } else {
                         egui::Color32::TRANSPARENT
                     };
                     let border = if is_active {
-                        egui::Color32::from_rgb(80, 140, 255)
+                        th.blue
                     } else {
-                        egui::Color32::from_rgb(60, 60, 70)
+                        th.surface0
                     };
 
                     let frame = egui::Frame::new()
@@ -72,7 +71,7 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
                                             .small()
                                             .strong()
                                             .color(egui::Color32::WHITE)
-                                            .background_color(NOTIFICATION_COLOR),
+                                            .background_color(th.blue),
                                     );
                                 });
                             }
@@ -83,7 +82,7 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
                             ui.label(
                                 egui::RichText::new(&subtitle)
                                     .small()
-                                    .color(egui::Color32::from_rgb(140, 160, 200)),
+                                    .color(th.subtext0),
                             );
                         }
 
@@ -92,7 +91,7 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
                             ui.label(
                                 egui::RichText::new(&description)
                                     .small()
-                                    .color(egui::Color32::from_rgb(130, 130, 150)),
+                                    .color(th.overlay0),
                             );
                         }
                     });
@@ -178,7 +177,7 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
                         ui.label(
                             egui::RichText::new(&key_str)
                                 .small()
-                                .color(egui::Color32::from_rgb(120, 180, 255)),
+                                .color(th.blue),
                         );
                         ui.label(egui::RichText::new(&desc_str).small());
                     });
@@ -189,7 +188,7 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
                         ui.label(
                             egui::RichText::new(key_str)
                                 .small()
-                                .color(egui::Color32::from_rgb(120, 180, 255)),
+                                .color(th.blue),
                         );
                         ui.label(egui::RichText::new(&desc_str).small());
                     });
@@ -208,15 +207,15 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
                     egui::Sense::click(),
                 );
                 let text_color = if response.hovered() {
-                    egui::Color32::from_rgb(200, 200, 210)
+                    th.subtext1
                 } else {
-                    egui::Color32::from_rgb(140, 140, 150)
+                    th.overlay0
                 };
                 if response.hovered() {
                     ui.painter().rect_filled(
                         rect,
                         4.0,
-                        egui::Color32::from_rgba_premultiplied(255, 255, 255, 12),
+                        th.hover_overlay,
                     );
                 }
                 ui.painter().text(
@@ -319,6 +318,7 @@ pub fn draw_ws_rename_dialog(ctx: &egui::Context, state: &mut AppState) {
 
 /// Draw pane dividers (borders between split panes).
 pub fn draw_pane_dividers(ctx: &egui::Context, dividers: &[Rect], scale_factor: f32) {
+    let th = theme::theme();
     if dividers.is_empty() {
         return;
     }
@@ -326,7 +326,7 @@ pub fn draw_pane_dividers(ctx: &egui::Context, dividers: &[Rect], scale_factor: 
         egui::Order::Middle,
         egui::Id::new("pane_dividers"),
     ));
-    let border_color = egui::Color32::from_rgb(80, 80, 100);
+    let border_color = th.surface2;
     for div in dividers {
         let rect = egui::Rect::from_min_size(
             egui::pos2(div.x / scale_factor, div.y / scale_factor),
@@ -344,6 +344,7 @@ pub fn draw_pane_tab_bars(
     pane_rects: &[(u32, Rect)],
     scale_factor: f32,
 ) {
+    let th = theme::theme();
     let focused_pane_id = state.focused_pane_id();
 
     // First pass: gather tab info (read-only) and render UI, collecting user actions.
@@ -392,9 +393,9 @@ pub fn draw_pane_tab_bars(
                 ui.set_max_width(info.logical_w);
 
                 let bg = if info.is_focused {
-                    egui::Color32::from_rgb(40, 40, 48)
+                    th.surface0
                 } else {
-                    egui::Color32::from_rgb(30, 30, 36)
+                    th.mantle
                 };
 
                 egui::Frame::new()
@@ -442,6 +443,7 @@ pub fn draw_pane_tab_bars(
 
 /// Draw the notification panel overlay (toggled with Ctrl+I).
 pub fn draw_notification_panel(ctx: &egui::Context, state: &mut AppState) {
+    let th = theme::theme();
     if !state.notification_panel_open {
         return;
     }
@@ -528,7 +530,7 @@ pub fn draw_notification_panel(ctx: &egui::Context, state: &mut AppState) {
                         let bg = if *read {
                             egui::Color32::TRANSPARENT
                         } else {
-                            egui::Color32::from_rgba_premultiplied(80, 140, 255, 20)
+                            egui::Color32::from_rgba_premultiplied(137, 180, 250, 20) // Blue at ~8%
                         };
 
                         egui::Frame::new()
@@ -540,7 +542,7 @@ pub fn draw_notification_panel(ctx: &egui::Context, state: &mut AppState) {
                                     if !*read {
                                         ui.label(
                                             egui::RichText::new("*")
-                                                .color(NOTIFICATION_COLOR)
+                                                .color(th.blue)
                                                 .strong(),
                                         );
                                     }
@@ -565,7 +567,7 @@ pub fn draw_notification_panel(ctx: &egui::Context, state: &mut AppState) {
                                     ui.label(
                                         egui::RichText::new(ws_name)
                                             .small()
-                                            .color(egui::Color32::from_rgb(100, 160, 220)),
+                                            .color(th.blue),
                                     );
 
                                     if ui
@@ -605,6 +607,7 @@ pub fn draw_non_terminal_panels(
     pane_rects: &[(u32, Rect)],
     scale_factor: f32,
 ) {
+    let th = theme::theme();
     // First pass: gather info about non-terminal panels (read-only).
     struct NonTerminalInfo {
         pane_id: u32,
@@ -661,7 +664,7 @@ pub fn draw_non_terminal_panels(
                         ui.set_min_size(egui::vec2(info.logical_w, info.logical_h));
                         ui.set_max_size(egui::vec2(info.logical_w, info.logical_h));
                         egui::Frame::new()
-                            .fill(egui::Color32::from_rgb(25, 25, 30))
+                            .fill(th.crust)
                             .inner_margin(egui::Margin::same(8))
                             .show(ui, |ui| {
                                 egui::ScrollArea::vertical()
@@ -682,7 +685,7 @@ pub fn draw_non_terminal_panels(
                         ui.set_min_size(egui::vec2(info.logical_w, info.logical_h));
                         ui.set_max_size(egui::vec2(info.logical_w, info.logical_h));
                         egui::Frame::new()
-                            .fill(egui::Color32::from_rgb(25, 25, 30))
+                            .fill(th.crust)
                             .inner_margin(egui::Margin::same(4))
                             .show(ui, |ui| {
                                 crate::explorer_ui::draw_explorer(ui, exp_panel);
@@ -700,6 +703,7 @@ pub fn draw_pane_context_menu(
     state: &mut AppState,
     _scale_factor: f32,
 ) {
+    let th = theme::theme();
     let menu = match &state.pane_context_menu {
         Some(m) => m.clone(),
         None => return,
@@ -714,8 +718,8 @@ pub fn draw_pane_context_menu(
         .order(egui::Order::Foreground)
         .show(ctx, |ui| {
             egui::Frame::new()
-                .fill(egui::Color32::from_rgb(40, 40, 50))
-                .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(70, 70, 85)))
+                .fill(th.surface0)
+                .stroke(egui::Stroke::new(1.0, th.surface1))
                 .corner_radius(4.0)
                 .inner_margin(egui::Margin::same(4))
                 .show(ui, |ui| {
