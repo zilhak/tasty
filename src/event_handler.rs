@@ -273,7 +273,12 @@ impl ApplicationHandler<AppEvent> for App {
                     return;
                 }
                 match ime_event {
+                    winit::event::Ime::Preedit(text, _cursor) => {
+                        self.preedit_text = text;
+                        self.mark_dirty();
+                    }
                     winit::event::Ime::Commit(text) => {
+                        self.preedit_text.clear();
                         if let Some(state) = &mut self.state {
                             let sid = state.focused_surface_id();
                             if let Some(terminal) = state.focused_terminal_mut() {
@@ -594,7 +599,7 @@ impl ApplicationHandler<AppEvent> for App {
                     if let (Some(gpu), Some(state), Some(window)) =
                         (&mut self.gpu, &mut self.state, &self.window)
                     {
-                        match gpu.render(state, window) {
+                        match gpu.render(state, window, &self.preedit_text) {
                             Ok(_) => {}
                             Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
                                 gpu.resize(window.inner_size());

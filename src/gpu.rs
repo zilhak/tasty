@@ -422,7 +422,7 @@ impl GpuState {
     }
 
     /// Render the full frame: egui UI + terminal surfaces.
-    pub fn render(&mut self, state: &mut AppState, window: &Window) -> Result<(), wgpu::SurfaceError> {
+    pub fn render(&mut self, state: &mut AppState, window: &Window, preedit: &str) -> Result<(), wgpu::SurfaceError> {
         // Sync sidebar_width from settings (in case it was changed in settings UI)
         state.sidebar_width = state.settings.appearance.sidebar_width;
 
@@ -463,6 +463,8 @@ impl GpuState {
         // 1. Begin egui frame
         let raw_input = self.egui_state.take_egui_input(window);
         let scale_factor = self.scale_factor;
+        let cell_w = self.renderer.cell_width();
+        let cell_h = self.renderer.cell_height();
         let prev_theme = state.settings.appearance.theme.clone();
         let full_output = self.egui_ctx.run(raw_input, |ctx| {
             ui::draw_ui(ctx, state, scale_factor);
@@ -473,6 +475,44 @@ impl GpuState {
             ui::draw_pane_context_menu(ctx, state, scale_factor);
             ui::draw_markdown_path_dialog(ctx, state);
             ui::draw_notification_panel(ctx, state);
+
+            // IME preedit overlay
+            if !preedit.is_empty() {
+                if let Some(terminal) = state.focused_terminal() {
+                    let (cx, cy) = terminal.surface().cursor_position();
+                    // terminal_rect is in physical pixels; convert to logical for egui
+                    let term_x = terminal_rect.x / scale_factor;
+                    let term_y = terminal_rect.y / scale_factor;
+                    let padding = 4.0; // grid offset in logical pixels
+                    let px = term_x + padding + cx as f32 * cell_w / scale_factor;
+                    let py = term_y + padding + cy as f32 * cell_h / scale_factor;
+
+                    let th = crate::theme::theme();
+                    let painter = ctx.layer_painter(egui::LayerId::new(
+                        egui::Order::Foreground,
+                        egui::Id::new("ime_preedit"),
+                    ));
+                    let font_id = egui::FontId::monospace(cell_h / scale_factor);
+                    let galley = painter.layout_no_wrap(
+                        preedit.to_string(),
+                        font_id,
+                        th.base,
+                    );
+                    let text_rect = egui::Rect::from_min_size(
+                        egui::pos2(px, py),
+                        galley.size(),
+                    );
+                    // Background: blue accent
+                    painter.rect_filled(
+                        text_rect,
+                        0.0,
+                        th.blue,
+                    );
+                    // Text on top
+                    painter.galley(egui::pos2(px, py), galley, th.base);
+                }
+            }
+
             if state.settings_open {
                 let mut settings = state.settings.clone();
                 let mut open = state.settings_open;

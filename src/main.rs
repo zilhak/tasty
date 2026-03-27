@@ -107,6 +107,8 @@ struct App {
     shell_setup_mode: bool,
     /// The shell path being edited in the setup dialog.
     shell_setup_path: String,
+    /// IME preedit text (composing, not yet committed).
+    pub preedit_text: String,
 }
 
 impl App {
@@ -126,6 +128,7 @@ impl App {
             port_file,
             shell_setup_mode: false,
             shell_setup_path: String::new(),
+            preedit_text: String::new(),
         }
     }
 
