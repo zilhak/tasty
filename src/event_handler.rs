@@ -67,6 +67,7 @@ impl ApplicationHandler<AppEvent> for App {
             }
         }
 
+        window.set_ime_allowed(true);
         self.init_app_state(window, gpu, init_settings);
     }
 
@@ -264,6 +265,27 @@ impl ApplicationHandler<AppEvent> for App {
                     if let Some(sid) = typing_surface_id {
                         state.record_typing(sid);
                     }
+                }
+            }
+            WindowEvent::Ime(ime_event) => {
+                if egui_consumed {
+                    self.mark_dirty();
+                    return;
+                }
+                match ime_event {
+                    winit::event::Ime::Commit(text) => {
+                        if let Some(state) = &mut self.state {
+                            let sid = state.focused_surface_id();
+                            if let Some(terminal) = state.focused_terminal_mut() {
+                                terminal.send_key(&text);
+                            }
+                            if let Some(sid) = sid {
+                                state.record_typing(sid);
+                            }
+                        }
+                        self.mark_dirty();
+                    }
+                    _ => {}
                 }
             }
             WindowEvent::CursorMoved { position, .. } => {
