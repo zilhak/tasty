@@ -195,17 +195,41 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
                     });
                 }
 
-                // Settings button pinned to bottom
-                let available = ui.available_height() - 36.0;
-                if available > 0.0 {
-                    ui.add_space(available);
+                // Settings button pinned to bottom using with_layout
+                let available = ui.available_height();
+                if available > 50.0 {
+                    ui.add_space(available - 50.0);
                 }
                 ui.separator();
                 ui.add_space(4.0);
                 let full_width = ui.available_width();
-                if ui.add_sized([full_width, 28.0], egui::Button::new(t("button.settings"))).clicked() {
+                let (rect, response) = ui.allocate_exact_size(
+                    egui::vec2(full_width, 28.0),
+                    egui::Sense::click(),
+                );
+                let text_color = if response.hovered() {
+                    egui::Color32::from_rgb(200, 200, 210)
+                } else {
+                    egui::Color32::from_rgb(140, 140, 150)
+                };
+                if response.hovered() {
+                    ui.painter().rect_filled(
+                        rect,
+                        4.0,
+                        egui::Color32::from_rgba_premultiplied(255, 255, 255, 12),
+                    );
+                }
+                ui.painter().text(
+                    rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    t("button.settings"),
+                    egui::FontId::proportional(12.0),
+                    text_color,
+                );
+                if response.clicked() {
                     state.settings_open = true;
                 }
+                ui.add_space(8.0);
             });
         });
 
