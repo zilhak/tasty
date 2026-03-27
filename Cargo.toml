@@ -65,6 +65,9 @@ shell-escape = "0.1"
 # Clipboard
 arboard = "3"
 
+# PNG encoding (screenshots)
+png = "0.18"
+
 # Utilities
 directories = "6"
 

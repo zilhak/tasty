@@ -865,8 +865,7 @@ impl GpuState {
         if let Ok(Ok(())) = rx.recv() {
             let data = buffer_slice.get_mapped_range();
 
-            // Write as PPM (simple format, no extra dependency needed)
-            // Format: BGRA -> RGB
+            // Convert BGRA -> RGB for PNG encoding
             let mut pixels = Vec::with_capacity((width * height * 3) as usize);
             for row in 0..height {
                 let offset = (row * padded_bytes_per_row) as usize;
@@ -881,13 +880,16 @@ impl GpuState {
             drop(data);
             buffer.unmap();
 
-            // Write as PPM (Portable Pixmap) - universally readable
-            let header = format!("P6\n{} {}\n255\n", width, height);
-            if let Ok(mut file) = std::fs::File::create(path) {
-                use std::io::Write;
-                let _ = file.write_all(header.as_bytes());
-                let _ = file.write_all(&pixels);
-                tracing::info!("screenshot saved to {}", path.display());
+            // Write as PNG
+            if let Ok(file) = std::fs::File::create(path) {
+                let writer = std::io::BufWriter::new(file);
+                let mut encoder = png::Encoder::new(writer, width, height);
+                encoder.set_color(png::ColorType::Rgb);
+                encoder.set_depth(png::BitDepth::Eight);
+                if let Ok(mut writer) = encoder.write_header() {
+                    let _ = writer.write_image_data(&pixels);
+                    tracing::info!("screenshot saved to {}", path.display());
+                }
             }
         } else {
             tracing::warn!("failed to capture screenshot");

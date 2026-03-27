@@ -3642,6 +3642,7 @@ dependencies = [
  "egui-winit",
  "enigo",
  "notify-rust",
+ "png",
  "pollster",
  "portable-pty",
  "regex",
