@@ -179,6 +179,7 @@ impl GpuState {
         window: &Window,
         shell_path: &mut String,
     ) -> Result<ShellSetupAction, wgpu::SurfaceError> {
+        let th = crate::theme::theme();
         let output = self.surface.get_current_texture()?;
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
 
@@ -237,7 +238,7 @@ impl GpuState {
                             offset: [0, 8],
                             blur: 24,
                             spread: 0,
-                            color: egui::Color32::from_black_alpha(80),
+                            color: th.crust,
                         }),
                 )
                 .show(ctx, |ui| {
@@ -247,7 +248,7 @@ impl GpuState {
                             egui::RichText::new("Tasty")
                                 .size(30.0)
                                 .strong()
-                                .color(egui::Color32::from_rgb(240, 240, 248)),
+                                .color(th.text),
                         );
                         ui.add_space(2.0);
                         ui.label(
@@ -263,8 +264,8 @@ impl GpuState {
 
                     // ── Warning ────────────────────────────────────
                     egui::Frame::new()
-                        .fill(egui::Color32::from_rgb(40, 32, 18))
-                        .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(80, 60, 20)))
+                        .fill(th.surface0)
+                        .stroke(egui::Stroke::new(1.0, th.surface1))
                         .corner_radius(egui::CornerRadius::same(6))
                         .inner_margin(egui::Margin::symmetric(12, 10))
                         .show(ui, |ui| {
@@ -325,7 +326,7 @@ impl GpuState {
                                     egui::RichText::new(t("button.cancel")).size(13.0).color(text_dim),
                                 )
                                 .min_size(btn_size)
-                                .fill(egui::Color32::from_rgb(34, 34, 42))
+                                .fill(th.base)
                                 .stroke(egui::Stroke::new(1.0, border))
                                 .corner_radius(egui::CornerRadius::same(6)),
                             ).clicked() {
@@ -337,15 +338,15 @@ impl GpuState {
                             // OK
                             let (ok_fill, ok_stroke, ok_text) = if is_valid {
                                 (
-                                    egui::Color32::from_rgb(50, 130, 90),
-                                    egui::Stroke::new(1.0, egui::Color32::from_rgb(70, 160, 110)),
-                                    egui::Color32::from_rgb(220, 248, 230),
+                                    th.green,
+                                    egui::Stroke::new(1.0, th.green),
+                                    th.base,
                                 )
                             } else {
                                 (
                                     accent_dis,
-                                    egui::Stroke::new(1.0, egui::Color32::from_rgb(60, 70, 80)),
-                                    egui::Color32::from_rgb(100, 110, 120),
+                                    egui::Stroke::new(1.0, th.surface2),
+                                    th.overlay0,
                                 )
                             };
 

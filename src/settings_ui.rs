@@ -130,6 +130,7 @@ pub fn draw_settings_window(
     open: &mut bool,
     ui_state: &mut SettingsUiState,
 ) {
+    let th = crate::theme::theme();
     // Initialize draft on first open
     if ui_state.draft.is_none() {
         ui_state.draft = Some(settings.clone());
@@ -147,7 +148,7 @@ pub fn draw_settings_window(
             ui.painter().rect_filled(
                 screen_rect,
                 0.0,
-                egui::Color32::from_black_alpha(120),
+                th.crust,
             );
             let _ = response;
         });
@@ -252,6 +253,7 @@ pub fn draw_settings_window(
 }
 
 fn draw_general_tab(ui: &mut egui::Ui, settings: &mut Settings) {
+    let th = crate::theme::theme();
     ui.add_space(8.0);
     ui.heading(t("settings.general.heading"));
     ui.add_space(4.0);
@@ -260,7 +262,7 @@ fn draw_general_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     if !settings.general.is_shell_valid() {
         ui.label(
             egui::RichText::new(t("settings.general.shell_not_found"))
-                .color(egui::Color32::from_rgb(220, 160, 60)),
+                .color(th.yellow),
         );
         ui.add_space(4.0);
     }
@@ -385,12 +387,14 @@ fn draw_notifications_tab(ui: &mut egui::Ui, settings: &mut Settings) {
         });
 }
 
+#[allow(clippy::too_many_arguments)]
 fn draw_keybindings_tab(
     ui: &mut egui::Ui,
     settings: &mut Settings,
     recording_field: &mut Option<String>,
     sub_tab: &mut KeybindingsSubTab,
 ) {
+    let th = crate::theme::theme();
     ui.add_space(8.0);
     ui.heading(t("settings.keybindings.heading"));
     ui.add_space(4.0);
@@ -401,8 +405,8 @@ fn draw_keybindings_tab(
     ui.horizontal_top(|ui| {
         // Left menu with bordered frame, full height
         egui::Frame::new()
-            .fill(egui::Color32::from_rgb(18, 18, 22))
-            .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(60, 60, 70)))
+            .fill(th.crust)
+            .stroke(egui::Stroke::new(1.0, th.surface0))
             .corner_radius(4.0)
             .inner_margin(egui::Margin::symmetric(6, 6))
             .show(ui, |ui| {
@@ -500,7 +504,7 @@ fn draw_keybindings_tab(
         ui.label(
             egui::RichText::new(t("settings.keybindings.hint_esc_to_clear"))
                 .small()
-                .color(egui::Color32::from_rgb(150, 150, 170)),
+                .color(th.overlay1),
         );
 
         }); // end vertical
@@ -522,6 +526,7 @@ fn draw_keybinding_entries(
     captured: &KeyCapture,
     bindings: &mut [(&str, &str, &mut String)],
 ) {
+    let th = crate::theme::theme();
     egui::Grid::new("keybindings_grid")
         .num_columns(2)
         .spacing([12.0, 8.0])
@@ -554,14 +559,14 @@ fn draw_keybinding_entries(
                 };
 
                 let bg_color = if is_recording {
-                    egui::Color32::from_rgb(60, 80, 120)
+                    th.surface1
                 } else {
-                    egui::Color32::from_rgb(45, 45, 55)
+                    th.surface0
                 };
                 let text_color = if is_recording || value.is_empty() {
-                    egui::Color32::from_rgb(160, 160, 180)
+                    th.overlay1
                 } else {
-                    egui::Color32::from_rgb(220, 220, 230)
+                    th.text
                 };
 
                 let button = egui::Button::new(
@@ -722,6 +727,7 @@ fn egui_key_to_string(key: &egui::Key) -> String {
 }
 
 fn draw_language_tab(ui: &mut egui::Ui, settings: &mut Settings) {
+    let th = crate::theme::theme();
     ui.add_space(8.0);
     ui.heading(t("settings.language.heading"));
     ui.add_space(4.0);
@@ -745,7 +751,7 @@ fn draw_language_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     ui.label(
         egui::RichText::new(t("settings.language.restart_notice"))
             .small()
-            .color(egui::Color32::from_rgb(200, 180, 100)),
+            .color(th.yellow),
     );
 }
 
@@ -759,12 +765,13 @@ fn language_display_name(code: &str) -> &str {
 }
 
 fn draw_performance_tab(ui: &mut egui::Ui, settings: &mut crate::settings::Settings) {
+    let th = crate::theme::theme();
     ui.heading("Performance");
     ui.add_space(4.0);
     ui.label(
         egui::RichText::new("Changes require restart to take effect.")
             .small()
-            .color(egui::Color32::from_rgb(249, 226, 175)), // Yellow warning
+            .color(th.yellow), // Yellow warning
     );
     ui.add_space(12.0);
 

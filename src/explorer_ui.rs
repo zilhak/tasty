@@ -1,7 +1,9 @@
 use crate::model::{ExplorerPanel, FileNode};
+use crate::theme;
 
 /// Draw the explorer panel with a file tree on the left and a file viewer on the right.
 pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel) {
+    let th = theme::theme();
     let available_width = ui.available_width();
     let tree_width = (available_width * 0.35).min(250.0).max(150.0);
 
@@ -70,7 +72,7 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel) {
                                     egui::RichText::new(content)
                                         .monospace()
                                         .size(12.0)
-                                        .color(egui::Color32::from_rgb(200, 200, 210)),
+                                        .color(th.subtext1),
                                 );
                             }
                         });
@@ -99,6 +101,7 @@ fn draw_file_node(
     selected_path: Option<&str>,
     action: &mut Option<TreeAction>,
 ) {
+    let th = theme::theme();
     let indent = depth as f32 * 16.0;
     let is_selected = selected_path == Some(&node.path);
 
@@ -125,7 +128,7 @@ fn draw_file_node(
         let label = if is_selected {
             egui::RichText::new(&text)
                 .strong()
-                .color(egui::Color32::from_rgb(120, 180, 255))
+                .color(th.blue)
         } else {
             egui::RichText::new(&text)
         };

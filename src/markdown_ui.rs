@@ -1,8 +1,11 @@
 /// Simple Markdown renderer using egui.
 /// Handles headings, lists, blockquotes, separators, code blocks, and paragraphs.
 
+use crate::theme;
+
 /// Render markdown content into an egui Ui.
 pub fn render_markdown(ui: &mut egui::Ui, content: &str) {
+    let th = theme::theme();
     let mut in_code_block = false;
     let mut code_buf = String::new();
 
@@ -12,7 +15,7 @@ pub fn render_markdown(ui: &mut egui::Ui, content: &str) {
                 // End code block: render accumulated code
                 if !code_buf.is_empty() {
                     egui::Frame::new()
-                        .fill(egui::Color32::from_rgb(35, 35, 42))
+                        .fill(th.surface0)
                         .corner_radius(4.0)
                         .inner_margin(egui::Margin::same(6))
                         .show(ui, |ui| {
@@ -20,7 +23,7 @@ pub fn render_markdown(ui: &mut egui::Ui, content: &str) {
                                 egui::RichText::new(&code_buf)
                                     .monospace()
                                     .size(12.0)
-                                    .color(egui::Color32::from_rgb(200, 200, 210)),
+                                    .color(th.subtext1),
                             );
                         });
                     code_buf.clear();
@@ -47,7 +50,7 @@ pub fn render_markdown(ui: &mut egui::Ui, content: &str) {
                 egui::RichText::new(&line[4..])
                     .strong()
                     .size(16.0)
-                    .color(egui::Color32::from_rgb(220, 220, 230)),
+                    .color(th.text),
             );
             ui.add_space(2.0);
         } else if line.starts_with("## ") {
@@ -56,7 +59,7 @@ pub fn render_markdown(ui: &mut egui::Ui, content: &str) {
                 egui::RichText::new(&line[3..])
                     .strong()
                     .size(20.0)
-                    .color(egui::Color32::from_rgb(220, 220, 230)),
+                    .color(th.text),
             );
             ui.add_space(3.0);
         } else if line.starts_with("# ") {
@@ -65,7 +68,7 @@ pub fn render_markdown(ui: &mut egui::Ui, content: &str) {
                 egui::RichText::new(&line[2..])
                     .strong()
                     .size(24.0)
-                    .color(egui::Color32::from_rgb(230, 230, 240)),
+                    .color(th.text),
             );
             ui.add_space(4.0);
         } else if line.starts_with("- ") || line.starts_with("* ") {
@@ -77,12 +80,12 @@ pub fn render_markdown(ui: &mut egui::Ui, content: &str) {
             ui.horizontal(|ui| {
                 ui.label(
                     egui::RichText::new("\u{2502}")
-                        .color(egui::Color32::from_rgb(100, 100, 140)),
+                        .color(th.overlay0),
                 );
                 ui.label(
                     egui::RichText::new(&line[2..])
                         .italics()
-                        .color(egui::Color32::from_rgb(180, 180, 200)),
+                        .color(th.subtext0),
                 );
             });
         } else if line.starts_with("---") || line.starts_with("***") || line.starts_with("___") {
@@ -95,7 +98,7 @@ pub fn render_markdown(ui: &mut egui::Ui, content: &str) {
                 egui::RichText::new(line)
                     .monospace()
                     .size(12.0)
-                    .color(egui::Color32::from_rgb(190, 190, 200)),
+                    .color(th.subtext0),
             );
         } else {
             render_inline_markdown(ui, line);
@@ -105,7 +108,7 @@ pub fn render_markdown(ui: &mut egui::Ui, content: &str) {
     // Handle unclosed code block
     if in_code_block && !code_buf.is_empty() {
         egui::Frame::new()
-            .fill(egui::Color32::from_rgb(35, 35, 42))
+            .fill(th.surface0)
             .corner_radius(4.0)
             .inner_margin(egui::Margin::same(6))
             .show(ui, |ui| {
@@ -113,7 +116,7 @@ pub fn render_markdown(ui: &mut egui::Ui, content: &str) {
                     egui::RichText::new(&code_buf)
                         .monospace()
                         .size(12.0)
-                        .color(egui::Color32::from_rgb(200, 200, 210)),
+                        .color(th.subtext1),
                 );
             });
     }
@@ -121,13 +124,12 @@ pub fn render_markdown(ui: &mut egui::Ui, content: &str) {
 
 /// Render a line with simple inline formatting: `code`, **bold**, *italic*.
 fn render_inline_markdown(ui: &mut egui::Ui, text: &str) {
-    // For simplicity, parse segments and render inline.
-    // A full parser would handle nesting; here we do a simple pass.
+    let th = theme::theme();
     let mut job = egui::text::LayoutJob::default();
-    let default_color = egui::Color32::from_rgb(200, 200, 210);
-    let code_color = egui::Color32::from_rgb(180, 220, 180);
-    let bold_color = egui::Color32::from_rgb(230, 230, 240);
-    let italic_color = egui::Color32::from_rgb(200, 200, 220);
+    let default_color = th.subtext1;
+    let code_color = th.green;
+    let bold_color = th.text;
+    let italic_color = th.subtext1;
 
     let mut chars = text.char_indices().peekable();
     let mut segment_start = 0;
@@ -246,7 +248,7 @@ fn render_inline_markdown(ui: &mut egui::Ui, text: &str) {
             text_format.italics = true;
         }
         if matches!(style, TextStyle::Code) {
-            text_format.background = egui::Color32::from_rgb(40, 40, 48);
+            text_format.background = th.surface0;
         }
         job.append(s, 0.0, text_format);
     }
