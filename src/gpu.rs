@@ -423,25 +423,57 @@ impl GpuState {
 
     /// Render the full frame: egui UI + terminal surfaces.
     pub fn render(&mut self, state: &mut AppState, window: &Window, preedit: &str) -> Result<(), wgpu::SurfaceError> {
-        // Sync sidebar_width from settings (in case it was changed in settings UI)
+        // 1. Prepare layout
         state.sidebar_width = state.engine.settings.appearance.sidebar_width;
-
-        // Compute the terminal rect (area after sidebar) in physical pixels
-        let surface_w = self.size.width as f32;
-        let surface_h = self.size.height as f32;
-        let terminal_rect = crate::model::compute_terminal_rect(surface_w, surface_h, state.sidebar_width, self.scale_factor);
-
-        // Ensure all panes have correct PTY dimensions for the current layout.
-        // This handles: split via IPC (no resize_all called), window resize race,
-        // and any other case where terminal dimensions are stale.
+        let terminal_rect = self.compute_terminal_rect(state.sidebar_width);
         state.resize_all(terminal_rect, self.renderer.cell_width(), self.renderer.cell_height());
 
-        // Compute pane rects for per-pane tab bars
+        let (pane_rects, dividers, focused_surface_id) = self.prepare_layout(state, terminal_rect);
+
+        // 2. Run egui frame (UI drawing)
+        let prev_theme = state.engine.settings.appearance.theme.clone();
+        let full_output = self.run_egui_frame(state, window, &pane_rects, &dividers, terminal_rect, preedit);
+
+        // 3. Post-egui updates (theme/font refresh)
+        self.post_egui_update(state, &prev_theme);
+        self.egui_state.handle_platform_output(window, full_output.platform_output);
+
+        // 4. Tessellate egui
+        let paint_jobs = self.egui_ctx.tessellate(full_output.shapes, full_output.pixels_per_point);
+        let screen_descriptor = egui_wgpu::ScreenDescriptor {
+            size_in_pixels: [self.size.width, self.size.height],
+            pixels_per_point: full_output.pixels_per_point,
+        };
+
+        // 5. GPU render
+        let regions = state.render_regions(terminal_rect);
+        let output = self.surface.get_current_texture()?;
+        let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        self.render_clear_pass(&view, state);
+        self.render_terminals(&view, &regions, focused_surface_id);
+        self.render_egui_pass(&view, &full_output.textures_delta, &paint_jobs, &screen_descriptor);
+
+        // 6. Screenshot + present
+        if let Some(path) = self.pending_screenshot.take() {
+            self.capture_frame_to_png(&output.texture, &path);
+        }
+        output.present();
+        Ok(())
+    }
+
+    fn compute_terminal_rect(&self, sidebar_width: f32) -> Rect {
+        crate::model::compute_terminal_rect(
+            self.size.width as f32, self.size.height as f32,
+            sidebar_width, self.scale_factor,
+        )
+    }
+
+    fn prepare_layout(&self, state: &AppState, terminal_rect: Rect) -> (Vec<(u32, Rect)>, Vec<Rect>, Option<u32>) {
         let pane_layout = state.active_workspace().pane_layout();
         let pane_rects: Vec<(u32, Rect)> = pane_layout.compute_rects(terminal_rect);
         let mut dividers: Vec<Rect> = pane_layout.collect_dividers(terminal_rect);
 
-        // Collect surface dividers
         let focused_surface_id = state.focused_surface_id();
         for (pane_id, pane_rect) in &pane_rects {
             if let Some(pane) = pane_layout.find_pane(*pane_id) {
@@ -459,19 +491,29 @@ impl GpuState {
                 }
             }
         }
+        (pane_rects, dividers, focused_surface_id)
+    }
 
-        // 1. Begin egui frame
+    fn run_egui_frame(
+        &mut self,
+        state: &mut AppState,
+        window: &Window,
+        pane_rects: &[(u32, Rect)],
+        dividers: &[Rect],
+        terminal_rect: Rect,
+        preedit: &str,
+    ) -> egui::FullOutput {
         let raw_input = self.egui_state.take_egui_input(window);
         let scale_factor = self.scale_factor;
         let cell_w = self.renderer.cell_width();
         let cell_h = self.renderer.cell_height();
-        let prev_theme = state.engine.settings.appearance.theme.clone();
-        let full_output = self.egui_ctx.run(raw_input, |ctx| {
+
+        self.egui_ctx.run(raw_input, |ctx| {
             ui::draw_ui(ctx, state, scale_factor);
             ui::draw_ws_rename_dialog(ctx, state);
-            ui::draw_pane_dividers(ctx, &dividers, scale_factor);
-            ui::draw_pane_tab_bars(ctx, state, &pane_rects, scale_factor);
-            ui::draw_non_terminal_panels(ctx, state, &pane_rects, scale_factor);
+            ui::draw_pane_dividers(ctx, dividers, scale_factor);
+            ui::draw_pane_tab_bars(ctx, state, pane_rects, scale_factor);
+            ui::draw_non_terminal_panels(ctx, state, pane_rects, scale_factor);
             ui::draw_pane_context_menu(ctx, state, scale_factor);
             ui::draw_markdown_path_dialog(ctx, state);
             ui::draw_notification_panel(ctx, state);
@@ -480,10 +522,9 @@ impl GpuState {
             if !preedit.is_empty() {
                 if let Some(terminal) = state.focused_terminal() {
                     let (cx, cy) = terminal.surface().cursor_position();
-                    // terminal_rect is in physical pixels; convert to logical for egui
                     let term_x = terminal_rect.x / scale_factor;
                     let term_y = terminal_rect.y / scale_factor;
-                    let padding = 4.0; // grid offset in logical pixels
+                    let padding = 4.0;
                     let px = term_x + padding + cx as f32 * cell_w / scale_factor;
                     let py = term_y + padding + cy as f32 * cell_h / scale_factor;
 
@@ -493,22 +534,9 @@ impl GpuState {
                         egui::Id::new("ime_preedit"),
                     ));
                     let font_id = egui::FontId::monospace(cell_h / scale_factor);
-                    let galley = painter.layout_no_wrap(
-                        preedit.to_string(),
-                        font_id,
-                        th.base,
-                    );
-                    let text_rect = egui::Rect::from_min_size(
-                        egui::pos2(px, py),
-                        galley.size(),
-                    );
-                    // Background: blue accent
-                    painter.rect_filled(
-                        text_rect,
-                        0.0,
-                        th.blue,
-                    );
-                    // Text on top
+                    let galley = painter.layout_no_wrap(preedit.to_string(), font_id, th.base);
+                    let text_rect = egui::Rect::from_min_size(egui::pos2(px, py), galley.size());
+                    painter.rect_filled(text_rect, 0.0, th.blue);
                     painter.galley(egui::pos2(px, py), galley, th.base);
                 }
             }
@@ -516,23 +544,18 @@ impl GpuState {
             if state.settings_open {
                 let mut settings = state.engine.settings.clone();
                 let mut open = state.settings_open;
-                settings_ui::draw_settings_window(
-                    ctx,
-                    &mut settings,
-                    &mut open,
-                    &mut state.settings_ui_state,
-                );
+                settings_ui::draw_settings_window(ctx, &mut settings, &mut open, &mut state.settings_ui_state);
                 state.engine.settings = settings;
                 state.settings_open = open;
             }
-        });
+        })
+    }
 
-        // Refresh egui theme if it changed (e.g., after settings save)
+    fn post_egui_update(&mut self, state: &AppState, prev_theme: &str) {
         if state.engine.settings.appearance.theme != prev_theme {
             self.refresh_theme(&state.engine.settings.appearance.theme);
         }
 
-        // Refresh font if font_size or font_family changed
         let current_font_size = self.renderer.font_config.metrics.font_size;
         let current_font_family = match &self.renderer.font_config.font_family {
             cosmic_text::FamilyOwned::Monospace => String::new(),
@@ -543,63 +566,31 @@ impl GpuState {
             || state.engine.settings.appearance.font_family != current_font_family
         {
             self.renderer.update_font(
-                &self.device,
-                &self.queue,
+                &self.device, &self.queue,
                 state.engine.settings.appearance.font_size,
                 &state.engine.settings.appearance.font_family,
             );
-            // Resize viewport with new cell metrics
             self.renderer.resize(&self.queue, self.size.width, self.size.height);
         }
+    }
 
-        self.egui_state
-            .handle_platform_output(window, full_output.platform_output);
-
-        // Tessellate egui shapes
-        let paint_jobs = self
-            .egui_ctx
-            .tessellate(full_output.shapes, full_output.pixels_per_point);
-
-        // Use the proper egui update path
-        let screen_descriptor = egui_wgpu::ScreenDescriptor {
-            size_in_pixels: [self.size.width, self.size.height],
-            pixels_per_point: full_output.pixels_per_point,
-        };
-
-        // 2. Get render regions for terminals (per-pane)
-        let regions = state.render_regions(terminal_rect);
-
-        // 3. Get the output texture
-        let output = self.surface.get_current_texture()?;
-        let view = output
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("render_encoder"),
-            });
-
-        // 4. Clear pass (apply background_opacity from settings)
+    fn render_clear_pass(&self, view: &wgpu::TextureView, state: &AppState) {
         let bg_alpha = state.engine.settings.appearance.background_opacity as f64;
-        let (clear_r, clear_g, clear_b) = if state.engine.settings.appearance.theme == "light" {
-            (0.941, 0.941, 0.957) // light theme bg
-        } else {
-            (0.102, 0.102, 0.118) // dark theme bg
-        };
+        let th = crate::theme::theme();
+        let bg = crate::theme::Theme::to_float(th.base);
+
+        let mut encoder = self.device.create_command_encoder(
+            &wgpu::CommandEncoderDescriptor { label: Some("clear_pass") },
+        );
         {
             let _clear_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("clear_pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
+                    view,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: clear_r,
-                            g: clear_g,
-                            b: clear_b,
-                            a: bg_alpha,
+                            r: bg[0] as f64, g: bg[1] as f64, b: bg[2] as f64, a: bg_alpha,
                         }),
                         store: wgpu::StoreOp::Store,
                     },
@@ -609,15 +600,16 @@ impl GpuState {
                 occlusion_query_set: None,
             });
         }
-
-        // 5. Render each terminal surface in its viewport rect.
-        // Each surface must be submitted separately because prepare_viewport()
-        // overwrites the shared uniform/instance buffers via queue.write_buffer().
-        // If all render passes were batched into one encoder, only the last
-        // surface's data would be visible when the GPU executes the passes.
         self.queue.submit(std::iter::once(encoder.finish()));
+    }
 
-        for (_pane_id, _pane_rect, terminal_regions) in &regions {
+    fn render_terminals(
+        &mut self,
+        view: &wgpu::TextureView,
+        regions: &[(u32, Rect, Vec<(u32, &tasty_terminal::Terminal, Rect)>)],
+        focused_surface_id: Option<u32>,
+    ) {
+        for (_pane_id, _pane_rect, terminal_regions) in regions {
             for (surface_id, terminal, rect) in terminal_regions {
                 let is_focused = focused_surface_id == Some(*surface_id);
                 let bg = if is_focused {
@@ -626,25 +618,18 @@ impl GpuState {
                     crate::renderer::DEFAULT_BG
                 };
                 self.renderer.prepare_terminal_viewport(
-                    terminal,
-                    &self.queue,
-                    rect,
-                    self.size.width,
-                    self.size.height,
-                    bg,
-                    is_focused,
+                    terminal, &self.queue, rect,
+                    self.size.width, self.size.height, bg, is_focused,
                 );
 
                 let mut term_encoder = self.device.create_command_encoder(
-                    &wgpu::CommandEncoderDescriptor {
-                        label: Some("terminal_pass"),
-                    },
+                    &wgpu::CommandEncoderDescriptor { label: Some("terminal_pass") },
                 );
                 {
                     let mut render_pass = term_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                         label: Some("terminal_pass"),
                         color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                            view: &view,
+                            view,
                             resolve_target: None,
                             ops: wgpu::Operations {
                                 load: wgpu::LoadOp::Load,
@@ -655,40 +640,37 @@ impl GpuState {
                         timestamp_writes: None,
                         occlusion_query_set: None,
                     });
-
                     self.renderer.render_scissored(&mut render_pass, rect, self.size.width, self.size.height);
                 }
                 self.queue.submit(std::iter::once(term_encoder.finish()));
             }
         }
+    }
 
-        // 6. Render egui on top
-        // Update egui textures and buffers
-        for (id, image_delta) in &full_output.textures_delta.set {
-            self.egui_renderer
-                .update_texture(&self.device, &self.queue, *id, image_delta);
+    fn render_egui_pass(
+        &mut self,
+        view: &wgpu::TextureView,
+        textures_delta: &egui::TexturesDelta,
+        paint_jobs: &[egui::ClippedPrimitive],
+        screen_descriptor: &egui_wgpu::ScreenDescriptor,
+    ) {
+        for (id, image_delta) in &textures_delta.set {
+            self.egui_renderer.update_texture(&self.device, &self.queue, *id, image_delta);
         }
 
-        // Create a separate encoder for egui
-        let mut egui_encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("egui_encoder"),
-            });
+        let mut egui_encoder = self.device.create_command_encoder(
+            &wgpu::CommandEncoderDescriptor { label: Some("egui_encoder") },
+        );
 
         self.egui_renderer.update_buffers(
-            &self.device,
-            &self.queue,
-            &mut egui_encoder,
-            &paint_jobs,
-            &screen_descriptor,
+            &self.device, &self.queue, &mut egui_encoder, paint_jobs, screen_descriptor,
         );
 
         {
             let render_pass = egui_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("egui_pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
+                    view,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Load,
@@ -699,29 +681,15 @@ impl GpuState {
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
-
-            // egui-wgpu requires RenderPass<'static>; we use forget_lifetime() to opt out
-            // of the compile-time encoder guard since we manage the ordering manually.
             let mut render_pass = render_pass.forget_lifetime();
-            self.egui_renderer
-                .render(&mut render_pass, &paint_jobs, &screen_descriptor);
+            self.egui_renderer.render(&mut render_pass, paint_jobs, screen_descriptor);
         }
 
-        // Free egui textures
-        for id in &full_output.textures_delta.free {
+        for id in &textures_delta.free {
             self.egui_renderer.free_texture(id);
         }
 
         self.queue.submit(std::iter::once(egui_encoder.finish()));
-
-        // Screenshot capture: copy the rendered frame to a buffer and save as PNG.
-        if let Some(path) = self.pending_screenshot.take() {
-            self.capture_frame_to_png(&output.texture, &path);
-        }
-
-        output.present();
-
-        Ok(())
     }
 
     /// Compute grid size for a given rect.
