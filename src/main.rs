@@ -63,6 +63,8 @@ enum AppEvent {
     IpcReady,
     /// egui requested a repaint (new window, animation, cursor blink).
     EguiRepaint,
+    /// Request to create a new window (triggered by IPC or shortcut).
+    CreateWindow,
 }
 
 /// Tracks an active divider drag operation.
@@ -155,23 +157,101 @@ impl App {
         self.engine.focused_window_id = Some(window_id);
     }
 
+    /// Create a new window with its own terminal.
+    fn create_new_window(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
+        use winit::window::WindowAttributes;
+
+        let attrs = WindowAttributes::default()
+            .with_title("Tasty")
+            .with_inner_size(winit::dpi::LogicalSize::new(1280, 720));
+
+        let window = Arc::new(
+            event_loop
+                .create_window(attrs)
+                .expect("failed to create window"),
+        );
+        window.set_ime_allowed(true);
+
+        let settings = crate::settings::Settings::load();
+        let gpu = pollster::block_on(crate::gpu::GpuState::new(
+            window.clone(),
+            &settings.appearance,
+            self.engine.proxy.clone(),
+        ))
+        .expect("failed to initialize GPU");
+
+        let sf = gpu.scale_factor();
+        let size = gpu.size();
+        let sidebar_w = settings.appearance.sidebar_width * sf;
+        let terminal_rect = crate::model::Rect {
+            x: sidebar_w,
+            y: 0.0,
+            width: (size.width as f32 - sidebar_w).max(1.0),
+            height: size.height as f32,
+        };
+        let (cols, rows) = gpu.grid_size_for_rect(&terminal_rect);
+
+        let proxy = self.engine.proxy.clone();
+        let waker: crate::terminal::Waker = Arc::new(move || {
+            let _ = proxy.send_event(AppEvent::TerminalOutput);
+        });
+
+        let state = crate::state::AppState::new(cols, rows, waker).expect("failed to create app state");
+
+        let window_id = window.id();
+        self.windows.insert(window_id, tasty_window::TastyWindow::new(gpu, state, window));
+        self.engine.focused_window_id = Some(window_id);
+        tracing::info!("created new window {:?}", window_id);
+    }
+
     /// Process pending IPC commands. Returns true if any commands were processed.
     fn process_ipc(&mut self) -> bool {
         let ipc = match &self.engine.ipc_server {
             Some(ipc) => ipc,
             None => return false,
         };
-        let focused_id = match self.engine.focused_window_id {
-            Some(id) => id,
-            None => return false,
-        };
-        let w = match self.windows.get_mut(&focused_id) {
-            Some(w) => w,
-            None => return false,
-        };
 
         let mut processed = false;
         while let Ok(cmd) = ipc.try_recv() {
+            // App-level IPC methods (don't need focused window)
+            if cmd.request.method == "window.create" {
+                let _ = self.engine.proxy.send_event(AppEvent::CreateWindow);
+                let response = ipc::protocol::JsonRpcResponse::success(
+                    cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
+                    serde_json::json!({"scheduled": true}),
+                );
+                let _ = cmd.response_tx.send(response);
+                processed = true;
+                continue;
+            }
+            if cmd.request.method == "window.list" {
+                let focused_id = self.engine.focused_window_id;
+                let list: Vec<_> = self.windows.iter().map(|(id, w)| {
+                    serde_json::json!({
+                        "id": format!("{:?}", id),
+                        "focused": focused_id == Some(*id),
+                        "title": w.state.active_workspace().name,
+                    })
+                }).collect();
+                let response = ipc::protocol::JsonRpcResponse::success(
+                    cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
+                    serde_json::json!(list),
+                );
+                let _ = cmd.response_tx.send(response);
+                processed = true;
+                continue;
+            }
+
+            // Focused-window IPC methods
+            let focused_id = match self.engine.focused_window_id {
+                Some(id) => id,
+                None => continue,
+            };
+            let w = match self.windows.get_mut(&focused_id) {
+                Some(w) => w,
+                None => continue,
+            };
+
             if cmd.request.method == "ui.screenshot" {
                 let path = cmd.request.params
                     .get("path")

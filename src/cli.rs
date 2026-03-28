@@ -22,6 +22,10 @@ pub struct Cli {
 pub enum Commands {
     /// List workspaces
     List,
+    /// Create a new window
+    NewWindow,
+    /// List all windows
+    Windows,
     /// Create a new workspace
     NewWorkspace {
         /// Name for the new workspace
@@ -487,6 +491,8 @@ fn run_claude_wait(stream: &mut TcpStream, child: u32, timeout: u64) -> Result<(
 fn command_to_request(command: &Commands) -> JsonRpcRequest {
     let (method, params) = match command {
         Commands::Info => ("system.info", serde_json::json!({})),
+        Commands::NewWindow => ("window.create", serde_json::json!({})),
+        Commands::Windows => ("window.list", serde_json::json!({})),
         Commands::List => ("workspace.list", serde_json::json!({})),
         Commands::NewWorkspace { name } => (
             "workspace.create",

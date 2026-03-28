@@ -6,8 +6,11 @@ use winit::window::WindowId;
 use crate::{App, AppEvent};
 
 impl ApplicationHandler<AppEvent> for App {
-    fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: AppEvent) {
+    fn user_event(&mut self, event_loop: &ActiveEventLoop, event: AppEvent) {
         match event {
+            AppEvent::CreateWindow => {
+                self.create_new_window(event_loop);
+            }
             AppEvent::TerminalOutput => {
                 // Wake all windows — PTY output could be for any of them
                 for w in self.windows.values_mut() {
