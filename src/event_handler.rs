@@ -11,6 +11,14 @@ impl ApplicationHandler<AppEvent> for App {
             AppEvent::CreateWindow => {
                 self.create_new_window(event_loop);
             }
+            AppEvent::OpenSettings => {
+                // TODO: Create modal settings window (Phase 3)
+                // For now, open settings in the focused window
+                if let Some(w) = self.focused_window_mut() {
+                    w.state.settings_open = true;
+                    w.mark_dirty();
+                }
+            }
             AppEvent::TerminalOutput => {
                 // Wake all windows — PTY output could be for any of them
                 for w in self.windows.values_mut() {
@@ -138,7 +146,8 @@ impl ApplicationHandler<AppEvent> for App {
         }
 
         if let Some(w) = self.windows.get_mut(&id) {
-            w.handle_window_event(event, event_loop);
+            let modal_active = self.engine.is_modal_active();
+            w.handle_window_event(event, event_loop, modal_active);
         }
     }
 

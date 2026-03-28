@@ -65,6 +65,8 @@ enum AppEvent {
     EguiRepaint,
     /// Request to create a new window (triggered by IPC or shortcut).
     CreateWindow,
+    /// Request to open settings modal.
+    OpenSettings,
 }
 
 /// Tracks an active divider drag operation.

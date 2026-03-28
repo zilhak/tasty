@@ -70,12 +70,20 @@ impl TastyWindow {
         }
     }
 
-    /// Handle a window event. Returns true if the app should exit.
-    pub fn handle_window_event(&mut self, event: WindowEvent, _event_loop: &ActiveEventLoop) -> bool {
+    /// Handle a window event. `modal_active` indicates if a modal is blocking input.
+    pub fn handle_window_event(&mut self, event: WindowEvent, _event_loop: &ActiveEventLoop, modal_active: bool) -> bool {
         // Let egui handle the event first
         let (egui_consumed, egui_repaint) = self.gpu.handle_egui_event(&self.window, &event);
         if egui_repaint {
             self.mark_dirty();
+        }
+
+        // If a modal is active, only allow Resized/RedrawRequested/ScaleFactorChanged
+        if modal_active {
+            match &event {
+                WindowEvent::Resized(_) | WindowEvent::RedrawRequested | WindowEvent::ScaleFactorChanged { .. } => {}
+                _ => return false,
+            }
         }
 
         let was_dirty = self.dirty;
