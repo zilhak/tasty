@@ -379,16 +379,18 @@ impl CellRenderer {
                     }
                     _ => false,
                 };
-                let (bg_color, fg_color) = if is_cursor {
-                    let fg = color_attr_to_rgba(&attrs.foreground(), DEFAULT_FG);
-                    let bg = color_attr_to_rgba(&attrs.background(), default_bg);
-                    (fg, bg)
-                } else {
-                    (
-                        color_attr_to_rgba(&attrs.background(), default_bg),
-                        color_attr_to_rgba(&attrs.foreground(), DEFAULT_FG),
-                    )
-                };
+                let (mut bg_color, mut fg_color) = (
+                    color_attr_to_rgba(&attrs.background(), default_bg),
+                    color_attr_to_rgba(&attrs.foreground(), DEFAULT_FG),
+                );
+                // SGR 7 (Reverse): swap fg/bg
+                if attrs.reverse() {
+                    std::mem::swap(&mut bg_color, &mut fg_color);
+                }
+                // Cursor: swap fg/bg (stacks with reverse)
+                if is_cursor {
+                    std::mem::swap(&mut bg_color, &mut fg_color);
+                }
 
                 self.bg_instances.push(BgInstance {
                     pos: [col_idx as f32, row_idx as f32],
@@ -614,6 +616,9 @@ impl CellRenderer {
     }
 
     /// Render a single scrollback line (stored as Vec<(String, CellAttributes)>).
+    /// Each entry in the line corresponds to a visible cell (continuation cells for
+    /// wide characters are not stored), so we track column position using
+    /// `unicode_width` instead of using `.enumerate()` indices directly.
     fn render_scrollback_line(
         &mut self,
         line: &[(String, CellAttributes)],
@@ -622,43 +627,53 @@ impl CellRenderer {
         default_bg: [f32; 4],
         queue: &wgpu::Queue,
     ) {
-        for (col_idx, (text, attrs)) in line.iter().enumerate() {
+        let mut col_idx: usize = 0;
+        for (text, attrs) in line.iter() {
             if col_idx >= cols {
                 break;
             }
-            let bg_color = color_attr_to_rgba(&attrs.background(), default_bg);
-            let fg_color = color_attr_to_rgba(&attrs.foreground(), DEFAULT_FG);
-
-            self.bg_instances.push(BgInstance {
-                pos: [col_idx as f32, row_idx as f32],
-                bg_color,
-            });
-
-            if text.is_empty() || text == " " {
-                continue;
+            let (mut bg_color, mut fg_color) = (
+                color_attr_to_rgba(&attrs.background(), default_bg),
+                color_attr_to_rgba(&attrs.foreground(), DEFAULT_FG),
+            );
+            if attrs.reverse() {
+                std::mem::swap(&mut bg_color, &mut fg_color);
             }
 
-            let ch = match text.chars().next() {
-                Some(c) => c,
-                None => continue,
-            };
-            let bold = attrs.intensity() == termwiz::cell::Intensity::Bold;
-            let italic = attrs.italic();
+            let ch = text.chars().next().unwrap_or(' ');
+            let width = unicode_width(ch);
 
-            let key = GlyphKey { ch, bold, italic };
-
-            if let Some(entry) = self.atlas.get_or_insert(key, &mut self.font_config, queue) {
-                if entry.width > 0.0 && entry.height > 0.0 {
-                    self.glyph_instances.push(GlyphInstance {
-                        pos: [col_idx as f32, row_idx as f32],
-                        uv_offset: [entry.uv_x, entry.uv_y],
-                        uv_size: [entry.uv_w, entry.uv_h],
-                        fg_color,
-                        glyph_offset: [entry.offset_x, entry.offset_y],
-                        glyph_size: [entry.width, entry.height],
+            // Push bg for main cell and continuation cells of wide characters
+            for i in 0..width {
+                if col_idx + i < cols {
+                    self.bg_instances.push(BgInstance {
+                        pos: [(col_idx + i) as f32, row_idx as f32],
+                        bg_color,
                     });
                 }
             }
+
+            if !text.is_empty() && text != " " {
+                let bold = attrs.intensity() == termwiz::cell::Intensity::Bold;
+                let italic = attrs.italic();
+
+                let key = GlyphKey { ch, bold, italic };
+
+                if let Some(entry) = self.atlas.get_or_insert(key, &mut self.font_config, queue) {
+                    if entry.width > 0.0 && entry.height > 0.0 {
+                        self.glyph_instances.push(GlyphInstance {
+                            pos: [col_idx as f32, row_idx as f32],
+                            uv_offset: [entry.uv_x, entry.uv_y],
+                            uv_size: [entry.uv_w, entry.uv_h],
+                            fg_color,
+                            glyph_offset: [entry.offset_x, entry.offset_y],
+                            glyph_size: [entry.width, entry.height],
+                        });
+                    }
+                }
+            }
+
+            col_idx += width;
         }
     }
 
@@ -678,8 +693,13 @@ impl CellRenderer {
             }
 
             let attrs = cell_ref.attrs();
-            let bg_color = color_attr_to_rgba(&attrs.background(), default_bg);
-            let fg_color = color_attr_to_rgba(&attrs.foreground(), DEFAULT_FG);
+            let (mut bg_color, mut fg_color) = (
+                color_attr_to_rgba(&attrs.background(), default_bg),
+                color_attr_to_rgba(&attrs.foreground(), DEFAULT_FG),
+            );
+            if attrs.reverse() {
+                std::mem::swap(&mut bg_color, &mut fg_color);
+            }
 
             self.bg_instances.push(BgInstance {
                 pos: [col_idx as f32, row_idx as f32],

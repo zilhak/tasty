@@ -1,4 +1,4 @@
-use termwiz::cell::{AttributeChange, CellAttributes};
+use termwiz::cell::{unicode_column_width, AttributeChange, CellAttributes};
 use termwiz::color::ColorAttribute;
 use termwiz::escape::csi::{Cursor, Edit, EraseInDisplay, EraseInLine, Sgr, CSI};
 use termwiz::escape::esc::{Esc, EscCode};
@@ -291,13 +291,25 @@ impl Terminal {
                     return vec![];
                 }
                 let line = self.read_line_from_surface(cy, cx, cols);
-                let mut new_content: Vec<char> = line.chars().collect();
-                let remove_count = n.min(new_content.len());
-                new_content.drain(..remove_count);
-                while new_content.len() < remaining {
-                    new_content.push(' ');
+                // Skip n columns worth of characters (n is in cells, not chars)
+                let mut skip_cols = 0;
+                let mut skip_chars = 0;
+                for ch in line.chars() {
+                    if skip_cols >= n {
+                        break;
+                    }
+                    skip_cols += unicode_column_width(&ch.to_string(), None);
+                    skip_chars += 1;
                 }
-                let text: String = new_content.into_iter().collect();
+                let after: String = line.chars().skip(skip_chars).collect();
+                let after_width: usize = after
+                    .chars()
+                    .map(|c| unicode_column_width(&c.to_string(), None))
+                    .sum();
+                let mut text = after;
+                for _ in 0..remaining.saturating_sub(after_width) {
+                    text.push(' ');
+                }
                 vec![
                     Change::CursorPosition {
                         x: Position::Absolute(cx),
@@ -319,19 +331,27 @@ impl Terminal {
                     return vec![];
                 }
                 let line = self.read_line_from_surface(cy, cx, cols);
-                let mut new_content: String = " ".repeat(n);
-                let take = remaining.saturating_sub(n);
-                new_content.extend(line.chars().take(take));
-                while new_content.len() < remaining {
-                    new_content.push(' ');
+                // Insert n blank columns, then append existing content that fits
+                let mut text = " ".repeat(n);
+                let mut used_cols = n;
+                for ch in line.chars() {
+                    let w = unicode_column_width(&ch.to_string(), None);
+                    if used_cols + w > remaining {
+                        break;
+                    }
+                    text.push(ch);
+                    used_cols += w;
                 }
-                new_content.truncate(remaining);
+                while used_cols < remaining {
+                    text.push(' ');
+                    used_cols += 1;
+                }
                 vec![
                     Change::CursorPosition {
                         x: Position::Absolute(cx),
                         y: Position::Absolute(cy),
                     },
-                    Change::Text(new_content),
+                    Change::Text(text),
                     Change::CursorPosition {
                         x: Position::Absolute(cx),
                         y: Position::Absolute(cy),
@@ -536,6 +556,8 @@ impl Terminal {
     }
 
     /// Read characters from a specific line of the active surface, from `start_col` to `end_col`.
+    /// Uses `visible_cells()` to correctly skip continuation cells of wide characters,
+    /// avoiding spurious spaces that would corrupt DCH/ICH operations.
     pub(crate) fn read_line_from_surface(&self, row: usize, start_col: usize, end_col: usize) -> String {
         let surface = self.surface();
         let lines = surface.screen_lines();
@@ -544,11 +566,13 @@ impl Terminal {
         }
         let line = &lines[row];
         let mut result = String::new();
-        for col in start_col..end_col {
-            if let Some(cell) = line.get_cell(col) {
+        for cell in line.visible_cells() {
+            let idx = cell.cell_index();
+            if idx >= end_col {
+                break;
+            }
+            if idx >= start_col {
                 result.push_str(cell.str());
-            } else {
-                result.push(' ');
             }
         }
         result
