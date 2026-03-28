@@ -204,8 +204,9 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
                 let full_width = ui.available_width();
                 let (rect, response) = ui.allocate_exact_size(
                     egui::vec2(full_width, 28.0),
-                    egui::Sense::click(),
+                    egui::Sense::click().union(egui::Sense::hover()),
                 );
+                // Paint our own hover effect — suppress egui's default by not using Button widget
                 let text_color = if response.hovered() {
                     th.subtext1
                 } else {

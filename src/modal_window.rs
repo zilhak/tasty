@@ -69,20 +69,17 @@ impl ModalWindow {
         self.dirty = false;
 
         let raw_input = self.gpu.take_egui_input(&self.window);
-        let mut open = true;
         let mut settings = self.settings.clone();
+        let ui_state = &mut self.settings_ui_state;
+        let mut action: Option<bool> = None;
 
         let full_output = self.gpu.run_egui(raw_input, |ctx| {
-            settings_ui::draw_settings_window(
-                ctx,
-                &mut settings,
-                &mut open,
-                &mut self.settings_ui_state,
-            );
+            action = settings_ui::draw_settings_panel(ctx, &mut settings, ui_state);
         });
 
         self.settings = settings;
-        if !open {
+        if let Some(_) = action {
+            // Save or Cancel — close the modal
             self.should_close = true;
         }
 
