@@ -13,6 +13,7 @@ pub mod modal_window;
 mod model;
 mod notification;
 mod renderer;
+mod selection;
 mod settings;
 mod settings_ui;
 mod shortcuts;

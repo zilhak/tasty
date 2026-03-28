@@ -9,7 +9,7 @@ mod shaders;
 mod types;
 
 /// Check if a character is a wide (2-cell) character (CJK, fullwidth, etc.)
-fn unicode_width(ch: char) -> usize {
+pub fn unicode_width(ch: char) -> usize {
     // CJK Unified Ideographs, Hangul, Fullwidth forms, etc.
     let cp = ch as u32;
     if (0x1100..=0x115F).contains(&cp)     // Hangul Jamo
