@@ -11,6 +11,7 @@ use termwiz::escape::parser::Parser;
 use termwiz::escape::Action;
 use termwiz::surface::{Change, Surface};
 
+pub mod disk_scrollback;
 mod events;
 mod modes;
 pub mod test_helpers;
@@ -69,6 +70,8 @@ pub struct Terminal {
     scrollback_limit: usize,
     /// Current scroll offset (0 = at bottom/live, >0 = scrolled up).
     pub scroll_offset: usize,
+    /// Disk-backed scrollback for older lines (enabled by scrollback_disk_swap setting).
+    disk_scrollback: Option<disk_scrollback::DiskScrollback>,
 }
 
 impl Terminal {
@@ -164,6 +167,7 @@ impl Terminal {
             scrollback: VecDeque::new(),
             scrollback_limit: 10000,
             scroll_offset: 0,
+            disk_scrollback: None,
         })
     }
 
@@ -417,14 +421,35 @@ impl Terminal {
     /// Set the scrollback buffer limit.
     pub fn set_scrollback_limit(&mut self, limit: usize) {
         self.scrollback_limit = limit;
+        self.flush_scrollback_to_disk();
+    }
+
+    /// Enable disk-backed scrollback swap for this terminal.
+    pub fn enable_disk_scrollback(&mut self, surface_id: u32) {
+        if self.disk_scrollback.is_none() {
+            match disk_scrollback::DiskScrollback::new(surface_id) {
+                Ok(ds) => self.disk_scrollback = Some(ds),
+                Err(e) => tracing::warn!("failed to create disk scrollback: {e}"),
+            }
+        }
+    }
+
+    /// Flush excess scrollback lines to disk (if disk swap is enabled).
+    fn flush_scrollback_to_disk(&mut self) {
         while self.scrollback.len() > self.scrollback_limit {
-            self.scrollback.pop_front();
+            if let Some(ds) = &mut self.disk_scrollback {
+                if let Some(line) = self.scrollback.pop_front() {
+                    let _ = ds.push_lines(&[line]);
+                }
+            } else {
+                self.scrollback.pop_front();
+            }
         }
     }
 
     /// Scroll up (towards older content).
     pub fn scroll_up(&mut self, lines: usize) {
-        let max = self.scrollback.len();
+        let max = self.scrollback_len();
         self.scroll_offset = (self.scroll_offset + lines).min(max);
     }
 
@@ -438,14 +463,33 @@ impl Terminal {
         self.scroll_offset = 0;
     }
 
-    /// Number of lines in the scrollback buffer.
+    /// Number of lines in the scrollback buffer (memory + disk).
     pub fn scrollback_len(&self) -> usize {
-        self.scrollback.len()
+        let disk_count = self.disk_scrollback.as_ref().map(|ds| ds.line_count()).unwrap_or(0);
+        disk_count + self.scrollback.len()
     }
 
-    /// Get a specific scrollback line by index.
+    /// Get a specific scrollback line by index (0 = oldest, memory only).
+    /// For disk-backed lines, use scrollback_line_owned().
     pub fn scrollback_line(&self, index: usize) -> Option<&Vec<(String, CellAttributes)>> {
-        self.scrollback.get(index)
+        let disk_count = self.disk_scrollback.as_ref().map(|ds| ds.line_count()).unwrap_or(0);
+        if index < disk_count {
+            None // Disk lines can't be returned as reference — use scrollback_line_owned()
+        } else {
+            self.scrollback.get(index - disk_count)
+        }
+    }
+
+    /// Get a scrollback line by index, returning owned data.
+    /// Works for both memory and disk-backed lines.
+    pub fn scrollback_line_owned(&self, index: usize) -> Option<Vec<(String, CellAttributes)>> {
+        let disk_count = self.disk_scrollback.as_ref().map(|ds| ds.line_count()).unwrap_or(0);
+        if index < disk_count {
+            self.disk_scrollback.as_ref()
+                .and_then(|ds| ds.read_line(index).ok().flatten())
+        } else {
+            self.scrollback.get(index - disk_count).cloned()
+        }
     }
 
     /// Capture the top line(s) from the surface before a scroll change is applied.
@@ -471,9 +515,7 @@ impl Terminal {
                 for line in captured {
                     self.scrollback.push_back(line);
                 }
-                while self.scrollback.len() > self.scrollback_limit {
-                    self.scrollback.pop_front();
-                }
+                self.flush_scrollback_to_disk();
             }
             Change::Text(t) if t == "\n" => {
                 let (_, cy) = self.surface().cursor_position();
@@ -483,9 +525,7 @@ impl Terminal {
                     for line in captured {
                         self.scrollback.push_back(line);
                     }
-                    while self.scrollback.len() > self.scrollback_limit {
-                        self.scrollback.pop_front();
-                    }
+                    self.flush_scrollback_to_disk();
                 }
             }
             _ => {}

@@ -160,8 +160,12 @@ impl EngineState {
     pub fn send_fast_init(&mut self, surface_id: u32) {
         crate::surface_meta::SurfaceMetaStore::ensure_created(surface_id);
         let scrollback_limit = self.settings.general.scrollback_lines;
+        let disk_swap = self.settings.performance.scrollback_disk_swap;
         if let Some(terminal) = self.find_terminal_by_id_mut(surface_id) {
             terminal.set_scrollback_limit(scrollback_limit);
+            if disk_swap {
+                terminal.enable_disk_scrollback(surface_id);
+            }
         }
         if let Some(cmd) = self.settings.general.fast_mode_init_command() {
             if let Some(terminal) = self.find_terminal_by_id_mut(surface_id) {
