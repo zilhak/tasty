@@ -105,9 +105,9 @@ impl Theme {
             rosewater: egui::Color32::from_rgb(245, 224, 220), // #f5e0dc
 
             // Semantic
-            hover_overlay:  egui::Color32::from_rgba_premultiplied(255, 255, 255, 20), // ~8%
-            active_overlay: egui::Color32::from_rgba_premultiplied(255, 255, 255, 31), // ~12%
-            separator:      egui::Color32::from_rgba_premultiplied(255, 255, 255, 20), // ~8%
+            hover_overlay:  egui::Color32::from_rgba_unmultiplied(255, 255, 255, 20), // ~8%
+            active_overlay: egui::Color32::from_rgba_unmultiplied(255, 255, 255, 31), // ~12%
+            separator:      egui::Color32::from_rgba_unmultiplied(255, 255, 255, 20), // ~8%
 
             // UI Typography
             font_size_caption: 11.0,

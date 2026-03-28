@@ -531,7 +531,7 @@ pub fn draw_notification_panel(ctx: &egui::Context, state: &mut AppState) {
                         let bg = if *read {
                             egui::Color32::TRANSPARENT
                         } else {
-                            egui::Color32::from_rgba_premultiplied(137, 180, 250, 20) // Blue at ~8%
+                            egui::Color32::from_rgba_unmultiplied(137, 180, 250, 20) // Blue at ~8%
                         };
 
                         egui::Frame::new()
