@@ -183,14 +183,24 @@ pub struct Engine {
 }
 ```
 
-### 1-2. `TastyWindow` 구조체
+### 1-2. `TastyWindow` 구조체로 App 윈도우 필드 이동
 
-**새 파일: `src/tasty_window.rs`**
+**현재 상태**: `TastyWindow` 구조체는 정의됨 (`src/tasty_window.rs`). App은 아직 기존 필드(gpu, state, window 등)을 직접 소유.
+
+**접근 방식**: `event_handler.rs`의 `window_event()`를 `TastyWindow`의 메서드로 이동. `App`의 `ApplicationHandler` impl은 `WindowId`로 `TastyWindow`를 찾아 위임만 하도록 변경. Rust borrow checker 문제로 `self.field` → `w.field` 단순 치환이 불가능하므로, `TastyWindow`에 `handle_event(&mut self, engine: &mut Engine, event: WindowEvent)` 패턴으로 구현.
+
+**구체적 단계:**
+1. `TastyWindow`에 `handle_window_event()`, `handle_keyboard_input()` 등 메서드를 이동
+2. `shortcuts.rs`의 `handle_shortcut()`을 `TastyWindow`의 메서드로 이동
+3. `App::window_event()`는 `self.primary_window.handle_event(&mut self.engine, event)`만 호출
+4. 기존 `App`에서 gpu, state, window 등 윈도우 필드 제거
+
+**새 파일: `src/tasty_window.rs` (이미 존재, 확장 필요)**
 
 ```rust
 pub struct TastyWindow {
     pub gpu: GpuState,
-    pub ui_state: WindowState,
+    pub state: AppState,  // EngineState + WindowState 포함
     pub window: Arc<Window>,
     pub dirty: bool,
     pub modifiers: ModifiersState,
