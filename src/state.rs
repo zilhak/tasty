@@ -818,6 +818,21 @@ impl AppState {
         }
     }
 
+    /// Check if the given physical pixel position is within any terminal surface area.
+    pub fn is_over_terminal(&self, x: f32, y: f32, terminal_rect: Rect) -> bool {
+        if !terminal_rect.contains(x, y) {
+            return false;
+        }
+        let ws = self.active_workspace();
+        let pane_rects = ws.pane_layout().compute_rects(terminal_rect);
+        for (_pane_id, rect) in &pane_rects {
+            if rect.contains(x, y) {
+                return true;
+            }
+        }
+        false
+    }
+
     /// Focus the pane at the given physical pixel position within the terminal rect.
     /// Returns true if focus changed.
     pub fn focus_pane_at_position(&mut self, x: f32, y: f32, terminal_rect: Rect) -> bool {

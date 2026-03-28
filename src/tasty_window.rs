@@ -323,7 +323,13 @@ impl TastyWindow {
                     };
                     self.window.set_cursor(cursor);
                 }
-                None => self.window.set_cursor(CursorIcon::Default),
+                None => {
+                    if self.state.is_over_terminal(x, y, terminal_rect) {
+                        self.window.set_cursor(CursorIcon::Text);
+                    } else {
+                        self.window.set_cursor(CursorIcon::Default);
+                    }
+                }
             }
         }
     }
