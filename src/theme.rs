@@ -64,6 +64,7 @@ pub struct Theme {
     // ── Terminal (float format for GPU renderer) ──
     pub terminal_fg: [f32; 4],
     pub terminal_bg: [f32; 4],
+    pub selection_bg: [f32; 4],
     pub ansi_colors: [[f32; 3]; 16],
 }
 
@@ -132,6 +133,7 @@ impl Theme {
             // Terminal (GPU float format)
             terminal_fg: [0.804, 0.839, 0.957, 1.0], // Text #cdd6f4
             terminal_bg: [0.118, 0.118, 0.180, 1.0], // Base #1e1e2e
+            selection_bg: [0.345, 0.357, 0.439, 1.0], // Surface2 #585b70
             ansi_colors: [
                 [0.176, 0.176, 0.271],  // 0: black      (Surface1 #45475a)
                 [0.953, 0.545, 0.659],  // 1: red         (#f38ba8)
