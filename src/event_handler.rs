@@ -127,30 +127,7 @@ impl ApplicationHandler<AppEvent> for App {
                 self.handle_keyboard_input(&event, egui_consumed);
             }
             WindowEvent::Ime(ime_event) => {
-                if egui_consumed {
-                    self.mark_dirty();
-                    return;
-                }
-                match ime_event {
-                    winit::event::Ime::Preedit(text, _cursor) => {
-                        self.preedit_text = text;
-                        self.mark_dirty();
-                    }
-                    winit::event::Ime::Commit(text) => {
-                        self.preedit_text.clear();
-                        if let Some(state) = &mut self.state {
-                            let sid = state.focused_surface_id();
-                            if let Some(terminal) = state.focused_terminal_mut() {
-                                terminal.send_key(&text);
-                            }
-                            if let Some(sid) = sid {
-                                state.record_typing(sid);
-                            }
-                        }
-                        self.mark_dirty();
-                    }
-                    _ => {}
-                }
+                self.handle_ime(ime_event, egui_consumed);
             }
             WindowEvent::CursorMoved { position, .. } => {
                 self.cursor_position = Some(position);
@@ -553,6 +530,33 @@ impl App {
             if let Some(sid) = typing_surface_id {
                 state.record_typing(sid);
             }
+        }
+    }
+
+    fn handle_ime(&mut self, ime_event: winit::event::Ime, egui_consumed: bool) {
+        if egui_consumed {
+            self.mark_dirty();
+            return;
+        }
+        match ime_event {
+            winit::event::Ime::Preedit(text, _cursor) => {
+                self.preedit_text = text;
+                self.mark_dirty();
+            }
+            winit::event::Ime::Commit(text) => {
+                self.preedit_text.clear();
+                if let Some(state) = &mut self.state {
+                    let sid = state.focused_surface_id();
+                    if let Some(terminal) = state.focused_terminal_mut() {
+                        terminal.send_key(&text);
+                    }
+                    if let Some(sid) = sid {
+                        state.record_typing(sid);
+                    }
+                }
+                self.mark_dirty();
+            }
+            _ => {}
         }
     }
 
