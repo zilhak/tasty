@@ -13,10 +13,6 @@ pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Commands>,
 
-    /// Run in headless mode (no GUI, IPC only)
-    #[arg(long)]
-    pub headless: bool,
-
     /// Custom port file path (for test isolation)
     #[arg(long)]
     pub port_file: Option<String>,

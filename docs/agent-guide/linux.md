@@ -62,13 +62,6 @@ tasty &
 while [ ! -f ~/.tasty/tasty.port ]; do sleep 0.2; done
 ```
 
-### 헤드리스 모드 (GUI 없이 IPC만)
-
-```bash
-tasty --headless &
-while [ ! -f ~/.tasty/tasty.port ]; do sleep 0.2; done
-```
-
 ## 4. 종료
 
 ```bash

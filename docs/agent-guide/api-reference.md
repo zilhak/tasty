@@ -39,7 +39,6 @@ def call(method, params=None):
 ```bash
 # GUI 실행
 tasty
-tasty --headless              # 헤드리스 모드
 
 # 시스템
 tasty info                    # 버전, 워크스페이스 수

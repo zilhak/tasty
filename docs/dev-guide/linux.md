@@ -35,10 +35,6 @@ fi
 /home/zilhak/workspace/tasty/target/debug/tasty &
 while [ ! -f ~/.tasty/tasty.port ]; do sleep 0.2; done
 
-# 헤드리스 (GUI 없이 IPC만)
-/home/zilhak/workspace/tasty/target/debug/tasty --headless &
-while [ ! -f ~/.tasty/tasty.port ]; do sleep 0.2; done
-
 # 다중 인스턴스
 /home/zilhak/workspace/tasty/target/debug/tasty --port-file /tmp/tasty-a.port &
 ```
