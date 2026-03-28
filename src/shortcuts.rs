@@ -98,6 +98,48 @@ impl TastyWindow {
         let cell_w = self.gpu.cell_width();
         let cell_h = self.gpu.cell_height();
 
+        // Clipboard copy shortcuts (handled before state borrow to avoid borrow conflict)
+        // Linux style: Ctrl+Shift+C
+        if ctrl && shift {
+            if let Key::Character(c) = key {
+                if (c.as_str() == "C" || c.as_str() == "c")
+                    && self.state.engine.settings.clipboard.linux_style
+                {
+                    if self.copy_selection_to_clipboard() {
+                        self.mark_dirty();
+                        return true;
+                    }
+                }
+            }
+        }
+        // Windows style: Ctrl+C — copy if selection exists, else let SIGINT through
+        if ctrl && !shift && !alt {
+            if let Key::Character(c) = key {
+                if (c.as_str() == "c" || c.as_str() == "C" || c.as_str() == "\x03")
+                    && self.state.engine.settings.clipboard.windows_style
+                {
+                    if self.copy_selection_to_clipboard() {
+                        self.mark_dirty();
+                        return true;
+                    }
+                    // No selection — fall through so \x03 reaches terminal as SIGINT
+                }
+            }
+        }
+        // macOS style: Alt+C
+        if alt && !ctrl && !shift {
+            if let Key::Character(c) = key {
+                if (c.as_str() == "c" || c.as_str() == "C")
+                    && self.state.engine.settings.clipboard.macos_style
+                {
+                    if self.copy_selection_to_clipboard() {
+                        self.mark_dirty();
+                        return true;
+                    }
+                }
+            }
+        }
+
         let state = &mut self.state;
         let kb = state.engine.settings.keybindings.clone();
 
