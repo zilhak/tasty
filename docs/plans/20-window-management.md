@@ -1,5 +1,7 @@
 # 20. 윈도우 관리
 
+> **참고**: 멀티 윈도우의 최종 설계는 `docs/design/multi-window-architecture.md`와 `docs/design/focus-policy.md`에 기술되어 있다. 이 문서는 초기 계획으로, 최종 설계와 다른 부분이 있을 수 있다.
+
 ## cmux 구현 방식
 
 - 다중 윈도우 (NSWindow)

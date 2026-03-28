@@ -24,15 +24,11 @@ tasty new-workspace  → 새 워크스페이스 생성 명령
 
 ### IPC 통신
 
-| OS | IPC 방법 | 경로 |
-|----|---------|------|
-| **Linux** | Unix domain socket | `$XDG_RUNTIME_DIR/tasty.sock` |
-| **macOS** | Unix domain socket | `$TMPDIR/tasty.sock` |
-| **Windows** | Named pipe | `\\.\pipe\tasty-{session}` |
+> **구현 현황**: TCP `127.0.0.1` + 동적 포트. 포트 파일: `~/.tasty/tasty.port`
 
-CLI는 IPC를 통해 JSON-RPC 메시지를 실행 중인 GUI 인스턴스에 전달하고, 응답을 stdout에 출력한다.
+CLI는 포트 파일을 읽어 TCP로 JSON-RPC 메시지를 실행 중인 GUI 인스턴스에 전달하고, 응답을 stdout에 출력한다.
 
-### 주요 명령 (계획)
+### 주요 명령 (구현 완료)
 
 | 명령 | 설명 |
 |------|------|
