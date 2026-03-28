@@ -122,6 +122,7 @@ impl Panel {
                         second: Box::new(SurfaceGroupLayout::Single(SurfaceNode {
                             id: new_surface_id,
                             terminal: new_terminal,
+                            deferred_spawn: None,
                         })),
                         focus_second: true,
                     }),
@@ -132,7 +133,7 @@ impl Panel {
             }
             Panel::SurfaceGroup(mut group) => {
                 // Pre-built terminal: wrap into SurfaceNode and use infallible split.
-                let new_node = SurfaceNode { id: new_surface_id, terminal: new_terminal };
+                let new_node = SurfaceNode { id: new_surface_id, terminal: new_terminal, deferred_spawn: None };
                 let target = group.focused_surface;
                 let old_layout = group.take_layout();
                 let (new_layout, _) = old_layout.split_with_node(target, direction, new_node);

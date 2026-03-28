@@ -379,7 +379,7 @@ fn for_each_terminal_mut_can_modify() {
 fn test_surface_node(id: SurfaceId) -> SurfaceNode {
     let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
     let terminal = tasty_terminal::Terminal::new(80, 24, waker).unwrap();
-    SurfaceNode { id, terminal }
+    SurfaceNode { id, terminal, deferred_spawn: None }
 }
 
 #[test]

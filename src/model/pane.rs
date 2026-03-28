@@ -467,7 +467,9 @@ impl Pane {
             panel_opt: Some(Panel::Terminal(SurfaceNode {
                 id: surface_id,
                 terminal,
+                deferred_spawn: None,
             })),
+            deferred_spawn: None,
         };
         Ok(Self {
             id,
@@ -494,7 +496,9 @@ impl Pane {
             panel_opt: Some(Panel::Terminal(SurfaceNode {
                 id: surface_id,
                 terminal,
+                deferred_spawn: None,
             })),
+            deferred_spawn: None,
         };
         self.tabs.push(tab);
         self.active_tab = self.tabs.len() - 1;
@@ -628,6 +632,7 @@ impl Pane {
             id: tab_id,
             name,
             panel_opt: Some(panel),
+        deferred_spawn: None,
         };
         self.tabs.push(tab);
         self.active_tab = self.tabs.len() - 1;
@@ -645,6 +650,7 @@ impl Pane {
             id: tab_id,
             name,
             panel_opt: Some(panel),
+        deferred_spawn: None,
         };
         self.tabs.push(tab);
         self.active_tab = self.tabs.len() - 1;
@@ -673,16 +679,42 @@ impl Pane {
 pub struct Tab {
     pub id: TabId,
     pub name: String,
-    /// Always `Some` during normal operation. Temporarily `None` during structural mutations.
+    /// Always `Some` during normal operation. Temporarily `None` during structural mutations
+    /// or when lazy_pty_init is enabled and the tab hasn't been focused yet.
     panel_opt: Option<Panel>,
+    /// When lazy_pty_init is enabled, stores parameters to spawn PTY on first access.
+    pub(crate) deferred_spawn: Option<super::surface_group::DeferredSpawn>,
 }
 
 impl Tab {
-    /// Access the panel (always valid during normal operation).
-    /// Panics if called during a structural mutation (between take/put).
+    /// Access the panel. If lazy init is pending, spawns the terminal first.
     #[track_caller]
     pub fn panel(&self) -> &Panel {
-        self.panel_opt.as_ref().expect("BUG: panel accessed during structural mutation (between take/put)")
+        self.panel_opt.as_ref().expect("BUG: panel accessed during structural mutation or before lazy init")
+    }
+
+    /// Ensure the panel is initialized (lazy spawn if needed). Returns true if spawned.
+    pub fn ensure_initialized(&mut self, surface_id: SurfaceId) -> bool {
+        if self.panel_opt.is_some() || self.deferred_spawn.is_none() {
+            return false;
+        }
+        let spawn = self.deferred_spawn.take().unwrap();
+        let shell_ref = spawn.shell.as_deref();
+        let shell_args: Vec<&str> = spawn.shell_args.iter().map(|s| s.as_str()).collect();
+        match Terminal::new_with_shell_args(spawn.cols, spawn.rows, shell_ref, &shell_args, spawn.waker) {
+            Ok(terminal) => {
+                self.panel_opt = Some(Panel::Terminal(SurfaceNode {
+                    id: surface_id,
+                    terminal,
+                    deferred_spawn: None,
+                }));
+                true
+            }
+            Err(e) => {
+                tracing::error!("lazy PTY init failed: {e}");
+                false
+            }
+        }
     }
 
     /// Access the panel mutably.

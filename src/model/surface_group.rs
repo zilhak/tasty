@@ -13,6 +13,19 @@ enum PathSide {
 pub struct SurfaceNode {
     pub id: SurfaceId,
     pub terminal: Terminal,
+    /// If lazy init is enabled and terminal hasn't been spawned yet,
+    /// this holds the deferred spawn parameters.
+    pub(crate) deferred_spawn: Option<DeferredSpawn>,
+}
+
+/// Parameters needed to spawn a PTY later (lazy init).
+#[derive(Clone)]
+pub(crate) struct DeferredSpawn {
+    pub shell: Option<String>,
+    pub shell_args: Vec<String>,
+    pub cols: usize,
+    pub rows: usize,
+    pub waker: tasty_terminal::Waker,
 }
 
 /// Split within a tab (appears as one tab but renders multiple terminals).
