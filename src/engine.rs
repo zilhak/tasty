@@ -10,6 +10,8 @@ pub struct Engine {
     pub proxy: EventLoopProxy<AppEvent>,
     /// When Some, a modal window is active and all other windows should ignore input.
     pub modal_window_id: Option<winit::window::WindowId>,
+    /// The window that currently has focus (receives IPC commands targeting "focused" window).
+    pub focused_window_id: Option<winit::window::WindowId>,
     pub port_file: Option<String>,
 }
 
@@ -19,6 +21,7 @@ impl Engine {
             ipc_server: None,
             proxy,
             modal_window_id: None,
+            focused_window_id: None,
             port_file,
         }
     }

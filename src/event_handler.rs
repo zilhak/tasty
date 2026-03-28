@@ -1,30 +1,28 @@
 use winit::application::ApplicationHandler;
-use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
+use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
-use winit::keyboard::{Key, NamedKey};
-use winit::window::{CursorIcon, WindowId};
+use winit::window::WindowId;
 
-use crate::model::SplitDirection;
-use crate::{App, AppEvent, DividerDrag, DividerDragKind};
-use crate::tasty_window::TastyWindow;
+use crate::{App, AppEvent};
 
 impl ApplicationHandler<AppEvent> for App {
     fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: AppEvent) {
         match event {
             AppEvent::TerminalOutput => {
-                if let Some(w) = &mut self.primary_window {
+                // Wake all windows — PTY output could be for any of them
+                for w in self.windows.values_mut() {
                     w.mark_dirty();
                 }
             }
             AppEvent::IpcReady => {
                 if self.process_ipc() {
-                    if let Some(w) = &mut self.primary_window {
+                    if let Some(w) = self.focused_window_mut() {
                         w.mark_dirty();
                     }
                 }
             }
             AppEvent::EguiRepaint => {
-                if let Some(w) = &mut self.primary_window {
+                for w in self.windows.values_mut() {
                     w.mark_dirty();
                 }
             }
@@ -32,7 +30,7 @@ impl ApplicationHandler<AppEvent> for App {
     }
 
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        if self.primary_window.is_some() || self.shell_setup_gpu.is_some() {
+        if !self.windows.is_empty() || self.shell_setup_gpu.is_some() {
             return;
         }
 
@@ -76,7 +74,7 @@ impl ApplicationHandler<AppEvent> for App {
         self.init_app_state(window, gpu, init_settings);
     }
 
-    fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
+    fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
         // Shell setup mode — handled by App directly
         if self.shell_setup_mode {
             if let WindowEvent::RedrawRequested = &event {
@@ -94,7 +92,7 @@ impl ApplicationHandler<AppEvent> for App {
                             let window = self.shell_setup_window.take().unwrap();
                             let gpu = self.shell_setup_gpu.take().unwrap();
                             self.init_app_state(window, gpu, settings);
-                            if let Some(w) = &mut self.primary_window { w.mark_dirty(); }
+                            if let Some(w) = self.focused_window_mut() { w.mark_dirty(); }
                         }
                         Ok(crate::gpu::ShellSetupAction::Exit) => {
                             event_loop.exit();
@@ -104,13 +102,11 @@ impl ApplicationHandler<AppEvent> for App {
                         }
                     }
                 }
-                // Still pass egui events for shell setup UI
                 if let (Some(gpu), Some(window)) = (&mut self.shell_setup_gpu, &self.shell_setup_window) {
                     gpu.handle_egui_event(window, &event);
                 }
                 return;
             }
-            // Pass non-redraw events to egui for shell setup
             if let (Some(gpu), Some(window)) = (&mut self.shell_setup_gpu, &self.shell_setup_window) {
                 gpu.handle_egui_event(window, &event);
                 if let WindowEvent::CloseRequested = &event {
@@ -120,23 +116,32 @@ impl ApplicationHandler<AppEvent> for App {
             return;
         }
 
-        // Normal mode — delegate to TastyWindow
+        // Normal mode — find the window by ID and delegate
         if let WindowEvent::CloseRequested = &event {
-            event_loop.exit();
+            self.windows.remove(&id);
+            if self.engine.focused_window_id == Some(id) {
+                // Focus moves to another window, or None
+                self.engine.focused_window_id = self.windows.keys().next().copied();
+            }
+            if self.windows.is_empty() {
+                event_loop.exit();
+            }
             return;
         }
 
-        if let Some(w) = &mut self.primary_window {
-            let should_exit = w.handle_window_event(event, event_loop);
-            if should_exit {
-                event_loop.exit();
-            }
+        // Track focused window on focus events
+        if let WindowEvent::Focused(true) = &event {
+            self.engine.focused_window_id = Some(id);
+        }
+
+        if let Some(w) = self.windows.get_mut(&id) {
+            w.handle_window_event(event, event_loop);
         }
     }
 
     fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
         if self.process_ipc() {
-            if let Some(w) = &mut self.primary_window {
+            if let Some(w) = self.focused_window_mut() {
                 w.mark_dirty();
             }
         }

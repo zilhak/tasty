@@ -82,7 +82,7 @@ struct DividerDrag {
 
 struct App {
     engine: engine::Engine,
-    primary_window: Option<tasty_window::TastyWindow>,
+    windows: std::collections::HashMap<WindowId, tasty_window::TastyWindow>,
     // Shell setup mode (before terminal is created)
     shell_setup_mode: bool,
     shell_setup_path: String,
@@ -90,16 +90,27 @@ struct App {
     shell_setup_window: Option<Arc<Window>>,
 }
 
+use winit::window::WindowId;
+
 impl App {
     fn new(proxy: EventLoopProxy<AppEvent>, port_file: Option<String>) -> Self {
         Self {
             engine: engine::Engine::new(proxy.clone(), port_file),
-            primary_window: None,
+            windows: std::collections::HashMap::new(),
             shell_setup_mode: false,
             shell_setup_path: String::new(),
             shell_setup_gpu: None,
             shell_setup_window: None,
         }
+    }
+
+    /// Get the focused window, if any.
+    fn focused_window(&self) -> Option<&tasty_window::TastyWindow> {
+        self.engine.focused_window_id.and_then(|id| self.windows.get(&id))
+    }
+
+    fn focused_window_mut(&mut self) -> Option<&mut tasty_window::TastyWindow> {
+        self.engine.focused_window_id.and_then(|id| self.windows.get_mut(&id))
     }
 
     /// Initialize the full app state (terminal, IPC server, etc.) after shell is confirmed.
@@ -139,7 +150,9 @@ impl App {
 
         self.engine.start_ipc();
 
-        self.primary_window = Some(tasty_window::TastyWindow::new(gpu, state, window));
+        let window_id = window.id();
+        self.windows.insert(window_id, tasty_window::TastyWindow::new(gpu, state, window));
+        self.engine.focused_window_id = Some(window_id);
     }
 
     /// Process pending IPC commands. Returns true if any commands were processed.
@@ -148,7 +161,11 @@ impl App {
             Some(ipc) => ipc,
             None => return false,
         };
-        let w = match &mut self.primary_window {
+        let focused_id = match self.engine.focused_window_id {
+            Some(id) => id,
+            None => return false,
+        };
+        let w = match self.windows.get_mut(&focused_id) {
             Some(w) => w,
             None => return false,
         };
