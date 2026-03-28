@@ -1,6 +1,6 @@
 use winit::keyboard::{Key, ModifiersState, NamedKey};
 
-use crate::App;
+use crate::tasty_window::TastyWindow;
 use crate::model::SplitDirection;
 
 /// Parse a binding string like "ctrl+shift+n" and check if it matches
@@ -86,19 +86,19 @@ fn named_key_to_string(key: &NamedKey) -> String {
     }
 }
 
-impl App {
+impl TastyWindow {
     /// Handle keyboard shortcuts. Returns true if the event was consumed by a shortcut.
     pub(crate) fn handle_shortcut(&mut self, key: &Key, mods: ModifiersState) -> bool {
         let ctrl = mods.control_key();
         let shift = mods.shift_key();
         let alt = mods.alt_key();
 
-        let state = match &mut self.state {
-            Some(s) => s,
-            None => return false,
-        };
+        // Pre-compute values that need &self before borrowing &mut self.state
+        let terminal_rect = self.compute_terminal_rect();
+        let cell_w = self.gpu.cell_width();
+        let cell_h = self.gpu.cell_height();
 
-        // --- Configurable keybindings (from settings) ---
+        let state = &mut self.state;
         let kb = state.engine.settings.keybindings.clone();
 
         if matches_binding(&kb.new_workspace, key, mods) {
@@ -113,37 +113,25 @@ impl App {
         }
         if matches_binding(&kb.split_pane_vertical, key, mods) {
             let _ = state.split_pane(SplitDirection::Vertical);
-            if let Some(gpu) = &self.gpu {
-                let rect = Self::compute_terminal_rect_with_sidebar(gpu, state.sidebar_width);
-                state.resize_all(rect, gpu.cell_width(), gpu.cell_height());
-            }
+            state.resize_all(terminal_rect, cell_w, cell_h);
             self.mark_dirty();
             return true;
         }
         if matches_binding(&kb.split_pane_horizontal, key, mods) {
             let _ = state.split_pane(SplitDirection::Horizontal);
-            if let Some(gpu) = &self.gpu {
-                let rect = Self::compute_terminal_rect_with_sidebar(gpu, state.sidebar_width);
-                state.resize_all(rect, gpu.cell_width(), gpu.cell_height());
-            }
+            state.resize_all(terminal_rect, cell_w, cell_h);
             self.mark_dirty();
             return true;
         }
         if matches_binding(&kb.split_surface_vertical, key, mods) {
             let _ = state.split_surface(SplitDirection::Vertical);
-            if let Some(gpu) = &self.gpu {
-                let rect = Self::compute_terminal_rect_with_sidebar(gpu, state.sidebar_width);
-                state.resize_all(rect, gpu.cell_width(), gpu.cell_height());
-            }
+            state.resize_all(terminal_rect, cell_w, cell_h);
             self.mark_dirty();
             return true;
         }
         if matches_binding(&kb.split_surface_horizontal, key, mods) {
             let _ = state.split_surface(SplitDirection::Horizontal);
-            if let Some(gpu) = &self.gpu {
-                let rect = Self::compute_terminal_rect_with_sidebar(gpu, state.sidebar_width);
-                state.resize_all(rect, gpu.cell_width(), gpu.cell_height());
-            }
+            state.resize_all(terminal_rect, cell_w, cell_h);
             self.mark_dirty();
             return true;
         }
@@ -170,11 +158,7 @@ impl App {
         // Close active pane
         if matches_binding(&kb.close_pane, key, mods) {
             if state.close_active_pane() {
-                if let Some(gpu) = &self.gpu {
-                    let rect =
-                        Self::compute_terminal_rect_with_sidebar(gpu, state.sidebar_width);
-                    state.resize_all(rect, gpu.cell_width(), gpu.cell_height());
-                }
+                    state.resize_all(terminal_rect, cell_w, cell_h);
                 self.mark_dirty();
                 return true;
             }
@@ -184,11 +168,7 @@ impl App {
         // Close active surface
         if matches_binding(&kb.close_surface, key, mods) {
             if state.close_active_surface() {
-                if let Some(gpu) = &self.gpu {
-                    let rect =
-                        Self::compute_terminal_rect_with_sidebar(gpu, state.sidebar_width);
-                    state.resize_all(rect, gpu.cell_width(), gpu.cell_height());
-                }
+                    state.resize_all(terminal_rect, cell_w, cell_h);
                 self.mark_dirty();
                 return true;
             }

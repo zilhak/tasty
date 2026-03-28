@@ -6,26 +6,33 @@ use winit::window::{CursorIcon, WindowId};
 
 use crate::model::SplitDirection;
 use crate::{App, AppEvent, DividerDrag, DividerDragKind};
+use crate::tasty_window::TastyWindow;
 
 impl ApplicationHandler<AppEvent> for App {
     fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: AppEvent) {
         match event {
             AppEvent::TerminalOutput => {
-                self.mark_dirty();
+                if let Some(w) = &mut self.primary_window {
+                    w.mark_dirty();
+                }
             }
             AppEvent::IpcReady => {
                 if self.process_ipc() {
-                    self.mark_dirty();
+                    if let Some(w) = &mut self.primary_window {
+                        w.mark_dirty();
+                    }
                 }
             }
             AppEvent::EguiRepaint => {
-                self.mark_dirty();
+                if let Some(w) = &mut self.primary_window {
+                    w.mark_dirty();
+                }
             }
         }
     }
 
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        if self.window.is_some() {
+        if self.primary_window.is_some() || self.shell_setup_gpu.is_some() {
             return;
         }
 
@@ -42,13 +49,11 @@ impl ApplicationHandler<AppEvent> for App {
                 .expect("failed to create window"),
         );
 
-        // Load settings before GPU init so font_size/font_family/theme are wired.
         let init_settings = crate::settings::Settings::load();
 
         let gpu = pollster::block_on(crate::gpu::GpuState::new(window.clone(), &init_settings.appearance, self.engine.proxy.clone()))
             .expect("failed to initialize GPU");
 
-        // If configured shell is invalid, try auto-detect before showing setup dialog
         let mut init_settings = init_settings;
         if !init_settings.general.is_shell_valid() {
             if let Some(detected) = crate::settings::GeneralSettings::detect_bash() {
@@ -61,8 +66,8 @@ impl ApplicationHandler<AppEvent> for App {
                 tracing::warn!("bash not found; entering shell setup mode");
                 self.shell_setup_mode = true;
                 self.shell_setup_path = String::new();
-                self.window = Some(window);
-                self.gpu = Some(gpu);
+                self.shell_setup_gpu = Some(gpu);
+                self.shell_setup_window = Some(window);
                 return;
             }
         }
@@ -72,535 +77,68 @@ impl ApplicationHandler<AppEvent> for App {
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
-        // Let egui handle the event first
-        let (egui_consumed, egui_repaint) = if let (Some(gpu), Some(window)) = (&mut self.gpu, &self.window) {
-            gpu.handle_egui_event(window, &event)
-        } else {
-            (false, false)
-        };
-        if egui_repaint {
-            self.mark_dirty();
+        // Shell setup mode — handled by App directly
+        if self.shell_setup_mode {
+            if let WindowEvent::RedrawRequested = &event {
+                if let (Some(gpu), Some(window)) = (&mut self.shell_setup_gpu, &self.shell_setup_window) {
+                    let result = gpu.render_shell_setup(window, &mut self.shell_setup_path);
+                    match result {
+                        Ok(crate::gpu::ShellSetupAction::None) => {}
+                        Ok(crate::gpu::ShellSetupAction::Confirmed) => {
+                            let mut settings = crate::settings::Settings::load();
+                            settings.general.shell = self.shell_setup_path.clone();
+                            if let Err(e) = settings.save() {
+                                tracing::error!("failed to save settings: {e}");
+                            }
+                            self.shell_setup_mode = false;
+                            let window = self.shell_setup_window.take().unwrap();
+                            let gpu = self.shell_setup_gpu.take().unwrap();
+                            self.init_app_state(window, gpu, settings);
+                            if let Some(w) = &mut self.primary_window { w.mark_dirty(); }
+                        }
+                        Ok(crate::gpu::ShellSetupAction::Exit) => {
+                            event_loop.exit();
+                        }
+                        Err(e) => {
+                            tracing::warn!("shell setup render error: {e}");
+                        }
+                    }
+                }
+                // Still pass egui events for shell setup UI
+                if let (Some(gpu), Some(window)) = (&mut self.shell_setup_gpu, &self.shell_setup_window) {
+                    gpu.handle_egui_event(window, &event);
+                }
+                return;
+            }
+            // Pass non-redraw events to egui for shell setup
+            if let (Some(gpu), Some(window)) = (&mut self.shell_setup_gpu, &self.shell_setup_window) {
+                gpu.handle_egui_event(window, &event);
+                if let WindowEvent::CloseRequested = &event {
+                    event_loop.exit();
+                }
+            }
+            return;
         }
 
-        // Track whether dirty was already set before this event.
-        let was_dirty = self.dirty;
+        // Normal mode — delegate to TastyWindow
+        if let WindowEvent::CloseRequested = &event {
+            event_loop.exit();
+            return;
+        }
 
-        match event {
-            WindowEvent::CloseRequested => {
+        if let Some(w) = &mut self.primary_window {
+            let should_exit = w.handle_window_event(event, event_loop);
+            if should_exit {
                 event_loop.exit();
-            }
-            WindowEvent::Resized(new_size) => {
-                if let Some(gpu) = &mut self.gpu {
-                    gpu.resize(new_size);
-                }
-                if let (Some(gpu), Some(state)) = (&self.gpu, &mut self.state) {
-                    let terminal_rect = Self::compute_terminal_rect_with_sidebar(gpu, state.sidebar_width);
-                    let (cols, rows) = gpu.grid_size_for_rect(&terminal_rect);
-                    let cw = gpu.cell_width();
-                    let ch = gpu.cell_height();
-                    state.update_grid_size(cols, rows);
-                    state.resize_all(terminal_rect, cw, ch);
-                }
-                self.mark_dirty();
-            }
-            WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
-                if let Some(gpu) = &mut self.gpu {
-                    gpu.update_scale_factor(scale_factor as f32);
-                }
-                self.mark_dirty();
-            }
-            WindowEvent::Focused(focused) => {
-                self.window_focused = focused;
-                if !focused {
-                    // Reset modifier state to prevent stuck keys after Alt+Tab etc.
-                    self.modifiers = winit::keyboard::ModifiersState::empty();
-                }
-                self.mark_dirty();
-            }
-            WindowEvent::Occluded(false) => {
-                self.mark_dirty();
-            }
-            WindowEvent::ModifiersChanged(modifiers) => {
-                self.modifiers = modifiers.state();
-            }
-            WindowEvent::KeyboardInput { event, .. } => {
-                self.handle_keyboard_input(&event, egui_consumed);
-            }
-            WindowEvent::Ime(ime_event) => {
-                self.handle_ime(ime_event, egui_consumed);
-            }
-            WindowEvent::CursorMoved { position, .. } => {
-                self.handle_cursor_moved(position, egui_consumed);
-            }
-            WindowEvent::CursorLeft { .. } => {
-                self.cursor_position = None;
-                if let Some(window) = &self.window {
-                    window.set_cursor(CursorIcon::Default);
-                }
-            }
-            WindowEvent::MouseInput { state: button_state, button, .. } => {
-                self.handle_mouse_input(button_state, button, egui_consumed);
-            }
-            WindowEvent::MouseWheel { delta, .. } => {
-                self.handle_mouse_wheel(delta, egui_consumed);
-            }
-            WindowEvent::RedrawRequested => {
-                // Shell setup mode: render only the setup dialog
-                if self.shell_setup_mode {
-                    if let (Some(gpu), Some(window)) = (&mut self.gpu, &self.window) {
-                        let result = gpu.render_shell_setup(
-                            window,
-                            &mut self.shell_setup_path,
-                        );
-                        match result {
-                            Ok(crate::gpu::ShellSetupAction::None) => {}
-                            Ok(crate::gpu::ShellSetupAction::Confirmed) => {
-                                // Save the shell path and initialize app
-                                let mut settings = crate::settings::Settings::load();
-                                settings.general.shell = self.shell_setup_path.clone();
-                                if let Err(e) = settings.save() {
-                                    tracing::error!("failed to save settings: {e}");
-                                }
-                                self.shell_setup_mode = false;
-                                let window = self.window.take().unwrap();
-                                let gpu = self.gpu.take().unwrap();
-                                self.init_app_state(window, gpu, settings);
-                                self.mark_dirty();
-                            }
-                            Ok(crate::gpu::ShellSetupAction::Exit) => {
-                                event_loop.exit();
-                            }
-                            Err(e) => {
-                                tracing::warn!("shell setup render error: {e}");
-                            }
-                        }
-                    }
-                    return;
-                }
-
-                // Process IPC commands
-                self.process_ipc();
-
-                // Process PTY output
-                let changed = if let Some(state) = &mut self.state {
-                    state.process_all()
-                } else {
-                    false
-                };
-
-                if changed {
-                    self.mark_dirty();
-                }
-
-                // Collect terminal events and process notifications + hooks
-                // Collect terminal events and process them.
-                // We borrow self.state mutably here, so we can't call mark_dirty() —
-                // use self.dirty = true instead. The catch-all at the end of
-                // window_event() ensures request_redraw() is called.
-                if let Some(state) = &mut self.state {
-                    let events = state.collect_events();
-                    for event in &events {
-                        let surface_id = event.surface_id;
-                        match &event.kind {
-                            crate::terminal::TerminalEventKind::Notification { title, body } => {
-                                if state.engine.settings.notification.enabled
-                                    && state.engine.settings.notification.system_notification
-                                    && !self.window_focused
-                                    && state.engine.notifications.should_send_system_notification()
-                                {
-                                    crate::notification::send_system_notification(title, body);
-                                }
-                                if state.engine.settings.notification.enabled {
-                                    let ws_id = state.active_workspace().id;
-                                    state.engine.notifications.add(
-                                        ws_id, surface_id, title.clone(), body.clone(),
-                                    );
-                                }
-                                let hook_events = vec![tasty_hooks::HookEvent::Notification];
-                                state.engine.hook_manager.check_and_fire(surface_id, &hook_events);
-                                self.dirty = true;
-                            }
-                            crate::terminal::TerminalEventKind::BellRing => {
-                                if state.engine.settings.notification.enabled {
-                                    let ws_id = state.active_workspace().id;
-                                    state.engine.notifications.add(
-                                        ws_id, surface_id, "Bell".to_string(), String::new(),
-                                    );
-                                }
-                                if state.engine.settings.notification.enabled
-                                    && state.engine.settings.notification.system_notification
-                                    && !self.window_focused
-                                    && state.engine.notifications.should_send_system_notification()
-                                {
-                                    crate::notification::send_system_notification("Tasty", "Bell");
-                                }
-                                let hook_events = vec![tasty_hooks::HookEvent::Bell];
-                                state.engine.hook_manager.check_and_fire(surface_id, &hook_events);
-                                self.dirty = true;
-                            }
-                            crate::terminal::TerminalEventKind::TitleChanged(_) => {
-                                self.dirty = true;
-                            }
-                            crate::terminal::TerminalEventKind::CwdChanged(_) => {
-                                self.dirty = true;
-                            }
-                            crate::terminal::TerminalEventKind::ClipboardSet(data) => {
-                                if let Some(cb) = &mut self.clipboard {
-                                    cb.set_text(data);
-                                }
-                            }
-                            crate::terminal::TerminalEventKind::ProcessExited => {
-                                let hook_events = vec![tasty_hooks::HookEvent::ProcessExit];
-                                state.engine.hook_manager.check_and_fire(surface_id, &hook_events);
-                                self.dirty = true;
-                            }
-                        }
-                    }
-                }
-
-                if self.dirty {
-                    self.dirty = false;
-                    if let (Some(gpu), Some(state), Some(window)) =
-                        (&mut self.gpu, &mut self.state, &self.window)
-                    {
-                        match gpu.render(state, window, &self.preedit_text) {
-                            Ok(_) => {}
-                            Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
-                                gpu.resize(window.inner_size());
-                            }
-                            Err(wgpu::SurfaceError::OutOfMemory) => {
-                                tracing::error!("GPU out of memory");
-                                event_loop.exit();
-                            }
-                            Err(e) => {
-                                tracing::warn!("surface error: {e}");
-                            }
-                        }
-                    }
-                }
-
-                if self.dirty {
-                    if let Some(window) = &self.window {
-                        window.request_redraw();
-                    }
-                }
-            }
-            _ => {}
-        }
-
-        // If any non-RedrawRequested event made us dirty, request a redraw.
-        if self.dirty && !was_dirty {
-            if let Some(window) = &self.window {
-                window.request_redraw();
             }
         }
     }
 
     fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
-        // Process IPC commands outside of RedrawRequested so they respond
-        // even when the window is idle (no redraws happening).
         if self.process_ipc() {
-            self.mark_dirty();
-        }
-    }
-}
-
-// ── Extracted event handlers ──
-
-impl App {
-    fn handle_keyboard_input(&mut self, event: &winit::event::KeyEvent, egui_consumed: bool) {
-        if event.state != ElementState::Pressed {
-            return;
-        }
-
-        // Always handle Escape to close overlays
-        if event.logical_key == Key::Named(NamedKey::Escape) {
-            if let Some(state) = &mut self.state {
-                if state.settings_open {
-                    state.settings_open = false;
-                    state.settings_ui_state = crate::settings_ui::SettingsUiState::new();
-                    self.mark_dirty();
-                    return;
-                }
-                if state.notification_panel_open {
-                    state.notification_panel_open = false;
-                    self.mark_dirty();
-                    return;
-                }
+            if let Some(w) = &mut self.primary_window {
+                w.mark_dirty();
             }
         }
-
-        // Overlay shortcut handling
-        let settings_open = self.state.as_ref().map(|s| s.settings_open).unwrap_or(false);
-        let notification_open = self.state.as_ref().map(|s| s.notification_panel_open).unwrap_or(false);
-        let overlay_open = settings_open || notification_open;
-
-        if !overlay_open || (notification_open && !settings_open) {
-            if self.handle_shortcut(&event.logical_key, self.modifiers) {
-                self.mark_dirty();
-                return;
-            }
-        }
-        if egui_consumed || overlay_open {
-            if egui_consumed {
-                self.mark_dirty();
-            }
-            return;
-        }
-
-        // Forward to terminal
-        if let Some(state) = &mut self.state {
-            let typing_surface_id = state.focused_surface_id();
-            if let Some(terminal) = state.focused_terminal_mut() {
-                let dirty = Self::send_key_to_terminal(terminal, &event.logical_key, &event.text, self.modifiers);
-                if dirty { self.dirty = true; }
-            }
-            if let Some(sid) = typing_surface_id {
-                state.record_typing(sid);
-            }
-        }
-    }
-
-    fn handle_cursor_moved(&mut self, position: winit::dpi::PhysicalPosition<f64>, egui_consumed: bool) {
-        self.cursor_position = Some(position);
-        let overlay_open = self.state.as_ref()
-            .map(|s| s.settings_open || s.notification_panel_open)
-            .unwrap_or(false);
-        if egui_consumed || overlay_open {
-            if egui_consumed { self.mark_dirty(); }
-            return;
-        }
-        if let (Some(gpu), Some(state), Some(window)) = (&self.gpu, &mut self.state, &self.window) {
-            let terminal_rect = Self::compute_terminal_rect_with_sidebar(gpu, state.sidebar_width);
-            let x = position.x as f32;
-            let y = position.y as f32;
-
-            if let Some(drag) = self.dragging_divider {
-                let changed = match drag.kind {
-                    DividerDragKind::Pane => state.update_pane_divider(&drag.info, x, y, terminal_rect),
-                    DividerDragKind::Surface => state.update_surface_divider(&drag.info, x, y, terminal_rect),
-                };
-                if changed {
-                    state.resize_all(terminal_rect, gpu.cell_width(), gpu.cell_height());
-                    self.mark_dirty();
-                }
-            } else {
-                let threshold = 4.0;
-                let divider = state.find_pane_divider_at(x, y, terminal_rect, threshold)
-                    .or_else(|| state.find_surface_divider_at(x, y, terminal_rect, threshold));
-                match divider {
-                    Some(info) => {
-                        let cursor = match info.direction {
-                            SplitDirection::Vertical => CursorIcon::ColResize,
-                            SplitDirection::Horizontal => CursorIcon::RowResize,
-                        };
-                        window.set_cursor(cursor);
-                    }
-                    None => window.set_cursor(CursorIcon::Default),
-                }
-            }
-        }
-    }
-
-    fn handle_mouse_input(&mut self, button_state: ElementState, button: MouseButton, egui_consumed: bool) {
-        let overlay_open = self.state.as_ref()
-            .map(|s| s.settings_open || s.notification_panel_open)
-            .unwrap_or(false);
-        if egui_consumed || overlay_open {
-            if button_state == ElementState::Released { self.dragging_divider = None; }
-            if egui_consumed { self.mark_dirty(); }
-            return;
-        }
-        if button == MouseButton::Left {
-            if let Some(state) = &mut self.state {
-                if state.pane_context_menu.is_some() {
-                    state.pane_context_menu = None;
-                    self.dirty = true;
-                }
-            }
-            if let (Some(gpu), Some(state)) = (&self.gpu, &mut self.state) {
-                let terminal_rect = Self::compute_terminal_rect_with_sidebar(gpu, state.sidebar_width);
-                if let Some(pos) = self.cursor_position {
-                    let (x, y) = (pos.x as f32, pos.y as f32);
-                    if button_state == ElementState::Pressed {
-                        let threshold = 4.0;
-                        let pane_div = state.find_pane_divider_at(x, y, terminal_rect, threshold);
-                        let surf_div = state.find_surface_divider_at(x, y, terminal_rect, threshold);
-                        if let Some(info) = pane_div {
-                            self.dragging_divider = Some(DividerDrag { info, kind: DividerDragKind::Pane });
-                        } else if let Some(info) = surf_div {
-                            self.dragging_divider = Some(DividerDrag { info, kind: DividerDragKind::Surface });
-                        } else {
-                            if state.focus_pane_at_position(x, y, terminal_rect) { self.dirty = true; }
-                            if state.focus_surface_at_position(x, y, terminal_rect) { self.dirty = true; }
-                        }
-                    } else if button_state == ElementState::Released && self.dragging_divider.is_some() {
-                        self.dragging_divider = None;
-                        state.resize_all(terminal_rect, gpu.cell_width(), gpu.cell_height());
-                        self.dirty = true;
-                    }
-                }
-            }
-        } else if button == MouseButton::Right && button_state == ElementState::Pressed {
-            if let (Some(gpu), Some(state)) = (&self.gpu, &mut self.state) {
-                let terminal_rect = Self::compute_terminal_rect_with_sidebar(gpu, state.sidebar_width);
-                if let Some(pos) = self.cursor_position {
-                    let (x, y) = (pos.x as f32, pos.y as f32);
-                    if terminal_rect.contains(x, y) {
-                        let ws = state.active_workspace();
-                        let pane_rects = ws.pane_layout().compute_rects(terminal_rect);
-                        let scale = gpu.scale_factor();
-                        for (pane_id, rect) in pane_rects {
-                            if rect.contains(x, y) {
-                                state.pane_context_menu = Some(crate::state::PaneContextMenu {
-                                    pane_id, x: x / scale, y: y / scale,
-                                });
-                                self.dirty = true;
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    fn handle_mouse_wheel(&mut self, delta: MouseScrollDelta, egui_consumed: bool) {
-        let overlay_open = self.state.as_ref()
-            .map(|s| s.settings_open || s.notification_panel_open)
-            .unwrap_or(false);
-        if egui_consumed { self.mark_dirty(); }
-        if !egui_consumed && !overlay_open {
-            if let Some(state) = &mut self.state {
-                if let Some(terminal) = state.focused_terminal_mut() {
-                    let lines = match delta {
-                        MouseScrollDelta::LineDelta(_, y) => y as i32,
-                        MouseScrollDelta::PixelDelta(pos) => (pos.y / 20.0) as i32,
-                    };
-                    if terminal.is_alternate_screen() {
-                        if lines > 0 {
-                            for _ in 0..lines.unsigned_abs() { terminal.send_bytes(b"\x1b[A"); }
-                        } else if lines < 0 {
-                            for _ in 0..lines.unsigned_abs() { terminal.send_bytes(b"\x1b[B"); }
-                        }
-                    } else {
-                        if lines > 0 { terminal.scroll_up(lines as usize); }
-                        else if lines < 0 { terminal.scroll_down((-lines) as usize); }
-                        self.dirty = true;
-                    }
-                }
-            }
-        }
-    }
-
-    fn handle_ime(&mut self, ime_event: winit::event::Ime, egui_consumed: bool) {
-        if egui_consumed {
-            self.mark_dirty();
-            return;
-        }
-        match ime_event {
-            winit::event::Ime::Preedit(text, _cursor) => {
-                self.preedit_text = text;
-                self.mark_dirty();
-            }
-            winit::event::Ime::Commit(text) => {
-                self.preedit_text.clear();
-                if let Some(state) = &mut self.state {
-                    let sid = state.focused_surface_id();
-                    if let Some(terminal) = state.focused_terminal_mut() {
-                        terminal.send_key(&text);
-                    }
-                    if let Some(sid) = sid {
-                        state.record_typing(sid);
-                    }
-                }
-                self.mark_dirty();
-            }
-            _ => {}
-        }
-    }
-
-    /// Send a key event to a terminal. Returns true if the display needs redraw (scrollback changed).
-    fn send_key_to_terminal(
-        terminal: &mut tasty_terminal::Terminal,
-        key: &Key,
-        text: &Option<winit::keyboard::SmolStr>,
-        modifiers: winit::keyboard::ModifiersState,
-    ) -> bool {
-        let app_cursor = terminal.application_cursor_keys();
-        let is_alt_screen = terminal.is_alternate_screen();
-        let mut dirty = false;
-
-        let is_scrollback_key = !is_alt_screen && matches!(
-            key.as_ref(),
-            Key::Named(NamedKey::PageUp) | Key::Named(NamedKey::PageDown)
-        );
-
-        if !is_scrollback_key && terminal.scroll_offset > 0 {
-            terminal.scroll_to_bottom();
-            dirty = true;
-        }
-
-        match key.as_ref() {
-            Key::Named(NamedKey::Enter) => terminal.send_bytes(b"\r"),
-            Key::Named(NamedKey::Backspace) => terminal.send_bytes(b"\x7f"),
-            Key::Named(NamedKey::Tab) => {
-                if modifiers.shift_key() {
-                    terminal.send_bytes(b"\x1b[Z");
-                } else {
-                    terminal.send_bytes(b"\t");
-                }
-            }
-            Key::Named(NamedKey::Escape) => terminal.send_bytes(b"\x1b"),
-            Key::Named(NamedKey::ArrowUp) => {
-                if app_cursor { terminal.send_bytes(b"\x1bOA") }
-                else { terminal.send_bytes(b"\x1b[A") }
-            }
-            Key::Named(NamedKey::ArrowDown) => {
-                if app_cursor { terminal.send_bytes(b"\x1bOB") }
-                else { terminal.send_bytes(b"\x1b[B") }
-            }
-            Key::Named(NamedKey::ArrowRight) => {
-                if app_cursor { terminal.send_bytes(b"\x1bOC") }
-                else { terminal.send_bytes(b"\x1b[C") }
-            }
-            Key::Named(NamedKey::ArrowLeft) => {
-                if app_cursor { terminal.send_bytes(b"\x1bOD") }
-                else { terminal.send_bytes(b"\x1b[D") }
-            }
-            Key::Named(NamedKey::Home) => terminal.send_bytes(b"\x1b[H"),
-            Key::Named(NamedKey::End) => terminal.send_bytes(b"\x1b[F"),
-            Key::Named(NamedKey::PageUp) => {
-                if is_alt_screen { terminal.send_bytes(b"\x1b[5~"); }
-                else { terminal.scroll_up(terminal.rows()); dirty = true; }
-            }
-            Key::Named(NamedKey::PageDown) => {
-                if is_alt_screen { terminal.send_bytes(b"\x1b[6~"); }
-                else { terminal.scroll_down(terminal.rows()); dirty = true; }
-            }
-            Key::Named(NamedKey::Insert) => terminal.send_bytes(b"\x1b[2~"),
-            Key::Named(NamedKey::Delete) => terminal.send_bytes(b"\x1b[3~"),
-            Key::Named(NamedKey::F1) => terminal.send_bytes(b"\x1bOP"),
-            Key::Named(NamedKey::F2) => terminal.send_bytes(b"\x1bOQ"),
-            Key::Named(NamedKey::F3) => terminal.send_bytes(b"\x1bOR"),
-            Key::Named(NamedKey::F4) => terminal.send_bytes(b"\x1bOS"),
-            Key::Named(NamedKey::F5) => terminal.send_bytes(b"\x1b[15~"),
-            Key::Named(NamedKey::F6) => terminal.send_bytes(b"\x1b[17~"),
-            Key::Named(NamedKey::F7) => terminal.send_bytes(b"\x1b[18~"),
-            Key::Named(NamedKey::F8) => terminal.send_bytes(b"\x1b[19~"),
-            Key::Named(NamedKey::F9) => terminal.send_bytes(b"\x1b[20~"),
-            Key::Named(NamedKey::F10) => terminal.send_bytes(b"\x1b[21~"),
-            Key::Named(NamedKey::F11) => terminal.send_bytes(b"\x1b[23~"),
-            Key::Named(NamedKey::F12) => terminal.send_bytes(b"\x1b[24~"),
-            _ => {
-                if let Some(text) = text {
-                    let s = text.as_str();
-                    if !s.is_empty() {
-                        terminal.send_key(s);
-                    }
-                }
-            }
-        }
-        dirty
     }
 }

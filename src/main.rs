@@ -31,13 +31,10 @@ use anyhow::Result;
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
 use winit::event_loop::{EventLoop, EventLoopProxy};
-use winit::keyboard::ModifiersState;
 use winit::window::Window;
 
 use gpu::GpuState;
-use ipc::server::IpcServer;
-use model::{DividerInfo, Rect};
-use state::AppState;
+use model::DividerInfo;
 
 /// Wrapper for the system clipboard (arboard).
 struct ClipboardContext {
@@ -85,40 +82,24 @@ struct DividerDrag {
 }
 
 struct App {
-    /// Central engine: IPC server, modal state.
     engine: engine::Engine,
-    // ── Window state (will become TastyWindow in Phase 2) ──
-    gpu: Option<GpuState>,
-    state: Option<AppState>,
-    window: Option<Arc<Window>>,
-    dirty: bool,
-    modifiers: ModifiersState,
-    window_focused: bool,
-    cursor_position: Option<winit::dpi::PhysicalPosition<f64>>,
-    dragging_divider: Option<DividerDrag>,
-    clipboard: Option<ClipboardContext>,
-    preedit_text: String,
-    // ── Shell setup ──
+    primary_window: Option<tasty_window::TastyWindow>,
+    // Shell setup mode (before terminal is created)
     shell_setup_mode: bool,
     shell_setup_path: String,
+    shell_setup_gpu: Option<GpuState>,
+    shell_setup_window: Option<Arc<Window>>,
 }
 
 impl App {
     fn new(proxy: EventLoopProxy<AppEvent>, port_file: Option<String>) -> Self {
         Self {
             engine: engine::Engine::new(proxy.clone(), port_file),
-            gpu: None,
-            state: None,
-            window: None,
-            dirty: true,
-            modifiers: ModifiersState::empty(),
-            window_focused: true,
-            cursor_position: None,
-            dragging_divider: None,
-            clipboard: ClipboardContext::new(),
-            preedit_text: String::new(),
+            primary_window: None,
             shell_setup_mode: false,
             shell_setup_path: String::new(),
+            shell_setup_gpu: None,
+            shell_setup_window: None,
         }
     }
 
@@ -159,47 +140,7 @@ impl App {
 
         self.engine.start_ipc();
 
-        self.window = Some(window);
-        self.gpu = Some(gpu);
-        self.state = Some(state);
-    }
-
-    /// Set dirty flag and request a redraw.
-    fn mark_dirty(&mut self) {
-        self.dirty = true;
-        if let Some(window) = &self.window {
-            window.request_redraw();
-        }
-    }
-
-    /// Compute the terminal rect without borrowing self (takes gpu ref directly).
-    fn compute_terminal_rect_with_sidebar(gpu: &GpuState, sidebar_logical_width: f32) -> Rect {
-        let size = gpu.size();
-        model::compute_terminal_rect(size.width as f32, size.height as f32, sidebar_logical_width, gpu.scale_factor())
-    }
-
-    /// Paste clipboard text into the focused terminal.
-    fn paste_to_terminal(&mut self) {
-        let text = match &mut self.clipboard {
-            Some(cb) => cb.get_text(),
-            None => None,
-        };
-        if let Some(text) = text {
-            if text.is_empty() {
-                return;
-            }
-            if let Some(state) = &mut self.state {
-                if let Some(terminal) = state.focused_terminal_mut() {
-                    if terminal.bracketed_paste() {
-                        terminal.send_bytes(b"\x1b[200~");
-                        terminal.send_key(&text);
-                        terminal.send_bytes(b"\x1b[201~");
-                    } else {
-                        terminal.send_key(&text);
-                    }
-                }
-            }
-        }
+        self.primary_window = Some(tasty_window::TastyWindow::new(gpu, state, window));
     }
 
     /// Process pending IPC commands. Returns true if any commands were processed.
@@ -208,8 +149,8 @@ impl App {
             Some(ipc) => ipc,
             None => return false,
         };
-        let state = match &mut self.state {
-            Some(s) => s,
+        let w = match &mut self.primary_window {
+            Some(w) => w,
             None => return false,
         };
 
@@ -221,13 +162,8 @@ impl App {
                     .and_then(|v| v.as_str())
                     .unwrap_or("screenshot.png")
                     .to_string();
-                if let Some(gpu) = &mut self.gpu {
-                    gpu.pending_screenshot = Some(std::path::PathBuf::from(&path));
-                    self.dirty = true;
-                    if let Some(window) = &self.window {
-                        window.request_redraw();
-                    }
-                }
+                w.gpu.pending_screenshot = Some(std::path::PathBuf::from(&path));
+                w.mark_dirty();
                 let response = ipc::protocol::JsonRpcResponse::success(
                     cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
                     serde_json::json!({"path": path, "scheduled": true}),
@@ -237,9 +173,9 @@ impl App {
                 continue;
             }
 
-            let response = ipc::handler::handle(state, &cmd.request);
+            let response = ipc::handler::handle(&mut w.state, &cmd.request);
             let _ = cmd.response_tx.send(response);
-            self.dirty = true;
+            w.dirty = true;
             processed = true;
         }
         processed
@@ -285,9 +221,9 @@ fn run_headless(port_file: Option<String>) -> Result<()> {
     tracing::info!("starting in headless mode");
 
     let waker: terminal::Waker = Arc::new(|| {});
-    let mut state = AppState::new(80, 24, waker)?;
+    let mut state = state::AppState::new(80, 24, waker)?;
 
-    let ipc = IpcServer::start_with_port_file(port_file, None)?;
+    let ipc = ipc::server::IpcServer::start_with_port_file(port_file, None)?;
     tracing::info!("headless IPC on port {}", ipc.port());
 
     let shutdown = Arc::new(AtomicBool::new(false));
