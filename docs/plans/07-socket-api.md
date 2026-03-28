@@ -25,15 +25,7 @@ JSON-RPC 2.0 단일 프로토콜로 시작 (v1 레거시 불필요):
 
 ### IPC 전송 계층
 
-> **구현 현황**: TCP `127.0.0.1` + 동적 포트 방식으로 구현 완료. 포트 번호는 `~/.tasty/tasty.port`에 기록.
-
-~~| OS | 전송 방식 | 경로 |~~
-~~|----|----------|------|~~
-~~| **Linux** | Unix domain socket | `$XDG_RUNTIME_DIR/tasty.sock` |~~
-~~| **macOS** | Unix domain socket | `$TMPDIR/tasty.sock` |~~
-~~| **Windows** | Named pipe | `\\.\pipe\tasty-{session}` |~~
-
-모든 플랫폼에서 TCP `127.0.0.1:<동적포트>`를 사용한다.
+모든 플랫폼에서 TCP `127.0.0.1:<동적포트>`를 사용한다. 포트 번호는 `~/.tasty/tasty.port`에 기록.
 
 추상화:
 
