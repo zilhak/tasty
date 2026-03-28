@@ -87,14 +87,17 @@
 
 ## 워크스페이스 & 탭
 
-### 데이터 모델 (Workspace / PaneNode / Pane / Tab / Panel / SurfaceGroupNode)
-- Workspace: 좌측 사이드바 항목. PaneLayout(PaneNode 이진 트리)을 포함
-- PaneNode: 물리적 화면 분할 이진 트리. Leaf(Pane) 또는 Split
-- Pane: **독립적인 탭 바**를 가진 화면 영역. 여러 Tab을 포함
-- Tab: Pane 탭 바의 탭 하나. Panel에 매핑
-- Panel: 콘텐츠 타입 enum. Terminal(단일), SurfaceGroup(탭 내부 분할), Markdown(마크다운 뷰어), Explorer(파일 탐색기)
-- SurfaceGroupNode: 탭 내부에서 여러 터미널을 분할하는 이진 트리. 탭 바에서는 하나의 탭으로 표시
-- SurfaceNode: 개별 터미널 인스턴스 (PTY + termwiz Surface)
+### 데이터 모델
+
+용어 정의는 `docs/design/ubiquitous-language.md` 참조.
+
+- Workspace: 최상위 컨테이너. 상위 레이아웃(PaneNode 이진 트리)을 소유
+- PaneNode: Pane Group의 상위 레이아웃 트리. Leaf(Pane) 또는 Split. 탭 전환과 무관하게 고정
+- Pane (= Pane Group): **독립적인 탭 바**를 가진 화면 영역. 여러 Tab을 포함
+- Tab (= Pane): 탭 하나. Panel에 매핑
+- Panel: 콘텐츠 타입 enum. Terminal(단일), SurfaceGroup(하위 레이아웃), Markdown, Explorer
+- SurfaceGroupNode: 하위 레이아웃 트리. 탭 전환 시 함께 전환
+- Surface: 실제 터미널 인스턴스 (PTY + termwiz Surface)
 - AppState: 전체 워크스페이스 목록과 활성 상태를 관리하는 중앙 상태 (IdGenerator 포함)
 
 ### egui UI 오버레이
@@ -229,7 +232,7 @@
 - 윈도우 포커스 상태 추적으로 시스템 알림 발송 조건 판단
 
 ### 터미널 뷰포트 관리
-- egui 사이드바를 제외한 전체 영역에 PaneLayout 렌더링
+- egui 사이드바를 제외한 전체 영역에 상위 레이아웃(PaneNode 트리) 렌더링
 - PaneNode에서 각 Pane의 rect를 계산, 탭 바 높이를 뺀 영역에 터미널 렌더링
 - 리사이즈 시 모든 Pane, 모든 Tab, 모든 Surface의 행/열 재계산
 - wgpu RenderPass의 forget_lifetime()을 이용한 egui-wgpu 호환

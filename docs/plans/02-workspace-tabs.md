@@ -4,29 +4,30 @@
 
 cmux 분석을 바탕으로 설계한 tasty의 데이터 모델 계층.
 
+용어 정의는 `docs/design/ubiquitous-language.md` 참조.
+
 ```
-Workspace (사이드바 항목)
-  └── PaneLayout (물리적 화면 분할 - 이진 트리)
-       ├── Pane (독립적인 탭 바를 가진 화면 영역)
-       │    ├── Tab → Panel::Terminal (단일 터미널)
-       │    ├── Tab → Panel::SurfaceGroup (탭 내부 분할)
-       │    │          ├── Panel::Terminal
-       │    │          └── Panel::Terminal
-       │    └── Tab → Panel::Terminal
-       └── Pane (독립적인 탭 바를 가진 화면 영역)
-            └── Tab → Panel::Terminal
+Workspace (최상위 컨테이너)
+  └── 상위 레이아웃 (PaneNode 이진 트리, 탭과 무관하게 고정)
+       ├── Pane Group (독립 탭 바)
+       │    ├── Pane (탭 1) → 하위 레이아웃 (SurfaceGroupNode)
+       │    │                   ├── Surface (터미널)
+       │    │                   └── Surface (터미널)
+       │    └── Pane (탭 2) → Surface (터미널)
+       └── Pane Group (독립 탭 바)
+            └── Pane (탭 1) → Surface (터미널)
 ```
 
 ### 핵심 개념
 
-| 개념 | 설명 |
-|------|------|
-| Workspace | 사이드바의 한 항목. PaneLayout을 포함한다. |
-| PaneLayout (PaneNode) | Pane들의 이진 분할 트리. 물리적 화면 분할을 담당한다. |
-| Pane | 자신만의 **독립적인 탭 바**를 가진 화면 영역. 여러 Tab을 포함한다. |
-| Tab | Pane의 탭 바에 있는 하나의 탭. Panel에 매핑된다. |
-| Panel | 콘텐츠 타입 enum. Terminal 또는 SurfaceGroup이다. |
-| SurfaceGroup | 탭 하나 안에서 콘텐츠를 여러 Panel로 분할하는 이진 트리. Pane의 탭 바에서는 **하나의 탭**으로 보이지만, 내부적으로 여러 터미널을 렌더링한다. |
+| 개념 | 코드 | 설명 |
+|------|------|------|
+| Workspace | `Workspace` | 최상위 컨테이너. 상위 레이아웃을 소유 |
+| 상위 레이아웃 | `PaneNode` | Pane Group들의 이진 분할 트리. 탭 전환과 무관하게 고정 |
+| Pane Group | `Pane` (struct) | 독립적인 탭 바를 가진 화면 영역 |
+| Pane | `Tab` → `Panel` | 탭 하나. 하위 레이아웃을 포함 |
+| 하위 레이아웃 | `SurfaceGroupNode` | Surface들의 이진 분할 트리. 탭 전환 시 함께 전환 |
+| Surface | `Terminal` | 실제 터미널 인스턴스 (PTY 연결) |
 
 ### 두 가지 분할 유형
 
@@ -117,7 +118,7 @@ pub enum SurfaceGroupLayout {
 
 ### Workspace 수준
 - Alt+1~9로 워크스페이스를 전환한다.
-- 각 워크스페이스는 완전히 독립적인 PaneLayout, 포커스 상태를 가진다.
+- 각 워크스페이스는 완전히 독립적인 상위 레이아웃과 포커스 상태를 가진다.
 
 ## UI 구현
 
