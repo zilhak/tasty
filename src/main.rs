@@ -1,4 +1,5 @@
 mod cli;
+pub mod engine_state;
 mod event_handler;
 mod explorer_ui;
 mod font;
