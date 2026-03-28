@@ -101,6 +101,22 @@ let color = th.blue;
 | `spacing_lg` | 16px | 섹션 패딩 |
 | `spacing_xl` | 24px | 주요 섹션 사이 |
 
+## 주의: egui의 premultiplied alpha
+
+egui의 `Color32::from_rgba_premultiplied(r, g, b, a)`는 **RGB 값이 알파에 의해 미리 곱해진 상태**를 기대한다.
+
+```rust
+// 잘못된 사용 — 사실상 불투명 흰색이 됨
+Color32::from_rgba_premultiplied(255, 255, 255, 20)
+// → RGB 255는 알파 20(8%)보다 훨씬 크므로 egui가 이를 거의 불투명으로 해석
+
+// 올바른 사용 — 8% 투명도의 흰색
+Color32::from_rgba_unmultiplied(255, 255, 255, 20)
+// → egui가 내부적으로 RGB * (a/255)를 계산하여 정상 처리
+```
+
+**규칙: 반투명 색상에는 항상 `from_rgba_unmultiplied`를 사용한다.** `from_rgba_premultiplied`는 이미 곱해진 값을 직접 다루는 특수한 경우에만 사용.
+
 ## 새 색상/크기 추가 시
 
 1. `src/theme.rs`의 `Theme` 구조체에 필드 추가
