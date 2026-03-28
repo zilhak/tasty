@@ -42,7 +42,7 @@ pub(crate) fn handle_hook_set(
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    let hook_id = state.hook_manager.add_hook(surface_id, event, command, once);
+    let hook_id = state.engine.hook_manager.add_hook(surface_id, event, command, once);
     JsonRpcResponse::success(id, json!({ "hook_id": hook_id }))
 }
 
@@ -57,7 +57,7 @@ pub(crate) fn handle_hook_list(
         .map(|v| v as u32);
 
     let hooks: Vec<_> = state
-        .hook_manager
+        .engine.hook_manager
         .list_hooks(surface_id)
         .iter()
         .map(|h| {
@@ -84,7 +84,7 @@ pub(crate) fn handle_hook_unset(
         None => return JsonRpcResponse::invalid_params(id, "Missing 'hook_id' parameter"),
     };
 
-    let removed = state.hook_manager.remove_hook(hook_id);
+    let removed = state.engine.hook_manager.remove_hook(hook_id);
     JsonRpcResponse::success(id, json!({ "removed": removed }))
 }
 
@@ -106,7 +106,7 @@ pub(crate) fn handle_claude_launch(
     }
 
     let ws_idx = state.active_workspace;
-    state.workspaces[ws_idx].name = workspace_name.to_string();
+    state.engine.workspaces[ws_idx].name = workspace_name.to_string();
 
     if let Some(dir) = directory {
         if let Some(terminal) = state.focused_terminal_mut() {
@@ -126,7 +126,7 @@ pub(crate) fn handle_claude_launch(
         terminal.send_key(&format!("{}\r", cmd));
     }
 
-    let ws_id = state.workspaces[ws_idx].id;
+    let ws_id = state.engine.workspaces[ws_idx].id;
     JsonRpcResponse::success(
         id,
         json!({
@@ -267,7 +267,7 @@ pub(crate) fn handle_claude_parent(
 
     match state.parent_of(child_surface_id) {
         Some(parent_id) => {
-            let status = if state.claude_closed_parents.contains(&parent_id) {
+            let status = if state.engine.claude_closed_parents.contains(&parent_id) {
                 "closed"
             } else {
                 "active"
@@ -563,7 +563,7 @@ pub(crate) fn handle_global_hook_set(
         .and_then(|v| v.as_str())
         .map(String::from);
 
-    let hook_id = state.global_hook_manager.add(condition, command, label);
+    let hook_id = state.engine.global_hook_manager.add(condition, command, label);
     JsonRpcResponse::success(id, json!({ "hook_id": hook_id }))
 }
 
@@ -572,7 +572,7 @@ pub(crate) fn handle_global_hook_list(
     id: serde_json::Value,
 ) -> JsonRpcResponse {
     let hooks: Vec<_> = state
-        .global_hook_manager
+        .engine.global_hook_manager
         .list()
         .iter()
         .map(|h| {
@@ -597,7 +597,7 @@ pub(crate) fn handle_global_hook_unset(
         None => return JsonRpcResponse::invalid_params(id, "Missing 'hook_id' parameter"),
     };
 
-    let removed = state.global_hook_manager.remove(hook_id);
+    let removed = state.engine.global_hook_manager.remove(hook_id);
     JsonRpcResponse::success(id, json!({ "removed": removed }))
 }
 
@@ -632,6 +632,6 @@ pub(crate) fn handle_surface_fire_hook(
         }
     };
 
-    let fired = state.hook_manager.check_and_fire(surface_id, &[event]);
+    let fired = state.engine.hook_manager.check_and_fire(surface_id, &[event]);
     JsonRpcResponse::success(id, json!({ "fired": fired.len() }))
 }

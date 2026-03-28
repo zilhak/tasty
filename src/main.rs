@@ -346,15 +346,15 @@ fn run_headless(port_file: Option<String>) -> Result<()> {
             match &event.kind {
                 terminal::TerminalEventKind::BellRing => {
                     let hook_events = vec![tasty_hooks::HookEvent::Bell];
-                    state.hook_manager.check_and_fire(event.surface_id, &hook_events);
+                    state.engine.hook_manager.check_and_fire(event.surface_id, &hook_events);
                 }
                 terminal::TerminalEventKind::Notification { .. } => {
                     let hook_events = vec![tasty_hooks::HookEvent::Notification];
-                    state.hook_manager.check_and_fire(event.surface_id, &hook_events);
+                    state.engine.hook_manager.check_and_fire(event.surface_id, &hook_events);
                 }
                 terminal::TerminalEventKind::ProcessExited => {
                     let hook_events = vec![tasty_hooks::HookEvent::ProcessExit];
-                    state.hook_manager.check_and_fire(event.surface_id, &hook_events);
+                    state.engine.hook_manager.check_and_fire(event.surface_id, &hook_events);
                 }
                 _ => {}
             }

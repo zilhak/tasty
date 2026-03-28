@@ -20,15 +20,15 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
                 ui.add_space(4.0);
 
                 let active_ws = state.active_workspace;
-                let ws_count = state.workspaces.len();
+                let ws_count = state.engine.workspaces.len();
 
                 for i in 0..ws_count {
                     let is_active = i == active_ws;
-                    let name = state.workspaces[i].name.clone();
-                    let subtitle = state.workspaces[i].subtitle.clone();
-                    let description = state.workspaces[i].description.clone();
-                    let ws_id = state.workspaces[i].id;
-                    let ws_unread = state.notifications.unread_count_for_workspace(ws_id);
+                    let name = state.engine.workspaces[i].name.clone();
+                    let subtitle = state.engine.workspaces[i].subtitle.clone();
+                    let description = state.engine.workspaces[i].description.clone();
+                    let ws_id = state.engine.workspaces[i].id;
+                    let ws_unread = state.engine.notifications.unread_count_for_workspace(ws_id);
 
                     let bg = if is_active {
                         th.surface0
@@ -106,11 +106,11 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
                     // Right click: context menu
                     card_response.context_menu(|ui| {
                         if ui.button(t("context_menu.rename_title")).clicked() {
-                            state.ws_rename = Some((i, WsRenameField::Name, state.workspaces[i].name.clone()));
+                            state.ws_rename = Some((i, WsRenameField::Name, state.engine.workspaces[i].name.clone()));
                             ui.close_menu();
                         }
                         if ui.button(t("context_menu.rename_subtitle")).clicked() {
-                            state.ws_rename = Some((i, WsRenameField::Subtitle, state.workspaces[i].subtitle.clone()));
+                            state.ws_rename = Some((i, WsRenameField::Subtitle, state.engine.workspaces[i].subtitle.clone()));
                             ui.close_menu();
                         }
                     });
@@ -134,7 +134,7 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
                 );
                 ui.add_space(2.0);
 
-                let kb = &state.settings.keybindings;
+                let kb = &state.engine.settings.keybindings;
                 // Configurable bindings: show from settings
                 let configurable_shortcuts: Vec<(&str, &str)> = vec![
                     (&kb.new_workspace, "shortcut.desc.new_workspace"),
@@ -253,7 +253,7 @@ pub fn draw_ws_rename_dialog(ctx: &egui::Context, state: &mut AppState) {
         return;
     };
 
-    if ws_idx >= state.workspaces.len() {
+    if ws_idx >= state.engine.workspaces.len() {
         state.ws_rename = None;
         return;
     }
@@ -299,15 +299,15 @@ pub fn draw_ws_rename_dialog(ctx: &egui::Context, state: &mut AppState) {
 
     if do_apply {
         let (ws_idx, field, buffer) = state.ws_rename.take().unwrap();
-        if ws_idx < state.workspaces.len() {
+        if ws_idx < state.engine.workspaces.len() {
             match field {
                 WsRenameField::Name => {
                     if !buffer.is_empty() {
-                        state.workspaces[ws_idx].name = buffer;
+                        state.engine.workspaces[ws_idx].name = buffer;
                     }
                 }
                 WsRenameField::Subtitle => {
-                    state.workspaces[ws_idx].subtitle = buffer;
+                    state.engine.workspaces[ws_idx].subtitle = buffer;
                 }
             }
         }
@@ -460,7 +460,7 @@ pub fn draw_notification_panel(ctx: &egui::Context, state: &mut AppState) {
         .show(ctx, |ui| {
             // Header with mark-all-read button
             ui.horizontal(|ui| {
-                let unread = state.notifications.unread_count();
+                let unread = state.engine.notifications.unread_count();
                 ui.label(
                     egui::RichText::new(t_fmt("notification_panel.unread_count", &unread.to_string()))
                         .small()
@@ -468,7 +468,7 @@ pub fn draw_notification_panel(ctx: &egui::Context, state: &mut AppState) {
                 );
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui.small_button(t("button.mark_all_read")).clicked() {
-                        state.notifications.mark_all_read();
+                        state.engine.notifications.mark_all_read();
                     }
                 });
             });
@@ -478,7 +478,7 @@ pub fn draw_notification_panel(ctx: &egui::Context, state: &mut AppState) {
             egui::ScrollArea::vertical()
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
-                    let notification_count = state.notifications.all().len();
+                    let notification_count = state.engine.notifications.all().len();
                     if notification_count == 0 {
                         ui.centered_and_justified(|ui| {
                             ui.label(
@@ -491,7 +491,7 @@ pub fn draw_notification_panel(ctx: &egui::Context, state: &mut AppState) {
 
                     // Collect notification info for display (iterate in reverse for newest first)
                     let now = Instant::now();
-                    let entries: Vec<_> = state.notifications.all()
+                    let entries: Vec<_> = state.engine.notifications.all()
                         .rev()
                         .map(|n| {
                             let elapsed = now.duration_since(n.timestamp);
@@ -505,7 +505,7 @@ pub fn draw_notification_panel(ctx: &egui::Context, state: &mut AppState) {
 
                             // Find workspace name
                             let ws_name = state
-                                .workspaces
+                                .engine.workspaces
                                 .iter()
                                 .find(|ws| ws.id == n.source_workspace)
                                 .map(|ws| ws.name.as_str())
@@ -586,10 +586,10 @@ pub fn draw_notification_panel(ctx: &egui::Context, state: &mut AppState) {
 
                     // Apply actions
                     if let Some(id) = mark_read_id {
-                        state.notifications.mark_read(id);
+                        state.engine.notifications.mark_read(id);
                     }
                     if let Some(ws_id) = jump_to_ws {
-                        if let Some(idx) = state.workspaces.iter().position(|ws| ws.id == ws_id) {
+                        if let Some(idx) = state.engine.workspaces.iter().position(|ws| ws.id == ws_id) {
                             state.switch_workspace(idx);
                         }
                     }

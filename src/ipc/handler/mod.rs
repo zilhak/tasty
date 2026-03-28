@@ -171,7 +171,7 @@ fn handle_ui_state(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {
             "settings_open": state.settings_open,
             "notification_panel_open": state.notification_panel_open,
             "active_workspace": state.active_workspace,
-            "workspace_count": state.workspaces.len(),
+            "workspace_count": state.engine.workspaces.len(),
             "pane_count": pane_count,
             "tab_count": tab_count,
         }),
@@ -183,7 +183,7 @@ fn handle_system_info(state: &AppState, id: serde_json::Value) -> JsonRpcRespons
         id,
         json!({
             "version": env!("CARGO_PKG_VERSION"),
-            "workspace_count": state.workspaces.len(),
+            "workspace_count": state.engine.workspaces.len(),
             "active_workspace": state.active_workspace,
         }),
     )
@@ -191,7 +191,7 @@ fn handle_system_info(state: &AppState, id: serde_json::Value) -> JsonRpcRespons
 
 fn handle_workspace_list(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {
     let workspaces: Vec<_> = state
-        .workspaces
+        .engine.workspaces
         .iter()
         .enumerate()
         .map(|(i, ws)| {
@@ -218,14 +218,14 @@ fn handle_workspace_create(
             let idx = state.active_workspace;
             if let Some(name) = params.get("name").and_then(|v| v.as_str()) {
                 if !name.is_empty() {
-                    state.workspaces[idx].name = name.to_string();
+                    state.engine.workspaces[idx].name = name.to_string();
                 }
             }
             if let Some(subtitle) = params.get("subtitle").and_then(|v| v.as_str()) {
-                state.workspaces[idx].subtitle = subtitle.to_string();
+                state.engine.workspaces[idx].subtitle = subtitle.to_string();
             }
             if let Some(desc) = params.get("description").and_then(|v| v.as_str()) {
-                state.workspaces[idx].description = desc.to_string();
+                state.engine.workspaces[idx].description = desc.to_string();
             }
             let ws = state.active_workspace();
             JsonRpcResponse::success(
@@ -252,7 +252,7 @@ fn handle_workspace_update(
     let idx = if let Some(i) = params.get("index").and_then(|v| v.as_u64()) {
         i as usize
     } else if let Some(ws_id) = params.get("id").and_then(|v| v.as_u64()) {
-        match state.workspaces.iter().position(|ws| ws.id == ws_id as u32) {
+        match state.engine.workspaces.iter().position(|ws| ws.id == ws_id as u32) {
             Some(i) => i,
             None => return JsonRpcResponse::invalid_params(id, format!("Workspace id {} not found", ws_id)),
         }
@@ -260,14 +260,14 @@ fn handle_workspace_update(
         state.active_workspace
     };
 
-    if idx >= state.workspaces.len() {
+    if idx >= state.engine.workspaces.len() {
         return JsonRpcResponse::invalid_params(
             id,
-            format!("Workspace index {} out of range (0..{})", idx, state.workspaces.len()),
+            format!("Workspace index {} out of range (0..{})", idx, state.engine.workspaces.len()),
         );
     }
 
-    let ws = &mut state.workspaces[idx];
+    let ws = &mut state.engine.workspaces[idx];
     if let Some(name) = params.get("name").and_then(|v| v.as_str()) {
         ws.name = name.to_string();
     }
@@ -300,13 +300,13 @@ fn handle_workspace_select(
         .and_then(|v| v.as_u64())
         .map(|v| v as usize);
     match index {
-        Some(idx) if idx < state.workspaces.len() => {
+        Some(idx) if idx < state.engine.workspaces.len() => {
             state.switch_workspace(idx);
             JsonRpcResponse::success(id, json!({ "active_workspace": idx }))
         }
         Some(idx) => JsonRpcResponse::invalid_params(
             id,
-            format!("Workspace index {} out of range (0..{})", idx, state.workspaces.len()),
+            format!("Workspace index {} out of range (0..{})", idx, state.engine.workspaces.len()),
         ),
         None => JsonRpcResponse::invalid_params(id, "Missing 'index' parameter"),
     }
@@ -415,7 +415,7 @@ fn handle_pane_close(state: &mut AppState, id: serde_json::Value) -> JsonRpcResp
 
 fn handle_notification_list(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {
     let notifications: Vec<_> = state
-        .notifications
+        .engine.notifications
         .all()
         .rev()
         .take(50)
@@ -449,13 +449,13 @@ fn handle_notification_create(
         .unwrap_or("")
         .to_string();
     let ws_id = state.active_workspace().id;
-    state.notifications.add(ws_id, 0, title, body);
+    state.engine.notifications.add(ws_id, 0, title, body);
     JsonRpcResponse::success(id, json!({ "created": true }))
 }
 
 fn handle_tree(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {
     let mut tree = Vec::new();
-    for (i, ws) in state.workspaces.iter().enumerate() {
+    for (i, ws) in state.engine.workspaces.iter().enumerate() {
         let active = i == state.active_workspace;
         let pane_ids = ws.pane_layout().all_pane_ids();
         let mut panes_info = Vec::new();
@@ -504,7 +504,7 @@ fn handle_is_typing(
         .or_else(|| state.focused_surface_id())
         .unwrap_or(0);
     let typing = state.is_typing(surface_id);
-    let idle_seconds = if let Some(last) = state.last_key_input.get(&surface_id) {
+    let idle_seconds = if let Some(last) = state.engine.last_key_input.get(&surface_id) {
         last.elapsed().as_secs_f64()
     } else {
         f64::MAX

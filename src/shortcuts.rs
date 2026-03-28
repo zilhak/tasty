@@ -99,7 +99,7 @@ impl App {
         };
 
         // --- Configurable keybindings (from settings) ---
-        let kb = state.settings.keybindings.clone();
+        let kb = state.engine.settings.keybindings.clone();
 
         if matches_binding(&kb.new_workspace, key, mods) {
             let _ = state.add_workspace();
@@ -161,7 +161,7 @@ impl App {
         if matches_binding(&kb.toggle_notifications, key, mods) {
             state.notification_panel_open = !state.notification_panel_open;
             if state.notification_panel_open {
-                state.notifications.mark_all_read();
+                state.engine.notifications.mark_all_read();
             }
             self.mark_dirty();
             return true;
@@ -298,7 +298,7 @@ impl App {
         if ctrl && shift {
             if let Key::Character(c) = key {
                 if (c.as_str() == "V" || c.as_str() == "v")
-                    && state.settings.clipboard.linux_style
+                    && state.engine.settings.clipboard.linux_style
                 {
                     self.paste_to_terminal();
                     self.mark_dirty();
@@ -309,7 +309,7 @@ impl App {
         if ctrl && !shift && !alt {
             if let Key::Character(c) = key {
                 if (c.as_str() == "v" || c.as_str() == "V" || c.as_str() == "\u{16}")
-                    && state.settings.clipboard.windows_style
+                    && state.engine.settings.clipboard.windows_style
                 {
                     self.paste_to_terminal();
                     self.mark_dirty();
@@ -320,7 +320,7 @@ impl App {
         if alt && !ctrl && !shift {
             if let Key::Character(c) = key {
                 if (c.as_str() == "v" || c.as_str() == "V")
-                    && state.settings.clipboard.macos_style
+                    && state.engine.settings.clipboard.macos_style
                 {
                     self.paste_to_terminal();
                     self.mark_dirty();

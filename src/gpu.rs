@@ -424,7 +424,7 @@ impl GpuState {
     /// Render the full frame: egui UI + terminal surfaces.
     pub fn render(&mut self, state: &mut AppState, window: &Window, preedit: &str) -> Result<(), wgpu::SurfaceError> {
         // Sync sidebar_width from settings (in case it was changed in settings UI)
-        state.sidebar_width = state.settings.appearance.sidebar_width;
+        state.sidebar_width = state.engine.settings.appearance.sidebar_width;
 
         // Compute the terminal rect (area after sidebar) in physical pixels
         let surface_w = self.size.width as f32;
@@ -465,7 +465,7 @@ impl GpuState {
         let scale_factor = self.scale_factor;
         let cell_w = self.renderer.cell_width();
         let cell_h = self.renderer.cell_height();
-        let prev_theme = state.settings.appearance.theme.clone();
+        let prev_theme = state.engine.settings.appearance.theme.clone();
         let full_output = self.egui_ctx.run(raw_input, |ctx| {
             ui::draw_ui(ctx, state, scale_factor);
             ui::draw_ws_rename_dialog(ctx, state);
@@ -514,7 +514,7 @@ impl GpuState {
             }
 
             if state.settings_open {
-                let mut settings = state.settings.clone();
+                let mut settings = state.engine.settings.clone();
                 let mut open = state.settings_open;
                 settings_ui::draw_settings_window(
                     ctx,
@@ -522,14 +522,14 @@ impl GpuState {
                     &mut open,
                     &mut state.settings_ui_state,
                 );
-                state.settings = settings;
+                state.engine.settings = settings;
                 state.settings_open = open;
             }
         });
 
         // Refresh egui theme if it changed (e.g., after settings save)
-        if state.settings.appearance.theme != prev_theme {
-            self.refresh_theme(&state.settings.appearance.theme);
+        if state.engine.settings.appearance.theme != prev_theme {
+            self.refresh_theme(&state.engine.settings.appearance.theme);
         }
 
         // Refresh font if font_size or font_family changed
@@ -539,14 +539,14 @@ impl GpuState {
             cosmic_text::FamilyOwned::Name(name) => name.to_string(),
             _ => String::new(),
         };
-        if state.settings.appearance.font_size != current_font_size
-            || state.settings.appearance.font_family != current_font_family
+        if state.engine.settings.appearance.font_size != current_font_size
+            || state.engine.settings.appearance.font_family != current_font_family
         {
             self.renderer.update_font(
                 &self.device,
                 &self.queue,
-                state.settings.appearance.font_size,
-                &state.settings.appearance.font_family,
+                state.engine.settings.appearance.font_size,
+                &state.engine.settings.appearance.font_family,
             );
             // Resize viewport with new cell metrics
             self.renderer.resize(&self.queue, self.size.width, self.size.height);
@@ -582,8 +582,8 @@ impl GpuState {
             });
 
         // 4. Clear pass (apply background_opacity from settings)
-        let bg_alpha = state.settings.appearance.background_opacity as f64;
-        let (clear_r, clear_g, clear_b) = if state.settings.appearance.theme == "light" {
+        let bg_alpha = state.engine.settings.appearance.background_opacity as f64;
+        let (clear_r, clear_g, clear_b) = if state.engine.settings.appearance.theme == "light" {
             (0.941, 0.941, 0.957) // light theme bg
         } else {
             (0.102, 0.102, 0.118) // dark theme bg

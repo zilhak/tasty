@@ -540,39 +540,39 @@ impl ApplicationHandler<AppEvent> for App {
                         let surface_id = event.surface_id;
                         match &event.kind {
                             crate::terminal::TerminalEventKind::Notification { title, body } => {
-                                if state.settings.notification.enabled
-                                    && state.settings.notification.system_notification
+                                if state.engine.settings.notification.enabled
+                                    && state.engine.settings.notification.system_notification
                                     && !self.window_focused
-                                    && state.notifications.should_send_system_notification()
+                                    && state.engine.notifications.should_send_system_notification()
                                 {
                                     crate::notification::send_system_notification(title, body);
                                 }
-                                if state.settings.notification.enabled {
+                                if state.engine.settings.notification.enabled {
                                     let ws_id = state.active_workspace().id;
-                                    state.notifications.add(
+                                    state.engine.notifications.add(
                                         ws_id, surface_id, title.clone(), body.clone(),
                                     );
                                 }
                                 let hook_events = vec![tasty_hooks::HookEvent::Notification];
-                                state.hook_manager.check_and_fire(surface_id, &hook_events);
+                                state.engine.hook_manager.check_and_fire(surface_id, &hook_events);
                                 self.dirty = true;
                             }
                             crate::terminal::TerminalEventKind::BellRing => {
-                                if state.settings.notification.enabled {
+                                if state.engine.settings.notification.enabled {
                                     let ws_id = state.active_workspace().id;
-                                    state.notifications.add(
+                                    state.engine.notifications.add(
                                         ws_id, surface_id, "Bell".to_string(), String::new(),
                                     );
                                 }
-                                if state.settings.notification.enabled
-                                    && state.settings.notification.system_notification
+                                if state.engine.settings.notification.enabled
+                                    && state.engine.settings.notification.system_notification
                                     && !self.window_focused
-                                    && state.notifications.should_send_system_notification()
+                                    && state.engine.notifications.should_send_system_notification()
                                 {
                                     crate::notification::send_system_notification("Tasty", "Bell");
                                 }
                                 let hook_events = vec![tasty_hooks::HookEvent::Bell];
-                                state.hook_manager.check_and_fire(surface_id, &hook_events);
+                                state.engine.hook_manager.check_and_fire(surface_id, &hook_events);
                                 self.dirty = true;
                             }
                             crate::terminal::TerminalEventKind::TitleChanged(_) => {
@@ -588,7 +588,7 @@ impl ApplicationHandler<AppEvent> for App {
                             }
                             crate::terminal::TerminalEventKind::ProcessExited => {
                                 let hook_events = vec![tasty_hooks::HookEvent::ProcessExit];
-                                state.hook_manager.check_and_fire(surface_id, &hook_events);
+                                state.engine.hook_manager.check_and_fire(surface_id, &hook_events);
                                 self.dirty = true;
                             }
                         }
