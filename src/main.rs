@@ -1,4 +1,5 @@
 mod cli;
+pub mod engine;
 pub mod engine_state;
 mod event_handler;
 mod explorer_ui;
@@ -83,6 +84,8 @@ struct DividerDrag {
 }
 
 struct App {
+    /// Central engine: IPC server, modal state.
+    engine: engine::Engine,
     // gpu must drop before window so the wgpu surface is released first
     gpu: Option<GpuState>,
     state: Option<AppState>,
@@ -91,18 +94,12 @@ struct App {
     modifiers: ModifiersState,
     /// Whether the window currently has OS focus.
     window_focused: bool,
-    /// IPC server for CLI communication.
-    ipc_server: Option<IpcServer>,
     /// Current cursor position in physical pixels.
     cursor_position: Option<winit::dpi::PhysicalPosition<f64>>,
     /// Active divider drag state.
     dragging_divider: Option<DividerDrag>,
-    /// Proxy to send events from background threads to the winit event loop.
-    proxy: EventLoopProxy<AppEvent>,
     /// System clipboard for copy/paste.
     clipboard: Option<ClipboardContext>,
-    /// Custom port file path for IPC (used by GUI tests).
-    port_file: Option<String>,
     /// When true, the app is in shell-setup mode: no terminal, just a dialog
     /// asking the user to provide a bash path. Set when bash is not found.
     shell_setup_mode: bool,
@@ -115,18 +112,16 @@ struct App {
 impl App {
     fn new(proxy: EventLoopProxy<AppEvent>, port_file: Option<String>) -> Self {
         Self {
+            engine: engine::Engine::new(proxy.clone(), port_file),
             gpu: None,
             state: None,
             window: None,
             dirty: true,
             modifiers: ModifiersState::empty(),
             window_focused: true,
-            ipc_server: None,
             cursor_position: None,
             dragging_divider: None,
-            proxy,
             clipboard: ClipboardContext::new(),
-            port_file,
             shell_setup_mode: false,
             shell_setup_path: String::new(),
             preedit_text: String::new(),
@@ -154,7 +149,7 @@ impl App {
         };
         let (cols, rows) = gpu.grid_size_for_rect(&terminal_rect);
 
-        let proxy = self.proxy.clone();
+        let proxy = self.engine.proxy.clone();
         let waker: crate::terminal::Waker = Arc::new(move || {
             let _ = proxy.send_event(AppEvent::TerminalOutput);
         });
@@ -168,19 +163,7 @@ impl App {
             }
         }
 
-        let ipc_proxy = self.proxy.clone();
-        let ipc_waker: crate::ipc::server::IpcWaker = std::sync::Arc::new(move || {
-            let _ = ipc_proxy.send_event(AppEvent::IpcReady);
-        });
-        match crate::ipc::server::IpcServer::start_with_port_file(self.port_file.take(), Some(ipc_waker)) {
-            Ok(ipc) => {
-                tracing::info!("IPC server started on port {}", ipc.port());
-                self.ipc_server = Some(ipc);
-            }
-            Err(e) => {
-                tracing::warn!("Failed to start IPC server: {}", e);
-            }
-        }
+        self.engine.start_ipc();
 
         self.window = Some(window);
         self.gpu = Some(gpu);
@@ -227,7 +210,7 @@ impl App {
 
     /// Process pending IPC commands. Returns true if any commands were processed.
     fn process_ipc(&mut self) -> bool {
-        let ipc = match &self.ipc_server {
+        let ipc = match &self.engine.ipc_server {
             Some(ipc) => ipc,
             None => return false,
         };
@@ -243,12 +226,11 @@ impl App {
                 let path = cmd.request.params
                     .get("path")
                     .and_then(|v| v.as_str())
-                    .unwrap_or("screenshot.ppm")
+                    .unwrap_or("screenshot.png")
                     .to_string();
                 if let Some(gpu) = &mut self.gpu {
                     gpu.pending_screenshot = Some(std::path::PathBuf::from(&path));
                     self.dirty = true;
-                    // Mark dirty + redraw so the screenshot is captured on the next frame
                     if let Some(window) = &self.window {
                         window.request_redraw();
                     }

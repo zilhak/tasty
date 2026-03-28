@@ -45,7 +45,7 @@ impl ApplicationHandler<AppEvent> for App {
         // Load settings before GPU init so font_size/font_family/theme are wired.
         let init_settings = crate::settings::Settings::load();
 
-        let gpu = pollster::block_on(crate::gpu::GpuState::new(window.clone(), &init_settings.appearance, self.proxy.clone()))
+        let gpu = pollster::block_on(crate::gpu::GpuState::new(window.clone(), &init_settings.appearance, self.engine.proxy.clone()))
             .expect("failed to initialize GPU");
 
         // If configured shell is invalid, try auto-detect before showing setup dialog
