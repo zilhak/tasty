@@ -174,10 +174,8 @@ impl Terminal {
     /// Process pending PTY output. Returns true if surface changed.
     pub fn process(&mut self) -> bool {
         let mut changed = false;
-        let mut had_data = false;
 
         while let Ok(data) = self.action_rx.try_recv() {
-            had_data = true;
             // Accumulate raw bytes for read-mark API
             self.output_buffer.extend_from_slice(&data);
             // Trim to max size
@@ -215,11 +213,6 @@ impl Terminal {
                     changed = true;
                 }
             }
-        }
-
-        // New output resets scroll to bottom
-        if had_data {
-            self.scroll_offset = 0;
         }
 
         // Check if the child process has exited (emit event once)
@@ -512,8 +505,13 @@ impl Terminal {
         match change {
             Change::ScrollRegionUp { first_row, scroll_count, .. } if *first_row == 0 => {
                 let captured = self.capture_top_lines(*scroll_count);
+                let count = captured.len();
                 for line in captured {
                     self.scrollback.push_back(line);
+                }
+                // Compensate scroll_offset so the user's viewport stays in place
+                if self.scroll_offset > 0 {
+                    self.scroll_offset += count;
                 }
                 self.flush_scrollback_to_disk();
             }
@@ -522,8 +520,13 @@ impl Terminal {
                 let bottom = self.scroll_region.map(|(_, b)| b).unwrap_or(self.rows - 1);
                 if cy >= bottom {
                     let captured = self.capture_top_lines(1);
+                    let count = captured.len();
                     for line in captured {
                         self.scrollback.push_back(line);
+                    }
+                    // Compensate scroll_offset so the user's viewport stays in place
+                    if self.scroll_offset > 0 {
+                        self.scroll_offset += count;
                     }
                     self.flush_scrollback_to_disk();
                 }
