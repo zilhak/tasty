@@ -613,11 +613,7 @@ impl GpuState {
         for (_pane_id, _pane_rect, terminal_regions) in regions {
             for (surface_id, terminal, rect) in terminal_regions {
                 let is_focused = focused_surface_id == Some(*surface_id);
-                let bg = if is_focused {
-                    [0.0, 0.0, 0.0, 1.0]
-                } else {
-                    crate::renderer::DEFAULT_BG
-                };
+                let bg = crate::renderer::DEFAULT_BG;
                 self.renderer.prepare_terminal_viewport(
                     terminal, &self.queue, rect,
                     self.size.width, self.size.height, bg, is_focused,

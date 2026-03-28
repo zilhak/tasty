@@ -401,6 +401,14 @@ impl CellRenderer {
                 }
 
                 let ch = text.chars().next().unwrap();
+
+                // For wide characters, push bg for the continuation cell too
+                if unicode_width(ch) > 1 && col_idx + 1 < cols {
+                    self.bg_instances.push(BgInstance {
+                        pos: [(col_idx + 1) as f32, row_idx as f32],
+                        bg_color,
+                    });
+                }
                 let bold = attrs.intensity() == termwiz::cell::Intensity::Bold;
                 let italic = attrs.italic();
 
