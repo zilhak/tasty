@@ -1,310 +1,126 @@
 # 구현 계획: 멀티 윈도우 아키텍처
 
 설계 문서: `docs/design/multi-window-architecture.md`, `docs/design/focus-policy.md`, `docs/design/ubiquitous-language.md`
+분석 문서: `.claude/plans/multi-window-analysis.md`
 
-## 현재 구조 분석
-
-### 문제: `App` 구조체가 엔진 + 윈도우 역할을 모두 담당
-
-```
-App (main.rs:84)
-├── gpu: GpuState          ← 윈도우 고유 (wgpu surface, egui)
-├── state: AppState        ← 엔진 고유 (워크스페이스, 설정, 알림, 훅)
-├── window: Arc<Window>    ← 윈도우 고유
-├── ipc_server: IpcServer  ← 엔진 고유
-├── clipboard: Clipboard   ← 윈도우 고유 (OS 윈도우별)
-├── dirty: bool            ← 윈도우 고유
-├── modifiers: Modifiers   ← 윈도우 고유
-├── preedit_text: String   ← 윈도우 고유
-├── proxy: EventLoopProxy  ← 엔진 고유 (하나의 이벤트 루프)
-└── port_file: String      ← 엔진 고유
-```
-
-### 문제: `AppState`도 엔진 상태 + UI 상태가 혼재
+## 현재 상태 (Phase 0 + Phase 1 부분 완료)
 
 ```
-AppState (state.rs:69)
-├── 엔진 상태 (공유해야 함)
-│   ├── workspaces: Vec<Workspace>
-│   ├── settings: Settings
-│   ├── notifications: NotificationStore
-│   ├── hook_manager: HookManager
-│   ├── global_hook_manager: GlobalHookManager
-│   ├── claude_*: HashMap (부모-자식 관계, idle 상태)
-│   ├── surface_messages: HashMap
-│   ├── last_key_input: HashMap
-│   └── waker: Waker
-│
-├── UI 상태 (윈도우별로 독립)
-│   ├── notification_panel_open: bool
-│   ├── settings_open: bool
-│   ├── settings_ui_state: SettingsUiState
-│   ├── ws_rename: Option<(...)>
-│   ├── pane_context_menu: Option<PaneContextMenu>
-│   └── markdown_path_dialog: Option<(...)>
-│
-└── 레이아웃 상태 (윈도우별 또는 공유 — 결정 필요)
-    ├── active_workspace: usize
-    ├── sidebar_width: f32
-    ├── default_cols/rows: usize
-    └── next_ids: IdGenerator
+App
+├── engine: Engine (IPC 서버, proxy, modal_window_id)
+├── gpu, state, window, dirty, modifiers... (윈도우 필드 — 아직 App에 직접 소유)
+└── shell_setup_mode/path
 ```
 
-### 문제: `event_handler.rs`가 단일 윈도우 전제
+```
+AppState
+├── engine: EngineState (워크스페이스, 설정, 알림, 훅, Claude, 메시지)
+└── UI 필드 (active_workspace, settings_open 등)
+```
 
-- `WindowEvent`에서 `WindowId`를 무시하고 `self.window`를 직접 참조
-- `RedrawRequested`에서 하나의 GPU로 렌더링
-
-### 문제: `gpu.rs::render()`가 너무 많은 역할
-
-928줄. 셸 설정 모달, egui UI 전체, 터미널 렌더링, 스크린샷, 테마 적용, 폰트 리프레시를 모두 담당.
+**완료:**
+- EngineState 추출 + AppState에 composition
+- gpu.rs render() 7개 함수 분해
+- event_handler.rs 키보드/IME/마우스 메서드 분리
+- Engine 구조체 (IPC, proxy, modal)
+- TastyWindow 구조체 정의 (미사용)
 
 ---
 
-## Phase 0: AppState 분리 (선행 리팩토링)
+## Phase 1-2: TastyWindow로 윈도우 필드 이동
 
-멀티 윈도우 전에 먼저 상태 분리. 이것이 가장 중요한 단계.
+**핵심 작업.** App의 윈도우 필드(gpu, state, window, dirty 등)를 TastyWindow로 이동.
 
-### 0-1. `EngineState` 추출
+### 접근 방식
 
-`AppState`에서 엔진(공유) 상태를 `EngineState`로 분리.
-
-**새 파일: `src/engine_state.rs`**
+`event_handler.rs`의 이벤트 처리 로직을 `TastyWindow`의 메서드로 이동한다. `App::window_event()`는 TastyWindow를 찾아 위임만 한다. `Engine`은 별도 `&mut`로 전달하여 borrow checker 충돌을 회피.
 
 ```rust
-pub struct EngineState {
-    // 워크스페이스/터미널 관리
-    pub workspaces: Vec<Workspace>,
-    pub next_ids: IdGenerator,
-    pub default_cols: usize,
-    pub default_rows: usize,
-    pub waker: Waker,
-
-    // 설정
-    pub settings: Settings,
-
-    // 알림/훅
-    pub notifications: NotificationStore,
-    pub hook_manager: HookManager,
-    pub global_hook_manager: GlobalHookManager,
-
-    // Claude 관련
-    pub claude_parent_children: HashMap<u32, Vec<ClaudeChildEntry>>,
-    pub claude_child_parent: HashMap<u32, u32>,
-    pub claude_closed_parents: HashSet<u32>,
-    claude_next_child_index: HashMap<u32, u32>,
-    pub claude_idle_state: HashMap<u32, bool>,
-    pub claude_needs_input_state: HashMap<u32, bool>,
-
-    // 메시지/타이핑
-    pub surface_messages: HashMap<u32, Vec<SurfaceMessage>>,
-    surface_next_message_id: u32,
-    pub last_key_input: HashMap<u32, std::time::Instant>,
-}
-```
-
-**수정: `src/state.rs` → `WindowState` (윈도우별 UI 상태)**
-
-```rust
-pub struct WindowState {
-    pub active_workspace: usize,
-    pub sidebar_width: f32,
-    pub notification_panel_open: bool,
-    pub settings_open: bool,
-    pub settings_ui_state: SettingsUiState,
-    pub ws_rename: Option<(usize, WsRenameField, String)>,
-    pub pane_context_menu: Option<PaneContextMenu>,
-    pub markdown_path_dialog: Option<(u32, String)>,
-}
-```
-
-**주의사항:**
-- `EngineState`의 메서드 중 워크스페이스 조작(add_workspace, split_pane 등)은 그대로 `EngineState`에 유지
-- `WindowState`는 해당 윈도우에서 어떤 워크스페이스를 보고 있는지(`active_workspace`)만 보유
-- 기존 `AppState`를 사용하던 모든 코드를 `EngineState` + `WindowState`로 분리
-
-### 0-2. 영향 받는 파일 목록
-
-| 파일 | 변경 내용 |
-|------|----------|
-| `state.rs` | `AppState` → `EngineState` + `WindowState` 분리. 기존 메서드 재배치 |
-| `main.rs` | `App`이 `EngineState` + `WindowState`를 별도로 소유 |
-| `gpu.rs` | `render()`가 `EngineState`, `WindowState` 둘 다 받음 |
-| `event_handler.rs` | 이벤트 핸들러가 둘 다 접근 |
-| `ui.rs` | `draw_*` 함수들이 `EngineState` + `WindowState` 분리 접근 |
-| `settings_ui.rs` | `settings`는 `EngineState`에서, `settings_open`은 `WindowState`에서 |
-| `shortcuts.rs` | `handle_shortcut`이 둘 다 접근 |
-| `ipc/handler/mod.rs` | IPC 핸들러는 `EngineState`만 접근 (UI 상태 불필요) |
-| `ipc/handler/surface.rs` | 동일 |
-| `ipc/handler/hooks.rs` | 동일 |
-
-### 0-3. `gpu.rs::render()` 분해
-
-현재 928줄의 `render()`를 역할별로 분리:
-
-| 새 함수 | 역할 | 줄 수 (예상) |
-|---------|------|-------------|
-| `render()` | 오케스트레이션 (호출 순서만 관리) | ~50 |
-| `prepare_layout()` | pane_rects, dividers 계산 | ~40 |
-| `run_egui_frame()` | egui 프레임 실행 (UI 그리기) | ~80 |
-| `render_terminals()` | 터미널 셀 렌더링 | ~60 |
-| `render_egui()` | egui 결과를 GPU에 제출 | ~30 |
-| `post_render()` | 스크린샷, 테마/폰트 리프레시 | ~40 |
-
-### 0-4. `event_handler.rs` 분해
-
-현재 643줄. `window_event` 함수 하나에 모든 이벤트가 들어있음.
-
-| 새 함수/모듈 | 역할 |
-|-------------|------|
-| `handle_keyboard()` | `KeyboardInput` 이벤트 처리 |
-| `handle_mouse()` | `CursorMoved`, `MouseInput`, `MouseWheel` 처리 |
-| `handle_ime()` | `Ime` 이벤트 처리 |
-| `handle_resize()` | `Resized` 이벤트 처리 |
-| `handle_redraw()` | `RedrawRequested` — 렌더링 트리거 |
-
----
-
-## Phase 1: 엔진/윈도우 구조체 분리
-
-Phase 0 완료 후 실행.
-
-### 1-1. `Engine` 구조체
-
-**새 파일: `src/engine.rs`**
-
-```rust
-pub struct Engine {
-    pub state: EngineState,
-    pub ipc_server: Option<IpcServer>,
-    pub proxy: EventLoopProxy<AppEvent>,
-    pub modal_active: AtomicBool,
-    port_file: Option<String>,
-}
-```
-
-### 1-2. `TastyWindow` 구조체로 App 윈도우 필드 이동
-
-**현재 상태**: `TastyWindow` 구조체는 정의됨 (`src/tasty_window.rs`). App은 아직 기존 필드(gpu, state, window 등)을 직접 소유.
-
-**접근 방식**: `event_handler.rs`의 `window_event()`를 `TastyWindow`의 메서드로 이동. `App`의 `ApplicationHandler` impl은 `WindowId`로 `TastyWindow`를 찾아 위임만 하도록 변경. Rust borrow checker 문제로 `self.field` → `w.field` 단순 치환이 불가능하므로, `TastyWindow`에 `handle_event(&mut self, engine: &mut Engine, event: WindowEvent)` 패턴으로 구현.
-
-**구체적 단계:**
-1. `TastyWindow`에 `handle_window_event()`, `handle_keyboard_input()` 등 메서드를 이동
-2. `shortcuts.rs`의 `handle_shortcut()`을 `TastyWindow`의 메서드로 이동
-3. `App::window_event()`는 `self.primary_window.handle_event(&mut self.engine, event)`만 호출
-4. 기존 `App`에서 gpu, state, window 등 윈도우 필드 제거
-
-**새 파일: `src/tasty_window.rs` (이미 존재, 확장 필요)**
-
-```rust
-pub struct TastyWindow {
-    pub gpu: GpuState,
-    pub state: AppState,  // EngineState + WindowState 포함
-    pub window: Arc<Window>,
-    pub dirty: bool,
-    pub modifiers: ModifiersState,
-    pub window_focused: bool,
-    pub cursor_position: Option<PhysicalPosition<f64>>,
-    pub dragging_divider: Option<DividerDrag>,
-    pub clipboard: Option<ClipboardContext>,
-    pub preedit_text: String,
-}
-```
-
-### 1-3. `App` 리팩토링
-
-```rust
+// App (최종 형태)
 struct App {
     engine: Engine,
-    windows: HashMap<WindowId, TastyWindow>,
-    // 셸 설정 모드는 별도 처리 (첫 윈도우 생성 전)
+    primary_window: Option<TastyWindow>,  // Phase 2에서 HashMap으로 확장
     shell_setup_mode: bool,
     shell_setup_path: String,
+    shell_setup_gpu: Option<GpuState>,
+    shell_setup_winit: Option<Arc<Window>>,
+}
+
+// App::window_event
+fn window_event(&mut self, ..., event: WindowEvent) {
+    if let Some(w) = &mut self.primary_window {
+        w.handle_event(&mut self.engine, event_loop, event);
+    }
 }
 ```
 
-### 1-4. 이벤트 루프 수정
+### 단계
 
-`window_event`에서 `WindowId`로 해당 `TastyWindow`를 찾아 처리:
+1. `TastyWindow`에 이벤트 핸들러 메서드 구현
+   - `handle_event()`: egui 이벤트 전달 + match 분기
+   - `handle_keyboard_input()`: 기존 App 메서드에서 이동
+   - `handle_ime()`: 이동
+   - `handle_cursor_moved()`, `handle_mouse_input()`, `handle_mouse_wheel()`: 이동
+   - `handle_redraw()`: 렌더링 트리거
+2. `shortcuts.rs`의 `handle_shortcut()`을 `TastyWindow`의 메서드로 이동
+3. `App::window_event()`를 위임 구조로 변경
+4. `App`에서 gpu, state, window, dirty, modifiers, window_focused, cursor_position, dragging_divider, clipboard, preedit_text 필드 제거
+
+### IPC handler 문제
+
+IPC handler가 `AppState`를 받는데, `AppState`는 TastyWindow 안에 있게 된다. IPC는 Engine에서 처리하므로, IPC 커맨드를 채널로 받아 TastyWindow에서 처리하는 현재 구조를 유지한다.
 
 ```rust
-fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
-    let window = match self.windows.get_mut(&id) {
-        Some(w) => w,
-        None => return,
-    };
-    // window + engine.state 를 함께 전달
-    window.handle_event(&mut self.engine, event_loop, event);
-}
+// Engine::try_recv_ipc() → IpcCommand
+// TastyWindow에서 process_ipc(engine) 호출 시 engine.try_recv_ipc()로 커맨드를 가져와 self.state에서 처리
 ```
+
+IPC handler 내부의 `state.active_workspace` 접근은 TastyWindow의 AppState를 통해 그대로 동작한다. 멀티 윈도우(Phase 2)에서 "어떤 윈도우의 active_workspace인가"는 Engine에 `focused_window_id`를 추가하여 해결.
+
+---
+
+## Phase 1-3: 헤드리스 모드 제거
+
+헤드리스 모드(`--headless`, `run_headless`)를 제거한다. 터미널 로직 테스트는 `EngineState`를 직접 생성하여 수행.
+
+### 삭제 대상
+- `main.rs`의 `run_headless()` 함수
+- `cli.rs`의 `--headless` CLI 플래그
+- 헤드리스 관련 문서/테스트 참조
+
+### 테스트 전환
+- 기존 헤드리스 E2E 테스트 → `EngineState` + IPC 서버를 직접 조합하는 방식으로 전환
+- 또는 GUI 테스트(`GuiTestInstance`)로 통합
 
 ---
 
 ## Phase 2: 멀티 윈도우 지원
 
-### 2-1. 윈도우 생성
+### 2-1. App을 HashMap으로 확장
+
+```rust
+struct App {
+    engine: Engine,
+    windows: HashMap<WindowId, TastyWindow>,
+    shell_setup_mode: bool,
+    shell_setup_path: String,
+    shell_setup_gpu: Option<GpuState>,
+    shell_setup_winit: Option<Arc<Window>>,
+}
+```
+
+### 2-2. 윈도우 생성/파괴
 
 - `Engine::create_window()` → 새 OS 윈도우 + wgpu 서피스 + egui 초기화
-- wgpu adapter/device는 `Engine`이 소유, 윈도우는 surface만 생성
-- IPC 메서드 `window.create` 추가
-- CLI `tasty new-window` 추가
-
-### 2-2. 윈도우 파괴
-
 - 마지막 윈도우 닫히면 앱 종료
-- `Engine`에서 `TastyWindow` 제거
-- IPC `window.close`, `window.list` 추가
 
 ### 2-3. wgpu 리소스 공유
 
-현재 `GpuState`가 `device`, `queue`, `adapter`를 소유. 이것을 `Engine`으로 올림:
+adapter/device를 Engine으로 올림. 윈도우는 surface만 소유.
 
-```rust
-pub struct Engine {
-    // GPU 공유 리소스
-    pub device: Arc<wgpu::Device>,
-    pub queue: Arc<wgpu::Queue>,
-    pub adapter: wgpu::Adapter,
-    ...
-}
+단일 adapter로 시작. 멀티 GPU 환경에서 surface 생성 실패 시 에러 로그 + 해당 윈도우 생성 거부.
 
-pub struct TastyWindow {
-    // 윈도우별 GPU 리소스
-    pub surface: wgpu::Surface,
-    pub surface_config: wgpu::SurfaceConfiguration,
-    pub renderer: CellRenderer,
-    pub egui_renderer: egui_wgpu::Renderer,
-    ...
-}
-```
-
----
-
-## Phase 3: 모달 시스템
-
-### 3-1. 설정창을 독립 윈도우로
-
-- 설정 단축키 → `Engine`이 모달 윈도우 생성
-- `engine.modal_active = true`
-- 모달 윈도우는 `CellRenderer` 불필요 (egui만 사용)
-
-### 3-2. 포커스 차단
-
-각 `TastyWindow::handle_event()`에서:
-
-```rust
-if engine.modal_active.load(Ordering::Relaxed) {
-    // 키보드/마우스 이벤트 무시
-    return;
-}
-```
-
----
-
-## Phase 4: IPC 확장
-
-### 4-1. 윈도우 관련 IPC
+### 2-4. IPC 확장
 
 | 메서드 | 설명 |
 |--------|------|
@@ -313,43 +129,74 @@ if engine.modal_active.load(Ordering::Relaxed) {
 | `window.close` | 윈도우 닫기 |
 | `window.focus` | 윈도우 포커스 |
 
-### 4-2. 기존 IPC에 `window_id` 파라미터
+Engine에 `focused_window_id: Option<WindowId>` 추가. 기존 IPC 메서드에서 `state.active_workspace`는 focused window의 AppState를 참조.
 
-기존 메서드들은 `window_id`를 선택적 파라미터로 추가. 생략 시 포커스된 윈도우.
+---
+
+## Phase 3: 모달 시스템
+
+### 3-1. 모달 윈도우 타입
+
+`WindowKind` enum으로 관리:
+
+```rust
+enum WindowKind {
+    Terminal(TastyWindow),
+    Modal(ModalWindow),  // egui 전용, CellRenderer 없음
+}
+```
+
+### 3-2. 포커스 차단
+
+`Engine.modal_window_id: Option<WindowId>`를 사용. `windows` HashMap에 해당 ID가 없으면 자동 해제 (모달 크래시 시 자동 복구).
+
+각 `TastyWindow::handle_event()`에서:
+
+```rust
+if engine.is_modal_active() {
+    return; // 입력 무시
+}
+```
+
+### 3-3. 설정창을 독립 모달로
+
+설정 단축키 → Engine이 ModalWindow 생성, modal_window_id 설정.
+모달 닫기 → modal_window_id = None, 설정 변경 사항을 Engine에 반영.
 
 ---
 
 ## 실행 순서
 
-1. **Phase 0-1**: `EngineState` 추출 (가장 먼저, 가장 중요)
-2. **Phase 0-2**: 영향 받는 파일 수정 (빌드 통과까지)
-3. **Phase 0-3**: `gpu.rs::render()` 분해
-4. **Phase 0-4**: `event_handler.rs` 분해
-5. **Phase 1**: Engine/TastyWindow 구조체 분리
-6. **Phase 2**: 멀티 윈도우 생성/파괴
-7. **Phase 3**: 모달 시스템
-8. **Phase 4**: IPC 확장
+1. ~~Phase 0-1: EngineState 추출~~ ✅
+2. ~~Phase 0-2: 영향 파일 수정~~ ✅
+3. ~~Phase 0-3: render() 분해~~ ✅
+4. ~~Phase 0-4: event_handler 분해~~ ✅
+5. ~~Phase 1-1: Engine 구조체~~ ✅
+6. **Phase 1-2: TastyWindow로 윈도우 필드 이동** ← 다음
+7. **Phase 1-3: 헤드리스 모드 제거**
+8. **Phase 2: 멀티 윈도우 (HashMap, 생성/파괴, wgpu 공유, IPC)**
+9. **Phase 3: 모달 시스템 (WindowKind, 포커스 차단, 설정창 분리)**
 
-**각 Phase는 독립적으로 빌드 가능해야 한다.** Phase 0만 완료해도 기존 기능이 동작해야 한다.
+**각 Phase는 독립적으로 빌드 + 실행 가능해야 한다.**
 
 ---
 
 ## 주의사항
 
-### 관심사 분리 원칙
+### 관심사 분리
 
-- **하나의 함수는 하나의 역할**: `render()`가 UI + 렌더링 + 스크린샷 + 테마 리프레시를 하지 않도록
-- **하나의 구조체는 하나의 소유권 범위**: 엔진 상태와 윈도우 상태를 같은 구조체에 넣지 않음
-- **IPC 핸들러는 UI 상태를 몰라야 함**: IPC는 `EngineState`만 접근, 어떤 윈도우가 뭘 보여주는지는 관여 안 함
+- 하나의 함수는 하나의 역할
+- 하나의 구조체는 하나의 소유권 범위
+- IPC는 Engine 경유, UI는 TastyWindow 경유
 
-### 빌드 안정성
+### borrow checker 대응
 
-- Phase 0의 각 단계마다 `cargo build` 통과 확인
-- 기존 테스트(`tests/`) 통과 확인
-- 헤드리스 모드가 깨지지 않는지 확인 (헤드리스는 `EngineState`만 사용)
+- `App`이 `engine`과 `windows`를 별도 필드로 소유 → 동시 `&mut` 가능
+- `Arc<Mutex<>>` 불필요 (winit 이벤트 루프가 단일 스레드)
+- TastyWindow의 메서드에 `engine: &mut Engine`을 파라미터로 전달
 
 ### 크로스플랫폼
 
-- `Engine`의 wgpu adapter/device 생성은 플랫폼 독립
-- `TastyWindow`의 surface 생성만 플랫폼별 (winit이 처리)
-- 모달의 포커스 차단은 앱 레벨 (`AtomicBool`)
+- Engine의 wgpu adapter/device: 플랫폼 독립
+- TastyWindow의 surface: winit이 처리
+- 모달 포커스 차단: 앱 레벨 (OS API 미사용)
