@@ -113,6 +113,12 @@ impl GpuState {
         // egui setup
         let egui_ctx = egui::Context::default();
 
+        // Disable egui's built-in Ctrl+/- zoom — it only affects egui widgets
+        // but not the terminal renderer, causing inconsistent scaling.
+        egui_ctx.options_mut(|opts| {
+            opts.zoom_with_keyboard = false;
+        });
+
         // Load system CJK font so Korean/Japanese/Chinese glyphs render in egui UI
         Self::setup_egui_cjk_fonts(&egui_ctx);
 
