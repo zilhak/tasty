@@ -7,6 +7,7 @@ use winit::window::{CursorIcon, Window};
 
 use crate::gpu::GpuState;
 use crate::model::{Rect, SplitDirection};
+use crate::selection::{self, TextSelection, SelectionMode, SelectionPoint};
 use crate::state::AppState;
 use crate::{AppEvent, ClipboardContext, DividerDrag, DividerDragKind};
 
@@ -23,6 +24,11 @@ pub struct TastyWindow {
     pub clipboard: Option<ClipboardContext>,
     pub preedit_text: String,
     pub proxy: winit::event_loop::EventLoopProxy<AppEvent>,
+    pub text_selection: Option<TextSelection>,
+    pub left_mouse_down: bool,
+    pub last_click_time: Option<std::time::Instant>,
+    pub last_click_pos: Option<(usize, usize)>,
+    pub click_count: u8,
 }
 
 impl TastyWindow {
@@ -37,6 +43,11 @@ impl TastyWindow {
             clipboard: ClipboardContext::new(),
             preedit_text: String::new(),
             proxy,
+            text_selection: None,
+            left_mouse_down: false,
+            last_click_time: None,
+            last_click_pos: None,
+            click_count: 0,
         }
     }
 
@@ -51,6 +62,173 @@ impl TastyWindow {
             size.width as f32, size.height as f32,
             self.state.sidebar_width, self.gpu.scale_factor(),
         )
+    }
+
+    /// Start a new text selection from the given pixel position.
+    fn start_selection(&mut self, x: f32, y: f32, terminal_rect: &Rect) {
+        if let Some((point, surface_id)) = self.mouse_to_grid(x, y, terminal_rect) {
+            // Detect multi-click
+            let now = std::time::Instant::now();
+            let same_pos = self.last_click_pos.map_or(false, |(c, r)| c == point.col && r == point.absolute_row);
+            let within_time = self.last_click_time.map_or(false, |t| now.duration_since(t).as_millis() < 400);
+            if same_pos && within_time {
+                self.click_count = (self.click_count + 1).min(3);
+            } else {
+                self.click_count = 1;
+            }
+            self.last_click_time = Some(now);
+            self.last_click_pos = Some((point.col, point.absolute_row));
+
+            let (mode, dragging) = match self.click_count {
+                2 => (SelectionMode::Word, false),
+                3 => {
+                    self.click_count = 0; // Reset after triple
+                    (SelectionMode::Line, false)
+                }
+                _ => (SelectionMode::Normal, true),
+            };
+
+            // For word/line mode, expand anchor/cursor
+            let (anchor, cursor) = match mode {
+                SelectionMode::Word => {
+                    let (start_col, end_col) = self.find_word_bounds(point.col, point.absolute_row);
+                    (
+                        SelectionPoint { col: start_col, absolute_row: point.absolute_row },
+                        SelectionPoint { col: end_col, absolute_row: point.absolute_row },
+                    )
+                }
+                SelectionMode::Line => {
+                    let cols = self.state.focused_terminal()
+                        .map(|t| t.surface().dimensions().0)
+                        .unwrap_or(80);
+                    (
+                        SelectionPoint { col: 0, absolute_row: point.absolute_row },
+                        SelectionPoint { col: cols.saturating_sub(1), absolute_row: point.absolute_row },
+                    )
+                }
+                SelectionMode::Normal => {
+                    // Clear any existing selection on single click
+                    (point, point)
+                }
+            };
+
+            self.text_selection = Some(TextSelection {
+                anchor,
+                cursor,
+                mode,
+                surface_id,
+                dragging,
+            });
+            self.mark_dirty();
+        } else {
+            // Clicked outside terminal — clear selection
+            self.text_selection = None;
+        }
+    }
+
+    /// Find word boundaries around the given column in the given absolute row.
+    fn find_word_bounds(&self, col: usize, absolute_row: usize) -> (usize, usize) {
+        let terminal = match self.state.focused_terminal() {
+            Some(t) => t,
+            None => return (col, col),
+        };
+        let scrollback_len = terminal.scrollback_len();
+
+        // Get the text for this row
+        let row_text: Vec<(String, usize)> = if absolute_row < scrollback_len {
+            match terminal.scrollback_line_owned(absolute_row) {
+                Some(line) => {
+                    let mut result = Vec::new();
+                    let mut c = 0;
+                    for (text, _) in &line {
+                        let ch = text.chars().next().unwrap_or(' ');
+                        let w = crate::renderer::unicode_width(ch);
+                        result.push((text.clone(), c));
+                        c += w;
+                    }
+                    result
+                }
+                None => return (col, col),
+            }
+        } else {
+            let screen_row = absolute_row - scrollback_len;
+            let surface = terminal.surface();
+            let lines = surface.screen_lines();
+            match lines.get(screen_row) {
+                Some(line) => {
+                    line.visible_cells()
+                        .map(|cell| (cell.str().to_string(), cell.cell_index()))
+                        .collect()
+                }
+                None => return (col, col),
+            }
+        };
+
+        // Find which cell the col is in
+        let is_word_char = |s: &str| -> bool {
+            s.chars().next().map_or(false, |c| c.is_alphanumeric() || c == '_')
+        };
+
+        // Find the cell at col
+        let target_idx = row_text.iter().position(|(_, c)| *c >= col).unwrap_or(row_text.len().saturating_sub(1));
+        if row_text.is_empty() {
+            return (col, col);
+        }
+        let target_idx = target_idx.min(row_text.len() - 1);
+        let word = is_word_char(&row_text[target_idx].0);
+
+        // Expand left
+        let mut start = target_idx;
+        while start > 0 && is_word_char(&row_text[start - 1].0) == word {
+            start -= 1;
+        }
+        // Expand right
+        let mut end = target_idx;
+        while end + 1 < row_text.len() && is_word_char(&row_text[end + 1].0) == word {
+            end += 1;
+        }
+
+        let start_col = row_text[start].1;
+        let end_text = &row_text[end].0;
+        let end_ch = end_text.chars().next().unwrap_or(' ');
+        let end_col = row_text[end].1 + crate::renderer::unicode_width(end_ch) - 1;
+        (start_col, end_col)
+    }
+
+    /// Convert mouse physical coordinates to a grid SelectionPoint for the focused terminal.
+    fn mouse_to_grid(&self, x: f32, y: f32, viewport: &Rect) -> Option<(SelectionPoint, u32)> {
+        let terminal = self.state.focused_terminal()?;
+        let surface_id = self.state.focused_surface_id()?;
+        let (cols, rows) = terminal.surface().dimensions();
+        let point = selection::pixel_to_grid(
+            x, y, viewport,
+            self.gpu.cell_width(), self.gpu.cell_height(),
+            cols, rows,
+            terminal.scroll_offset,
+            terminal.scrollback_len(),
+        );
+        Some((point, surface_id))
+    }
+
+    /// Copy the current selection to clipboard and clear selection.
+    pub fn copy_selection_to_clipboard(&mut self) -> bool {
+        let sel = match &self.text_selection {
+            Some(s) if !s.is_empty() => s.clone(),
+            _ => return false,
+        };
+        let text = if let Some(terminal) = self.state.find_terminal_by_id(sel.surface_id) {
+            selection::extract_selected_text(terminal, &sel)
+        } else {
+            return false;
+        };
+        if text.is_empty() {
+            return false;
+        }
+        if let Some(cb) = &mut self.clipboard {
+            cb.set_text(&text);
+        }
+        self.text_selection = None;
+        true
     }
 
     pub fn paste_to_terminal(&mut self) {
@@ -183,6 +361,12 @@ impl TastyWindow {
             return;
         }
 
+        // Clear selection on terminal input
+        if self.text_selection.is_some() {
+            self.text_selection = None;
+            self.dirty = true;
+        }
+
         // Forward to terminal
         let typing_surface_id = self.state.focused_surface_id();
         if let Some(terminal) = self.state.focused_terminal_mut() {
@@ -302,6 +486,19 @@ impl TastyWindow {
         let x = position.x as f32;
         let y = position.y as f32;
 
+        // Handle selection drag
+        if self.left_mouse_down && self.dragging_divider.is_none() {
+            let is_dragging = self.text_selection.as_ref().map_or(false, |s| s.dragging);
+            if is_dragging {
+                if let Some((point, _)) = self.mouse_to_grid(x, y, &terminal_rect) {
+                    if let Some(sel) = &mut self.text_selection {
+                        sel.cursor = point;
+                    }
+                    self.mark_dirty();
+                }
+            }
+        }
+
         if let Some(drag) = self.dragging_divider {
             let changed = match drag.kind {
                 DividerDragKind::Pane => self.state.update_pane_divider(&drag.info, x, y, terminal_rect),
@@ -337,11 +534,20 @@ impl TastyWindow {
     fn handle_mouse_input(&mut self, button_state: ElementState, button: MouseButton, egui_consumed: bool) {
         let overlay_open = self.state.settings_open || self.state.notification_panel_open;
         if egui_consumed || overlay_open {
-            if button_state == ElementState::Released { self.dragging_divider = None; }
+            if button_state == ElementState::Released {
+                self.dragging_divider = None;
+                self.left_mouse_down = false;
+            }
             if egui_consumed { self.mark_dirty(); }
             return;
         }
         if button == MouseButton::Left {
+            if button_state == ElementState::Pressed {
+                self.left_mouse_down = true;
+            } else {
+                self.left_mouse_down = false;
+            }
+
             if self.state.pane_context_menu.is_some() {
                 self.state.pane_context_menu = None;
                 self.dirty = true;
@@ -360,11 +566,30 @@ impl TastyWindow {
                     } else {
                         if self.state.focus_pane_at_position(x, y, terminal_rect) { self.dirty = true; }
                         if self.state.focus_surface_at_position(x, y, terminal_rect) { self.dirty = true; }
+
+                        // Start text selection (only if not mouse-tracking or Shift held)
+                        let mouse_tracking = self.state.focused_terminal()
+                            .map(|t| t.mouse_tracking())
+                            .unwrap_or(tasty_terminal::MouseTrackingMode::None);
+                        let shift = self.modifiers.shift_key();
+                        if mouse_tracking == tasty_terminal::MouseTrackingMode::None || shift {
+                            self.start_selection(x, y, &terminal_rect);
+                        }
                     }
-                } else if button_state == ElementState::Released && self.dragging_divider.is_some() {
-                    self.dragging_divider = None;
-                    self.state.resize_all(terminal_rect, self.gpu.cell_width(), self.gpu.cell_height());
-                    self.dirty = true;
+                } else if button_state == ElementState::Released {
+                    if self.dragging_divider.is_some() {
+                        self.dragging_divider = None;
+                        self.state.resize_all(terminal_rect, self.gpu.cell_width(), self.gpu.cell_height());
+                        self.dirty = true;
+                    }
+                    // Finish selection drag
+                    if let Some(sel) = &mut self.text_selection {
+                        sel.dragging = false;
+                        if sel.is_empty() {
+                            self.text_selection = None;
+                        }
+                    }
+                    self.mark_dirty();
                 }
             }
         } else if button == MouseButton::Right && button_state == ElementState::Pressed {
