@@ -226,6 +226,44 @@ impl App {
                 processed = true;
                 continue;
             }
+            if cmd.request.method == "window.close" {
+                // Close the focused window
+                if let Some(focused_id) = self.engine.focused_window_id {
+                    if let Some(w) = self.windows.get(&focused_id) {
+                        // Request the OS window to close — triggers CloseRequested
+                        // which removes it from the HashMap in window_event
+                    }
+                    self.windows.remove(&focused_id);
+                    self.engine.focused_window_id = self.windows.keys().next().copied();
+                }
+                let response = ipc::protocol::JsonRpcResponse::success(
+                    cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
+                    serde_json::json!({"closed": true}),
+                );
+                let _ = cmd.response_tx.send(response);
+                processed = true;
+                continue;
+            }
+            if cmd.request.method == "window.focus" {
+                // Focus a specific window by searching for matching ID string
+                let target = cmd.request.params.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                let mut found = false;
+                for (id, w) in &self.windows {
+                    if format!("{:?}", id) == target {
+                        w.window.focus_window();
+                        self.engine.focused_window_id = Some(*id);
+                        found = true;
+                        break;
+                    }
+                }
+                let response = ipc::protocol::JsonRpcResponse::success(
+                    cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
+                    serde_json::json!({"focused": found}),
+                );
+                let _ = cmd.response_tx.send(response);
+                processed = true;
+                continue;
+            }
             if cmd.request.method == "window.list" {
                 let focused_id = self.engine.focused_window_id;
                 let list: Vec<_> = self.windows.iter().map(|(id, w)| {

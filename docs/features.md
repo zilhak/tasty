@@ -393,19 +393,14 @@
 #### 에이전트 전용
 - `claude.launch`: Claude Code 전용 워크스페이스 생성 및 실행
 
-### 헤드리스 모드
-- `--headless` 플래그로 GUI 없이 IPC 전용 모드로 실행
-- GPU/윈도우 의존 없이 터미널 엔진과 IPC 서버만 구동
-- no-op waker를 사용하여 이벤트 루프 없이 10ms 간격 폴링
-- `system.shutdown` IPC 메서드로 정상 종료
-- E2E 테스트 및 CI 환경에서의 자동화에 활용
-
-### E2E 테스트 프레임워크 (헤드리스)
-- `tests/common/mod.rs`의 `TastyInstance` 헬퍼: 헤드리스 모드로 프로세스 스폰, IPC 통신, 자동 정리
-- 포트 파일 기반 프로세스 간 통신으로 테스트 격리
-- `wait_for_output()`: 타임아웃 기반 출력 폴링
-- Drop trait으로 테스트 종료 시 자동 프로세스 정리
-- 14개 E2E 테스트: 앱 시작, 셸 에코, 워크스페이스/탭/패인 CRUD, 훅, 마크, 화면 텍스트, 커서 위치 등
+### 멀티 윈도우
+- `window.create` IPC 또는 `tasty new-window` CLI로 새 독립 윈도우 생성
+- 각 윈도우는 자체 GPU 서피스, egui 컨텍스트, 터미널 세트를 보유
+- `window.list`: 전체 윈도우 목록 (id, focused, title)
+- `window.close`: 포커스된 윈도우 닫기
+- `window.focus`: 특정 윈도우에 포커스
+- 윈도우 닫기 시 HashMap에서 제거, 마지막 윈도우면 앱 종료
+- 모달 활성 시 다른 윈도우 입력 차단
 
 ### GUI 통합 테스트 프레임워크
 - `tests/gui_common/mod.rs`의 `GuiTestInstance` 헬퍼: 실제 GUI 모드로 프로세스 스폰
@@ -427,7 +422,7 @@
   - 속도 테스트: 설정 토글, 워크스페이스 전환, 탭 전환 반복 측정 (1초 이내 응답 보장)
 
 ### CLI 클라이언트 (cli.rs)
-- `tasty` 명령에 서브커맨드가 있으면 CLI 모드, `--headless`면 헤드리스 모드, 둘 다 없으면 GUI 모드로 동작
+- `tasty` 명령에 서브커맨드가 있으면 CLI 모드, 없으면 GUI 모드로 동작
 - clap 기반 서브커맨드: `list`, `new-workspace`, `select-workspace`, `send`, `send-key`, `notify`, `notifications`, `tree`, `split`, `new-tab`, `close-tab`, `close-pane`, `close-surface`, `surfaces`, `panes`, `info`, `set-hook`, `list-hooks`, `unset-hook`, `set-mark`, `read-since-mark`, `claude`, `message-send`, `message-read`, `message-count`, `message-clear`, `claude-broadcast`, `claude-wait`
 - 포트 파일에서 포트 번호를 읽어 TCP 연결 후 JSON-RPC 요청/응답
 - `tree` 커맨드: 워크스페이스/패인/탭 계층을 트리 형태로 표시

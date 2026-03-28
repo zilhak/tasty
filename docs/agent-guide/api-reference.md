@@ -118,6 +118,15 @@ tasty claude-wait --child 42 --timeout 60 # 타임아웃 60초로 대기
 | `ui.state` | 없음 | 현재 UI 상태 (설정창/알림패널 열림 여부, 패인 수 등) |
 | `ui.screenshot` | `path?: string` | 스크린샷을 PNG로 저장 (GUI 모드 전용, 비동기) |
 
+### 윈도우
+
+| 메서드 | 파라미터 | 설명 |
+|--------|---------|------|
+| `window.list` | 없음 | 전체 윈도우 목록 (id, focused, title) |
+| `window.create` | 없음 | 새 독립 윈도우 생성 |
+| `window.close` | 없음 | 포커스된 윈도우 닫기 |
+| `window.focus` | `id: string` | 특정 윈도우에 포커스 |
+
 ### 워크스페이스
 
 | 메서드 | 파라미터 | 설명 |

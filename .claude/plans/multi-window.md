@@ -172,10 +172,14 @@ if engine.is_modal_active() {
 3. ~~Phase 0-3: render() 분해~~ ✅
 4. ~~Phase 0-4: event_handler 분해~~ ✅
 5. ~~Phase 1-1: Engine 구조체~~ ✅
-6. **Phase 1-2: TastyWindow로 윈도우 필드 이동** ← 다음
-7. **Phase 1-3: 헤드리스 모드 제거**
-8. **Phase 2: 멀티 윈도우 (HashMap, 생성/파괴, wgpu 공유, IPC)**
-9. **Phase 3: 모달 시스템 (WindowKind, 포커스 차단, 설정창 분리)**
+6. ~~Phase 1-2: TastyWindow로 윈도우 필드 이동~~ ✅
+7. ~~Phase 1-3: 헤드리스 모드 제거~~ ✅
+8. ~~Phase 2: 멀티 윈도우 (HashMap, 생성/파괴, IPC)~~ ✅
+9. ~~Phase 3-1: 모달 포커스 차단~~ ✅
+
+**남은 작업:**
+- Phase 3-2: 설정창을 독립 모달 윈도우로 분리 (ModalWindow 타입)
+- wgpu 리소스 공유 최적화 (선택적, 윈도우 수가 적으면 불필요)
 
 **각 Phase는 독립적으로 빌드 + 실행 가능해야 한다.**
 
