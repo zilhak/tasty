@@ -130,52 +130,7 @@ impl ApplicationHandler<AppEvent> for App {
                 self.handle_ime(ime_event, egui_consumed);
             }
             WindowEvent::CursorMoved { position, .. } => {
-                self.cursor_position = Some(position);
-                let overlay_open = self.state.as_ref()
-                    .map(|s| s.settings_open || s.notification_panel_open)
-                    .unwrap_or(false);
-                if egui_consumed || overlay_open {
-                    // egui needs redraws for hover effects (button highlights, etc.)
-                    if egui_consumed {
-                        self.mark_dirty();
-                    }
-                    return;
-                }
-                if let (Some(gpu), Some(state), Some(window)) = (&self.gpu, &mut self.state, &self.window) {
-                    let terminal_rect = Self::compute_terminal_rect_with_sidebar(gpu, state.sidebar_width);
-                    let x = position.x as f32;
-                    let y = position.y as f32;
-
-                    if let Some(drag) = self.dragging_divider {
-                        let changed = match drag.kind {
-                            DividerDragKind::Pane => state.update_pane_divider(&drag.info, x, y, terminal_rect),
-                            DividerDragKind::Surface => state.update_surface_divider(&drag.info, x, y, terminal_rect),
-                        };
-                        if changed {
-                            let cw = gpu.cell_width();
-                            let ch = gpu.cell_height();
-                            state.resize_all(terminal_rect, cw, ch);
-                            self.mark_dirty();
-                        }
-                    } else if !egui_consumed {
-                        let threshold = 4.0;
-                        let pane_divider = state.find_pane_divider_at(x, y, terminal_rect, threshold);
-                        let surface_divider = state.find_surface_divider_at(x, y, terminal_rect, threshold);
-                        let divider = pane_divider.or(surface_divider);
-                        match divider {
-                            Some(info) => {
-                                let cursor = match info.direction {
-                                    SplitDirection::Vertical => CursorIcon::ColResize,
-                                    SplitDirection::Horizontal => CursorIcon::RowResize,
-                                };
-                                window.set_cursor(cursor);
-                            }
-                            None => {
-                                window.set_cursor(CursorIcon::Default);
-                            }
-                        }
-                    }
-                }
+                self.handle_cursor_moved(position, egui_consumed);
             }
             WindowEvent::CursorLeft { .. } => {
                 self.cursor_position = None;
@@ -184,137 +139,10 @@ impl ApplicationHandler<AppEvent> for App {
                 }
             }
             WindowEvent::MouseInput { state: button_state, button, .. } => {
-                let overlay_open = self.state.as_ref()
-                    .map(|s| s.settings_open || s.notification_panel_open)
-                    .unwrap_or(false);
-                if egui_consumed || overlay_open {
-                    if button_state == ElementState::Released {
-                        self.dragging_divider = None;
-                    }
-                    // egui handled the click — redraw so UI reflects the change.
-                    if egui_consumed {
-                        self.mark_dirty();
-                    }
-                    return;
-                }
-                if button == MouseButton::Left {
-                    // Dismiss context menu on left click
-                    if let Some(state) = &mut self.state {
-                        if state.pane_context_menu.is_some() {
-                            state.pane_context_menu = None;
-                            self.dirty = true;
-                        }
-                    }
-                    if let (Some(gpu), Some(state)) = (&self.gpu, &mut self.state) {
-                        let terminal_rect = Self::compute_terminal_rect_with_sidebar(gpu, state.sidebar_width);
-
-                        if let Some(pos) = self.cursor_position {
-                            let x = pos.x as f32;
-                            let y = pos.y as f32;
-
-                            if button_state == ElementState::Pressed {
-                                let threshold = 4.0;
-                                let pane_divider = state.find_pane_divider_at(x, y, terminal_rect, threshold);
-                                let surface_divider = state.find_surface_divider_at(x, y, terminal_rect, threshold);
-
-                                if let Some(info) = pane_divider {
-                                    self.dragging_divider = Some(DividerDrag {
-                                        info,
-                                        kind: DividerDragKind::Pane,
-                                    });
-                                } else if let Some(info) = surface_divider {
-                                    self.dragging_divider = Some(DividerDrag {
-                                        info,
-                                        kind: DividerDragKind::Surface,
-                                    });
-                                } else {
-                                    if state.focus_pane_at_position(x, y, terminal_rect) {
-                                        // Can't call self.mark_dirty() — state is mutably borrowed.
-                                        // Catch-all at end of window_event ensures request_redraw.
-                                        self.dirty = true;
-                                    }
-                                    if state.focus_surface_at_position(x, y, terminal_rect) {
-                                        self.dirty = true;
-                                    }
-                                }
-                            } else if button_state == ElementState::Released {
-                                if self.dragging_divider.is_some() {
-                                    self.dragging_divider = None;
-                                    let cw = gpu.cell_width();
-                                    let ch = gpu.cell_height();
-                                    state.resize_all(terminal_rect, cw, ch);
-                                    self.dirty = true;
-                                }
-                            }
-                        }
-                    }
-                } else if button == MouseButton::Right && button_state == ElementState::Pressed {
-                    // Right-click: show context menu on the terminal area
-                    if let (Some(gpu), Some(state)) = (&self.gpu, &mut self.state) {
-                        let terminal_rect = Self::compute_terminal_rect_with_sidebar(gpu, state.sidebar_width);
-                        if let Some(pos) = self.cursor_position {
-                            let x = pos.x as f32;
-                            let y = pos.y as f32;
-                            if terminal_rect.contains(x, y) {
-                                // Find which pane was right-clicked
-                                let ws = state.active_workspace();
-                                let pane_rects = ws.pane_layout().compute_rects(terminal_rect);
-                                let scale = gpu.scale_factor();
-                                for (pane_id, rect) in pane_rects {
-                                    if rect.contains(x, y) {
-                                        state.pane_context_menu = Some(crate::state::PaneContextMenu {
-                                            pane_id,
-                                            x: x / scale,
-                                            y: y / scale,
-                                        });
-                                        self.dirty = true;
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+                self.handle_mouse_input(button_state, button, egui_consumed);
             }
             WindowEvent::MouseWheel { delta, .. } => {
-                let overlay_open = self.state.as_ref()
-                    .map(|s| s.settings_open || s.notification_panel_open)
-                    .unwrap_or(false);
-                if egui_consumed {
-                    self.mark_dirty();
-                }
-                if !egui_consumed && !overlay_open {
-                    if let Some(state) = &mut self.state {
-                        if let Some(terminal) = state.focused_terminal_mut() {
-                            let lines = match delta {
-                                MouseScrollDelta::LineDelta(_, y) => y as i32,
-                                MouseScrollDelta::PixelDelta(pos) => {
-                                    (pos.y / 20.0) as i32
-                                }
-                            };
-                            if terminal.is_alternate_screen() {
-                                // In alternate screen (vim, less, etc.) - send to PTY
-                                if lines > 0 {
-                                    for _ in 0..lines.unsigned_abs() {
-                                        terminal.send_bytes(b"\x1b[A");
-                                    }
-                                } else if lines < 0 {
-                                    for _ in 0..lines.unsigned_abs() {
-                                        terminal.send_bytes(b"\x1b[B");
-                                    }
-                                }
-                            } else {
-                                // Normal mode - scroll the scrollback buffer
-                                if lines > 0 {
-                                    terminal.scroll_up(lines as usize);
-                                } else if lines < 0 {
-                                    terminal.scroll_down((-lines) as usize);
-                                }
-                                self.dirty = true;
-                            }
-                        }
-                    }
-                }
+                self.handle_mouse_wheel(delta, egui_consumed);
             }
             WindowEvent::RedrawRequested => {
                 // Shell setup mode: render only the setup dialog
@@ -529,6 +357,138 @@ impl App {
             }
             if let Some(sid) = typing_surface_id {
                 state.record_typing(sid);
+            }
+        }
+    }
+
+    fn handle_cursor_moved(&mut self, position: winit::dpi::PhysicalPosition<f64>, egui_consumed: bool) {
+        self.cursor_position = Some(position);
+        let overlay_open = self.state.as_ref()
+            .map(|s| s.settings_open || s.notification_panel_open)
+            .unwrap_or(false);
+        if egui_consumed || overlay_open {
+            if egui_consumed { self.mark_dirty(); }
+            return;
+        }
+        if let (Some(gpu), Some(state), Some(window)) = (&self.gpu, &mut self.state, &self.window) {
+            let terminal_rect = Self::compute_terminal_rect_with_sidebar(gpu, state.sidebar_width);
+            let x = position.x as f32;
+            let y = position.y as f32;
+
+            if let Some(drag) = self.dragging_divider {
+                let changed = match drag.kind {
+                    DividerDragKind::Pane => state.update_pane_divider(&drag.info, x, y, terminal_rect),
+                    DividerDragKind::Surface => state.update_surface_divider(&drag.info, x, y, terminal_rect),
+                };
+                if changed {
+                    state.resize_all(terminal_rect, gpu.cell_width(), gpu.cell_height());
+                    self.mark_dirty();
+                }
+            } else {
+                let threshold = 4.0;
+                let divider = state.find_pane_divider_at(x, y, terminal_rect, threshold)
+                    .or_else(|| state.find_surface_divider_at(x, y, terminal_rect, threshold));
+                match divider {
+                    Some(info) => {
+                        let cursor = match info.direction {
+                            SplitDirection::Vertical => CursorIcon::ColResize,
+                            SplitDirection::Horizontal => CursorIcon::RowResize,
+                        };
+                        window.set_cursor(cursor);
+                    }
+                    None => window.set_cursor(CursorIcon::Default),
+                }
+            }
+        }
+    }
+
+    fn handle_mouse_input(&mut self, button_state: ElementState, button: MouseButton, egui_consumed: bool) {
+        let overlay_open = self.state.as_ref()
+            .map(|s| s.settings_open || s.notification_panel_open)
+            .unwrap_or(false);
+        if egui_consumed || overlay_open {
+            if button_state == ElementState::Released { self.dragging_divider = None; }
+            if egui_consumed { self.mark_dirty(); }
+            return;
+        }
+        if button == MouseButton::Left {
+            if let Some(state) = &mut self.state {
+                if state.pane_context_menu.is_some() {
+                    state.pane_context_menu = None;
+                    self.dirty = true;
+                }
+            }
+            if let (Some(gpu), Some(state)) = (&self.gpu, &mut self.state) {
+                let terminal_rect = Self::compute_terminal_rect_with_sidebar(gpu, state.sidebar_width);
+                if let Some(pos) = self.cursor_position {
+                    let (x, y) = (pos.x as f32, pos.y as f32);
+                    if button_state == ElementState::Pressed {
+                        let threshold = 4.0;
+                        let pane_div = state.find_pane_divider_at(x, y, terminal_rect, threshold);
+                        let surf_div = state.find_surface_divider_at(x, y, terminal_rect, threshold);
+                        if let Some(info) = pane_div {
+                            self.dragging_divider = Some(DividerDrag { info, kind: DividerDragKind::Pane });
+                        } else if let Some(info) = surf_div {
+                            self.dragging_divider = Some(DividerDrag { info, kind: DividerDragKind::Surface });
+                        } else {
+                            if state.focus_pane_at_position(x, y, terminal_rect) { self.dirty = true; }
+                            if state.focus_surface_at_position(x, y, terminal_rect) { self.dirty = true; }
+                        }
+                    } else if button_state == ElementState::Released && self.dragging_divider.is_some() {
+                        self.dragging_divider = None;
+                        state.resize_all(terminal_rect, gpu.cell_width(), gpu.cell_height());
+                        self.dirty = true;
+                    }
+                }
+            }
+        } else if button == MouseButton::Right && button_state == ElementState::Pressed {
+            if let (Some(gpu), Some(state)) = (&self.gpu, &mut self.state) {
+                let terminal_rect = Self::compute_terminal_rect_with_sidebar(gpu, state.sidebar_width);
+                if let Some(pos) = self.cursor_position {
+                    let (x, y) = (pos.x as f32, pos.y as f32);
+                    if terminal_rect.contains(x, y) {
+                        let ws = state.active_workspace();
+                        let pane_rects = ws.pane_layout().compute_rects(terminal_rect);
+                        let scale = gpu.scale_factor();
+                        for (pane_id, rect) in pane_rects {
+                            if rect.contains(x, y) {
+                                state.pane_context_menu = Some(crate::state::PaneContextMenu {
+                                    pane_id, x: x / scale, y: y / scale,
+                                });
+                                self.dirty = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn handle_mouse_wheel(&mut self, delta: MouseScrollDelta, egui_consumed: bool) {
+        let overlay_open = self.state.as_ref()
+            .map(|s| s.settings_open || s.notification_panel_open)
+            .unwrap_or(false);
+        if egui_consumed { self.mark_dirty(); }
+        if !egui_consumed && !overlay_open {
+            if let Some(state) = &mut self.state {
+                if let Some(terminal) = state.focused_terminal_mut() {
+                    let lines = match delta {
+                        MouseScrollDelta::LineDelta(_, y) => y as i32,
+                        MouseScrollDelta::PixelDelta(pos) => (pos.y / 20.0) as i32,
+                    };
+                    if terminal.is_alternate_screen() {
+                        if lines > 0 {
+                            for _ in 0..lines.unsigned_abs() { terminal.send_bytes(b"\x1b[A"); }
+                        } else if lines < 0 {
+                            for _ in 0..lines.unsigned_abs() { terminal.send_bytes(b"\x1b[B"); }
+                        }
+                    } else {
+                        if lines > 0 { terminal.scroll_up(lines as usize); }
+                        else if lines < 0 { terminal.scroll_down((-lines) as usize); }
+                        self.dirty = true;
+                    }
+                }
             }
         }
     }
