@@ -8,7 +8,7 @@ use winit::window::{CursorIcon, Window};
 use crate::gpu::GpuState;
 use crate::model::{Rect, SplitDirection};
 use crate::state::AppState;
-use crate::{ClipboardContext, DividerDrag, DividerDragKind};
+use crate::{AppEvent, ClipboardContext, DividerDrag, DividerDragKind};
 
 /// A single Tasty window with its own GPU state, UI state, and input state.
 pub struct TastyWindow {
@@ -22,10 +22,11 @@ pub struct TastyWindow {
     pub dragging_divider: Option<DividerDrag>,
     pub clipboard: Option<ClipboardContext>,
     pub preedit_text: String,
+    pub proxy: winit::event_loop::EventLoopProxy<AppEvent>,
 }
 
 impl TastyWindow {
-    pub fn new(gpu: GpuState, state: AppState, window: Arc<Window>) -> Self {
+    pub fn new(gpu: GpuState, state: AppState, window: Arc<Window>, proxy: winit::event_loop::EventLoopProxy<AppEvent>) -> Self {
         Self {
             gpu, state, window,
             dirty: true,
@@ -35,6 +36,7 @@ impl TastyWindow {
             dragging_divider: None,
             clipboard: ClipboardContext::new(),
             preedit_text: String::new(),
+            proxy,
         }
     }
 

@@ -138,10 +138,9 @@ impl TastyWindow {
 
         // --- Configurable shortcuts (previously hardcoded) ---
 
-        // Toggle settings window
+        // Open settings modal
         if matches_binding(&kb.toggle_settings, key, mods) {
-            state.settings_open = !state.settings_open;
-            self.mark_dirty();
+            let _ = self.proxy.send_event(crate::AppEvent::OpenSettings);
             return true;
         }
 

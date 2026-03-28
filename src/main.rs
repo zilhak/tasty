@@ -9,6 +9,7 @@ mod gpu;
 mod i18n;
 mod ipc;
 mod markdown_ui;
+pub mod modal_window;
 mod model;
 mod notification;
 mod renderer;
@@ -87,6 +88,8 @@ struct DividerDrag {
 struct App {
     engine: engine::Engine,
     windows: std::collections::HashMap<WindowId, tasty_window::TastyWindow>,
+    /// Active modal window (settings, etc). Max 1 at a time.
+    modal: Option<modal_window::ModalWindow>,
     // Shell setup mode (before terminal is created)
     shell_setup_mode: bool,
     shell_setup_path: String,
@@ -101,6 +104,7 @@ impl App {
         Self {
             engine: engine::Engine::new(proxy.clone(), port_file),
             windows: std::collections::HashMap::new(),
+            modal: None,
             shell_setup_mode: false,
             shell_setup_path: String::new(),
             shell_setup_gpu: None,
@@ -155,7 +159,7 @@ impl App {
         self.engine.start_ipc();
 
         let window_id = window.id();
-        self.windows.insert(window_id, tasty_window::TastyWindow::new(gpu, state, window));
+        self.windows.insert(window_id, tasty_window::TastyWindow::new(gpu, state, window, self.engine.proxy.clone()));
         self.engine.focused_window_id = Some(window_id);
     }
 
@@ -201,9 +205,65 @@ impl App {
         let state = crate::state::AppState::new(cols, rows, waker).expect("failed to create app state");
 
         let window_id = window.id();
-        self.windows.insert(window_id, tasty_window::TastyWindow::new(gpu, state, window));
+        self.windows.insert(window_id, tasty_window::TastyWindow::new(gpu, state, window, self.engine.proxy.clone()));
         self.engine.focused_window_id = Some(window_id);
         tracing::info!("created new window {:?}", window_id);
+    }
+
+    /// Open settings as a modal window.
+    fn open_settings_modal(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
+        if self.modal.is_some() {
+            return; // Already open
+        }
+
+        use winit::window::WindowAttributes;
+
+        let attrs = WindowAttributes::default()
+            .with_title("Tasty Settings")
+            .with_inner_size(winit::dpi::LogicalSize::new(700, 500));
+
+        let window = Arc::new(
+            event_loop
+                .create_window(attrs)
+                .expect("failed to create settings window"),
+        );
+
+        // Load current settings from focused window, or from file
+        let settings = if let Some(w) = self.focused_window() {
+            w.state.engine.settings.clone()
+        } else {
+            crate::settings::Settings::load()
+        };
+
+        let gpu = pollster::block_on(crate::gpu::GpuState::new(
+            window.clone(),
+            &settings.appearance,
+            self.engine.proxy.clone(),
+        ))
+        .expect("failed to initialize GPU for settings");
+
+        let modal_window_id = window.id();
+        self.modal = Some(modal_window::ModalWindow::new(gpu, window, settings));
+        self.engine.modal_window_id = Some(modal_window_id);
+        tracing::info!("opened settings modal {:?}", modal_window_id);
+    }
+
+    /// Close the settings modal and apply settings to all windows.
+    fn close_settings_modal(&mut self) {
+        if let Some(modal) = self.modal.take() {
+            // Apply settings to all windows
+            let new_settings = modal.settings;
+            for w in self.windows.values_mut() {
+                w.state.engine.settings = new_settings.clone();
+                w.state.settings_open = false;
+                w.mark_dirty();
+            }
+            // Save to disk
+            if let Err(e) = new_settings.save() {
+                tracing::warn!("failed to save settings: {e}");
+            }
+        }
+        self.engine.modal_window_id = None;
     }
 
     /// Process pending IPC commands. Returns true if any commands were processed.
