@@ -18,6 +18,8 @@ pub struct ModalWindow {
     pub dirty: bool,
     /// Set to true when the user closes the modal.
     pub should_close: bool,
+    /// Whether the window has been shown yet (starts hidden to avoid layout flash).
+    shown: bool,
 }
 
 impl ModalWindow {
@@ -29,6 +31,7 @@ impl ModalWindow {
             settings_ui_state: SettingsUiState::new(),
             dirty: true,
             should_close: false,
+            shown: false,
         }
     }
 
@@ -84,6 +87,12 @@ impl ModalWindow {
         }
 
         self.gpu.finish_egui_frame(&self.window, full_output);
+
+        // Show window after first render to avoid layout flash
+        if !self.shown {
+            self.window.set_visible(true);
+            self.shown = true;
+        }
 
         if self.dirty {
             self.window.request_redraw();

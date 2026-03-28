@@ -223,7 +223,8 @@ impl App {
 
         let attrs = WindowAttributes::default()
             .with_title("Tasty Settings")
-            .with_inner_size(winit::dpi::LogicalSize::new(700, 500));
+            .with_inner_size(winit::dpi::LogicalSize::new(700, 500))
+            .with_visible(false); // Start hidden, show after first render
 
         let window = Arc::new(
             event_loop
@@ -231,7 +232,6 @@ impl App {
                 .expect("failed to create settings window"),
         );
 
-        // Load current settings from focused window, or from file
         let settings = if let Some(w) = self.focused_window() {
             w.state.engine.settings.clone()
         } else {
@@ -246,7 +246,10 @@ impl App {
         .expect("failed to initialize GPU for settings");
 
         let modal_window_id = window.id();
-        self.modal = Some(modal_window::ModalWindow::new(gpu, window, settings));
+        let mut modal = modal_window::ModalWindow::new(gpu, window, settings);
+        // Render first frame before showing to avoid layout flash
+        modal.mark_dirty();
+        self.modal = Some(modal);
         self.engine.modal_window_id = Some(modal_window_id);
         tracing::info!("opened settings modal {:?}", modal_window_id);
     }
