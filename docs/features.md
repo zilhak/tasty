@@ -143,7 +143,7 @@
 - Ctrl+W: 활성 탭 닫기 (탭이 2개 이상일 때)
 - Ctrl+Shift+W: 포커스된 패인 닫기 (unsplit, 패인이 2개 이상일 때)
 - Ctrl+Shift+I: 알림 패널 토글
-- Ctrl+,: 설정 윈도우 토글
+- Ctrl+,: 설정 모달 윈도우 열기 (독립 OS 윈도우, 모달 활성 시 다른 윈도우 입력 차단)
 - Ctrl+D: 터미널에 전달 (EOF). 이전에는 Surface 수직 분할이었으나, Ctrl+Shift+D로 변경
 - winit ModifiersState를 이용한 수정자 키 추적
 
