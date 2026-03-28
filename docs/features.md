@@ -289,6 +289,26 @@
 - `arboard` 크레이트를 사용한 시스템 클립보드 읽기/쓰기
 - 앱 시작 시 `Clipboard` 인스턴스를 생성하여 App 구조체에 보관
 
+### 텍스트 선택 (Text Selection)
+- 마우스 드래그로 터미널 텍스트 선택
+- 선택 모드:
+  - **Normal**: 문자 단위 드래그 선택
+  - **Word**: 더블클릭으로 단어 선택
+  - **Line**: 트리플클릭으로 줄 전체 선택
+- 선택 영역 시각적 하이라이트 (배경색 오버라이드, Catppuccin Surface2 기반)
+- 스크롤백 영역과 화면 영역을 넘나드는 선택 지원
+- 전각 문자(CJK, 한글) 2셀 너비 올바르게 처리
+- 마우스 트래킹 모드(1000/1002/1003) 활성 시 Shift+드래그로 강제 선택
+- 터미널 텍스트 영역 위에서 마우스 커서가 I-beam으로 변경
+
+### 복사 (Copy)
+- 설정에 따라 세 가지 단축키 지원:
+  - **Windows**: Ctrl+C (`clipboard.windows_style`) — 선택 있으면 복사, 없으면 SIGINT 전달
+  - **Linux**: Ctrl+Shift+C (`clipboard.linux_style`)
+  - **macOS**: Alt+C (`clipboard.macos_style`)
+- 선택 텍스트를 시스템 클립보드에 복사 후 선택 해제
+- 키보드 입력 시 선택 자동 해제
+
 ### 붙여넣기 (Paste)
 - 설정에 따라 세 가지 단축키 지원:
   - **Windows**: Ctrl+V (`clipboard.windows_style`)
