@@ -525,26 +525,40 @@ impl GpuState {
             ui::draw_markdown_path_dialog(ctx, state);
             ui::draw_notification_panel(ctx, state);
 
-            // IME preedit overlay
+            // IME preedit overlay — draw at the focused surface's actual position
             if !preedit.is_empty() {
+                let focused_sid = state.focused_surface_id();
                 if let Some(terminal) = state.focused_terminal() {
                     let (cx, cy) = terminal.surface().cursor_position();
-                    let term_x = terminal_rect.x / scale_factor;
-                    let term_y = terminal_rect.y / scale_factor;
-                    let padding = 4.0;
-                    let px = term_x + padding + cx as f32 * cell_w / scale_factor;
-                    let py = term_y + padding + cy as f32 * cell_h / scale_factor;
 
-                    let th = crate::theme::theme();
-                    let painter = ctx.layer_painter(egui::LayerId::new(
-                        egui::Order::Foreground,
-                        egui::Id::new("ime_preedit"),
-                    ));
-                    let font_id = egui::FontId::monospace(cell_h / scale_factor);
-                    let galley = painter.layout_no_wrap(preedit.to_string(), font_id, th.base);
-                    let text_rect = egui::Rect::from_min_size(egui::pos2(px, py), galley.size());
-                    painter.rect_filled(text_rect, 0.0, th.blue);
-                    painter.galley(egui::pos2(px, py), galley, th.base);
+                    // Find the actual rect of the focused surface within the layout
+                    let regions = state.render_regions(terminal_rect);
+                    let mut surface_rect = None;
+                    for (_pane_id, _pane_rect, terminal_regions) in &regions {
+                        for (sid, _term, rect) in terminal_regions {
+                            if Some(*sid) == focused_sid {
+                                surface_rect = Some(*rect);
+                                break;
+                            }
+                        }
+                        if surface_rect.is_some() { break; }
+                    }
+
+                    if let Some(rect) = surface_rect {
+                        let px = rect.x / scale_factor + 4.0 + cx as f32 * cell_w / scale_factor;
+                        let py = rect.y / scale_factor + 4.0 + cy as f32 * cell_h / scale_factor;
+
+                        let th = crate::theme::theme();
+                        let painter = ctx.layer_painter(egui::LayerId::new(
+                            egui::Order::Foreground,
+                            egui::Id::new("ime_preedit"),
+                        ));
+                        let font_id = egui::FontId::monospace(cell_h / scale_factor);
+                        let galley = painter.layout_no_wrap(preedit.to_string(), font_id, th.base);
+                        let text_rect = egui::Rect::from_min_size(egui::pos2(px, py), galley.size());
+                        painter.rect_filled(text_rect, 0.0, th.blue);
+                        painter.galley(egui::pos2(px, py), galley, th.base);
+                    }
                 }
             }
 
