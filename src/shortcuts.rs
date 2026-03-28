@@ -308,6 +308,43 @@ impl TastyWindow {
             }
         }
 
+        // Ctrl+= or Ctrl+Shift+=: increase font size
+        if ctrl && !alt {
+            if let Key::Character(c) = key {
+                if c.as_str() == "=" || c.as_str() == "+" {
+                    let current = state.engine.settings.appearance.font_size;
+                    let new_size = (current + 1.0).min(72.0);
+                    state.engine.settings.appearance.font_size = new_size;
+                    self.mark_dirty();
+                    return true;
+                }
+            }
+        }
+
+        // Ctrl+-: decrease font size
+        if ctrl && !alt {
+            if let Key::Character(c) = key {
+                if c.as_str() == "-" {
+                    let current = state.engine.settings.appearance.font_size;
+                    let new_size = (current - 1.0).max(6.0);
+                    state.engine.settings.appearance.font_size = new_size;
+                    self.mark_dirty();
+                    return true;
+                }
+            }
+        }
+
+        // Ctrl+0: reset font size to default (14)
+        if ctrl && !shift && !alt {
+            if let Key::Character(c) = key {
+                if c.as_str() == "0" {
+                    state.engine.settings.appearance.font_size = 14.0;
+                    self.mark_dirty();
+                    return true;
+                }
+            }
+        }
+
         false
     }
 }
