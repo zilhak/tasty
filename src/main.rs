@@ -17,6 +17,7 @@ mod settings_ui;
 mod shortcuts;
 mod state;
 mod surface_meta;
+pub mod tasty_window;
 pub mod theme;
 mod ui;
 
@@ -86,27 +87,20 @@ struct DividerDrag {
 struct App {
     /// Central engine: IPC server, modal state.
     engine: engine::Engine,
-    // gpu must drop before window so the wgpu surface is released first
+    // ── Window state (will become TastyWindow in Phase 2) ──
     gpu: Option<GpuState>,
     state: Option<AppState>,
     window: Option<Arc<Window>>,
     dirty: bool,
     modifiers: ModifiersState,
-    /// Whether the window currently has OS focus.
     window_focused: bool,
-    /// Current cursor position in physical pixels.
     cursor_position: Option<winit::dpi::PhysicalPosition<f64>>,
-    /// Active divider drag state.
     dragging_divider: Option<DividerDrag>,
-    /// System clipboard for copy/paste.
     clipboard: Option<ClipboardContext>,
-    /// When true, the app is in shell-setup mode: no terminal, just a dialog
-    /// asking the user to provide a bash path. Set when bash is not found.
+    preedit_text: String,
+    // ── Shell setup ──
     shell_setup_mode: bool,
-    /// The shell path being edited in the setup dialog.
     shell_setup_path: String,
-    /// IME preedit text (composing, not yet committed).
-    pub preedit_text: String,
 }
 
 impl App {
@@ -122,9 +116,9 @@ impl App {
             cursor_position: None,
             dragging_divider: None,
             clipboard: ClipboardContext::new(),
+            preedit_text: String::new(),
             shell_setup_mode: false,
             shell_setup_path: String::new(),
-            preedit_text: String::new(),
         }
     }
 
@@ -170,7 +164,7 @@ impl App {
         self.state = Some(state);
     }
 
-    /// Set dirty flag and request a redraw. Call this instead of `self.dirty = true` directly.
+    /// Set dirty flag and request a redraw.
     fn mark_dirty(&mut self) {
         self.dirty = true;
         if let Some(window) = &self.window {
@@ -221,7 +215,6 @@ impl App {
 
         let mut processed = false;
         while let Ok(cmd) = ipc.try_recv() {
-            // Special handling for ui.screenshot — needs GPU access
             if cmd.request.method == "ui.screenshot" {
                 let path = cmd.request.params
                     .get("path")
