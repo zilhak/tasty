@@ -3,6 +3,7 @@ use termwiz::surface::Surface;
 
 use crate::font::{FontConfig, GlyphAtlas, GlyphKey};
 use crate::model::Rect;
+use crate::selection::NormalizedSelection;
 
 mod palette;
 mod shaders;
@@ -354,7 +355,17 @@ impl CellRenderer {
     /// Build instance data from the terminal surface with a custom default background.
     /// If `cursor` is Some((col, row, wide)), that cell's fg/bg are swapped to show the cursor.
     /// `wide` indicates the cursor is on a wide (2-cell) character.
-    pub fn prepare_with_bg(&mut self, surface: &Surface, queue: &wgpu::Queue, default_bg: [f32; 4], cursor: Option<(usize, usize, bool)>) {
+    /// `selection` provides the normalized selection range and highlight color for selected cells.
+    /// `row_offset` is the absolute row offset for the first display row (for selection matching).
+    pub fn prepare_with_bg(
+        &mut self,
+        surface: &Surface,
+        queue: &wgpu::Queue,
+        default_bg: [f32; 4],
+        cursor: Option<(usize, usize, bool)>,
+        selection: Option<&(NormalizedSelection, [f32; 4])>,
+        row_offset: usize,
+    ) {
         let (cols, rows) = surface.dimensions();
         let lines = surface.screen_lines();
 
@@ -390,6 +401,14 @@ impl CellRenderer {
                 // Cursor: swap fg/bg (stacks with reverse)
                 if is_cursor {
                     std::mem::swap(&mut bg_color, &mut fg_color);
+                }
+
+                // Selection: override bg color
+                if let Some((sel, sel_bg)) = selection {
+                    let abs_row = row_offset + row_idx;
+                    if crate::selection::is_selected(col_idx, abs_row, sel) {
+                        bg_color = *sel_bg;
+                    }
                 }
 
                 self.bg_instances.push(BgInstance {
@@ -465,7 +484,7 @@ impl CellRenderer {
 
     /// Build instance data from the terminal surface (uses default palette bg).
     pub fn prepare(&mut self, surface: &Surface, queue: &wgpu::Queue) {
-        self.prepare_with_bg(surface, queue, DEFAULT_BG, None);
+        self.prepare_with_bg(surface, queue, DEFAULT_BG, None, None, 0);
     }
 
     /// Prepare instance data for a terminal surface to be rendered in a specific viewport rect.
@@ -501,7 +520,7 @@ impl CellRenderer {
         };
         queue.write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
 
-        self.prepare_with_bg(surface, queue, default_bg, None);
+        self.prepare_with_bg(surface, queue, default_bg, None, None, 0);
     }
 
     /// Prepare instance data for a terminal with scrollback support.
@@ -516,6 +535,7 @@ impl CellRenderer {
         screen_height: u32,
         default_bg: [f32; 4],
         show_cursor: bool,
+        selection: Option<&(NormalizedSelection, [f32; 4])>,
     ) {
         let uniforms = Uniforms {
             cell_size: [
@@ -549,7 +569,8 @@ impl CellRenderer {
 
         if terminal.scroll_offset == 0 {
             // No scrollback active - use normal surface rendering
-            self.prepare_with_bg(terminal.surface(), queue, default_bg, cursor);
+            let row_offset = terminal.scrollback_len();
+            self.prepare_with_bg(terminal.surface(), queue, default_bg, cursor, selection, row_offset);
             return;
         }
 
@@ -582,13 +603,13 @@ impl CellRenderer {
             if source_line < scrollback_len {
                 // From scrollback buffer
                 if let Some(line) = terminal.scrollback_line(source_line) {
-                    self.render_scrollback_line(line, row_idx, cols, default_bg, queue);
+                    self.render_scrollback_line(line, row_idx, cols, default_bg, queue, selection, source_line);
                 }
             } else {
                 // From current surface
                 let surface_row = source_line - scrollback_len;
                 if surface_row < surface_lines.len() {
-                    self.render_surface_line(&surface_lines[surface_row], row_idx, cols, default_bg, queue);
+                    self.render_surface_line(&surface_lines[surface_row], row_idx, cols, default_bg, queue, selection, source_line);
                 }
             }
         }
@@ -626,6 +647,8 @@ impl CellRenderer {
         cols: usize,
         default_bg: [f32; 4],
         queue: &wgpu::Queue,
+        selection: Option<&(NormalizedSelection, [f32; 4])>,
+        absolute_row: usize,
     ) {
         let mut col_idx: usize = 0;
         for (text, attrs) in line.iter() {
@@ -642,6 +665,13 @@ impl CellRenderer {
 
             let ch = text.chars().next().unwrap_or(' ');
             let width = unicode_width(ch);
+
+            // Selection: override bg color
+            if let Some((sel, sel_bg)) = selection {
+                if crate::selection::is_selected(col_idx, absolute_row, sel) {
+                    bg_color = *sel_bg;
+                }
+            }
 
             // Push bg for main cell and continuation cells of wide characters
             for i in 0..width {
@@ -685,6 +715,8 @@ impl CellRenderer {
         cols: usize,
         default_bg: [f32; 4],
         queue: &wgpu::Queue,
+        selection: Option<&(NormalizedSelection, [f32; 4])>,
+        absolute_row: usize,
     ) {
         for cell_ref in line.visible_cells() {
             let col_idx = cell_ref.cell_index();
@@ -699,6 +731,13 @@ impl CellRenderer {
             );
             if attrs.reverse() {
                 std::mem::swap(&mut bg_color, &mut fg_color);
+            }
+
+            // Selection: override bg color
+            if let Some((sel, sel_bg)) = selection {
+                if crate::selection::is_selected(col_idx, absolute_row, sel) {
+                    bg_color = *sel_bg;
+                }
             }
 
             self.bg_instances.push(BgInstance {

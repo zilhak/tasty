@@ -707,7 +707,7 @@ impl TastyWindow {
         // Render
         if self.dirty {
             self.dirty = false;
-            match self.gpu.render(&mut self.state, &self.window, &self.preedit_text) {
+            match self.gpu.render(&mut self.state, &self.window, &self.preedit_text, self.text_selection.as_ref()) {
                 Ok(_) => {}
                 Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
                     self.gpu.resize(self.window.inner_size());
