@@ -149,6 +149,7 @@ impl App {
         });
 
         let mut state = crate::state::AppState::new(cols, rows, waker).expect("failed to create app state");
+        state.engine.waker_factory = Some(self.engine.proxy.clone());
 
         if !startup_command.is_empty() {
             if let Some(terminal) = state.focused_terminal_mut() {
@@ -203,7 +204,8 @@ impl App {
             let _ = proxy.send_event(AppEvent::TerminalOutput(None));
         });
 
-        let state = crate::state::AppState::new(cols, rows, waker).expect("failed to create app state");
+        let mut state = crate::state::AppState::new(cols, rows, waker).expect("failed to create app state");
+        state.engine.waker_factory = Some(self.engine.proxy.clone());
 
         let window_id = window.id();
         self.windows.insert(window_id, tasty_window::TastyWindow::new(gpu, state, window, self.engine.proxy.clone()));

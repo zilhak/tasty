@@ -178,7 +178,7 @@ impl AppState {
             surface_id,
             shell,
             &shell_args,
-            self.engine.waker.clone(),
+            self.engine.make_waker(surface_id),
         )?;
         self.engine.workspaces.push(ws);
         self.active_workspace = self.engine.workspaces.len() - 1;
@@ -196,7 +196,7 @@ impl AppState {
         let shell_ref = if shell.is_empty() { None } else { Some(shell.as_str()) };
         let shell_args_owned = self.engine.settings.general.effective_shell_args();
         let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
-        let waker = self.engine.waker.clone();
+        let waker = self.engine.make_waker(surface_id);
         if let Some(pane) = self.focused_pane_mut() {
             pane.add_tab_with_shell(tab_id, surface_id, cols, rows, shell_ref, &shell_args, waker)?;
         }
@@ -239,7 +239,7 @@ impl AppState {
         let shell_args_owned = self.engine.settings.general.effective_shell_args();
         let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
         let new_pane =
-            crate::model::Pane::new_with_shell(new_pane_id, new_tab_id, new_surface_id, cols, rows, shell_ref, &shell_args, self.engine.waker.clone())?;
+            crate::model::Pane::new_with_shell(new_pane_id, new_tab_id, new_surface_id, cols, rows, shell_ref, &shell_args, self.engine.make_waker(new_surface_id))?;
 
         let ws = self.active_workspace_mut();
         let target_pane_id = ws.focused_pane;
@@ -260,7 +260,7 @@ impl AppState {
         let shell_ref = if shell.is_empty() { None } else { Some(shell.as_str()) };
         let shell_args_owned = self.engine.settings.general.effective_shell_args();
         let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
-        let waker = self.engine.waker.clone();
+        let waker = self.engine.make_waker(new_surface_id);
         if let Some(pane) = self.focused_pane_mut() {
             pane.split_active_surface_with_shell(direction, new_surface_id, cols, rows, shell_ref, &shell_args, waker)?;
         }
@@ -448,7 +448,7 @@ impl AppState {
         let shell_args_owned = self.engine.settings.general.effective_shell_args();
         let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
         let new_pane =
-            crate::model::Pane::new_with_shell(new_pane_id, new_tab_id, new_surface_id, cols, rows, shell_ref, &shell_args, self.engine.waker.clone())?;
+            crate::model::Pane::new_with_shell(new_pane_id, new_tab_id, new_surface_id, cols, rows, shell_ref, &shell_args, self.engine.make_waker(new_surface_id))?;
 
         let ws = self.active_workspace_mut();
         let target_pane_id = ws.focused_pane;

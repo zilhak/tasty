@@ -81,6 +81,9 @@ pub struct EngineState {
     pub surface_messages: HashMap<u32, Vec<SurfaceMessage>>,
     pub(crate) surface_next_message_id: u32,
     pub last_key_input: HashMap<u32, std::time::Instant>,
+
+    /// Event loop proxy for targeted waker creation. Set by App after EngineState creation.
+    pub waker_factory: Option<winit::event_loop::EventLoopProxy<crate::AppEvent>>,
 }
 
 impl EngineState {
@@ -117,6 +120,7 @@ impl EngineState {
             surface_messages: HashMap::new(),
             surface_next_message_id: 0,
             last_key_input: HashMap::new(),
+            waker_factory: None,
         };
 
         // Re-apply coalesce_ms from actual settings
@@ -129,8 +133,30 @@ impl EngineState {
     }
 
     /// Send fast-mode init command to a terminal by surface ID and apply scrollback limit.
-    /// TODO(scrollback_disk_swap): If performance.scrollback_disk_swap is enabled,
-    /// use a disk-backed scrollback buffer instead of in-memory.
+    /// Create a waker for a terminal. If targeted_pty_polling is enabled,
+    /// the waker includes the surface_id so only that terminal is processed.
+    /// Otherwise, returns the shared waker (all terminals polled).
+    pub fn make_waker(&self, surface_id: u32) -> Waker {
+        if self.settings.performance.targeted_pty_polling {
+            // Import the proxy-based waker creation from the base waker
+            // The base waker sends TerminalOutput(None). We create one that sends TerminalOutput(Some(id)).
+            // We need access to the EventLoopProxy, which is captured in self.waker.
+            // However, self.waker is a generic Fn(), not tied to proxy.
+            // So we store a waker_factory alongside waker.
+            if let Some(factory) = &self.waker_factory {
+                let proxy = factory.clone();
+                let sid = surface_id;
+                std::sync::Arc::new(move || {
+                    let _ = proxy.send_event(crate::AppEvent::TerminalOutput(Some(sid)));
+                })
+            } else {
+                self.waker.clone()
+            }
+        } else {
+            self.waker.clone()
+        }
+    }
+
     pub fn send_fast_init(&mut self, surface_id: u32) {
         crate::surface_meta::SurfaceMetaStore::ensure_created(surface_id);
         let scrollback_limit = self.settings.general.scrollback_lines;
@@ -211,6 +237,16 @@ impl EngineState {
             }
         }
         any
+    }
+
+    /// Process a single terminal by surface ID (read PTY output).
+    /// Returns true if data was processed.
+    pub fn process_surface(&mut self, surface_id: u32) -> bool {
+        if let Some(terminal) = self.find_terminal_by_id_mut(surface_id) {
+            terminal.process()
+        } else {
+            false
+        }
     }
 
     /// Collect events from all terminals.

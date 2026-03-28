@@ -14,11 +14,21 @@ impl ApplicationHandler<AppEvent> for App {
             AppEvent::OpenSettings => {
                 self.open_settings_modal(event_loop);
             }
-            AppEvent::TerminalOutput(_surface_id) => {
-                // TODO: When targeted_pty_polling is enabled, only wake the window
-                // that contains the specified surface_id. For now, wake all.
-                for w in self.windows.values_mut() {
-                    w.mark_dirty();
+            AppEvent::TerminalOutput(surface_id) => {
+                if let Some(sid) = surface_id {
+                    // Targeted polling: process only the specific terminal, then wake its window
+                    for w in self.windows.values_mut() {
+                        if w.state.engine.find_terminal_by_id(sid).is_some() {
+                            w.state.engine.process_surface(sid);
+                            w.mark_dirty();
+                            break;
+                        }
+                    }
+                } else {
+                    // Legacy: wake all windows
+                    for w in self.windows.values_mut() {
+                        w.mark_dirty();
+                    }
                 }
             }
             AppEvent::IpcReady => {
