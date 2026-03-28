@@ -785,17 +785,9 @@ impl GpuState {
         None
     }
 
-    /// Apply a theme ("dark" or "light") to the egui context.
-    fn apply_theme(ctx: &egui::Context, theme: &str) {
-        if theme == "light" {
-            let mut visuals = egui::Visuals::light();
-            visuals.panel_fill = egui::Color32::from_rgb(240, 240, 244);
-            visuals.window_fill = egui::Color32::from_rgb(240, 240, 244);
-            visuals.extreme_bg_color = egui::Color32::from_rgb(250, 250, 252);
-            ctx.set_visuals(visuals);
-        } else {
-            crate::theme::theme().apply_to_egui(ctx);
-        }
+    /// Apply the theme to the egui context.
+    fn apply_theme(ctx: &egui::Context, _theme: &str) {
+        crate::theme::theme().apply_to_egui(ctx);
     }
 
     /// Re-apply the theme from settings. Called after settings are saved.

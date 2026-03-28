@@ -336,12 +336,8 @@ fn draw_appearance_tab(ui: &mut egui::Ui, settings: &mut Settings) {
                 .speed(0.5));
             ui.end_row();
 
-            ui.label(t("settings.appearance.theme_label"));
-            ui.horizontal(|ui| {
-                ui.radio_value(&mut settings.appearance.theme, "dark".to_string(), t("settings.appearance.theme.dark"));
-                ui.radio_value(&mut settings.appearance.theme, "light".to_string(), t("settings.appearance.theme.light"));
-            });
-            ui.end_row();
+            // Theme selector — currently only dark theme (Catppuccin Mocha) is supported
+            // Future: add theme file loading from ~/.tasty/themes/
 
             ui.label(t("settings.appearance.background_opacity_label"));
             ui.add(egui::Slider::new(&mut settings.appearance.background_opacity, 0.0..=1.0));
