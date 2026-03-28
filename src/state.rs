@@ -232,8 +232,8 @@ impl AppState {
         let cols = self.engine.default_cols;
         let rows = self.engine.default_rows;
 
-        // Pre-create the new Pane (PTY allocation) BEFORE any structural mutation.
-        // This way, if PTY creation fails, the layout is untouched.
+        // TODO(lazy_pty_init): If performance.lazy_pty_init is enabled,
+        // create pane without spawning PTY process. Spawn on first focus.
         let shell = self.engine.settings.general.shell.clone();
         let shell_ref = if shell.is_empty() { None } else { Some(shell.as_str()) };
         let shell_args_owned = self.engine.settings.general.effective_shell_args();

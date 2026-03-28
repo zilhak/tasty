@@ -10,6 +10,7 @@ enum SettingsTab {
     Notifications,
     Keybindings,
     Language,
+    Performance,
 }
 
 /// Sub-tab within the Keybindings tab.
@@ -96,6 +97,7 @@ pub fn draw_settings_window(
                     (SettingsTab::Notifications, t("settings.tab.notifications")),
                     (SettingsTab::Keybindings, t("settings.tab.keybindings")),
                     (SettingsTab::Language, t("settings.tab.language")),
+                    (SettingsTab::Performance, "Performance"),
                 ];
                 for (tab, label) in &tabs {
                     let selected = ui_state.active_tab == *tab;
@@ -120,6 +122,7 @@ pub fn draw_settings_window(
                             SettingsTab::Notifications => draw_notifications_tab(ui, &mut draft),
                             SettingsTab::Keybindings => draw_keybindings_tab(ui, &mut draft, &mut ui_state.recording_field, &mut ui_state.keybindings_sub_tab),
                             SettingsTab::Language => draw_language_tab(ui, &mut draft),
+                            SettingsTab::Performance => draw_performance_tab(ui, &mut draft),
                         }
                     });
 
@@ -674,4 +677,47 @@ fn language_display_name(code: &str) -> &str {
         "ja" => "日本語",
         _ => code,
     }
+}
+
+fn draw_performance_tab(ui: &mut egui::Ui, settings: &mut crate::settings::Settings) {
+    ui.heading("Performance");
+    ui.add_space(4.0);
+    ui.label(
+        egui::RichText::new("Changes require restart to take effect.")
+            .small()
+            .color(egui::Color32::from_rgb(249, 226, 175)), // Yellow warning
+    );
+    ui.add_space(12.0);
+
+    ui.checkbox(
+        &mut settings.performance.targeted_pty_polling,
+        "Targeted PTY polling",
+    );
+    ui.label(
+        egui::RichText::new("Only process terminals with new output instead of polling all. Reduces CPU with many surfaces.")
+            .small()
+            .color(egui::Color32::GRAY),
+    );
+    ui.add_space(8.0);
+
+    ui.checkbox(
+        &mut settings.performance.scrollback_disk_swap,
+        "Scrollback disk swap",
+    );
+    ui.label(
+        egui::RichText::new("Swap old scrollback lines to disk to reduce memory usage.")
+            .small()
+            .color(egui::Color32::GRAY),
+    );
+    ui.add_space(8.0);
+
+    ui.checkbox(
+        &mut settings.performance.lazy_pty_init,
+        "Lazy PTY initialization",
+    );
+    ui.label(
+        egui::RichText::new("Spawn shell processes only when a tab is first focused, not at creation.")
+            .small()
+            .color(egui::Color32::GRAY),
+    );
 }

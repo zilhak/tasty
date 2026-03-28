@@ -58,8 +58,9 @@ impl ClipboardContext {
 /// Custom events sent to the winit event loop from background threads.
 #[derive(Debug)]
 enum AppEvent {
-    /// PTY reader thread produced output -- wake up and redraw.
-    TerminalOutput,
+    /// PTY reader thread produced output. If targeted_pty_polling is enabled,
+    /// contains the surface_id that has new data. Otherwise None (poll all).
+    TerminalOutput(Option<u32>),
     /// IPC command arrived -- wake up and process.
     IpcReady,
     /// egui requested a repaint (new window, animation, cursor blink).
@@ -144,7 +145,7 @@ impl App {
 
         let proxy = self.engine.proxy.clone();
         let waker: crate::terminal::Waker = Arc::new(move || {
-            let _ = proxy.send_event(AppEvent::TerminalOutput);
+            let _ = proxy.send_event(AppEvent::TerminalOutput(None));
         });
 
         let mut state = crate::state::AppState::new(cols, rows, waker).expect("failed to create app state");
@@ -199,7 +200,7 @@ impl App {
 
         let proxy = self.engine.proxy.clone();
         let waker: crate::terminal::Waker = Arc::new(move || {
-            let _ = proxy.send_event(AppEvent::TerminalOutput);
+            let _ = proxy.send_event(AppEvent::TerminalOutput(None));
         });
 
         let state = crate::state::AppState::new(cols, rows, waker).expect("failed to create app state");

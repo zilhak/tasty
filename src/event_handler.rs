@@ -14,8 +14,9 @@ impl ApplicationHandler<AppEvent> for App {
             AppEvent::OpenSettings => {
                 self.open_settings_modal(event_loop);
             }
-            AppEvent::TerminalOutput => {
-                // Wake all windows — PTY output could be for any of them
+            AppEvent::TerminalOutput(_surface_id) => {
+                // TODO: When targeted_pty_polling is enabled, only wake the window
+                // that contains the specified surface_id. For now, wake all.
                 for w in self.windows.values_mut() {
                     w.mark_dirty();
                 }

@@ -19,6 +19,7 @@ pub struct Settings {
     pub clipboard: ClipboardSettings,
     pub notification: NotificationSettings,
     pub keybindings: KeybindingSettings,
+    pub performance: PerformanceSettings,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -53,6 +54,32 @@ pub struct ClipboardSettings {
     pub macos_style: bool,
     pub linux_style: bool,
     pub windows_style: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PerformanceSettings {
+    /// When enabled, only terminals with new PTY output are processed each frame
+    /// instead of polling all terminals. Reduces CPU usage with many surfaces.
+    /// Requires restart to apply.
+    pub targeted_pty_polling: bool,
+    /// When enabled, swap old scrollback lines to disk to reduce memory usage.
+    /// Requires restart to apply.
+    pub scrollback_disk_swap: bool,
+    /// When enabled, PTY processes are only spawned when a tab is first focused,
+    /// instead of at tab creation time. Reduces initial resource usage.
+    /// Requires restart to apply.
+    pub lazy_pty_init: bool,
+}
+
+impl Default for PerformanceSettings {
+    fn default() -> Self {
+        Self {
+            targeted_pty_polling: false,
+            scrollback_disk_swap: false,
+            lazy_pty_init: false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -120,6 +147,7 @@ impl Default for Settings {
             clipboard: ClipboardSettings::default(),
             notification: NotificationSettings::default(),
             keybindings: KeybindingSettings::default(),
+            performance: PerformanceSettings::default(),
         }
     }
 }

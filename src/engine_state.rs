@@ -129,6 +129,8 @@ impl EngineState {
     }
 
     /// Send fast-mode init command to a terminal by surface ID and apply scrollback limit.
+    /// TODO(scrollback_disk_swap): If performance.scrollback_disk_swap is enabled,
+    /// use a disk-backed scrollback buffer instead of in-memory.
     pub fn send_fast_init(&mut self, surface_id: u32) {
         crate::surface_meta::SurfaceMetaStore::ensure_created(surface_id);
         let scrollback_limit = self.settings.general.scrollback_lines;

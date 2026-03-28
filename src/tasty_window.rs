@@ -410,7 +410,9 @@ impl TastyWindow {
     fn handle_redraw(&mut self, event_loop: &ActiveEventLoop) {
         // Process IPC is done by App::about_to_wait
 
-        // Process PTY output
+        // TODO(targeted_pty_polling): If performance.targeted_pty_polling is enabled,
+        // only process the specific surface_id from the TerminalOutput event
+        // instead of polling all terminals.
         if self.state.process_all() {
             self.dirty = true;
         }
