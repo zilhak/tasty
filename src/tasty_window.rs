@@ -361,17 +361,22 @@ impl TastyWindow {
             return;
         }
 
-        // Clear selection on terminal input
-        if self.text_selection.is_some() {
-            self.text_selection = None;
-            self.dirty = true;
-        }
-
         // Forward to terminal
         let typing_surface_id = self.state.focused_surface_id();
         if let Some(terminal) = self.state.focused_terminal_mut() {
             let dirty = Self::send_key_to_terminal(terminal, &event.logical_key, &event.text, self.modifiers);
             if dirty { self.dirty = true; }
+
+            // Clear selection only when actual content was sent to terminal
+            // (not on modifier-only keys like Ctrl, Shift, Alt)
+            let is_modifier_only = matches!(
+                event.logical_key,
+                Key::Named(NamedKey::Control | NamedKey::Shift | NamedKey::Alt | NamedKey::Super | NamedKey::Meta)
+            );
+            if !is_modifier_only && self.text_selection.is_some() {
+                self.text_selection = None;
+                self.dirty = true;
+            }
         }
         if let Some(sid) = typing_surface_id {
             self.state.record_typing(sid);
