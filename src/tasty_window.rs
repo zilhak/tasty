@@ -408,7 +408,11 @@ impl TastyWindow {
     }
 
     fn handle_redraw(&mut self, event_loop: &ActiveEventLoop) {
-        // Process IPC is done by App::about_to_wait
+        // Check if settings button was clicked (ui.rs sets state.settings_open = true)
+        if self.state.settings_open {
+            self.state.settings_open = false;
+            let _ = self.proxy.send_event(crate::AppEvent::OpenSettings);
+        }
 
         // When targeted_pty_polling is off, process all terminals every frame.
         // When on, individual terminals are processed via TerminalOutput(Some(id)) events,
