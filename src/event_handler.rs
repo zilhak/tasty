@@ -124,149 +124,7 @@ impl ApplicationHandler<AppEvent> for App {
                 self.modifiers = modifiers.state();
             }
             WindowEvent::KeyboardInput { event, .. } => {
-                if event.state != ElementState::Pressed {
-                    return;
-                }
-
-                // Always handle Escape to close overlays (settings, notifications)
-                if event.logical_key == Key::Named(NamedKey::Escape) {
-                    if let Some(state) = &mut self.state {
-                        if state.settings_open {
-                            state.settings_open = false;
-                            state.settings_ui_state = crate::settings_ui::SettingsUiState::new();
-                            self.mark_dirty();
-                            return;
-                        }
-                        if state.notification_panel_open {
-                            state.notification_panel_open = false;
-                            self.mark_dirty();
-                            return;
-                        }
-                    }
-                }
-
-                // If an overlay is open, skip shortcuts so key events
-                // stay within the overlay (e.g. keybinding capture).
-                // Exception: toggle shortcuts (settings, notifications) can close their own overlay.
-                let settings_open = self.state.as_ref().map(|s| s.settings_open).unwrap_or(false);
-                let notification_open = self.state.as_ref().map(|s| s.notification_panel_open).unwrap_or(false);
-                let overlay_open = settings_open || notification_open;
-
-                if !overlay_open || (notification_open && !settings_open) {
-                    if self.handle_shortcut(&event.logical_key, self.modifiers) {
-                        self.mark_dirty();
-                        return;
-                    }
-                }
-                if egui_consumed || overlay_open {
-                    // egui handled the input — still need to redraw so the UI updates.
-                    if egui_consumed {
-                        self.mark_dirty();
-                    }
-                    return;
-                }
-
-                // Forward to terminal
-
-                if let Some(state) = &mut self.state {
-                    // Record typing before borrowing terminal mutably
-                    let typing_surface_id = state.focused_surface_id();
-                    if let Some(terminal) = state.focused_terminal_mut() {
-                        // Handle special keys FIRST — these have well-defined byte
-                        // sequences and must not be intercepted by event.text,
-                        // which can contain unexpected control characters
-                        // (e.g. Backspace → \x7f or \x08 depending on platform).
-                        let app_cursor = terminal.application_cursor_keys();
-                        let is_alt_screen = terminal.is_alternate_screen();
-
-                        // Check if this key will be used for scrollback (not sent to PTY)
-                        let is_scrollback_key = !is_alt_screen && matches!(
-                            event.logical_key.as_ref(),
-                            Key::Named(NamedKey::PageUp) | Key::Named(NamedKey::PageDown)
-                        );
-
-                        // Any keyboard input that goes to PTY resets scroll to bottom
-                        if !is_scrollback_key && terminal.scroll_offset > 0 {
-                            terminal.scroll_to_bottom();
-                            self.dirty = true;
-                        }
-
-                        match event.logical_key.as_ref() {
-                            Key::Named(NamedKey::Enter) => terminal.send_bytes(b"\r"),
-                            Key::Named(NamedKey::Backspace) => terminal.send_bytes(b"\x7f"),
-                            Key::Named(NamedKey::Tab) => {
-                                if self.modifiers.shift_key() {
-                                    terminal.send_bytes(b"\x1b[Z"); // Reverse Tab (CSI Z)
-                                } else {
-                                    terminal.send_bytes(b"\t");
-                                }
-                            }
-                            Key::Named(NamedKey::Escape) => terminal.send_bytes(b"\x1b"),
-                            Key::Named(NamedKey::ArrowUp) => {
-                                if app_cursor { terminal.send_bytes(b"\x1bOA") }
-                                else { terminal.send_bytes(b"\x1b[A") }
-                            }
-                            Key::Named(NamedKey::ArrowDown) => {
-                                if app_cursor { terminal.send_bytes(b"\x1bOB") }
-                                else { terminal.send_bytes(b"\x1b[B") }
-                            }
-                            Key::Named(NamedKey::ArrowRight) => {
-                                if app_cursor { terminal.send_bytes(b"\x1bOC") }
-                                else { terminal.send_bytes(b"\x1b[C") }
-                            }
-                            Key::Named(NamedKey::ArrowLeft) => {
-                                if app_cursor { terminal.send_bytes(b"\x1bOD") }
-                                else { terminal.send_bytes(b"\x1b[D") }
-                            }
-                            Key::Named(NamedKey::Home) => terminal.send_bytes(b"\x1b[H"),
-                            Key::Named(NamedKey::End) => terminal.send_bytes(b"\x1b[F"),
-                            Key::Named(NamedKey::PageUp) => {
-                                if terminal.is_alternate_screen() {
-                                    terminal.send_bytes(b"\x1b[5~");
-                                } else {
-                                    terminal.scroll_up(terminal.rows());
-                                    self.dirty = true;
-                                }
-                            }
-                            Key::Named(NamedKey::PageDown) => {
-                                if terminal.is_alternate_screen() {
-                                    terminal.send_bytes(b"\x1b[6~");
-                                } else {
-                                    terminal.scroll_down(terminal.rows());
-                                    self.dirty = true;
-                                }
-                            }
-                            Key::Named(NamedKey::Insert) => terminal.send_bytes(b"\x1b[2~"),
-                            Key::Named(NamedKey::Delete) => terminal.send_bytes(b"\x1b[3~"),
-                            Key::Named(NamedKey::F1) => terminal.send_bytes(b"\x1bOP"),
-                            Key::Named(NamedKey::F2) => terminal.send_bytes(b"\x1bOQ"),
-                            Key::Named(NamedKey::F3) => terminal.send_bytes(b"\x1bOR"),
-                            Key::Named(NamedKey::F4) => terminal.send_bytes(b"\x1bOS"),
-                            Key::Named(NamedKey::F5) => terminal.send_bytes(b"\x1b[15~"),
-                            Key::Named(NamedKey::F6) => terminal.send_bytes(b"\x1b[17~"),
-                            Key::Named(NamedKey::F7) => terminal.send_bytes(b"\x1b[18~"),
-                            Key::Named(NamedKey::F8) => terminal.send_bytes(b"\x1b[19~"),
-                            Key::Named(NamedKey::F9) => terminal.send_bytes(b"\x1b[20~"),
-                            Key::Named(NamedKey::F10) => terminal.send_bytes(b"\x1b[21~"),
-                            Key::Named(NamedKey::F11) => terminal.send_bytes(b"\x1b[23~"),
-                            Key::Named(NamedKey::F12) => terminal.send_bytes(b"\x1b[24~"),
-                            _ => {
-                                // Not a special key — use event.text for regular characters
-                                // (includes Ctrl+key mappings like Ctrl+C → \x03).
-                                if let Some(text) = &event.text {
-                                    let s = text.as_str();
-                                    if !s.is_empty() {
-                                        terminal.send_key(s);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    // After terminal borrow ends, record typing for the surface
-                    if let Some(sid) = typing_surface_id {
-                        state.record_typing(sid);
-                    }
-                }
+                self.handle_keyboard_input(&event, egui_consumed);
             }
             WindowEvent::Ime(ime_event) => {
                 if egui_consumed {
@@ -639,5 +497,146 @@ impl ApplicationHandler<AppEvent> for App {
         if self.process_ipc() {
             self.mark_dirty();
         }
+    }
+}
+
+// ── Extracted event handlers ──
+
+impl App {
+    fn handle_keyboard_input(&mut self, event: &winit::event::KeyEvent, egui_consumed: bool) {
+        if event.state != ElementState::Pressed {
+            return;
+        }
+
+        // Always handle Escape to close overlays
+        if event.logical_key == Key::Named(NamedKey::Escape) {
+            if let Some(state) = &mut self.state {
+                if state.settings_open {
+                    state.settings_open = false;
+                    state.settings_ui_state = crate::settings_ui::SettingsUiState::new();
+                    self.mark_dirty();
+                    return;
+                }
+                if state.notification_panel_open {
+                    state.notification_panel_open = false;
+                    self.mark_dirty();
+                    return;
+                }
+            }
+        }
+
+        // Overlay shortcut handling
+        let settings_open = self.state.as_ref().map(|s| s.settings_open).unwrap_or(false);
+        let notification_open = self.state.as_ref().map(|s| s.notification_panel_open).unwrap_or(false);
+        let overlay_open = settings_open || notification_open;
+
+        if !overlay_open || (notification_open && !settings_open) {
+            if self.handle_shortcut(&event.logical_key, self.modifiers) {
+                self.mark_dirty();
+                return;
+            }
+        }
+        if egui_consumed || overlay_open {
+            if egui_consumed {
+                self.mark_dirty();
+            }
+            return;
+        }
+
+        // Forward to terminal
+        if let Some(state) = &mut self.state {
+            let typing_surface_id = state.focused_surface_id();
+            if let Some(terminal) = state.focused_terminal_mut() {
+                let dirty = Self::send_key_to_terminal(terminal, &event.logical_key, &event.text, self.modifiers);
+                if dirty { self.dirty = true; }
+            }
+            if let Some(sid) = typing_surface_id {
+                state.record_typing(sid);
+            }
+        }
+    }
+
+    /// Send a key event to a terminal. Returns true if the display needs redraw (scrollback changed).
+    fn send_key_to_terminal(
+        terminal: &mut tasty_terminal::Terminal,
+        key: &Key,
+        text: &Option<winit::keyboard::SmolStr>,
+        modifiers: winit::keyboard::ModifiersState,
+    ) -> bool {
+        let app_cursor = terminal.application_cursor_keys();
+        let is_alt_screen = terminal.is_alternate_screen();
+        let mut dirty = false;
+
+        let is_scrollback_key = !is_alt_screen && matches!(
+            key.as_ref(),
+            Key::Named(NamedKey::PageUp) | Key::Named(NamedKey::PageDown)
+        );
+
+        if !is_scrollback_key && terminal.scroll_offset > 0 {
+            terminal.scroll_to_bottom();
+            dirty = true;
+        }
+
+        match key.as_ref() {
+            Key::Named(NamedKey::Enter) => terminal.send_bytes(b"\r"),
+            Key::Named(NamedKey::Backspace) => terminal.send_bytes(b"\x7f"),
+            Key::Named(NamedKey::Tab) => {
+                if modifiers.shift_key() {
+                    terminal.send_bytes(b"\x1b[Z");
+                } else {
+                    terminal.send_bytes(b"\t");
+                }
+            }
+            Key::Named(NamedKey::Escape) => terminal.send_bytes(b"\x1b"),
+            Key::Named(NamedKey::ArrowUp) => {
+                if app_cursor { terminal.send_bytes(b"\x1bOA") }
+                else { terminal.send_bytes(b"\x1b[A") }
+            }
+            Key::Named(NamedKey::ArrowDown) => {
+                if app_cursor { terminal.send_bytes(b"\x1bOB") }
+                else { terminal.send_bytes(b"\x1b[B") }
+            }
+            Key::Named(NamedKey::ArrowRight) => {
+                if app_cursor { terminal.send_bytes(b"\x1bOC") }
+                else { terminal.send_bytes(b"\x1b[C") }
+            }
+            Key::Named(NamedKey::ArrowLeft) => {
+                if app_cursor { terminal.send_bytes(b"\x1bOD") }
+                else { terminal.send_bytes(b"\x1b[D") }
+            }
+            Key::Named(NamedKey::Home) => terminal.send_bytes(b"\x1b[H"),
+            Key::Named(NamedKey::End) => terminal.send_bytes(b"\x1b[F"),
+            Key::Named(NamedKey::PageUp) => {
+                if is_alt_screen { terminal.send_bytes(b"\x1b[5~"); }
+                else { terminal.scroll_up(terminal.rows()); dirty = true; }
+            }
+            Key::Named(NamedKey::PageDown) => {
+                if is_alt_screen { terminal.send_bytes(b"\x1b[6~"); }
+                else { terminal.scroll_down(terminal.rows()); dirty = true; }
+            }
+            Key::Named(NamedKey::Insert) => terminal.send_bytes(b"\x1b[2~"),
+            Key::Named(NamedKey::Delete) => terminal.send_bytes(b"\x1b[3~"),
+            Key::Named(NamedKey::F1) => terminal.send_bytes(b"\x1bOP"),
+            Key::Named(NamedKey::F2) => terminal.send_bytes(b"\x1bOQ"),
+            Key::Named(NamedKey::F3) => terminal.send_bytes(b"\x1bOR"),
+            Key::Named(NamedKey::F4) => terminal.send_bytes(b"\x1bOS"),
+            Key::Named(NamedKey::F5) => terminal.send_bytes(b"\x1b[15~"),
+            Key::Named(NamedKey::F6) => terminal.send_bytes(b"\x1b[17~"),
+            Key::Named(NamedKey::F7) => terminal.send_bytes(b"\x1b[18~"),
+            Key::Named(NamedKey::F8) => terminal.send_bytes(b"\x1b[19~"),
+            Key::Named(NamedKey::F9) => terminal.send_bytes(b"\x1b[20~"),
+            Key::Named(NamedKey::F10) => terminal.send_bytes(b"\x1b[21~"),
+            Key::Named(NamedKey::F11) => terminal.send_bytes(b"\x1b[23~"),
+            Key::Named(NamedKey::F12) => terminal.send_bytes(b"\x1b[24~"),
+            _ => {
+                if let Some(text) = text {
+                    let s = text.as_str();
+                    if !s.is_empty() {
+                        terminal.send_key(s);
+                    }
+                }
+            }
+        }
+        dirty
     }
 }
