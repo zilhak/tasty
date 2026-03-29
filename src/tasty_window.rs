@@ -597,7 +597,10 @@ impl TastyWindow {
         self.cursor_position = Some(position);
         let overlay_open = self.state.settings_open || self.state.notification_panel_open;
         if egui_consumed || overlay_open {
-            if egui_consumed { self.mark_dirty(); }
+            if egui_consumed {
+                self.window.set_cursor(CursorIcon::Default);
+                self.mark_dirty();
+            }
             return;
         }
 
