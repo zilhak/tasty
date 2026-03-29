@@ -741,10 +741,8 @@ pub fn draw_pane_context_menu(
                 });
         });
 
-    // Close menu if clicked outside (skip the frame the menu was opened on)
-    let current_frame = ctx.cumulative_pass_nr();
-    if current_frame > menu.open_frame
-        && ctx.input(|i| i.pointer.any_click())
+    // Close menu if a new mouse press occurs outside the menu
+    if ctx.input(|i| i.pointer.any_pressed())
         && !open_markdown_dialog
         && !open_explorer
     {
