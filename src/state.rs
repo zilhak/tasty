@@ -56,6 +56,8 @@ pub struct PaneContextMenu {
     pub pane_id: u32,
     pub x: f32,
     pub y: f32,
+    /// Frame number when the menu was opened, to ignore the opening click.
+    pub open_frame: u64,
 }
 
 /// Which workspace field is being renamed.

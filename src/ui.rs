@@ -740,8 +740,13 @@ pub fn draw_pane_context_menu(
                 });
         });
 
-    // Close menu if clicked outside
-    if ctx.input(|i| i.pointer.any_click()) && !open_markdown_dialog && !open_explorer {
+    // Close menu if clicked outside (skip the frame the menu was opened on)
+    let current_frame = ctx.cumulative_pass_nr();
+    if current_frame > menu.open_frame
+        && ctx.input(|i| i.pointer.any_click())
+        && !open_markdown_dialog
+        && !open_explorer
+    {
         close_menu = true;
     }
 

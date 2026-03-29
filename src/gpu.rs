@@ -740,6 +740,10 @@ impl GpuState {
         self.scale_factor
     }
 
+    pub fn egui_frame_nr(&self) -> u64 {
+        self.egui_ctx.cumulative_pass_nr()
+    }
+
     /// Update the scale factor (e.g., when the window moves between monitors with different DPI).
     pub fn update_scale_factor(&mut self, new_scale_factor: f32) {
         self.scale_factor = new_scale_factor;
