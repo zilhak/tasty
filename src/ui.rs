@@ -11,7 +11,24 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
     let th = theme::theme();
     let sidebar_width = state.sidebar_width;
 
-    // ---- Left sidebar: workspaces ----
+    // ---- Left sidebar ----
+    if !state.sidebar_visible {
+        // Sidebar hidden — skip rendering entirely
+    } else if state.sidebar_collapsed {
+        // Collapsed sidebar: only collapse toggle button
+        egui::SidePanel::left("workspace_sidebar")
+            .exact_width(sidebar_width)
+            .resizable(false)
+            .show(ctx, |ui| {
+                ui.vertical_centered(|ui| {
+                    ui.add_space(8.0);
+                    if ui.button(">").on_hover_text("Expand sidebar").clicked() {
+                        state.sidebar_collapsed = false;
+                    }
+                });
+            });
+    } else {
+    // Full sidebar
     egui::SidePanel::left("workspace_sidebar")
         .exact_width(sidebar_width)
         .resizable(false)
@@ -194,13 +211,36 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
                     });
                 }
 
-                // Settings button pinned to bottom using with_layout
+                // Collapse button + Settings button pinned to bottom
                 let available = ui.available_height();
-                if available > 50.0 {
-                    ui.add_space(available - 50.0);
+                if available > 80.0 {
+                    ui.add_space(available - 80.0);
                 }
+
+                // Collapse button
                 ui.separator();
-                ui.add_space(4.0);
+                ui.add_space(2.0);
+                let full_width = ui.available_width();
+                let (collapse_rect, collapse_resp) = ui.allocate_exact_size(
+                    egui::vec2(full_width, 22.0),
+                    egui::Sense::click().union(egui::Sense::hover()),
+                );
+                if collapse_resp.hovered() {
+                    ui.painter().rect_filled(collapse_rect, 4.0, th.hover_overlay);
+                }
+                ui.painter().text(
+                    collapse_rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    "<  Collapse",
+                    egui::FontId::proportional(11.0),
+                    if collapse_resp.hovered() { th.subtext1 } else { th.overlay0 },
+                );
+                if collapse_resp.clicked() {
+                    state.sidebar_collapsed = true;
+                }
+
+                // Settings button
+                ui.add_space(2.0);
                 let full_width = ui.available_width();
                 let (rect, response) = ui.allocate_exact_size(
                     egui::vec2(full_width, 28.0),
@@ -232,6 +272,7 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
                 ui.add_space(8.0);
             });
         });
+    } // end of sidebar visible/collapsed/full
 
     // Compute remaining terminal area in physical pixels
     let screen_rect = ctx.screen_rect();

@@ -434,7 +434,13 @@ impl GpuState {
         selection: Option<&crate::selection::TextSelection>,
     ) -> Result<(), wgpu::SurfaceError> {
         // 1. Prepare layout
-        state.sidebar_width = state.engine.settings.appearance.scaled_sidebar_width();
+        state.sidebar_width = if !state.sidebar_visible {
+            0.0
+        } else if state.sidebar_collapsed {
+            48.0 // Compact mode: narrow width for collapse button
+        } else {
+            state.engine.settings.appearance.scaled_sidebar_width()
+        };
         let terminal_rect = self.compute_terminal_rect(state.sidebar_width);
         state.resize_all(terminal_rect, self.renderer.cell_width(), self.renderer.cell_height());
 

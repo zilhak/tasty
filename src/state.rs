@@ -41,6 +41,10 @@ pub struct AppState {
     pub settings_ui_state: SettingsUiState,
     /// Cached sidebar width from settings (logical pixels).
     pub sidebar_width: f32,
+    /// Sidebar visibility: false = completely hidden.
+    pub sidebar_visible: bool,
+    /// Sidebar collapsed: true = compact mode (narrow width, icons only).
+    pub sidebar_collapsed: bool,
     /// Workspace rename dialog state: (workspace_index, field, edit_buffer)
     pub ws_rename: Option<(usize, WsRenameField, String)>,
     /// Pane right-click context menu state: (pane_id, logical_x, logical_y).
@@ -81,6 +85,8 @@ impl AppState {
             settings_open: false,
             settings_ui_state: SettingsUiState::new(),
             sidebar_width,
+            sidebar_visible: true,
+            sidebar_collapsed: false,
             ws_rename: None,
             pane_context_menu: None,
             markdown_path_dialog: None,

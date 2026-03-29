@@ -240,6 +240,20 @@ impl TastyWindow {
             return true;
         }
 
+        // Sidebar toggle (open/close)
+        if matches_binding(&kb.toggle_sidebar, key, mods) {
+            state.sidebar_visible = !state.sidebar_visible;
+            self.mark_dirty();
+            return true;
+        }
+
+        // Sidebar collapse (full/compact)
+        if matches_binding(&kb.toggle_sidebar_collapse, key, mods) {
+            state.sidebar_collapsed = !state.sidebar_collapsed;
+            self.mark_dirty();
+            return true;
+        }
+
         // --- Hardcoded shortcuts (not user-configurable) ---
 
         // Ctrl+Shift+Tab: previous tab in focused pane

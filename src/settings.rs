@@ -117,6 +117,10 @@ pub struct KeybindingSettings {
     pub tab_switch_modifier: String,
     /// Modifier for workspace switch (number keys): "ctrl" or "alt"
     pub workspace_switch_modifier: String,
+    /// Toggle sidebar visibility (completely hidden/shown).
+    pub toggle_sidebar: String,
+    /// Toggle sidebar collapse (full/compact mode).
+    pub toggle_sidebar_collapse: String,
 }
 
 impl KeybindingSettings {
@@ -442,6 +446,8 @@ impl Default for KeybindingSettings {
             focus_surface_prev: "alt+up".to_string(),
             tab_switch_modifier: "ctrl".to_string(),
             workspace_switch_modifier: "alt".to_string(),
+            toggle_sidebar: "ctrl+shift+b".to_string(),
+            toggle_sidebar_collapse: "ctrl+b".to_string(),
         }
     }
 }
