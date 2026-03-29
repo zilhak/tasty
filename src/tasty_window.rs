@@ -29,6 +29,7 @@ pub struct TastyWindow {
     pub last_click_time: Option<std::time::Instant>,
     pub last_click_pos: Option<(usize, usize)>,
     pub click_count: u8,
+    pub arrow_queue: Option<crate::click_cursor::ArrowQueue>,
 }
 
 impl TastyWindow {
@@ -48,6 +49,7 @@ impl TastyWindow {
             last_click_time: None,
             last_click_pos: None,
             click_count: 0,
+            arrow_queue: None,
         }
     }
 
@@ -241,16 +243,32 @@ impl TastyWindow {
             return;
         }
 
-        // Send arrow keys
+        // Check if this is a Claude Code surface before mut-borrowing terminal
+        let surface_id = self.state.focused_surface_id().unwrap_or(0);
+        let is_claude = self.state.engine.claude_parent_children.contains_key(&surface_id)
+            || self.state.engine.claude_child_parent.contains_key(&surface_id);
+
+        // Determine arrow escape sequence
         let terminal = self.state.focused_terminal_mut().unwrap();
         let app_cursor = terminal.application_cursor_keys();
-        let arrow: &[u8] = if going_right {
+        let arrow: &'static [u8] = if going_right {
             if app_cursor { b"\x1bOC" } else { b"\x1b[C" }
         } else {
             if app_cursor { b"\x1bOD" } else { b"\x1b[D" }
         };
-        for _ in 0..arrow_count {
-            terminal.send_bytes(arrow);
+
+        if is_claude {
+            // Queue arrows to send one per frame
+            terminal.send_bytes(arrow); // Send first one immediately
+            if arrow_count > 1 {
+                self.arrow_queue = Some(crate::click_cursor::ArrowQueue::new(arrow, arrow_count - 1, surface_id));
+                self.window.request_redraw();
+            }
+        } else {
+            // Shell: send all at once
+            for _ in 0..arrow_count {
+                terminal.send_bytes(arrow);
+            }
         }
     }
 
@@ -710,6 +728,23 @@ impl TastyWindow {
     }
 
     fn handle_redraw(&mut self, event_loop: &ActiveEventLoop) {
+        // Process queued arrow keys (one per frame for Claude Code surfaces)
+        if let Some(queue) = &self.arrow_queue {
+            let sid = queue.surface_id;
+            let arrow = queue.arrow;
+            if let Some(terminal) = self.state.find_terminal_by_id_mut(sid) {
+                let mut q = self.arrow_queue.take().unwrap();
+                let has_more = q.tick(terminal);
+                if has_more {
+                    self.arrow_queue = Some(q);
+                    self.dirty = true;
+                    self.window.request_redraw(); // Schedule next frame
+                }
+            } else {
+                self.arrow_queue = None;
+            }
+        }
+
         // Check if settings button was clicked (ui.rs sets state.settings_open = true)
         if self.state.settings_open {
             self.state.settings_open = false;

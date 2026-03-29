@@ -174,6 +174,32 @@ pub fn count_arrows(
     count
 }
 
+/// Pending arrow key queue for delayed sending (used for Claude Code surfaces).
+#[derive(Debug, Clone)]
+pub struct ArrowQueue {
+    /// The arrow escape sequence to send.
+    pub arrow: &'static [u8],
+    /// Remaining count of arrows to send.
+    pub remaining: usize,
+    /// Surface ID to send to.
+    pub surface_id: u32,
+}
+
+impl ArrowQueue {
+    pub fn new(arrow: &'static [u8], count: usize, surface_id: u32) -> Self {
+        Self { arrow, remaining: count, surface_id }
+    }
+
+    /// Send one arrow key. Returns true if there are more to send.
+    pub fn tick(&mut self, terminal: &mut tasty_terminal::Terminal) -> bool {
+        if self.remaining > 0 {
+            terminal.send_bytes(self.arrow);
+            self.remaining -= 1;
+        }
+        self.remaining > 0
+    }
+}
+
 /// Convert pixel coordinates to grid (col, row) within a terminal viewport.
 pub fn pixel_to_grid(
     x: f32,
