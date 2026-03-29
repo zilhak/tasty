@@ -367,9 +367,7 @@ pub fn draw_pane_tab_bars(
                 Some(p) => p,
                 None => continue,
             };
-            if pane.tabs.len() <= 1 {
-                continue;
-            }
+            // Always show tab bar, even with a single tab
             infos.push(PaneTabInfo {
                 pane_id,
                 tab_names: pane.tabs.iter().map(|t| t.name.clone()).collect(),
@@ -633,7 +631,7 @@ pub fn draw_non_terminal_panels(
             if !panel.is_non_terminal() {
                 continue;
             }
-            let tab_bar_h = if pane.tabs.len() > 1 { 24.0 } else { 0.0 };
+            let tab_bar_h = 24.0;
             infos.push(NonTerminalInfo {
                 pane_id,
                 logical_x: pane_rect.x / scale_factor,

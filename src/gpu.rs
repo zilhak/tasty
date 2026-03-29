@@ -490,7 +490,7 @@ impl GpuState {
         let focused_surface_id = state.focused_surface_id();
         for (pane_id, pane_rect) in &pane_rects {
             if let Some(pane) = pane_layout.find_pane(*pane_id) {
-                let tab_bar_h = if pane.tabs.len() > 1 { 24.0 } else { 0.0 };
+                let tab_bar_h = 24.0;
                 let content_rect = Rect {
                     x: pane_rect.x,
                     y: pane_rect.y + tab_bar_h,

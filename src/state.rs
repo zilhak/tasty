@@ -657,7 +657,7 @@ impl AppState {
         for (pane_id, pane_rect) in pane_rects {
             if let Some(pane) = ws.pane_layout().find_pane(pane_id) {
                 // Reserve space for tab bar at top of each pane
-                let tab_bar_h = if pane.tabs.len() > 1 { 24.0 } else { 0.0 };
+                let tab_bar_h = 24.0;
                 let content_rect = Rect {
                     x: pane_rect.x,
                     y: pane_rect.y + tab_bar_h,
@@ -743,7 +743,7 @@ impl AppState {
         let pane_rects = ws.pane_layout().compute_rects(terminal_rect);
         for (pane_id, pane_rect) in pane_rects {
             if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
-                let tab_bar_h = if pane.tabs.len() > 1 { 24.0 } else { 0.0 };
+                let tab_bar_h = 24.0;
                 let content_rect = Rect {
                     x: pane_rect.x,
                     y: pane_rect.y + tab_bar_h,
@@ -873,7 +873,7 @@ impl AppState {
         let tab_count = ws.pane_layout().find_pane(focused_id)
             .map(|p| p.tabs.len())
             .unwrap_or(0);
-        let tab_bar_h = if tab_count > 1 { 24.0 } else { 0.0 };
+        let tab_bar_h = 24.0;
         let content_rect = Rect {
             x: pane_rect.x,
             y: pane_rect.y + tab_bar_h,
@@ -925,7 +925,7 @@ impl AppState {
         };
 
         let pane = ws.pane_layout().find_pane(focused_id)?;
-        let tab_bar_h = if pane.tabs.len() > 1 { 24.0 } else { 0.0 };
+        let tab_bar_h = 24.0;
         let content_rect = Rect {
             x: pane_rect.x,
             y: pane_rect.y + tab_bar_h,
@@ -974,7 +974,7 @@ impl AppState {
             None => return false,
         };
 
-        let tab_bar_h = if pane.tabs.len() > 1 { 24.0 } else { 0.0 };
+        let tab_bar_h = 24.0;
         let content_rect = Rect {
             x: pane_rect.x,
             y: pane_rect.y + tab_bar_h,
