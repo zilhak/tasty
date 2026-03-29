@@ -109,11 +109,18 @@ impl EditableRegion {
     }
 
     /// Clamp a grid position to be within this editable region.
-    /// Returns the clamped (row, col), or None if the position is entirely outside.
+    /// Clicks up to 1 row above/below the region are clamped to the boundary.
+    /// Clicks further away are rejected (returns None).
     pub fn clamp(&self, row: usize, col: usize) -> Option<(usize, usize)> {
-        if row < self.start_row || row > self.end_row {
-            return None;
+        let margin = 1; // allow 1 row outside
+
+        if row + margin < self.start_row || row > self.end_row + margin {
+            return None; // Too far away
         }
+
+        // Clamp row into the region
+        let row = row.clamp(self.start_row, self.end_row);
+
         let col = if row == self.end_row {
             col.min(self.end_col)
         } else {
