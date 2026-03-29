@@ -20,6 +20,7 @@ enum KeybindingsSubTab {
     Workspace,
     Pane,
     Surface,
+    Preset,
 }
 
 /// Persistent state for the settings UI between frames.
@@ -31,6 +32,8 @@ pub struct SettingsUiState {
     recording_field: Option<String>,
     /// Active sub-tab within keybindings.
     keybindings_sub_tab: KeybindingsSubTab,
+    /// Pending preset name to apply (waiting for user confirmation).
+    preset_confirm: Option<String>,
 }
 
 impl SettingsUiState {
@@ -40,6 +43,7 @@ impl SettingsUiState {
             draft: None,
             recording_field: None,
             keybindings_sub_tab: KeybindingsSubTab::General,
+            preset_confirm: None,
         }
     }
 }
@@ -113,7 +117,7 @@ pub fn draw_settings_panel(
                         SettingsTab::Appearance => draw_appearance_tab(ui, &mut draft),
                         SettingsTab::Clipboard => draw_clipboard_tab(ui, &mut draft),
                         SettingsTab::Notifications => draw_notifications_tab(ui, &mut draft),
-                        SettingsTab::Keybindings => draw_keybindings_tab(ui, &mut draft, &mut ui_state.recording_field, &mut ui_state.keybindings_sub_tab),
+                        SettingsTab::Keybindings => draw_keybindings_tab(ui, &mut draft, &mut ui_state.recording_field, &mut ui_state.keybindings_sub_tab, &mut ui_state.preset_confirm),
                         SettingsTab::Language => draw_language_tab(ui, &mut draft),
                         SettingsTab::Performance => draw_performance_tab(ui, &mut draft),
                     }
@@ -203,7 +207,7 @@ pub fn draw_settings_window(
                             SettingsTab::Appearance => draw_appearance_tab(ui, &mut draft),
                             SettingsTab::Clipboard => draw_clipboard_tab(ui, &mut draft),
                             SettingsTab::Notifications => draw_notifications_tab(ui, &mut draft),
-                            SettingsTab::Keybindings => draw_keybindings_tab(ui, &mut draft, &mut ui_state.recording_field, &mut ui_state.keybindings_sub_tab),
+                            SettingsTab::Keybindings => draw_keybindings_tab(ui, &mut draft, &mut ui_state.recording_field, &mut ui_state.keybindings_sub_tab, &mut ui_state.preset_confirm),
                             SettingsTab::Language => draw_language_tab(ui, &mut draft),
                             SettingsTab::Performance => draw_performance_tab(ui, &mut draft),
                         }
@@ -406,6 +410,7 @@ fn draw_keybindings_tab(
     settings: &mut Settings,
     recording_field: &mut Option<String>,
     sub_tab: &mut KeybindingsSubTab,
+    preset_confirm: &mut Option<String>,
 ) {
     let th = crate::theme::theme();
     ui.add_space(8.0);
@@ -432,6 +437,7 @@ fn draw_keybindings_tab(
                         (KeybindingsSubTab::Workspace, t("settings.keybindings.subtab.workspace")),
                         (KeybindingsSubTab::Pane, t("settings.keybindings.subtab.pane")),
                         (KeybindingsSubTab::Surface, t("settings.keybindings.subtab.surface")),
+                        (KeybindingsSubTab::Preset, "Preset"),
                     ];
 
                     for (tab, label) in &sub_tabs {
@@ -511,17 +517,54 @@ fn draw_keybindings_tab(
                     ("close_surface", "settings.keybindings.close_surface_label", &mut settings.keybindings.close_surface),
                 ]);
             }
+            KeybindingsSubTab::Preset => {
+                ui.add_space(4.0);
+                ui.label("Select a preset to overwrite all keybindings:");
+                ui.add_space(8.0);
+
+                for name in crate::settings::KeybindingSettings::preset_names() {
+                    if ui.button(*name).clicked() {
+                        *preset_confirm = Some(name.to_string());
+                    }
+                }
+            }
         }
 
-        ui.add_space(8.0);
-        ui.label(
-            egui::RichText::new(t("settings.keybindings.hint_esc_to_clear"))
-                .small()
-                .color(th.overlay1),
-        );
+        if *sub_tab != KeybindingsSubTab::Preset {
+            ui.add_space(8.0);
+            ui.label(
+                egui::RichText::new(t("settings.keybindings.hint_esc_to_clear"))
+                    .small()
+                    .color(th.overlay1),
+            );
+        }
 
         }); // end vertical
     }); // end horizontal_top
+
+    // Preset confirmation modal
+    if let Some(name) = preset_confirm.clone() {
+        egui::Window::new("Apply Preset")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(ui.ctx(), |ui| {
+                ui.label(format!(
+                    "Are you sure you want to apply the \"{}\" preset?\nThis will overwrite all current keybindings.",
+                    name
+                ));
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    if ui.button("Cancel").clicked() {
+                        *preset_confirm = None;
+                    }
+                    if ui.button("Apply").clicked() {
+                        settings.keybindings.apply_preset(&name);
+                        *preset_confirm = None;
+                    }
+                });
+            });
+    }
 }
 
 /// Display modifier name for ComboBox.

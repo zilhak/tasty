@@ -429,25 +429,48 @@ impl Default for NotificationSettings {
 
 impl Default for KeybindingSettings {
     fn default() -> Self {
+        Self::preset_tasty()
+    }
+}
+
+impl KeybindingSettings {
+    /// Tasty preset (default). On macOS, Alt maps to Cmd.
+    pub fn preset_tasty() -> Self {
         Self {
-            new_workspace: "ctrl+shift+n".to_string(),
-            new_tab: "ctrl+shift+t".to_string(),
-            split_pane_vertical: "ctrl+shift+e".to_string(),
-            split_pane_horizontal: "ctrl+shift+o".to_string(),
-            split_surface_vertical: "ctrl+shift+d".to_string(),
-            split_surface_horizontal: "ctrl+shift+j".to_string(),
+            new_workspace: "alt+n".to_string(),
+            new_tab: "alt+t".to_string(),
+            split_pane_vertical: "alt+e".to_string(),
+            split_pane_horizontal: "alt+shift+e".to_string(),
+            split_surface_vertical: "alt+d".to_string(),
+            split_surface_horizontal: "alt+shift+d".to_string(),
             toggle_settings: "ctrl+,".to_string(),
             toggle_notifications: "ctrl+shift+i".to_string(),
             close_pane: "ctrl+shift+w".to_string(),
             close_surface: String::new(),
-            focus_pane_next: "alt+right".to_string(),
-            focus_pane_prev: "alt+left".to_string(),
-            focus_surface_next: "alt+down".to_string(),
-            focus_surface_prev: "alt+up".to_string(),
+            focus_pane_next: "ctrl+]".to_string(),
+            focus_pane_prev: "ctrl+[".to_string(),
+            focus_surface_next: "alt+]".to_string(),
+            focus_surface_prev: "alt+[".to_string(),
             tab_switch_modifier: "ctrl".to_string(),
             workspace_switch_modifier: "alt".to_string(),
             toggle_sidebar: "ctrl+shift+b".to_string(),
             toggle_sidebar_collapse: "ctrl+b".to_string(),
+        }
+    }
+
+    /// List available preset names.
+    pub fn preset_names() -> &'static [&'static str] {
+        &["Tasty"]
+    }
+
+    /// Apply a preset by name. Returns true if found.
+    pub fn apply_preset(&mut self, name: &str) -> bool {
+        match name {
+            "Tasty" => {
+                *self = Self::preset_tasty();
+                true
+            }
+            _ => false,
         }
     }
 }
