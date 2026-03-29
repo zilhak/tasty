@@ -196,111 +196,46 @@ impl TastyWindow {
         (start_col, end_col)
     }
 
-    /// Move the terminal cursor to the clicked position by sending arrow key sequences.
-    /// Supports multi-row movement for soft-wrapped command lines.
+    /// Move the terminal cursor to the clicked position using the click_cursor module.
     fn move_cursor_to_click(&mut self, x: f32, y: f32, terminal_rect: &Rect) {
+        if !self.state.engine.settings.general.click_to_move_cursor {
+            return;
+        }
+
         let terminal = match self.state.focused_terminal() {
             Some(t) => t,
             None => return,
         };
 
-        // Don't move cursor if scrolled back or in alternate screen (TUI apps handle their own mouse)
-        if terminal.scroll_offset > 0 || terminal.is_alternate_screen() {
-            return;
-        }
-
-        // Don't move cursor if mouse tracking is active (app handles mouse)
-        if terminal.mouse_tracking() != tasty_terminal::MouseTrackingMode::None {
-            return;
-        }
+        let region = match crate::click_cursor::EditableRegion::from_terminal(terminal) {
+            Some(r) => r,
+            None => return,
+        };
 
         let (cols, rows) = terminal.surface().dimensions();
-        let padding = 4.0;
-        let cell_w = self.gpu.cell_width();
-        let cell_h = self.gpu.cell_height();
+        let (click_col, click_row) = crate::click_cursor::pixel_to_grid(
+            x, y, terminal_rect,
+            self.gpu.cell_width(), self.gpu.cell_height(),
+            cols, rows,
+        );
 
-        // Convert click position to grid column/row
-        let rel_x = x - terminal_rect.x - padding;
-        let rel_y = y - terminal_rect.y - padding;
-        let click_col = (rel_x / cell_w).floor() as isize;
-        let click_col = click_col.clamp(0, (cols as isize) - 1) as usize;
-        let click_row = (rel_y / cell_h).floor() as isize;
-        let click_row = click_row.clamp(0, (rows as isize) - 1) as usize;
-
-        // Get current cursor position
-        let (cursor_col, cursor_row) = terminal.surface().cursor_position();
-        let cursor_row = cursor_row as usize;
-
-        if click_row == cursor_row && click_col == cursor_col {
-            return;
-        }
-
-        // Don't allow clicking below the cursor row (empty/non-editable area)
-        if click_row > cursor_row {
-            return;
-        }
-
-        let surface = terminal.surface();
-        let screen_lines = surface.screen_lines();
-
-        // For clicks above cursor row, only allow if every row from click_row
-        // to cursor_row-1 is fully filled (soft-wrapped continuation).
-        // Lines that don't fill the terminal width are hard line breaks (previous output).
-        if click_row < cursor_row {
-            for row in click_row..cursor_row {
-                let line = match screen_lines.get(row) {
-                    Some(l) => l,
-                    None => return,
-                };
-                let last_col = line.visible_cells()
-                    .map(|c| {
-                        let ch = c.str().chars().next().unwrap_or(' ');
-                        c.cell_index() + crate::renderer::unicode_width(ch)
-                    })
-                    .max()
-                    .unwrap_or(0);
-                if last_col < cols {
-                    return; // Not a soft wrap — previous output line
-                }
-            }
-        }
-
-        // On the cursor row, don't allow clicking past the cursor (into empty space)
-        let click_col = if click_row == cursor_row && click_col > cursor_col {
-            cursor_col
-        } else {
-            click_col
+        // Clamp to editable region
+        let (click_row, click_col) = match region.clamp(click_row, click_col) {
+            Some(pos) => pos,
+            None => return,
         };
 
-        if click_row == cursor_row && click_col == cursor_col {
+        if click_row == region.cursor_row && click_col == region.cursor_col {
             return;
         }
 
-        // Count arrow presses across rows, accounting for wide characters.
-        let going_right = (click_row, click_col) > (cursor_row, cursor_col);
-        let (start_row, start_col, end_row, end_col) = if going_right {
-            (cursor_row, cursor_col, click_row, click_col)
-        } else {
-            (click_row, click_col, cursor_row, cursor_col)
-        };
-
-        let mut arrow_count = 0usize;
-        for row in start_row..=end_row {
-            let line = match screen_lines.get(row) {
-                Some(l) => l,
-                None => break,
-            };
-
-            let row_start = if row == start_row { start_col } else { 0 };
-            let row_end = if row == end_row { end_col } else { cols };
-
-            for cell_ref in line.visible_cells() {
-                let col = cell_ref.cell_index();
-                if col >= row_start && col < row_end {
-                    arrow_count += 1;
-                }
-            }
-        }
+        let going_right = (click_row, click_col) > (region.cursor_row, region.cursor_col);
+        let arrow_count = crate::click_cursor::count_arrows(
+            terminal,
+            region.cursor_row, region.cursor_col,
+            click_row, click_col,
+            cols,
+        );
 
         if arrow_count == 0 {
             return;

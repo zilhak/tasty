@@ -36,6 +36,9 @@ pub struct GeneralSettings {
     pub scrollback_lines: usize,
     /// Show confirmation dialog when closing a surface with a running process.
     pub confirm_close_running: bool,
+    /// Enable click-to-move-cursor: clicking on the editable region moves the
+    /// shell cursor to that position.
+    pub click_to_move_cursor: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -163,6 +166,7 @@ impl Default for GeneralSettings {
             language: "en".to_string(),
             scrollback_lines: 10000,
             confirm_close_running: true,
+            click_to_move_cursor: true,
         }
     }
 }
