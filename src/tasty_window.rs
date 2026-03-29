@@ -481,7 +481,15 @@ impl TastyWindow {
         }
 
         match key.as_ref() {
-            Key::Named(NamedKey::Enter) => { terminal.send_bytes(b"\r"); sent = true; }
+            Key::Named(NamedKey::Enter) => {
+                if modifiers.shift_key() {
+                    // Kitty keyboard protocol: CSI 13 ; 2 u (Shift+Enter)
+                    terminal.send_bytes(b"\x1b[13;2u");
+                } else {
+                    terminal.send_bytes(b"\r");
+                }
+                sent = true;
+            }
             Key::Named(NamedKey::Backspace) => { terminal.send_bytes(b"\x7f"); sent = true; }
             Key::Named(NamedKey::Tab) => {
                 if modifiers.shift_key() { terminal.send_bytes(b"\x1b[Z"); }
