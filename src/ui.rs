@@ -142,8 +142,10 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
         .resizable(false)
         .show(ctx, |ui| {
             // === Scrollable workspace list area ===
-            let bottom_height = 60.0; // reserve for collapse + settings
-            let scroll_height = ui.available_height() - bottom_height;
+            // Reserve: separator(1) + space(2) + collapse(22) + space(2) + settings(28) + space(8) = 63
+            // Plus egui panel internal margins (~16px)
+            let bottom_height = 80.0;
+            let scroll_height = (ui.available_height() - bottom_height).max(50.0);
 
             egui::ScrollArea::vertical()
                 .max_height(scroll_height)
