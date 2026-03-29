@@ -235,11 +235,48 @@ impl TastyWindow {
             return;
         }
 
-        // Count arrow presses across rows, accounting for wide characters.
-        // For soft-wrapped lines, left/right arrows traverse across row boundaries.
+        // Don't allow clicking below the cursor row (empty/non-editable area)
+        if click_row > cursor_row {
+            return;
+        }
+
         let surface = terminal.surface();
         let screen_lines = surface.screen_lines();
 
+        // For clicks above cursor row, only allow if every row from click_row
+        // to cursor_row-1 is fully filled (soft-wrapped continuation).
+        // Lines that don't fill the terminal width are hard line breaks (previous output).
+        if click_row < cursor_row {
+            for row in click_row..cursor_row {
+                let line = match screen_lines.get(row) {
+                    Some(l) => l,
+                    None => return,
+                };
+                let last_col = line.visible_cells()
+                    .map(|c| {
+                        let ch = c.str().chars().next().unwrap_or(' ');
+                        c.cell_index() + crate::renderer::unicode_width(ch)
+                    })
+                    .max()
+                    .unwrap_or(0);
+                if last_col < cols {
+                    return; // Not a soft wrap — previous output line
+                }
+            }
+        }
+
+        // On the cursor row, don't allow clicking past the cursor (into empty space)
+        let click_col = if click_row == cursor_row && click_col > cursor_col {
+            cursor_col
+        } else {
+            click_col
+        };
+
+        if click_row == cursor_row && click_col == cursor_col {
+            return;
+        }
+
+        // Count arrow presses across rows, accounting for wide characters.
         let going_right = (click_row, click_col) > (cursor_row, cursor_col);
         let (start_row, start_col, end_row, end_col) = if going_right {
             (cursor_row, cursor_col, click_row, click_col)
