@@ -388,9 +388,6 @@ pub fn draw_pane_tab_bars(
             .fixed_pos(egui::pos2(info.logical_x, info.logical_y))
             .order(egui::Order::Foreground)
             .show(ctx, |ui| {
-                ui.set_min_width(info.logical_w);
-                ui.set_max_width(info.logical_w);
-
                 let bg = if info.is_focused {
                     th.surface0
                 } else {
@@ -401,6 +398,12 @@ pub fn draw_pane_tab_bars(
                     .fill(bg)
                     .inner_margin(egui::Margin::symmetric(4, 2))
                     .show(ui, |ui| {
+                        // Force the frame content to fill the full pane width
+                        // (subtract inner_margin: 4px left + 4px right = 8px)
+                        let inner_w = info.logical_w - 8.0;
+                        ui.set_min_width(inner_w);
+                        ui.set_max_width(inner_w);
+
                         ui.horizontal(|ui| {
                             for (i, name) in info.tab_names.iter().enumerate() {
                                 let is_active = i == info.active_tab;
