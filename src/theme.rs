@@ -165,8 +165,8 @@ impl Theme {
         ]
     }
 
-    /// Apply this theme to an egui context.
-    pub fn apply_to_egui(&self, ctx: &egui::Context) {
+    /// Apply this theme to an egui context with UI scale factor.
+    pub fn apply_to_egui(&self, ctx: &egui::Context, ui_scale: f32) {
         let mut visuals = egui::Visuals::dark();
         visuals.panel_fill = self.mantle;
         visuals.window_fill = self.base;
@@ -179,6 +179,38 @@ impl Theme {
         visuals.widgets.active.bg_fill = self.surface1;
         visuals.override_text_color = Some(self.text);
         ctx.set_visuals(visuals);
+
+        // Apply scaled UI text sizes and spacing
+        let mut style = (*ctx.style()).clone();
+        style.text_styles.insert(
+            egui::TextStyle::Body,
+            egui::FontId::proportional(self.font_size_body * ui_scale),
+        );
+        style.text_styles.insert(
+            egui::TextStyle::Small,
+            egui::FontId::proportional(self.font_size_caption * ui_scale),
+        );
+        style.text_styles.insert(
+            egui::TextStyle::Heading,
+            egui::FontId::proportional(self.font_size_heading * ui_scale * 1.15),
+        );
+        style.text_styles.insert(
+            egui::TextStyle::Button,
+            egui::FontId::proportional(self.font_size_body * ui_scale),
+        );
+        style.text_styles.insert(
+            egui::TextStyle::Monospace,
+            egui::FontId::monospace(self.font_size_body * ui_scale),
+        );
+        style.spacing.item_spacing = egui::vec2(
+            self.spacing_sm * ui_scale,
+            self.spacing_xs * ui_scale,
+        );
+        style.spacing.button_padding = egui::vec2(
+            self.spacing_sm * ui_scale,
+            self.spacing_xs * ui_scale,
+        );
+        ctx.set_style(style);
     }
 }
 

@@ -351,6 +351,20 @@ fn draw_appearance_tab(ui: &mut egui::Ui, settings: &mut Settings) {
                 .range(100.0..=400.0)
                 .speed(1.0));
             ui.end_row();
+
+            ui.label("UI Scale");
+            egui::ComboBox::from_id_salt("ui_scale")
+                .selected_text(match settings.appearance.ui_scale.as_str() {
+                    "small" => "Small",
+                    "large" => "Large",
+                    _ => "Medium",
+                })
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut settings.appearance.ui_scale, "small".to_string(), "Small");
+                    ui.selectable_value(&mut settings.appearance.ui_scale, "medium".to_string(), "Medium");
+                    ui.selectable_value(&mut settings.appearance.ui_scale, "large".to_string(), "Large");
+                });
+            ui.end_row();
         });
 }
 

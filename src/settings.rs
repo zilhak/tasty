@@ -49,6 +49,8 @@ pub struct AppearanceSettings {
     pub theme: String,
     pub background_opacity: f32,
     pub sidebar_width: f32,
+    /// UI scale: "small", "medium", or "large". Affects all non-terminal UI elements.
+    pub ui_scale: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -347,7 +349,29 @@ impl Default for AppearanceSettings {
             theme: "dark".to_string(),
             background_opacity: 1.0,
             sidebar_width: 180.0,
+            ui_scale: "medium".to_string(),
         }
+    }
+}
+
+impl AppearanceSettings {
+    /// Get the UI scale factor based on the ui_scale setting.
+    pub fn ui_scale_factor(&self) -> f32 {
+        match self.ui_scale.as_str() {
+            "small" => 0.85,
+            "large" => 1.2,
+            _ => 1.0, // medium
+        }
+    }
+
+    /// Get the sidebar width adjusted for UI scale.
+    pub fn scaled_sidebar_width(&self) -> f32 {
+        let base = match self.ui_scale.as_str() {
+            "small" => 150.0,
+            "large" => 220.0,
+            _ => 180.0,
+        };
+        base
     }
 }
 

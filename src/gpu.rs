@@ -132,7 +132,7 @@ impl GpuState {
         });
 
         // Apply theme from settings
-        Self::apply_theme(&egui_ctx, &appearance.theme);
+        Self::apply_theme(&egui_ctx, &appearance.theme, appearance.ui_scale_factor());
 
         let egui_state = egui_winit::State::new(
             egui_ctx.clone(),
@@ -206,10 +206,7 @@ impl GpuState {
 
             // Apply theme from theme module
             let th = crate::theme::theme();
-            th.apply_to_egui(ctx);
-            let mut style = (*ctx.style()).clone();
-            style.spacing.item_spacing = egui::vec2(8.0, 6.0);
-            ctx.set_style(style);
+            th.apply_to_egui(ctx, 1.0);
 
             // Local aliases for this function
             let bg_panel   = th.crust;
@@ -437,7 +434,7 @@ impl GpuState {
         selection: Option<&crate::selection::TextSelection>,
     ) -> Result<(), wgpu::SurfaceError> {
         // 1. Prepare layout
-        state.sidebar_width = state.engine.settings.appearance.sidebar_width;
+        state.sidebar_width = state.engine.settings.appearance.scaled_sidebar_width();
         let terminal_rect = self.compute_terminal_rect(state.sidebar_width);
         state.resize_all(terminal_rect, self.renderer.cell_width(), self.renderer.cell_height());
 
@@ -573,9 +570,12 @@ impl GpuState {
     }
 
     fn post_egui_update(&mut self, state: &AppState, prev_theme: &str) {
+        let ui_scale = state.engine.settings.appearance.ui_scale_factor();
         if state.engine.settings.appearance.theme != prev_theme {
-            self.refresh_theme(&state.engine.settings.appearance.theme);
+            self.refresh_theme(&state.engine.settings.appearance.theme, ui_scale);
         }
+        // Always re-apply UI scale (in case it changed)
+        crate::theme::theme().apply_to_egui(&self.egui_ctx, ui_scale);
 
         let current_font_size = self.renderer.font_config.metrics.font_size;
         let current_font_family = match &self.renderer.font_config.font_family {
@@ -822,13 +822,13 @@ impl GpuState {
     }
 
     /// Apply the theme to the egui context.
-    fn apply_theme(ctx: &egui::Context, _theme: &str) {
-        crate::theme::theme().apply_to_egui(ctx);
+    fn apply_theme(ctx: &egui::Context, _theme: &str, ui_scale: f32) {
+        crate::theme::theme().apply_to_egui(ctx, ui_scale);
     }
 
     /// Re-apply the theme from settings. Called after settings are saved.
-    pub fn refresh_theme(&self, theme: &str) {
-        Self::apply_theme(&self.egui_ctx, theme);
+    pub fn refresh_theme(&self, theme: &str, ui_scale: f32) {
+        Self::apply_theme(&self.egui_ctx, theme, ui_scale);
     }
 
     /// Capture the current frame texture to a PNG file.
