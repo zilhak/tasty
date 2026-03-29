@@ -57,6 +57,25 @@ pub fn draw_settings_panel(
 
     let mut result = None;
 
+    // Bottom panel with Save/Cancel buttons (rendered first so it reserves space)
+    egui::TopBottomPanel::bottom("settings_buttons").show(ctx, |ui| {
+        ui.add_space(4.0);
+        ui.horizontal(|ui| {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button(t("button.cancel")).clicked() {
+                    result = Some(false);
+                }
+                if ui.button(t("button.save")).clicked() {
+                    if let Some(draft) = &ui_state.draft {
+                        *settings = draft.clone();
+                    }
+                    result = Some(true);
+                }
+            });
+        });
+        ui.add_space(4.0);
+    });
+
     egui::CentralPanel::default().show(ctx, |ui| {
         ui.add_space(8.0);
         ui.heading(t("settings.window.title"));
@@ -102,22 +121,6 @@ pub fn draw_settings_panel(
 
             ui_state.draft = Some(draft);
         }
-
-        ui.separator();
-
-        ui.horizontal(|ui| {
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button(t("button.cancel")).clicked() {
-                    result = Some(false);
-                }
-                if ui.button(t("button.save")).clicked() {
-                    if let Some(draft) = &ui_state.draft {
-                        *settings = draft.clone();
-                    }
-                    result = Some(true);
-                }
-            });
-        });
     });
 
     result
