@@ -236,20 +236,58 @@ impl TastyWindow {
             return;
         }
 
-        let diff = click_col as isize - cursor_col as isize;
-        if diff == 0 {
+        if click_col == cursor_col {
+            return;
+        }
+
+        // Count the number of arrow key presses needed, accounting for wide characters.
+        // Each wide (2-cell) character is 1 arrow press but occupies 2 columns.
+        let surface = terminal.surface();
+        let lines = surface.screen_lines();
+        let line = match lines.get(cursor_row) {
+            Some(l) => l,
+            None => return,
+        };
+
+        // Build a map of cell_index → character width for this line
+        let mut col_widths: Vec<(usize, usize)> = Vec::new(); // (cell_index, width)
+        for cell_ref in line.visible_cells() {
+            let col = cell_ref.cell_index();
+            let ch = cell_ref.str().chars().next().unwrap_or(' ');
+            let w = crate::renderer::unicode_width(ch);
+            col_widths.push((col, w));
+        }
+
+        // Count characters (arrow presses) between cursor_col and click_col
+        let (from, to, going_right) = if click_col > cursor_col {
+            (cursor_col, click_col, true)
+        } else {
+            (click_col, cursor_col, false)
+        };
+
+        let mut arrow_count = 0usize;
+        for &(col, width) in &col_widths {
+            if col >= from && col < to {
+                // This character's starting cell is within our range
+                arrow_count += 1;
+            } else if width > 1 && col < from && col + width > from {
+                // Wide character that starts before `from` but spans into range — skip
+            }
+        }
+        // If click_col lands on the second cell of a wide character, don't add extra
+        if arrow_count == 0 {
             return;
         }
 
         // Send arrow keys
         let terminal = self.state.focused_terminal_mut().unwrap();
         let app_cursor = terminal.application_cursor_keys();
-        let (arrow, count) = if diff > 0 {
-            (if app_cursor { b"\x1bOC" } else { b"\x1b[C" }, diff as usize)
+        let arrow: &[u8] = if going_right {
+            if app_cursor { b"\x1bOC" } else { b"\x1b[C" }
         } else {
-            (if app_cursor { b"\x1bOD" } else { b"\x1b[D" }, (-diff) as usize)
+            if app_cursor { b"\x1bOD" } else { b"\x1b[D" }
         };
-        for _ in 0..count {
+        for _ in 0..arrow_count {
             terminal.send_bytes(arrow);
         }
     }
