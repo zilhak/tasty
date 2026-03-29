@@ -122,6 +122,7 @@ impl TastyWindow {
             self.mark_dirty();
         } else {
             // Clicked outside terminal — clear selection
+
             self.text_selection = None;
         }
     }
@@ -227,6 +228,7 @@ impl TastyWindow {
         if let Some(cb) = &mut self.clipboard {
             cb.set_text(&text);
         }
+
         self.text_selection = None;
         true
     }
@@ -369,6 +371,7 @@ impl TastyWindow {
 
             // Clear selection only when actual content was sent to the terminal PTY
             if sent && self.text_selection.is_some() {
+
                 self.text_selection = None;
                 self.dirty = true;
             }
@@ -594,6 +597,7 @@ impl TastyWindow {
                     if let Some(sel) = &mut self.text_selection {
                         sel.dragging = false;
                         if sel.is_empty() {
+
                             self.text_selection = None;
                         }
                     }
