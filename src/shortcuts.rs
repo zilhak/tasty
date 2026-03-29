@@ -43,7 +43,19 @@ fn matches_binding(binding: &str, key: &Key, mods: ModifiersState) -> bool {
     match key {
         Key::Character(c) => {
             let ch = c.to_lowercase();
-            ch == key_lower
+            if ch == key_lower {
+                return true;
+            }
+            // Ctrl+letter may arrive as control character (0x01-0x1A).
+            // Convert back to the letter for matching.
+            if expect_ctrl && c.len() == 1 {
+                let byte = c.as_bytes()[0];
+                if byte >= 1 && byte <= 26 {
+                    let letter = ((byte - 1) + b'a') as char;
+                    return letter.to_string() == key_lower;
+                }
+            }
+            false
         }
         Key::Named(named) => {
             let named_str = named_key_to_string(named);

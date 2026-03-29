@@ -79,8 +79,8 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
 
                     // Bottom: expand + settings
                     let available = ui.available_height();
-                    if available > 60.0 {
-                        ui.add_space(available - 60.0);
+                    if available > 80.0 {
+                        ui.add_space(available - 80.0);
                     }
                     ui.separator();
                     ui.add_space(2.0);
