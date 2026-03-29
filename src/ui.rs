@@ -123,7 +123,7 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
                     if resp.clicked() {
                         settings_clicked = true;
                     }
-                    ui.add_space(4.0);
+                    ui.add_space(12.0);
                 });
             });
 
@@ -133,12 +133,22 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
         if let Some(i) = switch_ws { state.switch_workspace(i); }
         if add_ws { let _ = state.add_workspace(); }
     } else {
-    // Full sidebar
+    // Full sidebar — two zones: scrollable workspace list + fixed bottom buttons
+    let mut sidebar_collapse = false;
+    let mut sidebar_settings = false;
+
     egui::SidePanel::left("workspace_sidebar")
         .exact_width(sidebar_width)
         .resizable(false)
         .show(ctx, |ui| {
-            ui.vertical(|ui| {
+            // === Scrollable workspace list area ===
+            let bottom_height = 60.0; // reserve for collapse + settings
+            let scroll_height = ui.available_height() - bottom_height;
+
+            egui::ScrollArea::vertical()
+                .max_height(scroll_height)
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
                 ui.add_space(4.0);
 
                 let active_ws = state.active_workspace;
@@ -245,86 +255,15 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
                 if ui.add_sized([full_width, 28.0], egui::Button::new(t("button.new_workspace"))).clicked() {
                     let _ = state.add_workspace();
                 }
-
-                ui.add_space(8.0);
-                ui.separator();
                 ui.add_space(4.0);
-                ui.label(
-                    egui::RichText::new(t("sidebar.shortcuts_heading"))
-                        .small()
-                        .color(egui::Color32::GRAY),
-                );
-                ui.add_space(2.0);
+            }); // end ScrollArea
 
-                let kb = &state.engine.settings.keybindings;
-                // Configurable bindings: show from settings
-                let configurable_shortcuts: Vec<(&str, &str)> = vec![
-                    (&kb.new_workspace, "shortcut.desc.new_workspace"),
-                    (&kb.new_tab, "shortcut.desc.new_tab"),
-                    (&kb.split_pane_vertical, "shortcut.desc.pane_split_vertical"),
-                    (&kb.split_pane_horizontal, "shortcut.desc.pane_split_horizontal"),
-                    (&kb.split_surface_vertical, "shortcut.desc.surface_split_vertical"),
-                    (&kb.split_surface_horizontal, "shortcut.desc.surface_split_horizontal"),
-                    (&kb.toggle_settings, "shortcut.desc.settings"),
-                    (&kb.toggle_notifications, "shortcut.desc.notifications"),
-                    (&kb.close_pane, "shortcut.desc.close_pane"),
-                    (&kb.focus_pane_next, "shortcut.desc.focus_pane_next"),
-                    (&kb.focus_pane_prev, "shortcut.desc.focus_pane_prev"),
-                    (&kb.focus_surface_next, "shortcut.desc.focus_surface_next"),
-                    (&kb.focus_surface_prev, "shortcut.desc.focus_surface_prev"),
-                    (&kb.close_surface, "shortcut.desc.close_surface"),
-                ];
+            // === Fixed bottom: Collapse + Settings ===
+            ui.separator();
+            ui.add_space(2.0);
 
-                // Dynamic modifier-based shortcuts
-                let tab_mod = if kb.tab_switch_modifier == "alt" { "Alt" } else { "Ctrl" };
-                let ws_mod = if kb.workspace_switch_modifier == "alt" { "Alt" } else { "Ctrl" };
-                let switch_tab_display = format!("{}+1~0", tab_mod);
-                let switch_ws_display = format!("{}+1~9", ws_mod);
-
-                // Fixed shortcuts
-                let fixed_shortcuts: Vec<(String, &str)> = vec![
-                    ("Ctrl+Tab".to_string(), "shortcut.desc.next_tab"),
-                    ("Ctrl+Shift+Tab".to_string(), "shortcut.desc.prev_tab"),
-                    (switch_tab_display, "shortcut.desc.switch_tab"),
-                    (switch_ws_display, "shortcut.desc.switch_workspace"),
-                ];
-
-                for (binding, desc_key) in &configurable_shortcuts {
-                    if binding.is_empty() {
-                        continue;
-                    }
-                    let key_str = KeybindingSettings::format_display(binding);
-                    let desc_str = t(desc_key).to_string();
-                    ui.horizontal(|ui| {
-                        ui.label(
-                            egui::RichText::new(&key_str)
-                                .small()
-                                .color(th.blue),
-                        );
-                        ui.label(egui::RichText::new(&desc_str).small());
-                    });
-                }
-                for (key_str, desc_key) in &fixed_shortcuts {
-                    let desc_str = t(desc_key).to_string();
-                    ui.horizontal(|ui| {
-                        ui.label(
-                            egui::RichText::new(key_str)
-                                .small()
-                                .color(th.blue),
-                        );
-                        ui.label(egui::RichText::new(&desc_str).small());
-                    });
-                }
-
-                // Collapse button + Settings button pinned to bottom
-                let available = ui.available_height();
-                if available > 80.0 {
-                    ui.add_space(available - 80.0);
-                }
-
-                // Collapse button
-                ui.separator();
-                ui.add_space(2.0);
+            // Collapse button
+            {
                 let full_width = ui.available_width();
                 let (collapse_rect, collapse_resp) = ui.allocate_exact_size(
                     egui::vec2(full_width, 22.0),
@@ -341,28 +280,21 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
                     if collapse_resp.hovered() { th.subtext1 } else { th.overlay0 },
                 );
                 if collapse_resp.clicked() {
-                    state.sidebar_collapsed = true;
+                    sidebar_collapse = true;
                 }
+            }
 
-                // Settings button
-                ui.add_space(2.0);
+            // Settings button
+            ui.add_space(2.0);
+            {
                 let full_width = ui.available_width();
                 let (rect, response) = ui.allocate_exact_size(
                     egui::vec2(full_width, 28.0),
                     egui::Sense::click().union(egui::Sense::hover()),
                 );
-                // Paint our own hover effect — suppress egui's default by not using Button widget
-                let text_color = if response.hovered() {
-                    th.subtext1
-                } else {
-                    th.overlay0
-                };
+                let text_color = if response.hovered() { th.subtext1 } else { th.overlay0 };
                 if response.hovered() {
-                    ui.painter().rect_filled(
-                        rect,
-                        4.0,
-                        th.hover_overlay,
-                    );
+                    ui.painter().rect_filled(rect, 4.0, th.hover_overlay);
                 }
                 ui.painter().text(
                     rect.center(),
@@ -372,11 +304,15 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
                     text_color,
                 );
                 if response.clicked() {
-                    state.settings_open = true;
+                    sidebar_settings = true;
                 }
-                ui.add_space(8.0);
-            });
-        });
+            }
+            ui.add_space(8.0);
+        }); // end SidePanel
+
+        // Apply actions outside the borrow
+        if sidebar_collapse { state.sidebar_collapsed = true; }
+        if sidebar_settings { state.settings_open = true; }
     } // end of sidebar visible/collapsed/full
 
     // Compute remaining terminal area in physical pixels
