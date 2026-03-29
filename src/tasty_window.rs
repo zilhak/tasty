@@ -197,7 +197,7 @@ impl TastyWindow {
     }
 
     /// Move the terminal cursor to the clicked position by sending arrow key sequences.
-    /// Only works on the current screen (not scrollback) and same row as cursor.
+    /// Supports multi-row movement for soft-wrapped command lines.
     fn move_cursor_to_click(&mut self, x: f32, y: f32, terminal_rect: &Rect) {
         let terminal = match self.state.focused_terminal() {
             Some(t) => t,
@@ -231,50 +231,40 @@ impl TastyWindow {
         let (cursor_col, cursor_row) = terminal.surface().cursor_position();
         let cursor_row = cursor_row as usize;
 
-        // Only move horizontally on the same row as the cursor
-        if click_row != cursor_row {
+        if click_row == cursor_row && click_col == cursor_col {
             return;
         }
 
-        if click_col == cursor_col {
-            return;
-        }
-
-        // Count the number of arrow key presses needed, accounting for wide characters.
-        // Each wide (2-cell) character is 1 arrow press but occupies 2 columns.
+        // Count arrow presses across rows, accounting for wide characters.
+        // For soft-wrapped lines, left/right arrows traverse across row boundaries.
         let surface = terminal.surface();
-        let lines = surface.screen_lines();
-        let line = match lines.get(cursor_row) {
-            Some(l) => l,
-            None => return,
-        };
+        let screen_lines = surface.screen_lines();
 
-        // Build a map of cell_index → character width for this line
-        let mut col_widths: Vec<(usize, usize)> = Vec::new(); // (cell_index, width)
-        for cell_ref in line.visible_cells() {
-            let col = cell_ref.cell_index();
-            let ch = cell_ref.str().chars().next().unwrap_or(' ');
-            let w = crate::renderer::unicode_width(ch);
-            col_widths.push((col, w));
-        }
-
-        // Count characters (arrow presses) between cursor_col and click_col
-        let (from, to, going_right) = if click_col > cursor_col {
-            (cursor_col, click_col, true)
+        let going_right = (click_row, click_col) > (cursor_row, cursor_col);
+        let (start_row, start_col, end_row, end_col) = if going_right {
+            (cursor_row, cursor_col, click_row, click_col)
         } else {
-            (click_col, cursor_col, false)
+            (click_row, click_col, cursor_row, cursor_col)
         };
 
         let mut arrow_count = 0usize;
-        for &(col, width) in &col_widths {
-            if col >= from && col < to {
-                // This character's starting cell is within our range
-                arrow_count += 1;
-            } else if width > 1 && col < from && col + width > from {
-                // Wide character that starts before `from` but spans into range — skip
+        for row in start_row..=end_row {
+            let line = match screen_lines.get(row) {
+                Some(l) => l,
+                None => break,
+            };
+
+            let row_start = if row == start_row { start_col } else { 0 };
+            let row_end = if row == end_row { end_col } else { cols };
+
+            for cell_ref in line.visible_cells() {
+                let col = cell_ref.cell_index();
+                if col >= row_start && col < row_end {
+                    arrow_count += 1;
+                }
             }
         }
-        // If click_col lands on the second cell of a wide character, don't add extra
+
         if arrow_count == 0 {
             return;
         }
