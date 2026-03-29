@@ -549,6 +549,19 @@ impl TastyWindow {
             Key::Named(NamedKey::F11) => { terminal.send_bytes(b"\x1b[23~"); sent = true; }
             Key::Named(NamedKey::F12) => { terminal.send_bytes(b"\x1b[24~"); sent = true; }
             _ => {
+                // Ctrl+letter → send control character (0x01-0x1A)
+                if modifiers.control_key() && !modifiers.alt_key() {
+                    if let Key::Character(c) = key {
+                        if let Some(ch) = c.chars().next() {
+                            if ch.is_ascii_alphabetic() {
+                                let ctrl_char = (ch.to_ascii_lowercase() as u8) - b'a' + 1;
+                                terminal.send_bytes(&[ctrl_char]);
+                                sent = true;
+                                return (dirty, sent);
+                            }
+                        }
+                    }
+                }
                 if let Some(text) = text {
                     let s = text.as_str();
                     if !s.is_empty() { terminal.send_key(s); sent = true; }
