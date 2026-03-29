@@ -820,15 +820,24 @@ impl AppState {
         }
     }
 
-    /// Check if the given physical pixel position is within any terminal surface area.
+    /// Check if the given physical pixel position is within any terminal surface area
+    /// (excludes the tab bar region at the top of each pane).
     pub fn is_over_terminal(&self, x: f32, y: f32, terminal_rect: Rect) -> bool {
         if !terminal_rect.contains(x, y) {
             return false;
         }
+        let tab_bar_h = 24.0;
         let ws = self.active_workspace();
         let pane_rects = ws.pane_layout().compute_rects(terminal_rect);
         for (_pane_id, rect) in &pane_rects {
-            if rect.contains(x, y) {
+            // Content area is below the tab bar
+            let content_rect = Rect {
+                x: rect.x,
+                y: rect.y + tab_bar_h,
+                width: rect.width,
+                height: (rect.height - tab_bar_h).max(1.0),
+            };
+            if content_rect.contains(x, y) {
                 return true;
             }
         }
