@@ -26,14 +26,20 @@ pub struct EditableRegion {
 }
 
 /// Get the last occupied column in a terminal line (exclusive).
+/// Only counts cells with actual content (non-space, non-empty).
 fn last_occupied_col(line: &termwiz::surface::line::Line) -> usize {
-    line.visible_cells()
-        .map(|c| {
-            let ch = c.str().chars().next().unwrap_or(' ');
-            c.cell_index() + crate::renderer::unicode_width(ch)
-        })
-        .max()
-        .unwrap_or(0)
+    let mut last = 0usize;
+    for c in line.visible_cells() {
+        let text = c.str();
+        if !text.is_empty() && text != " " {
+            let ch = text.chars().next().unwrap_or(' ');
+            let end = c.cell_index() + crate::renderer::unicode_width(ch);
+            if end > last {
+                last = end;
+            }
+        }
+    }
+    last
 }
 
 impl EditableRegion {
