@@ -204,6 +204,14 @@ impl TastyWindow {
             return;
         }
 
+        // Commit any in-progress IME composition before moving cursor
+        if !self.preedit_text.is_empty() {
+            let text = std::mem::take(&mut self.preedit_text);
+            if let Some(terminal) = self.state.focused_terminal_mut() {
+                terminal.send_key(&text);
+            }
+        }
+
         let terminal = match self.state.focused_terminal() {
             Some(t) => t,
             None => return,
