@@ -6,15 +6,18 @@
 
 use crate::model::Rect;
 
-/// The editable region of a terminal surface — the contiguous area from the
-/// start of the current (possibly soft-wrapped) command line to the cursor.
+/// The editable region of a terminal surface — the contiguous area of the
+/// current (possibly soft-wrapped) command line, from the first wrapped row
+/// to the last row with text content.
 #[derive(Debug, Clone)]
 pub struct EditableRegion {
     /// First row of the editable region (may be above cursor if soft-wrapped).
     pub start_row: usize,
-    /// Starting column on `start_row`.
-    pub start_col: usize,
-    /// Cursor row (last row of the editable region).
+    /// Last row of the editable region (may be below cursor if cursor is mid-command).
+    pub end_row: usize,
+    /// Last occupied column on `end_row` (text boundary).
+    pub end_col: usize,
+    /// Cursor row.
     pub cursor_row: usize,
     /// Cursor column.
     pub cursor_col: usize,
@@ -22,12 +25,22 @@ pub struct EditableRegion {
     pub cols: usize,
 }
 
+/// Get the last occupied column in a terminal line (exclusive).
+fn last_occupied_col(line: &termwiz::surface::line::Line) -> usize {
+    line.visible_cells()
+        .map(|c| {
+            let ch = c.str().chars().next().unwrap_or(' ');
+            c.cell_index() + crate::renderer::unicode_width(ch)
+        })
+        .max()
+        .unwrap_or(0)
+}
+
 impl EditableRegion {
     /// Compute the editable region from the current terminal state.
     /// Returns `None` if the terminal is in a state where click-to-move
     /// should be disabled (scrollback, alternate screen, mouse tracking).
     pub fn from_terminal(terminal: &tasty_terminal::Terminal) -> Option<Self> {
-        // Disabled in scrollback, alternate screen, or mouse tracking modes
         if terminal.scroll_offset > 0 || terminal.is_alternate_screen() {
             return None;
         }
@@ -35,7 +48,7 @@ impl EditableRegion {
             return None;
         }
 
-        let (cols, _rows) = terminal.surface().dimensions();
+        let (cols, rows) = terminal.surface().dimensions();
         let (cursor_col, cursor_row) = terminal.surface().cursor_position();
         let cursor_row = cursor_row as usize;
         let screen_lines = terminal.surface().screen_lines();
@@ -50,48 +63,59 @@ impl EditableRegion {
                 Some(l) => l,
                 None => break,
             };
-            let last_occupied = line
-                .visible_cells()
-                .map(|c| {
-                    let ch = c.str().chars().next().unwrap_or(' ');
-                    c.cell_index() + crate::renderer::unicode_width(ch)
-                })
-                .max()
-                .unwrap_or(0);
-            if last_occupied < cols {
-                break; // Hard line break — previous output, not part of this command
+            if last_occupied_col(line) < cols {
+                break;
             }
             start_row = prev_row;
         }
 
+        // Walk downward from cursor_row to find the last row of the editable region.
+        // If the cursor row fills all columns, the next row is a continuation.
+        let mut end_row = cursor_row;
+        while end_row + 1 < rows {
+            let line = match screen_lines.get(end_row) {
+                Some(l) => l,
+                None => break,
+            };
+            if last_occupied_col(line) < cols {
+                break; // This row doesn't fill the terminal width — no wrap
+            }
+            // Next row is a continuation if current row is fully filled
+            let next_line = match screen_lines.get(end_row + 1) {
+                Some(l) => l,
+                None => break,
+            };
+            // Only include next row if it has content
+            if last_occupied_col(next_line) == 0 {
+                break;
+            }
+            end_row += 1;
+        }
+
+        // End column: last visible character on end_row
+        let end_col = screen_lines
+            .get(end_row)
+            .map(|l| last_occupied_col(l))
+            .unwrap_or(0);
+
         Some(Self {
             start_row,
-            start_col: 0, // Soft-wrapped lines start at col 0
+            end_row,
+            end_col,
             cursor_row,
             cursor_col,
             cols,
         })
     }
 
-    /// Check if a grid position (row, col) is within this editable region.
-    pub fn contains(&self, row: usize, col: usize) -> bool {
-        if row < self.start_row || row > self.cursor_row {
-            return false;
-        }
-        if row == self.cursor_row && col > self.cursor_col {
-            return false;
-        }
-        true
-    }
-
     /// Clamp a grid position to be within this editable region.
     /// Returns the clamped (row, col), or None if the position is entirely outside.
     pub fn clamp(&self, row: usize, col: usize) -> Option<(usize, usize)> {
-        if row < self.start_row || row > self.cursor_row {
+        if row < self.start_row || row > self.end_row {
             return None;
         }
-        let col = if row == self.cursor_row {
-            col.min(self.cursor_col)
+        let col = if row == self.end_row {
+            col.min(self.end_col)
         } else {
             col
         };
