@@ -828,17 +828,17 @@ impl AppState {
         }
     }
 
-    /// Check if the given physical pixel position is within any terminal surface area
-    /// (excludes the tab bar region at the top of each pane).
-    pub fn is_over_terminal(&self, x: f32, y: f32, terminal_rect: Rect) -> bool {
+    /// Determine the cursor style for the given position within the terminal rect.
+    /// Returns Some(true) for terminal surfaces (I-beam), Some(false) for non-terminal
+    /// panels like Explorer/Markdown (default pointer), or None if not over any pane content.
+    pub fn cursor_style_at(&self, x: f32, y: f32, terminal_rect: Rect) -> Option<bool> {
         if !terminal_rect.contains(x, y) {
-            return false;
+            return None;
         }
         let tab_bar_h = 24.0;
         let ws = self.active_workspace();
         let pane_rects = ws.pane_layout().compute_rects(terminal_rect);
-        for (_pane_id, rect) in &pane_rects {
-            // Content area is below the tab bar
+        for (pane_id, rect) in &pane_rects {
             let content_rect = Rect {
                 x: rect.x,
                 y: rect.y + tab_bar_h,
@@ -846,10 +846,20 @@ impl AppState {
                 height: (rect.height - tab_bar_h).max(1.0),
             };
             if content_rect.contains(x, y) {
-                return true;
+                // Check the panel type of this pane
+                if let Some(pane) = ws.pane_layout().find_pane(*pane_id) {
+                    return Some(match pane.active_panel() {
+                        Some(crate::model::Panel::Terminal(_)) => true,
+                        Some(crate::model::Panel::SurfaceGroup(_)) => true,
+                        Some(crate::model::Panel::Markdown(_)) => false,
+                        Some(crate::model::Panel::Explorer(_)) => false,
+                        None => false,
+                    });
+                }
+                return None;
             }
         }
-        false
+        None
     }
 
     /// Focus the pane at the given physical pixel position within the terminal rect.

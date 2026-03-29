@@ -643,10 +643,10 @@ impl TastyWindow {
                     self.window.set_cursor(cursor);
                 }
                 None => {
-                    if self.state.is_over_terminal(x, y, terminal_rect) {
-                        self.window.set_cursor(CursorIcon::Text);
-                    } else {
-                        self.window.set_cursor(CursorIcon::Default);
+                    match self.state.cursor_style_at(x, y, terminal_rect) {
+                        Some(true) => self.window.set_cursor(CursorIcon::Text),   // Terminal
+                        Some(false) => self.window.set_cursor(CursorIcon::Default), // Explorer/Markdown
+                        None => self.window.set_cursor(CursorIcon::Default),        // Outside pane
                     }
                 }
             }
