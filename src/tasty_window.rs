@@ -442,10 +442,13 @@ impl TastyWindow {
                 return;
             }
         }
-        if egui_consumed || overlay_open {
-            if egui_consumed { self.mark_dirty(); }
+        if overlay_open {
             return;
         }
+        // Note: egui_consumed is intentionally NOT checked here for keyboard events.
+        // egui consumes Ctrl+C/V/X as clipboard shortcuts, but when a terminal is
+        // focused these keys must reach the terminal (e.g. Ctrl+C → SIGINT).
+        // egui UI elements (settings, dialogs) are guarded by overlay_open above.
 
         // Forward to terminal
         let typing_surface_id = self.state.focused_surface_id();
