@@ -196,6 +196,64 @@ impl TastyWindow {
         (start_col, end_col)
     }
 
+    /// Move the terminal cursor to the clicked position by sending arrow key sequences.
+    /// Only works on the current screen (not scrollback) and same row as cursor.
+    fn move_cursor_to_click(&mut self, x: f32, y: f32, terminal_rect: &Rect) {
+        let terminal = match self.state.focused_terminal() {
+            Some(t) => t,
+            None => return,
+        };
+
+        // Don't move cursor if scrolled back or in alternate screen (TUI apps handle their own mouse)
+        if terminal.scroll_offset > 0 || terminal.is_alternate_screen() {
+            return;
+        }
+
+        // Don't move cursor if mouse tracking is active (app handles mouse)
+        if terminal.mouse_tracking() != tasty_terminal::MouseTrackingMode::None {
+            return;
+        }
+
+        let (cols, rows) = terminal.surface().dimensions();
+        let padding = 4.0;
+        let cell_w = self.gpu.cell_width();
+        let cell_h = self.gpu.cell_height();
+
+        // Convert click position to grid column/row
+        let rel_x = x - terminal_rect.x - padding;
+        let rel_y = y - terminal_rect.y - padding;
+        let click_col = (rel_x / cell_w).floor() as isize;
+        let click_col = click_col.clamp(0, (cols as isize) - 1) as usize;
+        let click_row = (rel_y / cell_h).floor() as isize;
+        let click_row = click_row.clamp(0, (rows as isize) - 1) as usize;
+
+        // Get current cursor position
+        let (cursor_col, cursor_row) = terminal.surface().cursor_position();
+        let cursor_row = cursor_row as usize;
+
+        // Only move horizontally on the same row as the cursor
+        if click_row != cursor_row {
+            return;
+        }
+
+        let diff = click_col as isize - cursor_col as isize;
+        if diff == 0 {
+            return;
+        }
+
+        // Send arrow keys
+        let terminal = self.state.focused_terminal_mut().unwrap();
+        let app_cursor = terminal.application_cursor_keys();
+        let (arrow, count) = if diff > 0 {
+            (if app_cursor { b"\x1bOC" } else { b"\x1b[C" }, diff as usize)
+        } else {
+            (if app_cursor { b"\x1bOD" } else { b"\x1b[D" }, (-diff) as usize)
+        };
+        for _ in 0..count {
+            terminal.send_bytes(arrow);
+        }
+    }
+
     /// Convert mouse physical coordinates to a grid SelectionPoint for the focused terminal.
     fn mouse_to_grid(&self, x: f32, y: f32, viewport: &Rect) -> Option<(SelectionPoint, u32)> {
         let terminal = self.state.focused_terminal()?;
@@ -597,7 +655,8 @@ impl TastyWindow {
                     if let Some(sel) = &mut self.text_selection {
                         sel.dragging = false;
                         if sel.is_empty() {
-
+                            // Single click (no drag) — move cursor to clicked position
+                            self.move_cursor_to_click(x, y, &terminal_rect);
                             self.text_selection = None;
                         }
                     }
