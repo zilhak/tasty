@@ -715,7 +715,7 @@ pub fn draw_pane_context_menu(
     let mut open_markdown_dialog = false;
     let mut open_explorer = false;
 
-    egui::Area::new(egui::Id::new("pane_context_menu"))
+    let area_response = egui::Area::new(egui::Id::new("pane_context_menu"))
         .fixed_pos(egui::pos2(menu.x, menu.y))
         .order(egui::Order::Foreground)
         .show(ctx, |ui| {
@@ -741,12 +741,25 @@ pub fn draw_pane_context_menu(
                 });
         });
 
-    // Close menu if a new mouse press occurs outside the menu
-    if ctx.input(|i| i.pointer.any_pressed())
-        && !open_markdown_dialog
-        && !open_explorer
-    {
-        close_menu = true;
+    // Arming logic: the menu becomes "armed" once all mouse buttons are released
+    // after opening. This prevents the opening right-click release from closing it.
+    let any_button_down = ctx.input(|i| i.pointer.any_down());
+    if !menu.armed {
+        if !any_button_down {
+            // All buttons released — arm the menu for future click detection
+            if let Some(m) = &mut state.pane_context_menu {
+                m.armed = true;
+            }
+        }
+        // Not armed yet — don't close
+    } else {
+        // Armed: close if clicked outside the menu area
+        if area_response.response.clicked_elsewhere()
+            && !open_markdown_dialog
+            && !open_explorer
+        {
+            close_menu = true;
+        }
     }
 
     if open_markdown_dialog {

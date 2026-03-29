@@ -56,8 +56,10 @@ pub struct PaneContextMenu {
     pub pane_id: u32,
     pub x: f32,
     pub y: f32,
-    /// Frame number when the menu was opened, to ignore the opening click.
-    pub open_frame: u64,
+    /// Set to true after the first egui frame where no mouse button is pressed.
+    /// Until then, clicks are ignored (to avoid the opening right-click release
+    /// from immediately closing the menu).
+    pub armed: bool,
 }
 
 /// Which workspace field is being renamed.

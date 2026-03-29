@@ -725,7 +725,7 @@ impl TastyWindow {
                         if rect.contains(x, y) {
                             self.state.pane_context_menu = Some(crate::state::PaneContextMenu {
                                 pane_id, x: x / scale, y: y / scale,
-                                open_frame: self.gpu.egui_frame_nr(),
+                                armed: false,
                             });
                             self.dirty = true;
                             break;
