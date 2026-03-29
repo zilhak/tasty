@@ -15,18 +15,123 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
     if !state.sidebar_visible {
         // Sidebar hidden — skip rendering entirely
     } else if state.sidebar_collapsed {
-        // Collapsed sidebar: only collapse toggle button
+        // Collapsed sidebar: workspace numbers + expand/settings buttons
+        let mut expand_clicked = false;
+        let mut settings_clicked = false;
+        let mut switch_ws: Option<usize> = None;
+        let mut add_ws = false;
+
         egui::SidePanel::left("workspace_sidebar")
             .exact_width(sidebar_width)
             .resizable(false)
             .show(ctx, |ui| {
                 ui.vertical_centered(|ui| {
-                    ui.add_space(8.0);
-                    if ui.button(">").on_hover_text("Expand sidebar").clicked() {
-                        state.sidebar_collapsed = false;
+                    ui.add_space(4.0);
+
+                    // Workspace number buttons
+                    let active_ws = state.active_workspace;
+                    let ws_count = state.engine.workspaces.len();
+                    for i in 0..ws_count {
+                        let is_active = i == active_ws;
+                        let label = format!("{}", i + 1);
+                        let bg = if is_active { th.surface0 } else { th.mantle };
+                        let text_color = if is_active { th.text } else { th.subtext0 };
+
+                        let (rect, resp) = ui.allocate_exact_size(
+                            egui::vec2(32.0, 28.0),
+                            egui::Sense::click(),
+                        );
+                        ui.painter().rect_filled(rect, 4.0, bg);
+                        if resp.hovered() {
+                            ui.painter().rect_filled(rect, 4.0, th.hover_overlay);
+                        }
+                        ui.painter().text(
+                            rect.center(),
+                            egui::Align2::CENTER_CENTER,
+                            &label,
+                            egui::FontId::proportional(12.0),
+                            text_color,
+                        );
+                        if resp.clicked() {
+                            switch_ws = Some(i);
+                        }
                     }
+
+                    // "+" add workspace button
+                    ui.add_space(2.0);
+                    let (rect, resp) = ui.allocate_exact_size(
+                        egui::vec2(32.0, 22.0),
+                        egui::Sense::click(),
+                    );
+                    if resp.hovered() {
+                        ui.painter().rect_filled(rect, 4.0, th.hover_overlay);
+                    }
+                    ui.painter().text(
+                        rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        "+",
+                        egui::FontId::proportional(14.0),
+                        th.overlay0,
+                    );
+                    if resp.clicked() {
+                        add_ws = true;
+                    }
+
+                    // Bottom: expand + settings
+                    let available = ui.available_height();
+                    if available > 60.0 {
+                        ui.add_space(available - 60.0);
+                    }
+                    ui.separator();
+                    ui.add_space(2.0);
+
+                    // Expand button ">"
+                    let (rect, resp) = ui.allocate_exact_size(
+                        egui::vec2(32.0, 22.0),
+                        egui::Sense::click(),
+                    );
+                    if resp.hovered() {
+                        ui.painter().rect_filled(rect, 4.0, th.hover_overlay);
+                    }
+                    ui.painter().text(
+                        rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        ">",
+                        egui::FontId::proportional(14.0),
+                        if resp.hovered() { th.subtext1 } else { th.overlay0 },
+                    );
+                    if resp.clicked() {
+                        expand_clicked = true;
+                    }
+
+                    // Settings icon (gear)
+                    ui.add_space(2.0);
+                    let (rect, resp) = ui.allocate_exact_size(
+                        egui::vec2(32.0, 22.0),
+                        egui::Sense::click(),
+                    );
+                    if resp.hovered() {
+                        ui.painter().rect_filled(rect, 4.0, th.hover_overlay);
+                    }
+                    ui.painter().text(
+                        rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        "\u{2699}",  // ⚙
+                        egui::FontId::proportional(14.0),
+                        if resp.hovered() { th.subtext1 } else { th.overlay0 },
+                    );
+                    if resp.clicked() {
+                        settings_clicked = true;
+                    }
+                    ui.add_space(4.0);
                 });
             });
+
+        // Apply actions outside the borrow
+        if expand_clicked { state.sidebar_collapsed = false; }
+        if settings_clicked { state.settings_open = true; }
+        if let Some(i) = switch_ws { state.switch_workspace(i); }
+        if add_ws { let _ = state.add_workspace(); }
     } else {
     // Full sidebar
     egui::SidePanel::left("workspace_sidebar")
