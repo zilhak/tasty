@@ -783,6 +783,32 @@ pub fn draw_non_terminal_panels(
     }
 }
 
+/// A single context menu row: full-width hover highlight, text left-aligned.
+fn context_menu_item(ui: &mut egui::Ui, th: &theme::Theme, label: &str) -> bool {
+    let desired = egui::vec2(ui.available_width(), th.item_height_interactive);
+    let (rect, response) = ui.allocate_exact_size(desired, egui::Sense::click());
+
+    // Hover highlight — full row
+    if response.hovered() {
+        ui.painter().rect_filled(rect, th.corner_radius, th.hover_overlay);
+    }
+
+    // Text
+    let text_pos = egui::pos2(
+        rect.min.x + th.spacing_sm,
+        rect.center().y - th.font_size_body / 2.0,
+    );
+    ui.painter().text(
+        text_pos,
+        egui::Align2::LEFT_TOP,
+        label,
+        egui::FontId::proportional(th.font_size_body),
+        th.text,
+    );
+
+    response.clicked()
+}
+
 /// Render the pane right-click context menu.
 pub fn draw_pane_context_menu(
     ctx: &egui::Context,
@@ -806,20 +832,33 @@ pub fn draw_pane_context_menu(
             egui::Frame::new()
                 .fill(th.surface0)
                 .stroke(egui::Stroke::new(1.0, th.surface1))
-                .corner_radius(4.0)
-                .inner_margin(egui::Margin::same(4))
+                .corner_radius(th.corner_radius)
+                .inner_margin(egui::Margin::same(th.spacing_xs as i8))
                 .show(ui, |ui| {
-                    ui.set_min_width(160.0);
-                    if ui.button("Open Markdown...").clicked() {
+                    ui.set_min_width(180.0);
+                    ui.spacing_mut().item_spacing.y = 0.0;
+
+                    if context_menu_item(ui, th, "Open Markdown...") {
                         open_markdown_dialog = true;
                         close_menu = true;
                     }
-                    if ui.button("Open Explorer").clicked() {
+                    if context_menu_item(ui, th, "Open Explorer") {
                         open_explorer = true;
                         close_menu = true;
                     }
-                    ui.separator();
-                    if ui.button("Cancel").clicked() {
+
+                    // Separator
+                    ui.add_space(th.spacing_xs);
+                    let rect = ui.available_rect_before_wrap();
+                    let sep_rect = egui::Rect::from_min_size(
+                        rect.min,
+                        egui::vec2(rect.width(), th.border_width),
+                    );
+                    ui.painter().rect_filled(sep_rect, 0.0, th.separator);
+                    ui.advance_cursor_after_rect(sep_rect);
+                    ui.add_space(th.spacing_xs);
+
+                    if context_menu_item(ui, th, "Cancel") {
                         close_menu = true;
                     }
                 });
