@@ -120,16 +120,34 @@
 - 뷰포트별 유니폼 갱신 (grid_offset을 각 Surface rect에 맞게 조정)
 
 ### 키보드 단축키
-- Ctrl+Shift+N: 새 워크스페이스
-- Ctrl+Shift+T: 포커스된 Pane에 새 탭
-- Ctrl+Tab: 다음 탭 (포커스된 Pane)
-- Ctrl+Shift+Tab: 이전 탭 (포커스된 Pane)
-- Alt+1~9: 워크스페이스 전환
-- Ctrl+Shift+E: Pane 수직 분할 (새 독립 탭 바)
-- Ctrl+Shift+O: Pane 수평 분할 (새 독립 탭 바)
-- Ctrl+Shift+D: SurfaceGroup 수직 분할 (탭 내부)
-- Ctrl+Shift+J: SurfaceGroup 수평 분할 (탭 내부)
-- Alt+Arrow: 포커스 순환 이동 (SurfaceGroup 내 Surface 간 우선, 단일 Surface면 Pane 간 이동)
+
+#### 플랫폼별 수정자 키 매핑
+
+바인딩 문자열에서 `"alt"`는 macOS에서 Cmd(⌘) 키에 매핑된다. macOS 키보드의 Cmd 위치가 Windows/Linux의 Alt 위치와 물리적으로 일치하기 때문이다. 예를 들어 `"alt+n"` 바인딩은:
+- **Windows/Linux**: Alt+N
+- **macOS**: Cmd+N (⌘N)
+
+| 바인딩 토큰 | Windows/Linux | macOS |
+|-------------|---------------|-------|
+| `ctrl` | Ctrl | Ctrl |
+| `alt` | Alt | Cmd (⌘) |
+| `shift` | Shift | Shift |
+
+#### 기본 단축키 (Tasty 프리셋)
+
+- Alt+N (macOS: ⌘N): 새 워크스페이스
+- Alt+T (macOS: ⌘T): 포커스된 Pane에 새 탭
+- Alt+E (macOS: ⌘E): Pane 수직 분할
+- Alt+Shift+E (macOS: ⌘⇧E): Pane 수평 분할
+- Alt+D (macOS: ⌘D): SurfaceGroup 수직 분할 (탭 내부)
+- Alt+Shift+D (macOS: ⌘⇧D): SurfaceGroup 수평 분할 (탭 내부)
+- Alt+] / Alt+[ (macOS: ⌘] / ⌘[): Surface 포커스 다음/이전
+- Ctrl+] / Ctrl+[: Pane 포커스 다음/이전
+- Alt+1~9 (macOS: ⌘1~9): 워크스페이스 전환
+- Ctrl+1~0: 탭 전환
+- Ctrl+Tab / Ctrl+Shift+Tab: 다음/이전 탭
+- Ctrl+Shift+B: 사이드바 토글 (숨김/표시)
+- Ctrl+B: 사이드바 접기/펼치기
 
 ### 방향성 포커스 이동 (IPC/CLI)
 - `focus.direction` IPC 메서드: `direction` 파라미터 (`"left"`, `"right"`, `"up"`, `"down"`)로 분할 트리 구조 기반 방향성 포커스 이동

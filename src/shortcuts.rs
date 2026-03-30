@@ -30,10 +30,17 @@ fn matches_binding(binding: &str, key: &Key, mods: ModifiersState) -> bool {
         }
     }
 
-    // Check modifiers match exactly
+    // Check modifiers match exactly.
+    // On macOS, "alt" in binding maps to Cmd (super_key) since the physical
+    // position of Cmd on macOS keyboards matches Alt on Windows/Linux keyboards.
+    #[cfg(target_os = "macos")]
+    let alt_matches = mods.super_key() == expect_alt;
+    #[cfg(not(target_os = "macos"))]
+    let alt_matches = mods.alt_key() == expect_alt;
+
     if mods.control_key() != expect_ctrl
         || mods.shift_key() != expect_shift
-        || mods.alt_key() != expect_alt
+        || !alt_matches
     {
         return false;
     }
@@ -103,6 +110,10 @@ impl TastyWindow {
     pub(crate) fn handle_shortcut(&mut self, key: &Key, mods: ModifiersState) -> bool {
         let ctrl = mods.control_key();
         let shift = mods.shift_key();
+        // On macOS, "alt" maps to Cmd (super_key) — physical position match.
+        #[cfg(target_os = "macos")]
+        let alt = mods.super_key();
+        #[cfg(not(target_os = "macos"))]
         let alt = mods.alt_key();
 
         // Pre-compute values that need &self before borrowing &mut self.state
