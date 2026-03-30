@@ -640,6 +640,7 @@ impl TastyWindow {
                 if let Some(sid) = sid {
                     self.state.record_typing(sid);
                 }
+                self.ime_just_committed = true;
                 self.mark_dirty();
             }
             _ => {}
