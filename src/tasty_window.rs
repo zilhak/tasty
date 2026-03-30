@@ -30,6 +30,10 @@ pub struct TastyWindow {
     pub last_click_pos: Option<(usize, usize)>,
     pub click_count: u8,
     pub arrow_queue: Option<crate::click_cursor::ArrowQueue>,
+    /// Set to true after Ime::Commit to handle macOS Korean IME quirks:
+    /// - Suppress duplicate KeyboardInput(Pressed) that may follow Commit
+    /// - Detect lost trigger keys via KeyboardInput(Released) and resend them
+    pub ime_just_committed: bool,
 }
 
 impl TastyWindow {
@@ -50,6 +54,7 @@ impl TastyWindow {
             last_click_pos: None,
             click_count: 0,
             arrow_queue: None,
+            ime_just_committed: false,
         }
     }
 
@@ -421,6 +426,36 @@ impl TastyWindow {
     }
 
     fn handle_keyboard_input(&mut self, event: &winit::event::KeyEvent, egui_consumed: bool) {
+        // On macOS, Korean IME commit causes winit quirks:
+        // - For space: Commit includes space, but KeyboardInput(Pressed) may also fire → double-input
+        // - For comma/period: winit drops KeyboardInput(Pressed), but Released still fires → lost key
+        //
+        // Strategy: suppress Pressed after commit (prevents double), but if no Pressed came,
+        // use Released to recover the lost trigger key.
+        if self.ime_just_committed {
+            if event.state == ElementState::Pressed {
+                // Suppress duplicate Pressed event (e.g. space already in Commit text)
+                self.ime_just_committed = false;
+                return;
+            }
+            if event.state == ElementState::Released {
+                // No Pressed event arrived — winit dropped it. Recover the trigger key.
+                self.ime_just_committed = false;
+                if let Some(text) = &event.text {
+                    let s = text.as_str();
+                    if let Some(ch) = s.chars().next() {
+                        if !ch.is_control() && !s.is_empty() {
+                            if let Some(terminal) = self.state.focused_terminal_mut() {
+                                terminal.send_key(s);
+                                self.mark_dirty();
+                            }
+                        }
+                    }
+                }
+                return;
+            }
+        }
+
         if event.state != ElementState::Pressed {
             return;
         }
