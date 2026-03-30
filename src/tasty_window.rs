@@ -444,7 +444,16 @@ impl TastyWindow {
         let overlay_open = settings_open || notification_open;
 
         if !overlay_open || (notification_open && !settings_open) {
-            if self.handle_shortcut(&event.logical_key, self.modifiers) {
+            // On macOS, IME composition (e.g. Korean) can replace the logical key
+            // with the composed character. When modifier keys are held, use the
+            // physical key code to determine the intended key for shortcut matching.
+            let shortcut_key = if self.modifiers.control_key() || self.modifiers.super_key() || self.modifiers.alt_key() {
+                crate::shortcuts::physical_key_to_logical(&event.physical_key)
+                    .unwrap_or_else(|| event.logical_key.clone())
+            } else {
+                event.logical_key.clone()
+            };
+            if self.handle_shortcut(&shortcut_key, self.modifiers) {
                 self.mark_dirty();
                 return;
             }
