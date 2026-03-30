@@ -682,6 +682,21 @@ impl AppState {
         result
     }
 
+    /// Get the actual content rect for the focused surface (accounting for tab bar).
+    /// Returns None if no surface is focused.
+    pub fn focused_surface_rect(&self, terminal_rect: Rect) -> Option<Rect> {
+        let surface_id = self.focused_surface_id()?;
+        let regions = self.render_regions(terminal_rect);
+        for (_pane_id, _pane_rect, terminal_regions) in &regions {
+            for (sid, _term, rect) in terminal_regions {
+                if *sid == surface_id {
+                    return Some(*rect);
+                }
+            }
+        }
+        None
+    }
+
     /// Find a terminal by its surface ID across all workspaces (immutable).
     pub fn find_terminal_by_id(&self, surface_id: u32) -> Option<&Terminal> {
         self.engine.find_terminal_by_id(surface_id)

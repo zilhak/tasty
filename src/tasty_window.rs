@@ -223,8 +223,13 @@ impl TastyWindow {
         };
 
         let (cols, rows) = terminal.surface().dimensions();
+        // Use the actual content rect (after tab bar) instead of the raw pane rect
+        let surface_rect = match self.state.focused_surface_rect(*terminal_rect) {
+            Some(r) => r,
+            None => return,
+        };
         let (click_col, click_row) = crate::click_cursor::pixel_to_grid(
-            x, y, terminal_rect,
+            x, y, &surface_rect,
             self.gpu.cell_width(), self.gpu.cell_height(),
             cols, rows,
         );
@@ -281,12 +286,14 @@ impl TastyWindow {
     }
 
     /// Convert mouse physical coordinates to a grid SelectionPoint for the focused terminal.
-    fn mouse_to_grid(&self, x: f32, y: f32, viewport: &Rect) -> Option<(SelectionPoint, u32)> {
+    fn mouse_to_grid(&self, x: f32, y: f32, terminal_rect: &Rect) -> Option<(SelectionPoint, u32)> {
         let terminal = self.state.focused_terminal()?;
         let surface_id = self.state.focused_surface_id()?;
+        // Use the actual content rect (after tab bar) instead of the raw pane rect
+        let surface_rect = self.state.focused_surface_rect(*terminal_rect)?;
         let (cols, rows) = terminal.surface().dimensions();
         let point = selection::pixel_to_grid(
-            x, y, viewport,
+            x, y, &surface_rect,
             self.gpu.cell_width(), self.gpu.cell_height(),
             cols, rows,
             terminal.scroll_offset,
