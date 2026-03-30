@@ -262,10 +262,16 @@ impl TastyWindow {
             return false;
         }
 
-        // Close active surface
+        // Close active surface (fallback to close pane if only one surface remains)
         if matches_binding(&kb.close_surface, key, mods) {
             if state.close_active_surface() {
                     state.resize_all(terminal_rect, cell_w, cell_h);
+                self.mark_dirty();
+                return true;
+            }
+            // Surface was the only one in the group — try closing the pane instead
+            if state.close_active_pane() {
+                state.resize_all(terminal_rect, cell_w, cell_h);
                 self.mark_dirty();
                 return true;
             }
