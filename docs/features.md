@@ -18,7 +18,7 @@
   - **SGR (텍스트 속성)**: Reset, Intensity(Bold/Dim), Underline, Italic, Blink, Inverse, Invisible, StrikeThrough, Foreground/Background 색상
   - **커서 이동**: Up/Down/Left/Right, Position(CUP), CharacterAbsolute(CHA), LinePositionAbsolute(VPA), NextLine(CNL), PrecedingLine(CPL), Save/Restore
   - **화면 편집**: EraseInDisplay(ED 0/2/3), EraseInLine(EL 0/1/2), ScrollUp(SU), ScrollDown(SD), ClearScreen, ClearToEndOfLine, ClearToEndOfScreen, EraseToStartOfDisplay, EraseToStartOfLine, DeleteCharacter(DCH), InsertCharacter(ICH), DeleteLine(DL), InsertLine(IL), EraseCharacter(ECH). DCH/ICH는 전각 문자(CJK)의 2셀 너비를 올바르게 처리
-  - **ESC 시퀀스**: DECSC/DECRC(커서 저장/복원), RI(역방향 인덱스), RIS(전체 리셋)
+  - **ESC 시퀀스**: DECSC/DECRC(커서 저장/복원), IND(인덱스, ESC D), RI(역방향 인덱스, ESC M), RIS(전체 리셋). IND/RI는 스크롤 리전 경계에서 ScrollRegionUp/Down을 수행
   - **DECSET/DECRST (CSI ? Pm h/l)**: 터미널 모드 전환
     - DECCKM (모드 1): 애플리케이션 커서 키 — 방향키가 `\x1bO{A..D}` 시퀀스를 전송
     - DECTCEM (모드 25): 커서 가시성 제어
@@ -28,7 +28,7 @@
     - 포커스 트래킹 (모드 1004): FocusIn/FocusOut 이벤트
     - 브래킷 붙여넣기 (모드 2004): 붙여넣기 텍스트를 브래킷으로 감쌈
     - 커서 저장/복원 (모드 1048)
-  - **스크롤 리전 (DECSTBM)**: `CSI Pt;Pb r`로 스크롤 영역 설정. InsertLine/DeleteLine이 스크롤 리전 내에서 동작
+  - **스크롤 리전 (DECSTBM)**: `CSI Pt;Pb r`로 스크롤 영역 설정. InsertLine/DeleteLine/LineFeed/Index/ReverseIndex가 스크롤 리전 내에서 동작
 
 ### 키보드 입력
 - winit `KeyEvent.text`를 활용한 수정자 키 반영 (Ctrl+C 등 제어 문자 자동 처리)
