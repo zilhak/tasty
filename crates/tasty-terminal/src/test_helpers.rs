@@ -139,10 +139,52 @@ impl TestTerminal {
         }
     }
 
+    fn perform_index(&mut self) -> Vec<Change> {
+        let (_cx, cy) = self.active_surface().cursor_position();
+        let (top, size) = self.scroll_region_params();
+        let bottom = top + size - 1;
+        if cy == bottom {
+            vec![Change::ScrollRegionUp {
+                first_row: top,
+                region_size: size,
+                scroll_count: 1,
+            }]
+        } else {
+            vec![Change::Text("\n".into())]
+        }
+    }
+
+    fn perform_reverse_index(&mut self) -> Vec<Change> {
+        let (_cx, cy) = self.active_surface().cursor_position();
+        let (top, size) = self.scroll_region_params();
+        if cy == top {
+            vec![Change::ScrollRegionDown {
+                first_row: top,
+                region_size: size,
+                scroll_count: 1,
+            }]
+        } else {
+            vec![Change::CursorPosition {
+                x: Position::Relative(0),
+                y: Position::Relative(-1),
+            }]
+        }
+    }
+
+    fn scroll_region_params(&self) -> (usize, usize) {
+        match self.scroll_region {
+            Some((top, bottom)) => {
+                let size = bottom.saturating_sub(top) + 1;
+                (top, size)
+            }
+            None => (0, self.rows),
+        }
+    }
+
     fn map_control(&mut self, code: ControlCode) -> Vec<Change> {
         match code {
             ControlCode::LineFeed | ControlCode::VerticalTab | ControlCode::FormFeed => {
-                vec![Change::Text("\n".into())]
+                self.perform_index()
             }
             ControlCode::CarriageReturn => vec![Change::Text("\r".into())],
             ControlCode::Backspace => vec![Change::CursorPosition {
@@ -239,6 +281,12 @@ impl TestTerminal {
 
     fn map_esc(&mut self, esc: Esc) -> Vec<Change> {
         match esc {
+            Esc::Code(EscCode::Index) => {
+                self.perform_index()
+            }
+            Esc::Code(EscCode::ReverseIndex) => {
+                self.perform_reverse_index()
+            }
             Esc::Code(EscCode::FullReset) => {
                 self.application_cursor_keys = false;
                 self.cursor_visible = true;

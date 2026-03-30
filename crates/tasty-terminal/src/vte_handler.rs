@@ -24,10 +24,52 @@ impl Terminal {
         }
     }
 
+    /// Perform a line feed (Index): move cursor down one line.
+    /// If the cursor is at the bottom of the scroll region, scroll the region up.
+    pub(crate) fn perform_index(&mut self) -> Vec<Change> {
+        let (_cx, cy) = self.surface().cursor_position();
+        let (top, size) = self.scroll_region_params();
+        let bottom = top + size - 1;
+
+        if cy == bottom {
+            // Cursor is at the bottom of the scroll region — scroll region up
+            vec![Change::ScrollRegionUp {
+                first_row: top,
+                region_size: size,
+                scroll_count: 1,
+            }]
+        } else {
+            // Normal line feed — just move cursor down
+            vec![Change::Text("\n".into())]
+        }
+    }
+
+    /// Perform a reverse index: move cursor up one line.
+    /// If the cursor is at the top of the scroll region, scroll the region down.
+    pub(crate) fn perform_reverse_index(&mut self) -> Vec<Change> {
+        let (_cx, cy) = self.surface().cursor_position();
+        let (top, size) = self.scroll_region_params();
+
+        if cy == top {
+            // Cursor is at the top of the scroll region — scroll region down
+            vec![Change::ScrollRegionDown {
+                first_row: top,
+                region_size: size,
+                scroll_count: 1,
+            }]
+        } else {
+            // Normal cursor up
+            vec![Change::CursorPosition {
+                x: Position::Relative(0),
+                y: Position::Relative(-1),
+            }]
+        }
+    }
+
     pub(crate) fn map_control(&mut self, code: ControlCode) -> Vec<Change> {
         match code {
             ControlCode::LineFeed | ControlCode::VerticalTab | ControlCode::FormFeed => {
-                vec![Change::Text("\n".into())]
+                self.perform_index()
             }
             ControlCode::CarriageReturn => vec![Change::Text("\r".into())],
             ControlCode::Backspace => vec![Change::CursorPosition {
@@ -441,11 +483,11 @@ impl Terminal {
                     vec![]
                 }
             }
+            Esc::Code(EscCode::Index) => {
+                self.perform_index()
+            }
             Esc::Code(EscCode::ReverseIndex) => {
-                vec![Change::CursorPosition {
-                    x: Position::Relative(0),
-                    y: Position::Relative(-1),
-                }]
+                self.perform_reverse_index()
             }
             Esc::Code(EscCode::FullReset) => {
                 self.saved_cursor = None;
