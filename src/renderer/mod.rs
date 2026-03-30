@@ -417,19 +417,25 @@ impl CellRenderer {
                 });
 
                 let text = cell_ref.str();
+
+                // For wide characters (CJK/Hangul), always push bg for the
+                // continuation cell. visible_cells() skips continuation cells,
+                // so their background must be emitted here.
+                if !text.is_empty() {
+                    let ch = text.chars().next().unwrap();
+                    if unicode_width(ch) > 1 && col_idx + 1 < cols {
+                        self.bg_instances.push(BgInstance {
+                            pos: [(col_idx + 1) as f32, row_idx as f32],
+                            bg_color,
+                        });
+                    }
+                }
+
                 if text.is_empty() || text == " " {
                     continue;
                 }
 
                 let ch = text.chars().next().unwrap();
-
-                // For wide characters, push bg for the continuation cell too
-                if unicode_width(ch) > 1 && col_idx + 1 < cols {
-                    self.bg_instances.push(BgInstance {
-                        pos: [(col_idx + 1) as f32, row_idx as f32],
-                        bg_color,
-                    });
-                }
                 let bold = attrs.intensity() == termwiz::cell::Intensity::Bold;
                 let italic = attrs.italic();
 
@@ -746,6 +752,18 @@ impl CellRenderer {
             });
 
             let text = cell_ref.str();
+
+            // Wide characters: push bg for continuation cell
+            if !text.is_empty() {
+                let ch = text.chars().next().unwrap();
+                if unicode_width(ch) > 1 && col_idx + 1 < cols {
+                    self.bg_instances.push(BgInstance {
+                        pos: [(col_idx + 1) as f32, row_idx as f32],
+                        bg_color,
+                    });
+                }
+            }
+
             if text.is_empty() || text == " " {
                 continue;
             }
