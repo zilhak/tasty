@@ -185,9 +185,16 @@ impl IpcServer {
         Ok(())
     }
 
-    /// Get the path to the port file: ~/.tasty/tasty.port
+    /// Get the path to the port file.
+    /// Release: ~/.tasty/tasty.port
+    /// Debug:   ~/.tasty/tasty-debug.port
     pub fn port_file_path() -> Option<std::path::PathBuf> {
-        tasty_home().map(|dir| dir.join("tasty.port"))
+        let filename = if cfg!(debug_assertions) {
+            "tasty-debug.port"
+        } else {
+            "tasty.port"
+        };
+        tasty_home().map(|dir| dir.join(filename))
     }
 
     /// Read the port from the port file (used by CLI client).
