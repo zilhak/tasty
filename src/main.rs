@@ -171,8 +171,9 @@ impl App {
     fn create_new_window(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         use winit::window::WindowAttributes;
 
+        let title = if cfg!(debug_assertions) { "Tasty (Debug)" } else { "Tasty" };
         let attrs = WindowAttributes::default()
-            .with_title("Tasty")
+            .with_title(title)
             .with_inner_size(winit::dpi::LogicalSize::new(1280, 720));
 
         let window = Arc::new(

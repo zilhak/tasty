@@ -145,7 +145,8 @@ fn init_tracing() {
     // Try to set up file logging; fall back to stderr-only if it fails
     if let Some(dir) = tasty_home() {
         let _ = fs::create_dir_all(&dir);
-        let log_path = dir.join("debug.log");
+        let log_filename = if cfg!(debug_assertions) { "debug-dev.log" } else { "debug.log" };
+        let log_path = dir.join(log_filename);
         if let Ok(file) = fs::File::create(&log_path) {
             let file_layer = tracing_subscriber::fmt::layer()
                 .with_writer(std::sync::Mutex::new(file))
