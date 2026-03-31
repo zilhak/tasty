@@ -805,21 +805,32 @@ impl TastyWindow {
         let overlay_open = self.state.settings_open || self.state.notification_panel_open;
         if egui_consumed { self.mark_dirty(); }
         if !egui_consumed && !overlay_open {
-            if let Some(terminal) = self.state.focused_terminal_mut() {
-                let lines = match delta {
-                    MouseScrollDelta::LineDelta(_, y) => y as i32,
-                    MouseScrollDelta::PixelDelta(pos) => (pos.y / 20.0) as i32,
-                };
-                if terminal.is_alternate_screen() {
-                    if lines > 0 {
-                        for _ in 0..lines.unsigned_abs() { terminal.send_bytes(b"\x1b[A"); }
-                    } else if lines < 0 {
-                        for _ in 0..lines.unsigned_abs() { terminal.send_bytes(b"\x1b[B"); }
+            // Find the surface under the cursor, falling back to the focused surface
+            let terminal_rect = self.compute_terminal_rect();
+            let target_id = self.cursor_position
+                .and_then(|pos| {
+                    let (x, y) = (pos.x as f32, pos.y as f32);
+                    self.state.surface_id_at_position(x, y, terminal_rect)
+                })
+                .or_else(|| self.state.focused_surface_id());
+
+            if let Some(surface_id) = target_id {
+                if let Some(terminal) = self.state.find_terminal_by_id_mut(surface_id) {
+                    let lines = match delta {
+                        MouseScrollDelta::LineDelta(_, y) => y as i32,
+                        MouseScrollDelta::PixelDelta(pos) => (pos.y / 20.0) as i32,
+                    };
+                    if terminal.is_alternate_screen() {
+                        if lines > 0 {
+                            for _ in 0..lines.unsigned_abs() { terminal.send_bytes(b"\x1b[A"); }
+                        } else if lines < 0 {
+                            for _ in 0..lines.unsigned_abs() { terminal.send_bytes(b"\x1b[B"); }
+                        }
+                    } else {
+                        if lines > 0 { terminal.scroll_up(lines as usize); }
+                        else if lines < 0 { terminal.scroll_down((-lines) as usize); }
+                        self.dirty = true;
                     }
-                } else {
-                    if lines > 0 { terminal.scroll_up(lines as usize); }
-                    else if lines < 0 { terminal.scroll_down((-lines) as usize); }
-                    self.dirty = true;
                 }
             }
         }

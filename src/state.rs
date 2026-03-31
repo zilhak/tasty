@@ -857,6 +857,19 @@ impl AppState {
         None
     }
 
+    /// Find the surface ID at the given physical pixel position.
+    pub fn surface_id_at_position(&self, x: f32, y: f32, terminal_rect: Rect) -> Option<u32> {
+        let regions = self.render_regions(terminal_rect);
+        for (_pane_id, _pane_rect, terminal_regions) in &regions {
+            for (sid, _term, rect) in terminal_regions {
+                if rect.contains(x, y) {
+                    return Some(*sid);
+                }
+            }
+        }
+        None
+    }
+
     /// Find a terminal by its surface ID across all workspaces (immutable).
     pub fn find_terminal_by_id(&self, surface_id: u32) -> Option<&Terminal> {
         self.engine.find_terminal_by_id(surface_id)
