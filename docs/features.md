@@ -267,7 +267,7 @@
 
 ### 설정 카테고리
 - **General**: 셸 경로 (OS별 자동 감지: COMSPEC/SHELL), 시작 명령, 스크롤백 줄 수 (기본 10,000)
-- **Appearance**: 폰트 패밀리 (기본값: 시스템 모노스페이스), 폰트 크기, 테마 (dark/light), 배경 투명도, 사이드바 너비
+- **Appearance**: 폰트 패밀리 (기본값: 시스템 모노스페이스), 폰트 크기, 테마 (dark/light), 배경 투명도, 사이드바 너비, focused surface 배경색
 - **Clipboard**: OS별 기본 활성화 (macOS: Alt+C/V, Linux: Ctrl+Shift+C/V, Windows: Ctrl+C/V)
 - **Notifications**: 알림 활성화, 시스템 알림, 사운드, 병합 간격(ms)
 - **Keybindings**: 워크스페이스/탭/패인/서피스 분할 단축키
@@ -293,6 +293,7 @@
 - `settings.appearance.font_size`: GpuState 생성 시 CellRenderer에 전달. 기본값 14.0
 - `settings.appearance.theme`: egui Visuals 설정에 반영. "dark" → `Visuals::dark()`, "light" → `Visuals::light()`. wgpu clear color도 테마에 따라 변경. 설정 저장 후 실시간 반영
 - `settings.appearance.background_opacity`: wgpu clear color의 알파 값으로 적용. 0.0(투명)~1.0(불투명)
+- `settings.appearance.focused_surface_bg`: focused surface의 배경색 (hex, 기본 `#000000`). unfocused surface는 테마 기본 배경(`#1e1e2e`) 사용
 - `settings.appearance.sidebar_width`: 사이드바 너비가 UI, GPU 렌더러, 터미널 rect 계산에 반영. 렌더 루프에서 설정값과 자동 동기화
 - `settings.clipboard.windows_style`: Ctrl+V 붙여넣기 활성화
 - `settings.clipboard.linux_style`: Ctrl+Shift+V 붙여넣기 활성화
