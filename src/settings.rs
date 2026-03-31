@@ -51,6 +51,9 @@ pub struct AppearanceSettings {
     pub sidebar_width: f32,
     /// UI scale: "small", "medium", or "large". Affects all non-terminal UI elements.
     pub ui_scale: String,
+    /// Background color for the focused surface (hex, e.g. "#000000").
+    /// Unfocused surfaces use the theme's default terminal_bg.
+    pub focused_surface_bg: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -354,11 +357,30 @@ impl Default for AppearanceSettings {
             background_opacity: 1.0,
             sidebar_width: 180.0,
             ui_scale: "medium".to_string(),
+            focused_surface_bg: "#000000".to_string(),
         }
     }
 }
 
+/// Parse a hex color string (#RRGGBB or RRGGBB) to [r, g, b, a] floats.
+pub fn parse_hex_color(hex: &str) -> Option<[f32; 4]> {
+    let hex = hex.strip_prefix('#').unwrap_or(hex);
+    if hex.len() != 6 {
+        return None;
+    }
+    let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
+    let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
+    let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
+    Some([r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0, 1.0])
+}
+
 impl AppearanceSettings {
+    /// Parse focused_surface_bg hex string to GPU float format [r, g, b, a].
+    /// Falls back to #000000 on invalid input.
+    pub fn focused_surface_bg_float(&self) -> [f32; 4] {
+        parse_hex_color(&self.focused_surface_bg).unwrap_or([0.0, 0.0, 0.0, 1.0])
+    }
+
     /// Get the UI scale factor based on the ui_scale setting.
     pub fn ui_scale_factor(&self) -> f32 {
         match self.ui_scale.as_str() {

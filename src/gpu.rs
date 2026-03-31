@@ -467,7 +467,7 @@ impl GpuState {
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
 
         self.render_clear_pass(&view, state);
-        self.render_terminals(&view, &regions, focused_surface_id, selection);
+        self.render_terminals(&view, &regions, focused_surface_id, selection, &state.engine.settings.appearance);
         self.render_egui_pass(&view, &full_output.textures_delta, &paint_jobs, &screen_descriptor);
 
         // 6. Screenshot + present
@@ -636,12 +636,17 @@ impl GpuState {
         regions: &[(u32, Rect, Vec<(u32, &tasty_terminal::Terminal, Rect)>)],
         focused_surface_id: Option<u32>,
         selection: Option<&crate::selection::TextSelection>,
+        settings: &crate::settings::AppearanceSettings,
     ) {
         let theme = crate::theme::theme();
         for (_pane_id, _pane_rect, terminal_regions) in regions {
             for (surface_id, terminal, rect) in terminal_regions {
                 let is_focused = focused_surface_id == Some(*surface_id);
-                let bg = crate::renderer::DEFAULT_BG;
+                let bg = if is_focused {
+                    settings.focused_surface_bg_float()
+                } else {
+                    crate::renderer::DEFAULT_BG
+                };
 
                 // Build selection info for this surface
                 let sel_info = selection
