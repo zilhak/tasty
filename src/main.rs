@@ -1,5 +1,6 @@
 mod cli;
 mod click_cursor;
+mod crash_report;
 pub mod engine;
 pub mod engine_state;
 mod event_handler;
@@ -31,7 +32,6 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use clap::Parser;
-use tracing_subscriber::EnvFilter;
 use winit::event_loop::{EventLoop, EventLoopProxy};
 use winit::window::Window;
 
@@ -387,12 +387,7 @@ impl App {
 }
 
 fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::try_from_env("TASTY_LOG")
-                .unwrap_or_else(|_| EnvFilter::new("warn,wgpu_hal=error,wgpu_core=error,naga=error")),
-        )
-        .init();
+    crash_report::init();
 
     // Parse CLI arguments
     let cli = cli::Cli::parse();
