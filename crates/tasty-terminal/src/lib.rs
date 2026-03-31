@@ -75,8 +75,8 @@ pub struct Terminal {
 }
 
 impl Terminal {
-    pub fn new(cols: usize, rows: usize, waker: Waker) -> Result<Self> {
-        Self::new_with_shell(cols, rows, None, waker)
+    pub fn new(cols: usize, rows: usize, surface_id: u32, waker: Waker) -> Result<Self> {
+        Self::new_with_shell(cols, rows, None, surface_id, waker)
     }
 
     /// Create a terminal with an optional custom shell. If `shell` is `None` or empty,
@@ -84,11 +84,11 @@ impl Terminal {
     ///
     /// The `waker` callback is invoked from the PTY reader thread whenever new data
     /// arrives, allowing the main event loop to wake up and process the output.
-    pub fn new_with_shell(cols: usize, rows: usize, shell: Option<&str>, waker: Waker) -> Result<Self> {
-        Self::new_with_shell_args(cols, rows, shell, &[], waker)
+    pub fn new_with_shell(cols: usize, rows: usize, shell: Option<&str>, surface_id: u32, waker: Waker) -> Result<Self> {
+        Self::new_with_shell_args(cols, rows, shell, &[], surface_id, waker)
     }
 
-    pub fn new_with_shell_args(cols: usize, rows: usize, shell: Option<&str>, args: &[&str], waker: Waker) -> Result<Self> {
+    pub fn new_with_shell_args(cols: usize, rows: usize, shell: Option<&str>, args: &[&str], surface_id: u32, waker: Waker) -> Result<Self> {
         let pty_system = NativePtySystem::default();
 
         let pair = pty_system.openpty(PtySize {
@@ -111,6 +111,7 @@ impl Terminal {
             }
         }
         cmd.env("TERM", "xterm-256color");
+        cmd.env("TASTY_SURFACE_ID", surface_id.to_string());
 
         let child = pair.slave.spawn_command(cmd)?;
         drop(pair.slave);

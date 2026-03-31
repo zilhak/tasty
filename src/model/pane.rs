@@ -460,7 +460,7 @@ impl Pane {
         shell_args: &[&str],
         waker: Waker,
     ) -> anyhow::Result<Self> {
-        let terminal = Terminal::new_with_shell_args(cols, rows, shell, shell_args, waker)?;
+        let terminal = Terminal::new_with_shell_args(cols, rows, shell, shell_args, surface_id, waker)?;
         let tab = Tab {
             id: tab_id,
             name: "Shell".to_string(),
@@ -489,7 +489,7 @@ impl Pane {
         shell_args: &[&str],
         waker: Waker,
     ) -> anyhow::Result<()> {
-        let terminal = Terminal::new_with_shell_args(cols, rows, shell, shell_args, waker)?;
+        let terminal = Terminal::new_with_shell_args(cols, rows, shell, shell_args, surface_id, waker)?;
         let tab = Tab {
             id: tab_id,
             name: format!("Shell {}", self.tabs.len() + 1),
@@ -516,7 +516,7 @@ impl Pane {
         shell_args: &[&str],
         waker: Waker,
     ) -> anyhow::Result<()> {
-        let terminal = Terminal::new_with_shell_args(cols, rows, shell, shell_args, waker)?;
+        let terminal = Terminal::new_with_shell_args(cols, rows, shell, shell_args, surface_id, waker)?;
         let tab = Tab {
             id: tab_id,
             name: format!("Shell {}", self.tabs.len() + 1),
@@ -559,7 +559,7 @@ impl Pane {
     ) -> anyhow::Result<()> {
         // Pre-create the new terminal before any structural mutation.
         // If Terminal::new fails, panel is untouched.
-        let new_terminal = Terminal::new_with_shell_args(cols, rows, shell, shell_args, waker)?;
+        let new_terminal = Terminal::new_with_shell_args(cols, rows, shell, shell_args, new_surface_id, waker)?;
         if self.tabs.is_empty() {
             return Ok(()); // nothing to split
         }
@@ -583,7 +583,7 @@ impl Pane {
         shell_args: &[&str],
         waker: Waker,
     ) -> anyhow::Result<()> {
-        let new_terminal = Terminal::new_with_shell_args(cols, rows, shell, shell_args, waker)?;
+        let new_terminal = Terminal::new_with_shell_args(cols, rows, shell, shell_args, new_surface_id, waker)?;
         for tab in &mut self.tabs {
             if tab.panel().find_terminal(target_surface_id).is_some() {
                 let old_panel = tab.take_panel();
@@ -753,7 +753,7 @@ impl Tab {
         let spawn = self.deferred_spawn.take().unwrap();
         let shell_ref = spawn.shell.as_deref();
         let shell_args: Vec<&str> = spawn.shell_args.iter().map(|s| s.as_str()).collect();
-        match Terminal::new_with_shell_args(spawn.cols, spawn.rows, shell_ref, &shell_args, spawn.waker) {
+        match Terminal::new_with_shell_args(spawn.cols, spawn.rows, shell_ref, &shell_args, surface_id, spawn.waker) {
             Ok(terminal) => {
                 self.panel_opt = Some(Panel::Terminal(SurfaceNode {
                     id: surface_id,
