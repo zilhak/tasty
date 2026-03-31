@@ -64,9 +64,9 @@ pub enum Commands {
         /// Split level: pane-group (upper layout) or surface (lower layout)
         #[arg(long)]
         level: String,
-        /// Target ID (pane ID for pane-group, surface ID for surface). Omit for focused target
+        /// Target: numeric ID, "this" (current surface), or nickname. Omit for focused target
         #[arg(long)]
-        target: Option<u32>,
+        target: Option<String>,
         /// Split direction: vertical (default) or horizontal
         #[arg(long, default_value = "vertical")]
         direction: String,
@@ -343,6 +343,18 @@ fn make_request(method: &str, params: serde_json::Value) -> JsonRpcRequest {
     }
 }
 
+/// Resolve a target string for split/other commands.
+/// - "this" → numeric surface ID from TASTY_SURFACE_ID env var
+/// - numeric string → passed through as-is
+/// - other string → passed through as-is (server resolves as nickname)
+fn resolve_target(target: &str) -> String {
+    if target == "this" {
+        std::env::var("TASTY_SURFACE_ID").unwrap_or_else(|_| target.to_string())
+    } else {
+        target.to_string()
+    }
+}
+
 /// Run the CLI client: connect to a running tasty instance and execute the command.
 pub fn run_client(command: Commands) -> Result<()> {
     let port = IpcServer::read_port_file()?;
@@ -516,14 +528,17 @@ fn command_to_request(command: &Commands) -> JsonRpcRequest {
         ),
         Commands::Notifications => ("notification.list", serde_json::json!({})),
         Commands::Tree => ("tree", serde_json::json!({})),
-        Commands::Split { level, target, direction } => (
-            "split",
-            serde_json::json!({
-                "level": level,
-                "target_id": target,
-                "direction": direction,
-            }),
-        ),
+        Commands::Split { level, target, direction } => {
+            let resolved_target = target.as_deref().map(resolve_target);
+            (
+                "split",
+                serde_json::json!({
+                    "level": level,
+                    "target": resolved_target,
+                    "direction": direction,
+                }),
+            )
+        }
         Commands::NewTab => ("tab.create", serde_json::json!({})),
         Commands::CloseTab => ("tab.close", serde_json::json!({})),
         Commands::ClosePane => ("pane.close", serde_json::json!({})),

@@ -65,4 +65,21 @@ impl SurfaceMetaStore {
     pub fn list(surface_id: u32) -> HashMap<String, String> {
         Self::read_all(surface_id)
     }
+
+    /// Find the first surface ID whose meta contains key=value.
+    /// Scans all surface meta directories.
+    pub fn find_by_value(key: &str, value: &str) -> Option<u32> {
+        let base = std::env::temp_dir().join("tasty-surfaces");
+        let entries = fs::read_dir(&base).ok()?;
+        for entry in entries.flatten() {
+            if let Some(name) = entry.file_name().to_str() {
+                if let Ok(sid) = name.parse::<u32>() {
+                    if Self::get(sid, key).as_deref() == Some(value) {
+                        return Some(sid);
+                    }
+                }
+            }
+        }
+        None
+    }
 }

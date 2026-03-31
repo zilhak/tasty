@@ -334,6 +334,33 @@ fn handle_pane_list(state: &AppState, id: serde_json::Value) -> JsonRpcResponse 
     JsonRpcResponse::success(id, json!(panes))
 }
 
+/// Resolve a target parameter to a numeric ID.
+/// - Numeric string or JSON number → ID
+/// - Other string → nickname lookup via surface_meta (for "surface" level)
+/// - null/absent → None (use focused)
+fn resolve_target_param(value: Option<&serde_json::Value>, level: &str) -> Option<u32> {
+    let val = value?;
+    // JSON number
+    if let Some(n) = val.as_u64() {
+        return Some(n as u32);
+    }
+    // String
+    if let Some(s) = val.as_str() {
+        if s.is_empty() {
+            return None;
+        }
+        // Numeric string
+        if let Ok(n) = s.parse::<u32>() {
+            return Some(n);
+        }
+        // Nickname lookup (only for surface level — pane-group has no meta)
+        if level == "surface" {
+            return crate::surface_meta::SurfaceMetaStore::find_by_value("nickname", s);
+        }
+    }
+    None
+}
+
 fn handle_split(
     state: &mut AppState,
     id: serde_json::Value,
@@ -356,7 +383,7 @@ fn handle_split(
         _ => SplitDirection::Vertical,
     };
 
-    let target_id = params.get("target_id").and_then(|v| v.as_u64()).map(|v| v as u32);
+    let target_id = resolve_target_param(params.get("target"), level);
 
     match level {
         "pane-group" => match state.split_pane_targeted(target_id, direction) {
