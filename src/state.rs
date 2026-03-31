@@ -217,6 +217,55 @@ impl AppState {
         Ok(())
     }
 
+    /// Add a new workspace without switching to it. Used by IPC/CLI.
+    /// Returns the new workspace index.
+    pub fn add_workspace_background(&mut self) -> anyhow::Result<usize> {
+        let ws_id = self.engine.next_ids.next_workspace();
+        let pane_id = self.engine.next_ids.next_pane();
+        let tab_id = self.engine.next_ids.next_tab();
+        let surface_id = self.engine.next_ids.next_surface();
+
+        let name = format!("Workspace {}", self.engine.workspaces.len() + 1);
+        let shell = if self.engine.settings.general.shell.is_empty() { None } else { Some(self.engine.settings.general.shell.as_str()) };
+        let shell_args_owned = self.engine.settings.general.effective_shell_args();
+        let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
+        let ws = Workspace::new_with_shell(
+            ws_id,
+            name,
+            self.engine.default_cols,
+            self.engine.default_rows,
+            pane_id,
+            tab_id,
+            surface_id,
+            shell,
+            &shell_args,
+            self.engine.make_waker(surface_id),
+        )?;
+        self.engine.workspaces.push(ws);
+        let idx = self.engine.workspaces.len() - 1;
+        // Do NOT change self.active_workspace
+        self.send_fast_init(surface_id);
+        Ok(idx)
+    }
+
+    /// Add a new tab in the focused pane without switching to it. Used by IPC/CLI.
+    pub fn add_tab_background(&mut self) -> anyhow::Result<()> {
+        let tab_id = self.engine.next_ids.next_tab();
+        let surface_id = self.engine.next_ids.next_surface();
+        let cols = self.engine.default_cols;
+        let rows = self.engine.default_rows;
+        let shell = self.engine.settings.general.shell.clone();
+        let shell_ref = if shell.is_empty() { None } else { Some(shell.as_str()) };
+        let shell_args_owned = self.engine.settings.general.effective_shell_args();
+        let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
+        let waker = self.engine.make_waker(surface_id);
+        if let Some(pane) = self.focused_pane_mut() {
+            pane.add_tab_background_with_shell(tab_id, surface_id, cols, rows, shell_ref, &shell_args, waker)?;
+        }
+        self.send_fast_init(surface_id);
+        Ok(())
+    }
+
     /// Add a Markdown viewer tab in the focused pane.
     pub fn add_markdown_tab(&mut self, file_path: String) -> anyhow::Result<()> {
         let tab_id = self.engine.next_ids.next_tab();

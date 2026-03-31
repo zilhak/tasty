@@ -213,9 +213,8 @@ fn handle_workspace_create(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    match state.add_workspace() {
-        Ok(_) => {
-            let idx = state.active_workspace;
+    match state.add_workspace_background() {
+        Ok(idx) => {
             if let Some(name) = params.get("name").and_then(|v| v.as_str()) {
                 if !name.is_empty() {
                     state.engine.workspaces[idx].name = name.to_string();
@@ -227,7 +226,7 @@ fn handle_workspace_create(
             if let Some(desc) = params.get("description").and_then(|v| v.as_str()) {
                 state.engine.workspaces[idx].description = desc.to_string();
             }
-            let ws = state.active_workspace();
+            let ws = &state.engine.workspaces[idx];
             JsonRpcResponse::success(
                 id,
                 json!({
@@ -235,7 +234,7 @@ fn handle_workspace_create(
                     "name": ws.name,
                     "subtitle": ws.subtitle,
                     "description": ws.description,
-                    "index": state.active_workspace,
+                    "index": idx,
                 }),
             )
         }
@@ -403,7 +402,7 @@ fn handle_tab_list(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {
 }
 
 fn handle_tab_create(state: &mut AppState, id: serde_json::Value) -> JsonRpcResponse {
-    match state.add_tab() {
+    match state.add_tab_background() {
         Ok(_) => {
             let (tab_count, active_tab) = state
                 .focused_pane()

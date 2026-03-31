@@ -505,6 +505,33 @@ impl Pane {
         Ok(())
     }
 
+    /// Add a new tab without changing the active tab. Used by IPC/CLI.
+    pub fn add_tab_background_with_shell(
+        &mut self,
+        tab_id: TabId,
+        surface_id: SurfaceId,
+        cols: usize,
+        rows: usize,
+        shell: Option<&str>,
+        shell_args: &[&str],
+        waker: Waker,
+    ) -> anyhow::Result<()> {
+        let terminal = Terminal::new_with_shell_args(cols, rows, shell, shell_args, waker)?;
+        let tab = Tab {
+            id: tab_id,
+            name: format!("Shell {}", self.tabs.len() + 1),
+            panel_opt: Some(Panel::Terminal(SurfaceNode {
+                id: surface_id,
+                terminal,
+                deferred_spawn: None,
+            })),
+            deferred_spawn: None,
+        };
+        self.tabs.push(tab);
+        // Do NOT change self.active_tab
+        Ok(())
+    }
+
     /// Get the active tab's panel. Returns None if tabs are empty.
     pub fn active_panel(&self) -> Option<&Panel> {
         if self.tabs.is_empty() { return None; }
