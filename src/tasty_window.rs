@@ -432,6 +432,10 @@ impl TastyWindow {
         //
         // Strategy: suppress Pressed after commit (prevents double), but if no Pressed came,
         // use Released to recover the lost trigger key.
+        //
+        // This is macOS-specific. On Linux, Ime::Commit does NOT include the trigger key
+        // (space, period, etc.), so the subsequent Pressed event is the only way to input it.
+        #[cfg(target_os = "macos")]
         if self.ime_just_committed {
             if event.state == ElementState::Pressed {
                 // Suppress duplicate Pressed event (e.g. space already in Commit text)
@@ -454,6 +458,10 @@ impl TastyWindow {
                 }
                 return;
             }
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            self.ime_just_committed = false;
         }
 
         if event.state != ElementState::Pressed {
