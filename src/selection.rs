@@ -82,9 +82,8 @@ pub fn pixel_to_grid(
     scroll_offset: usize,
     scrollback_len: usize,
 ) -> SelectionPoint {
-    let padding = 4.0;
-    let rel_x = mouse_x - viewport.x - padding;
-    let rel_y = mouse_y - viewport.y - padding;
+    let rel_x = mouse_x - viewport.x;
+    let rel_y = mouse_y - viewport.y;
 
     let col = (rel_x / cell_width).floor() as isize;
     let col = col.clamp(0, (cols as isize) - 1) as usize;

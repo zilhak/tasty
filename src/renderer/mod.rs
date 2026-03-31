@@ -480,11 +480,10 @@ impl CellRenderer {
 
     /// Compute terminal grid size from a viewport rect (physical pixels).
     pub fn grid_size_for_rect(&self, rect: &Rect) -> (usize, usize) {
-        let padding = 8.0;
         let cell_w = self.font_config.metrics.cell_width.max(1.0);
         let cell_h = self.font_config.metrics.cell_height.max(1.0);
-        let cols = ((rect.width - padding) / cell_w).floor() as usize;
-        let rows = ((rect.height - padding) / cell_h).floor() as usize;
+        let cols = (rect.width / cell_w).floor() as usize;
+        let rows = (rect.height / cell_h).floor() as usize;
         (cols.max(1), rows.max(1))
     }
 
@@ -520,7 +519,7 @@ impl CellRenderer {
                 self.font_config.metrics.cell_width,
                 self.font_config.metrics.cell_height,
             ],
-            grid_offset: [viewport.x + 4.0, viewport.y + 4.0],
+            grid_offset: [viewport.x, viewport.y],
             viewport_size: [screen_width as f32, screen_height as f32],
             _padding: [0.0; 2],
         };
@@ -548,7 +547,7 @@ impl CellRenderer {
                 self.font_config.metrics.cell_width,
                 self.font_config.metrics.cell_height,
             ],
-            grid_offset: [viewport.x + 4.0, viewport.y + 4.0],
+            grid_offset: [viewport.x, viewport.y],
             viewport_size: [screen_width as f32, screen_height as f32],
             _padding: [0.0; 2],
         };
