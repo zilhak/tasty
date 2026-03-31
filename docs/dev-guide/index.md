@@ -11,3 +11,9 @@
 | Linux | [linux.md](linux.md) |
 | Windows | (예정) |
 | macOS | (예정) |
+
+## 주제별 가이드
+
+| 주제 | 문서 |
+|------|------|
+| Crash & 에러 진단 | [crash-diagnostics.md](crash-diagnostics.md) |
