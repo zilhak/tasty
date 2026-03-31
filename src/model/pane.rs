@@ -544,6 +544,31 @@ impl Pane {
         Ok(())
     }
 
+    /// Split a specific surface by ID (cross-tab search). Does NOT change focus.
+    pub fn split_surface_by_id_with_shell(
+        &mut self,
+        target_surface_id: SurfaceId,
+        direction: SplitDirection,
+        new_surface_id: SurfaceId,
+        cols: usize,
+        rows: usize,
+        shell: Option<&str>,
+        shell_args: &[&str],
+        waker: Waker,
+    ) -> anyhow::Result<()> {
+        let new_terminal = Terminal::new_with_shell_args(cols, rows, shell, shell_args, waker)?;
+        for tab in &mut self.tabs {
+            if tab.panel().find_terminal(target_surface_id).is_some() {
+                let old_panel = tab.take_panel();
+                tab.put_panel(old_panel.split_surface_by_id_with_terminal(
+                    target_surface_id, direction, new_surface_id, new_terminal,
+                ));
+                return Ok(());
+            }
+        }
+        anyhow::bail!("surface {} not found in this pane", target_surface_id)
+    }
+
     /// Close the tab at the given index. Returns false if the tab can't be closed
     /// (e.g., it's the last tab).
     pub fn close_tab(&mut self, tab_index: usize) -> bool {

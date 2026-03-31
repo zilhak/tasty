@@ -389,7 +389,7 @@
 
 #### 패인
 - `pane.list`: 활성 워크스페이스의 패인 목록 (포커스 여부, 탭 수)
-- `pane.split`: 포커스된 패인 분할 (vertical/horizontal)
+- `split`: 통합 분할 명령. `level`(pane-group/surface), `target_id`(전역 ID, cross-workspace), `direction`(vertical/horizontal) 파라미터. 포커스 이동 없음
 - `pane.close`: 포커스된 패인 닫기 (unsplit)
 - `pane.focus`: **pane_id로 특정 패인을 직접 포커스** — 멀티패인 환경에서 원하는 패인으로 전환
 

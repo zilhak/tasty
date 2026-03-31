@@ -50,7 +50,7 @@ tasty select-workspace INDEX  # 0-based
 
 # 패인/탭
 tasty panes                   # 패인 목록
-tasty split [--direction vertical|horizontal]
+tasty split --level pane-group|surface [--target ID] [--direction vertical|horizontal]
 tasty close-pane
 tasty new-tab
 tasty close-tab
@@ -142,7 +142,7 @@ tasty claude-wait --child 42 --timeout 60 # 타임아웃 60초로 대기
 | 메서드 | 파라미터 | 설명 |
 |--------|---------|------|
 | `pane.list` | 없음 | 활성 워크스페이스의 패인 목록 |
-| `pane.split` | `direction?: "vertical"\|"horizontal"` | 패인 분할 (기본: vertical) |
+| `split` | `level: "pane-group"\|"surface"`, `target_id?: number`, `direction?: "vertical"\|"horizontal"` | 분할. level로 상위/하위 레이아웃 선택, target_id로 대상 지정 (생략 시 focused), 포커스 이동 없음 |
 | `pane.close` | 없음 | 포커스된 패인 닫기 |
 | `pane.focus` | `pane_id: number` | 특정 패인에 포커스 |
 | `focus.direction` | `direction: "left"\|"right"\|"up"\|"down"` | 방향성 포커스 이동 (SurfaceGroup 내부 우선, 이후 패인 간) |

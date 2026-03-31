@@ -145,4 +145,45 @@ impl Panel {
             Panel::Markdown(_) | Panel::Explorer(_) => self,
         }
     }
+
+    /// Split a specific surface by ID. Does NOT change focused_surface.
+    /// Used by IPC `split` command where focus must not move.
+    pub fn split_surface_by_id_with_terminal(
+        self,
+        target_surface_id: SurfaceId,
+        direction: SplitDirection,
+        new_surface_id: SurfaceId,
+        new_terminal: Terminal,
+    ) -> Self {
+        match self {
+            Panel::Terminal(old_node) if old_node.id == target_surface_id => {
+                let old_surface_id = old_node.id;
+                let group = SurfaceGroupNode {
+                    layout_opt: Some(SurfaceGroupLayout::Split {
+                        direction,
+                        ratio: 0.5,
+                        first: Box::new(SurfaceGroupLayout::Single(old_node)),
+                        second: Box::new(SurfaceGroupLayout::Single(SurfaceNode {
+                            id: new_surface_id,
+                            terminal: new_terminal,
+                            deferred_spawn: None,
+                        })),
+                        focus_second: false,
+                    }),
+                    focused_surface: old_surface_id,
+                    _first_surface: old_surface_id,
+                };
+                Panel::SurfaceGroup(group)
+            }
+            Panel::SurfaceGroup(mut group) => {
+                let new_node = SurfaceNode { id: new_surface_id, terminal: new_terminal, deferred_spawn: None };
+                let old_layout = group.take_layout();
+                let (new_layout, _) = old_layout.split_with_node(target_surface_id, direction, new_node);
+                group.put_layout(new_layout);
+                // Do NOT change group.focused_surface
+                Panel::SurfaceGroup(group)
+            }
+            other => other,
+        }
+    }
 }

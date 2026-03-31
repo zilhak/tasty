@@ -59,8 +59,14 @@ pub enum Commands {
     Notifications,
     /// Show tree view of workspaces, panes, and tabs
     Tree,
-    /// Split the focused pane
+    /// Split a pane group or surface
     Split {
+        /// Split level: pane-group (upper layout) or surface (lower layout)
+        #[arg(long)]
+        level: String,
+        /// Target ID (pane ID for pane-group, surface ID for surface). Omit for focused target
+        #[arg(long)]
+        target: Option<u32>,
         /// Split direction: vertical (default) or horizontal
         #[arg(long, default_value = "vertical")]
         direction: String,
@@ -510,9 +516,13 @@ fn command_to_request(command: &Commands) -> JsonRpcRequest {
         ),
         Commands::Notifications => ("notification.list", serde_json::json!({})),
         Commands::Tree => ("tree", serde_json::json!({})),
-        Commands::Split { direction } => (
-            "pane.split",
-            serde_json::json!({ "direction": direction }),
+        Commands::Split { level, target, direction } => (
+            "split",
+            serde_json::json!({
+                "level": level,
+                "target_id": target,
+                "direction": direction,
+            }),
         ),
         Commands::NewTab => ("tab.create", serde_json::json!({})),
         Commands::CloseTab => ("tab.close", serde_json::json!({})),

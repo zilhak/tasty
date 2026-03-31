@@ -19,7 +19,7 @@ pub fn handle(state: &mut AppState, request: &JsonRpcRequest) -> JsonRpcResponse
         "workspace.update" => handle_workspace_update(state, id, &request.params),
         "workspace.select" => handle_workspace_select(state, id, &request.params),
         "pane.list" => handle_pane_list(state, id),
-        "pane.split" => handle_pane_split(state, id, &request.params),
+        "split" => handle_split(state, id, &request.params),
         "tab.list" => handle_tab_list(state, id),
         "tab.create" => handle_tab_create(state, id),
         "tab.close" => handle_tab_close(state, id),
@@ -335,27 +335,51 @@ fn handle_pane_list(state: &AppState, id: serde_json::Value) -> JsonRpcResponse 
     JsonRpcResponse::success(id, json!(panes))
 }
 
-fn handle_pane_split(
+fn handle_split(
     state: &mut AppState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
+    let level = match params.get("level").and_then(|v| v.as_str()) {
+        Some("pane-group") => "pane-group",
+        Some("surface") => "surface",
+        Some(other) => {
+            return JsonRpcResponse::invalid_params(
+                id,
+                format!("Invalid level '{}'. Use: pane-group, surface", other),
+            )
+        }
+        None => return JsonRpcResponse::invalid_params(id, "Missing 'level' parameter"),
+    };
+
     let direction = match params.get("direction").and_then(|v| v.as_str()) {
         Some("horizontal") | Some("h") => SplitDirection::Horizontal,
         _ => SplitDirection::Vertical,
     };
-    match state.split_pane(direction) {
-        Ok(_) => {
-            let ws = state.active_workspace();
-            JsonRpcResponse::success(
+
+    let target_id = params.get("target_id").and_then(|v| v.as_u64()).map(|v| v as u32);
+
+    match level {
+        "pane-group" => match state.split_pane_targeted(target_id, direction) {
+            Ok((new_pane_id, new_surface_id)) => JsonRpcResponse::success(
                 id,
                 json!({
-                    "focused_pane": ws.focused_pane,
-                    "pane_count": ws.pane_layout().all_pane_ids().len(),
+                    "new_pane_group_id": new_pane_id,
+                    "new_surface_id": new_surface_id,
                 }),
-            )
-        }
-        Err(e) => JsonRpcResponse::internal_error(id, e.to_string()),
+            ),
+            Err(e) => JsonRpcResponse::internal_error(id, e.to_string()),
+        },
+        "surface" => match state.split_surface_targeted(target_id, direction) {
+            Ok(new_surface_id) => JsonRpcResponse::success(
+                id,
+                json!({
+                    "new_surface_id": new_surface_id,
+                }),
+            ),
+            Err(e) => JsonRpcResponse::internal_error(id, e.to_string()),
+        },
+        _ => unreachable!(),
     }
 }
 

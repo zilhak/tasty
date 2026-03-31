@@ -281,6 +281,90 @@ impl AppState {
         Ok(())
     }
 
+    /// Split a pane group with cross-workspace target support. Does NOT move focus.
+    /// Returns (new_pane_id, new_surface_id).
+    pub fn split_pane_targeted(
+        &mut self,
+        target_pane_id: Option<u32>,
+        direction: SplitDirection,
+    ) -> anyhow::Result<(u32, u32)> {
+        let (ws_idx, resolved_pane_id) = match target_pane_id {
+            Some(pid) => {
+                let ws_idx = self.find_workspace_index_for_pane(pid)
+                    .ok_or_else(|| anyhow::anyhow!("pane {} not found", pid))?;
+                (ws_idx, pid)
+            }
+            None => {
+                let ws = &self.engine.workspaces[self.active_workspace];
+                (self.active_workspace, ws.focused_pane)
+            }
+        };
+
+        let new_pane_id = self.engine.next_ids.next_pane();
+        let new_tab_id = self.engine.next_ids.next_tab();
+        let new_surface_id = self.engine.next_ids.next_surface();
+        let cols = self.engine.default_cols;
+        let rows = self.engine.default_rows;
+        let shell = self.engine.settings.general.shell.clone();
+        let shell_ref = if shell.is_empty() { None } else { Some(shell.as_str()) };
+        let shell_args_owned = self.engine.settings.general.effective_shell_args();
+        let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
+        let new_pane = crate::model::Pane::new_with_shell(
+            new_pane_id, new_tab_id, new_surface_id, cols, rows,
+            shell_ref, &shell_args, self.engine.make_waker(new_surface_id),
+        )?;
+
+        let ws = &mut self.engine.workspaces[ws_idx];
+        ws.pane_layout_mut()
+            .split_pane_in_place(resolved_pane_id, direction, new_pane);
+        // Do NOT change ws.focused_pane
+
+        self.send_fast_init(new_surface_id);
+        Ok((new_pane_id, new_surface_id))
+    }
+
+    /// Split a surface with cross-workspace target support. Does NOT move focus.
+    /// Returns new_surface_id.
+    pub fn split_surface_targeted(
+        &mut self,
+        target_surface_id: Option<u32>,
+        direction: SplitDirection,
+    ) -> anyhow::Result<u32> {
+        let new_surface_id = self.engine.next_ids.next_surface();
+        let cols = self.engine.default_cols;
+        let rows = self.engine.default_rows;
+        let shell = self.engine.settings.general.shell.clone();
+        let shell_ref = if shell.is_empty() { None } else { Some(shell.as_str()) };
+        let shell_args_owned = self.engine.settings.general.effective_shell_args();
+        let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
+        let waker = self.engine.make_waker(new_surface_id);
+
+        match target_surface_id {
+            Some(sid) => {
+                let (ws_idx, pane_id) = self.find_workspace_index_for_surface(sid)
+                    .ok_or_else(|| anyhow::anyhow!("surface {} not found", sid))?;
+                let ws = &mut self.engine.workspaces[ws_idx];
+                let pane = ws.pane_layout_mut().find_pane_mut(pane_id)
+                    .ok_or_else(|| anyhow::anyhow!("pane {} not found", pane_id))?;
+                pane.split_surface_by_id_with_shell(
+                    sid, direction, new_surface_id, cols, rows,
+                    shell_ref, &shell_args, waker,
+                )?;
+            }
+            None => {
+                if let Some(pane) = self.focused_pane_mut() {
+                    pane.split_active_surface_with_shell(
+                        direction, new_surface_id, cols, rows,
+                        shell_ref, &shell_args, waker,
+                    )?;
+                }
+            }
+        }
+
+        self.send_fast_init(new_surface_id);
+        Ok(new_surface_id)
+    }
+
     /// Close the active tab in the focused pane. Returns true if a tab was closed.
     pub fn close_active_tab(&mut self) -> bool {
         // Collect surface IDs in the active tab before closing
@@ -495,6 +579,30 @@ impl AppState {
                 if let Some(pane) = workspace.pane_layout().find_pane(pid) {
                     if pane.find_terminal(surface_id).is_some() {
                         return Some(pid);
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Find the workspace index containing a given pane ID.
+    pub fn find_workspace_index_for_pane(&self, pane_id: u32) -> Option<usize> {
+        for (i, workspace) in self.engine.workspaces.iter().enumerate() {
+            if workspace.pane_layout().find_pane(pane_id).is_some() {
+                return Some(i);
+            }
+        }
+        None
+    }
+
+    /// Find the workspace index and pane ID containing a given surface ID.
+    pub fn find_workspace_index_for_surface(&self, surface_id: u32) -> Option<(usize, u32)> {
+        for (i, workspace) in self.engine.workspaces.iter().enumerate() {
+            for pid in workspace.pane_layout().all_pane_ids() {
+                if let Some(pane) = workspace.pane_layout().find_pane(pid) {
+                    if pane.find_terminal(surface_id).is_some() {
+                        return Some((i, pid));
                     }
                 }
             }
