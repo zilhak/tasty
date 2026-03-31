@@ -253,6 +253,7 @@
 ### 터미널 뷰포트 관리
 - egui 사이드바를 제외한 전체 영역에 상위 레이아웃(PaneNode 트리) 렌더링
 - PaneNode에서 각 Pane의 rect를 계산, 탭 바 높이를 뺀 영역에 터미널 렌더링
+- 탭 바 높이는 egui 렌더링 시 실측된 값을 사용 (하드코딩 아님)
 - 리사이즈 시 모든 Pane, 모든 Tab, 모든 Surface의 행/열 재계산
 - wgpu RenderPass의 forget_lifetime()을 이용한 egui-wgpu 호환
 
