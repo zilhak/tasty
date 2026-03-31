@@ -467,8 +467,10 @@ pub fn draw_pane_tab_bars(
     // Second pass: render egui and collect actions.
     let mut actions: Vec<(u32, PaneTabAction)> = Vec::new();
 
+    let mut measured_tab_bar_height: Option<f32> = None;
+
     for info in &infos {
-        egui::Area::new(egui::Id::new(format!("pane_tabs_{}", info.pane_id)))
+        let area_response = egui::Area::new(egui::Id::new(format!("pane_tabs_{}", info.pane_id)))
             .fixed_pos(egui::pos2(info.logical_x, info.logical_y))
             .order(egui::Order::Foreground)
             .show(ctx, |ui| {
@@ -508,6 +510,17 @@ pub fn draw_pane_tab_bars(
                         });
                     });
             });
+
+        // Measure actual tab bar height from the first rendered tab bar
+        if measured_tab_bar_height.is_none() {
+            let logical_h = area_response.response.rect.height();
+            measured_tab_bar_height = Some(logical_h * scale_factor);
+        }
+    }
+
+    // Update state with measured tab bar height
+    if let Some(h) = measured_tab_bar_height {
+        state.tab_bar_height = h;
     }
 
     // Third pass: apply actions.
@@ -718,7 +731,7 @@ pub fn draw_non_terminal_panels(
             if !panel.is_non_terminal() {
                 continue;
             }
-            let tab_bar_h = 24.0;
+            let tab_bar_h = state.tab_bar_height;
             infos.push(NonTerminalInfo {
                 pane_id,
                 logical_x: pane_rect.x / scale_factor,

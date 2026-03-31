@@ -51,6 +51,8 @@ pub struct AppState {
     pub pane_context_menu: Option<PaneContextMenu>,
     /// Markdown file path dialog state: (pane_id, path_buffer).
     pub markdown_path_dialog: Option<(u32, String)>,
+    /// Measured tab bar height in physical pixels, updated each frame by egui.
+    pub tab_bar_height: f32,
 }
 
 
@@ -90,6 +92,7 @@ impl AppState {
             ws_rename: None,
             pane_context_menu: None,
             markdown_path_dialog: None,
+            tab_bar_height: 24.0,
         })
     }
 
@@ -665,7 +668,7 @@ impl AppState {
         for (pane_id, pane_rect) in pane_rects {
             if let Some(pane) = ws.pane_layout().find_pane(pane_id) {
                 // Reserve space for tab bar at top of each pane
-                let tab_bar_h = 24.0;
+                let tab_bar_h = self.tab_bar_height;
                 let content_rect = Rect {
                     x: pane_rect.x,
                     y: pane_rect.y + tab_bar_h,
@@ -762,11 +765,11 @@ impl AppState {
 
     /// Resize all terminals in the active workspace to match a given terminal rect.
     pub fn resize_all(&mut self, terminal_rect: Rect, cell_width: f32, cell_height: f32) {
+        let tab_bar_h = self.tab_bar_height;
         let ws = self.active_workspace_mut();
         let pane_rects = ws.pane_layout().compute_rects(terminal_rect);
         for (pane_id, pane_rect) in pane_rects {
             if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
-                let tab_bar_h = 24.0;
                 let content_rect = Rect {
                     x: pane_rect.x,
                     y: pane_rect.y + tab_bar_h,
@@ -850,7 +853,7 @@ impl AppState {
         if !terminal_rect.contains(x, y) {
             return None;
         }
-        let tab_bar_h = 24.0;
+        let tab_bar_h = self.tab_bar_height;
         let ws = self.active_workspace();
         let pane_rects = ws.pane_layout().compute_rects(terminal_rect);
         for (pane_id, rect) in &pane_rects {
@@ -915,7 +918,7 @@ impl AppState {
         let tab_count = ws.pane_layout().find_pane(focused_id)
             .map(|p| p.tabs.len())
             .unwrap_or(0);
-        let tab_bar_h = 24.0;
+        let tab_bar_h = self.tab_bar_height;
         let content_rect = Rect {
             x: pane_rect.x,
             y: pane_rect.y + tab_bar_h,
@@ -967,7 +970,7 @@ impl AppState {
         };
 
         let pane = ws.pane_layout().find_pane(focused_id)?;
-        let tab_bar_h = 24.0;
+        let tab_bar_h = self.tab_bar_height;
         let content_rect = Rect {
             x: pane_rect.x,
             y: pane_rect.y + tab_bar_h,
@@ -1001,6 +1004,7 @@ impl AppState {
             SplitDirection::Horizontal => (y - divider.split_rect.y) / divider.split_rect.height,
         };
 
+        let tab_bar_h = self.tab_bar_height;
         let ws = self.active_workspace_mut();
         let focused_id = ws.focused_pane;
         let pane_rects = ws.pane_layout().compute_rects(terminal_rect);
@@ -1015,8 +1019,6 @@ impl AppState {
             Some(p) => p,
             None => return false,
         };
-
-        let tab_bar_h = 24.0;
         let content_rect = Rect {
             x: pane_rect.x,
             y: pane_rect.y + tab_bar_h,
