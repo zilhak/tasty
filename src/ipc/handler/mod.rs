@@ -334,6 +334,17 @@ fn handle_pane_list(state: &AppState, id: serde_json::Value) -> JsonRpcResponse 
     JsonRpcResponse::success(id, json!(panes))
 }
 
+/// Apply metadata key-value pairs to a surface.
+fn apply_meta(surface_id: u32, meta: Option<&serde_json::Map<String, serde_json::Value>>) {
+    if let Some(map) = meta {
+        for (key, value) in map {
+            if let Some(v) = value.as_str() {
+                crate::surface_meta::SurfaceMetaStore::set(surface_id, key, v);
+            }
+        }
+    }
+}
+
 /// Resolve a target parameter to a numeric ID.
 /// - Numeric string or JSON number → ID
 /// - Other string → nickname lookup via surface_meta (for "surface" level)
@@ -385,24 +396,32 @@ fn handle_split(
 
     let target_id = resolve_target_param(params.get("target"), level);
 
+    let meta = params.get("meta").and_then(|v| v.as_object());
+
     match level {
         "pane-group" => match state.split_pane_targeted(target_id, direction) {
-            Ok((new_pane_id, new_surface_id)) => JsonRpcResponse::success(
-                id,
-                json!({
-                    "new_pane_group_id": new_pane_id,
-                    "new_surface_id": new_surface_id,
-                }),
-            ),
+            Ok((new_pane_id, new_surface_id)) => {
+                apply_meta(new_surface_id, meta);
+                JsonRpcResponse::success(
+                    id,
+                    json!({
+                        "new_pane_group_id": new_pane_id,
+                        "new_surface_id": new_surface_id,
+                    }),
+                )
+            }
             Err(e) => JsonRpcResponse::internal_error(id, e.to_string()),
         },
         "surface" => match state.split_surface_targeted(target_id, direction) {
-            Ok(new_surface_id) => JsonRpcResponse::success(
-                id,
-                json!({
-                    "new_surface_id": new_surface_id,
-                }),
-            ),
+            Ok(new_surface_id) => {
+                apply_meta(new_surface_id, meta);
+                JsonRpcResponse::success(
+                    id,
+                    json!({
+                        "new_surface_id": new_surface_id,
+                    }),
+                )
+            }
             Err(e) => JsonRpcResponse::internal_error(id, e.to_string()),
         },
         _ => unreachable!(),

@@ -70,6 +70,9 @@ pub enum Commands {
         /// Split direction: vertical (default) or horizontal
         #[arg(long, default_value = "vertical")]
         direction: String,
+        /// Metadata JSON to set on the new surface (e.g. '{"nickname":"build"}')
+        #[arg(long)]
+        meta: Option<String>,
     },
     /// Create a new tab in the focused pane
     NewTab,
@@ -528,14 +531,18 @@ fn command_to_request(command: &Commands) -> JsonRpcRequest {
         ),
         Commands::Notifications => ("notification.list", serde_json::json!({})),
         Commands::Tree => ("tree", serde_json::json!({})),
-        Commands::Split { level, target, direction } => {
+        Commands::Split { level, target, direction, meta } => {
             let resolved_target = target.as_deref().map(resolve_target);
+            let meta_value = meta
+                .as_deref()
+                .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok());
             (
                 "split",
                 serde_json::json!({
                     "level": level,
                     "target": resolved_target,
                     "direction": direction,
+                    "meta": meta_value,
                 }),
             )
         }
