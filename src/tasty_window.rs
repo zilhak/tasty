@@ -30,10 +30,10 @@ pub struct TastyWindow {
     pub last_click_pos: Option<(usize, usize)>,
     pub click_count: u8,
     pub arrow_queue: Option<crate::click_cursor::ArrowQueue>,
-    /// Set to true after Ime::Commit to handle macOS Korean IME quirks:
-    /// - Suppress duplicate KeyboardInput(Pressed) that may follow Commit
-    /// - Detect lost trigger keys via KeyboardInput(Released) and resend them
-    pub ime_just_committed: bool,
+    /// Stores the last Ime::Commit text to handle macOS Korean IME quirks:
+    /// - If the trigger key (e.g. space) is already in the commit text, suppress the duplicate Pressed event
+    /// - If the trigger key (e.g. comma, period) is NOT in the commit text, let the Pressed event through
+    pub ime_committed_text: Option<String>,
 }
 
 impl TastyWindow {
@@ -54,7 +54,7 @@ impl TastyWindow {
             last_click_pos: None,
             click_count: 0,
             arrow_queue: None,
-            ime_just_committed: false,
+            ime_committed_text: None,
         }
     }
 
@@ -427,24 +427,29 @@ impl TastyWindow {
 
     fn handle_keyboard_input(&mut self, event: &winit::event::KeyEvent, egui_consumed: bool) {
         // On macOS, Korean IME commit causes winit quirks:
-        // - For space: Commit includes space, but KeyboardInput(Pressed) may also fire → double-input
-        // - For comma/period: winit drops KeyboardInput(Pressed), but Released still fires → lost key
+        // - For space: Commit("한 ") includes the trigger key → Pressed is a duplicate → suppress
+        // - For comma/period: Commit("한") does NOT include the trigger → Pressed is needed → let through
         //
-        // Strategy: suppress Pressed after commit (prevents double), but if no Pressed came,
-        // use Released to recover the lost trigger key.
+        // Strategy: compare the Pressed key against the committed text.
+        // If the trigger char is the last char of the commit text, it's a duplicate → suppress.
+        // Otherwise, clear the flag and let the normal Pressed handling proceed.
         //
         // This is macOS-specific. On Linux, Ime::Commit does NOT include the trigger key
         // (space, period, etc.), so the subsequent Pressed event is the only way to input it.
         #[cfg(target_os = "macos")]
-        if self.ime_just_committed {
+        if let Some(committed) = self.ime_committed_text.take() {
             if event.state == ElementState::Pressed {
-                // Suppress duplicate Pressed event (e.g. space already in Commit text)
-                self.ime_just_committed = false;
-                return;
-            }
-            if event.state == ElementState::Released {
+                // Check if the trigger key is already in the committed text
+                let trigger_char = event.text.as_ref().and_then(|t| t.as_str().chars().next());
+                if let Some(ch) = trigger_char {
+                    if committed.ends_with(ch) {
+                        // Trigger key was included in Commit → suppress duplicate
+                        return;
+                    }
+                }
+                // Trigger key was NOT in Commit → fall through to normal Pressed handling
+            } else if event.state == ElementState::Released {
                 // No Pressed event arrived — winit dropped it. Recover the trigger key.
-                self.ime_just_committed = false;
                 if let Some(text) = &event.text {
                     let s = text.as_str();
                     if let Some(ch) = s.chars().next() {
@@ -461,7 +466,7 @@ impl TastyWindow {
         }
         #[cfg(not(target_os = "macos"))]
         {
-            self.ime_just_committed = false;
+            self.ime_committed_text = None;
         }
 
         if event.state != ElementState::Pressed {
@@ -648,7 +653,7 @@ impl TastyWindow {
                 if let Some(sid) = sid {
                     self.state.record_typing(sid);
                 }
-                self.ime_just_committed = true;
+                self.ime_committed_text = Some(text.clone());
                 self.mark_dirty();
             }
             _ => {}
