@@ -668,14 +668,22 @@ fn capture_key_combo(ctx: &egui::Context, active: bool) -> KeyCapture {
                 }
 
                 // Ignore modifier-only keys
-                if matches!(key,
-                    egui::Key::Tab // allow Tab as a valid key
-                    ) || !is_modifier_only_key(key)
+                if is_modifier_only_key(key) {
+                    continue;
+                }
+
                 {
                     let mut parts = Vec::new();
                     if modifiers.ctrl {
                         parts.push("ctrl");
                     }
+                    // On macOS, Cmd (mac_cmd) maps to "alt" in our binding format
+                    // to match the physical key position (Cmd ↔ Alt).
+                    #[cfg(target_os = "macos")]
+                    if modifiers.mac_cmd {
+                        parts.push("alt");
+                    }
+                    #[cfg(not(target_os = "macos"))]
                     if modifiers.alt {
                         parts.push("alt");
                     }
@@ -684,10 +692,31 @@ fn capture_key_combo(ctx: &egui::Context, active: bool) -> KeyCapture {
                     }
 
                     let key_name = egui_key_to_string(key);
-                    if !key_name.is_empty() {
-                        parts.push(&key_name);
-                        return KeyCapture::Combo(parts.join("+"));
+                    if key_name.is_empty() {
+                        continue;
                     }
+
+                    // Require at least one modifier for regular typing keys
+                    let is_typing_key = matches!(key,
+                        egui::Key::A | egui::Key::B | egui::Key::C | egui::Key::D |
+                        egui::Key::E | egui::Key::F | egui::Key::G | egui::Key::H |
+                        egui::Key::I | egui::Key::J | egui::Key::K | egui::Key::L |
+                        egui::Key::M | egui::Key::N | egui::Key::O | egui::Key::P |
+                        egui::Key::Q | egui::Key::R | egui::Key::S | egui::Key::T |
+                        egui::Key::U | egui::Key::V | egui::Key::W | egui::Key::X |
+                        egui::Key::Y | egui::Key::Z |
+                        egui::Key::Num0 | egui::Key::Num1 | egui::Key::Num2 |
+                        egui::Key::Num3 | egui::Key::Num4 | egui::Key::Num5 |
+                        egui::Key::Num6 | egui::Key::Num7 | egui::Key::Num8 |
+                        egui::Key::Num9 |
+                        egui::Key::Space | egui::Key::Minus | egui::Key::Plus
+                    );
+                    if is_typing_key && parts.is_empty() {
+                        continue;
+                    }
+
+                    parts.push(&key_name);
+                    return KeyCapture::Combo(parts.join("+"));
                 }
             }
         }
