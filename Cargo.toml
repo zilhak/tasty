@@ -84,6 +84,10 @@ windows = { version = "0.62", features = [
     "Win32_Foundation",
 ] }
 
+# TODO: winit PR #4478 (https://github.com/rust-windowing/winit/pull/4478) 머지 후 공식 버전으로 교체
+[patch.crates-io]
+winit = { git = "https://github.com/zilhak/winit-ime-fix.git", branch = "fix-korean-ime" }
+
 [profile.release]
 lto = true
 strip = true

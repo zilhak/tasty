@@ -30,10 +30,6 @@ pub struct TastyWindow {
     pub last_click_pos: Option<(usize, usize)>,
     pub click_count: u8,
     pub arrow_queue: Option<crate::click_cursor::ArrowQueue>,
-    /// Stores the last Ime::Commit text to handle macOS Korean IME quirks:
-    /// - If the trigger key (e.g. space) is already in the commit text, suppress the duplicate Pressed event
-    /// - If the trigger key (e.g. comma, period) is NOT in the commit text, let the Pressed event through
-    pub ime_committed_text: Option<String>,
 }
 
 impl TastyWindow {
@@ -54,7 +50,6 @@ impl TastyWindow {
             last_click_pos: None,
             click_count: 0,
             arrow_queue: None,
-            ime_committed_text: None,
         }
     }
 
@@ -434,58 +429,6 @@ impl TastyWindow {
     }
 
     fn handle_keyboard_input(&mut self, event: &winit::event::KeyEvent, egui_consumed: bool) {
-        // On macOS, Korean IME commit causes winit quirks:
-        // - For space: Commit("한 ") includes the trigger key → Pressed is a duplicate → suppress
-        // - For comma/period: Commit("한") does NOT include the trigger → Pressed is needed → let through
-        //
-        // Strategy: compare the Pressed key against the committed text.
-        // If the trigger char is the last char of the commit text, it's a duplicate → suppress.
-        // Otherwise, clear the flag and let the normal Pressed handling proceed.
-        //
-        // This is macOS-specific. On Linux, Ime::Commit does NOT include the trigger key
-        // (space, period, etc.), so the subsequent Pressed event is the only way to input it.
-        #[cfg(target_os = "macos")]
-        if let Some(committed) = self.ime_committed_text.take() {
-            if event.state == ElementState::Pressed {
-                // Check if the trigger key is already in the committed text
-                let trigger_char = event.text.as_ref().and_then(|t| t.as_str().chars().next());
-                if let Some(ch) = trigger_char {
-                    if committed.ends_with(ch) {
-                        // Trigger key was included in Commit → suppress duplicate
-                        return;
-                    }
-                }
-                // Trigger key was NOT in Commit → fall through to normal Pressed handling
-            } else if event.state == ElementState::Released {
-                // No Pressed event arrived — winit dropped it. Recover the trigger key.
-                // On macOS, Released after IME commit often has text=None,
-                // so fall back to logical_key to get the character.
-                let key_str = event.text.as_ref().map(|t| t.as_str().to_string())
-                    .or_else(|| {
-                        if let Key::Character(c) = &event.logical_key {
-                            Some(c.to_string())
-                        } else {
-                            None
-                        }
-                    });
-                if let Some(s) = key_str {
-                    if let Some(ch) = s.chars().next() {
-                        if !ch.is_control() && !s.is_empty() {
-                            if let Some(terminal) = self.state.focused_terminal_mut() {
-                                terminal.send_key(&s);
-                                self.mark_dirty();
-                            }
-                        }
-                    }
-                }
-                return;
-            }
-        }
-        #[cfg(not(target_os = "macos"))]
-        {
-            self.ime_committed_text = None;
-        }
-
         if event.state != ElementState::Pressed {
             return;
         }
@@ -670,7 +613,6 @@ impl TastyWindow {
                 if let Some(sid) = sid {
                     self.state.record_typing(sid);
                 }
-                self.ime_committed_text = Some(text.clone());
                 self.mark_dirty();
             }
             _ => {}
