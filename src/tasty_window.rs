@@ -878,6 +878,7 @@ impl TastyWindow {
                 crate::terminal::TerminalEventKind::ProcessExited => {
                     let hook_events = vec![tasty_hooks::HookEvent::ProcessExit];
                     self.state.engine.hook_manager.check_and_fire(surface_id, &hook_events);
+                    self.state.close_surface_by_id(surface_id);
                     self.dirty = true;
                 }
             }

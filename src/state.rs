@@ -497,6 +497,156 @@ impl AppState {
         true
     }
 
+    /// Close a specific surface by ID. Cascades up the hierarchy:
+    /// surface → tab → pane → workspace as needed.
+    /// If the last workspace's last surface exits, spawns a new shell.
+    pub fn close_surface_by_id(&mut self, surface_id: u32) -> bool {
+        // Find which workspace and pane contain this surface
+        let (ws_idx, pane_id) = match self.find_workspace_index_for_surface(surface_id) {
+            Some(v) => v,
+            None => return false,
+        };
+
+        // Find the tab index containing this surface
+        let tab_idx;
+        let surface_is_sole_in_tab;
+        let can_close_surface_in_group;
+        {
+            let ws = &mut self.engine.workspaces[ws_idx];
+            let pane = match ws.pane_layout_mut().find_pane_mut(pane_id) {
+                Some(p) => p,
+                None => return false,
+            };
+
+            // Find which tab has this surface
+            let mut found_tab = None;
+            for (i, tab) in pane.tabs.iter().enumerate() {
+                if tab.panel().find_terminal(surface_id).is_some() {
+                    found_tab = Some(i);
+                    break;
+                }
+            }
+            tab_idx = match found_tab {
+                Some(i) => i,
+                None => return false,
+            };
+
+            // Check if the surface is the only one in this tab's panel
+            match pane.tabs[tab_idx].panel() {
+                crate::model::Panel::Terminal(node) if node.id == surface_id => {
+                    surface_is_sole_in_tab = true;
+                    can_close_surface_in_group = false;
+                }
+                crate::model::Panel::SurfaceGroup(group) => {
+                    // Try closing within the group (fails if it's the only surface)
+                    surface_is_sole_in_tab = false;
+                    can_close_surface_in_group = !matches!(
+                        group.layout(),
+                        crate::model::SurfaceGroupLayout::Single(_)
+                    ) || group.layout().find_terminal(surface_id).is_none();
+                }
+                _ => return false, // Markdown/Explorer panels
+            }
+        }
+
+        // Case 1: Surface is within a SurfaceGroup with multiple surfaces
+        if !surface_is_sole_in_tab && can_close_surface_in_group {
+            let ws = &mut self.engine.workspaces[ws_idx];
+            let pane = ws.pane_layout_mut().find_pane_mut(pane_id).unwrap();
+            if let crate::model::Panel::SurfaceGroup(group) = pane.tabs[tab_idx].panel_mut() {
+                if group.close_surface(surface_id) {
+                    self.unregister_child(surface_id);
+                    self.mark_parent_closed(surface_id);
+                    crate::surface_meta::SurfaceMetaStore::remove(surface_id);
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        // Case 2: Surface is the sole content of this tab
+        // Try closing the tab (fails if it's the last tab in the pane)
+        {
+            let ws = &mut self.engine.workspaces[ws_idx];
+            let pane = ws.pane_layout_mut().find_pane_mut(pane_id).unwrap();
+            if pane.tabs.len() > 1 {
+                pane.tabs.remove(tab_idx);
+                if pane.active_tab >= pane.tabs.len() {
+                    pane.active_tab = pane.tabs.len() - 1;
+                }
+                self.unregister_child(surface_id);
+                self.mark_parent_closed(surface_id);
+                crate::surface_meta::SurfaceMetaStore::remove(surface_id);
+                return true;
+            }
+        }
+
+        // Case 3: Last tab in pane — try closing the pane
+        {
+            let ws = &mut self.engine.workspaces[ws_idx];
+            if ws.pane_layout().all_pane_ids().len() > 1 {
+                ws.pane_layout_mut().close_pane(pane_id);
+                if let Some(first) = ws.pane_layout().first_pane() {
+                    ws.focused_pane = first.id;
+                }
+                self.unregister_child(surface_id);
+                self.mark_parent_closed(surface_id);
+                crate::surface_meta::SurfaceMetaStore::remove(surface_id);
+                return true;
+            }
+        }
+
+        // Case 4: Last pane in workspace — try closing the workspace
+        if self.engine.workspaces.len() > 1 {
+            self.engine.workspaces.remove(ws_idx);
+            if self.active_workspace >= self.engine.workspaces.len() {
+                self.active_workspace = self.engine.workspaces.len() - 1;
+            }
+            self.unregister_child(surface_id);
+            self.mark_parent_closed(surface_id);
+            crate::surface_meta::SurfaceMetaStore::remove(surface_id);
+            return true;
+        }
+
+        // Case 5: Last workspace — respawn a new shell instead of leaving a dead surface
+        self.respawn_surface(surface_id);
+        true
+    }
+
+    /// Respawn a new shell in the current terminal surface (replacing the dead one).
+    fn respawn_surface(&mut self, surface_id: u32) {
+        let cols = self.engine.default_cols;
+        let rows = self.engine.default_rows;
+        let shell = if self.engine.settings.general.shell.is_empty() {
+            None
+        } else {
+            Some(self.engine.settings.general.shell.clone())
+        };
+        let shell_args_owned = self.engine.settings.general.effective_shell_args();
+        let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
+        let waker = self.engine.make_waker(surface_id);
+
+        match Terminal::new_with_shell_args(
+            cols,
+            rows,
+            shell.as_deref(),
+            &shell_args,
+            surface_id,
+            waker,
+        ) {
+            Ok(new_terminal) => {
+                // Replace the terminal in the existing surface node
+                if let Some(term) = self.find_terminal_by_id_mut(surface_id) {
+                    *term = new_terminal;
+                }
+                self.send_fast_init(surface_id);
+            }
+            Err(e) => {
+                tracing::error!("Failed to respawn shell for surface {}: {}", surface_id, e);
+            }
+        }
+    }
+
     // ---- Claude parent-child management ----
 
     /// Get the next child index for a parent, incrementing the counter.
