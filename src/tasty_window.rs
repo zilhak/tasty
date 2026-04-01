@@ -377,6 +377,14 @@ impl TastyWindow {
             }
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                 self.gpu.update_scale_factor(scale_factor as f32);
+                // Re-fetch the physical size — the window's physical dimensions change
+                // when the scale factor changes (e.g., macOS sleep/wake cycle).
+                let new_size = self.window.inner_size();
+                self.gpu.resize(new_size);
+                let terminal_rect = self.compute_terminal_rect();
+                let (cols, rows) = self.gpu.grid_size_for_rect(&terminal_rect);
+                self.state.update_grid_size(cols, rows);
+                self.state.resize_all(terminal_rect, self.gpu.cell_width(), self.gpu.cell_height());
                 self.mark_dirty();
             }
             WindowEvent::Focused(focused) => {
@@ -450,12 +458,21 @@ impl TastyWindow {
                 // Trigger key was NOT in Commit → fall through to normal Pressed handling
             } else if event.state == ElementState::Released {
                 // No Pressed event arrived — winit dropped it. Recover the trigger key.
-                if let Some(text) = &event.text {
-                    let s = text.as_str();
+                // On macOS, Released after IME commit often has text=None,
+                // so fall back to logical_key to get the character.
+                let key_str = event.text.as_ref().map(|t| t.as_str().to_string())
+                    .or_else(|| {
+                        if let Key::Character(c) = &event.logical_key {
+                            Some(c.to_string())
+                        } else {
+                            None
+                        }
+                    });
+                if let Some(s) = key_str {
                     if let Some(ch) = s.chars().next() {
                         if !ch.is_control() && !s.is_empty() {
                             if let Some(terminal) = self.state.focused_terminal_mut() {
-                                terminal.send_key(s);
+                                terminal.send_key(&s);
                                 self.mark_dirty();
                             }
                         }
