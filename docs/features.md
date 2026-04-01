@@ -347,6 +347,7 @@
   - **macOS**: Alt+V (`clipboard.macos_style`)
 - 브래킷 붙여넣기 모드(DECSET 2004) 지원: 활성화 시 `\x1b[200~` ... `\x1b[201~`로 감싸서 전송
 - 포커스된 터미널의 PTY에 직접 전송
+- **이미지 붙여넣기**: 클립보드에 텍스트가 없고 이미지가 있는 경우, 이미지를 PNG 파일로 저장(`/tmp/tasty-clipboard/paste-{timestamp}.png`)하고 파일 경로를 터미널에 붙여넣기. AI 에이전트가 이미지를 참조할 수 있도록 지원
 
 ### IME 입력 (한글/CJK)
 - winit의 IME 이벤트를 통한 CJK 입력기 지원

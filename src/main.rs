@@ -52,6 +52,10 @@ impl ClipboardContext {
         self.inner.get_text().ok()
     }
 
+    fn get_image(&mut self) -> Option<arboard::ImageData<'static>> {
+        self.inner.get_image().ok()
+    }
+
     fn set_text(&mut self, text: &str) {
         let _ = self.inner.set_text(text.to_string());
     }
