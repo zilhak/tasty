@@ -474,11 +474,11 @@ impl TastyWindow {
             }
         }
 
-        let settings_open = self.state.settings_open;
-        let notification_open = self.state.notification_panel_open;
-        let overlay_open = settings_open || notification_open;
+        // Notification panel is a popup (not a modal) — it does NOT block input.
+        // Only true modals (settings) block keyboard input to the terminal.
+        let overlay_open = self.state.settings_open;
 
-        if !overlay_open || (notification_open && !settings_open) {
+        if !overlay_open {
             // On macOS, IME composition (e.g. Korean) can replace the logical key
             // with the composed character. When modifier keys are held, use the
             // physical key code to determine the intended key for shortcut matching.
@@ -648,7 +648,7 @@ impl TastyWindow {
 
     fn handle_cursor_moved(&mut self, position: winit::dpi::PhysicalPosition<f64>, egui_consumed: bool) {
         self.cursor_position = Some(position);
-        let overlay_open = self.state.settings_open || self.state.notification_panel_open;
+        let overlay_open = self.state.settings_open;
         if egui_consumed || overlay_open {
             if egui_consumed {
                 self.window.set_cursor(CursorIcon::Default);
@@ -707,7 +707,7 @@ impl TastyWindow {
     }
 
     fn handle_mouse_input(&mut self, button_state: ElementState, button: MouseButton, egui_consumed: bool) {
-        let overlay_open = self.state.settings_open || self.state.notification_panel_open;
+        let overlay_open = self.state.settings_open;
         if egui_consumed || overlay_open {
             if button_state == ElementState::Released {
                 self.dragging_divider = None;
@@ -793,7 +793,7 @@ impl TastyWindow {
     }
 
     fn handle_mouse_wheel(&mut self, delta: MouseScrollDelta, egui_consumed: bool) {
-        let overlay_open = self.state.settings_open || self.state.notification_panel_open;
+        let overlay_open = self.state.settings_open;
         if egui_consumed { self.mark_dirty(); }
         if !egui_consumed && !overlay_open {
             // Find the surface under the cursor, falling back to the focused surface
