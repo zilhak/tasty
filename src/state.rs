@@ -1469,7 +1469,7 @@ mod tests {
     /// 모든 워크스페이스에 걸쳐 surface ID를 수집한다.
     fn collect_all_surface_ids(state: &mut AppState) -> Vec<u32> {
         let mut ids = Vec::new();
-        for ws in &mut state.workspaces {
+        for ws in &mut state.engine.workspaces {
             ws.pane_layout_mut().for_each_terminal_mut(&mut |sid, _| {
                 ids.push(sid);
             });
@@ -1554,13 +1554,13 @@ mod tests {
         let mut state = test_state();
         state.split_pane(SplitDirection::Vertical).unwrap();
 
-        let ws_count_before = state.workspaces.len();
+        let ws_count_before = state.engine.workspaces.len();
         let tab_count_before = state.active_workspace().pane_layout().all_pane_ids().len();
 
         let pane_ids = state.active_workspace().pane_layout().all_pane_ids();
         state.focus_pane(pane_ids[0]);
 
-        assert_eq!(state.workspaces.len(), ws_count_before);
+        assert_eq!(state.engine.workspaces.len(), ws_count_before);
         assert_eq!(
             state.active_workspace().pane_layout().all_pane_ids().len(),
             tab_count_before
@@ -1673,9 +1673,9 @@ mod tests {
     #[test]
     fn add_workspace_increments_count() {
         let mut state = test_state();
-        assert_eq!(state.workspaces.len(), 1);
+        assert_eq!(state.engine.workspaces.len(), 1);
         state.add_workspace().unwrap();
-        assert_eq!(state.workspaces.len(), 2);
+        assert_eq!(state.engine.workspaces.len(), 2);
     }
 
     #[test]

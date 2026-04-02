@@ -693,7 +693,7 @@ font_size = 18.0
     #[test]
     fn settings_keybindings_default() {
         let settings = Settings::default();
-        assert_eq!(settings.keybindings.new_workspace, "ctrl+shift+n");
-        assert_eq!(settings.keybindings.new_tab, "ctrl+shift+t");
+        assert_eq!(settings.keybindings.new_workspace, "alt+n");
+        assert_eq!(settings.keybindings.new_tab, "alt+t");
     }
 }
