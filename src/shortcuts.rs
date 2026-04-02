@@ -252,30 +252,40 @@ impl TastyWindow {
             return true;
         }
 
-        // Close active pane
+        // Close active pane (fallback: close workspace if last pane)
         if matches_binding(&kb.close_pane, key, mods) {
-            if state.close_active_pane() {
-                    state.resize_all(terminal_rect, cell_w, cell_h);
-                self.mark_dirty();
-                return true;
-            }
-            return false;
-        }
-
-        // Close active surface (fallback to close pane if only one surface remains)
-        if matches_binding(&kb.close_surface, key, mods) {
-            if state.close_active_surface() {
-                    state.resize_all(terminal_rect, cell_w, cell_h);
-                self.mark_dirty();
-                return true;
-            }
-            // Surface was the only one in the group — try closing the pane instead
             if state.close_active_pane() {
                 state.resize_all(terminal_rect, cell_w, cell_h);
                 self.mark_dirty();
                 return true;
             }
-            return false;
+            // Last pane — close workspace and ensure one exists
+            state.close_active_workspace();
+            state.ensure_workspace_exists();
+            state.resize_all(terminal_rect, cell_w, cell_h);
+            self.mark_dirty();
+            return true;
+        }
+
+        // Close active surface (fallback: pane → workspace)
+        if matches_binding(&kb.close_surface, key, mods) {
+            if state.close_active_surface() {
+                state.resize_all(terminal_rect, cell_w, cell_h);
+                self.mark_dirty();
+                return true;
+            }
+            // Surface was the only one in the group — try closing the pane
+            if state.close_active_pane() {
+                state.resize_all(terminal_rect, cell_w, cell_h);
+                self.mark_dirty();
+                return true;
+            }
+            // Last pane — close workspace and ensure one exists
+            state.close_active_workspace();
+            state.ensure_workspace_exists();
+            state.resize_all(terminal_rect, cell_w, cell_h);
+            self.mark_dirty();
+            return true;
         }
 
         // Focus pane next/prev
@@ -327,7 +337,7 @@ impl TastyWindow {
             }
         }
 
-        // Ctrl+W: Close active tab
+        // Ctrl+W: Close active tab (fallback: pane → workspace)
         if ctrl && !shift && !alt {
             if let Key::Character(c) = key {
                 let s = c.as_str();
@@ -336,7 +346,18 @@ impl TastyWindow {
                         self.mark_dirty();
                         return true;
                     }
-                    return false;
+                    // Last tab — try closing the pane
+                    if state.close_active_pane() {
+                        state.resize_all(terminal_rect, cell_w, cell_h);
+                        self.mark_dirty();
+                        return true;
+                    }
+                    // Last pane — close workspace and ensure one exists
+                    state.close_active_workspace();
+                    state.ensure_workspace_exists();
+                    state.resize_all(terminal_rect, cell_w, cell_h);
+                    self.mark_dirty();
+                    return true;
                 }
             }
         }

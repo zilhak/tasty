@@ -816,6 +816,44 @@ impl AppState {
         }
     }
 
+    /// Close the active workspace. Returns true if the workspace was removed.
+    /// Cleans up all surfaces (claude parent-child, surface meta) in the workspace.
+    pub fn close_active_workspace(&mut self) -> bool {
+        if self.engine.workspaces.is_empty() {
+            return false;
+        }
+        let ws_idx = self.active_workspace;
+        // Collect all surface IDs for cleanup
+        let surface_ids = self.engine.workspaces[ws_idx].all_surface_ids();
+        self.engine.workspaces.remove(ws_idx);
+        // Adjust active workspace index
+        if self.active_workspace >= self.engine.workspaces.len() && !self.engine.workspaces.is_empty() {
+            self.active_workspace = self.engine.workspaces.len() - 1;
+        }
+        // Cleanup
+        for sid in surface_ids {
+            self.unregister_child(sid);
+            self.mark_parent_closed(sid);
+            crate::surface_meta::SurfaceMetaStore::remove(sid);
+        }
+        true
+    }
+
+    /// Ensure at least one workspace exists. If none exist, create a new one.
+    /// Returns true if a new workspace was created.
+    pub fn ensure_workspace_exists(&mut self) -> bool {
+        if !self.engine.workspaces.is_empty() {
+            return false;
+        }
+        match self.add_workspace() {
+            Ok(()) => true,
+            Err(e) => {
+                tracing::error!("Failed to create workspace: {}", e);
+                false
+            }
+        }
+    }
+
     /// Next tab in the focused pane.
     pub fn next_tab_in_pane(&mut self) {
         if let Some(pane) = self.focused_pane_mut() {
