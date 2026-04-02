@@ -306,6 +306,8 @@
 - `settings.clipboard.windows_style`: Ctrl+V 붙여넣기 활성화
 - `settings.clipboard.linux_style`: Ctrl+Shift+V 붙여넣기 활성화
 - `settings.clipboard.macos_style`: Alt+V 붙여넣기 활성화
+- `settings.zoom.ctrl_style`: Ctrl+=/-/0 줌 활성화 (Windows/Linux 기본)
+- `settings.zoom.alt_style`: Alt+=/-/0 줌 활성화 (macOS 기본)
 - `settings.notification.enabled`: 알림 활성화/비활성화. 비활성 시 알림 수집 및 시스템 알림 모두 차단
 - `settings.notification.system_notification`: OS 네이티브 알림 개별 제어
 - `settings.notification.coalesce_ms`: NotificationStore 생성 시 병합 간격 전달

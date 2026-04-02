@@ -380,6 +380,13 @@ fn draw_clipboard_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     ui.checkbox(&mut settings.clipboard.macos_style, t("settings.clipboard.macos_style"));
     ui.checkbox(&mut settings.clipboard.linux_style, t("settings.clipboard.linux_style"));
     ui.checkbox(&mut settings.clipboard.windows_style, t("settings.clipboard.windows_style"));
+
+    ui.add_space(12.0);
+    ui.heading(t("settings.zoom.heading"));
+    ui.add_space(4.0);
+
+    ui.checkbox(&mut settings.zoom.ctrl_style, t("settings.zoom.ctrl_style"));
+    ui.checkbox(&mut settings.zoom.alt_style, t("settings.zoom.alt_style"));
 }
 
 fn draw_notifications_tab(ui: &mut egui::Ui, settings: &mut Settings) {

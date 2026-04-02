@@ -63,6 +63,11 @@ macos_style = "macOS方式 (Alt+C / Alt+V)"
 linux_style = "Linux方式 (Ctrl+Shift+C / Ctrl+Shift+V)"
 windows_style = "Windows方式 (選択時Ctrl+C / Ctrl+V)"
 
+[settings.zoom]
+heading = "ズーム"
+ctrl_style = "Ctrl方式 (Ctrl+=/-/0)"
+alt_style = "Alt方式 (Alt+=/-/0)"
+
 [settings.notifications]
 heading = "通知"
 enabled = "通知を有効化"

@@ -63,6 +63,11 @@ macos_style = "macOS style (Alt+C / Alt+V)"
 linux_style = "Linux style (Ctrl+Shift+C / Ctrl+Shift+V)"
 windows_style = "Windows style (Ctrl+C with selection / Ctrl+V)"
 
+[settings.zoom]
+heading = "Zoom"
+ctrl_style = "Ctrl style (Ctrl+=/-/0)"
+alt_style = "Alt style (Alt+=/-/0)"
+
 [settings.notifications]
 heading = "Notifications"
 enabled = "Notifications enabled"

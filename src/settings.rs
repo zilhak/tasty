@@ -17,6 +17,7 @@ pub struct Settings {
     pub general: GeneralSettings,
     pub appearance: AppearanceSettings,
     pub clipboard: ClipboardSettings,
+    pub zoom: ZoomSettings,
     pub notification: NotificationSettings,
     pub keybindings: KeybindingSettings,
     pub performance: PerformanceSettings,
@@ -62,6 +63,15 @@ pub struct ClipboardSettings {
     pub macos_style: bool,
     pub linux_style: bool,
     pub windows_style: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ZoomSettings {
+    /// Ctrl+=/-/0 for zoom (Windows/Linux style)
+    pub ctrl_style: bool,
+    /// Alt+=/-/0 for zoom (macOS Cmd style)
+    pub alt_style: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -158,6 +168,7 @@ impl Default for Settings {
             general: GeneralSettings::default(),
             appearance: AppearanceSettings::default(),
             clipboard: ClipboardSettings::default(),
+            zoom: ZoomSettings::default(),
             notification: NotificationSettings::default(),
             keybindings: KeybindingSettings::default(),
             performance: PerformanceSettings::default(),
@@ -439,6 +450,25 @@ impl Default for ClipboardSettings {
     }
 }
 
+impl Default for ZoomSettings {
+    fn default() -> Self {
+        #[cfg(target_os = "macos")]
+        {
+            Self {
+                ctrl_style: false,
+                alt_style: true,
+            }
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            Self {
+                ctrl_style: true,
+                alt_style: false,
+            }
+        }
+    }
+}
+
 impl Default for NotificationSettings {
     fn default() -> Self {
         Self {
@@ -628,6 +658,21 @@ font_size = 18.0
         assert!(settings.clipboard.macos_style);
         #[cfg(target_os = "linux")]
         assert!(settings.clipboard.linux_style);
+    }
+
+    #[test]
+    fn settings_zoom_platform_defaults() {
+        let settings = Settings::default();
+        #[cfg(target_os = "macos")]
+        {
+            assert!(settings.zoom.alt_style);
+            assert!(!settings.zoom.ctrl_style);
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            assert!(settings.zoom.ctrl_style);
+            assert!(!settings.zoom.alt_style);
+        }
     }
 
     #[test]

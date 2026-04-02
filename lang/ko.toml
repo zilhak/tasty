@@ -63,6 +63,11 @@ macos_style = "macOS 방식 (Alt+C / Alt+V)"
 linux_style = "Linux 방식 (Ctrl+Shift+C / Ctrl+Shift+V)"
 windows_style = "Windows 방식 (선택 시 Ctrl+C / Ctrl+V)"
 
+[settings.zoom]
+heading = "확대/축소"
+ctrl_style = "Ctrl 방식 (Ctrl+=/-/0)"
+alt_style = "Alt 방식 (Alt+=/-/0)"
+
 [settings.notifications]
 heading = "알림"
 enabled = "알림 활성화"

@@ -456,8 +456,10 @@ impl TastyWindow {
             }
         }
 
-        // Ctrl+= or Ctrl+Shift+=: increase font size
-        if ctrl && !alt {
+        // Zoom: increase font size (Ctrl or Alt depending on settings)
+        let zoom_ctrl = ctrl && !alt && state.engine.settings.zoom.ctrl_style;
+        let zoom_alt = alt && !ctrl && state.engine.settings.zoom.alt_style;
+        if zoom_ctrl || zoom_alt {
             if let Key::Character(c) = key {
                 if c.as_str() == "=" || c.as_str() == "+" {
                     let current = state.engine.settings.appearance.font_size;
@@ -469,8 +471,8 @@ impl TastyWindow {
             }
         }
 
-        // Ctrl+-: decrease font size
-        if ctrl && !alt {
+        // Zoom: decrease font size
+        if zoom_ctrl || zoom_alt {
             if let Key::Character(c) = key {
                 if c.as_str() == "-" {
                     let current = state.engine.settings.appearance.font_size;
@@ -482,8 +484,10 @@ impl TastyWindow {
             }
         }
 
-        // Ctrl+0: reset font size to default (14)
-        if ctrl && !shift && !alt {
+        // Zoom: reset font size to default (14)
+        let zoom_ctrl_no_shift = ctrl && !shift && !alt && state.engine.settings.zoom.ctrl_style;
+        let zoom_alt_no_shift = alt && !shift && !ctrl && state.engine.settings.zoom.alt_style;
+        if zoom_ctrl_no_shift || zoom_alt_no_shift {
             if let Key::Character(c) = key {
                 if c.as_str() == "0" {
                     state.engine.settings.appearance.font_size = 14.0;
