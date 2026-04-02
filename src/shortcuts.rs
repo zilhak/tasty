@@ -252,6 +252,15 @@ impl TastyWindow {
             return true;
         }
 
+        // Close active workspace
+        if matches_binding(&kb.close_workspace, key, mods) {
+            state.close_active_workspace();
+            state.ensure_workspace_exists();
+            state.resize_all(terminal_rect, cell_w, cell_h);
+            self.mark_dirty();
+            return true;
+        }
+
         // Close active pane (fallback: close workspace if last pane)
         if matches_binding(&kb.close_pane, key, mods) {
             if state.close_active_pane() {

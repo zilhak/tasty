@@ -468,6 +468,7 @@ fn draw_keybindings_tab(
             KeybindingsSubTab::Workspace => {
                 draw_keybinding_entries(ui, recording_field, &captured, &mut [
                     ("new_workspace", "settings.keybindings.new_workspace_label", &mut settings.keybindings.new_workspace),
+                    ("close_workspace", "settings.keybindings.close_workspace_label", &mut settings.keybindings.close_workspace),
                 ]);
 
                 ui.add_space(8.0);

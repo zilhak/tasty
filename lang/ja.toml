@@ -73,6 +73,7 @@ coalesce_interval_label = "通知統合間隔 (ms):"
 [settings.keybindings]
 heading = "キーバインド"
 new_workspace_label = "新しいワークスペース:"
+close_workspace_label = "ワークスペースを閉じる:"
 new_tab_label = "新しいタブ:"
 split_pane_vertical_label = "ペイン垂直分割:"
 split_pane_horizontal_label = "ペイン水平分割:"

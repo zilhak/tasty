@@ -73,6 +73,7 @@ coalesce_interval_label = "Coalesce interval (ms):"
 [settings.keybindings]
 heading = "Keybindings"
 new_workspace_label = "New workspace:"
+close_workspace_label = "Close workspace:"
 new_tab_label = "New tab:"
 split_pane_vertical_label = "Pane split vertical:"
 split_pane_horizontal_label = "Pane split horizontal:"

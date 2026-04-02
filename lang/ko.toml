@@ -73,6 +73,7 @@ coalesce_interval_label = "알림 병합 간격 (ms):"
 [settings.keybindings]
 heading = "단축키"
 new_workspace_label = "새 워크스페이스:"
+close_workspace_label = "워크스페이스 닫기:"
 new_tab_label = "새 탭:"
 split_pane_vertical_label = "페인 수직 분할:"
 split_pane_horizontal_label = "페인 수평 분할:"
