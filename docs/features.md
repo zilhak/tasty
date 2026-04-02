@@ -161,6 +161,7 @@
 - close_surface 단축키: 포커스된 서피스 닫기. cascade: surface → pane → workspace. 마지막 workspace면 닫고 새로 생성
 - Ctrl+W: 활성 탭 닫기. cascade: tab → pane → workspace. 마지막 workspace면 닫고 새로 생성
 - Ctrl+Shift+W: 포커스된 패인 닫기. cascade: pane → workspace. 마지막 workspace면 닫고 새로 생성
+- Alt+Shift+W: 활성 워크스페이스 닫기. 마지막 workspace면 닫고 새로 생성
 - Ctrl+Shift+I: 알림 패널 토글
 - Ctrl+,: 설정 모달 윈도우 열기 (독립 OS 윈도우, 모달 활성 시 다른 윈도우 입력 차단)
 - Ctrl+D: 터미널에 전달 (EOF). 이전에는 Surface 수직 분할이었으나, Ctrl+Shift+D로 변경
