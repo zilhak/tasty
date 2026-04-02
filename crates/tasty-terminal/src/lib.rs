@@ -113,6 +113,20 @@ impl Terminal {
         cmd.env("TERM", "xterm-256color");
         cmd.env("TASTY_SURFACE_ID", surface_id.to_string());
 
+        // Add tasty's own binary directory to PATH so `tasty` CLI works inside the terminal
+        if let Ok(exe_path) = std::env::current_exe() {
+            if let Some(exe_dir) = exe_path.parent() {
+                let exe_dir_str = exe_dir.to_string_lossy();
+                let sep = if cfg!(windows) { ";" } else { ":" };
+                let new_path = if let Ok(existing) = std::env::var("PATH") {
+                    format!("{}{}{}", exe_dir_str, sep, existing)
+                } else {
+                    exe_dir_str.to_string()
+                };
+                cmd.env("PATH", new_path);
+            }
+        }
+
         let child = pair.slave.spawn_command(cmd)?;
         drop(pair.slave);
 
