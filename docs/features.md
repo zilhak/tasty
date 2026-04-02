@@ -158,9 +158,9 @@
   - Left/Up: 시블링의 rightmost/bottommost 리프로 이동 (인접한 엣지)
   - Right/Down: 시블링의 leftmost/topmost 리프로 이동 (인접한 엣지)
 - SurfaceGroup 내부 서피스 간 이동 우선, 이동 불가 시 Pane 간 이동
-- close_surface 단축키: 포커스된 서피스 닫기. 서피스가 하나뿐이면 상위 패인 닫기로 fallback (패인이 2개 이상일 때)
-- Ctrl+W: 활성 탭 닫기 (탭이 2개 이상일 때)
-- Ctrl+Shift+W: 포커스된 패인 닫기 (unsplit, 패인이 2개 이상일 때)
+- close_surface 단축키: 포커스된 서피스 닫기. cascade: surface → pane → workspace. 마지막 workspace면 닫고 새로 생성
+- Ctrl+W: 활성 탭 닫기. cascade: tab → pane → workspace. 마지막 workspace면 닫고 새로 생성
+- Ctrl+Shift+W: 포커스된 패인 닫기. cascade: pane → workspace. 마지막 workspace면 닫고 새로 생성
 - Ctrl+Shift+I: 알림 패널 토글
 - Ctrl+,: 설정 모달 윈도우 열기 (독립 OS 윈도우, 모달 활성 시 다른 윈도우 입력 차단)
 - Ctrl+D: 터미널에 전달 (EOF). 이전에는 Surface 수직 분할이었으나, Ctrl+Shift+D로 변경
