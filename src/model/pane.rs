@@ -284,6 +284,18 @@ impl PaneNode {
         }
     }
 
+    /// Collect all surface IDs across all panes in this tree.
+    pub fn all_surface_ids(&self) -> Vec<SurfaceId> {
+        match self {
+            PaneNode::Leaf(pane) => pane.all_surface_ids(),
+            PaneNode::Split { first, second, .. } => {
+                let mut result = first.all_surface_ids();
+                result.extend(second.all_surface_ids());
+                result
+            }
+        }
+    }
+
     /// Move focus to the next pane (by ID order). Returns the new focused PaneId if changed.
     pub fn next_pane_id(&self, current: PaneId) -> PaneId {
         let ids = self.all_pane_ids();
@@ -530,6 +542,15 @@ impl Pane {
         self.tabs.push(tab);
         // Do NOT change self.active_tab
         Ok(())
+    }
+
+    /// Collect all surface IDs across all tabs in this pane.
+    pub fn all_surface_ids(&self) -> Vec<SurfaceId> {
+        let mut ids = Vec::new();
+        for tab in &self.tabs {
+            ids.extend(tab.panel().all_surface_ids());
+        }
+        ids
     }
 
     /// Get the active tab's panel. Returns None if tabs are empty.

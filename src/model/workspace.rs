@@ -52,4 +52,8 @@ impl Workspace {
         self.pane_layout_opt.as_mut().expect("BUG: pane_layout accessed during structural mutation (between take/put)")
     }
 
+    /// Collect all surface IDs in this workspace.
+    pub fn all_surface_ids(&self) -> Vec<SurfaceId> {
+        self.pane_layout().all_surface_ids()
+    }
 }

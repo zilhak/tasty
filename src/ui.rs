@@ -33,6 +33,8 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
                     let ws_count = state.engine.workspaces.len();
                     for i in 0..ws_count {
                         let is_active = i == active_ws;
+                        let ws_surface_ids = state.engine.workspaces[i].all_surface_ids();
+                        let ws_has_highlight = state.engine.notifications.has_highlighted_surface(&ws_surface_ids);
                         let label = format!("{}", i + 1);
                         let bg = if is_active { th.surface0 } else { th.mantle };
                         let text_color = if is_active { th.text } else { th.subtext0 };
@@ -44,6 +46,10 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
                         ui.painter().rect_filled(rect, 4.0, bg);
                         if resp.hovered() {
                             ui.painter().rect_filled(rect, 4.0, th.hover_overlay);
+                        }
+                        // Draw highlight border if workspace has alerted surfaces
+                        if ws_has_highlight {
+                            ui.painter().rect_stroke(rect, 4.0, egui::Stroke::new(1.0, th.blue), egui::StrokeKind::Outside);
                         }
                         ui.painter().text(
                             rect.center(),
@@ -162,7 +168,8 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
                     let subtitle = state.engine.workspaces[i].subtitle.clone();
                     let description = state.engine.workspaces[i].description.clone();
                     let ws_id = state.engine.workspaces[i].id;
-                    let ws_unread = state.engine.notifications.unread_count_for_workspace(ws_id);
+                    let ws_surface_ids = state.engine.workspaces[i].all_surface_ids();
+                    let ws_has_highlight = state.engine.notifications.has_highlighted_surface(&ws_surface_ids);
 
                     let bg = if is_active {
                         th.surface0
@@ -184,7 +191,7 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
                     let response = frame.show(ui, |ui| {
                         ui.set_min_width(ui.available_width());
 
-                        // Title row with optional unread badge
+                        // Title row with optional alert badge
                         ui.horizontal(|ui| {
                             let title_text = if is_active {
                                 egui::RichText::new(&name).strong()
@@ -193,19 +200,18 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
                             };
                             ui.label(title_text);
 
-                            if ws_unread > 0 {
+                            if ws_has_highlight {
                                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                    let badge_text = if ws_unread > 99 {
-                                        "99+".to_string()
-                                    } else {
-                                        ws_unread.to_string()
-                                    };
-                                    ui.label(
-                                        egui::RichText::new(badge_text)
-                                            .small()
-                                            .strong()
-                                            .color(egui::Color32::WHITE)
-                                            .background_color(th.blue),
+                                    let badge_size = egui::vec2(18.0, 16.0);
+                                    let (rect, _) = ui.allocate_exact_size(badge_size, egui::Sense::hover());
+                                    // Draw border-only badge with "!"
+                                    ui.painter().rect_stroke(rect, 3.0, egui::Stroke::new(1.0, th.blue), egui::StrokeKind::Inside);
+                                    ui.painter().text(
+                                        rect.center(),
+                                        egui::Align2::CENTER_CENTER,
+                                        "!",
+                                        egui::FontId::proportional(10.0),
+                                        th.blue,
                                     );
                                 });
                             }
@@ -418,6 +424,27 @@ pub fn draw_pane_dividers(ctx: &egui::Context, dividers: &[Rect], scale_factor: 
             egui::vec2(div.width / scale_factor, div.height / scale_factor),
         );
         painter.rect_filled(rect, 0.0, border_color);
+    }
+}
+
+/// Draw highlight borders around surfaces that have unread notifications.
+pub fn draw_surface_highlights(ctx: &egui::Context, state: &AppState, terminal_rect: Rect, scale_factor: f32) {
+    let th = theme::theme();
+    let regions = state.render_regions(terminal_rect);
+    let painter = ctx.layer_painter(egui::LayerId::new(
+        egui::Order::Middle,
+        egui::Id::new("surface_highlights"),
+    ));
+    for (_pane_id, _pane_rect, terminal_regions) in &regions {
+        for (surface_id, _terminal, rect) in terminal_regions {
+            if state.engine.notifications.is_surface_highlighted(*surface_id) {
+                let egui_rect = egui::Rect::from_min_size(
+                    egui::pos2(rect.x / scale_factor, rect.y / scale_factor),
+                    egui::vec2(rect.width / scale_factor, rect.height / scale_factor),
+                );
+                painter.rect_stroke(egui_rect, 0.0, egui::Stroke::new(1.0, th.blue), egui::StrokeKind::Inside);
+            }
+        }
     }
 }
 

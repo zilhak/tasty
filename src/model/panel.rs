@@ -85,6 +85,15 @@ impl Panel {
         }
     }
 
+    /// Collect all surface IDs in this panel.
+    pub fn all_surface_ids(&self) -> Vec<SurfaceId> {
+        match self {
+            Panel::Terminal(node) => vec![node.id],
+            Panel::SurfaceGroup(group) => group.layout().all_surface_ids(),
+            Panel::Markdown(_) | Panel::Explorer(_) => vec![],
+        }
+    }
+
     /// Returns true if this panel is a non-terminal panel (Markdown or Explorer).
     pub fn is_non_terminal(&self) -> bool {
         matches!(self, Panel::Markdown(_) | Panel::Explorer(_))

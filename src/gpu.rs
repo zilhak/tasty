@@ -446,6 +446,11 @@ impl GpuState {
 
         let (pane_rects, dividers, focused_surface_id) = self.prepare_layout(state, terminal_rect);
 
+        // Clear notification highlight on the currently focused surface
+        if let Some(sid) = focused_surface_id {
+            state.engine.notifications.clear_surface_highlight(sid);
+        }
+
         // 2. Run egui frame (UI drawing)
         let prev_theme = state.engine.settings.appearance.theme.clone();
         let full_output = self.run_egui_frame(state, window, &pane_rects, &dividers, terminal_rect, preedit);
@@ -528,6 +533,7 @@ impl GpuState {
             ui::draw_ui(ctx, state, scale_factor);
             ui::draw_ws_rename_dialog(ctx, state);
             ui::draw_pane_dividers(ctx, dividers, scale_factor);
+            ui::draw_surface_highlights(ctx, state, terminal_rect, scale_factor);
             ui::draw_pane_tab_bars(ctx, state, pane_rects, scale_factor);
             ui::draw_non_terminal_panels(ctx, state, pane_rects, scale_factor);
             ui::draw_pane_context_menu(ctx, state, scale_factor);

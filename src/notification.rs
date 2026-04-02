@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::time::{Duration, Instant};
 
 use crate::model::{SurfaceId, WorkspaceId};
@@ -25,6 +26,8 @@ pub struct NotificationStore {
     last_system_notification: Option<Instant>,
     /// Coalesce window in milliseconds.
     coalesce_ms: u64,
+    /// Surfaces that have unread notifications (border highlight).
+    highlighted_surfaces: HashSet<SurfaceId>,
 }
 
 impl NotificationStore {
@@ -36,6 +39,7 @@ impl NotificationStore {
             next_id: 1,
             last_system_notification: None,
             coalesce_ms,
+            highlighted_surfaces: HashSet::new(),
         }
     }
 
@@ -83,6 +87,11 @@ impl NotificationStore {
         let id = self.next_id;
         self.next_id += 1;
 
+        // Highlight the surface that produced the notification
+        if source_surface != 0 {
+            self.highlighted_surfaces.insert(source_surface);
+        }
+
         self.notifications.push_back(Notification {
             id,
             source_workspace,
@@ -124,6 +133,21 @@ impl NotificationStore {
         for n in &mut self.notifications {
             n.read = true;
         }
+    }
+
+    /// Check if a surface is highlighted (has unread notification).
+    pub fn is_surface_highlighted(&self, surface_id: SurfaceId) -> bool {
+        self.highlighted_surfaces.contains(&surface_id)
+    }
+
+    /// Clear highlight for a surface (e.g. when it gains focus).
+    pub fn clear_surface_highlight(&mut self, surface_id: SurfaceId) {
+        self.highlighted_surfaces.remove(&surface_id);
+    }
+
+    /// Check if any surface in the given set is highlighted.
+    pub fn has_highlighted_surface(&self, surface_ids: &[SurfaceId]) -> bool {
+        surface_ids.iter().any(|id| self.highlighted_surfaces.contains(id))
     }
 
     /// Check if we should send a system notification (rate limited to 1/sec).
