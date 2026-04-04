@@ -2,7 +2,6 @@ use std::time::Instant;
 
 use crate::i18n::{t, t_fmt};
 use crate::model::Rect;
-use crate::settings::KeybindingSettings;
 use crate::state::{AppState, WsRenameField};
 use crate::theme;
 
@@ -167,7 +166,7 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
                     let name = state.engine.workspaces[i].name.clone();
                     let subtitle = state.engine.workspaces[i].subtitle.clone();
                     let description = state.engine.workspaces[i].description.clone();
-                    let ws_id = state.engine.workspaces[i].id;
+                    let _ws_id = state.engine.workspaces[i].id;
                     let ws_surface_ids = state.engine.workspaces[i].all_surface_ids();
                     let ws_has_highlight = state.engine.notifications.has_highlighted_surface(&ws_surface_ids);
 

@@ -487,47 +487,6 @@ impl CellRenderer {
         (cols.max(1), rows.max(1))
     }
 
-    /// Build instance data from the terminal surface (uses default palette bg).
-    pub fn prepare(&mut self, surface: &Surface, queue: &wgpu::Queue) {
-        self.prepare_with_bg(surface, queue, DEFAULT_BG, None, None, 0);
-    }
-
-    /// Prepare instance data for a terminal surface to be rendered in a specific viewport rect.
-    pub fn prepare_viewport(
-        &mut self,
-        surface: &Surface,
-        queue: &wgpu::Queue,
-        viewport: &Rect,
-        screen_width: u32,
-        screen_height: u32,
-    ) {
-        self.prepare_viewport_with_bg(surface, queue, viewport, screen_width, screen_height, DEFAULT_BG);
-    }
-
-    /// Prepare instance data with a custom default background color.
-    pub fn prepare_viewport_with_bg(
-        &mut self,
-        surface: &Surface,
-        queue: &wgpu::Queue,
-        viewport: &Rect,
-        screen_width: u32,
-        screen_height: u32,
-        default_bg: [f32; 4],
-    ) {
-        let uniforms = Uniforms {
-            cell_size: [
-                self.font_config.metrics.cell_width,
-                self.font_config.metrics.cell_height,
-            ],
-            grid_offset: [viewport.x, viewport.y],
-            viewport_size: [screen_width as f32, screen_height as f32],
-            _padding: [0.0; 2],
-        };
-        queue.write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
-
-        self.prepare_with_bg(surface, queue, default_bg, None, None, 0);
-    }
-
     /// Prepare instance data for a terminal with scrollback support.
     /// When scroll_offset > 0, mixes scrollback lines with surface lines.
     /// If `show_cursor` is true, the cursor cell's fg/bg colors are swapped.

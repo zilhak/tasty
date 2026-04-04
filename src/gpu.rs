@@ -10,7 +10,6 @@ use crate::i18n::t;
 use crate::model::Rect;
 use crate::renderer::CellRenderer;
 use crate::settings::AppearanceSettings;
-use crate::settings_ui;
 use crate::state::AppState;
 use crate::ui;
 use crate::AppEvent;
@@ -185,7 +184,7 @@ impl GpuState {
         window: &Window,
         shell_path: &mut String,
     ) -> Result<ShellSetupAction, wgpu::SurfaceError> {
-        let th = crate::theme::theme();
+        let _th = crate::theme::theme();
         let output = self.surface.get_current_texture()?;
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
 

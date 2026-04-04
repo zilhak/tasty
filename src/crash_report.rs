@@ -166,6 +166,7 @@ fn init_tracing() {
 // =============================================================================
 
 #[cfg(debug_assertions)]
+#[allow(dead_code)]
 pub mod error_loop {
     use std::sync::Mutex;
     use std::time::Instant;
@@ -226,4 +227,5 @@ pub mod error_loop {
 }
 
 #[cfg(debug_assertions)]
+#[allow(unused_imports)]
 pub use error_loop::ErrorLoopDetector;

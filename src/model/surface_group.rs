@@ -15,6 +15,7 @@ pub struct SurfaceNode {
     pub terminal: Terminal,
     /// If lazy init is enabled and terminal hasn't been spawned yet,
     /// this holds the deferred spawn parameters.
+    #[allow(dead_code)]
     pub(crate) deferred_spawn: Option<DeferredSpawn>,
 }
 

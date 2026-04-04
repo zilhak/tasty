@@ -21,8 +21,6 @@ pub struct EditableRegion {
     pub cursor_row: usize,
     /// Cursor column.
     pub cursor_col: usize,
-    /// Terminal column count.
-    pub cols: usize,
 }
 
 /// Get the last occupied column in a terminal line (exclusive).
@@ -110,7 +108,6 @@ impl EditableRegion {
             end_col,
             cursor_row,
             cursor_col,
-            cols,
         })
     }
 

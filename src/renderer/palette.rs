@@ -1,20 +1,5 @@
 use termwiz::color::ColorAttribute;
 
-use crate::theme;
-
-pub(crate) fn default_fg() -> [f32; 4] {
-    theme::theme().terminal_fg
-}
-
-pub fn default_bg() -> [f32; 4] {
-    theme::theme().terminal_bg
-}
-
-pub(crate) fn ansi_colors() -> &'static [[f32; 3]; 16] {
-    &theme::theme().ansi_colors
-}
-
-// Keep the old constants as aliases for backward compatibility in other modules
 pub(crate) const DEFAULT_FG: [f32; 4] = [0.804, 0.839, 0.957, 1.0]; // Text #cdd6f4
 pub const DEFAULT_BG: [f32; 4] = [0.118, 0.118, 0.180, 1.0]; // Base #1e1e2e
 

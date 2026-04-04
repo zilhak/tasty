@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use tasty_hooks::HookManager;
 use crate::global_hooks::GlobalHookManager;
-use crate::model::{Workspace, SplitDirection, PaneId, Rect};
+use crate::model::Workspace;
 use crate::notification::NotificationStore;
 use crate::settings::Settings;
 use crate::state::{ClaudeChildEntry, SurfaceMessage};

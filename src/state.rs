@@ -1,11 +1,5 @@
-use std::collections::{HashMap, HashSet};
-
-use tasty_hooks::HookManager;
 use crate::engine_state::EngineState;
-use crate::global_hooks::GlobalHookManager;
 use crate::model::{DividerInfo, FocusDirection, PaneId, Rect, SplitDirection, Workspace};
-use crate::notification::NotificationStore;
-use crate::settings::Settings;
 use crate::settings_ui::SettingsUiState;
 use tasty_terminal::{Terminal, TerminalEvent, Waker};
 
@@ -1345,10 +1339,6 @@ impl AppState {
         };
 
         // Account for tab bar height
-        let ws = self.active_workspace();
-        let tab_count = ws.pane_layout().find_pane(focused_id)
-            .map(|p| p.tabs.len())
-            .unwrap_or(0);
         let tab_bar_h = self.tab_bar_height;
         let content_rect = Rect {
             x: pane_rect.x,

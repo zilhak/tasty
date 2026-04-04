@@ -1,3 +1,5 @@
+#![allow(private_interfaces)]
+
 mod cli;
 mod click_cursor;
 mod crash_report;
@@ -302,10 +304,6 @@ impl App {
             if cmd.request.method == "window.close" {
                 // Close the focused window
                 if let Some(focused_id) = self.engine.focused_window_id {
-                    if let Some(w) = self.windows.get(&focused_id) {
-                        // Request the OS window to close — triggers CloseRequested
-                        // which removes it from the HashMap in window_event
-                    }
                     self.windows.remove(&focused_id);
                     self.engine.focused_window_id = self.windows.keys().next().copied();
                 }

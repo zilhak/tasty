@@ -455,7 +455,7 @@ impl TastyWindow {
         false // don't exit
     }
 
-    fn handle_keyboard_input(&mut self, event: &winit::event::KeyEvent, egui_consumed: bool) {
+    fn handle_keyboard_input(&mut self, event: &winit::event::KeyEvent, _egui_consumed: bool) {
         if event.state != ElementState::Pressed {
             return;
         }
@@ -827,11 +827,11 @@ impl TastyWindow {
         }
     }
 
-    fn handle_redraw(&mut self, event_loop: &ActiveEventLoop) {
+    fn handle_redraw(&mut self, _event_loop: &ActiveEventLoop) {
         // Process queued arrow keys (one per frame for Claude Code surfaces)
         if let Some(queue) = &self.arrow_queue {
             let sid = queue.surface_id;
-            let arrow = queue.arrow;
+            let _arrow = queue.arrow;
             if let Some(terminal) = self.state.find_terminal_by_id_mut(sid) {
                 let mut q = self.arrow_queue.take().unwrap();
                 let has_more = q.tick(terminal);
