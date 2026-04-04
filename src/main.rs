@@ -130,19 +130,11 @@ impl App {
         self.engine.focused_window_id.and_then(|id| self.windows.get_mut(&id))
     }
 
-    /// Initialize the full app state (terminal, IPC server, etc.) after shell is confirmed.
-    fn init_app_state(
-        &mut self,
-        window: Arc<Window>,
-        gpu: GpuState,
-        settings: crate::settings::Settings,
-    ) {
-        let sidebar_logical_width = settings.appearance.sidebar_width;
-        let startup_command = settings.general.startup_command.clone();
-
+    /// Create an AppState from a GPU state, computing grid size from the sidebar width.
+    fn create_app_state(&self, gpu: &GpuState, sidebar_width: f32) -> crate::state::AppState {
         let sf = gpu.scale_factor();
         let size = gpu.size();
-        let sidebar_w = sidebar_logical_width * sf;
+        let sidebar_w = sidebar_width * sf;
         let terminal_rect = crate::model::Rect {
             x: sidebar_w,
             y: 0.0,
@@ -158,6 +150,25 @@ impl App {
 
         let mut state = crate::state::AppState::new(cols, rows, waker).expect("failed to create app state");
         state.engine.waker_factory = Some(self.engine.proxy.clone());
+        state
+    }
+
+    /// Register a TastyWindow and set it as focused.
+    fn register_window(&mut self, gpu: GpuState, state: crate::state::AppState, window: Arc<Window>) {
+        let window_id = window.id();
+        self.windows.insert(window_id, tasty_window::TastyWindow::new(gpu, state, window, self.engine.proxy.clone()));
+        self.engine.focused_window_id = Some(window_id);
+    }
+
+    /// Initialize the full app state (terminal, IPC server, etc.) after shell is confirmed.
+    fn init_app_state(
+        &mut self,
+        window: Arc<Window>,
+        gpu: GpuState,
+        settings: crate::settings::Settings,
+    ) {
+        let startup_command = settings.general.startup_command.clone();
+        let mut state = self.create_app_state(&gpu, settings.appearance.sidebar_width);
 
         if !startup_command.is_empty() {
             if let Some(terminal) = state.focused_terminal_mut() {
@@ -167,10 +178,7 @@ impl App {
         }
 
         self.engine.start_ipc();
-
-        let window_id = window.id();
-        self.windows.insert(window_id, tasty_window::TastyWindow::new(gpu, state, window, self.engine.proxy.clone()));
-        self.engine.focused_window_id = Some(window_id);
+        self.register_window(gpu, state, window);
     }
 
     /// Create a new window with its own terminal.
@@ -197,29 +205,9 @@ impl App {
         ))
         .expect("failed to initialize GPU");
 
-        let sf = gpu.scale_factor();
-        let size = gpu.size();
-        let sidebar_w = settings.appearance.sidebar_width * sf;
-        let terminal_rect = crate::model::Rect {
-            x: sidebar_w,
-            y: 0.0,
-            width: (size.width as f32 - sidebar_w).max(1.0),
-            height: size.height as f32,
-        };
-        let (cols, rows) = gpu.grid_size_for_rect(&terminal_rect);
-
-        let proxy = self.engine.proxy.clone();
-        let waker: crate::terminal::Waker = Arc::new(move || {
-            let _ = proxy.send_event(AppEvent::TerminalOutput(None));
-        });
-
-        let mut state = crate::state::AppState::new(cols, rows, waker).expect("failed to create app state");
-        state.engine.waker_factory = Some(self.engine.proxy.clone());
-
-        let window_id = window.id();
-        self.windows.insert(window_id, tasty_window::TastyWindow::new(gpu, state, window, self.engine.proxy.clone()));
-        self.engine.focused_window_id = Some(window_id);
-        tracing::info!("created new window {:?}", window_id);
+        let state = self.create_app_state(&gpu, settings.appearance.sidebar_width);
+        self.register_window(gpu, state, window);
+        tracing::info!("created new window {:?}", self.engine.focused_window_id);
     }
 
     /// Open settings as a modal window.
