@@ -3,6 +3,7 @@ use serde_json::json;
 use crate::ipc::protocol::{JsonRpcRequest, JsonRpcResponse};
 use crate::state::AppState;
 
+mod claude;
 mod hooks;
 mod message;
 mod meta;
@@ -49,16 +50,16 @@ pub fn handle(state: &mut AppState, request: &JsonRpcRequest) -> JsonRpcResponse
         "surface.cursor_position" => surface::handle_cursor_position(state, id, &request.params),
         "surface.is_typing" => handle_is_typing(state, id, &request.params),
         "surface.send_wait_idle" => handle_send_wait_idle(state, id, &request.params),
-        "claude.launch" => hooks::handle_claude_launch(state, id, &request.params),
-        "claude.spawn" => hooks::handle_claude_spawn(state, id, &request.params),
-        "claude.children" => hooks::handle_claude_children(state, id, &request.params),
-        "claude.parent" => hooks::handle_claude_parent(state, id, &request.params),
-        "claude.kill" => hooks::handle_claude_kill(state, id, &request.params),
-        "claude.respawn" => hooks::handle_claude_respawn(state, id, &request.params),
-        "claude.set_idle_state" => hooks::handle_claude_set_idle_state(state, id, &request.params),
-        "claude.set_needs_input" => hooks::handle_claude_set_needs_input(state, id, &request.params),
-        "claude.broadcast" => hooks::handle_claude_broadcast(state, id, &request.params),
-        "claude.wait" => hooks::handle_claude_wait(state, id, &request.params),
+        "claude.launch" => claude::handle_claude_launch(state, id, &request.params),
+        "claude.spawn" => claude::handle_claude_spawn(state, id, &request.params),
+        "claude.children" => claude::handle_claude_children(state, id, &request.params),
+        "claude.parent" => claude::handle_claude_parent(state, id, &request.params),
+        "claude.kill" => claude::handle_claude_kill(state, id, &request.params),
+        "claude.respawn" => claude::handle_claude_respawn(state, id, &request.params),
+        "claude.set_idle_state" => claude::handle_claude_set_idle_state(state, id, &request.params),
+        "claude.set_needs_input" => claude::handle_claude_set_needs_input(state, id, &request.params),
+        "claude.broadcast" => claude::handle_claude_broadcast(state, id, &request.params),
+        "claude.wait" => claude::handle_claude_wait(state, id, &request.params),
         "surface.fire_hook" => hooks::handle_surface_fire_hook(state, id, &request.params),
         "global_hook.set" => hooks::handle_global_hook_set(state, id, &request.params),
         "global_hook.list" => hooks::handle_global_hook_list(state, id),
