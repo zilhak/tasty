@@ -1,11 +1,16 @@
 use serde_json::json;
 
 use crate::ipc::protocol::{JsonRpcRequest, JsonRpcResponse};
-use crate::model::{FocusDirection, SplitDirection};
 use crate::state::AppState;
 
 mod hooks;
+mod message;
+mod meta;
+mod notification;
+mod pane;
 mod surface;
+mod tab;
+mod workspace;
 
 /// Handle a JSON-RPC request against the application state.
 /// Returns a JSON-RPC response.
@@ -14,16 +19,16 @@ pub fn handle(state: &mut AppState, request: &JsonRpcRequest) -> JsonRpcResponse
 
     match request.method.as_str() {
         "system.info" => handle_system_info(state, id),
-        "workspace.list" => handle_workspace_list(state, id),
-        "workspace.create" => handle_workspace_create(state, id, &request.params),
-        "workspace.update" => handle_workspace_update(state, id, &request.params),
-        "workspace.select" => handle_workspace_select(state, id, &request.params),
-        "pane.list" => handle_pane_list(state, id),
-        "split" => handle_split(state, id, &request.params),
-        "tab.list" => handle_tab_list(state, id),
-        "tab.create" => handle_tab_create(state, id, &request.params),
-        "tab.close" => handle_tab_close(state, id),
-        "pane.close" => handle_pane_close(state, id),
+        "workspace.list" => workspace::handle_workspace_list(state, id),
+        "workspace.create" => workspace::handle_workspace_create(state, id, &request.params),
+        "workspace.update" => workspace::handle_workspace_update(state, id, &request.params),
+        "workspace.select" => workspace::handle_workspace_select(state, id, &request.params),
+        "pane.list" => pane::handle_pane_list(state, id),
+        "split" => pane::handle_split(state, id, &request.params),
+        "tab.list" => tab::handle_tab_list(state, id),
+        "tab.create" => tab::handle_tab_create(state, id, &request.params),
+        "tab.close" => tab::handle_tab_close(state, id),
+        "pane.close" => pane::handle_pane_close(state, id),
         "surface.close" => surface::handle_surface_close(state, id),
         "surface.list" => surface::handle_surface_list(state, id),
         "surface.send" => surface::handle_surface_send(state, id, &request.params),
@@ -32,8 +37,8 @@ pub fn handle(state: &mut AppState, request: &JsonRpcRequest) -> JsonRpcResponse
         "surface.send_to" => surface::handle_surface_send_to(state, id, &request.params),
         "surface.focus" => surface::handle_surface_focus(state, id, &request.params),
         "pane.focus" => surface::handle_pane_focus(state, id, &request.params),
-        "notification.list" => handle_notification_list(state, id),
-        "notification.create" => handle_notification_create(state, id, &request.params),
+        "notification.list" => notification::handle_notification_list(state, id),
+        "notification.create" => notification::handle_notification_create(state, id, &request.params),
         "tree" => handle_tree(state, id),
         "hook.set" => hooks::handle_hook_set(state, id, &request.params),
         "hook.list" => hooks::handle_hook_list(state, id, &request.params),
@@ -58,107 +63,62 @@ pub fn handle(state: &mut AppState, request: &JsonRpcRequest) -> JsonRpcResponse
         "global_hook.set" => hooks::handle_global_hook_set(state, id, &request.params),
         "global_hook.list" => hooks::handle_global_hook_list(state, id),
         "global_hook.unset" => hooks::handle_global_hook_unset(state, id, &request.params),
-        "surface.meta_set" => handle_surface_meta_set(state, id, &request.params),
-        "surface.meta_get" => handle_surface_meta_get(state, id, &request.params),
-        "surface.meta_unset" => handle_surface_meta_unset(state, id, &request.params),
-        "surface.meta_list" => handle_surface_meta_list(state, id, &request.params),
-        "focus.direction" => handle_focus_direction(state, id, &request.params),
-        "tab.open_markdown" => handle_open_markdown(state, id, &request.params),
-        "tab.open_explorer" => handle_open_explorer(state, id, &request.params),
+        "surface.meta_set" => meta::handle_surface_meta_set(state, id, &request.params),
+        "surface.meta_get" => meta::handle_surface_meta_get(state, id, &request.params),
+        "surface.meta_unset" => meta::handle_surface_meta_unset(state, id, &request.params),
+        "surface.meta_list" => meta::handle_surface_meta_list(state, id, &request.params),
+        "focus.direction" => pane::handle_focus_direction(state, id, &request.params),
+        "tab.open_markdown" => tab::handle_open_markdown(state, id, &request.params),
+        "tab.open_explorer" => tab::handle_open_explorer(state, id, &request.params),
         "ui.state" => handle_ui_state(state, id),
-        "message.send" => handle_message_send(state, id, &request.params),
-        "message.read" => handle_message_read(state, id, &request.params),
-        "message.count" => handle_message_count(state, id, &request.params),
-        "message.clear" => handle_message_clear(state, id, &request.params),
+        "message.send" => message::handle_message_send(state, id, &request.params),
+        "message.read" => message::handle_message_read(state, id, &request.params),
+        "message.count" => message::handle_message_count(state, id, &request.params),
+        "message.clear" => message::handle_message_clear(state, id, &request.params),
         _ => JsonRpcResponse::method_not_found(id, &request.method),
     }
 }
 
-fn handle_focus_direction(
-    state: &mut AppState,
-    id: serde_json::Value,
-    params: &serde_json::Value,
-) -> JsonRpcResponse {
-    let direction = match params.get("direction").and_then(|v| v.as_str()) {
-        Some("left") => FocusDirection::Left,
-        Some("right") => FocusDirection::Right,
-        Some("up") => FocusDirection::Up,
-        Some("down") => FocusDirection::Down,
-        Some(other) => {
-            return JsonRpcResponse::invalid_params(
-                id,
-                format!("Invalid direction '{}'. Use: left, right, up, down", other),
-            )
+/// Apply metadata key-value pairs to a surface.
+fn apply_meta(surface_id: u32, meta: Option<&serde_json::Map<String, serde_json::Value>>) {
+    if let Some(map) = meta {
+        for (key, value) in map {
+            if let Some(v) = value.as_str() {
+                crate::surface_meta::SurfaceMetaStore::set(surface_id, key, v);
+            }
         }
-        None => return JsonRpcResponse::invalid_params(id, "Missing 'direction' parameter"),
-    };
-    state.move_focus_direction(direction);
-    let ws = state.active_workspace();
+    }
+}
+
+/// Resolve a target parameter to a numeric ID.
+fn resolve_target_param(value: Option<&serde_json::Value>, level: &str) -> Option<u32> {
+    let val = value?;
+    if let Some(n) = val.as_u64() {
+        return Some(n as u32);
+    }
+    if let Some(s) = val.as_str() {
+        if s.is_empty() {
+            return None;
+        }
+        if let Ok(n) = s.parse::<u32>() {
+            return Some(n);
+        }
+        if level == "surface" {
+            return crate::surface_meta::SurfaceMetaStore::find_by_value("nickname", s);
+        }
+    }
+    None
+}
+
+fn handle_system_info(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {
     JsonRpcResponse::success(
         id,
         json!({
-            "focused_pane": ws.focused_pane,
+            "version": env!("CARGO_PKG_VERSION"),
+            "workspace_count": state.engine.workspaces.len(),
+            "active_workspace": state.active_workspace,
         }),
     )
-}
-
-fn handle_open_markdown(
-    state: &mut AppState,
-    id: serde_json::Value,
-    params: &serde_json::Value,
-) -> JsonRpcResponse {
-    let file_path = match params.get("file_path").and_then(|v| v.as_str()) {
-        Some(p) => p.to_string(),
-        None => return JsonRpcResponse::invalid_params(id, "Missing 'file_path' parameter"),
-    };
-
-    // Optionally focus a specific pane
-    if let Some(pane_id) = params.get("pane_id").and_then(|v| v.as_u64()) {
-        state.focus_pane(pane_id as u32);
-    }
-
-    match state.add_markdown_tab(file_path.clone()) {
-        Ok(_) => JsonRpcResponse::success(
-            id,
-            json!({
-                "ok": true,
-                "file_path": file_path,
-            }),
-        ),
-        Err(e) => JsonRpcResponse::internal_error(id, format!("Failed to open markdown: {}", e)),
-    }
-}
-
-fn handle_open_explorer(
-    state: &mut AppState,
-    id: serde_json::Value,
-    params: &serde_json::Value,
-) -> JsonRpcResponse {
-    let path = params
-        .get("path")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| {
-            directories::BaseDirs::new()
-                .map(|d| d.home_dir().to_string_lossy().to_string())
-                .unwrap_or_else(|| ".".to_string())
-        });
-
-    // Optionally focus a specific pane
-    if let Some(pane_id) = params.get("pane_id").and_then(|v| v.as_u64()) {
-        state.focus_pane(pane_id as u32);
-    }
-
-    match state.add_explorer_tab(path.clone()) {
-        Ok(_) => JsonRpcResponse::success(
-            id,
-            json!({
-                "ok": true,
-                "path": path,
-            }),
-        ),
-        Err(e) => JsonRpcResponse::internal_error(id, format!("Failed to open explorer: {}", e)),
-    }
 }
 
 fn handle_ui_state(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {
@@ -176,353 +136,6 @@ fn handle_ui_state(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {
             "tab_count": tab_count,
         }),
     )
-}
-
-fn handle_system_info(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {
-    JsonRpcResponse::success(
-        id,
-        json!({
-            "version": env!("CARGO_PKG_VERSION"),
-            "workspace_count": state.engine.workspaces.len(),
-            "active_workspace": state.active_workspace,
-        }),
-    )
-}
-
-fn handle_workspace_list(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {
-    let workspaces: Vec<_> = state
-        .engine.workspaces
-        .iter()
-        .enumerate()
-        .map(|(i, ws)| {
-            json!({
-                "id": ws.id,
-                "name": ws.name,
-                "subtitle": ws.subtitle,
-                "description": ws.description,
-                "active": i == state.active_workspace,
-                "pane_count": ws.pane_layout().all_pane_ids().len(),
-            })
-        })
-        .collect();
-    JsonRpcResponse::success(id, json!(workspaces))
-}
-
-fn handle_workspace_create(
-    state: &mut AppState,
-    id: serde_json::Value,
-    params: &serde_json::Value,
-) -> JsonRpcResponse {
-    let cwd = params.get("cwd").and_then(|v| v.as_str()).map(std::path::PathBuf::from);
-    match state.add_workspace_background_with_cwd(cwd) {
-        Ok(idx) => {
-            if let Some(name) = params.get("name").and_then(|v| v.as_str()) {
-                if !name.is_empty() {
-                    state.engine.workspaces[idx].name = name.to_string();
-                }
-            }
-            if let Some(subtitle) = params.get("subtitle").and_then(|v| v.as_str()) {
-                state.engine.workspaces[idx].subtitle = subtitle.to_string();
-            }
-            if let Some(desc) = params.get("description").and_then(|v| v.as_str()) {
-                state.engine.workspaces[idx].description = desc.to_string();
-            }
-            let ws = &state.engine.workspaces[idx];
-            JsonRpcResponse::success(
-                id,
-                json!({
-                    "id": ws.id,
-                    "name": ws.name,
-                    "subtitle": ws.subtitle,
-                    "description": ws.description,
-                    "index": idx,
-                }),
-            )
-        }
-        Err(e) => JsonRpcResponse::internal_error(id, e.to_string()),
-    }
-}
-
-fn handle_workspace_update(
-    state: &mut AppState,
-    id: serde_json::Value,
-    params: &serde_json::Value,
-) -> JsonRpcResponse {
-    // Find workspace by index or id; default to active
-    let idx = if let Some(i) = params.get("index").and_then(|v| v.as_u64()) {
-        i as usize
-    } else if let Some(ws_id) = params.get("id").and_then(|v| v.as_u64()) {
-        match state.engine.workspaces.iter().position(|ws| ws.id == ws_id as u32) {
-            Some(i) => i,
-            None => return JsonRpcResponse::invalid_params(id, format!("Workspace id {} not found", ws_id)),
-        }
-    } else {
-        state.active_workspace
-    };
-
-    if idx >= state.engine.workspaces.len() {
-        return JsonRpcResponse::invalid_params(
-            id,
-            format!("Workspace index {} out of range (0..{})", idx, state.engine.workspaces.len()),
-        );
-    }
-
-    let ws = &mut state.engine.workspaces[idx];
-    if let Some(name) = params.get("name").and_then(|v| v.as_str()) {
-        ws.name = name.to_string();
-    }
-    if let Some(subtitle) = params.get("subtitle").and_then(|v| v.as_str()) {
-        ws.subtitle = subtitle.to_string();
-    }
-    if let Some(desc) = params.get("description").and_then(|v| v.as_str()) {
-        ws.description = desc.to_string();
-    }
-
-    JsonRpcResponse::success(
-        id,
-        json!({
-            "id": ws.id,
-            "name": ws.name,
-            "subtitle": ws.subtitle,
-            "description": ws.description,
-            "index": idx,
-        }),
-    )
-}
-
-fn handle_workspace_select(
-    state: &mut AppState,
-    id: serde_json::Value,
-    params: &serde_json::Value,
-) -> JsonRpcResponse {
-    let index = params
-        .get("index")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as usize);
-    match index {
-        Some(idx) if idx < state.engine.workspaces.len() => {
-            state.switch_workspace(idx);
-            JsonRpcResponse::success(id, json!({ "active_workspace": idx }))
-        }
-        Some(idx) => JsonRpcResponse::invalid_params(
-            id,
-            format!("Workspace index {} out of range (0..{})", idx, state.engine.workspaces.len()),
-        ),
-        None => JsonRpcResponse::invalid_params(id, "Missing 'index' parameter"),
-    }
-}
-
-fn handle_pane_list(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {
-    let ws = state.active_workspace();
-    let pane_ids = ws.pane_layout().all_pane_ids();
-    let focused = ws.focused_pane;
-
-    let panes: Vec<_> = pane_ids
-        .iter()
-        .map(|&pid| {
-            let tab_count = ws
-                .pane_layout()
-                .find_pane(pid)
-                .map(|p| p.tabs.len())
-                .unwrap_or(0);
-            json!({
-                "id": pid,
-                "focused": pid == focused,
-                "tab_count": tab_count,
-            })
-        })
-        .collect();
-    JsonRpcResponse::success(id, json!(panes))
-}
-
-/// Apply metadata key-value pairs to a surface.
-fn apply_meta(surface_id: u32, meta: Option<&serde_json::Map<String, serde_json::Value>>) {
-    if let Some(map) = meta {
-        for (key, value) in map {
-            if let Some(v) = value.as_str() {
-                crate::surface_meta::SurfaceMetaStore::set(surface_id, key, v);
-            }
-        }
-    }
-}
-
-/// Resolve a target parameter to a numeric ID.
-/// - Numeric string or JSON number → ID
-/// - Other string → nickname lookup via surface_meta (for "surface" level)
-/// - null/absent → None (use focused)
-fn resolve_target_param(value: Option<&serde_json::Value>, level: &str) -> Option<u32> {
-    let val = value?;
-    // JSON number
-    if let Some(n) = val.as_u64() {
-        return Some(n as u32);
-    }
-    // String
-    if let Some(s) = val.as_str() {
-        if s.is_empty() {
-            return None;
-        }
-        // Numeric string
-        if let Ok(n) = s.parse::<u32>() {
-            return Some(n);
-        }
-        // Nickname lookup (only for surface level — pane-group has no meta)
-        if level == "surface" {
-            return crate::surface_meta::SurfaceMetaStore::find_by_value("nickname", s);
-        }
-    }
-    None
-}
-
-fn handle_split(
-    state: &mut AppState,
-    id: serde_json::Value,
-    params: &serde_json::Value,
-) -> JsonRpcResponse {
-    let level = match params.get("level").and_then(|v| v.as_str()) {
-        Some("pane-group") => "pane-group",
-        Some("surface") => "surface",
-        Some(other) => {
-            return JsonRpcResponse::invalid_params(
-                id,
-                format!("Invalid level '{}'. Use: pane-group, surface", other),
-            )
-        }
-        None => return JsonRpcResponse::invalid_params(id, "Missing 'level' parameter"),
-    };
-
-    let direction = match params.get("direction").and_then(|v| v.as_str()) {
-        Some("horizontal") | Some("h") => SplitDirection::Horizontal,
-        _ => SplitDirection::Vertical,
-    };
-
-    let target_id = resolve_target_param(params.get("target"), level);
-
-    let meta = params.get("meta").and_then(|v| v.as_object());
-    let cwd = params.get("cwd").and_then(|v| v.as_str()).map(std::path::PathBuf::from);
-
-    match level {
-        "pane-group" => match state.split_pane_targeted_with_cwd(target_id, direction, cwd) {
-            Ok((new_pane_id, new_surface_id)) => {
-                apply_meta(new_surface_id, meta);
-                JsonRpcResponse::success(
-                    id,
-                    json!({
-                        "new_pane_group_id": new_pane_id,
-                        "new_surface_id": new_surface_id,
-                    }),
-                )
-            }
-            Err(e) => JsonRpcResponse::internal_error(id, e.to_string()),
-        },
-        "surface" => match state.split_surface_targeted_with_cwd(target_id, direction, cwd) {
-            Ok(new_surface_id) => {
-                apply_meta(new_surface_id, meta);
-                JsonRpcResponse::success(
-                    id,
-                    json!({
-                        "new_surface_id": new_surface_id,
-                    }),
-                )
-            }
-            Err(e) => JsonRpcResponse::internal_error(id, e.to_string()),
-        },
-        _ => unreachable!(),
-    }
-}
-
-fn handle_tab_list(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {
-    let tabs: Vec<_> = if let Some(pane) = state.focused_pane() {
-        pane.tabs
-            .iter()
-            .enumerate()
-            .map(|(i, tab)| {
-                json!({
-                    "id": tab.id,
-                    "name": tab.name,
-                    "active": i == pane.active_tab,
-                })
-            })
-            .collect()
-    } else {
-        vec![]
-    };
-    JsonRpcResponse::success(id, json!(tabs))
-}
-
-fn handle_tab_create(state: &mut AppState, id: serde_json::Value, params: &serde_json::Value) -> JsonRpcResponse {
-    let cwd = params.get("cwd").and_then(|v| v.as_str()).map(std::path::PathBuf::from);
-    match state.add_tab_background_with_cwd(cwd) {
-        Ok(_) => {
-            let (tab_count, active_tab) = state
-                .focused_pane()
-                .map(|p| (p.tabs.len(), p.active_tab))
-                .unwrap_or((0, 0));
-            JsonRpcResponse::success(
-                id,
-                json!({
-                    "tab_count": tab_count,
-                    "active_tab": active_tab,
-                }),
-            )
-        }
-        Err(e) => JsonRpcResponse::internal_error(id, e.to_string()),
-    }
-}
-
-fn handle_tab_close(state: &mut AppState, id: serde_json::Value) -> JsonRpcResponse {
-    if state.close_active_tab() {
-        JsonRpcResponse::success(id, json!({ "closed": true }))
-    } else {
-        JsonRpcResponse::success(id, json!({ "closed": false, "reason": "cannot close the last tab" }))
-    }
-}
-
-fn handle_pane_close(state: &mut AppState, id: serde_json::Value) -> JsonRpcResponse {
-    if state.close_active_pane() {
-        JsonRpcResponse::success(id, json!({ "closed": true }))
-    } else {
-        JsonRpcResponse::success(id, json!({ "closed": false, "reason": "cannot close the last pane" }))
-    }
-}
-
-fn handle_notification_list(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {
-    let notifications: Vec<_> = state
-        .engine.notifications
-        .all()
-        .rev()
-        .take(50)
-        .map(|n| {
-            json!({
-                "id": n.id,
-                "title": n.title,
-                "body": n.body,
-                "workspace_id": n.source_workspace,
-                "surface_id": n.source_surface,
-                "read": n.read,
-            })
-        })
-        .collect();
-    JsonRpcResponse::success(id, json!(notifications))
-}
-
-fn handle_notification_create(
-    state: &mut AppState,
-    id: serde_json::Value,
-    params: &serde_json::Value,
-) -> JsonRpcResponse {
-    let title = params
-        .get("title")
-        .and_then(|v| v.as_str())
-        .unwrap_or("Notification")
-        .to_string();
-    let body = params
-        .get("body")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
-    let ws_id = state.active_workspace().id;
-    state.engine.notifications.add(ws_id, 0, title, body);
-    JsonRpcResponse::success(id, json!({ "created": true }))
 }
 
 fn handle_tree(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {
@@ -612,7 +225,6 @@ fn handle_send_wait_idle(
             json!({ "sent": false, "reason": "typing" }),
         );
     }
-    // Surface is idle — send text
     if let Some(terminal) = state.find_terminal_by_id_mut(surface_id) {
         terminal.send_key(&text);
         JsonRpcResponse::success(id, json!({ "sent": true }))
@@ -622,159 +234,4 @@ fn handle_send_wait_idle(
             format!("Surface {} not found", surface_id),
         )
     }
-}
-
-fn handle_message_send(
-    state: &mut AppState,
-    id: serde_json::Value,
-    params: &serde_json::Value,
-) -> JsonRpcResponse {
-    let to = match params.get("to_surface_id").and_then(|v| v.as_u64()) {
-        Some(v) => v as u32,
-        None => return JsonRpcResponse::invalid_params(id, "Missing 'to_surface_id'"),
-    };
-    let content = match params.get("content").and_then(|v| v.as_str()) {
-        Some(v) => v.to_string(),
-        None => return JsonRpcResponse::invalid_params(id, "Missing 'content'"),
-    };
-    let from = if let Some(f) = params.get("from_surface_id").and_then(|v| v.as_u64()) {
-        f as u32
-    } else {
-        state.focused_surface_id().unwrap_or(0)
-    };
-    let msg_id = state.send_message(from, to, content);
-    JsonRpcResponse::success(id, json!({ "id": msg_id }))
-}
-
-fn handle_message_read(
-    state: &mut AppState,
-    id: serde_json::Value,
-    params: &serde_json::Value,
-) -> JsonRpcResponse {
-    let surface_id = params
-        .get("surface_id")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
-        .or_else(|| state.focused_surface_id())
-        .unwrap_or(0);
-    let from = params
-        .get("from_surface_id")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32);
-    let peek = params
-        .get("peek")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-    let messages = state.read_messages(surface_id, from, peek);
-    let result: Vec<_> = messages
-        .iter()
-        .map(|m| json!({ "id": m.id, "from_surface_id": m.from_surface_id, "content": m.content }))
-        .collect();
-    JsonRpcResponse::success(id, json!(result))
-}
-
-fn handle_message_count(
-    state: &AppState,
-    id: serde_json::Value,
-    params: &serde_json::Value,
-) -> JsonRpcResponse {
-    let surface_id = params
-        .get("surface_id")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
-        .or_else(|| state.focused_surface_id())
-        .unwrap_or(0);
-    let count = state.message_count(surface_id);
-    JsonRpcResponse::success(id, json!({ "count": count }))
-}
-
-fn handle_message_clear(
-    state: &mut AppState,
-    id: serde_json::Value,
-    params: &serde_json::Value,
-) -> JsonRpcResponse {
-    let surface_id = params
-        .get("surface_id")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
-        .or_else(|| state.focused_surface_id())
-        .unwrap_or(0);
-    state.clear_messages(surface_id);
-    JsonRpcResponse::success(id, json!({ "cleared": true }))
-}
-
-fn handle_surface_meta_set(
-    state: &mut AppState,
-    id: serde_json::Value,
-    params: &serde_json::Value,
-) -> JsonRpcResponse {
-    let surface_id = params
-        .get("surface_id")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
-        .or_else(|| state.focused_surface_id())
-        .unwrap_or(0);
-    let key = match params.get("key").and_then(|v| v.as_str()) {
-        Some(k) => k,
-        None => return JsonRpcResponse::invalid_params(id, "Missing 'key' parameter"),
-    };
-    let value = match params.get("value").and_then(|v| v.as_str()) {
-        Some(v) => v,
-        None => return JsonRpcResponse::invalid_params(id, "Missing 'value' parameter"),
-    };
-    crate::surface_meta::SurfaceMetaStore::set(surface_id, key, value);
-    JsonRpcResponse::success(id, json!({ "ok": true }))
-}
-
-fn handle_surface_meta_get(
-    state: &mut AppState,
-    id: serde_json::Value,
-    params: &serde_json::Value,
-) -> JsonRpcResponse {
-    let surface_id = params
-        .get("surface_id")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
-        .or_else(|| state.focused_surface_id())
-        .unwrap_or(0);
-    let key = match params.get("key").and_then(|v| v.as_str()) {
-        Some(k) => k,
-        None => return JsonRpcResponse::invalid_params(id, "Missing 'key' parameter"),
-    };
-    let value = crate::surface_meta::SurfaceMetaStore::get(surface_id, key);
-    JsonRpcResponse::success(id, json!({ "value": value }))
-}
-
-fn handle_surface_meta_unset(
-    state: &mut AppState,
-    id: serde_json::Value,
-    params: &serde_json::Value,
-) -> JsonRpcResponse {
-    let surface_id = params
-        .get("surface_id")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
-        .or_else(|| state.focused_surface_id())
-        .unwrap_or(0);
-    let key = match params.get("key").and_then(|v| v.as_str()) {
-        Some(k) => k,
-        None => return JsonRpcResponse::invalid_params(id, "Missing 'key' parameter"),
-    };
-    crate::surface_meta::SurfaceMetaStore::unset(surface_id, key);
-    JsonRpcResponse::success(id, json!({ "ok": true }))
-}
-
-fn handle_surface_meta_list(
-    state: &mut AppState,
-    id: serde_json::Value,
-    params: &serde_json::Value,
-) -> JsonRpcResponse {
-    let surface_id = params
-        .get("surface_id")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
-        .or_else(|| state.focused_surface_id())
-        .unwrap_or(0);
-    let data = crate::surface_meta::SurfaceMetaStore::list(surface_id);
-    JsonRpcResponse::success(id, json!(data))
 }

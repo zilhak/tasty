@@ -1,21 +1,9 @@
 use crate::i18n::t;
-use crate::settings::{GeneralSettings, Settings};
-
-/// Active tab in the settings window.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum SettingsTab {
-    General,
-    Appearance,
-    Clipboard,
-    Notifications,
-    Keybindings,
-    Language,
-    Performance,
-}
+use crate::settings::Settings;
 
 /// Sub-tab within the Keybindings tab.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum KeybindingsSubTab {
+pub enum KeybindingsSubTab {
     General,
     Workspace,
     Pane,
@@ -23,271 +11,18 @@ enum KeybindingsSubTab {
     Preset,
 }
 
-/// Persistent state for the settings UI between frames.
-pub struct SettingsUiState {
-    active_tab: SettingsTab,
-    /// Working copy of settings being edited.
-    draft: Option<Settings>,
-    /// Which keybinding field is currently recording input (None = not recording).
-    recording_field: Option<String>,
-    /// Active sub-tab within keybindings.
-    keybindings_sub_tab: KeybindingsSubTab,
-    /// Pending preset name to apply (waiting for user confirmation).
-    preset_confirm: Option<String>,
-}
-
-impl SettingsUiState {
-    pub fn new() -> Self {
-        Self {
-            active_tab: SettingsTab::General,
-            draft: None,
-            recording_field: None,
-            keybindings_sub_tab: KeybindingsSubTab::General,
-            preset_confirm: None,
-        }
-    }
-}
-
-/// Draw settings directly as a full-window panel (for modal windows).
-/// Returns true if Save was clicked, false if Cancel was clicked, None otherwise.
-pub fn draw_settings_panel(
-    ctx: &egui::Context,
-    settings: &mut Settings,
-    ui_state: &mut SettingsUiState,
-) -> Option<bool> {
-    if ui_state.draft.is_none() {
-        ui_state.draft = Some(settings.clone());
-    }
-
-    let mut result = None;
-
-    // Bottom panel with Save/Cancel buttons (rendered first so it reserves space)
-    egui::TopBottomPanel::bottom("settings_buttons").show(ctx, |ui| {
-        ui.add_space(4.0);
-        ui.horizontal(|ui| {
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button(t("button.cancel")).clicked() {
-                    result = Some(false);
-                }
-                if ui.button(t("button.save")).clicked() {
-                    if let Some(draft) = &ui_state.draft {
-                        *settings = draft.clone();
-                    }
-                    result = Some(true);
-                }
-            });
-        });
-        ui.add_space(4.0);
-    });
-
-    egui::CentralPanel::default().show(ctx, |ui| {
-        ui.add_space(8.0);
-        ui.heading(t("settings.window.title"));
-        ui.add_space(8.0);
-
-        // Tab bar
-        ui.horizontal(|ui| {
-            let tabs = [
-                (SettingsTab::General, t("settings.tab.general")),
-                (SettingsTab::Appearance, t("settings.tab.appearance")),
-                (SettingsTab::Clipboard, t("settings.tab.clipboard")),
-                (SettingsTab::Notifications, t("settings.tab.notifications")),
-                (SettingsTab::Keybindings, t("settings.tab.keybindings")),
-                (SettingsTab::Language, t("settings.tab.language")),
-                (SettingsTab::Performance, "Performance"),
-            ];
-            for (tab, label) in &tabs {
-                let selected = ui_state.active_tab == *tab;
-                if ui.selectable_label(selected, *label).clicked() {
-                    ui_state.active_tab = *tab;
-                }
-            }
-        });
-        ui.separator();
-
-        {
-            let mut draft = ui_state.draft.take().unwrap();
-            let active_tab = ui_state.active_tab;
-
-            egui::ScrollArea::vertical()
-                .auto_shrink([false, false])
-                .show(ui, |ui| {
-                    match active_tab {
-                        SettingsTab::General => draw_general_tab(ui, &mut draft),
-                        SettingsTab::Appearance => draw_appearance_tab(ui, &mut draft),
-                        SettingsTab::Clipboard => draw_clipboard_tab(ui, &mut draft),
-                        SettingsTab::Notifications => draw_notifications_tab(ui, &mut draft),
-                        SettingsTab::Keybindings => draw_keybindings_tab(ui, &mut draft, &mut ui_state.recording_field, &mut ui_state.keybindings_sub_tab, &mut ui_state.preset_confirm),
-                        SettingsTab::Language => draw_language_tab(ui, &mut draft),
-                        SettingsTab::Performance => draw_performance_tab(ui, &mut draft),
-                    }
-                });
-
-            ui_state.draft = Some(draft);
-        }
-    });
-
-    result
-}
-
-fn draw_general_tab(ui: &mut egui::Ui, settings: &mut Settings) {
-    let th = crate::theme::theme();
-    ui.add_space(8.0);
-    ui.heading(t("settings.general.heading"));
-    ui.add_space(4.0);
-
-    // Show warning if shell is not valid
-    if !settings.general.is_shell_valid() {
-        ui.label(
-            egui::RichText::new(t("settings.general.shell_not_found"))
-                .color(th.yellow),
-        );
-        ui.add_space(4.0);
-    }
-
-    egui::Grid::new("general_grid")
-        .num_columns(2)
-        .spacing([12.0, 8.0])
-        .show(ui, |ui| {
-            ui.label(t("settings.general.shell_label"));
-            // Auto-detected bash path as hint, plus manual text input
-            if let Some(detected) = GeneralSettings::detect_bash() {
-                if settings.general.shell.is_empty() || !settings.general.is_shell_valid() {
-                    settings.general.shell = detected;
-                }
-            }
-            ui.text_edit_singleline(&mut settings.general.shell);
-            ui.end_row();
-
-            ui.label(t("settings.general.shell_mode_label"));
-            egui::ComboBox::from_id_salt("shell_mode")
-                .selected_text(match settings.general.shell_mode.as_str() {
-                    "fast" => t("settings.general.shell_mode_fast"),
-                    "custom" => t("settings.general.shell_mode_custom"),
-                    _ => t("settings.general.shell_mode_default"),
-                })
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut settings.general.shell_mode, "default".to_string(), t("settings.general.shell_mode_default"));
-                    ui.selectable_value(&mut settings.general.shell_mode, "fast".to_string(), t("settings.general.shell_mode_fast"));
-                    ui.selectable_value(&mut settings.general.shell_mode, "custom".to_string(), t("settings.general.shell_mode_custom"));
-                });
-            ui.end_row();
-
-            if settings.general.shell_mode == "custom" {
-                ui.label(t("settings.general.shell_args_label"));
-                ui.text_edit_singleline(&mut settings.general.shell_args);
-                ui.end_row();
-            }
-
-            ui.label(t("settings.general.startup_command_label"));
-            ui.text_edit_singleline(&mut settings.general.startup_command);
-            ui.end_row();
-
-            ui.label(t("settings.general.scrollback_lines_label"));
-            ui.add(egui::DragValue::new(&mut settings.general.scrollback_lines)
-                .range(0..=100000)
-                .speed(100));
-            ui.end_row();
-
-            ui.label(t("settings.general.confirm_close_label"));
-            ui.checkbox(&mut settings.general.confirm_close_running, "");
-            ui.end_row();
-
-            ui.label(t("settings.general.inherit_cwd_label"));
-            ui.checkbox(&mut settings.general.inherit_cwd, "");
-            ui.end_row();
-        });
-}
-
-fn draw_appearance_tab(ui: &mut egui::Ui, settings: &mut Settings) {
-    ui.add_space(8.0);
-    ui.heading(t("settings.appearance.heading"));
-    ui.add_space(4.0);
-
-    egui::Grid::new("appearance_grid")
-        .num_columns(2)
-        .spacing([12.0, 8.0])
-        .show(ui, |ui| {
-            ui.label(t("settings.appearance.font_family_label"));
-            ui.text_edit_singleline(&mut settings.appearance.font_family);
-            ui.end_row();
-
-            ui.label(t("settings.appearance.font_size_label"));
-            ui.add(egui::DragValue::new(&mut settings.appearance.font_size)
-                .range(6.0..=72.0)
-                .speed(0.5));
-            ui.end_row();
-
-            // Theme selector — currently only dark theme (Catppuccin Mocha) is supported
-            // Future: add theme file loading from ~/.tasty/themes/
-
-            ui.label(t("settings.appearance.background_opacity_label"));
-            ui.add(egui::Slider::new(&mut settings.appearance.background_opacity, 0.0..=1.0));
-            ui.end_row();
-
-            ui.label(t("settings.appearance.sidebar_width_label"));
-            ui.add(egui::DragValue::new(&mut settings.appearance.sidebar_width)
-                .range(100.0..=400.0)
-                .speed(1.0));
-            ui.end_row();
-
-            ui.label("UI Scale");
-            egui::ComboBox::from_id_salt("ui_scale")
-                .selected_text(match settings.appearance.ui_scale.as_str() {
-                    "small" => "Small",
-                    "large" => "Large",
-                    _ => "Medium",
-                })
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut settings.appearance.ui_scale, "small".to_string(), "Small");
-                    ui.selectable_value(&mut settings.appearance.ui_scale, "medium".to_string(), "Medium");
-                    ui.selectable_value(&mut settings.appearance.ui_scale, "large".to_string(), "Large");
-                });
-            ui.end_row();
-        });
-}
-
-fn draw_clipboard_tab(ui: &mut egui::Ui, settings: &mut Settings) {
-    ui.add_space(8.0);
-    ui.heading(t("settings.clipboard.heading"));
-    ui.add_space(4.0);
-
-    ui.checkbox(&mut settings.clipboard.macos_style, t("settings.clipboard.macos_style"));
-    ui.checkbox(&mut settings.clipboard.linux_style, t("settings.clipboard.linux_style"));
-    ui.checkbox(&mut settings.clipboard.windows_style, t("settings.clipboard.windows_style"));
-
-    ui.add_space(12.0);
-    ui.heading(t("settings.zoom.heading"));
-    ui.add_space(4.0);
-
-    ui.checkbox(&mut settings.zoom.ctrl_style, t("settings.zoom.ctrl_style"));
-    ui.checkbox(&mut settings.zoom.alt_style, t("settings.zoom.alt_style"));
-}
-
-fn draw_notifications_tab(ui: &mut egui::Ui, settings: &mut Settings) {
-    ui.add_space(8.0);
-    ui.heading(t("settings.notifications.heading"));
-    ui.add_space(4.0);
-
-    ui.checkbox(&mut settings.notification.enabled, t("settings.notifications.enabled"));
-    ui.checkbox(&mut settings.notification.system_notification, t("settings.notifications.system_notification"));
-    ui.checkbox(&mut settings.notification.sound, t("settings.notifications.sound"));
-
-    ui.add_space(8.0);
-    egui::Grid::new("notification_grid")
-        .num_columns(2)
-        .spacing([12.0, 8.0])
-        .show(ui, |ui| {
-            ui.label(t("settings.notifications.coalesce_interval_label"));
-            ui.add(egui::DragValue::new(&mut settings.notification.coalesce_ms)
-                .range(0..=5000)
-                .speed(50));
-            ui.end_row();
-        });
+/// Result of key capture attempt.
+pub enum KeyCapture {
+    /// No key pressed yet.
+    None,
+    /// User pressed Escape — clear the binding.
+    Clear,
+    /// A valid key combination was captured.
+    Combo(String),
 }
 
 #[allow(clippy::too_many_arguments)]
-fn draw_keybindings_tab(
+pub fn draw_keybindings_tab(
     ui: &mut egui::Ui,
     settings: &mut Settings,
     recording_field: &mut Option<String>,
@@ -299,11 +34,9 @@ fn draw_keybindings_tab(
     ui.heading(t("settings.keybindings.heading"));
     ui.add_space(4.0);
 
-    // Sub-tab layout: left menu + right content
     let available_height = ui.available_height() - 8.0;
 
     ui.horizontal_top(|ui| {
-        // Left menu with bordered frame, full height
         egui::Frame::new()
             .fill(th.crust)
             .stroke(egui::Stroke::new(1.0, th.surface0))
@@ -334,10 +67,8 @@ fn draw_keybindings_tab(
 
         ui.add_space(8.0);
 
-        // Right content area (vertical layout)
         ui.vertical(|ui| {
 
-        // If recording, capture key events from egui input
         let captured = capture_key_combo(ui.ctx(), recording_field.is_some());
 
         match *sub_tab {
@@ -357,7 +88,6 @@ fn draw_keybindings_tab(
                 ui.separator();
                 ui.add_space(4.0);
 
-                // Tab switch modifier: ComboBox
                 egui::Grid::new("tab_ws_modifier_grid")
                     .num_columns(2)
                     .spacing([12.0, 8.0])
@@ -450,7 +180,6 @@ fn draw_keybindings_tab(
     }
 }
 
-/// Display modifier name for ComboBox.
 fn modifier_display(modifier: &str) -> &str {
     match modifier.to_lowercase().as_str() {
         "alt" => "Alt",
@@ -458,7 +187,6 @@ fn modifier_display(modifier: &str) -> &str {
     }
 }
 
-/// Draw a list of keybinding capture entries in a grid.
 fn draw_keybinding_entries(
     ui: &mut egui::Ui,
     recording_field: &mut Option<String>,
@@ -522,17 +250,6 @@ fn draw_keybinding_entries(
         });
 }
 
-/// Result of key capture attempt.
-enum KeyCapture {
-    /// No key pressed yet.
-    None,
-    /// User pressed Escape — clear the binding.
-    Clear,
-    /// A valid key combination was captured.
-    Combo(String),
-}
-
-/// Read egui input events and build a key combo string like "ctrl+shift+n".
 fn capture_key_combo(ctx: &egui::Context, active: bool) -> KeyCapture {
     if !active {
         return KeyCapture::None;
@@ -545,12 +262,10 @@ fn capture_key_combo(ctx: &egui::Context, active: bool) -> KeyCapture {
                     continue;
                 }
 
-                // Escape clears the binding
                 if *key == egui::Key::Escape {
                     return KeyCapture::Clear;
                 }
 
-                // Ignore modifier-only keys
                 if is_modifier_only_key(key) {
                     continue;
                 }
@@ -560,8 +275,6 @@ fn capture_key_combo(ctx: &egui::Context, active: bool) -> KeyCapture {
                     if modifiers.ctrl {
                         parts.push("ctrl");
                     }
-                    // On macOS, Cmd (mac_cmd) maps to "alt" in our binding format
-                    // to match the physical key position (Cmd ↔ Alt).
                     #[cfg(target_os = "macos")]
                     if modifiers.mac_cmd {
                         parts.push("alt");
@@ -579,7 +292,6 @@ fn capture_key_combo(ctx: &egui::Context, active: bool) -> KeyCapture {
                         continue;
                     }
 
-                    // Require at least one modifier for regular typing keys
                     let is_typing_key = matches!(key,
                         egui::Key::A | egui::Key::B | egui::Key::C | egui::Key::D |
                         egui::Key::E | egui::Key::F | egui::Key::G | egui::Key::H |
@@ -607,12 +319,10 @@ fn capture_key_combo(ctx: &egui::Context, active: bool) -> KeyCapture {
     })
 }
 
-/// Returns true if the key is a modifier key only (no actual key).
 fn is_modifier_only_key(_key: &egui::Key) -> bool {
     false
 }
 
-/// Convert an egui::Key to a lowercase string representation.
 fn egui_key_to_string(key: &egui::Key) -> String {
     match key {
         egui::Key::A => "a".into(),
@@ -692,86 +402,4 @@ fn egui_key_to_string(key: &egui::Key) -> String {
         egui::Key::Equals => "=".into(),
         _ => String::new(),
     }
-}
-
-fn draw_language_tab(ui: &mut egui::Ui, settings: &mut Settings) {
-    let th = crate::theme::theme();
-    ui.add_space(8.0);
-    ui.heading(t("settings.language.heading"));
-    ui.add_space(4.0);
-
-    egui::Grid::new("language_grid")
-        .num_columns(2)
-        .spacing([12.0, 8.0])
-        .show(ui, |ui| {
-            ui.label(t("settings.language.label"));
-            egui::ComboBox::from_id_salt("language_select")
-                .selected_text(language_display_name(&settings.general.language))
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut settings.general.language, "en".to_string(), "English");
-                    ui.selectable_value(&mut settings.general.language, "ko".to_string(), "한국어");
-                    ui.selectable_value(&mut settings.general.language, "ja".to_string(), "日本語");
-                });
-            ui.end_row();
-        });
-
-    ui.add_space(8.0);
-    ui.label(
-        egui::RichText::new(t("settings.language.restart_notice"))
-            .small()
-            .color(th.yellow),
-    );
-}
-
-fn language_display_name(code: &str) -> &str {
-    match code {
-        "en" => "English",
-        "ko" => "한국어",
-        "ja" => "日本語",
-        _ => code,
-    }
-}
-
-fn draw_performance_tab(ui: &mut egui::Ui, settings: &mut crate::settings::Settings) {
-    let th = crate::theme::theme();
-    ui.heading("Performance");
-    ui.add_space(4.0);
-    ui.label(
-        egui::RichText::new("Changes require restart to take effect.")
-            .small()
-            .color(th.yellow), // Yellow warning
-    );
-    ui.add_space(12.0);
-
-    ui.checkbox(
-        &mut settings.performance.targeted_pty_polling,
-        "Targeted PTY polling",
-    );
-    ui.label(
-        egui::RichText::new("Only process terminals with new output instead of polling all. Reduces CPU with many surfaces.")
-            .small()
-            .color(egui::Color32::GRAY),
-    );
-    ui.add_space(8.0);
-
-    ui.checkbox(
-        &mut settings.performance.scrollback_disk_swap,
-        "Scrollback disk swap",
-    );
-    ui.label(
-        egui::RichText::new("Swap old scrollback lines to disk to reduce memory usage.")
-            .small()
-            .color(egui::Color32::GRAY),
-    );
-    ui.add_space(8.0);
-
-    ui.checkbox(
-        &mut settings.performance.lazy_pty_init,
-        "Lazy PTY initialization",
-    );
-    ui.label(
-        egui::RichText::new("Spawn shell processes only when a tab is first focused, not at creation.")
-            .small()
-            .color(egui::Color32::GRAY),
-    );
 }
