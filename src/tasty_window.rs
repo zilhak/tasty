@@ -921,10 +921,12 @@ impl TastyWindow {
                 }
                 Err(wgpu::SurfaceError::OutOfMemory) => {
                     tracing::error!("GPU out of memory");
-                    // Can't exit from here — App will handle
+                    crate::crash_report::record_error("GPU out of memory");
                 }
                 Err(e) => {
-                    tracing::warn!("surface error: {e}");
+                    let msg = format!("surface error: {e}");
+                    tracing::warn!("{}", msg);
+                    crate::crash_report::record_error(&msg);
                 }
             }
         }

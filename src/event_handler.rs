@@ -115,7 +115,9 @@ impl ApplicationHandler<AppEvent> for App {
                             event_loop.exit();
                         }
                         Err(e) => {
-                            tracing::warn!("shell setup render error: {e}");
+                            let msg = format!("shell setup render error: {e}");
+                            tracing::warn!("{}", msg);
+                            crate::crash_report::record_error(&msg);
                         }
                     }
                 }

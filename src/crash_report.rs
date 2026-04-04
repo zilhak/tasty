@@ -166,9 +166,8 @@ fn init_tracing() {
 // =============================================================================
 
 #[cfg(debug_assertions)]
-#[allow(dead_code)]
 pub mod error_loop {
-    use std::sync::Mutex;
+    use std::sync::{LazyLock, Mutex};
     use std::time::Instant;
 
     const WINDOW_SECS: u64 = 1;
@@ -224,8 +223,21 @@ pub mod error_loop {
             }
         }
     }
+
+    /// Global error loop detector instance.
+    static DETECTOR: LazyLock<ErrorLoopDetector> = LazyLock::new(ErrorLoopDetector::new);
+
+    /// Record an error for loop detection. Call this at recurring error sites
+    /// (render loop, event loop). Panics if the same error repeats >100 times/sec.
+    pub fn record_error(msg: &str) {
+        DETECTOR.record(msg);
+    }
 }
 
 #[cfg(debug_assertions)]
-#[allow(unused_imports)]
-pub use error_loop::ErrorLoopDetector;
+pub use error_loop::record_error;
+
+/// Record an error for loop detection (debug builds only, no-op in release).
+#[cfg(not(debug_assertions))]
+#[inline(always)]
+pub fn record_error(_msg: &str) {}

@@ -709,7 +709,9 @@ impl AppState {
                 self.send_fast_init(surface_id);
             }
             Err(e) => {
-                tracing::error!("Failed to respawn shell for surface {}: {}", surface_id, e);
+                let msg = format!("Failed to respawn shell for surface {}: {}", surface_id, e);
+                tracing::error!("{}", msg);
+                crate::crash_report::record_error(&msg);
             }
         }
     }
