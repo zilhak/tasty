@@ -110,6 +110,8 @@ pub fn compute_terminal_rect(surface_width: f32, surface_height: f32, sidebar_wi
 
 mod workspace;
 mod pane;
+mod pane_tree;
+mod tab;
 mod panel;
 mod surface_group;
 mod markdown_panel;
@@ -117,6 +119,8 @@ mod explorer_panel;
 
 pub use workspace::*;
 pub use pane::*;
+pub use pane_tree::*;
+pub use tab::*;
 pub use panel::*;
 pub use surface_group::*;
 pub use markdown_panel::*;

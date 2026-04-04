@@ -1,6 +1,6 @@
 use tasty_terminal::Terminal;
 use super::{DividerInfo, Rect, SplitDirection, SurfaceId, SURFACE_BORDER_WIDTH};
-use super::pane::FocusDirection;
+use super::pane_tree::FocusDirection;
 
 /// Which side of a split we descended into while building a path.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -15,7 +15,6 @@ pub struct SurfaceNode {
     pub terminal: Terminal,
     /// If lazy init is enabled and terminal hasn't been spawned yet,
     /// this holds the deferred spawn parameters.
-    #[allow(dead_code)]
     pub(crate) deferred_spawn: Option<DeferredSpawn>,
 }
 
