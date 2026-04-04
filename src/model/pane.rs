@@ -262,7 +262,9 @@ impl PaneNode {
         match self {
             PaneNode::Leaf(pane) => {
                 for tab in &mut pane.tabs {
-                    tab.panel_mut().for_each_terminal_mut(f);
+                    if let Some(panel) = tab.panel_mut_if_initialized() {
+                        panel.for_each_terminal_mut(f);
+                    }
                 }
             }
             PaneNode::Split { first, second, .. } => {
@@ -497,6 +499,7 @@ impl Pane {
                 deferred_spawn: None,
             })),
             deferred_spawn: None,
+            deferred_surface_id: None,
         };
         Ok(Self {
             id,
@@ -541,6 +544,7 @@ impl Pane {
                 deferred_spawn: None,
             })),
             deferred_spawn: None,
+            deferred_surface_id: None,
         };
         self.tabs.push(tab);
         self.active_tab = self.tabs.len() - 1;
@@ -583,33 +587,72 @@ impl Pane {
                 deferred_spawn: None,
             })),
             deferred_spawn: None,
+            deferred_surface_id: None,
         };
         self.tabs.push(tab);
         // Do NOT change self.active_tab
         Ok(())
     }
 
+    /// Add a deferred tab (lazy PTY init). The terminal will be spawned when the tab is first accessed.
+    pub fn add_tab_deferred(
+        &mut self,
+        tab_id: TabId,
+        surface_id: SurfaceId,
+        shell: Option<&str>,
+        shell_args: &[&str],
+        cols: usize,
+        rows: usize,
+        waker: Waker,
+        working_dir: Option<&std::path::Path>,
+    ) {
+        let tab = Tab {
+            id: tab_id,
+            name: format!("Shell {}", self.tabs.len() + 1),
+            panel_opt: None,
+            deferred_spawn: Some(super::surface_group::DeferredSpawn {
+                shell: shell.map(|s| s.to_string()),
+                shell_args: shell_args.iter().map(|s| s.to_string()).collect(),
+                cols,
+                rows,
+                waker,
+                working_dir: working_dir.map(|p| p.to_path_buf()),
+            }),
+            deferred_surface_id: Some(surface_id),
+        };
+        self.tabs.push(tab);
+    }
+
     /// Collect all surface IDs across all tabs in this pane.
     pub fn all_surface_ids(&self) -> Vec<SurfaceId> {
         let mut ids = Vec::new();
         for tab in &self.tabs {
-            ids.extend(tab.panel().all_surface_ids());
+            if let Some(panel) = tab.panel_if_initialized() {
+                ids.extend(panel.all_surface_ids());
+            }
         }
         ids
     }
 
-    /// Get the active tab's panel. Returns None if tabs are empty.
+    /// Get the active tab's panel. Returns None if tabs are empty or deferred (not yet initialized).
     pub fn active_panel(&self) -> Option<&Panel> {
         if self.tabs.is_empty() { return None; }
         let idx = self.active_tab.min(self.tabs.len() - 1);
-        Some(self.tabs[idx].panel())
+        self.tabs[idx].panel_if_initialized()
     }
 
-    /// Get the active tab's panel (mutable). Returns None if tabs are empty.
+    /// Get the active tab's panel (mutable). Returns None if tabs are empty or deferred.
     pub fn active_panel_mut(&mut self) -> Option<&mut Panel> {
         if self.tabs.is_empty() { return None; }
         let idx = self.active_tab.min(self.tabs.len() - 1);
-        Some(self.tabs[idx].panel_mut())
+        self.tabs[idx].panel_mut_if_initialized()
+    }
+
+    /// Ensure the active tab is initialized (lazy PTY spawn). Returns true if spawned.
+    pub fn ensure_active_tab_initialized(&mut self, surface_id: SurfaceId) -> bool {
+        if self.tabs.is_empty() { return false; }
+        let idx = self.active_tab.min(self.tabs.len() - 1);
+        self.tabs[idx].ensure_initialized(surface_id)
     }
 
     /// Split the active panel's focused surface with a custom shell.
@@ -680,7 +723,10 @@ impl Pane {
     ) -> anyhow::Result<()> {
         let new_terminal = Terminal::new_with_shell_args_cwd(cols, rows, shell, shell_args, new_surface_id, waker, working_dir)?;
         for tab in &mut self.tabs {
-            if tab.panel().find_terminal(target_surface_id).is_some() {
+            let has_target = tab.panel_if_initialized()
+                .map(|p| p.find_terminal(target_surface_id).is_some())
+                .unwrap_or(false);
+            if has_target {
                 let old_panel = tab.take_panel();
                 tab.put_panel(old_panel.split_surface_by_id_with_terminal(
                     target_surface_id, direction, new_surface_id, new_terminal,
@@ -726,8 +772,10 @@ impl Pane {
     /// Find a terminal by surface ID across all tabs (immutable).
     pub fn find_terminal(&self, surface_id: SurfaceId) -> Option<&Terminal> {
         for tab in &self.tabs {
-            if let Some(t) = tab.panel().find_terminal(surface_id) {
-                return Some(t);
+            if let Some(panel) = tab.panel_if_initialized() {
+                if let Some(t) = panel.find_terminal(surface_id) {
+                    return Some(t);
+                }
             }
         }
         None
@@ -736,7 +784,7 @@ impl Pane {
     /// Find a terminal by surface ID across all tabs (mutable).
     pub fn find_terminal_mut(&mut self, surface_id: SurfaceId) -> Option<&mut Terminal> {
         for tab in &mut self.tabs {
-            if let Some(t) = tab.panel_mut().find_terminal_mut(surface_id) {
+            if let Some(t) = tab.panel_mut_if_initialized().and_then(|p| p.find_terminal_mut(surface_id)) {
                 return Some(t);
             }
         }
@@ -779,7 +827,8 @@ impl Pane {
             id: tab_id,
             name,
             panel_opt: Some(panel),
-        deferred_spawn: None,
+            deferred_spawn: None,
+            deferred_surface_id: None,
         };
         self.tabs.push(tab);
         self.active_tab = self.tabs.len() - 1;
@@ -797,7 +846,8 @@ impl Pane {
             id: tab_id,
             name,
             panel_opt: Some(panel),
-        deferred_spawn: None,
+            deferred_spawn: None,
+            deferred_surface_id: None,
         };
         self.tabs.push(tab);
         self.active_tab = self.tabs.len() - 1;
@@ -816,7 +866,9 @@ impl Pane {
     pub fn all_terminals_mut(&mut self) -> Vec<&mut Terminal> {
         let mut result = Vec::new();
         for tab in &mut self.tabs {
-            tab.panel_mut().collect_terminals_mut(&mut result);
+            if let Some(panel) = tab.panel_mut_if_initialized() {
+                panel.collect_terminals_mut(&mut result);
+            }
         }
         result
     }
@@ -831,6 +883,8 @@ pub struct Tab {
     panel_opt: Option<Panel>,
     /// When lazy_pty_init is enabled, stores parameters to spawn PTY on first access.
     pub(crate) deferred_spawn: Option<super::surface_group::DeferredSpawn>,
+    /// Surface ID reserved for deferred spawn (set when lazy_pty_init creates the tab).
+    pub(crate) deferred_surface_id: Option<SurfaceId>,
 }
 
 impl Tab {
@@ -863,6 +917,21 @@ impl Tab {
                 false
             }
         }
+    }
+
+    /// Access the panel if already initialized. Returns None for deferred tabs.
+    pub fn panel_if_initialized(&self) -> Option<&Panel> {
+        self.panel_opt.as_ref()
+    }
+
+    /// Access the panel mutably if already initialized. Returns None for deferred tabs.
+    pub fn panel_mut_if_initialized(&mut self) -> Option<&mut Panel> {
+        self.panel_opt.as_mut()
+    }
+
+    /// Returns true if this tab has a deferred spawn pending.
+    pub fn is_deferred(&self) -> bool {
+        self.panel_opt.is_none() && self.deferred_spawn.is_some()
     }
 
     /// Access the panel mutably.

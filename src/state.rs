@@ -285,10 +285,17 @@ impl AppState {
         let shell_args_owned = self.engine.settings.general.effective_shell_args();
         let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
         let waker = self.engine.make_waker(surface_id);
-        if let Some(pane) = self.focused_pane_mut() {
-            pane.add_tab_background_with_shell_cwd(tab_id, surface_id, cols, rows, shell_ref, &shell_args, waker, cwd.as_deref())?;
+
+        if self.engine.settings.performance.lazy_pty_init {
+            if let Some(pane) = self.focused_pane_mut() {
+                pane.add_tab_deferred(tab_id, surface_id, shell_ref, &shell_args, cols, rows, waker, cwd.as_deref());
+            }
+        } else {
+            if let Some(pane) = self.focused_pane_mut() {
+                pane.add_tab_background_with_shell_cwd(tab_id, surface_id, cols, rows, shell_ref, &shell_args, waker, cwd.as_deref())?;
+            }
+            self.send_fast_init(surface_id);
         }
-        self.send_fast_init(surface_id);
         Ok(())
     }
 
@@ -940,7 +947,18 @@ impl AppState {
     /// Go to tab by index (0-based) in the focused pane.
     pub fn goto_tab_in_pane(&mut self, index: usize) -> bool {
         if let Some(pane) = self.focused_pane_mut() {
-            pane.goto_tab(index)
+            let switched = pane.goto_tab(index);
+            if switched {
+                // Trigger lazy PTY init if needed
+                if let Some(tab) = pane.active_tab_mut() {
+                    if let Some(sid) = tab.deferred_surface_id {
+                        if tab.ensure_initialized(sid) {
+                            self.send_fast_init(sid);
+                        }
+                    }
+                }
+            }
+            switched
         } else {
             false
         }
