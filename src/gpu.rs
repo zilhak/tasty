@@ -559,8 +559,8 @@ impl GpuState {
                     }
 
                     if let Some(rect) = surface_rect {
-                        let px = rect.x / scale_factor + 4.0 + cx as f32 * cell_w / scale_factor;
-                        let py = rect.y / scale_factor + 4.0 + cy as f32 * cell_h / scale_factor;
+                        let px = (rect.x + cx as f32 * cell_w) / scale_factor;
+                        let py = (rect.y + cy as f32 * cell_h) / scale_factor;
 
                         let th = crate::theme::theme();
                         let painter = ctx.layer_painter(egui::LayerId::new(
