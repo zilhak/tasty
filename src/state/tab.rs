@@ -13,19 +13,14 @@ impl AppState {
         let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
         let waker = self.engine.make_waker(surface_id);
         if let Some(pane) = self.focused_pane_mut() {
-            pane.add_tab_with_shell(tab_id, surface_id, cols, rows, shell_ref, &shell_args, waker)?;
+            pane.add_tab_with_shell(tab_id, surface_id, cols, rows, shell_ref, &shell_args, waker, None)?;
         }
         self.send_fast_init(surface_id);
         Ok(())
     }
 
-    /// Add a new tab in the focused pane without switching to it. Used by IPC/CLI.
-    pub fn add_tab_background(&mut self) -> anyhow::Result<()> {
-        self.add_tab_background_with_cwd(None)
-    }
-
-    /// Add a new tab without switching, with optional explicit cwd.
-    pub fn add_tab_background_with_cwd(&mut self, explicit_cwd: Option<std::path::PathBuf>) -> anyhow::Result<()> {
+    /// Add a new tab in the focused pane without switching to it, with optional explicit cwd.
+    pub fn add_tab_background(&mut self, explicit_cwd: Option<std::path::PathBuf>) -> anyhow::Result<()> {
         let cwd = explicit_cwd.or_else(|| self.resolve_inherit_cwd());
         let tab_id = self.engine.next_ids.next_tab();
         let surface_id = self.engine.next_ids.next_surface();
@@ -43,7 +38,7 @@ impl AppState {
             }
         } else {
             if let Some(pane) = self.focused_pane_mut() {
-                pane.add_tab_background_with_shell_cwd(tab_id, surface_id, cols, rows, shell_ref, &shell_args, waker, cwd.as_deref())?;
+                pane.add_tab_background_with_shell(tab_id, surface_id, cols, rows, shell_ref, &shell_args, waker, cwd.as_deref())?;
             }
             self.send_fast_init(surface_id);
         }

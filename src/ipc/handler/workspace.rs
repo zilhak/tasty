@@ -28,7 +28,7 @@ pub fn handle_workspace_create(
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
     let cwd = params.get("cwd").and_then(|v| v.as_str()).map(std::path::PathBuf::from);
-    match state.add_workspace_background_with_cwd(cwd) {
+    match state.add_workspace_background(cwd) {
         Ok(idx) => {
             if let Some(name) = params.get("name").and_then(|v| v.as_str()) {
                 if !name.is_empty() {

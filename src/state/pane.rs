@@ -18,7 +18,7 @@ impl AppState {
         let shell_args_owned = self.engine.settings.general.effective_shell_args();
         let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
         let new_pane =
-            crate::model::Pane::new_with_shell_cwd(new_pane_id, new_tab_id, new_surface_id, cols, rows, shell_ref, &shell_args, self.engine.make_waker(new_surface_id), cwd.as_deref())?;
+            crate::model::Pane::new_with_shell(new_pane_id, new_tab_id, new_surface_id, cols, rows, shell_ref, &shell_args, self.engine.make_waker(new_surface_id), cwd.as_deref())?;
 
         let ws = self.active_workspace_mut();
         let target_pane_id = ws.focused_pane;
@@ -41,23 +41,14 @@ impl AppState {
         let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
         let waker = self.engine.make_waker(new_surface_id);
         if let Some(pane) = self.focused_pane_mut() {
-            pane.split_active_surface_with_shell_cwd(direction, new_surface_id, cols, rows, shell_ref, &shell_args, waker, cwd.as_deref())?;
+            pane.split_active_surface_with_shell(direction, new_surface_id, cols, rows, shell_ref, &shell_args, waker, cwd.as_deref())?;
         }
         self.send_fast_init(new_surface_id);
         Ok(())
     }
 
-    /// Split a pane group with cross-workspace target support. Does NOT move focus.
+    /// Split a pane group with cross-workspace target support and optional cwd. Does NOT move focus.
     pub fn split_pane_targeted(
-        &mut self,
-        target_pane_id: Option<u32>,
-        direction: SplitDirection,
-    ) -> anyhow::Result<(u32, u32)> {
-        self.split_pane_targeted_with_cwd(target_pane_id, direction, None)
-    }
-
-    /// Split a pane group with optional explicit cwd.
-    pub fn split_pane_targeted_with_cwd(
         &mut self,
         target_pane_id: Option<u32>,
         direction: SplitDirection,
@@ -95,7 +86,7 @@ impl AppState {
         let shell_ref = if shell.is_empty() { None } else { Some(shell.as_str()) };
         let shell_args_owned = self.engine.settings.general.effective_shell_args();
         let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
-        let new_pane = crate::model::Pane::new_with_shell_cwd(
+        let new_pane = crate::model::Pane::new_with_shell(
             new_pane_id, new_tab_id, new_surface_id, cols, rows,
             shell_ref, &shell_args, self.engine.make_waker(new_surface_id),
             cwd.as_deref(),
@@ -109,17 +100,8 @@ impl AppState {
         Ok((new_pane_id, new_surface_id))
     }
 
-    /// Split a surface with cross-workspace target support. Does NOT move focus.
+    /// Split a surface with cross-workspace target support and optional cwd. Does NOT move focus.
     pub fn split_surface_targeted(
-        &mut self,
-        target_surface_id: Option<u32>,
-        direction: SplitDirection,
-    ) -> anyhow::Result<u32> {
-        self.split_surface_targeted_with_cwd(target_surface_id, direction, None)
-    }
-
-    /// Split a surface with optional explicit cwd.
-    pub fn split_surface_targeted_with_cwd(
         &mut self,
         target_surface_id: Option<u32>,
         direction: SplitDirection,
@@ -148,14 +130,14 @@ impl AppState {
                 let ws = &mut self.engine.workspaces[ws_idx];
                 let pane = ws.pane_layout_mut().find_pane_mut(pane_id)
                     .ok_or_else(|| anyhow::anyhow!("pane {} not found", pane_id))?;
-                pane.split_surface_by_id_with_shell_cwd(
+                pane.split_surface_by_id_with_shell(
                     sid, direction, new_surface_id, cols, rows,
                     shell_ref, &shell_args, waker, cwd.as_deref(),
                 )?;
             }
             None => {
                 if let Some(pane) = self.focused_pane_mut() {
-                    pane.split_active_surface_with_shell_cwd(
+                    pane.split_active_surface_with_shell(
                         direction, new_surface_id, cols, rows,
                         shell_ref, &shell_args, waker, cwd.as_deref(),
                     )?;
@@ -389,7 +371,7 @@ impl AppState {
         let shell_args_owned = self.engine.settings.general.effective_shell_args();
         let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
         let new_pane =
-            crate::model::Pane::new_with_shell(new_pane_id, new_tab_id, new_surface_id, cols, rows, shell_ref, &shell_args, self.engine.make_waker(new_surface_id))?;
+            crate::model::Pane::new_with_shell(new_pane_id, new_tab_id, new_surface_id, cols, rows, shell_ref, &shell_args, self.engine.make_waker(new_surface_id), None)?;
 
         let ws = self.active_workspace_mut();
         let target_pane_id = ws.focused_pane;

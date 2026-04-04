@@ -24,7 +24,7 @@ pub fn handle_tab_list(state: &AppState, id: serde_json::Value) -> JsonRpcRespon
 
 pub fn handle_tab_create(state: &mut AppState, id: serde_json::Value, params: &serde_json::Value) -> JsonRpcResponse {
     let cwd = params.get("cwd").and_then(|v| v.as_str()).map(std::path::PathBuf::from);
-    match state.add_tab_background_with_cwd(cwd) {
+    match state.add_tab_background(cwd) {
         Ok(_) => {
             let (tab_count, active_tab) = state
                 .focused_pane()

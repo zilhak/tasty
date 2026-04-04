@@ -241,8 +241,8 @@ fn pane_node_split_pane_in_place_not_found() {
 #[test]
 fn pane_close_tab_removes_tab() {
     let waker = noop_waker();
-    let mut pane = Pane::new_with_shell(1, 10, 100, 80, 24, None, &[], waker.clone()).expect("pane creation");
-    pane.add_tab_with_shell(11, 101, 80, 24, None, &[], waker).expect("add tab");
+    let mut pane = Pane::new_with_shell(1, 10, 100, 80, 24, None, &[], waker.clone(), None).expect("pane creation");
+    pane.add_tab_with_shell(11, 101, 80, 24, None, &[], waker, None).expect("add tab");
     assert_eq!(pane.tabs.len(), 2);
     assert!(pane.close_active_tab());
     assert_eq!(pane.tabs.len(), 1);
@@ -251,7 +251,7 @@ fn pane_close_tab_removes_tab() {
 #[test]
 fn pane_close_tab_last_tab_fails() {
     let waker = noop_waker();
-    let mut pane = Pane::new_with_shell(1, 10, 100, 80, 24, None, &[], waker).expect("pane creation");
+    let mut pane = Pane::new_with_shell(1, 10, 100, 80, 24, None, &[], waker, None).expect("pane creation");
     assert_eq!(pane.tabs.len(), 1);
     assert!(!pane.close_active_tab());
     assert_eq!(pane.tabs.len(), 1);
@@ -334,7 +334,7 @@ fn surface_group_layout_find_surface_at() {
 #[test]
 fn for_each_terminal_visits_single_pane() {
     let waker = noop_waker();
-    let pane = Pane::new_with_shell(1, 1, 100, 80, 24, None, &[], waker).unwrap();
+    let pane = Pane::new_with_shell(1, 1, 100, 80, 24, None, &[], waker, None).unwrap();
     let mut node = PaneNode::Leaf(pane);
     let mut visited = Vec::new();
     node.for_each_terminal_mut(&mut |sid, _terminal| {
@@ -346,8 +346,8 @@ fn for_each_terminal_visits_single_pane() {
 #[test]
 fn for_each_terminal_visits_split_panes() {
     let waker = noop_waker();
-    let p1 = Pane::new_with_shell(1, 1, 101, 80, 24, None, &[], waker.clone()).unwrap();
-    let p2 = Pane::new_with_shell(2, 2, 102, 80, 24, None, &[], waker).unwrap();
+    let p1 = Pane::new_with_shell(1, 1, 101, 80, 24, None, &[], waker.clone(), None).unwrap();
+    let p2 = Pane::new_with_shell(2, 2, 102, 80, 24, None, &[], waker, None).unwrap();
     let mut node = PaneNode::Split {
         direction: SplitDirection::Vertical,
         ratio: 0.5,
@@ -364,7 +364,7 @@ fn for_each_terminal_visits_split_panes() {
 #[test]
 fn for_each_terminal_mut_can_modify() {
     let waker = noop_waker();
-    let pane = Pane::new_with_shell(1, 1, 200, 80, 24, None, &[], waker).unwrap();
+    let pane = Pane::new_with_shell(1, 1, 200, 80, 24, None, &[], waker, None).unwrap();
     let mut node = PaneNode::Leaf(pane);
     let mut count = 0u32;
     node.for_each_terminal_mut(&mut |_sid, terminal| {

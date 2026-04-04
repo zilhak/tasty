@@ -65,7 +65,7 @@ pub fn handle_split(
     let cwd = params.get("cwd").and_then(|v| v.as_str()).map(std::path::PathBuf::from);
 
     match level {
-        "pane-group" => match state.split_pane_targeted_with_cwd(target_id, direction, cwd) {
+        "pane-group" => match state.split_pane_targeted(target_id, direction, cwd) {
             Ok((new_pane_id, new_surface_id)) => {
                 apply_meta(new_surface_id, meta);
                 JsonRpcResponse::success(
@@ -78,7 +78,7 @@ pub fn handle_split(
             }
             Err(e) => JsonRpcResponse::internal_error(id, e.to_string()),
         },
-        "surface" => match state.split_surface_targeted_with_cwd(target_id, direction, cwd) {
+        "surface" => match state.split_surface_targeted(target_id, direction, cwd) {
             Ok(new_surface_id) => {
                 apply_meta(new_surface_id, meta);
                 JsonRpcResponse::success(

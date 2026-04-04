@@ -15,7 +15,7 @@ impl AppState {
         let shell = if self.engine.settings.general.shell.is_empty() { None } else { Some(self.engine.settings.general.shell.as_str()) };
         let shell_args_owned = self.engine.settings.general.effective_shell_args();
         let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
-        let ws = Workspace::new_with_shell_cwd(
+        let ws = Workspace::new_with_shell(
             ws_id,
             name,
             self.engine.default_cols,
@@ -34,14 +34,9 @@ impl AppState {
         Ok(())
     }
 
-    /// Add a new workspace without switching to it. Used by IPC/CLI.
+    /// Add a new workspace without switching to it, with optional explicit cwd. Used by IPC/CLI.
     /// Returns the new workspace index.
-    pub fn add_workspace_background(&mut self) -> anyhow::Result<usize> {
-        self.add_workspace_background_with_cwd(None)
-    }
-
-    /// Add a new workspace without switching, with optional explicit cwd.
-    pub fn add_workspace_background_with_cwd(&mut self, explicit_cwd: Option<std::path::PathBuf>) -> anyhow::Result<usize> {
+    pub fn add_workspace_background(&mut self, explicit_cwd: Option<std::path::PathBuf>) -> anyhow::Result<usize> {
         let cwd = explicit_cwd.or_else(|| self.resolve_inherit_cwd());
         let ws_id = self.engine.next_ids.next_workspace();
         let pane_id = self.engine.next_ids.next_pane();
@@ -52,7 +47,7 @@ impl AppState {
         let shell = if self.engine.settings.general.shell.is_empty() { None } else { Some(self.engine.settings.general.shell.as_str()) };
         let shell_args_owned = self.engine.settings.general.effective_shell_args();
         let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
-        let ws = Workspace::new_with_shell_cwd(
+        let ws = Workspace::new_with_shell(
             ws_id,
             name,
             self.engine.default_cols,

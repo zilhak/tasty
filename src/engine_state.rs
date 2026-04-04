@@ -99,7 +99,7 @@ impl EngineState {
         let shell = if settings.general.shell.is_empty() { None } else { Some(settings.general.shell.as_str()) };
         let shell_args_owned = settings.general.effective_shell_args();
         let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
-        let ws = Workspace::new_with_shell(ws_id, "Workspace 1".to_string(), cols, rows, pane_id, tab_id, surface_id, shell, &shell_args, waker.clone())?;
+        let ws = Workspace::new_with_shell(ws_id, "Workspace 1".to_string(), cols, rows, pane_id, tab_id, surface_id, shell, &shell_args, waker.clone(), None)?;
 
         let mut engine = Self {
             workspaces: vec![ws],

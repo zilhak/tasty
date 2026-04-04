@@ -12,22 +12,8 @@ pub struct Pane {
 }
 
 impl Pane {
-    /// Create a Pane with a custom shell.
-    pub fn new_with_shell(
-        id: PaneId,
-        tab_id: TabId,
-        surface_id: SurfaceId,
-        cols: usize,
-        rows: usize,
-        shell: Option<&str>,
-        shell_args: &[&str],
-        waker: Waker,
-    ) -> anyhow::Result<Self> {
-        Self::new_with_shell_cwd(id, tab_id, surface_id, cols, rows, shell, shell_args, waker, None)
-    }
-
     /// Create a Pane with a custom shell and optional working directory.
-    pub fn new_with_shell_cwd(
+    pub fn new_with_shell(
         id: PaneId,
         tab_id: TabId,
         surface_id: SurfaceId,
@@ -57,22 +43,8 @@ impl Pane {
         })
     }
 
-    /// Add a new tab with a custom shell.
-    pub fn add_tab_with_shell(
-        &mut self,
-        tab_id: TabId,
-        surface_id: SurfaceId,
-        cols: usize,
-        rows: usize,
-        shell: Option<&str>,
-        shell_args: &[&str],
-        waker: Waker,
-    ) -> anyhow::Result<()> {
-        self.add_tab_with_shell_cwd(tab_id, surface_id, cols, rows, shell, shell_args, waker, None)
-    }
-
     /// Add a new tab with a custom shell and optional working directory.
-    pub fn add_tab_with_shell_cwd(
+    pub fn add_tab_with_shell(
         &mut self,
         tab_id: TabId,
         surface_id: SurfaceId,
@@ -100,22 +72,8 @@ impl Pane {
         Ok(())
     }
 
-    /// Add a new tab without changing the active tab. Used by IPC/CLI.
+    /// Add a new tab without changing the active tab, with optional working directory.
     pub fn add_tab_background_with_shell(
-        &mut self,
-        tab_id: TabId,
-        surface_id: SurfaceId,
-        cols: usize,
-        rows: usize,
-        shell: Option<&str>,
-        shell_args: &[&str],
-        waker: Waker,
-    ) -> anyhow::Result<()> {
-        self.add_tab_background_with_shell_cwd(tab_id, surface_id, cols, rows, shell, shell_args, waker, None)
-    }
-
-    /// Add a new tab without changing active tab, with optional working directory.
-    pub fn add_tab_background_with_shell_cwd(
         &mut self,
         tab_id: TabId,
         surface_id: SurfaceId,
@@ -204,22 +162,8 @@ impl Pane {
         self.tabs[idx].ensure_initialized(surface_id)
     }
 
-    /// Split the active panel's focused surface with a custom shell.
-    pub fn split_active_surface_with_shell(
-        &mut self,
-        direction: SplitDirection,
-        new_surface_id: SurfaceId,
-        cols: usize,
-        rows: usize,
-        shell: Option<&str>,
-        shell_args: &[&str],
-        waker: Waker,
-    ) -> anyhow::Result<()> {
-        self.split_active_surface_with_shell_cwd(direction, new_surface_id, cols, rows, shell, shell_args, waker, None)
-    }
-
     /// Split the active panel's focused surface with a custom shell and optional working directory.
-    pub fn split_active_surface_with_shell_cwd(
+    pub fn split_active_surface_with_shell(
         &mut self,
         direction: SplitDirection,
         new_surface_id: SurfaceId,
@@ -242,23 +186,8 @@ impl Pane {
         Ok(())
     }
 
-    /// Split a specific surface by ID (cross-tab search). Does NOT change focus.
-    pub fn split_surface_by_id_with_shell(
-        &mut self,
-        target_surface_id: SurfaceId,
-        direction: SplitDirection,
-        new_surface_id: SurfaceId,
-        cols: usize,
-        rows: usize,
-        shell: Option<&str>,
-        shell_args: &[&str],
-        waker: Waker,
-    ) -> anyhow::Result<()> {
-        self.split_surface_by_id_with_shell_cwd(target_surface_id, direction, new_surface_id, cols, rows, shell, shell_args, waker, None)
-    }
-
     /// Split a specific surface by ID with optional working directory.
-    pub fn split_surface_by_id_with_shell_cwd(
+    pub fn split_surface_by_id_with_shell(
         &mut self,
         target_surface_id: SurfaceId,
         direction: SplitDirection,

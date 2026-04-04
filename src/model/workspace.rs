@@ -13,24 +13,8 @@ pub struct Workspace {
 }
 
 impl Workspace {
-    /// Create a workspace with a custom shell.
-    pub fn new_with_shell(
-        id: WorkspaceId,
-        name: String,
-        cols: usize,
-        rows: usize,
-        pane_id: PaneId,
-        tab_id: TabId,
-        surface_id: SurfaceId,
-        shell: Option<&str>,
-        shell_args: &[&str],
-        waker: Waker,
-    ) -> anyhow::Result<Self> {
-        Self::new_with_shell_cwd(id, name, cols, rows, pane_id, tab_id, surface_id, shell, shell_args, waker, None)
-    }
-
     /// Create a workspace with a custom shell and optional working directory.
-    pub fn new_with_shell_cwd(
+    pub fn new_with_shell(
         id: WorkspaceId,
         name: String,
         cols: usize,
@@ -43,7 +27,7 @@ impl Workspace {
         waker: Waker,
         working_dir: Option<&std::path::Path>,
     ) -> anyhow::Result<Self> {
-        let pane = Pane::new_with_shell_cwd(pane_id, tab_id, surface_id, cols, rows, shell, shell_args, waker, working_dir)?;
+        let pane = Pane::new_with_shell(pane_id, tab_id, surface_id, cols, rows, shell, shell_args, waker, working_dir)?;
         let focused_pane = pane_id;
         Ok(Self {
             id,
