@@ -114,6 +114,7 @@ mod pane_tree;
 mod tab;
 mod panel;
 mod surface_group;
+mod surface_layout;
 mod markdown_panel;
 mod explorer_panel;
 
