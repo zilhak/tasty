@@ -45,14 +45,14 @@ tasty info                    # 버전, 워크스페이스 수
 
 # 워크스페이스
 tasty list                    # 워크스페이스 목록
-tasty new-workspace [--name NAME]
+tasty new-workspace [--name NAME] [--cwd PATH]
 tasty select-workspace INDEX  # 0-based
 
 # 패인/탭
 tasty panes                   # 패인 목록
-tasty split --level pane-group|surface [--target ID] [--direction vertical|horizontal]
+tasty split --level pane-group|surface [--target ID] [--direction vertical|horizontal] [--cwd PATH]
 tasty close-pane
-tasty new-tab
+tasty new-tab [--cwd PATH]
 tasty close-tab
 
 # 터미널 (Surface)
@@ -132,7 +132,7 @@ tasty claude-wait --child 42 --timeout 60 # 타임아웃 60초로 대기
 | 메서드 | 파라미터 | 설명 |
 |--------|---------|------|
 | `workspace.list` | 없음 | 전체 워크스페이스 목록 (id, name, subtitle, description, active) |
-| `workspace.create` | `name?, subtitle?, description?` | 새 워크스페이스 생성 후 활성화 |
+| `workspace.create` | `name?, subtitle?, description?, cwd?` | 새 워크스페이스 생성 후 활성화 |
 | `workspace.update` | `index?\|id?, name?, subtitle?, description?` | 워크스페이스 정보 수정 (생략 시 활성 워크스페이스) |
 | `workspace.select` | `index: number` | 워크스페이스 전환 (0-based) |
 | `tree` | 없음 | 전체 계층 구조 (워크스페이스 → 패인 → 탭) |
@@ -142,7 +142,7 @@ tasty claude-wait --child 42 --timeout 60 # 타임아웃 60초로 대기
 | 메서드 | 파라미터 | 설명 |
 |--------|---------|------|
 | `pane.list` | 없음 | 활성 워크스페이스의 패인 목록 |
-| `split` | `level: "pane-group"\|"surface"`, `target_id?: number`, `direction?: "vertical"\|"horizontal"` | 분할. level로 상위/하위 레이아웃 선택, target_id로 대상 지정 (생략 시 focused), 포커스 이동 없음 |
+| `split` | `level: "pane-group"\|"surface"`, `target_id?: number`, `direction?: "vertical"\|"horizontal"`, `cwd?: string` | 분할. level로 상위/하위 레이아웃 선택, target_id로 대상 지정 (생략 시 focused), 포커스 이동 없음. cwd로 작업 디렉토리 지정 가능 |
 | `pane.close` | 없음 | 포커스된 패인 닫기 |
 | `pane.focus` | `pane_id: number` | 특정 패인에 포커스 |
 | `focus.direction` | `direction: "left"\|"right"\|"up"\|"down"` | 방향성 포커스 이동 (SurfaceGroup 내부 우선, 이후 패인 간) |
@@ -152,7 +152,7 @@ tasty claude-wait --child 42 --timeout 60 # 타임아웃 60초로 대기
 | 메서드 | 파라미터 | 설명 |
 |--------|---------|------|
 | `tab.list` | 없음 | 포커스된 패인의 탭 목록 |
-| `tab.create` | 없음 | 새 탭 생성 |
+| `tab.create` | `cwd?: string` | 새 탭 생성. cwd로 작업 디렉토리 지정 가능 |
 | `tab.close` | 없음 | 활성 탭 닫기 |
 | `tab.open_markdown` | `file_path`, `pane_id?` | 마크다운 뷰어 탭 열기 |
 | `tab.open_explorer` | `path?`, `pane_id?` | 파일 탐색기 탭 열기 (path 생략 시 홈 디렉토리) |
