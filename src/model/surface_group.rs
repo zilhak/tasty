@@ -1,5 +1,5 @@
 use tasty_terminal::Terminal;
-use super::{Rect, SplitDirection, SurfaceId};
+use super::{Rect, SurfaceId};
 use super::pane_tree::FocusDirection;
 pub use super::surface_layout::SurfaceGroupLayout;
 

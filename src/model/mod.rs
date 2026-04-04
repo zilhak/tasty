@@ -121,7 +121,6 @@ mod explorer_panel;
 pub use workspace::*;
 pub use pane::*;
 pub use pane_tree::*;
-pub use tab::*;
 pub use panel::*;
 pub use surface_group::*;
 pub use markdown_panel::*;
