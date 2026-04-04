@@ -1,7 +1,6 @@
-use tasty_terminal::{Terminal, Waker};
+use tasty_terminal::Terminal;
 use super::{
-    DividerInfo, ExplorerPanel, MarkdownPanel, Pane, PaneId, Panel, Rect, SplitDirection, SurfaceId,
-    SurfaceNode, Tab, TabId,
+    DividerInfo, Pane, PaneId, Rect, SplitDirection, SurfaceId,
 };
 
 /// Directional focus movement.
