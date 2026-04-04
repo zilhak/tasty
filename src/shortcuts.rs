@@ -143,360 +143,297 @@ impl TastyWindow {
     pub(crate) fn handle_shortcut(&mut self, key: &Key, mods: ModifiersState) -> bool {
         let ctrl = mods.control_key();
         let shift = mods.shift_key();
-        // On macOS, "alt" maps to Cmd (super_key) — physical position match.
         #[cfg(target_os = "macos")]
         let alt = mods.super_key();
         #[cfg(not(target_os = "macos"))]
         let alt = mods.alt_key();
 
-        // Pre-compute values that need &self before borrowing &mut self.state
         let terminal_rect = self.compute_terminal_rect();
         let cell_w = self.gpu.cell_width();
         let cell_h = self.gpu.cell_height();
 
-        // Clipboard copy shortcuts (handled before state borrow to avoid borrow conflict)
-        // Linux style: Ctrl+Shift+C
-        if ctrl && shift {
-            if let Key::Character(c) = key {
-                if (c.as_str() == "C" || c.as_str() == "c")
-                    && self.state.engine.settings.clipboard.linux_style
-                {
-                    if self.copy_selection_to_clipboard() {
-                        self.mark_dirty();
-                        return true;
-                    }
-                }
-            }
-        }
-        // Windows style: Ctrl+C — copy if selection exists, else let SIGINT through
-        if ctrl && !shift && !alt {
-            if let Key::Character(c) = key {
-                if (c.as_str() == "c" || c.as_str() == "C" || c.as_str() == "\x03")
-                    && self.state.engine.settings.clipboard.windows_style
-                {
-                    if self.copy_selection_to_clipboard() {
-                        self.mark_dirty();
-                        return true;
-                    }
-                    // No selection — fall through so \x03 reaches terminal as SIGINT
-                }
-            }
-        }
-        // macOS style: Alt+C
-        if alt && !ctrl && !shift {
-            if let Key::Character(c) = key {
-                if (c.as_str() == "c" || c.as_str() == "C")
-                    && self.state.engine.settings.clipboard.macos_style
-                {
-                    if self.copy_selection_to_clipboard() {
-                        self.mark_dirty();
-                        return true;
-                    }
-                }
-            }
+        // Clipboard copy (needs &self before state borrow)
+        if self.handle_copy_shortcut(key, ctrl, shift, alt) {
+            return true;
         }
 
-        let state = &mut self.state;
-        let kb = state.engine.settings.keybindings.clone();
+        let kb = self.state.engine.settings.keybindings.clone();
 
+        // Configurable keybinding shortcuts
+        if Self::handle_keybinding_shortcuts(&mut self.state, &kb, key, mods, terminal_rect, cell_w, cell_h, &self.proxy) {
+            self.dirty = true;
+            return true;
+        }
+
+        // Hardcoded shortcuts (tab switch, Ctrl+W, number switch)
+        if Self::handle_hardcoded_shortcuts(&mut self.state, &kb, key, ctrl, shift, alt, terminal_rect, cell_w, cell_h) {
+            self.dirty = true;
+            return true;
+        }
+
+        // Clipboard paste
+        if self.handle_paste_shortcut(key, ctrl, shift, alt) {
+            return true;
+        }
+
+        // Zoom
+        if Self::handle_zoom_shortcut(&mut self.state, key, ctrl, shift, alt) {
+            self.dirty = true;
+            return true;
+        }
+
+        false
+    }
+
+    fn handle_copy_shortcut(&mut self, key: &Key, ctrl: bool, shift: bool, alt: bool) -> bool {
+        let clipboard = &self.state.engine.settings.clipboard;
+        if let Key::Character(c) = key {
+            let s = c.as_str().to_lowercase();
+            let is_c = s == "c" || c.as_str() == "\x03";
+            if is_c {
+                if (ctrl && shift && clipboard.linux_style)
+                    || (ctrl && !shift && !alt && clipboard.windows_style)
+                    || (alt && !ctrl && !shift && clipboard.macos_style)
+                {
+                    if self.copy_selection_to_clipboard() {
+                        self.mark_dirty();
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    fn handle_keybinding_shortcuts(
+        state: &mut crate::state::AppState,
+        kb: &crate::settings::KeybindingSettings,
+        key: &Key,
+        mods: ModifiersState,
+        terminal_rect: crate::model::Rect,
+        cell_w: f32,
+        cell_h: f32,
+        proxy: &winit::event_loop::EventLoopProxy<crate::AppEvent>,
+    ) -> bool {
         if matches_binding(&kb.new_workspace, key, mods) {
             let _ = state.add_workspace();
-            self.mark_dirty();
             return true;
         }
         if matches_binding(&kb.new_tab, key, mods) {
             let _ = state.add_tab();
-            self.mark_dirty();
             return true;
         }
         if matches_binding(&kb.split_pane_vertical, key, mods) {
             let _ = state.split_pane(SplitDirection::Vertical);
             state.resize_all(terminal_rect, cell_w, cell_h);
-            self.mark_dirty();
             return true;
         }
         if matches_binding(&kb.split_pane_horizontal, key, mods) {
             let _ = state.split_pane(SplitDirection::Horizontal);
             state.resize_all(terminal_rect, cell_w, cell_h);
-            self.mark_dirty();
             return true;
         }
         if matches_binding(&kb.split_surface_vertical, key, mods) {
             let _ = state.split_surface(SplitDirection::Vertical);
             state.resize_all(terminal_rect, cell_w, cell_h);
-            self.mark_dirty();
             return true;
         }
         if matches_binding(&kb.split_surface_horizontal, key, mods) {
             let _ = state.split_surface(SplitDirection::Horizontal);
             state.resize_all(terminal_rect, cell_w, cell_h);
-            self.mark_dirty();
             return true;
         }
-
-        // --- Configurable shortcuts (previously hardcoded) ---
-
-        // Open settings modal
         if matches_binding(&kb.toggle_settings, key, mods) {
-            let _ = self.proxy.send_event(crate::AppEvent::OpenSettings);
+            let _ = proxy.send_event(crate::AppEvent::OpenSettings);
             return true;
         }
-
-        // Toggle notification panel
         if matches_binding(&kb.toggle_notifications, key, mods) {
             state.notification_panel_open = !state.notification_panel_open;
             if state.notification_panel_open {
                 state.engine.notifications.mark_all_read();
             }
-            self.mark_dirty();
             return true;
         }
-
-        // Close active workspace
         if matches_binding(&kb.close_workspace, key, mods) {
             state.close_active_workspace();
             state.ensure_workspace_exists();
             state.resize_all(terminal_rect, cell_w, cell_h);
-            self.mark_dirty();
             return true;
         }
-
-        // Close active pane (fallback: close workspace if last pane)
         if matches_binding(&kb.close_pane, key, mods) {
-            if state.close_active_pane() {
-                state.resize_all(terminal_rect, cell_w, cell_h);
-                self.mark_dirty();
-                return true;
+            if !state.close_active_pane() {
+                state.close_active_workspace();
+                state.ensure_workspace_exists();
             }
-            // Last pane — close workspace and ensure one exists
-            state.close_active_workspace();
-            state.ensure_workspace_exists();
             state.resize_all(terminal_rect, cell_w, cell_h);
-            self.mark_dirty();
             return true;
         }
-
-        // Close active surface (fallback: pane → workspace)
         if matches_binding(&kb.close_surface, key, mods) {
-            if state.close_active_surface() {
-                state.resize_all(terminal_rect, cell_w, cell_h);
-                self.mark_dirty();
-                return true;
+            if !state.close_active_surface() {
+                if !state.close_active_pane() {
+                    state.close_active_workspace();
+                    state.ensure_workspace_exists();
+                }
             }
-            // Surface was the only one in the group — try closing the pane
-            if state.close_active_pane() {
-                state.resize_all(terminal_rect, cell_w, cell_h);
-                self.mark_dirty();
-                return true;
-            }
-            // Last pane — close workspace and ensure one exists
-            state.close_active_workspace();
-            state.ensure_workspace_exists();
             state.resize_all(terminal_rect, cell_w, cell_h);
-            self.mark_dirty();
             return true;
         }
-
-        // Focus pane next/prev
         if matches_binding(&kb.focus_pane_next, key, mods) {
             state.move_pane_focus_forward();
-            self.mark_dirty();
             return true;
         }
         if matches_binding(&kb.focus_pane_prev, key, mods) {
             state.move_pane_focus_backward();
-            self.mark_dirty();
             return true;
         }
-
-        // Focus surface next/prev
         if matches_binding(&kb.focus_surface_next, key, mods) {
             state.move_surface_focus_forward();
-            self.mark_dirty();
             return true;
         }
         if matches_binding(&kb.focus_surface_prev, key, mods) {
             state.move_surface_focus_backward();
-            self.mark_dirty();
             return true;
         }
-
-        // Sidebar toggle (open/close)
         if matches_binding(&kb.toggle_sidebar, key, mods) {
             state.sidebar_visible = !state.sidebar_visible;
-            self.mark_dirty();
             return true;
         }
-
-        // Sidebar collapse (full/compact)
         if matches_binding(&kb.toggle_sidebar_collapse, key, mods) {
             state.sidebar_collapsed = !state.sidebar_collapsed;
-            self.mark_dirty();
             return true;
         }
+        false
+    }
 
-        // --- Hardcoded shortcuts (not user-configurable) ---
-
-        // Ctrl+Shift+Tab: previous tab in focused pane
+    fn handle_hardcoded_shortcuts(
+        state: &mut crate::state::AppState,
+        kb: &crate::settings::KeybindingSettings,
+        key: &Key,
+        ctrl: bool,
+        shift: bool,
+        alt: bool,
+        terminal_rect: crate::model::Rect,
+        cell_w: f32,
+        cell_h: f32,
+    ) -> bool {
+        // Ctrl+Shift+Tab: previous tab
         if ctrl && shift {
             if let Key::Named(NamedKey::Tab) = key {
                 state.prev_tab_in_pane();
-                self.mark_dirty();
                 return true;
             }
         }
 
-        // Ctrl+W: Close active tab (fallback: pane → workspace)
+        // Ctrl+W: close tab → pane → workspace
         if ctrl && !shift && !alt {
             if let Key::Character(c) = key {
                 let s = c.as_str();
                 if s == "w" || s == "W" || s == "\u{17}" {
-                    if state.close_active_tab() {
-                        self.mark_dirty();
-                        return true;
-                    }
-                    // Last tab — try closing the pane
-                    if state.close_active_pane() {
+                    if !state.close_active_tab() {
+                        if !state.close_active_pane() {
+                            state.close_active_workspace();
+                            state.ensure_workspace_exists();
+                        }
                         state.resize_all(terminal_rect, cell_w, cell_h);
-                        self.mark_dirty();
-                        return true;
                     }
-                    // Last pane — close workspace and ensure one exists
-                    state.close_active_workspace();
-                    state.ensure_workspace_exists();
-                    state.resize_all(terminal_rect, cell_w, cell_h);
-                    self.mark_dirty();
                     return true;
                 }
             }
         }
 
-        // Ctrl+Tab: next tab in focused pane
+        // Ctrl+Tab: next tab
         if ctrl && !shift && !alt {
             if let Key::Named(NamedKey::Tab) = key {
                 state.next_tab_in_pane();
-                self.mark_dirty();
                 return true;
             }
         }
 
-        // Configurable modifier+1~0: switch tab in focused pane
-        // Configurable modifier+1~9: switch workspace
-        {
-            let tab_mod = kb.tab_switch_modifier.to_lowercase();
-            let ws_mod = kb.workspace_switch_modifier.to_lowercase();
+        // Number key tab/workspace switching
+        if let Key::Character(c) = key {
+            let ch = c.chars().next().unwrap_or('\0');
+            if ch.is_ascii_digit() {
+                let tab_mod = kb.tab_switch_modifier.to_lowercase();
+                let tab_mod_matches = match tab_mod.as_str() {
+                    "alt" => alt && !ctrl && !shift,
+                    _ => ctrl && !shift && !alt,
+                };
+                if tab_mod_matches {
+                    let index = if ch == '0' { 9 } else { (ch as usize) - ('1' as usize) };
+                    state.goto_tab_in_pane(index);
+                    return true;
+                }
 
-            if let Key::Character(c) = key {
-                let ch = c.chars().next().unwrap_or('\0');
-                if ch.is_ascii_digit() {
-                    // Tab switch: modifier + number
-                    let tab_mod_matches = match tab_mod.as_str() {
-                        "alt" => alt && !ctrl && !shift,
-                        _ => ctrl && !shift && !alt,  // default: ctrl
-                    };
-                    if tab_mod_matches {
-                        let index = if ch == '0' { 9 } else { (ch as usize) - ('1' as usize) };
-                        if state.goto_tab_in_pane(index) {
-                            self.mark_dirty();
+                let ws_mod = kb.workspace_switch_modifier.to_lowercase();
+                let ws_mod_matches = match ws_mod.as_str() {
+                    "ctrl" => ctrl && !shift && !alt,
+                    _ => alt && !ctrl && !shift,
+                };
+                if ws_mod_matches {
+                    if let Some(digit) = ch.to_digit(10) {
+                        if digit >= 1 && digit <= 9 {
+                            state.switch_workspace((digit - 1) as usize);
                             return true;
                         }
-                        return false;
-                    }
-
-                    // Workspace switch: modifier + number (1~9)
-                    let ws_mod_matches = match ws_mod.as_str() {
-                        "ctrl" => ctrl && !shift && !alt,
-                        _ => alt && !ctrl && !shift,  // default: alt
-                    };
-                    if ws_mod_matches {
-                        if let Some(digit) = ch.to_digit(10) {
-                            if digit >= 1 && digit <= 9 {
-                                state.switch_workspace((digit - 1) as usize);
-                                self.mark_dirty();
-                                return true;
-                            }
-                        }
                     }
                 }
             }
         }
 
-        // Clipboard paste shortcuts
-        if ctrl && shift {
-            if let Key::Character(c) = key {
-                if (c.as_str() == "V" || c.as_str() == "v")
-                    && state.engine.settings.clipboard.linux_style
-                {
-                    self.paste_to_terminal();
-                    self.mark_dirty();
-                    return true;
-                }
-            }
-        }
-        if ctrl && !shift && !alt {
-            if let Key::Character(c) = key {
-                if (c.as_str() == "v" || c.as_str() == "V" || c.as_str() == "\u{16}")
-                    && state.engine.settings.clipboard.windows_style
-                {
-                    self.paste_to_terminal();
-                    self.mark_dirty();
-                    return true;
-                }
-            }
-        }
-        if alt && !ctrl && !shift {
-            if let Key::Character(c) = key {
-                if (c.as_str() == "v" || c.as_str() == "V")
-                    && state.engine.settings.clipboard.macos_style
-                {
-                    self.paste_to_terminal();
-                    self.mark_dirty();
-                    return true;
-                }
-            }
-        }
+        false
+    }
 
-        // Zoom: increase font size (Ctrl or Alt depending on settings)
+    fn handle_paste_shortcut(&mut self, key: &Key, ctrl: bool, shift: bool, alt: bool) -> bool {
+        let clipboard = &self.state.engine.settings.clipboard;
+        if let Key::Character(c) = key {
+            let s = c.as_str().to_lowercase();
+            let is_v = s == "v" || c.as_str() == "\u{16}";
+            if is_v {
+                if (ctrl && shift && clipboard.linux_style)
+                    || (ctrl && !shift && !alt && clipboard.windows_style)
+                    || (alt && !ctrl && !shift && clipboard.macos_style)
+                {
+                    self.paste_to_terminal();
+                    self.mark_dirty();
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    fn handle_zoom_shortcut(
+        state: &mut crate::state::AppState,
+        key: &Key,
+        ctrl: bool,
+        shift: bool,
+        alt: bool,
+    ) -> bool {
         let zoom_ctrl = ctrl && !alt && state.engine.settings.zoom.ctrl_style;
         let zoom_alt = alt && !ctrl && state.engine.settings.zoom.alt_style;
-        if zoom_ctrl || zoom_alt {
-            if let Key::Character(c) = key {
-                if c.as_str() == "=" || c.as_str() == "+" {
-                    let current = state.engine.settings.appearance.font_size;
-                    let new_size = (current + 1.0).min(72.0);
-                    state.engine.settings.appearance.font_size = new_size;
-                    self.mark_dirty();
-                    return true;
-                }
-            }
+        if !(zoom_ctrl || zoom_alt) {
+            return false;
         }
 
-        // Zoom: decrease font size
-        if zoom_ctrl || zoom_alt {
-            if let Key::Character(c) = key {
-                if c.as_str() == "-" {
+        if let Key::Character(c) = key {
+            match c.as_str() {
+                "=" | "+" => {
                     let current = state.engine.settings.appearance.font_size;
-                    let new_size = (current - 1.0).max(6.0);
-                    state.engine.settings.appearance.font_size = new_size;
-                    self.mark_dirty();
+                    state.engine.settings.appearance.font_size = (current + 1.0).min(72.0);
                     return true;
                 }
-            }
-        }
-
-        // Zoom: reset font size to default (14)
-        let zoom_ctrl_no_shift = ctrl && !shift && !alt && state.engine.settings.zoom.ctrl_style;
-        let zoom_alt_no_shift = alt && !shift && !ctrl && state.engine.settings.zoom.alt_style;
-        if zoom_ctrl_no_shift || zoom_alt_no_shift {
-            if let Key::Character(c) = key {
-                if c.as_str() == "0" {
+                "-" => {
+                    let current = state.engine.settings.appearance.font_size;
+                    state.engine.settings.appearance.font_size = (current - 1.0).max(6.0);
+                    return true;
+                }
+                "0" if !shift => {
                     state.engine.settings.appearance.font_size = 14.0;
-                    self.mark_dirty();
                     return true;
                 }
+                _ => {}
             }
         }
-
         false
     }
 }
