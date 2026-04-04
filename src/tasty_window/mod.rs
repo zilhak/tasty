@@ -1,0 +1,159 @@
+mod clipboard;
+mod keyboard;
+mod mouse;
+mod redraw;
+mod selection;
+
+use std::sync::Arc;
+
+use winit::event::WindowEvent;
+use winit::event_loop::ActiveEventLoop;
+use winit::keyboard::ModifiersState;
+use winit::window::{CursorIcon, Window};
+
+use crate::gpu::GpuState;
+use crate::model::Rect;
+use crate::selection::TextSelection;
+use crate::state::AppState;
+use crate::{AppEvent, ClipboardContext};
+
+/// A single Tasty window with its own GPU state, UI state, and input state.
+pub struct TastyWindow {
+    pub(crate) gpu: GpuState,
+    pub(crate) state: AppState,
+    pub(crate) window: Arc<Window>,
+    pub(crate) dirty: bool,
+    pub(crate) modifiers: ModifiersState,
+    pub(crate) window_focused: bool,
+    pub(crate) cursor_position: Option<winit::dpi::PhysicalPosition<f64>>,
+    pub(crate) dragging_divider: Option<crate::DividerDrag>,
+    pub(crate) clipboard: Option<ClipboardContext>,
+    pub(crate) preedit_text: String,
+    pub(crate) proxy: winit::event_loop::EventLoopProxy<AppEvent>,
+    pub(crate) text_selection: Option<TextSelection>,
+    pub(crate) left_mouse_down: bool,
+    pub(crate) last_click_time: Option<std::time::Instant>,
+    pub(crate) last_click_pos: Option<(usize, usize)>,
+    pub(crate) click_count: u8,
+    pub(crate) arrow_queue: Option<crate::click_cursor::ArrowQueue>,
+}
+
+impl TastyWindow {
+    pub fn new(gpu: GpuState, state: AppState, window: Arc<Window>, proxy: winit::event_loop::EventLoopProxy<AppEvent>) -> Self {
+        Self {
+            gpu, state, window,
+            dirty: true,
+            modifiers: ModifiersState::empty(),
+            window_focused: true,
+            cursor_position: None,
+            dragging_divider: None,
+            clipboard: ClipboardContext::new(),
+            preedit_text: String::new(),
+            proxy,
+            text_selection: None,
+            left_mouse_down: false,
+            last_click_time: None,
+            last_click_pos: None,
+            click_count: 0,
+            arrow_queue: None,
+        }
+    }
+
+    pub fn mark_dirty(&mut self) {
+        self.dirty = true;
+        self.window.request_redraw();
+    }
+
+    pub fn compute_terminal_rect(&self) -> Rect {
+        let size = self.gpu.size();
+        crate::model::compute_terminal_rect(
+            size.width as f32, size.height as f32,
+            self.state.sidebar_width, self.gpu.scale_factor(),
+        )
+    }
+
+    /// Handle a window event. `modal_active` indicates if a modal is blocking input.
+    pub fn handle_window_event(&mut self, event: WindowEvent, _event_loop: &ActiveEventLoop, modal_active: bool) -> bool {
+        // Let egui handle the event first
+        let (egui_consumed, egui_repaint) = self.gpu.handle_egui_event(&self.window, &event);
+        if egui_repaint {
+            self.mark_dirty();
+        }
+
+        // If a modal is active, only allow Resized/RedrawRequested/ScaleFactorChanged
+        if modal_active {
+            match &event {
+                WindowEvent::Resized(_) | WindowEvent::RedrawRequested | WindowEvent::ScaleFactorChanged { .. } => {}
+                _ => return false,
+            }
+        }
+
+        let was_dirty = self.dirty;
+
+        match event {
+            WindowEvent::Resized(new_size) => {
+                self.gpu.resize(new_size);
+                let terminal_rect = self.compute_terminal_rect();
+                let (cols, rows) = self.gpu.grid_size_for_rect(&terminal_rect);
+                self.state.update_grid_size(cols, rows);
+                self.state.resize_all(terminal_rect, self.gpu.cell_width(), self.gpu.cell_height());
+                self.mark_dirty();
+            }
+            WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
+                self.gpu.update_scale_factor(scale_factor as f32);
+                // Re-fetch the physical size — the window's physical dimensions change
+                // when the scale factor changes (e.g., macOS sleep/wake cycle).
+                let new_size = self.window.inner_size();
+                self.gpu.resize(new_size);
+                let terminal_rect = self.compute_terminal_rect();
+                let (cols, rows) = self.gpu.grid_size_for_rect(&terminal_rect);
+                self.state.update_grid_size(cols, rows);
+                self.state.resize_all(terminal_rect, self.gpu.cell_width(), self.gpu.cell_height());
+                self.mark_dirty();
+            }
+            WindowEvent::Focused(focused) => {
+                self.window_focused = focused;
+                if !focused {
+                    self.modifiers = ModifiersState::empty();
+                }
+                self.mark_dirty();
+            }
+            WindowEvent::Occluded(false) => {
+                self.mark_dirty();
+            }
+            WindowEvent::ModifiersChanged(modifiers) => {
+                self.modifiers = modifiers.state();
+            }
+            WindowEvent::KeyboardInput { event, .. } => {
+                self.handle_keyboard_input(&event, egui_consumed);
+            }
+            WindowEvent::Ime(ime_event) => {
+                self.handle_ime(ime_event, egui_consumed);
+            }
+            WindowEvent::CursorMoved { position, .. } => {
+                self.handle_cursor_moved(position, egui_consumed);
+            }
+            WindowEvent::CursorLeft { .. } => {
+                self.cursor_position = None;
+                self.window.set_cursor(CursorIcon::Default);
+            }
+            WindowEvent::MouseInput { state: button_state, button, .. } => {
+                self.handle_mouse_input(button_state, button, egui_consumed);
+            }
+            WindowEvent::MouseWheel { delta, .. } => {
+                self.handle_mouse_wheel(delta, egui_consumed);
+            }
+            WindowEvent::RedrawRequested => {
+                self.handle_redraw(_event_loop);
+            }
+            _ => {}
+        }
+
+        // If this event made us dirty, request a redraw.
+        if self.dirty && !was_dirty {
+            self.window.request_redraw();
+        }
+
+        false // don't exit
+    }
+}
