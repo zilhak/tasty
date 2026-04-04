@@ -40,6 +40,9 @@ pub struct GeneralSettings {
     /// Enable click-to-move-cursor: clicking on the editable region moves the
     /// shell cursor to that position.
     pub click_to_move_cursor: bool,
+    /// When creating a new pane/surface/workspace, inherit the working directory
+    /// from the source surface.
+    pub inherit_cwd: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -188,6 +191,7 @@ impl Default for GeneralSettings {
             scrollback_lines: 10000,
             confirm_close_running: true,
             click_to_move_cursor: true,
+            inherit_cwd: true,
         }
     }
 }

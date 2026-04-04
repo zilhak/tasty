@@ -31,6 +31,9 @@ pub enum Commands {
         /// Name for the new workspace
         #[arg(long)]
         name: Option<String>,
+        /// Working directory for the new workspace
+        #[arg(long)]
+        cwd: Option<String>,
     },
     /// Select a workspace by index (0-based)
     SelectWorkspace {
@@ -73,9 +76,16 @@ pub enum Commands {
         /// Metadata JSON to set on the new surface (e.g. '{"nickname":"build"}')
         #[arg(long)]
         meta: Option<String>,
+        /// Working directory for the new surface
+        #[arg(long)]
+        cwd: Option<String>,
     },
     /// Create a new tab in the focused pane
-    NewTab,
+    NewTab {
+        /// Working directory for the new tab
+        #[arg(long)]
+        cwd: Option<String>,
+    },
     /// Close the active tab in the focused pane
     CloseTab,
     /// Close the focused pane (unsplit)
@@ -515,9 +525,9 @@ fn command_to_request(command: &Commands) -> JsonRpcRequest {
         Commands::NewWindow => ("window.create", serde_json::json!({})),
         Commands::Windows => ("window.list", serde_json::json!({})),
         Commands::List => ("workspace.list", serde_json::json!({})),
-        Commands::NewWorkspace { name } => (
+        Commands::NewWorkspace { name, cwd } => (
             "workspace.create",
-            serde_json::json!({ "name": name.as_deref().unwrap_or("") }),
+            serde_json::json!({ "name": name.as_deref().unwrap_or(""), "cwd": cwd }),
         ),
         Commands::SelectWorkspace { index } => (
             "workspace.select",
@@ -531,7 +541,7 @@ fn command_to_request(command: &Commands) -> JsonRpcRequest {
         ),
         Commands::Notifications => ("notification.list", serde_json::json!({})),
         Commands::Tree => ("tree", serde_json::json!({})),
-        Commands::Split { level, target, direction, meta } => {
+        Commands::Split { level, target, direction, meta, cwd } => {
             let resolved_target = target.as_deref().map(resolve_target);
             let meta_value = meta
                 .as_deref()
@@ -543,10 +553,11 @@ fn command_to_request(command: &Commands) -> JsonRpcRequest {
                     "target": resolved_target,
                     "direction": direction,
                     "meta": meta_value,
+                    "cwd": cwd,
                 }),
             )
         }
-        Commands::NewTab => ("tab.create", serde_json::json!({})),
+        Commands::NewTab { cwd } => ("tab.create", serde_json::json!({ "cwd": cwd })),
         Commands::CloseTab => ("tab.close", serde_json::json!({})),
         Commands::ClosePane => ("pane.close", serde_json::json!({})),
         Commands::CloseSurface => ("surface.close", serde_json::json!({})),

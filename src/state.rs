@@ -170,8 +170,25 @@ impl AppState {
         self.focused_pane_mut().and_then(|p| p.active_terminal_mut())
     }
 
+    /// Get the working directory to inherit from the focused surface, if enabled.
+    fn resolve_inherit_cwd(&self) -> Option<std::path::PathBuf> {
+        if !self.engine.settings.general.inherit_cwd {
+            return None;
+        }
+        self.focused_terminal()?.get_cwd()
+    }
+
+    /// Get the working directory to inherit from a specific surface, if enabled.
+    fn resolve_inherit_cwd_from_surface(&self, surface_id: u32) -> Option<std::path::PathBuf> {
+        if !self.engine.settings.general.inherit_cwd {
+            return None;
+        }
+        self.engine.find_terminal_by_id(surface_id)?.get_cwd()
+    }
+
     /// Add a new workspace with one pane, one tab, one terminal.
     pub fn add_workspace(&mut self) -> anyhow::Result<()> {
+        let cwd = self.resolve_inherit_cwd();
         let ws_id = self.engine.next_ids.next_workspace();
         let pane_id = self.engine.next_ids.next_pane();
         let tab_id = self.engine.next_ids.next_tab();
@@ -181,7 +198,7 @@ impl AppState {
         let shell = if self.engine.settings.general.shell.is_empty() { None } else { Some(self.engine.settings.general.shell.as_str()) };
         let shell_args_owned = self.engine.settings.general.effective_shell_args();
         let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
-        let ws = Workspace::new_with_shell(
+        let ws = Workspace::new_with_shell_cwd(
             ws_id,
             name,
             self.engine.default_cols,
@@ -192,6 +209,7 @@ impl AppState {
             shell,
             &shell_args,
             self.engine.make_waker(surface_id),
+            cwd.as_deref(),
         )?;
         self.engine.workspaces.push(ws);
         self.active_workspace = self.engine.workspaces.len() - 1;
@@ -201,6 +219,7 @@ impl AppState {
 
     /// Add a new tab in the focused pane.
     pub fn add_tab(&mut self) -> anyhow::Result<()> {
+        let cwd = self.resolve_inherit_cwd();
         let tab_id = self.engine.next_ids.next_tab();
         let surface_id = self.engine.next_ids.next_surface();
         let cols = self.engine.default_cols;
@@ -211,7 +230,7 @@ impl AppState {
         let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
         let waker = self.engine.make_waker(surface_id);
         if let Some(pane) = self.focused_pane_mut() {
-            pane.add_tab_with_shell(tab_id, surface_id, cols, rows, shell_ref, &shell_args, waker)?;
+            pane.add_tab_with_shell_cwd(tab_id, surface_id, cols, rows, shell_ref, &shell_args, waker, cwd.as_deref())?;
         }
         self.send_fast_init(surface_id);
         Ok(())
@@ -220,6 +239,12 @@ impl AppState {
     /// Add a new workspace without switching to it. Used by IPC/CLI.
     /// Returns the new workspace index.
     pub fn add_workspace_background(&mut self) -> anyhow::Result<usize> {
+        self.add_workspace_background_with_cwd(None)
+    }
+
+    /// Add a new workspace without switching, with optional explicit cwd.
+    pub fn add_workspace_background_with_cwd(&mut self, explicit_cwd: Option<std::path::PathBuf>) -> anyhow::Result<usize> {
+        let cwd = explicit_cwd.or_else(|| self.resolve_inherit_cwd());
         let ws_id = self.engine.next_ids.next_workspace();
         let pane_id = self.engine.next_ids.next_pane();
         let tab_id = self.engine.next_ids.next_tab();
@@ -229,7 +254,7 @@ impl AppState {
         let shell = if self.engine.settings.general.shell.is_empty() { None } else { Some(self.engine.settings.general.shell.as_str()) };
         let shell_args_owned = self.engine.settings.general.effective_shell_args();
         let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
-        let ws = Workspace::new_with_shell(
+        let ws = Workspace::new_with_shell_cwd(
             ws_id,
             name,
             self.engine.default_cols,
@@ -240,6 +265,7 @@ impl AppState {
             shell,
             &shell_args,
             self.engine.make_waker(surface_id),
+            cwd.as_deref(),
         )?;
         self.engine.workspaces.push(ws);
         let idx = self.engine.workspaces.len() - 1;
@@ -250,6 +276,12 @@ impl AppState {
 
     /// Add a new tab in the focused pane without switching to it. Used by IPC/CLI.
     pub fn add_tab_background(&mut self) -> anyhow::Result<()> {
+        self.add_tab_background_with_cwd(None)
+    }
+
+    /// Add a new tab without switching, with optional explicit cwd.
+    pub fn add_tab_background_with_cwd(&mut self, explicit_cwd: Option<std::path::PathBuf>) -> anyhow::Result<()> {
+        let cwd = explicit_cwd.or_else(|| self.resolve_inherit_cwd());
         let tab_id = self.engine.next_ids.next_tab();
         let surface_id = self.engine.next_ids.next_surface();
         let cols = self.engine.default_cols;
@@ -260,7 +292,7 @@ impl AppState {
         let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
         let waker = self.engine.make_waker(surface_id);
         if let Some(pane) = self.focused_pane_mut() {
-            pane.add_tab_background_with_shell(tab_id, surface_id, cols, rows, shell_ref, &shell_args, waker)?;
+            pane.add_tab_background_with_shell_cwd(tab_id, surface_id, cols, rows, shell_ref, &shell_args, waker, cwd.as_deref())?;
         }
         self.send_fast_init(surface_id);
         Ok(())
@@ -288,20 +320,19 @@ impl AppState {
 
     /// Split the focused pane into two (new independent tab bar).
     pub fn split_pane(&mut self, direction: SplitDirection) -> anyhow::Result<()> {
+        let cwd = self.resolve_inherit_cwd();
         let new_pane_id = self.engine.next_ids.next_pane();
         let new_tab_id = self.engine.next_ids.next_tab();
         let new_surface_id = self.engine.next_ids.next_surface();
         let cols = self.engine.default_cols;
         let rows = self.engine.default_rows;
 
-        // TODO(lazy_pty_init): If performance.lazy_pty_init is enabled,
-        // create pane without spawning PTY process. Spawn on first focus.
         let shell = self.engine.settings.general.shell.clone();
         let shell_ref = if shell.is_empty() { None } else { Some(shell.as_str()) };
         let shell_args_owned = self.engine.settings.general.effective_shell_args();
         let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
         let new_pane =
-            crate::model::Pane::new_with_shell(new_pane_id, new_tab_id, new_surface_id, cols, rows, shell_ref, &shell_args, self.engine.make_waker(new_surface_id))?;
+            crate::model::Pane::new_with_shell_cwd(new_pane_id, new_tab_id, new_surface_id, cols, rows, shell_ref, &shell_args, self.engine.make_waker(new_surface_id), cwd.as_deref())?;
 
         let ws = self.active_workspace_mut();
         let target_pane_id = ws.focused_pane;
@@ -315,6 +346,7 @@ impl AppState {
 
     /// Split within the current tab (SurfaceGroup). Appears as one tab.
     pub fn split_surface(&mut self, direction: SplitDirection) -> anyhow::Result<()> {
+        let cwd = self.resolve_inherit_cwd();
         let new_surface_id = self.engine.next_ids.next_surface();
         let cols = self.engine.default_cols;
         let rows = self.engine.default_rows;
@@ -324,7 +356,7 @@ impl AppState {
         let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
         let waker = self.engine.make_waker(new_surface_id);
         if let Some(pane) = self.focused_pane_mut() {
-            pane.split_active_surface_with_shell(direction, new_surface_id, cols, rows, shell_ref, &shell_args, waker)?;
+            pane.split_active_surface_with_shell_cwd(direction, new_surface_id, cols, rows, shell_ref, &shell_args, waker, cwd.as_deref())?;
         }
         self.send_fast_init(new_surface_id);
         Ok(())
@@ -336,6 +368,16 @@ impl AppState {
         &mut self,
         target_pane_id: Option<u32>,
         direction: SplitDirection,
+    ) -> anyhow::Result<(u32, u32)> {
+        self.split_pane_targeted_with_cwd(target_pane_id, direction, None)
+    }
+
+    /// Split a pane group with optional explicit cwd.
+    pub fn split_pane_targeted_with_cwd(
+        &mut self,
+        target_pane_id: Option<u32>,
+        direction: SplitDirection,
+        explicit_cwd: Option<std::path::PathBuf>,
     ) -> anyhow::Result<(u32, u32)> {
         let (ws_idx, resolved_pane_id) = match target_pane_id {
             Some(pid) => {
@@ -349,6 +391,18 @@ impl AppState {
             }
         };
 
+        // Resolve cwd: explicit > inherit from target pane's focused surface
+        let cwd = explicit_cwd.or_else(|| {
+            let ws = &self.engine.workspaces[ws_idx];
+            let pane = ws.pane_layout().find_pane(resolved_pane_id)?;
+            let terminal = pane.active_terminal()?;
+            if self.engine.settings.general.inherit_cwd {
+                terminal.get_cwd()
+            } else {
+                None
+            }
+        });
+
         let new_pane_id = self.engine.next_ids.next_pane();
         let new_tab_id = self.engine.next_ids.next_tab();
         let new_surface_id = self.engine.next_ids.next_surface();
@@ -358,9 +412,10 @@ impl AppState {
         let shell_ref = if shell.is_empty() { None } else { Some(shell.as_str()) };
         let shell_args_owned = self.engine.settings.general.effective_shell_args();
         let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
-        let new_pane = crate::model::Pane::new_with_shell(
+        let new_pane = crate::model::Pane::new_with_shell_cwd(
             new_pane_id, new_tab_id, new_surface_id, cols, rows,
             shell_ref, &shell_args, self.engine.make_waker(new_surface_id),
+            cwd.as_deref(),
         )?;
 
         let ws = &mut self.engine.workspaces[ws_idx];
@@ -379,6 +434,24 @@ impl AppState {
         target_surface_id: Option<u32>,
         direction: SplitDirection,
     ) -> anyhow::Result<u32> {
+        self.split_surface_targeted_with_cwd(target_surface_id, direction, None)
+    }
+
+    /// Split a surface with optional explicit cwd.
+    pub fn split_surface_targeted_with_cwd(
+        &mut self,
+        target_surface_id: Option<u32>,
+        direction: SplitDirection,
+        explicit_cwd: Option<std::path::PathBuf>,
+    ) -> anyhow::Result<u32> {
+        // Resolve cwd: explicit > inherit from target surface
+        let cwd = explicit_cwd.or_else(|| {
+            match target_surface_id {
+                Some(sid) => self.resolve_inherit_cwd_from_surface(sid),
+                None => self.resolve_inherit_cwd(),
+            }
+        });
+
         let new_surface_id = self.engine.next_ids.next_surface();
         let cols = self.engine.default_cols;
         let rows = self.engine.default_rows;
@@ -395,16 +468,16 @@ impl AppState {
                 let ws = &mut self.engine.workspaces[ws_idx];
                 let pane = ws.pane_layout_mut().find_pane_mut(pane_id)
                     .ok_or_else(|| anyhow::anyhow!("pane {} not found", pane_id))?;
-                pane.split_surface_by_id_with_shell(
+                pane.split_surface_by_id_with_shell_cwd(
                     sid, direction, new_surface_id, cols, rows,
-                    shell_ref, &shell_args, waker,
+                    shell_ref, &shell_args, waker, cwd.as_deref(),
                 )?;
             }
             None => {
                 if let Some(pane) = self.focused_pane_mut() {
-                    pane.split_active_surface_with_shell(
+                    pane.split_active_surface_with_shell_cwd(
                         direction, new_surface_id, cols, rows,
-                        shell_ref, &shell_args, waker,
+                        shell_ref, &shell_args, waker, cwd.as_deref(),
                     )?;
                 }
             }

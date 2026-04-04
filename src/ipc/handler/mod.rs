@@ -21,7 +21,7 @@ pub fn handle(state: &mut AppState, request: &JsonRpcRequest) -> JsonRpcResponse
         "pane.list" => handle_pane_list(state, id),
         "split" => handle_split(state, id, &request.params),
         "tab.list" => handle_tab_list(state, id),
-        "tab.create" => handle_tab_create(state, id),
+        "tab.create" => handle_tab_create(state, id, &request.params),
         "tab.close" => handle_tab_close(state, id),
         "pane.close" => handle_pane_close(state, id),
         "surface.close" => surface::handle_surface_close(state, id),
@@ -213,7 +213,8 @@ fn handle_workspace_create(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    match state.add_workspace_background() {
+    let cwd = params.get("cwd").and_then(|v| v.as_str()).map(std::path::PathBuf::from);
+    match state.add_workspace_background_with_cwd(cwd) {
         Ok(idx) => {
             if let Some(name) = params.get("name").and_then(|v| v.as_str()) {
                 if !name.is_empty() {
@@ -397,9 +398,10 @@ fn handle_split(
     let target_id = resolve_target_param(params.get("target"), level);
 
     let meta = params.get("meta").and_then(|v| v.as_object());
+    let cwd = params.get("cwd").and_then(|v| v.as_str()).map(std::path::PathBuf::from);
 
     match level {
-        "pane-group" => match state.split_pane_targeted(target_id, direction) {
+        "pane-group" => match state.split_pane_targeted_with_cwd(target_id, direction, cwd) {
             Ok((new_pane_id, new_surface_id)) => {
                 apply_meta(new_surface_id, meta);
                 JsonRpcResponse::success(
@@ -412,7 +414,7 @@ fn handle_split(
             }
             Err(e) => JsonRpcResponse::internal_error(id, e.to_string()),
         },
-        "surface" => match state.split_surface_targeted(target_id, direction) {
+        "surface" => match state.split_surface_targeted_with_cwd(target_id, direction, cwd) {
             Ok(new_surface_id) => {
                 apply_meta(new_surface_id, meta);
                 JsonRpcResponse::success(
@@ -447,8 +449,9 @@ fn handle_tab_list(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {
     JsonRpcResponse::success(id, json!(tabs))
 }
 
-fn handle_tab_create(state: &mut AppState, id: serde_json::Value) -> JsonRpcResponse {
-    match state.add_tab_background() {
+fn handle_tab_create(state: &mut AppState, id: serde_json::Value, params: &serde_json::Value) -> JsonRpcResponse {
+    let cwd = params.get("cwd").and_then(|v| v.as_str()).map(std::path::PathBuf::from);
+    match state.add_tab_background_with_cwd(cwd) {
         Ok(_) => {
             let (tab_count, active_tab) = state
                 .focused_pane()

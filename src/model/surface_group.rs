@@ -26,6 +26,7 @@ pub(crate) struct DeferredSpawn {
     pub cols: usize,
     pub rows: usize,
     pub waker: tasty_terminal::Waker,
+    pub working_dir: Option<std::path::PathBuf>,
 }
 
 /// Split within a tab (appears as one tab but renders multiple terminals).

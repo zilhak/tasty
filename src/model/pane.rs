@@ -472,7 +472,22 @@ impl Pane {
         shell_args: &[&str],
         waker: Waker,
     ) -> anyhow::Result<Self> {
-        let terminal = Terminal::new_with_shell_args(cols, rows, shell, shell_args, surface_id, waker)?;
+        Self::new_with_shell_cwd(id, tab_id, surface_id, cols, rows, shell, shell_args, waker, None)
+    }
+
+    /// Create a Pane with a custom shell and optional working directory.
+    pub fn new_with_shell_cwd(
+        id: PaneId,
+        tab_id: TabId,
+        surface_id: SurfaceId,
+        cols: usize,
+        rows: usize,
+        shell: Option<&str>,
+        shell_args: &[&str],
+        waker: Waker,
+        working_dir: Option<&std::path::Path>,
+    ) -> anyhow::Result<Self> {
+        let terminal = Terminal::new_with_shell_args_cwd(cols, rows, shell, shell_args, surface_id, waker, working_dir)?;
         let tab = Tab {
             id: tab_id,
             name: "Shell".to_string(),
@@ -501,7 +516,22 @@ impl Pane {
         shell_args: &[&str],
         waker: Waker,
     ) -> anyhow::Result<()> {
-        let terminal = Terminal::new_with_shell_args(cols, rows, shell, shell_args, surface_id, waker)?;
+        self.add_tab_with_shell_cwd(tab_id, surface_id, cols, rows, shell, shell_args, waker, None)
+    }
+
+    /// Add a new tab with a custom shell and optional working directory.
+    pub fn add_tab_with_shell_cwd(
+        &mut self,
+        tab_id: TabId,
+        surface_id: SurfaceId,
+        cols: usize,
+        rows: usize,
+        shell: Option<&str>,
+        shell_args: &[&str],
+        waker: Waker,
+        working_dir: Option<&std::path::Path>,
+    ) -> anyhow::Result<()> {
+        let terminal = Terminal::new_with_shell_args_cwd(cols, rows, shell, shell_args, surface_id, waker, working_dir)?;
         let tab = Tab {
             id: tab_id,
             name: format!("Shell {}", self.tabs.len() + 1),
@@ -528,7 +558,22 @@ impl Pane {
         shell_args: &[&str],
         waker: Waker,
     ) -> anyhow::Result<()> {
-        let terminal = Terminal::new_with_shell_args(cols, rows, shell, shell_args, surface_id, waker)?;
+        self.add_tab_background_with_shell_cwd(tab_id, surface_id, cols, rows, shell, shell_args, waker, None)
+    }
+
+    /// Add a new tab without changing active tab, with optional working directory.
+    pub fn add_tab_background_with_shell_cwd(
+        &mut self,
+        tab_id: TabId,
+        surface_id: SurfaceId,
+        cols: usize,
+        rows: usize,
+        shell: Option<&str>,
+        shell_args: &[&str],
+        waker: Waker,
+        working_dir: Option<&std::path::Path>,
+    ) -> anyhow::Result<()> {
+        let terminal = Terminal::new_with_shell_args_cwd(cols, rows, shell, shell_args, surface_id, waker, working_dir)?;
         let tab = Tab {
             id: tab_id,
             name: format!("Shell {}", self.tabs.len() + 1),
@@ -578,9 +623,22 @@ impl Pane {
         shell_args: &[&str],
         waker: Waker,
     ) -> anyhow::Result<()> {
-        // Pre-create the new terminal before any structural mutation.
-        // If Terminal::new fails, panel is untouched.
-        let new_terminal = Terminal::new_with_shell_args(cols, rows, shell, shell_args, new_surface_id, waker)?;
+        self.split_active_surface_with_shell_cwd(direction, new_surface_id, cols, rows, shell, shell_args, waker, None)
+    }
+
+    /// Split the active panel's focused surface with a custom shell and optional working directory.
+    pub fn split_active_surface_with_shell_cwd(
+        &mut self,
+        direction: SplitDirection,
+        new_surface_id: SurfaceId,
+        cols: usize,
+        rows: usize,
+        shell: Option<&str>,
+        shell_args: &[&str],
+        waker: Waker,
+        working_dir: Option<&std::path::Path>,
+    ) -> anyhow::Result<()> {
+        let new_terminal = Terminal::new_with_shell_args_cwd(cols, rows, shell, shell_args, new_surface_id, waker, working_dir)?;
         if self.tabs.is_empty() {
             return Ok(()); // nothing to split
         }
@@ -604,7 +662,23 @@ impl Pane {
         shell_args: &[&str],
         waker: Waker,
     ) -> anyhow::Result<()> {
-        let new_terminal = Terminal::new_with_shell_args(cols, rows, shell, shell_args, new_surface_id, waker)?;
+        self.split_surface_by_id_with_shell_cwd(target_surface_id, direction, new_surface_id, cols, rows, shell, shell_args, waker, None)
+    }
+
+    /// Split a specific surface by ID with optional working directory.
+    pub fn split_surface_by_id_with_shell_cwd(
+        &mut self,
+        target_surface_id: SurfaceId,
+        direction: SplitDirection,
+        new_surface_id: SurfaceId,
+        cols: usize,
+        rows: usize,
+        shell: Option<&str>,
+        shell_args: &[&str],
+        waker: Waker,
+        working_dir: Option<&std::path::Path>,
+    ) -> anyhow::Result<()> {
+        let new_terminal = Terminal::new_with_shell_args_cwd(cols, rows, shell, shell_args, new_surface_id, waker, working_dir)?;
         for tab in &mut self.tabs {
             if tab.panel().find_terminal(target_surface_id).is_some() {
                 let old_panel = tab.take_panel();
@@ -774,7 +848,8 @@ impl Tab {
         let spawn = self.deferred_spawn.take().unwrap();
         let shell_ref = spawn.shell.as_deref();
         let shell_args: Vec<&str> = spawn.shell_args.iter().map(|s| s.as_str()).collect();
-        match Terminal::new_with_shell_args(spawn.cols, spawn.rows, shell_ref, &shell_args, surface_id, spawn.waker) {
+        let working_dir = spawn.working_dir.as_deref();
+        match Terminal::new_with_shell_args_cwd(spawn.cols, spawn.rows, shell_ref, &shell_args, surface_id, spawn.waker, working_dir) {
             Ok(terminal) => {
                 self.panel_opt = Some(Panel::Terminal(SurfaceNode {
                     id: surface_id,

@@ -44,6 +44,7 @@ shell_args_label = "Shell arguments:"
 startup_command_label = "Startup command:"
 scrollback_lines_label = "Scrollback lines:"
 confirm_close_label = "Confirm close running process:"
+inherit_cwd_label = "Inherit working directory:"
 
 [settings.appearance]
 heading = "Appearance"
