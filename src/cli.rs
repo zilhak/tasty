@@ -8,7 +8,7 @@ use crate::ipc::protocol::{JsonRpcRequest, JsonRpcResponse};
 use crate::ipc::server::IpcServer;
 
 #[derive(Parser)]
-#[command(name = "tasty", about = "GPU-accelerated terminal emulator for AI coding agents")]
+#[command(name = "tasty", about = "GPU-accelerated terminal emulator for AI coding agents", version)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Commands>,
