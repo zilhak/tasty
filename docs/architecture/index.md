@@ -225,7 +225,6 @@ main.rs
 | 문서 | 설명 |
 |------|------|
 | [모듈별 상세](modules.md) | 디렉토리 모듈별 책임, 설계 목적, 한계 |
-| [데이터 흐름](data-flows.md) | 5가지 주요 데이터 흐름 단계별 설명 |
-| [라이브러리 분리 분석](library-separation/index.md) | 분리 후보 다관점 분석 |
-| [의존성 분리 (파일 분할)](dependency-separation/index.md) | 대형 파일 모듈 분할 계획 |
-| [리팩토링 분석](refactoring.md) | 코드 개선점, 리팩토링 로드맵 |
+| [데이터 흐름](data-flows.md) | 5가지 주요 데이터 흐름 (파일+함수 기준 참조) |
+| [리팩토링 분석](refactoring.md) | 남아있는 개선 가능성, 우선순위별 로드맵 |
+| [라이브러리 분리 분석](library-separation/index.md) | 크레이트 분리 후보 다관점 분석 |
