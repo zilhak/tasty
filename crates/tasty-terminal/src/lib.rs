@@ -581,22 +581,6 @@ impl Terminal {
                 }
                 self.flush_scrollback_to_disk();
             }
-            Change::Text(t) if t == "\n" => {
-                let (_, cy) = self.surface().cursor_position();
-                let bottom = self.scroll_region.map(|(_, b)| b).unwrap_or(self.rows - 1);
-                if cy >= bottom {
-                    let captured = self.capture_top_lines(1);
-                    let count = captured.len();
-                    for line in captured {
-                        self.scrollback.push_back(line);
-                    }
-                    // Compensate scroll_offset so the user's viewport stays in place
-                    if self.scroll_offset > 0 {
-                        self.scroll_offset += count;
-                    }
-                    self.flush_scrollback_to_disk();
-                }
-            }
             _ => {}
         }
     }

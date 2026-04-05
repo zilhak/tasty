@@ -173,7 +173,10 @@ impl TestTerminal {
                 scroll_count: 1,
             }]
         } else {
-            vec![Change::Text("\n".into())]
+            vec![Change::CursorPosition {
+                x: Position::Relative(0),
+                y: Position::Relative(1),
+            }]
         }
     }
 

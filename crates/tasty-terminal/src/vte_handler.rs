@@ -39,8 +39,18 @@ impl Terminal {
                 scroll_count: 1,
             }]
         } else {
-            // Normal line feed — just move cursor down
-            vec![Change::Text("\n".into())]
+            // Normal line feed — just move cursor down.
+            // Use CursorPosition instead of Text("\n") because:
+            // 1. termwiz Surface's print_text("\n") calls scroll_screen_up() at the
+            //    bottom row, which ignores scroll regions and scrolls the entire screen.
+            // 2. During synchronized output (mode 2026), changes are staged and flushed
+            //    later. The cursor position at flush time may differ from when this
+            //    decision was made, causing Text("\n") to trigger unexpected scrolls.
+            // CursorPosition with Relative(1) safely clamps at the bottom without scrolling.
+            vec![Change::CursorPosition {
+                x: Position::Relative(0),
+                y: Position::Relative(1),
+            }]
         }
     }
 
