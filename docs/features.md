@@ -278,7 +278,7 @@
 
 ### 설정 카테고리
 - **General**: 셸 경로 (OS별 자동 감지: COMSPEC/SHELL), 시작 명령, 스크롤백 줄 수 (기본 10,000), 작업 디렉토리 상속 (기본 on)
-- **Appearance**: 폰트 패밀리 (기본값: 시스템 모노스페이스), 폰트 크기, 테마 (dark/light), 배경 투명도, 사이드바 너비, focused surface 배경색
+- **Appearance**: 폰트 패밀리 (기본값: 시스템 모노스페이스), 폰트 크기, 테마 (dark/light), 배경 투명도, 사이드바 너비, focused surface 배경색, Font DPI 스케일링 모드 (auto: 모니터 DPI에 맞춰 동일 물리 크기 유지 / fixed: 픽셀 고정, 기본값)
 - **Clipboard**: OS별 기본 활성화 (macOS: Alt+C/V, Linux: Ctrl+Shift+C/V, Windows: Ctrl+C/V)
 - **Notifications**: 알림 활성화, 시스템 알림, 사운드, 병합 간격(ms)
 - **Keybindings**: 워크스페이스/탭/패인/서피스 분할 단축키
