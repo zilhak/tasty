@@ -404,6 +404,18 @@ fn main() -> Result<()> {
         return cli::run_client(command);
     }
 
+    // Inside a tasty terminal without subcommand: show help instead of launching GUI
+    if !cli.launch && std::env::var("TASTY_SURFACE_ID").is_ok() {
+        let bin = std::env::args().next().unwrap_or_else(|| "tasty".to_string());
+        eprintln!("Running inside a tasty terminal. Use subcommands to control it:");
+        eprintln!();
+        eprintln!("  {} --help          Show all commands", bin);
+        eprintln!("  {} tree            Show workspace/pane tree", bin);
+        eprintln!("  {} new-window      Open a new window", bin);
+        eprintln!("  {} --launch        Force launch a new GUI instance", bin);
+        return Ok(());
+    }
+
     // Run the GUI
     let event_loop = EventLoop::<AppEvent>::with_user_event().build()?;
     let proxy = event_loop.create_proxy();

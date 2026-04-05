@@ -25,6 +25,10 @@ pub struct Cli {
     /// Custom port file path (for test isolation)
     #[arg(long)]
     pub port_file: Option<String>,
+
+    /// Force GUI launch even inside a tasty terminal
+    #[arg(long)]
+    pub launch: bool,
 }
 
 #[derive(Subcommand)]
