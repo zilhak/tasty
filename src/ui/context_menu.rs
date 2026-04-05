@@ -1,3 +1,5 @@
+use egui::emath::GuiRounding as _;
+
 use crate::state::AppState;
 use crate::theme;
 
@@ -15,7 +17,7 @@ fn context_menu_item(ui: &mut egui::Ui, th: &theme::Theme, label: &str) -> bool 
     let text_pos = egui::pos2(
         rect.min.x + th.spacing_sm,
         rect.center().y - th.font_size_body / 2.0,
-    );
+    ).round_ui();
     ui.painter().text(
         text_pos,
         egui::Align2::LEFT_TOP,

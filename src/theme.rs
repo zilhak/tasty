@@ -1,3 +1,5 @@
+use egui::emath::GuiRounding as _;
+
 /// UI theme colors used across all rendering (egui + GPU).
 /// All colors are in the Catppuccin Mocha palette for the dark theme.
 
@@ -184,31 +186,31 @@ impl Theme {
         let mut style = (*ctx.style()).clone();
         style.text_styles.insert(
             egui::TextStyle::Body,
-            egui::FontId::proportional(self.font_size_body * ui_scale),
+            egui::FontId::proportional((self.font_size_body * ui_scale).round_ui()),
         );
         style.text_styles.insert(
             egui::TextStyle::Small,
-            egui::FontId::proportional(self.font_size_caption * ui_scale),
+            egui::FontId::proportional((self.font_size_caption * ui_scale).round_ui()),
         );
         style.text_styles.insert(
             egui::TextStyle::Heading,
-            egui::FontId::proportional(self.font_size_heading * ui_scale * 1.15),
+            egui::FontId::proportional((self.font_size_heading * ui_scale * 1.15).round_ui()),
         );
         style.text_styles.insert(
             egui::TextStyle::Button,
-            egui::FontId::proportional(self.font_size_body * ui_scale),
+            egui::FontId::proportional((self.font_size_body * ui_scale).round_ui()),
         );
         style.text_styles.insert(
             egui::TextStyle::Monospace,
-            egui::FontId::monospace(self.font_size_body * ui_scale),
+            egui::FontId::monospace((self.font_size_body * ui_scale).round_ui()),
         );
         style.spacing.item_spacing = egui::vec2(
-            self.spacing_sm * ui_scale,
-            self.spacing_xs * ui_scale,
+            (self.spacing_sm * ui_scale).round_ui(),
+            (self.spacing_xs * ui_scale).round_ui(),
         );
         style.spacing.button_padding = egui::vec2(
-            self.spacing_sm * ui_scale,
-            self.spacing_xs * ui_scale,
+            (self.spacing_sm * ui_scale).round_ui(),
+            (self.spacing_xs * ui_scale).round_ui(),
         );
         ctx.set_style(style);
     }

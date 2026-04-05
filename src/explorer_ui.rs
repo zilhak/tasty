@@ -1,3 +1,5 @@
+use egui::emath::GuiRounding as _;
+
 use crate::model::{ExplorerPanel, FileNode};
 use crate::theme;
 
@@ -5,7 +7,7 @@ use crate::theme;
 pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel) {
     let th = theme::theme();
     let available_width = ui.available_width();
-    let tree_width = (available_width * 0.35).min(250.0).max(150.0);
+    let tree_width = (available_width * 0.35).min(250.0).max(150.0).round_ui();
 
     ui.horizontal_top(|ui| {
         // Left: File tree

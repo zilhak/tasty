@@ -1,3 +1,5 @@
+use egui::emath::GuiRounding as _;
+
 use crate::model::Rect;
 use crate::state::AppState;
 use crate::theme;
@@ -38,10 +40,10 @@ pub fn draw_non_terminal_panels(
             let tab_bar_h = state.tab_bar_height;
             infos.push(NonTerminalInfo {
                 pane_id,
-                logical_x: pane_rect.x / scale_factor,
-                logical_y: (pane_rect.y + tab_bar_h) / scale_factor,
-                logical_w: pane_rect.width / scale_factor,
-                logical_h: (pane_rect.height - tab_bar_h).max(1.0) / scale_factor,
+                logical_x: (pane_rect.x / scale_factor).round_ui(),
+                logical_y: ((pane_rect.y + tab_bar_h) / scale_factor).round_ui(),
+                logical_w: (pane_rect.width / scale_factor).round_ui(),
+                logical_h: ((pane_rect.height - tab_bar_h).max(1.0) / scale_factor).round_ui(),
             });
         }
     }
