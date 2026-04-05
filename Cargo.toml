@@ -4,7 +4,7 @@ resolver = "2"
 
 [package]
 name = "tasty"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 license = "MIT"
 description = "Cross-platform GPU-accelerated terminal emulator for AI coding agents"

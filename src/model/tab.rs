@@ -10,6 +10,7 @@ pub struct Tab {
     /// When lazy_pty_init is enabled, stores parameters to spawn PTY on first access.
     pub(crate) deferred_spawn: Option<super::surface_group::DeferredSpawn>,
     /// Surface ID reserved for deferred spawn (set when lazy_pty_init creates the tab).
+    #[allow(dead_code)]
     pub(crate) deferred_surface_id: Option<SurfaceId>,
 }
 
