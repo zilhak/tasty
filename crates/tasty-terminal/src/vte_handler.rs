@@ -554,6 +554,9 @@ impl Terminal {
                 } else {
                     url.clone()
                 };
+                // Cache the CWD so get_cwd() can return it instantly without
+                // spawning an external process (critical on Windows).
+                self.cached_cwd = Some(std::path::PathBuf::from(&path));
                 self.events.push(TerminalEvent {
                     surface_id: 0,
                     kind: TerminalEventKind::CwdChanged(path),

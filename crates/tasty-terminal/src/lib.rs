@@ -77,6 +77,9 @@ pub struct Terminal {
     pub scroll_offset: usize,
     /// Disk-backed scrollback for older lines (enabled by scrollback_disk_swap setting).
     disk_scrollback: Option<disk_scrollback::DiskScrollback>,
+    /// CWD cached from OSC 7 (CurrentWorkingDirectory) sequences emitted by the shell.
+    /// Used by get_cwd() to avoid spawning external processes.
+    pub(crate) cached_cwd: Option<std::path::PathBuf>,
 }
 
 impl Terminal {
@@ -199,6 +202,7 @@ impl Terminal {
             scrollback_limit: 10000,
             scroll_offset: 0,
             disk_scrollback: None,
+            cached_cwd: None,
         })
     }
 
@@ -404,9 +408,20 @@ impl Terminal {
     }
 
     /// Get the current working directory of the child process.
+    /// Prefers the CWD cached from OSC 7 sequences (instant, no subprocess).
+    /// Falls back to OS-level process inspection on Linux/macOS.
+    /// On Windows the PowerShell fallback is omitted to avoid ~7s startup delay.
     pub fn get_cwd(&self) -> Option<std::path::PathBuf> {
-        let pid = self.child.process_id()?;
-        cwd::get_cwd_of_pid(pid)
+        if let Some(cwd) = &self.cached_cwd {
+            return Some(cwd.clone());
+        }
+        #[cfg(not(windows))]
+        {
+            let pid = self.child.process_id()?;
+            cwd::get_cwd_of_pid(pid)
+        }
+        #[cfg(windows)]
+        None
     }
 
     /// Check if the child process is still running.
