@@ -65,9 +65,9 @@ pub struct Terminal {
     /// Scroll region top/bottom (1-based inclusive, None = full screen).
     pub(crate) scroll_region: Option<(usize, usize)>,
     /// Whether synchronized output mode (DECSET 2026) is active.
+    /// Note: changes are always applied immediately regardless of this flag.
+    /// See apply_or_stage_change() for rationale.
     pub(crate) synchronized_output: bool,
-    /// Surface changes accumulated while synchronized output mode is active.
-    pub(crate) pending_changes: Vec<Change>,
     /// Scrollback buffer: stores lines that scrolled off the top of the screen.
     /// Each line is a vector of (character, CellAttributes) pairs.
     scrollback: VecDeque<Vec<(String, CellAttributes)>>,
@@ -195,7 +195,6 @@ impl Terminal {
             focus_tracking: false,
             scroll_region: None,
             synchronized_output: false,
-            pending_changes: Vec::new(),
             scrollback: VecDeque::new(),
             scrollback_limit: 10000,
             scroll_offset: 0,
@@ -318,20 +317,22 @@ impl Terminal {
     }
 
     pub(crate) fn apply_or_stage_change(&mut self, change: Change) {
-        if self.synchronized_output {
-            self.pending_changes.push(change);
-            return;
-        }
+        // Always apply changes immediately to keep surface state (especially
+        // cursor position) current. Many VTE operations (EraseLine, DeleteLine,
+        // EraseCharacter, etc.) read cursor_position() at generation time to
+        // produce absolute-positioned changes. If changes are staged during
+        // synchronized output (mode 2026), cursor_position() returns stale
+        // values, causing those operations to target wrong rows/columns.
+        //
+        // Tasty's architecture is process-then-render: all PTY data is processed
+        // before the GPU reads the surface, so immediate application doesn't
+        // cause visual tearing — the renderer always sees the final state.
         self.apply_change(change);
     }
 
     pub(crate) fn flush_pending_changes(&mut self) {
-        if self.pending_changes.is_empty() {
-            return;
-        }
-        for change in std::mem::take(&mut self.pending_changes) {
-            self.apply_change(change);
-        }
+        // No-op: changes are now applied immediately in apply_or_stage_change().
+        // Kept for API compatibility with mode handler.
     }
 
     fn apply_change(&mut self, change: Change) {

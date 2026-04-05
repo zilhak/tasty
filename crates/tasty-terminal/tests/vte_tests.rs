@@ -248,11 +248,14 @@ fn application_cursor_keys_mode() {
 // ============================================================
 
 #[test]
-fn synchronized_output_flushes_on_disable() {
+fn synchronized_output_applies_immediately() {
     let mut t = TestTerminal::new(80, 24);
 
+    // Changes are applied immediately even during sync output,
+    // so cursor_position() stays current for VTE operations that
+    // depend on it (EraseLine, DeleteLine, etc.).
     t.feed(b"\x1b[?2026habc\rXY");
-    assert_eq!(t.row(0), "");
+    assert_eq!(t.row(0), "XYc");
     assert!(t.synchronized_output);
 
     t.feed(b"\x1b[?2026l");

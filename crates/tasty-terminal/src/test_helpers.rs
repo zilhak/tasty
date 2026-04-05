@@ -29,7 +29,6 @@ pub struct TestTerminal {
     pub focus_tracking: bool,
     pub scroll_region: Option<(usize, usize)>,
     pub synchronized_output: bool,
-    pub pending_changes: Vec<Change>,
     pub sent_bytes: Vec<u8>,
 }
 
@@ -53,7 +52,6 @@ impl TestTerminal {
             focus_tracking: false,
             scroll_region: None,
             synchronized_output: false,
-            pending_changes: Vec::new(),
             sent_bytes: Vec::new(),
         }
     }
@@ -122,17 +120,12 @@ impl TestTerminal {
     }
 
     fn apply_or_stage_change(&mut self, change: Change) {
-        if self.synchronized_output {
-            self.pending_changes.push(change);
-            return;
-        }
+        // Always apply immediately — see Terminal::apply_or_stage_change() rationale.
         self.active_surface_mut().add_change(change);
     }
 
     fn flush_pending_changes(&mut self) {
-        for change in std::mem::take(&mut self.pending_changes) {
-            self.active_surface_mut().add_change(change);
-        }
+        // No-op: changes are applied immediately.
     }
 
     fn send_terminal_response(&mut self, response: &str) {
