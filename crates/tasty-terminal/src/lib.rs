@@ -112,7 +112,9 @@ impl Terminal {
             _ => Self::default_shell(),
         };
         let mut cmd = CommandBuilder::new(&shell);
-        // Launch as interactive login shell so .zshrc/.bashrc and themes are loaded
+        // Launch as interactive login shell so .zshrc/.bashrc and themes are loaded.
+        // On Windows, cmd.exe and powershell don't understand Unix-style -li flags.
+        #[cfg(not(windows))]
         cmd.arg("-li");
         for arg in args {
             if !arg.is_empty() {
