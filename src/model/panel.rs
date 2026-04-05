@@ -103,8 +103,8 @@ impl Panel {
     pub fn resize_all(&mut self, rect: Rect, cell_width: f32, cell_height: f32) {
         match self {
             Panel::Terminal(node) => {
-                let cols = ((rect.width - 4.0) / cell_width).floor().max(1.0) as usize;
-                let rows = ((rect.height - 4.0) / cell_height).floor().max(1.0) as usize;
+                let cols = (rect.width / cell_width).floor().max(1.0) as usize;
+                let rows = (rect.height / cell_height).floor().max(1.0) as usize;
                 node.terminal.resize(cols, rows);
             }
             Panel::SurfaceGroup(group) => group.resize_all(rect, cell_width, cell_height),
