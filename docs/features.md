@@ -29,6 +29,8 @@
     - 포커스 트래킹 (모드 1004): FocusIn/FocusOut 이벤트
     - 브래킷 붙여넣기 (모드 2004): 붙여넣기 텍스트를 브래킷으로 감쌈
     - 커서 저장/복원 (모드 1048)
+    - 동기화 출력 (모드 2026): 화면 업데이트를 버퍼링했다가 모드 해제 시 한꺼번에 flush하여 깜빡임 방지
+  - **디바이스 응답**: Device Status Report (DSR → `\x1b[0n`), Primary Device Attributes (DA → `\x1b[?1;2c`), Cursor Position Report (CPR → `\x1b[row;colR`)
   - **스크롤 리전 (DECSTBM)**: `CSI Pt;Pb r`로 스크롤 영역 설정. InsertLine/DeleteLine/LineFeed/Index/ReverseIndex가 스크롤 리전 내에서 동작
 
 ### 키보드 입력
@@ -363,11 +365,12 @@
 
 ### IME 입력 (한글/CJK)
 - winit의 IME 이벤트를 통한 CJK 입력기 지원
-- 조합 중인 문자를 커서 위치에 egui 오버레이로 표시 (파란색 배경)
+- 조합 중인 문자를 GPU 셰이더 파이프라인(CellRenderer)으로 터미널 셀 위에 직접 렌더링 (파란색 배경). 터미널 글리프와 동일한 좌표계를 사용하여 셀 그리드와 정확히 일치
 - 조합 확정(Commit) 시 PTY로 전송
 - 조합 중 단축키(Ctrl/Cmd/Alt + 키)는 physical key 기반으로 올바르게 동작
 - 마우스 클릭 시 조합 중인 텍스트를 먼저 커밋한 후 커서 이동
 - 분할 패널에서 포커스된 서피스의 실제 위치에 preedit 오버레이 표시
+- OS IME 후보창 위치를 실제 셀 좌표 기반으로 동기화 (`set_ime_cursor_area`)
 - macOS: 스페이스 이중 입력 방지 및 쉼표/마침표 유실 복구 (winit quirk 대응)
 - Linux: Ime::Commit에 트리거 키가 포함되지 않는 동작을 올바르게 처리
 
