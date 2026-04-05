@@ -167,7 +167,7 @@ impl AppState {
 
     /// Get the working directory to inherit from the focused terminal, if enabled.
     pub(crate) fn resolve_inherit_cwd(&self) -> Option<std::path::PathBuf> {
-        if !self.engine.settings.general.inherit_cwd {
+        if !self.engine.settings.general.inherit_cwd || self.engine.workspaces.is_empty() {
             return None;
         }
         self.focused_terminal()?.get_cwd()
