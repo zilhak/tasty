@@ -397,6 +397,7 @@
 - `system.info`: 버전, 워크스페이스 수, 활성 워크스페이스 인덱스
 - `system.shutdown`: 헤드리스 모드에서 프로세스를 정상 종료
 - `ui.state`: GUI 오버레이 상태 조회 (settings_open, notification_panel_open, active_workspace, workspace_count, pane_count, tab_count)
+- `debug.info`: 개발용 디버그 정보 조회 (scale_factor, cell 크기, viewport 등). `src/debug_info.rs`를 수정하여 커스텀 정보 추가 가능
 
 #### 워크스페이스
 - `workspace.list`: 전체 워크스페이스 목록 (이름, 활성 여부, 패인 수)
