@@ -59,6 +59,9 @@ impl ModalWindow {
             WindowEvent::RedrawRequested => {
                 self.render_settings();
             }
+            WindowEvent::CursorMoved { .. } => {
+                self.mark_dirty();
+            }
             _ => {}
         }
 

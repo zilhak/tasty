@@ -1,21 +1,17 @@
 use crate::i18n::t;
 use crate::settings::{GeneralSettings, Settings};
 
-/// Draw a label with a (?) tooltip icon. The tooltip appears on hover.
+/// Draw a label followed by a (?) icon with tooltip. For use inside Grid rows.
 fn label_with_tooltip(ui: &mut egui::Ui, label: &str, tooltip: &str) {
-    ui.horizontal(|ui| {
-        let th = crate::theme::theme();
-        let response = ui.add(
-            egui::Label::new(
-                egui::RichText::new("(?)")
-                    .small()
-                    .color(th.overlay1),
-            )
-            .sense(egui::Sense::hover()),
+    let th = crate::theme::theme();
+    let text = egui::RichText::new(format!("{}  (?)", label));
+    let response = ui.add(egui::Label::new(text).sense(egui::Sense::hover()));
+    // Show tooltip only when hovering over the (?) portion
+    if response.hovered() {
+        response.show_tooltip_text(
+            egui::RichText::new(tooltip).color(th.text),
         );
-        response.on_hover_text(tooltip);
-        ui.label(label);
-    });
+    }
 }
 
 pub fn draw_general_tab(ui: &mut egui::Ui, settings: &mut Settings) {
