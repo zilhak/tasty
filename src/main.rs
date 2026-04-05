@@ -247,10 +247,13 @@ impl App {
 
         let modal_window_id = window.id();
         let mut modal = modal_window::ModalWindow::new(gpu, window, settings);
-        // Render first frame immediately to avoid layout flash.
         // On Windows, hidden windows do not receive RedrawRequested events,
-        // so we cannot rely on the event loop to deliver the first render.
+        // so render the first frame immediately instead of waiting for the event loop.
+        // On other platforms, mark_dirty() + request_redraw() is sufficient.
+        #[cfg(windows)]
         modal.render_settings();
+        #[cfg(not(windows))]
+        modal.mark_dirty();
         self.modal = Some(modal);
         self.engine.modal_window_id = Some(modal_window_id);
         tracing::info!("opened settings modal {:?}", modal_window_id);
