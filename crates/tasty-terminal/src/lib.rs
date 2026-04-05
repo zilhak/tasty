@@ -348,6 +348,9 @@ impl Terminal {
     }
 
     pub fn resize(&mut self, cols: usize, rows: usize) {
+        if self.cols == cols && self.rows == rows {
+            return;
+        }
         self.cols = cols;
         self.rows = rows;
         self.primary_surface.resize(cols, rows);
