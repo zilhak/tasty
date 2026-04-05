@@ -88,7 +88,7 @@ impl ModalWindow {
         self.should_close
     }
 
-    fn render_settings(&mut self) {
+    pub fn render_settings(&mut self) {
         if !self.dirty {
             return;
         }
