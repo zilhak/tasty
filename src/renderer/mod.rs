@@ -40,6 +40,7 @@ use types::{BgInstance, GlyphInstance, Uniforms};
 
 pub struct RenderPreedit {
     pub text: String,
+    #[allow(dead_code)]
     pub cursor: Option<(usize, usize)>,
     pub anchor_col: usize,
     pub anchor_row: usize,
