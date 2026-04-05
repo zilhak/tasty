@@ -1,6 +1,6 @@
 use termwiz::cell::{unicode_column_width, AttributeChange, CellAttributes};
 use termwiz::color::ColorAttribute;
-use termwiz::escape::csi::{Cursor, Edit, EraseInDisplay, EraseInLine, Sgr, CSI};
+use termwiz::escape::csi::{Cursor, Device, Edit, EraseInDisplay, EraseInLine, Sgr, CSI};
 use termwiz::escape::esc::{Esc, EscCode};
 use termwiz::escape::{Action, ControlCode, OperatingSystemCommand};
 use termwiz::surface::{Change, CursorVisibility, Position};
@@ -97,7 +97,10 @@ impl Terminal {
                 // Handled in process() via handle_mode() before reaching here.
                 vec![]
             }
-            CSI::Device(_) => vec![],
+            CSI::Device(device) => {
+                self.handle_device(*device);
+                vec![]
+            }
             CSI::Mouse(_) => vec![],
             CSI::Window(_) => vec![],
             CSI::Keyboard(_) => vec![],
@@ -198,6 +201,11 @@ impl Terminal {
                 x: Position::Absolute(0),
                 y: Position::Relative(-(n as isize)),
             }],
+            Cursor::RequestActivePositionReport => {
+                let (x, y) = self.surface().cursor_position();
+                self.send_terminal_response(&format!("\x1b[{};{}R", y + 1, x + 1));
+                vec![]
+            }
             Cursor::ForwardTabulation(n) => {
                 // Move forward n tab stops
                 vec![Change::Text("\t".repeat(n as usize))]
@@ -592,6 +600,16 @@ impl Terminal {
                         });
                     }
                 }
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_device(&mut self, device: Device) {
+        match device {
+            Device::StatusReport => self.send_terminal_response("\x1b[0n"),
+            Device::RequestPrimaryDeviceAttributes => {
+                self.send_terminal_response("\x1b[?1;2c");
             }
             _ => {}
         }

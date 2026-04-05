@@ -64,6 +64,10 @@ pub struct Terminal {
     pub(crate) focus_tracking: bool,
     /// Scroll region top/bottom (1-based inclusive, None = full screen).
     pub(crate) scroll_region: Option<(usize, usize)>,
+    /// Whether synchronized output mode (DECSET 2026) is active.
+    pub(crate) synchronized_output: bool,
+    /// Surface changes accumulated while synchronized output mode is active.
+    pub(crate) pending_changes: Vec<Change>,
     /// Scrollback buffer: stores lines that scrolled off the top of the screen.
     /// Each line is a vector of (character, CellAttributes) pairs.
     scrollback: VecDeque<Vec<(String, CellAttributes)>>,
@@ -188,6 +192,8 @@ impl Terminal {
             sgr_mouse: false,
             focus_tracking: false,
             scroll_region: None,
+            synchronized_output: false,
+            pending_changes: Vec::new(),
             scrollback: VecDeque::new(),
             scrollback_limit: 10000,
             scroll_offset: 0,
@@ -228,11 +234,7 @@ impl Terminal {
                 let changes = self.action_to_changes(action);
                 if !changes.is_empty() {
                     for change in changes {
-                        // Capture lines before scroll (only on primary screen)
-                        if !self.use_alternate {
-                            self.capture_before_scroll(&change);
-                        }
-                        self.surface_mut().add_change(change);
+                        self.apply_or_stage_change(change);
                     }
                     changed = true;
                 }
@@ -297,7 +299,7 @@ impl Terminal {
             }
             let changes = self.action_to_changes(action);
             for change in changes {
-                self.surface_mut().add_change(change);
+                self.apply_or_stage_change(change);
             }
         }
     }
@@ -306,6 +308,35 @@ impl Terminal {
     pub fn send_key(&mut self, text: &str) {
         let _ = self.pty_writer.write_all(text.as_bytes());
         let _ = self.pty_writer.flush();
+    }
+
+    pub(crate) fn send_terminal_response(&mut self, response: &str) {
+        let _ = self.pty_writer.write_all(response.as_bytes());
+        let _ = self.pty_writer.flush();
+    }
+
+    pub(crate) fn apply_or_stage_change(&mut self, change: Change) {
+        if self.synchronized_output {
+            self.pending_changes.push(change);
+            return;
+        }
+        self.apply_change(change);
+    }
+
+    pub(crate) fn flush_pending_changes(&mut self) {
+        if self.pending_changes.is_empty() {
+            return;
+        }
+        for change in std::mem::take(&mut self.pending_changes) {
+            self.apply_change(change);
+        }
+    }
+
+    fn apply_change(&mut self, change: Change) {
+        if !self.use_alternate {
+            self.capture_before_scroll(&change);
+        }
+        self.surface_mut().add_change(change);
     }
 
     /// Send raw bytes to PTY
@@ -608,7 +639,7 @@ mod tests {
     #[test]
     fn decset_application_cursor_keys() {
         let waker = noop_waker();
-        let mut terminal = Terminal::new(80, 24, waker).expect("terminal creation");
+        let mut terminal = Terminal::new(80, 24, 0, waker).expect("terminal creation");
         assert!(!terminal.application_cursor_keys());
 
         let mut parser = Parser::new();
@@ -632,7 +663,7 @@ mod tests {
     #[test]
     fn decset_cursor_visibility() {
         let waker = noop_waker();
-        let mut terminal = Terminal::new(80, 24, waker).expect("terminal creation");
+        let mut terminal = Terminal::new(80, 24, 0, waker).expect("terminal creation");
         assert!(terminal.cursor_visible());
 
         let mut parser = Parser::new();
@@ -656,7 +687,7 @@ mod tests {
     #[test]
     fn decset_bracketed_paste() {
         let waker = noop_waker();
-        let mut terminal = Terminal::new(80, 24, waker).expect("terminal creation");
+        let mut terminal = Terminal::new(80, 24, 0, waker).expect("terminal creation");
         assert!(!terminal.bracketed_paste());
 
         let mut parser = Parser::new();
@@ -680,7 +711,7 @@ mod tests {
     #[test]
     fn decset_mouse_tracking() {
         let waker = noop_waker();
-        let mut terminal = Terminal::new(80, 24, waker).expect("terminal creation");
+        let mut terminal = Terminal::new(80, 24, 0, waker).expect("terminal creation");
         assert_eq!(terminal.mouse_tracking(), MouseTrackingMode::None);
 
         let mut parser = Parser::new();
@@ -714,7 +745,7 @@ mod tests {
     #[test]
     fn alternate_screen_switching() {
         let waker = noop_waker();
-        let mut terminal = Terminal::new(80, 24, waker).expect("terminal creation");
+        let mut terminal = Terminal::new(80, 24, 0, waker).expect("terminal creation");
         assert!(!terminal.is_alternate_screen());
 
         let mut parser = Parser::new();
@@ -739,7 +770,7 @@ mod tests {
     #[test]
     fn alternate_screen_mode_47() {
         let waker = noop_waker();
-        let mut terminal = Terminal::new(80, 24, waker).expect("terminal creation");
+        let mut terminal = Terminal::new(80, 24, 0, waker).expect("terminal creation");
 
         let mut parser = Parser::new();
         let actions = parser.parse_as_vec(b"\x1b[?47h");
@@ -762,7 +793,7 @@ mod tests {
     #[test]
     fn alternate_screen_resize() {
         let waker = noop_waker();
-        let mut terminal = Terminal::new(80, 24, waker).expect("terminal creation");
+        let mut terminal = Terminal::new(80, 24, 0, waker).expect("terminal creation");
 
         let mut parser = Parser::new();
         let actions = parser.parse_as_vec(b"\x1b[?1049h");
@@ -785,7 +816,7 @@ mod tests {
     #[test]
     fn arrow_key_sequences_normal_vs_application() {
         let waker = noop_waker();
-        let mut terminal = Terminal::new(80, 24, waker).expect("terminal creation");
+        let mut terminal = Terminal::new(80, 24, 0, waker).expect("terminal creation");
 
         assert!(!terminal.application_cursor_keys());
         let mut parser = Parser::new();
@@ -803,7 +834,7 @@ mod tests {
     #[test]
     fn full_reset_clears_modes() {
         let waker = noop_waker();
-        let mut terminal = Terminal::new(80, 24, waker).expect("terminal creation");
+        let mut terminal = Terminal::new(80, 24, 0, waker).expect("terminal creation");
 
         let mut parser = Parser::new();
         let data = b"\x1b[?1h\x1b[?25l\x1b[?2004h\x1b[?1049h";

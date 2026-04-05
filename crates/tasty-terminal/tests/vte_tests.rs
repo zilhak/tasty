@@ -244,6 +244,42 @@ fn application_cursor_keys_mode() {
 }
 
 // ============================================================
+// Synchronized output
+// ============================================================
+
+#[test]
+fn synchronized_output_flushes_on_disable() {
+    let mut t = TestTerminal::new(80, 24);
+
+    t.feed(b"\x1b[?2026habc\rXY");
+    assert_eq!(t.row(0), "");
+    assert!(t.synchronized_output);
+
+    t.feed(b"\x1b[?2026l");
+    assert_eq!(t.row(0), "XYc");
+    assert!(!t.synchronized_output);
+}
+
+// ============================================================
+// Device status / cursor position report
+// ============================================================
+
+#[test]
+fn cursor_position_report_responds_with_one_based_coordinates() {
+    let mut t = TestTerminal::new(80, 24);
+    t.feed(b"\x1b[3;5H");
+    t.feed(b"\x1b[6n");
+    assert_eq!(String::from_utf8_lossy(&t.sent_bytes), "\x1b[3;5R");
+}
+
+#[test]
+fn status_report_returns_terminal_ok() {
+    let mut t = TestTerminal::new(80, 24);
+    t.feed(b"\x1b[5n");
+    assert_eq!(String::from_utf8_lossy(&t.sent_bytes), "\x1b[0n");
+}
+
+// ============================================================
 // Full reset
 // ============================================================
 

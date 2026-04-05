@@ -3,9 +3,9 @@
 /// Used for unit testing terminal rendering without spawning real shells.
 
 use termwiz::escape::parser::Parser;
-use termwiz::escape::csi::CSI;
+use termwiz::escape::csi::{CSI, Device};
 use termwiz::escape::Action;
-use termwiz::surface::Surface;
+use termwiz::surface::{Change, Position, Surface};
 
 use crate::events::*;
 
@@ -28,6 +28,9 @@ pub struct TestTerminal {
     pub sgr_mouse: bool,
     pub focus_tracking: bool,
     pub scroll_region: Option<(usize, usize)>,
+    pub synchronized_output: bool,
+    pub pending_changes: Vec<Change>,
+    pub sent_bytes: Vec<u8>,
 }
 
 impl TestTerminal {
@@ -49,6 +52,9 @@ impl TestTerminal {
             sgr_mouse: false,
             focus_tracking: false,
             scroll_region: None,
+            synchronized_output: false,
+            pending_changes: Vec::new(),
+            sent_bytes: Vec::new(),
         }
     }
 
@@ -62,7 +68,7 @@ impl TestTerminal {
             }
             let changes = self.action_to_changes(action);
             for change in changes {
-                self.active_surface_mut().add_change(change);
+                self.apply_or_stage_change(change);
             }
         }
     }
@@ -114,6 +120,24 @@ impl TestTerminal {
             &mut self.surface
         }
     }
+
+    fn apply_or_stage_change(&mut self, change: Change) {
+        if self.synchronized_output {
+            self.pending_changes.push(change);
+            return;
+        }
+        self.active_surface_mut().add_change(change);
+    }
+
+    fn flush_pending_changes(&mut self) {
+        for change in std::mem::take(&mut self.pending_changes) {
+            self.active_surface_mut().add_change(change);
+        }
+    }
+
+    fn send_terminal_response(&mut self, response: &str) {
+        self.sent_bytes.extend_from_slice(response.as_bytes());
+    }
 }
 
 // Implement the same VTE handler methods on TestTerminal
@@ -124,7 +148,6 @@ use termwiz::cell::{AttributeChange, CellAttributes};
 use termwiz::escape::csi::{Cursor, Edit, EraseInDisplay, EraseInLine, Sgr};
 use termwiz::escape::esc::{Esc, EscCode};
 use termwiz::escape::ControlCode;
-use termwiz::surface::{Change, Position};
 
 impl TestTerminal {
     pub fn action_to_changes(&mut self, action: Action) -> Vec<Change> {
@@ -208,6 +231,10 @@ impl TestTerminal {
             CSI::Sgr(sgr) => self.map_sgr(sgr),
             CSI::Cursor(cursor) => self.map_cursor(cursor),
             CSI::Edit(edit) => self.map_edit(edit),
+            CSI::Device(device) => {
+                self.handle_device(*device);
+                vec![]
+            }
             _ => vec![],
         }
     }
@@ -228,7 +255,7 @@ impl TestTerminal {
         }
     }
 
-    fn map_cursor(&self, cursor: Cursor) -> Vec<Change> {
+    fn map_cursor(&mut self, cursor: Cursor) -> Vec<Change> {
         match cursor {
             Cursor::Up(n) => vec![Change::CursorPosition {
                 x: Position::Relative(0),
@@ -254,6 +281,11 @@ impl TestTerminal {
                 x: Position::Absolute(col.as_zero_based() as usize),
                 y: Position::Relative(0),
             }],
+            Cursor::RequestActivePositionReport => {
+                let (x, y) = self.active_surface().cursor_position();
+                self.send_terminal_response(&format!("\x1b[{};{}R", y + 1, x + 1));
+                vec![]
+            }
             _ => vec![],
         }
     }
@@ -327,6 +359,22 @@ impl TestTerminal {
                 }
             }
             DecPrivateModeCode::BracketedPaste => self.bracketed_paste = enable,
+            DecPrivateModeCode::SynchronizedOutput => {
+                self.synchronized_output = enable;
+                if !enable {
+                    self.flush_pending_changes();
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_device(&mut self, device: Device) {
+        match device {
+            Device::StatusReport => self.send_terminal_response("\x1b[0n"),
+            Device::RequestPrimaryDeviceAttributes => {
+                self.send_terminal_response("\x1b[?1;2c");
+            }
             _ => {}
         }
     }

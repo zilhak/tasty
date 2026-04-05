@@ -37,7 +37,7 @@ impl Terminal {
                 } else {
                     CursorVisibility::Hidden
                 };
-                self.surface_mut().add_change(Change::CursorVisibility(vis));
+                self.apply_or_stage_change(Change::CursorVisibility(vis));
             }
             DecPrivateModeCode::ClearAndEnableAlternateScreen => {
                 // Mode 1049: save cursor, switch to alt screen, clear it
@@ -63,7 +63,7 @@ impl Terminal {
                     self.use_alternate = false;
                     // Restore cursor on primary
                     if let Some((x, y)) = self.alt_saved_cursor.take() {
-                        self.primary_surface.add_change(Change::CursorPosition {
+                        self.apply_or_stage_change(Change::CursorPosition {
                             x: Position::Absolute(x),
                             y: Position::Absolute(y),
                         });
@@ -88,7 +88,7 @@ impl Terminal {
                     let pos = self.surface().cursor_position();
                     self.saved_cursor = Some((pos.0, pos.1));
                 } else if let Some((x, y)) = self.saved_cursor {
-                    self.surface_mut().add_change(Change::CursorPosition {
+                    self.apply_or_stage_change(Change::CursorPosition {
                         x: Position::Absolute(x),
                         y: Position::Absolute(y),
                     });
@@ -125,6 +125,12 @@ impl Terminal {
             }
             DecPrivateModeCode::FocusTracking => {
                 self.focus_tracking = enable;
+            }
+            DecPrivateModeCode::SynchronizedOutput => {
+                self.synchronized_output = enable;
+                if !enable {
+                    self.flush_pending_changes();
+                }
             }
             DecPrivateModeCode::AutoWrap => {
                 // AutoWrap is handled by termwiz Surface internally, ignore for now
