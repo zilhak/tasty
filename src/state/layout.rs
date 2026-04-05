@@ -63,6 +63,32 @@ impl AppState {
         None
     }
 
+    /// Get the physical pixel rect of a specific terminal cell within a surface.
+    pub fn surface_cell_rect(
+        &self,
+        terminal_rect: Rect,
+        surface_id: u32,
+        col: usize,
+        row: usize,
+        cell_w: f32,
+        cell_h: f32,
+    ) -> Option<Rect> {
+        let regions = self.render_regions(terminal_rect);
+        for (_pane_id, _pane_rect, terminal_regions) in &regions {
+            for (sid, _term, rect) in terminal_regions {
+                if *sid == surface_id {
+                    return Some(Rect {
+                        x: rect.x + col as f32 * cell_w,
+                        y: rect.y + row as f32 * cell_h,
+                        width: cell_w.max(1.0),
+                        height: cell_h.max(1.0),
+                    });
+                }
+            }
+        }
+        None
+    }
+
     /// Find the surface ID at the given physical pixel position.
     pub fn surface_id_at_position(&self, x: f32, y: f32, terminal_rect: Rect) -> Option<u32> {
         let regions = self.render_regions(terminal_rect);

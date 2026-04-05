@@ -1,4 +1,5 @@
 use crate::model::Rect;
+use crate::renderer::RenderPreedit;
 use crate::state::AppState;
 
 use super::GpuState;
@@ -40,6 +41,7 @@ impl GpuState {
         focused_surface_id: Option<u32>,
         selection: Option<&crate::selection::TextSelection>,
         settings: &crate::settings::AppearanceSettings,
+        preedit: Option<&super::ImePreeditState>,
     ) {
         let theme = crate::theme::theme();
         for (_pane_id, _pane_rect, terminal_regions) in regions {
@@ -57,10 +59,23 @@ impl GpuState {
                     .map(|s| (s.normalized(), theme.selection_bg));
                 let sel_ref = sel_info.as_ref();
 
+                let render_preedit = preedit
+                    .filter(|ime| ime.surface_id == *surface_id && !ime.text.is_empty())
+                    .map(|ime| RenderPreedit {
+                        text: ime.text.clone(),
+                        cursor: ime.cursor,
+                        anchor_col: ime.anchor_col,
+                        anchor_row: ime.anchor_row,
+                        bg_color: crate::theme::Theme::to_float(theme.blue),
+                        fg_color: crate::theme::Theme::to_float(theme.base),
+                    });
+                let render_preedit_ref = render_preedit.as_ref();
+
                 self.renderer.prepare_terminal_viewport(
                     terminal, &self.queue, rect,
                     self.size.width, self.size.height, bg, is_focused,
                     sel_ref,
+                    render_preedit_ref,
                 );
 
                 let mut term_encoder = self.device.create_command_encoder(

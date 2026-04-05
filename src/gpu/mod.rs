@@ -18,6 +18,14 @@ use crate::settings::AppearanceSettings;
 use crate::state::AppState;
 use crate::AppEvent;
 
+pub struct ImePreeditState {
+    pub text: String,
+    pub cursor: Option<(usize, usize)>,
+    pub anchor_col: usize,
+    pub anchor_row: usize,
+    pub surface_id: u32,
+}
+
 /// Actions returned by the shell setup dialog.
 pub enum ShellSetupAction {
     None,
@@ -187,7 +195,7 @@ impl GpuState {
         &mut self,
         state: &mut AppState,
         window: &Window,
-        preedit: &str,
+        preedit: Option<&ImePreeditState>,
         selection: Option<&crate::selection::TextSelection>,
     ) -> Result<(), wgpu::SurfaceError> {
         // 1. Prepare layout
@@ -210,7 +218,7 @@ impl GpuState {
 
         // 2. Run egui frame (UI drawing)
         let prev_theme = state.engine.settings.appearance.theme.clone();
-        let full_output = self.run_egui_frame(state, window, &pane_rects, &dividers, terminal_rect, preedit);
+        let full_output = self.run_egui_frame(state, window, &pane_rects, &dividers, terminal_rect);
 
         // 3. Post-egui updates (theme/font refresh)
         self.post_egui_update(state, &prev_theme);
@@ -229,7 +237,7 @@ impl GpuState {
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
 
         self.render_clear_pass(&view, state);
-        self.render_terminals(&view, &regions, focused_surface_id, selection, &state.engine.settings.appearance);
+        self.render_terminals(&view, &regions, focused_surface_id, selection, &state.engine.settings.appearance, preedit);
         self.render_egui_pass(&view, &full_output.textures_delta, &paint_jobs, &screen_descriptor);
 
         // 6. Screenshot + present

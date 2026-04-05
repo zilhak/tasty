@@ -38,6 +38,15 @@ pub use palette::DEFAULT_BG;
 use palette::{color_attr_to_rgba, DEFAULT_FG};
 use types::{BgInstance, GlyphInstance, Uniforms};
 
+pub struct RenderPreedit {
+    pub text: String,
+    pub cursor: Option<(usize, usize)>,
+    pub anchor_col: usize,
+    pub anchor_row: usize,
+    pub bg_color: [f32; 4],
+    pub fg_color: [f32; 4],
+}
+
 // ---- Cell Renderer ----
 
 pub struct CellRenderer {
@@ -211,6 +220,7 @@ impl CellRenderer {
         default_bg: [f32; 4],
         show_cursor: bool,
         selection: Option<&(NormalizedSelection, [f32; 4])>,
+        preedit: Option<&RenderPreedit>,
     ) {
         let uniforms = Uniforms {
             cell_size: [
@@ -241,14 +251,16 @@ impl CellRenderer {
             None
         };
 
+        let (cols, rows) = terminal.surface().dimensions();
+
         if terminal.scroll_offset == 0 {
             let row_offset = terminal.scrollback_len();
             self.prepare_with_bg(terminal.surface(), queue, default_bg, cursor, selection, row_offset);
+            self.append_preedit_overlay(preedit, queue, cols, rows);
             return;
         }
 
         // Scrolled back - mix scrollback buffer + surface lines
-        let (cols, rows) = terminal.surface().dimensions();
         let scroll_offset = terminal.scroll_offset;
         let scrollback_len = terminal.scrollback_len();
         let surface_lines = terminal.surface().screen_lines();
@@ -280,6 +292,80 @@ impl CellRenderer {
                     self.render_surface_line(&surface_lines[surface_row], row_idx, cols, default_bg, queue, selection, source_line);
                 }
             }
+        }
+
+        let bg_count = self.bg_instances.len().min(self.max_instances);
+        let glyph_count = self.glyph_instances.len().min(self.max_instances);
+
+        if bg_count > 0 {
+            queue.write_buffer(
+                &self.bg_instance_buffer,
+                0,
+                bytemuck::cast_slice(&self.bg_instances[..bg_count]),
+            );
+        }
+        if glyph_count > 0 {
+            queue.write_buffer(
+                &self.glyph_instance_buffer,
+                0,
+                bytemuck::cast_slice(&self.glyph_instances[..glyph_count]),
+            );
+        }
+
+        self.bg_instance_count = bg_count as u32;
+        self.glyph_instance_count = glyph_count as u32;
+        self.append_preedit_overlay(preedit, queue, cols, rows);
+    }
+
+    fn append_preedit_overlay(
+        &mut self,
+        preedit: Option<&RenderPreedit>,
+        queue: &wgpu::Queue,
+        cols: usize,
+        rows: usize,
+    ) {
+        let Some(preedit) = preedit else {
+            return;
+        };
+        if preedit.text.is_empty() || preedit.anchor_row >= rows || preedit.anchor_col >= cols {
+            return;
+        }
+
+        let mut col_idx = preedit.anchor_col;
+        for ch in preedit.text.chars() {
+            if col_idx >= cols {
+                break;
+            }
+
+            let width = unicode_width(ch);
+            for i in 0..width {
+                if col_idx + i < cols {
+                    self.bg_instances.push(BgInstance {
+                        pos: [(col_idx + i) as f32, preedit.anchor_row as f32],
+                        bg_color: preedit.bg_color,
+                    });
+                }
+            }
+
+            let key = GlyphKey {
+                ch,
+                bold: false,
+                italic: false,
+            };
+            if let Some(entry) = self.atlas.get_or_insert(key, &mut self.font_config, queue) {
+                if entry.width > 0.0 && entry.height > 0.0 {
+                    self.glyph_instances.push(GlyphInstance {
+                        pos: [col_idx as f32, preedit.anchor_row as f32],
+                        uv_offset: [entry.uv_x, entry.uv_y],
+                        uv_size: [entry.uv_w, entry.uv_h],
+                        fg_color: preedit.fg_color,
+                        glyph_offset: [entry.offset_x, entry.offset_y],
+                        glyph_size: [entry.width, entry.height],
+                    });
+                }
+            }
+
+            col_idx += width;
         }
 
         let bg_count = self.bg_instances.len().min(self.max_instances);

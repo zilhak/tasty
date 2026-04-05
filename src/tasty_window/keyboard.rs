@@ -176,12 +176,28 @@ impl TastyWindow {
     pub(super) fn handle_ime(&mut self, ime_event: winit::event::Ime, egui_consumed: bool) {
         if egui_consumed { self.mark_dirty(); return; }
         match ime_event {
-            winit::event::Ime::Preedit(text, _cursor) => {
-                self.preedit_text = text;
+            winit::event::Ime::Preedit(text, cursor) => {
+                if text.is_empty() {
+                    self.clear_ime_preedit();
+                } else {
+                    let surface_id = self.state.focused_surface_id();
+                    let cursor_pos = self.state.focused_terminal().map(|terminal| terminal.surface().cursor_position());
+                    self.ime_preedit = match (surface_id, cursor_pos) {
+                        (Some(surface_id), Some((anchor_col, anchor_row))) => Some(crate::gpu::ImePreeditState {
+                            text,
+                            cursor,
+                            anchor_col,
+                            anchor_row,
+                            surface_id,
+                        }),
+                        _ => None,
+                    };
+                    self.update_ime_cursor_area();
+                }
                 self.mark_dirty();
             }
             winit::event::Ime::Commit(text) => {
-                self.preedit_text.clear();
+                self.clear_ime_preedit();
                 let sid = self.state.focused_surface_id();
                 if let Some(terminal) = self.state.focused_terminal_mut() {
                     terminal.send_key(&text);

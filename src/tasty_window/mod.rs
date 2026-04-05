@@ -11,7 +11,7 @@ use winit::event_loop::ActiveEventLoop;
 use winit::keyboard::ModifiersState;
 use winit::window::{CursorIcon, Window};
 
-use crate::gpu::GpuState;
+use crate::gpu::{GpuState, ImePreeditState};
 use crate::model::Rect;
 use crate::selection::TextSelection;
 use crate::state::AppState;
@@ -28,7 +28,7 @@ pub struct TastyWindow {
     pub(crate) cursor_position: Option<winit::dpi::PhysicalPosition<f64>>,
     pub(crate) dragging_divider: Option<crate::DividerDrag>,
     pub(crate) clipboard: Option<ClipboardContext>,
-    pub(crate) preedit_text: String,
+    pub(crate) ime_preedit: Option<ImePreeditState>,
     pub(crate) proxy: winit::event_loop::EventLoopProxy<AppEvent>,
     pub(crate) text_selection: Option<TextSelection>,
     pub(crate) left_mouse_down: bool,
@@ -48,7 +48,7 @@ impl TastyWindow {
             cursor_position: None,
             dragging_divider: None,
             clipboard: ClipboardContext::new(),
-            preedit_text: String::new(),
+            ime_preedit: None,
             proxy,
             text_selection: None,
             left_mouse_down: false,
@@ -70,6 +70,36 @@ impl TastyWindow {
             size.width as f32, size.height as f32,
             self.state.sidebar_width, self.gpu.scale_factor(),
         )
+    }
+
+    fn clear_ime_preedit(&mut self) {
+        self.ime_preedit = None;
+    }
+
+    fn update_ime_cursor_area(&self) {
+        let Some(preedit) = &self.ime_preedit else {
+            return;
+        };
+        let terminal_rect = self.compute_terminal_rect();
+        let Some(cell_rect) = self.state.surface_cell_rect(
+            terminal_rect,
+            preedit.surface_id,
+            preedit.anchor_col,
+            preedit.anchor_row,
+            self.gpu.cell_width(),
+            self.gpu.cell_height(),
+        ) else {
+            return;
+        };
+
+        use winit::dpi::{PhysicalPosition, PhysicalSize};
+        self.window.set_ime_cursor_area(
+            PhysicalPosition::new(cell_rect.x.round() as i32, cell_rect.y.round() as i32),
+            PhysicalSize::new(
+                cell_rect.width.max(1.0).round() as u32,
+                cell_rect.height.max(1.0).round() as u32,
+            ),
+        );
     }
 
     /// Handle a window event. `modal_active` indicates if a modal is blocking input.
