@@ -113,11 +113,12 @@ impl GpuState {
         surface.configure(&device, &config);
 
         // Create renderer with font settings from config
+        let effective_font_size = appearance.effective_font_size(scale_factor);
         let renderer = CellRenderer::new(
             &device,
             &queue,
             surface_format,
-            appearance.font_size,
+            effective_font_size,
             &appearance.font_family,
         );
 

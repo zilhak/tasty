@@ -1,6 +1,23 @@
 use crate::i18n::t;
 use crate::settings::{GeneralSettings, Settings};
 
+/// Draw a label with a (?) tooltip icon. The tooltip appears on hover.
+fn label_with_tooltip(ui: &mut egui::Ui, label: &str, tooltip: &str) {
+    ui.horizontal(|ui| {
+        let th = crate::theme::theme();
+        let response = ui.add(
+            egui::Label::new(
+                egui::RichText::new("(?)")
+                    .small()
+                    .color(th.overlay1),
+            )
+            .sense(egui::Sense::hover()),
+        );
+        response.on_hover_text(tooltip);
+        ui.label(label);
+    });
+}
+
 pub fn draw_general_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     let th = crate::theme::theme();
     ui.add_space(8.0);
@@ -95,6 +112,22 @@ pub fn draw_appearance_tab(ui: &mut egui::Ui, settings: &mut Settings) {
             ui.add(egui::DragValue::new(&mut settings.appearance.sidebar_width)
                 .range(100.0..=400.0)
                 .speed(1.0));
+            ui.end_row();
+
+            label_with_tooltip(
+                ui,
+                t("settings.appearance.font_scale_mode_label"),
+                t("settings.appearance.font_scale_mode_tooltip"),
+            );
+            egui::ComboBox::from_id_salt("font_scale_mode")
+                .selected_text(match settings.appearance.font_scale_mode.as_str() {
+                    "auto" => t("settings.appearance.font_scale_mode_auto"),
+                    _ => t("settings.appearance.font_scale_mode_fixed"),
+                })
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut settings.appearance.font_scale_mode, "auto".to_string(), t("settings.appearance.font_scale_mode_auto"));
+                    ui.selectable_value(&mut settings.appearance.font_scale_mode, "fixed".to_string(), t("settings.appearance.font_scale_mode_fixed"));
+                });
             ui.end_row();
 
             ui.label("UI Scale");

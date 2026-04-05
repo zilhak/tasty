@@ -53,6 +53,10 @@ font_size_label = "フォントサイズ:"
 theme_label = "テーマ:"
 background_opacity_label = "背景透明度:"
 sidebar_width_label = "サイドバー幅:"
+font_scale_mode_label = "フォントDPIスケーリング:"
+font_scale_mode_auto = "自動"
+font_scale_mode_fixed = "固定"
+font_scale_mode_tooltip = "自動: モニターのDPIに合わせてフォントをレンダリングします。\n異なるモニターでも同じ物理的な文字サイズを維持します。\n\n固定: DPIに関係なく同じピクセルサイズを使用します。\n高解像度モニターではより多くのセルが表示され、文字が小さくなります。"
 
 [settings.appearance.theme]
 dark = "ダーク"

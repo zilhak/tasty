@@ -53,6 +53,10 @@ font_size_label = "글자 크기:"
 theme_label = "테마:"
 background_opacity_label = "배경 투명도:"
 sidebar_width_label = "사이드바 너비:"
+font_scale_mode_label = "폰트 DPI 스케일링:"
+font_scale_mode_auto = "자동"
+font_scale_mode_fixed = "고정"
+font_scale_mode_tooltip = "자동: 모니터 DPI에 맞춰 폰트를 렌더링합니다.\n모니터가 달라도 동일한 물리적 글자 크기를 유지합니다.\n\n고정: DPI와 무관하게 동일한 픽셀 크기를 사용합니다.\n고해상도 모니터에서 더 많은 셀이 표시되고 글자가 작아집니다."
 
 [settings.appearance.theme]
 dark = "다크"

@@ -53,6 +53,10 @@ font_size_label = "Font size:"
 theme_label = "Theme:"
 background_opacity_label = "Background opacity:"
 sidebar_width_label = "Sidebar width:"
+font_scale_mode_label = "Font DPI scaling:"
+font_scale_mode_auto = "Auto"
+font_scale_mode_fixed = "Fixed"
+font_scale_mode_tooltip = "Auto: Adjusts font rendering to match monitor DPI.\nSame physical text size across different monitors.\n\nFixed: Uses the same pixel size regardless of DPI.\nMore cells on high-DPI monitors, smaller text."
 
 [settings.appearance.theme]
 dark = "Dark"

@@ -13,6 +13,10 @@ pub struct AppearanceSettings {
     /// Background color for the focused surface (hex, e.g. "#000000").
     /// Unfocused surfaces use the theme's default terminal_bg.
     pub focused_surface_bg: String,
+    /// Font scaling mode when moving between monitors with different DPI.
+    /// "auto" = font_size * scale_factor (same physical size across monitors)
+    /// "fixed" = font_size as-is (more cells on high-DPI, current default)
+    pub font_scale_mode: String,
 }
 
 impl Default for AppearanceSettings {
@@ -25,6 +29,7 @@ impl Default for AppearanceSettings {
             sidebar_width: 180.0,
             ui_scale: "medium".to_string(),
             focused_surface_bg: "#000000".to_string(),
+            font_scale_mode: "fixed".to_string(),
         }
     }
 }
@@ -54,6 +59,16 @@ impl AppearanceSettings {
             "small" => 0.85,
             "large" => 1.2,
             _ => 1.0, // medium
+        }
+    }
+
+    /// Compute the effective font size considering scale_factor and font_scale_mode.
+    /// In "auto" mode, font is rasterized at font_size * scale_factor for DPI-aware rendering.
+    /// In "fixed" mode, font_size is used as-is regardless of DPI.
+    pub fn effective_font_size(&self, scale_factor: f32) -> f32 {
+        match self.font_scale_mode.as_str() {
+            "auto" => self.font_size * scale_factor,
+            _ => self.font_size,
         }
     }
 
