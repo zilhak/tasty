@@ -16,6 +16,7 @@ fn resolve_target(target: &str) -> String {
 pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
     let (method, params) = match command {
         Commands::Info => ("system.info", serde_json::json!({})),
+        Commands::Debug => ("debug.info", serde_json::json!({})),
         Commands::NewWindow => ("window.create", serde_json::json!({})),
         Commands::Windows => ("window.list", serde_json::json!({})),
         Commands::List => ("workspace.list", serde_json::json!({})),

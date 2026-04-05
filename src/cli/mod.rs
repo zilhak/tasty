@@ -310,6 +310,8 @@ pub enum Commands {
         #[arg(long)]
         path: Option<String>,
     },
+    /// Show debug info from the running tasty instance
+    Debug,
     /// Broadcast text to all children of a parent Claude instance
     ClaudeBroadcast {
         /// Text to send to all children

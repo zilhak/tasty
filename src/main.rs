@@ -3,6 +3,7 @@
 mod cli;
 mod click_cursor;
 mod crash_report;
+mod debug_info;
 pub mod engine;
 pub mod engine_state;
 mod event_handler;
@@ -350,6 +351,17 @@ impl App {
                 Some(w) => w,
                 None => continue,
             };
+
+            if cmd.request.method == "debug.info" {
+                let debug_data = debug_info::collect(&w.state, Some(&w.gpu));
+                let response = ipc::protocol::JsonRpcResponse::success(
+                    cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
+                    debug_data,
+                );
+                let _ = cmd.response_tx.send(response);
+                processed = true;
+                continue;
+            }
 
             if cmd.request.method == "ui.screenshot" {
                 let path = cmd.request.params
