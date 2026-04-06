@@ -185,10 +185,21 @@ impl CellRenderer {
             }
             // Fill remaining columns with default_bg so the focused surface
             // background covers the full row, not just cells with content.
+            // Also render cursor if it falls in this trailing region.
             for col_idx in last_col..cols {
+                let is_cursor = match cursor {
+                    Some((cx, cy, _)) if row_idx == cy && col_idx == cx => true,
+                    _ => false,
+                };
+                let bg = if is_cursor {
+                    // Cursor on empty cell: swap fg/bg (block cursor)
+                    DEFAULT_FG
+                } else {
+                    default_bg
+                };
                 self.bg_instances.push(BgInstance {
                     pos: [col_idx as f32, row_idx as f32],
-                    bg_color: default_bg,
+                    bg_color: bg,
                 });
             }
         }
