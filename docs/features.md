@@ -29,7 +29,7 @@
     - 포커스 트래킹 (모드 1004): FocusIn/FocusOut 이벤트
     - 브래킷 붙여넣기 (모드 2004): 붙여넣기 텍스트를 브래킷으로 감쌈
     - 커서 저장/복원 (모드 1048)
-    - 동기화 출력 (모드 2026): 화면 업데이트를 버퍼링했다가 모드 해제 시 한꺼번에 flush하여 깜빡임 방지
+    - 동기화 출력 (모드 2026): 모드 상태를 추적. 변경사항은 항상 즉시 적용 (process→render 순차 파이프라인이므로 렌더러가 항상 최종 상태만 표시)
   - **디바이스 응답**: Device Status Report (DSR → `\x1b[0n`), Primary Device Attributes (DA → `\x1b[?1;2c`), Cursor Position Report (CPR → `\x1b[row;colR`)
   - **스크롤 리전 (DECSTBM)**: `CSI Pt;Pb r`로 스크롤 영역 설정. InsertLine/DeleteLine/LineFeed/Index/ReverseIndex가 스크롤 리전 내에서 동작
 
@@ -106,8 +106,12 @@
 ### egui UI 오버레이
 - egui-winit + egui-wgpu를 이용한 wgpu 위 egui 렌더링
 - 좌측 SidePanel: 워크스페이스 목록, 활성 표시, 추가 버튼
-- Pane별 탭 바: 각 Pane의 rect 상단에 egui Area로 렌더링 (탭 2개 이상일 때만 표시)
-- 글로벌 상단 탭 바 제거, Pane별 독립 탭 바로 전환
+- Pane별 탭 바: 각 Pane의 rect 상단에 egui Area로 렌더링
+- 탭 UI: 150px 너비 영역 스타일, 1px 세로 구분선(surface1), active 탭 상단 2px 강조선(blue)
+- 탭 스크롤: 탭이 영역을 초과하면 좌우 화살표 버튼(< >)으로 스크롤 가능
+- 탭 이름 정책:
+  - 기본: 포커스된 surface의 현재 작업 디렉토리의 폴더 이름 (시스템/유저 루트는 `/` 또는 `~`)
+  - 명시적 설정 시: 설정된 이름 (explicit_name) 우선
 - 다크 테마 적용 (패널 배경색 커스터마이징)
 - 사이드바에 키보드 단축키 안내 표시
 

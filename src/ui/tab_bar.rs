@@ -36,7 +36,7 @@ pub fn draw_pane_tab_bars(
             };
             infos.push(PaneTabInfo {
                 pane_id,
-                tab_names: pane.tabs.iter().map(|t| t.name.clone()).collect(),
+                tab_names: pane.tabs.iter().map(|t| t.display_name()).collect(),
                 active_tab: pane.active_tab,
                 is_focused: pane_id == focused_pane_id,
                 logical_x: (pane_rect.x / scale_factor).round_ui(),

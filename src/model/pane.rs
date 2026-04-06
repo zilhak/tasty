@@ -43,7 +43,7 @@ impl Pane {
                 deferred_spawn: None,
             })),
             deferred_spawn: None,
-            deferred_surface_id: None,
+            explicit_name: None, deferred_surface_id: None,
         };
         Ok(Self {
             id,
@@ -75,7 +75,7 @@ impl Pane {
                 deferred_spawn: None,
             })),
             deferred_spawn: None,
-            deferred_surface_id: None,
+            explicit_name: None, deferred_surface_id: None,
         };
         self.tabs.push(tab);
         self.active_tab = self.tabs.len() - 1;
@@ -104,7 +104,7 @@ impl Pane {
                 deferred_spawn: None,
             })),
             deferred_spawn: None,
-            deferred_surface_id: None,
+            explicit_name: None, deferred_surface_id: None,
         };
         self.tabs.push(tab);
         // Do NOT change self.active_tab
@@ -135,7 +135,7 @@ impl Pane {
                 waker,
                 working_dir: working_dir.map(|p| p.to_path_buf()),
             }),
-            deferred_surface_id: Some(surface_id),
+            explicit_name: None, deferred_surface_id: Some(surface_id),
         };
         self.tabs.push(tab);
     }
@@ -316,7 +316,7 @@ impl Pane {
             name,
             panel_opt: Some(panel),
             deferred_spawn: None,
-            deferred_surface_id: None,
+            explicit_name: None, deferred_surface_id: None,
         };
         self.tabs.push(tab);
         self.active_tab = self.tabs.len() - 1;
@@ -335,7 +335,7 @@ impl Pane {
             name,
             panel_opt: Some(panel),
             deferred_spawn: None,
-            deferred_surface_id: None,
+            explicit_name: None, deferred_surface_id: None,
         };
         self.tabs.push(tab);
         self.active_tab = self.tabs.len() - 1;

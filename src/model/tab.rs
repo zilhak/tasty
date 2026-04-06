@@ -3,7 +3,10 @@ use super::{Panel, SurfaceId, SurfaceNode, TabId};
 
 pub struct Tab {
     pub id: TabId,
+    /// Auto-generated name (e.g. "Shell"). Used as fallback when explicit_name is None.
     pub name: String,
+    /// Explicitly set tab name. When Some, overrides the auto-generated name.
+    pub explicit_name: Option<String>,
     /// Always `Some` during normal operation. Temporarily `None` during structural mutations
     /// or when lazy_pty_init is enabled and the tab hasn't been focused yet.
     pub(crate) panel_opt: Option<Panel>,
@@ -15,6 +18,42 @@ pub struct Tab {
 }
 
 impl Tab {
+    /// Get the display name for this tab.
+    /// Priority: explicit_name > auto-derived from focused surface CWD > fallback "name" field.
+    pub fn display_name(&self) -> String {
+        if let Some(ref explicit) = self.explicit_name {
+            return explicit.clone();
+        }
+        // Try to derive name from the focused terminal's CWD
+        if let Some(panel) = self.panel_opt.as_ref() {
+            if let Some(terminal) = match panel {
+                Panel::Terminal(node) => Some(&node.terminal),
+                Panel::SurfaceGroup(group) => group.layout().find_terminal(group.focused_surface),
+                _ => None,
+            } {
+                if let Some(cwd) = terminal.get_cwd() {
+                    let path_str = cwd.to_string_lossy();
+                    // Home directory → "~"
+                    if let Some(home) = dirs_home() {
+                        if cwd == home {
+                            return "~".to_string();
+                        }
+                    }
+                    // Root → "/"
+                    if path_str == "/" {
+                        return "/".to_string();
+                    }
+                    // Otherwise → last component (folder name)
+                    if let Some(name) = cwd.file_name() {
+                        return name.to_string_lossy().to_string();
+                    }
+                }
+            }
+        }
+        self.name.clone()
+    }
+
+
     /// Access the panel. If lazy init is pending, spawns the terminal first.
     #[track_caller]
     pub fn panel(&self) -> &Panel {
@@ -78,5 +117,16 @@ impl Tab {
     /// Put the panel back after structural mutations.
     pub(crate) fn put_panel(&mut self, panel: Panel) {
         self.panel_opt = Some(panel);
+    }
+}
+
+fn dirs_home() -> Option<std::path::PathBuf> {
+    #[cfg(not(windows))]
+    {
+        std::env::var("HOME").ok().map(std::path::PathBuf::from)
+    }
+    #[cfg(windows)]
+    {
+        std::env::var("USERPROFILE").ok().map(std::path::PathBuf::from)
     }
 }
