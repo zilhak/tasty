@@ -60,6 +60,7 @@ impl PaneNode {
                             id: new_pane_id,
                             tabs: vec![],
                             active_tab: 0,
+                            tab_scroll_offset: 0.0,
                         })),
                     },
                 );
@@ -105,6 +106,7 @@ impl PaneNode {
                             id: 0,
                             tabs: vec![],
                             active_tab: 0,
+                            tab_scroll_offset: 0.0,
                         }),
                     );
                     if let PaneNode::Split { second, .. } = old {
@@ -119,6 +121,7 @@ impl PaneNode {
                             id: 0,
                             tabs: vec![],
                             active_tab: 0,
+                            tab_scroll_offset: 0.0,
                         }),
                     );
                     if let PaneNode::Split { first, .. } = old {

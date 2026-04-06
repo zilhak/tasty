@@ -9,6 +9,15 @@ pub struct Pane {
     pub id: PaneId,
     pub tabs: Vec<Tab>,
     pub active_tab: usize,
+    /// Horizontal scroll offset for the tab bar (in logical pixels).
+    #[cfg_attr(test, allow(dead_code))]
+    pub tab_scroll_offset: f32,
+}
+
+impl Default for Pane {
+    fn default() -> Self {
+        Self { id: 0, tabs: Vec::new(), active_tab: 0, tab_scroll_offset: 0.0 }
+    }
 }
 
 impl Pane {
@@ -40,6 +49,7 @@ impl Pane {
             id,
             tabs: vec![tab],
             active_tab: 0,
+            tab_scroll_offset: 0.0,
         })
     }
 

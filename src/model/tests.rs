@@ -113,8 +113,8 @@ fn pane_node_compute_rects_single() {
 
 #[test]
 fn pane_node_compute_rects_split() {
-    let p1 = Pane { id: 1, tabs: vec![], active_tab: 0 };
-    let p2 = Pane { id: 2, tabs: vec![], active_tab: 0 };
+    let p1 = Pane { id: 1, tabs: vec![], active_tab: 0, tab_scroll_offset: 0.0 };
+    let p2 = Pane { id: 2, tabs: vec![], active_tab: 0, tab_scroll_offset: 0.0 };
     let node = PaneNode::Split {
         direction: SplitDirection::Vertical,
         ratio: 0.5,
@@ -134,8 +134,8 @@ fn pane_node_compute_rects_split() {
 
 #[test]
 fn pane_node_find_pane() {
-    let p1 = Pane { id: 1, tabs: vec![], active_tab: 0 };
-    let p2 = Pane { id: 2, tabs: vec![], active_tab: 0 };
+    let p1 = Pane { id: 1, tabs: vec![], active_tab: 0, tab_scroll_offset: 0.0 };
+    let p2 = Pane { id: 2, tabs: vec![], active_tab: 0, tab_scroll_offset: 0.0 };
     let node = PaneNode::Split {
         direction: SplitDirection::Vertical,
         ratio: 0.5,
@@ -149,9 +149,9 @@ fn pane_node_find_pane() {
 
 #[test]
 fn pane_node_all_pane_ids() {
-    let p1 = Pane { id: 1, tabs: vec![], active_tab: 0 };
-    let p2 = Pane { id: 2, tabs: vec![], active_tab: 0 };
-    let p3 = Pane { id: 3, tabs: vec![], active_tab: 0 };
+    let p1 = Pane { id: 1, tabs: vec![], active_tab: 0, tab_scroll_offset: 0.0 };
+    let p2 = Pane { id: 2, tabs: vec![], active_tab: 0, tab_scroll_offset: 0.0 };
+    let p3 = Pane { id: 3, tabs: vec![], active_tab: 0, tab_scroll_offset: 0.0 };
     let node = PaneNode::Split {
         direction: SplitDirection::Vertical,
         ratio: 0.5,
@@ -168,9 +168,9 @@ fn pane_node_all_pane_ids() {
 
 #[test]
 fn pane_node_next_prev_pane_id() {
-    let p1 = Pane { id: 1, tabs: vec![], active_tab: 0 };
-    let p2 = Pane { id: 2, tabs: vec![], active_tab: 0 };
-    let p3 = Pane { id: 3, tabs: vec![], active_tab: 0 };
+    let p1 = Pane { id: 1, tabs: vec![], active_tab: 0, tab_scroll_offset: 0.0 };
+    let p2 = Pane { id: 2, tabs: vec![], active_tab: 0, tab_scroll_offset: 0.0 };
+    let p3 = Pane { id: 3, tabs: vec![], active_tab: 0, tab_scroll_offset: 0.0 };
     let node = PaneNode::Split {
         direction: SplitDirection::Vertical,
         ratio: 0.5,
@@ -191,8 +191,8 @@ fn pane_node_next_prev_pane_id() {
 
 #[test]
 fn pane_node_find_divider_at_vertical() {
-    let p1 = Pane { id: 1, tabs: vec![], active_tab: 0 };
-    let p2 = Pane { id: 2, tabs: vec![], active_tab: 0 };
+    let p1 = Pane { id: 1, tabs: vec![], active_tab: 0, tab_scroll_offset: 0.0 };
+    let p2 = Pane { id: 2, tabs: vec![], active_tab: 0, tab_scroll_offset: 0.0 };
     let node = PaneNode::Split {
         direction: SplitDirection::Vertical,
         ratio: 0.5,
@@ -212,10 +212,10 @@ fn pane_node_find_divider_at_vertical() {
 
 #[test]
 fn pane_node_split_pane_in_place() {
-    let p1 = Pane { id: 1, tabs: vec![], active_tab: 0 };
+    let p1 = Pane { id: 1, tabs: vec![], active_tab: 0, tab_scroll_offset: 0.0 };
     let mut node = PaneNode::Leaf(p1);
 
-    let new_pane = Pane { id: 2, tabs: vec![], active_tab: 0 };
+    let new_pane = Pane { id: 2, tabs: vec![], active_tab: 0, tab_scroll_offset: 0.0 };
     let result = node.split_pane_in_place(1, SplitDirection::Vertical, new_pane);
     assert!(result.is_none()); // success
 
@@ -225,10 +225,10 @@ fn pane_node_split_pane_in_place() {
 
 #[test]
 fn pane_node_split_pane_in_place_not_found() {
-    let p1 = Pane { id: 1, tabs: vec![], active_tab: 0 };
+    let p1 = Pane { id: 1, tabs: vec![], active_tab: 0, tab_scroll_offset: 0.0 };
     let mut node = PaneNode::Leaf(p1);
 
-    let new_pane = Pane { id: 2, tabs: vec![], active_tab: 0 };
+    let new_pane = Pane { id: 2, tabs: vec![], active_tab: 0, tab_scroll_offset: 0.0 };
     let result = node.split_pane_in_place(99, SplitDirection::Vertical, new_pane);
     assert!(result.is_some()); // not found, pane returned
 
@@ -261,15 +261,15 @@ fn pane_close_tab_last_tab_fails() {
 
 #[test]
 fn pane_node_close_pane_single_leaf_fails() {
-    let p1 = Pane { id: 1, tabs: vec![], active_tab: 0 };
+    let p1 = Pane { id: 1, tabs: vec![], active_tab: 0, tab_scroll_offset: 0.0 };
     let mut node = PaneNode::Leaf(p1);
     assert!(!node.close_pane(1));
 }
 
 #[test]
 fn pane_node_close_pane_promotes_sibling() {
-    let p1 = Pane { id: 1, tabs: vec![], active_tab: 0 };
-    let p2 = Pane { id: 2, tabs: vec![], active_tab: 0 };
+    let p1 = Pane { id: 1, tabs: vec![], active_tab: 0, tab_scroll_offset: 0.0 };
+    let p2 = Pane { id: 2, tabs: vec![], active_tab: 0, tab_scroll_offset: 0.0 };
     let mut node = PaneNode::Split {
         direction: SplitDirection::Vertical,
         ratio: 0.5,
@@ -284,9 +284,9 @@ fn pane_node_close_pane_promotes_sibling() {
 
 #[test]
 fn pane_node_close_pane_nested() {
-    let p1 = Pane { id: 1, tabs: vec![], active_tab: 0 };
-    let p2 = Pane { id: 2, tabs: vec![], active_tab: 0 };
-    let p3 = Pane { id: 3, tabs: vec![], active_tab: 0 };
+    let p1 = Pane { id: 1, tabs: vec![], active_tab: 0, tab_scroll_offset: 0.0 };
+    let p2 = Pane { id: 2, tabs: vec![], active_tab: 0, tab_scroll_offset: 0.0 };
+    let p3 = Pane { id: 3, tabs: vec![], active_tab: 0, tab_scroll_offset: 0.0 };
     let mut node = PaneNode::Split {
         direction: SplitDirection::Vertical,
         ratio: 0.5,
@@ -306,8 +306,8 @@ fn pane_node_close_pane_nested() {
 
 #[test]
 fn pane_node_close_pane_not_found() {
-    let p1 = Pane { id: 1, tabs: vec![], active_tab: 0 };
-    let p2 = Pane { id: 2, tabs: vec![], active_tab: 0 };
+    let p1 = Pane { id: 1, tabs: vec![], active_tab: 0, tab_scroll_offset: 0.0 };
+    let p2 = Pane { id: 2, tabs: vec![], active_tab: 0, tab_scroll_offset: 0.0 };
     let mut node = PaneNode::Split {
         direction: SplitDirection::Vertical,
         ratio: 0.5,
