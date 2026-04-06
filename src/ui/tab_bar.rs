@@ -71,7 +71,7 @@ pub fn draw_pane_tab_bars(
                         ui.set_max_width(info.logical_w);
 
                         let tab_w = 150.0 / scale_factor;
-                        let bar_h = ui.available_height().max(20.0);
+                        let bar_h = state.tab_bar_height / scale_factor;
 
                         ui.horizontal(|ui| {
                             ui.spacing_mut().item_spacing.x = 0.0;
