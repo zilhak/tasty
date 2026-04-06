@@ -36,6 +36,9 @@ pub struct TastyWindow {
     pub(crate) last_click_pos: Option<(usize, usize)>,
     pub(crate) click_count: u8,
     pub(crate) arrow_queue: Option<crate::click_cursor::ArrowQueue>,
+    /// Buffered text from KeyboardInput, pending IME check.
+    /// Flushed at end of event batch (redraw). Cleared if IME intercepts.
+    pub(crate) pending_key_text: Option<String>,
 }
 
 impl TastyWindow {
@@ -56,6 +59,7 @@ impl TastyWindow {
             last_click_pos: None,
             click_count: 0,
             arrow_queue: None,
+            pending_key_text: None,
         }
     }
 
