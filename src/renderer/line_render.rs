@@ -72,6 +72,7 @@ impl CellRenderer {
     }
 
     /// Render a single scrollback line (stored as Vec<(String, CellAttributes)>).
+    /// Fills remaining columns with default_bg.
     pub(super) fn render_scrollback_line(
         &mut self,
         line: &[(String, CellAttributes)],
@@ -92,9 +93,17 @@ impl CellRenderer {
             self.render_cell(col_idx, row_idx, text.as_str(), attrs, width, cols, default_bg, queue, selection, absolute_row);
             col_idx += width;
         }
+        // Fill remaining columns with default_bg
+        for c in col_idx..cols {
+            self.bg_instances.push(BgInstance {
+                pos: [c as f32, row_idx as f32],
+                bg_color: default_bg,
+            });
+        }
     }
 
     /// Render a single surface line (from termwiz screen_lines).
+    /// Fills remaining columns with default_bg.
     pub(super) fn render_surface_line(
         &mut self,
         line: &termwiz::surface::line::Line,
@@ -105,6 +114,7 @@ impl CellRenderer {
         selection: Option<&(NormalizedSelection, [f32; 4])>,
         absolute_row: usize,
     ) {
+        let mut last_col = 0usize;
         for cell_ref in line.visible_cells() {
             let col_idx = cell_ref.cell_index();
             if col_idx >= cols {
@@ -114,6 +124,14 @@ impl CellRenderer {
             let ch = text.chars().next().unwrap_or(' ');
             let width = if !text.is_empty() { unicode_width(ch) } else { 1 };
             self.render_cell(col_idx, row_idx, text, cell_ref.attrs(), width, cols, default_bg, queue, selection, absolute_row);
+            last_col = col_idx + width;
+        }
+        // Fill remaining columns with default_bg
+        for c in last_col..cols {
+            self.bg_instances.push(BgInstance {
+                pos: [c as f32, row_idx as f32],
+                bg_color: default_bg,
+            });
         }
     }
 }

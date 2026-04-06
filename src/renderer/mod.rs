@@ -106,6 +106,7 @@ impl CellRenderer {
             if row_idx >= rows {
                 break;
             }
+            let mut last_col = 0usize;
             for cell_ref in line.visible_cells() {
                 let col_idx = cell_ref.cell_index();
                 if col_idx >= cols {
@@ -151,7 +152,12 @@ impl CellRenderer {
                             pos: [(col_idx + 1) as f32, row_idx as f32],
                             bg_color,
                         });
+                        last_col = col_idx + 2;
+                    } else {
+                        last_col = col_idx + 1;
                     }
+                } else {
+                    last_col = col_idx + 1;
                 }
 
                 if text.is_empty() || text == " " {
@@ -176,6 +182,14 @@ impl CellRenderer {
                         });
                     }
                 }
+            }
+            // Fill remaining columns with default_bg so the focused surface
+            // background covers the full row, not just cells with content.
+            for col_idx in last_col..cols {
+                self.bg_instances.push(BgInstance {
+                    pos: [col_idx as f32, row_idx as f32],
+                    bg_color: default_bg,
+                });
             }
         }
 
