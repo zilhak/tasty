@@ -65,29 +65,73 @@ pub fn draw_pane_tab_bars(
 
                 egui::Frame::new()
                     .fill(bg)
-                    .inner_margin(egui::Margin::symmetric(4, 2))
+                    .inner_margin(egui::Margin::ZERO)
                     .show(ui, |ui| {
-                        // Force the frame content to fill the full pane width
-                        // (subtract inner_margin: 4px left + 4px right = 8px)
-                        let inner_w = info.logical_w - 8.0;
-                        ui.set_min_width(inner_w);
-                        ui.set_max_width(inner_w);
+                        ui.set_min_width(info.logical_w);
+                        ui.set_max_width(info.logical_w);
+
+                        let tab_w = 150.0 / scale_factor;
+                        let bar_h = ui.available_height().max(20.0);
 
                         ui.horizontal(|ui| {
-                            for (i, name) in info.tab_names.iter().enumerate() {
-                                let is_active = i == info.active_tab;
-                                let label = if is_active {
-                                    egui::RichText::new(name).strong().small()
-                                } else {
-                                    egui::RichText::new(name).small()
-                                };
+                            ui.spacing_mut().item_spacing.x = 0.0;
 
-                                if ui.selectable_label(is_active, label).clicked() {
+                            for (i, name) in info.tab_names.iter().enumerate() {
+                                // 1px vertical border between tabs
+                                if i > 0 {
+                                    let rect = ui.allocate_space(egui::vec2(1.0, bar_h)).1;
+                                    ui.painter().rect_filled(rect, 0.0, th.surface0);
+                                }
+
+                                let is_active = i == info.active_tab;
+                                let tab_bg = if is_active { th.base } else { bg };
+                                let text_color = if is_active { th.text } else { th.subtext0 };
+
+                                let (rect, response) = ui.allocate_exact_size(
+                                    egui::vec2(tab_w, bar_h),
+                                    egui::Sense::click(),
+                                );
+
+                                ui.painter().rect_filled(rect, 0.0, tab_bg);
+
+                                let label = egui::RichText::new(name)
+                                    .small()
+                                    .color(text_color);
+                                ui.painter().text(
+                                    rect.center(),
+                                    egui::Align2::CENTER_CENTER,
+                                    label.text(),
+                                    egui::FontId::proportional(11.0),
+                                    text_color,
+                                );
+
+                                if response.clicked() {
                                     actions.push((info.pane_id, PaneTabAction::SwitchTab(i)));
                                 }
                             }
 
-                            if ui.small_button("+").clicked() {
+                            // 1px border before + button
+                            {
+                                let rect = ui.allocate_space(egui::vec2(1.0, bar_h)).1;
+                                ui.painter().rect_filled(rect, 0.0, th.surface0);
+                            }
+
+                            // "+" button — same height, narrow width
+                            let (plus_rect, plus_resp) = ui.allocate_exact_size(
+                                egui::vec2(28.0, bar_h),
+                                egui::Sense::click(),
+                            );
+                            if plus_resp.hovered() {
+                                ui.painter().rect_filled(plus_rect, 0.0, th.surface0);
+                            }
+                            ui.painter().text(
+                                plus_rect.center(),
+                                egui::Align2::CENTER_CENTER,
+                                "+",
+                                egui::FontId::proportional(13.0),
+                                th.subtext0,
+                            );
+                            if plus_resp.clicked() {
                                 actions.push((info.pane_id, PaneTabAction::AddTab));
                             }
                         });

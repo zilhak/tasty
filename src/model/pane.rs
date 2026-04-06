@@ -58,7 +58,7 @@ impl Pane {
         let terminal = Terminal::new_with_shell_args_cwd(cols, rows, shell, shell_args, surface_id, waker, working_dir)?;
         let tab = Tab {
             id: tab_id,
-            name: format!("Shell {}", self.tabs.len() + 1),
+            name: "Shell".to_string(),
             panel_opt: Some(Panel::Terminal(SurfaceNode {
                 id: surface_id,
                 terminal,
@@ -87,7 +87,7 @@ impl Pane {
         let terminal = Terminal::new_with_shell_args_cwd(cols, rows, shell, shell_args, surface_id, waker, working_dir)?;
         let tab = Tab {
             id: tab_id,
-            name: format!("Shell {}", self.tabs.len() + 1),
+            name: "Shell".to_string(),
             panel_opt: Some(Panel::Terminal(SurfaceNode {
                 id: surface_id,
                 terminal,
@@ -115,7 +115,7 @@ impl Pane {
     ) {
         let tab = Tab {
             id: tab_id,
-            name: format!("Shell {}", self.tabs.len() + 1),
+            name: "Shell".to_string(),
             panel_opt: None,
             deferred_spawn: Some(super::surface_group::DeferredSpawn {
                 shell: shell.map(|s| s.to_string()),
