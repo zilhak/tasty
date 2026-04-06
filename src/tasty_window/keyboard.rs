@@ -53,7 +53,18 @@ impl TastyWindow {
         // Forward to terminal
         // When IME is active, skip text sending — let Ime::Commit handle it.
         // This prevents double input when switching to Korean/Chinese/Japanese IME.
-        let text_for_terminal = if self.ime_active { &None } else { &event.text };
+        // When IME is active, suppress non-ASCII text (Korean/Chinese/Japanese
+        // composition — Ime::Commit will handle it). ASCII text (numbers,
+        // punctuation like 1234567890,./) passes through IME unchanged and
+        // won't generate Ime::Commit, so we must send it here.
+        let text_for_terminal = if self.ime_active {
+            match &event.text {
+                Some(t) if t.as_str().is_ascii() => &event.text,
+                _ => &None,
+            }
+        } else {
+            &event.text
+        };
         let typing_surface_id = self.state.focused_surface_id();
         if let Some(terminal) = self.state.focused_terminal_mut() {
             let (dirty, sent) = Self::send_key_to_terminal(terminal, &event.logical_key, text_for_terminal, self.modifiers);
