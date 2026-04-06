@@ -193,6 +193,22 @@ impl CellRenderer {
             }
         }
 
+        // Fill the right and bottom gutter (fractional cell area beyond the grid)
+        // with default_bg. The extra bg instances extend beyond the grid boundary;
+        // the scissor rect clips them to exactly the remaining pixels.
+        for row_idx in 0..rows {
+            self.bg_instances.push(BgInstance {
+                pos: [cols as f32, row_idx as f32],
+                bg_color: default_bg,
+            });
+        }
+        for col_idx in 0..=cols {
+            self.bg_instances.push(BgInstance {
+                pos: [col_idx as f32, rows as f32],
+                bg_color: default_bg,
+            });
+        }
+
         let bg_count = self.bg_instances.len().min(self.max_instances);
         let glyph_count = self.glyph_instances.len().min(self.max_instances);
 
@@ -307,6 +323,20 @@ impl CellRenderer {
                     self.render_surface_line(&surface_lines[surface_row], row_idx, cols, default_bg, queue, selection, source_line);
                 }
             }
+        }
+
+        // Fill right and bottom gutter (same as prepare_with_bg)
+        for row_idx in 0..rows {
+            self.bg_instances.push(BgInstance {
+                pos: [cols as f32, row_idx as f32],
+                bg_color: default_bg,
+            });
+        }
+        for col_idx in 0..=cols {
+            self.bg_instances.push(BgInstance {
+                pos: [col_idx as f32, rows as f32],
+                bg_color: default_bg,
+            });
         }
 
         let bg_count = self.bg_instances.len().min(self.max_instances);
