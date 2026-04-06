@@ -94,13 +94,19 @@ pub fn draw_pane_tab_bars(
 
                                 ui.painter().rect_filled(rect, 0.0, tab_bg);
 
-                                let label = egui::RichText::new(name)
-                                    .small()
-                                    .color(text_color);
+                                // Active tab: 2px accent line at bottom
+                                if is_active {
+                                    let line_rect = egui::Rect::from_min_size(
+                                        egui::pos2(rect.min.x, rect.max.y - 2.0),
+                                        egui::vec2(rect.width(), 2.0),
+                                    );
+                                    ui.painter().rect_filled(line_rect, 0.0, th.blue);
+                                }
+
                                 ui.painter().text(
                                     rect.center(),
                                     egui::Align2::CENTER_CENTER,
-                                    label.text(),
+                                    name,
                                     egui::FontId::proportional(11.0),
                                     text_color,
                                 );
