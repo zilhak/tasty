@@ -21,11 +21,6 @@ impl TastyWindow {
             }
         }
 
-        // Flush any pending key text that wasn't consumed by IME.
-        // On macOS, KeyboardInput fires before Ime events in the same batch.
-        // If no Ime event arrived, the text was regular (non-IME) input.
-        self.flush_pending_key_text();
-
         // Check if settings button was clicked (ui.rs sets state.settings_open = true)
         if self.state.settings_open {
             self.state.settings_open = false;

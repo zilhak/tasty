@@ -4,27 +4,6 @@ use winit::keyboard::{Key, ModifiersState, NamedKey};
 use super::TastyWindow;
 
 impl TastyWindow {
-    /// Flush any pending key text to the terminal.
-    /// Called at the end of each event batch (before redraw).
-    /// If an IME event arrived in the same batch, pending_key_text will have
-    /// been cleared by handle_ime(), so nothing is sent.
-    pub(super) fn flush_pending_key_text(&mut self) {
-        if let Some(text) = self.pending_key_text.take() {
-            let typing_surface_id = self.state.focused_surface_id();
-            if let Some(terminal) = self.state.focused_terminal_mut() {
-                terminal.send_key(&text);
-            }
-            if let Some(sid) = typing_surface_id {
-                self.state.record_typing(sid);
-            }
-            // Clear selection when text is sent
-            if self.text_selection.is_some() {
-                self.text_selection = None;
-                self.dirty = true;
-            }
-        }
-    }
-
     pub(super) fn handle_keyboard_input(&mut self, event: &winit::event::KeyEvent, _egui_consumed: bool) {
         if event.state != ElementState::Pressed {
             return;
@@ -72,23 +51,16 @@ impl TastyWindow {
         // egui UI elements (settings, dialogs) are guarded by overlay_open above.
 
         // Forward to terminal
+        // When IME is active, skip text sending — let Ime::Commit handle it.
+        // This prevents double input when switching to Korean/Chinese/Japanese IME.
+        let text_for_terminal = if self.ime_active { &None } else { &event.text };
         let typing_surface_id = self.state.focused_surface_id();
         if let Some(terminal) = self.state.focused_terminal_mut() {
-            let (dirty, sent, buffered_text) = Self::send_key_to_terminal(terminal, &event.logical_key, &event.text, self.modifiers);
+            let (dirty, sent) = Self::send_key_to_terminal(terminal, &event.logical_key, text_for_terminal, self.modifiers);
             if dirty { self.dirty = true; }
-
-            // Buffer text for IME check instead of sending immediately.
-            // If an IME event arrives in the same event batch, the buffer
-            // is cleared. Otherwise it's flushed in flush_pending_key_text().
-            if let Some(text) = buffered_text {
-                self.pending_key_text = Some(text);
-                self.mark_dirty(); // Ensure redraw happens to flush
-                return;
-            }
 
             // Clear selection only when actual content was sent to the terminal PTY
             if sent && self.text_selection.is_some() {
-
                 self.text_selection = None;
                 self.dirty = true;
             }
@@ -98,16 +70,14 @@ impl TastyWindow {
         }
     }
 
-    /// Send a key to the terminal. Returns (dirty, sent, buffered_text):
-    /// - `dirty`: whether redraw is needed
-    /// - `sent`: whether bytes were written to the terminal PTY
-    /// - `buffered_text`: text that should be deferred for IME check
+    /// Send a key to the terminal. Returns (dirty, sent) where `sent` indicates
+    /// whether any bytes were actually written to the terminal PTY.
     fn send_key_to_terminal(
         terminal: &mut tasty_terminal::Terminal,
         key: &Key,
         text: &Option<winit::keyboard::SmolStr>,
         modifiers: ModifiersState,
-    ) -> (bool, bool, Option<String>) {
+    ) -> (bool, bool) {
         let app_cursor = terminal.application_cursor_keys();
         let is_alt_screen = terminal.is_alternate_screen();
         let mut dirty = false;
@@ -184,22 +154,14 @@ impl TastyWindow {
                                 let ctrl_char = (ch.to_ascii_lowercase() as u8) - b'a' + 1;
                                 terminal.send_bytes(&[ctrl_char]);
                                 sent = true;
-                                return (dirty, sent, None);
+                                return (dirty, sent);
                             }
                         }
                     }
                 }
                 if let Some(text) = text {
                     let s = text.as_str();
-                    if !s.is_empty() {
-                        // Don't send text immediately — buffer it so that
-                        // if an IME event (Preedit/Commit) arrives in the
-                        // same event batch, we can discard this text and
-                        // let the IME handle it. This prevents double input
-                        // on the first keystroke after switching to Korean/
-                        // Chinese/Japanese IME on macOS.
-                        return (dirty, false, Some(s.to_string()));
-                    }
+                    if !s.is_empty() { terminal.send_key(s); sent = true; }
                 }
             }
         }
@@ -210,14 +172,19 @@ impl TastyWindow {
             dirty = true;
         }
 
-        (dirty, sent, None)
+        (dirty, sent)
     }
 
     pub(super) fn handle_ime(&mut self, ime_event: winit::event::Ime, egui_consumed: bool) {
         if egui_consumed { self.mark_dirty(); return; }
-        // IME is handling this input — discard any text buffered from KeyboardInput
-        self.pending_key_text = None;
         match ime_event {
+            winit::event::Ime::Enabled => {
+                self.ime_active = true;
+            }
+            winit::event::Ime::Disabled => {
+                self.ime_active = false;
+                self.clear_ime_preedit();
+            }
             winit::event::Ime::Preedit(text, cursor) => {
                 if text.is_empty() {
                     self.clear_ime_preedit();
@@ -249,7 +216,6 @@ impl TastyWindow {
                 }
                 self.mark_dirty();
             }
-            _ => {}
         }
     }
 }
