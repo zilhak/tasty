@@ -54,6 +54,10 @@ pub struct AppState {
     pub ws_rename: Option<(usize, WsRenameField, String)>,
     /// Pane right-click context menu state: (pane_id, logical_x, logical_y).
     pub pane_context_menu: Option<PaneContextMenu>,
+    /// Tab right-click context menu state.
+    pub tab_context_menu: Option<TabContextMenu>,
+    /// Tab rename dialog state: (pane_id, tab_index, edit_buffer).
+    pub tab_rename_dialog: Option<(u32, usize, String)>,
     /// Markdown file path dialog state: (pane_id, path_buffer).
     pub markdown_path_dialog: Option<(u32, String)>,
     /// Measured tab bar height in physical pixels, updated each frame by egui.
@@ -70,6 +74,16 @@ pub struct PaneContextMenu {
     /// Set to true after the first egui frame where no mouse button is pressed.
     /// Until then, clicks are ignored (to avoid the opening right-click release
     /// from immediately closing the menu).
+    pub armed: bool,
+}
+
+/// State for the tab right-click context menu.
+#[derive(Debug, Clone)]
+pub struct TabContextMenu {
+    pub pane_id: u32,
+    pub tab_index: usize,
+    pub x: f32,
+    pub y: f32,
     pub armed: bool,
 }
 
@@ -96,6 +110,8 @@ impl AppState {
             sidebar_collapsed: false,
             ws_rename: None,
             pane_context_menu: None,
+            tab_context_menu: None,
+            tab_rename_dialog: None,
             markdown_path_dialog: None,
             tab_bar_height: 24.0,
         })

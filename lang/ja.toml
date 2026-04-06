@@ -146,6 +146,10 @@ close_surface = "サーフェスを閉じる"
 notifications = "通知"
 settings = "設定"
 
+[tab_context_menu]
+rename = "タブ名を変更"
+close = "タブを閉じる"
+
 [notification_panel]
 window_title = "通知"
 unread_count = "{}件の未読"

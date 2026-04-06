@@ -155,12 +155,15 @@ pub fn draw_pane_tab_bars(
                                     name, egui::FontId::proportional(11.0), text_color,
                                 );
 
-                                // Click detection via ctx input
+                                // Click detection
                                 let tab_clip = tab_rect.intersect(clip_rect);
                                 if !tab_clip.is_negative() {
                                     let resp = ui.interact(tab_clip, egui::Id::new(format!("tab_{}_{}", info.pane_id, i)), egui::Sense::click());
                                     if resp.clicked() {
                                         actions.push((info.pane_id, PaneTabAction::SwitchTab(i)));
+                                    }
+                                    if resp.secondary_clicked() {
+                                        actions.push((info.pane_id, PaneTabAction::OpenContextMenu(i, resp.interact_pointer_pos().unwrap_or_default())));
                                     }
                                 }
 
@@ -253,13 +256,202 @@ pub fn draw_pane_tab_bars(
                     pane.tab_scroll_offset += tab_w;
                 }
             }
+            PaneTabAction::OpenContextMenu(tab_idx, pos) => {
+                state.tab_context_menu = Some(crate::state::TabContextMenu {
+                    pane_id,
+                    tab_index: tab_idx,
+                    x: pos.x,
+                    y: pos.y,
+                    armed: false,
+                });
+            }
         }
     }
+
+    // Draw tab context menu if open
+    draw_tab_context_menu(ctx, state);
+
+    // Draw tab rename dialog if open
+    draw_tab_rename_dialog(ctx, state);
+}
+
+fn draw_tab_context_menu(ctx: &egui::Context, state: &mut AppState) {
+    let th = theme::theme();
+    let menu = match &state.tab_context_menu {
+        Some(m) => m.clone(),
+        None => return,
+    };
+
+    let mut close_menu = false;
+    let mut action: Option<TabContextAction> = None;
+
+    let area_response = egui::Area::new(egui::Id::new("tab_context_menu"))
+        .fixed_pos(egui::pos2(menu.x, menu.y))
+        .order(egui::Order::Foreground)
+        .show(ctx, |ui| {
+            egui::Frame::new()
+                .fill(th.surface0)
+                .stroke(egui::Stroke::new(1.0, th.surface1))
+                .corner_radius(th.corner_radius)
+                .inner_margin(egui::Margin::symmetric(0, 4))
+                .show(ui, |ui| {
+                    ui.set_min_width(160.0);
+
+                    let rename_label = crate::i18n::t("tab_context_menu.rename");
+                    let close_label = crate::i18n::t("tab_context_menu.close");
+
+                    if menu_item(ui, &th, &rename_label) {
+                        action = Some(TabContextAction::Rename);
+                        close_menu = true;
+                    }
+                    if menu_item(ui, &th, &close_label) {
+                        action = Some(TabContextAction::Close);
+                        close_menu = true;
+                    }
+                });
+        });
+
+    // Close menu on click outside (after arming)
+    if menu.armed {
+        let pointer = ctx.input(|i| i.pointer.press_origin());
+        if let Some(pos) = pointer {
+            if !area_response.response.rect.contains(pos) {
+                close_menu = true;
+            }
+        }
+    }
+
+    // Arm the menu after first frame
+    if !menu.armed {
+        if let Some(m) = &mut state.tab_context_menu {
+            m.armed = true;
+        }
+    }
+
+    if close_menu {
+        state.tab_context_menu = None;
+    }
+
+    // Process action
+    if let Some(act) = action {
+        match act {
+            TabContextAction::Rename => {
+                // Get current display name for the edit buffer
+                let current_name = state.active_workspace()
+                    .pane_layout()
+                    .find_pane(menu.pane_id)
+                    .and_then(|p| p.tabs.get(menu.tab_index))
+                    .map(|t| t.display_name())
+                    .unwrap_or_default();
+                state.tab_rename_dialog = Some((menu.pane_id, menu.tab_index, current_name));
+            }
+            TabContextAction::Close => {
+                // Get the surface ID of the tab to close
+                if let Some(pane) = state.active_workspace().pane_layout().find_pane(menu.pane_id) {
+                    if let Some(tab) = pane.tabs.get(menu.tab_index) {
+                        if let Some(panel) = tab.panel_if_initialized() {
+                            let ids = panel.all_surface_ids();
+                            if let Some(&sid) = ids.first() {
+                                state.close_surface_by_id(sid);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn draw_tab_rename_dialog(ctx: &egui::Context, state: &mut AppState) {
+    let th = theme::theme();
+    let dialog = match &state.tab_rename_dialog {
+        Some(d) => d.clone(),
+        None => return,
+    };
+    let (pane_id, tab_idx, mut buf) = dialog;
+
+    let mut close = false;
+
+    egui::Area::new(egui::Id::new("tab_rename_dialog"))
+        .fixed_pos(egui::pos2(
+            ctx.screen_rect().center().x - 120.0,
+            ctx.screen_rect().center().y - 40.0,
+        ))
+        .order(egui::Order::Foreground)
+        .show(ctx, |ui| {
+            egui::Frame::new()
+                .fill(th.surface0)
+                .stroke(egui::Stroke::new(1.0, th.surface1))
+                .corner_radius(th.corner_radius)
+                .inner_margin(egui::Margin::same(12))
+                .show(ui, |ui| {
+                    ui.set_min_width(240.0);
+
+                    let rename_label = crate::i18n::t("tab_context_menu.rename");
+                    ui.label(egui::RichText::new(rename_label).strong().color(th.text));
+                    ui.add_space(4.0);
+
+                    let resp = ui.text_edit_singleline(&mut buf);
+                    if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                        // Apply rename
+                        let name = buf.trim().to_string();
+                        if let Some(pane) = state.active_workspace_mut().pane_layout_mut().find_pane_mut(pane_id) {
+                            if let Some(tab) = pane.tabs.get_mut(tab_idx) {
+                                if name.is_empty() {
+                                    tab.explicit_name = None; // Revert to auto
+                                } else {
+                                    tab.explicit_name = Some(name);
+                                }
+                            }
+                        }
+                        close = true;
+                    }
+                    if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                        close = true;
+                    }
+
+                    // Auto-focus the text field
+                    resp.request_focus();
+
+                    // Update buffer
+                    state.tab_rename_dialog = Some((pane_id, tab_idx, buf));
+                });
+        });
+
+    if close {
+        state.tab_rename_dialog = None;
+    }
+}
+
+fn menu_item(ui: &mut egui::Ui, th: &theme::Theme, label: &str) -> bool {
+    let desired = egui::vec2(ui.available_width(), th.item_height_interactive);
+    let (rect, response) = ui.allocate_exact_size(desired, egui::Sense::click());
+    if response.hovered() {
+        ui.painter().rect_filled(rect, th.corner_radius, th.hover_overlay);
+    }
+    let text_pos = egui::pos2(
+        rect.min.x + th.spacing_sm,
+        rect.center().y - th.font_size_body / 2.0,
+    );
+    ui.painter().text(
+        text_pos,
+        egui::Align2::LEFT_TOP,
+        label,
+        egui::FontId::proportional(th.font_size_body),
+        th.text,
+    );
+    response.clicked()
+}
+
+enum TabContextAction {
+    Rename,
+    Close,
 }
 
 enum PaneTabAction {
     SwitchTab(usize),
     AddTab,
     ScrollLeft,
+    OpenContextMenu(usize, egui::Pos2),
     ScrollRight,
 }

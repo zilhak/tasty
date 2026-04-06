@@ -146,6 +146,10 @@ close_surface = "서피스 닫기"
 notifications = "알림"
 settings = "설정"
 
+[tab_context_menu]
+rename = "탭 이름 변경"
+close = "탭 닫기"
+
 [notification_panel]
 window_title = "알림"
 unread_count = "{}개 안 읽음"

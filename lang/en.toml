@@ -146,6 +146,10 @@ close_surface = "Close Surface"
 notifications = "Notifications"
 settings = "Settings"
 
+[tab_context_menu]
+rename = "Rename Tab"
+close = "Close Tab"
+
 [notification_panel]
 window_title = "Notifications"
 unread_count = "{} unread"
