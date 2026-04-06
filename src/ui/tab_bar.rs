@@ -127,7 +127,7 @@ pub fn draw_pane_tab_bars(
                                         egui::pos2(x, clip_rect.min.y),
                                         egui::vec2(separator_w, bar_h),
                                     );
-                                    painter.rect_filled(sep, 0.0, th.surface0);
+                                    painter.rect_filled(sep, 0.0, th.surface1);
                                     x += separator_w;
                                 }
 
@@ -173,7 +173,7 @@ pub fn draw_pane_tab_bars(
                                     egui::pos2(x, clip_rect.min.y),
                                     egui::vec2(separator_w, bar_h),
                                 );
-                                painter.rect_filled(sep, 0.0, th.surface0);
+                                painter.rect_filled(sep, 0.0, th.surface1);
                                 x += separator_w;
                             }
 
