@@ -80,7 +80,7 @@ impl TastyWindow {
         self.ime_preedit = None;
     }
 
-    fn update_ime_cursor_area(&self) {
+    pub(crate) fn update_ime_cursor_area(&self) {
         let Some(preedit) = &self.ime_preedit else {
             return;
         };

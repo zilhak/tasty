@@ -314,6 +314,27 @@ pub enum Commands {
         #[arg(long)]
         path: Option<String>,
     },
+    /// Enable IME composition mode
+    ImeEnable,
+    /// Disable IME composition mode and clear preedit
+    ImeDisable,
+    /// Send IME preedit (composition) text
+    ImePreedit {
+        /// Composition text (e.g. "ㅎ", "하", "한")
+        #[arg()]
+        text: String,
+        /// Cursor position within composition
+        #[arg(long)]
+        cursor: Option<u64>,
+    },
+    /// Commit IME composition text (finalize and send to terminal)
+    ImeCommit {
+        /// Finalized text to commit (e.g. "한")
+        #[arg()]
+        text: String,
+    },
+    /// Show current IME status
+    ImeStatus,
     /// Show debug info from the running tasty instance
     Debug,
     /// Broadcast text to all children of a parent Claude instance

@@ -229,6 +229,17 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
             "tab.open_explorer",
             serde_json::json!({ "path": path }),
         ),
+        Commands::ImeEnable => ("surface.ime_enable", serde_json::json!({})),
+        Commands::ImeDisable => ("surface.ime_disable", serde_json::json!({})),
+        Commands::ImePreedit { text, cursor } => (
+            "surface.ime_preedit",
+            serde_json::json!({ "text": text, "cursor": cursor }),
+        ),
+        Commands::ImeCommit { text } => (
+            "surface.ime_commit",
+            serde_json::json!({ "text": text }),
+        ),
+        Commands::ImeStatus => ("surface.ime_status", serde_json::json!({})),
     };
 
     JsonRpcRequest {

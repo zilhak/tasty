@@ -377,6 +377,12 @@
 - OS IME 후보창 위치를 실제 셀 좌표 기반으로 동기화 (`set_ime_cursor_area`)
 - macOS: 스페이스 이중 입력 방지 및 쉼표/마침표 유실 복구 (winit quirk 대응)
 - Linux: Ime::Commit에 트리거 키가 포함되지 않는 동작을 올바르게 처리
+- **IME 시뮬레이션 API**: IPC/CLI를 통해 IME 입력을 프로그래밍 방식으로 시뮬레이션. AI 에이전트가 한글/CJK 입력 파이프라인을 직접 테스트할 수 있음
+  - `surface.ime_enable` / `surface.ime_disable`: IME 활성/비활성 전환
+  - `surface.ime_preedit`: 조합 중 텍스트 표시 (preedit 렌더링 테스트)
+  - `surface.ime_commit`: 조합 확정 → PTY 전송
+  - `surface.ime_status`: 현재 IME 상태 조회 (active, preedit_text)
+  - CLI: `tasty ime-enable`, `tasty ime-disable`, `tasty ime-preedit "ㅎ"`, `tasty ime-commit "한"`, `tasty ime-status`
 
 ### OSC 52 클립보드 설정
 - 터미널 프로그램이 OSC 52 시퀀스로 시스템 클립보드에 텍스트를 설정할 수 있음

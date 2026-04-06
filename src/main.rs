@@ -363,6 +363,16 @@ impl App {
                 continue;
             }
 
+            // IME simulation IPC methods (require window-local state)
+            if cmd.request.method.starts_with("surface.ime_") {
+                let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
+                let response = ipc::handler::ime::handle_ime_method(w, &cmd.request.method, &cmd.request.params, id);
+                let _ = cmd.response_tx.send(response);
+                w.dirty = true;
+                processed = true;
+                continue;
+            }
+
             if cmd.request.method == "ui.screenshot" {
                 let path = cmd.request.params
                     .get("path")

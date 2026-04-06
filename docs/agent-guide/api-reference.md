@@ -67,6 +67,13 @@ tasty close-surface
 tasty open-markdown /path/to/file.md     # 마크다운 뷰어 탭 열기
 tasty open-explorer [--path /dir]        # 파일 탐색기 탭 열기
 
+# IME 시뮬레이션
+tasty ime-enable                   # IME 활성화
+tasty ime-preedit "ㅎ"              # 조합 중 텍스트 표시
+tasty ime-commit "한"               # 확정 → PTY 전송
+tasty ime-status                   # 현재 IME 상태 확인
+tasty ime-disable                  # IME 비활성화 + preedit 클리어
+
 # 포커스 이동
 tasty focus-direction left    # 왼쪽 패인/서피스로 포커스 이동
 tasty focus-direction right   # 오른쪽
@@ -172,6 +179,46 @@ tasty claude-wait --child 42 --timeout 60 # 타임아웃 60초로 대기
 | `surface.set_mark` | `surface_id?` | 현재 출력 위치에 마크 설정 |
 | `surface.read_since_mark` | `surface_id?, strip_ansi?: bool` | 마크 이후 새 출력 반환 |
 | `surface.cursor_position` | `surface_id?` | 커서 위치 (x, y) 반환 |
+
+### IME 시뮬레이션
+
+AI 에이전트가 한글/CJK IME 입력을 프로그래밍 방식으로 시뮬레이션할 수 있다. 실제 winit IME 이벤트와 동일한 코드 경로를 타므로 preedit 렌더링, 커서 위치 보정 등을 완전히 테스트할 수 있다.
+
+| 메서드 | 파라미터 | 설명 |
+|--------|---------|------|
+| `surface.ime_enable` | 없음 | IME 활성화. 이후 KeyboardInput의 비ASCII 텍스트가 무시됨 |
+| `surface.ime_disable` | 없음 | IME 비활성화 + preedit 클리어 |
+| `surface.ime_preedit` | `text: string`, `cursor?: number` | 조합 중 텍스트 표시. 빈 문자열이면 preedit 클리어 |
+| `surface.ime_commit` | `text: string` | 조합 확정. 텍스트를 PTY로 전송하고 preedit 클리어 |
+| `surface.ime_status` | 없음 | 현재 IME 상태 조회. `{ active, preedit_text, has_preedit }` |
+
+**CLI:**
+
+```bash
+tasty ime-enable                   # IME 활성화
+tasty ime-preedit "ㅎ"              # preedit 표시
+tasty ime-preedit "하"              # 모음 조합
+tasty ime-preedit "한"              # 받침 조합
+tasty ime-commit "한"               # 확정 → PTY 전송
+tasty ime-status                   # 상태 확인
+tasty ime-disable                  # IME 비활성화
+```
+
+**한글 입력 시뮬레이션 전체 흐름:**
+
+```bash
+tasty ime-enable
+# "한글" 입력
+tasty ime-preedit "ㅎ"
+tasty ime-preedit "하"
+tasty ime-preedit "한"
+tasty ime-commit "한"
+tasty ime-preedit "ㄱ"
+tasty ime-preedit "그"
+tasty ime-preedit "글"
+tasty ime-commit "글"
+tasty ime-disable
+```
 
 ### Surface 메타데이터
 

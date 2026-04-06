@@ -5,6 +5,7 @@ use crate::state::AppState;
 
 mod claude;
 mod hooks;
+pub mod ime;
 mod message;
 mod meta;
 mod notification;
