@@ -180,7 +180,9 @@ impl AppState {
         removed
     }
 
-    /// Close the focused surface within a SurfaceGroup. Returns true if a surface was removed.
+    /// Close the focused surface. For SurfaceGroup, closes the focused surface
+    /// within the group. For a single Terminal tab, delegates to close_surface_by_id
+    /// which handles tab/pane/workspace cascading properly.
     pub fn close_active_surface(&mut self) -> bool {
         let surface_id;
         if let Some(pane) = self.focused_pane_mut() {
@@ -189,8 +191,14 @@ impl AppState {
                     crate::model::Panel::SurfaceGroup(group) => {
                         surface_id = group.focused_surface;
                         if !group.close_surface(surface_id) {
-                            return false;
+                            // Last surface in group — fall through to close_surface_by_id
+                            // which will handle tab/pane/workspace cascading.
+                            return self.close_surface_by_id(surface_id);
                         }
+                    }
+                    crate::model::Panel::Terminal(node) => {
+                        surface_id = node.id;
+                        return self.close_surface_by_id(surface_id);
                     }
                     _ => return false,
                 }
