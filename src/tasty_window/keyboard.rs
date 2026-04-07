@@ -57,6 +57,7 @@ impl TastyWindow {
         // composition — Ime::Commit will handle it). ASCII text (numbers,
         // punctuation like 1234567890,./) passes through IME unchanged and
         // won't generate Ime::Commit, so we must send it here.
+        //
         let text_for_terminal = if self.ime_active {
             match &event.text {
                 Some(t) if t.as_str().is_ascii() => &event.text,
