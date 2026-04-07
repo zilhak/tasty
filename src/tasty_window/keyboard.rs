@@ -71,10 +71,16 @@ impl TastyWindow {
             let (dirty, sent) = Self::send_key_to_terminal(terminal, &event.logical_key, text_for_terminal, self.modifiers);
             if dirty { self.dirty = true; }
 
-            // Clear selection only when actual content was sent to the terminal PTY
-            if sent && self.text_selection.is_some() {
-                self.text_selection = None;
-                self.dirty = true;
+            if sent {
+                // KeyboardInput sent bytes to PTY — the cursor will move
+                // independently of IME, so any accumulated advance is stale.
+                self.ime_cursor_advance = 0;
+
+                // Clear selection only when actual content was sent to the terminal PTY
+                if self.text_selection.is_some() {
+                    self.text_selection = None;
+                    self.dirty = true;
+                }
             }
         }
         if let Some(sid) = typing_surface_id {
@@ -202,15 +208,49 @@ impl TastyWindow {
                     self.clear_ime_preedit();
                 } else {
                     let surface_id = self.state.focused_surface_id();
-                    let cursor_pos = self.state.focused_terminal().map(|terminal| terminal.surface().cursor_position());
+                    let cursor_pos = self.state.focused_terminal().map(|terminal| {
+                        let (col, row) = terminal.surface().cursor_position();
+                        let cols = terminal.cols();
+
+                        // Reconcile: if PTY echo has been processed, the raw
+                        // cursor already moved past the commit point. Reduce
+                        // the advance so we don't double-offset.
+                        if self.ime_cursor_advance > 0 {
+                            let (base_col, base_row) = self.ime_advance_base;
+                            let raw_advance = if row > base_row {
+                                (row - base_row) * cols + col - base_col
+                            } else if col >= base_col {
+                                col - base_col
+                            } else {
+                                0
+                            };
+                            // PTY echo moved the cursor by raw_advance columns,
+                            // so that portion of ime_cursor_advance is now stale.
+                            if raw_advance >= self.ime_cursor_advance {
+                                self.ime_cursor_advance = 0;
+                            } else {
+                                self.ime_cursor_advance -= raw_advance;
+                            }
+                            self.ime_advance_base = (col, row);
+                        }
+
+                        let adjusted_col = col + self.ime_cursor_advance;
+                        if cols > 0 && adjusted_col >= cols {
+                            (adjusted_col % cols, row + adjusted_col / cols)
+                        } else {
+                            (adjusted_col, row)
+                        }
+                    });
                     self.ime_preedit = match (surface_id, cursor_pos) {
-                        (Some(surface_id), Some((anchor_col, anchor_row))) => Some(crate::gpu::ImePreeditState {
-                            text,
-                            cursor,
-                            anchor_col,
-                            anchor_row,
-                            surface_id,
-                        }),
+                        (Some(surface_id), Some((anchor_col, anchor_row))) => {
+                            Some(crate::gpu::ImePreeditState {
+                                text,
+                                cursor,
+                                anchor_col,
+                                anchor_row,
+                                surface_id,
+                            })
+                        },
                         _ => None,
                     };
                     self.update_ime_cursor_area();
@@ -218,7 +258,21 @@ impl TastyWindow {
                 self.mark_dirty();
             }
             winit::event::Ime::Commit(text) => {
-                self.clear_ime_preedit();
+                // Record raw cursor position before accumulating advance.
+                // This base is used by Preedit to reconcile when PTY echo
+                // catches up (raw cursor moves past the base).
+                if self.ime_cursor_advance == 0 {
+                    if let Some(terminal) = self.state.focused_terminal() {
+                        self.ime_advance_base = terminal.surface().cursor_position();
+                    }
+                }
+                // Accumulate display width of committed text so that the next
+                // Preedit anchor is offset correctly (shell echo is not yet
+                // processed at this point).
+                for ch in text.chars() {
+                    self.ime_cursor_advance += crate::renderer::unicode_width(ch);
+                }
+                self.ime_preedit = None; // clear preedit but keep ime_cursor_advance
                 let sid = self.state.focused_surface_id();
                 if let Some(terminal) = self.state.focused_terminal_mut() {
                     terminal.send_key(&text);

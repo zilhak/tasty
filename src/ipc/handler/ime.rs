@@ -59,10 +59,33 @@ fn handle_ime_preedit(
         .map(|c| (c as usize, (c as usize) + text.len()));
 
     let surface_id = w.state.focused_surface_id();
-    let cursor_pos = w
-        .state
-        .focused_terminal()
-        .map(|terminal| terminal.surface().cursor_position());
+    let cursor_pos = w.state.focused_terminal().map(|terminal| {
+        let (col, row) = terminal.surface().cursor_position();
+        let cols = terminal.cols();
+        // Reconcile advance with PTY echo
+        if w.ime_cursor_advance > 0 {
+            let (base_col, base_row) = w.ime_advance_base;
+            let raw_advance = if row > base_row {
+                (row - base_row) * cols + col - base_col
+            } else if col >= base_col {
+                col - base_col
+            } else {
+                0
+            };
+            if raw_advance >= w.ime_cursor_advance {
+                w.ime_cursor_advance = 0;
+            } else {
+                w.ime_cursor_advance -= raw_advance;
+            }
+            w.ime_advance_base = (col, row);
+        }
+        let adjusted_col = col + w.ime_cursor_advance;
+        if cols > 0 && adjusted_col >= cols {
+            (adjusted_col % cols, row + adjusted_col / cols)
+        } else {
+            (adjusted_col, row)
+        }
+    });
 
     match (surface_id, cursor_pos) {
         (Some(surface_id), Some((anchor_col, anchor_row))) => {
@@ -100,7 +123,17 @@ fn handle_ime_commit(
         None => return JsonRpcResponse::invalid_params(id, "Missing 'text' parameter"),
     };
 
-    w.ime_preedit = None;
+    // Record base cursor position before accumulating advance
+    if w.ime_cursor_advance == 0 {
+        if let Some(terminal) = w.state.focused_terminal() {
+            w.ime_advance_base = terminal.surface().cursor_position();
+        }
+    }
+    // Accumulate display width for cursor advance (same as real IME commit)
+    for ch in text.chars() {
+        w.ime_cursor_advance += crate::renderer::unicode_width(ch);
+    }
+    w.ime_preedit = None; // clear preedit but keep ime_cursor_advance
 
     let sid = w.state.focused_surface_id();
     if let Some(terminal) = w.state.focused_terminal_mut() {

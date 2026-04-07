@@ -39,6 +39,15 @@ pub struct TastyWindow {
     /// Whether IME composition is active (set by Ime::Enabled/Disabled).
     /// When true, KeyboardInput text is ignored — only Ime::Commit sends text.
     pub(crate) ime_active: bool,
+    /// Accumulated cursor advance from IME commits (in terminal columns).
+    /// After Ime::Commit, the PTY echo hasn't been processed yet, so
+    /// cursor_position() returns a stale value. This offset compensates
+    /// so the next Preedit anchor appears after the committed text.
+    pub(crate) ime_cursor_advance: usize,
+    /// Raw cursor position when ime_cursor_advance was last updated.
+    /// Used to reconcile: if the raw cursor moved past this point, PTY
+    /// echo has caught up and advance should be reduced accordingly.
+    pub(crate) ime_advance_base: (usize, usize),
 }
 
 impl TastyWindow {
@@ -60,6 +69,8 @@ impl TastyWindow {
             click_count: 0,
             arrow_queue: None,
             ime_active: false,
+            ime_cursor_advance: 0,
+            ime_advance_base: (0, 0),
         }
     }
 
@@ -78,6 +89,8 @@ impl TastyWindow {
 
     fn clear_ime_preedit(&mut self) {
         self.ime_preedit = None;
+        self.ime_cursor_advance = 0;
+        self.ime_advance_base = (0, 0);
     }
 
     pub(crate) fn update_ime_cursor_area(&self) {
