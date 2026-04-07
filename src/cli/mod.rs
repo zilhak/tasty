@@ -314,6 +314,35 @@ pub enum Commands {
         #[arg(long)]
         path: Option<String>,
     },
+    /// Debug and diagnostic commands (IME simulation, raw key input, etc.)
+    Debug {
+        #[command(subcommand)]
+        command: DebugCommands,
+    },
+    /// Broadcast text to all children of a parent Claude instance
+    ClaudeBroadcast {
+        /// Text to send to all children
+        #[arg()]
+        text: String,
+        /// Filter children by role
+        #[arg(long)]
+        role: Option<String>,
+    },
+    /// Wait for a specific child Claude instance to become idle/needs_input/exited
+    ClaudeWait {
+        /// Child surface ID to wait for
+        #[arg(long)]
+        child: u32,
+        /// Timeout in seconds (default: 30)
+        #[arg(long, default_value = "30")]
+        timeout: u64,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum DebugCommands {
+    /// Show debug info from the running tasty instance
+    Info,
     /// Enable IME composition mode
     ImeEnable,
     /// Disable IME composition mode and clear preedit
@@ -346,26 +375,6 @@ pub enum Commands {
         /// macOS virtual key code (e.g. 7=KeyX, 35=KeyP, 49=Space)
         #[arg()]
         keycode: u16,
-    },
-    /// Show debug info from the running tasty instance
-    Debug,
-    /// Broadcast text to all children of a parent Claude instance
-    ClaudeBroadcast {
-        /// Text to send to all children
-        #[arg()]
-        text: String,
-        /// Filter children by role
-        #[arg(long)]
-        role: Option<String>,
-    },
-    /// Wait for a specific child Claude instance to become idle/needs_input/exited
-    ClaudeWait {
-        /// Child surface ID to wait for
-        #[arg(long)]
-        child: u32,
-        /// Timeout in seconds (default: 30)
-        #[arg(long, default_value = "30")]
-        timeout: u64,
     },
 }
 

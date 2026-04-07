@@ -1,5 +1,5 @@
 use crate::ipc::protocol::JsonRpcRequest;
-use super::Commands;
+use super::{Commands, DebugCommands};
 
 /// Resolve a target string for split/other commands.
 /// - "this" → numeric surface ID from TASTY_SURFACE_ID env var
@@ -16,7 +16,7 @@ fn resolve_target(target: &str) -> String {
 pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
     let (method, params) = match command {
         Commands::Info => ("system.info", serde_json::json!({})),
-        Commands::Debug => ("debug.info", serde_json::json!({})),
+        Commands::Debug { command } => debug_command_to_method_params(command),
         Commands::NewWindow => ("window.create", serde_json::json!({})),
         Commands::Windows => ("window.list", serde_json::json!({})),
         Commands::List => ("workspace.list", serde_json::json!({})),
@@ -229,25 +229,6 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
             "tab.open_explorer",
             serde_json::json!({ "path": path }),
         ),
-        Commands::ImeEnable => ("surface.ime_enable", serde_json::json!({})),
-        Commands::ImeDisable => ("surface.ime_disable", serde_json::json!({})),
-        Commands::ImePreedit { text, cursor } => (
-            "surface.ime_preedit",
-            serde_json::json!({ "text": text, "cursor": cursor }),
-        ),
-        Commands::ImeCommit { text } => (
-            "surface.ime_commit",
-            serde_json::json!({ "text": text }),
-        ),
-        Commands::SwitchInputSource { source_id } => (
-            "surface.switch_input_source",
-            serde_json::json!({ "source_id": source_id }),
-        ),
-        Commands::RawKey { keycode } => (
-            "surface.raw_key",
-            serde_json::json!({ "keycode": keycode }),
-        ),
-        Commands::ImeStatus => ("surface.ime_status", serde_json::json!({})),
     };
 
     JsonRpcRequest {
@@ -255,5 +236,30 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
         method: method.to_string(),
         params,
         id: Some(serde_json::json!(1)),
+    }
+}
+
+fn debug_command_to_method_params(command: &DebugCommands) -> (&'static str, serde_json::Value) {
+    match command {
+        DebugCommands::Info => ("debug.info", serde_json::json!({})),
+        DebugCommands::ImeEnable => ("surface.ime_enable", serde_json::json!({})),
+        DebugCommands::ImeDisable => ("surface.ime_disable", serde_json::json!({})),
+        DebugCommands::ImePreedit { text, cursor } => (
+            "surface.ime_preedit",
+            serde_json::json!({ "text": text, "cursor": cursor }),
+        ),
+        DebugCommands::ImeCommit { text } => (
+            "surface.ime_commit",
+            serde_json::json!({ "text": text }),
+        ),
+        DebugCommands::ImeStatus => ("surface.ime_status", serde_json::json!({})),
+        DebugCommands::SwitchInputSource { source_id } => (
+            "surface.switch_input_source",
+            serde_json::json!({ "source_id": source_id }),
+        ),
+        DebugCommands::RawKey { keycode } => (
+            "surface.raw_key",
+            serde_json::json!({ "keycode": keycode }),
+        ),
     }
 }
