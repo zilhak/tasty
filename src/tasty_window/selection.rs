@@ -239,7 +239,7 @@ impl TastyWindow {
         Some((point, surface_id))
     }
 
-    /// Copy the current selection to clipboard and clear selection.
+    /// Copy the current selection to clipboard. Selection is preserved.
     pub fn copy_selection_to_clipboard(&mut self) -> bool {
         let sel = match &self.text_selection {
             Some(s) if !s.is_empty() => s.clone(),
@@ -257,7 +257,6 @@ impl TastyWindow {
             cb.set_text(&text);
         }
 
-        self.text_selection = None;
         true
     }
 }
