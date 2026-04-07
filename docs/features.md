@@ -376,6 +376,7 @@
 - 분할 패널에서 포커스된 서피스의 실제 위치에 preedit 오버레이 표시
 - OS IME 후보창 위치를 실제 셀 좌표 기반으로 동기화 (`set_ime_cursor_area`)
 - macOS: 스페이스 이중 입력 방지 및 쉼표/마침표 유실 복구 (winit quirk 대응)
+- macOS: 입력소스 전환(한영 전환) 직후 첫 글자가 조합 없이 확정되는 문제 수정 (winit 포크에서 `interpretKeyEvents` 재시도로 해결)
 - Linux: Ime::Commit에 트리거 키가 포함되지 않는 동작을 올바르게 처리
 - **IME 시뮬레이션 API**: IPC/CLI를 통해 IME 입력을 프로그래밍 방식으로 시뮬레이션. AI 에이전트가 한글/CJK 입력 파이프라인을 직접 테스트할 수 있음
   - `surface.ime_enable` / `surface.ime_disable`: IME 활성/비활성 전환
