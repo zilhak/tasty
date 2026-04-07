@@ -53,6 +53,21 @@ pub enum Commands {
         /// Workspace index
         index: usize,
     },
+    /// Update workspace name, subtitle, or description
+    UpdateWorkspace {
+        /// Workspace ID (default: active workspace)
+        #[arg(long)]
+        id: Option<u32>,
+        /// New name
+        #[arg(long)]
+        name: Option<String>,
+        /// New subtitle
+        #[arg(long)]
+        subtitle: Option<String>,
+        /// New description
+        #[arg(long)]
+        description: Option<String>,
+    },
     /// Send text to the focused terminal
     Send {
         /// Text to send

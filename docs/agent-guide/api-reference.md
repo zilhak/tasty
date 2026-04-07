@@ -47,6 +47,7 @@ tasty info                    # 버전, 워크스페이스 수
 tasty list                    # 워크스페이스 목록
 tasty new-workspace [--name NAME] [--cwd PATH]
 tasty select-workspace INDEX  # 0-based
+tasty update-workspace [--id ID] [--name NAME] [--subtitle TEXT] [--description TEXT]
 
 # 패인/탭
 tasty panes                   # 패인 목록

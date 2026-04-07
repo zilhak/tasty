@@ -512,7 +512,7 @@
 
 ### CLI 클라이언트 (cli.rs)
 - `tasty` 명령에 서브커맨드가 있으면 CLI 모드, 없으면 GUI 모드로 동작
-- clap 기반 서브커맨드: `list`, `new-workspace`, `select-workspace`, `send`, `send-key`, `notify`, `notifications`, `tree`, `split`, `new-tab`, `close-tab`, `close-pane`, `close-surface`, `surfaces`, `panes`, `info`, `set-hook`, `list-hooks`, `unset-hook`, `set-mark`, `read-since-mark`, `claude`, `message-send`, `message-read`, `message-count`, `message-clear`, `claude-broadcast`, `claude-wait`
+- clap 기반 서브커맨드: `list`, `new-workspace`, `select-workspace`, `update-workspace`, `send`, `send-key`, `notify`, `notifications`, `tree`, `split`, `new-tab`, `close-tab`, `close-pane`, `close-surface`, `surfaces`, `panes`, `info`, `set-hook`, `list-hooks`, `unset-hook`, `set-mark`, `read-since-mark`, `claude`, `message-send`, `message-read`, `message-count`, `message-clear`, `claude-broadcast`, `claude-wait`
 - 포트 파일에서 포트 번호를 읽어 TCP 연결 후 JSON-RPC 요청/응답
 - `tree` 커맨드: 워크스페이스/패인/탭 계층을 트리 형태로 표시
 - 에러 시 종료 코드 1 반환

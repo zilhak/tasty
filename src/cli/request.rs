@@ -28,6 +28,15 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
             "workspace.select",
             serde_json::json!({ "index": index }),
         ),
+        Commands::UpdateWorkspace { id, name, subtitle, description } => (
+            "workspace.update",
+            serde_json::json!({
+                "id": id,
+                "name": name,
+                "subtitle": subtitle,
+                "description": description,
+            }),
+        ),
         Commands::Send { text } => ("surface.send", serde_json::json!({ "text": text })),
         Commands::SendKey { key } => ("surface.send_key", serde_json::json!({ "key": key })),
         Commands::Notify { body, title } => (
