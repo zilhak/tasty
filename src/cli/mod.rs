@@ -335,6 +335,18 @@ pub enum Commands {
     },
     /// Show current IME status
     ImeStatus,
+    /// Switch macOS input source (e.g. Korean IME)
+    SwitchInputSource {
+        /// Input source ID (e.g. "com.apple.inputmethod.Korean.2SetKorean")
+        #[arg()]
+        source_id: String,
+    },
+    /// Send a raw physical key code via CGEvent (goes through IME pipeline)
+    RawKey {
+        /// macOS virtual key code (e.g. 7=KeyX, 35=KeyP, 49=Space)
+        #[arg()]
+        keycode: u16,
+    },
     /// Show debug info from the running tasty instance
     Debug,
     /// Broadcast text to all children of a parent Claude instance

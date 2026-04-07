@@ -6,6 +6,8 @@ use crate::state::AppState;
 mod claude;
 mod hooks;
 pub mod ime;
+#[cfg(target_os = "macos")]
+mod input_source;
 mod message;
 mod meta;
 mod notification;
@@ -77,6 +79,10 @@ pub fn handle(state: &mut AppState, request: &JsonRpcRequest) -> JsonRpcResponse
         "message.read" => message::handle_message_read(state, id, &request.params),
         "message.count" => message::handle_message_count(state, id, &request.params),
         "message.clear" => message::handle_message_clear(state, id, &request.params),
+        #[cfg(target_os = "macos")]
+        "surface.switch_input_source" => input_source::handle_switch_input_source(id, &request.params),
+        #[cfg(target_os = "macos")]
+        "surface.raw_key" => input_source::handle_raw_key(id, &request.params),
         _ => JsonRpcResponse::method_not_found(id, &request.method),
     }
 }

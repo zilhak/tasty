@@ -239,6 +239,14 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
             "surface.ime_commit",
             serde_json::json!({ "text": text }),
         ),
+        Commands::SwitchInputSource { source_id } => (
+            "surface.switch_input_source",
+            serde_json::json!({ "source_id": source_id }),
+        ),
+        Commands::RawKey { keycode } => (
+            "surface.raw_key",
+            serde_json::json!({ "keycode": keycode }),
+        ),
         Commands::ImeStatus => ("surface.ime_status", serde_json::json!({})),
     };
 
