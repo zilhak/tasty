@@ -30,9 +30,9 @@ fi
 ### CLI
 
 ```bash
-tasty info          # 시스템 정보
-tasty tree          # 워크스페이스/패인/탭 구조
-tasty surfaces      # 서피스 목록
+tasty list info     # 시스템 정보
+tasty list tree     # 워크스페이스/패인/탭 구조
+tasty list surfaces # 서피스 목록
 tasty send "ls -la"
 tasty send-key enter
 ```

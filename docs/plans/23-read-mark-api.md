@@ -7,15 +7,15 @@
 ## CLI 인터페이스
 
 ```
-tasty set-mark [surface_id]
-tasty read-since-mark [surface_id] [--strip-ansi]
+tasty set mark [--surface surface_id]
+tasty read-since-mark [--surface surface_id] [--strip-ansi]
 ```
 
 ### 사용 예시
 
 ```bash
 # 현재 출력 위치에 마크 설정
-tasty set-mark 3
+tasty set mark --surface 3
 
 # Surface 3에 명령 전송
 tasty send-keys 3 "ls -la\n"
@@ -84,7 +84,7 @@ tasty read-since-mark 3 --strip-ansi
 
 에이전트가 다른 터미널에 명령을 보내고 결과만 효율적으로 읽는다:
 
-1. `tasty set-mark 3` — 현재 위치 기록
+1. `tasty set mark --surface 3` — 현재 위치 기록
 2. `tasty send-keys 3 "git status\n"` — 명령 전송
 3. 잠시 대기 (또는 idle-timeout 훅 활용)
 4. `tasty read-since-mark 3 --strip-ansi` — 명령 결과만 가져오기

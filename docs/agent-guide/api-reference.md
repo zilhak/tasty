@@ -41,30 +41,30 @@ def call(method, params=None):
 tasty
 
 # 시스템
-tasty info                    # 버전, 워크스페이스 수
+tasty list info               # 버전, 워크스페이스 수
 
 # 워크스페이스
-tasty list                    # 워크스페이스 목록
+tasty list workspaces         # 워크스페이스 목록
 tasty new workspace [--name NAME] [--cwd PATH]
 tasty select-workspace INDEX  # 0-based
-tasty update-workspace [--id ID] [--name NAME] [--subtitle TEXT] [--description TEXT]
+tasty set workspace [--id ID] [--name NAME] [--subtitle TEXT] [--description TEXT]
 
 # 윈도우
-tasty windows                 # 윈도우 목록
+tasty list windows            # 윈도우 목록
 tasty new window              # 새 윈도우 생성
 
 # 패인/탭
-tasty panes                   # 패인 목록
+tasty list panes              # 패인 목록
 tasty new split --level pane-group|surface [--target ID] [--direction vertical|horizontal] [--cwd PATH]
 tasty new tab [--cwd PATH]
 tasty close pane
 tasty close tab
 
 # 터미널 (Surface)
-tasty surfaces                # 서피스 목록 (id, cols, rows)
+tasty list surfaces           # 서피스 목록 (id, cols, rows)
 tasty send "ls -la\r"         # 텍스트 전송 (\r = Enter)
 tasty send-key enter          # 키 전송
-tasty set-mark                # 출력 마크 설정
+tasty set mark                # 출력 마크 설정
 tasty read-since-mark [--strip-ansi]  # 마크 이후 출력 읽기
 tasty close surface
 
@@ -86,16 +86,16 @@ tasty focus-direction up      # 위
 tasty focus-direction down    # 아래
 
 # 훅
-tasty set-hook --event process-exit --command "echo done"
-tasty list-hooks
+tasty set hook --event process-exit --command "echo done"
+tasty list hooks
 tasty unset-hook --hook HOOK_ID
 
 # 알림
 tasty notify "메시지" [--title "제목"]
-tasty notifications
+tasty list notifications
 
 # 트리 (전체 구조 출력)
-tasty tree
+tasty list tree
 
 # 메시지 패싱
 tasty message-send --to SURFACE_ID "내용"           # 서피스에 메시지 전송
@@ -288,10 +288,10 @@ tasty surface-meta list --surface 3   # 특정 서피스 지정
 **CLI**:
 
 ```bash
-tasty global-hook-set --condition interval:30 --command "echo tick" --label "heartbeat"
-tasty global-hook-set --condition once:5 --command "notify-send done"
-tasty global-hook-set --condition "file:/tmp/trigger" --command "bash /tmp/trigger"
-tasty global-hook-list
+tasty set global-hook --condition interval:30 --command "echo tick" --label "heartbeat"
+tasty set global-hook --condition once:5 --command "notify-send done"
+tasty set global-hook --condition "file:/tmp/trigger" --command "bash /tmp/trigger"
+tasty list global-hooks
 tasty global-hook-unset --hook HOOK_ID
 ```
 
