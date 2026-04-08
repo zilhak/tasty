@@ -3,6 +3,7 @@ mod dialog;
 mod divider;
 mod non_terminal;
 mod notification;
+pub mod popup;
 mod sidebar;
 mod tab_bar;
 
@@ -10,7 +11,8 @@ pub use context_menu::draw_pane_context_menu;
 pub use dialog::{draw_markdown_path_dialog, draw_ws_rename_dialog};
 pub use divider::{draw_pane_dividers, draw_surface_highlights};
 pub use non_terminal::draw_non_terminal_panels;
-pub use notification::draw_notification_panel;
+pub use notification::draw_popups;
+pub use popup::{PopupManager, PopupState};
 pub use tab_bar::draw_pane_tab_bars;
 
 use crate::model::Rect;

@@ -248,8 +248,8 @@ impl TastyWindow {
             return true;
         }
         if matches_binding(&kb.toggle_notifications, key, mods) {
-            state.notification_panel_open = !state.notification_panel_open;
-            if state.notification_panel_open {
+            state.popups.toggle("notifications");
+            if state.popups.is_open("notifications") {
                 state.engine.notifications.mark_all_read();
             }
             return true;

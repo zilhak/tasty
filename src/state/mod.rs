@@ -38,8 +38,6 @@ pub struct AppState {
 
     // ── Window-level UI state ──
     pub active_workspace: usize,
-    /// Whether the notification panel overlay is open.
-    pub notification_panel_open: bool,
     /// Whether the settings window is open.
     pub settings_open: bool,
     /// Persistent UI state for the settings window.
@@ -62,6 +60,8 @@ pub struct AppState {
     pub markdown_path_dialog: Option<(u32, String)>,
     /// Measured tab bar height in physical pixels, updated each frame by egui.
     pub tab_bar_height: f32,
+    /// Popup manager for internal popups (notification panel, etc.).
+    pub popups: crate::ui::PopupManager,
 }
 
 
@@ -102,7 +102,6 @@ impl AppState {
         Ok(Self {
             engine,
             active_workspace: 0,
-            notification_panel_open: false,
             settings_open: false,
             settings_ui_state: SettingsUiState::new(),
             sidebar_width,
@@ -114,6 +113,15 @@ impl AppState {
             tab_rename_dialog: None,
             markdown_path_dialog: None,
             tab_bar_height: 24.0,
+            popups: {
+                let mut pm = crate::ui::PopupManager::new();
+                pm.register(crate::ui::PopupState::new(
+                    "notifications",
+                    "Notifications",
+                    egui::vec2(350.0, 400.0),
+                ));
+                pm
+            },
         })
     }
 

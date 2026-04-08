@@ -137,7 +137,7 @@ fn handle_ui_state(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {
         id,
         json!({
             "settings_open": state.settings_open,
-            "notification_panel_open": state.notification_panel_open,
+            "notification_panel_open": state.popups.is_open("notifications"),
             "active_workspace": state.active_workspace,
             "workspace_count": state.engine.workspaces.len(),
             "pane_count": pane_count,

@@ -27,7 +27,7 @@ impl GpuState {
             ui::draw_non_terminal_panels(ctx, state, pane_rects, scale_factor);
             ui::draw_pane_context_menu(ctx, state, scale_factor);
             ui::draw_markdown_path_dialog(ctx, state);
-            ui::draw_notification_panel(ctx, state);
+            ui::draw_popups(ctx, state);
 
             // Settings UI is now rendered in the modal window (ModalWindow)
         })

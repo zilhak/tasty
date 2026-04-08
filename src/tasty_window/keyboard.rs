@@ -16,8 +16,8 @@ impl TastyWindow {
                 self.mark_dirty();
                 return;
             }
-            if self.state.notification_panel_open {
-                self.state.notification_panel_open = false;
+            if self.state.popups.is_open("notifications") {
+                self.state.popups.close("notifications");
                 self.mark_dirty();
                 return;
             }
