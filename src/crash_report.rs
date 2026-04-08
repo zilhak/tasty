@@ -120,7 +120,7 @@ pub fn init() {
 
 fn make_env_filter() -> EnvFilter {
     EnvFilter::try_from_env("TASTY_LOG")
-        .unwrap_or_else(|_| EnvFilter::new("warn,wgpu_hal=error,wgpu_core=error,naga=error"))
+        .unwrap_or_else(|_| EnvFilter::new("warn,wgpu_hal=error,wgpu_core=error,naga=error,egui_winit::clipboard=off"))
 }
 
 /// Release builds: stderr-only tracing.
