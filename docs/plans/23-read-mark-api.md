@@ -8,7 +8,7 @@
 
 ```
 tasty set mark [--surface surface_id]
-tasty read-since-mark [--surface surface_id] [--strip-ansi]
+tasty read mark [--surface surface_id] [--strip-ansi]
 ```
 
 ### 사용 예시
@@ -18,13 +18,13 @@ tasty read-since-mark [--surface surface_id] [--strip-ansi]
 tasty set mark --surface 3
 
 # Surface 3에 명령 전송
-tasty send-keys 3 "ls -la\n"
+tasty send text --surface 3 "ls -la\n"
 
 # 마크 이후 새 출력만 읽기
-tasty read-since-mark 3
+tasty read mark --surface 3
 
 # ANSI 이스케이프 시퀀스 제거 후 읽기
-tasty read-since-mark 3 --strip-ansi
+tasty read mark --surface 3 --strip-ansi
 ```
 
 ## 소켓 API
@@ -85,9 +85,9 @@ tasty read-since-mark 3 --strip-ansi
 에이전트가 다른 터미널에 명령을 보내고 결과만 효율적으로 읽는다:
 
 1. `tasty set mark --surface 3` — 현재 위치 기록
-2. `tasty send-keys 3 "git status\n"` — 명령 전송
+2. `tasty send text --surface 3 "git status\n"` — 명령 전송
 3. 잠시 대기 (또는 idle-timeout 훅 활용)
-4. `tasty read-since-mark 3 --strip-ansi` — 명령 결과만 가져오기
+4. `tasty read mark --surface 3 --strip-ansi` — 명령 결과만 가져오기
 
 기존 `tasty read` (전체 출력)와 달리, 델타 트래킹으로 새 내용만 효율적으로 추출한다.
 

@@ -16,9 +16,9 @@ s.sendall((json.dumps({"jsonrpc":"2.0","id":2,"method":"surface.send_key","param
 
 **CLI 조작 예시**:
 ```bash
-tasty list                          # 워크스페이스 목록
-tasty send "hello"                  # 텍스트 전송
-tasty send-key "enter"              # 키 입력
+tasty list workspaces               # 워크스페이스 목록
+tasty send text "hello"             # 텍스트 전송
+tasty send key "enter"              # 키 입력
 tasty notify --title "Done"         # 알림
 ```
 
@@ -32,14 +32,14 @@ tasty notify --title "Done"         # 알림
 
 ```bash
 # ❌ 틀림 — 리터럴 \r이 전송됨
-tasty send "ls -la\r"
+tasty send text "ls -la\r"
 
-# ✅ 올바른 방법 1: send + send-key 분리
-tasty send "ls -la"
-tasty send-key enter
+# ✅ 올바른 방법 1: send text + send key 분리
+tasty send text "ls -la"
+tasty send key enter
 
 # ✅ 올바른 방법 2: $'...' ANSI-C 인용 사용
-tasty send $'ls -la\r'
+tasty send text $'ls -la\r'
 ```
 
 ### IPC (JSON-RPC)에서: `\r`은 CR이다
@@ -55,8 +55,8 @@ call("surface.send", {"text": "ls -la\r"})
 
 | 전송 경로 | `"text\r"` 의미 | Enter 전송법 |
 |-----------|----------------|-------------|
-| CLI `tasty send "..."` | 리터럴 `\` + `r` | `send` + `send-key enter` 또는 `$'...\r'` |
+| CLI `tasty send text "..."` | 리터럴 `\` + `r` | `send text` + `send key enter` 또는 `$'...\r'` |
 | Python/JSON-RPC | CR (0x0D) ✅ | `{"text": "...\r"}` |
-| CLI `tasty send $'...'` | CR (0x0D) ✅ | `$'text\r'` |
+| CLI `tasty send text $'...'` | CR (0x0D) ✅ | `$'text\r'` |
 
-**AI 에이전트가 명령을 실행할 때**: Bash 도구에서 `tasty send "cat\r"`을 쓰면 리터럴 `\r`이 전송된다. 반드시 `tasty send "cat" && tasty send-key enter` 또는 Python IPC를 사용할 것.
+**AI 에이전트가 명령을 실행할 때**: Bash 도구에서 `tasty send text "cat\r"`을 쓰면 리터럴 `\r`이 전송된다. 반드시 `tasty send text "cat" && tasty send key enter` 또는 Python IPC를 사용할 것.

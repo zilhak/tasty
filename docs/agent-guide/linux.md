@@ -33,8 +33,8 @@ fi
 tasty list info     # 시스템 정보
 tasty list tree     # 워크스페이스/패인/탭 구조
 tasty list surfaces # 서피스 목록
-tasty send "ls -la"
-tasty send-key enter
+tasty send text "ls -la"
+tasty send key enter
 ```
 
 ### IPC (Python)

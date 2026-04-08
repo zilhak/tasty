@@ -89,7 +89,7 @@ tasty unset hook --hook 42
 에이전트가 다른 터미널의 프로세스 종료를 감지하여 후속 작업을 자동으로 실행한다:
 
 1. 에이전트 A가 Surface 3에서 빌드 시작
-2. `tasty set hook --surface 3 --event process-exit --command "tasty send-keys 5 'deploy.sh\n'"` 등록
+2. `tasty set hook --surface 3 --event process-exit --command "tasty send text --surface 5 'deploy.sh\n'"` 등록
 3. 빌드 완료(프로세스 종료) 시 자동으로 Surface 5에 배포 명령 전송
 
 ## 구현 가능 여부

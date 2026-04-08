@@ -62,10 +62,11 @@ tasty close tab
 
 # 터미널 (Surface)
 tasty list surfaces           # 서피스 목록 (id, cols, rows)
-tasty send "ls -la\r"         # 텍스트 전송 (\r = Enter)
-tasty send-key enter          # 키 전송
+tasty send text "ls -la\r"    # 텍스트 전송 (\r = Enter)
+tasty send key enter          # 키 전송
 tasty set mark                # 출력 마크 설정
-tasty read-since-mark [--strip-ansi]  # 마크 이후 출력 읽기
+tasty read mark [--strip-ansi]  # 마크 이후 출력 읽기
+tasty read screen             # 현재 화면 텍스트 읽기
 tasty close surface
 
 # 비터미널 패널
@@ -98,10 +99,10 @@ tasty list notifications
 tasty list tree
 
 # 메시지 패싱
-tasty message-send --to SURFACE_ID "내용"           # 서피스에 메시지 전송
-tasty message-read [--surface ID] [--from ID] [--peek]  # 메시지 읽기 (기본: 소비)
-tasty message-count [--surface ID]                  # 대기 메시지 수 확인
-tasty message-clear [--surface ID]                  # 메시지 큐 삭제
+tasty send queue --to SURFACE_ID "내용"             # 큐에 메시지 전송
+tasty read queue [--surface ID] [--from ID] [--peek]  # 큐에서 메시지 읽기 (기본: 소비)
+tasty list queue [--surface ID]                     # 큐 상태 확인 (count + 미리보기)
+tasty read queue --clear [--surface ID]             # 큐 비우기
 
 # Claude
 tasty claude launch [--workspace NAME] [--directory PATH] [--task "설명"]

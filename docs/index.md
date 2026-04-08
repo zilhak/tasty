@@ -181,7 +181,7 @@ GPU 렌더링된 사이드바에 Git 브랜치, PR 상태, 작업 디렉토리, 
 `tasty` 명령으로 워크스페이스 생성, 알림 전송, 키 입력 등을 자동화. IPC로 실행 중인 GUI 앱과 통신.
 
 **현재 구현된 기능:**
-- clap 기반 서브커맨드 그룹: new {window|workspace|tab|split|markdown|explorer}, close {tab|pane|surface}, list {workspaces|windows|tree|surfaces|panes|info|notifications|hooks|global-hooks}, set {hook|mark|workspace|global-hook}, claude {launch|spawn|children|parent|kill|respawn|broadcast|wait|hook}, select-workspace, send, send-key, notify
+- clap 기반 서브커맨드 그룹: new {window|workspace|tab|split|markdown|explorer}, close {tab|pane|surface}, list {workspaces|windows|tree|surfaces|panes|info|notifications|hooks|global-hooks|queue}, set {hook|mark|workspace|global-hook|focus}, unset {hook|global-hook}, send {text|key|queue}, read {mark|queue|screen}, claude {launch|spawn|children|parent|kill|respawn|broadcast|wait|hook}, notify
 - 포트 파일(`~/.tasty/tasty.port`) 기반 자동 연결
 - 서브커맨드 없으면 GUI 모드, 있으면 CLI 모드
 - 상세: [features.md](features.md)

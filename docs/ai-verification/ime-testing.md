@@ -65,7 +65,7 @@ call("surface.ime_disable")
 
 ```bash
 # 터미널에 텍스트를 먼저 입력
-tasty send "echo hello\r"
+tasty send text "echo hello\r"
 sleep 0.5
 
 # IME preedit 시작
@@ -107,7 +107,7 @@ tasty ime-preedit "글"
 tasty ime-enable
 
 # ASCII 텍스트는 surface.send로 전송 (실제 동작: KeyboardInput에서 ASCII는 통과)
-tasty send "123"
+tasty send text "123"
 
 # 한글은 IME 경로로
 tasty ime-preedit "한"
@@ -116,7 +116,7 @@ tasty ime-commit "한"
 tasty ime-disable
 
 # 결과 확인
-tasty read-since-mark --strip-ansi
+tasty read mark --strip-ansi
 ```
 
 ### 4. 분할 패널에서 Preedit 위치 검증
