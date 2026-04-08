@@ -321,7 +321,7 @@ impl CellRenderer {
         if terminal.scroll_offset == 0 {
             let row_offset = terminal.scrollback_len();
             self.prepare_with_bg(terminal.surface(), queue, default_bg, cursor, selection, row_offset, preedit);
-            self.append_preedit_overlay(preedit, queue, cols, rows);
+            self.append_preedit_overlay(preedit, queue, cols, rows, 0);
             return;
         }
 
@@ -393,7 +393,7 @@ impl CellRenderer {
 
         self.bg_instance_count = bg_count as u32;
         self.glyph_instance_count = glyph_count as u32;
-        self.append_preedit_overlay(preedit, queue, cols, rows);
+        self.append_preedit_overlay(preedit, queue, cols, rows, scroll_offset);
     }
 
     fn append_preedit_overlay(
@@ -402,11 +402,16 @@ impl CellRenderer {
         queue: &wgpu::Queue,
         cols: usize,
         rows: usize,
+        scroll_offset: usize,
     ) {
         let Some(preedit) = preedit else {
             return;
         };
-        if preedit.text.is_empty() || preedit.anchor_row >= rows || preedit.anchor_col >= cols {
+        // Convert surface-relative anchor_row to screen-relative row
+        // by accounting for scroll offset. When scrolled back, the screen
+        // shows older lines, so the cursor row shifts down by scroll_offset.
+        let screen_row = preedit.anchor_row + scroll_offset;
+        if preedit.text.is_empty() || screen_row >= rows || preedit.anchor_col >= cols {
             return;
         }
 
@@ -420,7 +425,7 @@ impl CellRenderer {
             for i in 0..width {
                 if col_idx + i < cols {
                     self.bg_instances.push(BgInstance {
-                        pos: [(col_idx + i) as f32, preedit.anchor_row as f32],
+                        pos: [(col_idx + i) as f32, screen_row as f32],
                         bg_color: preedit.bg_color,
                     });
                 }
@@ -434,7 +439,7 @@ impl CellRenderer {
             if let Some(entry) = self.atlas.get_or_insert(key, &mut self.font_config, queue) {
                 if entry.width > 0.0 && entry.height > 0.0 {
                     self.glyph_instances.push(GlyphInstance {
-                        pos: [col_idx as f32, preedit.anchor_row as f32],
+                        pos: [col_idx as f32, screen_row as f32],
                         uv_offset: [entry.uv_x, entry.uv_y],
                         uv_size: [entry.uv_w, entry.uv_h],
                         fg_color: preedit.fg_color,
