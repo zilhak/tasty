@@ -34,6 +34,8 @@ pub struct SettingsUiState {
     pub font_families: Option<Vec<String>>,
     /// Font family filter text for search.
     pub font_filter: String,
+    /// The font family currently loaded into egui for preview.
+    pub preview_font_loaded: String,
 }
 
 impl SettingsUiState {
@@ -46,6 +48,7 @@ impl SettingsUiState {
             preset_confirm: None,
             font_families: None,
             font_filter: String::new(),
+            preview_font_loaded: String::new(),
         }
     }
 }
@@ -121,7 +124,7 @@ pub fn draw_settings_panel(
                 .show(ui, |ui| {
                     match active_tab {
                         SettingsTab::General => draw_general_tab(ui, &mut draft),
-                        SettingsTab::Appearance => draw_appearance_tab(ui, &mut draft, &mut ui_state.font_families, &mut ui_state.font_filter),
+                        SettingsTab::Appearance => draw_appearance_tab(ui, &mut draft, &mut ui_state.font_families, &mut ui_state.font_filter, &mut ui_state.preview_font_loaded),
                         SettingsTab::Clipboard => draw_clipboard_tab(ui, &mut draft),
                         SettingsTab::Notifications => draw_notifications_tab(ui, &mut draft),
                         SettingsTab::Keybindings => draw_keybindings_tab(ui, &mut draft, &mut ui_state.recording_field, &mut ui_state.keybindings_sub_tab, &mut ui_state.preset_confirm, captured_double_tap),

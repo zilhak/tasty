@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::i18n::t;
 use crate::settings::{GeneralSettings, Settings};
 
@@ -81,7 +83,7 @@ pub fn draw_general_tab(ui: &mut egui::Ui, settings: &mut Settings) {
         });
 }
 
-pub fn draw_appearance_tab(ui: &mut egui::Ui, settings: &mut Settings, font_families: &mut Option<Vec<String>>, font_filter: &mut String) {
+pub fn draw_appearance_tab(ui: &mut egui::Ui, settings: &mut Settings, font_families: &mut Option<Vec<String>>, font_filter: &mut String, preview_font_loaded: &mut String) {
     let th = crate::theme::theme();
     ui.add_space(8.0);
 
@@ -106,6 +108,7 @@ pub fn draw_appearance_tab(ui: &mut egui::Ui, settings: &mut Settings, font_fami
                     .selected_text(&display_name)
                     .width(200.0)
                     .height(300.0)
+                    .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
                     .show_ui(ui, |ui| {
                         // Filter input
                         ui.add(
@@ -250,12 +253,12 @@ pub fn draw_appearance_tab(ui: &mut egui::Ui, settings: &mut Settings, font_fami
             });
 
         // ── Right column: font preview ──
-        draw_font_preview(&mut columns[1], settings, th);
+        draw_font_preview(&mut columns[1], settings, th, preview_font_loaded);
     });
 }
 
 /// Draw a fake terminal preview showing the current font/appearance settings.
-fn draw_font_preview(ui: &mut egui::Ui, settings: &Settings, th: &crate::theme::Theme) {
+fn draw_font_preview(ui: &mut egui::Ui, settings: &Settings, th: &crate::theme::Theme, preview_font_loaded: &mut String) {
     ui.heading("Preview");
     ui.add_space(4.0);
 
@@ -265,6 +268,53 @@ fn draw_font_preview(ui: &mut egui::Ui, settings: &Settings, th: &crate::theme::
         &settings.appearance.font_family
     };
     let font_size = settings.appearance.font_size;
+
+    // Load selected font into egui if it changed
+    let preview_family = if settings.appearance.font_family.is_empty() {
+        egui::FontFamily::Monospace
+    } else {
+        if *preview_font_loaded != settings.appearance.font_family {
+            let font_config = crate::font::FontConfig::new(14.0, "");
+            if let Some(data) = font_config.load_family_data(&settings.appearance.font_family) {
+                let mut fonts = egui::FontDefinitions::default();
+                fonts.font_data.insert(
+                    "preview_font".to_owned(),
+                    Arc::new(egui::FontData::from_owned(data)),
+                );
+                fonts
+                    .families
+                    .insert(
+                        egui::FontFamily::Name("preview".into()),
+                        vec!["preview_font".to_owned()],
+                    );
+                // Keep CJK fallback for Monospace/Proportional (re-run CJK setup)
+                if let Some(cjk_data) = load_system_cjk_font_data() {
+                    fonts.font_data.insert(
+                        "system_cjk".to_owned(),
+                        Arc::new(egui::FontData::from_owned(cjk_data)),
+                    );
+                    fonts
+                        .families
+                        .entry(egui::FontFamily::Proportional)
+                        .or_default()
+                        .push("system_cjk".to_owned());
+                    fonts
+                        .families
+                        .entry(egui::FontFamily::Monospace)
+                        .or_default()
+                        .push("system_cjk".to_owned());
+                    fonts
+                        .families
+                        .entry(egui::FontFamily::Name("preview".into()))
+                        .or_default()
+                        .push("system_cjk".to_owned());
+                }
+                ui.ctx().set_fonts(fonts);
+                *preview_font_loaded = settings.appearance.font_family.clone();
+            }
+        }
+        egui::FontFamily::Name("preview".into())
+    };
 
     let sample_lines = [
         "AaBbCcDdEeFfGg",
@@ -293,7 +343,7 @@ fn draw_font_preview(ui: &mut egui::Ui, settings: &Settings, th: &crate::theme::
         (fg[2] * 255.0) as u8,
     );
 
-    let mono_font = egui::FontId::new(font_size, egui::FontFamily::Monospace);
+    let preview_font = egui::FontId::new(font_size, preview_family);
     let line_height = font_size * 1.4;
     let padding = 8.0;
     let block_height = line_height * sample_lines.len() as f32 + padding * 2.0;
@@ -322,7 +372,7 @@ fn draw_font_preview(ui: &mut egui::Ui, settings: &Settings, th: &crate::theme::
             pos,
             egui::Align2::LEFT_TOP,
             line,
-            mono_font.clone(),
+            preview_font.clone(),
             fg32,
         );
     }
@@ -346,7 +396,7 @@ fn draw_font_preview(ui: &mut egui::Ui, settings: &Settings, th: &crate::theme::
             pos,
             egui::Align2::LEFT_TOP,
             line,
-            mono_font.clone(),
+            preview_font.clone(),
             fg32,
         );
     }
@@ -357,6 +407,46 @@ fn draw_font_preview(ui: &mut egui::Ui, settings: &Settings, th: &crate::theme::
             .size(th.font_size_caption)
             .color(th.subtext0),
     );
+}
+
+/// Load system CJK font data for egui fallback (mirrors GpuState::load_system_cjk_font).
+fn load_system_cjk_font_data() -> Option<Vec<u8>> {
+    #[cfg(target_os = "windows")]
+    {
+        let path = "C:/Windows/Fonts/malgun.ttf";
+        if let Ok(data) = std::fs::read(path) {
+            return Some(data);
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        for path in &[
+            "/System/Library/Fonts/AppleSDGothicNeo.ttc",
+            "/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc",
+            "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+        ] {
+            if let Ok(data) = std::fs::read(path) {
+                return Some(data);
+            }
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        for path in &[
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+        ] {
+            if let Ok(data) = std::fs::read(path) {
+                return Some(data);
+            }
+        }
+    }
+
+    None
 }
 
 pub fn draw_clipboard_tab(ui: &mut egui::Ui, settings: &mut Settings) {

@@ -62,6 +62,25 @@ impl FontConfig {
         }
     }
 
+    /// Load raw font data bytes for a given family name.
+    /// Returns the font data if found in the system font database.
+    pub fn load_family_data(&self, family: &str) -> Option<Vec<u8>> {
+        for face in self.font_system.db().faces() {
+            for (name, _) in &face.families {
+                if name.eq_ignore_ascii_case(family) {
+                    let mut result = None;
+                    self.font_system.db().with_face_data(face.id, |data, _| {
+                        result = Some(data.to_vec());
+                    });
+                    if result.is_some() {
+                        return result;
+                    }
+                }
+            }
+        }
+        None
+    }
+
     /// List all available font family names from the system, sorted alphabetically.
     pub fn list_families(&self) -> Vec<String> {
         let mut families = BTreeSet::new();
