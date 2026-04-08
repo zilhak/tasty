@@ -130,7 +130,8 @@ impl TastyWindow {
         // If a modal is active, only allow Resized/RedrawRequested/ScaleFactorChanged
         if modal_active {
             match &event {
-                WindowEvent::Resized(_) | WindowEvent::RedrawRequested | WindowEvent::ScaleFactorChanged { .. } => {}
+                WindowEvent::Resized(_) | WindowEvent::RedrawRequested | WindowEvent::ScaleFactorChanged { .. }
+                | WindowEvent::ModifiersChanged(_) | WindowEvent::Focused(_) => {}
                 _ => return false,
             }
         }
