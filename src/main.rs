@@ -222,7 +222,8 @@ impl App {
 
         let attrs = WindowAttributes::default()
             .with_title("Tasty Settings")
-            .with_inner_size(winit::dpi::LogicalSize::new(700, 500))
+            .with_inner_size(winit::dpi::LogicalSize::new(960, 640))
+            .with_min_inner_size(winit::dpi::LogicalSize::new(960, 640))
             .with_visible(false); // Start hidden, show after first render
 
         let window = Arc::new(
