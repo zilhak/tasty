@@ -1,5 +1,5 @@
 use crate::ipc::protocol::JsonRpcRequest;
-use super::{Commands, NewCommands, CloseCommands, ListCommands, SetCommands, SetFocusCommands, UnsetCommands, ClaudeCommands, DebugCommands};
+use super::{Commands, NewCommands, CloseCommands, ListCommands, SetCommands, SetFocusCommands, UnsetCommands, SendCommands, ReadCommands, ClaudeCommands, DebugCommands};
 
 /// Resolve a target string for split/other commands.
 /// - "this" → numeric surface ID from TASTY_SURFACE_ID env var
@@ -23,47 +23,13 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
         Commands::Claude { command } => claude_command_to_method_params(command),
         Commands::Debug { command } => debug_command_to_method_params(command),
         // ── standalone ──
-        Commands::Send { text } => ("surface.send", serde_json::json!({ "text": text })),
-        Commands::SendKey { key } => ("surface.send_key", serde_json::json!({ "key": key })),
+        Commands::Send { command } => send_command_to_method_params(command),
+        Commands::Read { command } => read_command_to_method_params(command),
         Commands::Notify { body, title } => (
             "notification.create",
             serde_json::json!({ "title": title, "body": body }),
         ),
         Commands::Unset { command } => unset_command_to_method_params(command),
-        Commands::ReadSinceMark {
-            surface,
-            strip_ansi,
-        } => (
-            "surface.read_since_mark",
-            serde_json::json!({
-                "surface_id": surface,
-                "strip_ansi": strip_ansi,
-            }),
-        ),
-        Commands::MessageSend { to, content, from } => (
-            "message.send",
-            serde_json::json!({
-                "to_surface_id": to,
-                "content": content,
-                "from_surface_id": from,
-            }),
-        ),
-        Commands::MessageRead { surface, from, peek } => (
-            "message.read",
-            serde_json::json!({
-                "surface_id": surface,
-                "from_surface_id": from,
-                "peek": peek,
-            }),
-        ),
-        Commands::MessageCount { surface } => (
-            "message.count",
-            serde_json::json!({ "surface_id": surface }),
-        ),
-        Commands::MessageClear { surface } => (
-            "message.clear",
-            serde_json::json!({ "surface_id": surface }),
-        ),
         Commands::SurfaceMeta { action, surface, key, value } => {
             let method = match action.as_str() {
                 "set" => "surface.meta_set",
@@ -152,6 +118,61 @@ fn list_command_to_method_params(command: &ListCommands) -> (&'static str, serde
             serde_json::json!({ "surface_id": surface }),
         ),
         ListCommands::GlobalHooks => ("global_hook.list", serde_json::json!({})),
+        ListCommands::Queue { surface } => (
+            "message.count",
+            serde_json::json!({ "surface_id": surface }),
+        ),
+    }
+}
+
+fn send_command_to_method_params(command: &SendCommands) -> (&'static str, serde_json::Value) {
+    match command {
+        SendCommands::Text { text, surface } => (
+            "surface.send",
+            serde_json::json!({ "text": text, "surface_id": surface }),
+        ),
+        SendCommands::Key { key, surface } => (
+            "surface.send_key",
+            serde_json::json!({ "key": key, "surface_id": surface }),
+        ),
+        SendCommands::Queue { to, content, from } => (
+            "message.send",
+            serde_json::json!({
+                "to_surface_id": to,
+                "content": content,
+                "from_surface_id": from,
+            }),
+        ),
+    }
+}
+
+fn read_command_to_method_params(command: &ReadCommands) -> (&'static str, serde_json::Value) {
+    match command {
+        ReadCommands::Mark { surface, strip_ansi } => (
+            "surface.read_since_mark",
+            serde_json::json!({
+                "surface_id": surface,
+                "strip_ansi": strip_ansi,
+            }),
+        ),
+        ReadCommands::Queue { surface, from, peek, clear } => {
+            if *clear {
+                ("message.clear", serde_json::json!({ "surface_id": surface }))
+            } else {
+                (
+                    "message.read",
+                    serde_json::json!({
+                        "surface_id": surface,
+                        "from_surface_id": from,
+                        "peek": peek,
+                    }),
+                )
+            }
+        }
+        ReadCommands::Screen { surface } => (
+            "surface.screen_text",
+            serde_json::json!({ "surface_id": surface }),
+        ),
     }
 }
 

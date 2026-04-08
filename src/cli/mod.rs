@@ -58,15 +58,15 @@ pub enum Commands {
         #[command(subcommand)]
         command: ClaudeCommands,
     },
-    /// Send text to the focused terminal
+    /// Send text, key, or queue message
     Send {
-        /// Text to send
-        text: String,
+        #[command(subcommand)]
+        command: SendCommands,
     },
-    /// Send a key to the focused terminal (enter, tab, escape, up, down, etc.)
-    SendKey {
-        /// Key name
-        key: String,
+    /// Read from surface or queue
+    Read {
+        #[command(subcommand)]
+        command: ReadCommands,
     },
     /// Create a notification
     Notify {
@@ -80,51 +80,6 @@ pub enum Commands {
     Unset {
         #[command(subcommand)]
         command: UnsetCommands,
-    },
-    /// Read output since last mark
-    ReadSinceMark {
-        /// Surface ID (default: focused terminal)
-        #[arg(long)]
-        surface: Option<u32>,
-        /// Strip ANSI escape sequences from output
-        #[arg(long)]
-        strip_ansi: bool,
-    },
-    /// Send a message to a surface's message queue
-    MessageSend {
-        /// Target surface ID
-        #[arg(long)]
-        to: u32,
-        /// Message content
-        #[arg()]
-        content: String,
-        /// Sender surface ID (default: focused)
-        #[arg(long)]
-        from: Option<u32>,
-    },
-    /// Read messages from a surface's message queue (consumes by default)
-    MessageRead {
-        /// Surface ID (default: focused)
-        #[arg(long)]
-        surface: Option<u32>,
-        /// Filter by sender surface ID
-        #[arg(long)]
-        from: Option<u32>,
-        /// Peek without consuming
-        #[arg(long)]
-        peek: bool,
-    },
-    /// Count messages in a surface's message queue
-    MessageCount {
-        /// Surface ID (default: focused)
-        #[arg(long)]
-        surface: Option<u32>,
-    },
-    /// Clear all messages in a surface's message queue
-    MessageClear {
-        /// Surface ID (default: focused)
-        #[arg(long)]
-        surface: Option<u32>,
     },
     /// Manage per-surface metadata (set, get, unset, list)
     SurfaceMeta {
@@ -178,6 +133,12 @@ pub enum ListCommands {
     },
     /// List all global hooks
     GlobalHooks,
+    /// Show queue status (count + preview of pending messages)
+    Queue {
+        /// Surface ID (default: focused)
+        #[arg(long)]
+        surface: Option<u32>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -248,6 +209,72 @@ pub enum SetFocusCommands {
     Direction {
         /// Direction: left, right, up, down
         direction: String,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum SendCommands {
+    /// Send text to a terminal surface
+    Text {
+        /// Text to send
+        text: String,
+        /// Target surface ID (default: focused)
+        #[arg(long)]
+        surface: Option<u32>,
+    },
+    /// Send a key to a terminal surface (enter, tab, escape, up, down, etc.)
+    Key {
+        /// Key name
+        key: String,
+        /// Target surface ID (default: focused)
+        #[arg(long)]
+        surface: Option<u32>,
+    },
+    /// Send a message to a surface's queue
+    Queue {
+        /// Target surface ID
+        #[arg(long)]
+        to: u32,
+        /// Message content
+        #[arg()]
+        content: String,
+        /// Sender surface ID (default: focused)
+        #[arg(long)]
+        from: Option<u32>,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum ReadCommands {
+    /// Read output since last mark
+    Mark {
+        /// Surface ID (default: focused terminal)
+        #[arg(long)]
+        surface: Option<u32>,
+        /// Strip ANSI escape sequences from output
+        #[arg(long)]
+        strip_ansi: bool,
+    },
+    /// Read from a surface's message queue (consumes oldest message)
+    Queue {
+        /// Surface ID (default: focused)
+        #[arg(long)]
+        surface: Option<u32>,
+        /// Filter by sender surface ID
+        #[arg(long)]
+        from: Option<u32>,
+        /// Peek without consuming
+        #[arg(long)]
+        peek: bool,
+        /// Clear all messages instead of reading
+        #[arg(long)]
+        clear: bool,
+    },
+    /// Read current screen text of a surface
+    Screen {
+        /// Surface ID (default: focused)
+        #[arg(long)]
+        surface: Option<u32>,
     },
 }
 
