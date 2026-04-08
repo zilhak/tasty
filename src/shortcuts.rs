@@ -42,6 +42,10 @@ fn matches_binding(binding: &str, key: &Key, mods: ModifiersState) -> bool {
     if binding.is_empty() {
         return false;
     }
+    // Double-tap bindings (e.g. "shift+shift") are handled separately
+    if is_double_tap_binding(binding).is_some() {
+        return false;
+    }
 
     let parts: Vec<&str> = binding.split('+').collect();
     if parts.is_empty() {
@@ -138,7 +142,86 @@ fn named_key_to_string(key: &NamedKey) -> String {
     }
 }
 
+/// Check if a binding string represents a double-tap modifier (e.g. "shift+shift").
+fn is_double_tap_binding(binding: &str) -> Option<crate::double_tap::DoubleTapKey> {
+    match binding.to_lowercase().as_str() {
+        "shift+shift" => Some(crate::double_tap::DoubleTapKey::Shift),
+        "ctrl+ctrl" => Some(crate::double_tap::DoubleTapKey::Ctrl),
+        "alt+alt" => Some(crate::double_tap::DoubleTapKey::Alt),
+        _ => None,
+    }
+}
+
 impl TastyWindow {
+    /// Handle double-tap modifier shortcuts. Returns true if consumed.
+    pub(crate) fn handle_double_tap_shortcut(&mut self, dt: crate::double_tap::DoubleTapKey) -> bool {
+        let kb = self.state.engine.settings.keybindings.clone();
+        let dt_str = dt.binding_str();
+
+        if kb.toggle_settings == dt_str {
+            let _ = self.proxy.send_event(crate::AppEvent::OpenSettings);
+            return true;
+        }
+        if kb.toggle_notifications == dt_str {
+            self.state.popups.toggle("notifications");
+            if self.state.popups.is_open("notifications") {
+                self.state.engine.notifications.mark_all_read();
+            }
+            return true;
+        }
+
+        let terminal_rect = self.compute_terminal_rect();
+        let cell_w = self.gpu.cell_width();
+        let cell_h = self.gpu.cell_height();
+
+        // Check all configurable bindings for double-tap matches
+        let bindings_to_check: Vec<(String, &str)> = vec![
+            (kb.new_workspace.clone(), "new_workspace"),
+            (kb.close_workspace.clone(), "close_workspace"),
+            (kb.new_tab.clone(), "new_tab"),
+            (kb.close_pane.clone(), "close_pane"),
+            (kb.split_pane_vertical.clone(), "split_pane_vertical"),
+            (kb.split_pane_horizontal.clone(), "split_pane_horizontal"),
+            (kb.split_surface_vertical.clone(), "split_surface_vertical"),
+            (kb.split_surface_horizontal.clone(), "split_surface_horizontal"),
+            (kb.focus_pane_next.clone(), "focus_pane_next"),
+            (kb.focus_pane_prev.clone(), "focus_pane_prev"),
+            (kb.focus_surface_next.clone(), "focus_surface_next"),
+            (kb.focus_surface_prev.clone(), "focus_surface_prev"),
+            (kb.close_surface.clone(), "close_surface"),
+        ];
+
+        for (binding, action) in &bindings_to_check {
+            if binding == dt_str {
+                match *action {
+                    "new_workspace" => { let _ = self.state.add_workspace(); self.state.resize_all(terminal_rect, cell_w, cell_h); }
+                    "close_workspace" => { self.state.close_active_workspace(); self.state.ensure_workspace_exists(); self.state.resize_all(terminal_rect, cell_w, cell_h); }
+                    "new_tab" => { let _ = self.state.add_tab(); self.state.resize_all(terminal_rect, cell_w, cell_h); }
+                    "close_pane" => {
+                        if !self.state.close_active_pane() { self.state.close_active_workspace(); self.state.ensure_workspace_exists(); }
+                        self.state.resize_all(terminal_rect, cell_w, cell_h);
+                    }
+                    "split_pane_vertical" => { let _ = self.state.split_pane(SplitDirection::Vertical); self.state.resize_all(terminal_rect, cell_w, cell_h); }
+                    "split_pane_horizontal" => { let _ = self.state.split_pane(SplitDirection::Horizontal); self.state.resize_all(terminal_rect, cell_w, cell_h); }
+                    "split_surface_vertical" => { let _ = self.state.split_surface(SplitDirection::Vertical); self.state.resize_all(terminal_rect, cell_w, cell_h); }
+                    "split_surface_horizontal" => { let _ = self.state.split_surface(SplitDirection::Horizontal); self.state.resize_all(terminal_rect, cell_w, cell_h); }
+                    "focus_pane_next" => { self.state.move_pane_focus_forward(); }
+                    "focus_pane_prev" => { self.state.move_pane_focus_backward(); }
+                    "focus_surface_next" => { self.state.move_surface_focus_forward(); }
+                    "focus_surface_prev" => { self.state.move_surface_focus_backward(); }
+                    "close_surface" => {
+                        if !self.state.close_active_surface() { if !self.state.close_active_pane() { self.state.close_active_workspace(); self.state.ensure_workspace_exists(); } }
+                        self.state.resize_all(terminal_rect, cell_w, cell_h);
+                    }
+                    _ => {}
+                }
+                return true;
+            }
+        }
+
+        false
+    }
+
     /// Handle keyboard shortcuts. Returns true if the event was consumed by a shortcut.
     pub(crate) fn handle_shortcut(&mut self, key: &Key, mods: ModifiersState) -> bool {
         let ctrl = mods.control_key();

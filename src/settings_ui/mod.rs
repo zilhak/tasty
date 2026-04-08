@@ -56,6 +56,7 @@ pub fn draw_settings_panel(
     ctx: &egui::Context,
     settings: &mut Settings,
     ui_state: &mut SettingsUiState,
+    captured_double_tap: &mut Option<String>,
 ) -> Option<bool> {
     if ui_state.draft.is_none() {
         ui_state.draft = Some(settings.clone());
@@ -123,7 +124,7 @@ pub fn draw_settings_panel(
                         SettingsTab::Appearance => draw_appearance_tab(ui, &mut draft, &mut ui_state.font_families, &mut ui_state.font_filter),
                         SettingsTab::Clipboard => draw_clipboard_tab(ui, &mut draft),
                         SettingsTab::Notifications => draw_notifications_tab(ui, &mut draft),
-                        SettingsTab::Keybindings => draw_keybindings_tab(ui, &mut draft, &mut ui_state.recording_field, &mut ui_state.keybindings_sub_tab, &mut ui_state.preset_confirm),
+                        SettingsTab::Keybindings => draw_keybindings_tab(ui, &mut draft, &mut ui_state.recording_field, &mut ui_state.keybindings_sub_tab, &mut ui_state.preset_confirm, captured_double_tap),
                         SettingsTab::Language => draw_language_tab(ui, &mut draft),
                         SettingsTab::Performance => draw_performance_tab(ui, &mut draft),
                     }

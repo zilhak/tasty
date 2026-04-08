@@ -5,8 +5,27 @@ use super::TastyWindow;
 
 impl TastyWindow {
     pub(super) fn handle_keyboard_input(&mut self, event: &winit::event::KeyEvent, _egui_consumed: bool) {
+        // Feed all key events (Press + Release) to the double-tap detector
+        self.double_tap.on_key_event(
+            &event.logical_key,
+            event.state == ElementState::Pressed,
+        );
+
         if event.state != ElementState::Pressed {
             return;
+        }
+
+        // Check for double-tap modifier shortcut (e.g. Shift+Shift)
+        if let Some(dt) = self.double_tap.take() {
+            if self.state.settings_open {
+                // When settings are open, pass to keybinding recorder
+                self.state.captured_double_tap = Some(dt.binding_str().to_string());
+                self.mark_dirty();
+                return;
+            } else if self.handle_double_tap_shortcut(dt) {
+                self.mark_dirty();
+                return;
+            }
         }
 
         if event.logical_key == Key::Named(NamedKey::Escape) {

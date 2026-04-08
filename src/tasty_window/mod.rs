@@ -48,6 +48,8 @@ pub struct TastyWindow {
     /// Used to reconcile: if the raw cursor moved past this point, PTY
     /// echo has caught up and advance should be reduced accordingly.
     pub(crate) ime_advance_base: (usize, usize),
+    /// Detector for double-tap modifier shortcuts (e.g. Shift+Shift).
+    pub(crate) double_tap: crate::double_tap::DoubleTapDetector,
 }
 
 impl TastyWindow {
@@ -71,6 +73,7 @@ impl TastyWindow {
             ime_active: false,
             ime_cursor_advance: 0,
             ime_advance_base: (0, 0),
+            double_tap: crate::double_tap::DoubleTapDetector::new(),
         }
     }
 

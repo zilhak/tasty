@@ -3,6 +3,7 @@
 mod cli;
 mod click_cursor;
 mod crash_report;
+mod double_tap;
 mod debug_info;
 pub mod engine;
 pub mod engine_state;

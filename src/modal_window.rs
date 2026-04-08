@@ -20,6 +20,10 @@ pub struct ModalWindow {
     pub should_close: bool,
     /// Whether the window has been shown yet (starts hidden to avoid layout flash).
     shown: bool,
+    /// Double-tap detector for the modal window's own key events.
+    double_tap: crate::double_tap::DoubleTapDetector,
+    /// Captured double-tap string for the keybinding recorder.
+    captured_double_tap: Option<String>,
 }
 
 impl ModalWindow {
@@ -32,6 +36,8 @@ impl ModalWindow {
             dirty: true,
             should_close: false,
             shown: false,
+            double_tap: crate::double_tap::DoubleTapDetector::new(),
+            captured_double_tap: None,
         }
     }
 
@@ -62,6 +68,20 @@ impl ModalWindow {
             WindowEvent::CursorMoved { .. } => {
                 self.mark_dirty();
             }
+            WindowEvent::KeyboardInput { ref event, .. } => {
+                use winit::event::ElementState;
+
+                self.double_tap.on_key_event(
+                    &event.logical_key,
+                    event.state == ElementState::Pressed,
+                );
+                if event.state == ElementState::Pressed {
+                    if let Some(dt) = self.double_tap.take() {
+                        self.captured_double_tap = Some(dt.binding_str().to_string());
+                        self.mark_dirty();
+                    }
+                }
+            }
             _ => {}
         }
 
@@ -77,10 +97,11 @@ impl ModalWindow {
         let raw_input = self.gpu.take_egui_input(&self.window);
         let mut settings = self.settings.clone();
         let ui_state = &mut self.settings_ui_state;
+        let captured_dt = &mut self.captured_double_tap;
         let mut action: Option<bool> = None;
 
         let full_output = self.gpu.run_egui(raw_input, |ctx| {
-            action = settings_ui::draw_settings_panel(ctx, &mut settings, ui_state);
+            action = settings_ui::draw_settings_panel(ctx, &mut settings, ui_state, captured_dt);
         });
 
         self.settings = settings;

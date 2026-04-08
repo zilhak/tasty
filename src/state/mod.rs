@@ -62,6 +62,8 @@ pub struct AppState {
     pub tab_bar_height: f32,
     /// Popup manager for internal popups (notification panel, etc.).
     pub popups: crate::ui::PopupManager,
+    /// Double-tap modifier captured from winit events, for the keybinding recorder to consume.
+    pub captured_double_tap: Option<String>,
 }
 
 
@@ -113,6 +115,7 @@ impl AppState {
             tab_rename_dialog: None,
             markdown_path_dialog: None,
             tab_bar_height: 24.0,
+            captured_double_tap: None,
             popups: {
                 let mut pm = crate::ui::PopupManager::new();
                 pm.register(crate::ui::PopupState::new(

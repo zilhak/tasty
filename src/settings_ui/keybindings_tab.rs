@@ -28,6 +28,7 @@ pub fn draw_keybindings_tab(
     recording_field: &mut Option<String>,
     sub_tab: &mut KeybindingsSubTab,
     preset_confirm: &mut Option<String>,
+    captured_double_tap: &mut Option<String>,
 ) {
     let th = crate::theme::theme();
     ui.add_space(8.0);
@@ -69,7 +70,14 @@ pub fn draw_keybindings_tab(
 
         ui.vertical(|ui| {
 
-        let captured = capture_key_combo(ui.ctx(), recording_field.is_some());
+        let mut captured = capture_key_combo(ui.ctx(), recording_field.is_some());
+
+        // Check for double-tap modifier captured from winit events
+        if recording_field.is_some() {
+            if let Some(dt) = captured_double_tap.take() {
+                captured = KeyCapture::Combo(dt);
+            }
+        }
 
         match *sub_tab {
             KeybindingsSubTab::General => {
