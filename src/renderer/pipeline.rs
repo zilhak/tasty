@@ -14,8 +14,8 @@ impl CellRenderer {
         let font_config = FontConfig::with_options(font_size, font_family, "", 1.0);
         let atlas = GlyphAtlas::new(device);
 
-        // Max instances for an 80x24 grid (with room for larger)
-        let max_instances = 300 * 100;
+        // Max instances for large displays (e.g., 4K at small font: ~500 cols × 250 rows)
+        let max_instances = 500 * 250;
 
         // Uniform buffer
         let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
