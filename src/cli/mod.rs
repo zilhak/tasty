@@ -81,11 +81,10 @@ pub enum Commands {
         #[arg(long, default_value = "Notification")]
         title: String,
     },
-    /// Remove a hook
-    UnsetHook {
-        /// Hook ID to remove
-        #[arg(long)]
-        hook: u64,
+    /// Remove resources (hook, global-hook)
+    Unset {
+        #[command(subcommand)]
+        command: UnsetCommands,
     },
     /// Read output since last mark
     ReadSinceMark {
@@ -151,12 +150,6 @@ pub enum Commands {
         /// Value (for set action)
         #[arg(long)]
         value: Option<String>,
-    },
-    /// Remove a global hook by ID
-    GlobalHookUnset {
-        /// Hook ID to remove
-        #[arg(long)]
-        hook: u32,
     },
     /// Check if a surface is currently typing (received key input within 5 seconds)
     IsTyping {
@@ -246,6 +239,22 @@ pub enum SetCommands {
         /// Optional human-readable label
         #[arg(long)]
         label: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum UnsetCommands {
+    /// Remove a hook
+    Hook {
+        /// Hook ID to remove
+        #[arg(long)]
+        hook: u64,
+    },
+    /// Remove a global hook by ID
+    GlobalHook {
+        /// Hook ID to remove
+        #[arg(long)]
+        hook: u32,
     },
 }
 

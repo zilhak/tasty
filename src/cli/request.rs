@@ -1,5 +1,5 @@
 use crate::ipc::protocol::JsonRpcRequest;
-use super::{Commands, NewCommands, CloseCommands, ListCommands, SetCommands, ClaudeCommands, DebugCommands};
+use super::{Commands, NewCommands, CloseCommands, ListCommands, SetCommands, UnsetCommands, ClaudeCommands, DebugCommands};
 
 /// Resolve a target string for split/other commands.
 /// - "this" → numeric surface ID from TASTY_SURFACE_ID env var
@@ -33,10 +33,7 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
             "notification.create",
             serde_json::json!({ "title": title, "body": body }),
         ),
-        Commands::UnsetHook { hook } => (
-            "hook.unset",
-            serde_json::json!({ "hook_id": hook }),
-        ),
+        Commands::Unset { command } => unset_command_to_method_params(command),
         Commands::ReadSinceMark {
             surface,
             strip_ansi,
@@ -92,10 +89,6 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
                 }),
             )
         }
-        Commands::GlobalHookUnset { hook } => (
-            "global_hook.unset",
-            serde_json::json!({ "hook_id": hook }),
-        ),
         Commands::IsTyping { surface } => (
             "surface.is_typing",
             serde_json::json!({ "surface_id": surface }),
@@ -210,6 +203,19 @@ fn set_command_to_method_params(command: &SetCommands) -> (&'static str, serde_j
                 "command": command,
                 "label": label,
             }),
+        ),
+    }
+}
+
+fn unset_command_to_method_params(command: &UnsetCommands) -> (&'static str, serde_json::Value) {
+    match command {
+        UnsetCommands::Hook { hook } => (
+            "hook.unset",
+            serde_json::json!({ "hook_id": hook }),
+        ),
+        UnsetCommands::GlobalHook { hook } => (
+            "global_hook.unset",
+            serde_json::json!({ "hook_id": hook }),
         ),
     }
 }
