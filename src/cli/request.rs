@@ -1,5 +1,5 @@
 use crate::ipc::protocol::JsonRpcRequest;
-use super::{Commands, NewCommands, CloseCommands, ClaudeCommands, DebugCommands};
+use super::{Commands, NewCommands, CloseCommands, ListCommands, SetCommands, ClaudeCommands, DebugCommands};
 
 /// Resolve a target string for split/other commands.
 /// - "this" → numeric surface ID from TASTY_SURFACE_ID env var
@@ -15,29 +15,17 @@ fn resolve_target(target: &str) -> String {
 
 pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
     let (method, params) = match command {
-        // ── new ──
+        // ── grouped ──
         Commands::New { command } => new_command_to_method_params(command),
-        // ── close ──
         Commands::Close { command } => close_command_to_method_params(command),
-        // ── claude ──
+        Commands::List { command } => list_command_to_method_params(command),
+        Commands::Set { command } => set_command_to_method_params(command),
         Commands::Claude { command } => claude_command_to_method_params(command),
-        // ── rest ──
-        Commands::Info => ("system.info", serde_json::json!({})),
         Commands::Debug { command } => debug_command_to_method_params(command),
-        Commands::List => ("workspace.list", serde_json::json!({})),
-        Commands::Windows => ("window.list", serde_json::json!({})),
+        // ── standalone ──
         Commands::SelectWorkspace { index } => (
             "workspace.select",
             serde_json::json!({ "index": index }),
-        ),
-        Commands::UpdateWorkspace { id, name, subtitle, description } => (
-            "workspace.update",
-            serde_json::json!({
-                "id": id,
-                "name": name,
-                "subtitle": subtitle,
-                "description": description,
-            }),
         ),
         Commands::Send { text } => ("surface.send", serde_json::json!({ "text": text })),
         Commands::SendKey { key } => ("surface.send_key", serde_json::json!({ "key": key })),
@@ -45,35 +33,9 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
             "notification.create",
             serde_json::json!({ "title": title, "body": body }),
         ),
-        Commands::Notifications => ("notification.list", serde_json::json!({})),
-        Commands::Tree => ("tree", serde_json::json!({})),
-        Commands::Surfaces => ("surface.list", serde_json::json!({})),
-        Commands::Panes => ("pane.list", serde_json::json!({})),
-        Commands::SetHook {
-            surface,
-            event,
-            command,
-            once,
-        } => (
-            "hook.set",
-            serde_json::json!({
-                "surface_id": surface,
-                "event": event,
-                "command": command,
-                "once": once,
-            }),
-        ),
-        Commands::ListHooks { surface } => (
-            "hook.list",
-            serde_json::json!({ "surface_id": surface }),
-        ),
         Commands::UnsetHook { hook } => (
             "hook.unset",
             serde_json::json!({ "hook_id": hook }),
-        ),
-        Commands::SetMark { surface } => (
-            "surface.set_mark",
-            serde_json::json!({ "surface_id": surface }),
         ),
         Commands::ReadSinceMark {
             surface,
@@ -130,19 +92,6 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
                 }),
             )
         }
-        Commands::GlobalHookSet {
-            condition,
-            command,
-            label,
-        } => (
-            "global_hook.set",
-            serde_json::json!({
-                "condition": condition,
-                "command": command,
-                "label": label,
-            }),
-        ),
-        Commands::GlobalHookList => ("global_hook.list", serde_json::json!({})),
         Commands::GlobalHookUnset { hook } => (
             "global_hook.unset",
             serde_json::json!({ "hook_id": hook }),
@@ -201,6 +150,67 @@ fn close_command_to_method_params(command: &CloseCommands) -> (&'static str, ser
         CloseCommands::Tab => ("tab.close", serde_json::json!({})),
         CloseCommands::Pane => ("pane.close", serde_json::json!({})),
         CloseCommands::Surface => ("surface.close", serde_json::json!({})),
+    }
+}
+
+fn list_command_to_method_params(command: &ListCommands) -> (&'static str, serde_json::Value) {
+    match command {
+        ListCommands::Workspaces => ("workspace.list", serde_json::json!({})),
+        ListCommands::Windows => ("window.list", serde_json::json!({})),
+        ListCommands::Tree => ("tree", serde_json::json!({})),
+        ListCommands::Surfaces => ("surface.list", serde_json::json!({})),
+        ListCommands::Panes => ("pane.list", serde_json::json!({})),
+        ListCommands::Info => ("system.info", serde_json::json!({})),
+        ListCommands::Notifications => ("notification.list", serde_json::json!({})),
+        ListCommands::Hooks { surface } => (
+            "hook.list",
+            serde_json::json!({ "surface_id": surface }),
+        ),
+        ListCommands::GlobalHooks => ("global_hook.list", serde_json::json!({})),
+    }
+}
+
+fn set_command_to_method_params(command: &SetCommands) -> (&'static str, serde_json::Value) {
+    match command {
+        SetCommands::Hook {
+            surface,
+            event,
+            command,
+            once,
+        } => (
+            "hook.set",
+            serde_json::json!({
+                "surface_id": surface,
+                "event": event,
+                "command": command,
+                "once": once,
+            }),
+        ),
+        SetCommands::Mark { surface } => (
+            "surface.set_mark",
+            serde_json::json!({ "surface_id": surface }),
+        ),
+        SetCommands::Workspace { id, name, subtitle, description } => (
+            "workspace.update",
+            serde_json::json!({
+                "id": id,
+                "name": name,
+                "subtitle": subtitle,
+                "description": description,
+            }),
+        ),
+        SetCommands::GlobalHook {
+            condition,
+            command,
+            label,
+        } => (
+            "global_hook.set",
+            serde_json::json!({
+                "condition": condition,
+                "command": command,
+                "label": label,
+            }),
+        ),
     }
 }
 

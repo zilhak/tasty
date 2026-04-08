@@ -43,34 +43,25 @@ pub enum Commands {
         #[command(subcommand)]
         command: CloseCommands,
     },
+    /// List/query resources (workspaces, windows, tree, surfaces, panes, info, hooks, etc.)
+    List {
+        #[command(subcommand)]
+        command: ListCommands,
+    },
+    /// Set/update resources (hook, mark, workspace, global-hook)
+    Set {
+        #[command(subcommand)]
+        command: SetCommands,
+    },
     /// Claude Code integration (launch, spawn, kill, wait, etc.)
     Claude {
         #[command(subcommand)]
         command: ClaudeCommands,
     },
-    /// List workspaces
-    List,
-    /// List all windows
-    Windows,
     /// Select a workspace by index (0-based)
     SelectWorkspace {
         /// Workspace index
         index: usize,
-    },
-    /// Update workspace name, subtitle, or description
-    UpdateWorkspace {
-        /// Workspace ID (default: active workspace)
-        #[arg(long)]
-        id: Option<u32>,
-        /// New name
-        #[arg(long)]
-        name: Option<String>,
-        /// New subtitle
-        #[arg(long)]
-        subtitle: Option<String>,
-        /// New description
-        #[arg(long)]
-        description: Option<String>,
     },
     /// Send text to the focused terminal
     Send {
@@ -90,48 +81,11 @@ pub enum Commands {
         #[arg(long, default_value = "Notification")]
         title: String,
     },
-    /// List notifications
-    Notifications,
-    /// Show tree view of workspaces, panes, and tabs
-    Tree,
-    /// List surfaces (terminals) in the active workspace
-    Surfaces,
-    /// List panes in the active workspace
-    Panes,
-    /// Show system info
-    Info,
-    /// Set a hook on a surface
-    SetHook {
-        /// Surface ID to hook (default: focused)
-        #[arg(long)]
-        surface: Option<u32>,
-        /// Event type: process-exit, bell, notification, output-match:PATTERN, idle-timeout:SECS
-        #[arg(long)]
-        event: String,
-        /// Shell command to execute when the event fires
-        #[arg(long)]
-        command: String,
-        /// Remove the hook after it fires once
-        #[arg(long)]
-        once: bool,
-    },
-    /// List hooks
-    ListHooks {
-        /// Filter by surface ID
-        #[arg(long)]
-        surface: Option<u32>,
-    },
     /// Remove a hook
     UnsetHook {
         /// Hook ID to remove
         #[arg(long)]
         hook: u64,
-    },
-    /// Set a read mark on a surface
-    SetMark {
-        /// Surface ID (default: focused terminal)
-        #[arg(long)]
-        surface: Option<u32>,
     },
     /// Read output since last mark
     ReadSinceMark {
@@ -198,20 +152,6 @@ pub enum Commands {
         #[arg(long)]
         value: Option<String>,
     },
-    /// Set a global hook (timer or file-watching)
-    GlobalHookSet {
-        /// Condition: interval:SECS, once:SECS, file:/path/to/watch
-        #[arg(long)]
-        condition: String,
-        /// Shell command to execute when the condition fires
-        #[arg(long)]
-        command: String,
-        /// Optional human-readable label
-        #[arg(long)]
-        label: Option<String>,
-    },
-    /// List all global hooks
-    GlobalHookList,
     /// Remove a global hook by ID
     GlobalHookUnset {
         /// Hook ID to remove
@@ -228,6 +168,84 @@ pub enum Commands {
     Debug {
         #[command(subcommand)]
         command: DebugCommands,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum ListCommands {
+    /// List workspaces
+    Workspaces,
+    /// List all windows
+    Windows,
+    /// Show tree view of workspaces, panes, and tabs
+    Tree,
+    /// List surfaces (terminals) in the active workspace
+    Surfaces,
+    /// List panes in the active workspace
+    Panes,
+    /// Show system info
+    Info,
+    /// List notifications
+    Notifications,
+    /// List hooks
+    Hooks {
+        /// Filter by surface ID
+        #[arg(long)]
+        surface: Option<u32>,
+    },
+    /// List all global hooks
+    GlobalHooks,
+}
+
+#[derive(Subcommand)]
+pub enum SetCommands {
+    /// Set a hook on a surface
+    Hook {
+        /// Surface ID to hook (default: focused)
+        #[arg(long)]
+        surface: Option<u32>,
+        /// Event type: process-exit, bell, notification, output-match:PATTERN, idle-timeout:SECS
+        #[arg(long)]
+        event: String,
+        /// Shell command to execute when the event fires
+        #[arg(long)]
+        command: String,
+        /// Remove the hook after it fires once
+        #[arg(long)]
+        once: bool,
+    },
+    /// Set a read mark on a surface
+    Mark {
+        /// Surface ID (default: focused terminal)
+        #[arg(long)]
+        surface: Option<u32>,
+    },
+    /// Update workspace name, subtitle, or description
+    Workspace {
+        /// Workspace ID (default: active workspace)
+        #[arg(long)]
+        id: Option<u32>,
+        /// New name
+        #[arg(long)]
+        name: Option<String>,
+        /// New subtitle
+        #[arg(long)]
+        subtitle: Option<String>,
+        /// New description
+        #[arg(long)]
+        description: Option<String>,
+    },
+    /// Set a global hook (timer or file-watching)
+    GlobalHook {
+        /// Condition: interval:SECS, once:SECS, file:/path/to/watch
+        #[arg(long)]
+        condition: String,
+        /// Shell command to execute when the condition fires
+        #[arg(long)]
+        command: String,
+        /// Optional human-readable label
+        #[arg(long)]
+        label: Option<String>,
     },
 }
 

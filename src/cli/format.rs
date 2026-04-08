@@ -1,13 +1,22 @@
-use super::Commands;
+use super::{Commands, ListCommands};
 
 pub fn format_output(command: &Commands, result: &serde_json::Value) {
     match command {
-        Commands::Tree => format_tree(result),
-        Commands::List => format_workspace_list(result),
-        Commands::Panes => format_pane_list(result),
-        Commands::Notifications => format_notification_list(result),
+        Commands::List { command } => format_list_output(command, result),
         _ => {
             // Pretty print JSON
+            println!("{}", serde_json::to_string_pretty(result).unwrap());
+        }
+    }
+}
+
+fn format_list_output(command: &ListCommands, result: &serde_json::Value) {
+    match command {
+        ListCommands::Tree => format_tree(result),
+        ListCommands::Workspaces => format_workspace_list(result),
+        ListCommands::Panes => format_pane_list(result),
+        ListCommands::Notifications => format_notification_list(result),
+        _ => {
             println!("{}", serde_json::to_string_pretty(result).unwrap());
         }
     }
