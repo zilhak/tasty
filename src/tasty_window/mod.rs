@@ -116,6 +116,53 @@ impl TastyWindow {
         self.mark_dirty();
     }
 
+    /// Recalculate the preedit anchor position using the current terminal cursor.
+    /// Call this after PTY output is processed so the preedit doesn't lag behind.
+    pub(crate) fn recalc_ime_preedit_anchor(&mut self) {
+        let preedit = match &self.ime_preedit {
+            Some(p) => p,
+            None => return,
+        };
+        let surface_id = preedit.surface_id;
+        let terminal = match self.state.find_terminal_by_id(surface_id) {
+            Some(t) => t,
+            None => return,
+        };
+
+        let (col, row) = terminal.surface().cursor_position();
+        let cols = terminal.cols();
+
+        // Reconcile advance with how far the raw cursor has moved
+        if self.ime_cursor_advance > 0 {
+            let (base_col, base_row) = self.ime_advance_base;
+            let raw_advance = if row > base_row {
+                (row - base_row) * cols + col - base_col
+            } else if col >= base_col {
+                col - base_col
+            } else {
+                0
+            };
+            if raw_advance >= self.ime_cursor_advance {
+                self.ime_cursor_advance = 0;
+            } else {
+                self.ime_cursor_advance -= raw_advance;
+            }
+            self.ime_advance_base = (col, row);
+        }
+
+        let adjusted_col = col + self.ime_cursor_advance;
+        let (anchor_col, anchor_row) = if cols > 0 && adjusted_col >= cols {
+            (adjusted_col % cols, row + adjusted_col / cols)
+        } else {
+            (adjusted_col, row)
+        };
+
+        if let Some(p) = &mut self.ime_preedit {
+            p.anchor_col = anchor_col;
+            p.anchor_row = anchor_row;
+        }
+    }
+
     pub(crate) fn update_ime_cursor_area(&self) {
         let Some(preedit) = &self.ime_preedit else {
             return;

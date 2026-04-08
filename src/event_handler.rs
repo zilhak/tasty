@@ -20,6 +20,7 @@ impl ApplicationHandler<AppEvent> for App {
                     for w in self.windows.values_mut() {
                         if w.state.engine.find_terminal_by_id(sid).is_some() {
                             w.state.engine.process_surface(sid);
+                            w.recalc_ime_preedit_anchor();
                             w.mark_dirty();
                             break;
                         }

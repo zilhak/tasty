@@ -31,6 +31,7 @@ impl TastyWindow {
         // When on, individual terminals are processed via TerminalOutput(Some(id)) events,
         // but we still call process_all() as a safety net (it's a no-op if channels are empty).
         if self.state.process_all() {
+            self.recalc_ime_preedit_anchor();
             self.dirty = true;
         }
 
