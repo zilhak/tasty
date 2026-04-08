@@ -164,6 +164,10 @@ impl ApplicationHandler<AppEvent> for App {
         // Track focused window on focus events
         if let WindowEvent::Focused(true) = &event {
             self.engine.focused_window_id = Some(id);
+            // If a modal is active, bring it to the front so it's not buried
+            if let Some(modal) = &self.modal {
+                modal.window.focus_window();
+            }
         }
 
         if let Some(w) = self.windows.get_mut(&id) {
