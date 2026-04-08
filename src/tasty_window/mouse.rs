@@ -100,8 +100,12 @@ impl TastyWindow {
                     } else if let Some(info) = surf_div {
                         self.dragging_divider = Some(DividerDrag { info, kind: DividerDragKind::Surface });
                     } else {
+                        let old_surface = self.state.focused_surface_id();
                         if self.state.focus_pane_at_position(x, y, terminal_rect) { self.dirty = true; }
                         if self.state.focus_surface_at_position(x, y, terminal_rect) { self.dirty = true; }
+                        if self.ime_preedit.is_some() && self.state.focused_surface_id() != old_surface {
+                            self.flush_ime_preedit();
+                        }
 
                         // Start text selection (only if not mouse-tracking or Shift held)
                         let mouse_tracking = self.state.focused_terminal()

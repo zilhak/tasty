@@ -38,6 +38,9 @@ impl TastyWindow {
                 event.logical_key.clone()
             };
             if self.handle_shortcut(&shortcut_key, self.modifiers) {
+                if self.ime_preedit.is_some() {
+                    self.flush_ime_preedit();
+                }
                 self.mark_dirty();
                 return;
             }

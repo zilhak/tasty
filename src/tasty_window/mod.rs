@@ -93,6 +93,29 @@ impl TastyWindow {
         self.ime_advance_base = (0, 0);
     }
 
+    /// If there is an active IME preedit, commit its text to the **original** surface
+    /// (the one where composition started) and reset all IME state.
+    /// Call this before any focus change or shortcut consumption.
+    fn flush_ime_preedit(&mut self) {
+        let preedit = match self.ime_preedit.take() {
+            Some(p) if !p.text.is_empty() => p,
+            _ => {
+                // No preedit or empty — just ensure state is clean
+                self.ime_cursor_advance = 0;
+                self.ime_advance_base = (0, 0);
+                return;
+            }
+        };
+        // Commit to the surface where composition started, not the currently focused one
+        if let Some(terminal) = self.state.find_terminal_by_id_mut(preedit.surface_id) {
+            terminal.send_key(&preedit.text);
+        }
+        self.state.record_typing(preedit.surface_id);
+        self.ime_cursor_advance = 0;
+        self.ime_advance_base = (0, 0);
+        self.mark_dirty();
+    }
+
     pub(crate) fn update_ime_cursor_area(&self) {
         let Some(preedit) = &self.ime_preedit else {
             return;
@@ -169,6 +192,9 @@ impl TastyWindow {
             WindowEvent::Focused(focused) => {
                 self.window_focused = focused;
                 if !focused {
+                    if self.ime_preedit.is_some() {
+                        self.flush_ime_preedit();
+                    }
                     self.modifiers = ModifiersState::empty();
                 }
                 self.mark_dirty();
