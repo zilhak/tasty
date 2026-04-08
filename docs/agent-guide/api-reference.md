@@ -46,7 +46,7 @@ tasty list info               # 버전, 워크스페이스 수
 # 워크스페이스
 tasty list workspaces         # 워크스페이스 목록
 tasty new workspace [--name NAME] [--cwd PATH]
-tasty select-workspace INDEX  # 0-based
+tasty set focus workspace INDEX  # 0-based
 tasty set workspace [--id ID] [--name NAME] [--subtitle TEXT] [--description TEXT]
 
 # 윈도우
@@ -80,10 +80,10 @@ tasty ime-status                   # 현재 IME 상태 확인
 tasty ime-disable                  # IME 비활성화 + preedit 클리어
 
 # 포커스 이동
-tasty focus-direction left    # 왼쪽 패인/서피스로 포커스 이동
-tasty focus-direction right   # 오른쪽
-tasty focus-direction up      # 위
-tasty focus-direction down    # 아래
+tasty set focus direction left    # 왼쪽 패인/서피스로 포커스 이동
+tasty set focus direction right   # 오른쪽
+tasty set focus direction up      # 위
+tasty set focus direction down    # 아래
 
 # 훅
 tasty set hook --event process-exit --command "echo done"

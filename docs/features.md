@@ -158,7 +158,7 @@
 
 ### 방향성 포커스 이동 (IPC/CLI)
 - `focus.direction` IPC 메서드: `direction` 파라미터 (`"left"`, `"right"`, `"up"`, `"down"`)로 분할 트리 구조 기반 방향성 포커스 이동
-- `tasty focus-direction <방향>` CLI 커맨드로도 동일하게 사용 가능
+- `tasty set focus direction <방향>` CLI 커맨드로도 동일하게 사용 가능
 - 알고리즘: SplitDirection 트리를 역방향으로 탐색하여 이동 방향에 맞는 분할을 찾고, 시블링 서브트리의 엣지 리프로 포커스 이동
   - `SplitDirection::Vertical`(좌우 경계) → Left/Right 방향에 대응
   - `SplitDirection::Horizontal`(상하 경계) → Up/Down 방향에 대응
