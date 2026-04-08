@@ -48,6 +48,22 @@ pub struct RenderPreedit {
     pub fg_color: [f32; 4],
 }
 
+impl RenderPreedit {
+    /// Returns the exclusive end column of the preedit text.
+    fn end_col(&self) -> usize {
+        let mut col = self.anchor_col;
+        for ch in self.text.chars() {
+            col += unicode_width(ch);
+        }
+        col
+    }
+
+    /// Check if a cell at (col, row) is covered by the preedit overlay.
+    fn covers(&self, col: usize, row: usize) -> bool {
+        row == self.anchor_row && col >= self.anchor_col && col < self.end_col()
+    }
+}
+
 // ---- Cell Renderer ----
 
 pub struct CellRenderer {
@@ -95,6 +111,7 @@ impl CellRenderer {
         cursor: Option<(usize, usize, bool)>,
         selection: Option<&(NormalizedSelection, [f32; 4])>,
         row_offset: usize,
+        preedit: Option<&RenderPreedit>,
     ) {
         let (cols, rows) = surface.dimensions();
         let lines = surface.screen_lines();
@@ -161,6 +178,12 @@ impl CellRenderer {
                 }
 
                 if text.is_empty() || text == " " {
+                    continue;
+                }
+
+                // Skip glyph rendering for cells covered by IME preedit overlay.
+                // The preedit overlay will draw its own glyphs on top.
+                if preedit.is_some_and(|p| p.covers(col_idx, row_idx)) {
                     continue;
                 }
 
@@ -297,7 +320,7 @@ impl CellRenderer {
 
         if terminal.scroll_offset == 0 {
             let row_offset = terminal.scrollback_len();
-            self.prepare_with_bg(terminal.surface(), queue, default_bg, cursor, selection, row_offset);
+            self.prepare_with_bg(terminal.surface(), queue, default_bg, cursor, selection, row_offset, preedit);
             self.append_preedit_overlay(preedit, queue, cols, rows);
             return;
         }
