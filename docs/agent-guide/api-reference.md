@@ -88,7 +88,7 @@ tasty focus-direction down    # 아래
 # 훅
 tasty set hook --event process-exit --command "echo done"
 tasty list hooks
-tasty unset-hook --hook HOOK_ID
+tasty unset hook --hook HOOK_ID
 
 # 알림
 tasty notify "메시지" [--title "제목"]
@@ -292,7 +292,7 @@ tasty set global-hook --condition interval:30 --command "echo tick" --label "hea
 tasty set global-hook --condition once:5 --command "notify-send done"
 tasty set global-hook --condition "file:/tmp/trigger" --command "bash /tmp/trigger"
 tasty list global-hooks
-tasty global-hook-unset --hook HOOK_ID
+tasty unset global-hook --hook HOOK_ID
 ```
 
 ### 알림

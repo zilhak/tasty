@@ -25,7 +25,7 @@ Surface별 이벤트 훅을 등록하여 에이전트 자동화를 가능하게 
 ```
 tasty set hook --surface <surface_id> --event <event> --command <command>
 tasty list hooks [--surface surface_id]
-tasty unset-hook --hook <hook_id>
+tasty unset hook --hook <hook_id>
 ```
 
 ### 사용 예시
@@ -42,7 +42,7 @@ tasty list hooks
 tasty list hooks --surface 3
 
 # 훅 제거
-tasty unset-hook --hook 42
+tasty unset hook --hook 42
 ```
 
 ## 소켓 API
