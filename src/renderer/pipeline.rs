@@ -11,7 +11,7 @@ impl CellRenderer {
         font_size: f32,
         font_family: &str,
     ) -> Self {
-        let font_config = FontConfig::new(font_size, font_family);
+        let font_config = FontConfig::new_with_custom_font(font_size, font_family, "");
         let atlas = GlyphAtlas::new(device);
 
         // Max instances for an 80x24 grid (with room for larger)
@@ -282,8 +282,8 @@ impl CellRenderer {
 
     /// Update font configuration (font size and/or family changed).
     /// Resets the glyph atlas and re-measures cell metrics.
-    pub fn update_font(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, font_size: f32, font_family: &str) {
-        self.font_config = FontConfig::new(font_size, font_family);
+    pub fn update_font(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, font_size: f32, font_family: &str, custom_font_path: &str) {
+        self.font_config = FontConfig::new_with_custom_font(font_size, font_family, custom_font_path);
         self.atlas = GlyphAtlas::new(device);
 
         // Rebuild the glyph bind group with the new atlas texture

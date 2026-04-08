@@ -17,6 +17,9 @@ pub struct AppearanceSettings {
     /// "auto" = font_size * scale_factor (same physical size across monitors)
     /// "fixed" = font_size as-is (more cells on high-DPI, current default)
     pub font_scale_mode: String,
+    /// Path to a custom font file (.ttf/.otf) to load.
+    /// When set, this font is loaded into the font database in addition to system fonts.
+    pub custom_font_path: String,
 }
 
 impl Default for AppearanceSettings {
@@ -30,6 +33,7 @@ impl Default for AppearanceSettings {
             ui_scale: "medium".to_string(),
             focused_surface_bg: "#000000".to_string(),
             font_scale_mode: "fixed".to_string(),
+            custom_font_path: String::new(),
         }
     }
 }

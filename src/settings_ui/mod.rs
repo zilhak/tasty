@@ -30,6 +30,10 @@ pub struct SettingsUiState {
     keybindings_sub_tab: KeybindingsSubTab,
     /// Pending preset name to apply (waiting for user confirmation).
     preset_confirm: Option<String>,
+    /// Cached system font family list.
+    pub font_families: Option<Vec<String>>,
+    /// Font family filter text for search.
+    pub font_filter: String,
 }
 
 impl SettingsUiState {
@@ -40,6 +44,8 @@ impl SettingsUiState {
             recording_field: None,
             keybindings_sub_tab: KeybindingsSubTab::General,
             preset_confirm: None,
+            font_families: None,
+            font_filter: String::new(),
         }
     }
 }
@@ -53,6 +59,12 @@ pub fn draw_settings_panel(
 ) -> Option<bool> {
     if ui_state.draft.is_none() {
         ui_state.draft = Some(settings.clone());
+    }
+
+    // Lazily load system font list on first access
+    if ui_state.font_families.is_none() {
+        let font_config = crate::font::FontConfig::new(14.0, "");
+        ui_state.font_families = Some(font_config.list_families());
     }
 
     let mut result = None;
@@ -108,7 +120,7 @@ pub fn draw_settings_panel(
                 .show(ui, |ui| {
                     match active_tab {
                         SettingsTab::General => draw_general_tab(ui, &mut draft),
-                        SettingsTab::Appearance => draw_appearance_tab(ui, &mut draft),
+                        SettingsTab::Appearance => draw_appearance_tab(ui, &mut draft, &mut ui_state.font_families, &mut ui_state.font_filter),
                         SettingsTab::Clipboard => draw_clipboard_tab(ui, &mut draft),
                         SettingsTab::Notifications => draw_notifications_tab(ui, &mut draft),
                         SettingsTab::Keybindings => draw_keybindings_tab(ui, &mut draft, &mut ui_state.recording_field, &mut ui_state.keybindings_sub_tab, &mut ui_state.preset_confirm),

@@ -305,8 +305,9 @@
 ### 설정 연동
 - `settings.general.shell`: Terminal 생성 시 커스텀 셸 경로 사용 (비어있으면 OS 기본 셸)
 - `settings.general.startup_command`: 첫 터미널 생성 후 자동 실행할 명령. 비어있으면 무시
-- `settings.appearance.font_family`: GPU 렌더러의 cosmic-text FontSystem에 전달. `FamilyOwned::Name`으로 해석되며, 빈 문자열이나 "monospace"이면 시스템 기본 모노스페이스 사용
+- `settings.appearance.font_family`: GPU 렌더러의 cosmic-text FontSystem에 전달. `FamilyOwned::Name`으로 해석되며, 빈 문자열이나 "monospace"이면 시스템 기본 모노스페이스 사용. 설정 UI에서 시스템 폰트 목록을 검색 가능한 드롭다운으로 선택 가능
 - `settings.appearance.font_size`: GpuState 생성 시 CellRenderer에 전달. 기본값 14.0
+- `settings.appearance.custom_font_path`: 커스텀 폰트 파일(.ttf/.otf) 경로. 지정 시 FontSystem에 해당 파일을 추가 로드한 후 font_family로 참조 가능
 - `settings.appearance.theme`: egui Visuals 설정에 반영. "dark" → `Visuals::dark()`, "light" → `Visuals::light()`. wgpu clear color도 테마에 따라 변경. 설정 저장 후 실시간 반영
 - `settings.appearance.background_opacity`: wgpu clear color의 알파 값으로 적용. 0.0(투명)~1.0(불투명)
 - `settings.appearance.focused_surface_bg`: focused surface의 배경색 (hex, 기본 `#000000`). unfocused surface는 테마 기본 배경(`#1e1e2e`) 사용

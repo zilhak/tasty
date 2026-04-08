@@ -55,6 +55,7 @@ impl GpuState {
                 &self.device, &self.queue,
                 effective_font_size,
                 &state.engine.settings.appearance.font_family,
+                &state.engine.settings.appearance.custom_font_path,
             );
             self.renderer.resize(&self.queue, self.size.width, self.size.height);
         }

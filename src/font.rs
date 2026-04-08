@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 use cosmic_text::{
     Attrs, Buffer, FamilyOwned, FontSystem, Metrics, Shaping, SwashCache, SwashContent,
@@ -23,11 +23,26 @@ pub struct FontConfig {
 }
 
 impl FontConfig {
-    /// Create a new FontConfig with the given font size and family name.
+    /// Create a new FontConfig with the given font size, family name, and optional custom font file.
     /// If `font_family` is empty or "monospace", the system default monospace font is used.
     pub fn new(font_size: f32, font_family: &str) -> Self {
+        Self::new_with_custom_font(font_size, font_family, "")
+    }
+
+    /// Create a new FontConfig, optionally loading a custom font file first.
+    pub fn new_with_custom_font(font_size: f32, font_family: &str, custom_font_path: &str) -> Self {
         let mut font_system = FontSystem::new();
         let swash_cache = SwashCache::new();
+
+        // Load custom font file if specified
+        if !custom_font_path.is_empty() {
+            if let Ok(data) = std::fs::read(custom_font_path) {
+                font_system.db_mut().load_font_data(data);
+                tracing::info!("Loaded custom font file: {}", custom_font_path);
+            } else {
+                tracing::warn!("Failed to load custom font file: {}", custom_font_path);
+            }
+        }
 
         let family = if font_family.is_empty()
             || font_family.eq_ignore_ascii_case("monospace")
@@ -45,6 +60,17 @@ impl FontConfig {
             metrics,
             font_family: family,
         }
+    }
+
+    /// List all available font family names from the system, sorted alphabetically.
+    pub fn list_families(&self) -> Vec<String> {
+        let mut families = BTreeSet::new();
+        for face in self.font_system.db().faces() {
+            for (name, _) in &face.families {
+                families.insert(name.clone());
+            }
+        }
+        families.into_iter().collect()
     }
 
     fn measure_cell(font_system: &mut FontSystem, font_size: f32, family: &FamilyOwned) -> FontMetrics {
