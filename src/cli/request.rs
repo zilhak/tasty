@@ -1,5 +1,5 @@
 use crate::ipc::protocol::JsonRpcRequest;
-use super::{Commands, DebugCommands};
+use super::{Commands, NewCommands, CloseCommands, ClaudeCommands, DebugCommands};
 
 /// Resolve a target string for split/other commands.
 /// - "this" → numeric surface ID from TASTY_SURFACE_ID env var
@@ -15,15 +15,17 @@ fn resolve_target(target: &str) -> String {
 
 pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
     let (method, params) = match command {
+        // ── new ──
+        Commands::New { command } => new_command_to_method_params(command),
+        // ── close ──
+        Commands::Close { command } => close_command_to_method_params(command),
+        // ── claude ──
+        Commands::Claude { command } => claude_command_to_method_params(command),
+        // ── rest ──
         Commands::Info => ("system.info", serde_json::json!({})),
         Commands::Debug { command } => debug_command_to_method_params(command),
-        Commands::NewWindow => ("window.create", serde_json::json!({})),
-        Commands::Windows => ("window.list", serde_json::json!({})),
         Commands::List => ("workspace.list", serde_json::json!({})),
-        Commands::NewWorkspace { name, cwd } => (
-            "workspace.create",
-            serde_json::json!({ "name": name.as_deref().unwrap_or(""), "cwd": cwd }),
-        ),
+        Commands::Windows => ("window.list", serde_json::json!({})),
         Commands::SelectWorkspace { index } => (
             "workspace.select",
             serde_json::json!({ "index": index }),
@@ -45,26 +47,6 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
         ),
         Commands::Notifications => ("notification.list", serde_json::json!({})),
         Commands::Tree => ("tree", serde_json::json!({})),
-        Commands::Split { level, target, direction, meta, cwd } => {
-            let resolved_target = target.as_deref().map(resolve_target);
-            let meta_value = meta
-                .as_deref()
-                .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok());
-            (
-                "split",
-                serde_json::json!({
-                    "level": level,
-                    "target": resolved_target,
-                    "direction": direction,
-                    "meta": meta_value,
-                    "cwd": cwd,
-                }),
-            )
-        }
-        Commands::NewTab { cwd } => ("tab.create", serde_json::json!({ "cwd": cwd })),
-        Commands::CloseTab => ("tab.close", serde_json::json!({})),
-        Commands::ClosePane => ("pane.close", serde_json::json!({})),
-        Commands::CloseSurface => ("surface.close", serde_json::json!({})),
         Commands::Surfaces => ("surface.list", serde_json::json!({})),
         Commands::Panes => ("pane.list", serde_json::json!({})),
         Commands::SetHook {
@@ -101,56 +83,6 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
             serde_json::json!({
                 "surface_id": surface,
                 "strip_ansi": strip_ansi,
-            }),
-        ),
-        Commands::Claude {
-            workspace,
-            directory,
-            task,
-        } => (
-            "claude.launch",
-            serde_json::json!({
-                "workspace": workspace,
-                "directory": directory,
-                "task": task,
-            }),
-        ),
-        Commands::ClaudeSpawn {
-            direction,
-            cwd,
-            role,
-            nickname,
-            prompt,
-        } => (
-            "claude.spawn",
-            serde_json::json!({
-                "direction": direction,
-                "cwd": cwd,
-                "role": role,
-                "nickname": nickname,
-                "prompt": prompt,
-            }),
-        ),
-        Commands::ClaudeChildren => ("claude.children", serde_json::json!({})),
-        Commands::ClaudeParent => ("claude.parent", serde_json::json!({})),
-        Commands::ClaudeKill { child } => (
-            "claude.kill",
-            serde_json::json!({ "child_surface_id": child }),
-        ),
-        Commands::ClaudeRespawn {
-            child,
-            cwd,
-            role,
-            nickname,
-            prompt,
-        } => (
-            "claude.respawn",
-            serde_json::json!({
-                "child_surface_id": child,
-                "cwd": cwd,
-                "role": role,
-                "nickname": nickname,
-                "prompt": prompt,
             }),
         ),
         Commands::MessageSend { to, content, from } => (
@@ -198,17 +130,6 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
                 }),
             )
         }
-        Commands::ClaudeBroadcast { text, role } => (
-            "claude.broadcast",
-            serde_json::json!({
-                "text": text,
-                "role": role,
-            }),
-        ),
-        // ClaudeHook is handled separately in run_client before reaching here
-        Commands::ClaudeHook { .. } => unreachable!("ClaudeHook is handled in run_client"),
-        // ClaudeWait is handled separately in run_client before reaching here
-        Commands::ClaudeWait { .. } => unreachable!("ClaudeWait is handled in run_client"),
         Commands::GlobalHookSet {
             condition,
             command,
@@ -230,14 +151,6 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
             "surface.is_typing",
             serde_json::json!({ "surface_id": surface }),
         ),
-        Commands::OpenMarkdown { path } => (
-            "tab.open_markdown",
-            serde_json::json!({ "file_path": path }),
-        ),
-        Commands::OpenExplorer { path } => (
-            "tab.open_explorer",
-            serde_json::json!({ "path": path }),
-        ),
     };
 
     JsonRpcRequest {
@@ -245,6 +158,114 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
         method: method.to_string(),
         params,
         id: Some(serde_json::json!(1)),
+    }
+}
+
+fn new_command_to_method_params(command: &NewCommands) -> (&'static str, serde_json::Value) {
+    match command {
+        NewCommands::Window => ("window.create", serde_json::json!({})),
+        NewCommands::Workspace { name, cwd } => (
+            "workspace.create",
+            serde_json::json!({ "name": name.as_deref().unwrap_or(""), "cwd": cwd }),
+        ),
+        NewCommands::Tab { cwd } => ("tab.create", serde_json::json!({ "cwd": cwd })),
+        NewCommands::Split { level, target, direction, meta, cwd } => {
+            let resolved_target = target.as_deref().map(resolve_target);
+            let meta_value = meta
+                .as_deref()
+                .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok());
+            (
+                "split",
+                serde_json::json!({
+                    "level": level,
+                    "target": resolved_target,
+                    "direction": direction,
+                    "meta": meta_value,
+                    "cwd": cwd,
+                }),
+            )
+        }
+        NewCommands::Markdown { path } => (
+            "tab.open_markdown",
+            serde_json::json!({ "file_path": path }),
+        ),
+        NewCommands::Explorer { path } => (
+            "tab.open_explorer",
+            serde_json::json!({ "path": path }),
+        ),
+    }
+}
+
+fn close_command_to_method_params(command: &CloseCommands) -> (&'static str, serde_json::Value) {
+    match command {
+        CloseCommands::Tab => ("tab.close", serde_json::json!({})),
+        CloseCommands::Pane => ("pane.close", serde_json::json!({})),
+        CloseCommands::Surface => ("surface.close", serde_json::json!({})),
+    }
+}
+
+fn claude_command_to_method_params(command: &ClaudeCommands) -> (&'static str, serde_json::Value) {
+    match command {
+        ClaudeCommands::Launch {
+            workspace,
+            directory,
+            task,
+        } => (
+            "claude.launch",
+            serde_json::json!({
+                "workspace": workspace,
+                "directory": directory,
+                "task": task,
+            }),
+        ),
+        ClaudeCommands::Spawn {
+            direction,
+            cwd,
+            role,
+            nickname,
+            prompt,
+        } => (
+            "claude.spawn",
+            serde_json::json!({
+                "direction": direction,
+                "cwd": cwd,
+                "role": role,
+                "nickname": nickname,
+                "prompt": prompt,
+            }),
+        ),
+        ClaudeCommands::Children => ("claude.children", serde_json::json!({})),
+        ClaudeCommands::Parent => ("claude.parent", serde_json::json!({})),
+        ClaudeCommands::Kill { child } => (
+            "claude.kill",
+            serde_json::json!({ "child_surface_id": child }),
+        ),
+        ClaudeCommands::Respawn {
+            child,
+            cwd,
+            role,
+            nickname,
+            prompt,
+        } => (
+            "claude.respawn",
+            serde_json::json!({
+                "child_surface_id": child,
+                "cwd": cwd,
+                "role": role,
+                "nickname": nickname,
+                "prompt": prompt,
+            }),
+        ),
+        ClaudeCommands::Broadcast { text, role } => (
+            "claude.broadcast",
+            serde_json::json!({
+                "text": text,
+                "role": role,
+            }),
+        ),
+        // Hook and Wait are handled separately in run_client
+        ClaudeCommands::Hook { .. } => unreachable!("ClaudeHook is handled in run_client"),
+        ClaudeCommands::Wait { .. } => unreachable!("ClaudeWait is handled in run_client"),
     }
 }
 
