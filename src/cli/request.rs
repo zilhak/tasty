@@ -1,5 +1,5 @@
 use crate::ipc::protocol::JsonRpcRequest;
-use super::{Commands, NewCommands, CloseCommands, ListCommands, SetCommands, UnsetCommands, ClaudeCommands, DebugCommands};
+use super::{Commands, NewCommands, CloseCommands, ListCommands, SetCommands, SetFocusCommands, UnsetCommands, ClaudeCommands, DebugCommands};
 
 /// Resolve a target string for split/other commands.
 /// - "this" → numeric surface ID from TASTY_SURFACE_ID env var
@@ -23,10 +23,6 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
         Commands::Claude { command } => claude_command_to_method_params(command),
         Commands::Debug { command } => debug_command_to_method_params(command),
         // ── standalone ──
-        Commands::SelectWorkspace { index } => (
-            "workspace.select",
-            serde_json::json!({ "index": index }),
-        ),
         Commands::Send { text } => ("surface.send", serde_json::json!({ "text": text })),
         Commands::SendKey { key } => ("surface.send_key", serde_json::json!({ "key": key })),
         Commands::Notify { body, title } => (
@@ -67,10 +63,6 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
         Commands::MessageClear { surface } => (
             "message.clear",
             serde_json::json!({ "surface_id": surface }),
-        ),
-        Commands::FocusDirection { direction } => (
-            "focus.direction",
-            serde_json::json!({ "direction": direction }),
         ),
         Commands::SurfaceMeta { action, surface, key, value } => {
             let method = match action.as_str() {
@@ -203,6 +195,20 @@ fn set_command_to_method_params(command: &SetCommands) -> (&'static str, serde_j
                 "command": command,
                 "label": label,
             }),
+        ),
+        SetCommands::Focus { command } => set_focus_command_to_method_params(command),
+    }
+}
+
+fn set_focus_command_to_method_params(command: &SetFocusCommands) -> (&'static str, serde_json::Value) {
+    match command {
+        SetFocusCommands::Workspace { index } => (
+            "workspace.select",
+            serde_json::json!({ "index": index }),
+        ),
+        SetFocusCommands::Direction { direction } => (
+            "focus.direction",
+            serde_json::json!({ "direction": direction }),
         ),
     }
 }

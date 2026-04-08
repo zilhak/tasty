@@ -58,11 +58,6 @@ pub enum Commands {
         #[command(subcommand)]
         command: ClaudeCommands,
     },
-    /// Select a workspace by index (0-based)
-    SelectWorkspace {
-        /// Workspace index
-        index: usize,
-    },
     /// Send text to the focused terminal
     Send {
         /// Text to send
@@ -130,11 +125,6 @@ pub enum Commands {
         /// Surface ID (default: focused)
         #[arg(long)]
         surface: Option<u32>,
-    },
-    /// Move focus in a spatial direction (left, right, up, down)
-    FocusDirection {
-        /// Direction to move focus: left, right, up, down
-        direction: String,
     },
     /// Manage per-surface metadata (set, get, unset, list)
     SurfaceMeta {
@@ -239,6 +229,25 @@ pub enum SetCommands {
         /// Optional human-readable label
         #[arg(long)]
         label: Option<String>,
+    },
+    /// Set focus target (workspace, direction)
+    Focus {
+        #[command(subcommand)]
+        command: SetFocusCommands,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum SetFocusCommands {
+    /// Select a workspace by index (0-based)
+    Workspace {
+        /// Workspace index
+        index: usize,
+    },
+    /// Move focus in a spatial direction (left, right, up, down)
+    Direction {
+        /// Direction: left, right, up, down
+        direction: String,
     },
 }
 
