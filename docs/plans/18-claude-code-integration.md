@@ -56,7 +56,7 @@ GUI 렌더링이므로 풍부한 상태 표시가 가능:
 ### 4. 전용 런처
 
 ```bash
-tasty claude [--workspace <name>] [--directory <path>]
+tasty claude launch [--workspace <name>] [--directory <path>]
 ```
 
 새 워크스페이스를 만들고 Claude Code를 바로 실행.

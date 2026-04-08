@@ -9,7 +9,7 @@ AI 에이전트 간 자동화 통합 기능. Claude Code 등 AI 코딩 에이전
 ### Claude Code 전용 런처
 
 ```
-tasty claude [--workspace <name>] [--directory <path>]
+tasty claude launch [--workspace <name>] [--directory <path>]
 ```
 
 - 새 Surface를 생성하고 지정 디렉토리에서 Claude Code를 실행한다

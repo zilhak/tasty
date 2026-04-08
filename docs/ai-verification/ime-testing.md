@@ -125,7 +125,7 @@ tasty read-since-mark --strip-ansi
 
 ```bash
 # 분할 생성
-tasty split --level surface --direction horizontal
+tasty new split --level surface --direction horizontal
 
 # 오른쪽 서피스에서 IME 시뮬레이션
 tasty ime-enable
