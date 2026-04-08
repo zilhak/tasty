@@ -26,11 +26,11 @@ impl FontConfig {
     /// Create a new FontConfig with the given font size, family name, and optional custom font file.
     /// If `font_family` is empty or "monospace", the system default monospace font is used.
     pub fn new(font_size: f32, font_family: &str) -> Self {
-        Self::new_with_custom_font(font_size, font_family, "")
+        Self::with_options(font_size, font_family, "", 1.0)
     }
 
-    /// Create a new FontConfig, optionally loading a custom font file first.
-    pub fn new_with_custom_font(font_size: f32, font_family: &str, custom_font_path: &str) -> Self {
+    /// Create a new FontConfig with all options.
+    pub fn with_options(font_size: f32, font_family: &str, custom_font_path: &str, line_height_mult: f32) -> Self {
         let mut font_system = FontSystem::new();
         let swash_cache = SwashCache::new();
 
@@ -52,7 +52,7 @@ impl FontConfig {
             FamilyOwned::Name(font_family.to_string().into())
         };
 
-        let metrics = Self::measure_cell(&mut font_system, font_size, &family);
+        let metrics = Self::measure_cell(&mut font_system, font_size, &family, line_height_mult);
 
         Self {
             font_system,
@@ -73,8 +73,8 @@ impl FontConfig {
         families.into_iter().collect()
     }
 
-    fn measure_cell(font_system: &mut FontSystem, font_size: f32, family: &FamilyOwned) -> FontMetrics {
-        let line_height = (font_size * 1.2).ceil();
+    fn measure_cell(font_system: &mut FontSystem, font_size: f32, family: &FamilyOwned, line_height_mult: f32) -> FontMetrics {
+        let line_height = (font_size * line_height_mult).ceil();
         let cosmic_metrics = Metrics::new(font_size, line_height);
 
         let mut buffer = Buffer::new(font_system, cosmic_metrics);

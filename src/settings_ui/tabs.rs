@@ -170,6 +170,19 @@ pub fn draw_appearance_tab(ui: &mut egui::Ui, settings: &mut Settings, font_fami
                 );
                 ui.end_row();
 
+                label_with_tooltip(
+                    ui,
+                    "Line height:",
+                    "Line height multiplier. 1.0 = tight (best for ASCII art), 1.2 = comfortable reading.",
+                );
+                ui.add(
+                    egui::DragValue::new(&mut settings.appearance.line_height)
+                        .range(0.8..=2.0)
+                        .speed(0.05)
+                        .max_decimals(2),
+                );
+                ui.end_row();
+
                 ui.label(t("settings.appearance.background_opacity_label"));
                 ui.add(egui::Slider::new(
                     &mut settings.appearance.background_opacity,

@@ -20,6 +20,9 @@ pub struct AppearanceSettings {
     /// Path to a custom font file (.ttf/.otf) to load.
     /// When set, this font is loaded into the font database in addition to system fonts.
     pub custom_font_path: String,
+    /// Line height multiplier relative to font size. Default 1.0 (tight, no gaps).
+    /// Values > 1.0 add spacing between lines (e.g. 1.2 = 20% extra).
+    pub line_height: f32,
 }
 
 impl Default for AppearanceSettings {
@@ -34,6 +37,7 @@ impl Default for AppearanceSettings {
             focused_surface_bg: "#000000".to_string(),
             font_scale_mode: "fixed".to_string(),
             custom_font_path: String::new(),
+            line_height: 1.0,
         }
     }
 }
