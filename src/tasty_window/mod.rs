@@ -212,25 +212,8 @@ impl TastyWindow {
         let was_dirty = self.dirty;
 
         match event {
-            WindowEvent::Resized(new_size) => {
-                // Re-sync scale factor on resize — macOS sleep/wake may send Resized
-                // without a preceding ScaleFactorChanged event, causing egui UI to
-                // render at the wrong DPI.
-                let current_sf = self.window.scale_factor() as f32;
-                if (current_sf - self.gpu.scale_factor()).abs() > f32::EPSILON {
-                    self.gpu.update_scale_factor(current_sf);
-                }
-                self.gpu.resize(new_size);
-                let terminal_rect = self.compute_terminal_rect();
-                let (cols, rows) = self.gpu.grid_size_for_rect(&terminal_rect);
-                self.state.update_grid_size(cols, rows);
-                self.state.resize_all(terminal_rect, self.gpu.cell_width(), self.gpu.cell_height());
-                self.mark_dirty();
-            }
-            WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
-                self.gpu.update_scale_factor(scale_factor as f32);
-                // Re-fetch the physical size — the window's physical dimensions change
-                // when the scale factor changes (e.g., macOS sleep/wake cycle).
+            WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => {
+                self.gpu.sync_scale_factor(&self.window);
                 let new_size = self.window.inner_size();
                 self.gpu.resize(new_size);
                 let terminal_rect = self.compute_terminal_rect();

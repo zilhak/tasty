@@ -201,12 +201,7 @@ impl GpuState {
     ) -> Result<(), wgpu::SurfaceError> {
         // 0. Re-sync scale factor — macOS may not fire ScaleFactorChanged
         // reliably during monitor hot-swap (e.g., 4K → 1080p).
-        let current_sf = window.scale_factor() as f32;
-        if (current_sf - self.scale_factor).abs() > f32::EPSILON {
-            self.update_scale_factor(current_sf);
-            let new_size = window.inner_size();
-            self.resize(new_size);
-        }
+        self.sync_scale_factor(window);
 
         // 1. Prepare layout
         state.sidebar_width = if !state.sidebar_visible {
@@ -320,5 +315,19 @@ impl GpuState {
         self.scale_factor = new_scale_factor;
         // Reconfigure egui with new scale factor
         self.egui_ctx.set_pixels_per_point(new_scale_factor);
+    }
+
+    /// Re-sync scale factor from the window and resize if it changed.
+    /// Returns true if scale factor was updated.
+    pub fn sync_scale_factor(&mut self, window: &Window) -> bool {
+        let current_sf = window.scale_factor() as f32;
+        if (current_sf - self.scale_factor).abs() > f32::EPSILON {
+            self.update_scale_factor(current_sf);
+            let new_size = window.inner_size();
+            self.resize(new_size);
+            true
+        } else {
+            false
+        }
     }
 }
