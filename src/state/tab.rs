@@ -3,6 +3,7 @@ use super::AppState;
 impl AppState {
     /// Add a new tab in the focused pane.
     pub fn add_tab(&mut self) -> anyhow::Result<()> {
+        let cwd = self.resolve_inherit_cwd();
         let tab_id = self.engine.next_ids.next_tab();
         let surface_id = self.engine.next_ids.next_surface();
         let cols = self.engine.default_cols;
@@ -13,7 +14,7 @@ impl AppState {
         let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
         let waker = self.engine.make_waker(surface_id);
         if let Some(pane) = self.focused_pane_mut() {
-            pane.add_tab_with_shell(tab_id, surface_id, cols, rows, shell_ref, &shell_args, waker, None)?;
+            pane.add_tab_with_shell(tab_id, surface_id, cols, rows, shell_ref, &shell_args, waker, cwd.as_deref())?;
         }
         self.send_fast_init(surface_id);
         Ok(())
