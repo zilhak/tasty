@@ -295,7 +295,7 @@ fn draw_tab_context_menu(ctx: &egui::Context, state: &mut AppState) {
                 .corner_radius(th.corner_radius)
                 .inner_margin(egui::Margin::symmetric(0, 4))
                 .show(ui, |ui| {
-                    ui.set_min_width(160.0);
+                    ui.set_max_width(200.0);
 
                     let rename_label = crate::i18n::t("tab_context_menu.rename");
                     let close_label = crate::i18n::t("tab_context_menu.close");
