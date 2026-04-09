@@ -1,7 +1,7 @@
 use serde_json::json;
 
 use crate::ipc::protocol::JsonRpcResponse;
-use crate::model::{FocusDirection, SplitDirection};
+use crate::model::SplitDirection;
 use crate::state::AppState;
 
 use super::{apply_meta, require_pane_id, resolve_target_param};
@@ -35,12 +35,18 @@ pub fn handle_pane_close(state: &mut AppState, id: serde_json::Value, params: &s
         Err(e) => return e,
     };
 
-    // Focus the target pane so close_active_pane operates on it
+    let saved_focus = state.active_workspace().focused_pane;
     if !state.focus_pane(pane_id) {
         return JsonRpcResponse::invalid_params(id, format!("Pane {} not found", pane_id));
     }
 
-    if state.close_active_pane() {
+    let closed = state.close_active_pane();
+    // Restore focus if we closed a different pane
+    if saved_focus != pane_id && closed {
+        state.focus_pane(saved_focus);
+    }
+
+    if closed {
         JsonRpcResponse::success(id, json!({ "closed": true, "pane_id": pane_id }))
     } else {
         JsonRpcResponse::success(id, json!({ "closed": false, "pane_id": pane_id, "reason": "cannot close the last pane" }))
@@ -107,30 +113,4 @@ pub fn handle_split(
     }
 }
 
-pub fn handle_focus_direction(
-    state: &mut AppState,
-    id: serde_json::Value,
-    params: &serde_json::Value,
-) -> JsonRpcResponse {
-    let direction = match params.get("direction").and_then(|v| v.as_str()) {
-        Some("left") => FocusDirection::Left,
-        Some("right") => FocusDirection::Right,
-        Some("up") => FocusDirection::Up,
-        Some("down") => FocusDirection::Down,
-        Some(other) => {
-            return JsonRpcResponse::invalid_params(
-                id,
-                format!("Invalid direction '{}'. Use: left, right, up, down", other),
-            )
-        }
-        None => return JsonRpcResponse::invalid_params(id, "Missing 'direction' parameter"),
-    };
-    state.move_focus_direction(direction);
-    let ws = state.active_workspace();
-    JsonRpcResponse::success(
-        id,
-        json!({
-            "focused_pane": ws.focused_pane,
-        }),
-    )
-}
+// focus.direction removed: focus is user-only (shortcuts/clicks).

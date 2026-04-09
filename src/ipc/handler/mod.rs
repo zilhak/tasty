@@ -26,7 +26,7 @@ pub fn handle(state: &mut AppState, request: &JsonRpcRequest) -> JsonRpcResponse
         "workspace.list" => workspace::handle_workspace_list(state, id),
         "workspace.create" => workspace::handle_workspace_create(state, id, &request.params),
         "workspace.update" => workspace::handle_workspace_update(state, id, &request.params),
-        "workspace.select" => workspace::handle_workspace_select(state, id, &request.params),
+        // workspace.select removed: focus is user-only (shortcuts/clicks).
         "pane.list" => pane::handle_pane_list(state, id),
         "split" => pane::handle_split(state, id, &request.params),
         "tab.list" => tab::handle_tab_list(state, id, &request.params),
@@ -39,8 +39,7 @@ pub fn handle(state: &mut AppState, request: &JsonRpcRequest) -> JsonRpcResponse
         "surface.send_key" => surface::handle_surface_send_key(state, id, &request.params),
         "surface.send_combo" => surface::handle_surface_send_combo(state, id, &request.params),
         "surface.send_to" => surface::handle_surface_send_to(state, id, &request.params),
-        "surface.focus" => surface::handle_surface_focus(state, id, &request.params),
-        "pane.focus" => surface::handle_pane_focus(state, id, &request.params),
+        // surface.focus / pane.focus removed: focus is user-only (shortcuts/clicks).
         "notification.list" => notification::handle_notification_list(state, id),
         "notification.create" => notification::handle_notification_create(state, id, &request.params),
         "tree" => handle_tree(state, id),
@@ -71,7 +70,7 @@ pub fn handle(state: &mut AppState, request: &JsonRpcRequest) -> JsonRpcResponse
         "surface.meta_get" => meta::handle_surface_meta_get(state, id, &request.params),
         "surface.meta_unset" => meta::handle_surface_meta_unset(state, id, &request.params),
         "surface.meta_list" => meta::handle_surface_meta_list(state, id, &request.params),
-        "focus.direction" => pane::handle_focus_direction(state, id, &request.params),
+        // focus.direction removed: focus is user-only (shortcuts/clicks).
         "tab.open_markdown" => tab::handle_open_markdown(state, id, &request.params),
         "tab.open_explorer" => tab::handle_open_explorer(state, id, &request.params),
         "ui.state" => handle_ui_state(state, id),

@@ -36,12 +36,16 @@ pub fn handle_tab_create(state: &mut AppState, id: serde_json::Value, params: &s
     };
     let cwd = params.get("cwd").and_then(|v| v.as_str()).map(std::path::PathBuf::from);
 
-    // Focus the target pane so add_tab_background creates the tab there
+    // Save and restore focus — IPC commands must never move focus
+    let saved_focus = state.active_workspace().focused_pane;
     if !state.focus_pane(pane_id) {
         return JsonRpcResponse::invalid_params(id, format!("Pane {} not found", pane_id));
     }
 
-    match state.add_tab_background(cwd) {
+    let result = state.add_tab_background(cwd);
+    state.focus_pane(saved_focus);
+
+    match result {
         Ok(_) => {
             let ws = state.active_workspace();
             let (tab_count, active_tab) = ws.pane_layout().find_pane(pane_id)
@@ -66,12 +70,18 @@ pub fn handle_tab_close(state: &mut AppState, id: serde_json::Value, params: &se
         Err(e) => return e,
     };
 
-    // Focus the target pane so close_active_tab operates on it
+    let saved_focus = state.active_workspace().focused_pane;
     if !state.focus_pane(pane_id) {
         return JsonRpcResponse::invalid_params(id, format!("Pane {} not found", pane_id));
     }
 
-    if state.close_active_tab() {
+    let closed = state.close_active_tab();
+    // Restore focus (if the closed pane wasn't the focused one)
+    if saved_focus != pane_id {
+        state.focus_pane(saved_focus);
+    }
+
+    if closed {
         JsonRpcResponse::success(id, json!({ "closed": true, "pane_id": pane_id }))
     } else {
         JsonRpcResponse::success(id, json!({ "closed": false, "pane_id": pane_id, "reason": "cannot close the last tab" }))
@@ -92,9 +102,12 @@ pub fn handle_open_markdown(
         None => return JsonRpcResponse::invalid_params(id, "Missing 'file_path' parameter"),
     };
 
+    let saved_focus = state.active_workspace().focused_pane;
     state.focus_pane(pane_id);
+    let result = state.add_markdown_tab(file_path.clone());
+    state.focus_pane(saved_focus);
 
-    match state.add_markdown_tab(file_path.clone()) {
+    match result {
         Ok(_) => JsonRpcResponse::success(
             id,
             json!({
@@ -126,9 +139,12 @@ pub fn handle_open_explorer(
                 .unwrap_or_else(|| ".".to_string())
         });
 
+    let saved_focus = state.active_workspace().focused_pane;
     state.focus_pane(pane_id);
+    let result = state.add_explorer_tab(path.clone());
+    state.focus_pane(saved_focus);
 
-    match state.add_explorer_tab(path.clone()) {
+    match result {
         Ok(_) => JsonRpcResponse::success(
             id,
             json!({

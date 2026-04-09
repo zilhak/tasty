@@ -67,6 +67,8 @@ pub(crate) fn handle_claude_spawn(
         Err(e) => return e,
     };
 
+    // Save and restore focus — IPC commands must never move focus
+    let saved_pane = state.active_workspace().focused_pane;
     state.focus_surface(parent_surface_id);
 
     let direction = match params.get("direction").and_then(|v| v.as_str()) {
@@ -112,6 +114,9 @@ pub(crate) fn handle_claude_spawn(
             terminal.send_key(&format!("{}\r", escaped));
         }
     }
+
+    // Restore focus
+    state.focus_pane(saved_pane);
 
     JsonRpcResponse::success(
         id,
@@ -243,6 +248,7 @@ pub(crate) fn handle_claude_respawn(
         state.mark_parent_closed(child_surface_id);
     }
 
+    let saved_pane = state.active_workspace().focused_pane;
     state.focus_surface(parent_id);
 
     let new_surface_id = match state.split_pane_get_surface(SplitDirection::Vertical) {
@@ -277,6 +283,9 @@ pub(crate) fn handle_claude_respawn(
             terminal.send_key(&format!("{}\r", escaped));
         }
     }
+
+    // Restore focus
+    state.focus_pane(saved_pane);
 
     JsonRpcResponse::success(
         id,

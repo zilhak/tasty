@@ -103,24 +103,4 @@ pub fn handle_workspace_update(
     )
 }
 
-pub fn handle_workspace_select(
-    state: &mut AppState,
-    id: serde_json::Value,
-    params: &serde_json::Value,
-) -> JsonRpcResponse {
-    let index = params
-        .get("index")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as usize);
-    match index {
-        Some(idx) if idx < state.engine.workspaces.len() => {
-            state.switch_workspace(idx);
-            JsonRpcResponse::success(id, json!({ "active_workspace": idx }))
-        }
-        Some(idx) => JsonRpcResponse::invalid_params(
-            id,
-            format!("Workspace index {} out of range (0..{})", idx, state.engine.workspaces.len()),
-        ),
-        None => JsonRpcResponse::invalid_params(id, "Missing 'index' parameter"),
-    }
-}
+// workspace.select removed: focus is user-only (shortcuts/clicks).

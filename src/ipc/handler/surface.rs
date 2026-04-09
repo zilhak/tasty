@@ -268,37 +268,7 @@ pub(crate) fn handle_surface_send_combo(
 }
 
 
-pub(crate) fn handle_pane_focus(
-    state: &mut AppState,
-    id: serde_json::Value,
-    params: &serde_json::Value,
-) -> JsonRpcResponse {
-    let pane_id = match params.get("pane_id").and_then(|v| v.as_u64()) {
-        Some(pid) => pid as u32,
-        None => return JsonRpcResponse::invalid_params(id, "Missing 'pane_id' parameter"),
-    };
-    if state.focus_pane(pane_id) {
-        JsonRpcResponse::success(id, json!({ "focused": true, "pane_id": pane_id }))
-    } else {
-        JsonRpcResponse::invalid_params(id, format!("Pane {} not found", pane_id))
-    }
-}
-
-pub(crate) fn handle_surface_focus(
-    state: &mut AppState,
-    id: serde_json::Value,
-    params: &serde_json::Value,
-) -> JsonRpcResponse {
-    let surface_id = match params.get("surface_id").and_then(|v| v.as_u64()) {
-        Some(sid) => sid as u32,
-        None => return JsonRpcResponse::invalid_params(id, "Missing 'surface_id' parameter"),
-    };
-    if state.focus_surface(surface_id) {
-        JsonRpcResponse::success(id, json!({ "focused": true, "surface_id": surface_id }))
-    } else {
-        JsonRpcResponse::invalid_params(id, format!("Surface {} not found", surface_id))
-    }
-}
+// handle_pane_focus / handle_surface_focus removed: focus is user-only.
 
 pub(crate) fn handle_surface_send_to(
     state: &mut AppState,

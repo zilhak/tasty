@@ -1,5 +1,5 @@
 use crate::ipc::protocol::JsonRpcRequest;
-use super::{Commands, NewCommands, CloseCommands, ListCommands, SetCommands, SetFocusCommands, UnsetCommands, SendCommands, ReadCommands, ClaudeCommands, DebugCommands};
+use super::{Commands, NewCommands, CloseCommands, ListCommands, SetCommands, UnsetCommands, SendCommands, ReadCommands, ClaudeCommands, DebugCommands};
 
 /// Resolve a target string for split/other commands.
 /// - "this" → numeric surface ID from TASTY_SURFACE_ID env var
@@ -246,20 +246,6 @@ fn set_command_to_method_params(command: &SetCommands) -> (&'static str, serde_j
                 "command": command,
                 "label": label,
             }),
-        ),
-        SetCommands::Focus { command } => set_focus_command_to_method_params(command),
-    }
-}
-
-fn set_focus_command_to_method_params(command: &SetFocusCommands) -> (&'static str, serde_json::Value) {
-    match command {
-        SetFocusCommands::Workspace { index } => (
-            "workspace.select",
-            serde_json::json!({ "index": index }),
-        ),
-        SetFocusCommands::Direction { direction } => (
-            "focus.direction",
-            serde_json::json!({ "direction": direction }),
         ),
     }
 }

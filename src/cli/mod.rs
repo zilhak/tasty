@@ -195,25 +195,6 @@ pub enum SetCommands {
         #[arg(long)]
         label: Option<String>,
     },
-    /// Set focus target (workspace, direction)
-    Focus {
-        #[command(subcommand)]
-        command: SetFocusCommands,
-    },
-}
-
-#[derive(Subcommand)]
-pub enum SetFocusCommands {
-    /// Select a workspace by index (0-based)
-    Workspace {
-        /// Workspace index
-        index: usize,
-    },
-    /// Move focus in a spatial direction (left, right, up, down)
-    Direction {
-        /// Direction: left, right, up, down
-        direction: String,
-    },
 }
 
 #[derive(Subcommand)]
