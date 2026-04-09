@@ -24,21 +24,26 @@ pub(crate) fn handle_claude_launch(
     let ws_idx = state.active_workspace;
     state.engine.workspaces[ws_idx].name = workspace_name.to_string();
 
-    if let Some(dir) = directory {
-        if let Some(terminal) = state.focused_terminal_mut() {
-            let normalized = dir.replace('\\', "/");
-            let escaped = shell_escape::escape(normalized.into());
-            terminal.send_key(&format!("cd {}\r", escaped));
-        }
-    }
+    // Get the surface ID of the newly created workspace's terminal
+    let surface_id = state.focused_surface_id();
 
-    let mut cmd = "claude".to_string();
-    if let Some(t) = task {
-        let escaped = shell_escape::escape(t.into());
-        cmd.push_str(&format!(" --task {}", escaped));
-    }
-    if let Some(terminal) = state.focused_terminal_mut() {
-        terminal.send_key(&format!("{}\r", cmd));
+    if let Some(sid) = surface_id {
+        if let Some(dir) = directory {
+            if let Some(terminal) = state.find_terminal_by_id_mut(sid) {
+                let normalized = dir.replace('\\', "/");
+                let escaped = shell_escape::escape(normalized.into());
+                terminal.send_key(&format!("cd {}\r", escaped));
+            }
+        }
+
+        let mut cmd = "claude".to_string();
+        if let Some(t) = task {
+            let escaped = shell_escape::escape(t.into());
+            cmd.push_str(&format!(" --task {}", escaped));
+        }
+        if let Some(terminal) = state.find_terminal_by_id_mut(sid) {
+            terminal.send_key(&format!("{}\r", cmd));
+        }
     }
 
     let ws_id = state.engine.workspaces[ws_idx].id;
@@ -47,6 +52,7 @@ pub(crate) fn handle_claude_launch(
         json!({
             "workspace_id": ws_id,
             "workspace_name": workspace_name,
+            "surface_id": surface_id,
         }),
     )
 }
@@ -56,15 +62,9 @@ pub(crate) fn handle_claude_spawn(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    let parent_surface_id = params
-        .get("surface_id")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
-        .or_else(|| state.focused_surface_id());
-
-    let parent_surface_id = match parent_surface_id {
-        Some(sid) => sid,
-        None => return JsonRpcResponse::internal_error(id, "No focused surface".to_string()),
+    let parent_surface_id = match super::require_surface_id(params, &id) {
+        Ok(sid) => sid,
+        Err(e) => return e,
     };
 
     state.focus_surface(parent_surface_id);
@@ -128,15 +128,9 @@ pub(crate) fn handle_claude_children(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    let parent_surface_id = params
-        .get("surface_id")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
-        .or_else(|| state.focused_surface_id());
-
-    let parent_surface_id = match parent_surface_id {
-        Some(sid) => sid,
-        None => return JsonRpcResponse::success(id, json!([])),
+    let parent_surface_id = match super::require_surface_id(params, &id) {
+        Ok(sid) => sid,
+        Err(e) => return e,
     };
 
     let children: Vec<_> = state
@@ -162,15 +156,9 @@ pub(crate) fn handle_claude_parent(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    let child_surface_id = params
-        .get("surface_id")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
-        .or_else(|| state.focused_surface_id());
-
-    let child_surface_id = match child_surface_id {
-        Some(sid) => sid,
-        None => return JsonRpcResponse::invalid_params(id, "No focused surface"),
+    let child_surface_id = match super::require_surface_id(params, &id) {
+        Ok(sid) => sid,
+        Err(e) => return e,
     };
 
     match state.parent_of(child_surface_id) {
@@ -309,7 +297,7 @@ pub(crate) fn handle_claude_set_idle_state(
         .get("surface_id")
         .and_then(|v| v.as_u64())
         .map(|v| v as u32)
-        .or_else(|| state.focused_surface_id());
+;
 
     let surface_id = match surface_id {
         Some(sid) => sid,
@@ -334,7 +322,7 @@ pub(crate) fn handle_claude_set_needs_input(
         .get("surface_id")
         .and_then(|v| v.as_u64())
         .map(|v| v as u32)
-        .or_else(|| state.focused_surface_id());
+;
 
     let surface_id = match surface_id {
         Some(sid) => sid,
@@ -357,15 +345,9 @@ pub(crate) fn handle_claude_broadcast(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    let parent_surface_id = params
-        .get("surface_id")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
-        .or_else(|| state.focused_surface_id());
-
-    let parent_surface_id = match parent_surface_id {
-        Some(sid) => sid,
-        None => return JsonRpcResponse::internal_error(id, "No focused surface".to_string()),
+    let parent_surface_id = match super::require_surface_id(params, &id) {
+        Ok(sid) => sid,
+        Err(e) => return e,
     };
 
     let text = match params.get("text").and_then(|v| v.as_str()) {

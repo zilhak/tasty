@@ -10,11 +10,10 @@ pub(crate) fn handle_hook_set(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    let surface_id = params
-        .get("surface_id")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
-        .unwrap_or(0);
+    let surface_id = match super::require_surface_id(params, &id) {
+        Ok(sid) => sid,
+        Err(e) => return e,
+    };
 
     let event_str = match params.get("event").and_then(|v| v.as_str()) {
         Some(e) => e,
@@ -163,15 +162,9 @@ pub(crate) fn handle_surface_fire_hook(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    let surface_id = params
-        .get("surface_id")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
-        .or_else(|| state.focused_surface_id());
-
-    let surface_id = match surface_id {
-        Some(sid) => sid,
-        None => return JsonRpcResponse::internal_error(id, "No focused surface".to_string()),
+    let surface_id = match super::require_surface_id(params, &id) {
+        Ok(sid) => sid,
+        Err(e) => return e,
     };
 
     let event_str = match params.get("event").and_then(|v| v.as_str()) {

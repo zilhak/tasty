@@ -4,7 +4,7 @@ use crate::ipc::protocol::JsonRpcResponse;
 use crate::model::{FocusDirection, SplitDirection};
 use crate::state::AppState;
 
-use super::{apply_meta, resolve_target_param};
+use super::{apply_meta, require_pane_id, resolve_target_param};
 
 pub fn handle_pane_list(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {
     let ws = state.active_workspace();
@@ -29,11 +29,21 @@ pub fn handle_pane_list(state: &AppState, id: serde_json::Value) -> JsonRpcRespo
     JsonRpcResponse::success(id, json!(panes))
 }
 
-pub fn handle_pane_close(state: &mut AppState, id: serde_json::Value) -> JsonRpcResponse {
+pub fn handle_pane_close(state: &mut AppState, id: serde_json::Value, params: &serde_json::Value) -> JsonRpcResponse {
+    let pane_id = match require_pane_id(params, &id) {
+        Ok(pid) => pid,
+        Err(e) => return e,
+    };
+
+    // Focus the target pane so close_active_pane operates on it
+    if !state.focus_pane(pane_id) {
+        return JsonRpcResponse::invalid_params(id, format!("Pane {} not found", pane_id));
+    }
+
     if state.close_active_pane() {
-        JsonRpcResponse::success(id, json!({ "closed": true }))
+        JsonRpcResponse::success(id, json!({ "closed": true, "pane_id": pane_id }))
     } else {
-        JsonRpcResponse::success(id, json!({ "closed": false, "reason": "cannot close the last pane" }))
+        JsonRpcResponse::success(id, json!({ "closed": false, "pane_id": pane_id, "reason": "cannot close the last pane" }))
     }
 }
 
@@ -60,6 +70,9 @@ pub fn handle_split(
     };
 
     let target_id = resolve_target_param(params.get("target"), level);
+    if target_id.is_none() {
+        return JsonRpcResponse::invalid_params(id, "Missing required 'target' parameter (numeric ID or nickname)");
+    }
 
     let meta = params.get("meta").and_then(|v| v.as_object());
     let cwd = params.get("cwd").and_then(|v| v.as_str()).map(std::path::PathBuf::from);

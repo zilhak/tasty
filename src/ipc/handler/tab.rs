@@ -3,8 +3,15 @@ use serde_json::json;
 use crate::ipc::protocol::JsonRpcResponse;
 use crate::state::AppState;
 
-pub fn handle_tab_list(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {
-    let tabs: Vec<_> = if let Some(pane) = state.focused_pane() {
+use super::require_pane_id;
+
+pub fn handle_tab_list(state: &AppState, id: serde_json::Value, params: &serde_json::Value) -> JsonRpcResponse {
+    let pane_id = match require_pane_id(params, &id) {
+        Ok(pid) => pid,
+        Err(e) => return e,
+    };
+    let ws = state.active_workspace();
+    let tabs: Vec<_> = if let Some(pane) = ws.pane_layout().find_pane(pane_id) {
         pane.tabs
             .iter()
             .enumerate()
@@ -17,22 +24,33 @@ pub fn handle_tab_list(state: &AppState, id: serde_json::Value) -> JsonRpcRespon
             })
             .collect()
     } else {
-        vec![]
+        return JsonRpcResponse::invalid_params(id, format!("Pane {} not found", pane_id));
     };
-    JsonRpcResponse::success(id, json!(tabs))
+    JsonRpcResponse::success(id, json!({ "pane_id": pane_id, "tabs": tabs }))
 }
 
 pub fn handle_tab_create(state: &mut AppState, id: serde_json::Value, params: &serde_json::Value) -> JsonRpcResponse {
+    let pane_id = match require_pane_id(params, &id) {
+        Ok(pid) => pid,
+        Err(e) => return e,
+    };
     let cwd = params.get("cwd").and_then(|v| v.as_str()).map(std::path::PathBuf::from);
+
+    // Focus the target pane so add_tab_background creates the tab there
+    if !state.focus_pane(pane_id) {
+        return JsonRpcResponse::invalid_params(id, format!("Pane {} not found", pane_id));
+    }
+
     match state.add_tab_background(cwd) {
         Ok(_) => {
-            let (tab_count, active_tab) = state
-                .focused_pane()
+            let ws = state.active_workspace();
+            let (tab_count, active_tab) = ws.pane_layout().find_pane(pane_id)
                 .map(|p| (p.tabs.len(), p.active_tab))
                 .unwrap_or((0, 0));
             JsonRpcResponse::success(
                 id,
                 json!({
+                    "pane_id": pane_id,
                     "tab_count": tab_count,
                     "active_tab": active_tab,
                 }),
@@ -42,11 +60,21 @@ pub fn handle_tab_create(state: &mut AppState, id: serde_json::Value, params: &s
     }
 }
 
-pub fn handle_tab_close(state: &mut AppState, id: serde_json::Value) -> JsonRpcResponse {
+pub fn handle_tab_close(state: &mut AppState, id: serde_json::Value, params: &serde_json::Value) -> JsonRpcResponse {
+    let pane_id = match require_pane_id(params, &id) {
+        Ok(pid) => pid,
+        Err(e) => return e,
+    };
+
+    // Focus the target pane so close_active_tab operates on it
+    if !state.focus_pane(pane_id) {
+        return JsonRpcResponse::invalid_params(id, format!("Pane {} not found", pane_id));
+    }
+
     if state.close_active_tab() {
-        JsonRpcResponse::success(id, json!({ "closed": true }))
+        JsonRpcResponse::success(id, json!({ "closed": true, "pane_id": pane_id }))
     } else {
-        JsonRpcResponse::success(id, json!({ "closed": false, "reason": "cannot close the last tab" }))
+        JsonRpcResponse::success(id, json!({ "closed": false, "pane_id": pane_id, "reason": "cannot close the last tab" }))
     }
 }
 
@@ -55,20 +83,23 @@ pub fn handle_open_markdown(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
+    let pane_id = match require_pane_id(params, &id) {
+        Ok(pid) => pid,
+        Err(e) => return e,
+    };
     let file_path = match params.get("file_path").and_then(|v| v.as_str()) {
         Some(p) => p.to_string(),
         None => return JsonRpcResponse::invalid_params(id, "Missing 'file_path' parameter"),
     };
 
-    if let Some(pane_id) = params.get("pane_id").and_then(|v| v.as_u64()) {
-        state.focus_pane(pane_id as u32);
-    }
+    state.focus_pane(pane_id);
 
     match state.add_markdown_tab(file_path.clone()) {
         Ok(_) => JsonRpcResponse::success(
             id,
             json!({
                 "ok": true,
+                "pane_id": pane_id,
                 "file_path": file_path,
             }),
         ),
@@ -81,6 +112,10 @@ pub fn handle_open_explorer(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
+    let pane_id = match require_pane_id(params, &id) {
+        Ok(pid) => pid,
+        Err(e) => return e,
+    };
     let path = params
         .get("path")
         .and_then(|v| v.as_str())
@@ -91,15 +126,14 @@ pub fn handle_open_explorer(
                 .unwrap_or_else(|| ".".to_string())
         });
 
-    if let Some(pane_id) = params.get("pane_id").and_then(|v| v.as_u64()) {
-        state.focus_pane(pane_id as u32);
-    }
+    state.focus_pane(pane_id);
 
     match state.add_explorer_tab(path.clone()) {
         Ok(_) => JsonRpcResponse::success(
             id,
             json!({
                 "ok": true,
+                "pane_id": pane_id,
                 "path": path,
             }),
         ),

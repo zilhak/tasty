@@ -29,11 +29,11 @@ pub fn handle(state: &mut AppState, request: &JsonRpcRequest) -> JsonRpcResponse
         "workspace.select" => workspace::handle_workspace_select(state, id, &request.params),
         "pane.list" => pane::handle_pane_list(state, id),
         "split" => pane::handle_split(state, id, &request.params),
-        "tab.list" => tab::handle_tab_list(state, id),
+        "tab.list" => tab::handle_tab_list(state, id, &request.params),
         "tab.create" => tab::handle_tab_create(state, id, &request.params),
-        "tab.close" => tab::handle_tab_close(state, id),
-        "pane.close" => pane::handle_pane_close(state, id),
-        "surface.close" => surface::handle_surface_close(state, id),
+        "tab.close" => tab::handle_tab_close(state, id, &request.params),
+        "pane.close" => pane::handle_pane_close(state, id, &request.params),
+        "surface.close" => surface::handle_surface_close(state, id, &request.params),
         "surface.list" => surface::handle_surface_list(state, id),
         "surface.send" => surface::handle_surface_send(state, id, &request.params),
         "surface.send_key" => surface::handle_surface_send_key(state, id, &request.params),
@@ -87,6 +87,24 @@ pub fn handle(state: &mut AppState, request: &JsonRpcRequest) -> JsonRpcResponse
     }
 }
 
+/// Extract a required surface_id from params. Returns Err(JsonRpcResponse) if missing.
+fn require_surface_id(params: &serde_json::Value, id: &serde_json::Value) -> Result<u32, JsonRpcResponse> {
+    params
+        .get("surface_id")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32)
+        .ok_or_else(|| JsonRpcResponse::invalid_params(id.clone(), "Missing required 'surface_id' parameter"))
+}
+
+/// Extract a required pane_id from params. Returns Err(JsonRpcResponse) if missing.
+fn require_pane_id(params: &serde_json::Value, id: &serde_json::Value) -> Result<u32, JsonRpcResponse> {
+    params
+        .get("pane_id")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32)
+        .ok_or_else(|| JsonRpcResponse::invalid_params(id.clone(), "Missing required 'pane_id' parameter"))
+}
+
 /// Apply metadata key-value pairs to a surface.
 fn apply_meta(surface_id: u32, meta: Option<&serde_json::Map<String, serde_json::Value>>) {
     if let Some(map) = meta {
@@ -132,7 +150,8 @@ fn handle_system_info(state: &AppState, id: serde_json::Value) -> JsonRpcRespons
 fn handle_ui_state(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {
     let ws = state.active_workspace();
     let pane_count = ws.pane_layout().all_pane_ids().len();
-    let tab_count = state.focused_pane().map(|p| p.tabs.len()).unwrap_or(0);
+    let focused_pane_id = ws.focused_pane;
+    let tab_count = ws.pane_layout().find_pane(focused_pane_id).map(|p| p.tabs.len()).unwrap_or(0);
     JsonRpcResponse::success(
         id,
         json!({
@@ -190,12 +209,10 @@ fn handle_is_typing(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    let surface_id = params
-        .get("surface_id")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
-        .or_else(|| state.focused_surface_id())
-        .unwrap_or(0);
+    let surface_id = match require_surface_id(params, &id) {
+        Ok(sid) => sid,
+        Err(e) => return e,
+    };
     let typing = state.is_typing(surface_id);
     let idle_seconds = if let Some(last) = state.engine.last_key_input.get(&surface_id) {
         last.elapsed().as_secs_f64()
@@ -217,12 +234,10 @@ fn handle_send_wait_idle(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    let surface_id = params
-        .get("surface_id")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
-        .or_else(|| state.focused_surface_id())
-        .unwrap_or(0);
+    let surface_id = match require_surface_id(params, &id) {
+        Ok(sid) => sid,
+        Err(e) => return e,
+    };
     let text = match params.get("text").and_then(|v| v.as_str()) {
         Some(t) => t.to_string(),
         None => return JsonRpcResponse::invalid_params(id, "Missing 'text' parameter"),

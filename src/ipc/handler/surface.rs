@@ -2,7 +2,8 @@ use serde_json::json;
 
 use crate::ipc::protocol::JsonRpcResponse;
 use crate::state::AppState;
-use crate::terminal::Terminal;
+
+use super::require_surface_id;
 
 pub(crate) fn handle_surface_list(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {
     let ws = state.active_workspace();
@@ -70,20 +71,20 @@ pub(crate) fn handle_surface_send(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
+    let surface_id = match require_surface_id(params, &id) {
+        Ok(sid) => sid,
+        Err(e) => return e,
+    };
     let text = match params.get("text").and_then(|v| v.as_str()) {
         Some(t) => t,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'text' parameter"),
     };
-    let surface_id = params.get("surface_id").and_then(|v| v.as_u64()).map(|v| v as u32);
-    let terminal = if let Some(sid) = surface_id {
-        state.find_terminal_by_id_mut(sid)
-    } else {
-        state.focused_terminal_mut()
-    };
-    if let Some(terminal) = terminal {
+    if let Some(terminal) = state.find_terminal_by_id_mut(surface_id) {
         terminal.send_key(text);
+        JsonRpcResponse::success(id, json!({ "sent": true, "surface_id": surface_id }))
+    } else {
+        JsonRpcResponse::invalid_params(id, format!("Surface {} not found", surface_id))
     }
-    JsonRpcResponse::success(id, json!({ "sent": true }))
 }
 
 pub(crate) fn handle_surface_send_key(
@@ -91,11 +92,14 @@ pub(crate) fn handle_surface_send_key(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
+    let surface_id = match require_surface_id(params, &id) {
+        Ok(sid) => sid,
+        Err(e) => return e,
+    };
     let key = match params.get("key").and_then(|v| v.as_str()) {
         Some(k) => k,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'key' parameter"),
     };
-    let surface_id = params.get("surface_id").and_then(|v| v.as_u64()).map(|v| v as u32);
 
     let bytes: Vec<u8> = match key {
         "enter" => b"\r".to_vec(),
@@ -125,34 +129,27 @@ pub(crate) fn handle_surface_send_key(
         "f11" => b"\x1b[23~".to_vec(),
         "f12" => b"\x1b[24~".to_vec(),
         other => {
-            let terminal = resolve_terminal(state, surface_id);
-            if let Some(terminal) = terminal {
+            if let Some(terminal) = state.find_terminal_by_id_mut(surface_id) {
                 terminal.send_key(other);
             }
-            return JsonRpcResponse::success(id, json!({ "sent": true }));
+            return JsonRpcResponse::success(id, json!({ "sent": true, "surface_id": surface_id }));
         }
     };
-    let terminal = resolve_terminal(state, surface_id);
-    if let Some(terminal) = terminal {
+    if let Some(terminal) = state.find_terminal_by_id_mut(surface_id) {
         terminal.send_bytes(&bytes);
     }
-    JsonRpcResponse::success(id, json!({ "sent": true }))
+    JsonRpcResponse::success(id, json!({ "sent": true, "surface_id": surface_id }))
 }
 
-/// Helper to resolve a terminal by optional surface_id, falling back to focused.
-fn resolve_terminal(state: &mut AppState, surface_id: Option<u32>) -> Option<&mut Terminal> {
-    if let Some(sid) = surface_id {
-        state.find_terminal_by_id_mut(sid)
+pub(crate) fn handle_surface_close(state: &mut AppState, id: serde_json::Value, params: &serde_json::Value) -> JsonRpcResponse {
+    let surface_id = match require_surface_id(params, &id) {
+        Ok(sid) => sid,
+        Err(e) => return e,
+    };
+    if state.close_surface_by_id(surface_id) {
+        JsonRpcResponse::success(id, json!({ "closed": true, "surface_id": surface_id }))
     } else {
-        state.focused_terminal_mut()
-    }
-}
-
-pub(crate) fn handle_surface_close(state: &mut AppState, id: serde_json::Value) -> JsonRpcResponse {
-    if state.close_active_surface() {
-        JsonRpcResponse::success(id, json!({ "closed": true }))
-    } else {
-        JsonRpcResponse::success(id, json!({ "closed": false, "reason": "cannot close a single terminal surface" }))
+        JsonRpcResponse::success(id, json!({ "closed": false, "surface_id": surface_id, "reason": "cannot close (not found or last surface)" }))
     }
 }
 
@@ -161,13 +158,13 @@ pub(crate) fn handle_set_mark(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    let surface_id = params
-        .get("surface_id")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32);
+    let surface_id = match require_surface_id(params, &id) {
+        Ok(sid) => sid,
+        Err(e) => return e,
+    };
 
-    state.set_mark(surface_id);
-    JsonRpcResponse::success(id, json!({ "ok": true }))
+    state.set_mark(Some(surface_id));
+    JsonRpcResponse::success(id, json!({ "ok": true, "surface_id": surface_id }))
 }
 
 pub(crate) fn handle_read_since_mark(
@@ -175,18 +172,18 @@ pub(crate) fn handle_read_since_mark(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    let surface_id = params
-        .get("surface_id")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32);
+    let surface_id = match require_surface_id(params, &id) {
+        Ok(sid) => sid,
+        Err(e) => return e,
+    };
 
     let strip_ansi = params
         .get("strip_ansi")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    let text = state.read_since_mark(surface_id, strip_ansi);
-    JsonRpcResponse::success(id, json!({ "text": text }))
+    let text = state.read_since_mark(Some(surface_id), strip_ansi);
+    JsonRpcResponse::success(id, json!({ "text": text, "surface_id": surface_id }))
 }
 
 pub(crate) fn handle_screen_text(
@@ -194,13 +191,12 @@ pub(crate) fn handle_screen_text(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    let surface_id = params.get("surface_id").and_then(|v| v.as_u64()).map(|v| v as u32);
-    let text = if let Some(sid) = surface_id {
-        state.find_terminal_by_id(sid).map(|t| t.screen_text()).unwrap_or_default()
-    } else {
-        state.focused_terminal().map(|t| t.screen_text()).unwrap_or_default()
+    let surface_id = match require_surface_id(params, &id) {
+        Ok(sid) => sid,
+        Err(e) => return e,
     };
-    JsonRpcResponse::success(id, json!({ "text": text }))
+    let text = state.find_terminal_by_id(surface_id).map(|t| t.screen_text()).unwrap_or_default();
+    JsonRpcResponse::success(id, json!({ "text": text, "surface_id": surface_id }))
 }
 
 pub(crate) fn handle_cursor_position(
@@ -208,17 +204,15 @@ pub(crate) fn handle_cursor_position(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    let surface_id = params.get("surface_id").and_then(|v| v.as_u64()).map(|v| v as u32);
-    let terminal = if let Some(sid) = surface_id {
-        state.find_terminal_by_id(sid)
-    } else {
-        state.focused_terminal()
+    let surface_id = match require_surface_id(params, &id) {
+        Ok(sid) => sid,
+        Err(e) => return e,
     };
-    if let Some(terminal) = terminal {
+    if let Some(terminal) = state.find_terminal_by_id(surface_id) {
         let (x, y) = terminal.surface().cursor_position();
-        JsonRpcResponse::success(id, json!({ "x": x, "y": y }))
+        JsonRpcResponse::success(id, json!({ "x": x, "y": y, "surface_id": surface_id }))
     } else {
-        JsonRpcResponse::success(id, json!({ "x": 0, "y": 0 }))
+        JsonRpcResponse::invalid_params(id, format!("Surface {} not found", surface_id))
     }
 }
 
@@ -227,6 +221,10 @@ pub(crate) fn handle_surface_send_combo(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
+    let surface_id = match require_surface_id(params, &id) {
+        Ok(sid) => sid,
+        Err(e) => return e,
+    };
     let key = match params.get("key").and_then(|v| v.as_str()) {
         Some(k) => k,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'key' parameter"),
@@ -235,7 +233,6 @@ pub(crate) fn handle_surface_send_combo(
         .and_then(|v| v.as_array())
         .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect::<Vec<_>>())
         .unwrap_or_default();
-    let surface_id = params.get("surface_id").and_then(|v| v.as_u64()).map(|v| v as u32);
 
     let has_ctrl = modifiers.iter().any(|m| m == "ctrl");
     let has_alt = modifiers.iter().any(|m| m == "alt");
@@ -260,12 +257,7 @@ pub(crate) fn handle_surface_send_combo(
         bytes_to_send.extend_from_slice(key.as_bytes());
     }
 
-    // Get the terminal: either by surface_id or focused
-    let terminal = if let Some(sid) = surface_id {
-        state.find_terminal_by_id_mut(sid)
-    } else {
-        state.focused_terminal_mut()
-    };
+    let terminal = state.find_terminal_by_id_mut(surface_id);
 
     if let Some(terminal) = terminal {
         terminal.send_bytes(&bytes_to_send);
