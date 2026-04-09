@@ -514,10 +514,16 @@
 
 ### CLI 클라이언트 (cli.rs)
 - `tasty` 명령에 서브커맨드가 있으면 CLI 모드, 없으면 GUI 모드로 동작
-- clap 기반 서브커맨드: `list`, `new-workspace`, `select-workspace`, `update-workspace`, `send`, `send-key`, `notify`, `notifications`, `tree`, `split`, `new-tab`, `close-tab`, `close-pane`, `close-surface`, `surfaces`, `panes`, `info`, `set-hook`, `list-hooks`, `unset-hook`, `set-mark`, `read-since-mark`, `claude`, `message-send`, `message-read`, `message-count`, `message-clear`, `claude-broadcast`, `claude-wait`
+- clap 기반 그룹형 서브커맨드: `new`, `close`, `list`, `set`, `send`, `read`, `unset`, `claude`, `notify`, `surface-meta`, `is-typing`, `debug`
 - 포트 파일에서 포트 번호를 읽어 TCP 연결 후 JSON-RPC 요청/응답
-- `tree` 커맨드: 워크스페이스/패인/탭 계층을 트리 형태로 표시
+- `list tree` 커맨드: 워크스페이스/패인/탭 계층을 트리 형태로 표시
 - 에러 시 종료 코드 1 반환
+
+#### 포커스 독립 원칙
+- 모든 CLI/IPC 명령은 focus에 의존하지 않고 명시적 ID로 대상을 지정
+- 생성/삭제 명령: `--pane`, `--surface`, `--target` 등이 필수. 미지정 시 에러 + 사용법 안내
+- 동작 명령 (`send`, `read`, `set` 등): `--surface` 미지정 시 `TASTY_SURFACE_ID` 환경변수에서 자동 채움
+- 모든 응답에 실제 적용된 파라미터 값(surface_id, pane_id 등)을 포함하여 묵시적 기본값도 확인 가능
 
 ## 에이전트 자동화
 
