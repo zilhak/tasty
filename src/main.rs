@@ -404,8 +404,23 @@ impl App {
 fn main() -> Result<()> {
     crash_report::init();
 
-    // Parse CLI arguments
-    let cli = cli::Cli::parse();
+    // Handle -a/--all before clap parsing (clap's -h exits before we can check -a)
+    {
+        let args: Vec<String> = std::env::args().collect();
+        if args.iter().any(|a| a == "-a" || a == "--all") {
+            cli::print_command_tree();
+            return Ok(());
+        }
+    }
+
+    // Parse CLI arguments (custom error handling for contextual messages)
+    let cli = match cli::Cli::try_parse() {
+        Ok(cli) => cli,
+        Err(err) => {
+            cli::format_parse_error(err);
+            unreachable!();
+        }
+    };
 
     // Initialize i18n
     let lang_settings = settings::Settings::load();

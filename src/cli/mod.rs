@@ -359,6 +359,9 @@ pub enum CloseCommands {
         #[arg(long)]
         surface: u32,
     },
+    /// Close the calling surface itself (uses TASTY_SURFACE_ID)
+    #[command(name = "self")]
+    CloseSelf,
 }
 
 #[derive(Subcommand)]

@@ -70,6 +70,14 @@ pub fn handle_tab_close(state: &mut AppState, id: serde_json::Value, params: &se
         Err(e) => return e,
     };
 
+    // Prevent closing a tab that contains the caller
+    if let Some(caller) = super::caller_surface_id(params) {
+        if super::surface_belongs_to_pane(state, caller, pane_id) {
+            return JsonRpcResponse::invalid_params(id,
+                "Cannot close a tab in a pane that contains your own surface. Use 'tasty close self' instead.");
+        }
+    }
+
     let saved_focus = state.active_workspace().focused_pane;
     if !state.focus_pane(pane_id) {
         return JsonRpcResponse::invalid_params(id, format!("Pane {} not found", pane_id));

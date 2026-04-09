@@ -146,6 +146,25 @@ pub(crate) fn handle_surface_close(state: &mut AppState, id: serde_json::Value, 
         Ok(sid) => sid,
         Err(e) => return e,
     };
+    // Prevent closing the caller's own surface — use 'close self' instead
+    if let Some(caller) = super::caller_surface_id(params) {
+        if caller == surface_id {
+            return JsonRpcResponse::invalid_params(id, "Cannot close your own surface with 'close surface'. Use 'tasty close self' instead.");
+        }
+    }
+    if state.close_surface_by_id(surface_id) {
+        JsonRpcResponse::success(id, json!({ "closed": true, "surface_id": surface_id }))
+    } else {
+        JsonRpcResponse::success(id, json!({ "closed": false, "surface_id": surface_id, "reason": "cannot close (not found or last surface)" }))
+    }
+}
+
+/// Close the calling surface itself. Only way for a surface to close itself.
+pub(crate) fn handle_surface_close_self(state: &mut AppState, id: serde_json::Value, params: &serde_json::Value) -> JsonRpcResponse {
+    let surface_id = match require_surface_id(params, &id) {
+        Ok(sid) => sid,
+        Err(e) => return e,
+    };
     if state.close_surface_by_id(surface_id) {
         JsonRpcResponse::success(id, json!({ "closed": true, "surface_id": surface_id }))
     } else {

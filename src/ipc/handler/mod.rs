@@ -34,6 +34,7 @@ pub fn handle(state: &mut AppState, request: &JsonRpcRequest) -> JsonRpcResponse
         "tab.close" => tab::handle_tab_close(state, id, &request.params),
         "pane.close" => pane::handle_pane_close(state, id, &request.params),
         "surface.close" => surface::handle_surface_close(state, id, &request.params),
+        "surface.close_self" => surface::handle_surface_close_self(state, id, &request.params),
         "surface.list" => surface::handle_surface_list(state, id),
         "surface.send" => surface::handle_surface_send(state, id, &request.params),
         "surface.send_key" => surface::handle_surface_send_key(state, id, &request.params),
@@ -102,6 +103,16 @@ fn require_pane_id(params: &serde_json::Value, id: &serde_json::Value) -> Result
         .and_then(|v| v.as_u64())
         .map(|v| v as u32)
         .ok_or_else(|| JsonRpcResponse::invalid_params(id.clone(), "Missing required 'pane_id' parameter"))
+}
+
+/// Extract optional caller_surface_id from params.
+fn caller_surface_id(params: &serde_json::Value) -> Option<u32> {
+    params.get("caller_surface_id").and_then(|v| v.as_u64()).map(|v| v as u32)
+}
+
+/// Check if a surface belongs to a pane (directly or in any tab).
+fn surface_belongs_to_pane(state: &AppState, surface_id: u32, pane_id: u32) -> bool {
+    state.find_pane_for_surface(surface_id) == Some(pane_id)
 }
 
 /// Apply metadata key-value pairs to a surface.
