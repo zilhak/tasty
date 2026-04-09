@@ -199,10 +199,6 @@ impl GpuState {
         preedit: Option<&ImePreeditState>,
         selection: Option<&crate::selection::TextSelection>,
     ) -> Result<(), wgpu::SurfaceError> {
-        // 0. Re-sync scale factor — macOS may not fire ScaleFactorChanged
-        // reliably during monitor hot-swap (e.g., 4K → 1080p).
-        self.sync_scale_factor(window);
-
         // 1. Prepare layout
         state.sidebar_width = if !state.sidebar_visible {
             0.0

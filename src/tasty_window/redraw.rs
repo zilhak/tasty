@@ -88,12 +88,25 @@ impl TastyWindow {
             }
         }
 
+        // Re-sync scale factor before render — macOS may not fire
+        // ScaleFactorChanged reliably during monitor hot-swap or sleep/wake.
+        if self.gpu.sync_scale_factor(&self.window) {
+            let new_size = self.window.inner_size();
+            self.gpu.resize(new_size);
+            let terminal_rect = self.compute_terminal_rect();
+            let (cols, rows) = self.gpu.grid_size_for_rect(&terminal_rect);
+            self.state.update_grid_size(cols, rows);
+            self.state.resize_all(terminal_rect, self.gpu.cell_width(), self.gpu.cell_height());
+            // Schedule another redraw to verify scale factor has stabilized.
+            self.dirty = true;
+        }
+
         // Render
         if self.dirty {
             self.dirty = false;
             self.update_ime_cursor_area();
             match self.gpu.render(&mut self.state, &self.window, self.ime_preedit.as_ref(), self.text_selection.as_ref()) {
-                Ok(_) => {}
+                Ok(()) => {}
                 Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
                     self.gpu.resize(self.window.inner_size());
                 }
