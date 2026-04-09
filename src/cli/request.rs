@@ -13,6 +13,28 @@ fn resolve_target(target: &str) -> String {
     }
 }
 
+/// Interpret C-style escape sequences: \r \n \t \\ \0
+fn unescape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            match chars.next() {
+                Some('r') => out.push('\r'),
+                Some('n') => out.push('\n'),
+                Some('t') => out.push('\t'),
+                Some('\\') => out.push('\\'),
+                Some('0') => out.push('\0'),
+                Some(other) => { out.push('\\'); out.push(other); }
+                None => out.push('\\'),
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
 /// Get surface_id: explicit value > TASTY_SURFACE_ID env var.
 fn resolve_surface_id(explicit: Option<u32>) -> Option<u32> {
     explicit.or_else(|| {
@@ -137,7 +159,7 @@ fn send_command_to_method_params(command: &SendCommands) -> (&'static str, serde
     match command {
         SendCommands::Text { text, surface } => (
             "surface.send",
-            serde_json::json!({ "text": text, "surface_id": resolve_surface_id(*surface) }),
+            serde_json::json!({ "text": unescape(text), "surface_id": resolve_surface_id(*surface) }),
         ),
         SendCommands::Key { key, surface } => (
             "surface.send_key",
