@@ -70,7 +70,7 @@ pub fn handle_workspace_update(
             None => return JsonRpcResponse::invalid_params(id, format!("Workspace id {} not found", ws_id)),
         }
     } else {
-        state.active_workspace
+        return JsonRpcResponse::invalid_params(id, "Missing required 'id' or 'index' parameter");
     };
 
     if idx >= state.engine.workspaces.len() {

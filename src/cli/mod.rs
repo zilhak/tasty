@@ -170,9 +170,9 @@ pub enum SetCommands {
     },
     /// Update workspace name, subtitle, or description
     Workspace {
-        /// Workspace ID (default: active workspace)
+        /// Workspace ID (required)
         #[arg(long)]
-        id: Option<u32>,
+        id: u32,
         /// New name
         #[arg(long)]
         name: Option<String>,
