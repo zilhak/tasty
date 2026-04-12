@@ -269,7 +269,10 @@ fn draw_font_preview(ui: &mut egui::Ui, settings: &Settings, th: &crate::theme::
     };
     let font_size = settings.appearance.font_size;
 
-    // Load selected font into egui if it changed
+    // Load selected font into egui if it changed.
+    // Returns the FontFamily to use for preview rendering.
+    // Falls back to Monospace if the font cannot be loaded, to avoid
+    // panicking with an unregistered FontFamily::Name("preview").
     let preview_family = if settings.appearance.font_family.is_empty() {
         egui::FontFamily::Monospace
     } else {
@@ -311,9 +314,19 @@ fn draw_font_preview(ui: &mut egui::Ui, settings: &Settings, th: &crate::theme::
                 }
                 ui.ctx().set_fonts(fonts);
                 *preview_font_loaded = settings.appearance.font_family.clone();
+            } else {
+                // Font data could not be loaded; clear the loaded marker so we
+                // retry next frame, but fall back to Monospace for this frame
+                // to avoid using an unregistered FontFamily::Name("preview").
+                *preview_font_loaded = String::new();
             }
         }
-        egui::FontFamily::Name("preview".into())
+        // Only use the "preview" family if it was actually registered.
+        if *preview_font_loaded == settings.appearance.font_family {
+            egui::FontFamily::Name("preview".into())
+        } else {
+            egui::FontFamily::Monospace
+        }
     };
 
     let sample_lines = [
