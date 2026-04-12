@@ -270,61 +270,62 @@ fn draw_font_preview(ui: &mut egui::Ui, settings: &Settings, th: &crate::theme::
     let font_size = settings.appearance.font_size;
 
     // Load selected font into egui if it changed.
-    // Returns the FontFamily to use for preview rendering.
-    // Falls back to Monospace if the font cannot be loaded, to avoid
-    // panicking with an unregistered FontFamily::Name("preview").
+    // `preview_font_loaded` holds either:
+    //   - the font family name on success (matches font_family → already loaded)
+    //   - "\x00:<font_family>" as a failure marker (don't retry)
+    //   - "" on init (never attempted)
+    let failed_marker = format!("\x00:{}", settings.appearance.font_family);
     let preview_family = if settings.appearance.font_family.is_empty() {
         egui::FontFamily::Monospace
+    } else if *preview_font_loaded == settings.appearance.font_family {
+        // Already loaded successfully.
+        egui::FontFamily::Name("preview".into())
+    } else if *preview_font_loaded == failed_marker {
+        // Load was already attempted and failed; don't retry.
+        egui::FontFamily::Monospace
     } else {
-        if *preview_font_loaded != settings.appearance.font_family {
-            let font_config = crate::font::FontConfig::new(14.0, "");
-            if let Some(data) = font_config.load_family_data(&settings.appearance.font_family) {
-                let mut fonts = egui::FontDefinitions::default();
+        // First attempt for this font family.
+        let font_config = crate::font::FontConfig::new(14.0, "");
+        if let Some(data) = font_config.load_family_data(&settings.appearance.font_family) {
+            let mut fonts = egui::FontDefinitions::default();
+            fonts.font_data.insert(
+                "preview_font".to_owned(),
+                Arc::new(egui::FontData::from_owned(data)),
+            );
+            fonts
+                .families
+                .insert(
+                    egui::FontFamily::Name("preview".into()),
+                    vec!["preview_font".to_owned()],
+                );
+            // Keep CJK fallback for Monospace/Proportional (re-run CJK setup)
+            if let Some(cjk_data) = load_system_cjk_font_data() {
                 fonts.font_data.insert(
-                    "preview_font".to_owned(),
-                    Arc::new(egui::FontData::from_owned(data)),
+                    "system_cjk".to_owned(),
+                    Arc::new(egui::FontData::from_owned(cjk_data)),
                 );
                 fonts
                     .families
-                    .insert(
-                        egui::FontFamily::Name("preview".into()),
-                        vec!["preview_font".to_owned()],
-                    );
-                // Keep CJK fallback for Monospace/Proportional (re-run CJK setup)
-                if let Some(cjk_data) = load_system_cjk_font_data() {
-                    fonts.font_data.insert(
-                        "system_cjk".to_owned(),
-                        Arc::new(egui::FontData::from_owned(cjk_data)),
-                    );
-                    fonts
-                        .families
-                        .entry(egui::FontFamily::Proportional)
-                        .or_default()
-                        .push("system_cjk".to_owned());
-                    fonts
-                        .families
-                        .entry(egui::FontFamily::Monospace)
-                        .or_default()
-                        .push("system_cjk".to_owned());
-                    fonts
-                        .families
-                        .entry(egui::FontFamily::Name("preview".into()))
-                        .or_default()
-                        .push("system_cjk".to_owned());
-                }
-                ui.ctx().set_fonts(fonts);
-                *preview_font_loaded = settings.appearance.font_family.clone();
-            } else {
-                // Font data could not be loaded; clear the loaded marker so we
-                // retry next frame, but fall back to Monospace for this frame
-                // to avoid using an unregistered FontFamily::Name("preview").
-                *preview_font_loaded = String::new();
+                    .entry(egui::FontFamily::Proportional)
+                    .or_default()
+                    .push("system_cjk".to_owned());
+                fonts
+                    .families
+                    .entry(egui::FontFamily::Monospace)
+                    .or_default()
+                    .push("system_cjk".to_owned());
+                fonts
+                    .families
+                    .entry(egui::FontFamily::Name("preview".into()))
+                    .or_default()
+                    .push("system_cjk".to_owned());
             }
-        }
-        // Only use the "preview" family if it was actually registered.
-        if *preview_font_loaded == settings.appearance.font_family {
+            ui.ctx().set_fonts(fonts);
+            *preview_font_loaded = settings.appearance.font_family.clone();
             egui::FontFamily::Name("preview".into())
         } else {
+            // Record failure so we don't retry on subsequent frames.
+            *preview_font_loaded = failed_marker;
             egui::FontFamily::Monospace
         }
     };
