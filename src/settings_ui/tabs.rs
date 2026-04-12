@@ -322,7 +322,10 @@ fn draw_font_preview(ui: &mut egui::Ui, settings: &Settings, th: &crate::theme::
             }
             ui.ctx().set_fonts(fonts);
             *preview_font_loaded = settings.appearance.font_family.clone();
-            egui::FontFamily::Name("preview".into())
+            // set_fonts() was just called this frame; the new family may not be
+            // available until the next frame. Use Monospace now and switch to
+            // Name("preview") from the next frame (preview_font_loaded is already set).
+            egui::FontFamily::Monospace
         } else {
             // Record failure so we don't retry on subsequent frames.
             *preview_font_loaded = failed_marker;

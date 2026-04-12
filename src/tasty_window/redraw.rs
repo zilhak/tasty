@@ -109,6 +109,10 @@ impl TastyWindow {
                 Ok(()) => {}
                 Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
                     self.gpu.resize(self.window.inner_size());
+                    // Surface was lost/outdated; resize recovers it, but we must
+                    // re-render now that it's ready. dirty was set to false above,
+                    // so restore it and request another frame.
+                    self.dirty = true;
                 }
                 Err(wgpu::SurfaceError::OutOfMemory) => {
                     tracing::error!("GPU out of memory");
