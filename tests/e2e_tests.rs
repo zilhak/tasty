@@ -87,7 +87,7 @@ fn split_pane() {
         .len();
     tasty.call(
         "split",
-        serde_json::json!({"level": "pane-group", "direction": "vertical"}),
+        serde_json::json!({"level": "pane", "direction": "vertical"}),
     );
     let after = tasty
         .call("pane.list", serde_json::json!({}))
@@ -102,7 +102,7 @@ fn close_pane() {
     let tasty = TastyInstance::spawn();
     tasty.call(
         "split",
-        serde_json::json!({"level": "pane-group", "direction": "vertical"}),
+        serde_json::json!({"level": "pane", "direction": "vertical"}),
     );
     let before = tasty
         .call("pane.list", serde_json::json!({}))
@@ -289,7 +289,7 @@ fn pane_focus_by_id() {
     let first_pane_id = panes_before.as_array().unwrap()[0]["id"].as_u64().unwrap();
 
     // Split pane
-    tasty.call("split", json!({"level": "pane-group", "direction": "vertical"}));
+    tasty.call("split", json!({"level": "pane", "direction": "vertical"}));
 
     // Get new pane list
     let panes_after = tasty.call("pane.list", json!({}));
@@ -317,7 +317,7 @@ fn surface_focus_by_id() {
     let first_surface_id = surfaces.as_array().unwrap()[0]["id"].as_u64().unwrap();
 
     // Split pane to create another surface
-    tasty.call("split", json!({"level": "pane-group", "direction": "vertical"}));
+    tasty.call("split", json!({"level": "pane", "direction": "vertical"}));
 
     // Focus the first surface by ID
     let result = tasty.call("surface.focus", json!({"surface_id": first_surface_id}));

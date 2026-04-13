@@ -64,7 +64,7 @@ pub enum Commands {
     },
     /// Split a pane group or surface
     Split {
-        /// Split level: pane-group (upper layout) or surface (lower layout)
+        /// Split level: pane (upper layout) or surface (lower layout)
         #[arg(long)]
         level: String,
         /// Target: numeric ID, "this" (current surface), or nickname (required)

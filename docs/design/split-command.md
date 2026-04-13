@@ -22,14 +22,14 @@ IPC와 CLI 모두 하나의 `split` 명령으로 상위/하위 레이아웃 분�
 
 ```bash
 tasty split --level surface --target this --direction vertical --meta '{"nickname":"logs"}'
-tasty split --level pane-group --target 2 --direction horizontal
+tasty split --level pane --target 2 --direction horizontal
 ```
 
 ## 파라미터
 
 | 파라미터 | 필수 | 타입 | 설명 |
 |----------|------|------|------|
-| `level` | yes | `"pane-group"` \| `"surface"` | 분할 레벨 |
+| `level` | yes | `"pane"` \| `"surface"` | 분할 레벨 |
 | `target` | no | string | 분할 대상. 생략 시 focused 대상 |
 | `direction` | no | `"vertical"` \| `"horizontal"` | 분할 방향. 기본값 `"vertical"` |
 | `meta` | no | JSON object | 새 surface에 설정할 메타데이터 |
@@ -72,7 +72,7 @@ ID는 전역 고유하므로, target이 주어지면 **모든 workspace를 검�
 ## 응답
 
 ```json
-// level: "pane-group"
+// level: "pane"
 {
   "new_pane_id": 5,
   "new_surface_id": 8
@@ -102,5 +102,5 @@ tasty split --level surface --target build-server --direction horizontal
 ### 독립 탭 바 영역 생성
 
 ```bash
-tasty split --level pane-group --direction horizontal
+tasty split --level pane --direction horizontal
 ```

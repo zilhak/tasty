@@ -61,12 +61,12 @@ pub fn handle_split(
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
     let level = match params.get("level").and_then(|v| v.as_str()) {
-        Some("pane-group") => "pane-group",
+        Some("pane-group") | Some("pane") => "pane",
         Some("surface") => "surface",
         Some(other) => {
             return JsonRpcResponse::invalid_params(
                 id,
-                format!("Invalid level '{}'. Use: pane-group, surface", other),
+                format!("Invalid level '{}'. Use: pane, surface", other),
             )
         }
         None => return JsonRpcResponse::invalid_params(id, "Missing 'level' parameter"),
@@ -86,7 +86,7 @@ pub fn handle_split(
     let cwd = params.get("cwd").and_then(|v| v.as_str()).map(std::path::PathBuf::from);
 
     match level {
-        "pane-group" => match state.split_pane_targeted(target_id, direction, cwd) {
+        "pane" => match state.split_pane_targeted(target_id, direction, cwd) {
             Ok((new_pane_id, new_surface_id)) => {
                 apply_meta(new_surface_id, meta);
                 JsonRpcResponse::success(
