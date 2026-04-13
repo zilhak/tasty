@@ -10,8 +10,7 @@ pub fn handle_tab_list(state: &AppState, id: serde_json::Value, params: &serde_j
         Ok(pid) => pid,
         Err(e) => return e,
     };
-    let ws = state.active_workspace();
-    let tabs: Vec<_> = if let Some(pane) = ws.pane_layout().find_pane(pane_id) {
+    let tabs: Vec<_> = if let Some(pane) = state.find_pane_by_id(pane_id) {
         pane.tabs
             .iter()
             .enumerate()
@@ -36,19 +35,15 @@ pub fn handle_tab_create(state: &mut AppState, id: serde_json::Value, params: &s
     };
     let cwd = params.get("cwd").and_then(|v| v.as_str()).map(std::path::PathBuf::from);
 
-    // Save and restore focus — IPC commands must never move focus
-    let saved_focus = state.active_workspace().focused_pane;
-    if !state.focus_pane(pane_id) {
+    if state.find_pane_by_id(pane_id).is_none() {
         return JsonRpcResponse::invalid_params(id, format!("Pane {} not found", pane_id));
     }
 
-    let result = state.add_tab_background(cwd);
-    state.focus_pane(saved_focus);
+    let result = state.add_tab_to_pane(pane_id, cwd);
 
     match result {
         Ok(_) => {
-            let ws = state.active_workspace();
-            let (tab_count, active_tab) = ws.pane_layout().find_pane(pane_id)
+            let (tab_count, active_tab) = state.find_pane_by_id(pane_id)
                 .map(|p| (p.tabs.len(), p.active_tab))
                 .unwrap_or((0, 0));
             JsonRpcResponse::success(
@@ -78,16 +73,11 @@ pub fn handle_tab_close(state: &mut AppState, id: serde_json::Value, params: &se
         }
     }
 
-    let saved_focus = state.active_workspace().focused_pane;
-    if !state.focus_pane(pane_id) {
+    if state.find_pane_by_id(pane_id).is_none() {
         return JsonRpcResponse::invalid_params(id, format!("Pane {} not found", pane_id));
     }
 
-    let closed = state.close_active_tab();
-    // Restore focus (if the closed pane wasn't the focused one)
-    if saved_focus != pane_id {
-        state.focus_pane(saved_focus);
-    }
+    let closed = state.close_tab_in_pane(pane_id);
 
     if closed {
         JsonRpcResponse::success(id, json!({ "closed": true, "pane_id": pane_id }))
@@ -110,10 +100,11 @@ pub fn handle_open_markdown(
         None => return JsonRpcResponse::invalid_params(id, "Missing 'file_path' parameter"),
     };
 
-    let saved_focus = state.active_workspace().focused_pane;
-    state.focus_pane(pane_id);
-    let result = state.add_markdown_tab(file_path.clone());
-    state.focus_pane(saved_focus);
+    if state.find_pane_by_id(pane_id).is_none() {
+        return JsonRpcResponse::invalid_params(id, format!("Pane {} not found", pane_id));
+    }
+
+    let result = state.add_markdown_tab_to_pane(pane_id, file_path.clone());
 
     match result {
         Ok(_) => JsonRpcResponse::success(
@@ -147,10 +138,11 @@ pub fn handle_open_explorer(
                 .unwrap_or_else(|| ".".to_string())
         });
 
-    let saved_focus = state.active_workspace().focused_pane;
-    state.focus_pane(pane_id);
-    let result = state.add_explorer_tab(path.clone());
-    state.focus_pane(saved_focus);
+    if state.find_pane_by_id(pane_id).is_none() {
+        return JsonRpcResponse::invalid_params(id, format!("Pane {} not found", pane_id));
+    }
+
+    let result = state.add_explorer_tab_to_pane(pane_id, path.clone());
 
     match result {
         Ok(_) => JsonRpcResponse::success(

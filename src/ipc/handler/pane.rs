@@ -7,25 +7,24 @@ use crate::state::AppState;
 use super::{apply_meta, require_pane_id, resolve_target_param};
 
 pub fn handle_pane_list(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {
-    let ws = state.active_workspace();
-    let pane_ids = ws.pane_layout().all_pane_ids();
-    let focused = ws.focused_pane;
-
-    let panes: Vec<_> = pane_ids
-        .iter()
-        .map(|&pid| {
+    let mut panes = Vec::new();
+    for ws in &state.engine.workspaces {
+        let pane_ids = ws.pane_layout().all_pane_ids();
+        let focused = ws.focused_pane;
+        for &pid in &pane_ids {
             let tab_count = ws
                 .pane_layout()
                 .find_pane(pid)
                 .map(|p| p.tabs.len())
                 .unwrap_or(0);
-            json!({
+            panes.push(json!({
                 "id": pid,
+                "workspace_id": ws.id,
                 "focused": pid == focused,
                 "tab_count": tab_count,
-            })
-        })
-        .collect();
+            }));
+        }
+    }
     JsonRpcResponse::success(id, json!(panes))
 }
 
@@ -43,16 +42,11 @@ pub fn handle_pane_close(state: &mut AppState, id: serde_json::Value, params: &s
         }
     }
 
-    let saved_focus = state.active_workspace().focused_pane;
-    if !state.focus_pane(pane_id) {
+    if state.find_pane_by_id(pane_id).is_none() {
         return JsonRpcResponse::invalid_params(id, format!("Pane {} not found", pane_id));
     }
 
-    let closed = state.close_active_pane();
-    // Restore focus if we closed a different pane
-    if saved_focus != pane_id && closed {
-        state.focus_pane(saved_focus);
-    }
+    let closed = state.close_pane_by_id(pane_id);
 
     if closed {
         JsonRpcResponse::success(id, json!({ "closed": true, "pane_id": pane_id }))

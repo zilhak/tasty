@@ -66,6 +66,84 @@ impl AppState {
         Ok(())
     }
 
+    /// Add a new tab in the specified pane (by ID, cross-workspace) without switching active tab.
+    pub fn add_tab_to_pane(&mut self, pane_id: u32, explicit_cwd: Option<std::path::PathBuf>) -> anyhow::Result<()> {
+        let cwd = explicit_cwd.or_else(|| {
+            if self.engine.settings.general.inherit_cwd {
+                self.find_pane_by_id(pane_id)
+                    .and_then(|p| p.active_terminal())
+                    .and_then(|t| t.get_cwd())
+            } else {
+                None
+            }
+        });
+        let tab_id = self.engine.next_ids.next_tab();
+        let surface_id = self.engine.next_ids.next_surface();
+        let cols = self.engine.default_cols;
+        let rows = self.engine.default_rows;
+        let shell = self.engine.settings.general.shell.clone();
+        let shell_ref = if shell.is_empty() { None } else { Some(shell.as_str()) };
+        let shell_args_owned = self.engine.settings.general.effective_shell_args();
+        let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
+        let waker = self.engine.make_waker(surface_id);
+
+        if self.engine.settings.performance.lazy_pty_init {
+            if let Some(pane) = self.find_pane_by_id_mut(pane_id) {
+                pane.add_tab_deferred(tab_id, surface_id, shell_ref, &shell_args, cols, rows, waker, cwd.as_deref());
+            }
+        } else {
+            if let Some(pane) = self.find_pane_by_id_mut(pane_id) {
+                pane.add_tab_background_with_shell(tab_id, surface_id, cols, rows, shell_ref, &shell_args, waker, cwd.as_deref())?;
+            }
+            self.send_fast_init(surface_id);
+        }
+        Ok(())
+    }
+
+    /// Add a Markdown viewer tab in the specified pane (by ID, cross-workspace).
+    pub fn add_markdown_tab_to_pane(&mut self, pane_id: u32, file_path: String) -> anyhow::Result<()> {
+        let tab_id = self.engine.next_ids.next_tab();
+        let panel_id = self.engine.next_ids.next_surface();
+        if let Some(pane) = self.find_pane_by_id_mut(pane_id) {
+            pane.add_markdown_tab(tab_id, panel_id, file_path);
+        }
+        Ok(())
+    }
+
+    /// Add a file explorer tab in the specified pane (by ID, cross-workspace).
+    pub fn add_explorer_tab_to_pane(&mut self, pane_id: u32, root_path: String) -> anyhow::Result<()> {
+        let tab_id = self.engine.next_ids.next_tab();
+        let panel_id = self.engine.next_ids.next_surface();
+        if let Some(pane) = self.find_pane_by_id_mut(pane_id) {
+            pane.add_explorer_tab(tab_id, panel_id, root_path);
+        }
+        Ok(())
+    }
+
+    /// Close the active tab in the specified pane (by ID, cross-workspace). Returns true if a tab was closed.
+    pub fn close_tab_in_pane(&mut self, pane_id: u32) -> bool {
+        let mut surface_ids = Vec::new();
+        if let Some(pane) = self.find_pane_by_id_mut(pane_id) {
+            let active = pane.active_tab;
+            if let Some(tab) = pane.tabs.get_mut(active) {
+                tab.panel_mut().for_each_terminal_mut(&mut |sid, _| {
+                    surface_ids.push(sid);
+                });
+            }
+        }
+        let closed = if let Some(pane) = self.find_pane_by_id_mut(pane_id) {
+            pane.close_active_tab()
+        } else {
+            false
+        };
+        if closed {
+            for sid in surface_ids {
+                crate::surface_meta::SurfaceMetaStore::remove(sid);
+            }
+        }
+        closed
+    }
+
     /// Next tab in the focused pane.
     pub fn next_tab_in_pane(&mut self) {
         if let Some(pane) = self.focused_pane_mut() {

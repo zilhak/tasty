@@ -243,6 +243,26 @@ impl AppState {
         None
     }
 
+    /// Find a pane by ID across all workspaces (immutable).
+    pub fn find_pane_by_id(&self, pane_id: u32) -> Option<&crate::model::Pane> {
+        for workspace in &self.engine.workspaces {
+            if let Some(pane) = workspace.pane_layout().find_pane(pane_id) {
+                return Some(pane);
+            }
+        }
+        None
+    }
+
+    /// Find a pane by ID across all workspaces (mutable).
+    pub fn find_pane_by_id_mut(&mut self, pane_id: u32) -> Option<&mut crate::model::Pane> {
+        for workspace in &mut self.engine.workspaces {
+            if let Some(pane) = workspace.pane_layout_mut().find_pane_mut(pane_id) {
+                return Some(pane);
+            }
+        }
+        None
+    }
+
     /// Find the workspace index and pane ID containing a given surface ID.
     pub fn find_workspace_index_for_surface(&self, surface_id: u32) -> Option<(usize, u32)> {
         for (i, workspace) in self.engine.workspaces.iter().enumerate() {

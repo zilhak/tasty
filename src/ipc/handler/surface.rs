@@ -6,12 +6,13 @@ use crate::state::AppState;
 use super::require_surface_id;
 
 pub(crate) fn handle_surface_list(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {
-    let ws = state.active_workspace();
     let mut surfaces = Vec::new();
-    for &pane_id in &ws.pane_layout().all_pane_ids() {
-        if let Some(pane) = ws.pane_layout().find_pane(pane_id) {
-            for (tab_idx, tab) in pane.tabs.iter().enumerate() {
-                collect_surface_info(tab.panel(), pane_id, tab_idx, &mut surfaces);
+    for ws in &state.engine.workspaces {
+        for &pane_id in &ws.pane_layout().all_pane_ids() {
+            if let Some(pane) = ws.pane_layout().find_pane(pane_id) {
+                for (tab_idx, tab) in pane.tabs.iter().enumerate() {
+                    collect_surface_info(tab.panel(), pane_id, ws.id, tab_idx, &mut surfaces);
+                }
             }
         }
     }
@@ -21,6 +22,7 @@ pub(crate) fn handle_surface_list(state: &AppState, id: serde_json::Value) -> Js
 fn collect_surface_info(
     panel: &crate::model::Panel,
     pane_id: u32,
+    workspace_id: u32,
     tab_idx: usize,
     out: &mut Vec<serde_json::Value>,
 ) {
@@ -29,13 +31,14 @@ fn collect_surface_info(
             out.push(json!({
                 "id": node.id,
                 "pane_id": pane_id,
+                "workspace_id": workspace_id,
                 "tab_index": tab_idx,
                 "cols": node.terminal.cols(),
                 "rows": node.terminal.rows(),
             }));
         }
         crate::model::Panel::SurfaceGroup(group) => {
-            collect_surface_layout_info(group.layout(), pane_id, tab_idx, out);
+            collect_surface_layout_info(group.layout(), pane_id, workspace_id, tab_idx, out);
         }
         crate::model::Panel::Markdown(_) | crate::model::Panel::Explorer(_) => {
             // Non-terminal panels have no surfaces to list.
@@ -46,6 +49,7 @@ fn collect_surface_info(
 fn collect_surface_layout_info(
     layout: &crate::model::SurfaceGroupLayout,
     pane_id: u32,
+    workspace_id: u32,
     tab_idx: usize,
     out: &mut Vec<serde_json::Value>,
 ) {
@@ -54,14 +58,15 @@ fn collect_surface_layout_info(
             out.push(json!({
                 "id": node.id,
                 "pane_id": pane_id,
+                "workspace_id": workspace_id,
                 "tab_index": tab_idx,
                 "cols": node.terminal.cols(),
                 "rows": node.terminal.rows(),
             }));
         }
         crate::model::SurfaceGroupLayout::Split { first, second, .. } => {
-            collect_surface_layout_info(first, pane_id, tab_idx, out);
-            collect_surface_layout_info(second, pane_id, tab_idx, out);
+            collect_surface_layout_info(first, pane_id, workspace_id, tab_idx, out);
+            collect_surface_layout_info(second, pane_id, workspace_id, tab_idx, out);
         }
     }
 }

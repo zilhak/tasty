@@ -390,16 +390,36 @@ impl AppState {
         Ok(new_surface_id)
     }
 
-    /// Close a specific pane by its ID (across the active workspace).
+    /// Close a specific pane by its ID (across all workspaces).
     /// Returns true if the pane was found and removed.
     pub fn close_pane_by_id(&mut self, pane_id: u32) -> bool {
-        let ws = self.active_workspace_mut();
+        let ws_idx = match self.find_workspace_index_for_pane(pane_id) {
+            Some(idx) => idx,
+            None => return false,
+        };
+
+        // Collect surface IDs for cleanup
+        let mut surface_ids = Vec::new();
+        if let Some(pane) = self.engine.workspaces[ws_idx].pane_layout_mut().find_pane_mut(pane_id) {
+            for tab in &mut pane.tabs {
+                tab.panel_mut().for_each_terminal_mut(&mut |sid, _| {
+                    surface_ids.push(sid);
+                });
+            }
+        }
+
+        let ws = &mut self.engine.workspaces[ws_idx];
         let removed = ws.pane_layout_mut().close_pane(pane_id);
         if removed {
             if ws.focused_pane == pane_id {
                 if let Some(first) = ws.pane_layout().first_pane() {
                     ws.focused_pane = first.id;
                 }
+            }
+            for sid in surface_ids {
+                self.unregister_child(sid);
+                self.mark_parent_closed(sid);
+                crate::surface_meta::SurfaceMetaStore::remove(sid);
             }
         }
         removed
