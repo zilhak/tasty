@@ -121,9 +121,9 @@ pub enum ListCommands {
     Windows,
     /// Show tree view of workspaces, panes, and tabs
     Tree,
-    /// List surfaces (terminals) in the active workspace
+    /// List surfaces (terminals) across all workspaces
     Surfaces,
-    /// List panes in the active workspace
+    /// List panes across all workspaces
     Panes,
     /// Show system info
     Info,
