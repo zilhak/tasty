@@ -102,6 +102,7 @@ fn pane_node_compute_rects_single() {
         id: 1,
         tabs: vec![],
         active_tab: 0,
+        tab_scroll_offset: 0.0,
     };
     let node = PaneNode::Leaf(pane);
     let rect = Rect { x: 0.0, y: 0.0, width: 800.0, height: 600.0 };
