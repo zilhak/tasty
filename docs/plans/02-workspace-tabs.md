@@ -9,13 +9,13 @@ cmux 분석을 바탕으로 설계한 tasty의 데이터 모델 계층.
 ```
 Workspace (최상위 컨테이너)
   └── 상위 레이아웃 (PaneNode 이진 트리, 탭과 무관하게 고정)
-       ├── Pane Group (독립 탭 바)
-       │    ├── Pane (탭 1) → 하위 레이아웃 (SurfaceGroupNode)
-       │    │                   ├── Surface (터미널)
-       │    │                   └── Surface (터미널)
-       │    └── Pane (탭 2) → Surface (터미널)
-       └── Pane Group (독립 탭 바)
-            └── Pane (탭 1) → Surface (터미널)
+       ├── Pane (독립 탭 바)
+       │    ├── Tab 1 → 하위 레이아웃 (SurfaceGroupNode)
+       │    │              ├── Surface (터미널)
+       │    │              └── Surface (터미널)
+       │    └── Tab 2 → Surface (터미널)
+       └── Pane (독립 탭 바)
+            └── Tab 1 → Surface (터미널)
 ```
 
 ### 핵심 개념
@@ -23,9 +23,9 @@ Workspace (최상위 컨테이너)
 | 개념 | 코드 | 설명 |
 |------|------|------|
 | Workspace | `Workspace` | 최상위 컨테이너. 상위 레이아웃을 소유 |
-| 상위 레이아웃 | `PaneNode` | Pane Group들의 이진 분할 트리. 탭 전환과 무관하게 고정 |
-| Pane Group | `Pane` (struct) | 독립적인 탭 바를 가진 화면 영역 |
-| Pane | `Tab` → `Panel` | 탭 하나. 하위 레이아웃을 포함 |
+| 상위 레이아웃 | `PaneNode` | Pane들의 이진 분할 트리. 탭 전환과 무관하게 고정 |
+| Pane | `Pane` | 독립적인 탭 바를 가진 화면 영역 |
+| Tab | `Tab` → `Panel` | 탭 하나. 하위 레이아웃을 포함 |
 | 하위 레이아웃 | `SurfaceGroupNode` | Surface들의 이진 분할 트리. 탭 전환 시 함께 전환 |
 | Surface | `Terminal` | 실제 터미널 인스턴스 (PTY 연결) |
 

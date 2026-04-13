@@ -95,9 +95,9 @@
 용어 정의는 `docs/design/ubiquitous-language.md` 참조.
 
 - Workspace: 최상위 컨테이너. 상위 레이아웃(PaneNode 이진 트리)을 소유
-- PaneNode: Pane Group의 상위 레이아웃 트리. Leaf(Pane) 또는 Split. 탭 전환과 무관하게 고정
-- Pane (= Pane Group): **독립적인 탭 바**를 가진 화면 영역. 여러 Tab을 포함
-- Tab (= Pane): 탭 하나. Panel에 매핑
+- PaneNode: Pane의 상위 레이아웃 트리. Leaf(Pane) 또는 Split. 탭 전환과 무관하게 고정
+- Pane: **독립적인 탭 바**를 가진 화면 영역. 여러 Tab을 포함
+- Tab: 탭 하나. Panel에 매핑
 - Panel: 콘텐츠 타입 enum. Terminal(단일), SurfaceGroup(하위 레이아웃), Markdown, Explorer
 - SurfaceGroupNode: 하위 레이아웃 트리. 탭 전환 시 함께 전환
 - Surface: 실제 터미널 인스턴스 (PTY + termwiz Surface)
@@ -418,7 +418,7 @@
 - `workspace.select`: 인덱스로 워크스페이스 전환
 
 #### 패인
-- `pane.list`: 활성 워크스페이스의 패인 목록 (포커스 여부, 탭 수)
+- `pane.list`: 전체 워크스페이스의 패인 목록 (포커스 여부, 탭 수)
 - `split`: 통합 분할 명령. `level`(pane-group/surface), `target_id`(전역 ID, cross-workspace), `direction`(vertical/horizontal) 파라미터. 포커스 이동 없음
 - `pane.close`: 포커스된 패인 닫기 (unsplit)
 - `pane.focus`: **pane_id로 특정 패인을 직접 포커스** — 멀티패인 환경에서 원하는 패인으로 전환

@@ -149,7 +149,7 @@ wgpu 기반 GPU 가속 터미널 렌더링. termwiz(WezTerm)로 VTE 파싱 및 �
 - 상세: [features.md](features.md)
 
 ### 워크스페이스 & 탭
-cmux 분석 기반 계층적 데이터 모델. Workspace → Pane Group (상위 레이아웃, PaneNode 트리) → Pane (탭) → Surface (하위 레이아웃, SurfaceGroupNode 트리).
+cmux 분석 기반 계층적 데이터 모델. Workspace → Pane (상위 레이아웃, PaneNode 트리) → Tab → Surface (하위 레이아웃, SurfaceGroupNode 트리).
 
 **현재 구현된 기능:**
 - Workspace / PaneNode / Pane / Tab / Panel / SurfaceGroupNode 계층 데이터 모델

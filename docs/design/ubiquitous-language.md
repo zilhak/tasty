@@ -11,8 +11,8 @@ Engine
 │   └── [Terminal 타입]
 │       └── Workspace
 │           └── 상위 레이아웃 (탭과 무관하게 고정)
-│               └── Pane Group (탭 방식으로 Pane 전환)
-│                   └── Pane (= 탭 하나)
+│               └── Pane (독립적인 탭 바)
+│                   └── Tab (= 탭 하나)
 │                       └── 하위 레이아웃 (탭 전환 시 함께 전환)
 │                           └── Surface (실제 터미널)
 └── Popup (window/modal 내부 가상 창)
@@ -40,13 +40,13 @@ Engine
 
 Terminal 타입 윈도우에만 존재하는 최상위 컨테이너. 하나의 윈도우에 여러 워크스페이스를 가질 수 있으며, 사이드바에서 전환한다.
 
-### Pane Group (페인 그룹)
-
-여러 Pane을 **탭 방식**으로 가지는 컨테이너. 워크스페이스의 **상위 레이아웃**에 의해 화면 내 위치가 결정된다. 상위 레이아웃은 탭 전환과 무관하게 고정된다.
-
 ### Pane (페인)
 
-Pane Group 내의 하나의 탭. 내부에 Surface들의 **하위 레이아웃**을 가진다. 탭을 전환하면 해당 Pane의 하위 레이아웃 전체가 함께 전환된다.
+**독립적인 탭 바**를 가진 화면 영역. 여러 Tab을 탭 방식으로 전환할 수 있다. 워크스페이스의 **상위 레이아웃**에 의해 화면 내 위치가 결정된다. 상위 레이아웃은 탭 전환과 무관하게 고정된다. 기존 터미널에 대응하는 개념이 없는 Tasty 고유의 설계.
+
+### Tab (탭)
+
+Pane 내의 하나의 탭. 내부에 Surface들의 **하위 레이아웃**을 가진다. 탭을 전환하면 해당 Tab의 하위 레이아웃 전체가 함께 전환된다.
 
 ### Surface (서피스)
 
@@ -56,17 +56,17 @@ Pane Group 내의 하나의 탭. 내부에 Surface들의 **하위 레이아웃**
 
 Tasty의 핵심 설계 특징. 기존 터미널에는 없는 구조.
 
-### 상위 레이아웃 (Pane Group 배치)
+### 상위 레이아웃 (Pane 배치)
 
-워크스페이스 내에서 Pane Group들이 어떻게 배치되는지를 정의한다 (상하분할, 좌우분할 등). **탭을 전환해도 이 레이아웃은 변하지 않는다.**
+워크스페이스 내에서 Pane들이 어떻게 배치되는지를 정의한다 (상하분할, 좌우분할 등). **탭을 전환해도 이 레이아웃은 변하지 않는다.**
 
-예: 화면을 좌우로 분할하면, 왼쪽 Pane Group과 오른쪽 Pane Group은 각각 독립적으로 탭을 전환할 수 있다.
+예: 화면을 좌우로 분할하면, 왼쪽 Pane과 오른쪽 Pane은 각각 독립적으로 탭을 전환할 수 있다.
 
 ### 하위 레이아웃 (Surface 배치)
 
-Pane 내에서 Surface들이 어떻게 배치되는지를 정의한다 (상하분할, 좌우분할 등). **탭을 전환하면 이 레이아웃도 함께 전환된다.**
+Tab 내에서 Surface들이 어떻게 배치되는지를 정의한다 (상하분할, 좌우분할 등). **탭을 전환하면 이 레이아웃도 함께 전환된다.**
 
-예: 탭 1에서 3개의 Surface를 분할해두고 탭 2로 전환하면, 탭 2의 Surface 배치가 표시된다. 다시 탭 1로 돌아오면 원래의 3분할이 복원된다.
+예: Tab 1에서 3개의 Surface를 분할해두고 Tab 2로 전환하면, Tab 2의 Surface 배치가 표시된다. 다시 Tab 1로 돌아오면 원래의 3분할이 복원된다.
 
 ### 기존 터미널과의 차이
 
@@ -80,11 +80,11 @@ Pane 내에서 Surface들이 어떻게 배치되는지를 정의한다 (상하�
 | Tasty | tmux | iTerm2 |
 |-------|------|--------|
 | Workspace | Session | Window |
-| Pane Group | — (없음) | — (없음) |
-| Pane | Window (탭) | Tab |
+| Pane | — (없음) | — (없음) |
+| Tab | Window (탭) | Tab |
 | Surface | Pane | Pane (split) |
 
-Pane Group은 기존 터미널에 대응하는 개념이 없다. 이것이 Tasty의 고유한 설계.
+Pane은 기존 터미널에 대응하는 개념이 없다. 이것이 Tasty의 고유한 설계.
 
 ## 코드 레벨 용어 매핑
 
@@ -93,9 +93,9 @@ Pane Group은 기존 터미널에 대응하는 개념이 없다. 이것이 Tasty
 | Engine | `App` (현재), 멀티윈도우 전환 시 `Engine` | 메인 프로세스 |
 | Window | `Window` (winit) | OS 윈도우 |
 | Workspace | `Workspace` | 최상위 컨테이너 |
-| 상위 레이아웃 | `PaneNode` (이진 트리 enum: Leaf / Split) | Pane Group 배치 |
-| Pane Group | `PaneNode::Leaf` → `Pane` | 탭 목록 보유 |
-| Pane | `Tab` → `Panel` | 탭 하나의 내용물 |
+| 상위 레이아웃 | `PaneNode` (이진 트리 enum: Leaf / Split) | Pane 배치 |
+| Pane | `Pane` | 독립적인 탭 바. 탭 목록 보유 |
+| Tab | `Tab` → `Panel` | 탭 하나의 내용물 |
 | 하위 레이아웃 | `SurfaceGroupNode` (이진 트리 enum) | Surface 배치 |
 | Surface | `Terminal` (tasty-terminal crate) | 실제 터미널 (PTY 연결) |
 | Popup | egui `Window` / `Area` | 내부 가상 창 |

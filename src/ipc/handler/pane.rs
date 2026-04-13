@@ -92,7 +92,7 @@ pub fn handle_split(
                 JsonRpcResponse::success(
                     id,
                     json!({
-                        "new_pane_group_id": new_pane_id,
+                        "new_pane_id": new_pane_id,
                         "new_surface_id": new_surface_id,
                     }),
                 )

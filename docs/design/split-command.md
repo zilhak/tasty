@@ -74,7 +74,7 @@ ID는 전역 고유하므로, target이 주어지면 **모든 workspace를 검�
 ```json
 // level: "pane-group"
 {
-  "new_pane_group_id": 5,
+  "new_pane_id": 5,
   "new_surface_id": 8
 }
 
