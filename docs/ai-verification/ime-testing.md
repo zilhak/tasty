@@ -116,7 +116,7 @@ tasty ime-commit "한"
 tasty ime-disable
 
 # 결과 확인
-tasty read mark --strip-ansi
+tasty read since-mark --strip-ansi
 ```
 
 ### 4. 분할 패널에서 Preedit 위치 검증
@@ -125,7 +125,7 @@ tasty read mark --strip-ansi
 
 ```bash
 # 분할 생성
-tasty new split --level surface --direction horizontal
+tasty split --level surface --direction horizontal
 
 # 오른쪽 서피스에서 IME 시뮬레이션
 tasty ime-enable

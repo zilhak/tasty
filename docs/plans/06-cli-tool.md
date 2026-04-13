@@ -39,7 +39,7 @@ CLI는 포트 파일을 읽어 TCP로 JSON-RPC 메시지를 실행 중인 GUI �
 | `tasty send key <key>` | 키 입력 전송 |
 | `tasty list workspaces` | 워크스페이스 목록 |
 | `tasty list tree` | 전체 계층 트리 뷰 |
-| `tasty new split [--level ...] [--direction ...]` | 패인 분할 |
+| `tasty split [--level ...] [--direction ...]` | 패인 분할 |
 | `tasty focus <pane-id>` | 패인 포커스 |
 | `tasty claude launch [--workspace <name>]` | Claude Code 실행 |
 

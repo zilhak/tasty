@@ -55,7 +55,7 @@ tasty new window              # 새 윈도우 생성
 
 # 패인/탭
 tasty list panes              # 패인 목록
-tasty new split --level pane-group|surface [--target ID] [--direction vertical|horizontal] [--cwd PATH]
+tasty split --level pane-group|surface [--target ID] [--direction vertical|horizontal] [--cwd PATH]
 tasty new tab [--cwd PATH]
 tasty close pane
 tasty close tab
@@ -65,7 +65,7 @@ tasty list surfaces           # 서피스 목록 (id, cols, rows)
 tasty send text "ls -la\r"    # 텍스트 전송 (\r = Enter)
 tasty send key enter          # 키 전송
 tasty set mark                # 출력 마크 설정
-tasty read mark [--strip-ansi]  # 마크 이후 출력 읽기
+tasty read since-mark [--strip-ansi]  # 마크 이후 출력 읽기
 tasty read screen             # 현재 화면 텍스트 읽기
 tasty close surface
 

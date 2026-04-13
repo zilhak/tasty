@@ -62,6 +62,24 @@ pub enum Commands {
         #[command(subcommand)]
         command: ClaudeCommands,
     },
+    /// Split a pane group or surface
+    Split {
+        /// Split level: pane-group (upper layout) or surface (lower layout)
+        #[arg(long)]
+        level: String,
+        /// Target: numeric ID, "this" (current surface), or nickname (required)
+        #[arg(long)]
+        target: String,
+        /// Split direction: vertical (default) or horizontal
+        #[arg(long, default_value = "vertical")]
+        direction: String,
+        /// Metadata JSON to set on the new surface (e.g. '{"nickname":"build"}')
+        #[arg(long)]
+        meta: Option<String>,
+        /// Working directory for the new surface
+        #[arg(long)]
+        cwd: Option<String>,
+    },
     /// Send text, key, or queue message
     Send {
         #[command(subcommand)]
@@ -85,20 +103,10 @@ pub enum Commands {
         #[command(subcommand)]
         command: UnsetCommands,
     },
-    /// Manage per-surface metadata (set, get, unset, list)
+    /// Manage per-surface metadata
     SurfaceMeta {
-        /// Action: set, get, unset, list
-        #[arg()]
-        action: String,
-        /// Surface ID (default: focused)
-        #[arg(long)]
-        surface: Option<u32>,
-        /// Key name
-        #[arg(long)]
-        key: Option<String>,
-        /// Value (for set action)
-        #[arg(long)]
-        value: Option<String>,
+        #[command(subcommand)]
+        command: SurfaceMetaCommands,
     },
     /// Check if a surface is currently typing (received key input within 5 seconds)
     IsTyping {
@@ -232,7 +240,8 @@ pub enum SendCommands {
 #[derive(Subcommand)]
 pub enum ReadCommands {
     /// Read output since last mark
-    Mark {
+    #[command(name = "since-mark")]
+    SinceMark {
         /// Surface ID (default: focused terminal)
         #[arg(long)]
         surface: Option<u32>,
@@ -298,24 +307,6 @@ pub enum NewCommands {
         #[arg(long)]
         pane: u32,
         /// Working directory for the new tab
-        #[arg(long)]
-        cwd: Option<String>,
-    },
-    /// Split a pane group or surface
-    Split {
-        /// Split level: pane-group (upper layout) or surface (lower layout)
-        #[arg(long)]
-        level: String,
-        /// Target: numeric ID, "this" (current surface), or nickname (required)
-        #[arg(long)]
-        target: String,
-        /// Split direction: vertical (default) or horizontal
-        #[arg(long, default_value = "vertical")]
-        direction: String,
-        /// Metadata JSON to set on the new surface (e.g. '{"nickname":"build"}')
-        #[arg(long)]
-        meta: Option<String>,
-        /// Working directory for the new surface
         #[arg(long)]
         cwd: Option<String>,
     },
@@ -462,6 +453,46 @@ pub enum ClaudeCommands {
         #[arg()]
         event: String,
         /// Surface ID (auto-detected from TASTY_SURFACE_ID env var if not provided)
+        #[arg(long)]
+        surface: Option<u32>,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum SurfaceMetaCommands {
+    /// Set a metadata key-value pair on a surface
+    Set {
+        /// Key name
+        #[arg(long)]
+        key: String,
+        /// Value
+        #[arg(long)]
+        value: String,
+        /// Surface ID (default: focused)
+        #[arg(long)]
+        surface: Option<u32>,
+    },
+    /// Get a metadata value by key
+    Get {
+        /// Key name
+        #[arg(long)]
+        key: String,
+        /// Surface ID (default: focused)
+        #[arg(long)]
+        surface: Option<u32>,
+    },
+    /// Remove a metadata key
+    Unset {
+        /// Key name
+        #[arg(long)]
+        key: String,
+        /// Surface ID (default: focused)
+        #[arg(long)]
+        surface: Option<u32>,
+    },
+    /// List all metadata for a surface
+    List {
+        /// Surface ID (default: focused)
         #[arg(long)]
         surface: Option<u32>,
     },

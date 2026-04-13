@@ -1,5 +1,5 @@
 use crate::ipc::protocol::JsonRpcRequest;
-use super::{Commands, NewCommands, CloseCommands, ListCommands, SetCommands, UnsetCommands, SendCommands, ReadCommands, ClaudeCommands, DebugCommands};
+use super::{Commands, NewCommands, CloseCommands, ListCommands, SetCommands, UnsetCommands, SendCommands, ReadCommands, ClaudeCommands, DebugCommands, SurfaceMetaCommands};
 
 /// Resolve a target string for split/other commands.
 /// - "this" → numeric surface ID from TASTY_SURFACE_ID env var
@@ -53,6 +53,22 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
         Commands::Claude { command } => claude_command_to_method_params(command),
         Commands::Debug { command } => debug_command_to_method_params(command),
         // ── standalone ──
+        Commands::Split { level, target, direction, meta, cwd } => {
+            let resolved_target = resolve_target(target);
+            let meta_value = meta
+                .as_deref()
+                .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok());
+            (
+                "split",
+                serde_json::json!({
+                    "level": level,
+                    "target": resolved_target,
+                    "direction": direction,
+                    "meta": meta_value,
+                    "cwd": cwd,
+                }),
+            )
+        }
         Commands::Send { command } => send_command_to_method_params(command),
         Commands::Read { command } => read_command_to_method_params(command),
         Commands::Notify { body, title } => (
@@ -60,23 +76,7 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
             serde_json::json!({ "title": title, "body": body }),
         ),
         Commands::Unset { command } => unset_command_to_method_params(command),
-        Commands::SurfaceMeta { action, surface, key, value } => {
-            let method = match action.as_str() {
-                "set" => "surface.meta_set",
-                "get" => "surface.meta_get",
-                "unset" => "surface.meta_unset",
-                "list" => "surface.meta_list",
-                _ => "surface.meta_list",
-            };
-            (
-                method,
-                serde_json::json!({
-                    "surface_id": resolve_surface_id(*surface),
-                    "key": key,
-                    "value": value,
-                }),
-            )
-        }
+        Commands::SurfaceMeta { command } => surface_meta_command_to_method_params(command),
         Commands::IsTyping { surface } => (
             "surface.is_typing",
             serde_json::json!({ "surface_id": resolve_surface_id(*surface) }),
@@ -99,22 +99,6 @@ fn new_command_to_method_params(command: &NewCommands) -> (&'static str, serde_j
             serde_json::json!({ "name": name.as_deref().unwrap_or(""), "cwd": cwd }),
         ),
         NewCommands::Tab { pane, cwd } => ("tab.create", serde_json::json!({ "pane_id": pane, "cwd": cwd })),
-        NewCommands::Split { level, target, direction, meta, cwd } => {
-            let resolved_target = resolve_target(target);
-            let meta_value = meta
-                .as_deref()
-                .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok());
-            (
-                "split",
-                serde_json::json!({
-                    "level": level,
-                    "target": resolved_target,
-                    "direction": direction,
-                    "meta": meta_value,
-                    "cwd": cwd,
-                }),
-            )
-        }
         NewCommands::Markdown { path, pane } => (
             "tab.open_markdown",
             serde_json::json!({ "file_path": path, "pane_id": pane }),
@@ -188,7 +172,7 @@ fn send_command_to_method_params(command: &SendCommands) -> (&'static str, serde
 
 fn read_command_to_method_params(command: &ReadCommands) -> (&'static str, serde_json::Value) {
     match command {
-        ReadCommands::Mark { surface, strip_ansi } => (
+        ReadCommands::SinceMark { surface, strip_ansi } => (
             "surface.read_since_mark",
             serde_json::json!({
                 "surface_id": resolve_surface_id(*surface),
@@ -362,6 +346,39 @@ fn debug_command_to_method_params(command: &DebugCommands) -> (&'static str, ser
         DebugCommands::RawKey { keycode } => (
             "surface.raw_key",
             serde_json::json!({ "keycode": keycode }),
+        ),
+    }
+}
+
+fn surface_meta_command_to_method_params(command: &SurfaceMetaCommands) -> (&'static str, serde_json::Value) {
+    match command {
+        SurfaceMetaCommands::Set { key, value, surface } => (
+            "surface.meta_set",
+            serde_json::json!({
+                "surface_id": resolve_surface_id(*surface),
+                "key": key,
+                "value": value,
+            }),
+        ),
+        SurfaceMetaCommands::Get { key, surface } => (
+            "surface.meta_get",
+            serde_json::json!({
+                "surface_id": resolve_surface_id(*surface),
+                "key": key,
+            }),
+        ),
+        SurfaceMetaCommands::Unset { key, surface } => (
+            "surface.meta_unset",
+            serde_json::json!({
+                "surface_id": resolve_surface_id(*surface),
+                "key": key,
+            }),
+        ),
+        SurfaceMetaCommands::List { surface } => (
+            "surface.meta_list",
+            serde_json::json!({
+                "surface_id": resolve_surface_id(*surface),
+            }),
         ),
     }
 }

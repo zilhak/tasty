@@ -562,7 +562,7 @@ Surface별 이벤트 훅을 등록하여 특정 이벤트 발생 시 셸 명령�
 - **read_since_mark(strip_ansi)**: 마크 이후 출력 텍스트 반환. `strip_ansi=true`이면 ANSI 이스케이프 시퀀스 제거
 - **strip_ansi_escapes()**: `LazyLock<Regex>`으로 초기화 시점 한 번만 컴파일하는 정규식으로 ANSI CSI, OSC BEL, OSC ST 시퀀스 제거 (반복 호출 시 regex 재컴파일 없음)
 - **Surface ID로 조회**: AppState에서 전체 워크스페이스/패인/탭/서피스 트리를 재귀 탐색하여 특정 Surface의 마크 설정/읽기 지원
-- CLI: `tasty set mark`, `tasty read mark --strip-ansi`
+- CLI: `tasty set mark`, `tasty read since-mark --strip-ansi`
 - IPC: `surface.set_mark`, `surface.read_since_mark` 메서드
 
 ### Claude Code 런처 (claude.launch)
@@ -619,7 +619,7 @@ Claude Code의 훅 시스템과 연동하여 Claude의 활동 상태를 추적�
 - **remove(surface_id)**: 서피스 닫힐 때 메타 디렉토리 전체 삭제. 탭/패인/서피스 닫기 시 자동 호출됨
 - **set/get/unset/list**: 파일을 읽어 HashMap으로 역직렬화, 수정 후 pretty JSON으로 재직렬화
 - **범용 키-값**: 역할(role), 닉네임, 상태 등 에이전트가 필요한 임의 데이터를 저장 가능
-- CLI: `tasty surface-meta set|get|unset|list [--surface ID] [--key KEY] [--value VALUE]`
+- CLI: `tasty surface-meta set|get|unset|list --key KEY [--value VALUE] [--surface ID]`
 - IPC: `surface.meta_set`, `surface.meta_get`, `surface.meta_unset`, `surface.meta_list` 메서드
 
 ## Crash Report & 진단

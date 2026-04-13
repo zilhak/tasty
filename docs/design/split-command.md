@@ -21,8 +21,8 @@ IPC와 CLI 모두 하나의 `split` 명령으로 상위/하위 레이아웃 분�
 ### CLI
 
 ```bash
-tasty new split --level surface --target this --direction vertical --meta '{"nickname":"logs"}'
-tasty new split --level pane-group --target 2 --direction horizontal
+tasty split --level surface --target this --direction vertical --meta '{"nickname":"logs"}'
+tasty split --level pane-group --target 2 --direction horizontal
 ```
 
 ## 파라미터
@@ -89,18 +89,18 @@ ID는 전역 고유하므로, target이 주어지면 **모든 workspace를 검�
 ### 닉네임으로 모니터링 영역 생성
 
 ```bash
-tasty new split --level surface --target this --direction vertical --meta '{"nickname":"logs"}'
+tasty split --level surface --target this --direction vertical --meta '{"nickname":"logs"}'
 tasty send-to --surface logs "tail -f /var/log/app.log"
 ```
 
 ### 다른 workspace의 surface를 닉네임으로 분할
 
 ```bash
-tasty new split --level surface --target build-server --direction horizontal
+tasty split --level surface --target build-server --direction horizontal
 ```
 
 ### 독립 탭 바 영역 생성
 
 ```bash
-tasty new split --level pane-group --direction horizontal
+tasty split --level pane-group --direction horizontal
 ```
