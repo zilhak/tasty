@@ -332,11 +332,11 @@ pub enum NewCommands {
 
 #[derive(Subcommand)]
 pub enum CloseCommands {
-    /// Close the active tab in the specified pane
+    /// Close a specific tab by its ID
     Tab {
-        /// Target pane ID (required)
+        /// Target tab ID (required)
         #[arg(long)]
-        pane: u32,
+        tab: u32,
     },
     /// Close the specified pane (unsplit)
     Pane {

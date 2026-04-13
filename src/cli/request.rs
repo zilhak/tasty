@@ -113,7 +113,7 @@ fn new_command_to_method_params(command: &NewCommands) -> (&'static str, serde_j
 fn close_command_to_method_params(command: &CloseCommands) -> (&'static str, serde_json::Value) {
     let caller = resolve_surface_id(None); // TASTY_SURFACE_ID
     match command {
-        CloseCommands::Tab { pane } => ("tab.close", serde_json::json!({ "pane_id": pane, "caller_surface_id": caller })),
+        CloseCommands::Tab { tab } => ("tab.close", serde_json::json!({ "tab_id": tab, "caller_surface_id": caller })),
         CloseCommands::Pane { pane } => ("pane.close", serde_json::json!({ "pane_id": pane, "caller_surface_id": caller })),
         CloseCommands::Surface { surface } => ("surface.close", serde_json::json!({ "surface_id": surface, "caller_surface_id": caller })),
         CloseCommands::CloseSelf => {

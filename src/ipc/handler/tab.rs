@@ -5,6 +5,14 @@ use crate::state::AppState;
 
 use super::require_pane_id;
 
+fn require_tab_id(params: &serde_json::Value, id: &serde_json::Value) -> Result<u32, JsonRpcResponse> {
+    params
+        .get("tab_id")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32)
+        .ok_or_else(|| JsonRpcResponse::invalid_params(id.clone(), "Missing required 'tab_id' parameter"))
+}
+
 pub fn handle_tab_list(state: &AppState, id: serde_json::Value, params: &serde_json::Value) -> JsonRpcResponse {
     let pane_id = match require_pane_id(params, &id) {
         Ok(pid) => pid,
@@ -60,29 +68,28 @@ pub fn handle_tab_create(state: &mut AppState, id: serde_json::Value, params: &s
 }
 
 pub fn handle_tab_close(state: &mut AppState, id: serde_json::Value, params: &serde_json::Value) -> JsonRpcResponse {
-    let pane_id = match require_pane_id(params, &id) {
-        Ok(pid) => pid,
+    let tab_id = match require_tab_id(params, &id) {
+        Ok(tid) => tid,
         Err(e) => return e,
     };
 
     // Prevent closing a tab that contains the caller
     if let Some(caller) = super::caller_surface_id(params) {
-        if super::surface_belongs_to_pane(state, caller, pane_id) {
-            return JsonRpcResponse::invalid_params(id,
-                "Cannot close a tab in a pane that contains your own surface. Use 'tasty close self' instead.");
+        // Find which pane contains this tab
+        if let Some(pane_id) = state.find_pane_for_tab(tab_id) {
+            if super::surface_belongs_to_pane(state, caller, pane_id) {
+                return JsonRpcResponse::invalid_params(id,
+                    "Cannot close a tab that contains your own surface. Use 'tasty close self' instead.");
+            }
         }
     }
 
-    if state.find_pane_by_id(pane_id).is_none() {
-        return JsonRpcResponse::invalid_params(id, format!("Pane {} not found", pane_id));
-    }
-
-    let closed = state.close_tab_in_pane(pane_id);
+    let closed = state.close_tab_by_tab_id(tab_id);
 
     if closed {
-        JsonRpcResponse::success(id, json!({ "closed": true, "pane_id": pane_id }))
+        JsonRpcResponse::success(id, json!({ "closed": true, "tab_id": tab_id }))
     } else {
-        JsonRpcResponse::success(id, json!({ "closed": false, "pane_id": pane_id, "reason": "cannot close the last tab" }))
+        JsonRpcResponse::success(id, json!({ "closed": false, "tab_id": tab_id, "reason": "tab not found or cannot close the last tab" }))
     }
 }
 

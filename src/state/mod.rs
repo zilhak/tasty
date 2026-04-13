@@ -253,6 +253,20 @@ impl AppState {
         None
     }
 
+    /// Find the pane ID containing a given tab ID.
+    pub fn find_pane_for_tab(&self, tab_id: u32) -> Option<u32> {
+        for workspace in &self.engine.workspaces {
+            for pid in workspace.pane_layout().all_pane_ids() {
+                if let Some(pane) = workspace.pane_layout().find_pane(pid) {
+                    if pane.tabs.iter().any(|t| t.id == tab_id) {
+                        return Some(pid);
+                    }
+                }
+            }
+        }
+        None
+    }
+
     /// Find a pane by ID across all workspaces (mutable).
     pub fn find_pane_by_id_mut(&mut self, pane_id: u32) -> Option<&mut crate::model::Pane> {
         for workspace in &mut self.engine.workspaces {

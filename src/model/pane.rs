@@ -247,6 +247,22 @@ impl Pane {
         self.close_tab(self.active_tab)
     }
 
+    /// Close a tab by its ID. Returns false if not found or it's the last tab.
+    pub fn close_tab_by_id(&mut self, tab_id: TabId) -> bool {
+        if self.tabs.len() <= 1 {
+            return false;
+        }
+        if let Some(idx) = self.tabs.iter().position(|t| t.id == tab_id) {
+            self.tabs.remove(idx);
+            if self.active_tab >= self.tabs.len() {
+                self.active_tab = self.tabs.len() - 1;
+            }
+            true
+        } else {
+            false
+        }
+    }
+
     /// Get the focused terminal (follows through Panel -> SurfaceGroup).
     pub fn active_terminal(&self) -> Option<&Terminal> {
         self.active_panel()?.focused_terminal()
