@@ -55,7 +55,7 @@ tasty new window              # 새 윈도우 생성
 
 # 패인/탭
 tasty list panes              # 패인 목록
-tasty split --level pane|surface [--target ID] [--direction vertical|horizontal] [--cwd PATH]
+tasty split --level pane|surface [--target ID] [--direction vertical|horizontal] [--type terminal|markdown|explorer] [--cwd PATH] [--file PATH] [--path DIR]
 tasty new tab [--cwd PATH]
 tasty close pane
 tasty close tab
@@ -69,9 +69,11 @@ tasty read since-mark [--strip-ansi]  # 마크 이후 출력 읽기
 tasty read screen             # 현재 화면 텍스트 읽기
 tasty close surface
 
-# 비터미널 패널
-tasty new markdown /path/to/file.md     # 마크다운 뷰어 탭 열기
-tasty new explorer [--path /dir]        # 파일 탐색기 탭 열기
+# 비터미널 surface
+tasty new tab --pane <ID> --type markdown --file /path/to/file.md
+tasty new tab --pane <ID> --type explorer [--path /dir]
+tasty split --level pane --target <ID> --type markdown --file /path/to/file.md
+tasty split --level pane --target <ID> --type explorer [--path /dir]
 
 # IME 시뮬레이션
 tasty ime-enable                   # IME 활성화
@@ -156,7 +158,7 @@ tasty claude hook stop --surface 5  # 특정 surface 지정 (또는 TASTY_SURFAC
 | 메서드 | 파라미터 | 설명 |
 |--------|---------|------|
 | `pane.list` | 없음 | 활성 워크스페이스의 패인 목록 |
-| `split` | `level: "pane"\|"surface"`, `target_id?: number`, `direction?: "vertical"\|"horizontal"`, `cwd?: string` | 분할. level로 상위/하위 레이아웃 선택, target_id로 대상 지정 (생략 시 focused), 포커스 이동 없음. cwd로 작업 디렉토리 지정 가능 |
+| `split` | `level`, `target?`, `direction?`, `type?`, `cwd?`, `file?`, `path?` | 분할. type: terminal(기본)/markdown/explorer. pane-level split은 모든 타입 지원, surface-level은 terminal만 |
 | `pane.close` | 없음 | 포커스된 패인 닫기 |
 | `pane.focus` | `pane_id: number` | 특정 패인에 포커스 |
 | `focus.direction` | `direction: "left"\|"right"\|"up"\|"down"` | 방향성 포커스 이동 (SurfaceGroup 내부 우선, 이후 패인 간) |
@@ -165,11 +167,9 @@ tasty claude hook stop --surface 5  # 특정 surface 지정 (또는 TASTY_SURFAC
 
 | 메서드 | 파라미터 | 설명 |
 |--------|---------|------|
-| `tab.list` | 없음 | 포커스된 패인의 탭 목록 |
-| `tab.create` | `cwd?: string` | 새 탭 생성. cwd로 작업 디렉토리 지정 가능 |
-| `tab.close` | 없음 | 활성 탭 닫기 |
-| `tab.open_markdown` | `file_path`, `pane_id?` | 마크다운 뷰어 탭 열기 |
-| `tab.open_explorer` | `path?`, `pane_id?` | 파일 탐색기 탭 열기 (path 생략 시 홈 디렉토리) |
+| `tab.list` | `pane_id` | 지정 패인의 탭 목록 |
+| `tab.create` | `pane_id`, `type?`, `cwd?`, `file?`, `path?` | 새 탭 생성. type: terminal(기본)/markdown/explorer |
+| `tab.close` | `tab_id` | 탭 닫기 |
 
 ### Surface (터미널 상호작용)
 

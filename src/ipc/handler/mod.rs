@@ -72,8 +72,7 @@ pub fn handle(state: &mut AppState, request: &JsonRpcRequest) -> JsonRpcResponse
         "surface.meta_unset" => meta::handle_surface_meta_unset(state, id, &request.params),
         "surface.meta_list" => meta::handle_surface_meta_list(state, id, &request.params),
         // focus.direction removed: focus is user-only (shortcuts/clicks).
-        "tab.open_markdown" => tab::handle_open_markdown(state, id, &request.params),
-        "tab.open_explorer" => tab::handle_open_explorer(state, id, &request.params),
+        // tab.open_markdown / tab.open_explorer removed: use tab.create with type parameter
         "ui.state" => handle_ui_state(state, id),
         "message.send" => message::handle_message_send(state, id, &request.params),
         "message.read" => message::handle_message_read(state, id, &request.params),
