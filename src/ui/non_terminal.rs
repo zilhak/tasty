@@ -64,6 +64,18 @@ pub fn draw_non_terminal_panels(
 
         match tab.panel_mut() {
             crate::model::Panel::Markdown(md_panel) => {
+                // Keyboard scrolling for Markdown panels
+                let scroll_line = 24.0;
+                let scroll_page = info.logical_h * 0.8;
+                let key_scroll_y = ctx.input(|i| {
+                    let mut dy = 0.0;
+                    if i.key_pressed(egui::Key::ArrowUp) { dy += scroll_line; }
+                    if i.key_pressed(egui::Key::ArrowDown) { dy -= scroll_line; }
+                    if i.key_pressed(egui::Key::PageUp) { dy += scroll_page; }
+                    if i.key_pressed(egui::Key::PageDown) { dy -= scroll_page; }
+                    dy
+                });
+
                 egui::Area::new(egui::Id::new(format!("md_panel_{}", info.pane_id)))
                     .fixed_pos(egui::pos2(info.logical_x, info.logical_y))
                     .order(egui::Order::Background)
@@ -74,10 +86,12 @@ pub fn draw_non_terminal_panels(
                             .fill(th.crust)
                             .inner_margin(egui::Margin::same(8))
                             .show(ui, |ui| {
+                                if key_scroll_y != 0.0 {
+                                    ui.scroll_with_delta(egui::vec2(0.0, key_scroll_y));
+                                }
                                 egui::ScrollArea::vertical()
                                     .id_salt(format!("md_scroll_{}", info.pane_id))
                                     .show(ui, |ui| {
-                                        // Clone content to avoid borrow issues
                                         let content = md_panel.content.clone();
                                         crate::markdown_ui::render_markdown(ui, &content);
                                     });
