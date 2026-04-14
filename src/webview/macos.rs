@@ -63,12 +63,30 @@ impl PlatformWebView {
     }
 
     /// Navigate to a URL (supports file:// for local files).
+    /// For file:// URLs, uses `loadFileURL:allowingReadAccessToURL:` with the
+    /// parent directory as the access scope, so relative resources (CSS, JS,
+    /// images, iframes) in the same directory tree are accessible.
     pub fn load_url(&self, url: &str) {
         unsafe {
-            let ns_url = NSURL::URLWithString(&NSString::from_str(url));
-            if let Some(ns_url) = ns_url {
-                let request = objc2_foundation::NSURLRequest::requestWithURL(&ns_url);
-                self.webview.loadRequest(&request);
+            if let Some(path) = url.strip_prefix("file://") {
+                // Use fileURLWithPath for proper percent-encoding of CJK paths
+                let file_url = NSURL::fileURLWithPath(&NSString::from_str(path));
+                // Allow read access to parent directory for relative resources
+                let dir_path = std::path::Path::new(path)
+                    .parent()
+                    .map(|p| p.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "/".to_string());
+                let dir_url = NSURL::fileURLWithPath_isDirectory(
+                    &NSString::from_str(&dir_path),
+                    true,
+                );
+                self.webview.loadFileURL_allowingReadAccessToURL(&file_url, &dir_url);
+            } else {
+                let ns_url = NSURL::URLWithString(&NSString::from_str(url));
+                if let Some(ns_url) = ns_url {
+                    let request = objc2_foundation::NSURLRequest::requestWithURL(&ns_url);
+                    self.webview.loadRequest(&request);
+                }
             }
         }
     }
