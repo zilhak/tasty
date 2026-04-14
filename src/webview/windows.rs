@@ -6,10 +6,11 @@
 
 use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use std::sync::mpsc;
-use webview2_com::Microsoft::Web::WebView2::Win32::*;
+use webview2_com::{Microsoft::Web::WebView2::Win32::*, *};
 use windows::core::*;
 use windows::Win32::Foundation::*;
 use windows::Win32::System::Com::*;
+use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 use super::WebViewBounds;
@@ -25,9 +26,9 @@ impl PlatformWebView {
         window: &impl HasWindowHandle,
         bounds: WebViewBounds,
         scale_factor: f64,
-    ) -> Result<Self, String> {
+    ) -> std::result::Result<Self, String> {
         let parent = match window.window_handle().map_err(|e| e.to_string())?.as_raw() {
-            RawWindowHandle::Win32(w) => HWND(w.hwnd.get() as _),
+            RawWindowHandle::Win32(w) => HWND(w.hwnd.get() as *mut core::ffi::c_void),
             _ => return Err("Not a Win32 window".to_string()),
         };
 
@@ -39,7 +40,7 @@ impl PlatformWebView {
             let wc = WNDCLASSEXW {
                 cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
                 style: CS_HREDRAW | CS_VREDRAW,
-                lpfnWndProc: Some(DefWindowProcW),
+                lpfnWndProc: Some(unsafe { std::mem::transmute(DefWindowProcW as usize) }),
                 hInstance: GetModuleHandleW(None).unwrap_or_default().into(),
                 lpszClassName: class_name,
                 ..Default::default()
@@ -71,7 +72,7 @@ impl PlatformWebView {
                 None,
                 &CreateCoreWebView2EnvironmentCompletedHandler::create(
                     Box::new(move |_hr, env| {
-                        let _ = env_tx.send(env.cloned());
+                        let _ = env_tx.send(env);
                         Ok(())
                     }),
                 ),
@@ -87,7 +88,7 @@ impl PlatformWebView {
                 hwnd,
                 &CreateCoreWebView2ControllerCompletedHandler::create(
                     Box::new(move |_hr, ctrl| {
-                        let _ = ctrl_tx.send(ctrl.cloned());
+                        let _ = ctrl_tx.send(ctrl);
                         Ok(())
                     }),
                 ),

@@ -87,6 +87,13 @@ objc2-app-kit = { version = "0.3", features = ["NSView", "NSWindow", "NSResponde
 # WebView (Windows)
 [target.'cfg(windows)'.dependencies]
 webview2-com = "0.38"
+windows = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_System_Com",
+    "Win32_System_LibraryLoader",
+    "Win32_UI_WindowsAndMessaging",
+] }
 
 # WebView (Linux)
 [target.'cfg(target_os = "linux")'.dependencies]
@@ -99,11 +106,6 @@ x11-dl = "2.21"
 serde_json = "1"
 enigo = "0.6"
 
-[target.'cfg(windows)'.dev-dependencies]
-windows = { version = "0.62", features = [
-    "Win32_UI_WindowsAndMessaging",
-    "Win32_Foundation",
-] }
 
 # TODO: winit PR #4478 (https://github.com/rust-windowing/winit/pull/4478) 머지 후 공식 버전으로 교체
 [patch.crates-io]
