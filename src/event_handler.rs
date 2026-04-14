@@ -17,18 +17,30 @@ impl ApplicationHandler<AppEvent> for App {
             AppEvent::TerminalOutput(surface_id) => {
                 if let Some(sid) = surface_id {
                     // Targeted polling: process only the specific terminal, then wake its window
+                    let mut found = false;
                     for w in self.windows.values_mut() {
                         if w.state.engine.find_terminal_by_id(sid).is_some() {
                             w.state.engine.process_surface(sid);
                             w.recalc_ime_preedit_anchor();
                             w.mark_dirty();
+                            found = true;
                             break;
+                        }
+                    }
+                    // If no window has this surface, it might be in the parked state
+                    if !found {
+                        if let Some(state) = &mut self.parked_state {
+                            state.engine.process_surface(sid);
                         }
                     }
                 } else {
                     // Legacy: wake all windows
                     for w in self.windows.values_mut() {
                         w.mark_dirty();
+                    }
+                    // Also process parked state terminals
+                    if let Some(state) = &mut self.parked_state {
+                        state.engine.process_all();
                     }
                 }
             }
@@ -43,6 +55,9 @@ impl ApplicationHandler<AppEvent> for App {
                 for w in self.windows.values_mut() {
                     w.mark_dirty();
                 }
+            }
+            AppEvent::Shutdown => {
+                event_loop.exit();
             }
         }
     }
@@ -151,13 +166,16 @@ impl ApplicationHandler<AppEvent> for App {
 
         // Normal mode — find the window by ID and delegate
         if let WindowEvent::CloseRequested = &event {
-            self.windows.remove(&id);
-            if self.engine.focused_window_id == Some(id) {
-                // Focus moves to another window, or None
-                self.engine.focused_window_id = self.windows.keys().next().copied();
+            // Park the state before removing the window
+            if let Some(w) = self.windows.remove(&id) {
+                if self.windows.is_empty() {
+                    // Last window closing: park the state so PTY sessions survive
+                    tracing::info!("last window closed, parking state");
+                    self.parked_state = Some(w.state);
+                }
             }
-            if self.windows.is_empty() {
-                event_loop.exit();
+            if self.engine.focused_window_id == Some(id) {
+                self.engine.focused_window_id = self.windows.keys().next().copied();
             }
             return;
         }
@@ -174,6 +192,19 @@ impl ApplicationHandler<AppEvent> for App {
         if let Some(w) = self.windows.get_mut(&id) {
             let modal_active = self.engine.is_modal_active();
             w.handle_window_event(event, event_loop, modal_active);
+
+            // Check if the window requested to close (e.g. last workspace removed)
+            if w.close_requested {
+                if let Some(w) = self.windows.remove(&id) {
+                    if self.windows.is_empty() {
+                        tracing::info!("last window closed via request, parking state");
+                        self.parked_state = Some(w.state);
+                    }
+                }
+                if self.engine.focused_window_id == Some(id) {
+                    self.engine.focused_window_id = self.windows.keys().next().copied();
+                }
+            }
         }
     }
 

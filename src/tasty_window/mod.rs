@@ -50,6 +50,8 @@ pub struct TastyWindow {
     pub(crate) ime_advance_base: (usize, usize),
     /// Detector for double-tap modifier shortcuts (e.g. Shift+Shift).
     pub(crate) double_tap: crate::double_tap::DoubleTapDetector,
+    /// Set to true when the window should close (e.g. last workspace removed).
+    pub(crate) close_requested: bool,
 }
 
 impl TastyWindow {
@@ -74,7 +76,13 @@ impl TastyWindow {
             ime_cursor_advance: 0,
             ime_advance_base: (0, 0),
             double_tap: crate::double_tap::DoubleTapDetector::new(),
+            close_requested: false,
         }
+    }
+
+    /// Request this window to close (will be handled by the event loop).
+    pub(crate) fn request_close(&mut self) {
+        self.close_requested = true;
     }
 
     pub fn mark_dirty(&mut self) {

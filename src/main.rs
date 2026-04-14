@@ -79,6 +79,8 @@ enum AppEvent {
     CreateWindow,
     /// Request to open settings modal.
     OpenSettings,
+    /// Request to shut down the entire application.
+    Shutdown,
 }
 
 /// Tracks an active divider drag operation.
@@ -101,6 +103,9 @@ struct App {
     windows: std::collections::HashMap<WindowId, tasty_window::TastyWindow>,
     /// Active modal window (settings, etc). Max 1 at a time.
     modal: Option<modal_window::ModalWindow>,
+    /// Parked AppState: preserved when all windows are closed so PTY sessions survive.
+    /// Moved into a new window when one is created, or used directly for IPC.
+    parked_state: Option<state::AppState>,
     // Shell setup mode (before terminal is created)
     shell_setup_mode: bool,
     shell_setup_path: String,
@@ -116,6 +121,7 @@ impl App {
             engine: engine::Engine::new(proxy.clone(), port_file),
             windows: std::collections::HashMap::new(),
             modal: None,
+            parked_state: None,
             shell_setup_mode: false,
             shell_setup_path: String::new(),
             shell_setup_gpu: None,
@@ -207,7 +213,17 @@ impl App {
         ))
         .expect("failed to initialize GPU");
 
-        let state = self.create_app_state(&gpu, settings.appearance.sidebar_width);
+        // Reuse parked state if available (restoring previous session)
+        let mut state = if let Some(parked) = self.parked_state.take() {
+            tracing::info!("restoring parked state with {} workspace(s)", parked.engine.workspaces.len());
+            parked
+        } else {
+            self.create_app_state(&gpu, settings.appearance.sidebar_width)
+        };
+
+        // Ensure at least one workspace exists for the new window
+        state.ensure_workspace_exists();
+
         self.register_window(gpu, state, window);
         tracing::info!("created new window {:?}", self.engine.focused_window_id);
     }
@@ -287,6 +303,15 @@ impl App {
         let mut processed = false;
         while let Ok(cmd) = ipc.try_recv() {
             // App-level IPC methods (don't need focused window)
+            if cmd.request.method == "system.shutdown" {
+                let response = ipc::protocol::JsonRpcResponse::success(
+                    cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
+                    serde_json::json!({"shutdown": true}),
+                );
+                let _ = cmd.response_tx.send(response);
+                let _ = self.engine.proxy.send_event(AppEvent::Shutdown);
+                return true;
+            }
             if cmd.request.method == "window.create" {
                 let _ = self.engine.proxy.send_event(AppEvent::CreateWindow);
                 let response = ipc::protocol::JsonRpcResponse::success(
@@ -349,58 +374,75 @@ impl App {
                 continue;
             }
 
-            // Focused-window IPC methods
-            let focused_id = match self.engine.focused_window_id {
-                Some(id) => id,
-                None => continue,
-            };
-            let w = match self.windows.get_mut(&focused_id) {
-                Some(w) => w,
-                None => continue,
-            };
+            // Window-required IPC methods (GPU, IME, screenshot)
+            if cmd.request.method == "debug.info"
+                || cmd.request.method.starts_with("surface.ime_")
+                || cmd.request.method == "ui.screenshot"
+            {
+                let focused_id = match self.engine.focused_window_id {
+                    Some(id) => id,
+                    None => {
+                        let response = ipc::protocol::JsonRpcResponse::error(
+                            cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
+                            -32000,
+                            "No window available for this command",
+                        );
+                        let _ = cmd.response_tx.send(response);
+                        processed = true;
+                        continue;
+                    }
+                };
+                let w = match self.windows.get_mut(&focused_id) {
+                    Some(w) => w,
+                    None => continue,
+                };
 
-            if cmd.request.method == "debug.info" {
-                let debug_data = debug_info::collect(&w.state, Some(&w.gpu));
-                let response = ipc::protocol::JsonRpcResponse::success(
-                    cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
-                    debug_data,
-                );
-                let _ = cmd.response_tx.send(response);
+                if cmd.request.method == "debug.info" {
+                    let debug_data = debug_info::collect(&w.state, Some(&w.gpu));
+                    let response = ipc::protocol::JsonRpcResponse::success(
+                        cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
+                        debug_data,
+                    );
+                    let _ = cmd.response_tx.send(response);
+                } else if cmd.request.method.starts_with("surface.ime_") {
+                    let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
+                    let response = ipc::handler::ime::handle_ime_method(w, &cmd.request.method, &cmd.request.params, id);
+                    let _ = cmd.response_tx.send(response);
+                    w.dirty = true;
+                } else if cmd.request.method == "ui.screenshot" {
+                    let path = cmd.request.params
+                        .get("path")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("screenshot.png")
+                        .to_string();
+                    w.gpu.pending_screenshot = Some(std::path::PathBuf::from(&path));
+                    w.mark_dirty();
+                    let response = ipc::protocol::JsonRpcResponse::success(
+                        cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
+                        serde_json::json!({"path": path, "scheduled": true}),
+                    );
+                    let _ = cmd.response_tx.send(response);
+                }
                 processed = true;
                 continue;
             }
 
-            // IME simulation IPC methods (require window-local state)
-            if cmd.request.method.starts_with("surface.ime_") {
-                let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
-                let response = ipc::handler::ime::handle_ime_method(w, &cmd.request.method, &cmd.request.params, id);
-                let _ = cmd.response_tx.send(response);
-                w.dirty = true;
-                processed = true;
-                continue;
+            // All other commands: route to active state (window or parked)
+            let focused_id = self.engine.focused_window_id;
+            if let Some(id) = focused_id {
+                if let Some(w) = self.windows.get_mut(&id) {
+                    let response = ipc::handler::handle(&mut w.state, &cmd.request);
+                    let _ = cmd.response_tx.send(response);
+                    w.dirty = true;
+                    processed = true;
+                    continue;
+                }
             }
-
-            if cmd.request.method == "ui.screenshot" {
-                let path = cmd.request.params
-                    .get("path")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("screenshot.png")
-                    .to_string();
-                w.gpu.pending_screenshot = Some(std::path::PathBuf::from(&path));
-                w.mark_dirty();
-                let response = ipc::protocol::JsonRpcResponse::success(
-                    cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
-                    serde_json::json!({"path": path, "scheduled": true}),
-                );
+            if let Some(state) = self.parked_state.as_mut() {
+                let response = ipc::handler::handle(state, &cmd.request);
                 let _ = cmd.response_tx.send(response);
                 processed = true;
-                continue;
             }
-
-            let response = ipc::handler::handle(&mut w.state, &cmd.request);
-            let _ = cmd.response_tx.send(response);
-            w.dirty = true;
-            processed = true;
         }
         processed
     }

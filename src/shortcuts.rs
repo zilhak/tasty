@@ -195,11 +195,22 @@ impl TastyWindow {
             if binding == dt_str {
                 match *action {
                     "new_workspace" => { let _ = self.state.add_workspace(); self.state.resize_all(terminal_rect, cell_w, cell_h); }
-                    "close_workspace" => { self.state.close_active_workspace(); self.state.ensure_workspace_exists(); self.state.resize_all(terminal_rect, cell_w, cell_h); }
+                    "close_workspace" => {
+                        self.state.close_active_workspace();
+                        if self.state.engine.workspaces.is_empty() {
+                            self.request_close();
+                        } else {
+                            self.state.resize_all(terminal_rect, cell_w, cell_h);
+                        }
+                    }
                     "new_tab" => { let _ = self.state.add_tab(); self.state.resize_all(terminal_rect, cell_w, cell_h); }
                     "close_pane" => {
-                        if !self.state.close_active_pane() { self.state.close_active_workspace(); self.state.ensure_workspace_exists(); }
-                        self.state.resize_all(terminal_rect, cell_w, cell_h);
+                        if !self.state.close_active_pane() { self.state.close_active_workspace(); }
+                        if self.state.engine.workspaces.is_empty() {
+                            self.request_close();
+                        } else {
+                            self.state.resize_all(terminal_rect, cell_w, cell_h);
+                        }
                     }
                     "split_pane_vertical" => { let _ = self.state.split_pane(SplitDirection::Vertical); self.state.resize_all(terminal_rect, cell_w, cell_h); }
                     "split_pane_horizontal" => { let _ = self.state.split_pane(SplitDirection::Horizontal); self.state.resize_all(terminal_rect, cell_w, cell_h); }
@@ -210,8 +221,12 @@ impl TastyWindow {
                     "focus_surface_next" => { self.state.move_surface_focus_forward(); }
                     "focus_surface_prev" => { self.state.move_surface_focus_backward(); }
                     "close_surface" => {
-                        if !self.state.close_active_surface() { if !self.state.close_active_pane() { self.state.close_active_workspace(); self.state.ensure_workspace_exists(); } }
-                        self.state.resize_all(terminal_rect, cell_w, cell_h);
+                        if !self.state.close_active_surface() { if !self.state.close_active_pane() { self.state.close_active_workspace(); } }
+                        if self.state.engine.workspaces.is_empty() {
+                            self.request_close();
+                        } else {
+                            self.state.resize_all(terminal_rect, cell_w, cell_h);
+                        }
                     }
                     _ => {}
                 }
@@ -244,12 +259,14 @@ impl TastyWindow {
 
         // Configurable keybinding shortcuts
         if Self::handle_keybinding_shortcuts(&mut self.state, &kb, key, mods, terminal_rect, cell_w, cell_h, &self.proxy) {
+            if self.state.engine.workspaces.is_empty() { self.request_close(); }
             self.dirty = true;
             return true;
         }
 
         // Hardcoded shortcuts (tab switch, Ctrl+W, number switch)
         if Self::handle_hardcoded_shortcuts(&mut self.state, &kb, key, ctrl, shift, alt, terminal_rect, cell_w, cell_h) {
+            if self.state.engine.workspaces.is_empty() { self.request_close(); }
             self.dirty = true;
             return true;
         }
@@ -339,26 +356,29 @@ impl TastyWindow {
         }
         if matches_binding(&kb.close_workspace, key, mods) {
             state.close_active_workspace();
-            state.ensure_workspace_exists();
-            state.resize_all(terminal_rect, cell_w, cell_h);
+            if !state.engine.workspaces.is_empty() {
+                state.resize_all(terminal_rect, cell_w, cell_h);
+            }
             return true;
         }
         if matches_binding(&kb.close_pane, key, mods) {
             if !state.close_active_pane() {
                 state.close_active_workspace();
-                state.ensure_workspace_exists();
             }
-            state.resize_all(terminal_rect, cell_w, cell_h);
+            if !state.engine.workspaces.is_empty() {
+                state.resize_all(terminal_rect, cell_w, cell_h);
+            }
             return true;
         }
         if matches_binding(&kb.close_surface, key, mods) {
             if !state.close_active_surface() {
                 if !state.close_active_pane() {
                     state.close_active_workspace();
-                    state.ensure_workspace_exists();
                 }
             }
-            state.resize_all(terminal_rect, cell_w, cell_h);
+            if !state.engine.workspaces.is_empty() {
+                state.resize_all(terminal_rect, cell_w, cell_h);
+            }
             return true;
         }
         if matches_binding(&kb.focus_pane_next, key, mods) {
@@ -415,9 +435,10 @@ impl TastyWindow {
                     if !state.close_active_tab() {
                         if !state.close_active_pane() {
                             state.close_active_workspace();
-                            state.ensure_workspace_exists();
                         }
-                        state.resize_all(terminal_rect, cell_w, cell_h);
+                        if !state.engine.workspaces.is_empty() {
+                            state.resize_all(terminal_rect, cell_w, cell_h);
+                        }
                     }
                     return true;
                 }

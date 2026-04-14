@@ -1,5 +1,4 @@
 use crate::model::SplitDirection;
-use tasty_terminal::Terminal;
 
 use super::AppState;
 
@@ -326,43 +325,12 @@ impl AppState {
             return true;
         }
 
-        // Case 5: Last workspace -- respawn a new shell instead of leaving a dead surface
-        self.respawn_surface(surface_id);
+        // Case 5: Last workspace -- close it. The window will close itself.
+        self.engine.workspaces.remove(ws_idx);
+        self.unregister_child(surface_id);
+        self.mark_parent_closed(surface_id);
+        crate::surface_meta::SurfaceMetaStore::remove(surface_id);
         true
-    }
-
-    /// Respawn a new shell in the current terminal surface (replacing the dead one).
-    fn respawn_surface(&mut self, surface_id: u32) {
-        let cols = self.engine.default_cols;
-        let rows = self.engine.default_rows;
-        let shell = if self.engine.settings.general.shell.is_empty() {
-            None
-        } else {
-            Some(self.engine.settings.general.shell.clone())
-        };
-        let shell_args_owned = self.engine.settings.general.effective_shell_args();
-        let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
-        let waker = self.engine.make_waker(surface_id);
-
-        match Terminal::new_with_shell_args(
-            cols,
-            rows,
-            shell.as_deref(),
-            &shell_args,
-            surface_id,
-            waker,
-        ) {
-            Ok(new_terminal) => {
-                // Replace the terminal in the existing surface node
-                if let Some(term) = self.find_terminal_by_id_mut(surface_id) {
-                    *term = new_terminal;
-                }
-                self.send_fast_init(surface_id);
-            }
-            Err(e) => {
-                tracing::error!("Failed to respawn shell for surface {}: {}", surface_id, e);
-            }
-        }
     }
 
     /// Split the focused pane and return the new surface ID.
