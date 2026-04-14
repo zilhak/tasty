@@ -306,11 +306,31 @@ impl GpuState {
         self.egui_ctx.cumulative_pass_nr()
     }
 
+    /// Get egui's actual pixels_per_point (what it uses for rendering).
+    pub fn egui_pixels_per_point(&self) -> f32 {
+        self.egui_ctx.pixels_per_point()
+    }
+
+    /// Get egui's zoom factor.
+    pub fn egui_zoom_factor(&self) -> f32 {
+        self.egui_ctx.zoom_factor()
+    }
+
+    /// Get the wgpu surface config dimensions.
+    pub fn surface_config_size(&self) -> (u32, u32) {
+        (self.config.width, self.config.height)
+    }
+
     /// Update the scale factor (e.g., when the window moves between monitors with different DPI).
     pub fn update_scale_factor(&mut self, new_scale_factor: f32) {
         self.scale_factor = new_scale_factor;
-        // Reconfigure egui with new scale factor
-        self.egui_ctx.set_pixels_per_point(new_scale_factor);
+        // Reset egui zoom to 1.0 so that egui_winit's native_pixels_per_point
+        // (provided via take_egui_input each frame) is used directly.
+        // DO NOT call set_pixels_per_point() here — it computes
+        // zoom = ppp / native_ppp, and if native_ppp hasn't been updated yet
+        // (e.g., during macOS auto-restore), zoom gets a stale value like 0.5
+        // that persists forever.
+        self.egui_ctx.set_zoom_factor(1.0);
     }
 
     /// Re-sync scale factor from the window and resize if it changed.
