@@ -151,6 +151,18 @@ impl AppState {
             || self.tab_rename_dialog.is_some()
     }
 
+    /// Returns true if any egui overlay (context menu, popup, dialog, settings)
+    /// is visible. Used to temporarily hide native WebViews that would cover
+    /// the overlay due to OS z-order being above the wgpu render surface.
+    pub fn has_egui_overlay_open(&self) -> bool {
+        self.settings_open
+            || self.tab_context_menu.is_some()
+            || self.pane_context_menu.is_some()
+            || self.convert_popup.is_some()
+            || self.has_input_dialog_open()
+            || self.popups.has_any_open()
+    }
+
     pub fn active_workspace(&self) -> &crate::model::Workspace {
         let idx = self.active_workspace.min(self.engine.workspaces.len().saturating_sub(1));
         &self.engine.workspaces[idx]

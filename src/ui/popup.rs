@@ -166,6 +166,11 @@ impl PopupManager {
         self.popups.iter().any(|p| p.open && p.focused)
     }
 
+    /// Check if any popup is currently open.
+    pub fn has_any_open(&self) -> bool {
+        self.popups.iter().any(|p| p.open)
+    }
+
     /// Bring a popup to the front (topmost z-order).
     fn bring_to_front(&mut self, id: PopupId) {
         if let Some(i) = self.popups.iter().position(|p| p.id == id) {

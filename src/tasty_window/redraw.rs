@@ -206,9 +206,16 @@ impl TastyWindow {
             }
         }
 
+        // When any egui overlay (context menu, popup, dialog) is open,
+        // hide all WebViews so they don't cover the overlay.
+        // Native views are always above the wgpu render surface in OS z-order.
+        let overlay_open = self.state.has_egui_overlay_open();
+
         // Update bounds/visibility for existing webviews
         for (sid, wv) in &self.webviews {
-            if let Some(bounds) = active_html.get(sid) {
+            if overlay_open {
+                wv.set_visible(false);
+            } else if let Some(bounds) = active_html.get(sid) {
                 wv.set_bounds(*bounds, scale_factor);
                 wv.set_visible(true);
             } else if all_html_ids.contains(sid) {
