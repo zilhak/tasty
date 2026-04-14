@@ -24,7 +24,6 @@ impl TastyInstance {
         ));
 
         let process = Command::new(env!("CARGO_BIN_EXE_tasty"))
-            .arg("--headless")
             .arg("--port-file")
             .arg(port_file.to_str().unwrap())
             .spawn()
