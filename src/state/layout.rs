@@ -108,21 +108,24 @@ impl AppState {
         self.engine.default_rows = rows;
     }
 
-    /// Resize all terminals in the active workspace to match a given terminal rect.
+    /// Resize all terminals in all workspaces and all tabs to match a given terminal rect.
     pub fn resize_all(&mut self, terminal_rect: Rect, cell_width: f32, cell_height: f32) {
         let tab_bar_h = self.tab_bar_height;
-        let ws = self.active_workspace_mut();
-        let pane_rects = ws.pane_layout().compute_rects(terminal_rect);
-        for (pane_id, pane_rect) in pane_rects {
-            if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
-                let content_rect = Rect {
-                    x: pane_rect.x,
-                    y: pane_rect.y + tab_bar_h,
-                    width: pane_rect.width,
-                    height: (pane_rect.height - tab_bar_h).max(1.0),
-                };
-                if let Some(panel) = pane.active_panel_mut() {
-                    panel.resize_all(content_rect, cell_width, cell_height);
+        for ws in &mut self.engine.workspaces {
+            let pane_rects = ws.pane_layout().compute_rects(terminal_rect);
+            for (pane_id, pane_rect) in pane_rects {
+                if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
+                    let content_rect = Rect {
+                        x: pane_rect.x,
+                        y: pane_rect.y + tab_bar_h,
+                        width: pane_rect.width,
+                        height: (pane_rect.height - tab_bar_h).max(1.0),
+                    };
+                    for tab in &mut pane.tabs {
+                        if let Some(panel) = tab.panel_mut_if_initialized() {
+                            panel.resize_all(content_rect, cell_width, cell_height);
+                        }
+                    }
                 }
             }
         }

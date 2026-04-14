@@ -363,10 +363,20 @@ impl Terminal {
         }
 
         let old_cols = self.cols;
+        let old_rows = self.rows;
 
         // Save/restore line tails on the primary surface when cols change
         if cols != old_cols && !self.use_alternate {
             self.save_or_restore_line_tails(old_cols, cols, rows);
+        }
+
+        // Handle rows change on primary surface: preserve cursor-content relationship
+        if rows != old_rows && !self.use_alternate {
+            if rows < old_rows {
+                self.handle_rows_shrink(rows, old_rows);
+            } else {
+                self.handle_rows_grow(rows, old_rows);
+            }
         }
 
         self.cols = cols;
@@ -391,6 +401,111 @@ impl Terminal {
             pixel_width: 0,
             pixel_height: 0,
         });
+    }
+
+    /// When rows shrink, capture top lines to scrollback so the cursor stays
+    /// near the bottom, mimicking xterm/Alacritty behavior.
+    fn handle_rows_shrink(&mut self, new_rows: usize, old_rows: usize) {
+        let (_, cursor_y) = self.primary_surface.cursor_position();
+        let rows_to_remove = old_rows - new_rows;
+
+        // Count blank lines below the cursor
+        let lines = self.primary_surface.screen_lines();
+        let mut blank_below = 0;
+        for i in ((cursor_y + 1)..old_rows).rev() {
+            if i < lines.len() && Self::is_line_blank(&lines[i]) {
+                blank_below += 1;
+            } else {
+                break;
+            }
+        }
+
+        // How many top lines need to be pushed to scrollback
+        let lines_to_scroll = rows_to_remove.saturating_sub(blank_below);
+        if lines_to_scroll > 0 {
+            // Capture top lines to scrollback
+            let captured = self.capture_top_lines(lines_to_scroll);
+            let count = captured.len();
+            for line in captured {
+                self.scrollback.push_back(line);
+            }
+            // Shift saved_line_tails
+            for _ in 0..count.min(self.saved_line_tails.len()) {
+                self.saved_line_tails.remove(0);
+            }
+            self.flush_scrollback_to_disk();
+
+            // Scroll the surface up to remove the captured lines
+            self.primary_surface.add_change(Change::ScrollRegionUp {
+                first_row: 0,
+                region_size: old_rows,
+                scroll_count: count,
+            });
+        }
+    }
+
+    /// When rows grow, restore lines from scrollback to the top of the screen.
+    fn handle_rows_grow(&mut self, new_rows: usize, old_rows: usize) {
+        use termwiz::surface::Position;
+
+        let rows_added = new_rows - old_rows;
+        let restore_count = rows_added.min(self.scrollback.len());
+
+        if restore_count == 0 {
+            return;
+        }
+
+        // We need to resize first so there's room, then fill the top lines.
+        // But resize is called after us. So instead, we collect the lines to restore
+        // and apply them after resize. We'll store them temporarily.
+        // Actually, we can scroll down to make room, then write the lines.
+        // But termwiz doesn't have ScrollRegionDown for the full screen easily.
+        //
+        // Simpler approach: just resize first (temporarily), write lines, then
+        // the outer resize call will be a no-op for rows since we already resized.
+        // But that breaks the flow.
+        //
+        // Best approach: store lines to restore, apply after resize in the caller.
+        // We'll use a temporary field.
+
+        // Pop from scrollback (most recent first = back of deque)
+        let mut to_restore: Vec<Vec<(String, CellAttributes)>> = Vec::new();
+        for _ in 0..restore_count {
+            if let Some(line) = self.scrollback.pop_back() {
+                to_restore.push(line);
+            }
+        }
+        to_restore.reverse(); // oldest first
+
+        // Scroll current content down to make room at top
+        self.primary_surface.add_change(Change::ScrollRegionDown {
+            first_row: 0,
+            region_size: old_rows,
+            scroll_count: restore_count,
+        });
+
+        // Write restored lines at the top
+        for (row, line_cells) in to_restore.iter().enumerate() {
+            self.primary_surface.add_change(Change::CursorPosition {
+                x: Position::Absolute(0),
+                y: Position::Absolute(row),
+            });
+            for (text, attrs) in line_cells {
+                self.primary_surface.add_change(Change::AllAttributes(attrs.clone()));
+                self.primary_surface.add_change(Change::Text(text.clone()));
+            }
+        }
+    }
+
+    /// Check if a line is visually blank (all spaces or empty).
+    fn is_line_blank(line: &termwiz::surface::line::Line) -> bool {
+        for cell in line.visible_cells() {
+            let s = cell.str();
+            if !s.is_empty() && s.trim() != "" {
+                return false;
+            }
+        }
+        true
     }
 
     /// Before termwiz truncates lines, capture cells that would be lost (cols shrinking)
