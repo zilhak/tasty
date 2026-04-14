@@ -14,7 +14,7 @@ Engine
 │               └── Pane (독립적인 탭 바)
 │                   └── Tab (= 탭 하나)
 │                       └── 하위 레이아웃 (탭 전환 시 함께 전환)
-│                           └── Surface (실제 터미널)
+│                           └── Surface (Terminal / Markdown / Explorer)
 └── Popup (window/modal 내부 가상 창)
 ```
 
@@ -50,7 +50,15 @@ Pane 내의 하나의 탭. 내부에 Surface들의 **하위 레이아웃**을 �
 
 ### Surface (서피스)
 
-실제 터미널을 나타내는 최하위 컨테이너. 각 Surface 내에서 bash, zsh 등의 쉘 프로세스가 실행된다. PTY와 1:1로 연결된다.
+Tab 내의 최하위 컨테이너. **타입**을 가지며, 타입에 따라 콘텐츠가 달라진다. 모든 Surface는 고유한 `surface_id`를 가지며, 닫기/포커스/리스트 등의 동작이 타입에 관계없이 동일하게 적용된다.
+
+| 타입 | 설명 | PTY |
+|------|------|-----|
+| Terminal | 쉘 세션 (bash, zsh 등) | O |
+| Markdown | 마크다운 파일 뷰어 | X |
+| Explorer | 파일 탐색기 | X |
+
+Terminal 타입만 PTY와 연결되며, Markdown/Explorer는 egui로 렌더링되는 비터미널 Surface이다.
 
 ## 두 레벨의 레이아웃
 
@@ -82,7 +90,7 @@ Tab 내에서 Surface들이 어떻게 배치되는지를 정의한다 (상하분
 | Workspace | Session | Window |
 | Pane | — (없음) | — (없음) |
 | Tab | Window (탭) | Tab |
-| Surface | Pane | Pane (split) |
+| Surface (Terminal) | Pane | Pane (split) |
 
 Pane은 기존 터미널에 대응하는 개념이 없다. 이것이 Tasty의 고유한 설계.
 
@@ -97,5 +105,5 @@ Pane은 기존 터미널에 대응하는 개념이 없다. 이것이 Tasty의 �
 | Pane | `Pane` | 독립적인 탭 바. 탭 목록 보유 |
 | Tab | `Tab` → `Panel` | 탭 하나의 내용물 |
 | 하위 레이아웃 | `SurfaceGroupNode` (이진 트리 enum) | Surface 배치 |
-| Surface | `Terminal` (tasty-terminal crate) | 실제 터미널 (PTY 연결) |
+| Surface | `Panel` variant (`Terminal` / `Markdown` / `Explorer`) | 최하위 컨테이너. 타입별 콘텐츠 |
 | Popup | egui `Window` / `Area` | 내부 가상 창 |

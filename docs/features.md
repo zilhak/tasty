@@ -100,7 +100,7 @@
 - Tab: 탭 하나. Panel에 매핑
 - Panel: 콘텐츠 타입 enum. Terminal(단일), SurfaceGroup(하위 레이아웃), Markdown, Explorer
 - SurfaceGroupNode: 하위 레이아웃 트리. 탭 전환 시 함께 전환
-- Surface: 실제 터미널 인스턴스 (PTY + termwiz Surface)
+- Surface: 최하위 컨테이너. 타입별 콘텐츠 (Terminal / Markdown / Explorer)
 - AppState: 전체 워크스페이스 목록과 활성 상태를 관리하는 중앙 상태 (IdGenerator 포함)
 
 ### egui UI 오버레이
@@ -183,10 +183,11 @@
 - **egui와의 이벤트 충돌 방지**: egui가 이벤트를 소비한 경우 (사이드바, 설정 윈도우 등) 터미널에는 전달하지 않음
 - 관련 모델 메서드: `Rect::contains()`, `PaneNode::find_divider_at()`, `PaneNode::update_ratio_for_rect()`, `SurfaceGroupLayout::find_divider_at()`, `SurfaceGroupLayout::update_ratio_for_rect()`, `SurfaceGroupLayout::find_surface_at()`
 
-### 비터미널 패널 (Markdown Viewer / Explorer)
-- Panel enum에 `Markdown(MarkdownPanel)`과 `Explorer(ExplorerPanel)` 변형 추가
-- PTY가 없는 순수 egui 렌더링 패널. 터미널 관련 메서드(focused_terminal, render_regions 등)는 None/empty 반환
+### 비터미널 Surface (Markdown Viewer / Explorer)
+- Surface 타입의 일종으로 취급. 고유 surface_id를 가지며 닫기/포커스/리스트 등 모든 surface 동작이 동일하게 적용됨
+- PTY가 없는 순수 egui 렌더링 surface
 - egui Area로 해당 패인 rect에 오버레이 렌더링
+- **알려진 제한사항**: 현재 코드에서는 `Panel::all_surface_ids()` 등에서 비터미널 패널의 ID가 누락되어 있어 닫기 cascade 등에서 버그 발생. surface_id 통합 리팩토링 필요
 
 #### Markdown Viewer
 - 마크다운 파일을 egui로 렌더링하는 읽기 전용 뷰어
@@ -209,9 +210,10 @@
 - 좌클릭 또는 Cancel로 메뉴 닫기
 
 #### IPC/CLI 지원
-- `tab.open_markdown`: `file_path` 파라미터로 마크다운 탭 열기 (`pane_id` 옵션)
-- `tab.open_explorer`: `path` 파라미터로 탐색기 탭 열기 (생략 시 홈 디렉토리, `pane_id` 옵션)
-- CLI: `tasty new markdown <path>`, `tasty new explorer [--path <dir>]`
+- `tab.create`에 `type` 파라미터 추가로 통합 예정 (`terminal` / `markdown` / `explorer`)
+- 현재(레거시): `tab.open_markdown`, `tab.open_explorer` — 별도 IPC 메서드
+- **목표 CLI**: `tasty new tab --type markdown --file <path>`, `tasty new tab --type explorer --path <dir>`
+- **목표 IPC**: `tab.create` → `{ "type": "markdown", "file": "path" }` 등
 
 ## 알림 시스템
 
