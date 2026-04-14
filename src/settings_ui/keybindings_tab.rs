@@ -131,6 +131,8 @@ pub fn draw_keybindings_tab(
                     ("focus_pane_next", "settings.keybindings.focus_pane_next_label", &mut settings.keybindings.focus_pane_next),
                     ("focus_pane_prev", "settings.keybindings.focus_pane_prev_label", &mut settings.keybindings.focus_pane_prev),
                     ("close_pane", "settings.keybindings.close_pane_label", &mut settings.keybindings.close_pane),
+                    ("open_markdown", "settings.keybindings.open_markdown_label", &mut settings.keybindings.open_markdown),
+                    ("open_explorer", "settings.keybindings.open_explorer_label", &mut settings.keybindings.open_explorer),
                 ]);
             }
             KeybindingsSubTab::Surface => {

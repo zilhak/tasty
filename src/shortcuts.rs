@@ -189,6 +189,8 @@ impl TastyWindow {
             (kb.focus_surface_next.clone(), "focus_surface_next"),
             (kb.focus_surface_prev.clone(), "focus_surface_prev"),
             (kb.close_surface.clone(), "close_surface"),
+            (kb.open_markdown.clone(), "open_markdown"),
+            (kb.open_explorer.clone(), "open_explorer"),
         ];
 
         for (binding, action) in &bindings_to_check {
@@ -235,6 +237,16 @@ impl TastyWindow {
                     "quit" => { let _ = self.proxy.send_event(crate::AppEvent::QuitRequested); }
                     "quit_immediate" => { let _ = self.proxy.send_event(crate::AppEvent::Shutdown); }
                     "quit_minimize" => { let _ = self.proxy.send_event(crate::AppEvent::Minimize); }
+                    "open_markdown" => {
+                        let pane_id = self.state.active_workspace().focused_pane;
+                        self.state.markdown_path_dialog = Some((pane_id, String::new()));
+                    }
+                    "open_explorer" => {
+                        let home = directories::BaseDirs::new()
+                            .map(|d| d.home_dir().to_string_lossy().to_string())
+                            .unwrap_or_else(|| ".".to_string());
+                        let _ = self.state.add_explorer_tab(home);
+                    }
                     _ => {}
                 }
                 return true;
@@ -427,6 +439,18 @@ impl TastyWindow {
         }
         if matches_binding(&kb.quit, key, mods) {
             let _ = proxy.send_event(crate::AppEvent::QuitRequested);
+            return true;
+        }
+        if matches_binding(&kb.open_markdown, key, mods) {
+            let pane_id = state.active_workspace().focused_pane;
+            state.markdown_path_dialog = Some((pane_id, String::new()));
+            return true;
+        }
+        if matches_binding(&kb.open_explorer, key, mods) {
+            let home = directories::BaseDirs::new()
+                            .map(|d| d.home_dir().to_string_lossy().to_string())
+                            .unwrap_or_else(|| ".".to_string());
+            let _ = state.add_explorer_tab(home);
             return true;
         }
         false

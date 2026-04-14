@@ -34,6 +34,10 @@ pub struct KeybindingSettings {
     pub quit_immediate: String,
     /// Minimize to background (park state).
     pub quit_minimize: String,
+    /// Open Markdown viewer (shows path dialog).
+    pub open_markdown: String,
+    /// Open file Explorer tab.
+    pub open_explorer: String,
 }
 
 impl KeybindingSettings {
@@ -92,6 +96,8 @@ impl KeybindingSettings {
             quit: String::new(),
             quit_immediate: String::new(),
             quit_minimize: String::new(),
+            open_markdown: String::new(),
+            open_explorer: String::new(),
         }
     }
 
