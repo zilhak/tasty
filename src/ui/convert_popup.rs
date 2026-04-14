@@ -67,11 +67,21 @@ pub fn draw_convert_popup(ctx: &egui::Context, state: &mut AppState) {
                         };
                         let text_color = if is_current { th.overlay0 } else { th.text };
 
-                        let resp = ui.add_sized(
-                            [popup_w, 24.0],
-                            egui::Button::new(egui::RichText::new(&label).color(text_color).size(th.font_size_body))
-                                .fill(egui::Color32::TRANSPARENT)
-                                .frame(false),
+                        let sense = if is_current { egui::Sense::hover() } else { egui::Sense::click() };
+                        let (rect, resp) = ui.allocate_exact_size(egui::vec2(popup_w, 24.0), sense);
+
+                        if !is_current && resp.hovered() {
+                            ui.painter().rect_filled(rect, 0.0, th.hover_overlay);
+                            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                        }
+
+                        let text_pos = egui::pos2(rect.min.x + th.spacing_sm, rect.center().y - th.font_size_body / 2.0);
+                        ui.painter().text(
+                            text_pos,
+                            egui::Align2::LEFT_TOP,
+                            &label,
+                            egui::FontId::proportional(th.font_size_body),
+                            text_color,
                         );
 
                         if resp.clicked() && !is_current {
@@ -82,11 +92,18 @@ pub fn draw_convert_popup(ctx: &egui::Context, state: &mut AppState) {
                     ui.separator();
 
                     // Cancel
-                    let cancel_resp = ui.add_sized(
-                        [popup_w, 24.0],
-                        egui::Button::new(egui::RichText::new(format!("  {}", t("convert_popup.cancel"))).color(th.subtext0).size(th.font_size_body))
-                            .fill(egui::Color32::TRANSPARENT)
-                            .frame(false),
+                    let (cancel_rect, cancel_resp) = ui.allocate_exact_size(egui::vec2(popup_w, 24.0), egui::Sense::click());
+                    if cancel_resp.hovered() {
+                        ui.painter().rect_filled(cancel_rect, 0.0, th.hover_overlay);
+                        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                    }
+                    let cancel_text_pos = egui::pos2(cancel_rect.min.x + th.spacing_sm, cancel_rect.center().y - th.font_size_body / 2.0);
+                    ui.painter().text(
+                        cancel_text_pos,
+                        egui::Align2::LEFT_TOP,
+                        &format!("  {}", t("convert_popup.cancel")),
+                        egui::FontId::proportional(th.font_size_body),
+                        th.subtext0,
                     );
                     if cancel_resp.clicked() {
                         close = true;
