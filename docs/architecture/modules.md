@@ -1,6 +1,6 @@
 # 모듈별 상세
 
-91개 .rs 파일을 디렉토리 모듈 단위로 묶어 설명한다. 각 모듈의 책임, 설계 목적, 한계를 기술한다.
+디렉토리 모듈 단위로 각 모듈의 책임과 구조를 기술한다.
 
 ---
 
@@ -8,7 +8,7 @@
 
 **책임:** Workspace → PaneNode → Pane → Tab → Panel → SurfaceNode/SurfaceGroupLayout의 계층 데이터 구조 정의. 레이아웃 계산(Rect 분할, 디바이더 탐색), 터미널 순회, 리사이즈.
 
-**설계 목적:** 렌더링이나 UI에 의존하지 않는 순수 데이터 계층. `tasty-terminal` 크레이트만 참조한다.
+렌더링이나 UI에 의존하지 않는 순수 데이터 계층. `tasty-terminal` 크레이트만 참조한다.
 
 | 파일 | 역할 |
 |------|------|
@@ -17,14 +17,14 @@
 | `pane_tree.rs` | PaneNode 이진 트리 (상위 분할). split/close/rect계산/디바이더탐색/방향포커스 |
 | `pane.rs` | Pane 구조체. 탭 관리 (생성/닫기/전환), Terminal 생성, Surface 분할 |
 | `tab.rs` | Tab 구조체. Panel lazy init (deferred PTY spawn), take/put 패턴 |
-| `panel.rs` | Panel enum (Terminal/SurfaceGroup/Markdown/Explorer). 터미널 탐색, 분할 연산 |
+| `panel.rs` | Panel enum (Terminal/SurfaceGroup/Markdown/Explorer/Html/Empty). Surface 타입별 동작 |
 | `surface_group.rs` | SurfaceGroupNode wrapper. SurfaceGroupLayout의 포커스/리사이즈 위임 |
 | `surface_layout.rs` | SurfaceGroupLayout 이진 트리 (하위 분할). pane_tree.rs와 동일한 패턴 |
 | `markdown_panel.rs` | 마크다운 파일 경로 + 파싱 캐시 |
 | `explorer_panel.rs` | 파일 탐색기 트리 상태 |
 | `tests.rs` | Rect/PaneNode/SurfaceGroupLayout 유닛 테스트 |
 
-**한계:** pane_tree.rs(456줄)와 surface_layout.rs(380줄)는 재귀 트리의 본질적 크기로, 모든 메서드가 `match self { Leaf/Split }` 패턴이라 더 분리하면 응집성이 깨진다.
+pane_tree.rs와 surface_layout.rs는 재귀 이진 트리 구조로, `match self { Leaf/Split }` 패턴의 반복이 본질적이다.
 
 ---
 
@@ -32,7 +32,7 @@
 
 **책임:** 윈도우당 1개의 AppState. model/ 위에서 "어떤 워크스페이스가 활성인가", "어떤 서피스에 포커스가 있는가" 등의 런타임 상태를 관리한다.
 
-**설계 목적:** God Object였던 state.rs(1812줄)를 도메인별 impl 분산으로 분리. AppState 구조체는 mod.rs에서 정의하고, 각 서브모듈이 `impl AppState` 블록으로 메서드를 추가한다.
+AppState 구조체를 mod.rs에서 정의하고, 각 서브모듈이 도메인별 `impl AppState` 블록으로 메서드를 추가한다.
 
 | 파일 | 역할 |
 |------|------|
@@ -48,7 +48,7 @@
 | `mark.rs` | Read mark, 타이핑 감지 |
 | `tests.rs` | 유닛 테스트 |
 
-**한계:** state/pane.rs의 close_surface_by_id(~110줄)는 SurfaceGroup→탭→패인→워크스페이스 순서로 계단식으로 닫는 로직이 한 함수에 있다. 본질적으로 5-case 처리라 분리하면 오히려 흐름 파악이 어려워진다.
+state/pane.rs의 close_surface_by_id는 SurfaceGroup→탭→패인→워크스페이스 순서로 계단식 닫기를 수행하는 5-case 로직이다.
 
 ---
 
@@ -56,7 +56,7 @@
 
 **책임:** wgpu 디바이스/서피스, egui 통합, 렌더 오케스트레이션.
 
-**설계 목적:** GpuState의 메서드를 역할별로 분산. mod.rs에 구조체와 진입점을 두고, 서브모듈이 impl 블록을 추가한다.
+mod.rs에 GpuState 구조체와 진입점을 두고, 서브모듈이 역할별 impl 블록을 추가한다.
 
 | 파일 | 역할 |
 |------|------|
@@ -67,7 +67,7 @@
 | `screenshot.rs` | wgpu 프레임 캡처 → PNG 저장 |
 | `shell_setup.rs` | 셸 경로 확인 다이얼로그 (첫 실행 시) |
 
-**한계:** GpuState가 egui_ctx, egui_state, wgpu device/queue, CellRenderer를 모두 소유한다. egui와 wgpu를 분리하려면 소유권 재설계가 필요하며 현시점에서는 비용 대비 효과가 작다.
+GpuState가 egui_ctx, egui_state, wgpu device/queue, CellRenderer를 모두 소유한다.
 
 ---
 
@@ -75,7 +75,7 @@
 
 **책임:** 터미널 셀을 wgpu 인스턴스 데이터로 변환하고 GPU에서 렌더링.
 
-**설계 목적:** CellRenderer가 GpuState와 분리되어 독립적으로 동작. 셰이더, 팔레트, 타입을 별도 파일로.
+CellRenderer가 GpuState와 분리되어 독립적으로 동작한다.
 
 | 파일 | 역할 |
 |------|------|
@@ -86,7 +86,7 @@
 | `palette.rs` | ANSI 256색 + TrueColor 팔레트 변환 |
 | `types.rs` | Uniforms, BgInstance, GlyphInstance (bytemuck 호환) |
 
-**한계:** pipeline.rs(349줄)는 wgpu RenderPipelineDescriptor가 본질적으로 장황한 선언 코드. 줄이기 어렵다.
+pipeline.rs는 wgpu RenderPipelineDescriptor의 장황한 선언 코드가 대부분이다.
 
 ---
 
@@ -94,7 +94,7 @@
 
 **책임:** egui로 그리는 모든 UI. 사이드바, 탭바, 알림 패널, 다이얼로그, egui 기반 Surface 패널(Markdown/Explorer/Empty).
 
-**설계 목적:** 함수 단위로 이미 분리되어 있던 것을 파일로 옮김. 각 파일이 하나의 독립 UI 컴포넌트.
+각 파일이 하나의 독립 UI 컴포넌트를 담당한다.
 
 | 파일 | 역할 |
 |------|------|
@@ -113,7 +113,7 @@
 
 **책임:** 윈도우당 1개의 TastyWindow. winit 이벤트를 받아 GpuState + AppState를 조작한다.
 
-**설계 목적:** handle_window_event() dispatch를 mod.rs에 두고, 입력 유형별(키보드/마우스/선택/리드로우)로 분산.
+handle_window_event() dispatch를 mod.rs에 두고, 입력 유형별(키보드/마우스/선택/리드로우)로 서브모듈을 분리한다.
 
 | 파일 | 역할 |
 |------|------|
@@ -130,7 +130,7 @@
 
 **책임:** `tasty <subcommand>` 실행 시 GUI 앱의 IPC 서버에 연결하여 명령을 보내고 결과를 표시.
 
-**설계 목적:** GUI 앱 내부와 공유하는 타입은 `JsonRpcRequest/Response`뿐. 완전히 독립적인 클라이언트.
+GUI 앱과 공유하는 타입은 `JsonRpcRequest/Response`뿐인 독립 클라이언트.
 
 | 파일 | 역할 |
 |------|------|
@@ -140,7 +140,7 @@
 | `claude.rs` | claude-hook, claude-wait (다중 요청/폴링) |
 | `transport.rs` | TCP send_request() |
 
-**한계:** cli/mod.rs(381줄)는 clap `#[derive(Subcommand)]` enum이 35+ variant라 줄일 수 없다.
+cli/mod.rs는 clap `#[derive(Subcommand)]` enum이 35+ variant를 가진다.
 
 ---
 
@@ -148,7 +148,7 @@
 
 **책임:** JSON-RPC 메서드를 AppState 조작으로 변환.
 
-**설계 목적:** 도메인별로 핸들러 파일 분리. 모든 핸들러가 `(state, id, params) → JsonRpcResponse` 동일 시그니처.
+도메인별로 핸들러 파일을 분리한다. 모든 핸들러가 `(state, id, params) → JsonRpcResponse` 시그니처를 따른다.
 
 | 파일 | 역할 |
 |------|------|
@@ -169,7 +169,7 @@
 
 **책임:** TOML 설정 파일 로드/저장, 플랫폼별 셸 감지, 키바인딩 프리셋.
 
-**설계 목적:** 외부 `use crate::` 없이 독립. 다른 모든 모듈에서 참조되는 최하위 계층.
+외부 `use crate::` 없이 독립적이며, 다른 모든 모듈에서 참조되는 최하위 계층.
 
 | 파일 | 역할 |
 |------|------|
@@ -191,7 +191,7 @@
 | `keybindings_tab.rs` | 키바인딩 캡처 UI (서브탭 5개, key combo 캡처, egui_key_to_string) |
 | `tabs.rs` | General/Appearance/Clipboard/Notification/Language/Performance 탭 렌더링 |
 
-**한계:** keybindings_tab.rs(405줄)는 egui_key_to_string 매핑 테이블(70줄)이 본질적으로 장황.
+keybindings_tab.rs의 egui_key_to_string 매핑 테이블은 키 목록을 1:1 나열하는 구조이다.
 
 ---
 
