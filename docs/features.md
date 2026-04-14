@@ -98,9 +98,9 @@
 - PaneNode: Pane의 상위 레이아웃 트리. Leaf(Pane) 또는 Split. 탭 전환과 무관하게 고정
 - Pane: **독립적인 탭 바**를 가진 화면 영역. 여러 Tab을 포함
 - Tab: 탭 하나. Panel에 매핑
-- Panel: 콘텐츠 타입 enum. Terminal(단일), SurfaceGroup(하위 레이아웃), Markdown, Explorer
+- Panel: 콘텐츠 타입 enum. Terminal(단일), SurfaceGroup(하위 레이아웃), Markdown, Explorer, Html, Empty
 - SurfaceGroupNode: 하위 레이아웃 트리. 탭 전환 시 함께 전환
-- Surface: 최하위 컨테이너. 타입별 콘텐츠 (Terminal / Markdown / Explorer)
+- Surface: 최하위 컨테이너. 타입별 콘텐츠 (Terminal / Markdown / Explorer / Html / Empty)
 - AppState: 전체 워크스페이스 목록과 활성 상태를 관리하는 중앙 상태 (IdGenerator 포함)
 
 ### egui UI 오버레이
