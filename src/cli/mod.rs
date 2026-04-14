@@ -37,7 +37,7 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Create a new resource (window, workspace, tab, split, markdown, explorer)
+    /// Create a new resource (window, workspace, tab, split)
     New {
         #[command(subcommand)]
         command: NewCommands,
@@ -73,12 +73,21 @@ pub enum Commands {
         /// Split direction: vertical (default) or horizontal
         #[arg(long, default_value = "vertical")]
         direction: String,
+        /// Surface type: terminal (default), markdown, explorer
+        #[arg(long, default_value = "terminal")]
+        r#type: String,
         /// Metadata JSON to set on the new surface (e.g. '{"nickname":"build"}')
         #[arg(long)]
         meta: Option<String>,
-        /// Working directory for the new surface
+        /// Working directory (for terminal type)
         #[arg(long)]
         cwd: Option<String>,
+        /// File path (for markdown type)
+        #[arg(long)]
+        file: Option<String>,
+        /// Directory path (for explorer type)
+        #[arg(long)]
+        path: Option<String>,
     },
     /// Send text, key, or queue message
     Send {
@@ -306,25 +315,16 @@ pub enum NewCommands {
         /// Target pane ID (required)
         #[arg(long)]
         pane: u32,
-        /// Working directory for the new tab
+        /// Surface type: terminal (default), markdown, explorer
+        #[arg(long, default_value = "terminal")]
+        r#type: String,
+        /// Working directory (for terminal type)
         #[arg(long)]
         cwd: Option<String>,
-    },
-    /// Open a Markdown file viewer tab
-    Markdown {
-        /// Path to the markdown file
-        #[arg()]
-        path: String,
-        /// Target pane ID (required)
+        /// File path (for markdown type)
         #[arg(long)]
-        pane: u32,
-    },
-    /// Open a file explorer tab
-    Explorer {
-        /// Target pane ID (required)
-        #[arg(long)]
-        pane: u32,
-        /// Root directory path (default: home directory)
+        file: Option<String>,
+        /// Directory path (for explorer type)
         #[arg(long)]
         path: Option<String>,
     },

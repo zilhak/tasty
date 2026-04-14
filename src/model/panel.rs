@@ -96,18 +96,34 @@ impl Panel {
         }
     }
 
-    /// Collect all surface IDs in this panel.
+    /// Collect all surface IDs in this panel (including non-terminal surfaces).
     pub fn all_surface_ids(&self) -> Vec<SurfaceId> {
         match self {
             Panel::Terminal(node) => vec![node.id],
             Panel::SurfaceGroup(group) => group.layout().all_surface_ids(),
-            Panel::Markdown(_) | Panel::Explorer(_) => vec![],
+            Panel::Markdown(md) => vec![md.id],
+            Panel::Explorer(ex) => vec![ex.id],
         }
     }
 
     /// Returns true if this panel is a non-terminal panel (Markdown or Explorer).
     pub fn is_non_terminal(&self) -> bool {
         matches!(self, Panel::Markdown(_) | Panel::Explorer(_))
+    }
+
+    /// Get the focused surface ID for this panel.
+    pub fn focused_surface_id(&self) -> Option<SurfaceId> {
+        match self {
+            Panel::Terminal(node) => Some(node.id),
+            Panel::SurfaceGroup(group) => Some(group.focused_surface),
+            Panel::Markdown(md) => Some(md.id),
+            Panel::Explorer(ex) => Some(ex.id),
+        }
+    }
+
+    /// Check if this panel contains the given surface ID.
+    pub fn contains_surface(&self, surface_id: SurfaceId) -> bool {
+        self.all_surface_ids().contains(&surface_id)
     }
 
     /// Resize all terminals in this panel.

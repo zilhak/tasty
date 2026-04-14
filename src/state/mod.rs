@@ -225,8 +225,12 @@ impl AppState {
             let pane_ids = workspace.pane_layout().all_pane_ids();
             for pid in pane_ids {
                 if let Some(pane) = workspace.pane_layout().find_pane(pid) {
-                    if pane.find_terminal(surface_id).is_some() {
-                        return Some(pid);
+                    for tab in &pane.tabs {
+                        if let Some(panel) = tab.panel_if_initialized() {
+                            if panel.contains_surface(surface_id) {
+                                return Some(pid);
+                            }
+                        }
                     }
                 }
             }
@@ -283,8 +287,13 @@ impl AppState {
         for (i, workspace) in self.engine.workspaces.iter().enumerate() {
             for pid in workspace.pane_layout().all_pane_ids() {
                 if let Some(pane) = workspace.pane_layout().find_pane(pid) {
-                    if pane.find_terminal(surface_id).is_some() {
-                        return Some((i, pid));
+                    // Check all tabs for this surface (including non-terminal)
+                    for tab in &pane.tabs {
+                        if let Some(panel) = tab.panel_if_initialized() {
+                            if panel.contains_surface(surface_id) {
+                                return Some((i, pid));
+                            }
+                        }
                     }
                 }
             }

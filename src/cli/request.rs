@@ -53,7 +53,7 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
         Commands::Claude { command } => claude_command_to_method_params(command),
         Commands::Debug { command } => debug_command_to_method_params(command),
         // ── standalone ──
-        Commands::Split { level, target, direction, meta, cwd } => {
+        Commands::Split { level, target, direction, r#type, meta, cwd, file, path } => {
             let resolved_target = resolve_target(target);
             let meta_value = meta
                 .as_deref()
@@ -64,8 +64,11 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
                     "level": level,
                     "target": resolved_target,
                     "direction": direction,
+                    "type": r#type,
                     "meta": meta_value,
                     "cwd": cwd,
+                    "file": file,
+                    "path": path,
                 }),
             )
         }
@@ -98,14 +101,15 @@ fn new_command_to_method_params(command: &NewCommands) -> (&'static str, serde_j
             "workspace.create",
             serde_json::json!({ "name": name.as_deref().unwrap_or(""), "cwd": cwd }),
         ),
-        NewCommands::Tab { pane, cwd } => ("tab.create", serde_json::json!({ "pane_id": pane, "cwd": cwd })),
-        NewCommands::Markdown { path, pane } => (
-            "tab.open_markdown",
-            serde_json::json!({ "file_path": path, "pane_id": pane }),
-        ),
-        NewCommands::Explorer { pane, path } => (
-            "tab.open_explorer",
-            serde_json::json!({ "pane_id": pane, "path": path }),
+        NewCommands::Tab { pane, r#type, cwd, file, path } => (
+            "tab.create",
+            serde_json::json!({
+                "pane_id": pane,
+                "type": r#type,
+                "cwd": cwd,
+                "file": file,
+                "path": path,
+            }),
         ),
     }
 }

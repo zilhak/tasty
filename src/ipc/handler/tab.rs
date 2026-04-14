@@ -41,13 +41,36 @@ pub fn handle_tab_create(state: &mut AppState, id: serde_json::Value, params: &s
         Ok(pid) => pid,
         Err(e) => return e,
     };
-    let cwd = params.get("cwd").and_then(|v| v.as_str()).map(std::path::PathBuf::from);
 
     if state.find_pane_by_id(pane_id).is_none() {
         return JsonRpcResponse::invalid_params(id, format!("Pane {} not found", pane_id));
     }
 
-    let result = state.add_tab_to_pane(pane_id, cwd);
+    let surface_type = params.get("type").and_then(|v| v.as_str()).unwrap_or("terminal");
+
+    let result = match surface_type {
+        "markdown" => {
+            let file_path = match params.get("file").or_else(|| params.get("file_path")).and_then(|v| v.as_str()) {
+                Some(p) => p.to_string(),
+                None => return JsonRpcResponse::invalid_params(id, "Missing 'file' parameter for markdown type"),
+            };
+            state.add_markdown_tab_to_pane(pane_id, file_path)
+        }
+        "explorer" => {
+            let path = params.get("path").and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| {
+                    directories::BaseDirs::new()
+                        .map(|d| d.home_dir().to_string_lossy().to_string())
+                        .unwrap_or_else(|| ".".to_string())
+                });
+            state.add_explorer_tab_to_pane(pane_id, path)
+        }
+        "terminal" | _ => {
+            let cwd = params.get("cwd").and_then(|v| v.as_str()).map(std::path::PathBuf::from);
+            state.add_tab_to_pane(pane_id, cwd)
+        }
+    };
 
     match result {
         Ok(_) => {

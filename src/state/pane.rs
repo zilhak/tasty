@@ -248,7 +248,7 @@ impl AppState {
             // Find which tab has this surface
             let mut found_tab = None;
             for (i, tab) in pane.tabs.iter().enumerate() {
-                if tab.panel().find_terminal(surface_id).is_some() {
+                if tab.panel().contains_surface(surface_id) {
                     found_tab = Some(i);
                     break;
                 }
@@ -272,7 +272,12 @@ impl AppState {
                         crate::model::SurfaceGroupLayout::Single(_)
                     ) || group.layout().find_terminal(surface_id).is_none();
                 }
-                _ => return false, // Markdown/Explorer panels
+                // Non-terminal panels (Markdown, Explorer): sole content of the tab
+                crate::model::Panel::Markdown(_) | crate::model::Panel::Explorer(_) => {
+                    surface_is_sole_in_tab = true;
+                    can_close_surface_in_group = false;
+                }
+                _ => return false,
             }
         }
 
