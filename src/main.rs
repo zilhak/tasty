@@ -29,6 +29,7 @@ mod surface_meta;
 pub mod tasty_window;
 pub mod theme;
 mod ui;
+mod webview;
 
 // Re-export tasty_terminal as terminal for backward compatibility within the crate
 use tasty_terminal as terminal;
