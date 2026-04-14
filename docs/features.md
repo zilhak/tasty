@@ -213,6 +213,14 @@
 - `open_explorer`: 탐색기 열기 (홈 디렉토리를 루트로 탭 생성)
 - 기본값 미설정 (설정 UI에서 Pane 서브탭에서 바인딩 가능)
 
+#### Surface 타입 전환
+- `convert_surface` 단축키 (기본 `Alt+'`): 전환 팝업 표시 — Terminal / Markdown... / Explorer / Cancel
+- `convert_to_markdown` / `convert_to_explorer`: 직접 전환 단축키 (기본값 없음, 설정에서 할당)
+- 현재 타입과 동일한 항목은 체크 표시 + 비활성
+- Markdown 전환 시 파일 경로 입력 다이얼로그 표시
+- Terminal 전환 시 새 PTY 생성, Explorer 전환 시 CWD 또는 홈 디렉토리 사용
+- Esc / Cancel / 외부 클릭으로 팝업 닫기
+
 #### IPC/CLI 지원
 - IPC: `tab.create`에 `type` 파라미터로 통합 (`terminal` / `markdown` / `explorer`)
 - CLI: `tasty new markdown <PATH> --pane <PANE>`, `tasty new explorer --pane <PANE>`

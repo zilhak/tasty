@@ -191,6 +191,9 @@ impl TastyWindow {
             (kb.close_surface.clone(), "close_surface"),
             (kb.open_markdown.clone(), "open_markdown"),
             (kb.open_explorer.clone(), "open_explorer"),
+            (kb.convert_surface.clone(), "convert_surface"),
+            (kb.convert_to_markdown.clone(), "convert_to_markdown"),
+            (kb.convert_to_explorer.clone(), "convert_to_explorer"),
         ];
 
         for (binding, action) in &bindings_to_check {
@@ -246,6 +249,23 @@ impl TastyWindow {
                             .map(|d| d.home_dir().to_string_lossy().to_string())
                             .unwrap_or_else(|| ".".to_string());
                         let _ = self.state.add_explorer_tab(home);
+                    }
+                    "convert_surface" => {
+                        if let Some(sid) = self.state.focused_surface_id() {
+                            self.state.convert_popup = Some(sid);
+                        }
+                    }
+                    "convert_to_markdown" => {
+                        if let Some(sid) = self.state.focused_surface_id() {
+                            let pane_id = self.state.active_workspace().focused_pane;
+                            self.state.markdown_convert_surface_id = Some(sid);
+                            self.state.markdown_path_dialog = Some((pane_id, String::new()));
+                        }
+                    }
+                    "convert_to_explorer" => {
+                        if let Some(sid) = self.state.focused_surface_id() {
+                            self.state.convert_surface_to_explorer(sid);
+                        }
                     }
                     _ => {}
                 }
@@ -451,6 +471,26 @@ impl TastyWindow {
                             .map(|d| d.home_dir().to_string_lossy().to_string())
                             .unwrap_or_else(|| ".".to_string());
             let _ = state.add_explorer_tab(home);
+            return true;
+        }
+        if matches_binding(&kb.convert_surface, key, mods) {
+            if let Some(sid) = state.focused_surface_id() {
+                state.convert_popup = Some(sid);
+            }
+            return true;
+        }
+        if matches_binding(&kb.convert_to_markdown, key, mods) {
+            if let Some(sid) = state.focused_surface_id() {
+                let pane_id = state.active_workspace().focused_pane;
+                state.markdown_convert_surface_id = Some(sid);
+                state.markdown_path_dialog = Some((pane_id, String::new()));
+            }
+            return true;
+        }
+        if matches_binding(&kb.convert_to_explorer, key, mods) {
+            if let Some(sid) = state.focused_surface_id() {
+                state.convert_surface_to_explorer(sid);
+            }
             return true;
         }
         false

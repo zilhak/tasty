@@ -106,10 +106,19 @@ pub fn draw_markdown_path_dialog(
         });
 
     if confirm && !path_buf.is_empty() {
-        state.active_workspace_mut().focused_pane = pane_id;
-        let _ = state.add_markdown_tab(path_buf);
+        if let Some(convert_sid) = state.markdown_convert_surface_id.take() {
+            // Convert mode: replace existing surface
+            state.convert_surface_to_markdown(convert_sid, path_buf);
+        } else {
+            // Normal mode: create new tab
+            state.active_workspace_mut().focused_pane = pane_id;
+            let _ = state.add_markdown_tab(path_buf);
+        }
         // Don't keep dialog open
     } else if keep_open && !confirm {
         state.markdown_path_dialog = Some((pane_id, path_buf));
+    } else {
+        // Dialog cancelled — clear convert mode
+        state.markdown_convert_surface_id = None;
     }
 }

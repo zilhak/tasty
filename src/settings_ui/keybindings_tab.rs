@@ -142,6 +142,9 @@ pub fn draw_keybindings_tab(
                     ("focus_surface_next", "settings.keybindings.focus_surface_next_label", &mut settings.keybindings.focus_surface_next),
                     ("focus_surface_prev", "settings.keybindings.focus_surface_prev_label", &mut settings.keybindings.focus_surface_prev),
                     ("close_surface", "settings.keybindings.close_surface_label", &mut settings.keybindings.close_surface),
+                    ("convert_surface", "settings.keybindings.convert_surface_label", &mut settings.keybindings.convert_surface),
+                    ("convert_to_markdown", "settings.keybindings.convert_to_markdown_label", &mut settings.keybindings.convert_to_markdown),
+                    ("convert_to_explorer", "settings.keybindings.convert_to_explorer_label", &mut settings.keybindings.convert_to_explorer),
                 ]);
             }
             KeybindingsSubTab::Preset => {

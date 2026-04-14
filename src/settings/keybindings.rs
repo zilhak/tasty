@@ -38,6 +38,12 @@ pub struct KeybindingSettings {
     pub open_markdown: String,
     /// Open file Explorer tab.
     pub open_explorer: String,
+    /// Open Surface type convert popup.
+    pub convert_surface: String,
+    /// Direct convert to Markdown (shows path dialog).
+    pub convert_to_markdown: String,
+    /// Direct convert to Explorer.
+    pub convert_to_explorer: String,
 }
 
 impl KeybindingSettings {
@@ -98,6 +104,9 @@ impl KeybindingSettings {
             quit_minimize: String::new(),
             open_markdown: String::new(),
             open_explorer: String::new(),
+            convert_surface: "alt+'".to_string(),
+            convert_to_markdown: String::new(),
+            convert_to_explorer: String::new(),
         }
     }
 

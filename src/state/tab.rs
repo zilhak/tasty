@@ -219,4 +219,101 @@ impl AppState {
         }
         closed
     }
+
+    /// Convert a surface to Terminal type. Creates a new PTY.
+    pub fn convert_surface_to_terminal(&mut self, surface_id: u32) -> bool {
+        let cwd = self.resolve_inherit_cwd();
+        let cols = self.engine.default_cols;
+        let rows = self.engine.default_rows;
+        let shell = self.engine.settings.general.shell.clone();
+        let shell_ref = if shell.is_empty() { None } else { Some(shell.as_str()) };
+        let shell_args_owned = self.engine.settings.general.effective_shell_args();
+        let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
+        let waker = self.engine.make_waker(surface_id);
+
+        let terminal = match tasty_terminal::Terminal::new_with_shell_args_cwd(
+            cols, rows, shell_ref, &shell_args, surface_id, waker, cwd.as_deref(),
+        ) {
+            Ok(t) => t,
+            Err(_) => return false,
+        };
+
+        let node = crate::model::SurfaceNode {
+            id: surface_id,
+            terminal,
+            deferred_spawn: None,
+        };
+        let panel = crate::model::Panel::Terminal(node);
+
+        self.replace_panel_for_surface(surface_id, panel, None)
+    }
+
+    /// Convert a surface to Markdown type.
+    pub fn convert_surface_to_markdown(&mut self, surface_id: u32, file_path: String) -> bool {
+        let panel = crate::model::Panel::Markdown(
+            crate::model::MarkdownPanel::new(surface_id, file_path.clone()),
+        );
+        let name = std::path::Path::new(&file_path)
+            .file_name()
+            .map(|f| f.to_string_lossy().to_string());
+        self.replace_panel_for_surface(surface_id, panel, name)
+    }
+
+    /// Convert a surface to Explorer type.
+    pub fn convert_surface_to_explorer(&mut self, surface_id: u32) -> bool {
+        let root = self.resolve_inherit_cwd()
+            .map(|p| p.to_string_lossy().to_string())
+            .or_else(|| {
+                directories::BaseDirs::new()
+                    .map(|d| d.home_dir().to_string_lossy().to_string())
+            })
+            .unwrap_or_else(|| ".".to_string());
+        let panel = crate::model::Panel::Explorer(
+            crate::model::ExplorerPanel::new(surface_id, root),
+        );
+        self.replace_panel_for_surface(surface_id, panel, Some("Explorer".to_string()))
+    }
+
+    /// Replace the panel of the tab containing the given surface_id.
+    /// Returns true if the replacement succeeded.
+    fn replace_panel_for_surface(
+        &mut self,
+        surface_id: u32,
+        new_panel: crate::model::Panel,
+        new_name: Option<String>,
+    ) -> bool {
+        for workspace in &mut self.engine.workspaces {
+            for &pid in &workspace.pane_layout().all_pane_ids() {
+                if let Some(pane) = workspace.pane_layout_mut().find_pane_mut(pid) {
+                    for tab in &mut pane.tabs {
+                        if let Some(panel) = tab.panel_mut_if_initialized() {
+                            if panel.contains_surface(surface_id) {
+                                let old_panel = tab.take_panel();
+                                // Drop old panel (PTY cleanup happens automatically)
+                                drop(old_panel);
+                                tab.put_panel(new_panel);
+                                if let Some(name) = new_name {
+                                    tab.explicit_name = Some(name);
+                                }
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    /// Get the current panel type name for the focused surface.
+    pub fn focused_panel_type_name(&self) -> Option<&'static str> {
+        let pane = self.focused_pane()?;
+        let panel = pane.active_panel()?;
+        Some(match panel {
+            crate::model::Panel::Terminal(_) => "Terminal",
+            crate::model::Panel::SurfaceGroup(_) => "SurfaceGroup",
+            crate::model::Panel::Markdown(_) => "Markdown",
+            crate::model::Panel::Explorer(_) => "Explorer",
+        })
+    }
 }

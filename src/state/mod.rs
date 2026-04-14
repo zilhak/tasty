@@ -58,7 +58,12 @@ pub struct AppState {
     /// Tab rename dialog state: (pane_id, tab_index, edit_buffer).
     pub tab_rename_dialog: Option<(u32, usize, String)>,
     /// Markdown file path dialog state: (pane_id, path_buffer).
+    /// When `markdown_convert_surface_id` is set, the dialog converts instead of creating a new tab.
     pub markdown_path_dialog: Option<(u32, String)>,
+    /// If set, the markdown path dialog will convert this surface instead of creating a new tab.
+    pub markdown_convert_surface_id: Option<u32>,
+    /// Surface convert popup: if Some, shows the convert popup for this surface_id.
+    pub convert_popup: Option<u32>,
     /// Measured tab bar height in physical pixels, updated each frame by egui.
     pub tab_bar_height: f32,
     /// Popup manager for internal popups (notification panel, etc.).
@@ -115,6 +120,8 @@ impl AppState {
             tab_context_menu: None,
             tab_rename_dialog: None,
             markdown_path_dialog: None,
+            markdown_convert_surface_id: None,
+            convert_popup: None,
             tab_bar_height: 24.0,
             captured_double_tap: None,
             popups: {
