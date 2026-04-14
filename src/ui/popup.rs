@@ -48,6 +48,9 @@ pub struct PopupState {
     drag_offset: egui::Vec2,
     /// Scope determines visibility and boundary clamping.
     pub scope: PopupScope,
+    /// Whether this popup currently has keyboard focus.
+    /// When focused, keyboard input should NOT be forwarded to the terminal.
+    pub focused: bool,
 }
 
 const TITLE_BAR_HEIGHT: f32 = 28.0;
@@ -64,6 +67,7 @@ impl PopupState {
             dragging: false,
             drag_offset: egui::Vec2::ZERO,
             scope: PopupScope::Window,
+            focused: false,
         }
     }
 
@@ -139,6 +143,7 @@ impl PopupManager {
         if let Some(p) = self.popups.iter_mut().find(|p| p.id == id) {
             p.open = false;
             p.dragging = false;
+            p.focused = false;
         }
     }
 
@@ -154,6 +159,11 @@ impl PopupManager {
     /// Check if a popup is open.
     pub fn is_open(&self, id: PopupId) -> bool {
         self.popups.iter().any(|p| p.id == id && p.open)
+    }
+
+    /// Check if any popup currently has keyboard focus.
+    pub fn has_focused(&self) -> bool {
+        self.popups.iter().any(|p| p.open && p.focused)
     }
 
     /// Bring a popup to the front (topmost z-order).
@@ -218,12 +228,21 @@ impl PopupManager {
             }
         }
 
-        // Handle close button click
+        // Handle close button click and focus
         if primary_pressed {
             if let Some(id) = hovered_close {
                 closed.push(id);
             } else if let Some(id) = hovered_popup {
                 bring_front = Some(id);
+                // Focus this popup, unfocus all others
+                for popup in &mut self.popups {
+                    popup.focused = popup.id == id;
+                }
+            } else {
+                // Clicked outside all popups — unfocus all
+                for popup in &mut self.popups {
+                    popup.focused = false;
+                }
             }
         }
 
