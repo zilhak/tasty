@@ -43,9 +43,11 @@ impl AppState {
     /// Add a Markdown viewer tab in the focused pane.
     pub fn add_markdown_tab(&mut self, file_path: String) -> anyhow::Result<()> {
         let tab_id = self.engine.next_ids.next_tab();
-        let panel_id = self.engine.next_ids.next_surface(); // reuse surface id counter
+        let panel_id = self.engine.next_ids.next_surface();
+        let name = file_path.split(['/', '\\']).last().unwrap_or("Markdown").to_string();
+        let panel = crate::model::Panel::Markdown(crate::model::MarkdownPanel::new(panel_id, file_path));
         if let Some(pane) = self.focused_pane_mut() {
-            pane.add_markdown_tab(tab_id, panel_id, file_path);
+            pane.add_panel_tab(tab_id, name, panel);
         }
         Ok(())
     }
@@ -54,8 +56,10 @@ impl AppState {
     pub fn add_explorer_tab(&mut self, root_path: String) -> anyhow::Result<()> {
         let tab_id = self.engine.next_ids.next_tab();
         let panel_id = self.engine.next_ids.next_surface();
+        let name = root_path.split(['/', '\\']).last().unwrap_or("Explorer").to_string();
+        let panel = crate::model::Panel::Explorer(crate::model::ExplorerPanel::new(panel_id, root_path));
         if let Some(pane) = self.focused_pane_mut() {
-            pane.add_explorer_tab(tab_id, panel_id, root_path);
+            pane.add_panel_tab(tab_id, name, panel);
         }
         Ok(())
     }
@@ -64,8 +68,9 @@ impl AppState {
     pub fn add_html_tab(&mut self, url: String) -> anyhow::Result<()> {
         let tab_id = self.engine.next_ids.next_tab();
         let panel_id = self.engine.next_ids.next_surface();
+        let panel = crate::model::Panel::Html(crate::model::HtmlPanel::new(panel_id, url));
         if let Some(pane) = self.focused_pane_mut() {
-            pane.add_html_tab(tab_id, panel_id, url);
+            pane.add_panel_tab(tab_id, "HTML".to_string(), panel);
         }
         Ok(())
     }
@@ -74,8 +79,9 @@ impl AppState {
     pub fn add_empty_tab(&mut self) -> Option<(u32, u32)> {
         let tab_id = self.engine.next_ids.next_tab();
         let panel_id = self.engine.next_ids.next_surface();
+        let panel = crate::model::Panel::Empty { id: panel_id };
         if let Some(pane) = self.focused_pane_mut() {
-            pane.add_empty_tab(tab_id, panel_id);
+            pane.add_panel_tab(tab_id, "Empty".to_string(), panel);
             Some((tab_id, panel_id))
         } else {
             None
@@ -113,34 +119,12 @@ impl AppState {
         Ok(())
     }
 
-    /// Add a Markdown viewer tab in the specified pane (by ID, cross-workspace).
-    pub fn add_markdown_tab_to_pane(&mut self, pane_id: u32, file_path: String) -> anyhow::Result<()> {
+    /// Add a non-terminal tab in the specified pane (by ID, cross-workspace).
+    pub fn add_panel_tab_to_pane(&mut self, pane_id: u32, name: String, panel: crate::model::Panel) {
         let tab_id = self.engine.next_ids.next_tab();
-        let panel_id = self.engine.next_ids.next_surface();
         if let Some(pane) = self.find_pane_by_id_mut(pane_id) {
-            pane.add_markdown_tab(tab_id, panel_id, file_path);
+            pane.add_panel_tab(tab_id, name, panel);
         }
-        Ok(())
-    }
-
-    /// Add a file explorer tab in the specified pane (by ID, cross-workspace).
-    pub fn add_explorer_tab_to_pane(&mut self, pane_id: u32, root_path: String) -> anyhow::Result<()> {
-        let tab_id = self.engine.next_ids.next_tab();
-        let panel_id = self.engine.next_ids.next_surface();
-        if let Some(pane) = self.find_pane_by_id_mut(pane_id) {
-            pane.add_explorer_tab(tab_id, panel_id, root_path);
-        }
-        Ok(())
-    }
-
-    /// Add an HTML viewer tab in the specified pane (by ID, cross-workspace).
-    pub fn add_html_tab_to_pane(&mut self, pane_id: u32, url: String) -> anyhow::Result<()> {
-        let tab_id = self.engine.next_ids.next_tab();
-        let panel_id = self.engine.next_ids.next_surface();
-        if let Some(pane) = self.find_pane_by_id_mut(pane_id) {
-            pane.add_html_tab(tab_id, panel_id, url);
-        }
-        Ok(())
     }
 
     /// Close a specific tab by its TabId (cross-workspace). Returns true if closed.
@@ -334,14 +318,6 @@ impl AppState {
     /// Get the current panel type name for the focused surface.
     pub fn focused_panel_type_name(&self) -> Option<&'static str> {
         let pane = self.focused_pane()?;
-        let panel = pane.active_panel()?;
-        Some(match panel {
-            crate::model::Panel::Terminal(_) => "Terminal",
-            crate::model::Panel::SurfaceGroup(_) => "SurfaceGroup",
-            crate::model::Panel::Markdown(_) => "Markdown",
-            crate::model::Panel::Explorer(_) => "Explorer",
-            crate::model::Panel::Html(_) => "Html",
-            crate::model::Panel::Empty { .. } => "Empty",
-        })
+        Some(pane.active_panel()?.type_name())
     }
 }

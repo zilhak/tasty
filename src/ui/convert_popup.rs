@@ -32,7 +32,7 @@ pub fn draw_convert_content(ui: &mut egui::Ui, state: &mut AppState) -> Option<C
 
     // Build selectable (non-current) indices
     let selectable_indices: Vec<usize> = ITEMS.iter().enumerate()
-        .filter(|(_, (type_name, _, _))| current_type.as_deref() != Some(type_name))
+        .filter(|(_, (type_name, _, _))| current_type != Some(type_name))
         .map(|(i, _)| i)
         .collect();
 
@@ -87,16 +87,16 @@ pub fn draw_convert_content(ui: &mut egui::Ui, state: &mut AppState) -> Option<C
                 && modifiers.is_none()
             {
                 match key {
-                    egui::Key::T if current_type.as_deref() != Some("Terminal") => {
+                    egui::Key::T if current_type != Some("Terminal") => {
                         action = Some(ConvertAction::Terminal);
                     }
-                    egui::Key::M if current_type.as_deref() != Some("Markdown") => {
+                    egui::Key::M if current_type != Some("Markdown") => {
                         action = Some(ConvertAction::Markdown);
                     }
-                    egui::Key::E if current_type.as_deref() != Some("Explorer") => {
+                    egui::Key::E if current_type != Some("Explorer") => {
                         action = Some(ConvertAction::Explorer);
                     }
-                    egui::Key::H if current_type.as_deref() != Some("Html") => {
+                    egui::Key::H if current_type != Some("Html") => {
                         action = Some(ConvertAction::Html);
                     }
                     _ => {}
@@ -108,7 +108,7 @@ pub fn draw_convert_content(ui: &mut egui::Ui, state: &mut AppState) -> Option<C
     // Draw menu items
     let selected = state.dialogs.convert_popup_selected;
     for (idx, (type_name, label_key, shortcut)) in ITEMS.iter().enumerate() {
-        let is_current = current_type.as_deref() == Some(type_name);
+        let is_current = current_type == Some(type_name);
         let is_selected = selected == Some(idx);
 
         let label = if is_current {
@@ -191,7 +191,7 @@ fn action_for_index(idx: usize) -> ConvertAction {
 }
 
 /// Get the panel type name for a specific surface ID.
-fn current_surface_type(state: &AppState, surface_id: u32) -> Option<String> {
+fn current_surface_type(state: &AppState, surface_id: u32) -> Option<&'static str> {
     for ws in &state.engine.workspaces {
         for &pid in &ws.pane_layout().all_pane_ids() {
             if let Some(pane) = ws.pane_layout().find_pane(pid)
@@ -201,14 +201,7 @@ fn current_surface_type(state: &AppState, surface_id: u32) -> Option<String> {
                 })
                 && let Some(panel) = tab.panel_if_initialized()
             {
-                return Some(match panel {
-                    crate::model::Panel::Terminal(_) => "Terminal",
-                    crate::model::Panel::SurfaceGroup(_) => "SurfaceGroup",
-                    crate::model::Panel::Markdown(_) => "Markdown",
-                    crate::model::Panel::Explorer(_) => "Explorer",
-                    crate::model::Panel::Html(_) => "Html",
-                    crate::model::Panel::Empty { .. } => "Empty",
-                }.to_string());
+                return Some(panel.type_name());
             }
         }
     }

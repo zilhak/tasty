@@ -48,20 +48,26 @@ pub fn handle_tab_create(state: &mut AppState, id: serde_json::Value, params: &s
 
     let surface_type = params.get("type").and_then(|v| v.as_str()).unwrap_or("terminal");
 
+    let panel_id = state.engine.next_ids.next_surface();
     let result = match surface_type {
         "markdown" => {
             let file_path = match params.get("file").or_else(|| params.get("file_path")).and_then(|v| v.as_str()) {
                 Some(p) => p.to_string(),
                 None => return JsonRpcResponse::invalid_params(id, "Missing 'file' parameter for markdown type"),
             };
-            state.add_markdown_tab_to_pane(pane_id, file_path)
+            let name = file_path.split(['/', '\\']).last().unwrap_or("Markdown").to_string();
+            let panel = crate::model::Panel::Markdown(crate::model::MarkdownPanel::new(panel_id, file_path));
+            state.add_panel_tab_to_pane(pane_id, name, panel);
+            Ok(())
         }
         "html" => {
             let url = match params.get("url").and_then(|v| v.as_str()) {
                 Some(u) => u.to_string(),
                 None => return JsonRpcResponse::invalid_params(id, "Missing 'url' parameter for html type"),
             };
-            state.add_html_tab_to_pane(pane_id, url)
+            let panel = crate::model::Panel::Html(crate::model::HtmlPanel::new(panel_id, url));
+            state.add_panel_tab_to_pane(pane_id, "HTML".to_string(), panel);
+            Ok(())
         }
         "explorer" => {
             let path = params.get("path").and_then(|v| v.as_str())
@@ -71,7 +77,10 @@ pub fn handle_tab_create(state: &mut AppState, id: serde_json::Value, params: &s
                         .map(|d| d.home_dir().to_string_lossy().to_string())
                         .unwrap_or_else(|| ".".to_string())
                 });
-            state.add_explorer_tab_to_pane(pane_id, path)
+            let name = path.split(['/', '\\']).last().unwrap_or("Explorer").to_string();
+            let panel = crate::model::Panel::Explorer(crate::model::ExplorerPanel::new(panel_id, path));
+            state.add_panel_tab_to_pane(pane_id, name, panel);
+            Ok(())
         }
         "terminal" | _ => {
             let cwd = params.get("cwd").and_then(|v| v.as_str()).map(std::path::PathBuf::from);

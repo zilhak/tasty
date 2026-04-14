@@ -18,6 +18,18 @@ pub enum Panel {
 }
 
 impl Panel {
+    /// Get the type name of this panel.
+    pub fn type_name(&self) -> &'static str {
+        match self {
+            Panel::Terminal(_) => "Terminal",
+            Panel::SurfaceGroup(_) => "SurfaceGroup",
+            Panel::Markdown(_) => "Markdown",
+            Panel::Explorer(_) => "Explorer",
+            Panel::Html(_) => "Html",
+            Panel::Empty { .. } => "Empty",
+        }
+    }
+
     /// Get the focused terminal.
     pub fn focused_terminal(&self) -> Option<&Terminal> {
         match self {

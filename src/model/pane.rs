@@ -1,6 +1,6 @@
 use tasty_terminal::{Terminal, Waker};
 use super::{
-    ExplorerPanel, MarkdownPanel, PaneId, Panel, SplitDirection, SurfaceId,
+    PaneId, Panel, SplitDirection, SurfaceId,
     SurfaceNode, TabId,
 };
 use super::tab::Tab;
@@ -338,65 +338,11 @@ impl Pane {
         }
     }
 
-    /// Add a Markdown viewer tab.
-    pub fn add_markdown_tab(&mut self, tab_id: TabId, panel_id: u32, file_path: String) {
-        let name = file_path
-            .split(['/', '\\'])
-            .last()
-            .unwrap_or("Markdown")
-            .to_string();
-        let panel = Panel::Markdown(MarkdownPanel::new(panel_id, file_path));
+    /// Add a non-terminal tab with a pre-built panel and switch to it.
+    pub fn add_panel_tab(&mut self, tab_id: TabId, name: String, panel: Panel) {
         let tab = Tab {
             id: tab_id,
             name,
-            panel_opt: Some(panel),
-            deferred_spawn: None,
-            explicit_name: None, deferred_surface_id: None,
-        };
-        self.tabs.push(tab);
-        self.active_tab = self.tabs.len() - 1;
-    }
-
-    /// Add a file explorer tab.
-    pub fn add_explorer_tab(&mut self, tab_id: TabId, panel_id: u32, root_path: String) {
-        let name = root_path
-            .split(['/', '\\'])
-            .last()
-            .unwrap_or("Explorer")
-            .to_string();
-        let panel = Panel::Explorer(ExplorerPanel::new(panel_id, root_path));
-        let tab = Tab {
-            id: tab_id,
-            name,
-            panel_opt: Some(panel),
-            deferred_spawn: None,
-            explicit_name: None, deferred_surface_id: None,
-        };
-        self.tabs.push(tab);
-        self.active_tab = self.tabs.len() - 1;
-    }
-
-    /// Add an HTML viewer tab.
-    pub fn add_html_tab(&mut self, tab_id: TabId, panel_id: u32, url: String) {
-        let name = "HTML".to_string();
-        let panel = Panel::Html(crate::model::HtmlPanel::new(panel_id, url));
-        let tab = Tab {
-            id: tab_id,
-            name,
-            panel_opt: Some(panel),
-            deferred_spawn: None,
-            explicit_name: None, deferred_surface_id: None,
-        };
-        self.tabs.push(tab);
-        self.active_tab = self.tabs.len() - 1;
-    }
-
-    /// Add an empty placeholder tab.
-    pub fn add_empty_tab(&mut self, tab_id: TabId, panel_id: u32) {
-        let panel = Panel::Empty { id: panel_id };
-        let tab = Tab {
-            id: tab_id,
-            name: "Empty".to_string(),
             panel_opt: Some(panel),
             deferred_spawn: None,
             explicit_name: None, deferred_surface_id: None,
