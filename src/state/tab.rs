@@ -8,13 +8,10 @@ impl AppState {
         let surface_id = self.engine.next_ids.next_surface();
         let cols = self.engine.default_cols;
         let rows = self.engine.default_rows;
-        let shell = self.engine.settings.general.shell.clone();
-        let shell_ref = if shell.is_empty() { None } else { Some(shell.as_str()) };
-        let shell_args_owned = self.engine.settings.general.effective_shell_args();
-        let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
+        let sh = crate::engine_state::ShellConfig::from_settings(&self.engine.settings);
         let waker = self.engine.make_waker(surface_id);
         if let Some(pane) = self.focused_pane_mut() {
-            pane.add_tab_with_shell(tab_id, surface_id, cols, rows, shell_ref, &shell_args, waker, cwd.as_deref())?;
+            pane.add_tab_with_shell(tab_id, surface_id, cols, rows, sh.shell_ref(), &sh.args_ref(), waker, cwd.as_deref())?;
         }
         self.send_fast_init(surface_id);
         Ok(())
@@ -27,19 +24,16 @@ impl AppState {
         let surface_id = self.engine.next_ids.next_surface();
         let cols = self.engine.default_cols;
         let rows = self.engine.default_rows;
-        let shell = self.engine.settings.general.shell.clone();
-        let shell_ref = if shell.is_empty() { None } else { Some(shell.as_str()) };
-        let shell_args_owned = self.engine.settings.general.effective_shell_args();
-        let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
+        let sh = crate::engine_state::ShellConfig::from_settings(&self.engine.settings);
         let waker = self.engine.make_waker(surface_id);
 
         if self.engine.settings.performance.lazy_pty_init {
             if let Some(pane) = self.focused_pane_mut() {
-                pane.add_tab_deferred(tab_id, surface_id, shell_ref, &shell_args, cols, rows, waker, cwd.as_deref());
+                pane.add_tab_deferred(tab_id, surface_id, sh.shell_ref(), &sh.args_ref(), cols, rows, waker, cwd.as_deref());
             }
         } else {
             if let Some(pane) = self.focused_pane_mut() {
-                pane.add_tab_background_with_shell(tab_id, surface_id, cols, rows, shell_ref, &shell_args, waker, cwd.as_deref())?;
+                pane.add_tab_background_with_shell(tab_id, surface_id, cols, rows, sh.shell_ref(), &sh.args_ref(), waker, cwd.as_deref())?;
             }
             self.send_fast_init(surface_id);
         }
@@ -91,19 +85,16 @@ impl AppState {
         let surface_id = self.engine.next_ids.next_surface();
         let cols = self.engine.default_cols;
         let rows = self.engine.default_rows;
-        let shell = self.engine.settings.general.shell.clone();
-        let shell_ref = if shell.is_empty() { None } else { Some(shell.as_str()) };
-        let shell_args_owned = self.engine.settings.general.effective_shell_args();
-        let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
+        let sh = crate::engine_state::ShellConfig::from_settings(&self.engine.settings);
         let waker = self.engine.make_waker(surface_id);
 
         if self.engine.settings.performance.lazy_pty_init {
             if let Some(pane) = self.find_pane_by_id_mut(pane_id) {
-                pane.add_tab_deferred(tab_id, surface_id, shell_ref, &shell_args, cols, rows, waker, cwd.as_deref());
+                pane.add_tab_deferred(tab_id, surface_id, sh.shell_ref(), &sh.args_ref(), cols, rows, waker, cwd.as_deref());
             }
         } else {
             if let Some(pane) = self.find_pane_by_id_mut(pane_id) {
-                pane.add_tab_background_with_shell(tab_id, surface_id, cols, rows, shell_ref, &shell_args, waker, cwd.as_deref())?;
+                pane.add_tab_background_with_shell(tab_id, surface_id, cols, rows, sh.shell_ref(), &sh.args_ref(), waker, cwd.as_deref())?;
             }
             self.send_fast_init(surface_id);
         }
@@ -245,14 +236,11 @@ impl AppState {
         let cwd = self.resolve_inherit_cwd();
         let cols = self.engine.default_cols;
         let rows = self.engine.default_rows;
-        let shell = self.engine.settings.general.shell.clone();
-        let shell_ref = if shell.is_empty() { None } else { Some(shell.as_str()) };
-        let shell_args_owned = self.engine.settings.general.effective_shell_args();
-        let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
+        let sh = crate::engine_state::ShellConfig::from_settings(&self.engine.settings);
         let waker = self.engine.make_waker(surface_id);
 
         let terminal = match tasty_terminal::Terminal::new_with_shell_args_cwd(
-            cols, rows, shell_ref, &shell_args, surface_id, waker, cwd.as_deref(),
+            cols, rows, sh.shell_ref(), &sh.args_ref(), surface_id, waker, cwd.as_deref(),
         ) {
             Ok(t) => t,
             Err(_) => return false,

@@ -51,6 +51,29 @@ impl IdGenerator {
     }
 }
 
+/// Helper to extract shell configuration from settings, avoiding boilerplate.
+pub struct ShellConfig {
+    pub shell: String,
+    pub args: Vec<String>,
+}
+
+impl ShellConfig {
+    pub fn from_settings(settings: &Settings) -> Self {
+        Self {
+            shell: settings.general.shell.clone(),
+            args: settings.general.effective_shell_args(),
+        }
+    }
+
+    pub fn shell_ref(&self) -> Option<&str> {
+        if self.shell.is_empty() { None } else { Some(&self.shell) }
+    }
+
+    pub fn args_ref(&self) -> Vec<&str> {
+        self.args.iter().map(|s| s.as_str()).collect()
+    }
+}
+
 /// Engine-level state shared across all windows.
 /// Contains all data that is not specific to a single window's UI.
 pub struct EngineState {
@@ -99,10 +122,8 @@ impl EngineState {
         let tab_id = next_ids.next_tab();
         let surface_id = next_ids.next_surface();
 
-        let shell = if settings.general.shell.is_empty() { None } else { Some(settings.general.shell.as_str()) };
-        let shell_args_owned = settings.general.effective_shell_args();
-        let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
-        let ws = Workspace::new_with_shell(ws_id, "Workspace 1".to_string(), cols, rows, pane_id, tab_id, surface_id, shell, &shell_args, waker.clone(), None)?;
+        let sh = ShellConfig::from_settings(&settings);
+        let ws = Workspace::new_with_shell(ws_id, "Workspace 1".to_string(), cols, rows, pane_id, tab_id, surface_id, sh.shell_ref(), &sh.args_ref(), waker.clone(), None)?;
 
         let mut engine = Self {
             workspaces: vec![ws],

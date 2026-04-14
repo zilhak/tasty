@@ -12,12 +12,9 @@ impl AppState {
         let cols = self.engine.default_cols;
         let rows = self.engine.default_rows;
 
-        let shell = self.engine.settings.general.shell.clone();
-        let shell_ref = if shell.is_empty() { None } else { Some(shell.as_str()) };
-        let shell_args_owned = self.engine.settings.general.effective_shell_args();
-        let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
+        let sh = crate::engine_state::ShellConfig::from_settings(&self.engine.settings);
         let new_pane =
-            crate::model::Pane::new_with_shell(new_pane_id, new_tab_id, new_surface_id, cols, rows, shell_ref, &shell_args, self.engine.make_waker(new_surface_id), cwd.as_deref())?;
+            crate::model::Pane::new_with_shell(new_pane_id, new_tab_id, new_surface_id, cols, rows, sh.shell_ref(), &sh.args_ref(), self.engine.make_waker(new_surface_id), cwd.as_deref())?;
 
         let ws = self.active_workspace_mut();
         let target_pane_id = ws.focused_pane;
@@ -45,13 +42,10 @@ impl AppState {
         let new_surface_id = self.engine.next_ids.next_surface();
         let cols = self.engine.default_cols;
         let rows = self.engine.default_rows;
-        let shell = self.engine.settings.general.shell.clone();
-        let shell_ref = if shell.is_empty() { None } else { Some(shell.as_str()) };
-        let shell_args_owned = self.engine.settings.general.effective_shell_args();
-        let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
+        let sh = crate::engine_state::ShellConfig::from_settings(&self.engine.settings);
         let waker = self.engine.make_waker(new_surface_id);
         if let Some(pane) = self.focused_pane_mut() {
-            pane.split_active_surface_with_shell(direction, new_surface_id, cols, rows, shell_ref, &shell_args, waker, cwd.as_deref())?;
+            pane.split_active_surface_with_shell(direction, new_surface_id, cols, rows, sh.shell_ref(), &sh.args_ref(), waker, cwd.as_deref())?;
         }
         self.send_fast_init(new_surface_id);
         Ok(())
@@ -95,13 +89,10 @@ impl AppState {
                 });
                 let cols = self.engine.default_cols;
                 let rows = self.engine.default_rows;
-                let shell = self.engine.settings.general.shell.clone();
-                let shell_ref = if shell.is_empty() { None } else { Some(shell.as_str()) };
-                let shell_args_owned = self.engine.settings.general.effective_shell_args();
-                let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
+                let sh = crate::engine_state::ShellConfig::from_settings(&self.engine.settings);
                 crate::model::Pane::new_with_shell(
                     new_pane_id, new_tab_id, new_surface_id, cols, rows,
-                    shell_ref, &shell_args, self.engine.make_waker(new_surface_id),
+                    sh.shell_ref(), &sh.args_ref(), self.engine.make_waker(new_surface_id),
                     cwd.as_deref(),
                 )?
             }
@@ -156,10 +147,7 @@ impl AppState {
         let new_surface_id = self.engine.next_ids.next_surface();
         let cols = self.engine.default_cols;
         let rows = self.engine.default_rows;
-        let shell = self.engine.settings.general.shell.clone();
-        let shell_ref = if shell.is_empty() { None } else { Some(shell.as_str()) };
-        let shell_args_owned = self.engine.settings.general.effective_shell_args();
-        let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
+        let sh = crate::engine_state::ShellConfig::from_settings(&self.engine.settings);
         let waker = self.engine.make_waker(new_surface_id);
 
         match target_surface_id {
@@ -171,14 +159,14 @@ impl AppState {
                     .ok_or_else(|| anyhow::anyhow!("pane {} not found", pane_id))?;
                 pane.split_surface_by_id_with_shell(
                     sid, direction, new_surface_id, cols, rows,
-                    shell_ref, &shell_args, waker, cwd.as_deref(),
+                    sh.shell_ref(), &sh.args_ref(), waker, cwd.as_deref(),
                 )?;
             }
             None => {
                 if let Some(pane) = self.focused_pane_mut() {
                     pane.split_active_surface_with_shell(
                         direction, new_surface_id, cols, rows,
-                        shell_ref, &shell_args, waker, cwd.as_deref(),
+                        sh.shell_ref(), &sh.args_ref(), waker, cwd.as_deref(),
                     )?;
                 }
             }
@@ -415,12 +403,9 @@ impl AppState {
         let cols = self.engine.default_cols;
         let rows = self.engine.default_rows;
 
-        let shell = self.engine.settings.general.shell.clone();
-        let shell_ref = if shell.is_empty() { None } else { Some(shell.as_str()) };
-        let shell_args_owned = self.engine.settings.general.effective_shell_args();
-        let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
+        let sh = crate::engine_state::ShellConfig::from_settings(&self.engine.settings);
         let new_pane =
-            crate::model::Pane::new_with_shell(new_pane_id, new_tab_id, new_surface_id, cols, rows, shell_ref, &shell_args, self.engine.make_waker(new_surface_id), None)?;
+            crate::model::Pane::new_with_shell(new_pane_id, new_tab_id, new_surface_id, cols, rows, sh.shell_ref(), &sh.args_ref(), self.engine.make_waker(new_surface_id), None)?;
 
         let ws = self.active_workspace_mut();
         let target_pane_id = ws.focused_pane;
