@@ -216,7 +216,19 @@ impl AppState {
         if !self.engine.settings.general.inherit_cwd || self.engine.workspaces.is_empty() {
             return None;
         }
-        self.focused_terminal()?.get_cwd()
+        // Try terminal CWD first
+        if let Some(cwd) = self.focused_terminal().and_then(|t| t.get_cwd()) {
+            return Some(cwd);
+        }
+        // Fall back to non-terminal panel paths
+        let panel = self.focused_pane()?.active_panel()?;
+        match panel {
+            crate::model::Panel::Explorer(exp) => Some(std::path::PathBuf::from(&exp.root_path)),
+            crate::model::Panel::Markdown(md) => {
+                std::path::Path::new(&md.file_path).parent().map(|p| p.to_path_buf())
+            }
+            _ => None,
+        }
     }
 
     /// Get the working directory to inherit from a specific surface, if enabled.
