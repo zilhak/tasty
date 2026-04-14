@@ -52,6 +52,7 @@ impl AppState {
         target_pane_id: Option<u32>,
         direction: SplitDirection,
         explicit_cwd: Option<std::path::PathBuf>,
+        surface_type: crate::model::SurfaceType,
     ) -> anyhow::Result<(u32, u32)> {
         let (ws_idx, resolved_pane_id) = match target_pane_id {
             Some(pid) => {
@@ -65,31 +66,52 @@ impl AppState {
             }
         };
 
-        let cwd = explicit_cwd.or_else(|| {
-            let ws = &self.engine.workspaces[ws_idx];
-            let pane = ws.pane_layout().find_pane(resolved_pane_id)?;
-            let terminal = pane.active_terminal()?;
-            if self.engine.settings.general.inherit_cwd {
-                terminal.get_cwd()
-            } else {
-                None
-            }
-        });
-
         let new_pane_id = self.engine.next_ids.next_pane();
         let new_tab_id = self.engine.next_ids.next_tab();
         let new_surface_id = self.engine.next_ids.next_surface();
-        let cols = self.engine.default_cols;
-        let rows = self.engine.default_rows;
-        let shell = self.engine.settings.general.shell.clone();
-        let shell_ref = if shell.is_empty() { None } else { Some(shell.as_str()) };
-        let shell_args_owned = self.engine.settings.general.effective_shell_args();
-        let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
-        let new_pane = crate::model::Pane::new_with_shell(
-            new_pane_id, new_tab_id, new_surface_id, cols, rows,
-            shell_ref, &shell_args, self.engine.make_waker(new_surface_id),
-            cwd.as_deref(),
-        )?;
+
+        let new_pane = match surface_type {
+            crate::model::SurfaceType::Terminal => {
+                let cwd = explicit_cwd.or_else(|| {
+                    let ws = &self.engine.workspaces[ws_idx];
+                    let pane = ws.pane_layout().find_pane(resolved_pane_id)?;
+                    let terminal = pane.active_terminal()?;
+                    if self.engine.settings.general.inherit_cwd {
+                        terminal.get_cwd()
+                    } else {
+                        None
+                    }
+                });
+                let cols = self.engine.default_cols;
+                let rows = self.engine.default_rows;
+                let shell = self.engine.settings.general.shell.clone();
+                let shell_ref = if shell.is_empty() { None } else { Some(shell.as_str()) };
+                let shell_args_owned = self.engine.settings.general.effective_shell_args();
+                let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
+                crate::model::Pane::new_with_shell(
+                    new_pane_id, new_tab_id, new_surface_id, cols, rows,
+                    shell_ref, &shell_args, self.engine.make_waker(new_surface_id),
+                    cwd.as_deref(),
+                )?
+            }
+            crate::model::SurfaceType::Markdown { file } => {
+                let panel = crate::model::Panel::Markdown(
+                    crate::model::MarkdownPanel::new(new_surface_id, file),
+                );
+                crate::model::Pane::new_with_panel(new_pane_id, new_tab_id, "Markdown".to_string(), panel)
+            }
+            crate::model::SurfaceType::Explorer { path } => {
+                let root = path.unwrap_or_else(|| {
+                    directories::BaseDirs::new()
+                        .map(|d| d.home_dir().to_string_lossy().to_string())
+                        .unwrap_or_else(|| ".".to_string())
+                });
+                let panel = crate::model::Panel::Explorer(
+                    crate::model::ExplorerPanel::new(new_surface_id, root),
+                );
+                crate::model::Pane::new_with_panel(new_pane_id, new_tab_id, "Explorer".to_string(), panel)
+            }
+        };
 
         let ws = &mut self.engine.workspaces[ws_idx];
         ws.pane_layout_mut()
@@ -100,6 +122,7 @@ impl AppState {
     }
 
     /// Split a surface with cross-workspace target support and optional cwd. Does NOT move focus.
+    /// Only terminal type is supported for surface-level splits.
     pub fn split_surface_targeted(
         &mut self,
         target_surface_id: Option<u32>,

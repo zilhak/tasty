@@ -84,9 +84,25 @@ pub fn handle_split(
 
     let meta = params.get("meta").and_then(|v| v.as_object());
     let cwd = params.get("cwd").and_then(|v| v.as_str()).map(std::path::PathBuf::from);
+    let surface_type = match params.get("type").and_then(|v| v.as_str()).unwrap_or("terminal") {
+        "markdown" => {
+            let file = params.get("file").and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            if file.is_empty() {
+                return JsonRpcResponse::invalid_params(id, "Missing 'file' parameter for markdown type");
+            }
+            crate::model::SurfaceType::Markdown { file }
+        }
+        "explorer" => {
+            let path = params.get("path").and_then(|v| v.as_str()).map(|s| s.to_string());
+            crate::model::SurfaceType::Explorer { path }
+        }
+        _ => crate::model::SurfaceType::Terminal,
+    };
 
     match level {
-        "pane" => match state.split_pane_targeted(target_id, direction, cwd) {
+        "pane" => match state.split_pane_targeted(target_id, direction, cwd, surface_type) {
             Ok((new_pane_id, new_surface_id)) => {
                 apply_meta(new_surface_id, meta);
                 JsonRpcResponse::success(

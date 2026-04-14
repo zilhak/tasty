@@ -86,6 +86,20 @@ pub enum SplitDirection {
     Vertical,
 }
 
+/// Type of surface to create.
+#[derive(Debug, Clone)]
+pub enum SurfaceType {
+    Terminal,
+    Markdown { file: String },
+    Explorer { path: Option<String> },
+}
+
+impl Default for SurfaceType {
+    fn default() -> Self {
+        SurfaceType::Terminal
+    }
+}
+
 /// Information about a divider (split border) that the cursor is near.
 #[derive(Debug, Clone, Copy)]
 pub struct DividerInfo {
@@ -122,6 +136,7 @@ pub mod closed_item;
 pub use workspace::*;
 pub use pane::*;
 pub use pane_tree::*;
+pub use tab::Tab;
 pub use panel::*;
 pub use surface_group::*;
 pub use markdown_panel::*;

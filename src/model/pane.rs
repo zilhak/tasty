@@ -21,6 +21,17 @@ impl Default for Pane {
 }
 
 impl Pane {
+    /// Create a Pane with a pre-built Panel (for non-terminal surfaces or restore).
+    pub fn new_with_panel(id: PaneId, tab_id: TabId, name: String, panel: Panel) -> Self {
+        let tab = super::tab::Tab::new_with_panel(tab_id, name, panel);
+        Self {
+            id,
+            tabs: vec![tab],
+            active_tab: 0,
+            tab_scroll_offset: 0.0,
+        }
+    }
+
     /// Create a Pane with a custom shell and optional working directory.
     pub fn new_with_shell(
         id: PaneId,
