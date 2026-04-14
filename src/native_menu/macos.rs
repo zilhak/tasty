@@ -25,6 +25,7 @@ pub fn show_context_menu(
     let ns_view: &NSView = unsafe { &*(ns_view_ptr as *const NSView) };
 
     let menu = NSMenu::new(mtm);
+    menu.setAutoenablesItems(false);
 
     for item in items {
         if item.is_separator() {
