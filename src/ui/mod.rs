@@ -12,7 +12,7 @@ pub use dialog::{draw_markdown_path_dialog, draw_ws_rename_dialog};
 pub use divider::{draw_pane_dividers, draw_surface_highlights};
 pub use non_terminal::draw_non_terminal_panels;
 pub use notification::draw_popups;
-pub use popup::{PopupManager, PopupState};
+pub use popup::{PopupDrawContext, PopupManager, PopupScope, PopupState};
 pub use tab_bar::draw_pane_tab_bars;
 
 use crate::model::Rect;

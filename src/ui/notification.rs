@@ -145,6 +145,9 @@ fn draw_notification_content(ui: &mut egui::Ui, state: &mut AppState) {
 
 /// Draw all popups via the PopupManager. Called from egui_bridge.
 pub fn draw_popups(ctx: &egui::Context, state: &mut AppState) {
+    // Build scope context for popup visibility/clamping
+    let draw_ctx = build_popup_draw_ctx(state);
+
     // Temporarily take the popup manager to avoid borrow conflicts
     // (popup manager needs &mut, and content callbacks need &mut state).
     let mut popups = std::mem::replace(&mut state.popups, crate::ui::PopupManager::new());
@@ -156,8 +159,24 @@ pub fn draw_popups(ctx: &egui::Context, state: &mut AppState) {
         ("notifications", &mut notif_fn),
     ];
 
-    popups.draw(ctx, &mut content_fns);
+    popups.draw(ctx, &mut content_fns, Some(&draw_ctx));
     drop(content_fns);
 
     state.popups = popups;
+}
+
+/// Build PopupDrawContext from current AppState.
+fn build_popup_draw_ctx(state: &AppState) -> crate::ui::PopupDrawContext {
+    let active_workspace = state.active_workspace;
+
+    // Note: we don't have the terminal_rect here, so we can't compute accurate
+    // pane/surface rects. For now, these are left empty — Window-scoped popups
+    // (the only ones currently registered) don't need them.
+    // When scoped popups are registered, the caller should provide rect info.
+    crate::ui::PopupDrawContext {
+        active_workspace,
+        pane_rects: Vec::new(),
+        surface_rects: Vec::new(),
+        active_tabs: Vec::new(),
+    }
 }

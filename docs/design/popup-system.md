@@ -73,6 +73,30 @@
 |---|---|---|
 | `notifications` | 알림 목록 | 350x400 |
 
+## 팝업 스코프
+
+팝업은 **소속 범위(scope)**를 가진다. 스코프에 따라 가시성과 경계 제약이 결정된다.
+
+| 스코프 | 소속 대상 | 가시성 규칙 | 경계 제약 | 예시 |
+|--------|----------|------------|----------|------|
+| Window | 윈도우 | 항상 보임 (워크스페이스 전환과 무관) | 윈도우 경계 내 | 알림 패널 |
+| Workspace | 워크스페이스 | 해당 워크스페이스 활성 시만 보임 | 워크스페이스 영역 내 | (향후 확장) |
+| Pane | 페인 | 해당 페인 영역 내에 존재, 페인이 보일 때만 보임 | 페인 경계 내 | (향후 확장) |
+| Tab | 탭 | 해당 탭이 활성 탭일 때만 보임 | 탭 소속 페인 경계 내 | (향후 확장) |
+| Surface | 서피스 | 해당 서피스 영역 내에 존재, 서피스가 보일 때만 보임 | 서피스 경계 내 | Surface 타입 전환 팝업 |
+
+### 스코프별 동작
+
+- **Window 스코프**: 기존 PopupManager 동작과 동일. `screen_rect` 기준 clamp.
+- **Workspace 스코프**: 다른 워크스페이스로 전환하면 숨겨짐. 돌아오면 다시 보임 (닫히는 게 아님).
+- **Pane 스코프**: 해당 pane rect 기준 clamp. 드래그도 pane 경계 내에서만.
+- **Tab 스코프**: pane 내에서 다른 탭으로 전환하면 숨겨짐.
+- **Surface 스코프**: 해당 surface rect 기준 clamp.
+
+### 구현
+
+`PopupState`에 `scope: PopupScope` 필드. `PopupScope` enum: `Window`, `Workspace(usize)`, `Pane(u32)`, `Tab(u32, usize)`, `Surface(u32)`. `PopupManager::draw()`에 `PopupDrawContext`를 받아 스코프별 가시성 필터링 및 clamp rect 결정.
+
 ## Modal과의 차이
 
 | 항목 | Popup | Modal |
