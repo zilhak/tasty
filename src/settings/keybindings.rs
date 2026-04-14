@@ -26,6 +26,8 @@ pub struct KeybindingSettings {
     pub toggle_sidebar: String,
     /// Toggle sidebar collapse (full/compact mode).
     pub toggle_sidebar_collapse: String,
+    /// Restore the most recently closed surface/tab/workspace.
+    pub restore_closed: String,
 }
 
 impl KeybindingSettings {
@@ -80,6 +82,7 @@ impl KeybindingSettings {
             workspace_switch_modifier: "alt".to_string(),
             toggle_sidebar: "ctrl+shift+b".to_string(),
             toggle_sidebar_collapse: "ctrl+b".to_string(),
+            restore_closed: "ctrl+shift+t".to_string(),
         }
     }
 

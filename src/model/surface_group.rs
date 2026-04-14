@@ -55,6 +55,16 @@ impl SurfaceGroupNode {
 }
 
 impl SurfaceGroupNode {
+    /// Create from a restored layout (no PTY creation needed).
+    pub fn from_restored(layout: SurfaceGroupLayout, focused_surface: SurfaceId) -> Self {
+        let first_surface = layout.first_surface_id().unwrap_or(0);
+        Self {
+            layout_opt: Some(layout),
+            focused_surface,
+            _first_surface: first_surface,
+        }
+    }
+
     pub fn close_surface(&mut self, target_id: SurfaceId) -> bool {
         let old_layout = self.take_layout();
         let (new_layout, found) = old_layout.close_surface(target_id);

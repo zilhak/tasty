@@ -84,6 +84,7 @@ pub fn draw_keybindings_tab(
                 draw_keybinding_entries(ui, recording_field, &captured, &mut [
                     ("toggle_settings", "settings.keybindings.toggle_settings_label", &mut settings.keybindings.toggle_settings),
                     ("toggle_notifications", "settings.keybindings.toggle_notifications_label", &mut settings.keybindings.toggle_notifications),
+                    ("restore_closed", "settings.keybindings.restore_closed_label", &mut settings.keybindings.restore_closed),
                 ]);
             }
             KeybindingsSubTab::Workspace => {

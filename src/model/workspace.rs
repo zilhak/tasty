@@ -53,6 +53,24 @@ impl Workspace {
         self.pane_layout_opt.as_mut().expect("BUG: pane_layout accessed during structural mutation (between take/put)")
     }
 
+    /// Create a workspace from a restored pane layout (no PTY creation needed).
+    pub fn from_restored(
+        id: WorkspaceId,
+        name: String,
+        subtitle: String,
+        pane_layout: PaneNode,
+        focused_pane: PaneId,
+    ) -> Self {
+        Self {
+            id,
+            name,
+            subtitle,
+            description: String::new(),
+            pane_layout_opt: Some(pane_layout),
+            focused_pane,
+        }
+    }
+
     /// Collect all surface IDs in this workspace.
     pub fn all_surface_ids(&self) -> Vec<SurfaceId> {
         self.pane_layout().all_surface_ids()

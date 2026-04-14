@@ -228,6 +228,10 @@ impl TastyWindow {
                             self.state.resize_all(terminal_rect, cell_w, cell_h);
                         }
                     }
+                    "restore_closed" => {
+                        self.state.restore_closed_item();
+                        self.state.resize_all(terminal_rect, cell_w, cell_h);
+                    }
                     _ => {}
                 }
                 return true;
@@ -403,6 +407,11 @@ impl TastyWindow {
         }
         if matches_binding(&kb.toggle_sidebar_collapse, key, mods) {
             state.sidebar_collapsed = !state.sidebar_collapsed;
+            return true;
+        }
+        if matches_binding(&kb.restore_closed, key, mods) {
+            state.restore_closed_item();
+            state.resize_all(terminal_rect, cell_w, cell_h);
             return true;
         }
         false

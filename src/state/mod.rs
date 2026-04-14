@@ -7,6 +7,7 @@ mod message;
 mod layout;
 mod mouse;
 mod mark;
+mod restore;
 #[cfg(test)]
 mod tests;
 

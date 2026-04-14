@@ -18,6 +18,18 @@ pub struct Tab {
 }
 
 impl Tab {
+    /// Create a tab with a pre-built panel (used by restore).
+    pub fn new_with_panel(id: TabId, name: String, panel: Panel) -> Self {
+        Self {
+            id,
+            name,
+            explicit_name: None,
+            panel_opt: Some(panel),
+            deferred_spawn: None,
+            deferred_surface_id: None,
+        }
+    }
+
     /// Get the display name for this tab.
     /// Priority: explicit_name > auto-derived from focused surface CWD > fallback "name" field.
     pub fn display_name(&self) -> String {
