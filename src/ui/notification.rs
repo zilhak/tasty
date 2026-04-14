@@ -3,6 +3,7 @@ use std::time::Instant;
 use crate::i18n::{t, t_fmt};
 use crate::state::AppState;
 use crate::theme;
+use crate::ui::convert_popup;
 
 /// Draw notification panel content inside a popup Ui.
 fn draw_notification_content(ui: &mut egui::Ui, state: &mut AppState) {
@@ -148,21 +149,44 @@ pub fn draw_popups(ctx: &egui::Context, state: &mut AppState) {
     // Build scope context for popup visibility/clamping
     let draw_ctx = build_popup_draw_ctx(state);
 
+    // Update convert_surface popup title (i18n may change)
+    if let Some(p) = state.popups.get_mut("convert_surface") {
+        p.title = t("convert_popup.title").to_string();
+    }
+
     // Temporarily take the popup manager to avoid borrow conflicts
     // (popup manager needs &mut, and content callbacks need &mut state).
     let mut popups = std::mem::replace(&mut state.popups, crate::ui::PopupManager::new());
 
-    let mut notif_fn = |ui: &mut egui::Ui| {
-        draw_notification_content(ui, state);
-    };
-    let mut content_fns: Vec<(&'static str, &mut dyn FnMut(&mut egui::Ui))> = vec![
-        ("notifications", &mut notif_fn),
-    ];
-
-    popups.draw(ctx, &mut content_fns, Some(&draw_ctx));
-    drop(content_fns);
+    let mut convert_result: Option<convert_popup::ConvertResult> = None;
+    let closed = popups.draw(ctx, &mut |id, ui| {
+        match id {
+            "notifications" => draw_notification_content(ui, state),
+            "convert_surface" => {
+                convert_result = convert_popup::draw_convert_content(ui, state);
+            }
+            _ => {}
+        }
+    }, Some(&draw_ctx));
 
     state.popups = popups;
+
+    // Handle convert popup close (via X button, outside click, or Escape)
+    let convert_closed = closed.contains(&"convert_surface")
+        || matches!(convert_result, Some(convert_popup::ConvertResult::Close));
+    if convert_closed {
+        state.popups.close("convert_surface");
+        state.dialogs.convert_popup = None;
+        state.dialogs.convert_popup_selected = None;
+    }
+
+    // Handle convert popup action
+    if let Some(convert_popup::ConvertResult::Action(action)) = convert_result {
+        convert_popup::apply_convert_action(state, action);
+        state.popups.close("convert_surface");
+        state.dialogs.convert_popup = None;
+        state.dialogs.convert_popup_selected = None;
+    }
 }
 
 /// Build PopupDrawContext from current AppState.

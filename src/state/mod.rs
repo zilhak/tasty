@@ -79,8 +79,10 @@ pub struct DialogState {
     pub markdown_path: Option<(u32, String)>,
     /// Convert to markdown: target surface id
     pub markdown_convert_surface_id: Option<u32>,
-    /// Surface convert popup: surface_id
+    /// Surface convert popup: target surface_id (None = closed)
     pub convert_popup: Option<u32>,
+    /// Keyboard-selected index in the convert popup menu
+    pub convert_popup_selected: Option<usize>,
     /// HTML URL input: (pane_id, url_buffer)
     pub html_url: Option<(u32, String)>,
     /// Convert to html: target surface id
@@ -97,6 +99,7 @@ impl DialogState {
             markdown_path: None,
             markdown_convert_surface_id: None,
             convert_popup: None,
+            convert_popup_selected: None,
             html_url: None,
             html_convert_surface_id: None,
             pending_native_menu: None,
@@ -113,8 +116,7 @@ impl DialogState {
 
     /// Returns true if any dialog/popup overlay is open.
     pub fn has_any_overlay(&self) -> bool {
-        self.convert_popup.is_some()
-            || self.has_text_input_open()
+        self.has_text_input_open()
     }
 }
 
@@ -150,6 +152,11 @@ impl AppState {
                     "Notifications",
                     egui::vec2(350.0, 400.0),
                 ));
+                pm.register(crate::ui::PopupState::new(
+                    "convert_surface",
+                    "",
+                    egui::vec2(200.0, 132.0),
+                ).with_close_on_outside_click(true));
                 pm
             },
         })

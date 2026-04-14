@@ -51,6 +51,10 @@ pub struct PopupState {
     /// Whether this popup currently has keyboard focus.
     /// When focused, keyboard input should NOT be forwarded to the terminal.
     pub focused: bool,
+    /// If true, clicking outside this popup will close it (not just unfocus).
+    pub close_on_outside_click: bool,
+    /// If true, PopupManager will center this popup on the next draw and clear the flag.
+    pub request_center: bool,
 }
 
 const TITLE_BAR_HEIGHT: f32 = 28.0;
@@ -68,12 +72,20 @@ impl PopupState {
             drag_offset: egui::Vec2::ZERO,
             scope: PopupScope::Window,
             focused: false,
+            close_on_outside_click: false,
+            request_center: false,
         }
     }
 
     /// Create a popup with a specific scope.
     pub fn with_scope(mut self, scope: PopupScope) -> Self {
         self.scope = scope;
+        self
+    }
+
+    /// Set whether clicking outside this popup should close it.
+    pub fn with_close_on_outside_click(mut self, v: bool) -> Self {
+        self.close_on_outside_click = v;
         self
     }
 
@@ -138,6 +150,17 @@ impl PopupManager {
         }
     }
 
+    /// Open a popup centered on screen, with focus.
+    pub fn open_centered_focused(&mut self, id: PopupId) {
+        if let Some(i) = self.popups.iter().position(|p| p.id == id) {
+            self.popups[i].open = true;
+            self.popups[i].focused = true;
+            self.popups[i].request_center = true;
+            let popup = self.popups.remove(i);
+            self.popups.push(popup);
+        }
+    }
+
     /// Close a popup by id.
     pub fn close(&mut self, id: PopupId) {
         if let Some(p) = self.popups.iter_mut().find(|p| p.id == id) {
@@ -184,13 +207,13 @@ impl PopupManager {
         self.popups.iter_mut().find(|p| p.id == id)
     }
 
-    /// Draw all open popups. The `content_fns` provides drawing callbacks per popup id.
+    /// Draw all open popups. The `content_fn` callback is invoked for each popup with its id.
     /// `draw_ctx` provides scope context for visibility and boundary clamping.
-    /// Returns a list of popup ids that were closed via the X button.
+    /// Returns a list of popup ids that were closed via the X button or outside click.
     pub fn draw(
         &mut self,
         ctx: &egui::Context,
-        content_fns: &mut [(&'static str, &mut dyn FnMut(&mut egui::Ui))],
+        content_fn: &mut dyn FnMut(&str, &mut egui::Ui),
         draw_ctx: Option<&PopupDrawContext>,
     ) -> Vec<PopupId> {
         let th = theme::theme();
@@ -244,8 +267,11 @@ impl PopupManager {
                     popup.focused = popup.id == id;
                 }
             } else {
-                // Clicked outside all popups — unfocus all
+                // Clicked outside all popups
                 for popup in &mut self.popups {
+                    if popup.open && popup.close_on_outside_click {
+                        closed.push(popup.id);
+                    }
                     popup.focused = false;
                 }
             }
@@ -285,9 +311,23 @@ impl PopupManager {
             }
         }
 
-        // Set cursor for title bar hover
+        // Handle request_center
+        for popup in &mut self.popups {
+            if popup.request_center && popup.open {
+                popup.pos = egui::pos2(
+                    screen_rect.center().x - popup.size.x / 2.0,
+                    screen_rect.center().y - popup.size.y / 2.0,
+                );
+                popup.request_center = false;
+            }
+        }
+
+        // Set cursor for popup hover
         if hovered_title.is_some() && hovered_close.is_none() {
             ctx.set_cursor_icon(egui::CursorIcon::Grab);
+        } else if hovered_popup.is_some() && hovered_title.is_none() {
+            // Content area: set default cursor (arrow) to override terminal cursor
+            ctx.set_cursor_icon(egui::CursorIcon::Default);
         }
 
         // --- Render all open popups ---
@@ -364,7 +404,7 @@ impl PopupManager {
             );
 
             // Content
-            if let Some((_id, content_fn)) = content_fns.iter_mut().find(|(id, _)| *id == popup_id) {
+            {
                 let mut child_ui = egui::Ui::new(
                     ctx.clone(),
                     egui::Id::new("popup_content").with(popup_id),
@@ -372,7 +412,7 @@ impl PopupManager {
                         .layer_id(layer_id)
                         .max_rect(content_rect),
                 );
-                content_fn(&mut child_ui);
+                content_fn(popup_id, &mut child_ui);
             }
         }
 

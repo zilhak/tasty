@@ -216,12 +216,15 @@
 - 기본값 미설정 (설정 UI에서 Pane 서브탭에서 바인딩 가능)
 
 #### Surface 타입 전환
-- `convert_surface` 단축키 (기본 `Alt+'`): 전환 팝업 표시 — Terminal / Markdown... / Explorer / HTML... / Cancel
+- `convert_surface` 단축키 (기본 `Alt+'`): PopupManager 기반 전환 팝업 표시 — Terminal(T) / Markdown(M)... / Explorer(E) / HTML(H)...
 - `convert_to_markdown` / `convert_to_explorer`: 직접 전환 단축키 (기본값 없음, 설정에서 할당)
 - 현재 타입과 동일한 항목은 체크 표시 + 비활성
 - Markdown 전환 시 파일 경로 입력 다이얼로그 표시
 - Terminal 전환 시 새 PTY 생성, Explorer 전환 시 CWD 또는 홈 디렉토리 사용
-- Esc / Cancel / 외부 클릭으로 팝업 닫기
+- Esc / 외부 클릭 / X 버튼으로 팝업 닫기
+- 키보드 탐색: Up/Down 방향키로 항목 이동, Enter로 선택 확정
+- 단축키: T/M/E/H 키로 즉시 선택
+- 팝업이 열려 있으면 키보드 입력이 터미널로 전달되지 않음 (PopupManager 포커스 자동 관리)
 
 #### HTML WebView
 - OS 네이티브 WebView를 wgpu 윈도우 위에 child view로 오버레이
