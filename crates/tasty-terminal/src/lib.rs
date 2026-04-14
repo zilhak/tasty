@@ -80,6 +80,10 @@ pub struct Terminal {
     /// CWD cached from OSC 7 (CurrentWorkingDirectory) sequences emitted by the shell.
     /// Used by get_cwd() to avoid spawning external processes.
     pub(crate) cached_cwd: Option<std::path::PathBuf>,
+    /// Saved right-side cells for each line, preserved when cols shrink.
+    /// Each entry corresponds to a screen line and holds cells beyond the current cols.
+    /// Restored when cols grow again. Cleared on scrollback capture (scroll up).
+    saved_line_tails: Vec<Vec<(String, CellAttributes)>>,
 }
 
 impl Terminal {
@@ -203,6 +207,7 @@ impl Terminal {
             scroll_offset: 0,
             disk_scrollback: None,
             cached_cwd: None,
+            saved_line_tails: Vec::new(),
         })
     }
 
@@ -356,12 +361,26 @@ impl Terminal {
         if self.cols == cols && self.rows == rows {
             return;
         }
+
+        let old_cols = self.cols;
+
+        // Save/restore line tails on the primary surface when cols change
+        if cols != old_cols && !self.use_alternate {
+            self.save_or_restore_line_tails(old_cols, cols, rows);
+        }
+
         self.cols = cols;
         self.rows = rows;
         self.primary_surface.resize(cols, rows);
         if let Some(alt) = &mut self.alternate_surface {
             alt.resize(cols, rows);
         }
+
+        // Restore saved tails onto the surface after resize expanded cols
+        if cols > old_cols && !self.use_alternate {
+            self.restore_tails_to_surface(old_cols, cols);
+        }
+
         // Reset scroll region on resize
         self.scroll_region = None;
 
@@ -372,6 +391,68 @@ impl Terminal {
             pixel_width: 0,
             pixel_height: 0,
         });
+    }
+
+    /// Before termwiz truncates lines, capture cells that would be lost (cols shrinking)
+    /// or merge saved tails back when cols grow.
+    fn save_or_restore_line_tails(&mut self, old_cols: usize, new_cols: usize, new_rows: usize) {
+        let lines = self.primary_surface.screen_lines();
+        let line_count = lines.len();
+
+        // Ensure saved_line_tails has enough entries
+        if self.saved_line_tails.len() < line_count {
+            self.saved_line_tails.resize(line_count, Vec::new());
+        }
+
+        if new_cols < old_cols {
+            // Cols shrinking: capture cells at indices [new_cols..] before termwiz truncates them
+            for (i, line) in lines.iter().enumerate() {
+                let mut tail_cells: Vec<(String, CellAttributes)> = line
+                    .visible_cells()
+                    .filter(|cell| cell.cell_index() >= new_cols)
+                    .map(|cell| (cell.str().to_string(), cell.attrs().clone()))
+                    .collect();
+                // Prepend to any previously saved tail for this line
+                if !self.saved_line_tails[i].is_empty() {
+                    tail_cells.extend(self.saved_line_tails[i].drain(..));
+                }
+                self.saved_line_tails[i] = tail_cells;
+            }
+        } else if new_cols > old_cols {
+            // Cols growing: trim saved tails — cells will be restored after resize
+            // (nothing to do here; restore_tails_to_surface handles it)
+        }
+
+        // Trim saved_line_tails to match new row count
+        self.saved_line_tails.truncate(new_rows);
+    }
+
+    /// After termwiz Surface::resize expanded cols, write back saved tail cells.
+    fn restore_tails_to_surface(&mut self, old_cols: usize, new_cols: usize) {
+        use termwiz::surface::Position;
+
+        let restore_count = new_cols - old_cols;
+
+        for (row, tail) in self.saved_line_tails.iter_mut().enumerate() {
+            if tail.is_empty() {
+                continue;
+            }
+            let cells_to_restore = restore_count.min(tail.len());
+            let restored: Vec<(String, CellAttributes)> = tail.drain(..cells_to_restore).collect();
+
+            // Position cursor at (old_cols, row) and write each cell
+            self.primary_surface.add_change(Change::CursorPosition {
+                x: Position::Absolute(old_cols),
+                y: Position::Absolute(row),
+            });
+            for (text, attrs) in restored {
+                self.primary_surface.add_change(Change::AllAttributes(attrs));
+                self.primary_surface.add_change(Change::Text(text));
+            }
+        }
+
+        // Restore cursor to where it was (bottom of screen, col 0 as safe default)
+        // The actual cursor position will be corrected by the next PTY output
     }
 
     pub fn surface(&self) -> &Surface {
@@ -595,6 +676,10 @@ impl Terminal {
                 let count = captured.len();
                 for line in captured {
                     self.scrollback.push_back(line);
+                }
+                // Shift saved_line_tails: remove top entries that scrolled off
+                for _ in 0..count.min(self.saved_line_tails.len()) {
+                    self.saved_line_tails.remove(0);
                 }
                 // Compensate scroll_offset so the user's viewport stays in place
                 if self.scroll_offset > 0 {
