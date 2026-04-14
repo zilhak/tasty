@@ -131,8 +131,18 @@ impl TastyWindow {
     }
 
     /// Recalculate the preedit anchor position using the current terminal cursor.
-    /// Call this after PTY output is processed so the preedit doesn't lag behind.
+    /// Only updates the anchor when compensating for PTY echo after Commit
+    /// (ime_cursor_advance > 0). While preedit text is actively composing,
+    /// the anchor is frozen at the position set by the Preedit event to prevent
+    /// the overlay from chasing the TUI cursor around the screen.
     pub(crate) fn recalc_ime_preedit_anchor(&mut self) {
+        // Only recalculate if we need to reconcile PTY echo advance.
+        // If ime_cursor_advance == 0, the anchor was set at Preedit event time
+        // and must not be overwritten by TUI cursor movements.
+        if self.ime_cursor_advance == 0 {
+            return;
+        }
+
         let preedit = match &self.ime_preedit {
             Some(p) => p,
             None => return,
@@ -147,22 +157,20 @@ impl TastyWindow {
         let cols = terminal.cols();
 
         // Reconcile advance with how far the raw cursor has moved
-        if self.ime_cursor_advance > 0 {
-            let (base_col, base_row) = self.ime_advance_base;
-            let raw_advance = if row > base_row {
-                (row - base_row) * cols + col - base_col
-            } else if col >= base_col {
-                col - base_col
-            } else {
-                0
-            };
-            if raw_advance >= self.ime_cursor_advance {
-                self.ime_cursor_advance = 0;
-            } else {
-                self.ime_cursor_advance -= raw_advance;
-            }
-            self.ime_advance_base = (col, row);
+        let (base_col, base_row) = self.ime_advance_base;
+        let raw_advance = if row > base_row {
+            (row - base_row) * cols + col - base_col
+        } else if col >= base_col {
+            col - base_col
+        } else {
+            0
+        };
+        if raw_advance >= self.ime_cursor_advance {
+            self.ime_cursor_advance = 0;
+        } else {
+            self.ime_cursor_advance -= raw_advance;
         }
+        self.ime_advance_base = (col, row);
 
         let adjusted_col = col + self.ime_cursor_advance;
         let (anchor_col, anchor_row) = if cols > 0 && adjusted_col >= cols {
