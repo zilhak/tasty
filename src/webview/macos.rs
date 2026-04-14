@@ -103,9 +103,7 @@ impl PlatformWebView {
 
 impl Drop for PlatformWebView {
     fn drop(&mut self) {
-        unsafe {
-            self.webview.removeFromSuperview();
-        }
+        self.webview.removeFromSuperview();
     }
 }
 

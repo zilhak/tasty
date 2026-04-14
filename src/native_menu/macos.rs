@@ -40,21 +40,17 @@ pub fn show_context_menu(
     }
 
     // Convert from top-left logical coordinates to NSView coordinates.
-    let location = unsafe {
-        let is_flipped = ns_view.isFlipped();
-        let view_h = ns_view.frame().size.height;
-        let ns_y = if is_flipped { y } else { view_h - y };
-        objc2_foundation::NSPoint::new(x, ns_y)
-    };
+    let is_flipped = ns_view.isFlipped();
+    let view_h = ns_view.frame().size.height;
+    let ns_y = if is_flipped { y } else { view_h - y };
+    let location = objc2_foundation::NSPoint::new(x, ns_y);
 
     // popUpMenuPositioningItem:atLocation:inView: is synchronous.
     let selected = menu.popUpMenuPositioningItem_atLocation_inView(None, location, Some(ns_view));
 
     if selected {
-        unsafe {
-            let highlighted = menu.highlightedItem();
-            highlighted.map(|item| item.tag() as u32)
-        }
+        let highlighted = menu.highlightedItem();
+        highlighted.map(|item| item.tag() as u32)
     } else {
         None
     }
