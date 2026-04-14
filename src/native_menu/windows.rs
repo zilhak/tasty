@@ -39,7 +39,7 @@ pub fn show_context_menu(
 
         // Convert client coordinates to screen coordinates.
         let mut pt = POINT { x: x as i32, y: y as i32 };
-        windows::Win32::Graphics::Gdi::ClientToScreen(hwnd, &mut pt);
+        let _ = windows::Win32::Graphics::Gdi::ClientToScreen(hwnd, &mut pt);
 
         let selected = TrackPopupMenu(
             hmenu,
