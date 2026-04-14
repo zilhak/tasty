@@ -34,6 +34,42 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel) -> Option<Exp
                                     &mut action,
                                 );
                             }
+                            // Keyboard navigation: Up/Down to move selection, Enter to open/toggle
+                            let key_up = ui.input(|i| i.key_pressed(egui::Key::ArrowUp));
+                            let key_down = ui.input(|i| i.key_pressed(egui::Key::ArrowDown));
+                            let key_enter = ui.input(|i| i.key_pressed(egui::Key::Enter));
+
+                            if (key_up || key_down || key_enter) && action.is_none() {
+                                let mut visible = Vec::new();
+                                for child in children.iter() {
+                                    collect_visible_paths(child, &mut visible);
+                                }
+                                let current_idx = panel.selected_file.as_ref()
+                                    .and_then(|sel| visible.iter().position(|p| p == sel));
+
+                                if key_up || key_down {
+                                    let new_idx = match current_idx {
+                                        Some(idx) => {
+                                            if key_up { idx.saturating_sub(1) }
+                                            else { (idx + 1).min(visible.len().saturating_sub(1)) }
+                                        }
+                                        None => 0,
+                                    };
+                                    if let Some(path) = visible.get(new_idx) {
+                                        action = Some(TreeAction::SelectFile(path.clone()));
+                                    }
+                                } else if key_enter {
+                                    if let Some(sel) = &panel.selected_file {
+                                        // Check if it's a directory
+                                        let is_dir = visible.contains(sel) && find_node(&panel.root_node, sel)
+                                            .is_some_and(|n| n.is_directory);
+                                        if is_dir {
+                                            action = Some(TreeAction::ToggleDir(sel.clone()));
+                                        }
+                                    }
+                                }
+                            }
+
                             // Apply action
                             if let Some(act) = action {
                                 match act {
@@ -178,6 +214,33 @@ fn draw_file_node(
         if let Some(ref mut children) = node.children {
             for child in children.iter_mut() {
                 draw_file_node(ui, child, depth + 1, selected_path, action);
+            }
+        }
+    }
+}
+
+/// Find a node by path in the tree.
+fn find_node<'a>(node: &'a FileNode, target: &str) -> Option<&'a FileNode> {
+    if node.path == target { return Some(node); }
+    if node.is_directory {
+        if let Some(ref children) = node.children {
+            for child in children {
+                if let Some(found) = find_node(child, target) {
+                    return Some(found);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Collect all visible (expanded) node paths in tree order.
+fn collect_visible_paths(node: &FileNode, out: &mut Vec<String>) {
+    out.push(node.path.clone());
+    if node.is_directory && node.is_expanded {
+        if let Some(ref children) = node.children {
+            for child in children {
+                collect_visible_paths(child, out);
             }
         }
     }
