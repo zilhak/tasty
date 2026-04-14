@@ -391,6 +391,20 @@ impl Pane {
         self.active_tab = self.tabs.len() - 1;
     }
 
+    /// Add an empty placeholder tab.
+    pub fn add_empty_tab(&mut self, tab_id: TabId, panel_id: u32) {
+        let panel = Panel::Empty { id: panel_id };
+        let tab = Tab {
+            id: tab_id,
+            name: "Empty".to_string(),
+            panel_opt: Some(panel),
+            deferred_spawn: None,
+            explicit_name: None, deferred_surface_id: None,
+        };
+        self.tabs.push(tab);
+        self.active_tab = self.tabs.len() - 1;
+    }
+
     /// Get the active tab (mutable). Returns None if tabs are empty.
     pub fn active_tab_mut(&mut self) -> Option<&mut Tab> {
         if self.tabs.is_empty() {

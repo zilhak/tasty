@@ -50,6 +50,7 @@ pub fn draw_non_terminal_panels(
 
     // Second pass: render each non-terminal panel.
     let mut pending_explorer_action: Option<(u32, crate::explorer_ui::ExplorerAction)> = None;
+    let mut pending_empty_convert: Option<u32> = None;
 
     for info in &infos {
         let ws = state.active_workspace_mut();
@@ -137,8 +138,39 @@ pub fn draw_non_terminal_panels(
                             });
                     });
             }
+            crate::model::Panel::Empty { id: surface_id } => {
+                let sid = *surface_id;
+                egui::Area::new(egui::Id::new(format!("empty_panel_{}", info.pane_id)))
+                    .fixed_pos(egui::pos2(info.logical_x, info.logical_y))
+                    .order(egui::Order::Background)
+                    .show(ctx, |ui| {
+                        ui.set_min_size(egui::vec2(info.logical_w, info.logical_h));
+                        ui.set_max_size(egui::vec2(info.logical_w, info.logical_h));
+                        egui::Frame::new()
+                            .fill(th.crust)
+                            .show(ui, |ui| {
+                                ui.centered_and_justified(|ui| {
+                                    let btn = ui.button(
+                                        egui::RichText::new(crate::i18n::t("convert_popup.title"))
+                                            .size(th.font_size_body)
+                                            .color(th.text),
+                                    );
+                                    if btn.clicked() {
+                                        pending_empty_convert = Some(sid);
+                                    }
+                                });
+                            });
+                    });
+            }
             _ => {}
         }
+    }
+
+    // Process deferred empty surface convert
+    if let Some(sid) = pending_empty_convert {
+        state.dialogs.convert_popup = Some(sid);
+        state.dialogs.convert_popup_selected = None;
+        state.popups.open_centered_focused("convert_surface");
     }
 
     // Process deferred explorer actions (requires state mutation outside the render loop)

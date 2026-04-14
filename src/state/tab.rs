@@ -70,6 +70,18 @@ impl AppState {
         Ok(())
     }
 
+    /// Add an empty placeholder tab in the focused pane. Returns (tab_id, surface_id).
+    pub fn add_empty_tab(&mut self) -> Option<(u32, u32)> {
+        let tab_id = self.engine.next_ids.next_tab();
+        let panel_id = self.engine.next_ids.next_surface();
+        if let Some(pane) = self.focused_pane_mut() {
+            pane.add_empty_tab(tab_id, panel_id);
+            Some((tab_id, panel_id))
+        } else {
+            None
+        }
+    }
+
     /// Add a new tab in the specified pane (by ID, cross-workspace) without switching active tab.
     pub fn add_tab_to_pane(&mut self, pane_id: u32, explicit_cwd: Option<std::path::PathBuf>) -> anyhow::Result<()> {
         let cwd = explicit_cwd.or_else(|| {
@@ -329,6 +341,7 @@ impl AppState {
             crate::model::Panel::Markdown(_) => "Markdown",
             crate::model::Panel::Explorer(_) => "Explorer",
             crate::model::Panel::Html(_) => "Html",
+            crate::model::Panel::Empty { .. } => "Empty",
         })
     }
 }

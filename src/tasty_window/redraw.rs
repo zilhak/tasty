@@ -305,7 +305,12 @@ impl TastyWindow {
                 let result = show_context_menu(self.window.as_ref(), x as f64, y as f64, &items);
                 match result {
                     Some(1) => {
-                        self.state.dialogs.markdown_path = Some((pane_id, String::new()));
+                        // Create empty tab first, then show markdown dialog targeting it
+                        self.state.active_workspace_mut().focused_pane = pane_id;
+                        if let Some((_tab_id, surface_id)) = self.state.add_empty_tab() {
+                            self.state.dialogs.markdown_convert_surface_id = Some(surface_id);
+                            self.state.dialogs.markdown_path = Some((pane_id, String::new()));
+                        }
                     }
                     Some(2) => {
                         let home = directories::BaseDirs::new()
@@ -315,7 +320,12 @@ impl TastyWindow {
                         let _ = self.state.add_explorer_tab(home);
                     }
                     Some(3) => {
-                        self.state.dialogs.html_url = Some((pane_id, String::new()));
+                        // Create empty tab first, then show HTML dialog targeting it
+                        self.state.active_workspace_mut().focused_pane = pane_id;
+                        if let Some((_tab_id, surface_id)) = self.state.add_empty_tab() {
+                            self.state.dialogs.html_convert_surface_id = Some(surface_id);
+                            self.state.dialogs.html_url = Some((pane_id, String::new()));
+                        }
                     }
                     _ => {}
                 }

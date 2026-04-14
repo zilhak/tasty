@@ -207,6 +207,7 @@ fn current_surface_type(state: &AppState, surface_id: u32) -> Option<String> {
                     crate::model::Panel::Markdown(_) => "Markdown",
                     crate::model::Panel::Explorer(_) => "Explorer",
                     crate::model::Panel::Html(_) => "Html",
+                    crate::model::Panel::Empty { .. } => "Empty",
                 }.to_string());
             }
         }

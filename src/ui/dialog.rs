@@ -129,7 +129,10 @@ pub fn draw_markdown_path_dialog(
         state.dialogs.markdown_path = Some((pane_id, path_buf));
     } else {
         // Dialog cancelled — clear convert mode
-        state.dialogs.markdown_convert_surface_id = None;
+        if let Some(sid) = state.dialogs.markdown_convert_surface_id.take() {
+            // Close the empty surface that was created for this dialog
+            state.close_surface_by_id_no_snapshot(sid);
+        }
     }
 }
 
@@ -195,6 +198,9 @@ pub fn draw_html_url_dialog(
     } else if keep_open && !confirm {
         state.dialogs.html_url = Some((pane_id, url_buf));
     } else {
-        state.dialogs.html_convert_surface_id = None;
+        // Dialog cancelled — close the empty surface if one was created
+        if let Some(sid) = state.dialogs.html_convert_surface_id.take() {
+            state.close_surface_by_id_no_snapshot(sid);
+        }
     }
 }

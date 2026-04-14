@@ -158,8 +158,8 @@ impl ClosedPanel {
             super::Panel::Explorer(ex) => {
                 ClosedPanel::Explorer { path: Some(PathBuf::from(&ex.root_path)) }
             }
-            super::Panel::Html(_) => {
-                // HTML panels are not restorable; treat as explorer with no path.
+            super::Panel::Html(_) | super::Panel::Empty { .. } => {
+                // HTML and Empty panels are not restorable; treat as explorer with no path.
                 ClosedPanel::Explorer { path: None }
             }
         }

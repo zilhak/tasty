@@ -119,6 +119,10 @@ impl AppState {
                 );
                 crate::model::Pane::new_with_panel(new_pane_id, new_tab_id, "HTML".to_string(), panel)
             }
+            crate::model::SurfaceType::Empty => {
+                let panel = crate::model::Panel::Empty { id: new_surface_id };
+                crate::model::Pane::new_with_panel(new_pane_id, new_tab_id, "Empty".to_string(), panel)
+            }
         };
 
         let ws = &mut self.engine.workspaces[ws_idx];

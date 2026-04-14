@@ -13,6 +13,8 @@ pub enum Panel {
     Explorer(ExplorerPanel),
     /// An HTML viewer (rendered by native OS WebView, no PTY).
     Html(HtmlPanel),
+    /// An empty surface placeholder (no content, shows convert button).
+    Empty { id: SurfaceId },
 }
 
 impl Panel {
@@ -21,7 +23,7 @@ impl Panel {
         match self {
             Panel::Terminal(node) => Some(&node.terminal),
             Panel::SurfaceGroup(group) => group.focused_terminal(),
-            Panel::Markdown(_) | Panel::Explorer(_) | Panel::Html(_) => None,
+            Panel::Markdown(_) | Panel::Explorer(_) | Panel::Html(_) | Panel::Empty { .. } => None,
         }
     }
 
@@ -30,7 +32,7 @@ impl Panel {
         match self {
             Panel::Terminal(node) => Some(&mut node.terminal),
             Panel::SurfaceGroup(group) => group.focused_terminal_mut(),
-            Panel::Markdown(_) | Panel::Explorer(_) | Panel::Html(_) => None,
+            Panel::Markdown(_) | Panel::Explorer(_) | Panel::Html(_) | Panel::Empty { .. } => None,
         }
     }
 
@@ -39,7 +41,7 @@ impl Panel {
         match self {
             Panel::Terminal(node) => out.push(&mut node.terminal),
             Panel::SurfaceGroup(group) => group.layout_mut().collect_terminals_mut(out),
-            Panel::Markdown(_) | Panel::Explorer(_) | Panel::Html(_) => {}
+            Panel::Markdown(_) | Panel::Explorer(_) | Panel::Html(_) | Panel::Empty { .. } => {}
         }
     }
 
@@ -51,7 +53,7 @@ impl Panel {
         match self {
             Panel::Terminal(node) => f(node.id, &mut node.terminal),
             Panel::SurfaceGroup(group) => group.layout_mut().for_each_terminal_mut(f),
-            Panel::Markdown(_) | Panel::Explorer(_) | Panel::Html(_) => {}
+            Panel::Markdown(_) | Panel::Explorer(_) | Panel::Html(_) | Panel::Empty { .. } => {}
         }
     }
 
@@ -62,7 +64,7 @@ impl Panel {
                 if node.id == surface_id { Some(&node.terminal) } else { None }
             }
             Panel::SurfaceGroup(group) => group.layout().find_terminal(surface_id),
-            Panel::Markdown(_) | Panel::Explorer(_) | Panel::Html(_) => None,
+            Panel::Markdown(_) | Panel::Explorer(_) | Panel::Html(_) | Panel::Empty { .. } => None,
         }
     }
 
@@ -73,7 +75,7 @@ impl Panel {
                 if node.id == surface_id { Some(node) } else { None }
             }
             Panel::SurfaceGroup(group) => group.layout().find_surface_node(surface_id),
-            Panel::Markdown(_) | Panel::Explorer(_) | Panel::Html(_) => None,
+            Panel::Markdown(_) | Panel::Explorer(_) | Panel::Html(_) | Panel::Empty { .. } => None,
         }
     }
 
@@ -84,7 +86,7 @@ impl Panel {
                 if node.id == surface_id { Some(&mut node.terminal) } else { None }
             }
             Panel::SurfaceGroup(group) => group.layout_mut().find_terminal_mut(surface_id),
-            Panel::Markdown(_) | Panel::Explorer(_) | Panel::Html(_) => None,
+            Panel::Markdown(_) | Panel::Explorer(_) | Panel::Html(_) | Panel::Empty { .. } => None,
         }
     }
 
@@ -94,7 +96,7 @@ impl Panel {
         match self {
             Panel::Terminal(node) => vec![(node.id, &node.terminal, rect)],
             Panel::SurfaceGroup(group) => group.compute_rects(rect),
-            Panel::Markdown(_) | Panel::Explorer(_) | Panel::Html(_) => vec![],
+            Panel::Markdown(_) | Panel::Explorer(_) | Panel::Html(_) | Panel::Empty { .. } => vec![],
         }
     }
 
@@ -106,12 +108,13 @@ impl Panel {
             Panel::Markdown(md) => vec![md.id],
             Panel::Explorer(ex) => vec![ex.id],
             Panel::Html(html) => vec![html.id],
+            Panel::Empty { id } => vec![*id],
         }
     }
 
     /// Returns true if this panel is a non-terminal panel (Markdown, Explorer, or Html).
     pub fn is_non_terminal(&self) -> bool {
-        matches!(self, Panel::Markdown(_) | Panel::Explorer(_) | Panel::Html(_))
+        matches!(self, Panel::Markdown(_) | Panel::Explorer(_) | Panel::Html(_) | Panel::Empty { .. })
     }
 
     /// Get the focused surface ID for this panel.
@@ -122,6 +125,7 @@ impl Panel {
             Panel::Markdown(md) => Some(md.id),
             Panel::Explorer(ex) => Some(ex.id),
             Panel::Html(html) => Some(html.id),
+            Panel::Empty { id } => Some(*id),
         }
     }
 
@@ -139,7 +143,7 @@ impl Panel {
                 node.terminal.resize(cols, rows);
             }
             Panel::SurfaceGroup(group) => group.resize_all(rect, cell_width, cell_height),
-            Panel::Markdown(_) | Panel::Explorer(_) | Panel::Html(_) => {}
+            Panel::Markdown(_) | Panel::Explorer(_) | Panel::Html(_) | Panel::Empty { .. } => {}
         }
     }
 
@@ -182,7 +186,7 @@ impl Panel {
                 Panel::SurfaceGroup(group)
             }
             // Non-terminal panels cannot be split (they have no surfaces).
-            Panel::Markdown(_) | Panel::Explorer(_) | Panel::Html(_) => self,
+            Panel::Markdown(_) | Panel::Explorer(_) | Panel::Html(_) | Panel::Empty { .. } => self,
         }
     }
 

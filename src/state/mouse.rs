@@ -29,6 +29,7 @@ impl AppState {
                         Some(crate::model::Panel::Markdown(_)) => false,
                         Some(crate::model::Panel::Explorer(_)) => false,
                         Some(crate::model::Panel::Html(_)) => false,
+                        Some(crate::model::Panel::Empty { .. }) => false,
                         None => false,
                     });
                 }

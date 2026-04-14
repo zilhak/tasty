@@ -93,6 +93,7 @@ pub enum SurfaceType {
     Markdown { file: String },
     Explorer { path: Option<String> },
     Html { url: String },
+    Empty,
 }
 
 impl Default for SurfaceType {
