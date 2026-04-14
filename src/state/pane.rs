@@ -216,8 +216,18 @@ impl AppState {
 
     /// Close a specific surface by ID. Cascades up the hierarchy:
     /// surface -> tab -> pane -> workspace as needed.
-    /// If the last workspace's last surface exits, spawns a new shell.
+    /// When `save_snapshot` is true, the closed item is saved for user restore (Ctrl+Shift+T).
+    /// Agent/IPC closures should pass false to avoid polluting the user's undo stack.
     pub fn close_surface_by_id(&mut self, surface_id: u32) -> bool {
+        self.close_surface_by_id_inner(surface_id, true)
+    }
+
+    /// Close without saving snapshot (for IPC/agent-initiated closures).
+    pub fn close_surface_by_id_no_snapshot(&mut self, surface_id: u32) -> bool {
+        self.close_surface_by_id_inner(surface_id, false)
+    }
+
+    fn close_surface_by_id_inner(&mut self, surface_id: u32, save_snapshot: bool) -> bool {
         // Find which workspace and pane contain this surface
         let (ws_idx, pane_id) = match self.find_workspace_index_for_surface(surface_id) {
             Some(v) => v,
@@ -268,8 +278,8 @@ impl AppState {
 
         // Case 1: Surface is within a SurfaceGroup with multiple surfaces
         if !surface_is_sole_in_tab && can_close_surface_in_group {
-            // Capture surface snapshot before closing
-            {
+            // Capture surface snapshot before closing (user actions only)
+            if save_snapshot {
                 let ws = &self.engine.workspaces[ws_idx];
                 let pane = ws.pane_layout().find_pane(pane_id).unwrap();
                 let tab = &pane.tabs[tab_idx];
@@ -299,9 +309,11 @@ impl AppState {
             let ws = &mut self.engine.workspaces[ws_idx];
             let pane = ws.pane_layout_mut().find_pane_mut(pane_id).unwrap();
             if pane.tabs.len() > 1 {
-                // Capture tab snapshot before removing
-                let snapshot = crate::model::closed_item::ClosedTab::from_tab(&pane.tabs[tab_idx]);
-                self.engine.closed_items.push(crate::model::ClosedItem::Tab(snapshot));
+                // Capture tab snapshot before removing (user actions only)
+                if save_snapshot {
+                    let snapshot = crate::model::closed_item::ClosedTab::from_tab(&pane.tabs[tab_idx]);
+                    self.engine.closed_items.push(crate::model::ClosedItem::Tab(snapshot));
+                }
 
                 pane.tabs.remove(tab_idx);
                 if pane.active_tab >= pane.tabs.len() {
@@ -331,8 +343,8 @@ impl AppState {
         }
 
         // Case 4 & 5: Last pane in workspace — close the workspace
-        // Capture workspace snapshot before removing
-        {
+        // Capture workspace snapshot before removing (user actions only)
+        if save_snapshot {
             let ws = &self.engine.workspaces[ws_idx];
             self.engine.closed_items.push(crate::model::ClosedItem::from_workspace(ws));
         }
