@@ -191,7 +191,7 @@ GPU 렌더링된 사이드바에 Git 브랜치, PR 상태, 작업 디렉토리, 
 
 **현재 구현된 기능:**
 - TCP 기반 JSON-RPC 2.0 서버 (127.0.0.1, 랜덤 포트)
-- 39개 메서드: system.info/shutdown, workspace.list/create/select, pane.list/split/close, tab.list/create/close, surface.list/close/send/send_key/set_mark/read_since_mark/screen_text/cursor_position/fire_hook/ime_enable/ime_disable/ime_preedit/ime_commit/ime_status, notification.list/create, tree, hook.set/list/unset, global_hook.set/list/unset, claude.launch/spawn/children/parent/kill/respawn/set_idle_state/set_needs_input
+- 53개 메서드: system.info, workspace.list/create/update, pane.list/close, split, tab.list/create/close, surface.list/close/close_self/send/send_key/send_combo/send_to/set_mark/read_since_mark/screen_text/cursor_position/is_typing/send_wait_idle/fire_hook/meta_set/meta_get/meta_unset/meta_list, notification.list/create, tree, hook.set/list/unset, global_hook.set/list/unset, claude.launch/spawn/children/parent/kill/respawn/broadcast/wait/set_idle_state/set_needs_input, message.send/read/count/clear
 - 메인 스레드 채널 통신으로 스레드 안전한 상태 접근
 - 앱 시작 시 자동 기동, 종료 시 포트 파일 자동 삭제
 - 헤드리스 모드: `--headless` 플래그로 GUI 없이 IPC 전용 실행 (E2E 테스트/CI 활용)
@@ -251,8 +251,9 @@ egui 기반 비터미널 패널. 마크다운 뷰어(제목/목록/인용/코드
 - Panel enum에 Markdown/Explorer 변형 추가 (비터미널 egui 패널)
 - 마크다운 렌더링: 제목, 목록, 인용, 코드 블록, 테이블, 인라인 서식(**볼드**, *이탤릭*, \`코드\`)
 - 파일 탐색기: 트리 뷰 + 파일 미리보기 (마크다운 렌더링 또는 모노스페이스 텍스트)
-- 패인 우클릭 컨텍스트 메뉴: Open Markdown... / Open Explorer
-- IPC: tab.open_markdown, tab.open_explorer
+- 패인 우클릭 또는 탭 바 빈 공간 우클릭 컨텍스트 메뉴: Open Markdown... / Open Explorer
+- 키보드 단축키: open_markdown, open_explorer (설정 UI에서 바인딩)
+- IPC: tab.create에 type 파라미터로 통합 (terminal/markdown/explorer)
 - CLI: tasty new markdown, tasty new explorer
 - 상세: [features.md](features.md)
 
