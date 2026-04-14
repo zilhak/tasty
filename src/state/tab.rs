@@ -189,7 +189,15 @@ impl AppState {
 
     /// Close the active tab in the focused pane. Returns true if a tab was closed.
     pub fn close_active_tab(&mut self) -> bool {
-        // Collect surface IDs in the active tab before closing
+        // Capture tab snapshot before closing (immutable borrow)
+        if let Some(pane) = self.focused_pane() {
+            let active = pane.active_tab;
+            if let Some(tab) = pane.tabs.get(active) {
+                let snapshot = crate::model::closed_item::ClosedTab::from_tab(tab);
+                self.engine.closed_items.push(crate::model::ClosedItem::Tab(snapshot));
+            }
+        }
+        // Collect surface IDs (mutable borrow)
         let mut surface_ids = Vec::new();
         if let Some(pane) = self.focused_pane_mut() {
             let active = pane.active_tab;

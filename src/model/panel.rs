@@ -64,6 +64,17 @@ impl Panel {
         }
     }
 
+    /// Find a SurfaceNode by surface ID (for snapshotting before close).
+    pub fn find_terminal_node(&self, surface_id: SurfaceId) -> Option<&SurfaceNode> {
+        match self {
+            Panel::Terminal(node) => {
+                if node.id == surface_id { Some(node) } else { None }
+            }
+            Panel::SurfaceGroup(group) => group.layout().find_surface_node(surface_id),
+            Panel::Markdown(_) | Panel::Explorer(_) => None,
+        }
+    }
+
     /// Find a terminal by surface ID (mutable).
     pub fn find_terminal_mut(&mut self, surface_id: SurfaceId) -> Option<&mut Terminal> {
         match self {

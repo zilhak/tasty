@@ -268,6 +268,19 @@ impl AppState {
 
         // Case 1: Surface is within a SurfaceGroup with multiple surfaces
         if !surface_is_sole_in_tab && can_close_surface_in_group {
+            // Capture surface snapshot before closing
+            {
+                let ws = &self.engine.workspaces[ws_idx];
+                let pane = ws.pane_layout().find_pane(pane_id).unwrap();
+                let tab = &pane.tabs[tab_idx];
+                if let Some(node) = tab.panel().find_terminal_node(surface_id) {
+                    let snapshot = crate::model::closed_item::ClosedSurface::from_surface_node(node);
+                    self.engine.closed_items.push(crate::model::ClosedItem::Surface {
+                        surface: snapshot,
+                        tab_name: tab.display_name().to_string(),
+                    });
+                }
+            }
             let ws = &mut self.engine.workspaces[ws_idx];
             let pane = ws.pane_layout_mut().find_pane_mut(pane_id).unwrap();
             if let crate::model::Panel::SurfaceGroup(group) = pane.tabs[tab_idx].panel_mut() {
@@ -281,12 +294,15 @@ impl AppState {
             return false;
         }
 
-        // Case 2: Surface is the sole content of this tab
-        // Try closing the tab (fails if it's the last tab in the pane)
+        // Case 2: Surface is the sole content of this tab — close the tab
         {
             let ws = &mut self.engine.workspaces[ws_idx];
             let pane = ws.pane_layout_mut().find_pane_mut(pane_id).unwrap();
             if pane.tabs.len() > 1 {
+                // Capture tab snapshot before removing
+                let snapshot = crate::model::closed_item::ClosedTab::from_tab(&pane.tabs[tab_idx]);
+                self.engine.closed_items.push(crate::model::ClosedItem::Tab(snapshot));
+
                 pane.tabs.remove(tab_idx);
                 if pane.active_tab >= pane.tabs.len() {
                     pane.active_tab = pane.tabs.len() - 1;
@@ -298,7 +314,8 @@ impl AppState {
             }
         }
 
-        // Case 3: Last tab in pane -- try closing the pane
+        // Case 3: Last tab in pane -- close the pane
+        // (pane snapshot is captured as part of workspace in Case 4/5, or inline here)
         {
             let ws = &mut self.engine.workspaces[ws_idx];
             if ws.pane_layout().all_pane_ids().len() > 1 {
@@ -313,20 +330,16 @@ impl AppState {
             }
         }
 
-        // Case 4: Last pane in workspace -- try closing the workspace
-        if self.engine.workspaces.len() > 1 {
-            self.engine.workspaces.remove(ws_idx);
-            if self.active_workspace >= self.engine.workspaces.len() {
-                self.active_workspace = self.engine.workspaces.len() - 1;
-            }
-            self.unregister_child(surface_id);
-            self.mark_parent_closed(surface_id);
-            crate::surface_meta::SurfaceMetaStore::remove(surface_id);
-            return true;
+        // Case 4 & 5: Last pane in workspace — close the workspace
+        // Capture workspace snapshot before removing
+        {
+            let ws = &self.engine.workspaces[ws_idx];
+            self.engine.closed_items.push(crate::model::ClosedItem::from_workspace(ws));
         }
-
-        // Case 5: Last workspace -- close it. The window will close itself.
         self.engine.workspaces.remove(ws_idx);
+        if self.active_workspace >= self.engine.workspaces.len() && !self.engine.workspaces.is_empty() {
+            self.active_workspace = self.engine.workspaces.len() - 1;
+        }
         self.unregister_child(surface_id);
         self.mark_parent_closed(surface_id);
         crate::surface_meta::SurfaceMetaStore::remove(surface_id);

@@ -159,6 +159,17 @@ impl SurfaceGroupLayout {
         }
     }
 
+    pub fn find_surface_node(&self, id: SurfaceId) -> Option<&SurfaceNode> {
+        match self {
+            SurfaceGroupLayout::Single(node) => {
+                if node.id == id { Some(node) } else { None }
+            }
+            SurfaceGroupLayout::Split { first, second, .. } => {
+                first.find_surface_node(id).or_else(|| second.find_surface_node(id))
+            }
+        }
+    }
+
     pub fn find_terminal_mut(&mut self, id: SurfaceId) -> Option<&mut Terminal> {
         match self {
             SurfaceGroupLayout::Single(node) => {

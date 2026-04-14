@@ -77,6 +77,9 @@ pub struct EngineState {
     pub claude_idle_state: HashMap<u32, bool>,
     pub claude_needs_input_state: HashMap<u32, bool>,
 
+    // ── Closed item history ──
+    pub closed_items: crate::model::ClosedItemStore,
+
     // ── Messaging / Typing detection ──
     pub surface_messages: HashMap<u32, Vec<SurfaceMessage>>,
     pub(crate) surface_next_message_id: u32,
@@ -117,6 +120,7 @@ impl EngineState {
             claude_next_child_index: HashMap::new(),
             claude_idle_state: HashMap::new(),
             claude_needs_input_state: HashMap::new(),
+            closed_items: crate::model::ClosedItemStore::new(),
             surface_messages: HashMap::new(),
             surface_next_message_id: 0,
             last_key_input: HashMap::new(),
