@@ -4,8 +4,9 @@ use crate::model::{ExplorerPanel, FileNode};
 use crate::theme;
 
 /// Draw the explorer panel with a file tree on the left and a file viewer on the right.
-pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel) {
+pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel) -> Option<ExplorerAction> {
     let th = theme::theme();
+    let mut explorer_action: Option<ExplorerAction> = None;
     let available_width = ui.available_width();
     let tree_width = (available_width * 0.35).min(250.0).max(150.0).round_ui();
 
@@ -38,6 +39,20 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel) {
                                 match act {
                                     TreeAction::SelectFile(path) => {
                                         panel.select_file(&path);
+                                    }
+                                    TreeAction::DoubleClickFile(path) => {
+                                        let ext = path.rsplit('.').next().unwrap_or("").to_lowercase();
+                                        match ext.as_str() {
+                                            "md" | "markdown" => {
+                                                explorer_action = Some(ExplorerAction::OpenMarkdownTab(path));
+                                            }
+                                            "html" | "htm" => {
+                                                explorer_action = Some(ExplorerAction::OpenHtmlTab(path));
+                                            }
+                                            _ => {
+                                                panel.select_file(&path);
+                                            }
+                                        }
                                     }
                                     TreeAction::ToggleDir(path) => {
                                         toggle_dir_by_path(&mut panel.root_node, &path);
@@ -89,11 +104,22 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel) {
             }
         });
     });
+
+    explorer_action
 }
 
 enum TreeAction {
     SelectFile(String),
+    DoubleClickFile(String),
     ToggleDir(String),
+}
+
+/// Action returned from `draw_explorer` for the caller to process.
+pub enum ExplorerAction {
+    /// Open a markdown file as a new Markdown tab.
+    OpenMarkdownTab(String),
+    /// Open an HTML file as a new Html tab (file:// URL).
+    OpenHtmlTab(String),
 }
 
 fn draw_file_node(
@@ -135,7 +161,10 @@ fn draw_file_node(
             egui::RichText::new(&text)
         };
 
-        if ui.selectable_label(is_selected, label).clicked() && action.is_none() {
+        let resp = ui.selectable_label(is_selected, label);
+        if resp.double_clicked() && action.is_none() && !node.is_directory {
+            *action = Some(TreeAction::DoubleClickFile(node.path.clone()));
+        } else if resp.clicked() && action.is_none() {
             if node.is_directory {
                 *action = Some(TreeAction::ToggleDir(node.path.clone()));
             } else {

@@ -49,6 +49,8 @@ pub fn draw_non_terminal_panels(
     }
 
     // Second pass: render each non-terminal panel.
+    let mut pending_explorer_action: Option<(u32, crate::explorer_ui::ExplorerAction)> = None;
+
     for info in &infos {
         let ws = state.active_workspace_mut();
         let pane = match ws.pane_layout_mut().find_pane_mut(info.pane_id) {
@@ -93,7 +95,9 @@ pub fn draw_non_terminal_panels(
                             .fill(th.crust)
                             .inner_margin(egui::Margin::same(4))
                             .show(ui, |ui| {
-                                crate::explorer_ui::draw_explorer(ui, exp_panel);
+                                if let Some(act) = crate::explorer_ui::draw_explorer(ui, exp_panel) {
+                                    pending_explorer_action = Some((info.pane_id, act));
+                                }
                             });
                     });
             }
@@ -120,6 +124,20 @@ pub fn draw_non_terminal_panels(
                     });
             }
             _ => {}
+        }
+    }
+
+    // Process deferred explorer actions (requires state mutation outside the render loop)
+    if let Some((pane_id, action)) = pending_explorer_action {
+        state.active_workspace_mut().focused_pane = pane_id;
+        match action {
+            crate::explorer_ui::ExplorerAction::OpenMarkdownTab(path) => {
+                let _ = state.add_markdown_tab(path);
+            }
+            crate::explorer_ui::ExplorerAction::OpenHtmlTab(path) => {
+                let url = format!("file://{}", path);
+                let _ = state.add_html_tab(url);
+            }
         }
     }
 }
