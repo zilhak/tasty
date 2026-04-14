@@ -81,7 +81,7 @@ tasty/
     │   ├── context_menu.rs     # 우클릭 컨텍스트 메뉴
     │   ├── dialog.rs           # 이름변경/마크다운 다이얼로그
     │   ├── divider.rs          # 분할선/서피스 하이라이트
-    │   └── non_terminal.rs     # 마크다운/탐색기 패널 렌더
+    │   └── egui_panels.rs      # egui 기반 Surface 패널 렌더
     │
     ├── tasty_window/           # 윈도우 이벤트 처리
     │   ├── mod.rs              # TastyWindow, handle_window_event dispatch

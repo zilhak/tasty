@@ -52,13 +52,15 @@ Pane 내의 하나의 탭. 내부에 Surface들의 **하위 레이아웃**을 �
 
 Tab 내의 최하위 컨테이너. **타입**을 가지며, 타입에 따라 콘텐츠가 달라진다. 모든 Surface는 고유한 `surface_id`를 가지며, 닫기/포커스/리스트 등의 동작이 타입에 관계없이 동일하게 적용된다.
 
-| 타입 | 설명 | PTY |
-|------|------|-----|
-| Terminal | 쉘 세션 (bash, zsh 등) | O |
-| Markdown | 마크다운 파일 뷰어 | X |
-| Explorer | 파일 탐색기 | X |
+| 타입 | 설명 | 렌더링 |
+|------|------|--------|
+| Terminal | 쉘 세션 (bash, zsh 등). PTY와 연결 | GPU 셰이더 |
+| Markdown | 마크다운 파일 뷰어 | egui |
+| Explorer | 파일 탐색기 | egui |
+| Html | HTML/웹 뷰어 | 네이티브 WebView |
+| Empty | 빈 surface. 타입 전환 버튼 표시 | egui |
 
-Terminal 타입만 PTY와 연결되며, Markdown/Explorer는 egui로 렌더링되는 비터미널 Surface이다.
+Terminal은 기본 Surface 타입이며 PTY(가상 터미널)와 연결된다. 다른 Surface 타입은 각각의 렌더링 방식으로 콘텐츠를 표시한다.
 
 ## 두 레벨의 레이아웃
 

@@ -25,7 +25,7 @@ pub enum ClosedPanel {
         layout: ClosedSurfaceLayout,
         focused_surface: SurfaceId,
     },
-    /// Non-terminal panels store just enough to recreate.
+    /// Panels without PTY store just enough to recreate.
     Markdown { path: PathBuf },
     Explorer { path: Option<PathBuf> },
 }

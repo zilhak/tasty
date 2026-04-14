@@ -8,7 +8,7 @@ pub struct AppearanceSettings {
     pub theme: String,
     pub background_opacity: f32,
     pub sidebar_width: f32,
-    /// UI scale: "small", "medium", or "large". Affects all non-terminal UI elements.
+    /// UI scale: "small", "medium", or "large". Affects all egui UI elements.
     pub ui_scale: String,
     /// Background color for the focused surface (hex, e.g. "#000000").
     /// Unfocused surfaces use the theme's default terminal_bg.

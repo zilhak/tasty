@@ -31,7 +31,7 @@ impl Panel {
     }
 
     /// Get the single surface ID for non-group panels.
-    /// Terminal and non-terminal panels each have exactly one surface ID.
+    /// Most panels have exactly one surface ID.
     /// SurfaceGroup has multiple — use `all_surface_ids()` for that.
     fn single_surface_id(&self) -> Option<SurfaceId> {
         match self {
@@ -111,7 +111,7 @@ impl Panel {
     }
 
     /// Get render regions for this panel within the given rect.
-    /// Non-terminal panels return empty since they are rendered by egui.
+    /// Only terminal panels return render regions; others are rendered by egui.
     pub fn render_regions(&self, rect: Rect) -> Vec<(SurfaceId, &Terminal, Rect)> {
         match self {
             Panel::Terminal(node) => vec![(node.id, &node.terminal, rect)],
@@ -120,7 +120,7 @@ impl Panel {
         }
     }
 
-    /// Collect all surface IDs in this panel (including non-terminal surfaces).
+    /// Collect all surface IDs in this panel.
     pub fn all_surface_ids(&self) -> Vec<SurfaceId> {
         match self {
             Panel::SurfaceGroup(group) => group.layout().all_surface_ids(),
@@ -128,9 +128,9 @@ impl Panel {
         }
     }
 
-    /// Returns true if this panel is a non-terminal panel.
-    pub fn is_non_terminal(&self) -> bool {
-        !matches!(self, Panel::Terminal(_) | Panel::SurfaceGroup(_))
+    /// Returns true if this panel contains terminal surfaces (PTY-backed).
+    pub fn has_terminal(&self) -> bool {
+        matches!(self, Panel::Terminal(_) | Panel::SurfaceGroup(_))
     }
 
     /// Get the focused surface ID for this panel.
@@ -196,7 +196,7 @@ impl Panel {
                 group.focused_surface = new_surface_id;
                 Panel::SurfaceGroup(group)
             }
-            other => other, // Non-terminal panels cannot be split
+            other => other, // Only terminal panels support surface-level split
         }
     }
 

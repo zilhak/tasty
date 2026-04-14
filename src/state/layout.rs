@@ -90,9 +90,10 @@ impl AppState {
     }
 
     /// Find the surface ID at the given physical pixel position.
-    /// Checks both terminal surfaces (via render_regions) and non-terminal
-    /// surfaces (Markdown/Explorer/Html) via pane rect matching.
+    /// First checks terminal render regions, then falls back to pane rect
+    /// matching for panels without render regions (Markdown/Explorer/Html/Empty).
     pub fn surface_id_at_position(&self, x: f32, y: f32, terminal_rect: Rect) -> Option<u32> {
+        // Terminal panels provide precise render regions
         let regions = self.render_regions(terminal_rect);
         for (_pane_id, _pane_rect, terminal_regions) in &regions {
             for (sid, _term, rect) in terminal_regions {
@@ -101,14 +102,14 @@ impl AppState {
                 }
             }
         }
-        // Fall back: check non-terminal panels by pane rect
+        // Other panels occupy the pane rect directly
         let ws = self.active_workspace();
         let pane_rects = ws.pane_layout().compute_rects(terminal_rect);
         for (pane_id, pane_rect) in &pane_rects {
             if pane_rect.contains(x, y) {
                 if let Some(pane) = ws.pane_layout().find_pane(*pane_id) {
                     if let Some(panel) = pane.active_panel() {
-                        if panel.is_non_terminal() {
+                        if !panel.has_terminal() {
                             return panel.focused_surface_id();
                         }
                     }

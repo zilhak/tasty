@@ -119,7 +119,7 @@ impl AppState {
         Ok(())
     }
 
-    /// Add a non-terminal tab in the specified pane (by ID, cross-workspace).
+    /// Add a tab with a pre-built panel in the specified pane (by ID, cross-workspace).
     pub fn add_panel_tab_to_pane(&mut self, pane_id: u32, name: String, panel: crate::model::Panel) {
         let tab_id = self.engine.next_ids.next_tab();
         if let Some(pane) = self.find_pane_by_id_mut(pane_id) {

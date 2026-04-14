@@ -251,7 +251,7 @@ impl AppState {
         if let Some(cwd) = self.focused_terminal().and_then(|t| t.get_cwd()) {
             return Some(cwd);
         }
-        // Fall back to non-terminal panel paths
+        // Fall back to panel-specific paths (Explorer, Markdown, etc.)
         let panel = self.focused_pane()?.active_panel()?;
         match panel {
             crate::model::Panel::Explorer(exp) => Some(std::path::PathBuf::from(&exp.root_path)),
@@ -348,7 +348,7 @@ impl AppState {
         for (i, workspace) in self.engine.workspaces.iter().enumerate() {
             for pid in workspace.pane_layout().all_pane_ids() {
                 if let Some(pane) = workspace.pane_layout().find_pane(pid) {
-                    // Check all tabs for this surface (including non-terminal)
+                    // Check all tabs for this surface (all panel types)
                     for tab in &pane.tabs {
                         if let Some(panel) = tab.panel_if_initialized() {
                             if panel.contains_surface(surface_id) {

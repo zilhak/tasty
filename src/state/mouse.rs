@@ -4,7 +4,7 @@ use super::AppState;
 
 impl AppState {
     /// Determine the cursor style for the given position within the terminal rect.
-    /// Returns Some(true) for terminal surfaces (I-beam), Some(false) for non-terminal
+    /// Returns Some(true) for terminal surfaces (I-beam), Some(false) for other surface types
     /// panels like Explorer/Markdown (default pointer), or None if not over any pane content.
     pub fn cursor_style_at(&self, x: f32, y: f32, terminal_rect: Rect) -> Option<bool> {
         if !terminal_rect.contains(x, y) {

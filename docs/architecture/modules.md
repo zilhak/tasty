@@ -92,7 +92,7 @@
 
 ## ui/ — egui UI 컴포넌트
 
-**책임:** egui로 그리는 모든 비터미널 UI. 사이드바, 탭바, 알림 패널, 컨텍스트 메뉴, 다이얼로그.
+**책임:** egui로 그리는 모든 UI. 사이드바, 탭바, 알림 패널, 다이얼로그, egui 기반 Surface 패널(Markdown/Explorer/Empty).
 
 **설계 목적:** 함수 단위로 이미 분리되어 있던 것을 파일로 옮김. 각 파일이 하나의 독립 UI 컴포넌트.
 
@@ -105,7 +105,7 @@
 | `context_menu.rs` | 우클릭 메뉴 (armed 상태머신) |
 | `dialog.rs` | 워크스페이스 이름변경 + 마크다운 경로 다이얼로그 |
 | `divider.rs` | 분할선 + 서피스 하이라이트 |
-| `non_terminal.rs` | 마크다운/탐색기 패널 (egui 위임) |
+| `egui_panels.rs` | egui 기반 Surface 패널 렌더링 (Markdown/Explorer/Html/Empty) |
 
 ---
 

@@ -183,11 +183,11 @@
 - **egui와의 이벤트 충돌 방지**: egui가 이벤트를 소비한 경우 (사이드바, 설정 윈도우 등) 터미널에는 전달하지 않음
 - 관련 모델 메서드: `Rect::contains()`, `PaneNode::find_divider_at()`, `PaneNode::update_ratio_for_rect()`, `SurfaceGroupLayout::find_divider_at()`, `SurfaceGroupLayout::update_ratio_for_rect()`, `SurfaceGroupLayout::find_surface_at()`
 
-### 비터미널 Surface (Markdown Viewer / Explorer / HTML WebView)
-- Surface 타입의 일종으로 취급. 고유 surface_id를 가지며 닫기/포커스/리스트 등 모든 surface 동작이 동일하게 적용됨
-- Markdown/Explorer: PTY가 없는 순수 egui 렌더링 surface
+### 추가 Surface 타입 (Markdown / Explorer / HTML / Empty)
+- 모든 Surface 타입은 고유 surface_id를 가지며, 닫기/포커스/리스트 등 공통 surface 동작이 동일하게 적용됨
+- Markdown/Explorer/Empty: egui로 렌더링
 - HTML: OS 네이티브 WebView (macOS: WKWebView, Windows: WebView2, Linux: WebKitGTK)를 wgpu 윈도우 위에 child view로 오버레이
-- egui Area로 해당 패인 rect에 오버레이 렌더링 (HTML은 네이티브 웹뷰)
+- Empty: 빈 placeholder. 중앙에 타입 전환 버튼 표시
 
 #### Markdown Viewer
 - 마크다운 파일을 egui로 렌더링하는 읽기 전용 뷰어

@@ -70,7 +70,7 @@ impl TastyWindow {
     pub(super) fn handle_mouse_input(&mut self, button_state: ElementState, button: MouseButton, egui_consumed: bool) {
         let overlay_open = self.state.settings_open;
         if egui_consumed || overlay_open {
-            // Even when egui consumes the event (e.g. non-terminal panels),
+            // Even when egui consumes the event (e.g. egui-rendered panels),
             // we still need to update pane focus on left-click within the terminal area.
             if egui_consumed && !overlay_open && button == MouseButton::Left && button_state == ElementState::Pressed {
                 let terminal_rect = self.compute_terminal_rect();

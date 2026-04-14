@@ -21,7 +21,7 @@ impl Default for Pane {
 }
 
 impl Pane {
-    /// Create a Pane with a pre-built Panel (for non-terminal surfaces or restore).
+    /// Create a Pane with a pre-built Panel (for pre-constructed panels or restore).
     pub fn new_with_panel(id: PaneId, tab_id: TabId, name: String, panel: Panel) -> Self {
         let tab = super::tab::Tab::new_with_panel(tab_id, name, panel);
         Self {
@@ -284,7 +284,7 @@ impl Pane {
         self.active_panel_mut()?.focused_terminal_mut()
     }
 
-    /// Check if any tab in this pane contains the given surface ID (terminal or non-terminal).
+    /// Check if any tab in this pane contains the given surface ID.
     pub fn contains_surface(&self, surface_id: SurfaceId) -> bool {
         self.tabs.iter().any(|tab| {
             tab.panel_if_initialized()
@@ -338,7 +338,7 @@ impl Pane {
         }
     }
 
-    /// Add a non-terminal tab with a pre-built panel and switch to it.
+    /// Add a tab with a pre-built panel and switch to it.
     pub fn add_panel_tab(&mut self, tab_id: TabId, name: String, panel: Panel) {
         let tab = Tab {
             id: tab_id,

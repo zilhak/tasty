@@ -4,17 +4,17 @@ use crate::model::Rect;
 use crate::state::AppState;
 use crate::theme;
 
-/// Render non-terminal panels (Markdown, Explorer) using egui.
-/// These panels don't have a wgpu terminal renderer; they are fully egui-based.
-pub fn draw_non_terminal_panels(
+/// Render egui-based panels (Markdown, Explorer, Html, Empty).
+/// Terminal panels are rendered by the wgpu shader pipeline; these are rendered by egui.
+pub fn draw_egui_panels(
     ctx: &egui::Context,
     state: &mut AppState,
     pane_rects: &[(u32, Rect)],
     scale_factor: f32,
 ) {
     let th = theme::theme();
-    // First pass: gather info about non-terminal panels (read-only).
-    struct NonTerminalInfo {
+    // First pass: gather info about egui-rendered panels (read-only).
+    struct EguiPanelInfo {
         pane_id: u32,
         logical_x: f32,
         logical_y: f32,
@@ -34,11 +34,11 @@ pub fn draw_non_terminal_panels(
                 Some(p) => p,
                 None => continue,
             };
-            if !panel.is_non_terminal() {
+            if panel.has_terminal() {
                 continue;
             }
             let tab_bar_h = state.tab_bar_height;
-            infos.push(NonTerminalInfo {
+            infos.push(EguiPanelInfo {
                 pane_id,
                 logical_x: (pane_rect.x / scale_factor).round_ui(),
                 logical_y: ((pane_rect.y + tab_bar_h) / scale_factor).round_ui(),
@@ -48,7 +48,7 @@ pub fn draw_non_terminal_panels(
         }
     }
 
-    // Second pass: render each non-terminal panel.
+    // Second pass: render each egui panel.
     let mut pending_explorer_action: Option<(u32, crate::explorer_ui::ExplorerAction)> = None;
     let mut pending_empty_convert: Option<u32> = None;
 

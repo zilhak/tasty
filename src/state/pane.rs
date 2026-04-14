@@ -26,15 +26,13 @@ impl AppState {
     }
 
     /// Split within the current tab (SurfaceGroup). Appears as one tab.
-    /// For non-terminal panels (Markdown/Explorer/Html), falls back to pane-level split
-    /// since they don't support internal surface splitting.
+    /// Only terminal panels support surface-level splitting; others fall back to pane split.
     pub fn split_surface(&mut self, direction: SplitDirection) -> anyhow::Result<()> {
-        // Check if focused panel is non-terminal → fall back to pane split
-        let is_non_terminal = self.focused_pane()
+        let has_terminal = self.focused_pane()
             .and_then(|p| p.active_panel())
-            .is_some_and(|panel| panel.is_non_terminal());
+            .is_some_and(|panel| panel.has_terminal());
 
-        if is_non_terminal {
+        if !has_terminal {
             return self.split_pane(direction);
         }
 
@@ -303,7 +301,7 @@ impl AppState {
                         crate::model::SurfaceGroupLayout::Single(_)
                     ) || group.layout().find_terminal(surface_id).is_none();
                 }
-                // Non-terminal panels (Markdown, Explorer): sole content of the tab
+                // Single-surface panels (Markdown, Explorer, etc.): sole content of the tab
                 crate::model::Panel::Markdown(_) | crate::model::Panel::Explorer(_) => {
                     surface_is_sole_in_tab = true;
                     can_close_surface_in_group = false;

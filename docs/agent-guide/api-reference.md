@@ -69,7 +69,7 @@ tasty read since-mark [--strip-ansi]  # 마크 이후 출력 읽기
 tasty read screen             # 현재 화면 텍스트 읽기
 tasty close surface
 
-# 비터미널 surface
+# 추가 Surface 타입
 tasty new tab --pane <ID> --type markdown --file /path/to/file.md
 tasty new tab --pane <ID> --type explorer [--path /dir]
 tasty split --level pane --target <ID> --type markdown --file /path/to/file.md

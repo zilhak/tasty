@@ -40,7 +40,7 @@ fn collect_surface_info(
         crate::model::Panel::SurfaceGroup(group) => {
             collect_surface_layout_info(group.layout(), pane_id, workspace_id, tab_idx, out);
         }
-        _ => {} // Non-terminal panels have no surfaces to list.
+        _ => {} // Only terminal panels have listable surfaces.
     }
 }
 

@@ -24,7 +24,7 @@ impl GpuState {
             ui::draw_pane_dividers(ctx, dividers, scale_factor);
             ui::draw_surface_highlights(ctx, state, terminal_rect, scale_factor);
             ui::draw_pane_tab_bars(ctx, state, pane_rects, scale_factor);
-            ui::draw_non_terminal_panels(ctx, state, pane_rects, scale_factor);
+            ui::draw_egui_panels(ctx, state, pane_rects, scale_factor);
             // Context menus are now handled via native OS menus (see process_pending_native_menu)
             ui::draw_markdown_path_dialog(ctx, state);
             ui::draw_html_url_dialog(ctx, state);
