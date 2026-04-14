@@ -203,8 +203,8 @@ impl AppState {
     }
 
     /// Close the focused surface. For SurfaceGroup, closes the focused surface
-    /// within the group. For a single Terminal tab, delegates to close_surface_by_id
-    /// which handles tab/pane/workspace cascading properly.
+    /// within the group. For other panel types (Terminal, Markdown, Explorer),
+    /// delegates to close_surface_by_id which handles tab/pane/workspace cascading.
     pub fn close_active_surface(&mut self) -> bool {
         let surface_id;
         if let Some(pane) = self.focused_pane_mut() {
@@ -218,11 +218,14 @@ impl AppState {
                             return self.close_surface_by_id(surface_id);
                         }
                     }
-                    crate::model::Panel::Terminal(node) => {
-                        surface_id = node.id;
+                    _ => {
+                        // Terminal, Markdown, Explorer — all have focused_surface_id()
+                        surface_id = match panel.focused_surface_id() {
+                            Some(id) => id,
+                            None => return false,
+                        };
                         return self.close_surface_by_id(surface_id);
                     }
-                    _ => return false,
                 }
             } else {
                 return false;
