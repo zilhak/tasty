@@ -84,8 +84,61 @@ impl ExplorerPanel {
     pub fn select_file(&mut self, path: &str) {
         let ext = path.rsplit('.').next().unwrap_or("").to_lowercase();
         self.is_markdown = ext == "md" || ext == "markdown";
-        self.file_content = std::fs::read_to_string(path).ok();
         self.selected_file = Some(path.to_string());
         self.scroll_offset = 0.0;
+
+        if is_previewable_file(path, &ext) {
+            self.file_content = std::fs::read_to_string(path).ok();
+        } else {
+            self.file_content = None;
+        }
     }
+}
+
+/// Check if a file is likely a text file suitable for preview.
+fn is_previewable_file(path: &str, ext: &str) -> bool {
+    const TEXT_EXTENSIONS: &[&str] = &[
+        // Markup / Doc
+        "md", "markdown", "txt", "text", "rst", "adoc", "org",
+        // Web
+        "html", "htm", "css", "js", "jsx", "ts", "tsx", "vue", "svelte", "json", "xml", "svg",
+        // Config
+        "toml", "yaml", "yml", "ini", "cfg", "conf", "env", "properties",
+        // Programming
+        "rs", "py", "go", "java", "kt", "kts", "c", "cpp", "cc", "h", "hpp", "hh",
+        "cs", "swift", "rb", "pl", "pm", "lua", "r", "jl", "ex", "exs", "erl", "hrl",
+        "hs", "ml", "mli", "fs", "fsi", "fsx", "clj", "cljs", "scala", "sc",
+        "zig", "nim", "v", "d", "dart", "php",
+        // Shell
+        "sh", "bash", "zsh", "fish", "ps1", "psm1", "bat", "cmd",
+        // Data
+        "csv", "tsv", "sql", "graphql", "gql",
+        // Build / CI
+        "cmake", "gradle", "sbt", "cabal",
+        // Other
+        "log", "diff", "patch", "gitignore", "gitattributes", "editorconfig",
+        "dockerignore", "prettierrc", "eslintrc", "babelrc",
+    ];
+
+    if TEXT_EXTENSIONS.contains(&ext) {
+        return true;
+    }
+
+    // Check extensionless known filenames
+    let filename = path.rsplit(['/', '\\']).next().unwrap_or("");
+    const TEXT_FILENAMES: &[&str] = &[
+        "Makefile", "makefile", "GNUmakefile", "Dockerfile", "Containerfile",
+        "Rakefile", "Gemfile", "Procfile", "Justfile", "Vagrantfile",
+        "CMakeLists.txt", "LICENSE", "LICENCE", "COPYING", "AUTHORS",
+        "CHANGELOG", "README", "INSTALL", "TODO", "CONTRIBUTORS",
+        ".gitignore", ".gitattributes", ".editorconfig", ".dockerignore",
+        ".env", ".env.local", ".env.example",
+    ];
+
+    if TEXT_FILENAMES.contains(&filename) {
+        return true;
+    }
+
+    // No extension and not a known filename — skip preview
+    false
 }
