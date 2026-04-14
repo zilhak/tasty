@@ -26,11 +26,7 @@ impl AppState {
                     return Some(match pane.active_panel() {
                         Some(crate::model::Panel::Terminal(_)) => true,
                         Some(crate::model::Panel::SurfaceGroup(_)) => true,
-                        Some(crate::model::Panel::Markdown(_)) => false,
-                        Some(crate::model::Panel::Explorer(_)) => false,
-                        Some(crate::model::Panel::Html(_)) => false,
-                        Some(crate::model::Panel::Empty { .. }) => false,
-                        None => false,
+                        _ => false,
                     });
                 }
                 return None;

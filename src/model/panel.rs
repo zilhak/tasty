@@ -30,12 +30,26 @@ impl Panel {
         }
     }
 
+    /// Get the single surface ID for non-group panels.
+    /// Terminal and non-terminal panels each have exactly one surface ID.
+    /// SurfaceGroup has multiple — use `all_surface_ids()` for that.
+    fn single_surface_id(&self) -> Option<SurfaceId> {
+        match self {
+            Panel::Terminal(node) => Some(node.id),
+            Panel::SurfaceGroup(_) => None,
+            Panel::Markdown(md) => Some(md.id),
+            Panel::Explorer(ex) => Some(ex.id),
+            Panel::Html(html) => Some(html.id),
+            Panel::Empty { id } => Some(*id),
+        }
+    }
+
     /// Get the focused terminal.
     pub fn focused_terminal(&self) -> Option<&Terminal> {
         match self {
             Panel::Terminal(node) => Some(&node.terminal),
             Panel::SurfaceGroup(group) => group.focused_terminal(),
-            Panel::Markdown(_) | Panel::Explorer(_) | Panel::Html(_) | Panel::Empty { .. } => None,
+            _ => None,
         }
     }
 
@@ -44,7 +58,7 @@ impl Panel {
         match self {
             Panel::Terminal(node) => Some(&mut node.terminal),
             Panel::SurfaceGroup(group) => group.focused_terminal_mut(),
-            Panel::Markdown(_) | Panel::Explorer(_) | Panel::Html(_) | Panel::Empty { .. } => None,
+            _ => None,
         }
     }
 
@@ -53,7 +67,7 @@ impl Panel {
         match self {
             Panel::Terminal(node) => out.push(&mut node.terminal),
             Panel::SurfaceGroup(group) => group.layout_mut().collect_terminals_mut(out),
-            Panel::Markdown(_) | Panel::Explorer(_) | Panel::Html(_) | Panel::Empty { .. } => {}
+            _ => {}
         }
     }
 
@@ -65,79 +79,65 @@ impl Panel {
         match self {
             Panel::Terminal(node) => f(node.id, &mut node.terminal),
             Panel::SurfaceGroup(group) => group.layout_mut().for_each_terminal_mut(f),
-            Panel::Markdown(_) | Panel::Explorer(_) | Panel::Html(_) | Panel::Empty { .. } => {}
+            _ => {}
         }
     }
 
     /// Find a terminal by surface ID (immutable).
     pub fn find_terminal(&self, surface_id: SurfaceId) -> Option<&Terminal> {
         match self {
-            Panel::Terminal(node) => {
-                if node.id == surface_id { Some(&node.terminal) } else { None }
-            }
+            Panel::Terminal(node) if node.id == surface_id => Some(&node.terminal),
             Panel::SurfaceGroup(group) => group.layout().find_terminal(surface_id),
-            Panel::Markdown(_) | Panel::Explorer(_) | Panel::Html(_) | Panel::Empty { .. } => None,
+            _ => None,
         }
     }
 
     /// Find a SurfaceNode by surface ID (for snapshotting before close).
     pub fn find_terminal_node(&self, surface_id: SurfaceId) -> Option<&SurfaceNode> {
         match self {
-            Panel::Terminal(node) => {
-                if node.id == surface_id { Some(node) } else { None }
-            }
+            Panel::Terminal(node) if node.id == surface_id => Some(node),
             Panel::SurfaceGroup(group) => group.layout().find_surface_node(surface_id),
-            Panel::Markdown(_) | Panel::Explorer(_) | Panel::Html(_) | Panel::Empty { .. } => None,
+            _ => None,
         }
     }
 
     /// Find a terminal by surface ID (mutable).
     pub fn find_terminal_mut(&mut self, surface_id: SurfaceId) -> Option<&mut Terminal> {
         match self {
-            Panel::Terminal(node) => {
-                if node.id == surface_id { Some(&mut node.terminal) } else { None }
-            }
+            Panel::Terminal(node) if node.id == surface_id => Some(&mut node.terminal),
             Panel::SurfaceGroup(group) => group.layout_mut().find_terminal_mut(surface_id),
-            Panel::Markdown(_) | Panel::Explorer(_) | Panel::Html(_) | Panel::Empty { .. } => None,
+            _ => None,
         }
     }
 
     /// Get render regions for this panel within the given rect.
-    /// Markdown and Explorer panels return empty since they are rendered by egui.
+    /// Non-terminal panels return empty since they are rendered by egui.
     pub fn render_regions(&self, rect: Rect) -> Vec<(SurfaceId, &Terminal, Rect)> {
         match self {
             Panel::Terminal(node) => vec![(node.id, &node.terminal, rect)],
             Panel::SurfaceGroup(group) => group.compute_rects(rect),
-            Panel::Markdown(_) | Panel::Explorer(_) | Panel::Html(_) | Panel::Empty { .. } => vec![],
+            _ => vec![],
         }
     }
 
     /// Collect all surface IDs in this panel (including non-terminal surfaces).
     pub fn all_surface_ids(&self) -> Vec<SurfaceId> {
         match self {
-            Panel::Terminal(node) => vec![node.id],
             Panel::SurfaceGroup(group) => group.layout().all_surface_ids(),
-            Panel::Markdown(md) => vec![md.id],
-            Panel::Explorer(ex) => vec![ex.id],
-            Panel::Html(html) => vec![html.id],
-            Panel::Empty { id } => vec![*id],
+            other => other.single_surface_id().into_iter().collect(),
         }
     }
 
-    /// Returns true if this panel is a non-terminal panel (Markdown, Explorer, or Html).
+    /// Returns true if this panel is a non-terminal panel.
     pub fn is_non_terminal(&self) -> bool {
-        matches!(self, Panel::Markdown(_) | Panel::Explorer(_) | Panel::Html(_) | Panel::Empty { .. })
+        !matches!(self, Panel::Terminal(_) | Panel::SurfaceGroup(_))
     }
 
     /// Get the focused surface ID for this panel.
     pub fn focused_surface_id(&self) -> Option<SurfaceId> {
         match self {
-            Panel::Terminal(node) => Some(node.id),
             Panel::SurfaceGroup(group) => Some(group.focused_surface),
-            Panel::Markdown(md) => Some(md.id),
-            Panel::Explorer(ex) => Some(ex.id),
-            Panel::Html(html) => Some(html.id),
-            Panel::Empty { id } => Some(*id),
+            other => other.single_surface_id(),
         }
     }
 
@@ -155,7 +155,7 @@ impl Panel {
                 node.terminal.resize(cols, rows);
             }
             Panel::SurfaceGroup(group) => group.resize_all(rect, cell_width, cell_height),
-            Panel::Markdown(_) | Panel::Explorer(_) | Panel::Html(_) | Panel::Empty { .. } => {}
+            _ => {}
         }
     }
 
@@ -188,7 +188,6 @@ impl Panel {
                 Panel::SurfaceGroup(group)
             }
             Panel::SurfaceGroup(mut group) => {
-                // Pre-built terminal: wrap into SurfaceNode and use infallible split.
                 let new_node = SurfaceNode { id: new_surface_id, terminal: new_terminal, deferred_spawn: None };
                 let target = group.focused_surface;
                 let old_layout = group.take_layout();
@@ -197,8 +196,7 @@ impl Panel {
                 group.focused_surface = new_surface_id;
                 Panel::SurfaceGroup(group)
             }
-            // Non-terminal panels cannot be split (they have no surfaces).
-            Panel::Markdown(_) | Panel::Explorer(_) | Panel::Html(_) | Panel::Empty { .. } => self,
+            other => other, // Non-terminal panels cannot be split
         }
     }
 
@@ -236,7 +234,6 @@ impl Panel {
                 let old_layout = group.take_layout();
                 let (new_layout, _) = old_layout.split_with_node(target_surface_id, direction, new_node);
                 group.put_layout(new_layout);
-                // Do NOT change group.focused_surface
                 Panel::SurfaceGroup(group)
             }
             other => other,
