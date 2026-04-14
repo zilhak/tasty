@@ -5,7 +5,7 @@
 ### PTY 기반 셸 실행
 - ConPTY(Windows) / Unix PTY를 통한 네이티브 셸 실행
 - `TERM=xterm-256color` 환경 설정
-- PTY 리사이즈 전파: 윈도우 크기 변경 시 자식 프로세스에 새 크기 통보
+- PTY 리사이즈 전파: 윈도우 크기 변경 시 자식 프로세스에 새 크기 통보. rows 축소 시 커서 아래 빈 행을 먼저 제거하고 부족하면 위쪽 행을 scrollback으로 캡처하여 커서-콘텐츠 관계를 보존. rows 확대 시 scrollback에서 복원. 모든 워크스페이스/탭의 터미널에 리사이즈 전파
 - 자식 프로세스 핸들 관리: 생존 여부 확인 가능
 - PTY 채널 백프레셔: `sync_channel(32)`으로 버퍼 크기 제한 (32 * 8KB = 256KB), 버퍼 가득 차면 PTY 리더 스레드 블로킹
 - 작업 디렉토리 상속: 새 surface/pane/workspace 생성 시 소스 surface의 현재 작업 디렉토리를 자동 상속. 크로스 플랫폼 CWD 감지 (Linux: `/proc/PID/cwd`, macOS: `lsof`, Windows: PowerShell). 설정에서 on/off 가능 (`general.inherit_cwd`, 기본 on). CLI/IPC에서는 `--cwd` 옵션으로 명시적 경로 지정도 가능
@@ -187,7 +187,6 @@
 - Surface 타입의 일종으로 취급. 고유 surface_id를 가지며 닫기/포커스/리스트 등 모든 surface 동작이 동일하게 적용됨
 - PTY가 없는 순수 egui 렌더링 surface
 - egui Area로 해당 패인 rect에 오버레이 렌더링
-- **알려진 제한사항**: 현재 코드에서는 `Panel::all_surface_ids()` 등에서 비터미널 패널의 ID가 누락되어 있어 닫기 cascade 등에서 버그 발생. surface_id 통합 리팩토링 필요
 
 #### Markdown Viewer
 - 마크다운 파일을 egui로 렌더링하는 읽기 전용 뷰어
@@ -203,11 +202,16 @@
 - 숨김 파일 기본 제외 (.env, .gitignore, .claude는 표시)
 - 디렉토리 우선, 대소문자 무시 이름순 정렬
 
-#### 패인 우클릭 컨텍스트 메뉴
-- 터미널 영역에서 마우스 우클릭 시 컨텍스트 메뉴 표시
+#### 컨텍스트 메뉴
+- 터미널 영역 또는 탭 바 빈 공간에서 마우스 우클릭 시 컨텍스트 메뉴 표시
 - "Open Markdown..." → 파일 경로 입력 다이얼로그 → 마크다운 탭 열기
 - "Open Explorer" → 홈 디렉토리를 루트로 하는 탐색기 탭 열기
 - 좌클릭 또는 Cancel로 메뉴 닫기
+
+#### 키보드 단축키
+- `open_markdown`: 마크다운 열기 (파일 경로 입력 다이얼로그 표시)
+- `open_explorer`: 탐색기 열기 (홈 디렉토리를 루트로 탭 생성)
+- 기본값 미설정 (설정 UI에서 Pane 서브탭에서 바인딩 가능)
 
 #### IPC/CLI 지원
 - `tab.create`에 `type` 파라미터 추가로 통합 예정 (`terminal` / `markdown` / `explorer`)
@@ -287,7 +291,7 @@
 - **Appearance**: 폰트 패밀리 (기본값: 시스템 모노스페이스), 폰트 크기, 테마 (dark/light), 배경 투명도, 사이드바 너비, focused surface 배경색, Font DPI 스케일링 모드 (auto: 모니터 DPI에 맞춰 동일 물리 크기 유지 / fixed: 픽셀 고정, 기본값)
 - **Clipboard**: OS별 기본 활성화 (macOS: Alt+C/V, Linux: Ctrl+Shift+C/V, Windows: Ctrl+C/V)
 - **Notifications**: 알림 활성화, 시스템 알림, 사운드, 병합 간격(ms)
-- **Keybindings**: 워크스페이스/탭/패인/서피스 분할 단축키
+- **Keybindings**: 워크스페이스/탭/패인/서피스 분할 단축키, 마크다운/탐색기 열기 단축키
 - **Performance**: targeted PTY polling, scrollback disk swap, lazy PTY init (background 탭 생성 시 PTY를 즉시 spawn하지 않고 최초 접근 시점에 spawn)
 
 ### GUI 설정 윈도우
