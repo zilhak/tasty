@@ -43,11 +43,9 @@ impl TastyWindow {
         }
 
         // Notification panel is a popup (not a modal) — it does NOT block input.
-        // Modals and dialogs block keyboard input to the terminal.
+        // Modals and dialogs with text input block keyboard input to the terminal.
         let overlay_open = self.state.settings_open
-            || self.state.html_url_dialog.is_some()
-            || self.state.markdown_path_dialog.is_some()
-            || self.state.ws_rename.is_some();
+            || self.state.has_input_dialog_open();
 
         if !overlay_open {
             // On macOS, IME composition (e.g. Korean) can replace the logical key

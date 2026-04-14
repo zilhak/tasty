@@ -142,6 +142,15 @@ impl AppState {
         })
     }
 
+    /// Returns true if any dialog or popup with text input is open,
+    /// meaning keyboard input should NOT be forwarded to the terminal.
+    pub fn has_input_dialog_open(&self) -> bool {
+        self.html_url_dialog.is_some()
+            || self.markdown_path_dialog.is_some()
+            || self.ws_rename.is_some()
+            || self.tab_rename_dialog.is_some()
+    }
+
     pub fn active_workspace(&self) -> &crate::model::Workspace {
         let idx = self.active_workspace.min(self.engine.workspaces.len().saturating_sub(1));
         &self.engine.workspaces[idx]
