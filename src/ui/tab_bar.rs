@@ -113,8 +113,11 @@ pub fn draw_pane_tab_bars(
                                 egui::pos2(clip_start_x, ui.cursor().min.y),
                                 egui::vec2(viewport_w, bar_h),
                             );
-                            // Reserve the viewport space
-                            ui.allocate_exact_size(egui::vec2(viewport_w, bar_h), egui::Sense::hover());
+                            // Reserve the viewport space (click sense for right-click context menu on empty area)
+                            let (_, viewport_resp) = ui.allocate_exact_size(egui::vec2(viewport_w, bar_h), egui::Sense::click());
+                            if viewport_resp.secondary_clicked() {
+                                actions.push((info.pane_id, PaneTabAction::OpenPaneContextMenu(viewport_resp.interact_pointer_pos().unwrap_or_default())));
+                            }
 
                             // Draw tabs inside the clip rect using painter with clip
                             let painter = ui.painter().with_clip_rect(clip_rect);
@@ -260,6 +263,14 @@ pub fn draw_pane_tab_bars(
                 state.tab_context_menu = Some(crate::state::TabContextMenu {
                     pane_id,
                     tab_index: tab_idx,
+                    x: pos.x,
+                    y: pos.y,
+                    armed: false,
+                });
+            }
+            PaneTabAction::OpenPaneContextMenu(pos) => {
+                state.pane_context_menu = Some(crate::state::PaneContextMenu {
+                    pane_id,
                     x: pos.x,
                     y: pos.y,
                     armed: false,
@@ -453,5 +464,6 @@ enum PaneTabAction {
     AddTab,
     ScrollLeft,
     OpenContextMenu(usize, egui::Pos2),
+    OpenPaneContextMenu(egui::Pos2),
     ScrollRight,
 }
