@@ -64,6 +64,10 @@ pub struct AppState {
     pub markdown_convert_surface_id: Option<u32>,
     /// Surface convert popup: if Some, shows the convert popup for this surface_id.
     pub convert_popup: Option<u32>,
+    /// HTML URL dialog state: (pane_id, url_buffer). If html_convert_surface_id is set, converts instead of creating new tab.
+    pub html_url_dialog: Option<(u32, String)>,
+    /// If set, the HTML URL dialog will convert this surface instead of creating a new tab.
+    pub html_convert_surface_id: Option<u32>,
     /// Measured tab bar height in physical pixels, updated each frame by egui.
     pub tab_bar_height: f32,
     /// Popup manager for internal popups (notification panel, etc.).
@@ -122,6 +126,8 @@ impl AppState {
             markdown_path_dialog: None,
             markdown_convert_surface_id: None,
             convert_popup: None,
+            html_url_dialog: None,
+            html_convert_surface_id: None,
             tab_bar_height: 24.0,
             captured_double_tap: None,
             popups: {

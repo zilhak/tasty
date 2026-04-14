@@ -183,10 +183,11 @@
 - **egui와의 이벤트 충돌 방지**: egui가 이벤트를 소비한 경우 (사이드바, 설정 윈도우 등) 터미널에는 전달하지 않음
 - 관련 모델 메서드: `Rect::contains()`, `PaneNode::find_divider_at()`, `PaneNode::update_ratio_for_rect()`, `SurfaceGroupLayout::find_divider_at()`, `SurfaceGroupLayout::update_ratio_for_rect()`, `SurfaceGroupLayout::find_surface_at()`
 
-### 비터미널 Surface (Markdown Viewer / Explorer)
+### 비터미널 Surface (Markdown Viewer / Explorer / HTML WebView)
 - Surface 타입의 일종으로 취급. 고유 surface_id를 가지며 닫기/포커스/리스트 등 모든 surface 동작이 동일하게 적용됨
-- PTY가 없는 순수 egui 렌더링 surface
-- egui Area로 해당 패인 rect에 오버레이 렌더링
+- Markdown/Explorer: PTY가 없는 순수 egui 렌더링 surface
+- HTML: OS 네이티브 WebView (macOS: WKWebView, Windows: WebView2, Linux: WebKitGTK)를 wgpu 윈도우 위에 child view로 오버레이
+- egui Area로 해당 패인 rect에 오버레이 렌더링 (HTML은 네이티브 웹뷰)
 
 #### Markdown Viewer
 - 마크다운 파일을 egui로 렌더링하는 읽기 전용 뷰어
@@ -206,6 +207,7 @@
 - 터미널 영역 또는 탭 바 빈 공간에서 마우스 우클릭 시 컨텍스트 메뉴 표시
 - "Open Markdown..." → 파일 경로 입력 다이얼로그 → 마크다운 탭 열기
 - "Open Explorer" → 홈 디렉토리를 루트로 하는 탐색기 탭 열기
+- "Open HTML..." → URL 입력 다이얼로그 → HTML WebView 탭 열기
 - 좌클릭 또는 Cancel로 메뉴 닫기
 
 #### 키보드 단축키
@@ -214,16 +216,24 @@
 - 기본값 미설정 (설정 UI에서 Pane 서브탭에서 바인딩 가능)
 
 #### Surface 타입 전환
-- `convert_surface` 단축키 (기본 `Alt+'`): 전환 팝업 표시 — Terminal / Markdown... / Explorer / Cancel
+- `convert_surface` 단축키 (기본 `Alt+'`): 전환 팝업 표시 — Terminal / Markdown... / Explorer / HTML... / Cancel
 - `convert_to_markdown` / `convert_to_explorer`: 직접 전환 단축키 (기본값 없음, 설정에서 할당)
 - 현재 타입과 동일한 항목은 체크 표시 + 비활성
 - Markdown 전환 시 파일 경로 입력 다이얼로그 표시
 - Terminal 전환 시 새 PTY 생성, Explorer 전환 시 CWD 또는 홈 디렉토리 사용
 - Esc / Cancel / 외부 클릭으로 팝업 닫기
 
+#### HTML WebView
+- OS 네이티브 WebView를 wgpu 윈도우 위에 child view로 오버레이
+- macOS: WKWebView (objc2-web-kit), Windows: WebView2 (webview2-com), Linux: WebKitGTK (webkit2gtk + x11-dl)
+- wry 소스 참조 자체 구현 (~120줄/플랫폼, 6개 API: create, set_bounds, set_visible, load_url, load_html, drop)
+- URL 또는 HTML 문자열 직접 로드 지원 (file:// 로컬 파일 로드 가능)
+- 탭 전환 시 자동 show/hide, 리사이즈 시 자동 bounds 동기화
+- 비활성 워크스페이스/탭의 WebView는 자동 hidden
+
 #### IPC/CLI 지원
-- IPC: `tab.create`에 `type` 파라미터로 통합 (`terminal` / `markdown` / `explorer`)
-- CLI: `tasty new markdown <PATH> --pane <PANE>`, `tasty new explorer --pane <PANE>`
+- IPC: `tab.create`에 `type` 파라미터로 통합 (`terminal` / `markdown` / `explorer` / `html`)
+- CLI: `tasty new tab --pane <PANE> --type html --url <URL>`
 
 ## 알림 시스템
 

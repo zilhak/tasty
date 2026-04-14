@@ -73,7 +73,7 @@ pub enum Commands {
         /// Split direction: vertical (default) or horizontal
         #[arg(long, default_value = "vertical")]
         direction: String,
-        /// Surface type: terminal (default), markdown, explorer
+        /// Surface type: terminal (default), markdown, explorer, html
         #[arg(long, default_value = "terminal")]
         r#type: String,
         /// Metadata JSON to set on the new surface (e.g. '{"nickname":"build"}')
@@ -88,6 +88,9 @@ pub enum Commands {
         /// Directory path (for explorer type)
         #[arg(long)]
         path: Option<String>,
+        /// URL (for html type)
+        #[arg(long)]
+        url: Option<String>,
     },
     /// Send text, key, or queue message
     Send {
@@ -315,7 +318,7 @@ pub enum NewCommands {
         /// Target pane ID (required)
         #[arg(long)]
         pane: u32,
-        /// Surface type: terminal (default), markdown, explorer
+        /// Surface type: terminal (default), markdown, explorer, html
         #[arg(long, default_value = "terminal")]
         r#type: String,
         /// Working directory (for terminal type)
@@ -327,6 +330,9 @@ pub enum NewCommands {
         /// Directory path (for explorer type)
         #[arg(long)]
         path: Option<String>,
+        /// URL (for html type)
+        #[arg(long)]
+        url: Option<String>,
     },
 }
 

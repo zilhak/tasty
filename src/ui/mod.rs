@@ -10,7 +10,7 @@ mod tab_bar;
 
 pub use context_menu::draw_pane_context_menu;
 pub use convert_popup::draw_convert_popup;
-pub use dialog::{draw_markdown_path_dialog, draw_ws_rename_dialog};
+pub use dialog::{draw_html_url_dialog, draw_markdown_path_dialog, draw_ws_rename_dialog};
 pub use divider::{draw_pane_dividers, draw_surface_highlights};
 pub use non_terminal::draw_non_terminal_panels;
 pub use notification::draw_popups;

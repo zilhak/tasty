@@ -44,6 +44,7 @@ pub fn draw_pane_context_menu(
     let mut close_menu = false;
     let mut open_markdown_dialog = false;
     let mut open_explorer = false;
+    let mut open_html_dialog = false;
 
     let area_response = egui::Area::new(egui::Id::new("pane_context_menu"))
         .fixed_pos(egui::pos2(menu.x, menu.y))
@@ -64,6 +65,10 @@ pub fn draw_pane_context_menu(
                     }
                     if context_menu_item(ui, th, "Open Explorer") {
                         open_explorer = true;
+                        close_menu = true;
+                    }
+                    if context_menu_item(ui, th, "Open HTML...") {
+                        open_html_dialog = true;
                         close_menu = true;
                     }
 
@@ -109,13 +114,14 @@ pub fn draw_pane_context_menu(
         state.markdown_path_dialog = Some((menu.pane_id, String::new()));
         state.pane_context_menu = None;
     } else if open_explorer {
-        // Open explorer at home directory as default
         let home = directories::BaseDirs::new()
             .map(|d| d.home_dir().to_string_lossy().to_string())
             .unwrap_or_else(|| ".".to_string());
-        // Focus the target pane
         state.active_workspace_mut().focused_pane = menu.pane_id;
         let _ = state.add_explorer_tab(home);
+        state.pane_context_menu = None;
+    } else if open_html_dialog {
+        state.html_url_dialog = Some((menu.pane_id, String::new()));
         state.pane_context_menu = None;
     } else if close_menu {
         state.pane_context_menu = None;

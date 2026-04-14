@@ -98,6 +98,13 @@ pub fn handle_split(
             let path = params.get("path").and_then(|v| v.as_str()).map(|s| s.to_string());
             crate::model::SurfaceType::Explorer { path }
         }
+        "html" => {
+            let url = params.get("url").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            if url.is_empty() {
+                return JsonRpcResponse::invalid_params(id, "Missing 'url' parameter for html type");
+            }
+            crate::model::SurfaceType::Html { url }
+        }
         _ => crate::model::SurfaceType::Terminal,
     };
 

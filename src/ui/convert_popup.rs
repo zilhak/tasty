@@ -51,10 +51,11 @@ pub fn draw_convert_popup(ctx: &egui::Context, state: &mut AppState) {
                     ui.separator();
 
                     // Menu items
-                    let items: [(&str, &str, ConvertAction); 3] = [
+                    let items: [(&str, &str, ConvertAction); 4] = [
                         ("Terminal", "convert_popup.terminal", ConvertAction::Terminal),
                         ("Markdown", "convert_popup.markdown", ConvertAction::Markdown),
                         ("Explorer", "convert_popup.explorer", ConvertAction::Explorer),
+                        ("Html", "convert_popup.html", ConvertAction::Html),
                     ];
 
                     for (type_name, label_key, item_action) in &items {
@@ -127,6 +128,11 @@ pub fn draw_convert_popup(ctx: &egui::Context, state: &mut AppState) {
             ConvertAction::Explorer => {
                 state.convert_surface_to_explorer(surface_id);
             }
+            ConvertAction::Html => {
+                let pane_id = state.active_workspace().focused_pane;
+                state.html_convert_surface_id = Some(surface_id);
+                state.html_url_dialog = Some((pane_id, String::new()));
+            }
         }
     }
 }
@@ -136,6 +142,7 @@ enum ConvertAction {
     Terminal,
     Markdown,
     Explorer,
+    Html,
 }
 
 /// Get the panel type name for a specific surface ID.

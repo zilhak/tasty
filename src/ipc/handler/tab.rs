@@ -56,6 +56,13 @@ pub fn handle_tab_create(state: &mut AppState, id: serde_json::Value, params: &s
             };
             state.add_markdown_tab_to_pane(pane_id, file_path)
         }
+        "html" => {
+            let url = match params.get("url").and_then(|v| v.as_str()) {
+                Some(u) => u.to_string(),
+                None => return JsonRpcResponse::invalid_params(id, "Missing 'url' parameter for html type"),
+            };
+            state.add_html_tab_to_pane(pane_id, url)
+        }
         "explorer" => {
             let path = params.get("path").and_then(|v| v.as_str())
                 .map(|s| s.to_string())

@@ -53,7 +53,7 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
         Commands::Claude { command } => claude_command_to_method_params(command),
         Commands::Debug { command } => debug_command_to_method_params(command),
         // ── standalone ──
-        Commands::Split { level, target, direction, r#type, meta, cwd, file, path } => {
+        Commands::Split { level, target, direction, r#type, meta, cwd, file, path, url } => {
             let resolved_target = resolve_target(target);
             let meta_value = meta
                 .as_deref()
@@ -69,6 +69,7 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
                     "cwd": cwd,
                     "file": file,
                     "path": path,
+                    "url": url,
                 }),
             )
         }
@@ -101,7 +102,7 @@ fn new_command_to_method_params(command: &NewCommands) -> (&'static str, serde_j
             "workspace.create",
             serde_json::json!({ "name": name.as_deref().unwrap_or(""), "cwd": cwd }),
         ),
-        NewCommands::Tab { pane, r#type, cwd, file, path } => (
+        NewCommands::Tab { pane, r#type, cwd, file, path, url } => (
             "tab.create",
             serde_json::json!({
                 "pane_id": pane,
@@ -109,6 +110,7 @@ fn new_command_to_method_params(command: &NewCommands) -> (&'static str, serde_j
                 "cwd": cwd,
                 "file": file,
                 "path": path,
+                "url": url,
             }),
         ),
     }

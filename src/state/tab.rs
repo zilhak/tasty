@@ -66,6 +66,16 @@ impl AppState {
         Ok(())
     }
 
+    /// Add an HTML viewer tab in the focused pane.
+    pub fn add_html_tab(&mut self, url: String) -> anyhow::Result<()> {
+        let tab_id = self.engine.next_ids.next_tab();
+        let panel_id = self.engine.next_ids.next_surface();
+        if let Some(pane) = self.focused_pane_mut() {
+            pane.add_html_tab(tab_id, panel_id, url);
+        }
+        Ok(())
+    }
+
     /// Add a new tab in the specified pane (by ID, cross-workspace) without switching active tab.
     pub fn add_tab_to_pane(&mut self, pane_id: u32, explicit_cwd: Option<std::path::PathBuf>) -> anyhow::Result<()> {
         let cwd = explicit_cwd.or_else(|| {
@@ -116,6 +126,16 @@ impl AppState {
         let panel_id = self.engine.next_ids.next_surface();
         if let Some(pane) = self.find_pane_by_id_mut(pane_id) {
             pane.add_explorer_tab(tab_id, panel_id, root_path);
+        }
+        Ok(())
+    }
+
+    /// Add an HTML viewer tab in the specified pane (by ID, cross-workspace).
+    pub fn add_html_tab_to_pane(&mut self, pane_id: u32, url: String) -> anyhow::Result<()> {
+        let tab_id = self.engine.next_ids.next_tab();
+        let panel_id = self.engine.next_ids.next_surface();
+        if let Some(pane) = self.find_pane_by_id_mut(pane_id) {
+            pane.add_html_tab(tab_id, panel_id, url);
         }
         Ok(())
     }
@@ -272,6 +292,14 @@ impl AppState {
             crate::model::ExplorerPanel::new(surface_id, root),
         );
         self.replace_panel_for_surface(surface_id, panel, Some("Explorer".to_string()))
+    }
+
+    /// Convert a surface to Html type.
+    pub fn convert_surface_to_html(&mut self, surface_id: u32, url: String) -> bool {
+        let panel = crate::model::Panel::Html(
+            crate::model::HtmlPanel::new(surface_id, url),
+        );
+        self.replace_panel_for_surface(surface_id, panel, Some("HTML".to_string()))
     }
 
     /// Replace the panel of the tab containing the given surface_id.

@@ -122,3 +122,58 @@ pub fn draw_markdown_path_dialog(
         state.markdown_convert_surface_id = None;
     }
 }
+
+/// Render the HTML URL input dialog.
+pub fn draw_html_url_dialog(
+    ctx: &egui::Context,
+    state: &mut AppState,
+) {
+    let (pane_id, mut url_buf) = match state.html_url_dialog.take() {
+        Some(d) => d,
+        None => return,
+    };
+
+    let mut keep_open = true;
+    let mut confirm = false;
+
+    egui::Window::new("Open HTML")
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .show(ctx, |ui| {
+            ui.label("Enter URL or file path:");
+            let response = ui.text_edit_singleline(&mut url_buf);
+            if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                confirm = true;
+            }
+            response.request_focus();
+            ui.horizontal(|ui| {
+                if ui.button("OK").clicked() {
+                    confirm = true;
+                }
+                if ui.button("Cancel").clicked() {
+                    keep_open = false;
+                }
+            });
+        });
+
+    if confirm && !url_buf.is_empty() {
+        // Normalize: if it looks like a file path, prepend file://
+        let url = if !url_buf.starts_with("http://") && !url_buf.starts_with("https://") && !url_buf.starts_with("file://") {
+            format!("file://{}", url_buf)
+        } else {
+            url_buf
+        };
+
+        if let Some(convert_sid) = state.html_convert_surface_id.take() {
+            state.convert_surface_to_html(convert_sid, url);
+        } else {
+            state.active_workspace_mut().focused_pane = pane_id;
+            let _ = state.add_html_tab(url);
+        }
+    } else if keep_open && !confirm {
+        state.html_url_dialog = Some((pane_id, url_buf));
+    } else {
+        state.html_convert_surface_id = None;
+    }
+}
