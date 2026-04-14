@@ -9,6 +9,7 @@ pub mod engine;
 pub mod engine_state;
 mod event_handler;
 mod explorer_ui;
+mod file_clipboard;
 mod font;
 mod global_hooks;
 mod gpu;

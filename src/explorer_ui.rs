@@ -19,6 +19,7 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel) -> Option<Exp
             egui::ScrollArea::vertical()
                 .id_salt("explorer_tree")
                 .show(ui, |ui| {
+                    let mut needs_refresh = false;
                     let root = &mut panel.root_node;
                     if root.is_directory {
                         if let Some(ref mut children) = root.children {
@@ -34,6 +35,50 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel) -> Option<Exp
                                     &mut action,
                                 );
                             }
+                            // Keyboard: file clipboard (Ctrl/Cmd+C = copy, Ctrl/Cmd+X = cut, Ctrl/Cmd+V = paste)
+                            let modifiers = ui.input(|i| i.modifiers);
+                            let cmd = modifiers.command; // Ctrl on Win/Linux, Cmd on macOS
+                            if cmd && action.is_none() {
+                                let key_c = ui.input(|i| i.key_pressed(egui::Key::C));
+                                let key_x = ui.input(|i| i.key_pressed(egui::Key::X));
+                                let key_v = ui.input(|i| i.key_pressed(egui::Key::V));
+
+                                if (key_c || key_x) && panel.selected_file.is_some() {
+                                    let sel = panel.selected_file.as_ref().unwrap();
+                                    let op = if key_x {
+                                        crate::file_clipboard::FileClipboardOp::Cut
+                                    } else {
+                                        crate::file_clipboard::FileClipboardOp::Copy
+                                    };
+                                    if modifiers.shift && key_c {
+                                        // Shift+Ctrl+C = copy path as text
+                                        action = Some(TreeAction::CopyPath(sel.clone()));
+                                    } else {
+                                        let _ = crate::file_clipboard::set_file_clipboard(&[sel.as_str()], op);
+                                    }
+                                } else if key_v {
+                                    // Paste files from clipboard into the explorer root directory
+                                    if let Ok(Some((sources, op))) = crate::file_clipboard::get_file_clipboard() {
+                                        let dest_dir = panel.root_path.clone();
+                                        for src in &sources {
+                                            let file_name = std::path::Path::new(src)
+                                                .file_name()
+                                                .map(|n| n.to_string_lossy().to_string())
+                                                .unwrap_or_default();
+                                            let dest = std::path::Path::new(&dest_dir).join(&file_name);
+                                            if op == crate::file_clipboard::FileClipboardOp::Cut {
+                                                let _ = std::fs::rename(src, &dest);
+                                            } else if std::path::Path::new(src).is_dir() {
+                                                let _ = copy_dir_recursive(src, &dest.to_string_lossy());
+                                            } else {
+                                                let _ = std::fs::copy(src, &dest);
+                                            }
+                                        }
+                                        needs_refresh = true;
+                                    }
+                                }
+                            }
+
                             // Keyboard navigation: Up/Down to move selection, Enter to open/toggle
                             let key_up = ui.input(|i| i.key_pressed(egui::Key::ArrowUp));
                             let key_down = ui.input(|i| i.key_pressed(egui::Key::ArrowDown));
@@ -93,9 +138,16 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel) -> Option<Exp
                                     TreeAction::ToggleDir(path) => {
                                         toggle_dir_by_path(&mut panel.root_node, &path);
                                     }
+                                    TreeAction::CopyPath(path) => {
+                                        // Copy path as text to clipboard (using arboard via egui)
+                                        ui.ctx().copy_text(path);
+                                    }
                                 }
                             }
                         }
+                    }
+                    if needs_refresh {
+                        crate::model::ExplorerPanel::load_directory(&mut panel.root_node);
                     }
                 });
         });
@@ -148,6 +200,7 @@ enum TreeAction {
     SelectFile(String),
     DoubleClickFile(String),
     ToggleDir(String),
+    CopyPath(String),
 }
 
 /// Action returned from `draw_explorer` for the caller to process.
@@ -244,6 +297,22 @@ fn collect_visible_paths(node: &FileNode, out: &mut Vec<String>) {
             }
         }
     }
+}
+
+/// Recursively copy a directory.
+fn copy_dir_recursive(src: &str, dst: &str) -> std::io::Result<()> {
+    std::fs::create_dir_all(dst)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let src_path = entry.path();
+        let dst_path = std::path::Path::new(dst).join(entry.file_name());
+        if src_path.is_dir() {
+            copy_dir_recursive(&src_path.to_string_lossy(), &dst_path.to_string_lossy())?;
+        } else {
+            std::fs::copy(&src_path, &dst_path)?;
+        }
+    }
+    Ok(())
 }
 
 /// Toggle a directory node by its path. Recurses through the tree to find it.
