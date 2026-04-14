@@ -29,7 +29,18 @@ impl AppState {
     }
 
     /// Split within the current tab (SurfaceGroup). Appears as one tab.
+    /// For non-terminal panels (Markdown/Explorer/Html), falls back to pane-level split
+    /// since they don't support internal surface splitting.
     pub fn split_surface(&mut self, direction: SplitDirection) -> anyhow::Result<()> {
+        // Check if focused panel is non-terminal → fall back to pane split
+        let is_non_terminal = self.focused_pane()
+            .and_then(|p| p.active_panel())
+            .is_some_and(|panel| panel.is_non_terminal());
+
+        if is_non_terminal {
+            return self.split_pane(direction);
+        }
+
         let cwd = self.resolve_inherit_cwd();
         let new_surface_id = self.engine.next_ids.next_surface();
         let cols = self.engine.default_cols;
