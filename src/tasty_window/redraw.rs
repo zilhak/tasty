@@ -126,8 +126,115 @@ impl TastyWindow {
             }
         }
 
+        // Sync webview lifecycle: create/destroy/reposition/visibility
+        self.sync_webviews();
+
         if self.dirty {
             self.window.request_redraw();
         }
+    }
+
+    /// Synchronize native WebView instances with the current state.
+    /// Creates webviews for new Html panels, destroys removed ones,
+    /// updates bounds and visibility based on active workspace/tab.
+    fn sync_webviews(&mut self) {
+        let terminal_rect = self.compute_terminal_rect();
+        let scale_factor = self.gpu.scale_factor() as f64;
+        let tab_bar_h = self.state.tab_bar_height as f64;
+
+        // Collect all Html surface IDs and their visibility/bounds
+        let active_ws = self.state.active_workspace;
+        let mut active_html: std::collections::HashMap<u32, crate::webview::WebViewBounds> = std::collections::HashMap::new();
+        let mut all_html_ids: Vec<u32> = Vec::new();
+
+        for (ws_idx, ws) in self.state.engine.workspaces.iter().enumerate() {
+            let pane_rects = ws.pane_layout().compute_rects(terminal_rect);
+            for (pane_id, pane_rect) in &pane_rects {
+                if let Some(pane) = ws.pane_layout().find_pane(*pane_id) {
+                    for (tab_idx, tab) in pane.tabs.iter().enumerate() {
+                        if let Some(panel) = tab.panel_if_initialized() {
+                            if let crate::model::Panel::Html(html) = panel {
+                                all_html_ids.push(html.id);
+                                // Only visible if: active workspace AND active tab
+                                let is_active_tab = tab_idx == pane.active_tab;
+                                if ws_idx == active_ws && is_active_tab {
+                                    let bounds = crate::webview::WebViewBounds {
+                                        x: pane_rect.x as f64 / scale_factor,
+                                        y: (pane_rect.y as f64 + tab_bar_h) / scale_factor,
+                                        width: pane_rect.width as f64 / scale_factor,
+                                        height: (pane_rect.height as f64 - tab_bar_h).max(1.0) / scale_factor,
+                                    };
+                                    active_html.insert(html.id, bounds);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Create new webviews for Html panels that don't have one yet
+        for &sid in &all_html_ids {
+            if !self.webviews.contains_key(&sid) {
+                // Find the URL for this surface
+                let url = self.find_html_url(sid);
+                match crate::webview::PlatformWebView::new(
+                    self.window.as_ref(),
+                    active_html.get(&sid).copied().unwrap_or(crate::webview::WebViewBounds {
+                        x: 0.0, y: 0.0, width: 1.0, height: 1.0,
+                    }),
+                    scale_factor,
+                ) {
+                    Ok(wv) => {
+                        if let Some(url) = &url {
+                            if url.starts_with("file://") || url.starts_with("http://") || url.starts_with("https://") {
+                                wv.load_url(url);
+                            } else {
+                                wv.load_html(url);
+                            }
+                        }
+                        // Start hidden if not active
+                        if !active_html.contains_key(&sid) {
+                            wv.set_visible(false);
+                        }
+                        self.webviews.insert(sid, wv);
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to create WebView for surface {}: {}", sid, e);
+                    }
+                }
+            }
+        }
+
+        // Update bounds/visibility for existing webviews
+        for (sid, wv) in &self.webviews {
+            if let Some(bounds) = active_html.get(sid) {
+                wv.set_bounds(*bounds, scale_factor);
+                wv.set_visible(true);
+            } else if all_html_ids.contains(sid) {
+                wv.set_visible(false);
+            }
+        }
+
+        // Remove webviews for closed Html surfaces
+        self.webviews.retain(|sid, _| all_html_ids.contains(sid));
+    }
+
+    /// Find the URL for an Html panel by surface ID.
+    fn find_html_url(&self, surface_id: u32) -> Option<String> {
+        for ws in &self.state.engine.workspaces {
+            for &pid in &ws.pane_layout().all_pane_ids() {
+                if let Some(pane) = ws.pane_layout().find_pane(pid) {
+                    for tab in &pane.tabs {
+                        if let Some(crate::model::Panel::Html(html)) = tab.panel_if_initialized() {
+                            if html.id == surface_id {
+                                return Some(html.url.clone());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        None
     }
 }

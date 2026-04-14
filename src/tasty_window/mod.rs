@@ -52,6 +52,8 @@ pub struct TastyWindow {
     pub(crate) double_tap: crate::double_tap::DoubleTapDetector,
     /// Set to true when the window should close (e.g. last workspace removed).
     pub(crate) close_requested: bool,
+    /// Native WebView instances keyed by surface ID.
+    pub(crate) webviews: std::collections::HashMap<u32, crate::webview::PlatformWebView>,
 }
 
 impl TastyWindow {
@@ -77,6 +79,7 @@ impl TastyWindow {
             ime_advance_base: (0, 0),
             double_tap: crate::double_tap::DoubleTapDetector::new(),
             close_requested: false,
+            webviews: std::collections::HashMap::new(),
         }
     }
 
