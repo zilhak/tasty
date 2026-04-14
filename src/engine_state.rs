@@ -51,6 +51,29 @@ impl IdGenerator {
     }
 }
 
+/// All Claude agent relationship state.
+pub struct ClaudeState {
+    pub parent_children: HashMap<u32, Vec<ClaudeChildEntry>>,
+    pub child_parent: HashMap<u32, u32>,
+    pub closed_parents: HashSet<u32>,
+    pub(crate) next_child_index: HashMap<u32, u32>,
+    pub idle_state: HashMap<u32, bool>,
+    pub needs_input_state: HashMap<u32, bool>,
+}
+
+impl ClaudeState {
+    pub fn new() -> Self {
+        Self {
+            parent_children: HashMap::new(),
+            child_parent: HashMap::new(),
+            closed_parents: HashSet::new(),
+            next_child_index: HashMap::new(),
+            idle_state: HashMap::new(),
+            needs_input_state: HashMap::new(),
+        }
+    }
+}
+
 /// Helper to extract shell configuration from settings, avoiding boilerplate.
 pub struct ShellConfig {
     pub shell: String,
@@ -93,12 +116,7 @@ pub struct EngineState {
     pub global_hook_manager: GlobalHookManager,
 
     // ── Claude agent relationships ──
-    pub claude_parent_children: HashMap<u32, Vec<ClaudeChildEntry>>,
-    pub claude_child_parent: HashMap<u32, u32>,
-    pub claude_closed_parents: HashSet<u32>,
-    pub(crate) claude_next_child_index: HashMap<u32, u32>,
-    pub claude_idle_state: HashMap<u32, bool>,
-    pub claude_needs_input_state: HashMap<u32, bool>,
+    pub claude: ClaudeState,
 
     // ── Closed item history ──
     pub closed_items: crate::model::ClosedItemStore,
@@ -135,12 +153,7 @@ impl EngineState {
             notifications: NotificationStore::with_coalesce_ms(500),
             hook_manager: HookManager::new(),
             global_hook_manager: GlobalHookManager::new(),
-            claude_parent_children: HashMap::new(),
-            claude_child_parent: HashMap::new(),
-            claude_closed_parents: HashSet::new(),
-            claude_next_child_index: HashMap::new(),
-            claude_idle_state: HashMap::new(),
-            claude_needs_input_state: HashMap::new(),
+            claude: ClaudeState::new(),
             closed_items: crate::model::ClosedItemStore::new(),
             surface_messages: HashMap::new(),
             surface_next_message_id: 0,

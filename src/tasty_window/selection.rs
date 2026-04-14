@@ -195,8 +195,8 @@ impl TastyWindow {
 
         // Check if this is a Claude Code surface before mut-borrowing terminal
         let surface_id = self.state.focused_surface_id().unwrap_or(0);
-        let is_claude = self.state.engine.claude_parent_children.contains_key(&surface_id)
-            || self.state.engine.claude_child_parent.contains_key(&surface_id);
+        let is_claude = self.state.engine.claude.parent_children.contains_key(&surface_id)
+            || self.state.engine.claude.child_parent.contains_key(&surface_id);
 
         // Determine arrow escape sequence
         let terminal = self.state.focused_terminal_mut().unwrap();

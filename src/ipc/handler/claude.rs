@@ -168,7 +168,7 @@ pub(crate) fn handle_claude_parent(
 
     match state.parent_of(child_surface_id) {
         Some(parent_id) => {
-            let status = if state.engine.claude_closed_parents.contains(&parent_id) {
+            let status = if state.engine.claude.closed_parents.contains(&parent_id) {
                 "closed"
             } else {
                 "active"
