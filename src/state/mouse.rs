@@ -28,6 +28,7 @@ impl AppState {
                         Some(crate::model::Panel::SurfaceGroup(_)) => true,
                         Some(crate::model::Panel::Markdown(_)) => false,
                         Some(crate::model::Panel::Explorer(_)) => false,
+                        Some(crate::model::Panel::Html(_)) => false,
                         None => false,
                     });
                 }

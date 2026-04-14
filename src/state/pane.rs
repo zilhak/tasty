@@ -111,6 +111,12 @@ impl AppState {
                 );
                 crate::model::Pane::new_with_panel(new_pane_id, new_tab_id, "Explorer".to_string(), panel)
             }
+            crate::model::SurfaceType::Html { url } => {
+                let panel = crate::model::Panel::Html(
+                    crate::model::HtmlPanel::new(new_surface_id, url),
+                );
+                crate::model::Pane::new_with_panel(new_pane_id, new_tab_id, "HTML".to_string(), panel)
+            }
         };
 
         let ws = &mut self.engine.workspaces[ws_idx];

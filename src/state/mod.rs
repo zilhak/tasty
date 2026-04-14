@@ -177,7 +177,7 @@ impl AppState {
         match panel {
             crate::model::Panel::Terminal(node) => Some(node.id),
             crate::model::Panel::SurfaceGroup(group) => Some(group.focused_surface),
-            crate::model::Panel::Markdown(_) | crate::model::Panel::Explorer(_) => None,
+            crate::model::Panel::Markdown(_) | crate::model::Panel::Explorer(_) | crate::model::Panel::Html(_) => None,
         }
     }
 

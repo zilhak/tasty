@@ -314,6 +314,7 @@ impl AppState {
             crate::model::Panel::SurfaceGroup(_) => "SurfaceGroup",
             crate::model::Panel::Markdown(_) => "Markdown",
             crate::model::Panel::Explorer(_) => "Explorer",
+            crate::model::Panel::Html(_) => "Html",
         })
     }
 }

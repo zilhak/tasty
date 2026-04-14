@@ -92,6 +92,7 @@ pub enum SurfaceType {
     Terminal,
     Markdown { file: String },
     Explorer { path: Option<String> },
+    Html { url: String },
 }
 
 impl Default for SurfaceType {
@@ -131,6 +132,7 @@ mod surface_group;
 mod surface_layout;
 mod markdown_panel;
 mod explorer_panel;
+mod html_panel;
 pub mod closed_item;
 
 pub use workspace::*;
@@ -141,6 +143,7 @@ pub use panel::*;
 pub use surface_group::*;
 pub use markdown_panel::*;
 pub use explorer_panel::*;
+pub use html_panel::*;
 pub use closed_item::{ClosedItem, ClosedItemStore};
 
 #[cfg(test)]
