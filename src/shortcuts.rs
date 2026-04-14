@@ -232,6 +232,9 @@ impl TastyWindow {
                         self.state.restore_closed_item();
                         self.state.resize_all(terminal_rect, cell_w, cell_h);
                     }
+                    "quit" => { let _ = self.proxy.send_event(crate::AppEvent::QuitRequested); }
+                    "quit_immediate" => { let _ = self.proxy.send_event(crate::AppEvent::Shutdown); }
+                    "quit_minimize" => { let _ = self.proxy.send_event(crate::AppEvent::Minimize); }
                     _ => {}
                 }
                 return true;
@@ -412,6 +415,18 @@ impl TastyWindow {
         if matches_binding(&kb.restore_closed, key, mods) {
             state.restore_closed_item();
             state.resize_all(terminal_rect, cell_w, cell_h);
+            return true;
+        }
+        if matches_binding(&kb.quit_immediate, key, mods) {
+            let _ = proxy.send_event(crate::AppEvent::Shutdown);
+            return true;
+        }
+        if matches_binding(&kb.quit_minimize, key, mods) {
+            let _ = proxy.send_event(crate::AppEvent::Minimize);
+            return true;
+        }
+        if matches_binding(&kb.quit, key, mods) {
+            let _ = proxy.send_event(crate::AppEvent::QuitRequested);
             return true;
         }
         false

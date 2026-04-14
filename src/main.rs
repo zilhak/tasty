@@ -17,6 +17,7 @@ mod ipc;
 mod markdown_ui;
 pub mod modal_window;
 mod model;
+mod quit_modal;
 mod notification;
 mod renderer;
 mod selection;
@@ -81,6 +82,10 @@ enum AppEvent {
     OpenSettings,
     /// Request to shut down the entire application.
     Shutdown,
+    /// Request to minimize (park state, close windows).
+    Minimize,
+    /// Request quit following the close_behavior setting.
+    QuitRequested,
 }
 
 /// Tracks an active divider drag operation.
@@ -106,6 +111,10 @@ struct App {
     /// Parked AppState: preserved when all windows are closed so PTY sessions survive.
     /// Moved into a new window when one is created, or used directly for IPC.
     parked_state: Option<state::AppState>,
+    /// Quit confirmation modal window.
+    quit_modal: Option<quit_modal::QuitModal>,
+    /// WindowId of the quit modal (for event routing).
+    quit_modal_window_id: Option<WindowId>,
     // Shell setup mode (before terminal is created)
     shell_setup_mode: bool,
     shell_setup_path: String,
@@ -122,6 +131,8 @@ impl App {
             windows: std::collections::HashMap::new(),
             modal: None,
             parked_state: None,
+            quit_modal: None,
+            quit_modal_window_id: None,
             shell_setup_mode: false,
             shell_setup_path: String::new(),
             shell_setup_gpu: None,
@@ -230,8 +241,8 @@ impl App {
 
     /// Open settings as a modal window.
     fn open_settings_modal(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-        if self.modal.is_some() {
-            return; // Already open
+        if self.modal.is_some() || self.quit_modal.is_some() {
+            return; // Another modal is already open
         }
 
         use winit::window::WindowAttributes;

@@ -3,7 +3,7 @@ use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
 use winit::window::WindowId;
 
-use crate::{App, AppEvent};
+use crate::{App, AppEvent, quit_modal};
 
 impl ApplicationHandler<AppEvent> for App {
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: AppEvent) {
@@ -58,6 +58,19 @@ impl ApplicationHandler<AppEvent> for App {
             }
             AppEvent::Shutdown => {
                 event_loop.exit();
+            }
+            AppEvent::Minimize => {
+                // Park state and close all windows
+                if let Some((_, w)) = self.windows.drain().next() {
+                    self.parked_state = Some(w.state);
+                }
+                // Drain remaining windows (state already parked from first)
+                self.windows.clear();
+                self.engine.focused_window_id = None;
+                tracing::info!("minimized to background");
+            }
+            AppEvent::QuitRequested => {
+                self.handle_quit_requested(event_loop);
             }
         }
     }
@@ -151,6 +164,34 @@ impl ApplicationHandler<AppEvent> for App {
             return;
         }
 
+        // Quit modal handling
+        if let Some(quit_modal_id) = self.quit_modal_window_id {
+            if id == quit_modal_id {
+                if let Some(qm) = &mut self.quit_modal {
+                    if let Some(result) = qm.handle_window_event(event, event_loop) {
+                        match result {
+                            crate::quit_modal::QuitModalResult::Quit => {
+                                self.quit_modal = None;
+                                self.quit_modal_window_id = None;
+                                event_loop.exit();
+                            }
+                            crate::quit_modal::QuitModalResult::Minimize => {
+                                self.quit_modal = None;
+                                self.quit_modal_window_id = None;
+                                let _ = self.engine.proxy.send_event(AppEvent::Minimize);
+                            }
+                            crate::quit_modal::QuitModalResult::Cancelled => {
+                                self.quit_modal = None;
+                                self.quit_modal_window_id = None;
+                            }
+                            crate::quit_modal::QuitModalResult::Pending => {}
+                        }
+                    }
+                }
+                return;
+            }
+        }
+
         // Modal window handling
         if let Some(modal_id) = self.engine.modal_window_id {
             if id == modal_id {
@@ -166,16 +207,15 @@ impl ApplicationHandler<AppEvent> for App {
 
         // Normal mode — find the window by ID and delegate
         if let WindowEvent::CloseRequested = &event {
-            // Park the state before removing the window
-            if let Some(w) = self.windows.remove(&id) {
-                if self.windows.is_empty() {
-                    // Last window closing: park the state so PTY sessions survive
-                    tracing::info!("last window closed, parking state");
-                    self.parked_state = Some(w.state);
+            if self.windows.len() > 1 {
+                // Multiple windows: just close this one (no modal needed)
+                self.windows.remove(&id);
+                if self.engine.focused_window_id == Some(id) {
+                    self.engine.focused_window_id = self.windows.keys().next().copied();
                 }
-            }
-            if self.engine.focused_window_id == Some(id) {
-                self.engine.focused_window_id = self.windows.keys().next().copied();
+            } else {
+                // Last window: route through quit logic
+                self.handle_quit_requested(event_loop);
             }
             return;
         }
@@ -214,5 +254,64 @@ impl ApplicationHandler<AppEvent> for App {
                 w.mark_dirty();
             }
         }
+    }
+}
+
+impl App {
+    fn handle_quit_requested(&mut self, event_loop: &ActiveEventLoop) {
+        // If quit modal is already open, treat as immediate quit
+        if self.quit_modal.is_some() {
+            self.quit_modal = None;
+            self.quit_modal_window_id = None;
+            event_loop.exit();
+            return;
+        }
+
+        // Get close behavior from settings
+        let behavior = self.focused_window()
+            .map(|w| w.state.engine.settings.general.close_behavior.clone())
+            .or_else(|| self.parked_state.as_ref().map(|s| s.engine.settings.general.close_behavior.clone()))
+            .unwrap_or_else(|| "ask".to_string());
+
+        match behavior.as_str() {
+            "quit" => {
+                event_loop.exit();
+            }
+            "minimize" => {
+                let _ = self.engine.proxy.send_event(AppEvent::Minimize);
+            }
+            _ => {
+                // "ask" — close settings modal if open, then show quit modal
+                self.close_settings_modal();
+                self.open_quit_modal(event_loop);
+            }
+        }
+    }
+
+    fn open_quit_modal(&mut self, event_loop: &ActiveEventLoop) {
+        use winit::window::WindowAttributes;
+
+        let attrs = WindowAttributes::default()
+            .with_title("Tasty")
+            .with_inner_size(winit::dpi::LogicalSize::new(400, 200))
+            .with_resizable(false)
+            .with_visible(false);
+
+        let window = std::sync::Arc::new(
+            event_loop
+                .create_window(attrs)
+                .expect("failed to create quit modal window"),
+        );
+
+        let gpu = pollster::block_on(crate::gpu::GpuState::new(
+            window.clone(),
+            &crate::settings::Settings::load().appearance,
+            self.engine.proxy.clone(),
+        ))
+        .expect("failed to initialize GPU for quit modal");
+
+        let window_id = window.id();
+        self.quit_modal = Some(quit_modal::QuitModal::new(gpu, window));
+        self.quit_modal_window_id = Some(window_id);
     }
 }

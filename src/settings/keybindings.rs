@@ -28,6 +28,12 @@ pub struct KeybindingSettings {
     pub toggle_sidebar_collapse: String,
     /// Restore the most recently closed surface/tab/workspace.
     pub restore_closed: String,
+    /// Quit: follows close_behavior setting (ask/minimize/quit).
+    pub quit: String,
+    /// Immediate quit: force exit, close everything.
+    pub quit_immediate: String,
+    /// Minimize to background (park state).
+    pub quit_minimize: String,
 }
 
 impl KeybindingSettings {
@@ -83,6 +89,9 @@ impl KeybindingSettings {
             toggle_sidebar: "ctrl+shift+b".to_string(),
             toggle_sidebar_collapse: "ctrl+b".to_string(),
             restore_closed: "ctrl+shift+t".to_string(),
+            quit: String::new(),
+            quit_immediate: String::new(),
+            quit_minimize: String::new(),
         }
     }
 

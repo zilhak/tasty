@@ -20,6 +20,8 @@ pub struct GeneralSettings {
     /// When creating a new pane/surface/workspace, inherit the working directory
     /// from the source surface.
     pub inherit_cwd: bool,
+    /// Behavior when closing the last window: "ask", "minimize", "quit".
+    pub close_behavior: String,
 }
 
 impl Default for GeneralSettings {
@@ -35,6 +37,7 @@ impl Default for GeneralSettings {
             confirm_close_running: true,
             click_to_move_cursor: true,
             inherit_cwd: true,
+            close_behavior: "ask".to_string(),
         }
     }
 }
