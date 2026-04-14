@@ -71,6 +71,9 @@ png = "0.18"
 # Platform
 libc = "0.2"
 
+# File Dialogs
+rfd = "0.15"
+
 # Utilities
 directories = "6"
 

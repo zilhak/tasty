@@ -89,12 +89,22 @@ pub fn draw_markdown_path_dialog(
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
         .show(ctx, |ui| {
             ui.label("Enter file path:");
-            let response = ui.text_edit_singleline(&mut path_buf);
-            if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                confirm = true;
-            }
-            // Request focus on first frame
-            response.request_focus();
+            ui.horizontal(|ui| {
+                let response = ui.text_edit_singleline(&mut path_buf);
+                if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                    confirm = true;
+                }
+                response.request_focus();
+                if ui.button("\u{1F4C2}").clicked() {
+                    if let Some(path) = rfd::FileDialog::new()
+                        .add_filter("Markdown", &["md"])
+                        .pick_file()
+                    {
+                        path_buf = path.to_string_lossy().to_string();
+                        confirm = true;
+                    }
+                }
+            });
             ui.horizontal(|ui| {
                 if ui.button("OK").clicked() {
                     confirm = true;
@@ -142,11 +152,22 @@ pub fn draw_html_url_dialog(
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
         .show(ctx, |ui| {
             ui.label("Enter URL or file path:");
-            let response = ui.text_edit_singleline(&mut url_buf);
-            if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                confirm = true;
-            }
-            response.request_focus();
+            ui.horizontal(|ui| {
+                let response = ui.text_edit_singleline(&mut url_buf);
+                if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                    confirm = true;
+                }
+                response.request_focus();
+                if ui.button("\u{1F4C2}").clicked() {
+                    if let Some(path) = rfd::FileDialog::new()
+                        .add_filter("HTML", &["html", "htm"])
+                        .pick_file()
+                    {
+                        url_buf = path.to_string_lossy().to_string();
+                        confirm = true;
+                    }
+                }
+            });
             ui.horizontal(|ui| {
                 if ui.button("OK").clicked() {
                     confirm = true;
