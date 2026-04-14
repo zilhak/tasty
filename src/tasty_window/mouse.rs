@@ -153,7 +153,7 @@ impl TastyWindow {
                     let scale = self.gpu.scale_factor();
                     for (pane_id, rect) in pane_rects {
                         if rect.contains(x, y) {
-                            self.state.pending_native_menu = Some(crate::state::PendingNativeMenu::Pane {
+                            self.state.dialogs.pending_native_menu = Some(crate::state::PendingNativeMenu::Pane {
                                 pane_id, x: x / scale, y: y / scale,
                             });
                             self.dirty = true;

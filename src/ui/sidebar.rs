@@ -232,11 +232,11 @@ pub fn draw_full_sidebar(
 
                     card_response.context_menu(|ui| {
                         if ui.button(t("context_menu.rename_title")).clicked() {
-                            state.ws_rename = Some((i, WsRenameField::Name, state.engine.workspaces[i].name.clone()));
+                            state.dialogs.ws_rename = Some((i, WsRenameField::Name, state.engine.workspaces[i].name.clone()));
                             ui.close_menu();
                         }
                         if ui.button(t("context_menu.rename_subtitle")).clicked() {
-                            state.ws_rename = Some((i, WsRenameField::Subtitle, state.engine.workspaces[i].subtitle.clone()));
+                            state.dialogs.ws_rename = Some((i, WsRenameField::Subtitle, state.engine.workspaces[i].subtitle.clone()));
                             ui.close_menu();
                         }
                     });

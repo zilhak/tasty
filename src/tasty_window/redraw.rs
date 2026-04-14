@@ -254,7 +254,7 @@ impl TastyWindow {
         use crate::native_menu::{MenuItem, show_context_menu};
         use crate::state::PendingNativeMenu;
 
-        let pending = match self.state.pending_native_menu.take() {
+        let pending = match self.state.dialogs.pending_native_menu.take() {
             Some(p) => p,
             None => return,
         };
@@ -277,7 +277,7 @@ impl TastyWindow {
                             .and_then(|p| p.tabs.get(tab_index))
                             .map(|t| t.display_name())
                             .unwrap_or_default();
-                        self.state.tab_rename_dialog = Some((pane_id, tab_index, current_name));
+                        self.state.dialogs.tab_rename = Some((pane_id, tab_index, current_name));
                     }
                     Some(2) => {
                         // Close
@@ -305,7 +305,7 @@ impl TastyWindow {
                 let result = show_context_menu(self.window.as_ref(), x as f64, y as f64, &items);
                 match result {
                     Some(1) => {
-                        self.state.markdown_path_dialog = Some((pane_id, String::new()));
+                        self.state.dialogs.markdown_path = Some((pane_id, String::new()));
                     }
                     Some(2) => {
                         let home = directories::BaseDirs::new()
@@ -315,7 +315,7 @@ impl TastyWindow {
                         let _ = self.state.add_explorer_tab(home);
                     }
                     Some(3) => {
-                        self.state.html_url_dialog = Some((pane_id, String::new()));
+                        self.state.dialogs.html_url = Some((pane_id, String::new()));
                     }
                     _ => {}
                 }

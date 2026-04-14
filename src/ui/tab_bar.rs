@@ -260,7 +260,7 @@ pub fn draw_pane_tab_bars(
                 }
             }
             PaneTabAction::OpenContextMenu(tab_idx, pos) => {
-                state.pending_native_menu = Some(crate::state::PendingNativeMenu::Tab {
+                state.dialogs.pending_native_menu = Some(crate::state::PendingNativeMenu::Tab {
                     pane_id,
                     tab_index: tab_idx,
                     x: pos.x,
@@ -268,7 +268,7 @@ pub fn draw_pane_tab_bars(
                 });
             }
             PaneTabAction::OpenPaneContextMenu(pos) => {
-                state.pending_native_menu = Some(crate::state::PendingNativeMenu::Pane {
+                state.dialogs.pending_native_menu = Some(crate::state::PendingNativeMenu::Pane {
                     pane_id,
                     x: pos.x,
                     y: pos.y,
@@ -285,7 +285,7 @@ pub fn draw_pane_tab_bars(
 
 fn draw_tab_rename_dialog(ctx: &egui::Context, state: &mut AppState) {
     let th = theme::theme();
-    let dialog = match &state.tab_rename_dialog {
+    let dialog = match &state.dialogs.tab_rename {
         Some(d) => d.clone(),
         None => return,
     };
@@ -335,12 +335,12 @@ fn draw_tab_rename_dialog(ctx: &egui::Context, state: &mut AppState) {
                     resp.request_focus();
 
                     // Update buffer
-                    state.tab_rename_dialog = Some((pane_id, tab_idx, buf));
+                    state.dialogs.tab_rename = Some((pane_id, tab_idx, buf));
                 });
         });
 
     if close {
-        state.tab_rename_dialog = None;
+        state.dialogs.tab_rename = None;
     }
 }
 

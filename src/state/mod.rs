@@ -49,30 +49,14 @@ pub struct AppState {
     pub sidebar_visible: bool,
     /// Sidebar collapsed: true = compact mode (narrow width, icons only).
     pub sidebar_collapsed: bool,
-    /// Workspace rename dialog state: (workspace_index, field, edit_buffer)
-    pub ws_rename: Option<(usize, WsRenameField, String)>,
-    /// Tab rename dialog state: (pane_id, tab_index, edit_buffer).
-    pub tab_rename_dialog: Option<(u32, usize, String)>,
-    /// Markdown file path dialog state: (pane_id, path_buffer).
-    /// When `markdown_convert_surface_id` is set, the dialog converts instead of creating a new tab.
-    pub markdown_path_dialog: Option<(u32, String)>,
-    /// If set, the markdown path dialog will convert this surface instead of creating a new tab.
-    pub markdown_convert_surface_id: Option<u32>,
-    /// Surface convert popup: if Some, shows the convert popup for this surface_id.
-    pub convert_popup: Option<u32>,
-    /// HTML URL dialog state: (pane_id, url_buffer). If html_convert_surface_id is set, converts instead of creating new tab.
-    pub html_url_dialog: Option<(u32, String)>,
-    /// If set, the HTML URL dialog will convert this surface instead of creating a new tab.
-    pub html_convert_surface_id: Option<u32>,
+    /// All transient dialog/popup state.
+    pub dialogs: DialogState,
     /// Measured tab bar height in physical pixels, updated each frame by egui.
     pub tab_bar_height: f32,
     /// Popup manager for internal popups (notification panel, etc.).
     pub popups: crate::ui::PopupManager,
     /// Double-tap modifier captured from winit events, for the keybinding recorder to consume.
     pub captured_double_tap: Option<String>,
-    /// Pending native context menu request. Set during egui drawing,
-    /// processed after egui frame by TastyWindow (which has the window handle).
-    pub pending_native_menu: Option<PendingNativeMenu>,
 }
 
 /// A pending native context menu request.
@@ -82,6 +66,56 @@ pub enum PendingNativeMenu {
     Tab { pane_id: u32, tab_index: usize, x: f32, y: f32 },
     /// Pane/empty area right-click: Open Markdown... / Open Explorer / Open HTML...
     Pane { pane_id: u32, x: f32, y: f32 },
+}
+
+/// All transient UI dialog/popup state, grouped to avoid AppState bloat.
+/// New dialogs should be added here, not as top-level AppState fields.
+pub struct DialogState {
+    /// Workspace rename: (workspace_index, field, edit_buffer)
+    pub ws_rename: Option<(usize, WsRenameField, String)>,
+    /// Tab rename: (pane_id, tab_index, edit_buffer)
+    pub tab_rename: Option<(u32, usize, String)>,
+    /// Markdown file path input: (pane_id, path_buffer)
+    pub markdown_path: Option<(u32, String)>,
+    /// Convert to markdown: target surface id
+    pub markdown_convert_surface_id: Option<u32>,
+    /// Surface convert popup: surface_id
+    pub convert_popup: Option<u32>,
+    /// HTML URL input: (pane_id, url_buffer)
+    pub html_url: Option<(u32, String)>,
+    /// Convert to html: target surface id
+    pub html_convert_surface_id: Option<u32>,
+    /// Pending native context menu
+    pub pending_native_menu: Option<PendingNativeMenu>,
+}
+
+impl DialogState {
+    pub fn new() -> Self {
+        Self {
+            ws_rename: None,
+            tab_rename: None,
+            markdown_path: None,
+            markdown_convert_surface_id: None,
+            convert_popup: None,
+            html_url: None,
+            html_convert_surface_id: None,
+            pending_native_menu: None,
+        }
+    }
+
+    /// Returns true if any dialog with text input is open.
+    pub fn has_text_input_open(&self) -> bool {
+        self.html_url.is_some()
+            || self.markdown_path.is_some()
+            || self.ws_rename.is_some()
+            || self.tab_rename.is_some()
+    }
+
+    /// Returns true if any dialog/popup overlay is open.
+    pub fn has_any_overlay(&self) -> bool {
+        self.convert_popup.is_some()
+            || self.has_text_input_open()
+    }
 }
 
 
@@ -106,16 +140,9 @@ impl AppState {
             sidebar_width,
             sidebar_visible: true,
             sidebar_collapsed: false,
-            ws_rename: None,
-            tab_rename_dialog: None,
-            markdown_path_dialog: None,
-            markdown_convert_surface_id: None,
-            convert_popup: None,
-            html_url_dialog: None,
-            html_convert_surface_id: None,
+            dialogs: DialogState::new(),
             tab_bar_height: 24.0,
             captured_double_tap: None,
-            pending_native_menu: None,
             popups: {
                 let mut pm = crate::ui::PopupManager::new();
                 pm.register(crate::ui::PopupState::new(
@@ -128,22 +155,15 @@ impl AppState {
         })
     }
 
-    /// Returns true if any dialog or popup with text input is open,
-    /// meaning keyboard input should NOT be forwarded to the terminal.
+    /// Returns true if any dialog with text input is open.
     pub fn has_input_dialog_open(&self) -> bool {
-        self.html_url_dialog.is_some()
-            || self.markdown_path_dialog.is_some()
-            || self.ws_rename.is_some()
-            || self.tab_rename_dialog.is_some()
+        self.dialogs.has_text_input_open()
     }
 
-    /// Returns true if any egui overlay (context menu, popup, dialog, settings)
-    /// is visible. Used to temporarily hide native WebViews that would cover
-    /// the overlay due to OS z-order being above the wgpu render surface.
+    /// Returns true if any egui overlay is visible.
     pub fn has_egui_overlay_open(&self) -> bool {
         self.settings_open
-            || self.convert_popup.is_some()
-            || self.has_input_dialog_open()
+            || self.dialogs.has_any_overlay()
             || self.popups.has_any_open()
     }
 

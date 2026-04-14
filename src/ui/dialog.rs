@@ -3,12 +3,12 @@ use crate::state::{AppState, WsRenameField};
 
 /// Draw the workspace rename dialog (if active).
 pub fn draw_ws_rename_dialog(ctx: &egui::Context, state: &mut AppState) {
-    let Some((ws_idx, field, ref mut buffer)) = state.ws_rename else {
+    let Some((ws_idx, field, ref mut buffer)) = state.dialogs.ws_rename else {
         return;
     };
 
     if ws_idx >= state.engine.workspaces.len() {
-        state.ws_rename = None;
+        state.dialogs.ws_rename = None;
         return;
     }
 
@@ -52,7 +52,7 @@ pub fn draw_ws_rename_dialog(ctx: &egui::Context, state: &mut AppState) {
         });
 
     if do_apply {
-        let (ws_idx, field, buffer) = state.ws_rename.take().unwrap();
+        let (ws_idx, field, buffer) = state.dialogs.ws_rename.take().unwrap();
         if ws_idx < state.engine.workspaces.len() {
             match field {
                 WsRenameField::Name => {
@@ -66,7 +66,7 @@ pub fn draw_ws_rename_dialog(ctx: &egui::Context, state: &mut AppState) {
             }
         }
     } else if do_cancel {
-        state.ws_rename = None;
+        state.dialogs.ws_rename = None;
     }
 }
 
@@ -75,7 +75,7 @@ pub fn draw_markdown_path_dialog(
     ctx: &egui::Context,
     state: &mut AppState,
 ) {
-    let (pane_id, mut path_buf) = match state.markdown_path_dialog.take() {
+    let (pane_id, mut path_buf) = match state.dialogs.markdown_path.take() {
         Some(d) => d,
         None => return,
     };
@@ -106,7 +106,7 @@ pub fn draw_markdown_path_dialog(
         });
 
     if confirm && !path_buf.is_empty() {
-        if let Some(convert_sid) = state.markdown_convert_surface_id.take() {
+        if let Some(convert_sid) = state.dialogs.markdown_convert_surface_id.take() {
             // Convert mode: replace existing surface
             state.convert_surface_to_markdown(convert_sid, path_buf);
         } else {
@@ -116,10 +116,10 @@ pub fn draw_markdown_path_dialog(
         }
         // Don't keep dialog open
     } else if keep_open && !confirm {
-        state.markdown_path_dialog = Some((pane_id, path_buf));
+        state.dialogs.markdown_path = Some((pane_id, path_buf));
     } else {
         // Dialog cancelled — clear convert mode
-        state.markdown_convert_surface_id = None;
+        state.dialogs.markdown_convert_surface_id = None;
     }
 }
 
@@ -128,7 +128,7 @@ pub fn draw_html_url_dialog(
     ctx: &egui::Context,
     state: &mut AppState,
 ) {
-    let (pane_id, mut url_buf) = match state.html_url_dialog.take() {
+    let (pane_id, mut url_buf) = match state.dialogs.html_url.take() {
         Some(d) => d,
         None => return,
     };
@@ -165,15 +165,15 @@ pub fn draw_html_url_dialog(
             url_buf
         };
 
-        if let Some(convert_sid) = state.html_convert_surface_id.take() {
+        if let Some(convert_sid) = state.dialogs.html_convert_surface_id.take() {
             state.convert_surface_to_html(convert_sid, url);
         } else {
             state.active_workspace_mut().focused_pane = pane_id;
             let _ = state.add_html_tab(url);
         }
     } else if keep_open && !confirm {
-        state.html_url_dialog = Some((pane_id, url_buf));
+        state.dialogs.html_url = Some((pane_id, url_buf));
     } else {
-        state.html_convert_surface_id = None;
+        state.dialogs.html_convert_surface_id = None;
     }
 }

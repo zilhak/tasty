@@ -242,7 +242,7 @@ impl TastyWindow {
                     "quit_minimize" => { let _ = self.proxy.send_event(crate::AppEvent::Minimize); }
                     "open_markdown" => {
                         let pane_id = self.state.active_workspace().focused_pane;
-                        self.state.markdown_path_dialog = Some((pane_id, String::new()));
+                        self.state.dialogs.markdown_path = Some((pane_id, String::new()));
                     }
                     "open_explorer" => {
                         let home = directories::BaseDirs::new()
@@ -252,14 +252,14 @@ impl TastyWindow {
                     }
                     "convert_surface" => {
                         if let Some(sid) = self.state.focused_surface_id() {
-                            self.state.convert_popup = Some(sid);
+                            self.state.dialogs.convert_popup = Some(sid);
                         }
                     }
                     "convert_to_markdown" => {
                         if let Some(sid) = self.state.focused_surface_id() {
                             let pane_id = self.state.active_workspace().focused_pane;
-                            self.state.markdown_convert_surface_id = Some(sid);
-                            self.state.markdown_path_dialog = Some((pane_id, String::new()));
+                            self.state.dialogs.markdown_convert_surface_id = Some(sid);
+                            self.state.dialogs.markdown_path = Some((pane_id, String::new()));
                         }
                     }
                     "convert_to_explorer" => {
@@ -463,7 +463,7 @@ impl TastyWindow {
         }
         if matches_binding(&kb.open_markdown, key, mods) {
             let pane_id = state.active_workspace().focused_pane;
-            state.markdown_path_dialog = Some((pane_id, String::new()));
+            state.dialogs.markdown_path = Some((pane_id, String::new()));
             return true;
         }
         if matches_binding(&kb.open_explorer, key, mods) {
@@ -475,15 +475,15 @@ impl TastyWindow {
         }
         if matches_binding(&kb.convert_surface, key, mods) {
             if let Some(sid) = state.focused_surface_id() {
-                state.convert_popup = Some(sid);
+                state.dialogs.convert_popup = Some(sid);
             }
             return true;
         }
         if matches_binding(&kb.convert_to_markdown, key, mods) {
             if let Some(sid) = state.focused_surface_id() {
                 let pane_id = state.active_workspace().focused_pane;
-                state.markdown_convert_surface_id = Some(sid);
-                state.markdown_path_dialog = Some((pane_id, String::new()));
+                state.dialogs.markdown_convert_surface_id = Some(sid);
+                state.dialogs.markdown_path = Some((pane_id, String::new()));
             }
             return true;
         }

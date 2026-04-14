@@ -5,7 +5,7 @@ use crate::theme;
 /// Draw the surface type convert popup.
 /// Shows Terminal / Markdown... / Explorer / Cancel options.
 pub fn draw_convert_popup(ctx: &egui::Context, state: &mut AppState) {
-    let surface_id = match state.convert_popup {
+    let surface_id = match state.dialogs.convert_popup {
         Some(id) => id,
         None => return,
     };
@@ -20,7 +20,7 @@ pub fn draw_convert_popup(ctx: &egui::Context, state: &mut AppState) {
 
     // Check for Esc key
     if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-        state.convert_popup = None;
+        state.dialogs.convert_popup = None;
         return;
     }
 
@@ -126,29 +126,29 @@ pub fn draw_convert_popup(ctx: &egui::Context, state: &mut AppState) {
     }
 
     if close {
-        state.convert_popup = None;
+        state.dialogs.convert_popup = None;
         return;
     }
 
     // Apply action
     if let Some(act) = action {
-        state.convert_popup = None;
+        state.dialogs.convert_popup = None;
         match act {
             ConvertAction::Terminal => {
                 state.convert_surface_to_terminal(surface_id);
             }
             ConvertAction::Markdown => {
                 let pane_id = state.active_workspace().focused_pane;
-                state.markdown_convert_surface_id = Some(surface_id);
-                state.markdown_path_dialog = Some((pane_id, String::new()));
+                state.dialogs.markdown_convert_surface_id = Some(surface_id);
+                state.dialogs.markdown_path = Some((pane_id, String::new()));
             }
             ConvertAction::Explorer => {
                 state.convert_surface_to_explorer(surface_id);
             }
             ConvertAction::Html => {
                 let pane_id = state.active_workspace().focused_pane;
-                state.html_convert_surface_id = Some(surface_id);
-                state.html_url_dialog = Some((pane_id, String::new()));
+                state.dialogs.html_convert_surface_id = Some(surface_id);
+                state.dialogs.html_url = Some((pane_id, String::new()));
             }
         }
     }
