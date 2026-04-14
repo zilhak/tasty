@@ -214,10 +214,8 @@
 - 기본값 미설정 (설정 UI에서 Pane 서브탭에서 바인딩 가능)
 
 #### IPC/CLI 지원
-- `tab.create`에 `type` 파라미터 추가로 통합 예정 (`terminal` / `markdown` / `explorer`)
-- 현재(레거시): `tab.open_markdown`, `tab.open_explorer` — 별도 IPC 메서드
-- **목표 CLI**: `tasty new tab --type markdown --file <path>`, `tasty new tab --type explorer --path <dir>`
-- **목표 IPC**: `tab.create` → `{ "type": "markdown", "file": "path" }` 등
+- IPC: `tab.create`에 `type` 파라미터로 통합 (`terminal` / `markdown` / `explorer`)
+- CLI: `tasty new markdown <PATH> --pane <PANE>`, `tasty new explorer --pane <PANE>`
 
 ## 알림 시스템
 
