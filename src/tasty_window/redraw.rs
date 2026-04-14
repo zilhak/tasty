@@ -126,6 +126,9 @@ impl TastyWindow {
             }
         }
 
+        // Process pending native context menu (after egui frame, before webview sync)
+        self.process_pending_native_menu();
+
         // Sync webview lifecycle: create/destroy/reposition/visibility
         self.sync_webviews();
 
@@ -243,5 +246,81 @@ impl TastyWindow {
             }
         }
         None
+    }
+
+    /// Process pending native context menu request.
+    /// Called after egui frame so we have access to the window handle.
+    fn process_pending_native_menu(&mut self) {
+        use crate::native_menu::{MenuItem, show_context_menu};
+        use crate::state::PendingNativeMenu;
+
+        let pending = match self.state.pending_native_menu.take() {
+            Some(p) => p,
+            None => return,
+        };
+
+        match pending {
+            PendingNativeMenu::Tab { pane_id, tab_index, x, y } => {
+                let rename_label = crate::i18n::t("tab_context_menu.rename");
+                let close_label = crate::i18n::t("tab_context_menu.close");
+                let items = [
+                    MenuItem::new(1, rename_label),
+                    MenuItem::new(2, close_label),
+                ];
+                let result = show_context_menu(self.window.as_ref(), x as f64, y as f64, &items);
+                match result {
+                    Some(1) => {
+                        // Rename
+                        let current_name = self.state.active_workspace()
+                            .pane_layout()
+                            .find_pane(pane_id)
+                            .and_then(|p| p.tabs.get(tab_index))
+                            .map(|t| t.display_name())
+                            .unwrap_or_default();
+                        self.state.tab_rename_dialog = Some((pane_id, tab_index, current_name));
+                    }
+                    Some(2) => {
+                        // Close
+                        if let Some(pane) = self.state.active_workspace().pane_layout().find_pane(pane_id) {
+                            if let Some(tab) = pane.tabs.get(tab_index) {
+                                if let Some(panel) = tab.panel_if_initialized() {
+                                    let ids = panel.all_surface_ids();
+                                    if let Some(&sid) = ids.first() {
+                                        self.state.close_surface_by_id(sid);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+                self.mark_dirty();
+            }
+            PendingNativeMenu::Pane { pane_id, x, y } => {
+                let items = [
+                    MenuItem::new(1, "Open Markdown..."),
+                    MenuItem::new(2, "Open Explorer"),
+                    MenuItem::new(3, "Open HTML..."),
+                ];
+                let result = show_context_menu(self.window.as_ref(), x as f64, y as f64, &items);
+                match result {
+                    Some(1) => {
+                        self.state.markdown_path_dialog = Some((pane_id, String::new()));
+                    }
+                    Some(2) => {
+                        let home = directories::BaseDirs::new()
+                            .map(|d| d.home_dir().to_string_lossy().to_string())
+                            .unwrap_or_else(|| ".".to_string());
+                        self.state.active_workspace_mut().focused_pane = pane_id;
+                        let _ = self.state.add_explorer_tab(home);
+                    }
+                    Some(3) => {
+                        self.state.html_url_dialog = Some((pane_id, String::new()));
+                    }
+                    _ => {}
+                }
+                self.mark_dirty();
+            }
+        }
     }
 }

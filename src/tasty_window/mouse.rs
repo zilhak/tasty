@@ -84,10 +84,6 @@ impl TastyWindow {
                 self.left_mouse_down = false;
             }
 
-            if self.state.pane_context_menu.is_some() {
-                self.state.pane_context_menu = None;
-                self.dirty = true;
-            }
             let terminal_rect = self.compute_terminal_rect();
             if let Some(pos) = self.cursor_position {
                 let (x, y) = (pos.x as f32, pos.y as f32);
@@ -144,9 +140,8 @@ impl TastyWindow {
                     let scale = self.gpu.scale_factor();
                     for (pane_id, rect) in pane_rects {
                         if rect.contains(x, y) {
-                            self.state.pane_context_menu = Some(crate::state::PaneContextMenu {
+                            self.state.pending_native_menu = Some(crate::state::PendingNativeMenu::Pane {
                                 pane_id, x: x / scale, y: y / scale,
-                                armed: false,
                             });
                             self.dirty = true;
                             break;

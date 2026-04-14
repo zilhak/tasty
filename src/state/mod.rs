@@ -51,10 +51,6 @@ pub struct AppState {
     pub sidebar_collapsed: bool,
     /// Workspace rename dialog state: (workspace_index, field, edit_buffer)
     pub ws_rename: Option<(usize, WsRenameField, String)>,
-    /// Pane right-click context menu state: (pane_id, logical_x, logical_y).
-    pub pane_context_menu: Option<PaneContextMenu>,
-    /// Tab right-click context menu state.
-    pub tab_context_menu: Option<TabContextMenu>,
     /// Tab rename dialog state: (pane_id, tab_index, edit_buffer).
     pub tab_rename_dialog: Option<(u32, usize, String)>,
     /// Markdown file path dialog state: (pane_id, path_buffer).
@@ -74,30 +70,21 @@ pub struct AppState {
     pub popups: crate::ui::PopupManager,
     /// Double-tap modifier captured from winit events, for the keybinding recorder to consume.
     pub captured_double_tap: Option<String>,
+    /// Pending native context menu request. Set during egui drawing,
+    /// processed after egui frame by TastyWindow (which has the window handle).
+    pub pending_native_menu: Option<PendingNativeMenu>,
+}
+
+/// A pending native context menu request.
+#[derive(Clone)]
+pub enum PendingNativeMenu {
+    /// Tab right-click: Rename / Close
+    Tab { pane_id: u32, tab_index: usize, x: f32, y: f32 },
+    /// Pane/empty area right-click: Open Markdown... / Open Explorer / Open HTML...
+    Pane { pane_id: u32, x: f32, y: f32 },
 }
 
 
-/// State for the pane right-click context menu.
-#[derive(Debug, Clone)]
-pub struct PaneContextMenu {
-    pub pane_id: u32,
-    pub x: f32,
-    pub y: f32,
-    /// Set to true after the first egui frame where no mouse button is pressed.
-    /// Until then, clicks are ignored (to avoid the opening right-click release
-    /// from immediately closing the menu).
-    pub armed: bool,
-}
-
-/// State for the tab right-click context menu.
-#[derive(Debug, Clone)]
-pub struct TabContextMenu {
-    pub pane_id: u32,
-    pub tab_index: usize,
-    pub x: f32,
-    pub y: f32,
-    pub armed: bool,
-}
 
 /// Which workspace field is being renamed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -120,8 +107,6 @@ impl AppState {
             sidebar_visible: true,
             sidebar_collapsed: false,
             ws_rename: None,
-            pane_context_menu: None,
-            tab_context_menu: None,
             tab_rename_dialog: None,
             markdown_path_dialog: None,
             markdown_convert_surface_id: None,
@@ -130,6 +115,7 @@ impl AppState {
             html_convert_surface_id: None,
             tab_bar_height: 24.0,
             captured_double_tap: None,
+            pending_native_menu: None,
             popups: {
                 let mut pm = crate::ui::PopupManager::new();
                 pm.register(crate::ui::PopupState::new(
@@ -156,8 +142,6 @@ impl AppState {
     /// the overlay due to OS z-order being above the wgpu render surface.
     pub fn has_egui_overlay_open(&self) -> bool {
         self.settings_open
-            || self.tab_context_menu.is_some()
-            || self.pane_context_menu.is_some()
             || self.convert_popup.is_some()
             || self.has_input_dialog_open()
             || self.popups.has_any_open()

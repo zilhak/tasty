@@ -17,6 +17,7 @@ mod ipc;
 mod markdown_ui;
 pub mod modal_window;
 mod model;
+mod native_menu;
 mod quit_modal;
 mod notification;
 mod renderer;
