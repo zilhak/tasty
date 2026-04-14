@@ -199,9 +199,7 @@ impl AppState {
             }
             // Claude parent-child cleanup + surface meta cleanup
             for sid in surface_ids {
-                self.unregister_child(sid);
-                self.mark_parent_closed(sid);
-                crate::surface_meta::SurfaceMetaStore::remove(sid);
+                self.cleanup_surface(sid);
             }
         }
         removed
@@ -239,9 +237,7 @@ impl AppState {
             return false;
         }
         // Claude parent-child cleanup + surface meta cleanup
-        self.unregister_child(surface_id);
-        self.mark_parent_closed(surface_id);
-        crate::surface_meta::SurfaceMetaStore::remove(surface_id);
+        self.cleanup_surface(surface_id);
         true
     }
 
@@ -388,9 +384,7 @@ impl AppState {
         if self.active_workspace >= self.engine.workspaces.len() && !self.engine.workspaces.is_empty() {
             self.active_workspace = self.engine.workspaces.len() - 1;
         }
-        self.unregister_child(surface_id);
-        self.mark_parent_closed(surface_id);
-        crate::surface_meta::SurfaceMetaStore::remove(surface_id);
+        self.cleanup_surface(surface_id);
         true
     }
 
@@ -443,9 +437,7 @@ impl AppState {
                 }
             }
             for sid in surface_ids {
-                self.unregister_child(sid);
-                self.mark_parent_closed(sid);
-                crate::surface_meta::SurfaceMetaStore::remove(sid);
+                self.cleanup_surface(sid);
             }
         }
         removed

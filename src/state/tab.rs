@@ -167,9 +167,7 @@ impl AppState {
         };
         if closed {
             for sid in surface_ids {
-                self.unregister_child(sid);
-                self.mark_parent_closed(sid);
-                crate::surface_meta::SurfaceMetaStore::remove(sid);
+                self.cleanup_surface(sid);
             }
         }
         closed
@@ -225,7 +223,7 @@ impl AppState {
         };
         if closed {
             for sid in surface_ids {
-                crate::surface_meta::SurfaceMetaStore::remove(sid);
+                self.cleanup_surface(sid);
             }
         }
         closed

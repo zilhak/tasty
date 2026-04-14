@@ -147,6 +147,14 @@ impl AppState {
             || self.popups.has_any_open()
     }
 
+    /// Clean up all state associated with a closed surface:
+    /// Claude agent relationships, parent tracking, and surface metadata.
+    pub(crate) fn cleanup_surface(&mut self, surface_id: u32) {
+        self.unregister_child(surface_id);
+        self.mark_parent_closed(surface_id);
+        crate::surface_meta::SurfaceMetaStore::remove(surface_id);
+    }
+
     pub fn active_workspace(&self) -> &crate::model::Workspace {
         let idx = self.active_workspace.min(self.engine.workspaces.len().saturating_sub(1));
         &self.engine.workspaces[idx]
