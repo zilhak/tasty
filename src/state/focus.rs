@@ -133,7 +133,7 @@ impl AppState {
         let mut found_pane_id = None;
         for pid in pane_ids {
             if let Some(pane) = ws.pane_layout().find_pane(pid) {
-                if pane.find_terminal(surface_id).is_some() {
+                if pane.contains_surface(surface_id) {
                     found_pane_id = Some(pid);
                     break;
                 }

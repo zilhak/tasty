@@ -185,11 +185,7 @@ impl AppState {
     pub fn focused_surface_id(&self) -> Option<u32> {
         let pane = self.focused_pane()?;
         let panel = pane.active_panel()?;
-        match panel {
-            crate::model::Panel::Terminal(node) => Some(node.id),
-            crate::model::Panel::SurfaceGroup(group) => Some(group.focused_surface),
-            crate::model::Panel::Markdown(_) | crate::model::Panel::Explorer(_) | crate::model::Panel::Html(_) => None,
-        }
+        panel.focused_surface_id()
     }
 
     /// Record that the user typed on the given surface (updates last_key_input timestamp).

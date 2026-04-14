@@ -284,6 +284,14 @@ impl Pane {
         self.active_panel_mut()?.focused_terminal_mut()
     }
 
+    /// Check if any tab in this pane contains the given surface ID (terminal or non-terminal).
+    pub fn contains_surface(&self, surface_id: SurfaceId) -> bool {
+        self.tabs.iter().any(|tab| {
+            tab.panel_if_initialized()
+                .is_some_and(|p| p.contains_surface(surface_id))
+        })
+    }
+
     /// Find a terminal by surface ID across all tabs (immutable).
     pub fn find_terminal(&self, surface_id: SurfaceId) -> Option<&Terminal> {
         for tab in &self.tabs {
