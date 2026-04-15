@@ -33,6 +33,9 @@ pub mod theme;
 mod ui;
 mod webview;
 
+#[cfg(target_os = "macos")]
+mod macos_delegate;
+
 // Re-export tasty_terminal as terminal for backward compatibility within the crate
 use tasty_terminal as terminal;
 
@@ -507,6 +510,10 @@ fn main() -> Result<()> {
     // Run the GUI
     let event_loop = EventLoop::<AppEvent>::with_user_event().build()?;
     let proxy = event_loop.create_proxy();
+
+    #[cfg(target_os = "macos")]
+    macos_delegate::setup(proxy.clone());
+
     let mut app = App::new(proxy, cli.port_file);
     event_loop.run_app(&mut app)?;
 
