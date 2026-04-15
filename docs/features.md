@@ -97,10 +97,11 @@
 - Workspace: 최상위 컨테이너. 상위 레이아웃(PaneNode 이진 트리)을 소유
 - PaneNode: Pane의 상위 레이아웃 트리. Leaf(Pane) 또는 Split. 탭 전환과 무관하게 고정
 - Pane: **독립적인 탭 바**를 가진 화면 영역. 여러 Tab을 포함
-- Tab: 탭 하나. Panel에 매핑
-- Panel: 콘텐츠 타입 enum. Terminal(단일), SurfaceGroup(하위 레이아웃), Markdown, Explorer, Html, Empty
-- SurfaceGroupNode: 하위 레이아웃 트리. 탭 전환 시 함께 전환
-- Surface: 최하위 컨테이너. 타입별 콘텐츠 (Terminal / Markdown / Explorer / Html / Empty)
+- Tab: 탭 하나. `Box<dyn Surface>` trait object 소유
+- Surface trait: 모든 콘텐츠 타입의 공통 인터페이스. 각 타입이 독립 struct로 구현
+  - TerminalSurface: 단일 PTY 터미널
+  - SurfaceGroupNode: 탭 내부 분할 (SurfaceGroupLayout 이진 트리 소유)
+  - MarkdownPanel, ExplorerPanel, HtmlPanel, EmptySurface: 비터미널 콘텐츠
 - AppState: 전체 워크스페이스 목록과 활성 상태를 관리하는 중앙 상태 (IdGenerator 포함)
 
 ### egui UI 오버레이
@@ -118,7 +119,7 @@
 ### 두 가지 분할 유형
 - **Pane 분할** (Ctrl+Shift+E/O): 물리적 화면 분할. PaneNode 이진 트리 기반. 각 영역이 독립 탭 바를 가진다
 - **SurfaceGroup 분할** (Ctrl+D / Ctrl+Shift+D): 탭 내부 분할. SurfaceGroupLayout 이진 트리 기반. 탭 바에서는 하나의 탭으로 표시된다
-- Panel::Terminal이 분할 시 자동으로 Panel::SurfaceGroup으로 변환
+- TerminalSurface가 분할 시 자동으로 SurfaceGroupNode으로 변환
 - **패닉 없는 분할 구현**: PTY/Terminal을 구조적 변경 이전에 선행 생성 — 리소스 생성 실패 시 레이아웃이 변경되지 않음
 - `PaneNode::split_pane_in_place`: `std::mem::replace` 2-step 패턴으로 소유권 이동 없이 트리 내부 노드를 in-place 변경
 - `SurfaceGroupLayout::split_with_node`: 소유권 기반 infallible 분할 — 사전 생성된 SurfaceNode를 받아 구조적 변경 중 패닉 경로 없음

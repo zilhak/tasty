@@ -105,7 +105,7 @@ Pane은 기존 터미널에 대응하는 개념이 없다. 이것이 Tasty의 �
 | Workspace | `Workspace` | 최상위 컨테이너 |
 | 상위 레이아웃 | `PaneNode` (이진 트리 enum: Leaf / Split) | Pane 배치 |
 | Pane | `Pane` | 독립적인 탭 바. 탭 목록 보유 |
-| Tab | `Tab` → `Panel` | 탭 하나의 내용물 |
+| Tab | `Tab` → `Box<dyn Surface>` | 탭 하나의 내용물 |
 | 하위 레이아웃 | `SurfaceGroupNode` (이진 트리 enum) | Surface 배치 |
-| Surface | `Panel` variant (`Terminal` / `Markdown` / `Explorer`), `PanelBehavior` trait | 최하위 컨테이너. 타입별 콘텐츠. 공통 동작은 trait으로 정의 |
+| Surface | `Surface` trait. 구현체: `TerminalSurface`, `SurfaceGroupNode`, `MarkdownPanel`, `ExplorerPanel`, `HtmlPanel`, `EmptySurface` | 최하위 컨테이너. 타입별 콘텐츠. 공통 동작은 trait으로 정의 |
 | Popup | `PopupContent` trait + `PopupManager` | 내부 가상 창. 팝업별 고유 동작은 trait으로 정의 |
