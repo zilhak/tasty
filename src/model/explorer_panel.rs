@@ -1,3 +1,6 @@
+use super::surface_trait::Surface;
+use super::SurfaceId;
+
 /// A node in the file tree.
 pub struct FileNode {
     pub name: String,
@@ -141,4 +144,15 @@ fn is_previewable_file(path: &str, ext: &str) -> bool {
 
     // No extension and not a known filename — skip preview
     false
+}
+
+impl Surface for ExplorerPanel {
+    fn type_name(&self) -> &'static str { "Explorer" }
+    fn surface_id(&self) -> Option<SurfaceId> { Some(self.id) }
+    fn display_name(&self) -> String {
+        std::path::Path::new(&self.root_path)
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| "Explorer".to_string())
+    }
 }

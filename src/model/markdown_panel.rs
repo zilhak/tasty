@@ -1,4 +1,7 @@
-/// A panel that displays a Markdown file rendered with egui.
+use super::surface_trait::Surface;
+use super::SurfaceId;
+
+/// A surface that displays a Markdown file rendered with egui.
 pub struct MarkdownPanel {
     pub id: u32,
     pub file_path: String,
@@ -21,5 +24,16 @@ impl MarkdownPanel {
     pub fn reload(&mut self) {
         self.content = std::fs::read_to_string(&self.file_path)
             .unwrap_or_else(|e| format!("Error: {}", e));
+    }
+}
+
+impl Surface for MarkdownPanel {
+    fn type_name(&self) -> &'static str { "Markdown" }
+    fn surface_id(&self) -> Option<SurfaceId> { Some(self.id) }
+    fn display_name(&self) -> String {
+        std::path::Path::new(&self.file_path)
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| "Markdown".to_string())
     }
 }

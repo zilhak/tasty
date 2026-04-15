@@ -136,6 +136,7 @@ mod surface_trait;
 mod markdown_panel;
 mod explorer_panel;
 mod html_panel;
+mod empty_surface;
 pub mod closed_item;
 
 pub use workspace::*;
@@ -149,6 +150,7 @@ pub use surface_group::*;
 pub use markdown_panel::*;
 pub use explorer_panel::*;
 pub use html_panel::*;
+pub use empty_surface::*;
 pub use closed_item::{ClosedItem, ClosedItemStore};
 
 #[cfg(test)]
