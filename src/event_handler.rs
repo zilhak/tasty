@@ -92,6 +92,9 @@ impl ApplicationHandler<AppEvent> for App {
             return;
         }
 
+        #[cfg(target_os = "macos")]
+        crate::macos_delegate::inject_delegate_methods();
+
         use std::sync::Arc;
         use winit::window::WindowAttributes;
 

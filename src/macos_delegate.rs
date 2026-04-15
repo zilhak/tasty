@@ -1,13 +1,14 @@
-//! macOS NSApplicationDelegate for dock reopen, dock menu, and app menu.
+//! macOS dock reopen, dock menu, and app menu support.
 //!
-//! Uses raw Objective-C runtime APIs to avoid objc2 version conflicts
-//! (winit uses objc2 0.5, we use 0.6).
+//! Instead of replacing winit's NSApplicationDelegate (which breaks winit),
+//! we inject methods directly into winit's existing delegate class at runtime.
+//! This is called after winit has set up its delegate (in `resumed()`).
 
 use std::sync::OnceLock;
 
 use objc2::rc::Retained;
-use objc2::runtime::{AnyObject, Bool, Sel};
-use objc2::{msg_send, sel, class};
+use objc2::runtime::{AnyClass, AnyObject, Bool, Sel};
+use objc2::{msg_send, sel};
 use objc2_app_kit::{NSApplication, NSMenu, NSMenuItem};
 use objc2_foundation::{MainThreadMarker, NSString};
 use winit::event_loop::EventLoopProxy;
@@ -53,7 +54,6 @@ unsafe extern "C-unwind" fn dock_menu(
     unsafe { item.setAction(Some(sel!(tastyNewWindow:))) };
     menu.addItem(&item);
 
-    // Transfer ownership via autorelease
     let ptr: *mut NSMenu = Retained::into_raw(menu);
     let _: *mut AnyObject = msg_send![ptr, autorelease];
     ptr.cast()
@@ -69,65 +69,58 @@ unsafe extern "C-unwind" fn new_window_action(
     send_create_window();
 }
 
-/// Register the delegate class at runtime and set it on NSApplication.
-/// Must be called after EventLoop creation and before run_app.
-pub fn setup(proxy: EventLoopProxy<AppEvent>) {
+/// Store the proxy. Called once at startup (before run_app).
+pub fn store_proxy(proxy: EventLoopProxy<AppEvent>) {
     PROXY.set(proxy).ok();
+}
 
+/// Inject delegate methods into winit's existing delegate class.
+/// Must be called AFTER winit has set up its delegate (i.e., from `resumed()`).
+pub fn inject_delegate_methods() {
     let Some(mtm) = MainThreadMarker::new() else {
-        tracing::warn!("macOS delegate setup: not on main thread, skipping");
         return;
     };
 
-    unsafe {
-        // Use raw ObjC runtime to build class, avoiding ClassBuilder's private API
-        let superclass: *const objc2::runtime::AnyClass = class!(NSObject);
-        let cls_ptr = objc2::ffi::objc_allocateClassPair(
-            superclass.cast_mut(),
-            c"TastyAppDelegate".as_ptr(),
-            0,
-        );
-        assert!(!cls_ptr.is_null(), "failed to allocate TastyAppDelegate class");
-
-        if let Some(protocol) = objc2::runtime::AnyProtocol::get(c"NSApplicationDelegate") {
-            objc2::ffi::class_addProtocol(cls_ptr, protocol as *const _ as *mut _);
+    let app = NSApplication::sharedApplication(mtm);
+    let delegate = match app.delegate() {
+        Some(d) => d,
+        None => {
+            tracing::warn!("macOS delegate inject: no delegate found");
+            return;
         }
+    };
+
+    unsafe {
+        // Get the class of winit's delegate and inject our methods into it.
+        let cls: *mut AnyClass = msg_send![&*delegate, class];
 
         objc2::ffi::class_addMethod(
-            cls_ptr,
+            cls,
             sel!(applicationShouldHandleReopen:hasVisibleWindows:),
             std::mem::transmute::<unsafe extern "C-unwind" fn(*mut AnyObject, Sel, *mut AnyObject, Bool) -> Bool, objc2::runtime::Imp>(handle_reopen),
             c"B@:@B".as_ptr(),
         );
 
         objc2::ffi::class_addMethod(
-            cls_ptr,
+            cls,
             sel!(applicationDockMenu:),
             std::mem::transmute::<unsafe extern "C-unwind" fn(*mut AnyObject, Sel, *mut AnyObject) -> *mut AnyObject, objc2::runtime::Imp>(dock_menu),
             c"@@:@".as_ptr(),
         );
 
         objc2::ffi::class_addMethod(
-            cls_ptr,
+            cls,
             sel!(tastyNewWindow:),
             std::mem::transmute::<unsafe extern "C-unwind" fn(*mut AnyObject, Sel, *mut AnyObject), objc2::runtime::Imp>(new_window_action),
             c"v@:@".as_ptr(),
         );
-
-        objc2::ffi::objc_registerClassPair(cls_ptr);
-        let cls = &*cls_ptr;
-
-        // Create instance and set as delegate
-        let delegate: *mut AnyObject = msg_send![cls, alloc];
-        let delegate: *mut AnyObject = msg_send![delegate, init];
-
-        let app = NSApplication::sharedApplication(mtm);
-        let _: () = msg_send![&*app, setDelegate: delegate];
-
-        setup_main_menu(&app, mtm, delegate);
-
-        // delegate intentionally leaked — must outlive the app
     }
+
+    // Set up app menu
+    let delegate_ptr: *mut AnyObject = unsafe { msg_send![&*delegate, self] };
+    setup_main_menu(&app, mtm, delegate_ptr);
+
+    tracing::info!("macOS delegate methods injected into winit's delegate");
 }
 
 /// Set up the app menu bar with File → New Window.

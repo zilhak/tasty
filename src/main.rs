@@ -513,7 +513,7 @@ fn main() -> Result<()> {
     let proxy = event_loop.create_proxy();
 
     #[cfg(target_os = "macos")]
-    macos_delegate::setup(proxy.clone());
+    macos_delegate::store_proxy(proxy.clone());
 
     let mut app = App::new(proxy, cli.port_file);
     event_loop.run_app(&mut app)?;
