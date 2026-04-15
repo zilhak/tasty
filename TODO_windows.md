@@ -1,11 +1,8 @@
 # Windows: New Window 접근성 개선 TODO
 
-## 1. 마지막 윈도우 닫기 동작
+## 1. ~~마지막 윈도우 닫기 동작~~ (구현 완료)
 
-`close_behavior: "minimize"` 일 때 마지막 윈도우를 실제로 최소화 (`window.set_minimized(true)`)하여 태스크바에 유지. 클릭하면 복원.
-
-- 윈도우 없이 백그라운드에 남는 것은 Windows에서 복구 불가 (macOS의 dock reopen 같은 메커니즘 없음)
-- 따라서 윈도우를 닫지 않고 최소화하는 방식이 적절
+`set_minimized(true)`로 태스크바에 유지하도록 구현됨. Windows/Linux에서는 윈도우를 파괴하지 않고 최소화.
 
 ## 2. 태스크바 Jump List에 "New Window" 추가
 

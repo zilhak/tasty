@@ -518,7 +518,12 @@
 - `window.list`: 전체 윈도우 목록 (id, focused, title)
 - `window.close`: 포커스된 윈도우 닫기
 - `window.focus`: 특정 윈도우에 포커스
-- 윈도우 닫기 시 HashMap에서 제거, 마지막 윈도우면 앱 종료
+- 윈도우 닫기 시 HashMap에서 제거
+- 마지막 윈도우 닫기: `close_behavior` 설정에 따라 동작 (ask/minimize/quit)
+- Minimize 동작 플랫폼 분기:
+  - macOS: 윈도우 파괴 + 모든 state를 parked_states에 보존 → dock 클릭으로 복원
+  - Windows/Linux: `set_minimized(true)`로 태스크바에 유지 → 클릭으로 복원
+- 멀티윈도우 minimize 시 모든 윈도우의 state를 보존 (Vec 기반)
 - 모달 활성 시 다른 윈도우 입력 차단
 - macOS: 커스텀 NSApplicationDelegate로 dock/메뉴 통합
   - dock 아이콘 클릭 시 윈도우가 없으면 자동 복원 (applicationShouldHandleReopen)

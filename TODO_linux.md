@@ -1,11 +1,8 @@
 # Linux: New Window 접근성 개선 TODO
 
-## 1. 마지막 윈도우 닫기 동작
+## 1. ~~마지막 윈도우 닫기 동작~~ (구현 완료)
 
-Windows와 동일. `close_behavior: "minimize"` 일 때 마지막 윈도우를 최소화하여 태스크바에 유지.
-
-- Linux도 윈도우 없이 백그라운드에 남으면 사용자가 복구할 방법이 없음
-- 최소화로 태스크바/독에 유지 → 클릭으로 복원
+`set_minimized(true)`로 태스크바에 유지하도록 구현됨. Windows와 동일.
 
 ## 2. .desktop 파일에 Actions 추가
 
