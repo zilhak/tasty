@@ -44,6 +44,8 @@ pub struct KeybindingSettings {
     pub convert_to_markdown: String,
     /// Direct convert to Explorer.
     pub convert_to_explorer: String,
+    /// Open a new window.
+    pub new_window: String,
 }
 
 impl KeybindingSettings {
@@ -107,6 +109,7 @@ impl KeybindingSettings {
             convert_surface: "alt+'".to_string(),
             convert_to_markdown: String::new(),
             convert_to_explorer: String::new(),
+            new_window: "alt+shift+n".to_string(),
         }
     }
 

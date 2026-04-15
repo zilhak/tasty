@@ -497,6 +497,10 @@ impl TastyWindow {
             }
             return true;
         }
+        if matches_binding(&kb.new_window, key, mods) {
+            let _ = proxy.send_event(crate::AppEvent::CreateWindow);
+            return true;
+        }
         false
     }
 
