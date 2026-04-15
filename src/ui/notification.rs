@@ -1,6 +1,7 @@
 use std::time::Instant;
 
 use crate::i18n::{t, t_fmt};
+use crate::model::PanelBehavior;
 use crate::state::AppState;
 use crate::theme;
 

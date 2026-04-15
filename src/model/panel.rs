@@ -1,5 +1,6 @@
 use tasty_terminal::Terminal;
 use super::{ExplorerPanel, HtmlPanel, MarkdownPanel, Rect, SplitDirection, SurfaceGroupLayout, SurfaceGroupNode, SurfaceId, SurfaceNode};
+use super::panel_trait::PanelBehavior;
 
 /// Content type within a Tab.
 pub enum Panel {
@@ -17,9 +18,8 @@ pub enum Panel {
     Empty { id: SurfaceId },
 }
 
-impl Panel {
-    /// Get the type name of this panel.
-    pub fn type_name(&self) -> &'static str {
+impl PanelBehavior for Panel {
+    fn type_name(&self) -> &'static str {
         match self {
             Panel::Terminal(_) => "Terminal",
             Panel::SurfaceGroup(_) => "SurfaceGroup",
@@ -30,10 +30,7 @@ impl Panel {
         }
     }
 
-    /// Get the single surface ID for non-group panels.
-    /// Most panels have exactly one surface ID.
-    /// SurfaceGroup has multiple — use `all_surface_ids()` for that.
-    fn single_surface_id(&self) -> Option<SurfaceId> {
+    fn surface_id(&self) -> Option<SurfaceId> {
         match self {
             Panel::Terminal(node) => Some(node.id),
             Panel::SurfaceGroup(_) => None,
@@ -44,8 +41,29 @@ impl Panel {
         }
     }
 
-    /// Get the focused terminal.
-    pub fn focused_terminal(&self) -> Option<&Terminal> {
+    fn all_surface_ids(&self) -> Vec<SurfaceId> {
+        match self {
+            Panel::SurfaceGroup(group) => group.layout().all_surface_ids(),
+            other => other.surface_id().into_iter().collect(),
+        }
+    }
+
+    fn focused_surface_id(&self) -> Option<SurfaceId> {
+        match self {
+            Panel::SurfaceGroup(group) => Some(group.focused_surface),
+            other => other.surface_id(),
+        }
+    }
+
+    fn contains_surface(&self, surface_id: SurfaceId) -> bool {
+        self.all_surface_ids().contains(&surface_id)
+    }
+
+    fn has_terminal(&self) -> bool {
+        matches!(self, Panel::Terminal(_) | Panel::SurfaceGroup(_))
+    }
+
+    fn focused_terminal(&self) -> Option<&Terminal> {
         match self {
             Panel::Terminal(node) => Some(&node.terminal),
             Panel::SurfaceGroup(group) => group.focused_terminal(),
@@ -53,8 +71,7 @@ impl Panel {
         }
     }
 
-    /// Get the focused terminal (mutable).
-    pub fn focused_terminal_mut(&mut self) -> Option<&mut Terminal> {
+    fn focused_terminal_mut(&mut self) -> Option<&mut Terminal> {
         match self {
             Panel::Terminal(node) => Some(&mut node.terminal),
             Panel::SurfaceGroup(group) => group.focused_terminal_mut(),
@@ -62,8 +79,51 @@ impl Panel {
         }
     }
 
-    /// Collect all terminals (mutable) in this panel.
-    pub fn collect_terminals_mut<'a>(&'a mut self, out: &mut Vec<&'a mut Terminal>) {
+    fn find_terminal(&self, surface_id: SurfaceId) -> Option<&Terminal> {
+        match self {
+            Panel::Terminal(node) if node.id == surface_id => Some(&node.terminal),
+            Panel::SurfaceGroup(group) => group.layout().find_terminal(surface_id),
+            _ => None,
+        }
+    }
+
+    fn find_terminal_node(&self, surface_id: SurfaceId) -> Option<&SurfaceNode> {
+        match self {
+            Panel::Terminal(node) if node.id == surface_id => Some(node),
+            Panel::SurfaceGroup(group) => group.layout().find_surface_node(surface_id),
+            _ => None,
+        }
+    }
+
+    fn find_terminal_mut(&mut self, surface_id: SurfaceId) -> Option<&mut Terminal> {
+        match self {
+            Panel::Terminal(node) if node.id == surface_id => Some(&mut node.terminal),
+            Panel::SurfaceGroup(group) => group.layout_mut().find_terminal_mut(surface_id),
+            _ => None,
+        }
+    }
+
+    fn render_regions(&self, rect: Rect) -> Vec<(SurfaceId, &Terminal, Rect)> {
+        match self {
+            Panel::Terminal(node) => vec![(node.id, &node.terminal, rect)],
+            Panel::SurfaceGroup(group) => group.compute_rects(rect),
+            _ => vec![],
+        }
+    }
+
+    fn resize_all(&mut self, rect: Rect, cell_width: f32, cell_height: f32) {
+        match self {
+            Panel::Terminal(node) => {
+                let cols = (rect.width / cell_width).floor().max(1.0) as usize;
+                let rows = (rect.height / cell_height).floor().max(1.0) as usize;
+                node.terminal.resize(cols, rows);
+            }
+            Panel::SurfaceGroup(group) => group.resize_all(rect, cell_width, cell_height),
+            _ => {}
+        }
+    }
+
+    fn collect_terminals_mut<'a>(&'a mut self, out: &mut Vec<&'a mut Terminal>) {
         match self {
             Panel::Terminal(node) => out.push(&mut node.terminal),
             Panel::SurfaceGroup(group) => group.layout_mut().collect_terminals_mut(out),
@@ -71,8 +131,7 @@ impl Panel {
         }
     }
 
-    /// Visit all terminals (mutable) in this panel.
-    pub fn for_each_terminal_mut<F>(&mut self, f: &mut F)
+    fn for_each_terminal_mut<F>(&mut self, f: &mut F)
     where
         F: FnMut(SurfaceId, &mut Terminal),
     {
@@ -82,80 +141,23 @@ impl Panel {
             _ => {}
         }
     }
+}
 
-    /// Find a terminal by surface ID (immutable).
-    pub fn find_terminal(&self, surface_id: SurfaceId) -> Option<&Terminal> {
+/// Downcasting helpers for Panel variants.
+impl Panel {
+    /// Get the inner SurfaceGroupNode if this is a SurfaceGroup.
+    pub fn as_surface_group(&self) -> Option<&SurfaceGroupNode> {
         match self {
-            Panel::Terminal(node) if node.id == surface_id => Some(&node.terminal),
-            Panel::SurfaceGroup(group) => group.layout().find_terminal(surface_id),
+            Panel::SurfaceGroup(group) => Some(group),
             _ => None,
         }
     }
 
-    /// Find a SurfaceNode by surface ID (for snapshotting before close).
-    pub fn find_terminal_node(&self, surface_id: SurfaceId) -> Option<&SurfaceNode> {
+    /// Get the inner SurfaceGroupNode mutably if this is a SurfaceGroup.
+    pub fn as_surface_group_mut(&mut self) -> Option<&mut SurfaceGroupNode> {
         match self {
-            Panel::Terminal(node) if node.id == surface_id => Some(node),
-            Panel::SurfaceGroup(group) => group.layout().find_surface_node(surface_id),
+            Panel::SurfaceGroup(group) => Some(group),
             _ => None,
-        }
-    }
-
-    /// Find a terminal by surface ID (mutable).
-    pub fn find_terminal_mut(&mut self, surface_id: SurfaceId) -> Option<&mut Terminal> {
-        match self {
-            Panel::Terminal(node) if node.id == surface_id => Some(&mut node.terminal),
-            Panel::SurfaceGroup(group) => group.layout_mut().find_terminal_mut(surface_id),
-            _ => None,
-        }
-    }
-
-    /// Get render regions for this panel within the given rect.
-    /// Only terminal panels return render regions; others are rendered by egui.
-    pub fn render_regions(&self, rect: Rect) -> Vec<(SurfaceId, &Terminal, Rect)> {
-        match self {
-            Panel::Terminal(node) => vec![(node.id, &node.terminal, rect)],
-            Panel::SurfaceGroup(group) => group.compute_rects(rect),
-            _ => vec![],
-        }
-    }
-
-    /// Collect all surface IDs in this panel.
-    pub fn all_surface_ids(&self) -> Vec<SurfaceId> {
-        match self {
-            Panel::SurfaceGroup(group) => group.layout().all_surface_ids(),
-            other => other.single_surface_id().into_iter().collect(),
-        }
-    }
-
-    /// Returns true if this panel contains terminal surfaces (PTY-backed).
-    pub fn has_terminal(&self) -> bool {
-        matches!(self, Panel::Terminal(_) | Panel::SurfaceGroup(_))
-    }
-
-    /// Get the focused surface ID for this panel.
-    pub fn focused_surface_id(&self) -> Option<SurfaceId> {
-        match self {
-            Panel::SurfaceGroup(group) => Some(group.focused_surface),
-            other => other.single_surface_id(),
-        }
-    }
-
-    /// Check if this panel contains the given surface ID.
-    pub fn contains_surface(&self, surface_id: SurfaceId) -> bool {
-        self.all_surface_ids().contains(&surface_id)
-    }
-
-    /// Resize all terminals in this panel.
-    pub fn resize_all(&mut self, rect: Rect, cell_width: f32, cell_height: f32) {
-        match self {
-            Panel::Terminal(node) => {
-                let cols = (rect.width / cell_width).floor().max(1.0) as usize;
-                let rows = (rect.height / cell_height).floor().max(1.0) as usize;
-                node.terminal.resize(cols, rows);
-            }
-            Panel::SurfaceGroup(group) => group.resize_all(rect, cell_width, cell_height),
-            _ => {}
         }
     }
 

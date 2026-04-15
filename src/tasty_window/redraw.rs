@@ -1,5 +1,6 @@
 use winit::event_loop::ActiveEventLoop;
 
+use crate::model::PanelBehavior;
 use super::TastyWindow;
 
 impl TastyWindow {

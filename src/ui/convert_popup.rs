@@ -1,4 +1,5 @@
 use crate::i18n::t;
+use crate::model::PanelBehavior;
 use crate::state::AppState;
 use crate::theme;
 use crate::ui::popup::{self, PopupAction, PopupContent, PopupId, PopupScope};

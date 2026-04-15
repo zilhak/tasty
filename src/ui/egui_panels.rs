@@ -1,6 +1,6 @@
 use egui::emath::GuiRounding as _;
 
-use crate::model::Rect;
+use crate::model::{PanelBehavior, Rect};
 use crate::state::AppState;
 use crate::theme;
 

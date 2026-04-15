@@ -12,6 +12,7 @@ mod restore;
 mod tests;
 
 use crate::engine_state::EngineState;
+use crate::model::PanelBehavior;
 use crate::settings_ui::SettingsUiState;
 use tasty_terminal::{Terminal, TerminalEvent, Waker};
 

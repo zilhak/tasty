@@ -1,3 +1,4 @@
+use crate::model::PanelBehavior;
 use super::AppState;
 
 impl AppState {

@@ -1,6 +1,6 @@
 use tasty_terminal::Terminal;
 use super::{
-    DividerInfo, Pane, PaneId, Rect, SplitDirection, SurfaceId,
+    DividerInfo, Pane, PaneId, PanelBehavior, Rect, SplitDirection, SurfaceId,
 };
 
 /// Directional focus movement.

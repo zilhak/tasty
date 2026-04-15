@@ -1,6 +1,6 @@
 use tasty_terminal::{Terminal, Waker};
 use super::{
-    PaneId, Panel, SplitDirection, SurfaceId,
+    PaneId, Panel, PanelBehavior, SplitDirection, SurfaceId,
     SurfaceNode, TabId,
 };
 use super::tab::Tab;

@@ -1,4 +1,4 @@
-use crate::model::{PaneId, Rect};
+use crate::model::{PaneId, PanelBehavior, Rect};
 use tasty_terminal::Terminal;
 
 use super::AppState;
