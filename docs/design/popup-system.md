@@ -43,37 +43,57 @@
 
 ## 구현
 
+### PopupContent trait (`src/ui/popup.rs`)
+
+모든 팝업은 `PopupContent` trait을 구현하여 자신의 고유 동작을 정의한다.
+
+```rust
+pub trait PopupContent {
+    fn id(&self) -> PopupId;
+    fn title(&self) -> String;
+    fn default_size(&self) -> egui::Vec2;
+    fn scope(&self) -> PopupScope { PopupScope::Window }
+    fn close_on_outside_click(&self) -> bool { false }
+    fn draw(&mut self, ui: &mut egui::Ui, state: &mut AppState) -> PopupAction;
+}
+```
+
 ### PopupManager (`src/ui/popup.rs`)
 
-모든 팝업의 생명주기와 렌더링을 관리하는 중앙 매니저.
+팝업의 공통 동작(z-order, 드래그, 타이틀바, clamp, 포커스)을 관리하는 중앙 매니저.
 
-- `register()`: 팝업 등록 (앱 초기화 시)
+- `register_content()`: PopupContent에서 PopupState 자동 생성 및 등록
 - `open()` / `close()` / `toggle()`: 팝업 열기/닫기
+- `open_with_scope()`: 동적 스코프 지정 + 센터링 (Surface 스코프 팝업에 사용)
 - `draw()`: 모든 열린 팝업을 z-order 순으로 렌더링
 
 ### PopupState
 
-개별 팝업의 상태를 저장.
+개별 팝업의 공통 상태를 저장 (PopupManager 내부).
 
 - `id`: 고유 식별자 (`&'static str`)
-- `title`: 타이틀바에 표시될 텍스트
+- `title`: 타이틀바에 표시될 텍스트 (PopupContent에서 매 프레임 갱신)
 - `pos`: 위치 (논리 픽셀)
-- `size`: 크기 (논리 픽셀)
+- `size`: 크기 (논리 픽셀, PopupContent에서 매 프레임 갱신)
 - `open`: 열림 여부
 - `focused`: 키보드 포커스 보유 여부
+- `scope`: 스코프 (open_with_scope로 동적 변경 가능)
 
 ### 팝업 추가 방법
 
-1. `AppState::new()`에서 `popups.register(PopupState::new("my_popup", "Title", size))` 호출
-2. `draw_popups()`에서 해당 id의 콘텐츠 그리기 콜백 추가
-3. 열기/닫기: `state.popups.toggle("my_popup")` 호출
+1. `PopupContent` trait을 구현하는 struct 생성 (예: `src/ui/my_popup.rs`)
+2. `AppState::new()`에서:
+   - `popup_contents`에 `Box::new(MyPopup::new())` 추가
+   - `popups.register_content(&MyPopup::new())` 호출
+3. 열기: `state.popups.open("my_popup")` 또는 `state.popups.open_with_scope("my_popup", scope)`
+4. 닫기: `state.popups.close("my_popup")` (또는 draw()에서 `PopupAction::Close` 반환)
 
 ### 등록된 팝업
 
-| ID | 용도 | 기본 크기 | 외부 클릭 닫기 |
+| ID | 구현체 | 스코프 | 외부 클릭 닫기 |
 |---|---|---|---|
-| `notifications` | 알림 목록 | 350x400 | No |
-| `convert_surface` | Surface 타입 전환 | 200x132 | Yes |
+| `notifications` | `NotificationPopup` | Window | No |
+| `convert_surface` | `ConvertSurfacePopup` | Surface (동적) | Yes |
 
 ## 외부 클릭 닫기
 

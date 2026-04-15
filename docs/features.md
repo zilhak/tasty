@@ -217,7 +217,7 @@
 - 기본값 미설정 (설정 UI에서 Pane 서브탭에서 바인딩 가능)
 
 #### Surface 타입 전환
-- `convert_surface` 단축키 (기본 `Alt+'`): PopupManager 기반 전환 팝업 표시 — Terminal(T) / Markdown(M)... / Explorer(E) / HTML(H)...
+- `convert_surface` 단축키 (기본 `Alt+'`): Surface 스코프 팝업으로 전환 메뉴 표시 — Terminal(T) / Markdown(M)... / Explorer(E) / HTML(H)... 팝업은 해당 surface 영역 중앙에 배치되며, 항목 수에 맞게 크기 자동 계산
 - `convert_to_markdown` / `convert_to_explorer`: 직접 전환 단축키 (기본값 없음, 설정에서 할당)
 - 현재 타입과 동일한 항목은 체크 표시 + 비활성
 - Markdown 전환 시 파일 경로 입력 다이얼로그 표시
