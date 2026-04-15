@@ -224,6 +224,12 @@ impl GpuState {
         // 3. Post-egui updates (theme/font refresh)
         self.post_egui_update(state, &prev_theme);
         self.egui_state.handle_platform_output(window, full_output.platform_output);
+        // egui-winit disables IME when no egui text field is focused.
+        // The terminal always needs IME, so re-enable it unconditionally.
+        if !self.egui_state.allow_ime() {
+            self.egui_state.set_allow_ime(true);
+            window.set_ime_allowed(true);
+        }
 
         // 4. Tessellate egui
         let paint_jobs = self.egui_ctx.tessellate(full_output.shapes, full_output.pixels_per_point);
@@ -272,7 +278,7 @@ impl GpuState {
                     height: (pane_rect.height - tab_bar_h).max(1.0),
                 };
                 if let Some(panel) = pane.active_panel() {
-                    if let crate::model::Panel::SurfaceGroup(group) = panel {
+                    if let Some(group) = panel.as_surface_group() {
                         dividers.extend(group.layout().collect_dividers(content_rect));
                     }
                 }
