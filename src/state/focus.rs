@@ -11,7 +11,7 @@ impl AppState {
         // Try to move within a SurfaceGroup first
         if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
             if let Some(panel) = pane.active_panel_mut() {
-                if let crate::model::Panel::SurfaceGroup(group) = panel {
+                if let Some(group) = panel.as_surface_group_mut() {
                     if group.layout().all_surface_ids().len() > 1 {
                         group.move_focus_forward();
                         return;
@@ -33,7 +33,7 @@ impl AppState {
         // Try to move within a SurfaceGroup first
         if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
             if let Some(panel) = pane.active_panel_mut() {
-                if let crate::model::Panel::SurfaceGroup(group) = panel {
+                if let Some(group) = panel.as_surface_group_mut() {
                     if group.layout().all_surface_ids().len() > 1 {
                         group.move_focus_backward();
                         return;
@@ -56,7 +56,7 @@ impl AppState {
         // Try to move within a SurfaceGroup first
         if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
             if let Some(panel) = pane.active_panel_mut() {
-                if let crate::model::Panel::SurfaceGroup(group) = panel {
+                if let Some(group) = panel.as_surface_group_mut() {
                     if let Some(new_surface_id) = group.directional_focus(direction) {
                         group.focused_surface = new_surface_id;
                         return;
@@ -91,7 +91,7 @@ impl AppState {
         let pane_id = ws.focused_pane;
         if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
             if let Some(panel) = pane.active_panel_mut() {
-                if let crate::model::Panel::SurfaceGroup(group) = panel {
+                if let Some(group) = panel.as_surface_group_mut() {
                     group.move_focus_forward();
                 }
             }
@@ -105,7 +105,7 @@ impl AppState {
         let pane_id = ws.focused_pane;
         if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
             if let Some(panel) = pane.active_panel_mut() {
-                if let crate::model::Panel::SurfaceGroup(group) = panel {
+                if let Some(group) = panel.as_surface_group_mut() {
                     group.move_focus_backward();
                 }
             }
@@ -149,7 +149,7 @@ impl AppState {
         // If the active panel for that pane is a SurfaceGroup, focus the surface within it.
         if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
             if let Some(panel) = pane.active_panel_mut() {
-                if let crate::model::Panel::SurfaceGroup(group) = panel {
+                if let Some(group) = panel.as_surface_group_mut() {
                     if group.layout().find_terminal(surface_id).is_some() {
                         group.focused_surface = surface_id;
                     }
@@ -216,17 +216,14 @@ impl AppState {
             None => return false,
         };
 
-        match panel {
-            crate::model::Panel::SurfaceGroup(group) => {
-                if let Some(surface_id) = group.layout().find_surface_at(x, y, content_rect) {
-                    if group.focused_surface != surface_id {
-                        group.focused_surface = surface_id;
-                        return true;
-                    }
+        if let Some(group) = panel.as_surface_group_mut() {
+            if let Some(surface_id) = group.layout().find_surface_at(x, y, content_rect) {
+                if group.focused_surface != surface_id {
+                    group.focused_surface = surface_id;
+                    return true;
                 }
-                false
             }
-            _ => false,
         }
+        false
     }
 }
