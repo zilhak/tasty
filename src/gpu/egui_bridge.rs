@@ -89,13 +89,13 @@ impl GpuState {
 
     /// Finish an egui frame: tessellate, render, present.
     pub fn finish_egui_frame(&mut self, window: &Window, full_output: egui::FullOutput) {
-        self.egui_state.handle_platform_output(window, full_output.platform_output);
         // egui-winit disables IME when no egui text field is focused.
-        // The terminal always needs IME, so re-enable it unconditionally.
-        if !self.egui_state.allow_ime() {
-            self.egui_state.set_allow_ime(true);
-            window.set_ime_allowed(true);
-        }
+        // The terminal always needs IME. Pre-set allow_ime=true so that
+        // handle_platform_output never calls set_ime_allowed(false), which
+        // would trigger a spurious Ime::Disabled → Ime::Enabled cycle and
+        // kill the active preedit for one frame.
+        self.egui_state.set_allow_ime(true);
+        self.egui_state.handle_platform_output(window, full_output.platform_output);
 
         let paint_jobs = self.egui_ctx.tessellate(full_output.shapes, full_output.pixels_per_point);
         let screen_descriptor = egui_wgpu::ScreenDescriptor {
