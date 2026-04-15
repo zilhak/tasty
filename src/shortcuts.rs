@@ -254,7 +254,7 @@ impl TastyWindow {
                         if let Some(sid) = self.state.focused_surface_id() {
                             self.state.dialogs.convert_popup = Some(sid);
                             self.state.dialogs.convert_popup_selected = None;
-                            self.state.popups.open_centered_focused("convert_surface");
+                            self.state.popups.open_with_scope("convert_surface", crate::ui::popup::PopupScope::Surface(sid));
                         }
                     }
                     "convert_to_markdown" => {
@@ -479,7 +479,7 @@ impl TastyWindow {
             if let Some(sid) = state.focused_surface_id() {
                 state.dialogs.convert_popup = Some(sid);
                 state.dialogs.convert_popup_selected = None;
-                state.popups.open_centered_focused("convert_surface");
+                state.popups.open_with_scope("convert_surface", crate::ui::popup::PopupScope::Surface(sid));
             }
             return true;
         }

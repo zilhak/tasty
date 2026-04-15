@@ -170,7 +170,7 @@ pub fn draw_egui_panels(
     if let Some(sid) = pending_empty_convert {
         state.dialogs.convert_popup = Some(sid);
         state.dialogs.convert_popup_selected = None;
-        state.popups.open_centered_focused("convert_surface");
+        state.popups.open_with_scope("convert_surface", crate::ui::popup::PopupScope::Surface(sid));
     }
 
     // Process deferred explorer actions (requires state mutation outside the render loop)

@@ -3,7 +3,6 @@ use std::time::Instant;
 use crate::i18n::{t, t_fmt};
 use crate::state::AppState;
 use crate::theme;
-use crate::ui::convert_popup;
 
 /// Draw notification panel content inside a popup Ui.
 /// Also called by NotificationPopup's PopupContent impl.
@@ -168,47 +167,28 @@ pub fn draw_popups(
     let mut popups = std::mem::replace(&mut state.popups, crate::ui::PopupManager::new());
     let mut contents = std::mem::replace(&mut state.popup_contents, Vec::new());
 
-    let mut convert_result: Option<convert_popup::ConvertResult> = None;
     let mut trait_closed: Vec<&'static str> = Vec::new();
     let closed = popups.draw(ctx, &mut |id, ui| {
-        // First try trait-based dispatch
         if let Some(content) = contents.iter_mut().find(|c| c.id() == id) {
-            let content_id = content.id(); // &'static str
+            let content_id = content.id();
             if matches!(content.draw(ui, state), crate::ui::PopupAction::Close) {
                 trait_closed.push(content_id);
             }
-            return;
-        }
-        // Legacy fallback for popups not yet migrated to trait
-        match id {
-            "convert_surface" => {
-                convert_result = convert_popup::draw_convert_content(ui, state);
-            }
-            _ => {}
         }
     }, Some(&draw_ctx));
 
     state.popups = popups;
     state.popup_contents = contents;
 
-    // Close popups that trait dispatch requested to close
-    for id in &trait_closed {
+    // Close popups requested by trait dispatch or X button / outside click
+    for id in trait_closed.iter().chain(closed.iter()) {
         state.popups.close(id);
     }
 
-    // Handle convert popup close (via X button, outside click, or Escape)
-    let convert_closed = closed.contains(&"convert_surface")
-        || matches!(convert_result, Some(convert_popup::ConvertResult::Close));
+    // Clean up convert_surface dialog state when closed
+    let convert_closed = trait_closed.contains(&"convert_surface")
+        || closed.contains(&"convert_surface");
     if convert_closed {
-        state.popups.close("convert_surface");
-        state.dialogs.convert_popup = None;
-        state.dialogs.convert_popup_selected = None;
-    }
-
-    // Handle convert popup action
-    if let Some(convert_popup::ConvertResult::Action(action)) = convert_result {
-        convert_popup::apply_convert_action(state, action);
-        state.popups.close("convert_surface");
         state.dialogs.convert_popup = None;
         state.dialogs.convert_popup_selected = None;
     }

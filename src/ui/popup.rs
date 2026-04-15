@@ -83,8 +83,8 @@ pub struct PopupState {
     pub request_center: bool,
 }
 
-const TITLE_BAR_HEIGHT: f32 = 28.0;
-const CONTENT_MARGIN: f32 = 4.0;
+pub const TITLE_BAR_HEIGHT: f32 = 28.0;
+pub const CONTENT_MARGIN: f32 = 4.0;
 
 impl PopupState {
     pub fn new(id: PopupId, title: impl Into<String>, default_size: egui::Vec2) -> Self {
