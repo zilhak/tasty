@@ -1,9 +1,10 @@
 use tasty_terminal::Terminal;
 use super::{Rect, SurfaceId};
 use super::pane_tree::FocusDirection;
+use super::surface_trait::Surface;
 pub use super::surface_layout::SurfaceGroupLayout;
 
-/// Single terminal instance.
+/// Single terminal instance (Surface type: Terminal).
 pub struct TerminalSurface {
     pub id: SurfaceId,
     pub terminal: Terminal,
@@ -22,6 +23,48 @@ pub(crate) struct DeferredSpawn {
     pub rows: usize,
     pub waker: tasty_terminal::Waker,
     pub working_dir: Option<std::path::PathBuf>,
+}
+
+impl Surface for TerminalSurface {
+    fn type_name(&self) -> &'static str { "Terminal" }
+
+    fn surface_id(&self) -> Option<SurfaceId> { Some(self.id) }
+
+    fn has_terminal(&self) -> bool { true }
+
+    fn focused_terminal(&self) -> Option<&Terminal> { Some(&self.terminal) }
+
+    fn focused_terminal_mut(&mut self) -> Option<&mut Terminal> { Some(&mut self.terminal) }
+
+    fn find_terminal(&self, surface_id: SurfaceId) -> Option<&Terminal> {
+        if self.id == surface_id { Some(&self.terminal) } else { None }
+    }
+
+    fn find_terminal_surface(&self, surface_id: SurfaceId) -> Option<&TerminalSurface> {
+        if self.id == surface_id { Some(self) } else { None }
+    }
+
+    fn find_terminal_mut(&mut self, surface_id: SurfaceId) -> Option<&mut Terminal> {
+        if self.id == surface_id { Some(&mut self.terminal) } else { None }
+    }
+
+    fn render_regions(&self, rect: Rect) -> Vec<(SurfaceId, &Terminal, Rect)> {
+        vec![(self.id, &self.terminal, rect)]
+    }
+
+    fn resize_all(&mut self, rect: Rect, cell_width: f32, cell_height: f32) {
+        let cols = (rect.width / cell_width).floor().max(1.0) as usize;
+        let rows = (rect.height / cell_height).floor().max(1.0) as usize;
+        self.terminal.resize(cols, rows);
+    }
+
+    fn collect_terminals_mut<'a>(&'a mut self, out: &mut Vec<&'a mut Terminal>) {
+        out.push(&mut self.terminal);
+    }
+
+    fn for_each_terminal_mut(&mut self, f: &mut dyn FnMut(SurfaceId, &mut Terminal)) {
+        f(self.id, &mut self.terminal);
+    }
 }
 
 /// Split within a tab (appears as one tab but renders multiple terminals).
@@ -122,4 +165,60 @@ impl SurfaceGroupNode {
     pub fn directional_focus(&self, direction: FocusDirection) -> Option<SurfaceId> {
         self.layout().directional_focus(self.focused_surface, direction)
     }
+}
+
+impl Surface for SurfaceGroupNode {
+    fn type_name(&self) -> &'static str { "SurfaceGroup" }
+
+    fn surface_id(&self) -> Option<SurfaceId> { None }
+
+    fn all_surface_ids(&self) -> Vec<SurfaceId> {
+        self.layout().all_surface_ids()
+    }
+
+    fn focused_surface_id(&self) -> Option<SurfaceId> {
+        Some(self.focused_surface)
+    }
+
+    fn has_terminal(&self) -> bool { true }
+
+    fn focused_terminal(&self) -> Option<&Terminal> {
+        SurfaceGroupNode::focused_terminal(self)
+    }
+
+    fn focused_terminal_mut(&mut self) -> Option<&mut Terminal> {
+        SurfaceGroupNode::focused_terminal_mut(self)
+    }
+
+    fn find_terminal(&self, surface_id: SurfaceId) -> Option<&Terminal> {
+        self.layout().find_terminal(surface_id)
+    }
+
+    fn find_terminal_surface(&self, surface_id: SurfaceId) -> Option<&TerminalSurface> {
+        self.layout().find_surface_node(surface_id)
+    }
+
+    fn find_terminal_mut(&mut self, surface_id: SurfaceId) -> Option<&mut Terminal> {
+        self.layout_mut().find_terminal_mut(surface_id)
+    }
+
+    fn render_regions(&self, rect: Rect) -> Vec<(SurfaceId, &Terminal, Rect)> {
+        self.compute_rects(rect)
+    }
+
+    fn resize_all(&mut self, rect: Rect, cell_width: f32, cell_height: f32) {
+        SurfaceGroupNode::resize_all(self, rect, cell_width, cell_height)
+    }
+
+    fn collect_terminals_mut<'a>(&'a mut self, out: &mut Vec<&'a mut Terminal>) {
+        self.layout_mut().collect_terminals_mut(out);
+    }
+
+    fn for_each_terminal_mut(&mut self, f: &mut dyn FnMut(SurfaceId, &mut Terminal)) {
+        self.layout_mut().for_each_terminal_mut_dyn(f);
+    }
+
+    fn as_surface_group(&self) -> Option<&SurfaceGroupNode> { Some(self) }
+
+    fn as_surface_group_mut(&mut self) -> Option<&mut SurfaceGroupNode> { Some(self) }
 }

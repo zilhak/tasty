@@ -246,6 +246,17 @@ impl SurfaceGroupLayout {
         }
     }
 
+    /// Object-safe version of for_each_terminal_mut (uses &mut dyn FnMut).
+    pub fn for_each_terminal_mut_dyn(&mut self, f: &mut dyn FnMut(SurfaceId, &mut Terminal)) {
+        match self {
+            SurfaceGroupLayout::Single(node) => f(node.id, &mut node.terminal),
+            SurfaceGroupLayout::Split { first, second, .. } => {
+                first.for_each_terminal_mut_dyn(f);
+                second.for_each_terminal_mut_dyn(f);
+            }
+        }
+    }
+
     pub fn collect_dividers(&self, rect: Rect) -> Vec<Rect> {
         match self {
             SurfaceGroupLayout::Single(_) => vec![],
