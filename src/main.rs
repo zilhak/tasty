@@ -512,8 +512,11 @@ fn main() -> Result<()> {
     let event_loop = EventLoop::<AppEvent>::with_user_event().build()?;
     let proxy = event_loop.create_proxy();
 
-    #[cfg(target_os = "macos")]
-    macos_delegate::setup(proxy.clone());
+    // macOS delegate disabled: winit 0.30 monopolizes NSApplicationDelegate.
+    // winit 0.31 will allow custom delegates (PR #3758), but egui-winit doesn't
+    // support winit 0.31 yet. Re-enable when egui upgrades.
+    // #[cfg(target_os = "macos")]
+    // macos_delegate::setup(proxy.clone());
 
     let mut app = App::new(proxy, cli.port_file);
     event_loop.run_app(&mut app)?;
