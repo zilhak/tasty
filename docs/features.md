@@ -117,8 +117,8 @@
 - 사이드바에 키보드 단축키 안내 표시
 
 ### 두 가지 분할 유형
-- **Pane 분할** (Ctrl+Shift+E/O): 물리적 화면 분할. PaneNode 이진 트리 기반. 각 영역이 독립 탭 바를 가진다
-- **SurfaceGroup 분할** (Ctrl+D / Ctrl+Shift+D): 탭 내부 분할. SurfaceGroupLayout 이진 트리 기반. 탭 바에서는 하나의 탭으로 표시된다
+- **Pane 분할** (Alt+E / Alt+Shift+E, macOS: ⌘E / ⌘⇧E): 물리적 화면 분할. PaneNode 이진 트리 기반. 각 영역이 독립 탭 바를 가진다
+- **SurfaceGroup 분할** (Alt+D / Alt+Shift+D, macOS: ⌘D / ⌘⇧D): 탭 내부 분할. SurfaceGroupLayout 이진 트리 기반. 탭 바에서는 하나의 탭으로 표시된다
 - TerminalSurface가 분할 시 자동으로 SurfaceGroupNode으로 변환
 - **패닉 없는 분할 구현**: PTY/Terminal을 구조적 변경 이전에 선행 생성 — 리소스 생성 실패 시 레이아웃이 변경되지 않음
 - `PaneNode::split_pane_in_place`: `std::mem::replace` 2-step 패턴으로 소유권 이동 없이 트리 내부 노드를 in-place 변경
@@ -158,9 +158,8 @@
 - Ctrl+Shift+B: 사이드바 토글 (숨김/표시)
 - Ctrl+B: 사이드바 접기/펼치기
 
-### 방향성 포커스 이동 (IPC/CLI)
-- `focus.direction` IPC 메서드: `direction` 파라미터 (`"left"`, `"right"`, `"up"`, `"down"`)로 분할 트리 구조 기반 방향성 포커스 이동
-- `tasty set focus direction <방향>` CLI 커맨드로도 동일하게 사용 가능
+### 방향성 포커스 이동 (키보드 단축키)
+- 키보드 단축키를 통한 분할 트리 구조 기반 방향성 포커스 이동
 - 알고리즘: SplitDirection 트리를 역방향으로 탐색하여 이동 방향에 맞는 분할을 찾고, 시블링 서브트리의 엣지 리프로 포커스 이동
   - `SplitDirection::Vertical`(좌우 경계) → Left/Right 방향에 대응
   - `SplitDirection::Horizontal`(상하 경계) → Up/Down 방향에 대응
@@ -443,23 +442,28 @@
 #### 워크스페이스
 - `workspace.list`: 전체 워크스페이스 목록 (이름, 활성 여부, 패인 수)
 - `workspace.create`: 새 워크스페이스 생성 (선택적 이름 지정)
-- `workspace.select`: 인덱스로 워크스페이스 전환
+- `workspace.update`: 워크스페이스 이름, 부제, 설명 수정
+
+#### 윈도우
+- `window.list`: 전체 윈도우 목록 (id, focused, title)
+- `window.create`: 새 독립 윈도우 생성
+- `window.close`: 포커스된 윈도우 닫기
+- `window.focus`: 특정 윈도우에 포커스
 
 #### 패인
 - `pane.list`: 전체 워크스페이스의 패인 목록 (포커스 여부, 탭 수)
 - `split`: 통합 분할 명령. `level`(pane/surface), `target_id`(전역 ID, cross-workspace), `direction`(vertical/horizontal) 파라미터. 포커스 이동 없음
-- `pane.close`: 포커스된 패인 닫기 (unsplit)
-- `pane.focus`: **pane_id로 특정 패인을 직접 포커스** — 멀티패인 환경에서 원하는 패인으로 전환
+- `pane.close`: 패인 닫기 (unsplit)
 
 #### 탭
-- `tab.list`: 포커스된 패인의 탭 목록
-- `tab.create`: 포커스된 패인에 새 탭 추가
-- `tab.close`: 포커스된 패인의 활성 탭 닫기
+- `tab.list`: 지정 패인의 탭 목록
+- `tab.create`: 지정 패인에 새 탭 추가
+- `tab.close`: 탭 닫기
 
 #### 서피스 (터미널)
-- `surface.list`: 활성 워크스페이스의 전체 서피스 목록 (id, pane_id, tab_index, cols, rows)
-- `surface.focus`: **surface_id로 특정 서피스를 직접 포커스** — 해당 서피스가 속한 패인까지 자동 포커스
-- `surface.close`: SurfaceGroup 내 포커스된 서피스 닫기
+- `surface.list`: 전체 워크스페이스의 서피스 목록 (id, pane_id, tab_index, cols, rows)
+- `surface.close`: 서피스 닫기
+- `surface.close_self`: 호출한 서피스 자신을 닫기 (TASTY_SURFACE_ID 기반)
 
 #### 입력
 - `surface.send`: 텍스트 전송 (optional surface_id)
@@ -651,7 +655,7 @@ Claude Code의 훅 시스템과 연동하여 Claude의 활동 상태를 추적�
 
 파일 기반 키-값 스토어로, 어떤 프로세스(Claude Code 포함)든 서피스별 임의 메타데이터를 읽고 쓸 수 있다.
 
-- **저장 위치**: Windows — `%TEMP%\tasty-surfaces\<surface_id>\meta.json`
+- **저장 위치**: OS 임시 디렉토리 — `{tmp}/tasty-surfaces/<surface_id>/meta.json` (Windows: `%TEMP%`, macOS: `/var/folders/...`, Linux: `/tmp`)
 - **SurfaceMetaStore**: 정적 메서드만 가지는 유틸리티 구조체 (상태 없음)
 - **ensure_created(surface_id)**: 서피스 생성 시 메타 디렉토리와 빈 JSON 파일 생성. `send_fast_init()` 내부에서 자동 호출됨
 - **remove(surface_id)**: 서피스 닫힐 때 메타 디렉토리 전체 삭제. 탭/패인/서피스 닫기 시 자동 호출됨
