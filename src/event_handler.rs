@@ -242,10 +242,13 @@ impl ApplicationHandler<AppEvent> for App {
             if let Some(modal) = &self.modal {
                 modal.window.focus_window();
             }
+            if let Some(qm) = &self.quit_modal {
+                qm.window.focus_window();
+            }
         }
 
         if let Some(w) = self.windows.get_mut(&id) {
-            let modal_active = self.engine.is_modal_active();
+            let modal_active = self.engine.is_modal_active() || self.quit_modal.is_some();
             w.handle_window_event(event, event_loop, modal_active);
 
             // Check if the window requested to close (e.g. last workspace removed)
