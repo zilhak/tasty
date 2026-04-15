@@ -223,13 +223,14 @@ impl GpuState {
 
         // 3. Post-egui updates (theme/font refresh)
         self.post_egui_update(state, &prev_theme);
+        // egui-winit disables IME when no egui text field is focused
+        // (calls set_ime_allowed(false) when self.allow_ime differs from
+        // ime.is_some()). The terminal always needs IME active.
+        // Pre-set allow_ime=false so that when egui computes allow_ime=false
+        // (no text field), the check false!=false is false and it skips
+        // the set_ime_allowed(false) call entirely.
+        self.egui_state.set_allow_ime(false);
         self.egui_state.handle_platform_output(window, full_output.platform_output);
-        // egui-winit disables IME when no egui text field is focused.
-        // The terminal always needs IME, so re-enable it unconditionally.
-        if !self.egui_state.allow_ime() {
-            self.egui_state.set_allow_ime(true);
-            window.set_ime_allowed(true);
-        }
 
         // 4. Tessellate egui
         let paint_jobs = self.egui_ctx.tessellate(full_output.shapes, full_output.pixels_per_point);

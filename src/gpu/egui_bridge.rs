@@ -89,12 +89,13 @@ impl GpuState {
 
     /// Finish an egui frame: tessellate, render, present.
     pub fn finish_egui_frame(&mut self, window: &Window, full_output: egui::FullOutput) {
-        // egui-winit disables IME when no egui text field is focused.
-        // The terminal always needs IME. Pre-set allow_ime=true so that
-        // handle_platform_output never calls set_ime_allowed(false), which
-        // would trigger a spurious Ime::Disabled → Ime::Enabled cycle and
-        // kill the active preedit for one frame.
-        self.egui_state.set_allow_ime(true);
+        // egui-winit disables IME when no egui text field is focused
+        // (calls set_ime_allowed(false) when self.allow_ime differs from
+        // ime.is_some()). The terminal always needs IME active.
+        // Pre-set allow_ime=false so that when egui computes allow_ime=false
+        // (no text field), the check false!=false is false and it skips
+        // the set_ime_allowed(false) call entirely.
+        self.egui_state.set_allow_ime(false);
         self.egui_state.handle_platform_output(window, full_output.platform_output);
 
         let paint_jobs = self.egui_ctx.tessellate(full_output.shapes, full_output.pixels_per_point);
