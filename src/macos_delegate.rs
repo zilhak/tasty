@@ -1,10 +1,7 @@
 //! macOS NSApplicationDelegate for dock reopen, dock menu, and app menu.
 //!
-//! Currently disabled: winit 0.30 monopolizes NSApplicationDelegate.
-//! Will be re-enabled when egui-winit supports winit 0.31 (which allows custom delegates).
-//!
-//! Uses raw Objective-C runtime APIs to avoid objc2 version conflicts.
-#![allow(dead_code)]
+//! Uses raw Objective-C runtime APIs to avoid objc2 version conflicts
+//! (winit uses objc2 0.5, we use 0.6).
 
 use std::sync::OnceLock;
 
