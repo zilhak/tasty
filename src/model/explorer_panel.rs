@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use super::surface_trait::Surface;
 use super::SurfaceId;
 
@@ -15,7 +17,12 @@ pub struct ExplorerPanel {
     pub id: u32,
     pub root_path: String,
     pub root_node: FileNode,
+    /// The last clicked/navigated item — used for right-side preview.
     pub selected_file: Option<String>,
+    /// All currently selected items (for multi-selection & clipboard).
+    pub selected_files: HashSet<String>,
+    /// Anchor point for Shift+click range selection.
+    pub selection_anchor: Option<String>,
     pub file_content: Option<String>,
     pub is_markdown: bool,
     pub scroll_offset: f32,
@@ -41,6 +48,8 @@ impl ExplorerPanel {
             root_path,
             root_node,
             selected_file: None,
+            selected_files: HashSet::new(),
+            selection_anchor: None,
             file_content: None,
             is_markdown: false,
             scroll_offset: 0.0,
@@ -84,17 +93,68 @@ impl ExplorerPanel {
         node.children = Some(entries);
     }
 
-    pub fn select_file(&mut self, path: &str) {
+    /// Single-click select: clear all selections, select one item, set anchor.
+    pub fn select_single(&mut self, path: &str) {
+        self.selected_files.clear();
+        self.selected_files.insert(path.to_string());
+        self.selection_anchor = Some(path.to_string());
+        self.set_preview(path);
+    }
+
+    /// Ctrl/Cmd+click: toggle one item in the selection set.
+    pub fn toggle_select(&mut self, path: &str) {
+        if self.selected_files.contains(path) {
+            self.selected_files.remove(path);
+        } else {
+            self.selected_files.insert(path.to_string());
+        }
+        self.selection_anchor = Some(path.to_string());
+        self.set_preview(path);
+    }
+
+    /// Shift+click: range select from anchor to target (inclusive).
+    /// `visible_paths` must be the current ordered list of visible tree nodes.
+    pub fn range_select(&mut self, target: &str, visible_paths: &[String]) {
+        let anchor = self.selection_anchor.clone().unwrap_or_else(|| target.to_string());
+        let anchor_idx = visible_paths.iter().position(|p| p == &anchor);
+        let target_idx = visible_paths.iter().position(|p| p == target);
+        if let (Some(a), Some(t)) = (anchor_idx, target_idx) {
+            let (start, end) = if a <= t { (a, t) } else { (t, a) };
+            self.selected_files.clear();
+            for p in &visible_paths[start..=end] {
+                self.selected_files.insert(p.clone());
+            }
+        }
+        self.set_preview(target);
+    }
+
+    /// Select all visible items.
+    pub fn select_all(&mut self, visible_paths: &[String]) {
+        self.selected_files.clear();
+        for p in visible_paths {
+            self.selected_files.insert(p.clone());
+        }
+    }
+
+    /// Update the right-side preview for the given path.
+    fn set_preview(&mut self, path: &str) {
         let ext = path.rsplit('.').next().unwrap_or("").to_lowercase();
         self.is_markdown = ext == "md" || ext == "markdown";
         self.selected_file = Some(path.to_string());
         self.scroll_offset = 0.0;
 
-        if is_previewable_file(path, &ext) {
+        // Only load preview for files (not directories)
+        let is_dir = std::path::Path::new(path).is_dir();
+        if !is_dir && is_previewable_file(path, &ext) {
             self.file_content = std::fs::read_to_string(path).ok();
         } else {
             self.file_content = None;
         }
+    }
+
+    /// Legacy compat — same as select_single.
+    pub fn select_file(&mut self, path: &str) {
+        self.select_single(path);
     }
 }
 

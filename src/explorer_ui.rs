@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use egui::emath::GuiRounding as _;
 
 use crate::model::{ExplorerPanel, FileNode};
@@ -23,43 +25,58 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel) -> Option<Exp
                     let root = &mut panel.root_node;
                     if root.is_directory {
                         if let Some(ref mut children) = root.children {
-                            // We need to collect actions because we can't mutate panel fields
-                            // while iterating the tree.
+                            // Collect visible paths for range selection
+                            let mut visible: Vec<String> = Vec::new();
+                            for child in children.iter() {
+                                collect_visible_paths(child, &mut visible);
+                            }
+
+                            // Draw tree nodes — collect action
                             let mut action: Option<TreeAction> = None;
                             for child in children.iter_mut() {
                                 draw_file_node(
                                     ui,
                                     child,
                                     0,
+                                    &panel.selected_files,
                                     panel.selected_file.as_deref(),
                                     &mut action,
                                 );
                             }
-                            // Keyboard: file clipboard (Ctrl/Cmd+C = copy, Ctrl/Cmd+X = cut, Ctrl/Cmd+V = paste)
+
+                            // Read modifiers once
                             let modifiers = ui.input(|i| i.modifiers);
-                            let cmd = modifiers.command; // Ctrl on Win/Linux, Cmd on macOS
+                            let cmd = modifiers.command;
+
+                            // Keyboard: file clipboard (Ctrl/Cmd+C/X/V, Ctrl/Cmd+A)
                             if cmd && action.is_none() {
                                 let key_c = ui.input(|i| i.key_pressed(egui::Key::C));
                                 let key_x = ui.input(|i| i.key_pressed(egui::Key::X));
                                 let key_v = ui.input(|i| i.key_pressed(egui::Key::V));
+                                let key_a = ui.input(|i| i.key_pressed(egui::Key::A));
 
-                                if (key_c || key_x) && panel.selected_file.is_some() {
-                                    let sel = panel.selected_file.as_ref().unwrap();
+                                if key_a {
+                                    action = Some(TreeAction::SelectAll);
+                                } else if (key_c || key_x) && !panel.selected_files.is_empty() {
                                     let op = if key_x {
                                         crate::file_clipboard::FileClipboardOp::Cut
                                     } else {
                                         crate::file_clipboard::FileClipboardOp::Copy
                                     };
                                     if modifiers.shift && key_c {
-                                        // Shift+Ctrl+C = copy path as text
-                                        action = Some(TreeAction::CopyPath(sel.clone()));
+                                        // Shift+Ctrl+C = copy paths as text
+                                        let text = panel.selected_files.iter()
+                                            .cloned().collect::<Vec<_>>().join("\n");
+                                        action = Some(TreeAction::CopyPath(text));
                                     } else {
-                                        let _ = crate::file_clipboard::set_file_clipboard(&[sel.as_str()], op);
+                                        let paths: Vec<&str> = panel.selected_files.iter()
+                                            .map(|s| s.as_str()).collect();
+                                        let _ = crate::file_clipboard::set_file_clipboard(&paths, op);
                                     }
                                 } else if key_v {
-                                    // Paste files from clipboard into the explorer root directory
+                                    // Determine paste destination
+                                    let dest_dir = paste_destination(panel);
                                     if let Ok(Some((sources, op))) = crate::file_clipboard::get_file_clipboard() {
-                                        let dest_dir = panel.root_path.clone();
                                         for src in &sources {
                                             let file_name = std::path::Path::new(src)
                                                 .file_name()
@@ -79,16 +96,12 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel) -> Option<Exp
                                 }
                             }
 
-                            // Keyboard navigation: Up/Down to move selection, Enter to open/toggle
+                            // Keyboard navigation
                             let key_up = ui.input(|i| i.key_pressed(egui::Key::ArrowUp));
                             let key_down = ui.input(|i| i.key_pressed(egui::Key::ArrowDown));
                             let key_enter = ui.input(|i| i.key_pressed(egui::Key::Enter));
 
                             if (key_up || key_down || key_enter) && action.is_none() {
-                                let mut visible = Vec::new();
-                                for child in children.iter() {
-                                    collect_visible_paths(child, &mut visible);
-                                }
                                 let current_idx = panel.selected_file.as_ref()
                                     .and_then(|sel| visible.iter().position(|p| p == sel));
 
@@ -101,12 +114,15 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel) -> Option<Exp
                                         None => 0,
                                     };
                                     if let Some(path) = visible.get(new_idx) {
-                                        action = Some(TreeAction::SelectFile(path.clone()));
+                                        if modifiers.shift {
+                                            action = Some(TreeAction::RangeSelect(path.clone()));
+                                        } else {
+                                            action = Some(TreeAction::SelectFile(path.clone()));
+                                        }
                                     }
                                 } else if key_enter {
                                     if let Some(sel) = &panel.selected_file {
-                                        // Check if it's a directory
-                                        let is_dir = visible.contains(sel) && find_node(&panel.root_node, sel)
+                                        let is_dir = find_node(&panel.root_node, sel)
                                             .is_some_and(|n| n.is_directory);
                                         if is_dir {
                                             action = Some(TreeAction::ToggleDir(sel.clone()));
@@ -119,7 +135,16 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel) -> Option<Exp
                             if let Some(act) = action {
                                 match act {
                                     TreeAction::SelectFile(path) => {
-                                        panel.select_file(&path);
+                                        panel.select_single(&path);
+                                    }
+                                    TreeAction::ToggleSelect(path) => {
+                                        panel.toggle_select(&path);
+                                    }
+                                    TreeAction::RangeSelect(path) => {
+                                        panel.range_select(&path, &visible);
+                                    }
+                                    TreeAction::SelectAll => {
+                                        panel.select_all(&visible);
                                     }
                                     TreeAction::DoubleClickFile(path) => {
                                         let ext = path.rsplit('.').next().unwrap_or("").to_lowercase();
@@ -131,16 +156,15 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel) -> Option<Exp
                                                 explorer_action = Some(ExplorerAction::OpenHtmlTab(path));
                                             }
                                             _ => {
-                                                panel.select_file(&path);
+                                                panel.select_single(&path);
                                             }
                                         }
                                     }
                                     TreeAction::ToggleDir(path) => {
                                         toggle_dir_by_path(&mut panel.root_node, &path);
                                     }
-                                    TreeAction::CopyPath(path) => {
-                                        // Copy path as text to clipboard (using arboard via egui)
-                                        ui.ctx().copy_text(path);
+                                    TreeAction::CopyPath(text) => {
+                                        ui.ctx().copy_text(text);
                                     }
                                 }
                             }
@@ -197,9 +221,19 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel) -> Option<Exp
 }
 
 enum TreeAction {
+    /// Normal click — clear selection, select one.
     SelectFile(String),
+    /// Ctrl/Cmd+click — toggle one item.
+    ToggleSelect(String),
+    /// Shift+click — range select from anchor.
+    RangeSelect(String),
+    /// Ctrl/Cmd+A — select all visible.
+    SelectAll,
+    /// Double-click on file — open in dedicated tab.
     DoubleClickFile(String),
+    /// Double-click on directory or Enter — expand/collapse.
     ToggleDir(String),
+    /// Copy path(s) as text.
     CopyPath(String),
 }
 
@@ -215,47 +249,69 @@ fn draw_file_node(
     ui: &mut egui::Ui,
     node: &mut FileNode,
     depth: usize,
-    selected_path: Option<&str>,
+    selected_files: &HashSet<String>,
+    focus_path: Option<&str>,
     action: &mut Option<TreeAction>,
 ) {
     let th = theme::theme();
     let indent = depth as f32 * 16.0;
-    let is_selected = selected_path == Some(&node.path);
+    let is_in_selection = selected_files.contains(&node.path);
+    let is_focus = focus_path == Some(&node.path);
 
     ui.horizontal(|ui| {
         ui.add_space(indent);
 
-        let icon = if node.is_directory {
-            if node.is_expanded {
-                "\u{25BC} \u{1F4C1}"
-            } else {
-                "\u{25B6} \u{1F4C1}"
+        // Directory arrow icon — clickable separately for toggle
+        if node.is_directory {
+            let arrow = if node.is_expanded { "\u{25BC}" } else { "\u{25B6}" };
+            let arrow_resp = ui.small_button(
+                egui::RichText::new(arrow).size(10.0),
+            );
+            if arrow_resp.clicked() && action.is_none() {
+                *action = Some(TreeAction::ToggleDir(node.path.clone()));
             }
+        }
+
+        let icon = if node.is_directory {
+            "\u{1F4C1}"
         } else {
             let ext = node.name.rsplit('.').next().unwrap_or("");
             match ext {
-                "md" | "markdown" => "  \u{1F4DD}",
-                "rs" => "  \u{1F980}",
-                "toml" | "json" | "yaml" | "yml" => "  \u{2699}",
-                _ => "  \u{1F4C4}",
+                "md" | "markdown" => "\u{1F4DD}",
+                "rs" => "\u{1F980}",
+                "toml" | "json" | "yaml" | "yml" => "\u{2699}",
+                _ => "\u{1F4C4}",
             }
         };
 
+        // For non-directory items, add spacing to align with directory items
+        if !node.is_directory {
+            ui.add_space(4.0);
+        }
+
         let text = format!("{} {}", icon, node.name);
-        let label = if is_selected {
-            egui::RichText::new(&text)
-                .strong()
-                .color(th.blue)
+        let label = if is_focus {
+            egui::RichText::new(&text).strong().color(th.blue)
+        } else if is_in_selection {
+            egui::RichText::new(&text).color(th.text)
         } else {
             egui::RichText::new(&text)
         };
 
-        let resp = ui.selectable_label(is_selected, label);
-        if resp.double_clicked() && action.is_none() && !node.is_directory {
-            *action = Some(TreeAction::DoubleClickFile(node.path.clone()));
-        } else if resp.clicked() && action.is_none() {
+        let resp = ui.selectable_label(is_in_selection, label);
+
+        if resp.double_clicked() && action.is_none() {
             if node.is_directory {
                 *action = Some(TreeAction::ToggleDir(node.path.clone()));
+            } else {
+                *action = Some(TreeAction::DoubleClickFile(node.path.clone()));
+            }
+        } else if resp.clicked() && action.is_none() {
+            let modifiers = ui.input(|i| i.modifiers);
+            if modifiers.command {
+                *action = Some(TreeAction::ToggleSelect(node.path.clone()));
+            } else if modifiers.shift {
+                *action = Some(TreeAction::RangeSelect(node.path.clone()));
             } else {
                 *action = Some(TreeAction::SelectFile(node.path.clone()));
             }
@@ -266,10 +322,29 @@ fn draw_file_node(
     if node.is_directory && node.is_expanded {
         if let Some(ref mut children) = node.children {
             for child in children.iter_mut() {
-                draw_file_node(ui, child, depth + 1, selected_path, action);
+                draw_file_node(ui, child, depth + 1, selected_files, focus_path, action);
             }
         }
     }
+}
+
+/// Determine the paste destination directory.
+fn paste_destination(panel: &ExplorerPanel) -> String {
+    // If exactly one directory is selected, paste into it
+    if panel.selected_files.len() == 1 {
+        let path = panel.selected_files.iter().next().unwrap();
+        if std::path::Path::new(path).is_dir() {
+            return path.clone();
+        }
+    }
+    // If the focused file exists, paste into its parent directory
+    if let Some(ref sel) = panel.selected_file {
+        if let Some(parent) = std::path::Path::new(sel).parent() {
+            return parent.to_string_lossy().to_string();
+        }
+    }
+    // Fallback to root
+    panel.root_path.clone()
 }
 
 /// Find a node by path in the tree.
