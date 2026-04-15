@@ -213,7 +213,9 @@ keybindings_tab.rs의 egui_key_to_string 매핑 테이블은 키 목록을 1:1 �
 | `notification.rs` | 248 | NotificationStore (FIFO, 병합, 읽음 추적) + OS 네이티브 알림 |
 | `global_hooks.rs` | 209 | GlobalHookManager (interval/once/file 조건 기반 훅) |
 | `surface_meta.rs` | ~90 | Surface별 key-value 메타데이터 (OnceLock + Mutex HashMap) |
-| `modal_window.rs` | ~120 | 설정 모달 윈도우 (독립 GPU + egui 인스턴스) |
+| `modal_trait.rs` | ~45 | Modal trait + ModalAction enum (모든 모달의 공통 인터페이스) |
+| `modal_window.rs` | ~140 | 설정 모달 윈도우 (Modal 구현, 독립 GPU + egui 인스턴스) |
+| `quit_modal.rs` | ~140 | 종료 확인 모달 윈도우 (Modal 구현, Quit/Minimize 선택) |
 | `i18n.rs` | ~100 | TOML 기반 번역 (en/ko/ja 내장 + 사용자 오버라이드) |
 | `crash_report.rs` | 243 | panic hook + 크래시 로그 수집 |
 | `markdown_ui.rs` | 259 | egui 마크다운 렌더링 (제목/목록/코드블록/테이블) |

@@ -6,26 +6,16 @@ use winit::window::Window;
 
 use crate::gpu::GpuState;
 use crate::i18n::t;
-
-/// Result of the quit confirmation modal.
-pub enum QuitModalResult {
-    /// User chose to quit (exit the app).
-    Quit,
-    /// User chose to minimize (park state, keep running).
-    Minimize,
-    /// Modal was closed without choosing (e.g. Escape).
-    Cancelled,
-    /// Still waiting for user input.
-    Pending,
-}
+use crate::modal_trait::{Modal, ModalAction};
+use crate::AppEvent;
 
 /// A small modal window asking the user to quit or minimize.
 pub struct QuitModal {
-    pub gpu: GpuState,
-    pub window: Arc<Window>,
-    pub dirty: bool,
+    gpu: GpuState,
+    window: Arc<Window>,
+    dirty: bool,
     shown: bool,
-    result: QuitModalResult,
+    action: ModalAction,
 }
 
 impl QuitModal {
@@ -35,54 +25,7 @@ impl QuitModal {
             window,
             dirty: true,
             shown: false,
-            result: QuitModalResult::Pending,
-        }
-    }
-
-    pub fn mark_dirty(&mut self) {
-        self.dirty = true;
-        self.window.request_redraw();
-    }
-
-    /// Handle a window event. Returns the result if the modal should close.
-    pub fn handle_window_event(&mut self, event: WindowEvent, _event_loop: &ActiveEventLoop) -> Option<QuitModalResult> {
-        let (_, egui_repaint) = self.gpu.handle_egui_event(&self.window, &event);
-        if egui_repaint {
-            self.mark_dirty();
-        }
-
-        match event {
-            WindowEvent::CloseRequested => {
-                return Some(QuitModalResult::Quit);
-            }
-            WindowEvent::Resized(new_size) => {
-                self.gpu.resize(new_size);
-                self.mark_dirty();
-            }
-            WindowEvent::RedrawRequested => {
-                self.render();
-            }
-            WindowEvent::CursorMoved { .. } => {
-                self.mark_dirty();
-            }
-            WindowEvent::KeyboardInput { ref event, .. } => {
-                use winit::event::ElementState;
-                use winit::keyboard::{Key, NamedKey};
-                if event.state == ElementState::Pressed {
-                    if let Key::Named(NamedKey::Escape) = &event.logical_key {
-                        self.result = QuitModalResult::Cancelled;
-                    }
-                }
-            }
-            _ => {}
-        }
-
-        match self.result {
-            QuitModalResult::Pending => None,
-            _ => {
-                let r = std::mem::replace(&mut self.result, QuitModalResult::Pending);
-                Some(r)
-            }
+            action: ModalAction::Pending,
         }
     }
 
@@ -93,7 +36,7 @@ impl QuitModal {
         self.dirty = false;
 
         let raw_input = self.gpu.take_egui_input(&self.window);
-        let result = &mut self.result;
+        let action = &mut self.action;
 
         let full_output = self.gpu.run_egui(raw_input, |ctx| {
             egui::CentralPanel::default().show(ctx, |ui| {
@@ -114,12 +57,24 @@ impl QuitModal {
                     let button_width = available_width / 2.0 - 4.0; // 8px gap between buttons
                     ui.horizontal(|ui| {
                         ui.add_space(20.0);
-                        if ui.add_sized([button_width, 24.0], egui::Button::new(t("quit_modal.quit_button"))).clicked() {
-                            *result = QuitModalResult::Quit;
+                        if ui
+                            .add_sized(
+                                [button_width, 24.0],
+                                egui::Button::new(t("quit_modal.quit_button")),
+                            )
+                            .clicked()
+                        {
+                            *action = ModalAction::CloseWithEvent(AppEvent::Shutdown);
                         }
                         ui.add_space(8.0);
-                        if ui.add_sized([button_width, 24.0], egui::Button::new(t("quit_modal.minimize_button"))).clicked() {
-                            *result = QuitModalResult::Minimize;
+                        if ui
+                            .add_sized(
+                                [button_width, 24.0],
+                                egui::Button::new(t("quit_modal.minimize_button")),
+                            )
+                            .clicked()
+                        {
+                            *action = ModalAction::CloseWithEvent(AppEvent::Minimize);
                         }
                     });
                 });
@@ -136,5 +91,66 @@ impl QuitModal {
         if self.dirty {
             self.window.request_redraw();
         }
+    }
+}
+
+impl Modal for QuitModal {
+    fn window(&self) -> &Arc<Window> {
+        &self.window
+    }
+
+    fn mark_dirty(&mut self) {
+        self.dirty = true;
+        self.window.request_redraw();
+    }
+
+    fn handle_window_event(
+        &mut self,
+        event: WindowEvent,
+        _event_loop: &ActiveEventLoop,
+    ) -> ModalAction {
+        let (_, egui_repaint) = self.gpu.handle_egui_event(&self.window, &event);
+        if egui_repaint {
+            self.mark_dirty();
+        }
+
+        match event {
+            WindowEvent::CloseRequested => {
+                return ModalAction::Close;
+            }
+            WindowEvent::Resized(new_size) => {
+                self.gpu.resize(new_size);
+                self.mark_dirty();
+            }
+            WindowEvent::RedrawRequested => {
+                self.render();
+            }
+            WindowEvent::CursorMoved { .. } => {
+                self.mark_dirty();
+            }
+            WindowEvent::KeyboardInput { ref event, .. } => {
+                use winit::event::ElementState;
+                use winit::keyboard::{Key, NamedKey};
+                if event.state == ElementState::Pressed {
+                    if let Key::Named(NamedKey::Escape) = &event.logical_key {
+                        return ModalAction::Close;
+                    }
+                }
+            }
+            _ => {}
+        }
+
+        match self.action {
+            ModalAction::Pending => ModalAction::Pending,
+            _ => std::mem::replace(&mut self.action, ModalAction::Pending),
+        }
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
     }
 }

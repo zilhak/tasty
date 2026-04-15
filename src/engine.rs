@@ -9,9 +9,8 @@ pub struct Engine {
     pub ipc_server: Option<IpcServer>,
     pub proxy: EventLoopProxy<AppEvent>,
     /// When Some, a modal window is active and all other windows should ignore input.
-    pub modal_window_id: Option<winit::window::WindowId>,
-    /// When Some, the quit confirmation modal is active.
-    pub quit_modal_window_id: Option<winit::window::WindowId>,
+    /// At most one modal can exist at a time.
+    pub active_modal_id: Option<winit::window::WindowId>,
     /// The window that currently has focus (receives IPC commands targeting "focused" window).
     pub focused_window_id: Option<winit::window::WindowId>,
     pub port_file: Option<String>,
@@ -22,8 +21,7 @@ impl Engine {
         Self {
             ipc_server: None,
             proxy,
-            modal_window_id: None,
-            quit_modal_window_id: None,
+            active_modal_id: None,
             focused_window_id: None,
             port_file,
         }
@@ -46,8 +44,8 @@ impl Engine {
         }
     }
 
-    /// Check if a modal is active (settings modal or quit modal).
+    /// Check if a modal is active.
     pub fn is_modal_active(&self) -> bool {
-        self.modal_window_id.is_some() || self.quit_modal_window_id.is_some()
+        self.active_modal_id.is_some()
     }
 }

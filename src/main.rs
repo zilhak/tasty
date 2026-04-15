@@ -16,6 +16,7 @@ mod gpu;
 mod i18n;
 mod ipc;
 mod markdown_ui;
+pub mod modal_trait;
 pub mod modal_window;
 mod model;
 mod native_menu;
@@ -45,6 +46,8 @@ use anyhow::Result;
 use clap::Parser;
 use winit::event_loop::{EventLoop, EventLoopProxy};
 use winit::window::Window;
+
+use modal_trait::Modal;
 
 use gpu::GpuState;
 use model::DividerInfo;
@@ -112,13 +115,12 @@ struct DividerDrag {
 struct App {
     engine: engine::Engine,
     windows: std::collections::HashMap<WindowId, tasty_window::TastyWindow>,
-    /// Active modal window (settings, etc). Max 1 at a time.
-    modal: Option<modal_window::ModalWindow>,
+    /// Active modal window. At most one modal can exist at a time.
+    /// While active, it is the sole focus target — all other windows have input blocked.
+    active_modal: Option<Box<dyn modal_trait::Modal>>,
     /// Parked AppStates: preserved when all windows are closed so PTY sessions survive.
     /// Moved into new windows when created, or used directly for IPC.
     parked_states: Vec<state::AppState>,
-    /// Quit confirmation modal window.
-    quit_modal: Option<quit_modal::QuitModal>,
     // Shell setup mode (before terminal is created)
     shell_setup_mode: bool,
     shell_setup_path: String,
@@ -133,9 +135,8 @@ impl App {
         Self {
             engine: engine::Engine::new(proxy.clone(), port_file),
             windows: std::collections::HashMap::new(),
-            modal: None,
+            active_modal: None,
             parked_states: Vec::new(),
-            quit_modal: None,
             shell_setup_mode: false,
             shell_setup_path: String::new(),
             shell_setup_gpu: None,
@@ -245,7 +246,7 @@ impl App {
 
     /// Open settings as a modal window.
     fn open_settings_modal(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-        if self.modal.is_some() || self.quit_modal.is_some() {
+        if self.active_modal.is_some() {
             return; // Another modal is already open
         }
 
@@ -285,27 +286,33 @@ impl App {
         modal.render_settings();
         #[cfg(not(windows))]
         modal.mark_dirty();
-        self.modal = Some(modal);
-        self.engine.modal_window_id = Some(modal_window_id);
+        self.open_modal(Box::new(modal), modal_window_id);
         tracing::info!("opened settings modal {:?}", modal_window_id);
     }
 
-    /// Close the settings modal and apply settings to all windows.
-    fn close_settings_modal(&mut self) {
-        if let Some(modal) = self.modal.take() {
-            // Apply settings to all windows
-            let new_settings = modal.settings;
-            for w in self.windows.values_mut() {
-                w.state.engine.settings = new_settings.clone();
-                w.state.settings_open = false;
-                w.mark_dirty();
-            }
-            // Save to disk
-            if let Err(e) = new_settings.save() {
-                tracing::warn!("failed to save settings: {e}");
+    /// Open a modal, registering it as the active modal.
+    fn open_modal(&mut self, modal: Box<dyn modal_trait::Modal>, window_id: WindowId) {
+        self.active_modal = Some(modal);
+        self.engine.active_modal_id = Some(window_id);
+    }
+
+    /// Close the active modal and handle modal-specific cleanup.
+    fn close_active_modal(&mut self) {
+        if let Some(modal) = self.active_modal.take() {
+            // If it was a settings modal, apply settings to all windows
+            if let Some(settings_modal) = modal.as_any().downcast_ref::<modal_window::ModalWindow>() {
+                let new_settings = settings_modal.settings.clone();
+                for w in self.windows.values_mut() {
+                    w.state.engine.settings = new_settings.clone();
+                    w.state.settings_open = false;
+                    w.mark_dirty();
+                }
+                if let Err(e) = new_settings.save() {
+                    tracing::warn!("failed to save settings: {e}");
+                }
             }
         }
-        self.engine.modal_window_id = None;
+        self.engine.active_modal_id = None;
     }
 
     /// Process pending IPC commands. Returns true if any commands were processed.

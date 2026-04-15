@@ -134,7 +134,9 @@ tasty/
     ├── notification.rs         # NotificationStore + OS 알림
     ├── global_hooks.rs         # GlobalHookManager (타이머/파일 감시)
     ├── surface_meta.rs         # Surface별 메타데이터 저장소
-    ├── modal_window.rs         # 설정 모달 윈도우
+    ├── modal_trait.rs          # Modal trait (공통 인터페이스)
+    ├── modal_window.rs         # 설정 모달 윈도우 (Modal 구현)
+    ├── quit_modal.rs           # 종료 확인 모달 윈도우 (Modal 구현)
     ├── i18n.rs                 # 국제화 (TOML 번역)
     ├── crash_report.rs         # 크래시 리포트 수집
     ├── markdown_ui.rs          # 마크다운 렌더링 (egui)
@@ -154,8 +156,10 @@ main.rs
 │   │   └── engine_state ← 공유 엔진 상태
 │   │       └── settings/ ← 설정 (최하위, 외부 의존 없음)
 │   └── shortcuts       ← 단축키 처리
-├── modal_window        ← 설정 모달
+├── modal_trait         ← Modal trait (공통 인터페이스)
+├── modal_window        ← 설정 모달 (Modal 구현)
 │   └── settings_ui/    ← 설정 UI
+├── quit_modal          ← 종료 확인 모달 (Modal 구현)
 └── cli/                ← CLI 클라이언트 (독립)
     └── ipc/            ← IPC 서버 + 핸들러
 ```

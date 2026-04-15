@@ -3,7 +3,8 @@ use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
 use winit::window::WindowId;
 
-use crate::{App, AppEvent, quit_modal};
+use crate::modal_trait::ModalAction;
+use crate::{App, AppEvent};
 
 impl ApplicationHandler<AppEvent> for App {
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: AppEvent) {
@@ -179,41 +180,23 @@ impl ApplicationHandler<AppEvent> for App {
             return;
         }
 
-        // Quit modal handling
-        if let Some(quit_modal_id) = self.engine.quit_modal_window_id {
-            if id == quit_modal_id {
-                if let Some(qm) = &mut self.quit_modal {
-                    if let Some(result) = qm.handle_window_event(event, event_loop) {
-                        match result {
-                            crate::quit_modal::QuitModalResult::Quit => {
-                                self.quit_modal = None;
-                                self.engine.quit_modal_window_id = None;
-                                event_loop.exit();
-                            }
-                            crate::quit_modal::QuitModalResult::Minimize => {
-                                self.quit_modal = None;
-                                self.engine.quit_modal_window_id = None;
-                                let _ = self.engine.proxy.send_event(AppEvent::Minimize);
-                            }
-                            crate::quit_modal::QuitModalResult::Cancelled => {
-                                self.quit_modal = None;
-                                self.engine.quit_modal_window_id = None;
-                            }
-                            crate::quit_modal::QuitModalResult::Pending => {}
-                        }
-                    }
-                }
-                return;
-            }
-        }
-
-        // Modal window handling
-        if let Some(modal_id) = self.engine.modal_window_id {
+        // Modal handling — unified for all modal types
+        if let Some(modal_id) = self.engine.active_modal_id {
             if id == modal_id {
-                if let Some(modal) = &mut self.modal {
-                    let should_close = modal.handle_window_event(event, event_loop);
-                    if should_close {
-                        self.close_settings_modal();
+                let action = if let Some(modal) = &mut self.active_modal {
+                    modal.handle_window_event(event, event_loop)
+                } else {
+                    ModalAction::Pending
+                };
+
+                match action {
+                    ModalAction::Pending => {}
+                    ModalAction::Close => {
+                        self.close_active_modal();
+                    }
+                    ModalAction::CloseWithEvent(app_event) => {
+                        self.close_active_modal();
+                        let _ = self.engine.proxy.send_event(app_event);
                     }
                 }
                 return;
@@ -239,11 +222,8 @@ impl ApplicationHandler<AppEvent> for App {
         if let WindowEvent::Focused(true) = &event {
             self.engine.focused_window_id = Some(id);
             // If a modal is active, bring it to the front so it's not buried
-            if let Some(modal) = &self.modal {
-                modal.window.focus_window();
-            }
-            if let Some(qm) = &self.quit_modal {
-                qm.window.focus_window();
+            if let Some(modal) = &self.active_modal {
+                modal.window().focus_window();
             }
         }
 
@@ -277,10 +257,11 @@ impl ApplicationHandler<AppEvent> for App {
 
 impl App {
     fn handle_quit_requested(&mut self, event_loop: &ActiveEventLoop) {
-        // If quit modal is already open, treat as immediate quit
-        if self.quit_modal.is_some() {
-            self.quit_modal = None;
-            self.engine.quit_modal_window_id = None;
+        // If a quit modal is already open, treat as immediate quit
+        if self.active_modal.as_ref().map_or(false, |m| {
+            m.as_any().downcast_ref::<crate::quit_modal::QuitModal>().is_some()
+        }) {
+            self.close_active_modal();
             event_loop.exit();
             return;
         }
@@ -299,8 +280,8 @@ impl App {
                 let _ = self.engine.proxy.send_event(AppEvent::Minimize);
             }
             _ => {
-                // "ask" — close settings modal if open, then show quit modal
-                self.close_settings_modal();
+                // "ask" — close any existing modal, then show quit modal
+                self.close_active_modal();
                 self.open_quit_modal(event_loop);
             }
         }
@@ -329,7 +310,7 @@ impl App {
         .expect("failed to initialize GPU for quit modal");
 
         let window_id = window.id();
-        self.quit_modal = Some(quit_modal::QuitModal::new(gpu, window));
-        self.engine.quit_modal_window_id = Some(window_id);
+        let modal = crate::quit_modal::QuitModal::new(gpu, window);
+        self.open_modal(Box::new(modal), window_id);
     }
 }
