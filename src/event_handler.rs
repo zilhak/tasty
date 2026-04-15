@@ -180,24 +180,24 @@ impl ApplicationHandler<AppEvent> for App {
         }
 
         // Quit modal handling
-        if let Some(quit_modal_id) = self.quit_modal_window_id {
+        if let Some(quit_modal_id) = self.engine.quit_modal_window_id {
             if id == quit_modal_id {
                 if let Some(qm) = &mut self.quit_modal {
                     if let Some(result) = qm.handle_window_event(event, event_loop) {
                         match result {
                             crate::quit_modal::QuitModalResult::Quit => {
                                 self.quit_modal = None;
-                                self.quit_modal_window_id = None;
+                                self.engine.quit_modal_window_id = None;
                                 event_loop.exit();
                             }
                             crate::quit_modal::QuitModalResult::Minimize => {
                                 self.quit_modal = None;
-                                self.quit_modal_window_id = None;
+                                self.engine.quit_modal_window_id = None;
                                 let _ = self.engine.proxy.send_event(AppEvent::Minimize);
                             }
                             crate::quit_modal::QuitModalResult::Cancelled => {
                                 self.quit_modal = None;
-                                self.quit_modal_window_id = None;
+                                self.engine.quit_modal_window_id = None;
                             }
                             crate::quit_modal::QuitModalResult::Pending => {}
                         }
@@ -248,7 +248,7 @@ impl ApplicationHandler<AppEvent> for App {
         }
 
         if let Some(w) = self.windows.get_mut(&id) {
-            let modal_active = self.engine.is_modal_active() || self.quit_modal.is_some();
+            let modal_active = self.engine.is_modal_active();
             w.handle_window_event(event, event_loop, modal_active);
 
             // Check if the window requested to close (e.g. last workspace removed)
@@ -280,7 +280,7 @@ impl App {
         // If quit modal is already open, treat as immediate quit
         if self.quit_modal.is_some() {
             self.quit_modal = None;
-            self.quit_modal_window_id = None;
+            self.engine.quit_modal_window_id = None;
             event_loop.exit();
             return;
         }
@@ -330,6 +330,6 @@ impl App {
 
         let window_id = window.id();
         self.quit_modal = Some(quit_modal::QuitModal::new(gpu, window));
-        self.quit_modal_window_id = Some(window_id);
+        self.engine.quit_modal_window_id = Some(window_id);
     }
 }

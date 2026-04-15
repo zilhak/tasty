@@ -119,8 +119,6 @@ struct App {
     parked_states: Vec<state::AppState>,
     /// Quit confirmation modal window.
     quit_modal: Option<quit_modal::QuitModal>,
-    /// WindowId of the quit modal (for event routing).
-    quit_modal_window_id: Option<WindowId>,
     // Shell setup mode (before terminal is created)
     shell_setup_mode: bool,
     shell_setup_path: String,
@@ -138,7 +136,6 @@ impl App {
             modal: None,
             parked_states: Vec::new(),
             quit_modal: None,
-            quit_modal_window_id: None,
             shell_setup_mode: false,
             shell_setup_path: String::new(),
             shell_setup_gpu: None,
