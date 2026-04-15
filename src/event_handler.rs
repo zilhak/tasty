@@ -27,10 +27,13 @@ impl ApplicationHandler<AppEvent> for App {
                             break;
                         }
                     }
-                    // If no window has this surface, it might be in the parked state
+                    // If no window has this surface, it might be in the parked states
                     if !found {
-                        if let Some(state) = &mut self.parked_state {
-                            state.engine.process_surface(sid);
+                        for state in &mut self.parked_states {
+                            if state.engine.find_terminal_by_id(sid).is_some() {
+                                state.engine.process_surface(sid);
+                                break;
+                            }
                         }
                     }
                 } else {
@@ -39,7 +42,7 @@ impl ApplicationHandler<AppEvent> for App {
                         w.mark_dirty();
                     }
                     // Also process parked state terminals
-                    if let Some(state) = &mut self.parked_state {
+                    for state in &mut self.parked_states {
                         state.engine.process_all();
                     }
                 }
@@ -60,14 +63,23 @@ impl ApplicationHandler<AppEvent> for App {
                 event_loop.exit();
             }
             AppEvent::Minimize => {
-                // Park state and close all windows
-                if let Some((_, w)) = self.windows.drain().next() {
-                    self.parked_state = Some(w.state);
+                #[cfg(target_os = "macos")]
+                {
+                    // macOS: destroy windows, park all states (dock reopen restores)
+                    for (_, w) in self.windows.drain() {
+                        self.parked_states.push(w.state);
+                    }
+                    self.engine.focused_window_id = None;
+                    tracing::info!("minimized to background ({} states parked)", self.parked_states.len());
                 }
-                // Drain remaining windows (state already parked from first)
-                self.windows.clear();
-                self.engine.focused_window_id = None;
-                tracing::info!("minimized to background");
+                #[cfg(not(target_os = "macos"))]
+                {
+                    // Windows/Linux: minimize windows to taskbar (keep alive)
+                    for w in self.windows.values() {
+                        w.window.set_minimized(true);
+                    }
+                    tracing::info!("minimized {} window(s) to taskbar", self.windows.len());
+                }
             }
             AppEvent::QuitRequested => {
                 self.handle_quit_requested(event_loop);
@@ -238,7 +250,7 @@ impl ApplicationHandler<AppEvent> for App {
                 if let Some(w) = self.windows.remove(&id) {
                     if self.windows.is_empty() {
                         tracing::info!("last window closed via request, parking state");
-                        self.parked_state = Some(w.state);
+                        self.parked_states.push(w.state);
                     }
                 }
                 if self.engine.focused_window_id == Some(id) {
@@ -270,7 +282,7 @@ impl App {
         // Get close behavior from settings
         let behavior = self.focused_window()
             .map(|w| w.state.engine.settings.general.close_behavior.clone())
-            .or_else(|| self.parked_state.as_ref().map(|s| s.engine.settings.general.close_behavior.clone()))
+            .or_else(|| self.parked_states.first().map(|s| s.engine.settings.general.close_behavior.clone()))
             .unwrap_or_else(|| "ask".to_string());
 
         match behavior.as_str() {

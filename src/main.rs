@@ -114,9 +114,9 @@ struct App {
     windows: std::collections::HashMap<WindowId, tasty_window::TastyWindow>,
     /// Active modal window (settings, etc). Max 1 at a time.
     modal: Option<modal_window::ModalWindow>,
-    /// Parked AppState: preserved when all windows are closed so PTY sessions survive.
-    /// Moved into a new window when one is created, or used directly for IPC.
-    parked_state: Option<state::AppState>,
+    /// Parked AppStates: preserved when all windows are closed so PTY sessions survive.
+    /// Moved into new windows when created, or used directly for IPC.
+    parked_states: Vec<state::AppState>,
     /// Quit confirmation modal window.
     quit_modal: Option<quit_modal::QuitModal>,
     /// WindowId of the quit modal (for event routing).
@@ -136,7 +136,7 @@ impl App {
             engine: engine::Engine::new(proxy.clone(), port_file),
             windows: std::collections::HashMap::new(),
             modal: None,
-            parked_state: None,
+            parked_states: Vec::new(),
             quit_modal: None,
             quit_modal_window_id: None,
             shell_setup_mode: false,
@@ -231,8 +231,9 @@ impl App {
         .expect("failed to initialize GPU");
 
         // Reuse parked state if available (restoring previous session)
-        let mut state = if let Some(parked) = self.parked_state.take() {
-            tracing::info!("restoring parked state with {} workspace(s)", parked.engine.workspaces.len());
+        let mut state = if !self.parked_states.is_empty() {
+            let parked = self.parked_states.remove(0);
+            tracing::info!("restoring parked state with {} workspace(s), {} remaining", parked.engine.workspaces.len(), self.parked_states.len());
             parked
         } else {
             self.create_app_state(&gpu, settings.appearance.sidebar_width)
@@ -455,7 +456,7 @@ impl App {
                     continue;
                 }
             }
-            if let Some(state) = self.parked_state.as_mut() {
+            if let Some(state) = self.parked_states.first_mut() {
                 let response = ipc::handler::handle(state, &cmd.request);
                 let _ = cmd.response_tx.send(response);
                 processed = true;
