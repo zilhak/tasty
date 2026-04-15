@@ -147,8 +147,24 @@ impl AppState {
             dialogs: DialogState::new(),
             tab_bar_height: 24.0,
             captured_double_tap: None,
-            popup_contents: Vec::new(),
-            popups: crate::ui::PopupManager::new(),
+            popup_contents: {
+                let contents: Vec<Box<dyn crate::ui::popup::PopupContent>> = vec![
+                    Box::new(crate::ui::notification_popup::NotificationPopup::new()),
+                ];
+                contents
+            },
+            popups: {
+                let mut pm = crate::ui::PopupManager::new();
+                // Register from trait objects
+                pm.register_content(&crate::ui::notification_popup::NotificationPopup::new());
+                // Legacy: convert_surface (will be migrated to trait in next step)
+                pm.register(crate::ui::PopupState::new(
+                    "convert_surface",
+                    "",
+                    egui::vec2(200.0, 132.0),
+                ).with_close_on_outside_click(true));
+                pm
+            },
         })
     }
 

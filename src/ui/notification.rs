@@ -6,7 +6,8 @@ use crate::theme;
 use crate::ui::convert_popup;
 
 /// Draw notification panel content inside a popup Ui.
-fn draw_notification_content(ui: &mut egui::Ui, state: &mut AppState) {
+/// Also called by NotificationPopup's PopupContent impl.
+pub(crate) fn draw_notification_content_inner(ui: &mut egui::Ui, state: &mut AppState) {
     let th = theme::theme();
 
     // Header with mark-all-read button
@@ -155,19 +156,31 @@ pub fn draw_popups(
     // Build scope context for popup visibility/clamping
     let draw_ctx = build_popup_draw_ctx(state, pane_rects, terminal_rect, scale_factor);
 
-    // Update convert_surface popup title (i18n may change)
-    if let Some(p) = state.popups.get_mut("convert_surface") {
-        p.title = t("convert_popup.title").to_string();
+    // Update popup titles/sizes from trait objects (e.g. i18n changes)
+    for content in &state.popup_contents {
+        if let Some(p) = state.popups.get_mut(content.id()) {
+            p.title = content.title();
+            p.size = content.default_size();
+        }
     }
 
-    // Temporarily take the popup manager to avoid borrow conflicts
-    // (popup manager needs &mut, and content callbacks need &mut state).
+    // Temporarily take the popup manager and contents to avoid borrow conflicts
     let mut popups = std::mem::replace(&mut state.popups, crate::ui::PopupManager::new());
+    let mut contents = std::mem::replace(&mut state.popup_contents, Vec::new());
 
     let mut convert_result: Option<convert_popup::ConvertResult> = None;
+    let mut trait_closed: Vec<&'static str> = Vec::new();
     let closed = popups.draw(ctx, &mut |id, ui| {
+        // First try trait-based dispatch
+        if let Some(content) = contents.iter_mut().find(|c| c.id() == id) {
+            let content_id = content.id(); // &'static str
+            if matches!(content.draw(ui, state), crate::ui::PopupAction::Close) {
+                trait_closed.push(content_id);
+            }
+            return;
+        }
+        // Legacy fallback for popups not yet migrated to trait
         match id {
-            "notifications" => draw_notification_content(ui, state),
             "convert_surface" => {
                 convert_result = convert_popup::draw_convert_content(ui, state);
             }
@@ -176,6 +189,12 @@ pub fn draw_popups(
     }, Some(&draw_ctx));
 
     state.popups = popups;
+    state.popup_contents = contents;
+
+    // Close popups that trait dispatch requested to close
+    for id in &trait_closed {
+        state.popups.close(id);
+    }
 
     // Handle convert popup close (via X button, outside click, or Escape)
     let convert_closed = closed.contains(&"convert_surface")
