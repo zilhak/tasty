@@ -54,5 +54,5 @@ pub trait PanelBehavior {
     /// Visit all terminals (mutable) with their surface IDs.
     fn for_each_terminal_mut<F>(&mut self, f: &mut F)
     where
-        F: FnMut(SurfaceId, &mut Terminal);
+        F: FnMut(SurfaceId, &mut Terminal) + ?Sized;
 }

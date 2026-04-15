@@ -133,7 +133,7 @@ impl PanelBehavior for Panel {
 
     fn for_each_terminal_mut<F>(&mut self, f: &mut F)
     where
-        F: FnMut(SurfaceId, &mut Terminal),
+        F: FnMut(SurfaceId, &mut Terminal) + ?Sized,
     {
         match self {
             Panel::Terminal(node) => f(node.id, &mut node.terminal),

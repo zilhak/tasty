@@ -54,6 +54,7 @@ impl Pane {
                 deferred_spawn: None,
             })),
             deferred_spawn: None,
+            surface_opt: None,
             explicit_name: None, deferred_surface_id: None,
         };
         Ok(Self {
@@ -86,6 +87,7 @@ impl Pane {
                 deferred_spawn: None,
             })),
             deferred_spawn: None,
+            surface_opt: None,
             explicit_name: None, deferred_surface_id: None,
         };
         self.tabs.push(tab);
@@ -115,6 +117,7 @@ impl Pane {
                 deferred_spawn: None,
             })),
             deferred_spawn: None,
+            surface_opt: None,
             explicit_name: None, deferred_surface_id: None,
         };
         self.tabs.push(tab);
@@ -146,6 +149,7 @@ impl Pane {
                 waker,
                 working_dir: working_dir.map(|p| p.to_path_buf()),
             }),
+            surface_opt: None,
             explicit_name: None, deferred_surface_id: Some(surface_id),
         };
         self.tabs.push(tab);
@@ -345,6 +349,7 @@ impl Pane {
             name,
             panel_opt: Some(panel),
             deferred_spawn: None,
+            surface_opt: None,
             explicit_name: None, deferred_surface_id: None,
         };
         self.tabs.push(tab);
