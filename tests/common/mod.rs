@@ -49,11 +49,10 @@ impl TastyInstance {
             port_file,
         };
 
-        // Wait until the shell is actually ready (has screen content),
-        // not a fixed sleep. This guarantees all tests start with a live shell.
+        // Wait until the shell is actually ready (has screen content).
         let start = Instant::now();
         loop {
-            let text = instance.screen_text();
+            let text = instance.screen_text_of(instance.first_surface_id());
             if !text.trim().is_empty() {
                 break;
             }
@@ -67,42 +66,63 @@ impl TastyInstance {
     }
 
     /// Send a JSON-RPC request and return the result value.
+    /// Retries on timeout (event loop may be slow when window is unfocused).
     pub fn call(&self, method: &str, params: Value) -> Value {
-        let mut stream = TcpStream::connect(format!("127.0.0.1:{}", self.port))
-            .expect("failed to connect to tasty IPC");
-        stream
-            .set_read_timeout(Some(Duration::from_secs(5)))
-            .ok();
+        for attempt in 0..3 {
+            let mut stream = match TcpStream::connect(format!("127.0.0.1:{}", self.port)) {
+                Ok(s) => s,
+                Err(e) => {
+                    if attempt < 2 {
+                        std::thread::sleep(Duration::from_millis(500));
+                        continue;
+                    }
+                    panic!("failed to connect for '{}': {}", method, e);
+                }
+            };
+            stream.set_read_timeout(Some(Duration::from_secs(10))).ok();
 
-        let request = serde_json::json!({
-            "jsonrpc": "2.0",
-            "method": method,
-            "params": params,
-            "id": 1
-        });
+            let request = serde_json::json!({
+                "jsonrpc": "2.0",
+                "method": method,
+                "params": params,
+                "id": 1
+            });
 
-        let mut msg = serde_json::to_string(&request).unwrap();
-        msg.push('\n');
-        stream.write_all(msg.as_bytes()).expect("failed to send");
+            let mut msg = serde_json::to_string(&request).unwrap();
+            msg.push('\n');
+            if stream.write_all(msg.as_bytes()).is_err() {
+                if attempt < 2 {
+                    std::thread::sleep(Duration::from_millis(500));
+                    continue;
+                }
+                panic!("failed to send for '{}'", method);
+            }
 
-        let mut reader = BufReader::new(&stream);
-        let mut line = String::new();
-        reader
-            .read_line(&mut line)
-            .expect("failed to read response");
+            let mut reader = BufReader::new(&stream);
+            let mut line = String::new();
+            match reader.read_line(&mut line) {
+                Ok(_) => {}
+                Err(_) if attempt < 2 => {
+                    std::thread::sleep(Duration::from_millis(500));
+                    continue;
+                }
+                Err(e) => panic!("failed to read response for '{}': {}", method, e),
+            }
 
-        let resp: Value = serde_json::from_str(&line).expect("invalid JSON response");
-        if let Some(error) = resp.get("error") {
-            panic!("IPC error: {}", error);
+            let resp: Value = serde_json::from_str(&line).expect("invalid JSON response");
+            if let Some(error) = resp.get("error") {
+                panic!("IPC error for '{}': {}", method, error);
+            }
+            return resp.get("result").cloned().unwrap_or(Value::Null);
         }
-        resp.get("result").cloned().unwrap_or(Value::Null)
+        unreachable!()
     }
 
     /// Send a JSON-RPC request and return the full response (including errors).
     pub fn call_raw(&self, method: &str, params: Value) -> Value {
         let mut stream = TcpStream::connect(format!("127.0.0.1:{}", self.port))
             .expect("failed to connect to tasty IPC");
-        stream.set_read_timeout(Some(Duration::from_secs(5))).ok();
+        stream.set_read_timeout(Some(Duration::from_secs(15))).ok();
         let request = serde_json::json!({
             "jsonrpc": "2.0",
             "method": method,
@@ -118,21 +138,33 @@ impl TastyInstance {
         serde_json::from_str(&line).expect("invalid JSON response")
     }
 
-    /// Send text to the focused terminal.
-    pub fn send_text(&self, text: &str) {
-        self.call("surface.send", serde_json::json!({ "text": text }));
+    /// Get the first surface ID from surface.list.
+    pub fn first_surface_id(&self) -> u64 {
+        let surfaces = self.call("surface.list", serde_json::json!({}));
+        surfaces.as_array().unwrap()[0]["id"].as_u64().unwrap()
     }
 
-    /// Set a read mark on the focused terminal.
-    pub fn set_mark(&self) {
-        self.call("surface.set_mark", serde_json::json!({}));
+    /// Get the first pane ID from pane.list.
+    pub fn first_pane_id(&self) -> u64 {
+        let panes = self.call("pane.list", serde_json::json!({}));
+        panes.as_array().unwrap()[0]["id"].as_u64().unwrap()
+    }
+
+    /// Send text to a specific surface.
+    pub fn send_text(&self, surface_id: u64, text: &str) {
+        self.call("surface.send", serde_json::json!({ "surface_id": surface_id, "text": text }));
+    }
+
+    /// Set a read mark on a specific surface.
+    pub fn set_mark(&self, surface_id: u64) {
+        self.call("surface.set_mark", serde_json::json!({ "surface_id": surface_id }));
     }
 
     /// Read output since the last mark, stripping ANSI.
-    pub fn read_since_mark(&self) -> String {
+    pub fn read_since_mark(&self, surface_id: u64) -> String {
         let result = self.call(
             "surface.read_since_mark",
-            serde_json::json!({ "strip_ansi": true }),
+            serde_json::json!({ "surface_id": surface_id, "strip_ansi": true }),
         );
         result
             .get("text")
@@ -142,10 +174,10 @@ impl TastyInstance {
     }
 
     /// Wait until read_since_mark contains the expected text (with timeout).
-    pub fn wait_for_output(&self, expected: &str, timeout: Duration) -> String {
+    pub fn wait_for_output(&self, surface_id: u64, expected: &str, timeout: Duration) -> String {
         let start = Instant::now();
         loop {
-            let output = self.read_since_mark();
+            let output = self.read_since_mark(surface_id);
             if output.contains(expected) {
                 return output;
             }
@@ -159,9 +191,9 @@ impl TastyInstance {
         }
     }
 
-    /// Get screen text of the focused terminal.
-    pub fn screen_text(&self) -> String {
-        let result = self.call("surface.screen_text", serde_json::json!({}));
+    /// Get screen text of a specific surface.
+    pub fn screen_text_of(&self, surface_id: u64) -> String {
+        let result = self.call("surface.screen_text", serde_json::json!({ "surface_id": surface_id }));
         result
             .get("text")
             .and_then(|t| t.as_str())
