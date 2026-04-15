@@ -15,7 +15,7 @@ use crate::gpu::GpuState;
 
 /// Collect debug information from the running tasty instance.
 /// Modify this function freely — add whatever you need to diagnose issues.
-pub fn collect(state: &AppState, gpu: Option<&GpuState>) -> Value {
+pub fn collect(state: &AppState, gpu: Option<&GpuState>, ime_active: bool) -> Value {
     let mut info = serde_json::Map::new();
 
     // -- Basic state --
@@ -36,7 +36,26 @@ pub fn collect(state: &AppState, gpu: Option<&GpuState>) -> Value {
     info.insert("font_size".into(), json!(state.engine.settings.appearance.font_size));
     info.insert("font_family".into(), json!(&state.engine.settings.appearance.font_family));
 
+    // -- IME state --
+    info.insert("ime_active".into(), json!(ime_active));
+    if let Some(gpu) = gpu {
+        info.insert("egui_ime_allowed".into(), json!(gpu.egui_ime_allowed()));
+    }
+
     // -- Add your own debug info below this line --
+
+    // -- egui actual rendering state (may differ from gpu.scale_factor) --
+    if let Some(gpu) = gpu {
+        info.insert("egui_pixels_per_point".into(), json!(gpu.egui_pixels_per_point()));
+        info.insert("egui_zoom_factor".into(), json!(gpu.egui_zoom_factor()));
+        let (cfg_w, cfg_h) = gpu.surface_config_size();
+        info.insert("surface_config_width".into(), json!(cfg_w));
+        info.insert("surface_config_height".into(), json!(cfg_h));
+    }
+
+    // -- tab bar height (physical px, measured by egui) --
+    info.insert("tab_bar_height".into(), json!(state.tab_bar_height));
+    info.insert("sidebar_width".into(), json!(state.sidebar_width));
 
     Value::Object(info)
 }

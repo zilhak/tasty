@@ -322,6 +322,11 @@ impl GpuState {
         self.egui_ctx.zoom_factor()
     }
 
+    /// Whether egui-winit currently allows IME on the window.
+    pub fn egui_ime_allowed(&self) -> bool {
+        self.egui_state.allow_ime()
+    }
+
     /// Get the wgpu surface config dimensions.
     pub fn surface_config_size(&self) -> (u32, u32) {
         (self.config.width, self.config.height)

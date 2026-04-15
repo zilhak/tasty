@@ -416,7 +416,7 @@ impl App {
                 };
 
                 if cmd.request.method == "debug.info" {
-                    let debug_data = debug_info::collect(&w.state, Some(&w.gpu));
+                    let debug_data = debug_info::collect(&w.state, Some(&w.gpu), w.ime_active);
                     let response = ipc::protocol::JsonRpcResponse::success(
                         cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
                         debug_data,
