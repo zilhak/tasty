@@ -153,6 +153,7 @@
 - Alt+1~9 (macOS: ⌘1~9): 워크스페이스 전환
 - Ctrl+1~0: 탭 전환
 - Ctrl+Tab / Ctrl+Shift+Tab: 다음/이전 탭
+- Alt+Shift+N (macOS: ⌘⇧N): 새 윈도우
 - Ctrl+Shift+B: 사이드바 토글 (숨김/표시)
 - Ctrl+B: 사이드바 접기/펼치기
 
@@ -512,12 +513,17 @@
 
 ### 멀티 윈도우
 - `window.create` IPC 또는 `tasty new window` CLI로 새 독립 윈도우 생성
+- 키바인딩: `new_window` (기본: Alt+Shift+N, macOS에서 Cmd+Shift+N)
 - 각 윈도우는 자체 GPU 서피스, egui 컨텍스트, 터미널 세트를 보유
 - `window.list`: 전체 윈도우 목록 (id, focused, title)
 - `window.close`: 포커스된 윈도우 닫기
 - `window.focus`: 특정 윈도우에 포커스
 - 윈도우 닫기 시 HashMap에서 제거, 마지막 윈도우면 앱 종료
 - 모달 활성 시 다른 윈도우 입력 차단
+- macOS: 커스텀 NSApplicationDelegate로 dock/메뉴 통합
+  - dock 아이콘 클릭 시 윈도우가 없으면 자동 복원 (applicationShouldHandleReopen)
+  - dock 우클릭 메뉴에 "New Window" 항목 (applicationDockMenu)
+  - 앱 상단 메뉴바 File → New Window (Cmd+Shift+N)
 
 ### GUI 통합 테스트 프레임워크
 - `tests/gui_common/mod.rs`의 `GuiTestInstance` 헬퍼: 실제 GUI 모드로 프로세스 스폰
