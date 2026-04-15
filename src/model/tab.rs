@@ -189,6 +189,15 @@ impl Tab {
         self.panel_opt = None;
         self.surface_opt = Some(surface);
     }
+
+    /// Produce a JSON tree representation of this tab.
+    pub fn to_tree_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "id": self.id,
+            "name": self.display_name(),
+            "surface": self.surface().to_tree_json(),
+        })
+    }
 }
 
 /// Implement Surface for Panel enum (legacy bridge).
@@ -286,6 +295,17 @@ impl Surface for Panel {
         match self { Panel::Html(html) => Some(html), _ => None }
     }
     fn as_empty_surface(&self) -> Option<&super::EmptySurface> { None }
+    fn to_tree_json(&self) -> serde_json::Value {
+        // Delegate to the inner surface type's to_tree_json
+        match self {
+            Panel::Terminal(node) => Surface::to_tree_json(node as &dyn Surface),
+            Panel::SurfaceGroup(group) => Surface::to_tree_json(group as &dyn Surface),
+            Panel::Markdown(md) => Surface::to_tree_json(md as &dyn Surface),
+            Panel::Explorer(ex) => Surface::to_tree_json(ex as &dyn Surface),
+            Panel::Html(html) => Surface::to_tree_json(html as &dyn Surface),
+            Panel::Empty { id } => serde_json::json!({ "type": "Empty", "id": id }),
+        }
+    }
 }
 
 fn dirs_home() -> Option<std::path::PathBuf> {

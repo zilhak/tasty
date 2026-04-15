@@ -175,41 +175,13 @@ fn handle_ui_state(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {
 }
 
 fn handle_tree(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {
-    let mut tree = Vec::new();
-    for (i, ws) in state.engine.workspaces.iter().enumerate() {
-        let active = i == state.active_workspace;
-        let pane_ids = ws.pane_layout().all_pane_ids();
-        let mut panes_info = Vec::new();
-
-        for &pid in &pane_ids {
-            if let Some(pane) = ws.pane_layout().find_pane(pid) {
-                let tabs: Vec<_> = pane
-                    .tabs
-                    .iter()
-                    .enumerate()
-                    .map(|(ti, tab)| {
-                        json!({
-                            "id": tab.id,
-                            "name": tab.name,
-                            "active": ti == pane.active_tab,
-                        })
-                    })
-                    .collect();
-                panes_info.push(json!({
-                    "id": pid,
-                    "focused": pid == ws.focused_pane,
-                    "tabs": tabs,
-                }));
-            }
-        }
-
-        tree.push(json!({
-            "id": ws.id,
-            "name": ws.name,
-            "active": active,
-            "panes": panes_info,
-        }));
-    }
+    let tree: Vec<_> = state.engine.workspaces.iter().enumerate()
+        .map(|(i, ws)| {
+            let mut t = ws.to_tree_json();
+            t["active"] = json!(i == state.active_workspace);
+            t
+        })
+        .collect();
     JsonRpcResponse::success(id, json!(tree))
 }
 

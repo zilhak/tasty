@@ -68,6 +68,15 @@ impl Surface for TerminalSurface {
 
     fn as_terminal_surface(&self) -> Option<&TerminalSurface> { Some(self) }
     fn as_terminal_surface_mut(&mut self) -> Option<&mut TerminalSurface> { Some(self) }
+
+    fn to_tree_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "type": "Terminal",
+            "id": self.id,
+            "cols": self.terminal.cols(),
+            "rows": self.terminal.rows(),
+        })
+    }
 }
 
 /// Split within a tab (appears as one tab but renders multiple terminals).
@@ -224,4 +233,12 @@ impl Surface for SurfaceGroupNode {
     fn as_surface_group(&self) -> Option<&SurfaceGroupNode> { Some(self) }
 
     fn as_surface_group_mut(&mut self) -> Option<&mut SurfaceGroupNode> { Some(self) }
+
+    fn to_tree_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "type": "SurfaceGroup",
+            "focused_surface": self.focused_surface,
+            "surfaces": self.layout().all_surface_ids(),
+        })
+    }
 }

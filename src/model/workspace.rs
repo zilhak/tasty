@@ -75,4 +75,21 @@ impl Workspace {
     pub fn all_surface_ids(&self) -> Vec<SurfaceId> {
         self.pane_layout().all_surface_ids()
     }
+
+    /// Produce a JSON tree representation of this workspace.
+    pub fn to_tree_json(&self) -> serde_json::Value {
+        let panes: Vec<_> = self.pane_layout().all_pane_ids().iter()
+            .filter_map(|&pid| self.pane_layout().find_pane(pid))
+            .map(|pane| {
+                let mut p = pane.to_tree_json();
+                p["focused"] = serde_json::json!(pane.id == self.focused_pane);
+                p
+            })
+            .collect();
+        serde_json::json!({
+            "id": self.id,
+            "name": self.name,
+            "panes": panes,
+        })
+    }
 }

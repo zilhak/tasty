@@ -76,4 +76,15 @@ pub trait Surface {
     fn display_name(&self) -> String {
         self.type_name().to_string()
     }
+
+    /// Produce a JSON tree representation of this surface.
+    fn to_tree_json(&self) -> serde_json::Value {
+        let mut obj = serde_json::json!({
+            "type": self.type_name(),
+        });
+        if let Some(id) = self.surface_id() {
+            obj["id"] = serde_json::json!(id);
+        }
+        obj
+    }
 }

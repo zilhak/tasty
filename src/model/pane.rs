@@ -393,4 +393,17 @@ impl Pane {
         }
         result
     }
+
+    /// Produce a JSON tree representation of this pane.
+    pub fn to_tree_json(&self) -> serde_json::Value {
+        let tabs: Vec<_> = self.tabs.iter().enumerate().map(|(i, tab)| {
+            let mut t = tab.to_tree_json();
+            t["active"] = serde_json::json!(i == self.active_tab);
+            t
+        }).collect();
+        serde_json::json!({
+            "id": self.id,
+            "tabs": tabs,
+        })
+    }
 }
