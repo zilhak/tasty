@@ -100,7 +100,7 @@ impl ApplicationHandler<AppEvent> for App {
         use winit::window::WindowAttributes;
 
         let attrs = WindowAttributes::default()
-            .with_title("Tasty")
+            .with_title(if cfg!(debug_assertions) { "Tasty (Debug)" } else { "Tasty" })
             .with_inner_size(winit::dpi::LogicalSize::new(1280, 720));
 
         let window = Arc::new(
