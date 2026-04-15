@@ -155,10 +155,10 @@ cli/mod.rs는 clap `#[derive(Subcommand)]` enum이 35+ variant를 가진다.
 | 파일 | 역할 |
 |------|------|
 | `mod.rs` | handle() dispatch match + 유틸 (apply_meta, resolve_target_param) |
-| `workspace.rs` | workspace.list/create/update/select |
-| `pane.rs` | pane.list/close, split, focus.direction |
-| `tab.rs` | tab.list/create/close (type 파라미터로 markdown/explorer 통합) |
-| `surface.rs` | surface.send/send_key/close/focus + mark/screen_text/cursor_position |
+| `workspace.rs` | workspace.list/create/update |
+| `pane.rs` | pane.list/close, split |
+| `tab.rs` | tab.list/create/close (type 파라미터로 markdown/explorer/html 통합) |
+| `surface.rs` | surface.send/send_key/send_combo/send_to/close/close_self + mark/screen_text/cursor_position |
 | `claude.rs` | claude.launch/spawn/children/parent/kill/respawn/set_idle/set_needs_input/broadcast/wait |
 | `hooks.rs` | hook.set/list/unset, global_hook.set/list/unset, surface.fire_hook |
 | `notification.rs` | notification.list/create |

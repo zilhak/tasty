@@ -105,7 +105,7 @@ tasty/
     │   └── handler/            # 요청 핸들러
     │       ├── mod.rs          # 라우터 dispatch
     │       ├── workspace.rs    # workspace.* 핸들러
-    │       ├── pane.rs         # pane.*, split, focus.direction
+    │       ├── pane.rs         # pane.*, split
     │       ├── tab.rs          # tab.list/create/close (type으로 markdown/explorer 통합)
     │       ├── surface.rs      # surface.* 핸들러
     │       ├── claude.rs       # claude.* 핸들러 (spawn/kill/broadcast 등)

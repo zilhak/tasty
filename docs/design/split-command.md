@@ -67,7 +67,7 @@ ID는 전역 고유하므로, target이 주어지면 **모든 workspace를 검�
 | workspace 생성 | 새 workspace로 전환 | 포커스 유지 |
 | tab 생성 | 새 탭으로 전환 | 포커스 유지 |
 
-포커스를 옮기려면 `pane.focus` 또는 `surface.focus`를 별도로 호출한다.
+포커스 이동은 CLI/IPC로 불가능하며, 키보드 단축키 또는 마우스 클릭으로만 가능하다.
 
 ## 응답
 
