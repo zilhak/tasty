@@ -65,6 +65,9 @@ impl Surface for TerminalSurface {
     fn for_each_terminal_mut(&mut self, f: &mut dyn FnMut(SurfaceId, &mut Terminal)) {
         f(self.id, &mut self.terminal);
     }
+
+    fn as_terminal_surface(&self) -> Option<&TerminalSurface> { Some(self) }
+    fn as_terminal_surface_mut(&mut self) -> Option<&mut TerminalSurface> { Some(self) }
 }
 
 /// Split within a tab (appears as one tab but renders multiple terminals).

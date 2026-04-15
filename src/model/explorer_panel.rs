@@ -155,4 +155,6 @@ impl Surface for ExplorerPanel {
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| "Explorer".to_string())
     }
+    fn as_explorer(&self) -> Option<&ExplorerPanel> { Some(self) }
+    fn as_explorer_mut(&mut self) -> Option<&mut ExplorerPanel> { Some(self) }
 }

@@ -21,4 +21,6 @@ impl Surface for HtmlPanel {
     fn display_name(&self) -> String {
         if self.url.is_empty() { "HTML".to_string() } else { self.url.clone() }
     }
+    fn as_html(&self) -> Option<&HtmlPanel> { Some(self) }
+    fn as_html_mut(&mut self) -> Option<&mut HtmlPanel> { Some(self) }
 }

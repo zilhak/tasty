@@ -1,5 +1,5 @@
 use tasty_terminal::Terminal;
-use super::{Rect, SurfaceGroupNode, SurfaceId, TerminalSurface};
+use super::{EmptySurface, ExplorerPanel, HtmlPanel, MarkdownPanel, Rect, SurfaceGroupNode, SurfaceId, TerminalSurface};
 
 /// Common behavior for all Surface types.
 ///
@@ -58,11 +58,19 @@ pub trait Surface {
     /// Visit all terminals with their surface IDs. Object-safe signature.
     fn for_each_terminal_mut(&mut self, _f: &mut dyn FnMut(SurfaceId, &mut Terminal)) {}
 
-    /// Downcast to SurfaceGroupNode (immutable). Default: None.
-    fn as_surface_group(&self) -> Option<&SurfaceGroupNode> { None }
+    // ── Downcast methods ──
 
-    /// Downcast to SurfaceGroupNode (mutable). Default: None.
+    fn as_surface_group(&self) -> Option<&SurfaceGroupNode> { None }
     fn as_surface_group_mut(&mut self) -> Option<&mut SurfaceGroupNode> { None }
+    fn as_terminal_surface(&self) -> Option<&TerminalSurface> { None }
+    fn as_terminal_surface_mut(&mut self) -> Option<&mut TerminalSurface> { None }
+    fn as_markdown(&self) -> Option<&MarkdownPanel> { None }
+    fn as_markdown_mut(&mut self) -> Option<&mut MarkdownPanel> { None }
+    fn as_explorer(&self) -> Option<&ExplorerPanel> { None }
+    fn as_explorer_mut(&mut self) -> Option<&mut ExplorerPanel> { None }
+    fn as_html(&self) -> Option<&HtmlPanel> { None }
+    fn as_html_mut(&mut self) -> Option<&mut HtmlPanel> { None }
+    fn as_empty_surface(&self) -> Option<&EmptySurface> { None }
 
     /// Display name for tab title. Default: type_name.
     fn display_name(&self) -> String {

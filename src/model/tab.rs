@@ -255,6 +255,31 @@ impl Surface for Panel {
     fn as_surface_group_mut(&mut self) -> Option<&mut super::SurfaceGroupNode> {
         Panel::as_surface_group_mut(self)
     }
+    fn as_terminal_surface(&self) -> Option<&super::TerminalSurface> {
+        match self { Panel::Terminal(node) => Some(node), _ => None }
+    }
+    fn as_terminal_surface_mut(&mut self) -> Option<&mut super::TerminalSurface> {
+        match self { Panel::Terminal(node) => Some(node), _ => None }
+    }
+    fn as_markdown(&self) -> Option<&super::MarkdownPanel> {
+        match self { Panel::Markdown(md) => Some(md), _ => None }
+    }
+    fn as_markdown_mut(&mut self) -> Option<&mut super::MarkdownPanel> {
+        match self { Panel::Markdown(md) => Some(md), _ => None }
+    }
+    fn as_explorer(&self) -> Option<&super::ExplorerPanel> {
+        match self { Panel::Explorer(ex) => Some(ex), _ => None }
+    }
+    fn as_explorer_mut(&mut self) -> Option<&mut super::ExplorerPanel> {
+        match self { Panel::Explorer(ex) => Some(ex), _ => None }
+    }
+    fn as_html(&self) -> Option<&super::HtmlPanel> {
+        match self { Panel::Html(html) => Some(html), _ => None }
+    }
+    fn as_html_mut(&mut self) -> Option<&mut super::HtmlPanel> {
+        match self { Panel::Html(html) => Some(html), _ => None }
+    }
+    fn as_empty_surface(&self) -> Option<&super::EmptySurface> { None }
 }
 
 fn dirs_home() -> Option<std::path::PathBuf> {
