@@ -412,7 +412,7 @@
   - `surface.ime_preedit`: 조합 중 텍스트 표시 (preedit 렌더링 테스트)
   - `surface.ime_commit`: 조합 확정 → PTY 전송
   - `surface.ime_status`: 현재 IME 상태 조회 (active, preedit_text)
-  - CLI: `tasty ime-enable`, `tasty ime-disable`, `tasty ime-preedit "ㅎ"`, `tasty ime-commit "한"`, `tasty ime-status`
+  - CLI: `tasty debug ime-enable`, `tasty debug ime-disable`, `tasty debug ime-preedit "ㅎ"`, `tasty debug ime-commit "한"`, `tasty debug ime-status`
 
 ### OSC 52 클립보드 설정
 - 터미널 프로그램이 OSC 52 시퀀스로 시스템 클립보드에 텍스트를 설정할 수 있음
