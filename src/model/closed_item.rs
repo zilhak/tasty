@@ -87,8 +87,8 @@ pub enum ClosedItem {
 // ── Capture functions: live model → closed snapshot ──
 
 impl ClosedSurface {
-    /// Capture a snapshot from a live SurfaceNode.
-    pub fn from_surface_node(node: &super::SurfaceNode) -> Self {
+    /// Capture a snapshot from a live TerminalSurface.
+    pub fn from_surface_node(node: &super::TerminalSurface) -> Self {
         let terminal = &node.terminal;
         let surface = terminal.surface();
         let lines = surface.screen_lines();

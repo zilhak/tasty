@@ -214,23 +214,17 @@ impl AppState {
         let surface_id;
         if let Some(pane) = self.focused_pane_mut() {
             if let Some(panel) = pane.active_panel_mut() {
-                match panel {
-                    crate::model::Panel::SurfaceGroup(group) => {
-                        surface_id = group.focused_surface;
-                        if !group.close_surface(surface_id) {
-                            // Last surface in group — fall through to close_surface_by_id
-                            // which will handle tab/pane/workspace cascading.
-                            return self.close_surface_by_id(surface_id);
-                        }
-                    }
-                    _ => {
-                        // Terminal, Markdown, Explorer — all have focused_surface_id()
-                        surface_id = match panel.focused_surface_id() {
-                            Some(id) => id,
-                            None => return false,
-                        };
+                if let Some(group) = panel.as_surface_group_mut() {
+                    surface_id = group.focused_surface;
+                    if !group.close_surface(surface_id) {
                         return self.close_surface_by_id(surface_id);
                     }
+                } else {
+                    surface_id = match panel.focused_surface_id() {
+                        Some(id) => id,
+                        None => return false,
+                    };
+                    return self.close_surface_by_id(surface_id);
                 }
             } else {
                 return false;
@@ -327,7 +321,7 @@ impl AppState {
             }
             let ws = &mut self.engine.workspaces[ws_idx];
             let pane = ws.pane_layout_mut().find_pane_mut(pane_id).unwrap();
-            if let crate::model::Panel::SurfaceGroup(group) = pane.tabs[tab_idx].panel_mut() {
+            if let Some(group) = pane.tabs[tab_idx].panel_mut().as_surface_group_mut() {
                 if group.close_surface(surface_id) {
                     self.unregister_child(surface_id);
                     self.mark_parent_closed(surface_id);

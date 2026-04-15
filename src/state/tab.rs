@@ -241,7 +241,7 @@ impl AppState {
             Err(_) => return false,
         };
 
-        let node = crate::model::SurfaceNode {
+        let node = crate::model::TerminalSurface {
             id: surface_id,
             terminal,
             deferred_spawn: None,

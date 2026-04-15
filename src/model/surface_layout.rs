@@ -1,7 +1,7 @@
 use tasty_terminal::Terminal;
 use super::{DividerInfo, Rect, SplitDirection, SurfaceId, SURFACE_BORDER_WIDTH};
 use super::pane_tree::FocusDirection;
-use super::surface_group::SurfaceNode;
+use super::surface_group::TerminalSurface;
 
 /// Which side of a split we descended into while building a path.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -11,7 +11,7 @@ enum PathSide {
 }
 
 pub enum SurfaceGroupLayout {
-    Single(SurfaceNode),
+    Single(TerminalSurface),
     Split {
         direction: SplitDirection,
         ratio: f32,
@@ -28,8 +28,8 @@ impl SurfaceGroupLayout {
         self,
         target_id: SurfaceId,
         direction: SplitDirection,
-        new_node: SurfaceNode,
-    ) -> (Self, Option<SurfaceNode>) {
+        new_node: TerminalSurface,
+    ) -> (Self, Option<TerminalSurface>) {
         match self {
             SurfaceGroupLayout::Single(node) if node.id == target_id => {
                 (
@@ -159,7 +159,7 @@ impl SurfaceGroupLayout {
         }
     }
 
-    pub fn find_surface_node(&self, id: SurfaceId) -> Option<&SurfaceNode> {
+    pub fn find_surface_node(&self, id: SurfaceId) -> Option<&TerminalSurface> {
         match self {
             SurfaceGroupLayout::Single(node) => {
                 if node.id == id { Some(node) } else { None }

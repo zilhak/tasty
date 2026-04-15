@@ -377,10 +377,10 @@ fn for_each_terminal_mut_can_modify() {
 
 // ---- SurfaceGroupLayout tests ----
 
-fn test_surface_node(id: SurfaceId) -> SurfaceNode {
+fn test_surface_node(id: SurfaceId) -> TerminalSurface {
     let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
     let terminal = tasty_terminal::Terminal::new(80, 24, id, waker).unwrap();
-    SurfaceNode { id, terminal, deferred_spawn: None }
+    TerminalSurface { id, terminal, deferred_spawn: None }
 }
 
 #[test]

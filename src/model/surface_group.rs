@@ -4,7 +4,7 @@ use super::pane_tree::FocusDirection;
 pub use super::surface_layout::SurfaceGroupLayout;
 
 /// Single terminal instance.
-pub struct SurfaceNode {
+pub struct TerminalSurface {
     pub id: SurfaceId,
     pub terminal: Terminal,
     /// If lazy init is enabled and terminal hasn't been spawned yet,

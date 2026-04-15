@@ -1,5 +1,5 @@
 use tasty_terminal::Terminal;
-use super::{Panel, SurfaceId, SurfaceNode, TabId};
+use super::{Panel, SurfaceId, TerminalSurface, TabId};
 
 pub struct Tab {
     pub id: TabId,
@@ -83,7 +83,7 @@ impl Tab {
         let working_dir = spawn.working_dir.as_deref();
         match Terminal::new_with_shell_args_cwd(spawn.cols, spawn.rows, shell_ref, &shell_args, surface_id, spawn.waker, working_dir) {
             Ok(terminal) => {
-                self.panel_opt = Some(Panel::Terminal(SurfaceNode {
+                self.panel_opt = Some(Panel::Terminal(TerminalSurface {
                     id: surface_id,
                     terminal,
                     deferred_spawn: None,

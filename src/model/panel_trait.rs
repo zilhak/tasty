@@ -1,5 +1,5 @@
 use tasty_terminal::Terminal;
-use super::{Rect, SurfaceId, SurfaceNode};
+use super::{Rect, SurfaceId, TerminalSurface};
 
 /// Common behavior for all Panel types.
 ///
@@ -35,8 +35,8 @@ pub trait PanelBehavior {
     /// Find a terminal by surface ID (immutable).
     fn find_terminal(&self, surface_id: SurfaceId) -> Option<&Terminal>;
 
-    /// Find a SurfaceNode by surface ID.
-    fn find_terminal_node(&self, surface_id: SurfaceId) -> Option<&SurfaceNode>;
+    /// Find a TerminalSurface by surface ID.
+    fn find_terminal_node(&self, surface_id: SurfaceId) -> Option<&TerminalSurface>;
 
     /// Find a terminal by surface ID (mutable).
     fn find_terminal_mut(&mut self, surface_id: SurfaceId) -> Option<&mut Terminal>;

@@ -1,7 +1,7 @@
 use tasty_terminal::{Terminal, Waker};
 use super::{
     PaneId, Panel, PanelBehavior, SplitDirection, SurfaceId,
-    SurfaceNode, TabId,
+    TerminalSurface, TabId,
 };
 use super::tab::Tab;
 /// A screen region with its own independent tab bar.
@@ -48,7 +48,7 @@ impl Pane {
         let tab = Tab {
             id: tab_id,
             name: "Shell".to_string(),
-            panel_opt: Some(Panel::Terminal(SurfaceNode {
+            panel_opt: Some(Panel::Terminal(TerminalSurface {
                 id: surface_id,
                 terminal,
                 deferred_spawn: None,
@@ -80,7 +80,7 @@ impl Pane {
         let tab = Tab {
             id: tab_id,
             name: "Shell".to_string(),
-            panel_opt: Some(Panel::Terminal(SurfaceNode {
+            panel_opt: Some(Panel::Terminal(TerminalSurface {
                 id: surface_id,
                 terminal,
                 deferred_spawn: None,
@@ -109,7 +109,7 @@ impl Pane {
         let tab = Tab {
             id: tab_id,
             name: "Shell".to_string(),
-            panel_opt: Some(Panel::Terminal(SurfaceNode {
+            panel_opt: Some(Panel::Terminal(TerminalSurface {
                 id: surface_id,
                 terminal,
                 deferred_spawn: None,

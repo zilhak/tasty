@@ -1,6 +1,6 @@
 use crate::model::closed_item::*;
 use crate::model::{
-    Pane, Panel, PaneNode, SurfaceGroupLayout, SurfaceGroupNode, SurfaceNode, Tab, Workspace,
+    Pane, Panel, PaneNode, SurfaceGroupLayout, SurfaceGroupNode, TerminalSurface, Tab, Workspace,
 };
 
 use super::AppState;
@@ -116,7 +116,7 @@ impl AppState {
         }
     }
 
-    fn rebuild_surface_node(&mut self, closed: ClosedSurface) -> Option<SurfaceNode> {
+    fn rebuild_surface_node(&mut self, closed: ClosedSurface) -> Option<TerminalSurface> {
         let surface_id = self.engine.next_ids.next_surface();
         let cols = self.engine.default_cols;
         let rows = self.engine.default_rows;
@@ -135,7 +135,7 @@ impl AppState {
         }
 
         self.engine.send_fast_init(surface_id);
-        Some(SurfaceNode { id: surface_id, terminal, deferred_spawn: None })
+        Some(TerminalSurface { id: surface_id, terminal, deferred_spawn: None })
     }
 
     fn rebuild_surface_layout(&mut self, closed: ClosedSurfaceLayout) -> Option<SurfaceGroupLayout> {

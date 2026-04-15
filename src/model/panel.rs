@@ -1,11 +1,11 @@
 use tasty_terminal::Terminal;
-use super::{ExplorerPanel, HtmlPanel, MarkdownPanel, Rect, SplitDirection, SurfaceGroupLayout, SurfaceGroupNode, SurfaceId, SurfaceNode};
+use super::{ExplorerPanel, HtmlPanel, MarkdownPanel, Rect, SplitDirection, SurfaceGroupLayout, SurfaceGroupNode, SurfaceId, TerminalSurface};
 use super::panel_trait::PanelBehavior;
 
 /// Content type within a Tab.
 pub enum Panel {
     /// A single terminal instance.
-    Terminal(SurfaceNode),
+    Terminal(TerminalSurface),
     /// A split within a tab - appears as ONE tab but renders multiple terminals.
     SurfaceGroup(SurfaceGroupNode),
     /// A Markdown file viewer (rendered with egui, no PTY).
@@ -87,7 +87,7 @@ impl PanelBehavior for Panel {
         }
     }
 
-    fn find_terminal_node(&self, surface_id: SurfaceId) -> Option<&SurfaceNode> {
+    fn find_terminal_node(&self, surface_id: SurfaceId) -> Option<&TerminalSurface> {
         match self {
             Panel::Terminal(node) if node.id == surface_id => Some(node),
             Panel::SurfaceGroup(group) => group.layout().find_surface_node(surface_id),
@@ -177,7 +177,7 @@ impl Panel {
                         direction,
                         ratio: 0.5,
                         first: Box::new(SurfaceGroupLayout::Single(old_node)),
-                        second: Box::new(SurfaceGroupLayout::Single(SurfaceNode {
+                        second: Box::new(SurfaceGroupLayout::Single(TerminalSurface {
                             id: new_surface_id,
                             terminal: new_terminal,
                             deferred_spawn: None,
@@ -190,7 +190,7 @@ impl Panel {
                 Panel::SurfaceGroup(group)
             }
             Panel::SurfaceGroup(mut group) => {
-                let new_node = SurfaceNode { id: new_surface_id, terminal: new_terminal, deferred_spawn: None };
+                let new_node = TerminalSurface { id: new_surface_id, terminal: new_terminal, deferred_spawn: None };
                 let target = group.focused_surface;
                 let old_layout = group.take_layout();
                 let (new_layout, _) = old_layout.split_with_node(target, direction, new_node);
@@ -219,7 +219,7 @@ impl Panel {
                         direction,
                         ratio: 0.5,
                         first: Box::new(SurfaceGroupLayout::Single(old_node)),
-                        second: Box::new(SurfaceGroupLayout::Single(SurfaceNode {
+                        second: Box::new(SurfaceGroupLayout::Single(TerminalSurface {
                             id: new_surface_id,
                             terminal: new_terminal,
                             deferred_spawn: None,
@@ -232,7 +232,7 @@ impl Panel {
                 Panel::SurfaceGroup(group)
             }
             Panel::SurfaceGroup(mut group) => {
-                let new_node = SurfaceNode { id: new_surface_id, terminal: new_terminal, deferred_spawn: None };
+                let new_node = TerminalSurface { id: new_surface_id, terminal: new_terminal, deferred_spawn: None };
                 let old_layout = group.take_layout();
                 let (new_layout, _) = old_layout.split_with_node(target_surface_id, direction, new_node);
                 group.put_layout(new_layout);
