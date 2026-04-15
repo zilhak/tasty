@@ -55,6 +55,8 @@ pub struct AppState {
     pub tab_bar_height: f32,
     /// Popup manager for internal popups (notification panel, etc.).
     pub popups: crate::ui::PopupManager,
+    /// Popup content implementations (trait objects, separate from PopupManager for borrow splitting).
+    pub popup_contents: Vec<Box<dyn crate::ui::popup::PopupContent>>,
     /// Double-tap modifier captured from winit events, for the keybinding recorder to consume.
     pub captured_double_tap: Option<String>,
 }
@@ -145,20 +147,8 @@ impl AppState {
             dialogs: DialogState::new(),
             tab_bar_height: 24.0,
             captured_double_tap: None,
-            popups: {
-                let mut pm = crate::ui::PopupManager::new();
-                pm.register(crate::ui::PopupState::new(
-                    "notifications",
-                    "Notifications",
-                    egui::vec2(350.0, 400.0),
-                ));
-                pm.register(crate::ui::PopupState::new(
-                    "convert_surface",
-                    "",
-                    egui::vec2(200.0, 132.0),
-                ).with_close_on_outside_click(true));
-                pm
-            },
+            popup_contents: Vec::new(),
+            popups: crate::ui::PopupManager::new(),
         })
     }
 

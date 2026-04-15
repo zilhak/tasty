@@ -1,7 +1,33 @@
+use crate::state::AppState;
 use crate::theme;
 
 /// Unique identifier for a popup instance.
 pub type PopupId = &'static str;
+
+/// Result of a popup's draw call.
+pub enum PopupAction {
+    /// No action needed.
+    None,
+    /// The popup requests to be closed.
+    Close,
+}
+
+/// Trait for popup content. Each popup type implements this to define
+/// its own size, scope, and rendering logic.
+pub trait PopupContent {
+    /// Unique popup ID (must match the registered PopupState id).
+    fn id(&self) -> PopupId;
+    /// Title text for the title bar.
+    fn title(&self) -> String;
+    /// Default size of the popup.
+    fn default_size(&self) -> egui::Vec2;
+    /// Scope for visibility and boundary clamping. Default: Window.
+    fn scope(&self) -> PopupScope { PopupScope::Window }
+    /// Whether clicking outside closes this popup. Default: false.
+    fn close_on_outside_click(&self) -> bool { false }
+    /// Draw the popup content. Called each frame while the popup is open.
+    fn draw(&mut self, ui: &mut egui::Ui, state: &mut AppState) -> PopupAction;
+}
 
 /// Scope determines where a popup is anchored and when it's visible.
 #[derive(Debug, Clone, PartialEq)]
@@ -134,6 +160,18 @@ impl PopupManager {
         }
     }
 
+    /// Register a popup from a PopupContent trait object.
+    /// Creates the PopupState automatically from the content's properties.
+    pub fn register_content(&mut self, content: &dyn PopupContent) {
+        let id = content.id();
+        if !self.popups.iter().any(|p| p.id == id) {
+            let popup = PopupState::new(id, content.title(), content.default_size())
+                .with_scope(content.scope())
+                .with_close_on_outside_click(content.close_on_outside_click());
+            self.popups.push(popup);
+        }
+    }
+
     /// Register a popup. Call once during init. Does nothing if already registered.
     pub fn register(&mut self, popup: PopupState) {
         if !self.popups.iter().any(|p| p.id == popup.id) {
@@ -156,6 +194,18 @@ impl PopupManager {
             self.popups[i].open = true;
             self.popups[i].focused = true;
             self.popups[i].request_center = true;
+            let popup = self.popups.remove(i);
+            self.popups.push(popup);
+        }
+    }
+
+    /// Open a popup centered within a specific scope, with focus.
+    pub fn open_with_scope(&mut self, id: PopupId, scope: PopupScope) {
+        if let Some(i) = self.popups.iter().position(|p| p.id == id) {
+            self.popups[i].open = true;
+            self.popups[i].focused = true;
+            self.popups[i].request_center = true;
+            self.popups[i].scope = scope;
             let popup = self.popups.remove(i);
             self.popups.push(popup);
         }
@@ -311,12 +361,13 @@ impl PopupManager {
             }
         }
 
-        // Handle request_center
+        // Handle request_center (use scope rect if available, else screen rect)
         for popup in &mut self.popups {
             if popup.request_center && popup.open {
+                let center_rect = Self::scope_rect(&popup.scope, draw_ctx).unwrap_or(screen_rect);
                 popup.pos = egui::pos2(
-                    screen_rect.center().x - popup.size.x / 2.0,
-                    screen_rect.center().y - popup.size.y / 2.0,
+                    center_rect.center().x - popup.size.x / 2.0,
+                    center_rect.center().y - popup.size.y / 2.0,
                 );
                 popup.request_center = false;
             }
