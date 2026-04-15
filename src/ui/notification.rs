@@ -145,9 +145,15 @@ fn draw_notification_content(ui: &mut egui::Ui, state: &mut AppState) {
 }
 
 /// Draw all popups via the PopupManager. Called from egui_bridge.
-pub fn draw_popups(ctx: &egui::Context, state: &mut AppState) {
+pub fn draw_popups(
+    ctx: &egui::Context,
+    state: &mut AppState,
+    pane_rects: &[(u32, crate::model::Rect)],
+    terminal_rect: crate::model::Rect,
+    scale_factor: f32,
+) {
     // Build scope context for popup visibility/clamping
-    let draw_ctx = build_popup_draw_ctx(state);
+    let draw_ctx = build_popup_draw_ctx(state, pane_rects, terminal_rect, scale_factor);
 
     // Update convert_surface popup title (i18n may change)
     if let Some(p) = state.popups.get_mut("convert_surface") {
@@ -189,18 +195,69 @@ pub fn draw_popups(ctx: &egui::Context, state: &mut AppState) {
     }
 }
 
-/// Build PopupDrawContext from current AppState.
-fn build_popup_draw_ctx(state: &AppState) -> crate::ui::PopupDrawContext {
+/// Build PopupDrawContext from current AppState and layout info.
+fn build_popup_draw_ctx(
+    state: &AppState,
+    pane_rects: &[(u32, crate::model::Rect)],
+    terminal_rect: crate::model::Rect,
+    scale_factor: f32,
+) -> crate::ui::PopupDrawContext {
     let active_workspace = state.active_workspace;
 
-    // Note: we don't have the terminal_rect here, so we can't compute accurate
-    // pane/surface rects. For now, these are left empty — Window-scoped popups
-    // (the only ones currently registered) don't need them.
-    // When scoped popups are registered, the caller should provide rect info.
+    // Convert physical pixel pane rects to logical pixel egui rects
+    let pane_rects_logical: Vec<(u32, egui::Rect)> = pane_rects
+        .iter()
+        .map(|(id, r)| {
+            (*id, egui::Rect::from_min_size(
+                egui::pos2(r.x / scale_factor, r.y / scale_factor),
+                egui::vec2(r.width / scale_factor, r.height / scale_factor),
+            ))
+        })
+        .collect();
+
+    // Compute surface rects from render_regions
+    let mut surface_rects = Vec::new();
+    let regions = state.render_regions(terminal_rect);
+    for (pane_id, pane_rect, terminal_regions) in &regions {
+        if terminal_regions.is_empty() {
+            // Non-terminal panel (Markdown, Explorer, Html, Empty):
+            // the surface fills the pane content area (pane rect minus tab bar)
+            let ws = state.active_workspace();
+            if let Some(pane) = ws.pane_layout().find_pane(*pane_id) {
+                if let Some(panel) = pane.active_panel() {
+                    if let Some(sid) = panel.focused_surface_id() {
+                        let tab_bar_h = state.tab_bar_height;
+                        let content_rect = egui::Rect::from_min_size(
+                            egui::pos2(pane_rect.x / scale_factor, (pane_rect.y + tab_bar_h) / scale_factor),
+                            egui::vec2(pane_rect.width / scale_factor, ((pane_rect.height - tab_bar_h).max(1.0)) / scale_factor),
+                        );
+                        surface_rects.push((sid, content_rect));
+                    }
+                }
+            }
+        } else {
+            for (sid, _term, rect) in terminal_regions {
+                surface_rects.push((*sid, egui::Rect::from_min_size(
+                    egui::pos2(rect.x / scale_factor, rect.y / scale_factor),
+                    egui::vec2(rect.width / scale_factor, rect.height / scale_factor),
+                )));
+            }
+        }
+    }
+
+    // Collect active tab indices
+    let mut active_tabs = Vec::new();
+    let ws = state.active_workspace();
+    for &pid in &ws.pane_layout().all_pane_ids() {
+        if let Some(pane) = ws.pane_layout().find_pane(pid) {
+            active_tabs.push((pid, pane.active_tab));
+        }
+    }
+
     crate::ui::PopupDrawContext {
         active_workspace,
-        pane_rects: Vec::new(),
-        surface_rects: Vec::new(),
-        active_tabs: Vec::new(),
+        pane_rects: pane_rects_logical,
+        surface_rects,
+        active_tabs,
     }
 }

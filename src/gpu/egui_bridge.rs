@@ -28,7 +28,7 @@ impl GpuState {
             // Context menus are now handled via native OS menus (see process_pending_native_menu)
             ui::draw_markdown_path_dialog(ctx, state);
             ui::draw_html_url_dialog(ctx, state);
-            ui::draw_popups(ctx, state);
+            ui::draw_popups(ctx, state, pane_rects, terminal_rect, scale_factor);
 
             // Settings UI is now rendered in the modal window (ModalWindow)
         })
