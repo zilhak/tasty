@@ -1,6 +1,6 @@
 use tasty_terminal::{Terminal, Waker};
 use super::{
-    PaneId, Panel, PanelBehavior, SplitDirection, SurfaceId,
+    PaneId, Panel, SplitDirection, SurfaceId,
     TerminalSurface, TabId,
 };
 use super::tab::Tab;
@@ -56,18 +56,12 @@ impl Pane {
         working_dir: Option<&std::path::Path>,
     ) -> anyhow::Result<Self> {
         let terminal = Terminal::new_with_shell_args_cwd(cols, rows, shell, shell_args, surface_id, waker, working_dir)?;
-        let tab = Tab {
-            id: tab_id,
-            name: "Shell".to_string(),
-            panel_opt: Some(Panel::Terminal(TerminalSurface {
-                id: surface_id,
-                terminal,
-                deferred_spawn: None,
-            })),
+        let surface: Box<dyn super::Surface> = Box::new(TerminalSurface {
+            id: surface_id,
+            terminal,
             deferred_spawn: None,
-            surface_opt: None,
-            explicit_name: None, deferred_surface_id: None,
-        };
+        });
+        let tab = Tab::new_with_surface(tab_id, "Shell".to_string(), surface);
         Ok(Self {
             id,
             tabs: vec![tab],
@@ -89,18 +83,12 @@ impl Pane {
         working_dir: Option<&std::path::Path>,
     ) -> anyhow::Result<()> {
         let terminal = Terminal::new_with_shell_args_cwd(cols, rows, shell, shell_args, surface_id, waker, working_dir)?;
-        let tab = Tab {
-            id: tab_id,
-            name: "Shell".to_string(),
-            panel_opt: Some(Panel::Terminal(TerminalSurface {
-                id: surface_id,
-                terminal,
-                deferred_spawn: None,
-            })),
+        let surface: Box<dyn super::Surface> = Box::new(TerminalSurface {
+            id: surface_id,
+            terminal,
             deferred_spawn: None,
-            surface_opt: None,
-            explicit_name: None, deferred_surface_id: None,
-        };
+        });
+        let tab = Tab::new_with_surface(tab_id, "Shell".to_string(), surface);
         self.tabs.push(tab);
         self.active_tab = self.tabs.len() - 1;
         Ok(())
@@ -119,18 +107,12 @@ impl Pane {
         working_dir: Option<&std::path::Path>,
     ) -> anyhow::Result<()> {
         let terminal = Terminal::new_with_shell_args_cwd(cols, rows, shell, shell_args, surface_id, waker, working_dir)?;
-        let tab = Tab {
-            id: tab_id,
-            name: "Shell".to_string(),
-            panel_opt: Some(Panel::Terminal(TerminalSurface {
-                id: surface_id,
-                terminal,
-                deferred_spawn: None,
-            })),
+        let surface: Box<dyn super::Surface> = Box::new(TerminalSurface {
+            id: surface_id,
+            terminal,
             deferred_spawn: None,
-            surface_opt: None,
-            explicit_name: None, deferred_surface_id: None,
-        };
+        });
+        let tab = Tab::new_with_surface(tab_id, "Shell".to_string(), surface);
         self.tabs.push(tab);
         // Do NOT change self.active_tab
         Ok(())
@@ -170,25 +152,9 @@ impl Pane {
     pub fn all_surface_ids(&self) -> Vec<SurfaceId> {
         let mut ids = Vec::new();
         for tab in &self.tabs {
-            if let Some(panel) = tab.panel_if_initialized() {
-                ids.extend(panel.all_surface_ids());
-            }
+            ids.extend(tab.surface().all_surface_ids());
         }
         ids
-    }
-
-    /// Get the active tab's panel. Returns None if tabs are empty or deferred (not yet initialized).
-    pub fn active_panel(&self) -> Option<&Panel> {
-        if self.tabs.is_empty() { return None; }
-        let idx = self.active_tab.min(self.tabs.len() - 1);
-        self.tabs[idx].panel_if_initialized()
-    }
-
-    /// Get the active tab's panel (mutable). Returns None if tabs are empty or deferred.
-    pub fn active_panel_mut(&mut self) -> Option<&mut Panel> {
-        if self.tabs.is_empty() { return None; }
-        let idx = self.active_tab.min(self.tabs.len() - 1);
-        self.tabs[idx].panel_mut_if_initialized()
     }
 
     /// Ensure the active tab is initialized (lazy PTY spawn). Returns true if spawned.
@@ -215,10 +181,7 @@ impl Pane {
             return Ok(()); // nothing to split
         }
         let active = self.active_tab.min(self.tabs.len() - 1);
-        let tab = &mut self.tabs[active];
-        // take/put is safe here: split_surface_with_terminal is infallible.
-        let old_panel = tab.take_panel();
-        tab.put_panel(old_panel.split_surface_with_terminal(direction, new_surface_id, new_terminal));
+        self.tabs[active].split_focused_surface(direction, new_surface_id, new_terminal);
         Ok(())
     }
 
@@ -237,14 +200,8 @@ impl Pane {
     ) -> anyhow::Result<()> {
         let new_terminal = Terminal::new_with_shell_args_cwd(cols, rows, shell, shell_args, new_surface_id, waker, working_dir)?;
         for tab in &mut self.tabs {
-            let has_target = tab.panel_if_initialized()
-                .map(|p| p.find_terminal(target_surface_id).is_some())
-                .unwrap_or(false);
-            if has_target {
-                let old_panel = tab.take_panel();
-                tab.put_panel(old_panel.split_surface_by_id_with_terminal(
-                    target_surface_id, direction, new_surface_id, new_terminal,
-                ));
+            if tab.surface().find_terminal(target_surface_id).is_some() {
+                tab.split_surface_by_id(target_surface_id, direction, new_surface_id, new_terminal);
                 return Ok(());
             }
         }
@@ -289,31 +246,29 @@ impl Pane {
         }
     }
 
-    /// Get the focused terminal (follows through Panel -> SurfaceGroup).
+    /// Get the focused terminal (follows through Surface -> SurfaceGroup).
     pub fn active_terminal(&self) -> Option<&Terminal> {
-        self.active_panel()?.focused_terminal()
+        let tab = self.tabs.get(self.active_tab.min(self.tabs.len().saturating_sub(1)))?;
+        tab.surface().focused_terminal()
     }
 
     /// Get the focused terminal (mutable).
     pub fn active_terminal_mut(&mut self) -> Option<&mut Terminal> {
-        self.active_panel_mut()?.focused_terminal_mut()
+        let idx = self.active_tab.min(self.tabs.len().saturating_sub(1));
+        let tab = self.tabs.get_mut(idx)?;
+        tab.surface_mut().focused_terminal_mut()
     }
 
     /// Check if any tab in this pane contains the given surface ID.
     pub fn contains_surface(&self, surface_id: SurfaceId) -> bool {
-        self.tabs.iter().any(|tab| {
-            tab.panel_if_initialized()
-                .is_some_and(|p| p.contains_surface(surface_id))
-        })
+        self.tabs.iter().any(|tab| tab.surface().contains_surface(surface_id))
     }
 
     /// Find a terminal by surface ID across all tabs (immutable).
     pub fn find_terminal(&self, surface_id: SurfaceId) -> Option<&Terminal> {
         for tab in &self.tabs {
-            if let Some(panel) = tab.panel_if_initialized() {
-                if let Some(t) = panel.find_terminal(surface_id) {
-                    return Some(t);
-                }
+            if let Some(t) = tab.surface().find_terminal(surface_id) {
+                return Some(t);
             }
         }
         None
@@ -322,7 +277,7 @@ impl Pane {
     /// Find a terminal by surface ID across all tabs (mutable).
     pub fn find_terminal_mut(&mut self, surface_id: SurfaceId) -> Option<&mut Terminal> {
         for tab in &mut self.tabs {
-            if let Some(t) = tab.panel_mut_if_initialized().and_then(|p| p.find_terminal_mut(surface_id)) {
+            if let Some(t) = tab.surface_mut().find_terminal_mut(surface_id) {
                 return Some(t);
             }
         }
@@ -387,9 +342,7 @@ impl Pane {
     pub fn all_terminals_mut(&mut self) -> Vec<&mut Terminal> {
         let mut result = Vec::new();
         for tab in &mut self.tabs {
-            if let Some(panel) = tab.panel_mut_if_initialized() {
-                panel.collect_terminals_mut(&mut result);
-            }
+            tab.surface_mut().collect_terminals_mut(&mut result);
         }
         result
     }

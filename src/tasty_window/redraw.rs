@@ -1,6 +1,5 @@
 use winit::event_loop::ActiveEventLoop;
 
-use crate::model::Surface;
 use super::TastyWindow;
 
 impl TastyWindow {
@@ -282,11 +281,9 @@ impl TastyWindow {
                         // Close
                         if let Some(pane) = self.state.active_workspace().pane_layout().find_pane(pane_id) {
                             if let Some(tab) = pane.tabs.get(tab_index) {
-                                if let Some(panel) = tab.panel_if_initialized() {
-                                    let ids = panel.all_surface_ids();
-                                    if let Some(&sid) = ids.first() {
-                                        self.state.close_surface_by_id(sid);
-                                    }
+                                let ids = tab.surface().all_surface_ids();
+                                if let Some(&sid) = ids.first() {
+                                    self.state.close_surface_by_id(sid);
                                 }
                             }
                         }

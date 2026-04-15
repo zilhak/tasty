@@ -1,6 +1,6 @@
 use tasty_terminal::Terminal;
 use super::{
-    DividerInfo, Pane, PaneId, PanelBehavior, Rect, SplitDirection, SurfaceId,
+    DividerInfo, Pane, PaneId, Rect, SplitDirection, SurfaceId,
 };
 
 /// Directional focus movement.
@@ -264,9 +264,7 @@ impl PaneNode {
         match self {
             PaneNode::Leaf(pane) => {
                 for tab in &mut pane.tabs {
-                    if let Some(panel) = tab.panel_mut_if_initialized() {
-                        panel.for_each_terminal_mut(f);
-                    }
+                    tab.surface_mut().for_each_terminal_mut(f);
                 }
             }
             PaneNode::Split { first, second, .. } => {

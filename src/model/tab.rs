@@ -173,21 +173,67 @@ impl Tab {
         self.panel_opt.as_mut().expect("BUG: panel accessed during structural mutation (between take/put)")
     }
 
-    /// Take ownership of the panel for structural mutations.
-    #[track_caller]
-    pub(crate) fn take_panel(&mut self) -> Panel {
-        self.panel_opt.take().expect("BUG: panel already taken")
-    }
-
-    /// Put the panel back after structural mutations.
-    pub(crate) fn put_panel(&mut self, panel: Panel) {
-        self.panel_opt = Some(panel);
-    }
-
     /// Replace the surface (drops both panel_opt and surface_opt, sets surface_opt).
     pub fn put_surface(&mut self, surface: Box<dyn Surface>) {
         self.panel_opt = None;
         self.surface_opt = Some(surface);
+    }
+
+    /// Split the focused surface within this tab. Creates a SurfaceGroup if needed.
+    /// Moves focus to the new surface.
+    pub fn split_focused_surface(
+        &mut self,
+        direction: super::SplitDirection,
+        new_surface_id: super::SurfaceId,
+        new_terminal: tasty_terminal::Terminal,
+    ) {
+        // Case 1: Already a SurfaceGroup — add to it
+        if self.surface_mut().as_surface_group_mut().is_some() {
+            let new_node = super::TerminalSurface { id: new_surface_id, terminal: new_terminal, deferred_spawn: None };
+            let group = self.surface_mut().as_surface_group_mut().unwrap();
+            let target = group.focused_surface;
+            let old_layout = group.take_layout();
+            let (new_layout, _) = old_layout.split_with_node(target, direction, new_node);
+            group.put_layout(new_layout);
+            group.focused_surface = new_surface_id;
+            return;
+        }
+
+        // Case 2: Single TerminalSurface → wrap into SurfaceGroup via Panel bridge
+        if self.panel_opt.is_some() {
+            let old_panel = self.panel_opt.take().unwrap();
+            let new_panel = old_panel.split_surface_with_terminal(direction, new_surface_id, new_terminal);
+            self.panel_opt = Some(new_panel);
+        }
+    }
+
+    /// Split a specific surface by ID. Does NOT change focused_surface.
+    pub fn split_surface_by_id(
+        &mut self,
+        target_surface_id: super::SurfaceId,
+        direction: super::SplitDirection,
+        new_surface_id: super::SurfaceId,
+        new_terminal: tasty_terminal::Terminal,
+    ) -> bool {
+        // Already a SurfaceGroup — add to it
+        if self.surface_mut().as_surface_group_mut().is_some() {
+            let new_node = super::TerminalSurface { id: new_surface_id, terminal: new_terminal, deferred_spawn: None };
+            let group = self.surface_mut().as_surface_group_mut().unwrap();
+            let old_layout = group.take_layout();
+            let (new_layout, remaining) = old_layout.split_with_node(target_surface_id, direction, new_node);
+            group.put_layout(new_layout);
+            return remaining.is_none();
+        }
+
+        // Single terminal — use Panel bridge
+        if self.panel_opt.is_some() {
+            let old_panel = self.panel_opt.take().unwrap();
+            let new_panel = old_panel.split_surface_by_id_with_terminal(target_surface_id, direction, new_surface_id, new_terminal);
+            self.panel_opt = Some(new_panel);
+            return true;
+        }
+
+        false
     }
 
     /// Produce a JSON tree representation of this tab.

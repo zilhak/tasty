@@ -277,8 +277,8 @@ impl GpuState {
                     width: pane_rect.width,
                     height: (pane_rect.height - tab_bar_h).max(1.0),
                 };
-                if let Some(panel) = pane.active_panel() {
-                    if let Some(group) = panel.as_surface_group() {
+                if let Some(tab) = pane.tabs.get(pane.active_tab) {
+                    if let Some(group) = tab.surface().as_surface_group() {
                         dividers.extend(group.layout().collect_dividers(content_rect));
                     }
                 }

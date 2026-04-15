@@ -1,5 +1,4 @@
 use crate::i18n::t;
-use crate::model::PanelBehavior;
 use crate::state::AppState;
 use crate::theme;
 use crate::ui::popup::{self, PopupAction, PopupContent, PopupId, PopupScope};
@@ -245,14 +244,10 @@ impl PopupContent for ConvertSurfacePopup {
 fn current_surface_type(state: &AppState, surface_id: u32) -> Option<&'static str> {
     for ws in &state.engine.workspaces {
         for &pid in &ws.pane_layout().all_pane_ids() {
-            if let Some(pane) = ws.pane_layout().find_pane(pid)
-                && let Some(tab) = pane.tabs.iter().find(|tab| {
-                    tab.panel_if_initialized()
-                        .is_some_and(|p| p.contains_surface(surface_id))
-                })
-                && let Some(panel) = tab.panel_if_initialized()
-            {
-                return Some(panel.type_name());
+            if let Some(pane) = ws.pane_layout().find_pane(pid) {
+                if let Some(tab) = pane.tabs.iter().find(|tab| tab.surface().contains_surface(surface_id)) {
+                    return Some(tab.surface().type_name());
+                }
             }
         }
     }

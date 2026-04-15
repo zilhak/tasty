@@ -150,7 +150,7 @@ fn focus_surface_changes_pane_focus() {
         let pane = ws.pane_layout_mut().find_pane_mut(first_pane_id).unwrap();
         let mut sid = 0u32;
         for tab in &mut pane.tabs {
-            tab.panel_mut().for_each_terminal_mut(&mut |id, _| {
+            tab.surface_mut().for_each_terminal_mut(&mut |id, _| {
                 sid = id;
             });
         }
