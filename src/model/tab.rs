@@ -183,6 +183,12 @@ impl Tab {
     pub(crate) fn put_panel(&mut self, panel: Panel) {
         self.panel_opt = Some(panel);
     }
+
+    /// Replace the surface (drops both panel_opt and surface_opt, sets surface_opt).
+    pub fn put_surface(&mut self, surface: Box<dyn Surface>) {
+        self.panel_opt = None;
+        self.surface_opt = Some(surface);
+    }
 }
 
 /// Implement Surface for Panel enum (legacy bridge).

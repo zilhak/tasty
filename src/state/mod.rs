@@ -12,7 +12,6 @@ mod restore;
 mod tests;
 
 use crate::engine_state::EngineState;
-use crate::model::PanelBehavior;
 use crate::settings_ui::SettingsUiState;
 use tasty_terminal::{Terminal, TerminalEvent, Waker};
 
@@ -221,8 +220,8 @@ impl AppState {
     /// Get the focused surface ID (the terminal that currently receives input).
     pub fn focused_surface_id(&self) -> Option<u32> {
         let pane = self.focused_pane()?;
-        let panel = pane.active_panel()?;
-        panel.focused_surface_id()
+        let tab = pane.tabs.get(pane.active_tab)?;
+        tab.surface().focused_surface_id()
     }
 
     /// Record that the user typed on the given surface (updates last_key_input timestamp).
@@ -253,15 +252,16 @@ impl AppState {
         if let Some(cwd) = self.focused_terminal().and_then(|t| t.get_cwd()) {
             return Some(cwd);
         }
-        // Fall back to panel-specific paths (Explorer, Markdown, etc.)
-        let panel = self.focused_pane()?.active_panel()?;
-        match panel {
-            crate::model::Panel::Explorer(exp) => Some(std::path::PathBuf::from(&exp.root_path)),
-            crate::model::Panel::Markdown(md) => {
-                std::path::Path::new(&md.file_path).parent().map(|p| p.to_path_buf())
-            }
-            _ => None,
+        // Fall back to surface-specific paths (Explorer, Markdown, etc.)
+        let pane = self.focused_pane()?;
+        let surface = pane.tabs.get(pane.active_tab)?.surface();
+        if let Some(exp) = surface.as_explorer() {
+            return Some(std::path::PathBuf::from(&exp.root_path));
         }
+        if let Some(md) = surface.as_markdown() {
+            return std::path::Path::new(&md.file_path).parent().map(|p| p.to_path_buf());
+        }
+        None
     }
 
     /// Get the working directory to inherit from a specific surface, if enabled.
@@ -289,10 +289,8 @@ impl AppState {
             for pid in pane_ids {
                 if let Some(pane) = workspace.pane_layout().find_pane(pid) {
                     for tab in &pane.tabs {
-                        if let Some(panel) = tab.panel_if_initialized() {
-                            if panel.contains_surface(surface_id) {
-                                return Some(pid);
-                            }
+                        if tab.surface().contains_surface(surface_id) {
+                            return Some(pid);
                         }
                     }
                 }
@@ -350,12 +348,9 @@ impl AppState {
         for (i, workspace) in self.engine.workspaces.iter().enumerate() {
             for pid in workspace.pane_layout().all_pane_ids() {
                 if let Some(pane) = workspace.pane_layout().find_pane(pid) {
-                    // Check all tabs for this surface (all panel types)
                     for tab in &pane.tabs {
-                        if let Some(panel) = tab.panel_if_initialized() {
-                            if panel.contains_surface(surface_id) {
-                                return Some((i, pid));
-                            }
+                        if tab.surface().contains_surface(surface_id) {
+                            return Some((i, pid));
                         }
                     }
                 }

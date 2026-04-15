@@ -56,8 +56,8 @@ pub fn handle_tab_create(state: &mut AppState, id: serde_json::Value, params: &s
                 None => return JsonRpcResponse::invalid_params(id, "Missing 'file' parameter for markdown type"),
             };
             let name = file_path.split(['/', '\\']).last().unwrap_or("Markdown").to_string();
-            let panel = crate::model::Panel::Markdown(crate::model::MarkdownPanel::new(panel_id, file_path));
-            state.add_panel_tab_to_pane(pane_id, name, panel);
+            let surface: Box<dyn crate::model::Surface> = Box::new(crate::model::MarkdownPanel::new(panel_id, file_path));
+            state.add_surface_tab_to_pane(pane_id, name, surface);
             Ok(())
         }
         "html" => {
@@ -65,8 +65,8 @@ pub fn handle_tab_create(state: &mut AppState, id: serde_json::Value, params: &s
                 Some(u) => u.to_string(),
                 None => return JsonRpcResponse::invalid_params(id, "Missing 'url' parameter for html type"),
             };
-            let panel = crate::model::Panel::Html(crate::model::HtmlPanel::new(panel_id, url));
-            state.add_panel_tab_to_pane(pane_id, "HTML".to_string(), panel);
+            let surface: Box<dyn crate::model::Surface> = Box::new(crate::model::HtmlPanel::new(panel_id, url));
+            state.add_surface_tab_to_pane(pane_id, "HTML".to_string(), surface);
             Ok(())
         }
         "explorer" => {
@@ -78,8 +78,8 @@ pub fn handle_tab_create(state: &mut AppState, id: serde_json::Value, params: &s
                         .unwrap_or_else(|| ".".to_string())
                 });
             let name = path.split(['/', '\\']).last().unwrap_or("Explorer").to_string();
-            let panel = crate::model::Panel::Explorer(crate::model::ExplorerPanel::new(panel_id, path));
-            state.add_panel_tab_to_pane(pane_id, name, panel);
+            let surface: Box<dyn crate::model::Surface> = Box::new(crate::model::ExplorerPanel::new(panel_id, path));
+            state.add_surface_tab_to_pane(pane_id, name, surface);
             Ok(())
         }
         "terminal" | _ => {

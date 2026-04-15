@@ -10,8 +10,8 @@ impl AppState {
 
         // Try to move within a SurfaceGroup first
         if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
-            if let Some(panel) = pane.active_panel_mut() {
-                if let Some(group) = panel.as_surface_group_mut() {
+            if let Some(tab) = pane.active_tab_mut() {
+                if let Some(group) = tab.surface_mut().as_surface_group_mut() {
                     if group.layout().all_surface_ids().len() > 1 {
                         group.move_focus_forward();
                         return;
@@ -32,8 +32,8 @@ impl AppState {
 
         // Try to move within a SurfaceGroup first
         if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
-            if let Some(panel) = pane.active_panel_mut() {
-                if let Some(group) = panel.as_surface_group_mut() {
+            if let Some(tab) = pane.active_tab_mut() {
+                if let Some(group) = tab.surface_mut().as_surface_group_mut() {
                     if group.layout().all_surface_ids().len() > 1 {
                         group.move_focus_backward();
                         return;
@@ -55,8 +55,8 @@ impl AppState {
 
         // Try to move within a SurfaceGroup first
         if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
-            if let Some(panel) = pane.active_panel_mut() {
-                if let Some(group) = panel.as_surface_group_mut() {
+            if let Some(tab) = pane.active_tab_mut() {
+                if let Some(group) = tab.surface_mut().as_surface_group_mut() {
                     if let Some(new_surface_id) = group.directional_focus(direction) {
                         group.focused_surface = new_surface_id;
                         return;
@@ -90,8 +90,8 @@ impl AppState {
         let ws = self.active_workspace_mut();
         let pane_id = ws.focused_pane;
         if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
-            if let Some(panel) = pane.active_panel_mut() {
-                if let Some(group) = panel.as_surface_group_mut() {
+            if let Some(tab) = pane.active_tab_mut() {
+                if let Some(group) = tab.surface_mut().as_surface_group_mut() {
                     group.move_focus_forward();
                 }
             }
@@ -104,8 +104,8 @@ impl AppState {
         let ws = self.active_workspace_mut();
         let pane_id = ws.focused_pane;
         if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
-            if let Some(panel) = pane.active_panel_mut() {
-                if let Some(group) = panel.as_surface_group_mut() {
+            if let Some(tab) = pane.active_tab_mut() {
+                if let Some(group) = tab.surface_mut().as_surface_group_mut() {
                     group.move_focus_backward();
                 }
             }
@@ -146,10 +146,10 @@ impl AppState {
         // Focus the pane.
         let ws = self.active_workspace_mut();
         ws.focused_pane = pane_id;
-        // If the active panel for that pane is a SurfaceGroup, focus the surface within it.
+        // If the active tab's surface is a SurfaceGroup, focus the surface within it.
         if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
-            if let Some(panel) = pane.active_panel_mut() {
-                if let Some(group) = panel.as_surface_group_mut() {
+            if let Some(tab) = pane.active_tab_mut() {
+                if let Some(group) = tab.surface_mut().as_surface_group_mut() {
                     if group.layout().find_terminal(surface_id).is_some() {
                         group.focused_surface = surface_id;
                     }
@@ -211,12 +211,12 @@ impl AppState {
             None => return false,
         };
 
-        let panel = match pane.active_panel_mut() {
-            Some(p) => p,
+        let tab = match pane.active_tab_mut() {
+            Some(t) => t,
             None => return false,
         };
 
-        if let Some(group) = panel.as_surface_group_mut() {
+        if let Some(group) = tab.surface_mut().as_surface_group_mut() {
             if let Some(surface_id) = group.layout().find_surface_at(x, y, content_rect) {
                 if group.focused_surface != surface_id {
                     group.focused_surface = surface_id;

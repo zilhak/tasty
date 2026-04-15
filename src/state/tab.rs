@@ -1,4 +1,3 @@
-use crate::model::PanelBehavior;
 use super::AppState;
 
 impl AppState {
@@ -44,11 +43,11 @@ impl AppState {
     /// Add a Markdown viewer tab in the focused pane.
     pub fn add_markdown_tab(&mut self, file_path: String) -> anyhow::Result<()> {
         let tab_id = self.engine.next_ids.next_tab();
-        let panel_id = self.engine.next_ids.next_surface();
+        let surface_id = self.engine.next_ids.next_surface();
         let name = file_path.split(['/', '\\']).last().unwrap_or("Markdown").to_string();
-        let panel = crate::model::Panel::Markdown(crate::model::MarkdownPanel::new(panel_id, file_path));
+        let surface: Box<dyn crate::model::Surface> = Box::new(crate::model::MarkdownPanel::new(surface_id, file_path));
         if let Some(pane) = self.focused_pane_mut() {
-            pane.add_panel_tab(tab_id, name, panel);
+            pane.add_surface_tab(tab_id, name, surface);
         }
         Ok(())
     }
@@ -56,11 +55,11 @@ impl AppState {
     /// Add a file explorer tab in the focused pane.
     pub fn add_explorer_tab(&mut self, root_path: String) -> anyhow::Result<()> {
         let tab_id = self.engine.next_ids.next_tab();
-        let panel_id = self.engine.next_ids.next_surface();
+        let surface_id = self.engine.next_ids.next_surface();
         let name = root_path.split(['/', '\\']).last().unwrap_or("Explorer").to_string();
-        let panel = crate::model::Panel::Explorer(crate::model::ExplorerPanel::new(panel_id, root_path));
+        let surface: Box<dyn crate::model::Surface> = Box::new(crate::model::ExplorerPanel::new(surface_id, root_path));
         if let Some(pane) = self.focused_pane_mut() {
-            pane.add_panel_tab(tab_id, name, panel);
+            pane.add_surface_tab(tab_id, name, surface);
         }
         Ok(())
     }
@@ -68,10 +67,10 @@ impl AppState {
     /// Add an HTML viewer tab in the focused pane.
     pub fn add_html_tab(&mut self, url: String) -> anyhow::Result<()> {
         let tab_id = self.engine.next_ids.next_tab();
-        let panel_id = self.engine.next_ids.next_surface();
-        let panel = crate::model::Panel::Html(crate::model::HtmlPanel::new(panel_id, url));
+        let surface_id = self.engine.next_ids.next_surface();
+        let surface: Box<dyn crate::model::Surface> = Box::new(crate::model::HtmlPanel::new(surface_id, url));
         if let Some(pane) = self.focused_pane_mut() {
-            pane.add_panel_tab(tab_id, "HTML".to_string(), panel);
+            pane.add_surface_tab(tab_id, "HTML".to_string(), surface);
         }
         Ok(())
     }
@@ -79,11 +78,11 @@ impl AppState {
     /// Add an empty placeholder tab in the focused pane. Returns (tab_id, surface_id).
     pub fn add_empty_tab(&mut self) -> Option<(u32, u32)> {
         let tab_id = self.engine.next_ids.next_tab();
-        let panel_id = self.engine.next_ids.next_surface();
-        let panel = crate::model::Panel::Empty { id: panel_id };
+        let surface_id = self.engine.next_ids.next_surface();
+        let surface: Box<dyn crate::model::Surface> = Box::new(crate::model::EmptySurface::new(surface_id));
         if let Some(pane) = self.focused_pane_mut() {
-            pane.add_panel_tab(tab_id, "Empty".to_string(), panel);
-            Some((tab_id, panel_id))
+            pane.add_surface_tab(tab_id, "Empty".to_string(), surface);
+            Some((tab_id, surface_id))
         } else {
             None
         }
@@ -128,6 +127,14 @@ impl AppState {
         }
     }
 
+    /// Add a tab with a Surface trait object in the specified pane (by ID, cross-workspace).
+    pub fn add_surface_tab_to_pane(&mut self, pane_id: u32, name: String, surface: Box<dyn crate::model::Surface>) {
+        let tab_id = self.engine.next_ids.next_tab();
+        if let Some(pane) = self.find_pane_by_id_mut(pane_id) {
+            pane.add_surface_tab(tab_id, name, surface);
+        }
+    }
+
     /// Close a specific tab by its TabId (cross-workspace). Returns true if closed.
     pub fn close_tab_by_tab_id(&mut self, tab_id: u32) -> bool {
         // Find the tab and collect surface IDs for cleanup
@@ -138,7 +145,7 @@ impl AppState {
                 if let Some(pane) = workspace.pane_layout_mut().find_pane_mut(pid) {
                     if let Some(tab_idx) = pane.tabs.iter().position(|t| t.id == tab_id) {
                         if let Some(tab) = pane.tabs.get_mut(tab_idx) {
-                            tab.panel_mut().for_each_terminal_mut(&mut |sid, _| {
+                            tab.surface_mut().for_each_terminal_mut(&mut |sid, _| {
                                 surface_ids.push(sid);
                             });
                         }
@@ -208,7 +215,7 @@ impl AppState {
         if let Some(pane) = self.focused_pane_mut() {
             let active = pane.active_tab;
             if let Some(tab) = pane.tabs.get_mut(active) {
-                tab.panel_mut().for_each_terminal_mut(&mut |sid, _| {
+                tab.surface_mut().for_each_terminal_mut(&mut |sid, _| {
                     surface_ids.push(sid);
                 });
             }
@@ -246,20 +253,20 @@ impl AppState {
             terminal,
             deferred_spawn: None,
         };
-        let panel = crate::model::Panel::Terminal(node);
+        let surface: Box<dyn crate::model::Surface> = Box::new(node);
 
-        self.replace_panel_for_surface(surface_id, panel, None)
+        self.replace_surface_for_id(surface_id, surface, None)
     }
 
     /// Convert a surface to Markdown type.
     pub fn convert_surface_to_markdown(&mut self, surface_id: u32, file_path: String) -> bool {
-        let panel = crate::model::Panel::Markdown(
+        let surface: Box<dyn crate::model::Surface> = Box::new(
             crate::model::MarkdownPanel::new(surface_id, file_path.clone()),
         );
         let name = std::path::Path::new(&file_path)
             .file_name()
             .map(|f| f.to_string_lossy().to_string());
-        self.replace_panel_for_surface(surface_id, panel, name)
+        self.replace_surface_for_id(surface_id, surface, name)
     }
 
     /// Convert a surface to Explorer type.
@@ -271,43 +278,38 @@ impl AppState {
                     .map(|d| d.home_dir().to_string_lossy().to_string())
             })
             .unwrap_or_else(|| ".".to_string());
-        let panel = crate::model::Panel::Explorer(
+        let surface: Box<dyn crate::model::Surface> = Box::new(
             crate::model::ExplorerPanel::new(surface_id, root),
         );
-        self.replace_panel_for_surface(surface_id, panel, Some("Explorer".to_string()))
+        self.replace_surface_for_id(surface_id, surface, Some("Explorer".to_string()))
     }
 
     /// Convert a surface to Html type.
     pub fn convert_surface_to_html(&mut self, surface_id: u32, url: String) -> bool {
-        let panel = crate::model::Panel::Html(
+        let surface: Box<dyn crate::model::Surface> = Box::new(
             crate::model::HtmlPanel::new(surface_id, url),
         );
-        self.replace_panel_for_surface(surface_id, panel, Some("HTML".to_string()))
+        self.replace_surface_for_id(surface_id, surface, Some("HTML".to_string()))
     }
 
-    /// Replace the panel of the tab containing the given surface_id.
+    /// Replace the surface of the tab containing the given surface_id.
     /// Returns true if the replacement succeeded.
-    fn replace_panel_for_surface(
+    fn replace_surface_for_id(
         &mut self,
         surface_id: u32,
-        new_panel: crate::model::Panel,
+        new_surface: Box<dyn crate::model::Surface>,
         new_name: Option<String>,
     ) -> bool {
         for workspace in &mut self.engine.workspaces {
             for &pid in &workspace.pane_layout().all_pane_ids() {
                 if let Some(pane) = workspace.pane_layout_mut().find_pane_mut(pid) {
                     for tab in &mut pane.tabs {
-                        if let Some(panel) = tab.panel_mut_if_initialized() {
-                            if panel.contains_surface(surface_id) {
-                                let old_panel = tab.take_panel();
-                                // Drop old panel (PTY cleanup happens automatically)
-                                drop(old_panel);
-                                tab.put_panel(new_panel);
-                                if let Some(name) = new_name {
-                                    tab.explicit_name = Some(name);
-                                }
-                                return true;
+                        if tab.surface().contains_surface(surface_id) {
+                            tab.put_surface(new_surface);
+                            if let Some(name) = new_name {
+                                tab.explicit_name = Some(name);
                             }
+                            return true;
                         }
                     }
                 }
@@ -316,9 +318,10 @@ impl AppState {
         false
     }
 
-    /// Get the current panel type name for the focused surface.
+    /// Get the current surface type name for the focused surface.
     pub fn focused_panel_type_name(&self) -> Option<&'static str> {
         let pane = self.focused_pane()?;
-        Some(pane.active_panel()?.type_name())
+        let tab = pane.tabs.get(pane.active_tab)?;
+        Some(tab.surface().type_name())
     }
 }

@@ -1,6 +1,6 @@
 use egui::emath::GuiRounding as _;
 
-use crate::model::{PanelBehavior, Rect};
+use crate::model::Rect;
 use crate::state::AppState;
 use crate::theme;
 
@@ -30,11 +30,11 @@ pub fn draw_egui_panels(
                 Some(p) => p,
                 None => continue,
             };
-            let panel = match pane.active_panel() {
-                Some(p) => p,
+            let tab = match pane.tabs.get(pane.active_tab) {
+                Some(t) => t,
                 None => continue,
             };
-            if panel.has_terminal() {
+            if tab.surface().has_terminal() {
                 continue;
             }
             let tab_bar_h = state.tab_bar_height;
@@ -63,106 +63,100 @@ pub fn draw_egui_panels(
             None => continue,
         };
 
-        match tab.panel_mut() {
-            crate::model::Panel::Markdown(md_panel) => {
-                // Keyboard scrolling for Markdown panels
-                let scroll_line = 24.0;
-                let scroll_page = info.logical_h * 0.8;
-                let key_scroll_y = ctx.input(|i| {
-                    let mut dy = 0.0;
-                    if i.key_pressed(egui::Key::ArrowUp) { dy += scroll_line; }
-                    if i.key_pressed(egui::Key::ArrowDown) { dy -= scroll_line; }
-                    if i.key_pressed(egui::Key::PageUp) { dy += scroll_page; }
-                    if i.key_pressed(egui::Key::PageDown) { dy -= scroll_page; }
-                    dy
-                });
+        let surface = tab.surface_mut();
+        if let Some(md_panel) = surface.as_markdown_mut() {
+            // Keyboard scrolling for Markdown panels
+            let scroll_line = 24.0;
+            let scroll_page = info.logical_h * 0.8;
+            let key_scroll_y = ctx.input(|i| {
+                let mut dy = 0.0;
+                if i.key_pressed(egui::Key::ArrowUp) { dy += scroll_line; }
+                if i.key_pressed(egui::Key::ArrowDown) { dy -= scroll_line; }
+                if i.key_pressed(egui::Key::PageUp) { dy += scroll_page; }
+                if i.key_pressed(egui::Key::PageDown) { dy -= scroll_page; }
+                dy
+            });
 
-                egui::Area::new(egui::Id::new(format!("md_panel_{}", info.pane_id)))
-                    .fixed_pos(egui::pos2(info.logical_x, info.logical_y))
-                    .order(egui::Order::Background)
-                    .show(ctx, |ui| {
-                        ui.set_min_size(egui::vec2(info.logical_w, info.logical_h));
-                        ui.set_max_size(egui::vec2(info.logical_w, info.logical_h));
-                        egui::Frame::new()
-                            .fill(th.crust)
-                            .inner_margin(egui::Margin::same(8))
-                            .show(ui, |ui| {
-                                if key_scroll_y != 0.0 {
-                                    ui.scroll_with_delta(egui::vec2(0.0, key_scroll_y));
-                                }
-                                egui::ScrollArea::vertical()
-                                    .id_salt(format!("md_scroll_{}", info.pane_id))
-                                    .show(ui, |ui| {
-                                        let content = md_panel.content.clone();
-                                        crate::markdown_ui::render_markdown(ui, &content);
-                                    });
-                            });
-                    });
-            }
-            crate::model::Panel::Explorer(exp_panel) => {
-                egui::Area::new(egui::Id::new(format!("explorer_{}", info.pane_id)))
-                    .fixed_pos(egui::pos2(info.logical_x, info.logical_y))
-                    .order(egui::Order::Background)
-                    .show(ctx, |ui| {
-                        ui.set_min_size(egui::vec2(info.logical_w, info.logical_h));
-                        ui.set_max_size(egui::vec2(info.logical_w, info.logical_h));
-                        egui::Frame::new()
-                            .fill(th.crust)
-                            .inner_margin(egui::Margin::same(4))
-                            .show(ui, |ui| {
-                                if let Some(act) = crate::explorer_ui::draw_explorer(ui, exp_panel) {
-                                    pending_explorer_action = Some((info.pane_id, act));
-                                }
-                            });
-                    });
-            }
-            crate::model::Panel::Html(html_panel) => {
-                // Draw a placeholder background behind the native WebView.
-                // Visible when the WebView is temporarily hidden (e.g. during overlay display).
-                egui::Area::new(egui::Id::new(format!("html_panel_{}", info.pane_id)))
-                    .fixed_pos(egui::pos2(info.logical_x, info.logical_y))
-                    .order(egui::Order::Background)
-                    .show(ctx, |ui| {
-                        ui.set_min_size(egui::vec2(info.logical_w, info.logical_h));
-                        ui.set_max_size(egui::vec2(info.logical_w, info.logical_h));
-                        egui::Frame::new()
-                            .fill(th.crust)
-                            .show(ui, |ui| {
-                                ui.centered_and_justified(|ui| {
-                                    ui.label(
-                                        egui::RichText::new(&html_panel.url)
-                                            .color(th.overlay0)
-                                            .size(th.font_size_body),
-                                    );
+            egui::Area::new(egui::Id::new(format!("md_panel_{}", info.pane_id)))
+                .fixed_pos(egui::pos2(info.logical_x, info.logical_y))
+                .order(egui::Order::Background)
+                .show(ctx, |ui| {
+                    ui.set_min_size(egui::vec2(info.logical_w, info.logical_h));
+                    ui.set_max_size(egui::vec2(info.logical_w, info.logical_h));
+                    egui::Frame::new()
+                        .fill(th.crust)
+                        .inner_margin(egui::Margin::same(8))
+                        .show(ui, |ui| {
+                            if key_scroll_y != 0.0 {
+                                ui.scroll_with_delta(egui::vec2(0.0, key_scroll_y));
+                            }
+                            egui::ScrollArea::vertical()
+                                .id_salt(format!("md_scroll_{}", info.pane_id))
+                                .show(ui, |ui| {
+                                    let content = md_panel.content.clone();
+                                    crate::markdown_ui::render_markdown(ui, &content);
                                 });
+                        });
+                });
+        } else if let Some(exp_panel) = surface.as_explorer_mut() {
+            egui::Area::new(egui::Id::new(format!("explorer_{}", info.pane_id)))
+                .fixed_pos(egui::pos2(info.logical_x, info.logical_y))
+                .order(egui::Order::Background)
+                .show(ctx, |ui| {
+                    ui.set_min_size(egui::vec2(info.logical_w, info.logical_h));
+                    ui.set_max_size(egui::vec2(info.logical_w, info.logical_h));
+                    egui::Frame::new()
+                        .fill(th.crust)
+                        .inner_margin(egui::Margin::same(4))
+                        .show(ui, |ui| {
+                            if let Some(act) = crate::explorer_ui::draw_explorer(ui, exp_panel) {
+                                pending_explorer_action = Some((info.pane_id, act));
+                            }
+                        });
+                });
+        } else if let Some(html_panel) = surface.as_html() {
+            let url = html_panel.url.clone();
+            egui::Area::new(egui::Id::new(format!("html_panel_{}", info.pane_id)))
+                .fixed_pos(egui::pos2(info.logical_x, info.logical_y))
+                .order(egui::Order::Background)
+                .show(ctx, |ui| {
+                    ui.set_min_size(egui::vec2(info.logical_w, info.logical_h));
+                    ui.set_max_size(egui::vec2(info.logical_w, info.logical_h));
+                    egui::Frame::new()
+                        .fill(th.crust)
+                        .show(ui, |ui| {
+                            ui.centered_and_justified(|ui| {
+                                ui.label(
+                                    egui::RichText::new(&url)
+                                        .color(th.overlay0)
+                                        .size(th.font_size_body),
+                                );
                             });
-                    });
-            }
-            crate::model::Panel::Empty { id: surface_id } => {
-                let sid = *surface_id;
-                egui::Area::new(egui::Id::new(format!("empty_panel_{}", info.pane_id)))
-                    .fixed_pos(egui::pos2(info.logical_x, info.logical_y))
-                    .order(egui::Order::Background)
-                    .show(ctx, |ui| {
-                        ui.set_min_size(egui::vec2(info.logical_w, info.logical_h));
-                        ui.set_max_size(egui::vec2(info.logical_w, info.logical_h));
-                        egui::Frame::new()
-                            .fill(th.crust)
-                            .show(ui, |ui| {
-                                ui.centered_and_justified(|ui| {
-                                    let btn = ui.button(
-                                        egui::RichText::new(crate::i18n::t("convert_popup.title"))
-                                            .size(th.font_size_body)
-                                            .color(th.text),
-                                    );
-                                    if btn.clicked() {
-                                        pending_empty_convert = Some(sid);
-                                    }
-                                });
+                        });
+                });
+        } else if let Some(empty) = surface.as_empty_surface() {
+            let sid = empty.id;
+            egui::Area::new(egui::Id::new(format!("empty_panel_{}", info.pane_id)))
+                .fixed_pos(egui::pos2(info.logical_x, info.logical_y))
+                .order(egui::Order::Background)
+                .show(ctx, |ui| {
+                    ui.set_min_size(egui::vec2(info.logical_w, info.logical_h));
+                    ui.set_max_size(egui::vec2(info.logical_w, info.logical_h));
+                    egui::Frame::new()
+                        .fill(th.crust)
+                        .show(ui, |ui| {
+                            ui.centered_and_justified(|ui| {
+                                let btn = ui.button(
+                                    egui::RichText::new(crate::i18n::t("convert_popup.title"))
+                                        .size(th.font_size_body)
+                                        .color(th.text),
+                                );
+                                if btn.clicked() {
+                                    pending_empty_convert = Some(sid);
+                                }
                             });
-                    });
-            }
-            _ => {}
+                        });
+                });
         }
     }
 

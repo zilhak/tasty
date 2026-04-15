@@ -23,11 +23,9 @@ impl AppState {
             if content_rect.contains(x, y) {
                 // Check the panel type of this pane
                 if let Some(pane) = ws.pane_layout().find_pane(*pane_id) {
-                    return Some(match pane.active_panel() {
-                        Some(crate::model::Panel::Terminal(_)) => true,
-                        Some(crate::model::Panel::SurfaceGroup(_)) => true,
-                        _ => false,
-                    });
+                    if let Some(tab) = pane.tabs.get(pane.active_tab) {
+                        return Some(tab.surface().has_terminal());
+                    }
                 }
                 return None;
             }
@@ -62,13 +60,9 @@ impl AppState {
             height: (pane_rect.height - tab_bar_h).max(1.0),
         };
 
-        let panel = pane.active_panel()?;
-        match panel {
-            crate::model::Panel::SurfaceGroup(group) => {
-                group.layout().find_divider_at(x, y, content_rect, threshold)
-            }
-            _ => None,
-        }
+        let tab = pane.tabs.get(pane.active_tab)?;
+        let group = tab.surface().as_surface_group()?;
+        group.layout().find_divider_at(x, y, content_rect, threshold)
     }
 
     /// Update a pane-level split ratio based on a divider drag.
@@ -110,16 +104,16 @@ impl AppState {
             height: (pane_rect.height - tab_bar_h).max(1.0),
         };
 
-        let panel = match pane.active_panel_mut() {
-            Some(p) => p,
+        let tab = match pane.active_tab_mut() {
+            Some(t) => t,
             None => return false,
         };
 
-        match panel {
-            crate::model::Panel::SurfaceGroup(group) => {
+        match tab.surface_mut().as_surface_group_mut() {
+            Some(group) => {
                 group.layout_mut().update_ratio_for_rect(divider.split_rect, new_ratio, content_rect)
             }
-            _ => false,
+            None => false,
         }
     }
 }

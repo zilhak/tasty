@@ -1,4 +1,4 @@
-use crate::model::{PaneId, PanelBehavior, Rect};
+use crate::model::{PaneId, Rect};
 use tasty_terminal::Terminal;
 
 use super::AppState;
@@ -38,8 +38,8 @@ impl AppState {
                     width: pane_rect.width,
                     height: (pane_rect.height - tab_bar_h).max(1.0),
                 };
-                let regions = match pane.active_panel() {
-                    Some(panel) => panel.render_regions(content_rect),
+                let regions = match pane.tabs.get(pane.active_tab) {
+                    Some(tab) => tab.surface().render_regions(content_rect),
                     None => Vec::new(),
                 };
                 result.push((pane_id, pane_rect, regions));
@@ -108,9 +108,10 @@ impl AppState {
         for (pane_id, pane_rect) in &pane_rects {
             if pane_rect.contains(x, y) {
                 if let Some(pane) = ws.pane_layout().find_pane(*pane_id) {
-                    if let Some(panel) = pane.active_panel() {
-                        if !panel.has_terminal() {
-                            return panel.focused_surface_id();
+                    if let Some(tab) = pane.tabs.get(pane.active_tab) {
+                        let surface = tab.surface();
+                        if !surface.has_terminal() {
+                            return surface.focused_surface_id();
                         }
                     }
                 }
@@ -139,9 +140,7 @@ impl AppState {
                         height: (pane_rect.height - tab_bar_h).max(1.0),
                     };
                     for tab in &mut pane.tabs {
-                        if let Some(panel) = tab.panel_mut_if_initialized() {
-                            panel.resize_all(content_rect, cell_width, cell_height);
-                        }
+                        tab.surface_mut().resize_all(content_rect, cell_width, cell_height);
                     }
                 }
             }

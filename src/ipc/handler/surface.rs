@@ -11,7 +11,7 @@ pub(crate) fn handle_surface_list(state: &AppState, id: serde_json::Value) -> Js
         for &pane_id in &ws.pane_layout().all_pane_ids() {
             if let Some(pane) = ws.pane_layout().find_pane(pane_id) {
                 for (tab_idx, tab) in pane.tabs.iter().enumerate() {
-                    collect_surface_info(tab.panel(), pane_id, ws.id, tab_idx, &mut surfaces);
+                    collect_surface_info(tab.surface(), pane_id, ws.id, tab_idx, &mut surfaces);
                 }
             }
         }
@@ -20,28 +20,25 @@ pub(crate) fn handle_surface_list(state: &AppState, id: serde_json::Value) -> Js
 }
 
 fn collect_surface_info(
-    panel: &crate::model::Panel,
+    surface: &dyn crate::model::Surface,
     pane_id: u32,
     workspace_id: u32,
     tab_idx: usize,
     out: &mut Vec<serde_json::Value>,
 ) {
-    match panel {
-        crate::model::Panel::Terminal(node) => {
-            out.push(json!({
-                "id": node.id,
-                "pane_id": pane_id,
-                "workspace_id": workspace_id,
-                "tab_index": tab_idx,
-                "cols": node.terminal.cols(),
-                "rows": node.terminal.rows(),
-            }));
-        }
-        crate::model::Panel::SurfaceGroup(group) => {
-            collect_surface_layout_info(group.layout(), pane_id, workspace_id, tab_idx, out);
-        }
-        _ => {} // Only terminal panels have listable surfaces.
+    if let Some(node) = surface.as_terminal_surface() {
+        out.push(json!({
+            "id": node.id,
+            "pane_id": pane_id,
+            "workspace_id": workspace_id,
+            "tab_index": tab_idx,
+            "cols": node.terminal.cols(),
+            "rows": node.terminal.rows(),
+        }));
+    } else if let Some(group) = surface.as_surface_group() {
+        collect_surface_layout_info(group.layout(), pane_id, workspace_id, tab_idx, out);
     }
+    // Non-terminal surfaces don't have listable surfaces.
 }
 
 fn collect_surface_layout_info(

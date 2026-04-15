@@ -1,4 +1,4 @@
-use crate::model::{PanelBehavior, SplitDirection};
+use crate::model::SplitDirection;
 
 use super::AppState;
 
@@ -29,8 +29,8 @@ impl AppState {
     /// Only terminal panels support surface-level splitting; others fall back to pane split.
     pub fn split_surface(&mut self, direction: SplitDirection) -> anyhow::Result<()> {
         let has_terminal = self.focused_pane()
-            .and_then(|p| p.active_panel())
-            .is_some_and(|panel| panel.has_terminal());
+            .and_then(|p| p.tabs.get(p.active_tab))
+            .is_some_and(|tab| tab.surface().has_terminal());
 
         if !has_terminal {
             return self.split_pane(direction);
@@ -95,10 +95,10 @@ impl AppState {
                 )?
             }
             crate::model::SurfaceType::Markdown { file } => {
-                let panel = crate::model::Panel::Markdown(
+                let surface: Box<dyn crate::model::Surface> = Box::new(
                     crate::model::MarkdownPanel::new(new_surface_id, file),
                 );
-                crate::model::Pane::new_with_panel(new_pane_id, new_tab_id, "Markdown".to_string(), panel)
+                crate::model::Pane::new_with_surface(new_pane_id, new_tab_id, "Markdown".to_string(), surface)
             }
             crate::model::SurfaceType::Explorer { path } => {
                 let root = path.unwrap_or_else(|| {
@@ -106,20 +106,22 @@ impl AppState {
                         .map(|d| d.home_dir().to_string_lossy().to_string())
                         .unwrap_or_else(|| ".".to_string())
                 });
-                let panel = crate::model::Panel::Explorer(
+                let surface: Box<dyn crate::model::Surface> = Box::new(
                     crate::model::ExplorerPanel::new(new_surface_id, root),
                 );
-                crate::model::Pane::new_with_panel(new_pane_id, new_tab_id, "Explorer".to_string(), panel)
+                crate::model::Pane::new_with_surface(new_pane_id, new_tab_id, "Explorer".to_string(), surface)
             }
             crate::model::SurfaceType::Html { url } => {
-                let panel = crate::model::Panel::Html(
+                let surface: Box<dyn crate::model::Surface> = Box::new(
                     crate::model::HtmlPanel::new(new_surface_id, url),
                 );
-                crate::model::Pane::new_with_panel(new_pane_id, new_tab_id, "HTML".to_string(), panel)
+                crate::model::Pane::new_with_surface(new_pane_id, new_tab_id, "HTML".to_string(), surface)
             }
             crate::model::SurfaceType::Empty => {
-                let panel = crate::model::Panel::Empty { id: new_surface_id };
-                crate::model::Pane::new_with_panel(new_pane_id, new_tab_id, "Empty".to_string(), panel)
+                let surface: Box<dyn crate::model::Surface> = Box::new(
+                    crate::model::EmptySurface::new(new_surface_id),
+                );
+                crate::model::Pane::new_with_surface(new_pane_id, new_tab_id, "Empty".to_string(), surface)
             }
         };
 
@@ -187,7 +189,7 @@ impl AppState {
         let mut surface_ids = Vec::new();
         if let Some(pane) = ws.pane_layout_mut().find_pane_mut(target_id) {
             for tab in &mut pane.tabs {
-                tab.panel_mut().for_each_terminal_mut(&mut |sid, _| {
+                tab.surface_mut().for_each_terminal_mut(&mut |sid, _| {
                     surface_ids.push(sid);
                 });
             }
@@ -208,26 +210,26 @@ impl AppState {
     }
 
     /// Close the focused surface. For SurfaceGroup, closes the focused surface
-    /// within the group. For other panel types (Terminal, Markdown, Explorer),
+    /// within the group. For other surface types (Terminal, Markdown, Explorer),
     /// delegates to close_surface_by_id which handles tab/pane/workspace cascading.
     pub fn close_active_surface(&mut self) -> bool {
         let surface_id;
         if let Some(pane) = self.focused_pane_mut() {
-            if let Some(panel) = pane.active_panel_mut() {
-                if let Some(group) = panel.as_surface_group_mut() {
-                    surface_id = group.focused_surface;
-                    if !group.close_surface(surface_id) {
-                        return self.close_surface_by_id(surface_id);
-                    }
-                } else {
-                    surface_id = match panel.focused_surface_id() {
-                        Some(id) => id,
-                        None => return false,
-                    };
+            let surface = match pane.active_tab_mut().map(|t| t.surface_mut()) {
+                Some(s) => s,
+                None => return false,
+            };
+            if let Some(group) = surface.as_surface_group_mut() {
+                surface_id = group.focused_surface;
+                if !group.close_surface(surface_id) {
                     return self.close_surface_by_id(surface_id);
                 }
             } else {
-                return false;
+                surface_id = match surface.focused_surface_id() {
+                    Some(id) => id,
+                    None => return false,
+                };
+                return self.close_surface_by_id(surface_id);
             }
         } else {
             return false;
@@ -271,7 +273,7 @@ impl AppState {
             // Find which tab has this surface
             let mut found_tab = None;
             for (i, tab) in pane.tabs.iter().enumerate() {
-                if tab.panel().contains_surface(surface_id) {
+                if tab.surface().contains_surface(surface_id) {
                     found_tab = Some(i);
                     break;
                 }
@@ -281,26 +283,21 @@ impl AppState {
                 None => return false,
             };
 
-            // Check if the surface is the only one in this tab's panel
-            match pane.tabs[tab_idx].panel() {
-                crate::model::Panel::Terminal(node) if node.id == surface_id => {
-                    surface_is_sole_in_tab = true;
-                    can_close_surface_in_group = false;
-                }
-                crate::model::Panel::SurfaceGroup(group) => {
-                    // Try closing within the group (fails if it's the only surface)
-                    surface_is_sole_in_tab = false;
-                    can_close_surface_in_group = !matches!(
-                        group.layout(),
-                        crate::model::SurfaceGroupLayout::Single(_)
-                    ) || group.layout().find_terminal(surface_id).is_none();
-                }
-                // Single-surface panels (Markdown, Explorer, etc.): sole content of the tab
-                crate::model::Panel::Markdown(_) | crate::model::Panel::Explorer(_) => {
-                    surface_is_sole_in_tab = true;
-                    can_close_surface_in_group = false;
-                }
-                _ => return false,
+            // Check if the surface is the only one in this tab's surface
+            let surface = pane.tabs[tab_idx].surface();
+            if let Some(group) = surface.as_surface_group() {
+                // SurfaceGroup: try closing within the group (fails if it's the only surface)
+                surface_is_sole_in_tab = false;
+                can_close_surface_in_group = !matches!(
+                    group.layout(),
+                    crate::model::SurfaceGroupLayout::Single(_)
+                ) || group.layout().find_terminal(surface_id).is_none();
+            } else if surface.contains_surface(surface_id) {
+                // Single-surface (Terminal, Markdown, Explorer, Html, Empty): sole content
+                surface_is_sole_in_tab = true;
+                can_close_surface_in_group = false;
+            } else {
+                return false;
             }
         }
 
@@ -311,7 +308,7 @@ impl AppState {
                 let ws = &self.engine.workspaces[ws_idx];
                 let pane = ws.pane_layout().find_pane(pane_id).unwrap();
                 let tab = &pane.tabs[tab_idx];
-                if let Some(node) = tab.panel().find_terminal_node(surface_id) {
+                if let Some(node) = tab.surface().find_terminal_surface(surface_id) {
                     let snapshot = crate::model::closed_item::ClosedSurface::from_surface_node(node);
                     self.engine.closed_items.push(crate::model::ClosedItem::Surface {
                         surface: snapshot,
@@ -321,7 +318,7 @@ impl AppState {
             }
             let ws = &mut self.engine.workspaces[ws_idx];
             let pane = ws.pane_layout_mut().find_pane_mut(pane_id).unwrap();
-            if let Some(group) = pane.tabs[tab_idx].panel_mut().as_surface_group_mut() {
+            if let Some(group) = pane.tabs[tab_idx].surface_mut().as_surface_group_mut() {
                 if group.close_surface(surface_id) {
                     self.unregister_child(surface_id);
                     self.mark_parent_closed(surface_id);
@@ -418,7 +415,7 @@ impl AppState {
         let mut surface_ids = Vec::new();
         if let Some(pane) = self.engine.workspaces[ws_idx].pane_layout_mut().find_pane_mut(pane_id) {
             for tab in &mut pane.tabs {
-                tab.panel_mut().for_each_terminal_mut(&mut |sid, _| {
+                tab.surface_mut().for_each_terminal_mut(&mut |sid, _| {
                     surface_ids.push(sid);
                 });
             }

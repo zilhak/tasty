@@ -1,6 +1,6 @@
 use winit::event_loop::ActiveEventLoop;
 
-use crate::model::PanelBehavior;
+use crate::model::Surface;
 use super::TastyWindow;
 
 impl TastyWindow {
@@ -156,20 +156,18 @@ impl TastyWindow {
             for (pane_id, pane_rect) in &pane_rects {
                 if let Some(pane) = ws.pane_layout().find_pane(*pane_id) {
                     for (tab_idx, tab) in pane.tabs.iter().enumerate() {
-                        if let Some(panel) = tab.panel_if_initialized() {
-                            if let crate::model::Panel::Html(html) = panel {
-                                all_html_ids.push(html.id);
-                                // Only visible if: active workspace AND active tab
-                                let is_active_tab = tab_idx == pane.active_tab;
-                                if ws_idx == active_ws && is_active_tab {
-                                    let bounds = crate::webview::WebViewBounds {
-                                        x: pane_rect.x as f64 / scale_factor,
-                                        y: (pane_rect.y as f64 + tab_bar_h) / scale_factor,
-                                        width: pane_rect.width as f64 / scale_factor,
-                                        height: (pane_rect.height as f64 - tab_bar_h).max(1.0) / scale_factor,
-                                    };
-                                    active_html.insert(html.id, bounds);
-                                }
+                        if let Some(html) = tab.surface().as_html() {
+                            all_html_ids.push(html.id);
+                            // Only visible if: active workspace AND active tab
+                            let is_active_tab = tab_idx == pane.active_tab;
+                            if ws_idx == active_ws && is_active_tab {
+                                let bounds = crate::webview::WebViewBounds {
+                                    x: pane_rect.x as f64 / scale_factor,
+                                    y: (pane_rect.y as f64 + tab_bar_h) / scale_factor,
+                                    width: pane_rect.width as f64 / scale_factor,
+                                    height: (pane_rect.height as f64 - tab_bar_h).max(1.0) / scale_factor,
+                                };
+                                active_html.insert(html.id, bounds);
                             }
                         }
                     }
@@ -237,7 +235,7 @@ impl TastyWindow {
             for &pid in &ws.pane_layout().all_pane_ids() {
                 if let Some(pane) = ws.pane_layout().find_pane(pid) {
                     for tab in &pane.tabs {
-                        if let Some(crate::model::Panel::Html(html)) = tab.panel_if_initialized() {
+                        if let Some(html) = tab.surface().as_html() {
                             if html.id == surface_id {
                                 return Some(html.url.clone());
                             }
