@@ -46,8 +46,7 @@ tasty list info               # 버전, 워크스페이스 수
 # 워크스페이스
 tasty list workspaces         # 워크스페이스 목록
 tasty new workspace [--name NAME] [--cwd PATH]
-tasty set focus workspace INDEX  # 0-based
-tasty set workspace [--id ID] [--name NAME] [--subtitle TEXT] [--description TEXT]
+tasty set workspace --id ID [--name NAME] [--subtitle TEXT] [--description TEXT]
 
 # 윈도우
 tasty list windows            # 윈도우 목록
@@ -55,19 +54,20 @@ tasty new window              # 새 윈도우 생성
 
 # 패인/탭
 tasty list panes              # 패인 목록
-tasty split --level pane|surface [--target ID] [--direction vertical|horizontal] [--type terminal|markdown|explorer] [--cwd PATH] [--file PATH] [--path DIR]
-tasty new tab [--cwd PATH]
-tasty close pane
-tasty close tab
+tasty split --level pane|surface --target ID [--direction vertical|horizontal] [--type terminal|markdown|explorer|html] [--cwd PATH] [--file PATH] [--path DIR] [--url URL] [--meta JSON]
+tasty new tab --pane ID [--type terminal|markdown|explorer|html] [--cwd PATH] [--file PATH] [--path DIR] [--url URL]
+tasty close pane --pane ID
+tasty close tab --tab ID
 
 # 터미널 (Surface)
 tasty list surfaces           # 서피스 목록 (id, cols, rows)
-tasty send text "ls -la\r"    # 텍스트 전송 (\r = Enter)
-tasty send key enter          # 키 전송
-tasty set mark                # 출력 마크 설정
-tasty read since-mark [--strip-ansi]  # 마크 이후 출력 읽기
-tasty read screen             # 현재 화면 텍스트 읽기
-tasty close surface
+tasty send text "ls -la\r" [--surface ID]   # 텍스트 전송 (\r = Enter)
+tasty send key enter [--surface ID]         # 키 전송
+tasty set mark [--surface ID]               # 출력 마크 설정
+tasty read since-mark [--surface ID] [--strip-ansi]  # 마크 이후 출력 읽기
+tasty read screen [--surface ID]            # 현재 화면 텍스트 읽기
+tasty close surface --surface ID
+tasty close self                            # 자기 자신 닫기 (TASTY_SURFACE_ID 사용)
 
 # 추가 Surface 타입
 tasty new tab --pane <ID> --type markdown --file /path/to/file.md
@@ -75,18 +75,13 @@ tasty new tab --pane <ID> --type explorer [--path /dir]
 tasty split --level pane --target <ID> --type markdown --file /path/to/file.md
 tasty split --level pane --target <ID> --type explorer [--path /dir]
 
-# IME 시뮬레이션
-tasty ime-enable                   # IME 활성화
-tasty ime-preedit "ㅎ"              # 조합 중 텍스트 표시
-tasty ime-commit "한"               # 확정 → PTY 전송
-tasty ime-status                   # 현재 IME 상태 확인
-tasty ime-disable                  # IME 비활성화 + preedit 클리어
-
-# 포커스 이동
-tasty set focus direction left    # 왼쪽 패인/서피스로 포커스 이동
-tasty set focus direction right   # 오른쪽
-tasty set focus direction up      # 위
-tasty set focus direction down    # 아래
+# IME 시뮬레이션 (debug 서브커맨드)
+tasty debug ime-enable             # IME 활성화
+tasty debug ime-preedit "ㅎ"        # 조합 중 텍스트 표시
+tasty debug ime-commit "한"         # 확정 → PTY 전송
+tasty debug ime-status             # 현재 IME 상태 확인
+tasty debug ime-disable            # IME 비활성화 + preedit 클리어
+tasty debug info                   # 디버그 정보 조회
 
 # 훅
 tasty set hook --event process-exit --command "echo done"
@@ -131,8 +126,10 @@ tasty claude hook stop --surface 5  # 특정 surface 지정 (또는 TASTY_SURFAC
 | 메서드 | 파라미터 | 설명 |
 |--------|---------|------|
 | `system.info` | 없음 | 버전, 워크스페이스 수 |
+| `system.shutdown` | 없음 | 헤드리스 모드에서 프로세스 정상 종료 |
 | `ui.state` | 없음 | 현재 UI 상태 (설정창/알림패널 열림 여부, 패인 수 등) |
 | `ui.screenshot` | `path?: string` | 스크린샷을 PNG로 저장 (GUI 모드 전용, 비동기) |
+| `debug.info` | 없음 | 디버그 정보 조회 (scale_factor, cell 크기, viewport 등) |
 
 ### 윈도우
 
@@ -150,25 +147,22 @@ tasty claude hook stop --surface 5  # 특정 surface 지정 (또는 TASTY_SURFAC
 | `workspace.list` | 없음 | 전체 워크스페이스 목록 (id, name, subtitle, description, active) |
 | `workspace.create` | `name?, subtitle?, description?, cwd?` | 새 워크스페이스 생성 후 활성화 |
 | `workspace.update` | `index?\|id?, name?, subtitle?, description?` | 워크스페이스 정보 수정 (생략 시 활성 워크스페이스) |
-| `workspace.select` | `index: number` | 워크스페이스 전환 (0-based) |
 | `tree` | 없음 | 전체 계층 구조 (워크스페이스 → 패인 → 탭) |
 
 ### 패인
 
 | 메서드 | 파라미터 | 설명 |
 |--------|---------|------|
-| `pane.list` | 없음 | 활성 워크스페이스의 패인 목록 |
-| `split` | `level`, `target?`, `direction?`, `type?`, `cwd?`, `file?`, `path?` | 분할. type: terminal(기본)/markdown/explorer. pane-level split은 모든 타입 지원, surface-level은 terminal만 |
-| `pane.close` | 없음 | 포커스된 패인 닫기 |
-| `pane.focus` | `pane_id: number` | 특정 패인에 포커스 |
-| `focus.direction` | `direction: "left"\|"right"\|"up"\|"down"` | 방향성 포커스 이동 (SurfaceGroup 내부 우선, 이후 패인 간) |
+| `pane.list` | 없음 | 전체 워크스페이스의 패인 목록 |
+| `split` | `level`, `target`, `direction?`, `type?`, `cwd?`, `file?`, `path?`, `url?`, `meta?` | 분할. level: pane/surface. type: terminal(기본)/markdown/explorer/html |
+| `pane.close` | `pane_id` | 패인 닫기 |
 
 ### 탭
 
 | 메서드 | 파라미터 | 설명 |
 |--------|---------|------|
 | `tab.list` | `pane_id` | 지정 패인의 탭 목록 |
-| `tab.create` | `pane_id`, `type?`, `cwd?`, `file?`, `path?` | 새 탭 생성. type: terminal(기본)/markdown/explorer |
+| `tab.create` | `pane_id`, `type?`, `cwd?`, `file?`, `path?`, `url?` | 새 탭 생성. type: terminal(기본)/markdown/explorer/html |
 | `tab.close` | `tab_id` | 탭 닫기 |
 
 ### Surface (터미널 상호작용)
@@ -176,16 +170,18 @@ tasty claude hook stop --surface 5  # 특정 surface 지정 (또는 TASTY_SURFAC
 | 메서드 | 파라미터 | 설명 |
 |--------|---------|------|
 | `surface.list` | 없음 | 모든 서피스 목록 (id, pane_id, cols, rows) |
-| `surface.send` | `text, surface_id?` | 텍스트 전송. `\r`로 Enter |
-| `surface.send_to` | `text, surface_id` | 특정 서피스에 텍스트 전송 (surface_id 필수) |
-| `surface.send_key` | `key, surface_id?` | 키 이름 전송 (enter, tab, escape, up, down 등) |
-| `surface.send_combo` | `key, modifiers[], surface_id?` | 수정자 키 조합 전송 (Ctrl+C 등) |
-| `surface.focus` | `surface_id` | 특정 서피스에 포커스 |
-| `surface.close` | 없음 | 포커스된 서피스 닫기 |
-| `surface.screen_text` | `surface_id?` | 현재 화면의 텍스트 반환 |
-| `surface.set_mark` | `surface_id?` | 현재 출력 위치에 마크 설정 |
-| `surface.read_since_mark` | `surface_id?, strip_ansi?: bool` | 마크 이후 새 출력 반환 |
-| `surface.cursor_position` | `surface_id?` | 커서 위치 (x, y) 반환 |
+| `surface.send` | `text, surface_id` | 텍스트 전송. `\r`로 Enter |
+| `surface.send_to` | `text, surface_id` | 특정 서피스에 텍스트 전송 |
+| `surface.send_key` | `key, surface_id` | 키 이름 전송 (enter, tab, escape, up, down 등) |
+| `surface.send_combo` | `key, modifiers[], surface_id` | 수정자 키 조합 전송 (Ctrl+C 등) |
+| `surface.close` | `surface_id` | 서피스 닫기 |
+| `surface.close_self` | `surface_id` | 호출한 서피스 자신을 닫기 |
+| `surface.screen_text` | `surface_id` | 현재 화면의 텍스트 반환 |
+| `surface.set_mark` | `surface_id` | 현재 출력 위치에 마크 설정 |
+| `surface.read_since_mark` | `surface_id, strip_ansi?: bool` | 마크 이후 새 출력 반환 |
+| `surface.cursor_position` | `surface_id` | 커서 위치 (x, y) 반환 |
+| `surface.is_typing` | `surface_id` | 최근 5초 내 키 입력 여부. 반환: `{ typing, idle_seconds }` |
+| `surface.send_wait_idle` | `surface_id, text` | 유휴 시에만 텍스트 전송. 타이핑 중이면 `{ sent: false }` |
 
 ### IME 시뮬레이션
 
@@ -202,29 +198,29 @@ AI 에이전트가 한글/CJK IME 입력을 프로그래밍 방식으로 시뮬�
 **CLI:**
 
 ```bash
-tasty ime-enable                   # IME 활성화
-tasty ime-preedit "ㅎ"              # preedit 표시
-tasty ime-preedit "하"              # 모음 조합
-tasty ime-preedit "한"              # 받침 조합
-tasty ime-commit "한"               # 확정 → PTY 전송
-tasty ime-status                   # 상태 확인
-tasty ime-disable                  # IME 비활성화
+tasty debug ime-enable             # IME 활성화
+tasty debug ime-preedit "ㅎ"        # preedit 표시
+tasty debug ime-preedit "하"        # 모음 조합
+tasty debug ime-preedit "한"        # 받침 조합
+tasty debug ime-commit "한"         # 확정 → PTY 전송
+tasty debug ime-status             # 상태 확인
+tasty debug ime-disable            # IME 비활성화
 ```
 
 **한글 입력 시뮬레이션 전체 흐름:**
 
 ```bash
-tasty ime-enable
+tasty debug ime-enable
 # "한글" 입력
-tasty ime-preedit "ㅎ"
-tasty ime-preedit "하"
-tasty ime-preedit "한"
-tasty ime-commit "한"
-tasty ime-preedit "ㄱ"
-tasty ime-preedit "그"
-tasty ime-preedit "글"
-tasty ime-commit "글"
-tasty ime-disable
+tasty debug ime-preedit "ㅎ"
+tasty debug ime-preedit "하"
+tasty debug ime-preedit "한"
+tasty debug ime-commit "한"
+tasty debug ime-preedit "ㄱ"
+tasty debug ime-preedit "그"
+tasty debug ime-preedit "글"
+tasty debug ime-commit "글"
+tasty debug ime-disable
 ```
 
 ### Surface 메타데이터
