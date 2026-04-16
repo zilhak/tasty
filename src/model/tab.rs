@@ -1,5 +1,5 @@
 use tasty_terminal::Terminal;
-use super::{Panel, PanelBehavior, SurfaceId, TerminalSurface, TabId};
+use super::{SurfaceId, TerminalSurface, TabId};
 use super::surface_trait::Surface;
 
 pub struct Tab {
@@ -11,8 +11,6 @@ pub struct Tab {
     /// The surface content of this tab. Temporarily `None` during structural mutations
     /// or when lazy_pty_init is enabled and the tab hasn't been focused yet.
     pub(crate) surface_opt: Option<Box<dyn Surface>>,
-    /// Legacy panel (kept during migration, will be removed).
-    pub(crate) panel_opt: Option<Panel>,
     /// When lazy_pty_init is enabled, stores parameters to spawn PTY on first access.
     pub(crate) deferred_spawn: Option<super::surface_group::DeferredSpawn>,
     /// Surface ID reserved for deferred spawn (set when lazy_pty_init creates the tab).
@@ -28,7 +26,6 @@ impl Tab {
             name,
             explicit_name: None,
             surface_opt: Some(surface),
-            panel_opt: None,
             deferred_spawn: None,
             deferred_surface_id: None,
         }
@@ -41,14 +38,8 @@ impl Tab {
             return explicit.clone();
         }
         // Try to derive name from the focused terminal's CWD
-        let terminal = if let Some(surface) = self.surface_opt.as_ref() {
-            surface.focused_terminal()
-        } else if let Some(panel) = self.panel_opt.as_ref() {
-            // Legacy path — disambiguate between PanelBehavior and Surface
-            PanelBehavior::focused_terminal(panel)
-        } else {
-            None
-        };
+        let terminal = self.surface_opt.as_ref()
+            .and_then(|s| s.focused_terminal());
         if let Some(terminal) = terminal {
             if let Some(cwd) = terminal.get_cwd() {
                 let path_str = cwd.to_string_lossy();
@@ -70,53 +61,36 @@ impl Tab {
 
     // ── Surface-based accessors ──
 
-    /// Access the surface. Falls back to legacy panel.
+    /// Access the surface.
     #[track_caller]
     pub fn surface(&self) -> &dyn Surface {
-        if let Some(s) = self.surface_opt.as_ref() {
-            return s.as_ref();
-        }
-        // Legacy fallback
-        self.panel_opt.as_ref().expect("BUG: no surface or panel")
+        self.surface_opt.as_ref().map(|s| s.as_ref())
+            .expect("BUG: no surface (deferred tab not initialized?)")
     }
 
-    /// Access the surface mutably. Falls back to legacy panel.
+    /// Access the surface mutably.
     #[track_caller]
     pub fn surface_mut(&mut self) -> &mut dyn Surface {
-        if let Some(s) = self.surface_opt.as_mut() {
-            return s.as_mut();
-        }
-        // Legacy fallback
-        self.panel_opt.as_mut().expect("BUG: no surface or panel")
+        self.surface_opt.as_mut().map(|s| s.as_mut())
+            .expect("BUG: no surface (deferred tab not initialized?)")
     }
 
     /// Access the surface if initialized.
     pub fn surface_if_initialized(&self) -> Option<&dyn Surface> {
-        if let Some(s) = self.surface_opt.as_ref() {
-            return Some(s.as_ref());
-        }
-        self.panel_opt.as_ref().map(|p| p as &dyn Surface)
+        self.surface_opt.as_ref().map(|s| s.as_ref())
     }
 
     /// Access the surface mutably if initialized.
     pub fn surface_mut_if_initialized(&mut self) -> Option<&mut dyn Surface> {
-        if let Some(s) = self.surface_opt.as_mut() {
-            return Some(s.as_mut());
+        match self.surface_opt {
+            Some(ref mut s) => Some(s.as_mut()),
+            None => None,
         }
-        self.panel_opt.as_mut().map(|p| p as &mut dyn Surface)
     }
 
-    // ── Legacy Panel accessors (to be removed after full migration) ──
-
-    /// Access the panel. If lazy init is pending, spawns the terminal first.
-    #[track_caller]
-    pub fn panel(&self) -> &Panel {
-        self.panel_opt.as_ref().expect("BUG: panel accessed during structural mutation or before lazy init")
-    }
-
-    /// Ensure the panel is initialized (lazy spawn if needed). Returns true if spawned.
+    /// Ensure the surface is initialized (lazy spawn if needed). Returns true if spawned.
     pub fn ensure_initialized(&mut self, surface_id: SurfaceId) -> bool {
-        if self.panel_opt.is_some() || self.surface_opt.is_some() || self.deferred_spawn.is_none() {
+        if self.surface_opt.is_some() || self.deferred_spawn.is_none() {
             return false;
         }
         let spawn = self.deferred_spawn.take().unwrap();
@@ -125,7 +99,7 @@ impl Tab {
         let working_dir = spawn.working_dir.as_deref();
         match Terminal::new_with_shell_args_cwd(spawn.cols, spawn.rows, shell_ref, &shell_args, surface_id, spawn.waker, working_dir) {
             Ok(terminal) => {
-                self.panel_opt = Some(Panel::Terminal(TerminalSurface {
+                self.surface_opt = Some(Box::new(TerminalSurface {
                     id: surface_id,
                     terminal,
                     deferred_spawn: None,
@@ -139,30 +113,13 @@ impl Tab {
         }
     }
 
-    /// Access the panel if already initialized. Returns None for deferred tabs.
-    pub fn panel_if_initialized(&self) -> Option<&Panel> {
-        self.panel_opt.as_ref()
-    }
-
-    /// Access the panel mutably if already initialized. Returns None for deferred tabs.
-    pub fn panel_mut_if_initialized(&mut self) -> Option<&mut Panel> {
-        self.panel_opt.as_mut()
-    }
-
     /// Returns true if this tab has a deferred spawn pending.
     pub fn is_deferred(&self) -> bool {
-        self.panel_opt.is_none() && self.surface_opt.is_none() && self.deferred_spawn.is_some()
+        self.surface_opt.is_none() && self.deferred_spawn.is_some()
     }
 
-    /// Access the panel mutably.
-    #[track_caller]
-    pub fn panel_mut(&mut self) -> &mut Panel {
-        self.panel_opt.as_mut().expect("BUG: panel accessed during structural mutation (between take/put)")
-    }
-
-    /// Replace the surface (drops both panel_opt and surface_opt, sets surface_opt).
+    /// Replace the surface.
     pub fn put_surface(&mut self, surface: Box<dyn Surface>) {
-        self.panel_opt = None;
         self.surface_opt = Some(surface);
     }
 
@@ -186,11 +143,28 @@ impl Tab {
             return;
         }
 
-        // Case 2: Single TerminalSurface → wrap into SurfaceGroup via Panel bridge
-        if self.panel_opt.is_some() {
-            let old_panel = self.panel_opt.take().unwrap();
-            let new_panel = old_panel.split_surface_with_terminal(direction, new_surface_id, new_terminal);
-            self.panel_opt = Some(new_panel);
+        // Case 2: Single TerminalSurface → wrap into SurfaceGroupNode
+        if self.surface_opt.as_ref().is_some_and(|s| s.as_terminal_surface().is_some()) {
+            let old_surface = self.surface_opt.take().unwrap();
+            let old_node = old_surface.take_terminal_surface()
+                .expect("BUG: as_terminal_surface() was Some but take failed");
+            let old_surface_id = old_node.id;
+            let group = super::SurfaceGroupNode {
+                layout_opt: Some(super::SurfaceGroupLayout::Split {
+                    direction,
+                    ratio: 0.5,
+                    first: Box::new(super::SurfaceGroupLayout::Leaf(Box::new(old_node))),
+                    second: Box::new(super::SurfaceGroupLayout::Leaf(Box::new(TerminalSurface {
+                        id: new_surface_id,
+                        terminal: new_terminal,
+                        deferred_spawn: None,
+                    }))),
+                    focus_second: true,
+                }),
+                focused_surface: new_surface_id,
+                _first_surface: old_surface_id,
+            };
+            self.surface_opt = Some(Box::new(group));
         }
     }
 
@@ -212,11 +186,28 @@ impl Tab {
             return remaining.is_none();
         }
 
-        // Single terminal — use Panel bridge
-        if self.panel_opt.is_some() {
-            let old_panel = self.panel_opt.take().unwrap();
-            let new_panel = old_panel.split_surface_by_id_with_terminal(target_surface_id, direction, new_surface_id, new_terminal);
-            self.panel_opt = Some(new_panel);
+        // Single TerminalSurface → wrap into SurfaceGroupNode
+        if self.surface_opt.as_ref().is_some_and(|s| s.as_terminal_surface().is_some_and(|n| n.id == target_surface_id)) {
+            let old_surface = self.surface_opt.take().unwrap();
+            let old_node = old_surface.take_terminal_surface()
+                .expect("BUG: as_terminal_surface() was Some but take failed");
+            let old_surface_id = old_node.id;
+            let group = super::SurfaceGroupNode {
+                layout_opt: Some(super::SurfaceGroupLayout::Split {
+                    direction,
+                    ratio: 0.5,
+                    first: Box::new(super::SurfaceGroupLayout::Leaf(Box::new(old_node))),
+                    second: Box::new(super::SurfaceGroupLayout::Leaf(Box::new(TerminalSurface {
+                        id: new_surface_id,
+                        terminal: new_terminal,
+                        deferred_spawn: None,
+                    }))),
+                    focus_second: false,
+                }),
+                focused_surface: old_surface_id,
+                _first_surface: old_surface_id,
+            };
+            self.surface_opt = Some(Box::new(group));
             return true;
         }
 
@@ -230,114 +221,6 @@ impl Tab {
             "name": self.display_name(),
             "surface": self.surface().to_tree_json(),
         })
-    }
-}
-
-/// Implement Surface for Panel enum (legacy bridge).
-/// This allows Panel to be used as &dyn Surface during migration.
-impl Surface for Panel {
-    fn type_name(&self) -> &'static str {
-        use super::PanelBehavior;
-        PanelBehavior::type_name(self)
-    }
-    fn surface_id(&self) -> Option<SurfaceId> {
-        use super::PanelBehavior;
-        PanelBehavior::surface_id(self)
-    }
-    fn all_surface_ids(&self) -> Vec<SurfaceId> {
-        use super::PanelBehavior;
-        PanelBehavior::all_surface_ids(self)
-    }
-    fn focused_surface_id(&self) -> Option<SurfaceId> {
-        use super::PanelBehavior;
-        PanelBehavior::focused_surface_id(self)
-    }
-    fn contains_surface(&self, surface_id: SurfaceId) -> bool {
-        use super::PanelBehavior;
-        PanelBehavior::contains_surface(self, surface_id)
-    }
-    fn has_terminal(&self) -> bool {
-        use super::PanelBehavior;
-        PanelBehavior::has_terminal(self)
-    }
-    fn focused_terminal(&self) -> Option<&Terminal> {
-        use super::PanelBehavior;
-        PanelBehavior::focused_terminal(self)
-    }
-    fn focused_terminal_mut(&mut self) -> Option<&mut Terminal> {
-        use super::PanelBehavior;
-        PanelBehavior::focused_terminal_mut(self)
-    }
-    fn find_terminal(&self, surface_id: SurfaceId) -> Option<&Terminal> {
-        use super::PanelBehavior;
-        PanelBehavior::find_terminal(self, surface_id)
-    }
-    fn find_terminal_surface(&self, surface_id: SurfaceId) -> Option<&TerminalSurface> {
-        use super::PanelBehavior;
-        PanelBehavior::find_terminal_node(self, surface_id)
-    }
-    fn find_terminal_mut(&mut self, surface_id: SurfaceId) -> Option<&mut Terminal> {
-        use super::PanelBehavior;
-        PanelBehavior::find_terminal_mut(self, surface_id)
-    }
-    fn render_regions(&self, rect: super::Rect) -> Vec<(SurfaceId, &Terminal, super::Rect)> {
-        use super::PanelBehavior;
-        PanelBehavior::render_regions(self, rect)
-    }
-    fn resize_all(&mut self, rect: super::Rect, cell_width: f32, cell_height: f32) {
-        use super::PanelBehavior;
-        PanelBehavior::resize_all(self, rect, cell_width, cell_height)
-    }
-    fn collect_terminals_mut<'a>(&'a mut self, out: &mut Vec<&'a mut Terminal>) {
-        use super::PanelBehavior;
-        PanelBehavior::collect_terminals_mut(self, out)
-    }
-    fn for_each_terminal_mut(&mut self, f: &mut dyn FnMut(SurfaceId, &mut Terminal)) {
-        // Bridge: PanelBehavior uses generic, Surface uses dyn
-        use super::PanelBehavior;
-        PanelBehavior::for_each_terminal_mut(self, f)
-    }
-    fn as_surface_group(&self) -> Option<&super::SurfaceGroupNode> {
-        Panel::as_surface_group(self)
-    }
-    fn as_surface_group_mut(&mut self) -> Option<&mut super::SurfaceGroupNode> {
-        Panel::as_surface_group_mut(self)
-    }
-    fn as_terminal_surface(&self) -> Option<&super::TerminalSurface> {
-        match self { Panel::Terminal(node) => Some(node), _ => None }
-    }
-    fn as_terminal_surface_mut(&mut self) -> Option<&mut super::TerminalSurface> {
-        match self { Panel::Terminal(node) => Some(node), _ => None }
-    }
-    fn as_markdown(&self) -> Option<&super::MarkdownPanel> {
-        match self { Panel::Markdown(md) => Some(md), _ => None }
-    }
-    fn as_markdown_mut(&mut self) -> Option<&mut super::MarkdownPanel> {
-        match self { Panel::Markdown(md) => Some(md), _ => None }
-    }
-    fn as_explorer(&self) -> Option<&super::ExplorerPanel> {
-        match self { Panel::Explorer(ex) => Some(ex), _ => None }
-    }
-    fn as_explorer_mut(&mut self) -> Option<&mut super::ExplorerPanel> {
-        match self { Panel::Explorer(ex) => Some(ex), _ => None }
-    }
-    fn as_html(&self) -> Option<&super::HtmlPanel> {
-        match self { Panel::Html(html) => Some(html), _ => None }
-    }
-    fn as_html_mut(&mut self) -> Option<&mut super::HtmlPanel> {
-        match self { Panel::Html(html) => Some(html), _ => None }
-    }
-    fn as_empty_surface(&self) -> Option<&super::EmptySurface> { None }
-    fn to_tree_json(&self) -> serde_json::Value {
-        // Delegate to the inner surface type's to_tree_json
-        match self {
-            Panel::Terminal(node) => Surface::to_tree_json(node as &dyn Surface),
-            Panel::SurfaceGroup(group) => Surface::to_tree_json(group as &dyn Surface),
-            Panel::Markdown(md) => Surface::to_tree_json(md as &dyn Surface),
-            Panel::Explorer(ex) => Surface::to_tree_json(ex as &dyn Surface),
-            Panel::Html(html) => Surface::to_tree_json(html as &dyn Surface),
-            Panel::Empty { id } => serde_json::json!({ "type": "Empty", "id": id }),
-        }
     }
 }
 

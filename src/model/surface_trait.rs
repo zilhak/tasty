@@ -72,6 +72,11 @@ pub trait Surface {
     fn as_html_mut(&mut self) -> Option<&mut HtmlPanel> { None }
     fn as_empty_surface(&self) -> Option<&EmptySurface> { None }
 
+    /// Consume this surface and return the inner TerminalSurface if applicable.
+    /// Used when converting a single terminal into a SurfaceGroup (split).
+    /// Default: None (non-terminal surfaces cannot be taken).
+    fn take_terminal_surface(self: Box<Self>) -> Option<TerminalSurface> { None }
+
     /// Display name for tab title. Default: type_name.
     fn display_name(&self) -> String {
         self.type_name().to_string()

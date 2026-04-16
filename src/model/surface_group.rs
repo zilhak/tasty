@@ -68,6 +68,7 @@ impl Surface for TerminalSurface {
 
     fn as_terminal_surface(&self) -> Option<&TerminalSurface> { Some(self) }
     fn as_terminal_surface_mut(&mut self) -> Option<&mut TerminalSurface> { Some(self) }
+    fn take_terminal_surface(self: Box<Self>) -> Option<TerminalSurface> { Some(*self) }
 
     fn to_tree_json(&self) -> serde_json::Value {
         serde_json::json!({

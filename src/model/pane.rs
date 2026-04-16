@@ -122,7 +122,6 @@ impl Pane {
         let tab = Tab {
             id: tab_id,
             name: "Shell".to_string(),
-            panel_opt: None,
             deferred_spawn: Some(super::surface_group::DeferredSpawn {
                 shell: shell.map(|s| s.to_string()),
                 shell_args: shell_args.iter().map(|s| s.to_string()).collect(),
