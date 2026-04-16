@@ -13,10 +13,14 @@
 pub mod base;
 pub mod base_window;
 pub mod modal;
+pub mod quit;
+pub mod settings;
 
 pub use base::WindowBase;
 pub use base_window::BaseWindow;
 pub use modal::ModalWindow;
+pub use quit::QuitWindow;
+pub use settings::SettingsWindow;
 
 use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;

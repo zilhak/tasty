@@ -20,11 +20,8 @@ mod jump_list;
 #[cfg(windows)]
 mod system_tray;
 mod markdown_ui;
-pub mod modal_trait;
-pub mod modal_window;
 mod model;
 mod native_menu;
-mod quit_modal;
 mod notification;
 mod renderer;
 mod selection;
@@ -51,8 +48,6 @@ use anyhow::Result;
 use clap::Parser;
 use winit::event_loop::{EventLoop, EventLoopProxy};
 use winit::window::Window;
-
-use modal_trait::Modal;
 
 use gpu::GpuState;
 use model::DividerInfo;
@@ -125,7 +120,7 @@ struct App {
     windows: std::collections::HashMap<WindowId, tasty_window::TastyWindow>,
     /// Active modal window. At most one modal can exist at a time.
     /// While active, it is the sole focus target — all other windows have input blocked.
-    active_modal: Option<Box<dyn modal_trait::Modal>>,
+    active_modal: Option<Box<dyn window::Window>>,
     /// Parked AppStates: preserved when all windows are closed so PTY sessions survive.
     /// Moved into new windows when created, or used directly for IPC.
     parked_states: Vec<state::AppState>,
@@ -297,20 +292,26 @@ impl App {
         .expect("failed to initialize GPU for settings");
 
         let modal_window_id = window.id();
-        let mut modal = modal_window::ModalWindow::new(gpu, window, settings);
+        let mut modal = window::SettingsWindow::new(gpu, window, settings);
         // On Windows, hidden windows do not receive RedrawRequested events,
         // so render the first frame immediately instead of waiting for the event loop.
         // On other platforms, mark_dirty() + request_redraw() is sufficient.
         #[cfg(windows)]
-        modal.render_settings();
+        {
+            use window::Window as _;
+            modal.render();
+        }
         #[cfg(not(windows))]
-        modal.mark_dirty();
+        {
+            use window::Window as _;
+            modal.mark_dirty();
+        }
         self.open_modal(Box::new(modal), modal_window_id);
         tracing::info!("opened settings modal {:?}", modal_window_id);
     }
 
     /// Open a modal, registering it as the active modal.
-    fn open_modal(&mut self, modal: Box<dyn modal_trait::Modal>, window_id: WindowId) {
+    fn open_modal(&mut self, modal: Box<dyn window::Window>, window_id: WindowId) {
         self.active_modal = Some(modal);
         self.engine.active_modal_id = Some(window_id);
     }
@@ -319,7 +320,7 @@ impl App {
     fn close_active_modal(&mut self) {
         if let Some(modal) = self.active_modal.take() {
             // If it was a settings modal, apply settings to all windows
-            if let Some(settings_modal) = modal.as_any().downcast_ref::<modal_window::ModalWindow>() {
+            if let Some(settings_modal) = modal.as_any().downcast_ref::<window::SettingsWindow>() {
                 let new_settings = settings_modal.settings.clone();
                 for w in self.windows.values_mut() {
                     w.state.engine.settings = new_settings.clone();

@@ -3,7 +3,7 @@ use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
 use winit::window::WindowId;
 
-use crate::modal_trait::ModalAction;
+use crate::window::{WindowAction, WindowCtx};
 use crate::{App, AppEvent};
 
 impl ApplicationHandler<AppEvent> for App {
@@ -221,17 +221,18 @@ impl ApplicationHandler<AppEvent> for App {
         if let Some(modal_id) = self.engine.active_modal_id {
             if id == modal_id {
                 let action = if let Some(modal) = &mut self.active_modal {
-                    modal.handle_window_event(event, event_loop)
+                    let mut ctx = WindowCtx { event_loop };
+                    modal.handle_event(event, &mut ctx)
                 } else {
-                    ModalAction::Pending
+                    WindowAction::None
                 };
 
                 match action {
-                    ModalAction::Pending => {}
-                    ModalAction::Close => {
+                    WindowAction::None => {}
+                    WindowAction::Close => {
                         self.close_active_modal();
                     }
-                    ModalAction::CloseWithEvent(app_event) => {
+                    WindowAction::CloseWithEvent(app_event) => {
                         self.close_active_modal();
                         let _ = self.engine.proxy.send_event(app_event);
                     }
@@ -260,7 +261,7 @@ impl ApplicationHandler<AppEvent> for App {
             self.engine.focused_window_id = Some(id);
             // If a modal is active, bring it to the front so it's not buried
             if let Some(modal) = &self.active_modal {
-                modal.window().focus_window();
+                modal.base().winit.focus_window();
             }
         }
 
@@ -330,7 +331,7 @@ impl App {
     fn handle_quit_requested(&mut self, event_loop: &ActiveEventLoop) {
         // If a quit modal is already open, treat as immediate quit
         if self.active_modal.as_ref().map_or(false, |m| {
-            m.as_any().downcast_ref::<crate::quit_modal::QuitModal>().is_some()
+            m.as_any().downcast_ref::<crate::window::QuitWindow>().is_some()
         }) {
             self.close_active_modal();
             event_loop.exit();
@@ -381,14 +382,20 @@ impl App {
         .expect("failed to initialize GPU for quit modal");
 
         let window_id = window.id();
-        let mut modal = crate::quit_modal::QuitModal::new(gpu, window);
+        let mut modal = crate::window::QuitWindow::new(gpu, window);
         // On Windows, hidden windows do not receive RedrawRequested events,
         // so render the first frame immediately to make the modal visible.
         // On other platforms, mark_dirty() + request_redraw() is sufficient.
         #[cfg(windows)]
-        modal.render();
+        {
+            use crate::window::Window as _;
+            modal.render();
+        }
         #[cfg(not(windows))]
-        modal.mark_dirty();
+        {
+            use crate::window::Window as _;
+            modal.mark_dirty();
+        }
         self.open_modal(Box::new(modal), window_id);
     }
 }
