@@ -39,6 +39,38 @@ impl QuitModal {
         let action = &mut self.action;
 
         let full_output = self.gpu.run_egui(raw_input, |ctx| {
+            // Bottom: fixed button area
+            egui::TopBottomPanel::bottom("quit_buttons")
+                .exact_height(52.0)
+                .show(ctx, |ui| {
+                    ui.add_space(12.0);
+                    let available_width = ui.available_width() - 40.0;
+                    let button_width = available_width / 2.0 - 4.0;
+                    ui.horizontal(|ui| {
+                        ui.add_space(20.0);
+                        if ui
+                            .add_sized(
+                                [button_width, 28.0],
+                                egui::Button::new(t("quit_modal.quit_button")),
+                            )
+                            .clicked()
+                        {
+                            *action = ModalAction::CloseWithEvent(AppEvent::Shutdown);
+                        }
+                        ui.add_space(8.0);
+                        if ui
+                            .add_sized(
+                                [button_width, 28.0],
+                                egui::Button::new(t("quit_modal.minimize_button")),
+                            )
+                            .clicked()
+                        {
+                            *action = ModalAction::CloseWithEvent(AppEvent::Minimize);
+                        }
+                    });
+                });
+
+            // Top: text content with top padding
             egui::CentralPanel::default().show(ctx, |ui| {
                 ui.vertical_centered(|ui| {
                     ui.add_space(20.0);
@@ -51,32 +83,6 @@ impl QuitModal {
                             .small()
                             .weak(),
                     );
-                    ui.add_space(20.0);
-
-                    let available_width = ui.available_width() - 40.0; // 20px padding each side
-                    let button_width = available_width / 2.0 - 4.0; // 8px gap between buttons
-                    ui.horizontal(|ui| {
-                        ui.add_space(20.0);
-                        if ui
-                            .add_sized(
-                                [button_width, 24.0],
-                                egui::Button::new(t("quit_modal.quit_button")),
-                            )
-                            .clicked()
-                        {
-                            *action = ModalAction::CloseWithEvent(AppEvent::Shutdown);
-                        }
-                        ui.add_space(8.0);
-                        if ui
-                            .add_sized(
-                                [button_width, 24.0],
-                                egui::Button::new(t("quit_modal.minimize_button")),
-                            )
-                            .clicked()
-                        {
-                            *action = ModalAction::CloseWithEvent(AppEvent::Minimize);
-                        }
-                    });
                 });
             });
         });
