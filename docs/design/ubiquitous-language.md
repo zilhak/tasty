@@ -6,17 +6,26 @@ Tasty 프로젝트에서 사용하는 용어 정의. 코드, 문서, IPC API 전
 
 ```
 Engine
-├── Modal (최대 1개)
-├── Window (여러 개, 타입별)
-│   └── [Terminal 타입]
-│       └── Workspace
-│           └── 상위 레이아웃 (탭과 무관하게 고정)
-│               └── Pane (독립적인 탭 바)
-│                   └── Tab (= 탭 하나)
-│                       └── 하위 레이아웃 (탭 전환 시 함께 전환)
-│                           └── Surface (Terminal / Markdown / Explorer)
-└── Popup (window/modal 내부 가상 창)
+├── Window (여러 개)
+│   ├── Modality: Modal  (전역 최대 1개)
+│   │   ├── SettingsWindow
+│   │   └── QuitWindow
+│   │
+│   └── Modality: Modeless
+│       └── TerminalHostWindow 계열 (터미널 Surface 호스팅)
+│           └── MainWindow  (현재 유일한 구현체)
+│               └── Workspace
+│                   └── 상위 레이아웃 (탭과 무관하게 고정)
+│                       └── Pane (독립적인 탭 바)
+│                           └── Tab (= 탭 하나)
+│                               └── 하위 레이아웃 (탭 전환 시 함께 전환)
+│                                   └── Surface (Terminal / Markdown / Explorer / Html / Empty)
+│
+└── Popup (window 내부 가상 창)
 ```
+
+Window는 단일 상위 개념이며 **modality**(Modeless/Modal)와 **계열**(ModalWindow/
+TerminalHostWindow)을 갖는다. Modal은 별개의 엔티티가 아니라 Window의 한 형태다.
 
 ## 용어 정의
 
@@ -26,19 +35,49 @@ Engine
 
 ### Window (윈도우)
 
-엔진이 관리하는 독립 OS 윈도우. 스레드 방식으로 동작하며, 각 윈도우는 독립적인 OS 포커스를 가진다. 윈도우는 타입을 가질 수 있다 (예: Terminal, Notification).
+엔진이 관리하는 독립 OS 윈도우. Tasty의 최상위 UI 엔티티이며, `Window` trait
+구현체로 표현된다. 모든 Window는 공통 필드(gpu, winit, dirty, modifiers, focused,
+close_requested)를 담은 `WindowBase`를 composition하며, **modality**와 **계열**을
+속성으로 갖는다.
 
-### Modal (모달)
+- **Modality**: `Modeless` 또는 `Modal`. 한 엔진에서 `Modal` modality를 가진 Window는
+  최대 1개.
+- **계열(supertrait)**: `ModalWindow`(모달 전용 공통 동작) 또는
+  `TerminalHostWindow`(터미널 계열 Surface를 호스팅하는 일반 윈도우).
 
-설정창 등 전역적으로 최대 1개만 존재하는 특수 윈도우. 모달이 열리면 모든 윈도우의 포커스를 탈취하며, 모달을 닫아야만 다른 윈도우에 포커스가 돌아간다.
+구현 레벨에서 `Window`는 sealed trait이며, 외부에서 직접 구현할 수 없다. 반드시
+`ModalWindow` 또는 `TerminalHostWindow` 중 하나를 거쳐야 한다.
+
+### Modal modality / ModalWindow (모달)
+
+설정창·종료 다이얼로그 등 전역적으로 최대 1개만 존재하는 Window의 특수 상태.
+Modal modality를 가진 Window(= `ModalWindow` 구현체)가 활성화되면 다른 모든 Window의
+입력이 차단되며, 닫아야만 다시 입력이 재개된다.
+
+- 구현체: `SettingsWindow`, `QuitWindow`
+- 공통 default 동작: 첫 프레임 렌더 후 가시화, Esc로 닫기, 포커스 탈취
+
+Modal은 별개의 엔티티가 아니라 Window의 한 형태라는 점에 주의한다.
+
+### TerminalHostWindow (터미널 호스트 윈도우)
+
+터미널 계열 Surface(Terminal / Markdown / Explorer / Html / Empty)를 호스팅하는
+Window 계열. Modal이 아닌 모든 일반 윈도우가 여기에 속한다.
+
+- 현재 구현체: `MainWindow` (워크스페이스/사이드바/탭 전체를 가진 메인 윈도우)
+- 미래 구현체 (계획): `StandaloneSurfaceWindow`(독립 Surface 하나만 가진 윈도우),
+  `StandaloneWorkspaceWindow`(워크스페이스 1개 고정).
 
 ### Popup (팝업)
 
-윈도우 또는 모달 내부에 존재하는 가상 창. `PopupManager`를 통해 관리되며, 타이틀바(중앙 제목 + 우측 닫기 버튼) + 콘텐츠 영역 구조를 가진다. 타이틀바 드래그로 이동 가능하며, 다중 팝업 시 z-order로 정렬된다. 팝업은 **스코프(scope)**를 가지며, 스코프에 따라 가시성 규칙과 경계 제약이 결정된다: Window(항상 보임, 윈도우 경계), Workspace(해당 워크스페이스 활성 시), Pane(해당 페인 영역 내), Tab(해당 탭 활성 시), Surface(해당 서피스 영역 내). 상세 규칙은 `docs/design/popup-system.md` 참조.
+Window 내부에 존재하는 가상 창. Modal/Modeless modality와 무관하게 모든 Window가
+팝업을 가질 수 있다. `PopupManager`를 통해 관리되며, 타이틀바(중앙 제목 + 우측 닫기 버튼) + 콘텐츠 영역 구조를 가진다. 타이틀바 드래그로 이동 가능하며, 다중 팝업 시 z-order로 정렬된다. 팝업은 **스코프(scope)**를 가지며, 스코프에 따라 가시성 규칙과 경계 제약이 결정된다: Window(항상 보임, 윈도우 경계), Workspace(해당 워크스페이스 활성 시), Pane(해당 페인 영역 내), Tab(해당 탭 활성 시), Surface(해당 서피스 영역 내). 상세 규칙은 `docs/design/popup-system.md` 참조.
 
 ### Workspace (워크스페이스)
 
-Terminal 타입 윈도우에만 존재하는 최상위 컨테이너. 하나의 윈도우에 여러 워크스페이스를 가질 수 있으며, 사이드바에서 전환한다.
+`MainWindow`에만 존재하는 최상위 컨테이너. 하나의 MainWindow에 여러 워크스페이스를
+가질 수 있으며, 사이드바에서 전환한다. 미래의 `StandaloneWorkspaceWindow`는 정확히
+1개의 워크스페이스를 고정 보유한다.
 
 ### Pane (페인)
 
@@ -100,12 +139,21 @@ Pane은 기존 터미널에 대응하는 개념이 없다. 이것이 Tasty의 �
 
 | 유비쿼터스 언어 | 코드 (Rust) | 설명 |
 |----------------|-------------|------|
-| Engine | `App` (현재), 멀티윈도우 전환 시 `Engine` | 메인 프로세스 |
-| Window | `Window` (winit) | OS 윈도우 |
-| Workspace | `Workspace` | 최상위 컨테이너 |
+| Engine | `App` + `engine::Engine` | 메인 프로세스, IPC/윈도우 생명주기 관리 |
+| Window (상위 개념) | `window::Window` sealed trait | 모든 윈도우의 공통 인터페이스 |
+| Window 공통 필드 | `window::WindowBase` struct | gpu, winit, dirty, modifiers, focused, close_requested. 각 Window 구현체가 `pub base: WindowBase`로 composition |
+| ModalWindow 계열 | `window::ModalWindow: Window` supertrait | Esc 닫기, 첫 프레임 후 reveal 등 default method |
+| TerminalHostWindow 계열 | `window::TerminalHostWindow: Window` supertrait | has_sidebar 등 default method |
+| Modal 구현체 | `window::SettingsWindow`, `window::QuitWindow` | impl Window + ModalWindow |
+| Main Window 구현체 | `window::MainWindow` | impl Window + TerminalHostWindow |
+| Modality | `window::Modality` enum (`Modeless`/`Modal`) | Window의 modality 속성 |
+| WindowAction | `window::WindowAction` enum (`None`/`Close`/`CloseWithEvent`) | 이벤트 핸들러 반환값 |
+| Workspace | `Workspace` | MainWindow의 최상위 컨테이너 |
 | 상위 레이아웃 | `PaneNode` (이진 트리 enum: Leaf / Split) | Pane 배치 |
 | Pane | `Pane` | 독립적인 탭 바. 탭 목록 보유 |
 | Tab | `Tab` → `Box<dyn Surface>` | 탭 하나의 내용물 |
 | 하위 레이아웃 | `SurfaceGroupNode` (이진 트리 enum) | Surface 배치 |
-| Surface | `Surface` trait. 구현체: `TerminalSurface`, `SurfaceGroupNode`, `MarkdownPanel`, `ExplorerPanel`, `HtmlPanel`, `EmptySurface` | 최하위 컨테이너. 타입별 콘텐츠. 공통 동작은 trait으로 정의 |
-| Popup | `PopupContent` trait + `PopupManager` | 내부 가상 창. 팝업별 고유 동작은 trait으로 정의 |
+| Surface | `Surface` trait. 구현체: `TerminalSurface`, `SurfaceGroupNode`, `MarkdownPanel`, `ExplorerPanel`, `HtmlPanel`, `EmptySurface` | 최하위 컨테이너. 타입별 콘텐츠 |
+| Popup | `PopupContent` trait + `PopupManager` | Window 내부 가상 창 |
+| App.windows | `HashMap<WindowId, Box<dyn Window>>` | 모달 포함 모든 윈도우 단일 저장소 |
+| 활성 모달 식별 | `engine::Engine::active_modal_id: Option<WindowId>` | 최대 1개 불변식

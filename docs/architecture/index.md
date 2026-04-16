@@ -83,13 +83,20 @@ tasty/
     │   ├── divider.rs          # 분할선/서피스 하이라이트
     │   └── egui_panels.rs      # egui 기반 Surface 패널 렌더
     │
-    ├── tasty_window/           # 윈도우 이벤트 처리
-    │   ├── mod.rs              # TastyWindow, handle_window_event dispatch
-    │   ├── keyboard.rs         # 키보드 입력, IME
-    │   ├── mouse.rs            # 마우스 클릭/이동/휠
-    │   ├── selection.rs        # 텍스트 선택 (Normal/Word/Line)
-    │   ├── redraw.rs           # 프레임 렌더, 터미널 이벤트 처리
-    │   └── clipboard.rs        # 붙여넣기, 이미지 저장
+    ├── window/                 # Window 트레잇 계층 + 구현체
+    │   ├── mod.rs              # Window sealed trait, Modality, WindowAction, unbox_main
+    │   ├── base.rs             # WindowBase (공통 필드 composition)
+    │   ├── modal.rs            # ModalWindow supertrait
+    │   ├── terminal_host.rs    # TerminalHostWindow supertrait
+    │   ├── settings.rs         # SettingsWindow (모달, 설정 UI)
+    │   ├── quit.rs             # QuitWindow (모달, 종료 다이얼로그)
+    │   └── main/               # MainWindow (TerminalHostWindow)
+    │       ├── mod.rs          # MainWindow 구조체, handle_event dispatch
+    │       ├── keyboard.rs     # 키보드 입력, IME
+    │       ├── mouse.rs        # 마우스 클릭/이동/휠
+    │       ├── selection.rs    # 텍스트 선택 (Normal/Word/Line)
+    │       ├── redraw.rs       # 프레임 렌더, 터미널 이벤트 처리
+    │       └── clipboard.rs    # 붙여넣기, 이미지 저장
     │
     ├── cli/                    # CLI 클라이언트
     │   ├── mod.rs              # Cli/Commands enum, run_client()
@@ -134,9 +141,6 @@ tasty/
     ├── notification.rs         # NotificationStore + OS 알림
     ├── global_hooks.rs         # GlobalHookManager (타이머/파일 감시)
     ├── surface_meta.rs         # Surface별 메타데이터 저장소
-    ├── modal_trait.rs          # Modal trait (공통 인터페이스)
-    ├── modal_window.rs         # 설정 모달 윈도우 (Modal 구현)
-    ├── quit_modal.rs           # 종료 확인 모달 윈도우 (Modal 구현)
     ├── i18n.rs                 # 국제화 (TOML 번역)
     ├── crash_report.rs         # 크래시 리포트 수집
     ├── markdown_ui.rs          # 마크다운 렌더링 (egui)
@@ -147,16 +151,21 @@ tasty/
 
 ```
 main.rs
-├── tasty_window/       ← 윈도우 이벤트 처리
-│   ├── gpu/            ← GPU 렌더링 + egui
-│   │   ├── renderer/   ← 셀 렌더러
-│   │   │   └── font    ← 폰트/아틀라스
-│   │   └── ui/         ← egui UI 컴포넌트
-│   ├── state/          ← 애플리케이션 상태
-│   │   └── engine_state ← 공유 엔진 상태
-│   │       └── settings/ ← 설정 (최하위, 외부 의존 없음)
-│   └── shortcuts       ← 단축키 처리
-├── modal_trait         ← Modal trait (공통 인터페이스)
+├── window/             ← Window 트레잇 계층 + 모든 구현체
+│   ├── main/           ← MainWindow (TerminalHostWindow 계열)
+│   │   ├── gpu/        ← GPU 렌더링 + egui
+│   │   │   ├── renderer/ ← 셀 렌더러
+│   │   │   │   └── font  ← 폰트/아틀라스
+│   │   │   └── ui/     ← egui UI 컴포넌트
+│   │   ├── state/      ← 애플리케이션 상태
+│   │   │   └── engine_state ← 공유 엔진 상태
+│   │   │       └── settings/ ← 설정 (최하위, 외부 의존 없음)
+│   │   └── shortcuts   ← 단축키 처리
+│   ├── settings.rs     ← SettingsWindow (모달)
+│   ├── quit.rs         ← QuitWindow (모달)
+│   ├── modal.rs        ← ModalWindow supertrait
+│   ├── terminal_host.rs ← TerminalHostWindow supertrait
+│   └── base.rs         ← WindowBase 공통 필드
 ├── modal_window        ← 설정 모달 (Modal 구현)
 │   └── settings_ui/    ← 설정 UI
 ├── quit_modal          ← 종료 확인 모달 (Modal 구현)
@@ -207,7 +216,7 @@ main.rs
 
 ## 데이터 흐름
 
-1. **키보드 입력 → 화면**: winit KeyEvent → TastyWindow → shortcuts/send_key → Terminal → PTY → 리더 스레드 → EventLoopProxy → process → CellRenderer → wgpu
+1. **키보드 입력 → 화면**: winit KeyEvent → MainWindow → shortcuts/send_key → Terminal → PTY → 리더 스레드 → EventLoopProxy → process → CellRenderer → wgpu
 2. **PTY 출력 → 렌더링**: PTY 리더 → Terminal::process → termwiz Parser → Surface → CellRenderer::prepare → 2-pass 렌더
 3. **IPC 요청 → 응답**: TCP → IpcServer → mpsc → main process_ipc → handler::handle → AppState → JsonRpcResponse → TCP
 4. **알림**: Terminal 이벤트 → NotificationStore → 사이드바 배지 + 알림 패널

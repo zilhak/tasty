@@ -6,35 +6,38 @@
 
 ```
 Engine
-└── Modal (최대 1개) ─── 있으면 모든 입력을 독점
-└── Window (여러 개) ─── Modal이 없을 때 OS 네이티브 포커스
-    └── Pane/Surface ── 윈도우 내부 포커스
+└── Window (여러 개, 단일 HashMap)
+    ├── Modality: Modal    — 있으면 모든 입력을 독점 (엔진 전역 최대 1개)
+    └── Modality: Modeless — Modal이 없을 때 OS 네이티브 포커스
+        └── Pane/Surface   — 윈도우 내부 포커스
 ```
 
 ## 규칙
 
-### 1. Modal이 없을 때
+### 1. Modal이 없을 때 (`engine.active_modal_id == None`)
 
-각 윈도우는 OS 네이티브 포커스 정책을 따른다.
+각 Modeless Window는 OS 네이티브 포커스 정책을 따른다.
 
 - Window 1과 Window 2는 독립적으로 포커스를 받을 수 있다
 - 윈도우 사이에 다른 앱의 창이 있을 수 있다 (z-order 독립)
 - 윈도우 내부의 Pane/Surface 포커스는 해당 윈도우가 관리
 
-### 2. Modal이 있을 때
+### 2. Modal이 있을 때 (`engine.active_modal_id == Some(id)`)
 
-Modal이 열리면, 엔진이 `modal_active` 플래그를 설정한다.
+Modal modality를 가진 Window가 열리면, 엔진이 `active_modal_id`를 설정한다.
 
-- **모든 윈도우**는 키보드/마우스 입력을 무시한다
-- Modal 윈도우만 입력을 받는다
-- Modal을 닫아야만 윈도우에 다시 포커스가 간다
+- **모든 Modeless Window**는 키보드/마우스 입력을 무시한다 (`WindowCtx.modal_active`)
+- Modal Window만 입력을 받는다
+- Modal을 닫아야만 다른 Window에 다시 포커스가 간다
+- `engine.focused_window_id`는 Modeless Window 전용이며, Modal이 활성 중에도
+  기존 focused MainWindow ID가 보존된다 (Modal 닫히면 자연 복귀)
 
-### 3. Modal의 종류
+### 3. Modality별 차이
 
-| 종류 | 예시 | 동작 |
-|------|------|------|
-| Modal | 설정창 | 전체 입력 차단, 닫기 전까지 다른 조작 불가 |
-| Window | 알림창, 터미널 윈도우 | 독립 포커스, 다른 윈도우와 공존 |
+| Modality | 구현체 | 동작 |
+|----------|--------|------|
+| Modal | `SettingsWindow`, `QuitWindow` | 전체 입력 차단, 닫기 전까지 다른 조작 불가 |
+| Modeless | `MainWindow` (+ 미래 StandaloneSurface/Workspace) | 독립 포커스, 다른 윈도우와 공존 |
 
 ### 4. 포커스 차단 구현
 
@@ -42,10 +45,11 @@ OS 네이티브 윈도우 비활성화(Win32 `EnableWindow` 등)를 사용하지
 
 대신 앱 레벨에서 처리:
 
-- 엔진이 `modal_active: AtomicBool`을 보유
-- 각 윈도우의 이벤트 핸들러가 매 이벤트마다 확인
-- `modal_active == true`이면 키보드/마우스 이벤트를 무시
-- 윈도우가 시각적으로 비활성 상태임을 표시 (반투명 오버레이 등)
+- 엔진이 `active_modal_id: Option<WindowId>`를 보유
+- 이벤트 디스패처가 각 Window에 `WindowCtx { modal_active: bool }`을 전달
+- `Window::handle_event` 구현체는 `ctx.modal_active == true`이면 입력 이벤트를
+  `Resized/RedrawRequested/ScaleFactorChanged/ModifiersChanged/Focused`만 허용
+- Modal 자신은 `modal_active: false`로 받아 정상 동작
 
 ### 5. 윈도우 내부 포커스
 

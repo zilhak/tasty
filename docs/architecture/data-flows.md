@@ -9,7 +9,7 @@
 ```
 winit KeyEvent
   → event_handler.rs (ApplicationHandler::window_event)
-  → tasty_window/mod.rs (handle_window_event)
+  → window/main/mod.rs (Window::handle_event)
   → gpu/mod.rs (handle_egui_event) — egui가 소비하면 여기서 종료
   → tasty_window/keyboard.rs (handle_keyboard_input)
       ├── Escape → 설정/알림 패널 닫기
@@ -116,11 +116,11 @@ UI 표시:
 
 런타임 변경:
   → shortcuts.rs (toggle_settings) → AppEvent::OpenSettings
-  → main.rs (open_settings_modal) → modal_window.rs (Modal 구현, 별도 OS 윈도우)
+  → main.rs (open_settings_modal) → window/settings.rs (SettingsWindow, 별도 OS 윈도우)
       → settings_ui/mod.rs (draw_settings_panel) — 드래프트 편집
       → Save: settings = draft + settings.save() (TOML 직렬화 → 파일 쓰기)
   → main.rs (close_active_modal)
-      → ModalWindow downcast → 모든 윈도우에 새 설정 적용
+      → SettingsWindow downcast → 모든 MainWindow에 새 설정 적용
 
 런타임 즉시 반영되는 항목:
   - font_size/font_family: gpu/egui_bridge.rs (post_egui_update)에서 변경 감지 → 렌더러 재초기화

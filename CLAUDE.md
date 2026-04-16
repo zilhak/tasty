@@ -60,9 +60,10 @@ Tasty는 **Windows, macOS, Linux를 모두 지원하는 크로스 플랫폼 앱*
 프로젝트 내 용어 정의는 `docs/design/ubiquitous-language.md`에 정리되어 있다. 코드/문서 작성 시 반드시 이 용어를 따를 것.
 
 핵심 구분:
-- **Modal**: 전역 입력 독점. 닫기 전까지 다른 조작 불가 (예: 설정창)
-- **Popup**: 윈도우 내부 가상 창. 포커스를 빼앗지 않으며 터미널과 공존 (예: 알림 패널)
-- **Window**: 독립 OS 윈도우. 다른 윈도우와 독립적 포커스
+- **Window**: 독립 OS 윈도우. Tasty의 최상위 UI 엔티티. **modality**(Modeless/Modal)와 **계열**(ModalWindow/TerminalHostWindow)을 속성으로 갖는 sealed trait
+- **Modality: Modal**: Window의 특수 상태. 전역 입력 독점, 닫기 전까지 다른 조작 불가. 엔진 전역 최대 1개 (예: SettingsWindow, QuitWindow)
+- **Modality: Modeless**: 일반 윈도우 상태. OS 네이티브 포커스로 독립 동작 (예: MainWindow)
+- **Popup**: Window 내부 가상 창. 포커스를 빼앗지 않으며 터미널과 공존 (예: 알림 패널)
 
 포커스 정책은 `docs/design/focus-policy.md` 참조.
 

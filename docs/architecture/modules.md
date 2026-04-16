@@ -111,20 +111,27 @@ pipeline.rs는 wgpu RenderPipelineDescriptor의 장황한 선언 코드가 대�
 
 ---
 
-## tasty_window/ — 윈도우 이벤트 처리
+## window/ — Window 트레잇 계층과 구현체
 
-**책임:** 윈도우당 1개의 TastyWindow. winit 이벤트를 받아 GpuState + AppState를 조작한다.
+**책임:** 모든 윈도우 타입의 trait 계층 정의 및 구현체 관리.
 
-handle_window_event() dispatch를 mod.rs에 두고, 입력 유형별(키보드/마우스/선택/리드로우)로 서브모듈을 분리한다.
+`Window` sealed trait을 최상위로 두고, `ModalWindow`/`TerminalHostWindow` supertrait으로
+계열을 분리한다. 모든 구현체는 `WindowBase` 구조체를 composition하여 공통 필드를 공유한다.
 
-| 파일 | 역할 |
-|------|------|
-| `mod.rs` | TastyWindow 구조체, new(), handle_window_event() dispatch |
-| `keyboard.rs` | handle_keyboard_input(), send_key_to_terminal(), handle_ime() |
-| `mouse.rs` | handle_cursor_moved(), handle_mouse_input(), handle_mouse_wheel() |
-| `selection.rs` | 텍스트 선택 (다중 클릭 감지, 단어/줄 경계, 그리드 변환) |
-| `redraw.rs` | handle_redraw(): arrow queue + 터미널 이벤트 + 훅 실행 + 렌더 |
-| `clipboard.rs` | paste_to_terminal(), 이미지 저장 |
+| 파일/디렉토리 | 역할 |
+|---------------|------|
+| `mod.rs` | `Window` sealed trait, `Modality`, `WindowAction`, `WindowCtx`, `sealed::Sealed`, `unbox_main()` |
+| `base.rs` | `WindowBase`: gpu, winit, dirty, modifiers, focused, close_requested 공통 필드 |
+| `modal.rs` | `ModalWindow` supertrait (reveal_after_first_render, on_escape default method) |
+| `terminal_host.rs` | `TerminalHostWindow` supertrait (has_sidebar default method) |
+| `settings.rs` | `SettingsWindow` (impl Window + ModalWindow) |
+| `quit.rs` | `QuitWindow` (impl Window + ModalWindow) |
+| `main/mod.rs` | `MainWindow` 구조체, new(), `handle_event` dispatch (impl Window + TerminalHostWindow) |
+| `main/keyboard.rs` | handle_keyboard_input(), send_key_to_terminal(), handle_ime() |
+| `main/mouse.rs` | handle_cursor_moved(), handle_mouse_input(), handle_mouse_wheel() |
+| `main/selection.rs` | 텍스트 선택 (다중 클릭 감지, 단어/줄 경계, 그리드 변환) |
+| `main/redraw.rs` | handle_redraw(): arrow queue + 터미널 이벤트 + 훅 실행 + 렌더 |
+| `main/clipboard.rs` | paste_to_terminal(), 이미지 저장 |
 
 ---
 
@@ -213,9 +220,12 @@ keybindings_tab.rs의 egui_key_to_string 매핑 테이블은 키 목록을 1:1 �
 | `notification.rs` | 248 | NotificationStore (FIFO, 병합, 읽음 추적) + OS 네이티브 알림 |
 | `global_hooks.rs` | 209 | GlobalHookManager (interval/once/file 조건 기반 훅) |
 | `surface_meta.rs` | ~90 | Surface별 key-value 메타데이터 (OnceLock + Mutex HashMap) |
-| `modal_trait.rs` | ~45 | Modal trait + ModalAction enum (모든 모달의 공통 인터페이스) |
-| `modal_window.rs` | ~140 | 설정 모달 윈도우 (Modal 구현, 독립 GPU + egui 인스턴스) |
-| `quit_modal.rs` | ~140 | 종료 확인 모달 윈도우 (Modal 구현, Quit/Minimize 선택) |
+| `window/mod.rs` | ~90 | Window sealed trait, Modality, WindowAction, WindowCtx, unbox_main |
+| `window/base.rs` | ~30 | WindowBase (모든 윈도우 공통 필드 composition struct) |
+| `window/modal.rs` | ~30 | ModalWindow supertrait (모달 계열 공통 default method) |
+| `window/terminal_host.rs` | ~25 | TerminalHostWindow supertrait (일반 윈도우 계열) |
+| `window/settings.rs` | ~160 | SettingsWindow (설정 모달, impl Window + ModalWindow) |
+| `window/quit.rs` | ~170 | QuitWindow (종료 확인 모달, impl Window + ModalWindow) |
 | `i18n.rs` | ~100 | TOML 기반 번역 (en/ko/ja 내장 + 사용자 오버라이드) |
 | `crash_report.rs` | 243 | panic hook + 크래시 로그 수집 |
 | `markdown_ui.rs` | 259 | egui 마크다운 렌더링 (제목/목록/코드블록/테이블) |

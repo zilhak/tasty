@@ -161,7 +161,7 @@ IME 관련 코드를 수정한 후 다음을 확인한다:
 
 ## 제한사항
 
-- IME 시뮬레이션은 윈도우 레벨 상태(`TastyWindow.ime_active`, `ime_preedit`)를 직접 조작한다. OS의 실제 IME 엔진은 관여하지 않는다.
+- IME 시뮬레이션은 윈도우 레벨 상태(`MainWindow.ime_active`, `ime_preedit`)를 직접 조작한다. OS의 실제 IME 엔진은 관여하지 않는다.
 - `surface_id` 지정은 현재 미지원 — 항상 포커스된 서피스에 대해 동작한다.
 - 마우스 이벤트(클릭 시 preedit 커밋)는 시뮬레이션할 수 없다.
 - OS IME 후보창 위치(`set_ime_cursor_area`)는 호출되지만, 실제 OS IME가 열리지는 않는다.
