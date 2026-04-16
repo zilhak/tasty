@@ -41,14 +41,35 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel, keys: &[Pendi
     let available_width = ui.available_width();
     let tree_width = (available_width * 0.35).min(250.0).max(150.0).round_ui();
 
+    // ── Address bar (top, full width) ──
+    let address_bar_h = 20.0;
+    ui.horizontal(|ui| {
+        ui.set_height(address_bar_h);
+        let resp = ui.add_sized(
+            [ui.available_width(), address_bar_h],
+            egui::TextEdit::singleline(&mut panel.address_bar_text)
+                .font(egui::FontId::proportional(th.font_size_caption))
+                .margin(egui::Margin::symmetric(4, 2)),
+        );
+        if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+            let path = panel.address_bar_text.clone();
+            panel.navigate_to(path);
+        }
+    });
+    ui.add_space(2.0);
+
     ui.horizontal_top(|ui| {
-        // Left: File tree
+        // Left: File tree + Bookmarks
         ui.vertical(|ui| {
             ui.set_width(tree_width);
-            ui.set_min_height(ui.available_height());
+            let total_height = ui.available_height();
+            let bookmark_height = (total_height * 0.2).max(40.0);
+            let tree_height = (total_height - bookmark_height - 4.0).max(40.0);
 
+            // ── File tree (top 80%) ──
             egui::ScrollArea::vertical()
                 .id_salt("explorer_tree")
+                .max_height(tree_height)
                 .show(ui, |ui| {
                     let mut needs_refresh = false;
                     let root = &mut panel.root_node;
@@ -195,12 +216,143 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel, keys: &[Pendi
                                     TreeAction::CopyPath(text) => {
                                         ui.ctx().copy_text(text);
                                     }
+                                    TreeAction::ContextMenu(path) => {
+                                        panel.context_menu_path = Some(path);
+                                    }
                                 }
                             }
                         }
                     }
                     if needs_refresh {
                         crate::model::ExplorerPanel::load_directory(&mut panel.root_node);
+                    }
+                });
+
+            // ── Right-click context menu (for bookmark add/remove) ──
+            if let Some(ctx_path) = panel.context_menu_path.clone() {
+                let is_bookmarked = panel.is_bookmarked(&ctx_path);
+                let menu_id = egui::Id::new("explorer_ctx_menu");
+                let mut close_menu = false;
+                egui::Area::new(menu_id)
+                    .order(egui::Order::Foreground)
+                    .fixed_pos(ui.ctx().pointer_latest_pos().unwrap_or_default())
+                    .show(ui.ctx(), |ui| {
+                        egui::Frame::new()
+                            .fill(th.surface0)
+                            .stroke(egui::Stroke::new(1.0, th.surface1))
+                            .corner_radius(4.0)
+                            .inner_margin(egui::Margin::same(4))
+                            .show(ui, |ui| {
+                                let label = if is_bookmarked {
+                                    crate::i18n::t("explorer.bookmark_remove")
+                                } else {
+                                    crate::i18n::t("explorer.bookmark_add")
+                                };
+                                if ui.button(label).clicked() {
+                                    if is_bookmarked {
+                                        panel.remove_bookmark(&ctx_path);
+                                    } else {
+                                        let folder_name = std::path::Path::new(&ctx_path)
+                                            .file_name()
+                                            .map(|n| n.to_string_lossy().to_string())
+                                            .unwrap_or_default();
+                                        panel.pending_bookmark = Some(crate::model::PendingBookmark {
+                                            path: ctx_path.clone(),
+                                            name: folder_name,
+                                        });
+                                    }
+                                    close_menu = true;
+                                }
+                            });
+                    });
+                // Close on click outside
+                if close_menu || ui.ctx().input(|i| i.pointer.any_pressed()) {
+                    panel.context_menu_path = None;
+                }
+            }
+
+            // ── Bookmark name input popup ──
+            if panel.pending_bookmark.is_some() {
+                let mut close_popup = false;
+                let mut confirm = false;
+                egui::Area::new(egui::Id::new("bookmark_name_popup"))
+                    .order(egui::Order::Foreground)
+                    .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                    .show(ui.ctx(), |ui| {
+                        egui::Frame::new()
+                            .fill(th.surface0)
+                            .stroke(egui::Stroke::new(1.0, th.surface1))
+                            .corner_radius(4.0)
+                            .inner_margin(egui::Margin::same(8))
+                            .show(ui, |ui| {
+                                ui.set_min_width(200.0);
+                                ui.label(
+                                    egui::RichText::new(crate::i18n::t("explorer.bookmark_name_label"))
+                                        .color(th.text),
+                                );
+                                ui.add_space(4.0);
+                                if let Some(ref mut pending) = panel.pending_bookmark {
+                                    let resp = ui.text_edit_singleline(&mut pending.name);
+                                    resp.request_focus();
+                                    if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                                        confirm = true;
+                                    }
+                                    if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                                        close_popup = true;
+                                    }
+                                }
+                            });
+                    });
+                if confirm {
+                    if let Some(pending) = panel.pending_bookmark.take() {
+                        let name = if pending.name.trim().is_empty() {
+                            std::path::Path::new(&pending.path)
+                                .file_name()
+                                .map(|n| n.to_string_lossy().to_string())
+                                .unwrap_or_else(|| pending.path.clone())
+                        } else {
+                            pending.name
+                        };
+                        panel.bookmarks.push(crate::model::Bookmark { name, path: pending.path });
+                    }
+                } else if close_popup {
+                    panel.pending_bookmark = None;
+                }
+            }
+
+            ui.add_space(2.0);
+            ui.separator();
+
+            // ── Bookmarks (bottom 20%) ──
+            ui.label(
+                egui::RichText::new(crate::i18n::t("explorer.bookmarks_heading"))
+                    .size(th.font_size_caption)
+                    .strong()
+                    .color(th.subtext0),
+            );
+            ui.add_space(2.0);
+            egui::ScrollArea::vertical()
+                .id_salt("explorer_bookmarks")
+                .show(ui, |ui| {
+                    let mut nav_path: Option<String> = None;
+                    for bm in &panel.bookmarks {
+                        let resp = ui.selectable_label(
+                            false,
+                            egui::RichText::new(format!("\u{2605} {}", bm.name)).size(th.font_size_caption),
+                        );
+                        if resp.double_clicked() {
+                            nav_path = Some(bm.path.clone());
+                        }
+                    }
+                    if panel.bookmarks.is_empty() {
+                        ui.label(
+                            egui::RichText::new(crate::i18n::t("explorer.bookmarks_empty"))
+                                .small()
+                                .color(th.overlay0),
+                        );
+                    }
+                    if let Some(path) = nav_path {
+                        panel.navigate_to(path);
                     }
                 });
         });
@@ -238,7 +390,7 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel, keys: &[Pendi
             } else {
                 ui.centered_and_justified(|ui| {
                     ui.label(
-                        egui::RichText::new("Select a file")
+                        egui::RichText::new(crate::i18n::t("explorer.select_file"))
                             .color(egui::Color32::GRAY),
                     );
                 });
@@ -264,6 +416,8 @@ enum TreeAction {
     ToggleDir(String),
     /// Copy path(s) as text.
     CopyPath(String),
+    /// Right-click on a directory — show context menu for bookmark add/remove.
+    ContextMenu(String),
 }
 
 /// Action returned from `draw_explorer` for the caller to process.
@@ -335,6 +489,8 @@ fn draw_file_node(
             } else {
                 *action = Some(TreeAction::DoubleClickFile(node.path.clone()));
             }
+        } else if resp.secondary_clicked() && action.is_none() && node.is_directory {
+            *action = Some(TreeAction::ContextMenu(node.path.clone()));
         } else if resp.clicked() && action.is_none() {
             let modifiers = ui.input(|i| i.modifiers);
             if modifiers.command {

@@ -217,6 +217,14 @@ window_title = "通知"
 unread_count = "{}件の未読"
 empty_message = "通知はありません"
 
+[explorer]
+select_file = "ファイルを選択してください"
+bookmark_add = "ブックマークに追加"
+bookmark_remove = "ブックマークから削除"
+bookmark_name_label = "ブックマーク名:"
+bookmarks_heading = "ブックマーク"
+bookmarks_empty = "フォルダを右クリックして追加"
+
 [convert_popup]
 title = "サーフェスタイプ切替"
 terminal = "ターミナル"

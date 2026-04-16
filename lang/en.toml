@@ -217,6 +217,14 @@ window_title = "Notifications"
 unread_count = "{} unread"
 empty_message = "No notifications"
 
+[explorer]
+select_file = "Select a file"
+bookmark_add = "Add to Bookmarks"
+bookmark_remove = "Remove from Bookmarks"
+bookmark_name_label = "Bookmark name:"
+bookmarks_heading = "Bookmarks"
+bookmarks_empty = "Right-click a folder to add"
+
 [convert_popup]
 title = "Surface Type"
 terminal = "Terminal"

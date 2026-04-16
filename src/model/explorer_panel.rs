@@ -12,6 +12,14 @@ pub struct FileNode {
     pub is_expanded: bool,
 }
 
+/// A bookmark entry in the explorer.
+pub struct Bookmark {
+    /// Display name (user-customizable, defaults to folder name).
+    pub name: String,
+    /// Full path to the bookmarked directory.
+    pub path: String,
+}
+
 /// A panel that shows a file explorer with a tree view and file preview.
 pub struct ExplorerPanel {
     pub id: u32,
@@ -27,6 +35,24 @@ pub struct ExplorerPanel {
     pub is_markdown: bool,
     pub scroll_offset: f32,
     pub tree_scroll_offset: f32,
+    /// Address bar editing state. When Some, the text field is being edited.
+    pub address_bar_text: String,
+    /// Whether the address bar is actively being edited (has focus).
+    pub address_bar_editing: bool,
+    /// Bookmarked directories.
+    pub bookmarks: Vec<Bookmark>,
+    /// Pending bookmark addition: folder path waiting for name input.
+    pub pending_bookmark: Option<PendingBookmark>,
+    /// Right-click context menu state: path of the right-clicked folder.
+    pub context_menu_path: Option<String>,
+}
+
+/// State for the bookmark name input popup.
+pub struct PendingBookmark {
+    /// Path to bookmark.
+    pub path: String,
+    /// User-editable name (defaults to folder name).
+    pub name: String,
 }
 
 impl ExplorerPanel {
@@ -45,7 +71,7 @@ impl ExplorerPanel {
         Self::load_directory(&mut root_node);
         Self {
             id,
-            root_path,
+            root_path: root_path.clone(),
             root_node,
             selected_file: None,
             selected_files: HashSet::new(),
@@ -54,6 +80,11 @@ impl ExplorerPanel {
             is_markdown: false,
             scroll_offset: 0.0,
             tree_scroll_offset: 0.0,
+            address_bar_text: root_path,
+            address_bar_editing: false,
+            bookmarks: Vec::new(),
+            pending_bookmark: None,
+            context_menu_path: None,
         }
     }
 
@@ -134,6 +165,41 @@ impl ExplorerPanel {
         for p in visible_paths {
             self.selected_files.insert(p.clone());
         }
+    }
+
+    /// Navigate to a new root path. Reloads the directory tree.
+    pub fn navigate_to(&mut self, path: String) {
+        if !std::path::Path::new(&path).is_dir() {
+            return;
+        }
+        self.root_path = path.clone();
+        self.root_node = FileNode {
+            name: path
+                .split(['/', '\\'])
+                .last()
+                .unwrap_or("root")
+                .to_string(),
+            path: path.clone(),
+            is_directory: true,
+            children: None,
+            is_expanded: true,
+        };
+        Self::load_directory(&mut self.root_node);
+        self.address_bar_text = path;
+        self.selected_file = None;
+        self.selected_files.clear();
+        self.selection_anchor = None;
+        self.file_content = None;
+    }
+
+    /// Check if a path is bookmarked.
+    pub fn is_bookmarked(&self, path: &str) -> bool {
+        self.bookmarks.iter().any(|b| b.path == path)
+    }
+
+    /// Remove a bookmark by path.
+    pub fn remove_bookmark(&mut self, path: &str) {
+        self.bookmarks.retain(|b| b.path != path);
     }
 
     /// Update the right-side preview for the given path.
