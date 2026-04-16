@@ -149,19 +149,24 @@ pub fn draw_egui_panels(
                 .show(ctx, |ui| {
                     ui.set_min_size(egui::vec2(info.logical_w, info.logical_h));
                     ui.set_max_size(egui::vec2(info.logical_w, info.logical_h));
-                    ui.set_clip_rect(ui.max_rect());
-                    egui::Frame::new()
-                        .fill(th.crust)
-                        .inner_margin(egui::Margin::same(8))
+                    egui::ScrollArea::new([false, false])
+                        .max_width(info.logical_w)
+                        .max_height(info.logical_h)
+                        .id_salt(format!("md_clip_{}", id_suffix))
                         .show(ui, |ui| {
-                            if key_scroll_y != 0.0 {
-                                ui.scroll_with_delta(egui::vec2(0.0, key_scroll_y));
-                            }
-                            egui::ScrollArea::vertical()
-                                .id_salt(format!("md_scroll_{}", id_suffix))
+                            egui::Frame::new()
+                                .fill(th.crust)
+                                .inner_margin(egui::Margin::same(8))
                                 .show(ui, |ui| {
-                                    let content = md_panel.content.clone();
-                                    crate::markdown_ui::render_markdown(ui, &content);
+                                    if key_scroll_y != 0.0 {
+                                        ui.scroll_with_delta(egui::vec2(0.0, key_scroll_y));
+                                    }
+                                    egui::ScrollArea::vertical()
+                                        .id_salt(format!("md_scroll_{}", id_suffix))
+                                        .show(ui, |ui| {
+                                            let content = md_panel.content.clone();
+                                            crate::markdown_ui::render_markdown(ui, &content);
+                                        });
                                 });
                         });
                 });
@@ -173,14 +178,19 @@ pub fn draw_egui_panels(
                 .show(ctx, |ui| {
                     ui.set_min_size(egui::vec2(info.logical_w, info.logical_h));
                     ui.set_max_size(egui::vec2(info.logical_w, info.logical_h));
-                    ui.set_clip_rect(ui.max_rect());
-                    egui::Frame::new()
-                        .fill(th.crust)
-                        .inner_margin(egui::Margin::same(4))
+                    egui::ScrollArea::new([false, false])
+                        .max_width(info.logical_w)
+                        .max_height(info.logical_h)
+                        .id_salt(format!("explorer_clip_{}", id_suffix))
                         .show(ui, |ui| {
-                            if let Some(act) = crate::explorer_ui::draw_explorer(ui, exp_panel, keys) {
-                                pending_explorer_action = Some((info.pane_id, act));
-                            }
+                            egui::Frame::new()
+                                .fill(th.crust)
+                                .inner_margin(egui::Margin::same(4))
+                                .show(ui, |ui| {
+                                    if let Some(act) = crate::explorer_ui::draw_explorer(ui, exp_panel, keys) {
+                                        pending_explorer_action = Some((info.pane_id, act));
+                                    }
+                                });
                         });
                 });
         } else if let Some(html_panel) = surface.as_html() {
@@ -191,17 +201,22 @@ pub fn draw_egui_panels(
                 .show(ctx, |ui| {
                     ui.set_min_size(egui::vec2(info.logical_w, info.logical_h));
                     ui.set_max_size(egui::vec2(info.logical_w, info.logical_h));
-                    ui.set_clip_rect(ui.max_rect());
-                    egui::Frame::new()
-                        .fill(th.crust)
+                    egui::ScrollArea::new([false, false])
+                        .max_width(info.logical_w)
+                        .max_height(info.logical_h)
+                        .id_salt(format!("html_clip_{}", id_suffix))
                         .show(ui, |ui| {
-                            ui.centered_and_justified(|ui| {
-                                ui.label(
-                                    egui::RichText::new(&url)
-                                        .color(th.overlay0)
-                                        .size(th.font_size_body),
-                                );
-                            });
+                            egui::Frame::new()
+                                .fill(th.crust)
+                                .show(ui, |ui| {
+                                    ui.centered_and_justified(|ui| {
+                                        ui.label(
+                                            egui::RichText::new(&url)
+                                                .color(th.overlay0)
+                                                .size(th.font_size_body),
+                                        );
+                                    });
+                                });
                         });
                 });
         } else if let Some(empty) = surface.as_empty_surface() {
@@ -212,20 +227,25 @@ pub fn draw_egui_panels(
                 .show(ctx, |ui| {
                     ui.set_min_size(egui::vec2(info.logical_w, info.logical_h));
                     ui.set_max_size(egui::vec2(info.logical_w, info.logical_h));
-                    ui.set_clip_rect(ui.max_rect());
-                    egui::Frame::new()
-                        .fill(th.crust)
+                    egui::ScrollArea::new([false, false])
+                        .max_width(info.logical_w)
+                        .max_height(info.logical_h)
+                        .id_salt(format!("empty_clip_{}", id_suffix))
                         .show(ui, |ui| {
-                            ui.centered_and_justified(|ui| {
-                                let btn = ui.button(
-                                    egui::RichText::new(crate::i18n::t("convert_popup.title"))
-                                        .size(th.font_size_body)
-                                        .color(th.text),
-                                );
-                                if btn.clicked() {
-                                    pending_empty_convert = Some(sid);
-                                }
-                            });
+                            egui::Frame::new()
+                                .fill(th.crust)
+                                .show(ui, |ui| {
+                                    ui.centered_and_justified(|ui| {
+                                        let btn = ui.button(
+                                            egui::RichText::new(crate::i18n::t("convert_popup.title"))
+                                                .size(th.font_size_body)
+                                                .color(th.text),
+                                        );
+                                        if btn.clicked() {
+                                            pending_empty_convert = Some(sid);
+                                        }
+                                    });
+                                });
                         });
                 });
         }
