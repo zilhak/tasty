@@ -95,15 +95,147 @@ pub fn draw_general_tab(ui: &mut egui::Ui, settings: &mut Settings) {
         });
 }
 
-pub fn draw_appearance_tab(ui: &mut egui::Ui, settings: &mut Settings, font_families: &mut Option<Vec<String>>, font_filter: &mut String, preview_font_loaded: &mut String) {
+pub fn draw_appearance_tab(
+    ui: &mut egui::Ui,
+    settings: &mut Settings,
+    sub_tab: &mut super::AppearanceSubTab,
+    font_families: &mut Option<Vec<String>>,
+    font_filter: &mut String,
+    preview_font_loaded: &mut String,
+) {
+    use super::AppearanceSubTab;
     let th = crate::theme::theme();
     ui.add_space(8.0);
 
-    // Left-right split: settings on the left, preview on the right
-    ui.columns(2, |columns| {
-        // ── Left column: settings controls ──
+    let available_height = ui.available_height() - 8.0;
 
-        egui::Grid::new("appearance_grid")
+    ui.horizontal_top(|ui| {
+        // ── Left: sub-tab selector ──
+        egui::Frame::new()
+            .fill(th.crust)
+            .stroke(egui::Stroke::new(1.0, th.surface0))
+            .corner_radius(4.0)
+            .inner_margin(egui::Margin::symmetric(6, 6))
+            .show(ui, |ui| {
+                ui.set_width(100.0);
+                ui.set_min_height(available_height);
+
+                ui.vertical(|ui| {
+                    let sub_tabs = [
+                        (AppearanceSubTab::General, t("settings.appearance.subtab.general")),
+                        (AppearanceSubTab::Tasty, "Tasty"),
+                        (AppearanceSubTab::Terminal, t("settings.appearance.subtab.terminal")),
+                        (AppearanceSubTab::Markdown, t("settings.appearance.subtab.markdown")),
+                        (AppearanceSubTab::Explorer, "Explorer"),
+                        (AppearanceSubTab::HtmlViewer, "HTML"),
+                    ];
+                    for (tab, label) in &sub_tabs {
+                        let selected = *sub_tab == *tab;
+                        if ui.selectable_label(selected, *label).clicked() {
+                            *sub_tab = *tab;
+                        }
+                    }
+                });
+            });
+
+        ui.add_space(8.0);
+
+        // ── Right: sub-tab content ──
+        ui.vertical(|ui| {
+            match *sub_tab {
+                AppearanceSubTab::General => {
+                    draw_appearance_general(ui, settings);
+                }
+                AppearanceSubTab::Tasty => {
+                    draw_appearance_tasty(ui, settings);
+                }
+                AppearanceSubTab::Terminal => {
+                    draw_appearance_terminal(ui, settings, font_families, font_filter, preview_font_loaded);
+                }
+                AppearanceSubTab::Markdown => {
+                    draw_appearance_placeholder(ui, "Markdown");
+                }
+                AppearanceSubTab::Explorer => {
+                    draw_appearance_placeholder(ui, "Explorer");
+                }
+                AppearanceSubTab::HtmlViewer => {
+                    draw_appearance_placeholder(ui, "HTML Viewer");
+                }
+            }
+        });
+    });
+}
+
+/// Appearance > General: theme, background opacity, focused surface bg
+fn draw_appearance_general(ui: &mut egui::Ui, settings: &mut Settings) {
+    egui::Grid::new("appearance_general_grid")
+        .num_columns(2)
+        .spacing([12.0, 8.0])
+        .show(ui, |ui| {
+            ui.label(t("settings.appearance.background_opacity_label"));
+            ui.add(egui::Slider::new(
+                &mut settings.appearance.background_opacity,
+                0.0..=1.0,
+            ));
+            ui.end_row();
+        });
+}
+
+/// Appearance > Tasty: UI scale, sidebar width
+fn draw_appearance_tasty(ui: &mut egui::Ui, settings: &mut Settings) {
+    egui::Grid::new("appearance_tasty_grid")
+        .num_columns(2)
+        .spacing([12.0, 8.0])
+        .show(ui, |ui| {
+            ui.label(t("settings.appearance.ui_scale_label"));
+            egui::ComboBox::from_id_salt("ui_scale")
+                .selected_text(match settings.appearance.ui_scale.as_str() {
+                    "small" => t("settings.appearance.ui_scale_small"),
+                    "large" => t("settings.appearance.ui_scale_large"),
+                    _ => t("settings.appearance.ui_scale_medium"),
+                })
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(
+                        &mut settings.appearance.ui_scale,
+                        "small".to_string(),
+                        t("settings.appearance.ui_scale_small"),
+                    );
+                    ui.selectable_value(
+                        &mut settings.appearance.ui_scale,
+                        "medium".to_string(),
+                        t("settings.appearance.ui_scale_medium"),
+                    );
+                    ui.selectable_value(
+                        &mut settings.appearance.ui_scale,
+                        "large".to_string(),
+                        t("settings.appearance.ui_scale_large"),
+                    );
+                });
+            ui.end_row();
+
+            ui.label(t("settings.appearance.sidebar_width_label"));
+            ui.add(
+                egui::DragValue::new(&mut settings.appearance.sidebar_width)
+                    .range(100.0..=400.0)
+                    .speed(1.0),
+            );
+            ui.end_row();
+        });
+}
+
+/// Appearance > Terminal: font, font size, line height, DPI mode, preview
+fn draw_appearance_terminal(
+    ui: &mut egui::Ui,
+    settings: &mut Settings,
+    font_families: &mut Option<Vec<String>>,
+    font_filter: &mut String,
+    preview_font_loaded: &mut String,
+) {
+    let th = crate::theme::theme();
+
+    ui.columns(2, |columns| {
+        // ── Left: terminal font settings ──
+        egui::Grid::new("appearance_terminal_grid")
             .num_columns(2)
             .spacing([12.0, 8.0])
             .show(&mut columns[0], |ui| {
@@ -120,7 +252,6 @@ pub fn draw_appearance_tab(ui: &mut egui::Ui, settings: &mut Settings, font_fami
                     .height(300.0)
                     .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
                     .show_ui(ui, |ui| {
-                        // Filter input
                         ui.add(
                             egui::TextEdit::singleline(font_filter)
                                 .hint_text(t("settings.appearance.search_hint"))
@@ -128,7 +259,6 @@ pub fn draw_appearance_tab(ui: &mut egui::Ui, settings: &mut Settings, font_fami
                         );
                         ui.separator();
 
-                        // Default monospace option
                         let filter_lower = font_filter.to_lowercase();
                         if filter_lower.is_empty() || "monospace".contains(&filter_lower) {
                             if ui
@@ -142,7 +272,6 @@ pub fn draw_appearance_tab(ui: &mut egui::Ui, settings: &mut Settings, font_fami
                             }
                         }
 
-                        // System font list
                         if let Some(families) = &font_families {
                             egui::ScrollArea::vertical()
                                 .max_height(250.0)
@@ -168,7 +297,6 @@ pub fn draw_appearance_tab(ui: &mut egui::Ui, settings: &mut Settings, font_fami
                     });
                 ui.end_row();
 
-                // Custom font file path
                 ui.label(t("settings.appearance.custom_font_label"));
                 ui.horizontal(|ui| {
                     ui.text_edit_singleline(&mut settings.appearance.custom_font_path);
@@ -196,21 +324,6 @@ pub fn draw_appearance_tab(ui: &mut egui::Ui, settings: &mut Settings, font_fami
                 );
                 ui.end_row();
 
-                ui.label(t("settings.appearance.background_opacity_label"));
-                ui.add(egui::Slider::new(
-                    &mut settings.appearance.background_opacity,
-                    0.0..=1.0,
-                ));
-                ui.end_row();
-
-                ui.label(t("settings.appearance.sidebar_width_label"));
-                ui.add(
-                    egui::DragValue::new(&mut settings.appearance.sidebar_width)
-                        .range(100.0..=400.0)
-                        .speed(1.0),
-                );
-                ui.end_row();
-
                 label_with_tooltip(
                     ui,
                     t("settings.appearance.font_scale_mode_label"),
@@ -234,37 +347,21 @@ pub fn draw_appearance_tab(ui: &mut egui::Ui, settings: &mut Settings, font_fami
                         );
                     });
                 ui.end_row();
-
-                ui.label(t("settings.appearance.ui_scale_label"));
-                egui::ComboBox::from_id_salt("ui_scale")
-                    .selected_text(match settings.appearance.ui_scale.as_str() {
-                        "small" => t("settings.appearance.ui_scale_small"),
-                        "large" => t("settings.appearance.ui_scale_large"),
-                        _ => t("settings.appearance.ui_scale_medium"),
-                    })
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(
-                            &mut settings.appearance.ui_scale,
-                            "small".to_string(),
-                            t("settings.appearance.ui_scale_small"),
-                        );
-                        ui.selectable_value(
-                            &mut settings.appearance.ui_scale,
-                            "medium".to_string(),
-                            t("settings.appearance.ui_scale_medium"),
-                        );
-                        ui.selectable_value(
-                            &mut settings.appearance.ui_scale,
-                            "large".to_string(),
-                            t("settings.appearance.ui_scale_large"),
-                        );
-                    });
-                ui.end_row();
             });
 
-        // ── Right column: font preview ──
+        // ── Right: font preview ──
         draw_font_preview(&mut columns[1], settings, th, preview_font_loaded);
     });
+}
+
+/// Placeholder for sub-tabs not yet populated with settings.
+fn draw_appearance_placeholder(ui: &mut egui::Ui, name: &str) {
+    let th = crate::theme::theme();
+    ui.add_space(20.0);
+    ui.label(
+        egui::RichText::new(format!("{} appearance settings (coming soon)", name))
+            .color(th.subtext0),
+    );
 }
 
 /// Draw a fake terminal preview showing the current font/appearance settings.

@@ -52,6 +52,11 @@ close_behavior_quit = "終了"
 
 [settings.appearance]
 heading = "外観"
+
+[settings.appearance.subtab]
+general = "一般"
+terminal = "ターミナル"
+markdown = "マークダウン"
 font_family_label = "フォント:"
 font_size_label = "フォントサイズ:"
 theme_label = "テーマ:"

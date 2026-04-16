@@ -52,6 +52,11 @@ close_behavior_quit = "Quit"
 
 [settings.appearance]
 heading = "Appearance"
+
+[settings.appearance.subtab]
+general = "General"
+terminal = "Terminal"
+markdown = "Markdown"
 font_family_label = "Font family:"
 font_size_label = "Font size:"
 theme_label = "Theme:"

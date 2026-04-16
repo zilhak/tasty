@@ -52,6 +52,11 @@ close_behavior_quit = "종료"
 
 [settings.appearance]
 heading = "외관"
+
+[settings.appearance.subtab]
+general = "일반"
+terminal = "터미널"
+markdown = "마크다운"
 font_family_label = "폰트:"
 font_size_label = "글자 크기:"
 theme_label = "테마:"

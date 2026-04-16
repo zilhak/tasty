@@ -7,6 +7,17 @@ use crate::settings::Settings;
 use keybindings_tab::{draw_keybindings_tab, KeybindingsSubTab};
 use tabs::*;
 
+/// Sub-tab within the Appearance tab.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AppearanceSubTab {
+    General,
+    Tasty,
+    Terminal,
+    Markdown,
+    Explorer,
+    HtmlViewer,
+}
+
 /// Active tab in the settings window.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SettingsTab {
@@ -28,6 +39,8 @@ pub struct SettingsUiState {
     recording_field: Option<String>,
     /// Active sub-tab within keybindings.
     keybindings_sub_tab: KeybindingsSubTab,
+    /// Active sub-tab within appearance.
+    appearance_sub_tab: AppearanceSubTab,
     /// Pending preset name to apply (waiting for user confirmation).
     preset_confirm: Option<String>,
     /// Cached system font family list.
@@ -45,6 +58,7 @@ impl SettingsUiState {
             draft: None,
             recording_field: None,
             keybindings_sub_tab: KeybindingsSubTab::General,
+            appearance_sub_tab: AppearanceSubTab::General,
             preset_confirm: None,
             font_families: None,
             font_filter: String::new(),
@@ -122,7 +136,7 @@ pub fn draw_settings_panel(
                 .show(ui, |ui| {
                     match active_tab {
                         SettingsTab::General => draw_general_tab(ui, &mut draft),
-                        SettingsTab::Appearance => draw_appearance_tab(ui, &mut draft, &mut ui_state.font_families, &mut ui_state.font_filter, &mut ui_state.preview_font_loaded),
+                        SettingsTab::Appearance => draw_appearance_tab(ui, &mut draft, &mut ui_state.appearance_sub_tab, &mut ui_state.font_families, &mut ui_state.font_filter, &mut ui_state.preview_font_loaded),
                         SettingsTab::Clipboard => draw_clipboard_tab(ui, &mut draft),
                         SettingsTab::Notifications => draw_notifications_tab(ui, &mut draft),
                         SettingsTab::Keybindings => draw_keybindings_tab(ui, &mut draft, &mut ui_state.recording_field, &mut ui_state.keybindings_sub_tab, &mut ui_state.preset_confirm, captured_double_tap),
