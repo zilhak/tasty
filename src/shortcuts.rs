@@ -199,7 +199,7 @@ impl TastyWindow {
         for (binding, action) in &bindings_to_check {
             if binding == dt_str {
                 match *action {
-                    "new_workspace" => { let _ = self.state.add_workspace(); self.state.resize_all(terminal_rect, cell_w, cell_h); }
+                    "new_workspace" => { if let Err(e) = self.state.add_workspace() { tracing::warn!("add_workspace failed: {e}"); } self.state.resize_all(terminal_rect, cell_w, cell_h); }
                     "close_workspace" => {
                         self.state.close_active_workspace();
                         if self.state.engine.workspaces.is_empty() {
@@ -208,7 +208,7 @@ impl TastyWindow {
                             self.state.resize_all(terminal_rect, cell_w, cell_h);
                         }
                     }
-                    "new_tab" => { let _ = self.state.add_tab(); self.state.resize_all(terminal_rect, cell_w, cell_h); }
+                    "new_tab" => { if let Err(e) = self.state.add_tab() { tracing::warn!("add_tab failed: {e}"); } self.state.resize_all(terminal_rect, cell_w, cell_h); }
                     "close_pane" => {
                         if !self.state.close_active_pane() { self.state.close_active_workspace(); }
                         if self.state.engine.workspaces.is_empty() {
@@ -217,10 +217,10 @@ impl TastyWindow {
                             self.state.resize_all(terminal_rect, cell_w, cell_h);
                         }
                     }
-                    "split_pane_vertical" => { let _ = self.state.split_pane(SplitDirection::Vertical); self.state.resize_all(terminal_rect, cell_w, cell_h); }
-                    "split_pane_horizontal" => { let _ = self.state.split_pane(SplitDirection::Horizontal); self.state.resize_all(terminal_rect, cell_w, cell_h); }
-                    "split_surface_vertical" => { let _ = self.state.split_surface(SplitDirection::Vertical); self.state.resize_all(terminal_rect, cell_w, cell_h); }
-                    "split_surface_horizontal" => { let _ = self.state.split_surface(SplitDirection::Horizontal); self.state.resize_all(terminal_rect, cell_w, cell_h); }
+                    "split_pane_vertical" => { if let Err(e) = self.state.split_pane(SplitDirection::Vertical) { tracing::warn!("split_pane_vertical failed: {e}"); } self.state.resize_all(terminal_rect, cell_w, cell_h); }
+                    "split_pane_horizontal" => { if let Err(e) = self.state.split_pane(SplitDirection::Horizontal) { tracing::warn!("split_pane_horizontal failed: {e}"); } self.state.resize_all(terminal_rect, cell_w, cell_h); }
+                    "split_surface_vertical" => { if let Err(e) = self.state.split_surface(SplitDirection::Vertical) { tracing::warn!("split_surface_vertical failed: {e}"); } self.state.resize_all(terminal_rect, cell_w, cell_h); }
+                    "split_surface_horizontal" => { if let Err(e) = self.state.split_surface(SplitDirection::Horizontal) { tracing::warn!("split_surface_horizontal failed: {e}"); } self.state.resize_all(terminal_rect, cell_w, cell_h); }
                     "focus_pane_next" => { self.state.move_pane_focus_forward(); }
                     "focus_pane_prev" => { self.state.move_pane_focus_backward(); }
                     "focus_surface_next" => { self.state.move_surface_focus_forward(); }
@@ -357,30 +357,30 @@ impl TastyWindow {
         proxy: &winit::event_loop::EventLoopProxy<crate::AppEvent>,
     ) -> bool {
         if matches_binding(&kb.new_workspace, key, mods) {
-            let _ = state.add_workspace();
+            if let Err(e) = state.add_workspace() { tracing::warn!("add_workspace failed: {e}"); }
             return true;
         }
         if matches_binding(&kb.new_tab, key, mods) {
-            let _ = state.add_tab();
+            if let Err(e) = state.add_tab() { tracing::warn!("add_tab failed: {e}"); }
             return true;
         }
         if matches_binding(&kb.split_pane_vertical, key, mods) {
-            let _ = state.split_pane(SplitDirection::Vertical);
+            if let Err(e) = state.split_pane(SplitDirection::Vertical) { tracing::warn!("split_pane_vertical failed: {e}"); }
             state.resize_all(terminal_rect, cell_w, cell_h);
             return true;
         }
         if matches_binding(&kb.split_pane_horizontal, key, mods) {
-            let _ = state.split_pane(SplitDirection::Horizontal);
+            if let Err(e) = state.split_pane(SplitDirection::Horizontal) { tracing::warn!("split_pane_horizontal failed: {e}"); }
             state.resize_all(terminal_rect, cell_w, cell_h);
             return true;
         }
         if matches_binding(&kb.split_surface_vertical, key, mods) {
-            let _ = state.split_surface(SplitDirection::Vertical);
+            if let Err(e) = state.split_surface(SplitDirection::Vertical) { tracing::warn!("split_surface_vertical failed: {e}"); }
             state.resize_all(terminal_rect, cell_w, cell_h);
             return true;
         }
         if matches_binding(&kb.split_surface_horizontal, key, mods) {
-            let _ = state.split_surface(SplitDirection::Horizontal);
+            if let Err(e) = state.split_surface(SplitDirection::Horizontal) { tracing::warn!("split_surface_horizontal failed: {e}"); }
             state.resize_all(terminal_rect, cell_w, cell_h);
             return true;
         }

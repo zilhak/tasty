@@ -31,7 +31,7 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
         if expand { state.sidebar_collapsed = false; }
         if settings { state.settings_open = true; }
         if let Some(i) = switch_ws { state.switch_workspace(i); }
-        if add_ws { let _ = state.add_workspace(); }
+        if add_ws { if let Err(e) = state.add_workspace() { tracing::warn!("add_workspace failed: {e}"); } }
     } else {
         let (collapse, settings) =
             sidebar::draw_full_sidebar(ctx, state, sidebar_width);

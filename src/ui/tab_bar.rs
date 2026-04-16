@@ -247,7 +247,7 @@ pub fn draw_pane_tab_bars(
             }
             PaneTabAction::AddTab => {
                 state.active_workspace_mut().focused_pane = pane_id;
-                let _ = state.add_tab();
+                if let Err(e) = state.add_tab() { tracing::warn!("add_tab failed: {e}"); }
             }
             PaneTabAction::ScrollLeft => {
                 if let Some(pane) = state.active_workspace_mut().pane_layout_mut().find_pane_mut(pane_id) {

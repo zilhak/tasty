@@ -247,7 +247,7 @@ pub fn draw_full_sidebar(
                 ui.add_space(4.0);
                 let full_width = ui.available_width();
                 if ui.add_sized([full_width, 28.0], egui::Button::new(t("button.new_workspace"))).clicked() {
-                    let _ = state.add_workspace();
+                    if let Err(e) = state.add_workspace() { tracing::warn!("add_workspace failed: {e}"); }
                 }
                 ui.add_space(4.0);
             });
