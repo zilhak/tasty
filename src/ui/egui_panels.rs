@@ -149,6 +149,7 @@ pub fn draw_egui_panels(
                 .show(ctx, |ui| {
                     ui.set_min_size(egui::vec2(info.logical_w, info.logical_h));
                     ui.set_max_size(egui::vec2(info.logical_w, info.logical_h));
+                    ui.set_clip_rect(ui.max_rect());
                     egui::Frame::new()
                         .fill(th.crust)
                         .inner_margin(egui::Margin::same(8))
@@ -172,6 +173,7 @@ pub fn draw_egui_panels(
                 .show(ctx, |ui| {
                     ui.set_min_size(egui::vec2(info.logical_w, info.logical_h));
                     ui.set_max_size(egui::vec2(info.logical_w, info.logical_h));
+                    ui.set_clip_rect(ui.max_rect());
                     egui::Frame::new()
                         .fill(th.crust)
                         .inner_margin(egui::Margin::same(4))
@@ -189,6 +191,7 @@ pub fn draw_egui_panels(
                 .show(ctx, |ui| {
                     ui.set_min_size(egui::vec2(info.logical_w, info.logical_h));
                     ui.set_max_size(egui::vec2(info.logical_w, info.logical_h));
+                    ui.set_clip_rect(ui.max_rect());
                     egui::Frame::new()
                         .fill(th.crust)
                         .show(ui, |ui| {
@@ -209,6 +212,7 @@ pub fn draw_egui_panels(
                 .show(ctx, |ui| {
                     ui.set_min_size(egui::vec2(info.logical_w, info.logical_h));
                     ui.set_max_size(egui::vec2(info.logical_w, info.logical_h));
+                    ui.set_clip_rect(ui.max_rect());
                     egui::Frame::new()
                         .fill(th.crust)
                         .show(ui, |ui| {
