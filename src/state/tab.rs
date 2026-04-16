@@ -255,7 +255,8 @@ impl AppState {
         };
         let surface: Box<dyn crate::model::Surface> = Box::new(node);
 
-        self.replace_surface_for_id(surface_id, surface, None)
+        // Clear explicit_name when converting back to Terminal (auto-derived from CWD).
+        self.replace_surface_for_id(surface_id, surface, Some(None))
     }
 
     /// Convert a surface to Markdown type.
@@ -266,7 +267,7 @@ impl AppState {
         let name = std::path::Path::new(&file_path)
             .file_name()
             .map(|f| f.to_string_lossy().to_string());
-        self.replace_surface_for_id(surface_id, surface, name)
+        self.replace_surface_for_id(surface_id, surface, Some(name))
     }
 
     /// Convert a surface to Explorer type.
@@ -281,7 +282,7 @@ impl AppState {
         let surface: Box<dyn crate::model::Surface> = Box::new(
             crate::model::ExplorerPanel::new(surface_id, root),
         );
-        self.replace_surface_for_id(surface_id, surface, Some("Explorer".to_string()))
+        self.replace_surface_for_id(surface_id, surface, Some(Some("Explorer".to_string())))
     }
 
     /// Convert a surface to Html type.
@@ -289,33 +290,58 @@ impl AppState {
         let surface: Box<dyn crate::model::Surface> = Box::new(
             crate::model::HtmlPanel::new(surface_id, url),
         );
-        self.replace_surface_for_id(surface_id, surface, Some("HTML".to_string()))
+        self.replace_surface_for_id(surface_id, surface, Some(Some("HTML".to_string())))
     }
 
-    /// Replace the surface of the tab containing the given surface_id.
-    /// Returns true if the replacement succeeded.
+    /// Replace a specific surface by ID. If the surface is inside a SurfaceGroup,
+    /// only that individual leaf is replaced — other surfaces in the group are unaffected.
+    /// If it's the sole surface in a tab, the tab's surface is replaced entirely.
+    /// `new_name` updates `explicit_name` only for standalone (non-SurfaceGroup) surfaces.
+    /// Pass `Some(None)` to clear explicit_name (e.g., when converting back to Terminal).
     fn replace_surface_for_id(
         &mut self,
         surface_id: u32,
         new_surface: Box<dyn crate::model::Surface>,
-        new_name: Option<String>,
+        new_name: Option<Option<String>>,
     ) -> bool {
-        for workspace in &mut self.engine.workspaces {
+        // First, find the location (workspace index, pane id, tab index).
+        let mut location: Option<(usize, u32, usize)> = None;
+        'outer: for (ws_idx, workspace) in self.engine.workspaces.iter().enumerate() {
             for &pid in &workspace.pane_layout().all_pane_ids() {
-                if let Some(pane) = workspace.pane_layout_mut().find_pane_mut(pid) {
-                    for tab in &mut pane.tabs {
+                if let Some(pane) = workspace.pane_layout().find_pane(pid) {
+                    for (tab_idx, tab) in pane.tabs.iter().enumerate() {
                         if tab.surface().contains_surface(surface_id) {
-                            tab.put_surface(new_surface);
-                            if let Some(name) = new_name {
-                                tab.explicit_name = Some(name);
-                            }
-                            return true;
+                            location = Some((ws_idx, pid, tab_idx));
+                            break 'outer;
                         }
                     }
                 }
             }
         }
-        false
+
+        let (ws_idx, pane_id, tab_idx) = match location {
+            Some(loc) => loc,
+            None => return false,
+        };
+
+        let ws = &mut self.engine.workspaces[ws_idx];
+        let pane = match ws.pane_layout_mut().find_pane_mut(pane_id) {
+            Some(p) => p,
+            None => return false,
+        };
+        let tab = &mut pane.tabs[tab_idx];
+
+        // Case 1: Surface is inside a SurfaceGroup — replace just the leaf.
+        if let Some(group) = tab.surface_mut().as_surface_group_mut() {
+            return group.layout_mut().replace_surface(surface_id, new_surface);
+            // Don't change tab name for individual surface replacement within a group.
+        }
+        // Case 2: Tab's sole surface — replace the whole tab surface.
+        tab.put_surface(new_surface);
+        if let Some(name_opt) = new_name {
+            tab.explicit_name = name_opt;
+        }
+        true
     }
 
     /// Get the current surface type name for the focused surface.

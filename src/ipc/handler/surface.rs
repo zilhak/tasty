@@ -49,15 +49,20 @@ fn collect_surface_layout_info(
     out: &mut Vec<serde_json::Value>,
 ) {
     match layout {
-        crate::model::SurfaceGroupLayout::Single(node) => {
-            out.push(json!({
-                "id": node.id,
+        crate::model::SurfaceGroupLayout::Leaf(surface) => {
+            let id = surface.surface_id().unwrap_or(0);
+            let mut entry = json!({
+                "id": id,
                 "pane_id": pane_id,
                 "workspace_id": workspace_id,
                 "tab_index": tab_idx,
-                "cols": node.terminal.cols(),
-                "rows": node.terminal.rows(),
-            }));
+                "type": surface.type_name(),
+            });
+            if let Some(terminal) = surface.focused_terminal() {
+                entry["cols"] = json!(terminal.cols());
+                entry["rows"] = json!(terminal.rows());
+            }
+            out.push(entry);
         }
         crate::model::SurfaceGroupLayout::Split { first, second, .. } => {
             collect_surface_layout_info(first, pane_id, workspace_id, tab_idx, out);

@@ -192,7 +192,10 @@ impl Surface for SurfaceGroupNode {
         Some(self.focused_surface)
     }
 
-    fn has_terminal(&self) -> bool { true }
+    /// Returns true if any leaf in this group is a terminal.
+    fn has_terminal(&self) -> bool {
+        self.layout().first_terminal().is_some()
+    }
 
     fn focused_terminal(&self) -> Option<&Terminal> {
         SurfaceGroupNode::focused_terminal(self)

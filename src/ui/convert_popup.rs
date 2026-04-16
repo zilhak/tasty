@@ -240,12 +240,23 @@ impl PopupContent for ConvertSurfacePopup {
     }
 }
 
-/// Get the panel type name for a specific surface ID.
+/// Get the type name for a specific surface ID.
+/// If the surface is inside a SurfaceGroup, returns the individual leaf's type.
 fn current_surface_type(state: &AppState, surface_id: u32) -> Option<&'static str> {
     for ws in &state.engine.workspaces {
         for &pid in &ws.pane_layout().all_pane_ids() {
             if let Some(pane) = ws.pane_layout().find_pane(pid) {
-                if let Some(tab) = pane.tabs.iter().find(|tab| tab.surface().contains_surface(surface_id)) {
+                for tab in &pane.tabs {
+                    if !tab.surface().contains_surface(surface_id) {
+                        continue;
+                    }
+                    // Check SurfaceGroup first — find the specific leaf.
+                    if let Some(group) = tab.surface().as_surface_group() {
+                        if let Some(leaf) = group.layout().find_surface(surface_id) {
+                            return Some(leaf.type_name());
+                        }
+                    }
+                    // Standalone surface — return the tab surface's type.
                     return Some(tab.surface().type_name());
                 }
             }

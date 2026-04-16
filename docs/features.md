@@ -234,6 +234,10 @@
 - 키보드 탐색: Up/Down 방향키로 항목 이동, Enter로 선택 확정
 - 단축키: T/M/E/H 키로 즉시 선택
 - 팝업이 열려 있으면 키보드 입력이 터미널로 전달되지 않음 (PopupManager 포커스 자동 관리)
+- **개별 surface 교체 원칙**: 타입 전환은 대상 surface의 구현체만 교체한다. 기존 구현체는 메모리에서 해제되고 새 구현체로 대체된다. 탭, SurfaceGroup 레이아웃, 다른 surface 등 주변 구조에는 어떤 영향도 주지 않는다.
+  - SurfaceGroup 내부의 surface를 전환해도 그룹의 다른 surface는 그대로 유지됨
+  - 단독 surface(탭에 1개)를 전환하면 탭의 surface가 교체됨. Terminal로 전환 시 탭 이름이 자동(CWD 기반)으로 복원됨
+  - 비터미널 surface(Markdown, Explorer, Html, Empty)는 SurfaceGroup 내에서도 올바르게 렌더링됨 (egui 렌더링)
 
 #### HTML WebView
 - OS 네이티브 WebView를 wgpu 윈도우 위에 child view로 오버레이

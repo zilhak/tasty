@@ -176,12 +176,12 @@ impl Panel {
                     layout_opt: Some(SurfaceGroupLayout::Split {
                         direction,
                         ratio: 0.5,
-                        first: Box::new(SurfaceGroupLayout::Single(old_node)),
-                        second: Box::new(SurfaceGroupLayout::Single(TerminalSurface {
+                        first: Box::new(SurfaceGroupLayout::Leaf(Box::new(old_node))),
+                        second: Box::new(SurfaceGroupLayout::Leaf(Box::new(TerminalSurface {
                             id: new_surface_id,
                             terminal: new_terminal,
                             deferred_spawn: None,
-                        })),
+                        }))),
                         focus_second: true,
                     }),
                     focused_surface: new_surface_id,
@@ -218,12 +218,12 @@ impl Panel {
                     layout_opt: Some(SurfaceGroupLayout::Split {
                         direction,
                         ratio: 0.5,
-                        first: Box::new(SurfaceGroupLayout::Single(old_node)),
-                        second: Box::new(SurfaceGroupLayout::Single(TerminalSurface {
+                        first: Box::new(SurfaceGroupLayout::Leaf(Box::new(old_node))),
+                        second: Box::new(SurfaceGroupLayout::Leaf(Box::new(TerminalSurface {
                             id: new_surface_id,
                             terminal: new_terminal,
                             deferred_spawn: None,
-                        })),
+                        }))),
                         focus_second: false,
                     }),
                     focused_surface: old_surface_id,

@@ -124,8 +124,18 @@ impl ClosedSurfaceLayout {
     /// Capture from a live SurfaceGroupLayout.
     pub fn from_layout(layout: &super::SurfaceGroupLayout) -> Self {
         match layout {
-            super::SurfaceGroupLayout::Single(node) => {
-                ClosedSurfaceLayout::Single(ClosedSurface::from_surface_node(node))
+            super::SurfaceGroupLayout::Leaf(surface) => {
+                if let Some(node) = surface.as_terminal_surface() {
+                    ClosedSurfaceLayout::Single(ClosedSurface::from_surface_node(node))
+                } else {
+                    // Non-terminal surfaces: store minimal placeholder with the surface ID.
+                    ClosedSurfaceLayout::Single(ClosedSurface {
+                        id: surface.surface_id().unwrap_or(0),
+                        cwd: None,
+                        screen: Vec::new(),
+                        scrollback: VecDeque::new(),
+                    })
+                }
             }
             super::SurfaceGroupLayout::Split { direction, ratio, first, second, .. } => {
                 ClosedSurfaceLayout::Split {

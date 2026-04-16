@@ -290,7 +290,7 @@ impl AppState {
                 surface_is_sole_in_tab = false;
                 can_close_surface_in_group = !matches!(
                     group.layout(),
-                    crate::model::SurfaceGroupLayout::Single(_)
+                    crate::model::SurfaceGroupLayout::Leaf(_)
                 ) || group.layout().find_terminal(surface_id).is_none();
             } else if surface.contains_surface(surface_id) {
                 // Single-surface (Terminal, Markdown, Explorer, Html, Empty): sole content

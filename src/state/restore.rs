@@ -142,7 +142,7 @@ impl AppState {
         match closed {
             ClosedSurfaceLayout::Single(surface) => {
                 let node = self.rebuild_surface_node(surface)?;
-                Some(SurfaceGroupLayout::Single(node))
+                Some(SurfaceGroupLayout::Leaf(Box::new(node)))
             }
             ClosedSurfaceLayout::Split { direction, ratio, first, second } => {
                 let first = self.rebuild_surface_layout(*first)?;
