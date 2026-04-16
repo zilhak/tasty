@@ -2,25 +2,25 @@
 //!
 //! ```text
 //! Window (sealed trait)
-//! ├── ModalWindow (supertrait)  — Settings, Quit, ...
-//! └── BaseWindow  (supertrait)  — Main, StandaloneSurface, ...
+//! ├── ModalWindow (supertrait)         — Settings, Quit, ...
+//! └── TerminalHostWindow (supertrait)  — Main, StandaloneSurface, ...
 //! ```
 //!
 //! 모든 구현체는 `WindowBase`를 composition하여 공통 필드를 공유한다.
 //! `Window`는 sealed이므로 크레이트 외부에서 직접 구현할 수 없다.
-//! 실제 구현체는 반드시 `ModalWindow` 또는 `BaseWindow` 중 하나를 거쳐야 한다.
+//! 실제 구현체는 반드시 `ModalWindow` 또는 `TerminalHostWindow` 중 하나를 거쳐야 한다.
 
 pub mod base;
-pub mod base_window;
 pub mod modal;
 pub mod quit;
 pub mod settings;
+pub mod terminal_host;
 
 pub use base::WindowBase;
-pub use base_window::BaseWindow;
 pub use modal::ModalWindow;
 pub use quit::QuitWindow;
 pub use settings::SettingsWindow;
+pub use terminal_host::TerminalHostWindow;
 
 use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
@@ -54,15 +54,15 @@ pub struct WindowCtx<'a> {
 }
 
 /// Sealed 모듈 — 외부에서 `Window`를 직접 구현하지 못하게 차단한다.
-/// `ModalWindow` 또는 `BaseWindow` 중 하나의 supertrait 체인을 경유해야 한다.
+/// `ModalWindow` 또는 `TerminalHostWindow` 중 하나의 supertrait 체인을 경유해야 한다.
 pub(crate) mod sealed {
     pub trait Sealed {}
 }
 
 /// 모든 윈도우 타입이 공유하는 최상위 트레잇.
 ///
-/// 직접 구현하지 말고 `ModalWindow` 또는 `BaseWindow` 중 하나를 구현하면
-/// `Sealed`가 자동으로 만족된다 (같은 파일의 blanket impl 참조).
+/// 직접 구현하지 말고 `ModalWindow` 또는 `TerminalHostWindow` 중 하나를 구현하라.
+/// 각 구현체는 `impl sealed::Sealed for MyWindow {}`를 별도로 추가해야 한다.
 pub trait Window: sealed::Sealed + std::any::Any {
     fn base(&self) -> &WindowBase;
     fn base_mut(&mut self) -> &mut WindowBase;
