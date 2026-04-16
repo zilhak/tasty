@@ -73,9 +73,25 @@ impl ApplicationHandler<AppEvent> for App {
                     self.engine.focused_window_id = None;
                     tracing::info!("minimized to background ({} states parked)", self.parked_states.len());
                 }
-                #[cfg(not(target_os = "macos"))]
+                #[cfg(windows)]
                 {
-                    // Windows/Linux: minimize windows to taskbar (keep alive)
+                    if self.tray_icon.is_some() {
+                        // Windows with tray: hide windows to tray (keep alive)
+                        for w in self.windows.values() {
+                            w.window.set_visible(false);
+                        }
+                        tracing::info!("hid {} window(s) to system tray", self.windows.len());
+                    } else {
+                        // Windows without tray: minimize to taskbar
+                        for w in self.windows.values() {
+                            w.window.set_minimized(true);
+                        }
+                        tracing::info!("minimized {} window(s) to taskbar", self.windows.len());
+                    }
+                }
+                #[cfg(not(any(target_os = "macos", windows)))]
+                {
+                    // Linux: minimize windows to taskbar (keep alive)
                     for w in self.windows.values() {
                         w.window.set_minimized(true);
                     }
@@ -84,6 +100,15 @@ impl ApplicationHandler<AppEvent> for App {
             }
             AppEvent::QuitRequested => {
                 self.handle_quit_requested(event_loop);
+            }
+            #[cfg(windows)]
+            AppEvent::TrayShowWindow => {
+                for w in self.windows.values() {
+                    w.window.set_visible(true);
+                    w.window.set_minimized(false);
+                    w.window.focus_window();
+                }
+                tracing::info!("restored {} window(s) from system tray", self.windows.len());
             }
         }
     }
@@ -135,6 +160,17 @@ impl ApplicationHandler<AppEvent> for App {
 
         window.set_ime_allowed(true);
         self.init_app_state(window, gpu, init_settings);
+
+        #[cfg(windows)]
+        crate::jump_list::setup_jump_list();
+
+        #[cfg(windows)]
+        {
+            if let Some((tray, ids)) = crate::system_tray::create_tray_icon() {
+                self.tray_icon = Some(tray);
+                self.tray_menu_ids = Some(ids);
+            }
+        }
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
@@ -251,6 +287,20 @@ impl ApplicationHandler<AppEvent> for App {
         if self.process_ipc() {
             if let Some(w) = self.focused_window_mut() {
                 w.mark_dirty();
+            }
+        }
+
+        // Poll system tray menu events (Windows only)
+        #[cfg(windows)]
+        if let Some(ref ids) = self.tray_menu_ids {
+            if let Some(menu_id) = crate::system_tray::poll_menu_event() {
+                if menu_id == ids.show_window {
+                    let _ = self.engine.proxy.send_event(AppEvent::TrayShowWindow);
+                } else if menu_id == ids.new_window {
+                    let _ = self.engine.proxy.send_event(AppEvent::CreateWindow);
+                } else if menu_id == ids.quit {
+                    let _ = self.engine.proxy.send_event(AppEvent::Shutdown);
+                }
             }
         }
 

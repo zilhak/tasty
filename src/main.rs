@@ -15,6 +15,10 @@ mod global_hooks;
 mod gpu;
 mod i18n;
 mod ipc;
+#[cfg(windows)]
+mod jump_list;
+#[cfg(windows)]
+mod system_tray;
 mod markdown_ui;
 pub mod modal_trait;
 pub mod modal_window;
@@ -95,6 +99,9 @@ enum AppEvent {
     Minimize,
     /// Request quit following the close_behavior setting.
     QuitRequested,
+    /// Request to show window from system tray (Windows only).
+    #[cfg(windows)]
+    TrayShowWindow,
 }
 
 /// Tracks an active divider drag operation.
@@ -126,6 +133,12 @@ struct App {
     shell_setup_path: String,
     shell_setup_gpu: Option<GpuState>,
     shell_setup_window: Option<Arc<Window>>,
+    /// System tray icon (Windows only). Must be kept alive for the tray to remain visible.
+    #[cfg(windows)]
+    tray_icon: Option<tray_icon::TrayIcon>,
+    /// Tray menu item IDs for event matching (Windows only).
+    #[cfg(windows)]
+    tray_menu_ids: Option<system_tray::TrayMenuIds>,
 }
 
 use winit::window::WindowId;
@@ -141,6 +154,10 @@ impl App {
             shell_setup_path: String::new(),
             shell_setup_gpu: None,
             shell_setup_window: None,
+            #[cfg(windows)]
+            tray_icon: None,
+            #[cfg(windows)]
+            tray_menu_ids: None,
         }
     }
 
