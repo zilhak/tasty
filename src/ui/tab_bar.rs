@@ -63,9 +63,9 @@ pub fn draw_pane_tab_bars(
         let needs_scroll = content_w > info.logical_w;
         // Available width for tab content (minus arrows if scrolling)
         let viewport_w = if needs_scroll {
-            info.logical_w - arrow_w * 2.0
+            (info.logical_w - arrow_w * 2.0).max(0.0)
         } else {
-            info.logical_w
+            info.logical_w.max(0.0)
         };
         let max_scroll = (content_w - viewport_w).max(0.0);
         let scroll = info.scroll_offset.clamp(0.0, max_scroll);

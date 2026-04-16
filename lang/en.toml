@@ -178,7 +178,7 @@ unread_count = "{} unread"
 empty_message = "No notifications"
 
 [convert_popup]
-title = "Convert Surface"
+title = "Surface Type"
 terminal = "Terminal"
 markdown = "Markdown..."
 explorer = "Explorer"

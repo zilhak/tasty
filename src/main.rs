@@ -211,7 +211,8 @@ impl App {
         let title = if cfg!(debug_assertions) { "Tasty (Debug)" } else { "Tasty" };
         let attrs = WindowAttributes::default()
             .with_title(title)
-            .with_inner_size(winit::dpi::LogicalSize::new(1280, 720));
+            .with_inner_size(winit::dpi::LogicalSize::new(1280, 720))
+            .with_min_inner_size(winit::dpi::LogicalSize::new(640, 480));
 
         let window = Arc::new(
             event_loop

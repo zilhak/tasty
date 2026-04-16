@@ -101,7 +101,8 @@ impl ApplicationHandler<AppEvent> for App {
 
         let attrs = WindowAttributes::default()
             .with_title(if cfg!(debug_assertions) { "Tasty (Debug)" } else { "Tasty" })
-            .with_inner_size(winit::dpi::LogicalSize::new(1280, 720));
+            .with_inner_size(winit::dpi::LogicalSize::new(1280, 720))
+            .with_min_inner_size(winit::dpi::LogicalSize::new(640, 480));
 
         let window = Arc::new(
             event_loop
@@ -250,6 +251,26 @@ impl ApplicationHandler<AppEvent> for App {
         if self.process_ipc() {
             if let Some(w) = self.focused_window_mut() {
                 w.mark_dirty();
+            }
+        }
+
+        // Flush deferred PTY resizes (throttled to 100ms intervals).
+        // If any terminal still has a pending resize (throttled), request a redraw
+        // so we retry on the next frame.
+        let mut any_pending = false;
+        for w in self.windows.values_mut() {
+            if w.state.engine.flush_all_pty_resizes() {
+                any_pending = true;
+            }
+        }
+        for state in &mut self.parked_states {
+            if state.engine.flush_all_pty_resizes() {
+                any_pending = true;
+            }
+        }
+        if any_pending {
+            for w in self.windows.values() {
+                w.window.request_redraw();
             }
         }
     }

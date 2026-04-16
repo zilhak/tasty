@@ -178,7 +178,7 @@ unread_count = "{}件の未読"
 empty_message = "通知はありません"
 
 [convert_popup]
-title = "サーフェス変換"
+title = "サーフェスタイプ切替"
 terminal = "ターミナル"
 markdown = "マークダウン..."
 explorer = "エクスプローラー"

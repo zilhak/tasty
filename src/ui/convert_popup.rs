@@ -213,9 +213,13 @@ impl PopupContent for ConvertSurfacePopup {
     }
 
     fn default_size(&self) -> egui::Vec2 {
+        // item_spacing.y (egui default 3.0) is added between each allocate_exact_size call
+        let item_spacing = 3.0;
+        let content_h = ITEMS.len() as f32 * ITEM_HEIGHT
+            + (ITEMS.len().saturating_sub(1)) as f32 * item_spacing;
         egui::vec2(
             200.0,
-            popup::TITLE_BAR_HEIGHT + popup::CONTENT_MARGIN * 2.0 + ITEMS.len() as f32 * ITEM_HEIGHT,
+            popup::TITLE_BAR_HEIGHT + popup::CONTENT_MARGIN * 2.0 + content_h,
         )
     }
 
