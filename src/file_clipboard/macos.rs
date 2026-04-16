@@ -1,48 +1,64 @@
-//! macOS file clipboard using NSPasteboard + NSPasteboardTypeFileURL.
+//! macOS file clipboard using NSPasteboard + writeObjects (NSURL).
+//!
+//! Uses `writeObjects:` with NSURL array so Finder can paste multiple files.
 
-use objc2_app_kit::NSPasteboard;
-use objc2_foundation::{NSString, NSURL};
+use objc2::runtime::ProtocolObject;
+use objc2_app_kit::{NSPasteboard, NSPasteboardWriting};
+use objc2_foundation::{NSArray, NSString, NSURL};
 
 use super::FileClipboardOp;
 
 /// Copy or cut file paths to the OS clipboard.
-/// Uses NSPasteboardTypeFileURL so Finder can paste them.
+/// Uses writeObjects: with NSURL array — Finder-compatible for multiple files.
 pub fn set_file_clipboard(paths: &[&str], _op: FileClipboardOp) -> Result<(), String> {
-    unsafe {
-        let pasteboard = NSPasteboard::generalPasteboard();
-        pasteboard.clearContents();
+    let pasteboard = NSPasteboard::generalPasteboard();
+    pasteboard.clearContents();
 
-        // Write file URLs as strings in NSPasteboardTypeFileURL format
-        for path in paths {
-            let url = NSURL::fileURLWithPath(&NSString::from_str(path));
-            let url_string = url.absoluteString()
-                .ok_or("Failed to get URL string")?;
-            let file_url_type: &NSString = objc2_app_kit::NSPasteboardTypeFileURL;
-            pasteboard.setString_forType(&url_string, file_url_type);
-        }
-        Ok(())
-    }
+    let urls: Vec<_> = paths.iter()
+        .map(|p| NSURL::fileURLWithPath(&NSString::from_str(p)))
+        .collect();
+
+    // Convert Vec<Retained<NSURL>> → Vec<&ProtocolObject<dyn NSPasteboardWriting>>
+    let protocol_objects: Vec<&ProtocolObject<dyn NSPasteboardWriting>> = urls.iter()
+        .map(|url| ProtocolObject::from_ref::<NSURL>(url.as_ref()))
+        .collect();
+
+    let array = NSArray::from_slice(&protocol_objects);
+    pasteboard.writeObjects(&array);
+
+    Ok(())
 }
 
 /// Read file paths from the OS clipboard.
 /// Returns None if clipboard doesn't contain file URLs.
+/// Reads all pasteboard items to support multiple files (e.g. from Finder).
 pub fn get_file_clipboard() -> Result<Option<(Vec<String>, FileClipboardOp)>, String> {
-    unsafe {
-        let pasteboard = NSPasteboard::generalPasteboard();
-        let file_url_type: &NSString = objc2_app_kit::NSPasteboardTypeFileURL;
-        let string = pasteboard.stringForType(file_url_type);
-        if let Some(s) = string {
-            let url_str = s.to_string();
-            let path = if let Some(p) = url_str.strip_prefix("file://") {
-                percent_decode(p)
-            } else {
-                url_str
-            };
-            if !path.is_empty() {
-                return Ok(Some((vec![path], FileClipboardOp::Copy)));
+    let pasteboard = NSPasteboard::generalPasteboard();
+    let file_url_type: &NSString = unsafe { objc2_app_kit::NSPasteboardTypeFileURL };
+
+    let mut paths = Vec::new();
+
+    // Iterate pasteboard items to read all file URLs
+    if let Some(items) = pasteboard.pasteboardItems() {
+        for item in items.iter() {
+            if let Some(s) = item.stringForType(file_url_type) {
+                let url_str = s.to_string();
+                let path = if let Some(p) = url_str.strip_prefix("file://") {
+                    percent_decode(p)
+                } else {
+                    url_str
+                };
+                if !path.is_empty() {
+                    paths.push(path);
+                }
             }
         }
+    }
+
+    if paths.is_empty() {
         Ok(None)
+    } else {
+        Ok(Some((paths, FileClipboardOp::Copy)))
     }
 }
 
