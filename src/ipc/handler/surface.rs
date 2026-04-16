@@ -160,7 +160,7 @@ pub(crate) fn handle_surface_close(state: &mut AppState, id: serde_json::Value, 
     if state.close_surface_by_id_no_snapshot(surface_id) {
         JsonRpcResponse::success(id, json!({ "closed": true, "surface_id": surface_id }))
     } else {
-        JsonRpcResponse::success(id, json!({ "closed": false, "surface_id": surface_id, "reason": "cannot close (not found or last surface)" }))
+        JsonRpcResponse::success(id, json!({ "closed": false, "surface_id": surface_id, "reason": "surface not found" }))
     }
 }
 
@@ -173,7 +173,7 @@ pub(crate) fn handle_surface_close_self(state: &mut AppState, id: serde_json::Va
     if state.close_surface_by_id_no_snapshot(surface_id) {
         JsonRpcResponse::success(id, json!({ "closed": true, "surface_id": surface_id }))
     } else {
-        JsonRpcResponse::success(id, json!({ "closed": false, "surface_id": surface_id, "reason": "cannot close (not found or last surface)" }))
+        JsonRpcResponse::success(id, json!({ "closed": false, "surface_id": surface_id, "reason": "surface not found" }))
     }
 }
 
