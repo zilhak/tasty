@@ -370,20 +370,24 @@ impl Terminal {
             self.save_or_restore_line_tails(old_cols, cols, rows);
         }
 
-        // Handle rows change on primary surface: preserve cursor-content relationship
-        if rows != old_rows && !self.use_alternate {
-            if rows < old_rows {
-                self.handle_rows_shrink(rows, old_rows);
-            } else {
-                self.handle_rows_grow(rows, old_rows);
-            }
+        // Handle rows shrink BEFORE resize (need to capture lines before they're lost)
+        if rows < old_rows && !self.use_alternate {
+            self.handle_rows_shrink(rows, old_rows);
         }
+
+        // Save cursor position before resize for grow restoration
+        let old_cursor = self.primary_surface.cursor_position();
 
         self.cols = cols;
         self.rows = rows;
         self.primary_surface.resize(cols, rows);
         if let Some(alt) = &mut self.alternate_surface {
             alt.resize(cols, rows);
+        }
+
+        // Handle rows grow AFTER resize (surface now has room for ScrollRegionDown)
+        if rows > old_rows && !self.use_alternate {
+            self.handle_rows_grow(rows, old_rows, old_cursor);
         }
 
         // Restore saved tails onto the surface after resize expanded cols
@@ -445,28 +449,21 @@ impl Terminal {
     }
 
     /// When rows grow, restore lines from scrollback to the top of the screen.
-    fn handle_rows_grow(&mut self, new_rows: usize, old_rows: usize) {
+    /// Called AFTER primary_surface.resize() so the surface already has room.
+    fn handle_rows_grow(&mut self, new_rows: usize, _old_rows: usize, old_cursor: (usize, usize)) {
         use termwiz::surface::Position;
 
-        let rows_added = new_rows - old_rows;
+        let rows_added = new_rows - _old_rows;
         let restore_count = rows_added.min(self.scrollback.len());
 
         if restore_count == 0 {
+            // No scrollback to restore — just ensure cursor stays at its original position
+            self.primary_surface.add_change(Change::CursorPosition {
+                x: Position::Absolute(old_cursor.0),
+                y: Position::Absolute(old_cursor.1),
+            });
             return;
         }
-
-        // We need to resize first so there's room, then fill the top lines.
-        // But resize is called after us. So instead, we collect the lines to restore
-        // and apply them after resize. We'll store them temporarily.
-        // Actually, we can scroll down to make room, then write the lines.
-        // But termwiz doesn't have ScrollRegionDown for the full screen easily.
-        //
-        // Simpler approach: just resize first (temporarily), write lines, then
-        // the outer resize call will be a no-op for rows since we already resized.
-        // But that breaks the flow.
-        //
-        // Best approach: store lines to restore, apply after resize in the caller.
-        // We'll use a temporary field.
 
         // Pop from scrollback (most recent first = back of deque)
         let mut to_restore: Vec<Vec<(String, CellAttributes)>> = Vec::new();
@@ -475,13 +472,15 @@ impl Terminal {
                 to_restore.push(line);
             }
         }
+        let actual_restored = to_restore.len();
         to_restore.reverse(); // oldest first
 
-        // Scroll current content down to make room at top
+        // Surface is already resized to new_rows.
+        // Scroll current content down to make room at top.
         self.primary_surface.add_change(Change::ScrollRegionDown {
             first_row: 0,
-            region_size: old_rows,
-            scroll_count: restore_count,
+            region_size: new_rows,
+            scroll_count: actual_restored,
         });
 
         // Write restored lines at the top
@@ -495,6 +494,19 @@ impl Terminal {
                 self.primary_surface.add_change(Change::Text(text.clone()));
             }
         }
+
+        // Shift saved_line_tails to match shifted content positions
+        if !self.saved_line_tails.is_empty() {
+            let mut shifted = vec![Vec::new(); actual_restored];
+            shifted.append(&mut self.saved_line_tails);
+            self.saved_line_tails = shifted;
+        }
+
+        // Restore cursor position, shifted down by the number of restored lines
+        self.primary_surface.add_change(Change::CursorPosition {
+            x: Position::Absolute(old_cursor.0),
+            y: Position::Absolute(old_cursor.1 + actual_restored),
+        });
     }
 
     /// Check if a line is visually blank (all spaces or empty).
