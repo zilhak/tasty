@@ -205,8 +205,40 @@ impl TastyWindow {
 
     /// Handle a window event. `modal_active` indicates if a modal is blocking input.
     pub fn handle_window_event(&mut self, event: WindowEvent, _event_loop: &ActiveEventLoop, modal_active: bool) -> bool {
-        // Let egui handle the event first
-        let (egui_consumed, egui_repaint) = self.gpu.handle_egui_event(&self.window, &event);
+        // ── Keyboard/IME routing ──
+        // Keyboard and IME events are only forwarded to egui when an overlay
+        // (settings, dialog, focused popup) is active.  Otherwise the central
+        // keyboard dispatcher in keyboard.rs handles routing to the correct
+        // surface, and egui never sees the key event — preventing the global
+        // ui.input() pollution bug.
+        let is_keyboard_event = matches!(
+            &event,
+            WindowEvent::KeyboardInput { .. } | WindowEvent::Ime(_)
+        );
+        let is_modifiers_event = matches!(&event, WindowEvent::ModifiersChanged(_));
+
+        let overlay_open = self.state.settings_open
+            || self.state.has_input_dialog_open()
+            || self.state.popups.has_focused();
+
+        let (egui_consumed, egui_repaint) = if is_keyboard_event {
+            if overlay_open {
+                // Overlay owns keyboard: forward to egui
+                self.gpu.handle_egui_event(&self.window, &event)
+            } else {
+                // No overlay: do NOT give keyboard events to egui
+                (false, false)
+            }
+        } else if is_modifiers_event {
+            // Always forward ModifiersChanged so egui tracks Ctrl/Shift state
+            // for hover cursor changes etc., but never "consume" it.
+            let (_, repaint) = self.gpu.handle_egui_event(&self.window, &event);
+            (false, repaint)
+        } else {
+            // All other events (mouse, resize, etc.) go to egui as before
+            self.gpu.handle_egui_event(&self.window, &event)
+        };
+
         if egui_repaint {
             self.mark_dirty();
         }

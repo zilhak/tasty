@@ -1,12 +1,41 @@
 use std::collections::HashSet;
 
 use egui::emath::GuiRounding as _;
+use winit::keyboard::{Key, NamedKey};
 
 use crate::model::{ExplorerPanel, FileNode};
+use crate::state::PendingKeyEvent;
 use crate::theme;
 
+/// Check if a specific key was pressed in the pending key events.
+fn key_pressed(keys: &[PendingKeyEvent], target: NamedKey) -> bool {
+    keys.iter().any(|k| k.key == Key::Named(target))
+}
+
+/// Check if a character key was pressed in the pending key events.
+fn char_pressed(keys: &[PendingKeyEvent], ch: &str) -> bool {
+    keys.iter().any(|k| matches!(&k.key, Key::Character(c) if c.as_str().eq_ignore_ascii_case(ch)))
+}
+
+/// Check if any key event has command modifier (Ctrl on Linux/Win, Cmd on macOS).
+fn has_command(keys: &[PendingKeyEvent]) -> bool {
+    keys.iter().any(|k| {
+        #[cfg(target_os = "macos")]
+        { k.modifiers.super_key() }
+        #[cfg(not(target_os = "macos"))]
+        { k.modifiers.control_key() }
+    })
+}
+
+/// Check if any key event has shift modifier.
+fn has_shift(keys: &[PendingKeyEvent]) -> bool {
+    keys.iter().any(|k| k.modifiers.shift_key())
+}
+
 /// Draw the explorer panel with a file tree on the left and a file viewer on the right.
-pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel) -> Option<ExplorerAction> {
+/// `keys` contains keyboard events routed by the central dispatcher — only present
+/// when this explorer is the focused surface.
+pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel, keys: &[PendingKeyEvent]) -> Option<ExplorerAction> {
     let th = theme::theme();
     let mut explorer_action: Option<ExplorerAction> = None;
     let available_width = ui.available_width();
@@ -44,16 +73,16 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel) -> Option<Exp
                                 );
                             }
 
-                            // Read modifiers once
-                            let modifiers = ui.input(|i| i.modifiers);
-                            let cmd = modifiers.command;
+                            // Read keyboard from dispatched key queue (NOT egui global input)
+                            let cmd = has_command(keys);
+                            let shift = has_shift(keys);
 
                             // Keyboard: file clipboard (Ctrl/Cmd+C/X/V, Ctrl/Cmd+A)
                             if cmd && action.is_none() {
-                                let key_c = ui.input(|i| i.key_pressed(egui::Key::C));
-                                let key_x = ui.input(|i| i.key_pressed(egui::Key::X));
-                                let key_v = ui.input(|i| i.key_pressed(egui::Key::V));
-                                let key_a = ui.input(|i| i.key_pressed(egui::Key::A));
+                                let key_c = char_pressed(keys, "c");
+                                let key_x = char_pressed(keys, "x");
+                                let key_v = char_pressed(keys, "v");
+                                let key_a = char_pressed(keys, "a");
 
                                 if key_a {
                                     action = Some(TreeAction::SelectAll);
@@ -63,7 +92,7 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel) -> Option<Exp
                                     } else {
                                         crate::file_clipboard::FileClipboardOp::Copy
                                     };
-                                    if modifiers.shift && key_c {
+                                    if shift && key_c {
                                         // Shift+Ctrl+C = copy paths as text
                                         let text = panel.selected_files.iter()
                                             .cloned().collect::<Vec<_>>().join("\n");
@@ -96,10 +125,10 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel) -> Option<Exp
                                 }
                             }
 
-                            // Keyboard navigation
-                            let key_up = ui.input(|i| i.key_pressed(egui::Key::ArrowUp));
-                            let key_down = ui.input(|i| i.key_pressed(egui::Key::ArrowDown));
-                            let key_enter = ui.input(|i| i.key_pressed(egui::Key::Enter));
+                            // Keyboard navigation (from dispatched key queue)
+                            let key_up = key_pressed(keys, NamedKey::ArrowUp);
+                            let key_down = key_pressed(keys, NamedKey::ArrowDown);
+                            let key_enter = key_pressed(keys, NamedKey::Enter);
 
                             if (key_up || key_down || key_enter) && action.is_none() {
                                 let current_idx = panel.selected_file.as_ref()
@@ -114,7 +143,7 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel) -> Option<Exp
                                         None => 0,
                                     };
                                     if let Some(path) = visible.get(new_idx) {
-                                        if modifiers.shift {
+                                        if shift {
                                             action = Some(TreeAction::RangeSelect(path.clone()));
                                         } else {
                                             action = Some(TreeAction::SelectFile(path.clone()));

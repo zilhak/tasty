@@ -78,6 +78,12 @@ impl TastyWindow {
                         if self.state.focus_pane_at_position(x, y, terminal_rect) {
                             self.dirty = true;
                         }
+                        // Also update surface focus within SurfaceGroup so that
+                        // clicking on an egui-rendered panel (Explorer, Markdown)
+                        // correctly moves keyboard target to that surface.
+                        if self.state.focus_surface_at_position(x, y, terminal_rect) {
+                            self.dirty = true;
+                        }
                     }
                 }
             }

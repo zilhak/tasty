@@ -147,10 +147,11 @@ impl AppState {
         let ws = self.active_workspace_mut();
         ws.focused_pane = pane_id;
         // If the active tab's surface is a SurfaceGroup, focus the surface within it.
+        // Uses contains_surface to support both terminal and non-terminal surfaces.
         if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
             if let Some(tab) = pane.active_tab_mut() {
                 if let Some(group) = tab.surface_mut().as_surface_group_mut() {
-                    if group.layout().find_terminal(surface_id).is_some() {
+                    if group.layout().contains_surface(surface_id) {
                         group.focused_surface = surface_id;
                     }
                 }

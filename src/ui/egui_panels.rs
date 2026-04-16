@@ -1,7 +1,8 @@
 use egui::emath::GuiRounding as _;
+use winit::keyboard::{Key, NamedKey};
 
 use crate::model::Rect;
-use crate::state::AppState;
+use crate::state::{AppState, PendingKeyEvent};
 use crate::theme;
 
 /// Render egui-based panels (Markdown, Explorer, Html, Empty).
@@ -24,12 +25,15 @@ pub fn draw_egui_panels(
         logical_y: f32,
         logical_w: f32,
         logical_h: f32,
+        /// Whether this panel is the keyboard target (receives pending_surface_keys).
+        is_keyboard_target: bool,
     }
 
     // First pass: gather info about egui-rendered panels (read-only).
     let mut infos = Vec::new();
     {
         let ws = state.active_workspace();
+        let focused_pane_id = ws.focused_pane;
         let tab_bar_h = state.tab_bar_height;
         for &(pane_id, pane_rect) in pane_rects {
             let pane = match ws.pane_layout().find_pane(pane_id) {
@@ -51,12 +55,14 @@ pub fn draw_egui_panels(
                     logical_y: ((pane_rect.y + tab_bar_h) / scale_factor).round_ui(),
                     logical_w: (pane_rect.width / scale_factor).round_ui(),
                     logical_h: ((pane_rect.height - tab_bar_h).max(1.0) / scale_factor).round_ui(),
+                    is_keyboard_target: pane_id == focused_pane_id,
                 });
                 continue;
             }
 
             // Case 2: SurfaceGroup — collect non-terminal leaf regions.
             if let Some(group) = surface.as_surface_group() {
+                let focused_surface_in_group = group.focused_surface;
                 let content_rect = Rect {
                     x: pane_rect.x,
                     y: pane_rect.y + tab_bar_h,
@@ -71,11 +77,16 @@ pub fn draw_egui_panels(
                         logical_y: (rect.y / scale_factor).round_ui(),
                         logical_w: (rect.width / scale_factor).round_ui(),
                         logical_h: (rect.height / scale_factor).round_ui(),
+                        is_keyboard_target: pane_id == focused_pane_id && sid == focused_surface_in_group,
                     });
                 }
             }
         }
     }
+
+    // Drain pending keyboard events for non-terminal surfaces.
+    // Only the panel that is_keyboard_target will use these.
+    let surface_keys: Vec<PendingKeyEvent> = state.pending_surface_keys.drain(..).collect();
 
     // Second pass: render each egui panel.
     let mut pending_explorer_action: Option<(u32, crate::explorer_ui::ExplorerAction)> = None;
@@ -115,14 +126,22 @@ pub fn draw_egui_panels(
         if let Some(md_panel) = surface.as_markdown_mut() {
             let scroll_line = 24.0;
             let scroll_page = info.logical_h * 0.8;
-            let key_scroll_y = ctx.input(|i| {
+            // Read keyboard scroll from dispatched key queue (not egui global input)
+            let key_scroll_y = if info.is_keyboard_target {
                 let mut dy = 0.0;
-                if i.key_pressed(egui::Key::ArrowUp) { dy += scroll_line; }
-                if i.key_pressed(egui::Key::ArrowDown) { dy -= scroll_line; }
-                if i.key_pressed(egui::Key::PageUp) { dy += scroll_page; }
-                if i.key_pressed(egui::Key::PageDown) { dy -= scroll_page; }
+                for k in &surface_keys {
+                    match &k.key {
+                        Key::Named(NamedKey::ArrowUp) => dy += scroll_line,
+                        Key::Named(NamedKey::ArrowDown) => dy -= scroll_line,
+                        Key::Named(NamedKey::PageUp) => dy += scroll_page,
+                        Key::Named(NamedKey::PageDown) => dy -= scroll_page,
+                        _ => {}
+                    }
+                }
                 dy
-            });
+            } else {
+                0.0
+            };
 
             egui::Area::new(egui::Id::new(format!("md_panel_{}", id_suffix)))
                 .fixed_pos(egui::pos2(info.logical_x, info.logical_y))
@@ -146,6 +165,7 @@ pub fn draw_egui_panels(
                         });
                 });
         } else if let Some(exp_panel) = surface.as_explorer_mut() {
+            let keys = if info.is_keyboard_target { &surface_keys[..] } else { &[] };
             egui::Area::new(egui::Id::new(format!("explorer_{}", id_suffix)))
                 .fixed_pos(egui::pos2(info.logical_x, info.logical_y))
                 .order(egui::Order::Background)
@@ -156,7 +176,7 @@ pub fn draw_egui_panels(
                         .fill(th.crust)
                         .inner_margin(egui::Margin::same(4))
                         .show(ui, |ui| {
-                            if let Some(act) = crate::explorer_ui::draw_explorer(ui, exp_panel) {
+                            if let Some(act) = crate::explorer_ui::draw_explorer(ui, exp_panel, keys) {
                                 pending_explorer_action = Some((info.pane_id, act));
                             }
                         });

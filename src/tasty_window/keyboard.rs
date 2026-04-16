@@ -1,6 +1,7 @@
 use winit::event::ElementState;
 use winit::keyboard::{Key, ModifiersState, NamedKey};
 
+use crate::state::{FocusedSurfaceType, PendingKeyEvent};
 use super::TastyWindow;
 
 impl TastyWindow {
@@ -68,44 +69,54 @@ impl TastyWindow {
         if overlay_open {
             return;
         }
-        // Note: egui_consumed is intentionally NOT checked here for keyboard events.
-        // egui consumes Ctrl+C/V/X as clipboard shortcuts, but when a terminal is
-        // focused these keys must reach the terminal (e.g. Ctrl+C → SIGINT).
-        // egui UI elements (settings, dialogs) are guarded by overlay_open above.
 
-        // Forward to terminal
-        // When IME is active, skip text sending — let Ime::Commit handle it.
-        // This prevents double input when switching to Korean/Chinese/Japanese IME.
-        // When IME is active, suppress non-ASCII text (Korean/Chinese/Japanese
-        // composition — Ime::Commit will handle it). ASCII text (numbers,
-        // punctuation like 1234567890,./) passes through IME unchanged and
-        // won't generate Ime::Commit, so we must send it here.
-        //
-        let text_for_terminal = if self.ime_active {
-            match &event.text {
-                Some(t) if t.as_str().is_ascii() => &event.text,
-                _ => &None,
-            }
-        } else {
-            &event.text
-        };
+        // ── Central keyboard dispatch: route to exactly one surface ──
+        let surface_type = self.state.focused_surface_type();
         let typing_surface_id = self.state.focused_surface_id();
-        if let Some(terminal) = self.state.focused_terminal_mut() {
-            let (dirty, sent) = Self::send_key_to_terminal(terminal, &event.logical_key, text_for_terminal, self.modifiers);
-            if dirty { self.dirty = true; }
 
-            if sent {
-                // KeyboardInput sent bytes to PTY — the cursor will move
-                // independently of IME, so any accumulated advance is stale.
-                self.ime_cursor_advance = 0;
+        match surface_type {
+            FocusedSurfaceType::Terminal => {
+                // Forward to terminal.
+                // When IME is active, suppress non-ASCII text (Korean/Chinese/Japanese
+                // composition — Ime::Commit will handle it). ASCII text (numbers,
+                // punctuation like 1234567890,./) passes through IME unchanged and
+                // won't generate Ime::Commit, so we must send it here.
+                let text_for_terminal = if self.ime_active {
+                    match &event.text {
+                        Some(t) if t.as_str().is_ascii() => &event.text,
+                        _ => &None,
+                    }
+                } else {
+                    &event.text
+                };
+                if let Some(terminal) = self.state.focused_terminal_mut() {
+                    let (dirty, sent) = Self::send_key_to_terminal(terminal, &event.logical_key, text_for_terminal, self.modifiers);
+                    if dirty { self.dirty = true; }
 
-                // Clear selection only when actual content was sent to the terminal PTY
-                if self.text_selection.is_some() {
-                    self.text_selection = None;
-                    self.dirty = true;
+                    if sent {
+                        self.ime_cursor_advance = 0;
+                        if self.text_selection.is_some() {
+                            self.text_selection = None;
+                            self.dirty = true;
+                        }
+                    }
                 }
             }
+            FocusedSurfaceType::Explorer | FocusedSurfaceType::Markdown => {
+                // Queue the key event for the non-terminal surface to consume
+                // during the next egui render frame.
+                self.state.pending_surface_keys.push(PendingKeyEvent {
+                    key: event.logical_key.clone(),
+                    modifiers: self.modifiers,
+                    text: event.text.clone(),
+                });
+                self.mark_dirty();
+            }
+            _ => {
+                // Html, Empty, None — no keyboard handling needed
+            }
         }
+
         if let Some(sid) = typing_surface_id {
             self.state.record_typing(sid);
         }

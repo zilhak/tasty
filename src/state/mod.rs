@@ -15,6 +15,26 @@ use crate::engine_state::EngineState;
 use crate::settings_ui::SettingsUiState;
 use tasty_terminal::{Terminal, TerminalEvent, Waker};
 
+/// Type of the currently focused surface, used for keyboard routing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FocusedSurfaceType {
+    Terminal,
+    Explorer,
+    Markdown,
+    Html,
+    Empty,
+    None,
+}
+
+/// A keyboard event destined for a non-terminal surface (Explorer, Markdown, etc.).
+/// Stored in a queue and consumed during the next egui render frame.
+#[derive(Debug, Clone)]
+pub struct PendingKeyEvent {
+    pub key: winit::keyboard::Key,
+    pub modifiers: winit::keyboard::ModifiersState,
+    pub text: Option<winit::keyboard::SmolStr>,
+}
+
 #[derive(Debug, Clone)]
 pub struct SurfaceMessage {
     pub id: u32,
@@ -63,6 +83,8 @@ pub struct AppState {
     pub popup_hovered: bool,
     /// Double-tap modifier captured from winit events, for the keybinding recorder to consume.
     pub captured_double_tap: Option<String>,
+    /// Keyboard events for non-terminal surfaces, consumed during egui rendering.
+    pub pending_surface_keys: Vec<PendingKeyEvent>,
 }
 
 /// A pending native context menu request.
@@ -151,6 +173,7 @@ impl AppState {
             dialogs: DialogState::new(),
             tab_bar_height: 24.0,
             captured_double_tap: None,
+            pending_surface_keys: Vec::new(),
             popup_hovered: false,
             popup_contents: {
                 let contents: Vec<Box<dyn crate::ui::popup::PopupContent>> = vec![
@@ -222,11 +245,43 @@ impl AppState {
         ws.pane_layout_mut().find_pane_mut(focused_id)
     }
 
-    /// Get the focused surface ID (the terminal that currently receives input).
+    /// Get the focused surface ID (the surface that currently receives input).
     pub fn focused_surface_id(&self) -> Option<u32> {
         let pane = self.focused_pane()?;
         let tab = pane.tabs.get(pane.active_tab)?;
         tab.surface().focused_surface_id()
+    }
+
+    /// Determine the type of the currently focused surface.
+    pub fn focused_surface_type(&self) -> FocusedSurfaceType {
+        let pane = match self.focused_pane() {
+            Some(p) => p,
+            None => return FocusedSurfaceType::None,
+        };
+        let tab = match pane.tabs.get(pane.active_tab) {
+            Some(t) => t,
+            None => return FocusedSurfaceType::None,
+        };
+        let surface = tab.surface();
+
+        // SurfaceGroup: check the focused leaf's type
+        if let Some(group) = surface.as_surface_group() {
+            if let Some(leaf) = group.layout().find_surface(group.focused_surface) {
+                return Self::surface_to_type(leaf);
+            }
+            return FocusedSurfaceType::None;
+        }
+
+        Self::surface_to_type(surface)
+    }
+
+    fn surface_to_type(surface: &dyn crate::model::Surface) -> FocusedSurfaceType {
+        if surface.as_terminal_surface().is_some() { return FocusedSurfaceType::Terminal; }
+        if surface.as_explorer().is_some() { return FocusedSurfaceType::Explorer; }
+        if surface.as_markdown().is_some() { return FocusedSurfaceType::Markdown; }
+        if surface.as_html().is_some() { return FocusedSurfaceType::Html; }
+        if surface.as_empty_surface().is_some() { return FocusedSurfaceType::Empty; }
+        FocusedSurfaceType::None
     }
 
     /// Record that the user typed on the given surface (updates last_key_input timestamp).
