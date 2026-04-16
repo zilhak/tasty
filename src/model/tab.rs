@@ -21,19 +21,6 @@ pub struct Tab {
 }
 
 impl Tab {
-    /// Create a tab with a pre-built panel (legacy, used by restore).
-    pub fn new_with_panel(id: TabId, name: String, panel: Panel) -> Self {
-        Self {
-            id,
-            name,
-            explicit_name: None,
-            surface_opt: None,
-            panel_opt: Some(panel),
-            deferred_spawn: None,
-            deferred_surface_id: None,
-        }
-    }
-
     /// Create a tab with a Surface trait object.
     pub fn new_with_surface(id: TabId, name: String, surface: Box<dyn Surface>) -> Self {
         Self {

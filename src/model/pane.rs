@@ -1,6 +1,6 @@
 use tasty_terminal::{Terminal, Waker};
 use super::{
-    PaneId, Panel, SplitDirection, SurfaceId,
+    PaneId, SplitDirection, SurfaceId,
     TerminalSurface, TabId,
 };
 use super::tab::Tab;
@@ -21,17 +21,6 @@ impl Default for Pane {
 }
 
 impl Pane {
-    /// Create a Pane with a pre-built Panel (for pre-constructed panels or restore).
-    pub fn new_with_panel(id: PaneId, tab_id: TabId, name: String, panel: Panel) -> Self {
-        let tab = super::tab::Tab::new_with_panel(tab_id, name, panel);
-        Self {
-            id,
-            tabs: vec![tab],
-            active_tab: 0,
-            tab_scroll_offset: 0.0,
-        }
-    }
-
     /// Create a Pane with a Surface trait object.
     pub fn new_with_surface(id: PaneId, tab_id: TabId, name: String, surface: Box<dyn super::Surface>) -> Self {
         let tab = super::tab::Tab::new_with_surface(tab_id, name, surface);
@@ -306,20 +295,6 @@ impl Pane {
         if self.tabs.len() > 1 {
             self.active_tab = (self.active_tab + self.tabs.len() - 1) % self.tabs.len();
         }
-    }
-
-    /// Add a tab with a pre-built panel and switch to it.
-    pub fn add_panel_tab(&mut self, tab_id: TabId, name: String, panel: Panel) {
-        let tab = Tab {
-            id: tab_id,
-            name,
-            panel_opt: Some(panel),
-            deferred_spawn: None,
-            surface_opt: None,
-            explicit_name: None, deferred_surface_id: None,
-        };
-        self.tabs.push(tab);
-        self.active_tab = self.tabs.len() - 1;
     }
 
     /// Add a tab with a Surface trait object and switch to it.

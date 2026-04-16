@@ -171,10 +171,6 @@ impl ClosedPanel {
         ClosedPanel::Explorer { path: None }
     }
 
-    /// Capture from a live Panel (legacy bridge, delegates to from_surface).
-    pub fn from_panel(panel: &super::Panel) -> Self {
-        Self::from_surface(panel)
-    }
 }
 
 impl ClosedTab {
