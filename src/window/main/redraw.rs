@@ -1,8 +1,8 @@
 use winit::event_loop::ActiveEventLoop;
 
-use super::TastyWindow;
+use super::MainWindow;
 
-impl TastyWindow {
+impl MainWindow {
     pub(super) fn handle_redraw(&mut self, _event_loop: &ActiveEventLoop) {
         // Process queued arrow keys (one per frame for Claude Code surfaces)
         if let Some(queue) = &self.arrow_queue {

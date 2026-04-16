@@ -2,13 +2,13 @@ use serde_json::json;
 
 use crate::gpu::ImePreeditState;
 use crate::ipc::protocol::JsonRpcResponse;
-use crate::tasty_window::TastyWindow;
+use crate::window::main::MainWindow;
 
 /// Handle IME simulation IPC methods.
 /// These require window-local state (ime_active, ime_preedit) so they are
 /// dispatched from App::process_ipc() rather than the AppState-level handler.
 pub fn handle_ime_method(
-    w: &mut TastyWindow,
+    w: &mut MainWindow,
     method: &str,
     params: &serde_json::Value,
     id: serde_json::Value,
@@ -23,13 +23,13 @@ pub fn handle_ime_method(
     }
 }
 
-fn handle_ime_enable(w: &mut TastyWindow, id: serde_json::Value) -> JsonRpcResponse {
+fn handle_ime_enable(w: &mut MainWindow, id: serde_json::Value) -> JsonRpcResponse {
     w.ime_active = true;
     w.mark_dirty();
     JsonRpcResponse::success(id, json!({ "active": true }))
 }
 
-fn handle_ime_disable(w: &mut TastyWindow, id: serde_json::Value) -> JsonRpcResponse {
+fn handle_ime_disable(w: &mut MainWindow, id: serde_json::Value) -> JsonRpcResponse {
     w.ime_active = false;
     w.ime_preedit = None;
     w.mark_dirty();
@@ -37,7 +37,7 @@ fn handle_ime_disable(w: &mut TastyWindow, id: serde_json::Value) -> JsonRpcResp
 }
 
 fn handle_ime_preedit(
-    w: &mut TastyWindow,
+    w: &mut MainWindow,
     params: &serde_json::Value,
     id: serde_json::Value,
 ) -> JsonRpcResponse {
@@ -114,7 +114,7 @@ fn handle_ime_preedit(
 }
 
 fn handle_ime_commit(
-    w: &mut TastyWindow,
+    w: &mut MainWindow,
     params: &serde_json::Value,
     id: serde_json::Value,
 ) -> JsonRpcResponse {
@@ -147,7 +147,7 @@ fn handle_ime_commit(
     JsonRpcResponse::success(id, json!({ "committed": true, "text": text }))
 }
 
-fn handle_ime_status(w: &TastyWindow, id: serde_json::Value) -> JsonRpcResponse {
+fn handle_ime_status(w: &MainWindow, id: serde_json::Value) -> JsonRpcResponse {
     let preedit_text = w.ime_preedit.as_ref().map(|p| p.text.as_str());
     JsonRpcResponse::success(
         id,

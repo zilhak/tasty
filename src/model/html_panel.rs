@@ -2,7 +2,7 @@ use super::surface_trait::Surface;
 use super::SurfaceId;
 
 /// A surface that displays HTML content via a native OS WebView.
-/// The actual WebView instance is managed by TastyWindow (not stored here),
+/// The actual WebView instance is managed by MainWindow (not stored here),
 /// keyed by the surface_id.
 pub struct HtmlPanel {
     pub id: u32,

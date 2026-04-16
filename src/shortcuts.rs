@@ -1,6 +1,6 @@
 use winit::keyboard::{Key, KeyCode, ModifiersState, NamedKey, PhysicalKey};
 
-use crate::tasty_window::TastyWindow;
+use crate::window::main::MainWindow;
 use crate::model::SplitDirection;
 
 /// Convert a physical key code to a Key::Character for shortcut matching.
@@ -152,7 +152,7 @@ fn is_double_tap_binding(binding: &str) -> Option<crate::double_tap::DoubleTapKe
     }
 }
 
-impl TastyWindow {
+impl MainWindow {
     /// Handle double-tap modifier shortcuts. Returns true if consumed.
     pub(crate) fn handle_double_tap_shortcut(&mut self, dt: crate::double_tap::DoubleTapKey) -> bool {
         let kb = self.state.engine.settings.keybindings.clone();

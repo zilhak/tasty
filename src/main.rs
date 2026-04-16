@@ -30,7 +30,6 @@ mod settings_ui;
 mod shortcuts;
 mod state;
 mod surface_meta;
-pub mod tasty_window;
 pub mod theme;
 mod ui;
 mod webview;
@@ -117,7 +116,7 @@ struct DividerDrag {
 
 struct App {
     engine: engine::Engine,
-    windows: std::collections::HashMap<WindowId, tasty_window::TastyWindow>,
+    windows: std::collections::HashMap<WindowId, window::main::MainWindow>,
     /// Active modal window. At most one modal can exist at a time.
     /// While active, it is the sole focus target — all other windows have input blocked.
     active_modal: Option<Box<dyn window::Window>>,
@@ -158,11 +157,11 @@ impl App {
     }
 
     /// Get the focused window, if any.
-    fn focused_window(&self) -> Option<&tasty_window::TastyWindow> {
+    fn focused_window(&self) -> Option<&window::main::MainWindow> {
         self.engine.focused_window_id.and_then(|id| self.windows.get(&id))
     }
 
-    fn focused_window_mut(&mut self) -> Option<&mut tasty_window::TastyWindow> {
+    fn focused_window_mut(&mut self) -> Option<&mut window::main::MainWindow> {
         self.engine.focused_window_id.and_then(|id| self.windows.get_mut(&id))
     }
 
@@ -189,10 +188,10 @@ impl App {
         state
     }
 
-    /// Register a TastyWindow and set it as focused.
+    /// Register a MainWindow and set it as focused.
     fn register_window(&mut self, gpu: GpuState, state: crate::state::AppState, window: Arc<Window>) {
         let window_id = window.id();
-        self.windows.insert(window_id, tasty_window::TastyWindow::new(gpu, state, window, self.engine.proxy.clone()));
+        self.windows.insert(window_id, window::main::MainWindow::new(gpu, state, window, self.engine.proxy.clone()));
         self.engine.focused_window_id = Some(window_id);
     }
 

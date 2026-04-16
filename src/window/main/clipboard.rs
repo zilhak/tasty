@@ -1,6 +1,6 @@
-use super::TastyWindow;
+use super::MainWindow;
 
-impl TastyWindow {
+impl MainWindow {
     pub fn paste_to_terminal(&mut self) {
         // Try text first
         let text = match &mut self.clipboard {

@@ -4,9 +4,9 @@ use winit::window::CursorIcon;
 use crate::model::SplitDirection;
 use crate::{DividerDrag, DividerDragKind};
 
-use super::TastyWindow;
+use super::MainWindow;
 
-impl TastyWindow {
+impl MainWindow {
     pub(super) fn handle_cursor_moved(&mut self, position: winit::dpi::PhysicalPosition<f64>, egui_consumed: bool) {
         self.cursor_position = Some(position);
         let overlay_open = self.state.settings_open;

@@ -1,9 +1,9 @@
 use crate::model::Rect;
 use crate::selection::{self, SelectionMode, SelectionPoint, TextSelection};
 
-use super::TastyWindow;
+use super::MainWindow;
 
-impl TastyWindow {
+impl MainWindow {
     /// Start a new text selection from the given pixel position.
     pub(super) fn start_selection(&mut self, x: f32, y: f32, terminal_rect: &Rect) {
         if let Some((point, surface_id)) = self.mouse_to_grid(x, y, terminal_rect) {

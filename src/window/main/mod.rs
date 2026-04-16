@@ -17,8 +17,9 @@ use crate::selection::TextSelection;
 use crate::state::AppState;
 use crate::{AppEvent, ClipboardContext};
 
-/// A single Tasty window with its own GPU state, UI state, and input state.
-pub struct TastyWindow {
+/// 메인 터미널 윈도우. 워크스페이스/사이드바/탭을 갖고 터미널 계열 Surface를 호스팅한다.
+/// `TerminalHostWindow` 계열의 대표 구현체.
+pub struct MainWindow {
     pub(crate) gpu: GpuState,
     pub(crate) state: AppState,
     pub(crate) window: Arc<Window>,
@@ -56,7 +57,7 @@ pub struct TastyWindow {
     pub(crate) webviews: std::collections::HashMap<u32, crate::webview::PlatformWebView>,
 }
 
-impl TastyWindow {
+impl MainWindow {
     pub fn new(gpu: GpuState, state: AppState, window: Arc<Window>, proxy: winit::event_loop::EventLoopProxy<AppEvent>) -> Self {
         Self {
             gpu, state, window,

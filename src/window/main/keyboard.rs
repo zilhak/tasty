@@ -2,9 +2,9 @@ use winit::event::ElementState;
 use winit::keyboard::{Key, ModifiersState, NamedKey};
 
 use crate::state::{FocusedSurfaceType, PendingKeyEvent};
-use super::TastyWindow;
+use super::MainWindow;
 
-impl TastyWindow {
+impl MainWindow {
     pub(super) fn handle_keyboard_input(&mut self, event: &winit::event::KeyEvent, _egui_consumed: bool) {
         // Feed all key events (Press + Release) to the double-tap detector
         self.double_tap.on_key_event(
