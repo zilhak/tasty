@@ -127,7 +127,7 @@ pub fn draw_appearance_tab(ui: &mut egui::Ui, settings: &mut Settings, font_fami
                         // Filter input
                         ui.add(
                             egui::TextEdit::singleline(font_filter)
-                                .hint_text("Search...")
+                                .hint_text(t("settings.appearance.search_hint"))
                                 .desired_width(190.0),
                         );
                         ui.separator();
@@ -165,7 +165,7 @@ pub fn draw_appearance_tab(ui: &mut egui::Ui, settings: &mut Settings, font_fami
                                 });
                         } else {
                             ui.label(
-                                egui::RichText::new("Loading fonts...")
+                                egui::RichText::new(t("settings.appearance.loading_fonts"))
                                     .color(th.subtext0),
                             );
                         }
@@ -173,7 +173,7 @@ pub fn draw_appearance_tab(ui: &mut egui::Ui, settings: &mut Settings, font_fami
                 ui.end_row();
 
                 // Custom font file path
-                ui.label("Custom font file:");
+                ui.label(t("settings.appearance.custom_font_label"));
                 ui.horizontal(|ui| {
                     ui.text_edit_singleline(&mut settings.appearance.custom_font_path);
                 });
@@ -189,8 +189,8 @@ pub fn draw_appearance_tab(ui: &mut egui::Ui, settings: &mut Settings, font_fami
 
                 label_with_tooltip(
                     ui,
-                    "Line height:",
-                    "Line height multiplier. 1.0 = tight (best for ASCII art), 1.2 = comfortable reading.",
+                    t("settings.appearance.line_height_label"),
+                    t("settings.appearance.line_height_tooltip"),
                 );
                 ui.add(
                     egui::DragValue::new(&mut settings.appearance.line_height)
@@ -239,28 +239,28 @@ pub fn draw_appearance_tab(ui: &mut egui::Ui, settings: &mut Settings, font_fami
                     });
                 ui.end_row();
 
-                ui.label("UI Scale");
+                ui.label(t("settings.appearance.ui_scale_label"));
                 egui::ComboBox::from_id_salt("ui_scale")
                     .selected_text(match settings.appearance.ui_scale.as_str() {
-                        "small" => "Small",
-                        "large" => "Large",
-                        _ => "Medium",
+                        "small" => t("settings.appearance.ui_scale_small"),
+                        "large" => t("settings.appearance.ui_scale_large"),
+                        _ => t("settings.appearance.ui_scale_medium"),
                     })
                     .show_ui(ui, |ui| {
                         ui.selectable_value(
                             &mut settings.appearance.ui_scale,
                             "small".to_string(),
-                            "Small",
+                            t("settings.appearance.ui_scale_small"),
                         );
                         ui.selectable_value(
                             &mut settings.appearance.ui_scale,
                             "medium".to_string(),
-                            "Medium",
+                            t("settings.appearance.ui_scale_medium"),
                         );
                         ui.selectable_value(
                             &mut settings.appearance.ui_scale,
                             "large".to_string(),
-                            "Large",
+                            t("settings.appearance.ui_scale_large"),
                         );
                     });
                 ui.end_row();
@@ -273,7 +273,7 @@ pub fn draw_appearance_tab(ui: &mut egui::Ui, settings: &mut Settings, font_fami
 
 /// Draw a fake terminal preview showing the current font/appearance settings.
 fn draw_font_preview(ui: &mut egui::Ui, settings: &Settings, th: &crate::theme::Theme, preview_font_loaded: &mut String) {
-    ui.heading("Preview");
+    ui.heading(t("settings.appearance.preview_heading"));
     ui.add_space(4.0);
 
     let font_name = if settings.appearance.font_family.is_empty() {
@@ -381,7 +381,7 @@ fn draw_font_preview(ui: &mut egui::Ui, settings: &Settings, th: &crate::theme::
 
     // ── Focused preview ──
     ui.label(
-        egui::RichText::new("Focused")
+        egui::RichText::new(t("settings.appearance.preview_focused"))
             .size(th.font_size_caption)
             .color(th.subtext0),
     );
@@ -412,7 +412,7 @@ fn draw_font_preview(ui: &mut egui::Ui, settings: &Settings, th: &crate::theme::
 
     // ── Unfocused preview ──
     ui.label(
-        egui::RichText::new("Unfocused")
+        egui::RichText::new(t("settings.appearance.preview_unfocused"))
             .size(th.font_size_caption)
             .color(th.subtext0),
     );
@@ -434,7 +434,9 @@ fn draw_font_preview(ui: &mut egui::Ui, settings: &Settings, th: &crate::theme::
 
     ui.add_space(8.0);
     ui.label(
-        egui::RichText::new(format!("Font: {} / Size: {:.1}px", font_name, font_size))
+        egui::RichText::new(
+            crate::i18n::t_fmt("settings.appearance.preview_font_info", &format!("{} / {:.1}px", font_name, font_size))
+        )
             .size(th.font_size_caption)
             .color(th.subtext0),
     );
@@ -559,10 +561,10 @@ fn language_display_name(code: &str) -> &str {
 
 pub fn draw_performance_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     let th = crate::theme::theme();
-    ui.heading("Performance");
+    ui.heading(t("settings.performance.heading"));
     ui.add_space(4.0);
     ui.label(
-        egui::RichText::new("Changes require restart to take effect.")
+        egui::RichText::new(t("settings.performance.restart_notice"))
             .small()
             .color(th.yellow),
     );
@@ -570,10 +572,10 @@ pub fn draw_performance_tab(ui: &mut egui::Ui, settings: &mut Settings) {
 
     ui.checkbox(
         &mut settings.performance.targeted_pty_polling,
-        "Targeted PTY polling",
+        t("settings.performance.targeted_pty_polling"),
     );
     ui.label(
-        egui::RichText::new("Only process terminals with new output instead of polling all. Reduces CPU with many surfaces.")
+        egui::RichText::new(t("settings.performance.targeted_pty_polling_desc"))
             .small()
             .color(egui::Color32::GRAY),
     );
@@ -581,10 +583,10 @@ pub fn draw_performance_tab(ui: &mut egui::Ui, settings: &mut Settings) {
 
     ui.checkbox(
         &mut settings.performance.scrollback_disk_swap,
-        "Scrollback disk swap",
+        t("settings.performance.scrollback_disk_swap"),
     );
     ui.label(
-        egui::RichText::new("Swap old scrollback lines to disk to reduce memory usage.")
+        egui::RichText::new(t("settings.performance.scrollback_disk_swap_desc"))
             .small()
             .color(egui::Color32::GRAY),
     );
@@ -592,10 +594,10 @@ pub fn draw_performance_tab(ui: &mut egui::Ui, settings: &mut Settings) {
 
     ui.checkbox(
         &mut settings.performance.lazy_pty_init,
-        "Lazy PTY initialization",
+        t("settings.performance.lazy_pty_init"),
     );
     ui.label(
-        egui::RichText::new("Spawn shell processes only when a tab is first focused, not at creation.")
+        egui::RichText::new(t("settings.performance.lazy_pty_init_desc"))
             .small()
             .color(egui::Color32::GRAY),
     );

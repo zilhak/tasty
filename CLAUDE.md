@@ -138,6 +138,23 @@ GitHub에 릴리스를 배포할 때, `docs/agent-guide/` 폴더의 문서들을
 - 포맷: rustfmt
 - 린트: clippy
 
+### 국제화 규칙 (필수)
+
+**모든 UI 문자열은 `t()` 함수를 통해 번역 키를 사용해야 한다.** 코드에 영어/한국어 등 자연어 문자열을 직접 하드코딩하지 않는다.
+
+```rust
+// ❌ 금지: UI 문자열 하드코딩
+ui.label("Custom font file:");
+ui.heading("Performance");
+
+// ✅ 올바름: 번역 키 사용
+ui.label(t("settings.appearance.custom_font_label"));
+ui.heading(t("settings.performance.heading"));
+```
+
+- 새 UI 문자열을 추가할 때는 `lang/en.toml`, `lang/ko.toml`, `lang/ja.toml` 세 파일에 모두 번역 키를 추가한다.
+- 예외: 수식키 이름(`Ctrl`, `Alt`), 폰트 프리뷰 텍스트(`AaBbCcDdEeFfGg`), 언어 이름(`English`, `한국어`, `日本語`) 등 번역하면 의미가 변하는 고유명사는 하드코딩을 허용한다.
+
 ### 에러 처리 규칙 (필수)
 
 **`Result`를 `let _ =`로 무시하지 않는다.** 에러가 발생하면 반드시 로그를 남겨야 한다.

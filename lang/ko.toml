@@ -62,6 +62,20 @@ font_scale_mode_auto = "자동"
 font_scale_mode_fixed = "고정"
 font_scale_mode_tooltip = "자동: 모니터 DPI에 맞춰 폰트를 렌더링합니다.\n모니터가 달라도 동일한 물리적 글자 크기를 유지합니다.\n\n고정: DPI와 무관하게 동일한 픽셀 크기를 사용합니다.\n고해상도 모니터에서 더 많은 셀이 표시되고 글자가 작아집니다."
 
+custom_font_label = "커스텀 폰트 파일:"
+line_height_label = "줄 높이:"
+line_height_tooltip = "줄 높이 배율. 1.0 = 촘촘 (ASCII 아트에 적합), 1.2 = 편안한 읽기."
+ui_scale_label = "UI 배율"
+ui_scale_small = "작게"
+ui_scale_medium = "보통"
+ui_scale_large = "크게"
+preview_heading = "미리보기"
+preview_focused = "포커스됨"
+preview_unfocused = "비포커스"
+preview_font_info = "폰트: {}"
+loading_fonts = "폰트 로딩 중..."
+search_hint = "검색..."
+
 [settings.appearance.theme]
 dark = "다크"
 light = "라이트"
@@ -117,11 +131,27 @@ hint_press_key = "키 조합을 누르세요..."
 hint_none = "없음"
 hint_esc_to_clear = "Esc로 해제, 또는 키 조합을 눌러 바인딩하세요."
 
+select_preset_label = "프리셋을 선택하면 모든 단축키가 덮어씌워집니다:"
+apply_preset_title = "프리셋 적용"
+apply_preset_confirm = "\"{}\" 프리셋을 적용하시겠습니까?\n현재 모든 단축키가 덮어씌워집니다."
+apply_button = "적용"
+
 [settings.keybindings.subtab]
 general = "일반"
 workspace = "워크스페이스"
 pane = "페인"
 surface = "서피스"
+preset = "프리셋"
+
+[settings.performance]
+heading = "성능"
+restart_notice = "변경사항은 재시작 후 적용됩니다."
+targeted_pty_polling = "선택적 PTY 폴링"
+targeted_pty_polling_desc = "모든 터미널 대신 새 출력이 있는 터미널만 처리합니다. 서피스가 많을 때 CPU 사용량을 줄입니다."
+scrollback_disk_swap = "스크롤백 디스크 스왑"
+scrollback_disk_swap_desc = "오래된 스크롤백 줄을 디스크로 스왑하여 메모리 사용량을 줄입니다."
+lazy_pty_init = "지연 PTY 초기화"
+lazy_pty_init_desc = "탭 생성 시가 아닌 처음 포커스될 때 셸 프로세스를 생성합니다."
 
 [settings.language]
 heading = "언어"

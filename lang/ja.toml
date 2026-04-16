@@ -62,6 +62,20 @@ font_scale_mode_auto = "自動"
 font_scale_mode_fixed = "固定"
 font_scale_mode_tooltip = "自動: モニターのDPIに合わせてフォントをレンダリングします。\n異なるモニターでも同じ物理的な文字サイズを維持します。\n\n固定: DPIに関係なく同じピクセルサイズを使用します。\n高解像度モニターではより多くのセルが表示され、文字が小さくなります。"
 
+custom_font_label = "カスタムフォントファイル:"
+line_height_label = "行の高さ:"
+line_height_tooltip = "行の高さの倍率。1.0 = 詰め (ASCIIアートに最適)、1.2 = 読みやすい。"
+ui_scale_label = "UIスケール"
+ui_scale_small = "小"
+ui_scale_medium = "中"
+ui_scale_large = "大"
+preview_heading = "プレビュー"
+preview_focused = "フォーカス"
+preview_unfocused = "非フォーカス"
+preview_font_info = "フォント: {}"
+loading_fonts = "フォント読み込み中..."
+search_hint = "検索..."
+
 [settings.appearance.theme]
 dark = "ダーク"
 light = "ライト"
@@ -117,11 +131,27 @@ hint_press_key = "キーの組み合わせを押してください..."
 hint_none = "なし"
 hint_esc_to_clear = "Escでクリア、またはキーの組み合わせを押してバインドしてください。"
 
+select_preset_label = "プリセットを選択するとすべてのキーバインドが上書きされます:"
+apply_preset_title = "プリセットを適用"
+apply_preset_confirm = "\"{}\" プリセットを適用しますか？\n現在のすべてのキーバインドが上書きされます。"
+apply_button = "適用"
+
 [settings.keybindings.subtab]
 general = "一般"
 workspace = "ワークスペース"
 pane = "ペイン"
 surface = "サーフェス"
+preset = "プリセット"
+
+[settings.performance]
+heading = "パフォーマンス"
+restart_notice = "変更は再起動後に適用されます。"
+targeted_pty_polling = "選択的PTYポーリング"
+targeted_pty_polling_desc = "すべてのターミナルではなく、新しい出力があるターミナルのみを処理します。サーフェスが多い場合にCPU使用量を削減します。"
+scrollback_disk_swap = "スクロールバックディスクスワップ"
+scrollback_disk_swap_desc = "古いスクロールバック行をディスクにスワップしてメモリ使用量を削減します。"
+lazy_pty_init = "遅延PTY初期化"
+lazy_pty_init_desc = "タブ作成時ではなく、初めてフォーカスされた時にシェルプロセスを生成します。"
 
 [settings.language]
 heading = "言語"

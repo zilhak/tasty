@@ -62,6 +62,20 @@ font_scale_mode_auto = "Auto"
 font_scale_mode_fixed = "Fixed"
 font_scale_mode_tooltip = "Auto: Adjusts font rendering to match monitor DPI.\nSame physical text size across different monitors.\n\nFixed: Uses the same pixel size regardless of DPI.\nMore cells on high-DPI monitors, smaller text."
 
+custom_font_label = "Custom font file:"
+line_height_label = "Line height:"
+line_height_tooltip = "Line height multiplier. 1.0 = tight (best for ASCII art), 1.2 = comfortable reading."
+ui_scale_label = "UI Scale"
+ui_scale_small = "Small"
+ui_scale_medium = "Medium"
+ui_scale_large = "Large"
+preview_heading = "Preview"
+preview_focused = "Focused"
+preview_unfocused = "Unfocused"
+preview_font_info = "Font: {}"
+loading_fonts = "Loading fonts..."
+search_hint = "Search..."
+
 [settings.appearance.theme]
 dark = "Dark"
 light = "Light"
@@ -117,11 +131,27 @@ hint_press_key = "Press key combination..."
 hint_none = "None"
 hint_esc_to_clear = "Press Esc to clear, or press a key combination to bind."
 
+select_preset_label = "Select a preset to overwrite all keybindings:"
+apply_preset_title = "Apply Preset"
+apply_preset_confirm = "Are you sure you want to apply the \"{}\" preset?\nThis will overwrite all current keybindings."
+apply_button = "Apply"
+
 [settings.keybindings.subtab]
 general = "General"
 workspace = "Workspace"
 pane = "Pane"
 surface = "Surface"
+preset = "Preset"
+
+[settings.performance]
+heading = "Performance"
+restart_notice = "Changes require restart to take effect."
+targeted_pty_polling = "Targeted PTY polling"
+targeted_pty_polling_desc = "Only process terminals with new output instead of polling all. Reduces CPU with many surfaces."
+scrollback_disk_swap = "Scrollback disk swap"
+scrollback_disk_swap_desc = "Swap old scrollback lines to disk to reduce memory usage."
+lazy_pty_init = "Lazy PTY initialization"
+lazy_pty_init_desc = "Spawn shell processes only when a tab is first focused, not at creation."
 
 [settings.language]
 heading = "Language"

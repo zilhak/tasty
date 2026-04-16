@@ -53,7 +53,7 @@ pub fn draw_keybindings_tab(
                         (KeybindingsSubTab::Workspace, t("settings.keybindings.subtab.workspace")),
                         (KeybindingsSubTab::Pane, t("settings.keybindings.subtab.pane")),
                         (KeybindingsSubTab::Surface, t("settings.keybindings.subtab.surface")),
-                        (KeybindingsSubTab::Preset, "Preset"),
+                        (KeybindingsSubTab::Preset, t("settings.keybindings.subtab.preset")),
                     ];
 
                     for (tab, label) in &sub_tabs {
@@ -150,7 +150,7 @@ pub fn draw_keybindings_tab(
             }
             KeybindingsSubTab::Preset => {
                 ui.add_space(4.0);
-                ui.label("Select a preset to overwrite all keybindings:");
+                ui.label(t("settings.keybindings.select_preset_label"));
                 ui.add_space(8.0);
 
                 for name in crate::settings::KeybindingSettings::preset_names() {
@@ -175,21 +175,21 @@ pub fn draw_keybindings_tab(
 
     // Preset confirmation modal
     if let Some(name) = preset_confirm.clone() {
-        egui::Window::new("Apply Preset")
+        egui::Window::new(t("settings.keybindings.apply_preset_title"))
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(ui.ctx(), |ui| {
-                ui.label(format!(
-                    "Are you sure you want to apply the \"{}\" preset?\nThis will overwrite all current keybindings.",
-                    name
+                ui.label(crate::i18n::t_fmt(
+                    "settings.keybindings.apply_preset_confirm",
+                    &name,
                 ));
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
+                    if ui.button(t("button.cancel")).clicked() {
                         *preset_confirm = None;
                     }
-                    if ui.button("Apply").clicked() {
+                    if ui.button(t("settings.keybindings.apply_button")).clicked() {
                         settings.keybindings.apply_preset(&name);
                         *preset_confirm = None;
                     }

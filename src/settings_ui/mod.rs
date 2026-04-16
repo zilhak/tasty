@@ -104,7 +104,7 @@ pub fn draw_settings_panel(
                 (SettingsTab::Notifications, t("settings.tab.notifications")),
                 (SettingsTab::Keybindings, t("settings.tab.keybindings")),
                 (SettingsTab::Language, t("settings.tab.language")),
-                (SettingsTab::Performance, "Performance"),
+                (SettingsTab::Performance, t("settings.performance.heading")),
             ];
             for (tab, label) in &tabs {
                 let selected = ui_state.active_tab == *tab;
