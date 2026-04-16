@@ -4,25 +4,19 @@
 
 `set_minimized(true)`로 태스크바에 유지하도록 구현됨. Windows/Linux에서는 윈도우를 파괴하지 않고 최소화.
 
-## 2. 태스크바 Jump List에 "New Window" 추가
+## ~~2. 태스크바 Jump List에 "New Window" 추가~~ (구현 완료)
 
-Windows 태스크바 아이콘 우클릭 시 "New Window" 항목 표시.
+앱 시작 시 `ICustomDestinationList` + `IShellLinkW` COM API로 Jump List에 "New Window" 태스크를 등록.
+클릭 시 `tasty new-window` CLI 명령 실행. `src/jump_list.rs`에 구현.
 
-- `ICustomDestinationList` COM API 사용
-- 클릭 시 `tasty new window` CLI 명령 실행 (이미 IPC로 `window.create` 지원됨)
-- 별도 COM 코드 필요, 작업량 있음
+## ~~3. System Tray 아이콘~~ (구현 완료)
 
-## 3. System Tray 아이콘 (선택사항)
+`tray-icon` 크레이트로 시스템 트레이 아이콘 생성. "Show Window", "New Window", "Quit" 메뉴 제공.
+최소화 시 창을 숨기고(set_visible(false)) 트레이에서 복원 가능. `src/system_tray.rs`에 구현.
 
-백그라운드 실행 시 시스템 트레이에 아이콘 표시.
+## ~~4. Explorer 파일 클립보드 — CF_HDROP 구현~~ (구현 완료)
 
-- "Show Window", "New Window", "Quit" 메뉴 제공
-- `tray-icon` 또는 유사 크레이트 필요
-- Jump List만으로 충분할 수 있으므로 우선순위 낮음
-
-## 4. Explorer 파일 클립보드 — CF_HDROP 구현
-
-Explorer 다중 선택 기능은 구현 완료되었으나, Windows에서 OS 파일 탐색기(Windows Explorer)와의 클립보드 호환은 아직 미구현.
+CF_HDROP + Preferred DropEffect 두 포맷을 동시에 설정하여 Windows Explorer와 양방향 호환 구현. `src/file_clipboard/windows.rs`에 구현.
 
 **현재 상태**: `src/file_clipboard/windows.rs`에 stub만 존재. `set_file_clipboard()`와 `get_file_clipboard()` 모두 에러 반환.
 
