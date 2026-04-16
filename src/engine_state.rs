@@ -291,6 +291,30 @@ impl EngineState {
         }
     }
 
+    /// Flush deferred PTY resizes (throttled). Returns true if any terminal still has pending resize.
+    pub fn flush_all_pty_resizes(&mut self) -> bool {
+        let mut any_pending = false;
+        for workspace in &mut self.workspaces {
+            workspace.pane_layout_mut().for_each_terminal_mut(&mut |_sid, terminal| {
+                terminal.flush_pty_resize();
+                if terminal.has_pending_pty_resize() {
+                    any_pending = true;
+                }
+            });
+        }
+        any_pending
+    }
+
+    /// Force flush deferred PTY resizes (ignores throttle).
+    /// Used after discrete events like pane split/close.
+    pub fn force_flush_all_pty_resizes(&mut self) {
+        for workspace in &mut self.workspaces {
+            workspace.pane_layout_mut().for_each_terminal_mut(&mut |_sid, terminal| {
+                terminal.force_flush_pty_resize();
+            });
+        }
+    }
+
     /// Collect events from all terminals.
     pub fn collect_events(&mut self) -> Vec<TerminalEvent> {
         let mut all_events = Vec::new();

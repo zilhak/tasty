@@ -84,6 +84,11 @@ pub struct Terminal {
     /// Each entry corresponds to a screen line and holds cells beyond the current cols.
     /// Restored when cols grow again. Cleared on scrollback capture (scroll up).
     saved_line_tails: Vec<Vec<(String, CellAttributes)>>,
+    /// Pending PTY resize: surface is updated immediately, but PTY notification
+    /// is throttled to avoid SIGWINCH storms during continuous window drag.
+    pending_pty_resize: Option<(usize, usize)>,
+    /// Timestamp of the last actual PTY resize flush. Used for throttling.
+    last_pty_flush: std::time::Instant,
 }
 
 impl Terminal {
@@ -208,11 +213,16 @@ impl Terminal {
             disk_scrollback: None,
             cached_cwd: None,
             saved_line_tails: Vec::new(),
+            pending_pty_resize: None,
+            last_pty_flush: std::time::Instant::now(),
         })
     }
 
     /// Process pending PTY output. Returns true if surface changed.
     pub fn process(&mut self) -> bool {
+        // Flush deferred PTY resize before processing new data
+        self.force_flush_pty_resize();
+
         let mut changed = false;
 
         while let Ok(data) = self.action_rx.try_recv() {
@@ -386,8 +396,9 @@ impl Terminal {
         }
 
         // Handle rows grow AFTER resize (surface now has room for ScrollRegionDown)
+        let mut rows_restored = 0usize;
         if rows > old_rows && !self.use_alternate {
-            self.handle_rows_grow(rows, old_rows, old_cursor);
+            rows_restored = self.handle_rows_grow(rows, old_rows);
         }
 
         // Restore saved tails onto the surface after resize expanded cols
@@ -395,16 +406,75 @@ impl Terminal {
             self.restore_tails_to_surface(old_cols, cols);
         }
 
+        // Always restore cursor position after all resize operations.
+        // restore_tails_to_surface and handle_rows_grow may leave cursor
+        // at unexpected positions. Final restore ensures shell's SIGWINCH
+        // response redraws at the correct location.
+        if !self.use_alternate {
+            use termwiz::surface::Position;
+            let cursor_y = (old_cursor.1 + rows_restored).min(rows.saturating_sub(1));
+            let cursor_x = old_cursor.0.min(cols.saturating_sub(1));
+            self.primary_surface.add_change(Change::CursorPosition {
+                x: Position::Absolute(cursor_x),
+                y: Position::Absolute(cursor_y),
+            });
+        }
+
         // Reset scroll region on resize
         self.scroll_region = None;
 
-        // Propagate resize to the PTY so the child process knows the new size
-        let _ = self.pty_master.resize(PtySize {
-            rows: rows as u16,
-            cols: cols as u16,
-            pixel_width: 0,
-            pixel_height: 0,
-        });
+        // Defer PTY resize notification to avoid SIGWINCH storms during drag.
+        // Call flush_pty_resize() after resize events settle.
+        self.pending_pty_resize = Some((cols, rows));
+    }
+
+    /// Throttle interval for PTY resize notifications.
+    const PTY_RESIZE_THROTTLE: std::time::Duration = std::time::Duration::from_millis(100);
+
+    /// Try to flush pending PTY resize. Returns true if flushed, false if throttled.
+    /// When throttled, the pending resize is kept and the caller should retry later.
+    pub fn flush_pty_resize(&mut self) -> bool {
+        if self.pending_pty_resize.is_none() {
+            return false;
+        }
+
+        if self.last_pty_flush.elapsed() < Self::PTY_RESIZE_THROTTLE {
+            return false; // throttled — caller should retry later
+        }
+
+        if let Some((cols, rows)) = self.pending_pty_resize.take() {
+            if let Err(e) = self.pty_master.resize(PtySize {
+                rows: rows as u16,
+                cols: cols as u16,
+                pixel_width: 0,
+                pixel_height: 0,
+            }) {
+                tracing::warn!("PTY resize failed: {e}");
+            }
+            self.last_pty_flush = std::time::Instant::now();
+        }
+        true
+    }
+
+    /// Force flush pending PTY resize regardless of throttle.
+    /// Used for discrete events (pane close, split) where immediate notification is needed.
+    pub fn force_flush_pty_resize(&mut self) {
+        if let Some((cols, rows)) = self.pending_pty_resize.take() {
+            if let Err(e) = self.pty_master.resize(PtySize {
+                rows: rows as u16,
+                cols: cols as u16,
+                pixel_width: 0,
+                pixel_height: 0,
+            }) {
+                tracing::warn!("PTY resize failed: {e}");
+            }
+            self.last_pty_flush = std::time::Instant::now();
+        }
+    }
+
+    /// Check if there is a pending PTY resize.
+    pub fn has_pending_pty_resize(&self) -> bool {
+        self.pending_pty_resize.is_some()
     }
 
     /// When rows shrink, capture top lines to scrollback so the cursor stays
@@ -450,19 +520,15 @@ impl Terminal {
 
     /// When rows grow, restore lines from scrollback to the top of the screen.
     /// Called AFTER primary_surface.resize() so the surface already has room.
-    fn handle_rows_grow(&mut self, new_rows: usize, _old_rows: usize, old_cursor: (usize, usize)) {
+    /// Returns the number of lines restored (for cursor offset calculation).
+    fn handle_rows_grow(&mut self, new_rows: usize, old_rows: usize) -> usize {
         use termwiz::surface::Position;
 
-        let rows_added = new_rows - _old_rows;
+        let rows_added = new_rows - old_rows;
         let restore_count = rows_added.min(self.scrollback.len());
 
         if restore_count == 0 {
-            // No scrollback to restore — just ensure cursor stays at its original position
-            self.primary_surface.add_change(Change::CursorPosition {
-                x: Position::Absolute(old_cursor.0),
-                y: Position::Absolute(old_cursor.1),
-            });
-            return;
+            return 0;
         }
 
         // Pop from scrollback (most recent first = back of deque)
@@ -502,11 +568,7 @@ impl Terminal {
             self.saved_line_tails = shifted;
         }
 
-        // Restore cursor position, shifted down by the number of restored lines
-        self.primary_surface.add_change(Change::CursorPosition {
-            x: Position::Absolute(old_cursor.0),
-            y: Position::Absolute(old_cursor.1 + actual_restored),
-        });
+        actual_restored
     }
 
     /// Check if a line is visually blank (all spaces or empty).

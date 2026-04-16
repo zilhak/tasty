@@ -145,5 +145,9 @@ impl AppState {
                 }
             }
         }
+
+        // Note: PTY resize is deferred (pending_pty_resize in Terminal).
+        // Callers should call flush_all_pty_resizes() when resize events settle,
+        // NOT on every frame during continuous drag.
     }
 }

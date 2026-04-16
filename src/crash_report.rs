@@ -88,6 +88,7 @@ fn write_crash_report(info: &panic::PanicHookInfo<'_>, backtrace: &Backtrace) ->
     } else {
         writeln!(file, "Message: <unknown>").ok();
     }
+    writeln!(file, "Display: {info}").ok();
     writeln!(file).ok();
 
     writeln!(file, "=== Backtrace ===").ok();
