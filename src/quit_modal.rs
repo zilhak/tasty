@@ -29,7 +29,7 @@ impl QuitModal {
         }
     }
 
-    fn render(&mut self) {
+    pub fn render(&mut self) {
         if !self.dirty {
             return;
         }

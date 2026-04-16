@@ -381,7 +381,14 @@ impl App {
         .expect("failed to initialize GPU for quit modal");
 
         let window_id = window.id();
-        let modal = crate::quit_modal::QuitModal::new(gpu, window);
+        let mut modal = crate::quit_modal::QuitModal::new(gpu, window);
+        // On Windows, hidden windows do not receive RedrawRequested events,
+        // so render the first frame immediately to make the modal visible.
+        // On other platforms, mark_dirty() + request_redraw() is sufficient.
+        #[cfg(windows)]
+        modal.render();
+        #[cfg(not(windows))]
+        modal.mark_dirty();
         self.open_modal(Box::new(modal), window_id);
     }
 }
