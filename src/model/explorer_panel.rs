@@ -152,10 +152,6 @@ impl ExplorerPanel {
         }
     }
 
-    /// Legacy compat — same as select_single.
-    pub fn select_file(&mut self, path: &str) {
-        self.select_single(path);
-    }
 }
 
 /// Check if a file is likely a text file suitable for preview.

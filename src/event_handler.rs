@@ -38,7 +38,7 @@ impl ApplicationHandler<AppEvent> for App {
                         }
                     }
                 } else {
-                    // Legacy: wake all windows
+                    // Fallback: window_id not matched — wake all windows
                     for w in self.windows.values_mut() {
                         w.mark_dirty();
                     }
