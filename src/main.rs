@@ -37,6 +37,7 @@ pub mod tasty_window;
 pub mod theme;
 mod ui;
 mod webview;
+pub mod window;
 
 #[cfg(target_os = "macos")]
 mod macos_delegate;
