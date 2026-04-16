@@ -224,7 +224,10 @@ pub fn draw_egui_panels(
                     egui::Frame::new()
                         .fill(th.crust)
                         .show(&mut clip_ui, |ui| {
-                            ui.centered_and_justified(|ui| {
+                            let available = ui.available_size();
+                            let button_h = 28.0;
+                            ui.add_space(((available.y - button_h) / 2.0).max(0.0));
+                            ui.vertical_centered(|ui| {
                                 let btn = ui.button(
                                     egui::RichText::new(crate::i18n::t("convert_popup.title"))
                                         .size(th.font_size_body)
