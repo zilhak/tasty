@@ -10,11 +10,9 @@ impl TastyWindow {
     pub(super) fn handle_cursor_moved(&mut self, position: winit::dpi::PhysicalPosition<f64>, egui_consumed: bool) {
         self.cursor_position = Some(position);
         let overlay_open = self.state.settings_open;
-        if egui_consumed || overlay_open {
-            if egui_consumed {
-                self.window.set_cursor(CursorIcon::Default);
-                self.mark_dirty();
-            }
+        if egui_consumed || overlay_open || self.state.popup_hovered {
+            self.window.set_cursor(CursorIcon::Default);
+            self.mark_dirty();
             return;
         }
 
@@ -69,7 +67,7 @@ impl TastyWindow {
 
     pub(super) fn handle_mouse_input(&mut self, button_state: ElementState, button: MouseButton, egui_consumed: bool) {
         let overlay_open = self.state.settings_open;
-        if egui_consumed || overlay_open {
+        if egui_consumed || overlay_open || self.state.popup_hovered {
             // Even when egui consumes the event (e.g. egui-rendered panels),
             // we still need to update pane focus on left-click within the terminal area.
             if egui_consumed && !overlay_open && button == MouseButton::Left && button_state == ElementState::Pressed {
@@ -168,7 +166,7 @@ impl TastyWindow {
     pub(super) fn handle_mouse_wheel(&mut self, delta: MouseScrollDelta, egui_consumed: bool) {
         let overlay_open = self.state.settings_open;
         if egui_consumed { self.mark_dirty(); }
-        if !egui_consumed && !overlay_open {
+        if !egui_consumed && !overlay_open && !self.state.popup_hovered {
             // Find the surface under the cursor, falling back to the focused surface
             let terminal_rect = self.compute_terminal_rect();
             let target_id = self.cursor_position

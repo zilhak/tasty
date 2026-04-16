@@ -12,6 +12,14 @@ pub enum PopupAction {
     Close,
 }
 
+/// Result of PopupManager::draw(), including input layer hit information.
+pub struct PopupDrawResult {
+    /// Popup IDs that were closed this frame.
+    pub closed: Vec<PopupId>,
+    /// Whether the mouse is currently over any open popup.
+    pub hovered: bool,
+}
+
 /// Trait for popup content. Each popup type implements this to define
 /// its own size, scope, and rendering logic.
 pub trait PopupContent {
@@ -259,13 +267,13 @@ impl PopupManager {
 
     /// Draw all open popups. The `content_fn` callback is invoked for each popup with its id.
     /// `draw_ctx` provides scope context for visibility and boundary clamping.
-    /// Returns a list of popup ids that were closed via the X button or outside click.
+    /// Returns draw result including closed popup IDs and hover state for input layer.
     pub fn draw(
         &mut self,
         ctx: &egui::Context,
         content_fn: &mut dyn FnMut(&str, &mut egui::Ui),
         draw_ctx: Option<&PopupDrawContext>,
-    ) -> Vec<PopupId> {
+    ) -> PopupDrawResult {
         let th = theme::theme();
         let screen_rect = ctx.screen_rect();
         let mut closed: Vec<PopupId> = Vec::new();
@@ -477,7 +485,10 @@ impl PopupManager {
             self.bring_to_front(id);
         }
 
-        closed
+        PopupDrawResult {
+            closed,
+            hovered: hovered_popup.is_some(),
+        }
     }
 
     /// Check if a popup's scope is currently visible.

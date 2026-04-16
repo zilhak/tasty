@@ -57,6 +57,10 @@ pub struct AppState {
     pub popups: crate::ui::PopupManager,
     /// Popup content implementations (trait objects, separate from PopupManager for borrow splitting).
     pub popup_contents: Vec<Box<dyn crate::ui::popup::PopupContent>>,
+    /// Whether the mouse is currently over an open popup (input layer state).
+    /// Updated each frame by PopupManager::draw(). Mouse handlers check this
+    /// to block events from reaching lower layers (terminal, dividers).
+    pub popup_hovered: bool,
     /// Double-tap modifier captured from winit events, for the keybinding recorder to consume.
     pub captured_double_tap: Option<String>,
 }
@@ -147,6 +151,7 @@ impl AppState {
             dialogs: DialogState::new(),
             tab_bar_height: 24.0,
             captured_double_tap: None,
+            popup_hovered: false,
             popup_contents: {
                 let contents: Vec<Box<dyn crate::ui::popup::PopupContent>> = vec![
                     Box::new(crate::ui::notification_popup::NotificationPopup::new()),

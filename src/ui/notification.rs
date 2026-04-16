@@ -168,7 +168,7 @@ pub fn draw_popups(
     let mut contents = std::mem::replace(&mut state.popup_contents, Vec::new());
 
     let mut trait_closed: Vec<&'static str> = Vec::new();
-    let closed = popups.draw(ctx, &mut |id, ui| {
+    let draw_result = popups.draw(ctx, &mut |id, ui| {
         if let Some(content) = contents.iter_mut().find(|c| c.id() == id) {
             let content_id = content.id();
             if matches!(content.draw(ui, state), crate::ui::PopupAction::Close) {
@@ -177,17 +177,20 @@ pub fn draw_popups(
         }
     }, Some(&draw_ctx));
 
+    // Update input layer state: popup hover blocks mouse events to lower layers
+    state.popup_hovered = draw_result.hovered;
+
     state.popups = popups;
     state.popup_contents = contents;
 
     // Close popups requested by trait dispatch or X button / outside click
-    for id in trait_closed.iter().chain(closed.iter()) {
+    for id in trait_closed.iter().chain(draw_result.closed.iter()) {
         state.popups.close(id);
     }
 
     // Clean up convert_surface dialog state when closed
     let convert_closed = trait_closed.contains(&"convert_surface")
-        || closed.contains(&"convert_surface");
+        || draw_result.closed.contains(&"convert_surface");
     if convert_closed {
         state.dialogs.convert_popup = None;
         state.dialogs.convert_popup_selected = None;
