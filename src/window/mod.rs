@@ -53,6 +53,8 @@ pub enum WindowAction {
 /// 이벤트 핸들러에 함께 전달되는 맥락.
 pub struct WindowCtx<'a> {
     pub event_loop: &'a ActiveEventLoop,
+    /// 현재 모달 윈도우가 활성 상태인지. true면 비모달 윈도우는 입력을 차단해야 한다.
+    pub modal_active: bool,
 }
 
 /// Sealed 모듈 — 외부에서 `Window`를 직접 구현하지 못하게 차단한다.

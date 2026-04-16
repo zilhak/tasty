@@ -1,5 +1,6 @@
 use crate::model::Rect;
 use crate::selection::{self, SelectionMode, SelectionPoint, TextSelection};
+use crate::window::Window;
 
 use super::MainWindow;
 
@@ -167,7 +168,7 @@ impl MainWindow {
         };
         let (click_col, click_row) = crate::click_cursor::pixel_to_grid(
             x, y, &surface_rect,
-            self.gpu.cell_width(), self.gpu.cell_height(),
+            self.base.gpu.cell_width(), self.base.gpu.cell_height(),
             cols, rows,
         );
 
@@ -212,7 +213,7 @@ impl MainWindow {
             terminal.send_bytes(arrow); // Send first one immediately
             if arrow_count > 1 {
                 self.arrow_queue = Some(crate::click_cursor::ArrowQueue::new(arrow, arrow_count - 1, surface_id));
-                self.window.request_redraw();
+                self.base.winit.request_redraw();
             }
         } else {
             // Shell: send all at once
@@ -231,7 +232,7 @@ impl MainWindow {
         let (cols, rows) = terminal.surface().dimensions();
         let point = selection::pixel_to_grid(
             x, y, &surface_rect,
-            self.gpu.cell_width(), self.gpu.cell_height(),
+            self.base.gpu.cell_width(), self.base.gpu.cell_height(),
             cols, rows,
             terminal.scroll_offset,
             terminal.scrollback_len(),

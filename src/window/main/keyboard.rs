@@ -2,6 +2,7 @@ use winit::event::ElementState;
 use winit::keyboard::{Key, ModifiersState, NamedKey};
 
 use crate::state::{FocusedSurfaceType, PendingKeyEvent};
+use crate::window::Window;
 use super::MainWindow;
 
 impl MainWindow {
@@ -52,13 +53,13 @@ impl MainWindow {
             // On macOS, IME composition (e.g. Korean) can replace the logical key
             // with the composed character. When modifier keys are held, use the
             // physical key code to determine the intended key for shortcut matching.
-            let shortcut_key = if self.modifiers.control_key() || self.modifiers.super_key() || self.modifiers.alt_key() {
+            let shortcut_key = if self.base.modifiers.control_key() || self.base.modifiers.super_key() || self.base.modifiers.alt_key() {
                 crate::shortcuts::physical_key_to_logical(&event.physical_key)
                     .unwrap_or_else(|| event.logical_key.clone())
             } else {
                 event.logical_key.clone()
             };
-            if self.handle_shortcut(&shortcut_key, self.modifiers) {
+            if self.handle_shortcut(&shortcut_key, self.base.modifiers) {
                 if self.ime_preedit.is_some() {
                     self.flush_ime_preedit();
                 }
@@ -90,14 +91,14 @@ impl MainWindow {
                     &event.text
                 };
                 if let Some(terminal) = self.state.focused_terminal_mut() {
-                    let (dirty, sent) = Self::send_key_to_terminal(terminal, &event.logical_key, text_for_terminal, self.modifiers);
-                    if dirty { self.dirty = true; }
+                    let (dirty, sent) = Self::send_key_to_terminal(terminal, &event.logical_key, text_for_terminal, self.base.modifiers);
+                    if dirty { self.base.dirty = true; }
 
                     if sent {
                         self.ime_cursor_advance = 0;
                         if self.text_selection.is_some() {
                             self.text_selection = None;
-                            self.dirty = true;
+                            self.base.dirty = true;
                         }
                     }
                 }
@@ -107,7 +108,7 @@ impl MainWindow {
                 // during the next egui render frame.
                 self.state.pending_surface_keys.push(PendingKeyEvent {
                     key: event.logical_key.clone(),
-                    modifiers: self.modifiers,
+                    modifiers: self.base.modifiers,
                     text: event.text.clone(),
                 });
                 self.mark_dirty();

@@ -3,6 +3,7 @@ use serde_json::json;
 use crate::gpu::ImePreeditState;
 use crate::ipc::protocol::JsonRpcResponse;
 use crate::window::main::MainWindow;
+use crate::window::Window as _;
 
 /// Handle IME simulation IPC methods.
 /// These require window-local state (ime_active, ime_preedit) so they are

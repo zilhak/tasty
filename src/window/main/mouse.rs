@@ -2,6 +2,7 @@ use winit::event::{ElementState, MouseButton, MouseScrollDelta};
 use winit::window::CursorIcon;
 
 use crate::model::SplitDirection;
+use crate::window::Window;
 use crate::{DividerDrag, DividerDragKind};
 
 use super::MainWindow;
@@ -11,7 +12,7 @@ impl MainWindow {
         self.cursor_position = Some(position);
         let overlay_open = self.state.settings_open;
         if egui_consumed || overlay_open || self.state.popup_hovered {
-            self.window.set_cursor(CursorIcon::Default);
+            self.base.winit.set_cursor(CursorIcon::Default);
             self.mark_dirty();
             return;
         }
@@ -39,7 +40,7 @@ impl MainWindow {
                 DividerDragKind::Surface => self.state.update_surface_divider(&drag.info, x, y, terminal_rect),
             };
             if changed {
-                self.state.resize_all(terminal_rect, self.gpu.cell_width(), self.gpu.cell_height());
+                self.state.resize_all(terminal_rect, self.base.gpu.cell_width(), self.base.gpu.cell_height());
                 self.mark_dirty();
             }
         } else {
@@ -52,13 +53,13 @@ impl MainWindow {
                         SplitDirection::Vertical => CursorIcon::ColResize,
                         SplitDirection::Horizontal => CursorIcon::RowResize,
                     };
-                    self.window.set_cursor(cursor);
+                    self.base.winit.set_cursor(cursor);
                 }
                 None => {
                     match self.state.cursor_style_at(x, y, terminal_rect) {
-                        Some(true) => self.window.set_cursor(CursorIcon::Text),   // Terminal
-                        Some(false) => self.window.set_cursor(CursorIcon::Default), // Explorer/Markdown
-                        None => self.window.set_cursor(CursorIcon::Default),        // Outside pane
+                        Some(true) => self.base.winit.set_cursor(CursorIcon::Text),   // Terminal
+                        Some(false) => self.base.winit.set_cursor(CursorIcon::Default), // Explorer/Markdown
+                        None => self.base.winit.set_cursor(CursorIcon::Default),        // Outside pane
                     }
                 }
             }
@@ -76,13 +77,13 @@ impl MainWindow {
                     let (x, y) = (pos.x as f32, pos.y as f32);
                     if terminal_rect.contains(x, y) {
                         if self.state.focus_pane_at_position(x, y, terminal_rect) {
-                            self.dirty = true;
+                            self.base.dirty = true;
                         }
                         // Also update surface focus within SurfaceGroup so that
                         // clicking on an egui-rendered panel (Explorer, Markdown)
                         // correctly moves keyboard target to that surface.
                         if self.state.focus_surface_at_position(x, y, terminal_rect) {
-                            self.dirty = true;
+                            self.base.dirty = true;
                         }
                     }
                 }
@@ -114,8 +115,8 @@ impl MainWindow {
                         self.dragging_divider = Some(DividerDrag { info, kind: DividerDragKind::Surface });
                     } else {
                         let old_surface = self.state.focused_surface_id();
-                        if self.state.focus_pane_at_position(x, y, terminal_rect) { self.dirty = true; }
-                        if self.state.focus_surface_at_position(x, y, terminal_rect) { self.dirty = true; }
+                        if self.state.focus_pane_at_position(x, y, terminal_rect) { self.base.dirty = true; }
+                        if self.state.focus_surface_at_position(x, y, terminal_rect) { self.base.dirty = true; }
                         if self.ime_preedit.is_some() && self.state.focused_surface_id() != old_surface {
                             self.flush_ime_preedit();
                         }
@@ -124,7 +125,7 @@ impl MainWindow {
                         let mouse_tracking = self.state.focused_terminal()
                             .map(|t| t.mouse_tracking())
                             .unwrap_or(tasty_terminal::MouseTrackingMode::None);
-                        let shift = self.modifiers.shift_key();
+                        let shift = self.base.modifiers.shift_key();
                         if mouse_tracking == tasty_terminal::MouseTrackingMode::None || shift {
                             self.start_selection(x, y, &terminal_rect);
                         }
@@ -132,8 +133,8 @@ impl MainWindow {
                 } else if button_state == ElementState::Released {
                     if self.dragging_divider.is_some() {
                         self.dragging_divider = None;
-                        self.state.resize_all(terminal_rect, self.gpu.cell_width(), self.gpu.cell_height());
-                        self.dirty = true;
+                        self.state.resize_all(terminal_rect, self.base.gpu.cell_width(), self.base.gpu.cell_height());
+                        self.base.dirty = true;
                     }
                     // Finish selection drag
                     if let Some(sel) = &mut self.text_selection {
@@ -178,7 +179,7 @@ impl MainWindow {
                     } else {
                         if lines > 0 { terminal.scroll_up(lines as usize); }
                         else if lines < 0 { terminal.scroll_down((-lines) as usize); }
-                        self.dirty = true;
+                        self.base.dirty = true;
                     }
                 }
             }

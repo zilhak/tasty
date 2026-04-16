@@ -7,25 +7,24 @@ mod selection;
 use std::sync::Arc;
 
 use winit::event::WindowEvent;
-use winit::event_loop::ActiveEventLoop;
 use winit::keyboard::ModifiersState;
-use winit::window::{CursorIcon, Window};
+use winit::window::CursorIcon;
 
 use crate::gpu::{GpuState, ImePreeditState};
 use crate::model::Rect;
 use crate::selection::TextSelection;
 use crate::state::AppState;
+use crate::window::{
+    sealed, terminal_host::MODELESS_MODALITY, Modality, TerminalHostWindow, Window, WindowAction,
+    WindowBase, WindowCtx,
+};
 use crate::{AppEvent, ClipboardContext};
 
 /// 메인 터미널 윈도우. 워크스페이스/사이드바/탭을 갖고 터미널 계열 Surface를 호스팅한다.
 /// `TerminalHostWindow` 계열의 대표 구현체.
 pub struct MainWindow {
-    pub(crate) gpu: GpuState,
+    pub base: WindowBase,
     pub(crate) state: AppState,
-    pub(crate) window: Arc<Window>,
-    pub(crate) dirty: bool,
-    pub(crate) modifiers: ModifiersState,
-    pub(crate) window_focused: bool,
     pub(crate) cursor_position: Option<winit::dpi::PhysicalPosition<f64>>,
     pub(crate) dragging_divider: Option<crate::DividerDrag>,
     pub(crate) clipboard: Option<ClipboardContext>,
@@ -51,19 +50,20 @@ pub struct MainWindow {
     pub(crate) ime_advance_base: (usize, usize),
     /// Detector for double-tap modifier shortcuts (e.g. Shift+Shift).
     pub(crate) double_tap: crate::double_tap::DoubleTapDetector,
-    /// Set to true when the window should close (e.g. last workspace removed).
-    pub(crate) close_requested: bool,
     /// Native WebView instances keyed by surface ID.
     pub(crate) webviews: std::collections::HashMap<u32, crate::webview::PlatformWebView>,
 }
 
 impl MainWindow {
-    pub fn new(gpu: GpuState, state: AppState, window: Arc<Window>, proxy: winit::event_loop::EventLoopProxy<AppEvent>) -> Self {
+    pub fn new(
+        gpu: GpuState,
+        state: AppState,
+        window: Arc<winit::window::Window>,
+        proxy: winit::event_loop::EventLoopProxy<AppEvent>,
+    ) -> Self {
         Self {
-            gpu, state, window,
-            dirty: true,
-            modifiers: ModifiersState::empty(),
-            window_focused: true,
+            base: WindowBase::new(gpu, window),
+            state,
             cursor_position: None,
             dragging_divider: None,
             clipboard: ClipboardContext::new(),
@@ -79,26 +79,22 @@ impl MainWindow {
             ime_cursor_advance: 0,
             ime_advance_base: (0, 0),
             double_tap: crate::double_tap::DoubleTapDetector::new(),
-            close_requested: false,
             webviews: std::collections::HashMap::new(),
         }
     }
 
     /// Request this window to close (will be handled by the event loop).
     pub(crate) fn request_close(&mut self) {
-        self.close_requested = true;
-    }
-
-    pub fn mark_dirty(&mut self) {
-        self.dirty = true;
-        self.window.request_redraw();
+        self.base.close_requested = true;
     }
 
     pub fn compute_terminal_rect(&self) -> Rect {
-        let size = self.gpu.size();
+        let size = self.base.gpu.size();
         crate::model::compute_terminal_rect(
-            size.width as f32, size.height as f32,
-            self.state.sidebar_width, self.gpu.scale_factor(),
+            size.width as f32,
+            size.height as f32,
+            self.state.sidebar_width,
+            self.base.gpu.scale_factor(),
         )
     }
 
@@ -115,13 +111,11 @@ impl MainWindow {
         let preedit = match self.ime_preedit.take() {
             Some(p) if !p.text.is_empty() => p,
             _ => {
-                // No preedit or empty — just ensure state is clean
                 self.ime_cursor_advance = 0;
                 self.ime_advance_base = (0, 0);
                 return;
             }
         };
-        // Commit to the surface where composition started, not the currently focused one
         if let Some(terminal) = self.state.find_terminal_by_id_mut(preedit.surface_id) {
             terminal.send_key(&preedit.text);
         }
@@ -132,14 +126,7 @@ impl MainWindow {
     }
 
     /// Recalculate the preedit anchor position using the current terminal cursor.
-    /// Only updates the anchor when compensating for PTY echo after Commit
-    /// (ime_cursor_advance > 0). While preedit text is actively composing,
-    /// the anchor is frozen at the position set by the Preedit event to prevent
-    /// the overlay from chasing the TUI cursor around the screen.
     pub(crate) fn recalc_ime_preedit_anchor(&mut self) {
-        // Only recalculate if we need to reconcile PTY echo advance.
-        // If ime_cursor_advance == 0, the anchor was set at Preedit event time
-        // and must not be overwritten by TUI cursor movements.
         if self.ime_cursor_advance == 0 {
             return;
         }
@@ -157,7 +144,6 @@ impl MainWindow {
         let (col, row) = terminal.surface().cursor_position();
         let cols = terminal.cols();
 
-        // Reconcile advance with how far the raw cursor has moved
         let (base_col, base_row) = self.ime_advance_base;
         let raw_advance = if row > base_row {
             (row - base_row) * cols + col - base_col
@@ -196,14 +182,14 @@ impl MainWindow {
             preedit.surface_id,
             preedit.anchor_col,
             preedit.anchor_row,
-            self.gpu.cell_width(),
-            self.gpu.cell_height(),
+            self.base.gpu.cell_width(),
+            self.base.gpu.cell_height(),
         ) else {
             return;
         };
 
         use winit::dpi::{PhysicalPosition, PhysicalSize};
-        self.window.set_ime_cursor_area(
+        self.base.winit.set_ime_cursor_area(
             PhysicalPosition::new(cell_rect.x.round() as i32, cell_rect.y.round() as i32),
             PhysicalSize::new(
                 cell_rect.width.max(1.0).round() as u32,
@@ -211,15 +197,32 @@ impl MainWindow {
             ),
         );
     }
+}
 
-    /// Handle a window event. `modal_active` indicates if a modal is blocking input.
-    pub fn handle_window_event(&mut self, event: WindowEvent, _event_loop: &ActiveEventLoop, modal_active: bool) -> bool {
+impl Window for MainWindow {
+    fn base(&self) -> &WindowBase {
+        &self.base
+    }
+    fn base_mut(&mut self) -> &mut WindowBase {
+        &mut self.base
+    }
+    fn modality(&self) -> Modality {
+        MODELESS_MODALITY
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+
+    fn handle_event(&mut self, event: WindowEvent, ctx: &mut WindowCtx<'_>) -> WindowAction {
         // ── Keyboard/IME routing ──
         // Keyboard and IME events are only forwarded to egui when an overlay
-        // (settings, dialog, focused popup) is active.  Otherwise the central
+        // (settings, dialog, focused popup) is active. Otherwise the central
         // keyboard dispatcher in keyboard.rs handles routing to the correct
-        // surface, and egui never sees the key event — preventing the global
-        // ui.input() pollution bug.
+        // surface, and egui never sees the key event.
         let is_keyboard_event = matches!(
             &event,
             WindowEvent::KeyboardInput { .. } | WindowEvent::Ime(_)
@@ -232,55 +235,57 @@ impl MainWindow {
 
         let (egui_consumed, egui_repaint) = if is_keyboard_event {
             if overlay_open {
-                // Overlay owns keyboard: forward to egui
-                self.gpu.handle_egui_event(&self.window, &event)
+                self.base.gpu.handle_egui_event(&self.base.winit, &event)
             } else {
-                // No overlay: do NOT give keyboard events to egui
                 (false, false)
             }
         } else if is_modifiers_event {
-            // Always forward ModifiersChanged so egui tracks Ctrl/Shift state
-            // for hover cursor changes etc., but never "consume" it.
-            let (_, repaint) = self.gpu.handle_egui_event(&self.window, &event);
+            let (_, repaint) = self.base.gpu.handle_egui_event(&self.base.winit, &event);
             (false, repaint)
         } else {
-            // All other events (mouse, resize, etc.) go to egui as before
-            self.gpu.handle_egui_event(&self.window, &event)
+            self.base.gpu.handle_egui_event(&self.base.winit, &event)
         };
 
         if egui_repaint {
             self.mark_dirty();
         }
 
-        // If a modal is active, only allow Resized/RedrawRequested/ScaleFactorChanged
-        if modal_active {
+        // If a modal is active, only allow Resized/RedrawRequested/ScaleFactorChanged/...
+        if ctx.modal_active {
             match &event {
-                WindowEvent::Resized(_) | WindowEvent::RedrawRequested | WindowEvent::ScaleFactorChanged { .. }
-                | WindowEvent::ModifiersChanged(_) | WindowEvent::Focused(_) => {}
-                _ => return false,
+                WindowEvent::Resized(_)
+                | WindowEvent::RedrawRequested
+                | WindowEvent::ScaleFactorChanged { .. }
+                | WindowEvent::ModifiersChanged(_)
+                | WindowEvent::Focused(_) => {}
+                _ => return WindowAction::None,
             }
         }
 
-        let was_dirty = self.dirty;
+        let was_dirty = self.base.dirty;
 
         match event {
             WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => {
-                self.gpu.sync_scale_factor(&self.window);
-                let new_size = self.window.inner_size();
-                self.gpu.resize(new_size);
+                self.base.gpu.sync_scale_factor(&self.base.winit);
+                let new_size = self.base.winit.inner_size();
+                self.base.gpu.resize(new_size);
                 let terminal_rect = self.compute_terminal_rect();
-                let (cols, rows) = self.gpu.grid_size_for_rect(&terminal_rect);
+                let (cols, rows) = self.base.gpu.grid_size_for_rect(&terminal_rect);
                 self.state.update_grid_size(cols, rows);
-                self.state.resize_all(terminal_rect, self.gpu.cell_width(), self.gpu.cell_height());
+                self.state.resize_all(
+                    terminal_rect,
+                    self.base.gpu.cell_width(),
+                    self.base.gpu.cell_height(),
+                );
                 self.mark_dirty();
             }
             WindowEvent::Focused(focused) => {
-                self.window_focused = focused;
+                self.base.focused = focused;
                 if !focused {
                     if self.ime_preedit.is_some() {
                         self.flush_ime_preedit();
                     }
-                    self.modifiers = ModifiersState::empty();
+                    self.base.modifiers = ModifiersState::empty();
                 }
                 self.mark_dirty();
             }
@@ -288,7 +293,7 @@ impl MainWindow {
                 self.mark_dirty();
             }
             WindowEvent::ModifiersChanged(modifiers) => {
-                self.modifiers = modifiers.state();
+                self.base.modifiers = modifiers.state();
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 self.handle_keyboard_input(&event, egui_consumed);
@@ -301,25 +306,38 @@ impl MainWindow {
             }
             WindowEvent::CursorLeft { .. } => {
                 self.cursor_position = None;
-                self.window.set_cursor(CursorIcon::Default);
+                self.base.winit.set_cursor(CursorIcon::Default);
             }
-            WindowEvent::MouseInput { state: button_state, button, .. } => {
+            WindowEvent::MouseInput {
+                state: button_state,
+                button,
+                ..
+            } => {
                 self.handle_mouse_input(button_state, button, egui_consumed);
             }
             WindowEvent::MouseWheel { delta, .. } => {
                 self.handle_mouse_wheel(delta, egui_consumed);
             }
             WindowEvent::RedrawRequested => {
-                self.handle_redraw(_event_loop);
+                self.handle_redraw(ctx.event_loop);
             }
             _ => {}
         }
 
-        // If this event made us dirty, request a redraw.
-        if self.dirty && !was_dirty {
-            self.window.request_redraw();
+        if self.base.dirty && !was_dirty {
+            self.base.winit.request_redraw();
         }
 
-        false // don't exit
+        WindowAction::None
+    }
+
+    fn render(&mut self) {
+        // 메인 윈도우는 별도 진입점인 handle_redraw 경로로 렌더한다.
+        // Window::render는 트레잇 디스패치 호환을 위해 존재하며 현재 Main
+        // 창에서는 호출되지 않는다.
     }
 }
+
+impl TerminalHostWindow for MainWindow {}
+
+impl sealed::Sealed for MainWindow {}

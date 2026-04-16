@@ -1,5 +1,7 @@
 use winit::event_loop::ActiveEventLoop;
 
+use crate::window::Window;
+
 use super::MainWindow;
 
 impl MainWindow {
@@ -13,8 +15,8 @@ impl MainWindow {
                 let has_more = q.tick(terminal);
                 if has_more {
                     self.arrow_queue = Some(q);
-                    self.dirty = true;
-                    self.window.request_redraw(); // Schedule next frame
+                    self.base.dirty = true;
+                    self.base.winit.request_redraw(); // Schedule next frame
                 }
             } else {
                 self.arrow_queue = None;
@@ -32,7 +34,7 @@ impl MainWindow {
         // but we still call process_all() as a safety net (it's a no-op if channels are empty).
         if self.state.process_all() {
             self.recalc_ime_preedit_anchor();
-            self.dirty = true;
+            self.base.dirty = true;
         }
 
         // Collect terminal events
@@ -43,7 +45,7 @@ impl MainWindow {
                 crate::terminal::TerminalEventKind::Notification { title, body } => {
                     if self.state.engine.settings.notification.enabled
                         && self.state.engine.settings.notification.system_notification
-                        && !self.window_focused
+                        && !self.base.focused
                         && self.state.engine.notifications.should_send_system_notification()
                     {
                         crate::notification::send_system_notification(title, body);
@@ -54,7 +56,7 @@ impl MainWindow {
                     }
                     let hook_events = vec![tasty_hooks::HookEvent::Notification];
                     self.state.engine.hook_manager.check_and_fire(surface_id, &hook_events);
-                    self.dirty = true;
+                    self.base.dirty = true;
                 }
                 crate::terminal::TerminalEventKind::BellRing => {
                     if self.state.engine.settings.notification.enabled {
@@ -63,17 +65,17 @@ impl MainWindow {
                     }
                     if self.state.engine.settings.notification.enabled
                         && self.state.engine.settings.notification.system_notification
-                        && !self.window_focused
+                        && !self.base.focused
                         && self.state.engine.notifications.should_send_system_notification()
                     {
                         crate::notification::send_system_notification("Tasty", "Bell");
                     }
                     let hook_events = vec![tasty_hooks::HookEvent::Bell];
                     self.state.engine.hook_manager.check_and_fire(surface_id, &hook_events);
-                    self.dirty = true;
+                    self.base.dirty = true;
                 }
-                crate::terminal::TerminalEventKind::TitleChanged(_) => { self.dirty = true; }
-                crate::terminal::TerminalEventKind::CwdChanged(_) => { self.dirty = true; }
+                crate::terminal::TerminalEventKind::TitleChanged(_) => { self.base.dirty = true; }
+                crate::terminal::TerminalEventKind::CwdChanged(_) => { self.base.dirty = true; }
                 crate::terminal::TerminalEventKind::ClipboardSet(data) => {
                     if let Some(cb) = &mut self.clipboard {
                         cb.set_text(data);
@@ -83,36 +85,36 @@ impl MainWindow {
                     let hook_events = vec![tasty_hooks::HookEvent::ProcessExit];
                     self.state.engine.hook_manager.check_and_fire(surface_id, &hook_events);
                     self.state.close_surface_by_id_no_snapshot(surface_id);
-                    self.dirty = true;
+                    self.base.dirty = true;
                 }
             }
         }
 
         // Re-sync scale factor before render — macOS may not fire
         // ScaleFactorChanged reliably during monitor hot-swap or sleep/wake.
-        if self.gpu.sync_scale_factor(&self.window) {
-            let new_size = self.window.inner_size();
-            self.gpu.resize(new_size);
+        if self.base.gpu.sync_scale_factor(&self.base.winit) {
+            let new_size = self.base.winit.inner_size();
+            self.base.gpu.resize(new_size);
             let terminal_rect = self.compute_terminal_rect();
-            let (cols, rows) = self.gpu.grid_size_for_rect(&terminal_rect);
+            let (cols, rows) = self.base.gpu.grid_size_for_rect(&terminal_rect);
             self.state.update_grid_size(cols, rows);
-            self.state.resize_all(terminal_rect, self.gpu.cell_width(), self.gpu.cell_height());
+            self.state.resize_all(terminal_rect, self.base.gpu.cell_width(), self.base.gpu.cell_height());
             // Schedule another redraw to verify scale factor has stabilized.
-            self.dirty = true;
+            self.base.dirty = true;
         }
 
         // Render
-        if self.dirty {
-            self.dirty = false;
+        if self.base.dirty {
+            self.base.dirty = false;
             self.update_ime_cursor_area();
-            match self.gpu.render(&mut self.state, &self.window, self.ime_preedit.as_ref(), self.text_selection.as_ref()) {
+            match self.base.gpu.render(&mut self.state, &self.base.winit, self.ime_preedit.as_ref(), self.text_selection.as_ref()) {
                 Ok(()) => {}
                 Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
-                    self.gpu.resize(self.window.inner_size());
+                    self.base.gpu.resize(self.base.winit.inner_size());
                     // Surface was lost/outdated; resize recovers it, but we must
                     // re-render now that it's ready. dirty was set to false above,
                     // so restore it and request another frame.
-                    self.dirty = true;
+                    self.base.dirty = true;
                 }
                 Err(wgpu::SurfaceError::OutOfMemory) => {
                     tracing::error!("GPU out of memory");
@@ -132,8 +134,8 @@ impl MainWindow {
         // Sync webview lifecycle: create/destroy/reposition/visibility
         self.sync_webviews();
 
-        if self.dirty {
-            self.window.request_redraw();
+        if self.base.dirty {
+            self.base.winit.request_redraw();
         }
     }
 
@@ -142,7 +144,7 @@ impl MainWindow {
     /// updates bounds and visibility based on active workspace/tab.
     fn sync_webviews(&mut self) {
         let terminal_rect = self.compute_terminal_rect();
-        let scale_factor = self.gpu.scale_factor() as f64;
+        let scale_factor = self.base.gpu.scale_factor() as f64;
         let tab_bar_h = self.state.tab_bar_height as f64;
 
         // Collect all Html surface IDs and their visibility/bounds
@@ -180,7 +182,7 @@ impl MainWindow {
                 // Find the URL for this surface
                 let url = self.find_html_url(sid);
                 match crate::webview::PlatformWebView::new(
-                    self.window.as_ref(),
+                    self.base.winit.as_ref(),
                     active_html.get(&sid).copied().unwrap_or(crate::webview::WebViewBounds {
                         x: 0.0, y: 0.0, width: 1.0, height: 1.0,
                     }),
@@ -265,7 +267,7 @@ impl MainWindow {
                     MenuItem::new(1, rename_label),
                     MenuItem::new(2, close_label),
                 ];
-                let result = show_context_menu(self.window.as_ref(), x as f64, y as f64, &items);
+                let result = show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
                 match result {
                     Some(1) => {
                         // Rename
@@ -298,7 +300,7 @@ impl MainWindow {
                     MenuItem::new(2, crate::i18n::t("pane_context_menu.new_explorer")),
                     MenuItem::new(3, crate::i18n::t("pane_context_menu.new_html")),
                 ];
-                let result = show_context_menu(self.window.as_ref(), x as f64, y as f64, &items);
+                let result = show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
                 match result {
                     Some(1) => {
                         // Create empty tab first, then show markdown dialog targeting it

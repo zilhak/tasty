@@ -3,7 +3,7 @@ use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
 use winit::window::WindowId;
 
-use crate::window::{WindowAction, WindowCtx};
+use crate::window::{Window, WindowAction, WindowCtx};
 use crate::{App, AppEvent};
 
 impl ApplicationHandler<AppEvent> for App {
@@ -78,13 +78,13 @@ impl ApplicationHandler<AppEvent> for App {
                     if self.tray_icon.is_some() {
                         // Windows with tray: hide windows to tray (keep alive)
                         for w in self.windows.values() {
-                            w.window.set_visible(false);
+                            w.base.winit.set_visible(false);
                         }
                         tracing::info!("hid {} window(s) to system tray", self.windows.len());
                     } else {
                         // Windows without tray: minimize to taskbar
                         for w in self.windows.values() {
-                            w.window.set_minimized(true);
+                            w.base.winit.set_minimized(true);
                         }
                         tracing::info!("minimized {} window(s) to taskbar", self.windows.len());
                     }
@@ -93,7 +93,7 @@ impl ApplicationHandler<AppEvent> for App {
                 {
                     // Linux: minimize windows to taskbar (keep alive)
                     for w in self.windows.values() {
-                        w.window.set_minimized(true);
+                        w.base.winit.set_minimized(true);
                     }
                     tracing::info!("minimized {} window(s) to taskbar", self.windows.len());
                 }
@@ -104,9 +104,9 @@ impl ApplicationHandler<AppEvent> for App {
             #[cfg(windows)]
             AppEvent::TrayShowWindow => {
                 for w in self.windows.values() {
-                    w.window.set_visible(true);
-                    w.window.set_minimized(false);
-                    w.window.focus_window();
+                    w.base.winit.set_visible(true);
+                    w.base.winit.set_minimized(false);
+                    w.base.winit.focus_window();
                 }
                 tracing::info!("restored {} window(s) from system tray", self.windows.len());
             }
@@ -221,7 +221,7 @@ impl ApplicationHandler<AppEvent> for App {
         if let Some(modal_id) = self.engine.active_modal_id {
             if id == modal_id {
                 let action = if let Some(modal) = &mut self.active_modal {
-                    let mut ctx = WindowCtx { event_loop };
+                    let mut ctx = WindowCtx { event_loop, modal_active: false };
                     modal.handle_event(event, &mut ctx)
                 } else {
                     WindowAction::None
@@ -267,10 +267,11 @@ impl ApplicationHandler<AppEvent> for App {
 
         if let Some(w) = self.windows.get_mut(&id) {
             let modal_active = self.engine.is_modal_active();
-            w.handle_window_event(event, event_loop, modal_active);
+            let mut ctx = WindowCtx { event_loop, modal_active };
+            let _ = w.handle_event(event, &mut ctx);
 
             // Check if the window requested to close (e.g. last workspace removed)
-            if w.close_requested {
+            if w.base.close_requested {
                 if let Some(w) = self.windows.remove(&id) {
                     if self.windows.is_empty() {
                         tracing::info!("last window closed via request, parking state");
@@ -321,7 +322,7 @@ impl ApplicationHandler<AppEvent> for App {
         }
         if any_pending {
             for w in self.windows.values() {
-                w.window.request_redraw();
+                w.base.winit.request_redraw();
             }
         }
     }

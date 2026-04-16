@@ -1,6 +1,7 @@
 use winit::keyboard::{Key, KeyCode, ModifiersState, NamedKey, PhysicalKey};
 
 use crate::window::main::MainWindow;
+use crate::window::Window as _;
 use crate::model::SplitDirection;
 
 /// Convert a physical key code to a Key::Character for shortcut matching.
@@ -171,8 +172,8 @@ impl MainWindow {
         }
 
         let terminal_rect = self.compute_terminal_rect();
-        let cell_w = self.gpu.cell_width();
-        let cell_h = self.gpu.cell_height();
+        let cell_w = self.base.gpu.cell_width();
+        let cell_h = self.base.gpu.cell_height();
 
         // Check all configurable bindings for double-tap matches
         let bindings_to_check: Vec<(String, &str)> = vec![
@@ -288,8 +289,8 @@ impl MainWindow {
         let alt = mods.alt_key();
 
         let terminal_rect = self.compute_terminal_rect();
-        let cell_w = self.gpu.cell_width();
-        let cell_h = self.gpu.cell_height();
+        let cell_w = self.base.gpu.cell_width();
+        let cell_h = self.base.gpu.cell_height();
 
         // Clipboard copy (needs &self before state borrow)
         if self.handle_copy_shortcut(key, ctrl, shift, alt) {
@@ -301,14 +302,14 @@ impl MainWindow {
         // Configurable keybinding shortcuts
         if Self::handle_keybinding_shortcuts(&mut self.state, &kb, key, mods, terminal_rect, cell_w, cell_h, &self.proxy) {
             if self.state.engine.workspaces.is_empty() { self.request_close(); }
-            self.dirty = true;
+            self.base.dirty = true;
             return true;
         }
 
         // Hardcoded shortcuts (tab switch, Ctrl+W, number switch)
         if Self::handle_hardcoded_shortcuts(&mut self.state, &kb, key, ctrl, shift, alt, terminal_rect, cell_w, cell_h) {
             if self.state.engine.workspaces.is_empty() { self.request_close(); }
-            self.dirty = true;
+            self.base.dirty = true;
             return true;
         }
 
@@ -319,7 +320,7 @@ impl MainWindow {
 
         // Zoom
         if Self::handle_zoom_shortcut(&mut self.state, key, ctrl, shift, alt) {
-            self.dirty = true;
+            self.base.dirty = true;
             return true;
         }
 

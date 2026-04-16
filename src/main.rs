@@ -50,6 +50,7 @@ use winit::window::Window;
 
 use gpu::GpuState;
 use model::DividerInfo;
+use window::Window as _;
 
 /// Wrapper for the system clipboard (arboard).
 struct ClipboardContext {
@@ -383,7 +384,7 @@ impl App {
                 let mut found = false;
                 for (id, w) in &self.windows {
                     if format!("{:?}", id) == target {
-                        w.window.focus_window();
+                        w.base.winit.focus_window();
                         self.engine.focused_window_id = Some(*id);
                         found = true;
                         break;
@@ -439,7 +440,7 @@ impl App {
                 };
 
                 if cmd.request.method == "debug.info" {
-                    let debug_data = debug_info::collect(&w.state, Some(&w.gpu), w.ime_active);
+                    let debug_data = debug_info::collect(&w.state, Some(&w.base.gpu), w.ime_active);
                     let response = ipc::protocol::JsonRpcResponse::success(
                         cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
                         debug_data,
@@ -449,14 +450,14 @@ impl App {
                     let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
                     let response = ipc::handler::ime::handle_ime_method(w, &cmd.request.method, &cmd.request.params, id);
                     let _ = cmd.response_tx.send(response);
-                    w.dirty = true;
+                    w.base.dirty = true;
                 } else if cmd.request.method == "ui.screenshot" {
                     let path = cmd.request.params
                         .get("path")
                         .and_then(|v| v.as_str())
                         .unwrap_or("screenshot.png")
                         .to_string();
-                    w.gpu.pending_screenshot = Some(std::path::PathBuf::from(&path));
+                    w.base.gpu.pending_screenshot = Some(std::path::PathBuf::from(&path));
                     w.mark_dirty();
                     let response = ipc::protocol::JsonRpcResponse::success(
                         cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
@@ -474,7 +475,7 @@ impl App {
                 if let Some(w) = self.windows.get_mut(&id) {
                     let response = ipc::handler::handle(&mut w.state, &cmd.request);
                     let _ = cmd.response_tx.send(response);
-                    w.dirty = true;
+                    w.base.dirty = true;
                     processed = true;
                     continue;
                 }
