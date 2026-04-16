@@ -52,11 +52,6 @@ close_behavior_quit = "終了"
 
 [settings.appearance]
 heading = "外観"
-
-[settings.appearance.subtab]
-general = "一般"
-terminal = "ターミナル"
-markdown = "マークダウン"
 font_family_label = "フォント:"
 font_size_label = "フォントサイズ:"
 theme_label = "テーマ:"
@@ -66,7 +61,6 @@ font_scale_mode_label = "フォントDPIスケーリング:"
 font_scale_mode_auto = "自動"
 font_scale_mode_fixed = "固定"
 font_scale_mode_tooltip = "自動: モニターのDPIに合わせてフォントをレンダリングします。\n異なるモニターでも同じ物理的な文字サイズを維持します。\n\n固定: DPIに関係なく同じピクセルサイズを使用します。\n高解像度モニターではより多くのセルが表示され、文字が小さくなります。"
-
 custom_font_label = "カスタムフォントファイル:"
 line_height_label = "行の高さ:"
 line_height_tooltip = "行の高さの倍率。1.0 = 詰め (ASCIIアートに最適)、1.2 = 読みやすい。"
@@ -80,6 +74,11 @@ preview_unfocused = "非フォーカス"
 preview_font_info = "フォント: {}"
 loading_fonts = "フォント読み込み中..."
 search_hint = "検索..."
+
+[settings.appearance.subtab]
+general = "一般"
+terminal = "ターミナル"
+markdown = "マークダウン"
 
 [settings.appearance.theme]
 dark = "ダーク"

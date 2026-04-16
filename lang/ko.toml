@@ -52,11 +52,6 @@ close_behavior_quit = "종료"
 
 [settings.appearance]
 heading = "외관"
-
-[settings.appearance.subtab]
-general = "일반"
-terminal = "터미널"
-markdown = "마크다운"
 font_family_label = "폰트:"
 font_size_label = "글자 크기:"
 theme_label = "테마:"
@@ -66,7 +61,6 @@ font_scale_mode_label = "폰트 DPI 스케일링:"
 font_scale_mode_auto = "자동"
 font_scale_mode_fixed = "고정"
 font_scale_mode_tooltip = "자동: 모니터 DPI에 맞춰 폰트를 렌더링합니다.\n모니터가 달라도 동일한 물리적 글자 크기를 유지합니다.\n\n고정: DPI와 무관하게 동일한 픽셀 크기를 사용합니다.\n고해상도 모니터에서 더 많은 셀이 표시되고 글자가 작아집니다."
-
 custom_font_label = "커스텀 폰트 파일:"
 line_height_label = "줄 높이:"
 line_height_tooltip = "줄 높이 배율. 1.0 = 촘촘 (ASCII 아트에 적합), 1.2 = 편안한 읽기."
@@ -80,6 +74,11 @@ preview_unfocused = "비포커스"
 preview_font_info = "폰트: {}"
 loading_fonts = "폰트 로딩 중..."
 search_hint = "검색..."
+
+[settings.appearance.subtab]
+general = "일반"
+terminal = "터미널"
+markdown = "마크다운"
 
 [settings.appearance.theme]
 dark = "다크"

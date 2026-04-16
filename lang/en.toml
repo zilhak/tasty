@@ -52,11 +52,6 @@ close_behavior_quit = "Quit"
 
 [settings.appearance]
 heading = "Appearance"
-
-[settings.appearance.subtab]
-general = "General"
-terminal = "Terminal"
-markdown = "Markdown"
 font_family_label = "Font family:"
 font_size_label = "Font size:"
 theme_label = "Theme:"
@@ -66,7 +61,6 @@ font_scale_mode_label = "Font DPI scaling:"
 font_scale_mode_auto = "Auto"
 font_scale_mode_fixed = "Fixed"
 font_scale_mode_tooltip = "Auto: Adjusts font rendering to match monitor DPI.\nSame physical text size across different monitors.\n\nFixed: Uses the same pixel size regardless of DPI.\nMore cells on high-DPI monitors, smaller text."
-
 custom_font_label = "Custom font file:"
 line_height_label = "Line height:"
 line_height_tooltip = "Line height multiplier. 1.0 = tight (best for ASCII art), 1.2 = comfortable reading."
@@ -80,6 +74,11 @@ preview_unfocused = "Unfocused"
 preview_font_info = "Font: {}"
 loading_fonts = "Loading fonts..."
 search_hint = "Search..."
+
+[settings.appearance.subtab]
+general = "General"
+terminal = "Terminal"
+markdown = "Markdown"
 
 [settings.appearance.theme]
 dark = "Dark"
