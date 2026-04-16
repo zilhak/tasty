@@ -1,13 +1,14 @@
 //! GUI integration test harness for tasty.
 //!
-//! Launches tasty in GUI mode with `--port-file` for IPC,
-//! finds the window, simulates keyboard/mouse input via `enigo`,
-//! and queries app state via JSON-RPC for verification.
+//! Launches a single shared tasty GUI instance for all tests.
+//! Each test creates its own workspace for isolation — no state reset needed.
 
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpStream;
 use std::path::PathBuf;
 use std::process::{Child, Command};
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use enigo::{
@@ -22,6 +23,43 @@ use windows::Win32::Foundation::HWND;
 use windows::Win32::UI::WindowsAndMessaging::{
     FindWindowW, GetClientRect, GetWindowRect, SetForegroundWindow, ShowWindow, SW_RESTORE,
 };
+
+// --- Shared instance ---
+
+static SHARED_INSTANCE: OnceLock<Mutex<GuiTestInstance>> = OnceLock::new();
+static CLEANUP_PID: AtomicU32 = AtomicU32::new(0);
+
+/// Acquire the shared GUI test instance.
+/// The first call spawns the tasty process; subsequent calls reuse it.
+pub fn shared() -> std::sync::MutexGuard<'static, GuiTestInstance> {
+    let guard = SHARED_INSTANCE.get_or_init(|| {
+        let inst = GuiTestInstance::spawn();
+        // Register atexit to kill tasty when the test process exits
+        CLEANUP_PID.store(inst.process_id(), Ordering::Relaxed);
+        extern "C" fn on_exit() {
+            let pid = CLEANUP_PID.load(Ordering::Relaxed);
+            if pid != 0 {
+                #[cfg(target_os = "windows")]
+                {
+                    let _ = std::process::Command::new("taskkill")
+                        .args(["/F", "/T", "/PID", &pid.to_string()])
+                        .stdout(std::process::Stdio::null())
+                        .stderr(std::process::Stdio::null())
+                        .status();
+                }
+                #[cfg(not(target_os = "windows"))]
+                unsafe {
+                    libc::kill(pid as i32, libc::SIGTERM);
+                }
+            }
+        }
+        unsafe { libc::atexit(on_exit); }
+        Mutex::new(inst)
+    });
+    guard.lock().unwrap()
+}
+
+// --- GuiTestInstance ---
 
 /// GUI test instance: a running tasty GUI process with IPC access and input simulation.
 pub struct GuiTestInstance {
@@ -93,6 +131,11 @@ impl GuiTestInstance {
         instance
     }
 
+    /// Get the child process ID.
+    pub fn process_id(&self) -> u32 {
+        self.process.id()
+    }
+
     /// Focus the tasty window.
     pub fn focus(&self) {
         #[cfg(target_os = "windows")]
@@ -146,6 +189,27 @@ impl GuiTestInstance {
         }
     }
 
+    /// Create a new workspace via IPC. Returns the workspace index (0-based).
+    #[allow(dead_code)]
+    pub fn create_workspace(&self, name: &str) -> usize {
+        let _result = self.call("workspace.create", serde_json::json!({ "name": name }));
+        let state = self.ui_state();
+        state.workspace_count - 1
+    }
+
+    /// Get the first surface ID from surface.list.
+    #[allow(dead_code)]
+    pub fn first_surface_id(&self) -> u64 {
+        let surfaces = self.call("surface.list", serde_json::json!({}));
+        surfaces.as_array().unwrap()[0]["id"].as_u64().unwrap()
+    }
+
+    /// Get the first pane ID from pane.list.
+    #[allow(dead_code)]
+    pub fn first_pane_id(&self) -> u64 {
+        let panes = self.call("pane.list", serde_json::json!({}));
+        panes.as_array().unwrap()[0]["id"].as_u64().unwrap()
+    }
 
     // --- Input simulation helpers ---
 
@@ -277,6 +341,12 @@ impl GuiTestInstance {
             }
             std::thread::sleep(Duration::from_millis(100));
         }
+    }
+
+    /// Shutdown the instance gracefully via IPC.
+    #[allow(dead_code)]
+    pub fn shutdown(&self) {
+        let _ = self.call("system.shutdown", serde_json::json!({}));
     }
 
     // --- Windows-specific helpers ---
