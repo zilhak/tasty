@@ -294,9 +294,9 @@ impl TastyWindow {
             }
             PendingNativeMenu::Pane { pane_id, x, y } => {
                 let items = [
-                    MenuItem::new(1, "Open Markdown..."),
-                    MenuItem::new(2, "Open Explorer"),
-                    MenuItem::new(3, "Open HTML..."),
+                    MenuItem::new(1, crate::i18n::t("pane_context_menu.new_markdown")),
+                    MenuItem::new(2, crate::i18n::t("pane_context_menu.new_explorer")),
+                    MenuItem::new(3, crate::i18n::t("pane_context_menu.new_html")),
                 ];
                 let result = show_context_menu(self.window.as_ref(), x as f64, y as f64, &items);
                 match result {

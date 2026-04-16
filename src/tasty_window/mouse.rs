@@ -147,25 +147,6 @@ impl TastyWindow {
                     self.mark_dirty();
                 }
             }
-        } else if button == MouseButton::Right && button_state == ElementState::Pressed {
-            let terminal_rect = self.compute_terminal_rect();
-            if let Some(pos) = self.cursor_position {
-                let (x, y) = (pos.x as f32, pos.y as f32);
-                if terminal_rect.contains(x, y) {
-                    let ws = self.state.active_workspace();
-                    let pane_rects = ws.pane_layout().compute_rects(terminal_rect);
-                    let scale = self.gpu.scale_factor();
-                    for (pane_id, rect) in pane_rects {
-                        if rect.contains(x, y) {
-                            self.state.dialogs.pending_native_menu = Some(crate::state::PendingNativeMenu::Pane {
-                                pane_id, x: x / scale, y: y / scale,
-                            });
-                            self.dirty = true;
-                            break;
-                        }
-                    }
-                }
-            }
         }
     }
 

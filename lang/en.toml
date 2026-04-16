@@ -172,6 +172,11 @@ settings = "Settings"
 rename = "Rename Tab"
 close = "Close Tab"
 
+[pane_context_menu]
+new_markdown = "New Markdown..."
+new_explorer = "New Explorer"
+new_html = "New HTML..."
+
 [notification_panel]
 window_title = "Notifications"
 unread_count = "{} unread"

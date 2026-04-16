@@ -172,6 +172,11 @@ settings = "설정"
 rename = "탭 이름 변경"
 close = "탭 닫기"
 
+[pane_context_menu]
+new_markdown = "새 마크다운..."
+new_explorer = "새 탐색기"
+new_html = "새 HTML..."
+
 [notification_panel]
 window_title = "알림"
 unread_count = "{}개 안 읽음"
