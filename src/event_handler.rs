@@ -20,10 +20,13 @@ impl ApplicationHandler<AppEvent> for App {
                     // Targeted polling: process only the specific terminal, then wake its window
                     let mut found = false;
                     for w in self.windows.values_mut() {
-                        if w.state.engine.find_terminal_by_id(sid).is_some() {
-                            w.state.engine.process_surface(sid);
-                            w.recalc_ime_preedit_anchor();
-                            w.mark_dirty();
+                        let Some(main) = w.as_main_mut() else {
+                            continue;
+                        };
+                        if main.state.engine.find_terminal_by_id(sid).is_some() {
+                            main.state.engine.process_surface(sid);
+                            main.recalc_ime_preedit_anchor();
+                            main.mark_dirty();
                             found = true;
                             break;
                         }
@@ -66,11 +69,16 @@ impl ApplicationHandler<AppEvent> for App {
             AppEvent::Minimize => {
                 #[cfg(target_os = "macos")]
                 {
-                    // macOS: destroy windows, park all states (dock reopen restores)
-                    for (_, w) in self.windows.drain() {
-                        self.parked_states.push(w.state);
+                    // macOS: destroy windows, park all MainWindow states (dock reopen restores).
+                    // 모달은 파킹 대상이 아니므로 그냥 drop.
+                    let drained: Vec<_> = self.windows.drain().map(|(_, w)| w).collect();
+                    for w in drained {
+                        if let Some(main_box) = crate::window::unbox_main(w) {
+                            self.parked_states.push(main_box.state);
+                        }
                     }
                     self.engine.focused_window_id = None;
+                    self.engine.active_modal_id = None;
                     tracing::info!("minimized to background ({} states parked)", self.parked_states.len());
                 }
                 #[cfg(windows)]
@@ -78,13 +86,13 @@ impl ApplicationHandler<AppEvent> for App {
                     if self.tray_icon.is_some() {
                         // Windows with tray: hide windows to tray (keep alive)
                         for w in self.windows.values() {
-                            w.base.winit.set_visible(false);
+                            w.base().winit.set_visible(false);
                         }
                         tracing::info!("hid {} window(s) to system tray", self.windows.len());
                     } else {
                         // Windows without tray: minimize to taskbar
                         for w in self.windows.values() {
-                            w.base.winit.set_minimized(true);
+                            w.base().winit.set_minimized(true);
                         }
                         tracing::info!("minimized {} window(s) to taskbar", self.windows.len());
                     }
@@ -93,7 +101,7 @@ impl ApplicationHandler<AppEvent> for App {
                 {
                     // Linux: minimize windows to taskbar (keep alive)
                     for w in self.windows.values() {
-                        w.base.winit.set_minimized(true);
+                        w.base().winit.set_minimized(true);
                     }
                     tracing::info!("minimized {} window(s) to taskbar", self.windows.len());
                 }
@@ -104,9 +112,9 @@ impl ApplicationHandler<AppEvent> for App {
             #[cfg(windows)]
             AppEvent::TrayShowWindow => {
                 for w in self.windows.values() {
-                    w.base.winit.set_visible(true);
-                    w.base.winit.set_minimized(false);
-                    w.base.winit.focus_window();
+                    w.base().winit.set_visible(true);
+                    w.base().winit.set_minimized(false);
+                    w.base().winit.focus_window();
                 }
                 tracing::info!("restored {} window(s) from system tray", self.windows.len());
             }
@@ -217,11 +225,14 @@ impl ApplicationHandler<AppEvent> for App {
             return;
         }
 
-        // Modal handling — unified for all modal types
+        // Modal handling — 활성 모달을 대상으로 한 이벤트
         if let Some(modal_id) = self.engine.active_modal_id {
             if id == modal_id {
-                let action = if let Some(modal) = &mut self.active_modal {
-                    let mut ctx = WindowCtx { event_loop, modal_active: false };
+                let action = if let Some(modal) = self.windows.get_mut(&id) {
+                    let mut ctx = WindowCtx {
+                        event_loop,
+                        modal_active: false,
+                    };
                     modal.handle_event(event, &mut ctx)
                 } else {
                     WindowAction::None
@@ -243,14 +254,24 @@ impl ApplicationHandler<AppEvent> for App {
 
         // Normal mode — find the window by ID and delegate
         if let WindowEvent::CloseRequested = &event {
-            if self.windows.len() > 1 {
-                // Multiple windows: just close this one (no modal needed)
+            // MainWindow 개수 기준으로 판단 (모달은 수에 포함되지 않음)
+            let main_window_count = self
+                .windows
+                .values()
+                .filter(|w| w.as_main().is_some())
+                .count();
+            if main_window_count > 1 {
+                // Multiple windows: just close this one
                 self.windows.remove(&id);
                 if self.engine.focused_window_id == Some(id) {
-                    self.engine.focused_window_id = self.windows.keys().next().copied();
+                    self.engine.focused_window_id = self
+                        .windows
+                        .iter()
+                        .find(|(_, w)| w.as_main().is_some())
+                        .map(|(id, _)| *id);
                 }
             } else {
-                // Last window: route through quit logic
+                // Last main window: route through quit logic
                 self.handle_quit_requested(event_loop);
             }
             return;
@@ -258,28 +279,51 @@ impl ApplicationHandler<AppEvent> for App {
 
         // Track focused window on focus events
         if let WindowEvent::Focused(true) = &event {
-            self.engine.focused_window_id = Some(id);
+            // 모달이 focus 이벤트를 받아도 focused_window_id는 MainWindow 전용
+            let is_main = self
+                .windows
+                .get(&id)
+                .map(|w| w.as_main().is_some())
+                .unwrap_or(false);
+            if is_main {
+                self.engine.focused_window_id = Some(id);
+            }
             // If a modal is active, bring it to the front so it's not buried
-            if let Some(modal) = &self.active_modal {
-                modal.base().winit.focus_window();
+            if let Some(modal_id) = self.engine.active_modal_id {
+                if let Some(modal) = self.windows.get(&modal_id) {
+                    modal.base().winit.focus_window();
+                }
             }
         }
 
         if let Some(w) = self.windows.get_mut(&id) {
             let modal_active = self.engine.is_modal_active();
-            let mut ctx = WindowCtx { event_loop, modal_active };
+            let mut ctx = WindowCtx {
+                event_loop,
+                modal_active,
+            };
             let _ = w.handle_event(event, &mut ctx);
 
             // Check if the window requested to close (e.g. last workspace removed)
-            if w.base.close_requested {
+            if w.base().close_requested {
                 if let Some(w) = self.windows.remove(&id) {
-                    if self.windows.is_empty() {
-                        tracing::info!("last window closed via request, parking state");
-                        self.parked_states.push(w.state);
+                    if self
+                        .windows
+                        .values()
+                        .all(|w| w.as_main().is_none())
+                    {
+                        if let Some(main_box) = crate::window::unbox_main(w) {
+                            tracing::info!("last main window closed via request, parking state");
+                            self.parked_states.push(main_box.state);
+                        }
                     }
                 }
                 if self.engine.focused_window_id == Some(id) {
-                    self.engine.focused_window_id = self.windows.keys().next().copied();
+                    self.engine.focused_window_id = self
+                        .windows
+                        .iter()
+                        .find(|(_, w)| w.as_main().is_some())
+                        .map(|(id, _)| *id);
                 }
             }
         }
@@ -311,7 +355,10 @@ impl ApplicationHandler<AppEvent> for App {
         // so we retry on the next frame.
         let mut any_pending = false;
         for w in self.windows.values_mut() {
-            if w.state.engine.flush_all_pty_resizes() {
+            let Some(main) = w.as_main_mut() else {
+                continue;
+            };
+            if main.state.engine.flush_all_pty_resizes() {
                 any_pending = true;
             }
         }
@@ -322,7 +369,7 @@ impl ApplicationHandler<AppEvent> for App {
         }
         if any_pending {
             for w in self.windows.values() {
-                w.base.winit.request_redraw();
+                w.base().winit.request_redraw();
             }
         }
     }
@@ -331,9 +378,13 @@ impl ApplicationHandler<AppEvent> for App {
 impl App {
     fn handle_quit_requested(&mut self, event_loop: &ActiveEventLoop) {
         // If a quit modal is already open, treat as immediate quit
-        if self.active_modal.as_ref().map_or(false, |m| {
-            m.as_any().downcast_ref::<crate::window::QuitWindow>().is_some()
-        }) {
+        let quit_modal_open = self
+            .engine
+            .active_modal_id
+            .and_then(|id| self.windows.get(&id))
+            .map(|m| m.as_any().downcast_ref::<crate::window::QuitWindow>().is_some())
+            .unwrap_or(false);
+        if quit_modal_open {
             self.close_active_modal();
             event_loop.exit();
             return;

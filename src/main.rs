@@ -117,10 +117,9 @@ struct DividerDrag {
 
 struct App {
     engine: engine::Engine,
-    windows: std::collections::HashMap<WindowId, window::main::MainWindow>,
-    /// Active modal window. At most one modal can exist at a time.
-    /// While active, it is the sole focus target — all other windows have input blocked.
-    active_modal: Option<Box<dyn window::Window>>,
+    /// 모든 윈도우(모달 포함). `engine.active_modal_id`로 현재 활성 모달을 식별한다.
+    /// 모달도 여기에 들어가며, 모달은 엔진 전역에 최대 1개라는 불변식을 유지한다.
+    windows: std::collections::HashMap<WindowId, Box<dyn window::Window>>,
     /// Parked AppStates: preserved when all windows are closed so PTY sessions survive.
     /// Moved into new windows when created, or used directly for IPC.
     parked_states: Vec<state::AppState>,
@@ -144,7 +143,6 @@ impl App {
         Self {
             engine: engine::Engine::new(proxy.clone(), port_file),
             windows: std::collections::HashMap::new(),
-            active_modal: None,
             parked_states: Vec::new(),
             shell_setup_mode: false,
             shell_setup_path: String::new(),
@@ -157,13 +155,27 @@ impl App {
         }
     }
 
-    /// Get the focused window, if any.
+    /// Get the focused main window, if any.
+    /// 모달이 아닌 MainWindow만 반환한다 — IPC/키보드 라우팅의 일반적 대상.
     fn focused_window(&self) -> Option<&window::main::MainWindow> {
-        self.engine.focused_window_id.and_then(|id| self.windows.get(&id))
+        self.engine
+            .focused_window_id
+            .and_then(|id| self.windows.get(&id))
+            .and_then(|w| w.as_main())
     }
 
     fn focused_window_mut(&mut self) -> Option<&mut window::main::MainWindow> {
-        self.engine.focused_window_id.and_then(|id| self.windows.get_mut(&id))
+        self.engine
+            .focused_window_id
+            .and_then(|id| self.windows.get_mut(&id))
+            .and_then(|w| w.as_main_mut())
+    }
+
+    /// 모든 MainWindow를 순회. 모달은 제외된다.
+    fn main_windows_iter_mut(&mut self) -> impl Iterator<Item = &mut window::main::MainWindow> {
+        self.windows
+            .values_mut()
+            .filter_map(|w| w.as_main_mut())
     }
 
     /// Create an AppState from a GPU state, computing grid size from the sidebar width.
@@ -192,7 +204,8 @@ impl App {
     /// Register a MainWindow and set it as focused.
     fn register_window(&mut self, gpu: GpuState, state: crate::state::AppState, window: Arc<Window>) {
         let window_id = window.id();
-        self.windows.insert(window_id, window::main::MainWindow::new(gpu, state, window, self.engine.proxy.clone()));
+        let main = window::main::MainWindow::new(gpu, state, window, self.engine.proxy.clone());
+        self.windows.insert(window_id, Box::new(main));
         self.engine.focused_window_id = Some(window_id);
     }
 
@@ -260,7 +273,7 @@ impl App {
 
     /// Open settings as a modal window.
     fn open_settings_modal(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-        if self.active_modal.is_some() {
+        if self.engine.is_modal_active() {
             return; // Another modal is already open
         }
 
@@ -310,29 +323,33 @@ impl App {
         tracing::info!("opened settings modal {:?}", modal_window_id);
     }
 
-    /// Open a modal, registering it as the active modal.
+    /// Open a modal, registering it in the unified window map.
+    /// 모달도 일반 윈도우와 같은 `windows` 맵에 저장되며, `active_modal_id`로 식별된다.
     fn open_modal(&mut self, modal: Box<dyn window::Window>, window_id: WindowId) {
-        self.active_modal = Some(modal);
+        self.windows.insert(window_id, modal);
         self.engine.active_modal_id = Some(window_id);
     }
 
     /// Close the active modal and handle modal-specific cleanup.
     fn close_active_modal(&mut self) {
-        if let Some(modal) = self.active_modal.take() {
-            // If it was a settings modal, apply settings to all windows
-            if let Some(settings_modal) = modal.as_any().downcast_ref::<window::SettingsWindow>() {
-                let new_settings = settings_modal.settings.clone();
-                for w in self.windows.values_mut() {
-                    w.state.engine.settings = new_settings.clone();
-                    w.state.settings_open = false;
-                    w.mark_dirty();
-                }
-                if let Err(e) = new_settings.save() {
-                    tracing::warn!("failed to save settings: {e}");
-                }
+        let Some(modal_id) = self.engine.active_modal_id.take() else {
+            return;
+        };
+        let Some(modal) = self.windows.remove(&modal_id) else {
+            return;
+        };
+        // If it was a settings modal, apply settings to all main windows
+        if let Some(settings_modal) = modal.as_any().downcast_ref::<window::SettingsWindow>() {
+            let new_settings = settings_modal.settings.clone();
+            for main in self.main_windows_iter_mut() {
+                main.state.engine.settings = new_settings.clone();
+                main.state.settings_open = false;
+                main.mark_dirty();
+            }
+            if let Err(e) = new_settings.save() {
+                tracing::warn!("failed to save settings: {e}");
             }
         }
-        self.engine.active_modal_id = None;
     }
 
     /// Process pending IPC commands. Returns true if any commands were processed.
@@ -379,12 +396,15 @@ impl App {
                 continue;
             }
             if cmd.request.method == "window.focus" {
-                // Focus a specific window by searching for matching ID string
+                // Focus a specific MainWindow by searching for matching ID string
                 let target = cmd.request.params.get("id").and_then(|v| v.as_str()).unwrap_or("");
                 let mut found = false;
                 for (id, w) in &self.windows {
+                    if w.as_main().is_none() {
+                        continue; // 모달은 focus 대상이 아님
+                    }
                     if format!("{:?}", id) == target {
-                        w.base.winit.focus_window();
+                        w.base().winit.focus_window();
                         self.engine.focused_window_id = Some(*id);
                         found = true;
                         break;
@@ -400,13 +420,18 @@ impl App {
             }
             if cmd.request.method == "window.list" {
                 let focused_id = self.engine.focused_window_id;
-                let list: Vec<_> = self.windows.iter().map(|(id, w)| {
-                    serde_json::json!({
-                        "id": format!("{:?}", id),
-                        "focused": focused_id == Some(*id),
-                        "title": w.state.active_workspace().name,
+                let list: Vec<_> = self
+                    .windows
+                    .iter()
+                    .filter_map(|(id, w)| {
+                        let main = w.as_main()?;
+                        Some(serde_json::json!({
+                            "id": format!("{:?}", id),
+                            "focused": focused_id == Some(*id),
+                            "title": main.state.active_workspace().name,
+                        }))
                     })
-                }).collect();
+                    .collect();
                 let response = ipc::protocol::JsonRpcResponse::success(
                     cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
                     serde_json::json!(list),
@@ -434,7 +459,11 @@ impl App {
                         continue;
                     }
                 };
-                let w = match self.windows.get_mut(&focused_id) {
+                let w = match self
+                    .windows
+                    .get_mut(&focused_id)
+                    .and_then(|w| w.as_main_mut())
+                {
                     Some(w) => w,
                     None => continue,
                 };
@@ -469,10 +498,10 @@ impl App {
                 continue;
             }
 
-            // All other commands: route to active state (window or parked)
+            // All other commands: route to focused MainWindow or parked state
             let focused_id = self.engine.focused_window_id;
             if let Some(id) = focused_id {
-                if let Some(w) = self.windows.get_mut(&id) {
+                if let Some(w) = self.windows.get_mut(&id).and_then(|w| w.as_main_mut()) {
                     let response = ipc::handler::handle(&mut w.state, &cmd.request);
                     let _ = cmd.response_tx.send(response);
                     w.base.dirty = true;

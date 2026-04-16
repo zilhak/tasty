@@ -24,6 +24,16 @@ pub use quit::QuitWindow;
 pub use settings::SettingsWindow;
 pub use terminal_host::TerminalHostWindow;
 
+/// `Box<dyn Window>`에서 `MainWindow` 소유권을 추출한다.
+/// 인자가 MainWindow가 아니면 `None` — 호출자가 인지 후 다르게 처리.
+pub fn unbox_main(w: Box<dyn Window>) -> Option<Box<MainWindow>> {
+    if !w.as_any().is::<MainWindow>() {
+        return None;
+    }
+    let any: Box<dyn std::any::Any> = w;
+    any.downcast::<MainWindow>().ok()
+}
+
 use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
 
@@ -81,6 +91,14 @@ pub trait Window: sealed::Sealed + std::any::Any {
     }
     fn as_modal_mut(&mut self) -> Option<&mut dyn ModalWindow> {
         None
+    }
+
+    /// MainWindow 다운캐스트. MainWindow가 아니면 `None`.
+    fn as_main(&self) -> Option<&MainWindow> {
+        self.as_any().downcast_ref::<MainWindow>()
+    }
+    fn as_main_mut(&mut self) -> Option<&mut MainWindow> {
+        self.as_any_mut().downcast_mut::<MainWindow>()
     }
 
     /// `std::any::Any` 다운캐스트용.
