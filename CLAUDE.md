@@ -138,6 +138,24 @@ GitHub에 릴리스를 배포할 때, `docs/agent-guide/` 폴더의 문서들을
 - 포맷: rustfmt
 - 린트: clippy
 
+### 에러 처리 규칙 (필수)
+
+**`Result`를 `let _ =`로 무시하지 않는다.** 에러가 발생하면 반드시 로그를 남겨야 한다.
+
+```rust
+// ❌ 금지: 에러가 발생해도 아무 흔적 없음
+let _ = self.state.split_surface(SplitDirection::Vertical);
+
+// ✅ 올바름: 에러 시 경고 로그
+if let Err(e) = self.state.split_surface(SplitDirection::Vertical) {
+    tracing::warn!("split_surface failed: {e}");
+}
+```
+
+- `Result`를 반환하는 함수의 결과는 **에러 시 `tracing::warn!` 또는 `tracing::error!`로 기록**한다.
+- 에러가 복구 불가능하면 `tracing::error!`, 무시해도 되면 `tracing::warn!`을 사용한다.
+- 의도적으로 무시해야 하는 극소수의 경우에만 `let _ =`를 허용하되, 왜 무시하는지 주석을 반드시 남긴다.
+
 ## UI 디자인 규칙 (필수)
 
 **모든 색상, 폰트 크기, 선 굵기, 간격은 `src/theme.rs`의 `Theme` 구조체에서 가져온다.** UI 코드에서 `from_rgb(...)` 등으로 하드코딩하지 않는다.
