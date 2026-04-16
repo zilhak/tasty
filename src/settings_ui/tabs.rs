@@ -19,8 +19,6 @@ fn label_with_tooltip(ui: &mut egui::Ui, label: &str, tooltip: &str) {
 pub fn draw_general_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     let th = crate::theme::theme();
     ui.add_space(8.0);
-    ui.heading(t("settings.general.heading"));
-    ui.add_space(4.0);
 
     if !settings.general.is_shell_valid() {
         ui.label(
@@ -104,8 +102,6 @@ pub fn draw_appearance_tab(ui: &mut egui::Ui, settings: &mut Settings, font_fami
     // Left-right split: settings on the left, preview on the right
     ui.columns(2, |columns| {
         // ── Left column: settings controls ──
-        columns[0].heading(t("settings.appearance.heading"));
-        columns[0].add_space(4.0);
 
         egui::Grid::new("appearance_grid")
             .num_columns(2)
@@ -484,8 +480,6 @@ fn load_system_cjk_font_data() -> Option<Vec<u8>> {
 
 pub fn draw_clipboard_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     ui.add_space(8.0);
-    ui.heading(t("settings.clipboard.heading"));
-    ui.add_space(4.0);
 
     ui.checkbox(&mut settings.clipboard.macos_style, t("settings.clipboard.macos_style"));
     ui.checkbox(&mut settings.clipboard.linux_style, t("settings.clipboard.linux_style"));
@@ -501,8 +495,6 @@ pub fn draw_clipboard_tab(ui: &mut egui::Ui, settings: &mut Settings) {
 
 pub fn draw_notifications_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     ui.add_space(8.0);
-    ui.heading(t("settings.notifications.heading"));
-    ui.add_space(4.0);
 
     ui.checkbox(&mut settings.notification.enabled, t("settings.notifications.enabled"));
     ui.checkbox(&mut settings.notification.system_notification, t("settings.notifications.system_notification"));
@@ -524,8 +516,6 @@ pub fn draw_notifications_tab(ui: &mut egui::Ui, settings: &mut Settings) {
 pub fn draw_language_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     let th = crate::theme::theme();
     ui.add_space(8.0);
-    ui.heading(t("settings.language.heading"));
-    ui.add_space(4.0);
 
     egui::Grid::new("language_grid")
         .num_columns(2)
@@ -561,8 +551,7 @@ fn language_display_name(code: &str) -> &str {
 
 pub fn draw_performance_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     let th = crate::theme::theme();
-    ui.heading(t("settings.performance.heading"));
-    ui.add_space(4.0);
+    ui.add_space(8.0);
     ui.label(
         egui::RichText::new(t("settings.performance.restart_notice"))
             .small()

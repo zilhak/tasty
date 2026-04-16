@@ -93,8 +93,6 @@ pub fn draw_settings_panel(
 
     egui::CentralPanel::default().show(ctx, |ui| {
         ui.add_space(8.0);
-        ui.heading(t("settings.window.title"));
-        ui.add_space(8.0);
 
         ui.horizontal(|ui| {
             let tabs = [
