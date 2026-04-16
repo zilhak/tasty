@@ -34,6 +34,10 @@
   - **스크롤 리전 (DECSTBM)**: `CSI Pt;Pb r`로 스크롤 영역 설정. InsertLine/DeleteLine/LineFeed/Index/ReverseIndex가 스크롤 리전 내에서 동작
 
 ### 키보드 입력
+- **중앙 키보드 디스패처**: 키보드 이벤트는 focused surface 타입에 따라 정확히 하나의 대상에만 전달됨
+  - Terminal: PTY에 바이트 전송 (기존 경로)
+  - Explorer/Markdown: `PendingKeyEvent` 큐에 저장 → 다음 egui 렌더 프레임에서 해당 패널이 소비
+  - overlay(설정/다이얼로그/팝업) 열림 시에만 egui에 키보드 이벤트 전달 — 비활성 패널의 `ui.input()` 전역 오염 방지
 - winit `KeyEvent.text`를 활용한 수정자 키 반영 (Ctrl+C 등 제어 문자 자동 처리)
 - 특수 키 매핑: Enter, Backspace, Tab, Escape, 방향키, Home/End, PageUp/PageDown, Insert/Delete, F1~F12
 - DECCKM 모드에 따른 방향키 시퀀스 자동 전환: 일반 모드 `\x1b[{A..D}` / 애플리케이션 모드 `\x1bO{A..D}`
