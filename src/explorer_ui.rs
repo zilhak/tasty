@@ -40,7 +40,7 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel, keys: &[Pendi
     let mut explorer_action: Option<ExplorerAction> = None;
     let available_width = ui.available_width();
     let tree_width = if panel.show_preview {
-        (available_width * 0.35).min(250.0).max(150.0).round_ui()
+        (available_width * panel.tree_ratio).max(80.0).min(available_width - 80.0).round_ui()
     } else {
         available_width
     };
@@ -92,6 +92,7 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel, keys: &[Pendi
                 .id_salt("explorer_tree")
                 .max_height(tree_height)
                 .show(ui, |ui| {
+                    ui.set_min_width(ui.available_width());
                     let mut needs_refresh = false;
                     let root = &mut panel.root_node;
                     if root.is_directory {
@@ -264,6 +265,7 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel, keys: &[Pendi
             egui::ScrollArea::vertical()
                 .id_salt("explorer_bookmarks")
                 .show(ui, |ui| {
+                    ui.set_min_width(ui.available_width());
                     let mut nav_path: Option<String> = None;
                     let bookmarks = crate::bookmarks::Bookmarks::load();
                     for bm in &bookmarks.entries {
@@ -299,7 +301,47 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel, keys: &[Pendi
         });
 
         if panel.show_preview {
-            ui.separator();
+            // Draggable divider between tree and preview
+            let divider_width = 6.0;
+            let divider_rect = {
+                let cursor = ui.cursor();
+                egui::Rect::from_min_size(
+                    egui::pos2(cursor.min.x, cursor.min.y),
+                    egui::vec2(divider_width, ui.available_height()),
+                )
+            };
+            let divider_id = ui.id().with("explorer_divider");
+            let divider_resp = ui.interact(divider_rect, divider_id, egui::Sense::drag());
+
+            // Paint the divider line
+            let divider_color = if divider_resp.hovered() || divider_resp.dragged() {
+                th.blue
+            } else {
+                th.surface1
+            };
+            ui.painter().rect_filled(
+                egui::Rect::from_min_size(
+                    egui::pos2(divider_rect.center().x - 0.5, divider_rect.min.y),
+                    egui::vec2(1.0, divider_rect.height()),
+                ),
+                0.0,
+                divider_color,
+            );
+
+            // Change cursor on hover
+            if divider_resp.hovered() || divider_resp.dragged() {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
+            }
+
+            // Handle drag
+            if divider_resp.dragged() {
+                let delta = divider_resp.drag_delta().x;
+                if delta != 0.0 {
+                    let new_width = tree_width + delta;
+                    panel.tree_ratio = (new_width / available_width).clamp(0.15, 0.85);
+                }
+            }
+            ui.advance_cursor_after_rect(divider_rect);
 
             // Right: File viewer
             ui.vertical(|ui| {

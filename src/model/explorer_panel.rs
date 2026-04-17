@@ -33,6 +33,8 @@ pub struct ExplorerPanel {
     pub address_bar_editing: bool,
     /// Whether the file preview panel is visible.
     pub show_preview: bool,
+    /// Tree panel width ratio (0.0..1.0) when preview is shown. Default 0.35.
+    pub tree_ratio: f32,
 }
 
 
@@ -64,6 +66,7 @@ impl ExplorerPanel {
             address_bar_text: root_path,
             address_bar_editing: false,
             show_preview: true,
+            tree_ratio: 0.35,
         }
     }
 
