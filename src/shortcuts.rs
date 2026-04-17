@@ -345,6 +345,14 @@ impl MainWindow {
                         self.mark_dirty();
                         return true;
                     }
+                    // For non-terminal surfaces (Explorer/Markdown), inject egui Copy
+                    // event so egui's label text selection can copy to clipboard.
+                    let st = self.state.focused_surface_type();
+                    if matches!(st, crate::state::FocusedSurfaceType::Explorer | crate::state::FocusedSurfaceType::Markdown) {
+                        self.base.gpu.egui_ctx.input_mut(|i| i.events.push(egui::Event::Copy));
+                        self.mark_dirty();
+                        return true;
+                    }
                 }
             }
         }
