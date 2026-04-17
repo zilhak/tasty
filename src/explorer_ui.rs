@@ -68,25 +68,20 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel, keys: &[Pendi
             ui.set_width(tree_width);
 
             // ── Toolbar above file tree ──
-            let toolbar_h = 18.0;
             ui.horizontal(|ui| {
-                ui.set_height(toolbar_h);
                 let label = if panel.show_preview {
                     crate::i18n::t("explorer.hide_preview")
                 } else {
                     crate::i18n::t("explorer.show_preview")
                 };
-                if ui.add(
-                    egui::Button::new(
-                        egui::RichText::new(label)
-                            .size(th.font_size_caption)
-                            .color(th.subtext0),
-                    ).frame(false),
+                if ui.button(
+                    egui::RichText::new(label)
+                        .size(th.font_size_caption),
                 ).clicked() {
                     panel.show_preview = !panel.show_preview;
                 }
             });
-            ui.add_space(2.0);
+            ui.separator();
 
             let total_height = ui.available_height();
             let bookmark_height = (total_height * 0.2).max(40.0);
