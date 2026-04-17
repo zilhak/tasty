@@ -447,25 +447,6 @@ impl AppState {
         self.engine.find_terminal_by_id_mut(surface_id)
     }
 
-    /// Find an explorer panel by surface_id and apply a closure to it.
-    pub fn with_explorer_mut<F>(&mut self, surface_id: u32, f: F)
-    where F: FnOnce(&mut crate::model::ExplorerPanel)
-    {
-        for ws in &mut self.engine.workspaces {
-            for &pid in &ws.pane_layout().all_pane_ids() {
-                if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pid) {
-                    for tab in &mut pane.tabs {
-                        if tab.surface().contains_surface(surface_id) {
-                            if let Some(panel) = tab.surface_mut().as_explorer_mut() {
-                                f(panel);
-                                return;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
 
     /// Get the focused pane ID.
     pub fn focused_pane_id(&self) -> crate::model::PaneId {

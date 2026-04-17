@@ -86,7 +86,7 @@ impl PopupContent for BookmarkNamePopup {
         }
 
         if confirm {
-            if let Some((surface_id, path, name)) = state.dialogs.bookmark_input.take() {
+            if let Some((_surface_id, path, name)) = state.dialogs.bookmark_input.take() {
                 let final_name = if name.trim().is_empty() {
                     std::path::Path::new(&path)
                         .file_name()
@@ -95,9 +95,8 @@ impl PopupContent for BookmarkNamePopup {
                 } else {
                     name
                 };
-                state.with_explorer_mut(surface_id, |panel| {
-                    panel.add_bookmark(final_name, path);
-                });
+                let mut bookmarks = crate::bookmarks::Bookmarks::load();
+                bookmarks.add(final_name, path);
             }
             return PopupAction::Close;
         }

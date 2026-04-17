@@ -350,10 +350,8 @@ impl MainWindow {
                 let result = show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
                 if result == Some(1) {
                     if is_bookmarked {
-                        // Find explorer by surface_id and remove bookmark
-                        self.state.with_explorer_mut(surface_id, |panel| {
-                            panel.remove_bookmark(&path);
-                        });
+                        let mut bookmarks = crate::bookmarks::Bookmarks::load();
+                        bookmarks.remove(&path);
                     } else {
                         let folder_name = std::path::Path::new(&path)
                             .file_name()

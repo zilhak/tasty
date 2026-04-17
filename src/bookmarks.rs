@@ -38,20 +38,17 @@ impl Bookmarks {
         }
     }
 
-    #[allow(dead_code)]
     pub fn add(&mut self, name: String, path: String) {
         self.entries.retain(|b| b.path != path);
         self.entries.push(BookmarkEntry { name, path });
         self.save();
     }
 
-    #[allow(dead_code)]
     pub fn remove(&mut self, path: &str) {
         self.entries.retain(|b| b.path != path);
         self.save();
     }
 
-    #[allow(dead_code)]
     pub fn is_bookmarked(&self, path: &str) -> bool {
         self.entries.iter().any(|b| b.path == path)
     }

@@ -12,14 +12,6 @@ pub struct FileNode {
     pub is_expanded: bool,
 }
 
-/// A bookmark entry in the explorer.
-pub struct Bookmark {
-    /// Display name (user-customizable, defaults to folder name).
-    pub name: String,
-    /// Full path to the bookmarked directory.
-    pub path: String,
-}
-
 /// A panel that shows a file explorer with a tree view and file preview.
 pub struct ExplorerPanel {
     pub id: u32,
@@ -39,8 +31,6 @@ pub struct ExplorerPanel {
     pub address_bar_text: String,
     /// Whether the address bar is actively being edited (has focus).
     pub address_bar_editing: bool,
-    /// Bookmarked directories.
-    pub bookmarks: Vec<Bookmark>,
     /// Whether the file preview panel is visible.
     pub show_preview: bool,
 }
@@ -73,12 +63,6 @@ impl ExplorerPanel {
             tree_scroll_offset: 0.0,
             address_bar_text: root_path,
             address_bar_editing: false,
-            bookmarks: {
-                let stored = crate::bookmarks::Bookmarks::load();
-                stored.entries.into_iter()
-                    .map(|e| Bookmark { name: e.name, path: e.path })
-                    .collect()
-            },
             show_preview: true,
         }
     }
@@ -187,33 +171,6 @@ impl ExplorerPanel {
         self.file_content = None;
     }
 
-    /// Check if a path is bookmarked.
-    pub fn is_bookmarked(&self, path: &str) -> bool {
-        self.bookmarks.iter().any(|b| b.path == path)
-    }
-
-    /// Remove a bookmark by path (also persists to file).
-    pub fn remove_bookmark(&mut self, path: &str) {
-        self.bookmarks.retain(|b| b.path != path);
-        self.save_bookmarks();
-    }
-
-    /// Add a bookmark (also persists to file).
-    pub fn add_bookmark(&mut self, name: String, path: String) {
-        self.bookmarks.retain(|b| b.path != path);
-        self.bookmarks.push(Bookmark { name, path });
-        self.save_bookmarks();
-    }
-
-    /// Persist current bookmarks to file.
-    fn save_bookmarks(&self) {
-        let stored = crate::bookmarks::Bookmarks {
-            entries: self.bookmarks.iter()
-                .map(|b| crate::bookmarks::BookmarkEntry { name: b.name.clone(), path: b.path.clone() })
-                .collect(),
-        };
-        stored.save();
-    }
 
     /// Update the right-side preview for the given path.
     fn set_preview(&mut self, path: &str) {

@@ -117,7 +117,8 @@ pub fn draw_egui_panels(
                     None => continue,
                 }
             } else {
-                continue;
+                // Standalone surface with a known surface_id — use the tab's surface directly.
+                tab.surface_mut()
             }
         } else {
             tab.surface_mut()

@@ -238,7 +238,7 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel, keys: &[Pendi
                                         ui.ctx().copy_text(text);
                                     }
                                     TreeAction::ContextMenu(path, pos) => {
-                                        let is_bookmarked = panel.is_bookmarked(&path);
+                                        let is_bookmarked = crate::bookmarks::Bookmarks::load().is_bookmarked(&path);
                                         explorer_action = Some(ExplorerAction::FolderContextMenu { path, is_bookmarked, x: pos.x, y: pos.y });
                                     }
                                 }
@@ -265,7 +265,8 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel, keys: &[Pendi
                 .id_salt("explorer_bookmarks")
                 .show(ui, |ui| {
                     let mut nav_path: Option<String> = None;
-                    for bm in &panel.bookmarks {
+                    let bookmarks = crate::bookmarks::Bookmarks::load();
+                    for bm in &bookmarks.entries {
                         let resp = ui.selectable_label(
                             false,
                             egui::RichText::new(format!("\u{2605} {}", bm.name)).size(th.font_size_caption),
@@ -274,7 +275,7 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel, keys: &[Pendi
                             nav_path = Some(bm.path.clone());
                         }
                     }
-                    if panel.bookmarks.is_empty() {
+                    if bookmarks.entries.is_empty() {
                         ui.label(
                             egui::RichText::new(crate::i18n::t("explorer.bookmarks_empty"))
                                 .small()
