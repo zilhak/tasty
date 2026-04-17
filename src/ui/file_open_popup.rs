@@ -8,8 +8,8 @@ use crate::ui::popup::{self, PopupAction, PopupContent, PopupId, PopupScope};
 const ITEM_HEIGHT: f32 = 22.0;
 const MAX_RECENT: usize = 10;
 const HORIZONTAL_MARGIN: f32 = 8.0;
-/// Base content height: label + spacing + input row + spacing + button row
-const BASE_CONTENT_HEIGHT: f32 = 16.0 + 4.0 + 22.0 + 8.0 + 24.0;
+/// Base content height: label + spacing + input row + error row + spacing + button row
+const BASE_CONTENT_HEIGHT: f32 = 16.0 + 4.0 + 22.0 + 16.0 + 8.0 + 24.0;
 /// Extra height for "Recent Files" label
 const RECENT_HEADER_HEIGHT: f32 = 20.0;
 
@@ -148,6 +148,12 @@ fn draw_file_open_content(ui: &mut egui::Ui, state: &mut AppState, file_type: Fi
         }
     });
 
+    // Error message below input
+    if let Some(ref err) = state.dialogs.file_open_error {
+        ui.add_space(2.0);
+        ui.label(egui::RichText::new(err.as_str()).size(th.font_size_caption).color(th.red));
+    }
+
     ui.add_space(8.0);
 
     // Recent files list
@@ -225,6 +231,23 @@ fn draw_file_open_content(ui: &mut egui::Ui, state: &mut AppState, file_type: Fi
             FileType::Html => state.dialogs.html_open_buffer.clone(),
         };
         if !path_value.is_empty() {
+            // For local file paths, validate existence and format
+            let is_remote = path_value.starts_with("http://") || path_value.starts_with("https://");
+            if !is_remote {
+                let file_path = std::path::Path::new(&path_value);
+                if !file_path.exists() {
+                    state.dialogs.file_open_error = Some(t("dialog.error.file_not_found").to_string());
+                    return PopupAction::None;
+                }
+                if file_type == FileType::Html {
+                    let ext = file_path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+                    if ext != "html" && ext != "htm" {
+                        state.dialogs.file_open_error = Some(t("dialog.error.invalid_format").to_string());
+                        return PopupAction::None;
+                    }
+                }
+            }
+            state.dialogs.file_open_error = None;
             apply_open(state, file_type, &path_value);
             clear_dialog_state(state, file_type);
             return PopupAction::Close;
@@ -282,6 +305,7 @@ fn clear_dialog_state(state: &mut AppState, file_type: FileType) {
         }
     }
     state.dialogs.file_open_pane_id = None;
+    state.dialogs.file_open_error = None;
 }
 
 fn shorten_path(path: &str) -> String {

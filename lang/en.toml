@@ -247,3 +247,7 @@ path_label = "Enter file path:"
 [dialog.html]
 title = "Open HTML"
 url_label = "Enter URL or file path:"
+
+[dialog.error]
+file_not_found = "File does not exist."
+invalid_format = "Invalid file format."

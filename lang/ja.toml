@@ -247,3 +247,7 @@ path_label = "ファイルパスを入力:"
 [dialog.html]
 title = "HTMLを開く"
 url_label = "URLまたはファイルパスを入力:"
+
+[dialog.error]
+file_not_found = "ファイルが存在しません。"
+invalid_format = "無効なファイル形式です。"

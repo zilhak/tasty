@@ -247,3 +247,7 @@ path_label = "파일 경로 입력:"
 [dialog.html]
 title = "HTML 열기"
 url_label = "URL 또는 파일 경로 입력:"
+
+[dialog.error]
+file_not_found = "존재하지 않는 파일입니다."
+invalid_format = "유효하지 않은 형식의 파일입니다."

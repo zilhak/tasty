@@ -125,6 +125,8 @@ pub struct DialogState {
     pub file_open_pane_id: Option<u32>,
     /// Internal flag for cancel button in file open popups
     pub file_popup_cancel: bool,
+    /// Error message for file open popup validation
+    pub file_open_error: Option<String>,
     /// Deferred popup open request: (popup_id, scope). Processed after popup draw loop.
     pub pending_popup_open: Option<(&'static str, crate::ui::popup::PopupScope)>,
     /// Bookmark name input: (pane_id, path, name_buffer)
@@ -145,6 +147,7 @@ impl DialogState {
             html_open_buffer: String::new(),
             file_open_pane_id: None,
             file_popup_cancel: false,
+            file_open_error: None,
             pending_popup_open: None,
             bookmark_input: None,
         }
