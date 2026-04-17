@@ -50,7 +50,7 @@ pub fn draw_egui_panels(
             if !surface.has_terminal() && surface.as_surface_group().is_none() {
                 infos.push(EguiPanelInfo {
                     pane_id,
-                    surface_id: None,
+                    surface_id: surface.surface_id(),
                     logical_x: (pane_rect.x / scale_factor).round_ui(),
                     logical_y: ((pane_rect.y + tab_bar_h) / scale_factor).round_ui(),
                     logical_w: (pane_rect.width / scale_factor).round_ui(),
