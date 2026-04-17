@@ -126,25 +126,6 @@ fn apply_meta(surface_id: u32, meta: Option<&serde_json::Map<String, serde_json:
     }
 }
 
-/// Resolve a target parameter to a numeric ID.
-fn resolve_target_param(value: Option<&serde_json::Value>, level: &str) -> Option<u32> {
-    let val = value?;
-    if let Some(n) = val.as_u64() {
-        return Some(n as u32);
-    }
-    if let Some(s) = val.as_str() {
-        if s.is_empty() {
-            return None;
-        }
-        if let Ok(n) = s.parse::<u32>() {
-            return Some(n);
-        }
-        if level == "surface" {
-            return crate::surface_meta::SurfaceMetaStore::find_by_value("nickname", s);
-        }
-    }
-    None
-}
 
 fn handle_system_info(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {
     JsonRpcResponse::success(

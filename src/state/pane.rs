@@ -134,25 +134,55 @@ impl AppState {
     }
 
     /// Split a surface with cross-workspace target support and optional cwd. Does NOT move focus.
-    /// Only terminal type is supported for surface-level splits.
+    /// Supports all surface types (Terminal, Markdown, Explorer, Html).
     pub fn split_surface_targeted(
         &mut self,
         target_surface_id: Option<u32>,
         direction: SplitDirection,
         explicit_cwd: Option<std::path::PathBuf>,
+        surface_type: crate::model::SurfaceType,
     ) -> anyhow::Result<u32> {
-        let cwd = explicit_cwd.or_else(|| {
-            match target_surface_id {
-                Some(sid) => self.resolve_inherit_cwd_from_surface(sid),
-                None => self.resolve_inherit_cwd(),
-            }
-        });
-
         let new_surface_id = self.engine.next_ids.next_surface();
-        let cols = self.engine.default_cols;
-        let rows = self.engine.default_rows;
-        let sh = crate::engine_state::ShellConfig::from_settings(&self.engine.settings);
-        let waker = self.engine.make_waker(new_surface_id);
+
+        let new_surface: Box<dyn crate::model::Surface> = match surface_type {
+            crate::model::SurfaceType::Terminal => {
+                let cwd = explicit_cwd.or_else(|| {
+                    match target_surface_id {
+                        Some(sid) => self.resolve_inherit_cwd_from_surface(sid),
+                        None => self.resolve_inherit_cwd(),
+                    }
+                });
+                let cols = self.engine.default_cols;
+                let rows = self.engine.default_rows;
+                let sh = crate::engine_state::ShellConfig::from_settings(&self.engine.settings);
+                let waker = self.engine.make_waker(new_surface_id);
+                let terminal = tasty_terminal::Terminal::new_with_shell_args_cwd(
+                    cols, rows, sh.shell_ref(), &sh.args_ref(), new_surface_id, waker, cwd.as_deref(),
+                )?;
+                Box::new(crate::model::TerminalSurface {
+                    id: new_surface_id,
+                    terminal,
+                    deferred_spawn: None,
+                })
+            }
+            crate::model::SurfaceType::Markdown { file } => {
+                Box::new(crate::model::MarkdownPanel::new(new_surface_id, file))
+            }
+            crate::model::SurfaceType::Explorer { path } => {
+                let root = path.unwrap_or_else(|| {
+                    directories::BaseDirs::new()
+                        .map(|d| d.home_dir().to_string_lossy().to_string())
+                        .unwrap_or_else(|| ".".to_string())
+                });
+                Box::new(crate::model::ExplorerPanel::new(new_surface_id, root))
+            }
+            crate::model::SurfaceType::Html { url } => {
+                Box::new(crate::model::HtmlPanel::new(new_surface_id, url))
+            }
+            crate::model::SurfaceType::Empty => {
+                Box::new(crate::model::EmptySurface::new(new_surface_id))
+            }
+        };
 
         match target_surface_id {
             Some(sid) => {
@@ -161,18 +191,10 @@ impl AppState {
                 let ws = &mut self.engine.workspaces[ws_idx];
                 let pane = ws.pane_layout_mut().find_pane_mut(pane_id)
                     .ok_or_else(|| anyhow::anyhow!("pane {} not found", pane_id))?;
-                pane.split_surface_by_id_with_shell(
-                    sid, direction, new_surface_id, cols, rows,
-                    sh.shell_ref(), &sh.args_ref(), waker, cwd.as_deref(),
-                )?;
+                pane.split_surface_by_id_with_surface(sid, direction, new_surface)?;
             }
             None => {
-                if let Some(pane) = self.focused_pane_mut() {
-                    pane.split_active_surface_with_shell(
-                        direction, new_surface_id, cols, rows,
-                        sh.shell_ref(), &sh.args_ref(), waker, cwd.as_deref(),
-                    )?;
-                }
+                anyhow::bail!("target_surface_id is required for surface-level splits");
             }
         }
 

@@ -4,7 +4,7 @@ use crate::ipc::protocol::JsonRpcResponse;
 use crate::model::SplitDirection;
 use crate::state::AppState;
 
-use super::{apply_meta, require_pane_id, resolve_target_param};
+use super::{apply_meta, require_pane_id};
 
 pub fn handle_pane_list(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {
     let mut panes = Vec::new();
@@ -55,6 +55,31 @@ pub fn handle_pane_close(state: &mut AppState, id: serde_json::Value, params: &s
     }
 }
 
+/// Resolve a surface target from params: tries target_surface first, then legacy "target".
+/// Supports numeric ID and nickname string.
+fn resolve_surface_target(params: &serde_json::Value) -> Option<u32> {
+    let val = params.get("target_surface")
+        .or_else(|| params.get("target")); // legacy fallback
+    let val = val?;
+    if val.is_null() {
+        return None;
+    }
+    if let Some(n) = val.as_u64() {
+        return Some(n as u32);
+    }
+    if let Some(s) = val.as_str() {
+        if s.is_empty() {
+            return None;
+        }
+        if let Ok(n) = s.parse::<u32>() {
+            return Some(n);
+        }
+        // Try nickname lookup
+        return crate::surface_meta::SurfaceMetaStore::find_by_value("nickname", s);
+    }
+    None
+}
+
 pub fn handle_split(
     state: &mut AppState,
     id: serde_json::Value,
@@ -77,9 +102,17 @@ pub fn handle_split(
         _ => SplitDirection::Vertical,
     };
 
-    let target_id = resolve_target_param(params.get("target"), level);
-    if target_id.is_none() {
-        return JsonRpcResponse::invalid_params(id, "Missing required 'target' parameter (numeric ID or nickname)");
+    // Resolve target: new target_surface/target_pane params, with legacy "target" fallback
+    let target_surface_id = resolve_surface_target(params);
+    let target_pane_id = params.get("target_pane").and_then(|v| v.as_u64()).map(|v| v as u32);
+
+    // Validate: at least one target must be specified
+    if target_surface_id.is_none() && target_pane_id.is_none() {
+        return JsonRpcResponse::invalid_params(id, "Missing target. Use 'target_surface' (surface ID or nickname) and/or 'target_pane' (pane ID)");
+    }
+    // Validate: can't specify both
+    if target_surface_id.is_some() && target_pane_id.is_some() {
+        return JsonRpcResponse::invalid_params(id, "Cannot specify both 'target_surface' and 'target_pane'. Use one.");
     }
 
     let meta = params.get("meta").and_then(|v| v.as_object());
@@ -109,30 +142,50 @@ pub fn handle_split(
     };
 
     match level {
-        "pane" => match state.split_pane_targeted(target_id, direction, cwd, surface_type) {
-            Ok((new_pane_id, new_surface_id)) => {
-                apply_meta(new_surface_id, meta);
-                JsonRpcResponse::success(
-                    id,
-                    json!({
-                        "new_pane_id": new_pane_id,
-                        "new_surface_id": new_surface_id,
-                    }),
-                )
+        "pane" => {
+            // For pane-level splits, resolve the pane ID from either target_pane or target_surface
+            let resolved_pane_id = if let Some(pid) = target_pane_id {
+                Some(pid)
+            } else if let Some(sid) = target_surface_id {
+                // Find the pane containing the given surface
+                state.find_pane_for_surface(sid)
+            } else {
+                None
+            };
+
+            match state.split_pane_targeted(resolved_pane_id, direction, cwd, surface_type) {
+                Ok((new_pane_id, new_surface_id)) => {
+                    apply_meta(new_surface_id, meta);
+                    JsonRpcResponse::success(
+                        id,
+                        json!({
+                            "new_pane_id": new_pane_id,
+                            "new_surface_id": new_surface_id,
+                        }),
+                    )
+                }
+                Err(e) => JsonRpcResponse::internal_error(id, e.to_string()),
             }
-            Err(e) => JsonRpcResponse::internal_error(id, e.to_string()),
         },
-        "surface" => match state.split_surface_targeted(target_id, direction, cwd) {
-            Ok(new_surface_id) => {
-                apply_meta(new_surface_id, meta);
-                JsonRpcResponse::success(
-                    id,
-                    json!({
-                        "new_surface_id": new_surface_id,
-                    }),
-                )
+        "surface" => {
+            // Surface-level splits require a surface target
+            let sid = match target_surface_id {
+                Some(sid) => sid,
+                None => return JsonRpcResponse::invalid_params(id, "Surface-level split requires 'target_surface', not 'target_pane'"),
+            };
+
+            match state.split_surface_targeted(Some(sid), direction, cwd, surface_type) {
+                Ok(new_surface_id) => {
+                    apply_meta(new_surface_id, meta);
+                    JsonRpcResponse::success(
+                        id,
+                        json!({
+                            "new_surface_id": new_surface_id,
+                        }),
+                    )
+                }
+                Err(e) => JsonRpcResponse::internal_error(id, e.to_string()),
             }
-            Err(e) => JsonRpcResponse::internal_error(id, e.to_string()),
         },
         _ => unreachable!(),
     }

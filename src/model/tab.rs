@@ -214,6 +214,53 @@ impl Tab {
         false
     }
 
+    /// Split a specific surface by ID with any surface type. Generic version of split_surface_by_id.
+    pub fn split_surface_by_id_generic(
+        &mut self,
+        target_surface_id: super::SurfaceId,
+        direction: super::SplitDirection,
+        new_surface: Box<dyn super::Surface>,
+    ) -> bool {
+        // Already a SurfaceGroup — add to it
+        if self.surface_mut().as_surface_group_mut().is_some() {
+            let group = self.surface_mut().as_surface_group_mut().unwrap();
+            let old_layout = group.take_layout();
+            let (new_layout, remaining) = old_layout.split_with_surface(target_surface_id, direction, new_surface);
+            group.put_layout(new_layout);
+            if remaining.is_some() {
+                tracing::warn!("split_surface_by_id_generic: target {} not found in group", target_surface_id);
+            }
+            return remaining.is_none();
+        }
+
+        // Single surface (any type) → wrap into SurfaceGroupNode
+        if self.surface_opt.as_ref().is_some_and(|s| s.surface_id() == Some(target_surface_id)) {
+            let old_surface = self.surface_opt.take().unwrap();
+            let old_surface_id = old_surface.surface_id().unwrap_or(0);
+            let group = super::SurfaceGroupNode {
+                layout_opt: Some(super::SurfaceGroupLayout::Split {
+                    direction,
+                    ratio: 0.5,
+                    first: Box::new(super::SurfaceGroupLayout::Leaf(old_surface)),
+                    second: Box::new(super::SurfaceGroupLayout::Leaf(new_surface)),
+                    focus_second: false,
+                }),
+                focused_surface: old_surface_id,
+                _first_surface: old_surface_id,
+            };
+            self.surface_opt = Some(Box::new(group));
+            return true;
+        }
+
+        // For non-terminal single surfaces that don't match, check if it's a non-terminal
+        // surface with the target ID inside it (shouldn't happen for single surfaces)
+        if self.surface_opt.as_ref().is_some_and(|s| s.contains_surface(target_surface_id)) {
+            tracing::warn!("split_surface_by_id_generic: unexpected containment for target {}", target_surface_id);
+        }
+
+        false
+    }
+
     /// Produce a JSON tree representation of this tab.
     pub fn to_tree_json(&self) -> serde_json::Value {
         serde_json::json!({

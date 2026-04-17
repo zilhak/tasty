@@ -31,12 +31,13 @@ impl SurfaceGroupLayout {
     }
 
     /// Split a specific surface by taking ownership (infallible structural mutation).
-    pub fn split_with_node(
+    /// Accepts any Surface type (Terminal, Markdown, Explorer, Html, etc.).
+    pub fn split_with_surface(
         self,
         target_id: SurfaceId,
         direction: SplitDirection,
-        new_node: TerminalSurface,
-    ) -> (Self, Option<TerminalSurface>) {
+        new_surface: Box<dyn Surface>,
+    ) -> (Self, Option<Box<dyn Surface>>) {
         match self {
             SurfaceGroupLayout::Leaf(surface) if Self::leaf_id(&*surface) == target_id => {
                 (
@@ -44,14 +45,14 @@ impl SurfaceGroupLayout {
                         direction,
                         ratio: 0.5,
                         first: Box::new(SurfaceGroupLayout::Leaf(surface)),
-                        second: Box::new(SurfaceGroupLayout::Leaf(Box::new(new_node))),
+                        second: Box::new(SurfaceGroupLayout::Leaf(new_surface)),
                         focus_second: true,
                     },
                     None,
                 )
             }
             SurfaceGroupLayout::Leaf(surface) => {
-                (SurfaceGroupLayout::Leaf(surface), Some(new_node))
+                (SurfaceGroupLayout::Leaf(surface), Some(new_surface))
             }
             SurfaceGroupLayout::Split {
                 direction: d,
@@ -61,10 +62,10 @@ impl SurfaceGroupLayout {
                 focus_second,
             } => {
                 let (new_first, remaining) =
-                    first.split_with_node(target_id, direction, new_node);
+                    first.split_with_surface(target_id, direction, new_surface);
                 if let Some(node) = remaining {
                     let (new_second, still_remaining) =
-                        second.split_with_node(target_id, direction, node);
+                        second.split_with_surface(target_id, direction, node);
                     (
                         SurfaceGroupLayout::Split {
                             direction: d,
@@ -89,6 +90,20 @@ impl SurfaceGroupLayout {
                 }
             }
         }
+    }
+
+    /// Split a specific surface with a TerminalSurface node (convenience wrapper).
+    pub fn split_with_node(
+        self,
+        target_id: SurfaceId,
+        direction: SplitDirection,
+        new_node: TerminalSurface,
+    ) -> (Self, Option<TerminalSurface>) {
+        let (result, remaining) = self.split_with_surface(target_id, direction, Box::new(new_node));
+        let remaining_node = remaining.and_then(|s| {
+            s.take_terminal_surface()
+        });
+        (result, remaining_node)
     }
 
     /// Remove a surface from the tree by promoting its sibling.

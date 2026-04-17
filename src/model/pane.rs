@@ -196,6 +196,22 @@ impl Pane {
         anyhow::bail!("surface {} not found in this pane", target_surface_id)
     }
 
+    /// Split a specific surface by ID with any surface type (not just terminal).
+    pub fn split_surface_by_id_with_surface(
+        &mut self,
+        target_surface_id: SurfaceId,
+        direction: SplitDirection,
+        new_surface: Box<dyn super::Surface>,
+    ) -> anyhow::Result<()> {
+        for tab in &mut self.tabs {
+            if tab.surface().contains_surface(target_surface_id) {
+                tab.split_surface_by_id_generic(target_surface_id, direction, new_surface);
+                return Ok(());
+            }
+        }
+        anyhow::bail!("surface {} not found in this pane", target_surface_id)
+    }
+
     /// Close the tab at the given index. Returns false if the tab can't be closed
     /// (e.g., it's the last tab).
     pub fn close_tab(&mut self, tab_index: usize) -> bool {

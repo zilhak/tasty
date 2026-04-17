@@ -67,9 +67,15 @@ pub enum Commands {
         /// Split level: pane (upper layout) or surface (lower layout)
         #[arg(long)]
         level: String,
-        /// Target: numeric ID, "this" (current surface), or nickname (required)
+        /// Target surface: numeric surface ID, "this" (TASTY_SURFACE_ID), or nickname
         #[arg(long)]
-        target: String,
+        target_surface: Option<String>,
+        /// Target pane: numeric pane ID (only for --level pane)
+        #[arg(long)]
+        target_pane: Option<u32>,
+        /// [deprecated] Use --target-surface or --target-pane instead
+        #[arg(long, hide = true)]
+        target: Option<String>,
         /// Split direction: vertical (default) or horizontal
         #[arg(long, default_value = "vertical")]
         direction: String,

@@ -56,16 +56,30 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
         #[cfg(debug_assertions)]
         Commands::Debug { command } => debug_command_to_method_params(command),
         // ── standalone ──
-        Commands::Split { level, target, direction, r#type, meta, cwd, file, path, url } => {
-            let resolved_target = resolve_target(target);
+        Commands::Split { level, target_surface, target_pane, target, direction, r#type, meta, cwd, file, path, url } => {
             let meta_value = meta
                 .as_deref()
                 .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok());
+
+            // Resolve target: new --target-surface/--target-pane take precedence over deprecated --target
+            let (ts, tp): (Option<serde_json::Value>, Option<serde_json::Value>) = if target_surface.is_some() || target_pane.is_some() {
+                (
+                    target_surface.as_ref().map(|s| serde_json::Value::String(resolve_target(s))),
+                    target_pane.map(|p| serde_json::Value::Number(p.into())),
+                )
+            } else if let Some(legacy) = target {
+                // Deprecated --target: treat as surface ID for backward compat
+                (Some(serde_json::Value::String(resolve_target(legacy))), None)
+            } else {
+                (None, None)
+            };
+
             (
                 "split",
                 serde_json::json!({
                     "level": level,
-                    "target": resolved_target,
+                    "target_surface": ts,
+                    "target_pane": tp,
                     "direction": direction,
                     "type": r#type,
                     "meta": meta_value,
