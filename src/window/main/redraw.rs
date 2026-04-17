@@ -296,13 +296,20 @@ impl MainWindow {
             }
             PendingNativeMenu::Pane { pane_id, x, y } => {
                 let items = [
-                    MenuItem::new(1, crate::i18n::t("pane_context_menu.new_markdown")),
-                    MenuItem::new(2, crate::i18n::t("pane_context_menu.new_explorer")),
-                    MenuItem::new(3, crate::i18n::t("pane_context_menu.new_html")),
+                    MenuItem::new(1, crate::i18n::t("pane_context_menu.new_terminal")),
+                    MenuItem::new(2, crate::i18n::t("pane_context_menu.new_markdown")),
+                    MenuItem::new(3, crate::i18n::t("pane_context_menu.new_explorer")),
+                    MenuItem::new(4, crate::i18n::t("pane_context_menu.new_html")),
                 ];
                 let result = show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
                 match result {
                     Some(1) => {
+                        self.state.active_workspace_mut().focused_pane = pane_id;
+                        if let Err(e) = self.state.add_tab() {
+                            tracing::warn!("add_tab from context menu failed: {e}");
+                        }
+                    }
+                    Some(2) => {
                         // Create empty tab first, then show markdown dialog targeting it
                         self.state.active_workspace_mut().focused_pane = pane_id;
                         if let Some((_tab_id, surface_id)) = self.state.add_empty_tab() {
@@ -310,14 +317,14 @@ impl MainWindow {
                             self.state.dialogs.markdown_path = Some((pane_id, String::new()));
                         }
                     }
-                    Some(2) => {
+                    Some(3) => {
                         let home = directories::BaseDirs::new()
                             .map(|d| d.home_dir().to_string_lossy().to_string())
                             .unwrap_or_else(|| ".".to_string());
                         self.state.active_workspace_mut().focused_pane = pane_id;
                         let _ = self.state.add_explorer_tab(home);
                     }
-                    Some(3) => {
+                    Some(4) => {
                         // Create empty tab first, then show HTML dialog targeting it
                         self.state.active_workspace_mut().focused_pane = pane_id;
                         if let Some((_tab_id, surface_id)) = self.state.add_empty_tab() {

@@ -207,6 +207,7 @@ rename = "Rename Tab"
 close = "Close Tab"
 
 [pane_context_menu]
+new_terminal = "New Terminal"
 new_markdown = "New Markdown..."
 new_explorer = "New Explorer"
 new_html = "New HTML..."

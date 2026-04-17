@@ -207,6 +207,7 @@ rename = "タブ名を変更"
 close = "タブを閉じる"
 
 [pane_context_menu]
+new_terminal = "新規ターミナル"
 new_markdown = "新規マークダウン..."
 new_explorer = "新規エクスプローラー"
 new_html = "新規HTML..."
