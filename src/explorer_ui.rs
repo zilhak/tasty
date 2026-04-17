@@ -237,8 +237,9 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel, keys: &[Pendi
                                     TreeAction::CopyPath(text) => {
                                         ui.ctx().copy_text(text);
                                     }
-                                    TreeAction::ContextMenu(path) => {
-                                        panel.context_menu_path = Some(path);
+                                    TreeAction::ContextMenu(path, pos) => {
+                                        let is_bookmarked = panel.is_bookmarked(&path);
+                                        explorer_action = Some(ExplorerAction::FolderContextMenu(path, is_bookmarked, pos.x, pos.y));
                                     }
                                 }
                             }
@@ -249,48 +250,6 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel, keys: &[Pendi
                     }
                 });
 
-            // ── Right-click context menu (for bookmark add/remove) ──
-            if let Some(ctx_path) = panel.context_menu_path.clone() {
-                let is_bookmarked = panel.is_bookmarked(&ctx_path);
-                let menu_id = egui::Id::new("explorer_ctx_menu");
-                let mut close_menu = false;
-                egui::Area::new(menu_id)
-                    .order(egui::Order::Foreground)
-                    .fixed_pos(ui.ctx().pointer_latest_pos().unwrap_or_default())
-                    .show(ui.ctx(), |ui| {
-                        egui::Frame::new()
-                            .fill(th.surface0)
-                            .stroke(egui::Stroke::new(1.0, th.surface1))
-                            .corner_radius(4.0)
-                            .inner_margin(egui::Margin::same(4))
-                            .show(ui, |ui| {
-                                let label = if is_bookmarked {
-                                    crate::i18n::t("explorer.bookmark_remove")
-                                } else {
-                                    crate::i18n::t("explorer.bookmark_add")
-                                };
-                                if ui.button(label).clicked() {
-                                    if is_bookmarked {
-                                        panel.remove_bookmark(&ctx_path);
-                                    } else {
-                                        let folder_name = std::path::Path::new(&ctx_path)
-                                            .file_name()
-                                            .map(|n| n.to_string_lossy().to_string())
-                                            .unwrap_or_default();
-                                        panel.pending_bookmark = Some(crate::model::PendingBookmark {
-                                            path: ctx_path.clone(),
-                                            name: folder_name,
-                                        });
-                                    }
-                                    close_menu = true;
-                                }
-                            });
-                    });
-                // Close on click outside
-                if close_menu || ui.ctx().input(|i| i.pointer.any_pressed()) {
-                    panel.context_menu_path = None;
-                }
-            }
 
             // ── Bookmark name input popup ──
             if panel.pending_bookmark.is_some() {
@@ -447,7 +406,7 @@ enum TreeAction {
     /// Copy path(s) as text.
     CopyPath(String),
     /// Right-click on a directory — show context menu for bookmark add/remove.
-    ContextMenu(String),
+    ContextMenu(String, egui::Pos2),
 }
 
 /// Action returned from `draw_explorer` for the caller to process.
@@ -456,6 +415,8 @@ pub enum ExplorerAction {
     OpenMarkdownTab(String),
     /// Open an HTML file as a new Html tab (file:// URL).
     OpenHtmlTab(String),
+    /// Request native context menu for a folder (path, is_bookmarked, x, y in screen coords).
+    FolderContextMenu(String, bool, f32, f32),
 }
 
 fn draw_file_node(
@@ -520,7 +481,8 @@ fn draw_file_node(
                 *action = Some(TreeAction::DoubleClickFile(node.path.clone()));
             }
         } else if resp.secondary_clicked() && action.is_none() && node.is_directory {
-            *action = Some(TreeAction::ContextMenu(node.path.clone()));
+            let pos = resp.interact_pointer_pos().unwrap_or_default();
+            *action = Some(TreeAction::ContextMenu(node.path.clone(), pos));
         } else if resp.clicked() && action.is_none() {
             let modifiers = ui.input(|i| i.modifiers);
             if modifiers.command {

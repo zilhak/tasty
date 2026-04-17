@@ -340,6 +340,46 @@ impl MainWindow {
                 }
                 self.mark_dirty();
             }
+            PendingNativeMenu::ExplorerFolder { path, is_bookmarked, x, y } => {
+                let label = if is_bookmarked {
+                    crate::i18n::t("explorer.bookmark_remove")
+                } else {
+                    crate::i18n::t("explorer.bookmark_add")
+                };
+                let items = [MenuItem::new(1, label)];
+                let result = show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
+                if result == Some(1) {
+                    // Find the explorer panel and apply bookmark action
+                    let mut applied = false;
+                    for ws in &mut self.state.engine.workspaces {
+                        for &pid in &ws.pane_layout().all_pane_ids() {
+                            if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pid) {
+                                for tab in &mut pane.tabs {
+                                    if let Some(panel) = tab.surface_mut().as_explorer_mut() {
+                                        if is_bookmarked {
+                                            panel.remove_bookmark(&path);
+                                        } else {
+                                            let folder_name = std::path::Path::new(&path)
+                                                .file_name()
+                                                .map(|n| n.to_string_lossy().to_string())
+                                                .unwrap_or_default();
+                                            panel.pending_bookmark = Some(crate::model::PendingBookmark {
+                                                path: path.clone(),
+                                                name: folder_name,
+                                            });
+                                        }
+                                        applied = true;
+                                        break;
+                                    }
+                                }
+                                if applied { break; }
+                            }
+                        }
+                        if applied { break; }
+                    }
+                }
+                self.mark_dirty();
+            }
         }
     }
 }

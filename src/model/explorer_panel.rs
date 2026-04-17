@@ -43,8 +43,6 @@ pub struct ExplorerPanel {
     pub bookmarks: Vec<Bookmark>,
     /// Pending bookmark addition: folder path waiting for name input.
     pub pending_bookmark: Option<PendingBookmark>,
-    /// Right-click context menu state: path of the right-clicked folder.
-    pub context_menu_path: Option<String>,
     /// Whether the file preview panel is visible.
     pub show_preview: bool,
 }
@@ -86,7 +84,6 @@ impl ExplorerPanel {
             address_bar_editing: false,
             bookmarks: Vec::new(),
             pending_bookmark: None,
-            context_menu_path: None,
             show_preview: true,
         }
     }

@@ -258,6 +258,11 @@ pub fn draw_egui_panels(
                 let url = format!("file://{}", path);
                 let _ = state.add_html_tab(url);
             }
+            crate::explorer_ui::ExplorerAction::FolderContextMenu(path, is_bookmarked, x, y) => {
+                state.dialogs.pending_native_menu = Some(crate::state::PendingNativeMenu::ExplorerFolder {
+                    path, is_bookmarked, x, y,
+                });
+            }
         }
     }
 }
