@@ -220,6 +220,7 @@ empty_message = "No notifications"
 [explorer]
 select_file = "Select a file"
 unsupported_format = "Preview not available for this file type"
+toggle_preview = "Toggle preview panel"
 bookmark_add = "Add to Bookmarks"
 bookmark_remove = "Remove from Bookmarks"
 bookmark_name_label = "Bookmark name:"

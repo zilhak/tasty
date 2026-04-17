@@ -39,14 +39,20 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel, keys: &[Pendi
     let th = theme::theme();
     let mut explorer_action: Option<ExplorerAction> = None;
     let available_width = ui.available_width();
-    let tree_width = (available_width * 0.35).min(250.0).max(150.0).round_ui();
+    let tree_width = if panel.show_preview {
+        (available_width * 0.35).min(250.0).max(150.0).round_ui()
+    } else {
+        available_width
+    };
 
-    // ── Address bar (top, full width) ──
+    // ── Top bar: address bar + preview toggle ──
     let address_bar_h = 20.0;
     ui.horizontal(|ui| {
         ui.set_height(address_bar_h);
+        let toggle_width = 20.0;
+        let text_width = ui.available_width() - toggle_width - 4.0;
         let resp = ui.add_sized(
-            [ui.available_width(), address_bar_h],
+            [text_width, address_bar_h],
             egui::TextEdit::singleline(&mut panel.address_bar_text)
                 .font(egui::FontId::proportional(th.font_size_caption))
                 .margin(egui::Margin::symmetric(4, 2)),
@@ -55,6 +61,19 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel, keys: &[Pendi
             let path = panel.address_bar_text.clone();
             panel.navigate_to(path);
         }
+        let icon = if panel.show_preview { "◨" } else { "▣" };
+        let toggle = ui.add_sized(
+            [toggle_width, address_bar_h],
+            egui::Button::new(
+                egui::RichText::new(icon)
+                    .size(th.font_size_caption)
+                    .color(if panel.show_preview { th.text } else { th.overlay0 }),
+            ).frame(false),
+        );
+        if toggle.clicked() {
+            panel.show_preview = !panel.show_preview;
+        }
+        toggle.on_hover_text(crate::i18n::t("explorer.toggle_preview"));
     });
     ui.add_space(2.0);
 
@@ -357,52 +376,54 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel, keys: &[Pendi
                 });
         });
 
-        ui.separator();
+        if panel.show_preview {
+            ui.separator();
 
-        // Right: File viewer
-        ui.vertical(|ui| {
-            if let Some(ref path) = panel.selected_file {
-                // File path header
-                ui.label(
-                    egui::RichText::new(path)
-                        .small()
-                        .color(egui::Color32::GRAY),
-                );
-                ui.separator();
+            // Right: File viewer
+            ui.vertical(|ui| {
+                if let Some(ref path) = panel.selected_file {
+                    // File path header
+                    ui.label(
+                        egui::RichText::new(path)
+                            .small()
+                            .color(egui::Color32::GRAY),
+                    );
+                    ui.separator();
 
-                if let Some(ref content) = panel.file_content {
-                    egui::ScrollArea::vertical()
-                        .id_salt("explorer_viewer")
-                        .show(ui, |ui| {
-                            if panel.is_markdown {
-                                crate::markdown_ui::render_markdown(ui, content);
-                            } else {
-                                // Render as plain text with monospace font
-                                ui.label(
-                                    egui::RichText::new(content)
-                                        .monospace()
-                                        .size(12.0)
-                                        .color(th.subtext1),
-                                );
-                            }
+                    if let Some(ref content) = panel.file_content {
+                        egui::ScrollArea::vertical()
+                            .id_salt("explorer_viewer")
+                            .show(ui, |ui| {
+                                if panel.is_markdown {
+                                    crate::markdown_ui::render_markdown(ui, content);
+                                } else {
+                                    // Render as plain text with monospace font
+                                    ui.label(
+                                        egui::RichText::new(content)
+                                            .monospace()
+                                            .size(12.0)
+                                            .color(th.subtext1),
+                                    );
+                                }
+                            });
+                    } else {
+                        ui.centered_and_justified(|ui| {
+                            ui.label(
+                                egui::RichText::new(crate::i18n::t("explorer.unsupported_format"))
+                                    .color(th.overlay0),
+                            );
                         });
+                    }
                 } else {
                     ui.centered_and_justified(|ui| {
                         ui.label(
-                            egui::RichText::new(crate::i18n::t("explorer.unsupported_format"))
-                                .color(th.overlay0),
+                            egui::RichText::new(crate::i18n::t("explorer.select_file"))
+                                .color(egui::Color32::GRAY),
                         );
                     });
                 }
-            } else {
-                ui.centered_and_justified(|ui| {
-                    ui.label(
-                        egui::RichText::new(crate::i18n::t("explorer.select_file"))
-                            .color(egui::Color32::GRAY),
-                    );
-                });
-            }
-        });
+            });
+        }
     });
 
     explorer_action

@@ -220,6 +220,7 @@ empty_message = "通知はありません"
 [explorer]
 select_file = "ファイルを選択してください"
 unsupported_format = "このファイル形式はプレビューできません"
+toggle_preview = "プレビューパネルの切り替え"
 bookmark_add = "ブックマークに追加"
 bookmark_remove = "ブックマークから削除"
 bookmark_name_label = "ブックマーク名:"
