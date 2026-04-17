@@ -221,23 +221,21 @@ pub fn draw_egui_panels(
                     let panel_rect = ui.max_rect();
                     let mut clip_ui = ui.new_child(egui::UiBuilder::new().max_rect(panel_rect));
                     clip_ui.set_clip_rect(panel_rect);
-                    egui::Frame::new()
-                        .fill(th.crust)
-                        .show(&mut clip_ui, |ui| {
-                            let available = ui.available_size();
-                            let button_h = 28.0;
-                            ui.add_space(((available.y - button_h) / 2.0).max(0.0));
-                            ui.vertical_centered(|ui| {
-                                let btn = ui.button(
-                                    egui::RichText::new(crate::i18n::t("convert_popup.title"))
-                                        .size(th.font_size_body)
-                                        .color(th.text),
-                                );
-                                if btn.clicked() {
-                                    pending_empty_convert = Some(sid);
-                                }
-                            });
-                        });
+                    // Paint full background first to avoid crust/base color mismatch
+                    clip_ui.painter().rect_filled(panel_rect, 0.0, th.crust);
+                    let available = clip_ui.available_size();
+                    let button_h = 28.0;
+                    clip_ui.add_space(((available.y - button_h) / 2.0).max(0.0));
+                    clip_ui.vertical_centered(|ui| {
+                        let btn = ui.button(
+                            egui::RichText::new(crate::i18n::t("convert_popup.title"))
+                                .size(th.font_size_body)
+                                .color(th.text),
+                        );
+                        if btn.clicked() {
+                            pending_empty_convert = Some(sid);
+                        }
+                    });
                 });
         }
     }
