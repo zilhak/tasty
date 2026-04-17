@@ -163,6 +163,7 @@ pub fn draw_egui_panels(
                             egui::ScrollArea::vertical()
                                 .id_salt(format!("md_scroll_{}", id_suffix))
                                 .show(ui, |ui| {
+                                    ui.style_mut().interaction.selectable_labels = true;
                                     let content = md_panel.content.clone();
                                     crate::markdown_ui::render_markdown(ui, &content);
                                 });

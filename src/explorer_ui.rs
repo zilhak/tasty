@@ -316,6 +316,7 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel, keys: &[Pendi
                         egui::ScrollArea::vertical()
                             .id_salt("explorer_viewer")
                             .show(ui, |ui| {
+                                ui.style_mut().interaction.selectable_labels = true;
                                 if panel.is_markdown {
                                     crate::markdown_ui::render_markdown(ui, content);
                                 } else {
