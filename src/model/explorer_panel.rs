@@ -73,7 +73,12 @@ impl ExplorerPanel {
             tree_scroll_offset: 0.0,
             address_bar_text: root_path,
             address_bar_editing: false,
-            bookmarks: Vec::new(),
+            bookmarks: {
+                let stored = crate::bookmarks::Bookmarks::load();
+                stored.entries.into_iter()
+                    .map(|e| Bookmark { name: e.name, path: e.path })
+                    .collect()
+            },
             show_preview: true,
         }
     }
@@ -187,9 +192,27 @@ impl ExplorerPanel {
         self.bookmarks.iter().any(|b| b.path == path)
     }
 
-    /// Remove a bookmark by path.
+    /// Remove a bookmark by path (also persists to file).
     pub fn remove_bookmark(&mut self, path: &str) {
         self.bookmarks.retain(|b| b.path != path);
+        self.save_bookmarks();
+    }
+
+    /// Add a bookmark (also persists to file).
+    pub fn add_bookmark(&mut self, name: String, path: String) {
+        self.bookmarks.retain(|b| b.path != path);
+        self.bookmarks.push(Bookmark { name, path });
+        self.save_bookmarks();
+    }
+
+    /// Persist current bookmarks to file.
+    fn save_bookmarks(&self) {
+        let stored = crate::bookmarks::Bookmarks {
+            entries: self.bookmarks.iter()
+                .map(|b| crate::bookmarks::BookmarkEntry { name: b.name.clone(), path: b.path.clone() })
+                .collect(),
+        };
+        stored.save();
     }
 
     /// Update the right-side preview for the given path.

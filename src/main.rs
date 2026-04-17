@@ -1,5 +1,6 @@
 #![allow(private_interfaces)]
 
+mod bookmarks;
 mod cli;
 mod click_cursor;
 mod crash_report;

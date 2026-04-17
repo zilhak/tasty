@@ -95,12 +95,8 @@ impl PopupContent for BookmarkNamePopup {
                 } else {
                     name
                 };
-                let bookmark = crate::model::Bookmark {
-                    name: final_name,
-                    path,
-                };
                 state.with_explorer_mut(surface_id, |panel| {
-                    panel.bookmarks.push(bookmark);
+                    panel.add_bookmark(final_name, path);
                 });
             }
             return PopupAction::Close;
