@@ -47,7 +47,7 @@ impl PopupContent for MarkdownOpenPopup {
 
     fn scope(&self) -> PopupScope { PopupScope::Window }
 
-    fn close_on_outside_click(&self) -> bool { true }
+    fn close_on_outside_click(&self) -> bool { false }
 
     fn draw(&mut self, ui: &mut egui::Ui, state: &mut AppState) -> PopupAction {
         draw_file_open_content(ui, state, FileType::Markdown)
@@ -76,7 +76,7 @@ impl PopupContent for HtmlOpenPopup {
 
     fn scope(&self) -> PopupScope { PopupScope::Window }
 
-    fn close_on_outside_click(&self) -> bool { true }
+    fn close_on_outside_click(&self) -> bool { false }
 
     fn draw(&mut self, ui: &mut egui::Ui, state: &mut AppState) -> PopupAction {
         draw_file_open_content(ui, state, FileType::Html)
