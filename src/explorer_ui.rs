@@ -45,14 +45,12 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel, keys: &[Pendi
         available_width
     };
 
-    // ── Top bar: address bar + preview toggle ──
+    // ── Address bar (top, full width) ──
     let address_bar_h = 20.0;
     ui.horizontal(|ui| {
         ui.set_height(address_bar_h);
-        let toggle_width = 20.0;
-        let text_width = ui.available_width() - toggle_width - 4.0;
         let resp = ui.add_sized(
-            [text_width, address_bar_h],
+            [ui.available_width(), address_bar_h],
             egui::TextEdit::singleline(&mut panel.address_bar_text)
                 .font(egui::FontId::proportional(th.font_size_caption))
                 .margin(egui::Margin::symmetric(4, 2)),
@@ -61,19 +59,6 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel, keys: &[Pendi
             let path = panel.address_bar_text.clone();
             panel.navigate_to(path);
         }
-        let icon = if panel.show_preview { "◨" } else { "▣" };
-        let toggle = ui.add_sized(
-            [toggle_width, address_bar_h],
-            egui::Button::new(
-                egui::RichText::new(icon)
-                    .size(th.font_size_caption)
-                    .color(if panel.show_preview { th.text } else { th.overlay0 }),
-            ).frame(false),
-        );
-        if toggle.clicked() {
-            panel.show_preview = !panel.show_preview;
-        }
-        toggle.on_hover_text(crate::i18n::t("explorer.toggle_preview"));
     });
     ui.add_space(2.0);
 
@@ -81,11 +66,33 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel, keys: &[Pendi
         // Left: File tree + Bookmarks
         ui.vertical(|ui| {
             ui.set_width(tree_width);
+
+            // ── Toolbar above file tree ──
+            let toolbar_h = 18.0;
+            ui.horizontal(|ui| {
+                ui.set_height(toolbar_h);
+                let label = if panel.show_preview {
+                    crate::i18n::t("explorer.hide_preview")
+                } else {
+                    crate::i18n::t("explorer.show_preview")
+                };
+                if ui.add(
+                    egui::Button::new(
+                        egui::RichText::new(label)
+                            .size(th.font_size_caption)
+                            .color(th.subtext0),
+                    ).frame(false),
+                ).clicked() {
+                    panel.show_preview = !panel.show_preview;
+                }
+            });
+            ui.add_space(2.0);
+
             let total_height = ui.available_height();
             let bookmark_height = (total_height * 0.2).max(40.0);
             let tree_height = (total_height - bookmark_height - 4.0).max(40.0);
 
-            // ── File tree (top 80%) ──
+            // ── File tree ──
             egui::ScrollArea::vertical()
                 .id_salt("explorer_tree")
                 .max_height(tree_height)
