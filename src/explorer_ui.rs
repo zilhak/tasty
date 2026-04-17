@@ -274,6 +274,16 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel, keys: &[Pendi
                         if resp.double_clicked() {
                             nav_path = Some(bm.path.clone());
                         }
+                        if resp.secondary_clicked() {
+                            if let Some(pos) = ui.ctx().input(|i| i.pointer.latest_pos()) {
+                                explorer_action = Some(ExplorerAction::BookmarkContextMenu {
+                                    path: bm.path.clone(),
+                                    name: bm.name.clone(),
+                                    x: pos.x,
+                                    y: pos.y,
+                                });
+                            }
+                        }
                     }
                     if bookmarks.entries.is_empty() {
                         ui.label(
@@ -368,6 +378,8 @@ pub enum ExplorerAction {
     OpenHtmlTab(String),
     /// Request native context menu for a folder (path, is_bookmarked, x, y).
     FolderContextMenu { path: String, is_bookmarked: bool, x: f32, y: f32 },
+    /// Request native context menu for a bookmark item (path, name, x, y).
+    BookmarkContextMenu { path: String, name: String, x: f32, y: f32 },
 }
 
 fn draw_file_node(

@@ -6,7 +6,7 @@ use crate::window::Window;
 use super::MainWindow;
 
 impl MainWindow {
-    pub(super) fn handle_keyboard_input(&mut self, event: &winit::event::KeyEvent, _egui_consumed: bool) {
+    pub(super) fn handle_keyboard_input(&mut self, event: &winit::event::KeyEvent, egui_consumed: bool) {
         // Feed all key events (Press + Release) to the double-tap detector
         self.double_tap.on_key_event(
             &event.logical_key,
@@ -104,13 +104,15 @@ impl MainWindow {
                 }
             }
             FocusedSurfaceType::Explorer | FocusedSurfaceType::Markdown => {
-                // Queue the key event for the non-terminal surface to consume
-                // during the next egui render frame.
-                self.state.pending_surface_keys.push(PendingKeyEvent {
-                    key: event.logical_key.clone(),
-                    modifiers: self.base.modifiers,
-                    text: event.text.clone(),
-                });
+                // If egui consumed the event (e.g. TextEdit has focus), skip
+                // the PendingKeyEvent queue to avoid double-handling.
+                if !egui_consumed {
+                    self.state.pending_surface_keys.push(PendingKeyEvent {
+                        key: event.logical_key.clone(),
+                        modifiers: self.base.modifiers,
+                        text: event.text.clone(),
+                    });
+                }
                 self.mark_dirty();
             }
             _ => {

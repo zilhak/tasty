@@ -264,6 +264,11 @@ pub fn draw_egui_panels(
                     surface_id: surface_id.unwrap_or(0), path, is_bookmarked, x, y,
                 });
             }
+            crate::explorer_ui::ExplorerAction::BookmarkContextMenu { path, name, x, y } => {
+                state.dialogs.pending_native_menu = Some(crate::state::PendingNativeMenu::BookmarkItem {
+                    path, name, x, y,
+                });
+            }
         }
     }
 }

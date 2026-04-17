@@ -96,6 +96,8 @@ pub enum PendingNativeMenu {
     Pane { pane_id: u32, x: f32, y: f32 },
     /// Explorer folder right-click: Bookmark add/remove
     ExplorerFolder { surface_id: u32, path: String, is_bookmarked: bool, x: f32, y: f32 },
+    /// Bookmark item right-click: Remove / Navigate
+    BookmarkItem { path: String, name: String, x: f32, y: f32 },
 }
 
 /// All transient UI dialog/popup state, grouped to avoid AppState bloat.

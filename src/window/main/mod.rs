@@ -13,7 +13,7 @@ use winit::window::CursorIcon;
 use crate::gpu::{GpuState, ImePreeditState};
 use crate::model::Rect;
 use crate::selection::TextSelection;
-use crate::state::AppState;
+use crate::state::{AppState, FocusedSurfaceType};
 use crate::window::{
     sealed, terminal_host::MODELESS_MODALITY, Modality, TerminalHostWindow, Window, WindowAction,
     WindowBase, WindowCtx,
@@ -233,8 +233,15 @@ impl Window for MainWindow {
             || self.state.has_input_dialog_open()
             || self.state.popups.has_focused();
 
+        // Non-terminal surfaces (Explorer, Markdown) use egui widgets (TextEdit etc.)
+        // that need direct keyboard events from egui's input system.
+        let egui_surface = matches!(
+            self.state.focused_surface_type(),
+            FocusedSurfaceType::Explorer | FocusedSurfaceType::Markdown
+        );
+
         let (egui_consumed, egui_repaint) = if is_keyboard_event {
-            if overlay_open {
+            if overlay_open || egui_surface {
                 self.base.gpu.handle_egui_event(&self.base.winit, &event)
             } else {
                 (false, false)

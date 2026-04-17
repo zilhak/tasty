@@ -366,6 +366,33 @@ impl MainWindow {
                 }
                 self.mark_dirty();
             }
+            PendingNativeMenu::BookmarkItem { path, name: _, x, y } => {
+                let items = [
+                    MenuItem::new(1, crate::i18n::t("explorer.bookmark_navigate")),
+                    MenuItem::new(2, crate::i18n::t("explorer.bookmark_remove")),
+                ];
+                let result = show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
+                match result {
+                    Some(1) => {
+                        // Navigate focused explorer to the bookmark path
+                        let focused_pane = self.state.active_workspace().focused_pane;
+                        if let Some(pane) = self.state.active_workspace_mut().pane_layout_mut().find_pane_mut(focused_pane) {
+                            let idx = pane.active_tab.min(pane.tabs.len().saturating_sub(1));
+                            if let Some(tab) = pane.tabs.get_mut(idx) {
+                                if let Some(panel) = tab.surface_mut().as_explorer_mut() {
+                                    panel.navigate_to(path);
+                                }
+                            }
+                        }
+                    }
+                    Some(2) => {
+                        let mut bookmarks = crate::bookmarks::Bookmarks::load();
+                        bookmarks.remove(&path);
+                    }
+                    _ => {}
+                }
+                self.mark_dirty();
+            }
         }
     }
 }
