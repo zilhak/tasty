@@ -8,20 +8,23 @@ use crate::ui::popup::{self, PopupAction, PopupContent, PopupId, PopupScope};
 const ITEM_HEIGHT: f32 = 22.0;
 const MAX_RECENT: usize = 10;
 const HORIZONTAL_MARGIN: f32 = 8.0;
-/// Base content height: label + spacing + input row + error row + spacing + button row
-const BASE_CONTENT_HEIGHT: f32 = 16.0 + 4.0 + 22.0 + 16.0 + 8.0 + 24.0;
-/// Extra height for "Recent Files" label
-const RECENT_HEADER_HEIGHT: f32 = 20.0;
+/// egui item_spacing.y (theme spacing_xs)
+const ITEM_SPACING_Y: f32 = 4.0;
 
 fn compute_popup_size(recent_count: usize) -> egui::Vec2 {
+    // label(16) + item_spacing + add_space(4) + input_row(22) + item_spacing + add_space(8) + buttons(24)
+    let base = 16.0 + ITEM_SPACING_Y + 4.0 + 22.0 + ITEM_SPACING_Y + 8.0 + 24.0;
     let recent_h = if recent_count > 0 {
-        RECENT_HEADER_HEIGHT + (recent_count.min(MAX_RECENT) as f32 * ITEM_HEIGHT) + 4.0
+        // "최근 파일" label(16) + item_spacing + add_space(2) + items + item_spacing + add_space(4)
+        16.0 + ITEM_SPACING_Y + 2.0
+            + (recent_count.min(MAX_RECENT) as f32 * ITEM_HEIGHT)
+            + ITEM_SPACING_Y + 4.0
     } else {
         0.0
     };
     egui::vec2(
         360.0,
-        popup::TITLE_BAR_HEIGHT + popup::CONTENT_MARGIN * 2.0 + BASE_CONTENT_HEIGHT + recent_h,
+        popup::TITLE_BAR_HEIGHT + popup::CONTENT_MARGIN * 2.0 + base + recent_h,
     )
 }
 
