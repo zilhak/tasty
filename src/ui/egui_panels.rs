@@ -264,7 +264,7 @@ pub fn draw_egui_panels(
                 let _ = state.add_markdown_tab(path);
             }
             crate::explorer_ui::ExplorerAction::OpenHtmlTab(path) => {
-                let url = format!("file://{}", path);
+                let url = crate::ui::file_open_popup::local_path_to_file_uri(&path);
                 let _ = state.add_html_tab(url);
             }
             crate::explorer_ui::ExplorerAction::FolderContextMenu { path, is_bookmarked, x, y } => {

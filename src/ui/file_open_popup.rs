@@ -237,8 +237,9 @@ fn draw_file_open_content(ui: &mut egui::Ui, state: &mut AppState, file_type: Fi
             // For local file paths, validate existence and format
             let is_remote = path_value.starts_with("http://") || path_value.starts_with("https://");
             if !is_remote {
-                let local_path = path_value.strip_prefix("file://").unwrap_or(&path_value);
-                let file_path = std::path::Path::new(local_path);
+                let local_path = file_uri_to_local_path(&path_value)
+                    .unwrap_or_else(|| path_value.clone());
+                let file_path = std::path::Path::new(&local_path);
                 if !file_path.exists() {
                     state.dialogs.file_open_error = Some(t("dialog.error.file_not_found").to_string());
                     return PopupAction::None;
@@ -266,7 +267,7 @@ fn apply_open(state: &mut AppState, file_type: FileType, path: &str) {
 
     match file_type {
         FileType::Markdown => {
-            let file_path = path.strip_prefix("file://").unwrap_or(path).to_string();
+            let file_path = file_uri_to_local_path(path).unwrap_or_else(|| path.to_string());
             recent.add_markdown(file_path.clone());
             if let Some(convert_sid) = state.dialogs.markdown_convert_surface_id.take() {
                 state.convert_surface_to_markdown(convert_sid, file_path);
@@ -279,10 +280,10 @@ fn apply_open(state: &mut AppState, file_type: FileType, path: &str) {
             }
         }
         FileType::Html => {
-            let url = if !path.starts_with("http://") && !path.starts_with("https://") && !path.starts_with("file://") {
-                format!("file://{}", path)
-            } else {
+            let url = if path.starts_with("http://") || path.starts_with("https://") || path.starts_with("file://") {
                 path.to_string()
+            } else {
+                local_path_to_file_uri(path)
             };
             recent.add_html(url.clone());
             if let Some(convert_sid) = state.dialogs.html_convert_surface_id.take() {
@@ -311,6 +312,39 @@ fn clear_dialog_state(state: &mut AppState, file_type: FileType) {
     }
     state.dialogs.file_open_pane_id = None;
     state.dialogs.file_open_error = None;
+}
+
+/// Convert a file:// URI to a local filesystem path.
+/// Handles `file:///C:/path` (Windows) and `file:///path` (Unix).
+fn file_uri_to_local_path(uri: &str) -> Option<String> {
+    let rest = uri.strip_prefix("file://")?;
+    // file:///C:/... → rest = "/C:/..." → on Windows, strip leading /
+    #[cfg(windows)]
+    {
+        let rest = rest.strip_prefix('/').unwrap_or(rest);
+        Some(rest.replace('/', "\\"))
+    }
+    #[cfg(not(windows))]
+    {
+        Some(rest.to_string())
+    }
+}
+
+/// Convert a local filesystem path to a proper file:// URI.
+pub fn local_path_to_file_uri(path: &str) -> String {
+    #[cfg(windows)]
+    {
+        let normalized = path.replace('\\', "/");
+        if normalized.starts_with('/') {
+            format!("file://{normalized}")
+        } else {
+            format!("file:///{normalized}")
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        format!("file://{path}")
+    }
 }
 
 fn shorten_path(path: &str) -> String {
