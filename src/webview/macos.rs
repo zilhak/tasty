@@ -33,6 +33,12 @@ impl PlatformWebView {
         unsafe {
             let config = WKWebViewConfiguration::new(mtm);
 
+            // Set default text encoding to UTF-8 (matches browser behavior for charset-less HTML)
+            let prefs = config.preferences();
+            let key = NSString::from_str("defaultTextEncodingName");
+            let value = NSString::from_str("UTF-8");
+            let _: () = objc2::msg_send![&prefs, setValue: &*value, forKey: &*key];
+
             let frame = logical_to_nsrect(ns_view, bounds, scale_factor);
 
             let webview = WKWebView::initWithFrame_configuration(

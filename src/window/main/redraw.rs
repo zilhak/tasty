@@ -162,11 +162,15 @@ impl MainWindow {
                             // Only visible if: active workspace AND active tab
                             let is_active_tab = tab_idx == pane.active_tab;
                             if ws_idx == active_ws && is_active_tab {
+                                // Inset bounds by divider drag threshold so that
+                                // the native WebView does not cover the divider
+                                // hit-test area, allowing pane resize via drag.
+                                let inset = 4.0_f64;
                                 let bounds = crate::webview::WebViewBounds {
-                                    x: pane_rect.x as f64 / scale_factor,
+                                    x: (pane_rect.x as f64 + inset) / scale_factor,
                                     y: (pane_rect.y as f64 + tab_bar_h) / scale_factor,
-                                    width: pane_rect.width as f64 / scale_factor,
-                                    height: (pane_rect.height as f64 - tab_bar_h).max(1.0) / scale_factor,
+                                    width: (pane_rect.width as f64 - inset * 2.0).max(1.0) / scale_factor,
+                                    height: (pane_rect.height as f64 - tab_bar_h - inset).max(1.0) / scale_factor,
                                 };
                                 active_html.insert(html.id, bounds);
                             }
