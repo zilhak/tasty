@@ -4,6 +4,7 @@ mod cli;
 mod click_cursor;
 mod crash_report;
 mod double_tap;
+#[cfg(debug_assertions)]
 mod debug_info;
 pub mod engine;
 pub mod engine_state;
@@ -362,6 +363,7 @@ impl App {
         let mut processed = false;
         while let Ok(cmd) = ipc.try_recv() {
             // App-level IPC methods (don't need focused window)
+            #[cfg(debug_assertions)]
             if cmd.request.method == "system.shutdown" {
                 let response = ipc::protocol::JsonRpcResponse::success(
                     cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
@@ -441,11 +443,16 @@ impl App {
                 continue;
             }
 
-            // Window-required IPC methods (GPU, IME, screenshot)
-            if cmd.request.method == "debug.info"
-                || cmd.request.method.starts_with("surface.ime_")
-                || cmd.request.method == "ui.screenshot"
+            // Window-required IPC methods (GPU, IME, debug)
+            #[allow(unused_mut)]
+            let mut is_window_required = cmd.request.method.starts_with("surface.ime_");
+            #[cfg(debug_assertions)]
             {
+                is_window_required = is_window_required
+                    || cmd.request.method == "debug.info"
+                    || cmd.request.method == "ui.screenshot";
+            }
+            if is_window_required {
                 let focused_id = match self.engine.focused_window_id {
                     Some(id) => id,
                     None => {
@@ -468,6 +475,7 @@ impl App {
                     None => continue,
                 };
 
+                #[cfg(debug_assertions)]
                 if cmd.request.method == "debug.info" {
                     let debug_data = debug_info::collect(&w.state, Some(&w.base.gpu), w.ime_active);
                     let response = ipc::protocol::JsonRpcResponse::success(
@@ -475,12 +483,11 @@ impl App {
                         debug_data,
                     );
                     let _ = cmd.response_tx.send(response);
-                } else if cmd.request.method.starts_with("surface.ime_") {
-                    let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
-                    let response = ipc::handler::ime::handle_ime_method(w, &cmd.request.method, &cmd.request.params, id);
-                    let _ = cmd.response_tx.send(response);
-                    w.base.dirty = true;
-                } else if cmd.request.method == "ui.screenshot" {
+                    processed = true;
+                    continue;
+                }
+                #[cfg(debug_assertions)]
+                if cmd.request.method == "ui.screenshot" {
                     let path = cmd.request.params
                         .get("path")
                         .and_then(|v| v.as_str())
@@ -493,6 +500,14 @@ impl App {
                         serde_json::json!({"path": path, "scheduled": true}),
                     );
                     let _ = cmd.response_tx.send(response);
+                    processed = true;
+                    continue;
+                }
+                if cmd.request.method.starts_with("surface.ime_") {
+                    let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
+                    let response = ipc::handler::ime::handle_ime_method(w, &cmd.request.method, &cmd.request.params, id);
+                    let _ = cmd.response_tx.send(response);
+                    w.base.dirty = true;
                 }
                 processed = true;
                 continue;

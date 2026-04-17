@@ -1,5 +1,7 @@
 use crate::ipc::protocol::JsonRpcRequest;
-use super::{Commands, NewCommands, CloseCommands, ListCommands, SetCommands, UnsetCommands, SendCommands, ReadCommands, ClaudeCommands, DebugCommands, SurfaceMetaCommands};
+use super::{Commands, NewCommands, CloseCommands, ListCommands, SetCommands, UnsetCommands, SendCommands, ReadCommands, ClaudeCommands, SurfaceMetaCommands};
+#[cfg(debug_assertions)]
+use super::DebugCommands;
 
 /// Resolve a target string for split/other commands.
 /// - "this" → numeric surface ID from TASTY_SURFACE_ID env var
@@ -51,6 +53,7 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
         Commands::List { command } => list_command_to_method_params(command),
         Commands::Set { command } => set_command_to_method_params(command),
         Commands::Claude { command } => claude_command_to_method_params(command),
+        #[cfg(debug_assertions)]
         Commands::Debug { command } => debug_command_to_method_params(command),
         // ── standalone ──
         Commands::Split { level, target, direction, r#type, meta, cwd, file, path, url } => {
@@ -331,6 +334,7 @@ fn claude_command_to_method_params(command: &ClaudeCommands) -> (&'static str, s
     }
 }
 
+#[cfg(debug_assertions)]
 fn debug_command_to_method_params(command: &DebugCommands) -> (&'static str, serde_json::Value) {
     match command {
         DebugCommands::Info => ("debug.info", serde_json::json!({})),

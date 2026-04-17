@@ -126,7 +126,8 @@ pub enum Commands {
         #[arg(long)]
         surface: Option<u32>,
     },
-    /// Debug and diagnostic commands (IME simulation, raw key input, etc.)
+    /// Debug and diagnostic commands (IME simulation, raw key input, etc.) — debug builds only
+    #[cfg(debug_assertions)]
     Debug {
         #[command(subcommand)]
         command: DebugCommands,
@@ -504,6 +505,7 @@ pub enum SurfaceMetaCommands {
     },
 }
 
+#[cfg(debug_assertions)]
 #[derive(Subcommand)]
 pub enum DebugCommands {
     /// Show debug info from the running tasty instance

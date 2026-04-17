@@ -143,6 +143,14 @@ impl GuiTestInstance {
             let _ = ShowWindow(self.hwnd, SW_RESTORE);
             let _ = SetForegroundWindow(self.hwnd);
         }
+        #[cfg(target_os = "macos")]
+        {
+            use objc2_app_kit::{NSApplicationActivationOptions, NSRunningApplication};
+            let pid = self.process.id() as i32;
+            if let Some(app) = NSRunningApplication::runningApplicationWithProcessIdentifier(pid) {
+                app.activateWithOptions(NSApplicationActivationOptions::ActivateAllWindows);
+            }
+        }
         std::thread::sleep(Duration::from_millis(100));
     }
 

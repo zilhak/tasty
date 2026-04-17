@@ -457,9 +457,15 @@
 
 #### 시스템
 - `system.info`: 버전, 워크스페이스 수, 활성 워크스페이스 인덱스
-- `system.shutdown`: 헤드리스 모드에서 프로세스를 정상 종료
+
+#### 디버그 전용 (debug 빌드에서만 사용 가능)
+다음 메서드들은 `cfg(debug_assertions)` 게이트로 릴리즈 빌드에서 제외된다. 개발 및 테스트 용도로만 존재한다.
+
+- `system.shutdown`: 테스트 종료 시 프로세스 정상 종료
 - `ui.state`: GUI 오버레이 상태 조회 (settings_open, notification_panel_open, active_workspace, workspace_count, pane_count, tab_count)
+- `ui.screenshot`: 현재 화면을 PNG로 저장
 - `debug.info`: 개발용 디버그 정보 조회 (scale_factor, cell 크기, viewport 등). `src/debug_info.rs`를 수정하여 커스텀 정보 추가 가능
+- `debug` CLI 서브커맨드: `tasty debug info`, `tasty debug ime-*` 등 디버그 관련 CLI 명령
 
 #### 워크스페이스
 - `workspace.list`: 전체 워크스페이스 목록 (이름, 활성 여부, 패인 수)

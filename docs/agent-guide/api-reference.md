@@ -126,8 +126,15 @@ tasty claude hook stop --surface 5  # 특정 surface 지정 (또는 TASTY_SURFAC
 | 메서드 | 파라미터 | 설명 |
 |--------|---------|------|
 | `system.info` | 없음 | 버전, 워크스페이스 수 |
-| `system.shutdown` | 없음 | 헤드리스 모드에서 프로세스 정상 종료 |
-| `ui.state` | 없음 | 현재 UI 상태 (설정창/알림패널 열림 여부, 패인 수 등) |
+
+### 디버그 전용 (debug 빌드에서만 사용 가능)
+
+다음 메서드들은 릴리즈 빌드에 포함되지 않는다. `cargo build` (debug)에서만 사용 가능.
+
+| 메서드 | 파라미터 | 설명 |
+|--------|---------|------|
+| `system.shutdown` | 없음 | 테스트 종료 시 프로세스 정상 종료 |
+| `ui.state` | 없음 | GUI 내부 상태 조회 (설정창/알림패널 열림 여부, 패인 수 등) |
 | `ui.screenshot` | `path?: string` | 스크린샷을 PNG로 저장 (GUI 모드 전용, 비동기) |
 | `debug.info` | 없음 | 디버그 정보 조회 (scale_factor, cell 크기, viewport 등) |
 

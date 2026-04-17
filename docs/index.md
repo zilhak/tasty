@@ -192,7 +192,8 @@ GPU 렌더링된 사이드바에 Git 브랜치, PR 상태, 작업 디렉토리, 
 
 **현재 구현된 기능:**
 - TCP 기반 JSON-RPC 2.0 서버 (127.0.0.1, 랜덤 포트)
-- 64개 메서드 (macOS 전용 2개 포함 66개): system.info/shutdown, workspace.list/create/update, window.list/create/close/focus, pane.list/close, split, tab.list/create/close, surface.list/close/close_self/send/send_key/send_combo/send_to/set_mark/read_since_mark/screen_text/cursor_position/is_typing/send_wait_idle/fire_hook/meta_set/meta_get/meta_unset/meta_list/ime_enable/ime_disable/ime_preedit/ime_commit/ime_status, notification.list/create, tree, hook.set/list/unset, global_hook.set/list/unset, claude.launch/spawn/children/parent/kill/respawn/broadcast/wait/set_idle_state/set_needs_input, message.send/read/count/clear, ui.state/screenshot, debug.info
+- 프로덕션 메서드 (macOS 전용 2개 포함): system.info, workspace.list/create/update, window.list/create/close/focus, pane.list/close, split, tab.list/create/close, surface.list/close/close_self/send/send_key/send_combo/send_to/set_mark/read_since_mark/screen_text/cursor_position/is_typing/send_wait_idle/fire_hook/meta_set/meta_get/meta_unset/meta_list/ime_enable/ime_disable/ime_preedit/ime_commit/ime_status, notification.list/create, tree, hook.set/list/unset, global_hook.set/list/unset, claude.launch/spawn/children/parent/kill/respawn/broadcast/wait/set_idle_state/set_needs_input, message.send/read/count/clear
+- 디버그 전용 메서드 (debug 빌드에서만 사용 가능): system.shutdown, ui.state, ui.screenshot, debug.info
 - 메인 스레드 채널 통신으로 스레드 안전한 상태 접근
 - 앱 시작 시 자동 기동, 종료 시 포트 파일 자동 삭제
 - 헤드리스 모드: `--headless` 플래그로 GUI 없이 IPC 전용 실행 (E2E 테스트/CI 활용)
