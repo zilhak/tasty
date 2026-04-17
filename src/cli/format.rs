@@ -25,24 +25,51 @@ fn format_list_output(command: &ListCommands, result: &serde_json::Value) {
 fn format_tree(result: &serde_json::Value) {
     if let Some(workspaces) = result.as_array() {
         for ws in workspaces {
+            let ws_id = ws.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
             let name = ws.get("name").and_then(|v| v.as_str()).unwrap_or("?");
             let active = ws.get("active").and_then(|v| v.as_bool()).unwrap_or(false);
             let marker = if active { " *" } else { "" };
-            println!("Workspace: {}{}", name, marker);
+            println!("Workspace: {} (id:{}){}",  name, ws_id, marker);
 
             if let Some(panes) = ws.get("panes").and_then(|v| v.as_array()) {
                 for pane in panes {
                     let pid = pane.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
                     let focused = pane.get("focused").and_then(|v| v.as_bool()).unwrap_or(false);
                     let pfx = if focused { ">" } else { " " };
-                    println!("  {} Pane {}", pfx, pid);
+                    println!("  {} Pane {} (id:{})", pfx, pid, pid);
 
                     if let Some(tabs) = pane.get("tabs").and_then(|v| v.as_array()) {
                         for tab in tabs {
+                            let tid = tab.get("id").and_then(|v| v.as_u64());
                             let tname = tab.get("name").and_then(|v| v.as_str()).unwrap_or("?");
                             let tactive = tab.get("active").and_then(|v| v.as_bool()).unwrap_or(false);
                             let tpfx = if tactive { "*" } else { " " };
-                            println!("      {} {}", tpfx, tname);
+
+                            // Extract surface info from the tab's surface field
+                            let surface = tab.get("surface");
+                            let stype = surface.and_then(|s| s.get("type")).and_then(|v| v.as_str());
+                            let sid = surface.and_then(|s| s.get("id")).and_then(|v| v.as_u64());
+
+                            let mut ids = String::new();
+                            if let Some(t) = tid {
+                                ids.push_str(&format!("tab:{}", t));
+                            }
+                            if let Some(s) = sid {
+                                if !ids.is_empty() { ids.push_str(", "); }
+                                ids.push_str(&format!("surface:{}", s));
+                            }
+                            if let Some(t) = stype {
+                                if t != "Terminal" {
+                                    if !ids.is_empty() { ids.push_str(", "); }
+                                    ids.push_str(t);
+                                }
+                            }
+
+                            if ids.is_empty() {
+                                println!("      {} {}", tpfx, tname);
+                            } else {
+                                println!("      {} {} [{}]", tpfx, tname, ids);
+                            }
                         }
                     }
                 }
