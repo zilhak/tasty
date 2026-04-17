@@ -195,6 +195,11 @@ pub fn draw_popups(
         state.dialogs.convert_popup = None;
         state.dialogs.convert_popup_selected = None;
     }
+
+    // Process deferred popup open requests (from popups that open other popups)
+    if let Some((id, scope)) = state.dialogs.pending_popup_open.take() {
+        state.popups.open_with_scope(id, scope);
+    }
 }
 
 /// Build PopupDrawContext from current AppState and layout info.

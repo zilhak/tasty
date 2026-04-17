@@ -166,7 +166,7 @@ pub fn apply_convert_action(state: &mut AppState, action: ConvertAction) {
             state.dialogs.markdown_convert_surface_id = Some(surface_id);
             state.dialogs.file_open_pane_id = Some(pane_id);
             state.dialogs.markdown_open_buffer.clear();
-            state.popups.open_with_scope("markdown_open", popup::PopupScope::Surface(surface_id));
+            state.dialogs.pending_popup_open = Some(("markdown_open", popup::PopupScope::Surface(surface_id)));
         }
         ConvertAction::Explorer => {
             state.convert_surface_to_explorer(surface_id);
@@ -176,7 +176,7 @@ pub fn apply_convert_action(state: &mut AppState, action: ConvertAction) {
             state.dialogs.html_convert_surface_id = Some(surface_id);
             state.dialogs.file_open_pane_id = Some(pane_id);
             state.dialogs.html_open_buffer.clear();
-            state.popups.open_with_scope("html_open", popup::PopupScope::Surface(surface_id));
+            state.dialogs.pending_popup_open = Some(("html_open", popup::PopupScope::Surface(surface_id)));
         }
     }
 }

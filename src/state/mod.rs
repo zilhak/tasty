@@ -121,6 +121,8 @@ pub struct DialogState {
     pub file_open_pane_id: Option<u32>,
     /// Internal flag for cancel button in file open popups
     pub file_popup_cancel: bool,
+    /// Deferred popup open request: (popup_id, scope). Processed after popup draw loop.
+    pub pending_popup_open: Option<(&'static str, crate::ui::popup::PopupScope)>,
 }
 
 impl DialogState {
@@ -137,6 +139,7 @@ impl DialogState {
             html_open_buffer: String::new(),
             file_open_pane_id: None,
             file_popup_cancel: false,
+            pending_popup_open: None,
         }
     }
 
