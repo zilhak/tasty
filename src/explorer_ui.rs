@@ -345,6 +345,7 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel, keys: &[Pendi
 
             // Right: File viewer
             ui.vertical(|ui| {
+                ui.set_min_width(ui.available_width());
                 if let Some(ref path) = panel.selected_file {
                     // File path header
                     ui.label(
