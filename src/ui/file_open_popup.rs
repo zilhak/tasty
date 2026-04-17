@@ -7,6 +7,23 @@ use crate::ui::popup::{self, PopupAction, PopupContent, PopupId, PopupScope};
 
 const ITEM_HEIGHT: f32 = 22.0;
 const MAX_RECENT: usize = 10;
+const HORIZONTAL_MARGIN: f32 = 8.0;
+/// Base content height: label + spacing + input row + spacing + button row
+const BASE_CONTENT_HEIGHT: f32 = 16.0 + 4.0 + 22.0 + 8.0 + 24.0;
+/// Extra height for "Recent Files" label
+const RECENT_HEADER_HEIGHT: f32 = 20.0;
+
+fn compute_popup_size(recent_count: usize) -> egui::Vec2 {
+    let recent_h = if recent_count > 0 {
+        RECENT_HEADER_HEIGHT + (recent_count.min(MAX_RECENT) as f32 * ITEM_HEIGHT) + 4.0
+    } else {
+        0.0
+    };
+    egui::vec2(
+        360.0,
+        popup::TITLE_BAR_HEIGHT + popup::CONTENT_MARGIN * 2.0 + BASE_CONTENT_HEIGHT + recent_h,
+    )
+}
 
 // ── Markdown Open Popup ──
 
@@ -24,7 +41,8 @@ impl PopupContent for MarkdownOpenPopup {
     }
 
     fn default_size(&self) -> egui::Vec2 {
-        egui::vec2(360.0, popup::TITLE_BAR_HEIGHT + popup::CONTENT_MARGIN * 2.0 + 200.0)
+        let recent = crate::recent_files::RecentFiles::load();
+        compute_popup_size(recent.markdown.len())
     }
 
     fn scope(&self) -> PopupScope { PopupScope::Window }
@@ -52,7 +70,8 @@ impl PopupContent for HtmlOpenPopup {
     }
 
     fn default_size(&self) -> egui::Vec2 {
-        egui::vec2(360.0, popup::TITLE_BAR_HEIGHT + popup::CONTENT_MARGIN * 2.0 + 200.0)
+        let recent = crate::recent_files::RecentFiles::load();
+        compute_popup_size(recent.html.len())
     }
 
     fn scope(&self) -> PopupScope { PopupScope::Window }
@@ -75,6 +94,12 @@ enum FileType {
 fn draw_file_open_content(ui: &mut egui::Ui, state: &mut AppState, file_type: FileType) -> PopupAction {
     let th = theme::theme();
     let ctx = ui.ctx().clone();
+
+    // Add horizontal margin
+    let available = ui.available_rect_before_wrap();
+    let inner_rect = available.shrink2(egui::vec2(HORIZONTAL_MARGIN, 0.0));
+    let mut child_ui = ui.new_child(egui::UiBuilder::new().max_rect(inner_rect));
+    let ui = &mut child_ui;
 
     // Escape to close
     if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
