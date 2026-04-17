@@ -23,11 +23,19 @@ pub fn handle_tab_list(state: &AppState, id: serde_json::Value, params: &serde_j
             .iter()
             .enumerate()
             .map(|(i, tab)| {
-                json!({
+                let surface = tab.surface();
+                let surface_type = surface.type_name();
+                let surface_id = surface.surface_id();
+                let mut entry = json!({
                     "id": tab.id,
                     "name": tab.name,
                     "active": i == pane.active_tab,
-                })
+                    "type": surface_type,
+                });
+                if let Some(sid) = surface_id {
+                    entry["surface_id"] = json!(sid);
+                }
+                entry
             })
             .collect()
     } else {

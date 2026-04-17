@@ -152,6 +152,12 @@ pub enum ListCommands {
     Surfaces,
     /// List panes across all workspaces
     Panes,
+    /// List tabs in a pane
+    Tabs {
+        /// Pane ID (required)
+        #[arg(long)]
+        pane: u32,
+    },
     /// Show system info
     Info,
     /// List notifications
