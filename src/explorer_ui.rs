@@ -386,6 +386,13 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel, keys: &[Pendi
                                 );
                             }
                         });
+                } else {
+                    ui.centered_and_justified(|ui| {
+                        ui.label(
+                            egui::RichText::new(crate::i18n::t("explorer.unsupported_format"))
+                                .color(th.overlay0),
+                        );
+                    });
                 }
             } else {
                 ui.centered_and_justified(|ui| {
