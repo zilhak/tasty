@@ -237,7 +237,8 @@ fn draw_file_open_content(ui: &mut egui::Ui, state: &mut AppState, file_type: Fi
             // For local file paths, validate existence and format
             let is_remote = path_value.starts_with("http://") || path_value.starts_with("https://");
             if !is_remote {
-                let file_path = std::path::Path::new(&path_value);
+                let local_path = path_value.strip_prefix("file://").unwrap_or(&path_value);
+                let file_path = std::path::Path::new(local_path);
                 if !file_path.exists() {
                     state.dialogs.file_open_error = Some(t("dialog.error.file_not_found").to_string());
                     return PopupAction::None;
@@ -265,15 +266,16 @@ fn apply_open(state: &mut AppState, file_type: FileType, path: &str) {
 
     match file_type {
         FileType::Markdown => {
-            recent.add_markdown(path.to_string());
+            let file_path = path.strip_prefix("file://").unwrap_or(path).to_string();
+            recent.add_markdown(file_path.clone());
             if let Some(convert_sid) = state.dialogs.markdown_convert_surface_id.take() {
-                state.convert_surface_to_markdown(convert_sid, path.to_string());
+                state.convert_surface_to_markdown(convert_sid, file_path);
             } else {
                 let pane_id = state.dialogs.file_open_pane_id.unwrap_or(
                     state.active_workspace().focused_pane,
                 );
                 state.active_workspace_mut().focused_pane = pane_id;
-                let _ = state.add_markdown_tab(path.to_string());
+                let _ = state.add_markdown_tab(file_path);
             }
         }
         FileType::Html => {
