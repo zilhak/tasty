@@ -310,11 +310,13 @@ impl MainWindow {
                         }
                     }
                     Some(2) => {
-                        // Create empty tab first, then show markdown dialog targeting it
+                        // Create empty tab first, then show markdown popup targeting it
                         self.state.active_workspace_mut().focused_pane = pane_id;
                         if let Some((_tab_id, surface_id)) = self.state.add_empty_tab() {
                             self.state.dialogs.markdown_convert_surface_id = Some(surface_id);
-                            self.state.dialogs.markdown_path = Some((pane_id, String::new()));
+                            self.state.dialogs.file_open_pane_id = Some(pane_id);
+                            self.state.dialogs.markdown_open_buffer.clear();
+                            self.state.popups.open_with_scope("markdown_open", crate::ui::popup::PopupScope::Surface(surface_id));
                         }
                     }
                     Some(3) => {
@@ -325,11 +327,13 @@ impl MainWindow {
                         let _ = self.state.add_explorer_tab(home);
                     }
                     Some(4) => {
-                        // Create empty tab first, then show HTML dialog targeting it
+                        // Create empty tab first, then show HTML popup targeting it
                         self.state.active_workspace_mut().focused_pane = pane_id;
                         if let Some((_tab_id, surface_id)) = self.state.add_empty_tab() {
                             self.state.dialogs.html_convert_surface_id = Some(surface_id);
-                            self.state.dialogs.html_url = Some((pane_id, String::new()));
+                            self.state.dialogs.file_open_pane_id = Some(pane_id);
+                            self.state.dialogs.html_open_buffer.clear();
+                            self.state.popups.open_with_scope("html_open", crate::ui::popup::PopupScope::Surface(surface_id));
                         }
                     }
                     _ => {}

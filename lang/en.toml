@@ -4,6 +4,7 @@
 name = "Tasty"
 
 [button]
+ok = "OK"
 cancel = "Cancel"
 save = "Save"
 new_workspace = "+ New Workspace"
@@ -233,3 +234,14 @@ terminal = "Terminal"
 markdown = "Markdown..."
 explorer = "Explorer"
 html = "HTML..."
+
+[dialog]
+recent_files = "Recent Files"
+
+[dialog.markdown]
+title = "Open Markdown File"
+path_label = "Enter file path:"
+
+[dialog.html]
+title = "Open HTML"
+url_label = "Enter URL or file path:"

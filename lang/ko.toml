@@ -4,6 +4,7 @@
 name = "Tasty"
 
 [button]
+ok = "확인"
 cancel = "취소"
 save = "저장"
 new_workspace = "+ 새 워크스페이스"
@@ -233,3 +234,14 @@ terminal = "터미널"
 markdown = "마크다운..."
 explorer = "탐색기"
 html = "HTML..."
+
+[dialog]
+recent_files = "최근 파일"
+
+[dialog.markdown]
+title = "마크다운 파일 열기"
+path_label = "파일 경로 입력:"
+
+[dialog.html]
+title = "HTML 열기"
+url_label = "URL 또는 파일 경로 입력:"

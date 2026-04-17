@@ -2,13 +2,14 @@ pub(crate) mod convert_popup;
 mod dialog;
 mod divider;
 mod egui_panels;
+pub(crate) mod file_open_popup;
 pub(crate) mod notification;
 pub(crate) mod notification_popup;
 pub mod popup;
 mod sidebar;
 mod tab_bar;
 
-pub use dialog::{draw_html_url_dialog, draw_markdown_path_dialog, draw_ws_rename_dialog};
+pub use dialog::draw_ws_rename_dialog;
 pub use divider::{draw_pane_dividers, draw_surface_highlights};
 pub use egui_panels::draw_egui_panels;
 pub use notification::draw_popups;

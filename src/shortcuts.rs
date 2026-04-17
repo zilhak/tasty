@@ -243,7 +243,9 @@ impl MainWindow {
                     "quit_minimize" => { let _ = self.proxy.send_event(crate::AppEvent::Minimize); }
                     "open_markdown" => {
                         let pane_id = self.state.active_workspace().focused_pane;
-                        self.state.dialogs.markdown_path = Some((pane_id, String::new()));
+                        self.state.dialogs.file_open_pane_id = Some(pane_id);
+                        self.state.dialogs.markdown_open_buffer.clear();
+                        self.state.popups.open_centered_focused("markdown_open");
                     }
                     "open_explorer" => {
                         let home = directories::BaseDirs::new()
@@ -262,7 +264,9 @@ impl MainWindow {
                         if let Some(sid) = self.state.focused_surface_id() {
                             let pane_id = self.state.active_workspace().focused_pane;
                             self.state.dialogs.markdown_convert_surface_id = Some(sid);
-                            self.state.dialogs.markdown_path = Some((pane_id, String::new()));
+                            self.state.dialogs.file_open_pane_id = Some(pane_id);
+                            self.state.dialogs.markdown_open_buffer.clear();
+                            self.state.popups.open_with_scope("markdown_open", crate::ui::popup::PopupScope::Surface(sid));
                         }
                     }
                     "convert_to_explorer" => {
@@ -466,7 +470,9 @@ impl MainWindow {
         }
         if matches_binding(&kb.open_markdown, key, mods) {
             let pane_id = state.active_workspace().focused_pane;
-            state.dialogs.markdown_path = Some((pane_id, String::new()));
+            state.dialogs.file_open_pane_id = Some(pane_id);
+            state.dialogs.markdown_open_buffer.clear();
+            state.popups.open_centered_focused("markdown_open");
             return true;
         }
         if matches_binding(&kb.open_explorer, key, mods) {
@@ -488,7 +494,9 @@ impl MainWindow {
             if let Some(sid) = state.focused_surface_id() {
                 let pane_id = state.active_workspace().focused_pane;
                 state.dialogs.markdown_convert_surface_id = Some(sid);
-                state.dialogs.markdown_path = Some((pane_id, String::new()));
+                state.dialogs.file_open_pane_id = Some(pane_id);
+                state.dialogs.markdown_open_buffer.clear();
+                state.popups.open_with_scope("markdown_open", crate::ui::popup::PopupScope::Surface(sid));
             }
             return true;
         }

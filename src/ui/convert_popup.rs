@@ -164,7 +164,9 @@ pub fn apply_convert_action(state: &mut AppState, action: ConvertAction) {
         ConvertAction::Markdown => {
             let pane_id = state.active_workspace().focused_pane;
             state.dialogs.markdown_convert_surface_id = Some(surface_id);
-            state.dialogs.markdown_path = Some((pane_id, String::new()));
+            state.dialogs.file_open_pane_id = Some(pane_id);
+            state.dialogs.markdown_open_buffer.clear();
+            state.popups.open_with_scope("markdown_open", popup::PopupScope::Surface(surface_id));
         }
         ConvertAction::Explorer => {
             state.convert_surface_to_explorer(surface_id);
@@ -172,7 +174,9 @@ pub fn apply_convert_action(state: &mut AppState, action: ConvertAction) {
         ConvertAction::Html => {
             let pane_id = state.active_workspace().focused_pane;
             state.dialogs.html_convert_surface_id = Some(surface_id);
-            state.dialogs.html_url = Some((pane_id, String::new()));
+            state.dialogs.file_open_pane_id = Some(pane_id);
+            state.dialogs.html_open_buffer.clear();
+            state.popups.open_with_scope("html_open", popup::PopupScope::Surface(surface_id));
         }
     }
 }

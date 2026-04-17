@@ -103,20 +103,24 @@ pub struct DialogState {
     pub ws_rename: Option<(usize, WsRenameField, String)>,
     /// Tab rename: (pane_id, tab_index, edit_buffer)
     pub tab_rename: Option<(u32, usize, String)>,
-    /// Markdown file path input: (pane_id, path_buffer)
-    pub markdown_path: Option<(u32, String)>,
     /// Convert to markdown: target surface id
     pub markdown_convert_surface_id: Option<u32>,
     /// Surface convert popup: target surface_id (None = closed)
     pub convert_popup: Option<u32>,
     /// Keyboard-selected index in the convert popup menu
     pub convert_popup_selected: Option<usize>,
-    /// HTML URL input: (pane_id, url_buffer)
-    pub html_url: Option<(u32, String)>,
     /// Convert to html: target surface id
     pub html_convert_surface_id: Option<u32>,
     /// Pending native context menu
     pub pending_native_menu: Option<PendingNativeMenu>,
+    /// Markdown open popup: path buffer
+    pub markdown_open_buffer: String,
+    /// HTML open popup: url buffer
+    pub html_open_buffer: String,
+    /// Which pane the file open popup was triggered from
+    pub file_open_pane_id: Option<u32>,
+    /// Internal flag for cancel button in file open popups
+    pub file_popup_cancel: bool,
 }
 
 impl DialogState {
@@ -124,21 +128,21 @@ impl DialogState {
         Self {
             ws_rename: None,
             tab_rename: None,
-            markdown_path: None,
             markdown_convert_surface_id: None,
             convert_popup: None,
             convert_popup_selected: None,
-            html_url: None,
             html_convert_surface_id: None,
             pending_native_menu: None,
+            markdown_open_buffer: String::new(),
+            html_open_buffer: String::new(),
+            file_open_pane_id: None,
+            file_popup_cancel: false,
         }
     }
 
     /// Returns true if any dialog with text input is open.
     pub fn has_text_input_open(&self) -> bool {
-        self.html_url.is_some()
-            || self.markdown_path.is_some()
-            || self.ws_rename.is_some()
+        self.ws_rename.is_some()
             || self.tab_rename.is_some()
     }
 
@@ -179,6 +183,8 @@ impl AppState {
                 let contents: Vec<Box<dyn crate::ui::popup::PopupContent>> = vec![
                     Box::new(crate::ui::notification_popup::NotificationPopup::new()),
                     Box::new(crate::ui::convert_popup::ConvertSurfacePopup::new()),
+                    Box::new(crate::ui::file_open_popup::MarkdownOpenPopup::new()),
+                    Box::new(crate::ui::file_open_popup::HtmlOpenPopup::new()),
                 ];
                 contents
             },
@@ -186,6 +192,8 @@ impl AppState {
                 let mut pm = crate::ui::PopupManager::new();
                 pm.register_content(&crate::ui::notification_popup::NotificationPopup::new());
                 pm.register_content(&crate::ui::convert_popup::ConvertSurfacePopup::new());
+                pm.register_content(&crate::ui::file_open_popup::MarkdownOpenPopup::new());
+                pm.register_content(&crate::ui::file_open_popup::HtmlOpenPopup::new());
                 pm
             },
         })
