@@ -80,13 +80,22 @@ fn collect_surface_info(
             "pane_id": pane_id,
             "workspace_id": workspace_id,
             "tab_index": tab_idx,
+            "type": "Terminal",
             "cols": node.terminal.cols(),
             "rows": node.terminal.rows(),
         }));
     } else if let Some(group) = surface.as_surface_group() {
         collect_surface_layout_info(group.layout(), pane_id, workspace_id, tab_idx, out);
+    } else if let Some(id) = surface.surface_id() {
+        // Non-terminal surfaces (Markdown, Explorer, Html, Empty)
+        out.push(json!({
+            "id": id,
+            "pane_id": pane_id,
+            "workspace_id": workspace_id,
+            "tab_index": tab_idx,
+            "type": surface.type_name(),
+        }));
     }
-    // Non-terminal surfaces don't have listable surfaces.
 }
 
 fn collect_surface_layout_info(
