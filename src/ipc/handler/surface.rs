@@ -3,6 +3,54 @@ use serde_json::json;
 use crate::ipc::protocol::JsonRpcResponse;
 use crate::state::AppState;
 
+/// Parse key combo strings like "ctrl+c", "ctrl+shift+c", "alt+x" into terminal bytes.
+fn parse_key_combo(input: &str) -> Option<Vec<u8>> {
+    let parts: Vec<&str> = input.split('+').collect();
+    if parts.len() < 2 {
+        return None;
+    }
+
+    let key = parts.last()?;
+    let modifiers: Vec<&str> = parts[..parts.len() - 1].to_vec();
+
+    let has_ctrl = modifiers.iter().any(|&m| m.eq_ignore_ascii_case("ctrl"));
+    let has_alt = modifiers.iter().any(|&m| m.eq_ignore_ascii_case("alt"));
+
+    if !has_ctrl && !has_alt {
+        return None;
+    }
+
+    let mut bytes = Vec::new();
+
+    if has_ctrl && key.len() == 1 {
+        let ch = key.chars().next()?.to_ascii_lowercase();
+        if ch >= 'a' && ch <= 'z' {
+            if has_alt {
+                bytes.push(0x1B);
+            }
+            bytes.push(ch as u8 - b'a' + 1);
+            return Some(bytes);
+        } else if ch == '[' {
+            bytes.push(0x1B);
+            return Some(bytes);
+        } else if ch == '\\' {
+            bytes.push(0x1C);
+            return Some(bytes);
+        } else if ch == ']' {
+            bytes.push(0x1D);
+            return Some(bytes);
+        }
+    }
+
+    if has_alt && !has_ctrl && key.len() == 1 {
+        bytes.push(0x1B);
+        bytes.extend_from_slice(key.as_bytes());
+        return Some(bytes);
+    }
+
+    None
+}
+
 use super::require_surface_id;
 
 pub(crate) fn handle_surface_list(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {
@@ -134,10 +182,15 @@ pub(crate) fn handle_surface_send_key(
         "f11" => b"\x1b[23~".to_vec(),
         "f12" => b"\x1b[24~".to_vec(),
         other => {
-            if let Some(terminal) = state.find_terminal_by_id_mut(surface_id) {
+            // Parse modifier+key combos like "ctrl+c", "alt+x"
+            if let Some(combo_bytes) = parse_key_combo(other) {
+                combo_bytes
+            } else if let Some(terminal) = state.find_terminal_by_id_mut(surface_id) {
                 terminal.send_key(other);
+                return JsonRpcResponse::success(id, json!({ "sent": true, "surface_id": surface_id }));
+            } else {
+                return JsonRpcResponse::invalid_params(id, format!("Surface {} not found", surface_id));
             }
-            return JsonRpcResponse::success(id, json!({ "sent": true, "surface_id": surface_id }));
         }
     };
     if let Some(terminal) = state.find_terminal_by_id_mut(surface_id) {
