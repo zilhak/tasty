@@ -250,56 +250,6 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel, keys: &[Pendi
                     }
                 });
 
-
-            // ── Bookmark name input popup ──
-            if panel.pending_bookmark.is_some() {
-                let mut close_popup = false;
-                let mut confirm = false;
-                egui::Area::new(egui::Id::new("bookmark_name_popup"))
-                    .order(egui::Order::Foreground)
-                    .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-                    .show(ui.ctx(), |ui| {
-                        egui::Frame::new()
-                            .fill(th.surface0)
-                            .stroke(egui::Stroke::new(1.0, th.surface1))
-                            .corner_radius(4.0)
-                            .inner_margin(egui::Margin::same(8))
-                            .show(ui, |ui| {
-                                ui.set_min_width(200.0);
-                                ui.label(
-                                    egui::RichText::new(crate::i18n::t("explorer.bookmark_name_label"))
-                                        .color(th.text),
-                                );
-                                ui.add_space(4.0);
-                                if let Some(ref mut pending) = panel.pending_bookmark {
-                                    let resp = ui.text_edit_singleline(&mut pending.name);
-                                    resp.request_focus();
-                                    if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                                        confirm = true;
-                                    }
-                                    if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-                                        close_popup = true;
-                                    }
-                                }
-                            });
-                    });
-                if confirm {
-                    if let Some(pending) = panel.pending_bookmark.take() {
-                        let name = if pending.name.trim().is_empty() {
-                            std::path::Path::new(&pending.path)
-                                .file_name()
-                                .map(|n| n.to_string_lossy().to_string())
-                                .unwrap_or_else(|| pending.path.clone())
-                        } else {
-                            pending.name
-                        };
-                        panel.bookmarks.push(crate::model::Bookmark { name, path: pending.path });
-                    }
-                } else if close_popup {
-                    panel.pending_bookmark = None;
-                }
-            }
-
             ui.add_space(2.0);
             ui.separator();
 

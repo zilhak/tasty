@@ -125,6 +125,8 @@ pub struct DialogState {
     pub file_popup_cancel: bool,
     /// Deferred popup open request: (popup_id, scope). Processed after popup draw loop.
     pub pending_popup_open: Option<(&'static str, crate::ui::popup::PopupScope)>,
+    /// Bookmark name input: (pane_id, path, name_buffer)
+    pub bookmark_input: Option<(u32, String, String)>,
 }
 
 impl DialogState {
@@ -142,6 +144,7 @@ impl DialogState {
             file_open_pane_id: None,
             file_popup_cancel: false,
             pending_popup_open: None,
+            bookmark_input: None,
         }
     }
 
@@ -190,6 +193,7 @@ impl AppState {
                     Box::new(crate::ui::convert_popup::ConvertSurfacePopup::new()),
                     Box::new(crate::ui::file_open_popup::MarkdownOpenPopup::new()),
                     Box::new(crate::ui::file_open_popup::HtmlOpenPopup::new()),
+                    Box::new(crate::ui::bookmark_popup::BookmarkNamePopup::new()),
                 ];
                 contents
             },
@@ -199,6 +203,7 @@ impl AppState {
                 pm.register_content(&crate::ui::convert_popup::ConvertSurfacePopup::new());
                 pm.register_content(&crate::ui::file_open_popup::MarkdownOpenPopup::new());
                 pm.register_content(&crate::ui::file_open_popup::HtmlOpenPopup::new());
+                pm.register_content(&crate::ui::bookmark_popup::BookmarkNamePopup::new());
                 pm
             },
         })

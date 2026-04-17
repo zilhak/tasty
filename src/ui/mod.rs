@@ -1,3 +1,4 @@
+pub(crate) mod bookmark_popup;
 pub(crate) mod convert_popup;
 mod dialog;
 mod divider;

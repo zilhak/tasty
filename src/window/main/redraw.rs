@@ -366,10 +366,8 @@ impl MainWindow {
                                 .file_name()
                                 .map(|n| n.to_string_lossy().to_string())
                                 .unwrap_or_default();
-                            panel.pending_bookmark = Some(crate::model::PendingBookmark {
-                                path: path.clone(),
-                                name: folder_name,
-                            });
+                            self.state.dialogs.bookmark_input = Some((pane_id, path.clone(), folder_name));
+                            self.state.popups.open_centered_focused("bookmark_name");
                         }
                     }
                 }

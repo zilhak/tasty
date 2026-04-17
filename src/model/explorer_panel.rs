@@ -41,19 +41,10 @@ pub struct ExplorerPanel {
     pub address_bar_editing: bool,
     /// Bookmarked directories.
     pub bookmarks: Vec<Bookmark>,
-    /// Pending bookmark addition: folder path waiting for name input.
-    pub pending_bookmark: Option<PendingBookmark>,
     /// Whether the file preview panel is visible.
     pub show_preview: bool,
 }
 
-/// State for the bookmark name input popup.
-pub struct PendingBookmark {
-    /// Path to bookmark.
-    pub path: String,
-    /// User-editable name (defaults to folder name).
-    pub name: String,
-}
 
 impl ExplorerPanel {
     pub fn new(id: u32, root_path: String) -> Self {
@@ -83,7 +74,6 @@ impl ExplorerPanel {
             address_bar_text: root_path,
             address_bar_editing: false,
             bookmarks: Vec::new(),
-            pending_bookmark: None,
             show_preview: true,
         }
     }
