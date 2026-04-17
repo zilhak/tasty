@@ -125,6 +125,9 @@ pub fn draw_egui_panels(
         };
 
         if let Some(md_panel) = surface.as_markdown_mut() {
+            // Check for file changes and auto-reload
+            md_panel.check_reload();
+
             let scroll_line = 24.0;
             let scroll_page = info.logical_h * 0.8;
             // Read keyboard scroll from dispatched key queue (not egui global input)
@@ -157,12 +160,16 @@ pub fn draw_egui_panels(
                         .fill(th.crust)
                         .inner_margin(egui::Margin::same(8))
                         .show(&mut clip_ui, |ui| {
+                            // Force the frame content to fill the available width
+                            ui.set_min_width(ui.available_width());
                             if key_scroll_y != 0.0 {
                                 ui.scroll_with_delta(egui::vec2(0.0, key_scroll_y));
                             }
                             egui::ScrollArea::vertical()
                                 .id_salt(format!("md_scroll_{}", id_suffix))
                                 .show(ui, |ui| {
+                                    // Ensure markdown text wraps at the available width
+                                    ui.set_min_width(ui.available_width());
                                     ui.style_mut().interaction.selectable_labels = true;
                                     let content = md_panel.content.clone();
                                     crate::markdown_ui::render_markdown(ui, &content);

@@ -126,6 +126,7 @@ pub fn render_markdown(ui: &mut egui::Ui, content: &str) {
 fn render_inline_markdown(ui: &mut egui::Ui, text: &str) {
     let th = theme::theme();
     let mut job = egui::text::LayoutJob::default();
+    job.wrap.max_width = ui.available_width();
     let default_color = th.subtext1;
     let code_color = th.green;
     let bold_color = th.text;
