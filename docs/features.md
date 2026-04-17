@@ -127,7 +127,7 @@
 - TerminalSurface가 분할 시 자동으로 SurfaceGroupNode으로 변환
 - **패닉 없는 분할 구현**: PTY/Terminal을 구조적 변경 이전에 선행 생성 — 리소스 생성 실패 시 레이아웃이 변경되지 않음
 - `PaneNode::split_pane_in_place`: `std::mem::replace` 2-step 패턴으로 소유권 이동 없이 트리 내부 노드를 in-place 변경
-- `SurfaceGroupLayout::split_with_node`: 소유권 기반 infallible 분할 — 사전 생성된 SurfaceNode를 받아 구조적 변경 중 패닉 경로 없음
+- `SurfaceGroupLayout::split_with_surface`: 소유권 기반 infallible 분할 — 사전 생성된 `Box<dyn Surface>`를 받아 모든 surface 타입(Terminal, Markdown, Explorer, Html) 지원. `split_with_node`는 TerminalSurface 전용 편의 래퍼
 - Workspace/Tab/SurfaceGroupNode 내부 Option 래핑 + take/put 패턴: split 함수가 infallible이므로 take 이후 put이 항상 실행됨 보장
 - 각 Surface를 scissor rect로 독립 렌더링
 - 뷰포트별 유니폼 갱신 (grid_offset을 각 Surface rect에 맞게 조정)
@@ -481,16 +481,16 @@
 
 #### 패인
 - `pane.list`: 전체 워크스페이스의 패인 목록 (포커스 여부, 탭 수)
-- `split`: 통합 분할 명령. `level`(pane/surface), `target_id`(전역 ID, cross-workspace), `direction`(vertical/horizontal) 파라미터. 포커스 이동 없음
+- `split`: 통합 분할 명령. `level`(pane/surface), `target_surface`(surface ID/nickname) 또는 `target_pane`(pane ID)으로 대상 지정, `direction`(vertical/horizontal), `type`(terminal/markdown/explorer/html) 파라미터. pane/surface 레벨 모두 비터미널 타입 지원. 포커스 이동 없음
 - `pane.close`: 패인 닫기 (unsplit)
 
 #### 탭
-- `tab.list`: 지정 패인의 탭 목록
+- `tab.list`: 지정 패인의 탭 목록 (id, name, type, surface_id, active)
 - `tab.create`: 지정 패인에 새 탭 추가
 - `tab.close`: 탭 닫기
 
-#### 서피스 (터미널)
-- `surface.list`: 전체 워크스페이스의 서피스 목록 (id, pane_id, tab_index, cols, rows)
+#### 서피스
+- `surface.list`: 전체 워크스페이스의 서피스 목록 (id, type, pane_id, tab_index, cols/rows). 비터미널 서피스(Markdown, Explorer, Html)도 포함
 - `surface.close`: 서피스 닫기
 - `surface.close_self`: 호출한 서피스 자신을 닫기 (TASTY_SURFACE_ID 기반)
 
@@ -587,7 +587,8 @@
 - `tasty` 명령에 서브커맨드가 있으면 CLI 모드, 없으면 GUI 모드로 동작
 - clap 기반 그룹형 서브커맨드: `new`, `close`, `list`, `set`, `send`, `read`, `unset`, `claude`, `notify`, `surface-meta`, `is-typing`, `debug`
 - 포트 파일에서 포트 번호를 읽어 TCP 연결 후 JSON-RPC 요청/응답
-- `list tree` 커맨드: 워크스페이스/패인/탭 계층을 트리 형태로 표시
+- `list tree` 커맨드: 워크스페이스/패인/탭 계층을 트리 형태로 표시 (ID, surface type 포함)
+- `list tabs --pane ID` 커맨드: 지정 패인의 탭 목록 조회 (id, name, type, surface_id)
 - 에러 시 종료 코드 1 반환
 
 #### 포커스 독립 원칙

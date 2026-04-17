@@ -31,8 +31,9 @@ fi
 
 ```bash
 tasty list info     # 시스템 정보
-tasty list tree     # 워크스페이스/패인/탭 구조
-tasty list surfaces # 서피스 목록
+tasty list tree     # 워크스페이스/패인/탭 구조 (ID 포함)
+tasty list surfaces # 서피스 목록 (비터미널 포함)
+tasty list tabs --pane ID  # 탭 목록 (type, surface_id 포함)
 tasty send text "ls -la"
 tasty send key enter
 ```
