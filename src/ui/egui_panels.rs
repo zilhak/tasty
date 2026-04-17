@@ -89,7 +89,7 @@ pub fn draw_egui_panels(
     let surface_keys: Vec<PendingKeyEvent> = state.pending_surface_keys.drain(..).collect();
 
     // Second pass: render each egui panel.
-    let mut pending_explorer_action: Option<(u32, crate::explorer_ui::ExplorerAction)> = None;
+    let mut pending_explorer_action: Option<(u32, Option<u32>, crate::explorer_ui::ExplorerAction)> = None;
     let mut pending_empty_convert: Option<u32> = None;
 
     for info in &infos {
@@ -183,7 +183,7 @@ pub fn draw_egui_panels(
                         .inner_margin(egui::Margin::same(4))
                         .show(&mut clip_ui, |ui| {
                             if let Some(act) = crate::explorer_ui::draw_explorer(ui, exp_panel, keys) {
-                                pending_explorer_action = Some((info.pane_id, act));
+                                pending_explorer_action = Some((info.pane_id, info.surface_id, act));
                             }
                         });
                 });
@@ -248,7 +248,7 @@ pub fn draw_egui_panels(
     }
 
     // Process deferred explorer actions (requires state mutation outside the render loop)
-    if let Some((pane_id, action)) = pending_explorer_action {
+    if let Some((pane_id, surface_id, action)) = pending_explorer_action {
         state.active_workspace_mut().focused_pane = pane_id;
         match action {
             crate::explorer_ui::ExplorerAction::OpenMarkdownTab(path) => {
@@ -258,9 +258,9 @@ pub fn draw_egui_panels(
                 let url = format!("file://{}", path);
                 let _ = state.add_html_tab(url);
             }
-            crate::explorer_ui::ExplorerAction::FolderContextMenu(path, is_bookmarked, x, y) => {
+            crate::explorer_ui::ExplorerAction::FolderContextMenu { path, is_bookmarked, x, y } => {
                 state.dialogs.pending_native_menu = Some(crate::state::PendingNativeMenu::ExplorerFolder {
-                    pane_id, path, is_bookmarked, x, y,
+                    surface_id: surface_id.unwrap_or(0), path, is_bookmarked, x, y,
                 });
             }
         }

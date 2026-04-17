@@ -340,7 +340,7 @@ impl MainWindow {
                 }
                 self.mark_dirty();
             }
-            PendingNativeMenu::ExplorerFolder { pane_id, path, is_bookmarked, x, y } => {
+            PendingNativeMenu::ExplorerFolder { surface_id, path, is_bookmarked, x, y } => {
                 let label = if is_bookmarked {
                     crate::i18n::t("explorer.bookmark_remove")
                 } else {
@@ -349,26 +349,21 @@ impl MainWindow {
                 let items = [MenuItem::new(1, label)];
                 let result = show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
                 if result == Some(1) {
-                    // Find the explorer panel in the specific pane's active tab
-                    let panel = self.state.engine.workspaces.iter_mut()
-                        .flat_map(|ws| {
-                            ws.pane_layout_mut().find_pane_mut(pane_id)
-                                .into_iter()
-                                .flat_map(|pane| pane.tabs.iter_mut())
-                                .filter_map(|tab| tab.surface_mut().as_explorer_mut())
-                        })
-                        .next();
-                    if let Some(panel) = panel {
-                        if is_bookmarked {
+                    if is_bookmarked {
+                        // Find explorer by surface_id and remove bookmark
+                        self.state.with_explorer_mut(surface_id, |panel| {
                             panel.remove_bookmark(&path);
-                        } else {
-                            let folder_name = std::path::Path::new(&path)
-                                .file_name()
-                                .map(|n| n.to_string_lossy().to_string())
-                                .unwrap_or_default();
-                            self.state.dialogs.bookmark_input = Some((pane_id, path.clone(), folder_name));
-                            self.state.popups.open_centered_focused("bookmark_name");
-                        }
+                        });
+                    } else {
+                        let folder_name = std::path::Path::new(&path)
+                            .file_name()
+                            .map(|n| n.to_string_lossy().to_string())
+                            .unwrap_or_default();
+                        self.state.dialogs.bookmark_input = Some((surface_id, path.clone(), folder_name));
+                        self.state.popups.open_with_scope(
+                            "bookmark_name",
+                            crate::ui::popup::PopupScope::Surface(surface_id),
+                        );
                     }
                 }
                 self.mark_dirty();

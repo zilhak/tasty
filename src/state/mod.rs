@@ -95,7 +95,7 @@ pub enum PendingNativeMenu {
     /// Pane/empty area right-click: Open Markdown... / Open Explorer / Open HTML...
     Pane { pane_id: u32, x: f32, y: f32 },
     /// Explorer folder right-click: Bookmark add/remove
-    ExplorerFolder { pane_id: u32, path: String, is_bookmarked: bool, x: f32, y: f32 },
+    ExplorerFolder { surface_id: u32, path: String, is_bookmarked: bool, x: f32, y: f32 },
 }
 
 /// All transient UI dialog/popup state, grouped to avoid AppState bloat.
@@ -445,6 +445,26 @@ impl AppState {
     /// Find a terminal by its surface ID across all workspaces (mutable).
     pub fn find_terminal_by_id_mut(&mut self, surface_id: u32) -> Option<&mut Terminal> {
         self.engine.find_terminal_by_id_mut(surface_id)
+    }
+
+    /// Find an explorer panel by surface_id and apply a closure to it.
+    pub fn with_explorer_mut<F>(&mut self, surface_id: u32, f: F)
+    where F: FnOnce(&mut crate::model::ExplorerPanel)
+    {
+        for ws in &mut self.engine.workspaces {
+            for &pid in &ws.pane_layout().all_pane_ids() {
+                if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pid) {
+                    for tab in &mut pane.tabs {
+                        if tab.surface().contains_surface(surface_id) {
+                            if let Some(panel) = tab.surface_mut().as_explorer_mut() {
+                                f(panel);
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /// Get the focused pane ID.

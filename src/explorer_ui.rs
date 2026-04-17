@@ -239,7 +239,7 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel, keys: &[Pendi
                                     }
                                     TreeAction::ContextMenu(path, pos) => {
                                         let is_bookmarked = panel.is_bookmarked(&path);
-                                        explorer_action = Some(ExplorerAction::FolderContextMenu(path, is_bookmarked, pos.x, pos.y));
+                                        explorer_action = Some(ExplorerAction::FolderContextMenu { path, is_bookmarked, x: pos.x, y: pos.y });
                                     }
                                 }
                             }
@@ -365,8 +365,8 @@ pub enum ExplorerAction {
     OpenMarkdownTab(String),
     /// Open an HTML file as a new Html tab (file:// URL).
     OpenHtmlTab(String),
-    /// Request native context menu for a folder (path, is_bookmarked, x, y in screen coords).
-    FolderContextMenu(String, bool, f32, f32),
+    /// Request native context menu for a folder (path, is_bookmarked, x, y).
+    FolderContextMenu { path: String, is_bookmarked: bool, x: f32, y: f32 },
 }
 
 fn draw_file_node(

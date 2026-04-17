@@ -86,7 +86,7 @@ impl PopupContent for BookmarkNamePopup {
         }
 
         if confirm {
-            if let Some((pane_id, path, name)) = state.dialogs.bookmark_input.take() {
+            if let Some((surface_id, path, name)) = state.dialogs.bookmark_input.take() {
                 let final_name = if name.trim().is_empty() {
                     std::path::Path::new(&path)
                         .file_name()
@@ -95,20 +95,13 @@ impl PopupContent for BookmarkNamePopup {
                 } else {
                     name
                 };
-                // Find the explorer panel and add the bookmark
-                for ws in &mut state.engine.workspaces {
-                    if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
-                        for tab in &mut pane.tabs {
-                            if let Some(panel) = tab.surface_mut().as_explorer_mut() {
-                                panel.bookmarks.push(crate::model::Bookmark {
-                                    name: final_name,
-                                    path,
-                                });
-                                return PopupAction::Close;
-                            }
-                        }
-                    }
-                }
+                let bookmark = crate::model::Bookmark {
+                    name: final_name,
+                    path,
+                };
+                state.with_explorer_mut(surface_id, |panel| {
+                    panel.bookmarks.push(bookmark);
+                });
             }
             return PopupAction::Close;
         }
