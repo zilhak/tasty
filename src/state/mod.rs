@@ -95,7 +95,7 @@ pub enum PendingNativeMenu {
     /// Pane/empty area right-click: Open Markdown... / Open Explorer / Open HTML...
     Pane { pane_id: u32, x: f32, y: f32 },
     /// Explorer folder right-click: Bookmark add/remove
-    ExplorerFolder { path: String, is_bookmarked: bool, x: f32, y: f32 },
+    ExplorerFolder { pane_id: u32, path: String, is_bookmarked: bool, x: f32, y: f32 },
 }
 
 /// All transient UI dialog/popup state, grouped to avoid AppState bloat.

@@ -260,7 +260,7 @@ pub fn draw_egui_panels(
             }
             crate::explorer_ui::ExplorerAction::FolderContextMenu(path, is_bookmarked, x, y) => {
                 state.dialogs.pending_native_menu = Some(crate::state::PendingNativeMenu::ExplorerFolder {
-                    path, is_bookmarked, x, y,
+                    pane_id, path, is_bookmarked, x, y,
                 });
             }
         }

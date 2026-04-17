@@ -340,7 +340,7 @@ impl MainWindow {
                 }
                 self.mark_dirty();
             }
-            PendingNativeMenu::ExplorerFolder { path, is_bookmarked, x, y } => {
+            PendingNativeMenu::ExplorerFolder { pane_id, path, is_bookmarked, x, y } => {
                 let label = if is_bookmarked {
                     crate::i18n::t("explorer.bookmark_remove")
                 } else {
@@ -349,33 +349,28 @@ impl MainWindow {
                 let items = [MenuItem::new(1, label)];
                 let result = show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
                 if result == Some(1) {
-                    // Find the explorer panel and apply bookmark action
-                    let mut applied = false;
-                    for ws in &mut self.state.engine.workspaces {
-                        for &pid in &ws.pane_layout().all_pane_ids() {
-                            if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pid) {
-                                for tab in &mut pane.tabs {
-                                    if let Some(panel) = tab.surface_mut().as_explorer_mut() {
-                                        if is_bookmarked {
-                                            panel.remove_bookmark(&path);
-                                        } else {
-                                            let folder_name = std::path::Path::new(&path)
-                                                .file_name()
-                                                .map(|n| n.to_string_lossy().to_string())
-                                                .unwrap_or_default();
-                                            panel.pending_bookmark = Some(crate::model::PendingBookmark {
-                                                path: path.clone(),
-                                                name: folder_name,
-                                            });
-                                        }
-                                        applied = true;
-                                        break;
-                                    }
-                                }
-                                if applied { break; }
-                            }
+                    // Find the explorer panel in the specific pane's active tab
+                    let panel = self.state.engine.workspaces.iter_mut()
+                        .flat_map(|ws| {
+                            ws.pane_layout_mut().find_pane_mut(pane_id)
+                                .into_iter()
+                                .flat_map(|pane| pane.tabs.iter_mut())
+                                .filter_map(|tab| tab.surface_mut().as_explorer_mut())
+                        })
+                        .next();
+                    if let Some(panel) = panel {
+                        if is_bookmarked {
+                            panel.remove_bookmark(&path);
+                        } else {
+                            let folder_name = std::path::Path::new(&path)
+                                .file_name()
+                                .map(|n| n.to_string_lossy().to_string())
+                                .unwrap_or_default();
+                            panel.pending_bookmark = Some(crate::model::PendingBookmark {
+                                path: path.clone(),
+                                name: folder_name,
+                            });
                         }
-                        if applied { break; }
                     }
                 }
                 self.mark_dirty();
