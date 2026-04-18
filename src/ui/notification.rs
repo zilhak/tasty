@@ -5,7 +5,7 @@ use crate::state::AppState;
 use crate::theme;
 
 /// Draw notification panel content inside a popup Ui.
-/// Also called by NotificationPopup's PopupContent impl.
+/// Called by the notifications popup's `draw_fn` (see popup_defs).
 pub(crate) fn draw_notification_content_inner(ui: &mut egui::Ui, state: &mut AppState) {
     let th = theme::theme();
 
@@ -155,24 +155,26 @@ pub fn draw_popups(
     // Build scope context for popup visibility/clamping
     let draw_ctx = build_popup_draw_ctx(state, pane_rects, terminal_rect, scale_factor);
 
-    // Update popup titles/sizes from trait objects (e.g. i18n changes)
-    for content in &state.popup_contents {
-        if let Some(p) = state.popups.get_mut(content.id()) {
-            p.title = content.title();
-            p.size = content.default_size();
+    // Refresh popup titles (i18n) and dynamic sizes each frame. Sizers read
+    // in-memory caches so this is cheap.
+    for def in crate::ui::popup_defs::all_defs() {
+        let new_size = def.sizer.map(|f| f(state));
+        if let Some(p) = state.popups.get_mut(def.id) {
+            p.title = crate::i18n::t(def.title_key).to_string();
+            if let Some(sz) = new_size {
+                p.size = sz;
+            }
         }
     }
 
-    // Temporarily take the popup manager and contents to avoid borrow conflicts
+    // Temporarily take the popup manager to avoid borrow conflicts with AppState.
     let mut popups = std::mem::replace(&mut state.popups, crate::ui::PopupManager::new());
-    let mut contents = std::mem::replace(&mut state.popup_contents, Vec::new());
 
-    let mut trait_closed: Vec<&'static str> = Vec::new();
+    let mut dispatch_closed: Vec<&'static str> = Vec::new();
     let draw_result = popups.draw(ctx, &mut |id, ui| {
-        if let Some(content) = contents.iter_mut().find(|c| c.id() == id) {
-            let content_id = content.id();
-            if matches!(content.draw(ui, state), crate::ui::PopupAction::Close) {
-                trait_closed.push(content_id);
+        if let Some(def) = crate::ui::popup_defs::find(id) {
+            if matches!((def.draw_fn)(ui, state), crate::ui::PopupAction::Close) {
+                dispatch_closed.push(def.id);
             }
         }
     }, Some(&draw_ctx));
@@ -181,15 +183,14 @@ pub fn draw_popups(
     state.popup_hovered = draw_result.hovered;
 
     state.popups = popups;
-    state.popup_contents = contents;
 
-    // Close popups requested by trait dispatch or X button / outside click
-    for id in trait_closed.iter().chain(draw_result.closed.iter()) {
+    // Close popups requested by draw dispatch or X button / outside click
+    for id in dispatch_closed.iter().chain(draw_result.closed.iter()) {
         state.popups.close(id);
     }
 
     // Clean up convert_surface dialog state when closed
-    let convert_closed = trait_closed.contains(&"convert_surface")
+    let convert_closed = dispatch_closed.contains(&"convert_surface")
         || draw_result.closed.contains(&"convert_surface");
     if convert_closed {
         state.dialogs.convert_popup = None;

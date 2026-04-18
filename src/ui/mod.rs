@@ -7,6 +7,7 @@ pub(crate) mod file_open_popup;
 pub(crate) mod notification;
 pub(crate) mod notification_popup;
 pub mod popup;
+pub(crate) mod popup_defs;
 mod sidebar;
 mod tab_bar;
 

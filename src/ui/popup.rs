@@ -1,6 +1,9 @@
 use crate::state::AppState;
 use crate::theme;
 
+// 참고: 기존 `PopupContent` trait는 PopupDef(데이터 지향)로 대체되었다. 새 popup을
+// 추가하려면 `src/ui/popup_defs.rs`의 `all_defs()`에 항목을 추가하라.
+
 /// Unique identifier for a popup instance.
 pub type PopupId = &'static str;
 
@@ -20,21 +23,20 @@ pub struct PopupDrawResult {
     pub hovered: bool,
 }
 
-/// Trait for popup content. Each popup type implements this to define
-/// its own size, scope, and rendering logic.
-pub trait PopupContent {
-    /// Unique popup ID (must match the registered PopupState id).
-    fn id(&self) -> PopupId;
-    /// Title text for the title bar.
-    fn title(&self) -> String;
-    /// Default size of the popup.
-    fn default_size(&self) -> egui::Vec2;
-    /// Scope for visibility and boundary clamping. Default: Window.
-    fn scope(&self) -> PopupScope { PopupScope::Window }
-    /// Whether clicking outside closes this popup. Default: false.
-    fn close_on_outside_click(&self) -> bool { false }
-    /// Draw the popup content. Called each frame while the popup is open.
-    fn draw(&mut self, ui: &mut egui::Ui, state: &mut AppState) -> PopupAction;
+/// Static, data-oriented popup definition. 등록 시점에 불변으로 고정되는 속성과
+/// 매 프레임 호출되는 draw 함수. 기존 trait 기반 `PopupContent`를 대체한다.
+pub struct PopupDef {
+    pub id: PopupId,
+    /// i18n 키. `t()`로 런타임 번역하여 popup title로 사용.
+    pub title_key: &'static str,
+    /// 기본 크기. 동적 크기가 필요하면 `sizer`로 덮어쓸 수 있다.
+    pub default_size: egui::Vec2,
+    /// 선택적 동적 크기 계산. popup open 시점에 1회 호출되어 `PopupState.size`에 반영.
+    pub sizer: Option<fn(&AppState) -> egui::Vec2>,
+    pub default_scope: PopupScope,
+    pub close_on_outside_click: bool,
+    /// 렌더링 함수. 매 프레임 호출. AppState에서 필요한 데이터를 꺼낸다.
+    pub draw_fn: fn(&mut egui::Ui, &mut AppState) -> PopupAction,
 }
 
 /// Scope determines where a popup is anchored and when it's visible.
@@ -168,15 +170,23 @@ impl PopupManager {
         }
     }
 
-    /// Register a popup from a PopupContent trait object.
-    /// Creates the PopupState automatically from the content's properties.
-    pub fn register_content(&mut self, content: &dyn PopupContent) {
-        let id = content.id();
-        if !self.popups.iter().any(|p| p.id == id) {
-            let popup = PopupState::new(id, content.title(), content.default_size())
-                .with_scope(content.scope())
-                .with_close_on_outside_click(content.close_on_outside_click());
-            self.popups.push(popup);
+    /// Register a popup from a PopupDef. title은 `t()`로 번역하여 사용하며,
+    /// 이후 locale이 바뀌면 draw 루프에서 재번역된다(draw_popups 참고).
+    pub fn register_def(&mut self, def: &PopupDef) {
+        if self.popups.iter().any(|p| p.id == def.id) {
+            return;
+        }
+        let popup = PopupState::new(def.id, crate::i18n::t(def.title_key), def.default_size)
+            .with_scope(def.default_scope.clone())
+            .with_close_on_outside_click(def.close_on_outside_click);
+        self.popups.push(popup);
+    }
+
+    /// `sizer`가 정의된 popup에 한해 open 직전 크기를 재계산한다. caller가 사이즈
+    /// 갱신 후 `open*` 계열을 호출하는 규약.
+    pub fn refresh_size(&mut self, id: PopupId, size: egui::Vec2) {
+        if let Some(p) = self.popups.iter_mut().find(|p| p.id == id) {
+            p.size = size;
         }
     }
 

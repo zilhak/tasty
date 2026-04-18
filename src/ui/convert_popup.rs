@@ -1,10 +1,33 @@
 use crate::i18n::t;
 use crate::state::AppState;
 use crate::theme;
-use crate::ui::popup::{self, PopupAction, PopupContent, PopupId, PopupScope};
+use crate::ui::popup::{self, PopupAction};
 
 /// Item height in the convert popup menu.
 const ITEM_HEIGHT: f32 = 24.0;
+
+/// Default size for the convert surface popup.
+pub fn convert_popup_default_size() -> egui::Vec2 {
+    let item_spacing = 3.0;
+    let content_h = ITEMS.len() as f32 * ITEM_HEIGHT
+        + (ITEMS.len().saturating_sub(1)) as f32 * item_spacing;
+    egui::vec2(
+        200.0,
+        popup::TITLE_BAR_HEIGHT + popup::CONTENT_MARGIN * 2.0 + content_h,
+    )
+}
+
+/// PopupDef::draw_fn entry point for the convert surface popup.
+pub fn draw_convert_popup(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction {
+    match draw_convert_content(ui, state) {
+        Some(ConvertResult::Close) => PopupAction::Close,
+        Some(ConvertResult::Action(action)) => {
+            apply_convert_action(state, action);
+            PopupAction::Close
+        }
+        None => PopupAction::None,
+    }
+}
 
 /// Menu items for the convert surface popup.
 const ITEMS: [(&str, &str, char); 4] = [
@@ -195,56 +218,6 @@ fn action_for_index(idx: usize) -> ConvertAction {
         1 => ConvertAction::Markdown,
         2 => ConvertAction::Explorer,
         _ => ConvertAction::Html,
-    }
-}
-
-/// PopupContent implementation for the convert surface popup.
-pub struct ConvertSurfacePopup;
-
-impl ConvertSurfacePopup {
-    pub fn new() -> Self {
-        Self
-    }
-}
-
-impl PopupContent for ConvertSurfacePopup {
-    fn id(&self) -> PopupId {
-        "convert_surface"
-    }
-
-    fn title(&self) -> String {
-        t("convert_popup.title").to_string()
-    }
-
-    fn default_size(&self) -> egui::Vec2 {
-        // item_spacing.y (egui default 3.0) is added between each allocate_exact_size call
-        let item_spacing = 3.0;
-        let content_h = ITEMS.len() as f32 * ITEM_HEIGHT
-            + (ITEMS.len().saturating_sub(1)) as f32 * item_spacing;
-        egui::vec2(
-            200.0,
-            popup::TITLE_BAR_HEIGHT + popup::CONTENT_MARGIN * 2.0 + content_h,
-        )
-    }
-
-    fn scope(&self) -> PopupScope {
-        // Actual scope is set dynamically via open_with_scope() when opened
-        PopupScope::Window
-    }
-
-    fn close_on_outside_click(&self) -> bool {
-        true
-    }
-
-    fn draw(&mut self, ui: &mut egui::Ui, state: &mut AppState) -> PopupAction {
-        match draw_convert_content(ui, state) {
-            Some(ConvertResult::Close) => PopupAction::Close,
-            Some(ConvertResult::Action(action)) => {
-                apply_convert_action(state, action);
-                PopupAction::Close
-            }
-            None => PopupAction::None,
-        }
     }
 }
 

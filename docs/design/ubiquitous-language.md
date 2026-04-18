@@ -154,6 +154,6 @@ Pane은 기존 터미널에 대응하는 개념이 없다. 이것이 Tasty의 �
 | Tab | `Tab` → `Box<dyn Surface>` | 탭 하나의 내용물 |
 | 하위 레이아웃 | `SurfaceGroupNode` (이진 트리 enum) | Surface 배치 |
 | Surface | `Surface` trait. 구현체: `TerminalSurface`, `SurfaceGroupNode`, `MarkdownPanel`, `ExplorerPanel`, `HtmlPanel`, `EmptySurface` | 최하위 컨테이너. 타입별 콘텐츠 |
-| Popup | `PopupContent` trait + `PopupManager` | Window 내부 가상 창 |
+| Popup | `PopupDef` + `PopupManager` | Window 내부 가상 창 |
 | App.windows | `HashMap<WindowId, Box<dyn Window>>` | 모달 포함 모든 윈도우 단일 저장소 |
 | 활성 모달 식별 | `engine::Engine::active_modal_id: Option<WindowId>` | 최대 1개 불변식

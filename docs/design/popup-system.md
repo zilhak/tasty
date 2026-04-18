@@ -43,26 +43,29 @@
 
 ## 구현
 
-### PopupContent trait (`src/ui/popup.rs`)
+### PopupDef (`src/ui/popup.rs`) — 데이터 지향 정의
 
-모든 팝업은 `PopupContent` trait을 구현하여 자신의 고유 동작을 정의한다.
+모든 팝업은 **`PopupDef` 구조체**로 정의된다. 과거 trait 기반 구현은 제거되었다 (2026-04).
 
 ```rust
-pub trait PopupContent {
-    fn id(&self) -> PopupId;
-    fn title(&self) -> String;
-    fn default_size(&self) -> egui::Vec2;
-    fn scope(&self) -> PopupScope { PopupScope::Window }
-    fn close_on_outside_click(&self) -> bool { false }
-    fn draw(&mut self, ui: &mut egui::Ui, state: &mut AppState) -> PopupAction;
+pub struct PopupDef {
+    pub id: PopupId,
+    pub title_key: &'static str,       // i18n 키 (draw 시점에 번역)
+    pub default_size: egui::Vec2,
+    pub sizer: Option<fn(&AppState) -> egui::Vec2>,  // 동적 크기(선택)
+    pub default_scope: PopupScope,
+    pub close_on_outside_click: bool,
+    pub draw_fn: fn(&mut egui::Ui, &mut AppState) -> PopupAction,
 }
 ```
+
+모든 팝업 정의는 **`src/ui/popup_defs.rs`의 `all_defs()`**에 집중 모아 놓는다. 새 팝업 1개 추가 = 테이블 항목 1개 + draw 함수 하나.
 
 ### PopupManager (`src/ui/popup.rs`)
 
 팝업의 공통 동작(z-order, 드래그, 타이틀바, clamp, 포커스)을 관리하는 중앙 매니저.
 
-- `register_content()`: PopupContent에서 PopupState 자동 생성 및 등록
+- `register_def(&PopupDef)`: PopupDef에서 PopupState 자동 생성 및 등록
 - `open()` / `close()` / `toggle()`: 팝업 열기/닫기
 - `open_with_scope()`: 동적 스코프 지정 + 센터링 (Surface 스코프 팝업에 사용)
 - `draw()`: 모든 열린 팝업을 z-order 순으로 렌더링
@@ -72,28 +75,31 @@ pub trait PopupContent {
 개별 팝업의 공통 상태를 저장 (PopupManager 내부).
 
 - `id`: 고유 식별자 (`&'static str`)
-- `title`: 타이틀바에 표시될 텍스트 (PopupContent에서 매 프레임 갱신)
+- `title`: 타이틀바에 표시될 텍스트 (매 프레임 `PopupDef.title_key`로 번역)
 - `pos`: 위치 (논리 픽셀)
-- `size`: 크기 (논리 픽셀, PopupContent에서 매 프레임 갱신)
+- `size`: 크기 (논리 픽셀, open 시점에 `sizer`로 1회 갱신)
 - `open`: 열림 여부
 - `focused`: 키보드 포커스 보유 여부
 - `scope`: 스코프 (open_with_scope로 동적 변경 가능)
 
 ### 팝업 추가 방법
 
-1. `PopupContent` trait을 구현하는 struct 생성 (예: `src/ui/my_popup.rs`)
-2. `AppState::new()`에서:
-   - `popup_contents`에 `Box::new(MyPopup::new())` 추가
-   - `popups.register_content(&MyPopup::new())` 호출
-3. 열기: `state.popups.open("my_popup")` 또는 `state.popups.open_with_scope("my_popup", scope)`
-4. 닫기: `state.popups.close("my_popup")` (또는 draw()에서 `PopupAction::Close` 반환)
+1. `src/ui/my_popup.rs`에 `pub fn draw_my_popup(ui, state) -> PopupAction` 함수를 정의.
+2. `src/ui/popup_defs.rs`의 `all_defs()`에 `PopupDef { id: "my_popup", title_key: ..., default_size: ..., draw_fn: draw_my_popup, ... }` 항목 추가.
+3. 열기: `state.popups.open("my_popup")` 또는 `state.popups.open_with_scope(...)`
+4. 닫기: `state.popups.close("my_popup")` (또는 draw 함수에서 `PopupAction::Close` 반환)
+
+추가적으로 `popup_defs`가 재빌드되지 않도록 ID는 **유일**해야 한다.
 
 ### 등록된 팝업
 
-| ID | 구현체 | 스코프 | 외부 클릭 닫기 |
+| ID | draw_fn | 스코프 | 외부 클릭 닫기 |
 |---|---|---|---|
-| `notifications` | `NotificationPopup` | Window | No |
-| `convert_surface` | `ConvertSurfacePopup` | Surface (동적) | Yes |
+| `notifications` | `notification_popup::draw_notification_popup` | Window | No |
+| `convert_surface` | `convert_popup::draw_convert_popup` | Surface (동적) | Yes |
+| `markdown_open` | `file_open_popup::draw_markdown_open_popup` | Window | No |
+| `html_open` | `file_open_popup::draw_html_open_popup` | Window | No |
+| `bookmark_name` | `bookmark_popup::draw_bookmark_popup` | Window | No |
 
 ## 외부 클릭 닫기
 

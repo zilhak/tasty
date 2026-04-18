@@ -75,8 +75,9 @@ pub struct AppState {
     pub tab_bar_height: f32,
     /// Popup manager for internal popups (notification panel, etc.).
     pub popups: crate::ui::PopupManager,
-    /// Popup content implementations (trait objects, separate from PopupManager for borrow splitting).
-    pub popup_contents: Vec<Box<dyn crate::ui::popup::PopupContent>>,
+    /// Cached recent files list (markdown/html open popups). Loaded from disk at
+    /// startup and mutated in-place; each mutation saves back to disk.
+    pub recent_files: crate::recent_files::RecentFiles,
     /// Whether the mouse is currently over an open popup (input layer state).
     /// Updated each frame by PopupManager::draw(). Mouse handlers check this
     /// to block events from reaching lower layers (terminal, dividers).
@@ -192,23 +193,12 @@ impl AppState {
             captured_double_tap: None,
             pending_surface_keys: Vec::new(),
             popup_hovered: false,
-            popup_contents: {
-                let contents: Vec<Box<dyn crate::ui::popup::PopupContent>> = vec![
-                    Box::new(crate::ui::notification_popup::NotificationPopup::new()),
-                    Box::new(crate::ui::convert_popup::ConvertSurfacePopup::new()),
-                    Box::new(crate::ui::file_open_popup::MarkdownOpenPopup::new()),
-                    Box::new(crate::ui::file_open_popup::HtmlOpenPopup::new()),
-                    Box::new(crate::ui::bookmark_popup::BookmarkNamePopup::new()),
-                ];
-                contents
-            },
+            recent_files: crate::recent_files::RecentFiles::load(),
             popups: {
                 let mut pm = crate::ui::PopupManager::new();
-                pm.register_content(&crate::ui::notification_popup::NotificationPopup::new());
-                pm.register_content(&crate::ui::convert_popup::ConvertSurfacePopup::new());
-                pm.register_content(&crate::ui::file_open_popup::MarkdownOpenPopup::new());
-                pm.register_content(&crate::ui::file_open_popup::HtmlOpenPopup::new());
-                pm.register_content(&crate::ui::bookmark_popup::BookmarkNamePopup::new());
+                for def in crate::ui::popup_defs::all_defs() {
+                    pm.register_def(def);
+                }
                 pm
             },
         })

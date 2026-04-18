@@ -1,15 +1,35 @@
-//! Markdown and HTML file open popups using the PopupContent system.
+//! Markdown and HTML file open popups.
 
 use crate::i18n::t;
 use crate::state::AppState;
 use crate::theme;
-use crate::ui::popup::{self, PopupAction, PopupContent, PopupId, PopupScope};
+use crate::ui::popup::{self, PopupAction};
 
 const ITEM_HEIGHT: f32 = 22.0;
 const MAX_RECENT: usize = 10;
 const HORIZONTAL_MARGIN: f32 = 8.0;
 /// egui item_spacing.y (theme spacing_xs)
 const ITEM_SPACING_Y: f32 = 4.0;
+
+/// Sizer for markdown open popup — uses AppState.recent_files cache (no disk IO).
+pub fn markdown_popup_sizer(state: &AppState) -> egui::Vec2 {
+    compute_popup_size(state.recent_files.markdown.len())
+}
+
+/// Sizer for html open popup.
+pub fn html_popup_sizer(state: &AppState) -> egui::Vec2 {
+    compute_popup_size(state.recent_files.html.len())
+}
+
+/// PopupDef::draw_fn entry for markdown open popup.
+pub fn draw_markdown_open_popup(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction {
+    draw_file_open_content(ui, state, FileType::Markdown)
+}
+
+/// PopupDef::draw_fn entry for HTML open popup.
+pub fn draw_html_open_popup(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction {
+    draw_file_open_content(ui, state, FileType::Html)
+}
 
 fn compute_popup_size(recent_count: usize) -> egui::Vec2 {
     // label(16) + item_spacing + add_space(4) + input_row(22) + item_spacing + add_space(8) + buttons(24)
@@ -26,64 +46,6 @@ fn compute_popup_size(recent_count: usize) -> egui::Vec2 {
         360.0,
         popup::TITLE_BAR_HEIGHT + popup::CONTENT_MARGIN * 2.0 + base + recent_h,
     )
-}
-
-// ── Markdown Open Popup ──
-
-pub struct MarkdownOpenPopup;
-
-impl MarkdownOpenPopup {
-    pub fn new() -> Self { Self }
-}
-
-impl PopupContent for MarkdownOpenPopup {
-    fn id(&self) -> PopupId { "markdown_open" }
-
-    fn title(&self) -> String {
-        t("dialog.markdown.title").to_string()
-    }
-
-    fn default_size(&self) -> egui::Vec2 {
-        let recent = crate::recent_files::RecentFiles::load();
-        compute_popup_size(recent.markdown.len())
-    }
-
-    fn scope(&self) -> PopupScope { PopupScope::Window }
-
-    fn close_on_outside_click(&self) -> bool { false }
-
-    fn draw(&mut self, ui: &mut egui::Ui, state: &mut AppState) -> PopupAction {
-        draw_file_open_content(ui, state, FileType::Markdown)
-    }
-}
-
-// ── HTML Open Popup ──
-
-pub struct HtmlOpenPopup;
-
-impl HtmlOpenPopup {
-    pub fn new() -> Self { Self }
-}
-
-impl PopupContent for HtmlOpenPopup {
-    fn id(&self) -> PopupId { "html_open" }
-
-    fn title(&self) -> String {
-        t("dialog.html.title").to_string()
-    }
-
-    fn default_size(&self) -> egui::Vec2 {
-        let recent = crate::recent_files::RecentFiles::load();
-        compute_popup_size(recent.html.len())
-    }
-
-    fn scope(&self) -> PopupScope { PopupScope::Window }
-
-    fn close_on_outside_click(&self) -> bool { false }
-
-    fn draw(&mut self, ui: &mut egui::Ui, state: &mut AppState) -> PopupAction {
-        draw_file_open_content(ui, state, FileType::Html)
-    }
 }
 
 // ── Shared drawing logic ──
@@ -159,12 +121,12 @@ fn draw_file_open_content(ui: &mut egui::Ui, state: &mut AppState, file_type: Fi
 
     ui.add_space(8.0);
 
-    // Recent files list
-    let recent = crate::recent_files::RecentFiles::load();
-    let recent_list = match file_type {
-        FileType::Markdown => &recent.markdown,
-        FileType::Html => &recent.html,
+    // Recent files list (from in-memory cache, no disk IO per frame)
+    let recent_list: Vec<String> = match file_type {
+        FileType::Markdown => state.recent_files.markdown.clone(),
+        FileType::Html => state.recent_files.html.clone(),
     };
+    let recent_list = &recent_list;
 
     if !recent_list.is_empty() {
         ui.label(egui::RichText::new(t("dialog.recent_files")).size(th.font_size_caption).color(th.overlay1));
@@ -263,12 +225,10 @@ fn draw_file_open_content(ui: &mut egui::Ui, state: &mut AppState, file_type: Fi
 }
 
 fn apply_open(state: &mut AppState, file_type: FileType, path: &str) {
-    let mut recent = crate::recent_files::RecentFiles::load();
-
     match file_type {
         FileType::Markdown => {
             let file_path = file_uri_to_local_path(path).unwrap_or_else(|| path.to_string());
-            recent.add_markdown(file_path.clone());
+            state.recent_files.add_markdown(file_path.clone());
             if let Some(convert_sid) = state.dialogs.markdown_convert_surface_id.take() {
                 state.convert_surface_to_markdown(convert_sid, file_path);
             } else {
@@ -285,7 +245,7 @@ fn apply_open(state: &mut AppState, file_type: FileType, path: &str) {
             } else {
                 local_path_to_file_uri(path)
             };
-            recent.add_html(url.clone());
+            state.recent_files.add_html(url.clone());
             if let Some(convert_sid) = state.dialogs.html_convert_surface_id.take() {
                 state.convert_surface_to_html(convert_sid, url);
             } else {
