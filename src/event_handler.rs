@@ -118,6 +118,9 @@ impl ApplicationHandler<AppEvent> for App {
                 }
                 tracing::info!("restored {} window(s) from system tray", self.windows.len());
             }
+            AppEvent::ClipboardTick => {
+                self.poll_clipboard_into_history();
+            }
         }
     }
 
@@ -376,6 +379,55 @@ impl ApplicationHandler<AppEvent> for App {
 }
 
 impl App {
+    /// Poll the system clipboard once and record it into every MainWindow's history
+    /// (each window has its own EngineState). No-op if `history_enabled` is false for
+    /// that window. Invoked from AppEvent::ClipboardTick.
+    fn poll_clipboard_into_history(&mut self) {
+        // 모든 MainWindow가 history_enabled=false이면 clipboard를 읽지도 않는다.
+        let any_enabled = self
+            .windows
+            .values()
+            .filter_map(|w| w.as_main())
+            .any(|w| w.state.engine.settings.clipboard.history_enabled)
+            || self
+                .parked_states
+                .iter()
+                .any(|s| s.engine.settings.clipboard.history_enabled);
+        if !any_enabled {
+            return;
+        }
+
+        let Some(mut cb) = arboard::Clipboard::new().ok() else {
+            return;
+        };
+        let Some(text) = cb.get_text().ok() else {
+            return;
+        };
+        if text.is_empty() {
+            return;
+        }
+
+        for w in self.windows.values_mut() {
+            let Some(main) = w.as_main_mut() else { continue };
+            if !main.state.engine.settings.clipboard.history_enabled {
+                continue;
+            }
+            main.state.engine.clipboard_history.record(
+                text.clone(),
+                crate::clipboard_history::ClipboardSource::System,
+            );
+        }
+        for state in &mut self.parked_states {
+            if !state.engine.settings.clipboard.history_enabled {
+                continue;
+            }
+            state
+                .engine
+                .clipboard_history
+                .record(text.clone(), crate::clipboard_history::ClipboardSource::System);
+        }
+    }
+
     fn handle_quit_requested(&mut self, event_loop: &ActiveEventLoop) {
         // If a quit modal is already open, treat as immediate quit
         let quit_modal_open = self

@@ -257,6 +257,7 @@ impl MainWindow {
         if let Some(cb) = &mut self.clipboard {
             cb.set_text(&text);
         }
+        self.state.engine.record_internal_copy(&text);
 
         true
     }

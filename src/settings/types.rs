@@ -6,6 +6,12 @@ pub struct ClipboardSettings {
     pub macos_style: bool,
     pub linux_style: bool,
     pub windows_style: bool,
+    /// 시스템 클립보드 변경을 감지하여 히스토리에 저장할지.
+    pub history_enabled: bool,
+    /// 히스토리 최대 개수.
+    pub history_max: usize,
+    /// 폴링 주기(ms). 재시작 필요.
+    pub poll_interval_ms: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -54,37 +60,32 @@ pub struct NotificationSettings {
 
 impl Default for ClipboardSettings {
     fn default() -> Self {
+        let (macos_style, linux_style, windows_style);
         #[cfg(target_os = "macos")]
         {
-            Self {
-                macos_style: true,
-                linux_style: false,
-                windows_style: false,
-            }
+            macos_style = true;
+            linux_style = false;
+            windows_style = false;
         }
         #[cfg(target_os = "linux")]
         {
-            Self {
-                macos_style: false,
-                linux_style: true,
-                windows_style: false,
-            }
+            macos_style = false;
+            linux_style = true;
+            windows_style = false;
         }
-        #[cfg(target_os = "windows")]
+        #[cfg(any(target_os = "windows", not(any(target_os = "macos", target_os = "linux"))))]
         {
-            Self {
-                macos_style: false,
-                linux_style: false,
-                windows_style: true,
-            }
+            macos_style = false;
+            linux_style = false;
+            windows_style = true;
         }
-        #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
-        {
-            Self {
-                macos_style: false,
-                linux_style: false,
-                windows_style: true,
-            }
+        Self {
+            macos_style,
+            linux_style,
+            windows_style,
+            history_enabled: true,
+            history_max: 100,
+            poll_interval_ms: 500,
         }
     }
 }

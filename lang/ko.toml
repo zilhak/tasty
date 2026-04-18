@@ -91,6 +91,11 @@ heading = "클립보드"
 macos_style = "macOS 방식 (Alt+C / Alt+V)"
 linux_style = "Linux 방식 (Ctrl+Shift+C / Ctrl+Shift+V)"
 windows_style = "Windows 방식 (선택 시 Ctrl+C / Ctrl+V)"
+history_heading = "히스토리"
+history_enabled_label = "클립보드 히스토리 기록"
+history_max_label = "최대 항목 수:"
+poll_interval_ms_label = "폴링 주기 (ms):"
+poll_interval_restart_notice = "폴링 주기 변경은 재시작 후 적용됩니다."
 
 [settings.zoom]
 heading = "확대/축소"

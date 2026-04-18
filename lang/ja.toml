@@ -91,6 +91,11 @@ heading = "クリップボード"
 macos_style = "macOS方式 (Alt+C / Alt+V)"
 linux_style = "Linux方式 (Ctrl+Shift+C / Ctrl+Shift+V)"
 windows_style = "Windows方式 (選択時Ctrl+C / Ctrl+V)"
+history_heading = "履歴"
+history_enabled_label = "クリップボード履歴を記録"
+history_max_label = "最大エントリ数:"
+poll_interval_ms_label = "ポーリング間隔 (ms):"
+poll_interval_restart_notice = "ポーリング間隔の変更は再起動後に反映されます。"
 
 [settings.zoom]
 heading = "ズーム"

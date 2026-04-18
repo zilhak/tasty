@@ -121,6 +121,9 @@ pub struct EngineState {
     // ── Closed item history ──
     pub closed_items: crate::model::ClosedItemStore,
 
+    // ── System clipboard history (memory-only) ──
+    pub clipboard_history: crate::clipboard_history::ClipboardHistory,
+
     // ── Messaging / Typing detection ──
     pub surface_messages: HashMap<u32, Vec<SurfaceMessage>>,
     pub(crate) surface_next_message_id: u32,
@@ -155,6 +158,7 @@ impl EngineState {
             global_hook_manager: GlobalHookManager::new(),
             claude: ClaudeState::new(),
             closed_items: crate::model::ClosedItemStore::new(),
+            clipboard_history: crate::clipboard_history::ClipboardHistory::new(100),
             surface_messages: HashMap::new(),
             surface_next_message_id: 0,
             last_key_input: HashMap::new(),
@@ -163,6 +167,9 @@ impl EngineState {
 
         // Re-apply coalesce_ms from actual settings
         engine.notifications = NotificationStore::with_coalesce_ms(engine.settings.notification.coalesce_ms);
+
+        // Apply clipboard history max from settings.
+        engine.clipboard_history.set_max(engine.settings.clipboard.history_max);
 
         // Init fast mode + scrollback for the first surface
         engine.send_fast_init(surface_id);
@@ -215,6 +222,16 @@ impl EngineState {
     /// Record that the user typed on the given surface.
     pub fn record_typing(&mut self, surface_id: u32) {
         self.last_key_input.insert(surface_id, std::time::Instant::now());
+    }
+
+    /// Internally-originated clipboard copy (selection copy 등). 히스토리에 저장하되
+    /// `Source::Internal`로 태깅. `history_enabled`가 false면 no-op.
+    pub fn record_internal_copy(&mut self, text: &str) {
+        if !self.settings.clipboard.history_enabled {
+            return;
+        }
+        self.clipboard_history
+            .record(text.to_string(), crate::clipboard_history::ClipboardSource::Internal);
     }
 
     /// Returns true if the surface received key input within the last 5 seconds.

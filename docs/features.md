@@ -447,6 +447,15 @@
 - 터미널 프로그램이 OSC 52 시퀀스로 시스템 클립보드에 텍스트를 설정할 수 있음
 - termwiz의 `SetSelection` 파싱을 활용하여 이벤트 발생 → main.rs에서 arboard로 클립보드에 반영
 
+### 시스템 클립보드 히스토리
+- `EngineState.clipboard_history`(메모리 전용)에 시스템 클립보드 변경 기록
+- 별도 스레드가 `settings.clipboard.poll_interval_ms`(기본 500ms) 주기로 `AppEvent::ClipboardTick` 발송 → 메인 스레드가 arboard로 현재 값을 읽어 모든 Window의 history에 기록
+- 연속 중복 자동 제거 (`last_seen` 비교), 빈 문자열 무시
+- 출처 태그: `ClipboardSource::System`(외부 앱) / `Internal`(Tasty 내부 복사). 내부 복사 지점(터미널 선택 복사, OSC 52)에서는 즉시 `record_internal_copy`로 기록
+- 설정: `clipboard.history_enabled`(기본 on), `history_max`(기본 100), `poll_interval_ms`(재시작 필요)
+- 주의: 비밀번호 관리자 등 민감 정보도 기록된다. OS 레벨 민감 플래그를 구분할 수단이 제한적이라 1차는 필터 없음
+- 재시작 시 휘발(디스크 영속화는 별도 TODO)
+
 ## CLI 도구 & 소켓 API
 
 ### JSON-RPC IPC 서버 (ipc/)

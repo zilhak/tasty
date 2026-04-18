@@ -80,6 +80,7 @@ impl MainWindow {
                     if let Some(cb) = &mut self.clipboard {
                         cb.set_text(data);
                     }
+                    self.state.engine.record_internal_copy(data);
                 }
                 crate::terminal::TerminalEventKind::ProcessExited => {
                     let hook_events = vec![tasty_hooks::HookEvent::ProcessExit];

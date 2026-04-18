@@ -4,6 +4,7 @@
 mod bookmarks;
 mod cli;
 mod click_cursor;
+mod clipboard_history;
 mod crash_report;
 mod double_tap;
 #[cfg(debug_assertions)]
@@ -104,6 +105,8 @@ enum AppEvent {
     /// Request to show window from system tray (Windows only).
     #[cfg(windows)]
     TrayShowWindow,
+    /// 주기적으로 시스템 클립보드를 폴링해 히스토리에 반영. 폴링 스레드가 발송.
+    ClipboardTick,
 }
 
 /// Tracks an active divider drag operation.
@@ -594,6 +597,25 @@ fn main() -> Result<()> {
 
     #[cfg(target_os = "macos")]
     macos_delegate::store_proxy(proxy.clone());
+
+    // 시스템 클립보드 폴링 스레드. interval은 앱 시작 시점의 설정 값을 사용하며,
+    // runtime 변경은 앱 재시작 후 반영된다.
+    {
+        let poll_interval_ms = crate::settings::Settings::load()
+            .clipboard
+            .poll_interval_ms
+            .max(100);
+        let tick_proxy = proxy.clone();
+        std::thread::spawn(move || {
+            let interval = std::time::Duration::from_millis(poll_interval_ms);
+            loop {
+                std::thread::sleep(interval);
+                if tick_proxy.send_event(AppEvent::ClipboardTick).is_err() {
+                    break; // event loop exited
+                }
+            }
+        });
+    }
 
     let mut app = App::new(proxy, cli.port_file);
     event_loop.run_app(&mut app)?;

@@ -91,6 +91,11 @@ heading = "Clipboard"
 macos_style = "macOS style (Alt+C / Alt+V)"
 linux_style = "Linux style (Ctrl+Shift+C / Ctrl+Shift+V)"
 windows_style = "Windows style (Ctrl+C with selection / Ctrl+V)"
+history_heading = "History"
+history_enabled_label = "Record clipboard history"
+history_max_label = "Max entries:"
+poll_interval_ms_label = "Poll interval (ms):"
+poll_interval_restart_notice = "Poll interval requires restart to apply."
 
 [settings.zoom]
 heading = "Zoom"
