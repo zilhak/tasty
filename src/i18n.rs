@@ -100,6 +100,14 @@ impl Translations {
         template.replace("{}", arg)
     }
 
+    /// Replace `{}` with `arg1`, `arg2` in order (one occurrence each).
+    /// Unlike `get_fmt`, this uses `replacen(_, 1)` so only the first two `{}` placeholders are replaced.
+    pub fn get_fmt2(&self, key: &str, arg1: &str, arg2: &str) -> String {
+        let template = self.get(key);
+        let first = template.replacen("{}", arg1, 1);
+        first.replacen("{}", arg2, 1)
+    }
+
 }
 
 /// Initialize the global translation store. Call once at startup.
@@ -119,5 +127,13 @@ pub fn t_fmt(key: &str, arg: &str) -> String {
         .get()
         .map(|tr| tr.get_fmt(key, arg))
         .unwrap_or_else(|| key.replace("{}", arg))
+}
+
+/// Get a translated string with two format arguments replacing the first two `{}` placeholders in order.
+pub fn t_fmt2(key: &str, arg1: &str, arg2: &str) -> String {
+    TRANSLATIONS
+        .get()
+        .map(|tr| tr.get_fmt2(key, arg1, arg2))
+        .unwrap_or_else(|| key.replacen("{}", arg1, 1).replacen("{}", arg2, 1))
 }
 

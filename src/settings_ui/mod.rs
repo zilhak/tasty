@@ -4,7 +4,7 @@ mod tabs;
 use crate::i18n::t;
 use crate::settings::Settings;
 
-use keybindings_tab::{draw_keybindings_tab, KeybindingsSubTab};
+use keybindings_tab::{draw_keybindings_tab, KeybindingsSubTab, PendingBinding};
 use tabs::*;
 
 /// Sub-tab within the Appearance tab.
@@ -43,6 +43,8 @@ pub struct SettingsUiState {
     appearance_sub_tab: AppearanceSubTab,
     /// Pending preset name to apply (waiting for user confirmation).
     preset_confirm: Option<String>,
+    /// Pending keybinding assignment waiting for conflict confirmation.
+    pending_binding: Option<PendingBinding>,
     /// Cached system font family list.
     pub font_families: Option<Vec<String>>,
     /// Font family filter text for search.
@@ -60,6 +62,7 @@ impl SettingsUiState {
             keybindings_sub_tab: KeybindingsSubTab::General,
             appearance_sub_tab: AppearanceSubTab::General,
             preset_confirm: None,
+            pending_binding: None,
             font_families: None,
             font_filter: String::new(),
             preview_font_loaded: String::new(),
@@ -139,7 +142,7 @@ pub fn draw_settings_panel(
                         SettingsTab::Appearance => draw_appearance_tab(ui, &mut draft, &mut ui_state.appearance_sub_tab, &mut ui_state.font_families, &mut ui_state.font_filter, &mut ui_state.preview_font_loaded),
                         SettingsTab::Clipboard => draw_clipboard_tab(ui, &mut draft),
                         SettingsTab::Notifications => draw_notifications_tab(ui, &mut draft),
-                        SettingsTab::Keybindings => draw_keybindings_tab(ui, &mut draft, &mut ui_state.recording_field, &mut ui_state.keybindings_sub_tab, &mut ui_state.preset_confirm, captured_double_tap),
+                        SettingsTab::Keybindings => draw_keybindings_tab(ui, &mut draft, &mut ui_state.recording_field, &mut ui_state.keybindings_sub_tab, &mut ui_state.preset_confirm, &mut ui_state.pending_binding, captured_double_tap),
                         SettingsTab::Language => draw_language_tab(ui, &mut draft),
                         SettingsTab::Performance => draw_performance_tab(ui, &mut draft),
                     }

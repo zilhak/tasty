@@ -141,6 +141,10 @@ apply_preset_title = "プリセットを適用"
 apply_preset_confirm = "\"{}\" プリセットを適用しますか？\n現在のすべてのキーバインドが上書きされます。"
 apply_button = "適用"
 
+conflict_title = "ショートカットが重複しています"
+conflict_message = "\"{}\" はすでに \"{}\" に割り当てられています。\nこのアクションに再割り当てして、既存のバインディングを消去しますか？"
+conflict_apply = "上書き"
+
 [settings.keybindings.subtab]
 general = "一般"
 workspace = "ワークスペース"

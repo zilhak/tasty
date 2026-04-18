@@ -1,5 +1,13 @@
 use crate::i18n::t;
-use crate::settings::Settings;
+use crate::settings::{KeybindingSettings, Settings};
+
+/// 녹화 완료 시 발견된 단축키 충돌의 확인 대기 상태.
+#[derive(Debug, Clone)]
+pub struct PendingBinding {
+    pub target_field: String,
+    pub combo: String,
+    pub conflicting_field: String,
+}
 
 /// Sub-tab within the Keybindings tab.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -28,6 +36,7 @@ pub fn draw_keybindings_tab(
     recording_field: &mut Option<String>,
     sub_tab: &mut KeybindingsSubTab,
     preset_confirm: &mut Option<String>,
+    pending_binding: &mut Option<PendingBinding>,
     captured_double_tap: &mut Option<String>,
 ) {
     let th = crate::theme::theme();
@@ -79,20 +88,20 @@ pub fn draw_keybindings_tab(
 
         match *sub_tab {
             KeybindingsSubTab::General => {
-                draw_keybinding_entries(ui, recording_field, &captured, &mut [
-                    ("toggle_settings", "settings.keybindings.toggle_settings_label", &mut settings.keybindings.toggle_settings),
-                    ("toggle_notifications", "settings.keybindings.toggle_notifications_label", &mut settings.keybindings.toggle_notifications),
-                    ("restore_closed", "settings.keybindings.restore_closed_label", &mut settings.keybindings.restore_closed),
-                    ("new_window", "settings.keybindings.new_window_label", &mut settings.keybindings.new_window),
-                    ("quit", "settings.keybindings.quit_label", &mut settings.keybindings.quit),
-                    ("quit_immediate", "settings.keybindings.quit_immediate_label", &mut settings.keybindings.quit_immediate),
-                    ("quit_minimize", "settings.keybindings.quit_minimize_label", &mut settings.keybindings.quit_minimize),
+                draw_keybinding_entries(ui, &mut settings.keybindings, recording_field, pending_binding, &captured, &[
+                    ("toggle_settings", "settings.keybindings.toggle_settings_label"),
+                    ("toggle_notifications", "settings.keybindings.toggle_notifications_label"),
+                    ("restore_closed", "settings.keybindings.restore_closed_label"),
+                    ("new_window", "settings.keybindings.new_window_label"),
+                    ("quit", "settings.keybindings.quit_label"),
+                    ("quit_immediate", "settings.keybindings.quit_immediate_label"),
+                    ("quit_minimize", "settings.keybindings.quit_minimize_label"),
                 ]);
             }
             KeybindingsSubTab::Workspace => {
-                draw_keybinding_entries(ui, recording_field, &captured, &mut [
-                    ("new_workspace", "settings.keybindings.new_workspace_label", &mut settings.keybindings.new_workspace),
-                    ("close_workspace", "settings.keybindings.close_workspace_label", &mut settings.keybindings.close_workspace),
+                draw_keybinding_entries(ui, &mut settings.keybindings, recording_field, pending_binding, &captured, &[
+                    ("new_workspace", "settings.keybindings.new_workspace_label"),
+                    ("close_workspace", "settings.keybindings.close_workspace_label"),
                 ]);
 
                 ui.add_space(8.0);
@@ -123,27 +132,27 @@ pub fn draw_keybindings_tab(
                     });
             }
             KeybindingsSubTab::Pane => {
-                draw_keybinding_entries(ui, recording_field, &captured, &mut [
-                    ("new_tab", "settings.keybindings.new_tab_label", &mut settings.keybindings.new_tab),
-                    ("split_pane_vertical", "settings.keybindings.split_pane_vertical_label", &mut settings.keybindings.split_pane_vertical),
-                    ("split_pane_horizontal", "settings.keybindings.split_pane_horizontal_label", &mut settings.keybindings.split_pane_horizontal),
-                    ("focus_pane_next", "settings.keybindings.focus_pane_next_label", &mut settings.keybindings.focus_pane_next),
-                    ("focus_pane_prev", "settings.keybindings.focus_pane_prev_label", &mut settings.keybindings.focus_pane_prev),
-                    ("close_pane", "settings.keybindings.close_pane_label", &mut settings.keybindings.close_pane),
-                    ("open_markdown", "settings.keybindings.open_markdown_label", &mut settings.keybindings.open_markdown),
-                    ("open_explorer", "settings.keybindings.open_explorer_label", &mut settings.keybindings.open_explorer),
+                draw_keybinding_entries(ui, &mut settings.keybindings, recording_field, pending_binding, &captured, &[
+                    ("new_tab", "settings.keybindings.new_tab_label"),
+                    ("split_pane_vertical", "settings.keybindings.split_pane_vertical_label"),
+                    ("split_pane_horizontal", "settings.keybindings.split_pane_horizontal_label"),
+                    ("focus_pane_next", "settings.keybindings.focus_pane_next_label"),
+                    ("focus_pane_prev", "settings.keybindings.focus_pane_prev_label"),
+                    ("close_pane", "settings.keybindings.close_pane_label"),
+                    ("open_markdown", "settings.keybindings.open_markdown_label"),
+                    ("open_explorer", "settings.keybindings.open_explorer_label"),
                 ]);
             }
             KeybindingsSubTab::Surface => {
-                draw_keybinding_entries(ui, recording_field, &captured, &mut [
-                    ("split_surface_vertical", "settings.keybindings.split_surface_vertical_label", &mut settings.keybindings.split_surface_vertical),
-                    ("split_surface_horizontal", "settings.keybindings.split_surface_horizontal_label", &mut settings.keybindings.split_surface_horizontal),
-                    ("focus_surface_next", "settings.keybindings.focus_surface_next_label", &mut settings.keybindings.focus_surface_next),
-                    ("focus_surface_prev", "settings.keybindings.focus_surface_prev_label", &mut settings.keybindings.focus_surface_prev),
-                    ("close_surface", "settings.keybindings.close_surface_label", &mut settings.keybindings.close_surface),
-                    ("convert_surface", "settings.keybindings.convert_surface_label", &mut settings.keybindings.convert_surface),
-                    ("convert_to_markdown", "settings.keybindings.convert_to_markdown_label", &mut settings.keybindings.convert_to_markdown),
-                    ("convert_to_explorer", "settings.keybindings.convert_to_explorer_label", &mut settings.keybindings.convert_to_explorer),
+                draw_keybinding_entries(ui, &mut settings.keybindings, recording_field, pending_binding, &captured, &[
+                    ("split_surface_vertical", "settings.keybindings.split_surface_vertical_label"),
+                    ("split_surface_horizontal", "settings.keybindings.split_surface_horizontal_label"),
+                    ("focus_surface_next", "settings.keybindings.focus_surface_next_label"),
+                    ("focus_surface_prev", "settings.keybindings.focus_surface_prev_label"),
+                    ("close_surface", "settings.keybindings.close_surface_label"),
+                    ("convert_surface", "settings.keybindings.convert_surface_label"),
+                    ("convert_to_markdown", "settings.keybindings.convert_to_markdown_label"),
+                    ("convert_to_explorer", "settings.keybindings.convert_to_explorer_label"),
                 ]);
             }
             KeybindingsSubTab::Preset => {
@@ -194,6 +203,58 @@ pub fn draw_keybindings_tab(
                 });
             });
     }
+
+    // Keybinding conflict confirmation modal
+    if let Some(pending) = pending_binding.clone() {
+        let conflict_label_raw = KeybindingSettings::label_key_for(&pending.conflicting_field)
+            .map(t)
+            .unwrap_or(pending.conflicting_field.as_str());
+        let conflict_label = conflict_label_raw
+            .trim_end_matches(':')
+            .trim()
+            .to_string();
+        let combo_display = KeybindingSettings::format_display(&pending.combo);
+
+        let mut accept = false;
+        let mut cancel = false;
+        ui.ctx().input(|i| {
+            if i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Y) {
+                accept = true;
+            }
+            if i.key_pressed(egui::Key::Escape) || i.key_pressed(egui::Key::N) {
+                cancel = true;
+            }
+        });
+
+        egui::Window::new(t("settings.keybindings.conflict_title"))
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(ui.ctx(), |ui| {
+                ui.label(crate::i18n::t_fmt2(
+                    "settings.keybindings.conflict_message",
+                    &combo_display,
+                    &conflict_label,
+                ));
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    if ui.button(t("button.cancel")).clicked() {
+                        cancel = true;
+                    }
+                    if ui.button(t("settings.keybindings.conflict_apply")).clicked() {
+                        accept = true;
+                    }
+                });
+            });
+
+        if accept {
+            settings.keybindings.clear_field(&pending.conflicting_field);
+            settings.keybindings.set_field(&pending.target_field, &pending.combo);
+            *pending_binding = None;
+        } else if cancel {
+            *pending_binding = None;
+        }
+    }
 }
 
 fn modifier_display(modifier: &str) -> &str {
@@ -205,16 +266,20 @@ fn modifier_display(modifier: &str) -> &str {
 
 fn draw_keybinding_entries(
     ui: &mut egui::Ui,
+    keybindings: &mut KeybindingSettings,
     recording_field: &mut Option<String>,
+    pending_binding: &mut Option<PendingBinding>,
     captured: &KeyCapture,
-    bindings: &mut [(&str, &str, &mut String)],
+    bindings: &[(&str, &str)],
 ) {
     let th = crate::theme::theme();
+    // 충돌 팝업이 떠 있는 동안은 녹화 버튼을 눌러도 녹화 상태로 진입하지 않도록 가드.
+    let can_record = pending_binding.is_none();
     egui::Grid::new("keybindings_grid")
         .num_columns(2)
         .spacing([12.0, 8.0])
         .show(ui, |ui| {
-            for (field_id, label_key, value) in bindings.iter_mut() {
+            for (field_id, label_key) in bindings.iter() {
                 ui.label(t(label_key));
 
                 let is_recording = recording_field.as_deref() == Some(*field_id);
@@ -222,23 +287,35 @@ fn draw_keybinding_entries(
                 if is_recording {
                     match captured {
                         KeyCapture::Combo(combo) => {
-                            **value = combo.clone();
+                            match keybindings.find_conflict(field_id, combo) {
+                                Some(conflicting) => {
+                                    *pending_binding = Some(PendingBinding {
+                                        target_field: field_id.to_string(),
+                                        combo: combo.clone(),
+                                        conflicting_field: conflicting.to_string(),
+                                    });
+                                }
+                                None => {
+                                    keybindings.set_field(field_id, combo);
+                                }
+                            }
                             *recording_field = None;
                         }
                         KeyCapture::Clear => {
-                            value.clear();
+                            keybindings.clear_field(field_id);
                             *recording_field = None;
                         }
                         KeyCapture::None => {}
                     }
                 }
 
+                let current = keybindings.get_field(field_id).unwrap_or("");
                 let display_text = if is_recording {
                     t("settings.keybindings.hint_press_key").to_string()
-                } else if value.is_empty() {
+                } else if current.is_empty() {
                     t("settings.keybindings.hint_none").to_string()
                 } else {
-                    (**value).clone()
+                    current.to_string()
                 };
 
                 let bg_color = if is_recording {
@@ -246,7 +323,7 @@ fn draw_keybinding_entries(
                 } else {
                     th.surface0
                 };
-                let text_color = if is_recording || value.is_empty() {
+                let text_color = if is_recording || current.is_empty() {
                     th.overlay1
                 } else {
                     th.text
@@ -258,7 +335,7 @@ fn draw_keybinding_entries(
                     .fill(bg_color)
                     .min_size(egui::vec2(200.0, 24.0));
 
-                if ui.add(button).clicked() {
+                if ui.add_enabled(can_record, button).clicked() {
                     *recording_field = Some(field_id.to_string());
                 }
                 ui.end_row();

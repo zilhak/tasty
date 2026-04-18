@@ -49,6 +49,133 @@ pub struct KeybindingSettings {
 }
 
 impl KeybindingSettings {
+    /// 일반 단축키 필드 전체 목록 (modifier 필드 제외).
+    /// 중복 검사 및 field_id ↔ 라벨 매핑에 사용.
+    pub const GENERAL_BINDING_FIELDS: &'static [(&'static str, &'static str)] = &[
+        ("new_workspace",           "settings.keybindings.new_workspace_label"),
+        ("new_tab",                 "settings.keybindings.new_tab_label"),
+        ("split_pane_vertical",     "settings.keybindings.split_pane_vertical_label"),
+        ("split_pane_horizontal",   "settings.keybindings.split_pane_horizontal_label"),
+        ("split_surface_vertical",  "settings.keybindings.split_surface_vertical_label"),
+        ("split_surface_horizontal","settings.keybindings.split_surface_horizontal_label"),
+        ("toggle_settings",         "settings.keybindings.toggle_settings_label"),
+        ("toggle_notifications",    "settings.keybindings.toggle_notifications_label"),
+        ("close_pane",              "settings.keybindings.close_pane_label"),
+        ("close_surface",           "settings.keybindings.close_surface_label"),
+        ("close_workspace",         "settings.keybindings.close_workspace_label"),
+        ("focus_pane_next",         "settings.keybindings.focus_pane_next_label"),
+        ("focus_pane_prev",         "settings.keybindings.focus_pane_prev_label"),
+        ("focus_surface_next",      "settings.keybindings.focus_surface_next_label"),
+        ("focus_surface_prev",      "settings.keybindings.focus_surface_prev_label"),
+        ("restore_closed",          "settings.keybindings.restore_closed_label"),
+        ("quit",                    "settings.keybindings.quit_label"),
+        ("quit_immediate",          "settings.keybindings.quit_immediate_label"),
+        ("quit_minimize",           "settings.keybindings.quit_minimize_label"),
+        ("open_markdown",           "settings.keybindings.open_markdown_label"),
+        ("open_explorer",           "settings.keybindings.open_explorer_label"),
+        ("convert_surface",         "settings.keybindings.convert_surface_label"),
+        ("convert_to_markdown",     "settings.keybindings.convert_to_markdown_label"),
+        ("convert_to_explorer",     "settings.keybindings.convert_to_explorer_label"),
+        ("new_window",              "settings.keybindings.new_window_label"),
+    ];
+
+    pub fn get_field(&self, field_id: &str) -> Option<&str> {
+        Some(match field_id {
+            "new_workspace"            => self.new_workspace.as_str(),
+            "new_tab"                  => self.new_tab.as_str(),
+            "split_pane_vertical"      => self.split_pane_vertical.as_str(),
+            "split_pane_horizontal"    => self.split_pane_horizontal.as_str(),
+            "split_surface_vertical"   => self.split_surface_vertical.as_str(),
+            "split_surface_horizontal" => self.split_surface_horizontal.as_str(),
+            "toggle_settings"          => self.toggle_settings.as_str(),
+            "toggle_notifications"     => self.toggle_notifications.as_str(),
+            "close_pane"               => self.close_pane.as_str(),
+            "close_surface"            => self.close_surface.as_str(),
+            "close_workspace"          => self.close_workspace.as_str(),
+            "focus_pane_next"          => self.focus_pane_next.as_str(),
+            "focus_pane_prev"          => self.focus_pane_prev.as_str(),
+            "focus_surface_next"       => self.focus_surface_next.as_str(),
+            "focus_surface_prev"       => self.focus_surface_prev.as_str(),
+            "toggle_sidebar"           => self.toggle_sidebar.as_str(),
+            "toggle_sidebar_collapse"  => self.toggle_sidebar_collapse.as_str(),
+            "restore_closed"           => self.restore_closed.as_str(),
+            "quit"                     => self.quit.as_str(),
+            "quit_immediate"           => self.quit_immediate.as_str(),
+            "quit_minimize"            => self.quit_minimize.as_str(),
+            "open_markdown"            => self.open_markdown.as_str(),
+            "open_explorer"            => self.open_explorer.as_str(),
+            "convert_surface"          => self.convert_surface.as_str(),
+            "convert_to_markdown"      => self.convert_to_markdown.as_str(),
+            "convert_to_explorer"      => self.convert_to_explorer.as_str(),
+            "new_window"               => self.new_window.as_str(),
+            _ => return None,
+        })
+    }
+
+    pub fn set_field(&mut self, field_id: &str, value: &str) -> bool {
+        let target: &mut String = match field_id {
+            "new_workspace"            => &mut self.new_workspace,
+            "new_tab"                  => &mut self.new_tab,
+            "split_pane_vertical"      => &mut self.split_pane_vertical,
+            "split_pane_horizontal"    => &mut self.split_pane_horizontal,
+            "split_surface_vertical"   => &mut self.split_surface_vertical,
+            "split_surface_horizontal" => &mut self.split_surface_horizontal,
+            "toggle_settings"          => &mut self.toggle_settings,
+            "toggle_notifications"     => &mut self.toggle_notifications,
+            "close_pane"               => &mut self.close_pane,
+            "close_surface"            => &mut self.close_surface,
+            "close_workspace"          => &mut self.close_workspace,
+            "focus_pane_next"          => &mut self.focus_pane_next,
+            "focus_pane_prev"          => &mut self.focus_pane_prev,
+            "focus_surface_next"       => &mut self.focus_surface_next,
+            "focus_surface_prev"       => &mut self.focus_surface_prev,
+            "toggle_sidebar"           => &mut self.toggle_sidebar,
+            "toggle_sidebar_collapse"  => &mut self.toggle_sidebar_collapse,
+            "restore_closed"           => &mut self.restore_closed,
+            "quit"                     => &mut self.quit,
+            "quit_immediate"           => &mut self.quit_immediate,
+            "quit_minimize"            => &mut self.quit_minimize,
+            "open_markdown"            => &mut self.open_markdown,
+            "open_explorer"            => &mut self.open_explorer,
+            "convert_surface"          => &mut self.convert_surface,
+            "convert_to_markdown"      => &mut self.convert_to_markdown,
+            "convert_to_explorer"      => &mut self.convert_to_explorer,
+            "new_window"               => &mut self.new_window,
+            _ => return false,
+        };
+        *target = value.to_string();
+        true
+    }
+
+    pub fn clear_field(&mut self, field_id: &str) -> bool {
+        self.set_field(field_id, "")
+    }
+
+    /// `combo`와 같은 값을 가진 **다른 필드**의 field_id를 반환.
+    /// 빈 조합은 항상 None. 자기 자신(field_id 일치)은 제외.
+    pub fn find_conflict(&self, field_id: &str, combo: &str) -> Option<&'static str> {
+        if combo.is_empty() {
+            return None;
+        }
+        for (id, _label) in Self::GENERAL_BINDING_FIELDS {
+            if *id == field_id {
+                continue;
+            }
+            if self.get_field(id).is_some_and(|v| v == combo) {
+                return Some(id);
+            }
+        }
+        None
+    }
+
+    /// field_id → 라벨 번역 키.
+    pub fn label_key_for(field_id: &str) -> Option<&'static str> {
+        Self::GENERAL_BINDING_FIELDS
+            .iter()
+            .find(|(id, _)| *id == field_id)
+            .map(|(_, key)| *key)
+    }
+
     /// Format a binding string for display (e.g. "ctrl+shift+n" → "Ctrl+Shift+N").
     pub fn format_display(binding: &str) -> String {
         if binding.is_empty() {
@@ -127,5 +254,79 @@ impl KeybindingSettings {
             }
             _ => false,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn find_conflict_detects_duplicate_across_fields() {
+        let kb = KeybindingSettings::preset_tasty();
+        assert_eq!(
+            kb.find_conflict("toggle_settings", "ctrl+shift+w"),
+            Some("close_pane")
+        );
+    }
+
+    #[test]
+    fn find_conflict_ignores_self() {
+        let kb = KeybindingSettings::preset_tasty();
+        assert_eq!(kb.find_conflict("close_pane", "ctrl+shift+w"), None);
+    }
+
+    #[test]
+    fn find_conflict_empty_combo_is_none() {
+        let kb = KeybindingSettings::preset_tasty();
+        assert_eq!(kb.find_conflict("close_pane", ""), None);
+    }
+
+    #[test]
+    fn find_conflict_empty_fields_dont_conflict() {
+        let kb = KeybindingSettings::preset_tasty();
+        assert_eq!(kb.find_conflict("quit", ""), None);
+    }
+
+    #[test]
+    fn set_and_get_field_roundtrip() {
+        let mut kb = KeybindingSettings::preset_tasty();
+        assert!(kb.set_field("new_tab", "alt+x"));
+        assert_eq!(kb.get_field("new_tab"), Some("alt+x"));
+        assert!(kb.clear_field("new_tab"));
+        assert_eq!(kb.get_field("new_tab"), Some(""));
+    }
+
+    #[test]
+    fn set_field_unknown_returns_false() {
+        let mut kb = KeybindingSettings::preset_tasty();
+        assert!(!kb.set_field("nonexistent", "ctrl+x"));
+        assert_eq!(kb.get_field("nonexistent"), None);
+    }
+
+    #[test]
+    fn general_binding_fields_count() {
+        // UI에 노출된 일반 단축키 필드: 25개.
+        // 구조체에 UI 편집 가능한 필드가 추가/삭제되면 이 숫자와 GENERAL_BINDING_FIELDS를 함께 갱신해야 한다.
+        assert_eq!(KeybindingSettings::GENERAL_BINDING_FIELDS.len(), 25);
+    }
+
+    #[test]
+    fn all_general_fields_have_getters_and_setters() {
+        let mut kb = KeybindingSettings::preset_tasty();
+        for (id, _) in KeybindingSettings::GENERAL_BINDING_FIELDS {
+            assert!(kb.get_field(id).is_some(), "get_field missing for {id}");
+            assert!(kb.set_field(id, "x"), "set_field missing for {id}");
+            assert_eq!(kb.get_field(id), Some("x"));
+        }
+    }
+
+    #[test]
+    fn label_key_for_returns_correct_key() {
+        assert_eq!(
+            KeybindingSettings::label_key_for("close_pane"),
+            Some("settings.keybindings.close_pane_label")
+        );
+        assert_eq!(KeybindingSettings::label_key_for("nonexistent"), None);
     }
 }

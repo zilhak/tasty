@@ -141,6 +141,10 @@ apply_preset_title = "Apply Preset"
 apply_preset_confirm = "Are you sure you want to apply the \"{}\" preset?\nThis will overwrite all current keybindings."
 apply_button = "Apply"
 
+conflict_title = "Shortcut already in use"
+conflict_message = "\"{}\" is already bound to \"{}\".\nReassign it to this action and clear the other?"
+conflict_apply = "Overwrite"
+
 [settings.keybindings.subtab]
 general = "General"
 workspace = "Workspace"
