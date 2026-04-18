@@ -554,6 +554,22 @@ impl Terminal {
                 } else {
                     url.clone()
                 };
+                // On Windows, OSC 7 paths arrive as "/C:/foo/bar" (URI form);
+                // strip the leading slash so PathBuf yields a valid drive path.
+                #[cfg(windows)]
+                let path = {
+                    let bytes = path.as_bytes();
+                    if bytes.len() >= 4
+                        && bytes[0] == b'/'
+                        && bytes[2] == b':'
+                        && bytes[3] == b'/'
+                        && bytes[1].is_ascii_alphabetic()
+                    {
+                        path[1..].replace('/', "\\")
+                    } else {
+                        path
+                    }
+                };
                 // Cache the CWD so get_cwd() can return it instantly without
                 // spawning an external process (critical on Windows).
                 self.cached_cwd = Some(std::path::PathBuf::from(&path));

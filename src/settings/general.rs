@@ -201,6 +201,20 @@ export PATH="/usr/local/bin:/usr/bin:/bin:${ORIGINAL_PATH}"
 # Prompt
 PS1='\[\033[32m\]\u@\h\[\033[0m\] \[\033[33m\]\w\[\033[0m\]\n\$ '
 
+# Emit OSC 7 so Tasty inherits cwd when opening new tabs/splits.
+# On Windows (Git Bash), convert the MSYS path to a Windows path so ConPTY
+# can spawn a child shell in the same directory.
+__tasty_osc7() {
+    local pwd_emit="$PWD"
+    if command -v cygpath >/dev/null 2>&1; then
+        pwd_emit=$(cygpath -w "$PWD" 2>/dev/null || printf '%s' "$PWD")
+        pwd_emit=${pwd_emit//\\//}
+        pwd_emit="/${pwd_emit}"
+    fi
+    printf '\033]7;file://%s%s\033\\' "${HOSTNAME:-localhost}" "$pwd_emit"
+}
+PROMPT_COMMAND="__tasty_osc7${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
+
 # Common aliases
 alias ls='ls --color=auto'
 alias ll='ls -la'
