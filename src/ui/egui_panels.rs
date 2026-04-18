@@ -5,6 +5,19 @@ use crate::model::Rect;
 use crate::state::{AppState, PendingKeyEvent};
 use crate::theme;
 
+struct EguiPanelInfo {
+    pane_id: u32,
+    /// If Some, this is a specific surface within a SurfaceGroup.
+    /// If None, this is the entire tab's standalone surface.
+    surface_id: Option<u32>,
+    logical_x: f32,
+    logical_y: f32,
+    logical_w: f32,
+    logical_h: f32,
+    /// Whether this panel is the keyboard target (receives pending_surface_keys).
+    is_keyboard_target: bool,
+}
+
 /// Render egui-based panels (Markdown, Explorer, Html, Empty).
 /// Terminal panels are rendered by the wgpu shader pipeline; these are rendered by egui.
 /// Supports both standalone non-terminal tabs and non-terminal leaves within SurfaceGroups.
@@ -14,21 +27,6 @@ pub fn draw_egui_panels(
     pane_rects: &[(u32, Rect)],
     scale_factor: f32,
 ) {
-    let th = theme::theme();
-
-    struct EguiPanelInfo {
-        pane_id: u32,
-        /// If Some, this is a specific surface within a SurfaceGroup.
-        /// If None, this is the entire tab's standalone surface.
-        surface_id: Option<u32>,
-        logical_x: f32,
-        logical_y: f32,
-        logical_w: f32,
-        logical_h: f32,
-        /// Whether this panel is the keyboard target (receives pending_surface_keys).
-        is_keyboard_target: bool,
-    }
-
     // First pass: gather info about egui-rendered panels (read-only).
     let mut infos = Vec::new();
     {
@@ -77,7 +75,8 @@ pub fn draw_egui_panels(
                         logical_y: (rect.y / scale_factor).round_ui(),
                         logical_w: (rect.width / scale_factor).round_ui(),
                         logical_h: (rect.height / scale_factor).round_ui(),
-                        is_keyboard_target: pane_id == focused_pane_id && sid == focused_surface_in_group,
+                        is_keyboard_target: pane_id == focused_pane_id
+                            && sid == focused_surface_in_group,
                     });
                 }
             }
@@ -90,10 +89,9 @@ pub fn draw_egui_panels(
 
     // Second pass: render each egui panel.
     let mut pending_explorer_action: Option<(u32, Option<u32>, crate::explorer_ui::ExplorerAction)> = None;
-    let mut pending_empty_convert: Option<u32> = None;
+    let mut pending_empty_action: Option<crate::empty_ui::EmptyAction> = None;
 
     for info in &infos {
-        // Unique ID suffix for egui Areas (avoids collisions when multiple panels exist).
         let id_suffix = info.surface_id.map_or(
             format!("pane_{}", info.pane_id),
             |sid| format!("surface_{}", sid),
@@ -117,7 +115,6 @@ pub fn draw_egui_panels(
                     None => continue,
                 }
             } else {
-                // Standalone surface with a known surface_id — use the tab's surface directly.
                 tab.surface_mut()
             }
         } else {
@@ -125,12 +122,8 @@ pub fn draw_egui_panels(
         };
 
         if let Some(md_panel) = surface.as_markdown_mut() {
-            // Check for file changes and auto-reload
-            md_panel.check_reload();
-
             let scroll_line = 24.0;
             let scroll_page = info.logical_h * 0.8;
-            // Read keyboard scroll from dispatched key queue (not egui global input)
             let key_scroll_y = if info.is_keyboard_target {
                 let mut dy = 0.0;
                 for k in &surface_keys {
@@ -146,111 +139,31 @@ pub fn draw_egui_panels(
             } else {
                 0.0
             };
-
-            egui::Area::new(egui::Id::new(format!("md_panel_{}", id_suffix)))
-                .fixed_pos(egui::pos2(info.logical_x, info.logical_y))
-                .order(egui::Order::Background)
-                .show(ctx, |ui| {
-                    ui.set_min_size(egui::vec2(info.logical_w, info.logical_h));
-                    ui.set_max_size(egui::vec2(info.logical_w, info.logical_h));
-                    let panel_rect = ui.max_rect();
-                    let mut clip_ui = ui.new_child(egui::UiBuilder::new().max_rect(panel_rect));
-                    clip_ui.set_clip_rect(panel_rect);
-                    egui::Frame::new()
-                        .fill(th.crust)
-                        .inner_margin(egui::Margin::same(8))
-                        .show(&mut clip_ui, |ui| {
-                            // Force the frame content to fill the available width
-                            ui.set_min_width(ui.available_width());
-                            if key_scroll_y != 0.0 {
-                                ui.scroll_with_delta(egui::vec2(0.0, key_scroll_y));
-                            }
-                            egui::ScrollArea::vertical()
-                                .id_salt(format!("md_scroll_{}", id_suffix))
-                                .show(ui, |ui| {
-                                    // Ensure markdown text wraps at the available width
-                                    ui.set_min_width(ui.available_width());
-                                    ui.style_mut().interaction.selectable_labels = true;
-                                    let content = md_panel.content.clone();
-                                    crate::markdown_ui::render_markdown(ui, &content);
-                                });
-                        });
-                });
+            draw_panel_frame(ctx, &format!("md_panel_{}", id_suffix), info, 8, |ui| {
+                crate::markdown_ui::draw_markdown(ui, md_panel, key_scroll_y, &id_suffix);
+            });
         } else if let Some(exp_panel) = surface.as_explorer_mut() {
             let keys = if info.is_keyboard_target { &surface_keys[..] } else { &[] };
-            egui::Area::new(egui::Id::new(format!("explorer_{}", id_suffix)))
-                .fixed_pos(egui::pos2(info.logical_x, info.logical_y))
-                .order(egui::Order::Background)
-                .show(ctx, |ui| {
-                    ui.set_min_size(egui::vec2(info.logical_w, info.logical_h));
-                    ui.set_max_size(egui::vec2(info.logical_w, info.logical_h));
-                    let panel_rect = ui.max_rect();
-                    let mut clip_ui = ui.new_child(egui::UiBuilder::new().max_rect(panel_rect));
-                    clip_ui.set_clip_rect(panel_rect);
-                    egui::Frame::new()
-                        .fill(th.crust)
-                        .inner_margin(egui::Margin::same(4))
-                        .show(&mut clip_ui, |ui| {
-                            if let Some(act) = crate::explorer_ui::draw_explorer(ui, exp_panel, keys) {
-                                pending_explorer_action = Some((info.pane_id, info.surface_id, act));
-                            }
-                        });
-                });
+            draw_panel_frame(ctx, &format!("explorer_{}", id_suffix), info, 4, |ui| {
+                if let Some(act) = crate::explorer_ui::draw_explorer(ui, exp_panel, keys) {
+                    pending_explorer_action = Some((info.pane_id, info.surface_id, act));
+                }
+            });
         } else if let Some(html_panel) = surface.as_html() {
-            let url = html_panel.url.clone();
-            egui::Area::new(egui::Id::new(format!("html_panel_{}", id_suffix)))
-                .fixed_pos(egui::pos2(info.logical_x, info.logical_y))
-                .order(egui::Order::Background)
-                .show(ctx, |ui| {
-                    ui.set_min_size(egui::vec2(info.logical_w, info.logical_h));
-                    ui.set_max_size(egui::vec2(info.logical_w, info.logical_h));
-                    let panel_rect = ui.max_rect();
-                    let mut clip_ui = ui.new_child(egui::UiBuilder::new().max_rect(panel_rect));
-                    clip_ui.set_clip_rect(panel_rect);
-                    egui::Frame::new()
-                        .fill(th.crust)
-                        .show(&mut clip_ui, |ui| {
-                            ui.centered_and_justified(|ui| {
-                                ui.label(
-                                    egui::RichText::new(&url)
-                                        .color(th.overlay0)
-                                        .size(th.font_size_body),
-                                );
-                            });
-                        });
-                });
+            draw_panel_frame(ctx, &format!("html_panel_{}", id_suffix), info, 0, |ui| {
+                crate::html_ui::draw_html(ui, html_panel);
+            });
         } else if let Some(empty) = surface.as_empty_surface() {
-            let sid = empty.id;
-            egui::Area::new(egui::Id::new(format!("empty_panel_{}", id_suffix)))
-                .fixed_pos(egui::pos2(info.logical_x, info.logical_y))
-                .order(egui::Order::Background)
-                .show(ctx, |ui| {
-                    ui.set_min_size(egui::vec2(info.logical_w, info.logical_h));
-                    ui.set_max_size(egui::vec2(info.logical_w, info.logical_h));
-                    let panel_rect = ui.max_rect();
-                    let mut clip_ui = ui.new_child(egui::UiBuilder::new().max_rect(panel_rect));
-                    clip_ui.set_clip_rect(panel_rect);
-                    // Paint full background first to avoid crust/base color mismatch
-                    clip_ui.painter().rect_filled(panel_rect, 0.0, th.crust);
-                    let available = clip_ui.available_size();
-                    let button_h = 28.0;
-                    clip_ui.add_space(((available.y - button_h) / 2.0).max(0.0));
-                    clip_ui.vertical_centered(|ui| {
-                        let btn = ui.button(
-                            egui::RichText::new(crate::i18n::t("convert_popup.title"))
-                                .size(th.font_size_body)
-                                .color(th.text),
-                        );
-                        if btn.clicked() {
-                            pending_empty_convert = Some(sid);
-                        }
-                    });
-                });
+            draw_panel_frame_no_margin(ctx, &format!("empty_panel_{}", id_suffix), info, |ui| {
+                if let Some(act) = crate::empty_ui::draw_empty(ui, empty) {
+                    pending_empty_action = Some(act);
+                }
+            });
         }
     }
 
-    // Process deferred empty surface convert
-    if let Some(sid) = pending_empty_convert {
+    // Apply deferred empty surface action (must happen after render loop due to state mutation).
+    if let Some(crate::empty_ui::EmptyAction::OpenConvertPopup(sid)) = pending_empty_action {
         state.dialogs.convert_popup = Some(sid);
         state.dialogs.convert_popup_selected = None;
         state.popups.open_with_scope("convert_surface", crate::ui::popup::PopupScope::Surface(sid));
@@ -279,4 +192,53 @@ pub fn draw_egui_panels(
             }
         }
     }
+}
+
+/// 공통 egui Area + Frame(crust background) 껍데기. `margin`만큼 내부 여백을 준다.
+fn draw_panel_frame<F>(
+    ctx: &egui::Context,
+    id: &str,
+    info: &EguiPanelInfo,
+    margin: i8,
+    body: F,
+) where
+    F: FnOnce(&mut egui::Ui),
+{
+    let th = theme::theme();
+    egui::Area::new(egui::Id::new(id))
+        .fixed_pos(egui::pos2(info.logical_x, info.logical_y))
+        .order(egui::Order::Background)
+        .show(ctx, |ui| {
+            ui.set_min_size(egui::vec2(info.logical_w, info.logical_h));
+            ui.set_max_size(egui::vec2(info.logical_w, info.logical_h));
+            let panel_rect = ui.max_rect();
+            let mut clip_ui = ui.new_child(egui::UiBuilder::new().max_rect(panel_rect));
+            clip_ui.set_clip_rect(panel_rect);
+            egui::Frame::new()
+                .fill(th.crust)
+                .inner_margin(egui::Margin::same(margin))
+                .show(&mut clip_ui, body);
+        });
+}
+
+/// 여백 없이 Area만 거는 변형. Empty surface처럼 배경을 직접 칠하는 경우에 사용.
+fn draw_panel_frame_no_margin<F>(
+    ctx: &egui::Context,
+    id: &str,
+    info: &EguiPanelInfo,
+    body: F,
+) where
+    F: FnOnce(&mut egui::Ui),
+{
+    egui::Area::new(egui::Id::new(id))
+        .fixed_pos(egui::pos2(info.logical_x, info.logical_y))
+        .order(egui::Order::Background)
+        .show(ctx, |ui| {
+            ui.set_min_size(egui::vec2(info.logical_w, info.logical_h));
+            ui.set_max_size(egui::vec2(info.logical_w, info.logical_h));
+            let panel_rect = ui.max_rect();
+            let mut clip_ui = ui.new_child(egui::UiBuilder::new().max_rect(panel_rect));
+            clip_ui.set_clip_rect(panel_rect);
+            body(&mut clip_ui);
+        });
 }

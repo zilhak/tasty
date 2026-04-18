@@ -1,7 +1,29 @@
 /// Simple Markdown renderer using egui.
 /// Handles headings, lists, blockquotes, separators, code blocks, and paragraphs.
 
+use crate::model::MarkdownPanel;
 use crate::theme;
+
+/// Draw a MarkdownPanel surface: file reload check + scroll area + content render.
+/// `scroll_delta` is applied before the ScrollArea (positive = scroll up).
+/// `id_suffix` uniquifies egui ids when multiple panels share a context.
+pub fn draw_markdown(ui: &mut egui::Ui, panel: &mut MarkdownPanel, scroll_delta: f32, id_suffix: &str) {
+    panel.check_reload();
+
+    // Force the frame content to fill the available width
+    ui.set_min_width(ui.available_width());
+    if scroll_delta != 0.0 {
+        ui.scroll_with_delta(egui::vec2(0.0, scroll_delta));
+    }
+    egui::ScrollArea::vertical()
+        .id_salt(format!("md_scroll_{}", id_suffix))
+        .show(ui, |ui| {
+            ui.set_min_width(ui.available_width());
+            ui.style_mut().interaction.selectable_labels = true;
+            let content = panel.content.clone();
+            render_markdown(ui, &content);
+        });
+}
 
 /// Render markdown content into an egui Ui.
 pub fn render_markdown(ui: &mut egui::Ui, content: &str) {
