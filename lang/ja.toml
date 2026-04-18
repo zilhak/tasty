@@ -29,6 +29,7 @@ clipboard = "クリップボード"
 notifications = "通知"
 keybindings = "キーバインド"
 language = "言語"
+misc = "その他"
 
 [settings.general]
 heading = "一般"
@@ -39,7 +40,7 @@ shell_valid = "✓  有効なシェルが検出されました"
 setup_subtitle = "ターミナル設定"
 shell_mode_label = "シェルモード:"
 shell_mode_default = "デフォルト (フルrc)"
-shell_mode_fast = "高速起動 (Tasty rc)"
+shell_mode_tasty = "Tasty (Tasty rc)"
 shell_mode_custom = "カスタム"
 shell_args_label = "シェル引数:"
 startup_command_label = "起動コマンド:"
@@ -259,3 +260,8 @@ url_label = "URLまたはファイルパスを入力:"
 [dialog.error]
 file_not_found = "ファイルが存在しません。"
 invalid_format = "無効なファイル形式です。"
+
+[settings.misc.bashrc]
+heading = "Tastyモードで適用される bashrc"
+description = "シェルモードを Tasty に設定したときに適用されます。Tasty の組み込みブロック（OSC 7、UTF-8、PATH）は自動的に先頭に追加されるため、ここに含める必要はありません。"
+reset_button = "デフォルトに戻す"

@@ -8,7 +8,7 @@
 - PTY 리사이즈 전파: 윈도우 크기 변경 시 자식 프로세스에 새 크기 통보. rows 축소 시 커서 아래 빈 행을 먼저 제거하고 부족하면 위쪽 행을 scrollback으로 캡처하여 커서-콘텐츠 관계를 보존. rows 확대 시 scrollback에서 복원. 모든 워크스페이스/탭의 터미널에 리사이즈 전파
 - 자식 프로세스 핸들 관리: 생존 여부 확인 가능
 - PTY 채널 백프레셔: `sync_channel(32)`으로 버퍼 크기 제한 (32 * 8KB = 256KB), 버퍼 가득 차면 PTY 리더 스레드 블로킹
-- 작업 디렉토리 상속: 새 surface/pane/workspace 생성 시 소스 surface의 현재 작업 디렉토리를 자동 상속. 셸이 내보내는 OSC 7 시퀀스로 CWD를 캐싱하며, 캐시가 없을 때 Linux는 `/proc/PID/cwd`, macOS는 `lsof`로 fallback. Windows는 PowerShell fallback 비용(~7초)을 피하기 위해 전적으로 OSC 7에 의존 — Tasty의 fast-mode bashrc가 `PROMPT_COMMAND`로 자동 emit하고, VTE 파서가 `/C:/path` URI 형식을 Windows 경로로 정규화. 설정에서 on/off 가능 (`general.inherit_cwd`, 기본 on). CLI/IPC에서는 `--cwd` 옵션으로 명시적 경로 지정도 가능
+- 작업 디렉토리 상속: 새 surface/pane/workspace 생성 시 소스 surface의 현재 작업 디렉토리를 자동 상속. 셸이 내보내는 OSC 7 시퀀스로 CWD를 캐싱하며, 캐시가 없을 때 Linux는 `/proc/PID/cwd`, macOS는 `lsof`로 fallback. Windows는 PowerShell fallback 비용(~7초)을 피하기 위해 전적으로 OSC 7에 의존 — Tasty-mode bashrc의 빌트인 블록이 `PROMPT_COMMAND`로 자동 emit하고, VTE 파서가 `/C:/path` URI 형식을 Windows 경로로 정규화. 설정에서 on/off 가능 (`general.inherit_cwd`, 기본 on). CLI/IPC에서는 `--cwd` 옵션으로 명시적 경로 지정도 가능
 
 ### VTE 파싱 및 터미널 에뮬레이션
 - termwiz `Parser`를 통한 VT 이스케이프 시퀀스 파싱
@@ -334,7 +334,7 @@
 - 설정 파일이 없거나 파싱 실패 시 기본값으로 폴백
 
 ### 설정 카테고리
-- **General**: 셸 경로 (OS별 자동 감지: COMSPEC/SHELL), 시작 명령, 스크롤백 줄 수 (기본 10,000), 작업 디렉토리 상속 (기본 on)
+- **General**: 셸 경로 (OS별 자동 감지: COMSPEC/SHELL), 시작 명령, 스크롤백 줄 수 (기본 10,000), 작업 디렉토리 상속 (기본 on), 셸 모드 (default / tasty / custom). tasty 모드는 `~/.tasty/bashrc`를 source하여 OSC 7 등의 빌트인 설정을 적용한다. 기존 설정 파일의 `"fast"`는 unknown 값으로 간주되어 default로 fallback.
 - **Appearance**: 폰트 패밀리 (기본값: 시스템 모노스페이스), 폰트 크기, 테마 (dark/light), 배경 투명도, 사이드바 너비, focused surface 배경색, Font DPI 스케일링 모드 (auto: 모니터 DPI에 맞춰 동일 물리 크기 유지 / fixed: 픽셀 고정, 기본값)
 - **Clipboard**: OS별 기본 활성화 (macOS: Alt+C/V, Linux: Ctrl+Shift+C/V, Windows: Ctrl+C/V)
 - **Notifications**: 알림 활성화, 시스템 알림, 사운드, 병합 간격(ms)
@@ -342,10 +342,11 @@
   - 중복 바인딩 방지: 녹화한 조합이 다른 액션에 이미 할당되어 있으면 확인 팝업 표시. Enter/Y/Overwrite 수락 시 기존 바인딩을 비우고 새 필드에 적용, Esc/N/Cancel 취소 시 값 변경 없음. 팝업이 열린 동안 녹화 버튼은 비활성화됨.
   - **Preset 서브탭**: 좌측에 프리셋 목록, 우측에 미리보기 패널 (3열 테이블 — 기능 / 이전 / 이후). 변경되는 행은 bold 강조. 하단 "적용" 버튼으로 Draft에 반영 (실제 저장은 하단 Save 버튼). Draft가 이미 프리셋과 동일하면 적용 버튼 비활성화.
 - **Performance**: targeted PTY polling, scrollback disk swap, lazy PTY init (background 탭 생성 시 PTY를 즉시 spawn하지 않고 최초 접근 시점에 spawn)
+- **Misc (기타)**: Tasty 모드 bashrc 편집기. 사용자 편집분은 `~/.tasty/bashrc.user`에 저장되고, 빌트인 블록(OSC 7 emission / UTF-8 / PATH)은 코드 상수로 유지되어 Save 시마다 `~/.tasty/bashrc`가 `builtin + user` 형태로 자동 재생성된다. 이로써 빌트인 템플릿이 업데이트되면 기존 사용자에게도 즉시 반영된다. Reset 버튼으로 user 파트를 초기 기본값으로 되돌릴 수 있다.
 
 ### GUI 설정 윈도우
 - Ctrl+, 단축키로 설정 윈도우 토글
-- egui Window 기반 탭 인터페이스 (General / Appearance / Clipboard / Notifications / Keybindings / Language)
+- egui Window 기반 탭 인터페이스 (General / Appearance / Clipboard / Notifications / Keybindings / Language / Performance / Misc)
 - egui에 시스템 CJK 폰트 로드: Windows(맑은 고딕), macOS(AppleSDGothicNeo), Linux(Noto Sans CJK)
 - 편집 중 원본 설정을 보존하는 드래프트 패턴
 - Save 버튼: 디스크에 저장 후 즉시 적용

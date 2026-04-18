@@ -1,4 +1,4 @@
-mod general;
+pub mod general;
 mod appearance;
 mod keybindings;
 mod types;

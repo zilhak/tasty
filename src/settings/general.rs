@@ -1,10 +1,56 @@
 use serde::{Deserialize, Serialize};
 
+/// Tasty 쉘 모드에서 항상 앞단에 prepend되는 빌트인 bashrc. UI에서 노출되지 않으며
+/// 사용자가 편집할 수 없다. 파생 `~/.tasty/bashrc`는 저장 시마다 `BUILTIN + "\n" + user`로
+/// 재생성되므로 템플릿 업데이트가 기존 사용자에게도 자동 반영된다.
+pub const BUILTIN_BASHRC: &str = r#"# === tasty built-in (auto-generated, do not edit) ===
+# This section is regenerated every time settings are saved.
+# Put your customizations in ~/.tasty/bashrc.user instead.
+
+# UTF-8
+export LANG=en_US.UTF-8
+export LC_ALL=en_US.UTF-8
+
+# Inherit Windows PATH
+ORIGINAL_PATH="${ORIGINAL_PATH:-${PATH}}"
+export PATH="/usr/local/bin:/usr/bin:/bin:${ORIGINAL_PATH}"
+
+# Emit OSC 7 so Tasty inherits cwd when opening new tabs/splits.
+# On Windows (Git Bash), convert the MSYS path to a Windows path so ConPTY
+# can spawn a child shell in the same directory.
+__tasty_osc7() {
+    local pwd_emit="$PWD"
+    if command -v cygpath >/dev/null 2>&1; then
+        pwd_emit=$(cygpath -w "$PWD" 2>/dev/null || printf '%s' "$PWD")
+        pwd_emit=${pwd_emit//\\//}
+        pwd_emit="/${pwd_emit}"
+    fi
+    printf '\033]7;file://%s%s\033\\' "${HOSTNAME:-localhost}" "$pwd_emit"
+}
+PROMPT_COMMAND="__tasty_osc7${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
+
+# === end tasty built-in ===
+"#;
+
+/// `~/.tasty/bashrc.user`의 초기 시드. 사용자가 자유롭게 수정/리셋할 수 있는 기본값.
+pub const INITIAL_USER_BASHRC: &str = r#"# Tasty user bashrc — edit freely.
+# Tasty prepends a built-in block (OSC 7 emission etc.) automatically; no need
+# to include those here.
+
+# Prompt
+PS1='\[\033[32m\]\u@\h\[\033[0m\] \[\033[33m\]\w\[\033[0m\]\n\$ '
+
+# Common aliases
+alias ls='ls --color=auto'
+alias ll='ls -la'
+alias grep='grep --color=auto'
+"#;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct GeneralSettings {
     pub shell: String,
-    /// Shell startup mode: "default", "fast", or "custom".
+    /// Shell startup mode: "default", "tasty", or "custom".
     pub shell_mode: String,
     /// Extra arguments passed to the shell (used when shell_mode is "custom").
     pub shell_args: String,
@@ -140,86 +186,92 @@ impl GeneralSettings {
     /// Resolve effective shell arguments based on shell_mode.
     pub fn effective_shell_args(&self) -> Vec<String> {
         match self.shell_mode.as_str() {
-            "fast" => {
-                Self::ensure_tasty_bashrc(&Self::tasty_bashrc_path());
-                vec![
-                    "--norc".to_string(),
-                    "--noprofile".to_string(),
-                ]
+            "tasty" => {
+                // 파생 bashrc가 없으면 현재 user 파일 내용으로 재생성.
+                ensure_compiled_bashrc();
+                vec!["--norc".to_string(), "--noprofile".to_string()]
             }
             "custom" => self
                 .shell_args
                 .split_whitespace()
                 .map(|s| s.to_string())
                 .collect(),
-            _ => vec![], // "default"
+            _ => vec![], // "default" 및 unknown
         }
     }
 
     /// Returns a command to source the Tasty bashrc (sent to PTY after shell starts).
-    /// Returns None if not in fast mode.
-    pub fn fast_mode_init_command(&self) -> Option<String> {
-        if self.shell_mode == "fast" {
-            let rcfile = Self::tasty_bashrc_path();
-            // Use printf to avoid issues with echo interpretation
+    /// Returns None if not in tasty mode.
+    pub fn tasty_mode_init_command(&self) -> Option<String> {
+        if self.shell_mode == "tasty" {
+            let rcfile = tasty_bashrc_path();
             Some(format!(". '{}'\n", rcfile.replace('\\', "/")))
         } else {
             None
         }
     }
+}
 
-    /// Path to Tasty's lightweight bashrc.
-    fn tasty_bashrc_path() -> String {
-        let home = std::env::var("HOME")
-            .or_else(|_| std::env::var("USERPROFILE"))
-            .map(std::path::PathBuf::from)
-            .unwrap_or_default();
-        home.join(".tasty").join("bashrc").to_string_lossy().to_string()
+/// Path to Tasty's compiled bashrc (builtin + user).
+pub fn tasty_bashrc_path() -> String {
+    tasty_dir()
+        .join("bashrc")
+        .to_string_lossy()
+        .to_string()
+}
+
+/// Path to the user-editable bashrc fragment.
+pub fn tasty_bashrc_user_path() -> String {
+    tasty_dir()
+        .join("bashrc.user")
+        .to_string_lossy()
+        .to_string()
+}
+
+fn tasty_dir() -> std::path::PathBuf {
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .map(std::path::PathBuf::from)
+        .unwrap_or_default();
+    home.join(".tasty")
+}
+
+/// 사용자 편집 파일을 로드. 파일이 없으면 `INITIAL_USER_BASHRC`를 반환(파일은 생성하지 않음).
+pub fn load_user_bashrc() -> String {
+    let path = tasty_bashrc_user_path();
+    match std::fs::read_to_string(&path) {
+        Ok(s) => s,
+        Err(_) => INITIAL_USER_BASHRC.to_string(),
     }
+}
 
-    /// Create ~/.tasty/bashrc if it doesn't exist.
-    fn ensure_tasty_bashrc(path: &str) {
-        let p = std::path::Path::new(path);
-        if p.exists() {
+/// 사용자 편집 내용을 디스크에 쓰고, 파생 bashrc(builtin + user)를 재생성한다.
+pub fn save_user_bashrc(user_content: &str) {
+    let user_path = tasty_bashrc_user_path();
+    let compiled_path = tasty_bashrc_path();
+    let p = std::path::Path::new(&user_path);
+    if let Some(parent) = p.parent() {
+        if let Err(e) = std::fs::create_dir_all(parent) {
+            tracing::warn!("create_dir_all for bashrc failed: {e}");
             return;
         }
-        if let Some(parent) = p.parent() {
-            let _ = std::fs::create_dir_all(parent);
-        }
-        let contents = r#"# Tasty fast-start bashrc
-# Minimal shell configuration for fast pane/tab creation.
-# Edit this file to customize. Tasty will not overwrite it.
-
-# UTF-8
-export LANG=en_US.UTF-8
-export LC_ALL=en_US.UTF-8
-
-# Inherit Windows PATH
-ORIGINAL_PATH="${ORIGINAL_PATH:-${PATH}}"
-export PATH="/usr/local/bin:/usr/bin:/bin:${ORIGINAL_PATH}"
-
-# Prompt
-PS1='\[\033[32m\]\u@\h\[\033[0m\] \[\033[33m\]\w\[\033[0m\]\n\$ '
-
-# Emit OSC 7 so Tasty inherits cwd when opening new tabs/splits.
-# On Windows (Git Bash), convert the MSYS path to a Windows path so ConPTY
-# can spawn a child shell in the same directory.
-__tasty_osc7() {
-    local pwd_emit="$PWD"
-    if command -v cygpath >/dev/null 2>&1; then
-        pwd_emit=$(cygpath -w "$PWD" 2>/dev/null || printf '%s' "$PWD")
-        pwd_emit=${pwd_emit//\\//}
-        pwd_emit="/${pwd_emit}"
-    fi
-    printf '\033]7;file://%s%s\033\\' "${HOSTNAME:-localhost}" "$pwd_emit"
-}
-PROMPT_COMMAND="__tasty_osc7${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
-
-# Common aliases
-alias ls='ls --color=auto'
-alias ll='ls -la'
-alias grep='grep --color=auto'
-"#;
-        let _ = std::fs::write(p, contents);
     }
+    if let Err(e) = std::fs::write(&user_path, user_content) {
+        tracing::warn!("write bashrc.user failed: {e}");
+        return;
+    }
+    let compiled = format!("{}\n{}", BUILTIN_BASHRC, user_content);
+    if let Err(e) = std::fs::write(&compiled_path, compiled) {
+        tracing::warn!("write compiled bashrc failed: {e}");
+    }
+}
+
+/// tasty 모드 진입 시 파생 bashrc가 없으면 현재 user 파일(또는 기본값)로 생성.
+fn ensure_compiled_bashrc() {
+    let compiled_path = tasty_bashrc_path();
+    if std::path::Path::new(&compiled_path).exists() {
+        return;
+    }
+    let user = load_user_bashrc();
+    save_user_bashrc(&user);
 }

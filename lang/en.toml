@@ -29,6 +29,7 @@ clipboard = "Clipboard"
 notifications = "Notifications"
 keybindings = "Keybindings"
 language = "Language"
+misc = "Misc"
 
 [settings.general]
 heading = "General"
@@ -39,7 +40,7 @@ shell_valid = "✓  Valid shell detected"
 setup_subtitle = "Terminal Setup"
 shell_mode_label = "Shell mode:"
 shell_mode_default = "Default (full rc)"
-shell_mode_fast = "Fast (Tasty rc)"
+shell_mode_tasty = "Tasty (Tasty rc)"
 shell_mode_custom = "Custom"
 shell_args_label = "Shell arguments:"
 startup_command_label = "Startup command:"
@@ -259,3 +260,8 @@ url_label = "Enter URL or file path:"
 [dialog.error]
 file_not_found = "File does not exist."
 invalid_format = "Invalid file format."
+
+[settings.misc.bashrc]
+heading = "Tasty-mode bashrc"
+description = "This is applied when Shell mode is set to Tasty. Tasty's built-in block (OSC 7 emission, UTF-8, PATH) is always prepended automatically and is not shown here."
+reset_button = "Reset to default"

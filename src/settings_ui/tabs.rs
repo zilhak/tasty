@@ -44,13 +44,13 @@ pub fn draw_general_tab(ui: &mut egui::Ui, settings: &mut Settings) {
             ui.label(t("settings.general.shell_mode_label"));
             egui::ComboBox::from_id_salt("shell_mode")
                 .selected_text(match settings.general.shell_mode.as_str() {
-                    "fast" => t("settings.general.shell_mode_fast"),
+                    "tasty" => t("settings.general.shell_mode_tasty"),
                     "custom" => t("settings.general.shell_mode_custom"),
                     _ => t("settings.general.shell_mode_default"),
                 })
                 .show_ui(ui, |ui| {
                     ui.selectable_value(&mut settings.general.shell_mode, "default".to_string(), t("settings.general.shell_mode_default"));
-                    ui.selectable_value(&mut settings.general.shell_mode, "fast".to_string(), t("settings.general.shell_mode_fast"));
+                    ui.selectable_value(&mut settings.general.shell_mode, "tasty".to_string(), t("settings.general.shell_mode_tasty"));
                     ui.selectable_value(&mut settings.general.shell_mode, "custom".to_string(), t("settings.general.shell_mode_custom"));
                 });
             ui.end_row();
@@ -644,6 +644,43 @@ fn language_display_name(code: &str) -> &str {
         "ja" => "日本語",
         _ => code,
     }
+}
+
+/// Misc / 기타 탭: Tasty 모드에서 적용되는 bashrc 사용자 영역 편집.
+pub fn draw_misc_tab(ui: &mut egui::Ui, bashrc_user_draft: &mut Option<String>) {
+    let th = crate::theme::theme();
+    ui.add_space(8.0);
+
+    ui.heading(t("settings.misc.bashrc.heading"));
+    ui.add_space(4.0);
+    ui.label(
+        egui::RichText::new(t("settings.misc.bashrc.description"))
+            .small()
+            .color(th.subtext0),
+    );
+    ui.add_space(8.0);
+
+    // draft는 mod.rs 진입부에서 lazy 로드되므로 이 시점엔 항상 Some.
+    let draft = bashrc_user_draft.get_or_insert_with(crate::settings::general::load_user_bashrc);
+
+    ui.horizontal(|ui| {
+        if ui.button(t("settings.misc.bashrc.reset_button")).clicked() {
+            *draft = crate::settings::general::INITIAL_USER_BASHRC.to_string();
+        }
+    });
+    ui.add_space(4.0);
+
+    egui::ScrollArea::vertical()
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
+            ui.add(
+                egui::TextEdit::multiline(draft)
+                    .font(egui::TextStyle::Monospace)
+                    .desired_rows(20)
+                    .desired_width(f32::INFINITY)
+                    .code_editor(),
+            );
+        });
 }
 
 pub fn draw_performance_tab(ui: &mut egui::Ui, settings: &mut Settings) {

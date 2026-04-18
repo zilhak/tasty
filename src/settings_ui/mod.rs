@@ -28,6 +28,7 @@ enum SettingsTab {
     Keybindings,
     Language,
     Performance,
+    Misc,
 }
 
 /// Persistent state for the settings UI between frames.
@@ -51,6 +52,8 @@ pub struct SettingsUiState {
     pub font_filter: String,
     /// The font family currently loaded into egui for preview.
     pub preview_font_loaded: String,
+    /// Draft of ~/.tasty/bashrc.user content. None until the Misc tab loads it.
+    pub(crate) bashrc_user_draft: Option<String>,
 }
 
 impl SettingsUiState {
@@ -66,6 +69,7 @@ impl SettingsUiState {
             font_families: None,
             font_filter: String::new(),
             preview_font_loaded: String::new(),
+            bashrc_user_draft: None,
         }
     }
 }
@@ -88,6 +92,11 @@ pub fn draw_settings_panel(
         ui_state.font_families = Some(font_config.list_families());
     }
 
+    // Lazily load ~/.tasty/bashrc.user on first settings open
+    if ui_state.bashrc_user_draft.is_none() {
+        ui_state.bashrc_user_draft = Some(crate::settings::general::load_user_bashrc());
+    }
+
     let mut result = None;
 
     egui::TopBottomPanel::bottom("settings_buttons").show(ctx, |ui| {
@@ -95,11 +104,16 @@ pub fn draw_settings_panel(
         ui.horizontal(|ui| {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui.button(t("button.cancel")).clicked() {
+                    // Cancel: discard bashrc draft so next open reloads from disk.
+                    ui_state.bashrc_user_draft = None;
                     result = Some(false);
                 }
                 if ui.button(t("button.save")).clicked() {
                     if let Some(draft) = &ui_state.draft {
                         *settings = draft.clone();
+                    }
+                    if let Some(bashrc) = &ui_state.bashrc_user_draft {
+                        crate::settings::general::save_user_bashrc(bashrc);
                     }
                     result = Some(true);
                 }
@@ -120,6 +134,7 @@ pub fn draw_settings_panel(
                 (SettingsTab::Keybindings, t("settings.tab.keybindings")),
                 (SettingsTab::Language, t("settings.tab.language")),
                 (SettingsTab::Performance, t("settings.performance.heading")),
+                (SettingsTab::Misc, t("settings.tab.misc")),
             ];
             for (tab, label) in &tabs {
                 let selected = ui_state.active_tab == *tab;
@@ -145,6 +160,7 @@ pub fn draw_settings_panel(
                         SettingsTab::Keybindings => draw_keybindings_tab(ui, &mut draft, &mut ui_state.recording_field, &mut ui_state.keybindings_sub_tab, &mut ui_state.selected_preset, &mut ui_state.pending_binding, captured_double_tap),
                         SettingsTab::Language => draw_language_tab(ui, &mut draft),
                         SettingsTab::Performance => draw_performance_tab(ui, &mut draft),
+                        SettingsTab::Misc => draw_misc_tab(ui, &mut ui_state.bashrc_user_draft),
                     }
                 });
 

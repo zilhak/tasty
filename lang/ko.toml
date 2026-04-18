@@ -29,6 +29,7 @@ clipboard = "클립보드"
 notifications = "알림"
 keybindings = "단축키"
 language = "언어"
+misc = "기타"
 
 [settings.general]
 heading = "일반"
@@ -39,7 +40,7 @@ shell_valid = "✓  유효한 셸이 감지되었습니다"
 setup_subtitle = "터미널 설정"
 shell_mode_label = "셸 모드:"
 shell_mode_default = "기본 (전체 rc)"
-shell_mode_fast = "빠른 시작 (Tasty rc)"
+shell_mode_tasty = "Tasty (Tasty rc)"
 shell_mode_custom = "커스텀"
 shell_args_label = "셸 인자:"
 startup_command_label = "시작 명령어:"
@@ -259,3 +260,8 @@ url_label = "URL 또는 파일 경로 입력:"
 [dialog.error]
 file_not_found = "존재하지 않는 파일입니다."
 invalid_format = "유효하지 않은 형식의 파일입니다."
+
+[settings.misc.bashrc]
+heading = "Tasty 모드에서 적용되는 bashrc"
+description = "셸 모드를 Tasty로 설정했을 때 적용됩니다. Tasty의 빌트인 블록(OSC 7, UTF-8, PATH)은 자동으로 앞에 추가되므로 여기에 포함시킬 필요가 없습니다."
+reset_button = "기본값으로 되돌리기"
