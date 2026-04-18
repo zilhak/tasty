@@ -80,6 +80,7 @@
 - 리사이즈 시 뷰포트 유니폼 자동 갱신 및 터미널 그리드 재조정
 - DPI 변경 감지: `ScaleFactorChanged` 이벤트 처리로 모니터 간 이동 시 스케일 팩터 자동 갱신
 - 모노스페이스 폰트 기반 셀 그리드 레이아웃 (기본 14pt)
+- **Windows 릴리스 빌드 서브시스템**: 릴리스 빌드는 `#![windows_subsystem = "windows"]`로 GUI 서브시스템으로 빌드되어 `tasty.exe` 실행 시 빈 콘솔 창이 뜨지 않음. 진입 직후 `AttachConsole(ATTACH_PARENT_PROCESS)`로 부모(ConPTY 포함) 콘솔에 attach하여 내부 pane에서의 CLI 호출 출력은 정상 표시. 디버그 빌드는 기존처럼 콘솔 창을 유지해 `tracing` 로그를 바로 확인 가능
 
 ### 이벤트 드리븐 렌더 루프
 - `EventLoopProxy<AppEvent>` 기반 PTY 웨이크업: PTY 리더 스레드에서 데이터 수신 시 `AppEvent::TerminalOutput` 이벤트를 메인 이벤트 루프로 전송

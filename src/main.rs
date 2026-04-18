@@ -1,4 +1,5 @@
 #![allow(private_interfaces)]
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 mod bookmarks;
 mod cli;
@@ -537,6 +538,16 @@ impl App {
 }
 
 fn main() -> Result<()> {
+    #[cfg(all(windows, not(debug_assertions)))]
+    {
+        use windows::Win32::System::Console::{AttachConsole, ATTACH_PARENT_PROCESS};
+        // 부모 프로세스에 콘솔이 있으면 attach (ConPTY 포함). 부모가 GUI 셸이면
+        // 호출은 실패하지만 무해하므로 결과를 의도적으로 무시한다.
+        unsafe {
+            let _ = AttachConsole(ATTACH_PARENT_PROCESS);
+        }
+    }
+
     crash_report::init();
 
     // Handle -a/--all before clap parsing (clap's -h exits before we can check -a)
