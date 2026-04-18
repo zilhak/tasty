@@ -41,8 +41,8 @@ pub struct SettingsUiState {
     keybindings_sub_tab: KeybindingsSubTab,
     /// Active sub-tab within appearance.
     appearance_sub_tab: AppearanceSubTab,
-    /// Pending preset name to apply (waiting for user confirmation).
-    preset_confirm: Option<String>,
+    /// Currently previewed preset name in the Preset sub-tab (None = no preview).
+    selected_preset: Option<String>,
     /// Pending keybinding assignment waiting for conflict confirmation.
     pending_binding: Option<PendingBinding>,
     /// Cached system font family list.
@@ -61,7 +61,7 @@ impl SettingsUiState {
             recording_field: None,
             keybindings_sub_tab: KeybindingsSubTab::General,
             appearance_sub_tab: AppearanceSubTab::General,
-            preset_confirm: None,
+            selected_preset: None,
             pending_binding: None,
             font_families: None,
             font_filter: String::new(),
@@ -142,7 +142,7 @@ pub fn draw_settings_panel(
                         SettingsTab::Appearance => draw_appearance_tab(ui, &mut draft, &mut ui_state.appearance_sub_tab, &mut ui_state.font_families, &mut ui_state.font_filter, &mut ui_state.preview_font_loaded),
                         SettingsTab::Clipboard => draw_clipboard_tab(ui, &mut draft),
                         SettingsTab::Notifications => draw_notifications_tab(ui, &mut draft),
-                        SettingsTab::Keybindings => draw_keybindings_tab(ui, &mut draft, &mut ui_state.recording_field, &mut ui_state.keybindings_sub_tab, &mut ui_state.preset_confirm, &mut ui_state.pending_binding, captured_double_tap),
+                        SettingsTab::Keybindings => draw_keybindings_tab(ui, &mut draft, &mut ui_state.recording_field, &mut ui_state.keybindings_sub_tab, &mut ui_state.selected_preset, &mut ui_state.pending_binding, captured_double_tap),
                         SettingsTab::Language => draw_language_tab(ui, &mut draft),
                         SettingsTab::Performance => draw_performance_tab(ui, &mut draft),
                     }

@@ -35,7 +35,7 @@ pub fn draw_keybindings_tab(
     settings: &mut Settings,
     recording_field: &mut Option<String>,
     sub_tab: &mut KeybindingsSubTab,
-    preset_confirm: &mut Option<String>,
+    selected_preset: &mut Option<String>,
     pending_binding: &mut Option<PendingBinding>,
     captured_double_tap: &mut Option<String>,
 ) {
@@ -159,15 +159,7 @@ pub fn draw_keybindings_tab(
                 ]);
             }
             KeybindingsSubTab::Preset => {
-                ui.add_space(4.0);
-                ui.label(t("settings.keybindings.select_preset_label"));
-                ui.add_space(8.0);
-
-                for name in crate::settings::KeybindingSettings::preset_names() {
-                    if ui.button(*name).clicked() {
-                        *preset_confirm = Some(name.to_string());
-                    }
-                }
+                draw_preset_subtab(ui, &mut settings.keybindings, selected_preset);
             }
         }
 
@@ -182,30 +174,6 @@ pub fn draw_keybindings_tab(
 
         }); // end vertical
     }); // end horizontal_top
-
-    // Preset confirmation modal
-    if let Some(name) = preset_confirm.clone() {
-        egui::Window::new(t("settings.keybindings.apply_preset_title"))
-            .collapsible(false)
-            .resizable(false)
-            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-            .show(ui.ctx(), |ui| {
-                ui.label(crate::i18n::t_fmt(
-                    "settings.keybindings.apply_preset_confirm",
-                    &name,
-                ));
-                ui.add_space(8.0);
-                ui.horizontal(|ui| {
-                    if ui.button(t("button.cancel")).clicked() {
-                        *preset_confirm = None;
-                    }
-                    if ui.button(t("settings.keybindings.apply_button")).clicked() {
-                        settings.keybindings.apply_preset(&name);
-                        *preset_confirm = None;
-                    }
-                });
-            });
-    }
 
     // Keybinding conflict confirmation modal
     if let Some(pending) = pending_binding.clone() {
@@ -265,6 +233,115 @@ fn modifier_display(modifier: &str) -> &str {
         "alt" => "Alt",
         _ => "Ctrl",
     }
+}
+
+/// Preset 서브탭: 좌측 프리셋 목록, 우측 미리보기 테이블 + 적용 버튼.
+fn draw_preset_subtab(
+    ui: &mut egui::Ui,
+    keybindings: &mut KeybindingSettings,
+    selected_preset: &mut Option<String>,
+) {
+    let th = crate::theme::theme();
+    ui.add_space(4.0);
+
+    ui.horizontal_top(|ui| {
+        // 좌측: 프리셋 목록
+        egui::Frame::new()
+            .fill(th.mantle)
+            .stroke(egui::Stroke::new(1.0, th.surface0))
+            .corner_radius(4.0)
+            .inner_margin(egui::Margin::symmetric(8, 8))
+            .show(ui, |ui| {
+                ui.set_width(120.0);
+                ui.vertical(|ui| {
+                    for name in KeybindingSettings::preset_names() {
+                        let is_selected = selected_preset.as_deref() == Some(*name);
+                        if ui.selectable_label(is_selected, *name).clicked() {
+                            *selected_preset = Some(name.to_string());
+                        }
+                    }
+                });
+            });
+
+        ui.add_space(8.0);
+
+        // 우측: 미리보기 패널
+        ui.vertical(|ui| {
+            let Some(name) = selected_preset.clone() else {
+                ui.label(t("settings.keybindings.select_preset_label"));
+                return;
+            };
+            let Some(preset) = KeybindingSettings::preset_by_name(&name) else {
+                ui.label(t("settings.keybindings.select_preset_label"));
+                return;
+            };
+
+            ui.heading(&name);
+            ui.add_space(4.0);
+
+            let is_identical = KeybindingSettings::GENERAL_BINDING_FIELDS
+                .iter()
+                .all(|(id, _)| keybindings.get_field(id) == preset.get_field(id));
+
+            egui::ScrollArea::vertical()
+                .max_height(ui.available_height() - 40.0)
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    egui::Grid::new("preset_preview_grid")
+                        .num_columns(3)
+                        .spacing([16.0, 6.0])
+                        .striped(true)
+                        .show(ui, |ui| {
+                            let strong = |s: String| {
+                                egui::RichText::new(s).color(th.text).strong()
+                            };
+                            let normal = |s: String| egui::RichText::new(s).color(th.text);
+
+                            ui.label(strong(t("settings.keybindings.preset_col_action").to_string()));
+                            ui.label(strong(t("settings.keybindings.preset_col_before").to_string()));
+                            ui.label(strong(t("settings.keybindings.preset_col_after").to_string()));
+                            ui.end_row();
+
+                            for (field_id, label_key) in KeybindingSettings::GENERAL_BINDING_FIELDS {
+                                let before_raw = keybindings.get_field(field_id).unwrap_or("");
+                                let after_raw = preset.get_field(field_id).unwrap_or("");
+                                let changed = before_raw != after_raw;
+
+                                let action_label = t(label_key)
+                                    .trim_end_matches(':')
+                                    .trim()
+                                    .to_string();
+                                let before_disp = if before_raw.is_empty() {
+                                    t("settings.keybindings.hint_none").to_string()
+                                } else {
+                                    KeybindingSettings::format_display(before_raw)
+                                };
+                                let after_disp = if after_raw.is_empty() {
+                                    t("settings.keybindings.hint_none").to_string()
+                                } else {
+                                    KeybindingSettings::format_display(after_raw)
+                                };
+
+                                let make = |s: String| if changed { strong(s) } else { normal(s) };
+                                ui.label(make(action_label));
+                                ui.label(make(before_disp));
+                                ui.label(make(after_disp));
+                                ui.end_row();
+                            }
+                        });
+                });
+
+            ui.add_space(4.0);
+            ui.separator();
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                let apply_btn = egui::Button::new(t("settings.keybindings.apply_button"));
+                if ui.add_enabled(!is_identical, apply_btn).clicked() {
+                    keybindings.apply_preset(&name);
+                }
+            });
+        });
+    });
 }
 
 fn draw_keybinding_entries(

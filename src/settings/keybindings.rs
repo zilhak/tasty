@@ -263,14 +263,22 @@ impl KeybindingSettings {
         &["Tasty"]
     }
 
+    /// 이름으로 프리셋의 원본 인스턴스를 얻는다. 미리보기/적용 공통 소스.
+    pub fn preset_by_name(name: &str) -> Option<Self> {
+        match name {
+            "Tasty" => Some(Self::preset_tasty()),
+            _ => None,
+        }
+    }
+
     /// Apply a preset by name. Returns true if found.
     pub fn apply_preset(&mut self, name: &str) -> bool {
-        match name {
-            "Tasty" => {
-                *self = Self::preset_tasty();
+        match Self::preset_by_name(name) {
+            Some(preset) => {
+                *self = preset;
                 true
             }
-            _ => false,
+            None => false,
         }
     }
 }
@@ -278,6 +286,20 @@ impl KeybindingSettings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn preset_by_name_matches_preset_tasty() {
+        let by_name = KeybindingSettings::preset_by_name("Tasty").unwrap();
+        let direct = KeybindingSettings::preset_tasty();
+        for (id, _) in KeybindingSettings::GENERAL_BINDING_FIELDS {
+            assert_eq!(
+                by_name.get_field(id),
+                direct.get_field(id),
+                "field {id} mismatch"
+            );
+        }
+        assert!(KeybindingSettings::preset_by_name("Unknown").is_none());
+    }
 
     #[test]
     fn find_conflict_detects_duplicate_across_fields() {
