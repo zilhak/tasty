@@ -158,7 +158,7 @@
 - Ctrl+] / Ctrl+[: Pane 포커스 다음/이전
 - Alt+1~9 (macOS: ⌘1~9): 워크스페이스 전환
 - Ctrl+1~0: 탭 전환
-- Ctrl+Tab / Ctrl+Shift+Tab: 다음/이전 탭
+- next_tab / prev_tab 단축키 (기본 Ctrl+Tab / Ctrl+Shift+Tab): 다음/이전 탭. 설정 가능
 - Alt+Shift+N (macOS: ⌘⇧N): 새 윈도우
 - Ctrl+Shift+B: 사이드바 토글 (숨김/표시)
 - Ctrl+B: 사이드바 접기/펼치기
@@ -172,7 +172,7 @@
   - Right/Down: 시블링의 leftmost/topmost 리프로 이동 (인접한 엣지)
 - SurfaceGroup 내부 서피스 간 이동 우선, 이동 불가 시 Pane 간 이동
 - close_surface 단축키: 포커스된 서피스 닫기. cascade: surface → pane → workspace. 마지막 workspace면 닫고 새로 생성
-- Ctrl+W: 활성 탭 닫기. cascade: tab → pane → workspace. 마지막 workspace면 닫고 새로 생성
+- close_active 단축키 (기본 Ctrl+W): 활성 항목 닫기. cascade: tab → pane → workspace. 마지막 workspace면 닫고 새로 생성. 설정 가능
 - Ctrl+Shift+W: 포커스된 패인 닫기. cascade: pane → workspace. 마지막 workspace면 닫고 새로 생성
 - Alt+Shift+W: 활성 워크스페이스 닫기. 마지막 workspace면 닫고 새로 생성
 - Ctrl+Shift+I: 알림 패널 토글

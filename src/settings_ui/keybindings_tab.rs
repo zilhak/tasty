@@ -134,10 +134,13 @@ pub fn draw_keybindings_tab(
             KeybindingsSubTab::Pane => {
                 draw_keybinding_entries(ui, &mut settings.keybindings, recording_field, pending_binding, &captured, &[
                     ("new_tab", "settings.keybindings.new_tab_label"),
+                    ("next_tab", "settings.keybindings.next_tab_label"),
+                    ("prev_tab", "settings.keybindings.prev_tab_label"),
                     ("split_pane_vertical", "settings.keybindings.split_pane_vertical_label"),
                     ("split_pane_horizontal", "settings.keybindings.split_pane_horizontal_label"),
                     ("focus_pane_next", "settings.keybindings.focus_pane_next_label"),
                     ("focus_pane_prev", "settings.keybindings.focus_pane_prev_label"),
+                    ("close_active", "settings.keybindings.close_active_label"),
                     ("close_pane", "settings.keybindings.close_pane_label"),
                     ("open_markdown", "settings.keybindings.open_markdown_label"),
                     ("open_explorer", "settings.keybindings.open_explorer_label"),

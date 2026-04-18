@@ -195,6 +195,9 @@ impl MainWindow {
             (kb.convert_surface.clone(), "convert_surface"),
             (kb.convert_to_markdown.clone(), "convert_to_markdown"),
             (kb.convert_to_explorer.clone(), "convert_to_explorer"),
+            (kb.close_active.clone(), "close_active"),
+            (kb.next_tab.clone(), "next_tab"),
+            (kb.prev_tab.clone(), "prev_tab"),
         ];
 
         for (binding, action) in &bindings_to_check {
@@ -274,6 +277,20 @@ impl MainWindow {
                             self.state.convert_surface_to_explorer(sid);
                         }
                     }
+                    "close_active" => {
+                        if !self.state.close_active_tab() {
+                            if !self.state.close_active_pane() {
+                                self.state.close_active_workspace();
+                            }
+                        }
+                        if self.state.engine.workspaces.is_empty() {
+                            self.request_close();
+                        } else {
+                            self.state.resize_all(terminal_rect, cell_w, cell_h);
+                        }
+                    }
+                    "next_tab" => { self.state.next_tab_in_pane(); }
+                    "prev_tab" => { self.state.prev_tab_in_pane(); }
                     _ => {}
                 }
                 return true;
@@ -310,8 +327,8 @@ impl MainWindow {
             return true;
         }
 
-        // Hardcoded shortcuts (tab switch, Ctrl+W, number switch)
-        if Self::handle_hardcoded_shortcuts(&mut self.state, &kb, key, ctrl, shift, alt, terminal_rect, cell_w, cell_h) {
+        // Numeric tab/workspace switching (Ctrl+1..9 / Alt+1..9)
+        if Self::handle_numeric_switch_shortcuts(&mut self.state, &kb, key, ctrl, shift, alt) {
             if self.state.engine.workspaces.is_empty() { self.request_close(); }
             self.base.dirty = true;
             return true;
@@ -518,55 +535,40 @@ impl MainWindow {
             let _ = proxy.send_event(crate::AppEvent::CreateWindow);
             return true;
         }
+        if matches_binding(&kb.close_active, key, mods) {
+            if !state.close_active_tab() {
+                if !state.close_active_pane() {
+                    state.close_active_workspace();
+                }
+            }
+            if !state.engine.workspaces.is_empty() {
+                state.resize_all(terminal_rect, cell_w, cell_h);
+            }
+            return true;
+        }
+        if matches_binding(&kb.next_tab, key, mods) {
+            state.next_tab_in_pane();
+            return true;
+        }
+        if matches_binding(&kb.prev_tab, key, mods) {
+            state.prev_tab_in_pane();
+            return true;
+        }
         false
     }
 
-    fn handle_hardcoded_shortcuts(
+    /// Number-key tab/workspace switching (Ctrl+1..9, Alt+1..9).
+    /// Not exposed to the keybinding UI because it is a bank of 9 slots
+    /// governed by the `tab_switch_modifier` / `workspace_switch_modifier`
+    /// settings, not a single bindable combo.
+    fn handle_numeric_switch_shortcuts(
         state: &mut crate::state::AppState,
         kb: &crate::settings::KeybindingSettings,
         key: &Key,
         ctrl: bool,
         shift: bool,
         alt: bool,
-        terminal_rect: crate::model::Rect,
-        cell_w: f32,
-        cell_h: f32,
     ) -> bool {
-        // Ctrl+Shift+Tab: previous tab
-        if ctrl && shift {
-            if let Key::Named(NamedKey::Tab) = key {
-                state.prev_tab_in_pane();
-                return true;
-            }
-        }
-
-        // Ctrl+W: close tab → pane → workspace
-        if ctrl && !shift && !alt {
-            if let Key::Character(c) = key {
-                let s = c.as_str();
-                if s == "w" || s == "W" || s == "\u{17}" {
-                    if !state.close_active_tab() {
-                        if !state.close_active_pane() {
-                            state.close_active_workspace();
-                        }
-                        if !state.engine.workspaces.is_empty() {
-                            state.resize_all(terminal_rect, cell_w, cell_h);
-                        }
-                    }
-                    return true;
-                }
-            }
-        }
-
-        // Ctrl+Tab: next tab
-        if ctrl && !shift && !alt {
-            if let Key::Named(NamedKey::Tab) = key {
-                state.next_tab_in_pane();
-                return true;
-            }
-        }
-
-        // Number key tab/workspace switching
         if let Key::Character(c) = key {
             let ch = c.chars().next().unwrap_or('\0');
             if ch.is_ascii_digit() {

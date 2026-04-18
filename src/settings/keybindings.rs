@@ -46,6 +46,12 @@ pub struct KeybindingSettings {
     pub convert_to_explorer: String,
     /// Open a new window.
     pub new_window: String,
+    /// Close nearest: tab → pane → workspace.
+    pub close_active: String,
+    /// Focus next tab in the current pane.
+    pub next_tab: String,
+    /// Focus previous tab in the current pane.
+    pub prev_tab: String,
 }
 
 impl KeybindingSettings {
@@ -77,6 +83,9 @@ impl KeybindingSettings {
         ("convert_to_markdown",     "settings.keybindings.convert_to_markdown_label"),
         ("convert_to_explorer",     "settings.keybindings.convert_to_explorer_label"),
         ("new_window",              "settings.keybindings.new_window_label"),
+        ("close_active",            "settings.keybindings.close_active_label"),
+        ("next_tab",                "settings.keybindings.next_tab_label"),
+        ("prev_tab",                "settings.keybindings.prev_tab_label"),
     ];
 
     pub fn get_field(&self, field_id: &str) -> Option<&str> {
@@ -108,6 +117,9 @@ impl KeybindingSettings {
             "convert_to_markdown"      => self.convert_to_markdown.as_str(),
             "convert_to_explorer"      => self.convert_to_explorer.as_str(),
             "new_window"               => self.new_window.as_str(),
+            "close_active"             => self.close_active.as_str(),
+            "next_tab"                 => self.next_tab.as_str(),
+            "prev_tab"                 => self.prev_tab.as_str(),
             _ => return None,
         })
     }
@@ -141,6 +153,9 @@ impl KeybindingSettings {
             "convert_to_markdown"      => &mut self.convert_to_markdown,
             "convert_to_explorer"      => &mut self.convert_to_explorer,
             "new_window"               => &mut self.new_window,
+            "close_active"             => &mut self.close_active,
+            "next_tab"                 => &mut self.next_tab,
+            "prev_tab"                 => &mut self.prev_tab,
             _ => return false,
         };
         *target = value.to_string();
@@ -237,6 +252,9 @@ impl KeybindingSettings {
             convert_to_markdown: String::new(),
             convert_to_explorer: String::new(),
             new_window: "alt+shift+n".to_string(),
+            close_active: "ctrl+w".to_string(),
+            next_tab: "ctrl+tab".to_string(),
+            prev_tab: "ctrl+shift+tab".to_string(),
         }
     }
 
@@ -306,9 +324,9 @@ mod tests {
 
     #[test]
     fn general_binding_fields_count() {
-        // UI에 노출된 일반 단축키 필드: 25개.
+        // UI에 노출된 일반 단축키 필드: 28개.
         // 구조체에 UI 편집 가능한 필드가 추가/삭제되면 이 숫자와 GENERAL_BINDING_FIELDS를 함께 갱신해야 한다.
-        assert_eq!(KeybindingSettings::GENERAL_BINDING_FIELDS.len(), 25);
+        assert_eq!(KeybindingSettings::GENERAL_BINDING_FIELDS.len(), 28);
     }
 
     #[test]
