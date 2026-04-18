@@ -1,4 +1,5 @@
 mod clipboard;
+pub(crate) mod ime;
 mod keyboard;
 mod mouse;
 mod redraw;
@@ -98,78 +99,15 @@ impl MainWindow {
         )
     }
 
-    fn clear_ime_preedit(&mut self) {
-        self.ime_preedit = None;
-        self.ime_cursor_advance = 0;
-        self.ime_advance_base = (0, 0);
+    /// 현재 preedit이 있으면 원래 surface에 확정 전송하고 IME 상태를 리셋한다.
+    /// 단축키 소비/포커스 전환 직전에 호출.
+    pub(crate) fn flush_ime_preedit(&mut self) {
+        ime::flush_preedit(self);
     }
 
-    /// If there is an active IME preedit, commit its text to the **original** surface
-    /// (the one where composition started) and reset all IME state.
-    /// Call this before any focus change or shortcut consumption.
-    fn flush_ime_preedit(&mut self) {
-        let preedit = match self.ime_preedit.take() {
-            Some(p) if !p.text.is_empty() => p,
-            _ => {
-                self.ime_cursor_advance = 0;
-                self.ime_advance_base = (0, 0);
-                return;
-            }
-        };
-        if let Some(terminal) = self.state.find_terminal_by_id_mut(preedit.surface_id) {
-            terminal.send_key(&preedit.text);
-        }
-        self.state.record_typing(preedit.surface_id);
-        self.ime_cursor_advance = 0;
-        self.ime_advance_base = (0, 0);
-        self.mark_dirty();
-    }
-
-    /// Recalculate the preedit anchor position using the current terminal cursor.
+    /// PTY 출력 처리 후 cursor가 움직였을 수 있을 때 preedit anchor를 재계산한다.
     pub(crate) fn recalc_ime_preedit_anchor(&mut self) {
-        if self.ime_cursor_advance == 0 {
-            return;
-        }
-
-        let preedit = match &self.ime_preedit {
-            Some(p) => p,
-            None => return,
-        };
-        let surface_id = preedit.surface_id;
-        let terminal = match self.state.find_terminal_by_id(surface_id) {
-            Some(t) => t,
-            None => return,
-        };
-
-        let (col, row) = terminal.surface().cursor_position();
-        let cols = terminal.cols();
-
-        let (base_col, base_row) = self.ime_advance_base;
-        let raw_advance = if row > base_row {
-            (row - base_row) * cols + col - base_col
-        } else if col >= base_col {
-            col - base_col
-        } else {
-            0
-        };
-        if raw_advance >= self.ime_cursor_advance {
-            self.ime_cursor_advance = 0;
-        } else {
-            self.ime_cursor_advance -= raw_advance;
-        }
-        self.ime_advance_base = (col, row);
-
-        let adjusted_col = col + self.ime_cursor_advance;
-        let (anchor_col, anchor_row) = if cols > 0 && adjusted_col >= cols {
-            (adjusted_col % cols, row + adjusted_col / cols)
-        } else {
-            (adjusted_col, row)
-        };
-
-        if let Some(p) = &mut self.ime_preedit {
-            p.anchor_col = anchor_col;
-            p.anchor_row = anchor_row;
-        }
+        ime::recalc_anchor(self);
     }
 
     pub(crate) fn update_ime_cursor_area(&self) {

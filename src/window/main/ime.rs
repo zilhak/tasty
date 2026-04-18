@@ -1,0 +1,294 @@
+//! IME (Input Method Editor) handling — OS별 분리.
+//!
+//! OS마다 winit의 IME 이벤트 모델이 다르다:
+//! - **macOS / Linux**: composition 세션당 `Enabled` 1회, 조합 중 `Preedit` 여러 번,
+//!   마지막에 `Commit`, 세션 종료 시 `Disabled`. 즉 `Disabled`는 실제 IME OFF 시그널.
+//! - **Windows (IMM/TSF)**: **매 글자마다** `Enabled` → `Preedit(...)` ... → `Preedit("")`
+//!   → `Commit(...)` → `Disabled` 사이클을 돈다. `Disabled`는 "이번 글자 composition 종료"
+//!   일 뿐, IME 전체 상태 리셋이 아니다.
+//!
+//! 이 차이 때문에 "composition 종료(빈 Preedit, Disabled)에서 advance 보정 상태를 완전히
+//! 리셋할지"가 OS별로 달라져야 한다. 그 외 로직(reconcile, commit 시 advance 누적 등)은
+//! 공통이다.
+//!
+//! PTY 에코 지연 보정에 쓰이는 두 상태:
+//! - `ime_cursor_advance`: 마지막 Commit 이후 전송된 문자들의 누적 display width.
+//!   PTY 에코가 반영되기 전까지 이 offset만큼 anchor를 앞으로 밀어준다.
+//! - `ime_advance_base`: advance가 마지막으로 갱신된 시점의 raw cursor 위치.
+//!   이후 raw cursor가 이 위치를 지나갔다면 그만큼 advance를 차감한다.
+
+use winit::event::Ime;
+
+use super::MainWindow;
+use crate::gpu::ImePreeditState;
+use crate::window::Window as _;
+
+// =============================================================================
+// Public entry points
+// =============================================================================
+
+pub(super) fn handle_event(w: &mut MainWindow, event: Ime, egui_consumed: bool) {
+    if egui_consumed {
+        w.mark_dirty();
+        return;
+    }
+    match event {
+        Ime::Enabled => w.ime_active = true,
+        Ime::Disabled => on_disabled(w),
+        Ime::Preedit(text, cursor) => on_preedit(w, text, cursor),
+        Ime::Commit(text) => on_commit(w, text),
+    }
+}
+
+/// PTY 출력이 도착해 terminal cursor(또는 TUI의 fake cursor)가 움직였을 수 있을
+/// 때 호출. advance가 차감되어 0이 되거나, fake cursor가 최신 위치로 갱신된 순간을
+/// 포착해 preedit anchor를 재계산한다.
+pub(super) fn recalc_anchor(w: &mut MainWindow) {
+    if w.ime_cursor_advance == 0 {
+        return;
+    }
+    let Some(preedit) = &w.ime_preedit else {
+        return;
+    };
+    let surface_id = preedit.surface_id;
+    let Some(terminal) = w.state.find_terminal_by_id(surface_id) else {
+        return;
+    };
+
+    let (col, row) = reference_cursor(terminal);
+    let cols = terminal.cols();
+    let (base_col, base_row) = w.ime_advance_base;
+    let raw_advance = compute_raw_advance(col, row, base_col, base_row, cols);
+
+    if raw_advance >= w.ime_cursor_advance {
+        w.ime_cursor_advance = 0;
+    } else {
+        w.ime_cursor_advance -= raw_advance;
+    }
+    w.ime_advance_base = (col, row);
+
+    let (anchor_col, anchor_row) = advanced_anchor(col, row, cols, w.ime_cursor_advance);
+    if let Some(p) = &mut w.ime_preedit {
+        p.anchor_col = anchor_col;
+        p.anchor_row = anchor_row;
+    }
+}
+
+/// 현재 preedit이 있으면 확정해서 PTY로 보낸다 (단축키 소비 전 호출).
+pub(super) fn flush_preedit(w: &mut MainWindow) {
+    let preedit = match w.ime_preedit.take() {
+        Some(p) if !p.text.is_empty() => p,
+        _ => {
+            w.ime_cursor_advance = 0;
+            w.ime_advance_base = (0, 0);
+            return;
+        }
+    };
+    if let Some(terminal) = w.state.find_terminal_by_id_mut(preedit.surface_id) {
+        terminal.send_key(&preedit.text);
+    }
+    w.state.record_typing(preedit.surface_id);
+    w.ime_cursor_advance = 0;
+    w.ime_advance_base = (0, 0);
+    w.mark_dirty();
+}
+
+/// 완전 리셋 — 비-Windows의 composition 세션 종료(`Disabled`/`Preedit("")`)에서만 호출.
+#[cfg_attr(windows, allow(dead_code))]
+fn clear_all(w: &mut MainWindow) {
+    w.ime_preedit = None;
+    w.ime_cursor_advance = 0;
+    w.ime_advance_base = (0, 0);
+}
+
+// =============================================================================
+// IPC helpers — debug/automation용. OS 분기 없이 macOS 모델(full session)로 동작.
+// =============================================================================
+
+pub(crate) fn ipc_set_preedit(
+    w: &mut MainWindow,
+    text: String,
+    cursor: Option<(usize, usize)>,
+) -> Option<(usize, usize, u32)> {
+    let surface_id = w.state.focused_surface_id()?;
+    let (col, row, cols) = {
+        let terminal = w.state.focused_terminal()?;
+        let (col, row) = terminal.surface().cursor_position();
+        (col, row, terminal.cols())
+    };
+
+    if w.ime_cursor_advance > 0 {
+        let (base_col, base_row) = w.ime_advance_base;
+        let raw_advance = compute_raw_advance(col, row, base_col, base_row, cols);
+        if raw_advance >= w.ime_cursor_advance {
+            w.ime_cursor_advance = 0;
+        } else {
+            w.ime_cursor_advance -= raw_advance;
+        }
+        w.ime_advance_base = (col, row);
+    }
+
+    let (anchor_col, anchor_row) = advanced_anchor(col, row, cols, w.ime_cursor_advance);
+    w.ime_preedit = Some(ImePreeditState {
+        text,
+        cursor,
+        anchor_col,
+        anchor_row,
+        surface_id,
+    });
+    w.update_ime_cursor_area();
+    w.mark_dirty();
+    Some((anchor_col, anchor_row, surface_id))
+}
+
+pub(crate) fn ipc_commit(w: &mut MainWindow, text: &str) {
+    if w.ime_cursor_advance == 0 {
+        if let Some(terminal) = w.state.focused_terminal() {
+            w.ime_advance_base = terminal.surface().cursor_position();
+        }
+    }
+    for ch in text.chars() {
+        w.ime_cursor_advance += crate::renderer::unicode_width(ch);
+    }
+    w.ime_preedit = None;
+    let sid = w.state.focused_surface_id();
+    if let Some(terminal) = w.state.focused_terminal_mut() {
+        terminal.send_key(text);
+    }
+    if let Some(sid) = sid {
+        w.state.record_typing(sid);
+    }
+    w.mark_dirty();
+}
+
+// =============================================================================
+// Event handlers
+// =============================================================================
+
+/// composition 종료(`Ime::Disabled`, `Preedit("")`). OS별 분기의 유일한 지점.
+///
+/// Windows는 매 글자마다 이 시그널이 오므로 preedit overlay만 지우고 advance/base는
+/// 다음 글자의 PTY 에코 보정을 위해 유지한다. 그 외 OS는 실제 IME 세션 종료이므로 리셋.
+fn on_composition_end(w: &mut MainWindow) {
+    #[cfg(windows)]
+    {
+        w.ime_preedit = None;
+    }
+    #[cfg(not(windows))]
+    {
+        clear_all(w);
+    }
+}
+
+fn on_disabled(w: &mut MainWindow) {
+    w.ime_active = false;
+    on_composition_end(w);
+}
+
+fn on_preedit(w: &mut MainWindow, text: String, cursor: Option<(usize, usize)>) {
+    if text.is_empty() {
+        on_composition_end(w);
+        w.mark_dirty();
+        return;
+    }
+
+    let surface_id = w.state.focused_surface_id();
+    let anchor = reconcile_and_compute_anchor(w);
+
+    w.ime_preedit = match (surface_id, anchor) {
+        (Some(sid), Some((anchor_col, anchor_row))) => Some(ImePreeditState {
+            text,
+            cursor,
+            anchor_col,
+            anchor_row,
+            surface_id: sid,
+        }),
+        _ => None,
+    };
+    w.update_ime_cursor_area();
+    w.mark_dirty();
+}
+
+fn on_commit(w: &mut MainWindow, text: String) {
+    if w.ime_cursor_advance == 0 {
+        if let Some(terminal) = w.state.focused_terminal() {
+            w.ime_advance_base = reference_cursor(terminal);
+        }
+    }
+    for ch in text.chars() {
+        w.ime_cursor_advance += crate::renderer::unicode_width(ch);
+    }
+    w.ime_preedit = None;
+
+    let sid = w.state.focused_surface_id();
+    if let Some(terminal) = w.state.focused_terminal_mut() {
+        terminal.send_key(&text);
+    }
+    if let Some(sid) = sid {
+        w.state.record_typing(sid);
+    }
+    w.mark_dirty();
+}
+
+// =============================================================================
+// Shared helpers
+// =============================================================================
+
+fn compute_raw_advance(
+    col: usize,
+    row: usize,
+    base_col: usize,
+    base_row: usize,
+    cols: usize,
+) -> usize {
+    if row > base_row {
+        (row - base_row) * cols + col.saturating_sub(base_col)
+    } else if col >= base_col {
+        col - base_col
+    } else {
+        0
+    }
+}
+
+fn advanced_anchor(col: usize, row: usize, cols: usize, advance: usize) -> (usize, usize) {
+    let adjusted_col = col + advance;
+    if cols > 0 && adjusted_col >= cols {
+        (adjusted_col % cols, row + adjusted_col / cols)
+    } else {
+        (adjusted_col, row)
+    }
+}
+
+fn reconcile_and_compute_anchor(w: &mut MainWindow) -> Option<(usize, usize)> {
+    let terminal = w.state.focused_terminal()?;
+    let cols = terminal.cols();
+
+    // 참조 좌표 선택: TUI(cursor 숨김 + 단일 reverse-video 셀)면 fake cursor,
+    // 아니면 실제 terminal cursor.
+    let (ref_col, ref_row) = reference_cursor(terminal);
+
+    if w.ime_cursor_advance > 0 {
+        let (base_col, base_row) = w.ime_advance_base;
+        let raw_advance = compute_raw_advance(ref_col, ref_row, base_col, base_row, cols);
+        if raw_advance >= w.ime_cursor_advance {
+            w.ime_cursor_advance = 0;
+        } else {
+            w.ime_cursor_advance -= raw_advance;
+        }
+        w.ime_advance_base = (ref_col, ref_row);
+    }
+
+    Some(advanced_anchor(ref_col, ref_row, cols, w.ime_cursor_advance))
+}
+
+/// Preedit/commit 모두가 사용하는 "입력 위치" 좌표.
+/// Ink 기반 TUI가 `\e[?25l`로 real cursor를 숨기고 `\e[7m`으로 그린 fake cursor가
+/// 있으면 그걸 우선 사용. 없으면 real cursor.
+fn reference_cursor(terminal: &tasty_terminal::Terminal) -> (usize, usize) {
+    if !terminal.cursor_visible() {
+        if let Some(fake) = terminal.find_fake_cursor_cell() {
+            return fake;
+        }
+    }
+    terminal.surface().cursor_position()
+}

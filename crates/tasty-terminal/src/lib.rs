@@ -766,6 +766,32 @@ impl Terminal {
         self.use_alternate
     }
 
+    /// Scan the active surface for an isolated reverse-video cell.
+    ///
+    /// Some TUIs (notably Ink-based ones like Claude Code) hide the real terminal
+    /// cursor with `\e[?25l` and draw their own "fake cursor" by emitting a single
+    /// cell with the reverse-video attribute (`\e[7m`). This scan detects that cell
+    /// so we can use its position as the IME preedit anchor.
+    ///
+    /// Returns the cell position only when a **single** reverse-video cell exists.
+    /// Multi-cell reverse regions (selection highlight, inverse-painted UI) are
+    /// ambiguous and return None.
+    pub fn find_fake_cursor_cell(&self) -> Option<(usize, usize)> {
+        let surface = self.surface();
+        let mut found: Option<(usize, usize)> = None;
+        for (row_idx, line) in surface.screen_lines().iter().enumerate() {
+            for cell_ref in line.visible_cells() {
+                if cell_ref.attrs().reverse() {
+                    if found.is_some() {
+                        return None; // two or more — ambiguous
+                    }
+                    found = Some((cell_ref.cell_index(), row_idx));
+                }
+            }
+        }
+        found
+    }
+
     // ---- Scrollback buffer methods ----
 
     /// Set the scrollback buffer limit.

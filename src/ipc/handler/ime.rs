@@ -1,7 +1,7 @@
 use serde_json::json;
 
-use crate::gpu::ImePreeditState;
 use crate::ipc::protocol::JsonRpcResponse;
+use crate::window::main::ime as window_ime;
 use crate::window::main::MainWindow;
 use crate::window::Window as _;
 
@@ -47,7 +47,6 @@ fn handle_ime_preedit(
         None => return JsonRpcResponse::invalid_params(id, "Missing 'text' parameter"),
     };
 
-    // Empty text clears the preedit
     if text.is_empty() {
         w.ime_preedit = None;
         w.mark_dirty();
@@ -59,58 +58,19 @@ fn handle_ime_preedit(
         .and_then(|v| v.as_u64())
         .map(|c| (c as usize, (c as usize) + text.len()));
 
-    let surface_id = w.state.focused_surface_id();
-    let cursor_pos = w.state.focused_terminal().map(|terminal| {
-        let (col, row) = terminal.surface().cursor_position();
-        let cols = terminal.cols();
-        // Reconcile advance with PTY echo
-        if w.ime_cursor_advance > 0 {
-            let (base_col, base_row) = w.ime_advance_base;
-            let raw_advance = if row > base_row {
-                (row - base_row) * cols + col - base_col
-            } else if col >= base_col {
-                col - base_col
-            } else {
-                0
-            };
-            if raw_advance >= w.ime_cursor_advance {
-                w.ime_cursor_advance = 0;
-            } else {
-                w.ime_cursor_advance -= raw_advance;
-            }
-            w.ime_advance_base = (col, row);
-        }
-        let adjusted_col = col + w.ime_cursor_advance;
-        if cols > 0 && adjusted_col >= cols {
-            (adjusted_col % cols, row + adjusted_col / cols)
-        } else {
-            (adjusted_col, row)
-        }
-    });
-
-    match (surface_id, cursor_pos) {
-        (Some(surface_id), Some((anchor_col, anchor_row))) => {
-            w.ime_preedit = Some(ImePreeditState {
-                text: text.clone(),
-                cursor,
-                anchor_col,
-                anchor_row,
-                surface_id,
-            });
-            w.update_ime_cursor_area();
-            w.mark_dirty();
-            JsonRpcResponse::success(
-                id,
-                json!({
-                    "preedit_active": true,
-                    "text": text,
-                    "anchor_col": anchor_col,
-                    "anchor_row": anchor_row,
-                    "surface_id": surface_id,
-                }),
-            )
-        }
-        _ => JsonRpcResponse::internal_error(id, "No focused terminal"),
+    let text_for_response = text.clone();
+    match window_ime::ipc_set_preedit(w, text, cursor) {
+        Some((anchor_col, anchor_row, surface_id)) => JsonRpcResponse::success(
+            id,
+            json!({
+                "preedit_active": true,
+                "text": text_for_response,
+                "anchor_col": anchor_col,
+                "anchor_row": anchor_row,
+                "surface_id": surface_id,
+            }),
+        ),
+        None => JsonRpcResponse::internal_error(id, "No focused terminal"),
     }
 }
 
@@ -124,26 +84,7 @@ fn handle_ime_commit(
         None => return JsonRpcResponse::invalid_params(id, "Missing 'text' parameter"),
     };
 
-    // Record base cursor position before accumulating advance
-    if w.ime_cursor_advance == 0 {
-        if let Some(terminal) = w.state.focused_terminal() {
-            w.ime_advance_base = terminal.surface().cursor_position();
-        }
-    }
-    // Accumulate display width for cursor advance (same as real IME commit)
-    for ch in text.chars() {
-        w.ime_cursor_advance += crate::renderer::unicode_width(ch);
-    }
-    w.ime_preedit = None; // clear preedit but keep ime_cursor_advance
-
-    let sid = w.state.focused_surface_id();
-    if let Some(terminal) = w.state.focused_terminal_mut() {
-        terminal.send_key(&text);
-    }
-    if let Some(sid) = sid {
-        w.state.record_typing(sid);
-    }
-    w.mark_dirty();
+    window_ime::ipc_commit(w, &text);
 
     JsonRpcResponse::success(id, json!({ "committed": true, "text": text }))
 }
