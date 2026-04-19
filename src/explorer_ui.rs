@@ -452,10 +452,12 @@ fn draw_file_node(
 
         // Directory arrow icon — clickable separately for toggle
         if node.is_directory {
-            let arrow = if node.is_expanded { "\u{25BC}" } else { "\u{25B6}" };
-            let arrow_resp = ui.small_button(
-                egui::RichText::new(arrow).size(10.0),
-            );
+            let dir = if node.is_expanded {
+                crate::ui::icon::Direction::Down
+            } else {
+                crate::ui::icon::Direction::Right
+            };
+            let arrow_resp = crate::ui::icon::Icon::Chevron { direction: dir }.show(ui);
             if arrow_resp.clicked() && action.is_none() {
                 *action = Some(TreeAction::ToggleDir(node.path.clone()));
             }
@@ -475,7 +477,7 @@ fn draw_file_node(
 
         // For non-directory items, add spacing to align with directory items
         if !node.is_directory {
-            ui.add_space(4.0);
+            ui.add_space(crate::ui::icon::DEFAULT_SIZE);
         }
 
         let text = format!("{} {}", icon, node.name);
