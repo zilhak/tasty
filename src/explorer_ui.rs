@@ -91,13 +91,12 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel, keys: &[Pendi
             let tree_height = (total_height - bookmark_height - SECTION_GAP).max(40.0);
 
             // ── File tree (고정 75% 점유) ──
-            egui::ScrollArea::vertical()
+            egui::ScrollArea::both()
                 .id_salt("explorer_tree")
                 .max_height(tree_height)
                 .min_scrolled_height(tree_height)
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
-                    ui.set_min_width(ui.available_width());
                     let mut needs_refresh = false;
                     let root = &mut panel.root_node;
                     if root.is_directory {
@@ -267,13 +266,12 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel, keys: &[Pendi
                     .color(th.subtext0),
             );
             ui.add_space(2.0);
-            egui::ScrollArea::vertical()
+            egui::ScrollArea::both()
                 .id_salt("explorer_bookmarks")
                 .max_height(bookmark_height)
                 .min_scrolled_height(bookmark_height)
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
-                    ui.set_min_width(ui.available_width());
                     let mut nav_path: Option<String> = None;
                     let bookmarks = crate::bookmarks::Bookmarks::load();
                     for bm in &bookmarks.entries {
