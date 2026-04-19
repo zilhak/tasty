@@ -225,7 +225,7 @@
   - 폴더 우클릭 → "즐겨찾기에 추가" / "즐겨찾기에서 삭제" (이미 등록된 경우)
   - 추가 시 이름 입력 팝업 표시. 비워두면 폴더명 사용
   - 즐겨찾기를 더블클릭하면 해당 경로로 탐색기 루트 이동
-  - `~/.tasty/bookmarks.json`에 persist. 모든 Explorer 패널이 동일한 즐겨찾기를 공유
+  - `~/.tasty/state.db` (SQLite)의 `bookmarks` 테이블에 persist. 모든 Explorer 패널이 동일한 즐겨찾기를 공유. 구 `bookmarks.json`은 첫 실행 시 자동 이관되고 `bookmarks.json.bak`으로 이름이 바뀜
 
 #### 컨텍스트 메뉴
 - 터미널 영역 또는 탭 바 빈 공간에서 마우스 우클릭 시 컨텍스트 메뉴 표시

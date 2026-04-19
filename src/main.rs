@@ -37,6 +37,7 @@ mod settings;
 mod settings_ui;
 mod shortcuts;
 mod state;
+mod storage;
 mod surface_meta;
 pub mod theme;
 mod ui;
@@ -577,6 +578,13 @@ fn main() -> Result<()> {
     // Initialize i18n
     let lang_settings = settings::Settings::load();
     i18n::init(&lang_settings.general.language);
+
+    // Initialize state.db (SQLite). 실패 시 인메모리 폴백.
+    storage::init();
+    // Legacy JSON → SQLite 1회성 마이그레이션. CLI 클라이언트 모드에서는
+    // 불필요하지만 싸게 끝나므로 동일하게 돌린다.
+    bookmarks::migrate_from_json();
+    recent_files::migrate_from_json();
 
     // If a subcommand was provided, run in CLI client mode
     if let Some(command) = cli.command {
