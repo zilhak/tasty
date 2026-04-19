@@ -75,6 +75,34 @@ impl AppState {
         Ok(())
     }
 
+    /// Add a clipboard viewer tab in the focused pane.
+    pub fn add_clipboard_viewer_tab(&mut self) -> anyhow::Result<()> {
+        let tab_id = self.engine.next_ids.next_tab();
+        let surface_id = self.engine.next_ids.next_surface();
+        let surface: Box<dyn crate::model::Surface> = Box::new(
+            crate::model::ClipboardViewerPanel::new(surface_id),
+        );
+        let name = crate::i18n::t("clipboard_viewer.tab_title").to_string();
+        if let Some(pane) = self.focused_pane_mut() {
+            pane.add_surface_tab(tab_id, name, surface);
+        }
+        Ok(())
+    }
+
+    /// Add a clipboard viewer tab to the specified pane (cross-workspace).
+    pub fn add_clipboard_viewer_tab_to_pane(&mut self, pane_id: u32) -> anyhow::Result<()> {
+        let tab_id = self.engine.next_ids.next_tab();
+        let surface_id = self.engine.next_ids.next_surface();
+        let surface: Box<dyn crate::model::Surface> = Box::new(
+            crate::model::ClipboardViewerPanel::new(surface_id),
+        );
+        let name = crate::i18n::t("clipboard_viewer.tab_title").to_string();
+        if let Some(pane) = self.find_pane_by_id_mut(pane_id) {
+            pane.add_surface_tab(tab_id, name, surface);
+        }
+        Ok(())
+    }
+
     /// Add an empty placeholder tab in the focused pane. Returns (tab_id, surface_id).
     pub fn add_empty_tab(&mut self) -> Option<(u32, u32)> {
         let tab_id = self.engine.next_ids.next_tab();

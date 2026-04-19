@@ -268,6 +268,7 @@ invalid_format = "Invalid file format."
 
 [clipboard_viewer]
 title = "Clipboard History"
+tab_title = "Clipboard"
 search_placeholder = "Search clipboard history..."
 empty_message = "Clipboard history is empty."
 no_match = "No matches."

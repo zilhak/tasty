@@ -1,5 +1,5 @@
 use tasty_terminal::Terminal;
-use super::{EmptySurface, ExplorerPanel, HtmlPanel, MarkdownPanel, Rect, SurfaceGroupNode, SurfaceId, TerminalSurface};
+use super::{ClipboardViewerPanel, EmptySurface, ExplorerPanel, HtmlPanel, MarkdownPanel, Rect, SurfaceGroupNode, SurfaceId, TerminalSurface};
 
 /// Common behavior for all Surface types.
 ///
@@ -71,6 +71,8 @@ pub trait Surface {
     fn as_html(&self) -> Option<&HtmlPanel> { None }
     fn as_html_mut(&mut self) -> Option<&mut HtmlPanel> { None }
     fn as_empty_surface(&self) -> Option<&EmptySurface> { None }
+    fn as_clipboard_viewer(&self) -> Option<&ClipboardViewerPanel> { None }
+    fn as_clipboard_viewer_mut(&mut self) -> Option<&mut ClipboardViewerPanel> { None }
 
     /// Consume this surface and return the inner TerminalSurface if applicable.
     /// Used when converting a single terminal into a SurfaceGroup (split).

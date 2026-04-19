@@ -90,6 +90,18 @@ pub fn draw_egui_panels(
     // Second pass: render each egui panel.
     let mut pending_explorer_action: Option<(u32, Option<u32>, crate::explorer_ui::ExplorerAction)> = None;
     let mut pending_empty_action: Option<crate::empty_ui::EmptyAction> = None;
+    // Clipboard viewer surfaces are rendered after the main loop to sidestep the
+    // borrow conflict between surface (via state.workspaces) and state.engine.clipboard_history.
+    struct PendingClipboardViewerRender {
+        pane_id: u32,
+        surface_id: Option<u32>,
+        id_suffix: String,
+        logical_x: f32,
+        logical_y: f32,
+        logical_w: f32,
+        logical_h: f32,
+    }
+    let mut pending_clipboard_viewer_renders: Vec<PendingClipboardViewerRender> = Vec::new();
 
     for info in &infos {
         let id_suffix = info.surface_id.map_or(
@@ -159,6 +171,78 @@ pub fn draw_egui_panels(
                     pending_empty_action = Some(act);
                 }
             });
+        } else if surface.as_clipboard_viewer().is_some() {
+            // Defer: we need both engine.clipboard_history and cv.state together,
+            // which requires dropping the current surface borrow chain first.
+            pending_clipboard_viewer_renders.push(PendingClipboardViewerRender {
+                pane_id: info.pane_id,
+                surface_id: info.surface_id,
+                id_suffix: id_suffix.clone(),
+                logical_x: info.logical_x,
+                logical_y: info.logical_y,
+                logical_w: info.logical_w,
+                logical_h: info.logical_h,
+            });
+        }
+    }
+
+    // Render clipboard viewer surfaces now. The main loop is done, so we have
+    // exclusive access to state again and can safely borrow engine + surface.
+    for pending in &pending_clipboard_viewer_renders {
+        let info = EguiPanelInfo {
+            pane_id: pending.pane_id,
+            surface_id: pending.surface_id,
+            logical_x: pending.logical_x,
+            logical_y: pending.logical_y,
+            logical_w: pending.logical_w,
+            logical_h: pending.logical_h,
+            is_keyboard_target: false, // egui TextEdit handles focus internally
+        };
+        // Temporarily take history so it can be borrowed mutably alongside the surface.
+        let history_max = state.engine.settings.clipboard.history_max;
+        let mut history = std::mem::replace(
+            &mut state.engine.clipboard_history,
+            crate::clipboard_history::ClipboardHistory::new(1),
+        );
+
+        let ws = state.active_workspace_mut();
+        let mut paste_index: Option<usize> = None;
+        if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pending.pane_id) {
+            if let Some(tab) = pane.active_tab_mut() {
+                let surface: &mut dyn crate::model::Surface = if let Some(sid) = pending.surface_id {
+                    if let Some(group) = tab.surface_mut().as_surface_group_mut() {
+                        match group.layout_mut().find_leaf_mut(sid) {
+                            Some(leaf) => leaf.as_mut(),
+                            None => continue,
+                        }
+                    } else {
+                        tab.surface_mut()
+                    }
+                } else {
+                    tab.surface_mut()
+                };
+                if let Some(cv) = surface.as_clipboard_viewer_mut() {
+                    paste_index = draw_panel_frame(
+                        ctx,
+                        &format!("clipboard_viewer_{}", pending.id_suffix),
+                        &info,
+                        4,
+                        |ui| {
+                            crate::clipboard_viewer_ui::draw_clipboard_viewer_surface(
+                                ui,
+                                &mut history,
+                                &mut cv.state,
+                            )
+                        },
+                    );
+                }
+            }
+        }
+
+        history.set_max(history_max);
+        state.engine.clipboard_history = history;
+        if let Some(orig) = paste_index {
+            crate::clipboard_viewer_ui::paste_from_history(state, orig);
         }
     }
 
@@ -195,16 +279,20 @@ pub fn draw_egui_panels(
 }
 
 /// 공통 egui Area + Frame(crust background) 껍데기. `margin`만큼 내부 여백을 준다.
-fn draw_panel_frame<F>(
+/// body의 반환값을 그대로 전달한다 (None을 리턴하는 기존 호출처는 ()).
+fn draw_panel_frame<R, F>(
     ctx: &egui::Context,
     id: &str,
     info: &EguiPanelInfo,
     margin: i8,
     body: F,
-) where
-    F: FnOnce(&mut egui::Ui),
+) -> R
+where
+    F: FnOnce(&mut egui::Ui) -> R,
+    R: Default,
 {
     let th = theme::theme();
+    let mut out: R = R::default();
     egui::Area::new(egui::Id::new(id))
         .fixed_pos(egui::pos2(info.logical_x, info.logical_y))
         .order(egui::Order::Background)
@@ -217,8 +305,11 @@ fn draw_panel_frame<F>(
             egui::Frame::new()
                 .fill(th.crust)
                 .inner_margin(egui::Margin::same(margin))
-                .show(&mut clip_ui, body);
+                .show(&mut clip_ui, |ui| {
+                    out = body(ui);
+                });
         });
+    out
 }
 
 /// 여백 없이 Area만 거는 변형. Empty surface처럼 배경을 직접 칠하는 경우에 사용.
