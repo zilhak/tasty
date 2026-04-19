@@ -28,19 +28,21 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
     if !state.sidebar_visible {
         // Sidebar hidden — skip rendering entirely
     } else if state.sidebar_collapsed {
-        let (expand, settings, switch_ws, add_ws) =
+        let (expand, settings, tools, switch_ws, add_ws) =
             sidebar::draw_collapsed_sidebar(ctx, state, sidebar_width);
 
         if expand { state.sidebar_collapsed = false; }
         if settings { state.settings_open = true; }
+        if tools { crate::clipboard_viewer_ui::open_clipboard_viewer_popup(state); }
         if let Some(i) = switch_ws { state.switch_workspace(i); }
         if add_ws { if let Err(e) = state.add_workspace() { tracing::warn!("add_workspace failed: {e}"); } }
     } else {
-        let (collapse, settings) =
+        let (collapse, settings, tools) =
             sidebar::draw_full_sidebar(ctx, state, sidebar_width);
 
         if collapse { state.sidebar_collapsed = true; }
         if settings { state.settings_open = true; }
+        if tools { crate::clipboard_viewer_ui::open_clipboard_viewer_popup(state); }
     }
 
     // Compute remaining terminal area in physical pixels

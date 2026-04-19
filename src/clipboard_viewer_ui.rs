@@ -363,6 +363,9 @@ pub fn format_relative_time(captured_at: std::time::Instant) -> String {
 }
 
 /// 히스토리를 검색어로 필터. 반환 `(원본 인덱스, 엔트리 참조)`.
+/// 현재 draw_inner는 인라인 로직을 사용하지만 테스트 및 외부 도구(CLI 등)에서
+/// 동일 규칙을 재사용할 수 있도록 유지.
+#[allow(dead_code)]
 pub fn filter_entries<'a>(
     entries: &'a [&'a ClipboardEntry],
     query: &str,

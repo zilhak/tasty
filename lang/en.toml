@@ -188,6 +188,7 @@ cancel_button = "Cancel"
 [sidebar]
 workspaces_heading = "Workspaces"
 shortcuts_heading = "Shortcuts"
+tools_button = "Tools"
 
 [context_menu]
 rename_title = "Rename"
