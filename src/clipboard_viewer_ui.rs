@@ -35,6 +35,12 @@ enum ViewerOutcome {
     Pasted,
 }
 
+/// 검색어/선택 초기화 후 뷰어 popup을 중앙에 연다.
+pub fn open_clipboard_viewer_popup(state: &mut AppState) {
+    state.dialogs.clipboard_viewer = ClipboardViewerState::default();
+    state.popups.open_centered_focused("clipboard_viewer");
+}
+
 /// Popup 래퍼. `PopupDef::draw_fn`로 등록.
 pub fn draw_clipboard_viewer_popup(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction {
     let outcome = draw_inner(

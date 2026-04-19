@@ -267,6 +267,7 @@ file_not_found = "File does not exist."
 invalid_format = "Invalid file format."
 
 [clipboard_viewer]
+title = "Clipboard History"
 search_placeholder = "Search clipboard history..."
 empty_message = "Clipboard history is empty."
 no_match = "No matches."

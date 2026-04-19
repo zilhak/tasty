@@ -267,6 +267,7 @@ file_not_found = "ファイルが存在しません。"
 invalid_format = "無効なファイル形式です。"
 
 [clipboard_viewer]
+title = "クリップボード履歴"
 search_placeholder = "クリップボード履歴を検索..."
 empty_message = "クリップボード履歴は空です。"
 no_match = "一致する項目がありません。"

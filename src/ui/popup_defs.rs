@@ -54,6 +54,15 @@ pub fn all_defs() -> &'static [PopupDef] {
                 close_on_outside_click: false,
                 draw_fn: super::bookmark_popup::draw_bookmark_popup,
             },
+            PopupDef {
+                id: "clipboard_viewer",
+                title_key: "clipboard_viewer.title",
+                default_size: egui::vec2(420.0, 520.0),
+                sizer: None,
+                default_scope: PopupScope::Window,
+                close_on_outside_click: true,
+                draw_fn: crate::clipboard_viewer_ui::draw_clipboard_viewer_popup,
+            },
         ]
     })
 }
