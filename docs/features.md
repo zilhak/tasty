@@ -370,11 +370,11 @@
 - `settings.appearance.background_opacity`: wgpu clear color의 알파 값으로 적용. 0.0(투명)~1.0(불투명)
 - `settings.appearance.focused_surface_bg`: focused surface의 배경색 (hex, 기본 `#000000`). unfocused surface는 테마 기본 배경(`#1e1e2e`) 사용
 - `settings.appearance.sidebar_width`: 사이드바 너비가 UI, GPU 렌더러, 터미널 rect 계산에 반영. 렌더 루프에서 설정값과 자동 동기화
-- `settings.clipboard.windows_style`: Ctrl+V 붙여넣기 활성화
-- `settings.clipboard.linux_style`: Ctrl+Shift+V 붙여넣기 활성화
-- `settings.clipboard.macos_style`: Alt+V 붙여넣기 활성화
-- `settings.zoom.ctrl_style`: Ctrl+=/-/0 줌 활성화 (Windows/Linux 기본)
-- `settings.zoom.alt_style`: Alt+=/-/0 줌 활성화 (macOS 기본)
+- `settings.clipboard.history_enabled`: 클립보드 히스토리 기록 여부
+- `settings.clipboard.history_max`: 히스토리 최대 항목 수 (기본 100)
+- `settings.clipboard.poll_interval_ms`: 시스템 클립보드 폴링 주기(ms, 재시작 필요)
+- `settings.keybindings.copy` / `settings.keybindings.paste`: 복사·붙여넣기 단축키 (다중 바인딩). 플랫폼별 기본값 — Windows: `ctrl+c` / `ctrl+v`, Linux: `ctrl+shift+c` / `ctrl+shift+v`, macOS: `alt+c` / `alt+v`
+- `settings.keybindings.zoom_in` / `zoom_out` / `zoom_reset`: 줌 단축키 (다중 바인딩). 플랫폼별 기본값 — Windows/Linux: `ctrl+=` / `ctrl+-` / `ctrl+0`, macOS: `alt+=` / `alt+-` / `alt+0`
 - `settings.notification.enabled`: 알림 활성화/비활성화. 비활성 시 알림 수집 및 시스템 알림 모두 차단
 - `settings.notification.system_notification`: OS 네이티브 알림 개별 제어
 - `settings.notification.coalesce_ms`: NotificationStore 생성 시 병합 간격 전달
@@ -410,18 +410,21 @@
   - 스크롤백 중, alternate screen(vim 등), 마우스 트래킹 모드에서는 비활성
 
 ### 복사 (Copy)
-- 설정에 따라 세 가지 단축키 지원:
-  - **Windows**: Ctrl+C (`clipboard.windows_style`) — 선택 있으면 복사, 없으면 SIGINT 전달
-  - **Linux**: Ctrl+Shift+C (`clipboard.linux_style`)
-  - **macOS**: Alt+C (`clipboard.macos_style`)
+- `settings.keybindings.copy` 바인딩 목록 중 하나와 매칭되면 복사 (다중 바인딩 지원)
+- 플랫폼별 기본값:
+  - **Windows**: `ctrl+c` — 선택 있으면 복사, 없으면 SIGINT 전달
+  - **Linux**: `ctrl+shift+c`
+  - **macOS**: `alt+c`
 - 선택 텍스트를 시스템 클립보드에 복사 후 선택 해제
 - 키보드 입력 시 선택 자동 해제
+- 사용자가 Keybindings → Clipboard 서브탭에서 바인딩을 추가/삭제/변경 가능
 
 ### 붙여넣기 (Paste)
-- 설정에 따라 세 가지 단축키 지원:
-  - **Windows**: Ctrl+V (`clipboard.windows_style`)
-  - **Linux**: Ctrl+Shift+V (`clipboard.linux_style`)
-  - **macOS**: Alt+V (`clipboard.macos_style`)
+- `settings.keybindings.paste` 바인딩 목록 중 하나와 매칭되면 붙여넣기 (다중 바인딩 지원)
+- 플랫폼별 기본값:
+  - **Windows**: `ctrl+v`
+  - **Linux**: `ctrl+shift+v`
+  - **macOS**: `alt+v`
 - 브래킷 붙여넣기 모드(DECSET 2004) 지원: 활성화 시 `\x1b[200~` ... `\x1b[201~`로 감싸서 전송
 - 포커스된 터미널의 PTY에 직접 전송
 - **이미지 붙여넣기**: 클립보드에 텍스트가 없고 이미지가 있는 경우, 이미지를 PNG 파일로 저장(`/tmp/tasty-clipboard/paste-{timestamp}.png`)하고 파일 경로를 터미널에 붙여넣기. AI 에이전트가 이미지를 참조할 수 있도록 지원

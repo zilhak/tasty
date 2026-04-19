@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 pub use general::GeneralSettings;
 pub use appearance::AppearanceSettings;
 pub use keybindings::KeybindingSettings;
-pub use types::{ClipboardSettings, ZoomSettings, PerformanceSettings, NotificationSettings};
+pub use types::{ClipboardSettings, PerformanceSettings, NotificationSettings};
 
 /// Returns the Tasty home directory: ~/.tasty/
 /// Consistent across all platforms for easy AI/agent access.
@@ -27,7 +27,6 @@ pub struct Settings {
     pub general: GeneralSettings,
     pub appearance: AppearanceSettings,
     pub clipboard: ClipboardSettings,
-    pub zoom: ZoomSettings,
     pub notification: NotificationSettings,
     pub keybindings: KeybindingSettings,
     pub performance: PerformanceSettings,
@@ -39,7 +38,6 @@ impl Default for Settings {
             general: GeneralSettings::default(),
             appearance: AppearanceSettings::default(),
             clipboard: ClipboardSettings::default(),
-            zoom: ZoomSettings::default(),
             notification: NotificationSettings::default(),
             keybindings: KeybindingSettings::default(),
             performance: PerformanceSettings::default(),
@@ -168,29 +166,10 @@ font_size = 18.0
     }
 
     #[test]
-    fn settings_clipboard_platform_defaults() {
+    fn settings_clipboard_history_defaults() {
         let settings = Settings::default();
-        #[cfg(target_os = "windows")]
-        assert!(settings.clipboard.windows_style);
-        #[cfg(target_os = "macos")]
-        assert!(settings.clipboard.macos_style);
-        #[cfg(target_os = "linux")]
-        assert!(settings.clipboard.linux_style);
-    }
-
-    #[test]
-    fn settings_zoom_platform_defaults() {
-        let settings = Settings::default();
-        #[cfg(target_os = "macos")]
-        {
-            assert!(settings.zoom.alt_style);
-            assert!(!settings.zoom.ctrl_style);
-        }
-        #[cfg(not(target_os = "macos"))]
-        {
-            assert!(settings.zoom.ctrl_style);
-            assert!(!settings.zoom.alt_style);
-        }
+        assert!(settings.clipboard.history_enabled);
+        assert_eq!(settings.clipboard.history_max, 100);
     }
 
     #[test]
@@ -211,7 +190,7 @@ font_size = 18.0
     #[test]
     fn settings_keybindings_default() {
         let settings = Settings::default();
-        assert_eq!(settings.keybindings.new_workspace, "alt+n");
-        assert_eq!(settings.keybindings.new_tab, "alt+t");
+        assert_eq!(settings.keybindings.get_field("new_workspace"), Some("alt+n"));
+        assert_eq!(settings.keybindings.get_field("new_tab"), Some("alt+t"));
     }
 }

@@ -37,6 +37,11 @@ pub(crate) fn physical_key_to_logical(physical: &PhysicalKey) -> Option<Key> {
     Some(Key::Character(ch.into()))
 }
 
+/// 바인딩 목록 중 하나라도 매칭되면 true.
+fn matches_any_binding(bindings: &[String], key: &Key, mods: ModifiersState) -> bool {
+    bindings.iter().any(|b| matches_binding(b, key, mods))
+}
+
 /// Parse a binding string like "ctrl+shift+n" and check if it matches
 /// the given key + modifiers. Returns false for empty bindings.
 fn matches_binding(binding: &str, key: &Key, mods: ModifiersState) -> bool {
@@ -159,11 +164,12 @@ impl MainWindow {
         let kb = self.state.engine.settings.keybindings.clone();
         let dt_str = dt.binding_str();
 
-        if kb.toggle_settings == dt_str {
+        let has_dt = |bindings: &[String]| bindings.iter().any(|b| b == dt_str);
+        if has_dt(&kb.toggle_settings) {
             let _ = self.proxy.send_event(crate::AppEvent::OpenSettings);
             return true;
         }
-        if kb.toggle_notifications == dt_str {
+        if has_dt(&kb.toggle_notifications) {
             self.state.popups.toggle("notifications");
             if self.state.popups.is_open("notifications") {
                 self.state.engine.notifications.mark_all_read();
@@ -176,32 +182,32 @@ impl MainWindow {
         let cell_h = self.base.gpu.cell_height();
 
         // Check all configurable bindings for double-tap matches
-        let bindings_to_check: Vec<(String, &str)> = vec![
-            (kb.new_workspace.clone(), "new_workspace"),
-            (kb.close_workspace.clone(), "close_workspace"),
-            (kb.new_tab.clone(), "new_tab"),
-            (kb.close_pane.clone(), "close_pane"),
-            (kb.split_pane_vertical.clone(), "split_pane_vertical"),
-            (kb.split_pane_horizontal.clone(), "split_pane_horizontal"),
-            (kb.split_surface_vertical.clone(), "split_surface_vertical"),
-            (kb.split_surface_horizontal.clone(), "split_surface_horizontal"),
-            (kb.focus_pane_next.clone(), "focus_pane_next"),
-            (kb.focus_pane_prev.clone(), "focus_pane_prev"),
-            (kb.focus_surface_next.clone(), "focus_surface_next"),
-            (kb.focus_surface_prev.clone(), "focus_surface_prev"),
-            (kb.close_surface.clone(), "close_surface"),
-            (kb.open_markdown.clone(), "open_markdown"),
-            (kb.open_explorer.clone(), "open_explorer"),
-            (kb.convert_surface.clone(), "convert_surface"),
-            (kb.convert_to_markdown.clone(), "convert_to_markdown"),
-            (kb.convert_to_explorer.clone(), "convert_to_explorer"),
-            (kb.close_active.clone(), "close_active"),
-            (kb.next_tab.clone(), "next_tab"),
-            (kb.prev_tab.clone(), "prev_tab"),
+        let bindings_to_check: Vec<(&[String], &str)> = vec![
+            (&kb.new_workspace, "new_workspace"),
+            (&kb.close_workspace, "close_workspace"),
+            (&kb.new_tab, "new_tab"),
+            (&kb.close_pane, "close_pane"),
+            (&kb.split_pane_vertical, "split_pane_vertical"),
+            (&kb.split_pane_horizontal, "split_pane_horizontal"),
+            (&kb.split_surface_vertical, "split_surface_vertical"),
+            (&kb.split_surface_horizontal, "split_surface_horizontal"),
+            (&kb.focus_pane_next, "focus_pane_next"),
+            (&kb.focus_pane_prev, "focus_pane_prev"),
+            (&kb.focus_surface_next, "focus_surface_next"),
+            (&kb.focus_surface_prev, "focus_surface_prev"),
+            (&kb.close_surface, "close_surface"),
+            (&kb.open_markdown, "open_markdown"),
+            (&kb.open_explorer, "open_explorer"),
+            (&kb.convert_surface, "convert_surface"),
+            (&kb.convert_to_markdown, "convert_to_markdown"),
+            (&kb.convert_to_explorer, "convert_to_explorer"),
+            (&kb.close_active, "close_active"),
+            (&kb.next_tab, "next_tab"),
+            (&kb.prev_tab, "prev_tab"),
         ];
 
-        for (binding, action) in &bindings_to_check {
-            if binding == dt_str {
+        for (bindings, action) in &bindings_to_check {
+            if has_dt(bindings) {
                 match *action {
                     "new_workspace" => { if let Err(e) = self.state.add_workspace() { tracing::warn!("add_workspace failed: {e}"); } self.state.resize_all(terminal_rect, cell_w, cell_h); }
                     "close_workspace" => {
@@ -314,7 +320,7 @@ impl MainWindow {
         let cell_h = self.base.gpu.cell_height();
 
         // Clipboard copy (needs &self before state borrow)
-        if self.handle_copy_shortcut(key, ctrl, shift, alt) {
+        if self.handle_copy_shortcut(key, mods) {
             return true;
         }
 
@@ -335,12 +341,12 @@ impl MainWindow {
         }
 
         // Clipboard paste
-        if self.handle_paste_shortcut(key, ctrl, shift, alt) {
+        if self.handle_paste_shortcut(key, mods) {
             return true;
         }
 
         // Zoom
-        if Self::handle_zoom_shortcut(&mut self.state, key, ctrl, shift, alt) {
+        if Self::handle_zoom_shortcut(&mut self.state, key, mods) {
             self.base.dirty = true;
             return true;
         }
@@ -348,30 +354,22 @@ impl MainWindow {
         false
     }
 
-    fn handle_copy_shortcut(&mut self, key: &Key, ctrl: bool, shift: bool, alt: bool) -> bool {
-        let clipboard = &self.state.engine.settings.clipboard;
-        if let Key::Character(c) = key {
-            let s = c.as_str().to_lowercase();
-            let is_c = s == "c" || c.as_str() == "\x03";
-            if is_c {
-                if (ctrl && shift && clipboard.linux_style)
-                    || (ctrl && !shift && !alt && clipboard.windows_style)
-                    || (alt && !ctrl && !shift && clipboard.macos_style)
-                {
-                    if self.copy_selection_to_clipboard() {
-                        self.mark_dirty();
-                        return true;
-                    }
-                    // For non-terminal surfaces (Explorer/Markdown), inject egui Copy
-                    // event so egui's label text selection can copy to clipboard.
-                    let st = self.state.focused_surface_type();
-                    if matches!(st, crate::state::FocusedSurfaceType::Explorer | crate::state::FocusedSurfaceType::Markdown) {
-                        self.base.gpu.egui_ctx.input_mut(|i| i.events.push(egui::Event::Copy));
-                        self.mark_dirty();
-                        return true;
-                    }
-                }
-            }
+    fn handle_copy_shortcut(&mut self, key: &Key, mods: ModifiersState) -> bool {
+        let bindings = self.state.engine.settings.keybindings.copy.clone();
+        if !matches_any_binding(&bindings, key, mods) {
+            return false;
+        }
+        if self.copy_selection_to_clipboard() {
+            self.mark_dirty();
+            return true;
+        }
+        // For non-terminal surfaces (Explorer/Markdown), inject egui Copy
+        // event so egui's label text selection can copy to clipboard.
+        let st = self.state.focused_surface_type();
+        if matches!(st, crate::state::FocusedSurfaceType::Explorer | crate::state::FocusedSurfaceType::Markdown) {
+            self.base.gpu.egui_ctx.input_mut(|i| i.events.push(egui::Event::Copy));
+            self.mark_dirty();
+            return true;
         }
         false
     }
@@ -386,46 +384,46 @@ impl MainWindow {
         cell_h: f32,
         proxy: &winit::event_loop::EventLoopProxy<crate::AppEvent>,
     ) -> bool {
-        if matches_binding(&kb.new_workspace, key, mods) {
+        if matches_any_binding(&kb.new_workspace, key, mods) {
             if let Err(e) = state.add_workspace() { tracing::warn!("add_workspace failed: {e}"); }
             return true;
         }
-        if matches_binding(&kb.new_tab, key, mods) {
+        if matches_any_binding(&kb.new_tab, key, mods) {
             if let Err(e) = state.add_tab() { tracing::warn!("add_tab failed: {e}"); }
             return true;
         }
-        if matches_binding(&kb.split_pane_vertical, key, mods) {
+        if matches_any_binding(&kb.split_pane_vertical, key, mods) {
             if let Err(e) = state.split_pane(SplitDirection::Vertical) { tracing::warn!("split_pane_vertical failed: {e}"); }
             state.resize_all(terminal_rect, cell_w, cell_h);
             return true;
         }
-        if matches_binding(&kb.split_pane_horizontal, key, mods) {
+        if matches_any_binding(&kb.split_pane_horizontal, key, mods) {
             if let Err(e) = state.split_pane(SplitDirection::Horizontal) { tracing::warn!("split_pane_horizontal failed: {e}"); }
             state.resize_all(terminal_rect, cell_w, cell_h);
             return true;
         }
-        if matches_binding(&kb.split_surface_vertical, key, mods) {
+        if matches_any_binding(&kb.split_surface_vertical, key, mods) {
             if let Err(e) = state.split_surface(SplitDirection::Vertical) { tracing::warn!("split_surface_vertical failed: {e}"); }
             state.resize_all(terminal_rect, cell_w, cell_h);
             return true;
         }
-        if matches_binding(&kb.split_surface_horizontal, key, mods) {
+        if matches_any_binding(&kb.split_surface_horizontal, key, mods) {
             if let Err(e) = state.split_surface(SplitDirection::Horizontal) { tracing::warn!("split_surface_horizontal failed: {e}"); }
             state.resize_all(terminal_rect, cell_w, cell_h);
             return true;
         }
-        if matches_binding(&kb.toggle_settings, key, mods) {
+        if matches_any_binding(&kb.toggle_settings, key, mods) {
             let _ = proxy.send_event(crate::AppEvent::OpenSettings);
             return true;
         }
-        if matches_binding(&kb.toggle_notifications, key, mods) {
+        if matches_any_binding(&kb.toggle_notifications, key, mods) {
             state.popups.toggle("notifications");
             if state.popups.is_open("notifications") {
                 state.engine.notifications.mark_all_read();
             }
             return true;
         }
-        if matches_binding(&kb.toggle_clipboard_viewer, key, mods) {
+        if matches_any_binding(&kb.toggle_clipboard_viewer, key, mods) {
             if state.popups.is_open("clipboard_viewer") {
                 state.popups.close("clipboard_viewer");
             } else {
@@ -433,14 +431,14 @@ impl MainWindow {
             }
             return true;
         }
-        if matches_binding(&kb.close_workspace, key, mods) {
+        if matches_any_binding(&kb.close_workspace, key, mods) {
             state.close_active_workspace();
             if !state.engine.workspaces.is_empty() {
                 state.resize_all(terminal_rect, cell_w, cell_h);
             }
             return true;
         }
-        if matches_binding(&kb.close_pane, key, mods) {
+        if matches_any_binding(&kb.close_pane, key, mods) {
             if !state.close_active_pane() {
                 state.close_active_workspace();
             }
@@ -449,7 +447,7 @@ impl MainWindow {
             }
             return true;
         }
-        if matches_binding(&kb.close_surface, key, mods) {
+        if matches_any_binding(&kb.close_surface, key, mods) {
             if !state.close_active_surface() {
                 if !state.close_active_pane() {
                     state.close_active_workspace();
@@ -460,62 +458,62 @@ impl MainWindow {
             }
             return true;
         }
-        if matches_binding(&kb.focus_pane_next, key, mods) {
+        if matches_any_binding(&kb.focus_pane_next, key, mods) {
             state.move_pane_focus_forward();
             return true;
         }
-        if matches_binding(&kb.focus_pane_prev, key, mods) {
+        if matches_any_binding(&kb.focus_pane_prev, key, mods) {
             state.move_pane_focus_backward();
             return true;
         }
-        if matches_binding(&kb.focus_surface_next, key, mods) {
+        if matches_any_binding(&kb.focus_surface_next, key, mods) {
             state.move_surface_focus_forward();
             return true;
         }
-        if matches_binding(&kb.focus_surface_prev, key, mods) {
+        if matches_any_binding(&kb.focus_surface_prev, key, mods) {
             state.move_surface_focus_backward();
             return true;
         }
-        if matches_binding(&kb.toggle_sidebar, key, mods) {
+        if matches_any_binding(&kb.toggle_sidebar, key, mods) {
             state.sidebar_visible = !state.sidebar_visible;
             return true;
         }
-        if matches_binding(&kb.toggle_sidebar_collapse, key, mods) {
+        if matches_any_binding(&kb.toggle_sidebar_collapse, key, mods) {
             state.sidebar_collapsed = !state.sidebar_collapsed;
             return true;
         }
-        if matches_binding(&kb.restore_closed, key, mods) {
+        if matches_any_binding(&kb.restore_closed, key, mods) {
             state.restore_closed_item();
             state.resize_all(terminal_rect, cell_w, cell_h);
             return true;
         }
-        if matches_binding(&kb.quit_immediate, key, mods) {
+        if matches_any_binding(&kb.quit_immediate, key, mods) {
             let _ = proxy.send_event(crate::AppEvent::Shutdown);
             return true;
         }
-        if matches_binding(&kb.quit_minimize, key, mods) {
+        if matches_any_binding(&kb.quit_minimize, key, mods) {
             let _ = proxy.send_event(crate::AppEvent::Minimize);
             return true;
         }
-        if matches_binding(&kb.quit, key, mods) {
+        if matches_any_binding(&kb.quit, key, mods) {
             let _ = proxy.send_event(crate::AppEvent::QuitRequested);
             return true;
         }
-        if matches_binding(&kb.open_markdown, key, mods) {
+        if matches_any_binding(&kb.open_markdown, key, mods) {
             let pane_id = state.active_workspace().focused_pane;
             state.dialogs.file_open_pane_id = Some(pane_id);
             state.dialogs.markdown_open_buffer.clear();
             state.popups.open_centered_focused("markdown_open");
             return true;
         }
-        if matches_binding(&kb.open_explorer, key, mods) {
+        if matches_any_binding(&kb.open_explorer, key, mods) {
             let home = directories::BaseDirs::new()
                             .map(|d| d.home_dir().to_string_lossy().to_string())
                             .unwrap_or_else(|| ".".to_string());
             let _ = state.add_explorer_tab(home);
             return true;
         }
-        if matches_binding(&kb.convert_surface, key, mods) {
+        if matches_any_binding(&kb.convert_surface, key, mods) {
             if let Some(sid) = state.focused_surface_id() {
                 state.dialogs.convert_popup = Some(sid);
                 state.dialogs.convert_popup_selected = None;
@@ -523,7 +521,7 @@ impl MainWindow {
             }
             return true;
         }
-        if matches_binding(&kb.convert_to_markdown, key, mods) {
+        if matches_any_binding(&kb.convert_to_markdown, key, mods) {
             if let Some(sid) = state.focused_surface_id() {
                 let pane_id = state.active_workspace().focused_pane;
                 state.dialogs.markdown_convert_surface_id = Some(sid);
@@ -533,17 +531,17 @@ impl MainWindow {
             }
             return true;
         }
-        if matches_binding(&kb.convert_to_explorer, key, mods) {
+        if matches_any_binding(&kb.convert_to_explorer, key, mods) {
             if let Some(sid) = state.focused_surface_id() {
                 state.convert_surface_to_explorer(sid);
             }
             return true;
         }
-        if matches_binding(&kb.new_window, key, mods) {
+        if matches_any_binding(&kb.new_window, key, mods) {
             let _ = proxy.send_event(crate::AppEvent::CreateWindow);
             return true;
         }
-        if matches_binding(&kb.close_active, key, mods) {
+        if matches_any_binding(&kb.close_active, key, mods) {
             if !state.close_active_tab() {
                 if !state.close_active_pane() {
                     state.close_active_workspace();
@@ -554,11 +552,11 @@ impl MainWindow {
             }
             return true;
         }
-        if matches_binding(&kb.next_tab, key, mods) {
+        if matches_any_binding(&kb.next_tab, key, mods) {
             state.next_tab_in_pane();
             return true;
         }
-        if matches_binding(&kb.prev_tab, key, mods) {
+        if matches_any_binding(&kb.prev_tab, key, mods) {
             state.prev_tab_in_pane();
             return true;
         }
@@ -610,56 +608,35 @@ impl MainWindow {
         false
     }
 
-    fn handle_paste_shortcut(&mut self, key: &Key, ctrl: bool, shift: bool, alt: bool) -> bool {
-        let clipboard = &self.state.engine.settings.clipboard;
-        if let Key::Character(c) = key {
-            let s = c.as_str().to_lowercase();
-            let is_v = s == "v" || c.as_str() == "\u{16}";
-            if is_v {
-                if (ctrl && shift && clipboard.linux_style)
-                    || (ctrl && !shift && !alt && clipboard.windows_style)
-                    || (alt && !ctrl && !shift && clipboard.macos_style)
-                {
-                    self.paste_to_terminal();
-                    self.mark_dirty();
-                    return true;
-                }
-            }
+    fn handle_paste_shortcut(&mut self, key: &Key, mods: ModifiersState) -> bool {
+        let bindings = self.state.engine.settings.keybindings.paste.clone();
+        if !matches_any_binding(&bindings, key, mods) {
+            return false;
         }
-        false
+        self.paste_to_terminal();
+        self.mark_dirty();
+        true
     }
 
     fn handle_zoom_shortcut(
         state: &mut crate::state::AppState,
         key: &Key,
-        ctrl: bool,
-        shift: bool,
-        alt: bool,
+        mods: ModifiersState,
     ) -> bool {
-        let zoom_ctrl = ctrl && !alt && state.engine.settings.zoom.ctrl_style;
-        let zoom_alt = alt && !ctrl && state.engine.settings.zoom.alt_style;
-        if !(zoom_ctrl || zoom_alt) {
-            return false;
+        let kb = &state.engine.settings.keybindings;
+        if matches_any_binding(&kb.zoom_in, key, mods) {
+            let current = state.engine.settings.appearance.font_size;
+            state.engine.settings.appearance.font_size = (current + 1.0).min(72.0);
+            return true;
         }
-
-        if let Key::Character(c) = key {
-            match c.as_str() {
-                "=" | "+" => {
-                    let current = state.engine.settings.appearance.font_size;
-                    state.engine.settings.appearance.font_size = (current + 1.0).min(72.0);
-                    return true;
-                }
-                "-" => {
-                    let current = state.engine.settings.appearance.font_size;
-                    state.engine.settings.appearance.font_size = (current - 1.0).max(6.0);
-                    return true;
-                }
-                "0" if !shift => {
-                    state.engine.settings.appearance.font_size = 14.0;
-                    return true;
-                }
-                _ => {}
-            }
+        if matches_any_binding(&kb.zoom_out, key, mods) {
+            let current = state.engine.settings.appearance.font_size;
+            state.engine.settings.appearance.font_size = (current - 1.0).max(6.0);
+            return true;
+        }
+        if matches_any_binding(&kb.zoom_reset, key, mods) {
+            state.engine.settings.appearance.font_size = 14.0;
+            return true;
         }
         false
     }

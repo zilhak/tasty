@@ -1,59 +1,123 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
+
+/// 문자열과 Vec<String> 모두를 Vec<String>으로 역직렬화하는 필드 헬퍼.
+/// 구 포맷(`new_tab = "alt+t"`)을 새 포맷(`new_tab = ["alt+t"]`)으로 자동 승격한다.
+fn deserialize_binding<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum StringOrVec {
+        S(String),
+        V(Vec<String>),
+    }
+    match StringOrVec::deserialize(deserializer)? {
+        StringOrVec::S(s) => Ok(if s.is_empty() { Vec::new() } else { vec![s] }),
+        StringOrVec::V(v) => Ok(v.into_iter().filter(|s| !s.is_empty()).collect()),
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct KeybindingSettings {
-    pub new_workspace: String,
-    pub new_tab: String,
-    pub split_pane_vertical: String,
-    pub split_pane_horizontal: String,
-    pub split_surface_vertical: String,
-    pub split_surface_horizontal: String,
-    pub toggle_settings: String,
-    pub toggle_notifications: String,
-    pub close_pane: String,
-    pub close_surface: String,
-    pub close_workspace: String,
-    pub focus_pane_next: String,
-    pub focus_pane_prev: String,
-    pub focus_surface_next: String,
-    pub focus_surface_prev: String,
+    #[serde(deserialize_with = "deserialize_binding")]
+    pub new_workspace: Vec<String>,
+    #[serde(deserialize_with = "deserialize_binding")]
+    pub new_tab: Vec<String>,
+    #[serde(deserialize_with = "deserialize_binding")]
+    pub split_pane_vertical: Vec<String>,
+    #[serde(deserialize_with = "deserialize_binding")]
+    pub split_pane_horizontal: Vec<String>,
+    #[serde(deserialize_with = "deserialize_binding")]
+    pub split_surface_vertical: Vec<String>,
+    #[serde(deserialize_with = "deserialize_binding")]
+    pub split_surface_horizontal: Vec<String>,
+    #[serde(deserialize_with = "deserialize_binding")]
+    pub toggle_settings: Vec<String>,
+    #[serde(deserialize_with = "deserialize_binding")]
+    pub toggle_notifications: Vec<String>,
+    #[serde(deserialize_with = "deserialize_binding")]
+    pub close_pane: Vec<String>,
+    #[serde(deserialize_with = "deserialize_binding")]
+    pub close_surface: Vec<String>,
+    #[serde(deserialize_with = "deserialize_binding")]
+    pub close_workspace: Vec<String>,
+    #[serde(deserialize_with = "deserialize_binding")]
+    pub focus_pane_next: Vec<String>,
+    #[serde(deserialize_with = "deserialize_binding")]
+    pub focus_pane_prev: Vec<String>,
+    #[serde(deserialize_with = "deserialize_binding")]
+    pub focus_surface_next: Vec<String>,
+    #[serde(deserialize_with = "deserialize_binding")]
+    pub focus_surface_prev: Vec<String>,
     /// Modifier for tab switch (number keys): "ctrl" or "alt"
     pub tab_switch_modifier: String,
     /// Modifier for workspace switch (number keys): "ctrl" or "alt"
     pub workspace_switch_modifier: String,
     /// Toggle sidebar visibility (completely hidden/shown).
-    pub toggle_sidebar: String,
+    #[serde(deserialize_with = "deserialize_binding")]
+    pub toggle_sidebar: Vec<String>,
     /// Toggle sidebar collapse (full/compact mode).
-    pub toggle_sidebar_collapse: String,
+    #[serde(deserialize_with = "deserialize_binding")]
+    pub toggle_sidebar_collapse: Vec<String>,
     /// Restore the most recently closed surface/tab/workspace.
-    pub restore_closed: String,
+    #[serde(deserialize_with = "deserialize_binding")]
+    pub restore_closed: Vec<String>,
     /// Quit: follows close_behavior setting (ask/minimize/quit).
-    pub quit: String,
+    #[serde(deserialize_with = "deserialize_binding")]
+    pub quit: Vec<String>,
     /// Immediate quit: force exit, close everything.
-    pub quit_immediate: String,
+    #[serde(deserialize_with = "deserialize_binding")]
+    pub quit_immediate: Vec<String>,
     /// Minimize to background (park state).
-    pub quit_minimize: String,
+    #[serde(deserialize_with = "deserialize_binding")]
+    pub quit_minimize: Vec<String>,
     /// Open Markdown viewer (shows path dialog).
-    pub open_markdown: String,
+    #[serde(deserialize_with = "deserialize_binding")]
+    pub open_markdown: Vec<String>,
     /// Open file Explorer tab.
-    pub open_explorer: String,
+    #[serde(deserialize_with = "deserialize_binding")]
+    pub open_explorer: Vec<String>,
     /// Open Surface type convert popup.
-    pub convert_surface: String,
+    #[serde(deserialize_with = "deserialize_binding")]
+    pub convert_surface: Vec<String>,
     /// Direct convert to Markdown (shows path dialog).
-    pub convert_to_markdown: String,
+    #[serde(deserialize_with = "deserialize_binding")]
+    pub convert_to_markdown: Vec<String>,
     /// Direct convert to Explorer.
-    pub convert_to_explorer: String,
+    #[serde(deserialize_with = "deserialize_binding")]
+    pub convert_to_explorer: Vec<String>,
     /// Open a new window.
-    pub new_window: String,
+    #[serde(deserialize_with = "deserialize_binding")]
+    pub new_window: Vec<String>,
     /// Close nearest: tab → pane → workspace.
-    pub close_active: String,
+    #[serde(deserialize_with = "deserialize_binding")]
+    pub close_active: Vec<String>,
     /// Focus next tab in the current pane.
-    pub next_tab: String,
+    #[serde(deserialize_with = "deserialize_binding")]
+    pub next_tab: Vec<String>,
     /// Focus previous tab in the current pane.
-    pub prev_tab: String,
+    #[serde(deserialize_with = "deserialize_binding")]
+    pub prev_tab: Vec<String>,
     /// Toggle the clipboard history viewer popup.
-    pub toggle_clipboard_viewer: String,
+    #[serde(deserialize_with = "deserialize_binding")]
+    pub toggle_clipboard_viewer: Vec<String>,
+    /// Copy selection (or inject egui Copy event) from focused surface.
+    #[serde(deserialize_with = "deserialize_binding")]
+    pub copy: Vec<String>,
+    /// Paste clipboard content into focused terminal.
+    #[serde(deserialize_with = "deserialize_binding")]
+    pub paste: Vec<String>,
+    /// Increase font size.
+    #[serde(deserialize_with = "deserialize_binding")]
+    pub zoom_in: Vec<String>,
+    /// Decrease font size.
+    #[serde(deserialize_with = "deserialize_binding")]
+    pub zoom_out: Vec<String>,
+    /// Reset font size.
+    #[serde(deserialize_with = "deserialize_binding")]
+    pub zoom_reset: Vec<String>,
 }
 
 impl KeybindingSettings {
@@ -89,47 +153,58 @@ impl KeybindingSettings {
         ("next_tab",                "settings.keybindings.next_tab_label"),
         ("prev_tab",                "settings.keybindings.prev_tab_label"),
         ("toggle_clipboard_viewer", "settings.keybindings.toggle_clipboard_viewer_label"),
+        ("copy",                    "settings.keybindings.copy_label"),
+        ("paste",                   "settings.keybindings.paste_label"),
+        ("zoom_in",                 "settings.keybindings.zoom_in_label"),
+        ("zoom_out",                "settings.keybindings.zoom_out_label"),
+        ("zoom_reset",              "settings.keybindings.zoom_reset_label"),
     ];
 
-    pub fn get_field(&self, field_id: &str) -> Option<&str> {
+    /// 필드 id로 Vec<String> 참조를 얻는다.
+    pub fn get_bindings(&self, field_id: &str) -> Option<&[String]> {
         Some(match field_id {
-            "new_workspace"            => self.new_workspace.as_str(),
-            "new_tab"                  => self.new_tab.as_str(),
-            "split_pane_vertical"      => self.split_pane_vertical.as_str(),
-            "split_pane_horizontal"    => self.split_pane_horizontal.as_str(),
-            "split_surface_vertical"   => self.split_surface_vertical.as_str(),
-            "split_surface_horizontal" => self.split_surface_horizontal.as_str(),
-            "toggle_settings"          => self.toggle_settings.as_str(),
-            "toggle_notifications"     => self.toggle_notifications.as_str(),
-            "close_pane"               => self.close_pane.as_str(),
-            "close_surface"            => self.close_surface.as_str(),
-            "close_workspace"          => self.close_workspace.as_str(),
-            "focus_pane_next"          => self.focus_pane_next.as_str(),
-            "focus_pane_prev"          => self.focus_pane_prev.as_str(),
-            "focus_surface_next"       => self.focus_surface_next.as_str(),
-            "focus_surface_prev"       => self.focus_surface_prev.as_str(),
-            "toggle_sidebar"           => self.toggle_sidebar.as_str(),
-            "toggle_sidebar_collapse"  => self.toggle_sidebar_collapse.as_str(),
-            "restore_closed"           => self.restore_closed.as_str(),
-            "quit"                     => self.quit.as_str(),
-            "quit_immediate"           => self.quit_immediate.as_str(),
-            "quit_minimize"            => self.quit_minimize.as_str(),
-            "open_markdown"            => self.open_markdown.as_str(),
-            "open_explorer"            => self.open_explorer.as_str(),
-            "convert_surface"          => self.convert_surface.as_str(),
-            "convert_to_markdown"      => self.convert_to_markdown.as_str(),
-            "convert_to_explorer"      => self.convert_to_explorer.as_str(),
-            "new_window"               => self.new_window.as_str(),
-            "close_active"             => self.close_active.as_str(),
-            "next_tab"                 => self.next_tab.as_str(),
-            "prev_tab"                 => self.prev_tab.as_str(),
-            "toggle_clipboard_viewer"  => self.toggle_clipboard_viewer.as_str(),
+            "new_workspace"            => self.new_workspace.as_slice(),
+            "new_tab"                  => self.new_tab.as_slice(),
+            "split_pane_vertical"      => self.split_pane_vertical.as_slice(),
+            "split_pane_horizontal"    => self.split_pane_horizontal.as_slice(),
+            "split_surface_vertical"   => self.split_surface_vertical.as_slice(),
+            "split_surface_horizontal" => self.split_surface_horizontal.as_slice(),
+            "toggle_settings"          => self.toggle_settings.as_slice(),
+            "toggle_notifications"     => self.toggle_notifications.as_slice(),
+            "close_pane"               => self.close_pane.as_slice(),
+            "close_surface"            => self.close_surface.as_slice(),
+            "close_workspace"          => self.close_workspace.as_slice(),
+            "focus_pane_next"          => self.focus_pane_next.as_slice(),
+            "focus_pane_prev"          => self.focus_pane_prev.as_slice(),
+            "focus_surface_next"       => self.focus_surface_next.as_slice(),
+            "focus_surface_prev"       => self.focus_surface_prev.as_slice(),
+            "toggle_sidebar"           => self.toggle_sidebar.as_slice(),
+            "toggle_sidebar_collapse"  => self.toggle_sidebar_collapse.as_slice(),
+            "restore_closed"           => self.restore_closed.as_slice(),
+            "quit"                     => self.quit.as_slice(),
+            "quit_immediate"           => self.quit_immediate.as_slice(),
+            "quit_minimize"            => self.quit_minimize.as_slice(),
+            "open_markdown"            => self.open_markdown.as_slice(),
+            "open_explorer"            => self.open_explorer.as_slice(),
+            "convert_surface"          => self.convert_surface.as_slice(),
+            "convert_to_markdown"      => self.convert_to_markdown.as_slice(),
+            "convert_to_explorer"      => self.convert_to_explorer.as_slice(),
+            "new_window"               => self.new_window.as_slice(),
+            "close_active"             => self.close_active.as_slice(),
+            "next_tab"                 => self.next_tab.as_slice(),
+            "prev_tab"                 => self.prev_tab.as_slice(),
+            "toggle_clipboard_viewer"  => self.toggle_clipboard_viewer.as_slice(),
+            "copy"                     => self.copy.as_slice(),
+            "paste"                    => self.paste.as_slice(),
+            "zoom_in"                  => self.zoom_in.as_slice(),
+            "zoom_out"                 => self.zoom_out.as_slice(),
+            "zoom_reset"               => self.zoom_reset.as_slice(),
             _ => return None,
         })
     }
 
-    pub fn set_field(&mut self, field_id: &str, value: &str) -> bool {
-        let target: &mut String = match field_id {
+    fn get_bindings_mut(&mut self, field_id: &str) -> Option<&mut Vec<String>> {
+        Some(match field_id {
             "new_workspace"            => &mut self.new_workspace,
             "new_tab"                  => &mut self.new_tab,
             "split_pane_vertical"      => &mut self.split_pane_vertical,
@@ -161,19 +236,85 @@ impl KeybindingSettings {
             "next_tab"                 => &mut self.next_tab,
             "prev_tab"                 => &mut self.prev_tab,
             "toggle_clipboard_viewer"  => &mut self.toggle_clipboard_viewer,
-            _ => return false,
-        };
-        *target = value.to_string();
+            "copy"                     => &mut self.copy,
+            "paste"                    => &mut self.paste,
+            "zoom_in"                  => &mut self.zoom_in,
+            "zoom_out"                 => &mut self.zoom_out,
+            "zoom_reset"               => &mut self.zoom_reset,
+            _ => return None,
+        })
+    }
+
+    /// 편의: 첫 번째 바인딩을 반환. 없으면 빈 문자열 슬라이스.
+    pub fn get_field(&self, field_id: &str) -> Option<&str> {
+        self.get_bindings(field_id)
+            .map(|v| v.first().map(|s| s.as_str()).unwrap_or(""))
+    }
+
+    /// 편의: 단일 값으로 덮어씀. 빈 문자열이면 바인딩 전체 제거.
+    pub fn set_field(&mut self, field_id: &str, value: &str) -> bool {
+        let Some(vec) = self.get_bindings_mut(field_id) else { return false; };
+        vec.clear();
+        if !value.is_empty() {
+            vec.push(value.to_string());
+        }
         true
     }
 
     pub fn clear_field(&mut self, field_id: &str) -> bool {
-        self.set_field(field_id, "")
+        let Some(vec) = self.get_bindings_mut(field_id) else { return false; };
+        vec.clear();
+        true
     }
 
-    /// `combo`와 같은 값을 가진 **다른 필드**의 field_id를 반환.
+    /// field의 바인딩 목록에 combo를 추가. 이미 있으면 추가하지 않고 false 반환.
+    /// combo가 빈 문자열이면 false.
+    pub fn add_binding(&mut self, field_id: &str, combo: String) -> bool {
+        if combo.is_empty() {
+            return false;
+        }
+        let Some(vec) = self.get_bindings_mut(field_id) else { return false; };
+        if vec.iter().any(|b| b == &combo) {
+            return false;
+        }
+        vec.push(combo);
+        true
+    }
+
+    /// field의 idx 번째 바인딩을 제거.
+    pub fn remove_binding(&mut self, field_id: &str, idx: usize) -> bool {
+        let Some(vec) = self.get_bindings_mut(field_id) else { return false; };
+        if idx >= vec.len() {
+            return false;
+        }
+        vec.remove(idx);
+        true
+    }
+
+    /// field의 idx 번째 바인딩을 combo로 교체. idx가 len()이면 새로 push.
+    pub fn replace_binding_at(&mut self, field_id: &str, idx: usize, combo: String) -> bool {
+        if combo.is_empty() {
+            return false;
+        }
+        let Some(vec) = self.get_bindings_mut(field_id) else { return false; };
+        if idx == vec.len() {
+            // 이미 같은 combo가 있으면 중복 추가 금지
+            if vec.iter().any(|b| b == &combo) {
+                return false;
+            }
+            vec.push(combo);
+            true
+        } else if idx < vec.len() {
+            vec[idx] = combo;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// `combo`와 같은 값을 가진 **다른 필드**의 (field_id, idx)를 반환.
     /// 빈 조합은 항상 None. 자기 자신(field_id 일치)은 제외.
-    pub fn find_conflict(&self, field_id: &str, combo: &str) -> Option<&'static str> {
+    pub fn find_conflict(&self, field_id: &str, combo: &str) -> Option<(&'static str, usize)> {
         if combo.is_empty() {
             return None;
         }
@@ -181,8 +322,10 @@ impl KeybindingSettings {
             if *id == field_id {
                 continue;
             }
-            if self.get_field(id).is_some_and(|v| v == combo) {
-                return Some(id);
+            if let Some(bindings) = self.get_bindings(id) {
+                if let Some(idx) = bindings.iter().position(|b| b == combo) {
+                    return Some((id, idx));
+                }
             }
         }
         None
@@ -225,42 +368,84 @@ impl Default for KeybindingSettings {
 }
 
 impl KeybindingSettings {
-    /// Tasty preset (default). On macOS, Alt maps to Cmd.
+    /// Tasty preset (default). Platform-aware defaults for copy/paste/zoom.
     pub fn preset_tasty() -> Self {
+        // 플랫폼별 기본 복사/붙여넣기/줌 단축키.
+        //   macOS: Alt는 내부적으로 Cmd 매핑. 따라서 "alt+c" = Cmd+C.
+        //   Windows/Linux: Ctrl 기반.
+        //   Linux는 터미널 관례 상 Ctrl+Shift를 사용.
+        #[cfg(target_os = "macos")]
+        let copy: Vec<String> = vec!["alt+c".into()];
+        #[cfg(target_os = "macos")]
+        let paste: Vec<String> = vec!["alt+v".into()];
+        #[cfg(target_os = "macos")]
+        let zoom_in: Vec<String> = vec!["alt+=".into(), "alt++".into()];
+        #[cfg(target_os = "macos")]
+        let zoom_out: Vec<String> = vec!["alt+-".into()];
+        #[cfg(target_os = "macos")]
+        let zoom_reset: Vec<String> = vec!["alt+0".into()];
+
+        #[cfg(target_os = "linux")]
+        let copy: Vec<String> = vec!["ctrl+shift+c".into()];
+        #[cfg(target_os = "linux")]
+        let paste: Vec<String> = vec!["ctrl+shift+v".into()];
+        #[cfg(target_os = "linux")]
+        let zoom_in: Vec<String> = vec!["ctrl+=".into(), "ctrl++".into()];
+        #[cfg(target_os = "linux")]
+        let zoom_out: Vec<String> = vec!["ctrl+-".into()];
+        #[cfg(target_os = "linux")]
+        let zoom_reset: Vec<String> = vec!["ctrl+0".into()];
+
+        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+        let copy: Vec<String> = vec!["ctrl+c".into()];
+        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+        let paste: Vec<String> = vec!["ctrl+v".into()];
+        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+        let zoom_in: Vec<String> = vec!["ctrl+=".into(), "ctrl++".into()];
+        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+        let zoom_out: Vec<String> = vec!["ctrl+-".into()];
+        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+        let zoom_reset: Vec<String> = vec!["ctrl+0".into()];
+
         Self {
-            new_workspace: "alt+n".to_string(),
-            new_tab: "alt+t".to_string(),
-            split_pane_vertical: "alt+e".to_string(),
-            split_pane_horizontal: "alt+shift+e".to_string(),
-            split_surface_vertical: "alt+d".to_string(),
-            split_surface_horizontal: "alt+shift+d".to_string(),
-            toggle_settings: "ctrl+,".to_string(),
-            toggle_notifications: "ctrl+shift+i".to_string(),
-            close_pane: "ctrl+shift+w".to_string(),
-            close_surface: String::new(),
-            close_workspace: "alt+shift+w".to_string(),
-            focus_pane_next: "ctrl+]".to_string(),
-            focus_pane_prev: "ctrl+[".to_string(),
-            focus_surface_next: "alt+]".to_string(),
-            focus_surface_prev: "alt+[".to_string(),
+            new_workspace: vec!["alt+n".into()],
+            new_tab: vec!["alt+t".into()],
+            split_pane_vertical: vec!["alt+e".into()],
+            split_pane_horizontal: vec!["alt+shift+e".into()],
+            split_surface_vertical: vec!["alt+d".into()],
+            split_surface_horizontal: vec!["alt+shift+d".into()],
+            toggle_settings: vec!["ctrl+,".into()],
+            toggle_notifications: vec!["ctrl+shift+i".into()],
+            close_pane: vec!["ctrl+shift+w".into()],
+            close_surface: Vec::new(),
+            close_workspace: vec!["alt+shift+w".into()],
+            focus_pane_next: vec!["ctrl+]".into()],
+            focus_pane_prev: vec!["ctrl+[".into()],
+            focus_surface_next: vec!["alt+]".into()],
+            focus_surface_prev: vec!["alt+[".into()],
             tab_switch_modifier: "ctrl".to_string(),
             workspace_switch_modifier: "alt".to_string(),
-            toggle_sidebar: "ctrl+shift+b".to_string(),
-            toggle_sidebar_collapse: "ctrl+b".to_string(),
-            restore_closed: "ctrl+shift+t".to_string(),
-            quit: String::new(),
-            quit_immediate: String::new(),
-            quit_minimize: String::new(),
-            open_markdown: String::new(),
-            open_explorer: String::new(),
-            convert_surface: "alt+'".to_string(),
-            convert_to_markdown: String::new(),
-            convert_to_explorer: String::new(),
-            new_window: "alt+shift+n".to_string(),
-            close_active: "ctrl+w".to_string(),
-            next_tab: "ctrl+tab".to_string(),
-            prev_tab: "ctrl+shift+tab".to_string(),
-            toggle_clipboard_viewer: "ctrl+shift+h".to_string(),
+            toggle_sidebar: vec!["ctrl+shift+b".into()],
+            toggle_sidebar_collapse: vec!["ctrl+b".into()],
+            restore_closed: vec!["ctrl+shift+t".into()],
+            quit: Vec::new(),
+            quit_immediate: Vec::new(),
+            quit_minimize: Vec::new(),
+            open_markdown: Vec::new(),
+            open_explorer: Vec::new(),
+            convert_surface: vec!["alt+'".into()],
+            convert_to_markdown: Vec::new(),
+            convert_to_explorer: Vec::new(),
+            new_window: vec!["alt+shift+n".into()],
+            close_active: vec!["ctrl+w".into()],
+            next_tab: vec!["ctrl+tab".into()],
+            prev_tab: vec!["ctrl+shift+tab".into()],
+            toggle_clipboard_viewer: vec!["ctrl+shift+h".into()],
+            copy,
+            paste,
+            zoom_in,
+            zoom_out,
+            zoom_reset,
         }
     }
 
@@ -299,8 +484,8 @@ mod tests {
         let direct = KeybindingSettings::preset_tasty();
         for (id, _) in KeybindingSettings::GENERAL_BINDING_FIELDS {
             assert_eq!(
-                by_name.get_field(id),
-                direct.get_field(id),
+                by_name.get_bindings(id),
+                direct.get_bindings(id),
                 "field {id} mismatch"
             );
         }
@@ -312,7 +497,7 @@ mod tests {
         let kb = KeybindingSettings::preset_tasty();
         assert_eq!(
             kb.find_conflict("toggle_settings", "ctrl+shift+w"),
-            Some("close_pane")
+            Some(("close_pane", 0))
         );
     }
 
@@ -329,18 +514,33 @@ mod tests {
     }
 
     #[test]
-    fn find_conflict_empty_fields_dont_conflict() {
-        let kb = KeybindingSettings::preset_tasty();
-        assert_eq!(kb.find_conflict("quit", ""), None);
-    }
-
-    #[test]
     fn set_and_get_field_roundtrip() {
         let mut kb = KeybindingSettings::preset_tasty();
         assert!(kb.set_field("new_tab", "alt+x"));
         assert_eq!(kb.get_field("new_tab"), Some("alt+x"));
         assert!(kb.clear_field("new_tab"));
         assert_eq!(kb.get_field("new_tab"), Some(""));
+    }
+
+    #[test]
+    fn add_remove_binding_roundtrip() {
+        let mut kb = KeybindingSettings::preset_tasty();
+        assert!(kb.clear_field("copy"));
+        assert!(kb.add_binding("copy", "ctrl+c".into()));
+        assert!(kb.add_binding("copy", "ctrl+shift+c".into()));
+        // 중복 추가는 실패.
+        assert!(!kb.add_binding("copy", "ctrl+c".into()));
+        assert_eq!(kb.get_bindings("copy"), Some(&["ctrl+c".to_string(), "ctrl+shift+c".to_string()][..]));
+        assert!(kb.remove_binding("copy", 0));
+        assert_eq!(kb.get_bindings("copy"), Some(&["ctrl+shift+c".to_string()][..]));
+        // 범위 밖 idx는 실패.
+        assert!(!kb.remove_binding("copy", 5));
+    }
+
+    #[test]
+    fn add_binding_rejects_empty() {
+        let mut kb = KeybindingSettings::preset_tasty();
+        assert!(!kb.add_binding("new_tab", String::new()));
     }
 
     #[test]
@@ -352,16 +552,15 @@ mod tests {
 
     #[test]
     fn general_binding_fields_count() {
-        // UI에 노출된 일반 단축키 필드: 29개.
-        // 구조체에 UI 편집 가능한 필드가 추가/삭제되면 이 숫자와 GENERAL_BINDING_FIELDS를 함께 갱신해야 한다.
-        assert_eq!(KeybindingSettings::GENERAL_BINDING_FIELDS.len(), 29);
+        // UI에 노출된 일반 단축키 필드: 34개. (기존 29 + copy/paste/zoom_in/zoom_out/zoom_reset 5)
+        assert_eq!(KeybindingSettings::GENERAL_BINDING_FIELDS.len(), 34);
     }
 
     #[test]
     fn all_general_fields_have_getters_and_setters() {
         let mut kb = KeybindingSettings::preset_tasty();
         for (id, _) in KeybindingSettings::GENERAL_BINDING_FIELDS {
-            assert!(kb.get_field(id).is_some(), "get_field missing for {id}");
+            assert!(kb.get_bindings(id).is_some(), "get_bindings missing for {id}");
             assert!(kb.set_field(id, "x"), "set_field missing for {id}");
             assert_eq!(kb.get_field(id), Some("x"));
         }
@@ -373,6 +572,25 @@ mod tests {
             KeybindingSettings::label_key_for("close_pane"),
             Some("settings.keybindings.close_pane_label")
         );
+        assert_eq!(
+            KeybindingSettings::label_key_for("copy"),
+            Some("settings.keybindings.copy_label")
+        );
         assert_eq!(KeybindingSettings::label_key_for("nonexistent"), None);
+    }
+
+    /// 구 포맷(단일 String) TOML이 Vec<String>으로 자동 승격되는지 확인.
+    #[test]
+    fn legacy_string_format_deserializes_as_single_element_vec() {
+        let toml_str = r#"
+new_tab = "alt+x"
+close_pane = ""
+copy = ["ctrl+c", "ctrl+shift+c"]
+"#;
+        let kb: KeybindingSettings = toml::from_str(toml_str).unwrap();
+        assert_eq!(kb.new_tab, vec!["alt+x".to_string()]);
+        // 빈 문자열은 빈 Vec으로.
+        assert!(kb.close_pane.is_empty());
+        assert_eq!(kb.copy, vec!["ctrl+c".to_string(), "ctrl+shift+c".to_string()]);
     }
 }

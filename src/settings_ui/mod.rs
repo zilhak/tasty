@@ -4,7 +4,7 @@ mod tabs;
 use crate::i18n::t;
 use crate::settings::Settings;
 
-use keybindings_tab::{draw_keybindings_tab, KeybindingsSubTab, PendingBinding};
+use keybindings_tab::{draw_keybindings_tab, KeybindingsSubTab, PendingBinding, RecordingSlot};
 use tabs::*;
 
 /// Sub-tab within the Appearance tab.
@@ -36,8 +36,8 @@ pub struct SettingsUiState {
     active_tab: SettingsTab,
     /// Working copy of settings being edited.
     draft: Option<Settings>,
-    /// Which keybinding field is currently recording input (None = not recording).
-    recording_field: Option<String>,
+    /// Which keybinding field+slot is currently recording input (None = not recording).
+    recording_field: Option<RecordingSlot>,
     /// Active sub-tab within keybindings.
     keybindings_sub_tab: KeybindingsSubTab,
     /// Active sub-tab within appearance.

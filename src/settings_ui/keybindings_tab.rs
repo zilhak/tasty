@@ -5,8 +5,11 @@ use crate::settings::{KeybindingSettings, Settings};
 #[derive(Debug, Clone)]
 pub struct PendingBinding {
     pub target_field: String,
+    /// 교체할 (또는 새로 추가할) 대상 인덱스. len()이면 새 추가.
+    pub target_idx: usize,
     pub combo: String,
     pub conflicting_field: String,
+    pub conflicting_idx: usize,
 }
 
 /// Sub-tab within the Keybindings tab.
@@ -16,7 +19,17 @@ pub enum KeybindingsSubTab {
     Workspace,
     Pane,
     Surface,
+    Clipboard,
+    Zoom,
     Preset,
+}
+
+/// 녹화 중인 필드 식별자 — 어떤 필드의 어느 슬롯을 기록 중인지.
+#[derive(Debug, Clone)]
+pub struct RecordingSlot {
+    pub field_id: String,
+    /// 기존 바인딩 교체 시 인덱스, 새 바인딩 추가 시 `bindings.len()`.
+    pub idx: usize,
 }
 
 /// Result of key capture attempt.
@@ -33,7 +46,7 @@ pub enum KeyCapture {
 pub fn draw_keybindings_tab(
     ui: &mut egui::Ui,
     settings: &mut Settings,
-    recording_field: &mut Option<String>,
+    recording_field: &mut Option<RecordingSlot>,
     sub_tab: &mut KeybindingsSubTab,
     selected_preset: &mut Option<String>,
     pending_binding: &mut Option<PendingBinding>,
@@ -60,6 +73,8 @@ pub fn draw_keybindings_tab(
                         (KeybindingsSubTab::Workspace, t("settings.keybindings.subtab.workspace")),
                         (KeybindingsSubTab::Pane, t("settings.keybindings.subtab.pane")),
                         (KeybindingsSubTab::Surface, t("settings.keybindings.subtab.surface")),
+                        (KeybindingsSubTab::Clipboard, t("settings.keybindings.subtab.clipboard")),
+                        (KeybindingsSubTab::Zoom, t("settings.keybindings.subtab.zoom")),
                         (KeybindingsSubTab::Preset, t("settings.keybindings.subtab.preset")),
                     ];
 
@@ -159,6 +174,19 @@ pub fn draw_keybindings_tab(
                     ("convert_to_explorer", "settings.keybindings.convert_to_explorer_label"),
                 ]);
             }
+            KeybindingsSubTab::Clipboard => {
+                draw_keybinding_entries(ui, &mut settings.keybindings, recording_field, pending_binding, &captured, &[
+                    ("copy", "settings.keybindings.copy_label"),
+                    ("paste", "settings.keybindings.paste_label"),
+                ]);
+            }
+            KeybindingsSubTab::Zoom => {
+                draw_keybinding_entries(ui, &mut settings.keybindings, recording_field, pending_binding, &captured, &[
+                    ("zoom_in", "settings.keybindings.zoom_in_label"),
+                    ("zoom_out", "settings.keybindings.zoom_out_label"),
+                    ("zoom_reset", "settings.keybindings.zoom_reset_label"),
+                ]);
+            }
             KeybindingsSubTab::Preset => {
                 draw_preset_subtab(ui, &mut settings.keybindings, selected_preset);
             }
@@ -220,8 +248,13 @@ pub fn draw_keybindings_tab(
             });
 
         if accept {
-            settings.keybindings.clear_field(&pending.conflicting_field);
-            settings.keybindings.set_field(&pending.target_field, &pending.combo);
+            // 충돌하는 쪽의 해당 바인딩만 제거 후, 대상 필드에 새 바인딩을 기록한다.
+            settings.keybindings.remove_binding(&pending.conflicting_field, pending.conflicting_idx);
+            settings.keybindings.replace_binding_at(
+                &pending.target_field,
+                pending.target_idx,
+                pending.combo.clone(),
+            );
             *pending_binding = None;
         } else if cancel {
             *pending_binding = None;
@@ -282,7 +315,7 @@ fn draw_preset_subtab(
 
             let is_identical = KeybindingSettings::GENERAL_BINDING_FIELDS
                 .iter()
-                .all(|(id, _)| keybindings.get_field(id) == preset.get_field(id));
+                .all(|(id, _)| keybindings.get_bindings(id) == preset.get_bindings(id));
 
             egui::ScrollArea::vertical()
                 .max_height(ui.available_height() - 40.0)
@@ -304,29 +337,29 @@ fn draw_preset_subtab(
                             ui.end_row();
 
                             for (field_id, label_key) in KeybindingSettings::GENERAL_BINDING_FIELDS {
-                                let before_raw = keybindings.get_field(field_id).unwrap_or("");
-                                let after_raw = preset.get_field(field_id).unwrap_or("");
+                                let before_raw = keybindings.get_bindings(field_id).unwrap_or(&[]);
+                                let after_raw = preset.get_bindings(field_id).unwrap_or(&[]);
                                 let changed = before_raw != after_raw;
 
                                 let action_label = t(label_key)
                                     .trim_end_matches(':')
                                     .trim()
                                     .to_string();
-                                let before_disp = if before_raw.is_empty() {
-                                    t("settings.keybindings.hint_none").to_string()
-                                } else {
-                                    KeybindingSettings::format_display(before_raw)
-                                };
-                                let after_disp = if after_raw.is_empty() {
-                                    t("settings.keybindings.hint_none").to_string()
-                                } else {
-                                    KeybindingSettings::format_display(after_raw)
+                                let fmt_list = |v: &[String]| -> String {
+                                    if v.is_empty() {
+                                        t("settings.keybindings.hint_none").to_string()
+                                    } else {
+                                        v.iter()
+                                            .map(|b| KeybindingSettings::format_display(b))
+                                            .collect::<Vec<_>>()
+                                            .join(", ")
+                                    }
                                 };
 
                                 let make = |s: String| if changed { strong(s) } else { normal(s) };
                                 ui.label(make(action_label));
-                                ui.label(make(before_disp));
-                                ui.label(make(after_disp));
+                                ui.label(make(fmt_list(before_raw)));
+                                ui.label(make(fmt_list(after_raw)));
                                 ui.end_row();
                             }
                         });
@@ -348,80 +381,122 @@ fn draw_preset_subtab(
 fn draw_keybinding_entries(
     ui: &mut egui::Ui,
     keybindings: &mut KeybindingSettings,
-    recording_field: &mut Option<String>,
+    recording_field: &mut Option<RecordingSlot>,
     pending_binding: &mut Option<PendingBinding>,
     captured: &KeyCapture,
-    bindings: &[(&str, &str)],
+    entries: &[(&str, &str)],
 ) {
     let th = crate::theme::theme();
     // 충돌 팝업이 떠 있는 동안은 녹화 버튼을 눌러도 녹화 상태로 진입하지 않도록 가드.
     let can_record = pending_binding.is_none();
-    egui::Grid::new("keybindings_grid")
-        .num_columns(2)
-        .spacing([12.0, 8.0])
-        .show(ui, |ui| {
-            for (field_id, label_key) in bindings.iter() {
-                ui.label(t(label_key));
 
-                let is_recording = recording_field.as_deref() == Some(*field_id);
-
-                if is_recording {
-                    match captured {
-                        KeyCapture::Combo(combo) => {
-                            match keybindings.find_conflict(field_id, combo) {
-                                Some(conflicting) => {
-                                    *pending_binding = Some(PendingBinding {
-                                        target_field: field_id.to_string(),
-                                        combo: combo.clone(),
-                                        conflicting_field: conflicting.to_string(),
-                                    });
-                                }
-                                None => {
-                                    keybindings.set_field(field_id, combo);
-                                }
-                            }
-                            *recording_field = None;
-                        }
-                        KeyCapture::Clear => {
-                            keybindings.clear_field(field_id);
-                            *recording_field = None;
-                        }
-                        KeyCapture::None => {}
+    // 녹화된 combo 처리: 녹화 슬롯이 정해져 있을 때만 적용.
+    if let Some(slot) = recording_field.clone() {
+        match captured {
+            KeyCapture::Combo(combo) => {
+                match keybindings.find_conflict(&slot.field_id, combo) {
+                    Some((conflicting, conflicting_idx)) => {
+                        *pending_binding = Some(PendingBinding {
+                            target_field: slot.field_id.clone(),
+                            target_idx: slot.idx,
+                            combo: combo.clone(),
+                            conflicting_field: conflicting.to_string(),
+                            conflicting_idx,
+                        });
+                    }
+                    None => {
+                        keybindings.replace_binding_at(&slot.field_id, slot.idx, combo.clone());
                     }
                 }
+                *recording_field = None;
+            }
+            KeyCapture::Clear => {
+                // Escape — 녹화 중인 슬롯이 기존 엔트리면 제거, 새 슬롯이면 그냥 취소.
+                let current_len = keybindings
+                    .get_bindings(&slot.field_id)
+                    .map(|v| v.len())
+                    .unwrap_or(0);
+                if slot.idx < current_len {
+                    keybindings.remove_binding(&slot.field_id, slot.idx);
+                }
+                *recording_field = None;
+            }
+            KeyCapture::None => {}
+        }
+    }
 
-                let current = keybindings.get_field(field_id).unwrap_or("");
+    for (field_id, label_key) in entries.iter() {
+        ui.horizontal(|ui| {
+            ui.label(t(label_key));
+            ui.add_space(8.0);
+
+            let bindings_len = keybindings
+                .get_bindings(field_id)
+                .map(|v| v.len())
+                .unwrap_or(0);
+
+            // 기존 바인딩 각각을 버튼으로 표시.
+            for idx in 0..bindings_len {
+                let is_recording = matches!(
+                    recording_field,
+                    Some(slot) if slot.field_id == *field_id && slot.idx == idx
+                );
+                let current = keybindings
+                    .get_bindings(field_id)
+                    .and_then(|v| v.get(idx))
+                    .cloned()
+                    .unwrap_or_default();
+
                 let display_text = if is_recording {
                     t("settings.keybindings.hint_press_key").to_string()
-                } else if current.is_empty() {
-                    t("settings.keybindings.hint_none").to_string()
                 } else {
-                    current.to_string()
+                    KeybindingSettings::format_display(&current)
                 };
 
-                let bg_color = if is_recording {
-                    th.surface1
-                } else {
-                    th.surface0
-                };
-                let text_color = if is_recording || current.is_empty() {
-                    th.overlay1
-                } else {
-                    th.text
-                };
+                let bg_color = if is_recording { th.surface1 } else { th.surface0 };
+                let text_color = if is_recording { th.overlay1 } else { th.text };
 
                 let button = egui::Button::new(
                     egui::RichText::new(&display_text).color(text_color).monospace()
                 )
                     .fill(bg_color)
-                    .min_size(egui::vec2(200.0, 24.0));
+                    .min_size(egui::vec2(140.0, 24.0));
 
                 if ui.add_enabled(can_record, button).clicked() {
-                    *recording_field = Some(field_id.to_string());
+                    *recording_field = Some(RecordingSlot { field_id: field_id.to_string(), idx });
                 }
-                ui.end_row();
+            }
+
+            // 새 바인딩 추가 버튼. 이미 이 필드에서 녹화 중이면 "누르는 중" 상태로 보임.
+            let adding = matches!(
+                recording_field,
+                Some(slot) if slot.field_id == *field_id && slot.idx == bindings_len
+            );
+            let add_label = if adding {
+                t("settings.keybindings.hint_press_key").to_string()
+            } else if bindings_len == 0 {
+                t("settings.keybindings.hint_none").to_string()
+            } else {
+                "+".to_string()
+            };
+            let add_bg = if adding { th.surface1 } else { th.surface0 };
+            let add_fg = if adding { th.overlay1 } else { th.subtext0 };
+            let add_btn = egui::Button::new(
+                egui::RichText::new(&add_label).color(add_fg).monospace()
+            )
+                .fill(add_bg)
+                .min_size(egui::vec2(if bindings_len == 0 { 140.0 } else { 32.0 }, 24.0));
+            if ui.add_enabled(can_record, add_btn)
+                .on_hover_text(t("settings.keybindings.add_binding_button"))
+                .clicked()
+            {
+                *recording_field = Some(RecordingSlot {
+                    field_id: field_id.to_string(),
+                    idx: bindings_len,
+                });
             }
         });
+    }
 }
 
 fn capture_key_combo(ctx: &egui::Context, active: bool) -> KeyCapture {

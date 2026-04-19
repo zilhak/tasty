@@ -88,19 +88,11 @@ light = "라이트"
 
 [settings.clipboard]
 heading = "클립보드"
-macos_style = "macOS 방식 (Alt+C / Alt+V)"
-linux_style = "Linux 방식 (Ctrl+Shift+C / Ctrl+Shift+V)"
-windows_style = "Windows 방식 (선택 시 Ctrl+C / Ctrl+V)"
 history_heading = "히스토리"
 history_enabled_label = "클립보드 히스토리 기록"
 history_max_label = "최대 항목 수:"
 poll_interval_ms_label = "폴링 주기 (ms):"
 poll_interval_restart_notice = "폴링 주기 변경은 재시작 후 적용됩니다."
-
-[settings.zoom]
-heading = "확대/축소"
-ctrl_style = "Ctrl 방식 (Ctrl+=/-/0)"
-alt_style = "Alt 방식 (Alt+=/-/0)"
 
 [settings.notifications]
 heading = "알림"
@@ -140,11 +132,17 @@ open_explorer_label = "탐색기 열기:"
 convert_surface_label = "서피스 전환:"
 convert_to_markdown_label = "마크다운으로 전환:"
 convert_to_explorer_label = "탐색기로 전환:"
+copy_label = "복사:"
+paste_label = "붙여넣기:"
+zoom_in_label = "확대:"
+zoom_out_label = "축소:"
+zoom_reset_label = "줌 초기화:"
 tab_switch_modifier_label = "탭 전환 수식키:"
 workspace_switch_modifier_label = "워크스페이스 전환 수식키:"
 hint_press_key = "키 조합을 누르세요..."
 hint_none = "없음"
-hint_esc_to_clear = "Esc로 해제, 또는 키 조합을 눌러 바인딩하세요."
+hint_esc_to_clear = "기존 바인딩에서 Esc를 누르면 해제, 키 조합을 누르면 바인딩됩니다. +로 바인딩 추가."
+add_binding_button = "바인딩 추가"
 
 select_preset_label = "프리셋을 선택하면 매핑이 표시됩니다."
 apply_button = "적용"
@@ -161,6 +159,8 @@ general = "일반"
 workspace = "워크스페이스"
 pane = "페인"
 surface = "서피스"
+clipboard = "클립보드"
+zoom = "줌"
 preset = "프리셋"
 
 [settings.performance]

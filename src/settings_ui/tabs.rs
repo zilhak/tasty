@@ -575,15 +575,12 @@ fn load_system_cjk_font_data() -> Option<Vec<u8>> {
     None
 }
 
+/// Clipboard 탭: 히스토리 기능 설정.
+/// (복사/붙여넣기/줌 단축키 설정은 Keybindings 탭의 Clipboard/Zoom 서브탭으로 이관됨.)
 pub fn draw_clipboard_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     let th = crate::theme::theme();
     ui.add_space(8.0);
 
-    ui.checkbox(&mut settings.clipboard.macos_style, t("settings.clipboard.macos_style"));
-    ui.checkbox(&mut settings.clipboard.linux_style, t("settings.clipboard.linux_style"));
-    ui.checkbox(&mut settings.clipboard.windows_style, t("settings.clipboard.windows_style"));
-
-    ui.add_space(12.0);
     ui.heading(t("settings.clipboard.history_heading"));
     ui.add_space(4.0);
 
@@ -616,13 +613,6 @@ pub fn draw_clipboard_tab(ui: &mut egui::Ui, settings: &mut Settings) {
             .small()
             .color(th.yellow),
     );
-
-    ui.add_space(12.0);
-    ui.heading(t("settings.zoom.heading"));
-    ui.add_space(4.0);
-
-    ui.checkbox(&mut settings.zoom.ctrl_style, t("settings.zoom.ctrl_style"));
-    ui.checkbox(&mut settings.zoom.alt_style, t("settings.zoom.alt_style"));
 }
 
 pub fn draw_notifications_tab(ui: &mut egui::Ui, settings: &mut Settings) {
