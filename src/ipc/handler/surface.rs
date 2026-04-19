@@ -4,25 +4,58 @@ use crate::ipc::protocol::JsonRpcResponse;
 use crate::state::AppState;
 
 /// Parse key combo strings like "ctrl+c", "ctrl+shift+c", "alt+x" into terminal bytes.
+///
+/// 왼쪽부터 `ctrl+`/`shift+`/`alt+` 프리픽스를 벗겨내고 남은 부분을 키 토큰으로 본다.
+/// `split('+')`을 쓰지 않는 이유는 `"ctrl++"`(Ctrl+`+`)처럼 키와 구분자가 충돌하는
+/// 경우를 올바르게 해석하기 위함. `"plus"`/`"minus"`/`"equals"` 같은 심볼 이름도
+/// 허용한다.
 fn parse_key_combo(input: &str) -> Option<Vec<u8>> {
-    let parts: Vec<&str> = input.split('+').collect();
-    if parts.len() < 2 {
+    if input.is_empty() {
         return None;
     }
 
-    let key = parts.last()?;
-    let modifiers: Vec<&str> = parts[..parts.len() - 1].to_vec();
+    let mut has_ctrl = false;
+    let mut has_shift = false;
+    let mut has_alt = false;
+    let mut rest = input;
+    loop {
+        let lower = rest.to_ascii_lowercase();
+        if !has_ctrl && lower.starts_with("ctrl+") {
+            has_ctrl = true;
+            rest = &rest[5..];
+        } else if !has_shift && lower.starts_with("shift+") {
+            has_shift = true;
+            rest = &rest[6..];
+        } else if !has_alt && lower.starts_with("alt+") {
+            has_alt = true;
+            rest = &rest[4..];
+        } else {
+            break;
+        }
+    }
+    let _ = has_shift; // 현재 shift-only 시퀀스는 미지원. 파싱만 한다.
 
-    let has_ctrl = modifiers.iter().any(|&m| m.eq_ignore_ascii_case("ctrl"));
-    let has_alt = modifiers.iter().any(|&m| m.eq_ignore_ascii_case("alt"));
-
+    if rest.is_empty() {
+        return None;
+    }
+    if matches!(rest.to_ascii_lowercase().as_str(), "ctrl" | "shift" | "alt") {
+        return None;
+    }
     if !has_ctrl && !has_alt {
         return None;
     }
 
+    // 심볼 이름을 단일 문자로 정규화.
+    let key: &str = match rest.to_ascii_lowercase().as_str() {
+        "plus" => "+",
+        "minus" => "-",
+        "equals" => "=",
+        _ => rest,
+    };
+
     let mut bytes = Vec::new();
 
-    if has_ctrl && key.len() == 1 {
+    if has_ctrl && key.chars().count() == 1 {
         let ch = key.chars().next()?.to_ascii_lowercase();
         if ch >= 'a' && ch <= 'z' {
             if has_alt {
@@ -42,7 +75,7 @@ fn parse_key_combo(input: &str) -> Option<Vec<u8>> {
         }
     }
 
-    if has_alt && !has_ctrl && key.len() == 1 {
+    if has_alt && !has_ctrl && key.chars().count() == 1 {
         bytes.push(0x1B);
         bytes.extend_from_slice(key.as_bytes());
         return Some(bytes);

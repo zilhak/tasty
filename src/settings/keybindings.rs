@@ -340,24 +340,54 @@ impl KeybindingSettings {
     }
 
     /// Format a binding string for display (e.g. "ctrl+shift+n" → "Ctrl+Shift+N").
+    ///
+    /// 주의: `split('+')`은 쓸 수 없다. `"ctrl++"`(Ctrl+`+키`) 같은 바인딩에서 구분자
+    /// `+`와 키 이름 `+`를 구분하지 못하기 때문. 왼쪽부터 모디파이어 프리픽스를 하나씩
+    /// 떼어내고, 남은 부분을 통째로 키 토큰으로 본다.
     pub fn format_display(binding: &str) -> String {
         if binding.is_empty() {
             return String::new();
         }
-        binding
-            .split('+')
-            .map(|part| {
-                let mut chars = part.chars();
-                match chars.next() {
-                    Some(first) => {
-                        let upper = first.to_uppercase().to_string();
-                        format!("{}{}", upper, chars.as_str())
+
+        let mut parts: Vec<String> = Vec::new();
+        let mut rest = binding;
+        let (mut ctrl, mut shift, mut alt) = (false, false, false);
+        loop {
+            let lower = rest.to_ascii_lowercase();
+            if !ctrl && lower.starts_with("ctrl+") {
+                ctrl = true;
+                parts.push("Ctrl".into());
+                rest = &rest[5..];
+            } else if !shift && lower.starts_with("shift+") {
+                shift = true;
+                parts.push("Shift".into());
+                rest = &rest[6..];
+            } else if !alt && lower.starts_with("alt+") {
+                alt = true;
+                parts.push("Alt".into());
+                rest = &rest[4..];
+            } else {
+                break;
+            }
+        }
+
+        if !rest.is_empty() {
+            let key_display = match rest.to_ascii_lowercase().as_str() {
+                "plus" => "+".into(),
+                "minus" => "-".into(),
+                "equals" => "=".into(),
+                _ => {
+                    let mut chars = rest.chars();
+                    match chars.next() {
+                        Some(first) => format!("{}{}", first.to_uppercase(), chars.as_str()),
+                        None => String::new(),
                     }
-                    None => String::new(),
                 }
-            })
-            .collect::<Vec<_>>()
-            .join("+")
+            };
+            parts.push(key_display);
+        }
+
+        parts.join("+")
     }
 }
 
@@ -592,5 +622,35 @@ copy = ["ctrl+c", "ctrl+shift+c"]
         // 빈 문자열은 빈 Vec으로.
         assert!(kb.close_pane.is_empty());
         assert_eq!(kb.copy, vec!["ctrl+c".to_string(), "ctrl+shift+c".to_string()]);
+    }
+
+    // ── format_display: `+` 구분자/키 충돌 해소 ───────────────────────
+
+    #[test]
+    fn format_display_basic() {
+        assert_eq!(
+            KeybindingSettings::format_display("ctrl+shift+n"),
+            "Ctrl+Shift+N"
+        );
+    }
+
+    #[test]
+    fn format_display_ctrl_plus_key() {
+        // "ctrl++"는 Ctrl + `+` 키. 표시상 "Ctrl++"여야 한다.
+        assert_eq!(KeybindingSettings::format_display("ctrl++"), "Ctrl++");
+    }
+
+    #[test]
+    fn format_display_symbol_aliases() {
+        assert_eq!(KeybindingSettings::format_display("ctrl+plus"), "Ctrl++");
+        assert_eq!(KeybindingSettings::format_display("ctrl+minus"), "Ctrl+-");
+        assert_eq!(KeybindingSettings::format_display("ctrl+equals"), "Ctrl+=");
+    }
+
+    #[test]
+    fn format_display_empty_and_minus() {
+        assert_eq!(KeybindingSettings::format_display(""), "");
+        assert_eq!(KeybindingSettings::format_display("ctrl+-"), "Ctrl+-");
+        assert_eq!(KeybindingSettings::format_display("ctrl+="), "Ctrl+=");
     }
 }

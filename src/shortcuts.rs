@@ -42,34 +42,90 @@ fn matches_any_binding(bindings: &[String], key: &Key, mods: ModifiersState) -> 
     bindings.iter().any(|b| matches_binding(b, key, mods))
 }
 
-/// Parse a binding string like "ctrl+shift+n" and check if it matches
-/// the given key + modifiers. Returns false for empty bindings.
-fn matches_binding(binding: &str, key: &Key, mods: ModifiersState) -> bool {
+/// Parsed binding: expected modifier state + the literal key token.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ParsedBinding<'a> {
+    ctrl: bool,
+    shift: bool,
+    alt: bool,
+    /// 키 토큰 (문자 "+", "-", "a" 또는 네임 "plus", "f1", "tab" 등). 공백/모디파이어 키워드는 거부되어 여기 오지 않는다.
+    key: &'a str,
+}
+
+/// 왼쪽부터 `ctrl+`/`shift+`/`alt+` 프리픽스를 순차적으로 떼어낸다.
+///
+/// `split('+')`을 쓰지 않는 이유: `"ctrl++"`의 두 번째 `+`처럼 키 이름과 구분자가
+/// 충돌하는 경우를 다루기 위함. 프리픽스를 하나씩 벗겨내면 남은 부분이 통째로 키가
+/// 되므로 구분자 충돌 문제가 사라진다.
+fn parse_binding(binding: &str) -> Option<ParsedBinding<'_>> {
     if binding.is_empty() {
-        return false;
+        return None;
     }
     // Double-tap bindings (e.g. "shift+shift") are handled separately
     if is_double_tap_binding(binding).is_some() {
-        return false;
+        return None;
     }
 
-    let parts: Vec<&str> = binding.split('+').collect();
-    if parts.is_empty() {
-        return false;
+    let mut ctrl = false;
+    let mut shift = false;
+    let mut alt = false;
+    let mut rest = binding;
+
+    loop {
+        let lower = rest.to_ascii_lowercase();
+        if !ctrl && lower.starts_with("ctrl+") {
+            ctrl = true;
+            rest = &rest[5..];
+        } else if !shift && lower.starts_with("shift+") {
+            shift = true;
+            rest = &rest[6..];
+        } else if !alt && lower.starts_with("alt+") {
+            alt = true;
+            rest = &rest[4..];
+        } else {
+            break;
+        }
     }
 
-    // Extract expected modifiers and the key part (last non-modifier token)
-    let mut expect_ctrl = false;
-    let mut expect_shift = false;
-    let mut expect_alt = false;
-    let mut key_part = "";
+    // 키 파트가 비어있거나(`"ctrl+"`) 모디파이어 키워드 그대로(`"ctrl"` 단독)인 경우
+    // 매칭이 불가능하므로 거부.
+    if rest.is_empty() {
+        return None;
+    }
+    let rest_lower = rest.to_ascii_lowercase();
+    if matches!(rest_lower.as_str(), "ctrl" | "shift" | "alt") {
+        return None;
+    }
 
-    for part in &parts {
-        match part.to_lowercase().as_str() {
-            "ctrl" => expect_ctrl = true,
-            "shift" => expect_shift = true,
-            "alt" => expect_alt = true,
-            _ => key_part = part,
+    Some(ParsedBinding { ctrl, shift, alt, key: rest })
+}
+
+/// Parse a binding string like "ctrl+shift+n" and check if it matches
+/// the given key + modifiers. Returns false for empty bindings.
+fn matches_binding(binding: &str, key: &Key, mods: ModifiersState) -> bool {
+    let Some(parsed) = parse_binding(binding) else { return false; };
+
+    // Modifier-only key presses must never trigger any shortcut, regardless of
+    // how the binding is spelled. This is the structural guard that prevents
+    // "Ctrl alone" from ever matching.
+    if let Key::Named(n) = key {
+        if matches!(
+            n,
+            NamedKey::Control
+                | NamedKey::Shift
+                | NamedKey::Alt
+                | NamedKey::Super
+                | NamedKey::Meta
+                | NamedKey::Hyper
+                | NamedKey::Fn
+                | NamedKey::FnLock
+                | NamedKey::CapsLock
+                | NamedKey::NumLock
+                | NamedKey::ScrollLock
+                | NamedKey::Symbol
+                | NamedKey::SymbolLock
+        ) {
+            return false;
         }
     }
 
@@ -77,28 +133,27 @@ fn matches_binding(binding: &str, key: &Key, mods: ModifiersState) -> bool {
     // On macOS, "alt" in binding maps to Cmd (super_key) since the physical
     // position of Cmd on macOS keyboards matches Alt on Windows/Linux keyboards.
     #[cfg(target_os = "macos")]
-    let alt_matches = mods.super_key() == expect_alt;
+    let alt_matches = mods.super_key() == parsed.alt;
     #[cfg(not(target_os = "macos"))]
-    let alt_matches = mods.alt_key() == expect_alt;
+    let alt_matches = mods.alt_key() == parsed.alt;
 
-    if mods.control_key() != expect_ctrl
-        || mods.shift_key() != expect_shift
+    if mods.control_key() != parsed.ctrl
+        || mods.shift_key() != parsed.shift
         || !alt_matches
     {
         return false;
     }
 
-    // Match the key part
-    let key_lower = key_part.to_lowercase();
+    let key_lower = parsed.key.to_ascii_lowercase();
     match key {
         Key::Character(c) => {
             let ch = c.to_lowercase();
-            if ch == key_lower {
+            if key_matches_token(&ch, &key_lower) {
                 return true;
             }
             // Ctrl+letter may arrive as control character (0x01-0x1A).
             // Convert back to the letter for matching.
-            if expect_ctrl && c.len() == 1 {
+            if parsed.ctrl && c.len() == 1 {
                 let byte = c.as_bytes()[0];
                 if byte >= 1 && byte <= 26 {
                     let letter = ((byte - 1) + b'a') as char;
@@ -107,45 +162,60 @@ fn matches_binding(binding: &str, key: &Key, mods: ModifiersState) -> bool {
             }
             false
         }
-        Key::Named(named) => {
-            let named_str = named_key_to_string(named);
-            named_str == key_lower
-        }
+        Key::Named(named) => match named_key_to_string(named) {
+            Some(named_str) => named_str == key_lower,
+            None => false,
+        },
         _ => false,
     }
 }
 
-fn named_key_to_string(key: &NamedKey) -> String {
-    match key {
-        NamedKey::Tab => "tab".into(),
-        NamedKey::Space => "space".into(),
-        NamedKey::Enter => "enter".into(),
-        NamedKey::Backspace => "backspace".into(),
-        NamedKey::Delete => "delete".into(),
-        NamedKey::Insert => "insert".into(),
-        NamedKey::Home => "home".into(),
-        NamedKey::End => "end".into(),
-        NamedKey::PageUp => "pageup".into(),
-        NamedKey::PageDown => "pagedown".into(),
-        NamedKey::ArrowUp => "up".into(),
-        NamedKey::ArrowDown => "down".into(),
-        NamedKey::ArrowLeft => "left".into(),
-        NamedKey::ArrowRight => "right".into(),
-        NamedKey::F1 => "f1".into(),
-        NamedKey::F2 => "f2".into(),
-        NamedKey::F3 => "f3".into(),
-        NamedKey::F4 => "f4".into(),
-        NamedKey::F5 => "f5".into(),
-        NamedKey::F6 => "f6".into(),
-        NamedKey::F7 => "f7".into(),
-        NamedKey::F8 => "f8".into(),
-        NamedKey::F9 => "f9".into(),
-        NamedKey::F10 => "f10".into(),
-        NamedKey::F11 => "f11".into(),
-        NamedKey::F12 => "f12".into(),
-        NamedKey::Escape => "escape".into(),
-        _ => String::new(),
+/// 입력 문자(`character`, 이미 lowercase)가 바인딩 키 토큰(`token`)과 동일한 키를
+/// 의미하는지 판정. `"plus"↔"+"`, `"minus"↔"-"`, `"equals"↔"="` 등 심볼 이름을
+/// 양쪽 모두에서 받도록 별칭 매칭을 수행한다.
+fn key_matches_token(character: &str, token: &str) -> bool {
+    if character == token {
+        return true;
     }
+    match (character, token) {
+        ("+", "plus") | ("plus", "+") => true,
+        ("-", "minus") | ("minus", "-") => true,
+        ("=", "equals") | ("equals", "=") => true,
+        _ => false,
+    }
+}
+
+fn named_key_to_string(key: &NamedKey) -> Option<&'static str> {
+    Some(match key {
+        NamedKey::Tab => "tab",
+        NamedKey::Space => "space",
+        NamedKey::Enter => "enter",
+        NamedKey::Backspace => "backspace",
+        NamedKey::Delete => "delete",
+        NamedKey::Insert => "insert",
+        NamedKey::Home => "home",
+        NamedKey::End => "end",
+        NamedKey::PageUp => "pageup",
+        NamedKey::PageDown => "pagedown",
+        NamedKey::ArrowUp => "up",
+        NamedKey::ArrowDown => "down",
+        NamedKey::ArrowLeft => "left",
+        NamedKey::ArrowRight => "right",
+        NamedKey::F1 => "f1",
+        NamedKey::F2 => "f2",
+        NamedKey::F3 => "f3",
+        NamedKey::F4 => "f4",
+        NamedKey::F5 => "f5",
+        NamedKey::F6 => "f6",
+        NamedKey::F7 => "f7",
+        NamedKey::F8 => "f8",
+        NamedKey::F9 => "f9",
+        NamedKey::F10 => "f10",
+        NamedKey::F11 => "f11",
+        NamedKey::F12 => "f12",
+        NamedKey::Escape => "escape",
+        _ => return None,
+    })
 }
 
 /// Check if a binding string represents a double-tap modifier (e.g. "shift+shift").
@@ -639,5 +709,193 @@ impl MainWindow {
             return true;
         }
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use winit::keyboard::SmolStr;
+
+    fn mods_ctrl() -> ModifiersState {
+        ModifiersState::CONTROL
+    }
+    fn mods_ctrl_shift() -> ModifiersState {
+        ModifiersState::CONTROL | ModifiersState::SHIFT
+    }
+    fn mods_none() -> ModifiersState {
+        ModifiersState::empty()
+    }
+    fn k_char(s: &str) -> Key {
+        Key::Character(SmolStr::new(s))
+    }
+    fn k_named(n: NamedKey) -> Key {
+        Key::Named(n)
+    }
+
+    // ── parse_binding 동작 ────────────────────────────────────────────
+
+    #[test]
+    fn parse_simple_modifier_plus_key() {
+        let p = parse_binding("ctrl+a").unwrap();
+        assert!(p.ctrl && !p.shift && !p.alt);
+        assert_eq!(p.key, "a");
+    }
+
+    #[test]
+    fn parse_double_plus_is_plus_key() {
+        // "ctrl++" = Ctrl + `+` 키.
+        let p = parse_binding("ctrl++").unwrap();
+        assert!(p.ctrl && !p.shift && !p.alt);
+        assert_eq!(p.key, "+");
+    }
+
+    #[test]
+    fn parse_minus_and_equals() {
+        assert_eq!(parse_binding("ctrl+-").unwrap().key, "-");
+        assert_eq!(parse_binding("ctrl+=").unwrap().key, "=");
+    }
+
+    #[test]
+    fn parse_plus_alias_is_canonical() {
+        let p = parse_binding("ctrl+plus").unwrap();
+        assert_eq!(p.key, "plus");
+    }
+
+    #[test]
+    fn parse_empty_is_rejected() {
+        assert!(parse_binding("").is_none());
+    }
+
+    #[test]
+    fn parse_trailing_plus_is_rejected() {
+        // "ctrl+"처럼 키가 없는 경우.
+        assert!(parse_binding("ctrl+").is_none());
+    }
+
+    #[test]
+    fn parse_modifier_only_is_rejected() {
+        assert!(parse_binding("ctrl").is_none());
+        assert!(parse_binding("shift").is_none());
+        assert!(parse_binding("alt").is_none());
+    }
+
+    #[test]
+    fn parse_accepts_any_modifier_order() {
+        let p1 = parse_binding("ctrl+shift+a").unwrap();
+        let p2 = parse_binding("shift+ctrl+a").unwrap();
+        assert_eq!((p1.ctrl, p1.shift, p1.key), (true, true, "a"));
+        assert_eq!((p2.ctrl, p2.shift, p2.key), (true, true, "a"));
+    }
+
+    #[test]
+    fn parse_is_case_insensitive_for_modifiers() {
+        let p = parse_binding("CTRL+A").unwrap();
+        assert!(p.ctrl);
+        assert_eq!(p.key, "A");
+    }
+
+    // ── matches_binding: 모디파이어 단독 방어 ─────────────────────────
+
+    #[test]
+    fn ctrl_alone_does_not_match_any_binding() {
+        let key = k_named(NamedKey::Control);
+        // 어떤 바인딩과도 Ctrl 단독은 매칭되지 않아야 한다.
+        for binding in ["ctrl++", "ctrl+=", "ctrl+plus", "ctrl+a", "ctrl+shift+="] {
+            assert!(
+                !matches_binding(binding, &key, mods_ctrl()),
+                "binding {binding:?}가 Ctrl 단독에 매칭되면 안 된다"
+            );
+        }
+    }
+
+    #[test]
+    fn shift_alone_does_not_match_any_binding() {
+        let key = k_named(NamedKey::Shift);
+        assert!(!matches_binding("shift+a", &key, ModifiersState::SHIFT));
+    }
+
+    #[test]
+    fn alt_alone_does_not_match_any_binding() {
+        let key = k_named(NamedKey::Alt);
+        assert!(!matches_binding("alt+a", &key, ModifiersState::ALT));
+    }
+
+    // ── matches_binding: 정상 매칭 경로 ───────────────────────────────
+
+    #[test]
+    fn plus_key_matches_ctrl_plus_binding() {
+        let key = k_char("+");
+        assert!(matches_binding("ctrl++", &key, mods_ctrl()));
+    }
+
+    #[test]
+    fn plus_alias_matches_plus_character() {
+        let key = k_char("+");
+        assert!(matches_binding("ctrl+plus", &key, mods_ctrl()));
+    }
+
+    #[test]
+    fn plus_character_matches_plus_alias_and_literal() {
+        let key = k_char("+");
+        assert!(matches_binding("ctrl+plus", &key, mods_ctrl()));
+        assert!(matches_binding("ctrl++", &key, mods_ctrl()));
+    }
+
+    #[test]
+    fn equals_key_matches_ctrl_equals_binding() {
+        let key = k_char("=");
+        assert!(matches_binding("ctrl+=", &key, mods_ctrl()));
+        assert!(matches_binding("ctrl+equals", &key, mods_ctrl()));
+    }
+
+    #[test]
+    fn minus_key_matches_ctrl_minus_binding() {
+        let key = k_char("-");
+        assert!(matches_binding("ctrl+-", &key, mods_ctrl()));
+        assert!(matches_binding("ctrl+minus", &key, mods_ctrl()));
+    }
+
+    #[test]
+    fn shift_requirement_is_enforced() {
+        // "ctrl++"는 Shift를 기대하지 않으므로 Ctrl+Shift+<+키>는 매칭 안 됨.
+        let key = k_char("+");
+        assert!(!matches_binding("ctrl++", &key, mods_ctrl_shift()));
+        // 반대로 "ctrl+shift+="는 shift를 요구.
+        let eq = k_char("=");
+        assert!(matches_binding("ctrl+shift+=", &eq, mods_ctrl_shift()));
+        assert!(!matches_binding("ctrl+shift+=", &eq, mods_ctrl()));
+    }
+
+    #[test]
+    fn letter_matches_both_char_and_control_char() {
+        // Ctrl+letter가 0x01-0x1A로 도착해도 매칭.
+        let ctrl_a = k_char("\u{1}"); // Ctrl+A = 0x01
+        assert!(matches_binding("ctrl+a", &ctrl_a, mods_ctrl()));
+        let plain_a = k_char("a");
+        assert!(matches_binding("ctrl+a", &plain_a, mods_ctrl()));
+    }
+
+    #[test]
+    fn no_modifier_binding_does_not_match_when_ctrl_held() {
+        // 가상의 "a" 단독 바인딩 (파서는 허용하지만 의미상 수정자 요구 안 함).
+        // Ctrl을 누르고 a를 눌렀는데 바인딩이 "a"뿐이라면 매칭되면 안 됨.
+        let key = k_char("a");
+        assert!(matches_binding("a", &key, mods_none()));
+        assert!(!matches_binding("a", &key, mods_ctrl()));
+    }
+
+    #[test]
+    fn empty_binding_never_matches() {
+        let key = k_char("a");
+        assert!(!matches_binding("", &key, mods_none()));
+    }
+
+    #[test]
+    fn named_key_without_mapping_never_matches_empty() {
+        // NamedKey::Control 같이 매핑이 없는 키는 매칭되지 않아야 한다.
+        // 과거에는 named_str이 "" 를 반환해서 빈 key_part와 매칭되는 버그가 있었다.
+        let key = k_named(NamedKey::Control);
+        assert!(!matches_binding("ctrl+a", &key, mods_ctrl()));
     }
 }
