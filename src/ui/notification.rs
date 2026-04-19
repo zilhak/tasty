@@ -201,6 +201,9 @@ pub fn draw_popups(
     if let Some((id, scope)) = state.dialogs.pending_popup_open.take() {
         state.popups.open_with_scope(id, scope);
     }
+
+    // Toast 렌더링 (popup 위 레이어). 같은 PopupDrawContext를 공유한다.
+    state.toasts.draw(ctx, &draw_ctx);
 }
 
 /// Build PopupDrawContext from current AppState and layout info.

@@ -285,3 +285,9 @@ tastyrc = "tastyrc"
 heading = "Tasty 모드에서 적용되는 bashrc"
 description = "셸 모드를 Tasty로 설정했을 때 적용됩니다. Tasty의 빌트인 블록(OSC 7, UTF-8, PATH)은 자동으로 앞에 추가되므로 여기에 포함시킬 필요가 없습니다."
 reset_button = "기본값으로 되돌리기"
+
+[toast]
+copied = "복사됨"
+copied_path = "경로 복사됨"
+copied_files = "파일 복사됨"
+cut_files = "파일 잘라냄"

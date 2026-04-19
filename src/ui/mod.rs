@@ -11,6 +11,7 @@ pub mod popup;
 pub(crate) mod popup_defs;
 mod sidebar;
 mod tab_bar;
+pub mod toast;
 
 pub use dialog::draw_ws_rename_dialog;
 pub use divider::{draw_pane_dividers, draw_surface_highlights};
@@ -18,6 +19,7 @@ pub use egui_panels::draw_egui_panels;
 pub use notification::draw_popups;
 pub use popup::{PopupAction, PopupDrawContext, PopupManager};
 pub use tab_bar::draw_pane_tab_bars;
+pub use toast::{ToastManager, ToastScope};
 
 use crate::model::Rect;
 use crate::state::AppState;

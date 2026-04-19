@@ -258,6 +258,10 @@ impl MainWindow {
             cb.set_text(&text);
         }
         self.state.engine.record_internal_copy(&text);
+        self.state.toasts.push_info(
+            crate::i18n::t("toast.copied"),
+            crate::ui::ToastScope::Surface(sel.surface_id),
+        );
 
         true
     }

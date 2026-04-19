@@ -285,3 +285,9 @@ tastyrc = "tastyrc"
 heading = "Tastyモードで適用される bashrc"
 description = "シェルモードを Tasty に設定したときに適用されます。Tasty の組み込みブロック（OSC 7、UTF-8、PATH）は自動的に先頭に追加されるため、ここに含める必要はありません。"
 reset_button = "デフォルトに戻す"
+
+[toast]
+copied = "コピーしました"
+copied_path = "パスをコピーしました"
+copied_files = "ファイルをコピーしました"
+cut_files = "ファイルを切り取りました"

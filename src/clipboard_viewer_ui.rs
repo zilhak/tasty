@@ -88,6 +88,7 @@ pub fn paste_from_history(state: &mut AppState, filtered_orig_index: usize) {
     match arboard::Clipboard::new().and_then(|mut cb| cb.set_text(text.clone())) {
         Ok(()) => {
             state.engine.record_internal_copy(&text);
+            state.toasts.push_info(t("toast.copied"), crate::ui::ToastScope::Window);
         }
         Err(e) => {
             tracing::warn!("clipboard set_text failed: {e}");

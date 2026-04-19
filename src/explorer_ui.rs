@@ -147,7 +147,17 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel, keys: &[Pendi
                                     } else {
                                         let paths: Vec<&str> = panel.selected_files.iter()
                                             .map(|s| s.as_str()).collect();
-                                        let _ = crate::file_clipboard::set_file_clipboard(&paths, op);
+                                        match crate::file_clipboard::set_file_clipboard(&paths, op) {
+                                            Ok(()) => {
+                                                let kind = if key_x {
+                                                    CopyFeedbackKind::Cut
+                                                } else {
+                                                    CopyFeedbackKind::Files
+                                                };
+                                                explorer_action = Some(ExplorerAction::CopyFeedback(kind));
+                                            }
+                                            Err(e) => tracing::warn!("set_file_clipboard failed: {e}"),
+                                        }
                                     }
                                 } else if key_v {
                                     // Determine paste destination
@@ -241,6 +251,7 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel, keys: &[Pendi
                                     }
                                     TreeAction::CopyPath(text) => {
                                         ui.ctx().copy_text(text);
+                                        explorer_action = Some(ExplorerAction::CopyFeedback(CopyFeedbackKind::Path));
                                     }
                                     TreeAction::ContextMenu(path, pos) => {
                                         let is_bookmarked = crate::bookmarks::Bookmarks::load().is_bookmarked(&path);
@@ -430,6 +441,19 @@ pub enum ExplorerAction {
     FolderContextMenu { path: String, is_bookmarked: bool, x: f32, y: f32 },
     /// Request native context menu for a bookmark item (path, name, x, y).
     BookmarkContextMenu { path: String, name: String, x: f32, y: f32 },
+    /// 사용자 단축키로 발생한 복사/잘라내기 피드백. 토스트 발사용.
+    CopyFeedback(CopyFeedbackKind),
+}
+
+/// 사용자 행동(키보드 단축키)에서 발생한 복사 종류.
+#[derive(Debug, Clone, Copy)]
+pub enum CopyFeedbackKind {
+    /// Ctrl+C — 파일을 시스템 파일 클립보드에 복사.
+    Files,
+    /// Ctrl+X — 파일을 잘라냄.
+    Cut,
+    /// Shift+Ctrl+C — 경로를 텍스트로 복사.
+    Path,
 }
 
 fn draw_file_node(

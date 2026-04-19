@@ -75,6 +75,9 @@ pub struct AppState {
     pub tab_bar_height: f32,
     /// Popup manager for internal popups (notification panel, etc.).
     pub popups: crate::ui::PopupManager,
+    /// Toast manager for transient in-app notifications (copy feedback, etc.).
+    /// 사용자 행동에서만 발사한다. CLI/IPC 경유 동작은 토스트를 만들지 않는다.
+    pub toasts: crate::ui::ToastManager,
     /// Cached recent files list (markdown/html open popups). Loaded from disk at
     /// startup and mutated in-place; each mutation saves back to disk.
     pub recent_files: crate::recent_files::RecentFiles,
@@ -204,6 +207,7 @@ impl AppState {
                 }
                 pm
             },
+            toasts: crate::ui::ToastManager::new(),
         })
     }
 
