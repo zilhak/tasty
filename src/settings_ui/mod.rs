@@ -18,6 +18,12 @@ pub(crate) enum AppearanceSubTab {
     HtmlViewer,
 }
 
+/// Sub-tab within the Misc tab.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum MiscSubTab {
+    Tastyrc,
+}
+
 /// Active tab in the settings window.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SettingsTab {
@@ -42,6 +48,8 @@ pub struct SettingsUiState {
     keybindings_sub_tab: KeybindingsSubTab,
     /// Active sub-tab within appearance.
     appearance_sub_tab: AppearanceSubTab,
+    /// Active sub-tab within misc.
+    misc_sub_tab: MiscSubTab,
     /// Currently previewed preset name in the Preset sub-tab (None = no preview).
     selected_preset: Option<String>,
     /// Pending keybinding assignment waiting for conflict confirmation.
@@ -64,6 +72,7 @@ impl SettingsUiState {
             recording_field: None,
             keybindings_sub_tab: KeybindingsSubTab::General,
             appearance_sub_tab: AppearanceSubTab::General,
+            misc_sub_tab: MiscSubTab::Tastyrc,
             selected_preset: None,
             pending_binding: None,
             font_families: None,
@@ -160,7 +169,7 @@ pub fn draw_settings_panel(
                         SettingsTab::Keybindings => draw_keybindings_tab(ui, &mut draft, &mut ui_state.recording_field, &mut ui_state.keybindings_sub_tab, &mut ui_state.selected_preset, &mut ui_state.pending_binding, captured_double_tap),
                         SettingsTab::Language => draw_language_tab(ui, &mut draft),
                         SettingsTab::Performance => draw_performance_tab(ui, &mut draft),
-                        SettingsTab::Misc => draw_misc_tab(ui, &mut ui_state.bashrc_user_draft),
+                        SettingsTab::Misc => draw_misc_tab(ui, &mut ui_state.misc_sub_tab, &mut ui_state.bashrc_user_draft),
                     }
                 });
 

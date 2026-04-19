@@ -671,10 +671,55 @@ fn language_display_name(code: &str) -> &str {
     }
 }
 
-/// Misc / 기타 탭: Tasty 모드에서 적용되는 bashrc 사용자 영역 편집.
-pub fn draw_misc_tab(ui: &mut egui::Ui, bashrc_user_draft: &mut Option<String>) {
+/// Misc / 기타 탭: 좌측 서브탭 메뉴 + 우측 콘텐츠.
+pub fn draw_misc_tab(
+    ui: &mut egui::Ui,
+    sub_tab: &mut crate::settings_ui::MiscSubTab,
+    bashrc_user_draft: &mut Option<String>,
+) {
     let th = crate::theme::theme();
     ui.add_space(8.0);
+
+    let available_height = ui.available_height() - 8.0;
+
+    ui.horizontal_top(|ui| {
+        egui::Frame::new()
+            .fill(th.crust)
+            .stroke(egui::Stroke::new(1.0, th.surface0))
+            .corner_radius(4.0)
+            .inner_margin(egui::Margin::symmetric(6, 6))
+            .show(ui, |ui| {
+                ui.set_width(100.0);
+                ui.set_min_height(available_height);
+
+                ui.vertical(|ui| {
+                    let sub_tabs = [
+                        (
+                            crate::settings_ui::MiscSubTab::Tastyrc,
+                            t("settings.misc.subtab.tastyrc"),
+                        ),
+                    ];
+
+                    for (tab, label) in &sub_tabs {
+                        let selected = *sub_tab == *tab;
+                        if ui.selectable_label(selected, *label).clicked() {
+                            *sub_tab = *tab;
+                        }
+                    }
+                });
+            });
+
+        ui.add_space(8.0);
+
+        ui.vertical(|ui| match *sub_tab {
+            crate::settings_ui::MiscSubTab::Tastyrc => draw_tastyrc_subtab(ui, bashrc_user_draft),
+        });
+    });
+}
+
+/// tastyrc 서브탭: Tasty 모드에서 적용되는 bashrc 사용자 영역 편집.
+fn draw_tastyrc_subtab(ui: &mut egui::Ui, bashrc_user_draft: &mut Option<String>) {
+    let th = crate::theme::theme();
 
     ui.heading(t("settings.misc.bashrc.heading"));
     ui.add_space(4.0);

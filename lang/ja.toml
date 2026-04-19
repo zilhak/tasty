@@ -278,6 +278,9 @@ result_counter = "{} / {}"
 clear_confirm = "クリップボード履歴をすべて消去しますか？"
 hint_bar = "Enter: コピーして閉じる    Delete: 削除    Shift+Delete: 全削除    Esc: 閉じる"
 
+[settings.misc.subtab]
+tastyrc = "tastyrc"
+
 [settings.misc.bashrc]
 heading = "Tastyモードで適用される bashrc"
 description = "シェルモードを Tasty に設定したときに適用されます。Tasty の組み込みブロック（OSC 7、UTF-8、PATH）は自動的に先頭に追加されるため、ここに含める必要はありません。"

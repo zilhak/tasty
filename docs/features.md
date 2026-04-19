@@ -343,7 +343,8 @@
   - 중복 바인딩 방지: 녹화한 조합이 다른 액션에 이미 할당되어 있으면 확인 팝업 표시. Enter/Y/Overwrite 수락 시 기존 바인딩을 비우고 새 필드에 적용, Esc/N/Cancel 취소 시 값 변경 없음. 팝업이 열린 동안 녹화 버튼은 비활성화됨.
   - **Preset 서브탭**: 좌측에 프리셋 목록, 우측에 미리보기 패널 (3열 테이블 — 기능 / 이전 / 이후). 변경되는 행은 bold 강조. 하단 "적용" 버튼으로 Draft에 반영 (실제 저장은 하단 Save 버튼). Draft가 이미 프리셋과 동일하면 적용 버튼 비활성화.
 - **Performance**: targeted PTY polling, scrollback disk swap, lazy PTY init (background 탭 생성 시 PTY를 즉시 spawn하지 않고 최초 접근 시점에 spawn)
-- **Misc (기타)**: Tasty 모드 bashrc 편집기. 사용자 편집분은 `~/.tasty/bashrc.user`에 저장되고, 빌트인 블록(OSC 7 emission / UTF-8 / PATH)은 코드 상수로 유지되어 Save 시마다 `~/.tasty/bashrc`가 `builtin + user` 형태로 자동 재생성된다. 이로써 빌트인 템플릿이 업데이트되면 기존 사용자에게도 즉시 반영된다. Reset 버튼으로 user 파트를 초기 기본값으로 되돌릴 수 있다.
+- **Misc (기타)**: 좌측 서브탭 메뉴 + 우측 콘텐츠 구조 (Keybindings 탭과 동일한 레이아웃, 향후 서브탭 확장 대비).
+  - **tastyrc 서브탭**: Tasty 모드 bashrc 편집기. 사용자 편집분은 `~/.tasty/bashrc.user`에 저장되고, 빌트인 블록(OSC 7 emission / UTF-8 / PATH)은 코드 상수로 유지되어 Save 시마다 `~/.tasty/bashrc`가 `builtin + user` 형태로 자동 재생성된다. 이로써 빌트인 템플릿이 업데이트되면 기존 사용자에게도 즉시 반영된다. Reset 버튼으로 user 파트를 초기 기본값으로 되돌릴 수 있다.
 
 ### GUI 설정 윈도우
 - Ctrl+, 단축키로 설정 윈도우 토글
