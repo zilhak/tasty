@@ -16,14 +16,21 @@ ORIGINAL_PATH="${ORIGINAL_PATH:-${PATH}}"
 export PATH="/usr/local/bin:/usr/bin:/bin:${ORIGINAL_PATH}"
 
 # Emit OSC 7 so Tasty inherits cwd when opening new tabs/splits.
-# On Windows (Git Bash), convert the MSYS path to a Windows path so ConPTY
-# can spawn a child shell in the same directory.
+# Only re-emits when PWD actually changes, and avoids a cygpath fork by
+# converting MSYS drive paths (/c/...) to Windows form (/C:/...) in pure bash.
+# Virtual MSYS mounts (/tmp, /usr, ...) fall back to cygpath, which is rare.
 __tasty_osc7() {
+    [[ "$PWD" == "$__TASTY_LAST_PWD" ]] && return
+    __TASTY_LAST_PWD="$PWD"
     local pwd_emit="$PWD"
-    if command -v cygpath >/dev/null 2>&1; then
+    if [[ "$pwd_emit" =~ ^/([a-zA-Z])/(.*)$ ]]; then
+        pwd_emit="/${BASH_REMATCH[1]^^}:/${BASH_REMATCH[2]}"
+    elif [[ "$pwd_emit" =~ ^/([a-zA-Z])$ ]]; then
+        pwd_emit="/${BASH_REMATCH[1]^^}:"
+    elif command -v cygpath >/dev/null 2>&1; then
         pwd_emit=$(cygpath -w "$PWD" 2>/dev/null || printf '%s' "$PWD")
         pwd_emit=${pwd_emit//\\//}
-        pwd_emit="/${pwd_emit}"
+        [[ "$pwd_emit" == [A-Za-z]:* ]] && pwd_emit="/${pwd_emit}"
     fi
     printf '\033]7;file://%s%s\033\\' "${HOSTNAME:-localhost}" "$pwd_emit"
 }
