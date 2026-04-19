@@ -83,6 +83,16 @@ impl ClipboardHistory {
         self.last_seen = None;
     }
 
+    /// Remove the entry at the given index. Out-of-range는 no-op.
+    pub fn remove_at(&mut self, index: usize) -> Option<ClipboardEntry> {
+        let removed = self.entries.remove(index);
+        // 0번 항목을 지우면 last_seen과 불일치할 수 있음 — 다음 같은 값 re-record 허용.
+        if index == 0 {
+            self.last_seen = self.entries.front().map(|e| e.text.clone());
+        }
+        removed
+    }
+
     pub fn set_max(&mut self, max: usize) {
         self.max_entries = max.max(1);
         self.truncate();

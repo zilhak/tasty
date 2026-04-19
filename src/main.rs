@@ -5,6 +5,7 @@ mod bookmarks;
 mod cli;
 mod click_cursor;
 mod clipboard_history;
+mod clipboard_viewer_ui;
 mod crash_report;
 mod double_tap;
 #[cfg(debug_assertions)]

@@ -266,6 +266,14 @@ url_label = "Enter URL or file path:"
 file_not_found = "File does not exist."
 invalid_format = "Invalid file format."
 
+[clipboard_viewer]
+search_placeholder = "Search clipboard history..."
+empty_message = "Clipboard history is empty."
+no_match = "No matches."
+result_counter = "{} / {}"
+clear_confirm = "Clear all clipboard history?"
+hint_bar = "Enter: copy & close    Delete: remove    Shift+Delete: clear all    Esc: close"
+
 [settings.misc.bashrc]
 heading = "Tasty-mode bashrc"
 description = "This is applied when Shell mode is set to Tasty. Tasty's built-in block (OSC 7 emission, UTF-8, PATH) is always prepended automatically and is not shown here."
