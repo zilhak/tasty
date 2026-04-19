@@ -21,7 +21,8 @@ Engine
 │                               └── 하위 레이아웃 (탭 전환 시 함께 전환)
 │                                   └── Surface (Terminal / Markdown / Explorer / Html / Empty)
 │
-└── Popup (window 내부 가상 창)
+├── Popup (window 내부 가상 창)
+└── Toast (window 내부 휘발성 알림)
 ```
 
 Window는 단일 상위 개념이며 **modality**(Modeless/Modal)와 **계열**(ModalWindow/
@@ -72,6 +73,10 @@ Window 계열. Modal이 아닌 모든 일반 윈도우가 여기에 속한다.
 
 Window 내부에 존재하는 가상 창. Modal/Modeless modality와 무관하게 모든 Window가
 팝업을 가질 수 있다. `PopupManager`를 통해 관리되며, 타이틀바(중앙 제목 + 우측 닫기 버튼) + 콘텐츠 영역 구조를 가진다. 타이틀바 드래그로 이동 가능하며, 다중 팝업 시 z-order로 정렬된다. 팝업은 **스코프(scope)**를 가지며, 스코프에 따라 가시성 규칙과 경계 제약이 결정된다: Window(항상 보임, 윈도우 경계), Workspace(해당 워크스페이스 활성 시), Pane(해당 페인 영역 내), Tab(해당 탭 활성 시), Surface(해당 서피스 영역 내). 상세 규칙은 `docs/design/popup-system.md` 참조.
+
+### Toast (토스트)
+
+Window 내부에 짧게 떠올랐다가 자동으로 사라지는 휘발성 알림. 사용자의 동작(복사 등)에 대한 즉각 피드백을 제공한다. Popup과 달리 **포커스를 받지 않으며 입력 이벤트를 소비하지 않는다.** 타이틀바·닫기 버튼 없이 본문만 표시되며 일정 시간 후 자동 소멸한다. 스코프(Window/Workspace/Pane/Surface)는 떠오를 위치 앵커 용도이며, 같은 스코프 내에서 새 토스트는 아래에서 위로 쌓인다. **사용자 행동에서만 발사**되며 CLI/IPC를 통한 에이전트 동작은 토스트를 발사하지 않는다. 상세 규칙은 `docs/design/toast-system.md` 참조.
 
 ### Workspace (워크스페이스)
 
@@ -155,5 +160,6 @@ Pane은 기존 터미널에 대응하는 개념이 없다. 이것이 Tasty의 �
 | 하위 레이아웃 | `SurfaceGroupNode` (이진 트리 enum) | Surface 배치 |
 | Surface | `Surface` trait. 구현체: `TerminalSurface`, `SurfaceGroupNode`, `MarkdownPanel`, `ExplorerPanel`, `HtmlPanel`, `EmptySurface` | 최하위 컨테이너. 타입별 콘텐츠 |
 | Popup | `PopupDef` + `PopupManager` | Window 내부 가상 창 |
+| Toast | `ToastState` + `ToastManager` | Window 내부 휘발성 알림 |
 | App.windows | `HashMap<WindowId, Box<dyn Window>>` | 모달 포함 모든 윈도우 단일 저장소 |
 | 활성 모달 식별 | `engine::Engine::active_modal_id: Option<WindowId>` | 최대 1개 불변식
