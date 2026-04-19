@@ -452,17 +452,13 @@ fn draw_keybinding_entries(
     for (field_id, label_key) in entries.iter() {
         ui.horizontal_top(|ui| {
             // 라벨 컬럼: 고정 폭, 우측 정렬(콜론이 항상 버튼 영역 바로 앞).
-            ui.scope(|ui| {
-                ui.set_min_width(label_col_width);
-                ui.set_max_width(label_col_width);
-                ui.set_min_height(BUTTON_HEIGHT);
-                ui.with_layout(
-                    egui::Layout::right_to_left(egui::Align::Center),
-                    |ui| {
-                        ui.label(t(label_key));
-                    },
-                );
-            });
+            ui.allocate_ui_with_layout(
+                egui::vec2(label_col_width, BUTTON_HEIGHT),
+                egui::Layout::right_to_left(egui::Align::Center),
+                |ui| {
+                    ui.label(t(label_key));
+                },
+            );
             ui.add_space(LABEL_GAP);
 
             // 버튼 영역: 남은 폭을 모두 사용. 폭을 초과하면 자동 줄바꿈.
