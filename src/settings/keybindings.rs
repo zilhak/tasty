@@ -52,6 +52,8 @@ pub struct KeybindingSettings {
     pub next_tab: String,
     /// Focus previous tab in the current pane.
     pub prev_tab: String,
+    /// Toggle the clipboard history viewer popup.
+    pub toggle_clipboard_viewer: String,
 }
 
 impl KeybindingSettings {
@@ -86,6 +88,7 @@ impl KeybindingSettings {
         ("close_active",            "settings.keybindings.close_active_label"),
         ("next_tab",                "settings.keybindings.next_tab_label"),
         ("prev_tab",                "settings.keybindings.prev_tab_label"),
+        ("toggle_clipboard_viewer", "settings.keybindings.toggle_clipboard_viewer_label"),
     ];
 
     pub fn get_field(&self, field_id: &str) -> Option<&str> {
@@ -120,6 +123,7 @@ impl KeybindingSettings {
             "close_active"             => self.close_active.as_str(),
             "next_tab"                 => self.next_tab.as_str(),
             "prev_tab"                 => self.prev_tab.as_str(),
+            "toggle_clipboard_viewer"  => self.toggle_clipboard_viewer.as_str(),
             _ => return None,
         })
     }
@@ -156,6 +160,7 @@ impl KeybindingSettings {
             "close_active"             => &mut self.close_active,
             "next_tab"                 => &mut self.next_tab,
             "prev_tab"                 => &mut self.prev_tab,
+            "toggle_clipboard_viewer"  => &mut self.toggle_clipboard_viewer,
             _ => return false,
         };
         *target = value.to_string();
@@ -255,6 +260,7 @@ impl KeybindingSettings {
             close_active: "ctrl+w".to_string(),
             next_tab: "ctrl+tab".to_string(),
             prev_tab: "ctrl+shift+tab".to_string(),
+            toggle_clipboard_viewer: "ctrl+shift+h".to_string(),
         }
     }
 
@@ -346,9 +352,9 @@ mod tests {
 
     #[test]
     fn general_binding_fields_count() {
-        // UI에 노출된 일반 단축키 필드: 28개.
+        // UI에 노출된 일반 단축키 필드: 29개.
         // 구조체에 UI 편집 가능한 필드가 추가/삭제되면 이 숫자와 GENERAL_BINDING_FIELDS를 함께 갱신해야 한다.
-        assert_eq!(KeybindingSettings::GENERAL_BINDING_FIELDS.len(), 28);
+        assert_eq!(KeybindingSettings::GENERAL_BINDING_FIELDS.len(), 29);
     }
 
     #[test]

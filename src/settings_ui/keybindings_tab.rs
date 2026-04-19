@@ -91,6 +91,7 @@ pub fn draw_keybindings_tab(
                 draw_keybinding_entries(ui, &mut settings.keybindings, recording_field, pending_binding, &captured, &[
                     ("toggle_settings", "settings.keybindings.toggle_settings_label"),
                     ("toggle_notifications", "settings.keybindings.toggle_notifications_label"),
+                    ("toggle_clipboard_viewer", "settings.keybindings.toggle_clipboard_viewer_label"),
                     ("restore_closed", "settings.keybindings.restore_closed_label"),
                     ("new_window", "settings.keybindings.new_window_label"),
                     ("quit", "settings.keybindings.quit_label"),

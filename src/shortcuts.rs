@@ -425,6 +425,14 @@ impl MainWindow {
             }
             return true;
         }
+        if matches_binding(&kb.toggle_clipboard_viewer, key, mods) {
+            if state.popups.is_open("clipboard_viewer") {
+                state.popups.close("clipboard_viewer");
+            } else {
+                crate::clipboard_viewer_ui::open_clipboard_viewer_popup(state);
+            }
+            return true;
+        }
         if matches_binding(&kb.close_workspace, key, mods) {
             state.close_active_workspace();
             if !state.engine.workspaces.is_empty() {
