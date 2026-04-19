@@ -4,6 +4,7 @@ use crate::ipc::protocol::{JsonRpcRequest, JsonRpcResponse};
 use crate::state::AppState;
 
 mod claude;
+mod clipboard;
 mod hooks;
 pub mod ime;
 #[cfg(target_os = "macos")]
@@ -83,6 +84,12 @@ pub fn handle(state: &mut AppState, request: &JsonRpcRequest) -> JsonRpcResponse
         "surface.switch_input_source" => input_source::handle_switch_input_source(id, &request.params),
         #[cfg(target_os = "macos")]
         "surface.raw_key" => input_source::handle_raw_key(id, &request.params),
+        "tool.clipboard.list" => clipboard::handle_list(state, id, &request.params),
+        "tool.clipboard.get" => clipboard::handle_get(state, id, &request.params),
+        "tool.clipboard.paste" => clipboard::handle_paste(state, id, &request.params),
+        "tool.clipboard.remove" => clipboard::handle_remove(state, id, &request.params),
+        "tool.clipboard.clear" => clipboard::handle_clear(state, id),
+        "tool.clipboard.viewer_open" => clipboard::handle_viewer_open(state, id),
         _ => JsonRpcResponse::method_not_found(id, &request.method),
     }
 }

@@ -138,6 +138,48 @@ pub enum Commands {
         #[command(subcommand)]
         command: DebugCommands,
     },
+    /// Internal tools (clipboard history, etc.)
+    Tool {
+        #[command(subcommand)]
+        command: ToolCommands,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum ToolCommands {
+    /// Clipboard history operations (list, get, paste, remove, clear, viewer).
+    Clipboard {
+        #[command(subcommand)]
+        command: ClipboardCommands,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum ClipboardCommands {
+    /// List clipboard history (newest first).
+    List {
+        #[arg(long)]
+        limit: Option<usize>,
+    },
+    /// Print the text at a specific index to stdout (0 = newest).
+    Get {
+        #[arg(long)]
+        index: usize,
+    },
+    /// Copy the entry at a specific index back to the system clipboard.
+    Paste {
+        #[arg(long)]
+        index: usize,
+    },
+    /// Remove a specific entry.
+    Remove {
+        #[arg(long)]
+        index: usize,
+    },
+    /// Clear all clipboard history.
+    Clear,
+    /// Open the clipboard viewer popup (focus not stolen — agent action).
+    Viewer,
 }
 
 #[derive(Subcommand)]

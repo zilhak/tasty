@@ -217,6 +217,18 @@ impl PopupManager {
         }
     }
 
+    /// Open a popup centered on screen **without** focus (agent-initiated).
+    /// 사용자의 포커스를 훔치지 않는다. CLI/IPC 경유 open에 사용.
+    pub fn open_centered(&mut self, id: PopupId) {
+        if let Some(i) = self.popups.iter().position(|p| p.id == id) {
+            self.popups[i].open = true;
+            self.popups[i].focused = false;
+            self.popups[i].request_center = true;
+            let popup = self.popups.remove(i);
+            self.popups.push(popup);
+        }
+    }
+
     /// Open a popup centered within a specific scope, with focus.
     pub fn open_with_scope(&mut self, id: PopupId, scope: PopupScope) {
         if let Some(i) = self.popups.iter().position(|p| p.id == id) {

@@ -1,5 +1,5 @@
 use crate::ipc::protocol::JsonRpcRequest;
-use super::{Commands, NewCommands, CloseCommands, ListCommands, SetCommands, UnsetCommands, SendCommands, ReadCommands, ClaudeCommands, SurfaceMetaCommands};
+use super::{Commands, NewCommands, CloseCommands, ListCommands, SetCommands, UnsetCommands, SendCommands, ReadCommands, ClaudeCommands, SurfaceMetaCommands, ToolCommands, ClipboardCommands};
 #[cfg(debug_assertions)]
 use super::DebugCommands;
 
@@ -102,6 +102,7 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
             "surface.is_typing",
             serde_json::json!({ "surface_id": resolve_surface_id(*surface) }),
         ),
+        Commands::Tool { command } => tool_command_to_method_params(command),
     };
 
     JsonRpcRequest {
@@ -405,5 +406,30 @@ fn surface_meta_command_to_method_params(command: &SurfaceMetaCommands) -> (&'st
                 "surface_id": resolve_surface_id(*surface),
             }),
         ),
+    }
+}
+
+fn tool_command_to_method_params(command: &ToolCommands) -> (&'static str, serde_json::Value) {
+    match command {
+        ToolCommands::Clipboard { command } => match command {
+            ClipboardCommands::List { limit } => (
+                "tool.clipboard.list",
+                serde_json::json!({ "limit": limit }),
+            ),
+            ClipboardCommands::Get { index } => (
+                "tool.clipboard.get",
+                serde_json::json!({ "index": index }),
+            ),
+            ClipboardCommands::Paste { index } => (
+                "tool.clipboard.paste",
+                serde_json::json!({ "index": index }),
+            ),
+            ClipboardCommands::Remove { index } => (
+                "tool.clipboard.remove",
+                serde_json::json!({ "index": index }),
+            ),
+            ClipboardCommands::Clear => ("tool.clipboard.clear", serde_json::json!({})),
+            ClipboardCommands::Viewer => ("tool.clipboard.viewer_open", serde_json::json!({})),
+        },
     }
 }
