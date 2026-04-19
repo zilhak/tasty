@@ -83,14 +83,19 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel, keys: &[Pendi
             });
             ui.separator();
 
+            // 좌측 패널 수직 분할: 파일 트리 75%, 즐겨찾기 25% 고정.
+            // 두 섹션 사이에 separator(≈1px) + add_space(2.0) 두 번 = 약 5px의 고정 비용.
+            const SECTION_GAP: f32 = 5.0;
             let total_height = ui.available_height();
-            let bookmark_height = (total_height * 0.2).max(40.0);
-            let tree_height = (total_height - bookmark_height - 4.0).max(40.0);
+            let bookmark_height = ((total_height - SECTION_GAP) * 0.25).max(40.0);
+            let tree_height = (total_height - bookmark_height - SECTION_GAP).max(40.0);
 
-            // ── File tree ──
+            // ── File tree (고정 75% 점유) ──
             egui::ScrollArea::vertical()
                 .id_salt("explorer_tree")
                 .max_height(tree_height)
+                .min_scrolled_height(tree_height)
+                .auto_shrink([false, false])
                 .show(ui, |ui| {
                     ui.set_min_width(ui.available_width());
                     let mut needs_refresh = false;
@@ -254,7 +259,7 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel, keys: &[Pendi
             ui.add_space(2.0);
             ui.separator();
 
-            // ── Bookmarks (bottom 20%) ──
+            // ── Bookmarks (고정 25% 점유) ──
             ui.label(
                 egui::RichText::new(crate::i18n::t("explorer.bookmarks_heading"))
                     .size(th.font_size_caption)
@@ -264,6 +269,9 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel, keys: &[Pendi
             ui.add_space(2.0);
             egui::ScrollArea::vertical()
                 .id_salt("explorer_bookmarks")
+                .max_height(bookmark_height)
+                .min_scrolled_height(bookmark_height)
+                .auto_shrink([false, false])
                 .show(ui, |ui| {
                     ui.set_min_width(ui.available_width());
                     let mut nav_path: Option<String> = None;
