@@ -147,6 +147,17 @@
 | `alt` | Alt | Cmd (⌘) |
 | `shift` | Shift | Shift |
 
+#### 단축키 프리셋
+
+4개의 프리셋을 제공한다. 설정 UI의 Preset 서브탭에서 전환 가능.
+
+| 프리셋 | 참고 앱 | 특징 |
+|--------|---------|------|
+| **Tasty** (기본) | 자체 설계 | 모든 플랫폼의 복사/붙여넣기/줌 바인딩을 통합 |
+| **Mac** | iTerm2 / Terminal.app | `alt+` (= ⌘) 중심 |
+| **Windows** | Windows Terminal | `ctrl+shift+` 중심, `ctrl+c/v`로 복사/붙여넣기 |
+| **Linux** | GNOME Terminal | `ctrl+shift+` 중심, `ctrl+shift+c/v`로 복사/붙여넣기 |
+
 #### 기본 단축키 (Tasty 프리셋)
 
 - Alt+N (macOS: ⌘N): 새 워크스페이스
@@ -159,7 +170,7 @@
 - Ctrl+] / Ctrl+[: Pane 포커스 다음/이전
 - Alt+1~9 (macOS: ⌘1~9): 워크스페이스 전환
 - Ctrl+1~0: 탭 전환
-- next_tab / prev_tab 단축키 (기본 Ctrl+Tab / Ctrl+Shift+Tab): 다음/이전 탭. 설정 가능
+- next_tab / prev_tab 단축키: 다음/이전 탭 (기본값 없음, 사용자 설정 가능)
 - Alt+Shift+N (macOS: ⌘⇧N): 새 윈도우
 - Ctrl+Shift+B: 사이드바 토글 (숨김/표시)
 - Ctrl+B: 사이드바 접기/펼치기

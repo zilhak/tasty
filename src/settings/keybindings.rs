@@ -398,45 +398,8 @@ impl Default for KeybindingSettings {
 }
 
 impl KeybindingSettings {
-    /// Tasty preset (default). Platform-aware defaults for copy/paste/zoom.
+    /// Tasty preset (default). All platform copy/paste/zoom bindings combined.
     pub fn preset_tasty() -> Self {
-        // 플랫폼별 기본 복사/붙여넣기/줌 단축키.
-        //   macOS: Alt는 내부적으로 Cmd 매핑. 따라서 "alt+c" = Cmd+C.
-        //   Windows/Linux: Ctrl 기반.
-        //   Linux는 터미널 관례 상 Ctrl+Shift를 사용.
-        #[cfg(target_os = "macos")]
-        let copy: Vec<String> = vec!["alt+c".into()];
-        #[cfg(target_os = "macos")]
-        let paste: Vec<String> = vec!["alt+v".into()];
-        #[cfg(target_os = "macos")]
-        let zoom_in: Vec<String> = vec!["alt+=".into(), "alt++".into()];
-        #[cfg(target_os = "macos")]
-        let zoom_out: Vec<String> = vec!["alt+-".into()];
-        #[cfg(target_os = "macos")]
-        let zoom_reset: Vec<String> = vec!["alt+0".into()];
-
-        #[cfg(target_os = "linux")]
-        let copy: Vec<String> = vec!["ctrl+shift+c".into()];
-        #[cfg(target_os = "linux")]
-        let paste: Vec<String> = vec!["ctrl+shift+v".into()];
-        #[cfg(target_os = "linux")]
-        let zoom_in: Vec<String> = vec!["ctrl+=".into(), "ctrl++".into()];
-        #[cfg(target_os = "linux")]
-        let zoom_out: Vec<String> = vec!["ctrl+-".into()];
-        #[cfg(target_os = "linux")]
-        let zoom_reset: Vec<String> = vec!["ctrl+0".into()];
-
-        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-        let copy: Vec<String> = vec!["ctrl+c".into()];
-        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-        let paste: Vec<String> = vec!["ctrl+v".into()];
-        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-        let zoom_in: Vec<String> = vec!["ctrl+=".into(), "ctrl++".into()];
-        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-        let zoom_out: Vec<String> = vec!["ctrl+-".into()];
-        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-        let zoom_reset: Vec<String> = vec!["ctrl+0".into()];
-
         Self {
             new_workspace: vec!["alt+n".into()],
             new_tab: vec!["alt+t".into()],
@@ -468,26 +431,161 @@ impl KeybindingSettings {
             convert_to_explorer: Vec::new(),
             new_window: vec!["alt+shift+n".into()],
             close_active: vec!["ctrl+w".into()],
-            next_tab: vec!["ctrl+tab".into()],
-            prev_tab: vec!["ctrl+shift+tab".into()],
+            next_tab: Vec::new(),
+            prev_tab: Vec::new(),
             toggle_clipboard_viewer: vec!["ctrl+shift+h".into()],
-            copy,
-            paste,
-            zoom_in,
-            zoom_out,
-            zoom_reset,
+            copy: vec!["ctrl+c".into(), "alt+c".into(), "ctrl+shift+c".into()],
+            paste: vec!["ctrl+v".into(), "alt+v".into(), "ctrl+shift+v".into()],
+            zoom_in: vec!["ctrl+=".into(), "ctrl++".into(), "alt+=".into(), "alt++".into()],
+            zoom_out: vec!["ctrl+-".into(), "alt+-".into()],
+            zoom_reset: vec!["ctrl+0".into(), "alt+0".into()],
+        }
+    }
+
+    /// Mac preset. ⌘ (alt) centric, following iTerm2 / Terminal.app conventions.
+    pub fn preset_mac() -> Self {
+        Self {
+            new_workspace: vec!["alt+n".into()],
+            new_tab: vec!["alt+t".into()],
+            split_pane_vertical: vec!["alt+e".into()],
+            split_pane_horizontal: vec!["alt+shift+e".into()],
+            split_surface_vertical: vec!["alt+d".into()],
+            split_surface_horizontal: vec!["alt+shift+d".into()],
+            toggle_settings: vec!["alt+,".into()],
+            toggle_notifications: vec!["alt+shift+i".into()],
+            close_pane: vec!["alt+shift+w".into()],
+            close_surface: Vec::new(),
+            close_workspace: Vec::new(),
+            focus_pane_next: vec!["ctrl+]".into()],
+            focus_pane_prev: vec!["ctrl+[".into()],
+            focus_surface_next: vec!["alt+]".into()],
+            focus_surface_prev: vec!["alt+[".into()],
+            tab_switch_modifier: "ctrl".to_string(),
+            workspace_switch_modifier: "alt".to_string(),
+            toggle_sidebar: vec!["alt+shift+b".into()],
+            toggle_sidebar_collapse: vec!["alt+b".into()],
+            restore_closed: vec!["ctrl+shift+t".into()],
+            quit: vec!["alt+q".into()],
+            quit_immediate: Vec::new(),
+            quit_minimize: vec!["alt+m".into()],
+            open_markdown: Vec::new(),
+            open_explorer: Vec::new(),
+            convert_surface: vec!["alt+'".into()],
+            convert_to_markdown: Vec::new(),
+            convert_to_explorer: Vec::new(),
+            new_window: vec!["alt+shift+n".into()],
+            close_active: vec!["alt+w".into()],
+            next_tab: Vec::new(),
+            prev_tab: Vec::new(),
+            toggle_clipboard_viewer: vec!["alt+shift+h".into()],
+            copy: vec!["alt+c".into()],
+            paste: vec!["alt+v".into()],
+            zoom_in: vec!["alt+=".into(), "alt++".into()],
+            zoom_out: vec!["alt+-".into()],
+            zoom_reset: vec!["alt+0".into()],
+        }
+    }
+
+    /// Windows preset. Ctrl+Shift centric, following Windows Terminal conventions.
+    pub fn preset_windows() -> Self {
+        Self {
+            new_workspace: vec!["alt+n".into()],
+            new_tab: vec!["alt+t".into()],
+            split_pane_vertical: vec!["alt+shift+e".into()],
+            split_pane_horizontal: vec!["alt+shift+d".into()],
+            split_surface_vertical: vec!["alt+d".into()],
+            split_surface_horizontal: vec!["alt+e".into()],
+            toggle_settings: vec!["ctrl+,".into()],
+            toggle_notifications: vec!["ctrl+shift+i".into()],
+            close_pane: vec!["ctrl+shift+w".into()],
+            close_surface: Vec::new(),
+            close_workspace: vec!["alt+shift+w".into()],
+            focus_pane_next: vec!["ctrl+]".into()],
+            focus_pane_prev: vec!["ctrl+[".into()],
+            focus_surface_next: vec!["alt+]".into()],
+            focus_surface_prev: vec!["alt+[".into()],
+            tab_switch_modifier: "ctrl".to_string(),
+            workspace_switch_modifier: "alt".to_string(),
+            toggle_sidebar: vec!["ctrl+shift+b".into()],
+            toggle_sidebar_collapse: vec!["ctrl+b".into()],
+            restore_closed: vec!["ctrl+shift+t".into()],
+            quit: Vec::new(),
+            quit_immediate: Vec::new(),
+            quit_minimize: Vec::new(),
+            open_markdown: Vec::new(),
+            open_explorer: Vec::new(),
+            convert_surface: vec!["alt+'".into()],
+            convert_to_markdown: Vec::new(),
+            convert_to_explorer: Vec::new(),
+            new_window: vec!["ctrl+shift+n".into()],
+            close_active: vec!["ctrl+w".into()],
+            next_tab: Vec::new(),
+            prev_tab: Vec::new(),
+            toggle_clipboard_viewer: vec!["ctrl+shift+h".into()],
+            copy: vec!["ctrl+c".into()],
+            paste: vec!["ctrl+v".into()],
+            zoom_in: vec!["ctrl+=".into(), "ctrl++".into()],
+            zoom_out: vec!["ctrl+-".into()],
+            zoom_reset: vec!["ctrl+0".into()],
+        }
+    }
+
+    /// Linux preset. Ctrl+Shift centric, following GNOME Terminal conventions.
+    pub fn preset_linux() -> Self {
+        Self {
+            new_workspace: vec!["alt+n".into()],
+            new_tab: vec!["alt+t".into()],
+            split_pane_vertical: vec!["alt+shift+e".into()],
+            split_pane_horizontal: vec!["alt+shift+d".into()],
+            split_surface_vertical: vec!["alt+d".into()],
+            split_surface_horizontal: vec!["alt+e".into()],
+            toggle_settings: vec!["ctrl+,".into()],
+            toggle_notifications: vec!["ctrl+shift+i".into()],
+            close_pane: vec!["ctrl+shift+w".into()],
+            close_surface: Vec::new(),
+            close_workspace: vec!["alt+shift+w".into()],
+            focus_pane_next: vec!["ctrl+]".into()],
+            focus_pane_prev: vec!["ctrl+[".into()],
+            focus_surface_next: vec!["alt+]".into()],
+            focus_surface_prev: vec!["alt+[".into()],
+            tab_switch_modifier: "ctrl".to_string(),
+            workspace_switch_modifier: "alt".to_string(),
+            toggle_sidebar: vec!["ctrl+shift+b".into()],
+            toggle_sidebar_collapse: vec!["ctrl+b".into()],
+            restore_closed: vec!["ctrl+shift+t".into()],
+            quit: vec!["ctrl+q".into()],
+            quit_immediate: Vec::new(),
+            quit_minimize: Vec::new(),
+            open_markdown: Vec::new(),
+            open_explorer: Vec::new(),
+            convert_surface: vec!["alt+'".into()],
+            convert_to_markdown: Vec::new(),
+            convert_to_explorer: Vec::new(),
+            new_window: vec!["ctrl+shift+n".into()],
+            close_active: vec!["ctrl+w".into()],
+            next_tab: Vec::new(),
+            prev_tab: Vec::new(),
+            toggle_clipboard_viewer: vec!["ctrl+shift+h".into()],
+            copy: vec!["ctrl+shift+c".into()],
+            paste: vec!["ctrl+shift+v".into()],
+            zoom_in: vec!["ctrl+=".into(), "ctrl++".into()],
+            zoom_out: vec!["ctrl+-".into()],
+            zoom_reset: vec!["ctrl+0".into()],
         }
     }
 
     /// List available preset names.
     pub fn preset_names() -> &'static [&'static str] {
-        &["Tasty"]
+        &["Tasty", "Mac", "Windows", "Linux"]
     }
 
     /// 이름으로 프리셋의 원본 인스턴스를 얻는다. 미리보기/적용 공통 소스.
     pub fn preset_by_name(name: &str) -> Option<Self> {
         match name {
             "Tasty" => Some(Self::preset_tasty()),
+            "Mac" => Some(Self::preset_mac()),
+            "Windows" => Some(Self::preset_windows()),
+            "Linux" => Some(Self::preset_linux()),
             _ => None,
         }
     }
@@ -520,6 +618,74 @@ mod tests {
             );
         }
         assert!(KeybindingSettings::preset_by_name("Unknown").is_none());
+    }
+
+    #[test]
+    fn preset_by_name_matches_preset_mac() {
+        let by_name = KeybindingSettings::preset_by_name("Mac").unwrap();
+        let direct = KeybindingSettings::preset_mac();
+        for (id, _) in KeybindingSettings::GENERAL_BINDING_FIELDS {
+            assert_eq!(
+                by_name.get_bindings(id),
+                direct.get_bindings(id),
+                "field {id} mismatch"
+            );
+        }
+    }
+
+    #[test]
+    fn preset_by_name_matches_preset_windows() {
+        let by_name = KeybindingSettings::preset_by_name("Windows").unwrap();
+        let direct = KeybindingSettings::preset_windows();
+        for (id, _) in KeybindingSettings::GENERAL_BINDING_FIELDS {
+            assert_eq!(
+                by_name.get_bindings(id),
+                direct.get_bindings(id),
+                "field {id} mismatch"
+            );
+        }
+    }
+
+    #[test]
+    fn preset_by_name_matches_preset_linux() {
+        let by_name = KeybindingSettings::preset_by_name("Linux").unwrap();
+        let direct = KeybindingSettings::preset_linux();
+        for (id, _) in KeybindingSettings::GENERAL_BINDING_FIELDS {
+            assert_eq!(
+                by_name.get_bindings(id),
+                direct.get_bindings(id),
+                "field {id} mismatch"
+            );
+        }
+    }
+
+    #[test]
+    fn preset_names_lists_all_four() {
+        let names = KeybindingSettings::preset_names();
+        assert_eq!(names, &["Tasty", "Mac", "Windows", "Linux"]);
+    }
+
+    /// 각 프리셋 내부에 바인딩 충돌이 없는지 검증.
+    #[test]
+    fn no_conflicts_within_presets() {
+        for name in KeybindingSettings::preset_names() {
+            let kb = KeybindingSettings::preset_by_name(name).unwrap();
+            for (id, _) in KeybindingSettings::GENERAL_BINDING_FIELDS {
+                if let Some(bindings) = kb.get_bindings(id) {
+                    for combo in bindings {
+                        if combo.is_empty() {
+                            continue;
+                        }
+                        let conflict = kb.find_conflict(id, combo);
+                        assert_eq!(
+                            conflict, None,
+                            "preset '{name}': field '{id}' combo '{combo}' conflicts with {:?}",
+                            conflict
+                        );
+                    }
+                }
+            }
+        }
     }
 
     #[test]
