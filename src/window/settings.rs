@@ -3,8 +3,10 @@ use std::sync::Arc;
 use winit::event::WindowEvent;
 
 use crate::gpu::GpuState;
+use crate::i18n::t;
 use crate::settings::Settings;
 use crate::settings_ui::{self, SettingsUiState};
+use crate::ui::{LayoutContext, ToastManager, ToastScope};
 use crate::window::{
     modal::MODAL_MODALITY, sealed, ModalWindow, Modality, Window, WindowAction, WindowBase,
     WindowCtx,
@@ -19,6 +21,7 @@ pub struct SettingsWindow {
     double_tap: crate::double_tap::DoubleTapDetector,
     captured_double_tap: Option<String>,
     should_close: bool,
+    toasts: ToastManager,
 }
 
 impl SettingsWindow {
@@ -35,6 +38,7 @@ impl SettingsWindow {
             double_tap: crate::double_tap::DoubleTapDetector::new(),
             captured_double_tap: None,
             should_close: false,
+            toasts: ToastManager::new(),
         }
     }
 
@@ -126,15 +130,32 @@ impl Window for SettingsWindow {
         let mut settings = self.settings.clone();
         let ui_state = &mut self.settings_ui_state;
         let captured_dt = &mut self.captured_double_tap;
+        let toasts = &mut self.toasts;
         let mut action: Option<bool> = None;
 
         let full_output = self.base.gpu.run_egui(raw_input, |ctx| {
             action = settings_ui::draw_settings_panel(ctx, &mut settings, ui_state, captured_dt);
+
+            let empty_layout = LayoutContext {
+                active_workspace: 0,
+                pane_rects: Vec::new(),
+                surface_rects: Vec::new(),
+                active_tabs: Vec::new(),
+            };
+            toasts.draw(ctx, &empty_layout);
         });
 
         self.settings = settings;
         if action.is_some() {
             self.should_close = true;
+        }
+
+        let has_copy = full_output.platform_output.commands.iter().any(|cmd| {
+            matches!(cmd, egui::OutputCommand::CopyText(_))
+        });
+        if has_copy {
+            self.toasts.push_info(t("toast.copied"), ToastScope::Window);
+            self.mark_dirty();
         }
 
         self.base.gpu.finish_egui_frame(&self.base.winit, full_output);
