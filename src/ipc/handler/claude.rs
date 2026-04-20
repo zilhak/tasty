@@ -210,9 +210,28 @@ pub(crate) fn handle_claude_kill(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    let child_surface_id = match params.get("child_surface_id").and_then(|v| v.as_u64()) {
-        Some(sid) => sid as u32,
-        None => return JsonRpcResponse::invalid_params(id, "Missing 'child_surface_id' parameter"),
+    let parent_surface_id = match super::require_surface_id(params, &id) {
+        Ok(sid) => sid,
+        Err(e) => return e,
+    };
+
+    let child_index = match params.get("child_index").and_then(|v| v.as_u64()) {
+        Some(idx) => idx as u32,
+        None => return JsonRpcResponse::invalid_params(id, "Missing 'child_index' parameter"),
+    };
+
+    let child_surface_id = match state
+        .children_of(parent_surface_id)
+        .iter()
+        .find(|c| c.index == child_index)
+    {
+        Some(c) => c.child_surface_id,
+        None => {
+            return JsonRpcResponse::invalid_params(
+                id,
+                format!("Child index {} not found for parent {}", child_index, parent_surface_id),
+            )
+        }
     };
 
     let pane_id = match state.find_pane_for_surface(child_surface_id) {
@@ -234,21 +253,32 @@ pub(crate) fn handle_claude_respawn(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    let child_surface_id = match params.get("child_surface_id").and_then(|v| v.as_u64()) {
-        Some(sid) => sid as u32,
-        None => return JsonRpcResponse::invalid_params(id, "Missing 'child_surface_id' parameter"),
+    let parent_surface_id = match super::require_surface_id(params, &id) {
+        Ok(sid) => sid,
+        Err(e) => return e,
     };
 
-    let parent_id = match state.parent_of(child_surface_id) {
-        Some(pid) => pid,
-        None => return JsonRpcResponse::invalid_params(id, format!("Surface {} is not a claude child", child_surface_id)),
+    let child_index = match params.get("child_index").and_then(|v| v.as_u64()) {
+        Some(idx) => idx as u32,
+        None => return JsonRpcResponse::invalid_params(id, "Missing 'child_index' parameter"),
     };
 
-    let old_index = state.children_of(parent_id)
+    let child_surface_id = match state
+        .children_of(parent_surface_id)
         .iter()
-        .find(|c| c.child_surface_id == child_surface_id)
-        .map(|c| c.index)
-        .unwrap_or(0);
+        .find(|c| c.index == child_index)
+    {
+        Some(c) => c.child_surface_id,
+        None => {
+            return JsonRpcResponse::invalid_params(
+                id,
+                format!("Child index {} not found for parent {}", child_index, parent_surface_id),
+            )
+        }
+    };
+
+    let parent_id = parent_surface_id;
+    let old_index = child_index;
 
     let cwd = params.get("cwd").and_then(|v| v.as_str()).map(String::from);
     let role = params.get("role").and_then(|v| v.as_str()).map(String::from);
@@ -477,9 +507,23 @@ pub(crate) fn handle_claude_wait(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    let child_surface_id = match params.get("child_surface_id").and_then(|v| v.as_u64()) {
-        Some(sid) => sid as u32,
-        None => return JsonRpcResponse::invalid_params(id, "Missing 'child_surface_id' parameter"),
+    let parent_surface_id = match super::require_surface_id(params, &id) {
+        Ok(sid) => sid,
+        Err(e) => return e,
+    };
+
+    let child_index = match params.get("child_index").and_then(|v| v.as_u64()) {
+        Some(idx) => idx as u32,
+        None => return JsonRpcResponse::invalid_params(id, "Missing 'child_index' parameter"),
+    };
+
+    let child_surface_id = match state
+        .children_of(parent_surface_id)
+        .iter()
+        .find(|c| c.index == child_index)
+    {
+        Some(c) => c.child_surface_id,
+        None => return JsonRpcResponse::success(id, json!({ "state": "exited" })),
     };
 
     let exists = state.find_pane_for_surface(child_surface_id).is_some();

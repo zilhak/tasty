@@ -71,7 +71,7 @@ pub fn run_claude_hook(stream: &mut TcpStream, event: &str, surface_arg: Option<
 }
 
 /// Handle the claude-wait subcommand: poll until child is idle/needs_input/exited or timeout.
-pub fn run_claude_wait(stream: &mut TcpStream, child: u32, timeout: u64) -> Result<()> {
+pub fn run_claude_wait(stream: &mut TcpStream, child: u32, surface_id: Option<u32>, timeout: u64) -> Result<()> {
     use std::time::{Duration, Instant};
 
     let deadline = Instant::now() + Duration::from_secs(timeout);
@@ -79,7 +79,7 @@ pub fn run_claude_wait(stream: &mut TcpStream, child: u32, timeout: u64) -> Resu
     loop {
         let req = make_request(
             "claude.wait",
-            serde_json::json!({ "child_surface_id": child }),
+            serde_json::json!({ "surface_id": surface_id, "child_index": child }),
         );
         let result = send_request(stream, &req)?;
 

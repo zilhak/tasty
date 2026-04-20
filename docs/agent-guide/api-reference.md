@@ -109,10 +109,10 @@ tasty claude launch [--workspace NAME] [--directory PATH] [--task "설명"]
 tasty claude spawn [--direction vertical|horizontal] [--cwd PATH] [--role ROLE] [--nickname NAME] [--prompt "TEXT"]
 tasty claude children             # 자식 Claude 목록
 tasty claude parent               # 부모 Claude 조회
-tasty claude kill --child ID      # 자식 Claude 종료
-tasty claude respawn --child ID [--cwd PATH] [--role ROLE] [--nickname NAME] [--prompt "TEXT"]
+tasty claude kill --child INDEX      # 자식 Claude 종료 (child index 지정)
+tasty claude respawn --child INDEX [--cwd PATH] [--role ROLE] [--nickname NAME] [--prompt "TEXT"]
 tasty claude broadcast "텍스트\r" [--role ROLE]   # 모든 자식에 텍스트 전송
-tasty claude wait --child 42 [--timeout 60]       # idle/needs_input/exited 대기
+tasty claude wait --child INDEX [--timeout 60]       # idle/needs_input/exited 대기
 
 # Claude Hook 통합 (Claude Code의 훅 시스템에서 호출)
 tasty claude hook stop              # Claude 작업 완료 → idle 상태 설정 + claude-idle 훅 실행
@@ -326,10 +326,10 @@ tasty unset global-hook --hook HOOK_ID
 | `claude.spawn` | `surface_id?, direction?, cwd?, role?, nickname?, prompt?` | 부모 pane을 분할하여 자식 Claude 인스턴스 생성 |
 | `claude.children` | `surface_id?` | 부모 surface의 자식 목록 조회 |
 | `claude.parent` | `surface_id?` | 자식 surface의 부모 조회 |
-| `claude.kill` | `child_surface_id` | 자식 Claude 인스턴스 종료 |
-| `claude.respawn` | `child_surface_id, cwd?, role?, nickname?, prompt?` | 자식 Claude 인스턴스 재시작 |
+| `claude.kill` | `surface_id?, child_index: number` | 자식 Claude 인스턴스 종료. child_index는 spawn 시 반환된 인덱스 |
+| `claude.respawn` | `surface_id?, child_index: number, cwd?, role?, nickname?, prompt?` | 자식 Claude 인스턴스 재시작. child_index로 대상 지정 |
 | `claude.broadcast` | `surface_id?, text: string, role?: string` | 부모의 모든 자식에 텍스트 동시 전송. role 필터로 특정 역할만 대상 지정 가능. 반환: `{ sent_count, children }` |
-| `claude.wait` | `child_surface_id: number` | 자식의 현재 상태 조회. 반환: `{ state: "idle"\|"needs_input"\|"active"\|"exited" }`. CLI에서 폴링하여 대기 구현 가능 |
+| `claude.wait` | `surface_id?, child_index: number` | 자식의 현재 상태 조회. 반환: `{ state: "idle"\|"needs_input"\|"active"\|"exited" }`. CLI에서 폴링하여 대기 구현 가능 |
 | `claude.set_idle_state` | `surface_id?, idle: bool` | Claude idle 상태 설정 (idle=false 시 needs_input도 해제) |
 | `claude.set_needs_input` | `surface_id?, needs_input: bool` | Claude needs-input 상태 설정 |
 | `surface.fire_hook` | `surface_id?, event: string` | 특정 이벤트의 등록된 훅 수동 실행 |

@@ -682,8 +682,9 @@ Claude Code를 새 워크스페이스에서 자동으로 실행하는 전용 런
 - **claude.broadcast**: 부모의 모든 자식에게 텍스트를 동시에 전송. `role` 파라미터로 특정 역할의 자식에만 필터링 가능. 반환: `{ sent_count, children }`
 - **claude.wait**: 자식 surface의 현재 상태를 조회. surface가 존재하지 않으면 "exited" 반환. 반환: `{ state: "idle"|"needs_input"|"active"|"exited" }`. CLI에서 폴링 루프로 대기 구현
 - CLI: `tasty claude spawn --direction vertical --cwd /path --role worker --nickname "agent-1" --prompt "Fix bugs"`
-- CLI: `tasty claude children`, `tasty claude parent`, `tasty claude kill --child 5`, `tasty claude respawn --child 5`
-- CLI: `tasty claude broadcast "text\r" [--role ROLE]`, `tasty claude wait --child ID [--timeout SECS]`
+- CLI: `tasty claude children`, `tasty claude parent`, `tasty claude kill --child 1`, `tasty claude respawn --child 1`
+- CLI: `tasty claude broadcast "text\r" [--role ROLE]`, `tasty claude wait --child 1 [--timeout SECS]`
+- `--child` 파라미터는 child index를 받는다 (spawn 시 반환되는 `child_index` 값)
 - IPC: `claude.spawn`, `claude.children`, `claude.parent`, `claude.kill`, `claude.respawn`, `claude.broadcast`, `claude.wait` 메서드
 
 ### Claude Hook 통합

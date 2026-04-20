@@ -472,17 +472,23 @@ pub enum ClaudeCommands {
         #[arg(long)]
         surface: Option<u32>,
     },
-    /// Kill a child Claude instance by surface ID
+    /// Kill a child Claude instance by child index
     Kill {
-        /// Child surface ID to kill
+        /// Child index to kill
         #[arg(long)]
         child: u32,
+        /// Parent surface ID (default: TASTY_SURFACE_ID)
+        #[arg(long)]
+        surface: Option<u32>,
     },
     /// Respawn a child Claude instance
     Respawn {
-        /// Child surface ID to respawn
+        /// Child index to respawn
         #[arg(long)]
         child: u32,
+        /// Parent surface ID (default: TASTY_SURFACE_ID)
+        #[arg(long)]
+        surface: Option<u32>,
         /// Working directory for the new child
         #[arg(long)]
         cwd: Option<String>,
@@ -510,9 +516,12 @@ pub enum ClaudeCommands {
     },
     /// Wait for a specific child Claude instance to become idle/needs_input/exited
     Wait {
-        /// Child surface ID to wait for
+        /// Child index to wait for
         #[arg(long)]
         child: u32,
+        /// Parent surface ID (default: TASTY_SURFACE_ID)
+        #[arg(long)]
+        surface: Option<u32>,
         /// Timeout in seconds (default: 30)
         #[arg(long, default_value = "30")]
         timeout: u64,
@@ -827,8 +836,9 @@ pub fn run_client(command: Commands) -> Result<()> {
     }
 
     // ClaudeWait is special: it polls until the child reaches a terminal state
-    if let Commands::Claude { command: ClaudeCommands::Wait { child, timeout } } = command {
-        run_claude_wait(&mut stream, child, timeout)?;
+    if let Commands::Claude { command: ClaudeCommands::Wait { child, surface, timeout } } = command {
+        let surface_id = request::resolve_surface_id(surface);
+        run_claude_wait(&mut stream, child, surface_id, timeout)?;
         return Ok(());
     }
 

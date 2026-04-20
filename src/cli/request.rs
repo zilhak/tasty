@@ -38,7 +38,7 @@ fn unescape(s: &str) -> String {
 }
 
 /// Get surface_id: explicit value > TASTY_SURFACE_ID env var.
-fn resolve_surface_id(explicit: Option<u32>) -> Option<u32> {
+pub(super) fn resolve_surface_id(explicit: Option<u32>) -> Option<u32> {
     explicit.or_else(|| {
         std::env::var("TASTY_SURFACE_ID").ok()?.parse().ok()
     })
@@ -313,12 +313,16 @@ fn claude_command_to_method_params(command: &ClaudeCommands) -> (&'static str, s
         ),
         ClaudeCommands::Children { surface } => ("claude.children", serde_json::json!({ "surface_id": resolve_surface_id(*surface) })),
         ClaudeCommands::Parent { surface } => ("claude.parent", serde_json::json!({ "surface_id": resolve_surface_id(*surface) })),
-        ClaudeCommands::Kill { child } => (
+        ClaudeCommands::Kill { child, surface } => (
             "claude.kill",
-            serde_json::json!({ "child_surface_id": child }),
+            serde_json::json!({
+                "surface_id": resolve_surface_id(*surface),
+                "child_index": child,
+            }),
         ),
         ClaudeCommands::Respawn {
             child,
+            surface,
             cwd,
             role,
             nickname,
@@ -326,7 +330,8 @@ fn claude_command_to_method_params(command: &ClaudeCommands) -> (&'static str, s
         } => (
             "claude.respawn",
             serde_json::json!({
-                "child_surface_id": child,
+                "surface_id": resolve_surface_id(*surface),
+                "child_index": child,
                 "cwd": cwd,
                 "role": role,
                 "nickname": nickname,
