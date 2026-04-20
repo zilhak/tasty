@@ -30,11 +30,12 @@ pub fn draw_convert_popup(ui: &mut egui::Ui, state: &mut AppState) -> PopupActio
 }
 
 /// Menu items for the convert surface popup.
-const ITEMS: [(&str, &str, char); 4] = [
+const ITEMS: [(&str, &str, char); 5] = [
     ("Terminal", "convert_popup.terminal", 'T'),
     ("Markdown", "convert_popup.markdown", 'M'),
     ("Explorer", "convert_popup.explorer", 'E'),
     ("Html", "convert_popup.html", 'H'),
+    ("Image", "convert_popup.image", 'I'),
 ];
 
 /// Result of drawing the convert popup content.
@@ -126,6 +127,9 @@ pub fn draw_convert_content(ui: &mut egui::Ui, state: &mut AppState) -> Option<C
                     egui::Key::H if current_type != Some("Html") => {
                         action = Some(ConvertAction::Html);
                     }
+                    egui::Key::I if current_type != Some("Image") => {
+                        action = Some(ConvertAction::Image);
+                    }
                     _ => {}
                 }
             }
@@ -201,6 +205,9 @@ pub fn apply_convert_action(state: &mut AppState, action: ConvertAction) {
             state.dialogs.html_open_buffer.clear();
             state.dialogs.pending_popup_open = Some(("html_open", popup::PopupScope::Surface(surface_id)));
         }
+        ConvertAction::Image => {
+            state.convert_surface_to_image(surface_id);
+        }
     }
 }
 
@@ -210,6 +217,7 @@ pub enum ConvertAction {
     Markdown,
     Explorer,
     Html,
+    Image,
 }
 
 fn action_for_index(idx: usize) -> ConvertAction {
@@ -217,7 +225,8 @@ fn action_for_index(idx: usize) -> ConvertAction {
         0 => ConvertAction::Terminal,
         1 => ConvertAction::Markdown,
         2 => ConvertAction::Explorer,
-        _ => ConvertAction::Html,
+        3 => ConvertAction::Html,
+        _ => ConvertAction::Image,
     }
 }
 

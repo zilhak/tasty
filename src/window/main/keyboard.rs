@@ -103,7 +103,7 @@ impl MainWindow {
                     }
                 }
             }
-            FocusedSurfaceType::Explorer | FocusedSurfaceType::Markdown => {
+            FocusedSurfaceType::Explorer | FocusedSurfaceType::Markdown | FocusedSurfaceType::Image => {
                 // If egui consumed the event (e.g. TextEdit has focus), skip
                 // the PendingKeyEvent queue to avoid double-handling.
                 if !egui_consumed {

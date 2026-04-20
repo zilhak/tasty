@@ -252,6 +252,7 @@ terminal = "ターミナル"
 markdown = "マークダウン..."
 explorer = "エクスプローラー"
 html = "HTML..."
+image = "イメージ"
 
 [dialog]
 recent_files = "最近のファイル"
@@ -285,6 +286,22 @@ tastyrc = "tastyrc"
 heading = "Tastyモードで適用される bashrc"
 description = "シェルモードを Tasty に設定したときに適用されます。Tasty の組み込みブロック（OSC 7、UTF-8、PATH）は自動的に先頭に追加されるため、ここに含める必要はありません。"
 reset_button = "デフォルトに戻す"
+
+[image_viewer]
+no_image = "画像が読み込まれていません"
+prev = "前の画像"
+next = "次の画像"
+refresh = "更新"
+edit = "編集"
+new_image = "新規画像"
+save = "保存"
+cancel = "キャンセル"
+brush_size = "太さ:"
+color = "色:"
+new_image_title = "新規画像"
+width = "幅:"
+height = "高さ:"
+save_path_title = "名前を付けて保存"
 
 [toast]
 copied = "コピーしました"

@@ -47,6 +47,10 @@ pub fn handle_workspace_create(
             }
             crate::model::SurfaceType::Html { url }
         }
+        "image" => {
+            let file = params.get("file").and_then(|v| v.as_str()).map(|s| s.to_string());
+            crate::model::SurfaceType::Image { file }
+        }
         _ => crate::model::SurfaceType::Terminal,
     };
     match state.add_workspace_background(cwd, surface_type) {

@@ -252,6 +252,7 @@ terminal = "터미널"
 markdown = "마크다운..."
 explorer = "탐색기"
 html = "HTML..."
+image = "이미지"
 
 [dialog]
 recent_files = "최근 파일"
@@ -285,6 +286,22 @@ tastyrc = "tastyrc"
 heading = "Tasty 모드에서 적용되는 bashrc"
 description = "셸 모드를 Tasty로 설정했을 때 적용됩니다. Tasty의 빌트인 블록(OSC 7, UTF-8, PATH)은 자동으로 앞에 추가되므로 여기에 포함시킬 필요가 없습니다."
 reset_button = "기본값으로 되돌리기"
+
+[image_viewer]
+no_image = "로드된 이미지 없음"
+prev = "이전 이미지"
+next = "다음 이미지"
+refresh = "새로고침"
+edit = "편집"
+new_image = "새 이미지"
+save = "저장"
+cancel = "취소"
+brush_size = "굵기:"
+color = "색상:"
+new_image_title = "새 이미지"
+width = "너비:"
+height = "높이:"
+save_path_title = "다른 이름으로 저장"
 
 [toast]
 copied = "복사됨"

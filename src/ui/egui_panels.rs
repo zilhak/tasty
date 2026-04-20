@@ -171,6 +171,10 @@ pub fn draw_egui_panels(
                     pending_empty_action = Some(act);
                 }
             });
+        } else if let Some(image_panel) = surface.as_image_mut() {
+            draw_panel_frame(ctx, &format!("image_panel_{}", id_suffix), info, 4, |ui| {
+                crate::image_ui::draw_image(ui, image_panel);
+            });
         } else if surface.as_clipboard_viewer().is_some() {
             // Defer: we need both engine.clipboard_history and cv.state together,
             // which requires dropping the current surface borrow chain first.

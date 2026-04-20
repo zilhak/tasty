@@ -252,6 +252,7 @@ terminal = "Terminal"
 markdown = "Markdown..."
 explorer = "Explorer"
 html = "HTML..."
+image = "Image"
 
 [dialog]
 recent_files = "Recent Files"
@@ -285,6 +286,22 @@ tastyrc = "tastyrc"
 heading = "Tasty-mode bashrc"
 description = "This is applied when Shell mode is set to Tasty. Tasty's built-in block (OSC 7 emission, UTF-8, PATH) is always prepended automatically and is not shown here."
 reset_button = "Reset to default"
+
+[image_viewer]
+no_image = "No image loaded"
+prev = "Previous image"
+next = "Next image"
+refresh = "Refresh"
+edit = "Edit"
+new_image = "New image"
+save = "Save"
+cancel = "Cancel"
+brush_size = "Brush:"
+color = "Color:"
+new_image_title = "New Image"
+width = "Width:"
+height = "Height:"
+save_path_title = "Save As"
 
 [toast]
 copied = "Copied"

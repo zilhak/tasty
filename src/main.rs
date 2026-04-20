@@ -18,6 +18,7 @@ mod explorer_ui;
 mod file_clipboard;
 mod font;
 mod html_ui;
+mod image_ui;
 mod global_hooks;
 mod gpu;
 mod i18n;

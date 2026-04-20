@@ -95,6 +95,14 @@ impl AppState {
                 let pane = crate::model::Pane::new_with_surface(pane_id, tab_id, "Html".to_string(), surface);
                 Workspace::new_with_pane(ws_id, name, pane)
             }
+            crate::model::SurfaceType::Image { file } => {
+                let surface: Box<dyn crate::model::Surface> = match file {
+                    Some(path) => Box::new(crate::model::ImagePanel::new(surface_id, path)),
+                    None => Box::new(crate::model::ImagePanel::new_blank(surface_id)),
+                };
+                let pane = crate::model::Pane::new_with_surface(pane_id, tab_id, "Image".to_string(), surface);
+                Workspace::new_with_pane(ws_id, name, pane)
+            }
             crate::model::SurfaceType::Empty => {
                 anyhow::bail!("Cannot create workspace with empty surface type");
             }

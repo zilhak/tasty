@@ -68,6 +68,9 @@ arboard = "3"
 # PNG encoding (screenshots)
 png = "0.18"
 
+# Image loading/saving (image viewer)
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "bmp", "webp", "ico", "tiff"] }
+
 # Platform
 libc = "0.2"
 

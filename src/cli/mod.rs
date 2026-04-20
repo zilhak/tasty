@@ -75,7 +75,7 @@ pub enum Commands {
         /// Split direction: vertical (default) or horizontal
         #[arg(long, default_value = "vertical")]
         direction: String,
-        /// Surface type: terminal (default), markdown, explorer, html
+        /// Surface type: terminal (default), markdown, explorer, html, image
         #[arg(long, default_value = "terminal")]
         r#type: String,
         /// Metadata JSON to set on the new surface (e.g. '{"nickname":"build"}')
@@ -84,7 +84,7 @@ pub enum Commands {
         /// Working directory (for terminal type)
         #[arg(long)]
         cwd: Option<String>,
-        /// File path (for markdown type)
+        /// File path (for markdown/image type)
         #[arg(long)]
         file: Option<String>,
         /// Directory path (for explorer type)
@@ -363,10 +363,10 @@ pub enum NewCommands {
         /// Working directory for the new workspace
         #[arg(long)]
         cwd: Option<String>,
-        /// Surface type: terminal (default), markdown, explorer, html
+        /// Surface type: terminal (default), markdown, explorer, html, image
         #[arg(long, default_value = "terminal")]
         r#type: String,
-        /// File path (for markdown type)
+        /// File path (for markdown/image type)
         #[arg(long)]
         file: Option<String>,
         /// Directory path (for explorer type)
@@ -381,7 +381,7 @@ pub enum NewCommands {
         /// Target pane ID (required)
         #[arg(long)]
         pane: u32,
-        /// Surface type: terminal (default), markdown, explorer, html
+        /// Surface type: terminal (default), markdown, explorer, html, image
         #[arg(long, default_value = "terminal")]
         r#type: String,
         /// Working directory (for terminal type)

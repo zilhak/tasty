@@ -113,6 +113,13 @@ impl AppState {
                     .unwrap_or_else(|| ".".to_string());
                 Some(Box::new(crate::model::ExplorerPanel::new(id, root)))
             }
+            ClosedPanel::Image { path } => {
+                let id = self.engine.next_ids.next_surface();
+                match path {
+                    Some(p) => Some(Box::new(crate::model::ImagePanel::new(id, p.to_string_lossy().to_string()))),
+                    None => Some(Box::new(crate::model::ImagePanel::new_blank(id))),
+                }
+            }
         }
     }
 

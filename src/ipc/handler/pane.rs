@@ -137,6 +137,10 @@ pub fn handle_split(
             }
             crate::model::SurfaceType::Html { url }
         }
+        "image" => {
+            let file = params.get("file").and_then(|v| v.as_str()).map(|s| s.to_string());
+            crate::model::SurfaceType::Image { file }
+        }
         _ => crate::model::SurfaceType::Terminal,
     };
 

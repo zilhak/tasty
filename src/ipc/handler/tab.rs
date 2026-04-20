@@ -90,6 +90,18 @@ pub fn handle_tab_create(state: &mut AppState, id: serde_json::Value, params: &s
             state.add_surface_tab_to_pane(pane_id, name, surface);
             Ok(())
         }
+        "image" => {
+            let file_path = params.get("file").or_else(|| params.get("file_path")).and_then(|v| v.as_str()).map(|s| s.to_string());
+            let name = file_path.as_ref()
+                .and_then(|p| p.split(['/', '\\']).last().map(|s| s.to_string()))
+                .unwrap_or_else(|| "Image".to_string());
+            let surface: Box<dyn crate::model::Surface> = match file_path {
+                Some(path) => Box::new(crate::model::ImagePanel::new(panel_id, path)),
+                None => Box::new(crate::model::ImagePanel::new_blank(panel_id)),
+            };
+            state.add_surface_tab_to_pane(pane_id, name, surface);
+            Ok(())
+        }
         "terminal" | _ => {
             let cwd = params.get("cwd").and_then(|v| v.as_str()).map(std::path::PathBuf::from);
             state.add_tab_to_pane(pane_id, cwd)

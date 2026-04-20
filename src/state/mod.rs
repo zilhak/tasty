@@ -22,6 +22,7 @@ pub enum FocusedSurfaceType {
     Explorer,
     Markdown,
     Html,
+    Image,
     Empty,
     None,
 }
@@ -300,6 +301,7 @@ impl AppState {
         if surface.as_explorer().is_some() { return FocusedSurfaceType::Explorer; }
         if surface.as_markdown().is_some() { return FocusedSurfaceType::Markdown; }
         if surface.as_html().is_some() { return FocusedSurfaceType::Html; }
+        if surface.as_image().is_some() { return FocusedSurfaceType::Image; }
         if surface.as_empty_surface().is_some() { return FocusedSurfaceType::Empty; }
         FocusedSurfaceType::None
     }

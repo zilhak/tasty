@@ -117,6 +117,13 @@ impl AppState {
                 );
                 crate::model::Pane::new_with_surface(new_pane_id, new_tab_id, "HTML".to_string(), surface)
             }
+            crate::model::SurfaceType::Image { file } => {
+                let surface: Box<dyn crate::model::Surface> = match file {
+                    Some(path) => Box::new(crate::model::ImagePanel::new(new_surface_id, path)),
+                    None => Box::new(crate::model::ImagePanel::new_blank(new_surface_id)),
+                };
+                crate::model::Pane::new_with_surface(new_pane_id, new_tab_id, "Image".to_string(), surface)
+            }
             crate::model::SurfaceType::Empty => {
                 let surface: Box<dyn crate::model::Surface> = Box::new(
                     crate::model::EmptySurface::new(new_surface_id),
@@ -178,6 +185,12 @@ impl AppState {
             }
             crate::model::SurfaceType::Html { url } => {
                 Box::new(crate::model::HtmlPanel::new(new_surface_id, url))
+            }
+            crate::model::SurfaceType::Image { file } => {
+                match file {
+                    Some(path) => Box::new(crate::model::ImagePanel::new(new_surface_id, path)),
+                    None => Box::new(crate::model::ImagePanel::new_blank(new_surface_id)),
+                }
             }
             crate::model::SurfaceType::Empty => {
                 Box::new(crate::model::EmptySurface::new(new_surface_id))

@@ -305,6 +305,26 @@ impl AppState {
         self.replace_surface_for_id(surface_id, surface, Some(Some("Explorer".to_string())))
     }
 
+    /// Add an image viewer tab in the focused pane.
+    pub fn add_image_tab(&mut self, file_path: String) -> anyhow::Result<()> {
+        let tab_id = self.engine.next_ids.next_tab();
+        let surface_id = self.engine.next_ids.next_surface();
+        let name = file_path.split(['/', '\\']).last().unwrap_or("Image").to_string();
+        let surface: Box<dyn crate::model::Surface> = Box::new(crate::model::ImagePanel::new(surface_id, file_path));
+        if let Some(pane) = self.focused_pane_mut() {
+            pane.add_surface_tab(tab_id, name, surface);
+        }
+        Ok(())
+    }
+
+    /// Convert a surface to Image type (blank canvas).
+    pub fn convert_surface_to_image(&mut self, surface_id: u32) -> bool {
+        let surface: Box<dyn crate::model::Surface> = Box::new(
+            crate::model::ImagePanel::new_blank(surface_id),
+        );
+        self.replace_surface_for_id(surface_id, surface, Some(Some("Image".to_string())))
+    }
+
     /// Convert a surface to Html type.
     pub fn convert_surface_to_html(&mut self, surface_id: u32, url: String) -> bool {
         let surface: Box<dyn crate::model::Surface> = Box::new(

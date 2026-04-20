@@ -28,6 +28,7 @@ pub enum ClosedPanel {
     /// Panels without PTY store just enough to recreate.
     Markdown { path: PathBuf },
     Explorer { path: Option<PathBuf> },
+    Image { path: Option<PathBuf> },
 }
 
 /// Mirrors SurfaceGroupLayout but with ClosedSurface instead of live Terminal.
@@ -166,6 +167,9 @@ impl ClosedPanel {
         }
         if let Some(ex) = surface.as_explorer() {
             return ClosedPanel::Explorer { path: Some(PathBuf::from(&ex.root_path)) };
+        }
+        if let Some(img) = surface.as_image() {
+            return ClosedPanel::Image { path: img.file_path.as_ref().map(PathBuf::from) };
         }
         // Html, Empty, etc. — not restorable
         ClosedPanel::Explorer { path: None }

@@ -45,7 +45,7 @@ tasty list info               # 버전, 워크스페이스 수
 
 # 워크스페이스
 tasty list workspaces         # 워크스페이스 목록
-tasty new workspace [--name NAME] [--cwd PATH] [--type terminal|markdown|explorer|html] [--file PATH] [--path DIR] [--url URL]
+tasty new workspace [--name NAME] [--cwd PATH] [--type terminal|markdown|explorer|html|image] [--file PATH] [--path DIR] [--url URL]
 tasty set workspace --id ID [--name NAME] [--subtitle TEXT] [--description TEXT]
 
 # 윈도우
@@ -55,9 +55,9 @@ tasty new window              # 새 윈도우 생성
 # 패인/탭
 tasty list panes              # 패인 목록
 tasty list tabs --pane ID     # 탭 목록 (id, name, type, surface_id)
-tasty split --level pane|surface --target-surface ID|this|nickname [--direction vertical|horizontal] [--type terminal|markdown|explorer|html] [--cwd PATH] [--file PATH] [--path DIR] [--url URL] [--meta JSON]
+tasty split --level pane|surface --target-surface ID|this|nickname [--direction vertical|horizontal] [--type terminal|markdown|explorer|html|image] [--cwd PATH] [--file PATH] [--path DIR] [--url URL] [--meta JSON]
 tasty split --level pane --target-pane PANE_ID [--direction vertical|horizontal] [--type ...] [...]
-tasty new tab --pane ID [--type terminal|markdown|explorer|html] [--cwd PATH] [--file PATH] [--path DIR] [--url URL]
+tasty new tab --pane ID [--type terminal|markdown|explorer|html|image] [--cwd PATH] [--file PATH] [--path DIR] [--url URL]
 tasty close pane --pane ID
 tasty close tab --tab ID
 
@@ -165,7 +165,7 @@ tasty claude hook stop --surface 5  # 특정 surface 지정 (또는 TASTY_SURFAC
 | 메서드 | 파라미터 | 설명 |
 |--------|---------|------|
 | `pane.list` | 없음 | 전체 워크스페이스의 패인 목록 (workspace_id, workspace_name 포함) |
-| `split` | `level`, `target_surface?\|target_pane?`, `direction?`, `type?`, `cwd?`, `file?`, `path?`, `url?`, `meta?` | 분할. level: pane/surface. target_surface: surface ID/nickname, target_pane: pane ID (둘 중 하나 필수). type: terminal(기본)/markdown/explorer/html. surface 레벨에서도 비터미널 타입 지원 |
+| `split` | `level`, `target_surface?\|target_pane?`, `direction?`, `type?`, `cwd?`, `file?`, `path?`, `url?`, `meta?` | 분할. level: pane/surface. target_surface: surface ID/nickname, target_pane: pane ID (둘 중 하나 필수). type: terminal(기본)/markdown/explorer/html/image. surface 레벨에서도 비터미널 타입 지원 |
 | `pane.close` | `pane_id` | 패인 닫기 |
 
 ### 탭
@@ -173,7 +173,7 @@ tasty claude hook stop --surface 5  # 특정 surface 지정 (또는 TASTY_SURFAC
 | 메서드 | 파라미터 | 설명 |
 |--------|---------|------|
 | `tab.list` | `pane_id` | 지정 패인의 탭 목록 (id, name, type, surface_id, active) |
-| `tab.create` | `pane_id`, `type?`, `cwd?`, `file?`, `path?`, `url?` | 새 탭 생성. type: terminal(기본)/markdown/explorer/html |
+| `tab.create` | `pane_id`, `type?`, `cwd?`, `file?`, `path?`, `url?` | 새 탭 생성. type: terminal(기본)/markdown/explorer/html/image |
 | `tab.close` | `tab_id` | 탭 닫기 |
 
 ### Surface (터미널 상호작용)
