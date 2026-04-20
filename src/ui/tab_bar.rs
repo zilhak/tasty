@@ -50,11 +50,11 @@ pub fn draw_pane_tab_bars(
     let mut actions: Vec<(u32, PaneTabAction)> = Vec::new();
     let mut measured_tab_bar_height: Option<f32> = None;
 
-    let tab_w: f32 = 150.0;
+    let tab_w = th.tab_width;
+    let bar_h = th.item_height_tab;
     let plus_w: f32 = 28.0;
     let arrow_w: f32 = 20.0;
     let separator_w: f32 = 1.0;
-    let bar_h: f32 = 24.0;
 
     for info in &infos {
         let n = info.tab_names.len();
@@ -100,7 +100,7 @@ pub fn draw_pane_tab_bars(
                                 }
                                 ui.painter().text(
                                     r.center(), egui::Align2::CENTER_CENTER,
-                                    "<", egui::FontId::proportional(11.0), arrow_color,
+                                    "<", egui::FontId::proportional(th.font_size_caption), arrow_color,
                                 );
                                 if resp.clicked() && can_left {
                                     actions.push((info.pane_id, PaneTabAction::ScrollLeft));
@@ -154,7 +154,7 @@ pub fn draw_pane_tab_bars(
                                 }
 
                                 // Truncate tab name with ellipsis if it exceeds available width
-                                let font_id = egui::FontId::proportional(11.0);
+                                let font_id = egui::FontId::proportional(th.font_size_caption);
                                 let h_padding = 8.0;
                                 let available_w = tab_w - h_padding * 2.0;
                                 let galley = painter.layout_no_wrap(name.clone(), font_id.clone(), text_color);
@@ -216,7 +216,7 @@ pub fn draw_pane_tab_bars(
                                     }
                                     painter.text(
                                         plus_rect.center(), egui::Align2::CENTER_CENTER,
-                                        "+", egui::FontId::proportional(13.0), th.subtext0,
+                                        "+", egui::FontId::proportional(th.font_size_body), th.subtext0,
                                     );
                                     if resp.clicked() {
                                         actions.push((info.pane_id, PaneTabAction::AddTab));
@@ -236,7 +236,7 @@ pub fn draw_pane_tab_bars(
                                 }
                                 ui.painter().text(
                                     r.center(), egui::Align2::CENTER_CENTER,
-                                    ">", egui::FontId::proportional(11.0), arrow_color,
+                                    ">", egui::FontId::proportional(th.font_size_caption), arrow_color,
                                 );
                                 if resp.clicked() && can_right {
                                     actions.push((info.pane_id, PaneTabAction::ScrollRight));

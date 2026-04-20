@@ -55,6 +55,7 @@ pub struct Theme {
     pub item_height_tree: f32,
     pub item_height_interactive: f32,
     pub item_height_tab: f32,
+    pub tab_width: f32,
 
     // ── Spacing (4px grid) ──
     pub spacing_xs: f32,
@@ -123,7 +124,8 @@ impl Theme {
             corner_radius: 4.0,
             item_height_tree: 22.0,
             item_height_interactive: 28.0,
-            item_height_tab: 35.0,
+            item_height_tab: 24.0,
+            tab_width: 150.0,
 
             // Spacing (4px grid)
             spacing_xs: 4.0,
