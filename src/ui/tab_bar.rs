@@ -50,13 +50,13 @@ pub fn draw_pane_tab_bars(
     let mut actions: Vec<(u32, PaneTabAction)> = Vec::new();
     let mut measured_tab_bar_height: Option<f32> = None;
 
-    let tab_w: f32 = 150.0 / scale_factor;
+    let tab_w: f32 = 150.0;
     let plus_w: f32 = 28.0;
     let arrow_w: f32 = 20.0;
     let separator_w: f32 = 1.0;
+    let bar_h: f32 = 24.0;
 
     for info in &infos {
-        let bar_h = state.tab_bar_height / scale_factor;
         let n = info.tab_names.len();
         // Total content width: tabs + separators + separator before "+" + "+"
         let content_w = n as f32 * tab_w + (n.max(1) - 1) as f32 * separator_w + separator_w + plus_w;
