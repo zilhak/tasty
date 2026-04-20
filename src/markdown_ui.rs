@@ -17,6 +17,7 @@ pub fn draw_markdown(ui: &mut egui::Ui, panel: &mut MarkdownPanel, scroll_delta:
     }
     egui::ScrollArea::vertical()
         .id_salt(format!("md_scroll_{}", id_suffix))
+        .auto_shrink([false, false])
         .show(ui, |ui| {
             ui.set_min_width(ui.available_width());
             ui.style_mut().interaction.selectable_labels = true;

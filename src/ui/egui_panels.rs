@@ -313,6 +313,7 @@ where
             let panel_rect = ui.max_rect();
             let mut clip_ui = ui.new_child(egui::UiBuilder::new().max_rect(panel_rect));
             clip_ui.set_clip_rect(panel_rect);
+            clip_ui.painter().rect_filled(panel_rect, 0.0, th.crust);
             egui::Frame::new()
                 .fill(th.crust)
                 .inner_margin(egui::Margin::same(margin))
