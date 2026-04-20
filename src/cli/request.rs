@@ -356,9 +356,11 @@ fn claude_command_to_method_params(command: &ClaudeCommands) -> (&'static str, s
                 "message": message,
             }),
         ),
-        // Hook and Wait are handled separately in run_client
+        // Hook, Wait, Install, Uninstall are handled separately in run_client
         ClaudeCommands::Hook { .. } => unreachable!("ClaudeHook is handled in run_client"),
         ClaudeCommands::Wait { .. } => unreachable!("ClaudeWait is handled in run_client"),
+        ClaudeCommands::Install => unreachable!("Install is handled in run_client"),
+        ClaudeCommands::Uninstall => unreachable!("Uninstall is handled in run_client"),
     }
 }
 

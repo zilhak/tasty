@@ -10,7 +10,7 @@ use clap::{Parser, Subcommand};
 
 use crate::ipc::server::IpcServer;
 
-use claude::{run_claude_hook, run_claude_wait};
+use claude::{run_claude_hook, run_claude_install, run_claude_uninstall, run_claude_wait};
 use format::format_output;
 use request::command_to_request;
 use transport::IpcConnection;
@@ -537,6 +537,10 @@ pub enum ClaudeCommands {
         #[arg(long)]
         surface: Option<u32>,
     },
+    /// Install tasty Stop hook into Claude Code's ~/.claude/settings.json
+    Install,
+    /// Uninstall tasty Stop hook from Claude Code's ~/.claude/settings.json
+    Uninstall,
     /// Claude Code hook integration (called by Claude Code's hook system)
     Hook {
         /// Hook event type: stop, notification, prompt-submit, session-start
@@ -824,6 +828,14 @@ pub fn format_parse_error(err: clap::Error) {
 
 /// Run the CLI client: connect to a running tasty instance and execute the command.
 pub fn run_client(command: Commands) -> Result<()> {
+    // Install/Uninstall are local-only commands — no IPC needed
+    if let Commands::Claude { command: ClaudeCommands::Install } = &command {
+        return run_claude_install();
+    }
+    if let Commands::Claude { command: ClaudeCommands::Uninstall } = &command {
+        return run_claude_uninstall();
+    }
+
     let port = IpcServer::read_port_file()?;
     let stream = TcpStream::connect(format!("127.0.0.1:{}", port))
         .map_err(|e| anyhow::anyhow!(

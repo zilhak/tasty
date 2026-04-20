@@ -1,4 +1,7 @@
+use std::path::PathBuf;
+
 use anyhow::Result;
+use serde_json::json;
 
 use super::transport::{make_request, IpcConnection};
 
@@ -65,6 +68,155 @@ pub fn run_claude_hook(conn: &mut IpcConnection, event: &str, surface_arg: Optio
         }
     }
 
+    Ok(())
+}
+
+const TASTY_HOOK_COMMAND: &str =
+    "[ -n \"$TASTY_SURFACE_ID\" ] && tasty claude hook stop || true";
+
+fn claude_settings_path() -> Result<PathBuf> {
+    let base = directories::BaseDirs::new()
+        .ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
+    Ok(base.home_dir().join(".claude").join("settings.json"))
+}
+
+/// Install tasty Stop hook into ~/.claude/settings.json
+pub fn run_claude_install() -> Result<()> {
+    let path = claude_settings_path()?;
+
+    let mut root: serde_json::Value = if path.exists() {
+        let content = std::fs::read_to_string(&path)?;
+        serde_json::from_str(&content)?
+    } else {
+        json!({})
+    };
+
+    let hooks = root
+        .as_object_mut()
+        .ok_or_else(|| anyhow::anyhow!("settings.json root is not an object"))?
+        .entry("hooks")
+        .or_insert_with(|| json!({}));
+
+    let stop_arr = hooks
+        .as_object_mut()
+        .ok_or_else(|| anyhow::anyhow!("hooks is not an object"))?
+        .entry("Stop")
+        .or_insert_with(|| json!([]));
+
+    let arr = stop_arr
+        .as_array_mut()
+        .ok_or_else(|| anyhow::anyhow!("hooks.Stop is not an array"))?;
+
+    // Check if already installed
+    let already = arr.iter().any(|entry| {
+        entry
+            .get("hooks")
+            .and_then(|h| h.as_array())
+            .map(|hooks| {
+                hooks.iter().any(|h| {
+                    h.get("command")
+                        .and_then(|c| c.as_str())
+                        .map(|c| c.contains("tasty claude hook stop"))
+                        .unwrap_or(false)
+                })
+            })
+            .unwrap_or(false)
+    });
+
+    if already {
+        println!("Already installed");
+        return Ok(());
+    }
+
+    arr.push(json!({
+        "matcher": "",
+        "hooks": [
+            {
+                "type": "command",
+                "command": TASTY_HOOK_COMMAND
+            }
+        ]
+    }));
+
+    // Ensure parent directory exists
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    let output = serde_json::to_string_pretty(&root)?;
+    std::fs::write(&path, output)?;
+    println!("Installed tasty Stop hook to ~/.claude/settings.json");
+    Ok(())
+}
+
+/// Uninstall tasty Stop hook from ~/.claude/settings.json
+pub fn run_claude_uninstall() -> Result<()> {
+    let path = claude_settings_path()?;
+
+    if !path.exists() {
+        println!("~/.claude/settings.json not found, nothing to uninstall");
+        return Ok(());
+    }
+
+    let content = std::fs::read_to_string(&path)?;
+    let mut root: serde_json::Value = serde_json::from_str(&content)?;
+
+    let root_obj = root
+        .as_object_mut()
+        .ok_or_else(|| anyhow::anyhow!("settings.json root is not an object"))?;
+
+    let Some(hooks) = root_obj.get_mut("hooks") else {
+        println!("No hooks found, nothing to uninstall");
+        return Ok(());
+    };
+
+    let Some(hooks_obj) = hooks.as_object_mut() else {
+        println!("hooks is not an object, nothing to uninstall");
+        return Ok(());
+    };
+
+    let Some(stop_val) = hooks_obj.get_mut("Stop") else {
+        println!("No Stop hook found, nothing to uninstall");
+        return Ok(());
+    };
+
+    let Some(arr) = stop_val.as_array_mut() else {
+        println!("hooks.Stop is not an array, nothing to uninstall");
+        return Ok(());
+    };
+
+    let before_len = arr.len();
+    arr.retain(|entry| {
+        !entry
+            .get("hooks")
+            .and_then(|h| h.as_array())
+            .map(|hooks| {
+                hooks.iter().any(|h| {
+                    h.get("command")
+                        .and_then(|c| c.as_str())
+                        .map(|c| c.contains("tasty claude hook stop"))
+                        .unwrap_or(false)
+                })
+            })
+            .unwrap_or(false)
+    });
+
+    if arr.len() == before_len {
+        println!("Tasty Stop hook not found, nothing to uninstall");
+        return Ok(());
+    }
+
+    // Clean up empty Stop array and hooks object
+    if arr.is_empty() {
+        hooks_obj.remove("Stop");
+    }
+    if hooks_obj.is_empty() {
+        root_obj.remove("hooks");
+    }
+
+    let output = serde_json::to_string_pretty(&root)?;
+    std::fs::write(&path, output)?;
+    println!("Uninstalled tasty Stop hook from ~/.claude/settings.json");
     Ok(())
 }
 
