@@ -438,9 +438,9 @@ pub enum ClaudeCommands {
         #[arg(long)]
         task: Option<String>,
     },
-    /// Spawn a child Claude instance in a new pane
+    /// Spawn a child Claude instance
     Spawn {
-        /// Parent surface ID (default: TASTY_SURFACE_ID)
+        /// Target surface to split next to (default: TASTY_SURFACE_ID)
         #[arg(long)]
         surface: Option<u32>,
         /// Split direction: vertical (default) or horizontal

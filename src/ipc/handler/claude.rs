@@ -67,15 +67,17 @@ pub(crate) fn handle_claude_spawn(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    let parent_surface_id = match super::require_surface_id(params, &id) {
+    // surface_id = where to split (--surface), caller_surface_id = parent (always the caller)
+    let target_surface_id = match super::require_surface_id(params, &id) {
         Ok(sid) => sid,
         Err(e) => return e,
     };
+    let parent_surface_id = super::caller_surface_id(params).unwrap_or(target_surface_id);
 
     // Save and restore focus — IPC commands must never move focus
     let saved_workspace = state.active_workspace;
     let saved_pane = state.engine.workspaces[saved_workspace].focused_pane;
-    state.focus_surface(parent_surface_id);
+    state.focus_surface(target_surface_id);
 
     let direction = match params.get("direction").and_then(|v| v.as_str()) {
         Some("horizontal") | Some("h") => SplitDirection::Horizontal,

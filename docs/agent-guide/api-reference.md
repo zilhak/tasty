@@ -106,7 +106,8 @@ tasty read queue --clear [--surface ID]             # 큐 비우기
 
 # Claude
 tasty claude launch [--workspace NAME] [--directory PATH] [--task "설명"]
-tasty claude spawn [--direction vertical|horizontal] [--cwd PATH] [--role ROLE] [--nickname NAME] [--prompt "TEXT"]
+tasty claude spawn [--surface ID] [--direction vertical|horizontal] [--cwd PATH] [--role ROLE] [--nickname NAME] [--prompt "TEXT"]
+# --surface: pane 분할 위치 (기본: TASTY_SURFACE_ID). parent는 항상 명령을 실행한 surface.
 tasty claude children             # 자식 Claude 목록
 tasty claude parent               # 부모 Claude 조회
 tasty claude kill --child INDEX      # 자식 Claude 종료 (child index 지정)
@@ -323,7 +324,7 @@ tasty unset global-hook --hook HOOK_ID
 | 메서드 | 파라미터 | 설명 |
 |--------|---------|------|
 | `claude.launch` | `workspace?, directory?, task?` | 새 워크스페이스에서 Claude 실행 |
-| `claude.spawn` | `surface_id?, direction?, cwd?, role?, nickname?, prompt?` | 부모 pane을 분할하여 자식 Claude 인스턴스 생성 |
+| `claude.spawn` | `surface_id?, caller_surface_id?, direction?, cwd?, role?, nickname?, prompt?` | 대상 surface의 pane을 분할하여 자식 Claude 인스턴스 생성. `surface_id`는 분할 위치, `caller_surface_id`는 parent (CLI에서 자동 설정) |
 | `claude.children` | `surface_id?` | 부모 surface의 자식 목록 조회 |
 | `claude.parent` | `surface_id?` | 자식 surface의 부모 조회 |
 | `claude.kill` | `surface_id?, child_index: number` | 자식 Claude 인스턴스 종료. child_index는 spawn 시 반환된 인덱스 |

@@ -674,7 +674,7 @@ Claude Code를 새 워크스페이스에서 자동으로 실행하는 전용 런
 - **ClaudeChildEntry**: 자식 surface ID, 인덱스, cwd, role, nickname을 추적하는 데이터 구조
 - **부모-자식 매핑**: `HashMap<u32, Vec<ClaudeChildEntry>>`로 부모별 자식 목록 관리, `HashMap<u32, u32>`로 자식에서 부모 역참조
 - **자동 정리**: 부모 또는 자식 surface가 닫힐 때 관계를 자동으로 정리. 부모가 먼저 닫혀도 자식이 살아있는 동안 관계 유지 (ghost cleanup)
-- **claude.spawn**: 부모 pane을 분할하여 새 터미널 생성 후 `claude` 명령 자동 실행. cwd, role, nickname, prompt 파라미터 지원
+- **claude.spawn**: 대상 surface(`--surface`)의 pane을 분할하여 새 터미널 생성 후 `claude` 명령 자동 실행. 부모(parent)는 항상 spawn 명령을 실행한 surface(`TASTY_SURFACE_ID`)이며, `--surface`는 pane 분할 위치만 결정한다. cwd, role, nickname, prompt 파라미터 지원
 - **claude.children**: 부모 surface의 자식 목록 조회. 각 자식의 surface ID, 인덱스, 메타데이터 반환
 - **claude.parent**: 자식 surface의 부모 조회. 부모의 surface ID와 상태(active/closed) 반환
 - **claude.kill**: 자식 surface를 종료하고 관계를 정리
