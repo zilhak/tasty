@@ -5,13 +5,13 @@
 //! - **사용자 행동에서만 발사**된다. CLI/IPC를 통한 에이전트 동작은 토스트를 만들지 않는다.
 //! - 포커스를 받지 않으며 입력 이벤트를 소비하지 않는다 (마우스가 그대로 통과).
 //! - 자동 소멸한다 (기본 2초).
-//! - Popup의 `PopupDrawContext`를 그대로 받아 스코프별 rect를 얻는다.
+//! - `LayoutContext`를 받아 스코프별 rect를 얻는다.
 
 use std::time::{Duration, Instant};
 
 use crate::theme;
 
-use super::popup::PopupDrawContext;
+use super::layout_context::LayoutContext;
 
 /// Toast의 종류. 좌측 컬러 바 색을 결정한다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -116,7 +116,7 @@ impl ToastManager {
 
     /// 매 프레임 호출. 만료된 토스트를 제거하고 살아있는 토스트를 그린다.
     /// `draw_ctx`는 PopupManager가 만든 것을 그대로 공유한다.
-    pub fn draw(&mut self, ctx: &egui::Context, draw_ctx: &PopupDrawContext) {
+    pub fn draw(&mut self, ctx: &egui::Context, draw_ctx: &LayoutContext) {
         let now = Instant::now();
 
         // 1) 만료된 토스트 제거.
@@ -253,7 +253,7 @@ impl ToastManager {
     /// 스코프의 rect를 얻는다. Window/Workspace는 screen rect를 사용한다.
     fn scope_rect(
         scope: &ToastScope,
-        draw_ctx: &PopupDrawContext,
+        draw_ctx: &LayoutContext,
         ctx: &egui::Context,
     ) -> Option<egui::Rect> {
         match scope {

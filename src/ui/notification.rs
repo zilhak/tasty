@@ -153,7 +153,7 @@ pub fn draw_popups(
     scale_factor: f32,
 ) {
     // Build scope context for popup visibility/clamping
-    let draw_ctx = build_popup_draw_ctx(state, pane_rects, terminal_rect, scale_factor);
+    let draw_ctx = build_layout_context(state, pane_rects, terminal_rect, scale_factor);
 
     // Refresh popup titles (i18n) and dynamic sizes each frame. Sizers read
     // in-memory caches so this is cheap.
@@ -202,17 +202,17 @@ pub fn draw_popups(
         state.popups.open_with_scope(id, scope);
     }
 
-    // Toast 렌더링 (popup 위 레이어). 같은 PopupDrawContext를 공유한다.
+    // Toast 렌더링 (popup 위 레이어). 같은 LayoutContext를 공유한다.
     state.toasts.draw(ctx, &draw_ctx);
 }
 
-/// Build PopupDrawContext from current AppState and layout info.
-fn build_popup_draw_ctx(
+/// Build LayoutContext from current AppState and layout info.
+fn build_layout_context(
     state: &AppState,
     pane_rects: &[(u32, crate::model::Rect)],
     terminal_rect: crate::model::Rect,
     scale_factor: f32,
-) -> crate::ui::PopupDrawContext {
+) -> crate::ui::LayoutContext {
     let active_workspace = state.active_workspace;
 
     // Convert physical pixel pane rects to logical pixel egui rects
@@ -265,7 +265,7 @@ fn build_popup_draw_ctx(
         }
     }
 
-    crate::ui::PopupDrawContext {
+    crate::ui::LayoutContext {
         active_workspace,
         pane_rects: pane_rects_logical,
         surface_rects,

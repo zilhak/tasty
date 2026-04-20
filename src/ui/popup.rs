@@ -54,16 +54,7 @@ pub enum PopupScope {
     Surface(u32),
 }
 
-/// Context passed to PopupManager::draw() for scope-based visibility/clamping.
-pub struct PopupDrawContext {
-    pub active_workspace: usize,
-    /// (pane_id, rect) for all visible panes.
-    pub pane_rects: Vec<(u32, egui::Rect)>,
-    /// (surface_id, rect) for all visible surfaces.
-    pub surface_rects: Vec<(u32, egui::Rect)>,
-    /// (pane_id, active_tab_index) for each pane.
-    pub active_tabs: Vec<(u32, usize)>,
-}
+use super::layout_context::LayoutContext;
 
 /// State for a single popup instance.
 #[derive(Debug, Clone)]
@@ -294,7 +285,7 @@ impl PopupManager {
         &mut self,
         ctx: &egui::Context,
         content_fn: &mut dyn FnMut(&str, &mut egui::Ui),
-        draw_ctx: Option<&PopupDrawContext>,
+        draw_ctx: Option<&LayoutContext>,
     ) -> PopupDrawResult {
         let th = theme::theme();
         let screen_rect = ctx.screen_rect();
@@ -514,7 +505,7 @@ impl PopupManager {
     }
 
     /// Check if a popup's scope is currently visible.
-    fn is_scope_visible(scope: &PopupScope, ctx: Option<&PopupDrawContext>) -> bool {
+    fn is_scope_visible(scope: &PopupScope, ctx: Option<&LayoutContext>) -> bool {
         let Some(ctx) = ctx else { return true };
         match scope {
             PopupScope::Window => true,
@@ -530,7 +521,7 @@ impl PopupManager {
     }
 
     /// Get the bounding rect for a popup's scope.
-    fn scope_rect(scope: &PopupScope, ctx: Option<&PopupDrawContext>) -> Option<egui::Rect> {
+    fn scope_rect(scope: &PopupScope, ctx: Option<&LayoutContext>) -> Option<egui::Rect> {
         let ctx = ctx?;
         match scope {
             PopupScope::Window => None, // use screen_rect (caller default)
