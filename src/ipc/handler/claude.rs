@@ -110,14 +110,21 @@ pub(crate) fn handle_claude_spawn(
         }
     }
 
-    if let Some(terminal) = state.find_terminal_by_id_mut(child_surface_id) {
-        terminal.send_key("claude\r");
-    }
-
     if let Some(p) = &prompt {
+        // Write prompt to temp file, pass as CLI positional arg for guaranteed submission.
+        let prompt_path = std::env::temp_dir().join(format!("tasty-prompt-{}.txt", child_surface_id));
+        if let Err(e) = std::fs::write(&prompt_path, p) {
+            tracing::warn!("Failed to write prompt file: {e}");
+        }
         if let Some(terminal) = state.find_terminal_by_id_mut(child_surface_id) {
-            let escaped = p.replace('\\', "\\\\").replace('"', "\\\"");
-            terminal.send_key(&format!("{}\r", escaped));
+            terminal.send_key(&format!(
+                "claude \"$(cat '{}')\"\r",
+                prompt_path.display()
+            ));
+        }
+    } else {
+        if let Some(terminal) = state.find_terminal_by_id_mut(child_surface_id) {
+            terminal.send_key("claude\r");
         }
     }
 
@@ -281,14 +288,20 @@ pub(crate) fn handle_claude_respawn(
         }
     }
 
-    if let Some(terminal) = state.find_terminal_by_id_mut(new_surface_id) {
-        terminal.send_key("claude\r");
-    }
-
     if let Some(p) = &prompt {
+        let prompt_path = std::env::temp_dir().join(format!("tasty-prompt-{}.txt", new_surface_id));
+        if let Err(e) = std::fs::write(&prompt_path, p) {
+            tracing::warn!("Failed to write prompt file: {e}");
+        }
         if let Some(terminal) = state.find_terminal_by_id_mut(new_surface_id) {
-            let escaped = p.replace('\\', "\\\\").replace('"', "\\\"");
-            terminal.send_key(&format!("{}\r", escaped));
+            terminal.send_key(&format!(
+                "claude \"$(cat '{}')\"\r",
+                prompt_path.display()
+            ));
+        }
+    } else {
+        if let Some(terminal) = state.find_terminal_by_id_mut(new_surface_id) {
+            terminal.send_key("claude\r");
         }
     }
 
