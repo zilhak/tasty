@@ -295,6 +295,7 @@ fn claude_command_to_method_params(command: &ClaudeCommands) -> (&'static str, s
         ),
         ClaudeCommands::Spawn {
             surface,
+            workspace,
             direction,
             cwd,
             role,
@@ -305,6 +306,7 @@ fn claude_command_to_method_params(command: &ClaudeCommands) -> (&'static str, s
             serde_json::json!({
                 "surface_id": resolve_surface_id(*surface),
                 "caller_surface_id": resolve_surface_id(None),
+                "workspace": workspace,
                 "direction": direction,
                 "cwd": cwd,
                 "role": role,

@@ -59,6 +59,8 @@ pub struct ClaudeState {
     pub(crate) next_child_index: HashMap<u32, u32>,
     pub idle_state: HashMap<u32, bool>,
     pub needs_input_state: HashMap<u32, bool>,
+    /// Maps (parent_surface_id, workspace_id) → spawn_pane_id for --workspace spawning.
+    pub spawn_panes: HashMap<(u32, u32), u32>,
 }
 
 impl ClaudeState {
@@ -70,6 +72,7 @@ impl ClaudeState {
             next_child_index: HashMap::new(),
             idle_state: HashMap::new(),
             needs_input_state: HashMap::new(),
+            spawn_panes: HashMap::new(),
         }
     }
 }

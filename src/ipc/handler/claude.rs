@@ -67,27 +67,68 @@ pub(crate) fn handle_claude_spawn(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    // surface_id = where to split (--surface), caller_surface_id = parent (always the caller)
-    let target_surface_id = match super::require_surface_id(params, &id) {
-        Ok(sid) => sid,
-        Err(e) => return e,
-    };
-    let parent_surface_id = super::caller_surface_id(params).unwrap_or(target_surface_id);
+    let workspace_param = params.get("workspace").and_then(|v| v.as_str()).map(String::from);
+    let explicit_surface = params.get("surface_id").and_then(|v| v.as_u64()).map(|v| v as u32);
 
-    // Save and restore focus — IPC commands must never move focus
-    let saved_workspace = state.active_workspace;
-    let saved_pane = state.engine.workspaces[saved_workspace].focused_pane;
-    state.focus_surface(target_surface_id);
-
-    let direction = match params.get("direction").and_then(|v| v.as_str()) {
-        Some("horizontal") | Some("h") => SplitDirection::Horizontal,
-        _ => SplitDirection::Vertical,
-    };
+    // --workspace and --surface are mutually exclusive
+    if workspace_param.is_some() && explicit_surface.is_some() {
+        return JsonRpcResponse::invalid_params(
+            id,
+            "Cannot specify both '--workspace' and '--surface'. Use one.",
+        );
+    }
 
     let cwd = params.get("cwd").and_then(|v| v.as_str()).map(String::from);
     let role = params.get("role").and_then(|v| v.as_str()).map(String::from);
     let nickname = params.get("nickname").and_then(|v| v.as_str()).map(String::from);
     let prompt = params.get("prompt").and_then(|v| v.as_str()).map(String::from);
+
+    if let Some(ws_target) = workspace_param {
+        // --workspace mode: auto-managed spawn pane placement
+        let parent_surface_id = super::caller_surface_id(params)
+            .or_else(|| params.get("surface_id").and_then(|v| v.as_u64()).map(|v| v as u32))
+            .unwrap_or(0);
+        if parent_surface_id == 0 {
+            return JsonRpcResponse::invalid_params(
+                id,
+                "Cannot determine parent surface. Set TASTY_SURFACE_ID or pass --surface.",
+            );
+        }
+
+        spawn_in_workspace(state, id, parent_surface_id, &ws_target, cwd, role, nickname, prompt)
+    } else {
+        // Original --surface mode
+        let target_surface_id = match super::require_surface_id(params, &id) {
+            Ok(sid) => sid,
+            Err(e) => return e,
+        };
+        let parent_surface_id = super::caller_surface_id(params).unwrap_or(target_surface_id);
+
+        let direction = match params.get("direction").and_then(|v| v.as_str()) {
+            Some("horizontal") | Some("h") => SplitDirection::Horizontal,
+            _ => SplitDirection::Vertical,
+        };
+
+        spawn_at_surface(state, id, target_surface_id, parent_surface_id, direction, cwd, role, nickname, prompt)
+    }
+}
+
+/// Original spawn logic: split next to a specific surface.
+fn spawn_at_surface(
+    state: &mut AppState,
+    id: serde_json::Value,
+    target_surface_id: u32,
+    parent_surface_id: u32,
+    direction: SplitDirection,
+    cwd: Option<String>,
+    role: Option<String>,
+    nickname: Option<String>,
+    prompt: Option<String>,
+) -> JsonRpcResponse {
+    // Save and restore focus — IPC commands must never move focus
+    let saved_workspace = state.active_workspace;
+    let saved_pane = state.engine.workspaces[saved_workspace].focused_pane;
+    state.focus_surface(target_surface_id);
 
     let child_surface_id = match state.split_pane_get_surface(direction) {
         Ok(sid) => sid,
@@ -104,31 +145,7 @@ pub(crate) fn handle_claude_spawn(
     };
     state.register_child(parent_surface_id, entry);
 
-    if let Some(dir) = &cwd {
-        if let Some(terminal) = state.find_terminal_by_id_mut(child_surface_id) {
-            let normalized = dir.replace('\\', "/");
-            let escaped = shell_escape::escape(normalized.into());
-            terminal.send_key(&format!("cd {}\r", escaped));
-        }
-    }
-
-    if let Some(p) = &prompt {
-        // Write prompt to temp file, pass as CLI positional arg for guaranteed submission.
-        let prompt_path = std::env::temp_dir().join(format!("tasty-prompt-{}.txt", child_surface_id));
-        if let Err(e) = std::fs::write(&prompt_path, p) {
-            tracing::warn!("Failed to write prompt file: {e}");
-        }
-        if let Some(terminal) = state.find_terminal_by_id_mut(child_surface_id) {
-            terminal.send_key(&format!(
-                "claude \"$(cat '{}')\"\r",
-                prompt_path.display()
-            ));
-        }
-    } else {
-        if let Some(terminal) = state.find_terminal_by_id_mut(child_surface_id) {
-            terminal.send_key("claude\r");
-        }
-    }
+    start_claude_in_surface(state, child_surface_id, cwd.as_deref(), prompt.as_deref());
 
     // Restore focus (both workspace and pane)
     state.active_workspace = saved_workspace;
@@ -142,6 +159,259 @@ pub(crate) fn handle_claude_spawn(
             "parent_surface_id": parent_surface_id,
         }),
     )
+}
+
+/// Workspace-based spawn: auto-manage spawn pane and 2×2 grid placement.
+fn spawn_in_workspace(
+    state: &mut AppState,
+    id: serde_json::Value,
+    parent_surface_id: u32,
+    ws_target: &str,
+    cwd: Option<String>,
+    role: Option<String>,
+    nickname: Option<String>,
+    prompt: Option<String>,
+) -> JsonRpcResponse {
+    // Resolve workspace by ID or name
+    let ws_idx = resolve_workspace(state, ws_target);
+    let ws_idx = match ws_idx {
+        Some(idx) => idx,
+        None => {
+            return JsonRpcResponse::invalid_params(
+                id,
+                format!("Workspace '{}' not found", ws_target),
+            );
+        }
+    };
+    let ws_id = state.engine.workspaces[ws_idx].id;
+
+    // Save and restore focus
+    let saved_workspace = state.active_workspace;
+    let saved_pane = state.engine.workspaces[saved_workspace].focused_pane;
+
+    // Check if spawn pane exists and is still valid
+    let spawn_pane_key = (parent_surface_id, ws_id);
+    let existing_spawn_pane = state.engine.claude.spawn_panes.get(&spawn_pane_key).copied();
+    let spawn_pane_id = match existing_spawn_pane {
+        Some(pid) if pane_exists_in_workspace(state, ws_idx, pid) => pid,
+        _ => {
+            // Create spawn pane: pane-level vertical split in the workspace
+            let any_pane_id = state.engine.workspaces[ws_idx].focused_pane;
+            match state.split_pane_targeted(
+                Some(any_pane_id),
+                SplitDirection::Vertical,
+                None,
+                crate::model::SurfaceType::Terminal,
+            ) {
+                Ok((new_pane_id, _new_surface_id)) => {
+                    state.engine.claude.spawn_panes.insert(spawn_pane_key, new_pane_id);
+                    new_pane_id
+                }
+                Err(e) => {
+                    return JsonRpcResponse::internal_error(id, e.to_string());
+                }
+            }
+        }
+    };
+
+    // Now find the best placement within the spawn pane
+    let child_surface_id = match find_and_spawn_in_pane(state, ws_idx, spawn_pane_id, spawn_pane_key) {
+        Ok(sid) => sid,
+        Err(e) => return JsonRpcResponse::internal_error(id, e.to_string()),
+    };
+
+    let child_index = state.next_child_index(parent_surface_id);
+    let entry = ClaudeChildEntry {
+        child_surface_id,
+        index: child_index,
+        cwd: cwd.clone(),
+        role: role.clone(),
+        nickname: nickname.clone(),
+    };
+    state.register_child(parent_surface_id, entry);
+
+    start_claude_in_surface(state, child_surface_id, cwd.as_deref(), prompt.as_deref());
+
+    // Restore focus
+    state.active_workspace = saved_workspace;
+    state.engine.workspaces[saved_workspace].focused_pane = saved_pane;
+
+    JsonRpcResponse::success(
+        id,
+        json!({
+            "child_surface_id": child_surface_id,
+            "child_index": child_index,
+            "parent_surface_id": parent_surface_id,
+            "spawn_pane_id": spawn_pane_id,
+            "workspace_id": ws_id,
+        }),
+    )
+}
+
+/// Find the best slot in a spawn pane and create a new terminal surface there.
+/// Implements the 2×2 grid algorithm: 1→2→3→4→new tab→repeat.
+fn find_and_spawn_in_pane(
+    state: &mut AppState,
+    ws_idx: usize,
+    spawn_pane_id: u32,
+    _spawn_pane_key: (u32, u32),
+) -> anyhow::Result<u32> {
+    let pane = state.engine.workspaces[ws_idx]
+        .pane_layout()
+        .find_pane(spawn_pane_id)
+        .ok_or_else(|| anyhow::anyhow!("spawn pane {} not found", spawn_pane_id))?;
+
+    // Find a tab with < 4 surfaces, or use the first surface of the initial tab
+    let mut target_tab_index = None;
+    let mut target_surface_count = 0;
+    let mut target_surface_ids: Vec<u32> = Vec::new();
+
+    for (i, tab) in pane.tabs.iter().enumerate() {
+        let surface_ids = tab.surface().all_surface_ids();
+        let count = surface_ids.len();
+        if count < 4 {
+            target_tab_index = Some(i);
+            target_surface_count = count;
+            target_surface_ids = surface_ids;
+            break;
+        }
+    }
+
+    if let Some(tab_idx) = target_tab_index {
+        // We have a tab with room — determine split direction and target
+        let (target_sid, direction) = pick_split_target(target_surface_count, &target_surface_ids);
+
+        // If target_surface_count == 0, the initial surface is in the pane already
+        // Use surface-level split
+        let new_surface_id = state.engine.next_ids.next_surface();
+        let cols = state.engine.default_cols;
+        let rows = state.engine.default_rows;
+        let sh = crate::engine_state::ShellConfig::from_settings(&state.engine.settings);
+        let waker = state.engine.make_waker(new_surface_id);
+        let terminal = tasty_terminal::Terminal::new_with_shell_args_cwd(
+            cols, rows, sh.shell_ref(), &sh.args_ref(), new_surface_id, waker, None,
+        )?;
+        let new_surface: Box<dyn crate::model::Surface> = Box::new(crate::model::TerminalSurface {
+            id: new_surface_id,
+            terminal,
+            deferred_spawn: None,
+        });
+
+        let ws = &mut state.engine.workspaces[ws_idx];
+        let pane = ws.pane_layout_mut().find_pane_mut(spawn_pane_id)
+            .ok_or_else(|| anyhow::anyhow!("spawn pane {} not found", spawn_pane_id))?;
+
+        // Determine if we're splitting the first surface (initial spawn pane surface)
+        if target_surface_count <= 1 {
+            // The spawn pane was just created with 1 surface — split it
+            let first_sid = pane.tabs[tab_idx].surface().all_surface_ids();
+            if let Some(&sid) = first_sid.first() {
+                pane.split_surface_by_id_with_surface(sid, direction, new_surface)?;
+            }
+        } else {
+            pane.split_surface_by_id_with_surface(target_sid, direction, new_surface)?;
+        }
+
+        state.send_fast_init(new_surface_id);
+        Ok(new_surface_id)
+    } else {
+        // All tabs are full (4 surfaces each) — create a new tab
+        let new_tab_id = state.engine.next_ids.next_tab();
+        let new_surface_id = state.engine.next_ids.next_surface();
+        let cols = state.engine.default_cols;
+        let rows = state.engine.default_rows;
+        let sh = crate::engine_state::ShellConfig::from_settings(&state.engine.settings);
+        let waker = state.engine.make_waker(new_surface_id);
+
+        let ws = &mut state.engine.workspaces[ws_idx];
+        let pane = ws.pane_layout_mut().find_pane_mut(spawn_pane_id)
+            .ok_or_else(|| anyhow::anyhow!("spawn pane {} not found", spawn_pane_id))?;
+        pane.add_tab_background_with_shell(
+            new_tab_id, new_surface_id, cols, rows,
+            sh.shell_ref(), &sh.args_ref(), waker, None,
+        )?;
+
+        state.send_fast_init(new_surface_id);
+        Ok(new_surface_id)
+    }
+}
+
+/// Determine which surface to split and in which direction, based on current count.
+/// Returns (target_surface_id_to_split, direction).
+///
+/// Layout progression:
+/// - 1 surface → split vertically (left|right) → target: the sole surface
+/// - 2 surfaces (left, right) → split left horizontally (top-left, bottom-left | right)
+/// - 3 surfaces (TL, BL, R) → split right horizontally (TL, BL | TR, BR)
+fn pick_split_target(count: usize, surface_ids: &[u32]) -> (u32, SplitDirection) {
+    match count {
+        0 | 1 => {
+            // Split the single surface vertically (creates left|right)
+            let sid = surface_ids.first().copied().unwrap_or(0);
+            (sid, SplitDirection::Vertical)
+        }
+        2 => {
+            // Split the first (left) surface horizontally
+            let sid = surface_ids[0];
+            (sid, SplitDirection::Horizontal)
+        }
+        3 => {
+            // Split the second (right) surface horizontally
+            // In the layout: [left-top, left-bottom, right]
+            // surface_ids[2] is the right surface
+            let sid = surface_ids[2];
+            (sid, SplitDirection::Horizontal)
+        }
+        _ => {
+            // Should not reach here (caller checks < 4), but fallback
+            let sid = surface_ids.last().copied().unwrap_or(0);
+            (sid, SplitDirection::Vertical)
+        }
+    }
+}
+
+/// Resolve workspace by ID (numeric string) or name.
+fn resolve_workspace(state: &AppState, target: &str) -> Option<usize> {
+    // Try as numeric ID first
+    if let Ok(ws_id) = target.parse::<u32>() {
+        return state.engine.workspaces.iter().position(|ws| ws.id == ws_id);
+    }
+    // Try as name
+    state.engine.workspaces.iter().position(|ws| ws.name == target)
+}
+
+/// Check if a pane exists in a specific workspace.
+fn pane_exists_in_workspace(state: &AppState, ws_idx: usize, pane_id: u32) -> bool {
+    state.engine.workspaces[ws_idx]
+        .pane_layout()
+        .find_pane(pane_id)
+        .is_some()
+}
+
+/// Start claude in a child surface: cd to cwd, then run claude with optional prompt.
+fn start_claude_in_surface(state: &mut AppState, surface_id: u32, cwd: Option<&str>, prompt: Option<&str>) {
+    if let Some(dir) = cwd {
+        if let Some(terminal) = state.find_terminal_by_id_mut(surface_id) {
+            let normalized = dir.replace('\\', "/");
+            let escaped = shell_escape::escape(normalized.into());
+            terminal.send_key(&format!("cd {}\r", escaped));
+        }
+    }
+
+    if let Some(p) = prompt {
+        let prompt_path = std::env::temp_dir().join(format!("tasty-prompt-{}.txt", surface_id));
+        if let Err(e) = std::fs::write(&prompt_path, p) {
+            tracing::warn!("Failed to write prompt file: {e}");
+        }
+        if let Some(terminal) = state.find_terminal_by_id_mut(surface_id) {
+            terminal.send_key(&format!(
+                "claude \"$(cat '{}')\"\r",
+                prompt_path.display()
+            ));
+        }
+    } else if let Some(terminal) = state.find_terminal_by_id_mut(surface_id) {
+        terminal.send_key("claude\r");
+    }
 }
 
 pub(crate) fn handle_claude_children(
