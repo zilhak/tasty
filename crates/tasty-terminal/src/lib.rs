@@ -31,7 +31,9 @@ pub struct Terminal {
     /// Whether the alternate screen is active.
     pub(crate) use_alternate: bool,
     parser: Parser,
-    pty_writer: Box<dyn Write + Send>,
+    /// Channel for non-blocking PTY writes. A background writer thread drains this.
+    pty_write_tx: mpsc::Sender<Vec<u8>>,
+    _writer_thread: thread::JoinHandle<()>,
     pty_master: Box<dyn portable_pty::MasterPty + Send>,
     child: Box<dyn portable_pty::Child + Send + Sync>,
     action_rx: mpsc::Receiver<Vec<u8>>,
@@ -157,8 +159,21 @@ impl Terminal {
         let child = pair.slave.spawn_command(cmd)?;
         drop(pair.slave);
 
-        let pty_writer = pair.master.take_writer()?;
+        let mut pty_writer = pair.master.take_writer()?;
         let mut pty_reader = pair.master.try_clone_reader()?;
+
+        // Writer thread: drains queued writes to PTY without blocking the main thread.
+        let (write_tx, write_rx) = mpsc::channel::<Vec<u8>>();
+        let writer_thread = thread::spawn(move || {
+            while let Ok(data) = write_rx.recv() {
+                if pty_writer.write_all(&data).is_err() {
+                    break;
+                }
+                if pty_writer.flush().is_err() {
+                    break;
+                }
+            }
+        });
 
         let (tx, rx) = mpsc::sync_channel(32); // 32 * 8KB = 256KB max buffered
 
@@ -186,7 +201,8 @@ impl Terminal {
             alternate_surface: None,
             use_alternate: false,
             parser,
-            pty_writer,
+            pty_write_tx: write_tx,
+            _writer_thread: writer_thread,
             pty_master: pair.master,
             child,
             action_rx: rx,
@@ -324,15 +340,13 @@ impl Terminal {
         }
     }
 
-    /// Send keyboard input to PTY
-    pub fn send_key(&mut self, text: &str) {
-        let _ = self.pty_writer.write_all(text.as_bytes());
-        let _ = self.pty_writer.flush();
+    /// Send keyboard input to PTY (non-blocking, queued to writer thread).
+    pub fn send_key(&self, text: &str) {
+        let _ = self.pty_write_tx.send(text.as_bytes().to_vec());
     }
 
-    pub(crate) fn send_terminal_response(&mut self, response: &str) {
-        let _ = self.pty_writer.write_all(response.as_bytes());
-        let _ = self.pty_writer.flush();
+    pub(crate) fn send_terminal_response(&self, response: &str) {
+        let _ = self.pty_write_tx.send(response.as_bytes().to_vec());
     }
 
     pub(crate) fn apply_or_stage_change(&mut self, change: Change) {
@@ -361,10 +375,9 @@ impl Terminal {
         self.surface_mut().add_change(change);
     }
 
-    /// Send raw bytes to PTY
-    pub fn send_bytes(&mut self, bytes: &[u8]) {
-        let _ = self.pty_writer.write_all(bytes);
-        let _ = self.pty_writer.flush();
+    /// Send raw bytes to PTY (non-blocking, queued to writer thread).
+    pub fn send_bytes(&self, bytes: &[u8]) {
+        let _ = self.pty_write_tx.send(bytes.to_vec());
     }
 
     pub fn resize(&mut self, cols: usize, rows: usize) {
