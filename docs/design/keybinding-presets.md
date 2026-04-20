@@ -30,16 +30,14 @@ Tasty는 4개의 단축키 프리셋을 제공한다. 각 프리셋은 해당 �
 
 | 필드 | Tasty | Mac | Windows | Linux |
 |------|-------|-----|---------|-------|
-| new_window | alt+shift+n | alt+n | ctrl+shift+n | ctrl+shift+n |
-| new_workspace | alt+n | alt+shift+n | alt+n | alt+n |
-| new_tab | alt+t | alt+t | ctrl+shift+t | ctrl+shift+t |
+| new_window | alt+shift+n | alt+shift+n | ctrl+shift+n | ctrl+shift+n |
+| new_workspace | alt+n | alt+n | alt+n | alt+n |
+| new_tab | alt+t | alt+t | alt+t | alt+t |
 | close_active | ctrl+w | alt+w | ctrl+w | ctrl+w |
 | close_pane | ctrl+shift+w | alt+shift+w | ctrl+shift+w | ctrl+shift+w |
 | close_surface | | | | |
 | close_workspace | alt+shift+w | | alt+shift+w | alt+shift+w |
-| restore_closed | ctrl+shift+t | alt+shift+t | ctrl+shift+r | ctrl+shift+r |
-
-> **Windows/Linux의 restore_closed**: Tasty 기본값 `ctrl+shift+t`는 `new_tab`과 충돌하므로 `ctrl+shift+r`(Restore)로 변경.
+| restore_closed | ctrl+shift+t | ctrl+shift+t | ctrl+shift+t | ctrl+shift+t |
 
 ### 분할
 
@@ -54,16 +52,17 @@ Tasty는 4개의 단축키 프리셋을 제공한다. 각 프리셋은 해당 �
 
 | 필드 | Tasty | Mac | Windows | Linux |
 |------|-------|-----|---------|-------|
-| focus_pane_next | ctrl+] | alt+] | alt+] | alt+] |
-| focus_pane_prev | ctrl+[ | alt+[ | alt+[ | alt+[ |
-| focus_surface_next | alt+] | ctrl+] | ctrl+] | ctrl+] |
-| focus_surface_prev | alt+[ | ctrl+[ | ctrl+[ | ctrl+[ |
-| next_tab | ctrl+tab | alt+shift+] | ctrl+tab | ctrl+tab |
-| prev_tab | ctrl+shift+tab | alt+shift+[ | ctrl+shift+tab | ctrl+shift+tab |
-| tab_switch_modifier | ctrl | alt | ctrl | alt |
-| workspace_switch_modifier | alt | ctrl | alt | ctrl |
+| focus_pane_next | ctrl+] | ctrl+] | ctrl+] | ctrl+] |
+| focus_pane_prev | ctrl+[ | ctrl+[ | ctrl+[ | ctrl+[ |
+| focus_surface_next | alt+] | alt+] | alt+] | alt+] |
+| focus_surface_prev | alt+[ | alt+[ | alt+[ | alt+[ |
+| next_tab | | | | |
+| prev_tab | | | | |
+| tab_switch_modifier | ctrl | ctrl | ctrl | ctrl |
+| workspace_switch_modifier | alt | alt | alt | alt |
 
-> **Mac의 next/prev_tab**: iTerm2 관례(⌘⇧] / ⌘⇧[)를 따름.
+> Pane/Surface 분할과 포커스 이동은 Tasty 고유 개념이므로 전 프리셋 동일.
+> `next_tab` / `prev_tab`은 `ctrl+tab` / `alt+tab`이 OS 수준 단축키와 충돌하므로 기본값 없음.
 
 ### 클립보드/줌
 
@@ -94,10 +93,12 @@ Tasty는 4개의 단축키 프리셋을 제공한다. 각 프리셋은 해당 �
 | 필드 | Tasty | Mac | Windows | Linux |
 |------|-------|-----|---------|-------|
 | quit | | alt+q | | ctrl+q |
-| quit_immediate | | alt+shift+q | | ctrl+shift+q |
+| quit_immediate | | | | |
 | quit_minimize | | alt+m | | |
 
-> **Mac**: ⌘Q(종료), ⌘⇧Q(즉시 종료), ⌘M(최소화)는 macOS 표준.
+> `quit`은 `close_behavior` 설정에 따라 확인 다이얼로그를 거치므로 기본 바인딩 허용.
+> `quit_immediate`는 확인 없이 즉시 종료하므로, 실수 방지를 위해 전 프리셋 기본값 없음. 사용자가 필요 시 직접 설정.
+> **Mac**: ⌘Q(종료), ⌘M(최소화)는 macOS 표준.
 > **Windows**: Alt+F4가 OS 수준 종료이므로 별도 바인딩 불필요.
 > **Linux**: Ctrl+Q(GNOME Terminal 종료 관례).
 
@@ -138,14 +139,7 @@ alt+        → 분할, pane 포커스 이동
 alt+shift+  → 상위 분할(pane 레벨)
 ```
 
-### 3. 충돌 회피
-
-각 프리셋 내에서 동일 바인딩이 두 기능에 할당되지 않도록 설계했다. 특히:
-
-- Windows/Linux: `ctrl+shift+t`를 `new_tab`에 사용하므로 `restore_closed`는 `ctrl+shift+r`로 변경
-- Mac: `alt+n`을 `new_window`(⌘N)에 사용하므로 `new_workspace`는 `alt+shift+n`(⌘⇧N)으로 변경
-
-### 4. Tasty 고유 기능 처리
+### 3. Tasty 고유 기능 처리
 
 Pane/Surface 분할, Workspace, Surface 변환 등 다른 터미널에 없는 개념은:
 - 각 프리셋의 수정자 키 계층에 맞춰 배정
