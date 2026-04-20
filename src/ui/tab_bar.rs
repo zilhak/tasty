@@ -153,10 +153,29 @@ pub fn draw_pane_tab_bars(
                                     painter.rect_filled(line_rect, 0.0, th.blue);
                                 }
 
-                                painter.text(
-                                    tab_rect.center(), egui::Align2::CENTER_CENTER,
-                                    name, egui::FontId::proportional(11.0), text_color,
-                                );
+                                // Truncate tab name with ellipsis if it exceeds available width
+                                let font_id = egui::FontId::proportional(11.0);
+                                let h_padding = 8.0;
+                                let available_w = tab_w - h_padding * 2.0;
+                                let galley = painter.layout_no_wrap(name.clone(), font_id.clone(), text_color);
+                                if galley.size().x > available_w {
+                                    // Binary-ish search: trim characters until it fits
+                                    let mut truncated = name.clone();
+                                    while !truncated.is_empty() {
+                                        truncated.pop();
+                                        let candidate = format!("{truncated}…");
+                                        let g = painter.layout_no_wrap(candidate.clone(), font_id.clone(), text_color);
+                                        if g.size().x <= available_w {
+                                            let text_x = tab_rect.min.x + h_padding;
+                                            let text_y = tab_rect.center().y - g.size().y / 2.0;
+                                            painter.galley(egui::pos2(text_x, text_y), g, text_color);
+                                            break;
+                                        }
+                                    }
+                                } else {
+                                    let text_pos = tab_rect.center() - galley.size() / 2.0;
+                                    painter.galley(text_pos, galley, text_color);
+                                }
 
                                 // Click detection
                                 let tab_clip = tab_rect.intersect(clip_rect);
