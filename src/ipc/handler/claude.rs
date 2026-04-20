@@ -428,14 +428,21 @@ pub(crate) fn handle_claude_children(
         .children_of(parent_surface_id)
         .iter()
         .map(|c| {
-            json!({
+            let mut entry = json!({
                 "child_surface_id": c.child_surface_id,
                 "index": c.index,
                 "cwd": c.cwd,
                 "role": c.role,
                 "nickname": c.nickname,
                 "state": state.claude_state_of(c.child_surface_id),
-            })
+            });
+            if let Some(terminal) = state.find_terminal_by_id(c.child_surface_id) {
+                if let Some(fg) = terminal.foreground_process_info() {
+                    entry["foreground_process"] = json!(fg.name);
+                    entry["foreground_pid"] = json!(fg.pid);
+                }
+            }
+            entry
         })
         .collect();
 

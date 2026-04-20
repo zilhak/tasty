@@ -14,6 +14,7 @@ use termwiz::surface::{Change, Surface};
 pub mod cwd;
 pub mod disk_scrollback;
 mod events;
+pub mod foreground_process;
 mod modes;
 pub mod test_helpers;
 mod vte_handler;
@@ -696,6 +697,12 @@ impl Terminal {
     /// Get the PID of the child process.
     pub fn process_id(&self) -> Option<u32> {
         self.child.process_id()
+    }
+
+    /// Get the foreground process info (name, PID) for this terminal.
+    pub fn foreground_process_info(&self) -> Option<foreground_process::ForegroundProcessInfo> {
+        let shell_pid = self.child.process_id()?;
+        foreground_process::get_foreground_process(shell_pid)
     }
 
     /// Get the current working directory of the child process.

@@ -108,7 +108,7 @@ fn collect_surface_info(
     out: &mut Vec<serde_json::Value>,
 ) {
     if let Some(node) = surface.as_terminal_surface() {
-        out.push(json!({
+        let mut entry = json!({
             "id": node.id,
             "pane_id": pane_id,
             "workspace_id": workspace_id,
@@ -116,7 +116,12 @@ fn collect_surface_info(
             "type": "Terminal",
             "cols": node.terminal.cols(),
             "rows": node.terminal.rows(),
-        }));
+        });
+        if let Some(fg) = node.terminal.foreground_process_info() {
+            entry["foreground_process"] = json!(fg.name);
+            entry["foreground_pid"] = json!(fg.pid);
+        }
+        out.push(entry);
     } else if let Some(group) = surface.as_surface_group() {
         collect_surface_layout_info(group.layout(), pane_id, workspace_id, tab_idx, out);
     } else if let Some(id) = surface.surface_id() {
@@ -151,6 +156,10 @@ fn collect_surface_layout_info(
             if let Some(terminal) = surface.focused_terminal() {
                 entry["cols"] = json!(terminal.cols());
                 entry["rows"] = json!(terminal.rows());
+                if let Some(fg) = terminal.foreground_process_info() {
+                    entry["foreground_process"] = json!(fg.name);
+                    entry["foreground_pid"] = json!(fg.pid);
+                }
             }
             out.push(entry);
         }
