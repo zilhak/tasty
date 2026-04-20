@@ -138,6 +138,14 @@ impl Terminal {
         cmd.env("TERM", "xterm-256color");
         cmd.env("TASTY_SURFACE_ID", surface_id.to_string());
 
+        // Remove CMUX_* environment variables so cmux CLI doesn't work inside tasty terminals.
+        // tasty inherits these from the parent process when launched from cmux.
+        for (key, _) in std::env::vars() {
+            if key.starts_with("CMUX_") {
+                cmd.env_remove(&key);
+            }
+        }
+
         // Add tasty's own binary directory to PATH so `tasty` CLI works inside the terminal
         if let Ok(exe_path) = std::env::current_exe() {
             if let Some(exe_dir) = exe_path.parent() {
