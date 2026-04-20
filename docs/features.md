@@ -490,7 +490,7 @@
 
 #### 워크스페이스
 - `workspace.list`: 전체 워크스페이스 목록 (이름, 활성 여부, 패인 수)
-- `workspace.create`: 새 워크스페이스 생성 (선택적 이름 지정)
+- `workspace.create`: 새 워크스페이스 생성 (선택적 이름, 타입 지정). `--type markdown --file <path>` 등으로 비터미널 워크스페이스 생성 가능
 - `workspace.update`: 워크스페이스 이름, 부제, 설명 수정
 
 #### 윈도우

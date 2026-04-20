@@ -45,7 +45,7 @@ tasty list info               # 버전, 워크스페이스 수
 
 # 워크스페이스
 tasty list workspaces         # 워크스페이스 목록
-tasty new workspace [--name NAME] [--cwd PATH]
+tasty new workspace [--name NAME] [--cwd PATH] [--type terminal|markdown|explorer|html] [--file PATH] [--path DIR] [--url URL]
 tasty set workspace --id ID [--name NAME] [--subtitle TEXT] [--description TEXT]
 
 # 윈도우
@@ -163,7 +163,7 @@ tasty claude hook stop --surface 5  # 특정 surface 지정 (또는 TASTY_SURFAC
 
 | 메서드 | 파라미터 | 설명 |
 |--------|---------|------|
-| `pane.list` | 없음 | 전체 워크스페이스의 패인 목록 |
+| `pane.list` | 없음 | 전체 워크스페이스의 패인 목록 (workspace_id, workspace_name 포함) |
 | `split` | `level`, `target_surface?\|target_pane?`, `direction?`, `type?`, `cwd?`, `file?`, `path?`, `url?`, `meta?` | 분할. level: pane/surface. target_surface: surface ID/nickname, target_pane: pane ID (둘 중 하나 필수). type: terminal(기본)/markdown/explorer/html. surface 레벨에서도 비터미널 타입 지원 |
 | `pane.close` | `pane_id` | 패인 닫기 |
 
