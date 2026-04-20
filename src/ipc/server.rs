@@ -100,6 +100,13 @@ impl IpcServer {
         let peer = stream.peer_addr().ok();
         tracing::debug!("IPC client connected from {:?}", peer);
 
+        // Listener is non-blocking for polling accept(), but each connection
+        // needs blocking I/O for the request-response loop.
+        if let Err(e) = stream.set_nonblocking(false) {
+            tracing::warn!("Failed to set stream to blocking mode: {}", e);
+            return;
+        }
+
         let reader = BufReader::new(match stream.try_clone() {
             Ok(s) => s,
             Err(_) => return,
@@ -109,7 +116,10 @@ impl IpcServer {
         for line in reader.lines() {
             let line = match line {
                 Ok(l) => l,
-                Err(_) => break,
+                Err(e) => {
+                    tracing::warn!("IPC read error from {:?}: {}", peer, e);
+                    break;
+                }
             };
 
             let trimmed = line.trim();
@@ -142,7 +152,8 @@ impl IpcServer {
 
             // Send command to main thread
             if cmd_tx.send(cmd).is_err() {
-                break; // Main thread shut down
+                tracing::warn!("IPC cmd_tx.send failed (main thread shut down?)");
+                break;
             }
 
             // Wake the event loop so it processes the command immediately
@@ -154,14 +165,20 @@ impl IpcServer {
             match resp_rx.recv() {
                 Ok(response) => {
                     let json = serde_json::to_string(&response).unwrap();
-                    if writeln!(writer, "{}", json).is_err() {
+                    if let Err(e) = writeln!(writer, "{}", json) {
+                        tracing::warn!("IPC write error: {}", e);
                         break;
                     }
-                    if writer.flush().is_err() {
+                    if let Err(e) = writer.flush() {
+                        tracing::warn!("IPC flush error: {}", e);
                         break;
                     }
+                    tracing::debug!("IPC response sent for {:?}", peer);
                 }
-                Err(_) => break,
+                Err(e) => {
+                    tracing::warn!("IPC resp_rx.recv failed: {} (response_tx dropped without sending)", e);
+                    break;
+                }
             }
         }
 
