@@ -3,18 +3,17 @@ mod format;
 mod request;
 mod transport;
 
-use std::io::{BufRead, BufReader, Write};
 use std::net::TcpStream;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 
-use crate::ipc::protocol::JsonRpcResponse;
 use crate::ipc::server::IpcServer;
 
 use claude::{run_claude_hook, run_claude_wait};
 use format::format_output;
 use request::command_to_request;
+use transport::IpcConnection;
 
 #[derive(Parser)]
 #[command(name = "tasty", about = "GPU-accelerated terminal emulator for AI coding agents", version)]
@@ -823,49 +822,41 @@ pub fn format_parse_error(err: clap::Error) {
 /// Run the CLI client: connect to a running tasty instance and execute the command.
 pub fn run_client(command: Commands) -> Result<()> {
     let port = IpcServer::read_port_file()?;
-    let mut stream = TcpStream::connect(format!("127.0.0.1:{}", port))
+    let stream = TcpStream::connect(format!("127.0.0.1:{}", port))
         .map_err(|e| anyhow::anyhow!(
             "Could not connect to tasty instance on port {}: {}. Is tasty running?",
             port, e
         ))?;
 
+    let mut conn = IpcConnection::new(stream)?;
+
     // ClaudeHook is special: it may send multiple requests
     if let Commands::Claude { command: ClaudeCommands::Hook { ref event, ref surface } } = command {
-        run_claude_hook(&mut stream, event, *surface)?;
+        run_claude_hook(&mut conn, event, *surface)?;
         return Ok(());
     }
 
     // ClaudeWait is special: it polls until the child reaches a terminal state
     if let Commands::Claude { command: ClaudeCommands::Wait { child, surface, timeout } } = command {
         let surface_id = request::resolve_surface_id(surface);
-        run_claude_wait(&mut stream, child, surface_id, timeout)?;
+        run_claude_wait(&mut conn, child, surface_id, timeout)?;
         return Ok(());
     }
 
     let request = command_to_request(&command);
-    let json = serde_json::to_string(&request)?;
-    writeln!(stream, "{}", json)?;
-    stream.flush()?;
+    let result = conn.send(&request);
 
-    let reader = BufReader::new(stream);
-    for line in reader.lines() {
-        let line = line?;
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-
-        let response: JsonRpcResponse = serde_json::from_str(trimmed)?;
-
-        if let Some(error) = response.error {
-            eprintln!("Error ({}): {}", error.code, error.message);
+    match result {
+        Ok(value) => format_output(&command, &value),
+        Err(e) => {
+            let msg = e.to_string();
+            if let Some(rest) = msg.strip_prefix("Error (") {
+                eprintln!("Error ({}", rest);
+            } else {
+                eprintln!("{}", msg);
+            }
             std::process::exit(1);
         }
-
-        if let Some(result) = response.result {
-            format_output(&command, &result);
-        }
-        break;
     }
 
     Ok(())
