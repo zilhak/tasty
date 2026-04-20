@@ -93,6 +93,15 @@ pub(super) fn flush_preedit(w: &mut MainWindow) {
     w.mark_dirty();
 }
 
+/// 현재 preedit을 PTY로 보내지 않고 버린다.
+/// 팝업/오버레이가 열릴 때 조합 중 문자가 터미널로 전달되지 않도록 사용.
+pub(super) fn clear_preedit(w: &mut MainWindow) {
+    w.ime_preedit = None;
+    w.ime_cursor_advance = 0;
+    w.ime_advance_base = (0, 0);
+    w.mark_dirty();
+}
+
 /// 완전 리셋 — 비-Windows의 composition 세션 종료(`Disabled`/`Preedit("")`)에서만 호출.
 #[cfg_attr(windows, allow(dead_code))]
 fn clear_all(w: &mut MainWindow) {

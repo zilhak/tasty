@@ -61,7 +61,13 @@ impl MainWindow {
             };
             if self.handle_shortcut(&shortcut_key, self.base.modifiers) {
                 if self.ime_preedit.is_some() {
-                    self.flush_ime_preedit();
+                    // 단축키로 팝업/오버레이가 열렸으면 조합 중 문자를 PTY로 보내지 않고 버린다.
+                    // 그 외 단축키(split, close 등)는 조합 문자를 확정 전송한다.
+                    if self.state.popups.has_focused() {
+                        self.clear_ime_preedit();
+                    } else {
+                        self.flush_ime_preedit();
+                    }
                 }
                 self.mark_dirty();
                 return;

@@ -108,13 +108,17 @@ pub fn draw_convert_content(ui: &mut egui::Ui, state: &mut AppState) -> Option<C
         action = Some(action_for_index(sel));
     }
 
-    // Shortcut keys: T/M/E/H
+    // Shortcut keys: T/M/E/H/I
+    // physical_key를 사용하여 한글 IME 활성 시에도 올바르게 매칭한다.
+    // IME가 켜져 있으면 logical key가 한글 조합 문자로 바뀌어 매칭 실패하므로,
+    // physical_key(물리 키보드 배열 기준)로 판단한다.
     ctx.input(|i| {
         for event in &i.events {
-            if let egui::Event::Key { key, pressed: true, modifiers, .. } = event
+            if let egui::Event::Key { physical_key, pressed: true, modifiers, .. } = event
                 && modifiers.is_none()
             {
-                match key {
+                let matched_key = physical_key.as_ref().unwrap_or(&egui::Key::Escape);
+                match matched_key {
                     egui::Key::T if current_type != Some("Terminal") => {
                         action = Some(ConvertAction::Terminal);
                     }

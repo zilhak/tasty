@@ -105,6 +105,12 @@ impl MainWindow {
         ime::flush_preedit(self);
     }
 
+    /// 현재 preedit을 PTY로 보내지 않고 버린다.
+    /// 팝업/오버레이가 열릴 때 사용.
+    pub(crate) fn clear_ime_preedit(&mut self) {
+        ime::clear_preedit(self);
+    }
+
     /// PTY 출력 처리 후 cursor가 움직였을 수 있을 때 preedit anchor를 재계산한다.
     pub(crate) fn recalc_ime_preedit_anchor(&mut self) {
         ime::recalc_anchor(self);
