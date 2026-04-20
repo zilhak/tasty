@@ -10,6 +10,8 @@ pub struct MarkdownPanel {
     pub file_path: String,
     pub content: String,
     pub scroll_offset: f32,
+    /// Cache for egui_commonmark parsed markdown.
+    pub commonmark_cache: egui_commonmark::CommonMarkCache,
     /// Last known modification time of the file.
     last_mtime: Option<SystemTime>,
     /// When we last checked the file's mtime (throttle to avoid excessive stat calls).
@@ -31,6 +33,7 @@ impl MarkdownPanel {
             file_path,
             content,
             scroll_offset: 0.0,
+            commonmark_cache: egui_commonmark::CommonMarkCache::default(),
             last_mtime: mtime,
             last_check: Instant::now(),
         }
