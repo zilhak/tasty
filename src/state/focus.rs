@@ -125,24 +125,33 @@ impl AppState {
     }
 
     /// Find which pane contains the surface, focus that pane, and if it's in a SurfaceGroup,
-    /// focus that surface. Returns true if found.
+    /// focus that surface. Searches all workspaces, not just the active one.
+    /// Returns true if found.
     pub fn focus_surface(&mut self, surface_id: u32) -> bool {
-        // Find the pane containing the surface in the active workspace.
-        let ws = self.active_workspace_mut();
-        let pane_ids = ws.pane_layout().all_pane_ids();
+        // Search all workspaces for the surface.
+        let mut found_ws_idx = None;
         let mut found_pane_id = None;
-        for pid in pane_ids {
-            if let Some(pane) = ws.pane_layout().find_pane(pid) {
-                if pane.contains_surface(surface_id) {
-                    found_pane_id = Some(pid);
-                    break;
+        for (ws_idx, ws) in self.engine.workspaces.iter().enumerate() {
+            let pane_ids = ws.pane_layout().all_pane_ids();
+            for pid in pane_ids {
+                if let Some(pane) = ws.pane_layout().find_pane(pid) {
+                    if pane.contains_surface(surface_id) {
+                        found_ws_idx = Some(ws_idx);
+                        found_pane_id = Some(pid);
+                        break;
+                    }
                 }
             }
+            if found_pane_id.is_some() {
+                break;
+            }
         }
-        let pane_id = match found_pane_id {
-            Some(id) => id,
-            None => return false,
+        let (ws_idx, pane_id) = match (found_ws_idx, found_pane_id) {
+            (Some(wi), Some(pi)) => (wi, pi),
+            _ => return false,
         };
+        // Switch to the workspace containing the surface.
+        self.active_workspace = ws_idx;
         // Focus the pane.
         let ws = self.active_workspace_mut();
         ws.focused_pane = pane_id;

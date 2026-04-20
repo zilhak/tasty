@@ -96,8 +96,10 @@ fn format_pane_list(result: &serde_json::Value) {
             let pid = pane.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
             let focused = pane.get("focused").and_then(|v| v.as_bool()).unwrap_or(false);
             let tab_count = pane.get("tab_count").and_then(|v| v.as_u64()).unwrap_or(0);
+            let ws_id = pane.get("workspace_id").and_then(|v| v.as_u64()).unwrap_or(0);
+            let ws_name = pane.get("workspace_name").and_then(|v| v.as_str()).unwrap_or("");
             let marker = if focused { " *" } else { "" };
-            println!("Pane {}{} ({} tabs)", pid, marker, tab_count);
+            println!("Pane {}{} ({} tabs) [ws:{} {}]", pid, marker, tab_count, ws_id, ws_name);
         }
     }
 }

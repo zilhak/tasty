@@ -28,7 +28,28 @@ pub fn handle_workspace_create(
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
     let cwd = params.get("cwd").and_then(|v| v.as_str()).map(std::path::PathBuf::from);
-    match state.add_workspace_background(cwd) {
+    let surface_type = match params.get("type").and_then(|v| v.as_str()).unwrap_or("terminal") {
+        "markdown" => {
+            let file = params.get("file").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            if file.is_empty() {
+                return JsonRpcResponse::invalid_params(id, "Missing 'file' parameter for markdown type");
+            }
+            crate::model::SurfaceType::Markdown { file }
+        }
+        "explorer" => {
+            let path = params.get("path").and_then(|v| v.as_str()).map(|s| s.to_string());
+            crate::model::SurfaceType::Explorer { path }
+        }
+        "html" => {
+            let url = params.get("url").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            if url.is_empty() {
+                return JsonRpcResponse::invalid_params(id, "Missing 'url' parameter for html type");
+            }
+            crate::model::SurfaceType::Html { url }
+        }
+        _ => crate::model::SurfaceType::Terminal,
+    };
+    match state.add_workspace_background(cwd, surface_type) {
         Ok(idx) => {
             if let Some(name) = params.get("name").and_then(|v| v.as_str()) {
                 if !name.is_empty() {

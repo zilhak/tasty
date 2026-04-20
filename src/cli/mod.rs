@@ -367,6 +367,18 @@ pub enum NewCommands {
         /// Working directory for the new workspace
         #[arg(long)]
         cwd: Option<String>,
+        /// Surface type: terminal (default), markdown, explorer, html
+        #[arg(long, default_value = "terminal")]
+        r#type: String,
+        /// File path (for markdown type)
+        #[arg(long)]
+        file: Option<String>,
+        /// Directory path (for explorer type)
+        #[arg(long)]
+        path: Option<String>,
+        /// URL (for html type)
+        #[arg(long)]
+        url: Option<String>,
     },
     /// Create a new tab in the specified pane
     Tab {

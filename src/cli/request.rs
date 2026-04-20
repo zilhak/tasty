@@ -116,9 +116,16 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
 fn new_command_to_method_params(command: &NewCommands) -> (&'static str, serde_json::Value) {
     match command {
         NewCommands::Window => ("window.create", serde_json::json!({})),
-        NewCommands::Workspace { name, cwd } => (
+        NewCommands::Workspace { name, cwd, r#type, file, path, url } => (
             "workspace.create",
-            serde_json::json!({ "name": name.as_deref().unwrap_or(""), "cwd": cwd }),
+            serde_json::json!({
+                "name": name.as_deref().unwrap_or(""),
+                "cwd": cwd,
+                "type": r#type,
+                "file": file,
+                "path": path,
+                "url": url,
+            }),
         ),
         NewCommands::Tab { pane, r#type, cwd, file, path, url } => (
             "tab.create",

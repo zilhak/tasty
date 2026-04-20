@@ -53,6 +53,19 @@ impl Workspace {
         self.pane_layout_opt.as_mut().expect("BUG: pane_layout accessed during structural mutation (between take/put)")
     }
 
+    /// Create a workspace from a pre-built Pane (for non-terminal surface types).
+    pub fn new_with_pane(id: WorkspaceId, name: String, pane: Pane) -> Self {
+        let focused_pane = pane.id;
+        Self {
+            id,
+            name,
+            subtitle: String::new(),
+            description: String::new(),
+            pane_layout_opt: Some(PaneNode::Leaf(pane)),
+            focused_pane,
+        }
+    }
+
     /// Create a workspace from a restored pane layout (no PTY creation needed).
     pub fn from_restored(
         id: WorkspaceId,

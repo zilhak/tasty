@@ -16,16 +16,21 @@ pub(crate) fn handle_claude_launch(
     let directory = params.get("directory").and_then(|v| v.as_str());
     let task = params.get("task").and_then(|v| v.as_str());
 
-    match state.add_workspace() {
-        Ok(_) => {}
+    let ws_idx = match state.add_workspace_background(None, crate::model::SurfaceType::Terminal) {
+        Ok(idx) => idx,
         Err(e) => return JsonRpcResponse::internal_error(id, e.to_string()),
-    }
+    };
 
-    let ws_idx = state.active_workspace;
     state.engine.workspaces[ws_idx].name = workspace_name.to_string();
 
     // Get the surface ID of the newly created workspace's terminal
-    let surface_id = state.focused_surface_id();
+    let surface_id = {
+        let ws = &state.engine.workspaces[ws_idx];
+        let pane_id = ws.focused_pane;
+        ws.pane_layout().find_pane(pane_id)
+            .and_then(|pane| pane.tabs.get(pane.active_tab))
+            .and_then(|tab| tab.surface().focused_surface_id())
+    };
 
     if let Some(sid) = surface_id {
         if let Some(dir) = directory {
@@ -68,7 +73,8 @@ pub(crate) fn handle_claude_spawn(
     };
 
     // Save and restore focus — IPC commands must never move focus
-    let saved_pane = state.active_workspace().focused_pane;
+    let saved_workspace = state.active_workspace;
+    let saved_pane = state.engine.workspaces[saved_workspace].focused_pane;
     state.focus_surface(parent_surface_id);
 
     let direction = match params.get("direction").and_then(|v| v.as_str()) {
@@ -115,8 +121,9 @@ pub(crate) fn handle_claude_spawn(
         }
     }
 
-    // Restore focus
-    state.focus_pane(saved_pane);
+    // Restore focus (both workspace and pane)
+    state.active_workspace = saved_workspace;
+    state.engine.workspaces[saved_workspace].focused_pane = saved_pane;
 
     JsonRpcResponse::success(
         id,
@@ -248,7 +255,8 @@ pub(crate) fn handle_claude_respawn(
         state.mark_parent_closed(child_surface_id);
     }
 
-    let saved_pane = state.active_workspace().focused_pane;
+    let saved_workspace = state.active_workspace;
+    let saved_pane = state.engine.workspaces[saved_workspace].focused_pane;
     state.focus_surface(parent_id);
 
     let new_surface_id = match state.split_pane_get_surface(SplitDirection::Vertical) {
@@ -284,8 +292,9 @@ pub(crate) fn handle_claude_respawn(
         }
     }
 
-    // Restore focus
-    state.focus_pane(saved_pane);
+    // Restore focus (both workspace and pane)
+    state.active_workspace = saved_workspace;
+    state.engine.workspaces[saved_workspace].focused_pane = saved_pane;
 
     JsonRpcResponse::success(
         id,

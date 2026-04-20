@@ -20,6 +20,7 @@ pub fn handle_pane_list(state: &AppState, id: serde_json::Value) -> JsonRpcRespo
             panes.push(json!({
                 "id": pid,
                 "workspace_id": ws.id,
+                "workspace_name": ws.name,
                 "focused": pid == focused,
                 "tab_count": tab_count,
             }));
