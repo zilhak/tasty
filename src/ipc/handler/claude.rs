@@ -418,6 +418,60 @@ pub(crate) fn handle_claude_broadcast(
     )
 }
 
+/// Send a message to a Claude Code instance with guaranteed submission.
+///
+/// Claude Code's handleEnter logic:
+/// - `\` before Enter → newline (not submit)
+/// - Enter alone → submit
+///
+/// This handler converts multi-line messages into the PTY sequence that
+/// Claude Code interprets correctly: each line break becomes `\` + `\r`
+/// (backslash+Enter = newline insertion), and the final `\r` triggers submission.
+pub(crate) fn handle_claude_tell(
+    state: &mut AppState,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
+    let surface_id = match super::require_surface_id(params, &id) {
+        Ok(sid) => sid,
+        Err(e) => return e,
+    };
+
+    let message = match params.get("message").and_then(|v| v.as_str()) {
+        Some(m) => m,
+        None => return JsonRpcResponse::invalid_params(id, "Missing 'message' parameter"),
+    };
+
+    // Build the PTY sequence:
+    // - Split by \n
+    // - Join with \<CR> (backslash + carriage return = newline in Claude Code)
+    // - End with <CR> (carriage return = submit)
+    // - If last line ends with \, append a space to prevent it from escaping the final CR
+    let lines: Vec<&str> = message.split('\n').collect();
+    let mut pty_text = String::new();
+    for (i, line) in lines.iter().enumerate() {
+        pty_text.push_str(line);
+        if i < lines.len() - 1 {
+            // Not the last line: backslash + CR = newline in Claude Code
+            pty_text.push('\\');
+            pty_text.push('\r');
+        }
+    }
+    // If the text ends with \, add a space so the final \r is treated as submit
+    if pty_text.ends_with('\\') {
+        pty_text.push(' ');
+    }
+    // Final CR = submit
+    pty_text.push('\r');
+
+    if let Some(terminal) = state.find_terminal_by_id_mut(surface_id) {
+        terminal.send_key(&pty_text);
+        JsonRpcResponse::success(id, json!({ "sent": true, "surface_id": surface_id }))
+    } else {
+        JsonRpcResponse::invalid_params(id, format!("Surface {} not found", surface_id))
+    }
+}
+
 pub(crate) fn handle_claude_wait(
     state: &AppState,
     id: serde_json::Value,

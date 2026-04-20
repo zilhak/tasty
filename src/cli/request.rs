@@ -341,6 +341,13 @@ fn claude_command_to_method_params(command: &ClaudeCommands) -> (&'static str, s
                 "role": role,
             }),
         ),
+        ClaudeCommands::Tell { message, surface } => (
+            "claude.tell",
+            serde_json::json!({
+                "surface_id": resolve_surface_id(*surface),
+                "message": message,
+            }),
+        ),
         // Hook and Wait are handled separately in run_client
         ClaudeCommands::Hook { .. } => unreachable!("ClaudeHook is handled in run_client"),
         ClaudeCommands::Wait { .. } => unreachable!("ClaudeWait is handled in run_client"),

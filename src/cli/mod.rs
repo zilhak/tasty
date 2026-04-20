@@ -517,6 +517,15 @@ pub enum ClaudeCommands {
         #[arg(long, default_value = "30")]
         timeout: u64,
     },
+    /// Send a message to a Claude Code instance and guarantee submission
+    Tell {
+        /// Message to send (multi-line supported)
+        #[arg()]
+        message: String,
+        /// Target surface ID
+        #[arg(long)]
+        surface: Option<u32>,
+    },
     /// Claude Code hook integration (called by Claude Code's hook system)
     Hook {
         /// Hook event type: stop, notification, prompt-submit, session-start
