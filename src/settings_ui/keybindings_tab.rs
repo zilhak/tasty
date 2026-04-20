@@ -55,7 +55,7 @@ pub fn draw_keybindings_tab(
     let th = crate::theme::theme();
     ui.add_space(8.0);
 
-    let available_height = ui.available_height() - 8.0;
+    let available_height = ui.available_height() - 8.0 - 14.0;
 
     ui.horizontal_top(|ui| {
         egui::Frame::new()
