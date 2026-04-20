@@ -81,6 +81,7 @@ impl GpuState {
                     label: Some("tasty_device"),
                     required_features: wgpu::Features::empty(),
                     required_limits: wgpu::Limits::default(),
+                    memory_hints: wgpu::MemoryHints::MemoryUsage,
                     ..Default::default()
                 },
                 None,
