@@ -141,7 +141,7 @@ pub struct PopupDef {
 
 ### 구현
 
-`PopupState`에 `scope: PopupScope` 필드. `PopupScope` enum: `Window`, `Workspace(usize)`, `Pane(u32)`, `Tab(u32, usize)`, `Surface(u32)`. `PopupManager::draw()`에 `PopupDrawContext`를 받아 스코프별 가시성 필터링 및 clamp rect 결정.
+`PopupState`에 `scope: PopupScope` 필드. `PopupScope` enum: `Window`, `Workspace(usize)`, `Pane(u32)`, `Tab(u32, usize)`, `Surface(u32)`. `PopupManager::draw()`에 `LayoutContext`를 받아 스코프별 가시성 필터링 및 clamp rect 결정.
 
 ## Modal과의 차이
 

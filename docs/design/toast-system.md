@@ -132,11 +132,11 @@ impl ToastManager {
     pub fn push(&mut self, message: impl Into<String>, kind: ToastKind, scope: ToastScope);
     pub fn push_info(&mut self, message: impl Into<String>, scope: ToastScope);
     /// 매 프레임 호출. 만료된 토스트를 제거하고 살아있는 것을 그린다.
-    pub fn draw(&mut self, ctx: &egui::Context, draw_ctx: &PopupDrawContext);
+    pub fn draw(&mut self, ctx: &egui::Context, draw_ctx: &LayoutContext);
 }
 ```
 
-`draw()`는 `PopupDrawContext`(이미 popup 시스템이 만들어 둠)를 그대로 받아 스코프별 rect를 얻는다. PopupManager와 같은 컨텍스트를 공유하므로 별도 계산이 필요 없다.
+`draw()`는 `LayoutContext`를 받아 스코프별 rect를 얻는다. PopupManager와 같은 컨텍스트를 공유하므로 별도 계산이 필요 없다.
 
 ### AppState 통합
 
@@ -172,4 +172,4 @@ impl AppState {
 
 Toast는 Popup의 한 변종이 **아니다**. PopupManager에 얹지 않고 별도 `ToastManager`로 둔다. Popup 7대 규칙(타이틀바, X 버튼, 드래그, z-order 클릭 승격, close_on_outside_click 등)은 토스트와 정면으로 충돌하기 때문이다.
 
-다만 스코프 정의(`ToastScope`)와 스코프-rect 계산은 Popup의 `PopupDrawContext`를 재사용해 일관성을 유지한다.
+다만 스코프 정의(`ToastScope`)와 스코프-rect 계산은 `LayoutContext`를 재사용해 일관성을 유지한다.
