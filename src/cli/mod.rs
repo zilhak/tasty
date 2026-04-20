@@ -73,9 +73,6 @@ pub enum Commands {
         /// Target pane: numeric pane ID (only for --level pane)
         #[arg(long)]
         target_pane: Option<u32>,
-        /// [deprecated] Use --target-surface or --target-pane instead
-        #[arg(long, hide = true)]
-        target: Option<String>,
         /// Split direction: vertical (default) or horizontal
         #[arg(long, default_value = "vertical")]
         direction: String,

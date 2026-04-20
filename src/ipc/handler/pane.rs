@@ -56,11 +56,10 @@ pub fn handle_pane_close(state: &mut AppState, id: serde_json::Value, params: &s
     }
 }
 
-/// Resolve a surface target from params: tries target_surface first, then legacy "target".
+/// Resolve a surface target from params.
 /// Supports numeric ID and nickname string.
 fn resolve_surface_target(params: &serde_json::Value) -> Option<u32> {
-    let val = params.get("target_surface")
-        .or_else(|| params.get("target")); // legacy fallback
+    let val = params.get("target_surface");
     let val = val?;
     if val.is_null() {
         return None;
@@ -103,7 +102,6 @@ pub fn handle_split(
         _ => SplitDirection::Vertical,
     };
 
-    // Resolve target: new target_surface/target_pane params, with legacy "target" fallback
     let target_surface_id = resolve_surface_target(params);
     let target_pane_id = params.get("target_pane").and_then(|v| v.as_u64()).map(|v| v as u32);
 
