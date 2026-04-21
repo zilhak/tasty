@@ -84,6 +84,7 @@ cmux의 기능을 크로스 플랫폼(Windows, macOS, Linux) GPU 가속 네이�
 | [design/popup-system.md](design/popup-system.md) | 내부 팝업 시스템 — 공통 규칙 7가지, PopupManager 구조 |
 | [design/toast-system.md](design/toast-system.md) | 토스트 시스템 — 휘발성 인앱 알림, 스코프, 사용자 행동 트리거 정책 |
 | [design/input-layer.md](design/input-layer.md) | 마우스 입력 계층 — z-order 기반 이벤트 소비/버블링 설계 |
+| [design/typed-length.md](design/typed-length.md) | 타입 안전 길이 시스템 — PhysicalPx/LogicalPx newtype, DPI 혼동 방지 |
 
 ## 아키텍처 문서
 

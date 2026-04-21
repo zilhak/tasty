@@ -139,6 +139,27 @@ GitHub에 릴리스를 배포할 때, `docs/agent-guide/` 폴더의 문서들을
 - 포맷: rustfmt
 - 린트: clippy
 
+### 길이 타입 규칙 (필수)
+
+**내부 소스에서 길이 값을 단순 `f32`로 다루는 것은 금지한다.** 반드시 `PhysicalPx` 또는 `LogicalPx` 타입을 사용한다.
+
+```rust
+// ❌ 금지: 길이를 f32로 선언
+let width: f32 = 150.0;
+let height = 24.0;
+
+// ✅ 올바름: 타입 명시
+let width = LogicalPx(150.0);
+let height = PhysicalPx(24.0);
+```
+
+- **`PhysicalPx`**: GPU, wgpu, winit 마우스 좌표, `Rect` 필드
+- **`LogicalPx`**: egui UI, Theme 상수, 사이드바 너비
+- 두 타입 간 직접 대입 불가. `to_physical(sf)` / `to_logical(sf)` 변환 필수.
+- 외부 API(egui, wgpu)에 전달 시 `.value()`로 f32 추출.
+- 비율, 불투명도, scale_factor 등 길이가 아닌 값은 f32 유지.
+- 상세: `docs/design/typed-length.md`
+
 ### 국제화 규칙 (필수)
 
 **모든 UI 문자열은 `t()` 함수를 통해 번역 키를 사용해야 한다.** 코드에 영어/한국어 등 자연어 문자열을 직접 하드코딩하지 않는다.
