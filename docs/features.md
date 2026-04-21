@@ -159,21 +159,44 @@
 
 #### 기본 단축키 (Tasty 프리셋)
 
-- Alt+N (macOS: ⌘N): 새 워크스페이스
-- Alt+T (macOS: ⌘T): 포커스된 Pane에 새 탭
-- Alt+E (macOS: ⌘E): Pane 수직 분할
-- Alt+Shift+E (macOS: ⌘⇧E): Pane 수평 분할
-- Alt+D (macOS: ⌘D): Surface 수직 분할 (탭 내부)
-- Alt+Shift+D (macOS: ⌘⇧D): Surface 수평 분할 (탭 내부)
-- Alt+] / Alt+[ (macOS: ⌘] / ⌘[): Surface 포커스 다음/이전
-- Ctrl+] / Ctrl+[: Pane 포커스 다음/이전
-- Alt+1~9 (macOS: ⌘1~9): 워크스페이스 전환
-- Ctrl+1~0: 탭 전환
-- next_tab / prev_tab 단축키: 다음/이전 탭 (기본값 없음, 사용자 설정 가능)
-- Alt+Shift+N (macOS: ⌘⇧N): 새 윈도우
-- Ctrl+Shift+B: 사이드바 토글 (숨김/표시)
-- Ctrl+B: 사이드바 접기/펼치기
-- Ctrl+Shift+H: 클립보드 히스토리 뷰어 토글 (Popup)
+| 단축키 | 동작 |
+|--------|------|
+| Alt+N | 새 워크스페이스 |
+| Alt+T | 포커스된 Pane에 새 탭 |
+| Alt+E | Pane 수직 분할 |
+| Alt+Shift+E | Pane 수평 분할 |
+| Alt+D | Surface 수직 분할 (탭 내부) |
+| Alt+Shift+D | Surface 수평 분할 (탭 내부) |
+| Alt+] / Alt+[ | Surface 포커스 다음/이전 |
+| Ctrl+] / Ctrl+[ | Pane 포커스 다음/이전 |
+| Alt+1~9 | 워크스페이스 전환 |
+| Ctrl+1~0 | 탭 전환 |
+| Alt+Shift+N | 새 윈도우 |
+| Ctrl+Shift+B | 사이드바 토글 (숨김/표시) |
+| Ctrl+B | 사이드바 접기/펼치기 |
+| Ctrl+Shift+H | 클립보드 히스토리 뷰어 토글 |
+| Ctrl+, | 설정 열기 |
+| Ctrl+C / Alt+C / Ctrl+Shift+C | 복사 |
+| Ctrl+V / Alt+V / Ctrl+Shift+V | 붙여넣기 |
+| Alt+Shift+C | 경로 복사 (Explorer) |
+| Ctrl+X / Alt+X | 잘라내기 (Explorer) |
+| Ctrl+A / Alt+A | 전체 선택 (Explorer) |
+| Ctrl+= / Alt+= | 확대 |
+| Ctrl+- / Alt+- | 축소 |
+| Ctrl+0 / Alt+0 | 줌 리셋 |
+| Alt+' | Surface 타입 전환 |
+
+#### Surface별 단축키 동작
+
+동일한 단축키가 포커스된 Surface 타입에 따라 다르게 동작한다.
+
+| 단축키 | Terminal | Explorer | Markdown |
+|--------|----------|----------|----------|
+| copy | 선택 텍스트를 클립보드에 복사 | 선택된 파일을 OS 파일 클립보드에 복사 | egui 텍스트 선택 복사 |
+| paste | 클립보드 텍스트를 터미널에 입력 | OS 파일 클립보드에서 파일 붙여넣기 | - |
+| copy_path | - | 선택된 파일 경로를 텍스트로 클립보드에 복사 | - |
+| cut | - | 선택된 파일을 잘라내기 | - |
+| select_all | - | 모든 파일 선택 | - |
 
 ### 방향성 포커스 이동 (키보드 단축키)
 - 키보드 단축키를 통한 분할 트리 구조 기반 방향성 포커스 이동
