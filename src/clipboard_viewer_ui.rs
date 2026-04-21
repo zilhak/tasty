@@ -270,10 +270,10 @@ fn draw_inner(
                     let preview = first_line_preview(&row.text);
 
                     ui.painter().text(
-                        egui::pos2(rect.min.x + 4.0, rect.center().y - th.font_size_body / 2.0),
+                        egui::pos2(rect.min.x + 4.0, rect.center().y - th.font_size_body.value() / 2.0),
                         egui::Align2::LEFT_TOP,
                         format!("{}{}", prefix, preview),
-                        egui::FontId::proportional(th.font_size_body),
+                        egui::FontId::proportional(th.font_size_body.value()),
                         th.text,
                     );
                     resp.clone().on_hover_text(&row.text);

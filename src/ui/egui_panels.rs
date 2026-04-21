@@ -49,10 +49,10 @@ pub fn draw_egui_panels(
                 infos.push(EguiPanelInfo {
                     pane_id,
                     surface_id: surface.surface_id(),
-                    logical_x: (pane_rect.x / scale_factor).round_ui(),
-                    logical_y: ((pane_rect.y + tab_bar_h) / scale_factor).round_ui(),
-                    logical_w: (pane_rect.width / scale_factor).round_ui(),
-                    logical_h: ((pane_rect.height - tab_bar_h).max(1.0) / scale_factor).round_ui(),
+                    logical_x: (pane_rect.x.value() / scale_factor).round_ui(),
+                    logical_y: ((pane_rect.y + tab_bar_h).value() / scale_factor).round_ui(),
+                    logical_w: (pane_rect.width.value() / scale_factor).round_ui(),
+                    logical_h: (((pane_rect.height - tab_bar_h).max(crate::model::length::PhysicalPx(1.0))).value() / scale_factor).round_ui(),
                     is_keyboard_target: pane_id == focused_pane_id,
                 });
                 continue;
@@ -65,16 +65,16 @@ pub fn draw_egui_panels(
                     x: pane_rect.x,
                     y: pane_rect.y + tab_bar_h,
                     width: pane_rect.width,
-                    height: (pane_rect.height - tab_bar_h).max(1.0),
+                    height: (pane_rect.height - tab_bar_h).max(crate::model::length::PhysicalPx(1.0)),
                 };
                 for (sid, rect) in group.layout().egui_regions(content_rect) {
                     infos.push(EguiPanelInfo {
                         pane_id,
                         surface_id: Some(sid),
-                        logical_x: (rect.x / scale_factor).round_ui(),
-                        logical_y: (rect.y / scale_factor).round_ui(),
-                        logical_w: (rect.width / scale_factor).round_ui(),
-                        logical_h: (rect.height / scale_factor).round_ui(),
+                        logical_x: (rect.x.value() / scale_factor).round_ui(),
+                        logical_y: (rect.y.value() / scale_factor).round_ui(),
+                        logical_w: (rect.width.value() / scale_factor).round_ui(),
+                        logical_h: (rect.height.value() / scale_factor).round_ui(),
                         is_keyboard_target: pane_id == focused_pane_id
                             && sid == focused_surface_in_group,
                     });

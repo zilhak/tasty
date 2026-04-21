@@ -17,8 +17,8 @@ pub fn draw_pane_dividers(ctx: &egui::Context, dividers: &[Rect], scale_factor: 
     let border_color = th.surface2;
     for div in dividers {
         let rect = egui::Rect::from_min_size(
-            egui::pos2(div.x / scale_factor, div.y / scale_factor),
-            egui::vec2(div.width / scale_factor, div.height / scale_factor),
+            egui::pos2(div.x.value() / scale_factor, div.y.value() / scale_factor),
+            egui::vec2(div.width.value() / scale_factor, div.height.value() / scale_factor),
         ).round_ui();
         painter.rect_filled(rect, 0.0, border_color);
     }
@@ -36,8 +36,8 @@ pub fn draw_surface_highlights(ctx: &egui::Context, state: &AppState, terminal_r
         for (surface_id, _terminal, rect) in terminal_regions {
             if state.engine.notifications.is_surface_highlighted(*surface_id) {
                 let egui_rect = egui::Rect::from_min_size(
-                    egui::pos2(rect.x / scale_factor, rect.y / scale_factor),
-                    egui::vec2(rect.width / scale_factor, rect.height / scale_factor),
+                    egui::pos2(rect.x.value() / scale_factor, rect.y.value() / scale_factor),
+                    egui::vec2(rect.width.value() / scale_factor, rect.height.value() / scale_factor),
                 ).round_ui();
                 painter.rect_stroke(egui_rect, 0.0, egui::Stroke::new(1.0, th.blue), egui::StrokeKind::Inside);
             }

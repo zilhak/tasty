@@ -12,6 +12,7 @@ mod restore;
 mod tests;
 
 use crate::engine_state::EngineState;
+use crate::model::{PhysicalPx, LogicalPx};
 use crate::settings_ui::SettingsUiState;
 use tasty_terminal::{Terminal, TerminalEvent, Waker};
 
@@ -65,7 +66,7 @@ pub struct AppState {
     /// Persistent UI state for the settings window.
     pub settings_ui_state: SettingsUiState,
     /// Cached sidebar width from settings (logical pixels).
-    pub sidebar_width: f32,
+    pub sidebar_width: LogicalPx,
     /// Sidebar visibility: false = completely hidden.
     pub sidebar_visible: bool,
     /// Sidebar collapsed: true = compact mode (narrow width, icons only).
@@ -73,7 +74,7 @@ pub struct AppState {
     /// All transient dialog/popup state.
     pub dialogs: DialogState,
     /// Measured tab bar height in physical pixels, updated each frame by egui.
-    pub tab_bar_height: f32,
+    pub tab_bar_height: PhysicalPx,
     /// Popup manager for internal popups (notification panel, etc.).
     pub popups: crate::ui::PopupManager,
     /// Toast manager for transient in-app notifications (copy feedback, etc.).
@@ -196,7 +197,7 @@ impl AppState {
             sidebar_visible: true,
             sidebar_collapsed: false,
             dialogs: DialogState::new(),
-            tab_bar_height: 24.0,
+            tab_bar_height: PhysicalPx(24.0),
             captured_double_tap: None,
             pending_surface_keys: Vec::new(),
             popup_hovered: false,

@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use crate::model::LogicalPx;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -7,7 +8,7 @@ pub struct AppearanceSettings {
     pub font_size: f32,
     pub theme: String,
     pub background_opacity: f32,
-    pub sidebar_width: f32,
+    pub sidebar_width: LogicalPx,
     /// UI scale: "small", "medium", or "large". Affects all egui UI elements.
     pub ui_scale: String,
     /// Background color for the focused surface (hex, e.g. "#000000").
@@ -32,7 +33,7 @@ impl Default for AppearanceSettings {
             font_size: 14.0,
             theme: "dark".to_string(),
             background_opacity: 1.0,
-            sidebar_width: 180.0,
+            sidebar_width: LogicalPx(180.0),
             ui_scale: "medium".to_string(),
             focused_surface_bg: "#000000".to_string(),
             font_scale_mode: "fixed".to_string(),
@@ -81,12 +82,11 @@ impl AppearanceSettings {
     }
 
     /// Get the sidebar width adjusted for UI scale.
-    pub fn scaled_sidebar_width(&self) -> f32 {
-        let base = match self.ui_scale.as_str() {
-            "small" => 150.0,
-            "large" => 220.0,
-            _ => 180.0,
-        };
-        base
+    pub fn scaled_sidebar_width(&self) -> LogicalPx {
+        match self.ui_scale.as_str() {
+            "small" => LogicalPx(150.0),
+            "large" => LogicalPx(220.0),
+            _ => LogicalPx(180.0),
+        }
     }
 }

@@ -207,8 +207,8 @@ pub fn pixel_to_grid(
     cols: usize,
     rows: usize,
 ) -> (usize, usize) {
-    let rel_x = x - viewport.x;
-    let rel_y = y - viewport.y;
+    let rel_x = x - viewport.x.value();
+    let rel_y = y - viewport.y.value();
     let col = (rel_x / cell_width).floor() as isize;
     let col = col.clamp(0, (cols as isize) - 1) as usize;
     let row = (rel_y / cell_height).floor() as isize;

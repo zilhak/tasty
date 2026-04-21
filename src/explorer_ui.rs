@@ -52,7 +52,7 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel, keys: &[Pendi
         let resp = ui.add_sized(
             [ui.available_width(), address_bar_h],
             egui::TextEdit::singleline(&mut panel.address_bar_text)
-                .font(egui::FontId::proportional(th.font_size_caption))
+                .font(egui::FontId::proportional(th.font_size_caption.value()))
                 .margin(egui::Margin::symmetric(4, 2)),
         );
         if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
@@ -76,7 +76,7 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel, keys: &[Pendi
                 };
                 if ui.button(
                     egui::RichText::new(label)
-                        .size(th.font_size_caption),
+                        .size(th.font_size_caption.value()),
                 ).clicked() {
                     panel.show_preview = !panel.show_preview;
                 }
@@ -272,7 +272,7 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel, keys: &[Pendi
             // ── Bookmarks (고정 25% 점유) ──
             ui.label(
                 egui::RichText::new(crate::i18n::t("explorer.bookmarks_heading"))
-                    .size(th.font_size_caption)
+                    .size(th.font_size_caption.value())
                     .strong()
                     .color(th.subtext0),
             );
@@ -288,7 +288,7 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel, keys: &[Pendi
                     for bm in &bookmarks.entries {
                         let resp = ui.selectable_label(
                             false,
-                            egui::RichText::new(format!("\u{2605} {}", bm.name)).size(th.font_size_caption),
+                            egui::RichText::new(format!("\u{2605} {}", bm.name)).size(th.font_size_caption.value()),
                         );
                         if resp.double_clicked() {
                             nav_path = Some(bm.path.clone());

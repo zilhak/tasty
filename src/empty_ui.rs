@@ -24,7 +24,7 @@ pub fn draw_empty(ui: &mut egui::Ui, empty: &EmptySurface) -> Option<EmptyAction
     ui.vertical_centered(|ui| {
         let btn = ui.button(
             egui::RichText::new(crate::i18n::t("convert_popup.title"))
-                .size(th.font_size_body)
+                .size(th.font_size_body.value())
                 .color(th.text),
         );
         if btn.clicked() {

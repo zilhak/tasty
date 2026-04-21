@@ -12,7 +12,7 @@ use winit::window::Window;
 
 use winit::event_loop::EventLoopProxy;
 
-use crate::model::Rect;
+use crate::model::{LogicalPx, PhysicalPx, Rect};
 use crate::renderer::CellRenderer;
 use crate::settings::AppearanceSettings;
 use crate::state::AppState;
@@ -202,9 +202,9 @@ impl GpuState {
     ) -> Result<(), wgpu::SurfaceError> {
         // 1. Prepare layout
         state.sidebar_width = if !state.sidebar_visible {
-            0.0
+            LogicalPx(0.0)
         } else if state.sidebar_collapsed {
-            48.0 // Compact mode: narrow width for collapse button
+            LogicalPx(48.0) // Compact mode: narrow width for collapse button
         } else {
             state.engine.settings.appearance.scaled_sidebar_width()
         };
@@ -257,9 +257,9 @@ impl GpuState {
         Ok(())
     }
 
-    fn compute_terminal_rect(&self, sidebar_width: f32) -> Rect {
+    fn compute_terminal_rect(&self, sidebar_width: LogicalPx) -> Rect {
         crate::model::compute_terminal_rect(
-            self.size.width as f32, self.size.height as f32,
+            PhysicalPx(self.size.width as f32), PhysicalPx(self.size.height as f32),
             sidebar_width, self.scale_factor,
         )
     }
@@ -277,7 +277,7 @@ impl GpuState {
                     x: pane_rect.x,
                     y: pane_rect.y + tab_bar_h,
                     width: pane_rect.width,
-                    height: (pane_rect.height - tab_bar_h).max(1.0),
+                    height: (pane_rect.height - tab_bar_h).max(PhysicalPx(1.0)),
                 };
                 if let Some(tab) = pane.tabs.get(pane.active_tab) {
                     if let Some(group) = tab.surface().as_surface_group() {

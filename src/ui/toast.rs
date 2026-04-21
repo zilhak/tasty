@@ -164,7 +164,7 @@ impl ToastManager {
 
                 let body_text = t.message.as_str();
                 let max_width = (scope_rect.width() * 0.8).max(80.0);
-                let font = egui::FontId::proportional(th.font_size_body);
+                let font = egui::FontId::proportional(th.font_size_body.value());
 
                 // 텍스트 갤리(줄바꿈 포함) 측정.
                 let galley = ctx.fonts(|f| {
@@ -195,11 +195,11 @@ impl ToastManager {
                 let accent = Self::accent_color(t.kind, &th).gamma_multiply(alpha);
 
                 // 배경 + 보더.
-                painter.rect_filled(rect, th.corner_radius, bg);
+                painter.rect_filled(rect, th.corner_radius.value(), bg);
                 painter.rect_stroke(
                     rect,
-                    th.corner_radius,
-                    egui::Stroke::new(th.border_width, border),
+                    th.corner_radius.value(),
+                    egui::Stroke::new(th.border_width.value(), border),
                     egui::StrokeKind::Inside,
                 );
 
@@ -209,8 +209,8 @@ impl ToastManager {
                     egui::pos2(rect.min.x + ACCENT_BAR_WIDTH, rect.max.y),
                 );
                 let bar_radius = egui::CornerRadius {
-                    nw: th.corner_radius as u8,
-                    sw: th.corner_radius as u8,
+                    nw: th.corner_radius.value() as u8,
+                    sw: th.corner_radius.value() as u8,
                     ne: 0,
                     se: 0,
                 };

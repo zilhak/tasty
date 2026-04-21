@@ -31,7 +31,7 @@ pub fn draw_bookmark_popup(ui: &mut egui::Ui, state: &mut AppState) -> PopupActi
 
     ui.label(
         egui::RichText::new(t("explorer.bookmark_name_label"))
-            .size(th.font_size_body)
+            .size(th.font_size_body.value())
             .color(th.subtext1),
     );
     ui.add_space(4.0);
@@ -39,7 +39,7 @@ pub fn draw_bookmark_popup(ui: &mut egui::Ui, state: &mut AppState) -> PopupActi
     let resp = ui.add_sized(
         [ui.available_width(), 22.0],
         egui::TextEdit::singleline(name_buf)
-            .font(egui::FontId::proportional(th.font_size_body))
+            .font(egui::FontId::proportional(th.font_size_body.value()))
             .margin(egui::Margin::symmetric(4, 2)),
     );
     if !resp.has_focus() {

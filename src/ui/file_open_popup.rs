@@ -83,7 +83,7 @@ fn draw_file_open_content(ui: &mut egui::Ui, state: &mut AppState, file_type: Fi
         }
     };
 
-    ui.label(egui::RichText::new(t(label_key)).size(th.font_size_body).color(th.subtext1));
+    ui.label(egui::RichText::new(t(label_key)).size(th.font_size_body.value()).color(th.subtext1));
     ui.add_space(4.0);
 
     // Path input + file picker button
@@ -92,7 +92,7 @@ fn draw_file_open_content(ui: &mut egui::Ui, state: &mut AppState, file_type: Fi
         let resp = ui.add_sized(
             [ui.available_width() - 30.0, 22.0],
             egui::TextEdit::singleline(path_buf)
-                .font(egui::FontId::proportional(th.font_size_body))
+                .font(egui::FontId::proportional(th.font_size_body.value()))
                 .margin(egui::Margin::symmetric(4, 2)),
         );
         if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
@@ -116,7 +116,7 @@ fn draw_file_open_content(ui: &mut egui::Ui, state: &mut AppState, file_type: Fi
     // Error message below input
     if let Some(ref err) = state.dialogs.file_open_error {
         ui.add_space(2.0);
-        ui.label(egui::RichText::new(err.as_str()).size(th.font_size_caption).color(th.red));
+        ui.label(egui::RichText::new(err.as_str()).size(th.font_size_caption.value()).color(th.red));
     }
 
     ui.add_space(8.0);
@@ -129,7 +129,7 @@ fn draw_file_open_content(ui: &mut egui::Ui, state: &mut AppState, file_type: Fi
     let recent_list = &recent_list;
 
     if !recent_list.is_empty() {
-        ui.label(egui::RichText::new(t("dialog.recent_files")).size(th.font_size_caption).color(th.overlay1));
+        ui.label(egui::RichText::new(t("dialog.recent_files")).size(th.font_size_caption.value()).color(th.overlay1));
         ui.add_space(2.0);
 
         egui::ScrollArea::vertical()
@@ -147,10 +147,10 @@ fn draw_file_open_content(ui: &mut egui::Ui, state: &mut AppState, file_type: Fi
                         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
                     }
                     ui.painter().text(
-                        egui::pos2(rect.min.x + 4.0, rect.center().y - th.font_size_caption / 2.0),
+                        egui::pos2(rect.min.x + 4.0, rect.center().y - th.font_size_caption.value() / 2.0),
                         egui::Align2::LEFT_TOP,
                         &display,
-                        egui::FontId::proportional(th.font_size_caption),
+                        egui::FontId::proportional(th.font_size_caption.value()),
                         th.subtext0,
                     );
                     if resp.clicked() {

@@ -220,8 +220,8 @@ fn build_layout_context(
         .iter()
         .map(|(id, r)| {
             (*id, egui::Rect::from_min_size(
-                egui::pos2(r.x / scale_factor, r.y / scale_factor),
-                egui::vec2(r.width / scale_factor, r.height / scale_factor),
+                egui::pos2(r.x.value() / scale_factor, r.y.value() / scale_factor),
+                egui::vec2(r.width.value() / scale_factor, r.height.value() / scale_factor),
             ))
         })
         .collect();
@@ -239,8 +239,8 @@ fn build_layout_context(
                     if let Some(sid) = tab.surface().focused_surface_id() {
                         let tab_bar_h = state.tab_bar_height;
                         let content_rect = egui::Rect::from_min_size(
-                            egui::pos2(pane_rect.x / scale_factor, (pane_rect.y + tab_bar_h) / scale_factor),
-                            egui::vec2(pane_rect.width / scale_factor, ((pane_rect.height - tab_bar_h).max(1.0)) / scale_factor),
+                            egui::pos2(pane_rect.x.value() / scale_factor, (pane_rect.y + tab_bar_h).value() / scale_factor),
+                            egui::vec2(pane_rect.width.value() / scale_factor, ((pane_rect.height - tab_bar_h).max(crate::model::length::PhysicalPx(1.0))).value() / scale_factor),
                         );
                         surface_rects.push((sid, content_rect));
                     }
@@ -249,8 +249,8 @@ fn build_layout_context(
         } else {
             for (sid, _term, rect) in terminal_regions {
                 surface_rects.push((*sid, egui::Rect::from_min_size(
-                    egui::pos2(rect.x / scale_factor, rect.y / scale_factor),
-                    egui::vec2(rect.width / scale_factor, rect.height / scale_factor),
+                    egui::pos2(rect.x.value() / scale_factor, rect.y.value() / scale_factor),
+                    egui::vec2(rect.width.value() / scale_factor, rect.height.value() / scale_factor),
                 )));
             }
         }

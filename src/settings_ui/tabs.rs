@@ -215,7 +215,7 @@ fn draw_appearance_tasty(ui: &mut egui::Ui, settings: &mut Settings) {
 
             ui.label(t("settings.appearance.sidebar_width_label"));
             ui.add(
-                egui::DragValue::new(&mut settings.appearance.sidebar_width)
+                egui::DragValue::new(&mut settings.appearance.sidebar_width.0)
                     .range(100.0..=400.0)
                     .speed(1.0),
             );
@@ -475,7 +475,7 @@ fn draw_font_preview(ui: &mut egui::Ui, settings: &Settings, th: &crate::theme::
     // ── Focused preview ──
     ui.label(
         egui::RichText::new(t("settings.appearance.preview_focused"))
-            .size(th.font_size_caption)
+            .size(th.font_size_caption.value())
             .color(th.subtext0),
     );
     let (focused_rect, _) = ui.allocate_exact_size(
@@ -487,7 +487,7 @@ fn draw_font_preview(ui: &mut egui::Ui, settings: &Settings, th: &crate::theme::
     ui.painter().rect_stroke(
         focused_rect,
         2.0,
-        egui::Stroke::new(th.border_width, th.blue),
+        egui::Stroke::new(th.border_width.value(), th.blue),
         egui::StrokeKind::Outside,
     );
     for (i, line) in sample_lines.iter().enumerate() {
@@ -506,7 +506,7 @@ fn draw_font_preview(ui: &mut egui::Ui, settings: &Settings, th: &crate::theme::
     // ── Unfocused preview ──
     ui.label(
         egui::RichText::new(t("settings.appearance.preview_unfocused"))
-            .size(th.font_size_caption)
+            .size(th.font_size_caption.value())
             .color(th.subtext0),
     );
     let (unfocused_rect, _) = ui.allocate_exact_size(
@@ -530,7 +530,7 @@ fn draw_font_preview(ui: &mut egui::Ui, settings: &Settings, th: &crate::theme::
         egui::RichText::new(
             crate::i18n::t_fmt("settings.appearance.preview_font_info", &format!("{} / {:.1}px", font_name, font_size))
         )
-            .size(th.font_size_caption)
+            .size(th.font_size_caption.value())
             .color(th.subtext0),
     );
 }

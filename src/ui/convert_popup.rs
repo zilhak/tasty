@@ -165,12 +165,12 @@ pub fn draw_convert_content(ui: &mut egui::Ui, state: &mut AppState) -> Option<C
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
         }
 
-        let text_pos = egui::pos2(rect.min.x + th.spacing_sm, rect.center().y - th.font_size_body / 2.0);
+        let text_pos = egui::pos2(rect.min.x + th.spacing_sm.value(), rect.center().y - th.font_size_body.value() / 2.0);
         ui.painter().text(
             text_pos,
             egui::Align2::LEFT_TOP,
             &label,
-            egui::FontId::proportional(th.font_size_body),
+            egui::FontId::proportional(th.font_size_body.value()),
             text_color,
         );
 

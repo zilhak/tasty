@@ -426,16 +426,16 @@ impl PopupManager {
             let painter = ctx.layer_painter(layer_id);
 
             // Popup background
-            painter.rect_filled(popup_rect, th.corner_radius, th.surface0);
+            painter.rect_filled(popup_rect, th.corner_radius.value(), th.surface0);
             painter.rect_stroke(
                 popup_rect,
-                th.corner_radius,
-                egui::Stroke::new(th.border_width, th.surface1),
+                th.corner_radius.value(),
+                egui::Stroke::new(th.border_width.value(), th.surface1),
                 egui::StrokeKind::Outside,
             );
 
             // Title bar
-            let cr = th.corner_radius as u8;
+            let cr = th.corner_radius.value() as u8;
             painter.rect_filled(
                 title_rect,
                 egui::CornerRadius { nw: cr, ne: cr, sw: 0, se: 0 },
@@ -446,7 +446,7 @@ impl PopupManager {
                     egui::pos2(title_rect.min.x, title_rect.max.y),
                     egui::pos2(title_rect.max.x, title_rect.max.y),
                 ],
-                egui::Stroke::new(th.border_width, th.surface1),
+                egui::Stroke::new(th.border_width.value(), th.surface1),
             );
 
             // Title text (centered)
@@ -454,7 +454,7 @@ impl PopupManager {
                 title_rect.center(),
                 egui::Align2::CENTER_CENTER,
                 &popup.title,
-                egui::FontId::proportional(th.font_size_body),
+                egui::FontId::proportional(th.font_size_body.value()),
                 th.text,
             );
 

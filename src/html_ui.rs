@@ -11,7 +11,7 @@ pub fn draw_html(ui: &mut egui::Ui, panel: &HtmlPanel) {
         ui.label(
             egui::RichText::new(&panel.url)
                 .color(th.overlay0)
-                .size(th.font_size_body),
+                .size(th.font_size_body.value()),
         );
     });
 }

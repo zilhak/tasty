@@ -1,4 +1,4 @@
-use crate::model::FocusDirection;
+use crate::model::{FocusDirection, PhysicalPx};
 
 use super::AppState;
 
@@ -175,7 +175,7 @@ impl AppState {
         let ws = self.active_workspace();
         let pane_rects = ws.pane_layout().compute_rects(terminal_rect);
         for (pane_id, rect) in pane_rects {
-            if rect.contains(x, y) {
+            if rect.contains(PhysicalPx(x), PhysicalPx(y)) {
                 let old = self.active_workspace().focused_pane;
                 if old != pane_id {
                     self.active_workspace_mut().focused_pane = pane_id;
@@ -212,7 +212,7 @@ impl AppState {
             x: pane_rect.x,
             y: pane_rect.y + tab_bar_h,
             width: pane_rect.width,
-            height: (pane_rect.height - tab_bar_h).max(1.0),
+            height: (pane_rect.height - tab_bar_h).max(PhysicalPx(1.0)),
         };
 
         let ws = self.active_workspace_mut();

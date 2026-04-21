@@ -28,7 +28,7 @@ use crate::state::AppState;
 
 /// Render the egui UI and return the remaining terminal area rect (in physical pixels).
 pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> Rect {
-    let sidebar_width = state.sidebar_width;
+    let sidebar_width = state.sidebar_width.value();
 
     if !state.sidebar_visible {
         // Sidebar hidden — skip rendering entirely
@@ -51,16 +51,17 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
     }
 
     // Compute remaining terminal area in physical pixels
+    use crate::model::length::PhysicalPx;
     let screen_rect = ctx.screen_rect();
-    let terminal_x = sidebar_width * scale_factor;
-    let terminal_y = 0.0;
-    let terminal_width = (screen_rect.width() - sidebar_width) * scale_factor;
-    let terminal_height = screen_rect.height() * scale_factor;
+    let terminal_x = PhysicalPx(sidebar_width * scale_factor);
+    let terminal_y = PhysicalPx(0.0);
+    let terminal_width = PhysicalPx((screen_rect.width() - sidebar_width) * scale_factor);
+    let terminal_height = PhysicalPx(screen_rect.height() * scale_factor);
 
     Rect {
         x: terminal_x,
         y: terminal_y,
-        width: terminal_width.max(1.0),
-        height: terminal_height.max(1.0),
+        width: PhysicalPx(terminal_width.value().max(1.0)),
+        height: PhysicalPx(terminal_height.value().max(1.0)),
     }
 }

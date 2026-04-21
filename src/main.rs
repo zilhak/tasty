@@ -191,15 +191,15 @@ impl App {
     }
 
     /// Create an AppState from a GPU state, computing grid size from the sidebar width.
-    fn create_app_state(&self, gpu: &GpuState, sidebar_width: f32) -> crate::state::AppState {
+    fn create_app_state(&self, gpu: &GpuState, sidebar_width: crate::model::LogicalPx) -> crate::state::AppState {
         let sf = gpu.scale_factor();
         let size = gpu.size();
-        let sidebar_w = sidebar_width * sf;
+        let sidebar_w = sidebar_width.to_physical(sf);
         let terminal_rect = crate::model::Rect {
             x: sidebar_w,
-            y: 0.0,
-            width: (size.width as f32 - sidebar_w).max(1.0),
-            height: size.height as f32,
+            y: crate::model::PhysicalPx(0.0),
+            width: (crate::model::PhysicalPx(size.width as f32) - sidebar_w).max(crate::model::PhysicalPx(1.0)),
+            height: crate::model::PhysicalPx(size.height as f32),
         };
         let (cols, rows) = gpu.grid_size_for_rect(&terminal_rect);
 

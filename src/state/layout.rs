@@ -1,4 +1,4 @@
-use crate::model::{PaneId, Rect};
+use crate::model::{PaneId, PhysicalPx, Rect};
 use tasty_terminal::Terminal;
 
 use super::AppState;
@@ -36,7 +36,7 @@ impl AppState {
                     x: pane_rect.x,
                     y: pane_rect.y + tab_bar_h,
                     width: pane_rect.width,
-                    height: (pane_rect.height - tab_bar_h).max(1.0),
+                    height: (pane_rect.height - tab_bar_h).max(PhysicalPx(1.0)),
                 };
                 let regions = match pane.tabs.get(pane.active_tab) {
                     Some(tab) => tab.surface().render_regions(content_rect),
@@ -78,10 +78,10 @@ impl AppState {
             for (sid, _term, rect) in terminal_regions {
                 if *sid == surface_id {
                     return Some(Rect {
-                        x: rect.x + col as f32 * cell_w,
-                        y: rect.y + row as f32 * cell_h,
-                        width: cell_w.max(1.0),
-                        height: cell_h.max(1.0),
+                        x: rect.x + PhysicalPx(col as f32 * cell_w),
+                        y: rect.y + PhysicalPx(row as f32 * cell_h),
+                        width: PhysicalPx(cell_w.max(1.0)),
+                        height: PhysicalPx(cell_h.max(1.0)),
                     });
                 }
             }
@@ -97,7 +97,7 @@ impl AppState {
         let regions = self.render_regions(terminal_rect);
         for (_pane_id, _pane_rect, terminal_regions) in &regions {
             for (sid, _term, rect) in terminal_regions {
-                if rect.contains(x, y) {
+                if rect.contains(PhysicalPx(x), PhysicalPx(y)) {
                     return Some(*sid);
                 }
             }
@@ -106,7 +106,7 @@ impl AppState {
         let ws = self.active_workspace();
         let pane_rects = ws.pane_layout().compute_rects(terminal_rect);
         for (pane_id, pane_rect) in &pane_rects {
-            if pane_rect.contains(x, y) {
+            if pane_rect.contains(PhysicalPx(x), PhysicalPx(y)) {
                 if let Some(pane) = ws.pane_layout().find_pane(*pane_id) {
                     if let Some(tab) = pane.tabs.get(pane.active_tab) {
                         let surface = tab.surface();
@@ -137,7 +137,7 @@ impl AppState {
                         x: pane_rect.x,
                         y: pane_rect.y + tab_bar_h,
                         width: pane_rect.width,
-                        height: (pane_rect.height - tab_bar_h).max(1.0),
+                        height: (pane_rect.height - tab_bar_h).max(PhysicalPx(1.0)),
                     };
                     for tab in &mut pane.tabs {
                         tab.surface_mut().resize_all(content_rect, cell_width, cell_height);

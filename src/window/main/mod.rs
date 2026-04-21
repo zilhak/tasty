@@ -12,7 +12,7 @@ use winit::keyboard::ModifiersState;
 use winit::window::CursorIcon;
 
 use crate::gpu::{GpuState, ImePreeditState};
-use crate::model::Rect;
+use crate::model::{PhysicalPx, Rect};
 use crate::selection::TextSelection;
 use crate::state::{AppState, FocusedSurfaceType};
 use crate::window::{
@@ -92,8 +92,8 @@ impl MainWindow {
     pub fn compute_terminal_rect(&self) -> Rect {
         let size = self.base.gpu.size();
         crate::model::compute_terminal_rect(
-            size.width as f32,
-            size.height as f32,
+            PhysicalPx(size.width as f32),
+            PhysicalPx(size.height as f32),
             self.state.sidebar_width,
             self.base.gpu.scale_factor(),
         )
@@ -134,10 +134,10 @@ impl MainWindow {
 
         use winit::dpi::{PhysicalPosition, PhysicalSize};
         self.base.winit.set_ime_cursor_area(
-            PhysicalPosition::new(cell_rect.x.round() as i32, cell_rect.y.round() as i32),
+            PhysicalPosition::new(cell_rect.x.value().round() as i32, cell_rect.y.value().round() as i32),
             PhysicalSize::new(
-                cell_rect.width.max(1.0).round() as u32,
-                cell_rect.height.max(1.0).round() as u32,
+                cell_rect.width.value().max(1.0).round() as u32,
+                cell_rect.height.value().max(1.0).round() as u32,
             ),
         );
     }

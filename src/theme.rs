@@ -1,5 +1,7 @@
 use egui::emath::GuiRounding as _;
 
+use crate::model::LogicalPx;
+
 /// UI theme colors used across all rendering (egui + GPU).
 /// All colors are in the Catppuccin Mocha palette for the dark theme.
 
@@ -44,25 +46,25 @@ pub struct Theme {
     pub separator: egui::Color32,
 
     // ── UI Typography (not terminal font) ──
-    pub font_size_caption: f32,
-    pub font_size_body: f32,
-    pub font_size_heading: f32,
-    pub font_size_max: f32,
+    pub font_size_caption: LogicalPx,
+    pub font_size_body: LogicalPx,
+    pub font_size_heading: LogicalPx,
+    pub font_size_max: LogicalPx,
 
     // ── UI Sizing ──
-    pub border_width: f32,
-    pub corner_radius: f32,
-    pub item_height_tree: f32,
-    pub item_height_interactive: f32,
-    pub item_height_tab: f32,
-    pub tab_width: f32,
+    pub border_width: LogicalPx,
+    pub corner_radius: LogicalPx,
+    pub item_height_tree: LogicalPx,
+    pub item_height_interactive: LogicalPx,
+    pub item_height_tab: LogicalPx,
+    pub tab_width: LogicalPx,
 
     // ── Spacing (4px grid) ──
-    pub spacing_xs: f32,
-    pub spacing_sm: f32,
-    pub spacing_md: f32,
-    pub spacing_lg: f32,
-    pub spacing_xl: f32,
+    pub spacing_xs: LogicalPx,
+    pub spacing_sm: LogicalPx,
+    pub spacing_md: LogicalPx,
+    pub spacing_lg: LogicalPx,
+    pub spacing_xl: LogicalPx,
 
     // ── Terminal (float format for GPU renderer) ──
     pub terminal_fg: [f32; 4],
@@ -114,25 +116,25 @@ impl Theme {
             separator:      egui::Color32::from_rgba_unmultiplied(255, 255, 255, 20), // ~8%
 
             // UI Typography
-            font_size_caption: 11.0,
-            font_size_body: 13.0,
-            font_size_heading: 13.0,  // semibold로 구분, 크기는 같음
-            font_size_max: 14.0,
+            font_size_caption: LogicalPx(11.0),
+            font_size_body: LogicalPx(13.0),
+            font_size_heading: LogicalPx(13.0),  // semibold로 구분, 크기는 같음
+            font_size_max: LogicalPx(14.0),
 
             // UI Sizing
-            border_width: 1.0,
-            corner_radius: 4.0,
-            item_height_tree: 22.0,
-            item_height_interactive: 28.0,
-            item_height_tab: 24.0,
-            tab_width: 150.0,
+            border_width: LogicalPx(1.0),
+            corner_radius: LogicalPx(4.0),
+            item_height_tree: LogicalPx(22.0),
+            item_height_interactive: LogicalPx(28.0),
+            item_height_tab: LogicalPx(24.0),
+            tab_width: LogicalPx(150.0),
 
             // Spacing (4px grid)
-            spacing_xs: 4.0,
-            spacing_sm: 8.0,
-            spacing_md: 12.0,
-            spacing_lg: 16.0,
-            spacing_xl: 24.0,
+            spacing_xs: LogicalPx(4.0),
+            spacing_sm: LogicalPx(8.0),
+            spacing_md: LogicalPx(12.0),
+            spacing_lg: LogicalPx(16.0),
+            spacing_xl: LogicalPx(24.0),
 
             // Terminal (GPU float format)
             terminal_fg: [0.804, 0.839, 0.957, 1.0], // Text #cdd6f4
@@ -188,31 +190,31 @@ impl Theme {
         let mut style = (*ctx.style()).clone();
         style.text_styles.insert(
             egui::TextStyle::Body,
-            egui::FontId::proportional((self.font_size_body * ui_scale).round_ui()),
+            egui::FontId::proportional((self.font_size_body.value() * ui_scale).round_ui()),
         );
         style.text_styles.insert(
             egui::TextStyle::Small,
-            egui::FontId::proportional((self.font_size_caption * ui_scale).round_ui()),
+            egui::FontId::proportional((self.font_size_caption.value() * ui_scale).round_ui()),
         );
         style.text_styles.insert(
             egui::TextStyle::Heading,
-            egui::FontId::proportional((self.font_size_heading * ui_scale * 1.15).round_ui()),
+            egui::FontId::proportional((self.font_size_heading.value() * ui_scale * 1.15).round_ui()),
         );
         style.text_styles.insert(
             egui::TextStyle::Button,
-            egui::FontId::proportional((self.font_size_body * ui_scale).round_ui()),
+            egui::FontId::proportional((self.font_size_body.value() * ui_scale).round_ui()),
         );
         style.text_styles.insert(
             egui::TextStyle::Monospace,
-            egui::FontId::monospace((self.font_size_body * ui_scale).round_ui()),
+            egui::FontId::monospace((self.font_size_body.value() * ui_scale).round_ui()),
         );
         style.spacing.item_spacing = egui::vec2(
-            (self.spacing_sm * ui_scale).round_ui(),
-            (self.spacing_xs * ui_scale).round_ui(),
+            (self.spacing_sm.value() * ui_scale).round_ui(),
+            (self.spacing_xs.value() * ui_scale).round_ui(),
         );
         style.spacing.button_padding = egui::vec2(
-            (self.spacing_sm * ui_scale).round_ui(),
-            (self.spacing_xs * ui_scale).round_ui(),
+            (self.spacing_sm.value() * ui_scale).round_ui(),
+            (self.spacing_xs.value() * ui_scale).round_ui(),
         );
         ctx.set_style(style);
     }

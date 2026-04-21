@@ -146,7 +146,7 @@ impl MainWindow {
     fn sync_webviews(&mut self) {
         let terminal_rect = self.compute_terminal_rect();
         let scale_factor = self.base.gpu.scale_factor() as f64;
-        let tab_bar_h = self.state.tab_bar_height as f64;
+        let tab_bar_h = self.state.tab_bar_height.value() as f64;
 
         // Collect all Html surface IDs and their visibility/bounds
         let active_ws = self.state.active_workspace;
@@ -168,10 +168,10 @@ impl MainWindow {
                                 // hit-test area, allowing pane resize via drag.
                                 let inset = 4.0_f64;
                                 let bounds = crate::webview::WebViewBounds {
-                                    x: (pane_rect.x as f64 + inset) / scale_factor,
-                                    y: (pane_rect.y as f64 + tab_bar_h) / scale_factor,
-                                    width: (pane_rect.width as f64 - inset * 2.0).max(1.0) / scale_factor,
-                                    height: (pane_rect.height as f64 - tab_bar_h - inset).max(1.0) / scale_factor,
+                                    x: (pane_rect.x.value() as f64 + inset) / scale_factor,
+                                    y: (pane_rect.y.value() as f64 + tab_bar_h) / scale_factor,
+                                    width: (pane_rect.width.value() as f64 - inset * 2.0).max(1.0) / scale_factor,
+                                    height: (pane_rect.height.value() as f64 - tab_bar_h - inset).max(1.0) / scale_factor,
                                 };
                                 active_html.insert(html.id, bounds);
                             }

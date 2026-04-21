@@ -1,7 +1,7 @@
 use winit::event::{ElementState, MouseButton, MouseScrollDelta};
 use winit::window::CursorIcon;
 
-use crate::model::SplitDirection;
+use crate::model::{PhysicalPx, SplitDirection};
 use crate::window::Window;
 use crate::{DividerDrag, DividerDragKind};
 
@@ -75,7 +75,7 @@ impl MainWindow {
                 let terminal_rect = self.compute_terminal_rect();
                 if let Some(pos) = self.cursor_position {
                     let (x, y) = (pos.x as f32, pos.y as f32);
-                    if terminal_rect.contains(x, y) {
+                    if terminal_rect.contains(PhysicalPx(x), PhysicalPx(y)) {
                         if self.state.focus_pane_at_position(x, y, terminal_rect) {
                             self.base.dirty = true;
                         }

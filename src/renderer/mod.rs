@@ -269,8 +269,8 @@ impl CellRenderer {
     pub fn grid_size_for_rect(&self, rect: &Rect) -> (usize, usize) {
         let cell_w = self.font_config.metrics.cell_width.max(1.0);
         let cell_h = self.font_config.metrics.cell_height.max(1.0);
-        let cols = (rect.width / cell_w).floor() as usize;
-        let rows = (rect.height / cell_h).floor() as usize;
+        let cols = (rect.width.value() / cell_w).floor() as usize;
+        let rows = (rect.height.value() / cell_h).floor() as usize;
         (cols.max(1), rows.max(1))
     }
 
@@ -292,7 +292,7 @@ impl CellRenderer {
                 self.font_config.metrics.cell_width,
                 self.font_config.metrics.cell_height,
             ],
-            grid_offset: [viewport.x, viewport.y],
+            grid_offset: [viewport.x.value(), viewport.y.value()],
             viewport_size: [screen_width as f32, screen_height as f32],
             _padding: [0.0; 2],
         };
@@ -482,12 +482,12 @@ impl CellRenderer {
         surface_width: u32,
         surface_height: u32,
     ) {
-        let x = (viewport.x.max(0.0) as u32).min(surface_width.saturating_sub(1));
-        let y = (viewport.y.max(0.0) as u32).min(surface_height.saturating_sub(1));
+        let x = (viewport.x.value().max(0.0) as u32).min(surface_width.saturating_sub(1));
+        let y = (viewport.y.value().max(0.0) as u32).min(surface_height.saturating_sub(1));
         let max_w = surface_width.saturating_sub(x);
         let max_h = surface_height.saturating_sub(y);
-        let w = (viewport.width.max(1.0) as u32).min(max_w).max(1);
-        let h = (viewport.height.max(1.0) as u32).min(max_h).max(1);
+        let w = (viewport.width.value().max(1.0) as u32).min(max_w).max(1);
+        let h = (viewport.height.value().max(1.0) as u32).min(max_h).max(1);
         render_pass.set_scissor_rect(x, y, w, h);
 
         if self.bg_instance_count > 0 {
