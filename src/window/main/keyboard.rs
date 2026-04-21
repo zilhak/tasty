@@ -97,7 +97,16 @@ impl MainWindow {
                     &event.text
                 };
                 if let Some(terminal) = self.state.focused_terminal_mut() {
-                    let (dirty, sent) = Self::send_key_to_terminal(terminal, &event.logical_key, text_for_terminal, self.base.modifiers);
+                    // When modifiers are held, prefer the physical key for Ctrl+letter
+                    // handling so that IME composition (e.g. Korean 'ㅊ' for 'c') doesn't
+                    // prevent control characters from being sent.
+                    let terminal_key = if self.base.modifiers.control_key() || self.base.modifiers.super_key() || self.base.modifiers.alt_key() {
+                        crate::shortcuts::physical_key_to_logical(&event.physical_key)
+                            .unwrap_or_else(|| event.logical_key.clone())
+                    } else {
+                        event.logical_key.clone()
+                    };
+                    let (dirty, sent) = Self::send_key_to_terminal(terminal, &terminal_key, text_for_terminal, self.base.modifiers);
                     if dirty { self.base.dirty = true; }
 
                     if sent {
