@@ -151,7 +151,21 @@ pub fn draw_egui_panels(
                 crate::markdown_ui::draw_markdown(ui, md_panel, key_scroll_y, &id_suffix);
             });
         } else if let Some(exp_panel) = surface.as_explorer_mut() {
-            let keys = if info.is_keyboard_target { &surface_keys[..] } else { &[] };
+            let is_focused = info.is_keyboard_target;
+            let keys = if is_focused { &surface_keys[..] } else { &[] };
+            // 포커스 획득 시 즉시 갱신 + focused 상태에서 2초마다 자동 갱신
+            let should_refresh = if is_focused && !exp_panel.was_focused {
+                true
+            } else if is_focused && exp_panel.last_refresh.elapsed().as_secs() >= 2 {
+                true
+            } else {
+                false
+            };
+            if should_refresh {
+                exp_panel.refresh_expanded_dirs();
+                exp_panel.last_refresh = std::time::Instant::now();
+            }
+            exp_panel.was_focused = is_focused;
             draw_panel_frame(ctx, &format!("explorer_{}", id_suffix), info, 4, |ui| {
                 if let Some(act) = crate::explorer_ui::draw_explorer(ui, exp_panel, keys) {
                     pending_explorer_action = Some((info.pane_id, info.surface_id, act));

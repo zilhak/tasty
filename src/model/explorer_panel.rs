@@ -35,6 +35,10 @@ pub struct ExplorerPanel {
     pub show_preview: bool,
     /// Tree panel width ratio (0.0..1.0) when preview is shown. Default 0.35.
     pub tree_ratio: f32,
+    /// 직전 프레임에 이 surface가 focused였는지 추적. 포커스 획득 시 트리 갱신용.
+    pub was_focused: bool,
+    /// 마지막 자동 갱신 시각. focused 상태에서 2초마다 증분 갱신.
+    pub last_refresh: std::time::Instant,
 }
 
 
@@ -67,6 +71,8 @@ impl ExplorerPanel {
             address_bar_editing: false,
             show_preview: true,
             tree_ratio: 0.35,
+            was_focused: false,
+            last_refresh: std::time::Instant::now(),
         }
     }
 
@@ -104,6 +110,87 @@ impl ExplorerPanel {
                 .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
         });
         node.children = Some(entries);
+    }
+
+    /// 포커스 획득 시 호출: 현재 펼쳐진 디렉토리만 디스크에서 다시 읽어 diff 갱신.
+    /// expanded 상태와 selection을 보존한다.
+    pub fn refresh_expanded_dirs(&mut self) {
+        Self::refresh_node(&mut self.root_node);
+    }
+
+    fn refresh_node(node: &mut FileNode) {
+        if !node.is_directory || !node.is_expanded {
+            return;
+        }
+
+        // 디스크에서 새로 읽기
+        let mut new_entries = Vec::new();
+        if let Ok(read_dir) = std::fs::read_dir(&node.path) {
+            for entry in read_dir.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.starts_with('.')
+                    && !name.starts_with(".env")
+                    && !name.starts_with(".gitignore")
+                    && !name.starts_with(".claude")
+                {
+                    continue;
+                }
+                let path = entry.path().to_string_lossy().to_string();
+                let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
+                new_entries.push(FileNode {
+                    name,
+                    path,
+                    is_directory: is_dir,
+                    children: None,
+                    is_expanded: false,
+                });
+            }
+        }
+        new_entries.sort_by(|a, b| {
+            b.is_directory
+                .cmp(&a.is_directory)
+                .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+        });
+
+        // 기존 children과 비교하여 변경 시에만 갱신
+        let old_children = match node.children.take() {
+            Some(c) => c,
+            None => {
+                node.children = Some(new_entries);
+                return;
+            }
+        };
+
+        let old_paths: HashSet<String> = old_children.iter().map(|n| n.path.clone()).collect();
+        let new_paths: HashSet<String> = new_entries.iter().map(|n| n.path.clone()).collect();
+
+        if old_paths == new_paths {
+            // 파일 목록 동일 — 기존 트리 복원 후 하위만 재귀 탐색
+            node.children = Some(old_children);
+        } else {
+            // 변경됨 — expanded 상태를 보존하며 merge
+            let expanded_map: HashSet<String> = old_children.iter()
+                .filter(|n| n.is_expanded)
+                .map(|n| n.path.clone())
+                .collect();
+
+            for child in &mut new_entries {
+                if child.is_directory && expanded_map.contains(&child.path) {
+                    child.is_expanded = true;
+                    Self::load_directory(child);
+                }
+            }
+            node.children = Some(new_entries);
+        }
+
+        // 하위 expanded 디렉토리도 재귀 확인
+        if let Some(ref mut children) = node.children {
+            for child in children {
+                if child.is_expanded {
+                    Self::refresh_node(child);
+                }
+            }
+        }
     }
 
     /// Single-click select: clear all selections, select one item, set anchor.
