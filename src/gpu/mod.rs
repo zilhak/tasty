@@ -233,13 +233,12 @@ impl GpuState {
         self.egui_state.set_allow_ime(false);
         self.egui_state.handle_platform_output(window, full_output.platform_output);
 
-        // 팝업/오버레이가 열려 있으면 IME를 비활성화하여 KeyboardInput이 직접
-        // 발생하도록 한다. 이렇게 하면 physical_key 기반 단축키가 한글 IME
-        // 상태에서도 정상 동작한다.
-        let overlay_open = state.settings_open
-            || state.has_input_dialog_open()
-            || state.popups.has_focused();
-        window.set_ime_allowed(!overlay_open);
+        // 텍스트 입력이 없는 focused popup이 열려 있으면 IME를 비활성화하여
+        // KeyboardInput이 직접 발생하도록 한다. physical_key 기반 단축키가
+        // 한글 IME 상태에서도 정상 동작한다.
+        // winit은 동일 값이면 no-op이므로 매 프레임 호출해도 비용 없음.
+        let disable_ime = state.popups.has_focused() && !state.has_input_dialog_open();
+        window.set_ime_allowed(!disable_ime);
 
         // 4. Tessellate egui
         let paint_jobs = self.egui_ctx.tessellate(full_output.shapes, full_output.pixels_per_point);
