@@ -324,6 +324,95 @@ impl AppState {
         explorer.selected_files.iter().cloned().collect::<Vec<_>>().join("\n")
     }
 
+    /// Explorer: 선택된 파일을 OS 파일 클립보드에 복사. 성공 시 true.
+    pub fn explorer_file_copy(&self) -> bool {
+        let explorer = match self.focused_explorer() {
+            Some(e) => e,
+            None => return false,
+        };
+        if explorer.selected_files.is_empty() { return false; }
+        let paths: Vec<&str> = explorer.selected_files.iter().map(|s| s.as_str()).collect();
+        match crate::file_clipboard::set_file_clipboard(&paths, crate::file_clipboard::FileClipboardOp::Copy) {
+            Ok(()) => true,
+            Err(e) => { tracing::warn!("file copy failed: {e}"); false }
+        }
+    }
+
+    /// Explorer: 선택된 파일을 잘라내기 (OS 파일 클립보드). 성공 시 true.
+    pub fn explorer_file_cut(&self) -> bool {
+        let explorer = match self.focused_explorer() {
+            Some(e) => e,
+            None => return false,
+        };
+        if explorer.selected_files.is_empty() { return false; }
+        let paths: Vec<&str> = explorer.selected_files.iter().map(|s| s.as_str()).collect();
+        match crate::file_clipboard::set_file_clipboard(&paths, crate::file_clipboard::FileClipboardOp::Cut) {
+            Ok(()) => true,
+            Err(e) => { tracing::warn!("file cut failed: {e}"); false }
+        }
+    }
+
+    /// Explorer: OS 파일 클립보드에서 파일 붙여넣기.
+    pub fn explorer_file_paste(&mut self) {
+        let dest_dir = {
+            let explorer = match self.focused_explorer() {
+                Some(e) => e,
+                None => return,
+            };
+            crate::explorer_ui::paste_destination_for(explorer)
+        };
+        if let Ok(Some((sources, op))) = crate::file_clipboard::get_file_clipboard() {
+            for src in &sources {
+                let file_name = std::path::Path::new(src)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                let dest = std::path::Path::new(&dest_dir).join(&file_name);
+                if op == crate::file_clipboard::FileClipboardOp::Cut {
+                    if let Err(e) = std::fs::rename(src, &dest) {
+                        tracing::warn!("file move failed: {e}");
+                    }
+                } else if std::path::Path::new(src).is_dir() {
+                    if let Err(e) = crate::explorer_ui::copy_dir_recursive_pub(src, &dest.to_string_lossy()) {
+                        tracing::warn!("dir copy failed: {e}");
+                    }
+                } else {
+                    if let Err(e) = std::fs::copy(src, &dest) {
+                        tracing::warn!("file copy failed: {e}");
+                    }
+                }
+            }
+            // Refresh explorer
+            if let Some(explorer) = self.focused_explorer_mut() {
+                crate::model::ExplorerPanel::load_directory(&mut explorer.root_node);
+            }
+        }
+    }
+
+    /// Explorer: 전체 선택.
+    pub fn explorer_select_all(&mut self) {
+        if let Some(explorer) = self.focused_explorer_mut() {
+            let mut visible = Vec::new();
+            crate::explorer_ui::collect_visible_paths_pub(&explorer.root_node, &mut visible);
+            explorer.select_all(&visible);
+        }
+    }
+
+    fn focused_explorer(&self) -> Option<&crate::model::ExplorerPanel> {
+        let pane = self.focused_pane()?;
+        let tab = pane.tabs.get(pane.active_tab)?;
+        let surface = tab.layout().find_surface(tab.focused_surface)?;
+        surface.as_explorer()
+    }
+
+    fn focused_explorer_mut(&mut self) -> Option<&mut crate::model::ExplorerPanel> {
+        let pane = self.focused_pane_mut()?;
+        let tab = pane.tabs.get_mut(pane.active_tab)?;
+        let focused = tab.focused_surface;
+        let leaf = tab.layout_mut().find_leaf_mut(focused)?;
+        leaf.as_explorer_mut()
+    }
+
     /// Record that the user typed on the given surface (updates last_key_input timestamp).
     pub fn record_typing(&mut self, surface_id: u32) {
         self.engine.last_key_input.insert(surface_id, std::time::Instant::now());

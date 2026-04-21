@@ -270,16 +270,6 @@ pub fn draw_egui_panels(
                     path, name, x, y,
                 });
             }
-            crate::explorer_ui::ExplorerAction::CopyFeedback(kind) => {
-                let key = match kind {
-                    crate::explorer_ui::CopyFeedbackKind::Files => "toast.copied_files",
-                    crate::explorer_ui::CopyFeedbackKind::Cut => "toast.cut_files",
-                };
-                let scope = surface_id
-                    .map(crate::ui::ToastScope::Surface)
-                    .unwrap_or(crate::ui::ToastScope::Pane(pane_id));
-                state.toasts.push_info(crate::i18n::t(key), scope);
-            }
         }
     }
 }

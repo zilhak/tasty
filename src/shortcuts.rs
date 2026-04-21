@@ -394,6 +394,11 @@ impl MainWindow {
             return true;
         }
 
+        // Explorer: cut, select_all
+        if self.handle_explorer_shortcuts(key, mods) {
+            return true;
+        }
+
         // Clipboard copy (needs &self before state borrow)
         if self.handle_copy_shortcut(key, mods) {
             return true;
@@ -423,6 +428,36 @@ impl MainWindow {
         // Zoom
         if Self::handle_zoom_shortcut(&mut self.state, key, mods) {
             self.base.dirty = true;
+            return true;
+        }
+
+        false
+    }
+
+    fn handle_explorer_shortcuts(&mut self, key: &Key, mods: ModifiersState) -> bool {
+        let st = self.state.focused_surface_type();
+        if !matches!(st, crate::state::FocusedSurfaceType::Explorer) {
+            return false;
+        }
+
+        let kb = &self.state.engine.settings.keybindings;
+
+        // Cut
+        if matches_any_binding(&kb.cut, key, mods) {
+            if self.state.explorer_file_cut() {
+                let scope = crate::ui::ToastScope::Surface(
+                    self.state.focused_surface_id().unwrap_or(0)
+                );
+                self.state.toasts.push_info(crate::i18n::t("toast.cut_files"), scope);
+                self.mark_dirty();
+            }
+            return true;
+        }
+
+        // Select all
+        if matches_any_binding(&kb.select_all, key, mods) {
+            self.state.explorer_select_all();
+            self.mark_dirty();
             return true;
         }
 
@@ -461,10 +496,19 @@ impl MainWindow {
             self.mark_dirty();
             return true;
         }
-        // For non-terminal surfaces (Explorer/Markdown), inject egui Copy
-        // event so egui's label text selection can copy to clipboard.
         let st = self.state.focused_surface_type();
-        if matches!(st, crate::state::FocusedSurfaceType::Explorer | crate::state::FocusedSurfaceType::Markdown) {
+        if matches!(st, crate::state::FocusedSurfaceType::Explorer) {
+            // Explorer: 파일을 OS 파일 클립보드에 복사
+            if self.state.explorer_file_copy() {
+                let scope = crate::ui::ToastScope::Surface(
+                    self.state.focused_surface_id().unwrap_or(0)
+                );
+                self.state.toasts.push_info(crate::i18n::t("toast.copied_files"), scope);
+                self.mark_dirty();
+            }
+            return true;
+        }
+        if matches!(st, crate::state::FocusedSurfaceType::Markdown) {
             self.base.gpu.egui_ctx.input_mut(|i| i.events.push(egui::Event::Copy));
             self.mark_dirty();
             return true;
@@ -710,6 +754,12 @@ impl MainWindow {
         let bindings = self.state.engine.settings.keybindings.paste.clone();
         if !matches_any_binding(&bindings, key, mods) {
             return false;
+        }
+        let st = self.state.focused_surface_type();
+        if matches!(st, crate::state::FocusedSurfaceType::Explorer) {
+            self.state.explorer_file_paste();
+            self.mark_dirty();
+            return true;
         }
         self.paste_to_terminal();
         self.mark_dirty();

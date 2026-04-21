@@ -109,7 +109,13 @@ pub struct KeybindingSettings {
     /// Copy selected file paths as text (Explorer only).
     #[serde(deserialize_with = "deserialize_binding")]
     pub copy_path: Vec<String>,
-    /// Paste clipboard content into focused terminal.
+    /// Cut selected files (Explorer only).
+    #[serde(deserialize_with = "deserialize_binding")]
+    pub cut: Vec<String>,
+    /// Select all files (Explorer only).
+    #[serde(deserialize_with = "deserialize_binding")]
+    pub select_all: Vec<String>,
+    /// Paste clipboard content into focused terminal / paste files in Explorer.
     #[serde(deserialize_with = "deserialize_binding")]
     pub paste: Vec<String>,
     /// Increase font size.
@@ -158,6 +164,8 @@ impl KeybindingSettings {
         ("toggle_clipboard_viewer", "settings.keybindings.toggle_clipboard_viewer_label"),
         ("copy",                    "settings.keybindings.copy_label"),
         ("copy_path",               "settings.keybindings.copy_path_label"),
+        ("cut",                     "settings.keybindings.cut_label"),
+        ("select_all",              "settings.keybindings.select_all_label"),
         ("paste",                   "settings.keybindings.paste_label"),
         ("zoom_in",                 "settings.keybindings.zoom_in_label"),
         ("zoom_out",                "settings.keybindings.zoom_out_label"),
@@ -200,6 +208,8 @@ impl KeybindingSettings {
             "toggle_clipboard_viewer"  => self.toggle_clipboard_viewer.as_slice(),
             "copy"                     => self.copy.as_slice(),
             "copy_path"                => self.copy_path.as_slice(),
+            "cut"                      => self.cut.as_slice(),
+            "select_all"               => self.select_all.as_slice(),
             "paste"                    => self.paste.as_slice(),
             "zoom_in"                  => self.zoom_in.as_slice(),
             "zoom_out"                 => self.zoom_out.as_slice(),
@@ -243,6 +253,8 @@ impl KeybindingSettings {
             "toggle_clipboard_viewer"  => &mut self.toggle_clipboard_viewer,
             "copy"                     => &mut self.copy,
             "copy_path"                => &mut self.copy_path,
+            "cut"                      => &mut self.cut,
+            "select_all"               => &mut self.select_all,
             "paste"                    => &mut self.paste,
             "zoom_in"                  => &mut self.zoom_in,
             "zoom_out"                 => &mut self.zoom_out,
@@ -442,6 +454,8 @@ impl KeybindingSettings {
             toggle_clipboard_viewer: vec!["ctrl+shift+h".into()],
             copy: vec!["ctrl+c".into(), "alt+c".into(), "ctrl+shift+c".into()],
             copy_path: vec!["alt+shift+c".into()],
+            cut: vec!["ctrl+x".into(), "alt+x".into()],
+            select_all: vec!["ctrl+a".into(), "alt+a".into()],
             paste: vec!["ctrl+v".into(), "alt+v".into(), "ctrl+shift+v".into()],
             zoom_in: vec!["ctrl+=".into(), "ctrl++".into(), "alt+=".into(), "alt++".into()],
             zoom_out: vec!["ctrl+-".into(), "alt+-".into()],
@@ -487,6 +501,8 @@ impl KeybindingSettings {
             toggle_clipboard_viewer: vec!["alt+shift+h".into()],
             copy: vec!["alt+c".into()],
             copy_path: vec!["alt+shift+c".into()],
+            cut: vec!["alt+x".into()],
+            select_all: vec!["alt+a".into()],
             paste: vec!["alt+v".into()],
             zoom_in: vec!["alt+=".into(), "alt++".into()],
             zoom_out: vec!["alt+-".into()],
@@ -532,6 +548,8 @@ impl KeybindingSettings {
             toggle_clipboard_viewer: vec!["ctrl+shift+h".into()],
             copy: vec!["ctrl+c".into()],
             copy_path: vec!["alt+shift+c".into()],
+            cut: vec!["ctrl+x".into()],
+            select_all: vec!["ctrl+a".into()],
             paste: vec!["ctrl+v".into()],
             zoom_in: vec!["ctrl+=".into(), "ctrl++".into()],
             zoom_out: vec!["ctrl+-".into()],
@@ -577,6 +595,8 @@ impl KeybindingSettings {
             toggle_clipboard_viewer: vec!["ctrl+shift+h".into()],
             copy: vec!["ctrl+shift+c".into()],
             copy_path: vec!["alt+shift+c".into()],
+            cut: vec!["ctrl+shift+x".into()],
+            select_all: vec!["ctrl+a".into()],
             paste: vec!["ctrl+shift+v".into()],
             zoom_in: vec!["ctrl+=".into(), "ctrl++".into()],
             zoom_out: vec!["ctrl+-".into()],

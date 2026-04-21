@@ -12,21 +12,6 @@ fn key_pressed(keys: &[PendingKeyEvent], target: NamedKey) -> bool {
     keys.iter().any(|k| k.key == Key::Named(target))
 }
 
-/// Check if a character key was pressed in the pending key events.
-fn char_pressed(keys: &[PendingKeyEvent], ch: &str) -> bool {
-    keys.iter().any(|k| matches!(&k.key, Key::Character(c) if c.as_str().eq_ignore_ascii_case(ch)))
-}
-
-/// Check if any key event has command modifier (Ctrl on Linux/Win, Cmd on macOS).
-fn has_command(keys: &[PendingKeyEvent]) -> bool {
-    keys.iter().any(|k| {
-        #[cfg(target_os = "macos")]
-        { k.modifiers.super_key() }
-        #[cfg(not(target_os = "macos"))]
-        { k.modifiers.control_key() }
-    })
-}
-
 /// Check if any key event has shift modifier.
 fn has_shift(keys: &[PendingKeyEvent]) -> bool {
     keys.iter().any(|k| k.modifiers.shift_key())
@@ -97,7 +82,6 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel, keys: &[Pendi
                 .min_scrolled_height(tree_height)
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
-                    let mut needs_refresh = false;
                     let root = &mut panel.root_node;
                     if root.is_directory {
                         if let Some(ref mut children) = root.children {
@@ -121,59 +105,7 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel, keys: &[Pendi
                             }
 
                             // Read keyboard from dispatched key queue (NOT egui global input)
-                            let cmd = has_command(keys);
                             let shift = has_shift(keys);
-
-                            // Keyboard: file clipboard (Ctrl/Cmd+C/X/V, Ctrl/Cmd+A)
-                            if cmd && action.is_none() {
-                                let key_c = char_pressed(keys, "c");
-                                let key_x = char_pressed(keys, "x");
-                                let key_v = char_pressed(keys, "v");
-                                let key_a = char_pressed(keys, "a");
-
-                                if key_a {
-                                    action = Some(TreeAction::SelectAll);
-                                } else if (key_c || key_x) && !panel.selected_files.is_empty() {
-                                    let op = if key_x {
-                                        crate::file_clipboard::FileClipboardOp::Cut
-                                    } else {
-                                        crate::file_clipboard::FileClipboardOp::Copy
-                                    };
-                                    let paths: Vec<&str> = panel.selected_files.iter()
-                                        .map(|s| s.as_str()).collect();
-                                    match crate::file_clipboard::set_file_clipboard(&paths, op) {
-                                        Ok(()) => {
-                                            let kind = if key_x {
-                                                CopyFeedbackKind::Cut
-                                            } else {
-                                                CopyFeedbackKind::Files
-                                            };
-                                            explorer_action = Some(ExplorerAction::CopyFeedback(kind));
-                                        }
-                                        Err(e) => tracing::warn!("set_file_clipboard failed: {e}"),
-                                    }
-                                } else if key_v {
-                                    // Determine paste destination
-                                    let dest_dir = paste_destination(panel);
-                                    if let Ok(Some((sources, op))) = crate::file_clipboard::get_file_clipboard() {
-                                        for src in &sources {
-                                            let file_name = std::path::Path::new(src)
-                                                .file_name()
-                                                .map(|n| n.to_string_lossy().to_string())
-                                                .unwrap_or_default();
-                                            let dest = std::path::Path::new(&dest_dir).join(&file_name);
-                                            if op == crate::file_clipboard::FileClipboardOp::Cut {
-                                                let _ = std::fs::rename(src, &dest);
-                                            } else if std::path::Path::new(src).is_dir() {
-                                                let _ = copy_dir_recursive(src, &dest.to_string_lossy());
-                                            } else {
-                                                let _ = std::fs::copy(src, &dest);
-                                            }
-                                        }
-                                        needs_refresh = true;
-                                    }
-                                }
-                            }
 
                             // Keyboard navigation (from dispatched key queue)
                             let key_up = key_pressed(keys, NamedKey::ArrowUp);
@@ -222,9 +154,6 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel, keys: &[Pendi
                                     TreeAction::RangeSelect(path) => {
                                         panel.range_select(&path, &visible);
                                     }
-                                    TreeAction::SelectAll => {
-                                        panel.select_all(&visible);
-                                    }
                                     TreeAction::DoubleClickFile(path) => {
                                         let ext = path.rsplit('.').next().unwrap_or("").to_lowercase();
                                         match ext.as_str() {
@@ -249,9 +178,6 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel, keys: &[Pendi
                                 }
                             }
                         }
-                    }
-                    if needs_refresh {
-                        crate::model::ExplorerPanel::load_directory(&mut panel.root_node);
                     }
                 });
 
@@ -408,8 +334,6 @@ enum TreeAction {
     ToggleSelect(String),
     /// Shift+click — range select from anchor.
     RangeSelect(String),
-    /// Ctrl/Cmd+A — select all visible.
-    SelectAll,
     /// Double-click on file — open in dedicated tab.
     DoubleClickFile(String),
     /// Double-click on directory or Enter — expand/collapse.
@@ -428,17 +352,6 @@ pub enum ExplorerAction {
     FolderContextMenu { path: String, is_bookmarked: bool, x: f32, y: f32 },
     /// Request native context menu for a bookmark item (path, name, x, y).
     BookmarkContextMenu { path: String, name: String, x: f32, y: f32 },
-    /// 사용자 단축키로 발생한 복사/잘라내기 피드백. 토스트 발사용.
-    CopyFeedback(CopyFeedbackKind),
-}
-
-/// 사용자 행동(키보드 단축키)에서 발생한 복사 종류.
-#[derive(Debug, Clone, Copy)]
-pub enum CopyFeedbackKind {
-    /// Ctrl+C — 파일을 시스템 파일 클립보드에 복사.
-    Files,
-    /// Ctrl+X — 파일을 잘라냄.
-    Cut,
 }
 
 fn draw_file_node(
@@ -530,6 +443,16 @@ fn draw_file_node(
 }
 
 /// Determine the paste destination directory.
+/// 외부에서 호출 가능한 paste 목적지 결정 함수.
+pub fn paste_destination_for(panel: &ExplorerPanel) -> String {
+    paste_destination(panel)
+}
+
+/// 외부에서 호출 가능한 visible paths 수집.
+pub fn collect_visible_paths_pub(node: &FileNode, out: &mut Vec<String>) {
+    collect_visible_paths(node, out);
+}
+
 fn paste_destination(panel: &ExplorerPanel) -> String {
     // If exactly one directory is selected, paste into it
     if panel.selected_files.len() == 1 {
@@ -573,6 +496,11 @@ fn collect_visible_paths(node: &FileNode, out: &mut Vec<String>) {
             }
         }
     }
+}
+
+/// Recursively copy a directory (public wrapper).
+pub fn copy_dir_recursive_pub(src: &str, dst: &str) -> std::io::Result<()> {
+    copy_dir_recursive(src, dst)
 }
 
 /// Recursively copy a directory.
