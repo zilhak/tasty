@@ -32,6 +32,22 @@ pub(super) fn handle_event(w: &mut MainWindow, event: Ime, egui_consumed: bool) 
         w.mark_dirty();
         return;
     }
+
+    // 팝업/오버레이가 열려 있으면 IME 이벤트를 터미널로 전달하지 않는다.
+    // Enabled/Disabled는 IME 상태 추적용이므로 허용하고, Preedit/Commit만 차단.
+    let overlay_open = w.state.settings_open
+        || w.state.has_input_dialog_open()
+        || w.state.popups.has_focused();
+    if overlay_open {
+        match event {
+            Ime::Enabled => { w.ime_active = true; }
+            Ime::Disabled => { w.ime_active = false; }
+            Ime::Preedit(..) | Ime::Commit(..) => {}
+        }
+        w.mark_dirty();
+        return;
+    }
+
     match event {
         Ime::Enabled => w.ime_active = true,
         Ime::Disabled => on_disabled(w),
