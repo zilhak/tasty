@@ -182,11 +182,6 @@ impl Tab {
         }
     }
 
-    /// Whether this tab contains any GPU-rendered (terminal) surface.
-    pub fn is_gpu_rendered(&self) -> bool {
-        self.layout().first_terminal().is_some()
-    }
-
     /// Get the focused terminal.
     pub fn focused_terminal(&self) -> Option<&Terminal> {
         let layout = self.layout_opt.as_ref()?;

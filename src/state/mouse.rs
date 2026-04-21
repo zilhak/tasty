@@ -5,29 +5,16 @@ use super::AppState;
 impl AppState {
     /// Determine the cursor style for the given position within the terminal rect.
     /// Returns Some(true) for terminal surfaces (I-beam), Some(false) for other surface types
-    /// panels like Explorer/Markdown (default pointer), or None if not over any pane content.
+    /// like Explorer/Markdown (default pointer), or None if not over any surface.
     pub fn cursor_style_at(&self, x: f32, y: f32, terminal_rect: Rect) -> Option<bool> {
         if !terminal_rect.contains(PhysicalPx(x), PhysicalPx(y)) {
             return None;
         }
-        let tab_bar_h = self.tab_bar_height;
-        let ws = self.active_workspace();
-        let pane_rects = ws.pane_layout().compute_rects(terminal_rect);
-        for (pane_id, rect) in &pane_rects {
-            let content_rect = Rect {
-                x: rect.x,
-                y: rect.y + tab_bar_h,
-                width: rect.width,
-                height: (rect.height - tab_bar_h).max(PhysicalPx(1.0)),
-            };
-            if content_rect.contains(PhysicalPx(x), PhysicalPx(y)) {
-                // Check the panel type of this pane
-                if let Some(pane) = ws.pane_layout().find_pane(*pane_id) {
-                    if let Some(tab) = pane.tabs.get(pane.active_tab) {
-                        return Some(tab.is_gpu_rendered());
-                    }
+        for (_pane_id, _pane_rect, regions) in &self.surface_regions(terminal_rect) {
+            for r in regions {
+                if r.rect.contains(PhysicalPx(x), PhysicalPx(y)) {
+                    return Some(r.surface.is_gpu_rendered());
                 }
-                return None;
             }
         }
         None

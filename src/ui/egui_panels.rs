@@ -43,49 +43,26 @@ pub fn draw_egui_panels(
                 None => continue,
             };
 
-            // Case 1: Single leaf tab with a non-GPU-rendered surface.
-            if !tab.is_split() && !tab.is_gpu_rendered() {
-                let surface = tab.surface();
+            // Collect non-GPU-rendered surfaces from this tab.
+            let focused_surface_in_tab = tab.focused_surface;
+            let content_rect = Rect {
+                x: pane_rect.x,
+                y: pane_rect.y + tab_bar_h,
+                width: pane_rect.width,
+                height: (pane_rect.height - tab_bar_h)
+                    .max(crate::model::length::PhysicalPx(1.0)),
+            };
+            for r in tab.layout().surface_regions(content_rect).into_iter().filter(|r| !r.surface.is_gpu_rendered()) {
                 infos.push(EguiPanelInfo {
                     pane_id,
-                    surface_id: surface.surface_id(),
-                    logical_x: (pane_rect.x.value() / scale_factor).round_ui(),
-                    logical_y: ((pane_rect.y + tab_bar_h).value() / scale_factor).round_ui(),
-                    logical_w: (pane_rect.width.value() / scale_factor).round_ui(),
-                    logical_h: (((pane_rect.height - tab_bar_h)
-                        .max(crate::model::length::PhysicalPx(1.0)))
-                    .value()
-                        / scale_factor)
-                        .round_ui(),
-                    is_keyboard_target: pane_id == focused_pane_id,
+                    surface_id: Some(r.id),
+                    logical_x: (r.rect.x.value() / scale_factor).round_ui(),
+                    logical_y: (r.rect.y.value() / scale_factor).round_ui(),
+                    logical_w: (r.rect.width.value() / scale_factor).round_ui(),
+                    logical_h: (r.rect.height.value() / scale_factor).round_ui(),
+                    is_keyboard_target: pane_id == focused_pane_id
+                        && r.id == focused_surface_in_tab,
                 });
-                continue;
-            }
-
-            // Case 2: Split tab — collect non-terminal leaf regions.
-            if tab.is_split() {
-                let focused_surface_in_tab = tab.focused_surface;
-                let content_rect = Rect {
-                    x: pane_rect.x,
-                    y: pane_rect.y + tab_bar_h,
-                    width: pane_rect.width,
-                    height: (pane_rect.height - tab_bar_h)
-                        .max(crate::model::length::PhysicalPx(1.0)),
-                };
-                for r in tab.layout().surface_regions(content_rect).into_iter().filter(|r| !r.surface.is_gpu_rendered()) {
-                    let sid = r.id;
-                    let rect = r.rect;
-                    infos.push(EguiPanelInfo {
-                        pane_id,
-                        surface_id: Some(sid),
-                        logical_x: (rect.x.value() / scale_factor).round_ui(),
-                        logical_y: (rect.y.value() / scale_factor).round_ui(),
-                        logical_w: (rect.width.value() / scale_factor).round_ui(),
-                        logical_h: (rect.height.value() / scale_factor).round_ui(),
-                        is_keyboard_target: pane_id == focused_pane_id
-                            && sid == focused_surface_in_tab,
-                    });
-                }
             }
         }
     }
