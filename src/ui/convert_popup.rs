@@ -109,59 +109,33 @@ pub fn draw_convert_content(ui: &mut egui::Ui, state: &mut AppState) -> Option<C
     }
 
     // Shortcut keys: T/M/E/H/I
-    // 두 가지 경로로 매칭한다:
-    // 1. Event::Key의 physical_key — IME 비활성(영문) 시 동작
-    // 2. Event::Ime(Commit) — macOS에서 한글 IME 활성 시 KeyboardInput이 발생하지 않으므로,
-    //    commit된 한글 자모를 두벌식 매핑으로 역변환하여 물리키를 판단
+    // physical_key를 사용하여 한글 IME 활성 시에도 올바르게 매칭한다.
+    // 팝업이 열리면 gpu/mod.rs에서 set_ime_allowed(false)를 호출하여
+    // OS가 KeyboardInput을 직접 발생시키므로 physical_key가 항상 유효하다.
     ctx.input(|i| {
         for event in &i.events {
-            match event {
-                egui::Event::Key { physical_key, pressed: true, modifiers, .. }
-                    if modifiers.is_none() =>
-                {
-                    let matched_key = physical_key.as_ref().unwrap_or(&egui::Key::Escape);
-                    match matched_key {
-                        egui::Key::T if current_type != Some("Terminal") => {
-                            action = Some(ConvertAction::Terminal);
-                        }
-                        egui::Key::M if current_type != Some("Markdown") => {
-                            action = Some(ConvertAction::Markdown);
-                        }
-                        egui::Key::E if current_type != Some("Explorer") => {
-                            action = Some(ConvertAction::Explorer);
-                        }
-                        egui::Key::H if current_type != Some("Html") => {
-                            action = Some(ConvertAction::Html);
-                        }
-                        egui::Key::I if current_type != Some("Image") => {
-                            action = Some(ConvertAction::Image);
-                        }
-                        _ => {}
+            if let egui::Event::Key { physical_key, pressed: true, modifiers, .. } = event
+                && modifiers.is_none()
+            {
+                let matched_key = physical_key.as_ref().unwrap_or(&egui::Key::Escape);
+                match matched_key {
+                    egui::Key::T if current_type != Some("Terminal") => {
+                        action = Some(ConvertAction::Terminal);
                     }
-                }
-                egui::Event::Ime(egui::ImeEvent::Commit(text)) => {
-                    if let Some(key) = hangul_to_physical_key(text) {
-                        match key {
-                            egui::Key::T if current_type != Some("Terminal") => {
-                                action = Some(ConvertAction::Terminal);
-                            }
-                            egui::Key::M if current_type != Some("Markdown") => {
-                                action = Some(ConvertAction::Markdown);
-                            }
-                            egui::Key::E if current_type != Some("Explorer") => {
-                                action = Some(ConvertAction::Explorer);
-                            }
-                            egui::Key::H if current_type != Some("Html") => {
-                                action = Some(ConvertAction::Html);
-                            }
-                            egui::Key::I if current_type != Some("Image") => {
-                                action = Some(ConvertAction::Image);
-                            }
-                            _ => {}
-                        }
+                    egui::Key::M if current_type != Some("Markdown") => {
+                        action = Some(ConvertAction::Markdown);
                     }
+                    egui::Key::E if current_type != Some("Explorer") => {
+                        action = Some(ConvertAction::Explorer);
+                    }
+                    egui::Key::H if current_type != Some("Html") => {
+                        action = Some(ConvertAction::Html);
+                    }
+                    egui::Key::I if current_type != Some("Image") => {
+                        action = Some(ConvertAction::Image);
+                    }
+                    _ => {}
                 }
-                _ => {}
             }
         }
     });
@@ -257,23 +231,6 @@ fn action_for_index(idx: usize) -> ConvertAction {
         2 => ConvertAction::Explorer,
         3 => ConvertAction::Html,
         _ => ConvertAction::Image,
-    }
-}
-
-/// 한글 두벌식 자모를 해당 물리키(영문)로 역매핑한다.
-/// macOS에서 한글 IME 활성 시 KeyboardInput이 발생하지 않으므로,
-/// IME commit 텍스트로부터 물리키를 추론하는 데 사용한다.
-fn hangul_to_physical_key(text: &str) -> Option<egui::Key> {
-    if text.len() > 4 {
-        return None; // 단일 자모만 처리
-    }
-    match text {
-        "ㅅ" => Some(egui::Key::T),
-        "ㅡ" => Some(egui::Key::M),
-        "ㄷ" => Some(egui::Key::E),
-        "ㅗ" => Some(egui::Key::H),
-        "ㅑ" => Some(egui::Key::I),
-        _ => None,
     }
 }
 
