@@ -152,10 +152,10 @@ wgpu 기반 GPU 가속 터미널 렌더링. termwiz(WezTerm)로 VTE 파싱 및 �
 - 상세: [features.md](features.md)
 
 ### 워크스페이스 & 탭
-cmux 분석 기반 계층적 데이터 모델. Workspace → Pane (상위 레이아웃, PaneNode 트리) → Tab (SurfaceGroupLayout 트리) → Surface.
+cmux 분석 기반 계층적 데이터 모델. Workspace → Pane (상위 레이아웃, PaneNode 트리) → Tab (SurfaceLayout 트리) → Surface.
 
 **현재 구현된 기능:**
-- Workspace / PaneNode / Pane / Tab / SurfaceGroupLayout 계층 데이터 모델
+- Workspace / PaneNode / Pane / Tab / SurfaceLayout 계층 데이터 모델
 - egui 좌측 사이드바 (워크스페이스 목록) + Pane별 독립 탭 바
 - 두 가지 분할: Pane 분할(물리적 화면, 독립 탭 바) + Surface 분할(탭 내부)
 - 키보드 단축키: Alt+N(워크스페이스), Alt+T(탭), Alt+E/Shift+E(Pane분할), Alt+D/Shift+D(Surface분할), Alt+1~9(WS전환), Ctrl+1~0(탭전환), Ctrl+Tab/Shift+Tab(탭순환). macOS에서 `alt` 바인딩은 Cmd(⌘)로 매핑 (물리적 키 위치 일치)

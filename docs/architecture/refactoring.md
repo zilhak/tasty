@@ -6,13 +6,13 @@
 
 ---
 
-## 1. 코드 중복: PaneNode / SurfaceGroupLayout
+## 1. 코드 중복: PaneNode / SurfaceLayout
 
-`model/pane_tree.rs`의 PaneNode과 `model/surface_layout.rs`의 SurfaceGroupLayout은 둘 다 바이너리 트리(Leaf/Split)이고 다음 메서드가 구조적으로 동일하다:
+`model/pane_tree.rs`의 PaneNode과 `model/surface_layout.rs`의 SurfaceLayout은 둘 다 바이너리 트리(Leaf/Split)이고 다음 메서드가 구조적으로 동일하다:
 
-| PaneNode | SurfaceGroupLayout |
+| PaneNode | SurfaceLayout |
 |----------|-------------------|
-| `compute_rects()` | `render_regions()` |
+| `compute_rects()` | `surface_regions()` |
 | `find_divider_at()` | `find_divider_at()` |
 | `update_ratio_for_rect()` | `update_ratio_for_rect()` |
 | `all_pane_ids()` | `all_surface_ids()` |

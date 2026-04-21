@@ -236,14 +236,14 @@ pub struct SurfaceNode {
 
 ```
 단계 1: SurfaceNode<T: TerminalBackend>           (model.rs:838)
-단계 2: SurfaceGroupLayout<T: TerminalBackend>     (model.rs:980)
+단계 2: SurfaceLayout<T: TerminalBackend>     (model.rs:980)
          ├─ Single(SurfaceNode<T>)
-         └─ Split { first: Box<SurfaceGroupLayout<T>>, ... }
-단계 3: SurfaceGroupNode<T: TerminalBackend>       (model.rs:844)
-         └─ layout_opt: Option<SurfaceGroupLayout<T>>
+         └─ Split { first: Box<SurfaceLayout<T>>, ... }
+단계 3: SurfaceLayout<T: TerminalBackend>       (model.rs:844)
+         └─ layout_opt: Option<SurfaceLayout<T>>
 단계 4: Panel<T: TerminalBackend>                  (model.rs:714)
          ├─ Terminal(SurfaceNode<T>)
-         └─ SurfaceGroup(SurfaceGroupNode<T>)
+         └─ SurfaceLayout(SurfaceLayout<T>)
 단계 5: Tab<T: TerminalBackend>                    (model.rs:678)
          └─ panel_opt: Option<Panel<T>>
 단계 6: Pane<T: TerminalBackend>                   (model.rs:481)
@@ -269,7 +269,7 @@ impl<T: TerminalBackend> PaneNode<T> {
 }
 ```
 
-**영향 범위:** `model.rs`에서 `Terminal`을 참조하는 메서드 약 30개 (all_terminals, all_terminals_mut, process_all, for_each_terminal, for_each_terminal_mut, focused_terminal, active_terminal, render_regions 등), `state.rs`의 `AppState`, `main.rs`의 `App`, `gpu.rs`의 `GpuState`, `ui.rs`, `renderer.rs`까지 전파.
+**영향 범위:** `model.rs`에서 `Terminal`을 참조하는 메서드 약 30개 (all_terminals, all_terminals_mut, process_all, for_each_terminal, for_each_terminal_mut, focused_terminal, active_terminal, surface_regions 등), `state.rs`의 `AppState`, `main.rs`의 `App`, `gpu.rs`의 `GpuState`, `ui.rs`, `renderer.rs`까지 전파.
 
 ### trait object 대안
 

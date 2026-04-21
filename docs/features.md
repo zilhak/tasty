@@ -103,7 +103,7 @@
 - Workspace: 최상위 컨테이너. 상위 레이아웃(PaneNode 이진 트리)을 소유
 - PaneNode: Pane의 상위 레이아웃 트리. Leaf(Pane) 또는 Split. 탭 전환과 무관하게 고정
 - Pane: **독립적인 탭 바**를 가진 화면 영역. 여러 Tab을 포함
-- Tab: 탭 하나. `SurfaceGroupLayout`을 직접 소유. 단일 Leaf = 분할 안 된 상태, Split = 탭 내부 분할
+- Tab: 탭 하나. `SurfaceLayout`을 직접 소유. 단일 Leaf = 분할 안 된 상태, Split = 탭 내부 분할
 - Surface trait: 모든 콘텐츠 타입의 공통 인터페이스. 각 타입이 독립 struct로 구현
   - TerminalSurface: 단일 PTY 터미널
   - MarkdownPanel, ExplorerPanel, HtmlPanel, EmptySurface: 비터미널 콘텐츠
@@ -123,11 +123,11 @@
 
 ### 두 가지 분할 유형
 - **Pane 분할** (Alt+E / Alt+Shift+E, macOS: ⌘E / ⌘⇧E): 물리적 화면 분할. PaneNode 이진 트리 기반. 각 영역이 독립 탭 바를 가진다
-- **Surface 분할** (Alt+D / Alt+Shift+D, macOS: ⌘D / ⌘⇧D): 탭 내부 분할. Tab이 직접 소유하는 SurfaceGroupLayout 이진 트리 기반. 탭 바에서는 하나의 탭으로 표시된다
+- **Surface 분할** (Alt+D / Alt+Shift+D, macOS: ⌘D / ⌘⇧D): 탭 내부 분할. Tab이 직접 소유하는 SurfaceLayout 이진 트리 기반. 탭 바에서는 하나의 탭으로 표시된다
 - 단일 Leaf 탭이 분할 시 자동으로 Split 구조로 변환
 - **패닉 없는 분할 구현**: PTY/Terminal을 구조적 변경 이전에 선행 생성 — 리소스 생성 실패 시 레이아웃이 변경되지 않음
 - `PaneNode::split_pane_in_place`: `std::mem::replace` 2-step 패턴으로 소유권 이동 없이 트리 내부 노드를 in-place 변경
-- `SurfaceGroupLayout::split_with_surface`: 소유권 기반 infallible 분할 — 사전 생성된 `Box<dyn Surface>`를 받아 모든 surface 타입(Terminal, Markdown, Explorer, Html) 지원. `split_with_node`는 TerminalSurface 전용 편의 래퍼
+- `SurfaceLayout::split_with_surface`: 소유권 기반 infallible 분할 — 사전 생성된 `Box<dyn Surface>`를 받아 모든 surface 타입(Terminal, Markdown, Explorer, Html) 지원. `split_with_node`는 TerminalSurface 전용 편의 래퍼
 - Workspace/Tab 내부 Option 래핑 + take/put 패턴: split 함수가 infallible이므로 take 이후 put이 항상 실행됨 보장
 - 각 Surface를 scissor rect로 독립 렌더링
 - 뷰포트별 유니폼 갱신 (grid_offset을 각 Surface rect에 맞게 조정)
@@ -222,7 +222,7 @@
 - **디바이더 호버 시 커서 변경**: 분할 경계선에 4px 이내로 마우스를 가져가면 커서가 리사이즈 아이콘으로 변경 (수직 분할: ColResize, 수평 분할: RowResize). 벗어나면 Default로 복귀
 - **마우스 스크롤**: 일반 모드에서 마우스 휠은 스크롤백 버퍼를 탐색함. 대체 화면(vim, less 등)에서는 방향키 시퀀스(`\x1b[A`/`\x1b[B`)를 PTY에 전달. LineDelta와 PixelDelta 모두 지원. 포커스와 무관하게 마우스 커서 아래의 surface가 스크롤 대상이 됨 (커서가 터미널 영역 밖이면 포커스된 surface로 폴백)
 - **egui와의 이벤트 충돌 방지**: egui가 이벤트를 소비한 경우 (사이드바, 설정 윈도우 등) 터미널에는 전달하지 않음
-- 관련 모델 메서드: `Rect::contains()`, `PaneNode::find_divider_at()`, `PaneNode::update_ratio_for_rect()`, `SurfaceGroupLayout::find_divider_at()`, `SurfaceGroupLayout::update_ratio_for_rect()`, `SurfaceGroupLayout::find_surface_at()`
+- 관련 모델 메서드: `Rect::contains()`, `PaneNode::find_divider_at()`, `PaneNode::update_ratio_for_rect()`, `SurfaceLayout::find_divider_at()`, `SurfaceLayout::update_ratio_for_rect()`, `SurfaceLayout::find_surface_at()`
 
 ### 추가 Surface 타입 (Markdown / Explorer / HTML / Empty)
 - 모든 Surface 타입은 고유 surface_id를 가지며, 닫기/포커스/리스트 등 공통 surface 동작이 동일하게 적용됨
@@ -346,10 +346,10 @@
 - 패널 열 때 자동으로 전체 읽음 처리
 - "Mark all read" 버튼 제공
 
-### Surface scope toast 앵커 보강
-- `build_layout_context()`는 기본적으로 active tab에 보이는 surface rect만 `surface_rects`에 넣는다
-- Surface scope toast가 draw 시점에 그 목록에서 빠진 경우, 같은 active workspace 안에서 해당 surface를 포함한 pane을 다시 찾아 pane content rect로 앵커를 보강한다
-- 이 보강으로 Explorer의 "경로 복사"/"파일 복사" toast가 탭 전환 타이밍이나 active tab 드리프트 때문에 즉시 제거되지 않는다
+### Surface 영역 계산
+- `AppState::surface_regions()`가 모든 surface(터미널, Explorer, Markdown 등)의 영역을 통합 계산
+- `SurfaceRegion { id, rect, surface: &dyn Surface }` 구조체로 타입 구분 없이 일관된 접근 제공
+- toast, popup, surface highlight 등이 모두 이 통합 API를 사용
 
 ### 이벤트 수집 파이프라인
 - AppState.collect_events()가 모든 워크스페이스의 모든 터미널에서 이벤트 수집

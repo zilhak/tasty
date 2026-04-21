@@ -6,7 +6,7 @@
 
 ## model/ — 데이터 모델
 
-**책임:** Workspace → PaneNode → Pane → Tab → SurfaceGroupLayout의 계층 데이터 구조 정의. 레이아웃 계산(Rect 분할, 디바이더 탐색), 터미널 순회, 리사이즈.
+**책임:** Workspace → PaneNode → Pane → Tab → SurfaceLayout의 계층 데이터 구조 정의. 레이아웃 계산(Rect 분할, 디바이더 탐색), 터미널 순회, 리사이즈.
 
 렌더링이나 UI에 의존하지 않는 순수 데이터 계층. `tasty-terminal` 크레이트만 참조한다.
 
@@ -16,15 +16,15 @@
 | `workspace.rs` | Workspace 구조체. PaneNode 트리를 소유하며 take/put 패턴으로 구조 변경 |
 | `pane_tree.rs` | PaneNode 이진 트리 (상위 분할). split/close/rect계산/디바이더탐색/방향포커스 |
 | `pane.rs` | Pane 구조체. 탭 관리 (생성/닫기/전환), Terminal 생성, Surface 분할 |
-| `tab.rs` | Tab 구조체. `SurfaceGroupLayout`을 직접 소유. 분할/포커스/복원 로직 |
+| `tab.rs` | Tab 구조체. `SurfaceLayout`을 직접 소유. 분할/포커스/복원 로직 |
 | `surface_trait.rs` | `Surface` trait 정의. 모든 콘텐츠 타입의 공통 인터페이스 (downcast 메서드 포함) |
-| `surface_group.rs` | TerminalSurface (단일 터미널). Surface impl |
-| `surface_layout.rs` | SurfaceGroupLayout 이진 트리 (하위 분할). pane_tree.rs와 동일한 패턴 |
+| `terminal_surface.rs` | TerminalSurface (단일 터미널). Surface impl |
+| `surface_layout.rs` | SurfaceLayout 이진 트리 (하위 분할) + SurfaceRegion. pane_tree.rs와 동일한 패턴 |
 | `markdown_panel.rs` | MarkdownPanel. Surface impl. 마크다운 파일 경로 + 파싱 캐시 |
 | `explorer_panel.rs` | ExplorerPanel. Surface impl. 파일 탐색기 트리 상태 |
 | `html_panel.rs` | HtmlPanel. Surface impl. WebView URL 보유 |
 | `empty_surface.rs` | EmptySurface. Surface impl. 변환 버튼 표시 |
-| `tests.rs` | Rect/PaneNode/SurfaceGroupLayout 유닛 테스트 |
+| `tests.rs` | Rect/PaneNode/SurfaceLayout 유닛 테스트 |
 
 pane_tree.rs와 surface_layout.rs는 재귀 이진 트리 구조로, `match self { Leaf/Split }` 패턴의 반복이 본질적이다.
 
@@ -45,8 +45,8 @@ AppState 구조체를 mod.rs에서 정의하고, 각 서브모듈이 도메인�
 | `focus.rs` | 포커스 이동 (순차, 방향별, 마우스 위치 기반) |
 | `claude.rs` | Claude 부모-자식 관계 등록/해제/상태 관리 |
 | `message.rs` | Surface 간 메시지 송수신 (큐 기반) |
-| `layout.rs` | resize_all, render_regions, process_all, update_grid_size |
-| `mouse.rs` | 디바이더 탐색/드래그, cursor_style_at |
+| `layout.rs` | resize_all, surface_regions, process_all, update_grid_size |
+| `mouse.rs` | 디바이더 탐색/드래그, winit_cursor_icon_at |
 | `mark.rs` | Read mark, 타이핑 감지 |
 | `tests.rs` | 유닛 테스트 |
 

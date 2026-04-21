@@ -335,8 +335,8 @@ model.rs는 1,775줄로 프로젝트에서 가장 큰 파일이다. 크레이트
 | 677-711 | `Tab` | 35 |
 | 713-835 | `Panel` | 123 |
 | 837-841 | `SurfaceNode` | 5 |
-| 843-978 | `SurfaceGroupNode` | 136 |
-| 980-1341 | `SurfaceGroupLayout` | 362 |
+| 843-978 | `SurfaceLayout` | 136 |
+| 980-1341 | `SurfaceLayout` | 362 |
 | 1344-1355 | `compute_terminal_rect()` | 12 |
 | 1357-1370 | `DividerInfo`, `SplitDirection` | 14 |
 | 1372-1775 | `#[cfg(test)] mod tests` | 403 |
@@ -350,7 +350,7 @@ src/model/
 ├── pane.rs                 ← PaneNode, Pane
 ├── tab.rs                  ← Tab
 ├── panel.rs                ← Panel
-├── surface.rs              ← SurfaceNode, SurfaceGroupNode, SurfaceGroupLayout
+├── surface.rs              ← SurfaceNode, SurfaceLayout, SurfaceLayout
 └── tests.rs                ← #[cfg(test)] mod tests
 ```
 
@@ -391,7 +391,7 @@ pub use workspace::Workspace;
 pub use pane::{PaneNode, Pane};
 pub use tab::Tab;
 pub use panel::Panel;
-pub use surface::{SurfaceNode, SurfaceGroupNode, SurfaceGroupLayout};
+pub use surface::{SurfaceNode, SurfaceLayout, SurfaceLayout};
 ```
 
 ### 이점

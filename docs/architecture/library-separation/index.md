@@ -72,7 +72,7 @@ Tasty는 현재 17개 소스 파일, 약 8,870줄의 단일 바이너리 크레�
 
 ### 장기 과제 (2개)
 
-6. **`tasty-model`** — `Terminal` 타입에 직접 의존 (`model.rs:1`, `model.rs:840`). 분리하려면 `TerminalBackend` trait 추상화가 필요하고, 제네릭 파라미터가 8단계 (`SurfaceNode<T>` → `SurfaceGroupLayout<T>` → `SurfaceGroupNode<T>` → `Panel<T>` → `Tab<T>` → `Pane<T>` → `PaneNode<T>` → `Workspace<T>`) 전파됨. 현재 시점에서는 비용이 이점을 초과하나, 코드베이스 15,000줄 이상 성장 시 재검토.
+6. **`tasty-model`** — `Terminal` 타입에 직접 의존 (`model.rs:1`, `model.rs:840`). 분리하려면 `TerminalBackend` trait 추상화가 필요하고, 제네릭 파라미터가 8단계 (`SurfaceNode<T>` → `SurfaceLayout<T>` → `SurfaceLayout<T>` → `Panel<T>` → `Tab<T>` → `Pane<T>` → `PaneNode<T>` → `Workspace<T>`) 전파됨. 현재 시점에서는 비용이 이점을 초과하나, 코드베이스 15,000줄 이상 성장 시 재검토.
 
 7. **`tasty-renderer`** — `termwiz::surface::Surface`에 직접 의존 (`renderer.rs:3`, `renderer.rs:515`). `TerminalSurface` trait 설계가 필요하고, wgpu 공개 API 안정성 문제. 다른 VTE 백엔드 지원이 필요해지는 시점에 분리.
 

@@ -10,7 +10,7 @@ cmux 분석을 바탕으로 설계한 tasty의 데이터 모델 계층.
 Workspace (최상위 컨테이너)
   └── 상위 레이아웃 (PaneNode 이진 트리, 탭과 무관하게 고정)
        ├── Pane (독립 탭 바)
-       │    ├── Tab 1 → 하위 레이아웃 (SurfaceGroupNode)
+       │    ├── Tab 1 → 하위 레이아웃 (SurfaceLayout)
        │    │              ├── Surface (터미널)
        │    │              └── Surface (터미널)
        │    └── Tab 2 → Surface (터미널)
@@ -26,13 +26,13 @@ Workspace (최상위 컨테이너)
 | 상위 레이아웃 | `PaneNode` | Pane들의 이진 분할 트리. 탭 전환과 무관하게 고정 |
 | Pane | `Pane` | 독립적인 탭 바를 가진 화면 영역 |
 | Tab | `Tab` → `Panel` | 탭 하나. 하위 레이아웃을 포함 |
-| 하위 레이아웃 | `SurfaceGroupNode` | Surface들의 이진 분할 트리. 탭 전환 시 함께 전환 |
+| 하위 레이아웃 | `SurfaceLayout` | Surface들의 이진 분할 트리. 탭 전환 시 함께 전환 |
 | Surface | `Terminal` | 실제 터미널 인스턴스 (PTY 연결) |
 
 ### 두 가지 분할 유형
 
 1. **Pane 분할** (Ctrl+Shift+E/O): 화면을 물리적으로 나눈다. 각 새 영역은 자체 탭 바를 가진다. 탭이 독립적으로 전환된다.
-2. **SurfaceGroup 분할** (Ctrl+D / Ctrl+Shift+D): 현재 탭 내부에서 나눈다. 탭 바에서는 하나의 탭으로 보인다. 탭을 전환하면 내부 서피스 전체가 함께 전환된다.
+2. **SurfaceLayout 분할** (Ctrl+D / Ctrl+Shift+D): 현재 탭 내부에서 나눈다. 탭 바에서는 하나의 탭으로 보인다. 탭을 전환하면 내부 서피스 전체가 함께 전환된다.
 
 ## 데이터 모델
 
@@ -78,7 +78,7 @@ pub struct Tab {
 /// 콘텐츠 타입
 pub enum Panel {
     Terminal(SurfaceNode),              // 단일 터미널
-    SurfaceGroup(SurfaceGroupNode),     // 탭 내부 분할
+    SurfaceLayout(SurfaceLayout),     // 탭 내부 분할
 }
 
 /// 단일 터미널 인스턴스
@@ -88,18 +88,18 @@ pub struct SurfaceNode {
 }
 
 /// 탭 내부 분할 (하나의 탭으로 보이지만 여러 터미널을 렌더링)
-pub struct SurfaceGroupNode {
-    pub layout: SurfaceGroupLayout,
+pub struct SurfaceLayout {
+    pub layout: SurfaceLayout,
     pub focused_surface: SurfaceId,
 }
 
-pub enum SurfaceGroupLayout {
+pub enum SurfaceLayout {
     Single(SurfaceNode),
     Split {
         direction: SplitDirection,
         ratio: f32,
-        first: Box<SurfaceGroupLayout>,
-        second: Box<SurfaceGroupLayout>,
+        first: Box<SurfaceLayout>,
+        second: Box<SurfaceLayout>,
         focus_second: bool,
     },
 }
@@ -111,10 +111,10 @@ pub enum SurfaceGroupLayout {
 - Ctrl+Tab / Ctrl+Shift+Tab으로 포커스된 Pane의 탭을 전환한다.
 - 각 Pane의 탭은 **독립적으로** 전환된다. Pane A의 탭을 바꿔도 Pane B에 영향 없다.
 
-### SurfaceGroup 수준
-- SurfaceGroup은 탭 바에서 하나의 탭으로 표시된다.
-- 탭을 전환하면 SurfaceGroup 전체가 표시/숨김된다.
-- SurfaceGroup 내부 서피스 간 포커스 이동은 Alt+Arrow로 한다.
+### SurfaceLayout 수준
+- SurfaceLayout은 탭 바에서 하나의 탭으로 표시된다.
+- 탭을 전환하면 SurfaceLayout 전체가 표시/숨김된다.
+- SurfaceLayout 내부 서피스 간 포커스 이동은 Alt+Arrow로 한다.
 
 ### Workspace 수준
 - Alt+1~9로 워크스페이스를 전환한다.
@@ -139,15 +139,15 @@ egui SidePanel로 워크스페이스 목록을 렌더링한다. 워크스페이�
 | Alt+1~9 | 워크스페이스 전환 |
 | Ctrl+Shift+E | Pane 수직 분할 |
 | Ctrl+Shift+O | Pane 수평 분할 |
-| Ctrl+D | SurfaceGroup 수직 분할 |
-| Ctrl+Shift+D | SurfaceGroup 수평 분할 |
+| Ctrl+D | SurfaceLayout 수직 분할 |
+| Ctrl+Shift+D | SurfaceLayout 수평 분할 |
 | Alt+Arrow | Pane 간 포커스 이동 |
 
 ## 구현 현황
 
-- Workspace / PaneNode / Pane / Tab / Panel / SurfaceGroupNode 계층 데이터 모델 구현 완료
+- Workspace / PaneNode / Pane / Tab / Panel / SurfaceLayout 계층 데이터 모델 구현 완료
 - egui 사이드바 + Pane별 탭 바 렌더링 구현 완료
 - Pane 분할 (Ctrl+Shift+E/O) 구현 완료
-- SurfaceGroup 분할 (Ctrl+D / Ctrl+Shift+D) 구현 완료
+- SurfaceLayout 분할 (Ctrl+D / Ctrl+Shift+D) 구현 완료
 - 탭 전환 (Ctrl+Tab / Ctrl+Shift+Tab) 구현 완료
 - Pane 간 포커스 이동 (Alt+Arrow) 구현 완료
