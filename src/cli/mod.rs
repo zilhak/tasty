@@ -440,15 +440,9 @@ pub enum ClaudeCommands {
     },
     /// Spawn a child Claude instance
     Spawn {
-        /// Target surface to split next to (default: TASTY_SURFACE_ID)
-        #[arg(long)]
-        surface: Option<u32>,
         /// Target workspace (ID or name) — auto-manages spawn pane placement
         #[arg(long)]
-        workspace: Option<String>,
-        /// Split direction: vertical (default) or horizontal
-        #[arg(long)]
-        direction: Option<String>,
+        workspace: String,
         /// Working directory for the child
         #[arg(long)]
         cwd: Option<String>,

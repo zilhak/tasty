@@ -67,98 +67,25 @@ pub(crate) fn handle_claude_spawn(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    let workspace_param = params.get("workspace").and_then(|v| v.as_str()).map(String::from);
-    let explicit_surface = params.get("surface_id").and_then(|v| v.as_u64()).map(|v| v as u32);
-
-    // --workspace and --surface are mutually exclusive
-    if workspace_param.is_some() && explicit_surface.is_some() {
-        return JsonRpcResponse::invalid_params(
-            id,
-            "Cannot specify both '--workspace' and '--surface'. Use one.",
-        );
-    }
+    let workspace_param = match params.get("workspace").and_then(|v| v.as_str()) {
+        Some(ws) => ws.to_string(),
+        None => return JsonRpcResponse::invalid_params(id, "Missing required '--workspace' parameter"),
+    };
 
     let cwd = params.get("cwd").and_then(|v| v.as_str()).map(String::from);
     let role = params.get("role").and_then(|v| v.as_str()).map(String::from);
     let nickname = params.get("nickname").and_then(|v| v.as_str()).map(String::from);
     let prompt = params.get("prompt").and_then(|v| v.as_str()).map(String::from);
 
-    if let Some(ws_target) = workspace_param {
-        // --workspace mode: auto-managed spawn pane placement
-        let parent_surface_id = super::caller_surface_id(params)
-            .or_else(|| params.get("surface_id").and_then(|v| v.as_u64()).map(|v| v as u32))
-            .unwrap_or(0);
-        if parent_surface_id == 0 {
-            return JsonRpcResponse::invalid_params(
-                id,
-                "Cannot determine parent surface. Set TASTY_SURFACE_ID or pass --surface.",
-            );
-        }
-
-        spawn_in_workspace(state, id, parent_surface_id, &ws_target, cwd, role, nickname, prompt)
-    } else {
-        // Original --surface mode
-        let target_surface_id = match super::require_surface_id(params, &id) {
-            Ok(sid) => sid,
-            Err(e) => return e,
-        };
-        let parent_surface_id = super::caller_surface_id(params).unwrap_or(target_surface_id);
-
-        let direction = match params.get("direction").and_then(|v| v.as_str()) {
-            Some("horizontal") | Some("h") => SplitDirection::Horizontal,
-            _ => SplitDirection::Vertical,
-        };
-
-        spawn_at_surface(state, id, target_surface_id, parent_surface_id, direction, cwd, role, nickname, prompt)
+    let parent_surface_id = super::caller_surface_id(params).unwrap_or(0);
+    if parent_surface_id == 0 {
+        return JsonRpcResponse::invalid_params(
+            id,
+            "Cannot determine parent surface. Set TASTY_SURFACE_ID.",
+        );
     }
-}
 
-/// Original spawn logic: split next to a specific surface.
-fn spawn_at_surface(
-    state: &mut AppState,
-    id: serde_json::Value,
-    target_surface_id: u32,
-    parent_surface_id: u32,
-    direction: SplitDirection,
-    cwd: Option<String>,
-    role: Option<String>,
-    nickname: Option<String>,
-    prompt: Option<String>,
-) -> JsonRpcResponse {
-    // Save and restore focus — IPC commands must never move focus
-    let saved_workspace = state.active_workspace;
-    let saved_pane = state.engine.workspaces[saved_workspace].focused_pane;
-    state.focus_surface(target_surface_id);
-
-    let child_surface_id = match state.split_pane_get_surface(direction) {
-        Ok(sid) => sid,
-        Err(e) => return JsonRpcResponse::internal_error(id, e.to_string()),
-    };
-
-    let child_index = state.next_child_index(parent_surface_id);
-    let entry = ClaudeChildEntry {
-        child_surface_id,
-        index: child_index,
-        cwd: cwd.clone(),
-        role: role.clone(),
-        nickname: nickname.clone(),
-    };
-    state.register_child(parent_surface_id, entry);
-
-    start_claude_in_surface(state, child_surface_id, cwd.as_deref(), prompt.as_deref());
-
-    // Restore focus (both workspace and pane)
-    state.active_workspace = saved_workspace;
-    state.engine.workspaces[saved_workspace].focused_pane = saved_pane;
-
-    JsonRpcResponse::success(
-        id,
-        json!({
-            "child_surface_id": child_surface_id,
-            "child_index": child_index,
-            "parent_surface_id": parent_surface_id,
-        }),
-    )
+    spawn_in_workspace(state, id, parent_surface_id, &workspace_param, cwd, role, nickname, prompt)
 }
 
 /// Workspace-based spawn: auto-manage spawn pane and 2×2 grid placement.
