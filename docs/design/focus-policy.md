@@ -56,7 +56,7 @@ OS 네이티브 윈도우 비활성화(Win32 `EnableWindow` 등)를 사용하지
 Modal/Window 레벨 포커스와 별개로, 각 윈도우 내부에서:
 
 - 패인 간 포커스: Alt+Arrow 또는 클릭
-- 서피스(SurfaceGroup) 간 포커스: Alt+Arrow 또는 클릭
+- 서피스(탭 내부 분할) 간 포커스: Alt+Arrow 또는 클릭
 - 탭 전환: Ctrl+Tab
 
 이 내부 포커스는 해당 윈도우가 OS 포커스를 가지고 있고, Modal이 활성화되지 않았을 때만 동작한다.

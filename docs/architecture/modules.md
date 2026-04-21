@@ -6,7 +6,7 @@
 
 ## model/ — 데이터 모델
 
-**책임:** Workspace → PaneNode → Pane → Tab → Panel → SurfaceNode/SurfaceGroupLayout의 계층 데이터 구조 정의. 레이아웃 계산(Rect 분할, 디바이더 탐색), 터미널 순회, 리사이즈.
+**책임:** Workspace → PaneNode → Pane → Tab → SurfaceGroupLayout의 계층 데이터 구조 정의. 레이아웃 계산(Rect 분할, 디바이더 탐색), 터미널 순회, 리사이즈.
 
 렌더링이나 UI에 의존하지 않는 순수 데이터 계층. `tasty-terminal` 크레이트만 참조한다.
 
@@ -16,9 +16,9 @@
 | `workspace.rs` | Workspace 구조체. PaneNode 트리를 소유하며 take/put 패턴으로 구조 변경 |
 | `pane_tree.rs` | PaneNode 이진 트리 (상위 분할). split/close/rect계산/디바이더탐색/방향포커스 |
 | `pane.rs` | Pane 구조체. 탭 관리 (생성/닫기/전환), Terminal 생성, Surface 분할 |
-| `tab.rs` | Tab 구조체. `Box<dyn Surface>` 소유. 분할/복원 로직 |
+| `tab.rs` | Tab 구조체. `SurfaceGroupLayout`을 직접 소유. 분할/포커스/복원 로직 |
 | `surface_trait.rs` | `Surface` trait 정의. 모든 콘텐츠 타입의 공통 인터페이스 (downcast 메서드 포함) |
-| `surface_group.rs` | TerminalSurface (단일 터미널), SurfaceGroupNode (하위 분할 그룹). 둘 다 Surface impl |
+| `surface_group.rs` | TerminalSurface (단일 터미널). Surface impl |
 | `surface_layout.rs` | SurfaceGroupLayout 이진 트리 (하위 분할). pane_tree.rs와 동일한 패턴 |
 | `markdown_panel.rs` | MarkdownPanel. Surface impl. 마크다운 파일 경로 + 파싱 캐시 |
 | `explorer_panel.rs` | ExplorerPanel. Surface impl. 파일 탐색기 트리 상태 |
@@ -50,7 +50,7 @@ AppState 구조체를 mod.rs에서 정의하고, 각 서브모듈이 도메인�
 | `mark.rs` | Read mark, 타이핑 감지 |
 | `tests.rs` | 유닛 테스트 |
 
-state/pane.rs의 close_surface_by_id는 SurfaceGroup→탭→패인→워크스페이스 순서로 계단식 닫기를 수행하는 5-case 로직이다.
+state/pane.rs의 close_surface_by_id는 탭 내부 분할→탭→패인→워크스페이스 순서로 계단식 닫기를 수행하는 로직이다.
 
 ---
 
