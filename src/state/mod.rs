@@ -303,6 +303,27 @@ impl AppState {
         FocusedSurfaceType::None
     }
 
+    /// Explorer에서 선택된 파일 경로들을 줄바꿈으로 결합하여 반환.
+    pub fn focused_explorer_selected_paths(&self) -> String {
+        let pane = match self.focused_pane() {
+            Some(p) => p,
+            None => return String::new(),
+        };
+        let tab = match pane.tabs.get(pane.active_tab) {
+            Some(t) => t,
+            None => return String::new(),
+        };
+        let surface = match tab.layout().find_surface(tab.focused_surface) {
+            Some(s) => s,
+            None => return String::new(),
+        };
+        let explorer = match surface.as_explorer() {
+            Some(e) => e,
+            None => return String::new(),
+        };
+        explorer.selected_files.iter().cloned().collect::<Vec<_>>().join("\n")
+    }
+
     /// Record that the user typed on the given surface (updates last_key_input timestamp).
     pub fn record_typing(&mut self, surface_id: u32) {
         self.engine.last_key_input.insert(surface_id, std::time::Instant::now());

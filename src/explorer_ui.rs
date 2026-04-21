@@ -139,25 +139,18 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel, keys: &[Pendi
                                     } else {
                                         crate::file_clipboard::FileClipboardOp::Copy
                                     };
-                                    if shift && key_c {
-                                        // Shift+Ctrl+C = copy paths as text
-                                        let text = panel.selected_files.iter()
-                                            .cloned().collect::<Vec<_>>().join("\n");
-                                        action = Some(TreeAction::CopyPath(text));
-                                    } else {
-                                        let paths: Vec<&str> = panel.selected_files.iter()
-                                            .map(|s| s.as_str()).collect();
-                                        match crate::file_clipboard::set_file_clipboard(&paths, op) {
-                                            Ok(()) => {
-                                                let kind = if key_x {
-                                                    CopyFeedbackKind::Cut
-                                                } else {
-                                                    CopyFeedbackKind::Files
-                                                };
-                                                explorer_action = Some(ExplorerAction::CopyFeedback(kind));
-                                            }
-                                            Err(e) => tracing::warn!("set_file_clipboard failed: {e}"),
+                                    let paths: Vec<&str> = panel.selected_files.iter()
+                                        .map(|s| s.as_str()).collect();
+                                    match crate::file_clipboard::set_file_clipboard(&paths, op) {
+                                        Ok(()) => {
+                                            let kind = if key_x {
+                                                CopyFeedbackKind::Cut
+                                            } else {
+                                                CopyFeedbackKind::Files
+                                            };
+                                            explorer_action = Some(ExplorerAction::CopyFeedback(kind));
                                         }
+                                        Err(e) => tracing::warn!("set_file_clipboard failed: {e}"),
                                     }
                                 } else if key_v {
                                     // Determine paste destination
@@ -248,10 +241,6 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel, keys: &[Pendi
                                     }
                                     TreeAction::ToggleDir(path) => {
                                         toggle_dir_by_path(&mut panel.root_node, &path);
-                                    }
-                                    TreeAction::CopyPath(text) => {
-                                        ui.ctx().copy_text(text);
-                                        explorer_action = Some(ExplorerAction::CopyFeedback(CopyFeedbackKind::Path));
                                     }
                                     TreeAction::ContextMenu(path, pos) => {
                                         let is_bookmarked = crate::bookmarks::Bookmarks::load().is_bookmarked(&path);
@@ -425,8 +414,6 @@ enum TreeAction {
     DoubleClickFile(String),
     /// Double-click on directory or Enter — expand/collapse.
     ToggleDir(String),
-    /// Copy path(s) as text.
-    CopyPath(String),
     /// Right-click on a directory — show context menu for bookmark add/remove.
     ContextMenu(String, egui::Pos2),
 }
@@ -452,8 +439,6 @@ pub enum CopyFeedbackKind {
     Files,
     /// Ctrl+X — 파일을 잘라냄.
     Cut,
-    /// Shift+Ctrl+C — 경로를 텍스트로 복사.
-    Path,
 }
 
 fn draw_file_node(

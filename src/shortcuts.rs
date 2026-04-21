@@ -389,6 +389,11 @@ impl MainWindow {
         let cell_w = self.base.gpu.cell_width();
         let cell_h = self.base.gpu.cell_height();
 
+        // Copy path (Explorer only) — must check before generic copy
+        if self.handle_copy_path_shortcut(key, mods) {
+            return true;
+        }
+
         // Clipboard copy (needs &self before state borrow)
         if self.handle_copy_shortcut(key, mods) {
             return true;
@@ -422,6 +427,29 @@ impl MainWindow {
         }
 
         false
+    }
+
+    fn handle_copy_path_shortcut(&mut self, key: &Key, mods: ModifiersState) -> bool {
+        let bindings = self.state.engine.settings.keybindings.copy_path.clone();
+        if !matches_any_binding(&bindings, key, mods) {
+            return false;
+        }
+        // Explorer에서 선택된 파일 경로를 텍스트로 클립보드에 복사
+        let st = self.state.focused_surface_type();
+        if !matches!(st, crate::state::FocusedSurfaceType::Explorer) {
+            return false;
+        }
+        let text = self.state.focused_explorer_selected_paths();
+        if text.is_empty() {
+            return false;
+        }
+        self.base.gpu.egui_state.set_clipboard_text(text);
+        let scope = crate::ui::ToastScope::Surface(
+            self.state.focused_surface_id().unwrap_or(0)
+        );
+        self.state.toasts.push_info(crate::i18n::t("toast.copied_path"), scope);
+        self.mark_dirty();
+        true
     }
 
     fn handle_copy_shortcut(&mut self, key: &Key, mods: ModifiersState) -> bool {

@@ -274,7 +274,6 @@ pub fn draw_egui_panels(
                 let key = match kind {
                     crate::explorer_ui::CopyFeedbackKind::Files => "toast.copied_files",
                     crate::explorer_ui::CopyFeedbackKind::Cut => "toast.cut_files",
-                    crate::explorer_ui::CopyFeedbackKind::Path => "toast.copied_path",
                 };
                 let scope = surface_id
                     .map(crate::ui::ToastScope::Surface)

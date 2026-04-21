@@ -106,6 +106,9 @@ pub struct KeybindingSettings {
     /// Copy selection (or inject egui Copy event) from focused surface.
     #[serde(deserialize_with = "deserialize_binding")]
     pub copy: Vec<String>,
+    /// Copy selected file paths as text (Explorer only).
+    #[serde(deserialize_with = "deserialize_binding")]
+    pub copy_path: Vec<String>,
     /// Paste clipboard content into focused terminal.
     #[serde(deserialize_with = "deserialize_binding")]
     pub paste: Vec<String>,
@@ -154,6 +157,7 @@ impl KeybindingSettings {
         ("prev_tab",                "settings.keybindings.prev_tab_label"),
         ("toggle_clipboard_viewer", "settings.keybindings.toggle_clipboard_viewer_label"),
         ("copy",                    "settings.keybindings.copy_label"),
+        ("copy_path",               "settings.keybindings.copy_path_label"),
         ("paste",                   "settings.keybindings.paste_label"),
         ("zoom_in",                 "settings.keybindings.zoom_in_label"),
         ("zoom_out",                "settings.keybindings.zoom_out_label"),
@@ -195,6 +199,7 @@ impl KeybindingSettings {
             "prev_tab"                 => self.prev_tab.as_slice(),
             "toggle_clipboard_viewer"  => self.toggle_clipboard_viewer.as_slice(),
             "copy"                     => self.copy.as_slice(),
+            "copy_path"                => self.copy_path.as_slice(),
             "paste"                    => self.paste.as_slice(),
             "zoom_in"                  => self.zoom_in.as_slice(),
             "zoom_out"                 => self.zoom_out.as_slice(),
@@ -237,6 +242,7 @@ impl KeybindingSettings {
             "prev_tab"                 => &mut self.prev_tab,
             "toggle_clipboard_viewer"  => &mut self.toggle_clipboard_viewer,
             "copy"                     => &mut self.copy,
+            "copy_path"                => &mut self.copy_path,
             "paste"                    => &mut self.paste,
             "zoom_in"                  => &mut self.zoom_in,
             "zoom_out"                 => &mut self.zoom_out,
@@ -435,6 +441,7 @@ impl KeybindingSettings {
             prev_tab: Vec::new(),
             toggle_clipboard_viewer: vec!["ctrl+shift+h".into()],
             copy: vec!["ctrl+c".into(), "alt+c".into(), "ctrl+shift+c".into()],
+            copy_path: vec!["alt+shift+c".into()],
             paste: vec!["ctrl+v".into(), "alt+v".into(), "ctrl+shift+v".into()],
             zoom_in: vec!["ctrl+=".into(), "ctrl++".into(), "alt+=".into(), "alt++".into()],
             zoom_out: vec!["ctrl+-".into(), "alt+-".into()],
@@ -479,6 +486,7 @@ impl KeybindingSettings {
             prev_tab: Vec::new(),
             toggle_clipboard_viewer: vec!["alt+shift+h".into()],
             copy: vec!["alt+c".into()],
+            copy_path: vec!["alt+shift+c".into()],
             paste: vec!["alt+v".into()],
             zoom_in: vec!["alt+=".into(), "alt++".into()],
             zoom_out: vec!["alt+-".into()],
@@ -523,6 +531,7 @@ impl KeybindingSettings {
             prev_tab: Vec::new(),
             toggle_clipboard_viewer: vec!["ctrl+shift+h".into()],
             copy: vec!["ctrl+c".into()],
+            copy_path: vec!["alt+shift+c".into()],
             paste: vec!["ctrl+v".into()],
             zoom_in: vec!["ctrl+=".into(), "ctrl++".into()],
             zoom_out: vec!["ctrl+-".into()],
@@ -567,6 +576,7 @@ impl KeybindingSettings {
             prev_tab: Vec::new(),
             toggle_clipboard_viewer: vec!["ctrl+shift+h".into()],
             copy: vec!["ctrl+shift+c".into()],
+            copy_path: vec!["alt+shift+c".into()],
             paste: vec!["ctrl+shift+v".into()],
             zoom_in: vec!["ctrl+=".into(), "ctrl++".into()],
             zoom_out: vec!["ctrl+-".into()],
