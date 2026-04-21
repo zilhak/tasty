@@ -91,6 +91,7 @@ pub fn draw_keybindings_tab(
         ui.add_space(8.0);
 
         ui.vertical(|ui| {
+        ui.set_max_height(available_height);
 
         let mut captured = capture_key_combo(ui.ctx(), recording_field.is_some());
 
