@@ -103,10 +103,9 @@
 - Workspace: 최상위 컨테이너. 상위 레이아웃(PaneNode 이진 트리)을 소유
 - PaneNode: Pane의 상위 레이아웃 트리. Leaf(Pane) 또는 Split. 탭 전환과 무관하게 고정
 - Pane: **독립적인 탭 바**를 가진 화면 영역. 여러 Tab을 포함
-- Tab: 탭 하나. `Box<dyn Surface>` trait object 소유
+- Tab: 탭 하나. `SurfaceGroupLayout`을 직접 소유. 단일 Leaf = 분할 안 된 상태, Split = 탭 내부 분할
 - Surface trait: 모든 콘텐츠 타입의 공통 인터페이스. 각 타입이 독립 struct로 구현
   - TerminalSurface: 단일 PTY 터미널
-  - SurfaceGroupNode: 탭 내부 분할 (SurfaceGroupLayout 이진 트리 소유)
   - MarkdownPanel, ExplorerPanel, HtmlPanel, EmptySurface: 비터미널 콘텐츠
 - AppState: 전체 워크스페이스 목록과 활성 상태를 관리하는 중앙 상태 (IdGenerator 포함)
 
@@ -124,12 +123,12 @@
 
 ### 두 가지 분할 유형
 - **Pane 분할** (Alt+E / Alt+Shift+E, macOS: ⌘E / ⌘⇧E): 물리적 화면 분할. PaneNode 이진 트리 기반. 각 영역이 독립 탭 바를 가진다
-- **SurfaceGroup 분할** (Alt+D / Alt+Shift+D, macOS: ⌘D / ⌘⇧D): 탭 내부 분할. SurfaceGroupLayout 이진 트리 기반. 탭 바에서는 하나의 탭으로 표시된다
-- TerminalSurface가 분할 시 자동으로 SurfaceGroupNode으로 변환
+- **Surface 분할** (Alt+D / Alt+Shift+D, macOS: ⌘D / ⌘⇧D): 탭 내부 분할. Tab이 직접 소유하는 SurfaceGroupLayout 이진 트리 기반. 탭 바에서는 하나의 탭으로 표시된다
+- 단일 Leaf 탭이 분할 시 자동으로 Split 구조로 변환
 - **패닉 없는 분할 구현**: PTY/Terminal을 구조적 변경 이전에 선행 생성 — 리소스 생성 실패 시 레이아웃이 변경되지 않음
 - `PaneNode::split_pane_in_place`: `std::mem::replace` 2-step 패턴으로 소유권 이동 없이 트리 내부 노드를 in-place 변경
 - `SurfaceGroupLayout::split_with_surface`: 소유권 기반 infallible 분할 — 사전 생성된 `Box<dyn Surface>`를 받아 모든 surface 타입(Terminal, Markdown, Explorer, Html) 지원. `split_with_node`는 TerminalSurface 전용 편의 래퍼
-- Workspace/Tab/SurfaceGroupNode 내부 Option 래핑 + take/put 패턴: split 함수가 infallible이므로 take 이후 put이 항상 실행됨 보장
+- Workspace/Tab 내부 Option 래핑 + take/put 패턴: split 함수가 infallible이므로 take 이후 put이 항상 실행됨 보장
 - 각 Surface를 scissor rect로 독립 렌더링
 - 뷰포트별 유니폼 갱신 (grid_offset을 각 Surface rect에 맞게 조정)
 
@@ -164,8 +163,8 @@
 - Alt+T (macOS: ⌘T): 포커스된 Pane에 새 탭
 - Alt+E (macOS: ⌘E): Pane 수직 분할
 - Alt+Shift+E (macOS: ⌘⇧E): Pane 수평 분할
-- Alt+D (macOS: ⌘D): SurfaceGroup 수직 분할 (탭 내부)
-- Alt+Shift+D (macOS: ⌘⇧D): SurfaceGroup 수평 분할 (탭 내부)
+- Alt+D (macOS: ⌘D): Surface 수직 분할 (탭 내부)
+- Alt+Shift+D (macOS: ⌘⇧D): Surface 수평 분할 (탭 내부)
 - Alt+] / Alt+[ (macOS: ⌘] / ⌘[): Surface 포커스 다음/이전
 - Ctrl+] / Ctrl+[: Pane 포커스 다음/이전
 - Alt+1~9 (macOS: ⌘1~9): 워크스페이스 전환
@@ -183,7 +182,7 @@
   - `SplitDirection::Horizontal`(상하 경계) → Up/Down 방향에 대응
   - Left/Up: 시블링의 rightmost/bottommost 리프로 이동 (인접한 엣지)
   - Right/Down: 시블링의 leftmost/topmost 리프로 이동 (인접한 엣지)
-- SurfaceGroup 내부 서피스 간 이동 우선, 이동 불가 시 Pane 간 이동
+- 탭 내부 서피스 간 이동 우선, 이동 불가 시 Pane 간 이동
 - close_surface 단축키: 포커스된 서피스 닫기. cascade: surface → pane → workspace. 마지막 workspace면 닫고 새로 생성
 - close_active 단축키 (기본 Ctrl+W): 활성 항목 닫기. cascade: tab → pane → workspace. 마지막 workspace면 닫고 새로 생성. 설정 가능
 - Ctrl+Shift+W: 포커스된 패인 닫기. cascade: pane → workspace. 마지막 workspace면 닫고 새로 생성
@@ -195,8 +194,8 @@
 
 ### 마우스 인터랙션
 - **클릭으로 Pane 포커스**: 터미널 영역 좌클릭 시 해당 Pane이 포커스됨. `cursor_position` 추적 + `focus_pane_at_position()`으로 어떤 Pane인지 판별
-- **클릭으로 Surface 포커스**: SurfaceGroup 내에서 특정 터미널을 클릭하면 해당 Surface가 포커스됨. `focus_surface_at_position()`으로 클릭 좌표에서 Surface ID를 찾아 전환
-- **디바이더 드래그로 분할 비율 조절**: Pane 또는 SurfaceGroup 분할 경계선을 마우스 드래그하여 비율 조정 (0.1~0.9 범위 클램프). `DividerDrag` 상태 머신으로 드래그 시작/이동/종료를 추적. 드래그 중 실시간 리사이즈 적용
+- **클릭으로 Surface 포커스**: 탭 내부 분할에서 특정 터미널을 클릭하면 해당 Surface가 포커스됨. `focus_surface_at_position()`으로 클릭 좌표에서 Surface ID를 찾아 전환
+- **디바이더 드래그로 분할 비율 조절**: Pane 또는 탭 내부 분할 경계선을 마우스 드래그하여 비율 조정 (0.1~0.9 범위 클램프). `DividerDrag` 상태 머신으로 드래그 시작/이동/종료를 추적. 드래그 중 실시간 리사이즈 적용
 - **디바이더 호버 시 커서 변경**: 분할 경계선에 4px 이내로 마우스를 가져가면 커서가 리사이즈 아이콘으로 변경 (수직 분할: ColResize, 수평 분할: RowResize). 벗어나면 Default로 복귀
 - **마우스 스크롤**: 일반 모드에서 마우스 휠은 스크롤백 버퍼를 탐색함. 대체 화면(vim, less 등)에서는 방향키 시퀀스(`\x1b[A`/`\x1b[B`)를 PTY에 전달. LineDelta와 PixelDelta 모두 지원. 포커스와 무관하게 마우스 커서 아래의 surface가 스크롤 대상이 됨 (커서가 터미널 영역 밖이면 포커스된 surface로 폴백)
 - **egui와의 이벤트 충돌 방지**: egui가 이벤트를 소비한 경우 (사이드바, 설정 윈도우 등) 터미널에는 전달하지 않음
@@ -260,10 +259,10 @@
 - 키보드 탐색: Up/Down 방향키로 항목 이동, Enter로 선택 확정
 - 단축키: T/M/E/H 키로 즉시 선택
 - 팝업이 열려 있으면 키보드 입력이 터미널로 전달되지 않음 (PopupManager 포커스 자동 관리)
-- **개별 surface 교체 원칙**: 타입 전환은 대상 surface의 구현체만 교체한다. 기존 구현체는 메모리에서 해제되고 새 구현체로 대체된다. 탭, SurfaceGroup 레이아웃, 다른 surface 등 주변 구조에는 어떤 영향도 주지 않는다.
-  - SurfaceGroup 내부의 surface를 전환해도 그룹의 다른 surface는 그대로 유지됨
+- **개별 surface 교체 원칙**: 타입 전환은 대상 surface의 구현체만 교체한다. 기존 구현체는 메모리에서 해제되고 새 구현체로 대체된다. 탭 레이아웃, 다른 surface 등 주변 구조에는 어떤 영향도 주지 않는다.
+  - 탭 내부 분할의 surface를 전환해도 다른 surface는 그대로 유지됨
   - 단독 surface(탭에 1개)를 전환하면 탭의 surface가 교체됨. Terminal로 전환 시 탭 이름이 자동(CWD 기반)으로 복원됨
-  - 비터미널 surface(Markdown, Explorer, Html, Empty)는 SurfaceGroup 내에서도 올바르게 렌더링됨 (egui 렌더링)
+  - 비터미널 surface(Markdown, Explorer, Html, Empty)는 탭 내부 분할에서도 올바르게 렌더링됨 (egui 렌더링)
 
 #### HTML WebView
 - OS 네이티브 WebView를 wgpu 윈도우 위에 child view로 오버레이
@@ -770,7 +769,7 @@ Claude Code의 훅 시스템과 연동하여 Claude의 활동 상태를 추적�
 - `PaneNode::find_pane`: ID 기반 탐색
 - `PaneNode::all_pane_ids`: 순서 보장 ID 수집
 - `PaneNode::next_pane_id` / `prev_pane_id`: 순환 포커스 이동
-- `AppState::move_focus_forward` / `move_focus_backward`: SurfaceGroup 내 Surface 우선 이동, 단일이면 Pane 간 이동
+- `AppState::move_focus_forward` / `move_focus_backward`: 탭 내부 Surface 우선 이동, 단일이면 Pane 간 이동
 - `PaneNode::find_divider_at`: 분할 경계선 히트 테스트
 - `PaneNode::split_pane_in_place`: 트리 내부 분할 (성공/실패 케이스)
 - `PaneNode::close_pane`: 단일 리프 닫기 실패, 분할에서 형제 승격, 중첩 분할에서 닫기, 미발견 대상

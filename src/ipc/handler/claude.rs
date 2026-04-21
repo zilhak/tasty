@@ -29,7 +29,7 @@ pub(crate) fn handle_claude_launch(
         let pane_id = ws.focused_pane;
         ws.pane_layout().find_pane(pane_id)
             .and_then(|pane| pane.tabs.get(pane.active_tab))
-            .and_then(|tab| tab.surface().focused_surface_id())
+            .and_then(|tab| tab.focused_surface_id())
     };
 
     if let Some(sid) = surface_id {
@@ -194,7 +194,7 @@ fn find_and_spawn_in_pane(
     let mut target_surface_ids: Vec<u32> = Vec::new();
 
     for (i, tab) in pane.tabs.iter().enumerate() {
-        let surface_ids = tab.surface().all_surface_ids();
+        let surface_ids = tab.all_surface_ids();
         let count = surface_ids.len();
         if count < 4 {
             target_tab_index = Some(i);

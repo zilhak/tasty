@@ -280,9 +280,7 @@ impl GpuState {
                     height: (pane_rect.height - tab_bar_h).max(PhysicalPx(1.0)),
                 };
                 if let Some(tab) = pane.tabs.get(pane.active_tab) {
-                    if let Some(group) = tab.surface().as_surface_group() {
-                        dividers.extend(group.layout().collect_dividers(content_rect));
-                    }
+                    dividers.extend(tab.layout().collect_dividers(content_rect));
                 }
             }
         }

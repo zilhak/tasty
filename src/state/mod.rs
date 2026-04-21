@@ -271,7 +271,7 @@ impl AppState {
     pub fn focused_surface_id(&self) -> Option<u32> {
         let pane = self.focused_pane()?;
         let tab = pane.tabs.get(pane.active_tab)?;
-        tab.surface().focused_surface_id()
+        tab.focused_surface_id()
     }
 
     /// Determine the type of the currently focused surface.
@@ -284,17 +284,13 @@ impl AppState {
             Some(t) => t,
             None => return FocusedSurfaceType::None,
         };
-        let surface = tab.surface();
 
-        // SurfaceGroup: check the focused leaf's type
-        if let Some(group) = surface.as_surface_group() {
-            if let Some(leaf) = group.layout().find_surface(group.focused_surface) {
-                return Self::surface_to_type(leaf);
-            }
-            return FocusedSurfaceType::None;
+        // Find the focused leaf surface in the layout
+        if let Some(leaf) = tab.layout().find_surface(tab.focused_surface) {
+            return Self::surface_to_type(leaf);
         }
 
-        Self::surface_to_type(surface)
+        FocusedSurfaceType::None
     }
 
     fn surface_to_type(surface: &dyn crate::model::Surface) -> FocusedSurfaceType {
@@ -372,7 +368,7 @@ impl AppState {
             for pid in pane_ids {
                 if let Some(pane) = workspace.pane_layout().find_pane(pid) {
                     for tab in &pane.tabs {
-                        if tab.surface().contains_surface(surface_id) {
+                        if tab.contains_surface(surface_id) {
                             return Some(pid);
                         }
                     }
@@ -432,7 +428,7 @@ impl AppState {
             for pid in workspace.pane_layout().all_pane_ids() {
                 if let Some(pane) = workspace.pane_layout().find_pane(pid) {
                     for tab in &pane.tabs {
-                        if tab.surface().contains_surface(surface_id) {
+                        if tab.contains_surface(surface_id) {
                             return Some((i, pid));
                         }
                     }

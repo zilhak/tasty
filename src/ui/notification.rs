@@ -236,7 +236,7 @@ fn build_layout_context(
             let ws = state.active_workspace();
             if let Some(pane) = ws.pane_layout().find_pane(*pane_id) {
                 if let Some(tab) = pane.tabs.get(pane.active_tab) {
-                    if let Some(sid) = tab.surface().focused_surface_id() {
+                    if let Some(sid) = tab.focused_surface_id() {
                         let tab_bar_h = state.tab_bar_height;
                         let content_rect = egui::Rect::from_min_size(
                             egui::pos2(pane_rect.x.value() / scale_factor, (pane_rect.y + tab_bar_h).value() / scale_factor),

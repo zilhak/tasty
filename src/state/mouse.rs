@@ -24,7 +24,7 @@ impl AppState {
                 // Check the panel type of this pane
                 if let Some(pane) = ws.pane_layout().find_pane(*pane_id) {
                     if let Some(tab) = pane.tabs.get(pane.active_tab) {
-                        return Some(tab.surface().is_gpu_rendered());
+                        return Some(tab.is_gpu_rendered());
                     }
                 }
                 return None;
@@ -61,8 +61,7 @@ impl AppState {
         };
 
         let tab = pane.tabs.get(pane.active_tab)?;
-        let group = tab.surface().as_surface_group()?;
-        group.layout().find_divider_at(x, y, content_rect, threshold)
+        tab.layout().find_divider_at(x, y, content_rect, threshold)
     }
 
     /// Update a pane-level split ratio based on a divider drag.
@@ -109,11 +108,6 @@ impl AppState {
             None => return false,
         };
 
-        match tab.surface_mut().as_surface_group_mut() {
-            Some(group) => {
-                group.layout_mut().update_ratio_for_rect(divider.split_rect, new_ratio, content_rect)
-            }
-            None => false,
-        }
+        tab.layout_mut().update_ratio_for_rect(divider.split_rect, new_ratio, content_rect)
     }
 }

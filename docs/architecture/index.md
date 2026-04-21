@@ -49,9 +49,8 @@ tasty/
     │   ├── workspace.rs        # Workspace 구조체
     │   ├── pane_tree.rs        # PaneNode 이진 트리 (상위 분할)
     │   ├── pane.rs             # Pane 구조체 + 탭 관리
-    │   ├── tab.rs              # Tab 구조체 + Panel lazy init
-    │   ├── panel.rs            # Panel enum (Terminal/SurfaceGroup/Markdown/Explorer)
-    │   ├── surface_group.rs    # SurfaceGroupNode wrapper + DeferredSpawn
+    │   ├── tab.rs              # Tab 구조체 (SurfaceGroupLayout 직접 소유)
+    │   ├── surface_group.rs    # TerminalSurface + DeferredSpawn
     │   ├── surface_layout.rs   # SurfaceGroupLayout 이진 트리 (하위 분할)
     │   ├── markdown_panel.rs   # 마크다운 뷰어 데이터
     │   ├── explorer_panel.rs   # 파일 탐색기 데이터

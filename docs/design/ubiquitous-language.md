@@ -156,9 +156,9 @@ Pane은 기존 터미널에 대응하는 개념이 없다. 이것이 Tasty의 �
 | Workspace | `Workspace` | MainWindow의 최상위 컨테이너 |
 | 상위 레이아웃 | `PaneNode` (이진 트리 enum: Leaf / Split) | Pane 배치 |
 | Pane | `Pane` | 독립적인 탭 바. 탭 목록 보유 |
-| Tab | `Tab` → `Box<dyn Surface>` | 탭 하나의 내용물 |
-| 하위 레이아웃 | `SurfaceGroupNode` (이진 트리 enum) | Surface 배치 |
-| Surface | `Surface` trait. 구현체: `TerminalSurface`, `SurfaceGroupNode`, `MarkdownPanel`, `ExplorerPanel`, `HtmlPanel`, `EmptySurface` | 최하위 컨테이너. 타입별 콘텐츠 |
+| Tab | `Tab` → `SurfaceGroupLayout` (이진 트리) | 탭 하나의 내용물. Leaf = 단일 surface, Split = 탭 내부 분할 |
+| 하위 레이아웃 | `SurfaceGroupLayout` (이진 트리 enum: Leaf / Split) | Surface 배치 |
+| Surface | `Surface` trait. 구현체: `TerminalSurface`, `MarkdownPanel`, `ExplorerPanel`, `HtmlPanel`, `EmptySurface` | 최하위 컨테이너. 타입별 콘텐츠 |
 | Popup | `PopupDef` + `PopupManager` | Window 내부 가상 창 |
 | Toast | `ToastState` + `ToastManager` | Window 내부 휘발성 알림 |
 | App.windows | `HashMap<WindowId, Box<dyn Window>>` | 모달 포함 모든 윈도우 단일 저장소 |

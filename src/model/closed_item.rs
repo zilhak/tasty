@@ -151,16 +151,23 @@ impl ClosedSurfaceLayout {
 }
 
 impl ClosedPanel {
-    /// Capture from a live Surface (trait object).
+    /// Capture from a live Tab.
+    pub fn from_tab(tab: &super::tab::Tab) -> Self {
+        if tab.is_split() {
+            return ClosedPanel::SurfaceGroup {
+                layout: ClosedSurfaceLayout::from_layout(tab.layout()),
+                focused_surface: tab.focused_surface,
+            };
+        }
+        // Single surface tab
+        let surface = tab.surface();
+        Self::from_surface(surface)
+    }
+
+    /// Capture from a single Surface (trait object).
     pub fn from_surface(surface: &dyn super::Surface) -> Self {
         if let Some(node) = surface.as_terminal_surface() {
             return ClosedPanel::Terminal(ClosedSurface::from_surface_node(node));
-        }
-        if let Some(group) = surface.as_surface_group() {
-            return ClosedPanel::SurfaceGroup {
-                layout: ClosedSurfaceLayout::from_layout(group.layout()),
-                focused_surface: group.focused_surface,
-            };
         }
         if let Some(md) = surface.as_markdown() {
             return ClosedPanel::Markdown { path: PathBuf::from(&md.file_path) };
@@ -184,7 +191,7 @@ impl ClosedTab {
             id: tab.id,
             name: tab.name.clone(),
             explicit_name: tab.explicit_name.clone(),
-            panel: ClosedPanel::from_surface(tab.surface()),
+            panel: ClosedPanel::from_tab(tab),
         }
     }
 }

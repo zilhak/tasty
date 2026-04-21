@@ -1,6 +1,8 @@
 use tasty_terminal::Terminal;
-use super::{SurfaceId, TerminalSurface, TabId};
+use super::{SurfaceId, TerminalSurface, TabId, SplitDirection};
 use super::surface_trait::Surface;
+use super::surface_layout::SurfaceGroupLayout;
+use super::pane_tree::FocusDirection;
 
 pub struct Tab {
     pub id: TabId,
@@ -8,9 +10,11 @@ pub struct Tab {
     pub name: String,
     /// Explicitly set tab name. When Some, overrides the auto-generated name.
     pub explicit_name: Option<String>,
-    /// The surface content of this tab. Temporarily `None` during structural mutations
-    /// or when lazy_pty_init is enabled and the tab hasn't been focused yet.
-    pub(crate) surface_opt: Option<Box<dyn Surface>>,
+    /// The layout tree of surfaces. Always a binary tree; a single leaf = unsplit state.
+    /// Temporarily `None` during structural mutations or when lazy_pty_init is enabled.
+    pub(crate) layout_opt: Option<SurfaceGroupLayout>,
+    /// The focused surface ID within this tab's layout.
+    pub focused_surface: SurfaceId,
     /// When lazy_pty_init is enabled, stores parameters to spawn PTY on first access.
     pub(crate) deferred_spawn: Option<super::surface_group::DeferredSpawn>,
     /// Surface ID reserved for deferred spawn (set when lazy_pty_init creates the tab).
@@ -21,11 +25,13 @@ pub struct Tab {
 impl Tab {
     /// Create a tab with a Surface trait object.
     pub fn new_with_surface(id: TabId, name: String, surface: Box<dyn Surface>) -> Self {
+        let surface_id = surface.surface_id().unwrap_or(0);
         Self {
             id,
             name,
             explicit_name: None,
-            surface_opt: Some(surface),
+            layout_opt: Some(SurfaceGroupLayout::Leaf(surface)),
+            focused_surface: surface_id,
             deferred_spawn: None,
             deferred_surface_id: None,
         }
@@ -38,8 +44,7 @@ impl Tab {
             return explicit.clone();
         }
         // Try to derive name from the focused terminal's CWD
-        let terminal = self.surface_opt.as_ref()
-            .and_then(|s| s.focused_terminal());
+        let terminal = self.focused_terminal();
         if let Some(terminal) = terminal {
             if let Some(cwd) = terminal.get_cwd() {
                 let path_str = cwd.to_string_lossy();
@@ -59,38 +64,225 @@ impl Tab {
         self.name.clone()
     }
 
-    // ── Surface-based accessors ──
+    // ── Layout-based accessors ──
 
-    /// Access the surface.
+    /// Access the layout.
+    #[track_caller]
+    pub fn layout(&self) -> &SurfaceGroupLayout {
+        self.layout_opt.as_ref()
+            .expect("BUG: no layout (deferred tab not initialized?)")
+    }
+
+    /// Access the layout mutably.
+    #[track_caller]
+    pub fn layout_mut(&mut self) -> &mut SurfaceGroupLayout {
+        self.layout_opt.as_mut()
+            .expect("BUG: no layout (deferred tab not initialized?)")
+    }
+
+    /// Access the layout if initialized.
+    pub fn layout_if_initialized(&self) -> Option<&SurfaceGroupLayout> {
+        self.layout_opt.as_ref()
+    }
+
+    /// Take the layout out (for structural mutation). Must be followed by put_layout.
+    #[track_caller]
+    pub(crate) fn take_layout(&mut self) -> SurfaceGroupLayout {
+        self.layout_opt.take().expect("BUG: layout already taken")
+    }
+
+    /// Put the layout back after structural mutation.
+    pub(crate) fn put_layout(&mut self, layout: SurfaceGroupLayout) {
+        self.layout_opt = Some(layout);
+    }
+
+    // ── Surface delegation (backward-compat helpers) ──
+
+    /// Get the "surface" for this tab. For a single leaf, returns the leaf.
+    /// For a split, returns the focused leaf surface.
+    /// NOTE: Callers that need the full layout tree should use layout() instead.
     #[track_caller]
     pub fn surface(&self) -> &dyn Surface {
-        self.surface_opt.as_ref().map(|s| s.as_ref())
-            .expect("BUG: no surface (deferred tab not initialized?)")
+        let layout = self.layout();
+        // For a single leaf, return it directly
+        if let SurfaceGroupLayout::Leaf(surface) = layout {
+            return surface.as_ref();
+        }
+        // For splits, return the focused leaf
+        if let Some(leaf) = layout.find_surface(self.focused_surface) {
+            return leaf;
+        }
+        // Fallback: first leaf
+        if let Some(first_id) = layout.first_surface_id() {
+            if let Some(leaf) = layout.find_surface(first_id) {
+                return leaf;
+            }
+        }
+        panic!("BUG: layout has no surfaces");
     }
 
-    /// Access the surface mutably.
+    /// Get the focused surface mutably.
+    /// NOTE: Callers that need the full layout tree should use layout_mut() instead.
     #[track_caller]
     pub fn surface_mut(&mut self) -> &mut dyn Surface {
-        self.surface_opt.as_mut().map(|s| s.as_mut())
-            .expect("BUG: no surface (deferred tab not initialized?)")
+        let focused = self.focused_surface;
+        let layout = self.layout_mut();
+        // For a single leaf, return it directly
+        if let SurfaceGroupLayout::Leaf(surface) = layout {
+            return surface.as_mut();
+        }
+        // Determine which ID to look up
+        let target_id = if layout.contains_surface(focused) {
+            focused
+        } else {
+            layout.first_surface_id().expect("BUG: layout has no surfaces")
+        };
+        layout.find_leaf_mut(target_id)
+            .map(|b| b.as_mut())
+            .expect("BUG: layout has no surfaces")
     }
 
-    /// Access the surface if initialized.
+    /// Access the surface if initialized (for backward compat).
     pub fn surface_if_initialized(&self) -> Option<&dyn Surface> {
-        self.surface_opt.as_ref().map(|s| s.as_ref())
+        let layout = self.layout_opt.as_ref()?;
+        if let SurfaceGroupLayout::Leaf(surface) = layout {
+            return Some(surface.as_ref());
+        }
+        if let Some(leaf) = layout.find_surface(self.focused_surface) {
+            return Some(leaf);
+        }
+        layout.first_surface_id()
+            .and_then(|id| layout.find_surface(id))
     }
 
-    /// Access the surface mutably if initialized.
-    pub fn surface_mut_if_initialized(&mut self) -> Option<&mut dyn Surface> {
-        match self.surface_opt {
-            Some(ref mut s) => Some(s.as_mut()),
-            None => None,
+    /// Whether the layout is a split (more than one surface).
+    pub fn is_split(&self) -> bool {
+        matches!(self.layout_opt.as_ref(), Some(SurfaceGroupLayout::Split { .. }))
+    }
+
+    /// All surface IDs in this tab.
+    pub fn all_surface_ids(&self) -> Vec<SurfaceId> {
+        self.layout().all_surface_ids()
+    }
+
+    /// Whether this tab contains the given surface ID.
+    pub fn contains_surface(&self, surface_id: SurfaceId) -> bool {
+        match &self.layout_opt {
+            Some(layout) => layout.contains_surface(surface_id),
+            None => false,
         }
     }
 
+    /// Whether this tab contains any GPU-rendered (terminal) surface.
+    pub fn is_gpu_rendered(&self) -> bool {
+        self.layout().first_terminal().is_some()
+    }
+
+    /// Get the focused terminal.
+    pub fn focused_terminal(&self) -> Option<&Terminal> {
+        let layout = self.layout_opt.as_ref()?;
+        layout.find_terminal(self.focused_surface)
+            .or_else(|| layout.first_terminal())
+    }
+
+    /// Get the focused terminal mutably.
+    pub fn focused_terminal_mut(&mut self) -> Option<&mut Terminal> {
+        let id = self.focused_surface;
+        let layout = self.layout_opt.as_mut()?;
+        if layout.find_terminal(id).is_none() {
+            // focused_surface is not a terminal; don't change focus
+            return None;
+        }
+        layout.find_terminal_mut(id)
+    }
+
+    /// Find a terminal by surface ID.
+    pub fn find_terminal(&self, surface_id: SurfaceId) -> Option<&Terminal> {
+        self.layout_opt.as_ref()?.find_terminal(surface_id)
+    }
+
+    /// Find a terminal by surface ID (mutable).
+    pub fn find_terminal_mut(&mut self, surface_id: SurfaceId) -> Option<&mut Terminal> {
+        self.layout_opt.as_mut()?.find_terminal_mut(surface_id)
+    }
+
+    /// Find a TerminalSurface by surface ID.
+    pub fn find_terminal_surface(&self, surface_id: SurfaceId) -> Option<&TerminalSurface> {
+        self.layout_opt.as_ref()?.find_surface_node(surface_id)
+    }
+
+    /// Get the focused surface ID.
+    pub fn focused_surface_id(&self) -> Option<SurfaceId> {
+        Some(self.focused_surface)
+    }
+
+    /// Visit all terminals with their surface IDs.
+    pub fn for_each_terminal_mut(&mut self, f: &mut dyn FnMut(SurfaceId, &mut Terminal)) {
+        if let Some(layout) = self.layout_opt.as_mut() {
+            layout.for_each_terminal_mut_dyn(f);
+        }
+    }
+
+    /// Collect all terminals (mutable).
+    pub fn collect_terminals_mut<'a>(&'a mut self, out: &mut Vec<&'a mut Terminal>) {
+        if let Some(layout) = self.layout_opt.as_mut() {
+            layout.collect_terminals_mut(out);
+        }
+    }
+
+    // ── SurfaceGroup-like operations (previously on SurfaceGroupNode) ──
+
+    /// Close a surface within this tab. Returns true if found and closed.
+    pub fn close_surface(&mut self, target_id: SurfaceId) -> bool {
+        let old_layout = self.take_layout();
+        let (new_layout, found) = old_layout.close_surface(target_id);
+        self.put_layout(new_layout);
+        if found && self.focused_surface == target_id {
+            if let Some(first_id) = self.layout().first_surface_id() {
+                self.focused_surface = first_id;
+            }
+        }
+        found
+    }
+
+    /// Move focus to the next surface.
+    pub fn move_focus_forward(&mut self) {
+        let ids = self.layout().all_surface_ids();
+        if ids.len() <= 1 { return; }
+        let pos = ids.iter().position(|&id| id == self.focused_surface).unwrap_or(0);
+        self.focused_surface = ids[(pos + 1) % ids.len()];
+    }
+
+    /// Move focus to the previous surface.
+    pub fn move_focus_backward(&mut self) {
+        let ids = self.layout().all_surface_ids();
+        if ids.len() <= 1 { return; }
+        let pos = ids.iter().position(|&id| id == self.focused_surface).unwrap_or(0);
+        self.focused_surface = ids[(pos + ids.len() - 1) % ids.len()];
+    }
+
+    /// Directional focus navigation.
+    pub fn directional_focus(&self, direction: FocusDirection) -> Option<SurfaceId> {
+        self.layout().directional_focus(self.focused_surface, direction)
+    }
+
+    /// Resize all surfaces within the layout.
+    pub fn resize_all(&mut self, rect: super::Rect, cell_width: f32, cell_height: f32) {
+        if let Some(layout) = self.layout_opt.as_mut() {
+            layout.resize_all(rect, cell_width, cell_height);
+        }
+    }
+
+    /// Render regions (terminal surfaces only).
+    pub fn render_regions(&self, rect: super::Rect) -> Vec<(SurfaceId, &Terminal, super::Rect)> {
+        self.layout().render_regions(rect)
+    }
+
+    // ── Initialization ──
+
     /// Ensure the surface is initialized (lazy spawn if needed). Returns true if spawned.
     pub fn ensure_initialized(&mut self, surface_id: SurfaceId) -> bool {
-        if self.surface_opt.is_some() || self.deferred_spawn.is_none() {
+        if self.layout_opt.is_some() || self.deferred_spawn.is_none() {
             return false;
         }
         let spawn = self.deferred_spawn.take().unwrap();
@@ -99,11 +291,13 @@ impl Tab {
         let working_dir = spawn.working_dir.as_deref();
         match Terminal::new_with_shell_args_cwd(spawn.cols, spawn.rows, shell_ref, &shell_args, surface_id, spawn.waker, working_dir) {
             Ok(terminal) => {
-                self.surface_opt = Some(Box::new(TerminalSurface {
+                let ts = TerminalSurface {
                     id: surface_id,
                     terminal,
                     deferred_spawn: None,
-                }));
+                };
+                self.layout_opt = Some(SurfaceGroupLayout::Leaf(Box::new(ts)));
+                self.focused_surface = surface_id;
                 true
             }
             Err(e) => {
@@ -115,158 +309,80 @@ impl Tab {
 
     /// Returns true if this tab has a deferred spawn pending.
     pub fn is_deferred(&self) -> bool {
-        self.surface_opt.is_none() && self.deferred_spawn.is_some()
+        self.layout_opt.is_none() && self.deferred_spawn.is_some()
     }
 
-    /// Replace the surface.
+    /// Replace the entire layout with a single surface.
     pub fn put_surface(&mut self, surface: Box<dyn Surface>) {
-        self.surface_opt = Some(surface);
+        let sid = surface.surface_id().unwrap_or(0);
+        self.layout_opt = Some(SurfaceGroupLayout::Leaf(surface));
+        self.focused_surface = sid;
     }
 
-    /// Split the focused surface within this tab. Creates a SurfaceGroup if needed.
+    // ── Split operations ──
+
+    /// Split the focused surface within this tab.
     /// Moves focus to the new surface.
     pub fn split_focused_surface(
         &mut self,
-        direction: super::SplitDirection,
-        new_surface_id: super::SurfaceId,
-        new_terminal: tasty_terminal::Terminal,
+        direction: SplitDirection,
+        new_surface_id: SurfaceId,
+        new_terminal: Terminal,
     ) {
-        // Case 1: Already a SurfaceGroup — add to it
-        if self.surface_mut().as_surface_group_mut().is_some() {
-            let new_node = super::TerminalSurface { id: new_surface_id, terminal: new_terminal, deferred_spawn: None };
-            let group = self.surface_mut().as_surface_group_mut().unwrap();
-            let target = group.focused_surface;
-            let old_layout = group.take_layout();
-            let (new_layout, _) = old_layout.split_with_node(target, direction, new_node);
-            group.put_layout(new_layout);
-            group.focused_surface = new_surface_id;
-            return;
-        }
-
-        // Case 2: Single TerminalSurface → wrap into SurfaceGroupNode
-        if self.surface_opt.as_ref().is_some_and(|s| s.as_terminal_surface().is_some()) {
-            let old_surface = self.surface_opt.take().unwrap();
-            let old_node = old_surface.take_terminal_surface()
-                .expect("BUG: as_terminal_surface() was Some but take failed");
-            let old_surface_id = old_node.id;
-            let group = super::SurfaceGroupNode {
-                layout_opt: Some(super::SurfaceGroupLayout::Split {
-                    direction,
-                    ratio: 0.5,
-                    first: Box::new(super::SurfaceGroupLayout::Leaf(Box::new(old_node))),
-                    second: Box::new(super::SurfaceGroupLayout::Leaf(Box::new(TerminalSurface {
-                        id: new_surface_id,
-                        terminal: new_terminal,
-                        deferred_spawn: None,
-                    }))),
-                    focus_second: true,
-                }),
-                focused_surface: new_surface_id,
-                _first_surface: old_surface_id,
-            };
-            self.surface_opt = Some(Box::new(group));
-        }
+        let new_node = TerminalSurface { id: new_surface_id, terminal: new_terminal, deferred_spawn: None };
+        let target = self.focused_surface;
+        let old_layout = self.take_layout();
+        let (new_layout, _) = old_layout.split_with_node(target, direction, new_node);
+        self.put_layout(new_layout);
+        self.focused_surface = new_surface_id;
     }
 
     /// Split a specific surface by ID. Does NOT change focused_surface.
     pub fn split_surface_by_id(
         &mut self,
-        target_surface_id: super::SurfaceId,
-        direction: super::SplitDirection,
-        new_surface_id: super::SurfaceId,
-        new_terminal: tasty_terminal::Terminal,
+        target_surface_id: SurfaceId,
+        direction: SplitDirection,
+        new_surface_id: SurfaceId,
+        new_terminal: Terminal,
     ) -> bool {
-        // Already a SurfaceGroup — add to it
-        if self.surface_mut().as_surface_group_mut().is_some() {
-            let new_node = super::TerminalSurface { id: new_surface_id, terminal: new_terminal, deferred_spawn: None };
-            let group = self.surface_mut().as_surface_group_mut().unwrap();
-            let old_layout = group.take_layout();
-            let (new_layout, remaining) = old_layout.split_with_node(target_surface_id, direction, new_node);
-            group.put_layout(new_layout);
-            return remaining.is_none();
-        }
-
-        // Single TerminalSurface → wrap into SurfaceGroupNode
-        if self.surface_opt.as_ref().is_some_and(|s| s.as_terminal_surface().is_some_and(|n| n.id == target_surface_id)) {
-            let old_surface = self.surface_opt.take().unwrap();
-            let old_node = old_surface.take_terminal_surface()
-                .expect("BUG: as_terminal_surface() was Some but take failed");
-            let old_surface_id = old_node.id;
-            let group = super::SurfaceGroupNode {
-                layout_opt: Some(super::SurfaceGroupLayout::Split {
-                    direction,
-                    ratio: 0.5,
-                    first: Box::new(super::SurfaceGroupLayout::Leaf(Box::new(old_node))),
-                    second: Box::new(super::SurfaceGroupLayout::Leaf(Box::new(TerminalSurface {
-                        id: new_surface_id,
-                        terminal: new_terminal,
-                        deferred_spawn: None,
-                    }))),
-                    focus_second: false,
-                }),
-                focused_surface: old_surface_id,
-                _first_surface: old_surface_id,
-            };
-            self.surface_opt = Some(Box::new(group));
-            return true;
-        }
-
-        false
+        let new_node = TerminalSurface { id: new_surface_id, terminal: new_terminal, deferred_spawn: None };
+        let old_layout = self.take_layout();
+        let (new_layout, remaining) = old_layout.split_with_node(target_surface_id, direction, new_node);
+        self.put_layout(new_layout);
+        remaining.is_none()
     }
 
-    /// Split a specific surface by ID with any surface type. Generic version of split_surface_by_id.
+    /// Split a specific surface by ID with any surface type.
     pub fn split_surface_by_id_generic(
         &mut self,
-        target_surface_id: super::SurfaceId,
-        direction: super::SplitDirection,
-        new_surface: Box<dyn super::Surface>,
+        target_surface_id: SurfaceId,
+        direction: SplitDirection,
+        new_surface: Box<dyn Surface>,
     ) -> bool {
-        // Already a SurfaceGroup — add to it
-        if self.surface_mut().as_surface_group_mut().is_some() {
-            let group = self.surface_mut().as_surface_group_mut().unwrap();
-            let old_layout = group.take_layout();
-            let (new_layout, remaining) = old_layout.split_with_surface(target_surface_id, direction, new_surface);
-            group.put_layout(new_layout);
-            if remaining.is_some() {
-                tracing::warn!("split_surface_by_id_generic: target {} not found in group", target_surface_id);
-            }
-            return remaining.is_none();
+        let old_layout = self.take_layout();
+        let (new_layout, remaining) = old_layout.split_with_surface(target_surface_id, direction, new_surface);
+        self.put_layout(new_layout);
+        if remaining.is_some() {
+            tracing::warn!("split_surface_by_id_generic: target {} not found", target_surface_id);
         }
-
-        // Single surface (any type) → wrap into SurfaceGroupNode
-        if self.surface_opt.as_ref().is_some_and(|s| s.surface_id() == Some(target_surface_id)) {
-            let old_surface = self.surface_opt.take().unwrap();
-            let old_surface_id = old_surface.surface_id().unwrap_or(0);
-            let group = super::SurfaceGroupNode {
-                layout_opt: Some(super::SurfaceGroupLayout::Split {
-                    direction,
-                    ratio: 0.5,
-                    first: Box::new(super::SurfaceGroupLayout::Leaf(old_surface)),
-                    second: Box::new(super::SurfaceGroupLayout::Leaf(new_surface)),
-                    focus_second: false,
-                }),
-                focused_surface: old_surface_id,
-                _first_surface: old_surface_id,
-            };
-            self.surface_opt = Some(Box::new(group));
-            return true;
-        }
-
-        // For non-terminal single surfaces that don't match, check if it's a non-terminal
-        // surface with the target ID inside it (shouldn't happen for single surfaces)
-        if self.surface_opt.as_ref().is_some_and(|s| s.contains_surface(target_surface_id)) {
-            tracing::warn!("split_surface_by_id_generic: unexpected containment for target {}", target_surface_id);
-        }
-
-        false
+        remaining.is_none()
     }
 
     /// Produce a JSON tree representation of this tab.
     pub fn to_tree_json(&self) -> serde_json::Value {
+        let layout_json = if self.is_split() {
+            serde_json::json!({
+                "type": "SurfaceGroup",
+                "focused_surface": self.focused_surface,
+                "surfaces": self.all_surface_ids(),
+            })
+        } else {
+            self.surface().to_tree_json()
+        };
         serde_json::json!({
             "id": self.id,
             "name": self.display_name(),
-            "surface": self.surface().to_tree_json(),
+            "surface": layout_json,
         })
     }
 }

@@ -130,8 +130,10 @@ impl Pane {
                 waker,
                 working_dir: working_dir.map(|p| p.to_path_buf()),
             }),
-            surface_opt: None,
-            explicit_name: None, deferred_surface_id: Some(surface_id),
+            layout_opt: None,
+            focused_surface: 0,
+            explicit_name: None,
+            deferred_surface_id: Some(surface_id),
         };
         self.tabs.push(tab);
     }
@@ -140,7 +142,7 @@ impl Pane {
     pub fn all_surface_ids(&self) -> Vec<SurfaceId> {
         let mut ids = Vec::new();
         for tab in &self.tabs {
-            ids.extend(tab.surface().all_surface_ids());
+            ids.extend(tab.all_surface_ids());
         }
         ids
     }
@@ -188,7 +190,7 @@ impl Pane {
     ) -> anyhow::Result<()> {
         let new_terminal = Terminal::new_with_shell_args_cwd(cols, rows, shell, shell_args, new_surface_id, waker, working_dir)?;
         for tab in &mut self.tabs {
-            if tab.surface().find_terminal(target_surface_id).is_some() {
+            if tab.find_terminal(target_surface_id).is_some() {
                 tab.split_surface_by_id(target_surface_id, direction, new_surface_id, new_terminal);
                 return Ok(());
             }
@@ -204,7 +206,7 @@ impl Pane {
         new_surface: Box<dyn super::Surface>,
     ) -> anyhow::Result<()> {
         for tab in &mut self.tabs {
-            if tab.surface().contains_surface(target_surface_id) {
+            if tab.contains_surface(target_surface_id) {
                 tab.split_surface_by_id_generic(target_surface_id, direction, new_surface);
                 return Ok(());
             }
@@ -250,28 +252,28 @@ impl Pane {
         }
     }
 
-    /// Get the focused terminal (follows through Surface -> SurfaceGroup).
+    /// Get the focused terminal.
     pub fn active_terminal(&self) -> Option<&Terminal> {
         let tab = self.tabs.get(self.active_tab.min(self.tabs.len().saturating_sub(1)))?;
-        tab.surface().focused_terminal()
+        tab.focused_terminal()
     }
 
     /// Get the focused terminal (mutable).
     pub fn active_terminal_mut(&mut self) -> Option<&mut Terminal> {
         let idx = self.active_tab.min(self.tabs.len().saturating_sub(1));
         let tab = self.tabs.get_mut(idx)?;
-        tab.surface_mut().focused_terminal_mut()
+        tab.focused_terminal_mut()
     }
 
     /// Check if any tab in this pane contains the given surface ID.
     pub fn contains_surface(&self, surface_id: SurfaceId) -> bool {
-        self.tabs.iter().any(|tab| tab.surface().contains_surface(surface_id))
+        self.tabs.iter().any(|tab| tab.contains_surface(surface_id))
     }
 
     /// Find a terminal by surface ID across all tabs (immutable).
     pub fn find_terminal(&self, surface_id: SurfaceId) -> Option<&Terminal> {
         for tab in &self.tabs {
-            if let Some(t) = tab.surface().find_terminal(surface_id) {
+            if let Some(t) = tab.find_terminal(surface_id) {
                 return Some(t);
             }
         }
@@ -281,7 +283,7 @@ impl Pane {
     /// Find a terminal by surface ID across all tabs (mutable).
     pub fn find_terminal_mut(&mut self, surface_id: SurfaceId) -> Option<&mut Terminal> {
         for tab in &mut self.tabs {
-            if let Some(t) = tab.surface_mut().find_terminal_mut(surface_id) {
+            if let Some(t) = tab.find_terminal_mut(surface_id) {
                 return Some(t);
             }
         }
@@ -332,7 +334,7 @@ impl Pane {
     pub fn all_terminals_mut(&mut self) -> Vec<&mut Terminal> {
         let mut result = Vec::new();
         for tab in &mut self.tabs {
-            tab.surface_mut().collect_terminals_mut(&mut result);
+            tab.collect_terminals_mut(&mut result);
         }
         result
     }
