@@ -34,7 +34,7 @@ impl AppState {
         Ok(())
     }
 
-    /// Split within the current tab (SurfaceGroup). Appears as one tab.
+    /// Split within the current tab. Appears as one tab.
     /// Only terminal panels support surface-level splitting; others fall back to pane split.
     pub fn split_surface(&mut self, direction: SplitDirection) -> anyhow::Result<()> {
         let target_surface_id = self.focused_surface_id();
@@ -360,7 +360,7 @@ impl AppState {
                 // Split tab: try closing within the layout (fails if it's the only surface)
                 surface_is_sole_in_tab = false;
                 can_close_surface_in_group =
-                    !matches!(tab.layout(), crate::model::SurfaceGroupLayout::Leaf(_));
+                    !matches!(tab.layout(), crate::model::SurfaceLayout::Leaf(_));
             } else if tab.contains_surface(surface_id) {
                 // Single-surface tab: sole content
                 surface_is_sole_in_tab = true;

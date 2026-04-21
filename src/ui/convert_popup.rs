@@ -252,7 +252,7 @@ fn action_for_index(idx: usize) -> ConvertAction {
 }
 
 /// Get the type name for a specific surface ID.
-/// If the surface is inside a SurfaceGroup, returns the individual leaf's type.
+/// If the surface is inside a split tab, returns the individual leaf's type.
 fn current_surface_type(state: &AppState, surface_id: u32) -> Option<&'static str> {
     for ws in &state.engine.workspaces {
         for &pid in &ws.pane_layout().all_pane_ids() {

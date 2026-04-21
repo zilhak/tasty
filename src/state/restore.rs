@@ -1,5 +1,5 @@
 use crate::model::closed_item::*;
-use crate::model::{Pane, PaneNode, Surface, SurfaceGroupLayout, Tab, TerminalSurface, Workspace};
+use crate::model::{Pane, PaneNode, Surface, SurfaceLayout, Tab, TerminalSurface, Workspace};
 
 use super::AppState;
 
@@ -8,7 +8,7 @@ enum RebuildResult {
     /// A single surface (Terminal, Markdown, Explorer, etc.)
     Single(Box<dyn Surface>),
     /// A full layout tree with focused_surface id
-    Layout(SurfaceGroupLayout, u32),
+    Layout(SurfaceLayout, u32),
 }
 
 impl RebuildResult {
@@ -122,7 +122,7 @@ impl AppState {
                 let node = self.rebuild_surface_node(surface)?;
                 Some(RebuildResult::Single(Box::new(node)))
             }
-            ClosedPanel::SurfaceGroup {
+            ClosedPanel::Tab {
                 layout,
                 focused_surface: _,
             } => {
@@ -198,11 +198,11 @@ impl AppState {
     fn rebuild_surface_layout(
         &mut self,
         closed: ClosedSurfaceLayout,
-    ) -> Option<SurfaceGroupLayout> {
+    ) -> Option<SurfaceLayout> {
         match closed {
             ClosedSurfaceLayout::Single(surface) => {
                 let node = self.rebuild_surface_node(surface)?;
-                Some(SurfaceGroupLayout::Leaf(Box::new(node)))
+                Some(SurfaceLayout::Leaf(Box::new(node)))
             }
             ClosedSurfaceLayout::Split {
                 direction,
@@ -212,7 +212,7 @@ impl AppState {
             } => {
                 let first = self.rebuild_surface_layout(*first)?;
                 let second = self.rebuild_surface_layout(*second)?;
-                Some(SurfaceGroupLayout::Split {
+                Some(SurfaceLayout::Split {
                     direction,
                     ratio,
                     first: Box::new(first),

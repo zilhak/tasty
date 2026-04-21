@@ -142,14 +142,14 @@ fn collect_tab_surface_info(
 }
 
 fn collect_surface_layout_info(
-    layout: &crate::model::SurfaceGroupLayout,
+    layout: &crate::model::SurfaceLayout,
     pane_id: u32,
     workspace_id: u32,
     tab_idx: usize,
     out: &mut Vec<serde_json::Value>,
 ) {
     match layout {
-        crate::model::SurfaceGroupLayout::Leaf(surface) => {
+        crate::model::SurfaceLayout::Leaf(surface) => {
             let id = surface.surface_id().unwrap_or(0);
             let mut entry = json!({
                 "id": id,
@@ -168,7 +168,7 @@ fn collect_surface_layout_info(
             }
             out.push(entry);
         }
-        crate::model::SurfaceGroupLayout::Split { first, second, .. } => {
+        crate::model::SurfaceLayout::Split { first, second, .. } => {
             collect_surface_layout_info(first, pane_id, workspace_id, tab_idx, out);
             collect_surface_layout_info(second, pane_id, workspace_id, tab_idx, out);
         }

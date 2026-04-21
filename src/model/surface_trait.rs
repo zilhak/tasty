@@ -6,14 +6,14 @@ use tasty_terminal::Terminal;
 
 /// Common behavior for all Surface types.
 ///
-/// Each surface type (TerminalSurface, MarkdownSurface, ExplorerSurface,
-/// HtmlSurface, EmptySurface, SurfaceGroup) implements this trait.
+/// Each surface type (TerminalSurface, MarkdownPanel, ExplorerPanel,
+/// HtmlPanel, EmptySurface, ImagePanel) implements this trait.
 /// All methods have default implementations suitable for non-terminal surfaces.
 pub trait Surface {
     /// Surface type name (e.g. "Terminal", "Markdown").
     fn type_name(&self) -> &'static str;
 
-    /// Get this surface's ID. Returns None only for SurfaceGroup (multiple IDs).
+    /// Get this surface's ID.
     fn surface_id(&self) -> Option<SurfaceId>;
 
     /// All surface IDs contained in this surface.
@@ -113,7 +113,7 @@ pub trait Surface {
     }
 
     /// Consume this surface and return the inner TerminalSurface if applicable.
-    /// Used when converting a single terminal into a SurfaceGroup (split).
+    /// Used when splitting a tab (converting a single surface into a split layout).
     /// Default: None (non-terminal surfaces cannot be taken).
     fn take_terminal_surface(self: Box<Self>) -> Option<TerminalSurface> {
         None

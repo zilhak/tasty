@@ -1,4 +1,4 @@
-pub use super::surface_layout::{SurfaceGroupLayout, SurfaceRegion};
+pub use super::surface_layout::{SurfaceLayout, SurfaceRegion};
 use super::surface_trait::Surface;
 use super::{PhysicalPx, Rect, SurfaceId};
 use tasty_terminal::Terminal;

@@ -1,5 +1,5 @@
 use super::pane_tree::FocusDirection;
-use super::surface_layout::SurfaceGroupLayout;
+use super::surface_layout::SurfaceLayout;
 use super::surface_trait::Surface;
 use super::{SplitDirection, SurfaceId, TabId, TerminalSurface};
 use tasty_terminal::Terminal;
@@ -12,11 +12,11 @@ pub struct Tab {
     pub explicit_name: Option<String>,
     /// The layout tree of surfaces. Always a binary tree; a single leaf = unsplit state.
     /// Temporarily `None` during structural mutations or when lazy_pty_init is enabled.
-    pub(crate) layout_opt: Option<SurfaceGroupLayout>,
+    pub(crate) layout_opt: Option<SurfaceLayout>,
     /// The focused surface ID within this tab's layout.
     pub focused_surface: SurfaceId,
     /// When lazy_pty_init is enabled, stores parameters to spawn PTY on first access.
-    pub(crate) deferred_spawn: Option<super::surface_group::DeferredSpawn>,
+    pub(crate) deferred_spawn: Option<super::terminal_surface::DeferredSpawn>,
     /// Surface ID reserved for deferred spawn (set when lazy_pty_init creates the tab).
     #[allow(dead_code)]
     pub(crate) deferred_surface_id: Option<SurfaceId>,
@@ -30,7 +30,7 @@ impl Tab {
             id,
             name,
             explicit_name: None,
-            layout_opt: Some(SurfaceGroupLayout::Leaf(surface)),
+            layout_opt: Some(SurfaceLayout::Leaf(surface)),
             focused_surface: surface_id,
             deferred_spawn: None,
             deferred_surface_id: None,
@@ -68,7 +68,7 @@ impl Tab {
 
     /// Access the layout.
     #[track_caller]
-    pub fn layout(&self) -> &SurfaceGroupLayout {
+    pub fn layout(&self) -> &SurfaceLayout {
         self.layout_opt
             .as_ref()
             .expect("BUG: no layout (deferred tab not initialized?)")
@@ -76,25 +76,25 @@ impl Tab {
 
     /// Access the layout mutably.
     #[track_caller]
-    pub fn layout_mut(&mut self) -> &mut SurfaceGroupLayout {
+    pub fn layout_mut(&mut self) -> &mut SurfaceLayout {
         self.layout_opt
             .as_mut()
             .expect("BUG: no layout (deferred tab not initialized?)")
     }
 
     /// Access the layout if initialized.
-    pub fn layout_if_initialized(&self) -> Option<&SurfaceGroupLayout> {
+    pub fn layout_if_initialized(&self) -> Option<&SurfaceLayout> {
         self.layout_opt.as_ref()
     }
 
     /// Take the layout out (for structural mutation). Must be followed by put_layout.
     #[track_caller]
-    pub(crate) fn take_layout(&mut self) -> SurfaceGroupLayout {
+    pub(crate) fn take_layout(&mut self) -> SurfaceLayout {
         self.layout_opt.take().expect("BUG: layout already taken")
     }
 
     /// Put the layout back after structural mutation.
-    pub(crate) fn put_layout(&mut self, layout: SurfaceGroupLayout) {
+    pub(crate) fn put_layout(&mut self, layout: SurfaceLayout) {
         self.layout_opt = Some(layout);
     }
 
@@ -107,7 +107,7 @@ impl Tab {
     pub fn surface(&self) -> &dyn Surface {
         let layout = self.layout();
         // For a single leaf, return it directly
-        if let SurfaceGroupLayout::Leaf(surface) = layout {
+        if let SurfaceLayout::Leaf(surface) = layout {
             return surface.as_ref();
         }
         // For splits, return the focused leaf
@@ -130,7 +130,7 @@ impl Tab {
         let focused = self.focused_surface;
         let layout = self.layout_mut();
         // For a single leaf, return it directly
-        if let SurfaceGroupLayout::Leaf(surface) = layout {
+        if let SurfaceLayout::Leaf(surface) = layout {
             return surface.as_mut();
         }
         // Determine which ID to look up
@@ -150,7 +150,7 @@ impl Tab {
     /// Access the surface if initialized (for backward compat).
     pub fn surface_if_initialized(&self) -> Option<&dyn Surface> {
         let layout = self.layout_opt.as_ref()?;
-        if let SurfaceGroupLayout::Leaf(surface) = layout {
+        if let SurfaceLayout::Leaf(surface) = layout {
             return Some(surface.as_ref());
         }
         if let Some(leaf) = layout.find_surface(self.focused_surface) {
@@ -165,7 +165,7 @@ impl Tab {
     pub fn is_split(&self) -> bool {
         matches!(
             self.layout_opt.as_ref(),
-            Some(SurfaceGroupLayout::Split { .. })
+            Some(SurfaceLayout::Split { .. })
         )
     }
 
@@ -240,7 +240,7 @@ impl Tab {
         }
     }
 
-    // ── SurfaceGroup-like operations (previously on SurfaceGroupNode) ──
+    // ── Surface layout operations ──
 
     /// Close a surface within this tab. Returns true if found and closed.
     pub fn close_surface(&mut self, target_id: SurfaceId) -> bool {
@@ -325,7 +325,7 @@ impl Tab {
                     terminal,
                     deferred_spawn: None,
                 };
-                self.layout_opt = Some(SurfaceGroupLayout::Leaf(Box::new(ts)));
+                self.layout_opt = Some(SurfaceLayout::Leaf(Box::new(ts)));
                 self.focused_surface = surface_id;
                 true
             }
@@ -344,7 +344,7 @@ impl Tab {
     /// Replace the entire layout with a single surface.
     pub fn put_surface(&mut self, surface: Box<dyn Surface>) {
         let sid = surface.surface_id().unwrap_or(0);
-        self.layout_opt = Some(SurfaceGroupLayout::Leaf(surface));
+        self.layout_opt = Some(SurfaceLayout::Leaf(surface));
         self.focused_surface = sid;
     }
 
@@ -414,7 +414,7 @@ impl Tab {
     pub fn to_tree_json(&self) -> serde_json::Value {
         let layout_json = if self.is_split() {
             serde_json::json!({
-                "type": "SurfaceGroup",
+                "type": "SplitLayout",
                 "focused_surface": self.focused_surface,
                 "surfaces": self.all_surface_ids(),
             })

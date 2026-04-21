@@ -18,10 +18,10 @@ pub struct ClosedSurface {
     pub scrollback: VecDeque<Vec<(String, CellAttributes)>>,
 }
 
-/// Snapshot of a closed panel (terminal or surface group).
+/// Snapshot of a closed panel (terminal, tab with split surfaces, etc).
 pub enum ClosedPanel {
     Terminal(ClosedSurface),
-    SurfaceGroup {
+    Tab {
         layout: ClosedSurfaceLayout,
         focused_surface: SurfaceId,
     },
@@ -37,7 +37,7 @@ pub enum ClosedPanel {
     },
 }
 
-/// Mirrors SurfaceGroupLayout but with ClosedSurface instead of live Terminal.
+/// Mirrors SurfaceLayout but with ClosedSurface instead of live Terminal.
 pub enum ClosedSurfaceLayout {
     Single(ClosedSurface),
     Split {
@@ -128,10 +128,10 @@ impl ClosedSurface {
 }
 
 impl ClosedSurfaceLayout {
-    /// Capture from a live SurfaceGroupLayout.
-    pub fn from_layout(layout: &super::SurfaceGroupLayout) -> Self {
+    /// Capture from a live SurfaceLayout.
+    pub fn from_layout(layout: &super::SurfaceLayout) -> Self {
         match layout {
-            super::SurfaceGroupLayout::Leaf(surface) => {
+            super::SurfaceLayout::Leaf(surface) => {
                 if let Some(node) = surface.as_terminal_surface() {
                     ClosedSurfaceLayout::Single(ClosedSurface::from_surface_node(node))
                 } else {
@@ -144,7 +144,7 @@ impl ClosedSurfaceLayout {
                     })
                 }
             }
-            super::SurfaceGroupLayout::Split {
+            super::SurfaceLayout::Split {
                 direction,
                 ratio,
                 first,
@@ -164,7 +164,7 @@ impl ClosedPanel {
     /// Capture from a live Tab.
     pub fn from_tab(tab: &super::tab::Tab) -> Self {
         if tab.is_split() {
-            return ClosedPanel::SurfaceGroup {
+            return ClosedPanel::Tab {
                 layout: ClosedSurfaceLayout::from_layout(tab.layout()),
                 focused_surface: tab.focused_surface,
             };

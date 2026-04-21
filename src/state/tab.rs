@@ -411,10 +411,10 @@ impl AppState {
         self.replace_surface_for_id(surface_id, surface, Some(Some("HTML".to_string())))
     }
 
-    /// Replace a specific surface by ID. If the surface is inside a SurfaceGroup,
-    /// only that individual leaf is replaced — other surfaces in the group are unaffected.
+    /// Replace a specific surface by ID. If the surface is inside a split tab,
+    /// only that individual leaf is replaced — other surfaces in the tab are unaffected.
     /// If it's the sole surface in a tab, the tab's surface is replaced entirely.
-    /// `new_name` updates `explicit_name` only for standalone (non-SurfaceGroup) surfaces.
+    /// `new_name` updates `explicit_name` only for standalone (non-split) surfaces.
     /// Pass `Some(None)` to clear explicit_name (e.g., when converting back to Terminal).
     fn replace_surface_for_id(
         &mut self,

@@ -527,10 +527,10 @@ fn pane_node_close_pane_not_found() {
     assert_eq!(node.all_pane_ids(), vec![1, 2]);
 }
 
-// ---- SurfaceGroupLayout tests ----
+// ---- SurfaceLayout tests ----
 
 #[test]
-fn surface_group_layout_find_surface_at() {
+fn surface_layout_find_surface_at() {
     // Cannot easily test with real terminals, but we can test the layout structure
     // This test validates the basic Rect-based lookup
     let rect = Rect {
@@ -588,7 +588,7 @@ fn for_each_terminal_mut_can_modify() {
     assert_eq!(count, 1);
 }
 
-// ---- SurfaceGroupLayout tests ----
+// ---- SurfaceLayout tests ----
 
 fn test_surface_node(id: SurfaceId) -> TerminalSurface {
     let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
@@ -601,17 +601,17 @@ fn test_surface_node(id: SurfaceId) -> TerminalSurface {
 }
 
 #[test]
-fn surface_group_all_surface_ids_single() {
+fn surface_layout_all_surface_ids_single() {
     let node = test_surface_node(10);
-    let layout = SurfaceGroupLayout::Leaf(Box::new(node));
+    let layout = SurfaceLayout::Leaf(Box::new(node));
     assert_eq!(layout.all_surface_ids(), vec![10]);
 }
 
 #[test]
-fn surface_group_all_surface_ids_split() {
+fn surface_layout_all_surface_ids_split() {
     let node1 = test_surface_node(10);
     let node2 = test_surface_node(20);
-    let layout = SurfaceGroupLayout::Leaf(Box::new(node1));
+    let layout = SurfaceLayout::Leaf(Box::new(node1));
     let (layout, leftover) = layout.split_with_node(10, SplitDirection::Vertical, node2);
     assert!(leftover.is_none(), "split should succeed");
     let ids = layout.all_surface_ids();
@@ -621,20 +621,20 @@ fn surface_group_all_surface_ids_split() {
 }
 
 #[test]
-fn surface_group_split_with_node_success() {
+fn surface_layout_split_with_node_success() {
     let node1 = test_surface_node(10);
     let node2 = test_surface_node(20);
-    let layout = SurfaceGroupLayout::Leaf(Box::new(node1));
+    let layout = SurfaceLayout::Leaf(Box::new(node1));
     let (new_layout, leftover) = layout.split_with_node(10, SplitDirection::Vertical, node2);
     assert!(leftover.is_none(), "node should be consumed on success");
     assert_eq!(new_layout.all_surface_ids().len(), 2);
 }
 
 #[test]
-fn surface_group_split_nonexistent_target() {
+fn surface_layout_split_nonexistent_target() {
     let node1 = test_surface_node(10);
     let node2 = test_surface_node(20);
-    let layout = SurfaceGroupLayout::Leaf(Box::new(node1));
+    let layout = SurfaceLayout::Leaf(Box::new(node1));
     // Target 999 doesn't exist — new_node is returned back
     let (new_layout, leftover) = layout.split_with_node(999, SplitDirection::Vertical, node2);
     assert!(
@@ -645,10 +645,10 @@ fn surface_group_split_nonexistent_target() {
 }
 
 #[test]
-fn surface_group_close_surface_split_first() {
+fn surface_layout_close_surface_split_first() {
     let node1 = test_surface_node(10);
     let node2 = test_surface_node(20);
-    let layout = SurfaceGroupLayout::Leaf(Box::new(node1));
+    let layout = SurfaceLayout::Leaf(Box::new(node1));
     let (layout, _) = layout.split_with_node(10, SplitDirection::Vertical, node2);
     let (new_layout, removed) = layout.close_surface(10);
     assert!(removed, "surface 10 should be removed");
@@ -656,10 +656,10 @@ fn surface_group_close_surface_split_first() {
 }
 
 #[test]
-fn surface_group_close_surface_split_second() {
+fn surface_layout_close_surface_split_second() {
     let node1 = test_surface_node(10);
     let node2 = test_surface_node(20);
-    let layout = SurfaceGroupLayout::Leaf(Box::new(node1));
+    let layout = SurfaceLayout::Leaf(Box::new(node1));
     let (layout, _) = layout.split_with_node(10, SplitDirection::Vertical, node2);
     let (new_layout, removed) = layout.close_surface(20);
     assert!(removed, "surface 20 should be removed");
@@ -667,36 +667,36 @@ fn surface_group_close_surface_split_second() {
 }
 
 #[test]
-fn surface_group_close_single_surface_fails() {
+fn surface_layout_close_single_surface_fails() {
     let node = test_surface_node(10);
-    let layout = SurfaceGroupLayout::Leaf(Box::new(node));
+    let layout = SurfaceLayout::Leaf(Box::new(node));
     let (new_layout, removed) = layout.close_surface(10);
     assert!(!removed, "cannot close the only surface");
     assert_eq!(new_layout.all_surface_ids(), vec![10]);
 }
 
 #[test]
-fn surface_group_close_nonexistent_surface() {
+fn surface_layout_close_nonexistent_surface() {
     let node = test_surface_node(10);
-    let layout = SurfaceGroupLayout::Leaf(Box::new(node));
+    let layout = SurfaceLayout::Leaf(Box::new(node));
     let (new_layout, removed) = layout.close_surface(999);
     assert!(!removed, "999 does not exist");
     assert_eq!(new_layout.all_surface_ids(), vec![10]);
 }
 
 #[test]
-fn surface_group_find_terminal() {
+fn surface_layout_find_terminal() {
     let node = test_surface_node(10);
-    let layout = SurfaceGroupLayout::Leaf(Box::new(node));
+    let layout = SurfaceLayout::Leaf(Box::new(node));
     assert!(layout.find_terminal(10).is_some());
     assert!(layout.find_terminal(999).is_none());
 }
 
 #[test]
-fn surface_group_find_terminal_in_split() {
+fn surface_layout_find_terminal_in_split() {
     let node1 = test_surface_node(10);
     let node2 = test_surface_node(20);
-    let layout = SurfaceGroupLayout::Leaf(Box::new(node1));
+    let layout = SurfaceLayout::Leaf(Box::new(node1));
     let (layout, _) = layout.split_with_node(10, SplitDirection::Vertical, node2);
     assert!(layout.find_terminal(10).is_some());
     assert!(layout.find_terminal(20).is_some());
@@ -707,7 +707,7 @@ fn surface_group_find_terminal_in_split() {
 fn tab_close_surface_in_split() {
     let node1 = test_surface_node(10);
     let node2 = test_surface_node(20);
-    let layout = SurfaceGroupLayout::Leaf(Box::new(node1));
+    let layout = SurfaceLayout::Leaf(Box::new(node1));
     let (split_layout, _) = layout.split_with_node(10, SplitDirection::Vertical, node2);
     let mut tab = Tab {
         id: 1,
@@ -726,11 +726,11 @@ fn tab_close_surface_in_split() {
 }
 
 #[test]
-fn surface_group_all_surface_ids_three_way() {
+fn surface_layout_all_surface_ids_three_way() {
     let n1 = test_surface_node(1);
     let n2 = test_surface_node(2);
     let n3 = test_surface_node(3);
-    let layout = SurfaceGroupLayout::Leaf(Box::new(n1));
+    let layout = SurfaceLayout::Leaf(Box::new(n1));
     let (layout, _) = layout.split_with_node(1, SplitDirection::Vertical, n2);
     let (layout, _) = layout.split_with_node(2, SplitDirection::Horizontal, n3);
     let ids = layout.all_surface_ids();

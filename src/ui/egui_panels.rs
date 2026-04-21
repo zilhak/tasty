@@ -7,7 +7,7 @@ use crate::theme;
 
 struct EguiPanelInfo {
     pane_id: u32,
-    /// If Some, this is a specific surface within a SurfaceGroup.
+    /// If Some, this is a specific surface within a split tab.
     /// If None, this is the entire tab's standalone surface.
     surface_id: Option<u32>,
     logical_x: f32,
@@ -20,7 +20,7 @@ struct EguiPanelInfo {
 
 /// Render egui-based panels (Markdown, Explorer, Html, Empty).
 /// Terminal panels are rendered by the wgpu shader pipeline; these are rendered by egui.
-/// Supports both standalone non-terminal tabs and non-terminal leaves within SurfaceGroups.
+/// Supports both standalone non-terminal tabs and non-terminal leaves within split tabs.
 pub fn draw_egui_panels(
     ctx: &egui::Context,
     state: &mut AppState,

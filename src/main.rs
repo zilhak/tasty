@@ -117,7 +117,7 @@ enum AppEvent {
 enum DividerDragKind {
     /// Dragging a pane-level split divider.
     Pane,
-    /// Dragging a surface-level split divider (within a SurfaceGroup).
+    /// Dragging a surface-level split divider (within a tab).
     Surface,
 }
 

@@ -417,7 +417,7 @@ pub enum CloseCommands {
         #[arg(long)]
         pane: u32,
     },
-    /// Close the specified surface within a SurfaceGroup
+    /// Close the specified surface within a tab
     Surface {
         /// Target surface ID (required)
         #[arg(long)]
