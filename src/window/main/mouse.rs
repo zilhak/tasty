@@ -1,7 +1,6 @@
 use winit::event::{ElementState, MouseButton, MouseScrollDelta};
-use winit::window::CursorIcon;
 
-use crate::model::{PhysicalPx, SplitDirection};
+use crate::model::PhysicalPx;
 use crate::window::Window;
 use crate::{DividerDrag, DividerDragKind};
 
@@ -16,7 +15,6 @@ impl MainWindow {
         self.cursor_position = Some(position);
         let overlay_open = self.state.settings_open;
         if egui_consumed || overlay_open || self.state.popup_hovered {
-            self.base.winit.set_cursor(CursorIcon::Default);
             self.mark_dirty();
             return;
         }
@@ -57,32 +55,8 @@ impl MainWindow {
                 );
                 self.mark_dirty();
             }
-        } else {
-            let threshold = 4.0;
-            let divider = self
-                .state
-                .find_pane_divider_at(x, y, terminal_rect, threshold)
-                .or_else(|| {
-                    self.state
-                        .find_surface_divider_at(x, y, terminal_rect, threshold)
-                });
-            match divider {
-                Some(info) => {
-                    let cursor = match info.direction {
-                        SplitDirection::Vertical => CursorIcon::ColResize,
-                        SplitDirection::Horizontal => CursorIcon::RowResize,
-                    };
-                    self.base.winit.set_cursor(cursor);
-                }
-                None => {
-                    match self.state.cursor_style_at(x, y, terminal_rect) {
-                        Some(true) => self.base.winit.set_cursor(CursorIcon::Text), // Terminal
-                        Some(false) => self.base.winit.set_cursor(CursorIcon::Default), // Explorer/Markdown
-                        None => self.base.winit.set_cursor(CursorIcon::Default), // Outside pane
-                    }
-                }
-            }
         }
+        // Cursor icon is determined in the egui render cycle (gpu/mod.rs)
     }
 
     pub(super) fn handle_mouse_input(

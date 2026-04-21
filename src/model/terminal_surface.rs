@@ -37,6 +37,10 @@ impl Surface for TerminalSurface {
         true
     }
 
+    fn cursor_icon_at(&self, _local_x: f32, _local_y: f32) -> Option<egui::CursorIcon> {
+        Some(egui::CursorIcon::Text)
+    }
+
     fn focused_terminal(&self) -> Option<&Terminal> {
         Some(&self.terminal)
     }

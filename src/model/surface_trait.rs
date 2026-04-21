@@ -36,6 +36,13 @@ pub trait Surface {
         false
     }
 
+    /// Determine the cursor icon at the given surface-local position.
+    /// Returns Some(icon) if this surface wants to set the cursor, None to leave it unchanged.
+    /// Coordinates are in physical pixels, relative to the surface's top-left corner.
+    fn cursor_icon_at(&self, _local_x: f32, _local_y: f32) -> Option<egui::CursorIcon> {
+        None
+    }
+
     /// Get the focused terminal (immutable).
     fn focused_terminal(&self) -> Option<&Terminal> {
         None

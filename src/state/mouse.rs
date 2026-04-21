@@ -3,20 +3,41 @@ use crate::model::{DividerInfo, PhysicalPx, Rect, SplitDirection};
 use super::AppState;
 
 impl AppState {
-    /// Determine the cursor style for the given position within the terminal rect.
-    /// Returns Some(true) for terminal surfaces (I-beam), Some(false) for other surface types
-    /// like Explorer/Markdown (default pointer), or None if not over any surface.
-    pub fn cursor_style_at(&self, x: f32, y: f32, terminal_rect: Rect) -> Option<bool> {
+    /// Determine the cursor icon for the winit (non-egui) area at the given position.
+    /// Checks dividers first, then asks the surface. Returns None if not over any winit area.
+    pub fn winit_cursor_icon_at(
+        &self,
+        x: f32,
+        y: f32,
+        terminal_rect: Rect,
+        divider_threshold: f32,
+    ) -> Option<egui::CursorIcon> {
         if !terminal_rect.contains(PhysicalPx(x), PhysicalPx(y)) {
             return None;
         }
+
+        // 1. Divider check
+        let divider = self
+            .find_pane_divider_at(x, y, terminal_rect, divider_threshold)
+            .or_else(|| self.find_surface_divider_at(x, y, terminal_rect, divider_threshold));
+        if let Some(info) = divider {
+            return Some(match info.direction {
+                SplitDirection::Vertical => egui::CursorIcon::ResizeHorizontal,
+                SplitDirection::Horizontal => egui::CursorIcon::ResizeVertical,
+            });
+        }
+
+        // 2. Surface check — ask the surface for its cursor
         for (_pane_id, _pane_rect, regions) in &self.surface_regions(terminal_rect) {
             for r in regions {
                 if r.rect.contains(PhysicalPx(x), PhysicalPx(y)) {
-                    return Some(r.surface.is_gpu_rendered());
+                    let local_x = x - r.rect.x.value();
+                    let local_y = y - r.rect.y.value();
+                    return r.surface.cursor_icon_at(local_x, local_y);
                 }
             }
         }
+
         None
     }
 

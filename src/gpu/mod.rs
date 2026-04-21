@@ -238,9 +238,20 @@ impl GpuState {
 
         // 2. Run egui frame (UI drawing)
         let prev_theme = state.engine.settings.appearance.theme.clone();
-        let full_output = self.run_egui_frame(state, window, &pane_rects, &dividers, terminal_rect);
+        let mut full_output = self.run_egui_frame(state, window, &pane_rects, &dividers, terminal_rect);
 
-        // 3. Post-egui updates (theme/font refresh)
+        // 3. Cursor decision: egui first, then winit area (dividers + surfaces)
+        if !self.egui_ctx.is_pointer_over_area() {
+            if let Some(pos) = self.egui_ctx.input(|i| i.pointer.hover_pos()) {
+                let px = pos.x * self.scale_factor;
+                let py = pos.y * self.scale_factor;
+                if let Some(icon) = state.winit_cursor_icon_at(px, py, terminal_rect, 4.0) {
+                    full_output.platform_output.cursor_icon = icon;
+                }
+            }
+        }
+
+        // 4. Post-egui updates (theme/font refresh)
         self.post_egui_update(state, &prev_theme);
         // egui-winit disables IME when no egui text field is focused
         // (calls set_ime_allowed(false) when self.allow_ime differs from
