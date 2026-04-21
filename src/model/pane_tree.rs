@@ -326,8 +326,8 @@ impl PaneNode {
             PaneNode::Split { direction, ratio, first, second } => {
                 let (r1, r2) = rect.split(*direction, *ratio);
                 let divider_pos = match direction {
-                    SplitDirection::Vertical => r1.x + r1.width,
-                    SplitDirection::Horizontal => r1.y + r1.height,
+                    SplitDirection::Vertical => (r1.x + r1.width).value(),
+                    SplitDirection::Horizontal => (r1.y + r1.height).value(),
                 };
                 let cursor_pos = match direction {
                     SplitDirection::Vertical => x,
@@ -336,8 +336,8 @@ impl PaneNode {
                 // Check if cursor is within threshold of this divider
                 // and within the perpendicular bounds
                 let in_bounds = match direction {
-                    SplitDirection::Vertical => y >= rect.y && y < rect.y + rect.height,
-                    SplitDirection::Horizontal => x >= rect.x && x < rect.x + rect.width,
+                    SplitDirection::Vertical => y >= rect.y.value() && y < (rect.y + rect.height).value(),
+                    SplitDirection::Horizontal => x >= rect.x.value() && x < (rect.x + rect.width).value(),
                 };
                 if in_bounds && (cursor_pos - divider_pos).abs() < threshold {
                     return Some(DividerInfo {

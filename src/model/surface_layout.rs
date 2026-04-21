@@ -1,5 +1,5 @@
 use tasty_terminal::Terminal;
-use super::{DividerInfo, Rect, SplitDirection, SurfaceId, SURFACE_BORDER_WIDTH};
+use super::{DividerInfo, PhysicalPx, Rect, SplitDirection, SurfaceId, SURFACE_BORDER_WIDTH};
 use super::pane_tree::FocusDirection;
 use super::surface_group::TerminalSurface;
 use super::surface_trait::Surface;
@@ -395,16 +395,16 @@ impl SurfaceGroupLayout {
             SurfaceGroupLayout::Split { direction, ratio, first, second, .. } => {
                 let (r1, r2) = rect.split_with_gap(*direction, *ratio, SURFACE_BORDER_WIDTH);
                 let divider_pos = match direction {
-                    SplitDirection::Vertical => r1.x + r1.width,
-                    SplitDirection::Horizontal => r1.y + r1.height,
+                    SplitDirection::Vertical => (r1.x + r1.width).value(),
+                    SplitDirection::Horizontal => (r1.y + r1.height).value(),
                 };
                 let cursor_pos = match direction {
                     SplitDirection::Vertical => x,
                     SplitDirection::Horizontal => y,
                 };
                 let in_bounds = match direction {
-                    SplitDirection::Vertical => y >= rect.y && y < rect.y + rect.height,
-                    SplitDirection::Horizontal => x >= rect.x && x < rect.x + rect.width,
+                    SplitDirection::Vertical => y >= rect.y.value() && y < (rect.y + rect.height).value(),
+                    SplitDirection::Horizontal => x >= rect.x.value() && x < (rect.x + rect.width).value(),
                 };
                 if in_bounds && (cursor_pos - divider_pos).abs() < threshold {
                     return Some(DividerInfo {
@@ -500,7 +500,7 @@ impl SurfaceGroupLayout {
     pub fn find_surface_at(&self, x: f32, y: f32, rect: Rect) -> Option<SurfaceId> {
         match self {
             SurfaceGroupLayout::Leaf(surface) => {
-                if rect.contains(x, y) { surface.surface_id() } else { None }
+                if rect.contains(PhysicalPx(x), PhysicalPx(y)) { surface.surface_id() } else { None }
             }
             SurfaceGroupLayout::Split { direction, ratio, first, second, .. } => {
                 let (r1, r2) = rect.split_with_gap(*direction, *ratio, SURFACE_BORDER_WIDTH);

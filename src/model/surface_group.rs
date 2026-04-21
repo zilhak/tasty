@@ -1,5 +1,5 @@
 use tasty_terminal::Terminal;
-use super::{Rect, SurfaceId};
+use super::{PhysicalPx, Rect, SurfaceId};
 use super::pane_tree::FocusDirection;
 use super::surface_trait::Surface;
 pub use super::surface_layout::SurfaceGroupLayout;
@@ -53,8 +53,8 @@ impl Surface for TerminalSurface {
     }
 
     fn resize_all(&mut self, rect: Rect, cell_width: f32, cell_height: f32) {
-        let cols = (rect.width / cell_width).floor().max(1.0) as usize;
-        let rows = (rect.height / cell_height).floor().max(1.0) as usize;
+        let cols = (rect.width / cell_width).floor().max(PhysicalPx(1.0)).value() as usize;
+        let rows = (rect.height / cell_height).floor().max(PhysicalPx(1.0)).value() as usize;
         self.terminal.resize(cols, rows);
     }
 

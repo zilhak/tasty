@@ -6,75 +6,81 @@ fn noop_waker() -> Waker {
     Arc::new(|| {})
 }
 
+/// Helper to create a PhysicalPx value concisely in tests.
+fn px(v: f32) -> PhysicalPx { PhysicalPx(v) }
+
+/// Helper to create a LogicalPx value concisely in tests.
+fn lp(v: f32) -> LogicalPx { LogicalPx(v) }
+
 // ---- Rect tests ----
 
 #[test]
 fn rect_contains_inside() {
-    let r = Rect { x: 10.0, y: 20.0, width: 100.0, height: 50.0 };
-    assert!(r.contains(50.0, 40.0));
+    let r = Rect { x: px(10.0), y: px(20.0), width: px(100.0), height: px(50.0) };
+    assert!(r.contains(px(50.0), px(40.0)));
 }
 
 #[test]
 fn rect_contains_at_origin() {
-    let r = Rect { x: 10.0, y: 20.0, width: 100.0, height: 50.0 };
-    assert!(r.contains(10.0, 20.0));
+    let r = Rect { x: px(10.0), y: px(20.0), width: px(100.0), height: px(50.0) };
+    assert!(r.contains(px(10.0), px(20.0)));
 }
 
 #[test]
 fn rect_contains_outside_left() {
-    let r = Rect { x: 10.0, y: 20.0, width: 100.0, height: 50.0 };
-    assert!(!r.contains(5.0, 40.0));
+    let r = Rect { x: px(10.0), y: px(20.0), width: px(100.0), height: px(50.0) };
+    assert!(!r.contains(px(5.0), px(40.0)));
 }
 
 #[test]
 fn rect_contains_outside_bottom() {
-    let r = Rect { x: 10.0, y: 20.0, width: 100.0, height: 50.0 };
-    assert!(!r.contains(50.0, 80.0));
+    let r = Rect { x: px(10.0), y: px(20.0), width: px(100.0), height: px(50.0) };
+    assert!(!r.contains(px(50.0), px(80.0)));
 }
 
 #[test]
 fn rect_contains_at_boundary_exclusive() {
-    let r = Rect { x: 0.0, y: 0.0, width: 100.0, height: 100.0 };
+    let r = Rect { x: px(0.0), y: px(0.0), width: px(100.0), height: px(100.0) };
     // Right edge is exclusive
-    assert!(!r.contains(100.0, 50.0));
+    assert!(!r.contains(px(100.0), px(50.0)));
     // Bottom edge is exclusive
-    assert!(!r.contains(50.0, 100.0));
+    assert!(!r.contains(px(50.0), px(100.0)));
 }
 
 #[test]
 fn rect_split_vertical() {
-    let r = Rect { x: 0.0, y: 0.0, width: 200.0, height: 100.0 };
+    let r = Rect { x: px(0.0), y: px(0.0), width: px(200.0), height: px(100.0) };
     let (r1, r2) = r.split(SplitDirection::Vertical, 0.5);
     let gap = PANE_BORDER_WIDTH;
-    let usable = 200.0 - gap;
-    assert_eq!(r1.x, 0.0);
+    let usable = px(200.0) - gap;
+    assert_eq!(r1.x, px(0.0));
     assert_eq!(r1.width, (usable * 0.5).floor());
     assert_eq!(r2.x, r1.width + gap);
     assert_eq!(r2.width, usable - r1.width);
-    assert_eq!(r1.height, 100.0);
-    assert_eq!(r2.height, 100.0);
+    assert_eq!(r1.height, px(100.0));
+    assert_eq!(r2.height, px(100.0));
 }
 
 #[test]
 fn rect_split_horizontal() {
-    let r = Rect { x: 0.0, y: 0.0, width: 200.0, height: 100.0 };
+    let r = Rect { x: px(0.0), y: px(0.0), width: px(200.0), height: px(100.0) };
     let (r1, r2) = r.split(SplitDirection::Horizontal, 0.5);
     let gap = PANE_BORDER_WIDTH;
-    let usable = 100.0 - gap;
-    assert_eq!(r1.y, 0.0);
+    let usable = px(100.0) - gap;
+    assert_eq!(r1.y, px(0.0));
     assert_eq!(r1.height, (usable * 0.5).floor());
     assert_eq!(r2.y, r1.height + gap);
     assert_eq!(r2.height, usable - r1.height);
-    assert_eq!(r1.width, 200.0);
-    assert_eq!(r2.width, 200.0);
+    assert_eq!(r1.width, px(200.0));
+    assert_eq!(r2.width, px(200.0));
 }
 
 #[test]
 fn rect_split_unequal_ratio() {
-    let r = Rect { x: 0.0, y: 0.0, width: 300.0, height: 100.0 };
+    let r = Rect { x: px(0.0), y: px(0.0), width: px(300.0), height: px(100.0) };
     let (r1, r2) = r.split(SplitDirection::Vertical, 0.3);
     let gap = PANE_BORDER_WIDTH;
-    let usable = 300.0 - gap;
+    let usable = px(300.0) - gap;
     assert_eq!(r1.width, (usable * 0.3).floor());
     assert_eq!(r2.width, usable - r1.width);
     assert_eq!(r2.x, r1.width + gap);
@@ -82,15 +88,15 @@ fn rect_split_unequal_ratio() {
 
 #[test]
 fn rect_approx_eq() {
-    let r1 = Rect { x: 10.0, y: 20.0, width: 100.0, height: 50.0 };
-    let r2 = Rect { x: 10.5, y: 20.3, width: 100.2, height: 50.1 };
+    let r1 = Rect { x: px(10.0), y: px(20.0), width: px(100.0), height: px(50.0) };
+    let r2 = Rect { x: px(10.5), y: px(20.3), width: px(100.2), height: px(50.1) };
     assert!(r1.approx_eq(&r2));
 }
 
 #[test]
 fn rect_not_approx_eq() {
-    let r1 = Rect { x: 10.0, y: 20.0, width: 100.0, height: 50.0 };
-    let r2 = Rect { x: 12.0, y: 20.0, width: 100.0, height: 50.0 };
+    let r1 = Rect { x: px(10.0), y: px(20.0), width: px(100.0), height: px(50.0) };
+    let r2 = Rect { x: px(12.0), y: px(20.0), width: px(100.0), height: px(50.0) };
     assert!(!r1.approx_eq(&r2));
 }
 
@@ -105,11 +111,11 @@ fn pane_node_compute_rects_single() {
         tab_scroll_offset: 0.0,
     };
     let node = PaneNode::Leaf(pane);
-    let rect = Rect { x: 0.0, y: 0.0, width: 800.0, height: 600.0 };
+    let rect = Rect { x: px(0.0), y: px(0.0), width: px(800.0), height: px(600.0) };
     let rects = node.compute_rects(rect);
     assert_eq!(rects.len(), 1);
     assert_eq!(rects[0].0, 1);
-    assert_eq!(rects[0].1.width, 800.0);
+    assert_eq!(rects[0].1.width, px(800.0));
 }
 
 #[test]
@@ -122,13 +128,13 @@ fn pane_node_compute_rects_split() {
         first: Box::new(PaneNode::Leaf(p1)),
         second: Box::new(PaneNode::Leaf(p2)),
     };
-    let rect = Rect { x: 0.0, y: 0.0, width: 800.0, height: 600.0 };
+    let rect = Rect { x: px(0.0), y: px(0.0), width: px(800.0), height: px(600.0) };
     let rects = node.compute_rects(rect);
     assert_eq!(rects.len(), 2);
     assert_eq!(rects[0].0, 1);
     assert_eq!(rects[1].0, 2);
     let gap = PANE_BORDER_WIDTH;
-    let usable = 800.0 - gap;
+    let usable = px(800.0) - gap;
     assert_eq!(rects[0].1.width, (usable * 0.5).floor());
     assert_eq!(rects[1].1.width, usable - rects[0].1.width);
 }
@@ -200,7 +206,7 @@ fn pane_node_find_divider_at_vertical() {
         first: Box::new(PaneNode::Leaf(p1)),
         second: Box::new(PaneNode::Leaf(p2)),
     };
-    let rect = Rect { x: 0.0, y: 0.0, width: 800.0, height: 600.0 };
+    let rect = Rect { x: px(0.0), y: px(0.0), width: px(800.0), height: px(600.0) };
     // Divider should be at x=400
     let result = node.find_divider_at(401.0, 300.0, rect, 5.0);
     assert!(result.is_some());
@@ -325,9 +331,9 @@ fn pane_node_close_pane_not_found() {
 fn surface_group_layout_find_surface_at() {
     // Cannot easily test with real terminals, but we can test the layout structure
     // This test validates the basic Rect-based lookup
-    let rect = Rect { x: 0.0, y: 0.0, width: 100.0, height: 100.0 };
-    assert!(rect.contains(50.0, 50.0));
-    assert!(!rect.contains(150.0, 50.0));
+    let rect = Rect { x: px(0.0), y: px(0.0), width: px(100.0), height: px(100.0) };
+    assert!(rect.contains(px(50.0), px(50.0)));
+    assert!(!rect.contains(px(150.0), px(50.0)));
 }
 
 // ---- Visitor pattern tests ----
@@ -520,33 +526,33 @@ fn surface_group_all_surface_ids_three_way() {
 
 #[test]
 fn compute_terminal_rect_basic() {
-    let r = super::compute_terminal_rect(1920.0, 1080.0, 200.0, 1.0);
-    assert_eq!(r.x, 200.0);
-    assert_eq!(r.y, 0.0);
-    assert_eq!(r.width, 1720.0);
-    assert_eq!(r.height, 1080.0);
+    let r = super::compute_terminal_rect(px(1920.0), px(1080.0), lp(200.0), 1.0);
+    assert_eq!(r.x, px(200.0));
+    assert_eq!(r.y, px(0.0));
+    assert_eq!(r.width, px(1720.0));
+    assert_eq!(r.height, px(1080.0));
 }
 
 #[test]
 fn compute_terminal_rect_with_scale() {
-    let r = super::compute_terminal_rect(1920.0, 1080.0, 100.0, 2.0);
-    assert_eq!(r.x, 200.0);
-    assert_eq!(r.y, 0.0);
-    assert_eq!(r.width, 1720.0);
-    assert_eq!(r.height, 1080.0);
+    let r = super::compute_terminal_rect(px(1920.0), px(1080.0), lp(100.0), 2.0);
+    assert_eq!(r.x, px(200.0));
+    assert_eq!(r.y, px(0.0));
+    assert_eq!(r.width, px(1720.0));
+    assert_eq!(r.height, px(1080.0));
 }
 
 #[test]
 fn compute_terminal_rect_sidebar_clamped() {
     // Sidebar wider than surface should be clamped
-    let r = super::compute_terminal_rect(100.0, 100.0, 200.0, 1.0);
-    assert_eq!(r.x, 99.0);
-    assert_eq!(r.width, 1.0);
+    let r = super::compute_terminal_rect(px(100.0), px(100.0), lp(200.0), 1.0);
+    assert_eq!(r.x, px(99.0));
+    assert_eq!(r.width, px(1.0));
 }
 
 #[test]
 fn compute_terminal_rect_zero_sidebar() {
-    let r = super::compute_terminal_rect(800.0, 600.0, 0.0, 1.5);
-    assert_eq!(r.x, 0.0);
-    assert_eq!(r.width, 800.0);
+    let r = super::compute_terminal_rect(px(800.0), px(600.0), lp(0.0), 1.5);
+    assert_eq!(r.x, px(0.0));
+    assert_eq!(r.width, px(800.0));
 }
