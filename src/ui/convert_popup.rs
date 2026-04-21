@@ -241,16 +241,14 @@ fn current_surface_type(state: &AppState, surface_id: u32) -> Option<&'static st
         for &pid in &ws.pane_layout().all_pane_ids() {
             if let Some(pane) = ws.pane_layout().find_pane(pid) {
                 for tab in &pane.tabs {
-                    if !tab.surface().contains_surface(surface_id) {
+                    if !tab.contains_surface(surface_id) {
                         continue;
                     }
-                    // Check SurfaceGroup first — find the specific leaf.
-                    if let Some(group) = tab.surface().as_surface_group() {
-                        if let Some(leaf) = group.layout().find_surface(surface_id) {
-                            return Some(leaf.type_name());
-                        }
+                    // Find the specific leaf in the layout.
+                    if let Some(leaf) = tab.layout().find_surface(surface_id) {
+                        return Some(leaf.type_name());
                     }
-                    // Standalone surface — return the tab surface's type.
+                    // Fallback: return the focused surface's type.
                     return Some(tab.surface().type_name());
                 }
             }

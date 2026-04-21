@@ -42,10 +42,10 @@ pub fn draw_egui_panels(
                 Some(t) => t,
                 None => continue,
             };
-            let surface = tab.surface();
 
-            // Case 1: Entire tab is a non-terminal surface (standalone, not a SurfaceGroup).
-            if !surface.has_terminal() && surface.as_surface_group().is_none() {
+            // Case 1: Single leaf tab with a non-terminal surface.
+            if !tab.is_split() && !tab.has_terminal() {
+                let surface = tab.surface();
                 infos.push(EguiPanelInfo {
                     pane_id,
                     surface_id: surface.surface_id(),
@@ -58,16 +58,16 @@ pub fn draw_egui_panels(
                 continue;
             }
 
-            // Case 2: SurfaceGroup — collect non-terminal leaf regions.
-            if let Some(group) = surface.as_surface_group() {
-                let focused_surface_in_group = group.focused_surface;
+            // Case 2: Split tab — collect non-terminal leaf regions.
+            if tab.is_split() {
+                let focused_surface_in_tab = tab.focused_surface;
                 let content_rect = Rect {
                     x: pane_rect.x,
                     y: pane_rect.y + tab_bar_h,
                     width: pane_rect.width,
                     height: (pane_rect.height - tab_bar_h).max(crate::model::length::PhysicalPx(1.0)),
                 };
-                for (sid, rect) in group.layout().egui_regions(content_rect) {
+                for (sid, rect) in tab.layout().egui_regions(content_rect) {
                     infos.push(EguiPanelInfo {
                         pane_id,
                         surface_id: Some(sid),
@@ -76,7 +76,7 @@ pub fn draw_egui_panels(
                         logical_w: (rect.width.value() / scale_factor).round_ui(),
                         logical_h: (rect.height.value() / scale_factor).round_ui(),
                         is_keyboard_target: pane_id == focused_pane_id
-                            && sid == focused_surface_in_group,
+                            && sid == focused_surface_in_tab,
                     });
                 }
             }
@@ -119,15 +119,11 @@ pub fn draw_egui_panels(
             None => continue,
         };
 
-        // Get the surface to render: either a leaf within SurfaceGroup, or the tab's surface.
+        // Get the surface to render: either a leaf within a split tab, or the tab's surface.
         let surface: &mut dyn crate::model::Surface = if let Some(sid) = info.surface_id {
-            if let Some(group) = tab.surface_mut().as_surface_group_mut() {
-                match group.layout_mut().find_leaf_mut(sid) {
-                    Some(leaf) => leaf.as_mut(),
-                    None => continue,
-                }
-            } else {
-                tab.surface_mut()
+            match tab.layout_mut().find_leaf_mut(sid) {
+                Some(leaf) => leaf.as_mut(),
+                None => continue,
             }
         } else {
             tab.surface_mut()
@@ -214,13 +210,9 @@ pub fn draw_egui_panels(
         if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pending.pane_id) {
             if let Some(tab) = pane.active_tab_mut() {
                 let surface: &mut dyn crate::model::Surface = if let Some(sid) = pending.surface_id {
-                    if let Some(group) = tab.surface_mut().as_surface_group_mut() {
-                        match group.layout_mut().find_leaf_mut(sid) {
-                            Some(leaf) => leaf.as_mut(),
-                            None => continue,
-                        }
-                    } else {
-                        tab.surface_mut()
+                    match tab.layout_mut().find_leaf_mut(sid) {
+                        Some(leaf) => leaf.as_mut(),
+                        None => continue,
                     }
                 } else {
                     tab.surface_mut()

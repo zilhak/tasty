@@ -3,64 +3,58 @@ use crate::model::{FocusDirection, PhysicalPx};
 use super::AppState;
 
 impl AppState {
-    /// Move focus forward: within the active SurfaceGroup first, then between panes.
+    /// Move focus forward: within the active tab's split first, then between panes.
     pub fn move_focus_forward(&mut self) {
         let ws = self.active_workspace_mut();
         let pane_id = ws.focused_pane;
 
-        // Try to move within a SurfaceGroup first
+        // Try to move within a split tab first
         if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
             if let Some(tab) = pane.active_tab_mut() {
-                if let Some(group) = tab.surface_mut().as_surface_group_mut() {
-                    if group.layout().all_surface_ids().len() > 1 {
-                        group.move_focus_forward();
-                        return;
-                    }
+                if tab.all_surface_ids().len() > 1 {
+                    tab.move_focus_forward();
+                    return;
                 }
             }
         }
 
-        // Not in a multi-surface group, move between panes
+        // Not in a multi-surface tab, move between panes
         let ws = self.active_workspace_mut();
         ws.focused_pane = ws.pane_layout().next_pane_id(ws.focused_pane);
     }
 
-    /// Move focus backward: within the active SurfaceGroup first, then between panes.
+    /// Move focus backward: within the active tab's split first, then between panes.
     pub fn move_focus_backward(&mut self) {
         let ws = self.active_workspace_mut();
         let pane_id = ws.focused_pane;
 
-        // Try to move within a SurfaceGroup first
+        // Try to move within a split tab first
         if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
             if let Some(tab) = pane.active_tab_mut() {
-                if let Some(group) = tab.surface_mut().as_surface_group_mut() {
-                    if group.layout().all_surface_ids().len() > 1 {
-                        group.move_focus_backward();
-                        return;
-                    }
+                if tab.all_surface_ids().len() > 1 {
+                    tab.move_focus_backward();
+                    return;
                 }
             }
         }
 
-        // Not in a multi-surface group, move between panes
+        // Not in a multi-surface tab, move between panes
         let ws = self.active_workspace_mut();
         ws.focused_pane = ws.pane_layout().prev_pane_id(ws.focused_pane);
     }
 
     /// Move focus in a spatial direction (left/right/up/down).
-    /// First tries to move within a SurfaceGroup, then moves between panes.
+    /// First tries to move within a split tab, then moves between panes.
     pub fn move_focus_direction(&mut self, direction: FocusDirection) {
         let ws = self.active_workspace_mut();
         let pane_id = ws.focused_pane;
 
-        // Try to move within a SurfaceGroup first
+        // Try to move within a split tab first
         if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
             if let Some(tab) = pane.active_tab_mut() {
-                if let Some(group) = tab.surface_mut().as_surface_group_mut() {
-                    if let Some(new_surface_id) = group.directional_focus(direction) {
-                        group.focused_surface = new_surface_id;
-                        return;
-                    }
+                if let Some(new_surface_id) = tab.directional_focus(direction) {
+                    tab.focused_surface = new_surface_id;
+                    return;
                 }
             }
         }
@@ -84,30 +78,26 @@ impl AppState {
         ws.focused_pane = ws.pane_layout().prev_pane_id(ws.focused_pane);
     }
 
-    /// Move focus to the next surface within the current pane's SurfaceGroup.
-    /// Does nothing if not in a multi-surface group.
+    /// Move focus to the next surface within the current tab's split.
+    /// Does nothing if not in a multi-surface tab.
     pub fn move_surface_focus_forward(&mut self) {
         let ws = self.active_workspace_mut();
         let pane_id = ws.focused_pane;
         if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
             if let Some(tab) = pane.active_tab_mut() {
-                if let Some(group) = tab.surface_mut().as_surface_group_mut() {
-                    group.move_focus_forward();
-                }
+                tab.move_focus_forward();
             }
         }
     }
 
-    /// Move focus to the previous surface within the current pane's SurfaceGroup.
-    /// Does nothing if not in a multi-surface group.
+    /// Move focus to the previous surface within the current tab's split.
+    /// Does nothing if not in a multi-surface tab.
     pub fn move_surface_focus_backward(&mut self) {
         let ws = self.active_workspace_mut();
         let pane_id = ws.focused_pane;
         if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
             if let Some(tab) = pane.active_tab_mut() {
-                if let Some(group) = tab.surface_mut().as_surface_group_mut() {
-                    group.move_focus_backward();
-                }
+                tab.move_focus_backward();
             }
         }
     }
@@ -124,7 +114,7 @@ impl AppState {
         }
     }
 
-    /// Find which pane contains the surface, focus that pane, and if it's in a SurfaceGroup,
+    /// Find which pane contains the surface, focus that pane, and if it's in a split tab,
     /// focus that surface. Searches all workspaces, not just the active one.
     /// Returns true if found.
     pub fn focus_surface(&mut self, surface_id: u32) -> bool {
@@ -155,14 +145,11 @@ impl AppState {
         // Focus the pane.
         let ws = self.active_workspace_mut();
         ws.focused_pane = pane_id;
-        // If the active tab's surface is a SurfaceGroup, focus the surface within it.
-        // Uses contains_surface to support both terminal and non-terminal surfaces.
+        // If the active tab contains this surface, focus it within the tab.
         if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
             if let Some(tab) = pane.active_tab_mut() {
-                if let Some(group) = tab.surface_mut().as_surface_group_mut() {
-                    if group.layout().contains_surface(surface_id) {
-                        group.focused_surface = surface_id;
-                    }
+                if tab.contains_surface(surface_id) {
+                    tab.focused_surface = surface_id;
                 }
             }
         }
@@ -187,7 +174,7 @@ impl AppState {
         false
     }
 
-    /// Focus the surface (within a SurfaceGroup) at the given physical pixel position.
+    /// Focus the surface (within a split tab) at the given physical pixel position.
     /// This should be called after focus_pane_at_position to also focus within the pane's panel.
     /// Returns true if focus changed.
     pub fn focus_surface_at_position(&mut self, x: f32, y: f32, terminal_rect: crate::model::Rect) -> bool {
@@ -226,12 +213,10 @@ impl AppState {
             None => return false,
         };
 
-        if let Some(group) = tab.surface_mut().as_surface_group_mut() {
-            if let Some(surface_id) = group.layout().find_surface_at(x, y, content_rect) {
-                if group.focused_surface != surface_id {
-                    group.focused_surface = surface_id;
-                    return true;
-                }
+        if let Some(surface_id) = tab.layout().find_surface_at(x, y, content_rect) {
+            if tab.focused_surface != surface_id {
+                tab.focused_surface = surface_id;
+                return true;
             }
         }
         false

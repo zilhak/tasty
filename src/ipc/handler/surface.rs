@@ -92,7 +92,7 @@ pub(crate) fn handle_surface_list(state: &AppState, id: serde_json::Value) -> Js
         for &pane_id in &ws.pane_layout().all_pane_ids() {
             if let Some(pane) = ws.pane_layout().find_pane(pane_id) {
                 for (tab_idx, tab) in pane.tabs.iter().enumerate() {
-                    collect_surface_info(tab.surface(), pane_id, ws.id, tab_idx, &mut surfaces);
+                    collect_tab_surface_info(tab, pane_id, ws.id, tab_idx, &mut surfaces);
                 }
             }
         }
@@ -100,39 +100,44 @@ pub(crate) fn handle_surface_list(state: &AppState, id: serde_json::Value) -> Js
     JsonRpcResponse::success(id, json!(surfaces))
 }
 
-fn collect_surface_info(
-    surface: &dyn crate::model::Surface,
+fn collect_tab_surface_info(
+    tab: &crate::model::Tab,
     pane_id: u32,
     workspace_id: u32,
     tab_idx: usize,
     out: &mut Vec<serde_json::Value>,
 ) {
-    if let Some(node) = surface.as_terminal_surface() {
-        let mut entry = json!({
-            "id": node.id,
-            "pane_id": pane_id,
-            "workspace_id": workspace_id,
-            "tab_index": tab_idx,
-            "type": "Terminal",
-            "cols": node.terminal.cols(),
-            "rows": node.terminal.rows(),
-        });
-        if let Some(fg) = node.terminal.foreground_process_info() {
-            entry["foreground_process"] = json!(fg.name);
-            entry["foreground_pid"] = json!(fg.pid);
+    if tab.is_split() {
+        // Split tab: iterate through the layout
+        collect_surface_layout_info(tab.layout(), pane_id, workspace_id, tab_idx, out);
+    } else {
+        // Single surface tab
+        let surface = tab.surface();
+        if let Some(node) = surface.as_terminal_surface() {
+            let mut entry = json!({
+                "id": node.id,
+                "pane_id": pane_id,
+                "workspace_id": workspace_id,
+                "tab_index": tab_idx,
+                "type": "Terminal",
+                "cols": node.terminal.cols(),
+                "rows": node.terminal.rows(),
+            });
+            if let Some(fg) = node.terminal.foreground_process_info() {
+                entry["foreground_process"] = json!(fg.name);
+                entry["foreground_pid"] = json!(fg.pid);
+            }
+            out.push(entry);
+        } else if let Some(id) = surface.surface_id() {
+            // Non-terminal surfaces (Markdown, Explorer, Html, Empty)
+            out.push(json!({
+                "id": id,
+                "pane_id": pane_id,
+                "workspace_id": workspace_id,
+                "tab_index": tab_idx,
+                "type": surface.type_name(),
+            }));
         }
-        out.push(entry);
-    } else if let Some(group) = surface.as_surface_group() {
-        collect_surface_layout_info(group.layout(), pane_id, workspace_id, tab_idx, out);
-    } else if let Some(id) = surface.surface_id() {
-        // Non-terminal surfaces (Markdown, Explorer, Html, Empty)
-        out.push(json!({
-            "id": id,
-            "pane_id": pane_id,
-            "workspace_id": workspace_id,
-            "tab_index": tab_idx,
-            "type": surface.type_name(),
-        }));
     }
 }
 

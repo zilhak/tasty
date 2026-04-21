@@ -1,9 +1,37 @@
 use crate::model::closed_item::*;
 use crate::model::{
-    Pane, PaneNode, Surface, SurfaceGroupLayout, SurfaceGroupNode, TerminalSurface, Tab, Workspace,
+    Pane, PaneNode, Surface, SurfaceGroupLayout, TerminalSurface, Tab, Workspace,
 };
 
 use super::AppState;
+
+/// Result of rebuilding a closed panel.
+enum RebuildResult {
+    /// A single surface (Terminal, Markdown, Explorer, etc.)
+    Single(Box<dyn Surface>),
+    /// A full layout tree with focused_surface id
+    Layout(SurfaceGroupLayout, u32),
+}
+
+impl RebuildResult {
+    /// Convert into a Tab.
+    fn into_tab(self, tab_id: u32, name: String) -> Tab {
+        match self {
+            RebuildResult::Single(surface) => Tab::new_with_surface(tab_id, name, surface),
+            RebuildResult::Layout(layout, focused_surface) => {
+                Tab {
+                    id: tab_id,
+                    name,
+                    explicit_name: None,
+                    layout_opt: Some(layout),
+                    focused_surface,
+                    deferred_spawn: None,
+                    deferred_surface_id: None,
+                }
+            }
+        }
+    }
+}
 
 impl AppState {
     /// Restore the most recently closed item. Returns true if something was restored.
@@ -46,14 +74,14 @@ impl AppState {
     }
 
     fn restore_tab(&mut self, closed_tab: ClosedTab) -> bool {
-        let surface = match self.rebuild_surface(closed_tab.panel) {
-            Some(s) => s,
+        let result = match self.rebuild_surface(closed_tab.panel) {
+            Some(r) => r,
             None => return false,
         };
 
         let tab_id = self.engine.next_ids.next_tab();
         let name = closed_tab.explicit_name.unwrap_or(closed_tab.name);
-        let tab = Tab::new_with_surface(tab_id, name, surface);
+        let tab = result.into_tab(tab_id, name);
 
         self.ensure_workspace_exists();
         if let Some(pane) = self.focused_pane_mut() {
@@ -92,32 +120,32 @@ impl AppState {
 
     // ── Rebuild helpers ──
 
-    fn rebuild_surface(&mut self, closed: ClosedPanel) -> Option<Box<dyn Surface>> {
+    fn rebuild_surface(&mut self, closed: ClosedPanel) -> Option<RebuildResult> {
         match closed {
             ClosedPanel::Terminal(surface) => {
                 let node = self.rebuild_surface_node(surface)?;
-                Some(Box::new(node))
+                Some(RebuildResult::Single(Box::new(node)))
             }
             ClosedPanel::SurfaceGroup { layout, focused_surface: _ } => {
                 let rebuilt_layout = self.rebuild_surface_layout(layout)?;
                 let first_id = rebuilt_layout.first_surface_id().unwrap_or(0);
-                Some(Box::new(SurfaceGroupNode::from_restored(rebuilt_layout, first_id)))
+                Some(RebuildResult::Layout(rebuilt_layout, first_id))
             }
             ClosedPanel::Markdown { path } => {
                 let id = self.engine.next_ids.next_surface();
-                Some(Box::new(crate::model::MarkdownPanel::new(id, path.to_string_lossy().to_string())))
+                Some(RebuildResult::Single(Box::new(crate::model::MarkdownPanel::new(id, path.to_string_lossy().to_string()))))
             }
             ClosedPanel::Explorer { path } => {
                 let id = self.engine.next_ids.next_surface();
                 let root = path.map(|p| p.to_string_lossy().to_string())
                     .unwrap_or_else(|| ".".to_string());
-                Some(Box::new(crate::model::ExplorerPanel::new(id, root)))
+                Some(RebuildResult::Single(Box::new(crate::model::ExplorerPanel::new(id, root))))
             }
             ClosedPanel::Image { path } => {
                 let id = self.engine.next_ids.next_surface();
                 match path {
-                    Some(p) => Some(Box::new(crate::model::ImagePanel::new(id, p.to_string_lossy().to_string()))),
-                    None => Some(Box::new(crate::model::ImagePanel::new_blank(id))),
+                    Some(p) => Some(RebuildResult::Single(Box::new(crate::model::ImagePanel::new(id, p.to_string_lossy().to_string())))),
+                    None => Some(RebuildResult::Single(Box::new(crate::model::ImagePanel::new_blank(id)))),
                 }
             }
         }
@@ -188,10 +216,10 @@ impl AppState {
         let pane_id = self.engine.next_ids.next_pane();
         let mut tabs = Vec::new();
         for closed_tab in closed.tabs {
-            let surface = self.rebuild_surface(closed_tab.panel)?;
+            let result = self.rebuild_surface(closed_tab.panel)?;
             let tab_id = self.engine.next_ids.next_tab();
             let name = closed_tab.explicit_name.unwrap_or(closed_tab.name);
-            tabs.push(Tab::new_with_surface(tab_id, name, surface));
+            tabs.push(result.into_tab(tab_id, name));
         }
         if tabs.is_empty() {
             return None;

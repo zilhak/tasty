@@ -1,5 +1,5 @@
 use tasty_terminal::Terminal;
-use super::{ClipboardViewerPanel, EmptySurface, ExplorerPanel, HtmlPanel, ImagePanel, MarkdownPanel, Rect, SurfaceGroupNode, SurfaceId, TerminalSurface};
+use super::{ClipboardViewerPanel, EmptySurface, ExplorerPanel, HtmlPanel, ImagePanel, MarkdownPanel, Rect, SurfaceId, TerminalSurface};
 
 /// Common behavior for all Surface types.
 ///
@@ -60,8 +60,6 @@ pub trait Surface {
 
     // ── Downcast methods ──
 
-    fn as_surface_group(&self) -> Option<&SurfaceGroupNode> { None }
-    fn as_surface_group_mut(&mut self) -> Option<&mut SurfaceGroupNode> { None }
     fn as_terminal_surface(&self) -> Option<&TerminalSurface> { None }
     fn as_terminal_surface_mut(&mut self) -> Option<&mut TerminalSurface> { None }
     fn as_markdown(&self) -> Option<&MarkdownPanel> { None }

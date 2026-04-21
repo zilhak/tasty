@@ -165,7 +165,7 @@ impl AppState {
                 if let Some(pane) = workspace.pane_layout_mut().find_pane_mut(pid) {
                     if let Some(tab_idx) = pane.tabs.iter().position(|t| t.id == tab_id) {
                         if let Some(tab) = pane.tabs.get_mut(tab_idx) {
-                            tab.surface_mut().for_each_terminal_mut(&mut |sid, _| {
+                            tab.for_each_terminal_mut(&mut |sid, _| {
                                 surface_ids.push(sid);
                             });
                         }
@@ -235,7 +235,7 @@ impl AppState {
         if let Some(pane) = self.focused_pane_mut() {
             let active = pane.active_tab;
             if let Some(tab) = pane.tabs.get_mut(active) {
-                tab.surface_mut().for_each_terminal_mut(&mut |sid, _| {
+                tab.for_each_terminal_mut(&mut |sid, _| {
                     surface_ids.push(sid);
                 });
             }
@@ -350,7 +350,7 @@ impl AppState {
             for &pid in &workspace.pane_layout().all_pane_ids() {
                 if let Some(pane) = workspace.pane_layout().find_pane(pid) {
                     for (tab_idx, tab) in pane.tabs.iter().enumerate() {
-                        if tab.surface().contains_surface(surface_id) {
+                        if tab.contains_surface(surface_id) {
                             location = Some((ws_idx, pid, tab_idx));
                             break 'outer;
                         }
@@ -371,10 +371,10 @@ impl AppState {
         };
         let tab = &mut pane.tabs[tab_idx];
 
-        // Case 1: Surface is inside a SurfaceGroup — replace just the leaf.
-        if let Some(group) = tab.surface_mut().as_surface_group_mut() {
-            return group.layout_mut().replace_surface(surface_id, new_surface);
-            // Don't change tab name for individual surface replacement within a group.
+        // Case 1: Tab has split layout — replace just the leaf.
+        if tab.is_split() {
+            return tab.layout_mut().replace_surface(surface_id, new_surface);
+            // Don't change tab name for individual surface replacement within a split.
         }
         // Case 2: Tab's sole surface — replace the whole tab surface.
         tab.put_surface(new_surface);

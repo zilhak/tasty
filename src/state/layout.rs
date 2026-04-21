@@ -39,7 +39,7 @@ impl AppState {
                     height: (pane_rect.height - tab_bar_h).max(PhysicalPx(1.0)),
                 };
                 let regions = match pane.tabs.get(pane.active_tab) {
-                    Some(tab) => tab.surface().render_regions(content_rect),
+                    Some(tab) => tab.render_regions(content_rect),
                     None => Vec::new(),
                 };
                 result.push((pane_id, pane_rect, regions));
@@ -140,7 +140,7 @@ impl AppState {
                         height: (pane_rect.height - tab_bar_h).max(PhysicalPx(1.0)),
                     };
                     for tab in &mut pane.tabs {
-                        tab.surface_mut().resize_all(content_rect, cell_width, cell_height);
+                        tab.resize_all(content_rect, cell_width, cell_height);
                     }
                 }
             }

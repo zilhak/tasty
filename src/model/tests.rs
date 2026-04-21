@@ -490,21 +490,25 @@ fn surface_group_find_terminal_in_split() {
 }
 
 #[test]
-fn surface_group_node_close_surface_via_wrapper() {
+fn tab_close_surface_in_split() {
     let node1 = test_surface_node(10);
     let node2 = test_surface_node(20);
     let layout = SurfaceGroupLayout::Leaf(Box::new(node1));
     let (split_layout, _) = layout.split_with_node(10, SplitDirection::Vertical, node2);
-    let mut group_node = SurfaceGroupNode {
+    let mut tab = Tab {
+        id: 1,
+        name: "Test".to_string(),
+        explicit_name: None,
         layout_opt: Some(split_layout),
         focused_surface: 10,
-        _first_surface: 10,
+        deferred_spawn: None,
+        deferred_surface_id: None,
     };
-    let closed = group_node.close_surface(10);
+    let closed = tab.close_surface(10);
     assert!(closed);
-    assert_eq!(group_node.layout().all_surface_ids(), vec![20]);
+    assert_eq!(tab.layout().all_surface_ids(), vec![20]);
     // focused_surface should have been reset to the remaining surface
-    assert_eq!(group_node.focused_surface, 20);
+    assert_eq!(tab.focused_surface, 20);
 }
 
 #[test]

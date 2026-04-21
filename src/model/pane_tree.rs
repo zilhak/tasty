@@ -264,7 +264,7 @@ impl PaneNode {
         match self {
             PaneNode::Leaf(pane) => {
                 for tab in &mut pane.tabs {
-                    tab.surface_mut().for_each_terminal_mut(f);
+                    tab.for_each_terminal_mut(f);
                 }
             }
             PaneNode::Split { first, second, .. } => {

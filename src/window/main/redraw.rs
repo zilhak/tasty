@@ -288,7 +288,7 @@ impl MainWindow {
                         // Close
                         if let Some(pane) = self.state.active_workspace().pane_layout().find_pane(pane_id) {
                             if let Some(tab) = pane.tabs.get(tab_index) {
-                                let ids = tab.surface().all_surface_ids();
+                                let ids = tab.all_surface_ids();
                                 if let Some(&sid) = ids.first() {
                                     self.state.close_surface_by_id(sid);
                                 }
