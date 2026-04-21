@@ -29,12 +29,21 @@ impl AppState {
     /// Only terminal panels support surface-level splitting; others fall back to pane split.
     pub fn split_surface(&mut self, direction: SplitDirection) -> anyhow::Result<()> {
         let target_surface_id = self.focused_surface_id();
-        self.split_surface_targeted(
+        let new_surface_id = self.split_surface_targeted(
             target_surface_id,
             direction,
             None,
             crate::model::SurfaceType::Terminal,
         )?;
+
+        // 단축키(사용자 행위)로 split한 경우 새 surface로 포커스 이동
+        let ws = self.active_workspace_mut();
+        let focused_pane_id = ws.focused_pane;
+        if let Some(pane) = ws.pane_layout_mut().find_pane_mut(focused_pane_id) {
+            if let Some(tab) = pane.active_tab_mut() {
+                tab.focused_surface = new_surface_id;
+            }
+        }
         Ok(())
     }
 
