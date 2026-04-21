@@ -28,24 +28,13 @@ impl AppState {
     /// Split within the current tab (SurfaceGroup). Appears as one tab.
     /// Only terminal panels support surface-level splitting; others fall back to pane split.
     pub fn split_surface(&mut self, direction: SplitDirection) -> anyhow::Result<()> {
-        let has_terminal = self.focused_pane()
-            .and_then(|p| p.tabs.get(p.active_tab))
-            .is_some_and(|tab| tab.surface().has_terminal());
-
-        if !has_terminal {
-            return self.split_pane(direction);
-        }
-
-        let cwd = self.resolve_inherit_cwd();
-        let new_surface_id = self.engine.next_ids.next_surface();
-        let cols = self.engine.default_cols;
-        let rows = self.engine.default_rows;
-        let sh = crate::engine_state::ShellConfig::from_settings(&self.engine.settings);
-        let waker = self.engine.make_waker(new_surface_id);
-        if let Some(pane) = self.focused_pane_mut() {
-            pane.split_active_surface_with_shell(direction, new_surface_id, cols, rows, sh.shell_ref(), &sh.args_ref(), waker, cwd.as_deref())?;
-        }
-        self.send_fast_init(new_surface_id);
+        let target_surface_id = self.focused_surface_id();
+        self.split_surface_targeted(
+            target_surface_id,
+            direction,
+            None,
+            crate::model::SurfaceType::Terminal,
+        )?;
         Ok(())
     }
 
