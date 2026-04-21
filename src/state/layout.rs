@@ -1,5 +1,4 @@
-use crate::model::{PaneId, PhysicalPx, Rect};
-use tasty_terminal::Terminal;
+use crate::model::{PaneId, PhysicalPx, Rect, SurfaceRegion};
 
 use super::AppState;
 
@@ -18,42 +17,12 @@ impl AppState {
         active_changed
     }
 
-    /// Compute all render regions for the active workspace.
-    /// Returns: for each pane, the pane rect and the terminal regions within it.
-    pub fn render_regions(
-        &self,
-        terminal_rect: Rect,
-    ) -> Vec<(PaneId, Rect, Vec<(u32, &Terminal, Rect)>)> {
-        let ws = self.active_workspace();
-        let pane_rects = ws.pane_layout().compute_rects(terminal_rect);
-
-        let mut result = Vec::new();
-        for (pane_id, pane_rect) in pane_rects {
-            if let Some(pane) = ws.pane_layout().find_pane(pane_id) {
-                // Reserve space for tab bar at top of each pane
-                let tab_bar_h = self.tab_bar_height;
-                let content_rect = Rect {
-                    x: pane_rect.x,
-                    y: pane_rect.y + tab_bar_h,
-                    width: pane_rect.width,
-                    height: (pane_rect.height - tab_bar_h).max(PhysicalPx(1.0)),
-                };
-                let regions = match pane.tabs.get(pane.active_tab) {
-                    Some(tab) => tab.render_regions(content_rect),
-                    None => Vec::new(),
-                };
-                result.push((pane_id, pane_rect, regions));
-            }
-        }
-        result
-    }
-
-    /// Compute all surface regions (terminal + non-terminal) for the active workspace.
+    /// Compute all surface regions for the active workspace.
     /// Returns: for each pane, the pane rect and all surface regions within it.
-    pub fn all_surface_regions(
+    pub fn surface_regions(
         &self,
         terminal_rect: Rect,
-    ) -> Vec<(PaneId, Rect, Vec<(u32, Rect)>)> {
+    ) -> Vec<(PaneId, Rect, Vec<SurfaceRegion<'_>>)> {
         let ws = self.active_workspace();
         let pane_rects = ws.pane_layout().compute_rects(terminal_rect);
 
@@ -68,7 +37,7 @@ impl AppState {
                     height: (pane_rect.height - tab_bar_h).max(PhysicalPx(1.0)),
                 };
                 let regions = match pane.tabs.get(pane.active_tab) {
-                    Some(tab) => tab.all_surface_regions(content_rect),
+                    Some(tab) => tab.surface_regions(content_rect),
                     None => Vec::new(),
                 };
                 result.push((pane_id, pane_rect, regions));
@@ -81,10 +50,10 @@ impl AppState {
     /// Returns None if no surface is focused.
     pub fn focused_surface_rect(&self, terminal_rect: Rect) -> Option<Rect> {
         let surface_id = self.focused_surface_id()?;
-        for (_pane_id, _pane_rect, surface_regions) in &self.all_surface_regions(terminal_rect) {
-            for (sid, rect) in surface_regions {
-                if *sid == surface_id {
-                    return Some(*rect);
+        for (_pane_id, _pane_rect, regions) in &self.surface_regions(terminal_rect) {
+            for r in regions {
+                if r.id == surface_id {
+                    return Some(r.rect);
                 }
             }
         }
@@ -101,13 +70,12 @@ impl AppState {
         cell_w: f32,
         cell_h: f32,
     ) -> Option<Rect> {
-        let regions = self.render_regions(terminal_rect);
-        for (_pane_id, _pane_rect, terminal_regions) in &regions {
-            for (sid, _term, rect) in terminal_regions {
-                if *sid == surface_id {
+        for (_pane_id, _pane_rect, regions) in &self.surface_regions(terminal_rect) {
+            for r in regions {
+                if r.id == surface_id {
                     return Some(Rect {
-                        x: rect.x + PhysicalPx(col as f32 * cell_w),
-                        y: rect.y + PhysicalPx(row as f32 * cell_h),
+                        x: r.rect.x + PhysicalPx(col as f32 * cell_w),
+                        y: r.rect.y + PhysicalPx(row as f32 * cell_h),
                         width: PhysicalPx(cell_w.max(1.0)),
                         height: PhysicalPx(cell_h.max(1.0)),
                     });
@@ -118,30 +86,11 @@ impl AppState {
     }
 
     /// Find the surface ID at the given physical pixel position.
-    /// First checks terminal render regions, then falls back to pane rect
-    /// matching for panels without render regions (Markdown/Explorer/Html/Empty).
     pub fn surface_id_at_position(&self, x: f32, y: f32, terminal_rect: Rect) -> Option<u32> {
-        // Terminal panels provide precise render regions
-        let regions = self.render_regions(terminal_rect);
-        for (_pane_id, _pane_rect, terminal_regions) in &regions {
-            for (sid, _term, rect) in terminal_regions {
-                if rect.contains(PhysicalPx(x), PhysicalPx(y)) {
-                    return Some(*sid);
-                }
-            }
-        }
-        // Other panels occupy the pane rect directly
-        let ws = self.active_workspace();
-        let pane_rects = ws.pane_layout().compute_rects(terminal_rect);
-        for (pane_id, pane_rect) in &pane_rects {
-            if pane_rect.contains(PhysicalPx(x), PhysicalPx(y)) {
-                if let Some(pane) = ws.pane_layout().find_pane(*pane_id) {
-                    if let Some(tab) = pane.tabs.get(pane.active_tab) {
-                        let surface = tab.surface();
-                        if !surface.is_gpu_rendered() {
-                            return surface.focused_surface_id();
-                        }
-                    }
+        for (_pane_id, _pane_rect, regions) in &self.surface_regions(terminal_rect) {
+            for r in regions {
+                if r.rect.contains(PhysicalPx(x), PhysicalPx(y)) {
+                    return Some(r.id);
                 }
             }
         }

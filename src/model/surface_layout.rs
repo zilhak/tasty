@@ -4,6 +4,13 @@ use super::surface_trait::Surface;
 use super::{DividerInfo, PhysicalPx, Rect, SURFACE_BORDER_WIDTH, SplitDirection, SurfaceId};
 use tasty_terminal::Terminal;
 
+/// A surface and its screen region, returned by `surface_regions()`.
+pub struct SurfaceRegion<'a> {
+    pub id: SurfaceId,
+    pub rect: Rect,
+    pub surface: &'a dyn Surface,
+}
+
 /// Which side of a split we descended into while building a path.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PathSide {
@@ -264,38 +271,16 @@ impl SurfaceGroupLayout {
         }
     }
 
-    /// Render regions for terminal surfaces only (GPU rendering).
-    pub fn render_regions(&self, rect: Rect) -> Vec<(SurfaceId, &Terminal, Rect)> {
+    /// Collect regions for all surfaces with their Surface trait references.
+    pub fn surface_regions(&self, rect: Rect) -> Vec<SurfaceRegion<'_>> {
         match self {
             SurfaceGroupLayout::Leaf(surface) => {
                 if let Some(id) = surface.surface_id() {
-                    if let Some(terminal) = surface.focused_terminal() {
-                        return vec![(id, terminal, rect)];
-                    }
-                }
-                vec![]
-            }
-            SurfaceGroupLayout::Split {
-                direction,
-                ratio,
-                first,
-                second,
-                ..
-            } => {
-                let (r1, r2) = rect.split_with_gap(*direction, *ratio, SURFACE_BORDER_WIDTH);
-                let mut result = first.render_regions(r1);
-                result.extend(second.render_regions(r2));
-                result
-            }
-        }
-    }
-
-    /// Collect regions for all surfaces (terminal and non-terminal).
-    pub fn all_surface_regions(&self, rect: Rect) -> Vec<(SurfaceId, Rect)> {
-        match self {
-            SurfaceGroupLayout::Leaf(surface) => {
-                if let Some(id) = surface.surface_id() {
-                    vec![(id, rect)]
+                    vec![SurfaceRegion {
+                        id,
+                        rect,
+                        surface: &**surface,
+                    }]
                 } else {
                     vec![]
                 }
@@ -308,35 +293,8 @@ impl SurfaceGroupLayout {
                 ..
             } => {
                 let (r1, r2) = rect.split_with_gap(*direction, *ratio, SURFACE_BORDER_WIDTH);
-                let mut result = first.all_surface_regions(r1);
-                result.extend(second.all_surface_regions(r2));
-                result
-            }
-        }
-    }
-
-    /// Collect regions for non-terminal surfaces (egui rendering).
-    pub fn egui_regions(&self, rect: Rect) -> Vec<(SurfaceId, Rect)> {
-        match self {
-            SurfaceGroupLayout::Leaf(surface) => {
-                if surface.is_gpu_rendered() {
-                    vec![]
-                } else if let Some(id) = surface.surface_id() {
-                    vec![(id, rect)]
-                } else {
-                    vec![]
-                }
-            }
-            SurfaceGroupLayout::Split {
-                direction,
-                ratio,
-                first,
-                second,
-                ..
-            } => {
-                let (r1, r2) = rect.split_with_gap(*direction, *ratio, SURFACE_BORDER_WIDTH);
-                let mut result = first.egui_regions(r1);
-                result.extend(second.egui_regions(r2));
+                let mut result = first.surface_regions(r1);
+                result.extend(second.surface_regions(r2));
                 result
             }
         }

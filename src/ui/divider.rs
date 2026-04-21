@@ -36,23 +36,23 @@ pub fn draw_surface_highlights(
     scale_factor: f32,
 ) {
     let th = theme::theme();
-    let regions = state.all_surface_regions(terminal_rect);
+    let regions = state.surface_regions(terminal_rect);
     let painter = ctx.layer_painter(egui::LayerId::new(
         egui::Order::Middle,
         egui::Id::new("surface_highlights"),
     ));
     for (_pane_id, _pane_rect, surface_regions) in &regions {
-        for (surface_id, rect) in surface_regions {
+        for r in surface_regions {
             if state
                 .engine
                 .notifications
-                .is_surface_highlighted(*surface_id)
+                .is_surface_highlighted(r.id)
             {
                 let egui_rect = egui::Rect::from_min_size(
-                    egui::pos2(rect.x.value() / scale_factor, rect.y.value() / scale_factor),
+                    egui::pos2(r.rect.x.value() / scale_factor, r.rect.y.value() / scale_factor),
                     egui::vec2(
-                        rect.width.value() / scale_factor,
-                        rect.height.value() / scale_factor,
+                        r.rect.width.value() / scale_factor,
+                        r.rect.height.value() / scale_factor,
                     ),
                 )
                 .round_ui();

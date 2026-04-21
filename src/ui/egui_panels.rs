@@ -72,7 +72,9 @@ pub fn draw_egui_panels(
                     height: (pane_rect.height - tab_bar_h)
                         .max(crate::model::length::PhysicalPx(1.0)),
                 };
-                for (sid, rect) in tab.layout().egui_regions(content_rect) {
+                for r in tab.layout().surface_regions(content_rect).into_iter().filter(|r| !r.surface.is_gpu_rendered()) {
+                    let sid = r.id;
+                    let rect = r.rect;
                     infos.push(EguiPanelInfo {
                         pane_id,
                         surface_id: Some(sid),

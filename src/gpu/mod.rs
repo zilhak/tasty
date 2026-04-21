@@ -269,7 +269,7 @@ impl GpuState {
         };
 
         // 5. GPU render
-        let regions = state.render_regions(terminal_rect);
+        let regions = state.surface_regions(terminal_rect);
         let output = self.surface.get_current_texture()?;
         let view = output
             .texture

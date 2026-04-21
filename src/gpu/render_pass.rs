@@ -42,15 +42,20 @@ impl GpuState {
     pub(super) fn render_terminals(
         &mut self,
         view: &wgpu::TextureView,
-        regions: &[(u32, Rect, Vec<(u32, &tasty_terminal::Terminal, Rect)>)],
+        regions: &[(u32, Rect, Vec<crate::model::SurfaceRegion<'_>>)],
         focused_surface_id: Option<u32>,
         selection: Option<&crate::selection::TextSelection>,
         settings: &crate::settings::AppearanceSettings,
         preedit: Option<&super::ImePreeditState>,
     ) {
         let theme = crate::theme::theme();
-        for (_pane_id, _pane_rect, terminal_regions) in regions {
-            for (surface_id, terminal, rect) in terminal_regions {
+        for (_pane_id, _pane_rect, surface_regions) in regions {
+            for region in surface_regions {
+                let Some(terminal) = region.surface.focused_terminal() else {
+                    continue;
+                };
+                let surface_id = &region.id;
+                let rect = &region.rect;
                 let is_focused = focused_surface_id == Some(*surface_id);
                 let bg = if is_focused {
                     settings.focused_surface_bg_float()

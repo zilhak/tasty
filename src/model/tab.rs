@@ -294,14 +294,9 @@ impl Tab {
         }
     }
 
-    /// Render regions (terminal surfaces only).
-    pub fn render_regions(&self, rect: super::Rect) -> Vec<(SurfaceId, &Terminal, super::Rect)> {
-        self.layout().render_regions(rect)
-    }
-
-    /// All surface regions (terminal and non-terminal).
-    pub fn all_surface_regions(&self, rect: super::Rect) -> Vec<(SurfaceId, super::Rect)> {
-        self.layout().all_surface_regions(rect)
+    /// All surface regions with Surface trait references.
+    pub fn surface_regions(&self, rect: super::Rect) -> Vec<super::SurfaceRegion<'_>> {
+        self.layout().surface_regions(rect)
     }
 
     // ── Initialization ──

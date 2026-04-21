@@ -233,17 +233,17 @@ fn build_layout_context(
         })
         .collect();
 
-    // Compute surface rects using all_surface_regions (terminal + non-terminal)
+    // Compute surface rects using surface_regions
     let mut surface_rects = Vec::new();
-    for (_pane_id, _pane_rect, regions) in state.all_surface_regions(terminal_rect) {
-        for (sid, rect) in regions {
+    for (_pane_id, _pane_rect, regions) in state.surface_regions(terminal_rect) {
+        for r in regions {
             surface_rects.push((
-                sid,
+                r.id,
                 egui::Rect::from_min_size(
-                    egui::pos2(rect.x.value() / scale_factor, rect.y.value() / scale_factor),
+                    egui::pos2(r.rect.x.value() / scale_factor, r.rect.y.value() / scale_factor),
                     egui::vec2(
-                        rect.width.value() / scale_factor,
-                        rect.height.value() / scale_factor,
+                        r.rect.width.value() / scale_factor,
+                        r.rect.height.value() / scale_factor,
                     ),
                 ),
             ));

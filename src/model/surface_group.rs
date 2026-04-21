@@ -1,4 +1,4 @@
-pub use super::surface_layout::SurfaceGroupLayout;
+pub use super::surface_layout::{SurfaceGroupLayout, SurfaceRegion};
 use super::surface_trait::Surface;
 use super::{PhysicalPx, Rect, SurfaceId};
 use tasty_terminal::Terminal;
@@ -67,10 +67,6 @@ impl Surface for TerminalSurface {
         } else {
             None
         }
-    }
-
-    fn render_regions(&self, rect: Rect) -> Vec<(SurfaceId, &Terminal, Rect)> {
-        vec![(self.id, &self.terminal, rect)]
     }
 
     fn resize_all(&mut self, rect: Rect, cell_width: f32, cell_height: f32) {

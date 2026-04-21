@@ -61,11 +61,6 @@ pub trait Surface {
         None
     }
 
-    /// Get render regions for GPU rendering. Non-terminal surfaces return empty.
-    fn render_regions(&self, _rect: Rect) -> Vec<(SurfaceId, &Terminal, Rect)> {
-        vec![]
-    }
-
     /// Resize all terminals to fit the given rect.
     fn resize_all(&mut self, _rect: Rect, _cell_width: f32, _cell_height: f32) {}
 
