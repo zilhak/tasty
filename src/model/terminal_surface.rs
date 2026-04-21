@@ -33,8 +33,8 @@ impl Surface for TerminalSurface {
         Some(self.id)
     }
 
-    fn is_gpu_rendered(&self) -> bool {
-        true
+    fn is_egui_surface(&self) -> bool {
+        false
     }
 
     fn cursor_icon_at(&self, _local_x: f32, _local_y: f32) -> Option<egui::CursorIcon> {

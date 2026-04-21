@@ -31,9 +31,9 @@ pub trait Surface {
         self.all_surface_ids().contains(&surface_id)
     }
 
-    /// Whether this surface is rendered by the GPU shader (not egui).
-    fn is_gpu_rendered(&self) -> bool {
-        false
+    /// Whether this surface is an egui surface (rendered by egui, not GPU shader).
+    fn is_egui_surface(&self) -> bool {
+        true
     }
 
     /// Determine the cursor icon at the given surface-local position.
