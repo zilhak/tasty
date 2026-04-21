@@ -284,7 +284,7 @@ impl SurfaceGroupLayout {
     pub fn egui_regions(&self, rect: Rect) -> Vec<(SurfaceId, Rect)> {
         match self {
             SurfaceGroupLayout::Leaf(surface) => {
-                if surface.has_terminal() {
+                if surface.is_gpu_rendered() {
                     vec![]
                 } else if let Some(id) = surface.surface_id() {
                     vec![(id, rect)]

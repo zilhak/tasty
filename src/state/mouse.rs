@@ -24,7 +24,7 @@ impl AppState {
                 // Check the panel type of this pane
                 if let Some(pane) = ws.pane_layout().find_pane(*pane_id) {
                     if let Some(tab) = pane.tabs.get(pane.active_tab) {
-                        return Some(tab.surface().has_terminal());
+                        return Some(tab.surface().is_gpu_rendered());
                     }
                 }
                 return None;

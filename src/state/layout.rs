@@ -110,7 +110,7 @@ impl AppState {
                 if let Some(pane) = ws.pane_layout().find_pane(*pane_id) {
                     if let Some(tab) = pane.tabs.get(pane.active_tab) {
                         let surface = tab.surface();
-                        if !surface.has_terminal() {
+                        if !surface.is_gpu_rendered() {
                             return surface.focused_surface_id();
                         }
                     }

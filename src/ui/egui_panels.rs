@@ -45,7 +45,7 @@ pub fn draw_egui_panels(
             let surface = tab.surface();
 
             // Case 1: Entire tab is a non-terminal surface (standalone, not a SurfaceGroup).
-            if !surface.has_terminal() && surface.as_surface_group().is_none() {
+            if !surface.is_gpu_rendered() && surface.as_surface_group().is_none() {
                 infos.push(EguiPanelInfo {
                     pane_id,
                     surface_id: surface.surface_id(),

@@ -30,7 +30,7 @@ impl Surface for TerminalSurface {
 
     fn surface_id(&self) -> Option<SurfaceId> { Some(self.id) }
 
-    fn has_terminal(&self) -> bool { true }
+    fn is_gpu_rendered(&self) -> bool { true }
 
     fn focused_terminal(&self) -> Option<&Terminal> { Some(&self.terminal) }
 
@@ -193,8 +193,8 @@ impl Surface for SurfaceGroupNode {
         Some(self.focused_surface)
     }
 
-    /// Returns true if any leaf in this group is a terminal.
-    fn has_terminal(&self) -> bool {
+    /// Returns true if any leaf in this group is GPU-rendered.
+    fn is_gpu_rendered(&self) -> bool {
         self.layout().first_terminal().is_some()
     }
 

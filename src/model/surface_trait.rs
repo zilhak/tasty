@@ -28,8 +28,8 @@ pub trait Surface {
         self.all_surface_ids().contains(&surface_id)
     }
 
-    /// Whether this surface has terminal (PTY-backed) content.
-    fn has_terminal(&self) -> bool { false }
+    /// Whether this surface is rendered by the GPU shader (not egui).
+    fn is_gpu_rendered(&self) -> bool { false }
 
     /// Get the focused terminal (immutable).
     fn focused_terminal(&self) -> Option<&Terminal> { None }
