@@ -1,10 +1,9 @@
+use termwiz::escape::Action;
+use termwiz::escape::csi::{CSI, Device};
 /// Test helper: lightweight terminal emulator without PTY.
 /// Processes VTE sequences and applies them to a Surface.
 /// Used for unit testing terminal rendering without spawning real shells.
-
 use termwiz::escape::parser::Parser;
-use termwiz::escape::csi::{CSI, Device};
-use termwiz::escape::Action;
 use termwiz::surface::{Change, Position, Surface};
 
 use crate::events::*;
@@ -94,13 +93,16 @@ impl TestTerminal {
     pub fn rows_text(&self) -> Vec<String> {
         let surface = self.active_surface();
         let lines = surface.screen_lines();
-        lines.iter().map(|line| {
-            let mut text = String::new();
-            for cell in line.visible_cells() {
-                text.push_str(cell.str());
-            }
-            text.trim_end().to_string()
-        }).collect()
+        lines
+            .iter()
+            .map(|line| {
+                let mut text = String::new();
+                for cell in line.visible_cells() {
+                    text.push_str(cell.str());
+                }
+                text.trim_end().to_string()
+            })
+            .collect()
     }
 
     fn active_surface(&self) -> &Surface {
@@ -138,9 +140,9 @@ impl TestTerminal {
 // but on the TestTerminal struct directly.
 
 use termwiz::cell::{AttributeChange, CellAttributes};
+use termwiz::escape::ControlCode;
 use termwiz::escape::csi::{Cursor, Edit, EraseInDisplay, EraseInLine, Sgr};
 use termwiz::escape::esc::{Esc, EscCode};
-use termwiz::escape::ControlCode;
 
 impl TestTerminal {
     pub fn action_to_changes(&mut self, action: Action) -> Vec<Change> {
@@ -309,12 +311,8 @@ impl TestTerminal {
 
     fn map_esc(&mut self, esc: Esc) -> Vec<Change> {
         match esc {
-            Esc::Code(EscCode::Index) => {
-                self.perform_index()
-            }
-            Esc::Code(EscCode::ReverseIndex) => {
-                self.perform_reverse_index()
-            }
+            Esc::Code(EscCode::Index) => self.perform_index(),
+            Esc::Code(EscCode::ReverseIndex) => self.perform_reverse_index(),
             Esc::Code(EscCode::FullReset) => {
                 self.application_cursor_keys = false;
                 self.cursor_visible = true;
@@ -328,10 +326,14 @@ impl TestTerminal {
     }
 
     fn handle_mode(&mut self, mode: &termwiz::escape::csi::Mode) {
-        use termwiz::escape::csi::{Mode as CsiMode, DecPrivateMode};
+        use termwiz::escape::csi::{DecPrivateMode, Mode as CsiMode};
         match mode {
-            CsiMode::SetDecPrivateMode(DecPrivateMode::Code(code)) => self.set_dec(code.clone(), true),
-            CsiMode::ResetDecPrivateMode(DecPrivateMode::Code(code)) => self.set_dec(code.clone(), false),
+            CsiMode::SetDecPrivateMode(DecPrivateMode::Code(code)) => {
+                self.set_dec(code.clone(), true)
+            }
+            CsiMode::ResetDecPrivateMode(DecPrivateMode::Code(code)) => {
+                self.set_dec(code.clone(), false)
+            }
             _ => {}
         }
     }

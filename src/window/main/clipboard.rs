@@ -61,7 +61,11 @@ fn save_clipboard_image_as_png(image: &arboard::ImageData<'_>) -> anyhow::Result
     let path = dir.join(format!("paste-{}.png", timestamp));
 
     let file = std::fs::File::create(&path)?;
-    let mut encoder = png::Encoder::new(std::io::BufWriter::new(file), image.width as u32, image.height as u32);
+    let mut encoder = png::Encoder::new(
+        std::io::BufWriter::new(file),
+        image.width as u32,
+        image.height as u32,
+    );
     encoder.set_color(png::ColorType::Rgba);
     encoder.set_depth(png::BitDepth::Eight);
     let mut writer = encoder.write_header()?;

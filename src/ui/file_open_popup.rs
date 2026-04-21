@@ -36,9 +36,11 @@ fn compute_popup_size(recent_count: usize) -> egui::Vec2 {
     let base = 16.0 + ITEM_SPACING_Y + 4.0 + 22.0 + ITEM_SPACING_Y + 8.0 + 24.0;
     let recent_h = if recent_count > 0 {
         // "최근 파일" label(16) + item_spacing + add_space(2) + items + item_spacing + add_space(4)
-        16.0 + ITEM_SPACING_Y + 2.0
+        16.0 + ITEM_SPACING_Y
+            + 2.0
             + (recent_count.min(MAX_RECENT) as f32 * ITEM_HEIGHT)
-            + ITEM_SPACING_Y + 4.0
+            + ITEM_SPACING_Y
+            + 4.0
     } else {
         0.0
     };
@@ -56,7 +58,11 @@ enum FileType {
     Html,
 }
 
-fn draw_file_open_content(ui: &mut egui::Ui, state: &mut AppState, file_type: FileType) -> PopupAction {
+fn draw_file_open_content(
+    ui: &mut egui::Ui,
+    state: &mut AppState,
+    file_type: FileType,
+) -> PopupAction {
     let th = theme::theme();
     let ctx = ui.ctx().clone();
 
@@ -83,7 +89,11 @@ fn draw_file_open_content(ui: &mut egui::Ui, state: &mut AppState, file_type: Fi
         }
     };
 
-    ui.label(egui::RichText::new(t(label_key)).size(th.font_size_body.value()).color(th.subtext1));
+    ui.label(
+        egui::RichText::new(t(label_key))
+            .size(th.font_size_body.value())
+            .color(th.subtext1),
+    );
     ui.add_space(4.0);
 
     // Path input + file picker button
@@ -103,7 +113,10 @@ fn draw_file_open_content(ui: &mut egui::Ui, state: &mut AppState, file_type: Fi
             resp.request_focus();
         }
 
-        if ui.add_sized([26.0, 22.0], egui::Button::new("\u{1F4C2}")).clicked() {
+        if ui
+            .add_sized([26.0, 22.0], egui::Button::new("\u{1F4C2}"))
+            .clicked()
+        {
             let mut dialog = rfd::FileDialog::new();
             dialog = dialog.add_filter(filter_name, &filter_exts);
             if let Some(path) = dialog.pick_file() {
@@ -116,7 +129,11 @@ fn draw_file_open_content(ui: &mut egui::Ui, state: &mut AppState, file_type: Fi
     // Error message below input
     if let Some(ref err) = state.dialogs.file_open_error {
         ui.add_space(2.0);
-        ui.label(egui::RichText::new(err.as_str()).size(th.font_size_caption.value()).color(th.red));
+        ui.label(
+            egui::RichText::new(err.as_str())
+                .size(th.font_size_caption.value())
+                .color(th.red),
+        );
     }
 
     ui.add_space(8.0);
@@ -129,7 +146,11 @@ fn draw_file_open_content(ui: &mut egui::Ui, state: &mut AppState, file_type: Fi
     let recent_list = &recent_list;
 
     if !recent_list.is_empty() {
-        ui.label(egui::RichText::new(t("dialog.recent_files")).size(th.font_size_caption.value()).color(th.overlay1));
+        ui.label(
+            egui::RichText::new(t("dialog.recent_files"))
+                .size(th.font_size_caption.value())
+                .color(th.overlay1),
+        );
         ui.add_space(2.0);
 
         egui::ScrollArea::vertical()
@@ -147,7 +168,10 @@ fn draw_file_open_content(ui: &mut egui::Ui, state: &mut AppState, file_type: Fi
                         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
                     }
                     ui.painter().text(
-                        egui::pos2(rect.min.x + 4.0, rect.center().y - th.font_size_caption.value() / 2.0),
+                        egui::pos2(
+                            rect.min.x + 4.0,
+                            rect.center().y - th.font_size_caption.value() / 2.0,
+                        ),
                         egui::Align2::LEFT_TOP,
                         &display,
                         egui::FontId::proportional(th.font_size_caption.value()),
@@ -199,17 +223,23 @@ fn draw_file_open_content(ui: &mut egui::Ui, state: &mut AppState, file_type: Fi
             // For local file paths, validate existence and format
             let is_remote = path_value.starts_with("http://") || path_value.starts_with("https://");
             if !is_remote {
-                let local_path = file_uri_to_local_path(&path_value)
-                    .unwrap_or_else(|| path_value.clone());
+                let local_path =
+                    file_uri_to_local_path(&path_value).unwrap_or_else(|| path_value.clone());
                 let file_path = std::path::Path::new(&local_path);
                 if !file_path.exists() {
-                    state.dialogs.file_open_error = Some(t("dialog.error.file_not_found").to_string());
+                    state.dialogs.file_open_error =
+                        Some(t("dialog.error.file_not_found").to_string());
                     return PopupAction::None;
                 }
                 if file_type == FileType::Html {
-                    let ext = file_path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+                    let ext = file_path
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .unwrap_or("")
+                        .to_lowercase();
                     if ext != "html" && ext != "htm" {
-                        state.dialogs.file_open_error = Some(t("dialog.error.invalid_format").to_string());
+                        state.dialogs.file_open_error =
+                            Some(t("dialog.error.invalid_format").to_string());
                         return PopupAction::None;
                     }
                 }
@@ -232,15 +262,19 @@ fn apply_open(state: &mut AppState, file_type: FileType, path: &str) {
             if let Some(convert_sid) = state.dialogs.markdown_convert_surface_id.take() {
                 state.convert_surface_to_markdown(convert_sid, file_path);
             } else {
-                let pane_id = state.dialogs.file_open_pane_id.unwrap_or(
-                    state.active_workspace().focused_pane,
-                );
+                let pane_id = state
+                    .dialogs
+                    .file_open_pane_id
+                    .unwrap_or(state.active_workspace().focused_pane);
                 state.active_workspace_mut().focused_pane = pane_id;
                 let _ = state.add_markdown_tab(file_path);
             }
         }
         FileType::Html => {
-            let url = if path.starts_with("http://") || path.starts_with("https://") || path.starts_with("file://") {
+            let url = if path.starts_with("http://")
+                || path.starts_with("https://")
+                || path.starts_with("file://")
+            {
                 path.to_string()
             } else {
                 local_path_to_file_uri(path)
@@ -249,9 +283,10 @@ fn apply_open(state: &mut AppState, file_type: FileType, path: &str) {
             if let Some(convert_sid) = state.dialogs.html_convert_surface_id.take() {
                 state.convert_surface_to_html(convert_sid, url);
             } else {
-                let pane_id = state.dialogs.file_open_pane_id.unwrap_or(
-                    state.active_workspace().focused_pane,
-                );
+                let pane_id = state
+                    .dialogs
+                    .file_open_pane_id
+                    .unwrap_or(state.active_workspace().focused_pane);
                 state.active_workspace_mut().focused_pane = pane_id;
                 let _ = state.add_html_tab(url);
             }
@@ -316,5 +351,5 @@ fn shorten_path(path: &str) -> String {
     if parts.len() <= 2 {
         return path.to_string();
     }
-    format!(".../{}", parts[parts.len()-2..].join("/"))
+    format!(".../{}", parts[parts.len() - 2..].join("/"))
 }

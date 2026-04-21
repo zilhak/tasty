@@ -69,13 +69,34 @@ pub fn draw_keybindings_tab(
 
                 ui.vertical(|ui| {
                     let sub_tabs = [
-                        (KeybindingsSubTab::General, t("settings.keybindings.subtab.general")),
-                        (KeybindingsSubTab::Workspace, t("settings.keybindings.subtab.workspace")),
-                        (KeybindingsSubTab::Pane, t("settings.keybindings.subtab.pane")),
-                        (KeybindingsSubTab::Surface, t("settings.keybindings.subtab.surface")),
-                        (KeybindingsSubTab::Clipboard, t("settings.keybindings.subtab.clipboard")),
-                        (KeybindingsSubTab::Zoom, t("settings.keybindings.subtab.zoom")),
-                        (KeybindingsSubTab::Preset, t("settings.keybindings.subtab.preset")),
+                        (
+                            KeybindingsSubTab::General,
+                            t("settings.keybindings.subtab.general"),
+                        ),
+                        (
+                            KeybindingsSubTab::Workspace,
+                            t("settings.keybindings.subtab.workspace"),
+                        ),
+                        (
+                            KeybindingsSubTab::Pane,
+                            t("settings.keybindings.subtab.pane"),
+                        ),
+                        (
+                            KeybindingsSubTab::Surface,
+                            t("settings.keybindings.subtab.surface"),
+                        ),
+                        (
+                            KeybindingsSubTab::Clipboard,
+                            t("settings.keybindings.subtab.clipboard"),
+                        ),
+                        (
+                            KeybindingsSubTab::Zoom,
+                            t("settings.keybindings.subtab.zoom"),
+                        ),
+                        (
+                            KeybindingsSubTab::Preset,
+                            t("settings.keybindings.subtab.preset"),
+                        ),
                     ];
 
                     for (tab, label) in &sub_tabs {
@@ -91,117 +112,232 @@ pub fn draw_keybindings_tab(
         ui.add_space(8.0);
 
         ui.vertical(|ui| {
-        ui.set_max_height(available_height);
+            ui.set_max_height(available_height);
 
-        let mut captured = capture_key_combo(ui.ctx(), recording_field.is_some());
+            let mut captured = capture_key_combo(ui.ctx(), recording_field.is_some());
 
-        // Check for double-tap modifier captured from winit events
-        if recording_field.is_some() {
-            if let Some(dt) = captured_double_tap.take() {
-                captured = KeyCapture::Combo(dt);
+            // Check for double-tap modifier captured from winit events
+            if recording_field.is_some() {
+                if let Some(dt) = captured_double_tap.take() {
+                    captured = KeyCapture::Combo(dt);
+                }
             }
-        }
 
-        match *sub_tab {
-            KeybindingsSubTab::General => {
-                draw_keybinding_entries(ui, &mut settings.keybindings, recording_field, pending_binding, &captured, &[
-                    ("toggle_settings", "settings.keybindings.toggle_settings_label"),
-                    ("toggle_notifications", "settings.keybindings.toggle_notifications_label"),
-                    ("toggle_clipboard_viewer", "settings.keybindings.toggle_clipboard_viewer_label"),
-                    ("restore_closed", "settings.keybindings.restore_closed_label"),
-                    ("new_window", "settings.keybindings.new_window_label"),
-                    ("quit", "settings.keybindings.quit_label"),
-                    ("quit_immediate", "settings.keybindings.quit_immediate_label"),
-                    ("quit_minimize", "settings.keybindings.quit_minimize_label"),
-                ]);
+            match *sub_tab {
+                KeybindingsSubTab::General => {
+                    draw_keybinding_entries(
+                        ui,
+                        &mut settings.keybindings,
+                        recording_field,
+                        pending_binding,
+                        &captured,
+                        &[
+                            (
+                                "toggle_settings",
+                                "settings.keybindings.toggle_settings_label",
+                            ),
+                            (
+                                "toggle_notifications",
+                                "settings.keybindings.toggle_notifications_label",
+                            ),
+                            (
+                                "toggle_clipboard_viewer",
+                                "settings.keybindings.toggle_clipboard_viewer_label",
+                            ),
+                            (
+                                "restore_closed",
+                                "settings.keybindings.restore_closed_label",
+                            ),
+                            ("new_window", "settings.keybindings.new_window_label"),
+                            ("quit", "settings.keybindings.quit_label"),
+                            (
+                                "quit_immediate",
+                                "settings.keybindings.quit_immediate_label",
+                            ),
+                            ("quit_minimize", "settings.keybindings.quit_minimize_label"),
+                        ],
+                    );
+                }
+                KeybindingsSubTab::Workspace => {
+                    draw_keybinding_entries(
+                        ui,
+                        &mut settings.keybindings,
+                        recording_field,
+                        pending_binding,
+                        &captured,
+                        &[
+                            ("new_workspace", "settings.keybindings.new_workspace_label"),
+                            (
+                                "close_workspace",
+                                "settings.keybindings.close_workspace_label",
+                            ),
+                        ],
+                    );
+
+                    ui.add_space(8.0);
+                    ui.separator();
+                    ui.add_space(4.0);
+
+                    egui::Grid::new("tab_ws_modifier_grid")
+                        .num_columns(2)
+                        .spacing([12.0, 8.0])
+                        .show(ui, |ui| {
+                            ui.label(t("settings.keybindings.tab_switch_modifier_label"));
+                            egui::ComboBox::from_id_salt("tab_switch_modifier")
+                                .selected_text(modifier_display(
+                                    &settings.keybindings.tab_switch_modifier,
+                                ))
+                                .show_ui(ui, |ui| {
+                                    ui.selectable_value(
+                                        &mut settings.keybindings.tab_switch_modifier,
+                                        "ctrl".to_string(),
+                                        "Ctrl",
+                                    );
+                                    ui.selectable_value(
+                                        &mut settings.keybindings.tab_switch_modifier,
+                                        "alt".to_string(),
+                                        "Alt",
+                                    );
+                                });
+                            ui.end_row();
+
+                            ui.label(t("settings.keybindings.workspace_switch_modifier_label"));
+                            egui::ComboBox::from_id_salt("workspace_switch_modifier")
+                                .selected_text(modifier_display(
+                                    &settings.keybindings.workspace_switch_modifier,
+                                ))
+                                .show_ui(ui, |ui| {
+                                    ui.selectable_value(
+                                        &mut settings.keybindings.workspace_switch_modifier,
+                                        "ctrl".to_string(),
+                                        "Ctrl",
+                                    );
+                                    ui.selectable_value(
+                                        &mut settings.keybindings.workspace_switch_modifier,
+                                        "alt".to_string(),
+                                        "Alt",
+                                    );
+                                });
+                            ui.end_row();
+                        });
+                }
+                KeybindingsSubTab::Pane => {
+                    draw_keybinding_entries(
+                        ui,
+                        &mut settings.keybindings,
+                        recording_field,
+                        pending_binding,
+                        &captured,
+                        &[
+                            ("new_tab", "settings.keybindings.new_tab_label"),
+                            ("next_tab", "settings.keybindings.next_tab_label"),
+                            ("prev_tab", "settings.keybindings.prev_tab_label"),
+                            (
+                                "split_pane_vertical",
+                                "settings.keybindings.split_pane_vertical_label",
+                            ),
+                            (
+                                "split_pane_horizontal",
+                                "settings.keybindings.split_pane_horizontal_label",
+                            ),
+                            (
+                                "focus_pane_next",
+                                "settings.keybindings.focus_pane_next_label",
+                            ),
+                            (
+                                "focus_pane_prev",
+                                "settings.keybindings.focus_pane_prev_label",
+                            ),
+                            ("close_active", "settings.keybindings.close_active_label"),
+                            ("close_pane", "settings.keybindings.close_pane_label"),
+                            ("open_markdown", "settings.keybindings.open_markdown_label"),
+                            ("open_explorer", "settings.keybindings.open_explorer_label"),
+                        ],
+                    );
+                }
+                KeybindingsSubTab::Surface => {
+                    draw_keybinding_entries(
+                        ui,
+                        &mut settings.keybindings,
+                        recording_field,
+                        pending_binding,
+                        &captured,
+                        &[
+                            (
+                                "split_surface_vertical",
+                                "settings.keybindings.split_surface_vertical_label",
+                            ),
+                            (
+                                "split_surface_horizontal",
+                                "settings.keybindings.split_surface_horizontal_label",
+                            ),
+                            (
+                                "focus_surface_next",
+                                "settings.keybindings.focus_surface_next_label",
+                            ),
+                            (
+                                "focus_surface_prev",
+                                "settings.keybindings.focus_surface_prev_label",
+                            ),
+                            ("close_surface", "settings.keybindings.close_surface_label"),
+                            (
+                                "convert_surface",
+                                "settings.keybindings.convert_surface_label",
+                            ),
+                            (
+                                "convert_to_markdown",
+                                "settings.keybindings.convert_to_markdown_label",
+                            ),
+                            (
+                                "convert_to_explorer",
+                                "settings.keybindings.convert_to_explorer_label",
+                            ),
+                        ],
+                    );
+                }
+                KeybindingsSubTab::Clipboard => {
+                    draw_keybinding_entries(
+                        ui,
+                        &mut settings.keybindings,
+                        recording_field,
+                        pending_binding,
+                        &captured,
+                        &[
+                            ("copy", "settings.keybindings.copy_label"),
+                            ("copy_path", "settings.keybindings.copy_path_label"),
+                            ("cut", "settings.keybindings.cut_label"),
+                            ("select_all", "settings.keybindings.select_all_label"),
+                            ("paste", "settings.keybindings.paste_label"),
+                        ],
+                    );
+                }
+                KeybindingsSubTab::Zoom => {
+                    draw_keybinding_entries(
+                        ui,
+                        &mut settings.keybindings,
+                        recording_field,
+                        pending_binding,
+                        &captured,
+                        &[
+                            ("zoom_in", "settings.keybindings.zoom_in_label"),
+                            ("zoom_out", "settings.keybindings.zoom_out_label"),
+                            ("zoom_reset", "settings.keybindings.zoom_reset_label"),
+                        ],
+                    );
+                }
+                KeybindingsSubTab::Preset => {
+                    draw_preset_subtab(ui, &mut settings.keybindings, selected_preset);
+                }
             }
-            KeybindingsSubTab::Workspace => {
-                draw_keybinding_entries(ui, &mut settings.keybindings, recording_field, pending_binding, &captured, &[
-                    ("new_workspace", "settings.keybindings.new_workspace_label"),
-                    ("close_workspace", "settings.keybindings.close_workspace_label"),
-                ]);
 
+            if *sub_tab != KeybindingsSubTab::Preset {
                 ui.add_space(8.0);
-                ui.separator();
-                ui.add_space(4.0);
-
-                egui::Grid::new("tab_ws_modifier_grid")
-                    .num_columns(2)
-                    .spacing([12.0, 8.0])
-                    .show(ui, |ui| {
-                        ui.label(t("settings.keybindings.tab_switch_modifier_label"));
-                        egui::ComboBox::from_id_salt("tab_switch_modifier")
-                            .selected_text(modifier_display(&settings.keybindings.tab_switch_modifier))
-                            .show_ui(ui, |ui| {
-                                ui.selectable_value(&mut settings.keybindings.tab_switch_modifier, "ctrl".to_string(), "Ctrl");
-                                ui.selectable_value(&mut settings.keybindings.tab_switch_modifier, "alt".to_string(), "Alt");
-                            });
-                        ui.end_row();
-
-                        ui.label(t("settings.keybindings.workspace_switch_modifier_label"));
-                        egui::ComboBox::from_id_salt("workspace_switch_modifier")
-                            .selected_text(modifier_display(&settings.keybindings.workspace_switch_modifier))
-                            .show_ui(ui, |ui| {
-                                ui.selectable_value(&mut settings.keybindings.workspace_switch_modifier, "ctrl".to_string(), "Ctrl");
-                                ui.selectable_value(&mut settings.keybindings.workspace_switch_modifier, "alt".to_string(), "Alt");
-                            });
-                        ui.end_row();
-                    });
+                ui.label(
+                    egui::RichText::new(t("settings.keybindings.hint_esc_to_clear"))
+                        .small()
+                        .color(th.overlay1),
+                );
             }
-            KeybindingsSubTab::Pane => {
-                draw_keybinding_entries(ui, &mut settings.keybindings, recording_field, pending_binding, &captured, &[
-                    ("new_tab", "settings.keybindings.new_tab_label"),
-                    ("next_tab", "settings.keybindings.next_tab_label"),
-                    ("prev_tab", "settings.keybindings.prev_tab_label"),
-                    ("split_pane_vertical", "settings.keybindings.split_pane_vertical_label"),
-                    ("split_pane_horizontal", "settings.keybindings.split_pane_horizontal_label"),
-                    ("focus_pane_next", "settings.keybindings.focus_pane_next_label"),
-                    ("focus_pane_prev", "settings.keybindings.focus_pane_prev_label"),
-                    ("close_active", "settings.keybindings.close_active_label"),
-                    ("close_pane", "settings.keybindings.close_pane_label"),
-                    ("open_markdown", "settings.keybindings.open_markdown_label"),
-                    ("open_explorer", "settings.keybindings.open_explorer_label"),
-                ]);
-            }
-            KeybindingsSubTab::Surface => {
-                draw_keybinding_entries(ui, &mut settings.keybindings, recording_field, pending_binding, &captured, &[
-                    ("split_surface_vertical", "settings.keybindings.split_surface_vertical_label"),
-                    ("split_surface_horizontal", "settings.keybindings.split_surface_horizontal_label"),
-                    ("focus_surface_next", "settings.keybindings.focus_surface_next_label"),
-                    ("focus_surface_prev", "settings.keybindings.focus_surface_prev_label"),
-                    ("close_surface", "settings.keybindings.close_surface_label"),
-                    ("convert_surface", "settings.keybindings.convert_surface_label"),
-                    ("convert_to_markdown", "settings.keybindings.convert_to_markdown_label"),
-                    ("convert_to_explorer", "settings.keybindings.convert_to_explorer_label"),
-                ]);
-            }
-            KeybindingsSubTab::Clipboard => {
-                draw_keybinding_entries(ui, &mut settings.keybindings, recording_field, pending_binding, &captured, &[
-                    ("copy", "settings.keybindings.copy_label"),
-                    ("paste", "settings.keybindings.paste_label"),
-                ]);
-            }
-            KeybindingsSubTab::Zoom => {
-                draw_keybinding_entries(ui, &mut settings.keybindings, recording_field, pending_binding, &captured, &[
-                    ("zoom_in", "settings.keybindings.zoom_in_label"),
-                    ("zoom_out", "settings.keybindings.zoom_out_label"),
-                    ("zoom_reset", "settings.keybindings.zoom_reset_label"),
-                ]);
-            }
-            KeybindingsSubTab::Preset => {
-                draw_preset_subtab(ui, &mut settings.keybindings, selected_preset);
-            }
-        }
-
-        if *sub_tab != KeybindingsSubTab::Preset {
-            ui.add_space(8.0);
-            ui.label(
-                egui::RichText::new(t("settings.keybindings.hint_esc_to_clear"))
-                    .small()
-                    .color(th.overlay1),
-            );
-        }
-
         }); // end vertical
     }); // end horizontal_top
 
@@ -210,10 +346,7 @@ pub fn draw_keybindings_tab(
         let conflict_label_raw = KeybindingSettings::label_key_for(&pending.conflicting_field)
             .map(t)
             .unwrap_or(pending.conflicting_field.as_str());
-        let conflict_label = conflict_label_raw
-            .trim_end_matches(':')
-            .trim()
-            .to_string();
+        let conflict_label = conflict_label_raw.trim_end_matches(':').trim().to_string();
         let combo_display = KeybindingSettings::format_display(&pending.combo);
 
         let mut accept = false;
@@ -242,7 +375,10 @@ pub fn draw_keybindings_tab(
                     if ui.button(t("button.cancel")).clicked() {
                         cancel = true;
                     }
-                    if ui.button(t("settings.keybindings.conflict_apply")).clicked() {
+                    if ui
+                        .button(t("settings.keybindings.conflict_apply"))
+                        .clicked()
+                    {
                         accept = true;
                     }
                 });
@@ -250,7 +386,9 @@ pub fn draw_keybindings_tab(
 
         if accept {
             // 충돌하는 쪽의 해당 바인딩만 제거 후, 대상 필드에 새 바인딩을 기록한다.
-            settings.keybindings.remove_binding(&pending.conflicting_field, pending.conflicting_idx);
+            settings
+                .keybindings
+                .remove_binding(&pending.conflicting_field, pending.conflicting_idx);
             settings.keybindings.replace_binding_at(
                 &pending.target_field,
                 pending.target_idx,
@@ -327,25 +465,28 @@ fn draw_preset_subtab(
                         .spacing([16.0, 6.0])
                         .striped(true)
                         .show(ui, |ui| {
-                            let strong = |s: String| {
-                                egui::RichText::new(s).color(th.text).strong()
-                            };
+                            let strong = |s: String| egui::RichText::new(s).color(th.text).strong();
                             let normal = |s: String| egui::RichText::new(s).color(th.text);
 
-                            ui.label(strong(t("settings.keybindings.preset_col_action").to_string()));
-                            ui.label(strong(t("settings.keybindings.preset_col_before").to_string()));
-                            ui.label(strong(t("settings.keybindings.preset_col_after").to_string()));
+                            ui.label(strong(
+                                t("settings.keybindings.preset_col_action").to_string(),
+                            ));
+                            ui.label(strong(
+                                t("settings.keybindings.preset_col_before").to_string(),
+                            ));
+                            ui.label(strong(
+                                t("settings.keybindings.preset_col_after").to_string(),
+                            ));
                             ui.end_row();
 
-                            for (field_id, label_key) in KeybindingSettings::GENERAL_BINDING_FIELDS {
+                            for (field_id, label_key) in KeybindingSettings::GENERAL_BINDING_FIELDS
+                            {
                                 let before_raw = keybindings.get_bindings(field_id).unwrap_or(&[]);
                                 let after_raw = preset.get_bindings(field_id).unwrap_or(&[]);
                                 let changed = before_raw != after_raw;
 
-                                let action_label = t(label_key)
-                                    .trim_end_matches(':')
-                                    .trim()
-                                    .to_string();
+                                let action_label =
+                                    t(label_key).trim_end_matches(':').trim().to_string();
                                 let fmt_list = |v: &[String]| -> String {
                                     if v.is_empty() {
                                         t("settings.keybindings.hint_none").to_string()
@@ -489,11 +630,17 @@ fn draw_keybinding_entries(
                         KeybindingSettings::format_display(&current)
                     };
 
-                    let bg_color = if is_recording { th.surface1 } else { th.surface0 };
+                    let bg_color = if is_recording {
+                        th.surface1
+                    } else {
+                        th.surface0
+                    };
                     let text_color = if is_recording { th.overlay1 } else { th.text };
 
                     let button = egui::Button::new(
-                        egui::RichText::new(&display_text).color(text_color).monospace(),
+                        egui::RichText::new(&display_text)
+                            .color(text_color)
+                            .monospace(),
                     )
                     .fill(bg_color)
                     .min_size(egui::vec2(BUTTON_WIDTH, BUTTON_HEIGHT));
@@ -525,11 +672,10 @@ fn draw_keybinding_entries(
                 } else {
                     ADD_BUTTON_WIDTH
                 };
-                let add_btn = egui::Button::new(
-                    egui::RichText::new(&add_label).color(add_fg).monospace(),
-                )
-                .fill(add_bg)
-                .min_size(egui::vec2(add_width, BUTTON_HEIGHT));
+                let add_btn =
+                    egui::Button::new(egui::RichText::new(&add_label).color(add_fg).monospace())
+                        .fill(add_bg)
+                        .min_size(egui::vec2(add_width, BUTTON_HEIGHT));
                 if ui
                     .add_enabled(can_record, add_btn)
                     .on_hover_text(t("settings.keybindings.add_binding_button"))
@@ -553,7 +699,13 @@ fn capture_key_combo(ctx: &egui::Context, active: bool) -> KeyCapture {
 
     ctx.input(|input| {
         for event in &input.events {
-            if let egui::Event::Key { key, pressed, modifiers, .. } = event {
+            if let egui::Event::Key {
+                key,
+                pressed,
+                modifiers,
+                ..
+            } = event
+            {
                 if !pressed {
                     continue;
                 }
@@ -588,19 +740,47 @@ fn capture_key_combo(ctx: &egui::Context, active: bool) -> KeyCapture {
                         continue;
                     }
 
-                    let is_typing_key = matches!(key,
-                        egui::Key::A | egui::Key::B | egui::Key::C | egui::Key::D |
-                        egui::Key::E | egui::Key::F | egui::Key::G | egui::Key::H |
-                        egui::Key::I | egui::Key::J | egui::Key::K | egui::Key::L |
-                        egui::Key::M | egui::Key::N | egui::Key::O | egui::Key::P |
-                        egui::Key::Q | egui::Key::R | egui::Key::S | egui::Key::T |
-                        egui::Key::U | egui::Key::V | egui::Key::W | egui::Key::X |
-                        egui::Key::Y | egui::Key::Z |
-                        egui::Key::Num0 | egui::Key::Num1 | egui::Key::Num2 |
-                        egui::Key::Num3 | egui::Key::Num4 | egui::Key::Num5 |
-                        egui::Key::Num6 | egui::Key::Num7 | egui::Key::Num8 |
-                        egui::Key::Num9 |
-                        egui::Key::Space | egui::Key::Minus | egui::Key::Plus
+                    let is_typing_key = matches!(
+                        key,
+                        egui::Key::A
+                            | egui::Key::B
+                            | egui::Key::C
+                            | egui::Key::D
+                            | egui::Key::E
+                            | egui::Key::F
+                            | egui::Key::G
+                            | egui::Key::H
+                            | egui::Key::I
+                            | egui::Key::J
+                            | egui::Key::K
+                            | egui::Key::L
+                            | egui::Key::M
+                            | egui::Key::N
+                            | egui::Key::O
+                            | egui::Key::P
+                            | egui::Key::Q
+                            | egui::Key::R
+                            | egui::Key::S
+                            | egui::Key::T
+                            | egui::Key::U
+                            | egui::Key::V
+                            | egui::Key::W
+                            | egui::Key::X
+                            | egui::Key::Y
+                            | egui::Key::Z
+                            | egui::Key::Num0
+                            | egui::Key::Num1
+                            | egui::Key::Num2
+                            | egui::Key::Num3
+                            | egui::Key::Num4
+                            | egui::Key::Num5
+                            | egui::Key::Num6
+                            | egui::Key::Num7
+                            | egui::Key::Num8
+                            | egui::Key::Num9
+                            | egui::Key::Space
+                            | egui::Key::Minus
+                            | egui::Key::Plus
                     );
                     if is_typing_key && parts.is_empty() {
                         continue;

@@ -5,7 +5,8 @@ use crate::state::AppState;
 
 pub fn handle_workspace_list(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {
     let workspaces: Vec<_> = state
-        .engine.workspaces
+        .engine
+        .workspaces
         .iter()
         .enumerate()
         .map(|(i, ws)| {
@@ -27,28 +28,55 @@ pub fn handle_workspace_create(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    let cwd = params.get("cwd").and_then(|v| v.as_str()).map(std::path::PathBuf::from);
-    let surface_type = match params.get("type").and_then(|v| v.as_str()).unwrap_or("terminal") {
+    let cwd = params
+        .get("cwd")
+        .and_then(|v| v.as_str())
+        .map(std::path::PathBuf::from);
+    let surface_type = match params
+        .get("type")
+        .and_then(|v| v.as_str())
+        .unwrap_or("terminal")
+    {
         "markdown" => {
-            let file = params.get("file").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let file = params
+                .get("file")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
             if file.is_empty() {
-                return JsonRpcResponse::invalid_params(id, "Missing 'file' parameter for markdown type");
+                return JsonRpcResponse::invalid_params(
+                    id,
+                    "Missing 'file' parameter for markdown type",
+                );
             }
             crate::model::SurfaceType::Markdown { file }
         }
         "explorer" => {
-            let path = params.get("path").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let path = params
+                .get("path")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
             crate::model::SurfaceType::Explorer { path }
         }
         "html" => {
-            let url = params.get("url").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let url = params
+                .get("url")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
             if url.is_empty() {
-                return JsonRpcResponse::invalid_params(id, "Missing 'url' parameter for html type");
+                return JsonRpcResponse::invalid_params(
+                    id,
+                    "Missing 'url' parameter for html type",
+                );
             }
             crate::model::SurfaceType::Html { url }
         }
         "image" => {
-            let file = params.get("file").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let file = params
+                .get("file")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
             crate::model::SurfaceType::Image { file }
         }
         _ => crate::model::SurfaceType::Terminal,
@@ -90,9 +118,19 @@ pub fn handle_workspace_update(
     let idx = if let Some(i) = params.get("index").and_then(|v| v.as_u64()) {
         i as usize
     } else if let Some(ws_id) = params.get("id").and_then(|v| v.as_u64()) {
-        match state.engine.workspaces.iter().position(|ws| ws.id == ws_id as u32) {
+        match state
+            .engine
+            .workspaces
+            .iter()
+            .position(|ws| ws.id == ws_id as u32)
+        {
             Some(i) => i,
-            None => return JsonRpcResponse::invalid_params(id, format!("Workspace id {} not found", ws_id)),
+            None => {
+                return JsonRpcResponse::invalid_params(
+                    id,
+                    format!("Workspace id {} not found", ws_id),
+                );
+            }
         }
     } else {
         return JsonRpcResponse::invalid_params(id, "Missing required 'id' or 'index' parameter");
@@ -101,7 +139,11 @@ pub fn handle_workspace_update(
     if idx >= state.engine.workspaces.len() {
         return JsonRpcResponse::invalid_params(
             id,
-            format!("Workspace index {} out of range (0..{})", idx, state.engine.workspaces.len()),
+            format!(
+                "Workspace index {} out of range (0..{})",
+                idx,
+                state.engine.workspaces.len()
+            ),
         );
     }
 

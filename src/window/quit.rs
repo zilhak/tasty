@@ -2,13 +2,13 @@ use std::sync::Arc;
 
 use winit::event::WindowEvent;
 
+use crate::AppEvent;
 use crate::gpu::GpuState;
 use crate::i18n::t;
 use crate::window::{
-    modal::MODAL_MODALITY, sealed, ModalWindow, Modality, Window, WindowAction, WindowBase,
-    WindowCtx,
+    ModalWindow, Modality, Window, WindowAction, WindowBase, WindowCtx, modal::MODAL_MODALITY,
+    sealed,
 };
-use crate::AppEvent;
 
 /// 종료 확인 다이얼로그. 사용자에게 종료/최소화를 묻는다.
 pub struct QuitWindow {
@@ -53,10 +53,7 @@ impl Window for QuitWindow {
     }
 
     fn handle_event(&mut self, event: WindowEvent, _ctx: &mut WindowCtx<'_>) -> WindowAction {
-        let (_, egui_repaint) = self
-            .base
-            .gpu
-            .handle_egui_event(&self.base.winit, &event);
+        let (_, egui_repaint) = self.base.gpu.handle_egui_event(&self.base.winit, &event);
         if egui_repaint {
             self.mark_dirty();
         }
@@ -147,7 +144,9 @@ impl Window for QuitWindow {
             });
         });
 
-        self.base.gpu.finish_egui_frame(&self.base.winit, full_output);
+        self.base
+            .gpu
+            .finish_egui_frame(&self.base.winit, full_output);
 
         self.reveal_after_first_render();
 

@@ -3,10 +3,14 @@ use std::path::PathBuf;
 use anyhow::Result;
 use serde_json::json;
 
-use super::transport::{make_request, IpcConnection};
+use super::transport::{IpcConnection, make_request};
 
 /// Handle the claude-hook subcommand, which maps Claude Code hook events to IPC calls.
-pub fn run_claude_hook(conn: &mut IpcConnection, event: &str, surface_arg: Option<u32>) -> Result<()> {
+pub fn run_claude_hook(
+    conn: &mut IpcConnection,
+    event: &str,
+    surface_arg: Option<u32>,
+) -> Result<()> {
     // Resolve surface_id: --surface arg > TASTY_SURFACE_ID env var > null (server uses focused)
     let surface_id = surface_arg.or_else(|| {
         std::env::var("TASTY_SURFACE_ID")
@@ -71,8 +75,7 @@ pub fn run_claude_hook(conn: &mut IpcConnection, event: &str, surface_arg: Optio
     Ok(())
 }
 
-const TASTY_HOOK_COMMAND: &str =
-    "[ -n \"$TASTY_SURFACE_ID\" ] && tasty claude hook stop || true";
+const TASTY_HOOK_COMMAND: &str = "[ -n \"$TASTY_SURFACE_ID\" ] && tasty claude hook stop || true";
 
 fn claude_settings_path() -> Result<PathBuf> {
     let base = directories::BaseDirs::new()
@@ -221,7 +224,12 @@ pub fn run_claude_uninstall() -> Result<()> {
 }
 
 /// Handle the claude-wait subcommand: poll until child is idle/needs_input/exited or timeout.
-pub fn run_claude_wait(conn: &mut IpcConnection, child: u32, surface_id: Option<u32>, timeout: u64) -> Result<()> {
+pub fn run_claude_wait(
+    conn: &mut IpcConnection,
+    child: u32,
+    surface_id: Option<u32>,
+    timeout: u64,
+) -> Result<()> {
     use std::time::{Duration, Instant};
 
     let deadline = Instant::now() + Duration::from_secs(timeout);
@@ -246,7 +254,10 @@ pub fn run_claude_wait(conn: &mut IpcConnection, child: u32, surface_id: Option<
             }
             _ => {
                 if Instant::now() >= deadline {
-                    eprintln!("Timeout: child {} did not reach a terminal state within {}s", child, timeout);
+                    eprintln!(
+                        "Timeout: child {} did not reach a terminal state within {}s",
+                        child, timeout
+                    );
                     std::process::exit(1);
                 }
                 std::thread::sleep(Duration::from_secs(2));

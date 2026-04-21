@@ -33,7 +33,10 @@ impl DiskScrollback {
     }
 
     /// Write lines to disk. Returns number of lines written.
-    pub fn push_lines(&mut self, lines: &[Vec<(String, CellAttributes)>]) -> std::io::Result<usize> {
+    pub fn push_lines(
+        &mut self,
+        lines: &[Vec<(String, CellAttributes)>],
+    ) -> std::io::Result<usize> {
         let file = OpenOptions::new().append(true).open(&self.file_path)?;
         let mut writer = BufWriter::new(file);
 
@@ -52,7 +55,10 @@ impl DiskScrollback {
     }
 
     /// Read a line from disk by index.
-    pub fn read_line(&self, index: usize) -> std::io::Result<Option<Vec<(String, CellAttributes)>>> {
+    pub fn read_line(
+        &self,
+        index: usize,
+    ) -> std::io::Result<Option<Vec<(String, CellAttributes)>>> {
         if index >= self.disk_line_count {
             return Ok(None);
         }
@@ -104,10 +110,18 @@ fn serialize_line(line: &[(String, CellAttributes)]) -> Vec<u8> {
 
         // Flags: bold, italic, underline, strikethrough
         let mut flags: u8 = 0;
-        if attrs.intensity() == termwiz::cell::Intensity::Bold { flags |= 1; }
-        if attrs.italic() { flags |= 2; }
-        if attrs.underline() != termwiz::cell::Underline::None { flags |= 4; }
-        if attrs.strikethrough() { flags |= 8; }
+        if attrs.intensity() == termwiz::cell::Intensity::Bold {
+            flags |= 1;
+        }
+        if attrs.italic() {
+            flags |= 2;
+        }
+        if attrs.underline() != termwiz::cell::Underline::None {
+            flags |= 4;
+        }
+        if attrs.strikethrough() {
+            flags |= 8;
+        }
         buf.push(flags);
     }
     buf
@@ -133,7 +147,9 @@ fn serialize_color(color: &ColorAttribute, buf: &mut Vec<u8>) {
 
 fn deserialize_line(data: &[u8]) -> Vec<(String, CellAttributes)> {
     let mut pos = 0;
-    if data.len() < 4 { return Vec::new(); }
+    if data.len() < 4 {
+        return Vec::new();
+    }
 
     let cell_count = u32::from_le_bytes([data[0], data[1], data[2], data[3]]) as usize;
     pos += 4;
@@ -141,11 +157,15 @@ fn deserialize_line(data: &[u8]) -> Vec<(String, CellAttributes)> {
     let mut line = Vec::with_capacity(cell_count);
 
     for _ in 0..cell_count {
-        if pos + 2 > data.len() { break; }
+        if pos + 2 > data.len() {
+            break;
+        }
         let text_len = u16::from_le_bytes([data[pos], data[pos + 1]]) as usize;
         pos += 2;
 
-        if pos + text_len > data.len() { break; }
+        if pos + text_len > data.len() {
+            break;
+        }
         let text = String::from_utf8_lossy(&data[pos..pos + text_len]).to_string();
         pos += text_len;
 
@@ -154,17 +174,27 @@ fn deserialize_line(data: &[u8]) -> Vec<(String, CellAttributes)> {
         let (bg, advance) = deserialize_color(&data[pos..]);
         pos += advance;
 
-        if pos >= data.len() { break; }
+        if pos >= data.len() {
+            break;
+        }
         let flags = data[pos];
         pos += 1;
 
         let mut attrs = CellAttributes::default();
         attrs.set_foreground(fg);
         attrs.set_background(bg);
-        if flags & 1 != 0 { attrs.set_intensity(termwiz::cell::Intensity::Bold); }
-        if flags & 2 != 0 { attrs.set_italic(true); }
-        if flags & 4 != 0 { attrs.set_underline(termwiz::cell::Underline::Single); }
-        if flags & 8 != 0 { attrs.set_strikethrough(true); }
+        if flags & 1 != 0 {
+            attrs.set_intensity(termwiz::cell::Intensity::Bold);
+        }
+        if flags & 2 != 0 {
+            attrs.set_italic(true);
+        }
+        if flags & 4 != 0 {
+            attrs.set_underline(termwiz::cell::Underline::Single);
+        }
+        if flags & 8 != 0 {
+            attrs.set_strikethrough(true);
+        }
 
         line.push((text, attrs));
     }
@@ -172,15 +202,21 @@ fn deserialize_line(data: &[u8]) -> Vec<(String, CellAttributes)> {
 }
 
 fn deserialize_color(data: &[u8]) -> (ColorAttribute, usize) {
-    if data.is_empty() { return (ColorAttribute::Default, 0); }
+    if data.is_empty() {
+        return (ColorAttribute::Default, 0);
+    }
     match data[0] {
         0 => (ColorAttribute::Default, 1),
         1 => {
-            if data.len() < 2 { return (ColorAttribute::Default, 1); }
+            if data.len() < 2 {
+                return (ColorAttribute::Default, 1);
+            }
             (ColorAttribute::PaletteIndex(data[1]), 2)
         }
         2 => {
-            if data.len() < 4 { return (ColorAttribute::Default, 1); }
+            if data.len() < 4 {
+                return (ColorAttribute::Default, 1);
+            }
             let c = termwiz::color::SrgbaTuple(
                 data[1] as f32 / 255.0,
                 data[2] as f32 / 255.0,

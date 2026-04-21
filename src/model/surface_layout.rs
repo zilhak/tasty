@@ -1,8 +1,8 @@
-use tasty_terminal::Terminal;
-use super::{DividerInfo, PhysicalPx, Rect, SplitDirection, SurfaceId, SURFACE_BORDER_WIDTH};
 use super::pane_tree::FocusDirection;
 use super::surface_group::TerminalSurface;
 use super::surface_trait::Surface;
+use super::{DividerInfo, PhysicalPx, Rect, SURFACE_BORDER_WIDTH, SplitDirection, SurfaceId};
+use tasty_terminal::Terminal;
 
 /// Which side of a split we descended into while building a path.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,7 +27,9 @@ pub enum SurfaceGroupLayout {
 impl SurfaceGroupLayout {
     /// Helper: get the surface ID of a Leaf node.
     fn leaf_id(surface: &dyn Surface) -> SurfaceId {
-        surface.surface_id().expect("BUG: Leaf surface must have an ID")
+        surface
+            .surface_id()
+            .expect("BUG: Leaf surface must have an ID")
     }
 
     /// Split a specific surface by taking ownership (infallible structural mutation).
@@ -39,18 +41,16 @@ impl SurfaceGroupLayout {
         new_surface: Box<dyn Surface>,
     ) -> (Self, Option<Box<dyn Surface>>) {
         match self {
-            SurfaceGroupLayout::Leaf(surface) if Self::leaf_id(&*surface) == target_id => {
-                (
-                    SurfaceGroupLayout::Split {
-                        direction,
-                        ratio: 0.5,
-                        first: Box::new(SurfaceGroupLayout::Leaf(surface)),
-                        second: Box::new(SurfaceGroupLayout::Leaf(new_surface)),
-                        focus_second: true,
-                    },
-                    None,
-                )
-            }
+            SurfaceGroupLayout::Leaf(surface) if Self::leaf_id(&*surface) == target_id => (
+                SurfaceGroupLayout::Split {
+                    direction,
+                    ratio: 0.5,
+                    first: Box::new(SurfaceGroupLayout::Leaf(surface)),
+                    second: Box::new(SurfaceGroupLayout::Leaf(new_surface)),
+                    focus_second: true,
+                },
+                None,
+            ),
             SurfaceGroupLayout::Leaf(surface) => {
                 (SurfaceGroupLayout::Leaf(surface), Some(new_surface))
             }
@@ -100,9 +100,7 @@ impl SurfaceGroupLayout {
         new_node: TerminalSurface,
     ) -> (Self, Option<TerminalSurface>) {
         let (result, remaining) = self.split_with_surface(target_id, direction, Box::new(new_node));
-        let remaining_node = remaining.and_then(|s| {
-            s.take_terminal_surface()
-        });
+        let remaining_node = remaining.and_then(|s| s.take_terminal_surface());
         (result, remaining_node)
     }
 
@@ -117,10 +115,8 @@ impl SurfaceGroupLayout {
                 second,
                 focus_second,
             } => {
-                let first_is_target =
-                    matches!(first.as_ref(), SurfaceGroupLayout::Leaf(s) if Self::leaf_id(&**s) == target_id);
-                let second_is_target =
-                    matches!(second.as_ref(), SurfaceGroupLayout::Leaf(s) if Self::leaf_id(&**s) == target_id);
+                let first_is_target = matches!(first.as_ref(), SurfaceGroupLayout::Leaf(s) if Self::leaf_id(&**s) == target_id);
+                let second_is_target = matches!(second.as_ref(), SurfaceGroupLayout::Leaf(s) if Self::leaf_id(&**s) == target_id);
 
                 if first_is_target {
                     return (*second, true);
@@ -213,9 +209,9 @@ impl SurfaceGroupLayout {
     pub fn find_surface_node(&self, id: SurfaceId) -> Option<&TerminalSurface> {
         match self {
             SurfaceGroupLayout::Leaf(surface) => surface.find_terminal_surface(id),
-            SurfaceGroupLayout::Split { first, second, .. } => {
-                first.find_surface_node(id).or_else(|| second.find_surface_node(id))
-            }
+            SurfaceGroupLayout::Split { first, second, .. } => first
+                .find_surface_node(id)
+                .or_else(|| second.find_surface_node(id)),
         }
     }
 
@@ -223,7 +219,11 @@ impl SurfaceGroupLayout {
     pub fn find_surface(&self, id: SurfaceId) -> Option<&dyn Surface> {
         match self {
             SurfaceGroupLayout::Leaf(surface) => {
-                if Self::leaf_id(&**surface) == id { Some(&**surface) } else { None }
+                if Self::leaf_id(&**surface) == id {
+                    Some(&**surface)
+                } else {
+                    None
+                }
             }
             SurfaceGroupLayout::Split { first, second, .. } => {
                 first.find_surface(id).or_else(|| second.find_surface(id))
@@ -235,7 +235,11 @@ impl SurfaceGroupLayout {
     pub fn find_leaf_mut(&mut self, id: SurfaceId) -> Option<&mut Box<dyn Surface>> {
         match self {
             SurfaceGroupLayout::Leaf(surface) => {
-                if Self::leaf_id(&**surface) == id { Some(surface) } else { None }
+                if Self::leaf_id(&**surface) == id {
+                    Some(surface)
+                } else {
+                    None
+                }
             }
             SurfaceGroupLayout::Split { first, second, .. } => {
                 if first.contains_surface(id) {
@@ -271,10 +275,41 @@ impl SurfaceGroupLayout {
                 }
                 vec![]
             }
-            SurfaceGroupLayout::Split { direction, ratio, first, second, .. } => {
+            SurfaceGroupLayout::Split {
+                direction,
+                ratio,
+                first,
+                second,
+                ..
+            } => {
                 let (r1, r2) = rect.split_with_gap(*direction, *ratio, SURFACE_BORDER_WIDTH);
                 let mut result = first.render_regions(r1);
                 result.extend(second.render_regions(r2));
+                result
+            }
+        }
+    }
+
+    /// Collect regions for all surfaces (terminal and non-terminal).
+    pub fn all_surface_regions(&self, rect: Rect) -> Vec<(SurfaceId, Rect)> {
+        match self {
+            SurfaceGroupLayout::Leaf(surface) => {
+                if let Some(id) = surface.surface_id() {
+                    vec![(id, rect)]
+                } else {
+                    vec![]
+                }
+            }
+            SurfaceGroupLayout::Split {
+                direction,
+                ratio,
+                first,
+                second,
+                ..
+            } => {
+                let (r1, r2) = rect.split_with_gap(*direction, *ratio, SURFACE_BORDER_WIDTH);
+                let mut result = first.all_surface_regions(r1);
+                result.extend(second.all_surface_regions(r2));
                 result
             }
         }
@@ -292,7 +327,13 @@ impl SurfaceGroupLayout {
                     vec![]
                 }
             }
-            SurfaceGroupLayout::Split { direction, ratio, first, second, .. } => {
+            SurfaceGroupLayout::Split {
+                direction,
+                ratio,
+                first,
+                second,
+                ..
+            } => {
                 let (r1, r2) = rect.split_with_gap(*direction, *ratio, SURFACE_BORDER_WIDTH);
                 let mut result = first.egui_regions(r1);
                 result.extend(second.egui_regions(r2));
@@ -306,7 +347,13 @@ impl SurfaceGroupLayout {
             SurfaceGroupLayout::Leaf(surface) => {
                 surface.resize_all(rect, cell_width, cell_height);
             }
-            SurfaceGroupLayout::Split { direction, ratio, first, second, .. } => {
+            SurfaceGroupLayout::Split {
+                direction,
+                ratio,
+                first,
+                second,
+                ..
+            } => {
                 let (r1, r2) = rect.split_with_gap(*direction, *ratio, SURFACE_BORDER_WIDTH);
                 first.resize_all(r1, cell_width, cell_height);
                 second.resize_all(r2, cell_width, cell_height);
@@ -316,9 +363,7 @@ impl SurfaceGroupLayout {
 
     pub fn all_surface_ids(&self) -> Vec<SurfaceId> {
         match self {
-            SurfaceGroupLayout::Leaf(surface) => {
-                surface.surface_id().into_iter().collect()
-            }
+            SurfaceGroupLayout::Leaf(surface) => surface.surface_id().into_iter().collect(),
             SurfaceGroupLayout::Split { first, second, .. } => {
                 let mut result = first.all_surface_ids();
                 result.extend(second.all_surface_ids());
@@ -370,15 +415,27 @@ impl SurfaceGroupLayout {
     pub fn collect_dividers(&self, rect: Rect) -> Vec<Rect> {
         match self {
             SurfaceGroupLayout::Leaf(_) => vec![],
-            SurfaceGroupLayout::Split { direction, ratio, first, second, .. } => {
+            SurfaceGroupLayout::Split {
+                direction,
+                ratio,
+                first,
+                second,
+                ..
+            } => {
                 let gap = SURFACE_BORDER_WIDTH;
                 let (r1, r2) = rect.split_with_gap(*direction, *ratio, gap);
                 let divider = match direction {
                     SplitDirection::Vertical => Rect {
-                        x: r1.x + r1.width, y: rect.y, width: gap, height: rect.height,
+                        x: r1.x + r1.width,
+                        y: rect.y,
+                        width: gap,
+                        height: rect.height,
                     },
                     SplitDirection::Horizontal => Rect {
-                        x: rect.x, y: r1.y + r1.height, width: rect.width, height: gap,
+                        x: rect.x,
+                        y: r1.y + r1.height,
+                        width: rect.width,
+                        height: gap,
                     },
                 };
                 let mut result = vec![divider];
@@ -389,10 +446,22 @@ impl SurfaceGroupLayout {
         }
     }
 
-    pub fn find_divider_at(&self, x: f32, y: f32, rect: Rect, threshold: f32) -> Option<DividerInfo> {
+    pub fn find_divider_at(
+        &self,
+        x: f32,
+        y: f32,
+        rect: Rect,
+        threshold: f32,
+    ) -> Option<DividerInfo> {
         match self {
             SurfaceGroupLayout::Leaf(_) => None,
-            SurfaceGroupLayout::Split { direction, ratio, first, second, .. } => {
+            SurfaceGroupLayout::Split {
+                direction,
+                ratio,
+                first,
+                second,
+                ..
+            } => {
                 let (r1, r2) = rect.split_with_gap(*direction, *ratio, SURFACE_BORDER_WIDTH);
                 let divider_pos = match direction {
                     SplitDirection::Vertical => (r1.x + r1.width).value(),
@@ -403,8 +472,12 @@ impl SurfaceGroupLayout {
                     SplitDirection::Horizontal => y,
                 };
                 let in_bounds = match direction {
-                    SplitDirection::Vertical => y >= rect.y.value() && y < (rect.y + rect.height).value(),
-                    SplitDirection::Horizontal => x >= rect.x.value() && x < (rect.x + rect.width).value(),
+                    SplitDirection::Vertical => {
+                        y >= rect.y.value() && y < (rect.y + rect.height).value()
+                    }
+                    SplitDirection::Horizontal => {
+                        x >= rect.x.value() && x < (rect.x + rect.width).value()
+                    }
                 };
                 if in_bounds && (cursor_pos - divider_pos).abs() < threshold {
                     return Some(DividerInfo {
@@ -412,28 +485,45 @@ impl SurfaceGroupLayout {
                         split_rect: rect,
                     });
                 }
-                first.find_divider_at(x, y, r1, threshold)
+                first
+                    .find_divider_at(x, y, r1, threshold)
                     .or_else(|| second.find_divider_at(x, y, r2, threshold))
             }
         }
     }
 
-    pub fn update_ratio_for_rect(&mut self, split_rect: Rect, new_ratio: f32, current_rect: Rect) -> bool {
+    pub fn update_ratio_for_rect(
+        &mut self,
+        split_rect: Rect,
+        new_ratio: f32,
+        current_rect: Rect,
+    ) -> bool {
         match self {
             SurfaceGroupLayout::Leaf(_) => false,
-            SurfaceGroupLayout::Split { direction, ratio, first, second, .. } => {
+            SurfaceGroupLayout::Split {
+                direction,
+                ratio,
+                first,
+                second,
+                ..
+            } => {
                 if current_rect.approx_eq(&split_rect) {
                     *ratio = new_ratio.clamp(0.1, 0.9);
                     return true;
                 }
-                let (r1, r2) = current_rect.split_with_gap(*direction, *ratio, SURFACE_BORDER_WIDTH);
+                let (r1, r2) =
+                    current_rect.split_with_gap(*direction, *ratio, SURFACE_BORDER_WIDTH);
                 first.update_ratio_for_rect(split_rect, new_ratio, r1)
                     || second.update_ratio_for_rect(split_rect, new_ratio, r2)
             }
         }
     }
 
-    pub fn directional_focus(&self, current_id: SurfaceId, direction: FocusDirection) -> Option<SurfaceId> {
+    pub fn directional_focus(
+        &self,
+        current_id: SurfaceId,
+        direction: FocusDirection,
+    ) -> Option<SurfaceId> {
         let mut path: Vec<(SplitDirection, PathSide, &SurfaceGroupLayout)> = Vec::new();
         if !self.build_path_to(current_id, &mut path) {
             return None;
@@ -458,7 +548,12 @@ impl SurfaceGroupLayout {
     ) -> bool {
         match self {
             SurfaceGroupLayout::Leaf(surface) => Self::leaf_id(&**surface) == target_id,
-            SurfaceGroupLayout::Split { direction, first, second, .. } => {
+            SurfaceGroupLayout::Split {
+                direction,
+                first,
+                second,
+                ..
+            } => {
                 path.push((*direction, PathSide::First, second.as_ref()));
                 if first.build_path_to(target_id, path) {
                     return true;
@@ -500,11 +595,22 @@ impl SurfaceGroupLayout {
     pub fn find_surface_at(&self, x: f32, y: f32, rect: Rect) -> Option<SurfaceId> {
         match self {
             SurfaceGroupLayout::Leaf(surface) => {
-                if rect.contains(PhysicalPx(x), PhysicalPx(y)) { surface.surface_id() } else { None }
+                if rect.contains(PhysicalPx(x), PhysicalPx(y)) {
+                    surface.surface_id()
+                } else {
+                    None
+                }
             }
-            SurfaceGroupLayout::Split { direction, ratio, first, second, .. } => {
+            SurfaceGroupLayout::Split {
+                direction,
+                ratio,
+                first,
+                second,
+                ..
+            } => {
                 let (r1, r2) = rect.split_with_gap(*direction, *ratio, SURFACE_BORDER_WIDTH);
-                first.find_surface_at(x, y, r1)
+                first
+                    .find_surface_at(x, y, r1)
                     .or_else(|| second.find_surface_at(x, y, r2))
             }
         }

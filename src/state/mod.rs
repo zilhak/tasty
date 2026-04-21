@@ -1,18 +1,18 @@
-mod workspace;
-mod tab;
-mod pane;
-mod focus;
 mod claude;
-mod message;
+mod focus;
 mod layout;
-mod mouse;
 mod mark;
+mod message;
+mod mouse;
+mod pane;
 mod restore;
+mod tab;
 #[cfg(test)]
 mod tests;
+mod workspace;
 
 use crate::engine_state::EngineState;
-use crate::model::{PhysicalPx, LogicalPx};
+use crate::model::{LogicalPx, PhysicalPx};
 use crate::settings_ui::SettingsUiState;
 use tasty_terminal::{Terminal, TerminalEvent, Waker};
 
@@ -97,13 +97,29 @@ pub struct AppState {
 #[derive(Clone)]
 pub enum PendingNativeMenu {
     /// Tab right-click: Rename / Close
-    Tab { pane_id: u32, tab_index: usize, x: f32, y: f32 },
+    Tab {
+        pane_id: u32,
+        tab_index: usize,
+        x: f32,
+        y: f32,
+    },
     /// Pane/empty area right-click: Open Markdown... / Open Explorer / Open HTML...
     Pane { pane_id: u32, x: f32, y: f32 },
     /// Explorer folder right-click: Bookmark add/remove
-    ExplorerFolder { surface_id: u32, path: String, is_bookmarked: bool, x: f32, y: f32 },
+    ExplorerFolder {
+        surface_id: u32,
+        path: String,
+        is_bookmarked: bool,
+        x: f32,
+        y: f32,
+    },
     /// Bookmark item right-click: Remove / Navigate
-    BookmarkItem { path: String, name: String, x: f32, y: f32 },
+    BookmarkItem {
+        path: String,
+        name: String,
+        x: f32,
+        y: f32,
+    },
 }
 
 /// All transient UI dialog/popup state, grouped to avoid AppState bloat.
@@ -164,8 +180,7 @@ impl DialogState {
 
     /// Returns true if any dialog with text input is open.
     pub fn has_text_input_open(&self) -> bool {
-        self.ws_rename.is_some()
-            || self.tab_rename.is_some()
+        self.ws_rename.is_some() || self.tab_rename.is_some()
     }
 
     /// Returns true if any dialog/popup overlay is open.
@@ -173,8 +188,6 @@ impl DialogState {
         self.has_text_input_open()
     }
 }
-
-
 
 /// Which workspace field is being renamed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -220,9 +233,7 @@ impl AppState {
 
     /// Returns true if any egui overlay is visible.
     pub fn has_egui_overlay_open(&self) -> bool {
-        self.settings_open
-            || self.dialogs.has_any_overlay()
-            || self.popups.has_any_open()
+        self.settings_open || self.dialogs.has_any_overlay() || self.popups.has_any_open()
     }
 
     /// Clean up all state associated with a closed surface:
@@ -234,12 +245,16 @@ impl AppState {
     }
 
     pub fn active_workspace(&self) -> &crate::model::Workspace {
-        let idx = self.active_workspace.min(self.engine.workspaces.len().saturating_sub(1));
+        let idx = self
+            .active_workspace
+            .min(self.engine.workspaces.len().saturating_sub(1));
         &self.engine.workspaces[idx]
     }
 
     pub fn active_workspace_mut(&mut self) -> &mut crate::model::Workspace {
-        let idx = self.active_workspace.min(self.engine.workspaces.len().saturating_sub(1));
+        let idx = self
+            .active_workspace
+            .min(self.engine.workspaces.len().saturating_sub(1));
         &mut self.engine.workspaces[idx]
     }
 
@@ -294,12 +309,24 @@ impl AppState {
     }
 
     fn surface_to_type(surface: &dyn crate::model::Surface) -> FocusedSurfaceType {
-        if surface.as_terminal_surface().is_some() { return FocusedSurfaceType::Terminal; }
-        if surface.as_explorer().is_some() { return FocusedSurfaceType::Explorer; }
-        if surface.as_markdown().is_some() { return FocusedSurfaceType::Markdown; }
-        if surface.as_html().is_some() { return FocusedSurfaceType::Html; }
-        if surface.as_image().is_some() { return FocusedSurfaceType::Image; }
-        if surface.as_empty_surface().is_some() { return FocusedSurfaceType::Empty; }
+        if surface.as_terminal_surface().is_some() {
+            return FocusedSurfaceType::Terminal;
+        }
+        if surface.as_explorer().is_some() {
+            return FocusedSurfaceType::Explorer;
+        }
+        if surface.as_markdown().is_some() {
+            return FocusedSurfaceType::Markdown;
+        }
+        if surface.as_html().is_some() {
+            return FocusedSurfaceType::Html;
+        }
+        if surface.as_image().is_some() {
+            return FocusedSurfaceType::Image;
+        }
+        if surface.as_empty_surface().is_some() {
+            return FocusedSurfaceType::Empty;
+        }
         FocusedSurfaceType::None
     }
 
@@ -321,7 +348,12 @@ impl AppState {
             Some(e) => e,
             None => return String::new(),
         };
-        explorer.selected_files.iter().cloned().collect::<Vec<_>>().join("\n")
+        explorer
+            .selected_files
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     /// Explorer: 선택된 파일을 OS 파일 클립보드에 복사. 성공 시 true.
@@ -330,11 +362,19 @@ impl AppState {
             Some(e) => e,
             None => return false,
         };
-        if explorer.selected_files.is_empty() { return false; }
+        if explorer.selected_files.is_empty() {
+            return false;
+        }
         let paths: Vec<&str> = explorer.selected_files.iter().map(|s| s.as_str()).collect();
-        match crate::file_clipboard::set_file_clipboard(&paths, crate::file_clipboard::FileClipboardOp::Copy) {
+        match crate::file_clipboard::set_file_clipboard(
+            &paths,
+            crate::file_clipboard::FileClipboardOp::Copy,
+        ) {
             Ok(()) => true,
-            Err(e) => { tracing::warn!("file copy failed: {e}"); false }
+            Err(e) => {
+                tracing::warn!("file copy failed: {e}");
+                false
+            }
         }
     }
 
@@ -344,11 +384,19 @@ impl AppState {
             Some(e) => e,
             None => return false,
         };
-        if explorer.selected_files.is_empty() { return false; }
+        if explorer.selected_files.is_empty() {
+            return false;
+        }
         let paths: Vec<&str> = explorer.selected_files.iter().map(|s| s.as_str()).collect();
-        match crate::file_clipboard::set_file_clipboard(&paths, crate::file_clipboard::FileClipboardOp::Cut) {
+        match crate::file_clipboard::set_file_clipboard(
+            &paths,
+            crate::file_clipboard::FileClipboardOp::Cut,
+        ) {
             Ok(()) => true,
-            Err(e) => { tracing::warn!("file cut failed: {e}"); false }
+            Err(e) => {
+                tracing::warn!("file cut failed: {e}");
+                false
+            }
         }
     }
 
@@ -373,7 +421,9 @@ impl AppState {
                         tracing::warn!("file move failed: {e}");
                     }
                 } else if std::path::Path::new(src).is_dir() {
-                    if let Err(e) = crate::explorer_ui::copy_dir_recursive_pub(src, &dest.to_string_lossy()) {
+                    if let Err(e) =
+                        crate::explorer_ui::copy_dir_recursive_pub(src, &dest.to_string_lossy())
+                    {
                         tracing::warn!("dir copy failed: {e}");
                     }
                 } else {
@@ -415,7 +465,9 @@ impl AppState {
 
     /// Record that the user typed on the given surface (updates last_key_input timestamp).
     pub fn record_typing(&mut self, surface_id: u32) {
-        self.engine.last_key_input.insert(surface_id, std::time::Instant::now());
+        self.engine
+            .last_key_input
+            .insert(surface_id, std::time::Instant::now());
     }
 
     /// Returns true if the surface received key input within the last 5 seconds.
@@ -448,13 +500,18 @@ impl AppState {
             return Some(std::path::PathBuf::from(&exp.root_path));
         }
         if let Some(md) = surface.as_markdown() {
-            return std::path::Path::new(&md.file_path).parent().map(|p| p.to_path_buf());
+            return std::path::Path::new(&md.file_path)
+                .parent()
+                .map(|p| p.to_path_buf());
         }
         None
     }
 
     /// Get the working directory to inherit from a specific surface, if enabled.
-    pub(crate) fn resolve_inherit_cwd_from_surface(&self, surface_id: u32) -> Option<std::path::PathBuf> {
+    pub(crate) fn resolve_inherit_cwd_from_surface(
+        &self,
+        surface_id: u32,
+    ) -> Option<std::path::PathBuf> {
         if !self.engine.settings.general.inherit_cwd {
             return None;
         }
@@ -468,7 +525,8 @@ impl AppState {
 
     /// Get the ultimately focused terminal (mutable).
     pub fn focused_terminal_mut(&mut self) -> Option<&mut Terminal> {
-        self.focused_pane_mut().and_then(|p| p.active_terminal_mut())
+        self.focused_pane_mut()
+            .and_then(|p| p.active_terminal_mut())
     }
 
     /// Find the pane ID that contains a given surface ID.
@@ -558,7 +616,6 @@ impl AppState {
         self.engine.find_terminal_by_id_mut(surface_id)
     }
 
-
     /// Get the focused pane ID.
     pub fn focused_pane_id(&self) -> crate::model::PaneId {
         self.active_workspace().focused_pane
@@ -569,13 +626,15 @@ impl AppState {
     pub fn collect_events(&mut self) -> Vec<TerminalEvent> {
         let mut all_events = Vec::new();
         for workspace in &mut self.engine.workspaces {
-            workspace.pane_layout_mut().for_each_terminal_mut(&mut |sid, terminal| {
-                let mut events = terminal.take_events();
-                for event in &mut events {
-                    event.surface_id = sid;
-                }
-                all_events.extend(events);
-            });
+            workspace
+                .pane_layout_mut()
+                .for_each_terminal_mut(&mut |sid, terminal| {
+                    let mut events = terminal.take_events();
+                    for event in &mut events {
+                        event.surface_id = sid;
+                    }
+                    all_events.extend(events);
+                });
         }
         all_events
     }

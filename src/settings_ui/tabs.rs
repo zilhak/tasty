@@ -10,9 +10,7 @@ fn label_with_tooltip(ui: &mut egui::Ui, label: &str, tooltip: &str) {
     let response = ui.add(egui::Label::new(text).sense(egui::Sense::hover()));
     // Show tooltip only when hovering over the (?) portion
     if response.hovered() {
-        response.show_tooltip_text(
-            egui::RichText::new(tooltip).color(th.text),
-        );
+        response.show_tooltip_text(egui::RichText::new(tooltip).color(th.text));
     }
 }
 
@@ -21,10 +19,7 @@ pub fn draw_general_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     ui.add_space(8.0);
 
     if !settings.general.is_shell_valid() {
-        ui.label(
-            egui::RichText::new(t("settings.general.shell_not_found"))
-                .color(th.yellow),
-        );
+        ui.label(egui::RichText::new(t("settings.general.shell_not_found")).color(th.yellow));
         ui.add_space(4.0);
     }
 
@@ -49,9 +44,21 @@ pub fn draw_general_tab(ui: &mut egui::Ui, settings: &mut Settings) {
                     _ => t("settings.general.shell_mode_default"),
                 })
                 .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut settings.general.shell_mode, "default".to_string(), t("settings.general.shell_mode_default"));
-                    ui.selectable_value(&mut settings.general.shell_mode, "tasty".to_string(), t("settings.general.shell_mode_tasty"));
-                    ui.selectable_value(&mut settings.general.shell_mode, "custom".to_string(), t("settings.general.shell_mode_custom"));
+                    ui.selectable_value(
+                        &mut settings.general.shell_mode,
+                        "default".to_string(),
+                        t("settings.general.shell_mode_default"),
+                    );
+                    ui.selectable_value(
+                        &mut settings.general.shell_mode,
+                        "tasty".to_string(),
+                        t("settings.general.shell_mode_tasty"),
+                    );
+                    ui.selectable_value(
+                        &mut settings.general.shell_mode,
+                        "custom".to_string(),
+                        t("settings.general.shell_mode_custom"),
+                    );
                 });
             ui.end_row();
 
@@ -66,9 +73,11 @@ pub fn draw_general_tab(ui: &mut egui::Ui, settings: &mut Settings) {
             ui.end_row();
 
             ui.label(t("settings.general.scrollback_lines_label"));
-            ui.add(egui::DragValue::new(&mut settings.general.scrollback_lines)
-                .range(0..=100000)
-                .speed(100));
+            ui.add(
+                egui::DragValue::new(&mut settings.general.scrollback_lines)
+                    .range(0..=100000)
+                    .speed(100),
+            );
             ui.end_row();
 
             ui.label(t("settings.general.confirm_close_label"));
@@ -87,9 +96,21 @@ pub fn draw_general_tab(ui: &mut egui::Ui, settings: &mut Settings) {
                     _ => t("settings.general.close_behavior_ask"),
                 })
                 .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut settings.general.close_behavior, "ask".to_string(), t("settings.general.close_behavior_ask"));
-                    ui.selectable_value(&mut settings.general.close_behavior, "minimize".to_string(), t("settings.general.close_behavior_minimize"));
-                    ui.selectable_value(&mut settings.general.close_behavior, "quit".to_string(), t("settings.general.close_behavior_quit"));
+                    ui.selectable_value(
+                        &mut settings.general.close_behavior,
+                        "ask".to_string(),
+                        t("settings.general.close_behavior_ask"),
+                    );
+                    ui.selectable_value(
+                        &mut settings.general.close_behavior,
+                        "minimize".to_string(),
+                        t("settings.general.close_behavior_minimize"),
+                    );
+                    ui.selectable_value(
+                        &mut settings.general.close_behavior,
+                        "quit".to_string(),
+                        t("settings.general.close_behavior_quit"),
+                    );
                 });
             ui.end_row();
         });
@@ -122,10 +143,19 @@ pub fn draw_appearance_tab(
 
                 ui.vertical(|ui| {
                     let sub_tabs = [
-                        (AppearanceSubTab::General, t("settings.appearance.subtab.general")),
+                        (
+                            AppearanceSubTab::General,
+                            t("settings.appearance.subtab.general"),
+                        ),
                         (AppearanceSubTab::Tasty, "Tasty"),
-                        (AppearanceSubTab::Terminal, t("settings.appearance.subtab.terminal")),
-                        (AppearanceSubTab::Markdown, t("settings.appearance.subtab.markdown")),
+                        (
+                            AppearanceSubTab::Terminal,
+                            t("settings.appearance.subtab.terminal"),
+                        ),
+                        (
+                            AppearanceSubTab::Markdown,
+                            t("settings.appearance.subtab.markdown"),
+                        ),
                         (AppearanceSubTab::Explorer, "Explorer"),
                         (AppearanceSubTab::HtmlViewer, "HTML"),
                     ];
@@ -141,26 +171,30 @@ pub fn draw_appearance_tab(
         ui.add_space(8.0);
 
         // ── Right: sub-tab content ──
-        ui.vertical(|ui| {
-            match *sub_tab {
-                AppearanceSubTab::General => {
-                    draw_appearance_general(ui, settings);
-                }
-                AppearanceSubTab::Tasty => {
-                    draw_appearance_tasty(ui, settings);
-                }
-                AppearanceSubTab::Terminal => {
-                    draw_appearance_terminal(ui, settings, font_families, font_filter, preview_font_loaded);
-                }
-                AppearanceSubTab::Markdown => {
-                    draw_appearance_placeholder(ui, "Markdown");
-                }
-                AppearanceSubTab::Explorer => {
-                    draw_appearance_placeholder(ui, "Explorer");
-                }
-                AppearanceSubTab::HtmlViewer => {
-                    draw_appearance_placeholder(ui, "HTML Viewer");
-                }
+        ui.vertical(|ui| match *sub_tab {
+            AppearanceSubTab::General => {
+                draw_appearance_general(ui, settings);
+            }
+            AppearanceSubTab::Tasty => {
+                draw_appearance_tasty(ui, settings);
+            }
+            AppearanceSubTab::Terminal => {
+                draw_appearance_terminal(
+                    ui,
+                    settings,
+                    font_families,
+                    font_filter,
+                    preview_font_loaded,
+                );
+            }
+            AppearanceSubTab::Markdown => {
+                draw_appearance_placeholder(ui, "Markdown");
+            }
+            AppearanceSubTab::Explorer => {
+                draw_appearance_placeholder(ui, "Explorer");
+            }
+            AppearanceSubTab::HtmlViewer => {
+                draw_appearance_placeholder(ui, "HTML Viewer");
             }
         });
     });
@@ -365,7 +399,12 @@ fn draw_appearance_placeholder(ui: &mut egui::Ui, name: &str) {
 }
 
 /// Draw a fake terminal preview showing the current font/appearance settings.
-fn draw_font_preview(ui: &mut egui::Ui, settings: &Settings, th: &crate::theme::Theme, preview_font_loaded: &mut String) {
+fn draw_font_preview(
+    ui: &mut egui::Ui,
+    settings: &Settings,
+    th: &crate::theme::Theme,
+    preview_font_loaded: &mut String,
+) {
     ui.heading(t("settings.appearance.preview_heading"));
     ui.add_space(4.0);
 
@@ -399,12 +438,10 @@ fn draw_font_preview(ui: &mut egui::Ui, settings: &Settings, th: &crate::theme::
                 "preview_font".to_owned(),
                 Arc::new(egui::FontData::from_owned(data)),
             );
-            fonts
-                .families
-                .insert(
-                    egui::FontFamily::Name("preview".into()),
-                    vec!["preview_font".to_owned()],
-                );
+            fonts.families.insert(
+                egui::FontFamily::Name("preview".into()),
+                vec!["preview_font".to_owned()],
+            );
             // Keep CJK fallback for Monospace/Proportional (re-run CJK setup)
             if let Some(cjk_data) = load_system_cjk_font_data() {
                 fonts.font_data.insert(
@@ -442,7 +479,7 @@ fn draw_font_preview(ui: &mut egui::Ui, settings: &Settings, th: &crate::theme::
 
     let sample_lines = [
         "AaBbCcDdEeFfGg",
-        "\u{AC00}\u{B098}\u{B2E4}\u{B77C}\u{B9C8}\u{BC14}\u{C0AC}",       // 가나다라마바사
+        "\u{AC00}\u{B098}\u{B2E4}\u{B77C}\u{B9C8}\u{BC14}\u{C0AC}", // 가나다라마바사
         "1234567890",
         "\u{30A2}\u{30AB}\u{30B5}\u{30BF}\u{30CA}\u{30CF}\u{30DE}\u{30E9}\u{30E4}\u{30EF}", // アカサタナハマラヤワ
     ];
@@ -513,7 +550,8 @@ fn draw_font_preview(ui: &mut egui::Ui, settings: &Settings, th: &crate::theme::
         egui::vec2(ui.available_width(), block_height),
         egui::Sense::hover(),
     );
-    ui.painter().rect_filled(unfocused_rect, 2.0, unfocused_bg32);
+    ui.painter()
+        .rect_filled(unfocused_rect, 2.0, unfocused_bg32);
     for (i, line) in sample_lines.iter().enumerate() {
         let pos = unfocused_rect.min + egui::vec2(padding, padding + line_height * i as f32);
         ui.painter().text(
@@ -527,11 +565,12 @@ fn draw_font_preview(ui: &mut egui::Ui, settings: &Settings, th: &crate::theme::
 
     ui.add_space(8.0);
     ui.label(
-        egui::RichText::new(
-            crate::i18n::t_fmt("settings.appearance.preview_font_info", &format!("{} / {:.1}px", font_name, font_size))
-        )
-            .size(th.font_size_caption.value())
-            .color(th.subtext0),
+        egui::RichText::new(crate::i18n::t_fmt(
+            "settings.appearance.preview_font_info",
+            &format!("{} / {:.1}px", font_name, font_size),
+        ))
+        .size(th.font_size_caption.value())
+        .color(th.subtext0),
     );
 }
 
@@ -618,9 +657,18 @@ pub fn draw_clipboard_tab(ui: &mut egui::Ui, settings: &mut Settings) {
 pub fn draw_notifications_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     ui.add_space(8.0);
 
-    ui.checkbox(&mut settings.notification.enabled, t("settings.notifications.enabled"));
-    ui.checkbox(&mut settings.notification.system_notification, t("settings.notifications.system_notification"));
-    ui.checkbox(&mut settings.notification.sound, t("settings.notifications.sound"));
+    ui.checkbox(
+        &mut settings.notification.enabled,
+        t("settings.notifications.enabled"),
+    );
+    ui.checkbox(
+        &mut settings.notification.system_notification,
+        t("settings.notifications.system_notification"),
+    );
+    ui.checkbox(
+        &mut settings.notification.sound,
+        t("settings.notifications.sound"),
+    );
 
     ui.add_space(8.0);
     egui::Grid::new("notification_grid")
@@ -628,9 +676,11 @@ pub fn draw_notifications_tab(ui: &mut egui::Ui, settings: &mut Settings) {
         .spacing([12.0, 8.0])
         .show(ui, |ui| {
             ui.label(t("settings.notifications.coalesce_interval_label"));
-            ui.add(egui::DragValue::new(&mut settings.notification.coalesce_ms)
-                .range(0..=5000)
-                .speed(50));
+            ui.add(
+                egui::DragValue::new(&mut settings.notification.coalesce_ms)
+                    .range(0..=5000)
+                    .speed(50),
+            );
             ui.end_row();
         });
 }
@@ -647,7 +697,11 @@ pub fn draw_language_tab(ui: &mut egui::Ui, settings: &mut Settings) {
             egui::ComboBox::from_id_salt("language_select")
                 .selected_text(language_display_name(&settings.general.language))
                 .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut settings.general.language, "en".to_string(), "English");
+                    ui.selectable_value(
+                        &mut settings.general.language,
+                        "en".to_string(),
+                        "English",
+                    );
                     ui.selectable_value(&mut settings.general.language, "ko".to_string(), "한국어");
                     ui.selectable_value(&mut settings.general.language, "ja".to_string(), "日本語");
                 });
@@ -693,12 +747,10 @@ pub fn draw_misc_tab(
                 ui.set_min_height(available_height);
 
                 ui.vertical(|ui| {
-                    let sub_tabs = [
-                        (
-                            crate::settings_ui::MiscSubTab::Tastyrc,
-                            t("settings.misc.subtab.tastyrc"),
-                        ),
-                    ];
+                    let sub_tabs = [(
+                        crate::settings_ui::MiscSubTab::Tastyrc,
+                        t("settings.misc.subtab.tastyrc"),
+                    )];
 
                     for (tab, label) in &sub_tabs {
                         let selected = *sub_tab == *tab;

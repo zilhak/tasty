@@ -99,11 +99,7 @@ pub fn pixel_to_grid(
 }
 
 /// Check if a cell at (col, absolute_row) is within the normalized selection range.
-pub fn is_selected(
-    col: usize,
-    absolute_row: usize,
-    sel: &NormalizedSelection,
-) -> bool {
+pub fn is_selected(col: usize, absolute_row: usize, sel: &NormalizedSelection) -> bool {
     if absolute_row < sel.start.absolute_row || absolute_row > sel.end.absolute_row {
         return false;
     }

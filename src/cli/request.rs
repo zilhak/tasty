@@ -1,7 +1,10 @@
-use crate::ipc::protocol::JsonRpcRequest;
-use super::{Commands, NewCommands, CloseCommands, ListCommands, SetCommands, UnsetCommands, SendCommands, ReadCommands, ClaudeCommands, SurfaceMetaCommands, ToolCommands, ClipboardCommands};
 #[cfg(debug_assertions)]
 use super::DebugCommands;
+use super::{
+    ClaudeCommands, ClipboardCommands, CloseCommands, Commands, ListCommands, NewCommands,
+    ReadCommands, SendCommands, SetCommands, SurfaceMetaCommands, ToolCommands, UnsetCommands,
+};
+use crate::ipc::protocol::JsonRpcRequest;
 
 /// Resolve a target string for split/other commands.
 /// - "this" → numeric surface ID from TASTY_SURFACE_ID env var
@@ -27,7 +30,10 @@ fn unescape(s: &str) -> String {
                 Some('t') => out.push('\t'),
                 Some('\\') => out.push('\\'),
                 Some('0') => out.push('\0'),
-                Some(other) => { out.push('\\'); out.push(other); }
+                Some(other) => {
+                    out.push('\\');
+                    out.push(other);
+                }
                 None => out.push('\\'),
             }
         } else {
@@ -39,11 +45,8 @@ fn unescape(s: &str) -> String {
 
 /// Get surface_id: explicit value > TASTY_SURFACE_ID env var.
 pub(super) fn resolve_surface_id(explicit: Option<u32>) -> Option<u32> {
-    explicit.or_else(|| {
-        std::env::var("TASTY_SURFACE_ID").ok()?.parse().ok()
-    })
+    explicit.or_else(|| std::env::var("TASTY_SURFACE_ID").ok()?.parse().ok())
 }
-
 
 pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
     let (method, params) = match command {
@@ -56,12 +59,25 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
         #[cfg(debug_assertions)]
         Commands::Debug { command } => debug_command_to_method_params(command),
         // ── standalone ──
-        Commands::Split { level, target_surface, target_pane, direction, r#type, meta, cwd, file, path, url } => {
+        Commands::Split {
+            level,
+            target_surface,
+            target_pane,
+            direction,
+            r#type,
+            meta,
+            cwd,
+            file,
+            path,
+            url,
+        } => {
             let meta_value = meta
                 .as_deref()
                 .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok());
 
-            let ts = target_surface.as_ref().map(|s| serde_json::Value::String(resolve_target(s)));
+            let ts = target_surface
+                .as_ref()
+                .map(|s| serde_json::Value::String(resolve_target(s)));
             let tp = target_pane.map(|p| serde_json::Value::Number(p.into()));
 
             (
@@ -106,7 +122,14 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
 fn new_command_to_method_params(command: &NewCommands) -> (&'static str, serde_json::Value) {
     match command {
         NewCommands::Window => ("window.create", serde_json::json!({})),
-        NewCommands::Workspace { name, cwd, r#type, file, path, url } => (
+        NewCommands::Workspace {
+            name,
+            cwd,
+            r#type,
+            file,
+            path,
+            url,
+        } => (
             "workspace.create",
             serde_json::json!({
                 "name": name.as_deref().unwrap_or(""),
@@ -117,7 +140,14 @@ fn new_command_to_method_params(command: &NewCommands) -> (&'static str, serde_j
                 "url": url,
             }),
         ),
-        NewCommands::Tab { pane, r#type, cwd, file, path, url } => (
+        NewCommands::Tab {
+            pane,
+            r#type,
+            cwd,
+            file,
+            path,
+            url,
+        } => (
             "tab.create",
             serde_json::json!({
                 "pane_id": pane,
@@ -134,18 +164,30 @@ fn new_command_to_method_params(command: &NewCommands) -> (&'static str, serde_j
 fn close_command_to_method_params(command: &CloseCommands) -> (&'static str, serde_json::Value) {
     let caller = resolve_surface_id(None); // TASTY_SURFACE_ID
     match command {
-        CloseCommands::Tab { tab } => ("tab.close", serde_json::json!({ "tab_id": tab, "caller_surface_id": caller })),
-        CloseCommands::Pane { pane } => ("pane.close", serde_json::json!({ "pane_id": pane, "caller_surface_id": caller })),
-        CloseCommands::Surface { surface } => ("surface.close", serde_json::json!({ "surface_id": surface, "caller_surface_id": caller })),
-        CloseCommands::CloseSelf => {
-            match caller {
-                Some(sid) => ("surface.close_self", serde_json::json!({ "surface_id": sid })),
-                None => {
-                    eprintln!("Error: TASTY_SURFACE_ID not set. 'close self' can only be used inside a tasty terminal.");
-                    std::process::exit(1);
-                }
+        CloseCommands::Tab { tab } => (
+            "tab.close",
+            serde_json::json!({ "tab_id": tab, "caller_surface_id": caller }),
+        ),
+        CloseCommands::Pane { pane } => (
+            "pane.close",
+            serde_json::json!({ "pane_id": pane, "caller_surface_id": caller }),
+        ),
+        CloseCommands::Surface { surface } => (
+            "surface.close",
+            serde_json::json!({ "surface_id": surface, "caller_surface_id": caller }),
+        ),
+        CloseCommands::CloseSelf => match caller {
+            Some(sid) => (
+                "surface.close_self",
+                serde_json::json!({ "surface_id": sid }),
+            ),
+            None => {
+                eprintln!(
+                    "Error: TASTY_SURFACE_ID not set. 'close self' can only be used inside a tasty terminal."
+                );
+                std::process::exit(1);
             }
-        }
+        },
     }
 }
 
@@ -194,16 +236,27 @@ fn send_command_to_method_params(command: &SendCommands) -> (&'static str, serde
 
 fn read_command_to_method_params(command: &ReadCommands) -> (&'static str, serde_json::Value) {
     match command {
-        ReadCommands::SinceMark { surface, strip_ansi } => (
+        ReadCommands::SinceMark {
+            surface,
+            strip_ansi,
+        } => (
             "surface.read_since_mark",
             serde_json::json!({
                 "surface_id": resolve_surface_id(*surface),
                 "strip_ansi": strip_ansi,
             }),
         ),
-        ReadCommands::Queue { surface, from, peek, clear } => {
+        ReadCommands::Queue {
+            surface,
+            from,
+            peek,
+            clear,
+        } => {
             if *clear {
-                ("message.clear", serde_json::json!({ "surface_id": resolve_surface_id(*surface) }))
+                (
+                    "message.clear",
+                    serde_json::json!({ "surface_id": resolve_surface_id(*surface) }),
+                )
             } else {
                 (
                     "message.read",
@@ -242,7 +295,12 @@ fn set_command_to_method_params(command: &SetCommands) -> (&'static str, serde_j
             "surface.set_mark",
             serde_json::json!({ "surface_id": resolve_surface_id(*surface) }),
         ),
-        SetCommands::Workspace { id, name, subtitle, description } => (
+        SetCommands::Workspace {
+            id,
+            name,
+            subtitle,
+            description,
+        } => (
             "workspace.update",
             serde_json::json!({
                 "id": id,
@@ -268,14 +326,10 @@ fn set_command_to_method_params(command: &SetCommands) -> (&'static str, serde_j
 
 fn unset_command_to_method_params(command: &UnsetCommands) -> (&'static str, serde_json::Value) {
     match command {
-        UnsetCommands::Hook { hook } => (
-            "hook.unset",
-            serde_json::json!({ "hook_id": hook }),
-        ),
-        UnsetCommands::GlobalHook { hook } => (
-            "global_hook.unset",
-            serde_json::json!({ "hook_id": hook }),
-        ),
+        UnsetCommands::Hook { hook } => ("hook.unset", serde_json::json!({ "hook_id": hook })),
+        UnsetCommands::GlobalHook { hook } => {
+            ("global_hook.unset", serde_json::json!({ "hook_id": hook }))
+        }
     }
 }
 
@@ -310,8 +364,14 @@ fn claude_command_to_method_params(command: &ClaudeCommands) -> (&'static str, s
                 "prompt": prompt,
             }),
         ),
-        ClaudeCommands::Children { surface } => ("claude.children", serde_json::json!({ "surface_id": resolve_surface_id(*surface) })),
-        ClaudeCommands::Parent { surface } => ("claude.parent", serde_json::json!({ "surface_id": resolve_surface_id(*surface) })),
+        ClaudeCommands::Children { surface } => (
+            "claude.children",
+            serde_json::json!({ "surface_id": resolve_surface_id(*surface) }),
+        ),
+        ClaudeCommands::Parent { surface } => (
+            "claude.parent",
+            serde_json::json!({ "surface_id": resolve_surface_id(*surface) }),
+        ),
         ClaudeCommands::Kill { child, surface } => (
             "claude.kill",
             serde_json::json!({
@@ -337,7 +397,11 @@ fn claude_command_to_method_params(command: &ClaudeCommands) -> (&'static str, s
                 "prompt": prompt,
             }),
         ),
-        ClaudeCommands::Broadcast { text, surface, role } => (
+        ClaudeCommands::Broadcast {
+            text,
+            surface,
+            role,
+        } => (
             "claude.broadcast",
             serde_json::json!({
                 "surface_id": resolve_surface_id(*surface),
@@ -370,25 +434,29 @@ fn debug_command_to_method_params(command: &DebugCommands) -> (&'static str, ser
             "surface.ime_preedit",
             serde_json::json!({ "text": text, "cursor": cursor }),
         ),
-        DebugCommands::ImeCommit { text } => (
-            "surface.ime_commit",
-            serde_json::json!({ "text": text }),
-        ),
+        DebugCommands::ImeCommit { text } => {
+            ("surface.ime_commit", serde_json::json!({ "text": text }))
+        }
         DebugCommands::ImeStatus => ("surface.ime_status", serde_json::json!({})),
         DebugCommands::SwitchInputSource { source_id } => (
             "surface.switch_input_source",
             serde_json::json!({ "source_id": source_id }),
         ),
-        DebugCommands::RawKey { keycode } => (
-            "surface.raw_key",
-            serde_json::json!({ "keycode": keycode }),
-        ),
+        DebugCommands::RawKey { keycode } => {
+            ("surface.raw_key", serde_json::json!({ "keycode": keycode }))
+        }
     }
 }
 
-fn surface_meta_command_to_method_params(command: &SurfaceMetaCommands) -> (&'static str, serde_json::Value) {
+fn surface_meta_command_to_method_params(
+    command: &SurfaceMetaCommands,
+) -> (&'static str, serde_json::Value) {
     match command {
-        SurfaceMetaCommands::Set { key, value, surface } => (
+        SurfaceMetaCommands::Set {
+            key,
+            value,
+            surface,
+        } => (
             "surface.meta_set",
             serde_json::json!({
                 "surface_id": resolve_surface_id(*surface),
@@ -422,14 +490,12 @@ fn surface_meta_command_to_method_params(command: &SurfaceMetaCommands) -> (&'st
 fn tool_command_to_method_params(command: &ToolCommands) -> (&'static str, serde_json::Value) {
     match command {
         ToolCommands::Clipboard { command } => match command {
-            ClipboardCommands::List { limit } => (
-                "tool.clipboard.list",
-                serde_json::json!({ "limit": limit }),
-            ),
-            ClipboardCommands::Get { index } => (
-                "tool.clipboard.get",
-                serde_json::json!({ "index": index }),
-            ),
+            ClipboardCommands::List { limit } => {
+                ("tool.clipboard.list", serde_json::json!({ "limit": limit }))
+            }
+            ClipboardCommands::Get { index } => {
+                ("tool.clipboard.get", serde_json::json!({ "index": index }))
+            }
             ClipboardCommands::Paste { index } => (
                 "tool.clipboard.paste",
                 serde_json::json!({ "index": index }),

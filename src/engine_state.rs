@@ -1,11 +1,11 @@
 use std::collections::{HashMap, HashSet};
 
-use tasty_hooks::HookManager;
 use crate::global_hooks::GlobalHookManager;
 use crate::model::Workspace;
 use crate::notification::NotificationStore;
 use crate::settings::Settings;
 use crate::state::{ClaudeChildEntry, SurfaceMessage};
+use tasty_hooks::HookManager;
 use tasty_terminal::{Terminal, TerminalEvent, Waker};
 
 /// ID generator for workspaces, panes, tabs, and surfaces.
@@ -92,7 +92,11 @@ impl ShellConfig {
     }
 
     pub fn shell_ref(&self) -> Option<&str> {
-        if self.shell.is_empty() { None } else { Some(&self.shell) }
+        if self.shell.is_empty() {
+            None
+        } else {
+            Some(&self.shell)
+        }
     }
 
     pub fn args_ref(&self) -> Vec<&str> {
@@ -147,7 +151,19 @@ impl EngineState {
         let surface_id = next_ids.next_surface();
 
         let sh = ShellConfig::from_settings(&settings);
-        let ws = Workspace::new_with_shell(ws_id, "Workspace 1".to_string(), cols, rows, pane_id, tab_id, surface_id, sh.shell_ref(), &sh.args_ref(), waker.clone(), None)?;
+        let ws = Workspace::new_with_shell(
+            ws_id,
+            "Workspace 1".to_string(),
+            cols,
+            rows,
+            pane_id,
+            tab_id,
+            surface_id,
+            sh.shell_ref(),
+            &sh.args_ref(),
+            waker.clone(),
+            None,
+        )?;
 
         let mut engine = Self {
             workspaces: vec![ws],
@@ -169,10 +185,13 @@ impl EngineState {
         };
 
         // Re-apply coalesce_ms from actual settings
-        engine.notifications = NotificationStore::with_coalesce_ms(engine.settings.notification.coalesce_ms);
+        engine.notifications =
+            NotificationStore::with_coalesce_ms(engine.settings.notification.coalesce_ms);
 
         // Apply clipboard history max from settings.
-        engine.clipboard_history.set_max(engine.settings.clipboard.history_max);
+        engine
+            .clipboard_history
+            .set_max(engine.settings.clipboard.history_max);
 
         // Init fast mode + scrollback for the first surface
         engine.send_fast_init(surface_id);
@@ -224,7 +243,8 @@ impl EngineState {
 
     /// Record that the user typed on the given surface.
     pub fn record_typing(&mut self, surface_id: u32) {
-        self.last_key_input.insert(surface_id, std::time::Instant::now());
+        self.last_key_input
+            .insert(surface_id, std::time::Instant::now());
     }
 
     /// Internally-originated clipboard copy (selection copy 등). 히스토리에 저장하되
@@ -233,8 +253,10 @@ impl EngineState {
         if !self.settings.clipboard.history_enabled {
             return;
         }
-        self.clipboard_history
-            .record(text.to_string(), crate::clipboard_history::ClipboardSource::Internal);
+        self.clipboard_history.record(
+            text.to_string(),
+            crate::clipboard_history::ClipboardSource::Internal,
+        );
     }
 
     /// Returns true if the surface received key input within the last 5 seconds.
@@ -268,7 +290,10 @@ impl EngineState {
         None
     }
 
-    fn find_terminal_in_layout(layout: &crate::model::PaneNode, surface_id: u32) -> Option<&Terminal> {
+    fn find_terminal_in_layout(
+        layout: &crate::model::PaneNode,
+        surface_id: u32,
+    ) -> Option<&Terminal> {
         match layout {
             crate::model::PaneNode::Leaf(pane) => pane.find_terminal(surface_id),
             crate::model::PaneNode::Split { first, second, .. } => {
@@ -278,7 +303,10 @@ impl EngineState {
         }
     }
 
-    fn find_terminal_in_layout_mut(layout: &mut crate::model::PaneNode, surface_id: u32) -> Option<&mut Terminal> {
+    fn find_terminal_in_layout_mut(
+        layout: &mut crate::model::PaneNode,
+        surface_id: u32,
+    ) -> Option<&mut Terminal> {
         match layout {
             crate::model::PaneNode::Leaf(pane) => pane.find_terminal_mut(surface_id),
             crate::model::PaneNode::Split { first, second, .. } => {
@@ -315,12 +343,14 @@ impl EngineState {
     pub fn flush_all_pty_resizes(&mut self) -> bool {
         let mut any_pending = false;
         for workspace in &mut self.workspaces {
-            workspace.pane_layout_mut().for_each_terminal_mut(&mut |_sid, terminal| {
-                terminal.flush_pty_resize();
-                if terminal.has_pending_pty_resize() {
-                    any_pending = true;
-                }
-            });
+            workspace
+                .pane_layout_mut()
+                .for_each_terminal_mut(&mut |_sid, terminal| {
+                    terminal.flush_pty_resize();
+                    if terminal.has_pending_pty_resize() {
+                        any_pending = true;
+                    }
+                });
         }
         any_pending
     }
@@ -329,9 +359,11 @@ impl EngineState {
     /// Used after discrete events like pane split/close.
     pub fn force_flush_all_pty_resizes(&mut self) {
         for workspace in &mut self.workspaces {
-            workspace.pane_layout_mut().for_each_terminal_mut(&mut |_sid, terminal| {
-                terminal.force_flush_pty_resize();
-            });
+            workspace
+                .pane_layout_mut()
+                .for_each_terminal_mut(&mut |_sid, terminal| {
+                    terminal.force_flush_pty_resize();
+                });
         }
     }
 
@@ -339,13 +371,15 @@ impl EngineState {
     pub fn collect_events(&mut self) -> Vec<TerminalEvent> {
         let mut all_events = Vec::new();
         for workspace in &mut self.workspaces {
-            workspace.pane_layout_mut().for_each_terminal_mut(&mut |sid, terminal| {
-                let mut events = terminal.take_events();
-                for event in &mut events {
-                    event.surface_id = sid;
-                }
-                all_events.extend(events);
-            });
+            workspace
+                .pane_layout_mut()
+                .for_each_terminal_mut(&mut |sid, terminal| {
+                    let mut events = terminal.take_events();
+                    for event in &mut events {
+                        event.surface_id = sid;
+                    }
+                    all_events.extend(events);
+                });
         }
         all_events
     }

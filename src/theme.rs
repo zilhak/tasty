@@ -78,12 +78,12 @@ impl Theme {
     pub fn dark() -> Self {
         Self {
             // Surfaces
-            crust:    egui::Color32::from_rgb(17, 17, 27),    // #11111b
-            mantle:   egui::Color32::from_rgb(24, 24, 37),    // #181825
-            base:     egui::Color32::from_rgb(30, 30, 46),    // #1e1e2e
-            surface0: egui::Color32::from_rgb(49, 50, 68),    // #313244
-            surface1: egui::Color32::from_rgb(69, 71, 90),    // #45475a
-            surface2: egui::Color32::from_rgb(88, 91, 112),   // #585b70
+            crust: egui::Color32::from_rgb(17, 17, 27), // #11111b
+            mantle: egui::Color32::from_rgb(24, 24, 37), // #181825
+            base: egui::Color32::from_rgb(30, 30, 46),  // #1e1e2e
+            surface0: egui::Color32::from_rgb(49, 50, 68), // #313244
+            surface1: egui::Color32::from_rgb(69, 71, 90), // #45475a
+            surface2: egui::Color32::from_rgb(88, 91, 112), // #585b70
 
             // Overlays
             overlay0: egui::Color32::from_rgb(108, 112, 134), // #6c7086
@@ -91,34 +91,34 @@ impl Theme {
             overlay2: egui::Color32::from_rgb(147, 153, 178), // #9399b2
 
             // Text
-            text:     egui::Color32::from_rgb(205, 214, 244), // #cdd6f4
+            text: egui::Color32::from_rgb(205, 214, 244), // #cdd6f4
             subtext1: egui::Color32::from_rgb(186, 194, 222), // #bac2de
             subtext0: egui::Color32::from_rgb(166, 173, 200), // #a6adc8
 
             // Accent colors
-            blue:      egui::Color32::from_rgb(137, 180, 250), // #89b4fa
-            green:     egui::Color32::from_rgb(166, 227, 161), // #a6e3a1
-            red:       egui::Color32::from_rgb(243, 139, 168), // #f38ba8
-            yellow:    egui::Color32::from_rgb(249, 226, 175), // #f9e2af
-            peach:     egui::Color32::from_rgb(250, 179, 135), // #fab387
-            mauve:     egui::Color32::from_rgb(203, 166, 247), // #cba6f7
-            teal:      egui::Color32::from_rgb(148, 226, 213), // #94e2d5
-            sky:       egui::Color32::from_rgb(137, 220, 235), // #89dceb
-            lavender:  egui::Color32::from_rgb(180, 190, 254), // #b4befe
-            flamingo:  egui::Color32::from_rgb(242, 205, 205), // #f2cdcd
-            pink:      egui::Color32::from_rgb(245, 194, 231), // #f5c2e7
-            maroon:    egui::Color32::from_rgb(235, 160, 172), // #eba0ac
+            blue: egui::Color32::from_rgb(137, 180, 250), // #89b4fa
+            green: egui::Color32::from_rgb(166, 227, 161), // #a6e3a1
+            red: egui::Color32::from_rgb(243, 139, 168),  // #f38ba8
+            yellow: egui::Color32::from_rgb(249, 226, 175), // #f9e2af
+            peach: egui::Color32::from_rgb(250, 179, 135), // #fab387
+            mauve: egui::Color32::from_rgb(203, 166, 247), // #cba6f7
+            teal: egui::Color32::from_rgb(148, 226, 213), // #94e2d5
+            sky: egui::Color32::from_rgb(137, 220, 235),  // #89dceb
+            lavender: egui::Color32::from_rgb(180, 190, 254), // #b4befe
+            flamingo: egui::Color32::from_rgb(242, 205, 205), // #f2cdcd
+            pink: egui::Color32::from_rgb(245, 194, 231), // #f5c2e7
+            maroon: egui::Color32::from_rgb(235, 160, 172), // #eba0ac
             rosewater: egui::Color32::from_rgb(245, 224, 220), // #f5e0dc
 
             // Semantic
-            hover_overlay:  egui::Color32::from_rgba_unmultiplied(255, 255, 255, 20), // ~8%
+            hover_overlay: egui::Color32::from_rgba_unmultiplied(255, 255, 255, 20), // ~8%
             active_overlay: egui::Color32::from_rgba_unmultiplied(255, 255, 255, 31), // ~12%
-            separator:      egui::Color32::from_rgba_unmultiplied(255, 255, 255, 20), // ~8%
+            separator: egui::Color32::from_rgba_unmultiplied(255, 255, 255, 20),     // ~8%
 
             // UI Typography
             font_size_caption: LogicalPx(11.0),
             font_size_body: LogicalPx(13.0),
-            font_size_heading: LogicalPx(13.0),  // semibold로 구분, 크기는 같음
+            font_size_heading: LogicalPx(13.0), // semibold로 구분, 크기는 같음
             font_size_max: LogicalPx(14.0),
 
             // UI Sizing
@@ -141,22 +141,22 @@ impl Theme {
             terminal_bg: [0.118, 0.118, 0.180, 1.0], // Base #1e1e2e
             selection_bg: [0.345, 0.357, 0.439, 1.0], // Surface2 #585b70
             ansi_colors: [
-                [0.176, 0.176, 0.271],  // 0: black      (Surface1 #45475a)
-                [0.953, 0.545, 0.659],  // 1: red         (#f38ba8)
-                [0.651, 0.890, 0.631],  // 2: green       (#a6e3a1)
-                [0.976, 0.886, 0.686],  // 3: yellow      (#f9e2af)
-                [0.537, 0.706, 0.980],  // 4: blue        (#89b4fa)
-                [0.796, 0.651, 0.969],  // 5: magenta     (#cba6f7)
-                [0.580, 0.886, 0.835],  // 6: cyan        (#94e2d5)
-                [0.729, 0.761, 0.882],  // 7: white       (Subtext1 #bac2de)
-                [0.424, 0.439, 0.537],  // 8: bright black(Overlay0 #6c7086)
-                [0.953, 0.545, 0.659],  // 9: bright red  (#f38ba8)
-                [0.651, 0.890, 0.631],  // 10: bright green(#a6e3a1)
-                [0.976, 0.886, 0.686],  // 11: bright yellow(#f9e2af)
-                [0.537, 0.706, 0.980],  // 12: bright blue(#89b4fa)
-                [0.796, 0.651, 0.969],  // 13: bright magenta(#cba6f7)
-                [0.537, 0.784, 0.922],  // 14: bright cyan(Sky #89dceb)
-                [0.804, 0.839, 0.957],  // 15: bright white(Text #cdd6f4)
+                [0.176, 0.176, 0.271], // 0: black      (Surface1 #45475a)
+                [0.953, 0.545, 0.659], // 1: red         (#f38ba8)
+                [0.651, 0.890, 0.631], // 2: green       (#a6e3a1)
+                [0.976, 0.886, 0.686], // 3: yellow      (#f9e2af)
+                [0.537, 0.706, 0.980], // 4: blue        (#89b4fa)
+                [0.796, 0.651, 0.969], // 5: magenta     (#cba6f7)
+                [0.580, 0.886, 0.835], // 6: cyan        (#94e2d5)
+                [0.729, 0.761, 0.882], // 7: white       (Subtext1 #bac2de)
+                [0.424, 0.439, 0.537], // 8: bright black(Overlay0 #6c7086)
+                [0.953, 0.545, 0.659], // 9: bright red  (#f38ba8)
+                [0.651, 0.890, 0.631], // 10: bright green(#a6e3a1)
+                [0.976, 0.886, 0.686], // 11: bright yellow(#f9e2af)
+                [0.537, 0.706, 0.980], // 12: bright blue(#89b4fa)
+                [0.796, 0.651, 0.969], // 13: bright magenta(#cba6f7)
+                [0.537, 0.784, 0.922], // 14: bright cyan(Sky #89dceb)
+                [0.804, 0.839, 0.957], // 15: bright white(Text #cdd6f4)
             ],
         }
     }
@@ -198,7 +198,9 @@ impl Theme {
         );
         style.text_styles.insert(
             egui::TextStyle::Heading,
-            egui::FontId::proportional((self.font_size_heading.value() * ui_scale * 1.15).round_ui()),
+            egui::FontId::proportional(
+                (self.font_size_heading.value() * ui_scale * 1.15).round_ui(),
+            ),
         );
         style.text_styles.insert(
             egui::TextStyle::Button,

@@ -97,21 +97,30 @@ pub fn inject_delegate_methods() {
         objc2::ffi::class_addMethod(
             cls,
             sel!(applicationShouldHandleReopen:hasVisibleWindows:),
-            std::mem::transmute::<unsafe extern "C-unwind" fn(*mut AnyObject, Sel, *mut AnyObject, Bool) -> Bool, objc2::runtime::Imp>(handle_reopen),
+            std::mem::transmute::<
+                unsafe extern "C-unwind" fn(*mut AnyObject, Sel, *mut AnyObject, Bool) -> Bool,
+                objc2::runtime::Imp,
+            >(handle_reopen),
             c"B@:@B".as_ptr(),
         );
 
         objc2::ffi::class_addMethod(
             cls,
             sel!(applicationDockMenu:),
-            std::mem::transmute::<unsafe extern "C-unwind" fn(*mut AnyObject, Sel, *mut AnyObject) -> *mut AnyObject, objc2::runtime::Imp>(dock_menu),
+            std::mem::transmute::<
+                unsafe extern "C-unwind" fn(*mut AnyObject, Sel, *mut AnyObject) -> *mut AnyObject,
+                objc2::runtime::Imp,
+            >(dock_menu),
             c"@@:@".as_ptr(),
         );
 
         objc2::ffi::class_addMethod(
             cls,
             sel!(tastyNewWindow:),
-            std::mem::transmute::<unsafe extern "C-unwind" fn(*mut AnyObject, Sel, *mut AnyObject), objc2::runtime::Imp>(new_window_action),
+            std::mem::transmute::<
+                unsafe extern "C-unwind" fn(*mut AnyObject, Sel, *mut AnyObject),
+                objc2::runtime::Imp,
+            >(new_window_action),
             c"v@:@".as_ptr(),
         );
     }

@@ -1,5 +1,5 @@
-pub mod general;
 mod appearance;
+pub mod general;
 mod keybindings;
 mod types;
 
@@ -10,10 +10,10 @@ use anyhow::Result;
 use directories::BaseDirs;
 use serde::{Deserialize, Serialize};
 
-pub use general::GeneralSettings;
 pub use appearance::AppearanceSettings;
+pub use general::GeneralSettings;
 pub use keybindings::KeybindingSettings;
-pub use types::{ClipboardSettings, PerformanceSettings, NotificationSettings};
+pub use types::{ClipboardSettings, NotificationSettings, PerformanceSettings};
 
 /// Returns the Tasty home directory: ~/.tasty/
 /// Consistent across all platforms for easy AI/agent access.
@@ -82,10 +82,7 @@ impl Settings {
                 }
             },
             Err(_) => {
-                tracing::info!(
-                    "no settings file at {}, using defaults",
-                    path.display()
-                );
+                tracing::info!("no settings file at {}, using defaults", path.display());
                 Self::default()
             }
         }
@@ -123,7 +120,10 @@ mod tests {
         let parsed: Settings = toml::from_str(&toml_str).unwrap();
         assert_eq!(parsed.appearance.font_size, settings.appearance.font_size);
         assert_eq!(parsed.general.shell, settings.general.shell);
-        assert_eq!(parsed.notification.coalesce_ms, settings.notification.coalesce_ms);
+        assert_eq!(
+            parsed.notification.coalesce_ms,
+            settings.notification.coalesce_ms
+        );
     }
 
     #[test]
@@ -144,7 +144,10 @@ font_size = 18.0
         let parsed: Settings = toml::from_str("").unwrap();
         let defaults = Settings::default();
         assert_eq!(parsed.appearance.font_size, defaults.appearance.font_size);
-        assert_eq!(parsed.notification.coalesce_ms, defaults.notification.coalesce_ms);
+        assert_eq!(
+            parsed.notification.coalesce_ms,
+            defaults.notification.coalesce_ms
+        );
     }
 
     #[test]
@@ -190,7 +193,10 @@ font_size = 18.0
     #[test]
     fn settings_keybindings_default() {
         let settings = Settings::default();
-        assert_eq!(settings.keybindings.get_field("new_workspace"), Some("alt+n"));
+        assert_eq!(
+            settings.keybindings.get_field("new_workspace"),
+            Some("alt+n")
+        );
         assert_eq!(settings.keybindings.get_field("new_tab"), Some("alt+t"));
     }
 }

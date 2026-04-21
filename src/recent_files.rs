@@ -33,8 +33,14 @@ impl RecentFiles {
     /// 앱 시작 시 1회 호출. 이후는 캐시를 사용.
     pub fn load() -> Self {
         crate::storage::with_db(|db| {
-            let markdown = query_list(&db.conn, "SELECT path FROM recent_markdown ORDER BY opened_at DESC LIMIT ?1");
-            let html = query_list(&db.conn, "SELECT url FROM recent_html ORDER BY opened_at DESC LIMIT ?1");
+            let markdown = query_list(
+                &db.conn,
+                "SELECT path FROM recent_markdown ORDER BY opened_at DESC LIMIT ?1",
+            );
+            let html = query_list(
+                &db.conn,
+                "SELECT url FROM recent_html ORDER BY opened_at DESC LIMIT ?1",
+            );
             Self { markdown, html }
         })
         .unwrap_or_default()
@@ -67,7 +73,9 @@ fn query_list(conn: &rusqlite::Connection, sql: &str) -> Vec<String> {
             return Vec::new();
         }
     };
-    let rows = stmt.query_map(rusqlite::params![MAX_ENTRIES as i64], |r| r.get::<_, String>(0));
+    let rows = stmt.query_map(rusqlite::params![MAX_ENTRIES as i64], |r| {
+        r.get::<_, String>(0)
+    });
     match rows {
         Ok(iter) => iter.filter_map(|r| r.ok()).collect(),
         Err(e) => {
@@ -118,7 +126,9 @@ fn prune_table(table: &str, key_col: &str) {
 /// 구 `recent_files.json`이 있고 DB에 아직 반영되지 않았다면 import 후
 /// `recent_files.json.bak`으로 rename.
 pub fn migrate_from_json() {
-    let Some(path) = json_path() else { return; };
+    let Some(path) = json_path() else {
+        return;
+    };
     if !path.exists() {
         return;
     }

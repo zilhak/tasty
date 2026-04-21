@@ -1,8 +1,8 @@
 //! macOS WKWebView wrapper.
 //! Reference: wry/src/wkwebview/mod.rs (MIT license, Tauri)
 
-use objc2::{MainThreadMarker, MainThreadOnly};
 use objc2::rc::Retained;
+use objc2::{MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::NSView;
 use objc2_foundation::{NSPoint, NSRect, NSSize, NSString, NSURL};
 use objc2_web_kit::{WKWebView, WKWebViewConfiguration};
@@ -21,8 +21,8 @@ impl PlatformWebView {
         bounds: WebViewBounds,
         scale_factor: f64,
     ) -> Result<Self, String> {
-        let mtm = MainThreadMarker::new()
-            .ok_or_else(|| "Must be called from main thread".to_string())?;
+        let mtm =
+            MainThreadMarker::new().ok_or_else(|| "Must be called from main thread".to_string())?;
 
         let ns_view_ptr = match window.window_handle().map_err(|e| e.to_string())?.as_raw() {
             RawWindowHandle::AppKit(w) => w.ns_view.as_ptr(),
@@ -41,11 +41,8 @@ impl PlatformWebView {
 
             let frame = logical_to_nsrect(ns_view, bounds, scale_factor);
 
-            let webview = WKWebView::initWithFrame_configuration(
-                WKWebView::alloc(mtm),
-                frame,
-                &config,
-            );
+            let webview =
+                WKWebView::initWithFrame_configuration(WKWebView::alloc(mtm), frame, &config);
 
             ns_view.addSubview(&webview);
 
@@ -82,11 +79,10 @@ impl PlatformWebView {
                     .parent()
                     .map(|p| p.to_string_lossy().to_string())
                     .unwrap_or_else(|| "/".to_string());
-                let dir_url = NSURL::fileURLWithPath_isDirectory(
-                    &NSString::from_str(&dir_path),
-                    true,
-                );
-                self.webview.loadFileURL_allowingReadAccessToURL(&file_url, &dir_url);
+                let dir_url =
+                    NSURL::fileURLWithPath_isDirectory(&NSString::from_str(&dir_path), true);
+                self.webview
+                    .loadFileURL_allowingReadAccessToURL(&file_url, &dir_url);
             } else {
                 let ns_url = NSURL::URLWithString(&NSString::from_str(url));
                 if let Some(ns_url) = ns_url {
@@ -102,7 +98,8 @@ impl PlatformWebView {
         unsafe {
             let ns_html = NSString::from_str(html);
             let base_url = NSURL::URLWithString(&NSString::from_str("about:blank"));
-            self.webview.loadHTMLString_baseURL(&ns_html, base_url.as_deref());
+            self.webview
+                .loadHTMLString_baseURL(&ns_html, base_url.as_deref());
         }
     }
 }
@@ -115,11 +112,7 @@ impl Drop for PlatformWebView {
 
 /// Convert logical bounds (top-left origin) to NSRect,
 /// handling macOS coordinate system (bottom-left origin for non-flipped views).
-unsafe fn logical_to_nsrect(
-    parent: &NSView,
-    bounds: WebViewBounds,
-    _scale_factor: f64,
-) -> NSRect {
+unsafe fn logical_to_nsrect(parent: &NSView, bounds: WebViewBounds, _scale_factor: f64) -> NSRect {
     let is_flipped = parent.isFlipped();
     let parent_h = parent.frame().size.height;
 

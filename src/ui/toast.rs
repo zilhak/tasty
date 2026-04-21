@@ -68,7 +68,10 @@ pub struct ToastManager {
 
 impl ToastManager {
     pub fn new() -> Self {
-        Self { toasts: Vec::new(), next_id: 1 }
+        Self {
+            toasts: Vec::new(),
+            next_id: 1,
+        }
     }
 
     /// 토스트 발사. 사용자 행동에서만 호출되어야 한다.
@@ -143,14 +146,19 @@ impl ToastManager {
         let mut by_scope: std::collections::HashMap<String, Vec<&ToastState>> =
             std::collections::HashMap::new();
         for t in &self.toasts {
-            by_scope.entry(format!("{:?}", t.scope)).or_default().push(t);
+            by_scope
+                .entry(format!("{:?}", t.scope))
+                .or_default()
+                .push(t);
         }
 
         for (_, mut group) in by_scope {
             // 안정적인 순서: id 오름차순(= 발사 순서). 새것이 가장 아래.
             group.sort_by_key(|t| t.id);
             let scope = &group[0].scope;
-            let Some(scope_rect) = Self::scope_rect(scope, draw_ctx, ctx) else { continue };
+            let Some(scope_rect) = Self::scope_rect(scope, draw_ctx, ctx) else {
+                continue;
+            };
 
             // 우측 하단 시작 좌표 (가장 새로운 토스트의 bottom).
             let mut cursor_y = scope_rect.max.y - SCOPE_MARGIN;
@@ -176,8 +184,7 @@ impl ToastManager {
                     )
                 });
 
-                let toast_w =
-                    (galley.size().x + PADDING_X * 2.0 + ACCENT_BAR_WIDTH).min(max_width);
+                let toast_w = (galley.size().x + PADDING_X * 2.0 + ACCENT_BAR_WIDTH).min(max_width);
                 let toast_h = galley.size().y + PADDING_Y * 2.0;
 
                 let max_x = scope_rect.max.x - SCOPE_MARGIN;
@@ -218,7 +225,10 @@ impl ToastManager {
 
                 // 본문 텍스트. galley 색을 alpha 적용해 다시 만들지 않고 그대로 그린다 —
                 // 알파는 배경/보더로 표현하고, 텍스트는 단단하게 둬도 가독성에 도움이 된다.
-                let text_pos = egui::pos2(rect.min.x + ACCENT_BAR_WIDTH + PADDING_X, rect.min.y + PADDING_Y);
+                let text_pos = egui::pos2(
+                    rect.min.x + ACCENT_BAR_WIDTH + PADDING_X,
+                    rect.min.y + PADDING_Y,
+                );
                 painter.galley(text_pos, galley, th.text.gamma_multiply(alpha));
 
                 cursor_y = top_y - TOAST_GAP;

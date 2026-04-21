@@ -59,7 +59,8 @@ pub fn draw_pane_tab_bars(
     for info in &infos {
         let n = info.tab_names.len();
         // Total content width: tabs + separators + separator before "+" + "+"
-        let content_w = n as f32 * tab_w + (n.max(1) - 1) as f32 * separator_w + separator_w + plus_w;
+        let content_w =
+            n as f32 * tab_w + (n.max(1) - 1) as f32 * separator_w + separator_w + plus_w;
         let needs_scroll = content_w > info.logical_w;
         // Available width for tab content (minus arrows if scrolling)
         let viewport_w = if needs_scroll {
@@ -74,7 +75,11 @@ pub fn draw_pane_tab_bars(
             .fixed_pos(egui::pos2(info.logical_x, info.logical_y))
             .order(egui::Order::Foreground)
             .show(ctx, |ui| {
-                let bg = if info.is_focused { th.surface0 } else { th.mantle };
+                let bg = if info.is_focused {
+                    th.surface0
+                } else {
+                    th.mantle
+                };
 
                 egui::Frame::new()
                     .fill(bg)
@@ -92,15 +97,19 @@ pub fn draw_pane_tab_bars(
                             if needs_scroll {
                                 let can_left = scroll > 0.0;
                                 let (r, resp) = ui.allocate_exact_size(
-                                    egui::vec2(arrow_w, bar_h), egui::Sense::click(),
+                                    egui::vec2(arrow_w, bar_h),
+                                    egui::Sense::click(),
                                 );
                                 let arrow_color = if can_left { th.subtext0 } else { th.surface1 };
                                 if resp.hovered() && can_left {
                                     ui.painter().rect_filled(r, 0.0, th.surface0);
                                 }
                                 ui.painter().text(
-                                    r.center(), egui::Align2::CENTER_CENTER,
-                                    "<", egui::FontId::proportional(th.font_size_caption.value()), arrow_color,
+                                    r.center(),
+                                    egui::Align2::CENTER_CENTER,
+                                    "<",
+                                    egui::FontId::proportional(th.font_size_caption.value()),
+                                    arrow_color,
                                 );
                                 if resp.clicked() && can_left {
                                     actions.push((info.pane_id, PaneTabAction::ScrollLeft));
@@ -114,9 +123,17 @@ pub fn draw_pane_tab_bars(
                                 egui::vec2(viewport_w, bar_h),
                             );
                             // Reserve the viewport space (click sense for right-click context menu on empty area)
-                            let (_, viewport_resp) = ui.allocate_exact_size(egui::vec2(viewport_w, bar_h), egui::Sense::click());
+                            let (_, viewport_resp) = ui.allocate_exact_size(
+                                egui::vec2(viewport_w, bar_h),
+                                egui::Sense::click(),
+                            );
                             if viewport_resp.secondary_clicked() {
-                                actions.push((info.pane_id, PaneTabAction::OpenPaneContextMenu(viewport_resp.interact_pointer_pos().unwrap_or_default())));
+                                actions.push((
+                                    info.pane_id,
+                                    PaneTabAction::OpenPaneContextMenu(
+                                        viewport_resp.interact_pointer_pos().unwrap_or_default(),
+                                    ),
+                                ));
                             }
 
                             // Draw tabs inside the clip rect using painter with clip
@@ -154,21 +171,34 @@ pub fn draw_pane_tab_bars(
                                 }
 
                                 // Truncate tab name with ellipsis if it exceeds available width
-                                let font_id = egui::FontId::proportional(th.font_size_caption.value());
+                                let font_id =
+                                    egui::FontId::proportional(th.font_size_caption.value());
                                 let h_padding = 8.0;
                                 let available_w = tab_w - h_padding * 2.0;
-                                let galley = painter.layout_no_wrap(name.clone(), font_id.clone(), text_color);
+                                let galley = painter.layout_no_wrap(
+                                    name.clone(),
+                                    font_id.clone(),
+                                    text_color,
+                                );
                                 if galley.size().x > available_w {
                                     // Binary-ish search: trim characters until it fits
                                     let mut truncated = name.clone();
                                     while !truncated.is_empty() {
                                         truncated.pop();
                                         let candidate = format!("{truncated}…");
-                                        let g = painter.layout_no_wrap(candidate.clone(), font_id.clone(), text_color);
+                                        let g = painter.layout_no_wrap(
+                                            candidate.clone(),
+                                            font_id.clone(),
+                                            text_color,
+                                        );
                                         if g.size().x <= available_w {
                                             let text_x = tab_rect.min.x + h_padding;
                                             let text_y = tab_rect.center().y - g.size().y / 2.0;
-                                            painter.galley(egui::pos2(text_x, text_y), g, text_color);
+                                            painter.galley(
+                                                egui::pos2(text_x, text_y),
+                                                g,
+                                                text_color,
+                                            );
                                             break;
                                         }
                                     }
@@ -180,12 +210,22 @@ pub fn draw_pane_tab_bars(
                                 // Click detection
                                 let tab_clip = tab_rect.intersect(clip_rect);
                                 if !tab_clip.is_negative() {
-                                    let resp = ui.interact(tab_clip, egui::Id::new(format!("tab_{}_{}", info.pane_id, i)), egui::Sense::click());
+                                    let resp = ui.interact(
+                                        tab_clip,
+                                        egui::Id::new(format!("tab_{}_{}", info.pane_id, i)),
+                                        egui::Sense::click(),
+                                    );
                                     if resp.clicked() {
                                         actions.push((info.pane_id, PaneTabAction::SwitchTab(i)));
                                     }
                                     if resp.secondary_clicked() {
-                                        actions.push((info.pane_id, PaneTabAction::OpenContextMenu(i, resp.interact_pointer_pos().unwrap_or_default())));
+                                        actions.push((
+                                            info.pane_id,
+                                            PaneTabAction::OpenContextMenu(
+                                                i,
+                                                resp.interact_pointer_pos().unwrap_or_default(),
+                                            ),
+                                        ));
                                     }
                                 }
 
@@ -210,13 +250,20 @@ pub fn draw_pane_tab_bars(
                                 );
                                 let plus_clip = plus_rect.intersect(clip_rect);
                                 if !plus_clip.is_negative() {
-                                    let resp = ui.interact(plus_clip, egui::Id::new(format!("tab_plus_{}", info.pane_id)), egui::Sense::click());
+                                    let resp = ui.interact(
+                                        plus_clip,
+                                        egui::Id::new(format!("tab_plus_{}", info.pane_id)),
+                                        egui::Sense::click(),
+                                    );
                                     if resp.hovered() {
                                         painter.rect_filled(plus_rect, 0.0, th.surface0);
                                     }
                                     painter.text(
-                                        plus_rect.center(), egui::Align2::CENTER_CENTER,
-                                        "+", egui::FontId::proportional(th.font_size_body.value()), th.subtext0,
+                                        plus_rect.center(),
+                                        egui::Align2::CENTER_CENTER,
+                                        "+",
+                                        egui::FontId::proportional(th.font_size_body.value()),
+                                        th.subtext0,
                                     );
                                     if resp.clicked() {
                                         actions.push((info.pane_id, PaneTabAction::AddTab));
@@ -228,15 +275,19 @@ pub fn draw_pane_tab_bars(
                             if needs_scroll {
                                 let can_right = scroll < max_scroll;
                                 let (r, resp) = ui.allocate_exact_size(
-                                    egui::vec2(arrow_w, bar_h), egui::Sense::click(),
+                                    egui::vec2(arrow_w, bar_h),
+                                    egui::Sense::click(),
                                 );
                                 let arrow_color = if can_right { th.subtext0 } else { th.surface1 };
                                 if resp.hovered() && can_right {
                                     ui.painter().rect_filled(r, 0.0, th.surface0);
                                 }
                                 ui.painter().text(
-                                    r.center(), egui::Align2::CENTER_CENTER,
-                                    ">", egui::FontId::proportional(th.font_size_caption.value()), arrow_color,
+                                    r.center(),
+                                    egui::Align2::CENTER_CENTER,
+                                    ">",
+                                    egui::FontId::proportional(th.font_size_caption.value()),
+                                    arrow_color,
                                 );
                                 if resp.clicked() && can_right {
                                     actions.push((info.pane_id, PaneTabAction::ScrollRight));
@@ -260,21 +311,35 @@ pub fn draw_pane_tab_bars(
     for (pane_id, action) in actions {
         match action {
             PaneTabAction::SwitchTab(idx) => {
-                if let Some(pane) = state.active_workspace_mut().pane_layout_mut().find_pane_mut(pane_id) {
+                if let Some(pane) = state
+                    .active_workspace_mut()
+                    .pane_layout_mut()
+                    .find_pane_mut(pane_id)
+                {
                     pane.active_tab = idx;
                 }
             }
             PaneTabAction::AddTab => {
                 state.active_workspace_mut().focused_pane = pane_id;
-                if let Err(e) = state.add_tab() { tracing::warn!("add_tab failed: {e}"); }
+                if let Err(e) = state.add_tab() {
+                    tracing::warn!("add_tab failed: {e}");
+                }
             }
             PaneTabAction::ScrollLeft => {
-                if let Some(pane) = state.active_workspace_mut().pane_layout_mut().find_pane_mut(pane_id) {
+                if let Some(pane) = state
+                    .active_workspace_mut()
+                    .pane_layout_mut()
+                    .find_pane_mut(pane_id)
+                {
                     pane.tab_scroll_offset = (pane.tab_scroll_offset - tab_w).max(0.0);
                 }
             }
             PaneTabAction::ScrollRight => {
-                if let Some(pane) = state.active_workspace_mut().pane_layout_mut().find_pane_mut(pane_id) {
+                if let Some(pane) = state
+                    .active_workspace_mut()
+                    .pane_layout_mut()
+                    .find_pane_mut(pane_id)
+                {
                     pane.tab_scroll_offset += tab_w;
                 }
             }
@@ -335,7 +400,11 @@ fn draw_tab_rename_dialog(ctx: &egui::Context, state: &mut AppState) {
                     if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                         // Apply rename
                         let name = buf.trim().to_string();
-                        if let Some(pane) = state.active_workspace_mut().pane_layout_mut().find_pane_mut(pane_id) {
+                        if let Some(pane) = state
+                            .active_workspace_mut()
+                            .pane_layout_mut()
+                            .find_pane_mut(pane_id)
+                        {
                             if let Some(tab) = pane.tabs.get_mut(tab_idx) {
                                 if name.is_empty() {
                                     tab.explicit_name = None; // Revert to auto

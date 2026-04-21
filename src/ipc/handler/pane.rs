@@ -29,7 +29,11 @@ pub fn handle_pane_list(state: &AppState, id: serde_json::Value) -> JsonRpcRespo
     JsonRpcResponse::success(id, json!(panes))
 }
 
-pub fn handle_pane_close(state: &mut AppState, id: serde_json::Value, params: &serde_json::Value) -> JsonRpcResponse {
+pub fn handle_pane_close(
+    state: &mut AppState,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
     let pane_id = match require_pane_id(params, &id) {
         Ok(pid) => pid,
         Err(e) => return e,
@@ -38,8 +42,10 @@ pub fn handle_pane_close(state: &mut AppState, id: serde_json::Value, params: &s
     // Prevent closing a pane that contains the caller
     if let Some(caller) = super::caller_surface_id(params) {
         if super::surface_belongs_to_pane(state, caller, pane_id) {
-            return JsonRpcResponse::invalid_params(id,
-                "Cannot close a pane that contains your own surface. Close all other surfaces in the pane first, then use 'tasty close self'.");
+            return JsonRpcResponse::invalid_params(
+                id,
+                "Cannot close a pane that contains your own surface. Close all other surfaces in the pane first, then use 'tasty close self'.",
+            );
         }
     }
 
@@ -52,7 +58,10 @@ pub fn handle_pane_close(state: &mut AppState, id: serde_json::Value, params: &s
     if closed {
         JsonRpcResponse::success(id, json!({ "closed": true, "pane_id": pane_id }))
     } else {
-        JsonRpcResponse::success(id, json!({ "closed": false, "pane_id": pane_id, "reason": "cannot close the last pane" }))
+        JsonRpcResponse::success(
+            id,
+            json!({ "closed": false, "pane_id": pane_id, "reason": "cannot close the last pane" }),
+        )
     }
 }
 
@@ -92,7 +101,7 @@ pub fn handle_split(
             return JsonRpcResponse::invalid_params(
                 id,
                 format!("Invalid level '{}'. Use: pane, surface", other),
-            )
+            );
         }
         None => return JsonRpcResponse::invalid_params(id, "Missing 'level' parameter"),
     };
@@ -103,42 +112,76 @@ pub fn handle_split(
     };
 
     let target_surface_id = resolve_surface_target(params);
-    let target_pane_id = params.get("target_pane").and_then(|v| v.as_u64()).map(|v| v as u32);
+    let target_pane_id = params
+        .get("target_pane")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32);
 
     // Validate: at least one target must be specified
     if target_surface_id.is_none() && target_pane_id.is_none() {
-        return JsonRpcResponse::invalid_params(id, "Missing target. Use 'target_surface' (surface ID or nickname) and/or 'target_pane' (pane ID)");
+        return JsonRpcResponse::invalid_params(
+            id,
+            "Missing target. Use 'target_surface' (surface ID or nickname) and/or 'target_pane' (pane ID)",
+        );
     }
     // Validate: can't specify both
     if target_surface_id.is_some() && target_pane_id.is_some() {
-        return JsonRpcResponse::invalid_params(id, "Cannot specify both 'target_surface' and 'target_pane'. Use one.");
+        return JsonRpcResponse::invalid_params(
+            id,
+            "Cannot specify both 'target_surface' and 'target_pane'. Use one.",
+        );
     }
 
     let meta = params.get("meta").and_then(|v| v.as_object());
-    let cwd = params.get("cwd").and_then(|v| v.as_str()).map(std::path::PathBuf::from);
-    let surface_type = match params.get("type").and_then(|v| v.as_str()).unwrap_or("terminal") {
+    let cwd = params
+        .get("cwd")
+        .and_then(|v| v.as_str())
+        .map(std::path::PathBuf::from);
+    let surface_type = match params
+        .get("type")
+        .and_then(|v| v.as_str())
+        .unwrap_or("terminal")
+    {
         "markdown" => {
-            let file = params.get("file").and_then(|v| v.as_str())
+            let file = params
+                .get("file")
+                .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();
             if file.is_empty() {
-                return JsonRpcResponse::invalid_params(id, "Missing 'file' parameter for markdown type");
+                return JsonRpcResponse::invalid_params(
+                    id,
+                    "Missing 'file' parameter for markdown type",
+                );
             }
             crate::model::SurfaceType::Markdown { file }
         }
         "explorer" => {
-            let path = params.get("path").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let path = params
+                .get("path")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
             crate::model::SurfaceType::Explorer { path }
         }
         "html" => {
-            let url = params.get("url").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let url = params
+                .get("url")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
             if url.is_empty() {
-                return JsonRpcResponse::invalid_params(id, "Missing 'url' parameter for html type");
+                return JsonRpcResponse::invalid_params(
+                    id,
+                    "Missing 'url' parameter for html type",
+                );
             }
             crate::model::SurfaceType::Html { url }
         }
         "image" => {
-            let file = params.get("file").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let file = params
+                .get("file")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
             crate::model::SurfaceType::Image { file }
         }
         _ => crate::model::SurfaceType::Terminal,
@@ -169,12 +212,17 @@ pub fn handle_split(
                 }
                 Err(e) => JsonRpcResponse::internal_error(id, e.to_string()),
             }
-        },
+        }
         "surface" => {
             // Surface-level splits require a surface target
             let sid = match target_surface_id {
                 Some(sid) => sid,
-                None => return JsonRpcResponse::invalid_params(id, "Surface-level split requires 'target_surface', not 'target_pane'"),
+                None => {
+                    return JsonRpcResponse::invalid_params(
+                        id,
+                        "Surface-level split requires 'target_surface', not 'target_pane'",
+                    );
+                }
             };
 
             match state.split_surface_targeted(Some(sid), direction, cwd, surface_type) {
@@ -189,7 +237,7 @@ pub fn handle_split(
                 }
                 Err(e) => JsonRpcResponse::internal_error(id, e.to_string()),
             }
-        },
+        }
         _ => unreachable!(),
     }
 }

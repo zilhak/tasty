@@ -1,5 +1,8 @@
+use super::{
+    ClipboardViewerPanel, EmptySurface, ExplorerPanel, HtmlPanel, ImagePanel, MarkdownPanel, Rect,
+    SurfaceId, TerminalSurface,
+};
 use tasty_terminal::Terminal;
-use super::{ClipboardViewerPanel, EmptySurface, ExplorerPanel, HtmlPanel, ImagePanel, MarkdownPanel, Rect, SurfaceId, TerminalSurface};
 
 /// Common behavior for all Surface types.
 ///
@@ -29,25 +32,39 @@ pub trait Surface {
     }
 
     /// Whether this surface is rendered by the GPU shader (not egui).
-    fn is_gpu_rendered(&self) -> bool { false }
+    fn is_gpu_rendered(&self) -> bool {
+        false
+    }
 
     /// Get the focused terminal (immutable).
-    fn focused_terminal(&self) -> Option<&Terminal> { None }
+    fn focused_terminal(&self) -> Option<&Terminal> {
+        None
+    }
 
     /// Get the focused terminal (mutable).
-    fn focused_terminal_mut(&mut self) -> Option<&mut Terminal> { None }
+    fn focused_terminal_mut(&mut self) -> Option<&mut Terminal> {
+        None
+    }
 
     /// Find a terminal by surface ID (immutable).
-    fn find_terminal(&self, _surface_id: SurfaceId) -> Option<&Terminal> { None }
+    fn find_terminal(&self, _surface_id: SurfaceId) -> Option<&Terminal> {
+        None
+    }
 
     /// Find a TerminalSurface by surface ID.
-    fn find_terminal_surface(&self, _surface_id: SurfaceId) -> Option<&TerminalSurface> { None }
+    fn find_terminal_surface(&self, _surface_id: SurfaceId) -> Option<&TerminalSurface> {
+        None
+    }
 
     /// Find a terminal by surface ID (mutable).
-    fn find_terminal_mut(&mut self, _surface_id: SurfaceId) -> Option<&mut Terminal> { None }
+    fn find_terminal_mut(&mut self, _surface_id: SurfaceId) -> Option<&mut Terminal> {
+        None
+    }
 
     /// Get render regions for GPU rendering. Non-terminal surfaces return empty.
-    fn render_regions(&self, _rect: Rect) -> Vec<(SurfaceId, &Terminal, Rect)> { vec![] }
+    fn render_regions(&self, _rect: Rect) -> Vec<(SurfaceId, &Terminal, Rect)> {
+        vec![]
+    }
 
     /// Resize all terminals to fit the given rect.
     fn resize_all(&mut self, _rect: Rect, _cell_width: f32, _cell_height: f32) {}
@@ -60,24 +77,52 @@ pub trait Surface {
 
     // ── Downcast methods ──
 
-    fn as_terminal_surface(&self) -> Option<&TerminalSurface> { None }
-    fn as_terminal_surface_mut(&mut self) -> Option<&mut TerminalSurface> { None }
-    fn as_markdown(&self) -> Option<&MarkdownPanel> { None }
-    fn as_markdown_mut(&mut self) -> Option<&mut MarkdownPanel> { None }
-    fn as_explorer(&self) -> Option<&ExplorerPanel> { None }
-    fn as_explorer_mut(&mut self) -> Option<&mut ExplorerPanel> { None }
-    fn as_html(&self) -> Option<&HtmlPanel> { None }
-    fn as_html_mut(&mut self) -> Option<&mut HtmlPanel> { None }
-    fn as_empty_surface(&self) -> Option<&EmptySurface> { None }
-    fn as_clipboard_viewer(&self) -> Option<&ClipboardViewerPanel> { None }
-    fn as_clipboard_viewer_mut(&mut self) -> Option<&mut ClipboardViewerPanel> { None }
-    fn as_image(&self) -> Option<&ImagePanel> { None }
-    fn as_image_mut(&mut self) -> Option<&mut ImagePanel> { None }
+    fn as_terminal_surface(&self) -> Option<&TerminalSurface> {
+        None
+    }
+    fn as_terminal_surface_mut(&mut self) -> Option<&mut TerminalSurface> {
+        None
+    }
+    fn as_markdown(&self) -> Option<&MarkdownPanel> {
+        None
+    }
+    fn as_markdown_mut(&mut self) -> Option<&mut MarkdownPanel> {
+        None
+    }
+    fn as_explorer(&self) -> Option<&ExplorerPanel> {
+        None
+    }
+    fn as_explorer_mut(&mut self) -> Option<&mut ExplorerPanel> {
+        None
+    }
+    fn as_html(&self) -> Option<&HtmlPanel> {
+        None
+    }
+    fn as_html_mut(&mut self) -> Option<&mut HtmlPanel> {
+        None
+    }
+    fn as_empty_surface(&self) -> Option<&EmptySurface> {
+        None
+    }
+    fn as_clipboard_viewer(&self) -> Option<&ClipboardViewerPanel> {
+        None
+    }
+    fn as_clipboard_viewer_mut(&mut self) -> Option<&mut ClipboardViewerPanel> {
+        None
+    }
+    fn as_image(&self) -> Option<&ImagePanel> {
+        None
+    }
+    fn as_image_mut(&mut self) -> Option<&mut ImagePanel> {
+        None
+    }
 
     /// Consume this surface and return the inner TerminalSurface if applicable.
     /// Used when converting a single terminal into a SurfaceGroup (split).
     /// Default: None (non-terminal surfaces cannot be taken).
-    fn take_terminal_surface(self: Box<Self>) -> Option<TerminalSurface> { None }
+    fn take_terminal_surface(self: Box<Self>) -> Option<TerminalSurface> {
+        None
+    }
 
     /// Display name for tab title. Default: type_name.
     fn display_name(&self) -> String {

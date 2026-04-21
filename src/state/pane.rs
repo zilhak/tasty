@@ -13,8 +13,17 @@ impl AppState {
         let rows = self.engine.default_rows;
 
         let sh = crate::engine_state::ShellConfig::from_settings(&self.engine.settings);
-        let new_pane =
-            crate::model::Pane::new_with_shell(new_pane_id, new_tab_id, new_surface_id, cols, rows, sh.shell_ref(), &sh.args_ref(), self.engine.make_waker(new_surface_id), cwd.as_deref())?;
+        let new_pane = crate::model::Pane::new_with_shell(
+            new_pane_id,
+            new_tab_id,
+            new_surface_id,
+            cols,
+            rows,
+            sh.shell_ref(),
+            &sh.args_ref(),
+            self.engine.make_waker(new_surface_id),
+            cwd.as_deref(),
+        )?;
 
         let ws = self.active_workspace_mut();
         let target_pane_id = ws.focused_pane;
@@ -57,7 +66,8 @@ impl AppState {
     ) -> anyhow::Result<(u32, u32)> {
         let (ws_idx, resolved_pane_id) = match target_pane_id {
             Some(pid) => {
-                let ws_idx = self.find_workspace_index_for_pane(pid)
+                let ws_idx = self
+                    .find_workspace_index_for_pane(pid)
                     .ok_or_else(|| anyhow::anyhow!("pane {} not found", pid))?;
                 (ws_idx, pid)
             }
@@ -87,16 +97,26 @@ impl AppState {
                 let rows = self.engine.default_rows;
                 let sh = crate::engine_state::ShellConfig::from_settings(&self.engine.settings);
                 crate::model::Pane::new_with_shell(
-                    new_pane_id, new_tab_id, new_surface_id, cols, rows,
-                    sh.shell_ref(), &sh.args_ref(), self.engine.make_waker(new_surface_id),
+                    new_pane_id,
+                    new_tab_id,
+                    new_surface_id,
+                    cols,
+                    rows,
+                    sh.shell_ref(),
+                    &sh.args_ref(),
+                    self.engine.make_waker(new_surface_id),
                     cwd.as_deref(),
                 )?
             }
             crate::model::SurfaceType::Markdown { file } => {
-                let surface: Box<dyn crate::model::Surface> = Box::new(
-                    crate::model::MarkdownPanel::new(new_surface_id, file),
-                );
-                crate::model::Pane::new_with_surface(new_pane_id, new_tab_id, "Markdown".to_string(), surface)
+                let surface: Box<dyn crate::model::Surface> =
+                    Box::new(crate::model::MarkdownPanel::new(new_surface_id, file));
+                crate::model::Pane::new_with_surface(
+                    new_pane_id,
+                    new_tab_id,
+                    "Markdown".to_string(),
+                    surface,
+                )
             }
             crate::model::SurfaceType::Explorer { path } => {
                 let root = path.unwrap_or_else(|| {
@@ -104,29 +124,46 @@ impl AppState {
                         .map(|d| d.home_dir().to_string_lossy().to_string())
                         .unwrap_or_else(|| ".".to_string())
                 });
-                let surface: Box<dyn crate::model::Surface> = Box::new(
-                    crate::model::ExplorerPanel::new(new_surface_id, root),
-                );
-                crate::model::Pane::new_with_surface(new_pane_id, new_tab_id, "Explorer".to_string(), surface)
+                let surface: Box<dyn crate::model::Surface> =
+                    Box::new(crate::model::ExplorerPanel::new(new_surface_id, root));
+                crate::model::Pane::new_with_surface(
+                    new_pane_id,
+                    new_tab_id,
+                    "Explorer".to_string(),
+                    surface,
+                )
             }
             crate::model::SurfaceType::Html { url } => {
-                let surface: Box<dyn crate::model::Surface> = Box::new(
-                    crate::model::HtmlPanel::new(new_surface_id, url),
-                );
-                crate::model::Pane::new_with_surface(new_pane_id, new_tab_id, "HTML".to_string(), surface)
+                let surface: Box<dyn crate::model::Surface> =
+                    Box::new(crate::model::HtmlPanel::new(new_surface_id, url));
+                crate::model::Pane::new_with_surface(
+                    new_pane_id,
+                    new_tab_id,
+                    "HTML".to_string(),
+                    surface,
+                )
             }
             crate::model::SurfaceType::Image { file } => {
                 let surface: Box<dyn crate::model::Surface> = match file {
                     Some(path) => Box::new(crate::model::ImagePanel::new(new_surface_id, path)),
                     None => Box::new(crate::model::ImagePanel::new_blank(new_surface_id)),
                 };
-                crate::model::Pane::new_with_surface(new_pane_id, new_tab_id, "Image".to_string(), surface)
+                crate::model::Pane::new_with_surface(
+                    new_pane_id,
+                    new_tab_id,
+                    "Image".to_string(),
+                    surface,
+                )
             }
             crate::model::SurfaceType::Empty => {
-                let surface: Box<dyn crate::model::Surface> = Box::new(
-                    crate::model::EmptySurface::new(new_surface_id),
-                );
-                crate::model::Pane::new_with_surface(new_pane_id, new_tab_id, "Empty".to_string(), surface)
+                let surface: Box<dyn crate::model::Surface> =
+                    Box::new(crate::model::EmptySurface::new(new_surface_id));
+                crate::model::Pane::new_with_surface(
+                    new_pane_id,
+                    new_tab_id,
+                    "Empty".to_string(),
+                    surface,
+                )
             }
         };
 
@@ -151,18 +188,22 @@ impl AppState {
 
         let new_surface: Box<dyn crate::model::Surface> = match surface_type {
             crate::model::SurfaceType::Terminal => {
-                let cwd = explicit_cwd.or_else(|| {
-                    match target_surface_id {
-                        Some(sid) => self.resolve_inherit_cwd_from_surface(sid),
-                        None => self.resolve_inherit_cwd(),
-                    }
+                let cwd = explicit_cwd.or_else(|| match target_surface_id {
+                    Some(sid) => self.resolve_inherit_cwd_from_surface(sid),
+                    None => self.resolve_inherit_cwd(),
                 });
                 let cols = self.engine.default_cols;
                 let rows = self.engine.default_rows;
                 let sh = crate::engine_state::ShellConfig::from_settings(&self.engine.settings);
                 let waker = self.engine.make_waker(new_surface_id);
                 let terminal = tasty_terminal::Terminal::new_with_shell_args_cwd(
-                    cols, rows, sh.shell_ref(), &sh.args_ref(), new_surface_id, waker, cwd.as_deref(),
+                    cols,
+                    rows,
+                    sh.shell_ref(),
+                    &sh.args_ref(),
+                    new_surface_id,
+                    waker,
+                    cwd.as_deref(),
                 )?;
                 Box::new(crate::model::TerminalSurface {
                     id: new_surface_id,
@@ -184,12 +225,10 @@ impl AppState {
             crate::model::SurfaceType::Html { url } => {
                 Box::new(crate::model::HtmlPanel::new(new_surface_id, url))
             }
-            crate::model::SurfaceType::Image { file } => {
-                match file {
-                    Some(path) => Box::new(crate::model::ImagePanel::new(new_surface_id, path)),
-                    None => Box::new(crate::model::ImagePanel::new_blank(new_surface_id)),
-                }
-            }
+            crate::model::SurfaceType::Image { file } => match file {
+                Some(path) => Box::new(crate::model::ImagePanel::new(new_surface_id, path)),
+                None => Box::new(crate::model::ImagePanel::new_blank(new_surface_id)),
+            },
             crate::model::SurfaceType::Empty => {
                 Box::new(crate::model::EmptySurface::new(new_surface_id))
             }
@@ -197,10 +236,13 @@ impl AppState {
 
         match target_surface_id {
             Some(sid) => {
-                let (ws_idx, pane_id) = self.find_workspace_index_for_surface(sid)
+                let (ws_idx, pane_id) = self
+                    .find_workspace_index_for_surface(sid)
                     .ok_or_else(|| anyhow::anyhow!("surface {} not found", sid))?;
                 let ws = &mut self.engine.workspaces[ws_idx];
-                let pane = ws.pane_layout_mut().find_pane_mut(pane_id)
+                let pane = ws
+                    .pane_layout_mut()
+                    .find_pane_mut(pane_id)
                     .ok_or_else(|| anyhow::anyhow!("pane {} not found", pane_id))?;
                 pane.split_surface_by_id_with_surface(sid, direction, new_surface)?;
             }
@@ -317,10 +359,8 @@ impl AppState {
             if tab.is_split() {
                 // Split tab: try closing within the layout (fails if it's the only surface)
                 surface_is_sole_in_tab = false;
-                can_close_surface_in_group = !matches!(
-                    tab.layout(),
-                    crate::model::SurfaceGroupLayout::Leaf(_)
-                );
+                can_close_surface_in_group =
+                    !matches!(tab.layout(), crate::model::SurfaceGroupLayout::Leaf(_));
             } else if tab.contains_surface(surface_id) {
                 // Single-surface tab: sole content
                 surface_is_sole_in_tab = true;
@@ -338,11 +378,14 @@ impl AppState {
                 let pane = ws.pane_layout().find_pane(pane_id).unwrap();
                 let tab = &pane.tabs[tab_idx];
                 if let Some(node) = tab.find_terminal_surface(surface_id) {
-                    let snapshot = crate::model::closed_item::ClosedSurface::from_surface_node(node);
-                    self.engine.closed_items.push(crate::model::ClosedItem::Surface {
-                        surface: snapshot,
-                        tab_name: tab.display_name().to_string(),
-                    });
+                    let snapshot =
+                        crate::model::closed_item::ClosedSurface::from_surface_node(node);
+                    self.engine
+                        .closed_items
+                        .push(crate::model::ClosedItem::Surface {
+                            surface: snapshot,
+                            tab_name: tab.display_name().to_string(),
+                        });
                 }
             }
             let ws = &mut self.engine.workspaces[ws_idx];
@@ -364,8 +407,11 @@ impl AppState {
             if pane.tabs.len() > 1 {
                 // Capture tab snapshot before removing (user actions only)
                 if save_snapshot {
-                    let snapshot = crate::model::closed_item::ClosedTab::from_tab(&pane.tabs[tab_idx]);
-                    self.engine.closed_items.push(crate::model::ClosedItem::Tab(snapshot));
+                    let snapshot =
+                        crate::model::closed_item::ClosedTab::from_tab(&pane.tabs[tab_idx]);
+                    self.engine
+                        .closed_items
+                        .push(crate::model::ClosedItem::Tab(snapshot));
                 }
 
                 pane.tabs.remove(tab_idx);
@@ -399,10 +445,14 @@ impl AppState {
         // Capture workspace snapshot before removing (user actions only)
         if save_snapshot {
             let ws = &self.engine.workspaces[ws_idx];
-            self.engine.closed_items.push(crate::model::ClosedItem::from_workspace(ws));
+            self.engine
+                .closed_items
+                .push(crate::model::ClosedItem::from_workspace(ws));
         }
         self.engine.workspaces.remove(ws_idx);
-        if self.active_workspace >= self.engine.workspaces.len() && !self.engine.workspaces.is_empty() {
+        if self.active_workspace >= self.engine.workspaces.len()
+            && !self.engine.workspaces.is_empty()
+        {
             self.active_workspace = self.engine.workspaces.len() - 1;
         }
         self.cleanup_surface(surface_id);
@@ -419,8 +469,17 @@ impl AppState {
         let rows = self.engine.default_rows;
 
         let sh = crate::engine_state::ShellConfig::from_settings(&self.engine.settings);
-        let new_pane =
-            crate::model::Pane::new_with_shell(new_pane_id, new_tab_id, new_surface_id, cols, rows, sh.shell_ref(), &sh.args_ref(), self.engine.make_waker(new_surface_id), None)?;
+        let new_pane = crate::model::Pane::new_with_shell(
+            new_pane_id,
+            new_tab_id,
+            new_surface_id,
+            cols,
+            rows,
+            sh.shell_ref(),
+            &sh.args_ref(),
+            self.engine.make_waker(new_surface_id),
+            None,
+        )?;
 
         let ws = self.active_workspace_mut();
         let target_pane_id = ws.focused_pane;
@@ -441,7 +500,10 @@ impl AppState {
 
         // Collect surface IDs for cleanup
         let mut surface_ids = Vec::new();
-        if let Some(pane) = self.engine.workspaces[ws_idx].pane_layout_mut().find_pane_mut(pane_id) {
+        if let Some(pane) = self.engine.workspaces[ws_idx]
+            .pane_layout_mut()
+            .find_pane_mut(pane_id)
+        {
             for tab in &mut pane.tabs {
                 tab.for_each_terminal_mut(&mut |sid, _| {
                     surface_ids.push(sid);

@@ -1,12 +1,12 @@
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc, Arc};
+use std::sync::{Arc, mpsc};
 use std::thread;
 use std::time::Duration;
 
-use anyhow::Result;
 use crate::settings::tasty_home;
+use anyhow::Result;
 
 use crate::ipc::protocol::{JsonRpcRequest, JsonRpcResponse};
 
@@ -33,7 +33,10 @@ impl IpcServer {
     /// Start the IPC server with an optional custom port file path and waker.
     /// The waker is called whenever an IPC command is enqueued, so the event
     /// loop can wake up and process it immediately.
-    pub fn start_with_port_file(port_file: Option<String>, waker: Option<IpcWaker>) -> Result<Self> {
+    pub fn start_with_port_file(
+        port_file: Option<String>,
+        waker: Option<IpcWaker>,
+    ) -> Result<Self> {
         let listener = TcpListener::bind("127.0.0.1:0")?;
         let port = listener.local_addr()?.port();
 
@@ -176,7 +179,10 @@ impl IpcServer {
                     tracing::debug!("IPC response sent for {:?}", peer);
                 }
                 Err(e) => {
-                    tracing::warn!("IPC resp_rx.recv failed: {} (response_tx dropped without sending)", e);
+                    tracing::warn!(
+                        "IPC resp_rx.recv failed: {} (response_tx dropped without sending)",
+                        e
+                    );
                     break;
                 }
             }
@@ -226,11 +232,12 @@ impl IpcServer {
             None => Self::port_file_path()
                 .ok_or_else(|| anyhow::anyhow!("Could not determine config directory"))?,
         };
-        let contents = std::fs::read_to_string(&path)
-            .map_err(|_| anyhow::anyhow!(
+        let contents = std::fs::read_to_string(&path).map_err(|_| {
+            anyhow::anyhow!(
                 "No running tasty instance found (port file not found at {})",
                 path.display()
-            ))?;
+            )
+        })?;
         contents
             .trim()
             .parse::<u16>()

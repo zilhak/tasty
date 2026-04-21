@@ -13,9 +13,12 @@ pub(crate) fn draw_notification_content_inner(ui: &mut egui::Ui, state: &mut App
     ui.horizontal(|ui| {
         let unread = state.engine.notifications.unread_count();
         ui.label(
-            egui::RichText::new(t_fmt("notification_panel.unread_count", &unread.to_string()))
-                .small()
-                .color(th.subtext0),
+            egui::RichText::new(t_fmt(
+                "notification_panel.unread_count",
+                &unread.to_string(),
+            ))
+            .small()
+            .color(th.subtext0),
         );
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if ui.small_button(t("button.mark_all_read")).clicked() {
@@ -41,7 +44,10 @@ pub(crate) fn draw_notification_content_inner(ui: &mut egui::Ui, state: &mut App
             }
 
             let now = Instant::now();
-            let entries: Vec<_> = state.engine.notifications.all()
+            let entries: Vec<_> = state
+                .engine
+                .notifications
+                .all()
                 .rev()
                 .map(|n| {
                     let elapsed = now.duration_since(n.timestamp);
@@ -54,7 +60,8 @@ pub(crate) fn draw_notification_content_inner(ui: &mut egui::Ui, state: &mut App
                     };
 
                     let ws_name = state
-                        .engine.workspaces
+                        .engine
+                        .workspaces
                         .iter()
                         .find(|ws| ws.id == n.source_workspace)
                         .map(|ws| ws.name.as_str())
@@ -89,20 +96,14 @@ pub(crate) fn draw_notification_content_inner(ui: &mut egui::Ui, state: &mut App
                     .show(ui, |ui| {
                         ui.horizontal(|ui| {
                             if !*read {
-                                ui.label(
-                                    egui::RichText::new("*")
-                                        .color(th.blue)
-                                        .strong(),
-                                );
+                                ui.label(egui::RichText::new("*").color(th.blue).strong());
                             }
                             ui.label(egui::RichText::new(title).strong().small());
                             ui.with_layout(
                                 egui::Layout::right_to_left(egui::Align::Center),
                                 |ui| {
                                     ui.label(
-                                        egui::RichText::new(time_str)
-                                            .small()
-                                            .color(th.subtext0),
+                                        egui::RichText::new(time_str).small().color(th.subtext0),
                                     );
                                 },
                             );
@@ -113,11 +114,7 @@ pub(crate) fn draw_notification_content_inner(ui: &mut egui::Ui, state: &mut App
                         }
 
                         ui.horizontal(|ui| {
-                            ui.label(
-                                egui::RichText::new(ws_name)
-                                    .small()
-                                    .color(th.blue),
-                            );
+                            ui.label(egui::RichText::new(ws_name).small().color(th.blue));
 
                             if ui
                                 .small_button(t("button.jump_to_workspace"))
@@ -171,13 +168,17 @@ pub fn draw_popups(
     let mut popups = std::mem::replace(&mut state.popups, crate::ui::PopupManager::new());
 
     let mut dispatch_closed: Vec<&'static str> = Vec::new();
-    let draw_result = popups.draw(ctx, &mut |id, ui| {
-        if let Some(def) = crate::ui::popup_defs::find(id) {
-            if matches!((def.draw_fn)(ui, state), crate::ui::PopupAction::Close) {
-                dispatch_closed.push(def.id);
+    let draw_result = popups.draw(
+        ctx,
+        &mut |id, ui| {
+            if let Some(def) = crate::ui::popup_defs::find(id) {
+                if matches!((def.draw_fn)(ui, state), crate::ui::PopupAction::Close) {
+                    dispatch_closed.push(def.id);
+                }
             }
-        }
-    }, Some(&draw_ctx));
+        },
+        Some(&draw_ctx),
+    );
 
     // Update input layer state: popup hover blocks mouse events to lower layers
     state.popup_hovered = draw_result.hovered;
@@ -219,40 +220,33 @@ fn build_layout_context(
     let pane_rects_logical: Vec<(u32, egui::Rect)> = pane_rects
         .iter()
         .map(|(id, r)| {
-            (*id, egui::Rect::from_min_size(
-                egui::pos2(r.x.value() / scale_factor, r.y.value() / scale_factor),
-                egui::vec2(r.width.value() / scale_factor, r.height.value() / scale_factor),
-            ))
+            (
+                *id,
+                egui::Rect::from_min_size(
+                    egui::pos2(r.x.value() / scale_factor, r.y.value() / scale_factor),
+                    egui::vec2(
+                        r.width.value() / scale_factor,
+                        r.height.value() / scale_factor,
+                    ),
+                ),
+            )
         })
         .collect();
 
-    // Compute surface rects from render_regions
+    // Compute surface rects using all_surface_regions (terminal + non-terminal)
     let mut surface_rects = Vec::new();
-    let regions = state.render_regions(terminal_rect);
-    for (pane_id, pane_rect, terminal_regions) in &regions {
-        if terminal_regions.is_empty() {
-            // Non-terminal panel (Markdown, Explorer, Html, Empty):
-            // the surface fills the pane content area (pane rect minus tab bar)
-            let ws = state.active_workspace();
-            if let Some(pane) = ws.pane_layout().find_pane(*pane_id) {
-                if let Some(tab) = pane.tabs.get(pane.active_tab) {
-                    if let Some(sid) = tab.focused_surface_id() {
-                        let tab_bar_h = state.tab_bar_height;
-                        let content_rect = egui::Rect::from_min_size(
-                            egui::pos2(pane_rect.x.value() / scale_factor, (pane_rect.y + tab_bar_h).value() / scale_factor),
-                            egui::vec2(pane_rect.width.value() / scale_factor, ((pane_rect.height - tab_bar_h).max(crate::model::length::PhysicalPx(1.0))).value() / scale_factor),
-                        );
-                        surface_rects.push((sid, content_rect));
-                    }
-                }
-            }
-        } else {
-            for (sid, _term, rect) in terminal_regions {
-                surface_rects.push((*sid, egui::Rect::from_min_size(
+    for (_pane_id, _pane_rect, regions) in state.all_surface_regions(terminal_rect) {
+        for (sid, rect) in regions {
+            surface_rects.push((
+                sid,
+                egui::Rect::from_min_size(
                     egui::pos2(rect.x.value() / scale_factor, rect.y.value() / scale_factor),
-                    egui::vec2(rect.width.value() / scale_factor, rect.height.value() / scale_factor),
-                )));
-            }
+                    egui::vec2(
+                        rect.width.value() / scale_factor,
+                        rect.height.value() / scale_factor,
+                    ),
+                ),
+            ));
         }
     }
 

@@ -1,5 +1,5 @@
 pub mod length;
-pub use length::{PhysicalPx, LogicalPx};
+pub use length::{LogicalPx, PhysicalPx};
 
 pub type WorkspaceId = u32;
 pub type PaneId = u32;
@@ -38,7 +38,12 @@ impl Rect {
         self.split_with_gap(direction, ratio, PANE_BORDER_WIDTH)
     }
 
-    pub fn split_with_gap(self, direction: SplitDirection, ratio: f32, gap: PhysicalPx) -> (Rect, Rect) {
+    pub fn split_with_gap(
+        self,
+        direction: SplitDirection,
+        ratio: f32,
+        gap: PhysicalPx,
+    ) -> (Rect, Rect) {
         match direction {
             SplitDirection::Vertical => {
                 let usable = (self.width - gap).max(PhysicalPx(0.0));
@@ -117,8 +122,15 @@ pub struct DividerInfo {
 /// Compute the terminal area rectangle (everything right of the sidebar) in physical pixels.
 ///
 /// This is the single canonical implementation. Both `main.rs` and `gpu.rs` should use this.
-pub fn compute_terminal_rect(surface_width: PhysicalPx, surface_height: PhysicalPx, sidebar_width: LogicalPx, scale_factor: f32) -> Rect {
-    let sw = sidebar_width.to_physical(scale_factor).min(surface_width - PhysicalPx(1.0));
+pub fn compute_terminal_rect(
+    surface_width: PhysicalPx,
+    surface_height: PhysicalPx,
+    sidebar_width: LogicalPx,
+    scale_factor: f32,
+) -> Rect {
+    let sw = sidebar_width
+        .to_physical(scale_factor)
+        .min(surface_width - PhysicalPx(1.0));
     Rect {
         x: sw,
         y: PhysicalPx(0.0),
@@ -127,34 +139,34 @@ pub fn compute_terminal_rect(surface_width: PhysicalPx, surface_height: Physical
     }
 }
 
-mod workspace;
+mod clipboard_viewer_panel;
+pub mod closed_item;
+mod empty_surface;
+mod explorer_panel;
+mod html_panel;
+mod image_panel;
+mod markdown_panel;
 mod pane;
 mod pane_tree;
-mod tab;
 mod surface_group;
 mod surface_layout;
 mod surface_trait;
-mod markdown_panel;
-mod explorer_panel;
-mod html_panel;
-mod empty_surface;
-mod clipboard_viewer_panel;
-mod image_panel;
-pub mod closed_item;
+mod tab;
+mod workspace;
 
-pub use workspace::*;
-pub use pane::*;
-pub use pane_tree::*;
-pub use tab::Tab;
-pub use surface_trait::Surface;
-pub use surface_group::*;
-pub use markdown_panel::*;
+pub use clipboard_viewer_panel::*;
+pub use closed_item::{ClosedItem, ClosedItemStore};
+pub use empty_surface::*;
 pub use explorer_panel::*;
 pub use html_panel::*;
-pub use empty_surface::*;
-pub use clipboard_viewer_panel::*;
 pub use image_panel::*;
-pub use closed_item::{ClosedItem, ClosedItemStore};
+pub use markdown_panel::*;
+pub use pane::*;
+pub use pane_tree::*;
+pub use surface_group::*;
+pub use surface_trait::Surface;
+pub use tab::Tab;
+pub use workspace::*;
 
 #[cfg(test)]
 mod tests;

@@ -30,7 +30,12 @@ impl FontConfig {
     }
 
     /// Create a new FontConfig with all options.
-    pub fn with_options(font_size: f32, font_family: &str, custom_font_path: &str, line_height_mult: f32) -> Self {
+    pub fn with_options(
+        font_size: f32,
+        font_family: &str,
+        custom_font_path: &str,
+        line_height_mult: f32,
+    ) -> Self {
         let mut font_system = FontSystem::new();
         let swash_cache = SwashCache::new();
 
@@ -44,9 +49,7 @@ impl FontConfig {
             }
         }
 
-        let family = if font_family.is_empty()
-            || font_family.eq_ignore_ascii_case("monospace")
-        {
+        let family = if font_family.is_empty() || font_family.eq_ignore_ascii_case("monospace") {
             FamilyOwned::Monospace
         } else {
             FamilyOwned::Name(font_family.to_string().into())
@@ -92,7 +95,12 @@ impl FontConfig {
         families.into_iter().collect()
     }
 
-    fn measure_cell(font_system: &mut FontSystem, font_size: f32, family: &FamilyOwned, line_height_mult: f32) -> FontMetrics {
+    fn measure_cell(
+        font_system: &mut FontSystem,
+        font_size: f32,
+        family: &FamilyOwned,
+        line_height_mult: f32,
+    ) -> FontMetrics {
         let line_height = (font_size * line_height_mult).ceil();
         let cosmic_metrics = Metrics::new(font_size, line_height);
 
@@ -403,9 +411,7 @@ impl GlyphAtlas {
                 image
                     .data
                     .chunks_exact(3)
-                    .map(|pixel| {
-                        ((pixel[0] as u16 + pixel[1] as u16 + pixel[2] as u16) / 3) as u8
-                    })
+                    .map(|pixel| ((pixel[0] as u16 + pixel[1] as u16 + pixel[2] as u16) / 3) as u8)
                     .collect()
             }
         };
@@ -420,7 +426,10 @@ impl GlyphAtlas {
 
         if self.shelf_y + glyph_height > self.atlas_size {
             // Atlas full - reset and rebuild. Existing glyphs will be re-rasterized on demand.
-            tracing::warn!("glyph atlas full, resetting ({} cached glyphs cleared)", self.cache.len());
+            tracing::warn!(
+                "glyph atlas full, resetting ({} cached glyphs cleared)",
+                self.cache.len()
+            );
             self.cache.clear();
             self.shelf_x = 0;
             self.shelf_y = 0;
@@ -560,23 +569,59 @@ fn draw_block_element(cp: u32, bitmap: &mut [u8], w: u32, h: u32) -> bool {
         // U+2580  ▀  Upper half block
         0x2580 => fill_rect(bitmap, w, h, 0, 0, w, h / 2, 255),
         // U+2581–U+2587  Lower 1/8 … 7/8 blocks
-        0x2581 => { let t = h / 8; fill_rect(bitmap, w, h, 0, h - t.max(1), w, h, 255); }
-        0x2582 => { let t = h / 4; fill_rect(bitmap, w, h, 0, h - t.max(1), w, h, 255); }
-        0x2583 => { let t = h * 3 / 8; fill_rect(bitmap, w, h, 0, h - t.max(1), w, h, 255); }
+        0x2581 => {
+            let t = h / 8;
+            fill_rect(bitmap, w, h, 0, h - t.max(1), w, h, 255);
+        }
+        0x2582 => {
+            let t = h / 4;
+            fill_rect(bitmap, w, h, 0, h - t.max(1), w, h, 255);
+        }
+        0x2583 => {
+            let t = h * 3 / 8;
+            fill_rect(bitmap, w, h, 0, h - t.max(1), w, h, 255);
+        }
         0x2584 => fill_rect(bitmap, w, h, 0, h / 2, w, h, 255),
-        0x2585 => { let t = h * 5 / 8; fill_rect(bitmap, w, h, 0, h - t.max(1), w, h, 255); }
-        0x2586 => { let t = h * 3 / 4; fill_rect(bitmap, w, h, 0, h - t.max(1), w, h, 255); }
-        0x2587 => { let t = h * 7 / 8; fill_rect(bitmap, w, h, 0, h - t.max(1), w, h, 255); }
+        0x2585 => {
+            let t = h * 5 / 8;
+            fill_rect(bitmap, w, h, 0, h - t.max(1), w, h, 255);
+        }
+        0x2586 => {
+            let t = h * 3 / 4;
+            fill_rect(bitmap, w, h, 0, h - t.max(1), w, h, 255);
+        }
+        0x2587 => {
+            let t = h * 7 / 8;
+            fill_rect(bitmap, w, h, 0, h - t.max(1), w, h, 255);
+        }
         // U+2588  █  Full block
         0x2588 => fill_rect(bitmap, w, h, 0, 0, w, h, 255),
         // U+2589–U+258F  Left 7/8 … 1/8 blocks
-        0x2589 => { let t = w * 7 / 8; fill_rect(bitmap, w, h, 0, 0, t.max(1), h, 255); }
-        0x258A => { let t = w * 3 / 4; fill_rect(bitmap, w, h, 0, 0, t.max(1), h, 255); }
-        0x258B => { let t = w * 5 / 8; fill_rect(bitmap, w, h, 0, 0, t.max(1), h, 255); }
+        0x2589 => {
+            let t = w * 7 / 8;
+            fill_rect(bitmap, w, h, 0, 0, t.max(1), h, 255);
+        }
+        0x258A => {
+            let t = w * 3 / 4;
+            fill_rect(bitmap, w, h, 0, 0, t.max(1), h, 255);
+        }
+        0x258B => {
+            let t = w * 5 / 8;
+            fill_rect(bitmap, w, h, 0, 0, t.max(1), h, 255);
+        }
         0x258C => fill_rect(bitmap, w, h, 0, 0, w / 2, h, 255),
-        0x258D => { let t = w * 3 / 8; fill_rect(bitmap, w, h, 0, 0, t.max(1), h, 255); }
-        0x258E => { let t = w / 4; fill_rect(bitmap, w, h, 0, 0, t.max(1), h, 255); }
-        0x258F => { let t = w / 8; fill_rect(bitmap, w, h, 0, 0, t.max(1), h, 255); }
+        0x258D => {
+            let t = w * 3 / 8;
+            fill_rect(bitmap, w, h, 0, 0, t.max(1), h, 255);
+        }
+        0x258E => {
+            let t = w / 4;
+            fill_rect(bitmap, w, h, 0, 0, t.max(1), h, 255);
+        }
+        0x258F => {
+            let t = w / 8;
+            fill_rect(bitmap, w, h, 0, 0, t.max(1), h, 255);
+        }
         // U+2590  ▐  Right half block
         0x2590 => fill_rect(bitmap, w, h, w / 2, 0, w, h, 255),
         // U+2591–U+2593  Shade characters
@@ -584,38 +629,50 @@ fn draw_block_element(cp: u32, bitmap: &mut [u8], w: u32, h: u32) -> bool {
         0x2592 => fill_shade(bitmap, w, h, 128),
         0x2593 => fill_shade(bitmap, w, h, 191),
         // U+2594  ▔  Upper one eighth block
-        0x2594 => { let t = (h / 8).max(1); fill_rect(bitmap, w, h, 0, 0, w, t, 255); }
+        0x2594 => {
+            let t = (h / 8).max(1);
+            fill_rect(bitmap, w, h, 0, 0, w, t, 255);
+        }
         // U+2595  ▕  Right one eighth block
-        0x2595 => { let t = (w / 8).max(1); fill_rect(bitmap, w, h, w - t, 0, w, h, 255); }
+        0x2595 => {
+            let t = (w / 8).max(1);
+            fill_rect(bitmap, w, h, w - t, 0, w, h, 255);
+        }
         // U+2596–U+259F  Quadrants
-        0x2596 => fill_rect(bitmap, w, h, 0, h / 2, w / 2, h, 255),           // lower left
-        0x2597 => fill_rect(bitmap, w, h, w / 2, h / 2, w, h, 255),           // lower right
-        0x2598 => fill_rect(bitmap, w, h, 0, 0, w / 2, h / 2, 255),           // upper left
-        0x2599 => {                                                              // UL + LL + LR
+        0x2596 => fill_rect(bitmap, w, h, 0, h / 2, w / 2, h, 255), // lower left
+        0x2597 => fill_rect(bitmap, w, h, w / 2, h / 2, w, h, 255), // lower right
+        0x2598 => fill_rect(bitmap, w, h, 0, 0, w / 2, h / 2, 255), // upper left
+        0x2599 => {
+            // UL + LL + LR
             fill_rect(bitmap, w, h, 0, 0, w / 2, h / 2, 255);
             fill_rect(bitmap, w, h, 0, h / 2, w / 2, h, 255);
             fill_rect(bitmap, w, h, w / 2, h / 2, w, h, 255);
         }
-        0x259A => {                                                              // UL + LR
+        0x259A => {
+            // UL + LR
             fill_rect(bitmap, w, h, 0, 0, w / 2, h / 2, 255);
             fill_rect(bitmap, w, h, w / 2, h / 2, w, h, 255);
         }
-        0x259B => {                                                              // UL + UR + LL
+        0x259B => {
+            // UL + UR + LL
             fill_rect(bitmap, w, h, 0, 0, w / 2, h / 2, 255);
             fill_rect(bitmap, w, h, w / 2, 0, w, h / 2, 255);
             fill_rect(bitmap, w, h, 0, h / 2, w / 2, h, 255);
         }
-        0x259C => {                                                              // UL + UR + LR
+        0x259C => {
+            // UL + UR + LR
             fill_rect(bitmap, w, h, 0, 0, w / 2, h / 2, 255);
             fill_rect(bitmap, w, h, w / 2, 0, w, h / 2, 255);
             fill_rect(bitmap, w, h, w / 2, h / 2, w, h, 255);
         }
-        0x259D => fill_rect(bitmap, w, h, w / 2, 0, w, h / 2, 255),           // upper right
-        0x259E => {                                                              // UR + LL
+        0x259D => fill_rect(bitmap, w, h, w / 2, 0, w, h / 2, 255), // upper right
+        0x259E => {
+            // UR + LL
             fill_rect(bitmap, w, h, w / 2, 0, w, h / 2, 255);
             fill_rect(bitmap, w, h, 0, h / 2, w / 2, h, 255);
         }
-        0x259F => {                                                              // UR + LL + LR
+        0x259F => {
+            // UR + LL + LR
             fill_rect(bitmap, w, h, w / 2, 0, w, h / 2, 255);
             fill_rect(bitmap, w, h, 0, h / 2, w / 2, h, 255);
             fill_rect(bitmap, w, h, w / 2, h / 2, w, h, 255);
@@ -650,7 +707,12 @@ struct BoxDesc {
 
 impl BoxDesc {
     const fn new(left: Lw, right: Lw, up: Lw, down: Lw) -> Self {
-        Self { left, right, up, down }
+        Self {
+            left,
+            right,
+            up,
+            down,
+        }
     }
 }
 
@@ -659,144 +721,144 @@ fn box_desc(cp: u32) -> Option<BoxDesc> {
     use Lw::*;
     let d = match cp {
         // ── Single horizontal / vertical ──
-        0x2500 => BoxDesc::new(Light, Light, None,  None),   // ─
-        0x2501 => BoxDesc::new(Heavy, Heavy, None,  None),   // ━
-        0x2502 => BoxDesc::new(None,  None,  Light, Light),  // │
-        0x2503 => BoxDesc::new(None,  None,  Heavy, Heavy),  // ┃
+        0x2500 => BoxDesc::new(Light, Light, None, None), // ─
+        0x2501 => BoxDesc::new(Heavy, Heavy, None, None), // ━
+        0x2502 => BoxDesc::new(None, None, Light, Light), // │
+        0x2503 => BoxDesc::new(None, None, Heavy, Heavy), // ┃
 
         // ── Dashed variants (rendered as their non-dashed equivalents) ──
-        0x2504 => BoxDesc::new(Light, Light, None,  None),   // ┄ (triple dash horizontal light)
-        0x2505 => BoxDesc::new(Heavy, Heavy, None,  None),   // ┅ (triple dash horizontal heavy)
-        0x2506 => BoxDesc::new(None,  None,  Light, Light),  // ┆ (triple dash vertical light)
-        0x2507 => BoxDesc::new(None,  None,  Heavy, Heavy),  // ┇ (triple dash vertical heavy)
-        0x2508 => BoxDesc::new(Light, Light, None,  None),   // ┈ (quadruple dash horizontal light)
-        0x2509 => BoxDesc::new(Heavy, Heavy, None,  None),   // ┉ (quadruple dash horizontal heavy)
-        0x250A => BoxDesc::new(None,  None,  Light, Light),  // ┊ (quadruple dash vertical light)
-        0x250B => BoxDesc::new(None,  None,  Heavy, Heavy),  // ┋ (quadruple dash vertical heavy)
+        0x2504 => BoxDesc::new(Light, Light, None, None), // ┄ (triple dash horizontal light)
+        0x2505 => BoxDesc::new(Heavy, Heavy, None, None), // ┅ (triple dash horizontal heavy)
+        0x2506 => BoxDesc::new(None, None, Light, Light), // ┆ (triple dash vertical light)
+        0x2507 => BoxDesc::new(None, None, Heavy, Heavy), // ┇ (triple dash vertical heavy)
+        0x2508 => BoxDesc::new(Light, Light, None, None), // ┈ (quadruple dash horizontal light)
+        0x2509 => BoxDesc::new(Heavy, Heavy, None, None), // ┉ (quadruple dash horizontal heavy)
+        0x250A => BoxDesc::new(None, None, Light, Light), // ┊ (quadruple dash vertical light)
+        0x250B => BoxDesc::new(None, None, Heavy, Heavy), // ┋ (quadruple dash vertical heavy)
 
         // ── Corners ──
-        0x250C => BoxDesc::new(None,  Light, None,  Light),  // ┌
-        0x250D => BoxDesc::new(None,  Heavy, None,  Light),  // ┍
-        0x250E => BoxDesc::new(None,  Light, None,  Heavy),  // ┎
-        0x250F => BoxDesc::new(None,  Heavy, None,  Heavy),  // ┏
+        0x250C => BoxDesc::new(None, Light, None, Light), // ┌
+        0x250D => BoxDesc::new(None, Heavy, None, Light), // ┍
+        0x250E => BoxDesc::new(None, Light, None, Heavy), // ┎
+        0x250F => BoxDesc::new(None, Heavy, None, Heavy), // ┏
 
-        0x2510 => BoxDesc::new(Light, None,  None,  Light),  // ┐
-        0x2511 => BoxDesc::new(Heavy, None,  None,  Light),  // ┑
-        0x2512 => BoxDesc::new(Light, None,  None,  Heavy),  // ┒
-        0x2513 => BoxDesc::new(Heavy, None,  None,  Heavy),  // ┓
+        0x2510 => BoxDesc::new(Light, None, None, Light), // ┐
+        0x2511 => BoxDesc::new(Heavy, None, None, Light), // ┑
+        0x2512 => BoxDesc::new(Light, None, None, Heavy), // ┒
+        0x2513 => BoxDesc::new(Heavy, None, None, Heavy), // ┓
 
-        0x2514 => BoxDesc::new(None,  Light, Light, None),   // └
-        0x2515 => BoxDesc::new(None,  Heavy, Light, None),   // ┕
-        0x2516 => BoxDesc::new(None,  Light, Heavy, None),   // ┖
-        0x2517 => BoxDesc::new(None,  Heavy, Heavy, None),   // ┗
+        0x2514 => BoxDesc::new(None, Light, Light, None), // └
+        0x2515 => BoxDesc::new(None, Heavy, Light, None), // ┕
+        0x2516 => BoxDesc::new(None, Light, Heavy, None), // ┖
+        0x2517 => BoxDesc::new(None, Heavy, Heavy, None), // ┗
 
-        0x2518 => BoxDesc::new(Light, None,  Light, None),   // ┘
-        0x2519 => BoxDesc::new(Heavy, None,  Light, None),   // ┙
-        0x251A => BoxDesc::new(Light, None,  Heavy, None),   // ┚
-        0x251B => BoxDesc::new(Heavy, None,  Heavy, None),   // ┛
+        0x2518 => BoxDesc::new(Light, None, Light, None), // ┘
+        0x2519 => BoxDesc::new(Heavy, None, Light, None), // ┙
+        0x251A => BoxDesc::new(Light, None, Heavy, None), // ┚
+        0x251B => BoxDesc::new(Heavy, None, Heavy, None), // ┛
 
         // ── T-junctions ──
-        0x251C => BoxDesc::new(None,  Light, Light, Light),  // ├
-        0x251D => BoxDesc::new(None,  Heavy, Light, Light),  // ┝
-        0x251E => BoxDesc::new(None,  Light, Heavy, Light),  // ┞
-        0x251F => BoxDesc::new(None,  Light, Light, Heavy),  // ┟
-        0x2520 => BoxDesc::new(None,  Light, Heavy, Heavy),  // ┠
-        0x2521 => BoxDesc::new(None,  Heavy, Heavy, Light),  // ┡
-        0x2522 => BoxDesc::new(None,  Heavy, Light, Heavy),  // ┢
-        0x2523 => BoxDesc::new(None,  Heavy, Heavy, Heavy),  // ┣
+        0x251C => BoxDesc::new(None, Light, Light, Light), // ├
+        0x251D => BoxDesc::new(None, Heavy, Light, Light), // ┝
+        0x251E => BoxDesc::new(None, Light, Heavy, Light), // ┞
+        0x251F => BoxDesc::new(None, Light, Light, Heavy), // ┟
+        0x2520 => BoxDesc::new(None, Light, Heavy, Heavy), // ┠
+        0x2521 => BoxDesc::new(None, Heavy, Heavy, Light), // ┡
+        0x2522 => BoxDesc::new(None, Heavy, Light, Heavy), // ┢
+        0x2523 => BoxDesc::new(None, Heavy, Heavy, Heavy), // ┣
 
-        0x2524 => BoxDesc::new(Light, None,  Light, Light),  // ┤
-        0x2525 => BoxDesc::new(Heavy, None,  Light, Light),  // ┥
-        0x2526 => BoxDesc::new(Light, None,  Heavy, Light),  // ┦
-        0x2527 => BoxDesc::new(Light, None,  Light, Heavy),  // ┧
-        0x2528 => BoxDesc::new(Light, None,  Heavy, Heavy),  // ┨
-        0x2529 => BoxDesc::new(Heavy, None,  Heavy, Light),  // ┩
-        0x252A => BoxDesc::new(Heavy, None,  Light, Heavy),  // ┪
-        0x252B => BoxDesc::new(Heavy, None,  Heavy, Heavy),  // ┫
+        0x2524 => BoxDesc::new(Light, None, Light, Light), // ┤
+        0x2525 => BoxDesc::new(Heavy, None, Light, Light), // ┥
+        0x2526 => BoxDesc::new(Light, None, Heavy, Light), // ┦
+        0x2527 => BoxDesc::new(Light, None, Light, Heavy), // ┧
+        0x2528 => BoxDesc::new(Light, None, Heavy, Heavy), // ┨
+        0x2529 => BoxDesc::new(Heavy, None, Heavy, Light), // ┩
+        0x252A => BoxDesc::new(Heavy, None, Light, Heavy), // ┪
+        0x252B => BoxDesc::new(Heavy, None, Heavy, Heavy), // ┫
 
-        0x252C => BoxDesc::new(Light, Light, None,  Light),  // ┬
-        0x252D => BoxDesc::new(Heavy, Light, None,  Light),  // ┭
-        0x252E => BoxDesc::new(Light, Heavy, None,  Light),  // ┮
-        0x252F => BoxDesc::new(Heavy, Heavy, None,  Light),  // ┯
-        0x2530 => BoxDesc::new(Light, Light, None,  Heavy),  // ┰
-        0x2531 => BoxDesc::new(Heavy, Light, None,  Heavy),  // ┱
-        0x2532 => BoxDesc::new(Light, Heavy, None,  Heavy),  // ┲
-        0x2533 => BoxDesc::new(Heavy, Heavy, None,  Heavy),  // ┳
+        0x252C => BoxDesc::new(Light, Light, None, Light), // ┬
+        0x252D => BoxDesc::new(Heavy, Light, None, Light), // ┭
+        0x252E => BoxDesc::new(Light, Heavy, None, Light), // ┮
+        0x252F => BoxDesc::new(Heavy, Heavy, None, Light), // ┯
+        0x2530 => BoxDesc::new(Light, Light, None, Heavy), // ┰
+        0x2531 => BoxDesc::new(Heavy, Light, None, Heavy), // ┱
+        0x2532 => BoxDesc::new(Light, Heavy, None, Heavy), // ┲
+        0x2533 => BoxDesc::new(Heavy, Heavy, None, Heavy), // ┳
 
-        0x2534 => BoxDesc::new(Light, Light, Light, None),   // ┴
-        0x2535 => BoxDesc::new(Heavy, Light, Light, None),   // ┵
-        0x2536 => BoxDesc::new(Light, Heavy, Light, None),   // ┶
-        0x2537 => BoxDesc::new(Heavy, Heavy, Light, None),   // ┷
-        0x2538 => BoxDesc::new(Light, Light, Heavy, None),   // ┸
-        0x2539 => BoxDesc::new(Heavy, Light, Heavy, None),   // ┹
-        0x253A => BoxDesc::new(Light, Heavy, Heavy, None),   // ┺
-        0x253B => BoxDesc::new(Heavy, Heavy, Heavy, None),   // ┻
+        0x2534 => BoxDesc::new(Light, Light, Light, None), // ┴
+        0x2535 => BoxDesc::new(Heavy, Light, Light, None), // ┵
+        0x2536 => BoxDesc::new(Light, Heavy, Light, None), // ┶
+        0x2537 => BoxDesc::new(Heavy, Heavy, Light, None), // ┷
+        0x2538 => BoxDesc::new(Light, Light, Heavy, None), // ┸
+        0x2539 => BoxDesc::new(Heavy, Light, Heavy, None), // ┹
+        0x253A => BoxDesc::new(Light, Heavy, Heavy, None), // ┺
+        0x253B => BoxDesc::new(Heavy, Heavy, Heavy, None), // ┻
 
         // ── Crosses ──
-        0x253C => BoxDesc::new(Light, Light, Light, Light),  // ┼
-        0x253D => BoxDesc::new(Heavy, Light, Light, Light),  // ┽
-        0x253E => BoxDesc::new(Light, Heavy, Light, Light),  // ┾
-        0x253F => BoxDesc::new(Heavy, Heavy, Light, Light),  // ┿
-        0x2540 => BoxDesc::new(Light, Light, Heavy, Light),  // ╀
-        0x2541 => BoxDesc::new(Light, Light, Light, Heavy),  // ╁
-        0x2542 => BoxDesc::new(Light, Light, Heavy, Heavy),  // ╂
-        0x2543 => BoxDesc::new(Heavy, Light, Heavy, Light),  // ╃
-        0x2544 => BoxDesc::new(Light, Heavy, Heavy, Light),  // ╄
-        0x2545 => BoxDesc::new(Heavy, Light, Light, Heavy),  // ╅
-        0x2546 => BoxDesc::new(Light, Heavy, Light, Heavy),  // ╆
-        0x2547 => BoxDesc::new(Heavy, Heavy, Heavy, Light),  // ╇
-        0x2548 => BoxDesc::new(Heavy, Heavy, Light, Heavy),  // ╈
-        0x2549 => BoxDesc::new(Heavy, Light, Heavy, Heavy),  // ╉
-        0x254A => BoxDesc::new(Light, Heavy, Heavy, Heavy),  // ╊
-        0x254B => BoxDesc::new(Heavy, Heavy, Heavy, Heavy),  // ╋
+        0x253C => BoxDesc::new(Light, Light, Light, Light), // ┼
+        0x253D => BoxDesc::new(Heavy, Light, Light, Light), // ┽
+        0x253E => BoxDesc::new(Light, Heavy, Light, Light), // ┾
+        0x253F => BoxDesc::new(Heavy, Heavy, Light, Light), // ┿
+        0x2540 => BoxDesc::new(Light, Light, Heavy, Light), // ╀
+        0x2541 => BoxDesc::new(Light, Light, Light, Heavy), // ╁
+        0x2542 => BoxDesc::new(Light, Light, Heavy, Heavy), // ╂
+        0x2543 => BoxDesc::new(Heavy, Light, Heavy, Light), // ╃
+        0x2544 => BoxDesc::new(Light, Heavy, Heavy, Light), // ╄
+        0x2545 => BoxDesc::new(Heavy, Light, Light, Heavy), // ╅
+        0x2546 => BoxDesc::new(Light, Heavy, Light, Heavy), // ╆
+        0x2547 => BoxDesc::new(Heavy, Heavy, Heavy, Light), // ╇
+        0x2548 => BoxDesc::new(Heavy, Heavy, Light, Heavy), // ╈
+        0x2549 => BoxDesc::new(Heavy, Light, Heavy, Heavy), // ╉
+        0x254A => BoxDesc::new(Light, Heavy, Heavy, Heavy), // ╊
+        0x254B => BoxDesc::new(Heavy, Heavy, Heavy, Heavy), // ╋
 
         // ── More dashed variants (treat as non-dashed) ──
-        0x254C => BoxDesc::new(Light, Light, None,  None),   // ╌
-        0x254D => BoxDesc::new(Heavy, Heavy, None,  None),   // ╍
-        0x254E => BoxDesc::new(None,  None,  Light, Light),  // ╎
-        0x254F => BoxDesc::new(None,  None,  Heavy, Heavy),  // ╏
+        0x254C => BoxDesc::new(Light, Light, None, None), // ╌
+        0x254D => BoxDesc::new(Heavy, Heavy, None, None), // ╍
+        0x254E => BoxDesc::new(None, None, Light, Light), // ╎
+        0x254F => BoxDesc::new(None, None, Heavy, Heavy), // ╏
 
         // ── Double lines ──
-        0x2550 => BoxDesc::new(Double, Double, None,   None),    // ═
-        0x2551 => BoxDesc::new(None,   None,   Double, Double),  // ║
+        0x2550 => BoxDesc::new(Double, Double, None, None), // ═
+        0x2551 => BoxDesc::new(None, None, Double, Double), // ║
 
         // ── Double corners ──
-        0x2552 => BoxDesc::new(None,   Double, None,   Light),   // ╒
-        0x2553 => BoxDesc::new(None,   Light,  None,   Double),  // ╓
-        0x2554 => BoxDesc::new(None,   Double, None,   Double),  // ╔
-        0x2555 => BoxDesc::new(Double, None,   None,   Light),   // ╕
-        0x2556 => BoxDesc::new(Light,  None,   None,   Double),  // ╖
-        0x2557 => BoxDesc::new(Double, None,   None,   Double),  // ╗
-        0x2558 => BoxDesc::new(None,   Double, Light,  None),    // ╘
-        0x2559 => BoxDesc::new(None,   Light,  Double, None),    // ╙
-        0x255A => BoxDesc::new(None,   Double, Double, None),    // ╚
-        0x255B => BoxDesc::new(Double, None,   Light,  None),    // ╛
-        0x255C => BoxDesc::new(Light,  None,   Double, None),    // ╜
-        0x255D => BoxDesc::new(Double, None,   Double, None),    // ╝
+        0x2552 => BoxDesc::new(None, Double, None, Light), // ╒
+        0x2553 => BoxDesc::new(None, Light, None, Double), // ╓
+        0x2554 => BoxDesc::new(None, Double, None, Double), // ╔
+        0x2555 => BoxDesc::new(Double, None, None, Light), // ╕
+        0x2556 => BoxDesc::new(Light, None, None, Double), // ╖
+        0x2557 => BoxDesc::new(Double, None, None, Double), // ╗
+        0x2558 => BoxDesc::new(None, Double, Light, None), // ╘
+        0x2559 => BoxDesc::new(None, Light, Double, None), // ╙
+        0x255A => BoxDesc::new(None, Double, Double, None), // ╚
+        0x255B => BoxDesc::new(Double, None, Light, None), // ╛
+        0x255C => BoxDesc::new(Light, None, Double, None), // ╜
+        0x255D => BoxDesc::new(Double, None, Double, None), // ╝
 
         // ── Double T-junctions ──
-        0x255E => BoxDesc::new(None,   Double, Light,  Light),   // ╞
-        0x255F => BoxDesc::new(None,   Light,  Double, Double),  // ╟
-        0x2560 => BoxDesc::new(None,   Double, Double, Double),  // ╠
-        0x2561 => BoxDesc::new(Double, None,   Light,  Light),   // ╡
-        0x2562 => BoxDesc::new(Light,  None,   Double, Double),  // ╢
-        0x2563 => BoxDesc::new(Double, None,   Double, Double),  // ╣
-        0x2564 => BoxDesc::new(Double, Double, None,   Light),   // ╤
-        0x2565 => BoxDesc::new(Light,  Light,  None,   Double),  // ╥
-        0x2566 => BoxDesc::new(Double, Double, None,   Double),  // ╦
-        0x2567 => BoxDesc::new(Double, Double, Light,  None),    // ╧
-        0x2568 => BoxDesc::new(Light,  Light,  Double, None),    // ╨
-        0x2569 => BoxDesc::new(Double, Double, Double, None),    // ╩
+        0x255E => BoxDesc::new(None, Double, Light, Light), // ╞
+        0x255F => BoxDesc::new(None, Light, Double, Double), // ╟
+        0x2560 => BoxDesc::new(None, Double, Double, Double), // ╠
+        0x2561 => BoxDesc::new(Double, None, Light, Light), // ╡
+        0x2562 => BoxDesc::new(Light, None, Double, Double), // ╢
+        0x2563 => BoxDesc::new(Double, None, Double, Double), // ╣
+        0x2564 => BoxDesc::new(Double, Double, None, Light), // ╤
+        0x2565 => BoxDesc::new(Light, Light, None, Double), // ╥
+        0x2566 => BoxDesc::new(Double, Double, None, Double), // ╦
+        0x2567 => BoxDesc::new(Double, Double, Light, None), // ╧
+        0x2568 => BoxDesc::new(Light, Light, Double, None), // ╨
+        0x2569 => BoxDesc::new(Double, Double, Double, None), // ╩
         // ── Double crosses ──
-        0x256A => BoxDesc::new(Double, Double, Light,  Light),   // ╪
-        0x256B => BoxDesc::new(Light,  Light,  Double, Double),  // ╫
-        0x256C => BoxDesc::new(Double, Double, Double, Double),  // ╬
+        0x256A => BoxDesc::new(Double, Double, Light, Light), // ╪
+        0x256B => BoxDesc::new(Light, Light, Double, Double), // ╫
+        0x256C => BoxDesc::new(Double, Double, Double, Double), // ╬
 
         // ── Rounded corners (light) ──
-        0x256D => BoxDesc::new(None,  Light, None,  Light),  // ╭
-        0x256E => BoxDesc::new(Light, None,  None,  Light),  // ╮
-        0x256F => BoxDesc::new(Light, None,  Light, None),   // ╯
-        0x2570 => BoxDesc::new(None,  Light, Light, None),   // ╰
+        0x256D => BoxDesc::new(None, Light, None, Light), // ╭
+        0x256E => BoxDesc::new(Light, None, None, Light), // ╮
+        0x256F => BoxDesc::new(Light, None, Light, None), // ╯
+        0x2570 => BoxDesc::new(None, Light, Light, None), // ╰
 
         // ── Diagonal lines (render as light cross for approximation) ──
         0x2571 => BoxDesc::new(None, None, None, None), // ╱ (handled specially)
@@ -804,20 +866,20 @@ fn box_desc(cp: u32) -> Option<BoxDesc> {
         0x2573 => BoxDesc::new(None, None, None, None), // ╳ (handled specially)
 
         // ── Half lines ──
-        0x2574 => BoxDesc::new(Light, None,  None,  None),   // ╴ left light
-        0x2575 => BoxDesc::new(None,  None,  Light, None),   // ╵ up light
-        0x2576 => BoxDesc::new(None,  Light, None,  None),   // ╶ right light
-        0x2577 => BoxDesc::new(None,  None,  None,  Light),  // ╷ down light
-        0x2578 => BoxDesc::new(Heavy, None,  None,  None),   // ╸ left heavy
-        0x2579 => BoxDesc::new(None,  None,  Heavy, None),   // ╹ up heavy
-        0x257A => BoxDesc::new(None,  Heavy, None,  None),   // ╺ right heavy
-        0x257B => BoxDesc::new(None,  None,  None,  Heavy),  // ╻ down heavy
+        0x2574 => BoxDesc::new(Light, None, None, None), // ╴ left light
+        0x2575 => BoxDesc::new(None, None, Light, None), // ╵ up light
+        0x2576 => BoxDesc::new(None, Light, None, None), // ╶ right light
+        0x2577 => BoxDesc::new(None, None, None, Light), // ╷ down light
+        0x2578 => BoxDesc::new(Heavy, None, None, None), // ╸ left heavy
+        0x2579 => BoxDesc::new(None, None, Heavy, None), // ╹ up heavy
+        0x257A => BoxDesc::new(None, Heavy, None, None), // ╺ right heavy
+        0x257B => BoxDesc::new(None, None, None, Heavy), // ╻ down heavy
 
         // ── Mixed weight lines ──
-        0x257C => BoxDesc::new(Light, Heavy, None,  None),   // ╼ light left, heavy right
-        0x257D => BoxDesc::new(None,  None,  Light, Heavy),  // ╽ light up, heavy down
-        0x257E => BoxDesc::new(Heavy, Light, None,  None),   // ╾ heavy left, light right
-        0x257F => BoxDesc::new(None,  None,  Heavy, Light),  // ╿ heavy up, light down
+        0x257C => BoxDesc::new(Light, Heavy, None, None), // ╼ light left, heavy right
+        0x257D => BoxDesc::new(None, None, Light, Heavy), // ╽ light up, heavy down
+        0x257E => BoxDesc::new(Heavy, Light, None, None), // ╾ heavy left, light right
+        0x257F => BoxDesc::new(None, None, Heavy, Light), // ╿ heavy up, light down
 
         _ => return ::core::option::Option::None,
     };
@@ -827,9 +889,19 @@ fn box_desc(cp: u32) -> Option<BoxDesc> {
 fn draw_box_drawing(cp: u32, bitmap: &mut [u8], w: u32, h: u32) -> bool {
     // Handle diagonal lines specially
     match cp {
-        0x2571 => { draw_diagonal_forward(bitmap, w, h); return true; }
-        0x2572 => { draw_diagonal_back(bitmap, w, h); return true; }
-        0x2573 => { draw_diagonal_forward(bitmap, w, h); draw_diagonal_back(bitmap, w, h); return true; }
+        0x2571 => {
+            draw_diagonal_forward(bitmap, w, h);
+            return true;
+        }
+        0x2572 => {
+            draw_diagonal_back(bitmap, w, h);
+            return true;
+        }
+        0x2573 => {
+            draw_diagonal_forward(bitmap, w, h);
+            draw_diagonal_back(bitmap, w, h);
+            return true;
+        }
         _ => {}
     }
 
@@ -842,10 +914,10 @@ fn draw_box_drawing(cp: u32, bitmap: &mut [u8], w: u32, h: u32) -> bool {
     let cy = h / 2;
 
     // Line thickness
-    let light_h = (w / 8).max(1);   // horizontal light thickness (vertical extent)
-    let heavy_h = (w / 4).max(2);   // horizontal heavy thickness
-    let light_v = (w / 8).max(1);   // vertical light thickness (horizontal extent)
-    let heavy_v = (w / 4).max(2);   // vertical heavy thickness
+    let light_h = (w / 8).max(1); // horizontal light thickness (vertical extent)
+    let heavy_h = (w / 4).max(2); // horizontal heavy thickness
+    let light_v = (w / 8).max(1); // vertical light thickness (horizontal extent)
+    let heavy_v = (w / 4).max(2); // vertical heavy thickness
     let double_gap = (w / 6).max(2); // gap between double lines (center-to-center distance)
 
     // Draw each arm
@@ -856,8 +928,24 @@ fn draw_box_drawing(cp: u32, bitmap: &mut [u8], w: u32, h: u32) -> bool {
         Lw::Heavy => fill_hline(bitmap, w, h, 0, cx + heavy_v / 2, cy, heavy_h),
         Lw::Double => {
             let offset = double_gap / 2;
-            fill_hline(bitmap, w, h, 0, cx + light_v / 2, cy.saturating_sub(offset), light_h);
-            fill_hline(bitmap, w, h, 0, cx + light_v / 2, (cy + offset).min(h - 1), light_h);
+            fill_hline(
+                bitmap,
+                w,
+                h,
+                0,
+                cx + light_v / 2,
+                cy.saturating_sub(offset),
+                light_h,
+            );
+            fill_hline(
+                bitmap,
+                w,
+                h,
+                0,
+                cx + light_v / 2,
+                (cy + offset).min(h - 1),
+                light_h,
+            );
         }
     }
 
@@ -868,8 +956,24 @@ fn draw_box_drawing(cp: u32, bitmap: &mut [u8], w: u32, h: u32) -> bool {
         Lw::Heavy => fill_hline(bitmap, w, h, cx.saturating_sub(heavy_v / 2), w, cy, heavy_h),
         Lw::Double => {
             let offset = double_gap / 2;
-            fill_hline(bitmap, w, h, cx.saturating_sub(light_v / 2), w, cy.saturating_sub(offset), light_h);
-            fill_hline(bitmap, w, h, cx.saturating_sub(light_v / 2), w, (cy + offset).min(h - 1), light_h);
+            fill_hline(
+                bitmap,
+                w,
+                h,
+                cx.saturating_sub(light_v / 2),
+                w,
+                cy.saturating_sub(offset),
+                light_h,
+            );
+            fill_hline(
+                bitmap,
+                w,
+                h,
+                cx.saturating_sub(light_v / 2),
+                w,
+                (cy + offset).min(h - 1),
+                light_h,
+            );
         }
     }
 
@@ -880,8 +984,24 @@ fn draw_box_drawing(cp: u32, bitmap: &mut [u8], w: u32, h: u32) -> bool {
         Lw::Heavy => fill_vline(bitmap, w, h, 0, cy + heavy_h / 2, cx, heavy_v),
         Lw::Double => {
             let offset = double_gap / 2;
-            fill_vline(bitmap, w, h, 0, cy + light_h / 2, cx.saturating_sub(offset), light_v);
-            fill_vline(bitmap, w, h, 0, cy + light_h / 2, (cx + offset).min(w - 1), light_v);
+            fill_vline(
+                bitmap,
+                w,
+                h,
+                0,
+                cy + light_h / 2,
+                cx.saturating_sub(offset),
+                light_v,
+            );
+            fill_vline(
+                bitmap,
+                w,
+                h,
+                0,
+                cy + light_h / 2,
+                (cx + offset).min(w - 1),
+                light_v,
+            );
         }
     }
 
@@ -892,8 +1012,24 @@ fn draw_box_drawing(cp: u32, bitmap: &mut [u8], w: u32, h: u32) -> bool {
         Lw::Heavy => fill_vline(bitmap, w, h, cy.saturating_sub(heavy_h / 2), h, cx, heavy_v),
         Lw::Double => {
             let offset = double_gap / 2;
-            fill_vline(bitmap, w, h, cy.saturating_sub(light_h / 2), h, cx.saturating_sub(offset), light_v);
-            fill_vline(bitmap, w, h, cy.saturating_sub(light_h / 2), h, (cx + offset).min(w - 1), light_v);
+            fill_vline(
+                bitmap,
+                w,
+                h,
+                cy.saturating_sub(light_h / 2),
+                h,
+                cx.saturating_sub(offset),
+                light_v,
+            );
+            fill_vline(
+                bitmap,
+                w,
+                h,
+                cy.saturating_sub(light_h / 2),
+                h,
+                (cx + offset).min(w - 1),
+                light_v,
+            );
         }
     }
 

@@ -79,7 +79,10 @@ impl ApplicationHandler<AppEvent> for App {
                     }
                     self.engine.focused_window_id = None;
                     self.engine.active_modal_id = None;
-                    tracing::info!("minimized to background ({} states parked)", self.parked_states.len());
+                    tracing::info!(
+                        "minimized to background ({} states parked)",
+                        self.parked_states.len()
+                    );
                 }
                 #[cfg(windows)]
                 {
@@ -136,7 +139,11 @@ impl ApplicationHandler<AppEvent> for App {
         use winit::window::WindowAttributes;
 
         let attrs = WindowAttributes::default()
-            .with_title(if cfg!(debug_assertions) { "Tasty (Debug)" } else { "Tasty" })
+            .with_title(if cfg!(debug_assertions) {
+                "Tasty (Debug)"
+            } else {
+                "Tasty"
+            })
             .with_inner_size(winit::dpi::LogicalSize::new(1280, 720))
             .with_min_inner_size(winit::dpi::LogicalSize::new(640, 480));
 
@@ -148,8 +155,12 @@ impl ApplicationHandler<AppEvent> for App {
 
         let init_settings = crate::settings::Settings::load();
 
-        let gpu = pollster::block_on(crate::gpu::GpuState::new(window.clone(), &init_settings.appearance, self.engine.proxy.clone()))
-            .expect("failed to initialize GPU");
+        let gpu = pollster::block_on(crate::gpu::GpuState::new(
+            window.clone(),
+            &init_settings.appearance,
+            self.engine.proxy.clone(),
+        ))
+        .expect("failed to initialize GPU");
 
         let mut init_settings = init_settings;
         if !init_settings.general.is_shell_valid() {
@@ -188,7 +199,9 @@ impl ApplicationHandler<AppEvent> for App {
         // Shell setup mode — handled by App directly
         if self.shell_setup_mode {
             if let WindowEvent::RedrawRequested = &event {
-                if let (Some(gpu), Some(window)) = (&mut self.shell_setup_gpu, &self.shell_setup_window) {
+                if let (Some(gpu), Some(window)) =
+                    (&mut self.shell_setup_gpu, &self.shell_setup_window)
+                {
                     let result = gpu.render_shell_setup(window, &mut self.shell_setup_path);
                     match result {
                         Ok(crate::gpu::ShellSetupAction::None) => {}
@@ -202,7 +215,9 @@ impl ApplicationHandler<AppEvent> for App {
                             let window = self.shell_setup_window.take().unwrap();
                             let gpu = self.shell_setup_gpu.take().unwrap();
                             self.init_app_state(window, gpu, settings);
-                            if let Some(w) = self.focused_window_mut() { w.mark_dirty(); }
+                            if let Some(w) = self.focused_window_mut() {
+                                w.mark_dirty();
+                            }
                         }
                         Ok(crate::gpu::ShellSetupAction::Exit) => {
                             event_loop.exit();
@@ -214,12 +229,15 @@ impl ApplicationHandler<AppEvent> for App {
                         }
                     }
                 }
-                if let (Some(gpu), Some(window)) = (&mut self.shell_setup_gpu, &self.shell_setup_window) {
+                if let (Some(gpu), Some(window)) =
+                    (&mut self.shell_setup_gpu, &self.shell_setup_window)
+                {
                     gpu.handle_egui_event(window, &event);
                 }
                 return;
             }
-            if let (Some(gpu), Some(window)) = (&mut self.shell_setup_gpu, &self.shell_setup_window) {
+            if let (Some(gpu), Some(window)) = (&mut self.shell_setup_gpu, &self.shell_setup_window)
+            {
                 gpu.handle_egui_event(window, &event);
                 if let WindowEvent::CloseRequested = &event {
                     event_loop.exit();
@@ -310,11 +328,7 @@ impl ApplicationHandler<AppEvent> for App {
             // Check if the window requested to close (e.g. last workspace removed)
             if w.base().close_requested {
                 if let Some(w) = self.windows.remove(&id) {
-                    if self
-                        .windows
-                        .values()
-                        .all(|w| w.as_main().is_none())
-                    {
+                    if self.windows.values().all(|w| w.as_main().is_none()) {
                         if let Some(main_box) = crate::window::unbox_main(w) {
                             tracing::info!("last main window closed via request, parking state");
                             self.parked_states.push(main_box.state);
@@ -408,7 +422,9 @@ impl App {
         }
 
         for w in self.windows.values_mut() {
-            let Some(main) = w.as_main_mut() else { continue };
+            let Some(main) = w.as_main_mut() else {
+                continue;
+            };
             if !main.state.engine.settings.clipboard.history_enabled {
                 continue;
             }
@@ -421,10 +437,10 @@ impl App {
             if !state.engine.settings.clipboard.history_enabled {
                 continue;
             }
-            state
-                .engine
-                .clipboard_history
-                .record(text.clone(), crate::clipboard_history::ClipboardSource::System);
+            state.engine.clipboard_history.record(
+                text.clone(),
+                crate::clipboard_history::ClipboardSource::System,
+            );
         }
     }
 
@@ -434,7 +450,11 @@ impl App {
             .engine
             .active_modal_id
             .and_then(|id| self.windows.get(&id))
-            .map(|m| m.as_any().downcast_ref::<crate::window::QuitWindow>().is_some())
+            .map(|m| {
+                m.as_any()
+                    .downcast_ref::<crate::window::QuitWindow>()
+                    .is_some()
+            })
             .unwrap_or(false);
         if quit_modal_open {
             self.close_active_modal();
@@ -443,9 +463,14 @@ impl App {
         }
 
         // Get close behavior from settings
-        let behavior = self.focused_window()
+        let behavior = self
+            .focused_window()
             .map(|w| w.state.engine.settings.general.close_behavior.clone())
-            .or_else(|| self.parked_states.first().map(|s| s.engine.settings.general.close_behavior.clone()))
+            .or_else(|| {
+                self.parked_states
+                    .first()
+                    .map(|s| s.engine.settings.general.close_behavior.clone())
+            })
             .unwrap_or_else(|| "ask".to_string());
 
         match behavior.as_str() {

@@ -61,7 +61,10 @@ impl AppState {
 
         // Try to move between panes
         let ws = self.active_workspace_mut();
-        if let Some(target_pane_id) = ws.pane_layout().directional_focus(ws.focused_pane, direction) {
+        if let Some(target_pane_id) = ws
+            .pane_layout()
+            .directional_focus(ws.focused_pane, direction)
+        {
             ws.focused_pane = target_pane_id;
         }
     }
@@ -158,7 +161,12 @@ impl AppState {
 
     /// Focus the pane at the given physical pixel position within the terminal rect.
     /// Returns true if focus changed.
-    pub fn focus_pane_at_position(&mut self, x: f32, y: f32, terminal_rect: crate::model::Rect) -> bool {
+    pub fn focus_pane_at_position(
+        &mut self,
+        x: f32,
+        y: f32,
+        terminal_rect: crate::model::Rect,
+    ) -> bool {
         let ws = self.active_workspace();
         let pane_rects = ws.pane_layout().compute_rects(terminal_rect);
         for (pane_id, rect) in pane_rects {
@@ -177,7 +185,12 @@ impl AppState {
     /// Focus the surface (within a split tab) at the given physical pixel position.
     /// This should be called after focus_pane_at_position to also focus within the pane's panel.
     /// Returns true if focus changed.
-    pub fn focus_surface_at_position(&mut self, x: f32, y: f32, terminal_rect: crate::model::Rect) -> bool {
+    pub fn focus_surface_at_position(
+        &mut self,
+        x: f32,
+        y: f32,
+        terminal_rect: crate::model::Rect,
+    ) -> bool {
         let ws = self.active_workspace();
         let focused_id = ws.focused_pane;
         let pane_rects = ws.pane_layout().compute_rects(terminal_rect);
@@ -191,7 +204,9 @@ impl AppState {
 
         // Account for tab bar height
         let ws = self.active_workspace();
-        let _tab_count = ws.pane_layout().find_pane(focused_id)
+        let _tab_count = ws
+            .pane_layout()
+            .find_pane(focused_id)
             .map(|p| p.tabs.len())
             .unwrap_or(0);
         let tab_bar_h = self.tab_bar_height;

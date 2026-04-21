@@ -16,7 +16,11 @@ use request::command_to_request;
 use transport::IpcConnection;
 
 #[derive(Parser)]
-#[command(name = "tasty", about = "GPU-accelerated terminal emulator for AI coding agents", version)]
+#[command(
+    name = "tasty",
+    about = "GPU-accelerated terminal emulator for AI coding agents",
+    version
+)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Commands>,
@@ -640,12 +644,18 @@ impl ArgInfo {
     fn compact(&self) -> String {
         match &self.flag {
             None => {
-                if self.required { format!("<{}>", self.name) }
-                else { format!("[{}]", self.name) }
+                if self.required {
+                    format!("<{}>", self.name)
+                } else {
+                    format!("[{}]", self.name)
+                }
             }
             Some(f) => {
-                if self.required { format!("{} <{}>", f, self.name) }
-                else { format!("[{} <{}>]", f, self.name) }
+                if self.required {
+                    format!("{} <{}>", f, self.name)
+                } else {
+                    format!("[{} <{}>]", f, self.name)
+                }
             }
         }
     }
@@ -671,7 +681,9 @@ fn visible_args(cmd: &clap::Command) -> Vec<ArgInfo> {
         .filter(|a| a.get_id() != "help" && a.get_id() != "version")
         .map(|a| ArgInfo {
             name: a.get_id().to_string().to_uppercase(),
-            flag: a.get_long().map(|l| format!("--{}", l))
+            flag: a
+                .get_long()
+                .map(|l| format!("--{}", l))
                 .or_else(|| a.get_short().map(|s| format!("-{}", s))),
             help: a.get_help().map(|s| s.to_string()).unwrap_or_default(),
             required: a.is_required_set(),
@@ -688,7 +700,11 @@ fn visible_subcommands(cmd: &clap::Command) -> Vec<&clap::Command> {
 
 /// Compact usage string: `<TEXT> [--surface <SURFACE>]`
 fn format_args(cmd: &clap::Command) -> String {
-    visible_args(cmd).iter().map(|a| a.compact()).collect::<Vec<_>>().join(" ")
+    visible_args(cmd)
+        .iter()
+        .map(|a| a.compact())
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// Resolve the deepest matched command from raw CLI args.
@@ -704,7 +720,8 @@ fn resolve_command_path() -> (clap::Command, String) {
         if arg.starts_with('-') {
             break;
         }
-        let found = current.get_subcommands()
+        let found = current
+            .get_subcommands()
             .find(|s| s.get_name() == arg.as_str());
         if let Some(sub) = found {
             matched_path.push(arg.clone());
@@ -730,7 +747,10 @@ pub fn print_command_tree() {
 
     let cmd = Cli::command();
     println!("{} {}", cmd.get_name(), cmd.get_version().unwrap_or(""));
-    println!("{}", cmd.get_about().map(|s| s.to_string()).unwrap_or_default());
+    println!(
+        "{}",
+        cmd.get_about().map(|s| s.to_string()).unwrap_or_default()
+    );
     println!();
 
     fn print_node(cmd: &clap::Command, prefix: &str, connector: &str) {
@@ -760,7 +780,11 @@ pub fn print_command_tree() {
             let child_count = children.len();
             for (j, child) in children.iter().enumerate() {
                 let child_is_last = j == child_count - 1;
-                let child_prefix = if child_is_last { "└── " } else { "├── " };
+                let child_prefix = if child_is_last {
+                    "└── "
+                } else {
+                    "├── "
+                };
                 print_node(child, &format!("{}{}", connector, child_prefix), connector);
             }
         }
@@ -823,30 +847,52 @@ pub fn format_parse_error(err: clap::Error) {
 /// Run the CLI client: connect to a running tasty instance and execute the command.
 pub fn run_client(command: Commands) -> Result<()> {
     // Install/Uninstall are local-only commands — no IPC needed
-    if let Commands::Claude { command: ClaudeCommands::Install } = &command {
+    if let Commands::Claude {
+        command: ClaudeCommands::Install,
+    } = &command
+    {
         return run_claude_install();
     }
-    if let Commands::Claude { command: ClaudeCommands::Uninstall } = &command {
+    if let Commands::Claude {
+        command: ClaudeCommands::Uninstall,
+    } = &command
+    {
         return run_claude_uninstall();
     }
 
     let port = IpcServer::read_port_file()?;
-    let stream = TcpStream::connect(format!("127.0.0.1:{}", port))
-        .map_err(|e| anyhow::anyhow!(
+    let stream = TcpStream::connect(format!("127.0.0.1:{}", port)).map_err(|e| {
+        anyhow::anyhow!(
             "Could not connect to tasty instance on port {}: {}. Is tasty running?",
-            port, e
-        ))?;
+            port,
+            e
+        )
+    })?;
 
     let mut conn = IpcConnection::new(stream)?;
 
     // ClaudeHook is special: it may send multiple requests
-    if let Commands::Claude { command: ClaudeCommands::Hook { ref event, ref surface } } = command {
+    if let Commands::Claude {
+        command: ClaudeCommands::Hook {
+            ref event,
+            ref surface,
+        },
+    } = command
+    {
         run_claude_hook(&mut conn, event, *surface)?;
         return Ok(());
     }
 
     // ClaudeWait is special: it polls until the child reaches a terminal state
-    if let Commands::Claude { command: ClaudeCommands::Wait { child, surface, timeout } } = command {
+    if let Commands::Claude {
+        command:
+            ClaudeCommands::Wait {
+                child,
+                surface,
+                timeout,
+            },
+    } = command
+    {
         let surface_id = request::resolve_surface_id(surface);
         run_claude_wait(&mut conn, child, surface_id, timeout)?;
         return Ok(());

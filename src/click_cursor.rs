@@ -184,7 +184,11 @@ pub struct ArrowQueue {
 
 impl ArrowQueue {
     pub fn new(arrow: &'static [u8], count: usize, surface_id: u32) -> Self {
-        Self { arrow, remaining: count, surface_id }
+        Self {
+            arrow,
+            remaining: count,
+            surface_id,
+        }
     }
 
     /// Send one arrow key. Returns true if there are more to send.

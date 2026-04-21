@@ -1,8 +1,8 @@
 //! ClipboardViewer surface — 탭 내부에 고정 뷰어로 배치. 각 인스턴스가 자체
 //! 검색어/선택 상태를 가진다 (popup의 `DialogState.clipboard_viewer`와 독립).
 
-use super::surface_trait::Surface;
 use super::SurfaceId;
+use super::surface_trait::Surface;
 use crate::clipboard_viewer_ui::ClipboardViewerState;
 
 pub struct ClipboardViewerPanel {

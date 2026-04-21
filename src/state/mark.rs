@@ -6,12 +6,14 @@ impl AppState {
         if let Some(target_sid) = surface_id {
             for workspace in &mut self.engine.workspaces {
                 let mut found = false;
-                workspace.pane_layout_mut().for_each_terminal_mut(&mut |sid, terminal| {
-                    if sid == target_sid {
-                        terminal.set_mark();
-                        found = true;
-                    }
-                });
+                workspace
+                    .pane_layout_mut()
+                    .for_each_terminal_mut(&mut |sid, terminal| {
+                        if sid == target_sid {
+                            terminal.set_mark();
+                            found = true;
+                        }
+                    });
                 if found {
                     return;
                 }
@@ -26,11 +28,13 @@ impl AppState {
         if let Some(target_sid) = surface_id {
             let mut result = None;
             for workspace in &mut self.engine.workspaces {
-                workspace.pane_layout_mut().for_each_terminal_mut(&mut |sid, terminal| {
-                    if sid == target_sid && result.is_none() {
-                        result = Some(terminal.read_since_mark(strip_ansi));
-                    }
-                });
+                workspace
+                    .pane_layout_mut()
+                    .for_each_terminal_mut(&mut |sid, terminal| {
+                        if sid == target_sid && result.is_none() {
+                            result = Some(terminal.read_since_mark(strip_ansi));
+                        }
+                    });
                 if result.is_some() {
                     break;
                 }

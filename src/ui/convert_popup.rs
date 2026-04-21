@@ -9,8 +9,8 @@ const ITEM_HEIGHT: f32 = 24.0;
 /// Default size for the convert surface popup.
 pub fn convert_popup_default_size() -> egui::Vec2 {
     let item_spacing = 3.0;
-    let content_h = ITEMS.len() as f32 * ITEM_HEIGHT
-        + (ITEMS.len().saturating_sub(1)) as f32 * item_spacing;
+    let content_h =
+        ITEMS.len() as f32 * ITEM_HEIGHT + (ITEMS.len().saturating_sub(1)) as f32 * item_spacing;
     egui::vec2(
         200.0,
         popup::TITLE_BAR_HEIGHT + popup::CONTENT_MARGIN * 2.0 + content_h,
@@ -59,7 +59,9 @@ pub fn draw_convert_content(ui: &mut egui::Ui, state: &mut AppState) -> Option<C
     let popup_w = ui.available_width();
 
     // Build selectable (non-current) indices
-    let selectable_indices: Vec<usize> = ITEMS.iter().enumerate()
+    let selectable_indices: Vec<usize> = ITEMS
+        .iter()
+        .enumerate()
         .filter(|(_, (type_name, _, _))| current_type != Some(type_name))
         .map(|(i, _)| i)
         .collect();
@@ -91,7 +93,8 @@ pub fn draw_convert_content(ui: &mut egui::Ui, state: &mut AppState) -> Option<C
             None => *selectable_indices.last().unwrap(),
             Some(cur) => {
                 if let Some(pos) = selectable_indices.iter().position(|&i| i == cur) {
-                    selectable_indices[(pos + selectable_indices.len() - 1) % selectable_indices.len()]
+                    selectable_indices
+                        [(pos + selectable_indices.len() - 1) % selectable_indices.len()]
                 } else {
                     *selectable_indices.last().unwrap()
                 }
@@ -114,7 +117,12 @@ pub fn draw_convert_content(ui: &mut egui::Ui, state: &mut AppState) -> Option<C
     // OS가 KeyboardInput을 직접 발생시키므로 physical_key가 항상 유효하다.
     ctx.input(|i| {
         for event in &i.events {
-            if let egui::Event::Key { physical_key, pressed: true, modifiers, .. } = event
+            if let egui::Event::Key {
+                physical_key,
+                pressed: true,
+                modifiers,
+                ..
+            } = event
                 && modifiers.is_none()
             {
                 let matched_key = physical_key.as_ref().unwrap_or(&egui::Key::Escape);
@@ -153,7 +161,11 @@ pub fn draw_convert_content(ui: &mut egui::Ui, state: &mut AppState) -> Option<C
         };
         let text_color = if is_current { th.overlay0 } else { th.text };
 
-        let sense = if is_current { egui::Sense::hover() } else { egui::Sense::click() };
+        let sense = if is_current {
+            egui::Sense::hover()
+        } else {
+            egui::Sense::click()
+        };
         let (rect, resp) = ui.allocate_exact_size(egui::vec2(popup_w, 24.0), sense);
 
         // Highlight: hover or keyboard selection
@@ -165,7 +177,10 @@ pub fn draw_convert_content(ui: &mut egui::Ui, state: &mut AppState) -> Option<C
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
         }
 
-        let text_pos = egui::pos2(rect.min.x + th.spacing_sm.value(), rect.center().y - th.font_size_body.value() / 2.0);
+        let text_pos = egui::pos2(
+            rect.min.x + th.spacing_sm.value(),
+            rect.center().y - th.font_size_body.value() / 2.0,
+        );
         ui.painter().text(
             text_pos,
             egui::Align2::LEFT_TOP,
@@ -197,7 +212,8 @@ pub fn apply_convert_action(state: &mut AppState, action: ConvertAction) {
             state.dialogs.markdown_convert_surface_id = Some(surface_id);
             state.dialogs.file_open_pane_id = Some(pane_id);
             state.dialogs.markdown_open_buffer.clear();
-            state.dialogs.pending_popup_open = Some(("markdown_open", popup::PopupScope::Surface(surface_id)));
+            state.dialogs.pending_popup_open =
+                Some(("markdown_open", popup::PopupScope::Surface(surface_id)));
         }
         ConvertAction::Explorer => {
             state.convert_surface_to_explorer(surface_id);
@@ -207,7 +223,8 @@ pub fn apply_convert_action(state: &mut AppState, action: ConvertAction) {
             state.dialogs.html_convert_surface_id = Some(surface_id);
             state.dialogs.file_open_pane_id = Some(pane_id);
             state.dialogs.html_open_buffer.clear();
-            state.dialogs.pending_popup_open = Some(("html_open", popup::PopupScope::Surface(surface_id)));
+            state.dialogs.pending_popup_open =
+                Some(("html_open", popup::PopupScope::Surface(surface_id)));
         }
         ConvertAction::Image => {
             state.convert_surface_to_image(surface_id);

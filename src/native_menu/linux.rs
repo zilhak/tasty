@@ -1,8 +1,8 @@
 //! Linux native context menu using GTK.
 //! TODO: Implement using gtk::Menu + popup_at_pointer
 
-use winit::raw_window_handle::HasWindowHandle;
 use super::MenuItem;
+use winit::raw_window_handle::HasWindowHandle;
 
 pub fn show_context_menu(
     _window: &impl HasWindowHandle,

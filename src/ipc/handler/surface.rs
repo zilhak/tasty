@@ -243,9 +243,15 @@ pub(crate) fn handle_surface_send_key(
                 combo_bytes
             } else if let Some(terminal) = state.find_terminal_by_id_mut(surface_id) {
                 terminal.send_key(other);
-                return JsonRpcResponse::success(id, json!({ "sent": true, "surface_id": surface_id }));
+                return JsonRpcResponse::success(
+                    id,
+                    json!({ "sent": true, "surface_id": surface_id }),
+                );
             } else {
-                return JsonRpcResponse::invalid_params(id, format!("Surface {} not found", surface_id));
+                return JsonRpcResponse::invalid_params(
+                    id,
+                    format!("Surface {} not found", surface_id),
+                );
             }
         }
     };
@@ -255,7 +261,11 @@ pub(crate) fn handle_surface_send_key(
     JsonRpcResponse::success(id, json!({ "sent": true, "surface_id": surface_id }))
 }
 
-pub(crate) fn handle_surface_close(state: &mut AppState, id: serde_json::Value, params: &serde_json::Value) -> JsonRpcResponse {
+pub(crate) fn handle_surface_close(
+    state: &mut AppState,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
     let surface_id = match require_surface_id(params, &id) {
         Ok(sid) => sid,
         Err(e) => return e,
@@ -263,18 +273,28 @@ pub(crate) fn handle_surface_close(state: &mut AppState, id: serde_json::Value, 
     // Prevent closing the caller's own surface — use 'close self' instead
     if let Some(caller) = super::caller_surface_id(params) {
         if caller == surface_id {
-            return JsonRpcResponse::invalid_params(id, "Cannot close your own surface with 'close surface'. Use 'tasty close self' instead.");
+            return JsonRpcResponse::invalid_params(
+                id,
+                "Cannot close your own surface with 'close surface'. Use 'tasty close self' instead.",
+            );
         }
     }
     if state.close_surface_by_id_no_snapshot(surface_id) {
         JsonRpcResponse::success(id, json!({ "closed": true, "surface_id": surface_id }))
     } else {
-        JsonRpcResponse::success(id, json!({ "closed": false, "surface_id": surface_id, "reason": "surface not found" }))
+        JsonRpcResponse::success(
+            id,
+            json!({ "closed": false, "surface_id": surface_id, "reason": "surface not found" }),
+        )
     }
 }
 
 /// Close the calling surface itself. Only way for a surface to close itself.
-pub(crate) fn handle_surface_close_self(state: &mut AppState, id: serde_json::Value, params: &serde_json::Value) -> JsonRpcResponse {
+pub(crate) fn handle_surface_close_self(
+    state: &mut AppState,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
     let surface_id = match require_surface_id(params, &id) {
         Ok(sid) => sid,
         Err(e) => return e,
@@ -282,7 +302,10 @@ pub(crate) fn handle_surface_close_self(state: &mut AppState, id: serde_json::Va
     if state.close_surface_by_id_no_snapshot(surface_id) {
         JsonRpcResponse::success(id, json!({ "closed": true, "surface_id": surface_id }))
     } else {
-        JsonRpcResponse::success(id, json!({ "closed": false, "surface_id": surface_id, "reason": "surface not found" }))
+        JsonRpcResponse::success(
+            id,
+            json!({ "closed": false, "surface_id": surface_id, "reason": "surface not found" }),
+        )
     }
 }
 
@@ -328,7 +351,10 @@ pub(crate) fn handle_screen_text(
         Ok(sid) => sid,
         Err(e) => return e,
     };
-    let text = state.find_terminal_by_id(surface_id).map(|t| t.screen_text()).unwrap_or_default();
+    let text = state
+        .find_terminal_by_id(surface_id)
+        .map(|t| t.screen_text())
+        .unwrap_or_default();
     JsonRpcResponse::success(id, json!({ "text": text, "surface_id": surface_id }))
 }
 
@@ -362,9 +388,14 @@ pub(crate) fn handle_surface_send_combo(
         Some(k) => k,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'key' parameter"),
     };
-    let modifiers = params.get("modifiers")
+    let modifiers = params
+        .get("modifiers")
         .and_then(|v| v.as_array())
-        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect::<Vec<_>>())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect::<Vec<_>>()
+        })
         .unwrap_or_default();
 
     let has_ctrl = modifiers.iter().any(|m| m == "ctrl");
@@ -399,7 +430,6 @@ pub(crate) fn handle_surface_send_combo(
         JsonRpcResponse::internal_error(id, "No terminal found".to_string())
     }
 }
-
 
 // handle_pane_focus / handle_surface_focus removed: focus is user-only.
 

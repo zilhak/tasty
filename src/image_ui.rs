@@ -86,22 +86,21 @@ pub fn draw_image(ui: &mut egui::Ui, panel: &mut ImagePanel) {
 
         // Center with pan offset
         let center = rect.center() + panel.pan_offset;
-        let img_rect = egui::Rect::from_center_size(
-            center,
-            egui::vec2(final_w, final_h),
-        );
+        let img_rect = egui::Rect::from_center_size(center, egui::vec2(final_w, final_h));
 
         // Draw the original image
         if let Some(ref tex) = panel.texture {
             let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
-            ui.painter().image(tex.id(), img_rect, uv, egui::Color32::WHITE);
+            ui.painter()
+                .image(tex.id(), img_rect, uv, egui::Color32::WHITE);
         }
 
         // Draw the overlay layer
         if panel.edit_mode {
             if let Some(ref tex) = panel.draw_texture {
                 let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
-                ui.painter().image(tex.id(), img_rect, uv, egui::Color32::WHITE);
+                ui.painter()
+                    .image(tex.id(), img_rect, uv, egui::Color32::WHITE);
             }
         }
 
@@ -109,7 +108,9 @@ pub fn draw_image(ui: &mut egui::Ui, panel: &mut ImagePanel) {
 
         // Zoom with mouse wheel
         let scroll_delta = ui.input(|i| i.smooth_scroll_delta.y);
-        if scroll_delta != 0.0 && rect.contains(ui.input(|i| i.pointer.latest_pos().unwrap_or_default())) {
+        if scroll_delta != 0.0
+            && rect.contains(ui.input(|i| i.pointer.latest_pos().unwrap_or_default()))
+        {
             let factor = if scroll_delta > 0.0 { 1.1 } else { 1.0 / 1.1 };
             panel.zoom = (panel.zoom * factor).clamp(0.1, 20.0);
         }
@@ -162,25 +163,45 @@ fn draw_viewer_controls(ui: &mut egui::Ui, panel: &mut ImagePanel, th: &theme::T
     let has_dir = !panel.dir_images.is_empty();
 
     if has_dir {
-        if ui.add_sized([24.0, 20.0], egui::Button::new("\u{25C0}")).on_hover_text(t("image_viewer.prev")).clicked() {
+        if ui
+            .add_sized([24.0, 20.0], egui::Button::new("\u{25C0}"))
+            .on_hover_text(t("image_viewer.prev"))
+            .clicked()
+        {
             panel.prev_image();
         }
-        if ui.add_sized([24.0, 20.0], egui::Button::new("\u{25B6}")).on_hover_text(t("image_viewer.next")).clicked() {
+        if ui
+            .add_sized([24.0, 20.0], egui::Button::new("\u{25B6}"))
+            .on_hover_text(t("image_viewer.next"))
+            .clicked()
+        {
             panel.next_image();
         }
     }
 
-    if ui.add_sized([24.0, 20.0], egui::Button::new("\u{21BB}")).on_hover_text(t("image_viewer.refresh")).clicked() {
+    if ui
+        .add_sized([24.0, 20.0], egui::Button::new("\u{21BB}"))
+        .on_hover_text(t("image_viewer.refresh"))
+        .clicked()
+    {
         panel.reload();
     }
 
     if panel.original_image.is_some() {
-        if ui.add_sized([24.0, 20.0], egui::Button::new("\u{270F}")).on_hover_text(t("image_viewer.edit")).clicked() {
+        if ui
+            .add_sized([24.0, 20.0], egui::Button::new("\u{270F}"))
+            .on_hover_text(t("image_viewer.edit"))
+            .clicked()
+        {
             panel.enter_edit_mode();
         }
     }
 
-    if ui.add_sized([24.0, 20.0], egui::Button::new("+")).on_hover_text(t("image_viewer.new_image")).clicked() {
+    if ui
+        .add_sized([24.0, 20.0], egui::Button::new("+"))
+        .on_hover_text(t("image_viewer.new_image"))
+        .clicked()
+    {
         panel.new_image_popup = true;
     }
 
@@ -193,11 +214,20 @@ fn draw_viewer_controls(ui: &mut egui::Ui, panel: &mut ImagePanel, th: &theme::T
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_default();
         let info = if panel.dir_images.len() > 1 {
-            format!("{} ({}/{})", name, panel.current_index + 1, panel.dir_images.len())
+            format!(
+                "{} ({}/{})",
+                name,
+                panel.current_index + 1,
+                panel.dir_images.len()
+            )
         } else {
             name
         };
-        ui.label(egui::RichText::new(info).size(th.font_size_caption.value()).color(th.subtext0));
+        ui.label(
+            egui::RichText::new(info)
+                .size(th.font_size_caption.value())
+                .color(th.subtext0),
+        );
     }
 
     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -206,7 +236,10 @@ fn draw_viewer_controls(ui: &mut egui::Ui, panel: &mut ImagePanel, th: &theme::T
 }
 
 fn draw_edit_controls(ui: &mut egui::Ui, panel: &mut ImagePanel, th: &theme::Theme) {
-    if ui.add_sized([50.0, 20.0], egui::Button::new(t("image_viewer.save"))).clicked() {
+    if ui
+        .add_sized([50.0, 20.0], egui::Button::new(t("image_viewer.save")))
+        .clicked()
+    {
         if let Some(path) = panel.save_path() {
             if let Err(e) = panel.save_png(&path) {
                 tracing::warn!("Failed to save image: {}", e);
@@ -220,19 +253,34 @@ fn draw_edit_controls(ui: &mut egui::Ui, panel: &mut ImagePanel, th: &theme::The
         }
     }
 
-    if ui.add_sized([50.0, 20.0], egui::Button::new(t("image_viewer.cancel"))).clicked() {
+    if ui
+        .add_sized([50.0, 20.0], egui::Button::new(t("image_viewer.cancel")))
+        .clicked()
+    {
         panel.exit_edit_mode();
     }
 
     ui.separator();
 
     // Brush size
-    ui.label(egui::RichText::new(t("image_viewer.brush_size")).size(th.font_size_caption.value()).color(th.subtext0));
+    ui.label(
+        egui::RichText::new(t("image_viewer.brush_size"))
+            .size(th.font_size_caption.value())
+            .color(th.subtext0),
+    );
     ui.add(egui::Slider::new(&mut panel.brush_size, 1.0..=20.0).show_value(false));
 
     // Color picker
-    ui.label(egui::RichText::new(t("image_viewer.color")).size(th.font_size_caption.value()).color(th.subtext0));
-    let mut color_arr = [panel.brush_color.r(), panel.brush_color.g(), panel.brush_color.b()];
+    ui.label(
+        egui::RichText::new(t("image_viewer.color"))
+            .size(th.font_size_caption.value())
+            .color(th.subtext0),
+    );
+    let mut color_arr = [
+        panel.brush_color.r(),
+        panel.brush_color.g(),
+        panel.brush_color.b(),
+    ];
     if ui.color_edit_button_srgb(&mut color_arr).changed() {
         panel.brush_color = egui::Color32::from_rgb(color_arr[0], color_arr[1], color_arr[2]);
     }
@@ -243,7 +291,10 @@ fn draw_edit_controls(ui: &mut egui::Ui, panel: &mut ImagePanel, th: &theme::The
 }
 
 fn draw_zoom_controls(ui: &mut egui::Ui, panel: &mut ImagePanel, th: &theme::Theme) {
-    if ui.add_sized([30.0, 20.0], egui::Button::new("Fit")).clicked() {
+    if ui
+        .add_sized([30.0, 20.0], egui::Button::new("Fit"))
+        .clicked()
+    {
         panel.zoom = 1.0;
         panel.pan_offset = egui::Vec2::ZERO;
     }
@@ -253,7 +304,11 @@ fn draw_zoom_controls(ui: &mut egui::Ui, panel: &mut ImagePanel, th: &theme::The
     }
 
     let zoom_pct = format!("{}%", (panel.zoom * 100.0).round_ui() as i32);
-    ui.label(egui::RichText::new(zoom_pct).size(th.font_size_caption.value()).color(th.subtext0));
+    ui.label(
+        egui::RichText::new(zoom_pct)
+            .size(th.font_size_caption.value())
+            .color(th.subtext0),
+    );
 
     if ui.add_sized([20.0, 20.0], egui::Button::new("-")).clicked() {
         panel.zoom = (panel.zoom / 1.25).max(0.1);
@@ -263,24 +318,54 @@ fn draw_zoom_controls(ui: &mut egui::Ui, panel: &mut ImagePanel, th: &theme::The
 fn draw_new_image_popup(ui: &mut egui::Ui, panel: &mut ImagePanel, th: &theme::Theme) {
     ui.vertical_centered(|ui| {
         ui.add_space(20.0);
-        ui.label(egui::RichText::new(t("image_viewer.new_image_title")).size(th.font_size_heading.value()).color(th.text));
+        ui.label(
+            egui::RichText::new(t("image_viewer.new_image_title"))
+                .size(th.font_size_heading.value())
+                .color(th.text),
+        );
         ui.add_space(12.0);
 
         ui.horizontal(|ui| {
-            ui.label(egui::RichText::new(t("image_viewer.width")).size(th.font_size_body.value()).color(th.subtext0));
-            ui.add_sized([80.0, 22.0], egui::TextEdit::singleline(&mut panel.new_image_width)
-                .font(egui::FontId::proportional(th.font_size_body.value())));
-            ui.label(egui::RichText::new(" x ").size(th.font_size_body.value()).color(th.subtext0));
-            ui.label(egui::RichText::new(t("image_viewer.height")).size(th.font_size_body.value()).color(th.subtext0));
-            ui.add_sized([80.0, 22.0], egui::TextEdit::singleline(&mut panel.new_image_height)
-                .font(egui::FontId::proportional(th.font_size_body.value())));
+            ui.label(
+                egui::RichText::new(t("image_viewer.width"))
+                    .size(th.font_size_body.value())
+                    .color(th.subtext0),
+            );
+            ui.add_sized(
+                [80.0, 22.0],
+                egui::TextEdit::singleline(&mut panel.new_image_width)
+                    .font(egui::FontId::proportional(th.font_size_body.value())),
+            );
+            ui.label(
+                egui::RichText::new(" x ")
+                    .size(th.font_size_body.value())
+                    .color(th.subtext0),
+            );
+            ui.label(
+                egui::RichText::new(t("image_viewer.height"))
+                    .size(th.font_size_body.value())
+                    .color(th.subtext0),
+            );
+            ui.add_sized(
+                [80.0, 22.0],
+                egui::TextEdit::singleline(&mut panel.new_image_height)
+                    .font(egui::FontId::proportional(th.font_size_body.value())),
+            );
         });
 
         ui.add_space(12.0);
         ui.horizontal(|ui| {
             if ui.button(t("button.ok")).clicked() {
-                let w = panel.new_image_width.parse::<usize>().unwrap_or(800).clamp(1, 8192);
-                let h = panel.new_image_height.parse::<usize>().unwrap_or(600).clamp(1, 8192);
+                let w = panel
+                    .new_image_width
+                    .parse::<usize>()
+                    .unwrap_or(800)
+                    .clamp(1, 8192);
+                let h = panel
+                    .new_image_height
+                    .parse::<usize>()
+                    .unwrap_or(600)
+                    .clamp(1, 8192);
                 panel.create_blank_canvas(w, h);
             }
             if ui.button(t("button.cancel")).clicked() {
@@ -293,7 +378,11 @@ fn draw_new_image_popup(ui: &mut egui::Ui, panel: &mut ImagePanel, th: &theme::T
 fn draw_save_path_popup(ui: &mut egui::Ui, panel: &mut ImagePanel, th: &theme::Theme) {
     ui.vertical_centered(|ui| {
         ui.add_space(20.0);
-        ui.label(egui::RichText::new(t("image_viewer.save_path_title")).size(th.font_size_heading.value()).color(th.text));
+        ui.label(
+            egui::RichText::new(t("image_viewer.save_path_title"))
+                .size(th.font_size_heading.value())
+                .color(th.text),
+        );
         ui.add_space(12.0);
 
         ui.horizontal(|ui| {
@@ -307,7 +396,10 @@ fn draw_save_path_popup(ui: &mut egui::Ui, panel: &mut ImagePanel, th: &theme::T
                 resp.request_focus();
             }
 
-            if ui.add_sized([26.0, 22.0], egui::Button::new("\u{1F4C2}")).clicked() {
+            if ui
+                .add_sized([26.0, 22.0], egui::Button::new("\u{1F4C2}"))
+                .clicked()
+            {
                 let dialog = rfd::FileDialog::new()
                     .add_filter("PNG", &["png"])
                     .set_file_name("image.png");

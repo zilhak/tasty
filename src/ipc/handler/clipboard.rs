@@ -3,7 +3,7 @@
 //! 포커스 독립성 원칙: viewer_open은 **항상 focus 없이** popup을 연다. 사용자가
 //! 작업 중인 포커스를 뺏지 않는다. 사용자가 focus를 원하면 단축키를 눌러야 한다.
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::clipboard_history::ClipboardSource;
 use crate::ipc::protocol::JsonRpcResponse;
@@ -17,7 +17,10 @@ fn source_str(s: ClipboardSource) -> &'static str {
 }
 
 pub fn handle_list(state: &AppState, id: Value, params: &Value) -> JsonRpcResponse {
-    let limit = params.get("limit").and_then(|v| v.as_u64()).map(|n| n as usize);
+    let limit = params
+        .get("limit")
+        .and_then(|v| v.as_u64())
+        .map(|n| n as usize);
     let total = state.engine.clipboard_history.len();
     let entries: Vec<Value> = state
         .engine
@@ -91,8 +94,7 @@ pub fn handle_clear(state: &mut AppState, id: Value) -> JsonRpcResponse {
 }
 
 pub fn handle_viewer_open(state: &mut AppState, id: Value) -> JsonRpcResponse {
-    state.dialogs.clipboard_viewer =
-        crate::clipboard_viewer_ui::ClipboardViewerState::default();
+    state.dialogs.clipboard_viewer = crate::clipboard_viewer_ui::ClipboardViewerState::default();
     state.popups.open_centered("clipboard_viewer");
     JsonRpcResponse::success(id, json!({ "ok": true }))
 }

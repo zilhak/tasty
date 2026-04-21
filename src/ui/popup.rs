@@ -127,7 +127,10 @@ impl PopupState {
     fn content_rect(&self) -> egui::Rect {
         let popup = self.popup_rect();
         egui::Rect::from_min_max(
-            egui::pos2(popup.min.x + CONTENT_MARGIN, popup.min.y + TITLE_BAR_HEIGHT + CONTENT_MARGIN),
+            egui::pos2(
+                popup.min.x + CONTENT_MARGIN,
+                popup.min.y + TITLE_BAR_HEIGHT + CONTENT_MARGIN,
+            ),
             egui::pos2(popup.max.x - CONTENT_MARGIN, popup.max.y - CONTENT_MARGIN),
         )
     }
@@ -143,8 +146,14 @@ impl PopupState {
     fn clamp_to_screen(&mut self, screen: egui::Rect) {
         self.size.x = self.size.x.min(screen.width());
         self.size.y = self.size.y.min(screen.height());
-        self.pos.x = self.pos.x.clamp(screen.min.x, (screen.max.x - self.size.x).max(screen.min.x));
-        self.pos.y = self.pos.y.clamp(screen.min.y, (screen.max.y - self.size.y).max(screen.min.y));
+        self.pos.x = self
+            .pos
+            .x
+            .clamp(screen.min.x, (screen.max.x - self.size.x).max(screen.min.x));
+        self.pos.y = self
+            .pos
+            .y
+            .clamp(screen.min.y, (screen.max.y - self.size.y).max(screen.min.y));
     }
 }
 
@@ -156,9 +165,7 @@ pub struct PopupManager {
 
 impl PopupManager {
     pub fn new() -> Self {
-        Self {
-            popups: Vec::new(),
-        }
+        Self { popups: Vec::new() }
     }
 
     /// Register a popup from a PopupDef. title은 `t()`로 번역하여 사용하며,
@@ -375,8 +382,14 @@ impl PopupManager {
                     let bounds = Self::scope_rect(&popup.scope, draw_ctx).unwrap_or(screen_rect);
                     let new_pos = pos - popup.drag_offset;
                     popup.pos = egui::pos2(
-                        new_pos.x.clamp(bounds.min.x, (bounds.max.x - popup.size.x).max(bounds.min.x)),
-                        new_pos.y.clamp(bounds.min.y, (bounds.max.y - popup.size.y).max(bounds.min.y)),
+                        new_pos.x.clamp(
+                            bounds.min.x,
+                            (bounds.max.x - popup.size.x).max(bounds.min.x),
+                        ),
+                        new_pos.y.clamp(
+                            bounds.min.y,
+                            (bounds.max.y - popup.size.y).max(bounds.min.y),
+                        ),
                     );
                 }
             }
@@ -438,7 +451,12 @@ impl PopupManager {
             let cr = th.corner_radius.value() as u8;
             painter.rect_filled(
                 title_rect,
-                egui::CornerRadius { nw: cr, ne: cr, sw: 0, se: 0 },
+                egui::CornerRadius {
+                    nw: cr,
+                    ne: cr,
+                    sw: 0,
+                    se: 0,
+                },
                 th.mantle,
             );
             painter.line_segment(
@@ -464,14 +482,24 @@ impl PopupManager {
                 painter.rect_filled(close_btn_rect, 2.0, th.hover_overlay);
             }
             let x_size = 5.0;
-            let x_color = if is_close_hovered { th.red } else { th.subtext0 };
+            let x_color = if is_close_hovered {
+                th.red
+            } else {
+                th.subtext0
+            };
             let center = close_btn_rect.center();
             painter.line_segment(
-                [center - egui::vec2(x_size, x_size), center + egui::vec2(x_size, x_size)],
+                [
+                    center - egui::vec2(x_size, x_size),
+                    center + egui::vec2(x_size, x_size),
+                ],
                 egui::Stroke::new(1.5, x_color),
             );
             painter.line_segment(
-                [center + egui::vec2(-x_size, x_size), center + egui::vec2(x_size, -x_size)],
+                [
+                    center + egui::vec2(-x_size, x_size),
+                    center + egui::vec2(x_size, -x_size),
+                ],
                 egui::Stroke::new(1.5, x_color),
             );
 
@@ -511,9 +539,10 @@ impl PopupManager {
             PopupScope::Window => true,
             PopupScope::Workspace(ws_idx) => *ws_idx == ctx.active_workspace,
             PopupScope::Pane(pane_id) => ctx.pane_rects.iter().any(|(id, _)| *id == *pane_id),
-            PopupScope::Tab(pane_id, tab_idx) => {
-                ctx.active_tabs.iter().any(|(pid, tidx)| *pid == *pane_id && *tidx == *tab_idx)
-            }
+            PopupScope::Tab(pane_id, tab_idx) => ctx
+                .active_tabs
+                .iter()
+                .any(|(pid, tidx)| *pid == *pane_id && *tidx == *tab_idx),
             PopupScope::Surface(surface_id) => {
                 ctx.surface_rects.iter().any(|(id, _)| *id == *surface_id)
             }
@@ -524,17 +553,23 @@ impl PopupManager {
     fn scope_rect(scope: &PopupScope, ctx: Option<&LayoutContext>) -> Option<egui::Rect> {
         let ctx = ctx?;
         match scope {
-            PopupScope::Window => None, // use screen_rect (caller default)
+            PopupScope::Window => None,       // use screen_rect (caller default)
             PopupScope::Workspace(_) => None, // workspace fills window
-            PopupScope::Pane(pane_id) => {
-                ctx.pane_rects.iter().find(|(id, _)| *id == *pane_id).map(|(_, r)| *r)
-            }
-            PopupScope::Tab(pane_id, _) => {
-                ctx.pane_rects.iter().find(|(id, _)| *id == *pane_id).map(|(_, r)| *r)
-            }
-            PopupScope::Surface(surface_id) => {
-                ctx.surface_rects.iter().find(|(id, _)| *id == *surface_id).map(|(_, r)| *r)
-            }
+            PopupScope::Pane(pane_id) => ctx
+                .pane_rects
+                .iter()
+                .find(|(id, _)| *id == *pane_id)
+                .map(|(_, r)| *r),
+            PopupScope::Tab(pane_id, _) => ctx
+                .pane_rects
+                .iter()
+                .find(|(id, _)| *id == *pane_id)
+                .map(|(_, r)| *r),
+            PopupScope::Surface(surface_id) => ctx
+                .surface_rects
+                .iter()
+                .find(|(id, _)| *id == *surface_id)
+                .map(|(_, r)| *r),
         }
     }
 }

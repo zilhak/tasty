@@ -107,7 +107,6 @@ impl Translations {
         let first = template.replacen("{}", arg1, 1);
         first.replacen("{}", arg2, 1)
     }
-
 }
 
 /// Initialize the global translation store. Call once at startup.
@@ -136,4 +135,3 @@ pub fn t_fmt2(key: &str, arg1: &str, arg2: &str) -> String {
         .map(|tr| tr.get_fmt2(key, arg1, arg2))
         .unwrap_or_else(|| key.replacen("{}", arg1, 1).replacen("{}", arg2, 1))
 }
-

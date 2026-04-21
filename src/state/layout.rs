@@ -48,13 +48,41 @@ impl AppState {
         result
     }
 
+    /// Compute all surface regions (terminal + non-terminal) for the active workspace.
+    /// Returns: for each pane, the pane rect and all surface regions within it.
+    pub fn all_surface_regions(
+        &self,
+        terminal_rect: Rect,
+    ) -> Vec<(PaneId, Rect, Vec<(u32, Rect)>)> {
+        let ws = self.active_workspace();
+        let pane_rects = ws.pane_layout().compute_rects(terminal_rect);
+
+        let mut result = Vec::new();
+        for (pane_id, pane_rect) in pane_rects {
+            if let Some(pane) = ws.pane_layout().find_pane(pane_id) {
+                let tab_bar_h = self.tab_bar_height;
+                let content_rect = Rect {
+                    x: pane_rect.x,
+                    y: pane_rect.y + tab_bar_h,
+                    width: pane_rect.width,
+                    height: (pane_rect.height - tab_bar_h).max(PhysicalPx(1.0)),
+                };
+                let regions = match pane.tabs.get(pane.active_tab) {
+                    Some(tab) => tab.all_surface_regions(content_rect),
+                    None => Vec::new(),
+                };
+                result.push((pane_id, pane_rect, regions));
+            }
+        }
+        result
+    }
+
     /// Get the actual content rect for the focused surface (accounting for tab bar).
     /// Returns None if no surface is focused.
     pub fn focused_surface_rect(&self, terminal_rect: Rect) -> Option<Rect> {
         let surface_id = self.focused_surface_id()?;
-        let regions = self.render_regions(terminal_rect);
-        for (_pane_id, _pane_rect, terminal_regions) in &regions {
-            for (sid, _term, rect) in terminal_regions {
+        for (_pane_id, _pane_rect, surface_regions) in &self.all_surface_regions(terminal_rect) {
+            for (sid, rect) in surface_regions {
                 if *sid == surface_id {
                     return Some(*rect);
                 }

@@ -3,11 +3,13 @@ use std::time::SystemTime;
 
 use egui::ColorImage;
 
-use super::surface_trait::Surface;
 use super::SurfaceId;
+use super::surface_trait::Surface;
 
 /// Image file extensions recognized by the viewer.
-const IMAGE_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "gif", "bmp", "webp", "ico", "tiff", "svg"];
+const IMAGE_EXTENSIONS: &[&str] = &[
+    "png", "jpg", "jpeg", "gif", "bmp", "webp", "ico", "tiff", "svg",
+];
 
 /// A surface that displays an image with viewer and drawing capabilities.
 pub struct ImagePanel {
@@ -226,11 +228,12 @@ impl ImagePanel {
             rgba_data.push(pixel.a());
         }
 
-        let img_buf: image::RgbaImage =
-            image::RgbaImage::from_raw(w as u32, h as u32, rgba_data)
-                .ok_or("Failed to create image buffer")?;
+        let img_buf: image::RgbaImage = image::RgbaImage::from_raw(w as u32, h as u32, rgba_data)
+            .ok_or("Failed to create image buffer")?;
 
-        img_buf.save(path).map_err(|e| format!("Failed to save PNG: {}", e))
+        img_buf
+            .save(path)
+            .map_err(|e| format!("Failed to save PNG: {}", e))
     }
 
     /// Get the save path for the current image (with .png extension).
@@ -243,16 +246,25 @@ impl ImagePanel {
 }
 
 impl Surface for ImagePanel {
-    fn type_name(&self) -> &'static str { "Image" }
-    fn surface_id(&self) -> Option<SurfaceId> { Some(self.id) }
+    fn type_name(&self) -> &'static str {
+        "Image"
+    }
+    fn surface_id(&self) -> Option<SurfaceId> {
+        Some(self.id)
+    }
     fn display_name(&self) -> String {
-        self.file_path.as_ref()
+        self.file_path
+            .as_ref()
             .and_then(|p| Path::new(p).file_name())
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| "Image".to_string())
     }
-    fn as_image(&self) -> Option<&ImagePanel> { Some(self) }
-    fn as_image_mut(&mut self) -> Option<&mut ImagePanel> { Some(self) }
+    fn as_image(&self) -> Option<&ImagePanel> {
+        Some(self)
+    }
+    fn as_image_mut(&mut self) -> Option<&mut ImagePanel> {
+        Some(self)
+    }
 }
 
 // ── Helper functions ──
@@ -280,14 +292,15 @@ fn scan_directory_images(file_path: &str) -> Vec<String> {
     };
 
     images.sort();
-    images.into_iter().map(|p| p.to_string_lossy().to_string()).collect()
+    images
+        .into_iter()
+        .map(|p| p.to_string_lossy().to_string())
+        .collect()
 }
 
 /// Load an image from a file path, returning the ColorImage and modification time.
 fn load_image_from_path(path: &str) -> (Option<ColorImage>, Option<SystemTime>) {
-    let mtime = std::fs::metadata(path)
-        .and_then(|m| m.modified())
-        .ok();
+    let mtime = std::fs::metadata(path).and_then(|m| m.modified()).ok();
 
     let img = match image::open(path) {
         Ok(img) => img,
@@ -301,7 +314,13 @@ fn load_image_from_path(path: &str) -> (Option<ColorImage>, Option<SystemTime>) 
         .map(|p| egui::Color32::from_rgba_unmultiplied(p[0], p[1], p[2], p[3]))
         .collect();
 
-    (Some(ColorImage { size: [w as usize, h as usize], pixels }), mtime)
+    (
+        Some(ColorImage {
+            size: [w as usize, h as usize],
+            pixels,
+        }),
+        mtime,
+    )
 }
 
 /// Alpha blend foreground over background.

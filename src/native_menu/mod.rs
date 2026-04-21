@@ -33,17 +33,29 @@ pub struct MenuItem {
 
 impl MenuItem {
     pub fn new(id: u32, label: impl Into<String>) -> Self {
-        Self { id, label: label.into(), enabled: true }
+        Self {
+            id,
+            label: label.into(),
+            enabled: true,
+        }
     }
 
     #[allow(dead_code)]
     pub fn disabled(id: u32, label: impl Into<String>) -> Self {
-        Self { id, label: label.into(), enabled: false }
+        Self {
+            id,
+            label: label.into(),
+            enabled: false,
+        }
     }
 
     #[allow(dead_code)]
     pub fn separator() -> Self {
-        Self { id: 0, label: String::new(), enabled: false }
+        Self {
+            id: 0,
+            label: String::new(),
+            enabled: false,
+        }
     }
 
     pub fn is_separator(&self) -> bool {

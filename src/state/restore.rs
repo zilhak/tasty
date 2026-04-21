@@ -1,7 +1,5 @@
 use crate::model::closed_item::*;
-use crate::model::{
-    Pane, PaneNode, Surface, SurfaceGroupLayout, TerminalSurface, Tab, Workspace,
-};
+use crate::model::{Pane, PaneNode, Surface, SurfaceGroupLayout, Tab, TerminalSurface, Workspace};
 
 use super::AppState;
 
@@ -18,17 +16,15 @@ impl RebuildResult {
     fn into_tab(self, tab_id: u32, name: String) -> Tab {
         match self {
             RebuildResult::Single(surface) => Tab::new_with_surface(tab_id, name, surface),
-            RebuildResult::Layout(layout, focused_surface) => {
-                Tab {
-                    id: tab_id,
-                    name,
-                    explicit_name: None,
-                    layout_opt: Some(layout),
-                    focused_surface,
-                    deferred_spawn: None,
-                    deferred_surface_id: None,
-                }
-            }
+            RebuildResult::Layout(layout, focused_surface) => Tab {
+                id: tab_id,
+                name,
+                explicit_name: None,
+                layout_opt: Some(layout),
+                focused_surface,
+                deferred_spawn: None,
+                deferred_surface_id: None,
+            },
         }
     }
 }
@@ -43,15 +39,15 @@ impl AppState {
         };
 
         match item {
-            ClosedItem::Surface { surface, tab_name } => {
-                self.restore_surface(surface, tab_name)
-            }
-            ClosedItem::Tab(tab) => {
-                self.restore_tab(tab)
-            }
-            ClosedItem::Workspace { name, subtitle, pane_layout, focused_pane, .. } => {
-                self.restore_workspace(name, subtitle, pane_layout, focused_pane)
-            }
+            ClosedItem::Surface { surface, tab_name } => self.restore_surface(surface, tab_name),
+            ClosedItem::Tab(tab) => self.restore_tab(tab),
+            ClosedItem::Workspace {
+                name,
+                subtitle,
+                pane_layout,
+                focused_pane,
+                ..
+            } => self.restore_workspace(name, subtitle, pane_layout, focused_pane),
         }
     }
 
@@ -126,26 +122,38 @@ impl AppState {
                 let node = self.rebuild_surface_node(surface)?;
                 Some(RebuildResult::Single(Box::new(node)))
             }
-            ClosedPanel::SurfaceGroup { layout, focused_surface: _ } => {
+            ClosedPanel::SurfaceGroup {
+                layout,
+                focused_surface: _,
+            } => {
                 let rebuilt_layout = self.rebuild_surface_layout(layout)?;
                 let first_id = rebuilt_layout.first_surface_id().unwrap_or(0);
                 Some(RebuildResult::Layout(rebuilt_layout, first_id))
             }
             ClosedPanel::Markdown { path } => {
                 let id = self.engine.next_ids.next_surface();
-                Some(RebuildResult::Single(Box::new(crate::model::MarkdownPanel::new(id, path.to_string_lossy().to_string()))))
+                Some(RebuildResult::Single(Box::new(
+                    crate::model::MarkdownPanel::new(id, path.to_string_lossy().to_string()),
+                )))
             }
             ClosedPanel::Explorer { path } => {
                 let id = self.engine.next_ids.next_surface();
-                let root = path.map(|p| p.to_string_lossy().to_string())
+                let root = path
+                    .map(|p| p.to_string_lossy().to_string())
                     .unwrap_or_else(|| ".".to_string());
-                Some(RebuildResult::Single(Box::new(crate::model::ExplorerPanel::new(id, root))))
+                Some(RebuildResult::Single(Box::new(
+                    crate::model::ExplorerPanel::new(id, root),
+                )))
             }
             ClosedPanel::Image { path } => {
                 let id = self.engine.next_ids.next_surface();
                 match path {
-                    Some(p) => Some(RebuildResult::Single(Box::new(crate::model::ImagePanel::new(id, p.to_string_lossy().to_string())))),
-                    None => Some(RebuildResult::Single(Box::new(crate::model::ImagePanel::new_blank(id)))),
+                    Some(p) => Some(RebuildResult::Single(Box::new(
+                        crate::model::ImagePanel::new(id, p.to_string_lossy().to_string()),
+                    ))),
+                    None => Some(RebuildResult::Single(Box::new(
+                        crate::model::ImagePanel::new_blank(id),
+                    ))),
                 }
             }
         }
@@ -155,14 +163,24 @@ impl AppState {
         let surface_id = self.engine.next_ids.next_surface();
         let cols = self.engine.default_cols;
         let rows = self.engine.default_rows;
-        let shell = if self.engine.settings.general.shell.is_empty() { None } else { Some(self.engine.settings.general.shell.clone()) };
+        let shell = if self.engine.settings.general.shell.is_empty() {
+            None
+        } else {
+            Some(self.engine.settings.general.shell.clone())
+        };
         let shell_args_owned = self.engine.settings.general.effective_shell_args();
         let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
         let waker = self.engine.make_waker(surface_id);
 
         let terminal = tasty_terminal::Terminal::new_with_shell_args(
-            cols, rows, shell.as_deref(), &shell_args, surface_id, waker,
-        ).ok()?;
+            cols,
+            rows,
+            shell.as_deref(),
+            &shell_args,
+            surface_id,
+            waker,
+        )
+        .ok()?;
 
         if let Some(dir) = closed.cwd.as_deref() {
             let cd_cmd = format!("cd {}\r", shell_escape(dir));
@@ -170,16 +188,28 @@ impl AppState {
         }
 
         self.engine.send_fast_init(surface_id);
-        Some(TerminalSurface { id: surface_id, terminal, deferred_spawn: None })
+        Some(TerminalSurface {
+            id: surface_id,
+            terminal,
+            deferred_spawn: None,
+        })
     }
 
-    fn rebuild_surface_layout(&mut self, closed: ClosedSurfaceLayout) -> Option<SurfaceGroupLayout> {
+    fn rebuild_surface_layout(
+        &mut self,
+        closed: ClosedSurfaceLayout,
+    ) -> Option<SurfaceGroupLayout> {
         match closed {
             ClosedSurfaceLayout::Single(surface) => {
                 let node = self.rebuild_surface_node(surface)?;
                 Some(SurfaceGroupLayout::Leaf(Box::new(node)))
             }
-            ClosedSurfaceLayout::Split { direction, ratio, first, second } => {
+            ClosedSurfaceLayout::Split {
+                direction,
+                ratio,
+                first,
+                second,
+            } => {
                 let first = self.rebuild_surface_layout(*first)?;
                 let second = self.rebuild_surface_layout(*second)?;
                 Some(SurfaceGroupLayout::Split {
@@ -199,7 +229,12 @@ impl AppState {
                 let pane = self.rebuild_pane(closed_pane)?;
                 Some(PaneNode::Leaf(pane))
             }
-            ClosedPaneNode::Split { direction, ratio, first, second } => {
+            ClosedPaneNode::Split {
+                direction,
+                ratio,
+                first,
+                second,
+            } => {
                 let first = self.rebuild_pane_node(*first)?;
                 let second = self.rebuild_pane_node(*second)?;
                 Some(PaneNode::Split {
@@ -225,9 +260,13 @@ impl AppState {
             return None;
         }
         let active_tab = closed.active_tab.min(tabs.len() - 1);
-        Some(Pane { id: pane_id, tabs, active_tab, tab_scroll_offset: 0.0 })
+        Some(Pane {
+            id: pane_id,
+            tabs,
+            active_tab,
+            tab_scroll_offset: 0.0,
+        })
     }
-
 }
 
 /// Escape a path for shell use.

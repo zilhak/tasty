@@ -1,6 +1,5 @@
 /// Integration tests for VTE processing: input, deletion, editing.
 /// Uses TestTerminal (no PTY) for fast, deterministic tests.
-
 use tasty_terminal::test_helpers::TestTerminal;
 
 // ============================================================
@@ -126,7 +125,7 @@ fn erase_to_end_of_line() {
     let mut t = TestTerminal::new(80, 24);
     t.feed_str("hello world");
     t.feed(b"\x1b[6G"); // move to column 6
-    t.feed(b"\x1b[K");   // erase to end of line
+    t.feed(b"\x1b[K"); // erase to end of line
     assert_eq!(t.row(0), "hello");
 }
 
@@ -145,7 +144,7 @@ fn erase_to_end_of_display() {
     let mut t = TestTerminal::new(80, 24);
     t.feed_str("line1\r\nline2\r\nline3");
     t.feed(b"\x1b[2;1H"); // go to row 2, col 1
-    t.feed(b"\x1b[J");     // erase to end of display
+    t.feed(b"\x1b[J"); // erase to end of display
     assert_eq!(t.row(0), "line1");
     assert_eq!(t.row(1), "");
     assert_eq!(t.row(2), "");
@@ -290,9 +289,9 @@ fn status_report_returns_terminal_ok() {
 fn full_reset() {
     let mut t = TestTerminal::new(80, 24);
     t.feed_str("some text");
-    t.feed(b"\x1b[?1h");    // enable DECCKM
+    t.feed(b"\x1b[?1h"); // enable DECCKM
     t.feed(b"\x1b[?2004h"); // enable bracketed paste
-    t.feed(b"\x1bc");       // RIS (full reset)
+    t.feed(b"\x1bc"); // RIS (full reset)
 
     assert!(!t.application_cursor_keys);
     assert!(!t.bracketed_paste);

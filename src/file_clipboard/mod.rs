@@ -7,19 +7,19 @@
 mod macos;
 
 #[cfg(target_os = "macos")]
-pub use macos::{set_file_clipboard, get_file_clipboard};
+pub use macos::{get_file_clipboard, set_file_clipboard};
 
 #[cfg(windows)]
 mod windows;
 
 #[cfg(windows)]
-pub use windows::{set_file_clipboard, get_file_clipboard};
+pub use windows::{get_file_clipboard, set_file_clipboard};
 
 #[cfg(target_os = "linux")]
 mod linux;
 
 #[cfg(target_os = "linux")]
-pub use linux::{set_file_clipboard, get_file_clipboard};
+pub use linux::{get_file_clipboard, set_file_clipboard};
 
 /// Whether files were copied or cut.
 #[derive(Debug, Clone, Copy, PartialEq)]

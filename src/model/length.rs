@@ -74,70 +74,98 @@ impl LogicalPx {
 
 impl std::ops::Add for PhysicalPx {
     type Output = Self;
-    fn add(self, rhs: Self) -> Self { Self(self.0 + rhs.0) }
+    fn add(self, rhs: Self) -> Self {
+        Self(self.0 + rhs.0)
+    }
 }
 
 impl std::ops::Sub for PhysicalPx {
     type Output = Self;
-    fn sub(self, rhs: Self) -> Self { Self(self.0 - rhs.0) }
+    fn sub(self, rhs: Self) -> Self {
+        Self(self.0 - rhs.0)
+    }
 }
 
 impl std::ops::Mul<f32> for PhysicalPx {
     type Output = Self;
-    fn mul(self, rhs: f32) -> Self { Self(self.0 * rhs) }
+    fn mul(self, rhs: f32) -> Self {
+        Self(self.0 * rhs)
+    }
 }
 
 impl std::ops::Div<f32> for PhysicalPx {
     type Output = Self;
-    fn div(self, rhs: f32) -> Self { Self(self.0 / rhs) }
+    fn div(self, rhs: f32) -> Self {
+        Self(self.0 / rhs)
+    }
 }
 
 impl std::ops::Neg for PhysicalPx {
     type Output = Self;
-    fn neg(self) -> Self { Self(-self.0) }
+    fn neg(self) -> Self {
+        Self(-self.0)
+    }
 }
 
 impl std::ops::AddAssign for PhysicalPx {
-    fn add_assign(&mut self, rhs: Self) { self.0 += rhs.0; }
+    fn add_assign(&mut self, rhs: Self) {
+        self.0 += rhs.0;
+    }
 }
 
 impl std::ops::SubAssign for PhysicalPx {
-    fn sub_assign(&mut self, rhs: Self) { self.0 -= rhs.0; }
+    fn sub_assign(&mut self, rhs: Self) {
+        self.0 -= rhs.0;
+    }
 }
 
 // ── Arithmetic: LogicalPx ──
 
 impl std::ops::Add for LogicalPx {
     type Output = Self;
-    fn add(self, rhs: Self) -> Self { Self(self.0 + rhs.0) }
+    fn add(self, rhs: Self) -> Self {
+        Self(self.0 + rhs.0)
+    }
 }
 
 impl std::ops::Sub for LogicalPx {
     type Output = Self;
-    fn sub(self, rhs: Self) -> Self { Self(self.0 - rhs.0) }
+    fn sub(self, rhs: Self) -> Self {
+        Self(self.0 - rhs.0)
+    }
 }
 
 impl std::ops::Mul<f32> for LogicalPx {
     type Output = Self;
-    fn mul(self, rhs: f32) -> Self { Self(self.0 * rhs) }
+    fn mul(self, rhs: f32) -> Self {
+        Self(self.0 * rhs)
+    }
 }
 
 impl std::ops::Div<f32> for LogicalPx {
     type Output = Self;
-    fn div(self, rhs: f32) -> Self { Self(self.0 / rhs) }
+    fn div(self, rhs: f32) -> Self {
+        Self(self.0 / rhs)
+    }
 }
 
 impl std::ops::Neg for LogicalPx {
     type Output = Self;
-    fn neg(self) -> Self { Self(-self.0) }
+    fn neg(self) -> Self {
+        Self(-self.0)
+    }
 }
 
 impl std::ops::AddAssign for LogicalPx {
-    fn add_assign(&mut self, rhs: Self) { self.0 += rhs.0; }
+    fn add_assign(&mut self, rhs: Self) {
+        self.0 += rhs.0;
+    }
 }
 
 impl std::ops::SubAssign for LogicalPx {
-    fn sub_assign(&mut self, rhs: Self) { self.0 -= rhs.0; }
+    fn sub_assign(&mut self, rhs: Self) {
+        self.0 -= rhs.0;
+    }
 }
 
 // ── Display ──

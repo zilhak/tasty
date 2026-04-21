@@ -11,14 +11,26 @@ impl AppState {
         let sh = crate::engine_state::ShellConfig::from_settings(&self.engine.settings);
         let waker = self.engine.make_waker(surface_id);
         if let Some(pane) = self.focused_pane_mut() {
-            pane.add_tab_with_shell(tab_id, surface_id, cols, rows, sh.shell_ref(), &sh.args_ref(), waker, cwd.as_deref())?;
+            pane.add_tab_with_shell(
+                tab_id,
+                surface_id,
+                cols,
+                rows,
+                sh.shell_ref(),
+                &sh.args_ref(),
+                waker,
+                cwd.as_deref(),
+            )?;
         }
         self.send_fast_init(surface_id);
         Ok(())
     }
 
     /// Add a new tab in the focused pane without switching to it, with optional explicit cwd.
-    pub fn add_tab_background(&mut self, explicit_cwd: Option<std::path::PathBuf>) -> anyhow::Result<()> {
+    pub fn add_tab_background(
+        &mut self,
+        explicit_cwd: Option<std::path::PathBuf>,
+    ) -> anyhow::Result<()> {
         let cwd = explicit_cwd.or_else(|| self.resolve_inherit_cwd());
         let tab_id = self.engine.next_ids.next_tab();
         let surface_id = self.engine.next_ids.next_surface();
@@ -29,11 +41,29 @@ impl AppState {
 
         if self.engine.settings.performance.lazy_pty_init {
             if let Some(pane) = self.focused_pane_mut() {
-                pane.add_tab_deferred(tab_id, surface_id, sh.shell_ref(), &sh.args_ref(), cols, rows, waker, cwd.as_deref());
+                pane.add_tab_deferred(
+                    tab_id,
+                    surface_id,
+                    sh.shell_ref(),
+                    &sh.args_ref(),
+                    cols,
+                    rows,
+                    waker,
+                    cwd.as_deref(),
+                );
             }
         } else {
             if let Some(pane) = self.focused_pane_mut() {
-                pane.add_tab_background_with_shell(tab_id, surface_id, cols, rows, sh.shell_ref(), &sh.args_ref(), waker, cwd.as_deref())?;
+                pane.add_tab_background_with_shell(
+                    tab_id,
+                    surface_id,
+                    cols,
+                    rows,
+                    sh.shell_ref(),
+                    &sh.args_ref(),
+                    waker,
+                    cwd.as_deref(),
+                )?;
             }
             self.send_fast_init(surface_id);
         }
@@ -44,8 +74,13 @@ impl AppState {
     pub fn add_markdown_tab(&mut self, file_path: String) -> anyhow::Result<()> {
         let tab_id = self.engine.next_ids.next_tab();
         let surface_id = self.engine.next_ids.next_surface();
-        let name = file_path.split(['/', '\\']).last().unwrap_or("Markdown").to_string();
-        let surface: Box<dyn crate::model::Surface> = Box::new(crate::model::MarkdownPanel::new(surface_id, file_path));
+        let name = file_path
+            .split(['/', '\\'])
+            .last()
+            .unwrap_or("Markdown")
+            .to_string();
+        let surface: Box<dyn crate::model::Surface> =
+            Box::new(crate::model::MarkdownPanel::new(surface_id, file_path));
         if let Some(pane) = self.focused_pane_mut() {
             pane.add_surface_tab(tab_id, name, surface);
         }
@@ -56,8 +91,13 @@ impl AppState {
     pub fn add_explorer_tab(&mut self, root_path: String) -> anyhow::Result<()> {
         let tab_id = self.engine.next_ids.next_tab();
         let surface_id = self.engine.next_ids.next_surface();
-        let name = root_path.split(['/', '\\']).last().unwrap_or("Explorer").to_string();
-        let surface: Box<dyn crate::model::Surface> = Box::new(crate::model::ExplorerPanel::new(surface_id, root_path));
+        let name = root_path
+            .split(['/', '\\'])
+            .last()
+            .unwrap_or("Explorer")
+            .to_string();
+        let surface: Box<dyn crate::model::Surface> =
+            Box::new(crate::model::ExplorerPanel::new(surface_id, root_path));
         if let Some(pane) = self.focused_pane_mut() {
             pane.add_surface_tab(tab_id, name, surface);
         }
@@ -68,7 +108,8 @@ impl AppState {
     pub fn add_html_tab(&mut self, url: String) -> anyhow::Result<()> {
         let tab_id = self.engine.next_ids.next_tab();
         let surface_id = self.engine.next_ids.next_surface();
-        let surface: Box<dyn crate::model::Surface> = Box::new(crate::model::HtmlPanel::new(surface_id, url));
+        let surface: Box<dyn crate::model::Surface> =
+            Box::new(crate::model::HtmlPanel::new(surface_id, url));
         if let Some(pane) = self.focused_pane_mut() {
             pane.add_surface_tab(tab_id, "HTML".to_string(), surface);
         }
@@ -79,9 +120,8 @@ impl AppState {
     pub fn add_clipboard_viewer_tab(&mut self) -> anyhow::Result<()> {
         let tab_id = self.engine.next_ids.next_tab();
         let surface_id = self.engine.next_ids.next_surface();
-        let surface: Box<dyn crate::model::Surface> = Box::new(
-            crate::model::ClipboardViewerPanel::new(surface_id),
-        );
+        let surface: Box<dyn crate::model::Surface> =
+            Box::new(crate::model::ClipboardViewerPanel::new(surface_id));
         let name = crate::i18n::t("clipboard_viewer.tab_title").to_string();
         if let Some(pane) = self.focused_pane_mut() {
             pane.add_surface_tab(tab_id, name, surface);
@@ -93,9 +133,8 @@ impl AppState {
     pub fn add_clipboard_viewer_tab_to_pane(&mut self, pane_id: u32) -> anyhow::Result<()> {
         let tab_id = self.engine.next_ids.next_tab();
         let surface_id = self.engine.next_ids.next_surface();
-        let surface: Box<dyn crate::model::Surface> = Box::new(
-            crate::model::ClipboardViewerPanel::new(surface_id),
-        );
+        let surface: Box<dyn crate::model::Surface> =
+            Box::new(crate::model::ClipboardViewerPanel::new(surface_id));
         let name = crate::i18n::t("clipboard_viewer.tab_title").to_string();
         if let Some(pane) = self.find_pane_by_id_mut(pane_id) {
             pane.add_surface_tab(tab_id, name, surface);
@@ -107,7 +146,8 @@ impl AppState {
     pub fn add_empty_tab(&mut self) -> Option<(u32, u32)> {
         let tab_id = self.engine.next_ids.next_tab();
         let surface_id = self.engine.next_ids.next_surface();
-        let surface: Box<dyn crate::model::Surface> = Box::new(crate::model::EmptySurface::new(surface_id));
+        let surface: Box<dyn crate::model::Surface> =
+            Box::new(crate::model::EmptySurface::new(surface_id));
         if let Some(pane) = self.focused_pane_mut() {
             pane.add_surface_tab(tab_id, "Empty".to_string(), surface);
             Some((tab_id, surface_id))
@@ -117,7 +157,11 @@ impl AppState {
     }
 
     /// Add a new tab in the specified pane (by ID, cross-workspace) without switching active tab.
-    pub fn add_tab_to_pane(&mut self, pane_id: u32, explicit_cwd: Option<std::path::PathBuf>) -> anyhow::Result<()> {
+    pub fn add_tab_to_pane(
+        &mut self,
+        pane_id: u32,
+        explicit_cwd: Option<std::path::PathBuf>,
+    ) -> anyhow::Result<()> {
         let cwd = explicit_cwd.or_else(|| {
             if self.engine.settings.general.inherit_cwd {
                 self.find_pane_by_id(pane_id)
@@ -136,11 +180,29 @@ impl AppState {
 
         if self.engine.settings.performance.lazy_pty_init {
             if let Some(pane) = self.find_pane_by_id_mut(pane_id) {
-                pane.add_tab_deferred(tab_id, surface_id, sh.shell_ref(), &sh.args_ref(), cols, rows, waker, cwd.as_deref());
+                pane.add_tab_deferred(
+                    tab_id,
+                    surface_id,
+                    sh.shell_ref(),
+                    &sh.args_ref(),
+                    cols,
+                    rows,
+                    waker,
+                    cwd.as_deref(),
+                );
             }
         } else {
             if let Some(pane) = self.find_pane_by_id_mut(pane_id) {
-                pane.add_tab_background_with_shell(tab_id, surface_id, cols, rows, sh.shell_ref(), &sh.args_ref(), waker, cwd.as_deref())?;
+                pane.add_tab_background_with_shell(
+                    tab_id,
+                    surface_id,
+                    cols,
+                    rows,
+                    sh.shell_ref(),
+                    &sh.args_ref(),
+                    waker,
+                    cwd.as_deref(),
+                )?;
             }
             self.send_fast_init(surface_id);
         }
@@ -148,7 +210,12 @@ impl AppState {
     }
 
     /// Add a tab with a Surface trait object in the specified pane (by ID, cross-workspace).
-    pub fn add_surface_tab_to_pane(&mut self, pane_id: u32, name: String, surface: Box<dyn crate::model::Surface>) {
+    pub fn add_surface_tab_to_pane(
+        &mut self,
+        pane_id: u32,
+        name: String,
+        surface: Box<dyn crate::model::Surface>,
+    ) {
         let tab_id = self.engine.next_ids.next_tab();
         if let Some(pane) = self.find_pane_by_id_mut(pane_id) {
             pane.add_surface_tab(tab_id, name, surface);
@@ -227,7 +294,9 @@ impl AppState {
             let active = pane.active_tab;
             if let Some(tab) = pane.tabs.get(active) {
                 let snapshot = crate::model::closed_item::ClosedTab::from_tab(tab);
-                self.engine.closed_items.push(crate::model::ClosedItem::Tab(snapshot));
+                self.engine
+                    .closed_items
+                    .push(crate::model::ClosedItem::Tab(snapshot));
             }
         }
         // Collect surface IDs (mutable borrow)
@@ -262,7 +331,13 @@ impl AppState {
         let waker = self.engine.make_waker(surface_id);
 
         let terminal = match tasty_terminal::Terminal::new_with_shell_args_cwd(
-            cols, rows, sh.shell_ref(), &sh.args_ref(), surface_id, waker, cwd.as_deref(),
+            cols,
+            rows,
+            sh.shell_ref(),
+            &sh.args_ref(),
+            surface_id,
+            waker,
+            cwd.as_deref(),
         ) {
             Ok(t) => t,
             Err(_) => return false,
@@ -281,9 +356,10 @@ impl AppState {
 
     /// Convert a surface to Markdown type.
     pub fn convert_surface_to_markdown(&mut self, surface_id: u32, file_path: String) -> bool {
-        let surface: Box<dyn crate::model::Surface> = Box::new(
-            crate::model::MarkdownPanel::new(surface_id, file_path.clone()),
-        );
+        let surface: Box<dyn crate::model::Surface> = Box::new(crate::model::MarkdownPanel::new(
+            surface_id,
+            file_path.clone(),
+        ));
         let name = std::path::Path::new(&file_path)
             .file_name()
             .map(|f| f.to_string_lossy().to_string());
@@ -292,16 +368,15 @@ impl AppState {
 
     /// Convert a surface to Explorer type.
     pub fn convert_surface_to_explorer(&mut self, surface_id: u32) -> bool {
-        let root = self.resolve_inherit_cwd()
+        let root = self
+            .resolve_inherit_cwd()
             .map(|p| p.to_string_lossy().to_string())
             .or_else(|| {
-                directories::BaseDirs::new()
-                    .map(|d| d.home_dir().to_string_lossy().to_string())
+                directories::BaseDirs::new().map(|d| d.home_dir().to_string_lossy().to_string())
             })
             .unwrap_or_else(|| ".".to_string());
-        let surface: Box<dyn crate::model::Surface> = Box::new(
-            crate::model::ExplorerPanel::new(surface_id, root),
-        );
+        let surface: Box<dyn crate::model::Surface> =
+            Box::new(crate::model::ExplorerPanel::new(surface_id, root));
         self.replace_surface_for_id(surface_id, surface, Some(Some("Explorer".to_string())))
     }
 
@@ -309,8 +384,13 @@ impl AppState {
     pub fn add_image_tab(&mut self, file_path: String) -> anyhow::Result<()> {
         let tab_id = self.engine.next_ids.next_tab();
         let surface_id = self.engine.next_ids.next_surface();
-        let name = file_path.split(['/', '\\']).last().unwrap_or("Image").to_string();
-        let surface: Box<dyn crate::model::Surface> = Box::new(crate::model::ImagePanel::new(surface_id, file_path));
+        let name = file_path
+            .split(['/', '\\'])
+            .last()
+            .unwrap_or("Image")
+            .to_string();
+        let surface: Box<dyn crate::model::Surface> =
+            Box::new(crate::model::ImagePanel::new(surface_id, file_path));
         if let Some(pane) = self.focused_pane_mut() {
             pane.add_surface_tab(tab_id, name, surface);
         }
@@ -319,17 +399,15 @@ impl AppState {
 
     /// Convert a surface to Image type (blank canvas).
     pub fn convert_surface_to_image(&mut self, surface_id: u32) -> bool {
-        let surface: Box<dyn crate::model::Surface> = Box::new(
-            crate::model::ImagePanel::new_blank(surface_id),
-        );
+        let surface: Box<dyn crate::model::Surface> =
+            Box::new(crate::model::ImagePanel::new_blank(surface_id));
         self.replace_surface_for_id(surface_id, surface, Some(Some("Image".to_string())))
     }
 
     /// Convert a surface to Html type.
     pub fn convert_surface_to_html(&mut self, surface_id: u32, url: String) -> bool {
-        let surface: Box<dyn crate::model::Surface> = Box::new(
-            crate::model::HtmlPanel::new(surface_id, url),
-        );
+        let surface: Box<dyn crate::model::Surface> =
+            Box::new(crate::model::HtmlPanel::new(surface_id, url));
         self.replace_surface_for_id(surface_id, surface, Some(Some("HTML".to_string())))
     }
 

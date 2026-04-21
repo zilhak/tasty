@@ -55,16 +55,11 @@ impl NotificationStore {
         let coalesce_window = Duration::from_millis(self.coalesce_ms);
 
         // Coalesce: if same source sent a notification recently, merge
-        if let Some(existing) = self
-            .notifications
-            .iter_mut()
-            .rev()
-            .find(|n| {
-                n.source_workspace == source_workspace
-                    && n.source_surface == source_surface
-                    && now.duration_since(n.timestamp) < coalesce_window
-            })
-        {
+        if let Some(existing) = self.notifications.iter_mut().rev().find(|n| {
+            n.source_workspace == source_workspace
+                && n.source_surface == source_surface
+                && now.duration_since(n.timestamp) < coalesce_window
+        }) {
             if !body.is_empty() {
                 if existing.body.is_empty() {
                     existing.body = body;
@@ -147,7 +142,9 @@ impl NotificationStore {
 
     /// Check if any surface in the given set is highlighted.
     pub fn has_highlighted_surface(&self, surface_ids: &[SurfaceId]) -> bool {
-        surface_ids.iter().any(|id| self.highlighted_surfaces.contains(id))
+        surface_ids
+            .iter()
+            .any(|id| self.highlighted_surfaces.contains(id))
     }
 
     /// Check if we should send a system notification (rate limited to 1/sec).
@@ -161,7 +158,6 @@ impl NotificationStore {
         self.last_system_notification = Some(now);
         true
     }
-
 }
 
 /// Send an OS-level desktop notification.

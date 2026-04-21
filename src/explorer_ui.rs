@@ -20,12 +20,19 @@ fn has_shift(keys: &[PendingKeyEvent]) -> bool {
 /// Draw the explorer panel with a file tree on the left and a file viewer on the right.
 /// `keys` contains keyboard events routed by the central dispatcher — only present
 /// when this explorer is the focused surface.
-pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel, keys: &[PendingKeyEvent]) -> Option<ExplorerAction> {
+pub fn draw_explorer(
+    ui: &mut egui::Ui,
+    panel: &mut ExplorerPanel,
+    keys: &[PendingKeyEvent],
+) -> Option<ExplorerAction> {
     let th = theme::theme();
     let mut explorer_action: Option<ExplorerAction> = None;
     let available_width = ui.available_width();
     let tree_width = if panel.show_preview {
-        (available_width * panel.tree_ratio).max(80.0).min(available_width - 80.0).round_ui()
+        (available_width * panel.tree_ratio)
+            .max(80.0)
+            .min(available_width - 80.0)
+            .round_ui()
     } else {
         available_width
     };
@@ -59,10 +66,10 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel, keys: &[Pendi
                 } else {
                     crate::i18n::t("explorer.show_preview")
                 };
-                if ui.button(
-                    egui::RichText::new(label)
-                        .size(th.font_size_caption.value()),
-                ).clicked() {
+                if ui
+                    .button(egui::RichText::new(label).size(th.font_size_caption.value()))
+                    .clicked()
+                {
                     panel.show_preview = !panel.show_preview;
                 }
             });
@@ -113,14 +120,19 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel, keys: &[Pendi
                             let key_enter = key_pressed(keys, NamedKey::Enter);
 
                             if (key_up || key_down || key_enter) && action.is_none() {
-                                let current_idx = panel.selected_file.as_ref()
+                                let current_idx = panel
+                                    .selected_file
+                                    .as_ref()
                                     .and_then(|sel| visible.iter().position(|p| p == sel));
 
                                 if key_up || key_down {
                                     let new_idx = match current_idx {
                                         Some(idx) => {
-                                            if key_up { idx.saturating_sub(1) }
-                                            else { (idx + 1).min(visible.len().saturating_sub(1)) }
+                                            if key_up {
+                                                idx.saturating_sub(1)
+                                            } else {
+                                                (idx + 1).min(visible.len().saturating_sub(1))
+                                            }
                                         }
                                         None => 0,
                                     };
@@ -155,13 +167,16 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel, keys: &[Pendi
                                         panel.range_select(&path, &visible);
                                     }
                                     TreeAction::DoubleClickFile(path) => {
-                                        let ext = path.rsplit('.').next().unwrap_or("").to_lowercase();
+                                        let ext =
+                                            path.rsplit('.').next().unwrap_or("").to_lowercase();
                                         match ext.as_str() {
                                             "md" | "markdown" => {
-                                                explorer_action = Some(ExplorerAction::OpenMarkdownTab(path));
+                                                explorer_action =
+                                                    Some(ExplorerAction::OpenMarkdownTab(path));
                                             }
                                             "html" | "htm" => {
-                                                explorer_action = Some(ExplorerAction::OpenHtmlTab(path));
+                                                explorer_action =
+                                                    Some(ExplorerAction::OpenHtmlTab(path));
                                             }
                                             _ => {
                                                 panel.select_single(&path);
@@ -172,8 +187,14 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel, keys: &[Pendi
                                         toggle_dir_by_path(&mut panel.root_node, &path);
                                     }
                                     TreeAction::ContextMenu(path, pos) => {
-                                        let is_bookmarked = crate::bookmarks::Bookmarks::load().is_bookmarked(&path);
-                                        explorer_action = Some(ExplorerAction::FolderContextMenu { path, is_bookmarked, x: pos.x, y: pos.y });
+                                        let is_bookmarked = crate::bookmarks::Bookmarks::load()
+                                            .is_bookmarked(&path);
+                                        explorer_action = Some(ExplorerAction::FolderContextMenu {
+                                            path,
+                                            is_bookmarked,
+                                            x: pos.x,
+                                            y: pos.y,
+                                        });
                                     }
                                 }
                             }
@@ -203,7 +224,8 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel, keys: &[Pendi
                     for bm in &bookmarks.entries {
                         let resp = ui.selectable_label(
                             false,
-                            egui::RichText::new(format!("\u{2605} {}", bm.name)).size(th.font_size_caption.value()),
+                            egui::RichText::new(format!("\u{2605} {}", bm.name))
+                                .size(th.font_size_caption.value()),
                         );
                         if resp.double_clicked() {
                             nav_path = Some(bm.path.clone());
@@ -280,11 +302,7 @@ pub fn draw_explorer(ui: &mut egui::Ui, panel: &mut ExplorerPanel, keys: &[Pendi
                 ui.set_min_width(ui.available_width());
                 if let Some(ref path) = panel.selected_file {
                     // File path header
-                    ui.label(
-                        egui::RichText::new(path)
-                            .small()
-                            .color(egui::Color32::GRAY),
-                    );
+                    ui.label(egui::RichText::new(path).small().color(egui::Color32::GRAY));
                     ui.separator();
 
                     if let Some(ref content) = panel.file_content {
@@ -349,9 +367,19 @@ pub enum ExplorerAction {
     /// Open an HTML file as a new Html tab (file:// URL).
     OpenHtmlTab(String),
     /// Request native context menu for a folder (path, is_bookmarked, x, y).
-    FolderContextMenu { path: String, is_bookmarked: bool, x: f32, y: f32 },
+    FolderContextMenu {
+        path: String,
+        is_bookmarked: bool,
+        x: f32,
+        y: f32,
+    },
     /// Request native context menu for a bookmark item (path, name, x, y).
-    BookmarkContextMenu { path: String, name: String, x: f32, y: f32 },
+    BookmarkContextMenu {
+        path: String,
+        name: String,
+        x: f32,
+        y: f32,
+    },
 }
 
 fn draw_file_node(
@@ -473,7 +501,9 @@ fn paste_destination(panel: &ExplorerPanel) -> String {
 
 /// Find a node by path in the tree.
 fn find_node<'a>(node: &'a FileNode, target: &str) -> Option<&'a FileNode> {
-    if node.path == target { return Some(node); }
+    if node.path == target {
+        return Some(node);
+    }
     if node.is_directory {
         if let Some(ref children) = node.children {
             for child in children {

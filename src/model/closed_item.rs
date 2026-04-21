@@ -26,9 +26,15 @@ pub enum ClosedPanel {
         focused_surface: SurfaceId,
     },
     /// Panels without PTY store just enough to recreate.
-    Markdown { path: PathBuf },
-    Explorer { path: Option<PathBuf> },
-    Image { path: Option<PathBuf> },
+    Markdown {
+        path: PathBuf,
+    },
+    Explorer {
+        path: Option<PathBuf>,
+    },
+    Image {
+        path: Option<PathBuf>,
+    },
 }
 
 /// Mirrors SurfaceGroupLayout but with ClosedSurface instead of live Terminal.
@@ -138,14 +144,18 @@ impl ClosedSurfaceLayout {
                     })
                 }
             }
-            super::SurfaceGroupLayout::Split { direction, ratio, first, second, .. } => {
-                ClosedSurfaceLayout::Split {
-                    direction: *direction,
-                    ratio: *ratio,
-                    first: Box::new(Self::from_layout(first)),
-                    second: Box::new(Self::from_layout(second)),
-                }
-            }
+            super::SurfaceGroupLayout::Split {
+                direction,
+                ratio,
+                first,
+                second,
+                ..
+            } => ClosedSurfaceLayout::Split {
+                direction: *direction,
+                ratio: *ratio,
+                first: Box::new(Self::from_layout(first)),
+                second: Box::new(Self::from_layout(second)),
+            },
         }
     }
 }
@@ -170,18 +180,23 @@ impl ClosedPanel {
             return ClosedPanel::Terminal(ClosedSurface::from_surface_node(node));
         }
         if let Some(md) = surface.as_markdown() {
-            return ClosedPanel::Markdown { path: PathBuf::from(&md.file_path) };
+            return ClosedPanel::Markdown {
+                path: PathBuf::from(&md.file_path),
+            };
         }
         if let Some(ex) = surface.as_explorer() {
-            return ClosedPanel::Explorer { path: Some(PathBuf::from(&ex.root_path)) };
+            return ClosedPanel::Explorer {
+                path: Some(PathBuf::from(&ex.root_path)),
+            };
         }
         if let Some(img) = surface.as_image() {
-            return ClosedPanel::Image { path: img.file_path.as_ref().map(PathBuf::from) };
+            return ClosedPanel::Image {
+                path: img.file_path.as_ref().map(PathBuf::from),
+            };
         }
         // Html, Empty, etc. — not restorable
         ClosedPanel::Explorer { path: None }
     }
-
 }
 
 impl ClosedTab {
@@ -212,14 +227,18 @@ impl ClosedPaneNode {
     pub fn from_pane_node(node: &super::PaneNode) -> Self {
         match node {
             super::PaneNode::Leaf(pane) => ClosedPaneNode::Leaf(ClosedPane::from_pane(pane)),
-            super::PaneNode::Split { direction, ratio, first, second, .. } => {
-                ClosedPaneNode::Split {
-                    direction: *direction,
-                    ratio: *ratio,
-                    first: Box::new(Self::from_pane_node(first)),
-                    second: Box::new(Self::from_pane_node(second)),
-                }
-            }
+            super::PaneNode::Split {
+                direction,
+                ratio,
+                first,
+                second,
+                ..
+            } => ClosedPaneNode::Split {
+                direction: *direction,
+                ratio: *ratio,
+                first: Box::new(Self::from_pane_node(first)),
+                second: Box::new(Self::from_pane_node(second)),
+            },
         }
     }
 }

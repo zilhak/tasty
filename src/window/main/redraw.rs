@@ -46,36 +46,64 @@ impl MainWindow {
                     if self.state.engine.settings.notification.enabled
                         && self.state.engine.settings.notification.system_notification
                         && !self.base.focused
-                        && self.state.engine.notifications.should_send_system_notification()
+                        && self
+                            .state
+                            .engine
+                            .notifications
+                            .should_send_system_notification()
                     {
                         crate::notification::send_system_notification(title, body);
                     }
                     if self.state.engine.settings.notification.enabled {
                         let ws_id = self.state.active_workspace().id;
-                        self.state.engine.notifications.add(ws_id, surface_id, title.clone(), body.clone());
+                        self.state.engine.notifications.add(
+                            ws_id,
+                            surface_id,
+                            title.clone(),
+                            body.clone(),
+                        );
                     }
                     let hook_events = vec![tasty_hooks::HookEvent::Notification];
-                    self.state.engine.hook_manager.check_and_fire(surface_id, &hook_events);
+                    self.state
+                        .engine
+                        .hook_manager
+                        .check_and_fire(surface_id, &hook_events);
                     self.base.dirty = true;
                 }
                 crate::terminal::TerminalEventKind::BellRing => {
                     if self.state.engine.settings.notification.enabled {
                         let ws_id = self.state.active_workspace().id;
-                        self.state.engine.notifications.add(ws_id, surface_id, "Bell".to_string(), String::new());
+                        self.state.engine.notifications.add(
+                            ws_id,
+                            surface_id,
+                            "Bell".to_string(),
+                            String::new(),
+                        );
                     }
                     if self.state.engine.settings.notification.enabled
                         && self.state.engine.settings.notification.system_notification
                         && !self.base.focused
-                        && self.state.engine.notifications.should_send_system_notification()
+                        && self
+                            .state
+                            .engine
+                            .notifications
+                            .should_send_system_notification()
                     {
                         crate::notification::send_system_notification("Tasty", "Bell");
                     }
                     let hook_events = vec![tasty_hooks::HookEvent::Bell];
-                    self.state.engine.hook_manager.check_and_fire(surface_id, &hook_events);
+                    self.state
+                        .engine
+                        .hook_manager
+                        .check_and_fire(surface_id, &hook_events);
                     self.base.dirty = true;
                 }
-                crate::terminal::TerminalEventKind::TitleChanged(_) => { self.base.dirty = true; }
-                crate::terminal::TerminalEventKind::CwdChanged(_) => { self.base.dirty = true; }
+                crate::terminal::TerminalEventKind::TitleChanged(_) => {
+                    self.base.dirty = true;
+                }
+                crate::terminal::TerminalEventKind::CwdChanged(_) => {
+                    self.base.dirty = true;
+                }
                 crate::terminal::TerminalEventKind::ClipboardSet(data) => {
                     if let Some(cb) = &mut self.clipboard {
                         cb.set_text(data);
@@ -84,7 +112,10 @@ impl MainWindow {
                 }
                 crate::terminal::TerminalEventKind::ProcessExited => {
                     let hook_events = vec![tasty_hooks::HookEvent::ProcessExit];
-                    self.state.engine.hook_manager.check_and_fire(surface_id, &hook_events);
+                    self.state
+                        .engine
+                        .hook_manager
+                        .check_and_fire(surface_id, &hook_events);
                     self.state.close_surface_by_id_no_snapshot(surface_id);
                     self.base.dirty = true;
                 }
@@ -99,7 +130,11 @@ impl MainWindow {
             let terminal_rect = self.compute_terminal_rect();
             let (cols, rows) = self.base.gpu.grid_size_for_rect(&terminal_rect);
             self.state.update_grid_size(cols, rows);
-            self.state.resize_all(terminal_rect, self.base.gpu.cell_width(), self.base.gpu.cell_height());
+            self.state.resize_all(
+                terminal_rect,
+                self.base.gpu.cell_width(),
+                self.base.gpu.cell_height(),
+            );
             // Schedule another redraw to verify scale factor has stabilized.
             self.base.dirty = true;
         }
@@ -108,7 +143,12 @@ impl MainWindow {
         if self.base.dirty {
             self.base.dirty = false;
             self.update_ime_cursor_area();
-            match self.base.gpu.render(&mut self.state, &self.base.winit, self.ime_preedit.as_ref(), self.text_selection.as_ref()) {
+            match self.base.gpu.render(
+                &mut self.state,
+                &self.base.winit,
+                self.ime_preedit.as_ref(),
+                self.text_selection.as_ref(),
+            ) {
                 Ok(()) => {}
                 Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
                     self.base.gpu.resize(self.base.winit.inner_size());
@@ -150,7 +190,8 @@ impl MainWindow {
 
         // Collect all Html surface IDs and their visibility/bounds
         let active_ws = self.state.active_workspace;
-        let mut active_html: std::collections::HashMap<u32, crate::webview::WebViewBounds> = std::collections::HashMap::new();
+        let mut active_html: std::collections::HashMap<u32, crate::webview::WebViewBounds> =
+            std::collections::HashMap::new();
         let mut all_html_ids: Vec<u32> = Vec::new();
 
         for (ws_idx, ws) in self.state.engine.workspaces.iter().enumerate() {
@@ -170,8 +211,11 @@ impl MainWindow {
                                 let bounds = crate::webview::WebViewBounds {
                                     x: (pane_rect.x.value() as f64 + inset) / scale_factor,
                                     y: (pane_rect.y.value() as f64 + tab_bar_h) / scale_factor,
-                                    width: (pane_rect.width.value() as f64 - inset * 2.0).max(1.0) / scale_factor,
-                                    height: (pane_rect.height.value() as f64 - tab_bar_h - inset).max(1.0) / scale_factor,
+                                    width: (pane_rect.width.value() as f64 - inset * 2.0).max(1.0)
+                                        / scale_factor,
+                                    height: (pane_rect.height.value() as f64 - tab_bar_h - inset)
+                                        .max(1.0)
+                                        / scale_factor,
                                 };
                                 active_html.insert(html.id, bounds);
                             }
@@ -188,14 +232,23 @@ impl MainWindow {
                 let url = self.find_html_url(sid);
                 match crate::webview::PlatformWebView::new(
                     self.base.winit.as_ref(),
-                    active_html.get(&sid).copied().unwrap_or(crate::webview::WebViewBounds {
-                        x: 0.0, y: 0.0, width: 1.0, height: 1.0,
-                    }),
+                    active_html
+                        .get(&sid)
+                        .copied()
+                        .unwrap_or(crate::webview::WebViewBounds {
+                            x: 0.0,
+                            y: 0.0,
+                            width: 1.0,
+                            height: 1.0,
+                        }),
                     scale_factor,
                 ) {
                     Ok(wv) => {
                         if let Some(url) = &url {
-                            if url.starts_with("file://") || url.starts_with("http://") || url.starts_with("https://") {
+                            if url.starts_with("file://")
+                                || url.starts_with("http://")
+                                || url.starts_with("https://")
+                            {
                                 wv.load_url(url);
                             } else {
                                 wv.load_html(url);
@@ -265,18 +318,26 @@ impl MainWindow {
         };
 
         match pending {
-            PendingNativeMenu::Tab { pane_id, tab_index, x, y } => {
+            PendingNativeMenu::Tab {
+                pane_id,
+                tab_index,
+                x,
+                y,
+            } => {
                 let rename_label = crate::i18n::t("tab_context_menu.rename");
                 let close_label = crate::i18n::t("tab_context_menu.close");
                 let items = [
                     MenuItem::new(1, rename_label),
                     MenuItem::new(2, close_label),
                 ];
-                let result = show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
+                let result =
+                    show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
                 match result {
                     Some(1) => {
                         // Rename
-                        let current_name = self.state.active_workspace()
+                        let current_name = self
+                            .state
+                            .active_workspace()
                             .pane_layout()
                             .find_pane(pane_id)
                             .and_then(|p| p.tabs.get(tab_index))
@@ -286,7 +347,12 @@ impl MainWindow {
                     }
                     Some(2) => {
                         // Close
-                        if let Some(pane) = self.state.active_workspace().pane_layout().find_pane(pane_id) {
+                        if let Some(pane) = self
+                            .state
+                            .active_workspace()
+                            .pane_layout()
+                            .find_pane(pane_id)
+                        {
                             if let Some(tab) = pane.tabs.get(tab_index) {
                                 let ids = tab.all_surface_ids();
                                 if let Some(&sid) = ids.first() {
@@ -306,7 +372,8 @@ impl MainWindow {
                     MenuItem::new(3, crate::i18n::t("pane_context_menu.new_explorer")),
                     MenuItem::new(4, crate::i18n::t("pane_context_menu.new_html")),
                 ];
-                let result = show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
+                let result =
+                    show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
                 match result {
                     Some(1) => {
                         self.state.active_workspace_mut().focused_pane = pane_id;
@@ -321,7 +388,10 @@ impl MainWindow {
                             self.state.dialogs.markdown_convert_surface_id = Some(surface_id);
                             self.state.dialogs.file_open_pane_id = Some(pane_id);
                             self.state.dialogs.markdown_open_buffer.clear();
-                            self.state.popups.open_with_scope("markdown_open", crate::ui::popup::PopupScope::Surface(surface_id));
+                            self.state.popups.open_with_scope(
+                                "markdown_open",
+                                crate::ui::popup::PopupScope::Surface(surface_id),
+                            );
                         }
                     }
                     Some(3) => {
@@ -338,21 +408,31 @@ impl MainWindow {
                             self.state.dialogs.html_convert_surface_id = Some(surface_id);
                             self.state.dialogs.file_open_pane_id = Some(pane_id);
                             self.state.dialogs.html_open_buffer.clear();
-                            self.state.popups.open_with_scope("html_open", crate::ui::popup::PopupScope::Surface(surface_id));
+                            self.state.popups.open_with_scope(
+                                "html_open",
+                                crate::ui::popup::PopupScope::Surface(surface_id),
+                            );
                         }
                     }
                     _ => {}
                 }
                 self.mark_dirty();
             }
-            PendingNativeMenu::ExplorerFolder { surface_id, path, is_bookmarked, x, y } => {
+            PendingNativeMenu::ExplorerFolder {
+                surface_id,
+                path,
+                is_bookmarked,
+                x,
+                y,
+            } => {
                 let label = if is_bookmarked {
                     crate::i18n::t("explorer.bookmark_remove")
                 } else {
                     crate::i18n::t("explorer.bookmark_add")
                 };
                 let items = [MenuItem::new(1, label)];
-                let result = show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
+                let result =
+                    show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
                 if result == Some(1) {
                     if is_bookmarked {
                         let mut bookmarks = crate::bookmarks::Bookmarks::load();
@@ -362,7 +442,8 @@ impl MainWindow {
                             .file_name()
                             .map(|n| n.to_string_lossy().to_string())
                             .unwrap_or_default();
-                        self.state.dialogs.bookmark_input = Some((surface_id, path.clone(), folder_name));
+                        self.state.dialogs.bookmark_input =
+                            Some((surface_id, path.clone(), folder_name));
                         self.state.popups.open_with_scope(
                             "bookmark_name",
                             crate::ui::popup::PopupScope::Surface(surface_id),
@@ -371,17 +452,28 @@ impl MainWindow {
                 }
                 self.mark_dirty();
             }
-            PendingNativeMenu::BookmarkItem { path, name: _, x, y } => {
+            PendingNativeMenu::BookmarkItem {
+                path,
+                name: _,
+                x,
+                y,
+            } => {
                 let items = [
                     MenuItem::new(1, crate::i18n::t("explorer.bookmark_navigate")),
                     MenuItem::new(2, crate::i18n::t("explorer.bookmark_remove")),
                 ];
-                let result = show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
+                let result =
+                    show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
                 match result {
                     Some(1) => {
                         // Navigate focused explorer to the bookmark path
                         let focused_pane = self.state.active_workspace().focused_pane;
-                        if let Some(pane) = self.state.active_workspace_mut().pane_layout_mut().find_pane_mut(focused_pane) {
+                        if let Some(pane) = self
+                            .state
+                            .active_workspace_mut()
+                            .pane_layout_mut()
+                            .find_pane_mut(focused_pane)
+                        {
                             let idx = pane.active_tab.min(pane.tabs.len().saturating_sub(1));
                             if let Some(tab) = pane.tabs.get_mut(idx) {
                                 if let Some(panel) = tab.surface_mut().as_explorer_mut() {

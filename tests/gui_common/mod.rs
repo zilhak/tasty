@@ -11,17 +11,14 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-use enigo::{
-    Coordinate, Direction,
-    Enigo, Key, Keyboard, Mouse, Settings as EnigoSettings,
-};
+use enigo::{Coordinate, Direction, Enigo, Key, Keyboard, Mouse, Settings as EnigoSettings};
 use serde_json::Value;
 
 #[cfg(target_os = "windows")]
 use windows::Win32::Foundation::HWND;
 #[cfg(target_os = "windows")]
 use windows::Win32::UI::WindowsAndMessaging::{
-    FindWindowW, GetClientRect, GetWindowRect, SetForegroundWindow, ShowWindow, SW_RESTORE,
+    FindWindowW, GetClientRect, GetWindowRect, SW_RESTORE, SetForegroundWindow, ShowWindow,
 };
 
 // --- Shared instance ---
@@ -53,7 +50,9 @@ pub fn shared() -> std::sync::MutexGuard<'static, GuiTestInstance> {
                 }
             }
         }
-        unsafe { libc::atexit(on_exit); }
+        unsafe {
+            libc::atexit(on_exit);
+        }
         Mutex::new(inst)
     });
     guard.lock().unwrap()
@@ -112,8 +111,7 @@ impl GuiTestInstance {
         // Let the window fully initialize (GPU, terminal, etc.)
         std::thread::sleep(Duration::from_millis(1500));
 
-        let enigo = Enigo::new(&EnigoSettings::default())
-            .expect("failed to create enigo instance");
+        let enigo = Enigo::new(&EnigoSettings::default()).expect("failed to create enigo instance");
 
         let instance = Self {
             process,
@@ -158,9 +156,7 @@ impl GuiTestInstance {
     pub fn call(&self, method: &str, params: Value) -> Value {
         let mut stream = TcpStream::connect(format!("127.0.0.1:{}", self.port))
             .expect("failed to connect to tasty IPC");
-        stream
-            .set_read_timeout(Some(Duration::from_secs(5)))
-            .ok();
+        stream.set_read_timeout(Some(Duration::from_secs(5))).ok();
 
         let request = serde_json::json!({
             "jsonrpc": "2.0",
@@ -171,11 +167,15 @@ impl GuiTestInstance {
 
         let mut msg = serde_json::to_string(&request).unwrap();
         msg.push('\n');
-        stream.write_all(msg.as_bytes()).expect("failed to send IPC");
+        stream
+            .write_all(msg.as_bytes())
+            .expect("failed to send IPC");
 
         let mut reader = BufReader::new(&stream);
         let mut line = String::new();
-        reader.read_line(&mut line).expect("failed to read IPC response");
+        reader
+            .read_line(&mut line)
+            .expect("failed to read IPC response");
 
         let resp: Value = serde_json::from_str(&line).expect("invalid JSON response");
         if let Some(error) = resp.get("error") {
@@ -225,7 +225,9 @@ impl GuiTestInstance {
     pub fn press_key(&mut self, key: Key) {
         self.focus();
         std::thread::sleep(Duration::from_millis(50));
-        self.enigo.key(key, Direction::Click).expect("key press failed");
+        self.enigo
+            .key(key, Direction::Click)
+            .expect("key press failed");
         std::thread::sleep(Duration::from_millis(200));
     }
 
@@ -233,11 +235,17 @@ impl GuiTestInstance {
     pub fn press_ctrl(&mut self, key: Key) {
         self.focus();
         std::thread::sleep(Duration::from_millis(50));
-        self.enigo.key(Key::Control, Direction::Press).expect("ctrl press failed");
+        self.enigo
+            .key(Key::Control, Direction::Press)
+            .expect("ctrl press failed");
         std::thread::sleep(Duration::from_millis(30));
-        self.enigo.key(key, Direction::Click).expect("key click failed");
+        self.enigo
+            .key(key, Direction::Click)
+            .expect("key click failed");
         std::thread::sleep(Duration::from_millis(30));
-        self.enigo.key(Key::Control, Direction::Release).expect("ctrl release failed");
+        self.enigo
+            .key(Key::Control, Direction::Release)
+            .expect("ctrl release failed");
         std::thread::sleep(Duration::from_millis(200));
     }
 
@@ -245,15 +253,25 @@ impl GuiTestInstance {
     pub fn press_ctrl_shift(&mut self, key: Key) {
         self.focus();
         std::thread::sleep(Duration::from_millis(50));
-        self.enigo.key(Key::Control, Direction::Press).expect("ctrl press failed");
+        self.enigo
+            .key(Key::Control, Direction::Press)
+            .expect("ctrl press failed");
         std::thread::sleep(Duration::from_millis(20));
-        self.enigo.key(Key::Shift, Direction::Press).expect("shift press failed");
+        self.enigo
+            .key(Key::Shift, Direction::Press)
+            .expect("shift press failed");
         std::thread::sleep(Duration::from_millis(20));
-        self.enigo.key(key, Direction::Click).expect("key click failed");
+        self.enigo
+            .key(key, Direction::Click)
+            .expect("key click failed");
         std::thread::sleep(Duration::from_millis(20));
-        self.enigo.key(Key::Shift, Direction::Release).expect("shift release failed");
+        self.enigo
+            .key(Key::Shift, Direction::Release)
+            .expect("shift release failed");
         std::thread::sleep(Duration::from_millis(20));
-        self.enigo.key(Key::Control, Direction::Release).expect("ctrl release failed");
+        self.enigo
+            .key(Key::Control, Direction::Release)
+            .expect("ctrl release failed");
         std::thread::sleep(Duration::from_millis(200));
     }
 
@@ -261,11 +279,17 @@ impl GuiTestInstance {
     pub fn press_alt(&mut self, key: Key) {
         self.focus();
         std::thread::sleep(Duration::from_millis(50));
-        self.enigo.key(Key::Alt, Direction::Press).expect("alt press failed");
+        self.enigo
+            .key(Key::Alt, Direction::Press)
+            .expect("alt press failed");
         std::thread::sleep(Duration::from_millis(30));
-        self.enigo.key(key, Direction::Click).expect("key click failed");
+        self.enigo
+            .key(key, Direction::Click)
+            .expect("key click failed");
         std::thread::sleep(Duration::from_millis(30));
-        self.enigo.key(Key::Alt, Direction::Release).expect("alt release failed");
+        self.enigo
+            .key(Key::Alt, Direction::Release)
+            .expect("alt release failed");
         std::thread::sleep(Duration::from_millis(200));
     }
 
@@ -286,10 +310,12 @@ impl GuiTestInstance {
         // Convert window-relative coordinates to screen coordinates
         let (screen_x, screen_y) = self.client_to_screen(x, y);
 
-        self.enigo.move_mouse(screen_x, screen_y, Coordinate::Abs)
+        self.enigo
+            .move_mouse(screen_x, screen_y, Coordinate::Abs)
             .expect("mouse move failed");
         std::thread::sleep(Duration::from_millis(50));
-        self.enigo.button(enigo::Button::Left, Direction::Click)
+        self.enigo
+            .button(enigo::Button::Left, Direction::Click)
             .expect("mouse click failed");
         std::thread::sleep(Duration::from_millis(200));
     }
@@ -316,10 +342,16 @@ impl GuiTestInstance {
             let _ = GetClientRect(self.hwnd, &mut client_rect);
         }
         // The client area offset from window top-left
-        let border_x = ((window_rect.right - window_rect.left) - (client_rect.right - client_rect.left)) / 2;
-        let title_height = (window_rect.bottom - window_rect.top) - (client_rect.bottom - client_rect.top) - border_x;
+        let border_x =
+            ((window_rect.right - window_rect.left) - (client_rect.right - client_rect.left)) / 2;
+        let title_height = (window_rect.bottom - window_rect.top)
+            - (client_rect.bottom - client_rect.top)
+            - border_x;
 
-        (window_rect.left + border_x + x, window_rect.top + title_height + y)
+        (
+            window_rect.left + border_x + x,
+            window_rect.top + title_height + y,
+        )
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -367,9 +399,7 @@ impl GuiTestInstance {
             if start.elapsed() > timeout {
                 panic!("Window '{}' did not appear within {:?}", title, timeout);
             }
-            let hwnd = unsafe {
-                FindWindowW(None, windows::core::PCWSTR(wide_title.as_ptr()))
-            };
+            let hwnd = unsafe { FindWindowW(None, windows::core::PCWSTR(wide_title.as_ptr())) };
             match hwnd {
                 Ok(h) if !h.is_invalid() => return h,
                 _ => {

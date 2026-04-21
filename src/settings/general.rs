@@ -178,7 +178,8 @@ impl GeneralSettings {
         #[cfg(windows)]
         {
             // On Windows, only accept bash-compatible shells
-            let filename = path.file_name()
+            let filename = path
+                .file_name()
                 .and_then(|f| f.to_str())
                 .unwrap_or("")
                 .to_ascii_lowercase();
@@ -221,10 +222,7 @@ impl GeneralSettings {
 
 /// Path to Tasty's compiled bashrc (builtin + user).
 pub fn tasty_bashrc_path() -> String {
-    tasty_dir()
-        .join("bashrc")
-        .to_string_lossy()
-        .to_string()
+    tasty_dir().join("bashrc").to_string_lossy().to_string()
 }
 
 /// Path to the user-editable bashrc fragment.

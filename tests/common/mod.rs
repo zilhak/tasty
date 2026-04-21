@@ -134,7 +134,9 @@ impl TastyInstance {
         stream.write_all(msg.as_bytes()).expect("failed to send");
         let mut reader = BufReader::new(&stream);
         let mut line = String::new();
-        reader.read_line(&mut line).expect("failed to read response");
+        reader
+            .read_line(&mut line)
+            .expect("failed to read response");
         serde_json::from_str(&line).expect("invalid JSON response")
     }
 
@@ -152,12 +154,18 @@ impl TastyInstance {
 
     /// Send text to a specific surface.
     pub fn send_text(&self, surface_id: u64, text: &str) {
-        self.call("surface.send", serde_json::json!({ "surface_id": surface_id, "text": text }));
+        self.call(
+            "surface.send",
+            serde_json::json!({ "surface_id": surface_id, "text": text }),
+        );
     }
 
     /// Set a read mark on a specific surface.
     pub fn set_mark(&self, surface_id: u64) {
-        self.call("surface.set_mark", serde_json::json!({ "surface_id": surface_id }));
+        self.call(
+            "surface.set_mark",
+            serde_json::json!({ "surface_id": surface_id }),
+        );
     }
 
     /// Read output since the last mark, stripping ANSI.
@@ -193,7 +201,10 @@ impl TastyInstance {
 
     /// Get screen text of a specific surface.
     pub fn screen_text_of(&self, surface_id: u64) -> String {
-        let result = self.call("surface.screen_text", serde_json::json!({ "surface_id": surface_id }));
+        let result = self.call(
+            "surface.screen_text",
+            serde_json::json!({ "surface_id": surface_id }),
+        );
         result
             .get("text")
             .and_then(|t| t.as_str())

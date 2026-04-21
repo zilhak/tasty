@@ -133,132 +133,183 @@ impl KeybindingSettings {
     /// 일반 단축키 필드 전체 목록 (modifier 필드 제외).
     /// 중복 검사 및 field_id ↔ 라벨 매핑에 사용.
     pub const GENERAL_BINDING_FIELDS: &'static [(&'static str, &'static str)] = &[
-        ("new_workspace",           "settings.keybindings.new_workspace_label"),
-        ("new_tab",                 "settings.keybindings.new_tab_label"),
-        ("split_pane_vertical",     "settings.keybindings.split_pane_vertical_label"),
-        ("split_pane_horizontal",   "settings.keybindings.split_pane_horizontal_label"),
-        ("split_surface_vertical",  "settings.keybindings.split_surface_vertical_label"),
-        ("split_surface_horizontal","settings.keybindings.split_surface_horizontal_label"),
-        ("toggle_settings",         "settings.keybindings.toggle_settings_label"),
-        ("toggle_notifications",    "settings.keybindings.toggle_notifications_label"),
-        ("close_pane",              "settings.keybindings.close_pane_label"),
-        ("close_surface",           "settings.keybindings.close_surface_label"),
-        ("close_workspace",         "settings.keybindings.close_workspace_label"),
-        ("focus_pane_next",         "settings.keybindings.focus_pane_next_label"),
-        ("focus_pane_prev",         "settings.keybindings.focus_pane_prev_label"),
-        ("focus_surface_next",      "settings.keybindings.focus_surface_next_label"),
-        ("focus_surface_prev",      "settings.keybindings.focus_surface_prev_label"),
-        ("restore_closed",          "settings.keybindings.restore_closed_label"),
-        ("quit",                    "settings.keybindings.quit_label"),
-        ("quit_immediate",          "settings.keybindings.quit_immediate_label"),
-        ("quit_minimize",           "settings.keybindings.quit_minimize_label"),
-        ("open_markdown",           "settings.keybindings.open_markdown_label"),
-        ("open_explorer",           "settings.keybindings.open_explorer_label"),
-        ("convert_surface",         "settings.keybindings.convert_surface_label"),
-        ("convert_to_markdown",     "settings.keybindings.convert_to_markdown_label"),
-        ("convert_to_explorer",     "settings.keybindings.convert_to_explorer_label"),
-        ("new_window",              "settings.keybindings.new_window_label"),
-        ("close_active",            "settings.keybindings.close_active_label"),
-        ("next_tab",                "settings.keybindings.next_tab_label"),
-        ("prev_tab",                "settings.keybindings.prev_tab_label"),
-        ("toggle_clipboard_viewer", "settings.keybindings.toggle_clipboard_viewer_label"),
-        ("copy",                    "settings.keybindings.copy_label"),
-        ("copy_path",               "settings.keybindings.copy_path_label"),
-        ("cut",                     "settings.keybindings.cut_label"),
-        ("select_all",              "settings.keybindings.select_all_label"),
-        ("paste",                   "settings.keybindings.paste_label"),
-        ("zoom_in",                 "settings.keybindings.zoom_in_label"),
-        ("zoom_out",                "settings.keybindings.zoom_out_label"),
-        ("zoom_reset",              "settings.keybindings.zoom_reset_label"),
+        ("new_workspace", "settings.keybindings.new_workspace_label"),
+        ("new_tab", "settings.keybindings.new_tab_label"),
+        (
+            "split_pane_vertical",
+            "settings.keybindings.split_pane_vertical_label",
+        ),
+        (
+            "split_pane_horizontal",
+            "settings.keybindings.split_pane_horizontal_label",
+        ),
+        (
+            "split_surface_vertical",
+            "settings.keybindings.split_surface_vertical_label",
+        ),
+        (
+            "split_surface_horizontal",
+            "settings.keybindings.split_surface_horizontal_label",
+        ),
+        (
+            "toggle_settings",
+            "settings.keybindings.toggle_settings_label",
+        ),
+        (
+            "toggle_notifications",
+            "settings.keybindings.toggle_notifications_label",
+        ),
+        ("close_pane", "settings.keybindings.close_pane_label"),
+        ("close_surface", "settings.keybindings.close_surface_label"),
+        (
+            "close_workspace",
+            "settings.keybindings.close_workspace_label",
+        ),
+        (
+            "focus_pane_next",
+            "settings.keybindings.focus_pane_next_label",
+        ),
+        (
+            "focus_pane_prev",
+            "settings.keybindings.focus_pane_prev_label",
+        ),
+        (
+            "focus_surface_next",
+            "settings.keybindings.focus_surface_next_label",
+        ),
+        (
+            "focus_surface_prev",
+            "settings.keybindings.focus_surface_prev_label",
+        ),
+        (
+            "restore_closed",
+            "settings.keybindings.restore_closed_label",
+        ),
+        ("quit", "settings.keybindings.quit_label"),
+        (
+            "quit_immediate",
+            "settings.keybindings.quit_immediate_label",
+        ),
+        ("quit_minimize", "settings.keybindings.quit_minimize_label"),
+        ("open_markdown", "settings.keybindings.open_markdown_label"),
+        ("open_explorer", "settings.keybindings.open_explorer_label"),
+        (
+            "convert_surface",
+            "settings.keybindings.convert_surface_label",
+        ),
+        (
+            "convert_to_markdown",
+            "settings.keybindings.convert_to_markdown_label",
+        ),
+        (
+            "convert_to_explorer",
+            "settings.keybindings.convert_to_explorer_label",
+        ),
+        ("new_window", "settings.keybindings.new_window_label"),
+        ("close_active", "settings.keybindings.close_active_label"),
+        ("next_tab", "settings.keybindings.next_tab_label"),
+        ("prev_tab", "settings.keybindings.prev_tab_label"),
+        (
+            "toggle_clipboard_viewer",
+            "settings.keybindings.toggle_clipboard_viewer_label",
+        ),
+        ("copy", "settings.keybindings.copy_label"),
+        ("copy_path", "settings.keybindings.copy_path_label"),
+        ("cut", "settings.keybindings.cut_label"),
+        ("select_all", "settings.keybindings.select_all_label"),
+        ("paste", "settings.keybindings.paste_label"),
+        ("zoom_in", "settings.keybindings.zoom_in_label"),
+        ("zoom_out", "settings.keybindings.zoom_out_label"),
+        ("zoom_reset", "settings.keybindings.zoom_reset_label"),
     ];
 
     /// 필드 id로 Vec<String> 참조를 얻는다.
     pub fn get_bindings(&self, field_id: &str) -> Option<&[String]> {
         Some(match field_id {
-            "new_workspace"            => self.new_workspace.as_slice(),
-            "new_tab"                  => self.new_tab.as_slice(),
-            "split_pane_vertical"      => self.split_pane_vertical.as_slice(),
-            "split_pane_horizontal"    => self.split_pane_horizontal.as_slice(),
-            "split_surface_vertical"   => self.split_surface_vertical.as_slice(),
+            "new_workspace" => self.new_workspace.as_slice(),
+            "new_tab" => self.new_tab.as_slice(),
+            "split_pane_vertical" => self.split_pane_vertical.as_slice(),
+            "split_pane_horizontal" => self.split_pane_horizontal.as_slice(),
+            "split_surface_vertical" => self.split_surface_vertical.as_slice(),
             "split_surface_horizontal" => self.split_surface_horizontal.as_slice(),
-            "toggle_settings"          => self.toggle_settings.as_slice(),
-            "toggle_notifications"     => self.toggle_notifications.as_slice(),
-            "close_pane"               => self.close_pane.as_slice(),
-            "close_surface"            => self.close_surface.as_slice(),
-            "close_workspace"          => self.close_workspace.as_slice(),
-            "focus_pane_next"          => self.focus_pane_next.as_slice(),
-            "focus_pane_prev"          => self.focus_pane_prev.as_slice(),
-            "focus_surface_next"       => self.focus_surface_next.as_slice(),
-            "focus_surface_prev"       => self.focus_surface_prev.as_slice(),
-            "toggle_sidebar"           => self.toggle_sidebar.as_slice(),
-            "toggle_sidebar_collapse"  => self.toggle_sidebar_collapse.as_slice(),
-            "restore_closed"           => self.restore_closed.as_slice(),
-            "quit"                     => self.quit.as_slice(),
-            "quit_immediate"           => self.quit_immediate.as_slice(),
-            "quit_minimize"            => self.quit_minimize.as_slice(),
-            "open_markdown"            => self.open_markdown.as_slice(),
-            "open_explorer"            => self.open_explorer.as_slice(),
-            "convert_surface"          => self.convert_surface.as_slice(),
-            "convert_to_markdown"      => self.convert_to_markdown.as_slice(),
-            "convert_to_explorer"      => self.convert_to_explorer.as_slice(),
-            "new_window"               => self.new_window.as_slice(),
-            "close_active"             => self.close_active.as_slice(),
-            "next_tab"                 => self.next_tab.as_slice(),
-            "prev_tab"                 => self.prev_tab.as_slice(),
-            "toggle_clipboard_viewer"  => self.toggle_clipboard_viewer.as_slice(),
-            "copy"                     => self.copy.as_slice(),
-            "copy_path"                => self.copy_path.as_slice(),
-            "cut"                      => self.cut.as_slice(),
-            "select_all"               => self.select_all.as_slice(),
-            "paste"                    => self.paste.as_slice(),
-            "zoom_in"                  => self.zoom_in.as_slice(),
-            "zoom_out"                 => self.zoom_out.as_slice(),
-            "zoom_reset"               => self.zoom_reset.as_slice(),
+            "toggle_settings" => self.toggle_settings.as_slice(),
+            "toggle_notifications" => self.toggle_notifications.as_slice(),
+            "close_pane" => self.close_pane.as_slice(),
+            "close_surface" => self.close_surface.as_slice(),
+            "close_workspace" => self.close_workspace.as_slice(),
+            "focus_pane_next" => self.focus_pane_next.as_slice(),
+            "focus_pane_prev" => self.focus_pane_prev.as_slice(),
+            "focus_surface_next" => self.focus_surface_next.as_slice(),
+            "focus_surface_prev" => self.focus_surface_prev.as_slice(),
+            "toggle_sidebar" => self.toggle_sidebar.as_slice(),
+            "toggle_sidebar_collapse" => self.toggle_sidebar_collapse.as_slice(),
+            "restore_closed" => self.restore_closed.as_slice(),
+            "quit" => self.quit.as_slice(),
+            "quit_immediate" => self.quit_immediate.as_slice(),
+            "quit_minimize" => self.quit_minimize.as_slice(),
+            "open_markdown" => self.open_markdown.as_slice(),
+            "open_explorer" => self.open_explorer.as_slice(),
+            "convert_surface" => self.convert_surface.as_slice(),
+            "convert_to_markdown" => self.convert_to_markdown.as_slice(),
+            "convert_to_explorer" => self.convert_to_explorer.as_slice(),
+            "new_window" => self.new_window.as_slice(),
+            "close_active" => self.close_active.as_slice(),
+            "next_tab" => self.next_tab.as_slice(),
+            "prev_tab" => self.prev_tab.as_slice(),
+            "toggle_clipboard_viewer" => self.toggle_clipboard_viewer.as_slice(),
+            "copy" => self.copy.as_slice(),
+            "copy_path" => self.copy_path.as_slice(),
+            "cut" => self.cut.as_slice(),
+            "select_all" => self.select_all.as_slice(),
+            "paste" => self.paste.as_slice(),
+            "zoom_in" => self.zoom_in.as_slice(),
+            "zoom_out" => self.zoom_out.as_slice(),
+            "zoom_reset" => self.zoom_reset.as_slice(),
             _ => return None,
         })
     }
 
     fn get_bindings_mut(&mut self, field_id: &str) -> Option<&mut Vec<String>> {
         Some(match field_id {
-            "new_workspace"            => &mut self.new_workspace,
-            "new_tab"                  => &mut self.new_tab,
-            "split_pane_vertical"      => &mut self.split_pane_vertical,
-            "split_pane_horizontal"    => &mut self.split_pane_horizontal,
-            "split_surface_vertical"   => &mut self.split_surface_vertical,
+            "new_workspace" => &mut self.new_workspace,
+            "new_tab" => &mut self.new_tab,
+            "split_pane_vertical" => &mut self.split_pane_vertical,
+            "split_pane_horizontal" => &mut self.split_pane_horizontal,
+            "split_surface_vertical" => &mut self.split_surface_vertical,
             "split_surface_horizontal" => &mut self.split_surface_horizontal,
-            "toggle_settings"          => &mut self.toggle_settings,
-            "toggle_notifications"     => &mut self.toggle_notifications,
-            "close_pane"               => &mut self.close_pane,
-            "close_surface"            => &mut self.close_surface,
-            "close_workspace"          => &mut self.close_workspace,
-            "focus_pane_next"          => &mut self.focus_pane_next,
-            "focus_pane_prev"          => &mut self.focus_pane_prev,
-            "focus_surface_next"       => &mut self.focus_surface_next,
-            "focus_surface_prev"       => &mut self.focus_surface_prev,
-            "toggle_sidebar"           => &mut self.toggle_sidebar,
-            "toggle_sidebar_collapse"  => &mut self.toggle_sidebar_collapse,
-            "restore_closed"           => &mut self.restore_closed,
-            "quit"                     => &mut self.quit,
-            "quit_immediate"           => &mut self.quit_immediate,
-            "quit_minimize"            => &mut self.quit_minimize,
-            "open_markdown"            => &mut self.open_markdown,
-            "open_explorer"            => &mut self.open_explorer,
-            "convert_surface"          => &mut self.convert_surface,
-            "convert_to_markdown"      => &mut self.convert_to_markdown,
-            "convert_to_explorer"      => &mut self.convert_to_explorer,
-            "new_window"               => &mut self.new_window,
-            "close_active"             => &mut self.close_active,
-            "next_tab"                 => &mut self.next_tab,
-            "prev_tab"                 => &mut self.prev_tab,
-            "toggle_clipboard_viewer"  => &mut self.toggle_clipboard_viewer,
-            "copy"                     => &mut self.copy,
-            "copy_path"                => &mut self.copy_path,
-            "cut"                      => &mut self.cut,
-            "select_all"               => &mut self.select_all,
-            "paste"                    => &mut self.paste,
-            "zoom_in"                  => &mut self.zoom_in,
-            "zoom_out"                 => &mut self.zoom_out,
-            "zoom_reset"               => &mut self.zoom_reset,
+            "toggle_settings" => &mut self.toggle_settings,
+            "toggle_notifications" => &mut self.toggle_notifications,
+            "close_pane" => &mut self.close_pane,
+            "close_surface" => &mut self.close_surface,
+            "close_workspace" => &mut self.close_workspace,
+            "focus_pane_next" => &mut self.focus_pane_next,
+            "focus_pane_prev" => &mut self.focus_pane_prev,
+            "focus_surface_next" => &mut self.focus_surface_next,
+            "focus_surface_prev" => &mut self.focus_surface_prev,
+            "toggle_sidebar" => &mut self.toggle_sidebar,
+            "toggle_sidebar_collapse" => &mut self.toggle_sidebar_collapse,
+            "restore_closed" => &mut self.restore_closed,
+            "quit" => &mut self.quit,
+            "quit_immediate" => &mut self.quit_immediate,
+            "quit_minimize" => &mut self.quit_minimize,
+            "open_markdown" => &mut self.open_markdown,
+            "open_explorer" => &mut self.open_explorer,
+            "convert_surface" => &mut self.convert_surface,
+            "convert_to_markdown" => &mut self.convert_to_markdown,
+            "convert_to_explorer" => &mut self.convert_to_explorer,
+            "new_window" => &mut self.new_window,
+            "close_active" => &mut self.close_active,
+            "next_tab" => &mut self.next_tab,
+            "prev_tab" => &mut self.prev_tab,
+            "toggle_clipboard_viewer" => &mut self.toggle_clipboard_viewer,
+            "copy" => &mut self.copy,
+            "copy_path" => &mut self.copy_path,
+            "cut" => &mut self.cut,
+            "select_all" => &mut self.select_all,
+            "paste" => &mut self.paste,
+            "zoom_in" => &mut self.zoom_in,
+            "zoom_out" => &mut self.zoom_out,
+            "zoom_reset" => &mut self.zoom_reset,
             _ => return None,
         })
     }
@@ -271,7 +322,9 @@ impl KeybindingSettings {
 
     /// 편의: 단일 값으로 덮어씀. 빈 문자열이면 바인딩 전체 제거.
     pub fn set_field(&mut self, field_id: &str, value: &str) -> bool {
-        let Some(vec) = self.get_bindings_mut(field_id) else { return false; };
+        let Some(vec) = self.get_bindings_mut(field_id) else {
+            return false;
+        };
         vec.clear();
         if !value.is_empty() {
             vec.push(value.to_string());
@@ -280,7 +333,9 @@ impl KeybindingSettings {
     }
 
     pub fn clear_field(&mut self, field_id: &str) -> bool {
-        let Some(vec) = self.get_bindings_mut(field_id) else { return false; };
+        let Some(vec) = self.get_bindings_mut(field_id) else {
+            return false;
+        };
         vec.clear();
         true
     }
@@ -291,7 +346,9 @@ impl KeybindingSettings {
         if combo.is_empty() {
             return false;
         }
-        let Some(vec) = self.get_bindings_mut(field_id) else { return false; };
+        let Some(vec) = self.get_bindings_mut(field_id) else {
+            return false;
+        };
         if vec.iter().any(|b| b == &combo) {
             return false;
         }
@@ -301,7 +358,9 @@ impl KeybindingSettings {
 
     /// field의 idx 번째 바인딩을 제거.
     pub fn remove_binding(&mut self, field_id: &str, idx: usize) -> bool {
-        let Some(vec) = self.get_bindings_mut(field_id) else { return false; };
+        let Some(vec) = self.get_bindings_mut(field_id) else {
+            return false;
+        };
         if idx >= vec.len() {
             return false;
         }
@@ -314,7 +373,9 @@ impl KeybindingSettings {
         if combo.is_empty() {
             return false;
         }
-        let Some(vec) = self.get_bindings_mut(field_id) else { return false; };
+        let Some(vec) = self.get_bindings_mut(field_id) else {
+            return false;
+        };
         if idx == vec.len() {
             // 이미 같은 combo가 있으면 중복 추가 금지
             if vec.iter().any(|b| b == &combo) {
@@ -457,7 +518,12 @@ impl KeybindingSettings {
             cut: vec!["ctrl+x".into(), "alt+x".into()],
             select_all: vec!["ctrl+a".into(), "alt+a".into()],
             paste: vec!["ctrl+v".into(), "alt+v".into(), "ctrl+shift+v".into()],
-            zoom_in: vec!["ctrl+=".into(), "ctrl++".into(), "alt+=".into(), "alt++".into()],
+            zoom_in: vec![
+                "ctrl+=".into(),
+                "ctrl++".into(),
+                "alt+=".into(),
+                "alt++".into(),
+            ],
             zoom_out: vec!["ctrl+-".into(), "alt+-".into()],
             zoom_reset: vec!["ctrl+0".into(), "alt+0".into()],
         }
@@ -756,9 +822,15 @@ mod tests {
         assert!(kb.add_binding("copy", "ctrl+shift+c".into()));
         // 중복 추가는 실패.
         assert!(!kb.add_binding("copy", "ctrl+c".into()));
-        assert_eq!(kb.get_bindings("copy"), Some(&["ctrl+c".to_string(), "ctrl+shift+c".to_string()][..]));
+        assert_eq!(
+            kb.get_bindings("copy"),
+            Some(&["ctrl+c".to_string(), "ctrl+shift+c".to_string()][..])
+        );
         assert!(kb.remove_binding("copy", 0));
-        assert_eq!(kb.get_bindings("copy"), Some(&["ctrl+shift+c".to_string()][..]));
+        assert_eq!(
+            kb.get_bindings("copy"),
+            Some(&["ctrl+shift+c".to_string()][..])
+        );
         // 범위 밖 idx는 실패.
         assert!(!kb.remove_binding("copy", 5));
     }
@@ -786,7 +858,10 @@ mod tests {
     fn all_general_fields_have_getters_and_setters() {
         let mut kb = KeybindingSettings::preset_tasty();
         for (id, _) in KeybindingSettings::GENERAL_BINDING_FIELDS {
-            assert!(kb.get_bindings(id).is_some(), "get_bindings missing for {id}");
+            assert!(
+                kb.get_bindings(id).is_some(),
+                "get_bindings missing for {id}"
+            );
             assert!(kb.set_field(id, "x"), "set_field missing for {id}");
             assert_eq!(kb.get_field(id), Some("x"));
         }
@@ -817,7 +892,10 @@ copy = ["ctrl+c", "ctrl+shift+c"]
         assert_eq!(kb.new_tab, vec!["alt+x".to_string()]);
         // 빈 문자열은 빈 Vec으로.
         assert!(kb.close_pane.is_empty());
-        assert_eq!(kb.copy, vec!["ctrl+c".to_string(), "ctrl+shift+c".to_string()]);
+        assert_eq!(
+            kb.copy,
+            vec!["ctrl+c".to_string(), "ctrl+shift+c".to_string()]
+        );
     }
 
     // ── format_display: `+` 구분자/키 충돌 해소 ───────────────────────

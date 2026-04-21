@@ -34,13 +34,26 @@ impl AppState {
     }
 
     /// Find a pane-level divider at the given position.
-    pub fn find_pane_divider_at(&self, x: f32, y: f32, terminal_rect: Rect, threshold: f32) -> Option<DividerInfo> {
+    pub fn find_pane_divider_at(
+        &self,
+        x: f32,
+        y: f32,
+        terminal_rect: Rect,
+        threshold: f32,
+    ) -> Option<DividerInfo> {
         let ws = self.active_workspace();
-        ws.pane_layout().find_divider_at(x, y, terminal_rect, threshold)
+        ws.pane_layout()
+            .find_divider_at(x, y, terminal_rect, threshold)
     }
 
     /// Find a surface-level divider at the given position (within the focused pane's panel).
-    pub fn find_surface_divider_at(&self, x: f32, y: f32, terminal_rect: Rect, threshold: f32) -> Option<DividerInfo> {
+    pub fn find_surface_divider_at(
+        &self,
+        x: f32,
+        y: f32,
+        terminal_rect: Rect,
+        threshold: f32,
+    ) -> Option<DividerInfo> {
         let ws = self.active_workspace();
         let focused_id = ws.focused_pane;
         let pane_rects = ws.pane_layout().compute_rects(terminal_rect);
@@ -65,20 +78,41 @@ impl AppState {
     }
 
     /// Update a pane-level split ratio based on a divider drag.
-    pub fn update_pane_divider(&mut self, divider: &DividerInfo, x: f32, y: f32, terminal_rect: Rect) -> bool {
+    pub fn update_pane_divider(
+        &mut self,
+        divider: &DividerInfo,
+        x: f32,
+        y: f32,
+        terminal_rect: Rect,
+    ) -> bool {
         let new_ratio = match divider.direction {
-            SplitDirection::Vertical => (PhysicalPx(x) - divider.split_rect.x).value() / divider.split_rect.width.value(),
-            SplitDirection::Horizontal => (PhysicalPx(y) - divider.split_rect.y).value() / divider.split_rect.height.value(),
+            SplitDirection::Vertical => {
+                (PhysicalPx(x) - divider.split_rect.x).value() / divider.split_rect.width.value()
+            }
+            SplitDirection::Horizontal => {
+                (PhysicalPx(y) - divider.split_rect.y).value() / divider.split_rect.height.value()
+            }
         };
         let ws = self.active_workspace_mut();
-        ws.pane_layout_mut().update_ratio_for_rect(divider.split_rect, new_ratio, terminal_rect)
+        ws.pane_layout_mut()
+            .update_ratio_for_rect(divider.split_rect, new_ratio, terminal_rect)
     }
 
     /// Update a surface-level split ratio based on a divider drag.
-    pub fn update_surface_divider(&mut self, divider: &DividerInfo, x: f32, y: f32, terminal_rect: Rect) -> bool {
+    pub fn update_surface_divider(
+        &mut self,
+        divider: &DividerInfo,
+        x: f32,
+        y: f32,
+        terminal_rect: Rect,
+    ) -> bool {
         let new_ratio = match divider.direction {
-            SplitDirection::Vertical => (PhysicalPx(x) - divider.split_rect.x).value() / divider.split_rect.width.value(),
-            SplitDirection::Horizontal => (PhysicalPx(y) - divider.split_rect.y).value() / divider.split_rect.height.value(),
+            SplitDirection::Vertical => {
+                (PhysicalPx(x) - divider.split_rect.x).value() / divider.split_rect.width.value()
+            }
+            SplitDirection::Horizontal => {
+                (PhysicalPx(y) - divider.split_rect.y).value() / divider.split_rect.height.value()
+            }
         };
 
         let tab_bar_h = self.tab_bar_height;
@@ -108,6 +142,7 @@ impl AppState {
             None => return false,
         };
 
-        tab.layout_mut().update_ratio_for_rect(divider.split_rect, new_ratio, content_rect)
+        tab.layout_mut()
+            .update_ratio_for_rect(divider.split_rect, new_ratio, content_rect)
     }
 }

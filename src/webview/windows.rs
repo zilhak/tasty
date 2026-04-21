@@ -4,14 +4,14 @@
 //! Creates a child HWND inside the parent window, then hosts a WebView2
 //! controller inside it. Requires WebView2 runtime (Edge Chromium).
 
-use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use std::sync::mpsc;
 use webview2_com::{Microsoft::Web::WebView2::Win32::*, *};
-use windows::core::*;
 use windows::Win32::Foundation::*;
 use windows::Win32::System::Com::*;
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::WindowsAndMessaging::*;
+use windows::core::*;
+use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
 use super::WebViewBounds;
 
@@ -57,12 +57,16 @@ impl PlatformWebView {
                 class_name,
                 PCWSTR::null(),
                 WS_CHILD | WS_CLIPCHILDREN | WS_VISIBLE,
-                x, y, w, h,
+                x,
+                y,
+                w,
+                h,
                 Some(parent),
                 None,
                 None,
                 None,
-            ).map_err(|e| format!("CreateWindowExW failed: {e}"))?;
+            )
+            .map_err(|e| format!("CreateWindowExW failed: {e}"))?;
 
             // Create WebView2 environment
             let (env_tx, env_rx) = mpsc::channel();
@@ -70,13 +74,14 @@ impl PlatformWebView {
                 PCWSTR::null(),
                 PCWSTR::null(),
                 None,
-                &CreateCoreWebView2EnvironmentCompletedHandler::create(
-                    Box::new(move |_hr, env| {
+                &CreateCoreWebView2EnvironmentCompletedHandler::create(Box::new(
+                    move |_hr, env| {
                         let _ = env_tx.send(env);
                         Ok(())
-                    }),
-                ),
-            ).map_err(|e| format!("CreateEnvironment failed: {e}"))?;
+                    },
+                )),
+            )
+            .map_err(|e| format!("CreateEnvironment failed: {e}"))?;
 
             let env = webview2_com::wait_with_pump(env_rx)
                 .map_err(|e| format!("Environment wait failed: {e}"))?
@@ -86,27 +91,38 @@ impl PlatformWebView {
             let (ctrl_tx, ctrl_rx) = mpsc::channel();
             env.CreateCoreWebView2Controller(
                 hwnd,
-                &CreateCoreWebView2ControllerCompletedHandler::create(
-                    Box::new(move |_hr, ctrl| {
+                &CreateCoreWebView2ControllerCompletedHandler::create(Box::new(
+                    move |_hr, ctrl| {
                         let _ = ctrl_tx.send(ctrl);
                         Ok(())
-                    }),
-                ),
-            ).map_err(|e| format!("CreateController failed: {e}"))?;
+                    },
+                )),
+            )
+            .map_err(|e| format!("CreateController failed: {e}"))?;
 
             let controller = webview2_com::wait_with_pump(ctrl_rx)
                 .map_err(|e| format!("Controller wait failed: {e}"))?
                 .ok_or("No controller returned")?;
 
             // Set bounds
-            controller.SetBounds(RECT {
-                left: 0, top: 0, right: w, bottom: h,
-            }).map_err(|e| format!("SetBounds failed: {e}"))?;
+            controller
+                .SetBounds(RECT {
+                    left: 0,
+                    top: 0,
+                    right: w,
+                    bottom: h,
+                })
+                .map_err(|e| format!("SetBounds failed: {e}"))?;
 
-            let webview: ICoreWebView2 = controller.CoreWebView2()
+            let webview: ICoreWebView2 = controller
+                .CoreWebView2()
                 .map_err(|e| format!("CoreWebView2 failed: {e}"))?;
 
-            Ok(Self { hwnd, controller, webview })
+            Ok(Self {
+                hwnd,
+                controller,
+                webview,
+            })
         }
     }
 
@@ -118,10 +134,18 @@ impl PlatformWebView {
 
         unsafe {
             let _ = self.controller.SetBounds(RECT {
-                left: 0, top: 0, right: w, bottom: h,
+                left: 0,
+                top: 0,
+                right: w,
+                bottom: h,
             });
             let _ = SetWindowPos(
-                self.hwnd, None, x, y, w, h,
+                self.hwnd,
+                None,
+                x,
+                y,
+                w,
+                h,
                 SWP_ASYNCWINDOWPOS | SWP_NOACTIVATE | SWP_NOZORDER,
             );
         }

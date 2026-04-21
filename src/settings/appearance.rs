@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use crate::model::LogicalPx;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]

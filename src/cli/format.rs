@@ -29,12 +29,15 @@ fn format_tree(result: &serde_json::Value) {
             let name = ws.get("name").and_then(|v| v.as_str()).unwrap_or("?");
             let active = ws.get("active").and_then(|v| v.as_bool()).unwrap_or(false);
             let marker = if active { " *" } else { "" };
-            println!("Workspace: {} (id:{}){}",  name, ws_id, marker);
+            println!("Workspace: {} (id:{}){}", name, ws_id, marker);
 
             if let Some(panes) = ws.get("panes").and_then(|v| v.as_array()) {
                 for pane in panes {
                     let pid = pane.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
-                    let focused = pane.get("focused").and_then(|v| v.as_bool()).unwrap_or(false);
+                    let focused = pane
+                        .get("focused")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
                     let pfx = if focused { ">" } else { " " };
                     println!("  {} Pane {} (id:{})", pfx, pid, pid);
 
@@ -42,12 +45,14 @@ fn format_tree(result: &serde_json::Value) {
                         for tab in tabs {
                             let tid = tab.get("id").and_then(|v| v.as_u64());
                             let tname = tab.get("name").and_then(|v| v.as_str()).unwrap_or("?");
-                            let tactive = tab.get("active").and_then(|v| v.as_bool()).unwrap_or(false);
+                            let tactive =
+                                tab.get("active").and_then(|v| v.as_bool()).unwrap_or(false);
                             let tpfx = if tactive { "*" } else { " " };
 
                             // Extract surface info from the tab's surface field
                             let surface = tab.get("surface");
-                            let stype = surface.and_then(|s| s.get("type")).and_then(|v| v.as_str());
+                            let stype =
+                                surface.and_then(|s| s.get("type")).and_then(|v| v.as_str());
                             let sid = surface.and_then(|s| s.get("id")).and_then(|v| v.as_u64());
 
                             let mut ids = String::new();
@@ -55,12 +60,16 @@ fn format_tree(result: &serde_json::Value) {
                                 ids.push_str(&format!("tab:{}", t));
                             }
                             if let Some(s) = sid {
-                                if !ids.is_empty() { ids.push_str(", "); }
+                                if !ids.is_empty() {
+                                    ids.push_str(", ");
+                                }
                                 ids.push_str(&format!("surface:{}", s));
                             }
                             if let Some(t) = stype {
                                 if t != "Terminal" {
-                                    if !ids.is_empty() { ids.push_str(", "); }
+                                    if !ids.is_empty() {
+                                        ids.push_str(", ");
+                                    }
                                     ids.push_str(t);
                                 }
                             }
@@ -94,12 +103,24 @@ fn format_pane_list(result: &serde_json::Value) {
     if let Some(panes) = result.as_array() {
         for pane in panes {
             let pid = pane.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
-            let focused = pane.get("focused").and_then(|v| v.as_bool()).unwrap_or(false);
+            let focused = pane
+                .get("focused")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
             let tab_count = pane.get("tab_count").and_then(|v| v.as_u64()).unwrap_or(0);
-            let ws_id = pane.get("workspace_id").and_then(|v| v.as_u64()).unwrap_or(0);
-            let ws_name = pane.get("workspace_name").and_then(|v| v.as_str()).unwrap_or("");
+            let ws_id = pane
+                .get("workspace_id")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            let ws_name = pane
+                .get("workspace_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             let marker = if focused { " *" } else { "" };
-            println!("Pane {}{} ({} tabs) [ws:{} {}]", pid, marker, tab_count, ws_id, ws_name);
+            println!(
+                "Pane {}{} ({} tabs) [ws:{} {}]",
+                pid, marker, tab_count, ws_id, ws_name
+            );
         }
     }
 }

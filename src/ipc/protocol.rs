@@ -83,10 +83,7 @@ mod tests {
 
     #[test]
     fn response_success() {
-        let resp = JsonRpcResponse::success(
-            serde_json::json!(1),
-            serde_json::json!({"ok": true}),
-        );
+        let resp = JsonRpcResponse::success(serde_json::json!(1), serde_json::json!({"ok": true}));
         assert!(resp.result.is_some());
         assert!(resp.error.is_none());
         let json = serde_json::to_string(&resp).unwrap();
@@ -96,11 +93,7 @@ mod tests {
 
     #[test]
     fn response_error() {
-        let resp = JsonRpcResponse::error(
-            serde_json::json!(1),
-            -32601,
-            "Method not found",
-        );
+        let resp = JsonRpcResponse::error(serde_json::json!(1), -32601, "Method not found");
         assert!(resp.result.is_none());
         assert!(resp.error.is_some());
         assert_eq!(resp.error.as_ref().unwrap().code, -32601);
@@ -108,10 +101,7 @@ mod tests {
 
     #[test]
     fn response_method_not_found() {
-        let resp = JsonRpcResponse::method_not_found(
-            serde_json::json!(1),
-            "foo.bar",
-        );
+        let resp = JsonRpcResponse::method_not_found(serde_json::json!(1), "foo.bar");
         assert!(resp.error.is_some());
         assert_eq!(resp.error.as_ref().unwrap().code, -32601);
         assert!(resp.error.as_ref().unwrap().message.contains("foo.bar"));
@@ -119,10 +109,7 @@ mod tests {
 
     #[test]
     fn response_roundtrip() {
-        let resp = JsonRpcResponse::success(
-            serde_json::json!(42),
-            serde_json::json!({"count": 5}),
-        );
+        let resp = JsonRpcResponse::success(serde_json::json!(42), serde_json::json!({"count": 5}));
         let json = serde_json::to_string(&resp).unwrap();
         let parsed: JsonRpcResponse = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.id, serde_json::json!(42));

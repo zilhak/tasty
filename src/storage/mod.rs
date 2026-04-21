@@ -33,8 +33,8 @@ impl Db {
             std::fs::create_dir_all(parent)
                 .with_context(|| format!("create dir {}", parent.display()))?;
         }
-        let conn = Connection::open(path)
-            .with_context(|| format!("open sqlite at {}", path.display()))?;
+        let conn =
+            Connection::open(path).with_context(|| format!("open sqlite at {}", path.display()))?;
         Self::prepare(conn)
     }
 
@@ -60,8 +60,7 @@ static DB: OnceLock<Mutex<Db>> = OnceLock::new();
 
 /// `~/.tasty/state.db` 경로. `None`이면 홈 디렉터리 미확인.
 pub fn default_db_path() -> Option<PathBuf> {
-    directories::BaseDirs::new()
-        .map(|dirs| dirs.home_dir().join(".tasty").join("state.db"))
+    directories::BaseDirs::new().map(|dirs| dirs.home_dir().join(".tasty").join("state.db"))
 }
 
 /// 앱 시작 시 1회 호출. 실패 시 인메모리 폴백.

@@ -25,8 +25,11 @@ pub(crate) fn handle_hook_set(
         None => {
             return JsonRpcResponse::invalid_params(
                 id,
-                format!("Unknown event type: '{}'. Use: process-exit, bell, notification, output-match:PATTERN, idle-timeout:SECS, claude-idle, needs-input", event_str),
-            )
+                format!(
+                    "Unknown event type: '{}'. Use: process-exit, bell, notification, output-match:PATTERN, idle-timeout:SECS, claude-idle, needs-input",
+                    event_str
+                ),
+            );
         }
     };
 
@@ -40,7 +43,10 @@ pub(crate) fn handle_hook_set(
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    let hook_id = state.engine.hook_manager.add_hook(surface_id, event, command, once);
+    let hook_id = state
+        .engine
+        .hook_manager
+        .add_hook(surface_id, event, command, once);
     JsonRpcResponse::success(id, json!({ "hook_id": hook_id }))
 }
 
@@ -55,7 +61,8 @@ pub(crate) fn handle_hook_list(
         .map(|v| v as u32);
 
     let hooks: Vec<_> = state
-        .engine.hook_manager
+        .engine
+        .hook_manager
         .list_hooks(surface_id)
         .iter()
         .map(|h| {
@@ -105,7 +112,7 @@ pub(crate) fn handle_global_hook_set(
                     "Invalid condition '{}'. Use: interval:SECS, once:SECS, file:/path",
                     condition_str
                 ),
-            )
+            );
         }
     };
 
@@ -119,16 +126,17 @@ pub(crate) fn handle_global_hook_set(
         .and_then(|v| v.as_str())
         .map(String::from);
 
-    let hook_id = state.engine.global_hook_manager.add(condition, command, label);
+    let hook_id = state
+        .engine
+        .global_hook_manager
+        .add(condition, command, label);
     JsonRpcResponse::success(id, json!({ "hook_id": hook_id }))
 }
 
-pub(crate) fn handle_global_hook_list(
-    state: &AppState,
-    id: serde_json::Value,
-) -> JsonRpcResponse {
+pub(crate) fn handle_global_hook_list(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {
     let hooks: Vec<_> = state
-        .engine.global_hook_manager
+        .engine
+        .global_hook_manager
         .list()
         .iter()
         .map(|h| {
@@ -178,10 +186,13 @@ pub(crate) fn handle_surface_fire_hook(
             return JsonRpcResponse::invalid_params(
                 id,
                 format!("Unknown event type: '{}'", event_str),
-            )
+            );
         }
     };
 
-    let fired = state.engine.hook_manager.check_and_fire(surface_id, &[event]);
+    let fired = state
+        .engine
+        .hook_manager
+        .check_and_fire(surface_id, &[event]);
     JsonRpcResponse::success(id, json!({ "fired": fired.len() }))
 }

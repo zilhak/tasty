@@ -40,26 +40,33 @@ impl GpuState {
         // Always re-apply UI scale (in case it changed)
         crate::theme::theme().apply_to_egui(&self.egui_ctx, ui_scale);
 
-        let effective_font_size = state.engine.settings.appearance.effective_font_size(self.scale_factor);
+        let effective_font_size = state
+            .engine
+            .settings
+            .appearance
+            .effective_font_size(self.scale_factor);
         let current_font_size = self.renderer.font_config.metrics.font_size;
         let current_font_family = match &self.renderer.font_config.font_family {
             cosmic_text::FamilyOwned::Monospace => String::new(),
             cosmic_text::FamilyOwned::Name(name) => name.to_string(),
             _ => String::new(),
         };
-        let expected_cell_height = (effective_font_size * state.engine.settings.appearance.line_height).ceil();
+        let expected_cell_height =
+            (effective_font_size * state.engine.settings.appearance.line_height).ceil();
         if effective_font_size != current_font_size
             || state.engine.settings.appearance.font_family != current_font_family
             || expected_cell_height != self.renderer.font_config.metrics.cell_height
         {
             self.renderer.update_font(
-                &self.device, &self.queue,
+                &self.device,
+                &self.queue,
                 effective_font_size,
                 &state.engine.settings.appearance.font_family,
                 &state.engine.settings.appearance.custom_font_path,
                 state.engine.settings.appearance.line_height,
             );
-            self.renderer.resize(&self.queue, self.size.width, self.size.height);
+            self.renderer
+                .resize(&self.queue, self.size.width, self.size.height);
         }
     }
 
@@ -81,7 +88,11 @@ impl GpuState {
     }
 
     /// Run an egui frame with a custom UI closure.
-    pub fn run_egui(&self, raw_input: egui::RawInput, ui_fn: impl FnMut(&egui::Context)) -> egui::FullOutput {
+    pub fn run_egui(
+        &self,
+        raw_input: egui::RawInput,
+        ui_fn: impl FnMut(&egui::Context),
+    ) -> egui::FullOutput {
         self.egui_ctx.run(raw_input, ui_fn)
     }
 
@@ -94,9 +105,12 @@ impl GpuState {
         // (no text field), the check false!=false is false and it skips
         // the set_ime_allowed(false) call entirely.
         self.egui_state.set_allow_ime(false);
-        self.egui_state.handle_platform_output(window, full_output.platform_output);
+        self.egui_state
+            .handle_platform_output(window, full_output.platform_output);
 
-        let paint_jobs = self.egui_ctx.tessellate(full_output.shapes, full_output.pixels_per_point);
+        let paint_jobs = self
+            .egui_ctx
+            .tessellate(full_output.shapes, full_output.pixels_per_point);
         let screen_descriptor = egui_wgpu::ScreenDescriptor {
             size_in_pixels: [self.size.width, self.size.height],
             pixels_per_point: full_output.pixels_per_point,
@@ -109,12 +123,18 @@ impl GpuState {
                 return;
             }
         };
-        let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let view = output
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
 
         // Clear
         let th = crate::theme::theme();
         let bg = crate::theme::Theme::to_float(th.base);
-        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("modal_clear") });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("modal_clear"),
+            });
         {
             let _pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("modal_clear"),
@@ -122,7 +142,12 @@ impl GpuState {
                     view: &view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color { r: bg[0] as f64, g: bg[1] as f64, b: bg[2] as f64, a: 1.0 }),
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: bg[0] as f64,
+                            g: bg[1] as f64,
+                            b: bg[2] as f64,
+                            a: 1.0,
+                        }),
                         store: wgpu::StoreOp::Store,
                     },
                 })],
@@ -135,10 +160,21 @@ impl GpuState {
 
         // Egui render
         for (id, image_delta) in &full_output.textures_delta.set {
-            self.egui_renderer.update_texture(&self.device, &self.queue, *id, image_delta);
+            self.egui_renderer
+                .update_texture(&self.device, &self.queue, *id, image_delta);
         }
-        let mut egui_encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("modal_egui") });
-        self.egui_renderer.update_buffers(&self.device, &self.queue, &mut egui_encoder, &paint_jobs, &screen_descriptor);
+        let mut egui_encoder =
+            self.device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("modal_egui"),
+                });
+        self.egui_renderer.update_buffers(
+            &self.device,
+            &self.queue,
+            &mut egui_encoder,
+            &paint_jobs,
+            &screen_descriptor,
+        );
         {
             let render_pass = egui_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("modal_egui_pass"),
@@ -155,7 +191,8 @@ impl GpuState {
                 occlusion_query_set: None,
             });
             let mut render_pass = render_pass.forget_lifetime();
-            self.egui_renderer.render(&mut render_pass, &paint_jobs, &screen_descriptor);
+            self.egui_renderer
+                .render(&mut render_pass, &paint_jobs, &screen_descriptor);
         }
         for id in &full_output.textures_delta.free {
             self.egui_renderer.free_texture(id);

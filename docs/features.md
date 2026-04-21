@@ -346,6 +346,11 @@
 - 패널 열 때 자동으로 전체 읽음 처리
 - "Mark all read" 버튼 제공
 
+### Surface scope toast 앵커 보강
+- `build_layout_context()`는 기본적으로 active tab에 보이는 surface rect만 `surface_rects`에 넣는다
+- Surface scope toast가 draw 시점에 그 목록에서 빠진 경우, 같은 active workspace 안에서 해당 surface를 포함한 pane을 다시 찾아 pane content rect로 앵커를 보강한다
+- 이 보강으로 Explorer의 "경로 복사"/"파일 복사" toast가 탭 전환 타이밍이나 active tab 드리프트 때문에 즉시 제거되지 않는다
+
 ### 이벤트 수집 파이프라인
 - AppState.collect_events()가 모든 워크스페이스의 모든 터미널에서 이벤트 수집
 - AppState.process_all()이 모든 워크스페이스의 PTY 채널을 처리 (비활성 워크스페이스 메모리 누수 방지)

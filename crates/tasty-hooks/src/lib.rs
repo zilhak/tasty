@@ -174,8 +174,7 @@ impl HookManager {
 
         // Remove once-hooks that fired
         let fired_set: HashSet<HookId> = fired.iter().copied().collect();
-        self.hooks
-            .retain(|h| !h.once || !fired_set.contains(&h.id));
+        self.hooks.retain(|h| !h.once || !fired_set.contains(&h.id));
 
         fired
     }
@@ -187,7 +186,10 @@ mod tests {
 
     #[test]
     fn hook_event_parse_process_exit() {
-        assert_eq!(HookEvent::parse("process-exit"), Some(HookEvent::ProcessExit));
+        assert_eq!(
+            HookEvent::parse("process-exit"),
+            Some(HookEvent::ProcessExit)
+        );
     }
 
     #[test]
@@ -197,7 +199,10 @@ mod tests {
 
     #[test]
     fn hook_event_parse_notification() {
-        assert_eq!(HookEvent::parse("notification"), Some(HookEvent::Notification));
+        assert_eq!(
+            HookEvent::parse("notification"),
+            Some(HookEvent::Notification)
+        );
     }
 
     #[test]

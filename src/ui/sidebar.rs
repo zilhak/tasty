@@ -28,21 +28,27 @@ pub fn draw_collapsed_sidebar(
                 for i in 0..ws_count {
                     let is_active = i == active_ws;
                     let ws_surface_ids = state.engine.workspaces[i].all_surface_ids();
-                    let ws_has_highlight = state.engine.notifications.has_highlighted_surface(&ws_surface_ids);
+                    let ws_has_highlight = state
+                        .engine
+                        .notifications
+                        .has_highlighted_surface(&ws_surface_ids);
                     let label = format!("{}", i + 1);
                     let bg = if is_active { th.surface0 } else { th.mantle };
                     let text_color = if is_active { th.text } else { th.subtext0 };
 
-                    let (rect, resp) = ui.allocate_exact_size(
-                        egui::vec2(32.0, 28.0),
-                        egui::Sense::click(),
-                    );
+                    let (rect, resp) =
+                        ui.allocate_exact_size(egui::vec2(32.0, 28.0), egui::Sense::click());
                     ui.painter().rect_filled(rect, 4.0, bg);
                     if resp.hovered() {
                         ui.painter().rect_filled(rect, 4.0, th.hover_overlay);
                     }
                     if ws_has_highlight {
-                        ui.painter().rect_stroke(rect, 4.0, egui::Stroke::new(1.0, th.blue), egui::StrokeKind::Outside);
+                        ui.painter().rect_stroke(
+                            rect,
+                            4.0,
+                            egui::Stroke::new(1.0, th.blue),
+                            egui::StrokeKind::Outside,
+                        );
                     }
                     ui.painter().text(
                         rect.center(),
@@ -58,10 +64,8 @@ pub fn draw_collapsed_sidebar(
 
                 // "+" add workspace button
                 ui.add_space(2.0);
-                let (rect, resp) = ui.allocate_exact_size(
-                    egui::vec2(32.0, 22.0),
-                    egui::Sense::click(),
-                );
+                let (rect, resp) =
+                    ui.allocate_exact_size(egui::vec2(32.0, 22.0), egui::Sense::click());
                 if resp.hovered() {
                     ui.painter().rect_filled(rect, 4.0, th.hover_overlay);
                 }
@@ -85,10 +89,8 @@ pub fn draw_collapsed_sidebar(
                 ui.add_space(2.0);
 
                 // Tools button "[T]" — opens clipboard viewer popup
-                let (tools_rect, tools_resp) = ui.allocate_exact_size(
-                    egui::vec2(32.0, 22.0),
-                    egui::Sense::click(),
-                );
+                let (tools_rect, tools_resp) =
+                    ui.allocate_exact_size(egui::vec2(32.0, 22.0), egui::Sense::click());
                 if tools_resp.hovered() {
                     ui.painter().rect_filled(tools_rect, 4.0, th.hover_overlay);
                 }
@@ -97,7 +99,11 @@ pub fn draw_collapsed_sidebar(
                     egui::Align2::CENTER_CENTER,
                     "T",
                     egui::FontId::proportional(12.0),
-                    if tools_resp.hovered() { th.subtext1 } else { th.overlay0 },
+                    if tools_resp.hovered() {
+                        th.subtext1
+                    } else {
+                        th.overlay0
+                    },
                 );
                 let tools_resp = tools_resp.on_hover_text(t("sidebar.tools_button"));
                 if tools_resp.clicked() {
@@ -106,10 +112,8 @@ pub fn draw_collapsed_sidebar(
                 ui.add_space(2.0);
 
                 // Expand button ">"
-                let (rect, resp) = ui.allocate_exact_size(
-                    egui::vec2(32.0, 22.0),
-                    egui::Sense::click(),
-                );
+                let (rect, resp) =
+                    ui.allocate_exact_size(egui::vec2(32.0, 22.0), egui::Sense::click());
                 if resp.hovered() {
                     ui.painter().rect_filled(rect, 4.0, th.hover_overlay);
                 }
@@ -118,7 +122,11 @@ pub fn draw_collapsed_sidebar(
                     egui::Align2::CENTER_CENTER,
                     ">",
                     egui::FontId::proportional(14.0),
-                    if resp.hovered() { th.subtext1 } else { th.overlay0 },
+                    if resp.hovered() {
+                        th.subtext1
+                    } else {
+                        th.overlay0
+                    },
                 );
                 if resp.clicked() {
                     expand_clicked = true;
@@ -126,19 +134,21 @@ pub fn draw_collapsed_sidebar(
 
                 // Settings icon (gear)
                 ui.add_space(2.0);
-                let (rect, resp) = ui.allocate_exact_size(
-                    egui::vec2(32.0, 22.0),
-                    egui::Sense::click(),
-                );
+                let (rect, resp) =
+                    ui.allocate_exact_size(egui::vec2(32.0, 22.0), egui::Sense::click());
                 if resp.hovered() {
                     ui.painter().rect_filled(rect, 4.0, th.hover_overlay);
                 }
                 ui.painter().text(
                     rect.center(),
                     egui::Align2::CENTER_CENTER,
-                    "\u{2699}",  // ⚙
+                    "\u{2699}", // ⚙
                     egui::FontId::proportional(14.0),
-                    if resp.hovered() { th.subtext1 } else { th.overlay0 },
+                    if resp.hovered() {
+                        th.subtext1
+                    } else {
+                        th.overlay0
+                    },
                 );
                 if resp.clicked() {
                     settings_clicked = true;
@@ -147,7 +157,13 @@ pub fn draw_collapsed_sidebar(
             });
         });
 
-    (expand_clicked, settings_clicked, tools_clicked, switch_ws, add_ws)
+    (
+        expand_clicked,
+        settings_clicked,
+        tools_clicked,
+        switch_ws,
+        add_ws,
+    )
 }
 
 /// Draw the full (expanded) sidebar with workspace cards.
@@ -173,107 +189,127 @@ pub fn draw_full_sidebar(
                 .max_height(scroll_height)
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
-                ui.add_space(4.0);
+                    ui.add_space(4.0);
 
-                let active_ws = state.active_workspace;
-                let ws_count = state.engine.workspaces.len();
+                    let active_ws = state.active_workspace;
+                    let ws_count = state.engine.workspaces.len();
 
-                for i in 0..ws_count {
-                    let is_active = i == active_ws;
-                    let name = state.engine.workspaces[i].name.clone();
-                    let subtitle = state.engine.workspaces[i].subtitle.clone();
-                    let description = state.engine.workspaces[i].description.clone();
-                    let ws_surface_ids = state.engine.workspaces[i].all_surface_ids();
-                    let ws_has_highlight = state.engine.notifications.has_highlighted_surface(&ws_surface_ids);
+                    for i in 0..ws_count {
+                        let is_active = i == active_ws;
+                        let name = state.engine.workspaces[i].name.clone();
+                        let subtitle = state.engine.workspaces[i].subtitle.clone();
+                        let description = state.engine.workspaces[i].description.clone();
+                        let ws_surface_ids = state.engine.workspaces[i].all_surface_ids();
+                        let ws_has_highlight = state
+                            .engine
+                            .notifications
+                            .has_highlighted_surface(&ws_surface_ids);
 
-                    let bg = if is_active {
-                        th.surface0
-                    } else {
-                        egui::Color32::TRANSPARENT
-                    };
-                    let border = if is_active {
-                        th.blue
-                    } else {
-                        th.surface0
-                    };
+                        let bg = if is_active {
+                            th.surface0
+                        } else {
+                            egui::Color32::TRANSPARENT
+                        };
+                        let border = if is_active { th.blue } else { th.surface0 };
 
-                    let frame = egui::Frame::new()
-                        .fill(bg)
-                        .stroke(egui::Stroke::new(1.0, border))
-                        .corner_radius(4.0)
-                        .inner_margin(egui::Margin::symmetric(8, 6));
+                        let frame = egui::Frame::new()
+                            .fill(bg)
+                            .stroke(egui::Stroke::new(1.0, border))
+                            .corner_radius(4.0)
+                            .inner_margin(egui::Margin::symmetric(8, 6));
 
-                    let response = frame.show(ui, |ui| {
-                        ui.set_min_width(ui.available_width());
+                        let response = frame.show(ui, |ui| {
+                            ui.set_min_width(ui.available_width());
 
-                        ui.horizontal(|ui| {
-                            let title_text = if is_active {
-                                egui::RichText::new(&name).strong()
-                            } else {
-                                egui::RichText::new(&name)
-                            };
-                            ui.label(title_text);
+                            ui.horizontal(|ui| {
+                                let title_text = if is_active {
+                                    egui::RichText::new(&name).strong()
+                                } else {
+                                    egui::RichText::new(&name)
+                                };
+                                ui.label(title_text);
 
-                            if ws_has_highlight {
-                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                    let badge_size = egui::vec2(18.0, 16.0);
-                                    let (rect, _) = ui.allocate_exact_size(badge_size, egui::Sense::hover());
-                                    ui.painter().rect_stroke(rect, 3.0, egui::Stroke::new(1.0, th.blue), egui::StrokeKind::Inside);
-                                    ui.painter().text(
-                                        rect.center(),
-                                        egui::Align2::CENTER_CENTER,
-                                        "!",
-                                        egui::FontId::proportional(10.0),
-                                        th.blue,
+                                if ws_has_highlight {
+                                    ui.with_layout(
+                                        egui::Layout::right_to_left(egui::Align::Center),
+                                        |ui| {
+                                            let badge_size = egui::vec2(18.0, 16.0);
+                                            let (rect, _) = ui.allocate_exact_size(
+                                                badge_size,
+                                                egui::Sense::hover(),
+                                            );
+                                            ui.painter().rect_stroke(
+                                                rect,
+                                                3.0,
+                                                egui::Stroke::new(1.0, th.blue),
+                                                egui::StrokeKind::Inside,
+                                            );
+                                            ui.painter().text(
+                                                rect.center(),
+                                                egui::Align2::CENTER_CENTER,
+                                                "!",
+                                                egui::FontId::proportional(10.0),
+                                                th.blue,
+                                            );
+                                        },
                                     );
-                                });
+                                }
+                            });
+
+                            if !subtitle.is_empty() {
+                                ui.label(egui::RichText::new(&subtitle).small().color(th.subtext0));
+                            }
+
+                            if !description.is_empty() {
+                                ui.label(
+                                    egui::RichText::new(&description).small().color(th.overlay0),
+                                );
                             }
                         });
 
-                        if !subtitle.is_empty() {
-                            ui.label(
-                                egui::RichText::new(&subtitle)
-                                    .small()
-                                    .color(th.subtext0),
-                            );
+                        let card_response = response.response.interact(egui::Sense::click());
+
+                        if card_response.clicked() {
+                            state.switch_workspace(i);
                         }
 
-                        if !description.is_empty() {
-                            ui.label(
-                                egui::RichText::new(&description)
-                                    .small()
-                                    .color(th.overlay0),
-                            );
-                        }
-                    });
+                        card_response.context_menu(|ui| {
+                            if ui.button(t("context_menu.rename_title")).clicked() {
+                                state.dialogs.ws_rename = Some((
+                                    i,
+                                    WsRenameField::Name,
+                                    state.engine.workspaces[i].name.clone(),
+                                ));
+                                ui.close_menu();
+                            }
+                            if ui.button(t("context_menu.rename_subtitle")).clicked() {
+                                state.dialogs.ws_rename = Some((
+                                    i,
+                                    WsRenameField::Subtitle,
+                                    state.engine.workspaces[i].subtitle.clone(),
+                                ));
+                                ui.close_menu();
+                            }
+                        });
 
-                    let card_response = response.response.interact(egui::Sense::click());
-
-                    if card_response.clicked() {
-                        state.switch_workspace(i);
+                        ui.add_space(2.0);
                     }
 
-                    card_response.context_menu(|ui| {
-                        if ui.button(t("context_menu.rename_title")).clicked() {
-                            state.dialogs.ws_rename = Some((i, WsRenameField::Name, state.engine.workspaces[i].name.clone()));
-                            ui.close_menu();
+                    ui.add_space(4.0);
+                    let full_width = ui.available_width();
+                    if ui
+                        .add_sized(
+                            [full_width, 28.0],
+                            egui::Button::new(t("button.new_workspace")),
+                        )
+                        .clicked()
+                    {
+                        if let Err(e) = state.add_workspace() {
+                            tracing::warn!("add_workspace failed: {e}");
                         }
-                        if ui.button(t("context_menu.rename_subtitle")).clicked() {
-                            state.dialogs.ws_rename = Some((i, WsRenameField::Subtitle, state.engine.workspaces[i].subtitle.clone()));
-                            ui.close_menu();
-                        }
-                    });
-
-                    ui.add_space(2.0);
-                }
-
-                ui.add_space(4.0);
-                let full_width = ui.available_width();
-                if ui.add_sized([full_width, 28.0], egui::Button::new(t("button.new_workspace"))).clicked() {
-                    if let Err(e) = state.add_workspace() { tracing::warn!("add_workspace failed: {e}"); }
-                }
-                ui.add_space(4.0);
-            });
+                    }
+                    ui.add_space(4.0);
+                });
 
             // === Fixed bottom: Tools + Collapse + Settings ===
             ui.separator();
@@ -294,7 +330,11 @@ pub fn draw_full_sidebar(
                     egui::Align2::CENTER_CENTER,
                     t("sidebar.tools_button"),
                     egui::FontId::proportional(11.0),
-                    if resp.hovered() { th.subtext1 } else { th.overlay0 },
+                    if resp.hovered() {
+                        th.subtext1
+                    } else {
+                        th.overlay0
+                    },
                 );
                 if resp.clicked() {
                     sidebar_tools = true;
@@ -310,14 +350,19 @@ pub fn draw_full_sidebar(
                     egui::Sense::click().union(egui::Sense::hover()),
                 );
                 if collapse_resp.hovered() {
-                    ui.painter().rect_filled(collapse_rect, 4.0, th.hover_overlay);
+                    ui.painter()
+                        .rect_filled(collapse_rect, 4.0, th.hover_overlay);
                 }
                 ui.painter().text(
                     collapse_rect.center(),
                     egui::Align2::CENTER_CENTER,
                     "<  Collapse",
                     egui::FontId::proportional(11.0),
-                    if collapse_resp.hovered() { th.subtext1 } else { th.overlay0 },
+                    if collapse_resp.hovered() {
+                        th.subtext1
+                    } else {
+                        th.overlay0
+                    },
                 );
                 if collapse_resp.clicked() {
                     sidebar_collapse = true;
@@ -331,7 +376,11 @@ pub fn draw_full_sidebar(
                     egui::vec2(full_width, 28.0),
                     egui::Sense::click().union(egui::Sense::hover()),
                 );
-                let text_color = if response.hovered() { th.subtext1 } else { th.overlay0 };
+                let text_color = if response.hovered() {
+                    th.subtext1
+                } else {
+                    th.overlay0
+                };
                 if response.hovered() {
                     ui.painter().rect_filled(rect, 4.0, th.hover_overlay);
                 }

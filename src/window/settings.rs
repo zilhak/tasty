@@ -8,8 +8,8 @@ use crate::settings::Settings;
 use crate::settings_ui::{self, SettingsUiState};
 use crate::ui::{LayoutContext, ToastManager, ToastScope};
 use crate::window::{
-    modal::MODAL_MODALITY, sealed, ModalWindow, Modality, Window, WindowAction, WindowBase,
-    WindowCtx,
+    ModalWindow, Modality, Window, WindowAction, WindowBase, WindowCtx, modal::MODAL_MODALITY,
+    sealed,
 };
 
 /// 설정 모달 윈도우. egui 기반 설정 UI를 렌더한다.
@@ -25,11 +25,7 @@ pub struct SettingsWindow {
 }
 
 impl SettingsWindow {
-    pub fn new(
-        gpu: GpuState,
-        winit: Arc<winit::window::Window>,
-        settings: Settings,
-    ) -> Self {
+    pub fn new(gpu: GpuState, winit: Arc<winit::window::Window>, settings: Settings) -> Self {
         Self {
             base: WindowBase::new(gpu, winit),
             settings,
@@ -73,10 +69,7 @@ impl Window for SettingsWindow {
     }
 
     fn handle_event(&mut self, event: WindowEvent, _ctx: &mut WindowCtx<'_>) -> WindowAction {
-        let (_, egui_repaint) = self
-            .base
-            .gpu
-            .handle_egui_event(&self.base.winit, &event);
+        let (_, egui_repaint) = self.base.gpu.handle_egui_event(&self.base.winit, &event);
         if egui_repaint {
             self.mark_dirty();
         }
@@ -99,10 +92,8 @@ impl Window for SettingsWindow {
             WindowEvent::KeyboardInput { ref event, .. } => {
                 use winit::event::ElementState;
 
-                self.double_tap.on_key_event(
-                    &event.logical_key,
-                    event.state == ElementState::Pressed,
-                );
+                self.double_tap
+                    .on_key_event(&event.logical_key, event.state == ElementState::Pressed);
                 if event.state == ElementState::Pressed {
                     if let Some(dt) = self.double_tap.take() {
                         self.captured_double_tap = Some(dt.binding_str().to_string());
@@ -150,15 +141,19 @@ impl Window for SettingsWindow {
             self.should_close = true;
         }
 
-        let has_copy = full_output.platform_output.commands.iter().any(|cmd| {
-            matches!(cmd, egui::OutputCommand::CopyText(_))
-        });
+        let has_copy = full_output
+            .platform_output
+            .commands
+            .iter()
+            .any(|cmd| matches!(cmd, egui::OutputCommand::CopyText(_)));
         if has_copy {
             self.toasts.push_info(t("toast.copied"), ToastScope::Window);
             self.mark_dirty();
         }
 
-        self.base.gpu.finish_egui_frame(&self.base.winit, full_output);
+        self.base
+            .gpu
+            .finish_egui_frame(&self.base.winit, full_output);
 
         self.reveal_after_first_render();
 

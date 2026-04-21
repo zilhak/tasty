@@ -78,21 +78,14 @@ impl GlobalHookManager {
     }
 
     /// Add a new hook. Returns the assigned hook ID.
-    pub fn add(
-        &mut self,
-        condition: HookCondition,
-        command: String,
-        label: Option<String>,
-    ) -> u32 {
+    pub fn add(&mut self, condition: HookCondition, command: String, label: Option<String>) -> u32 {
         self.next_id += 1;
         let id = self.next_id;
         let now = Instant::now();
 
         match &condition {
             HookCondition::FileModified(path) => {
-                let mtime = std::fs::metadata(path)
-                    .ok()
-                    .and_then(|m| m.modified().ok());
+                let mtime = std::fs::metadata(path).ok().and_then(|m| m.modified().ok());
                 self.file_mtimes.insert(id, mtime);
             }
             HookCondition::Interval(_) => {
@@ -156,9 +149,8 @@ impl GlobalHookManager {
                     }
                 }
                 HookCondition::FileModified(path) => {
-                    let current_mtime = std::fs::metadata(path)
-                        .ok()
-                        .and_then(|m| m.modified().ok());
+                    let current_mtime =
+                        std::fs::metadata(path).ok().and_then(|m| m.modified().ok());
                     let prev_mtime = self.file_mtimes.get(id).cloned().flatten();
                     if current_mtime.is_some() && current_mtime != prev_mtime {
                         to_fire.push((*id, hook.command.clone()));
@@ -174,9 +166,7 @@ impl GlobalHookManager {
                     self.last_fired.insert(*id, now);
                 }
                 if let HookCondition::FileModified(path) = &hook.condition {
-                    let new_mtime = std::fs::metadata(path)
-                        .ok()
-                        .and_then(|m| m.modified().ok());
+                    let new_mtime = std::fs::metadata(path).ok().and_then(|m| m.modified().ok());
                     self.file_mtimes.insert(*id, new_mtime);
                 }
             }

@@ -23,7 +23,10 @@ pub fn handle_message_send(
         None => return JsonRpcResponse::invalid_params(id, "Missing 'from_surface_id'"),
     };
     let msg_id = state.send_message(from, to, content);
-    JsonRpcResponse::success(id, json!({ "id": msg_id, "from_surface_id": from, "to_surface_id": to }))
+    JsonRpcResponse::success(
+        id,
+        json!({ "id": msg_id, "from_surface_id": from, "to_surface_id": to }),
+    )
 }
 
 pub fn handle_message_read(

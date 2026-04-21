@@ -14,12 +14,14 @@ pub fn set_file_clipboard(paths: &[&str], _op: FileClipboardOp) -> Result<(), St
     let pasteboard = NSPasteboard::generalPasteboard();
     pasteboard.clearContents();
 
-    let urls: Vec<_> = paths.iter()
+    let urls: Vec<_> = paths
+        .iter()
         .map(|p| NSURL::fileURLWithPath(&NSString::from_str(p)))
         .collect();
 
     // Convert Vec<Retained<NSURL>> → Vec<&ProtocolObject<dyn NSPasteboardWriting>>
-    let protocol_objects: Vec<&ProtocolObject<dyn NSPasteboardWriting>> = urls.iter()
+    let protocol_objects: Vec<&ProtocolObject<dyn NSPasteboardWriting>> = urls
+        .iter()
         .map(|url| ProtocolObject::from_ref::<NSURL>(url.as_ref()))
         .collect();
 

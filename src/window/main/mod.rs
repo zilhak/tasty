@@ -16,8 +16,8 @@ use crate::model::{PhysicalPx, Rect};
 use crate::selection::TextSelection;
 use crate::state::{AppState, FocusedSurfaceType};
 use crate::window::{
-    sealed, terminal_host::MODELESS_MODALITY, Modality, TerminalHostWindow, Window, WindowAction,
-    WindowBase, WindowCtx,
+    Modality, TerminalHostWindow, Window, WindowAction, WindowBase, WindowCtx, sealed,
+    terminal_host::MODELESS_MODALITY,
 };
 use crate::{AppEvent, ClipboardContext};
 
@@ -134,7 +134,10 @@ impl MainWindow {
 
         use winit::dpi::{PhysicalPosition, PhysicalSize};
         self.base.winit.set_ime_cursor_area(
-            PhysicalPosition::new(cell_rect.x.value().round() as i32, cell_rect.y.value().round() as i32),
+            PhysicalPosition::new(
+                cell_rect.x.value().round() as i32,
+                cell_rect.y.value().round() as i32,
+            ),
             PhysicalSize::new(
                 cell_rect.width.value().max(1.0).round() as u32,
                 cell_rect.height.value().max(1.0).round() as u32,

@@ -1,6 +1,6 @@
-use termwiz::cell::{unicode_column_width, AttributeChange, CellAttributes};
+use termwiz::cell::{AttributeChange, CellAttributes, unicode_column_width};
 use termwiz::color::ColorAttribute;
-use termwiz::escape::csi::{Cursor, Device, Edit, EraseInDisplay, EraseInLine, Sgr, CSI};
+use termwiz::escape::csi::{CSI, Cursor, Device, Edit, EraseInDisplay, EraseInLine, Sgr};
 use termwiz::escape::esc::{Esc, EscCode};
 use termwiz::escape::{Action, ControlCode, OperatingSystemCommand};
 use termwiz::surface::{Change, CursorVisibility, Position};
@@ -501,12 +501,8 @@ impl Terminal {
                     vec![]
                 }
             }
-            Esc::Code(EscCode::Index) => {
-                self.perform_index()
-            }
-            Esc::Code(EscCode::ReverseIndex) => {
-                self.perform_reverse_index()
-            }
+            Esc::Code(EscCode::Index) => self.perform_index(),
+            Esc::Code(EscCode::ReverseIndex) => self.perform_reverse_index(),
             Esc::Code(EscCode::FullReset) => {
                 self.saved_cursor = None;
                 self.alt_saved_cursor = None;
@@ -647,7 +643,12 @@ impl Terminal {
     /// Read characters from a specific line of the active surface, from `start_col` to `end_col`.
     /// Uses `visible_cells()` to correctly skip continuation cells of wide characters,
     /// avoiding spurious spaces that would corrupt DCH/ICH operations.
-    pub(crate) fn read_line_from_surface(&self, row: usize, start_col: usize, end_col: usize) -> String {
+    pub(crate) fn read_line_from_surface(
+        &self,
+        row: usize,
+        start_col: usize,
+        end_col: usize,
+    ) -> String {
         let surface = self.surface();
         let lines = surface.screen_lines();
         if row >= lines.len() {

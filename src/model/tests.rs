@@ -7,40 +7,69 @@ fn noop_waker() -> Waker {
 }
 
 /// Helper to create a PhysicalPx value concisely in tests.
-fn px(v: f32) -> PhysicalPx { PhysicalPx(v) }
+fn px(v: f32) -> PhysicalPx {
+    PhysicalPx(v)
+}
 
 /// Helper to create a LogicalPx value concisely in tests.
-fn lp(v: f32) -> LogicalPx { LogicalPx(v) }
+fn lp(v: f32) -> LogicalPx {
+    LogicalPx(v)
+}
 
 // ---- Rect tests ----
 
 #[test]
 fn rect_contains_inside() {
-    let r = Rect { x: px(10.0), y: px(20.0), width: px(100.0), height: px(50.0) };
+    let r = Rect {
+        x: px(10.0),
+        y: px(20.0),
+        width: px(100.0),
+        height: px(50.0),
+    };
     assert!(r.contains(px(50.0), px(40.0)));
 }
 
 #[test]
 fn rect_contains_at_origin() {
-    let r = Rect { x: px(10.0), y: px(20.0), width: px(100.0), height: px(50.0) };
+    let r = Rect {
+        x: px(10.0),
+        y: px(20.0),
+        width: px(100.0),
+        height: px(50.0),
+    };
     assert!(r.contains(px(10.0), px(20.0)));
 }
 
 #[test]
 fn rect_contains_outside_left() {
-    let r = Rect { x: px(10.0), y: px(20.0), width: px(100.0), height: px(50.0) };
+    let r = Rect {
+        x: px(10.0),
+        y: px(20.0),
+        width: px(100.0),
+        height: px(50.0),
+    };
     assert!(!r.contains(px(5.0), px(40.0)));
 }
 
 #[test]
 fn rect_contains_outside_bottom() {
-    let r = Rect { x: px(10.0), y: px(20.0), width: px(100.0), height: px(50.0) };
+    let r = Rect {
+        x: px(10.0),
+        y: px(20.0),
+        width: px(100.0),
+        height: px(50.0),
+    };
     assert!(!r.contains(px(50.0), px(80.0)));
 }
 
 #[test]
 fn rect_contains_at_boundary_exclusive() {
-    let r = Rect { x: px(0.0), y: px(0.0), width: px(100.0), height: px(100.0) };
+    let r = Rect {
+        x: px(0.0),
+        y: px(0.0),
+        width: px(100.0),
+        height: px(100.0),
+    };
     // Right edge is exclusive
     assert!(!r.contains(px(100.0), px(50.0)));
     // Bottom edge is exclusive
@@ -49,7 +78,12 @@ fn rect_contains_at_boundary_exclusive() {
 
 #[test]
 fn rect_split_vertical() {
-    let r = Rect { x: px(0.0), y: px(0.0), width: px(200.0), height: px(100.0) };
+    let r = Rect {
+        x: px(0.0),
+        y: px(0.0),
+        width: px(200.0),
+        height: px(100.0),
+    };
     let (r1, r2) = r.split(SplitDirection::Vertical, 0.5);
     let gap = PANE_BORDER_WIDTH;
     let usable = px(200.0) - gap;
@@ -63,7 +97,12 @@ fn rect_split_vertical() {
 
 #[test]
 fn rect_split_horizontal() {
-    let r = Rect { x: px(0.0), y: px(0.0), width: px(200.0), height: px(100.0) };
+    let r = Rect {
+        x: px(0.0),
+        y: px(0.0),
+        width: px(200.0),
+        height: px(100.0),
+    };
     let (r1, r2) = r.split(SplitDirection::Horizontal, 0.5);
     let gap = PANE_BORDER_WIDTH;
     let usable = px(100.0) - gap;
@@ -77,7 +116,12 @@ fn rect_split_horizontal() {
 
 #[test]
 fn rect_split_unequal_ratio() {
-    let r = Rect { x: px(0.0), y: px(0.0), width: px(300.0), height: px(100.0) };
+    let r = Rect {
+        x: px(0.0),
+        y: px(0.0),
+        width: px(300.0),
+        height: px(100.0),
+    };
     let (r1, r2) = r.split(SplitDirection::Vertical, 0.3);
     let gap = PANE_BORDER_WIDTH;
     let usable = px(300.0) - gap;
@@ -88,15 +132,35 @@ fn rect_split_unequal_ratio() {
 
 #[test]
 fn rect_approx_eq() {
-    let r1 = Rect { x: px(10.0), y: px(20.0), width: px(100.0), height: px(50.0) };
-    let r2 = Rect { x: px(10.5), y: px(20.3), width: px(100.2), height: px(50.1) };
+    let r1 = Rect {
+        x: px(10.0),
+        y: px(20.0),
+        width: px(100.0),
+        height: px(50.0),
+    };
+    let r2 = Rect {
+        x: px(10.5),
+        y: px(20.3),
+        width: px(100.2),
+        height: px(50.1),
+    };
     assert!(r1.approx_eq(&r2));
 }
 
 #[test]
 fn rect_not_approx_eq() {
-    let r1 = Rect { x: px(10.0), y: px(20.0), width: px(100.0), height: px(50.0) };
-    let r2 = Rect { x: px(12.0), y: px(20.0), width: px(100.0), height: px(50.0) };
+    let r1 = Rect {
+        x: px(10.0),
+        y: px(20.0),
+        width: px(100.0),
+        height: px(50.0),
+    };
+    let r2 = Rect {
+        x: px(12.0),
+        y: px(20.0),
+        width: px(100.0),
+        height: px(50.0),
+    };
     assert!(!r1.approx_eq(&r2));
 }
 
@@ -111,7 +175,12 @@ fn pane_node_compute_rects_single() {
         tab_scroll_offset: 0.0,
     };
     let node = PaneNode::Leaf(pane);
-    let rect = Rect { x: px(0.0), y: px(0.0), width: px(800.0), height: px(600.0) };
+    let rect = Rect {
+        x: px(0.0),
+        y: px(0.0),
+        width: px(800.0),
+        height: px(600.0),
+    };
     let rects = node.compute_rects(rect);
     assert_eq!(rects.len(), 1);
     assert_eq!(rects[0].0, 1);
@@ -120,15 +189,30 @@ fn pane_node_compute_rects_single() {
 
 #[test]
 fn pane_node_compute_rects_split() {
-    let p1 = Pane { id: 1, tabs: vec![], active_tab: 0, tab_scroll_offset: 0.0 };
-    let p2 = Pane { id: 2, tabs: vec![], active_tab: 0, tab_scroll_offset: 0.0 };
+    let p1 = Pane {
+        id: 1,
+        tabs: vec![],
+        active_tab: 0,
+        tab_scroll_offset: 0.0,
+    };
+    let p2 = Pane {
+        id: 2,
+        tabs: vec![],
+        active_tab: 0,
+        tab_scroll_offset: 0.0,
+    };
     let node = PaneNode::Split {
         direction: SplitDirection::Vertical,
         ratio: 0.5,
         first: Box::new(PaneNode::Leaf(p1)),
         second: Box::new(PaneNode::Leaf(p2)),
     };
-    let rect = Rect { x: px(0.0), y: px(0.0), width: px(800.0), height: px(600.0) };
+    let rect = Rect {
+        x: px(0.0),
+        y: px(0.0),
+        width: px(800.0),
+        height: px(600.0),
+    };
     let rects = node.compute_rects(rect);
     assert_eq!(rects.len(), 2);
     assert_eq!(rects[0].0, 1);
@@ -141,8 +225,18 @@ fn pane_node_compute_rects_split() {
 
 #[test]
 fn pane_node_find_pane() {
-    let p1 = Pane { id: 1, tabs: vec![], active_tab: 0, tab_scroll_offset: 0.0 };
-    let p2 = Pane { id: 2, tabs: vec![], active_tab: 0, tab_scroll_offset: 0.0 };
+    let p1 = Pane {
+        id: 1,
+        tabs: vec![],
+        active_tab: 0,
+        tab_scroll_offset: 0.0,
+    };
+    let p2 = Pane {
+        id: 2,
+        tabs: vec![],
+        active_tab: 0,
+        tab_scroll_offset: 0.0,
+    };
     let node = PaneNode::Split {
         direction: SplitDirection::Vertical,
         ratio: 0.5,
@@ -156,9 +250,24 @@ fn pane_node_find_pane() {
 
 #[test]
 fn pane_node_all_pane_ids() {
-    let p1 = Pane { id: 1, tabs: vec![], active_tab: 0, tab_scroll_offset: 0.0 };
-    let p2 = Pane { id: 2, tabs: vec![], active_tab: 0, tab_scroll_offset: 0.0 };
-    let p3 = Pane { id: 3, tabs: vec![], active_tab: 0, tab_scroll_offset: 0.0 };
+    let p1 = Pane {
+        id: 1,
+        tabs: vec![],
+        active_tab: 0,
+        tab_scroll_offset: 0.0,
+    };
+    let p2 = Pane {
+        id: 2,
+        tabs: vec![],
+        active_tab: 0,
+        tab_scroll_offset: 0.0,
+    };
+    let p3 = Pane {
+        id: 3,
+        tabs: vec![],
+        active_tab: 0,
+        tab_scroll_offset: 0.0,
+    };
     let node = PaneNode::Split {
         direction: SplitDirection::Vertical,
         ratio: 0.5,
@@ -175,9 +284,24 @@ fn pane_node_all_pane_ids() {
 
 #[test]
 fn pane_node_next_prev_pane_id() {
-    let p1 = Pane { id: 1, tabs: vec![], active_tab: 0, tab_scroll_offset: 0.0 };
-    let p2 = Pane { id: 2, tabs: vec![], active_tab: 0, tab_scroll_offset: 0.0 };
-    let p3 = Pane { id: 3, tabs: vec![], active_tab: 0, tab_scroll_offset: 0.0 };
+    let p1 = Pane {
+        id: 1,
+        tabs: vec![],
+        active_tab: 0,
+        tab_scroll_offset: 0.0,
+    };
+    let p2 = Pane {
+        id: 2,
+        tabs: vec![],
+        active_tab: 0,
+        tab_scroll_offset: 0.0,
+    };
+    let p3 = Pane {
+        id: 3,
+        tabs: vec![],
+        active_tab: 0,
+        tab_scroll_offset: 0.0,
+    };
     let node = PaneNode::Split {
         direction: SplitDirection::Vertical,
         ratio: 0.5,
@@ -198,15 +322,30 @@ fn pane_node_next_prev_pane_id() {
 
 #[test]
 fn pane_node_find_divider_at_vertical() {
-    let p1 = Pane { id: 1, tabs: vec![], active_tab: 0, tab_scroll_offset: 0.0 };
-    let p2 = Pane { id: 2, tabs: vec![], active_tab: 0, tab_scroll_offset: 0.0 };
+    let p1 = Pane {
+        id: 1,
+        tabs: vec![],
+        active_tab: 0,
+        tab_scroll_offset: 0.0,
+    };
+    let p2 = Pane {
+        id: 2,
+        tabs: vec![],
+        active_tab: 0,
+        tab_scroll_offset: 0.0,
+    };
     let node = PaneNode::Split {
         direction: SplitDirection::Vertical,
         ratio: 0.5,
         first: Box::new(PaneNode::Leaf(p1)),
         second: Box::new(PaneNode::Leaf(p2)),
     };
-    let rect = Rect { x: px(0.0), y: px(0.0), width: px(800.0), height: px(600.0) };
+    let rect = Rect {
+        x: px(0.0),
+        y: px(0.0),
+        width: px(800.0),
+        height: px(600.0),
+    };
     // Divider should be at x=400
     let result = node.find_divider_at(401.0, 300.0, rect, 5.0);
     assert!(result.is_some());
@@ -219,10 +358,20 @@ fn pane_node_find_divider_at_vertical() {
 
 #[test]
 fn pane_node_split_pane_in_place() {
-    let p1 = Pane { id: 1, tabs: vec![], active_tab: 0, tab_scroll_offset: 0.0 };
+    let p1 = Pane {
+        id: 1,
+        tabs: vec![],
+        active_tab: 0,
+        tab_scroll_offset: 0.0,
+    };
     let mut node = PaneNode::Leaf(p1);
 
-    let new_pane = Pane { id: 2, tabs: vec![], active_tab: 0, tab_scroll_offset: 0.0 };
+    let new_pane = Pane {
+        id: 2,
+        tabs: vec![],
+        active_tab: 0,
+        tab_scroll_offset: 0.0,
+    };
     let result = node.split_pane_in_place(1, SplitDirection::Vertical, new_pane);
     assert!(result.is_none()); // success
 
@@ -232,10 +381,20 @@ fn pane_node_split_pane_in_place() {
 
 #[test]
 fn pane_node_split_pane_in_place_not_found() {
-    let p1 = Pane { id: 1, tabs: vec![], active_tab: 0, tab_scroll_offset: 0.0 };
+    let p1 = Pane {
+        id: 1,
+        tabs: vec![],
+        active_tab: 0,
+        tab_scroll_offset: 0.0,
+    };
     let mut node = PaneNode::Leaf(p1);
 
-    let new_pane = Pane { id: 2, tabs: vec![], active_tab: 0, tab_scroll_offset: 0.0 };
+    let new_pane = Pane {
+        id: 2,
+        tabs: vec![],
+        active_tab: 0,
+        tab_scroll_offset: 0.0,
+    };
     let result = node.split_pane_in_place(99, SplitDirection::Vertical, new_pane);
     assert!(result.is_some()); // not found, pane returned
 
@@ -248,8 +407,10 @@ fn pane_node_split_pane_in_place_not_found() {
 #[test]
 fn pane_close_tab_removes_tab() {
     let waker = noop_waker();
-    let mut pane = Pane::new_with_shell(1, 10, 100, 80, 24, None, &[], waker.clone(), None).expect("pane creation");
-    pane.add_tab_with_shell(11, 101, 80, 24, None, &[], waker, None).expect("add tab");
+    let mut pane = Pane::new_with_shell(1, 10, 100, 80, 24, None, &[], waker.clone(), None)
+        .expect("pane creation");
+    pane.add_tab_with_shell(11, 101, 80, 24, None, &[], waker, None)
+        .expect("add tab");
     assert_eq!(pane.tabs.len(), 2);
     assert!(pane.close_active_tab());
     assert_eq!(pane.tabs.len(), 1);
@@ -258,7 +419,8 @@ fn pane_close_tab_removes_tab() {
 #[test]
 fn pane_close_tab_last_tab_fails() {
     let waker = noop_waker();
-    let mut pane = Pane::new_with_shell(1, 10, 100, 80, 24, None, &[], waker, None).expect("pane creation");
+    let mut pane =
+        Pane::new_with_shell(1, 10, 100, 80, 24, None, &[], waker, None).expect("pane creation");
     assert_eq!(pane.tabs.len(), 1);
     assert!(!pane.close_active_tab());
     assert_eq!(pane.tabs.len(), 1);
@@ -268,15 +430,30 @@ fn pane_close_tab_last_tab_fails() {
 
 #[test]
 fn pane_node_close_pane_single_leaf_fails() {
-    let p1 = Pane { id: 1, tabs: vec![], active_tab: 0, tab_scroll_offset: 0.0 };
+    let p1 = Pane {
+        id: 1,
+        tabs: vec![],
+        active_tab: 0,
+        tab_scroll_offset: 0.0,
+    };
     let mut node = PaneNode::Leaf(p1);
     assert!(!node.close_pane(1));
 }
 
 #[test]
 fn pane_node_close_pane_promotes_sibling() {
-    let p1 = Pane { id: 1, tabs: vec![], active_tab: 0, tab_scroll_offset: 0.0 };
-    let p2 = Pane { id: 2, tabs: vec![], active_tab: 0, tab_scroll_offset: 0.0 };
+    let p1 = Pane {
+        id: 1,
+        tabs: vec![],
+        active_tab: 0,
+        tab_scroll_offset: 0.0,
+    };
+    let p2 = Pane {
+        id: 2,
+        tabs: vec![],
+        active_tab: 0,
+        tab_scroll_offset: 0.0,
+    };
     let mut node = PaneNode::Split {
         direction: SplitDirection::Vertical,
         ratio: 0.5,
@@ -291,9 +468,24 @@ fn pane_node_close_pane_promotes_sibling() {
 
 #[test]
 fn pane_node_close_pane_nested() {
-    let p1 = Pane { id: 1, tabs: vec![], active_tab: 0, tab_scroll_offset: 0.0 };
-    let p2 = Pane { id: 2, tabs: vec![], active_tab: 0, tab_scroll_offset: 0.0 };
-    let p3 = Pane { id: 3, tabs: vec![], active_tab: 0, tab_scroll_offset: 0.0 };
+    let p1 = Pane {
+        id: 1,
+        tabs: vec![],
+        active_tab: 0,
+        tab_scroll_offset: 0.0,
+    };
+    let p2 = Pane {
+        id: 2,
+        tabs: vec![],
+        active_tab: 0,
+        tab_scroll_offset: 0.0,
+    };
+    let p3 = Pane {
+        id: 3,
+        tabs: vec![],
+        active_tab: 0,
+        tab_scroll_offset: 0.0,
+    };
     let mut node = PaneNode::Split {
         direction: SplitDirection::Vertical,
         ratio: 0.5,
@@ -313,8 +505,18 @@ fn pane_node_close_pane_nested() {
 
 #[test]
 fn pane_node_close_pane_not_found() {
-    let p1 = Pane { id: 1, tabs: vec![], active_tab: 0, tab_scroll_offset: 0.0 };
-    let p2 = Pane { id: 2, tabs: vec![], active_tab: 0, tab_scroll_offset: 0.0 };
+    let p1 = Pane {
+        id: 1,
+        tabs: vec![],
+        active_tab: 0,
+        tab_scroll_offset: 0.0,
+    };
+    let p2 = Pane {
+        id: 2,
+        tabs: vec![],
+        active_tab: 0,
+        tab_scroll_offset: 0.0,
+    };
     let mut node = PaneNode::Split {
         direction: SplitDirection::Vertical,
         ratio: 0.5,
@@ -331,7 +533,12 @@ fn pane_node_close_pane_not_found() {
 fn surface_group_layout_find_surface_at() {
     // Cannot easily test with real terminals, but we can test the layout structure
     // This test validates the basic Rect-based lookup
-    let rect = Rect { x: px(0.0), y: px(0.0), width: px(100.0), height: px(100.0) };
+    let rect = Rect {
+        x: px(0.0),
+        y: px(0.0),
+        width: px(100.0),
+        height: px(100.0),
+    };
     assert!(rect.contains(px(50.0), px(50.0)));
     assert!(!rect.contains(px(150.0), px(50.0)));
 }
@@ -386,7 +593,11 @@ fn for_each_terminal_mut_can_modify() {
 fn test_surface_node(id: SurfaceId) -> TerminalSurface {
     let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
     let terminal = tasty_terminal::Terminal::new(80, 24, id, waker).unwrap();
-    TerminalSurface { id, terminal, deferred_spawn: None }
+    TerminalSurface {
+        id,
+        terminal,
+        deferred_spawn: None,
+    }
 }
 
 #[test]
@@ -426,7 +637,10 @@ fn surface_group_split_nonexistent_target() {
     let layout = SurfaceGroupLayout::Leaf(Box::new(node1));
     // Target 999 doesn't exist — new_node is returned back
     let (new_layout, leftover) = layout.split_with_node(999, SplitDirection::Vertical, node2);
-    assert!(leftover.is_some(), "node should be returned when target not found");
+    assert!(
+        leftover.is_some(),
+        "node should be returned when target not found"
+    );
     assert_eq!(new_layout.all_surface_ids(), vec![10]);
 }
 

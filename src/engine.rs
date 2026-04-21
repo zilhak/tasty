@@ -1,5 +1,5 @@
-use crate::ipc::server::IpcServer;
 use crate::AppEvent;
+use crate::ipc::server::IpcServer;
 use winit::event_loop::EventLoopProxy;
 
 /// The central engine that owns IPC server and coordinates windows.

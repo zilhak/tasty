@@ -1,5 +1,5 @@
-use super::surface_trait::Surface;
 use super::SurfaceId;
+use super::surface_trait::Surface;
 
 /// A surface that displays HTML content via a native OS WebView.
 /// The actual WebView instance is managed by MainWindow (not stored here),
@@ -16,11 +16,23 @@ impl HtmlPanel {
 }
 
 impl Surface for HtmlPanel {
-    fn type_name(&self) -> &'static str { "Html" }
-    fn surface_id(&self) -> Option<SurfaceId> { Some(self.id) }
-    fn display_name(&self) -> String {
-        if self.url.is_empty() { "HTML".to_string() } else { self.url.clone() }
+    fn type_name(&self) -> &'static str {
+        "Html"
     }
-    fn as_html(&self) -> Option<&HtmlPanel> { Some(self) }
-    fn as_html_mut(&mut self) -> Option<&mut HtmlPanel> { Some(self) }
+    fn surface_id(&self) -> Option<SurfaceId> {
+        Some(self.id)
+    }
+    fn display_name(&self) -> String {
+        if self.url.is_empty() {
+            "HTML".to_string()
+        } else {
+            self.url.clone()
+        }
+    }
+    fn as_html(&self) -> Option<&HtmlPanel> {
+        Some(self)
+    }
+    fn as_html_mut(&mut self) -> Option<&mut HtmlPanel> {
+        Some(self)
+    }
 }

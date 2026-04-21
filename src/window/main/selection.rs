@@ -10,8 +10,12 @@ impl MainWindow {
         if let Some((point, surface_id)) = self.mouse_to_grid(x, y, terminal_rect) {
             // Detect multi-click
             let now = std::time::Instant::now();
-            let same_pos = self.last_click_pos.map_or(false, |(c, r)| c == point.col && r == point.absolute_row);
-            let within_time = self.last_click_time.map_or(false, |t| now.duration_since(t).as_millis() < 400);
+            let same_pos = self
+                .last_click_pos
+                .map_or(false, |(c, r)| c == point.col && r == point.absolute_row);
+            let within_time = self
+                .last_click_time
+                .map_or(false, |t| now.duration_since(t).as_millis() < 400);
             if same_pos && within_time {
                 self.click_count = (self.click_count + 1).min(3);
             } else {
@@ -34,17 +38,31 @@ impl MainWindow {
                 SelectionMode::Word => {
                     let (start_col, end_col) = self.find_word_bounds(point.col, point.absolute_row);
                     (
-                        SelectionPoint { col: start_col, absolute_row: point.absolute_row },
-                        SelectionPoint { col: end_col, absolute_row: point.absolute_row },
+                        SelectionPoint {
+                            col: start_col,
+                            absolute_row: point.absolute_row,
+                        },
+                        SelectionPoint {
+                            col: end_col,
+                            absolute_row: point.absolute_row,
+                        },
                     )
                 }
                 SelectionMode::Line => {
-                    let cols = self.state.focused_terminal()
+                    let cols = self
+                        .state
+                        .focused_terminal()
                         .map(|t| t.surface().dimensions().0)
                         .unwrap_or(80);
                     (
-                        SelectionPoint { col: 0, absolute_row: point.absolute_row },
-                        SelectionPoint { col: cols.saturating_sub(1), absolute_row: point.absolute_row },
+                        SelectionPoint {
+                            col: 0,
+                            absolute_row: point.absolute_row,
+                        },
+                        SelectionPoint {
+                            col: cols.saturating_sub(1),
+                            absolute_row: point.absolute_row,
+                        },
                     )
                 }
                 SelectionMode::Normal => {
@@ -97,22 +115,26 @@ impl MainWindow {
             let surface = terminal.surface();
             let lines = surface.screen_lines();
             match lines.get(screen_row) {
-                Some(line) => {
-                    line.visible_cells()
-                        .map(|cell| (cell.str().to_string(), cell.cell_index()))
-                        .collect()
-                }
+                Some(line) => line
+                    .visible_cells()
+                    .map(|cell| (cell.str().to_string(), cell.cell_index()))
+                    .collect(),
                 None => return (col, col),
             }
         };
 
         // Find which cell the col is in
         let is_word_char = |s: &str| -> bool {
-            s.chars().next().map_or(false, |c| c.is_alphanumeric() || c == '_')
+            s.chars()
+                .next()
+                .map_or(false, |c| c.is_alphanumeric() || c == '_')
         };
 
         // Find the cell at col
-        let target_idx = row_text.iter().position(|(_, c)| *c >= col).unwrap_or(row_text.len().saturating_sub(1));
+        let target_idx = row_text
+            .iter()
+            .position(|(_, c)| *c >= col)
+            .unwrap_or(row_text.len().saturating_sub(1));
         if row_text.is_empty() {
             return (col, col);
         }
@@ -167,9 +189,13 @@ impl MainWindow {
             None => return,
         };
         let (click_col, click_row) = crate::click_cursor::pixel_to_grid(
-            x, y, &surface_rect,
-            self.base.gpu.cell_width(), self.base.gpu.cell_height(),
-            cols, rows,
+            x,
+            y,
+            &surface_rect,
+            self.base.gpu.cell_width(),
+            self.base.gpu.cell_height(),
+            cols,
+            rows,
         );
 
         // Clamp to editable region
@@ -185,8 +211,10 @@ impl MainWindow {
         let going_right = (click_row, click_col) > (region.cursor_row, region.cursor_col);
         let arrow_count = crate::click_cursor::count_arrows(
             terminal,
-            region.cursor_row, region.cursor_col,
-            click_row, click_col,
+            region.cursor_row,
+            region.cursor_col,
+            click_row,
+            click_col,
             cols,
         );
 
@@ -196,8 +224,18 @@ impl MainWindow {
 
         // Check if this is a Claude Code surface before mut-borrowing terminal
         let surface_id = self.state.focused_surface_id().unwrap_or(0);
-        let is_claude = self.state.engine.claude.parent_children.contains_key(&surface_id)
-            || self.state.engine.claude.child_parent.contains_key(&surface_id);
+        let is_claude = self
+            .state
+            .engine
+            .claude
+            .parent_children
+            .contains_key(&surface_id)
+            || self
+                .state
+                .engine
+                .claude
+                .child_parent
+                .contains_key(&surface_id);
 
         // Determine arrow escape sequence
         let terminal = self.state.focused_terminal_mut().unwrap();
@@ -212,7 +250,11 @@ impl MainWindow {
             // Queue arrows to send one per frame
             terminal.send_bytes(arrow); // Send first one immediately
             if arrow_count > 1 {
-                self.arrow_queue = Some(crate::click_cursor::ArrowQueue::new(arrow, arrow_count - 1, surface_id));
+                self.arrow_queue = Some(crate::click_cursor::ArrowQueue::new(
+                    arrow,
+                    arrow_count - 1,
+                    surface_id,
+                ));
                 self.base.winit.request_redraw();
             }
         } else {
@@ -224,16 +266,25 @@ impl MainWindow {
     }
 
     /// Convert mouse physical coordinates to a grid SelectionPoint for the focused terminal.
-    pub(super) fn mouse_to_grid(&self, x: f32, y: f32, terminal_rect: &Rect) -> Option<(SelectionPoint, u32)> {
+    pub(super) fn mouse_to_grid(
+        &self,
+        x: f32,
+        y: f32,
+        terminal_rect: &Rect,
+    ) -> Option<(SelectionPoint, u32)> {
         let terminal = self.state.focused_terminal()?;
         let surface_id = self.state.focused_surface_id()?;
         // Use the actual content rect (after tab bar) instead of the raw pane rect
         let surface_rect = self.state.focused_surface_rect(*terminal_rect)?;
         let (cols, rows) = terminal.surface().dimensions();
         let point = selection::pixel_to_grid(
-            x, y, &surface_rect,
-            self.base.gpu.cell_width(), self.base.gpu.cell_height(),
-            cols, rows,
+            x,
+            y,
+            &surface_rect,
+            self.base.gpu.cell_width(),
+            self.base.gpu.cell_height(),
+            cols,
+            rows,
             terminal.scroll_offset,
             terminal.scrollback_len(),
         );

@@ -1,17 +1,19 @@
 use winit::event::ElementState;
 use winit::keyboard::{Key, ModifiersState, NamedKey};
 
+use super::MainWindow;
 use crate::state::{FocusedSurfaceType, PendingKeyEvent};
 use crate::window::Window;
-use super::MainWindow;
 
 impl MainWindow {
-    pub(super) fn handle_keyboard_input(&mut self, event: &winit::event::KeyEvent, egui_consumed: bool) {
+    pub(super) fn handle_keyboard_input(
+        &mut self,
+        event: &winit::event::KeyEvent,
+        egui_consumed: bool,
+    ) {
         // Feed all key events (Press + Release) to the double-tap detector
-        self.double_tap.on_key_event(
-            &event.logical_key,
-            event.state == ElementState::Pressed,
-        );
+        self.double_tap
+            .on_key_event(&event.logical_key, event.state == ElementState::Pressed);
 
         if event.state != ElementState::Pressed {
             return;
@@ -53,7 +55,10 @@ impl MainWindow {
             // On macOS, IME composition (e.g. Korean) can replace the logical key
             // with the composed character. When modifier keys are held, use the
             // physical key code to determine the intended key for shortcut matching.
-            let shortcut_key = if self.base.modifiers.control_key() || self.base.modifiers.super_key() || self.base.modifiers.alt_key() {
+            let shortcut_key = if self.base.modifiers.control_key()
+                || self.base.modifiers.super_key()
+                || self.base.modifiers.alt_key()
+            {
                 crate::shortcuts::physical_key_to_logical(&event.physical_key)
                     .unwrap_or_else(|| event.logical_key.clone())
             } else {
@@ -100,14 +105,24 @@ impl MainWindow {
                     // When modifiers are held, prefer the physical key for Ctrl+letter
                     // handling so that IME composition (e.g. Korean 'ㅊ' for 'c') doesn't
                     // prevent control characters from being sent.
-                    let terminal_key = if self.base.modifiers.control_key() || self.base.modifiers.super_key() || self.base.modifiers.alt_key() {
+                    let terminal_key = if self.base.modifiers.control_key()
+                        || self.base.modifiers.super_key()
+                        || self.base.modifiers.alt_key()
+                    {
                         crate::shortcuts::physical_key_to_logical(&event.physical_key)
                             .unwrap_or_else(|| event.logical_key.clone())
                     } else {
                         event.logical_key.clone()
                     };
-                    let (dirty, sent) = Self::send_key_to_terminal(terminal, &terminal_key, text_for_terminal, self.base.modifiers);
-                    if dirty { self.base.dirty = true; }
+                    let (dirty, sent) = Self::send_key_to_terminal(
+                        terminal,
+                        &terminal_key,
+                        text_for_terminal,
+                        self.base.modifiers,
+                    );
+                    if dirty {
+                        self.base.dirty = true;
+                    }
 
                     if sent {
                         self.ime_cursor_advance = 0;
@@ -118,7 +133,9 @@ impl MainWindow {
                     }
                 }
             }
-            FocusedSurfaceType::Explorer | FocusedSurfaceType::Markdown | FocusedSurfaceType::Image => {
+            FocusedSurfaceType::Explorer
+            | FocusedSurfaceType::Markdown
+            | FocusedSurfaceType::Image => {
                 // If egui consumed the event (e.g. TextEdit has focus), skip
                 // the PendingKeyEvent queue to avoid double-handling.
                 if !egui_consumed {
@@ -153,10 +170,11 @@ impl MainWindow {
         let mut dirty = false;
         let mut sent = false;
 
-        let is_scrollback_key = !is_alt_screen && matches!(
-            key.as_ref(),
-            Key::Named(NamedKey::PageUp) | Key::Named(NamedKey::PageDown)
-        );
+        let is_scrollback_key = !is_alt_screen
+            && matches!(
+                key.as_ref(),
+                Key::Named(NamedKey::PageUp) | Key::Named(NamedKey::PageDown)
+            );
 
         match key.as_ref() {
             Key::Named(NamedKey::Enter) => {
@@ -168,53 +186,136 @@ impl MainWindow {
                 }
                 sent = true;
             }
-            Key::Named(NamedKey::Backspace) => { terminal.send_bytes(b"\x7f"); sent = true; }
-            Key::Named(NamedKey::Tab) => {
-                if modifiers.shift_key() { terminal.send_bytes(b"\x1b[Z"); }
-                else { terminal.send_bytes(b"\t"); }
+            Key::Named(NamedKey::Backspace) => {
+                terminal.send_bytes(b"\x7f");
                 sent = true;
             }
-            Key::Named(NamedKey::Escape) => { terminal.send_bytes(b"\x1b"); sent = true; }
+            Key::Named(NamedKey::Tab) => {
+                if modifiers.shift_key() {
+                    terminal.send_bytes(b"\x1b[Z");
+                } else {
+                    terminal.send_bytes(b"\t");
+                }
+                sent = true;
+            }
+            Key::Named(NamedKey::Escape) => {
+                terminal.send_bytes(b"\x1b");
+                sent = true;
+            }
             Key::Named(NamedKey::ArrowUp) => {
-                if app_cursor { terminal.send_bytes(b"\x1bOA") } else { terminal.send_bytes(b"\x1b[A") }
+                if app_cursor {
+                    terminal.send_bytes(b"\x1bOA")
+                } else {
+                    terminal.send_bytes(b"\x1b[A")
+                }
                 sent = true;
             }
             Key::Named(NamedKey::ArrowDown) => {
-                if app_cursor { terminal.send_bytes(b"\x1bOB") } else { terminal.send_bytes(b"\x1b[B") }
+                if app_cursor {
+                    terminal.send_bytes(b"\x1bOB")
+                } else {
+                    terminal.send_bytes(b"\x1b[B")
+                }
                 sent = true;
             }
             Key::Named(NamedKey::ArrowRight) => {
-                if app_cursor { terminal.send_bytes(b"\x1bOC") } else { terminal.send_bytes(b"\x1b[C") }
+                if app_cursor {
+                    terminal.send_bytes(b"\x1bOC")
+                } else {
+                    terminal.send_bytes(b"\x1b[C")
+                }
                 sent = true;
             }
             Key::Named(NamedKey::ArrowLeft) => {
-                if app_cursor { terminal.send_bytes(b"\x1bOD") } else { terminal.send_bytes(b"\x1b[D") }
+                if app_cursor {
+                    terminal.send_bytes(b"\x1bOD")
+                } else {
+                    terminal.send_bytes(b"\x1b[D")
+                }
                 sent = true;
             }
-            Key::Named(NamedKey::Home) => { terminal.send_bytes(b"\x1b[H"); sent = true; }
-            Key::Named(NamedKey::End) => { terminal.send_bytes(b"\x1b[F"); sent = true; }
+            Key::Named(NamedKey::Home) => {
+                terminal.send_bytes(b"\x1b[H");
+                sent = true;
+            }
+            Key::Named(NamedKey::End) => {
+                terminal.send_bytes(b"\x1b[F");
+                sent = true;
+            }
             Key::Named(NamedKey::PageUp) => {
-                if is_alt_screen { terminal.send_bytes(b"\x1b[5~"); sent = true; }
-                else { terminal.scroll_up(terminal.rows()); dirty = true; }
+                if is_alt_screen {
+                    terminal.send_bytes(b"\x1b[5~");
+                    sent = true;
+                } else {
+                    terminal.scroll_up(terminal.rows());
+                    dirty = true;
+                }
             }
             Key::Named(NamedKey::PageDown) => {
-                if is_alt_screen { terminal.send_bytes(b"\x1b[6~"); sent = true; }
-                else { terminal.scroll_down(terminal.rows()); dirty = true; }
+                if is_alt_screen {
+                    terminal.send_bytes(b"\x1b[6~");
+                    sent = true;
+                } else {
+                    terminal.scroll_down(terminal.rows());
+                    dirty = true;
+                }
             }
-            Key::Named(NamedKey::Insert) => { terminal.send_bytes(b"\x1b[2~"); sent = true; }
-            Key::Named(NamedKey::Delete) => { terminal.send_bytes(b"\x1b[3~"); sent = true; }
-            Key::Named(NamedKey::F1) => { terminal.send_bytes(b"\x1bOP"); sent = true; }
-            Key::Named(NamedKey::F2) => { terminal.send_bytes(b"\x1bOQ"); sent = true; }
-            Key::Named(NamedKey::F3) => { terminal.send_bytes(b"\x1bOR"); sent = true; }
-            Key::Named(NamedKey::F4) => { terminal.send_bytes(b"\x1bOS"); sent = true; }
-            Key::Named(NamedKey::F5) => { terminal.send_bytes(b"\x1b[15~"); sent = true; }
-            Key::Named(NamedKey::F6) => { terminal.send_bytes(b"\x1b[17~"); sent = true; }
-            Key::Named(NamedKey::F7) => { terminal.send_bytes(b"\x1b[18~"); sent = true; }
-            Key::Named(NamedKey::F8) => { terminal.send_bytes(b"\x1b[19~"); sent = true; }
-            Key::Named(NamedKey::F9) => { terminal.send_bytes(b"\x1b[20~"); sent = true; }
-            Key::Named(NamedKey::F10) => { terminal.send_bytes(b"\x1b[21~"); sent = true; }
-            Key::Named(NamedKey::F11) => { terminal.send_bytes(b"\x1b[23~"); sent = true; }
-            Key::Named(NamedKey::F12) => { terminal.send_bytes(b"\x1b[24~"); sent = true; }
+            Key::Named(NamedKey::Insert) => {
+                terminal.send_bytes(b"\x1b[2~");
+                sent = true;
+            }
+            Key::Named(NamedKey::Delete) => {
+                terminal.send_bytes(b"\x1b[3~");
+                sent = true;
+            }
+            Key::Named(NamedKey::F1) => {
+                terminal.send_bytes(b"\x1bOP");
+                sent = true;
+            }
+            Key::Named(NamedKey::F2) => {
+                terminal.send_bytes(b"\x1bOQ");
+                sent = true;
+            }
+            Key::Named(NamedKey::F3) => {
+                terminal.send_bytes(b"\x1bOR");
+                sent = true;
+            }
+            Key::Named(NamedKey::F4) => {
+                terminal.send_bytes(b"\x1bOS");
+                sent = true;
+            }
+            Key::Named(NamedKey::F5) => {
+                terminal.send_bytes(b"\x1b[15~");
+                sent = true;
+            }
+            Key::Named(NamedKey::F6) => {
+                terminal.send_bytes(b"\x1b[17~");
+                sent = true;
+            }
+            Key::Named(NamedKey::F7) => {
+                terminal.send_bytes(b"\x1b[18~");
+                sent = true;
+            }
+            Key::Named(NamedKey::F8) => {
+                terminal.send_bytes(b"\x1b[19~");
+                sent = true;
+            }
+            Key::Named(NamedKey::F9) => {
+                terminal.send_bytes(b"\x1b[20~");
+                sent = true;
+            }
+            Key::Named(NamedKey::F10) => {
+                terminal.send_bytes(b"\x1b[21~");
+                sent = true;
+            }
+            Key::Named(NamedKey::F11) => {
+                terminal.send_bytes(b"\x1b[23~");
+                sent = true;
+            }
+            Key::Named(NamedKey::F12) => {
+                terminal.send_bytes(b"\x1b[24~");
+                sent = true;
+            }
             _ => {
                 // Ctrl+letter → send control character (0x01-0x1A)
                 if modifiers.control_key() && !modifiers.alt_key() {
@@ -231,7 +332,10 @@ impl MainWindow {
                 }
                 if let Some(text) = text {
                     let s = text.as_str();
-                    if !s.is_empty() { terminal.send_key(s); sent = true; }
+                    if !s.is_empty() {
+                        terminal.send_key(s);
+                        sent = true;
+                    }
                 }
             }
         }

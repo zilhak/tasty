@@ -30,8 +30,7 @@ pub fn setup_jump_list() {
 fn setup_jump_list_inner() -> Result<(), Box<dyn std::error::Error>> {
     unsafe {
         // Get the current executable path
-        let exe_path = std::env::current_exe()
-            .map_err(|e| format!("current_exe failed: {e}"))?;
+        let exe_path = std::env::current_exe().map_err(|e| format!("current_exe failed: {e}"))?;
         let exe_wide: Vec<u16> = exe_path
             .to_string_lossy()
             .encode_utf16()
@@ -39,8 +38,11 @@ fn setup_jump_list_inner() -> Result<(), Box<dyn std::error::Error>> {
             .collect();
 
         // Create IShellLink for "New Window"
-        let shell_link: IShellLinkW =
-            windows::Win32::System::Com::CoCreateInstance(&ShellLink, None, windows::Win32::System::Com::CLSCTX_INPROC_SERVER)?;
+        let shell_link: IShellLinkW = windows::Win32::System::Com::CoCreateInstance(
+            &ShellLink,
+            None,
+            windows::Win32::System::Com::CLSCTX_INPROC_SERVER,
+        )?;
 
         shell_link.SetPath(PCWSTR(exe_wide.as_ptr()))?;
         shell_link.SetArguments(w!("new-window"))?;
@@ -56,13 +58,19 @@ fn setup_jump_list_inner() -> Result<(), Box<dyn std::error::Error>> {
         property_store.Commit()?;
 
         // Create collection and add the shell link
-        let collection: IObjectCollection =
-            windows::Win32::System::Com::CoCreateInstance(&EnumerableObjectCollection, None, windows::Win32::System::Com::CLSCTX_INPROC_SERVER)?;
+        let collection: IObjectCollection = windows::Win32::System::Com::CoCreateInstance(
+            &EnumerableObjectCollection,
+            None,
+            windows::Win32::System::Com::CLSCTX_INPROC_SERVER,
+        )?;
         collection.AddObject(&shell_link)?;
 
         // Create the Jump List
-        let dest_list: ICustomDestinationList =
-            windows::Win32::System::Com::CoCreateInstance(&DestinationList, None, windows::Win32::System::Com::CLSCTX_INPROC_SERVER)?;
+        let dest_list: ICustomDestinationList = windows::Win32::System::Com::CoCreateInstance(
+            &DestinationList,
+            None,
+            windows::Win32::System::Com::CLSCTX_INPROC_SERVER,
+        )?;
 
         let mut min_slots: u32 = 0;
         let _removed: windows::Win32::UI::Shell::Common::IObjectArray =

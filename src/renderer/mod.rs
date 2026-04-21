@@ -26,7 +26,8 @@ pub fn unicode_width(ch: char) -> usize {
         || (0xFF01..=0xFF60).contains(&cp) // Fullwidth Forms
         || (0xFFE0..=0xFFE6).contains(&cp) // Fullwidth Signs
         || (0x20000..=0x2FA1F).contains(&cp) // CJK Extensions B-F, Compat Supplement
-        || (0x30000..=0x3134F).contains(&cp) // CJK Extension G
+        || (0x30000..=0x3134F).contains(&cp)
+    // CJK Extension G
     {
         2
     } else {
@@ -35,7 +36,7 @@ pub fn unicode_width(ch: char) -> usize {
 }
 
 pub use palette::DEFAULT_BG;
-use palette::{color_attr_to_rgba, DEFAULT_FG};
+use palette::{DEFAULT_FG, color_attr_to_rgba};
 use types::{BgInstance, GlyphInstance, Uniforms};
 
 pub struct RenderPreedit {
@@ -300,7 +301,9 @@ impl CellRenderer {
 
         let cursor = if show_cursor && terminal.cursor_visible() && terminal.scroll_offset == 0 {
             let (cx, cy) = terminal.surface().cursor_position();
-            let wide = terminal.surface().screen_lines()
+            let wide = terminal
+                .surface()
+                .screen_lines()
                 .get(cy as usize)
                 .and_then(|line| {
                     line.visible_cells()
@@ -320,7 +323,15 @@ impl CellRenderer {
 
         if terminal.scroll_offset == 0 {
             let row_offset = terminal.scrollback_len();
-            self.prepare_with_bg(terminal.surface(), queue, default_bg, cursor, selection, row_offset, preedit);
+            self.prepare_with_bg(
+                terminal.surface(),
+                queue,
+                default_bg,
+                cursor,
+                selection,
+                row_offset,
+                preedit,
+            );
             self.append_preedit_overlay(preedit, queue, cols, rows, 0);
             return;
         }
@@ -349,12 +360,28 @@ impl CellRenderer {
 
             if source_line < scrollback_len {
                 if let Some(line) = terminal.scrollback_line(source_line) {
-                    self.render_scrollback_line(line, row_idx, cols, default_bg, queue, selection, source_line);
+                    self.render_scrollback_line(
+                        line,
+                        row_idx,
+                        cols,
+                        default_bg,
+                        queue,
+                        selection,
+                        source_line,
+                    );
                 }
             } else {
                 let surface_row = source_line - scrollback_len;
                 if surface_row < surface_lines.len() {
-                    self.render_surface_line(&surface_lines[surface_row], row_idx, cols, default_bg, queue, selection, source_line);
+                    self.render_surface_line(
+                        &surface_lines[surface_row],
+                        row_idx,
+                        cols,
+                        default_bg,
+                        queue,
+                        selection,
+                        source_line,
+                    );
                 }
             }
         }

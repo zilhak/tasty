@@ -17,9 +17,11 @@ impl GpuState {
             mapped_at_creation: false,
         });
 
-        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("screenshot_encoder"),
-        });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("screenshot_encoder"),
+            });
 
         encoder.copy_texture_to_buffer(
             wgpu::TexelCopyTextureInfo {
@@ -65,7 +67,7 @@ impl GpuState {
                     // BGRA → RGB
                     pixels.push(data[px + 2]); // R
                     pixels.push(data[px + 1]); // G
-                    pixels.push(data[px]);     // B
+                    pixels.push(data[px]); // B
                 }
             }
             drop(data);

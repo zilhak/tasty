@@ -2,9 +2,8 @@
 
 use windows::Win32::Foundation::{HWND, POINT};
 use windows::Win32::UI::WindowsAndMessaging::{
-    AppendMenuW, CreatePopupMenu, DestroyMenu, TrackPopupMenu,
-    MF_ENABLED, MF_GRAYED, MF_SEPARATOR, MF_STRING,
-    TPM_RETURNCMD, TPM_RIGHTBUTTON,
+    AppendMenuW, CreatePopupMenu, DestroyMenu, MF_ENABLED, MF_GRAYED, MF_SEPARATOR, MF_STRING,
+    TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu,
 };
 use windows::core::PCWSTR;
 use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
@@ -29,16 +28,22 @@ pub fn show_context_menu(
             if item.is_separator() {
                 let _ = AppendMenuW(hmenu, MF_SEPARATOR, 0, PCWSTR::null());
             } else {
-                let flags = MF_STRING
-                    | if item.enabled { MF_ENABLED } else { MF_GRAYED };
+                let flags = MF_STRING | if item.enabled { MF_ENABLED } else { MF_GRAYED };
                 // Encode label as null-terminated UTF-16.
-                let wide: Vec<u16> = item.label.encode_utf16().chain(std::iter::once(0)).collect();
+                let wide: Vec<u16> = item
+                    .label
+                    .encode_utf16()
+                    .chain(std::iter::once(0))
+                    .collect();
                 let _ = AppendMenuW(hmenu, flags, item.id as usize, PCWSTR(wide.as_ptr()));
             }
         }
 
         // Convert client coordinates to screen coordinates.
-        let mut pt = POINT { x: x as i32, y: y as i32 };
+        let mut pt = POINT {
+            x: x as i32,
+            y: y as i32,
+        };
         let _ = windows::Win32::Graphics::Gdi::ClientToScreen(hwnd, &mut pt);
 
         let selected = TrackPopupMenu(

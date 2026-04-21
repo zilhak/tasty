@@ -8,10 +8,9 @@
 use anyhow::{Context, Result};
 use rusqlite::Connection;
 
-const MIGRATIONS: &[(u32, &str)] = &[
-    (
-        1,
-        r#"
+const MIGRATIONS: &[(u32, &str)] = &[(
+    1,
+    r#"
         CREATE TABLE IF NOT EXISTS meta (
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
@@ -46,12 +45,15 @@ const MIGRATIONS: &[(u32, &str)] = &[
         CREATE INDEX IF NOT EXISTS idx_clipboard_history_created_at
             ON clipboard_history(created_at DESC);
         "#,
-    ),
-];
+)];
 
 pub fn run(conn: &mut Connection) -> Result<()> {
     let current: u32 = conn
-        .query_row("SELECT COALESCE(MIN(user_version), 0) FROM pragma_user_version()", [], |r| r.get(0))
+        .query_row(
+            "SELECT COALESCE(MIN(user_version), 0) FROM pragma_user_version()",
+            [],
+            |r| r.get(0),
+        )
         .unwrap_or(0);
 
     for (version, sql) in MIGRATIONS {

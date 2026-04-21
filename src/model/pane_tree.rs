@@ -1,7 +1,5 @@
+use super::{DividerInfo, Pane, PaneId, Rect, SplitDirection, SurfaceId};
 use tasty_terminal::Terminal;
-use super::{
-    DividerInfo, Pane, PaneId, Rect, SplitDirection, SurfaceId,
-};
 
 /// Directional focus movement.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -89,9 +87,7 @@ impl PaneNode {
     pub fn close_pane(&mut self, target_id: PaneId) -> bool {
         match self {
             PaneNode::Leaf(_) => false, // Can't close the root pane
-            PaneNode::Split {
-                first, second, ..
-            } => {
+            PaneNode::Split { first, second, .. } => {
                 // Check if first child is the target leaf
                 let first_is_target =
                     matches!(first.as_ref(), PaneNode::Leaf(p) if p.id == target_id);
@@ -320,10 +316,21 @@ impl PaneNode {
 
     /// Find a divider near the given point. Returns divider info if the cursor
     /// is within `threshold` pixels of a split border.
-    pub fn find_divider_at(&self, x: f32, y: f32, rect: Rect, threshold: f32) -> Option<DividerInfo> {
+    pub fn find_divider_at(
+        &self,
+        x: f32,
+        y: f32,
+        rect: Rect,
+        threshold: f32,
+    ) -> Option<DividerInfo> {
         match self {
             PaneNode::Leaf(_) => None,
-            PaneNode::Split { direction, ratio, first, second } => {
+            PaneNode::Split {
+                direction,
+                ratio,
+                first,
+                second,
+            } => {
                 let (r1, r2) = rect.split(*direction, *ratio);
                 let divider_pos = match direction {
                     SplitDirection::Vertical => (r1.x + r1.width).value(),
@@ -336,8 +343,12 @@ impl PaneNode {
                 // Check if cursor is within threshold of this divider
                 // and within the perpendicular bounds
                 let in_bounds = match direction {
-                    SplitDirection::Vertical => y >= rect.y.value() && y < (rect.y + rect.height).value(),
-                    SplitDirection::Horizontal => x >= rect.x.value() && x < (rect.x + rect.width).value(),
+                    SplitDirection::Vertical => {
+                        y >= rect.y.value() && y < (rect.y + rect.height).value()
+                    }
+                    SplitDirection::Horizontal => {
+                        x >= rect.x.value() && x < (rect.x + rect.width).value()
+                    }
                 };
                 if in_bounds && (cursor_pos - divider_pos).abs() < threshold {
                     return Some(DividerInfo {
@@ -346,7 +357,8 @@ impl PaneNode {
                     });
                 }
                 // Recurse into children
-                first.find_divider_at(x, y, r1, threshold)
+                first
+                    .find_divider_at(x, y, r1, threshold)
                     .or_else(|| second.find_divider_at(x, y, r2, threshold))
             }
         }
@@ -354,7 +366,11 @@ impl PaneNode {
 
     /// Move focus in a direction based on the split tree structure.
     /// Returns the pane_id to focus, or None if movement is not possible.
-    pub fn directional_focus(&self, current_pane_id: PaneId, direction: FocusDirection) -> Option<PaneId> {
+    pub fn directional_focus(
+        &self,
+        current_pane_id: PaneId,
+        direction: FocusDirection,
+    ) -> Option<PaneId> {
         // path entries: (split_direction, side_we_went, sibling_subtree)
         let mut path: Vec<(SplitDirection, PathSide, &PaneNode)> = Vec::new();
         if !self.build_path_to(current_pane_id, &mut path) {
@@ -384,7 +400,12 @@ impl PaneNode {
     ) -> bool {
         match self {
             PaneNode::Leaf(pane) => pane.id == target_id,
-            PaneNode::Split { direction, first, second, .. } => {
+            PaneNode::Split {
+                direction,
+                first,
+                second,
+                ..
+            } => {
                 // Try first subtree
                 path.push((*direction, PathSide::First, second.as_ref()));
                 if first.build_path_to(target_id, path) {
@@ -439,10 +460,20 @@ impl PaneNode {
 
     /// Update the ratio of the split node whose rect approximately matches `split_rect`.
     /// Returns true if a matching split was found and updated.
-    pub fn update_ratio_for_rect(&mut self, split_rect: Rect, new_ratio: f32, current_rect: Rect) -> bool {
+    pub fn update_ratio_for_rect(
+        &mut self,
+        split_rect: Rect,
+        new_ratio: f32,
+        current_rect: Rect,
+    ) -> bool {
         match self {
             PaneNode::Leaf(_) => false,
-            PaneNode::Split { direction, ratio, first, second } => {
+            PaneNode::Split {
+                direction,
+                ratio,
+                first,
+                second,
+            } => {
                 if current_rect.approx_eq(&split_rect) {
                     *ratio = new_ratio.clamp(0.1, 0.9);
                     return true;
@@ -454,4 +485,3 @@ impl PaneNode {
         }
     }
 }
-

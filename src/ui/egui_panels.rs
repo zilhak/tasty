@@ -52,7 +52,11 @@ pub fn draw_egui_panels(
                     logical_x: (pane_rect.x.value() / scale_factor).round_ui(),
                     logical_y: ((pane_rect.y + tab_bar_h).value() / scale_factor).round_ui(),
                     logical_w: (pane_rect.width.value() / scale_factor).round_ui(),
-                    logical_h: (((pane_rect.height - tab_bar_h).max(crate::model::length::PhysicalPx(1.0))).value() / scale_factor).round_ui(),
+                    logical_h: (((pane_rect.height - tab_bar_h)
+                        .max(crate::model::length::PhysicalPx(1.0)))
+                    .value()
+                        / scale_factor)
+                        .round_ui(),
                     is_keyboard_target: pane_id == focused_pane_id,
                 });
                 continue;
@@ -65,7 +69,8 @@ pub fn draw_egui_panels(
                     x: pane_rect.x,
                     y: pane_rect.y + tab_bar_h,
                     width: pane_rect.width,
-                    height: (pane_rect.height - tab_bar_h).max(crate::model::length::PhysicalPx(1.0)),
+                    height: (pane_rect.height - tab_bar_h)
+                        .max(crate::model::length::PhysicalPx(1.0)),
                 };
                 for (sid, rect) in tab.layout().egui_regions(content_rect) {
                     infos.push(EguiPanelInfo {
@@ -88,7 +93,11 @@ pub fn draw_egui_panels(
     let surface_keys: Vec<PendingKeyEvent> = state.pending_surface_keys.drain(..).collect();
 
     // Second pass: render each egui panel.
-    let mut pending_explorer_action: Option<(u32, Option<u32>, crate::explorer_ui::ExplorerAction)> = None;
+    let mut pending_explorer_action: Option<(
+        u32,
+        Option<u32>,
+        crate::explorer_ui::ExplorerAction,
+    )> = None;
     let mut pending_empty_action: Option<crate::empty_ui::EmptyAction> = None;
     // Clipboard viewer surfaces are rendered after the main loop to sidestep the
     // borrow conflict between surface (via state.workspaces) and state.engine.clipboard_history.
@@ -104,10 +113,11 @@ pub fn draw_egui_panels(
     let mut pending_clipboard_viewer_renders: Vec<PendingClipboardViewerRender> = Vec::new();
 
     for info in &infos {
-        let id_suffix = info.surface_id.map_or(
-            format!("pane_{}", info.pane_id),
-            |sid| format!("surface_{}", sid),
-        );
+        let id_suffix = info
+            .surface_id
+            .map_or(format!("pane_{}", info.pane_id), |sid| {
+                format!("surface_{}", sid)
+            });
 
         let ws = state.active_workspace_mut();
         let pane = match ws.pane_layout_mut().find_pane_mut(info.pane_id) {
@@ -223,7 +233,8 @@ pub fn draw_egui_panels(
         let mut paste_index: Option<usize> = None;
         if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pending.pane_id) {
             if let Some(tab) = pane.active_tab_mut() {
-                let surface: &mut dyn crate::model::Surface = if let Some(sid) = pending.surface_id {
+                let surface: &mut dyn crate::model::Surface = if let Some(sid) = pending.surface_id
+                {
                     match tab.layout_mut().find_leaf_mut(sid) {
                         Some(leaf) => leaf.as_mut(),
                         None => continue,
@@ -260,7 +271,10 @@ pub fn draw_egui_panels(
     if let Some(crate::empty_ui::EmptyAction::OpenConvertPopup(sid)) = pending_empty_action {
         state.dialogs.convert_popup = Some(sid);
         state.dialogs.convert_popup_selected = None;
-        state.popups.open_with_scope("convert_surface", crate::ui::popup::PopupScope::Surface(sid));
+        state.popups.open_with_scope(
+            "convert_surface",
+            crate::ui::popup::PopupScope::Surface(sid),
+        );
     }
 
     // Process deferred explorer actions (requires state mutation outside the render loop)
@@ -274,15 +288,24 @@ pub fn draw_egui_panels(
                 let url = crate::ui::file_open_popup::local_path_to_file_uri(&path);
                 let _ = state.add_html_tab(url);
             }
-            crate::explorer_ui::ExplorerAction::FolderContextMenu { path, is_bookmarked, x, y } => {
-                state.dialogs.pending_native_menu = Some(crate::state::PendingNativeMenu::ExplorerFolder {
-                    surface_id: surface_id.unwrap_or(0), path, is_bookmarked, x, y,
-                });
+            crate::explorer_ui::ExplorerAction::FolderContextMenu {
+                path,
+                is_bookmarked,
+                x,
+                y,
+            } => {
+                state.dialogs.pending_native_menu =
+                    Some(crate::state::PendingNativeMenu::ExplorerFolder {
+                        surface_id: surface_id.unwrap_or(0),
+                        path,
+                        is_bookmarked,
+                        x,
+                        y,
+                    });
             }
             crate::explorer_ui::ExplorerAction::BookmarkContextMenu { path, name, x, y } => {
-                state.dialogs.pending_native_menu = Some(crate::state::PendingNativeMenu::BookmarkItem {
-                    path, name, x, y,
-                });
+                state.dialogs.pending_native_menu =
+                    Some(crate::state::PendingNativeMenu::BookmarkItem { path, name, x, y });
             }
         }
     }
@@ -324,12 +347,8 @@ where
 }
 
 /// 여백 없이 Area만 거는 변형. Empty surface처럼 배경을 직접 칠하는 경우에 사용.
-fn draw_panel_frame_no_margin<F>(
-    ctx: &egui::Context,
-    id: &str,
-    info: &EguiPanelInfo,
-    body: F,
-) where
+fn draw_panel_frame_no_margin<F>(ctx: &egui::Context, id: &str, info: &EguiPanelInfo, body: F)
+where
     F: FnOnce(&mut egui::Ui),
 {
     egui::Area::new(egui::Id::new(id))

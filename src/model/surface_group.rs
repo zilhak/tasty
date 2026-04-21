@@ -1,7 +1,7 @@
-use tasty_terminal::Terminal;
-use super::{PhysicalPx, Rect, SurfaceId};
-use super::surface_trait::Surface;
 pub use super::surface_layout::SurfaceGroupLayout;
+use super::surface_trait::Surface;
+use super::{PhysicalPx, Rect, SurfaceId};
+use tasty_terminal::Terminal;
 
 /// Single terminal instance (Surface type: Terminal).
 pub struct TerminalSurface {
@@ -25,26 +25,48 @@ pub(crate) struct DeferredSpawn {
 }
 
 impl Surface for TerminalSurface {
-    fn type_name(&self) -> &'static str { "Terminal" }
+    fn type_name(&self) -> &'static str {
+        "Terminal"
+    }
 
-    fn surface_id(&self) -> Option<SurfaceId> { Some(self.id) }
+    fn surface_id(&self) -> Option<SurfaceId> {
+        Some(self.id)
+    }
 
-    fn is_gpu_rendered(&self) -> bool { true }
+    fn is_gpu_rendered(&self) -> bool {
+        true
+    }
 
-    fn focused_terminal(&self) -> Option<&Terminal> { Some(&self.terminal) }
+    fn focused_terminal(&self) -> Option<&Terminal> {
+        Some(&self.terminal)
+    }
 
-    fn focused_terminal_mut(&mut self) -> Option<&mut Terminal> { Some(&mut self.terminal) }
+    fn focused_terminal_mut(&mut self) -> Option<&mut Terminal> {
+        Some(&mut self.terminal)
+    }
 
     fn find_terminal(&self, surface_id: SurfaceId) -> Option<&Terminal> {
-        if self.id == surface_id { Some(&self.terminal) } else { None }
+        if self.id == surface_id {
+            Some(&self.terminal)
+        } else {
+            None
+        }
     }
 
     fn find_terminal_surface(&self, surface_id: SurfaceId) -> Option<&TerminalSurface> {
-        if self.id == surface_id { Some(self) } else { None }
+        if self.id == surface_id {
+            Some(self)
+        } else {
+            None
+        }
     }
 
     fn find_terminal_mut(&mut self, surface_id: SurfaceId) -> Option<&mut Terminal> {
-        if self.id == surface_id { Some(&mut self.terminal) } else { None }
+        if self.id == surface_id {
+            Some(&mut self.terminal)
+        } else {
+            None
+        }
     }
 
     fn render_regions(&self, rect: Rect) -> Vec<(SurfaceId, &Terminal, Rect)> {
@@ -52,8 +74,14 @@ impl Surface for TerminalSurface {
     }
 
     fn resize_all(&mut self, rect: Rect, cell_width: f32, cell_height: f32) {
-        let cols = (rect.width / cell_width).floor().max(PhysicalPx(1.0)).value() as usize;
-        let rows = (rect.height / cell_height).floor().max(PhysicalPx(1.0)).value() as usize;
+        let cols = (rect.width / cell_width)
+            .floor()
+            .max(PhysicalPx(1.0))
+            .value() as usize;
+        let rows = (rect.height / cell_height)
+            .floor()
+            .max(PhysicalPx(1.0))
+            .value() as usize;
         self.terminal.resize(cols, rows);
     }
 
@@ -65,9 +93,15 @@ impl Surface for TerminalSurface {
         f(self.id, &mut self.terminal);
     }
 
-    fn as_terminal_surface(&self) -> Option<&TerminalSurface> { Some(self) }
-    fn as_terminal_surface_mut(&mut self) -> Option<&mut TerminalSurface> { Some(self) }
-    fn take_terminal_surface(self: Box<Self>) -> Option<TerminalSurface> { Some(*self) }
+    fn as_terminal_surface(&self) -> Option<&TerminalSurface> {
+        Some(self)
+    }
+    fn as_terminal_surface_mut(&mut self) -> Option<&mut TerminalSurface> {
+        Some(self)
+    }
+    fn take_terminal_surface(self: Box<Self>) -> Option<TerminalSurface> {
+        Some(*self)
+    }
 
     fn to_tree_json(&self) -> serde_json::Value {
         serde_json::json!({

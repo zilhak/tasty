@@ -3,9 +3,9 @@ use termwiz::cell::CellAttributes;
 use crate::font::GlyphKey;
 use crate::selection::NormalizedSelection;
 
-use super::{CellRenderer, unicode_width};
-use super::palette::{color_attr_to_rgba, DEFAULT_FG};
+use super::palette::{DEFAULT_FG, color_attr_to_rgba};
 use super::types::{BgInstance, GlyphInstance};
+use super::{CellRenderer, unicode_width};
 
 impl CellRenderer {
     /// Render a single cell into instance buffers (shared logic for both line types).
@@ -90,7 +90,18 @@ impl CellRenderer {
             }
             let ch = text.chars().next().unwrap_or(' ');
             let width = unicode_width(ch);
-            self.render_cell(col_idx, row_idx, text.as_str(), attrs, width, cols, default_bg, queue, selection, absolute_row);
+            self.render_cell(
+                col_idx,
+                row_idx,
+                text.as_str(),
+                attrs,
+                width,
+                cols,
+                default_bg,
+                queue,
+                selection,
+                absolute_row,
+            );
             col_idx += width;
         }
         // Fill remaining columns with default_bg
@@ -122,8 +133,23 @@ impl CellRenderer {
             }
             let text = cell_ref.str();
             let ch = text.chars().next().unwrap_or(' ');
-            let width = if !text.is_empty() { unicode_width(ch) } else { 1 };
-            self.render_cell(col_idx, row_idx, text, cell_ref.attrs(), width, cols, default_bg, queue, selection, absolute_row);
+            let width = if !text.is_empty() {
+                unicode_width(ch)
+            } else {
+                1
+            };
+            self.render_cell(
+                col_idx,
+                row_idx,
+                text,
+                cell_ref.attrs(),
+                width,
+                cols,
+                default_bg,
+                queue,
+                selection,
+                absolute_row,
+            );
             last_col = col_idx + width;
         }
         // Fill remaining columns with default_bg

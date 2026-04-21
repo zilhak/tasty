@@ -1,7 +1,7 @@
 use std::time::{Instant, SystemTime};
 
-use super::surface_trait::Surface;
 use super::SurfaceId;
+use super::surface_trait::Surface;
 
 /// A surface that displays a Markdown file rendered with egui.
 /// Supports automatic reload when the file changes on disk.
@@ -40,8 +40,8 @@ impl MarkdownPanel {
     }
 
     pub fn reload(&mut self) {
-        self.content = std::fs::read_to_string(&self.file_path)
-            .unwrap_or_else(|e| format!("Error: {}", e));
+        self.content =
+            std::fs::read_to_string(&self.file_path).unwrap_or_else(|e| format!("Error: {}", e));
         self.last_mtime = std::fs::metadata(&self.file_path)
             .and_then(|m| m.modified())
             .ok();
@@ -72,14 +72,22 @@ impl MarkdownPanel {
 }
 
 impl Surface for MarkdownPanel {
-    fn type_name(&self) -> &'static str { "Markdown" }
-    fn surface_id(&self) -> Option<SurfaceId> { Some(self.id) }
+    fn type_name(&self) -> &'static str {
+        "Markdown"
+    }
+    fn surface_id(&self) -> Option<SurfaceId> {
+        Some(self.id)
+    }
     fn display_name(&self) -> String {
         std::path::Path::new(&self.file_path)
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| "Markdown".to_string())
     }
-    fn as_markdown(&self) -> Option<&MarkdownPanel> { Some(self) }
-    fn as_markdown_mut(&mut self) -> Option<&mut MarkdownPanel> { Some(self) }
+    fn as_markdown(&self) -> Option<&MarkdownPanel> {
+        Some(self)
+    }
+    fn as_markdown_mut(&mut self) -> Option<&mut MarkdownPanel> {
+        Some(self)
+    }
 }

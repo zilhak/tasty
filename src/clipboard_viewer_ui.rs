@@ -47,7 +47,9 @@ pub fn draw_clipboard_viewer_popup(ui: &mut egui::Ui, state: &mut AppState) -> P
         ui,
         &mut state.engine.clipboard_history,
         &mut state.dialogs.clipboard_viewer,
-        ViewerConfig { show_close_hint: true },
+        ViewerConfig {
+            show_close_hint: true,
+        },
     );
     if let ViewerOutcome::Pasted = outcome {
         let index = state.dialogs.clipboard_viewer.selected.unwrap_or(0);
@@ -70,7 +72,9 @@ pub fn draw_clipboard_viewer_surface(
         ui,
         history,
         viewer,
-        ViewerConfig { show_close_hint: false },
+        ViewerConfig {
+            show_close_hint: false,
+        },
     );
     if let ViewerOutcome::Pasted = outcome {
         Some(viewer.selected.unwrap_or(0))
@@ -88,7 +92,9 @@ pub fn paste_from_history(state: &mut AppState, filtered_orig_index: usize) {
     match arboard::Clipboard::new().and_then(|mut cb| cb.set_text(text.clone())) {
         Ok(()) => {
             state.engine.record_internal_copy(&text);
-            state.toasts.push_info(t("toast.copied"), crate::ui::ToastScope::Window);
+            state
+                .toasts
+                .push_info(t("toast.copied"), crate::ui::ToastScope::Window);
         }
         Err(e) => {
             tracing::warn!("clipboard set_text failed: {e}");
@@ -105,7 +111,9 @@ fn draw_inner(
     let th = theme::theme();
     let ctx = ui.ctx().clone();
     let margin = 8.0;
-    let inner = ui.available_rect_before_wrap().shrink2(egui::vec2(margin, 0.0));
+    let inner = ui
+        .available_rect_before_wrap()
+        .shrink2(egui::vec2(margin, 0.0));
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner));
     let ui = &mut child;
 
@@ -193,8 +201,7 @@ fn draw_inner(
         if i.key_pressed(egui::Key::End) && filtered_len > 0 {
             viewer.selected = Some(filtered_len - 1);
         }
-        if (i.key_pressed(egui::Key::Enter)
-            || (i.key_pressed(egui::Key::C) && i.modifiers.ctrl))
+        if (i.key_pressed(egui::Key::Enter) || (i.key_pressed(egui::Key::C) && i.modifiers.ctrl))
             && filtered_len > 0
         {
             let n = viewer.selected.unwrap_or(0);
@@ -206,12 +213,16 @@ fn draw_inner(
     });
 
     // Delete 처리 (history mut borrow).
-    let (delete_pressed, shift_delete) = ctx.input(|i| (
-        i.key_pressed(egui::Key::Delete),
-        i.key_pressed(egui::Key::Delete) && i.modifiers.shift,
-    ));
+    let (delete_pressed, shift_delete) = ctx.input(|i| {
+        (
+            i.key_pressed(egui::Key::Delete),
+            i.key_pressed(egui::Key::Delete) && i.modifiers.shift,
+        )
+    });
     let delete_target: Option<usize> = if delete_pressed && !shift_delete && filtered_len > 0 {
-        viewer.selected.and_then(|n| filtered.get(n).map(|r| r.orig))
+        viewer
+            .selected
+            .and_then(|n| filtered.get(n).map(|r| r.orig))
     } else {
         None
     };
@@ -229,18 +240,12 @@ fn draw_inner(
     if is_history_empty {
         ui.add_space(12.0);
         ui.centered_and_justified(|ui| {
-            ui.label(
-                egui::RichText::new(t("clipboard_viewer.empty_message"))
-                    .color(th.subtext0),
-            );
+            ui.label(egui::RichText::new(t("clipboard_viewer.empty_message")).color(th.subtext0));
         });
     } else if filtered.is_empty() {
         ui.add_space(12.0);
         ui.centered_and_justified(|ui| {
-            ui.label(
-                egui::RichText::new(t("clipboard_viewer.no_match"))
-                    .color(th.subtext0),
-            );
+            ui.label(egui::RichText::new(t("clipboard_viewer.no_match")).color(th.subtext0));
         });
     } else {
         // 힌트 바 영역을 위한 여유 공간
@@ -270,7 +275,10 @@ fn draw_inner(
                     let preview = first_line_preview(&row.text);
 
                     ui.painter().text(
-                        egui::pos2(rect.min.x + 4.0, rect.center().y - th.font_size_body.value() / 2.0),
+                        egui::pos2(
+                            rect.min.x + 4.0,
+                            rect.center().y - th.font_size_body.value() / 2.0,
+                        ),
                         egui::Align2::LEFT_TOP,
                         format!("{}{}", prefix, preview),
                         egui::FontId::proportional(th.font_size_body.value()),
@@ -299,10 +307,7 @@ fn draw_inner(
     if viewer.pending_clear {
         ui.add_space(4.0);
         ui.horizontal(|ui| {
-            ui.label(
-                egui::RichText::new(t("clipboard_viewer.clear_confirm"))
-                    .color(th.yellow),
-            );
+            ui.label(egui::RichText::new(t("clipboard_viewer.clear_confirm")).color(th.yellow));
             if ui.button(t("button.ok")).clicked() {
                 history.clear();
                 viewer.pending_clear = false;

@@ -1,8 +1,8 @@
 use winit::keyboard::{Key, KeyCode, ModifiersState, NamedKey, PhysicalKey};
 
-use crate::window::main::MainWindow;
-use crate::window::Window as _;
 use crate::model::SplitDirection;
+use crate::window::Window as _;
+use crate::window::main::MainWindow;
 
 /// Convert a physical key code to a Key::Character for shortcut matching.
 /// On macOS, when IME is composing (e.g. Korean), logical_key may contain
@@ -14,24 +14,53 @@ pub(crate) fn physical_key_to_logical(physical: &PhysicalKey) -> Option<Key> {
         _ => return None,
     };
     let ch: &str = match code {
-        KeyCode::KeyA => "a", KeyCode::KeyB => "b", KeyCode::KeyC => "c",
-        KeyCode::KeyD => "d", KeyCode::KeyE => "e", KeyCode::KeyF => "f",
-        KeyCode::KeyG => "g", KeyCode::KeyH => "h", KeyCode::KeyI => "i",
-        KeyCode::KeyJ => "j", KeyCode::KeyK => "k", KeyCode::KeyL => "l",
-        KeyCode::KeyM => "m", KeyCode::KeyN => "n", KeyCode::KeyO => "o",
-        KeyCode::KeyP => "p", KeyCode::KeyQ => "q", KeyCode::KeyR => "r",
-        KeyCode::KeyS => "s", KeyCode::KeyT => "t", KeyCode::KeyU => "u",
-        KeyCode::KeyV => "v", KeyCode::KeyW => "w", KeyCode::KeyX => "x",
-        KeyCode::KeyY => "y", KeyCode::KeyZ => "z",
-        KeyCode::Digit0 => "0", KeyCode::Digit1 => "1", KeyCode::Digit2 => "2",
-        KeyCode::Digit3 => "3", KeyCode::Digit4 => "4", KeyCode::Digit5 => "5",
-        KeyCode::Digit6 => "6", KeyCode::Digit7 => "7", KeyCode::Digit8 => "8",
+        KeyCode::KeyA => "a",
+        KeyCode::KeyB => "b",
+        KeyCode::KeyC => "c",
+        KeyCode::KeyD => "d",
+        KeyCode::KeyE => "e",
+        KeyCode::KeyF => "f",
+        KeyCode::KeyG => "g",
+        KeyCode::KeyH => "h",
+        KeyCode::KeyI => "i",
+        KeyCode::KeyJ => "j",
+        KeyCode::KeyK => "k",
+        KeyCode::KeyL => "l",
+        KeyCode::KeyM => "m",
+        KeyCode::KeyN => "n",
+        KeyCode::KeyO => "o",
+        KeyCode::KeyP => "p",
+        KeyCode::KeyQ => "q",
+        KeyCode::KeyR => "r",
+        KeyCode::KeyS => "s",
+        KeyCode::KeyT => "t",
+        KeyCode::KeyU => "u",
+        KeyCode::KeyV => "v",
+        KeyCode::KeyW => "w",
+        KeyCode::KeyX => "x",
+        KeyCode::KeyY => "y",
+        KeyCode::KeyZ => "z",
+        KeyCode::Digit0 => "0",
+        KeyCode::Digit1 => "1",
+        KeyCode::Digit2 => "2",
+        KeyCode::Digit3 => "3",
+        KeyCode::Digit4 => "4",
+        KeyCode::Digit5 => "5",
+        KeyCode::Digit6 => "6",
+        KeyCode::Digit7 => "7",
+        KeyCode::Digit8 => "8",
         KeyCode::Digit9 => "9",
-        KeyCode::Minus => "-", KeyCode::Equal => "=",
-        KeyCode::BracketLeft => "[", KeyCode::BracketRight => "]",
-        KeyCode::Semicolon => ";", KeyCode::Quote => "'",
-        KeyCode::Backquote => "`", KeyCode::Backslash => "\\",
-        KeyCode::Comma => ",", KeyCode::Period => ".", KeyCode::Slash => "/",
+        KeyCode::Minus => "-",
+        KeyCode::Equal => "=",
+        KeyCode::BracketLeft => "[",
+        KeyCode::BracketRight => "]",
+        KeyCode::Semicolon => ";",
+        KeyCode::Quote => "'",
+        KeyCode::Backquote => "`",
+        KeyCode::Backslash => "\\",
+        KeyCode::Comma => ",",
+        KeyCode::Period => ".",
+        KeyCode::Slash => "/",
         _ => return None,
     };
     Some(Key::Character(ch.into()))
@@ -97,13 +126,20 @@ fn parse_binding(binding: &str) -> Option<ParsedBinding<'_>> {
         return None;
     }
 
-    Some(ParsedBinding { ctrl, shift, alt, key: rest })
+    Some(ParsedBinding {
+        ctrl,
+        shift,
+        alt,
+        key: rest,
+    })
 }
 
 /// Parse a binding string like "ctrl+shift+n" and check if it matches
 /// the given key + modifiers. Returns false for empty bindings.
 fn matches_binding(binding: &str, key: &Key, mods: ModifiersState) -> bool {
-    let Some(parsed) = parse_binding(binding) else { return false; };
+    let Some(parsed) = parse_binding(binding) else {
+        return false;
+    };
 
     // Modifier-only key presses must never trigger any shortcut, regardless of
     // how the binding is spelled. This is the structural guard that prevents
@@ -137,10 +173,7 @@ fn matches_binding(binding: &str, key: &Key, mods: ModifiersState) -> bool {
     #[cfg(not(target_os = "macos"))]
     let alt_matches = mods.alt_key() == parsed.alt;
 
-    if mods.control_key() != parsed.ctrl
-        || mods.shift_key() != parsed.shift
-        || !alt_matches
-    {
+    if mods.control_key() != parsed.ctrl || mods.shift_key() != parsed.shift || !alt_matches {
         return false;
     }
 
@@ -230,7 +263,10 @@ fn is_double_tap_binding(binding: &str) -> Option<crate::double_tap::DoubleTapKe
 
 impl MainWindow {
     /// Handle double-tap modifier shortcuts. Returns true if consumed.
-    pub(crate) fn handle_double_tap_shortcut(&mut self, dt: crate::double_tap::DoubleTapKey) -> bool {
+    pub(crate) fn handle_double_tap_shortcut(
+        &mut self,
+        dt: crate::double_tap::DoubleTapKey,
+    ) -> bool {
         let kb = self.state.engine.settings.keybindings.clone();
         let dt_str = dt.binding_str();
 
@@ -279,7 +315,12 @@ impl MainWindow {
         for (bindings, action) in &bindings_to_check {
             if has_dt(bindings) {
                 match *action {
-                    "new_workspace" => { if let Err(e) = self.state.add_workspace() { tracing::warn!("add_workspace failed: {e}"); } self.state.resize_all(terminal_rect, cell_w, cell_h); }
+                    "new_workspace" => {
+                        if let Err(e) = self.state.add_workspace() {
+                            tracing::warn!("add_workspace failed: {e}");
+                        }
+                        self.state.resize_all(terminal_rect, cell_w, cell_h);
+                    }
                     "close_workspace" => {
                         self.state.close_active_workspace();
                         if self.state.engine.workspaces.is_empty() {
@@ -288,25 +329,64 @@ impl MainWindow {
                             self.state.resize_all(terminal_rect, cell_w, cell_h);
                         }
                     }
-                    "new_tab" => { if let Err(e) = self.state.add_tab() { tracing::warn!("add_tab failed: {e}"); } self.state.resize_all(terminal_rect, cell_w, cell_h); }
+                    "new_tab" => {
+                        if let Err(e) = self.state.add_tab() {
+                            tracing::warn!("add_tab failed: {e}");
+                        }
+                        self.state.resize_all(terminal_rect, cell_w, cell_h);
+                    }
                     "close_pane" => {
-                        if !self.state.close_active_pane() { self.state.close_active_workspace(); }
+                        if !self.state.close_active_pane() {
+                            self.state.close_active_workspace();
+                        }
                         if self.state.engine.workspaces.is_empty() {
                             self.request_close();
                         } else {
                             self.state.resize_all(terminal_rect, cell_w, cell_h);
                         }
                     }
-                    "split_pane_vertical" => { if let Err(e) = self.state.split_pane(SplitDirection::Vertical) { tracing::warn!("split_pane_vertical failed: {e}"); } self.state.resize_all(terminal_rect, cell_w, cell_h); }
-                    "split_pane_horizontal" => { if let Err(e) = self.state.split_pane(SplitDirection::Horizontal) { tracing::warn!("split_pane_horizontal failed: {e}"); } self.state.resize_all(terminal_rect, cell_w, cell_h); }
-                    "split_surface_vertical" => { if let Err(e) = self.state.split_surface(SplitDirection::Vertical) { tracing::warn!("split_surface_vertical failed: {e}"); } self.state.resize_all(terminal_rect, cell_w, cell_h); }
-                    "split_surface_horizontal" => { if let Err(e) = self.state.split_surface(SplitDirection::Horizontal) { tracing::warn!("split_surface_horizontal failed: {e}"); } self.state.resize_all(terminal_rect, cell_w, cell_h); }
-                    "focus_pane_next" => { self.state.move_pane_focus_forward(); }
-                    "focus_pane_prev" => { self.state.move_pane_focus_backward(); }
-                    "focus_surface_next" => { self.state.move_surface_focus_forward(); }
-                    "focus_surface_prev" => { self.state.move_surface_focus_backward(); }
+                    "split_pane_vertical" => {
+                        if let Err(e) = self.state.split_pane(SplitDirection::Vertical) {
+                            tracing::warn!("split_pane_vertical failed: {e}");
+                        }
+                        self.state.resize_all(terminal_rect, cell_w, cell_h);
+                    }
+                    "split_pane_horizontal" => {
+                        if let Err(e) = self.state.split_pane(SplitDirection::Horizontal) {
+                            tracing::warn!("split_pane_horizontal failed: {e}");
+                        }
+                        self.state.resize_all(terminal_rect, cell_w, cell_h);
+                    }
+                    "split_surface_vertical" => {
+                        if let Err(e) = self.state.split_surface(SplitDirection::Vertical) {
+                            tracing::warn!("split_surface_vertical failed: {e}");
+                        }
+                        self.state.resize_all(terminal_rect, cell_w, cell_h);
+                    }
+                    "split_surface_horizontal" => {
+                        if let Err(e) = self.state.split_surface(SplitDirection::Horizontal) {
+                            tracing::warn!("split_surface_horizontal failed: {e}");
+                        }
+                        self.state.resize_all(terminal_rect, cell_w, cell_h);
+                    }
+                    "focus_pane_next" => {
+                        self.state.move_pane_focus_forward();
+                    }
+                    "focus_pane_prev" => {
+                        self.state.move_pane_focus_backward();
+                    }
+                    "focus_surface_next" => {
+                        self.state.move_surface_focus_forward();
+                    }
+                    "focus_surface_prev" => {
+                        self.state.move_surface_focus_backward();
+                    }
                     "close_surface" => {
-                        if !self.state.close_active_surface() { if !self.state.close_active_pane() { self.state.close_active_workspace(); } }
+                        if !self.state.close_active_surface() {
+                            if !self.state.close_active_pane() {
+                                self.state.close_active_workspace();
+                            }
+                        }
                         if self.state.engine.workspaces.is_empty() {
                             self.request_close();
                         } else {
@@ -317,9 +397,15 @@ impl MainWindow {
                         self.state.restore_closed_item();
                         self.state.resize_all(terminal_rect, cell_w, cell_h);
                     }
-                    "quit" => { let _ = self.proxy.send_event(crate::AppEvent::QuitRequested); }
-                    "quit_immediate" => { let _ = self.proxy.send_event(crate::AppEvent::Shutdown); }
-                    "quit_minimize" => { let _ = self.proxy.send_event(crate::AppEvent::Minimize); }
+                    "quit" => {
+                        let _ = self.proxy.send_event(crate::AppEvent::QuitRequested);
+                    }
+                    "quit_immediate" => {
+                        let _ = self.proxy.send_event(crate::AppEvent::Shutdown);
+                    }
+                    "quit_minimize" => {
+                        let _ = self.proxy.send_event(crate::AppEvent::Minimize);
+                    }
                     "open_markdown" => {
                         let pane_id = self.state.active_workspace().focused_pane;
                         self.state.dialogs.file_open_pane_id = Some(pane_id);
@@ -336,7 +422,10 @@ impl MainWindow {
                         if let Some(sid) = self.state.focused_surface_id() {
                             self.state.dialogs.convert_popup = Some(sid);
                             self.state.dialogs.convert_popup_selected = None;
-                            self.state.popups.open_with_scope("convert_surface", crate::ui::popup::PopupScope::Surface(sid));
+                            self.state.popups.open_with_scope(
+                                "convert_surface",
+                                crate::ui::popup::PopupScope::Surface(sid),
+                            );
                         }
                     }
                     "convert_to_markdown" => {
@@ -345,7 +434,10 @@ impl MainWindow {
                             self.state.dialogs.markdown_convert_surface_id = Some(sid);
                             self.state.dialogs.file_open_pane_id = Some(pane_id);
                             self.state.dialogs.markdown_open_buffer.clear();
-                            self.state.popups.open_with_scope("markdown_open", crate::ui::popup::PopupScope::Surface(sid));
+                            self.state.popups.open_with_scope(
+                                "markdown_open",
+                                crate::ui::popup::PopupScope::Surface(sid),
+                            );
                         }
                     }
                     "convert_to_explorer" => {
@@ -365,8 +457,12 @@ impl MainWindow {
                             self.state.resize_all(terminal_rect, cell_w, cell_h);
                         }
                     }
-                    "next_tab" => { self.state.next_tab_in_pane(); }
-                    "prev_tab" => { self.state.prev_tab_in_pane(); }
+                    "next_tab" => {
+                        self.state.next_tab_in_pane();
+                    }
+                    "prev_tab" => {
+                        self.state.prev_tab_in_pane();
+                    }
                     _ => {}
                 }
                 return true;
@@ -407,15 +503,28 @@ impl MainWindow {
         let kb = self.state.engine.settings.keybindings.clone();
 
         // Configurable keybinding shortcuts
-        if Self::handle_keybinding_shortcuts(&mut self.state, &kb, key, mods, terminal_rect, cell_w, cell_h, &self.proxy) {
-            if self.state.engine.workspaces.is_empty() { self.request_close(); }
+        if Self::handle_keybinding_shortcuts(
+            &mut self.state,
+            &kb,
+            key,
+            mods,
+            terminal_rect,
+            cell_w,
+            cell_h,
+            &self.proxy,
+        ) {
+            if self.state.engine.workspaces.is_empty() {
+                self.request_close();
+            }
             self.base.dirty = true;
             return true;
         }
 
         // Numeric tab/workspace switching (Ctrl+1..9 / Alt+1..9)
         if Self::handle_numeric_switch_shortcuts(&mut self.state, &kb, key, ctrl, shift, alt) {
-            if self.state.engine.workspaces.is_empty() { self.request_close(); }
+            if self.state.engine.workspaces.is_empty() {
+                self.request_close();
+            }
             self.base.dirty = true;
             return true;
         }
@@ -445,10 +554,11 @@ impl MainWindow {
         // Cut
         if matches_any_binding(&kb.cut, key, mods) {
             if self.state.explorer_file_cut() {
-                let scope = crate::ui::ToastScope::Surface(
-                    self.state.focused_surface_id().unwrap_or(0)
-                );
-                self.state.toasts.push_info(crate::i18n::t("toast.cut_files"), scope);
+                let scope =
+                    crate::ui::ToastScope::Surface(self.state.focused_surface_id().unwrap_or(0));
+                self.state
+                    .toasts
+                    .push_info(crate::i18n::t("toast.cut_files"), scope);
                 self.mark_dirty();
             }
             return true;
@@ -482,7 +592,9 @@ impl MainWindow {
         let scope = crate::ui::ToastScope::Surface(
             self.state.focused_surface_id().unwrap_or(0)
         );
-        self.state.toasts.push_info(crate::i18n::t("toast.copied_path"), scope);
+        self.state
+            .toasts
+            .push_info(crate::i18n::t("toast.copied_path"), scope);
         self.mark_dirty();
         true
     }
@@ -500,16 +612,20 @@ impl MainWindow {
         if matches!(st, crate::state::FocusedSurfaceType::Explorer) {
             // Explorer: 파일을 OS 파일 클립보드에 복사
             if self.state.explorer_file_copy() {
-                let scope = crate::ui::ToastScope::Surface(
-                    self.state.focused_surface_id().unwrap_or(0)
-                );
-                self.state.toasts.push_info(crate::i18n::t("toast.copied_files"), scope);
+                let scope =
+                    crate::ui::ToastScope::Surface(self.state.focused_surface_id().unwrap_or(0));
+                self.state
+                    .toasts
+                    .push_info(crate::i18n::t("toast.copied_files"), scope);
                 self.mark_dirty();
             }
             return true;
         }
         if matches!(st, crate::state::FocusedSurfaceType::Markdown) {
-            self.base.gpu.egui_ctx.input_mut(|i| i.events.push(egui::Event::Copy));
+            self.base
+                .gpu
+                .egui_ctx
+                .input_mut(|i| i.events.push(egui::Event::Copy));
             self.mark_dirty();
             return true;
         }
@@ -527,30 +643,42 @@ impl MainWindow {
         proxy: &winit::event_loop::EventLoopProxy<crate::AppEvent>,
     ) -> bool {
         if matches_any_binding(&kb.new_workspace, key, mods) {
-            if let Err(e) = state.add_workspace() { tracing::warn!("add_workspace failed: {e}"); }
+            if let Err(e) = state.add_workspace() {
+                tracing::warn!("add_workspace failed: {e}");
+            }
             return true;
         }
         if matches_any_binding(&kb.new_tab, key, mods) {
-            if let Err(e) = state.add_tab() { tracing::warn!("add_tab failed: {e}"); }
+            if let Err(e) = state.add_tab() {
+                tracing::warn!("add_tab failed: {e}");
+            }
             return true;
         }
         if matches_any_binding(&kb.split_pane_vertical, key, mods) {
-            if let Err(e) = state.split_pane(SplitDirection::Vertical) { tracing::warn!("split_pane_vertical failed: {e}"); }
+            if let Err(e) = state.split_pane(SplitDirection::Vertical) {
+                tracing::warn!("split_pane_vertical failed: {e}");
+            }
             state.resize_all(terminal_rect, cell_w, cell_h);
             return true;
         }
         if matches_any_binding(&kb.split_pane_horizontal, key, mods) {
-            if let Err(e) = state.split_pane(SplitDirection::Horizontal) { tracing::warn!("split_pane_horizontal failed: {e}"); }
+            if let Err(e) = state.split_pane(SplitDirection::Horizontal) {
+                tracing::warn!("split_pane_horizontal failed: {e}");
+            }
             state.resize_all(terminal_rect, cell_w, cell_h);
             return true;
         }
         if matches_any_binding(&kb.split_surface_vertical, key, mods) {
-            if let Err(e) = state.split_surface(SplitDirection::Vertical) { tracing::warn!("split_surface_vertical failed: {e}"); }
+            if let Err(e) = state.split_surface(SplitDirection::Vertical) {
+                tracing::warn!("split_surface_vertical failed: {e}");
+            }
             state.resize_all(terminal_rect, cell_w, cell_h);
             return true;
         }
         if matches_any_binding(&kb.split_surface_horizontal, key, mods) {
-            if let Err(e) = state.split_surface(SplitDirection::Horizontal) { tracing::warn!("split_surface_horizontal failed: {e}"); }
+            if let Err(e) = state.split_surface(SplitDirection::Horizontal) {
+                tracing::warn!("split_surface_horizontal failed: {e}");
+            }
             state.resize_all(terminal_rect, cell_w, cell_h);
             return true;
         }
@@ -650,8 +778,8 @@ impl MainWindow {
         }
         if matches_any_binding(&kb.open_explorer, key, mods) {
             let home = directories::BaseDirs::new()
-                            .map(|d| d.home_dir().to_string_lossy().to_string())
-                            .unwrap_or_else(|| ".".to_string());
+                .map(|d| d.home_dir().to_string_lossy().to_string())
+                .unwrap_or_else(|| ".".to_string());
             let _ = state.add_explorer_tab(home);
             return true;
         }
@@ -659,7 +787,10 @@ impl MainWindow {
             if let Some(sid) = state.focused_surface_id() {
                 state.dialogs.convert_popup = Some(sid);
                 state.dialogs.convert_popup_selected = None;
-                state.popups.open_with_scope("convert_surface", crate::ui::popup::PopupScope::Surface(sid));
+                state.popups.open_with_scope(
+                    "convert_surface",
+                    crate::ui::popup::PopupScope::Surface(sid),
+                );
             }
             return true;
         }
@@ -669,7 +800,9 @@ impl MainWindow {
                 state.dialogs.markdown_convert_surface_id = Some(sid);
                 state.dialogs.file_open_pane_id = Some(pane_id);
                 state.dialogs.markdown_open_buffer.clear();
-                state.popups.open_with_scope("markdown_open", crate::ui::popup::PopupScope::Surface(sid));
+                state
+                    .popups
+                    .open_with_scope("markdown_open", crate::ui::popup::PopupScope::Surface(sid));
             }
             return true;
         }
@@ -726,7 +859,11 @@ impl MainWindow {
                     _ => ctrl && !shift && !alt,
                 };
                 if tab_mod_matches {
-                    let index = if ch == '0' { 9 } else { (ch as usize) - ('1' as usize) };
+                    let index = if ch == '0' {
+                        9
+                    } else {
+                        (ch as usize) - ('1' as usize)
+                    };
                     state.goto_tab_in_pane(index);
                     return true;
                 }

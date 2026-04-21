@@ -7,26 +7,24 @@ mod click_cursor;
 mod clipboard_history;
 mod clipboard_viewer_ui;
 mod crash_report;
-mod double_tap;
 #[cfg(debug_assertions)]
 mod debug_info;
+mod double_tap;
+mod empty_ui;
 pub mod engine;
 pub mod engine_state;
 mod event_handler;
-mod empty_ui;
 mod explorer_ui;
 mod file_clipboard;
 mod font;
-mod html_ui;
-mod image_ui;
 mod global_hooks;
 mod gpu;
+mod html_ui;
 mod i18n;
+mod image_ui;
 mod ipc;
 #[cfg(windows)]
 mod jump_list;
-#[cfg(windows)]
-mod system_tray;
 mod markdown_ui;
 mod model;
 mod native_menu;
@@ -40,6 +38,8 @@ mod shortcuts;
 mod state;
 mod storage;
 mod surface_meta;
+#[cfg(windows)]
+mod system_tray;
 pub mod theme;
 mod ui;
 mod webview;
@@ -185,20 +185,23 @@ impl App {
 
     /// 모든 MainWindow를 순회. 모달은 제외된다.
     fn main_windows_iter_mut(&mut self) -> impl Iterator<Item = &mut window::main::MainWindow> {
-        self.windows
-            .values_mut()
-            .filter_map(|w| w.as_main_mut())
+        self.windows.values_mut().filter_map(|w| w.as_main_mut())
     }
 
     /// Create an AppState from a GPU state, computing grid size from the sidebar width.
-    fn create_app_state(&self, gpu: &GpuState, sidebar_width: crate::model::LogicalPx) -> crate::state::AppState {
+    fn create_app_state(
+        &self,
+        gpu: &GpuState,
+        sidebar_width: crate::model::LogicalPx,
+    ) -> crate::state::AppState {
         let sf = gpu.scale_factor();
         let size = gpu.size();
         let sidebar_w = sidebar_width.to_physical(sf);
         let terminal_rect = crate::model::Rect {
             x: sidebar_w,
             y: crate::model::PhysicalPx(0.0),
-            width: (crate::model::PhysicalPx(size.width as f32) - sidebar_w).max(crate::model::PhysicalPx(1.0)),
+            width: (crate::model::PhysicalPx(size.width as f32) - sidebar_w)
+                .max(crate::model::PhysicalPx(1.0)),
             height: crate::model::PhysicalPx(size.height as f32),
         };
         let (cols, rows) = gpu.grid_size_for_rect(&terminal_rect);
@@ -208,13 +211,19 @@ impl App {
             let _ = proxy.send_event(AppEvent::TerminalOutput(None));
         });
 
-        let mut state = crate::state::AppState::new(cols, rows, waker).expect("failed to create app state");
+        let mut state =
+            crate::state::AppState::new(cols, rows, waker).expect("failed to create app state");
         state.engine.waker_factory = Some(self.engine.proxy.clone());
         state
     }
 
     /// Register a MainWindow and set it as focused.
-    fn register_window(&mut self, gpu: GpuState, state: crate::state::AppState, window: Arc<Window>) {
+    fn register_window(
+        &mut self,
+        gpu: GpuState,
+        state: crate::state::AppState,
+        window: Arc<Window>,
+    ) {
         let window_id = window.id();
         let main = window::main::MainWindow::new(gpu, state, window, self.engine.proxy.clone());
         self.windows.insert(window_id, Box::new(main));
@@ -246,7 +255,11 @@ impl App {
     fn create_new_window(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         use winit::window::WindowAttributes;
 
-        let title = if cfg!(debug_assertions) { "Tasty (Debug)" } else { "Tasty" };
+        let title = if cfg!(debug_assertions) {
+            "Tasty (Debug)"
+        } else {
+            "Tasty"
+        };
         let attrs = WindowAttributes::default()
             .with_title(title)
             .with_inner_size(winit::dpi::LogicalSize::new(1280, 720))
@@ -270,7 +283,11 @@ impl App {
         // Reuse parked state if available (restoring previous session)
         let mut state = if !self.parked_states.is_empty() {
             let parked = self.parked_states.remove(0);
-            tracing::info!("restoring parked state with {} workspace(s), {} remaining", parked.engine.workspaces.len(), self.parked_states.len());
+            tracing::info!(
+                "restoring parked state with {} workspace(s), {} remaining",
+                parked.engine.workspaces.len(),
+                self.parked_states.len()
+            );
             parked
         } else {
             self.create_app_state(&gpu, settings.appearance.sidebar_width)
@@ -410,7 +427,12 @@ impl App {
             }
             if cmd.request.method == "window.focus" {
                 // Focus a specific MainWindow by searching for matching ID string
-                let target = cmd.request.params.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                let target = cmd
+                    .request
+                    .params
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
                 let mut found = false;
                 for (id, w) in &self.windows {
                     if w.as_main().is_none() {
@@ -499,7 +521,9 @@ impl App {
                 }
                 #[cfg(debug_assertions)]
                 if cmd.request.method == "ui.screenshot" {
-                    let path = cmd.request.params
+                    let path = cmd
+                        .request
+                        .params
                         .get("path")
                         .and_then(|v| v.as_str())
                         .unwrap_or("screenshot.png")
@@ -516,7 +540,12 @@ impl App {
                 }
                 if cmd.request.method.starts_with("surface.ime_") {
                     let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
-                    let response = ipc::handler::ime::handle_ime_method(w, &cmd.request.method, &cmd.request.params, id);
+                    let response = ipc::handler::ime::handle_ime_method(
+                        w,
+                        &cmd.request.method,
+                        &cmd.request.params,
+                        id,
+                    );
                     let _ = cmd.response_tx.send(response);
                     w.base.dirty = true;
                 }
@@ -548,7 +577,7 @@ impl App {
 fn main() -> Result<()> {
     #[cfg(all(windows, not(debug_assertions)))]
     {
-        use windows::Win32::System::Console::{AttachConsole, ATTACH_PARENT_PROCESS};
+        use windows::Win32::System::Console::{ATTACH_PARENT_PROCESS, AttachConsole};
         // 부모 프로세스에 콘솔이 있으면 attach (ConPTY 포함). 부모가 GUI 셸이면
         // 호출은 실패하지만 무해하므로 결과를 의도적으로 무시한다.
         unsafe {

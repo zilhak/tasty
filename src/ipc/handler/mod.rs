@@ -43,7 +43,9 @@ pub fn handle(state: &mut AppState, request: &JsonRpcRequest) -> JsonRpcResponse
         "surface.send_to" => surface::handle_surface_send_to(state, id, &request.params),
         // surface.focus / pane.focus removed: focus is user-only (shortcuts/clicks).
         "notification.list" => notification::handle_notification_list(state, id),
-        "notification.create" => notification::handle_notification_create(state, id, &request.params),
+        "notification.create" => {
+            notification::handle_notification_create(state, id, &request.params)
+        }
         "tree" => handle_tree(state, id),
         "hook.set" => hooks::handle_hook_set(state, id, &request.params),
         "hook.list" => hooks::handle_hook_list(state, id, &request.params),
@@ -61,7 +63,9 @@ pub fn handle(state: &mut AppState, request: &JsonRpcRequest) -> JsonRpcResponse
         "claude.kill" => claude::handle_claude_kill(state, id, &request.params),
         "claude.respawn" => claude::handle_claude_respawn(state, id, &request.params),
         "claude.set_idle_state" => claude::handle_claude_set_idle_state(state, id, &request.params),
-        "claude.set_needs_input" => claude::handle_claude_set_needs_input(state, id, &request.params),
+        "claude.set_needs_input" => {
+            claude::handle_claude_set_needs_input(state, id, &request.params)
+        }
         "claude.broadcast" => claude::handle_claude_broadcast(state, id, &request.params),
         "claude.tell" => claude::handle_claude_tell(state, id, &request.params),
         "claude.wait" => claude::handle_claude_wait(state, id, &request.params),
@@ -82,7 +86,9 @@ pub fn handle(state: &mut AppState, request: &JsonRpcRequest) -> JsonRpcResponse
         "message.count" => message::handle_message_count(state, id, &request.params),
         "message.clear" => message::handle_message_clear(state, id, &request.params),
         #[cfg(target_os = "macos")]
-        "surface.switch_input_source" => input_source::handle_switch_input_source(id, &request.params),
+        "surface.switch_input_source" => {
+            input_source::handle_switch_input_source(id, &request.params)
+        }
         #[cfg(target_os = "macos")]
         "surface.raw_key" => input_source::handle_raw_key(id, &request.params),
         "tool.clipboard.list" => clipboard::handle_list(state, id, &request.params),
@@ -96,26 +102,39 @@ pub fn handle(state: &mut AppState, request: &JsonRpcRequest) -> JsonRpcResponse
 }
 
 /// Extract a required surface_id from params. Returns Err(JsonRpcResponse) if missing.
-fn require_surface_id(params: &serde_json::Value, id: &serde_json::Value) -> Result<u32, JsonRpcResponse> {
+fn require_surface_id(
+    params: &serde_json::Value,
+    id: &serde_json::Value,
+) -> Result<u32, JsonRpcResponse> {
     params
         .get("surface_id")
         .and_then(|v| v.as_u64())
         .map(|v| v as u32)
-        .ok_or_else(|| JsonRpcResponse::invalid_params(id.clone(), "Missing required 'surface_id' parameter"))
+        .ok_or_else(|| {
+            JsonRpcResponse::invalid_params(id.clone(), "Missing required 'surface_id' parameter")
+        })
 }
 
 /// Extract a required pane_id from params. Returns Err(JsonRpcResponse) if missing.
-fn require_pane_id(params: &serde_json::Value, id: &serde_json::Value) -> Result<u32, JsonRpcResponse> {
+fn require_pane_id(
+    params: &serde_json::Value,
+    id: &serde_json::Value,
+) -> Result<u32, JsonRpcResponse> {
     params
         .get("pane_id")
         .and_then(|v| v.as_u64())
         .map(|v| v as u32)
-        .ok_or_else(|| JsonRpcResponse::invalid_params(id.clone(), "Missing required 'pane_id' parameter"))
+        .ok_or_else(|| {
+            JsonRpcResponse::invalid_params(id.clone(), "Missing required 'pane_id' parameter")
+        })
 }
 
 /// Extract optional caller_surface_id from params.
 fn caller_surface_id(params: &serde_json::Value) -> Option<u32> {
-    params.get("caller_surface_id").and_then(|v| v.as_u64()).map(|v| v as u32)
+    params
+        .get("caller_surface_id")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32)
 }
 
 /// Check if a surface belongs to a pane (directly or in any tab).
@@ -134,7 +153,6 @@ fn apply_meta(surface_id: u32, meta: Option<&serde_json::Map<String, serde_json:
     }
 }
 
-
 fn handle_system_info(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {
     JsonRpcResponse::success(
         id,
@@ -151,7 +169,11 @@ fn handle_ui_state(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {
     let ws = state.active_workspace();
     let pane_count = ws.pane_layout().all_pane_ids().len();
     let focused_pane_id = ws.focused_pane;
-    let tab_count = ws.pane_layout().find_pane(focused_pane_id).map(|p| p.tabs.len()).unwrap_or(0);
+    let tab_count = ws
+        .pane_layout()
+        .find_pane(focused_pane_id)
+        .map(|p| p.tabs.len())
+        .unwrap_or(0);
     JsonRpcResponse::success(
         id,
         json!({
@@ -166,7 +188,11 @@ fn handle_ui_state(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {
 }
 
 fn handle_tree(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {
-    let tree: Vec<_> = state.engine.workspaces.iter().enumerate()
+    let tree: Vec<_> = state
+        .engine
+        .workspaces
+        .iter()
+        .enumerate()
         .map(|(i, ws)| {
             let mut t = ws.to_tree_json();
             t["active"] = json!(i == state.active_workspace);
@@ -191,7 +217,11 @@ fn handle_is_typing(
     } else {
         f64::MAX
     };
-    let idle_seconds_capped = if idle_seconds == f64::MAX { -1.0 } else { idle_seconds };
+    let idle_seconds_capped = if idle_seconds == f64::MAX {
+        -1.0
+    } else {
+        idle_seconds
+    };
     JsonRpcResponse::success(
         id,
         json!({
@@ -215,18 +245,12 @@ fn handle_send_wait_idle(
         None => return JsonRpcResponse::invalid_params(id, "Missing 'text' parameter"),
     };
     if state.is_typing(surface_id) {
-        return JsonRpcResponse::success(
-            id,
-            json!({ "sent": false, "reason": "typing" }),
-        );
+        return JsonRpcResponse::success(id, json!({ "sent": false, "reason": "typing" }));
     }
     if let Some(terminal) = state.find_terminal_by_id_mut(surface_id) {
         terminal.send_key(&text);
         JsonRpcResponse::success(id, json!({ "sent": true }))
     } else {
-        JsonRpcResponse::invalid_params(
-            id,
-            format!("Surface {} not found", surface_id),
-        )
+        JsonRpcResponse::invalid_params(id, format!("Surface {} not found", surface_id))
     }
 }

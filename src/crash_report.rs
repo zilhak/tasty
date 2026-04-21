@@ -120,8 +120,9 @@ pub fn init() {
 }
 
 fn make_env_filter() -> EnvFilter {
-    EnvFilter::try_from_env("TASTY_LOG")
-        .unwrap_or_else(|_| EnvFilter::new("warn,wgpu_hal=error,wgpu_core=error,naga=error,egui_winit::clipboard=off"))
+    EnvFilter::try_from_env("TASTY_LOG").unwrap_or_else(|_| {
+        EnvFilter::new("warn,wgpu_hal=error,wgpu_core=error,naga=error,egui_winit::clipboard=off")
+    })
 }
 
 /// Release builds: stderr-only tracing.
@@ -146,13 +147,19 @@ fn init_tracing() {
     // Try to set up file logging; fall back to stderr-only if it fails
     if let Some(dir) = tasty_home() {
         let _ = fs::create_dir_all(&dir);
-        let log_filename = if cfg!(debug_assertions) { "debug-dev.log" } else { "debug.log" };
+        let log_filename = if cfg!(debug_assertions) {
+            "debug-dev.log"
+        } else {
+            "debug.log"
+        };
         let log_path = dir.join(log_filename);
         if let Ok(file) = fs::File::create(&log_path) {
             let file_layer = tracing_subscriber::fmt::layer()
                 .with_writer(std::sync::Mutex::new(file))
                 .with_ansi(false)
-                .with_filter(EnvFilter::new("debug,wgpu_hal=warn,wgpu_core=warn,naga=warn"));
+                .with_filter(EnvFilter::new(
+                    "debug,wgpu_hal=warn,wgpu_core=warn,naga=warn",
+                ));
 
             registry.with(file_layer).init();
             return;

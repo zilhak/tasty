@@ -6,9 +6,9 @@ use std::thread;
 use anyhow::Result;
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
 use termwiz::cell::CellAttributes;
+use termwiz::escape::Action;
 use termwiz::escape::csi::CSI;
 use termwiz::escape::parser::Parser;
-use termwiz::escape::Action;
 use termwiz::surface::{Change, Surface};
 
 pub mod cwd;
@@ -104,15 +104,36 @@ impl Terminal {
     ///
     /// The `waker` callback is invoked from the PTY reader thread whenever new data
     /// arrives, allowing the main event loop to wake up and process the output.
-    pub fn new_with_shell(cols: usize, rows: usize, shell: Option<&str>, surface_id: u32, waker: Waker) -> Result<Self> {
+    pub fn new_with_shell(
+        cols: usize,
+        rows: usize,
+        shell: Option<&str>,
+        surface_id: u32,
+        waker: Waker,
+    ) -> Result<Self> {
         Self::new_with_shell_args(cols, rows, shell, &[], surface_id, waker)
     }
 
-    pub fn new_with_shell_args(cols: usize, rows: usize, shell: Option<&str>, args: &[&str], surface_id: u32, waker: Waker) -> Result<Self> {
+    pub fn new_with_shell_args(
+        cols: usize,
+        rows: usize,
+        shell: Option<&str>,
+        args: &[&str],
+        surface_id: u32,
+        waker: Waker,
+    ) -> Result<Self> {
         Self::new_with_shell_args_cwd(cols, rows, shell, args, surface_id, waker, None)
     }
 
-    pub fn new_with_shell_args_cwd(cols: usize, rows: usize, shell: Option<&str>, args: &[&str], surface_id: u32, waker: Waker, working_dir: Option<&std::path::Path>) -> Result<Self> {
+    pub fn new_with_shell_args_cwd(
+        cols: usize,
+        rows: usize,
+        shell: Option<&str>,
+        args: &[&str],
+        surface_id: u32,
+        waker: Waker,
+        working_dir: Option<&std::path::Path>,
+    ) -> Result<Self> {
         let pty_system = NativePtySystem::default();
 
         let pair = pty_system.openpty(PtySize {
@@ -578,7 +599,8 @@ impl Terminal {
                 y: Position::Absolute(row),
             });
             for (text, attrs) in line_cells {
-                self.primary_surface.add_change(Change::AllAttributes(attrs.clone()));
+                self.primary_surface
+                    .add_change(Change::AllAttributes(attrs.clone()));
                 self.primary_surface.add_change(Change::Text(text.clone()));
             }
         }
@@ -657,7 +679,8 @@ impl Terminal {
                 y: Position::Absolute(row),
             });
             for (text, attrs) in restored {
-                self.primary_surface.add_change(Change::AllAttributes(attrs));
+                self.primary_surface
+                    .add_change(Change::AllAttributes(attrs));
                 self.primary_surface.add_change(Change::Text(text));
             }
         }
@@ -869,14 +892,22 @@ impl Terminal {
 
     /// Number of lines in the scrollback buffer (memory + disk).
     pub fn scrollback_len(&self) -> usize {
-        let disk_count = self.disk_scrollback.as_ref().map(|ds| ds.line_count()).unwrap_or(0);
+        let disk_count = self
+            .disk_scrollback
+            .as_ref()
+            .map(|ds| ds.line_count())
+            .unwrap_or(0);
         disk_count + self.scrollback.len()
     }
 
     /// Get a specific scrollback line by index (0 = oldest, memory only).
     /// For disk-backed lines, use scrollback_line_owned().
     pub fn scrollback_line(&self, index: usize) -> Option<&Vec<(String, CellAttributes)>> {
-        let disk_count = self.disk_scrollback.as_ref().map(|ds| ds.line_count()).unwrap_or(0);
+        let disk_count = self
+            .disk_scrollback
+            .as_ref()
+            .map(|ds| ds.line_count())
+            .unwrap_or(0);
         if index < disk_count {
             None // Disk lines can't be returned as reference — use scrollback_line_owned()
         } else {
@@ -887,9 +918,14 @@ impl Terminal {
     /// Get a scrollback line by index, returning owned data.
     /// Works for both memory and disk-backed lines.
     pub fn scrollback_line_owned(&self, index: usize) -> Option<Vec<(String, CellAttributes)>> {
-        let disk_count = self.disk_scrollback.as_ref().map(|ds| ds.line_count()).unwrap_or(0);
+        let disk_count = self
+            .disk_scrollback
+            .as_ref()
+            .map(|ds| ds.line_count())
+            .unwrap_or(0);
         if index < disk_count {
-            self.disk_scrollback.as_ref()
+            self.disk_scrollback
+                .as_ref()
                 .and_then(|ds| ds.read_line(index).ok().flatten())
         } else {
             self.scrollback.get(index - disk_count).cloned()
@@ -914,7 +950,11 @@ impl Terminal {
     /// Inspect a change and capture scrollback lines before it's applied.
     fn capture_before_scroll(&mut self, change: &Change) {
         match change {
-            Change::ScrollRegionUp { first_row, scroll_count, .. } if *first_row == 0 => {
+            Change::ScrollRegionUp {
+                first_row,
+                scroll_count,
+                ..
+            } if *first_row == 0 => {
                 let captured = self.capture_top_lines(*scroll_count);
                 let count = captured.len();
                 for line in captured {

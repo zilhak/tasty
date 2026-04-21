@@ -35,13 +35,16 @@ pub(super) fn handle_event(w: &mut MainWindow, event: Ime, egui_consumed: bool) 
 
     // 팝업/오버레이가 열려 있으면 IME 이벤트를 터미널로 전달하지 않는다.
     // Enabled/Disabled는 IME 상태 추적용이므로 허용하고, Preedit/Commit만 차단.
-    let overlay_open = w.state.settings_open
-        || w.state.has_input_dialog_open()
-        || w.state.popups.has_focused();
+    let overlay_open =
+        w.state.settings_open || w.state.has_input_dialog_open() || w.state.popups.has_focused();
     if overlay_open {
         match event {
-            Ime::Enabled => { w.ime_active = true; }
-            Ime::Disabled => { w.ime_active = false; }
+            Ime::Enabled => {
+                w.ime_active = true;
+            }
+            Ime::Disabled => {
+                w.ime_active = false;
+            }
             Ime::Preedit(..) | Ime::Commit(..) => {}
         }
         w.mark_dirty();
@@ -303,7 +306,12 @@ fn reconcile_and_compute_anchor(w: &mut MainWindow) -> Option<(usize, usize)> {
         w.ime_advance_base = (ref_col, ref_row);
     }
 
-    Some(advanced_anchor(ref_col, ref_row, cols, w.ime_cursor_advance))
+    Some(advanced_anchor(
+        ref_col,
+        ref_row,
+        cols,
+        w.ime_cursor_advance,
+    ))
 }
 
 /// Preedit/commit 모두가 사용하는 "입력 위치" 좌표.

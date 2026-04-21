@@ -30,8 +30,7 @@ pub struct Bookmarks {
 }
 
 fn json_path() -> Option<PathBuf> {
-    directories::BaseDirs::new()
-        .map(|dirs| dirs.home_dir().join(".tasty").join("bookmarks.json"))
+    directories::BaseDirs::new().map(|dirs| dirs.home_dir().join(".tasty").join("bookmarks.json"))
 }
 
 fn now_secs() -> i64 {
@@ -45,9 +44,10 @@ impl Bookmarks {
     /// DB에서 모든 엔트리를 가장 최근 추가 순(내림차순)으로 읽어온다.
     pub fn load() -> Self {
         let entries = crate::storage::with_db(|db| {
-            let mut stmt = match db.conn.prepare(
-                "SELECT name, path FROM bookmarks ORDER BY created_at DESC, path ASC",
-            ) {
+            let mut stmt = match db
+                .conn
+                .prepare("SELECT name, path FROM bookmarks ORDER BY created_at DESC, path ASC")
+            {
                 Ok(s) => s,
                 Err(e) => {
                     tracing::warn!("bookmarks load prepare failed: {e}");
@@ -96,7 +96,10 @@ impl Bookmarks {
     pub fn remove(&mut self, path: &str) {
         self.entries.retain(|b| b.path != path);
         let _ = crate::storage::with_db(|db| {
-            if let Err(e) = db.conn.execute("DELETE FROM bookmarks WHERE path = ?1", rusqlite::params![path]) {
+            if let Err(e) = db.conn.execute(
+                "DELETE FROM bookmarks WHERE path = ?1",
+                rusqlite::params![path],
+            ) {
                 tracing::warn!("bookmarks delete failed: {e}");
             }
         });
@@ -110,7 +113,9 @@ impl Bookmarks {
 /// 구 `bookmarks.json`이 있고 DB에 아직 반영되지 않았다면 import 후
 /// `bookmarks.json.bak`으로 rename. 이미 마이그레이션 완료 플래그가 있으면 no-op.
 pub fn migrate_from_json() {
-    let Some(path) = json_path() else { return; };
+    let Some(path) = json_path() else {
+        return;
+    };
     if !path.exists() {
         return;
     }

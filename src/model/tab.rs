@@ -1,8 +1,8 @@
-use tasty_terminal::Terminal;
-use super::{SurfaceId, TerminalSurface, TabId, SplitDirection};
-use super::surface_trait::Surface;
-use super::surface_layout::SurfaceGroupLayout;
 use super::pane_tree::FocusDirection;
+use super::surface_layout::SurfaceGroupLayout;
+use super::surface_trait::Surface;
+use super::{SplitDirection, SurfaceId, TabId, TerminalSurface};
+use tasty_terminal::Terminal;
 
 pub struct Tab {
     pub id: TabId,
@@ -69,14 +69,16 @@ impl Tab {
     /// Access the layout.
     #[track_caller]
     pub fn layout(&self) -> &SurfaceGroupLayout {
-        self.layout_opt.as_ref()
+        self.layout_opt
+            .as_ref()
             .expect("BUG: no layout (deferred tab not initialized?)")
     }
 
     /// Access the layout mutably.
     #[track_caller]
     pub fn layout_mut(&mut self) -> &mut SurfaceGroupLayout {
-        self.layout_opt.as_mut()
+        self.layout_opt
+            .as_mut()
             .expect("BUG: no layout (deferred tab not initialized?)")
     }
 
@@ -135,9 +137,12 @@ impl Tab {
         let target_id = if layout.contains_surface(focused) {
             focused
         } else {
-            layout.first_surface_id().expect("BUG: layout has no surfaces")
+            layout
+                .first_surface_id()
+                .expect("BUG: layout has no surfaces")
         };
-        layout.find_leaf_mut(target_id)
+        layout
+            .find_leaf_mut(target_id)
             .map(|b| b.as_mut())
             .expect("BUG: layout has no surfaces")
     }
@@ -151,13 +156,17 @@ impl Tab {
         if let Some(leaf) = layout.find_surface(self.focused_surface) {
             return Some(leaf);
         }
-        layout.first_surface_id()
+        layout
+            .first_surface_id()
             .and_then(|id| layout.find_surface(id))
     }
 
     /// Whether the layout is a split (more than one surface).
     pub fn is_split(&self) -> bool {
-        matches!(self.layout_opt.as_ref(), Some(SurfaceGroupLayout::Split { .. }))
+        matches!(
+            self.layout_opt.as_ref(),
+            Some(SurfaceGroupLayout::Split { .. })
+        )
     }
 
     /// All surface IDs in this tab.
@@ -181,7 +190,8 @@ impl Tab {
     /// Get the focused terminal.
     pub fn focused_terminal(&self) -> Option<&Terminal> {
         let layout = self.layout_opt.as_ref()?;
-        layout.find_terminal(self.focused_surface)
+        layout
+            .find_terminal(self.focused_surface)
             .or_else(|| layout.first_terminal())
     }
 
@@ -248,22 +258,33 @@ impl Tab {
     /// Move focus to the next surface.
     pub fn move_focus_forward(&mut self) {
         let ids = self.layout().all_surface_ids();
-        if ids.len() <= 1 { return; }
-        let pos = ids.iter().position(|&id| id == self.focused_surface).unwrap_or(0);
+        if ids.len() <= 1 {
+            return;
+        }
+        let pos = ids
+            .iter()
+            .position(|&id| id == self.focused_surface)
+            .unwrap_or(0);
         self.focused_surface = ids[(pos + 1) % ids.len()];
     }
 
     /// Move focus to the previous surface.
     pub fn move_focus_backward(&mut self) {
         let ids = self.layout().all_surface_ids();
-        if ids.len() <= 1 { return; }
-        let pos = ids.iter().position(|&id| id == self.focused_surface).unwrap_or(0);
+        if ids.len() <= 1 {
+            return;
+        }
+        let pos = ids
+            .iter()
+            .position(|&id| id == self.focused_surface)
+            .unwrap_or(0);
         self.focused_surface = ids[(pos + ids.len() - 1) % ids.len()];
     }
 
     /// Directional focus navigation.
     pub fn directional_focus(&self, direction: FocusDirection) -> Option<SurfaceId> {
-        self.layout().directional_focus(self.focused_surface, direction)
+        self.layout()
+            .directional_focus(self.focused_surface, direction)
     }
 
     /// Resize all surfaces within the layout.
@@ -278,6 +299,11 @@ impl Tab {
         self.layout().render_regions(rect)
     }
 
+    /// All surface regions (terminal and non-terminal).
+    pub fn all_surface_regions(&self, rect: super::Rect) -> Vec<(SurfaceId, super::Rect)> {
+        self.layout().all_surface_regions(rect)
+    }
+
     // ── Initialization ──
 
     /// Ensure the surface is initialized (lazy spawn if needed). Returns true if spawned.
@@ -289,7 +315,15 @@ impl Tab {
         let shell_ref = spawn.shell.as_deref();
         let shell_args: Vec<&str> = spawn.shell_args.iter().map(|s| s.as_str()).collect();
         let working_dir = spawn.working_dir.as_deref();
-        match Terminal::new_with_shell_args_cwd(spawn.cols, spawn.rows, shell_ref, &shell_args, surface_id, spawn.waker, working_dir) {
+        match Terminal::new_with_shell_args_cwd(
+            spawn.cols,
+            spawn.rows,
+            shell_ref,
+            &shell_args,
+            surface_id,
+            spawn.waker,
+            working_dir,
+        ) {
             Ok(terminal) => {
                 let ts = TerminalSurface {
                     id: surface_id,
@@ -329,7 +363,11 @@ impl Tab {
         new_surface_id: SurfaceId,
         new_terminal: Terminal,
     ) {
-        let new_node = TerminalSurface { id: new_surface_id, terminal: new_terminal, deferred_spawn: None };
+        let new_node = TerminalSurface {
+            id: new_surface_id,
+            terminal: new_terminal,
+            deferred_spawn: None,
+        };
         let target = self.focused_surface;
         let old_layout = self.take_layout();
         let (new_layout, _) = old_layout.split_with_node(target, direction, new_node);
@@ -345,9 +383,14 @@ impl Tab {
         new_surface_id: SurfaceId,
         new_terminal: Terminal,
     ) -> bool {
-        let new_node = TerminalSurface { id: new_surface_id, terminal: new_terminal, deferred_spawn: None };
+        let new_node = TerminalSurface {
+            id: new_surface_id,
+            terminal: new_terminal,
+            deferred_spawn: None,
+        };
         let old_layout = self.take_layout();
-        let (new_layout, remaining) = old_layout.split_with_node(target_surface_id, direction, new_node);
+        let (new_layout, remaining) =
+            old_layout.split_with_node(target_surface_id, direction, new_node);
         self.put_layout(new_layout);
         remaining.is_none()
     }
@@ -360,10 +403,14 @@ impl Tab {
         new_surface: Box<dyn Surface>,
     ) -> bool {
         let old_layout = self.take_layout();
-        let (new_layout, remaining) = old_layout.split_with_surface(target_surface_id, direction, new_surface);
+        let (new_layout, remaining) =
+            old_layout.split_with_surface(target_surface_id, direction, new_surface);
         self.put_layout(new_layout);
         if remaining.is_some() {
-            tracing::warn!("split_surface_by_id_generic: target {} not found", target_surface_id);
+            tracing::warn!(
+                "split_surface_by_id_generic: target {} not found",
+                target_surface_id
+            );
         }
         remaining.is_none()
     }
@@ -394,6 +441,8 @@ fn dirs_home() -> Option<std::path::PathBuf> {
     }
     #[cfg(windows)]
     {
-        std::env::var("USERPROFILE").ok().map(std::path::PathBuf::from)
+        std::env::var("USERPROFILE")
+            .ok()
+            .map(std::path::PathBuf::from)
     }
 }

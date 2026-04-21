@@ -12,9 +12,9 @@ use windows::Win32::System::DataExchange::{
     RegisterClipboardFormatW, SetClipboardData,
 };
 use windows::Win32::System::Memory::{
-    GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock, GLOBAL_ALLOC_FLAGS,
+    GLOBAL_ALLOC_FLAGS, GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock,
 };
-use windows::Win32::UI::Shell::{DragQueryFileW, DROPFILES, HDROP};
+use windows::Win32::UI::Shell::{DROPFILES, DragQueryFileW, HDROP};
 use windows::core::w;
 
 use super::FileClipboardOp;
@@ -32,8 +32,7 @@ pub fn set_file_clipboard(paths: &[&str], op: FileClipboardOp) -> Result<(), Str
     }
 
     // Register custom "Preferred DropEffect" format
-    let drop_effect_fmt =
-        unsafe { RegisterClipboardFormatW(w!("Preferred DropEffect")) };
+    let drop_effect_fmt = unsafe { RegisterClipboardFormatW(w!("Preferred DropEffect")) };
     if drop_effect_fmt == 0 {
         return Err("Failed to register Preferred DropEffect format".to_string());
     }
@@ -142,8 +141,7 @@ unsafe fn get_file_clipboard_inner() -> Result<Option<(Vec<String>, FileClipboar
 }
 
 unsafe fn read_drop_effect() -> Option<FileClipboardOp> {
-    let drop_effect_fmt =
-        unsafe { RegisterClipboardFormatW(w!("Preferred DropEffect")) };
+    let drop_effect_fmt = unsafe { RegisterClipboardFormatW(w!("Preferred DropEffect")) };
     if drop_effect_fmt == 0 {
         return None;
     }

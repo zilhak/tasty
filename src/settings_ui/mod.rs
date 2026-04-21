@@ -4,7 +4,7 @@ mod tabs;
 use crate::i18n::t;
 use crate::settings::Settings;
 
-use keybindings_tab::{draw_keybindings_tab, KeybindingsSubTab, PendingBinding, RecordingSlot};
+use keybindings_tab::{KeybindingsSubTab, PendingBinding, RecordingSlot, draw_keybindings_tab};
 use tabs::*;
 
 /// Sub-tab within the Appearance tab.
@@ -160,17 +160,34 @@ pub fn draw_settings_panel(
 
             egui::ScrollArea::vertical()
                 .auto_shrink([false, false])
-                .show(ui, |ui| {
-                    match active_tab {
-                        SettingsTab::General => draw_general_tab(ui, &mut draft),
-                        SettingsTab::Appearance => draw_appearance_tab(ui, &mut draft, &mut ui_state.appearance_sub_tab, &mut ui_state.font_families, &mut ui_state.font_filter, &mut ui_state.preview_font_loaded),
-                        SettingsTab::Clipboard => draw_clipboard_tab(ui, &mut draft),
-                        SettingsTab::Notifications => draw_notifications_tab(ui, &mut draft),
-                        SettingsTab::Keybindings => draw_keybindings_tab(ui, &mut draft, &mut ui_state.recording_field, &mut ui_state.keybindings_sub_tab, &mut ui_state.selected_preset, &mut ui_state.pending_binding, captured_double_tap),
-                        SettingsTab::Language => draw_language_tab(ui, &mut draft),
-                        SettingsTab::Performance => draw_performance_tab(ui, &mut draft),
-                        SettingsTab::Misc => draw_misc_tab(ui, &mut ui_state.misc_sub_tab, &mut ui_state.bashrc_user_draft),
-                    }
+                .show(ui, |ui| match active_tab {
+                    SettingsTab::General => draw_general_tab(ui, &mut draft),
+                    SettingsTab::Appearance => draw_appearance_tab(
+                        ui,
+                        &mut draft,
+                        &mut ui_state.appearance_sub_tab,
+                        &mut ui_state.font_families,
+                        &mut ui_state.font_filter,
+                        &mut ui_state.preview_font_loaded,
+                    ),
+                    SettingsTab::Clipboard => draw_clipboard_tab(ui, &mut draft),
+                    SettingsTab::Notifications => draw_notifications_tab(ui, &mut draft),
+                    SettingsTab::Keybindings => draw_keybindings_tab(
+                        ui,
+                        &mut draft,
+                        &mut ui_state.recording_field,
+                        &mut ui_state.keybindings_sub_tab,
+                        &mut ui_state.selected_preset,
+                        &mut ui_state.pending_binding,
+                        captured_double_tap,
+                    ),
+                    SettingsTab::Language => draw_language_tab(ui, &mut draft),
+                    SettingsTab::Performance => draw_performance_tab(ui, &mut draft),
+                    SettingsTab::Misc => draw_misc_tab(
+                        ui,
+                        &mut ui_state.misc_sub_tab,
+                        &mut ui_state.bashrc_user_draft,
+                    ),
                 });
 
             ui_state.draft = Some(draft);

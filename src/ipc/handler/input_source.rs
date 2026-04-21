@@ -21,10 +21,7 @@ pub fn handle_switch_input_source(
 
 /// Send a raw physical key code via CGEvent. This goes through the full
 /// macOS IME pipeline (interpretKeyEvents → setMarkedText/insertText).
-pub fn handle_raw_key(
-    id: serde_json::Value,
-    params: &serde_json::Value,
-) -> JsonRpcResponse {
+pub fn handle_raw_key(id: serde_json::Value, params: &serde_json::Value) -> JsonRpcResponse {
     let keycode = match params.get("keycode").and_then(|v| v.as_u64()) {
         Some(k) if k <= u16::MAX as u64 => k as u16,
         _ => return JsonRpcResponse::invalid_params(id, "Missing or invalid 'keycode' (u16)"),
@@ -53,10 +50,7 @@ use std::ffi::c_void;
 
 #[link(name = "Carbon", kind = "framework")]
 unsafe extern "C" {
-    fn TISCreateInputSourceList(
-        properties: *const c_void,
-        include_all: bool,
-    ) -> *const c_void;
+    fn TISCreateInputSourceList(properties: *const c_void, include_all: bool) -> *const c_void;
     fn TISSelectInputSource(source: *const c_void) -> i32;
 }
 
@@ -95,7 +89,13 @@ const K_CF_STRING_ENCODING_UTF8: u32 = 0x0800_0100;
 
 fn cf_string(s: &str) -> *const c_void {
     let c_str = std::ffi::CString::new(s).unwrap();
-    unsafe { CFStringCreateWithCString(std::ptr::null(), c_str.as_ptr() as _, K_CF_STRING_ENCODING_UTF8) }
+    unsafe {
+        CFStringCreateWithCString(
+            std::ptr::null(),
+            c_str.as_ptr() as _,
+            K_CF_STRING_ENCODING_UTF8,
+        )
+    }
 }
 
 fn switch_input_source(source_id: &str) -> Result<(), String> {

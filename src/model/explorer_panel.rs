@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
-use super::surface_trait::Surface;
 use super::SurfaceId;
+use super::surface_trait::Surface;
 
 /// A node in the file tree.
 pub struct FileNode {
@@ -40,7 +40,6 @@ pub struct ExplorerPanel {
     /// 마지막 자동 갱신 시각. focused 상태에서 2초마다 증분 갱신.
     pub last_refresh: std::time::Instant,
 }
-
 
 impl ExplorerPanel {
     pub fn new(id: u32, root_path: String) -> Self {
@@ -169,7 +168,8 @@ impl ExplorerPanel {
             node.children = Some(old_children);
         } else {
             // 변경됨 — expanded 상태를 보존하며 merge
-            let expanded_map: HashSet<String> = old_children.iter()
+            let expanded_map: HashSet<String> = old_children
+                .iter()
                 .filter(|n| n.is_expanded)
                 .map(|n| n.path.clone())
                 .collect();
@@ -215,7 +215,10 @@ impl ExplorerPanel {
     /// Shift+click: range select from anchor to target (inclusive).
     /// `visible_paths` must be the current ordered list of visible tree nodes.
     pub fn range_select(&mut self, target: &str, visible_paths: &[String]) {
-        let anchor = self.selection_anchor.clone().unwrap_or_else(|| target.to_string());
+        let anchor = self
+            .selection_anchor
+            .clone()
+            .unwrap_or_else(|| target.to_string());
         let anchor_idx = visible_paths.iter().position(|p| p == &anchor);
         let target_idx = visible_paths.iter().position(|p| p == target);
         if let (Some(a), Some(t)) = (anchor_idx, target_idx) {
@@ -243,11 +246,7 @@ impl ExplorerPanel {
         }
         self.root_path = path.clone();
         self.root_node = FileNode {
-            name: path
-                .split(['/', '\\'])
-                .last()
-                .unwrap_or("root")
-                .to_string(),
+            name: path.split(['/', '\\']).last().unwrap_or("root").to_string(),
             path: path.clone(),
             is_directory: true,
             children: None,
@@ -260,7 +259,6 @@ impl ExplorerPanel {
         self.selection_anchor = None;
         self.file_content = None;
     }
-
 
     /// Update the right-side preview for the given path.
     fn set_preview(&mut self, path: &str) {
@@ -277,32 +275,113 @@ impl ExplorerPanel {
             self.file_content = None;
         }
     }
-
 }
 
 /// Check if a file is likely a text file suitable for preview.
 fn is_previewable_file(path: &str, ext: &str) -> bool {
     const TEXT_EXTENSIONS: &[&str] = &[
         // Markup / Doc
-        "md", "markdown", "txt", "text", "rst", "adoc", "org",
+        "md",
+        "markdown",
+        "txt",
+        "text",
+        "rst",
+        "adoc",
+        "org",
         // Web
-        "html", "htm", "css", "js", "jsx", "ts", "tsx", "vue", "svelte", "json", "xml", "svg",
+        "html",
+        "htm",
+        "css",
+        "js",
+        "jsx",
+        "ts",
+        "tsx",
+        "vue",
+        "svelte",
+        "json",
+        "xml",
+        "svg",
         // Config
-        "toml", "yaml", "yml", "ini", "cfg", "conf", "env", "properties",
+        "toml",
+        "yaml",
+        "yml",
+        "ini",
+        "cfg",
+        "conf",
+        "env",
+        "properties",
         // Programming
-        "rs", "py", "go", "java", "kt", "kts", "c", "cpp", "cc", "h", "hpp", "hh",
-        "cs", "swift", "rb", "pl", "pm", "lua", "r", "jl", "ex", "exs", "erl", "hrl",
-        "hs", "ml", "mli", "fs", "fsi", "fsx", "clj", "cljs", "scala", "sc",
-        "zig", "nim", "v", "d", "dart", "php",
+        "rs",
+        "py",
+        "go",
+        "java",
+        "kt",
+        "kts",
+        "c",
+        "cpp",
+        "cc",
+        "h",
+        "hpp",
+        "hh",
+        "cs",
+        "swift",
+        "rb",
+        "pl",
+        "pm",
+        "lua",
+        "r",
+        "jl",
+        "ex",
+        "exs",
+        "erl",
+        "hrl",
+        "hs",
+        "ml",
+        "mli",
+        "fs",
+        "fsi",
+        "fsx",
+        "clj",
+        "cljs",
+        "scala",
+        "sc",
+        "zig",
+        "nim",
+        "v",
+        "d",
+        "dart",
+        "php",
         // Shell
-        "sh", "bash", "zsh", "fish", "ps1", "psm1", "bat", "cmd",
+        "sh",
+        "bash",
+        "zsh",
+        "fish",
+        "ps1",
+        "psm1",
+        "bat",
+        "cmd",
         // Data
-        "csv", "tsv", "sql", "graphql", "gql",
+        "csv",
+        "tsv",
+        "sql",
+        "graphql",
+        "gql",
         // Build / CI
-        "cmake", "gradle", "sbt", "cabal",
+        "cmake",
+        "gradle",
+        "sbt",
+        "cabal",
         // Other
-        "log", "diff", "patch", "gitignore", "gitattributes", "editorconfig",
-        "dockerignore", "prettierrc", "eslintrc", "babelrc",
+        "log",
+        "diff",
+        "patch",
+        "gitignore",
+        "gitattributes",
+        "editorconfig",
+        "dockerignore",
+        "prettierrc",
+        "eslintrc",
+        "babelrc",
     ];
 
     if TEXT_EXTENSIONS.contains(&ext) {
@@ -312,12 +391,33 @@ fn is_previewable_file(path: &str, ext: &str) -> bool {
     // Check extensionless known filenames
     let filename = path.rsplit(['/', '\\']).next().unwrap_or("");
     const TEXT_FILENAMES: &[&str] = &[
-        "Makefile", "makefile", "GNUmakefile", "Dockerfile", "Containerfile",
-        "Rakefile", "Gemfile", "Procfile", "Justfile", "Vagrantfile",
-        "CMakeLists.txt", "LICENSE", "LICENCE", "COPYING", "AUTHORS",
-        "CHANGELOG", "README", "INSTALL", "TODO", "CONTRIBUTORS",
-        ".gitignore", ".gitattributes", ".editorconfig", ".dockerignore",
-        ".env", ".env.local", ".env.example",
+        "Makefile",
+        "makefile",
+        "GNUmakefile",
+        "Dockerfile",
+        "Containerfile",
+        "Rakefile",
+        "Gemfile",
+        "Procfile",
+        "Justfile",
+        "Vagrantfile",
+        "CMakeLists.txt",
+        "LICENSE",
+        "LICENCE",
+        "COPYING",
+        "AUTHORS",
+        "CHANGELOG",
+        "README",
+        "INSTALL",
+        "TODO",
+        "CONTRIBUTORS",
+        ".gitignore",
+        ".gitattributes",
+        ".editorconfig",
+        ".dockerignore",
+        ".env",
+        ".env.local",
+        ".env.example",
     ];
 
     if TEXT_FILENAMES.contains(&filename) {
@@ -329,14 +429,22 @@ fn is_previewable_file(path: &str, ext: &str) -> bool {
 }
 
 impl Surface for ExplorerPanel {
-    fn type_name(&self) -> &'static str { "Explorer" }
-    fn surface_id(&self) -> Option<SurfaceId> { Some(self.id) }
+    fn type_name(&self) -> &'static str {
+        "Explorer"
+    }
+    fn surface_id(&self) -> Option<SurfaceId> {
+        Some(self.id)
+    }
     fn display_name(&self) -> String {
         std::path::Path::new(&self.root_path)
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| "Explorer".to_string())
     }
-    fn as_explorer(&self) -> Option<&ExplorerPanel> { Some(self) }
-    fn as_explorer_mut(&mut self) -> Option<&mut ExplorerPanel> { Some(self) }
+    fn as_explorer(&self) -> Option<&ExplorerPanel> {
+        Some(self)
+    }
+    fn as_explorer_mut(&mut self) -> Option<&mut ExplorerPanel> {
+        Some(self)
+    }
 }

@@ -1,7 +1,7 @@
-use crate::font::{FontConfig, GlyphAtlas};
-use super::types::{BgInstance, GlyphInstance, Uniforms};
-use super::shaders::{BG_SHADER, GLYPH_SHADER};
 use super::CellRenderer;
+use super::shaders::{BG_SHADER, GLYPH_SHADER};
+use super::types::{BgInstance, GlyphInstance, Uniforms};
+use crate::font::{FontConfig, GlyphAtlas};
 
 impl CellRenderer {
     pub fn new(
@@ -41,19 +41,20 @@ impl CellRenderer {
         });
 
         // Background bind group layout (uniforms only)
-        let bg_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("bg_bind_group_layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        });
+        let bg_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("bg_bind_group_layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
 
         // Glyph bind group layout (uniforms + texture + sampler)
         let glyph_bind_group_layout =
@@ -253,7 +254,10 @@ impl CellRenderer {
 
         // Write initial uniforms
         let uniforms = Uniforms {
-            cell_size: [font_config.metrics.cell_width, font_config.metrics.cell_height],
+            cell_size: [
+                font_config.metrics.cell_width,
+                font_config.metrics.cell_height,
+            ],
             grid_offset: [4.0, 4.0],
             viewport_size: [1280.0, 720.0],
             _padding: [0.0; 2],
@@ -282,42 +286,52 @@ impl CellRenderer {
 
     /// Update font configuration (font size and/or family changed).
     /// Resets the glyph atlas and re-measures cell metrics.
-    pub fn update_font(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, font_size: f32, font_family: &str, custom_font_path: &str, line_height: f32) {
-        self.font_config = FontConfig::with_options(font_size, font_family, custom_font_path, line_height);
+    pub fn update_font(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        font_size: f32,
+        font_family: &str,
+        custom_font_path: &str,
+        line_height: f32,
+    ) {
+        self.font_config =
+            FontConfig::with_options(font_size, font_family, custom_font_path, line_height);
         self.atlas = GlyphAtlas::new(device);
 
         // Rebuild the glyph bind group with the new atlas texture
-        let glyph_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("glyph_bind_group_layout"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+        let glyph_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("glyph_bind_group_layout"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::VERTEX,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
-        });
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+            });
         self.glyph_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("glyph_bind_group"),
             layout: &glyph_bind_group_layout,
@@ -339,7 +353,10 @@ impl CellRenderer {
 
         // Update uniform buffer with new cell size
         let uniforms = Uniforms {
-            cell_size: [self.font_config.metrics.cell_width, self.font_config.metrics.cell_height],
+            cell_size: [
+                self.font_config.metrics.cell_width,
+                self.font_config.metrics.cell_height,
+            ],
             grid_offset: [0.0, 0.0],
             viewport_size: [0.0, 0.0], // will be updated on next resize
             _padding: [0.0, 0.0],

@@ -5,7 +5,8 @@ use crate::state::AppState;
 
 pub fn handle_notification_list(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {
     let notifications: Vec<_> = state
-        .engine.notifications
+        .engine
+        .notifications
         .all()
         .rev()
         .take(50)

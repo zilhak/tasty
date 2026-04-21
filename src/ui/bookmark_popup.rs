@@ -3,7 +3,7 @@
 use crate::i18n::t;
 use crate::state::AppState;
 use crate::theme;
-use crate::ui::popup::{PopupAction, CONTENT_MARGIN, TITLE_BAR_HEIGHT};
+use crate::ui::popup::{CONTENT_MARGIN, PopupAction, TITLE_BAR_HEIGHT};
 
 /// Default size for the bookmark name popup.
 pub fn bookmark_popup_default_size() -> egui::Vec2 {

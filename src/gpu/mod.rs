@@ -12,11 +12,11 @@ use winit::window::Window;
 
 use winit::event_loop::EventLoopProxy;
 
+use crate::AppEvent;
 use crate::model::{LogicalPx, PhysicalPx, Rect};
 use crate::renderer::CellRenderer;
 use crate::settings::AppearanceSettings;
 use crate::state::AppState;
-use crate::AppEvent;
 
 pub struct ImePreeditState {
     pub text: String,
@@ -49,7 +49,11 @@ pub struct GpuState {
 }
 
 impl GpuState {
-    pub async fn new(window: Arc<Window>, appearance: &AppearanceSettings, proxy: EventLoopProxy<AppEvent>) -> Result<Self> {
+    pub async fn new(
+        window: Arc<Window>,
+        appearance: &AppearanceSettings,
+        proxy: EventLoopProxy<AppEvent>,
+    ) -> Result<Self> {
         let size = window.inner_size();
         let scale_factor = window.scale_factor() as f32;
 
@@ -102,12 +106,19 @@ impl GpuState {
             format: surface_format,
             width: size.width.max(1),
             height: size.height.max(1),
-            present_mode: if surface_caps.present_modes.contains(&wgpu::PresentMode::Mailbox) {
+            present_mode: if surface_caps
+                .present_modes
+                .contains(&wgpu::PresentMode::Mailbox)
+            {
                 wgpu::PresentMode::Mailbox
             } else {
                 wgpu::PresentMode::Fifo
             },
-            alpha_mode: surface_caps.alpha_modes.first().copied().unwrap_or(wgpu::CompositeAlphaMode::Auto),
+            alpha_mode: surface_caps
+                .alpha_modes
+                .first()
+                .copied()
+                .unwrap_or(wgpu::CompositeAlphaMode::Auto),
             view_formats: vec![],
             desired_maximum_frame_latency: 2,
         };
@@ -156,8 +167,7 @@ impl GpuState {
             Some(2048),
         );
 
-        let egui_renderer =
-            egui_wgpu::Renderer::new(&device, surface_format, None, 1, false);
+        let egui_renderer = egui_wgpu::Renderer::new(&device, surface_format, None, 1, false);
 
         Ok(Self {
             surface,
@@ -187,7 +197,11 @@ impl GpuState {
     }
 
     /// Pass a winit event to egui. Returns (consumed, repaint).
-    pub fn handle_egui_event(&mut self, window: &Window, event: &winit::event::WindowEvent) -> (bool, bool) {
+    pub fn handle_egui_event(
+        &mut self,
+        window: &Window,
+        event: &winit::event::WindowEvent,
+    ) -> (bool, bool) {
         let response = self.egui_state.on_window_event(window, event);
         (response.consumed, response.repaint)
     }
@@ -209,7 +223,11 @@ impl GpuState {
             state.engine.settings.appearance.scaled_sidebar_width()
         };
         let terminal_rect = self.compute_terminal_rect(state.sidebar_width);
-        state.resize_all(terminal_rect, self.renderer.cell_width(), self.renderer.cell_height());
+        state.resize_all(
+            terminal_rect,
+            self.renderer.cell_width(),
+            self.renderer.cell_height(),
+        );
 
         let (pane_rects, dividers, focused_surface_id) = self.prepare_layout(state, terminal_rect);
 
@@ -231,7 +249,8 @@ impl GpuState {
         // (no text field), the check false!=false is false and it skips
         // the set_ime_allowed(false) call entirely.
         self.egui_state.set_allow_ime(false);
-        self.egui_state.handle_platform_output(window, full_output.platform_output);
+        self.egui_state
+            .handle_platform_output(window, full_output.platform_output);
 
         // 텍스트 입력이 없는 focused popup이 열려 있으면 IME를 비활성화하여
         // KeyboardInput이 직접 발생하도록 한다. physical_key 기반 단축키가
@@ -241,7 +260,9 @@ impl GpuState {
         window.set_ime_allowed(!disable_ime);
 
         // 4. Tessellate egui
-        let paint_jobs = self.egui_ctx.tessellate(full_output.shapes, full_output.pixels_per_point);
+        let paint_jobs = self
+            .egui_ctx
+            .tessellate(full_output.shapes, full_output.pixels_per_point);
         let screen_descriptor = egui_wgpu::ScreenDescriptor {
             size_in_pixels: [self.size.width, self.size.height],
             pixels_per_point: full_output.pixels_per_point,
@@ -250,11 +271,25 @@ impl GpuState {
         // 5. GPU render
         let regions = state.render_regions(terminal_rect);
         let output = self.surface.get_current_texture()?;
-        let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let view = output
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
 
         self.render_clear_pass(&view, state);
-        self.render_terminals(&view, &regions, focused_surface_id, selection, &state.engine.settings.appearance, preedit);
-        self.render_egui_pass(&view, &full_output.textures_delta, &paint_jobs, &screen_descriptor);
+        self.render_terminals(
+            &view,
+            &regions,
+            focused_surface_id,
+            selection,
+            &state.engine.settings.appearance,
+            preedit,
+        );
+        self.render_egui_pass(
+            &view,
+            &full_output.textures_delta,
+            &paint_jobs,
+            &screen_descriptor,
+        );
 
         // 6. Screenshot + present
         if let Some(path) = self.pending_screenshot.take() {
@@ -266,12 +301,18 @@ impl GpuState {
 
     fn compute_terminal_rect(&self, sidebar_width: LogicalPx) -> Rect {
         crate::model::compute_terminal_rect(
-            PhysicalPx(self.size.width as f32), PhysicalPx(self.size.height as f32),
-            sidebar_width, self.scale_factor,
+            PhysicalPx(self.size.width as f32),
+            PhysicalPx(self.size.height as f32),
+            sidebar_width,
+            self.scale_factor,
         )
     }
 
-    fn prepare_layout(&self, state: &AppState, terminal_rect: Rect) -> (Vec<(u32, Rect)>, Vec<Rect>, Option<u32>) {
+    fn prepare_layout(
+        &self,
+        state: &AppState,
+        terminal_rect: Rect,
+    ) -> (Vec<(u32, Rect)>, Vec<Rect>, Option<u32>) {
         let pane_layout = state.active_workspace().pane_layout();
         let pane_rects: Vec<(u32, Rect)> = pane_layout.compute_rects(terminal_rect);
         let mut dividers: Vec<Rect> = pane_layout.collect_dividers(terminal_rect);

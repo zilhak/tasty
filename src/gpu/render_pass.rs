@@ -10,9 +10,11 @@ impl GpuState {
         let th = crate::theme::theme();
         let bg = crate::theme::Theme::to_float(th.base);
 
-        let mut encoder = self.device.create_command_encoder(
-            &wgpu::CommandEncoderDescriptor { label: Some("clear_pass") },
-        );
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("clear_pass"),
+            });
         {
             let _clear_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("clear_pass"),
@@ -21,7 +23,10 @@ impl GpuState {
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: bg[0] as f64, g: bg[1] as f64, b: bg[2] as f64, a: bg_alpha,
+                            r: bg[0] as f64,
+                            g: bg[1] as f64,
+                            b: bg[2] as f64,
+                            a: bg_alpha,
                         }),
                         store: wgpu::StoreOp::Store,
                     },
@@ -72,31 +77,44 @@ impl GpuState {
                 let render_preedit_ref = render_preedit.as_ref();
 
                 self.renderer.prepare_terminal_viewport(
-                    terminal, &self.queue, rect,
-                    self.size.width, self.size.height, bg, is_focused,
+                    terminal,
+                    &self.queue,
+                    rect,
+                    self.size.width,
+                    self.size.height,
+                    bg,
+                    is_focused,
                     sel_ref,
                     render_preedit_ref,
                 );
 
-                let mut term_encoder = self.device.create_command_encoder(
-                    &wgpu::CommandEncoderDescriptor { label: Some("terminal_pass") },
-                );
+                let mut term_encoder =
+                    self.device
+                        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                            label: Some("terminal_pass"),
+                        });
                 {
-                    let mut render_pass = term_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                        label: Some("terminal_pass"),
-                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                            view,
-                            resolve_target: None,
-                            ops: wgpu::Operations {
-                                load: wgpu::LoadOp::Load,
-                                store: wgpu::StoreOp::Store,
-                            },
-                        })],
-                        depth_stencil_attachment: None,
-                        timestamp_writes: None,
-                        occlusion_query_set: None,
-                    });
-                    self.renderer.render_scissored(&mut render_pass, rect, self.size.width, self.size.height);
+                    let mut render_pass =
+                        term_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                            label: Some("terminal_pass"),
+                            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                                view,
+                                resolve_target: None,
+                                ops: wgpu::Operations {
+                                    load: wgpu::LoadOp::Load,
+                                    store: wgpu::StoreOp::Store,
+                                },
+                            })],
+                            depth_stencil_attachment: None,
+                            timestamp_writes: None,
+                            occlusion_query_set: None,
+                        });
+                    self.renderer.render_scissored(
+                        &mut render_pass,
+                        rect,
+                        self.size.width,
+                        self.size.height,
+                    );
                 }
                 self.queue.submit(std::iter::once(term_encoder.finish()));
             }
@@ -111,15 +129,22 @@ impl GpuState {
         screen_descriptor: &egui_wgpu::ScreenDescriptor,
     ) {
         for (id, image_delta) in &textures_delta.set {
-            self.egui_renderer.update_texture(&self.device, &self.queue, *id, image_delta);
+            self.egui_renderer
+                .update_texture(&self.device, &self.queue, *id, image_delta);
         }
 
-        let mut egui_encoder = self.device.create_command_encoder(
-            &wgpu::CommandEncoderDescriptor { label: Some("egui_encoder") },
-        );
+        let mut egui_encoder =
+            self.device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("egui_encoder"),
+                });
 
         self.egui_renderer.update_buffers(
-            &self.device, &self.queue, &mut egui_encoder, paint_jobs, screen_descriptor,
+            &self.device,
+            &self.queue,
+            &mut egui_encoder,
+            paint_jobs,
+            screen_descriptor,
         );
 
         {
@@ -138,7 +163,8 @@ impl GpuState {
                 occlusion_query_set: None,
             });
             let mut render_pass = render_pass.forget_lifetime();
-            self.egui_renderer.render(&mut render_pass, paint_jobs, screen_descriptor);
+            self.egui_renderer
+                .render(&mut render_pass, paint_jobs, screen_descriptor);
         }
 
         for id in &textures_delta.free {

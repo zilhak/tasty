@@ -27,7 +27,8 @@ pub(crate) fn handle_claude_launch(
     let surface_id = {
         let ws = &state.engine.workspaces[ws_idx];
         let pane_id = ws.focused_pane;
-        ws.pane_layout().find_pane(pane_id)
+        ws.pane_layout()
+            .find_pane(pane_id)
             .and_then(|pane| pane.tabs.get(pane.active_tab))
             .and_then(|tab| tab.focused_surface_id())
     };
@@ -69,13 +70,24 @@ pub(crate) fn handle_claude_spawn(
 ) -> JsonRpcResponse {
     let workspace_param = match params.get("workspace").and_then(|v| v.as_str()) {
         Some(ws) => ws.to_string(),
-        None => return JsonRpcResponse::invalid_params(id, "Missing required '--workspace' parameter"),
+        None => {
+            return JsonRpcResponse::invalid_params(id, "Missing required '--workspace' parameter");
+        }
     };
 
     let cwd = params.get("cwd").and_then(|v| v.as_str()).map(String::from);
-    let role = params.get("role").and_then(|v| v.as_str()).map(String::from);
-    let nickname = params.get("nickname").and_then(|v| v.as_str()).map(String::from);
-    let prompt = params.get("prompt").and_then(|v| v.as_str()).map(String::from);
+    let role = params
+        .get("role")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+    let nickname = params
+        .get("nickname")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+    let prompt = params
+        .get("prompt")
+        .and_then(|v| v.as_str())
+        .map(String::from);
 
     let parent_surface_id = super::caller_surface_id(params).unwrap_or(0);
     if parent_surface_id == 0 {
@@ -85,7 +97,16 @@ pub(crate) fn handle_claude_spawn(
         );
     }
 
-    spawn_in_workspace(state, id, parent_surface_id, &workspace_param, cwd, role, nickname, prompt)
+    spawn_in_workspace(
+        state,
+        id,
+        parent_surface_id,
+        &workspace_param,
+        cwd,
+        role,
+        nickname,
+        prompt,
+    )
 }
 
 /// Workspace-based spawn: auto-manage spawn pane and 2×2 grid placement.
@@ -118,7 +139,12 @@ fn spawn_in_workspace(
 
     // Check if spawn pane exists and is still valid
     let spawn_pane_key = (parent_surface_id, ws_id);
-    let existing_spawn_pane = state.engine.claude.spawn_panes.get(&spawn_pane_key).copied();
+    let existing_spawn_pane = state
+        .engine
+        .claude
+        .spawn_panes
+        .get(&spawn_pane_key)
+        .copied();
     let spawn_pane_id = match existing_spawn_pane {
         Some(pid) if pane_exists_in_workspace(state, ws_idx, pid) => pid,
         _ => {
@@ -131,7 +157,11 @@ fn spawn_in_workspace(
                 crate::model::SurfaceType::Terminal,
             ) {
                 Ok((new_pane_id, _new_surface_id)) => {
-                    state.engine.claude.spawn_panes.insert(spawn_pane_key, new_pane_id);
+                    state
+                        .engine
+                        .claude
+                        .spawn_panes
+                        .insert(spawn_pane_key, new_pane_id);
                     new_pane_id
                 }
                 Err(e) => {
@@ -142,10 +172,11 @@ fn spawn_in_workspace(
     };
 
     // Now find the best placement within the spawn pane
-    let child_surface_id = match find_and_spawn_in_pane(state, ws_idx, spawn_pane_id, spawn_pane_key) {
-        Ok(sid) => sid,
-        Err(e) => return JsonRpcResponse::internal_error(id, e.to_string()),
-    };
+    let child_surface_id =
+        match find_and_spawn_in_pane(state, ws_idx, spawn_pane_id, spawn_pane_key) {
+            Ok(sid) => sid,
+            Err(e) => return JsonRpcResponse::internal_error(id, e.to_string()),
+        };
 
     let child_index = state.next_child_index(parent_surface_id);
     let entry = ClaudeChildEntry {
@@ -216,7 +247,13 @@ fn find_and_spawn_in_pane(
         let sh = crate::engine_state::ShellConfig::from_settings(&state.engine.settings);
         let waker = state.engine.make_waker(new_surface_id);
         let terminal = tasty_terminal::Terminal::new_with_shell_args_cwd(
-            cols, rows, sh.shell_ref(), &sh.args_ref(), new_surface_id, waker, None,
+            cols,
+            rows,
+            sh.shell_ref(),
+            &sh.args_ref(),
+            new_surface_id,
+            waker,
+            None,
         )?;
         let new_surface: Box<dyn crate::model::Surface> = Box::new(crate::model::TerminalSurface {
             id: new_surface_id,
@@ -225,7 +262,9 @@ fn find_and_spawn_in_pane(
         });
 
         let ws = &mut state.engine.workspaces[ws_idx];
-        let pane = ws.pane_layout_mut().find_pane_mut(spawn_pane_id)
+        let pane = ws
+            .pane_layout_mut()
+            .find_pane_mut(spawn_pane_id)
             .ok_or_else(|| anyhow::anyhow!("spawn pane {} not found", spawn_pane_id))?;
 
         // Determine if we're splitting the first surface (initial spawn pane surface)
@@ -251,11 +290,19 @@ fn find_and_spawn_in_pane(
         let waker = state.engine.make_waker(new_surface_id);
 
         let ws = &mut state.engine.workspaces[ws_idx];
-        let pane = ws.pane_layout_mut().find_pane_mut(spawn_pane_id)
+        let pane = ws
+            .pane_layout_mut()
+            .find_pane_mut(spawn_pane_id)
             .ok_or_else(|| anyhow::anyhow!("spawn pane {} not found", spawn_pane_id))?;
         pane.add_tab_background_with_shell(
-            new_tab_id, new_surface_id, cols, rows,
-            sh.shell_ref(), &sh.args_ref(), waker, None,
+            new_tab_id,
+            new_surface_id,
+            cols,
+            rows,
+            sh.shell_ref(),
+            &sh.args_ref(),
+            waker,
+            None,
         )?;
 
         state.send_fast_init(new_surface_id);
@@ -304,7 +351,11 @@ fn resolve_workspace(state: &AppState, target: &str) -> Option<usize> {
         return state.engine.workspaces.iter().position(|ws| ws.id == ws_id);
     }
     // Try as name
-    state.engine.workspaces.iter().position(|ws| ws.name == target)
+    state
+        .engine
+        .workspaces
+        .iter()
+        .position(|ws| ws.name == target)
 }
 
 /// Check if a pane exists in a specific workspace.
@@ -316,7 +367,12 @@ fn pane_exists_in_workspace(state: &AppState, ws_idx: usize, pane_id: u32) -> bo
 }
 
 /// Start claude in a child surface: cd to cwd, then run claude with optional prompt.
-fn start_claude_in_surface(state: &mut AppState, surface_id: u32, cwd: Option<&str>, prompt: Option<&str>) {
+fn start_claude_in_surface(
+    state: &mut AppState,
+    surface_id: u32,
+    cwd: Option<&str>,
+    prompt: Option<&str>,
+) {
     if let Some(dir) = cwd {
         if let Some(terminal) = state.find_terminal_by_id_mut(surface_id) {
             let normalized = dir.replace('\\', "/");
@@ -331,10 +387,7 @@ fn start_claude_in_surface(state: &mut AppState, surface_id: u32, cwd: Option<&s
             tracing::warn!("Failed to write prompt file: {e}");
         }
         if let Some(terminal) = state.find_terminal_by_id_mut(surface_id) {
-            terminal.send_key(&format!(
-                "claude \"$(cat '{}')\"\r",
-                prompt_path.display()
-            ));
+            terminal.send_key(&format!("claude \"$(cat '{}')\"\r", prompt_path.display()));
         }
     } else if let Some(terminal) = state.find_terminal_by_id_mut(surface_id) {
         terminal.send_key("claude\r");
@@ -435,14 +488,22 @@ pub(crate) fn handle_claude_kill(
         None => {
             return JsonRpcResponse::invalid_params(
                 id,
-                format!("Child index {} not found for parent {}", child_index, parent_surface_id),
-            )
+                format!(
+                    "Child index {} not found for parent {}",
+                    child_index, parent_surface_id
+                ),
+            );
         }
     };
 
     let pane_id = match state.find_pane_for_surface(child_surface_id) {
         Some(pid) => pid,
-        None => return JsonRpcResponse::invalid_params(id, format!("Surface {} not found", child_surface_id)),
+        None => {
+            return JsonRpcResponse::invalid_params(
+                id,
+                format!("Surface {} not found", child_surface_id),
+            );
+        }
     };
 
     let removed = state.close_pane_by_id(pane_id);
@@ -478,8 +539,11 @@ pub(crate) fn handle_claude_respawn(
         None => {
             return JsonRpcResponse::invalid_params(
                 id,
-                format!("Child index {} not found for parent {}", child_index, parent_surface_id),
-            )
+                format!(
+                    "Child index {} not found for parent {}",
+                    child_index, parent_surface_id
+                ),
+            );
         }
     };
 
@@ -487,9 +551,18 @@ pub(crate) fn handle_claude_respawn(
     let old_index = child_index;
 
     let cwd = params.get("cwd").and_then(|v| v.as_str()).map(String::from);
-    let role = params.get("role").and_then(|v| v.as_str()).map(String::from);
-    let nickname = params.get("nickname").and_then(|v| v.as_str()).map(String::from);
-    let prompt = params.get("prompt").and_then(|v| v.as_str()).map(String::from);
+    let role = params
+        .get("role")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+    let nickname = params
+        .get("nickname")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+    let prompt = params
+        .get("prompt")
+        .and_then(|v| v.as_str())
+        .map(String::from);
 
     let pane_id = state.find_pane_for_surface(child_surface_id);
     if let Some(pid) = pane_id {
@@ -530,10 +603,7 @@ pub(crate) fn handle_claude_respawn(
             tracing::warn!("Failed to write prompt file: {e}");
         }
         if let Some(terminal) = state.find_terminal_by_id_mut(new_surface_id) {
-            terminal.send_key(&format!(
-                "claude \"$(cat '{}')\"\r",
-                prompt_path.display()
-            ));
+            terminal.send_key(&format!("claude \"$(cat '{}')\"\r", prompt_path.display()));
         }
     } else {
         if let Some(terminal) = state.find_terminal_by_id_mut(new_surface_id) {
@@ -563,8 +633,7 @@ pub(crate) fn handle_claude_set_idle_state(
     let surface_id = params
         .get("surface_id")
         .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
-;
+        .map(|v| v as u32);
 
     let surface_id = match surface_id {
         Some(sid) => sid,
@@ -588,8 +657,7 @@ pub(crate) fn handle_claude_set_needs_input(
     let surface_id = params
         .get("surface_id")
         .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
-;
+        .map(|v| v as u32);
 
     let surface_id = match surface_id {
         Some(sid) => sid,
@@ -599,7 +667,7 @@ pub(crate) fn handle_claude_set_needs_input(
     let needs_input = match params.get("needs_input").and_then(|v| v.as_bool()) {
         Some(b) => b,
         None => {
-            return JsonRpcResponse::invalid_params(id, "Missing 'needs_input' parameter (bool)")
+            return JsonRpcResponse::invalid_params(id, "Missing 'needs_input' parameter (bool)");
         }
     };
 
@@ -622,7 +690,10 @@ pub(crate) fn handle_claude_broadcast(
         None => return JsonRpcResponse::invalid_params(id, "Missing 'text' parameter"),
     };
 
-    let role_filter = params.get("role").and_then(|v| v.as_str()).map(|s| s.to_string());
+    let role_filter = params
+        .get("role")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
 
     let child_ids: Vec<u32> = state
         .children_of(parent_surface_id)
