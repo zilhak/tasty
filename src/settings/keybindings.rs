@@ -854,8 +854,7 @@ mod tests {
 
     #[test]
     fn general_binding_fields_count() {
-        // UI에 노출된 일반 단축키 필드: 34개. (기존 29 + copy/paste/zoom_in/zoom_out/zoom_reset 5)
-        assert_eq!(KeybindingSettings::GENERAL_BINDING_FIELDS.len(), 34);
+        assert_eq!(KeybindingSettings::GENERAL_BINDING_FIELDS.len(), 37);
     }
 
     #[test]

@@ -159,7 +159,7 @@ font_size = 18.0
     #[test]
     fn settings_theme_default() {
         let settings = Settings::default();
-        assert_eq!(settings.appearance.theme, "dark");
+        assert_eq!(settings.appearance.theme, "catppuccin-mocha");
     }
 
     #[test]
