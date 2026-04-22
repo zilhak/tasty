@@ -384,7 +384,7 @@ fn draw_appearance_terminal(
             });
 
         // ── Right: font preview ──
-        draw_font_preview(&mut columns[1], settings, th, preview_font_loaded);
+        draw_font_preview(&mut columns[1], settings, &th, preview_font_loaded);
     });
 }
 
