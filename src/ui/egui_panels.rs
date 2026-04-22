@@ -91,6 +91,9 @@ pub fn draw_egui_panels(
     }
     let mut pending_clipboard_viewer_renders: Vec<PendingClipboardViewerRender> = Vec::new();
 
+    let markdown_colors = state.engine.settings.appearance.markdown_colors.clone();
+    let explorer_colors = state.engine.settings.appearance.explorer_colors.clone();
+
     for info in &infos {
         let id_suffix = info
             .surface_id
@@ -136,7 +139,12 @@ pub fn draw_egui_panels(
             } else {
                 0.0
             };
-            draw_panel_frame(ctx, &format!("md_panel_{}", id_suffix), info, 8, |ui| {
+            let md_bg = if info.is_keyboard_target {
+                markdown_colors.focused_bg.0
+            } else {
+                markdown_colors.unfocused_bg.0
+            };
+            draw_panel_frame(ctx, &format!("md_panel_{}", id_suffix), info, 8, Some(md_bg), |ui| {
                 crate::markdown_ui::draw_markdown(ui, md_panel, key_scroll_y, &id_suffix);
             });
         } else if let Some(exp_panel) = surface.as_explorer_mut() {
@@ -155,13 +163,18 @@ pub fn draw_egui_panels(
                 exp_panel.last_refresh = std::time::Instant::now();
             }
             exp_panel.was_focused = is_focused;
-            draw_panel_frame(ctx, &format!("explorer_{}", id_suffix), info, 4, |ui| {
+            let exp_bg = if is_focused {
+                explorer_colors.focused_bg.0
+            } else {
+                explorer_colors.unfocused_bg.0
+            };
+            draw_panel_frame(ctx, &format!("explorer_{}", id_suffix), info, 4, Some(exp_bg), |ui| {
                 if let Some(act) = crate::explorer_ui::draw_explorer(ui, exp_panel, keys) {
                     pending_explorer_action = Some((info.pane_id, info.surface_id, act));
                 }
             });
         } else if let Some(html_panel) = surface.as_html() {
-            draw_panel_frame(ctx, &format!("html_panel_{}", id_suffix), info, 0, |ui| {
+            draw_panel_frame(ctx, &format!("html_panel_{}", id_suffix), info, 0, None, |ui| {
                 crate::html_ui::draw_html(ui, html_panel);
             });
         } else if let Some(empty) = surface.as_empty_surface() {
@@ -171,7 +184,7 @@ pub fn draw_egui_panels(
                 }
             });
         } else if let Some(image_panel) = surface.as_image_mut() {
-            draw_panel_frame(ctx, &format!("image_panel_{}", id_suffix), info, 4, |ui| {
+            draw_panel_frame(ctx, &format!("image_panel_{}", id_suffix), info, 4, None, |ui| {
                 crate::image_ui::draw_image(ui, image_panel);
             });
         } else if surface.as_clipboard_viewer().is_some() {
@@ -227,6 +240,7 @@ pub fn draw_egui_panels(
                         &format!("clipboard_viewer_{}", pending.id_suffix),
                         &info,
                         4,
+                        None,
                         |ui| {
                             crate::clipboard_viewer_ui::draw_clipboard_viewer_surface(
                                 ui,
@@ -290,13 +304,15 @@ pub fn draw_egui_panels(
     }
 }
 
-/// 공통 egui Area + Frame(crust background) 껍데기. `margin`만큼 내부 여백을 준다.
+/// 공통 egui Area + Frame 껍데기. `margin`만큼 내부 여백을 준다.
+/// `bg_color`가 Some이면 해당 색상을, None이면 th.crust를 배경으로 사용한다.
 /// body의 반환값을 그대로 전달한다 (None을 리턴하는 기존 호출처는 ()).
 fn draw_panel_frame<R, F>(
     ctx: &egui::Context,
     id: &str,
     info: &EguiPanelInfo,
     margin: i8,
+    bg_color: Option<egui::Color32>,
     body: F,
 ) -> R
 where
@@ -304,6 +320,7 @@ where
     R: Default,
 {
     let th = theme::theme();
+    let bg = bg_color.unwrap_or(th.crust);
     let mut out: R = R::default();
     egui::Area::new(egui::Id::new(id))
         .fixed_pos(egui::pos2(info.logical_x, info.logical_y))
@@ -314,9 +331,9 @@ where
             let panel_rect = ui.max_rect();
             let mut clip_ui = ui.new_child(egui::UiBuilder::new().max_rect(panel_rect));
             clip_ui.set_clip_rect(panel_rect);
-            clip_ui.painter().rect_filled(panel_rect, 0.0, th.crust);
+            clip_ui.painter().rect_filled(panel_rect, 0.0, bg);
             egui::Frame::new()
-                .fill(th.crust)
+                .fill(bg)
                 .inner_margin(egui::Margin::same(margin))
                 .show(&mut clip_ui, |ui| {
                     out = body(ui);
