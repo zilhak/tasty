@@ -723,7 +723,7 @@ Claude Code를 새 워크스페이스에서 자동으로 실행하는 전용 런
 - **claude.children**: 부모 surface의 자식 목록 조회. 각 자식의 surface ID, 인덱스, 메타데이터 반환
 - **claude.parent**: 자식 surface의 부모 조회. 부모의 surface ID와 상태(active/closed) 반환
 - **claude.kill**: 자식 surface를 종료하고 관계를 정리
-- **claude.respawn**: 기존 자식을 종료하고 같은 인덱스로 새 자식을 생성. cwd, role, nickname, prompt 재설정 가능
+- **claude.respawn**: 기존 자식 surface의 터미널 프로세스만 종료하고 같은 surface에서 새 쉘 + `claude`를 재시작. 레이아웃(pane/surface 구조)은 변경하지 않는다. child index와 부모-자식 관계도 유지. cwd, role, nickname, prompt 재설정 가능
 - **claude.broadcast**: 부모의 모든 자식에게 텍스트를 동시에 전송. `role` 파라미터로 특정 역할의 자식에만 필터링 가능. 반환: `{ sent_count, children }`
 - **claude.wait**: 자식 surface의 현재 상태를 조회. surface가 존재하지 않으면 "exited" 반환. 반환: `{ state: "idle"|"needs_input"|"active"|"exited" }`. CLI에서 폴링 루프로 대기 구현
 - CLI: `tasty claude spawn --direction vertical --cwd /path --role worker --nickname "agent-1" --prompt "Fix bugs"`

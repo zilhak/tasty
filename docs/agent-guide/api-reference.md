@@ -328,7 +328,7 @@ tasty unset global-hook --hook HOOK_ID
 | `claude.children` | `surface_id?` | 부모 surface의 자식 목록 조회 |
 | `claude.parent` | `surface_id?` | 자식 surface의 부모 조회 |
 | `claude.kill` | `surface_id?, child_index: number` | 자식 Claude 인스턴스 종료. child_index는 spawn 시 반환된 인덱스 |
-| `claude.respawn` | `surface_id?, child_index: number, cwd?, role?, nickname?, prompt?` | 자식 Claude 인스턴스 재시작. child_index로 대상 지정 |
+| `claude.respawn` | `surface_id?, child_index: number, cwd?, role?, nickname?, prompt?` | 자식 Claude 인스턴스를 같은 surface에서 재시작 (레이아웃 변경 없음). child_index로 대상 지정 |
 | `claude.broadcast` | `surface_id?, text: string, role?: string` | 부모의 모든 자식에 텍스트 동시 전송. role 필터로 특정 역할만 대상 지정 가능. 반환: `{ sent_count, children }` |
 | `claude.wait` | `surface_id?, child_index: number` | 자식의 현재 상태 조회. 반환: `{ state: "idle"\|"needs_input"\|"active"\|"exited" }`. CLI에서 폴링하여 대기 구현 가능 |
 | `claude.set_idle_state` | `surface_id?, idle: bool` | Claude idle 상태 설정 (idle=false 시 needs_input도 해제) |
