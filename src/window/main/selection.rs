@@ -193,6 +193,25 @@ impl MainWindow {
             return;
         }
 
+        // Claude Code uses a virtual cursor that doesn't match terminal grid positions,
+        // so arrow-key-based cursor movement doesn't work correctly. Skip entirely.
+        let surface_id = self.state.focused_surface_id().unwrap_or(0);
+        let is_claude = self
+            .state
+            .engine
+            .claude
+            .parent_children
+            .contains_key(&surface_id)
+            || self
+                .state
+                .engine
+                .claude
+                .child_parent
+                .contains_key(&surface_id);
+        if is_claude {
+            return;
+        }
+
         // Commit any in-progress IME composition before moving cursor
         if let Some(preedit) = self.ime_preedit.take() {
             if let Some(terminal) = self.state.focused_terminal_mut() {
@@ -250,21 +269,6 @@ impl MainWindow {
             return;
         }
 
-        // Check if this is a Claude Code surface before mut-borrowing terminal
-        let surface_id = self.state.focused_surface_id().unwrap_or(0);
-        let is_claude = self
-            .state
-            .engine
-            .claude
-            .parent_children
-            .contains_key(&surface_id)
-            || self
-                .state
-                .engine
-                .claude
-                .child_parent
-                .contains_key(&surface_id);
-
         // Determine arrow escape sequence
         let terminal = self.state.focused_terminal_mut().unwrap();
         let app_cursor = terminal.application_cursor_keys();
@@ -274,22 +278,8 @@ impl MainWindow {
             if app_cursor { b"\x1bOD" } else { b"\x1b[D" }
         };
 
-        if is_claude {
-            // Queue arrows to send one per frame
-            terminal.send_bytes(arrow); // Send first one immediately
-            if arrow_count > 1 {
-                self.arrow_queue = Some(crate::click_cursor::ArrowQueue::new(
-                    arrow,
-                    arrow_count - 1,
-                    surface_id,
-                ));
-                self.base.winit.request_redraw();
-            }
-        } else {
-            // Shell: send all at once
-            for _ in 0..arrow_count {
-                terminal.send_bytes(arrow);
-            }
+        for _ in 0..arrow_count {
+            terminal.send_bytes(arrow);
         }
     }
 

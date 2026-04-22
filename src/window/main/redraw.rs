@@ -6,23 +6,6 @@ use super::MainWindow;
 
 impl MainWindow {
     pub(super) fn handle_redraw(&mut self, _event_loop: &ActiveEventLoop) {
-        // Process queued arrow keys (one per frame for Claude Code surfaces)
-        if let Some(queue) = &self.arrow_queue {
-            let sid = queue.surface_id;
-            let _arrow = queue.arrow;
-            if let Some(terminal) = self.state.find_terminal_by_id_mut(sid) {
-                let mut q = self.arrow_queue.take().unwrap();
-                let has_more = q.tick(terminal);
-                if has_more {
-                    self.arrow_queue = Some(q);
-                    self.base.dirty = true;
-                    self.base.winit.request_redraw(); // Schedule next frame
-                }
-            } else {
-                self.arrow_queue = None;
-            }
-        }
-
         // Check if settings button was clicked (ui.rs sets state.settings_open = true)
         if self.state.settings_open {
             self.state.settings_open = false;

@@ -36,7 +36,6 @@ pub struct MainWindow {
     pub(crate) last_click_time: Option<std::time::Instant>,
     pub(crate) last_click_pos: Option<(usize, usize)>,
     pub(crate) click_count: u8,
-    pub(crate) arrow_queue: Option<crate::click_cursor::ArrowQueue>,
     /// Whether IME composition is active (set by Ime::Enabled/Disabled).
     /// When true, KeyboardInput text is ignored — only Ime::Commit sends text.
     pub(crate) ime_active: bool,
@@ -75,7 +74,6 @@ impl MainWindow {
             last_click_time: None,
             last_click_pos: None,
             click_count: 0,
-            arrow_queue: None,
             ime_active: false,
             ime_cursor_advance: 0,
             ime_advance_base: (0, 0),
