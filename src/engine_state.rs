@@ -290,6 +290,24 @@ impl EngineState {
         None
     }
 
+    /// Replace the terminal in a TerminalSurface, keeping the surface/layout intact.
+    /// The old terminal's PTY process is dropped (SIGHUP sent).
+    /// Returns Ok(()) on success, Err if the surface was not found.
+    pub fn replace_terminal_by_id(
+        &mut self,
+        surface_id: u32,
+        mut new_terminal: Terminal,
+    ) -> anyhow::Result<()> {
+        if let Some(old) = self.find_terminal_by_id_mut(surface_id) {
+            std::mem::swap(old, &mut new_terminal);
+            // old terminal (now in new_terminal) is dropped here, sending SIGHUP
+            drop(new_terminal);
+            Ok(())
+        } else {
+            anyhow::bail!("Surface {} not found", surface_id)
+        }
+    }
+
     fn find_terminal_in_layout(
         layout: &crate::model::PaneNode,
         surface_id: u32,

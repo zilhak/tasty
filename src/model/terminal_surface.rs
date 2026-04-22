@@ -24,6 +24,14 @@ pub(crate) struct DeferredSpawn {
     pub working_dir: Option<std::path::PathBuf>,
 }
 
+impl TerminalSurface {
+    /// Replace the inner terminal with a new one (same surface ID, same layout position).
+    /// The old terminal's PTY process is dropped, which sends SIGHUP to the child.
+    pub fn replace_terminal(&mut self, new_terminal: Terminal) {
+        self.terminal = new_terminal;
+    }
+}
+
 impl Surface for TerminalSurface {
     fn type_name(&self) -> &'static str {
         "Terminal"

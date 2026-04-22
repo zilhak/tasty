@@ -547,9 +547,6 @@ pub(crate) fn handle_claude_respawn(
         }
     };
 
-    let parent_id = parent_surface_id;
-    let old_index = child_index;
-
     let cwd = params.get("cwd").and_then(|v| v.as_str()).map(String::from);
     let role = params
         .get("role")
@@ -564,63 +561,53 @@ pub(crate) fn handle_claude_respawn(
         .and_then(|v| v.as_str())
         .map(String::from);
 
-    let pane_id = state.find_pane_for_surface(child_surface_id);
-    if let Some(pid) = pane_id {
-        state.close_pane_by_id(pid);
-        state.unregister_child(child_surface_id);
-        state.mark_parent_closed(child_surface_id);
-    }
-
-    let saved_workspace = state.active_workspace;
-    let saved_pane = state.engine.workspaces[saved_workspace].focused_pane;
-    state.focus_surface(parent_id);
-
-    let new_surface_id = match state.split_pane_get_surface(SplitDirection::Vertical) {
-        Ok(sid) => sid,
+    // Create a new terminal in the same surface (layout unchanged).
+    // The old terminal is dropped, sending SIGHUP to its PTY process.
+    let cols = state.engine.default_cols;
+    let rows = state.engine.default_rows;
+    let sh = crate::engine_state::ShellConfig::from_settings(&state.engine.settings);
+    let waker = state.engine.make_waker(child_surface_id);
+    let new_terminal = match tasty_terminal::Terminal::new_with_shell_args_cwd(
+        cols,
+        rows,
+        sh.shell_ref(),
+        &sh.args_ref(),
+        child_surface_id,
+        waker,
+        None,
+    ) {
+        Ok(t) => t,
         Err(e) => return JsonRpcResponse::internal_error(id, e.to_string()),
     };
 
-    let entry = ClaudeChildEntry {
-        child_surface_id: new_surface_id,
-        index: old_index,
-        cwd: cwd.clone(),
-        role: role.clone(),
-        nickname: nickname.clone(),
-    };
-    state.register_child(parent_id, entry);
+    if let Err(e) = state.engine.replace_terminal_by_id(child_surface_id, new_terminal) {
+        return JsonRpcResponse::internal_error(id, e.to_string());
+    }
 
-    if let Some(dir) = &cwd {
-        if let Some(terminal) = state.find_terminal_by_id_mut(new_surface_id) {
-            let normalized = dir.replace('\\', "/");
-            let escaped = shell_escape::escape(normalized.into());
-            terminal.send_key(&format!("cd {}\r", escaped));
+    // Update child entry metadata (cwd, role, nickname)
+    if let Some(children) = state.engine.claude.parent_children.get_mut(&parent_surface_id) {
+        if let Some(entry) = children.iter_mut().find(|c| c.index == child_index) {
+            if cwd.is_some() {
+                entry.cwd = cwd.clone();
+            }
+            if role.is_some() {
+                entry.role = role.clone();
+            }
+            if nickname.is_some() {
+                entry.nickname = nickname.clone();
+            }
         }
     }
 
-    if let Some(p) = &prompt {
-        let prompt_path = std::env::temp_dir().join(format!("tasty-prompt-{}.txt", new_surface_id));
-        if let Err(e) = std::fs::write(&prompt_path, p) {
-            tracing::warn!("Failed to write prompt file: {e}");
-        }
-        if let Some(terminal) = state.find_terminal_by_id_mut(new_surface_id) {
-            terminal.send_key(&format!("claude \"$(cat '{}')\"\r", prompt_path.display()));
-        }
-    } else {
-        if let Some(terminal) = state.find_terminal_by_id_mut(new_surface_id) {
-            terminal.send_key("claude\r");
-        }
-    }
-
-    // Restore focus (both workspace and pane)
-    state.active_workspace = saved_workspace;
-    state.engine.workspaces[saved_workspace].focused_pane = saved_pane;
+    // Start claude in the respawned surface
+    start_claude_in_surface(state, child_surface_id, cwd.as_deref(), prompt.as_deref());
 
     JsonRpcResponse::success(
         id,
         json!({
-            "child_surface_id": new_surface_id,
-            "child_index": old_index,
-            "parent_surface_id": parent_id,
+            "child_surface_id": child_surface_id,
+            "child_index": child_index,
+            "parent_surface_id": parent_surface_id,
         }),
     )
 }
