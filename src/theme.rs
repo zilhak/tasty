@@ -159,6 +159,91 @@ impl Theme {
         ],
     };
 
+    /// Catppuccin Latte light theme.
+    pub const LATTE: Self = Self {
+        // Surfaces
+        crust: egui::Color32::from_rgb(220, 224, 232),    // #dce0e8
+        mantle: egui::Color32::from_rgb(230, 233, 239),   // #e6e9ef
+        base: egui::Color32::from_rgb(239, 241, 245),     // #eff1f5
+        surface0: egui::Color32::from_rgb(204, 208, 218), // #ccd0da
+        surface1: egui::Color32::from_rgb(188, 192, 204), // #bcc0cc
+        surface2: egui::Color32::from_rgb(172, 176, 190), // #acb0be
+
+        // Overlays
+        overlay0: egui::Color32::from_rgb(156, 160, 176), // #9ca0b0
+        overlay1: egui::Color32::from_rgb(140, 143, 161), // #8c8fa1
+        overlay2: egui::Color32::from_rgb(124, 127, 147), // #7c7f93
+
+        // Text
+        text: egui::Color32::from_rgb(76, 79, 105),       // #4c4f69
+        subtext1: egui::Color32::from_rgb(92, 95, 119),   // #5c5f77
+        subtext0: egui::Color32::from_rgb(108, 111, 133), // #6c6f85
+
+        // Accent colors
+        blue: egui::Color32::from_rgb(30, 102, 245),      // #1e66f5
+        green: egui::Color32::from_rgb(64, 160, 43),      // #40a02b
+        red: egui::Color32::from_rgb(210, 15, 57),        // #d20f39
+        yellow: egui::Color32::from_rgb(223, 142, 29),    // #df8e1d
+        peach: egui::Color32::from_rgb(254, 100, 11),     // #fe640b
+        mauve: egui::Color32::from_rgb(136, 57, 239),     // #8839ef
+        teal: egui::Color32::from_rgb(23, 146, 153),      // #179299
+        sky: egui::Color32::from_rgb(4, 165, 229),        // #04a5e5
+        lavender: egui::Color32::from_rgb(114, 135, 253), // #7287fd
+        flamingo: egui::Color32::from_rgb(221, 120, 120), // #dd7878
+        pink: egui::Color32::from_rgb(234, 118, 203),     // #ea76cb
+        maroon: egui::Color32::from_rgb(230, 69, 83),     // #e64553
+        rosewater: egui::Color32::from_rgb(220, 138, 120), // #dc8a78
+
+        // Semantic (premultiplied: black at ~8% / ~12% alpha)
+        hover_overlay: egui::Color32::from_rgba_premultiplied(0, 0, 0, 20),  // ~8%
+        active_overlay: egui::Color32::from_rgba_premultiplied(0, 0, 0, 31), // ~12%
+        separator: egui::Color32::from_rgba_premultiplied(0, 0, 0, 20),      // ~8%
+
+        // UI Typography (same as dark)
+        font_size_caption: LogicalPx(11.0),
+        font_size_body: LogicalPx(13.0),
+        font_size_heading: LogicalPx(13.0),
+        font_size_max: LogicalPx(14.0),
+
+        // UI Sizing (same as dark)
+        border_width: LogicalPx(1.0),
+        corner_radius: LogicalPx(4.0),
+        item_height_tree: LogicalPx(22.0),
+        item_height_interactive: LogicalPx(28.0),
+        item_height_tab: LogicalPx(24.0),
+        tab_width: LogicalPx(150.0),
+
+        // Spacing (same as dark)
+        spacing_xs: LogicalPx(4.0),
+        spacing_sm: LogicalPx(8.0),
+        spacing_md: LogicalPx(12.0),
+        spacing_lg: LogicalPx(16.0),
+        spacing_xl: LogicalPx(24.0),
+
+        // Terminal (GPU float format)
+        terminal_fg: [0.298, 0.310, 0.412, 1.0], // Text #4c4f69
+        terminal_bg: [0.937, 0.945, 0.961, 1.0], // Base #eff1f5
+        selection_bg: [0.675, 0.686, 0.714, 1.0], // Surface0 #acb0be
+        ansi_colors: [
+            [0.675, 0.686, 0.714], // 0: black      (Surface1 #bcc0cc)
+            [0.824, 0.059, 0.224], // 1: red         (#d20f39)
+            [0.251, 0.627, 0.169], // 2: green       (#40a02b)
+            [0.875, 0.557, 0.114], // 3: yellow      (#df8e1d)
+            [0.118, 0.400, 0.961], // 4: blue        (#1e66f5)
+            [0.533, 0.224, 0.937], // 5: magenta     (#8839ef)
+            [0.090, 0.573, 0.600], // 6: cyan        (#179299)
+            [0.361, 0.373, 0.467], // 7: white       (Subtext1 #5c5f77)
+            [0.612, 0.627, 0.690], // 8: bright black(Overlay0 #9ca0b0)
+            [0.824, 0.059, 0.224], // 9: bright red  (#d20f39)
+            [0.251, 0.627, 0.169], // 10: bright green(#40a02b)
+            [0.875, 0.557, 0.114], // 11: bright yellow(#df8e1d)
+            [0.118, 0.400, 0.961], // 12: bright blue(#1e66f5)
+            [0.533, 0.224, 0.937], // 13: bright magenta(#8839ef)
+            [0.016, 0.647, 0.898], // 14: bright cyan(Sky #04a5e5)
+            [0.298, 0.310, 0.412], // 15: bright white(Text #4c4f69)
+        ],
+    };
+
     /// Convert an egui Color32 to GPU float format [r, g, b, a].
     pub fn to_float(c: egui::Color32) -> [f32; 4] {
         [
@@ -218,6 +303,55 @@ impl Theme {
         );
         ctx.set_style(style);
     }
+}
+
+/// A theme preset: UI theme + default surface colors for each surface type.
+pub struct ThemePreset {
+    pub id: &'static str,
+    pub label: &'static str,
+    pub theme: Theme,
+    pub terminal_colors: crate::settings::SurfaceColors,
+    pub markdown_colors: crate::settings::SurfaceColors,
+    pub explorer_colors: crate::settings::SurfaceColors,
+}
+
+/// List all available theme presets.
+pub fn presets() -> Vec<ThemePreset> {
+    use crate::settings::{HexColor, SurfaceColors};
+
+    vec![
+        ThemePreset {
+            id: "catppuccin-mocha",
+            label: "Catppuccin Mocha",
+            theme: Theme::DARK,
+            terminal_colors: SurfaceColors::terminal_default(),
+            markdown_colors: SurfaceColors::markdown_default(),
+            explorer_colors: SurfaceColors::explorer_default(),
+        },
+        ThemePreset {
+            id: "catppuccin-latte",
+            label: "Catppuccin Latte",
+            theme: Theme::LATTE,
+            terminal_colors: SurfaceColors {
+                focused_bg: HexColor::from_rgb(239, 241, 245),  // #eff1f5
+                focused_fg: HexColor::from_rgb(76, 79, 105),    // #4c4f69
+                unfocused_bg: HexColor::from_rgb(230, 233, 239), // #e6e9ef
+                unfocused_fg: HexColor::from_rgb(108, 111, 133), // #6c6f85
+            },
+            markdown_colors: SurfaceColors {
+                focused_bg: HexColor::from_rgb(239, 241, 245),  // #eff1f5
+                focused_fg: HexColor::from_rgb(76, 79, 105),    // #4c4f69
+                unfocused_bg: HexColor::from_rgb(230, 233, 239), // #e6e9ef
+                unfocused_fg: HexColor::from_rgb(108, 111, 133), // #6c6f85
+            },
+            explorer_colors: SurfaceColors {
+                focused_bg: HexColor::from_rgb(239, 241, 245),  // #eff1f5
+                focused_fg: HexColor::from_rgb(76, 79, 105),    // #4c4f69
+                unfocused_bg: HexColor::from_rgb(230, 233, 239), // #e6e9ef
+                unfocused_fg: HexColor::from_rgb(108, 111, 133), // #6c6f85
+            },
+        },
+    ]
 }
 
 /// Global theme instance. Mutable at runtime via `set_theme()`.

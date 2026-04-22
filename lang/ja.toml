@@ -84,11 +84,14 @@ bg_label = "背景色:"
 fg_label = "文字色:"
 
 [settings.appearance.subtab]
+theme = "テーマ"
 general = "一般"
 terminal = "ターミナル"
 markdown = "マークダウン"
 
 [settings.appearance.theme]
+heading = "テーマプリセット"
+hint = "プリセットを選択すると全サーフェスの色がリセットされます。各サブタブで個別にカスタマイズできます。"
 dark = "ダーク"
 light = "ライト"
 

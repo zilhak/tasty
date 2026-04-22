@@ -272,7 +272,18 @@ impl App {
         );
         window.set_ime_allowed(true);
 
-        let settings = crate::settings::Settings::load();
+        let mut settings = crate::settings::Settings::load();
+        // Migrate legacy theme names
+        match settings.appearance.theme.as_str() {
+            "dark" => settings.appearance.theme = "catppuccin-mocha".to_string(),
+            "light" => settings.appearance.theme = "catppuccin-latte".to_string(),
+            _ => {}
+        }
+        // Apply saved theme preset at startup
+        let presets = crate::theme::presets();
+        if let Some(preset) = presets.iter().find(|p| p.id == settings.appearance.theme) {
+            crate::theme::set_theme(preset.theme);
+        }
         let gpu = pollster::block_on(crate::gpu::GpuState::new(
             window.clone(),
             &settings.appearance,

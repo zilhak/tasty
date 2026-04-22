@@ -84,11 +84,14 @@ bg_label = "Background:"
 fg_label = "Text:"
 
 [settings.appearance.subtab]
+theme = "Theme"
 general = "General"
 terminal = "Terminal"
 markdown = "Markdown"
 
 [settings.appearance.theme]
+heading = "Theme Preset"
+hint = "Selecting a preset will reset all surface colors. You can customize them individually in each sub-tab."
 dark = "Dark"
 light = "Light"
 

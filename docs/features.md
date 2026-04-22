@@ -405,9 +405,11 @@
 - `settings.appearance.font_size`: GpuState 생성 시 CellRenderer에 전달. 기본값 14.0
 - `settings.appearance.custom_font_path`: 커스텀 폰트 파일(.ttf/.otf) 경로. 지정 시 FontSystem에 해당 파일을 추가 로드한 후 font_family로 참조 가능
 - `settings.appearance.line_height`: 행간 배수. 1.0(기본, 틈 없음 - ASCII 아트에 최적) ~ 2.0. 값이 클수록 행 간격이 넓어짐
-- `settings.appearance.theme`: egui Visuals 설정에 반영. "dark" → `Visuals::dark()`, "light" → `Visuals::light()`. wgpu clear color도 테마에 따라 변경. 설정 저장 후 실시간 반영
+- `settings.appearance.theme`: 테마 프리셋 ID. "catppuccin-mocha"(기본 다크), "catppuccin-latte"(라이트). 설정 저장 시 `set_theme()`로 런타임 반영. 레거시 "dark"/"light"는 시작 시 자동 마이그레이션
 - `settings.appearance.background_opacity`: wgpu clear color의 알파 값으로 적용. 0.0(투명)~1.0(불투명)
-- `settings.appearance.focused_surface_bg`: focused surface의 배경색 (hex, 기본 `#000000`). unfocused surface는 테마 기본 배경(`#1e1e2e`) 사용
+- `settings.appearance.terminal_colors`: 터미널 surface의 focused/unfocused 배경색·글자색 (HexColor, 기본 focused_bg `#000000`)
+- `settings.appearance.markdown_colors`: 마크다운 surface의 focused/unfocused 배경색·글자색
+- `settings.appearance.explorer_colors`: 익스플로러 surface의 focused/unfocused 배경색·글자색
 - `settings.appearance.sidebar_width`: 사이드바 너비가 UI, GPU 렌더러, 터미널 rect 계산에 반영. 렌더 루프에서 설정값과 자동 동기화
 - `settings.clipboard.history_enabled`: 클립보드 히스토리 기록 여부
 - `settings.clipboard.history_max`: 히스토리 최대 항목 수 (기본 100)

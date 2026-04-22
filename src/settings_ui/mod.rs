@@ -10,6 +10,7 @@ use tabs::*;
 /// Sub-tab within the Appearance tab.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AppearanceSubTab {
+    Theme,
     General,
     Tasty,
     Terminal,
@@ -123,6 +124,11 @@ pub fn draw_settings_panel(
                     }
                     if let Some(bashrc) = &ui_state.bashrc_user_draft {
                         crate::settings::general::save_user_bashrc(bashrc);
+                    }
+                    // Apply the selected theme preset at runtime
+                    let presets = crate::theme::presets();
+                    if let Some(preset) = presets.iter().find(|p| p.id == settings.appearance.theme) {
+                        crate::theme::set_theme(preset.theme);
                     }
                     result = Some(true);
                 }

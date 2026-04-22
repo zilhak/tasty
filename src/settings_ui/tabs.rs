@@ -144,6 +144,10 @@ pub fn draw_appearance_tab(
                 ui.vertical(|ui| {
                     let sub_tabs = [
                         (
+                            AppearanceSubTab::Theme,
+                            t("settings.appearance.subtab.theme"),
+                        ),
+                        (
                             AppearanceSubTab::General,
                             t("settings.appearance.subtab.general"),
                         ),
@@ -172,6 +176,9 @@ pub fn draw_appearance_tab(
 
         // ── Right: sub-tab content ──
         ui.vertical(|ui| match *sub_tab {
+            AppearanceSubTab::Theme => {
+                draw_appearance_theme(ui, settings);
+            }
             AppearanceSubTab::General => {
                 draw_appearance_general(ui, settings);
             }
@@ -198,6 +205,38 @@ pub fn draw_appearance_tab(
             }
         });
     });
+}
+
+/// Appearance > Theme: preset selection with preview.
+fn draw_appearance_theme(ui: &mut egui::Ui, settings: &mut Settings) {
+    let th = crate::theme::theme();
+    ui.add_space(8.0);
+
+    ui.label(
+        egui::RichText::new(t("settings.appearance.theme.heading"))
+            .strong()
+            .color(th.text),
+    );
+    ui.add_space(8.0);
+
+    let presets = crate::theme::presets();
+    for preset in &presets {
+        let is_current = settings.appearance.theme == preset.id;
+        let response = ui.selectable_label(is_current, preset.label);
+        if response.clicked() && !is_current {
+            settings.appearance.theme = preset.id.to_string();
+            settings.appearance.terminal_colors = preset.terminal_colors.clone();
+            settings.appearance.markdown_colors = preset.markdown_colors.clone();
+            settings.appearance.explorer_colors = preset.explorer_colors.clone();
+        }
+    }
+
+    ui.add_space(12.0);
+    ui.label(
+        egui::RichText::new(t("settings.appearance.theme.hint"))
+            .small()
+            .color(th.subtext0),
+    );
 }
 
 /// Appearance > General: theme, background opacity, focused surface bg

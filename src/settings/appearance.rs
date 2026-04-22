@@ -126,7 +126,7 @@ impl Default for AppearanceSettings {
         Self {
             font_family: String::new(),
             font_size: 14.0,
-            theme: "dark".to_string(),
+            theme: "catppuccin-mocha".to_string(),
             background_opacity: 1.0,
             sidebar_width: LogicalPx(180.0),
             ui_scale: "medium".to_string(),

@@ -117,9 +117,34 @@ Color32::from_rgba_unmultiplied(255, 255, 255, 20)
 
 **규칙: 반투명 색상에는 항상 `from_rgba_unmultiplied`를 사용한다.** `from_rgba_premultiplied`는 이미 곱해진 값을 직접 다루는 특수한 경우에만 사용.
 
+## 런타임 테마 전환
+
+전역 테마는 `static RwLock<Theme>`으로 관리되며, `set_theme()`으로 런타임에 교체 가능하다.
+
+- `theme()` → `RwLockReadGuard<Theme>` 반환 (기존 `th.blue` 접근 그대로 동작)
+- `set_theme(new_theme)` → 전역 테마 교체
+- 설정 저장 시, 선택된 프리셋의 `Theme`을 `set_theme()`으로 적용
+- 앱 시작 시, 저장된 `settings.appearance.theme` 프리셋을 적용
+
+## 테마 프리셋
+
+`theme::presets()`가 사용 가능한 프리셋 목록을 반환한다. 각 프리셋은:
+- `Theme` (UI 전체 색상)
+- 3종 `SurfaceColors` (터미널/마크다운/익스플로러의 기본 배경·글자색)
+
+현재 프리셋:
+- `catppuccin-mocha` — Catppuccin Mocha (다크, 기본)
+- `catppuccin-latte` — Catppuccin Latte (라이트)
+
+## Surface별 색상 커스텀
+
+설정의 `terminal_colors`, `markdown_colors`, `explorer_colors` (각각 `SurfaceColors`)로 surface 종류별 focused/unfocused 배경색·글자색을 개별 지정한다. 프리셋 선택 시 기본값으로 초기화되며, 이후 개별 서브탭에서 커스텀 가능.
+
+색상 값은 `HexColor` 타입으로, 내부는 `Color32`이고 설정 파일에는 `"#rrggbb"` hex 문자열로 직렬화된다.
+
 ## 새 색상/크기 추가 시
 
 1. `src/theme.rs`의 `Theme` 구조체에 필드 추가
-2. `Theme::dark()`에 값 설정
+2. `Theme::DARK`와 `Theme::LATTE` 모두에 값 설정
 3. 이 문서에 해당 변수 추가
 4. UI 코드에서 `th.새변수`로 사용
