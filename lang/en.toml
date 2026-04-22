@@ -77,6 +77,12 @@ preview_font_info = "Font: {}"
 loading_fonts = "Loading fonts..."
 search_hint = "Search..."
 
+[settings.appearance.colors]
+focused_heading = "Focused"
+unfocused_heading = "Unfocused"
+bg_label = "Background:"
+fg_label = "Text:"
+
 [settings.appearance.subtab]
 general = "General"
 terminal = "Terminal"

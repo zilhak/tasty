@@ -35,7 +35,6 @@ pub fn unicode_width(ch: char) -> usize {
     }
 }
 
-pub use palette::DEFAULT_BG;
 use palette::{DEFAULT_FG, color_attr_to_rgba};
 use types::{BgInstance, GlyphInstance, Uniforms};
 

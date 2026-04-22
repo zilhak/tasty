@@ -77,6 +77,12 @@ preview_font_info = "폰트: {}"
 loading_fonts = "폰트 로딩 중..."
 search_hint = "검색..."
 
+[settings.appearance.colors]
+focused_heading = "포커스 상태"
+unfocused_heading = "비포커스 상태"
+bg_label = "배경색:"
+fg_label = "글자색:"
+
 [settings.appearance.subtab]
 general = "일반"
 terminal = "터미널"

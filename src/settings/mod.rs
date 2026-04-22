@@ -10,7 +10,7 @@ use anyhow::Result;
 use directories::BaseDirs;
 use serde::{Deserialize, Serialize};
 
-pub use appearance::AppearanceSettings;
+pub use appearance::{AppearanceSettings, HexColor, SurfaceColors};
 pub use general::GeneralSettings;
 pub use keybindings::KeybindingSettings;
 pub use types::{ClipboardSettings, NotificationSettings, PerformanceSettings};
@@ -110,7 +110,7 @@ mod tests {
         let settings = Settings::default();
         assert!(!settings.general.shell.is_empty());
         assert!(settings.appearance.font_size > 0.0);
-        assert!(settings.appearance.sidebar_width > 0.0);
+        assert!(settings.appearance.sidebar_width > crate::model::LogicalPx(0.0));
     }
 
     #[test]

@@ -1,7 +1,6 @@
 use termwiz::color::ColorAttribute;
 
 pub(crate) const DEFAULT_FG: [f32; 4] = [0.804, 0.839, 0.957, 1.0]; // Text #cdd6f4
-pub const DEFAULT_BG: [f32; 4] = [0.118, 0.118, 0.180, 1.0]; // Base #1e1e2e
 
 /// Catppuccin Mocha 16-color ANSI palette.
 pub(crate) const ANSI_COLORS: [[f32; 3]; 16] = [

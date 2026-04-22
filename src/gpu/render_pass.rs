@@ -58,9 +58,9 @@ impl GpuState {
                 let rect = &region.rect;
                 let is_focused = focused_surface_id == Some(*surface_id);
                 let bg = if is_focused {
-                    settings.focused_surface_bg_float()
+                    settings.terminal_colors.focused_bg.to_float()
                 } else {
-                    crate::renderer::DEFAULT_BG
+                    settings.terminal_colors.unfocused_bg.to_float()
                 };
 
                 // Build selection info for this surface

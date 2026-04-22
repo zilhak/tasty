@@ -77,6 +77,12 @@ preview_font_info = "フォント: {}"
 loading_fonts = "フォント読み込み中..."
 search_hint = "検索..."
 
+[settings.appearance.colors]
+focused_heading = "フォーカス時"
+unfocused_heading = "非フォーカス時"
+bg_label = "背景色:"
+fg_label = "文字色:"
+
 [settings.appearance.subtab]
 general = "一般"
 terminal = "ターミナル"

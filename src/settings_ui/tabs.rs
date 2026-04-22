@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::i18n::t;
-use crate::settings::{GeneralSettings, Settings};
+use crate::settings::{GeneralSettings, HexColor, Settings};
 
 /// Draw a label followed by a (?) icon with tooltip. For use inside Grid rows.
 fn label_with_tooltip(ui: &mut egui::Ui, label: &str, tooltip: &str) {
@@ -188,10 +188,10 @@ pub fn draw_appearance_tab(
                 );
             }
             AppearanceSubTab::Markdown => {
-                draw_appearance_placeholder(ui, "Markdown");
+                draw_appearance_markdown(ui, settings);
             }
             AppearanceSubTab::Explorer => {
-                draw_appearance_placeholder(ui, "Explorer");
+                draw_appearance_explorer(ui, settings);
             }
             AppearanceSubTab::HtmlViewer => {
                 draw_appearance_placeholder(ui, "HTML Viewer");
@@ -386,6 +386,81 @@ fn draw_appearance_terminal(
         // ── Right: font preview ──
         draw_font_preview(&mut columns[1], settings, &th, preview_font_loaded);
     });
+
+    ui.add_space(16.0);
+    ui.separator();
+    ui.add_space(8.0);
+
+    draw_surface_colors(ui, "terminal", &mut settings.appearance.terminal_colors);
+}
+
+/// Draw a single color row: label + color picker button + hex text input.
+fn draw_color_row(ui: &mut egui::Ui, label: &str, color: &mut HexColor) {
+    ui.label(label);
+    ui.horizontal(|ui| {
+        egui::widgets::color_picker::color_edit_button_srgba(
+            ui,
+            &mut color.0,
+            egui::color_picker::Alpha::Opaque,
+        );
+        let mut hex = color.to_hex();
+        let response = ui.add(egui::TextEdit::singleline(&mut hex).desired_width(80.0));
+        if response.changed() {
+            if let Some(parsed) = HexColor::from_hex(&hex) {
+                *color = parsed;
+            }
+        }
+    });
+    ui.end_row();
+}
+
+/// Draw color settings for a SurfaceColors (focused/unfocused bg/fg).
+fn draw_surface_colors(ui: &mut egui::Ui, id_salt: &str, colors: &mut crate::settings::SurfaceColors) {
+    let th = crate::theme::theme();
+
+    ui.label(
+        egui::RichText::new(t("settings.appearance.colors.focused_heading"))
+            .strong()
+            .color(th.text),
+    );
+    ui.end_row();
+
+    egui::Grid::new(format!("{}_focused_grid", id_salt))
+        .num_columns(2)
+        .spacing([12.0, 8.0])
+        .show(ui, |ui| {
+            draw_color_row(ui, t("settings.appearance.colors.bg_label"), &mut colors.focused_bg);
+            draw_color_row(ui, t("settings.appearance.colors.fg_label"), &mut colors.focused_fg);
+        });
+
+    ui.add_space(12.0);
+
+    ui.label(
+        egui::RichText::new(t("settings.appearance.colors.unfocused_heading"))
+            .strong()
+            .color(th.text),
+    );
+    ui.end_row();
+
+    egui::Grid::new(format!("{}_unfocused_grid", id_salt))
+        .num_columns(2)
+        .spacing([12.0, 8.0])
+        .show(ui, |ui| {
+            draw_color_row(ui, t("settings.appearance.colors.bg_label"), &mut colors.unfocused_bg);
+            draw_color_row(ui, t("settings.appearance.colors.fg_label"), &mut colors.unfocused_fg);
+        });
+}
+
+/// Appearance > Markdown: color settings.
+fn draw_appearance_markdown(ui: &mut egui::Ui, settings: &mut Settings) {
+    ui.add_space(8.0);
+    draw_surface_colors(ui, "markdown", &mut settings.appearance.markdown_colors);
+}
+
+/// Appearance > Explorer: color settings.
+fn draw_appearance_explorer(ui: &mut egui::Ui, settings: &mut Settings) {
+    ui.add_space(8.0);
+    draw_surface_colors(ui, "explorer", &mut settings.appearance.explorer_colors);
 }
 
 /// Placeholder for sub-tabs not yet populated with settings.
@@ -484,25 +559,10 @@ fn draw_font_preview(
         "\u{30A2}\u{30AB}\u{30B5}\u{30BF}\u{30CA}\u{30CF}\u{30DE}\u{30E9}\u{30E4}\u{30EF}", // アカサタナハマラヤワ
     ];
 
-    let focused_bg = settings.appearance.focused_surface_bg_float();
-    let unfocused_bg = th.terminal_bg;
-    let fg = th.terminal_fg;
-
-    let focused_bg32 = egui::Color32::from_rgb(
-        (focused_bg[0] * 255.0) as u8,
-        (focused_bg[1] * 255.0) as u8,
-        (focused_bg[2] * 255.0) as u8,
-    );
-    let unfocused_bg32 = egui::Color32::from_rgb(
-        (unfocused_bg[0] * 255.0) as u8,
-        (unfocused_bg[1] * 255.0) as u8,
-        (unfocused_bg[2] * 255.0) as u8,
-    );
-    let fg32 = egui::Color32::from_rgb(
-        (fg[0] * 255.0) as u8,
-        (fg[1] * 255.0) as u8,
-        (fg[2] * 255.0) as u8,
-    );
+    let tc = &settings.appearance.terminal_colors;
+    let focused_bg32 = tc.focused_bg.0;
+    let unfocused_bg32 = tc.unfocused_bg.0;
+    let fg32 = tc.focused_fg.0;
 
     let preview_font = egui::FontId::new(font_size, preview_family);
     let line_height = font_size * 1.4;
