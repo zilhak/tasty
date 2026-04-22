@@ -149,7 +149,11 @@ impl MainWindow {
                             .unwrap_or(tasty_terminal::MouseTrackingMode::None);
                         let shift = self.base.modifiers.shift_key();
                         if mouse_tracking == tasty_terminal::MouseTrackingMode::None || shift {
-                            self.start_selection(x, y, &terminal_rect);
+                            if shift {
+                                self.extend_selection(x, y, &terminal_rect);
+                            } else {
+                                self.start_selection(x, y, &terminal_rect);
+                            }
                         }
                     }
                 } else if button_state == ElementState::Released {

@@ -5,6 +5,34 @@ use crate::window::Window;
 use super::MainWindow;
 
 impl MainWindow {
+    /// Extend the current selection (or create one from last click) to the given position.
+    /// Used for Shift+Click range selection.
+    pub(super) fn extend_selection(&mut self, x: f32, y: f32, terminal_rect: &Rect) {
+        if let Some((point, surface_id)) = self.mouse_to_grid(x, y, terminal_rect) {
+            if let Some(sel) = &mut self.text_selection {
+                // Existing selection: keep anchor, move cursor
+                if sel.surface_id == surface_id {
+                    sel.cursor = point;
+                    sel.mode = SelectionMode::Normal;
+                    sel.dragging = true;
+                }
+            } else if let Some((col, abs_row)) = self.last_click_pos {
+                // No selection but have a previous click position: use it as anchor
+                self.text_selection = Some(TextSelection {
+                    anchor: SelectionPoint {
+                        col,
+                        absolute_row: abs_row,
+                    },
+                    cursor: point,
+                    mode: SelectionMode::Normal,
+                    surface_id,
+                    dragging: true,
+                });
+            }
+            self.mark_dirty();
+        }
+    }
+
     /// Start a new text selection from the given pixel position.
     pub(super) fn start_selection(&mut self, x: f32, y: f32, terminal_rect: &Rect) {
         if let Some((point, surface_id)) = self.mouse_to_grid(x, y, terminal_rect) {
