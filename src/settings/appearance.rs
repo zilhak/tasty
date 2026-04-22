@@ -71,7 +71,7 @@ impl SurfaceColors {
     /// Markdown defaults.
     pub fn markdown_default() -> Self {
         Self {
-            focused_bg: HexColor::from_rgb(30, 30, 46),     // #1e1e2e
+            focused_bg: HexColor::from_rgb(0, 0, 0),        // #000000
             focused_fg: HexColor::from_rgb(205, 214, 244),   // #cdd6f4
             unfocused_bg: HexColor::from_rgb(24, 24, 37),    // #181825
             unfocused_fg: HexColor::from_rgb(166, 173, 200), // #a6adc8
@@ -81,7 +81,7 @@ impl SurfaceColors {
     /// Explorer defaults.
     pub fn explorer_default() -> Self {
         Self {
-            focused_bg: HexColor::from_rgb(30, 30, 46),     // #1e1e2e
+            focused_bg: HexColor::from_rgb(0, 0, 0),        // #000000
             focused_fg: HexColor::from_rgb(205, 214, 244),   // #cdd6f4
             unfocused_bg: HexColor::from_rgb(24, 24, 37),    // #181825
             unfocused_fg: HexColor::from_rgb(166, 173, 200), // #a6adc8

@@ -207,7 +207,6 @@ if let Err(e) = self.state.split_surface(SplitDirection::Vertical) {
 - UI 폰트 최대 크기: 14px
 - 보더 두께: 항상 1px
 - 호버: `rgba(255,255,255,0.08)` 오버레이
-- 순수 검정/흰색 사용 금지
 - 텍스트 대비율: 최소 4.5:1
 - 터미널 콘텐츠 애니메이션: 절대 0ms
 

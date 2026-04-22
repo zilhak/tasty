@@ -333,19 +333,19 @@ pub fn presets() -> Vec<ThemePreset> {
             label: "Catppuccin Latte",
             theme: Theme::LATTE,
             terminal_colors: SurfaceColors {
-                focused_bg: HexColor::from_rgb(239, 241, 245),  // #eff1f5
+                focused_bg: HexColor::from_rgb(255, 255, 255),  // #ffffff
                 focused_fg: HexColor::from_rgb(76, 79, 105),    // #4c4f69
                 unfocused_bg: HexColor::from_rgb(230, 233, 239), // #e6e9ef
                 unfocused_fg: HexColor::from_rgb(108, 111, 133), // #6c6f85
             },
             markdown_colors: SurfaceColors {
-                focused_bg: HexColor::from_rgb(239, 241, 245),  // #eff1f5
+                focused_bg: HexColor::from_rgb(255, 255, 255),  // #ffffff
                 focused_fg: HexColor::from_rgb(76, 79, 105),    // #4c4f69
                 unfocused_bg: HexColor::from_rgb(230, 233, 239), // #e6e9ef
                 unfocused_fg: HexColor::from_rgb(108, 111, 133), // #6c6f85
             },
             explorer_colors: SurfaceColors {
-                focused_bg: HexColor::from_rgb(239, 241, 245),  // #eff1f5
+                focused_bg: HexColor::from_rgb(255, 255, 255),  // #ffffff
                 focused_fg: HexColor::from_rgb(76, 79, 105),    // #4c4f69
                 unfocused_bg: HexColor::from_rgb(230, 233, 239), // #e6e9ef
                 unfocused_fg: HexColor::from_rgb(108, 111, 133), // #6c6f85
