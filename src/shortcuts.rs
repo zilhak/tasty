@@ -77,6 +77,8 @@ struct ParsedBinding<'a> {
     ctrl: bool,
     shift: bool,
     alt: bool,
+    /// macOS 전용: Option 키. Windows/Linux에서는 항상 false.
+    option: bool,
     /// 키 토큰 (문자 "+", "-", "a" 또는 네임 "plus", "f1", "tab" 등). 공백/모디파이어 키워드는 거부되어 여기 오지 않는다.
     key: &'a str,
 }
@@ -98,6 +100,7 @@ fn parse_binding(binding: &str) -> Option<ParsedBinding<'_>> {
     let mut ctrl = false;
     let mut shift = false;
     let mut alt = false;
+    let mut option = false;
     let mut rest = binding;
 
     loop {
@@ -111,6 +114,9 @@ fn parse_binding(binding: &str) -> Option<ParsedBinding<'_>> {
         } else if !alt && lower.starts_with("alt+") {
             alt = true;
             rest = &rest[4..];
+        } else if !option && lower.starts_with("option+") {
+            option = true;
+            rest = &rest[7..];
         } else {
             break;
         }
@@ -122,7 +128,7 @@ fn parse_binding(binding: &str) -> Option<ParsedBinding<'_>> {
         return None;
     }
     let rest_lower = rest.to_ascii_lowercase();
-    if matches!(rest_lower.as_str(), "ctrl" | "shift" | "alt") {
+    if matches!(rest_lower.as_str(), "ctrl" | "shift" | "alt" | "option") {
         return None;
     }
 
@@ -130,6 +136,7 @@ fn parse_binding(binding: &str) -> Option<ParsedBinding<'_>> {
         ctrl,
         shift,
         alt,
+        option,
         key: rest,
     })
 }
@@ -168,12 +175,24 @@ fn matches_binding(binding: &str, key: &Key, mods: ModifiersState) -> bool {
     // Check modifiers match exactly.
     // On macOS, "alt" in binding maps to Cmd (super_key) since the physical
     // position of Cmd on macOS keyboards matches Alt on Windows/Linux keyboards.
+    // "option" maps to the macOS Option key (alt_key in winit).
     #[cfg(target_os = "macos")]
     let alt_matches = mods.super_key() == parsed.alt;
     #[cfg(not(target_os = "macos"))]
     let alt_matches = mods.alt_key() == parsed.alt;
 
-    if mods.control_key() != parsed.ctrl || mods.shift_key() != parsed.shift || !alt_matches {
+    // macOS: "option" modifier maps to Option key (alt_key in winit).
+    // On non-macOS, "option" bindings never match (option is always false).
+    #[cfg(target_os = "macos")]
+    let option_matches = mods.alt_key() == parsed.option;
+    #[cfg(not(target_os = "macos"))]
+    let option_matches = !parsed.option; // option binding은 non-macOS에서 항상 불일치
+
+    if mods.control_key() != parsed.ctrl
+        || mods.shift_key() != parsed.shift
+        || !alt_matches
+        || !option_matches
+    {
         return false;
     }
 

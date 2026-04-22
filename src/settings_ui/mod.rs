@@ -3,6 +3,7 @@ mod tabs;
 
 use crate::i18n::t;
 use crate::settings::Settings;
+use crate::ui::popup::{PopupManager, PopupState};
 
 use keybindings_tab::{KeybindingsSubTab, PendingBinding, RecordingSlot, draw_keybindings_tab};
 use tabs::*;
@@ -55,6 +56,11 @@ pub struct SettingsUiState {
     selected_preset: Option<String>,
     /// Pending keybinding assignment waiting for conflict confirmation.
     pending_binding: Option<PendingBinding>,
+    /// Popup manager for settings-window popups (e.g. keybinding conflict).
+    popups: PopupManager,
+    /// 충돌 팝업에서 수락/거부 결과를 전달하는 플래그.
+    conflict_accepted: bool,
+    conflict_cancelled: bool,
     /// Cached system font family list.
     pub font_families: Option<Vec<String>>,
     /// Font family filter text for search.
@@ -67,6 +73,15 @@ pub struct SettingsUiState {
 
 impl SettingsUiState {
     pub fn new() -> Self {
+        let mut popups = PopupManager::new();
+        popups.register(
+            PopupState::new(
+                "keybinding_conflict",
+                t("settings.keybindings.conflict_title"),
+                egui::vec2(340.0, 120.0),
+            )
+            .with_close_on_outside_click(false),
+        );
         Self {
             active_tab: SettingsTab::General,
             draft: None,
@@ -76,6 +91,9 @@ impl SettingsUiState {
             misc_sub_tab: MiscSubTab::Tastyrc,
             selected_preset: None,
             pending_binding: None,
+            popups,
+            conflict_accepted: false,
+            conflict_cancelled: false,
             font_families: None,
             font_filter: String::new(),
             preview_font_loaded: String::new(),
@@ -196,9 +214,99 @@ pub fn draw_settings_panel(
                     ),
                 });
 
+            // 충돌 감지 시 팝업 열기
+            if ui_state.pending_binding.is_some()
+                && !ui_state.popups.is_open("keybinding_conflict")
+            {
+                ui_state.popups.open_centered_focused("keybinding_conflict");
+            }
+
+            // 충돌 팝업에서 수락/거부 처리
+            if ui_state.conflict_accepted {
+                ui_state.conflict_accepted = false;
+                if let Some(pending) = ui_state.pending_binding.take() {
+                    draft
+                        .keybindings
+                        .remove_binding(&pending.conflicting_field, pending.conflicting_idx);
+                    draft.keybindings.replace_binding_at(
+                        &pending.target_field,
+                        pending.target_idx,
+                        pending.combo,
+                    );
+                }
+                ui_state.popups.close("keybinding_conflict");
+            }
+            if ui_state.conflict_cancelled {
+                ui_state.conflict_cancelled = false;
+                ui_state.pending_binding = None;
+                ui_state.popups.close("keybinding_conflict");
+            }
+
             ui_state.draft = Some(draft);
         }
     });
+
+    // Draw popups (충돌 확인 등)
+    let popup_result = {
+        let pending = ui_state.pending_binding.clone();
+        let accepted = &mut ui_state.conflict_accepted;
+        let cancelled = &mut ui_state.conflict_cancelled;
+        ui_state.popups.draw(
+            ctx,
+            &mut |id, ui| {
+                if id == "keybinding_conflict" {
+                    if let Some(pending) = &pending {
+                        let conflict_label_raw =
+                            crate::settings::KeybindingSettings::label_key_for(
+                                &pending.conflicting_field,
+                            )
+                            .map(t)
+                            .unwrap_or(pending.conflicting_field.as_str());
+                        let conflict_label =
+                            conflict_label_raw.trim_end_matches(':').trim().to_string();
+                        let combo_display =
+                            crate::settings::KeybindingSettings::format_display(&pending.combo);
+
+                        ui.label(crate::i18n::t_fmt2(
+                            "settings.keybindings.conflict_message",
+                            &combo_display,
+                            &conflict_label,
+                        ));
+                        ui.add_space(8.0);
+                        ui.horizontal(|ui| {
+                            if ui.button(t("button.cancel")).clicked() {
+                                *cancelled = true;
+                            }
+                            if ui
+                                .button(t("settings.keybindings.conflict_apply"))
+                                .clicked()
+                            {
+                                *accepted = true;
+                            }
+                        });
+                    }
+                }
+            },
+            None,
+        )
+    };
+
+    // X 버튼으로 충돌 팝업이 닫힌 경우 pending_binding 정리
+    if popup_result.closed.contains(&"keybinding_conflict") {
+        ui_state.pending_binding = None;
+    }
+
+    // 키보드로 충돌 팝업 수락/거부
+    if ui_state.popups.is_open("keybinding_conflict") {
+        ctx.input(|i| {
+            if i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Y) {
+                ui_state.conflict_accepted = true;
+            }
+            if i.key_pressed(egui::Key::Escape) || i.key_pressed(egui::Key::N) {
+                ui_state.conflict_cancelled = true;
+            }
+        });
+    }
 
     result
 }

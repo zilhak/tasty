@@ -341,64 +341,6 @@ pub fn draw_keybindings_tab(
         }); // end vertical
     }); // end horizontal_top
 
-    // Keybinding conflict confirmation modal
-    if let Some(pending) = pending_binding.clone() {
-        let conflict_label_raw = KeybindingSettings::label_key_for(&pending.conflicting_field)
-            .map(t)
-            .unwrap_or(pending.conflicting_field.as_str());
-        let conflict_label = conflict_label_raw.trim_end_matches(':').trim().to_string();
-        let combo_display = KeybindingSettings::format_display(&pending.combo);
-
-        let mut accept = false;
-        let mut cancel = false;
-        ui.ctx().input(|i| {
-            if i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Y) {
-                accept = true;
-            }
-            if i.key_pressed(egui::Key::Escape) || i.key_pressed(egui::Key::N) {
-                cancel = true;
-            }
-        });
-
-        egui::Window::new(t("settings.keybindings.conflict_title"))
-            .collapsible(false)
-            .resizable(false)
-            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-            .show(ui.ctx(), |ui| {
-                ui.label(crate::i18n::t_fmt2(
-                    "settings.keybindings.conflict_message",
-                    &combo_display,
-                    &conflict_label,
-                ));
-                ui.add_space(8.0);
-                ui.horizontal(|ui| {
-                    if ui.button(t("button.cancel")).clicked() {
-                        cancel = true;
-                    }
-                    if ui
-                        .button(t("settings.keybindings.conflict_apply"))
-                        .clicked()
-                    {
-                        accept = true;
-                    }
-                });
-            });
-
-        if accept {
-            // 충돌하는 쪽의 해당 바인딩만 제거 후, 대상 필드에 새 바인딩을 기록한다.
-            settings
-                .keybindings
-                .remove_binding(&pending.conflicting_field, pending.conflicting_idx);
-            settings.keybindings.replace_binding_at(
-                &pending.target_field,
-                pending.target_idx,
-                pending.combo.clone(),
-            );
-            *pending_binding = None;
-        } else if cancel {
-            *pending_binding = None;
-        }
-    }
 }
 
 fn modifier_display(modifier: &str) -> &str {
@@ -723,6 +665,7 @@ fn capture_key_combo(ctx: &egui::Context, active: bool) -> KeyCapture {
                     if modifiers.ctrl {
                         parts.push("ctrl");
                     }
+                    // macOS: Command(⌘) = "alt" (물리적 위치가 Win/Linux Alt와 동일)
                     #[cfg(target_os = "macos")]
                     if modifiers.mac_cmd {
                         parts.push("alt");
@@ -730,6 +673,11 @@ fn capture_key_combo(ctx: &egui::Context, active: bool) -> KeyCapture {
                     #[cfg(not(target_os = "macos"))]
                     if modifiers.alt {
                         parts.push("alt");
+                    }
+                    // macOS: Option 키 = "option"
+                    #[cfg(target_os = "macos")]
+                    if modifiers.alt {
+                        parts.push("option");
                     }
                     if modifiers.shift {
                         parts.push("shift");

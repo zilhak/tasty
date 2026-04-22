@@ -430,7 +430,7 @@ impl KeybindingSettings {
 
         let mut parts: Vec<String> = Vec::new();
         let mut rest = binding;
-        let (mut ctrl, mut shift, mut alt) = (false, false, false);
+        let (mut ctrl, mut shift, mut alt, mut option) = (false, false, false, false);
         loop {
             let lower = rest.to_ascii_lowercase();
             if !ctrl && lower.starts_with("ctrl+") {
@@ -445,6 +445,10 @@ impl KeybindingSettings {
                 alt = true;
                 parts.push("Alt".into());
                 rest = &rest[4..];
+            } else if !option && lower.starts_with("option+") {
+                option = true;
+                parts.push("Option".into());
+                rest = &rest[7..];
             } else {
                 break;
             }
