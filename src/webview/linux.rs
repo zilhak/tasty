@@ -4,9 +4,12 @@
 //! Creates an X11 child window inside the parent, then hosts a GTK window
 //! with a WebKitGTK WebView inside it.
 
+use gtk::glib::Cast;
 use gtk::prelude::*;
 use webkit2gtk::{WebView, WebViewExt};
-use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+use winit::raw_window_handle::{
+    HasDisplayHandle, HasWindowHandle, RawDisplayHandle, RawWindowHandle,
+};
 
 use super::WebViewBounds;
 
@@ -20,20 +23,26 @@ pub struct PlatformWebView {
 
 impl PlatformWebView {
     pub fn new(
-        window: &impl HasWindowHandle,
+        window: &(impl HasWindowHandle + HasDisplayHandle),
         bounds: WebViewBounds,
         scale_factor: f64,
     ) -> Result<Self, String> {
-        let (parent_xid, x11_display_ptr) =
-            match window.window_handle().map_err(|e| e.to_string())?.as_raw() {
-                RawWindowHandle::Xlib(w) => (
-                    w.window,
-                    w.display
-                        .map(|d| d.as_ptr())
-                        .unwrap_or(std::ptr::null_mut()),
-                ),
-                _ => return Err("Not an X11 window (Wayland is not supported)".to_string()),
-            };
+        let parent_xid = match window.window_handle().map_err(|e| e.to_string())?.as_raw() {
+            RawWindowHandle::Xlib(w) => w.window,
+            _ => return Err("Not an X11 window (Wayland is not supported)".to_string()),
+        };
+
+        let x11_display_ptr = match window
+            .display_handle()
+            .map_err(|e| e.to_string())?
+            .as_raw()
+        {
+            RawDisplayHandle::Xlib(d) => d
+                .display
+                .map(|p| p.as_ptr())
+                .unwrap_or(std::ptr::null_mut()),
+            _ => std::ptr::null_mut(),
+        };
 
         // Initialize GTK if not already initialized
         if !gtk::is_initialized() {
@@ -75,16 +84,12 @@ impl PlatformWebView {
         // Create GDK window from X11 window
         let gdk_display = gtk::gdk::Display::default().ok_or("No GDK display")?;
 
-        let gdk_window = unsafe {
-            use gdkx11::ffi::gdk_x11_window_foreign_new_for_display;
-            use gtk::glib::translate::{ToGlibPtr, from_glib_full};
-            let raw_display = gdkx11::X11Display::from(gdk_display.clone());
-            let gdk_win: gtk::gdk::Window = from_glib_full(gdk_x11_window_foreign_new_for_display(
-                raw_display.to_glib_none().0 as _,
-                x11_window,
-            ));
-            gdk_win
-        };
+        let x11_gdk_display: gdkx11::X11Display = gdk_display
+            .downcast()
+            .map_err(|_| "GDK display is not X11")?;
+
+        let gdk_window: gtk::gdk::Window =
+            gdkx11::X11Window::foreign_new_for_display(&x11_gdk_display, x11_window).upcast();
 
         // Create GTK window and bind to the GDK window
         let gtk_window = gtk::Window::new(gtk::WindowType::Toplevel);
