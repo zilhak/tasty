@@ -147,6 +147,15 @@ struct App {
     /// Tray menu item IDs for event matching (Windows only).
     #[cfg(windows)]
     tray_menu_ids: Option<system_tray::TrayMenuIds>,
+    /// Modal shake animation state.
+    modal_shake: Option<ModalShake>,
+}
+
+/// State for the modal window shake animation.
+struct ModalShake {
+    start: std::time::Instant,
+    /// Original window position before shake began.
+    origin: winit::dpi::PhysicalPosition<i32>,
 }
 
 use winit::window::WindowId;
@@ -165,6 +174,7 @@ impl App {
             tray_icon: None,
             #[cfg(windows)]
             tray_menu_ids: None,
+            modal_shake: None,
         }
     }
 
