@@ -20,18 +20,62 @@ pub enum ClipboardSource {
     Internal,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ClipboardContent {
+    Text(String),
+    Image(ImageData),
+}
+
+/// PNG-compressed image data for clipboard history.
+#[derive(Debug, Clone)]
+pub struct ImageData {
+    /// PNG-encoded bytes.
+    pub png_bytes: Vec<u8>,
+    pub width: u32,
+    pub height: u32,
+}
+
+impl PartialEq for ImageData {
+    fn eq(&self, other: &Self) -> bool {
+        self.width == other.width && self.height == other.height && self.png_bytes == other.png_bytes
+    }
+}
+impl Eq for ImageData {}
+
 #[derive(Debug, Clone)]
 pub struct ClipboardEntry {
-    pub text: String,
+    pub content: ClipboardContent,
     pub captured_at: Instant,
     pub source: ClipboardSource,
+}
+
+impl ClipboardEntry {
+    /// Display text for the entry (text content or image placeholder).
+    pub fn display_text(&self) -> String {
+        match &self.content {
+            ClipboardContent::Text(s) => s.clone(),
+            ClipboardContent::Image(img) => format!("[Image {}×{}]", img.width, img.height),
+        }
+    }
+
+    /// The raw text content, if any.
+    pub fn text(&self) -> Option<&str> {
+        match &self.content {
+            ClipboardContent::Text(s) => Some(s),
+            ClipboardContent::Image(_) => None,
+        }
+    }
+
+    pub fn is_image(&self) -> bool {
+        matches!(self.content, ClipboardContent::Image(_))
+    }
 }
 
 pub struct ClipboardHistory {
     entries: VecDeque<ClipboardEntry>,
     max_entries: usize,
-    /// 마지막으로 관찰한 값. 같은 값이 연속 들어오면 무시.
-    last_seen: Option<String>,
+    /// 마지막으로 관찰한 콘텐츠. 같은 값이 연속 들어오면 무시.
+    last_seen: Option<ClipboardContent>,
 }
 
 impl ClipboardHistory {
@@ -55,18 +99,28 @@ impl ClipboardHistory {
         self.entries.is_empty()
     }
 
-    /// 새 값을 앞에 push. `last_seen`과 같으면 추가하지 않고 false 반환.
-    /// 빈 문자열도 무시.
+    /// Record text content. Skips empty strings and consecutive duplicates.
     pub fn record(&mut self, text: String, source: ClipboardSource) -> bool {
         if text.is_empty() {
             return false;
         }
-        if self.last_seen.as_deref() == Some(&text) {
+        let content = ClipboardContent::Text(text);
+        self.record_content(content, source)
+    }
+
+    /// Record image content. Skips consecutive duplicates (same dimensions + bytes).
+    pub fn record_image(&mut self, data: ImageData, source: ClipboardSource) -> bool {
+        let content = ClipboardContent::Image(data);
+        self.record_content(content, source)
+    }
+
+    fn record_content(&mut self, content: ClipboardContent, source: ClipboardSource) -> bool {
+        if self.last_seen.as_ref() == Some(&content) {
             return false;
         }
-        self.last_seen = Some(text.clone());
+        self.last_seen = Some(content.clone());
         self.entries.push_front(ClipboardEntry {
-            text,
+            content,
             captured_at: Instant::now(),
             source,
         });
@@ -86,9 +140,8 @@ impl ClipboardHistory {
     /// Remove the entry at the given index. Out-of-range는 no-op.
     pub fn remove_at(&mut self, index: usize) -> Option<ClipboardEntry> {
         let removed = self.entries.remove(index);
-        // 0번 항목을 지우면 last_seen과 불일치할 수 있음 — 다음 같은 값 re-record 허용.
         if index == 0 {
-            self.last_seen = self.entries.front().map(|e| e.text.clone());
+            self.last_seen = self.entries.front().map(|e| e.content.clone());
         }
         removed
     }
@@ -120,7 +173,7 @@ mod tests {
         let mut h = ClipboardHistory::new(10);
         assert!(h.record("hello".to_string(), ClipboardSource::System));
         assert_eq!(h.len(), 1);
-        assert_eq!(h.get(0).unwrap().text, "hello");
+        assert_eq!(h.get(0).unwrap().display_text(), "hello");
         assert_eq!(h.get(0).unwrap().source, ClipboardSource::System);
     }
 
@@ -140,9 +193,9 @@ mod tests {
         h.record("b".to_string(), ClipboardSource::System);
         h.record("a".to_string(), ClipboardSource::System);
         assert_eq!(h.len(), 3);
-        assert_eq!(h.get(0).unwrap().text, "a");
-        assert_eq!(h.get(1).unwrap().text, "b");
-        assert_eq!(h.get(2).unwrap().text, "a");
+        assert_eq!(h.get(0).unwrap().display_text(), "a");
+        assert_eq!(h.get(1).unwrap().display_text(), "b");
+        assert_eq!(h.get(2).unwrap().display_text(), "a");
     }
 
     #[test]
@@ -160,8 +213,8 @@ mod tests {
         }
         assert_eq!(h.len(), 3);
         // Newest first
-        assert_eq!(h.get(0).unwrap().text, "entry4");
-        assert_eq!(h.get(2).unwrap().text, "entry2");
+        assert_eq!(h.get(0).unwrap().display_text(), "entry4");
+        assert_eq!(h.get(2).unwrap().display_text(), "entry2");
     }
 
     #[test]
@@ -182,8 +235,8 @@ mod tests {
         }
         h.set_max(2);
         assert_eq!(h.len(), 2);
-        assert_eq!(h.get(0).unwrap().text, "e4");
-        assert_eq!(h.get(1).unwrap().text, "e3");
+        assert_eq!(h.get(0).unwrap().display_text(), "e4");
+        assert_eq!(h.get(1).unwrap().display_text(), "e3");
     }
 
     #[test]
@@ -193,6 +246,6 @@ mod tests {
         h.record("a".to_string(), ClipboardSource::System);
         h.record("b".to_string(), ClipboardSource::System);
         assert_eq!(h.len(), 1);
-        assert_eq!(h.get(0).unwrap().text, "b");
+        assert_eq!(h.get(0).unwrap().display_text(), "b");
     }
 }

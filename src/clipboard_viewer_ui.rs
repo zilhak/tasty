@@ -85,19 +85,55 @@ pub fn draw_clipboard_viewer_surface(
 
 /// 시스템 클립보드에 해당 index의 항목을 복사하고 `Internal`로 재기록한다.
 pub fn paste_from_history(state: &mut AppState, filtered_orig_index: usize) {
-    let text = match state.engine.clipboard_history.get(filtered_orig_index) {
-        Some(e) => e.text.clone(),
+    use crate::clipboard_history::ClipboardContent;
+
+    let content = match state.engine.clipboard_history.get(filtered_orig_index) {
+        Some(e) => e.content.clone(),
         None => return,
     };
-    match arboard::Clipboard::new().and_then(|mut cb| cb.set_text(text.clone())) {
-        Ok(()) => {
-            state.engine.record_internal_copy(&text);
-            state
-                .toasts
-                .push_info(t("toast.copied"), crate::ui::ToastScope::Window);
+    match content {
+        ClipboardContent::Text(text) => {
+            match arboard::Clipboard::new().and_then(|mut cb| cb.set_text(text.clone())) {
+                Ok(()) => {
+                    state.engine.record_internal_copy(&text);
+                    state
+                        .toasts
+                        .push_info(t("toast.copied"), crate::ui::ToastScope::Window);
+                }
+                Err(e) => {
+                    tracing::warn!("clipboard set_text failed: {e}");
+                }
+            }
         }
-        Err(e) => {
-            tracing::warn!("clipboard set_text failed: {e}");
+        ClipboardContent::Image(img) => {
+            // Decode PNG back to RGBA for arboard
+            match image::load_from_memory_with_format(&img.png_bytes, image::ImageFormat::Png) {
+                Ok(dyn_img) => {
+                    let rgba = dyn_img.to_rgba8();
+                    let arboard_img = arboard::ImageData {
+                        width: rgba.width() as usize,
+                        height: rgba.height() as usize,
+                        bytes: rgba.into_raw().into(),
+                    };
+                    match arboard::Clipboard::new().and_then(|mut cb| cb.set_image(arboard_img)) {
+                        Ok(()) => {
+                            state.engine.clipboard_history.record_image(
+                                img,
+                                crate::clipboard_history::ClipboardSource::Internal,
+                            );
+                            state
+                                .toasts
+                                .push_info(t("toast.copied"), crate::ui::ToastScope::Window);
+                        }
+                        Err(e) => {
+                            tracing::warn!("clipboard set_image failed: {e}");
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to decode stored PNG: {e}");
+                }
+            }
         }
     }
 }
@@ -142,7 +178,7 @@ fn draw_inner(
         .enumerate()
         .map(|(i, e)| Row {
             orig: i,
-            text: e.text.clone(),
+            text: e.display_text(),
             source: e.source,
             captured_at: e.captured_at,
         })
@@ -384,7 +420,8 @@ pub fn filter_entries<'a>(
         .iter()
         .enumerate()
         .filter(|(_, e)| {
-            let capped: String = e.text.chars().take(SEARCH_MATCH_MAX_CHARS).collect();
+            let display = e.display_text();
+            let capped: String = display.chars().take(SEARCH_MATCH_MAX_CHARS).collect();
             capped.to_lowercase().contains(&q)
         })
         .map(|(i, e)| (i, *e))
@@ -399,7 +436,7 @@ mod tests {
 
     fn make_entry(s: &str) -> ClipboardEntry {
         ClipboardEntry {
-            text: s.to_string(),
+            content: crate::clipboard_history::ClipboardContent::Text(s.to_string()),
             captured_at: Instant::now(),
             source: ClipboardSource::System,
         }
@@ -423,11 +460,11 @@ mod tests {
         let v = vec![&a, &b];
         let result = filter_entries(&v, "world");
         assert_eq!(result.len(), 1);
-        assert_eq!(result[0].1.text, "Hello World");
+        assert_eq!(result[0].1.display_text(), "Hello World");
 
         let result = filter_entries(&v, "RuSt");
         assert_eq!(result.len(), 1);
-        assert_eq!(result[0].1.text, "RUST");
+        assert_eq!(result[0].1.display_text(), "RUST");
     }
 
     #[test]

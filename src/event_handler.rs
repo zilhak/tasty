@@ -471,39 +471,47 @@ impl App {
             return;
         };
 
-        // Try text first, then fall back to image placeholder.
-        let entry_text = if let Ok(text) = cb.get_text() {
+        // Try text first, then fall back to image.
+        enum ClipboardPoll {
+            Text(String),
+            Image(crate::clipboard_history::ImageData),
+        }
+
+        let polled = if let Ok(text) = cb.get_text() {
             if text.is_empty() {
                 return;
             }
-            text
+            ClipboardPoll::Text(text)
         } else if let Ok(img) = cb.get_image() {
-            // Don't store image data — just record a placeholder with dimensions.
-            format!("[Image {}×{}]", img.width, img.height)
+            match encode_clipboard_image(&img) {
+                Some(data) => ClipboardPoll::Image(data),
+                None => return,
+            }
         } else {
             return;
         };
 
-        for w in self.windows.values_mut() {
-            let Some(main) = w.as_main_mut() else {
-                continue;
-            };
-            if !main.state.engine.settings.clipboard.history_enabled {
-                continue;
-            }
-            main.state.engine.clipboard_history.record(
-                entry_text.clone(),
-                crate::clipboard_history::ClipboardSource::System,
-            );
-        }
-        for state in &mut self.parked_states {
-            if !state.engine.settings.clipboard.history_enabled {
+        let source = crate::clipboard_history::ClipboardSource::System;
+        // Record into all windows and parked states
+        let all_engines: Vec<&mut crate::engine_state::EngineState> = self
+            .windows
+            .values_mut()
+            .filter_map(|w| w.as_main_mut())
+            .map(|m| &mut m.state.engine)
+            .chain(self.parked_states.iter_mut().map(|s| &mut s.engine))
+            .collect();
+        for engine in all_engines {
+            if !engine.settings.clipboard.history_enabled {
                 continue;
             }
-            state.engine.clipboard_history.record(
-                entry_text.clone(),
-                crate::clipboard_history::ClipboardSource::System,
-            );
+            match &polled {
+                ClipboardPoll::Text(text) => {
+                    engine.clipboard_history.record(text.clone(), source);
+                }
+                ClipboardPoll::Image(data) => {
+                    engine.clipboard_history.record_image(data.clone(), source);
+                }
+            }
         }
     }
 
@@ -592,4 +600,28 @@ impl App {
         }
         self.open_modal(Box::new(modal), window_id);
     }
+}
+
+/// Encode arboard image data to PNG for clipboard history storage.
+fn encode_clipboard_image(
+    img: &arboard::ImageData<'_>,
+) -> Option<crate::clipboard_history::ImageData> {
+    use image::ImageEncoder;
+    let w = img.width as u32;
+    let h = img.height as u32;
+    let mut png_buf = Vec::new();
+    let encoder = image::codecs::png::PngEncoder::new_with_quality(
+        &mut png_buf,
+        image::codecs::png::CompressionType::Fast,
+        image::codecs::png::FilterType::Sub,
+    );
+    if let Err(e) = encoder.write_image(&img.bytes, w, h, image::ExtendedColorType::Rgba8) {
+        tracing::warn!("Failed to encode clipboard image to PNG: {e}");
+        return None;
+    }
+    Some(crate::clipboard_history::ImageData {
+        png_bytes: png_buf,
+        width: w,
+        height: h,
+    })
 }

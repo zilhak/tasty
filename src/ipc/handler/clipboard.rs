@@ -31,7 +31,8 @@ pub fn handle_list(state: &AppState, id: Value, params: &Value) -> JsonRpcRespon
         .map(|(i, e)| {
             json!({
                 "index": i,
-                "text": e.text,
+                "text": e.display_text(),
+                "is_image": e.is_image(),
                 "source": source_str(e.source),
                 "age_ms": e.captured_at.elapsed().as_millis() as u64,
             })
@@ -50,7 +51,8 @@ pub fn handle_get(state: &AppState, id: Value, params: &Value) -> JsonRpcRespons
             id,
             json!({
                 "index": idx,
-                "text": e.text,
+                "text": e.display_text(),
+                "is_image": e.is_image(),
                 "source": source_str(e.source),
                 "age_ms": e.captured_at.elapsed().as_millis() as u64,
             }),
@@ -60,20 +62,56 @@ pub fn handle_get(state: &AppState, id: Value, params: &Value) -> JsonRpcRespons
 }
 
 pub fn handle_paste(state: &mut AppState, id: Value, params: &Value) -> JsonRpcResponse {
+    use crate::clipboard_history::ClipboardContent;
+
     let idx = match params.get("index").and_then(|v| v.as_u64()) {
         Some(n) => n as usize,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'index'"),
     };
-    let text = match state.engine.clipboard_history.get(idx) {
-        Some(e) => e.text.clone(),
+    let content = match state.engine.clipboard_history.get(idx) {
+        Some(e) => e.content.clone(),
         None => return JsonRpcResponse::invalid_params(id, format!("Index {idx} out of range")),
     };
-    match arboard::Clipboard::new().and_then(|mut cb| cb.set_text(text.clone())) {
-        Ok(()) => {
-            state.engine.record_internal_copy(&text);
-            JsonRpcResponse::success(id, json!({ "ok": true, "index": idx }))
+    match content {
+        ClipboardContent::Text(text) => {
+            match arboard::Clipboard::new().and_then(|mut cb| cb.set_text(text.clone())) {
+                Ok(()) => {
+                    state.engine.record_internal_copy(&text);
+                    JsonRpcResponse::success(id, json!({ "ok": true, "index": idx }))
+                }
+                Err(e) => {
+                    JsonRpcResponse::internal_error(id, format!("clipboard set_text failed: {e}"))
+                }
+            }
         }
-        Err(e) => JsonRpcResponse::internal_error(id, format!("clipboard set_text failed: {e}")),
+        ClipboardContent::Image(img) => {
+            match image::load_from_memory_with_format(&img.png_bytes, image::ImageFormat::Png) {
+                Ok(dyn_img) => {
+                    let rgba = dyn_img.to_rgba8();
+                    let arboard_img = arboard::ImageData {
+                        width: rgba.width() as usize,
+                        height: rgba.height() as usize,
+                        bytes: rgba.into_raw().into(),
+                    };
+                    match arboard::Clipboard::new().and_then(|mut cb| cb.set_image(arboard_img)) {
+                        Ok(()) => {
+                            state.engine.clipboard_history.record_image(
+                                img,
+                                crate::clipboard_history::ClipboardSource::Internal,
+                            );
+                            JsonRpcResponse::success(id, json!({ "ok": true, "index": idx }))
+                        }
+                        Err(e) => JsonRpcResponse::internal_error(
+                            id,
+                            format!("clipboard set_image failed: {e}"),
+                        ),
+                    }
+                }
+                Err(e) => {
+                    JsonRpcResponse::internal_error(id, format!("Failed to decode PNG: {e}"))
+                }
+            }
+        }
     }
 }
 
