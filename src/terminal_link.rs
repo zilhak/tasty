@@ -8,6 +8,7 @@
 //! 링크 좌표는 표시 컬럼(display column) 단위이며 와이드 문자는 2칸을 차지한다.
 //! scrollback 라인과 screen 라인 양쪽을 지원한다.
 
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use regex::Regex;
@@ -44,6 +45,39 @@ fn url_regex() -> &'static Regex {
     })
 }
 
+/// 스키마 없는 경로 후보를 찾는 regex.
+///
+/// - Unix 절대: `/foo/bar`
+/// - Windows 절대: `C:\...` 또는 `C:/...`
+/// - 상대: `./foo`, `../foo`
+///
+/// 후보일 뿐이며 실제 파일 존재 여부는 별도로 검증한다.
+fn path_regex() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        // 경로 문자: 영숫자, -, _, ., /, \, :, ~, (, ), 공백 제외. 한글 등 non-ASCII는 제외.
+        // 단어 경계(앞)에서 시작해 공백/괄호/따옴표까지.
+        Regex::new(
+            r#"(?x)
+            (?:
+              (?:^|[\s"'(\[<])                              # 앞 경계(시작/공백/구두점)
+              (?P<rel>\.{1,2}/[A-Za-z0-9._\-/]+)            # ./foo, ../foo/bar
+            )
+            |
+            (?:
+              (?:^|[\s"'(\[<])
+              (?P<unix>/[A-Za-z0-9._\-/]+)                  # /foo/bar
+            )
+            |
+            (?:
+              \b(?P<win>[A-Za-z]:[\\/][A-Za-z0-9._\-\\/]+)  # C:\foo, C:/foo
+            )
+            "#,
+        )
+        .expect("path regex compile")
+    })
+}
+
 /// URL 뒤에 딸려 붙기 쉬운 구두점을 잘라낸다.
 /// 예: "see https://a.com/x." → "https://a.com/x"
 fn trim_trailing_punct(s: &str) -> &str {
@@ -69,6 +103,7 @@ fn trim_trailing_punct(s: &str) -> &str {
 pub fn detect_scrollback_line(
     line: &[(String, CellAttributes)],
     absolute_row: usize,
+    cwd: Option<&Path>,
 ) -> Vec<LinkSpan> {
     // 1) OSC 8 hyperlink 수집 (연속된 동일 uri 셀을 하나로 묶음).
     let mut result = Vec::new();
@@ -119,6 +154,8 @@ pub fn detect_scrollback_line(
 
     // 2) 일반 텍스트에서 URL regex 검출. OSC8 범위와 겹치지 않는 경우만 추가.
     append_regex_matches(&text, &col_of_byte, absolute_row, &mut result);
+    // 3) 스키마 없는 경로 (CWD 기준 exists 검증).
+    append_path_matches(&text, &col_of_byte, absolute_row, cwd, &mut result);
     result
 }
 
@@ -126,6 +163,7 @@ pub fn detect_scrollback_line(
 pub fn detect_screen_line(
     line: &termwiz::surface::line::Line,
     absolute_row: usize,
+    cwd: Option<&Path>,
 ) -> Vec<LinkSpan> {
     let mut result = Vec::new();
     let mut text = String::new();
@@ -174,6 +212,7 @@ pub fn detect_screen_line(
     }
 
     append_regex_matches(&text, &col_of_byte, absolute_row, &mut result);
+    append_path_matches(&text, &col_of_byte, absolute_row, cwd, &mut result);
     result
 }
 
@@ -232,15 +271,17 @@ pub fn link_at(
     absolute_row: usize,
 ) -> Option<LinkSpan> {
     let scrollback_len = terminal.scrollback_len();
+    let cwd = terminal.get_cwd();
+    let cwd_ref = cwd.as_deref();
     let spans = if absolute_row < scrollback_len {
         let line = terminal.scrollback_line_owned(absolute_row)?;
-        detect_scrollback_line(&line, absolute_row)
+        detect_scrollback_line(&line, absolute_row, cwd_ref)
     } else {
         let screen_row = absolute_row - scrollback_len;
         let surface = terminal.surface();
         let lines = surface.screen_lines();
         let line = lines.get(screen_row)?;
-        detect_screen_line(line, absolute_row)
+        detect_screen_line(line, absolute_row, cwd_ref)
     };
     spans.into_iter().find(|s| s.contains(col, absolute_row))
 }
@@ -262,6 +303,85 @@ impl LinkHighlight {
     }
 }
 
+/// 경로 후보가 실제로 존재하는 파일/디렉토리인지 확인하고, 존재하면
+/// `file://` URI 형식의 String으로 변환해서 반환.
+/// - 절대경로면 그대로 사용.
+/// - 상대경로면 `cwd` 기준으로 해석.
+fn resolve_path(candidate: &str, cwd: Option<&Path>) -> Option<String> {
+    let p = Path::new(candidate);
+    let abs: PathBuf = if p.is_absolute() {
+        p.to_path_buf()
+    } else {
+        cwd?.join(p)
+    };
+    if !abs.exists() {
+        return None;
+    }
+    // 정규화 (심볼릭/`.` `..`): canonicalize는 실패 가능하고 Windows에서 UNC 접두사를
+    // 붙일 수 있어, 존재 확인만 하고 원본 abs 경로를 file:// URI로 변환.
+    Some(path_to_file_uri(&abs))
+}
+
+/// 절대 경로를 `file://` URI로 변환. Windows 백슬래시는 `/`로 치환.
+fn path_to_file_uri(abs: &Path) -> String {
+    let s = abs.to_string_lossy().replace('\\', "/");
+    if s.starts_with('/') {
+        format!("file://{s}")
+    } else {
+        // Windows 드라이브 문자 경로: `C:/...` → `file:///C:/...`
+        format!("file:///{s}")
+    }
+}
+
+/// 경로 regex 매치를 돌면서 존재하는 경로만 LinkSpan으로 추가.
+fn append_path_matches(
+    text: &str,
+    col_of_byte: &[usize],
+    absolute_row: usize,
+    cwd: Option<&Path>,
+    out: &mut Vec<LinkSpan>,
+) {
+    for caps in path_regex().captures_iter(text) {
+        let m = caps
+            .name("rel")
+            .or_else(|| caps.name("unix"))
+            .or_else(|| caps.name("win"));
+        let Some(m) = m else { continue };
+        let raw = m.as_str();
+        let trimmed = trim_trailing_punct(raw);
+        if trimmed.is_empty() {
+            continue;
+        }
+        let Some(uri) = resolve_path(trimmed, cwd) else {
+            continue;
+        };
+        let start_byte = m.start();
+        let end_byte = start_byte + trimmed.len();
+        let Some(&start_col) = col_of_byte.get(start_byte) else {
+            continue;
+        };
+        let last_byte = end_byte.saturating_sub(1);
+        let Some(&last_start_col) = col_of_byte.get(last_byte) else {
+            continue;
+        };
+        let end_ch = text[..end_byte].chars().next_back().unwrap_or(' ');
+        let end_col = last_start_col + unicode_width(end_ch).saturating_sub(1);
+        let overlap = out.iter().any(|s| {
+            s.absolute_row == absolute_row
+                && !(end_col < s.start_col || start_col > s.end_col)
+        });
+        if overlap {
+            continue;
+        }
+        out.push(LinkSpan {
+            start_col,
+            end_col,
+            uri,
+            absolute_row,
+        });
+    }
+}
+
 /// URI를 기본 브라우저/연결 프로그램으로 연다. 크로스 플랫폼.
 /// 성공하면 true, 실패하면 `tracing::warn!`을 남기고 false.
 pub fn open_uri(uri: &str) -> bool {
@@ -277,6 +397,47 @@ pub fn open_uri(uri: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn path_regex_matches_common_forms() {
+        let re = path_regex();
+        let cases = [
+            ("open ./src/main.rs now", "./src/main.rs"),
+            ("see /etc/passwd", "/etc/passwd"),
+            ("at ../foo/bar", "../foo/bar"),
+            ("C:\\Users\\a.txt file", "C:\\Users\\a.txt"),
+            ("C:/Users/a.txt yay", "C:/Users/a.txt"),
+        ];
+        for (input, expected) in cases {
+            let caps = re.captures(input).unwrap_or_else(|| panic!("no match: {input}"));
+            let m = caps
+                .name("rel")
+                .or_else(|| caps.name("unix"))
+                .or_else(|| caps.name("win"))
+                .unwrap();
+            assert_eq!(m.as_str(), expected, "input: {input}");
+        }
+    }
+
+    #[test]
+    fn path_to_file_uri_forms() {
+        assert_eq!(
+            path_to_file_uri(std::path::Path::new("/home/user/a.txt")),
+            "file:///home/user/a.txt"
+        );
+        assert_eq!(
+            path_to_file_uri(std::path::Path::new("C:\\Users\\a.txt")),
+            "file:///C:/Users/a.txt"
+        );
+    }
+
+    #[test]
+    fn resolve_path_rejects_nonexistent() {
+        assert!(resolve_path("/definitely/not/a/real/path/xyz123", None).is_none());
+        assert!(
+            resolve_path("./nope_does_not_exist_xyz", Some(std::path::Path::new("."))).is_none()
+        );
+    }
 
     #[test]
     fn trims_trailing_punct() {
