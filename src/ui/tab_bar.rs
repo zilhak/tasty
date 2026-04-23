@@ -397,27 +397,28 @@ fn draw_tab_rename_dialog(ctx: &egui::Context, state: &mut AppState) {
                     ui.add_space(4.0);
 
                     let resp = ui.text_edit_singleline(&mut buf);
-                    if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                        // Apply rename
-                        let name = buf.trim().to_string();
-                        if let Some(pane) = state
-                            .active_workspace_mut()
-                            .pane_layout_mut()
-                            .find_pane_mut(pane_id)
-                        {
-                            if let Some(tab) = pane.tabs.get_mut(tab_idx) {
-                                if name.is_empty() {
-                                    tab.explicit_name = None; // Revert to auto
-                                } else {
-                                    tab.explicit_name = Some(name);
+                    if resp.lost_focus() {
+                        if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                            close = true;
+                        } else {
+                            // lost_focus without Escape = Enter (or clicked outside)
+                            let name = buf.trim().to_string();
+                            if let Some(pane) = state
+                                .active_workspace_mut()
+                                .pane_layout_mut()
+                                .find_pane_mut(pane_id)
+                            {
+                                if let Some(tab) = pane.tabs.get_mut(tab_idx) {
+                                    if name.is_empty() {
+                                        tab.explicit_name = None;
+                                    } else {
+                                        tab.explicit_name = Some(name);
+                                    }
                                 }
                             }
+                            state.engine.mark_layout_dirty();
+                            close = true;
                         }
-                        state.engine.mark_layout_dirty();
-                        close = true;
-                    }
-                    if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-                        close = true;
                     }
 
                     // Auto-focus the text field

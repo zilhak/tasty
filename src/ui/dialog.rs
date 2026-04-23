@@ -30,12 +30,18 @@ pub fn draw_ws_rename_dialog(ctx: &egui::Context, state: &mut AppState) {
             if !response.has_focus() {
                 response.request_focus();
             }
-            // Enter to confirm, Escape to cancel
+            // Enter to confirm, Escape to cancel.
+            // Check key_pressed first: singleline TextEdit surrenders focus on Enter,
+            // but key_pressed may already be consumed by the widget in the same frame.
+            // Use lost_focus() as the primary trigger — it fires reliably on Enter.
             if response.lost_focus() {
-                if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                    do_apply = true;
-                } else if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                // lost_focus on singleline TextEdit happens on Enter or Escape.
+                // Escape can be distinguished because the user pressed Escape key.
+                if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
                     do_cancel = true;
+                } else {
+                    // lost_focus without Escape = Enter (or clicked outside)
+                    do_apply = true;
                 }
             }
 
