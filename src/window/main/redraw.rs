@@ -126,11 +126,16 @@ impl MainWindow {
         if self.base.dirty {
             self.base.dirty = false;
             self.update_ime_cursor_area();
+            let link_hover = self
+                .hovered_link
+                .as_ref()
+                .map(|h| (h.surface_id, &h.highlight));
             match self.base.gpu.render(
                 &mut self.state,
                 &self.base.winit,
                 self.ime_preedit.as_ref(),
                 self.text_selection.as_ref(),
+                link_hover,
             ) {
                 Ok(()) => {}
                 Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {

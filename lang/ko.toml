@@ -52,6 +52,10 @@ close_behavior_label = "종료 동작:"
 close_behavior_ask = "물어보기"
 close_behavior_minimize = "백그라운드로 최소화"
 close_behavior_quit = "종료"
+link_modifier_label = "링크 클릭 수식키:"
+link_modifier_ctrl = "Ctrl"
+link_modifier_alt = "Alt"
+link_modifier_none = "없음 (일반 클릭)"
 
 [settings.appearance]
 heading = "외관"

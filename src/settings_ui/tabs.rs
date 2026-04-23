@@ -117,6 +117,32 @@ pub fn draw_general_tab(ui: &mut egui::Ui, settings: &mut Settings) {
                     );
                 });
             ui.end_row();
+
+            ui.label(t("settings.general.link_modifier_label"));
+            egui::ComboBox::from_id_salt("link_modifier")
+                .selected_text(match settings.general.link_click_modifier.as_str() {
+                    "alt" => t("settings.general.link_modifier_alt"),
+                    "none" => t("settings.general.link_modifier_none"),
+                    _ => t("settings.general.link_modifier_ctrl"),
+                })
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(
+                        &mut settings.general.link_click_modifier,
+                        "ctrl".to_string(),
+                        t("settings.general.link_modifier_ctrl"),
+                    );
+                    ui.selectable_value(
+                        &mut settings.general.link_click_modifier,
+                        "alt".to_string(),
+                        t("settings.general.link_modifier_alt"),
+                    );
+                    ui.selectable_value(
+                        &mut settings.general.link_click_modifier,
+                        "none".to_string(),
+                        t("settings.general.link_modifier_none"),
+                    );
+                });
+            ui.end_row();
         });
 }
 

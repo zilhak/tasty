@@ -2,6 +2,7 @@ use termwiz::cell::CellAttributes;
 
 use crate::font::GlyphKey;
 use crate::selection::NormalizedSelection;
+use crate::terminal_link::LinkHighlight;
 
 use super::palette::{DEFAULT_FG, color_attr_to_rgba};
 use super::types::{BgInstance, GlyphInstance};
@@ -21,6 +22,7 @@ impl CellRenderer {
         queue: &wgpu::Queue,
         selection: Option<&(NormalizedSelection, [f32; 4])>,
         absolute_row: usize,
+        link: Option<&LinkHighlight>,
     ) {
         let (mut bg_color, mut fg_color) = (
             color_attr_to_rgba(&attrs.background(), default_bg),
@@ -34,6 +36,13 @@ impl CellRenderer {
         if let Some((sel, sel_bg)) = selection {
             if crate::selection::is_selected(col_idx, absolute_row, sel) {
                 bg_color = *sel_bg;
+            }
+        }
+        // Link highlight: override both bg and fg for hovered link spans
+        if let Some(link) = link {
+            if link.covers(col_idx, absolute_row) {
+                bg_color = link.bg;
+                fg_color = link.fg;
             }
         }
 
@@ -82,6 +91,7 @@ impl CellRenderer {
         queue: &wgpu::Queue,
         selection: Option<&(NormalizedSelection, [f32; 4])>,
         absolute_row: usize,
+        link: Option<&LinkHighlight>,
     ) {
         let mut col_idx: usize = 0;
         for (text, attrs) in line.iter() {
@@ -101,6 +111,7 @@ impl CellRenderer {
                 queue,
                 selection,
                 absolute_row,
+                link,
             );
             col_idx += width;
         }
@@ -124,6 +135,7 @@ impl CellRenderer {
         queue: &wgpu::Queue,
         selection: Option<&(NormalizedSelection, [f32; 4])>,
         absolute_row: usize,
+        link: Option<&LinkHighlight>,
     ) {
         let mut last_col = 0usize;
         for cell_ref in line.visible_cells() {
@@ -149,6 +161,7 @@ impl CellRenderer {
                 queue,
                 selection,
                 absolute_row,
+                link,
             );
             last_col = col_idx + width;
         }

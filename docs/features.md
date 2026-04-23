@@ -222,6 +222,7 @@
 - **디바이더 호버 시 커서 변경**: 분할 경계선에 4px 이내로 마우스를 가져가면 커서가 리사이즈 아이콘으로 변경 (수직 분할: ColResize, 수평 분할: RowResize). 벗어나면 Default로 복귀
 - **마우스 스크롤**: 일반 모드에서 마우스 휠은 스크롤백 버퍼를 탐색함. 대체 화면(vim, less 등)에서는 방향키 시퀀스(`\x1b[A`/`\x1b[B`)를 PTY에 전달. LineDelta와 PixelDelta 모두 지원. 포커스와 무관하게 마우스 커서 아래의 surface가 스크롤 대상이 됨 (커서가 터미널 영역 밖이면 포커스된 surface로 폴백)
 - **egui와의 이벤트 충돌 방지**: egui가 이벤트를 소비한 경우 (사이드바, 설정 윈도우 등) 터미널에는 전달하지 않음
+- **터미널 내 링크 hover·클릭 오픈**: 터미널 출력에 포함된 URL(`http://`, `https://`, `ftp://`, `file://`) 또는 OSC 8 hyperlink를 감지. 설정된 수식키(기본 `Ctrl`, 설정에서 `Alt`/`없음` 선택 가능)를 누른 채 마우스를 올리면 해당 링크가 blue로 하이라이트되고 커서가 PointingHand로 변경됨. 수식키+좌클릭 시 `webbrowser` crate로 기본 브라우저/연결 프로그램을 열어 URI를 처리. 수식키+클릭은 링크 위가 아니면 아무 동작도 하지 않으며 selection과 충돌하지 않음. 사용자의 키보드/마우스 동작이므로 CLI/IPC로 노출되지 않음 (`docs/design/ubiquitous-language.md`의 사용자/에이전트 분리 원칙)
 - 관련 모델 메서드: `Rect::contains()`, `PaneNode::find_divider_at()`, `PaneNode::update_ratio_for_rect()`, `SurfaceLayout::find_divider_at()`, `SurfaceLayout::update_ratio_for_rect()`, `SurfaceLayout::find_surface_at()`
 
 ### 추가 Surface 타입 (Markdown / Explorer / HTML / Empty)

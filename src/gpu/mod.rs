@@ -213,6 +213,7 @@ impl GpuState {
         window: &Window,
         preedit: Option<&ImePreeditState>,
         selection: Option<&crate::selection::TextSelection>,
+        link_hover: Option<(u32, &crate::terminal_link::LinkHighlight)>,
     ) -> Result<(), wgpu::SurfaceError> {
         // 1. Prepare layout
         state.sidebar_width = if !state.sidebar_visible {
@@ -249,6 +250,10 @@ impl GpuState {
                     full_output.platform_output.cursor_icon = icon;
                 }
             }
+        }
+        // Link hover overrides cursor to pointing-hand.
+        if link_hover.is_some() {
+            full_output.platform_output.cursor_icon = egui::CursorIcon::PointingHand;
         }
 
         // 4. Post-egui updates (theme/font refresh)
@@ -294,6 +299,7 @@ impl GpuState {
             selection,
             &state.engine.settings.appearance,
             preedit,
+            link_hover,
         );
         self.render_egui_pass(
             &view,

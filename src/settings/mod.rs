@@ -11,7 +11,7 @@ use directories::BaseDirs;
 use serde::{Deserialize, Serialize};
 
 pub use appearance::{AppearanceSettings, HexColor, SurfaceColors};
-pub use general::GeneralSettings;
+pub use general::{GeneralSettings, LinkModifier};
 pub use keybindings::KeybindingSettings;
 pub use types::{ClipboardSettings, NotificationSettings, PerformanceSettings};
 

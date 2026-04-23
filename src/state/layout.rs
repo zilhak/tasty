@@ -85,6 +85,18 @@ impl AppState {
         None
     }
 
+    /// Get the rect of a specific surface by id.
+    pub fn surface_rect_by_id(&self, surface_id: u32, terminal_rect: Rect) -> Option<Rect> {
+        for (_pane_id, _pane_rect, regions) in &self.surface_regions(terminal_rect) {
+            for r in regions {
+                if r.id == surface_id {
+                    return Some(r.rect);
+                }
+            }
+        }
+        None
+    }
+
     /// Find the surface ID at the given physical pixel position.
     pub fn surface_id_at_position(&self, x: f32, y: f32, terminal_rect: Rect) -> Option<u32> {
         for (_pane_id, _pane_rect, regions) in &self.surface_regions(terminal_rect) {

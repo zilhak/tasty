@@ -33,6 +33,7 @@ mod notification;
 mod recent_files;
 mod renderer;
 mod selection;
+mod terminal_link;
 mod settings;
 mod settings_ui;
 mod shortcuts;

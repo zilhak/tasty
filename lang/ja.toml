@@ -52,6 +52,10 @@ close_behavior_label = "終了時の動作:"
 close_behavior_ask = "確認する"
 close_behavior_minimize = "バックグラウンドに最小化"
 close_behavior_quit = "終了"
+link_modifier_label = "リンククリック修飾キー:"
+link_modifier_ctrl = "Ctrl"
+link_modifier_alt = "Alt"
+link_modifier_none = "なし (通常クリック)"
 
 [settings.appearance]
 heading = "外観"

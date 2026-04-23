@@ -1,12 +1,96 @@
 use winit::event::{ElementState, MouseButton, MouseScrollDelta};
 
 use crate::model::PhysicalPx;
+use crate::settings::LinkModifier;
+use crate::terminal_link::{self, LinkHighlight};
+use crate::theme;
 use crate::window::Window;
 use crate::{DividerDrag, DividerDragKind};
 
-use super::MainWindow;
+use super::{HoveredLink, MainWindow};
 
 impl MainWindow {
+    /// 현재 마우스 좌표와 수식키 상태로 hovered_link를 갱신한다.
+    /// 변경이 있으면 true를 반환 (렌더 dirty 플래그를 켜기 위함).
+    pub(crate) fn update_hovered_link(&mut self) -> bool {
+        let prev = self.hovered_link.as_ref().map(|h| {
+            (
+                h.surface_id,
+                h.highlight.start_col,
+                h.highlight.end_col,
+                h.highlight.absolute_row,
+            )
+        });
+
+        let modifier = LinkModifier::parse(&self.state.engine.settings.general.link_click_modifier);
+        let matches_mods = modifier.matches(&self.base.modifiers);
+
+        let new_link = if !matches_mods {
+            None
+        } else if self.state.settings_open || self.state.popup_hovered {
+            None
+        } else {
+            self.compute_hovered_link()
+        };
+
+        let changed = prev
+            != new_link.as_ref().map(|h| {
+                (
+                    h.surface_id,
+                    h.highlight.start_col,
+                    h.highlight.end_col,
+                    h.highlight.absolute_row,
+                )
+            });
+        self.hovered_link = new_link;
+        changed
+    }
+
+    fn compute_hovered_link(&self) -> Option<HoveredLink> {
+        let pos = self.cursor_position?;
+        let terminal_rect = self.compute_terminal_rect();
+        let x = pos.x as f32;
+        let y = pos.y as f32;
+        if !terminal_rect.contains(PhysicalPx(x), PhysicalPx(y)) {
+            return None;
+        }
+        // 마우스 아래 surface id를 구하고 그 surface의 terminal을 사용.
+        // focused 기반이 아니라 실제 hover 위치의 surface로 판별해야 여러 pane 중
+        // 어느 곳이든 동작한다.
+        let surface_id = self
+            .state
+            .surface_id_at_position(x, y, terminal_rect)?;
+        let terminal = self.state.find_terminal_by_id(surface_id)?;
+        let surface_rect = self.state.surface_rect_by_id(surface_id, terminal_rect)?;
+
+        let (cols, rows) = terminal.surface().dimensions();
+        let point = crate::selection::pixel_to_grid(
+            x,
+            y,
+            &surface_rect,
+            self.base.gpu.cell_width(),
+            self.base.gpu.cell_height(),
+            cols,
+            rows,
+            terminal.scroll_offset,
+            terminal.scrollback_len(),
+        );
+        let span = terminal_link::link_at(terminal, point.col, point.absolute_row)?;
+        let th = theme::theme();
+        let highlight = LinkHighlight {
+            start_col: span.start_col,
+            end_col: span.end_col,
+            absolute_row: span.absolute_row,
+            fg: theme::Theme::to_float(th.blue),
+            bg: th.selection_bg,
+        };
+        Some(HoveredLink {
+            surface_id,
+            uri: span.uri,
+            highlight,
+        })
+    }
+
     pub(super) fn handle_cursor_moved(
         &mut self,
         position: winit::dpi::PhysicalPosition<f64>,
@@ -15,6 +99,9 @@ impl MainWindow {
         self.cursor_position = Some(position);
         let overlay_open = self.state.settings_open;
         if egui_consumed || overlay_open || self.state.popup_hovered {
+            if self.hovered_link.take().is_some() {
+                self.mark_dirty();
+            }
             self.mark_dirty();
             return;
         }
@@ -22,6 +109,10 @@ impl MainWindow {
         let terminal_rect = self.compute_terminal_rect();
         let x = position.x as f32;
         let y = position.y as f32;
+
+        if self.update_hovered_link() {
+            self.mark_dirty();
+        }
 
         // Handle selection drag
         if self.left_mouse_down && self.dragging_divider.is_none() {
@@ -109,6 +200,28 @@ impl MainWindow {
             let terminal_rect = self.compute_terminal_rect();
             if let Some(pos) = self.cursor_position {
                 let (x, y) = (pos.x as f32, pos.y as f32);
+                // 수식키+클릭은 무조건 링크 클릭 동작으로 라우팅.
+                // 링크 위면 열고, 링크 위가 아니면 아무것도 안 함 (selection 시작 안 함).
+                let modifier = LinkModifier::parse(
+                    &self.state.engine.settings.general.link_click_modifier,
+                );
+                let link_mods_match = !matches!(modifier, LinkModifier::None)
+                    && modifier.matches(&self.base.modifiers);
+                if link_mods_match && button_state == ElementState::Pressed {
+                    if terminal_rect.contains(PhysicalPx(x), PhysicalPx(y)) {
+                        if self.state.focus_pane_at_position(x, y, terminal_rect) {
+                            self.base.dirty = true;
+                        }
+                        if self.state.focus_surface_at_position(x, y, terminal_rect) {
+                            self.base.dirty = true;
+                        }
+                    }
+                    if let Some(hovered) = self.hovered_link.clone() {
+                        terminal_link::open_uri(&hovered.uri);
+                    }
+                    self.mark_dirty();
+                    return;
+                }
                 if button_state == ElementState::Pressed {
                     let threshold = 4.0;
                     let pane_div = self

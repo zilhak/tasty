@@ -77,6 +77,37 @@ pub struct GeneralSettings {
     pub close_behavior: String,
     /// Save and restore layout (workspaces, panes, tabs) on restart.
     pub restore_layout: bool,
+    /// 터미널 내 링크 클릭 시 요구되는 수식키. "ctrl" | "alt" | "none".
+    /// "none"이면 평범한 클릭으로 링크가 열리므로 텍스트 선택과 구분되지 않는 점에 유의.
+    pub link_click_modifier: String,
+}
+
+/// 파싱된 링크 클릭 수식키.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LinkModifier {
+    Ctrl,
+    Alt,
+    None,
+}
+
+impl LinkModifier {
+    pub fn parse(s: &str) -> Self {
+        match s.to_ascii_lowercase().as_str() {
+            "ctrl" | "control" => Self::Ctrl,
+            "alt" | "option" => Self::Alt,
+            "none" | "off" | "" => Self::None,
+            _ => Self::Ctrl,
+        }
+    }
+
+    /// 현재 modifier 상태가 링크 클릭 트리거 조건을 만족하는지.
+    pub fn matches(&self, mods: &winit::keyboard::ModifiersState) -> bool {
+        match self {
+            Self::Ctrl => mods.control_key() && !mods.alt_key() && !mods.super_key(),
+            Self::Alt => mods.alt_key() && !mods.control_key() && !mods.super_key(),
+            Self::None => true,
+        }
+    }
 }
 
 impl Default for GeneralSettings {
@@ -94,6 +125,7 @@ impl Default for GeneralSettings {
             inherit_cwd: true,
             close_behavior: "ask".to_string(),
             restore_layout: false,
+            link_click_modifier: "ctrl".to_string(),
         }
     }
 }

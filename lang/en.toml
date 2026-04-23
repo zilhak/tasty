@@ -52,6 +52,10 @@ close_behavior_label = "Close behavior:"
 close_behavior_ask = "Ask"
 close_behavior_minimize = "Minimize to background"
 close_behavior_quit = "Quit"
+link_modifier_label = "Link click modifier:"
+link_modifier_ctrl = "Ctrl"
+link_modifier_alt = "Alt"
+link_modifier_none = "None (plain click)"
 
 [settings.appearance]
 heading = "Appearance"

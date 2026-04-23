@@ -47,6 +47,7 @@ impl GpuState {
         selection: Option<&crate::selection::TextSelection>,
         settings: &crate::settings::AppearanceSettings,
         preedit: Option<&super::ImePreeditState>,
+        link_hover: Option<(u32, &crate::terminal_link::LinkHighlight)>,
     ) {
         let theme = crate::theme::theme();
         for (_pane_id, _pane_rect, surface_regions) in regions {
@@ -81,6 +82,10 @@ impl GpuState {
                     });
                 let render_preedit_ref = render_preedit.as_ref();
 
+                let link_for_this = link_hover
+                    .filter(|(sid, _)| sid == surface_id)
+                    .map(|(_, h)| h);
+
                 self.renderer.prepare_terminal_viewport(
                     terminal,
                     &self.queue,
@@ -91,6 +96,7 @@ impl GpuState {
                     is_focused,
                     sel_ref,
                     render_preedit_ref,
+                    link_for_this,
                 );
 
                 let mut term_encoder =

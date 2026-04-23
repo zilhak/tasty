@@ -59,6 +59,9 @@ notify-rust = "4"
 # Regex
 regex = "1"
 
+# URL/파일 오픈 (터미널 내 링크 클릭 시 기본 브라우저/연결 프로그램)
+webbrowser = "1"
+
 # Shell escaping
 shell-escape = "0.1"
 

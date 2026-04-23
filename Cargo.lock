@@ -4642,6 +4642,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "tray-icon",
+ "webbrowser",
  "webkit2gtk",
  "webview2-com",
  "wgpu",

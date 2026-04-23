@@ -3,6 +3,7 @@ use termwiz::surface::Surface;
 use crate::font::{FontConfig, GlyphAtlas, GlyphKey};
 use crate::model::Rect;
 use crate::selection::NormalizedSelection;
+use crate::terminal_link::LinkHighlight;
 
 mod line_render;
 mod palette;
@@ -112,6 +113,7 @@ impl CellRenderer {
         selection: Option<&(NormalizedSelection, [f32; 4])>,
         row_offset: usize,
         preedit: Option<&RenderPreedit>,
+        link: Option<&LinkHighlight>,
     ) {
         let (cols, rows) = surface.dimensions();
         let lines = surface.screen_lines();
@@ -148,10 +150,16 @@ impl CellRenderer {
                     std::mem::swap(&mut bg_color, &mut fg_color);
                 }
 
+                let abs_row = row_offset + row_idx;
                 if let Some((sel, sel_bg)) = selection {
-                    let abs_row = row_offset + row_idx;
                     if crate::selection::is_selected(col_idx, abs_row, sel) {
                         bg_color = *sel_bg;
+                    }
+                }
+                if let Some(link) = link {
+                    if link.covers(col_idx, abs_row) {
+                        bg_color = link.bg;
+                        fg_color = link.fg;
                     }
                 }
 
@@ -286,6 +294,7 @@ impl CellRenderer {
         show_cursor: bool,
         selection: Option<&(NormalizedSelection, [f32; 4])>,
         preedit: Option<&RenderPreedit>,
+        link: Option<&LinkHighlight>,
     ) {
         let uniforms = Uniforms {
             cell_size: [
@@ -330,6 +339,7 @@ impl CellRenderer {
                 selection,
                 row_offset,
                 preedit,
+                link,
             );
             self.append_preedit_overlay(preedit, queue, cols, rows, 0);
             return;
@@ -367,6 +377,7 @@ impl CellRenderer {
                         queue,
                         selection,
                         source_line,
+                        link,
                     );
                 }
             } else {
@@ -380,6 +391,7 @@ impl CellRenderer {
                         queue,
                         selection,
                         source_line,
+                        link,
                     );
                 }
             }

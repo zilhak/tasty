@@ -52,6 +52,16 @@ pub struct MainWindow {
     pub(crate) double_tap: crate::double_tap::DoubleTapDetector,
     /// Native WebView instances keyed by surface ID.
     pub(crate) webviews: std::collections::HashMap<u32, crate::webview::PlatformWebView>,
+    /// 현재 마우스 hover 중이고 수식키 조건을 만족한 링크. 렌더 및 클릭에 사용.
+    pub(crate) hovered_link: Option<HoveredLink>,
+}
+
+/// 마우스가 위에 있고 설정된 수식키 조건을 만족한 링크.
+#[derive(Debug, Clone)]
+pub(crate) struct HoveredLink {
+    pub surface_id: u32,
+    pub uri: String,
+    pub highlight: crate::terminal_link::LinkHighlight,
 }
 
 impl MainWindow {
@@ -79,6 +89,7 @@ impl MainWindow {
             ime_advance_base: (0, 0),
             double_tap: crate::double_tap::DoubleTapDetector::new(),
             webviews: std::collections::HashMap::new(),
+            hovered_link: None,
         }
     }
 
@@ -247,6 +258,9 @@ impl Window for MainWindow {
             }
             WindowEvent::ModifiersChanged(modifiers) => {
                 self.base.modifiers = modifiers.state();
+                if self.update_hovered_link() {
+                    self.mark_dirty();
+                }
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 self.handle_keyboard_input(&event, egui_consumed);
