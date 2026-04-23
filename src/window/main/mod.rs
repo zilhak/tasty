@@ -163,6 +163,19 @@ impl Window for MainWindow {
     }
 
     fn handle_event(&mut self, event: WindowEvent, ctx: &mut WindowCtx<'_>) -> WindowAction {
+        // If a modal is active, block all input events before they reach egui.
+        // Only allow non-input events (resize, redraw, scale factor, focus) through.
+        if ctx.modal_active {
+            match &event {
+                WindowEvent::Resized(_)
+                | WindowEvent::RedrawRequested
+                | WindowEvent::ScaleFactorChanged { .. }
+                | WindowEvent::ModifiersChanged(_)
+                | WindowEvent::Focused(_) => {}
+                _ => return WindowAction::None,
+            }
+        }
+
         // ── Keyboard/IME routing ──
         // Keyboard and IME events are only forwarded to egui when an overlay
         // (settings, dialog, focused popup) is active. Otherwise the central
@@ -200,18 +213,6 @@ impl Window for MainWindow {
 
         if egui_repaint {
             self.mark_dirty();
-        }
-
-        // If a modal is active, only allow Resized/RedrawRequested/ScaleFactorChanged/...
-        if ctx.modal_active {
-            match &event {
-                WindowEvent::Resized(_)
-                | WindowEvent::RedrawRequested
-                | WindowEvent::ScaleFactorChanged { .. }
-                | WindowEvent::ModifiersChanged(_)
-                | WindowEvent::Focused(_) => {}
-                _ => return WindowAction::None,
-            }
         }
 
         let was_dirty = self.base.dirty;
