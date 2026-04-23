@@ -470,12 +470,19 @@ impl App {
         let Some(mut cb) = arboard::Clipboard::new().ok() else {
             return;
         };
-        let Some(text) = cb.get_text().ok() else {
+
+        // Try text first, then fall back to image placeholder.
+        let entry_text = if let Ok(text) = cb.get_text() {
+            if text.is_empty() {
+                return;
+            }
+            text
+        } else if let Ok(img) = cb.get_image() {
+            // Don't store image data — just record a placeholder with dimensions.
+            format!("[Image {}×{}]", img.width, img.height)
+        } else {
             return;
         };
-        if text.is_empty() {
-            return;
-        }
 
         for w in self.windows.values_mut() {
             let Some(main) = w.as_main_mut() else {
@@ -485,7 +492,7 @@ impl App {
                 continue;
             }
             main.state.engine.clipboard_history.record(
-                text.clone(),
+                entry_text.clone(),
                 crate::clipboard_history::ClipboardSource::System,
             );
         }
@@ -494,7 +501,7 @@ impl App {
                 continue;
             }
             state.engine.clipboard_history.record(
-                text.clone(),
+                entry_text.clone(),
                 crate::clipboard_history::ClipboardSource::System,
             );
         }
