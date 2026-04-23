@@ -23,6 +23,7 @@ impl AppState {
             )?;
         }
         self.send_fast_init(surface_id);
+        self.engine.mark_layout_dirty();
         Ok(())
     }
 
@@ -67,6 +68,7 @@ impl AppState {
             }
             self.send_fast_init(surface_id);
         }
+        self.engine.mark_layout_dirty();
         Ok(())
     }
 
@@ -83,6 +85,7 @@ impl AppState {
             Box::new(crate::model::MarkdownPanel::new(surface_id, file_path));
         if let Some(pane) = self.focused_pane_mut() {
             pane.add_surface_tab(tab_id, name, surface);
+            self.engine.mark_layout_dirty();
         }
         Ok(())
     }
@@ -100,6 +103,7 @@ impl AppState {
             Box::new(crate::model::ExplorerPanel::new(surface_id, root_path));
         if let Some(pane) = self.focused_pane_mut() {
             pane.add_surface_tab(tab_id, name, surface);
+            self.engine.mark_layout_dirty();
         }
         Ok(())
     }
@@ -112,6 +116,7 @@ impl AppState {
             Box::new(crate::model::HtmlPanel::new(surface_id, url));
         if let Some(pane) = self.focused_pane_mut() {
             pane.add_surface_tab(tab_id, "HTML".to_string(), surface);
+            self.engine.mark_layout_dirty();
         }
         Ok(())
     }
@@ -125,6 +130,7 @@ impl AppState {
         let name = crate::i18n::t("clipboard_viewer.tab_title").to_string();
         if let Some(pane) = self.focused_pane_mut() {
             pane.add_surface_tab(tab_id, name, surface);
+            self.engine.mark_layout_dirty();
         }
         Ok(())
     }
@@ -138,6 +144,7 @@ impl AppState {
         let name = crate::i18n::t("clipboard_viewer.tab_title").to_string();
         if let Some(pane) = self.find_pane_by_id_mut(pane_id) {
             pane.add_surface_tab(tab_id, name, surface);
+            self.engine.mark_layout_dirty();
         }
         Ok(())
     }
@@ -150,6 +157,7 @@ impl AppState {
             Box::new(crate::model::EmptySurface::new(surface_id));
         if let Some(pane) = self.focused_pane_mut() {
             pane.add_surface_tab(tab_id, "Empty".to_string(), surface);
+            self.engine.mark_layout_dirty();
             Some((tab_id, surface_id))
         } else {
             None
@@ -206,6 +214,7 @@ impl AppState {
             }
             self.send_fast_init(surface_id);
         }
+        self.engine.mark_layout_dirty();
         Ok(())
     }
 
@@ -219,6 +228,7 @@ impl AppState {
         let tab_id = self.engine.next_ids.next_tab();
         if let Some(pane) = self.find_pane_by_id_mut(pane_id) {
             pane.add_surface_tab(tab_id, name, surface);
+            self.engine.mark_layout_dirty();
         }
     }
 
@@ -260,6 +270,7 @@ impl AppState {
             for sid in surface_ids {
                 self.cleanup_surface(sid);
             }
+            self.engine.mark_layout_dirty();
         }
         closed
     }
@@ -318,6 +329,7 @@ impl AppState {
             for sid in surface_ids {
                 self.cleanup_surface(sid);
             }
+            self.engine.mark_layout_dirty();
         }
         closed
     }
@@ -393,6 +405,7 @@ impl AppState {
             Box::new(crate::model::ImagePanel::new(surface_id, file_path));
         if let Some(pane) = self.focused_pane_mut() {
             pane.add_surface_tab(tab_id, name, surface);
+            self.engine.mark_layout_dirty();
         }
         Ok(())
     }
@@ -451,7 +464,11 @@ impl AppState {
 
         // Case 1: Tab has split layout — replace just the leaf.
         if tab.is_split() {
-            return tab.layout_mut().replace_surface(surface_id, new_surface);
+            let replaced = tab.layout_mut().replace_surface(surface_id, new_surface);
+            if replaced {
+                self.engine.mark_layout_dirty();
+            }
+            return replaced;
             // Don't change tab name for individual surface replacement within a split.
         }
         // Case 2: Tab's sole surface — replace the whole tab surface.
@@ -459,6 +476,7 @@ impl AppState {
         if let Some(name_opt) = new_name {
             tab.explicit_name = name_opt;
         }
+        self.engine.mark_layout_dirty();
         true
     }
 

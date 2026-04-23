@@ -102,8 +102,13 @@ impl AppState {
             }
         };
         let ws = self.active_workspace_mut();
-        ws.pane_layout_mut()
-            .update_ratio_for_rect(divider.split_rect, new_ratio, terminal_rect)
+        let updated = ws
+            .pane_layout_mut()
+            .update_ratio_for_rect(divider.split_rect, new_ratio, terminal_rect);
+        if updated {
+            self.engine.mark_layout_dirty();
+        }
+        updated
     }
 
     /// Update a surface-level split ratio based on a divider drag.
@@ -150,7 +155,12 @@ impl AppState {
             None => return false,
         };
 
-        tab.layout_mut()
-            .update_ratio_for_rect(divider.split_rect, new_ratio, content_rect)
+        let updated = tab
+            .layout_mut()
+            .update_ratio_for_rect(divider.split_rect, new_ratio, content_rect);
+        if updated {
+            self.engine.mark_layout_dirty();
+        }
+        updated
     }
 }

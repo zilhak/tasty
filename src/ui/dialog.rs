@@ -64,6 +64,7 @@ pub fn draw_ws_rename_dialog(ctx: &egui::Context, state: &mut AppState) {
                     state.engine.workspaces[ws_idx].subtitle = buffer;
                 }
             }
+            state.engine.mark_layout_dirty();
         }
     } else if do_cancel {
         state.dialogs.ws_rename = None;

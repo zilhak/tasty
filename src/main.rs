@@ -23,6 +23,7 @@ mod html_ui;
 mod i18n;
 mod image_ui;
 mod ipc;
+mod layout_persistence;
 #[cfg(windows)]
 mod jump_list;
 mod markdown_ui;

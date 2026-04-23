@@ -35,6 +35,7 @@ impl AppState {
         self.engine.workspaces.push(ws);
         self.active_workspace = self.engine.workspaces.len() - 1;
         self.send_fast_init(surface_id);
+        self.engine.mark_layout_dirty();
         Ok(())
     }
 
@@ -138,6 +139,7 @@ impl AppState {
         if is_terminal {
             self.send_fast_init(surface_id);
         }
+        self.engine.mark_layout_dirty();
         Ok(idx)
     }
 
@@ -171,6 +173,7 @@ impl AppState {
         for sid in surface_ids {
             self.cleanup_surface(sid);
         }
+        self.engine.mark_layout_dirty();
         true
     }
 

@@ -138,39 +138,26 @@ pub struct EngineState {
 
     /// Event loop proxy for targeted waker creation. Set by App after EngineState creation.
     pub waker_factory: Option<winit::event_loop::EventLoopProxy<crate::AppEvent>>,
+
+    // ── Layout persistence ──
+    pub layout_dirty: crate::layout_persistence::LayoutDirtyTracker,
+    /// Active workspace index restored from layout.json. Consumed once by AppState::new().
+    pub restored_active_workspace: Option<usize>,
 }
 
 impl EngineState {
     /// Create a new EngineState with default settings.
     pub fn new(cols: usize, rows: usize, waker: Waker) -> anyhow::Result<Self> {
         let settings = Settings::load();
-        let mut next_ids = IdGenerator::new();
-        let ws_id = next_ids.next_workspace();
-        let pane_id = next_ids.next_pane();
-        let tab_id = next_ids.next_tab();
-        let surface_id = next_ids.next_surface();
+        let restore_layout = settings.general.restore_layout;
 
-        let sh = ShellConfig::from_settings(&settings);
-        let ws = Workspace::new_with_shell(
-            ws_id,
-            "Workspace 1".to_string(),
-            cols,
-            rows,
-            pane_id,
-            tab_id,
-            surface_id,
-            sh.shell_ref(),
-            &sh.args_ref(),
-            waker.clone(),
-            None,
-        )?;
-
+        // Create engine with empty workspaces first; we'll fill them below.
         let mut engine = Self {
-            workspaces: vec![ws],
-            next_ids,
+            workspaces: Vec::new(),
+            next_ids: IdGenerator::new(),
             default_cols: cols,
             default_rows: rows,
-            waker,
+            waker: waker.clone(),
             settings,
             notifications: NotificationStore::with_coalesce_ms(500),
             hook_manager: HookManager::new(),
@@ -182,6 +169,8 @@ impl EngineState {
             surface_next_message_id: 0,
             last_key_input: HashMap::new(),
             waker_factory: None,
+            layout_dirty: crate::layout_persistence::LayoutDirtyTracker::new(),
+            restored_active_workspace: None,
         };
 
         // Re-apply coalesce_ms from actual settings
@@ -193,8 +182,40 @@ impl EngineState {
             .clipboard_history
             .set_max(engine.settings.clipboard.history_max);
 
-        // Init fast mode + scrollback for the first surface
-        engine.send_fast_init(surface_id);
+        // Try restoring saved layout
+        let mut restored = false;
+        if restore_layout {
+            if let Some(saved) = crate::layout_persistence::load_from_disk() {
+                restored = saved.restore(&mut engine);
+                if restored {
+                    tracing::info!("Layout restored from layout.json");
+                }
+            }
+        }
+
+        // Fallback: create default workspace
+        if !restored {
+            let ws_id = engine.next_ids.next_workspace();
+            let pane_id = engine.next_ids.next_pane();
+            let tab_id = engine.next_ids.next_tab();
+            let surface_id = engine.next_ids.next_surface();
+            let sh = ShellConfig::from_settings(&engine.settings);
+            let ws = Workspace::new_with_shell(
+                ws_id,
+                "Workspace 1".to_string(),
+                cols,
+                rows,
+                pane_id,
+                tab_id,
+                surface_id,
+                sh.shell_ref(),
+                &sh.args_ref(),
+                waker,
+                None,
+            )?;
+            engine.workspaces = vec![ws];
+            engine.send_fast_init(surface_id);
+        }
 
         Ok(engine)
     }
@@ -371,6 +392,11 @@ impl EngineState {
                 });
         }
         any_pending
+    }
+
+    /// Mark layout as dirty for persistence.
+    pub fn mark_layout_dirty(&mut self) {
+        self.layout_dirty.mark_dirty();
     }
 
     /// Force flush deferred PTY resizes (ignores throttle).

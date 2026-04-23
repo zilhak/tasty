@@ -38,7 +38,7 @@ impl AppState {
             None => return false,
         };
 
-        match item {
+        let result = match item {
             ClosedItem::Surface { surface, tab_name } => self.restore_surface(surface, tab_name),
             ClosedItem::Tab(tab) => self.restore_tab(tab),
             ClosedItem::Workspace {
@@ -48,7 +48,11 @@ impl AppState {
                 focused_pane,
                 ..
             } => self.restore_workspace(name, subtitle, pane_layout, focused_pane),
+        };
+        if result {
+            self.engine.mark_layout_dirty();
         }
+        result
     }
 
     fn restore_surface(&mut self, closed: ClosedSurface, tab_name: String) -> bool {

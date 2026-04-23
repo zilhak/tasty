@@ -64,6 +64,7 @@ impl ApplicationHandler<AppEvent> for App {
                 }
             }
             AppEvent::Shutdown => {
+                self.flush_layout_persistence_final();
                 event_loop.exit();
             }
             AppEvent::Minimize => {
@@ -367,6 +368,9 @@ impl ApplicationHandler<AppEvent> for App {
             }
         }
 
+        // Flush layout persistence (debounced).
+        self.flush_layout_persistence();
+
         // Flush deferred PTY resizes (throttled to 100ms intervals).
         // If any terminal still has a pending resize (throttled), request a redraw
         // so we retry on the next frame.
@@ -393,6 +397,58 @@ impl ApplicationHandler<AppEvent> for App {
 }
 
 impl App {
+    /// Flush layout persistence if debounce timer has elapsed.
+    fn flush_layout_persistence(&mut self) {
+        for w in self.windows.values_mut() {
+            let Some(main) = w.as_main_mut() else {
+                continue;
+            };
+            if main.state.engine.settings.general.restore_layout
+                && main.state.engine.layout_dirty.should_flush()
+            {
+                crate::layout_persistence::save_to_disk(
+                    &main.state.engine,
+                    main.state.active_workspace,
+                );
+                main.state.engine.layout_dirty.clear();
+            }
+        }
+        for state in &mut self.parked_states {
+            if state.engine.settings.general.restore_layout
+                && state.engine.layout_dirty.should_flush()
+            {
+                crate::layout_persistence::save_to_disk(&state.engine, 0);
+                state.engine.layout_dirty.clear();
+            }
+        }
+    }
+
+    /// Force flush layout persistence on shutdown (ignore debounce).
+    fn flush_layout_persistence_final(&mut self) {
+        for w in self.windows.values_mut() {
+            let Some(main) = w.as_main_mut() else {
+                continue;
+            };
+            if main.state.engine.settings.general.restore_layout
+                && main.state.engine.layout_dirty.is_dirty()
+            {
+                crate::layout_persistence::save_to_disk(
+                    &main.state.engine,
+                    main.state.active_workspace,
+                );
+                main.state.engine.layout_dirty.clear();
+            }
+        }
+        for state in &mut self.parked_states {
+            if state.engine.settings.general.restore_layout
+                && state.engine.layout_dirty.is_dirty()
+            {
+                crate::layout_persistence::save_to_disk(&state.engine, 0);
+                state.engine.layout_dirty.clear();
+            }
+        }
+    }
+
     /// Poll the system clipboard once and record it into every MainWindow's history
     /// (each window has its own EngineState). No-op if `history_enabled` is false for
     /// that window. Invoked from AppEvent::ClipboardTick.
@@ -458,6 +514,7 @@ impl App {
             .unwrap_or(false);
         if quit_modal_open {
             self.close_active_modal();
+            self.flush_layout_persistence_final();
             event_loop.exit();
             return;
         }
@@ -475,6 +532,7 @@ impl App {
 
         match behavior.as_str() {
             "quit" => {
+                self.flush_layout_persistence_final();
                 event_loop.exit();
             }
             "minimize" => {

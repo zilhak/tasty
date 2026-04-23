@@ -373,7 +373,7 @@
 - 설정 파일이 없거나 파싱 실패 시 기본값으로 폴백
 
 ### 설정 카테고리
-- **General**: 셸 경로 (OS별 자동 감지: COMSPEC/SHELL), 시작 명령, 스크롤백 줄 수 (기본 10,000), 작업 디렉토리 상속 (기본 on), 셸 모드 (default / tasty / custom). tasty 모드는 `~/.tasty/bashrc`를 source하여 OSC 7 등의 빌트인 설정을 적용한다. 기존 설정 파일의 `"fast"`는 unknown 값으로 간주되어 default로 fallback.
+- **General**: 셸 경로 (OS별 자동 감지: COMSPEC/SHELL), 시작 명령, 스크롤백 줄 수 (기본 10,000), 작업 디렉토리 상속 (기본 on), 셸 모드 (default / tasty / custom). tasty 모드는 `~/.tasty/bashrc`를 source하여 OSC 7 등의 빌트인 설정을 적용한다. 기존 설정 파일의 `"fast"`는 unknown 값으로 간주되어 default로 fallback. 레이아웃 저장/복원 (기본 off): 체크 시 워크스페이스/페인/탭/서피스 구조를 `~/.tasty/layout.json`에 저장하고 다음 시작 시 복원.
 - **Appearance**: 폰트 패밀리 (기본값: 시스템 모노스페이스), 폰트 크기, 테마 (dark/light), 배경 투명도, 사이드바 너비, focused surface 배경색, Font DPI 스케일링 모드 (auto: 모니터 DPI에 맞춰 동일 물리 크기 유지 / fixed: 픽셀 고정, 기본값)
 - **Clipboard**: OS별 기본 활성화 (macOS: Alt+C/V, Linux: Ctrl+Shift+C/V, Windows: Ctrl+C/V)
 - **Notifications**: 알림 활성화, 시스템 알림, 사운드, 병합 간격(ms)
@@ -900,3 +900,39 @@ egui 기반 Image Surface 타입. 이미지 파일을 로드하여 표시하고,
 ### 닫기/복원
 - 이미지 탭 닫기 시 ClosedItem에 파일 경로 저장
 - Ctrl+Shift+T로 복원 시 같은 이미지를 다시 로드
+
+## 레이아웃 영속화
+
+### 개요
+- 설정 (`general.restore_layout`, 기본 off) 활성화 시 워크스페이스/페인/탭/서피스 구조를 `~/.tasty/layout.json`에 JSON으로 저장
+- 앱 시작 시 저장된 레이아웃을 복원하여 이전 세션의 창 배치를 재현
+
+### 저장 대상
+- 워크스페이스 목록 (이름, 부제, 설명)
+- 페인 트리 구조 (split direction, ratio)
+- 탭 목록 (이름, explicit_name, active_tab)
+- 서피스 레이아웃 트리 (split direction, ratio)
+- 각 서피스의 타입별 최소 정보:
+  - Terminal: cwd
+  - Markdown: file path
+  - Explorer: root path
+  - Html: url
+  - Image: file path
+  - Empty: (없음)
+- 활성 워크스페이스 인덱스, 포커스된 페인 인덱스
+
+### 저장 타이밍
+- 구조적 변경 시 dirty flag 설정 + 500ms 디바운스
+- 대상 이벤트: 워크스페이스/페인/탭/서피스 추가·삭제·분할, 이름 변경, split ratio 드래그, 서피스 타입 변환, 닫힌 항목 복원
+- 앱 종료 시 dirty 상태면 즉시 flush
+
+### 복원 시점
+- 앱 시작 시 1회만 (`EngineState::new()`)
+- `layout.json` 파싱 실패 또는 파일 없음 시 기본 "Workspace 1"로 폴백
+- 개별 서피스 복원 실패 시 해당 서피스만 스킵하고 나머지 계속 복원
+
+### 저장하지 않는 것
+- 화면 내용 (screen/scrollback)
+- PTY 상태, 환경변수, 실행 중인 명령
+- 팝업 상태
+- ClipboardViewerPanel (Empty로 대체)

@@ -413,6 +413,7 @@ fn draw_tab_rename_dialog(ctx: &egui::Context, state: &mut AppState) {
                                 }
                             }
                         }
+                        state.engine.mark_layout_dirty();
                         close = true;
                     }
                     if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {

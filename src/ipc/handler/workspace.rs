@@ -94,6 +94,7 @@ pub fn handle_workspace_create(
             if let Some(desc) = params.get("description").and_then(|v| v.as_str()) {
                 state.engine.workspaces[idx].description = desc.to_string();
             }
+            state.engine.mark_layout_dirty();
             let ws = &state.engine.workspaces[idx];
             JsonRpcResponse::success(
                 id,
@@ -147,17 +148,20 @@ pub fn handle_workspace_update(
         );
     }
 
-    let ws = &mut state.engine.workspaces[idx];
-    if let Some(name) = params.get("name").and_then(|v| v.as_str()) {
-        ws.name = name.to_string();
+    {
+        let ws = &mut state.engine.workspaces[idx];
+        if let Some(name) = params.get("name").and_then(|v| v.as_str()) {
+            ws.name = name.to_string();
+        }
+        if let Some(subtitle) = params.get("subtitle").and_then(|v| v.as_str()) {
+            ws.subtitle = subtitle.to_string();
+        }
+        if let Some(desc) = params.get("description").and_then(|v| v.as_str()) {
+            ws.description = desc.to_string();
+        }
     }
-    if let Some(subtitle) = params.get("subtitle").and_then(|v| v.as_str()) {
-        ws.subtitle = subtitle.to_string();
-    }
-    if let Some(desc) = params.get("description").and_then(|v| v.as_str()) {
-        ws.description = desc.to_string();
-    }
-
+    state.engine.mark_layout_dirty();
+    let ws = &state.engine.workspaces[idx];
     JsonRpcResponse::success(
         id,
         json!({

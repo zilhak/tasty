@@ -75,6 +75,8 @@ pub struct GeneralSettings {
     pub inherit_cwd: bool,
     /// Behavior when closing the last window: "ask", "minimize", "quit".
     pub close_behavior: String,
+    /// Save and restore layout (workspaces, panes, tabs) on restart.
+    pub restore_layout: bool,
 }
 
 impl Default for GeneralSettings {
@@ -91,6 +93,7 @@ impl Default for GeneralSettings {
             click_to_move_cursor: true,
             inherit_cwd: true,
             close_behavior: "ask".to_string(),
+            restore_layout: false,
         }
     }
 }

@@ -199,11 +199,12 @@ pub enum WsRenameField {
 impl AppState {
     /// Creates initial state with one workspace, one pane, one tab, one terminal.
     pub fn new(cols: usize, rows: usize, waker: Waker) -> anyhow::Result<Self> {
-        let engine = EngineState::new(cols, rows, waker)?;
+        let mut engine = EngineState::new(cols, rows, waker)?;
         let sidebar_width = engine.settings.appearance.sidebar_width;
+        let active_workspace = engine.restored_active_workspace.take().unwrap_or(0);
         Ok(Self {
             engine,
-            active_workspace: 0,
+            active_workspace,
             settings_open: false,
             settings_ui_state: SettingsUiState::new(),
             sidebar_width,

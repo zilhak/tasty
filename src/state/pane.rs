@@ -31,6 +31,7 @@ impl AppState {
             .split_pane_in_place(target_pane_id, direction, new_pane);
         ws.focused_pane = new_pane_id;
         self.send_fast_init(new_surface_id);
+        self.engine.mark_layout_dirty();
         Ok(())
     }
 
@@ -53,6 +54,7 @@ impl AppState {
                 tab.focused_surface = new_surface_id;
             }
         }
+        self.engine.mark_layout_dirty();
         Ok(())
     }
 
@@ -172,6 +174,7 @@ impl AppState {
             .split_pane_in_place(resolved_pane_id, direction, new_pane);
 
         self.send_fast_init(new_surface_id);
+        self.engine.mark_layout_dirty();
         Ok((new_pane_id, new_surface_id))
     }
 
@@ -252,6 +255,7 @@ impl AppState {
         }
 
         self.send_fast_init(new_surface_id);
+        self.engine.mark_layout_dirty();
         Ok(new_surface_id)
     }
 
@@ -280,6 +284,7 @@ impl AppState {
             for sid in surface_ids {
                 self.cleanup_surface(sid);
             }
+            self.engine.mark_layout_dirty();
         }
         removed
     }
@@ -307,6 +312,7 @@ impl AppState {
         }
         // Claude parent-child cleanup + surface meta cleanup
         self.cleanup_surface(surface_id);
+        self.engine.mark_layout_dirty();
         true
     }
 
@@ -395,6 +401,7 @@ impl AppState {
                 self.unregister_child(surface_id);
                 self.mark_parent_closed(surface_id);
                 crate::surface_meta::SurfaceMetaStore::remove(surface_id);
+                self.engine.mark_layout_dirty();
                 return true;
             }
             return false;
@@ -421,6 +428,7 @@ impl AppState {
                 self.unregister_child(surface_id);
                 self.mark_parent_closed(surface_id);
                 crate::surface_meta::SurfaceMetaStore::remove(surface_id);
+                self.engine.mark_layout_dirty();
                 return true;
             }
         }
@@ -437,6 +445,7 @@ impl AppState {
                 self.unregister_child(surface_id);
                 self.mark_parent_closed(surface_id);
                 crate::surface_meta::SurfaceMetaStore::remove(surface_id);
+                self.engine.mark_layout_dirty();
                 return true;
             }
         }
@@ -456,6 +465,7 @@ impl AppState {
             self.active_workspace = self.engine.workspaces.len() - 1;
         }
         self.cleanup_surface(surface_id);
+        self.engine.mark_layout_dirty();
         true
     }
 
@@ -487,6 +497,7 @@ impl AppState {
             .split_pane_in_place(target_pane_id, direction, new_pane);
         ws.focused_pane = new_pane_id;
         self.send_fast_init(new_surface_id);
+        self.engine.mark_layout_dirty();
         Ok(new_surface_id)
     }
 
@@ -522,6 +533,7 @@ impl AppState {
             for sid in surface_ids {
                 self.cleanup_surface(sid);
             }
+            self.engine.mark_layout_dirty();
         }
         removed
     }
