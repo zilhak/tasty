@@ -363,7 +363,11 @@ impl AppState {
         let surface: Box<dyn crate::model::Surface> = Box::new(node);
 
         // Clear explicit_name when converting back to Terminal (auto-derived from CWD).
-        self.replace_surface_for_id(surface_id, surface, Some(None))
+        let replaced = self.replace_surface_for_id(surface_id, surface, Some(None));
+        if replaced {
+            self.send_fast_init(surface_id);
+        }
+        replaced
     }
 
     /// Convert a surface to Markdown type.
