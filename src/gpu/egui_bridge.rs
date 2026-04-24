@@ -194,10 +194,11 @@ impl GpuState {
             self.egui_renderer
                 .render(&mut render_pass, &paint_jobs, &screen_descriptor);
         }
+        self.queue.submit(std::iter::once(egui_encoder.finish()));
+
         for id in &full_output.textures_delta.free {
             self.egui_renderer.free_texture(id);
         }
-        self.queue.submit(std::iter::once(egui_encoder.finish()));
 
         output.present();
     }
