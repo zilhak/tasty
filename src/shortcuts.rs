@@ -623,6 +623,22 @@ impl MainWindow {
         if !matches_any_binding(&bindings, key, mods) {
             return false;
         }
+        // Paste cooldown: Ctrl+V 직후 짧은 시간 안에 들어온 Ctrl+C는 사용자의
+        // 오타(옆 키 누름)로 간주하고 통째로 무시한다. SIGINT도, 클립보드 복사도
+        // 일어나지 않으며 toast로만 알린다.
+        if let Some(t) = self.last_terminal_paste_at {
+            if t.elapsed() < crate::window::main::PASTE_CTRL_C_COOLDOWN {
+                let scope = crate::ui::ToastScope::Surface(
+                    self.state.focused_surface_id().unwrap_or(0),
+                );
+                self.state.toasts.push_info(
+                    crate::i18n::t("toast.ctrl_c_ignored_after_paste"),
+                    scope,
+                );
+                self.mark_dirty();
+                return true;
+            }
+        }
         if self.copy_selection_to_clipboard() {
             self.mark_dirty();
             return true;

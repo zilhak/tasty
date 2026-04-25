@@ -54,7 +54,13 @@ pub struct MainWindow {
     pub(crate) webviews: std::collections::HashMap<u32, crate::webview::PlatformWebView>,
     /// 현재 마우스 hover 중이고 수식키 조건을 만족한 링크. 렌더 및 클릭에 사용.
     pub(crate) hovered_link: Option<HoveredLink>,
+    /// 가장 최근에 터미널에 paste한 시각. Ctrl+V 직후 사용자가 옆 키 Ctrl+C를 잘못 눌러
+    /// 입력을 날려버리는 사고를 막기 위해 cooldown 구간 안의 Ctrl+C는 무시한다.
+    pub(crate) last_terminal_paste_at: Option<std::time::Instant>,
 }
+
+/// Ctrl+V 직후 Ctrl+C를 SIGINT로 흘려보내지 않을 보호 시간.
+pub(crate) const PASTE_CTRL_C_COOLDOWN: std::time::Duration = std::time::Duration::from_millis(500);
 
 /// 마우스가 위에 있고 설정된 수식키 조건을 만족한 링크.
 #[derive(Debug, Clone)]
@@ -90,6 +96,7 @@ impl MainWindow {
             double_tap: crate::double_tap::DoubleTapDetector::new(),
             webviews: std::collections::HashMap::new(),
             hovered_link: None,
+            last_terminal_paste_at: None,
         }
     }
 

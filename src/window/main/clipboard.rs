@@ -17,6 +17,7 @@ impl MainWindow {
                     } else {
                         terminal.send_key(&text);
                     }
+                    self.last_terminal_paste_at = Some(std::time::Instant::now());
                 }
                 return;
             }
@@ -38,6 +39,7 @@ impl MainWindow {
                         } else {
                             terminal.send_key(&path);
                         }
+                        self.last_terminal_paste_at = Some(std::time::Instant::now());
                     }
                 }
                 Err(e) => {
