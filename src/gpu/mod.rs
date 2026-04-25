@@ -268,12 +268,21 @@ impl GpuState {
         self.egui_state
             .handle_platform_output(window, full_output.platform_output);
 
-        // 텍스트 입력이 없는 focused popup이 열려 있으면 IME를 비활성화하여
-        // KeyboardInput이 직접 발생하도록 한다. physical_key 기반 단축키가
-        // 한글 IME 상태에서도 정상 동작한다.
-        // winit은 동일 값이면 no-op이므로 매 프레임 호출해도 비용 없음.
-        let disable_ime = state.popups.has_focused() && !state.has_input_dialog_open();
-        window.set_ime_allowed(!disable_ime);
+        // popup이 focused면 IME를 비활성화하여 KeyboardInput이 직접 발생하도록 한다.
+        // 이렇게 하면 한글 IME 활성 상태에서도 popup 단축키가 physical_key로 매칭된다.
+        //
+        // Windows 예외: winit Windows의 set_ime_allowed는 ImmAssociateContextEx(IACE_DEFAULT/
+        // IACE_CHILDREN)로 IMC를 매번 attach/detach시킨다. 이 association churn이 한/영 키
+        // (VK_HANGUL) 토글을 가끔 망가뜨린다(다른 앱으로 갔다 오면 풀리는 증상의 원인).
+        // Windows winit은 IME 활성 상태에서도 KeyboardInput과 physical_key를 정상 emit하므로,
+        // popup 단축키 매칭에 IME 비활성화가 필요 없다. 따라서 Windows는 항상 IME를 허용한다.
+        #[cfg(not(windows))]
+        {
+            let disable_ime = state.popups.has_focused() && !state.has_input_dialog_open();
+            window.set_ime_allowed(!disable_ime);
+        }
+        #[cfg(windows)]
+        window.set_ime_allowed(true);
 
         // 4. Tessellate egui
         let paint_jobs = self
