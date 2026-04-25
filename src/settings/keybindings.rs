@@ -127,6 +127,15 @@ pub struct KeybindingSettings {
     /// Reset font size.
     #[serde(deserialize_with = "deserialize_binding")]
     pub zoom_reset: Vec<String>,
+    /// Open the rename dialog for the focused tab.
+    #[serde(deserialize_with = "deserialize_binding")]
+    pub rename_tab: Vec<String>,
+    /// Open the name rename dialog for the active workspace.
+    #[serde(deserialize_with = "deserialize_binding")]
+    pub rename_workspace: Vec<String>,
+    /// Open the subtitle rename dialog for the active workspace.
+    #[serde(deserialize_with = "deserialize_binding")]
+    pub rename_workspace_subtitle: Vec<String>,
 }
 
 impl KeybindingSettings {
@@ -221,6 +230,15 @@ impl KeybindingSettings {
         ("zoom_in", "settings.keybindings.zoom_in_label"),
         ("zoom_out", "settings.keybindings.zoom_out_label"),
         ("zoom_reset", "settings.keybindings.zoom_reset_label"),
+        ("rename_tab", "settings.keybindings.rename_tab_label"),
+        (
+            "rename_workspace",
+            "settings.keybindings.rename_workspace_label",
+        ),
+        (
+            "rename_workspace_subtitle",
+            "settings.keybindings.rename_workspace_subtitle_label",
+        ),
     ];
 
     /// 필드 id로 Vec<String> 참조를 얻는다.
@@ -265,6 +283,9 @@ impl KeybindingSettings {
             "zoom_in" => self.zoom_in.as_slice(),
             "zoom_out" => self.zoom_out.as_slice(),
             "zoom_reset" => self.zoom_reset.as_slice(),
+            "rename_tab" => self.rename_tab.as_slice(),
+            "rename_workspace" => self.rename_workspace.as_slice(),
+            "rename_workspace_subtitle" => self.rename_workspace_subtitle.as_slice(),
             _ => return None,
         })
     }
@@ -310,6 +331,9 @@ impl KeybindingSettings {
             "zoom_in" => &mut self.zoom_in,
             "zoom_out" => &mut self.zoom_out,
             "zoom_reset" => &mut self.zoom_reset,
+            "rename_tab" => &mut self.rename_tab,
+            "rename_workspace" => &mut self.rename_workspace,
+            "rename_workspace_subtitle" => &mut self.rename_workspace_subtitle,
             _ => return None,
         })
     }
@@ -530,6 +554,9 @@ impl KeybindingSettings {
             ],
             zoom_out: vec!["ctrl+-".into(), "alt+-".into()],
             zoom_reset: vec!["ctrl+0".into(), "alt+0".into()],
+            rename_tab: vec!["ctrl+`".into()],
+            rename_workspace: vec!["alt+`".into()],
+            rename_workspace_subtitle: vec!["alt+shift+`".into()],
         }
     }
 
@@ -577,6 +604,9 @@ impl KeybindingSettings {
             zoom_in: vec!["alt+=".into(), "alt++".into()],
             zoom_out: vec!["alt+-".into()],
             zoom_reset: vec!["alt+0".into()],
+            rename_tab: vec!["ctrl+`".into()],
+            rename_workspace: vec!["alt+`".into()],
+            rename_workspace_subtitle: vec!["alt+shift+`".into()],
         }
     }
 
@@ -624,6 +654,9 @@ impl KeybindingSettings {
             zoom_in: vec!["ctrl+=".into(), "ctrl++".into()],
             zoom_out: vec!["ctrl+-".into()],
             zoom_reset: vec!["ctrl+0".into()],
+            rename_tab: vec!["ctrl+`".into()],
+            rename_workspace: vec!["alt+`".into()],
+            rename_workspace_subtitle: vec!["alt+shift+`".into()],
         }
     }
 
@@ -671,6 +704,9 @@ impl KeybindingSettings {
             zoom_in: vec!["ctrl+=".into(), "ctrl++".into()],
             zoom_out: vec!["ctrl+-".into()],
             zoom_reset: vec!["ctrl+0".into()],
+            rename_tab: vec!["ctrl+`".into()],
+            rename_workspace: vec!["alt+`".into()],
+            rename_workspace_subtitle: vec!["alt+shift+`".into()],
         }
     }
 
@@ -854,7 +890,7 @@ mod tests {
 
     #[test]
     fn general_binding_fields_count() {
-        assert_eq!(KeybindingSettings::GENERAL_BINDING_FIELDS.len(), 37);
+        assert_eq!(KeybindingSettings::GENERAL_BINDING_FIELDS.len(), 40);
     }
 
     #[test]
