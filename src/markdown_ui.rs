@@ -18,13 +18,13 @@ pub fn draw_markdown(
 
     // Force the frame content to fill the available width
     ui.set_min_width(ui.available_width());
-    if scroll_delta != 0.0 {
-        ui.scroll_with_delta(egui::vec2(0.0, scroll_delta));
-    }
     egui::ScrollArea::vertical()
         .id_salt(format!("md_scroll_{}", id_suffix))
         .auto_shrink([false, false])
         .show(ui, |ui| {
+            if scroll_delta != 0.0 {
+                ui.scroll_with_delta(egui::vec2(0.0, scroll_delta));
+            }
             ui.set_min_width(ui.available_width());
             ui.style_mut().interaction.selectable_labels = true;
             ui.style_mut().url_in_tooltip = true;
@@ -41,6 +41,10 @@ pub fn draw_markdown(
                 &mut panel.commonmark_cache,
                 &content,
             );
+
+            // Trailing space so the last line doesn't visually collide with the
+            // panel's bottom inner_margin when scrolled to the end.
+            ui.add_space(8.0);
         });
 }
 
