@@ -51,6 +51,7 @@
 - 스크롤백 중에는 새 PTY 출력이 도착해도 스크롤 위치를 유지 — 새 라인이 추가되면 scroll_offset을 자동 보정하여 동일한 위치를 표시
 - 스크롤 시 GPU 렌더러가 스크롤백 라인과 현재 화면 라인을 혼합하여 표시. 전각 문자(CJK, 한글 등)의 2셀 너비를 올바르게 반영하여 배치
 - `ScrollRegionUp`(전체 화면 스크롤)과 `\n`(커서가 하단에 있을 때) 발생 시 최상단 줄 캡처
+- 텍스트 wrap에 의한 implicit 스크롤(termwiz Surface가 `ScrollRegionUp` Change 없이 내부 처리하는 케이스)도 변경 전후 화면 스냅샷 비교로 감지하여 사라진 행을 scrollback에 기록 — 선택 영역의 `absolute_row`가 콘텐츠를 정확히 따라가도록 보장
 
 ### GPU 가속 렌더링
 - wgpu 기반 크로스 플랫폼 GPU 렌더링
