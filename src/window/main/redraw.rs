@@ -359,6 +359,7 @@ impl MainWindow {
                     MenuItem::new(2, crate::i18n::t("pane_context_menu.new_markdown")),
                     MenuItem::new(3, crate::i18n::t("pane_context_menu.new_explorer")),
                     MenuItem::new(4, crate::i18n::t("pane_context_menu.new_html")),
+                    MenuItem::new(5, crate::i18n::t("pane_context_menu.new_image")),
                 ];
                 let result =
                     show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
@@ -400,6 +401,12 @@ impl MainWindow {
                                 "html_open",
                                 crate::ui::popup::PopupScope::Surface(surface_id),
                             );
+                        }
+                    }
+                    Some(5) => {
+                        self.state.active_workspace_mut().focused_pane = pane_id;
+                        if let Some((_tab_id, surface_id)) = self.state.add_empty_tab() {
+                            self.state.convert_surface_to_image(surface_id);
                         }
                     }
                     _ => {}

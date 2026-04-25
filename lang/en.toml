@@ -245,6 +245,7 @@ new_terminal = "New Terminal"
 new_markdown = "New Markdown..."
 new_explorer = "New Explorer"
 new_html = "New HTML..."
+new_image = "New Image"
 
 [notification_panel]
 window_title = "Notifications"

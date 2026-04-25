@@ -245,6 +245,7 @@ new_terminal = "新規ターミナル"
 new_markdown = "新規マークダウン..."
 new_explorer = "新規エクスプローラー"
 new_html = "新規HTML..."
+new_image = "新規画像"
 
 [notification_panel]
 window_title = "通知"

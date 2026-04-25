@@ -268,6 +268,7 @@
 - "Open Markdown..." → 파일 경로 입력 다이얼로그 → 마크다운 탭 열기
 - "Open Explorer" → 홈 디렉토리를 루트로 하는 탐색기 탭 열기
 - "Open HTML..." → URL 입력 다이얼로그 → HTML WebView 탭 열기
+- "새 이미지" → 빈 이미지 surface 탭 생성 (가로/세로 크기 입력 팝업이 함께 뜸)
 - 좌클릭 또는 Cancel로 메뉴 닫기
 
 #### 키보드 단축키
