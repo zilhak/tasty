@@ -11,6 +11,10 @@ const IMAGE_EXTENSIONS: &[&str] = &[
     "png", "jpg", "jpeg", "gif", "bmp", "webp", "ico", "tiff", "svg",
 ];
 
+/// Default blank canvas dimensions (width × height) when an image surface starts empty.
+pub const DEFAULT_BLANK_CANVAS_WIDTH: usize = 800;
+pub const DEFAULT_BLANK_CANVAS_HEIGHT: usize = 600;
+
 /// A surface that displays an image with viewer and drawing capabilities.
 pub struct ImagePanel {
     pub id: u32,
@@ -70,16 +74,21 @@ impl ImagePanel {
             is_dirty: false,
             draw_texture_dirty: false,
             new_image_popup: false,
-            new_image_width: "800".to_string(),
-            new_image_height: "600".to_string(),
+            new_image_width: DEFAULT_BLANK_CANVAS_WIDTH.to_string(),
+            new_image_height: DEFAULT_BLANK_CANVAS_HEIGHT.to_string(),
             save_path_popup: false,
             save_path_buffer: String::new(),
         }
     }
 
     /// Create an image panel for a new blank canvas.
+    ///
+    /// Starts with an 800×600 white canvas already filled in and edit mode active,
+    /// so the user (or AI agent) can begin drawing immediately. The "new image"
+    /// popup is reserved for the explicit `+` button, which lets users pick a
+    /// different size on demand.
     pub fn new_blank(id: u32) -> Self {
-        Self {
+        let mut panel = Self {
             id,
             file_path: None,
             dir_images: Vec::new(),
@@ -97,12 +106,14 @@ impl ImagePanel {
             last_draw_pos: None,
             is_dirty: false,
             draw_texture_dirty: false,
-            new_image_popup: true,
-            new_image_width: "800".to_string(),
-            new_image_height: "600".to_string(),
+            new_image_popup: false,
+            new_image_width: DEFAULT_BLANK_CANVAS_WIDTH.to_string(),
+            new_image_height: DEFAULT_BLANK_CANVAS_HEIGHT.to_string(),
             save_path_popup: false,
             save_path_buffer: String::new(),
-        }
+        };
+        panel.create_blank_canvas(DEFAULT_BLANK_CANVAS_WIDTH, DEFAULT_BLANK_CANVAS_HEIGHT);
+        panel
     }
 
     /// Navigate to the previous image in the directory.
