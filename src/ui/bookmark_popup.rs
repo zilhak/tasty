@@ -45,6 +45,20 @@ pub fn draw_bookmark_popup(ui: &mut egui::Ui, state: &mut AppState) -> PopupActi
     if !resp.has_focus() {
         resp.request_focus();
     }
+    // 북마크 이름은 기본값(폴더명)으로 미리 채워지므로, 포커스를 얻은 첫 프레임에
+    // 전체 선택해서 사용자가 곧바로 입력하면 새 이름으로 대체되도록 한다.
+    if resp.gained_focus() {
+        if let Some(mut text_state) = egui::TextEdit::load_state(&ctx, resp.id) {
+            let len = name_buf.chars().count();
+            text_state.cursor.set_char_range(Some(
+                egui::text::CCursorRange::two(
+                    egui::text::CCursor::new(0),
+                    egui::text::CCursor::new(len),
+                ),
+            ));
+            text_state.store(&ctx, resp.id);
+        }
+    }
 
     let mut confirm = false;
     if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {

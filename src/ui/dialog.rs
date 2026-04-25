@@ -30,6 +30,22 @@ pub fn draw_ws_rename_dialog(ctx: &egui::Context, state: &mut AppState) {
             if !response.has_focus() {
                 response.request_focus();
             }
+            // 다이얼로그가 막 열려 포커스를 얻은 첫 프레임에 텍스트 전체를 선택해서,
+            // 사용자가 곧바로 입력하면 기존 이름이 새 입력으로 대체되도록 한다.
+            if response.gained_focus() {
+                if let Some(mut text_state) =
+                    egui::TextEdit::load_state(ctx, response.id)
+                {
+                    let len = buffer.chars().count();
+                    text_state.cursor.set_char_range(Some(
+                        egui::text::CCursorRange::two(
+                            egui::text::CCursor::new(0),
+                            egui::text::CCursor::new(len),
+                        ),
+                    ));
+                    text_state.store(ctx, response.id);
+                }
+            }
             // Enter to confirm, Escape to cancel.
             // Check key_pressed first: singleline TextEdit surrenders focus on Enter,
             // but key_pressed may already be consumed by the widget in the same frame.
