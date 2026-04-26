@@ -4,6 +4,19 @@ use cosmic_text::{
     Attrs, Buffer, FamilyOwned, FontSystem, Metrics, Shaping, SwashCache, SwashContent,
 };
 
+/// Family name of the bundled D2Coding ligature font.
+/// Must match the `family` entry in the ttf `name` table exactly
+/// (lowercase `l`, single space — verified against NAVER Ver 1.3.2).
+pub const D2CODING_FAMILY: &str = "D2Coding ligature";
+
+/// D2Coding ligature Regular ttf bytes embedded at compile time (OFL 1.1).
+pub const D2CODING_REGULAR_TTF: &[u8] =
+    include_bytes!("../assets/fonts/D2Coding-ligature-Regular.ttf");
+
+/// D2Coding ligature Bold ttf bytes embedded at compile time (OFL 1.1).
+pub const D2CODING_BOLD_TTF: &[u8] =
+    include_bytes!("../assets/fonts/D2Coding-ligature-Bold.ttf");
+
 /// Font metrics for monospace grid layout.
 pub struct FontMetrics {
     pub cell_width: f32,
@@ -24,7 +37,7 @@ pub struct FontConfig {
 
 impl FontConfig {
     /// Create a new FontConfig with the given font size, family name, and optional custom font file.
-    /// If `font_family` is empty or "monospace", the system default monospace font is used.
+    /// If `font_family` is empty or "monospace", the bundled D2Coding ligature font is used.
     pub fn new(font_size: f32, font_family: &str) -> Self {
         Self::with_options(font_size, font_family, "", 1.0)
     }
@@ -39,7 +52,13 @@ impl FontConfig {
         let mut font_system = FontSystem::new();
         let swash_cache = SwashCache::new();
 
-        // Load custom font file if specified
+        font_system
+            .db_mut()
+            .load_font_data(D2CODING_REGULAR_TTF.to_vec());
+        font_system
+            .db_mut()
+            .load_font_data(D2CODING_BOLD_TTF.to_vec());
+
         if !custom_font_path.is_empty() {
             if let Ok(data) = std::fs::read(custom_font_path) {
                 font_system.db_mut().load_font_data(data);
@@ -50,7 +69,7 @@ impl FontConfig {
         }
 
         let family = if font_family.is_empty() || font_family.eq_ignore_ascii_case("monospace") {
-            FamilyOwned::Monospace
+            FamilyOwned::Name(D2CODING_FAMILY.to_string().into())
         } else {
             FamilyOwned::Name(font_family.to_string().into())
         };
