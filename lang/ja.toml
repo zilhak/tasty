@@ -100,6 +100,13 @@ hint = "プリセットを選択すると全サーフェスの色がリセット
 dark = "ダーク"
 light = "ライト"
 
+[settings.appearance.font]
+default_heading = "デフォルトフォント設定"
+default_hint = "Terminal・Markdown・Explorer のすべてに一括で適用されます。各サブタブで項目ごとに override できます。"
+override_heading = "フォント override"
+override_hint = "各項目で「デフォルトを使用」をオフにすると、このサーフェス専用の値を指定できます。"
+use_default_label = "デフォルトを使用"
+
 [settings.clipboard]
 heading = "クリップボード"
 history_heading = "履歴"

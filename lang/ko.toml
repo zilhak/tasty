@@ -100,6 +100,13 @@ hint = "프리셋을 선택하면 모든 surface 색상이 초기화됩니다. �
 dark = "다크"
 light = "라이트"
 
+[settings.appearance.font]
+default_heading = "기본 폰트 설정"
+default_hint = "Terminal · Markdown · Explorer 모두에 일괄 적용됩니다. 각 서브탭에서 항목별로 override 할 수 있습니다."
+override_heading = "폰트 override"
+override_hint = "각 항목에 대해 \"기본값 사용\"을 끄면 이 surface 전용 값을 지정할 수 있습니다."
+use_default_label = "기본값 사용"
+
 [settings.clipboard]
 heading = "클립보드"
 history_heading = "히스토리"

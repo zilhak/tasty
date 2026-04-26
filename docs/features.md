@@ -420,10 +420,14 @@
 ### 설정 연동
 - `settings.general.shell`: Terminal 생성 시 커스텀 셸 경로 사용 (비어있으면 OS 기본 셸)
 - `settings.general.startup_command`: 첫 터미널 생성 후 자동 실행할 명령. 비어있으면 무시
-- `settings.appearance.font_family`: GPU 렌더러의 cosmic-text FontSystem에 전달. `FamilyOwned::Name`으로 해석되며, 빈 문자열이나 "monospace"이면 시스템 기본 모노스페이스 사용. 설정 UI에서 시스템 폰트 목록을 검색 가능한 드롭다운으로 선택 가능
-- `settings.appearance.font_size`: GpuState 생성 시 CellRenderer에 전달. 기본값 14.0
-- `settings.appearance.custom_font_path`: 커스텀 폰트 파일(.ttf/.otf) 경로. 지정 시 FontSystem에 해당 파일을 추가 로드한 후 font_family로 참조 가능
-- `settings.appearance.line_height`: 행간 배수. 1.0(기본, 틈 없음 - ASCII 아트에 최적) ~ 2.0. 값이 클수록 행 간격이 넓어짐
+- `settings.appearance.default_font`: 기본 폰트 5종 묶음 (`font_family`, `font_size`, `custom_font_path`, `line_height`, `font_scale_mode`). Terminal·Markdown·Explorer 모두에 일괄 적용되며, 각 surface는 아래 override 그룹으로 항목별 재정의 가능. 설정 UI에서는 Theme 서브탭 하단의 "기본 폰트 설정" 섹션에서 편집
+- `settings.appearance.terminal_font` / `markdown_font` / `explorer_font`: surface별 per-field override. 5개 필드 모두 `Option<T>`이며 `None`이면 `default_font`를 사용. 각 surface 서브탭에 "기본값 사용" 체크박스 + 입력 위젯 패턴으로 노출
+- `font_family`: cosmic-text(터미널) 또는 egui FontDefinitions(Markdown/Explorer)에 전달. 빈 문자열이나 "monospace"는 시스템 기본 모노스페이스. 설정 UI에서 시스템 폰트 목록을 검색 가능한 드롭다운으로 선택
+- `font_size`: 픽셀 단위. 기본값 14.0. 단축키 `Ctrl+/-/0`은 포커스된 surface(Terminal/Markdown/Explorer)의 `font_size` override만 변경하며, `Ctrl+0`은 override를 제거해 기본값으로 회귀
+- `custom_font_path`: 커스텀 폰트 파일(.ttf/.otf) 경로. 지정 시 FontSystem 또는 egui FontDefinitions에 해당 파일을 추가 로드한 후 `font_family`로 참조 가능
+- `line_height`: 행간 배수. 1.0(기본, 틈 없음 - ASCII 아트에 최적) ~ 2.0. 값이 클수록 행 간격이 넓어짐
+- `font_scale_mode`: "auto"는 `font_size * scale_factor`(고DPI에서 동일 물리 크기 유지), "fixed"는 픽셀 크기 고정
+- 레거시 평면 형식(`appearance.font_family = ...` 등)은 자동으로 `default_font`로 마이그레이션되어 기존 설정 파일이 그대로 동작
 - `settings.appearance.theme`: 테마 프리셋 ID. "catppuccin-mocha"(기본 다크), "catppuccin-latte"(라이트). 설정 저장 시 `set_theme()`로 런타임 반영. 레거시 "dark"/"light"는 시작 시 자동 마이그레이션
 - `settings.appearance.background_opacity`: wgpu clear color의 알파 값으로 적용. 0.0(투명)~1.0(불투명)
 - `settings.appearance.terminal_colors`: 터미널 surface의 focused/unfocused 배경색·글자색 (HexColor, 기본 focused_bg `#000000`)

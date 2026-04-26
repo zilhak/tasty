@@ -1,7 +1,9 @@
-use std::sync::Arc;
+use std::collections::HashMap;
 
 use crate::i18n::t;
-use crate::settings::{GeneralSettings, HexColor, Settings};
+use crate::settings::{
+    EffectiveFont, FontOverride, FontSettings, GeneralSettings, HexColor, Settings, SurfaceColors,
+};
 
 /// Draw a label followed by a (?) icon with tooltip. For use inside Grid rows.
 fn label_with_tooltip(ui: &mut egui::Ui, label: &str, tooltip: &str) {
@@ -151,8 +153,8 @@ pub fn draw_appearance_tab(
     settings: &mut Settings,
     sub_tab: &mut super::AppearanceSubTab,
     font_families: &mut Option<Vec<String>>,
-    font_filter: &mut String,
-    preview_font_loaded: &mut String,
+    font_filter: &mut HashMap<String, String>,
+    preview_font_loaded: &mut HashMap<String, String>,
 ) {
     use super::AppearanceSubTab;
     let th = crate::theme::theme();
@@ -207,7 +209,7 @@ pub fn draw_appearance_tab(
         // ── Right: sub-tab content ──
         ui.vertical(|ui| match *sub_tab {
             AppearanceSubTab::Theme => {
-                draw_appearance_theme(ui, settings);
+                draw_appearance_theme(ui, settings, font_families, font_filter, preview_font_loaded);
             }
             AppearanceSubTab::General => {
                 draw_appearance_general(ui, settings);
@@ -225,10 +227,22 @@ pub fn draw_appearance_tab(
                 );
             }
             AppearanceSubTab::Markdown => {
-                draw_appearance_markdown(ui, settings);
+                draw_appearance_markdown(
+                    ui,
+                    settings,
+                    font_families,
+                    font_filter,
+                    preview_font_loaded,
+                );
             }
             AppearanceSubTab::Explorer => {
-                draw_appearance_explorer(ui, settings);
+                draw_appearance_explorer(
+                    ui,
+                    settings,
+                    font_families,
+                    font_filter,
+                    preview_font_loaded,
+                );
             }
             AppearanceSubTab::HtmlViewer => {
                 draw_appearance_placeholder(ui, "HTML Viewer");
@@ -237,8 +251,15 @@ pub fn draw_appearance_tab(
     });
 }
 
-/// Appearance > Theme: preset selection with preview.
-fn draw_appearance_theme(ui: &mut egui::Ui, settings: &mut Settings) {
+/// Appearance > Theme: preset selection + default font settings (single source
+/// of truth for fields not overridden per-surface).
+fn draw_appearance_theme(
+    ui: &mut egui::Ui,
+    settings: &mut Settings,
+    font_families: &mut Option<Vec<String>>,
+    font_filter: &mut HashMap<String, String>,
+    preview_font_loaded: &mut HashMap<String, String>,
+) {
     let th = crate::theme::theme();
     ui.add_space(8.0);
 
@@ -261,12 +282,59 @@ fn draw_appearance_theme(ui: &mut egui::Ui, settings: &mut Settings) {
         }
     }
 
-    ui.add_space(12.0);
+    ui.add_space(8.0);
     ui.label(
         egui::RichText::new(t("settings.appearance.theme.hint"))
             .small()
             .color(th.subtext0),
     );
+
+    ui.add_space(16.0);
+    ui.separator();
+    ui.add_space(8.0);
+
+    ui.label(
+        egui::RichText::new(t("settings.appearance.font.default_heading"))
+            .strong()
+            .color(th.text),
+    );
+    ui.add_space(4.0);
+    ui.label(
+        egui::RichText::new(t("settings.appearance.font.default_hint"))
+            .small()
+            .color(th.subtext0),
+    );
+    ui.add_space(8.0);
+
+    ui.columns(2, |columns| {
+        font_settings_grid(
+            &mut columns[0],
+            &mut settings.appearance.default_font,
+            font_families,
+            font_filter,
+            "default",
+        );
+        let preview_eff = effective_from_settings(&settings.appearance.default_font);
+        draw_font_preview(
+            &mut columns[1],
+            &preview_eff,
+            &settings.appearance.terminal_colors,
+            &settings.appearance,
+            "default",
+            preview_font_loaded,
+        );
+    });
+}
+
+/// Convert FontSettings → EffectiveFont (used for default-font preview).
+fn effective_from_settings(s: &FontSettings) -> EffectiveFont {
+    EffectiveFont {
+        font_family: s.font_family.clone(),
+        font_size: s.font_size,
+        custom_font_path: s.custom_font_path.clone(),
+        line_height: s.line_height,
+        font_scale_mode: s.font_scale_mode.clone(),
+    }
 }
 
 /// Appearance > General: theme, background opacity, focused surface bg
@@ -326,141 +394,119 @@ fn draw_appearance_tasty(ui: &mut egui::Ui, settings: &mut Settings) {
         });
 }
 
-/// Appearance > Terminal: font, font size, line height, DPI mode, preview
+/// Appearance > Terminal: font override + preview + colors
 fn draw_appearance_terminal(
     ui: &mut egui::Ui,
     settings: &mut Settings,
     font_families: &mut Option<Vec<String>>,
-    font_filter: &mut String,
-    preview_font_loaded: &mut String,
+    font_filter: &mut HashMap<String, String>,
+    preview_font_loaded: &mut HashMap<String, String>,
 ) {
-    let th = crate::theme::theme();
-
-    ui.columns(2, |columns| {
-        // ── Left: terminal font settings ──
-        egui::Grid::new("appearance_terminal_grid")
-            .num_columns(2)
-            .spacing([12.0, 8.0])
-            .show(&mut columns[0], |ui| {
-                // Font family: searchable combo box
-                ui.label(t("settings.appearance.font_family_label"));
-                let display_name = if settings.appearance.font_family.is_empty() {
-                    "monospace (default)".to_string()
-                } else {
-                    settings.appearance.font_family.clone()
-                };
-                egui::ComboBox::from_id_salt("font_family_combo")
-                    .selected_text(&display_name)
-                    .width(200.0)
-                    .height(300.0)
-                    .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-                    .show_ui(ui, |ui| {
-                        ui.add(
-                            egui::TextEdit::singleline(font_filter)
-                                .hint_text(t("settings.appearance.search_hint"))
-                                .desired_width(190.0),
-                        );
-                        ui.separator();
-
-                        let filter_lower = font_filter.to_lowercase();
-                        if filter_lower.is_empty() || "monospace".contains(&filter_lower) {
-                            if ui
-                                .selectable_label(
-                                    settings.appearance.font_family.is_empty(),
-                                    "monospace (default)",
-                                )
-                                .clicked()
-                            {
-                                settings.appearance.font_family.clear();
-                            }
-                        }
-
-                        if let Some(families) = &font_families {
-                            egui::ScrollArea::vertical()
-                                .max_height(250.0)
-                                .show(ui, |ui| {
-                                    for family in families {
-                                        if !filter_lower.is_empty()
-                                            && !family.to_lowercase().contains(&filter_lower)
-                                        {
-                                            continue;
-                                        }
-                                        let selected = settings.appearance.font_family == *family;
-                                        if ui.selectable_label(selected, family).clicked() {
-                                            settings.appearance.font_family = family.clone();
-                                        }
-                                    }
-                                });
-                        } else {
-                            ui.label(
-                                egui::RichText::new(t("settings.appearance.loading_fonts"))
-                                    .color(th.subtext0),
-                            );
-                        }
-                    });
-                ui.end_row();
-
-                ui.label(t("settings.appearance.custom_font_label"));
-                ui.horizontal(|ui| {
-                    ui.text_edit_singleline(&mut settings.appearance.custom_font_path);
-                });
-                ui.end_row();
-
-                ui.label(t("settings.appearance.font_size_label"));
-                ui.add(
-                    egui::DragValue::new(&mut settings.appearance.font_size)
-                        .range(6.0..=72.0)
-                        .speed(0.5),
-                );
-                ui.end_row();
-
-                label_with_tooltip(
-                    ui,
-                    t("settings.appearance.line_height_label"),
-                    t("settings.appearance.line_height_tooltip"),
-                );
-                ui.add(
-                    egui::DragValue::new(&mut settings.appearance.line_height)
-                        .range(0.8..=2.0)
-                        .speed(0.05)
-                        .max_decimals(2),
-                );
-                ui.end_row();
-
-                label_with_tooltip(
-                    ui,
-                    t("settings.appearance.font_scale_mode_label"),
-                    t("settings.appearance.font_scale_mode_tooltip"),
-                );
-                egui::ComboBox::from_id_salt("font_scale_mode")
-                    .selected_text(match settings.appearance.font_scale_mode.as_str() {
-                        "auto" => t("settings.appearance.font_scale_mode_auto"),
-                        _ => t("settings.appearance.font_scale_mode_fixed"),
-                    })
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(
-                            &mut settings.appearance.font_scale_mode,
-                            "auto".to_string(),
-                            t("settings.appearance.font_scale_mode_auto"),
-                        );
-                        ui.selectable_value(
-                            &mut settings.appearance.font_scale_mode,
-                            "fixed".to_string(),
-                            t("settings.appearance.font_scale_mode_fixed"),
-                        );
-                    });
-                ui.end_row();
-            });
-
-        // ── Right: font preview ──
-        draw_font_preview(&mut columns[1], settings, &th, preview_font_loaded);
-    });
+    draw_surface_font_section(
+        ui,
+        settings,
+        font_families,
+        font_filter,
+        preview_font_loaded,
+        SurfaceFontTarget::Terminal,
+    );
 
     ui.add_space(16.0);
     ui.separator();
     ui.add_space(8.0);
 
     draw_surface_colors(ui, "terminal", &mut settings.appearance.terminal_colors);
+}
+
+#[derive(Clone, Copy)]
+enum SurfaceFontTarget {
+    Terminal,
+    Markdown,
+    Explorer,
+}
+
+impl SurfaceFontTarget {
+    fn salt(self) -> &'static str {
+        match self {
+            SurfaceFontTarget::Terminal => "terminal",
+            SurfaceFontTarget::Markdown => "markdown",
+            SurfaceFontTarget::Explorer => "explorer",
+        }
+    }
+
+    fn override_mut(self, app: &mut crate::settings::AppearanceSettings) -> &mut FontOverride {
+        match self {
+            SurfaceFontTarget::Terminal => &mut app.terminal_font,
+            SurfaceFontTarget::Markdown => &mut app.markdown_font,
+            SurfaceFontTarget::Explorer => &mut app.explorer_font,
+        }
+    }
+
+    fn effective(self, app: &crate::settings::AppearanceSettings) -> EffectiveFont {
+        match self {
+            SurfaceFontTarget::Terminal => app.effective_terminal_font(),
+            SurfaceFontTarget::Markdown => app.effective_markdown_font(),
+            SurfaceFontTarget::Explorer => app.effective_explorer_font(),
+        }
+    }
+
+    fn colors<'a>(
+        self,
+        app: &'a crate::settings::AppearanceSettings,
+    ) -> &'a SurfaceColors {
+        match self {
+            SurfaceFontTarget::Terminal => &app.terminal_colors,
+            SurfaceFontTarget::Markdown => &app.markdown_colors,
+            SurfaceFontTarget::Explorer => &app.explorer_colors,
+        }
+    }
+}
+
+fn draw_surface_font_section(
+    ui: &mut egui::Ui,
+    settings: &mut Settings,
+    font_families: &mut Option<Vec<String>>,
+    font_filter: &mut HashMap<String, String>,
+    preview_font_loaded: &mut HashMap<String, String>,
+    target: SurfaceFontTarget,
+) {
+    let th = crate::theme::theme();
+    ui.add_space(4.0);
+    ui.label(
+        egui::RichText::new(t("settings.appearance.font.override_heading"))
+            .strong()
+            .color(th.text),
+    );
+    ui.add_space(4.0);
+    ui.label(
+        egui::RichText::new(t("settings.appearance.font.override_hint"))
+            .small()
+            .color(th.subtext0),
+    );
+    ui.add_space(8.0);
+
+    ui.columns(2, |columns| {
+        let default_font = settings.appearance.default_font.clone();
+        font_override_grid(
+            &mut columns[0],
+            target.override_mut(&mut settings.appearance),
+            &default_font,
+            font_families,
+            font_filter,
+            target.salt(),
+        );
+
+        let eff = target.effective(&settings.appearance);
+        let colors = target.colors(&settings.appearance).clone();
+        draw_font_preview(
+            &mut columns[1],
+            &eff,
+            &colors,
+            &settings.appearance,
+            target.salt(),
+            preview_font_loaded,
+        );
+    });
 }
 
 /// Draw a single color row: label + color picker button + hex text input.
@@ -520,15 +566,51 @@ fn draw_surface_colors(ui: &mut egui::Ui, id_salt: &str, colors: &mut crate::set
         });
 }
 
-/// Appearance > Markdown: color settings.
-fn draw_appearance_markdown(ui: &mut egui::Ui, settings: &mut Settings) {
+/// Appearance > Markdown: font override + color settings.
+fn draw_appearance_markdown(
+    ui: &mut egui::Ui,
+    settings: &mut Settings,
+    font_families: &mut Option<Vec<String>>,
+    font_filter: &mut HashMap<String, String>,
+    preview_font_loaded: &mut HashMap<String, String>,
+) {
+    draw_surface_font_section(
+        ui,
+        settings,
+        font_families,
+        font_filter,
+        preview_font_loaded,
+        SurfaceFontTarget::Markdown,
+    );
+
+    ui.add_space(16.0);
+    ui.separator();
     ui.add_space(8.0);
+
     draw_surface_colors(ui, "markdown", &mut settings.appearance.markdown_colors);
 }
 
-/// Appearance > Explorer: color settings.
-fn draw_appearance_explorer(ui: &mut egui::Ui, settings: &mut Settings) {
+/// Appearance > Explorer: font override + color settings.
+fn draw_appearance_explorer(
+    ui: &mut egui::Ui,
+    settings: &mut Settings,
+    font_families: &mut Option<Vec<String>>,
+    font_filter: &mut HashMap<String, String>,
+    preview_font_loaded: &mut HashMap<String, String>,
+) {
+    draw_surface_font_section(
+        ui,
+        settings,
+        font_families,
+        font_filter,
+        preview_font_loaded,
+        SurfaceFontTarget::Explorer,
+    );
+
+    ui.add_space(16.0);
+    ui.separator();
     ui.add_space(8.0);
+
     draw_surface_colors(ui, "explorer", &mut settings.appearance.explorer_colors);
 }
 
@@ -542,81 +624,328 @@ fn draw_appearance_placeholder(ui: &mut egui::Ui, name: &str) {
     );
 }
 
-/// Draw a fake terminal preview showing the current font/appearance settings.
+/// Searchable font family combo. `value` is the family name in the underlying
+/// data (`""` means "monospace default"). `salt` uniquifies the combo id and
+/// the per-combo filter cache key.
+fn font_family_picker(
+    ui: &mut egui::Ui,
+    value: &mut String,
+    font_families: &Option<Vec<String>>,
+    font_filter: &mut HashMap<String, String>,
+    salt: &str,
+    enabled: bool,
+) {
+    let th = crate::theme::theme();
+    let display_name = if value.is_empty() {
+        "monospace (default)".to_string()
+    } else {
+        value.clone()
+    };
+    let combo_id = format!("font_family_combo_{}", salt);
+    let filter = font_filter.entry(salt.to_string()).or_default();
+
+    ui.add_enabled_ui(enabled, |ui| {
+        egui::ComboBox::from_id_salt(combo_id)
+            .selected_text(&display_name)
+            .width(200.0)
+            .height(300.0)
+            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+            .show_ui(ui, |ui| {
+                ui.add(
+                    egui::TextEdit::singleline(filter)
+                        .hint_text(t("settings.appearance.search_hint"))
+                        .desired_width(190.0),
+                );
+                ui.separator();
+
+                let filter_lower = filter.to_lowercase();
+                if filter_lower.is_empty() || "monospace".contains(&filter_lower) {
+                    if ui
+                        .selectable_label(value.is_empty(), "monospace (default)")
+                        .clicked()
+                    {
+                        value.clear();
+                    }
+                }
+
+                if let Some(families) = font_families {
+                    egui::ScrollArea::vertical()
+                        .max_height(250.0)
+                        .show(ui, |ui| {
+                            for family in families {
+                                if !filter_lower.is_empty()
+                                    && !family.to_lowercase().contains(&filter_lower)
+                                {
+                                    continue;
+                                }
+                                let selected = value == family;
+                                if ui.selectable_label(selected, family).clicked() {
+                                    *value = family.clone();
+                                }
+                            }
+                        });
+                } else {
+                    ui.label(
+                        egui::RichText::new(t("settings.appearance.loading_fonts"))
+                            .color(th.subtext0),
+                    );
+                }
+            });
+    });
+}
+
+/// Edit a `FontSettings` (no fallback semantics — every field is always set).
+fn font_settings_grid(
+    ui: &mut egui::Ui,
+    font: &mut FontSettings,
+    font_families: &mut Option<Vec<String>>,
+    font_filter: &mut HashMap<String, String>,
+    salt: &str,
+) {
+    egui::Grid::new(format!("font_settings_grid_{}", salt))
+        .num_columns(2)
+        .spacing([12.0, 8.0])
+        .show(ui, |ui| {
+            ui.label(t("settings.appearance.font_family_label"));
+            font_family_picker(ui, &mut font.font_family, font_families, font_filter, salt, true);
+            ui.end_row();
+
+            ui.label(t("settings.appearance.custom_font_label"));
+            ui.text_edit_singleline(&mut font.custom_font_path);
+            ui.end_row();
+
+            ui.label(t("settings.appearance.font_size_label"));
+            ui.add(
+                egui::DragValue::new(&mut font.font_size)
+                    .range(6.0..=72.0)
+                    .speed(0.5),
+            );
+            ui.end_row();
+
+            label_with_tooltip(
+                ui,
+                t("settings.appearance.line_height_label"),
+                t("settings.appearance.line_height_tooltip"),
+            );
+            ui.add(
+                egui::DragValue::new(&mut font.line_height)
+                    .range(0.8..=2.0)
+                    .speed(0.05)
+                    .max_decimals(2),
+            );
+            ui.end_row();
+
+            label_with_tooltip(
+                ui,
+                t("settings.appearance.font_scale_mode_label"),
+                t("settings.appearance.font_scale_mode_tooltip"),
+            );
+            font_scale_mode_combo(ui, &mut font.font_scale_mode, salt, true);
+            ui.end_row();
+        });
+}
+
+/// Edit a `FontOverride` against a `FontSettings` default. Each row has a
+/// "use default" checkbox: checked → override field is `None` (input
+/// disabled, default value shown for reference). Unchecked → override is
+/// `Some(current_effective_value)` and the input is enabled.
+fn font_override_grid(
+    ui: &mut egui::Ui,
+    ov: &mut FontOverride,
+    default: &FontSettings,
+    font_families: &mut Option<Vec<String>>,
+    font_filter: &mut HashMap<String, String>,
+    salt: &str,
+) {
+    egui::Grid::new(format!("font_override_grid_{}", salt))
+        .num_columns(3)
+        .spacing([8.0, 8.0])
+        .show(ui, |ui| {
+            // ── Font family ──
+            ui.label(t("settings.appearance.font_family_label"));
+            override_checkbox(ui, &mut ov.font_family, || default.font_family.clone(), salt);
+            let mut family_value = ov
+                .font_family
+                .clone()
+                .unwrap_or_else(|| default.font_family.clone());
+            font_family_picker(
+                ui,
+                &mut family_value,
+                font_families,
+                font_filter,
+                salt,
+                ov.font_family.is_some(),
+            );
+            if let Some(stored) = ov.font_family.as_mut() {
+                *stored = family_value;
+            }
+            ui.end_row();
+
+            // ── Custom font path ──
+            ui.label(t("settings.appearance.custom_font_label"));
+            override_checkbox(
+                ui,
+                &mut ov.custom_font_path,
+                || default.custom_font_path.clone(),
+                salt,
+            );
+            let mut path_value = ov
+                .custom_font_path
+                .clone()
+                .unwrap_or_else(|| default.custom_font_path.clone());
+            ui.add_enabled_ui(ov.custom_font_path.is_some(), |ui| {
+                ui.text_edit_singleline(&mut path_value);
+            });
+            if let Some(stored) = ov.custom_font_path.as_mut() {
+                *stored = path_value;
+            }
+            ui.end_row();
+
+            // ── Font size ──
+            ui.label(t("settings.appearance.font_size_label"));
+            override_checkbox(ui, &mut ov.font_size, || default.font_size, salt);
+            let mut size_value = ov.font_size.unwrap_or(default.font_size);
+            ui.add_enabled_ui(ov.font_size.is_some(), |ui| {
+                ui.add(
+                    egui::DragValue::new(&mut size_value)
+                        .range(6.0..=72.0)
+                        .speed(0.5),
+                );
+            });
+            if let Some(stored) = ov.font_size.as_mut() {
+                *stored = size_value;
+            }
+            ui.end_row();
+
+            // ── Line height ──
+            label_with_tooltip(
+                ui,
+                t("settings.appearance.line_height_label"),
+                t("settings.appearance.line_height_tooltip"),
+            );
+            override_checkbox(ui, &mut ov.line_height, || default.line_height, salt);
+            let mut lh_value = ov.line_height.unwrap_or(default.line_height);
+            ui.add_enabled_ui(ov.line_height.is_some(), |ui| {
+                ui.add(
+                    egui::DragValue::new(&mut lh_value)
+                        .range(0.8..=2.0)
+                        .speed(0.05)
+                        .max_decimals(2),
+                );
+            });
+            if let Some(stored) = ov.line_height.as_mut() {
+                *stored = lh_value;
+            }
+            ui.end_row();
+
+            // ── Font scale mode ──
+            label_with_tooltip(
+                ui,
+                t("settings.appearance.font_scale_mode_label"),
+                t("settings.appearance.font_scale_mode_tooltip"),
+            );
+            override_checkbox(
+                ui,
+                &mut ov.font_scale_mode,
+                || default.font_scale_mode.clone(),
+                salt,
+            );
+            let mut mode_value = ov
+                .font_scale_mode
+                .clone()
+                .unwrap_or_else(|| default.font_scale_mode.clone());
+            font_scale_mode_combo(ui, &mut mode_value, salt, ov.font_scale_mode.is_some());
+            if let Some(stored) = ov.font_scale_mode.as_mut() {
+                *stored = mode_value;
+            }
+            ui.end_row();
+        });
+}
+
+/// "Use default" checkbox: checked when override is None.
+/// Toggling on → set to None; toggling off → seed with the current default.
+fn override_checkbox<T, F>(ui: &mut egui::Ui, slot: &mut Option<T>, default_provider: F, _salt: &str)
+where
+    F: FnOnce() -> T,
+{
+    let mut use_default = slot.is_none();
+    let label = t("settings.appearance.font.use_default_label");
+    if ui.checkbox(&mut use_default, label).changed() {
+        if use_default {
+            *slot = None;
+        } else if slot.is_none() {
+            *slot = Some(default_provider());
+        }
+    }
+}
+
+fn font_scale_mode_combo(ui: &mut egui::Ui, value: &mut String, salt: &str, enabled: bool) {
+    ui.add_enabled_ui(enabled, |ui| {
+        let combo_id = format!("font_scale_mode_{}", salt);
+        egui::ComboBox::from_id_salt(combo_id)
+            .selected_text(match value.as_str() {
+                "auto" => t("settings.appearance.font_scale_mode_auto"),
+                _ => t("settings.appearance.font_scale_mode_fixed"),
+            })
+            .show_ui(ui, |ui| {
+                ui.selectable_value(
+                    value,
+                    "auto".to_string(),
+                    t("settings.appearance.font_scale_mode_auto"),
+                );
+                ui.selectable_value(
+                    value,
+                    "fixed".to_string(),
+                    t("settings.appearance.font_scale_mode_fixed"),
+                );
+            });
+    });
+}
+
+/// Draw a 2-row colored preview block for an `EffectiveFont`. `slot` is a
+/// short id ("default"/"terminal"/"markdown"/"explorer") used as both the egui
+/// font family slot name and the cache key in `preview_font_loaded`.
 fn draw_font_preview(
     ui: &mut egui::Ui,
-    settings: &Settings,
-    th: &crate::theme::Theme,
-    preview_font_loaded: &mut String,
+    eff: &EffectiveFont,
+    colors: &SurfaceColors,
+    appearance: &crate::settings::AppearanceSettings,
+    slot: &str,
+    preview_font_loaded: &mut HashMap<String, String>,
 ) {
+    let th = crate::theme::theme();
     ui.heading(t("settings.appearance.preview_heading"));
     ui.add_space(4.0);
 
-    let font_name = if settings.appearance.font_family.is_empty() {
-        "monospace"
+    let slot_name = format!("preview_{}", slot);
+    let display_family = if eff.font_family.is_empty() {
+        "monospace".to_string()
     } else {
-        &settings.appearance.font_family
+        eff.font_family.clone()
     };
-    let font_size = settings.appearance.font_size;
 
-    // Load selected font into egui if it changed.
-    // `preview_font_loaded` holds either:
-    //   - the font family name on success (matches font_family → already loaded)
-    //   - "\x00:<font_family>" as a failure marker (don't retry)
-    //   - "" on init (never attempted)
-    let failed_marker = format!("\x00:{}", settings.appearance.font_family);
-    let preview_family = if settings.appearance.font_family.is_empty() {
-        egui::FontFamily::Monospace
-    } else if *preview_font_loaded == settings.appearance.font_family {
-        // Already loaded successfully.
-        egui::FontFamily::Name("preview".into())
-    } else if *preview_font_loaded == failed_marker {
-        // Load was already attempted and failed; don't retry.
+    // Decide which egui FontFamily to render text in. We try to load the
+    // requested family into a per-slot named family the first time we see it,
+    // and remember success/failure in `preview_font_loaded` so we don't retry.
+    let preview_family = if eff.font_family.is_empty() && eff.custom_font_path.is_empty() {
         egui::FontFamily::Monospace
     } else {
-        // First attempt for this font family.
-        let font_config = crate::font::FontConfig::new(14.0, "");
-        if let Some(data) = font_config.load_family_data(&settings.appearance.font_family) {
-            let mut fonts = egui::FontDefinitions::default();
-            fonts.font_data.insert(
-                "preview_font".to_owned(),
-                Arc::new(egui::FontData::from_owned(data)),
-            );
-            fonts.families.insert(
-                egui::FontFamily::Name("preview".into()),
-                vec!["preview_font".to_owned()],
-            );
-            // Keep CJK fallback for Monospace/Proportional (re-run CJK setup)
-            if let Some(cjk_data) = load_system_cjk_font_data() {
-                fonts.font_data.insert(
-                    "system_cjk".to_owned(),
-                    Arc::new(egui::FontData::from_owned(cjk_data)),
-                );
-                fonts
-                    .families
-                    .entry(egui::FontFamily::Proportional)
-                    .or_default()
-                    .push("system_cjk".to_owned());
-                fonts
-                    .families
-                    .entry(egui::FontFamily::Monospace)
-                    .or_default()
-                    .push("system_cjk".to_owned());
-                fonts
-                    .families
-                    .entry(egui::FontFamily::Name("preview".into()))
-                    .or_default()
-                    .push("system_cjk".to_owned());
-            }
-            ui.ctx().set_fonts(fonts);
-            *preview_font_loaded = settings.appearance.font_family.clone();
-            // set_fonts() was just called this frame; the new family may not be
-            // available until the next frame. Use Monospace now and switch to
-            // Name("preview") from the next frame (preview_font_loaded is already set).
+        let key = format!("{}|{}", eff.font_family, eff.custom_font_path);
+        let failed_marker = format!("\x00:{}", key);
+        let cached = preview_font_loaded.get(&slot_name).cloned().unwrap_or_default();
+        if cached == key {
+            egui::FontFamily::Name(slot_name.clone().into())
+        } else if cached == failed_marker {
             egui::FontFamily::Monospace
         } else {
-            // Record failure so we don't retry on subsequent frames.
-            *preview_font_loaded = failed_marker;
+            // First attempt this frame: rebuild the full FontDefinitions
+            // (surface families + this preview slot) and install it.
+            let fonts =
+                crate::ui::font_registry::build_font_definitions(appearance, Some((&slot_name, eff)));
+            ui.ctx().set_fonts(fonts);
+            preview_font_loaded.insert(slot_name.clone(), key);
+            // The family won't be available until the next frame; fall back
+            // to Monospace this frame.
             egui::FontFamily::Monospace
         }
     };
@@ -628,11 +957,11 @@ fn draw_font_preview(
         "\u{30A2}\u{30AB}\u{30B5}\u{30BF}\u{30CA}\u{30CF}\u{30DE}\u{30E9}\u{30E4}\u{30EF}", // アカサタナハマラヤワ
     ];
 
-    let tc = &settings.appearance.terminal_colors;
-    let focused_bg32 = tc.focused_bg.0;
-    let unfocused_bg32 = tc.unfocused_bg.0;
-    let fg32 = tc.focused_fg.0;
+    let focused_bg32 = colors.focused_bg.0;
+    let unfocused_bg32 = colors.unfocused_bg.0;
+    let fg32 = colors.focused_fg.0;
 
+    let font_size = eff.font_size.max(1.0);
     let preview_font = egui::FontId::new(font_size, preview_family);
     let line_height = font_size * 1.4;
     let padding = 8.0;
@@ -649,7 +978,6 @@ fn draw_font_preview(
         egui::Sense::hover(),
     );
     ui.painter().rect_filled(focused_rect, 2.0, focused_bg32);
-    // Focused border highlight
     ui.painter().rect_stroke(
         focused_rect,
         2.0,
@@ -696,51 +1024,11 @@ fn draw_font_preview(
     ui.label(
         egui::RichText::new(crate::i18n::t_fmt(
             "settings.appearance.preview_font_info",
-            &format!("{} / {:.1}px", font_name, font_size),
+            &format!("{} / {:.1}px", display_family, font_size),
         ))
         .size(th.font_size_caption.value())
         .color(th.subtext0),
     );
-}
-
-/// Load system CJK font data for egui fallback (mirrors GpuState::load_system_cjk_font).
-fn load_system_cjk_font_data() -> Option<Vec<u8>> {
-    #[cfg(target_os = "windows")]
-    {
-        let path = "C:/Windows/Fonts/malgun.ttf";
-        if let Ok(data) = std::fs::read(path) {
-            return Some(data);
-        }
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        for path in &[
-            "/System/Library/Fonts/AppleSDGothicNeo.ttc",
-            "/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc",
-            "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
-        ] {
-            if let Ok(data) = std::fs::read(path) {
-                return Some(data);
-            }
-        }
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        for path in &[
-            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-            "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
-            "/usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc",
-            "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
-        ] {
-            if let Ok(data) = std::fs::read(path) {
-                return Some(data);
-            }
-        }
-    }
-
-    None
 }
 
 /// Clipboard 탭: 히스토리 기능 설정.

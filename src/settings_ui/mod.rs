@@ -63,10 +63,11 @@ pub struct SettingsUiState {
     conflict_cancelled: bool,
     /// Cached system font family list.
     pub font_families: Option<Vec<String>>,
-    /// Font family filter text for search.
-    pub font_filter: String,
-    /// The font family currently loaded into egui for preview.
-    pub preview_font_loaded: String,
+    /// Font family filter text for search (per font picker, keyed by slot id).
+    pub font_filter: std::collections::HashMap<String, String>,
+    /// Family currently loaded into each preview slot ("preview_default", etc.).
+    /// A `\0:<family>` value records a previous load failure to avoid retry loops.
+    pub preview_font_loaded: std::collections::HashMap<String, String>,
     /// Draft of ~/.tasty/bashrc.user content. None until the Misc tab loads it.
     pub(crate) bashrc_user_draft: Option<String>,
 }
@@ -95,8 +96,8 @@ impl SettingsUiState {
             conflict_accepted: false,
             conflict_cancelled: false,
             font_families: None,
-            font_filter: String::new(),
-            preview_font_loaded: String::new(),
+            font_filter: std::collections::HashMap::new(),
+            preview_font_loaded: std::collections::HashMap::new(),
             bashrc_user_draft: None,
         }
     }

@@ -100,6 +100,13 @@ hint = "Selecting a preset will reset all surface colors. You can customize them
 dark = "Dark"
 light = "Light"
 
+[settings.appearance.font]
+default_heading = "Default Font Settings"
+default_hint = "Applied to Terminal, Markdown and Explorer alike. Each sub-tab can override individual fields."
+override_heading = "Font override"
+override_hint = "Uncheck \"Use default\" on a row to set a surface-specific value."
+use_default_label = "Use default"
+
 [settings.clipboard]
 heading = "Clipboard"
 history_heading = "History"

@@ -32,9 +32,19 @@ pub fn collect(state: &AppState, gpu: Option<&GpuState>, ime_active: bool) -> Va
         info.insert("viewport_height".into(), json!(size.height));
     }
 
-    // -- Font settings --
-    info.insert("font_size".into(), json!(state.engine.settings.appearance.font_size));
-    info.insert("font_family".into(), json!(&state.engine.settings.appearance.font_family));
+    // -- Font settings (per-surface effective values) --
+    let appearance = &state.engine.settings.appearance;
+    let term_eff = appearance.effective_terminal_font();
+    let md_eff = appearance.effective_markdown_font();
+    let exp_eff = appearance.effective_explorer_font();
+    info.insert("default_font_size".into(), json!(appearance.default_font.font_size));
+    info.insert("default_font_family".into(), json!(&appearance.default_font.font_family));
+    info.insert("terminal_font_size".into(), json!(term_eff.font_size));
+    info.insert("terminal_font_family".into(), json!(term_eff.font_family));
+    info.insert("markdown_font_size".into(), json!(md_eff.font_size));
+    info.insert("markdown_font_family".into(), json!(md_eff.font_family));
+    info.insert("explorer_font_size".into(), json!(exp_eff.font_size));
+    info.insert("explorer_font_family".into(), json!(exp_eff.font_family));
 
     // -- IME state --
     info.insert("ime_active".into(), json!(ime_active));
