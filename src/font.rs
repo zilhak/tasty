@@ -1099,7 +1099,10 @@ mod tests {
     #[test]
     fn font_config_default_monospace() {
         let config = FontConfig::new(14.0, "");
-        assert!(matches!(config.font_family, FamilyOwned::Monospace));
+        match &config.font_family {
+            FamilyOwned::Name(name) => assert_eq!(&**name, D2CODING_FAMILY),
+            other => panic!("expected bundled D2Coding family, got {other:?}"),
+        }
         assert_eq!(config.metrics.font_size, 14.0);
         assert!(config.metrics.cell_width > 0.0);
         assert!(config.metrics.cell_height > 0.0);
@@ -1108,7 +1111,10 @@ mod tests {
     #[test]
     fn font_config_explicit_monospace() {
         let config = FontConfig::new(14.0, "monospace");
-        assert!(matches!(config.font_family, FamilyOwned::Monospace));
+        match &config.font_family {
+            FamilyOwned::Name(name) => assert_eq!(&**name, D2CODING_FAMILY),
+            other => panic!("expected bundled D2Coding family, got {other:?}"),
+        }
     }
 
     #[test]
