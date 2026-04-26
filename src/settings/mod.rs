@@ -10,7 +10,9 @@ use anyhow::Result;
 use directories::BaseDirs;
 use serde::{Deserialize, Serialize};
 
-pub use appearance::{AppearanceSettings, HexColor, SurfaceColors};
+pub use appearance::{
+    AppearanceSettings, EffectiveFont, FontOverride, FontSettings, HexColor, SurfaceColors,
+};
 pub use general::{GeneralSettings, LinkModifier};
 pub use keybindings::KeybindingSettings;
 pub use types::{ClipboardSettings, NotificationSettings, PerformanceSettings};
@@ -109,7 +111,7 @@ mod tests {
     fn default_settings_valid() {
         let settings = Settings::default();
         assert!(!settings.general.shell.is_empty());
-        assert!(settings.appearance.font_size > 0.0);
+        assert!(settings.appearance.default_font.font_size > 0.0);
         assert!(settings.appearance.sidebar_width > crate::model::LogicalPx(0.0));
     }
 
@@ -118,7 +120,10 @@ mod tests {
         let settings = Settings::default();
         let toml_str = toml::to_string_pretty(&settings).unwrap();
         let parsed: Settings = toml::from_str(&toml_str).unwrap();
-        assert_eq!(parsed.appearance.font_size, settings.appearance.font_size);
+        assert_eq!(
+            parsed.appearance.default_font.font_size,
+            settings.appearance.default_font.font_size
+        );
         assert_eq!(parsed.general.shell, settings.general.shell);
         assert_eq!(
             parsed.notification.coalesce_ms,
@@ -133,7 +138,8 @@ mod tests {
 font_size = 18.0
 "#;
         let parsed: Settings = toml::from_str(partial).unwrap();
-        assert_eq!(parsed.appearance.font_size, 18.0);
+        // Legacy flat font_size should migrate into default_font.
+        assert_eq!(parsed.appearance.default_font.font_size, 18.0);
         // Other fields should be defaults
         assert!(parsed.notification.enabled);
         assert!(!parsed.general.shell.is_empty());
@@ -143,7 +149,10 @@ font_size = 18.0
     fn settings_empty_toml_uses_all_defaults() {
         let parsed: Settings = toml::from_str("").unwrap();
         let defaults = Settings::default();
-        assert_eq!(parsed.appearance.font_size, defaults.appearance.font_size);
+        assert_eq!(
+            parsed.appearance.default_font.font_size,
+            defaults.appearance.default_font.font_size
+        );
         assert_eq!(
             parsed.notification.coalesce_ms,
             defaults.notification.coalesce_ms
@@ -153,7 +162,26 @@ font_size = 18.0
     #[test]
     fn settings_font_family_default() {
         let settings = Settings::default();
-        assert_eq!(settings.appearance.font_family, "");
+        assert_eq!(settings.appearance.default_font.font_family, "");
+    }
+
+    #[test]
+    fn legacy_settings_toml_migrates_into_default_font() {
+        let legacy = r#"
+[appearance]
+font_size = 18.0
+font_family = "Fira Code"
+line_height = 1.25
+font_scale_mode = "auto"
+"#;
+        let parsed: Settings = toml::from_str(legacy).unwrap();
+        assert_eq!(parsed.appearance.default_font.font_size, 18.0);
+        assert_eq!(parsed.appearance.default_font.font_family, "Fira Code");
+        assert_eq!(parsed.appearance.default_font.line_height, 1.25);
+        assert_eq!(parsed.appearance.default_font.font_scale_mode, "auto");
+        assert!(parsed.appearance.terminal_font.font_size.is_none());
+        assert!(parsed.appearance.markdown_font.font_size.is_none());
+        assert!(parsed.appearance.explorer_font.font_size.is_none());
     }
 
     #[test]
@@ -178,14 +206,16 @@ font_size = 18.0
     #[test]
     fn settings_custom_appearance_roundtrip() {
         let mut settings = Settings::default();
-        settings.appearance.font_family = "Fira Code".to_string();
-        settings.appearance.font_size = 18.0;
+        settings.appearance.default_font.font_family = "Fira Code".to_string();
+        settings.appearance.default_font.font_size = 18.0;
+        settings.appearance.terminal_font.font_size = Some(20.0);
         settings.appearance.theme = "light".to_string();
         settings.appearance.background_opacity = 0.8;
         let toml_str = toml::to_string_pretty(&settings).unwrap();
         let parsed: Settings = toml::from_str(&toml_str).unwrap();
-        assert_eq!(parsed.appearance.font_family, "Fira Code");
-        assert_eq!(parsed.appearance.font_size, 18.0);
+        assert_eq!(parsed.appearance.default_font.font_family, "Fira Code");
+        assert_eq!(parsed.appearance.default_font.font_size, 18.0);
+        assert_eq!(parsed.appearance.terminal_font.font_size, Some(20.0));
         assert_eq!(parsed.appearance.theme, "light");
         assert_eq!(parsed.appearance.background_opacity, 0.8);
     }
