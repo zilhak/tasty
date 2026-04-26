@@ -134,6 +134,18 @@
 - 각 Surface를 scissor rect로 독립 렌더링
 - 뷰포트별 유니폼 갱신 (grid_offset을 각 Surface rect에 맞게 조정)
 
+### 새 surface 생성 시 cwd 상속
+
+단축키나 IPC/CLI(cwd 미지정)로 새 surface를 만들 때, 분할 대상 또는 포커스된 source surface의 `Surface::source_cwd()` 값을 새 터미널의 시작 디렉터리로 사용한다 (`docs/design/split-command.md` 참조).
+
+- Terminal: OSC 7로 알린 cwd
+- Explorer: `root_path` (주소바 편집 텍스트는 무시)
+- Markdown: 열려 있는 파일의 부모 디렉터리
+- HTML(`file://` 또는 로컬 절대경로): URL이 가리키는 파일의 부모 디렉터리. 그 외(http/https/about/data 등)는 None
+- Image / Empty / ClipboardViewer: None
+
+`general.inherit_cwd` 설정(default true)을 false로 바꾸면 모든 단축키 경로에서 fallback이 비활성화되어 셸의 home에서 시작한다. IPC/CLI에서 명시적으로 전달한 `cwd` 인자는 이 설정과 무관하게 그대로 사용된다.
+
 ### 키보드 단축키
 
 #### 플랫폼별 수정자 키 매핑

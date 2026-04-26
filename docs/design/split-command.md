@@ -87,6 +87,27 @@ ID는 전역 고유하므로, target이 주어지면 **모든 workspace를 검�
 - `nickname`: surface를 이름으로 참조할 수 있게 함
 - 커스텀 태그: AI 에이전트가 surface를 분류/추적하는 데 사용
 
+## cwd 결정 정책
+
+새 터미널 surface가 생성될 때 cwd는 다음 우선순위로 결정된다.
+
+1. 호출자가 명시한 `cwd` 파라미터(IPC/CLI에서만 가능).
+2. `inherit_cwd` 설정이 켜져 있으면, 분할 대상이 되는 source surface의 `Surface::source_cwd()` 값.
+3. 그 외에는 None → 셸의 home에서 시작.
+
+source surface별 `source_cwd()` 매트릭스:
+
+| source surface | cwd |
+|----------------|-----|
+| Terminal | OSC 7으로 알린 cwd (없으면 None) |
+| Explorer | `root_path` (트리가 실제로 보이고 있는 폴더, 주소바 편집 텍스트는 무시) |
+| Markdown | 열려 있는 파일의 부모 디렉터리 |
+| HTML (`file://` 또는 로컬 절대경로) | URL이 가리키는 파일의 부모 디렉터리 |
+| HTML (http/https/about/data 등) | None |
+| Image / Empty / ClipboardViewer | None |
+
+이 정책은 단축키로 만드는 새 탭(`add_tab`), 새 워크스페이스(`add_workspace`), pane 분할(`split_pane`), surface 분할(`split_surface`), surface 종류 변환(`convert_surface_to_*`) 등 모든 사용자 입력 경로와 IPC/CLI fallback에 동일하게 적용된다.
+
 ## 포커스 정책
 
 **split은 포커스를 이동하지 않는다.** workspace.create, tab.create도 IPC/CLI 호출 시 포커스를 이동하지 않는다.
