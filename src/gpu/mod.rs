@@ -44,6 +44,8 @@ pub struct GpuState {
     pub(super) egui_state: egui_winit::State,
     pub(super) egui_renderer: egui_wgpu::Renderer,
     pub(super) scale_factor: f32,
+    /// Tracks per-surface egui font signatures so we re-register only on change.
+    pub(super) surface_font_state: crate::ui::font_registry::SurfaceFontState,
     /// When set, the next render will capture the frame to this path as PNG.
     pub pending_screenshot: Option<std::path::PathBuf>,
 }
@@ -124,14 +126,15 @@ impl GpuState {
         };
         surface.configure(&device, &config);
 
-        // Create renderer with font settings from config
-        let effective_font_size = appearance.effective_font_size(scale_factor);
+        // Create renderer with effective terminal font settings.
+        let term_font = appearance.effective_terminal_font();
+        let effective_font_size = term_font.effective_font_size(scale_factor);
         let renderer = CellRenderer::new(
             &device,
             &queue,
             surface_format,
             effective_font_size,
-            &appearance.font_family,
+            &term_font.font_family,
         );
 
         // egui setup
@@ -180,6 +183,7 @@ impl GpuState {
             egui_state,
             egui_renderer,
             scale_factor,
+            surface_font_state: crate::ui::font_registry::SurfaceFontState::default(),
             pending_screenshot: None,
         })
     }

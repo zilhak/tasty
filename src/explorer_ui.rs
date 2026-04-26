@@ -4,8 +4,10 @@ use egui::emath::GuiRounding as _;
 use winit::keyboard::{Key, NamedKey};
 
 use crate::model::{ExplorerPanel, FileNode};
+use crate::settings::EffectiveFont;
 use crate::state::PendingKeyEvent;
 use crate::theme;
+use crate::ui::font_registry;
 
 /// Check if a specific key was pressed in the pending key events.
 fn key_pressed(keys: &[PendingKeyEvent], target: NamedKey) -> bool {
@@ -20,12 +22,18 @@ fn has_shift(keys: &[PendingKeyEvent]) -> bool {
 /// Draw the explorer panel with a file tree on the left and a file viewer on the right.
 /// `keys` contains keyboard events routed by the central dispatcher — only present
 /// when this explorer is the focused surface.
+/// `font` is the explorer surface's effective font (controls tree/address bar size).
+/// `md_font` is used for the markdown preview pane on the right.
 pub fn draw_explorer(
     ui: &mut egui::Ui,
     panel: &mut ExplorerPanel,
     keys: &[PendingKeyEvent],
+    font: &EffectiveFont,
+    md_font: &EffectiveFont,
 ) -> Option<ExplorerAction> {
     let th = theme::theme();
+    let font_size = font.font_size.max(1.0);
+    let explorer_family = font_registry::explorer_family();
     let mut explorer_action: Option<ExplorerAction> = None;
     let available_width = ui.available_width();
     let tree_width = if panel.show_preview {
@@ -44,7 +52,7 @@ pub fn draw_explorer(
         let resp = ui.add_sized(
             [ui.available_width(), address_bar_h],
             egui::TextEdit::singleline(&mut panel.address_bar_text)
-                .font(egui::FontId::proportional(th.font_size_caption.value()))
+                .font(egui::FontId::new(font_size, explorer_family.clone()))
                 .margin(egui::Margin::symmetric(4, 2)),
         );
         if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
@@ -67,7 +75,11 @@ pub fn draw_explorer(
                     crate::i18n::t("explorer.show_preview")
                 };
                 if ui
-                    .button(egui::RichText::new(label).size(th.font_size_caption.value()))
+                    .button(
+                        egui::RichText::new(label)
+                            .size(font_size)
+                            .family(explorer_family.clone()),
+                    )
                     .clicked()
                 {
                     panel.show_preview = !panel.show_preview;
@@ -108,6 +120,8 @@ pub fn draw_explorer(
                                     &panel.selected_files,
                                     panel.selected_file.as_deref(),
                                     &mut action,
+                                    font_size,
+                                    &explorer_family,
                                 );
                             }
 
@@ -208,7 +222,8 @@ pub fn draw_explorer(
             // ── Bookmarks (고정 25% 점유) ──
             ui.label(
                 egui::RichText::new(crate::i18n::t("explorer.bookmarks_heading"))
-                    .size(th.font_size_caption.value())
+                    .size(font_size)
+                    .family(explorer_family.clone())
                     .strong()
                     .color(th.subtext0),
             );
@@ -225,7 +240,8 @@ pub fn draw_explorer(
                         let resp = ui.selectable_label(
                             false,
                             egui::RichText::new(format!("\u{2605} {}", bm.name))
-                                .size(th.font_size_caption.value()),
+                                .size(font_size)
+                                .family(explorer_family.clone()),
                         );
                         if resp.double_clicked() {
                             nav_path = Some(bm.path.clone());
@@ -311,7 +327,7 @@ pub fn draw_explorer(
                             .show(ui, |ui| {
                                 ui.style_mut().interaction.selectable_labels = true;
                                 if panel.is_markdown {
-                                    crate::markdown_ui::render_markdown(ui, content);
+                                    crate::markdown_ui::render_markdown(ui, content, md_font);
                                 } else {
                                     // Render as plain text with monospace font
                                     ui.label(
@@ -389,6 +405,8 @@ fn draw_file_node(
     selected_files: &HashSet<String>,
     focus_path: Option<&str>,
     action: &mut Option<TreeAction>,
+    font_size: f32,
+    family: &egui::FontFamily,
 ) {
     let th = theme::theme();
     let indent = depth as f32 * 16.0;
@@ -429,12 +447,15 @@ fn draw_file_node(
         }
 
         let text = format!("{} {}", icon, node.name);
+        let base = egui::RichText::new(&text)
+            .size(font_size)
+            .family(family.clone());
         let label = if is_focus {
-            egui::RichText::new(&text).strong().color(th.blue)
+            base.strong().color(th.blue)
         } else if is_in_selection {
-            egui::RichText::new(&text).color(th.text)
+            base.color(th.text)
         } else {
-            egui::RichText::new(&text)
+            base
         };
 
         let resp = ui.selectable_label(is_in_selection, label);
@@ -464,7 +485,16 @@ fn draw_file_node(
     if node.is_directory && node.is_expanded {
         if let Some(ref mut children) = node.children {
             for child in children.iter_mut() {
-                draw_file_node(ui, child, depth + 1, selected_files, focus_path, action);
+                draw_file_node(
+                    ui,
+                    child,
+                    depth + 1,
+                    selected_files,
+                    focus_path,
+                    action,
+                    font_size,
+                    family,
+                );
             }
         }
     }

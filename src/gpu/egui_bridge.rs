@@ -40,30 +40,33 @@ impl GpuState {
         // Always re-apply UI scale (in case it changed)
         crate::theme::theme().apply_to_egui(&self.egui_ctx, ui_scale);
 
-        let effective_font_size = state
-            .engine
-            .settings
-            .appearance
-            .effective_font_size(self.scale_factor);
+        // Re-register markdown/explorer surface fonts if their settings changed.
+        crate::ui::font_registry::refresh_surface_fonts(
+            &self.egui_ctx,
+            &state.engine.settings.appearance,
+            &mut self.surface_font_state,
+        );
+
+        let term_font = state.engine.settings.appearance.effective_terminal_font();
+        let effective_font_size = term_font.effective_font_size(self.scale_factor);
         let current_font_size = self.renderer.font_config.metrics.font_size;
         let current_font_family = match &self.renderer.font_config.font_family {
             cosmic_text::FamilyOwned::Monospace => String::new(),
             cosmic_text::FamilyOwned::Name(name) => name.to_string(),
             _ => String::new(),
         };
-        let expected_cell_height =
-            (effective_font_size * state.engine.settings.appearance.line_height).ceil();
+        let expected_cell_height = (effective_font_size * term_font.line_height).ceil();
         if effective_font_size != current_font_size
-            || state.engine.settings.appearance.font_family != current_font_family
+            || term_font.font_family != current_font_family
             || expected_cell_height != self.renderer.font_config.metrics.cell_height
         {
             self.renderer.update_font(
                 &self.device,
                 &self.queue,
                 effective_font_size,
-                &state.engine.settings.appearance.font_family,
-                &state.engine.settings.appearance.custom_font_path,
-                state.engine.settings.appearance.line_height,
+                &term_font.font_family,
+                &term_font.custom_font_path,
+                term_font.line_height,
             );
             self.renderer
                 .resize(&self.queue, self.size.width, self.size.height);

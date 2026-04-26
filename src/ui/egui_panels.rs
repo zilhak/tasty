@@ -93,6 +93,8 @@ pub fn draw_egui_panels(
 
     let markdown_colors = state.engine.settings.appearance.markdown_colors.clone();
     let explorer_colors = state.engine.settings.appearance.explorer_colors.clone();
+    let markdown_font = state.engine.settings.appearance.effective_markdown_font();
+    let explorer_font = state.engine.settings.appearance.effective_explorer_font();
 
     for info in &infos {
         let id_suffix = info
@@ -145,7 +147,13 @@ pub fn draw_egui_panels(
                 markdown_colors.unfocused_bg.0
             };
             draw_panel_frame(ctx, &format!("md_panel_{}", id_suffix), info, 8, Some(md_bg), |ui| {
-                crate::markdown_ui::draw_markdown(ui, md_panel, key_scroll_y, &id_suffix);
+                crate::markdown_ui::draw_markdown(
+                    ui,
+                    md_panel,
+                    key_scroll_y,
+                    &id_suffix,
+                    &markdown_font,
+                );
             });
         } else if let Some(exp_panel) = surface.as_explorer_mut() {
             let is_focused = info.is_keyboard_target;
@@ -169,7 +177,9 @@ pub fn draw_egui_panels(
                 explorer_colors.unfocused_bg.0
             };
             draw_panel_frame(ctx, &format!("explorer_{}", id_suffix), info, 4, Some(exp_bg), |ui| {
-                if let Some(act) = crate::explorer_ui::draw_explorer(ui, exp_panel, keys) {
+                if let Some(act) =
+                    crate::explorer_ui::draw_explorer(ui, exp_panel, keys, &explorer_font, &markdown_font)
+                {
                     pending_explorer_action = Some((info.pane_id, info.surface_id, act));
                 }
             });
