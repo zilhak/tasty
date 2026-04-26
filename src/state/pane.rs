@@ -88,12 +88,9 @@ impl AppState {
                 let cwd = explicit_cwd.or_else(|| {
                     let ws = &self.engine.workspaces[ws_idx];
                     let pane = ws.pane_layout().find_pane(resolved_pane_id)?;
-                    let terminal = pane.active_terminal()?;
-                    if self.engine.settings.general.inherit_cwd {
-                        terminal.get_cwd()
-                    } else {
-                        None
-                    }
+                    let tab = pane.tabs.get(pane.active_tab)?;
+                    let sid = tab.focused_surface_id()?;
+                    self.resolve_inherit_cwd_from_surface(sid)
                 });
                 let cols = self.engine.default_cols;
                 let rows = self.engine.default_rows;

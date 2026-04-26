@@ -171,13 +171,10 @@ impl AppState {
         explicit_cwd: Option<std::path::PathBuf>,
     ) -> anyhow::Result<()> {
         let cwd = explicit_cwd.or_else(|| {
-            if self.engine.settings.general.inherit_cwd {
-                self.find_pane_by_id(pane_id)
-                    .and_then(|p| p.active_terminal())
-                    .and_then(|t| t.get_cwd())
-            } else {
-                None
-            }
+            let pane = self.find_pane_by_id(pane_id)?;
+            let tab = pane.tabs.get(pane.active_tab)?;
+            let sid = tab.focused_surface_id()?;
+            self.resolve_inherit_cwd_from_surface(sid)
         });
         let tab_id = self.engine.next_ids.next_tab();
         let surface_id = self.engine.next_ids.next_surface();

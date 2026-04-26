@@ -485,27 +485,36 @@ impl AppState {
         self.engine.send_fast_init(surface_id);
     }
 
-    /// Get the working directory to inherit from the focused terminal, if enabled.
+    /// Find a surface (any type) by ID across all workspaces.
+    pub fn find_surface_by_id(&self, surface_id: u32) -> Option<&dyn crate::model::Surface> {
+        for workspace in &self.engine.workspaces {
+            for pid in workspace.pane_layout().all_pane_ids() {
+                if let Some(pane) = workspace.pane_layout().find_pane(pid) {
+                    for tab in &pane.tabs {
+                        if !tab.contains_surface(surface_id) {
+                            continue;
+                        }
+                        if let Some(s) = tab.layout().find_surface(surface_id) {
+                            return Some(s);
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Get the working directory to inherit from the focused surface, if enabled.
+    ///
+    /// 사용자가 현재 포커스한 surface 본인의 `source_cwd()`를 사용한다.
+    /// (terminal/explorer/markdown/html → 자체 cwd, image/empty/clipboard → None)
     pub(crate) fn resolve_inherit_cwd(&self) -> Option<std::path::PathBuf> {
         if !self.engine.settings.general.inherit_cwd || self.engine.workspaces.is_empty() {
             return None;
         }
-        // Try terminal CWD first
-        if let Some(cwd) = self.focused_terminal().and_then(|t| t.get_cwd()) {
-            return Some(cwd);
-        }
-        // Fall back to surface-specific paths (Explorer, Markdown, etc.)
-        let pane = self.focused_pane()?;
-        let surface = pane.tabs.get(pane.active_tab)?.surface();
-        if let Some(exp) = surface.as_explorer() {
-            return Some(std::path::PathBuf::from(&exp.root_path));
-        }
-        if let Some(md) = surface.as_markdown() {
-            return std::path::Path::new(&md.file_path)
-                .parent()
-                .map(|p| p.to_path_buf());
-        }
-        None
+        let sid = self.focused_surface_id()?;
+        self.find_surface_by_id(sid)
+            .and_then(|s| s.source_cwd())
     }
 
     /// Get the working directory to inherit from a specific surface, if enabled.
@@ -516,7 +525,8 @@ impl AppState {
         if !self.engine.settings.general.inherit_cwd {
             return None;
         }
-        self.engine.find_terminal_by_id(surface_id)?.get_cwd()
+        self.find_surface_by_id(surface_id)
+            .and_then(|s| s.source_cwd())
     }
 
     /// Get the ultimately focused terminal.
