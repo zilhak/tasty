@@ -32,6 +32,10 @@ pub enum HookEvent {
     ClaudeIdle,
     /// Claude Code needs user input.
     NeedsInput,
+    /// Claude child PTY emitted a known error pattern (API Error, content filter,
+    /// rate limit, network failure, …). The pattern catalog lives outside this
+    /// crate; this variant is matched without arguments.
+    ClaudeError,
 }
 
 impl HookEvent {
@@ -42,6 +46,7 @@ impl HookEvent {
             (HookEvent::Notification, HookEvent::Notification) => true,
             (HookEvent::ClaudeIdle, HookEvent::ClaudeIdle) => true,
             (HookEvent::NeedsInput, HookEvent::NeedsInput) => true,
+            (HookEvent::ClaudeError, HookEvent::ClaudeError) => true,
             (HookEvent::OutputMatch(_pattern), HookEvent::OutputMatch(text)) => {
                 // Use pre-compiled regex if available, otherwise compile on-the-fly
                 if let Some(re) = compiled_regex {
@@ -72,6 +77,8 @@ impl HookEvent {
             Some(HookEvent::ClaudeIdle)
         } else if s == "needs-input" {
             Some(HookEvent::NeedsInput)
+        } else if s == "claude-error" {
+            Some(HookEvent::ClaudeError)
         } else {
             None
         }
@@ -87,6 +94,7 @@ impl HookEvent {
             HookEvent::IdleTimeout(secs) => format!("idle-timeout:{}", secs),
             HookEvent::ClaudeIdle => "claude-idle".to_string(),
             HookEvent::NeedsInput => "needs-input".to_string(),
+            HookEvent::ClaudeError => "claude-error".to_string(),
         }
     }
 }
@@ -219,6 +227,25 @@ mod tests {
             Some(HookEvent::IdleTimeout(30)) => {}
             _ => panic!("expected IdleTimeout(30)"),
         }
+    }
+
+    #[test]
+    fn hook_event_parse_claude_error() {
+        assert_eq!(
+            HookEvent::parse("claude-error"),
+            Some(HookEvent::ClaudeError)
+        );
+    }
+
+    #[test]
+    fn hook_event_display_claude_error() {
+        assert_eq!(HookEvent::ClaudeError.to_display_string(), "claude-error");
+    }
+
+    #[test]
+    fn hook_event_matches_claude_error() {
+        assert!(HookEvent::ClaudeError.matches(&HookEvent::ClaudeError, None));
+        assert!(!HookEvent::ClaudeError.matches(&HookEvent::ClaudeIdle, None));
     }
 
     #[test]

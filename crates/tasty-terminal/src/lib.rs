@@ -51,6 +51,10 @@ pub struct Terminal {
     output_buffer: Vec<u8>,
     /// Byte offset of the read mark in the output buffer.
     read_mark: Option<usize>,
+    /// Byte offset for the ClaudeError output scanner. Independent of `read_mark`
+    /// (which is owned by the IPC `terminal.read_since_mark` API). Adjusted alongside
+    /// `read_mark` when the buffer is trimmed.
+    output_scan_mark: usize,
     /// Whether we've already emitted a ProcessExited event.
     process_exit_emitted: bool,
     /// DECCKM: application cursor keys mode.
@@ -244,6 +248,7 @@ impl Terminal {
             events: Vec::new(),
             output_buffer: Vec::new(),
             read_mark: None,
+            output_scan_mark: 0,
             process_exit_emitted: false,
             application_cursor_keys: false,
             cursor_visible: true,
@@ -286,6 +291,10 @@ impl Terminal {
                         *mark -= excess;
                     }
                 }
+                // Adjust the ClaudeError scan mark in the same way. If it falls
+                // inside the trimmed region, snap it to 0 so the next scan
+                // re-reads from the start of the surviving buffer.
+                self.output_scan_mark = self.output_scan_mark.saturating_sub(excess);
             }
 
             let actions = self.parser.parse_as_vec(&data);
@@ -837,6 +846,24 @@ impl Terminal {
     /// Set a read mark at the current end of the output buffer.
     pub fn set_mark(&mut self) {
         self.read_mark = Some(self.output_buffer.len());
+    }
+
+    /// Return raw bytes accumulated since the last `set_output_scan_mark()` call.
+    /// Used by the ClaudeError scanner; independent of `read_since_mark`'s mark.
+    pub fn output_since_scan_mark(&self, strip_ansi: bool) -> String {
+        let start = self.output_scan_mark.min(self.output_buffer.len());
+        let bytes = &self.output_buffer[start..];
+        let text = String::from_utf8_lossy(bytes).to_string();
+        if strip_ansi {
+            strip_ansi_escapes(&text)
+        } else {
+            text
+        }
+    }
+
+    /// Advance the scan mark to the current end of the output buffer.
+    pub fn set_output_scan_mark(&mut self) {
+        self.output_scan_mark = self.output_buffer.len();
     }
 
     /// Read output since the last mark. If no mark was set, reads from the beginning.

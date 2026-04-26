@@ -282,6 +282,7 @@ tasty surface-meta list --surface 3   # 특정 서피스 지정
 | `idle-timeout:SECS` | N초간 출력 없음 |
 | `claude-idle` | Claude Code 작업 완료 (idle 상태 전환) |
 | `needs-input` | Claude Code 사용자 입력 필요 |
+| `claude-error` | Claude child PTY가 알려진 비정상 패턴(API Error, content filter, rate limit, network error 등)을 출력. `claude.spawn`/`claude.launch` 자식 surface에서 자동 감시되며, 사용자/에이전트도 추가 hook을 걸 수 있다. |
 
 ### 글로벌 훅 (타이머 / 파일 감시)
 

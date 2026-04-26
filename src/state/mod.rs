@@ -1,4 +1,5 @@
 mod claude;
+pub mod claude_error;
 mod focus;
 mod layout;
 mod mark;

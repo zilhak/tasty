@@ -699,6 +699,7 @@ Surface별 이벤트 훅을 등록하여 특정 이벤트 발생 시 셸 명령�
   - `IdleTimeout(secs)`: N초간 PTY 출력 없을 때
   - `ClaudeIdle`: Claude Code 작업 완료 시
   - `NeedsInput`: Claude Code 사용자 입력 필요 시
+  - `ClaudeError`: Claude child PTY가 알려진 비정상 패턴(API Error, content filter, rate limit 등)을 출력했을 때 자동 fire
 - **ProcessExit 구현**: 터미널 프로세스 종료 시 ProcessExited 이벤트 자동 발생 및 훅 실행. 프로세스 종료 후 해당 서피스를 자동으로 닫음. 서피스 → 탭 → 패인 → 워크스페이스 순으로 계층을 올라가며 적절한 레벨에서 정리. 마지막 워크스페이스의 마지막 서피스인 경우 새 셸을 스폰
 - **정규식 캐싱**: OutputMatch 훅 등록 시 정규식을 사전 컴파일하여 매칭 시 재컴파일 방지
 - **once 옵션**: true로 설정하면 한 번 실행 후 자동 삭제
@@ -768,7 +769,8 @@ Claude Code의 훅 시스템과 연동하여 Claude의 활동 상태를 추적�
 - **claude.children 상태 반영**: 자식 목록 조회 시 각 자식의 실제 Claude 상태가 state 필드에 반영됨
 - **surface.fire_hook**: 특정 이벤트의 등록된 훅을 수동으로 실행 (hook_manager.check_and_fire 호출)
 - **HookEvent 확장**: ClaudeIdle, NeedsInput 이벤트 타입 추가 ("claude-idle", "needs-input"으로 등록)
-- **자동 정리**: surface가 닫힐 때 (unregister_child, mark_parent_closed) idle/needs_input 상태 자동 제거
+- **자동 정리**: surface가 닫힐 때 (unregister_child, mark_parent_closed) idle/needs_input/error_scan_enabled 상태 자동 제거
+- **ClaudeError 자동 감시**: `claude.spawn` / `claude.launch`로 만들어진 child surface는 PTY 출력에 대한 패턴 스캐너가 자동으로 활성화된다. 매 redraw에서 `Terminal::output_since_scan_mark`로 새 출력 슬라이스를 ANSI strip 후 catalog 정규식과 매칭하고, 매칭되면 `claude-error` 훅을 fire한다. 카탈로그(`src/state/claude_error.rs`): `API Error`, `Output blocked by content filtering policy`, `overloaded_error`, `rate_limit_error`, `Bad Request`, `Internal Server Error`, `network error` (대소문자 무시). 일반 셸 surface는 영향 없음. 사용자도 `tasty set hook --event claude-error --surface ID --command ...`로 추가 hook을 걸 수 있다.
 - **`tasty claude install` / `uninstall`**: `~/.claude/settings.json`의 `hooks` 객체에 4종 hook entry를
   idempotent하게 추가/제거한다. 등록 대상: `Stop`(메인 응답 종료), `Notification`(권한 요청·idle 알림),
   `SessionEnd`(세션 종료), `SubagentStop`(Task tool 종료). 각 entry의 command는

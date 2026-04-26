@@ -49,7 +49,10 @@ pub(crate) fn handle_claude_launch(
         }
         if let Some(terminal) = state.find_terminal_by_id_mut(sid) {
             terminal.send_key(&format!("{}\r", cmd));
+            terminal.set_output_scan_mark();
         }
+        // Enroll the launched surface in the ClaudeError auto-watcher.
+        state.engine.claude.error_scan_enabled.insert(sid);
     }
 
     let ws_id = state.engine.workspaces[ws_idx].id;

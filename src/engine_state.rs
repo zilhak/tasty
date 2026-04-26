@@ -61,6 +61,10 @@ pub struct ClaudeState {
     pub needs_input_state: HashMap<u32, bool>,
     /// Maps (parent_surface_id, workspace_id) → spawn_pane_id for --workspace spawning.
     pub spawn_panes: HashMap<(u32, u32), u32>,
+    /// Surfaces for which the ClaudeError PTY scanner should run on every redraw.
+    /// Populated automatically when a Claude child is spawned via
+    /// `claude.spawn` / `claude.launch`; never populated for plain shells.
+    pub error_scan_enabled: HashSet<u32>,
 }
 
 impl ClaudeState {
@@ -73,6 +77,7 @@ impl ClaudeState {
             idle_state: HashMap::new(),
             needs_input_state: HashMap::new(),
             spawn_panes: HashMap::new(),
+            error_scan_enabled: HashSet::new(),
         }
     }
 }

@@ -138,6 +138,8 @@ fn entry_matches_marker(entry: &Value, marker: &str) -> bool {
 }
 
 /// settings.json 루트 값에서 특정 hook 이벤트 + marker가 이미 설치돼 있는지 검사.
+/// `run_claude_wait` 진입 점검(S4)을 비롯해 외부 호출자가 helper만 따로 쓰도록 노출한다.
+#[allow(dead_code)]
 fn is_marker_installed_in_value(root: &Value, event_name: &str, marker: &str) -> bool {
     let Some(hooks) = root.get("hooks").and_then(|h| h.as_object()) else {
         return false;

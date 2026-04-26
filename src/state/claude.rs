@@ -13,12 +13,17 @@ impl AppState {
         *idx
     }
 
-    /// Register a child entry under a parent surface.
+    /// Register a child entry under a parent surface. Also enables the
+    /// ClaudeError PTY scanner for the child surface (auto-watcher).
     pub fn register_child(&mut self, parent_id: u32, entry: ClaudeChildEntry) {
-        self.engine
-            .claude
-            .child_parent
-            .insert(entry.child_surface_id, parent_id);
+        let child_id = entry.child_surface_id;
+        self.engine.claude.child_parent.insert(child_id, parent_id);
+        self.engine.claude.error_scan_enabled.insert(child_id);
+        // Mark the current end of the PTY buffer as the scan baseline so the
+        // pre-claude shell init banner is not retroactively scanned.
+        if let Some(terminal) = self.engine.find_terminal_by_id_mut(child_id) {
+            terminal.set_output_scan_mark();
+        }
         self.engine
             .claude
             .parent_children
@@ -33,6 +38,10 @@ impl AppState {
         self.engine
             .claude
             .needs_input_state
+            .remove(&child_surface_id);
+        self.engine
+            .claude
+            .error_scan_enabled
             .remove(&child_surface_id);
         if let Some(parent_id) = self.engine.claude.child_parent.remove(&child_surface_id) {
             if let Some(children) = self.engine.claude.parent_children.get_mut(&parent_id) {

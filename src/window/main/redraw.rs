@@ -20,6 +20,11 @@ impl MainWindow {
             self.base.dirty = true;
         }
 
+        // Scan Claude child PTY output for known error patterns and fire
+        // `claude-error` hooks. Independent of Claude's own Stop hook because
+        // these failure modes do not fire Stop (API Error, content filter, …).
+        self.scan_claude_errors();
+
         // Collect terminal events
         let events = self.state.collect_events();
         for event in &events {
@@ -165,6 +170,45 @@ impl MainWindow {
 
         if self.base.dirty {
             self.base.winit.request_redraw();
+        }
+    }
+
+    /// Scan ClaudeError-watched surfaces for new PTY output matching the
+    /// catalog regex, and fire the `claude-error` hook on hits.
+    fn scan_claude_errors(&mut self) {
+        // Collect candidate surface IDs first to avoid double mut borrow.
+        let surfaces: Vec<u32> = self
+            .state
+            .engine
+            .claude
+            .error_scan_enabled
+            .iter()
+            .copied()
+            .collect();
+        if surfaces.is_empty() {
+            return;
+        }
+
+        let mut hit_surfaces: Vec<u32> = Vec::new();
+        for sid in surfaces {
+            let Some(terminal) = self.state.engine.find_terminal_by_id_mut(sid) else {
+                continue;
+            };
+            let new_text = terminal.output_since_scan_mark(true);
+            if new_text.is_empty() {
+                continue;
+            }
+            terminal.set_output_scan_mark();
+            if crate::state::claude_error::detect_claude_error(&new_text) {
+                hit_surfaces.push(sid);
+            }
+        }
+
+        for sid in hit_surfaces {
+            self.state
+                .engine
+                .hook_manager
+                .check_and_fire(sid, &[tasty_hooks::HookEvent::ClaudeError]);
         }
     }
 

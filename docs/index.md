@@ -280,7 +280,7 @@ Surface별 이벤트 훅 등록 API. 프로세스 종료, 출력 패턴 매칭 �
 
 **현재 구현된 기능:**
 - HookManager: 훅 등록/삭제/조회/실행 (hooks.rs)
-- HookEvent: ProcessExit, OutputMatch(regex), Bell, Notification, IdleTimeout, ClaudeIdle, NeedsInput
+- HookEvent: ProcessExit, OutputMatch(regex), Bell, Notification, IdleTimeout, ClaudeIdle, NeedsInput, ClaudeError
 - once 옵션, 백그라운드 스레드 실행, 이벤트 루프 자동 통합
 - CLI: set-hook, list-hooks, unset-hook
 - IPC: hook.set, hook.list, hook.unset

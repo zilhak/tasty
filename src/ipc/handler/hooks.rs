@@ -26,7 +26,7 @@ pub(crate) fn handle_hook_set(
             return JsonRpcResponse::invalid_params(
                 id,
                 format!(
-                    "Unknown event type: '{}'. Use: process-exit, bell, notification, output-match:PATTERN, idle-timeout:SECS, claude-idle, needs-input",
+                    "Unknown event type: '{}'. Use: process-exit, bell, notification, output-match:PATTERN, idle-timeout:SECS, claude-idle, needs-input, claude-error",
                     event_str
                 ),
             );
