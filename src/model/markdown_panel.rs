@@ -90,4 +90,9 @@ impl Surface for MarkdownPanel {
     fn as_markdown_mut(&mut self) -> Option<&mut MarkdownPanel> {
         Some(self)
     }
+    fn source_cwd(&self) -> Option<std::path::PathBuf> {
+        std::path::Path::new(&self.file_path)
+            .parent()
+            .map(|p| p.to_path_buf())
+    }
 }

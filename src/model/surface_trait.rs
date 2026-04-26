@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use super::{
     ClipboardViewerPanel, EmptySurface, ExplorerPanel, HtmlPanel, ImagePanel, MarkdownPanel, Rect,
     SurfaceId, TerminalSurface,
@@ -123,6 +125,20 @@ pub trait Surface {
     /// Used when splitting a tab (converting a single surface into a split layout).
     /// Default: None (non-terminal surfaces cannot be taken).
     fn take_terminal_surface(self: Box<Self>) -> Option<TerminalSurface> {
+        None
+    }
+
+    /// The "source" working directory associated with this surface, if any.
+    ///
+    /// 단축키 등 사용자 행위로 새 surface(터미널/탭/워크스페이스 등)를 만들 때
+    /// 이 값을 시작 cwd로 상속한다.
+    ///
+    /// - TerminalSurface: 터미널의 OSC 7 cwd
+    /// - ExplorerPanel: `root_path`
+    /// - MarkdownPanel: 파일의 부모 디렉터리
+    /// - HtmlPanel: `file://` 또는 로컬 절대경로일 때 부모 디렉터리, 아니면 None
+    /// - 그 외(Image/Empty/ClipboardViewer): None
+    fn source_cwd(&self) -> Option<PathBuf> {
         None
     }
 

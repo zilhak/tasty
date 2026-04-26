@@ -49,6 +49,10 @@ impl Surface for TerminalSurface {
         Some(egui::CursorIcon::Text)
     }
 
+    fn source_cwd(&self) -> Option<std::path::PathBuf> {
+        self.terminal.get_cwd()
+    }
+
     fn focused_terminal(&self) -> Option<&Terminal> {
         Some(&self.terminal)
     }

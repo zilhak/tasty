@@ -447,4 +447,13 @@ impl Surface for ExplorerPanel {
     fn as_explorer_mut(&mut self) -> Option<&mut ExplorerPanel> {
         Some(self)
     }
+    /// 주소바에 편집 중인 텍스트(`address_bar_text`)는 무시하고 실제로 트리가
+    /// 보이고 있는 `root_path`만 사용한다.
+    fn source_cwd(&self) -> Option<std::path::PathBuf> {
+        if self.root_path.is_empty() {
+            None
+        } else {
+            Some(std::path::PathBuf::from(&self.root_path))
+        }
+    }
 }
