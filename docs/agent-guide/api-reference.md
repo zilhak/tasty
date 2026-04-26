@@ -105,6 +105,8 @@ tasty list queue [--surface ID]                     # 큐 상태 확인 (count +
 tasty read queue --clear [--surface ID]             # 큐 비우기
 
 # Claude
+tasty claude install              # ~/.claude/settings.json에 tasty Stop 훅 등록 (wait/이벤트 훅 사용 전 필수)
+tasty claude uninstall            # 등록된 tasty Stop 훅 제거
 tasty claude launch [--workspace NAME] [--directory PATH] [--task "설명"]
 tasty claude spawn [--surface ID] [--direction vertical|horizontal] [--cwd PATH] [--role ROLE] [--nickname NAME] [--prompt "TEXT"]
 # --surface: pane 분할 위치 (기본: TASTY_SURFACE_ID). parent는 항상 명령을 실행한 surface.
@@ -113,7 +115,7 @@ tasty claude parent               # 부모 Claude 조회
 tasty claude kill --child INDEX      # 자식 Claude 종료 (child index 지정)
 tasty claude respawn --child INDEX [--cwd PATH] [--role ROLE] [--nickname NAME] [--prompt "TEXT"]
 tasty claude broadcast "텍스트\r" [--role ROLE]   # 모든 자식에 텍스트 전송
-tasty claude wait --child INDEX [--timeout 60]       # idle/needs_input/exited 대기
+tasty claude wait --child INDEX [--timeout 60]       # idle/needs_input/exited 대기 (사전 요구: tasty claude install)
 
 # Claude Hook 통합 (Claude Code의 훅 시스템에서 호출)
 tasty claude hook stop              # Claude 작업 완료 → idle 상태 설정 + claude-idle 훅 실행
@@ -332,7 +334,7 @@ tasty unset global-hook --hook HOOK_ID
 | `claude.kill` | `surface_id?, child_index: number` | 자식 Claude 인스턴스 종료. child_index는 spawn 시 반환된 인덱스 |
 | `claude.respawn` | `surface_id?, child_index: number, cwd?, role?, nickname?, prompt?` | 자식 Claude 인스턴스를 같은 surface에서 재시작 (레이아웃 변경 없음). child_index로 대상 지정 |
 | `claude.broadcast` | `surface_id?, text: string, role?: string` | 부모의 모든 자식에 텍스트 동시 전송. role 필터로 특정 역할만 대상 지정 가능. 반환: `{ sent_count, children }` |
-| `claude.wait` | `surface_id?, child_index: number` | 자식의 현재 상태 조회. 반환: `{ state: "idle"\|"needs_input"\|"active"\|"exited" }`. CLI에서 폴링하여 대기 구현 가능 |
+| `claude.wait` | `surface_id?, child_index: number` | 자식의 현재 상태 조회. 반환: `{ state: "idle"\|"needs_input"\|"active"\|"exited" }`. CLI에서 폴링하여 대기 구현 가능. CLI(`tasty claude wait`)는 시작 시 `~/.claude/settings.json`의 tasty Stop 훅 설치 여부를 점검하며, 미설치 시 안내 메시지를 출력하고 즉시 종료한다 (먼저 `tasty claude install` 실행 필요) |
 | `claude.set_idle_state` | `surface_id?, idle: bool` | Claude idle 상태 설정 (idle=false 시 needs_input도 해제) |
 | `claude.set_needs_input` | `surface_id?, needs_input: bool` | Claude needs-input 상태 설정 |
 | `surface.fire_hook` | `surface_id?, event: string` | 특정 이벤트의 등록된 훅 수동 실행 |

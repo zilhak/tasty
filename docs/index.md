@@ -306,7 +306,9 @@ AI 에이전트 간 자동화 통합 기능. Claude Code 전용 런처, 멀티 �
 - Claude Parent-Child 관계 관리: 부모 Claude가 자식 Claude를 생성/조회/종료/재시작
 - CLI: tasty claude launch --workspace NAME --directory DIR --task TASK
 - CLI: tasty claude spawn/children/parent/kill/respawn/broadcast/wait
+- CLI: tasty claude install/uninstall (~/.claude/settings.json의 tasty Stop 훅 등록 관리; wait/이벤트 훅 사용 전 필수)
 - CLI: tasty claude hook stop|notification|prompt-submit|session-start (Claude Code 훅 통합)
+- tasty claude wait는 시작 시 Stop 훅 설치 여부를 점검하여 미설치 시 안내 메시지와 함께 즉시 종료
 - IPC: claude.launch, claude.spawn, claude.children, claude.parent, claude.kill, claude.respawn, claude.set_idle_state, claude.set_needs_input, surface.fire_hook 메서드
 - Surface Hook + Read Mark API와 조합하여 완전한 에이전트 자동화 파이프라인 구성 가능
 - 상세: [features.md](features.md)

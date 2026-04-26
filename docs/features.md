@@ -749,7 +749,7 @@ Claude Code를 새 워크스페이스에서 자동으로 실행하는 전용 런
 - **claude.kill**: 자식 surface를 종료하고 관계를 정리
 - **claude.respawn**: 기존 자식 surface의 터미널 프로세스만 종료하고 같은 surface에서 새 쉘 + `claude`를 재시작. 레이아웃(pane/surface 구조)은 변경하지 않는다. child index와 부모-자식 관계도 유지. cwd, role, nickname, prompt 재설정 가능
 - **claude.broadcast**: 부모의 모든 자식에게 텍스트를 동시에 전송. `role` 파라미터로 특정 역할의 자식에만 필터링 가능. 반환: `{ sent_count, children }`
-- **claude.wait**: 자식 surface의 현재 상태를 조회. surface가 존재하지 않으면 "exited" 반환. 반환: `{ state: "idle"|"needs_input"|"active"|"exited" }`. CLI에서 폴링 루프로 대기 구현
+- **claude.wait**: 자식 surface의 현재 상태를 조회. surface가 존재하지 않으면 "exited" 반환. 반환: `{ state: "idle"|"needs_input"|"active"|"exited" }`. CLI에서 폴링 루프로 대기 구현. CLI(`tasty claude wait`)는 시작 시 `~/.claude/settings.json`의 tasty Stop 훅 등록 여부를 점검하며, 미설치 시 stderr에 안내 메시지를 출력하고 비정상 종료(exit 1)한다 (Stop 훅이 없으면 idle/needs-input 이벤트가 fire되지 않아 wait이 영원히 진행되지 않기 때문)
 - CLI: `tasty claude spawn --direction vertical --cwd /path --role worker --nickname "agent-1" --prompt "Fix bugs"`
 - CLI: `tasty claude children`, `tasty claude parent`, `tasty claude kill --child 1`, `tasty claude respawn --child 1`
 - CLI: `tasty claude broadcast "text\r" [--role ROLE]`, `tasty claude wait --child 1 [--timeout SECS]`
@@ -768,7 +768,9 @@ Claude Code의 훅 시스템과 연동하여 Claude의 활동 상태를 추적�
 - **surface.fire_hook**: 특정 이벤트의 등록된 훅을 수동으로 실행 (hook_manager.check_and_fire 호출)
 - **HookEvent 확장**: ClaudeIdle, NeedsInput 이벤트 타입 추가 ("claude-idle", "needs-input"으로 등록)
 - **자동 정리**: surface가 닫힐 때 (unregister_child, mark_parent_closed) idle/needs_input 상태 자동 제거
-- CLI: `tasty claude hook stop|notification|prompt-submit|session-start [--surface ID]`
+- **install/uninstall**: `tasty claude install`은 `~/.claude/settings.json`의 `hooks.Stop` 배열에 tasty Stop 훅(`[ -n "$TASTY_SURFACE_ID" ] && tasty claude hook stop || true`)을 자동 등록. `tasty claude uninstall`은 등록된 항목을 제거하고 빈 `Stop` 배열/`hooks` 객체도 정리한다. 매칭은 모두 `tasty claude hook stop` substring 기준으로 동일하게 동작
+- **wait의 사전 요구사항 점검**: `tasty claude wait`는 시작 시 `is_tasty_stop_hook_installed()` 헬퍼로 Stop 훅 등록 여부를 확인하고, 미설치(또는 settings.json 파싱 실패)면 안내 메시지를 stderr에 출력하고 exit code 1로 종료한다. install 함수와 동일한 매칭 로직(`entry_matches_tasty`)을 공유하므로 등록 판정이 자동으로 일치한다
+- CLI: `tasty claude install`, `tasty claude uninstall`, `tasty claude hook stop|notification|prompt-submit|session-start [--surface ID]`
 - IPC: `claude.set_idle_state`, `claude.set_needs_input`, `surface.fire_hook` 메서드
 
 ### Surface Metadata Store (surface_meta.rs)
