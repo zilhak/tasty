@@ -774,3 +774,95 @@ fn compute_terminal_rect_zero_sidebar() {
     assert_eq!(r.x, px(0.0));
     assert_eq!(r.width, px(800.0));
 }
+
+// ---- Surface::source_cwd ----
+
+#[test]
+fn source_cwd_explorer_returns_root_path() {
+    #[cfg(windows)]
+    let root = "C:\\Users\\me\\proj";
+    #[cfg(not(windows))]
+    let root = "/home/me/proj";
+    let exp = ExplorerPanel::new(1, root.to_string());
+    assert_eq!(exp.source_cwd(), Some(std::path::PathBuf::from(root)));
+}
+
+#[test]
+fn source_cwd_explorer_empty_root_is_none() {
+    let exp = ExplorerPanel::new(1, String::new());
+    assert_eq!(exp.source_cwd(), None);
+}
+
+#[test]
+fn source_cwd_markdown_returns_parent_dir() {
+    #[cfg(windows)]
+    let (file, parent) = ("C:\\docs\\readme.md", "C:\\docs");
+    #[cfg(not(windows))]
+    let (file, parent) = ("/docs/readme.md", "/docs");
+    let md = MarkdownPanel::new(1, file.to_string());
+    assert_eq!(md.source_cwd(), Some(std::path::PathBuf::from(parent)));
+}
+
+#[test]
+fn source_cwd_html_file_uri_returns_parent() {
+    #[cfg(windows)]
+    {
+        let html = HtmlPanel::new(1, "file:///C:/a/b.html".to_string());
+        assert_eq!(html.source_cwd(), Some(std::path::PathBuf::from("C:\\a")));
+    }
+    #[cfg(not(windows))]
+    {
+        let html = HtmlPanel::new(1, "file:///home/x/y.html".to_string());
+        assert_eq!(html.source_cwd(), Some(std::path::PathBuf::from("/home/x")));
+    }
+}
+
+#[test]
+fn source_cwd_html_absolute_path_returns_parent() {
+    #[cfg(windows)]
+    {
+        let html = HtmlPanel::new(1, "C:\\a\\b.html".to_string());
+        assert_eq!(html.source_cwd(), Some(std::path::PathBuf::from("C:\\a")));
+    }
+    #[cfg(not(windows))]
+    {
+        let html = HtmlPanel::new(1, "/home/x/y.html".to_string());
+        assert_eq!(html.source_cwd(), Some(std::path::PathBuf::from("/home/x")));
+    }
+}
+
+#[test]
+fn source_cwd_html_remote_url_is_none() {
+    let html = HtmlPanel::new(1, "https://example.com".to_string());
+    assert_eq!(html.source_cwd(), None);
+}
+
+#[test]
+fn source_cwd_html_about_blank_is_none() {
+    let html = HtmlPanel::new(1, "about:blank".to_string());
+    assert_eq!(html.source_cwd(), None);
+}
+
+#[test]
+fn source_cwd_html_empty_is_none() {
+    let html = HtmlPanel::new(1, String::new());
+    assert_eq!(html.source_cwd(), None);
+}
+
+#[test]
+fn source_cwd_image_is_none() {
+    let img = ImagePanel::new_blank(1);
+    assert_eq!(img.source_cwd(), None);
+}
+
+#[test]
+fn source_cwd_empty_surface_is_none() {
+    let e = EmptySurface::new(1);
+    assert_eq!(e.source_cwd(), None);
+}
+
+#[test]
+fn source_cwd_clipboard_viewer_is_none() {
+    let c = ClipboardViewerPanel::new(1);
+    assert_eq!(c.source_cwd(), None);
+}

@@ -276,3 +276,71 @@ fn move_focus_forward_two_panes() {
     // 두 번 이동하면 원래 위치로 돌아와야 한다
     assert_eq!(after_second_move, initial_focus);
 }
+
+// ---- resolve_inherit_cwd_from_surface ----
+
+#[test]
+fn resolve_inherit_cwd_from_explorer_surface() {
+    let mut state = test_state();
+    #[cfg(windows)]
+    let root = "C:\\workspace\\proj";
+    #[cfg(not(windows))]
+    let root = "/workspace/proj";
+    state.add_explorer_tab(root.to_string()).unwrap();
+
+    // 새로 추가된 explorer surface ID 찾기
+    let mut explorer_sid = None;
+    for ws in &state.engine.workspaces {
+        for pid in ws.pane_layout().all_pane_ids() {
+            if let Some(p) = ws.pane_layout().find_pane(pid) {
+                for tab in &p.tabs {
+                    if let Some(s) = tab.layout().find_surface(tab.focused_surface) {
+                        if s.as_explorer().is_some() {
+                            explorer_sid = s.surface_id();
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let sid = explorer_sid.expect("explorer surface should exist");
+    assert_eq!(
+        state.resolve_inherit_cwd_from_surface(sid),
+        Some(std::path::PathBuf::from(root))
+    );
+}
+
+#[test]
+fn resolve_inherit_cwd_from_surface_respects_toggle_off() {
+    let mut state = test_state();
+    state.engine.settings.general.inherit_cwd = false;
+
+    #[cfg(windows)]
+    let root = "C:\\workspace\\proj";
+    #[cfg(not(windows))]
+    let root = "/workspace/proj";
+    state.add_explorer_tab(root.to_string()).unwrap();
+
+    let mut explorer_sid = None;
+    for ws in &state.engine.workspaces {
+        for pid in ws.pane_layout().all_pane_ids() {
+            if let Some(p) = ws.pane_layout().find_pane(pid) {
+                for tab in &p.tabs {
+                    if let Some(s) = tab.layout().find_surface(tab.focused_surface) {
+                        if s.as_explorer().is_some() {
+                            explorer_sid = s.surface_id();
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let sid = explorer_sid.expect("explorer surface should exist");
+    assert_eq!(state.resolve_inherit_cwd_from_surface(sid), None);
+}
+
+#[test]
+fn resolve_inherit_cwd_from_unknown_surface_is_none() {
+    let state = test_state();
+    assert_eq!(state.resolve_inherit_cwd_from_surface(99999), None);
+}
