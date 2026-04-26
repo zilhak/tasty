@@ -75,12 +75,55 @@ pub fn run_claude_hook(
     Ok(())
 }
 
+const TASTY_HOOK_MARKER: &str = "tasty claude hook stop";
 const TASTY_HOOK_COMMAND: &str = "[ -n \"$TASTY_SURFACE_ID\" ] && tasty claude hook stop || true";
 
 fn claude_settings_path() -> Result<PathBuf> {
     let base = directories::BaseDirs::new()
         .ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
     Ok(base.home_dir().join(".claude").join("settings.json"))
+}
+
+/// Whether a single hooks.Stop array entry contains a tasty Stop hook command.
+fn entry_matches_tasty(entry: &serde_json::Value) -> bool {
+    entry
+        .get("hooks")
+        .and_then(|h| h.as_array())
+        .map(|hooks| {
+            hooks.iter().any(|h| {
+                h.get("command")
+                    .and_then(|c| c.as_str())
+                    .map(|c| c.contains(TASTY_HOOK_MARKER))
+                    .unwrap_or(false)
+            })
+        })
+        .unwrap_or(false)
+}
+
+/// Pure check against a parsed settings.json `Value` root.
+fn is_installed_in_value(root: &serde_json::Value) -> bool {
+    let Some(arr) = root
+        .get("hooks")
+        .and_then(|h| h.get("Stop"))
+        .and_then(|s| s.as_array())
+    else {
+        return false;
+    };
+    arr.iter().any(entry_matches_tasty)
+}
+
+/// Read `~/.claude/settings.json` and return whether the tasty Stop hook is installed.
+///
+/// Returns `Ok(false)` if the file does not exist. Propagates I/O and JSON parse errors so the
+/// caller can surface them in a guidance message.
+pub fn is_tasty_stop_hook_installed() -> Result<bool> {
+    let path = claude_settings_path()?;
+    if !path.exists() {
+        return Ok(false);
+    }
+    let content = std::fs::read_to_string(&path)?;
+    let root: serde_json::Value = serde_json::from_str(&content)?;
+    Ok(is_installed_in_value(&root))
 }
 
 /// Install tasty Stop hook into ~/.claude/settings.json
@@ -111,20 +154,7 @@ pub fn run_claude_install() -> Result<()> {
         .ok_or_else(|| anyhow::anyhow!("hooks.Stop is not an array"))?;
 
     // Check if already installed
-    let already = arr.iter().any(|entry| {
-        entry
-            .get("hooks")
-            .and_then(|h| h.as_array())
-            .map(|hooks| {
-                hooks.iter().any(|h| {
-                    h.get("command")
-                        .and_then(|c| c.as_str())
-                        .map(|c| c.contains("tasty claude hook stop"))
-                        .unwrap_or(false)
-                })
-            })
-            .unwrap_or(false)
-    });
+    let already = arr.iter().any(entry_matches_tasty);
 
     if already {
         println!("Already installed");
@@ -189,20 +219,7 @@ pub fn run_claude_uninstall() -> Result<()> {
     };
 
     let before_len = arr.len();
-    arr.retain(|entry| {
-        !entry
-            .get("hooks")
-            .and_then(|h| h.as_array())
-            .map(|hooks| {
-                hooks.iter().any(|h| {
-                    h.get("command")
-                        .and_then(|c| c.as_str())
-                        .map(|c| c.contains("tasty claude hook stop"))
-                        .unwrap_or(false)
-                })
-            })
-            .unwrap_or(false)
-    });
+    arr.retain(|entry| !entry_matches_tasty(entry));
 
     if arr.len() == before_len {
         println!("Tasty Stop hook not found, nothing to uninstall");
@@ -231,6 +248,27 @@ pub fn run_claude_wait(
     timeout: u64,
 ) -> Result<()> {
     use std::time::{Duration, Instant};
+
+    match is_tasty_stop_hook_installed() {
+        Ok(true) => {}
+        Ok(false) => {
+            eprintln!(
+                "error: tasty Stop hook is not installed in ~/.claude/settings.json.\n       \
+                 Without it, Claude Code idle/needs-input events are not delivered to tasty\n       \
+                 and `tasty claude wait` cannot complete.\n\n       \
+                 Run:\n           tasty claude install\n\n       \
+                 Then retry this command."
+            );
+            std::process::exit(1);
+        }
+        Err(e) => {
+            eprintln!(
+                "error: failed to read ~/.claude/settings.json while checking tasty Stop hook: {e}\n       \
+                 Fix the settings file (or run `tasty claude install`) and retry."
+            );
+            std::process::exit(1);
+        }
+    }
 
     let deadline = Instant::now() + Duration::from_secs(timeout);
 
@@ -263,5 +301,114 @@ pub fn run_claude_wait(
                 std::thread::sleep(Duration::from_secs(2));
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn empty_settings_is_not_installed() {
+        let root = json!({});
+        assert!(!is_installed_in_value(&root));
+    }
+
+    #[test]
+    fn missing_stop_array_is_not_installed() {
+        let root = json!({
+            "hooks": {
+                "OtherEvent": []
+            }
+        });
+        assert!(!is_installed_in_value(&root));
+    }
+
+    #[test]
+    fn stop_with_only_other_hooks_is_not_installed() {
+        let root = json!({
+            "hooks": {
+                "Stop": [
+                    {
+                        "matcher": "",
+                        "hooks": [
+                            { "type": "command", "command": "echo other" }
+                        ]
+                    }
+                ]
+            }
+        });
+        assert!(!is_installed_in_value(&root));
+    }
+
+    #[test]
+    fn stop_with_tasty_hook_is_installed() {
+        let root = json!({
+            "hooks": {
+                "Stop": [
+                    {
+                        "matcher": "",
+                        "hooks": [
+                            { "type": "command", "command": TASTY_HOOK_COMMAND }
+                        ]
+                    }
+                ]
+            }
+        });
+        assert!(is_installed_in_value(&root));
+    }
+
+    #[test]
+    fn stop_with_tasty_hook_alongside_others_is_installed() {
+        let root = json!({
+            "hooks": {
+                "Stop": [
+                    {
+                        "matcher": "",
+                        "hooks": [
+                            { "type": "command", "command": "echo other" }
+                        ]
+                    },
+                    {
+                        "matcher": "",
+                        "hooks": [
+                            { "type": "command", "command": "tasty claude hook stop" }
+                        ]
+                    }
+                ]
+            }
+        });
+        assert!(is_installed_in_value(&root));
+    }
+
+    #[test]
+    fn stop_not_an_array_is_not_installed() {
+        let root = json!({
+            "hooks": {
+                "Stop": "not-an-array"
+            }
+        });
+        assert!(!is_installed_in_value(&root));
+    }
+
+    #[test]
+    fn entry_matches_tasty_detects_marker_substring() {
+        let entry = json!({
+            "hooks": [
+                { "type": "command", "command": TASTY_HOOK_COMMAND }
+            ]
+        });
+        assert!(entry_matches_tasty(&entry));
+    }
+
+    #[test]
+    fn entry_matches_tasty_rejects_non_matching() {
+        let entry = json!({
+            "hooks": [
+                { "type": "command", "command": "echo nothing" }
+            ]
+        });
+        assert!(!entry_matches_tasty(&entry));
     }
 }
