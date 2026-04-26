@@ -976,22 +976,52 @@ impl MainWindow {
         key: &Key,
         mods: ModifiersState,
     ) -> bool {
+        use crate::state::FocusedSurfaceType;
         let kb = &state.engine.settings.keybindings;
-        if matches_any_binding(&kb.zoom_in, key, mods) {
-            let current = state.engine.settings.appearance.font_size;
-            state.engine.settings.appearance.font_size = (current + 1.0).min(72.0);
-            return true;
+        let is_zoom_in = matches_any_binding(&kb.zoom_in, key, mods);
+        let is_zoom_out = matches_any_binding(&kb.zoom_out, key, mods);
+        let is_zoom_reset = matches_any_binding(&kb.zoom_reset, key, mods);
+        if !(is_zoom_in || is_zoom_out || is_zoom_reset) {
+            return false;
         }
-        if matches_any_binding(&kb.zoom_out, key, mods) {
-            let current = state.engine.settings.appearance.font_size;
-            state.engine.settings.appearance.font_size = (current - 1.0).max(6.0);
-            return true;
+
+        // Pick which surface override the shortcut targets based on focus.
+        let kind = state.focused_surface_type();
+        let appearance = &mut state.engine.settings.appearance;
+        let (override_ref, current_effective_size) = match kind {
+            FocusedSurfaceType::Terminal => {
+                let size = appearance
+                    .default_font
+                    .apply_override(&appearance.terminal_font)
+                    .font_size;
+                (&mut appearance.terminal_font, size)
+            }
+            FocusedSurfaceType::Markdown => {
+                let size = appearance
+                    .default_font
+                    .apply_override(&appearance.markdown_font)
+                    .font_size;
+                (&mut appearance.markdown_font, size)
+            }
+            FocusedSurfaceType::Explorer => {
+                let size = appearance
+                    .default_font
+                    .apply_override(&appearance.explorer_font)
+                    .font_size;
+                (&mut appearance.explorer_font, size)
+            }
+            // Other surfaces don't expose a font_size shortcut.
+            _ => return false,
+        };
+
+        if is_zoom_reset {
+            override_ref.font_size = None;
+        } else if is_zoom_in {
+            override_ref.font_size = Some((current_effective_size + 1.0).min(72.0));
+        } else if is_zoom_out {
+            override_ref.font_size = Some((current_effective_size - 1.0).max(6.0));
         }
-        if matches_any_binding(&kb.zoom_reset, key, mods) {
-            state.engine.settings.appearance.font_size = 14.0;
-            return true;
-        }
-        false
+        true
     }
 }
 
@@ -1180,5 +1210,95 @@ mod tests {
         // 과거에는 named_str이 "" 를 반환해서 빈 key_part와 매칭되는 버그가 있었다.
         let key = k_named(NamedKey::Control);
         assert!(!matches_binding("ctrl+a", &key, mods_ctrl()));
+    }
+
+    // ── handle_zoom_shortcut: surface별 override 갱신 ──────────────────
+
+    fn fresh_state() -> crate::state::AppState {
+        let waker: crate::terminal::Waker = std::sync::Arc::new(|| {});
+        crate::state::AppState::new(80, 24, waker).unwrap()
+    }
+
+    #[test]
+    fn zoom_in_increments_terminal_font_size_override_only() {
+        let mut state = fresh_state();
+        // Pin the default so the test is independent of the user's settings file.
+        state.engine.settings.appearance.default_font.font_size = 14.0;
+        state.engine.settings.appearance.terminal_font.font_size = None;
+        state.engine.settings.appearance.markdown_font.font_size = None;
+        state.engine.settings.appearance.explorer_font.font_size = None;
+        let consumed = MainWindow::handle_zoom_shortcut(
+            &mut state,
+            &k_char("="),
+            ModifiersState::CONTROL,
+        );
+        assert!(consumed);
+        let app = &state.engine.settings.appearance;
+        assert_eq!(app.terminal_font.font_size, Some(15.0));
+        // Other surfaces remain untouched.
+        assert!(app.markdown_font.font_size.is_none());
+        assert!(app.explorer_font.font_size.is_none());
+        // default_font is also untouched.
+        assert_eq!(app.default_font.font_size, 14.0);
+    }
+
+    #[test]
+    fn zoom_out_decrements_terminal_font_size_override() {
+        let mut state = fresh_state();
+        state.engine.settings.appearance.terminal_font.font_size = Some(20.0);
+        let consumed = MainWindow::handle_zoom_shortcut(
+            &mut state,
+            &k_char("-"),
+            ModifiersState::CONTROL,
+        );
+        assert!(consumed);
+        assert_eq!(
+            state.engine.settings.appearance.terminal_font.font_size,
+            Some(19.0)
+        );
+    }
+
+    #[test]
+    fn zoom_reset_clears_terminal_font_size_override() {
+        let mut state = fresh_state();
+        state.engine.settings.appearance.terminal_font.font_size = Some(20.0);
+        let consumed = MainWindow::handle_zoom_shortcut(
+            &mut state,
+            &k_char("0"),
+            ModifiersState::CONTROL,
+        );
+        assert!(consumed);
+        // Reset → override removed (surface returns to default_font).
+        assert!(state.engine.settings.appearance.terminal_font.font_size.is_none());
+    }
+
+    #[test]
+    fn zoom_in_clamps_at_72px() {
+        let mut state = fresh_state();
+        state.engine.settings.appearance.terminal_font.font_size = Some(71.5);
+        MainWindow::handle_zoom_shortcut(
+            &mut state,
+            &k_char("="),
+            ModifiersState::CONTROL,
+        );
+        assert_eq!(
+            state.engine.settings.appearance.terminal_font.font_size,
+            Some(72.0)
+        );
+    }
+
+    #[test]
+    fn zoom_out_clamps_at_6px() {
+        let mut state = fresh_state();
+        state.engine.settings.appearance.terminal_font.font_size = Some(6.5);
+        MainWindow::handle_zoom_shortcut(
+            &mut state,
+            &k_char("-"),
+            ModifiersState::CONTROL,
+        );
+        assert_eq!(
+            state.engine.settings.appearance.terminal_font.font_size,
+            Some(6.0)
+        );
     }
 }
