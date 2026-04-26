@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use anyhow::Result;
-use serde_json::json;
+use serde_json::{Value, json};
 
 use super::transport::{IpcConnection, make_request};
 
@@ -24,8 +24,9 @@ pub fn run_claude_hook(
     };
 
     match event {
-        "stop" => {
-            // Claude stopped → set idle, then fire claude-idle hook
+        "stop" | "session-end" | "subagent-stop" => {
+            // Claude finished (main agent stopped, session ended, or sub-agent stopped)
+            // → set idle and fire claude-idle hook.
             let req1 = make_request(
                 "claude.set_idle_state",
                 serde_json::json!({ "surface_id": surface_param, "idle": true }),
@@ -65,7 +66,7 @@ pub fn run_claude_hook(
         }
         _ => {
             eprintln!(
-                "Unknown claude-hook event: '{}'. Use: stop, notification, prompt-submit, session-start",
+                "Unknown claude-hook event: '{}'. Use: stop, notification, session-end, subagent-stop, prompt-submit, session-start",
                 event
             );
             std::process::exit(1);
@@ -75,8 +76,44 @@ pub fn run_claude_hook(
     Ok(())
 }
 
-const TASTY_HOOK_MARKER: &str = "tasty claude hook stop";
-const TASTY_HOOK_COMMAND: &str = "[ -n \"$TASTY_SURFACE_ID\" ] && tasty claude hook stop || true";
+// ─────────────────────────────────────────────────────────────────────────────
+// install / uninstall helpers
+//
+// 함수 단위로 깔끔하게 분리해 두어, 동일한 파일을 손대는 다른 작업과의
+// 머지 충돌을 줄인다. `run_claude_install` / `run_claude_uninstall`은 이 헬퍼들의
+// 얇은 래퍼다.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// tasty가 자동으로 등록하는 Claude Code hook 이벤트 목록.
+/// `(claude_event_name, tasty_hook_token)` 형태.
+///
+/// - `Stop`: 메인 에이전트 응답 종료 (idle 신호의 핵심)
+/// - `Notification`: 권한 요청 / idle 알림 (needs-input 신호의 핵심)
+/// - `SessionEnd`: 세션 종료 (exited 정확도 향상)
+/// - `SubagentStop`: subagent(Task tool) 종료 (idle 정확도 향상)
+const MANAGED_HOOKS: &[(&str, &str)] = &[
+    ("Stop", "stop"),
+    ("Notification", "notification"),
+    ("SessionEnd", "session-end"),
+    ("SubagentStop", "subagent-stop"),
+];
+
+/// `entry_matches_marker`가 식별자로 사용하는 substring.
+/// 예: "tasty claude hook stop" → settings.json 안의 command 필드에 이 substring이
+/// 포함되면 tasty가 등록한 hook entry로 간주한다.
+fn tasty_hook_marker(event_token: &str) -> String {
+    format!("tasty claude hook {}", event_token)
+}
+
+/// settings.json에 실제로 기록되는 명령 문자열.
+/// `TASTY_SURFACE_ID`가 없는 환경(claude를 tasty 외부에서 실행 중인 경우)에서는
+/// 무조건 성공 종료(`true`)하도록 가드를 걸어 Claude 측에 영향을 주지 않는다.
+fn tasty_hook_command(event_token: &str) -> String {
+    format!(
+        "[ -n \"$TASTY_SURFACE_ID\" ] && tasty claude hook {} || true",
+        event_token
+    )
+}
 
 fn claude_settings_path() -> Result<PathBuf> {
     let base = directories::BaseDirs::new()
@@ -84,8 +121,8 @@ fn claude_settings_path() -> Result<PathBuf> {
     Ok(base.home_dir().join(".claude").join("settings.json"))
 }
 
-/// Whether a single hooks.Stop array entry contains a tasty Stop hook command.
-fn entry_matches_tasty(entry: &serde_json::Value) -> bool {
+/// hooks.<Event> 배열의 한 entry가 주어진 marker를 가진 tasty entry인지 판단.
+fn entry_matches_marker(entry: &Value, marker: &str) -> bool {
     entry
         .get("hooks")
         .and_then(|h| h.as_array())
@@ -93,96 +130,160 @@ fn entry_matches_tasty(entry: &serde_json::Value) -> bool {
             hooks.iter().any(|h| {
                 h.get("command")
                     .and_then(|c| c.as_str())
-                    .map(|c| c.contains(TASTY_HOOK_MARKER))
+                    .map(|c| c.contains(marker))
                     .unwrap_or(false)
             })
         })
         .unwrap_or(false)
 }
 
-/// Pure check against a parsed settings.json `Value` root.
-fn is_installed_in_value(root: &serde_json::Value) -> bool {
-    let Some(arr) = root
-        .get("hooks")
-        .and_then(|h| h.get("Stop"))
-        .and_then(|s| s.as_array())
-    else {
+/// settings.json 루트 값에서 특정 hook 이벤트 + marker가 이미 설치돼 있는지 검사.
+fn is_marker_installed_in_value(root: &Value, event_name: &str, marker: &str) -> bool {
+    let Some(hooks) = root.get("hooks").and_then(|h| h.as_object()) else {
         return false;
     };
-    arr.iter().any(entry_matches_tasty)
+    let Some(arr) = hooks.get(event_name).and_then(|v| v.as_array()) else {
+        return false;
+    };
+    arr.iter().any(|entry| entry_matches_marker(entry, marker))
 }
 
 /// Read `~/.claude/settings.json` and return whether the tasty Stop hook is installed.
 ///
 /// Returns `Ok(false)` if the file does not exist. Propagates I/O and JSON parse errors so the
-/// caller can surface them in a guidance message.
+/// caller can surface them in a guidance message. Stop hook은 4종 중 idle 신호의 핵심이므로
+/// `tasty claude wait`의 사전 점검 기준으로 사용한다.
 pub fn is_tasty_stop_hook_installed() -> Result<bool> {
     let path = claude_settings_path()?;
     if !path.exists() {
         return Ok(false);
     }
     let content = std::fs::read_to_string(&path)?;
-    let root: serde_json::Value = serde_json::from_str(&content)?;
-    Ok(is_installed_in_value(&root))
+    let root: Value = serde_json::from_str(&content)?;
+    let marker = tasty_hook_marker("stop");
+    Ok(is_marker_installed_in_value(&root, "Stop", &marker))
 }
 
-/// Install tasty Stop hook into ~/.claude/settings.json
+/// settings.json 루트 값에 4종 hook을 idempotent하게 추가.
+/// 이미 있으면 건너뛰고, 추가된 이벤트 이름 목록을 반환한다.
+fn install_hooks_in_value(root: &mut Value) -> Result<Vec<&'static str>> {
+    let root_obj = root
+        .as_object_mut()
+        .ok_or_else(|| anyhow::anyhow!("settings.json root is not an object"))?;
+
+    let hooks_obj = root_obj
+        .entry("hooks")
+        .or_insert_with(|| json!({}))
+        .as_object_mut()
+        .ok_or_else(|| anyhow::anyhow!("hooks is not an object"))?;
+
+    let mut added: Vec<&'static str> = Vec::new();
+
+    for (event_name, event_token) in MANAGED_HOOKS {
+        let marker = tasty_hook_marker(event_token);
+        let command = tasty_hook_command(event_token);
+
+        let arr = hooks_obj
+            .entry((*event_name).to_string())
+            .or_insert_with(|| json!([]))
+            .as_array_mut()
+            .ok_or_else(|| anyhow::anyhow!("hooks.{} is not an array", event_name))?;
+
+        let already = arr.iter().any(|entry| entry_matches_marker(entry, &marker));
+        if already {
+            continue;
+        }
+
+        arr.push(json!({
+            "matcher": "",
+            "hooks": [
+                {
+                    "type": "command",
+                    "command": command
+                }
+            ]
+        }));
+        added.push(*event_name);
+    }
+
+    Ok(added)
+}
+
+/// settings.json 루트 값에서 4종 hook의 tasty entry를 제거.
+/// 빈 이벤트 배열과 빈 hooks 객체도 정리한다. 제거된 이벤트 이름 목록을 반환.
+fn uninstall_hooks_from_value(root: &mut Value) -> Vec<&'static str> {
+    let Some(root_obj) = root.as_object_mut() else {
+        return Vec::new();
+    };
+    let Some(hooks) = root_obj.get_mut("hooks") else {
+        return Vec::new();
+    };
+    let Some(hooks_obj) = hooks.as_object_mut() else {
+        return Vec::new();
+    };
+
+    let mut removed: Vec<&'static str> = Vec::new();
+
+    for (event_name, event_token) in MANAGED_HOOKS {
+        let marker = tasty_hook_marker(event_token);
+
+        let Some(arr) = hooks_obj.get_mut(*event_name).and_then(|v| v.as_array_mut()) else {
+            continue;
+        };
+
+        let before_len = arr.len();
+        arr.retain(|entry| !entry_matches_marker(entry, &marker));
+        let changed = arr.len() != before_len;
+
+        if changed {
+            removed.push(*event_name);
+        }
+
+        if arr.is_empty() {
+            hooks_obj.remove(*event_name);
+        }
+    }
+
+    if hooks_obj.is_empty() {
+        root_obj.remove("hooks");
+    }
+
+    removed
+}
+
+/// Install tasty Claude Code hooks (Stop/Notification/SessionEnd/SubagentStop)
+/// into ~/.claude/settings.json. Idempotent.
 pub fn run_claude_install() -> Result<()> {
     let path = claude_settings_path()?;
 
-    let mut root: serde_json::Value = if path.exists() {
+    let mut root: Value = if path.exists() {
         let content = std::fs::read_to_string(&path)?;
         serde_json::from_str(&content)?
     } else {
         json!({})
     };
 
-    let hooks = root
-        .as_object_mut()
-        .ok_or_else(|| anyhow::anyhow!("settings.json root is not an object"))?
-        .entry("hooks")
-        .or_insert_with(|| json!({}));
+    let added = install_hooks_in_value(&mut root)?;
 
-    let stop_arr = hooks
-        .as_object_mut()
-        .ok_or_else(|| anyhow::anyhow!("hooks is not an object"))?
-        .entry("Stop")
-        .or_insert_with(|| json!([]));
-
-    let arr = stop_arr
-        .as_array_mut()
-        .ok_or_else(|| anyhow::anyhow!("hooks.Stop is not an array"))?;
-
-    // Check if already installed
-    let already = arr.iter().any(entry_matches_tasty);
-
-    if already {
+    if added.is_empty() {
         println!("Already installed");
         return Ok(());
     }
 
-    arr.push(json!({
-        "matcher": "",
-        "hooks": [
-            {
-                "type": "command",
-                "command": TASTY_HOOK_COMMAND
-            }
-        ]
-    }));
-
-    // Ensure parent directory exists
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
 
     let output = serde_json::to_string_pretty(&root)?;
     std::fs::write(&path, output)?;
-    println!("Installed tasty Stop hook to ~/.claude/settings.json");
+    println!(
+        "Installed tasty Claude hooks to ~/.claude/settings.json: {}",
+        added.join(", ")
+    );
     Ok(())
 }
 
-/// Uninstall tasty Stop hook from ~/.claude/settings.json
+/// Uninstall tasty Claude Code hooks from ~/.claude/settings.json.
 pub fn run_claude_uninstall() -> Result<()> {
     let path = claude_settings_path()?;
 
@@ -192,51 +293,21 @@ pub fn run_claude_uninstall() -> Result<()> {
     }
 
     let content = std::fs::read_to_string(&path)?;
-    let mut root: serde_json::Value = serde_json::from_str(&content)?;
+    let mut root: Value = serde_json::from_str(&content)?;
 
-    let root_obj = root
-        .as_object_mut()
-        .ok_or_else(|| anyhow::anyhow!("settings.json root is not an object"))?;
+    let removed = uninstall_hooks_from_value(&mut root);
 
-    let Some(hooks) = root_obj.get_mut("hooks") else {
-        println!("No hooks found, nothing to uninstall");
+    if removed.is_empty() {
+        println!("Tasty hooks not found, nothing to uninstall");
         return Ok(());
-    };
-
-    let Some(hooks_obj) = hooks.as_object_mut() else {
-        println!("hooks is not an object, nothing to uninstall");
-        return Ok(());
-    };
-
-    let Some(stop_val) = hooks_obj.get_mut("Stop") else {
-        println!("No Stop hook found, nothing to uninstall");
-        return Ok(());
-    };
-
-    let Some(arr) = stop_val.as_array_mut() else {
-        println!("hooks.Stop is not an array, nothing to uninstall");
-        return Ok(());
-    };
-
-    let before_len = arr.len();
-    arr.retain(|entry| !entry_matches_tasty(entry));
-
-    if arr.len() == before_len {
-        println!("Tasty Stop hook not found, nothing to uninstall");
-        return Ok(());
-    }
-
-    // Clean up empty Stop array and hooks object
-    if arr.is_empty() {
-        hooks_obj.remove("Stop");
-    }
-    if hooks_obj.is_empty() {
-        root_obj.remove("hooks");
     }
 
     let output = serde_json::to_string_pretty(&root)?;
     std::fs::write(&path, output)?;
-    println!("Uninstalled tasty Stop hook from ~/.claude/settings.json");
+    println!(
+        "Uninstalled tasty Claude hooks from ~/.claude/settings.json: {}",
+        removed.join(", ")
+    );
     Ok(())
 }
 
@@ -307,108 +378,116 @@ pub fn run_claude_wait(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
 
-    #[test]
-    fn empty_settings_is_not_installed() {
-        let root = json!({});
-        assert!(!is_installed_in_value(&root));
+    fn count_managed_entries(root: &Value, event_name: &str, marker: &str) -> usize {
+        root.get("hooks")
+            .and_then(|h| h.as_object())
+            .and_then(|h| h.get(event_name))
+            .and_then(|a| a.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter(|e| entry_matches_marker(e, marker))
+                    .count()
+            })
+            .unwrap_or(0)
     }
 
     #[test]
-    fn missing_stop_array_is_not_installed() {
-        let root = json!({
-            "hooks": {
-                "OtherEvent": []
-            }
-        });
-        assert!(!is_installed_in_value(&root));
+    fn install_in_empty_value_adds_all_four_events() {
+        let mut root = json!({});
+        let added = install_hooks_in_value(&mut root).expect("install");
+        assert_eq!(added.len(), 4);
+        for (event_name, token) in MANAGED_HOOKS {
+            let marker = tasty_hook_marker(token);
+            assert_eq!(
+                count_managed_entries(&root, event_name, &marker),
+                1,
+                "missing event {} after install",
+                event_name
+            );
+        }
     }
 
     #[test]
-    fn stop_with_only_other_hooks_is_not_installed() {
-        let root = json!({
+    fn install_is_idempotent() {
+        let mut root = json!({});
+        let _ = install_hooks_in_value(&mut root).expect("install 1");
+        let added2 = install_hooks_in_value(&mut root).expect("install 2");
+        assert!(added2.is_empty(), "second install should add nothing");
+        for (event_name, token) in MANAGED_HOOKS {
+            let marker = tasty_hook_marker(token);
+            assert_eq!(count_managed_entries(&root, event_name, &marker), 1);
+        }
+    }
+
+    #[test]
+    fn install_preserves_other_hooks() {
+        let mut root = json!({
             "hooks": {
+                "PreToolUse": [
+                    { "matcher": "Bash", "hooks": [{ "type": "command", "command": "echo user" }] }
+                ],
                 "Stop": [
-                    {
-                        "matcher": "",
-                        "hooks": [
-                            { "type": "command", "command": "echo other" }
-                        ]
-                    }
+                    { "matcher": "", "hooks": [{ "type": "command", "command": "echo user-stop" }] }
                 ]
             }
         });
-        assert!(!is_installed_in_value(&root));
+        let _ = install_hooks_in_value(&mut root).expect("install");
+
+        // user PreToolUse 보존
+        assert_eq!(
+            root["hooks"]["PreToolUse"]
+                .as_array()
+                .map(|a| a.len())
+                .unwrap_or(0),
+            1
+        );
+        // user Stop entry + tasty Stop entry 둘 다 존재
+        let stop_arr = root["hooks"]["Stop"].as_array().unwrap();
+        assert_eq!(stop_arr.len(), 2);
     }
 
     #[test]
-    fn stop_with_tasty_hook_is_installed() {
-        let root = json!({
+    fn uninstall_removes_all_four() {
+        let mut root = json!({});
+        let _ = install_hooks_in_value(&mut root).expect("install");
+        let removed = uninstall_hooks_from_value(&mut root);
+        assert_eq!(removed.len(), 4);
+        // hooks 객체 자체가 사라져야 함
+        assert!(root.get("hooks").is_none(), "empty hooks should be removed");
+    }
+
+    #[test]
+    fn uninstall_preserves_user_entries() {
+        let mut root = json!({
             "hooks": {
                 "Stop": [
-                    {
-                        "matcher": "",
-                        "hooks": [
-                            { "type": "command", "command": TASTY_HOOK_COMMAND }
-                        ]
-                    }
+                    { "matcher": "", "hooks": [{ "type": "command", "command": "echo user-stop" }] }
                 ]
             }
         });
-        assert!(is_installed_in_value(&root));
+        let _ = install_hooks_in_value(&mut root).expect("install");
+        let _ = uninstall_hooks_from_value(&mut root);
+        // 사용자 entry는 그대로 남아있어야 한다
+        let stop_arr = root["hooks"]["Stop"].as_array().unwrap();
+        assert_eq!(stop_arr.len(), 1);
+        let cmd = stop_arr[0]["hooks"][0]["command"].as_str().unwrap();
+        assert!(cmd.contains("user-stop"));
     }
 
     #[test]
-    fn stop_with_tasty_hook_alongside_others_is_installed() {
-        let root = json!({
-            "hooks": {
-                "Stop": [
-                    {
-                        "matcher": "",
-                        "hooks": [
-                            { "type": "command", "command": "echo other" }
-                        ]
-                    },
-                    {
-                        "matcher": "",
-                        "hooks": [
-                            { "type": "command", "command": "tasty claude hook stop" }
-                        ]
-                    }
-                ]
-            }
-        });
-        assert!(is_installed_in_value(&root));
+    fn uninstall_on_empty_settings_returns_empty() {
+        let mut root = json!({});
+        let removed = uninstall_hooks_from_value(&mut root);
+        assert!(removed.is_empty());
     }
 
     #[test]
-    fn stop_not_an_array_is_not_installed() {
-        let root = json!({
-            "hooks": {
-                "Stop": "not-an-array"
-            }
-        });
-        assert!(!is_installed_in_value(&root));
-    }
-
-    #[test]
-    fn entry_matches_tasty_detects_marker_substring() {
-        let entry = json!({
-            "hooks": [
-                { "type": "command", "command": TASTY_HOOK_COMMAND }
-            ]
-        });
-        assert!(entry_matches_tasty(&entry));
-    }
-
-    #[test]
-    fn entry_matches_tasty_rejects_non_matching() {
-        let entry = json!({
-            "hooks": [
-                { "type": "command", "command": "echo nothing" }
-            ]
-        });
-        assert!(!entry_matches_tasty(&entry));
+    fn is_marker_installed_in_value_works() {
+        let mut root = json!({});
+        let marker = tasty_hook_marker("stop");
+        assert!(!is_marker_installed_in_value(&root, "Stop", &marker));
+        let _ = install_hooks_in_value(&mut root).expect("install");
+        assert!(is_marker_installed_in_value(&root, "Stop", &marker));
     }
 }

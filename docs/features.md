@@ -769,9 +769,17 @@ Claude Code의 훅 시스템과 연동하여 Claude의 활동 상태를 추적�
 - **surface.fire_hook**: 특정 이벤트의 등록된 훅을 수동으로 실행 (hook_manager.check_and_fire 호출)
 - **HookEvent 확장**: ClaudeIdle, NeedsInput 이벤트 타입 추가 ("claude-idle", "needs-input"으로 등록)
 - **자동 정리**: surface가 닫힐 때 (unregister_child, mark_parent_closed) idle/needs_input 상태 자동 제거
-- **install/uninstall**: `tasty claude install`은 `~/.claude/settings.json`의 `hooks.Stop` 배열에 tasty Stop 훅(`[ -n "$TASTY_SURFACE_ID" ] && tasty claude hook stop || true`)을 자동 등록. `tasty claude uninstall`은 등록된 항목을 제거하고 빈 `Stop` 배열/`hooks` 객체도 정리한다. 매칭은 모두 `tasty claude hook stop` substring 기준으로 동일하게 동작
-- **wait의 사전 요구사항 점검**: `tasty claude wait`는 시작 시 `is_tasty_stop_hook_installed()` 헬퍼로 Stop 훅 등록 여부를 확인하고, 미설치(또는 settings.json 파싱 실패)면 안내 메시지를 stderr에 출력하고 exit code 1로 종료한다. install 함수와 동일한 매칭 로직(`entry_matches_tasty`)을 공유하므로 등록 판정이 자동으로 일치한다
-- CLI: `tasty claude install`, `tasty claude uninstall`, `tasty claude hook stop|notification|prompt-submit|session-start [--surface ID]`
+- **`tasty claude install` / `uninstall`**: `~/.claude/settings.json`의 `hooks` 객체에 4종 hook entry를
+  idempotent하게 추가/제거한다. 등록 대상: `Stop`(메인 응답 종료), `Notification`(권한 요청·idle 알림),
+  `SessionEnd`(세션 종료), `SubagentStop`(Task tool 종료). 각 entry의 command는
+  `[ -n "$TASTY_SURFACE_ID" ] && tasty claude hook <token> || true` 형태로, tasty 외부에서 claude를 실행할 때는
+  무해하게 통과한다. 매칭은 `tasty claude hook <token>` substring 기준으로 동작하며, 사용자가 손수 등록한 다른
+  hook entry는 보존한다. 제거 시 빈 이벤트 배열과 빈 `hooks` 객체도 함께 정리한다.
+- **wait의 사전 요구사항 점검**: `tasty claude wait`는 시작 시 `is_tasty_stop_hook_installed()` 헬퍼로 Stop 훅
+  등록 여부를 확인하고, 미설치(또는 settings.json 파싱 실패)면 안내 메시지를 stderr에 출력하고 exit code 1로
+  종료한다. 점검은 install과 동일한 marker 기반 매칭(`is_marker_installed_in_value`)을 공유하므로 등록 판정이
+  자동으로 일치한다.
+- CLI: `tasty claude install`, `tasty claude uninstall`, `tasty claude hook stop|notification|session-end|subagent-stop|prompt-submit|session-start [--surface ID]`
 - IPC: `claude.set_idle_state`, `claude.set_needs_input`, `surface.fire_hook` 메서드
 
 ### Surface Metadata Store (surface_meta.rs)

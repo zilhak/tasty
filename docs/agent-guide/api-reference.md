@@ -118,7 +118,11 @@ tasty claude broadcast "텍스트\r" [--role ROLE]   # 모든 자식에 텍스�
 tasty claude wait --child INDEX [--timeout 60]       # idle/needs_input/exited 대기 (사전 요구: tasty claude install)
 
 # Claude Hook 통합 (Claude Code의 훅 시스템에서 호출)
+tasty claude install                # ~/.claude/settings.json에 Stop/Notification/SessionEnd/SubagentStop 4종 등록 (idempotent)
+tasty claude uninstall              # ~/.claude/settings.json에서 위 4종 제거 (사용자 entry는 보존)
 tasty claude hook stop              # Claude 작업 완료 → idle 상태 설정 + claude-idle 훅 실행
+tasty claude hook session-end       # 세션 종료 → idle 상태 + claude-idle 훅 실행
+tasty claude hook subagent-stop     # Task subagent 종료 → idle 상태 + claude-idle 훅 실행
 tasty claude hook notification      # Claude 입력 필요 → needs-input 상태 설정 + needs-input 훅 실행
 tasty claude hook prompt-submit     # 사용자 입력 전송 → active 상태로 전환
 tasty claude hook session-start     # 세션 시작 → active 상태로 전환
