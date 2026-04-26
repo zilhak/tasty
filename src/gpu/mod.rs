@@ -146,8 +146,8 @@ impl GpuState {
             opts.zoom_with_keyboard = false;
         });
 
-        // Load system CJK font so Korean/Japanese/Chinese glyphs render in egui UI
-        Self::setup_egui_cjk_fonts(&egui_ctx);
+        // Register bundled D2Coding (primary monospace) and system CJK fallback in egui.
+        Self::setup_egui_fonts(&egui_ctx);
 
         // Connect egui's repaint requests to the winit event loop.
         // Without this, egui's internal repaints (new window registration,
