@@ -64,10 +64,11 @@
 
 ### 폰트 래스터라이징
 - cosmic-text FontSystem/SwashCache를 이용한 글리프 래스터라이징
+- **번들 D2Coding ligature 폰트** (NAVER, OFL 1.1): Regular/Bold ttf를 바이너리에 임베드해 사용자의 OS에 D2Coding이 설치되지 않아도 동작. `font_family`가 빈 문자열이거나 `"monospace"`일 때 자동 적용되며, 다른 폰트를 지정해도 D2Coding은 폰트 DB에 남아 fallback face로 동작. `Shaping::Advanced`로 합자(`==`, `!=`, `=>`, `->`, `<=`, `>=` 등) 자동 적용. 한자/가나는 시스템 CJK 폰트로 자동 fallback
 - 2048x2048 R8 텍스처 아틀라스에 선반(shelf) 기반 글리프 패킹
 - 아틀라스 가득 찰 때 자동 리셋 및 재구축 (캐시 초기화 + 텍스처 클리어)
 - 베이스라인 기반 글리프 오프셋 계산
-- Bold/Italic 변형 지원
+- Bold/Italic 변형 지원 (Bold는 D2Coding ligature Bold face가 직접 매칭, synthetic bold 회피)
 - Mask/Color/SubpixelMask 콘텐츠 타입별 그레이스케일 변환 (`chunks_exact` 사용)
 - 블록 요소(U+2580–U+259F) 및 박스 드로잉(U+2500–U+257F) 커스텀 렌더링: 셀 경계를 정확히 채우는 픽셀 퍼펙트 비트맵을 프로그래밍 방식으로 생성. 상/하/좌/우 분할 블록, 쉐이드(25%/50%/75%), 사분면, light/heavy/double 선, 코너, T-접합, 크로스, 대각선 지원. Bold/Italic이 아닌 일반 스타일에서만 적용되며, 나머지는 swash 래스터라이저로 폴백
 
@@ -422,7 +423,7 @@
 - `settings.general.startup_command`: 첫 터미널 생성 후 자동 실행할 명령. 비어있으면 무시
 - `settings.appearance.default_font`: 기본 폰트 5종 묶음 (`font_family`, `font_size`, `custom_font_path`, `line_height`, `font_scale_mode`). Terminal·Markdown·Explorer 모두에 일괄 적용되며, 각 surface는 아래 override 그룹으로 항목별 재정의 가능. 설정 UI에서는 Theme 서브탭 하단의 "기본 폰트 설정" 섹션에서 편집
 - `settings.appearance.terminal_font` / `markdown_font` / `explorer_font`: surface별 per-field override. 5개 필드 모두 `Option<T>`이며 `None`이면 `default_font`를 사용. 각 surface 서브탭에 "기본값 사용" 체크박스 + 입력 위젯 패턴으로 노출
-- `font_family`: cosmic-text(터미널) 또는 egui FontDefinitions(Markdown/Explorer)에 전달. 빈 문자열이나 "monospace"는 시스템 기본 모노스페이스. 설정 UI에서 시스템 폰트 목록을 검색 가능한 드롭다운으로 선택
+- `font_family`: cosmic-text(터미널) 또는 egui FontDefinitions(Markdown/Explorer)에 전달. 빈 문자열이나 "monospace"이면 번들 D2Coding ligature를 사용. 다른 폰트를 지정해도 D2Coding은 폰트 DB에 남아 fallback face로 동작. 설정 UI에서 시스템 폰트 목록(번들 `D2Coding ligature` 포함)을 검색 가능한 드롭다운으로 선택
 - `font_size`: 픽셀 단위. 기본값 14.0. 단축키 `Ctrl+/-/0`은 포커스된 surface(Terminal/Markdown/Explorer)의 `font_size` override만 변경하며, `Ctrl+0`은 override를 제거해 기본값으로 회귀
 - `custom_font_path`: 커스텀 폰트 파일(.ttf/.otf) 경로. 지정 시 FontSystem 또는 egui FontDefinitions에 해당 파일을 추가 로드한 후 `font_family`로 참조 가능
 - `line_height`: 행간 배수. 1.0(기본, 틈 없음 - ASCII 아트에 최적) ~ 2.0. 값이 클수록 행 간격이 넓어짐
