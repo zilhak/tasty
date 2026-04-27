@@ -9,7 +9,7 @@ use termwiz::cell::CellAttributes;
 use termwiz::escape::Action;
 use termwiz::escape::csi::CSI;
 use termwiz::escape::parser::Parser;
-use termwiz::surface::{Change, Position, Surface};
+use termwiz::surface::{Change, Surface};
 
 pub mod cwd;
 pub mod disk_scrollback;
@@ -87,6 +87,10 @@ pub struct Terminal {
     /// CWD cached from OSC 7 (CurrentWorkingDirectory) sequences emitted by the shell.
     /// Used by get_cwd() to avoid spawning external processes.
     pub(crate) cached_cwd: Option<std::path::PathBuf>,
+    /// OS-level CWD fallback cache (result + last query time).
+    /// Prevents spawning lsof/proc every frame when cached_cwd is None.
+    /// Uses `RefCell` so `get_cwd()` can stay `&self`.
+    os_cwd_cache: std::cell::RefCell<Option<(std::time::Instant, Option<std::path::PathBuf>)>>,
     /// Saved right-side cells for each line, preserved when cols shrink.
     /// Each entry corresponds to a screen line and holds cells beyond the current cols.
     /// Restored when cols grow again. Cleared on scrollback capture (scroll up).
@@ -96,11 +100,12 @@ pub struct Terminal {
     pending_pty_resize: Option<(usize, usize)>,
     /// Timestamp of the last actual PTY resize flush. Used for throttling.
     last_pty_flush: std::time::Instant,
-    /// True when cursor Y was explicitly moved upward via CUP/VPA etc.
-    /// Suppresses `capture_implicit_shift` for subsequent text writes, preventing
-    /// TUI apps (that reposition cursor and redraw) from duplicating scrollback.
-    /// Reset when an explicit `ScrollRegionUp` is handled (natural scroll).
-    cursor_repositioned_up: bool,
+    /// Screen snapshot taken at BSM (Begin Synchronized Mode, DECSET 2026).
+    /// Used to compute net scrollback when ESM ends the sync period.
+    /// During sync, scrollback capture is suppressed; only the net effect
+    /// (lines that actually scrolled off compared to the pre-sync state)
+    /// is captured when the sync period ends.
+    sync_pre_snapshot: Option<Vec<Vec<(String, CellAttributes)>>>,
 }
 
 impl Terminal {
@@ -268,10 +273,11 @@ impl Terminal {
             scroll_offset: 0,
             disk_scrollback: None,
             cached_cwd: None,
+            os_cwd_cache: std::cell::RefCell::new(None),
             saved_line_tails: Vec::new(),
             pending_pty_resize: None,
             last_pty_flush: std::time::Instant::now(),
-            cursor_repositioned_up: false,
+            sync_pre_snapshot: None,
         })
     }
 
@@ -471,9 +477,78 @@ impl Terminal {
         self.apply_change(change);
     }
 
-    pub(crate) fn flush_pending_changes(&mut self) {
-        // No-op: changes are now applied immediately in apply_or_stage_change().
-        // Kept for API compatibility with mode handler.
+    /// ESM 시점에 호출: BSM 이전 스냅샷과 현재 화면을 비교하여
+    /// sync 구간 동안 실제로 밀려난 행만 scrollback에 push한다.
+    ///
+    /// TUI 리드로우(같은 내용 다시 그리기)의 경우 화면 내용이 변하지 않으므로
+    /// net scroll = 0 → scrollback에 아무것도 추가되지 않는다.
+    pub(crate) fn flush_sync_scrollback(&mut self) {
+        let Some(pre) = self.sync_pre_snapshot.take() else {
+            return;
+        };
+        if self.use_alternate || pre.is_empty() {
+            return;
+        }
+
+        // 현재 화면의 첫 번째 행을 가져온다.
+        let new_first: Vec<String> = {
+            let surface = self.surface();
+            let new_lines = surface.screen_lines();
+            match new_lines.first() {
+                Some(line) => line
+                    .visible_cells()
+                    .map(|c| c.str().to_string())
+                    .collect(),
+                None => return,
+            }
+        };
+
+        // pre-snapshot에서 현재 화면의 첫 행과 일치하는 위치를 찾는다.
+        // 그 위치(shift)가 sync 구간 동안 밀려난 행 수.
+        let mut shift = 0usize;
+        for (k, pre_line) in pre.iter().enumerate().skip(1) {
+            if pre_line.len() == new_first.len()
+                && pre_line
+                    .iter()
+                    .zip(new_first.iter())
+                    .all(|((a, _), b)| a == b)
+            {
+                shift = k;
+                break;
+            }
+        }
+
+        // 현재 첫 행이 pre에 없으면 — 화면 내용이 완전히 바뀐 경우.
+        // pre의 모든 행이 밀려난 것으로 간주한다.
+        if shift == 0 {
+            // 첫 행이 pre[0]과 같으면 실제로 스크롤이 없었다 (리드로우).
+            let same_first = pre[0].len() == new_first.len()
+                && pre[0]
+                    .iter()
+                    .zip(new_first.iter())
+                    .all(|((a, _), b)| a == b);
+            if same_first {
+                // 스크롤 없음 — scrollback에 추가할 것 없음.
+                return;
+            }
+            // 첫 행이 다르고 어디서도 매칭이 안 됨 — 전체 스크롤로 간주.
+            shift = pre.len();
+        }
+
+        if shift > 0 {
+            let captured: Vec<_> = pre.into_iter().take(shift).collect();
+            let count = captured.len();
+            for line in captured {
+                self.scrollback.push_back(line);
+            }
+            for _ in 0..count.min(self.saved_line_tails.len()) {
+                self.saved_line_tails.remove(0);
+            }
+            if self.scroll_offset > 0 {
+                self.scroll_offset += count;
+            }
+            self.flush_scrollback_to_disk();
+        }
     }
 
     fn apply_change(&mut self, change: Change) {
@@ -482,24 +557,13 @@ impl Terminal {
             return;
         }
 
-        // Track cursor-up repositioning to suppress implicit shift capture.
-        // TUI apps (e.g. Claude Code) reposition cursor upward and redraw the screen,
-        // which can cause the same content to be captured to scrollback repeatedly.
-        match &change {
-            Change::CursorPosition {
-                y: Position::Absolute(new_y),
-                ..
-            } => {
-                let (_, cy) = self.surface().cursor_position();
-                if (*new_y as usize) < cy as usize {
-                    self.cursor_repositioned_up = true;
-                }
-            }
-            Change::ScrollRegionUp { .. } => {
-                // Explicit scroll (from natural LF at bottom) resets the flag.
-                self.cursor_repositioned_up = false;
-            }
-            _ => {}
+        // ── Synchronized output (mode 2026): scrollback 캡처 억제 ──
+        // BSM~ESM 구간에서는 scrollback 캡처를 건너뛴다.
+        // Surface 변경은 즉시 적용하여 cursor position 정확성을 유지하되,
+        // scrollback은 ESM 시점에 pre-snapshot 대비 net effect만 캡처한다.
+        if self.synchronized_output {
+            self.surface_mut().add_change(change);
+            return;
         }
 
         self.capture_before_scroll(&change);
@@ -509,10 +573,7 @@ impl Terminal {
         // ScrollRegionUp Change를 발생시키지 않고 내부적으로 처리하므로
         // capture_before_scroll만으로는 사라지는 행을 잡지 못한다.
         // → 변경 전후 화면 스냅샷을 비교해 시프트된 행을 scrollback에 push.
-        //
-        // 단, cursor가 명시적으로 위로 이동된 상태(TUI 리드로우)에서는 억제한다.
-        // 이 경우 implicit scroll은 동일 콘텐츠의 반복 캡처를 유발한다.
-        if !self.cursor_repositioned_up && matches!(change, Change::Text(_)) {
+        if matches!(change, Change::Text(_)) {
             let (_, rows) = self.surface().dimensions();
             let (_, cy) = self.surface().cursor_position();
             if rows > 0 && (cy as usize) + 1 == rows {
@@ -902,7 +963,7 @@ impl Terminal {
 
     /// Get the current working directory of the child process.
     /// Prefers the CWD cached from OSC 7 sequences (instant, no subprocess).
-    /// Falls back to OS-level process inspection on Linux/macOS.
+    /// Falls back to OS-level process inspection on Linux/macOS (throttled to 2s).
     /// On Windows the PowerShell fallback is omitted to avoid ~7s startup delay.
     pub fn get_cwd(&self) -> Option<std::path::PathBuf> {
         if let Some(cwd) = &self.cached_cwd {
@@ -910,8 +971,18 @@ impl Terminal {
         }
         #[cfg(not(windows))]
         {
+            // Throttle OS-level CWD queries (lsof/proc) to at most once per 2 seconds
+            let cache = self.os_cwd_cache.borrow();
+            if let Some((last_time, ref cached_result)) = *cache {
+                if last_time.elapsed() < std::time::Duration::from_secs(2) {
+                    return cached_result.clone();
+                }
+            }
+            drop(cache);
             let pid = self.child.process_id()?;
-            cwd::get_cwd_of_pid(pid)
+            let result = cwd::get_cwd_of_pid(pid);
+            *self.os_cwd_cache.borrow_mut() = Some((std::time::Instant::now(), result.clone()));
+            result
         }
         #[cfg(windows)]
         None
