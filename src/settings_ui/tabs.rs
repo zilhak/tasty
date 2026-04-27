@@ -943,6 +943,10 @@ fn draw_font_preview(
             let fonts =
                 crate::ui::font_registry::build_font_definitions(appearance, Some((&slot_name, eff)));
             ui.ctx().set_fonts(fonts);
+            // set_fonts() replaces the entire FontDefinitions, so other
+            // preview slots are no longer registered. Clear them so they
+            // get re-loaded when their tab is revisited.
+            preview_font_loaded.retain(|k, _| k == &slot_name);
             preview_font_loaded.insert(slot_name.clone(), key);
             // The family won't be available until the next frame; fall back
             // to Monospace this frame.
