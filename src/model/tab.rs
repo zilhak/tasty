@@ -20,6 +20,8 @@ pub struct Tab {
     /// Surface ID reserved for deferred spawn (set when lazy_pty_init creates the tab).
     #[allow(dead_code)]
     pub(crate) deferred_surface_id: Option<SurfaceId>,
+    /// Cached display name. Updated on CwdChanged/explicit_name change, not every frame.
+    pub(crate) cached_display_name: Option<String>,
 }
 
 impl Tab {
@@ -34,34 +36,49 @@ impl Tab {
             focused_surface: surface_id,
             deferred_spawn: None,
             deferred_surface_id: None,
+            cached_display_name: None,
         }
     }
 
-    /// Get the display name for this tab.
-    /// Priority: explicit_name > auto-derived from focused surface CWD > fallback "name" field.
+    /// Get the display name for this tab (cached, no syscalls).
+    /// Priority: explicit_name > cached CWD-derived name > fallback "name" field.
     pub fn display_name(&self) -> String {
         if let Some(ref explicit) = self.explicit_name {
             return explicit.clone();
         }
-        // Try to derive name from the focused terminal's CWD
+        if let Some(ref cached) = self.cached_display_name {
+            return cached.clone();
+        }
+        self.name.clone()
+    }
+
+    /// Recompute and cache the display name from the focused terminal's CWD.
+    /// Call this when CWD changes (CwdChanged event) or when the tab is first created.
+    pub fn refresh_display_name(&mut self) {
+        if self.explicit_name.is_some() {
+            return;
+        }
         let terminal = self.focused_terminal();
         if let Some(terminal) = terminal {
             if let Some(cwd) = terminal.get_cwd() {
-                let path_str = cwd.to_string_lossy();
                 if let Some(home) = dirs_home() {
                     if cwd == home {
-                        return "~".to_string();
+                        self.cached_display_name = Some("~".to_string());
+                        return;
                     }
                 }
+                let path_str = cwd.to_string_lossy();
                 if path_str == "/" {
-                    return "/".to_string();
+                    self.cached_display_name = Some("/".to_string());
+                    return;
                 }
                 if let Some(name) = cwd.file_name() {
-                    return name.to_string_lossy().to_string();
+                    self.cached_display_name = Some(name.to_string_lossy().to_string());
+                    return;
                 }
             }
         }
-        self.name.clone()
+        self.cached_display_name = None;
     }
 
     // ── Layout-based accessors ──

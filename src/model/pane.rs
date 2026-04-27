@@ -165,6 +165,7 @@ impl Pane {
             focused_surface: 0,
             explicit_name: None,
             deferred_surface_id: Some(surface_id),
+            cached_display_name: None,
         };
         self.tabs.push(tab);
     }

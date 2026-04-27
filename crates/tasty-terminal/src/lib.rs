@@ -87,10 +87,6 @@ pub struct Terminal {
     /// CWD cached from OSC 7 (CurrentWorkingDirectory) sequences emitted by the shell.
     /// Used by get_cwd() to avoid spawning external processes.
     pub(crate) cached_cwd: Option<std::path::PathBuf>,
-    /// OS-level CWD fallback cache (result + last query time).
-    /// Prevents spawning lsof/proc every frame when cached_cwd is None.
-    /// Uses `RefCell` so `get_cwd()` can stay `&self`.
-    os_cwd_cache: std::cell::RefCell<Option<(std::time::Instant, Option<std::path::PathBuf>)>>,
     /// Saved right-side cells for each line, preserved when cols shrink.
     /// Each entry corresponds to a screen line and holds cells beyond the current cols.
     /// Restored when cols grow again. Cleared on scrollback capture (scroll up).
@@ -273,7 +269,6 @@ impl Terminal {
             scroll_offset: 0,
             disk_scrollback: None,
             cached_cwd: None,
-            os_cwd_cache: std::cell::RefCell::new(None),
             saved_line_tails: Vec::new(),
             pending_pty_resize: None,
             last_pty_flush: std::time::Instant::now(),
@@ -962,30 +957,9 @@ impl Terminal {
     }
 
     /// Get the current working directory of the child process.
-    /// Prefers the CWD cached from OSC 7 sequences (instant, no subprocess).
-    /// Falls back to OS-level process inspection on Linux/macOS (throttled to 2s).
-    /// On Windows the PowerShell fallback is omitted to avoid ~7s startup delay.
+    /// Returns the CWD cached from OSC 7 sequences only (no subprocess spawning).
     pub fn get_cwd(&self) -> Option<std::path::PathBuf> {
-        if let Some(cwd) = &self.cached_cwd {
-            return Some(cwd.clone());
-        }
-        #[cfg(not(windows))]
-        {
-            // Throttle OS-level CWD queries (lsof/proc) to at most once per 2 seconds
-            let cache = self.os_cwd_cache.borrow();
-            if let Some((last_time, ref cached_result)) = *cache {
-                if last_time.elapsed() < std::time::Duration::from_secs(2) {
-                    return cached_result.clone();
-                }
-            }
-            drop(cache);
-            let pid = self.child.process_id()?;
-            let result = cwd::get_cwd_of_pid(pid);
-            *self.os_cwd_cache.borrow_mut() = Some((std::time::Instant::now(), result.clone()));
-            result
-        }
-        #[cfg(windows)]
-        None
+        self.cached_cwd.clone()
     }
 
     /// Check if the child process is still running.

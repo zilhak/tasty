@@ -90,6 +90,7 @@ impl MainWindow {
                     self.base.dirty = true;
                 }
                 crate::terminal::TerminalEventKind::CwdChanged(_) => {
+                    self.state.refresh_tab_display_name(surface_id);
                     self.base.dirty = true;
                 }
                 crate::terminal::TerminalEventKind::ClipboardSet(data) => {

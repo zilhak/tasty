@@ -24,6 +24,7 @@ impl RebuildResult {
                 focused_surface,
                 deferred_spawn: None,
                 deferred_surface_id: None,
+                cached_display_name: None,
             },
         }
     }

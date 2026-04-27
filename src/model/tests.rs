@@ -717,6 +717,7 @@ fn tab_close_surface_in_split() {
         focused_surface: 10,
         deferred_spawn: None,
         deferred_surface_id: None,
+        cached_display_name: None,
     };
     let closed = tab.close_surface(10);
     assert!(closed);

@@ -553,6 +553,23 @@ impl AppState {
             .and_then(|p| p.active_terminal_mut())
     }
 
+    /// Refresh the cached display name of the tab containing a given surface ID.
+    pub fn refresh_tab_display_name(&mut self, surface_id: u32) {
+        for workspace in &mut self.engine.workspaces {
+            let pane_ids = workspace.pane_layout().all_pane_ids();
+            for pid in pane_ids {
+                if let Some(pane) = workspace.pane_layout_mut().find_pane_mut(pid) {
+                    for tab in &mut pane.tabs {
+                        if tab.contains_surface(surface_id) {
+                            tab.refresh_display_name();
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /// Find the pane ID that contains a given surface ID.
     pub fn find_pane_for_surface(&self, surface_id: u32) -> Option<u32> {
         for workspace in &self.engine.workspaces {
