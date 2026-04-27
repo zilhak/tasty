@@ -69,9 +69,16 @@ impl Window for SettingsWindow {
     }
 
     fn handle_event(&mut self, event: WindowEvent, _ctx: &mut WindowCtx<'_>) -> WindowAction {
-        let (_, egui_repaint) = self.base.gpu.handle_egui_event(&self.base.winit, &event);
-        if egui_repaint {
-            self.mark_dirty();
+        // 녹화 중이면 키보드 이벤트를 egui에 전달하지 않는다.
+        // egui가 Cmd+C 등을 시맨틱 커맨드(Copy)로 소비하면 캡처가 안 되기 때문.
+        let is_recording = self.settings_ui_state.is_recording();
+        let skip_egui = is_recording && matches!(&event, WindowEvent::KeyboardInput { .. });
+
+        if !skip_egui {
+            let (_, egui_repaint) = self.base.gpu.handle_egui_event(&self.base.winit, &event);
+            if egui_repaint {
+                self.mark_dirty();
+            }
         }
 
         match event {
@@ -89,6 +96,9 @@ impl Window for SettingsWindow {
             WindowEvent::CursorMoved { .. } => {
                 self.mark_dirty();
             }
+            WindowEvent::ModifiersChanged(modifiers) => {
+                self.base.modifiers = modifiers.state();
+            }
             WindowEvent::KeyboardInput { ref event, .. } => {
                 use winit::event::ElementState;
 
@@ -97,6 +107,18 @@ impl Window for SettingsWindow {
                 if event.state == ElementState::Pressed {
                     if let Some(dt) = self.double_tap.take() {
                         self.captured_double_tap = Some(dt.binding_str().to_string());
+                        self.mark_dirty();
+                    }
+                }
+
+                // 녹화 중이면 winit에서 직접 키 조합 캡처
+                if is_recording {
+                    let combo = crate::settings_ui::capture_winit_key_combo(
+                        event,
+                        self.base.modifiers,
+                    );
+                    if !matches!(combo, crate::settings_ui::KeyCapture::None) {
+                        self.settings_ui_state.captured_winit_combo = Some(combo);
                         self.mark_dirty();
                     }
                 }

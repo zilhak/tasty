@@ -51,6 +51,7 @@ pub fn draw_keybindings_tab(
     selected_preset: &mut Option<String>,
     pending_binding: &mut Option<PendingBinding>,
     captured_double_tap: &mut Option<String>,
+    captured_winit_combo: &mut Option<KeyCapture>,
 ) {
     let th = crate::theme::theme();
     ui.add_space(8.0);
@@ -114,14 +115,16 @@ pub fn draw_keybindings_tab(
         ui.vertical(|ui| {
             ui.set_max_height(available_height);
 
-            let mut captured = capture_key_combo(ui.ctx(), recording_field.is_some());
-
-            // Check for double-tap modifier captured from winit events
-            if recording_field.is_some() {
+            // winit에서 직접 캡처한 키 조합을 사용. double-tap이 우선.
+            let captured = if recording_field.is_some() {
                 if let Some(dt) = captured_double_tap.take() {
-                    captured = KeyCapture::Combo(dt);
+                    KeyCapture::Combo(dt)
+                } else {
+                    captured_winit_combo.take().unwrap_or(KeyCapture::None)
                 }
-            }
+            } else {
+                KeyCapture::None
+            };
 
             match *sub_tab {
                 KeybindingsSubTab::General => {
@@ -634,196 +637,246 @@ fn draw_keybinding_entries(
     }
 }
 
-fn capture_key_combo(ctx: &egui::Context, active: bool) -> KeyCapture {
-    if !active {
+/// winit KeyEvent + ModifiersState에서 키 조합 문자열을 생성한다.
+/// egui를 거치지 않으므로 Cmd+C 등 egui가 시맨틱 커맨드로 소비하는
+/// 조합도 정상 캡처된다.
+pub fn capture_winit_key_combo(
+    event: &winit::event::KeyEvent,
+    modifiers: winit::keyboard::ModifiersState,
+) -> KeyCapture {
+    use winit::event::ElementState;
+    use winit::keyboard::{Key, KeyCode, NamedKey, PhysicalKey};
+
+    if event.state != ElementState::Pressed {
         return KeyCapture::None;
     }
 
-    ctx.input(|input| {
-        for event in &input.events {
-            if let egui::Event::Key {
-                key,
-                pressed,
-                modifiers,
-                ..
-            } = event
-            {
-                if !pressed {
-                    continue;
-                }
+    // Escape → clear
+    if event.logical_key == Key::Named(NamedKey::Escape) {
+        return KeyCapture::Clear;
+    }
 
-                if *key == egui::Key::Escape {
-                    return KeyCapture::Clear;
-                }
-
-                if is_modifier_only_key(key) {
-                    continue;
-                }
-
-                {
-                    let mut parts = Vec::new();
-                    if modifiers.ctrl {
-                        parts.push("ctrl");
-                    }
-                    // macOS: Command(⌘) = "alt" (물리적 위치가 Win/Linux Alt와 동일)
-                    #[cfg(target_os = "macos")]
-                    if modifiers.mac_cmd {
-                        parts.push("alt");
-                    }
-                    #[cfg(not(target_os = "macos"))]
-                    if modifiers.alt {
-                        parts.push("alt");
-                    }
-                    // macOS: Option 키 = "option"
-                    #[cfg(target_os = "macos")]
-                    if modifiers.alt {
-                        parts.push("option");
-                    }
-                    if modifiers.shift {
-                        parts.push("shift");
-                    }
-
-                    let key_name = egui_key_to_string(key);
-                    if key_name.is_empty() {
-                        continue;
-                    }
-
-                    let is_typing_key = matches!(
-                        key,
-                        egui::Key::A
-                            | egui::Key::B
-                            | egui::Key::C
-                            | egui::Key::D
-                            | egui::Key::E
-                            | egui::Key::F
-                            | egui::Key::G
-                            | egui::Key::H
-                            | egui::Key::I
-                            | egui::Key::J
-                            | egui::Key::K
-                            | egui::Key::L
-                            | egui::Key::M
-                            | egui::Key::N
-                            | egui::Key::O
-                            | egui::Key::P
-                            | egui::Key::Q
-                            | egui::Key::R
-                            | egui::Key::S
-                            | egui::Key::T
-                            | egui::Key::U
-                            | egui::Key::V
-                            | egui::Key::W
-                            | egui::Key::X
-                            | egui::Key::Y
-                            | egui::Key::Z
-                            | egui::Key::Num0
-                            | egui::Key::Num1
-                            | egui::Key::Num2
-                            | egui::Key::Num3
-                            | egui::Key::Num4
-                            | egui::Key::Num5
-                            | egui::Key::Num6
-                            | egui::Key::Num7
-                            | egui::Key::Num8
-                            | egui::Key::Num9
-                            | egui::Key::Space
-                            | egui::Key::Minus
-                            | egui::Key::Plus
-                    );
-                    if is_typing_key && parts.is_empty() {
-                        continue;
-                    }
-
-                    parts.push(&key_name);
-                    return KeyCapture::Combo(parts.join("+"));
-                }
-            }
+    // modifier-only 키는 무시
+    if let Key::Named(n) = &event.logical_key {
+        if matches!(
+            n,
+            NamedKey::Control
+                | NamedKey::Shift
+                | NamedKey::Alt
+                | NamedKey::Super
+                | NamedKey::Meta
+                | NamedKey::Hyper
+                | NamedKey::Fn
+                | NamedKey::FnLock
+                | NamedKey::CapsLock
+                | NamedKey::NumLock
+                | NamedKey::ScrollLock
+                | NamedKey::Symbol
+                | NamedKey::SymbolLock
+        ) {
+            return KeyCapture::None;
         }
-        KeyCapture::None
+    }
+
+    // 물리 키에서 키 이름 결정 (IME/Option 변환에 영향받지 않도록)
+    let key_name = physical_key_to_name(&event.physical_key)
+        .or_else(|| named_key_to_name(&event.logical_key));
+    let Some(key_name) = key_name else {
+        return KeyCapture::None;
+    };
+
+    // modifier 조합
+    let mut parts = Vec::new();
+    if modifiers.control_key() {
+        parts.push("ctrl");
+    }
+    // macOS: Cmd(⌘) = "alt" (물리적 위치가 Win/Linux Alt와 동일)
+    #[cfg(target_os = "macos")]
+    if modifiers.super_key() {
+        parts.push("alt");
+    }
+    #[cfg(not(target_os = "macos"))]
+    if modifiers.alt_key() {
+        parts.push("alt");
+    }
+    // macOS: Option 키 = "option"
+    #[cfg(target_os = "macos")]
+    if modifiers.alt_key() {
+        parts.push("option");
+    }
+    if modifiers.shift_key() {
+        parts.push("shift");
+    }
+
+    // modifier 없는 타이핑 키는 단축키로 등록 불가
+    let is_typing_key = matches!(
+        event.physical_key,
+        PhysicalKey::Code(
+            KeyCode::KeyA
+                | KeyCode::KeyB
+                | KeyCode::KeyC
+                | KeyCode::KeyD
+                | KeyCode::KeyE
+                | KeyCode::KeyF
+                | KeyCode::KeyG
+                | KeyCode::KeyH
+                | KeyCode::KeyI
+                | KeyCode::KeyJ
+                | KeyCode::KeyK
+                | KeyCode::KeyL
+                | KeyCode::KeyM
+                | KeyCode::KeyN
+                | KeyCode::KeyO
+                | KeyCode::KeyP
+                | KeyCode::KeyQ
+                | KeyCode::KeyR
+                | KeyCode::KeyS
+                | KeyCode::KeyT
+                | KeyCode::KeyU
+                | KeyCode::KeyV
+                | KeyCode::KeyW
+                | KeyCode::KeyX
+                | KeyCode::KeyY
+                | KeyCode::KeyZ
+                | KeyCode::Digit0
+                | KeyCode::Digit1
+                | KeyCode::Digit2
+                | KeyCode::Digit3
+                | KeyCode::Digit4
+                | KeyCode::Digit5
+                | KeyCode::Digit6
+                | KeyCode::Digit7
+                | KeyCode::Digit8
+                | KeyCode::Digit9
+                | KeyCode::Space
+                | KeyCode::Minus
+                | KeyCode::Equal
+        )
+    );
+    if is_typing_key && parts.is_empty() {
+        return KeyCapture::None;
+    }
+
+    parts.push(key_name);
+    KeyCapture::Combo(parts.join("+"))
+}
+
+fn physical_key_to_name(physical: &winit::keyboard::PhysicalKey) -> Option<&'static str> {
+    use winit::keyboard::{KeyCode, PhysicalKey};
+    let code = match physical {
+        PhysicalKey::Code(c) => c,
+        _ => return None,
+    };
+    Some(match code {
+        KeyCode::KeyA => "a",
+        KeyCode::KeyB => "b",
+        KeyCode::KeyC => "c",
+        KeyCode::KeyD => "d",
+        KeyCode::KeyE => "e",
+        KeyCode::KeyF => "f",
+        KeyCode::KeyG => "g",
+        KeyCode::KeyH => "h",
+        KeyCode::KeyI => "i",
+        KeyCode::KeyJ => "j",
+        KeyCode::KeyK => "k",
+        KeyCode::KeyL => "l",
+        KeyCode::KeyM => "m",
+        KeyCode::KeyN => "n",
+        KeyCode::KeyO => "o",
+        KeyCode::KeyP => "p",
+        KeyCode::KeyQ => "q",
+        KeyCode::KeyR => "r",
+        KeyCode::KeyS => "s",
+        KeyCode::KeyT => "t",
+        KeyCode::KeyU => "u",
+        KeyCode::KeyV => "v",
+        KeyCode::KeyW => "w",
+        KeyCode::KeyX => "x",
+        KeyCode::KeyY => "y",
+        KeyCode::KeyZ => "z",
+        KeyCode::Digit0 => "0",
+        KeyCode::Digit1 => "1",
+        KeyCode::Digit2 => "2",
+        KeyCode::Digit3 => "3",
+        KeyCode::Digit4 => "4",
+        KeyCode::Digit5 => "5",
+        KeyCode::Digit6 => "6",
+        KeyCode::Digit7 => "7",
+        KeyCode::Digit8 => "8",
+        KeyCode::Digit9 => "9",
+        KeyCode::Tab => "tab",
+        KeyCode::Space => "space",
+        KeyCode::Enter => "enter",
+        KeyCode::Backspace => "backspace",
+        KeyCode::Delete => "delete",
+        KeyCode::Insert => "insert",
+        KeyCode::Home => "home",
+        KeyCode::End => "end",
+        KeyCode::PageUp => "pageup",
+        KeyCode::PageDown => "pagedown",
+        KeyCode::ArrowUp => "up",
+        KeyCode::ArrowDown => "down",
+        KeyCode::ArrowLeft => "left",
+        KeyCode::ArrowRight => "right",
+        KeyCode::F1 => "f1",
+        KeyCode::F2 => "f2",
+        KeyCode::F3 => "f3",
+        KeyCode::F4 => "f4",
+        KeyCode::F5 => "f5",
+        KeyCode::F6 => "f6",
+        KeyCode::F7 => "f7",
+        KeyCode::F8 => "f8",
+        KeyCode::F9 => "f9",
+        KeyCode::F10 => "f10",
+        KeyCode::F11 => "f11",
+        KeyCode::F12 => "f12",
+        KeyCode::Minus => "minus",
+        KeyCode::Equal => "=",
+        KeyCode::Comma => ",",
+        KeyCode::Period => ".",
+        KeyCode::Semicolon => ";",
+        KeyCode::BracketLeft => "[",
+        KeyCode::BracketRight => "]",
+        KeyCode::Backslash => "\\",
+        KeyCode::Backquote => "`",
+        KeyCode::Slash => "/",
+        _ => return None,
     })
 }
 
-fn is_modifier_only_key(_key: &egui::Key) -> bool {
-    false
-}
-
-fn egui_key_to_string(key: &egui::Key) -> String {
-    match key {
-        egui::Key::A => "a".into(),
-        egui::Key::B => "b".into(),
-        egui::Key::C => "c".into(),
-        egui::Key::D => "d".into(),
-        egui::Key::E => "e".into(),
-        egui::Key::F => "f".into(),
-        egui::Key::G => "g".into(),
-        egui::Key::H => "h".into(),
-        egui::Key::I => "i".into(),
-        egui::Key::J => "j".into(),
-        egui::Key::K => "k".into(),
-        egui::Key::L => "l".into(),
-        egui::Key::M => "m".into(),
-        egui::Key::N => "n".into(),
-        egui::Key::O => "o".into(),
-        egui::Key::P => "p".into(),
-        egui::Key::Q => "q".into(),
-        egui::Key::R => "r".into(),
-        egui::Key::S => "s".into(),
-        egui::Key::T => "t".into(),
-        egui::Key::U => "u".into(),
-        egui::Key::V => "v".into(),
-        egui::Key::W => "w".into(),
-        egui::Key::X => "x".into(),
-        egui::Key::Y => "y".into(),
-        egui::Key::Z => "z".into(),
-        egui::Key::Num0 => "0".into(),
-        egui::Key::Num1 => "1".into(),
-        egui::Key::Num2 => "2".into(),
-        egui::Key::Num3 => "3".into(),
-        egui::Key::Num4 => "4".into(),
-        egui::Key::Num5 => "5".into(),
-        egui::Key::Num6 => "6".into(),
-        egui::Key::Num7 => "7".into(),
-        egui::Key::Num8 => "8".into(),
-        egui::Key::Num9 => "9".into(),
-        egui::Key::Tab => "tab".into(),
-        egui::Key::Space => "space".into(),
-        egui::Key::Enter => "enter".into(),
-        egui::Key::Backspace => "backspace".into(),
-        egui::Key::Delete => "delete".into(),
-        egui::Key::Insert => "insert".into(),
-        egui::Key::Home => "home".into(),
-        egui::Key::End => "end".into(),
-        egui::Key::PageUp => "pageup".into(),
-        egui::Key::PageDown => "pagedown".into(),
-        egui::Key::ArrowUp => "up".into(),
-        egui::Key::ArrowDown => "down".into(),
-        egui::Key::ArrowLeft => "left".into(),
-        egui::Key::ArrowRight => "right".into(),
-        egui::Key::F1 => "f1".into(),
-        egui::Key::F2 => "f2".into(),
-        egui::Key::F3 => "f3".into(),
-        egui::Key::F4 => "f4".into(),
-        egui::Key::F5 => "f5".into(),
-        egui::Key::F6 => "f6".into(),
-        egui::Key::F7 => "f7".into(),
-        egui::Key::F8 => "f8".into(),
-        egui::Key::F9 => "f9".into(),
-        egui::Key::F10 => "f10".into(),
-        egui::Key::F11 => "f11".into(),
-        egui::Key::F12 => "f12".into(),
-        egui::Key::Minus => "minus".into(),
-        egui::Key::Plus => "plus".into(),
-        egui::Key::Comma => ",".into(),
-        egui::Key::Period => ".".into(),
-        egui::Key::Semicolon => ";".into(),
-        egui::Key::Colon => ":".into(),
-        egui::Key::Pipe => "|".into(),
-        egui::Key::Questionmark => "?".into(),
-        egui::Key::OpenBracket => "[".into(),
-        egui::Key::CloseBracket => "]".into(),
-        egui::Key::Backslash => "\\".into(),
-        egui::Key::Backtick => "`".into(),
-        egui::Key::Equals => "=".into(),
-        _ => String::new(),
+fn named_key_to_name(key: &winit::keyboard::Key) -> Option<&'static str> {
+    use winit::keyboard::NamedKey;
+    if let winit::keyboard::Key::Named(n) = key {
+        Some(match n {
+            NamedKey::Tab => "tab",
+            NamedKey::Space => "space",
+            NamedKey::Enter => "enter",
+            NamedKey::Backspace => "backspace",
+            NamedKey::Delete => "delete",
+            NamedKey::Insert => "insert",
+            NamedKey::Home => "home",
+            NamedKey::End => "end",
+            NamedKey::PageUp => "pageup",
+            NamedKey::PageDown => "pagedown",
+            NamedKey::ArrowUp => "up",
+            NamedKey::ArrowDown => "down",
+            NamedKey::ArrowLeft => "left",
+            NamedKey::ArrowRight => "right",
+            NamedKey::F1 => "f1",
+            NamedKey::F2 => "f2",
+            NamedKey::F3 => "f3",
+            NamedKey::F4 => "f4",
+            NamedKey::F5 => "f5",
+            NamedKey::F6 => "f6",
+            NamedKey::F7 => "f7",
+            NamedKey::F8 => "f8",
+            NamedKey::F9 => "f9",
+            NamedKey::F10 => "f10",
+            NamedKey::F11 => "f11",
+            NamedKey::F12 => "f12",
+            _ => return None,
+        })
+    } else {
+        None
     }
 }

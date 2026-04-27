@@ -5,6 +5,7 @@ use crate::i18n::t;
 use crate::settings::Settings;
 use crate::ui::popup::{PopupManager, PopupState};
 
+pub use keybindings_tab::{KeyCapture, capture_winit_key_combo};
 use keybindings_tab::{KeybindingsSubTab, PendingBinding, RecordingSlot, draw_keybindings_tab};
 use tabs::*;
 
@@ -70,9 +71,16 @@ pub struct SettingsUiState {
     pub preview_font_loaded: std::collections::HashMap<String, String>,
     /// Draft of ~/.tasty/bashrc.user content. None until the Misc tab loads it.
     pub(crate) bashrc_user_draft: Option<String>,
+    /// winit KeyboardInput에서 직접 캡처한 키 조합 (녹화 중일 때 사용).
+    pub captured_winit_combo: Option<KeyCapture>,
 }
 
 impl SettingsUiState {
+    /// 단축키 녹화 중인지 여부.
+    pub fn is_recording(&self) -> bool {
+        self.recording_field.is_some()
+    }
+
     pub fn new() -> Self {
         let mut popups = PopupManager::new();
         popups.register(
@@ -99,6 +107,7 @@ impl SettingsUiState {
             font_filter: std::collections::HashMap::new(),
             preview_font_loaded: std::collections::HashMap::new(),
             bashrc_user_draft: None,
+            captured_winit_combo: None,
         }
     }
 }
@@ -205,6 +214,7 @@ pub fn draw_settings_panel(
                         &mut ui_state.selected_preset,
                         &mut ui_state.pending_binding,
                         captured_double_tap,
+                        &mut ui_state.captured_winit_combo,
                     ),
                     SettingsTab::Language => draw_language_tab(ui, &mut draft),
                     SettingsTab::Performance => draw_performance_tab(ui, &mut draft),
