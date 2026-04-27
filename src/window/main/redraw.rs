@@ -118,13 +118,21 @@ impl MainWindow {
             let terminal_rect = self.compute_terminal_rect();
             let (cols, rows) = self.base.gpu.grid_size_for_rect(&terminal_rect);
             self.state.update_grid_size(cols, rows);
+            // Schedule another redraw to verify scale factor has stabilized.
+            self.base.dirty = true;
+        }
+
+        // Resize all terminals to match their current layout rects.
+        // After structural changes (split, new tab, close pane) the terminal's
+        // internal cols/rows may not match the actual rendering area. This call
+        // is cheap: terminal.resize() early-returns when cols/rows are unchanged.
+        {
+            let terminal_rect = self.compute_terminal_rect();
             self.state.resize_all(
                 terminal_rect,
                 self.base.gpu.cell_width(),
                 self.base.gpu.cell_height(),
             );
-            // Schedule another redraw to verify scale factor has stabilized.
-            self.base.dirty = true;
         }
 
         // Render
