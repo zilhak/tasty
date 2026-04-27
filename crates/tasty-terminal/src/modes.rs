@@ -127,17 +127,6 @@ impl Terminal {
                 self.focus_tracking = enable;
             }
             DecPrivateModeCode::SynchronizedOutput => {
-                if enable && !self.synchronized_output {
-                    // BSM (Begin Synchronized Mode): 현재 화면을 스냅샷으로 저장.
-                    // 이후 apply_change에서 scrollback 캡처가 억제된다.
-                    if !self.use_alternate {
-                        self.sync_pre_snapshot = Some(self.capture_top_lines(usize::MAX));
-                    }
-                } else if !enable && self.synchronized_output {
-                    // ESM (End Synchronized Mode): pre-snapshot과 현재 화면을 비교하여
-                    // 실제로 밀려난 행(net scroll)만 scrollback에 캡처한다.
-                    self.flush_sync_scrollback();
-                }
                 self.synchronized_output = enable;
             }
             DecPrivateModeCode::AutoWrap => {

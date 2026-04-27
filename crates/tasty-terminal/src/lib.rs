@@ -95,12 +95,6 @@ pub struct Terminal {
     pending_pty_resize: Option<(usize, usize)>,
     /// Timestamp of the last actual PTY resize flush. Used for throttling.
     last_pty_flush: std::time::Instant,
-    /// Screen snapshot taken at BSM (Begin Synchronized Mode, DECSET 2026).
-    /// Used to compute net scrollback when ESM ends the sync period.
-    /// During sync, scrollback capture is suppressed; only the net effect
-    /// (lines that actually scrolled off compared to the pre-sync state)
-    /// is captured when the sync period ends.
-    sync_pre_snapshot: Option<Vec<Vec<(String, CellAttributes)>>>,
 }
 
 impl Terminal {
@@ -271,7 +265,6 @@ impl Terminal {
             saved_line_tails: Vec::new(),
             pending_pty_resize: None,
             last_pty_flush: std::time::Instant::now(),
-            sync_pre_snapshot: None,
         })
     }
 
@@ -471,176 +464,14 @@ impl Terminal {
         self.apply_change(change);
     }
 
-    /// ESM 시점에 호출: BSM 이전 스냅샷과 현재 화면을 비교하여
-    /// sync 구간 동안 실제로 밀려난 행만 scrollback에 push한다.
-    ///
-    /// TUI 리드로우(같은 내용 다시 그리기)의 경우 화면 내용이 변하지 않으므로
-    /// net scroll = 0 → scrollback에 아무것도 추가되지 않는다.
-    pub(crate) fn flush_sync_scrollback(&mut self) {
-        let Some(pre) = self.sync_pre_snapshot.take() else {
-            return;
-        };
-        if self.use_alternate || pre.is_empty() {
-            return;
-        }
-
-        // 현재 화면의 첫 번째 행을 가져온다.
-        let new_first: Vec<String> = {
-            let surface = self.surface();
-            let new_lines = surface.screen_lines();
-            match new_lines.first() {
-                Some(line) => line
-                    .visible_cells()
-                    .map(|c| c.str().to_string())
-                    .collect(),
-                None => return,
-            }
-        };
-
-        // pre-snapshot에서 현재 화면의 첫 행과 일치하는 위치를 찾는다.
-        // 그 위치(shift)가 sync 구간 동안 밀려난 행 수.
-        let mut shift = 0usize;
-        for (k, pre_line) in pre.iter().enumerate().skip(1) {
-            if pre_line.len() == new_first.len()
-                && pre_line
-                    .iter()
-                    .zip(new_first.iter())
-                    .all(|((a, _), b)| a == b)
-            {
-                shift = k;
-                break;
-            }
-        }
-
-        // 현재 첫 행이 pre에 없으면 — 화면 내용이 완전히 바뀐 경우.
-        // pre의 모든 행이 밀려난 것으로 간주한다.
-        if shift == 0 {
-            // 첫 행이 pre[0]과 같으면 실제로 스크롤이 없었다 (리드로우).
-            let same_first = pre[0].len() == new_first.len()
-                && pre[0]
-                    .iter()
-                    .zip(new_first.iter())
-                    .all(|((a, _), b)| a == b);
-            if same_first {
-                // 스크롤 없음 — scrollback에 추가할 것 없음.
-                return;
-            }
-            // 첫 행이 다르고 어디서도 매칭이 안 됨 — 전체 스크롤로 간주.
-            shift = pre.len();
-        }
-
-        if shift > 0 {
-            let captured: Vec<_> = pre.into_iter().take(shift).collect();
-            let count = captured.len();
-            for line in captured {
-                self.scrollback.push_back(line);
-            }
-            for _ in 0..count.min(self.saved_line_tails.len()) {
-                self.saved_line_tails.remove(0);
-            }
-            if self.scroll_offset > 0 {
-                self.scroll_offset += count;
-            }
-            self.flush_scrollback_to_disk();
-        }
-    }
-
     fn apply_change(&mut self, change: Change) {
         if self.use_alternate {
             self.surface_mut().add_change(change);
             return;
         }
 
-        // ── Synchronized output (mode 2026): scrollback 캡처 억제 ──
-        // BSM~ESM 구간에서는 scrollback 캡처를 건너뛴다.
-        // Surface 변경은 즉시 적용하여 cursor position 정확성을 유지하되,
-        // scrollback은 ESM 시점에 pre-snapshot 대비 net effect만 캡처한다.
-        if self.synchronized_output {
-            self.surface_mut().add_change(change);
-            return;
-        }
-
         self.capture_before_scroll(&change);
-
-        // Text Change는 cursor가 scroll region bottom에 있을 때 line wrap으로
-        // implicit scroll을 일으킬 수 있다. termwiz Surface는 이때 별도의
-        // ScrollRegionUp Change를 발생시키지 않고 내부적으로 처리하므로
-        // capture_before_scroll만으로는 사라지는 행을 잡지 못한다.
-        // → 변경 전후 화면 스냅샷을 비교해 시프트된 행을 scrollback에 push.
-        if matches!(change, Change::Text(_)) {
-            let (_, rows) = self.surface().dimensions();
-            let (_, cy) = self.surface().cursor_position();
-            if rows > 0 && (cy as usize) + 1 == rows {
-                let pre = self.capture_top_lines(usize::MAX);
-                self.surface_mut().add_change(change);
-                self.capture_implicit_shift(pre);
-                return;
-            }
-        }
-
         self.surface_mut().add_change(change);
-    }
-
-    /// Compare a pre-change snapshot of all visible rows to the current screen.
-    /// If the screen has scrolled up (rows shifted off the top), push the
-    /// missing rows to scrollback. Used to recover from wrap-induced scrolls
-    /// that termwiz performs without emitting a ScrollRegionUp Change.
-    fn capture_implicit_shift(&mut self, pre: Vec<Vec<(String, CellAttributes)>>) {
-        if pre.is_empty() {
-            return;
-        }
-        let new_first: Vec<String> = {
-            let surface = self.surface();
-            let new_lines = surface.screen_lines();
-            match new_lines.first() {
-                Some(line) => line
-                    .visible_cells()
-                    .map(|c| c.str().to_string())
-                    .collect(),
-                None => return,
-            }
-        };
-
-        // 불변식: 스크롤이 발생했다면 화면 첫 행이 반드시 바뀌어야 한다.
-        // pre[0] == new[0]이면 스크롤이 아닌 것이므로 즉시 return.
-        let first_unchanged = pre[0].len() == new_first.len()
-            && pre[0]
-                .iter()
-                .zip(new_first.iter())
-                .all(|((a, _), b)| a == b);
-        if first_unchanged {
-            return;
-        }
-
-        // Find the smallest k > 0 such that pre[k] (visible cells) equals
-        // the new row 0. That k is the number of rows that scrolled off.
-        let mut shift = 0usize;
-        for (k, pre_line) in pre.iter().enumerate().skip(1) {
-            if pre_line.len() == new_first.len()
-                && pre_line
-                    .iter()
-                    .zip(new_first.iter())
-                    .all(|((a, _), b)| a == b)
-            {
-                shift = k;
-                break;
-            }
-        }
-
-        if shift > 0 {
-            let captured: Vec<_> = pre.into_iter().take(shift).collect();
-            let count = captured.len();
-            for line in captured {
-                self.scrollback.push_back(line);
-            }
-            for _ in 0..count.min(self.saved_line_tails.len()) {
-                self.saved_line_tails.remove(0);
-            }
-            if self.scroll_offset > 0 {
-                self.scroll_offset += count;
-            }
-            self.flush_scrollback_to_disk();
-        }
     }
 
     /// Send raw bytes to PTY (non-blocking, queued to writer thread).
@@ -1507,38 +1338,4 @@ mod tests {
         assert_eq!(first_scrollback_text(&terminal, 0), "row0");
     }
 
-    #[test]
-    fn scrollback_captured_on_text_wrap_at_bottom_row() {
-        let waker = noop_waker();
-        let mut terminal = Terminal::new(10, 4, 0, waker).expect("terminal");
-        terminal.process_bytes(b"row0\r\nrow1\r\nrow2\r\nrow3");
-        assert_eq!(terminal.scrollback_len(), 0);
-        // 10 chars: 6 fit on the current row (cursor at col 4 after "row3"),
-        // remaining 4 wrap to a new line — forcing the screen to scroll one
-        // row, which termwiz handles internally without emitting ScrollRegionUp.
-        terminal.process_bytes(b"ABCDEFGHIJ");
-        assert_eq!(
-            terminal.scrollback_len(),
-            1,
-            "text wrap at bottom row must push row0 to scrollback"
-        );
-        assert_eq!(first_scrollback_text(&terminal, 0), "row0");
-    }
-
-    #[test]
-    fn scrollback_captured_on_multi_row_text_wrap() {
-        let waker = noop_waker();
-        let mut terminal = Terminal::new(10, 4, 0, waker).expect("terminal");
-        terminal.process_bytes(b"row0\r\nrow1\r\nrow2\r\nrow3");
-        // 30 chars from cursor (row 3 col 4): row3+6chars, then 10+10+4 → 3 wraps.
-        terminal.process_bytes(b"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123");
-        assert_eq!(
-            terminal.scrollback_len(),
-            3,
-            "three wraps must push row0..row2 to scrollback"
-        );
-        assert_eq!(first_scrollback_text(&terminal, 0), "row0");
-        assert_eq!(first_scrollback_text(&terminal, 1), "row1");
-        assert_eq!(first_scrollback_text(&terminal, 2), "row2");
-    }
 }
