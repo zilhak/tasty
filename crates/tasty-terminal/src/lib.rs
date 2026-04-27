@@ -9,7 +9,7 @@ use termwiz::cell::CellAttributes;
 use termwiz::escape::Action;
 use termwiz::escape::csi::CSI;
 use termwiz::escape::parser::Parser;
-use termwiz::surface::{Change, Surface};
+use termwiz::surface::{Change, Position, Surface};
 
 pub mod cwd;
 pub mod disk_scrollback;
@@ -96,6 +96,11 @@ pub struct Terminal {
     pending_pty_resize: Option<(usize, usize)>,
     /// Timestamp of the last actual PTY resize flush. Used for throttling.
     last_pty_flush: std::time::Instant,
+    /// True when cursor Y was explicitly moved upward via CUP/VPA etc.
+    /// Suppresses `capture_implicit_shift` for subsequent text writes, preventing
+    /// TUI apps (that reposition cursor and redraw) from duplicating scrollback.
+    /// Reset when an explicit `ScrollRegionUp` is handled (natural scroll).
+    cursor_repositioned_up: bool,
 }
 
 impl Terminal {
@@ -266,6 +271,7 @@ impl Terminal {
             saved_line_tails: Vec::new(),
             pending_pty_resize: None,
             last_pty_flush: std::time::Instant::now(),
+            cursor_repositioned_up: false,
         })
     }
 
@@ -413,6 +419,26 @@ impl Terminal {
             return;
         }
 
+        // Track cursor-up repositioning to suppress implicit shift capture.
+        // TUI apps (e.g. Claude Code) reposition cursor upward and redraw the screen,
+        // which can cause the same content to be captured to scrollback repeatedly.
+        match &change {
+            Change::CursorPosition {
+                y: Position::Absolute(new_y),
+                ..
+            } => {
+                let (_, cy) = self.surface().cursor_position();
+                if (*new_y as usize) < cy as usize {
+                    self.cursor_repositioned_up = true;
+                }
+            }
+            Change::ScrollRegionUp { .. } => {
+                // Explicit scroll (from natural LF at bottom) resets the flag.
+                self.cursor_repositioned_up = false;
+            }
+            _ => {}
+        }
+
         self.capture_before_scroll(&change);
 
         // Text Change는 cursor가 scroll region bottom에 있을 때 line wrap으로
@@ -420,7 +446,10 @@ impl Terminal {
         // ScrollRegionUp Change를 발생시키지 않고 내부적으로 처리하므로
         // capture_before_scroll만으로는 사라지는 행을 잡지 못한다.
         // → 변경 전후 화면 스냅샷을 비교해 시프트된 행을 scrollback에 push.
-        if matches!(change, Change::Text(_)) {
+        //
+        // 단, cursor가 명시적으로 위로 이동된 상태(TUI 리드로우)에서는 억제한다.
+        // 이 경우 implicit scroll은 동일 콘텐츠의 반복 캡처를 유발한다.
+        if !self.cursor_repositioned_up && matches!(change, Change::Text(_)) {
             let (_, rows) = self.surface().dimensions();
             let (_, cy) = self.surface().cursor_position();
             if rows > 0 && (cy as usize) + 1 == rows {
