@@ -124,7 +124,7 @@ impl Default for GeneralSettings {
             click_to_move_cursor: true,
             inherit_cwd: true,
             close_behavior: "ask".to_string(),
-            restore_layout: false,
+            restore_layout: true,
             link_click_modifier: "ctrl".to_string(),
         }
     }
