@@ -880,7 +880,10 @@ impl MainWindow {
                 let tab_index = pane.active_tab;
                 if let Some(tab) = pane.tabs.get(tab_index) {
                     let current_name = tab.display_name();
-                    state.dialogs.tab_rename = Some((pane_id, tab_index, current_name));
+                    state.dialogs.rename = Some((
+                        crate::state::RenameTarget::TabName { pane_id, tab_index },
+                        current_name,
+                    ));
                 }
             }
             return true;
@@ -888,18 +891,20 @@ impl MainWindow {
         if matches_any_binding(&kb.rename_workspace, key, mods) {
             let ws_idx = state.active_workspace;
             if let Some(ws) = state.engine.workspaces.get(ws_idx) {
-                let current = ws.name.clone();
-                state.dialogs.ws_rename =
-                    Some((ws_idx, crate::state::WsRenameField::Name, current));
+                state.dialogs.rename = Some((
+                    crate::state::RenameTarget::WorkspaceName { ws_idx },
+                    ws.name.clone(),
+                ));
             }
             return true;
         }
         if matches_any_binding(&kb.rename_workspace_subtitle, key, mods) {
             let ws_idx = state.active_workspace;
             if let Some(ws) = state.engine.workspaces.get(ws_idx) {
-                let current = ws.subtitle.clone();
-                state.dialogs.ws_rename =
-                    Some((ws_idx, crate::state::WsRenameField::Subtitle, current));
+                state.dialogs.rename = Some((
+                    crate::state::RenameTarget::WorkspaceSubtitle { ws_idx },
+                    ws.subtitle.clone(),
+                ));
             }
             return true;
         }

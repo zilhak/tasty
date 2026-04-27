@@ -225,6 +225,7 @@ rename_subtitle = "サブタイトルの変更"
 [rename_dialog]
 title_heading = "ワークスペース名の変更"
 subtitle_heading = "サブタイトルの変更"
+tab_heading = "タブ名の変更"
 
 [shortcut.desc]
 new_workspace = "新しいワークスペース"

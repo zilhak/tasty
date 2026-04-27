@@ -15,7 +15,7 @@ mod sidebar;
 mod tab_bar;
 pub mod toast;
 
-pub use dialog::draw_ws_rename_dialog;
+pub use dialog::draw_rename_dialog;
 pub use divider::{draw_pane_dividers, draw_surface_highlights};
 pub use egui_panels::draw_egui_panels;
 pub use layout_context::LayoutContext;

@@ -225,6 +225,7 @@ rename_subtitle = "부제목 변경"
 [rename_dialog]
 title_heading = "워크스페이스 이름 변경"
 subtitle_heading = "부제목 변경"
+tab_heading = "탭 이름 변경"
 
 [shortcut.desc]
 new_workspace = "새 워크스페이스"

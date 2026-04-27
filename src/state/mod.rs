@@ -126,10 +126,8 @@ pub enum PendingNativeMenu {
 /// All transient UI dialog/popup state, grouped to avoid AppState bloat.
 /// New dialogs should be added here, not as top-level AppState fields.
 pub struct DialogState {
-    /// Workspace rename: (workspace_index, field, edit_buffer)
-    pub ws_rename: Option<(usize, WsRenameField, String)>,
-    /// Tab rename: (pane_id, tab_index, edit_buffer)
-    pub tab_rename: Option<(u32, usize, String)>,
+    /// Unified rename dialog: target + edit buffer.
+    pub rename: Option<(RenameTarget, String)>,
     /// Convert to markdown: target surface id
     pub markdown_convert_surface_id: Option<u32>,
     /// Surface convert popup: target surface_id (None = closed)
@@ -161,8 +159,7 @@ pub struct DialogState {
 impl DialogState {
     pub fn new() -> Self {
         Self {
-            ws_rename: None,
-            tab_rename: None,
+            rename: None,
             markdown_convert_surface_id: None,
             convert_popup: None,
             convert_popup_selected: None,
@@ -181,7 +178,7 @@ impl DialogState {
 
     /// Returns true if any dialog with text input is open.
     pub fn has_text_input_open(&self) -> bool {
-        self.ws_rename.is_some() || self.tab_rename.is_some()
+        self.rename.is_some()
     }
 
     /// Returns true if any dialog/popup overlay is open.
@@ -190,11 +187,26 @@ impl DialogState {
     }
 }
 
-/// Which workspace field is being renamed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum WsRenameField {
-    Name,
-    Subtitle,
+/// What is being renamed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RenameTarget {
+    /// Workspace name.
+    WorkspaceName { ws_idx: usize },
+    /// Workspace subtitle.
+    WorkspaceSubtitle { ws_idx: usize },
+    /// Tab name.
+    TabName { pane_id: u32, tab_index: usize },
+}
+
+impl RenameTarget {
+    /// i18n key for the dialog heading.
+    pub fn heading_key(&self) -> &'static str {
+        match self {
+            Self::WorkspaceName { .. } => "rename_dialog.title_heading",
+            Self::WorkspaceSubtitle { .. } => "rename_dialog.subtitle_heading",
+            Self::TabName { .. } => "rename_dialog.tab_heading",
+        }
+    }
 }
 
 impl AppState {

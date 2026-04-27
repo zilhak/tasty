@@ -1,5 +1,5 @@
 use crate::i18n::t;
-use crate::state::{AppState, WsRenameField};
+use crate::state::{AppState, RenameTarget};
 use crate::theme;
 
 /// Draw the collapsed sidebar (workspace numbers + tools/expand/settings buttons).
@@ -275,17 +275,15 @@ pub fn draw_full_sidebar(
 
                         card_response.context_menu(|ui| {
                             if ui.button(t("context_menu.rename_title")).clicked() {
-                                state.dialogs.ws_rename = Some((
-                                    i,
-                                    WsRenameField::Name,
+                                state.dialogs.rename = Some((
+                                    RenameTarget::WorkspaceName { ws_idx: i },
                                     state.engine.workspaces[i].name.clone(),
                                 ));
                                 ui.close_menu();
                             }
                             if ui.button(t("context_menu.rename_subtitle")).clicked() {
-                                state.dialogs.ws_rename = Some((
-                                    i,
-                                    WsRenameField::Subtitle,
+                                state.dialogs.rename = Some((
+                                    RenameTarget::WorkspaceSubtitle { ws_idx: i },
                                     state.engine.workspaces[i].subtitle.clone(),
                                 ));
                                 ui.close_menu();

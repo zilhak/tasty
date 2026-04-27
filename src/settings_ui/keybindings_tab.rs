@@ -174,6 +174,14 @@ pub fn draw_keybindings_tab(
                                 "close_workspace",
                                 "settings.keybindings.close_workspace_label",
                             ),
+                            (
+                                "rename_workspace",
+                                "settings.keybindings.rename_workspace_label",
+                            ),
+                            (
+                                "rename_workspace_subtitle",
+                                "settings.keybindings.rename_workspace_subtitle_label",
+                            ),
                         ],
                     );
 
@@ -233,6 +241,7 @@ pub fn draw_keybindings_tab(
                         &captured,
                         &[
                             ("new_tab", "settings.keybindings.new_tab_label"),
+                            ("rename_tab", "settings.keybindings.rename_tab_label"),
                             ("next_tab", "settings.keybindings.next_tab_label"),
                             ("prev_tab", "settings.keybindings.prev_tab_label"),
                             (

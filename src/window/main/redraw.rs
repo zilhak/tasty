@@ -375,7 +375,10 @@ impl MainWindow {
                             .and_then(|p| p.tabs.get(tab_index))
                             .map(|t| t.display_name())
                             .unwrap_or_default();
-                        self.state.dialogs.tab_rename = Some((pane_id, tab_index, current_name));
+                        self.state.dialogs.rename = Some((
+                            crate::state::RenameTarget::TabName { pane_id, tab_index },
+                            current_name,
+                        ));
                     }
                     Some(2) => {
                         // Close
