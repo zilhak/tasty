@@ -601,6 +601,17 @@ impl Terminal {
             }
         };
 
+        // 불변식: 스크롤이 발생했다면 화면 첫 행이 반드시 바뀌어야 한다.
+        // pre[0] == new[0]이면 스크롤이 아닌 것이므로 즉시 return.
+        let first_unchanged = pre[0].len() == new_first.len()
+            && pre[0]
+                .iter()
+                .zip(new_first.iter())
+                .all(|((a, _), b)| a == b);
+        if first_unchanged {
+            return;
+        }
+
         // Find the smallest k > 0 such that pre[k] (visible cells) equals
         // the new row 0. That k is the number of rows that scrolled off.
         let mut shift = 0usize;
