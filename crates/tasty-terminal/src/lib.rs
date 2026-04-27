@@ -11,7 +11,6 @@ use termwiz::escape::csi::CSI;
 use termwiz::escape::parser::Parser;
 use termwiz::surface::{Change, Surface};
 
-pub mod cwd;
 pub mod disk_scrollback;
 mod events;
 pub mod foreground_process;
