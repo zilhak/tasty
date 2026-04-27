@@ -351,9 +351,16 @@ pub(crate) fn handle_screen_text(
         Ok(sid) => sid,
         Err(e) => return e,
     };
+    let lines = params
+        .get("lines")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as usize);
     let text = state
         .find_terminal_by_id(surface_id)
-        .map(|t| t.screen_text())
+        .map(|t| match lines {
+            Some(n) => t.screen_text_lines(n),
+            None => t.screen_text(),
+        })
         .unwrap_or_default();
     JsonRpcResponse::success(id, json!({ "text": text, "surface_id": surface_id }))
 }

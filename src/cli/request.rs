@@ -268,9 +268,12 @@ fn read_command_to_method_params(command: &ReadCommands) -> (&'static str, serde
                 )
             }
         }
-        ReadCommands::Screen { surface } => (
+        ReadCommands::Screen { surface, lines } => (
             "surface.screen_text",
-            serde_json::json!({ "surface_id": resolve_surface_id(*surface) }),
+            serde_json::json!({
+                "surface_id": resolve_surface_id(*surface),
+                "lines": lines,
+            }),
         ),
     }
 }

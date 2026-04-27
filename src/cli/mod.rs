@@ -336,6 +336,9 @@ pub enum ReadCommands {
         /// Surface ID (default: focused)
         #[arg(long)]
         surface: Option<u32>,
+        /// Number of lines to read from the bottom (dips into scrollback if needed)
+        #[arg(long)]
+        lines: Option<usize>,
     },
 }
 

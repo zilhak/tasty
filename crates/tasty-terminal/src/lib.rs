@@ -355,6 +355,69 @@ impl Terminal {
         result
     }
 
+    /// Get the last N lines of terminal output (screen + scrollback from the bottom).
+    /// If N is larger than available lines, returns everything available.
+    pub fn screen_text_lines(&self, n: usize) -> String {
+        let surface = self.surface();
+        let screen_lines = surface.screen_lines();
+        let screen_count = screen_lines.len();
+        let scrollback_total = self.scrollback_len();
+
+        if n <= screen_count {
+            // Only need lines from the current screen (bottom N rows)
+            let start = screen_count - n;
+            let mut result = String::new();
+            for line in &screen_lines[start..] {
+                let mut row_text = String::new();
+                for cell in line.visible_cells() {
+                    row_text.push_str(cell.str());
+                }
+                result.push_str(row_text.trim_end());
+                result.push('\n');
+            }
+            while result.ends_with("\n\n") {
+                result.pop();
+            }
+            result
+        } else {
+            // Need scrollback lines + full screen
+            let scrollback_needed = (n - screen_count).min(scrollback_total);
+            let scrollback_start = scrollback_total - scrollback_needed;
+
+            let mut result = String::new();
+
+            // Append scrollback lines (from scrollback_start to end)
+            for i in scrollback_start..scrollback_total {
+                let line_text = self
+                    .scrollback_line_owned(i)
+                    .map(|cells| {
+                        cells
+                            .iter()
+                            .map(|(s, _)| s.as_str())
+                            .collect::<String>()
+                    })
+                    .unwrap_or_default();
+                result.push_str(line_text.trim_end());
+                result.push('\n');
+            }
+
+            // Append all screen lines
+            for line in screen_lines {
+                let mut row_text = String::new();
+                for cell in line.visible_cells() {
+                    row_text.push_str(cell.str());
+                }
+                result.push_str(row_text.trim_end());
+                result.push('\n');
+            }
+
+            while result.ends_with("\n\n") {
+                result.pop();
+            }
+            result
+        }
+    }
+
     /// Get the text of a specific row (0-indexed), trimmed.
     pub fn screen_row(&self, row: usize) -> String {
         let surface = self.surface();
