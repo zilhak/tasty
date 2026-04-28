@@ -34,7 +34,13 @@ pub fn draw_collapsed_sidebar(
                         .has_highlighted_surface(&ws_surface_ids);
                     let label = format!("{}", i + 1);
                     let bg = if is_active { th.surface0 } else { th.mantle };
-                    let text_color = if is_active { th.text } else { th.subtext0 };
+                    let text_color = if is_active {
+                        th.text
+                    } else if ws_has_highlight {
+                        th.yellow
+                    } else {
+                        th.subtext0
+                    };
 
                     let (rect, resp) =
                         ui.allocate_exact_size(egui::vec2(32.0, 28.0), egui::Sense::click());
@@ -49,14 +55,6 @@ pub fn draw_collapsed_sidebar(
                     }
                     if resp.hovered() {
                         ui.painter().rect_filled(rect, 4.0, th.hover_overlay);
-                    }
-                    if ws_has_highlight && !is_active {
-                        ui.painter().rect_stroke(
-                            rect,
-                            4.0,
-                            egui::Stroke::new(1.0, th.blue),
-                            egui::StrokeKind::Outside,
-                        );
                     }
                     ui.painter().text(
                         rect.center(),
