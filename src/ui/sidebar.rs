@@ -39,10 +39,18 @@ pub fn draw_collapsed_sidebar(
                     let (rect, resp) =
                         ui.allocate_exact_size(egui::vec2(32.0, 28.0), egui::Sense::click());
                     ui.painter().rect_filled(rect, 4.0, bg);
+                    if is_active {
+                        ui.painter().rect_stroke(
+                            rect,
+                            4.0,
+                            egui::Stroke::new(1.0, th.blue),
+                            egui::StrokeKind::Inside,
+                        );
+                    }
                     if resp.hovered() {
                         ui.painter().rect_filled(rect, 4.0, th.hover_overlay);
                     }
-                    if ws_has_highlight {
+                    if ws_has_highlight && !is_active {
                         ui.painter().rect_stroke(
                             rect,
                             4.0,
