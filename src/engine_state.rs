@@ -145,9 +145,12 @@ pub struct EngineState {
     pub waker_factory: Option<winit::event_loop::EventLoopProxy<crate::AppEvent>>,
 
     // ── CWD polling (round-robin) ──
+    // macOS/Linux 전용. Windows에서는 폴링을 돌지 않아 필드 자체가 없음.
     /// Last surface_id that was polled for CWD. Used for round-robin iteration.
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     pub last_cwd_poll_id: u32,
     /// Toggles between round-robin and focused-surface CWD polling.
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     pub cwd_poll_focused_turn: bool,
 
     // ── Layout persistence ──
@@ -180,7 +183,9 @@ impl EngineState {
             surface_next_message_id: 0,
             last_key_input: HashMap::new(),
             waker_factory: None,
+            #[cfg(any(target_os = "macos", target_os = "linux"))]
             last_cwd_poll_id: 0,
+            #[cfg(any(target_os = "macos", target_os = "linux"))]
             cwd_poll_focused_turn: false,
             layout_dirty: crate::layout_persistence::LayoutDirtyTracker::new(),
             restored_active_workspace: None,
@@ -442,6 +447,8 @@ impl EngineState {
     }
 
     /// Collect all terminal surface IDs across all workspaces.
+    /// 현재는 CWD 폴링(macOS/Linux)에서만 사용된다.
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     pub fn all_terminal_surface_ids(&mut self) -> Vec<u32> {
         let mut ids = Vec::new();
         for workspace in &mut self.workspaces {
@@ -455,6 +462,8 @@ impl EngineState {
     }
 
     /// Poll OS-level CWD for a specific terminal and update its cache.
+    /// macOS/Linux 전용. Windows에서는 호출되지 않음.
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     fn poll_cwd_for_surface(&mut self, surface_id: u32) {
         if let Some(terminal) = self.find_terminal_by_id_mut(surface_id) {
             if let Some(pid) = terminal.process_id() {
@@ -469,6 +478,8 @@ impl EngineState {
 
     /// Poll CWD for the next terminal in round-robin order.
     /// Returns the surface_id that was polled this time.
+    /// macOS/Linux 전용.
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     pub fn poll_one_cwd_round_robin(&mut self) -> u32 {
         let ids = self.all_terminal_surface_ids();
         if ids.is_empty() {
@@ -486,6 +497,8 @@ impl EngineState {
     }
 
     /// Poll CWD for a specific (focused) surface.
+    /// macOS/Linux 전용.
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     pub fn poll_one_cwd_focused(&mut self, focused_surface_id: u32) {
         self.poll_cwd_for_surface(focused_surface_id);
     }

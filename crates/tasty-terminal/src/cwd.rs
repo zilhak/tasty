@@ -2,6 +2,10 @@ use std::path::PathBuf;
 
 /// Get the current working directory of a process by PID.
 /// Returns None if the PID is invalid or the cwd cannot be determined.
+///
+/// Windows에서는 항상 None을 반환한다. 다른 프로세스의 CWD를 얻는 표준 API가
+/// 없고, WMI/PowerShell 호출은 콘솔창을 띄우는 무거운 동작이라 폴링에 부적합하다.
+/// Windows에서는 OSC 7 시퀀스에만 의존한다 (git bash, PowerShell 7+ 등은 송신함).
 pub fn get_cwd_of_pid(pid: u32) -> Option<PathBuf> {
     #[cfg(target_os = "linux")]
     {
@@ -13,12 +17,7 @@ pub fn get_cwd_of_pid(pid: u32) -> Option<PathBuf> {
         macos_proc_cwd(pid)
     }
 
-    #[cfg(windows)]
-    {
-        windows_proc_cwd(pid)
-    }
-
-    #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     {
         let _ = pid;
         None
@@ -39,26 +38,4 @@ fn macos_proc_cwd(pid: u32) -> Option<PathBuf> {
         }
     }
     None
-}
-
-#[cfg(windows)]
-fn windows_proc_cwd(pid: u32) -> Option<PathBuf> {
-    use std::process::Command;
-    let output = Command::new("powershell")
-        .args([
-            "-NoProfile",
-            "-Command",
-            &format!(
-                "(Get-CimInstance Win32_Process -Filter \"ProcessId={}\" | Select-Object -ExpandProperty ExecutablePath | Split-Path -Parent)",
-                pid
-            ),
-        ])
-        .output()
-        .ok()?;
-    let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if path.is_empty() {
-        None
-    } else {
-        Some(PathBuf::from(path))
-    }
 }

@@ -114,6 +114,8 @@ enum AppEvent {
     /// 주기적으로 시스템 클립보드를 폴링해 히스토리에 반영. 폴링 스레드가 발송.
     ClipboardTick,
     /// 터미널 CWD를 라운드 로빈으로 1개씩 폴링. 50ms 간격 스레드가 발송.
+    /// macOS/Linux 전용. Windows는 OSC 7에만 의존하므로 이 이벤트가 발생하지 않는다.
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     CwdPoll,
 }
 
@@ -689,6 +691,8 @@ fn main() -> Result<()> {
     }
 
     // CWD 폴링 스레드: 50ms마다 하나의 터미널 CWD를 라운드 로빈으로 갱신.
+    // macOS/Linux 전용. Windows는 OSC 7에만 의존한다 (cwd.rs 참조).
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     {
         let cwd_proxy = proxy.clone();
         std::thread::spawn(move || {

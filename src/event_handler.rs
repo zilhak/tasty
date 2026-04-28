@@ -125,6 +125,7 @@ impl ApplicationHandler<AppEvent> for App {
             AppEvent::ClipboardTick => {
                 self.poll_clipboard_into_history();
             }
+            #[cfg(any(target_os = "macos", target_os = "linux"))]
             AppEvent::CwdPoll => {
                 self.poll_one_terminal_cwd();
             }
@@ -603,7 +604,8 @@ impl App {
     }
 
     /// Poll CWD for one terminal. Alternates between round-robin and focused-surface polling.
-    /// Invoked from AppEvent::CwdPoll (every 50ms).
+    /// Invoked from AppEvent::CwdPoll (every 50ms). macOS/Linux 전용.
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     fn poll_one_terminal_cwd(&mut self) {
         // Collect (engine, focused_surface_id) pairs from MainWindows
         let mut targets: Vec<(&mut crate::engine_state::EngineState, Option<u32>)> = self
