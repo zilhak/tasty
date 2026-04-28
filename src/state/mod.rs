@@ -121,6 +121,12 @@ pub enum PendingNativeMenu {
         x: f32,
         y: f32,
     },
+    /// Workspace right-click in sidebar: Rename title / Rename subtitle
+    Workspace {
+        ws_idx: usize,
+        x: f32,
+        y: f32,
+    },
 }
 
 /// All transient UI dialog/popup state, grouped to avoid AppState bloat.

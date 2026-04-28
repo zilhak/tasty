@@ -541,6 +541,34 @@ impl MainWindow {
                 }
                 self.mark_dirty();
             }
+            PendingNativeMenu::Workspace { ws_idx, x, y } => {
+                let items = [
+                    MenuItem::new(1, crate::i18n::t("context_menu.rename_title")),
+                    MenuItem::new(2, crate::i18n::t("context_menu.rename_subtitle")),
+                ];
+                let result =
+                    show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
+                if ws_idx < self.state.engine.workspaces.len() {
+                    match result {
+                        Some(1) => {
+                            let name = self.state.engine.workspaces[ws_idx].name.clone();
+                            self.state.dialogs.rename = Some((
+                                crate::state::RenameTarget::WorkspaceName { ws_idx },
+                                name,
+                            ));
+                        }
+                        Some(2) => {
+                            let subtitle = self.state.engine.workspaces[ws_idx].subtitle.clone();
+                            self.state.dialogs.rename = Some((
+                                crate::state::RenameTarget::WorkspaceSubtitle { ws_idx },
+                                subtitle,
+                            ));
+                        }
+                        _ => {}
+                    }
+                }
+                self.mark_dirty();
+            }
         }
     }
 }
