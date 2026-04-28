@@ -368,7 +368,8 @@ impl ApplicationHandler<AppEvent> for App {
         }
     }
 
-    fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
         if self.process_ipc() {
             if let Some(w) = self.focused_window_mut() {
                 w.mark_dirty();
