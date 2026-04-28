@@ -54,6 +54,9 @@ fn format_tree(result: &serde_json::Value) {
                             let stype =
                                 surface.and_then(|s| s.get("type")).and_then(|v| v.as_str());
                             let sid = surface.and_then(|s| s.get("id")).and_then(|v| v.as_u64());
+                            let surfaces_arr = surface
+                                .and_then(|s| s.get("surfaces"))
+                                .and_then(|v| v.as_array());
 
                             let mut ids = String::new();
                             if let Some(t) = tid {
@@ -64,6 +67,16 @@ fn format_tree(result: &serde_json::Value) {
                                     ids.push_str(", ");
                                 }
                                 ids.push_str(&format!("surface:{}", s));
+                            } else if let Some(arr) = surfaces_arr {
+                                // SplitLayout: list all surface IDs
+                                for s in arr {
+                                    if let Some(sv) = s.as_u64() {
+                                        if !ids.is_empty() {
+                                            ids.push_str(", ");
+                                        }
+                                        ids.push_str(&format!("surface:{}", sv));
+                                    }
+                                }
                             }
                             if let Some(t) = stype {
                                 if t != "Terminal" {
