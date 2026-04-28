@@ -82,11 +82,19 @@ PLIST
 echo "==> Creating $DMG_NAME..."
 rm -f "$DIST_DIR/$DMG_NAME"
 
-# Create DMG with Applications symlink for drag-install
+# Stage DMG contents: app + Applications symlink for drag-install
+DMG_STAGE="$DIST_DIR/dmg-stage"
+rm -rf "$DMG_STAGE"
+mkdir -p "$DMG_STAGE"
+cp -R "$APP_DIR" "$DMG_STAGE/"
+ln -s /Applications "$DMG_STAGE/Applications"
+
 hdiutil create -volname "$APP_NAME" \
-    -srcfolder "$APP_DIR" \
+    -srcfolder "$DMG_STAGE" \
     -ov -format UDZO \
     "$DIST_DIR/$DMG_NAME"
+
+rm -rf "$DMG_STAGE"
 
 echo ""
 echo "Done!"
