@@ -125,6 +125,9 @@ impl ApplicationHandler<AppEvent> for App {
             AppEvent::ClipboardTick => {
                 self.poll_clipboard_into_history();
             }
+            AppEvent::CwdPoll => {
+                self.poll_one_terminal_cwd();
+            }
         }
     }
 
@@ -592,6 +595,38 @@ impl App {
                 ClipboardPoll::Image(data) => {
                     engine.clipboard_history.record_image(data.clone(), source);
                 }
+            }
+        }
+    }
+
+    /// Poll CWD for one terminal. Alternates between round-robin and focused-surface polling.
+    /// Invoked from AppEvent::CwdPoll (every 50ms).
+    fn poll_one_terminal_cwd(&mut self) {
+        // Collect (engine, focused_surface_id) pairs from MainWindows
+        let mut targets: Vec<(&mut crate::engine_state::EngineState, Option<u32>)> = self
+            .windows
+            .values_mut()
+            .filter_map(|w| w.as_main_mut())
+            .map(|m| {
+                let focused = m.state.focused_surface_id();
+                (&mut m.state.engine, focused)
+            })
+            .collect();
+        // Parked states have no focused surface
+        for s in &mut self.parked_states {
+            targets.push((&mut s.engine, None));
+        }
+
+        for (engine, focused) in targets {
+            let is_focused_turn = engine.cwd_poll_focused_turn;
+            engine.cwd_poll_focused_turn = !is_focused_turn;
+
+            if is_focused_turn {
+                if let Some(sid) = focused {
+                    engine.poll_one_cwd_focused(sid);
+                }
+            } else {
+                engine.last_cwd_poll_id = engine.poll_one_cwd_round_robin();
             }
         }
     }

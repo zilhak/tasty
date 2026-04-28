@@ -112,6 +112,8 @@ enum AppEvent {
     TrayShowWindow,
     /// 주기적으로 시스템 클립보드를 폴링해 히스토리에 반영. 폴링 스레드가 발송.
     ClipboardTick,
+    /// 터미널 CWD를 라운드 로빈으로 1개씩 폴링. 50ms 간격 스레드가 발송.
+    CwdPoll,
 }
 
 /// Tracks an active divider drag operation.
@@ -674,6 +676,20 @@ fn main() -> Result<()> {
                 std::thread::sleep(interval);
                 if tick_proxy.send_event(AppEvent::ClipboardTick).is_err() {
                     break; // event loop exited
+                }
+            }
+        });
+    }
+
+    // CWD 폴링 스레드: 50ms마다 하나의 터미널 CWD를 라운드 로빈으로 갱신.
+    {
+        let cwd_proxy = proxy.clone();
+        std::thread::spawn(move || {
+            let interval = std::time::Duration::from_millis(50);
+            loop {
+                std::thread::sleep(interval);
+                if cwd_proxy.send_event(AppEvent::CwdPoll).is_err() {
+                    break;
                 }
             }
         });

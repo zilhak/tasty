@@ -11,6 +11,7 @@ use termwiz::escape::csi::CSI;
 use termwiz::escape::parser::Parser;
 use termwiz::surface::{Change, Surface};
 
+pub mod cwd;
 pub mod disk_scrollback;
 mod events;
 pub mod foreground_process;
@@ -798,9 +799,14 @@ impl Terminal {
     }
 
     /// Get the current working directory of the child process.
-    /// Returns the CWD cached from OSC 7 sequences only (no subprocess spawning).
+    /// Returns the CWD cached from OSC 7 sequences or OS-level polling.
     pub fn get_cwd(&self) -> Option<std::path::PathBuf> {
         self.cached_cwd.clone()
+    }
+
+    /// Set the cached CWD. Used by the OS-level CWD polling mechanism.
+    pub fn set_cached_cwd(&mut self, cwd: std::path::PathBuf) {
+        self.cached_cwd = Some(cwd);
     }
 
     /// Check if the child process is still running.

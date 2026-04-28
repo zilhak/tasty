@@ -144,6 +144,12 @@ pub struct EngineState {
     /// Event loop proxy for targeted waker creation. Set by App after EngineState creation.
     pub waker_factory: Option<winit::event_loop::EventLoopProxy<crate::AppEvent>>,
 
+    // ── CWD polling (round-robin) ──
+    /// Last surface_id that was polled for CWD. Used for round-robin iteration.
+    pub last_cwd_poll_id: u32,
+    /// Toggles between round-robin and focused-surface CWD polling.
+    pub cwd_poll_focused_turn: bool,
+
     // ── Layout persistence ──
     pub layout_dirty: crate::layout_persistence::LayoutDirtyTracker,
     /// Active workspace index restored from layout.json. Consumed once by AppState::new().
@@ -174,6 +180,8 @@ impl EngineState {
             surface_next_message_id: 0,
             last_key_input: HashMap::new(),
             waker_factory: None,
+            last_cwd_poll_id: 0,
+            cwd_poll_focused_turn: false,
             layout_dirty: crate::layout_persistence::LayoutDirtyTracker::new(),
             restored_active_workspace: None,
         };
@@ -431,5 +439,54 @@ impl EngineState {
                 });
         }
         all_events
+    }
+
+    /// Collect all terminal surface IDs across all workspaces.
+    pub fn all_terminal_surface_ids(&mut self) -> Vec<u32> {
+        let mut ids = Vec::new();
+        for workspace in &mut self.workspaces {
+            workspace
+                .pane_layout_mut()
+                .for_each_terminal_mut(&mut |sid, _terminal| {
+                    ids.push(sid);
+                });
+        }
+        ids
+    }
+
+    /// Poll OS-level CWD for a specific terminal and update its cache.
+    fn poll_cwd_for_surface(&mut self, surface_id: u32) {
+        if let Some(terminal) = self.find_terminal_by_id_mut(surface_id) {
+            if let Some(pid) = terminal.process_id() {
+                if let Some(cwd) = tasty_terminal::cwd::get_cwd_of_pid(pid) {
+                    if terminal.get_cwd().as_ref() != Some(&cwd) {
+                        terminal.set_cached_cwd(cwd);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Poll CWD for the next terminal in round-robin order.
+    /// Returns the surface_id that was polled this time.
+    pub fn poll_one_cwd_round_robin(&mut self) -> u32 {
+        let ids = self.all_terminal_surface_ids();
+        if ids.is_empty() {
+            return 0;
+        }
+
+        let last = self.last_cwd_poll_id;
+        let next_id = ids.iter()
+            .find(|&&id| id > last)
+            .copied()
+            .unwrap_or(ids[0]);
+
+        self.poll_cwd_for_surface(next_id);
+        next_id
+    }
+
+    /// Poll CWD for a specific (focused) surface.
+    pub fn poll_one_cwd_focused(&mut self, focused_surface_id: u32) {
+        self.poll_cwd_for_surface(focused_surface_id);
     }
 }
