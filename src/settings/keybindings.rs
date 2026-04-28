@@ -554,9 +554,9 @@ impl KeybindingSettings {
             ],
             zoom_out: vec!["ctrl+-".into(), "alt+-".into()],
             zoom_reset: vec!["ctrl+0".into(), "alt+0".into()],
-            rename_tab: vec!["ctrl+`".into()],
-            rename_workspace: vec!["alt+`".into()],
-            rename_workspace_subtitle: vec!["alt+shift+`".into()],
+            rename_tab: vec!["f2".into()],
+            rename_workspace: vec!["f3".into()],
+            rename_workspace_subtitle: vec!["f4".into()],
         }
     }
 
@@ -604,9 +604,9 @@ impl KeybindingSettings {
             zoom_in: vec!["alt+=".into(), "alt++".into()],
             zoom_out: vec!["alt+-".into()],
             zoom_reset: vec!["alt+0".into()],
-            rename_tab: vec!["ctrl+`".into()],
-            rename_workspace: vec!["option+`".into()],
-            rename_workspace_subtitle: vec!["option+shift+`".into()],
+            rename_tab: vec!["f2".into()],
+            rename_workspace: vec!["f3".into()],
+            rename_workspace_subtitle: vec!["f4".into()],
         }
     }
 
@@ -654,9 +654,9 @@ impl KeybindingSettings {
             zoom_in: vec!["ctrl+=".into(), "ctrl++".into()],
             zoom_out: vec!["ctrl+-".into()],
             zoom_reset: vec!["ctrl+0".into()],
-            rename_tab: vec!["ctrl+`".into()],
-            rename_workspace: vec!["alt+`".into()],
-            rename_workspace_subtitle: vec!["alt+shift+`".into()],
+            rename_tab: vec!["f2".into()],
+            rename_workspace: vec!["f3".into()],
+            rename_workspace_subtitle: vec!["f4".into()],
         }
     }
 
@@ -704,9 +704,9 @@ impl KeybindingSettings {
             zoom_in: vec!["ctrl+=".into(), "ctrl++".into()],
             zoom_out: vec!["ctrl+-".into()],
             zoom_reset: vec!["ctrl+0".into()],
-            rename_tab: vec!["ctrl+`".into()],
-            rename_workspace: vec!["alt+`".into()],
-            rename_workspace_subtitle: vec!["alt+shift+`".into()],
+            rename_tab: vec!["f2".into()],
+            rename_workspace: vec!["f3".into()],
+            rename_workspace_subtitle: vec!["f4".into()],
         }
     }
 
