@@ -605,8 +605,8 @@ impl KeybindingSettings {
             zoom_out: vec!["alt+-".into()],
             zoom_reset: vec!["alt+0".into()],
             rename_tab: vec!["ctrl+`".into()],
-            rename_workspace: vec!["alt+`".into()],
-            rename_workspace_subtitle: vec!["alt+shift+`".into()],
+            rename_workspace: vec!["option+`".into()],
+            rename_workspace_subtitle: vec!["option+shift+`".into()],
         }
     }
 
