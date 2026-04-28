@@ -147,6 +147,32 @@ impl AppState {
     pub fn switch_workspace(&mut self, index: usize) {
         if index < self.engine.workspaces.len() {
             self.active_workspace = index;
+            self.ensure_active_workspace_initialized();
+        }
+    }
+
+    /// Ensure all deferred tabs in the active workspace are initialized.
+    /// Called on workspace switch to lazily spawn PTYs for restored terminals.
+    fn ensure_active_workspace_initialized(&mut self) {
+        let mut spawned_ids = Vec::new();
+        {
+            let ws = &mut self.engine.workspaces[self.active_workspace];
+            let pane_ids: Vec<u32> = ws.pane_layout().all_pane_ids();
+            for pane_id in pane_ids {
+                if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
+                    for tab in &mut pane.tabs {
+                        if tab.is_deferred() {
+                            let surface_id = tab.deferred_surface_id.unwrap_or(0);
+                            if tab.ensure_initialized(surface_id) {
+                                spawned_ids.push(surface_id);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        for surface_id in spawned_ids {
+            self.engine.send_fast_init(surface_id);
         }
     }
 

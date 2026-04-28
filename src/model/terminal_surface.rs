@@ -15,7 +15,7 @@ pub struct TerminalSurface {
 
 /// Parameters needed to spawn a PTY later (lazy init).
 #[derive(Clone)]
-pub(crate) struct DeferredSpawn {
+pub struct DeferredSpawn {
     pub shell: Option<String>,
     pub shell_args: Vec<String>,
     pub cols: usize,

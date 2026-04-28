@@ -314,8 +314,9 @@ impl Tab {
     // ── Initialization ──
 
     /// Ensure the surface is initialized (lazy spawn if needed). Returns true if spawned.
+    /// If the tab has a placeholder surface (from deferred layout restore), replaces it.
     pub fn ensure_initialized(&mut self, surface_id: SurfaceId) -> bool {
-        if self.layout_opt.is_some() || self.deferred_spawn.is_none() {
+        if self.deferred_spawn.is_none() {
             return false;
         }
         let spawn = self.deferred_spawn.take().unwrap();
@@ -350,7 +351,7 @@ impl Tab {
 
     /// Returns true if this tab has a deferred spawn pending.
     pub fn is_deferred(&self) -> bool {
-        self.layout_opt.is_none() && self.deferred_spawn.is_some()
+        self.deferred_spawn.is_some()
     }
 
     /// Replace the entire layout with a single surface.
