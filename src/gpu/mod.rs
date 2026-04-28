@@ -267,13 +267,17 @@ impl GpuState {
         }
 
         // 4. Post-egui updates (theme/font refresh)
+        let t0 = std::time::Instant::now();
         self.post_egui_update(state, &prev_theme);
+        let post_egui_ms = t0.elapsed().as_secs_f64() * 1000.0;
+
         // egui-winit disables IME when no egui text field is focused
         // (calls set_ime_allowed(false) when self.allow_ime differs from
         // ime.is_some()). The terminal always needs IME active.
         // Pre-set allow_ime=false so that when egui computes allow_ime=false
         // (no text field), the check false!=false is false and it skips
         // the set_ime_allowed(false) call entirely.
+        let t0 = std::time::Instant::now();
         self.egui_state.set_allow_ime(false);
         self.egui_state
             .handle_platform_output(window, full_output.platform_output);
@@ -293,8 +297,9 @@ impl GpuState {
         }
         #[cfg(windows)]
         window.set_ime_allowed(true);
+        let platform_output_ms = t0.elapsed().as_secs_f64() * 1000.0;
 
-        // 4. Tessellate egui
+        // 5. Tessellate egui
         let t0 = std::time::Instant::now();
         let paint_jobs = self
             .egui_ctx
@@ -352,6 +357,7 @@ impl GpuState {
             tracing::warn!(
                 "slow gpu render: {gpu_total_ms:.1}ms \
                  [layout={layout_ms:.1}, egui_frame={egui_frame_ms:.1}, \
+                 post_egui={post_egui_ms:.1}, platform_output={platform_output_ms:.1}, \
                  tessellate={tessellate_ms:.1}, clear={clear_ms:.1}, \
                  terminals={terminals_ms:.1}, egui_pass={egui_pass_ms:.1}, \
                  present={present_ms:.1}]"
