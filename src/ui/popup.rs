@@ -29,6 +29,9 @@ pub struct PopupDef {
     pub id: PopupId,
     /// i18n 키. `t()`로 런타임 번역하여 popup title로 사용.
     pub title_key: &'static str,
+    /// 동적 타이틀. 매 프레임 호출. `title_key` 대신 사용된다. (예: rename popup의
+    /// 대상별 제목)
+    pub title_fn: Option<fn(&AppState) -> String>,
     /// 기본 크기. 동적 크기가 필요하면 `sizer`로 덮어쓸 수 있다.
     pub default_size: egui::Vec2,
     /// 선택적 동적 크기 계산. popup open 시점에 1회 호출되어 `PopupState.size`에 반영.

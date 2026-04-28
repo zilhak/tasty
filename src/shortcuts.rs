@@ -884,6 +884,7 @@ impl MainWindow {
                         crate::state::RenameTarget::TabName { pane_id, tab_index },
                         current_name,
                     ));
+                    state.popups.open_centered_focused("rename");
                 }
             }
             return true;
@@ -895,6 +896,7 @@ impl MainWindow {
                     crate::state::RenameTarget::WorkspaceName { ws_idx },
                     ws.name.clone(),
                 ));
+                state.popups.open_centered_focused("rename");
             }
             return true;
         }
@@ -905,6 +907,7 @@ impl MainWindow {
                     crate::state::RenameTarget::WorkspaceSubtitle { ws_idx },
                     ws.subtitle.clone(),
                 ));
+                state.popups.open_centered_focused("rename");
             }
             return true;
         }

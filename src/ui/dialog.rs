@@ -1,13 +1,39 @@
 use crate::i18n::t;
 use crate::state::{AppState, RenameTarget};
+use crate::theme;
+use crate::ui::popup::{CONTENT_MARGIN, PopupAction, TITLE_BAR_HEIGHT};
 
-/// Draw the unified rename dialog (workspace name/subtitle, tab name).
-pub fn draw_rename_dialog(ctx: &egui::Context, state: &mut AppState) {
-    let Some((target, _)) = &state.dialogs.rename else {
-        return;
+/// Default size for the rename popup.
+pub fn rename_popup_default_size() -> egui::Vec2 {
+    egui::vec2(280.0, TITLE_BAR_HEIGHT + CONTENT_MARGIN * 2.0 + 60.0)
+}
+
+/// Dynamic title for the rename popup (based on RenameTarget).
+pub fn rename_popup_title(state: &AppState) -> String {
+    state
+        .dialogs
+        .rename
+        .as_ref()
+        .map(|(target, _)| t(target.heading_key()).to_string())
+        .unwrap_or_else(|| t("rename_dialog.tab_heading").to_string())
+}
+
+/// Draw function for the rename popup (PopupDef draw_fn).
+pub fn draw_rename_popup(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction {
+    let th = theme::theme();
+    let ctx = ui.ctx().clone();
+
+    // Escape → cancel
+    if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+        state.dialogs.rename = None;
+        return PopupAction::Close;
+    }
+
+    let Some((ref target, _)) = state.dialogs.rename else {
+        return PopupAction::Close;
     };
 
-    // Validate target still exists (read-only check before mutable borrow).
+    // Validate target still exists.
     let valid = match target {
         RenameTarget::WorkspaceName { ws_idx } | RenameTarget::WorkspaceSubtitle { ws_idx } => {
             *ws_idx < state.engine.workspaces.len()
@@ -23,73 +49,74 @@ pub fn draw_rename_dialog(ctx: &egui::Context, state: &mut AppState) {
     };
     if !valid {
         state.dialogs.rename = None;
-        return;
+        return PopupAction::Close;
     }
 
-    let heading = t(target.heading_key());
+    let margin = 8.0;
+    let available = ui.available_rect_before_wrap();
+    let inner_rect = available.shrink2(egui::vec2(margin, 0.0));
+    let mut child_ui = ui.new_child(egui::UiBuilder::new().max_rect(inner_rect));
+    let ui = &mut child_ui;
 
-    let mut do_apply = false;
-    let mut do_cancel = false;
-
-    // Re-borrow mutably for the text buffer.
     let buffer = &mut state.dialogs.rename.as_mut().unwrap().1;
 
-    egui::Window::new(heading)
-        .fixed_size(egui::vec2(280.0, 60.0))
-        .collapsible(false)
-        .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
-        .show(ctx, |ui| {
-            let response = ui.text_edit_singleline(buffer);
+    let resp = ui.add_sized(
+        [ui.available_width(), 22.0],
+        egui::TextEdit::singleline(buffer)
+            .font(egui::FontId::proportional(th.font_size_body.value()))
+            .margin(egui::Margin::symmetric(4, 2)),
+    );
 
-            // ── Focus handling (egui 0.31 동적 focus 계산 대응) ──
-            // lost_focus() = `had_focus_last_frame && !has_focus` (동적 계산)
-            // → request_focus() 이전에 먼저 체크해야 한다.
-            let focus_lost = response.lost_focus();
+    // Auto-focus: 포커스가 없으면 되찾는다.
+    if !resp.has_focus() {
+        resp.request_focus();
+    }
 
-            // Auto-focus: 포커스가 없으면 되찾는다.
-            if !response.has_focus() {
-                response.request_focus();
+    // 포커스를 얻은 첫 프레임에 전체 선택
+    if resp.gained_focus() {
+        if let Some(mut text_state) = egui::TextEdit::load_state(&ctx, resp.id) {
+            let len = buffer.chars().count();
+            text_state
+                .cursor
+                .set_char_range(Some(egui::text::CCursorRange::two(
+                    egui::text::CCursor::new(0),
+                    egui::text::CCursor::new(len),
+                )));
+            text_state.store(&ctx, resp.id);
+        }
+    }
+
+    // Enter 키로 적용
+    let mut confirm = false;
+    if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+        confirm = true;
+    }
+
+    ui.add_space(8.0);
+    ui.horizontal(|ui| {
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if ui.button(t("button.cancel")).clicked() {
+                state.dialogs.rename = None;
+                state.dialogs.file_popup_cancel = true;
             }
-
-            // gained_focus() = `!had_focus_last_frame && has_focus` (동적 계산)
-            // → request_focus() 이후에 체크해야 첫 프레임에서 true가 된다.
-            if response.gained_focus() {
-                if let Some(mut text_state) = egui::TextEdit::load_state(ctx, response.id) {
-                    let len = buffer.chars().count();
-                    text_state.cursor.set_char_range(Some(egui::text::CCursorRange::two(
-                        egui::text::CCursor::new(0),
-                        egui::text::CCursor::new(len),
-                    )));
-                    text_state.store(ctx, response.id);
-                }
+            if ui.button(t("button.save")).clicked() {
+                confirm = true;
             }
-
-            if focus_lost {
-                if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-                    do_cancel = true;
-                } else {
-                    do_apply = true;
-                }
-            }
-
-            ui.horizontal(|ui| {
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button(t("button.cancel")).clicked() {
-                        do_cancel = true;
-                    }
-                    if ui.button(t("button.save")).clicked() {
-                        do_apply = true;
-                    }
-                });
-            });
         });
+    });
 
-    if do_apply {
+    if state.dialogs.file_popup_cancel {
+        state.dialogs.file_popup_cancel = false;
+        return PopupAction::Close;
+    }
+
+    if confirm {
         let (target, buffer) = state.dialogs.rename.take().unwrap();
         apply_rename(state, target, buffer);
-    } else if do_cancel {
-        state.dialogs.rename = None;
+        return PopupAction::Close;
     }
+
+    PopupAction::None
 }
 
 fn apply_rename(state: &mut AppState, target: RenameTarget, buffer: String) {

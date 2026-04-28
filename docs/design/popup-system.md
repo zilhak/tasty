@@ -51,6 +51,7 @@
 pub struct PopupDef {
     pub id: PopupId,
     pub title_key: &'static str,       // i18n 키 (draw 시점에 번역)
+    pub title_fn: Option<fn(&AppState) -> String>,  // 동적 타이틀(선택, title_key 대신 사용)
     pub default_size: egui::Vec2,
     pub sizer: Option<fn(&AppState) -> egui::Vec2>,  // 동적 크기(선택)
     pub default_scope: PopupScope,
@@ -100,6 +101,7 @@ pub struct PopupDef {
 | `markdown_open` | `file_open_popup::draw_markdown_open_popup` | Window | No |
 | `html_open` | `file_open_popup::draw_html_open_popup` | Window | No |
 | `bookmark_name` | `bookmark_popup::draw_bookmark_popup` | Window | No |
+| `rename` | `dialog::draw_rename_popup` | Window | No |
 
 ## 외부 클릭 닫기
 

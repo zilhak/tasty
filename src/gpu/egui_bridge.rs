@@ -20,7 +20,6 @@ impl GpuState {
 
         self.egui_ctx.run(raw_input, |ctx| {
             ui::draw_ui(ctx, state, scale_factor);
-            ui::draw_rename_dialog(ctx, state);
             ui::draw_pane_dividers(ctx, dividers, scale_factor);
             ui::draw_surface_highlights(ctx, state, terminal_rect, scale_factor);
             ui::draw_pane_tab_bars(ctx, state, pane_rects, scale_factor);

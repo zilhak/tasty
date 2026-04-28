@@ -155,9 +155,14 @@ pub fn draw_popups(
     // Refresh popup titles (i18n) and dynamic sizes each frame. Sizers read
     // in-memory caches so this is cheap.
     for def in crate::ui::popup_defs::all_defs() {
+        let new_title = if let Some(title_fn) = def.title_fn {
+            (title_fn)(state)
+        } else {
+            crate::i18n::t(def.title_key).to_string()
+        };
         let new_size = def.sizer.map(|f| f(state));
         if let Some(p) = state.popups.get_mut(def.id) {
-            p.title = crate::i18n::t(def.title_key).to_string();
+            p.title = new_title;
             if let Some(sz) = new_size {
                 p.size = sz;
             }
@@ -196,6 +201,13 @@ pub fn draw_popups(
     if convert_closed {
         state.dialogs.convert_popup = None;
         state.dialogs.convert_popup_selected = None;
+    }
+
+    // Clean up rename dialog state when closed (X button)
+    let rename_closed =
+        dispatch_closed.contains(&"rename") || draw_result.closed.contains(&"rename");
+    if rename_closed {
+        state.dialogs.rename = None;
     }
 
     // Process deferred popup open requests (from popups that open other popups)

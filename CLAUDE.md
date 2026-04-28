@@ -86,6 +86,25 @@ Tasty는 **Windows, macOS, Linux를 모두 지원하는 크로스 플랫폼 앱*
 
 포커스 정책은 `docs/design/focus-policy.md` 참조.
 
+### Window / Modal / Popup 설계 규칙 (필수)
+
+이 세 개념은 명확히 구분된다. 코드에서 혼용하면 안 된다.
+
+| 개념 | 정의 | 입력 | 구현 |
+|------|------|------|------|
+| **Window** | 독립 OS 윈도우 | OS 네이티브 포커스 | `winit::window::Window` + sealed trait |
+| **Modal** | Window의 특수 modality. 전역 입력 독점 | 닫기 전 다른 조작 불가 | 별도 OS 윈도우 (SettingsWindow 등) |
+| **Popup** | Window 내부 가상 창 | 키보드: 포커스 시 차단. 마우스: 입력 계층에 따라 소비 | `PopupManager` + `PopupDef` |
+
+**모든 내부 팝업(다이얼로그 포함)은 `PopupManager`/`PopupDef` 시스템으로 구현해야 한다.** `egui::Window`를 직접 사용하면 입력 계층(popup_hovered)을 우회하여 클릭이 뒤의 surface로 통과한다.
+
+- 팝업 추가: `popup_defs.rs`의 `all_defs()`에 `PopupDef` 항목 추가 + draw 함수 작성
+- 팝업 열기: `state.popups.open_centered_focused("id")`
+- 팝업 닫기: draw 함수에서 `PopupAction::Close` 반환
+- 동적 타이틀: `PopupDef.title_fn`에 `fn(&AppState) -> String` 설정
+
+상세 설계: `docs/design/popup-system.md`, 입력 계층: `docs/design/input-layer.md`
+
 ## 작업 규칙
 
 ### 문서 갱신 (필수)

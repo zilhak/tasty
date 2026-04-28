@@ -12,6 +12,7 @@ pub fn all_defs() -> &'static [PopupDef] {
             PopupDef {
                 id: "notifications",
                 title_key: "notification_panel.window_title",
+                title_fn: None,
                 default_size: egui::vec2(350.0, 400.0),
                 sizer: None,
                 default_scope: PopupScope::Window,
@@ -21,6 +22,7 @@ pub fn all_defs() -> &'static [PopupDef] {
             PopupDef {
                 id: "convert_surface",
                 title_key: "convert_popup.title",
+                title_fn: None,
                 default_size: super::convert_popup::convert_popup_default_size(),
                 sizer: None,
                 default_scope: PopupScope::Window,
@@ -30,6 +32,7 @@ pub fn all_defs() -> &'static [PopupDef] {
             PopupDef {
                 id: "markdown_open",
                 title_key: "dialog.markdown.title",
+                title_fn: None,
                 default_size: egui::vec2(360.0, 200.0),
                 sizer: Some(super::file_open_popup::markdown_popup_sizer),
                 default_scope: PopupScope::Window,
@@ -39,6 +42,7 @@ pub fn all_defs() -> &'static [PopupDef] {
             PopupDef {
                 id: "html_open",
                 title_key: "dialog.html.title",
+                title_fn: None,
                 default_size: egui::vec2(360.0, 200.0),
                 sizer: Some(super::file_open_popup::html_popup_sizer),
                 default_scope: PopupScope::Window,
@@ -48,6 +52,7 @@ pub fn all_defs() -> &'static [PopupDef] {
             PopupDef {
                 id: "bookmark_name",
                 title_key: "explorer.bookmark_add",
+                title_fn: None,
                 default_size: super::bookmark_popup::bookmark_popup_default_size(),
                 sizer: None,
                 default_scope: PopupScope::Window,
@@ -57,11 +62,22 @@ pub fn all_defs() -> &'static [PopupDef] {
             PopupDef {
                 id: "clipboard_viewer",
                 title_key: "clipboard_viewer.title",
+                title_fn: None,
                 default_size: egui::vec2(420.0, 520.0),
                 sizer: None,
                 default_scope: PopupScope::Window,
                 close_on_outside_click: true,
                 draw_fn: crate::clipboard_viewer_ui::draw_clipboard_viewer_popup,
+            },
+            PopupDef {
+                id: "rename",
+                title_key: "rename_dialog.tab_heading",
+                title_fn: Some(super::dialog::rename_popup_title),
+                default_size: super::dialog::rename_popup_default_size(),
+                sizer: None,
+                default_scope: PopupScope::Window,
+                close_on_outside_click: false,
+                draw_fn: super::dialog::draw_rename_popup,
             },
         ]
     })

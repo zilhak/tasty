@@ -1,6 +1,6 @@
 pub(crate) mod bookmark_popup;
 pub(crate) mod convert_popup;
-mod dialog;
+pub(crate) mod dialog;
 mod divider;
 mod egui_panels;
 pub(crate) mod file_open_popup;
@@ -15,7 +15,6 @@ mod sidebar;
 mod tab_bar;
 pub mod toast;
 
-pub use dialog::draw_rename_dialog;
 pub use divider::{draw_pane_dividers, draw_surface_highlights};
 pub use egui_panels::draw_egui_panels;
 pub use layout_context::LayoutContext;
