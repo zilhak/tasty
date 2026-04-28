@@ -8,7 +8,7 @@ use std::sync::OnceLock;
 
 use objc2::rc::Retained;
 use objc2::runtime::{AnyClass, AnyObject, Bool, Sel};
-use objc2::{msg_send, sel};
+use objc2::{msg_send, sel, AnyThread};
 use objc2_app_kit::{NSApplication, NSMenu, NSMenuItem};
 use objc2_foundation::{MainThreadMarker, NSString};
 use winit::event_loop::EventLoopProxy;
@@ -129,6 +129,9 @@ pub fn inject_delegate_methods() {
     let delegate_ptr: *mut AnyObject = unsafe { msg_send![&*delegate, self] };
     setup_main_menu(&app, mtm, delegate_ptr);
 
+    // Set Dock icon from embedded PNG (works even without .app bundle)
+    set_dock_icon(&app);
+
     tracing::info!("macOS delegate methods injected into winit's delegate");
 }
 
@@ -183,4 +186,20 @@ fn find_or_create_file_menu(main_menu: &NSMenu, mtm: MainThreadMarker) -> Retain
     main_menu.insertItem_atIndex(&file_item, insert_idx);
 
     file_menu
+}
+
+/// Set the Dock icon using NSApplication::setApplicationIconImage.
+/// This works even for non-bundled executables (cargo run).
+fn set_dock_icon(app: &NSApplication) {
+    use objc2_app_kit::NSImage;
+    use objc2_foundation::NSData;
+
+    let png_bytes = crate::app_icon::ICON_PNG_256;
+    let data = NSData::with_bytes(png_bytes);
+    let image = NSImage::initWithData(NSImage::alloc(), &data);
+    if let Some(image) = image {
+        unsafe { app.setApplicationIconImage(Some(&image)) };
+    } else {
+        tracing::warn!("Failed to create NSImage for dock icon");
+    }
 }
