@@ -59,7 +59,7 @@ pub fn draw_surface_highlights(
                 painter.rect_stroke(
                     egui_rect,
                     0.0,
-                    egui::Stroke::new(1.0, th.blue),
+                    egui::Stroke::new(2.0, th.blue),
                     egui::StrokeKind::Inside,
                 );
             }

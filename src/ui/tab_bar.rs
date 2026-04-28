@@ -18,6 +18,7 @@ pub fn draw_pane_tab_bars(
     struct PaneTabInfo {
         pane_id: u32,
         tab_names: Vec<String>,
+        tab_has_notification: Vec<bool>,
         active_tab: usize,
         is_focused: bool,
         logical_x: f32,
@@ -34,9 +35,14 @@ pub fn draw_pane_tab_bars(
                 Some(p) => p,
                 None => continue,
             };
+            let tab_has_notification: Vec<bool> = pane.tabs.iter().map(|t| {
+                let sids = t.all_surface_ids();
+                state.engine.notifications.has_highlighted_surface(&sids)
+            }).collect();
             infos.push(PaneTabInfo {
                 pane_id,
                 tab_names: pane.tabs.iter().map(|t| t.display_name()).collect(),
+                tab_has_notification,
                 active_tab: pane.active_tab,
                 is_focused: pane_id == focused_pane_id,
                 logical_x: (pane_rect.x.value() / scale_factor).round_ui(),
@@ -152,8 +158,15 @@ pub fn draw_pane_tab_bars(
                                 }
 
                                 let is_active = i == info.active_tab;
+                                let has_notif = info.tab_has_notification.get(i).copied().unwrap_or(false);
                                 let tab_bg = if is_active { th.base } else { bg };
-                                let text_color = if is_active { th.text } else { th.subtext0 };
+                                let text_color = if is_active {
+                                    th.text
+                                } else if has_notif {
+                                    th.yellow
+                                } else {
+                                    th.subtext0
+                                };
 
                                 let tab_rect = egui::Rect::from_min_size(
                                     egui::pos2(x, clip_rect.min.y),
