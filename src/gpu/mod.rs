@@ -219,6 +219,8 @@ impl GpuState {
         selection: Option<&crate::selection::TextSelection>,
         link_hover: Option<(u32, &crate::terminal_link::LinkHighlight)>,
     ) -> Result<(), wgpu::SurfaceError> {
+        let render_start = std::time::Instant::now();
+
         // 1. Prepare layout
         state.sidebar_width = if !state.sidebar_visible {
             LogicalPx(0.0)
@@ -241,9 +243,13 @@ impl GpuState {
             state.engine.notifications.clear_surface_highlight(sid);
         }
 
+        let layout_ms = render_start.elapsed().as_secs_f64() * 1000.0;
+
         // 2. Run egui frame (UI drawing)
+        let t0 = std::time::Instant::now();
         let prev_theme = state.engine.settings.appearance.theme.clone();
         let mut full_output = self.run_egui_frame(state, window, &pane_rects, &dividers, terminal_rect);
+        let egui_frame_ms = t0.elapsed().as_secs_f64() * 1000.0;
 
         // 3. Cursor decision: egui first, then winit area (dividers + surfaces)
         if !self.egui_ctx.is_pointer_over_area() {
@@ -289,6 +295,7 @@ impl GpuState {
         window.set_ime_allowed(true);
 
         // 4. Tessellate egui
+        let t0 = std::time::Instant::now();
         let paint_jobs = self
             .egui_ctx
             .tessellate(full_output.shapes, full_output.pixels_per_point);
@@ -296,8 +303,10 @@ impl GpuState {
             size_in_pixels: [self.size.width, self.size.height],
             pixels_per_point: full_output.pixels_per_point,
         };
+        let tessellate_ms = t0.elapsed().as_secs_f64() * 1000.0;
 
         // 5. GPU render
+        let t0 = std::time::Instant::now();
         let regions = state.surface_regions(terminal_rect);
         let output = self.surface.get_current_texture()?;
         let view = output
@@ -305,6 +314,9 @@ impl GpuState {
             .create_view(&wgpu::TextureViewDescriptor::default());
 
         self.render_clear_pass(&view, state);
+        let clear_ms = t0.elapsed().as_secs_f64() * 1000.0;
+
+        let t0 = std::time::Instant::now();
         self.render_terminals(
             &view,
             &regions,
@@ -314,18 +326,38 @@ impl GpuState {
             preedit,
             link_hover,
         );
+        let terminals_ms = t0.elapsed().as_secs_f64() * 1000.0;
+
+        let t0 = std::time::Instant::now();
         self.render_egui_pass(
             &view,
             &full_output.textures_delta,
             &paint_jobs,
             &screen_descriptor,
         );
+        let egui_pass_ms = t0.elapsed().as_secs_f64() * 1000.0;
 
         // 6. Screenshot + present
+        let t0 = std::time::Instant::now();
         if let Some(path) = self.pending_screenshot.take() {
             self.capture_frame_to_png(&output.texture, &path);
         }
         output.present();
+        let present_ms = t0.elapsed().as_secs_f64() * 1000.0;
+
+        // --- GPU render timing ---
+        let gpu_total_ms = render_start.elapsed().as_secs_f64() * 1000.0;
+        const SLOW_RENDER_MS: f64 = 30.0;
+        if gpu_total_ms > SLOW_RENDER_MS {
+            tracing::warn!(
+                "slow gpu render: {gpu_total_ms:.1}ms \
+                 [layout={layout_ms:.1}, egui_frame={egui_frame_ms:.1}, \
+                 tessellate={tessellate_ms:.1}, clear={clear_ms:.1}, \
+                 terminals={terminals_ms:.1}, egui_pass={egui_pass_ms:.1}, \
+                 present={present_ms:.1}]"
+            );
+        }
+
         Ok(())
     }
 
