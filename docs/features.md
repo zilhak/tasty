@@ -649,6 +649,15 @@
   - dock 우클릭 메뉴에 "New Window" 항목 (applicationDockMenu)
   - 앱 상단 메뉴바 File → New Window (Cmd+Shift+N)
 
+### 앱 아이콘
+- 커스텀 앱 아이콘 (수박 디자인) 적용
+- **런타임 윈도우 아이콘**: 모든 윈도우(메인, 설정, 종료 확인)에 256x256 PNG를 winit `with_window_icon`으로 설정. Windows 태스크바, Linux WM 등에서 표시됨
+- **Windows exe 아이콘**: `build.rs` + `winresource`로 `.ico`를 exe에 임베드. 탐색기, 작업 관리자에서 표시됨
+- **Windows 트레이 아이콘**: 32x32 PNG에서 디코딩한 실제 아이콘 사용 (기존 하드코딩 사각형 대체)
+- **macOS 번들**: `assets/macos/Info.plist` + `assets/icons/icon.icns` 제공. `.app` 번들 생성 시 사용
+- **Linux 데스크탑**: `assets/linux/tasty.desktop` 엔트리 파일 + 다양한 크기의 PNG 아이콘 제공
+- 아이콘 에셋: `assets/icons/` (icon.icns, icon.ico, icon_16~1024.png)
+
 ### GUI 통합 테스트 프레임워크
 - `tests/gui_common/mod.rs`의 `GuiTestInstance` 헬퍼: 실제 GUI 모드로 프로세스 스폰
 - `enigo` 크레이트로 키보드/마우스 입력 시뮬레이션 (Windows SendInput API)

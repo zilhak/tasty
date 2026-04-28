@@ -1,6 +1,7 @@
 #![allow(private_interfaces)]
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
+mod app_icon;
 mod bookmarks;
 mod cli;
 mod click_cursor;
@@ -274,10 +275,13 @@ impl App {
         } else {
             "Tasty"
         };
-        let attrs = WindowAttributes::default()
+        let mut attrs = WindowAttributes::default()
             .with_title(title)
             .with_inner_size(winit::dpi::LogicalSize::new(1280, 720))
             .with_min_inner_size(winit::dpi::LogicalSize::new(640, 480));
+        if let Some(icon) = crate::app_icon::winit_window_icon() {
+            attrs = attrs.with_window_icon(Some(icon));
+        }
 
         let window = Arc::new(
             event_loop
@@ -333,11 +337,14 @@ impl App {
 
         use winit::window::WindowAttributes;
 
-        let attrs = WindowAttributes::default()
+        let mut attrs = WindowAttributes::default()
             .with_title("Tasty Settings")
             .with_inner_size(winit::dpi::LogicalSize::new(960, 640))
             .with_min_inner_size(winit::dpi::LogicalSize::new(960, 640))
             .with_visible(false); // Start hidden, show after first render
+        if let Some(icon) = crate::app_icon::winit_window_icon() {
+            attrs = attrs.with_window_icon(Some(icon));
+        }
 
         let window = Arc::new(
             event_loop

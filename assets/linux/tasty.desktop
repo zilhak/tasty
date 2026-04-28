@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Tasty
+Comment=Cross-platform GPU-accelerated terminal emulator
+Exec=tasty
+Icon=tasty
+Terminal=false
+Type=Application
+Categories=System;TerminalEmulator;
+Keywords=terminal;shell;console;

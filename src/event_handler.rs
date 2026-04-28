@@ -142,7 +142,7 @@ impl ApplicationHandler<AppEvent> for App {
         use std::sync::Arc;
         use winit::window::WindowAttributes;
 
-        let attrs = WindowAttributes::default()
+        let mut attrs = WindowAttributes::default()
             .with_title(if cfg!(debug_assertions) {
                 "Tasty (Debug)"
             } else {
@@ -150,6 +150,9 @@ impl ApplicationHandler<AppEvent> for App {
             })
             .with_inner_size(winit::dpi::LogicalSize::new(1280, 720))
             .with_min_inner_size(winit::dpi::LogicalSize::new(640, 480));
+        if let Some(icon) = crate::app_icon::winit_window_icon() {
+            attrs = attrs.with_window_icon(Some(icon));
+        }
 
         let window = Arc::new(
             event_loop
@@ -680,11 +683,14 @@ impl App {
     fn open_quit_modal(&mut self, event_loop: &ActiveEventLoop) {
         use winit::window::WindowAttributes;
 
-        let attrs = WindowAttributes::default()
+        let mut attrs = WindowAttributes::default()
             .with_title("Tasty")
             .with_inner_size(winit::dpi::LogicalSize::new(400, 200))
             .with_resizable(false)
             .with_visible(false);
+        if let Some(icon) = crate::app_icon::winit_window_icon() {
+            attrs = attrs.with_window_icon(Some(icon));
+        }
 
         let window = std::sync::Arc::new(
             event_loop

@@ -6,7 +6,7 @@
 #![cfg(windows)]
 
 use tray_icon::menu::{Menu, MenuEvent, MenuItem};
-use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
+use tray_icon::{TrayIcon, TrayIconBuilder};
 
 /// Menu item IDs for tray context menu.
 pub struct TrayMenuIds {
@@ -28,8 +28,8 @@ pub fn create_tray_icon() -> Option<(TrayIcon, TrayMenuIds)> {
 }
 
 fn create_tray_icon_inner() -> Result<(TrayIcon, TrayMenuIds), Box<dyn std::error::Error>> {
-    // Create a simple 32x32 RGBA icon (teal/green color matching Catppuccin Mocha theme)
-    let icon = create_simple_icon()?;
+    let icon = crate::app_icon::tray_icon()
+        .ok_or("failed to decode tray icon from embedded PNG")?;
 
     // Build context menu
     let show_item = MenuItem::new("Show Window", true, None);
@@ -61,38 +61,6 @@ fn create_tray_icon_inner() -> Result<(TrayIcon, TrayMenuIds), Box<dyn std::erro
 
     tracing::info!("System tray icon created");
     Ok((tray_icon, ids))
-}
-
-/// Create a simple 32x32 RGBA icon with a solid color.
-fn create_simple_icon() -> Result<Icon, Box<dyn std::error::Error>> {
-    let size = 32u32;
-    let mut rgba = Vec::with_capacity((size * size * 4) as usize);
-
-    // Catppuccin Mocha Teal: #94E2D5
-    let (r, g, b, a) = (0x94u8, 0xE2u8, 0xD5u8, 0xFFu8);
-
-    for y in 0..size {
-        for x in 0..size {
-            // Create a rounded rectangle shape
-            let margin = 4u32;
-            let in_bounds = x >= margin && x < size - margin && y >= margin && y < size - margin;
-
-            if in_bounds {
-                rgba.push(r);
-                rgba.push(g);
-                rgba.push(b);
-                rgba.push(a);
-            } else {
-                // Transparent outside the shape
-                rgba.push(0);
-                rgba.push(0);
-                rgba.push(0);
-                rgba.push(0);
-            }
-        }
-    }
-
-    Icon::from_rgba(rgba, size, size).map_err(|e| e.into())
 }
 
 /// Poll for tray menu events. Returns the menu item ID if an event was received.
