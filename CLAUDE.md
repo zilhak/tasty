@@ -110,7 +110,10 @@ Tasty는 **Windows, macOS, Linux를 모두 지원하는 크로스 플랫폼 앱*
 - `docs/`: 프로그램의 **현재 상태**만 기록. 과거 설계/히스토리는 넣지 않는다.
 - `docs/design/`: 아키텍처, 포커스 정책, 테마 시스템 등 설계 문서.
 - `docs/agent-guide/`: **사용자의 AI 에이전트**를 위한 Tasty 사용법 (IPC/CLI 레퍼런스). 릴리스 에셋으로 배포.
-- `docs/dev-guide/`: **개발 AI 에이전트**를 위한 개발 가이드 (빌드, 디버깅, UI 검증).
+- `docs/dev-guide/`: **개발 AI 에이전트**를 위한 개발 가이드. 관련 기능 구현 시 반드시 해당 문서를 먼저 읽고 규칙을 따를 것.
+  - `context-menu.md`: 우클릭 컨텍스트 메뉴 구현 (네이티브 메뉴 필수, PendingNativeMenu 패턴)
+  - `crash-diagnostics.md`: Crash & 에러 진단 방법 (로그, strace, gdb)
+  - `linux.md`: Linux 환경 빌드/실행 가이드
 - `.claude-workspace/plans/`: 구현 작업 계획. 구현 완료 후 삭제.
 - `.claude-workspace/temp/`: 임시 파일. 작업 후 정리.
 
