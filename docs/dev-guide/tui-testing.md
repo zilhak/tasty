@@ -18,13 +18,131 @@
 
 ### tasty-test-tui
 
-`crates/tasty-test-tui/`에 있는 crossterm 기반 테스트 앱. 저수준 VTE 시퀀스를 직접 출력하여 터미널 에뮬레이터가 올바르게 해석하는지 검증한다.
+`crates/tasty-test-tui/`에 있는 crossterm 기반 TUI 앱. 저수준 VTE 시퀀스를 직접 출력하여 터미널 에뮬레이터가 올바르게 해석하는지 검증한다. 테스트 전용이 아니라 **독립적인 TUI 도구**이며, 테스트가 이 도구를 활용하는 구조.
 
 ```bash
-# 빌드
 cargo build -p tasty-test-tui
+```
 
-# 실행 (Tasty 터미널 안에서)
+#### 인터랙티브 모드 (핵심)
+
+서브커맨드 없이 실행하면 stdin에서 명령을 읽는 REPL로 동작한다. 외부(E2E 테스트)에서 `surface.send`로 명령을 한 줄씩 보내서 터미널 상태를 단계적으로 구성할 수 있다.
+
+```bash
+tasty-test-tui              # 인터랙티브 모드 진입
+tasty-test-tui interactive  # 명시적으로도 가능
+```
+
+시작 시 `READY`를 출력하고, 매 명령 실행 후 `OK`를 출력한다. 테스트에서는 `wait_for_output("OK")`로 동기화한다.
+
+#### 인터랙티브 명령어 레퍼런스
+
+**화면 제어:**
+
+| 명령 | 설명 |
+|------|------|
+| `clear` | 화면 초기화 (ED 2 + CUP home) |
+| `reset` | 전체 터미널 리셋 (RIS) |
+
+**커서 이동:**
+
+| 명령 | 설명 |
+|------|------|
+| `cursor <row> <col>` | 지정 위치로 이동 (0-indexed) |
+| `cursor-up [N]` | N칸 위로 (기본 1) |
+| `cursor-down [N]` | N칸 아래로 |
+| `cursor-right [N]` | N칸 오른쪽으로 |
+| `cursor-left [N]` | N칸 왼쪽으로 |
+| `cursor-save` | 커서 위치 저장 (DECSC) |
+| `cursor-restore` | 저장된 위치로 복원 (DECRC) |
+
+**텍스트 출력:**
+
+| 명령 | 설명 |
+|------|------|
+| `print <text>` | 현재 위치에 텍스트 출력 |
+| `println <text>` | 텍스트 출력 + CR+LF |
+| `newline` | LF 출력 |
+| `cr` | CR 출력 |
+| `tab` | TAB 출력 |
+| `bell` | BEL(0x07) 출력 |
+
+**SGR (텍스트 속성 & 색상):**
+
+| 명령 | 설명 |
+|------|------|
+| `sgr <params>` | SGR 시퀀스 출력 (예: `sgr 1` = bold, `sgr 38;5;1` = red fg) |
+| `sgr-reset` | SGR 리셋 |
+| `bold` | 볼드 |
+| `italic` | 이탤릭 |
+| `underline` | 밑줄 |
+| `strikethrough` | 취소선 |
+| `inverse` | 반전 |
+| `dim` | 흐리게 |
+| `fg <N>` 또는 `fg <r;g;b>` | 전경색 (팔레트 인덱스 또는 TrueColor) |
+| `bg <N>` 또는 `bg <r;g;b>` | 배경색 |
+
+**지우기:**
+
+| 명령 | 설명 |
+|------|------|
+| `erase-display [N]` | ED (0=커서~끝, 1=시작~커서, 2=전체, 3=스크롤백 포함) |
+| `erase-line [N]` | EL (0=커서~끝, 1=시작~커서, 2=전체) |
+
+**대체 화면:**
+
+| 명령 | 설명 |
+|------|------|
+| `altscreen-enter` | DECSET 1049 |
+| `altscreen-exit` | DECRST 1049 |
+
+**스크롤 리전:**
+
+| 명령 | 설명 |
+|------|------|
+| `scroll-region <top> <bottom>` | DECSTBM 설정 (0-indexed) |
+| `scroll-region-reset` | DECSTBM 리셋 |
+| `scroll-up [N]` | SU — N줄 위로 스크롤 |
+| `scroll-down [N]` | SD — N줄 아래로 스크롤 |
+
+**DECSET/DECRST:**
+
+| 명령 | 설명 |
+|------|------|
+| `decset <mode>` | DECSET (예: `decset 1049`) |
+| `decrst <mode>` | DECRST |
+
+**Raw 시퀀스:**
+
+| 명령 | 설명 |
+|------|------|
+| `raw <hex>` | 16진수 바이트를 직접 출력 (예: `raw 1b5b48` = ESC[H) |
+| `esc <seq>` | ESC + 문자열 출력 (예: `esc [H` = ESC[H) |
+
+**프리셋 시나리오 (인라인 실행):**
+
+| 명령 | 설명 |
+|------|------|
+| `scenario cursor` | 커서 이동 시나리오 |
+| `scenario colors` | ANSI/TrueColor 시나리오 |
+| `scenario attrs` | 텍스트 속성 시나리오 |
+| `scenario unicode` | CJK 전각 시나리오 |
+| `scenario scroll-region` | 스크롤 리전 시나리오 |
+
+**종료:**
+
+| 명령 | 설명 |
+|------|------|
+| `quit` / `exit` | 정상 종료 (exit code 0). `BYE` 출력 후 종료 |
+| `exit-code <N>` | 지정 코드로 종료 |
+| `crash` | SIGABRT로 비정상 종료 |
+| `panic` | Rust panic으로 비정상 종료 |
+
+#### 원샷 서브커맨드 (수동 확인용)
+
+미리 정의된 시나리오를 한번에 실행하고 끝내는 모드. 수동으로 눈으로 확인할 때 사용.
+
+```bash
 tasty-test-tui cursor --row 5 --col 10 --exit
 tasty-test-tui colors --exit
 tasty-test-tui attrs --exit
@@ -33,10 +151,7 @@ tasty-test-tui unicode --exit
 tasty-test-tui scroll-region --exit
 ```
 
-**시나리오 규칙:**
-- 각 시나리오는 **결정적(deterministic)** — 같은 입력이면 항상 같은 화면 상태
-- 출력 완료 시 마지막 행에 `*_TEST_DONE` 마커를 출력한다
-- `--exit` 플래그: 출력 후 즉시 종료 (E2E 테스트용). 없으면 키 입력 대기 (수동 확인용)
+- `--exit`: 출력 후 즉시 종료. 없으면 키 입력 대기.
 
 ### 디버그 IPC (debug 빌드 전용)
 
@@ -108,32 +223,62 @@ fn scenario_new(exit: bool) {
 
 ### 3. E2E 테스트 작성
 
-`tests/e2e_tests.rs`에 테스트를 추가한다.
+`tests/e2e_tests.rs`에 테스트를 추가한다. 인터랙티브 모드를 사용하면 하나의 TUI 프로세스 안에서 명령을 단계별로 보내며 검증할 수 있다.
 
 ```rust
-// TUI 앱 실행
+// 1. TUI 앱을 인터랙티브 모드로 실행
 tasty.set_mark(sid);
-tasty.send_text(sid, "tasty-test-tui new-scenario --exit\n");
-tasty.wait_for_output(sid, "NEW_TEST_DONE", Duration::from_secs(5));
+tasty.send_text(sid, "tasty-test-tui\n");
+tasty.wait_for_output(sid, "READY", Duration::from_secs(5));
 
-// 기대 상태 검증
+// 2. 명령을 보내고 OK를 기다려 동기화
+tasty.send_text(sid, "clear\n");
+tasty.wait_for_output(sid, "OK", Duration::from_secs(2));
+
+// 3. 재현하려는 동작을 단계별로 수행
+tasty.send_text(sid, "cursor 0 0\n");
+tasty.wait_for_output(sid, "OK", Duration::from_secs(2));
+
+tasty.send_text(sid, "print 한글\n");
+tasty.wait_for_output(sid, "OK", Duration::from_secs(2));
+
+// 4. 기대 상태 검증
 let cell = tasty.call("debug.cell_info", json!({
     "surface_id": sid, "row": 0, "col": 0
 }));
 assert_eq!(cell["text"], "한");
 assert_eq!(cell["width"], 2);
 
-// 전각 문자 뒤의 셀 위치 검증
 let next = tasty.call("debug.cell_info", json!({
-    "surface_id": sid, "row": 0, "col": 2  // 한(2칸) 뒤는 col 2
+    "surface_id": sid, "row": 0, "col": 2  // 한(2칸) 뒤
 }));
 assert_eq!(next["text"], "글");
+
+// 5. 추가 동작 (같은 프로세스에서 계속)
+tasty.send_text(sid, "cursor 1 0\n");
+tasty.wait_for_output(sid, "OK", Duration::from_secs(2));
+tasty.send_text(sid, "bold\n");
+tasty.wait_for_output(sid, "OK", Duration::from_secs(2));
+tasty.send_text(sid, "print HELLO\n");
+tasty.wait_for_output(sid, "OK", Duration::from_secs(2));
+
+let bold_cell = tasty.call("debug.cell_info", json!({
+    "surface_id": sid, "row": 1, "col": 0
+}));
+assert_eq!(bold_cell["text"], "H");
+assert_eq!(bold_cell["bold"], true);
+
+// 6. 종료
+tasty.send_text(sid, "quit\n");
+tasty.wait_for_output(sid, "BYE", Duration::from_secs(2));
 ```
 
 **테스트 패턴:**
-1. `send_text`로 TUI 앱 실행 (반드시 `--exit` 플래그)
-2. `wait_for_output`로 완료 마커 대기
-3. `debug.cell_info` 또는 `debug.screen_attrs`로 셀 상태 검증
+1. `send_text`로 `tasty-test-tui\n` 실행, `READY` 대기
+2. 명령을 한 줄씩 보내고, 매번 `OK` 대기로 동기화
+3. `debug.cell_info` / `debug.screen_attrs`로 셀 상태 검증
+4. 같은 프로세스에서 여러 단계를 연속 수행 가능
+5. `quit`으로 정상 종료, `crash`로 비정상 종료 테스트
 
 ## 시나리오별 기대 출력 레퍼런스
 
