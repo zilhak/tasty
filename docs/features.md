@@ -562,6 +562,7 @@
 - `workspace.list`: 전체 워크스페이스 목록 (이름, 활성 여부, 패인 수)
 - `workspace.create`: 새 워크스페이스 생성 (선택적 이름, 타입 지정). `--type markdown --file <path>` 등으로 비터미널 워크스페이스 생성 가능
 - `workspace.update`: 워크스페이스 이름, 부제, 설명 수정
+- `workspace.move`: 워크스페이스 순서 이동 (`from_index`, `to_index`)
 
 #### 윈도우
 - `window.list`: 전체 윈도우 목록 (id, focused, title)
@@ -578,6 +579,7 @@
 - `tab.list`: 지정 패인의 탭 목록 (id, name, type, surface_id, active)
 - `tab.create`: 지정 패인에 새 탭 추가
 - `tab.close`: 탭 닫기
+- `tab.move`: 탭 순서 이동 (`pane_id`, `from_index`, `to_index`)
 
 #### 서피스
 - `surface.list`: 전체 워크스페이스의 서피스 목록 (id, type, pane_id, tab_index, cols/rows). 비터미널 서피스(Markdown, Explorer, Html)도 포함
