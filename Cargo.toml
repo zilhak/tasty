@@ -68,6 +68,9 @@ shell-escape = "0.1"
 # Clipboard
 arboard = "3"
 
+# Trash (OS recycle bin)
+trash = "5"
+
 # PNG encoding (screenshots)
 png = "0.18"
 

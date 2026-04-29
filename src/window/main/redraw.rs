@@ -515,37 +515,89 @@ impl MainWindow {
                 }
                 self.mark_dirty();
             }
-            PendingNativeMenu::ExplorerFolder {
+            PendingNativeMenu::ExplorerTree {
                 surface_id,
-                path,
-                is_bookmarked,
+                targets,
+                has_directories,
+                has_files: _,
+                is_background,
                 x,
                 y,
             } => {
-                let label = if is_bookmarked {
-                    crate::i18n::t("explorer.bookmark_remove")
-                } else {
-                    crate::i18n::t("explorer.bookmark_add")
-                };
-                let items = [MenuItem::new(1, label)];
+                let is_single = targets.len() == 1;
+                let mut items: Vec<MenuItem> = Vec::new();
+
+                // 1. Copy Path (always)
+                items.push(MenuItem::new(1, crate::i18n::t("explorer.context_menu.copy_path")));
+
+                // 2. Bookmark add/remove (single folder or background only)
+                let show_bookmark = is_single && (is_background || has_directories);
+                if show_bookmark {
+                    let bookmark_path = &targets[0];
+                    let is_bookmarked =
+                        crate::bookmarks::Bookmarks::load().is_bookmarked(bookmark_path);
+                    let label = if is_bookmarked {
+                        crate::i18n::t("explorer.bookmark_remove")
+                    } else {
+                        crate::i18n::t("explorer.bookmark_add")
+                    };
+                    items.push(MenuItem::new(2, label));
+                }
+
+                // 3. Copy files / 4. Delete (not for background)
+                if !is_background {
+                    items.push(MenuItem::separator());
+                    items.push(MenuItem::new(
+                        3,
+                        crate::i18n::t("explorer.context_menu.copy_files"),
+                    ));
+                    items.push(MenuItem::new(
+                        4,
+                        crate::i18n::t("explorer.context_menu.delete"),
+                    ));
+                }
+
                 let result =
                     show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
-                if result == Some(1) {
-                    if is_bookmarked {
-                        let mut bookmarks = crate::bookmarks::Bookmarks::load();
-                        bookmarks.remove(&path);
-                    } else {
-                        let folder_name = std::path::Path::new(&path)
-                            .file_name()
-                            .map(|n| n.to_string_lossy().to_string())
-                            .unwrap_or_default();
-                        self.state.dialogs.bookmark_input =
-                            Some((surface_id, path.clone(), folder_name));
-                        self.state.popups.open_with_scope(
-                            "bookmark_name",
-                            crate::ui::popup::PopupScope::Surface(surface_id),
-                        );
+                match result {
+                    Some(1) => {
+                        // Copy path(s) to clipboard
+                        let text = targets.join("\n");
+                        if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                            if let Err(e) = clipboard.set_text(&text) {
+                                tracing::warn!("clipboard set_text failed: {e}");
+                            }
+                        }
                     }
+                    Some(2) if show_bookmark => {
+                        let bookmark_path = &targets[0];
+                        let is_bookmarked =
+                            crate::bookmarks::Bookmarks::load().is_bookmarked(bookmark_path);
+                        if is_bookmarked {
+                            let mut bookmarks = crate::bookmarks::Bookmarks::load();
+                            bookmarks.remove(bookmark_path);
+                        } else {
+                            let folder_name = std::path::Path::new(bookmark_path)
+                                .file_name()
+                                .map(|n| n.to_string_lossy().to_string())
+                                .unwrap_or_default();
+                            self.state.dialogs.bookmark_input =
+                                Some((surface_id, bookmark_path.clone(), folder_name));
+                            self.state.popups.open_with_scope(
+                                "bookmark_name",
+                                crate::ui::popup::PopupScope::Surface(surface_id),
+                            );
+                        }
+                    }
+                    Some(3) if !is_background => {
+                        // Copy files to OS file clipboard
+                        self.state.explorer_file_copy_paths(&targets);
+                    }
+                    Some(4) if !is_background => {
+                        // Delete to trash
+                        self.state.explorer_trash_paths(&targets);
+                    }
+                    _ => {}
                 }
                 self.mark_dirty();
             }

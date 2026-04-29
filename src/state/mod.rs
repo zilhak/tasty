@@ -106,11 +106,13 @@ pub enum PendingNativeMenu {
     },
     /// Pane/empty area right-click: Open Markdown... / Open Explorer / Open HTML...
     Pane { pane_id: u32, x: f32, y: f32 },
-    /// Explorer folder right-click: Bookmark add/remove
-    ExplorerFolder {
+    /// Explorer tree right-click: unified context menu for file/folder/background/multi-selection
+    ExplorerTree {
         surface_id: u32,
-        path: String,
-        is_bookmarked: bool,
+        targets: Vec<String>,
+        has_directories: bool,
+        has_files: bool,
+        is_background: bool,
         x: f32,
         y: f32,
     },
@@ -489,6 +491,42 @@ impl AppState {
             // Refresh explorer
             if let Some(explorer) = self.focused_explorer_mut() {
                 crate::model::ExplorerPanel::load_directory(&mut explorer.root_node);
+            }
+        }
+    }
+
+    /// Explorer: 지정된 경로들을 OS 휴지통으로 이동. 성공한 개수 반환.
+    pub fn explorer_trash_paths(&mut self, paths: &[String]) -> usize {
+        let mut count = 0;
+        for path in paths {
+            match trash::delete(path) {
+                Ok(()) => count += 1,
+                Err(e) => tracing::warn!("trash failed for {path}: {e}"),
+            }
+        }
+        if count > 0 {
+            // Refresh explorer tree
+            if let Some(explorer) = self.focused_explorer_mut() {
+                crate::model::ExplorerPanel::load_directory(&mut explorer.root_node);
+            }
+        }
+        count
+    }
+
+    /// Explorer: 선택된 파일/폴더를 특정 대상 경로들로 OS 파일 클립보드에 복사.
+    pub fn explorer_file_copy_paths(&self, paths: &[String]) -> bool {
+        if paths.is_empty() {
+            return false;
+        }
+        let refs: Vec<&str> = paths.iter().map(|s| s.as_str()).collect();
+        match crate::file_clipboard::set_file_clipboard(
+            &refs,
+            crate::file_clipboard::FileClipboardOp::Copy,
+        ) {
+            Ok(()) => true,
+            Err(e) => {
+                tracing::warn!("file copy failed: {e}");
+                false
             }
         }
     }

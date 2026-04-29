@@ -280,6 +280,11 @@ bookmark_name_label = "ブックマーク名:"
 bookmarks_heading = "ブックマーク"
 bookmarks_empty = "フォルダを右クリックして追加"
 
+[explorer.context_menu]
+copy_path = "パスをコピー"
+copy_files = "コピー"
+delete = "ゴミ箱に移動"
+
 [convert_popup]
 title = "サーフェスタイプ切替"
 terminal = "ターミナル"

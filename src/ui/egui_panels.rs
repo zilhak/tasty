@@ -291,17 +291,21 @@ pub fn draw_egui_panels(
                 let url = crate::ui::file_open_popup::local_path_to_file_uri(&path);
                 let _ = state.add_html_tab(url);
             }
-            crate::explorer_ui::ExplorerAction::FolderContextMenu {
-                path,
-                is_bookmarked,
+            crate::explorer_ui::ExplorerAction::TreeContextMenu {
+                targets,
+                has_directories,
+                has_files,
+                is_background,
                 x,
                 y,
             } => {
                 state.dialogs.pending_native_menu =
-                    Some(crate::state::PendingNativeMenu::ExplorerFolder {
+                    Some(crate::state::PendingNativeMenu::ExplorerTree {
                         surface_id: surface_id.unwrap_or(0),
-                        path,
-                        is_bookmarked,
+                        targets,
+                        has_directories,
+                        has_files,
+                        is_background,
                         x,
                         y,
                     });

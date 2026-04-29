@@ -168,6 +168,22 @@ pub fn draw_explorer(
                                 }
                             }
 
+                            // Background right-click: fill remaining space with invisible sensor
+                            let remaining = ui.available_height();
+                            if remaining > 0.0 {
+                                let (bg_rect, bg_resp) = ui.allocate_exact_size(
+                                    egui::vec2(ui.available_width(), remaining),
+                                    egui::Sense::click(),
+                                );
+                                let _ = bg_rect;
+                                if bg_resp.secondary_clicked() && action.is_none() {
+                                    let pos = bg_resp
+                                        .interact_pointer_pos()
+                                        .unwrap_or_default();
+                                    action = Some(TreeAction::BackgroundContextMenu(pos));
+                                }
+                            }
+
                             // Apply action
                             if let Some(act) = action {
                                 match act {
@@ -200,15 +216,56 @@ pub fn draw_explorer(
                                     TreeAction::ToggleDir(path) => {
                                         toggle_dir_by_path(&mut panel.root_node, &path);
                                     }
-                                    TreeAction::ContextMenu(path, pos) => {
-                                        let is_bookmarked = crate::bookmarks::Bookmarks::load()
-                                            .is_bookmarked(&path);
-                                        explorer_action = Some(ExplorerAction::FolderContextMenu {
-                                            path,
-                                            is_bookmarked,
-                                            x: pos.x,
-                                            y: pos.y,
-                                        });
+                                    TreeAction::ContextMenu {
+                                        path,
+                                        is_directory,
+                                        pos,
+                                    } => {
+                                        // Determine targets based on selection state
+                                        let targets: Vec<String>;
+                                        let has_directories: bool;
+                                        let has_files: bool;
+
+                                        if panel.selected_files.contains(&path) {
+                                            // Right-clicked on a selected item → all selected are targets
+                                            targets =
+                                                panel.selected_files.iter().cloned().collect();
+                                            has_directories = targets.iter().any(|p| {
+                                                find_node(&panel.root_node, p)
+                                                    .is_some_and(|n| n.is_directory)
+                                            });
+                                            has_files = targets.iter().any(|p| {
+                                                find_node(&panel.root_node, p)
+                                                    .is_some_and(|n| !n.is_directory)
+                                            });
+                                        } else {
+                                            // Right-clicked outside selection → clear + select only this
+                                            panel.select_single(&path);
+                                            targets = vec![path];
+                                            has_directories = is_directory;
+                                            has_files = !is_directory;
+                                        }
+
+                                        explorer_action =
+                                            Some(ExplorerAction::TreeContextMenu {
+                                                targets,
+                                                has_directories,
+                                                has_files,
+                                                is_background: false,
+                                                x: pos.x,
+                                                y: pos.y,
+                                            });
+                                    }
+                                    TreeAction::BackgroundContextMenu(pos) => {
+                                        explorer_action =
+                                            Some(ExplorerAction::TreeContextMenu {
+                                                targets: vec![panel.root_path.clone()],
+                                                has_directories: true,
+                                                has_files: false,
+                                                is_background: true,
+                                                x: pos.x,
+                                                y: pos.y,
+                                            });
                                     }
                                 }
                             }
@@ -372,8 +429,14 @@ enum TreeAction {
     DoubleClickFile(String),
     /// Double-click on directory or Enter — expand/collapse.
     ToggleDir(String),
-    /// Right-click on a directory — show context menu for bookmark add/remove.
-    ContextMenu(String, egui::Pos2),
+    /// Right-click on a file or directory — show context menu.
+    ContextMenu {
+        path: String,
+        is_directory: bool,
+        pos: egui::Pos2,
+    },
+    /// Right-click on background (empty area) — show context menu for cwd.
+    BackgroundContextMenu(egui::Pos2),
 }
 
 /// Action returned from `draw_explorer` for the caller to process.
@@ -382,10 +445,16 @@ pub enum ExplorerAction {
     OpenMarkdownTab(String),
     /// Open an HTML file as a new Html tab (file:// URL).
     OpenHtmlTab(String),
-    /// Request native context menu for a folder (path, is_bookmarked, x, y).
-    FolderContextMenu {
-        path: String,
-        is_bookmarked: bool,
+    /// Unified tree context menu (file, folder, background, multi-selection).
+    TreeContextMenu {
+        /// Target paths (background → cwd only).
+        targets: Vec<String>,
+        /// At least one target is a directory.
+        has_directories: bool,
+        /// At least one target is a file.
+        has_files: bool,
+        /// Background (empty area) right-click.
+        is_background: bool,
         x: f32,
         y: f32,
     },
@@ -466,9 +535,13 @@ fn draw_file_node(
             } else {
                 *action = Some(TreeAction::DoubleClickFile(node.path.clone()));
             }
-        } else if resp.secondary_clicked() && action.is_none() && node.is_directory {
+        } else if resp.secondary_clicked() && action.is_none() {
             let pos = resp.interact_pointer_pos().unwrap_or_default();
-            *action = Some(TreeAction::ContextMenu(node.path.clone(), pos));
+            *action = Some(TreeAction::ContextMenu {
+                path: node.path.clone(),
+                is_directory: node.is_directory,
+                pos,
+            });
         } else if resp.clicked() && action.is_none() {
             let modifiers = ui.input(|i| i.modifiers);
             if modifiers.command {

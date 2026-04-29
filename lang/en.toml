@@ -280,6 +280,11 @@ bookmark_name_label = "Bookmark name:"
 bookmarks_heading = "Bookmarks"
 bookmarks_empty = "Right-click a folder to add"
 
+[explorer.context_menu]
+copy_path = "Copy Path"
+copy_files = "Copy"
+delete = "Move to Trash"
+
 [convert_popup]
 title = "Surface Type"
 terminal = "Terminal"

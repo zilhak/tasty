@@ -280,6 +280,11 @@ bookmark_name_label = "즐겨찾기 이름:"
 bookmarks_heading = "즐겨찾기"
 bookmarks_empty = "폴더를 우클릭하여 추가"
 
+[explorer.context_menu]
+copy_path = "경로 복사"
+copy_files = "복사"
+delete = "휴지통으로 이동"
+
 [convert_popup]
 title = "서피스 타입 전환"
 terminal = "터미널"
