@@ -136,6 +136,12 @@ enigo = "0.6"
 winit = { git = "https://github.com/zilhak/winit-ime-fix.git", branch = "fix-korean-ime" }
 
 [profile.release]
-lto = true
+lto = "thin"
 strip = true
 opt-level = 3
+
+# 배포용 프로필. release를 상속받되 full LTO를 사용해 끝까지 짜낸다.
+# 일상 cargo build --release보다 약 3.5배 느리므로 DMG/MSIX 등 배포 산출물에만 사용.
+[profile.dist]
+inherits = "release"
+lto = true

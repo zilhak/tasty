@@ -2,8 +2,9 @@
 # Build a macOS .app bundle and .dmg disk image for Tasty.
 #
 # Usage:
-#   ./scripts/build-macos-dmg.sh          # release build
-#   ./scripts/build-macos-dmg.sh --debug  # debug build
+#   ./scripts/build-macos-dmg.sh           # dist build (full LTO, 배포용)
+#   ./scripts/build-macos-dmg.sh --release # release build (thin LTO, 빠른 빌드)
+#   ./scripts/build-macos-dmg.sh --debug   # debug build
 #
 # Output:
 #   dist/Tasty.app    — the application bundle
@@ -19,11 +20,16 @@ fi
 cd "$(dirname "$0")/.."
 
 # Parse arguments
-PROFILE="release"
-CARGO_FLAGS="--release"
+# 기본은 dist 프로필 (full LTO)을 써서 가장 빠른 바이너리를 배포한다.
+# 개발 중 빠르게 .app만 만들고 싶을 땐 --release(thin LTO) 또는 --debug 사용.
+PROFILE="dist"
+CARGO_FLAGS="--profile dist"
 if [[ "${1:-}" == "--debug" ]]; then
     PROFILE="debug"
     CARGO_FLAGS=""
+elif [[ "${1:-}" == "--release" ]]; then
+    PROFILE="release"
+    CARGO_FLAGS="--release"
 fi
 
 VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
