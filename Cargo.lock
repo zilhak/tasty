@@ -4720,7 +4720,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "tasty-test-tui"
+name = "tasty-tui-simulator"
 version = "0.1.0"
 dependencies = [
  "clap",

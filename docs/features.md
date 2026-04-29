@@ -861,11 +861,12 @@ Claude Code의 훅 시스템과 연동하여 Claude의 활동 상태를 추적�
 - 다른 소스 비병합
 - FIFO 최대 100개 제한
 
-### tasty-test-tui (테스트용 TUI 앱)
-crossterm 기반 저수준 VTE 시퀀스 출력으로 터미널 에뮬레이션 정확성을 검증하는 테스트 시나리오 앱.
-- 시나리오: cursor, colors, attrs, altscreen, unicode, scroll-region
-- 각 시나리오는 결정적(deterministic) 출력 후 완료 마커를 남김
-- `--exit` 플래그로 즉시 종료 (E2E 테스트 자동화 지원)
+### tasty-tui-simulator (TUI 시뮬레이터)
+고수준 명령을 raw VTE escape sequence로 변환하여 출력하는 VTE 시뮬레이터. 터미널 입장에서 실제 TUI 앱과 동일한 바이트 스트림을 받는다.
+- **인터랙티브 모드**: stdin REPL — 외부에서 `surface.send`로 명령을 단계별로 전송. 명령마다 `OK` 응답으로 동기화
+- 명령어: cursor, print, sgr, fg/bg, bold/italic/underline, altscreen, scroll-region, erase, raw, esc 등
+- 종료 제어: `quit`(정상), `exit-code N`(코드 지정), `crash`(SIGABRT), `panic`(Rust panic)
+- 원샷 시나리오: cursor, colors, attrs, altscreen, unicode, scroll-region (수동 확인용)
 - `debug.cell_info` / `debug.screen_attrs` IPC와 조합하여 셀 속성 자동 검증 가능
 
 ### tasty-hooks 테스트

@@ -1,8 +1,11 @@
-//! Test TUI app for verifying tasty terminal emulation.
+//! VTE sequence simulator for testing tasty terminal emulation.
+//!
+//! Translates high-level commands (e.g. "cursor 5 3", "bold", "print hello")
+//! into raw VTE escape sequences. The terminal sees the same byte stream
+//! as a real TUI app (vim, htop, etc.) would produce.
 //!
 //! Two modes:
 //! - **Interactive**: stdin REPL — external test sends commands via `surface.send`.
-//!   This is the primary mode for E2E testing.
 //! - **Scenario**: predefined one-shot scenarios for manual verification.
 
 use std::io::{self, BufRead, Write};
@@ -10,7 +13,7 @@ use std::io::{self, BufRead, Write};
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "tasty-test-tui", about = "Test TUI scenarios for tasty")]
+#[command(name = "tasty-tui-sim", about = "VTE sequence simulator for tasty")]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
@@ -286,7 +289,7 @@ fn interactive_mode() {
             }
             "panic" => {
                 out.flush().unwrap();
-                panic!("tasty-test-tui: panic requested");
+                panic!("tasty-tui-sim: panic requested");
             }
 
             // ── Predefined scenarios (run inline) ──

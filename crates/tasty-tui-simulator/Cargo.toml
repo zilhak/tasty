@@ -1,12 +1,12 @@
 [package]
-name = "tasty-test-tui"
+name = "tasty-tui-simulator"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
-description = "Test TUI app for verifying tasty terminal emulation"
+description = "VTE sequence simulator for testing tasty terminal emulation"
 
 [[bin]]
-name = "tasty-test-tui"
+name = "tasty-tui-sim"
 path = "src/main.rs"
 
 [dependencies]
