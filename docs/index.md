@@ -88,6 +88,7 @@ cmux의 기능을 크로스 플랫폼(Windows, macOS, Linux) GPU 가속 네이�
 | [design/input-layer.md](design/input-layer.md) | 마우스 입력 계층 — z-order 기반 이벤트 소비/버블링 설계 |
 | [design/typed-length.md](design/typed-length.md) | 타입 안전 길이 시스템 — PhysicalPx/LogicalPx newtype, DPI 혼동 방지 |
 | [design/cwd-policy.md](design/cwd-policy.md) | CWD 정책 — OSC 7 기반 CWD 감지 (모든 플랫폼 공통) |
+| [design/explorer-context-menu.md](design/explorer-context-menu.md) | Explorer 컨텍스트 메뉴 — 우클릭 대상 결정, 메뉴 항목 분기, 액션 동작 정의 |
 
 ## 아키텍처 문서
 
