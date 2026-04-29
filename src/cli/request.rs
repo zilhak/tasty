@@ -324,6 +324,21 @@ fn set_command_to_method_params(command: &SetCommands) -> (&'static str, serde_j
                 "label": label,
             }),
         ),
+        SetCommands::TabOrder { pane, from, to } => (
+            "tab.move",
+            serde_json::json!({
+                "pane_id": pane,
+                "from_index": from,
+                "to_index": to,
+            }),
+        ),
+        SetCommands::WorkspaceOrder { from, to } => (
+            "workspace.move",
+            serde_json::json!({
+                "from_index": from,
+                "to_index": to,
+            }),
+        ),
     }
 }
 

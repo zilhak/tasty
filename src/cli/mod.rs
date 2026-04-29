@@ -264,6 +264,27 @@ pub enum SetCommands {
         #[arg(long)]
         description: Option<String>,
     },
+    /// Move a tab to a different position within the same pane
+    TabOrder {
+        /// Pane ID
+        #[arg(long)]
+        pane: u32,
+        /// Source tab index (0-based)
+        #[arg(long)]
+        from: u64,
+        /// Destination tab index (0-based)
+        #[arg(long)]
+        to: u64,
+    },
+    /// Move a workspace to a different position
+    WorkspaceOrder {
+        /// Source workspace index (0-based)
+        #[arg(long)]
+        from: u64,
+        /// Destination workspace index (0-based)
+        #[arg(long)]
+        to: u64,
+    },
     /// Set a global hook (timer or file-watching)
     GlobalHook {
         /// Condition: interval:SECS, once:SECS, file:/path/to/watch

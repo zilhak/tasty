@@ -174,4 +174,25 @@ pub fn handle_workspace_update(
     )
 }
 
+pub fn handle_workspace_move(
+    state: &mut AppState,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
+    let from = match params.get("from_index").and_then(|v| v.as_u64()) {
+        Some(f) => f as usize,
+        None => return JsonRpcResponse::invalid_params(id, "Missing 'from_index' parameter"),
+    };
+    let to = match params.get("to_index").and_then(|v| v.as_u64()) {
+        Some(t) => t as usize,
+        None => return JsonRpcResponse::invalid_params(id, "Missing 'to_index' parameter"),
+    };
+
+    let moved = state.move_workspace(from, to);
+    if moved {
+        state.engine.mark_layout_dirty();
+    }
+    JsonRpcResponse::success(id, json!({ "moved": moved }))
+}
+
 // workspace.select removed: focus is user-only (shortcuts/clicks).

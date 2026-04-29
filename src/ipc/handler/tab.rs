@@ -213,4 +213,34 @@ pub fn handle_tab_close(
     }
 }
 
+pub fn handle_tab_move(
+    state: &mut AppState,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
+    let pane_id = match require_pane_id(params, &id) {
+        Ok(pid) => pid,
+        Err(e) => return e,
+    };
+    let from = match params.get("from_index").and_then(|v| v.as_u64()) {
+        Some(f) => f as usize,
+        None => return JsonRpcResponse::invalid_params(id, "Missing 'from_index' parameter"),
+    };
+    let to = match params.get("to_index").and_then(|v| v.as_u64()) {
+        Some(t) => t as usize,
+        None => return JsonRpcResponse::invalid_params(id, "Missing 'to_index' parameter"),
+    };
+
+    if let Some(pane) = state
+        .active_workspace_mut()
+        .pane_layout_mut()
+        .find_pane_mut(pane_id)
+    {
+        let moved = pane.move_tab(from, to);
+        JsonRpcResponse::success(id, json!({ "moved": moved, "pane_id": pane_id }))
+    } else {
+        JsonRpcResponse::invalid_params(id, format!("Pane {} not found", pane_id))
+    }
+}
+
 // handle_open_markdown / handle_open_explorer removed: use handle_tab_create with type parameter
