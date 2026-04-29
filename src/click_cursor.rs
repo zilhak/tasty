@@ -45,7 +45,7 @@ impl EditableRegion {
     /// Returns `None` if the terminal is in a state where click-to-move
     /// should be disabled (scrollback, alternate screen, mouse tracking).
     pub fn from_terminal(terminal: &tasty_terminal::Terminal) -> Option<Self> {
-        if terminal.scroll_offset > 0 || terminal.is_alternate_screen() {
+        if terminal.scroll_offset() > 0 || terminal.is_alternate_screen() {
             return None;
         }
         if terminal.mouse_tracking() != tasty_terminal::MouseTrackingMode::None {

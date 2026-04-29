@@ -72,7 +72,7 @@ impl MainWindow {
             self.base.gpu.cell_height(),
             cols,
             rows,
-            terminal.scroll_offset,
+            terminal.scroll_offset(),
             terminal.scrollback_len(),
         );
         let span = terminal_link::link_at(terminal, point.col, point.absolute_row)?;

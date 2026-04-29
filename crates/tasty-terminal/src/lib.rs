@@ -1,4 +1,3 @@
-use std::collections::VecDeque;
 use std::io::{Read, Write};
 use std::sync::mpsc;
 use std::thread;
@@ -18,6 +17,7 @@ mod events;
 pub mod foreground_process;
 mod modes;
 mod output_buffer;
+mod scrollback;
 pub mod test_helpers;
 mod vte_handler;
 
@@ -92,15 +92,8 @@ pub struct Terminal {
     /// Note: changes are always applied immediately regardless of this flag.
     /// See apply_or_stage_change() for rationale.
     pub(crate) synchronized_output: bool,
-    /// Scrollback buffer: stores lines that scrolled off the top of the screen.
-    /// Each line is a vector of (character, CellAttributes) pairs.
-    scrollback: VecDeque<Vec<(String, CellAttributes)>>,
-    /// Maximum number of scrollback lines.
-    scrollback_limit: usize,
-    /// Current scroll offset (0 = at bottom/live, >0 = scrolled up).
-    pub scroll_offset: usize,
-    /// Disk-backed scrollback for older lines (enabled by scrollback_disk_swap setting).
-    disk_scrollback: Option<disk_scrollback::DiskScrollback>,
+    /// Scrollback buffer (memory + optional disk).
+    scrollback: scrollback::Scrollback,
     /// CWD cached from OSC 7 (CurrentWorkingDirectory) sequences emitted by the shell.
     /// Used by get_cwd() to avoid spawning external processes.
     pub(crate) cached_cwd: Option<std::path::PathBuf>,
@@ -244,10 +237,7 @@ impl Terminal {
             focus_tracking: false,
             scroll_region: None,
             synchronized_output: false,
-            scrollback: VecDeque::new(),
-            scrollback_limit: 10000,
-            scroll_offset: 0,
-            disk_scrollback: None,
+            scrollback: scrollback::Scrollback::new(),
             cached_cwd: None,
             saved_line_tails: Vec::new(),
             pending_pty_resize: None,
@@ -669,13 +659,12 @@ impl Terminal {
             let captured = self.capture_top_lines(lines_to_scroll);
             let count = captured.len();
             for line in captured {
-                self.scrollback.push_back(line);
+                self.scrollback.push_line(line);
             }
             // Shift saved_line_tails
             for _ in 0..count.min(self.saved_line_tails.len()) {
                 self.saved_line_tails.remove(0);
             }
-            self.flush_scrollback_to_disk();
 
             // Scroll the surface up to remove the captured lines
             self.primary_surface.add_change(Change::ScrollRegionUp {
@@ -693,7 +682,7 @@ impl Terminal {
         use termwiz::surface::Position;
 
         let rows_added = new_rows - old_rows;
-        let restore_count = rows_added.min(self.scrollback.len());
+        let restore_count = rows_added.min(self.scrollback.memory_len());
 
         if restore_count == 0 {
             return 0;
@@ -976,93 +965,53 @@ impl Terminal {
         found
     }
 
-    // ---- Scrollback buffer methods ----
+    // ---- Scrollback buffer methods (delegated to Scrollback) ----
+
+    /// Current scroll offset (0 = at bottom/live, >0 = scrolled up).
+    pub fn scroll_offset(&self) -> usize {
+        self.scrollback.scroll_offset
+    }
 
     /// Set the scrollback buffer limit.
     pub fn set_scrollback_limit(&mut self, limit: usize) {
-        self.scrollback_limit = limit;
-        self.flush_scrollback_to_disk();
+        self.scrollback.set_limit(limit);
     }
 
     /// Enable disk-backed scrollback swap for this terminal.
     pub fn enable_disk_scrollback(&mut self, surface_id: u32) {
-        if self.disk_scrollback.is_none() {
-            match disk_scrollback::DiskScrollback::new(surface_id) {
-                Ok(ds) => self.disk_scrollback = Some(ds),
-                Err(e) => tracing::warn!("failed to create disk scrollback: {e}"),
-            }
-        }
-    }
-
-    /// Flush excess scrollback lines to disk (if disk swap is enabled).
-    fn flush_scrollback_to_disk(&mut self) {
-        while self.scrollback.len() > self.scrollback_limit {
-            if let Some(ds) = &mut self.disk_scrollback {
-                if let Some(line) = self.scrollback.pop_front() {
-                    let _ = ds.push_lines(&[line]);
-                }
-            } else {
-                self.scrollback.pop_front();
-            }
-        }
+        self.scrollback.enable_disk(surface_id);
     }
 
     /// Scroll up (towards older content).
     pub fn scroll_up(&mut self, lines: usize) {
-        let max = self.scrollback_len();
-        self.scroll_offset = (self.scroll_offset + lines).min(max);
+        self.scrollback.scroll_up(lines);
     }
 
     /// Scroll down (towards newer/live content).
     pub fn scroll_down(&mut self, lines: usize) {
-        self.scroll_offset = self.scroll_offset.saturating_sub(lines);
+        self.scrollback.scroll_down(lines);
     }
 
     /// Reset scroll position to the bottom (live view).
     pub fn scroll_to_bottom(&mut self) {
-        self.scroll_offset = 0;
+        self.scrollback.scroll_to_bottom();
     }
 
     /// Number of lines in the scrollback buffer (memory + disk).
     pub fn scrollback_len(&self) -> usize {
-        let disk_count = self
-            .disk_scrollback
-            .as_ref()
-            .map(|ds| ds.line_count())
-            .unwrap_or(0);
-        disk_count + self.scrollback.len()
+        self.scrollback.total_len()
     }
 
     /// Get a specific scrollback line by index (0 = oldest, memory only).
     /// For disk-backed lines, use scrollback_line_owned().
     pub fn scrollback_line(&self, index: usize) -> Option<&Vec<(String, CellAttributes)>> {
-        let disk_count = self
-            .disk_scrollback
-            .as_ref()
-            .map(|ds| ds.line_count())
-            .unwrap_or(0);
-        if index < disk_count {
-            None // Disk lines can't be returned as reference — use scrollback_line_owned()
-        } else {
-            self.scrollback.get(index - disk_count)
-        }
+        self.scrollback.line(index)
     }
 
     /// Get a scrollback line by index, returning owned data.
     /// Works for both memory and disk-backed lines.
     pub fn scrollback_line_owned(&self, index: usize) -> Option<Vec<(String, CellAttributes)>> {
-        let disk_count = self
-            .disk_scrollback
-            .as_ref()
-            .map(|ds| ds.line_count())
-            .unwrap_or(0);
-        if index < disk_count {
-            self.disk_scrollback
-                .as_ref()
-                .and_then(|ds| ds.read_line(index).ok().flatten())
-        } else {
-            self.scrollback.get(index - disk_count).cloned()
-        }
+        self.scrollback.line_owned(index)
     }
 
     /// Capture the top line(s) from the surface before a scroll change is applied.
@@ -1091,17 +1040,16 @@ impl Terminal {
                 let captured = self.capture_top_lines(*scroll_count);
                 let count = captured.len();
                 for line in captured {
-                    self.scrollback.push_back(line);
+                    self.scrollback.push_line(line);
                 }
                 // Shift saved_line_tails: remove top entries that scrolled off
                 for _ in 0..count.min(self.saved_line_tails.len()) {
                     self.saved_line_tails.remove(0);
                 }
                 // Compensate scroll_offset so the user's viewport stays in place
-                if self.scroll_offset > 0 {
-                    self.scroll_offset += count;
+                if self.scrollback.scroll_offset > 0 {
+                    self.scrollback.scroll_offset += count;
                 }
-                self.flush_scrollback_to_disk();
             }
             _ => {}
         }

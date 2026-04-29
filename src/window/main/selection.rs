@@ -303,7 +303,7 @@ impl MainWindow {
             self.base.gpu.cell_height(),
             cols,
             rows,
-            terminal.scroll_offset,
+            terminal.scroll_offset(),
             terminal.scrollback_len(),
         );
         Some((point, surface_id))

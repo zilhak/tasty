@@ -341,7 +341,7 @@ impl MainWindow {
         }
         // Scroll to bottom only when actual content was sent to the terminal,
         // not on modifier-only keypresses (Ctrl, Cmd, Shift, Alt).
-        if sent && !is_scrollback_key && terminal.scroll_offset > 0 {
+        if sent && !is_scrollback_key && terminal.scroll_offset() > 0 {
             terminal.scroll_to_bottom();
             dirty = true;
         }

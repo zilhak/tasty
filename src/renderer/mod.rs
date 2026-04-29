@@ -307,7 +307,7 @@ impl CellRenderer {
         };
         queue.write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
 
-        let cursor = if show_cursor && terminal.cursor_visible() && terminal.scroll_offset == 0 {
+        let cursor = if show_cursor && terminal.cursor_visible() && terminal.scroll_offset() == 0 {
             let (cx, cy) = terminal.surface().cursor_position();
             let wide = terminal
                 .surface()
@@ -329,7 +329,7 @@ impl CellRenderer {
 
         let (cols, rows) = terminal.surface().dimensions();
 
-        if terminal.scroll_offset == 0 {
+        if terminal.scroll_offset() == 0 {
             let row_offset = terminal.scrollback_len();
             self.prepare_with_bg(
                 terminal.surface(),
@@ -346,7 +346,7 @@ impl CellRenderer {
         }
 
         // Scrolled back - mix scrollback buffer + surface lines
-        let scroll_offset = terminal.scroll_offset;
+        let scroll_offset = terminal.scroll_offset();
         let scrollback_len = terminal.scrollback_len();
         let surface_lines = terminal.surface().screen_lines();
 
