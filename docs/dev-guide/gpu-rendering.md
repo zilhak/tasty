@@ -50,3 +50,7 @@ submit 횟수가 늘어나지만, 터미널 수는 일반적으로 10개 이하�
 | `glyph_instance_buffer` | 글리프 인스턴스 (pos + uv + fg_color + glyph_size) |
 
 이 버퍼들은 `prepare_terminal_viewport` 호출마다 offset 0부터 덮어쓰므로, 반드시 submit으로 분리해야 한다.
+
+## 프레임 타이밍 계측
+
+`handle_redraw`와 `gpu::render`에 `Instant::now()` + `elapsed()` 기반 타이밍 측정이 매 프레임 실행된다. `tracing::warn!`은 임계값 초과 시에만 호출되지만, 타이밍 측정 자체(Instant::now 6~7회 + f64 연산)는 항상 수행된다. 현재 비용은 프레임 시간 대비 무시할 수준이나, 극한 최적화가 필요하면 `#[cfg(debug_assertions)]`로 감싸서 release 빌드에서 제거할 수 있다.
