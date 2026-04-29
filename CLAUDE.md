@@ -117,6 +117,7 @@ Tasty는 **Windows, macOS, Linux를 모두 지원하는 크로스 플랫폼 앱*
 - `docs/design/`: 아키텍처, 포커스 정책, 테마 시스템 등 설계 문서.
 - `docs/agent-guide/`: **사용자의 AI 에이전트**를 위한 Tasty 사용법 (IPC/CLI 레퍼런스). 릴리스 에셋으로 배포.
 - `docs/dev-guide/`: **개발 AI 에이전트**를 위한 개발 가이드. 관련 기능 구현 시 반드시 해당 문서를 먼저 읽고 규칙을 따를 것.
+  - `build.md`: 워크스페이스 구조, 빌드 프로필(dev/release/dist), LTO, 빌드 시간 측정/최적화
   - `context-menu.md`: 우클릭 컨텍스트 메뉴 구현 (네이티브 메뉴 필수, PendingNativeMenu 패턴)
   - `crash-diagnostics.md`: Crash & 에러 진단 방법 (로그, strace, gdb)
   - `linux.md`: Linux 환경 빌드/실행 가이드
@@ -125,6 +126,24 @@ Tasty는 **Windows, macOS, Linux를 모두 지원하는 크로스 플랫폼 앱*
   - `tui-testing.md`: TUI 테스트 — 터미널 버그 재현 → 시나리오 추가 → E2E 테스트 순서
 - `.claude-workspace/plans/`: 구현 작업 계획. 구현 완료 후 삭제.
 - `.claude-workspace/temp/`: 임시 파일. 작업 후 정리.
+
+### 빌드 규칙
+
+Tasty는 cargo workspace로 구성된 멀티 크레이트 프로젝트다 (`tasty` 본 바이너리 + `crates/tasty-core`, `tasty-settings`, `tasty-font`, `tasty-terminal`, `tasty-hooks`, `tasty-tui-simulator`).
+
+빌드 프로필 3종:
+
+| 프로필 | LTO | 용도 |
+|--------|-----|------|
+| `dev` (기본) | off | 일상 개발, `cargo build` / `cargo check` |
+| `release` | thin | 빠른 최적화 빌드, `cargo build --release` (일상적인 릴리즈 모드 검증) |
+| `dist` | full | 배포용 산출물(DMG/MSIX/AppImage), `cargo build --profile dist` |
+
+- **개발 중 빌드는 `cargo build` 또는 `cargo build --release`만 사용한다.** `--profile dist`는 배포 산출물 빌드에만 쓴다 (3.5배 느림).
+- `release`는 thin LTO로 cross-crate inlining을 병렬 적용해 full LTO의 95-99% 성능을 1/3 시간에 얻는다.
+- 빌드 시간이 거슬리면 `cargo machete`로 미사용 deps 제거, `cargo build --timings`로 hot crate 식별, 큰 leaf 모듈은 별 크레이트로 분리한다.
+- 본 바이너리에서 `pub use tasty_core::{model, theme, i18n, paths};`, `pub use tasty_settings as settings;`, `pub use tasty_font as font;`로 재수출하므로 기존 `crate::model::X` 같은 경로가 그대로 동작한다.
+- 상세: `docs/dev-guide/build.md`
 
 ### 버전 규칙
 

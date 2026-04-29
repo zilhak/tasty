@@ -16,6 +16,7 @@
 
 | 주제 | 문서 |
 |------|------|
+| 빌드 & 빌드 최적화 | [build.md](build.md) |
 | Crash & 에러 진단 | [crash-diagnostics.md](crash-diagnostics.md) |
 | 컨텍스트 메뉴 구현 | [context-menu.md](context-menu.md) |
 | Popup 구현 | [popup-implementation.md](popup-implementation.md) |
