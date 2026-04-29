@@ -799,9 +799,19 @@ impl Terminal {
     }
 
     /// Get the current working directory of the child process.
-    /// Returns the CWD cached from OSC 7 sequences or OS-level polling.
+    /// Returns the CWD cached from OSC 7 sequences. If no OSC 7 has been
+    /// received yet, falls back to an OS-level query (proc_pidinfo on macOS,
+    /// /proc on Linux). The fallback result is NOT cached to avoid stale data
+    /// — OSC 7 remains the authoritative source when available.
     pub fn get_cwd(&self) -> Option<std::path::PathBuf> {
-        self.cached_cwd.clone()
+        if let Some(ref cwd) = self.cached_cwd {
+            return Some(cwd.clone());
+        }
+        // On-demand fallback: query OS for CWD (microseconds on macOS/Linux, None on Windows)
+        if let Some(pid) = self.process_id() {
+            return cwd::get_cwd_of_pid(pid);
+        }
+        None
     }
 
     /// Set the cached CWD. Used by the OS-level CWD polling mechanism.
