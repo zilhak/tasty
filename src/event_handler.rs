@@ -122,8 +122,8 @@ impl ApplicationHandler<AppEvent> for App {
                 }
                 tracing::info!("restored {} window(s) from system tray", self.windows.len());
             }
-            AppEvent::ClipboardTick => {
-                self.poll_clipboard_into_history();
+            AppEvent::ClipboardChanged(data) => {
+                self.record_clipboard_data(data);
             }
             #[cfg(any(target_os = "macos", target_os = "linux"))]
             AppEvent::CwdPoll => {
@@ -538,50 +538,9 @@ impl App {
         }
     }
 
-    /// Poll the system clipboard once and record it into every MainWindow's history
-    /// (each window has its own EngineState). No-op if `history_enabled` is false for
-    /// that window. Invoked from AppEvent::ClipboardTick.
-    fn poll_clipboard_into_history(&mut self) {
-        // 모든 MainWindow가 history_enabled=false이면 clipboard를 읽지도 않는다.
-        let any_enabled = self
-            .windows
-            .values()
-            .filter_map(|w| w.as_main())
-            .any(|w| w.state.engine.settings.clipboard.history_enabled)
-            || self
-                .parked_states
-                .iter()
-                .any(|s| s.engine.settings.clipboard.history_enabled);
-        if !any_enabled {
-            return;
-        }
-
-        let Some(mut cb) = arboard::Clipboard::new().ok() else {
-            return;
-        };
-
-        // Try text first, then fall back to image.
-        enum ClipboardPoll {
-            Text(String),
-            Image(crate::clipboard_history::ImageData),
-        }
-
-        let polled = if let Ok(text) = cb.get_text() {
-            if text.is_empty() {
-                return;
-            }
-            ClipboardPoll::Text(text)
-        } else if let Ok(img) = cb.get_image() {
-            match encode_clipboard_image(&img) {
-                Some(data) => ClipboardPoll::Image(data),
-                None => return,
-            }
-        } else {
-            return;
-        };
-
+    /// Record clipboard data from the background polling thread into all engines.
+    fn record_clipboard_data(&mut self, data: crate::ClipboardData) {
         let source = crate::clipboard_history::ClipboardSource::System;
-        // Record into all windows and parked states
         let all_engines: Vec<&mut crate::engine_state::EngineState> = self
             .windows
             .values_mut()
@@ -593,12 +552,12 @@ impl App {
             if !engine.settings.clipboard.history_enabled {
                 continue;
             }
-            match &polled {
-                ClipboardPoll::Text(text) => {
+            match &data {
+                crate::ClipboardData::Text(text) => {
                     engine.clipboard_history.record(text.clone(), source);
                 }
-                ClipboardPoll::Image(data) => {
-                    engine.clipboard_history.record_image(data.clone(), source);
+                crate::ClipboardData::Image(img) => {
+                    engine.clipboard_history.record_image(img.clone(), source);
                 }
             }
         }
@@ -728,7 +687,7 @@ impl App {
 }
 
 /// Encode arboard image data to PNG for clipboard history storage.
-fn encode_clipboard_image(
+pub(crate) fn encode_clipboard_image(
     img: &arboard::ImageData<'_>,
 ) -> Option<crate::clipboard_history::ImageData> {
     use image::ImageEncoder;

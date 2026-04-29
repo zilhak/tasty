@@ -88,6 +88,21 @@ impl ClipboardContext {
     }
 }
 
+/// Clipboard data detected by the background polling thread.
+enum ClipboardData {
+    Text(String),
+    Image(crate::clipboard_history::ImageData),
+}
+
+impl std::fmt::Debug for ClipboardData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ClipboardData::Text(t) => write!(f, "Text({}B)", t.len()),
+            ClipboardData::Image(img) => write!(f, "Image({}x{})", img.width, img.height),
+        }
+    }
+}
+
 /// Custom events sent to the winit event loop from background threads.
 #[derive(Debug)]
 enum AppEvent {
@@ -111,8 +126,8 @@ enum AppEvent {
     /// Request to show window from system tray (Windows only).
     #[cfg(windows)]
     TrayShowWindow,
-    /// 주기적으로 시스템 클립보드를 폴링해 히스토리에 반영. 폴링 스레드가 발송.
-    ClipboardTick,
+    /// 백그라운드 스레드에서 클립보드 변경을 감지하여 데이터를 전달.
+    ClipboardChanged(ClipboardData),
     /// 터미널 CWD를 라운드 로빈으로 1개씩 폴링. 50ms 간격 스레드가 발송.
     /// macOS/Linux 전용. Windows는 OSC 7에만 의존하므로 이 이벤트가 발생하지 않는다.
     #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -681,10 +696,38 @@ fn main() -> Result<()> {
         let tick_proxy = proxy.clone();
         std::thread::spawn(move || {
             let interval = std::time::Duration::from_millis(poll_interval_ms);
+            let mut last_text: Option<String> = None;
             loop {
                 std::thread::sleep(interval);
-                if tick_proxy.send_event(AppEvent::ClipboardTick).is_err() {
-                    break; // event loop exited
+                let Some(mut cb) = arboard::Clipboard::new().ok() else {
+                    continue;
+                };
+                // Try text first, then image
+                if let Ok(text) = cb.get_text() {
+                    if !text.is_empty() {
+                        let changed = last_text.as_ref() != Some(&text);
+                        if changed {
+                            last_text = Some(text.clone());
+                            if tick_proxy
+                                .send_event(AppEvent::ClipboardChanged(ClipboardData::Text(text)))
+                                .is_err()
+                            {
+                                break;
+                            }
+                        }
+                        continue;
+                    }
+                }
+                if let Ok(img) = cb.get_image() {
+                    if let Some(data) = event_handler::encode_clipboard_image(&img) {
+                        last_text = None;
+                        if tick_proxy
+                            .send_event(AppEvent::ClipboardChanged(ClipboardData::Image(data)))
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
                 }
             }
         });
