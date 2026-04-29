@@ -241,6 +241,9 @@
 - **마우스 스크롤**: 일반 모드에서 마우스 휠은 스크롤백 버퍼를 탐색함. 대체 화면(vim, less 등)에서는 방향키 시퀀스(`\x1b[A`/`\x1b[B`)를 PTY에 전달. LineDelta와 PixelDelta 모두 지원. 포커스와 무관하게 마우스 커서 아래의 surface가 스크롤 대상이 됨 (커서가 터미널 영역 밖이면 포커스된 surface로 폴백)
 - **egui와의 이벤트 충돌 방지**: egui가 이벤트를 소비한 경우 (사이드바, 설정 윈도우 등) 터미널에는 전달하지 않음
 - **터미널 내 링크 hover·클릭 오픈**: 터미널 출력에 포함된 URL(`http://`, `https://`, `ftp://`, `file://`), OSC 8 hyperlink, 그리고 **스키마 없는 경로**(Unix 절대 `/foo/bar`, Windows 절대 `C:\foo`/`C:/foo`, 상대 `./foo`·`../foo`)를 감지. 경로는 터미널 OSC 7 기반 CWD를 기준으로 실제 존재할 때만 링크로 판정되어 오탐을 줄임. 설정된 수식키(기본 `Ctrl`, 설정에서 `Alt`/`없음` 선택 가능)를 누른 채 마우스를 올리면 해당 링크가 blue로 하이라이트되고 커서가 PointingHand로 변경됨. 수식키+좌클릭 시 `webbrowser` crate로 기본 브라우저/연결 프로그램을 열어 URI를 처리. 수식키+클릭은 링크 위가 아니면 아무 동작도 하지 않으며 selection과 충돌하지 않음. 사용자의 키보드/마우스 동작이므로 CLI/IPC로 노출되지 않음 (`docs/design/ubiquitous-language.md`의 사용자/에이전트 분리 원칙)
+- **탭 드래그 재정렬**: 탭 바에서 탭을 마우스 왼쪽 버튼으로 드래그하여 순서 변경. 드래그 중 반투명 고스트 탭 + 파란 삽입 마커 표시. 드롭 시 `Pane::move_tab()`으로 이동
+- **워크스페이스 드래그 재정렬**: 사이드바에서 워크스페이스 카드를 드래그하여 순서 변경. 드래그 중 반투명 고스트 카드 + 가로 파란 삽입 마커 표시. 드롭 시 `AppState::move_workspace()`로 이동
+- **탭/워크스페이스 우클릭 이동**: 탭 우클릭 → Move Left / Move Right, 워크스페이스 우클릭 → Move Up / Move Down. 끝에 있으면 비활성화
 - 관련 모델 메서드: `Rect::contains()`, `PaneNode::find_divider_at()`, `PaneNode::update_ratio_for_rect()`, `SurfaceLayout::find_divider_at()`, `SurfaceLayout::update_ratio_for_rect()`, `SurfaceLayout::find_surface_at()`
 
 ### 추가 Surface 타입 (Markdown / Explorer / HTML / Empty)
