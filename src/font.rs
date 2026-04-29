@@ -84,6 +84,38 @@ impl FontConfig {
         }
     }
 
+    /// Reconfigure font settings without rebuilding the FontSystem from scratch.
+    /// Reuses the existing system font database to avoid the ~180ms FontSystem::new() scan.
+    /// Only reloads the custom font if the path changed.
+    pub fn reconfigure(
+        &mut self,
+        font_size: f32,
+        font_family: &str,
+        custom_font_path: &str,
+        line_height_mult: f32,
+    ) {
+        // Load custom font if path is non-empty (additive; duplicates are harmless)
+        if !custom_font_path.is_empty() {
+            if let Ok(data) = std::fs::read(custom_font_path) {
+                self.font_system.db_mut().load_font_data(data);
+                tracing::info!("Loaded custom font file: {}", custom_font_path);
+            } else {
+                tracing::warn!("Failed to load custom font file: {}", custom_font_path);
+            }
+        }
+
+        let family = if font_family.is_empty() || font_family.eq_ignore_ascii_case("monospace") {
+            FamilyOwned::Name(D2CODING_FAMILY.to_string().into())
+        } else {
+            FamilyOwned::Name(font_family.to_string().into())
+        };
+
+        self.metrics =
+            Self::measure_cell(&mut self.font_system, font_size, &family, line_height_mult);
+        self.font_family = family;
+        self.swash_cache = SwashCache::new();
+    }
+
     /// Load raw font data bytes for a given family name.
     /// Returns the font data if found in the system font database.
     pub fn load_family_data(&self, family: &str) -> Option<Vec<u8>> {

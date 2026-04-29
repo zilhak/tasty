@@ -295,8 +295,8 @@ impl CellRenderer {
         custom_font_path: &str,
         line_height: f32,
     ) {
-        self.font_config =
-            FontConfig::with_options(font_size, font_family, custom_font_path, line_height);
+        self.font_config
+            .reconfigure(font_size, font_family, custom_font_path, line_height);
         self.atlas = GlyphAtlas::new(device);
 
         // Rebuild the glyph bind group with the new atlas texture
