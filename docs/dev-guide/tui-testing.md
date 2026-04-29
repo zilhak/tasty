@@ -107,6 +107,21 @@ tasty-tui-sim interactive  # 명시적으로도 가능
 | `scroll-up [N]` | SU — N줄 위로 스크롤 |
 | `scroll-down [N]` | SD — N줄 아래로 스크롤 |
 
+**터미널 크기:**
+
+| 명령 | 설명 |
+|------|------|
+| `size` | 현재 터미널 크기를 `SIZE:{cols}x{rows}` 형식으로 출력 |
+
+**마우스 트래킹:**
+
+| 명령 | 설명 |
+|------|------|
+| `mouse-track` | X10 클릭 트래킹 + SGR 인코딩 활성화 (1000+1006) |
+| `mouse-track-off` | 마우스 트래킹 비활성화 |
+| `mouse-track-motion` | 셀 모션 트래킹 + SGR (1002+1006) |
+| `mouse-track-all` | 전체 모션 트래킹 + SGR (1003+1006) |
+
 **DECSET/DECRST:**
 
 | 명령 | 설명 |
@@ -180,6 +195,53 @@ tasty debug screen-attrs --row 2
 | `strikethrough` | bool | 취소선 여부 |
 | `inverse` | bool | 반전 여부 |
 | `width` | int | 셀 너비 (1 또는 2, 전각 문자는 2) |
+
+### 입력 시뮬레이션 IPC (debug + `--enable-input-simulation` 필요)
+
+마우스/키보드 이벤트를 PTY에 주입하는 디버그 IPC. **2단계 게이트**로 보호된다:
+
+1. `#[cfg(debug_assertions)]` — 릴리즈 빌드에서 코드 자체가 없음
+2. `--enable-input-simulation` 플래그 — debug 빌드라도 이 플래그 없이 실행하면 거부
+
+```bash
+# 플래그 없이 실행하면 거부됨
+tasty
+# → debug.inject_mouse 호출 시: "input simulation not enabled"
+
+# 플래그로 명시적 허락
+tasty --enable-input-simulation
+# → debug.inject_mouse 동작
+```
+
+**`debug.inject_mouse`** — SGR 마우스 이벤트를 PTY에 주입:
+
+```json
+{"method": "debug.inject_mouse", "params": {
+    "surface_id": 1,
+    "col": 5, "row": 3,
+    "button": 0,
+    "event_type": "press"
+}}
+```
+
+- `button`: 0=left, 1=middle, 2=right (기본: 0)
+- `event_type`: `"press"`, `"release"`, `"move"` (기본: "press")
+
+**`debug.inject_key`** — 임의 바이트/텍스트를 PTY에 주입:
+
+```json
+{"method": "debug.inject_key", "params": {
+    "surface_id": 1,
+    "text": "hello"
+}}
+```
+또는 hex 바이트로:
+```json
+{"method": "debug.inject_key", "params": {
+    "surface_id": 1,
+    "bytes": "1b5b41"
+}}
+```
 
 ## 시나리오 추가 방법
 

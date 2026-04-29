@@ -553,6 +553,9 @@
 - `debug.info`: 개발용 디버그 정보 조회 (scale_factor, cell 크기, viewport 등). `src/debug_info.rs`를 수정하여 커스텀 정보 추가 가능
 - `debug.cell_info`: 특정 셀(row, col)의 텍스트, 색상(fg/bg), 속성(bold/italic/underline/strikethrough/inverse), 너비 조회
 - `debug.screen_attrs`: 특정 행 전체의 셀 속성을 일괄 조회
+- `debug.inject_mouse`: SGR 마우스 이벤트를 PTY에 주입 (`--enable-input-simulation` 필요)
+- `debug.inject_key`: 임의 바이트/텍스트를 PTY에 주입 (`--enable-input-simulation` 필요)
+- `--enable-input-simulation` CLI 플래그: debug 빌드에서 입력 시뮬레이션 IPC를 활성화. 이 플래그 없이는 inject_mouse/inject_key가 거부됨 (2단계 게이트: 컴파일 + 런타임)
 - `debug` CLI 서브커맨드: `tasty debug info`, `tasty debug ime-*`, `tasty debug cell-info`, `tasty debug screen-attrs` 등 디버그 관련 CLI 명령
 
 #### 워크스페이스
