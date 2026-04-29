@@ -17,7 +17,6 @@ pub mod engine_state;
 mod event_handler;
 mod explorer_ui;
 mod file_clipboard;
-mod font;
 mod global_hooks;
 mod gpu;
 mod html_ui;
@@ -53,6 +52,8 @@ use tasty_terminal as terminal;
 pub use tasty_core::{i18n, model, paths, theme};
 // Re-export tasty_settings as `crate::settings` to keep existing reverse imports
 pub use tasty_settings as settings;
+// Re-export tasty_font as `crate::font` to keep existing reverse imports
+pub use tasty_font as font;
 
 use std::sync::Arc;
 

@@ -11,11 +11,11 @@ pub const D2CODING_FAMILY: &str = "D2Coding ligature";
 
 /// D2Coding ligature Regular ttf bytes embedded at compile time (OFL 1.1).
 pub const D2CODING_REGULAR_TTF: &[u8] =
-    include_bytes!("../assets/fonts/D2Coding-ligature-Regular.ttf");
+    include_bytes!("../assets/D2Coding-ligature-Regular.ttf");
 
 /// D2Coding ligature Bold ttf bytes embedded at compile time (OFL 1.1).
 pub const D2CODING_BOLD_TTF: &[u8] =
-    include_bytes!("../assets/fonts/D2Coding-ligature-Bold.ttf");
+    include_bytes!("../assets/D2Coding-ligature-Bold.ttf");
 
 /// Font metrics for monospace grid layout.
 pub struct FontMetrics {

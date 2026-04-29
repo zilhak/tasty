@@ -4704,6 +4704,7 @@ dependencies = [
  "serde_json",
  "shell-escape",
  "tasty-core",
+ "tasty-font",
  "tasty-hooks",
  "tasty-settings",
  "tasty-terminal",
@@ -4738,6 +4739,15 @@ dependencies = [
  "termwiz",
  "toml 0.8.2",
  "tracing",
+]
+
+[[package]]
+name = "tasty-font"
+version = "0.1.0"
+dependencies = [
+ "cosmic-text",
+ "tracing",
+ "wgpu",
 ]
 
 [[package]]

@@ -1,0 +1,16 @@
+[package]
+name = "tasty-font"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Font atlas, glyph rasterization, and font registry for Tasty"
+
+[dependencies]
+# Cosmic-text for font shaping/rasterization
+cosmic-text = "0.18"
+
+# wgpu for GPU font atlas texture
+wgpu = "24"
+
+# Logging
+tracing = "0.1"
