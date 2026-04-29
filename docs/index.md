@@ -83,6 +83,7 @@ cmux의 기능을 크로스 플랫폼(Windows, macOS, Linux) GPU 가속 네이�
 | [design/key-mapping.md](design/key-mapping.md) | 키 매핑 설계 — OS별 물리적 키 위치 매핑, 프리셋, 캡처/매칭 규칙 |
 | [design/popup-system.md](design/popup-system.md) | 내부 팝업 시스템 — 공통 규칙 7가지, PopupManager 구조 |
 | [design/toast-system.md](design/toast-system.md) | 토스트 시스템 — 휘발성 인앱 알림, 스코프, 사용자 행동 트리거 정책 |
+| [design/settings-system.md](design/settings-system.md) | 설정 시스템 — 탭/서브탭 구조, 항목 순서 규칙, 배치 판단 기준 |
 | [design/input-layer.md](design/input-layer.md) | 마우스 입력 계층 — z-order 기반 이벤트 소비/버블링 설계 |
 | [design/typed-length.md](design/typed-length.md) | 타입 안전 길이 시스템 — PhysicalPx/LogicalPx newtype, DPI 혼동 방지 |
 | [design/cwd-policy.md](design/cwd-policy.md) | CWD 정책 — OSC 7 기반 CWD 감지 (모든 플랫폼 공통) |

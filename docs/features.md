@@ -397,7 +397,7 @@
 - **Appearance**: 폰트 패밀리 (기본값: 시스템 모노스페이스), 폰트 크기, 테마 (dark/light), 배경 투명도, 사이드바 너비, focused surface 배경색, Font DPI 스케일링 모드 (auto: 모니터 DPI에 맞춰 동일 물리 크기 유지 / fixed: 픽셀 고정, 기본값)
 - **Clipboard**: OS별 기본 활성화 (macOS: Alt+C/V, Linux: Ctrl+Shift+C/V, Windows: Ctrl+C/V)
 - **Notifications**: 알림 활성화, 시스템 알림, 사운드, 병합 간격(ms)
-- **Keybindings**: 워크스페이스/탭/패인/서피스 분할 단축키, 마크다운/탐색기 열기 단축키
+- **Keybindings**: 서브탭으로 분류된 단축키 설정 (General / Workspace / Pane / Tab / Surface / Clipboard / Zoom / Preset). 유비쿼터스 언어 계층 구조(Workspace → Pane → Tab → Surface) 순서. 각 서브탭 내부 항목은 생성/분할 → 탐색 → 수정 → 닫기 순서로 정렬
   - 중복 바인딩 방지: 녹화한 조합이 다른 액션에 이미 할당되어 있으면 확인 팝업 표시. Enter/Y/Overwrite 수락 시 기존 바인딩을 비우고 새 필드에 적용, Esc/N/Cancel 취소 시 값 변경 없음. 팝업이 열린 동안 녹화 버튼은 비활성화됨.
   - **Preset 서브탭**: 좌측에 프리셋 목록, 우측에 미리보기 패널 (3열 테이블 — 기능 / 이전 / 이후). 변경되는 행은 bold 강조. 하단 "적용" 버튼으로 Draft에 반영 (실제 저장은 하단 Save 버튼). Draft가 이미 프리셋과 동일하면 적용 버튼 비활성화.
 - **Performance**: targeted PTY polling, scrollback disk swap, lazy PTY init (background 탭 생성 시 PTY를 즉시 spawn하지 않고 최초 접근 시점에 spawn)
