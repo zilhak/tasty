@@ -28,22 +28,23 @@ pub fn get_cwd_of_pid(pid: u32) -> Option<PathBuf> {
 fn macos_proc_cwd(pid: u32) -> Option<PathBuf> {
     // Use proc_pidinfo syscall instead of lsof subprocess.
     // lsof fork+exec takes 10-54ms per call; proc_pidinfo is microseconds.
+    //
+    // Struct sizes verified with C sizeof():
+    //   vinfo_stat=136, vnode_info=152, vnode_info_path=1176, proc_vnodepathinfo=2352
     use std::mem::MaybeUninit;
 
-    // PROC_PIDVNODEPATHINFO = 9, size = vnode_info_path (2 * MAXPATHLEN + extras)
     const PROC_PIDVNODEPATHINFO: libc::c_int = 9;
 
     #[repr(C)]
     struct VInfoStat {
-        _pad: [u8; 304], // sizeof(vinfo_stat)
+        _pad: [u8; 136],
     }
 
     #[repr(C)]
     struct VnodeInfo {
         _stat: VInfoStat,
         _type: libc::c_int,
-        _padding: libc::c_int,
-        _fattrs: [u8; 48], // struct fsobj_id + pad
+        _padding: [u8; 12], // alignment padding to reach 152 bytes total
     }
 
     #[repr(C)]
@@ -57,6 +58,9 @@ fn macos_proc_cwd(pid: u32) -> Option<PathBuf> {
         cdir: VnodeInfoPath,
         rdir: VnodeInfoPath,
     }
+
+    // Compile-time size check
+    const _: () = assert!(std::mem::size_of::<ProcVnodePathInfo>() == 2352);
 
     let mut info = MaybeUninit::<ProcVnodePathInfo>::zeroed();
     let ret = unsafe {
