@@ -166,6 +166,9 @@ struct App {
     tray_menu_ids: Option<system_tray::TrayMenuIds>,
     /// Modal shake animation state.
     modal_shake: Option<ModalShake>,
+    /// Whether input simulation IPC is enabled (debug builds only).
+    #[cfg(debug_assertions)]
+    input_simulation_enabled: bool,
 }
 
 /// State for the modal window shake animation.
@@ -178,7 +181,11 @@ struct ModalShake {
 use winit::window::WindowId;
 
 impl App {
-    fn new(proxy: EventLoopProxy<AppEvent>, port_file: Option<String>) -> Self {
+    fn new(
+        proxy: EventLoopProxy<AppEvent>,
+        port_file: Option<String>,
+        #[cfg(debug_assertions)] input_simulation_enabled: bool,
+    ) -> Self {
         Self {
             engine: engine::Engine::new(proxy.clone(), port_file),
             windows: std::collections::HashMap::new(),
@@ -192,6 +199,8 @@ impl App {
             #[cfg(windows)]
             tray_menu_ids: None,
             modal_shake: None,
+            #[cfg(debug_assertions)]
+            input_simulation_enabled,
         }
     }
 
@@ -242,6 +251,10 @@ impl App {
         let mut state =
             crate::state::AppState::new(cols, rows, waker).expect("failed to create app state");
         state.engine.waker_factory = Some(self.engine.proxy.clone());
+        #[cfg(debug_assertions)]
+        {
+            state.engine.input_simulation_enabled = self.input_simulation_enabled;
+        }
         state
     }
 
@@ -732,7 +745,12 @@ fn main() -> Result<()> {
     // CWD는 OSC 7 시퀀스에만 의존한다. 모든 플랫폼 공통.
     // zsh/fish는 기본 지원, bash는 PROMPT_COMMAND 설정 필요.
 
-    let mut app = App::new(proxy, cli.port_file);
+    let mut app = App::new(
+        proxy,
+        cli.port_file,
+        #[cfg(debug_assertions)]
+        cli.enable_input_simulation,
+    );
     event_loop.run_app(&mut app)?;
 
     Ok(())

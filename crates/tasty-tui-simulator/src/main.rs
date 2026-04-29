@@ -249,6 +249,29 @@ fn interactive_mode() {
                 write!(out, "\x1b[{n}T").unwrap();
             }
 
+            // ── Terminal size ──
+            "size" => {
+                let (cols, rows) = crossterm::terminal::size().unwrap_or((0, 0));
+                write!(out, "SIZE:{cols}x{rows}\r\n").unwrap();
+            }
+
+            // ── Mouse tracking ──
+            "mouse-track" => {
+                // Enable mouse tracking (X10 + SGR encoding)
+                write!(out, "\x1b[?1000h\x1b[?1006h").unwrap();
+            }
+            "mouse-track-off" => {
+                write!(out, "\x1b[?1000l\x1b[?1006l").unwrap();
+            }
+            "mouse-track-motion" => {
+                // Cell motion + SGR
+                write!(out, "\x1b[?1002h\x1b[?1006h").unwrap();
+            }
+            "mouse-track-all" => {
+                // All motion + SGR
+                write!(out, "\x1b[?1003h\x1b[?1006h").unwrap();
+            }
+
             // ── DECSET/DECRST modes ──
             "decset" => {
                 write!(out, "\x1b[?{args}h").unwrap();

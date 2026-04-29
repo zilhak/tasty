@@ -36,6 +36,12 @@ pub struct Cli {
     /// Show all commands in a tree (use with -h)
     #[arg(short = 'a', long = "all")]
     pub all: bool,
+
+    /// Enable input simulation IPC (debug builds only).
+    /// Required for debug.inject_mouse, debug.inject_key, etc.
+    #[cfg(debug_assertions)]
+    #[arg(long)]
+    pub enable_input_simulation: bool,
 }
 
 #[derive(Subcommand)]

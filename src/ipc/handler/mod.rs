@@ -85,6 +85,10 @@ pub fn handle(state: &mut AppState, request: &JsonRpcRequest) -> JsonRpcResponse
         "debug.cell_info" => handle_debug_cell_info(state, id, &request.params),
         #[cfg(debug_assertions)]
         "debug.screen_attrs" => handle_debug_screen_attrs(state, id, &request.params),
+        #[cfg(debug_assertions)]
+        "debug.inject_mouse" => handle_debug_inject_mouse(state, id, &request.params),
+        #[cfg(debug_assertions)]
+        "debug.inject_key" => handle_debug_inject_key(state, id, &request.params),
         "message.send" => message::handle_message_send(state, id, &request.params),
         "message.read" => message::handle_message_read(state, id, &request.params),
         "message.count" => message::handle_message_count(state, id, &request.params),
@@ -267,6 +271,120 @@ fn handle_debug_screen_attrs(
             })
             .collect();
         JsonRpcResponse::success(id, json!({"row": row, "cells": cells}))
+    } else {
+        JsonRpcResponse::invalid_params(id, format!("Surface {} not found", surface_id))
+    }
+}
+
+#[cfg(debug_assertions)]
+fn require_input_simulation(
+    state: &AppState,
+    id: &serde_json::Value,
+) -> Result<(), JsonRpcResponse> {
+    if !state.engine.input_simulation_enabled {
+        Err(JsonRpcResponse::error(
+            id.clone(),
+            -32001,
+            "input simulation not enabled. Launch tasty with --enable-input-simulation",
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+/// Inject a mouse event into a surface's PTY as if the terminal received it.
+/// Encodes as SGR mouse (mode 1006) bytes: ESC [ < Cb ; Cx ; Cy M/m
+#[cfg(debug_assertions)]
+fn handle_debug_inject_mouse(
+    state: &mut AppState,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
+    if let Err(e) = require_input_simulation(state, &id) {
+        return e;
+    }
+    let surface_id = match require_surface_id(params, &id) {
+        Ok(sid) => sid,
+        Err(e) => return e,
+    };
+    // col, row: 1-indexed cell coordinates
+    let col = match params.get("col").and_then(|v| v.as_u64()) {
+        Some(c) => c,
+        None => return JsonRpcResponse::invalid_params(id, "Missing 'col' parameter"),
+    };
+    let row = match params.get("row").and_then(|v| v.as_u64()) {
+        Some(r) => r,
+        None => return JsonRpcResponse::invalid_params(id, "Missing 'row' parameter"),
+    };
+    // button: 0=left, 1=middle, 2=right. Default: 0
+    let button = params
+        .get("button")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    // event_type: "press", "release", "move". Default: "press"
+    let event_type = params
+        .get("event_type")
+        .and_then(|v| v.as_str())
+        .unwrap_or("press");
+
+    let cb = match event_type {
+        "press" => button as u8,
+        "release" => button as u8,
+        "move" => 32 + button as u8,
+        _ => return JsonRpcResponse::invalid_params(id, "event_type must be press/release/move"),
+    };
+    let suffix = if event_type == "release" { "m" } else { "M" };
+
+    // SGR mouse encoding: ESC [ < Cb ; Cx ; Cy M/m (1-indexed)
+    let seq = format!("\x1b[<{};{};{}{}", cb, col + 1, row + 1, suffix);
+
+    if let Some(terminal) = state.find_terminal_by_id_mut(surface_id) {
+        terminal.send_key(&seq);
+        JsonRpcResponse::success(id, json!({"sent": true}))
+    } else {
+        JsonRpcResponse::invalid_params(id, format!("Surface {} not found", surface_id))
+    }
+}
+
+/// Inject a key event into a surface's PTY.
+#[cfg(debug_assertions)]
+fn handle_debug_inject_key(
+    state: &mut AppState,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
+    if let Err(e) = require_input_simulation(state, &id) {
+        return e;
+    }
+    let surface_id = match require_surface_id(params, &id) {
+        Ok(sid) => sid,
+        Err(e) => return e,
+    };
+    let bytes = match params.get("bytes").and_then(|v| v.as_str()) {
+        Some(hex) => {
+            let hex = hex.trim();
+            let mut result = Vec::new();
+            for i in (0..hex.len()).step_by(2) {
+                match u8::from_str_radix(&hex[i..i.min(hex.len()).max(i + 2)], 16) {
+                    Ok(b) => result.push(b),
+                    Err(_) => {
+                        return JsonRpcResponse::invalid_params(id, "Invalid hex in 'bytes'")
+                    }
+                }
+            }
+            result
+        }
+        None => match params.get("text").and_then(|v| v.as_str()) {
+            Some(t) => t.as_bytes().to_vec(),
+            None => {
+                return JsonRpcResponse::invalid_params(id, "Missing 'bytes' or 'text' parameter")
+            }
+        },
+    };
+
+    if let Some(terminal) = state.find_terminal_by_id_mut(surface_id) {
+        terminal.send_key(&String::from_utf8_lossy(&bytes));
+        JsonRpcResponse::success(id, json!({"sent": true}))
     } else {
         JsonRpcResponse::invalid_params(id, format!("Surface {} not found", surface_id))
     }

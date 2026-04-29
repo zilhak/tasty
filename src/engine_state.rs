@@ -150,6 +150,10 @@ pub struct EngineState {
     pub layout_dirty: crate::layout_persistence::LayoutDirtyTracker,
     /// Active workspace index restored from layout.json. Consumed once by AppState::new().
     pub restored_active_workspace: Option<usize>,
+
+    /// Whether input simulation IPC is enabled (debug builds only, --enable-input-simulation).
+    #[cfg(debug_assertions)]
+    pub input_simulation_enabled: bool,
 }
 
 impl EngineState {
@@ -178,6 +182,8 @@ impl EngineState {
             waker_factory: None,
             layout_dirty: crate::layout_persistence::LayoutDirtyTracker::new(),
             restored_active_workspace: None,
+            #[cfg(debug_assertions)]
+            input_simulation_enabled: false,
         };
 
         // Re-apply coalesce_ms from actual settings
