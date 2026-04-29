@@ -26,16 +26,57 @@ pub fn get_cwd_of_pid(pid: u32) -> Option<PathBuf> {
 
 #[cfg(target_os = "macos")]
 fn macos_proc_cwd(pid: u32) -> Option<PathBuf> {
-    use std::process::Command;
-    let output = Command::new("lsof")
-        .args(["-p", &pid.to_string(), "-Fn", "-a", "-d", "cwd"])
-        .output()
-        .ok()?;
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    for line in stdout.lines() {
-        if let Some(path) = line.strip_prefix('n') {
-            return Some(PathBuf::from(path));
-        }
+    // Use proc_pidinfo syscall instead of lsof subprocess.
+    // lsof fork+exec takes 10-54ms per call; proc_pidinfo is microseconds.
+    use std::mem::MaybeUninit;
+
+    // PROC_PIDVNODEPATHINFO = 9, size = vnode_info_path (2 * MAXPATHLEN + extras)
+    const PROC_PIDVNODEPATHINFO: libc::c_int = 9;
+
+    #[repr(C)]
+    struct VInfoStat {
+        _pad: [u8; 304], // sizeof(vinfo_stat)
     }
-    None
+
+    #[repr(C)]
+    struct VnodeInfo {
+        _stat: VInfoStat,
+        _type: libc::c_int,
+        _padding: libc::c_int,
+        _fattrs: [u8; 48], // struct fsobj_id + pad
+    }
+
+    #[repr(C)]
+    struct VnodeInfoPath {
+        vi: VnodeInfo,
+        path: [u8; libc::PATH_MAX as usize],
+    }
+
+    #[repr(C)]
+    struct ProcVnodePathInfo {
+        cdir: VnodeInfoPath,
+        rdir: VnodeInfoPath,
+    }
+
+    let mut info = MaybeUninit::<ProcVnodePathInfo>::zeroed();
+    let ret = unsafe {
+        libc::proc_pidinfo(
+            pid as libc::c_int,
+            PROC_PIDVNODEPATHINFO,
+            0,
+            info.as_mut_ptr() as *mut libc::c_void,
+            std::mem::size_of::<ProcVnodePathInfo>() as libc::c_int,
+        )
+    };
+    if ret <= 0 {
+        return None;
+    }
+    let info = unsafe { info.assume_init() };
+    let path_bytes = &info.cdir.path;
+    let len = path_bytes.iter().position(|&b| b == 0).unwrap_or(path_bytes.len());
+    if len == 0 {
+        return None;
+    }
+    let path_str = std::str::from_utf8(&path_bytes[..len]).ok()?;
+    Some(PathBuf::from(path_str))
 }
