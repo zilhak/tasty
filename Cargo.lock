@@ -4709,7 +4709,6 @@ dependencies = [
  "tasty-settings",
  "tasty-terminal",
  "termwiz",
- "toml 0.8.2",
  "tracing",
  "tracing-subscriber",
  "trash",
@@ -4763,7 +4762,6 @@ name = "tasty-settings"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "egui",
  "serde",
  "tasty-core",
  "toml 0.8.2",
