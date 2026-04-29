@@ -619,6 +619,27 @@ pub enum DebugCommands {
     },
     /// Show current IME status
     ImeStatus,
+    /// Get cell info at a specific position
+    CellInfo {
+        /// Row (0-indexed)
+        #[arg(long)]
+        row: u64,
+        /// Column (0-indexed)
+        #[arg(long)]
+        col: u64,
+        /// Surface ID (default: focused)
+        #[arg(long)]
+        surface: Option<u32>,
+    },
+    /// Get all cell attributes for a specific row
+    ScreenAttrs {
+        /// Row (0-indexed)
+        #[arg(long)]
+        row: u64,
+        /// Surface ID (default: focused)
+        #[arg(long)]
+        surface: Option<u32>,
+    },
     /// Switch macOS input source (e.g. Korean IME)
     SwitchInputSource {
         /// Input source ID (e.g. "com.apple.inputmethod.Korean.2SetKorean")

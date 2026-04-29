@@ -81,6 +81,10 @@ pub fn handle(state: &mut AppState, request: &JsonRpcRequest) -> JsonRpcResponse
         // tab.open_markdown / tab.open_explorer removed: use tab.create with type parameter
         #[cfg(debug_assertions)]
         "ui.state" => handle_ui_state(state, id),
+        #[cfg(debug_assertions)]
+        "debug.cell_info" => handle_debug_cell_info(state, id, &request.params),
+        #[cfg(debug_assertions)]
+        "debug.screen_attrs" => handle_debug_screen_attrs(state, id, &request.params),
         "message.send" => message::handle_message_send(state, id, &request.params),
         "message.read" => message::handle_message_read(state, id, &request.params),
         "message.count" => message::handle_message_count(state, id, &request.params),
@@ -185,6 +189,87 @@ fn handle_ui_state(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {
             "tab_count": tab_count,
         }),
     )
+}
+
+#[cfg(debug_assertions)]
+fn handle_debug_cell_info(
+    state: &AppState,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
+    let surface_id = match require_surface_id(params, &id) {
+        Ok(sid) => sid,
+        Err(e) => return e,
+    };
+    let row = match params.get("row").and_then(|v| v.as_u64()) {
+        Some(r) => r as usize,
+        None => return JsonRpcResponse::invalid_params(id, "Missing 'row' parameter"),
+    };
+    let col = match params.get("col").and_then(|v| v.as_u64()) {
+        Some(c) => c as usize,
+        None => return JsonRpcResponse::invalid_params(id, "Missing 'col' parameter"),
+    };
+    if let Some(terminal) = state.find_terminal_by_id(surface_id) {
+        if let Some(info) = terminal.cell_info(row, col) {
+            JsonRpcResponse::success(
+                id,
+                json!({
+                    "text": info.text,
+                    "fg": info.fg,
+                    "bg": info.bg,
+                    "bold": info.bold,
+                    "italic": info.italic,
+                    "underline": info.underline,
+                    "strikethrough": info.strikethrough,
+                    "inverse": info.inverse,
+                    "width": info.width,
+                }),
+            )
+        } else {
+            JsonRpcResponse::success(id, json!({"text": "", "fg": "default", "bg": "default"}))
+        }
+    } else {
+        JsonRpcResponse::invalid_params(id, format!("Surface {} not found", surface_id))
+    }
+}
+
+#[cfg(debug_assertions)]
+fn handle_debug_screen_attrs(
+    state: &AppState,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
+    let surface_id = match require_surface_id(params, &id) {
+        Ok(sid) => sid,
+        Err(e) => return e,
+    };
+    let row = match params.get("row").and_then(|v| v.as_u64()) {
+        Some(r) => r as usize,
+        None => return JsonRpcResponse::invalid_params(id, "Missing 'row' parameter"),
+    };
+    if let Some(terminal) = state.find_terminal_by_id(surface_id) {
+        let cells: Vec<_> = terminal
+            .row_cells(row)
+            .into_iter()
+            .map(|(col, info)| {
+                json!({
+                    "col": col,
+                    "text": info.text,
+                    "fg": info.fg,
+                    "bg": info.bg,
+                    "bold": info.bold,
+                    "italic": info.italic,
+                    "underline": info.underline,
+                    "strikethrough": info.strikethrough,
+                    "inverse": info.inverse,
+                    "width": info.width,
+                })
+            })
+            .collect();
+        JsonRpcResponse::success(id, json!({"row": row, "cells": cells}))
+    } else {
+        JsonRpcResponse::invalid_params(id, format!("Surface {} not found", surface_id))
+    }
 }
 
 fn handle_tree(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {

@@ -5,7 +5,8 @@ use std::thread;
 
 use anyhow::Result;
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
-use termwiz::cell::CellAttributes;
+use termwiz::cell::{CellAttributes, Underline};
+use termwiz::color::ColorAttribute;
 use termwiz::escape::Action;
 use termwiz::escape::csi::CSI;
 use termwiz::escape::parser::Parser;
@@ -23,6 +24,20 @@ pub use events::*;
 
 /// Maximum size of the output buffer (1 MB).
 const OUTPUT_BUFFER_MAX: usize = 1_048_576;
+
+/// Information about a single cell for debug inspection.
+#[derive(Debug, Clone)]
+pub struct CellInfo {
+    pub text: String,
+    pub fg: String,
+    pub bg: String,
+    pub bold: bool,
+    pub italic: bool,
+    pub underline: bool,
+    pub strikethrough: bool,
+    pub inverse: bool,
+    pub width: usize,
+}
 
 pub struct Terminal {
     /// Primary screen buffer.
@@ -424,6 +439,93 @@ impl Terminal {
             text.push_str(cell.str());
         }
         text.trim_end().to_string()
+    }
+
+    /// Get detailed information about a specific cell (row, col) on the current screen.
+    /// Returns None if row/col is out of bounds.
+    pub fn cell_info(&self, row: usize, col: usize) -> Option<CellInfo> {
+        let surface = self.surface();
+        let lines = surface.screen_lines();
+        if row >= lines.len() {
+            return None;
+        }
+        for cell in lines[row].visible_cells() {
+            if cell.cell_index() == col {
+                let attrs = cell.attrs();
+                let width = if cell.str().chars().next().map_or(false, |c| {
+                    unicode_width::UnicodeWidthChar::width(c).unwrap_or(1) > 1
+                }) {
+                    2
+                } else {
+                    1
+                };
+                return Some(CellInfo {
+                    text: cell.str().to_string(),
+                    fg: Self::color_attr_to_string(&attrs.foreground()),
+                    bg: Self::color_attr_to_string(&attrs.background()),
+                    bold: attrs.intensity() == termwiz::cell::Intensity::Bold,
+                    italic: attrs.italic(),
+                    underline: attrs.underline() != Underline::None,
+                    strikethrough: attrs.strikethrough(),
+                    inverse: attrs.reverse(),
+                    width,
+                });
+            }
+        }
+        None
+    }
+
+    /// Get cell info for all cells in a specific row.
+    /// Returns empty vec if row is out of bounds.
+    pub fn row_cells(&self, row: usize) -> Vec<(usize, CellInfo)> {
+        let surface = self.surface();
+        let lines = surface.screen_lines();
+        if row >= lines.len() {
+            return Vec::new();
+        }
+        lines[row]
+            .visible_cells()
+            .map(|cell| {
+                let attrs = cell.attrs();
+                let width = if cell.str().chars().next().map_or(false, |c| {
+                    unicode_width::UnicodeWidthChar::width(c).unwrap_or(1) > 1
+                }) {
+                    2
+                } else {
+                    1
+                };
+                (
+                    cell.cell_index(),
+                    CellInfo {
+                        text: cell.str().to_string(),
+                        fg: Self::color_attr_to_string(&attrs.foreground()),
+                        bg: Self::color_attr_to_string(&attrs.background()),
+                        bold: attrs.intensity() == termwiz::cell::Intensity::Bold,
+                        italic: attrs.italic(),
+                        underline: attrs.underline() != Underline::None,
+                        strikethrough: attrs.strikethrough(),
+                        inverse: attrs.reverse(),
+                        width,
+                    },
+                )
+            })
+            .collect()
+    }
+
+    fn color_attr_to_string(attr: &ColorAttribute) -> String {
+        match attr {
+            ColorAttribute::Default => "default".to_string(),
+            ColorAttribute::PaletteIndex(idx) => format!("palette:{idx}"),
+            ColorAttribute::TrueColorWithPaletteFallback(srgba, _)
+            | ColorAttribute::TrueColorWithDefaultFallback(srgba) => {
+                format!(
+                    "#{:02x}{:02x}{:02x}",
+                    (srgba.0 * 255.0) as u8,
+                    (srgba.1 * 255.0) as u8,
+                    (srgba.2 * 255.0) as u8
+                )
+            }
+        }
     }
 
     /// Process raw bytes through the VTE parser and apply to the surface.

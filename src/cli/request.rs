@@ -441,6 +441,21 @@ fn debug_command_to_method_params(command: &DebugCommands) -> (&'static str, ser
             ("surface.ime_commit", serde_json::json!({ "text": text }))
         }
         DebugCommands::ImeStatus => ("surface.ime_status", serde_json::json!({})),
+        DebugCommands::CellInfo { row, col, surface } => (
+            "debug.cell_info",
+            serde_json::json!({
+                "surface_id": resolve_surface_id(*surface),
+                "row": row,
+                "col": col,
+            }),
+        ),
+        DebugCommands::ScreenAttrs { row, surface } => (
+            "debug.screen_attrs",
+            serde_json::json!({
+                "surface_id": resolve_surface_id(*surface),
+                "row": row,
+            }),
+        ),
         DebugCommands::SwitchInputSource { source_id } => (
             "surface.switch_input_source",
             serde_json::json!({ "source_id": source_id }),
