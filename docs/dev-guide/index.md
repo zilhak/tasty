@@ -20,3 +20,4 @@
 | 컨텍스트 메뉴 구현 | [context-menu.md](context-menu.md) |
 | Popup 구현 | [popup-implementation.md](popup-implementation.md) |
 | GPU 렌더링 구조 | [gpu-rendering.md](gpu-rendering.md) |
+| TUI 테스트 | [tui-testing.md](tui-testing.md) |

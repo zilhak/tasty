@@ -122,6 +122,7 @@ Tasty는 **Windows, macOS, Linux를 모두 지원하는 크로스 플랫폼 앱*
   - `linux.md`: Linux 환경 빌드/실행 가이드
   - `popup-implementation.md`: Popup 구현 (PopupDef 시스템, egui::Window 직접 사용 금지)
   - `gpu-rendering.md`: GPU 렌더링 구조 (공유 버퍼 + submit 분리 규칙)
+  - `tui-testing.md`: TUI 테스트 — 터미널 버그 재현 → 시나리오 추가 → E2E 테스트 순서
 - `.claude-workspace/plans/`: 구현 작업 계획. 구현 완료 후 삭제.
 - `.claude-workspace/temp/`: 임시 파일. 작업 후 정리.
 
