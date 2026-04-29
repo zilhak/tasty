@@ -18,6 +18,7 @@ pub enum KeybindingsSubTab {
     General,
     Workspace,
     Pane,
+    Tab,
     Surface,
     Clipboard,
     Zoom,
@@ -81,6 +82,10 @@ pub fn draw_keybindings_tab(
                         (
                             KeybindingsSubTab::Pane,
                             t("settings.keybindings.subtab.pane"),
+                        ),
+                        (
+                            KeybindingsSubTab::Tab,
+                            t("settings.keybindings.subtab.tab"),
                         ),
                         (
                             KeybindingsSubTab::Surface,
@@ -171,16 +176,16 @@ pub fn draw_keybindings_tab(
                         &[
                             ("new_workspace", "settings.keybindings.new_workspace_label"),
                             (
-                                "close_workspace",
-                                "settings.keybindings.close_workspace_label",
-                            ),
-                            (
                                 "rename_workspace",
                                 "settings.keybindings.rename_workspace_label",
                             ),
                             (
                                 "rename_workspace_subtitle",
                                 "settings.keybindings.rename_workspace_subtitle_label",
+                            ),
+                            (
+                                "close_workspace",
+                                "settings.keybindings.close_workspace_label",
                             ),
                         ],
                     );
@@ -189,29 +194,10 @@ pub fn draw_keybindings_tab(
                     ui.separator();
                     ui.add_space(4.0);
 
-                    egui::Grid::new("tab_ws_modifier_grid")
+                    egui::Grid::new("ws_modifier_grid")
                         .num_columns(2)
                         .spacing([12.0, 8.0])
                         .show(ui, |ui| {
-                            ui.label(t("settings.keybindings.tab_switch_modifier_label"));
-                            egui::ComboBox::from_id_salt("tab_switch_modifier")
-                                .selected_text(modifier_display(
-                                    &settings.keybindings.tab_switch_modifier,
-                                ))
-                                .show_ui(ui, |ui| {
-                                    ui.selectable_value(
-                                        &mut settings.keybindings.tab_switch_modifier,
-                                        "ctrl".to_string(),
-                                        "Ctrl",
-                                    );
-                                    ui.selectable_value(
-                                        &mut settings.keybindings.tab_switch_modifier,
-                                        "alt".to_string(),
-                                        "Alt",
-                                    );
-                                });
-                            ui.end_row();
-
                             ui.label(t("settings.keybindings.workspace_switch_modifier_label"));
                             egui::ComboBox::from_id_salt("workspace_switch_modifier")
                                 .selected_text(modifier_display(
@@ -240,10 +226,6 @@ pub fn draw_keybindings_tab(
                         pending_binding,
                         &captured,
                         &[
-                            ("new_tab", "settings.keybindings.new_tab_label"),
-                            ("rename_tab", "settings.keybindings.rename_tab_label"),
-                            ("next_tab", "settings.keybindings.next_tab_label"),
-                            ("prev_tab", "settings.keybindings.prev_tab_label"),
                             (
                                 "split_pane_vertical",
                                 "settings.keybindings.split_pane_vertical_label",
@@ -260,12 +242,55 @@ pub fn draw_keybindings_tab(
                                 "focus_pane_prev",
                                 "settings.keybindings.focus_pane_prev_label",
                             ),
-                            ("close_active", "settings.keybindings.close_active_label"),
                             ("close_pane", "settings.keybindings.close_pane_label"),
-                            ("open_markdown", "settings.keybindings.open_markdown_label"),
-                            ("open_explorer", "settings.keybindings.open_explorer_label"),
                         ],
                     );
+                }
+                KeybindingsSubTab::Tab => {
+                    draw_keybinding_entries(
+                        ui,
+                        &mut settings.keybindings,
+                        recording_field,
+                        pending_binding,
+                        &captured,
+                        &[
+                            ("new_tab", "settings.keybindings.new_tab_label"),
+                            ("open_markdown", "settings.keybindings.open_markdown_label"),
+                            ("open_explorer", "settings.keybindings.open_explorer_label"),
+                            ("next_tab", "settings.keybindings.next_tab_label"),
+                            ("prev_tab", "settings.keybindings.prev_tab_label"),
+                            ("rename_tab", "settings.keybindings.rename_tab_label"),
+                            ("close_active", "settings.keybindings.close_active_label"),
+                        ],
+                    );
+
+                    ui.add_space(8.0);
+                    ui.separator();
+                    ui.add_space(4.0);
+
+                    egui::Grid::new("tab_modifier_grid")
+                        .num_columns(2)
+                        .spacing([12.0, 8.0])
+                        .show(ui, |ui| {
+                            ui.label(t("settings.keybindings.tab_switch_modifier_label"));
+                            egui::ComboBox::from_id_salt("tab_switch_modifier")
+                                .selected_text(modifier_display(
+                                    &settings.keybindings.tab_switch_modifier,
+                                ))
+                                .show_ui(ui, |ui| {
+                                    ui.selectable_value(
+                                        &mut settings.keybindings.tab_switch_modifier,
+                                        "ctrl".to_string(),
+                                        "Ctrl",
+                                    );
+                                    ui.selectable_value(
+                                        &mut settings.keybindings.tab_switch_modifier,
+                                        "alt".to_string(),
+                                        "Alt",
+                                    );
+                                });
+                            ui.end_row();
+                        });
                 }
                 KeybindingsSubTab::Surface => {
                     draw_keybinding_entries(
@@ -291,7 +316,6 @@ pub fn draw_keybindings_tab(
                                 "focus_surface_prev",
                                 "settings.keybindings.focus_surface_prev_label",
                             ),
-                            ("close_surface", "settings.keybindings.close_surface_label"),
                             (
                                 "convert_surface",
                                 "settings.keybindings.convert_surface_label",
@@ -304,6 +328,7 @@ pub fn draw_keybindings_tab(
                                 "convert_to_explorer",
                                 "settings.keybindings.convert_to_explorer_label",
                             ),
+                            ("close_surface", "settings.keybindings.close_surface_label"),
                         ],
                     );
                 }
