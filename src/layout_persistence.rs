@@ -482,14 +482,16 @@ impl SavedSurface {
                 let sh = ShellConfig::from_settings(&engine.settings);
                 let waker = engine.make_waker(surface_id);
                 let working_dir = cwd.as_ref().map(PathBuf::from);
-                let terminal = match tasty_terminal::Terminal::new_with_shell_args_cwd(
-                    engine.default_cols,
-                    engine.default_rows,
-                    sh.shell_ref(),
-                    &sh.args_ref(),
-                    surface_id,
+                let terminal = match tasty_terminal::Terminal::new(
+                    tasty_terminal::TerminalConfig {
+                        cols: engine.default_cols,
+                        rows: engine.default_rows,
+                        shell: sh.shell_ref(),
+                        args: &sh.args_ref(),
+                        surface_id,
+                        working_dir: working_dir.as_deref(),
+                    },
                     waker,
-                    working_dir.as_deref(),
                 ) {
                     Ok(t) => t,
                     Err(e) => {

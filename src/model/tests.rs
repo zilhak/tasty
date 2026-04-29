@@ -592,7 +592,18 @@ fn for_each_terminal_mut_can_modify() {
 
 fn test_surface_node(id: SurfaceId) -> TerminalSurface {
     let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
-    let terminal = tasty_terminal::Terminal::new(80, 24, id, waker).unwrap();
+    let terminal = tasty_terminal::Terminal::new(
+        tasty_terminal::TerminalConfig {
+            cols: 80,
+            rows: 24,
+            shell: None,
+            args: &[],
+            surface_id: id,
+            working_dir: None,
+        },
+        waker,
+    )
+    .unwrap();
     TerminalSurface {
         id,
         terminal,

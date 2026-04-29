@@ -323,14 +323,16 @@ impl Tab {
         let shell_ref = spawn.shell.as_deref();
         let shell_args: Vec<&str> = spawn.shell_args.iter().map(|s| s.as_str()).collect();
         let working_dir = spawn.working_dir.as_deref();
-        match Terminal::new_with_shell_args_cwd(
-            spawn.cols,
-            spawn.rows,
-            shell_ref,
-            &shell_args,
-            surface_id,
+        match Terminal::new(
+            tasty_terminal::TerminalConfig {
+                cols: spawn.cols,
+                rows: spawn.rows,
+                shell: shell_ref,
+                args: &shell_args,
+                surface_id,
+                working_dir,
+            },
             spawn.waker,
-            working_dir,
         ) {
             Ok(terminal) => {
                 let ts = TerminalSurface {

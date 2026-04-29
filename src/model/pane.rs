@@ -51,14 +51,16 @@ impl Pane {
         waker: Waker,
         working_dir: Option<&std::path::Path>,
     ) -> anyhow::Result<Self> {
-        let terminal = Terminal::new_with_shell_args_cwd(
-            cols,
-            rows,
-            shell,
-            shell_args,
-            surface_id,
+        let terminal = Terminal::new(
+            tasty_terminal::TerminalConfig {
+                cols,
+                rows,
+                shell,
+                args: shell_args,
+                surface_id,
+                working_dir,
+            },
             waker,
-            working_dir,
         )?;
         let surface: Box<dyn super::Surface> = Box::new(TerminalSurface {
             id: surface_id,
@@ -86,14 +88,16 @@ impl Pane {
         waker: Waker,
         working_dir: Option<&std::path::Path>,
     ) -> anyhow::Result<()> {
-        let terminal = Terminal::new_with_shell_args_cwd(
-            cols,
-            rows,
-            shell,
-            shell_args,
-            surface_id,
+        let terminal = Terminal::new(
+            tasty_terminal::TerminalConfig {
+                cols,
+                rows,
+                shell,
+                args: shell_args,
+                surface_id,
+                working_dir,
+            },
             waker,
-            working_dir,
         )?;
         let surface: Box<dyn super::Surface> = Box::new(TerminalSurface {
             id: surface_id,
@@ -118,14 +122,16 @@ impl Pane {
         waker: Waker,
         working_dir: Option<&std::path::Path>,
     ) -> anyhow::Result<()> {
-        let terminal = Terminal::new_with_shell_args_cwd(
-            cols,
-            rows,
-            shell,
-            shell_args,
-            surface_id,
+        let terminal = Terminal::new(
+            tasty_terminal::TerminalConfig {
+                cols,
+                rows,
+                shell,
+                args: shell_args,
+                surface_id,
+                working_dir,
+            },
             waker,
-            working_dir,
         )?;
         let surface: Box<dyn super::Surface> = Box::new(TerminalSurface {
             id: surface_id,
@@ -200,14 +206,16 @@ impl Pane {
         waker: Waker,
         working_dir: Option<&std::path::Path>,
     ) -> anyhow::Result<()> {
-        let new_terminal = Terminal::new_with_shell_args_cwd(
-            cols,
-            rows,
-            shell,
-            shell_args,
-            new_surface_id,
+        let new_terminal = Terminal::new(
+            tasty_terminal::TerminalConfig {
+                cols,
+                rows,
+                shell,
+                args: shell_args,
+                surface_id: new_surface_id,
+                working_dir,
+            },
             waker,
-            working_dir,
         )?;
         if self.tabs.is_empty() {
             return Ok(()); // nothing to split
@@ -230,14 +238,16 @@ impl Pane {
         waker: Waker,
         working_dir: Option<&std::path::Path>,
     ) -> anyhow::Result<()> {
-        let new_terminal = Terminal::new_with_shell_args_cwd(
-            cols,
-            rows,
-            shell,
-            shell_args,
-            new_surface_id,
+        let new_terminal = Terminal::new(
+            tasty_terminal::TerminalConfig {
+                cols,
+                rows,
+                shell,
+                args: shell_args,
+                surface_id: new_surface_id,
+                working_dir,
+            },
             waker,
-            working_dir,
         )?;
         for tab in &mut self.tabs {
             if tab.find_terminal(target_surface_id).is_some() {

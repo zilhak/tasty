@@ -339,14 +339,16 @@ impl AppState {
         let sh = crate::engine_state::ShellConfig::from_settings(&self.engine.settings);
         let waker = self.engine.make_waker(surface_id);
 
-        let terminal = match tasty_terminal::Terminal::new_with_shell_args_cwd(
-            cols,
-            rows,
-            sh.shell_ref(),
-            &sh.args_ref(),
-            surface_id,
+        let terminal = match tasty_terminal::Terminal::new(
+            tasty_terminal::TerminalConfig {
+                cols,
+                rows,
+                shell: sh.shell_ref(),
+                args: &sh.args_ref(),
+                surface_id,
+                working_dir: cwd.as_deref(),
+            },
             waker,
-            cwd.as_deref(),
         ) {
             Ok(t) => t,
             Err(_) => return false,

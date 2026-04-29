@@ -23,6 +23,16 @@ mod vte_handler;
 
 pub use events::*;
 
+/// Configuration for creating a new Terminal.
+pub struct TerminalConfig<'a> {
+    pub cols: usize,
+    pub rows: usize,
+    pub shell: Option<&'a str>,
+    pub args: &'a [&'a str],
+    pub surface_id: u32,
+    pub working_dir: Option<&'a std::path::Path>,
+}
+
 /// Information about a single cell for debug inspection.
 #[derive(Debug, Clone)]
 pub struct CellInfo {
@@ -106,45 +116,16 @@ pub struct Terminal {
 }
 
 impl Terminal {
-    pub fn new(cols: usize, rows: usize, surface_id: u32, waker: Waker) -> Result<Self> {
-        Self::new_with_shell(cols, rows, None, surface_id, waker)
-    }
-
-    /// Create a terminal with an optional custom shell. If `shell` is `None` or empty,
-    /// the platform default shell is used.
+    /// Create a new terminal.
     ///
+    /// If `config.shell` is `None` or empty, the platform default shell is used.
     /// The `waker` callback is invoked from the PTY reader thread whenever new data
     /// arrives, allowing the main event loop to wake up and process the output.
-    pub fn new_with_shell(
-        cols: usize,
-        rows: usize,
-        shell: Option<&str>,
-        surface_id: u32,
-        waker: Waker,
-    ) -> Result<Self> {
-        Self::new_with_shell_args(cols, rows, shell, &[], surface_id, waker)
-    }
-
-    pub fn new_with_shell_args(
-        cols: usize,
-        rows: usize,
-        shell: Option<&str>,
-        args: &[&str],
-        surface_id: u32,
-        waker: Waker,
-    ) -> Result<Self> {
-        Self::new_with_shell_args_cwd(cols, rows, shell, args, surface_id, waker, None)
-    }
-
-    pub fn new_with_shell_args_cwd(
-        cols: usize,
-        rows: usize,
-        shell: Option<&str>,
-        args: &[&str],
-        surface_id: u32,
-        waker: Waker,
-        working_dir: Option<&std::path::Path>,
-    ) -> Result<Self> {
+    pub fn new(config: TerminalConfig<'_>, waker: Waker) -> Result<Self> {
+        let cols = config.cols;
+        let rows = config.rows;
+        let surface_id = config.surface_id;
+        let working_dir = config.working_dir;
         let pty_system = NativePtySystem::default();
 
         let pair = pty_system.openpty(PtySize {
@@ -154,7 +135,7 @@ impl Terminal {
             pixel_height: 0,
         })?;
 
-        let shell = match shell {
+        let shell = match config.shell {
             Some(s) if !s.is_empty() => s.to_string(),
             _ => Self::default_shell(),
         };
@@ -163,7 +144,7 @@ impl Terminal {
         // On Windows, cmd.exe and powershell don't understand Unix-style -li flags.
         #[cfg(not(windows))]
         cmd.arg("-li");
-        for arg in args {
+        for arg in config.args {
             if !arg.is_empty() {
                 cmd.arg(arg);
             }
@@ -1149,12 +1130,27 @@ mod tests {
         Arc::new(|| {})
     }
 
+    fn test_terminal(cols: usize, rows: usize) -> Terminal {
+        let waker = noop_waker();
+        Terminal::new(
+            TerminalConfig {
+                cols,
+                rows,
+                shell: None,
+                args: &[],
+                surface_id: 0,
+                working_dir: None,
+            },
+            waker,
+        )
+        .expect("terminal creation")
+    }
+
     // ---- DECSET/DECRST mode toggling tests ----
 
     #[test]
     fn decset_application_cursor_keys() {
-        let waker = noop_waker();
-        let mut terminal = Terminal::new(80, 24, 0, waker).expect("terminal creation");
+        let mut terminal = test_terminal(80, 24);
         assert!(!terminal.application_cursor_keys());
 
         let mut parser = Parser::new();
@@ -1177,8 +1173,7 @@ mod tests {
 
     #[test]
     fn decset_cursor_visibility() {
-        let waker = noop_waker();
-        let mut terminal = Terminal::new(80, 24, 0, waker).expect("terminal creation");
+        let mut terminal = test_terminal(80, 24);
         assert!(terminal.cursor_visible());
 
         let mut parser = Parser::new();
@@ -1201,8 +1196,7 @@ mod tests {
 
     #[test]
     fn decset_bracketed_paste() {
-        let waker = noop_waker();
-        let mut terminal = Terminal::new(80, 24, 0, waker).expect("terminal creation");
+        let mut terminal = test_terminal(80, 24);
         assert!(!terminal.bracketed_paste());
 
         let mut parser = Parser::new();
@@ -1225,8 +1219,7 @@ mod tests {
 
     #[test]
     fn decset_mouse_tracking() {
-        let waker = noop_waker();
-        let mut terminal = Terminal::new(80, 24, 0, waker).expect("terminal creation");
+        let mut terminal = test_terminal(80, 24);
         assert_eq!(terminal.mouse_tracking(), MouseTrackingMode::None);
 
         let mut parser = Parser::new();
@@ -1259,8 +1252,7 @@ mod tests {
 
     #[test]
     fn alternate_screen_switching() {
-        let waker = noop_waker();
-        let mut terminal = Terminal::new(80, 24, 0, waker).expect("terminal creation");
+        let mut terminal = test_terminal(80, 24);
         assert!(!terminal.is_alternate_screen());
 
         let mut parser = Parser::new();
@@ -1284,8 +1276,7 @@ mod tests {
 
     #[test]
     fn alternate_screen_mode_47() {
-        let waker = noop_waker();
-        let mut terminal = Terminal::new(80, 24, 0, waker).expect("terminal creation");
+        let mut terminal = test_terminal(80, 24);
 
         let mut parser = Parser::new();
         let actions = parser.parse_as_vec(b"\x1b[?47h");
@@ -1307,8 +1298,7 @@ mod tests {
 
     #[test]
     fn alternate_screen_resize() {
-        let waker = noop_waker();
-        let mut terminal = Terminal::new(80, 24, 0, waker).expect("terminal creation");
+        let mut terminal = test_terminal(80, 24);
 
         let mut parser = Parser::new();
         let actions = parser.parse_as_vec(b"\x1b[?1049h");
@@ -1330,8 +1320,7 @@ mod tests {
 
     #[test]
     fn arrow_key_sequences_normal_vs_application() {
-        let waker = noop_waker();
-        let mut terminal = Terminal::new(80, 24, 0, waker).expect("terminal creation");
+        let mut terminal = test_terminal(80, 24);
 
         assert!(!terminal.application_cursor_keys());
         let mut parser = Parser::new();
@@ -1348,8 +1337,7 @@ mod tests {
 
     #[test]
     fn full_reset_clears_modes() {
-        let waker = noop_waker();
-        let mut terminal = Terminal::new(80, 24, 0, waker).expect("terminal creation");
+        let mut terminal = test_terminal(80, 24);
 
         let mut parser = Parser::new();
         let data = b"\x1b[?1h\x1b[?25l\x1b[?2004h\x1b[?1049h";
@@ -1391,8 +1379,7 @@ mod tests {
 
     #[test]
     fn scrollback_captured_on_lf_at_bottom_row() {
-        let waker = noop_waker();
-        let mut terminal = Terminal::new(10, 4, 0, waker).expect("terminal");
+        let mut terminal = test_terminal(10, 4);
         terminal.process_bytes(b"row0\r\nrow1\r\nrow2\r\nrow3");
         assert_eq!(terminal.scrollback_len(), 0);
         terminal.process_bytes(b"\r\nrow4");

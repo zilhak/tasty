@@ -177,12 +177,15 @@ impl AppState {
         let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
         let waker = self.engine.make_waker(surface_id);
 
-        let terminal = tasty_terminal::Terminal::new_with_shell_args(
-            cols,
-            rows,
-            shell.as_deref(),
-            &shell_args,
-            surface_id,
+        let terminal = tasty_terminal::Terminal::new(
+            tasty_terminal::TerminalConfig {
+                cols,
+                rows,
+                shell: shell.as_deref(),
+                args: &shell_args,
+                surface_id,
+                working_dir: None,
+            },
             waker,
         )
         .ok()?;

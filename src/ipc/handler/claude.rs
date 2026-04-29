@@ -249,14 +249,16 @@ fn find_and_spawn_in_pane(
         let rows = state.engine.default_rows;
         let sh = crate::engine_state::ShellConfig::from_settings(&state.engine.settings);
         let waker = state.engine.make_waker(new_surface_id);
-        let terminal = tasty_terminal::Terminal::new_with_shell_args_cwd(
-            cols,
-            rows,
-            sh.shell_ref(),
-            &sh.args_ref(),
-            new_surface_id,
+        let terminal = tasty_terminal::Terminal::new(
+            tasty_terminal::TerminalConfig {
+                cols,
+                rows,
+                shell: sh.shell_ref(),
+                args: &sh.args_ref(),
+                surface_id: new_surface_id,
+                working_dir: None,
+            },
             waker,
-            None,
         )?;
         let new_surface: Box<dyn crate::model::Surface> = Box::new(crate::model::TerminalSurface {
             id: new_surface_id,
@@ -570,14 +572,16 @@ pub(crate) fn handle_claude_respawn(
     let rows = state.engine.default_rows;
     let sh = crate::engine_state::ShellConfig::from_settings(&state.engine.settings);
     let waker = state.engine.make_waker(child_surface_id);
-    let new_terminal = match tasty_terminal::Terminal::new_with_shell_args_cwd(
-        cols,
-        rows,
-        sh.shell_ref(),
-        &sh.args_ref(),
-        child_surface_id,
+    let new_terminal = match tasty_terminal::Terminal::new(
+        tasty_terminal::TerminalConfig {
+            cols,
+            rows,
+            shell: sh.shell_ref(),
+            args: &sh.args_ref(),
+            surface_id: child_surface_id,
+            working_dir: None,
+        },
         waker,
-        None,
     ) {
         Ok(t) => t,
         Err(e) => return JsonRpcResponse::internal_error(id, e.to_string()),
