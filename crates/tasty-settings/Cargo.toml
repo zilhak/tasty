@@ -1,0 +1,26 @@
+[package]
+name = "tasty-settings"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Settings types and persistence for Tasty (appearance, keybindings, general)"
+
+[dependencies]
+# Workspace crates
+tasty-core = { path = "../tasty-core" }
+
+# UI types referenced in settings (e.g. egui::Color32 via HexColor)
+egui = "0.31"
+
+# Winit modifiers/keys for keybinding capture
+winit = "0.30"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+
+# Logging
+tracing = "0.1"
+
+# Error handling
+anyhow = "1"

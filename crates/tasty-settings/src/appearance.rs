@@ -1,5 +1,5 @@
-use crate::model::LogicalPx;
 use serde::{Deserialize, Serialize};
+use tasty_core::model::LogicalPx;
 
 pub use tasty_core::color::{HexColor, SurfaceColors};
 

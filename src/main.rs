@@ -33,7 +33,6 @@ mod recent_files;
 mod renderer;
 mod selection;
 mod terminal_link;
-mod settings;
 mod settings_ui;
 mod shortcuts;
 mod state;
@@ -52,6 +51,8 @@ mod macos_delegate;
 use tasty_terminal as terminal;
 // Re-export tasty_core modules so existing `crate::model::...` etc. paths keep working
 pub use tasty_core::{i18n, model, paths, theme};
+// Re-export tasty_settings as `crate::settings` to keep existing reverse imports
+pub use tasty_settings as settings;
 
 use std::sync::Arc;
 

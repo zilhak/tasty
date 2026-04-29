@@ -16,7 +16,7 @@ pub use general::{GeneralSettings, LinkModifier};
 pub use keybindings::KeybindingSettings;
 pub use types::{ClipboardSettings, NotificationSettings, PerformanceSettings};
 
-use crate::paths::tasty_home;
+use tasty_core::paths::tasty_home;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -107,7 +107,7 @@ mod tests {
         let settings = Settings::default();
         assert!(!settings.general.shell.is_empty());
         assert!(settings.appearance.default_font.font_size > 0.0);
-        assert!(settings.appearance.sidebar_width > crate::model::LogicalPx(0.0));
+        assert!(settings.appearance.sidebar_width > tasty_core::model::LogicalPx(0.0));
     }
 
     #[test]
