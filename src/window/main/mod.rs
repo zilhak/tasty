@@ -216,7 +216,15 @@ impl Window for MainWindow {
             FocusedSurfaceType::Explorer | FocusedSurfaceType::Markdown
         );
 
-        let (egui_consumed, egui_repaint) = if is_keyboard_event {
+        let is_redraw_event = matches!(&event, WindowEvent::RedrawRequested);
+
+        let (egui_consumed, egui_repaint) = if is_redraw_event {
+            // RedrawRequested를 egui에 전달하면 항상 repaint=true를 반환하여
+            // dirty → request_redraw → RedrawRequested 무한 루프가 발생한다.
+            // egui 렌더링은 handle_redraw의 run_egui_frame에서 별도로 수행하므로
+            // 이 이벤트를 egui에 전달할 필요가 없다.
+            (false, false)
+        } else if is_keyboard_event {
             if overlay_open || egui_surface {
                 self.base.gpu.handle_egui_event(&self.base.winit, &event)
             } else {

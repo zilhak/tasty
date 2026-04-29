@@ -6,8 +6,6 @@ use super::MainWindow;
 
 impl MainWindow {
     pub(super) fn handle_redraw(&mut self, _event_loop: &ActiveEventLoop) {
-        let frame_start = std::time::Instant::now();
-
         // Check if settings button was clicked (ui.rs sets state.settings_open = true)
         if self.state.settings_open {
             self.state.settings_open = false;
@@ -17,22 +15,17 @@ impl MainWindow {
         // When targeted_pty_polling is off, process all terminals every frame.
         // When on, individual terminals are processed via TerminalOutput(Some(id)) events,
         // but we still call process_all() as a safety net (it's a no-op if channels are empty).
-        let t0 = std::time::Instant::now();
         if self.state.process_all() {
             self.recalc_ime_preedit_anchor();
             self.base.dirty = true;
         }
-        let process_all_ms = t0.elapsed().as_secs_f64() * 1000.0;
 
         // Scan Claude child PTY output for known error patterns and fire
         // `claude-error` hooks. Independent of Claude's own Stop hook because
         // these failure modes do not fire Stop (API Error, content filter, …).
-        let t0 = std::time::Instant::now();
         self.scan_claude_errors();
-        let scan_claude_ms = t0.elapsed().as_secs_f64() * 1000.0;
 
         // Collect terminal events
-        let t0 = std::time::Instant::now();
         let events = self.state.collect_events();
         for event in &events {
             let surface_id = event.surface_id;
@@ -118,8 +111,6 @@ impl MainWindow {
             }
         }
 
-        let events_ms = t0.elapsed().as_secs_f64() * 1000.0;
-
         // Re-sync scale factor before render — macOS may not fire
         // ScaleFactorChanged reliably during monitor hot-swap or sleep/wake.
         if self.base.gpu.sync_scale_factor(&self.base.winit) {
@@ -146,7 +137,6 @@ impl MainWindow {
         }
 
         // Render
-        let mut render_ms = 0.0;
         if self.base.dirty {
             self.base.dirty = false;
             self.update_ime_cursor_area();
@@ -154,7 +144,6 @@ impl MainWindow {
                 .hovered_link
                 .as_ref()
                 .map(|h| (h.surface_id, &h.highlight));
-            let t0 = std::time::Instant::now();
             match self.base.gpu.render(
                 &mut self.state,
                 &self.base.winit,
@@ -180,39 +169,13 @@ impl MainWindow {
                     crate::crash_report::record_error(&msg);
                 }
             }
-            render_ms = t0.elapsed().as_secs_f64() * 1000.0;
         }
 
         // Process pending native context menu (after egui frame, before webview sync)
         self.process_pending_native_menu();
 
         // Sync webview lifecycle: create/destroy/reposition/visibility
-        let t0 = std::time::Instant::now();
         self.sync_webviews();
-        let webview_ms = t0.elapsed().as_secs_f64() * 1000.0;
-
-        // --- Frame timing: warn if any stage exceeds threshold ---
-        let total_ms = frame_start.elapsed().as_secs_f64() * 1000.0;
-        const SLOW_FRAME_MS: f64 = 50.0;
-        const SLOW_STAGE_MS: f64 = 10.0;
-        if total_ms > SLOW_FRAME_MS {
-            tracing::warn!(
-                "slow frame: {total_ms:.1}ms \
-                 [process_all={process_all_ms:.1}, scan_claude={scan_claude_ms:.1}, \
-                 events={events_ms:.1}, render={render_ms:.1}, webview={webview_ms:.1}]"
-            );
-        } else if process_all_ms > SLOW_STAGE_MS
-            || scan_claude_ms > SLOW_STAGE_MS
-            || events_ms > SLOW_STAGE_MS
-            || render_ms > SLOW_STAGE_MS
-            || webview_ms > SLOW_STAGE_MS
-        {
-            tracing::info!(
-                "slow stage in frame ({total_ms:.1}ms): \
-                 [process_all={process_all_ms:.1}, scan_claude={scan_claude_ms:.1}, \
-                 events={events_ms:.1}, render={render_ms:.1}, webview={webview_ms:.1}]"
-            );
-        }
 
         if self.base.dirty {
             self.base.winit.request_redraw();
