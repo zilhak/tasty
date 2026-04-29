@@ -384,11 +384,10 @@ impl MainWindow {
                             .and_then(|p| p.tabs.get(tab_index))
                             .map(|t| t.display_name())
                             .unwrap_or_default();
-                        self.state.dialogs.rename = Some((
-                            crate::state::RenameTarget::TabName { pane_id, tab_index },
-                            current_name,
-                        ));
-                        self.state.popups.open_centered_focused("rename");
+                        let target = crate::state::RenameTarget::TabName { pane_id, tab_index };
+                        let scope = target.popup_scope();
+                        self.state.dialogs.rename = Some((target, current_name));
+                        self.state.popups.open_with_scope("rename", scope);
                     }
                     Some(2) => {
                         // Close
@@ -553,19 +552,17 @@ impl MainWindow {
                     match result {
                         Some(1) => {
                             let name = self.state.engine.workspaces[ws_idx].name.clone();
-                            self.state.dialogs.rename = Some((
-                                crate::state::RenameTarget::WorkspaceName { ws_idx },
-                                name,
-                            ));
-                            self.state.popups.open_centered_focused("rename");
+                            let target = crate::state::RenameTarget::WorkspaceName { ws_idx };
+                            let scope = target.popup_scope();
+                            self.state.dialogs.rename = Some((target, name));
+                            self.state.popups.open_with_scope("rename", scope);
                         }
                         Some(2) => {
                             let subtitle = self.state.engine.workspaces[ws_idx].subtitle.clone();
-                            self.state.dialogs.rename = Some((
-                                crate::state::RenameTarget::WorkspaceSubtitle { ws_idx },
-                                subtitle,
-                            ));
-                            self.state.popups.open_centered_focused("rename");
+                            let target = crate::state::RenameTarget::WorkspaceSubtitle { ws_idx };
+                            let scope = target.popup_scope();
+                            self.state.dialogs.rename = Some((target, subtitle));
+                            self.state.popups.open_with_scope("rename", scope);
                         }
                         _ => {}
                     }

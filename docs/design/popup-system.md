@@ -101,7 +101,7 @@ pub struct PopupDef {
 | `markdown_open` | `file_open_popup::draw_markdown_open_popup` | Window | No |
 | `html_open` | `file_open_popup::draw_html_open_popup` | Window | No |
 | `bookmark_name` | `bookmark_popup::draw_bookmark_popup` | Window | No |
-| `rename` | `dialog::draw_rename_popup` | Window | No |
+| `rename` | `dialog::draw_rename_popup` | Tab/Workspace (동적) | No |
 
 ## 외부 클릭 닫기
 

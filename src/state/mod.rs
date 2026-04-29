@@ -213,6 +213,17 @@ impl RenameTarget {
             Self::TabName { .. } => "rename_dialog.tab_heading",
         }
     }
+
+    /// Popup scope matching the rename target.
+    pub fn popup_scope(&self) -> crate::ui::popup::PopupScope {
+        match self {
+            Self::WorkspaceName { ws_idx } => crate::ui::popup::PopupScope::Workspace(*ws_idx),
+            Self::WorkspaceSubtitle { ws_idx } => crate::ui::popup::PopupScope::Workspace(*ws_idx),
+            Self::TabName { pane_id, tab_index } => {
+                crate::ui::popup::PopupScope::Tab(*pane_id, *tab_index)
+            }
+        }
+    }
 }
 
 impl AppState {
