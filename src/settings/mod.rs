@@ -7,7 +7,6 @@ use std::fs;
 use std::path::PathBuf;
 
 use anyhow::Result;
-use directories::BaseDirs;
 use serde::{Deserialize, Serialize};
 
 pub use appearance::{
@@ -17,11 +16,7 @@ pub use general::{GeneralSettings, LinkModifier};
 pub use keybindings::KeybindingSettings;
 pub use types::{ClipboardSettings, NotificationSettings, PerformanceSettings};
 
-/// Returns the Tasty home directory: ~/.tasty/
-/// Consistent across all platforms for easy AI/agent access.
-pub fn tasty_home() -> Option<PathBuf> {
-    BaseDirs::new().map(|dirs| dirs.home_dir().join(".tasty"))
-}
+use crate::paths::tasty_home;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]

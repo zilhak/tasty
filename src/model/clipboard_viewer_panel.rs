@@ -3,7 +3,17 @@
 
 use super::SurfaceId;
 use super::surface_trait::Surface;
-use crate::clipboard_viewer_ui::ClipboardViewerState;
+
+/// Popup/Surface 양쪽에서 유지하는 뷰어 상태.
+#[derive(Debug, Default, Clone)]
+pub struct ClipboardViewerState {
+    /// 검색어. 빈 문자열이면 전체 표시.
+    pub search: String,
+    /// 키보드 선택 인덱스 (필터된 결과 기준).
+    pub selected: Option<usize>,
+    /// 전체 비우기 확인 대기 플래그.
+    pub pending_clear: bool,
+}
 
 pub struct ClipboardViewerPanel {
     pub id: SurfaceId,

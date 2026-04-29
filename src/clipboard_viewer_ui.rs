@@ -12,16 +12,7 @@ const PREVIEW_MAX_CHARS: usize = 200;
 /// 검색 매칭 시 비교하는 최대 문자수. 너무 긴 텍스트의 검색 비용 방어.
 const SEARCH_MATCH_MAX_CHARS: usize = 1000;
 
-/// Popup/Surface 양쪽에서 유지하는 뷰어 상태.
-#[derive(Debug, Default, Clone)]
-pub struct ClipboardViewerState {
-    /// 검색어. 빈 문자열이면 전체 표시.
-    pub search: String,
-    /// 키보드 선택 인덱스 (필터된 결과 기준).
-    pub selected: Option<usize>,
-    /// 전체 비우기 확인 대기 플래그.
-    pub pending_clear: bool,
-}
+pub use crate::model::ClipboardViewerState;
 
 struct ViewerConfig {
     /// Popup 모드에서 "Esc로 닫기" 등 안내 힌트를 추가로 보여줄지.

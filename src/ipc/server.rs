@@ -5,7 +5,7 @@ use std::sync::{Arc, mpsc};
 use std::thread;
 use std::time::Duration;
 
-use crate::settings::tasty_home;
+use crate::paths::tasty_home;
 use anyhow::Result;
 
 use crate::ipc::protocol::{JsonRpcRequest, JsonRpcResponse};

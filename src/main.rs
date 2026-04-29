@@ -31,6 +31,7 @@ mod markdown_ui;
 mod model;
 mod native_menu;
 mod notification;
+mod paths;
 mod recent_files;
 mod renderer;
 mod selection;

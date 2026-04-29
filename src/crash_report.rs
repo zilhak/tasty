@@ -7,7 +7,7 @@ use std::time::SystemTime;
 
 use tracing_subscriber::EnvFilter;
 
-use crate::settings::tasty_home;
+use crate::paths::tasty_home;
 
 /// Return the crash report directory: `~/.tasty/crash-reports/`
 fn crash_report_dir() -> Option<PathBuf> {
