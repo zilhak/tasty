@@ -199,6 +199,7 @@ pub fn draw_full_sidebar(
 
                     let active_ws = state.active_workspace;
                     let ws_count = state.engine.workspaces.len();
+                    let mut ws_card_rects: Vec<(usize, egui::Rect)> = Vec::new();
 
                     for i in 0..ws_count {
                         let is_active = i == active_ws;
@@ -273,7 +274,8 @@ pub fn draw_full_sidebar(
                             }
                         });
 
-                        let card_response = response.response.interact(egui::Sense::click());
+                        let card_response =
+                            response.response.interact(egui::Sense::click_and_drag());
 
                         if card_response.clicked() {
                             state.switch_workspace(i);
@@ -289,7 +291,104 @@ pub fn draw_full_sidebar(
                                 });
                         }
 
+                        // Drag-and-drop for workspace reordering
+                        if card_response.drag_started_by(egui::PointerButton::Primary) {
+                            state.dialogs.ws_drag = Some(crate::state::WsDragState {
+                                ws_idx: i,
+                                current_y: card_response
+                                    .interact_pointer_pos()
+                                    .map(|p| p.y)
+                                    .unwrap_or(0.0),
+                            });
+                        }
+                        if card_response.dragged_by(egui::PointerButton::Primary) {
+                            if let Some(ref mut drag) = state.dialogs.ws_drag {
+                                if drag.ws_idx == i {
+                                    if let Some(pos) = card_response.interact_pointer_pos() {
+                                        drag.current_y = pos.y;
+                                    }
+                                }
+                            }
+                        }
+
+                        // Store card rect for drop calculation
+                        ws_card_rects.push((i, response.response.rect));
+
                         ui.add_space(2.0);
+                    }
+
+                    // Handle drag stop — check if mouse was released
+                    if let Some(drag) = state.dialogs.ws_drag.clone() {
+                        let released = !ui.input(|i| i.pointer.primary_down());
+                        if released {
+                            state.dialogs.ws_drag = None;
+                            // Compute drop target from card rects
+                            let target = ws_card_rects
+                                .iter()
+                                .position(|(_, rect)| drag.current_y < rect.center().y)
+                                .unwrap_or(ws_card_rects.len().saturating_sub(1));
+                            let target = target.min(ws_count.saturating_sub(1));
+                            if target != drag.ws_idx {
+                                state.move_workspace(drag.ws_idx, target);
+                            }
+                        } else {
+                            // Draw insert marker
+                            let insert_idx = ws_card_rects
+                                .iter()
+                                .position(|(_, rect)| drag.current_y < rect.center().y)
+                                .unwrap_or(ws_card_rects.len());
+                            if let Some(marker_rect) = if insert_idx < ws_card_rects.len() {
+                                Some(ws_card_rects[insert_idx].1)
+                            } else {
+                                ws_card_rects.last().map(|(_, r)| *r)
+                            } {
+                                let marker_y = if insert_idx < ws_card_rects.len() {
+                                    marker_rect.min.y - 1.0
+                                } else {
+                                    marker_rect.max.y + 1.0
+                                };
+                                let line = egui::Rect::from_min_size(
+                                    egui::pos2(marker_rect.min.x, marker_y),
+                                    egui::vec2(marker_rect.width(), 2.0),
+                                );
+                                ui.painter().rect_filled(line, 0.0, th.blue);
+                            }
+
+                            // Draw ghost card at mouse position
+                            if let Some(name) =
+                                state.engine.workspaces.get(drag.ws_idx).map(|w| w.name.clone())
+                            {
+                                if let Some((_, first_rect)) = ws_card_rects.first() {
+                                    let ghost_rect = egui::Rect::from_min_size(
+                                        egui::pos2(
+                                            first_rect.min.x,
+                                            drag.current_y - first_rect.height() / 2.0,
+                                        ),
+                                        first_rect.size(),
+                                    );
+                                    let ghost_bg = egui::Color32::from_rgba_unmultiplied(
+                                        th.surface0.r(),
+                                        th.surface0.g(),
+                                        th.surface0.b(),
+                                        180,
+                                    );
+                                    let ghost_fg = egui::Color32::from_rgba_unmultiplied(
+                                        th.text.r(),
+                                        th.text.g(),
+                                        th.text.b(),
+                                        180,
+                                    );
+                                    ui.painter().rect_filled(ghost_rect, 4.0, ghost_bg);
+                                    ui.painter().text(
+                                        ghost_rect.center(),
+                                        egui::Align2::CENTER_CENTER,
+                                        &name,
+                                        egui::FontId::proportional(12.0),
+                                        ghost_fg,
+                                    );
+                                }
+                            }
+                        }
                     }
 
                     ui.add_space(4.0);
