@@ -39,12 +39,7 @@ impl GpuState {
         // Always re-apply UI scale (in case it changed)
         crate::theme::theme().apply_to_egui(&self.egui_ctx, ui_scale);
 
-        // Re-register markdown/explorer surface fonts if their settings changed.
-        crate::ui::font_registry::refresh_surface_fonts(
-            &self.egui_ctx,
-            &state.engine.settings.appearance,
-            &mut self.surface_font_state,
-        );
+        // Surface font refresh is done in render() before run_egui_frame().
 
         let term_font = state.engine.settings.appearance.effective_terminal_font();
         let effective_font_size = term_font.effective_font_size(self.scale_factor);
