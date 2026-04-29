@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 use std::io::{Read, Write};
-use std::sync::{LazyLock, mpsc};
+use std::sync::mpsc;
 use std::thread;
 
 use anyhow::Result;
@@ -17,13 +17,11 @@ pub mod disk_scrollback;
 mod events;
 pub mod foreground_process;
 mod modes;
+mod output_buffer;
 pub mod test_helpers;
 mod vte_handler;
 
 pub use events::*;
-
-/// Maximum size of the output buffer (1 MB).
-const OUTPUT_BUFFER_MAX: usize = 1_048_576;
 
 /// Information about a single cell for debug inspection.
 #[derive(Debug, Clone)]
@@ -62,14 +60,8 @@ pub struct Terminal {
     pub(crate) alt_saved_cursor: Option<(usize, usize)>,
     /// Events accumulated during process(), consumed via take_events().
     pub(crate) events: Vec<TerminalEvent>,
-    /// Raw PTY output history for read-mark API.
-    output_buffer: Vec<u8>,
-    /// Byte offset of the read mark in the output buffer.
-    read_mark: Option<usize>,
-    /// Byte offset for the ClaudeError output scanner. Independent of `read_mark`
-    /// (which is owned by the IPC `terminal.read_since_mark` API). Adjusted alongside
-    /// `read_mark` when the buffer is trimmed.
-    output_scan_mark: usize,
+    /// Raw PTY output buffer for read-mark API and ClaudeError scanner.
+    output: output_buffer::OutputBuffer,
     /// Whether we've already emitted a ProcessExited event.
     process_exit_emitted: bool,
     /// DECCKM: application cursor keys mode.
@@ -261,9 +253,7 @@ impl Terminal {
             saved_cursor: None,
             alt_saved_cursor: None,
             events: Vec::new(),
-            output_buffer: Vec::new(),
-            read_mark: None,
-            output_scan_mark: 0,
+            output: output_buffer::OutputBuffer::new(),
             process_exit_emitted: false,
             application_cursor_keys: false,
             cursor_visible: true,
@@ -292,25 +282,7 @@ impl Terminal {
         let mut changed = false;
 
         while let Ok(data) = self.action_rx.try_recv() {
-            // Accumulate raw bytes for read-mark API
-            self.output_buffer.extend_from_slice(&data);
-            // Trim to max size
-            if self.output_buffer.len() > OUTPUT_BUFFER_MAX {
-                let excess = self.output_buffer.len() - OUTPUT_BUFFER_MAX;
-                self.output_buffer.drain(..excess);
-                // Adjust mark if it was in the trimmed region
-                if let Some(mark) = &mut self.read_mark {
-                    if *mark <= excess {
-                        self.read_mark = None; // mark was in trimmed region, invalidate
-                    } else {
-                        *mark -= excess;
-                    }
-                }
-                // Adjust the ClaudeError scan mark in the same way. If it falls
-                // inside the trimmed region, snap it to 0 so the next scan
-                // re-reads from the start of the surviving buffer.
-                self.output_scan_mark = self.output_scan_mark.saturating_sub(excess);
-            }
+            self.output.append(&data);
 
             let actions = self.parser.parse_as_vec(&data);
             for action in actions {
@@ -941,37 +913,23 @@ impl Terminal {
 
     /// Set a read mark at the current end of the output buffer.
     pub fn set_mark(&mut self) {
-        self.read_mark = Some(self.output_buffer.len());
+        self.output.set_mark();
     }
 
     /// Return raw bytes accumulated since the last `set_output_scan_mark()` call.
     /// Used by the ClaudeError scanner; independent of `read_since_mark`'s mark.
     pub fn output_since_scan_mark(&self, strip_ansi: bool) -> String {
-        let start = self.output_scan_mark.min(self.output_buffer.len());
-        let bytes = &self.output_buffer[start..];
-        let text = String::from_utf8_lossy(bytes).to_string();
-        if strip_ansi {
-            strip_ansi_escapes(&text)
-        } else {
-            text
-        }
+        self.output.output_since_scan_mark(strip_ansi)
     }
 
     /// Advance the scan mark to the current end of the output buffer.
     pub fn set_output_scan_mark(&mut self) {
-        self.output_scan_mark = self.output_buffer.len();
+        self.output.set_scan_mark();
     }
 
     /// Read output since the last mark. If no mark was set, reads from the beginning.
     pub fn read_since_mark(&self, strip_ansi: bool) -> String {
-        let start = self.read_mark.unwrap_or(0);
-        let bytes = &self.output_buffer[start..];
-        let text = String::from_utf8_lossy(bytes).to_string();
-        if strip_ansi {
-            strip_ansi_escapes(&text)
-        } else {
-            text
-        }
+        self.output.read_since_mark(strip_ansi)
     }
 
     // ---- Public getters for terminal state ----
@@ -1178,16 +1136,6 @@ impl Terminal {
             std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string())
         }
     }
-}
-
-static ANSI_ESCAPE_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
-    regex::Regex::new(r"\x1b\[[0-9;]*[a-zA-Z]|\x1b\][^\x07]*\x07|\x1b\][^\x1b]*\x1b\\")
-        .expect("static regex is valid")
-});
-
-/// Strip ANSI escape sequences from a string using regex.
-fn strip_ansi_escapes(s: &str) -> String {
-    ANSI_ESCAPE_RE.replace_all(s, "").to_string()
 }
 
 #[cfg(test)]
