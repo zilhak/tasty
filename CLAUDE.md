@@ -90,6 +90,10 @@ Tasty는 **Windows, macOS, Linux를 모두 지원하는 크로스 플랫폼 앱*
 
 ## 작업 규칙
 
+### 유비쿼터스 언어 확인 (필수)
+
+**모든 작업을 시작하기 전에 `docs/design/ubiquitous-language.md`를 먼저 읽을 것.** 용어를 잘못 사용하면 코드/문서 전체의 일관성이 깨진다. 특히 Window/Pane/Tab/Surface 계층, 상위 레이아웃/하위 레이아웃 구분, Modal/Popup/Toast 구분을 정확히 이해한 상태에서 작업해야 한다.
+
 ### 문서 갱신 (필수)
 
 **모든 작업 완료 시 docs를 반드시 갱신할 것.**
