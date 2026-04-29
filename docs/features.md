@@ -551,7 +551,9 @@
 - `ui.state`: GUI 오버레이 상태 조회 (settings_open, notification_panel_open, active_workspace, workspace_count, pane_count, tab_count)
 - `ui.screenshot`: 현재 화면을 PNG로 저장
 - `debug.info`: 개발용 디버그 정보 조회 (scale_factor, cell 크기, viewport 등). `src/debug_info.rs`를 수정하여 커스텀 정보 추가 가능
-- `debug` CLI 서브커맨드: `tasty debug info`, `tasty debug ime-*` 등 디버그 관련 CLI 명령
+- `debug.cell_info`: 특정 셀(row, col)의 텍스트, 색상(fg/bg), 속성(bold/italic/underline/strikethrough/inverse), 너비 조회
+- `debug.screen_attrs`: 특정 행 전체의 셀 속성을 일괄 조회
+- `debug` CLI 서브커맨드: `tasty debug info`, `tasty debug ime-*`, `tasty debug cell-info`, `tasty debug screen-attrs` 등 디버그 관련 CLI 명령
 
 #### 워크스페이스
 - `workspace.list`: 전체 워크스페이스 목록 (이름, 활성 여부, 패인 수)
@@ -858,6 +860,13 @@ Claude Code의 훅 시스템과 연동하여 Claude의 활동 상태를 추적�
 - 동일 소스 병합(coalescing)
 - 다른 소스 비병합
 - FIFO 최대 100개 제한
+
+### tasty-test-tui (테스트용 TUI 앱)
+crossterm 기반 저수준 VTE 시퀀스 출력으로 터미널 에뮬레이션 정확성을 검증하는 테스트 시나리오 앱.
+- 시나리오: cursor, colors, attrs, altscreen, unicode, scroll-region
+- 각 시나리오는 결정적(deterministic) 출력 후 완료 마커를 남김
+- `--exit` 플래그로 즉시 종료 (E2E 테스트 자동화 지원)
+- `debug.cell_info` / `debug.screen_attrs` IPC와 조합하여 셀 속성 자동 검증 가능
 
 ### tasty-hooks 테스트
 - `HookEvent::parse` 전체 이벤트 타입
