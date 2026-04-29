@@ -50,6 +50,17 @@ impl GpuState {
         link_hover: Option<(u32, &crate::terminal_link::LinkHighlight)>,
     ) {
         let theme = crate::theme::theme();
+
+        // Use a single command encoder for all terminals to reduce queue.submit() calls.
+        // Each terminal still needs its own prepare → render cycle because
+        // prepare_terminal_viewport overwrites the shared uniform/instance buffers.
+        let mut term_encoder =
+            self.device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("terminal_pass"),
+                });
+        let mut any_rendered = false;
+
         for (_pane_id, _pane_rect, surface_regions) in regions {
             for region in surface_regions {
                 let Some(terminal) = region.surface.focused_terminal() else {
@@ -99,11 +110,6 @@ impl GpuState {
                     link_for_this,
                 );
 
-                let mut term_encoder =
-                    self.device
-                        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                            label: Some("terminal_pass"),
-                        });
                 {
                     let mut render_pass =
                         term_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -127,8 +133,12 @@ impl GpuState {
                         self.size.height,
                     );
                 }
-                self.queue.submit(std::iter::once(term_encoder.finish()));
+                any_rendered = true;
             }
+        }
+
+        if any_rendered {
+            self.queue.submit(std::iter::once(term_encoder.finish()));
         }
     }
 
