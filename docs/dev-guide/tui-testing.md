@@ -135,6 +135,148 @@ assert_eq!(next["text"], "글");
 2. `wait_for_output`로 완료 마커 대기
 3. `debug.cell_info` 또는 `debug.screen_attrs`로 셀 상태 검증
 
+## 시나리오별 기대 출력 레퍼런스
+
+각 시나리오가 어떤 행/열에 무엇을 출력하는지 정리. E2E 테스트 작성 시 검증값으로 사용한다.
+
+### cursor
+
+커서를 지정 위치로 이동한 뒤 마커 문자를 출력한다.
+
+```
+옵션: --row R --col C --marker M (기본: row=5, col=10, marker=X)
+```
+
+| row | col | 기대 | 비고 |
+|-----|-----|------|------|
+| R | C | `M` | 마커 문자 |
+| 마지막 행 | 0~ | `CURSOR_TEST_DONE` | 완료 마커 |
+
+### colors
+
+ANSI 16색과 TrueColor 출력.
+
+**Row 0**: ANSI 16색 전경 — 각 문자가 해당 팔레트 색상의 fg로 출력
+
+| col | text | fg |
+|-----|------|----|
+| 0 | `0` | `palette:0` (black) |
+| 1 | `1` | `palette:1` (red) |
+| ... | ... | ... |
+| 9 | `9` | `palette:9` |
+| 10 | `A` | `palette:10` |
+| 15 | `F` | `palette:15` (bright white) |
+
+**Row 1**: ANSI 16색 배경 — 각 셀이 해당 팔레트 색상의 bg, 문자는 공백
+
+| col | text | bg |
+|-----|------|----|
+| 0 | ` ` | `palette:0` |
+| 1 | ` ` | `palette:1` |
+| ... | ... | ... |
+| 15 | ` ` | `palette:15` |
+
+**Row 2**: TrueColor 전경
+
+| col | text | fg |
+|-----|------|----|
+| 0 | `R` | `#ff0000` |
+| 1 | `G` | `#00ff00` |
+| 2 | `B` | `#0000ff` |
+
+### attrs
+
+각 행에 하나의 텍스트 속성을 적용하여 출력.
+
+| row | text | bold | italic | underline | strikethrough | inverse |
+|-----|------|------|--------|-----------|---------------|---------|
+| 0 | `BOLD` | true | false | false | false | false |
+| 1 | `ITALIC` | false | true | false | false | false |
+| 2 | `UNDERLINE` | false | false | true | false | false |
+| 3 | `STRIKE` | false | false | false | true | false |
+| 4 | `INVERSE` | false | false | false | false | true |
+| 5 | `COMBO` | true | true | true | false | false |
+
+### altscreen
+
+대체 화면 진입/퇴장 시퀀스 검증.
+
+1. 일반 화면에 `NORMAL_SCREEN` 출력 (row 0)
+2. DECSET 1049로 대체 화면 진입
+3. 대체 화면에 `ALT_SCREEN_CONTENT` 출력 (row 0)
+4. 마지막 행에 `ALTSCREEN_TEST_DONE` 출력
+5. (대기 후) DECRST 1049로 대체 화면 퇴장
+
+**대체 화면 진입 직후:**
+
+| row | col 0~ | 비고 |
+|-----|--------|------|
+| 0 | `ALT_SCREEN_CONTENT` | 대체 화면 콘텐츠 |
+| 마지막 행 | `ALTSCREEN_TEST_DONE` | 완료 마커 |
+
+**퇴장 후:**
+
+| row | col 0~ | 비고 |
+|-----|--------|------|
+| 0 | `NORMAL_SCREEN` | 원래 일반 화면으로 복원되어야 함 |
+
+### unicode
+
+CJK 전각 문자 렌더링 검증. 전각 문자는 2셀을 차지한다.
+
+**Row 0**: 한글 `한글`
+
+| col | text | width |
+|-----|------|-------|
+| 0 | `한` | 2 |
+| 2 | `글` | 2 |
+
+**Row 1**: 한자 `漢字`
+
+| col | text | width |
+|-----|------|-------|
+| 0 | `漢` | 2 |
+| 2 | `字` | 2 |
+
+**Row 2**: ASCII + 전각 혼합 `AB한CD`
+
+| col | text | width |
+|-----|------|-------|
+| 0 | `A` | 1 |
+| 1 | `B` | 1 |
+| 2 | `한` | 2 |
+| 4 | `C` | 1 |
+| 5 | `D` | 1 |
+
+**Row 3**: 히라가나 `あいう`
+
+| col | text | width |
+|-----|------|-------|
+| 0 | `あ` | 2 |
+| 2 | `い` | 2 |
+| 4 | `う` | 2 |
+
+### scroll-region
+
+DECSTBM으로 스크롤 리전 설정 후 리전 내 스크롤 검증.
+
+**초기 출력**: 모든 행에 `LINE0`~`LINE7`
+
+**스크롤 리전**: row 2~5 (1-indexed 3~6)
+
+**리전 바닥(row 5)에서 개행 후 기대 상태:**
+
+| row | 기대 text | 비고 |
+|-----|-----------|------|
+| 0 | `LINE0` | 리전 밖 — 영향 없음 |
+| 1 | `LINE1` | 리전 밖 — 영향 없음 |
+| 2 | `LINE3` | 리전 내부 — LINE2가 스크롤 아웃, LINE3이 올라옴 |
+| 3 | `LINE4` | 리전 내부 |
+| 4 | `LINE5` | 리전 내부 |
+| 5 | `SCROLLED` | 리전 바닥에 새 텍스트 |
+| 6 | `LINE6` | 리전 밖 — 영향 없음 |
+| 7 | `LINE7` | 리전 밖 — 영향 없음 |
+
 ## 검증 가능한 항목
 
 | 항목 | 검증 방법 |
