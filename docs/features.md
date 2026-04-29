@@ -8,7 +8,7 @@
 - PTY 리사이즈 전파: 윈도우 크기 변경 시 자식 프로세스에 새 크기 통보. rows 축소 시 커서 아래 빈 행을 먼저 제거하고 부족하면 위쪽 행을 scrollback으로 캡처하여 커서-콘텐츠 관계를 보존. rows 확대 시 scrollback에서 복원. 모든 워크스페이스/탭의 터미널에 리사이즈 전파
 - 자식 프로세스 핸들 관리: 생존 여부 확인 가능
 - PTY 채널 백프레셔: `sync_channel(32)`으로 버퍼 크기 제한 (32 * 8KB = 256KB), 버퍼 가득 차면 PTY 리더 스레드 블로킹
-- 작업 디렉토리 상속: 새 surface/pane/workspace 생성 시 소스 surface의 현재 작업 디렉토리를 자동 상속. 셸이 내보내는 OSC 7 시퀀스로 CWD를 캐싱하며, 캐시가 없을 때 Linux는 `/proc/PID/cwd`, macOS는 `lsof`로 fallback. Windows는 PowerShell fallback 비용(~7초)을 피하기 위해 전적으로 OSC 7에 의존 — Tasty-mode bashrc의 빌트인 블록이 `PROMPT_COMMAND`로 자동 emit하고, VTE 파서가 `/C:/path` URI 형식을 Windows 경로로 정규화. 설정에서 on/off 가능 (`general.inherit_cwd`, 기본 on). CLI/IPC에서는 `--cwd` 옵션으로 명시적 경로 지정도 가능
+- 작업 디렉토리 상속: 새 surface/pane/workspace 생성 시 소스 surface의 현재 작업 디렉토리를 자동 상속. 셸이 내보내는 OSC 7 시퀀스로 CWD를 캐싱 (모든 플랫폼 공통). zsh/fish는 기본 지원, bash는 `PROMPT_COMMAND` 설정 필요. VTE 파서가 `/C:/path` URI 형식을 Windows 경로로 정규화. 설정에서 on/off 가능 (`general.inherit_cwd`, 기본 on). CLI/IPC에서는 `--cwd` 옵션으로 명시적 경로 지정도 가능
 
 ### VTE 파싱 및 터미널 에뮬레이션
 - termwiz `Parser`를 통한 VT 이스케이프 시퀀스 파싱

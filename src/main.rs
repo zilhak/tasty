@@ -128,10 +128,6 @@ enum AppEvent {
     TrayShowWindow,
     /// 백그라운드 스레드에서 클립보드 변경을 감지하여 데이터를 전달.
     ClipboardChanged(ClipboardData),
-    /// 터미널 CWD를 라운드 로빈으로 1개씩 폴링. 50ms 간격 스레드가 발송.
-    /// macOS/Linux 전용. Windows는 OSC 7에만 의존하므로 이 이벤트가 발생하지 않는다.
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
-    CwdPoll,
 }
 
 /// Tracks an active divider drag operation.
@@ -733,21 +729,8 @@ fn main() -> Result<()> {
         });
     }
 
-    // CWD 폴링 스레드: 50ms마다 하나의 터미널 CWD를 라운드 로빈으로 갱신.
-    // macOS/Linux 전용. Windows는 OSC 7에만 의존한다 (cwd.rs 참조).
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
-    {
-        let cwd_proxy = proxy.clone();
-        std::thread::spawn(move || {
-            let interval = std::time::Duration::from_millis(50);
-            loop {
-                std::thread::sleep(interval);
-                if cwd_proxy.send_event(AppEvent::CwdPoll).is_err() {
-                    break;
-                }
-            }
-        });
-    }
+    // CWD는 OSC 7 시퀀스에만 의존한다. 모든 플랫폼 공통.
+    // zsh/fish는 기본 지원, bash는 PROMPT_COMMAND 설정 필요.
 
     let mut app = App::new(proxy, cli.port_file);
     event_loop.run_app(&mut app)?;

@@ -8,6 +8,8 @@ use crate::{App, AppEvent};
 
 impl ApplicationHandler<AppEvent> for App {
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: AppEvent) {
+        let t0 = std::time::Instant::now();
+        let event_name = format!("{event:?}");
         match event {
             AppEvent::CreateWindow => {
                 self.create_new_window(event_loop);
@@ -125,10 +127,10 @@ impl ApplicationHandler<AppEvent> for App {
             AppEvent::ClipboardChanged(data) => {
                 self.record_clipboard_data(data);
             }
-            #[cfg(any(target_os = "macos", target_os = "linux"))]
-            AppEvent::CwdPoll => {
-                self.poll_one_terminal_cwd();
-            }
+        }
+        let elapsed_ms = t0.elapsed().as_secs_f64() * 1000.0;
+        if elapsed_ms > 10.0 {
+            tracing::warn!("slow user_event({event_name}): {elapsed_ms:.1}ms");
         }
     }
 
@@ -204,6 +206,14 @@ impl ApplicationHandler<AppEvent> for App {
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
+        let t0 = std::time::Instant::now();
+        let is_redraw = matches!(event, WindowEvent::RedrawRequested);
+        let event_name = if is_redraw {
+            String::new()
+        } else {
+            format!("{event:?}")
+        };
+
         // Shell setup mode — handled by App directly
         if self.shell_setup_mode {
             if let WindowEvent::RedrawRequested = &event {
@@ -366,15 +376,26 @@ impl ApplicationHandler<AppEvent> for App {
                 }
             }
         }
+
+        if !is_redraw {
+            let elapsed_ms = t0.elapsed().as_secs_f64() * 1000.0;
+            if elapsed_ms > 10.0 {
+                tracing::warn!("slow window_event({event_name}): {elapsed_ms:.1}ms");
+            }
+        }
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        let atw_start = std::time::Instant::now();
         event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
+
+        let t0 = std::time::Instant::now();
         if self.process_ipc() {
             if let Some(w) = self.focused_window_mut() {
                 w.mark_dirty();
             }
         }
+        let ipc_ms = t0.elapsed().as_secs_f64() * 1000.0;
 
         // Poll system tray menu events (Windows only)
         #[cfg(windows)]
@@ -394,11 +415,14 @@ impl ApplicationHandler<AppEvent> for App {
         self.tick_modal_shake();
 
         // Flush layout persistence (debounced).
+        let t0 = std::time::Instant::now();
         self.flush_layout_persistence();
+        let layout_persist_ms = t0.elapsed().as_secs_f64() * 1000.0;
 
         // Flush deferred PTY resizes (throttled to 100ms intervals).
         // If any terminal still has a pending resize (throttled), request a redraw
         // so we retry on the next frame.
+        let t0 = std::time::Instant::now();
         let mut any_pending = false;
         for w in self.windows.values_mut() {
             let Some(main) = w.as_main_mut() else {
@@ -417,6 +441,16 @@ impl ApplicationHandler<AppEvent> for App {
             for w in self.windows.values() {
                 w.base().winit.request_redraw();
             }
+        }
+        let pty_resize_ms = t0.elapsed().as_secs_f64() * 1000.0;
+
+        let total_ms = atw_start.elapsed().as_secs_f64() * 1000.0;
+        if total_ms > 10.0 {
+            tracing::warn!(
+                "slow about_to_wait: {total_ms:.1}ms \
+                 [ipc={ipc_ms:.1}, layout_persist={layout_persist_ms:.1}, \
+                 pty_resize={pty_resize_ms:.1}]"
+            );
         }
     }
 }
@@ -563,38 +597,6 @@ impl App {
         }
     }
 
-    /// Poll CWD for one terminal. Alternates between round-robin and focused-surface polling.
-    /// Invoked from AppEvent::CwdPoll (every 50ms). macOS/Linux 전용.
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
-    fn poll_one_terminal_cwd(&mut self) {
-        // Collect (engine, focused_surface_id) pairs from MainWindows
-        let mut targets: Vec<(&mut crate::engine_state::EngineState, Option<u32>)> = self
-            .windows
-            .values_mut()
-            .filter_map(|w| w.as_main_mut())
-            .map(|m| {
-                let focused = m.state.focused_surface_id();
-                (&mut m.state.engine, focused)
-            })
-            .collect();
-        // Parked states have no focused surface
-        for s in &mut self.parked_states {
-            targets.push((&mut s.engine, None));
-        }
-
-        for (engine, focused) in targets {
-            let is_focused_turn = engine.cwd_poll_focused_turn;
-            engine.cwd_poll_focused_turn = !is_focused_turn;
-
-            if is_focused_turn {
-                if let Some(sid) = focused {
-                    engine.poll_one_cwd_focused(sid);
-                }
-            } else {
-                engine.last_cwd_poll_id = engine.poll_one_cwd_round_robin();
-            }
-        }
-    }
 
     fn handle_quit_requested(&mut self, event_loop: &ActiveEventLoop) {
         // If a quit modal is already open, treat as immediate quit
