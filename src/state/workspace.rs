@@ -151,6 +151,26 @@ impl AppState {
         }
     }
 
+    /// Move a workspace from one index to another, adjusting active_workspace accordingly.
+    /// Returns false if indices are out of bounds or equal.
+    pub fn move_workspace(&mut self, from: usize, to: usize) -> bool {
+        let len = self.engine.workspaces.len();
+        if from == to || from >= len || to >= len {
+            return false;
+        }
+        let ws = self.engine.workspaces.remove(from);
+        self.engine.workspaces.insert(to, ws);
+        // Adjust active_workspace to follow the moved workspace or account for the shift
+        if self.active_workspace == from {
+            self.active_workspace = to;
+        } else if from < to && self.active_workspace > from && self.active_workspace <= to {
+            self.active_workspace -= 1;
+        } else if from > to && self.active_workspace >= to && self.active_workspace < from {
+            self.active_workspace += 1;
+        }
+        true
+    }
+
     /// Ensure all deferred tabs in the active workspace are initialized.
     /// Called on workspace switch to lazily spawn PTYs for restored terminals.
     fn ensure_active_workspace_initialized(&mut self) {

@@ -365,11 +365,33 @@ impl MainWindow {
                 x,
                 y,
             } => {
-                let rename_label = crate::i18n::t("tab_context_menu.rename");
-                let close_label = crate::i18n::t("tab_context_menu.close");
+                let tab_count = self
+                    .state
+                    .active_workspace()
+                    .pane_layout()
+                    .find_pane(pane_id)
+                    .map(|p| p.tabs.len())
+                    .unwrap_or(0);
+                let can_move_left = tab_index > 0;
+                let can_move_right = tab_index + 1 < tab_count;
+
+                let move_left = if can_move_left {
+                    MenuItem::new(3, crate::i18n::t("tab_context_menu.move_left"))
+                } else {
+                    MenuItem::disabled(3, crate::i18n::t("tab_context_menu.move_left"))
+                };
+                let move_right = if can_move_right {
+                    MenuItem::new(4, crate::i18n::t("tab_context_menu.move_right"))
+                } else {
+                    MenuItem::disabled(4, crate::i18n::t("tab_context_menu.move_right"))
+                };
+
                 let items = [
-                    MenuItem::new(1, rename_label),
-                    MenuItem::new(2, close_label),
+                    MenuItem::new(1, crate::i18n::t("tab_context_menu.rename")),
+                    MenuItem::new(2, crate::i18n::t("tab_context_menu.close")),
+                    MenuItem::separator(),
+                    move_left,
+                    move_right,
                 ];
                 let result =
                     show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
@@ -403,6 +425,30 @@ impl MainWindow {
                                     self.state.close_surface_by_id(sid);
                                 }
                             }
+                        }
+                    }
+                    Some(3) => {
+                        // Move Left
+                        if tab_index > 0 {
+                            if let Some(pane) = self
+                                .state
+                                .active_workspace_mut()
+                                .pane_layout_mut()
+                                .find_pane_mut(pane_id)
+                            {
+                                pane.move_tab(tab_index, tab_index - 1);
+                            }
+                        }
+                    }
+                    Some(4) => {
+                        // Move Right
+                        if let Some(pane) = self
+                            .state
+                            .active_workspace_mut()
+                            .pane_layout_mut()
+                            .find_pane_mut(pane_id)
+                        {
+                            pane.move_tab(tab_index, tab_index + 1);
                         }
                     }
                     _ => {}
@@ -542,9 +588,27 @@ impl MainWindow {
                 self.mark_dirty();
             }
             PendingNativeMenu::Workspace { ws_idx, x, y } => {
+                let ws_count = self.state.engine.workspaces.len();
+                let can_move_up = ws_idx > 0;
+                let can_move_down = ws_idx + 1 < ws_count;
+
+                let move_up = if can_move_up {
+                    MenuItem::new(3, crate::i18n::t("context_menu.move_up"))
+                } else {
+                    MenuItem::disabled(3, crate::i18n::t("context_menu.move_up"))
+                };
+                let move_down = if can_move_down {
+                    MenuItem::new(4, crate::i18n::t("context_menu.move_down"))
+                } else {
+                    MenuItem::disabled(4, crate::i18n::t("context_menu.move_down"))
+                };
+
                 let items = [
                     MenuItem::new(1, crate::i18n::t("context_menu.rename_title")),
                     MenuItem::new(2, crate::i18n::t("context_menu.rename_subtitle")),
+                    MenuItem::separator(),
+                    move_up,
+                    move_down,
                 ];
                 let result =
                     show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
@@ -563,6 +627,18 @@ impl MainWindow {
                             let scope = target.popup_scope();
                             self.state.dialogs.rename = Some((target, subtitle));
                             self.state.popups.open_with_scope("rename", scope);
+                        }
+                        Some(3) => {
+                            // Move Up
+                            if ws_idx > 0 {
+                                self.state.move_workspace(ws_idx, ws_idx - 1);
+                            }
+                        }
+                        Some(4) => {
+                            // Move Down
+                            if ws_idx + 1 < self.state.engine.workspaces.len() {
+                                self.state.move_workspace(ws_idx, ws_idx + 1);
+                            }
                         }
                         _ => {}
                     }

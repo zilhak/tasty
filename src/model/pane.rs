@@ -406,6 +406,25 @@ impl Pane {
         result
     }
 
+    /// Move a tab from one index to another, adjusting active_tab accordingly.
+    /// Returns false if indices are out of bounds or equal.
+    pub fn move_tab(&mut self, from: usize, to: usize) -> bool {
+        if from == to || from >= self.tabs.len() || to >= self.tabs.len() {
+            return false;
+        }
+        let tab = self.tabs.remove(from);
+        self.tabs.insert(to, tab);
+        // Adjust active_tab to follow the moved tab or account for the shift
+        if self.active_tab == from {
+            self.active_tab = to;
+        } else if from < to && self.active_tab > from && self.active_tab <= to {
+            self.active_tab -= 1;
+        } else if from > to && self.active_tab >= to && self.active_tab < from {
+            self.active_tab += 1;
+        }
+        true
+    }
+
     /// Produce a JSON tree representation of this pane.
     pub fn to_tree_json(&self) -> serde_json::Value {
         let tabs: Vec<_> = self

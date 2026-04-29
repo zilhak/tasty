@@ -222,6 +222,8 @@ tools_button = "도구"
 [context_menu]
 rename_title = "이름 변경"
 rename_subtitle = "부제목 변경"
+move_up = "위로 이동"
+move_down = "아래로 이동"
 
 [rename_dialog]
 title_heading = "워크스페이스 이름 변경"
@@ -251,6 +253,8 @@ settings = "설정"
 [tab_context_menu]
 rename = "탭 이름 변경"
 close = "탭 닫기"
+move_left = "왼쪽으로 이동"
+move_right = "오른쪽으로 이동"
 
 [pane_context_menu]
 new_terminal = "새 터미널"

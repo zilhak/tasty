@@ -222,6 +222,8 @@ tools_button = "ツール"
 [context_menu]
 rename_title = "名前の変更"
 rename_subtitle = "サブタイトルの変更"
+move_up = "上へ移動"
+move_down = "下へ移動"
 
 [rename_dialog]
 title_heading = "ワークスペース名の変更"
@@ -251,6 +253,8 @@ settings = "設定"
 [tab_context_menu]
 rename = "タブ名を変更"
 close = "タブを閉じる"
+move_left = "左へ移動"
+move_right = "右へ移動"
 
 [pane_context_menu]
 new_terminal = "新規ターミナル"

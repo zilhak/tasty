@@ -222,6 +222,8 @@ tools_button = "Tools"
 [context_menu]
 rename_title = "Rename"
 rename_subtitle = "Change Subtitle"
+move_up = "Move Up"
+move_down = "Move Down"
 
 [rename_dialog]
 title_heading = "Rename Workspace"
@@ -251,6 +253,8 @@ settings = "Settings"
 [tab_context_menu]
 rename = "Rename Tab"
 close = "Close Tab"
+move_left = "Move Left"
+move_right = "Move Right"
 
 [pane_context_menu]
 new_terminal = "New Terminal"
