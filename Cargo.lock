@@ -4714,6 +4714,7 @@ dependencies = [
  "serde",
  "serde_json",
  "shell-escape",
+ "tasty-core",
  "tasty-hooks",
  "tasty-terminal",
  "termwiz",
@@ -4732,6 +4733,23 @@ dependencies = [
  "winit",
  "winresource",
  "x11-dl",
+]
+
+[[package]]
+name = "tasty-core"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "directories",
+ "egui",
+ "egui_commonmark",
+ "image",
+ "serde",
+ "serde_json",
+ "tasty-terminal",
+ "termwiz",
+ "toml 0.8.2",
+ "tracing",
 ]
 
 [[package]]

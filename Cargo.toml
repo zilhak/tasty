@@ -12,6 +12,7 @@ repository = "https://github.com/zilhak/tasty"
 
 [dependencies]
 # Workspace crates
+tasty-core = { path = "crates/tasty-core" }
 tasty-hooks = { path = "crates/tasty-hooks" }
 tasty-terminal = { path = "crates/tasty-terminal" }
 # Window & Input

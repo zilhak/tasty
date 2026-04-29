@@ -310,14 +310,14 @@ pub struct ThemePreset {
     pub id: &'static str,
     pub label: &'static str,
     pub theme: Theme,
-    pub terminal_colors: crate::settings::SurfaceColors,
-    pub markdown_colors: crate::settings::SurfaceColors,
-    pub explorer_colors: crate::settings::SurfaceColors,
+    pub terminal_colors: crate::color::SurfaceColors,
+    pub markdown_colors: crate::color::SurfaceColors,
+    pub explorer_colors: crate::color::SurfaceColors,
 }
 
 /// List all available theme presets.
 pub fn presets() -> Vec<ThemePreset> {
-    use crate::settings::{HexColor, SurfaceColors};
+    use crate::color::{HexColor, SurfaceColors};
 
     vec![
         ThemePreset {

@@ -1,0 +1,36 @@
+[package]
+name = "tasty-core"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Shared data types, theme, i18n and path helpers for Tasty"
+
+[dependencies]
+# Workspace crates
+tasty-terminal = { path = "../tasty-terminal" }
+
+# UI types (Color32, TextureHandle, Vec2, Pos2, ColorImage)
+egui = "0.31"
+
+# Cell attributes for closed-item history
+termwiz = "0.22"
+
+# Serialization (model::length, settings 등 외부에서 사용)
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+
+# Path helpers (~/.tasty)
+directories = "6"
+
+# Logging
+tracing = "0.1"
+
+# Error handling (model::workspace, model::pane)
+anyhow = "1"
+
+# Image loading/saving (model::image_panel)
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "bmp", "webp", "ico", "tiff"] }
+
+# Markdown rendering cache (model::markdown_panel)
+egui_commonmark = "0.20.0"

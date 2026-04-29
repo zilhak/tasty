@@ -12,16 +12,15 @@ pub struct Tab {
     pub explicit_name: Option<String>,
     /// The layout tree of surfaces. Always a binary tree; a single leaf = unsplit state.
     /// Temporarily `None` during structural mutations or when lazy_pty_init is enabled.
-    pub(crate) layout_opt: Option<SurfaceLayout>,
+    pub layout_opt: Option<SurfaceLayout>,
     /// The focused surface ID within this tab's layout.
     pub focused_surface: SurfaceId,
     /// When lazy_pty_init is enabled, stores parameters to spawn PTY on first access.
-    pub(crate) deferred_spawn: Option<super::terminal_surface::DeferredSpawn>,
+    pub deferred_spawn: Option<super::terminal_surface::DeferredSpawn>,
     /// Surface ID reserved for deferred spawn (set when lazy_pty_init creates the tab).
-    #[allow(dead_code)]
-    pub(crate) deferred_surface_id: Option<SurfaceId>,
+    pub deferred_surface_id: Option<SurfaceId>,
     /// Cached display name. Updated on CwdChanged/explicit_name change, not every frame.
-    pub(crate) cached_display_name: Option<String>,
+    pub cached_display_name: Option<String>,
 }
 
 impl Tab {
@@ -106,12 +105,12 @@ impl Tab {
 
     /// Take the layout out (for structural mutation). Must be followed by put_layout.
     #[track_caller]
-    pub(crate) fn take_layout(&mut self) -> SurfaceLayout {
+    pub fn take_layout(&mut self) -> SurfaceLayout {
         self.layout_opt.take().expect("BUG: layout already taken")
     }
 
     /// Put the layout back after structural mutation.
-    pub(crate) fn put_layout(&mut self, layout: SurfaceLayout) {
+    pub fn put_layout(&mut self, layout: SurfaceLayout) {
         self.layout_opt = Some(layout);
     }
 

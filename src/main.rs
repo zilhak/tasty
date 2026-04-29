@@ -21,17 +21,14 @@ mod font;
 mod global_hooks;
 mod gpu;
 mod html_ui;
-mod i18n;
 mod image_ui;
 mod ipc;
 mod layout_persistence;
 #[cfg(windows)]
 mod jump_list;
 mod markdown_ui;
-mod model;
 mod native_menu;
 mod notification;
-mod paths;
 mod recent_files;
 mod renderer;
 mod selection;
@@ -44,7 +41,6 @@ mod storage;
 mod surface_meta;
 #[cfg(windows)]
 mod system_tray;
-pub mod theme;
 mod ui;
 mod webview;
 pub mod window;
@@ -54,6 +50,8 @@ mod macos_delegate;
 
 // Re-export tasty_terminal as terminal for backward compatibility within the crate
 use tasty_terminal as terminal;
+// Re-export tasty_core modules so existing `crate::model::...` etc. paths keep working
+pub use tasty_core::{i18n, model, paths, theme};
 
 use std::sync::Arc;
 
