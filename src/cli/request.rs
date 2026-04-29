@@ -1,8 +1,9 @@
 #[cfg(debug_assertions)]
 use super::DebugCommands;
 use super::{
-    ClaudeCommands, ClipboardCommands, CloseCommands, Commands, ListCommands, NewCommands,
-    ReadCommands, SendCommands, SetCommands, SurfaceMetaCommands, ToolCommands, UnsetCommands,
+    ClaudeCommands, ClipboardCommands, CloseCommands, Commands, ListCommands, MoveCommands,
+    NewCommands, ReadCommands, SendCommands, SetCommands, SurfaceMetaCommands, ToolCommands,
+    UnsetCommands,
 };
 use crate::ipc::protocol::JsonRpcRequest;
 
@@ -55,6 +56,7 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
         Commands::Close { command } => close_command_to_method_params(command),
         Commands::List { command } => list_command_to_method_params(command),
         Commands::Set { command } => set_command_to_method_params(command),
+        Commands::Move { command } => move_command_to_method_params(command),
         Commands::Claude { command } => claude_command_to_method_params(command),
         #[cfg(debug_assertions)]
         Commands::Debug { command } => debug_command_to_method_params(command),
@@ -324,7 +326,12 @@ fn set_command_to_method_params(command: &SetCommands) -> (&'static str, serde_j
                 "label": label,
             }),
         ),
-        SetCommands::TabOrder { pane, from, to } => (
+    }
+}
+
+fn move_command_to_method_params(command: &MoveCommands) -> (&'static str, serde_json::Value) {
+    match command {
+        MoveCommands::Tab { pane, from, to } => (
             "tab.move",
             serde_json::json!({
                 "pane_id": pane,
@@ -332,7 +339,7 @@ fn set_command_to_method_params(command: &SetCommands) -> (&'static str, serde_j
                 "to_index": to,
             }),
         ),
-        SetCommands::WorkspaceOrder { from, to } => (
+        MoveCommands::Workspace { from, to } => (
             "workspace.move",
             serde_json::json!({
                 "from_index": from,
