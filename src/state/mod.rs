@@ -160,6 +160,27 @@ pub struct DialogState {
     pub bookmark_input: Option<(u32, String, String)>,
     /// Clipboard viewer popup/surface 공유 상태.
     pub clipboard_viewer: crate::clipboard_viewer_ui::ClipboardViewerState,
+    /// Tab drag-and-drop state.
+    pub tab_drag: Option<TabDragState>,
+    /// Workspace drag-and-drop state.
+    pub ws_drag: Option<WsDragState>,
+}
+
+/// Tab drag-and-drop state (UI-only, not persisted).
+#[derive(Clone)]
+pub struct TabDragState {
+    pub pane_id: u32,
+    pub tab_index: usize,
+    /// Current mouse x in logical pixels (for insert position calculation).
+    pub current_x: f32,
+}
+
+/// Workspace drag-and-drop state (UI-only, not persisted).
+#[derive(Clone)]
+pub struct WsDragState {
+    pub ws_idx: usize,
+    /// Current mouse y in logical pixels (for insert position calculation).
+    pub current_y: f32,
 }
 
 impl DialogState {
@@ -179,6 +200,8 @@ impl DialogState {
             pending_popup_open: None,
             bookmark_input: None,
             clipboard_viewer: crate::clipboard_viewer_ui::ClipboardViewerState::default(),
+            tab_drag: None,
+            ws_drag: None,
         }
     }
 

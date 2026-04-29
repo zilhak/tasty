@@ -220,13 +220,13 @@ pub fn draw_pane_tab_bars(
                                     painter.galley(text_pos, galley, text_color);
                                 }
 
-                                // Click detection
+                                // Click & drag detection
                                 let tab_clip = tab_rect.intersect(clip_rect);
                                 if !tab_clip.is_negative() {
                                     let resp = ui.interact(
                                         tab_clip,
                                         egui::Id::new(format!("tab_{}_{}", info.pane_id, i)),
-                                        egui::Sense::click(),
+                                        egui::Sense::click_and_drag(),
                                     );
                                     if resp.clicked() {
                                         actions.push((info.pane_id, PaneTabAction::SwitchTab(i)));
@@ -238,6 +238,26 @@ pub fn draw_pane_tab_bars(
                                                 i,
                                                 resp.interact_pointer_pos().unwrap_or_default(),
                                             ),
+                                        ));
+                                    }
+                                    if resp.drag_started_by(egui::PointerButton::Primary) {
+                                        actions.push((
+                                            info.pane_id,
+                                            PaneTabAction::DragStart(i),
+                                        ));
+                                    }
+                                    if resp.dragged_by(egui::PointerButton::Primary) {
+                                        if let Some(pos) = resp.interact_pointer_pos() {
+                                            actions.push((
+                                                info.pane_id,
+                                                PaneTabAction::DragUpdate(pos.x),
+                                            ));
+                                        }
+                                    }
+                                    if resp.drag_stopped_by(egui::PointerButton::Primary) {
+                                        actions.push((
+                                            info.pane_id,
+                                            PaneTabAction::DragEnd,
                                         ));
                                     }
                                 }
@@ -371,11 +391,143 @@ pub fn draw_pane_tab_bars(
                     y: pos.y,
                 });
             }
+            PaneTabAction::DragStart(tab_idx) => {
+                state.dialogs.tab_drag = Some(crate::state::TabDragState {
+                    pane_id,
+                    tab_index: tab_idx,
+                    current_x: 0.0,
+                });
+            }
+            PaneTabAction::DragUpdate(mouse_x) => {
+                if let Some(ref mut drag) = state.dialogs.tab_drag {
+                    if drag.pane_id == pane_id {
+                        drag.current_x = mouse_x;
+                    }
+                }
+            }
+            PaneTabAction::DragEnd => {
+                if let Some(drag) = state.dialogs.tab_drag.take() {
+                    if drag.pane_id == pane_id {
+                        // Calculate insert position from mouse x
+                        // Find the pane's tab info to determine target index
+                        if let Some(pane_info) = infos.iter().find(|i| i.pane_id == pane_id) {
+                            let target = compute_drop_index(
+                                drag.current_x,
+                                pane_info.logical_x,
+                                pane_info.scroll_offset,
+                                pane_info.tab_names.len(),
+                                tab_w,
+                                separator_w,
+                                pane_info.logical_w,
+                            );
+                            if target != drag.tab_index {
+                                if let Some(pane) = state
+                                    .active_workspace_mut()
+                                    .pane_layout_mut()
+                                    .find_pane_mut(pane_id)
+                                {
+                                    pane.move_tab(drag.tab_index, target);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
-    // Tab context menu is now handled via native OS menus (see process_pending_native_menu)
+    // Draw drag overlay (ghost tab + insert marker)
+    if let Some(ref drag) = state.dialogs.tab_drag {
+        if let Some(pane_info) = infos.iter().find(|i| i.pane_id == drag.pane_id) {
+            if let Some(pane_rect) = pane_rects.iter().find(|(pid, _)| *pid == drag.pane_id) {
+                let pane_logical_y = (pane_rect.1.y.value() / scale_factor).round_ui();
+                let needs_scroll_arrows = {
+                    let n = pane_info.tab_names.len();
+                    let content_w = n as f32 * tab_w
+                        + (n.max(1) - 1) as f32 * separator_w
+                        + separator_w
+                        + plus_w;
+                    content_w > pane_info.logical_w
+                };
+                let viewport_start = if needs_scroll_arrows {
+                    pane_info.logical_x + arrow_w
+                } else {
+                    pane_info.logical_x
+                };
 
+                let drop_idx = compute_drop_index(
+                    drag.current_x,
+                    pane_info.logical_x,
+                    pane_info.scroll_offset,
+                    pane_info.tab_names.len(),
+                    tab_w,
+                    separator_w,
+                    pane_info.logical_w,
+                );
+
+                // Insert marker (blue vertical line)
+                let marker_x = viewport_start - pane_info.scroll_offset
+                    + drop_idx as f32 * (tab_w + separator_w);
+                let marker_rect = egui::Rect::from_min_size(
+                    egui::pos2(marker_x - 1.0, pane_logical_y),
+                    egui::vec2(2.0, bar_h),
+                );
+                let overlay_painter = ctx.layer_painter(egui::LayerId::new(
+                    egui::Order::Tooltip,
+                    egui::Id::new("tab_drag_overlay"),
+                ));
+                overlay_painter.rect_filled(marker_rect, 0.0, th.blue);
+
+                // Ghost tab at mouse position
+                let ghost_name = pane_info
+                    .tab_names
+                    .get(drag.tab_index)
+                    .cloned()
+                    .unwrap_or_default();
+                let ghost_rect = egui::Rect::from_min_size(
+                    egui::pos2(drag.current_x - tab_w / 2.0, pane_logical_y),
+                    egui::vec2(tab_w, bar_h),
+                );
+                let ghost_bg = egui::Color32::from_rgba_unmultiplied(
+                    th.base.r(),
+                    th.base.g(),
+                    th.base.b(),
+                    180,
+                );
+                let ghost_fg = egui::Color32::from_rgba_unmultiplied(
+                    th.text.r(),
+                    th.text.g(),
+                    th.text.b(),
+                    180,
+                );
+                overlay_painter.rect_filled(ghost_rect, 0.0, ghost_bg);
+                overlay_painter.text(
+                    ghost_rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    &ghost_name,
+                    egui::FontId::proportional(th.font_size_caption.value()),
+                    ghost_fg,
+                );
+            }
+        }
+    }
+}
+
+/// Compute which tab index the mouse x position corresponds to for a drop.
+fn compute_drop_index(
+    mouse_x: f32,
+    pane_logical_x: f32,
+    scroll_offset: f32,
+    tab_count: usize,
+    tab_w: f32,
+    separator_w: f32,
+    _pane_w: f32,
+) -> usize {
+    // Convert mouse x to position within the tab content
+    let content_x = mouse_x - pane_logical_x + scroll_offset;
+    // Each tab occupies tab_w + separator_w (except the first which has no leading separator)
+    let slot = content_x / (tab_w + separator_w);
+    slot.round().clamp(0.0, (tab_count.saturating_sub(1)) as f32) as usize
 }
 
 enum PaneTabAction {
@@ -385,4 +537,7 @@ enum PaneTabAction {
     OpenContextMenu(usize, egui::Pos2),
     OpenPaneContextMenu(egui::Pos2),
     ScrollRight,
+    DragStart(usize),
+    DragUpdate(f32),
+    DragEnd,
 }
