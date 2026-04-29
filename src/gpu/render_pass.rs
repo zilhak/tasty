@@ -51,16 +51,10 @@ impl GpuState {
     ) {
         let theme = crate::theme::theme();
 
-        // Use a single command encoder for all terminals to reduce queue.submit() calls.
-        // Each terminal still needs its own prepare → render cycle because
-        // prepare_terminal_viewport overwrites the shared uniform/instance buffers.
-        let mut term_encoder =
-            self.device
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("terminal_pass"),
-                });
-        let mut any_rendered = false;
-
+        // Each terminal needs its own encoder + submit cycle because
+        // prepare_terminal_viewport writes to shared GPU buffers via queue.write_buffer().
+        // write_buffer writes are applied at submit time, so batching multiple terminals
+        // into one encoder would cause only the last terminal's data to be visible.
         for (_pane_id, _pane_rect, surface_regions) in regions {
             for region in surface_regions {
                 let Some(terminal) = region.surface.focused_terminal() else {
@@ -110,9 +104,14 @@ impl GpuState {
                     link_for_this,
                 );
 
+                let mut encoder =
+                    self.device
+                        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                            label: Some("terminal_pass"),
+                        });
                 {
                     let mut render_pass =
-                        term_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                             label: Some("terminal_pass"),
                             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                                 view,
@@ -133,12 +132,8 @@ impl GpuState {
                         self.size.height,
                     );
                 }
-                any_rendered = true;
+                self.queue.submit(std::iter::once(encoder.finish()));
             }
-        }
-
-        if any_rendered {
-            self.queue.submit(std::iter::once(term_encoder.finish()));
         }
     }
 
