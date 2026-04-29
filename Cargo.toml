@@ -28,11 +28,9 @@ egui-winit = "0.31"
 
 # Terminal Emulation
 termwiz = "0.22"
-portable-pty = "0.8"
 
 # Async
 pollster = "0.4"
-tokio = { version = "1", features = ["full"] }
 
 # Logging
 tracing = "0.1"
@@ -40,7 +38,6 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Error Handling
 anyhow = "1"
-thiserror = "2"
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
