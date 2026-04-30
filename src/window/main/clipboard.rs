@@ -1,6 +1,41 @@
+use egui::ColorImage;
+
 use super::MainWindow;
 
 impl MainWindow {
+    /// Paste a clipboard image into the focused ImagePanel as a floating selection.
+    /// Returns true if an image was pasted.
+    pub fn paste_to_image(&mut self) -> bool {
+        let image = match &mut self.clipboard {
+            Some(cb) => cb.get_image(),
+            None => return false,
+        };
+        let image = match image {
+            Some(img) => img,
+            None => return false,
+        };
+
+        // Convert arboard::ImageData → egui::ColorImage
+        let w = image.width;
+        let h = image.height;
+        let pixels: Vec<egui::Color32> = image
+            .bytes
+            .chunks_exact(4)
+            .map(|c| egui::Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3]))
+            .collect();
+        let color_image = ColorImage {
+            size: [w, h],
+            pixels,
+        };
+
+        if let Some(panel) = self.state.focused_image_mut() {
+            panel.paste_image(color_image);
+            true
+        } else {
+            false
+        }
+    }
+
     pub fn paste_to_terminal(&mut self) {
         // Try text first
         let text = match &mut self.clipboard {

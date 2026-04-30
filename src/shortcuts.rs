@@ -1001,6 +1001,12 @@ impl MainWindow {
             self.mark_dirty();
             return true;
         }
+        if matches!(st, crate::state::FocusedSurfaceType::Image) {
+            if self.paste_to_image() {
+                self.mark_dirty();
+            }
+            return true;
+        }
         self.paste_to_terminal();
         self.mark_dirty();
         true

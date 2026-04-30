@@ -634,6 +634,14 @@ impl AppState {
             .and_then(|p| p.active_terminal_mut())
     }
 
+    /// Get the focused image panel (mutable).
+    pub fn focused_image_mut(&mut self) -> Option<&mut crate::model::ImagePanel> {
+        let pane = self.focused_pane_mut()?;
+        let tab = pane.tabs.get_mut(pane.active_tab)?;
+        let focused = tab.focused_surface;
+        tab.layout_mut().find_leaf_mut(focused)?.as_image_mut()
+    }
+
     /// Refresh the cached display name of the tab containing a given surface ID.
     pub fn refresh_tab_display_name(&mut self, surface_id: u32) {
         for workspace in &mut self.engine.workspaces {

@@ -25,6 +25,11 @@ pub enum DrawAction {
         brush_size: f32,
         color: egui::Color32,
     },
+    PasteImage {
+        image: ColorImage,
+        position: egui::Vec2,
+        size: [usize; 2],
+    },
 }
 
 /// Tracks drawing actions for undo/redo.
@@ -86,6 +91,13 @@ impl ActionHistory {
                         bresenham_thick_line(&mut layer, from, to, radius, *color, w, h);
                     }
                 }
+                DrawAction::PasteImage {
+                    image: paste_img,
+                    position,
+                    size,
+                } => {
+                    blit_image(&mut layer, paste_img, *position, *size, w, h);
+                }
             }
         }
         layer
@@ -99,12 +111,53 @@ pub struct StrokeBuilder {
     pub color: egui::Color32,
 }
 
+/// Resize handle position on the floating selection border.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResizeHandle {
+    TopLeft,
+    Top,
+    TopRight,
+    Right,
+    BottomRight,
+    Bottom,
+    BottomLeft,
+    Left,
+}
+
+/// Drag interaction state for a floating selection.
+#[derive(Debug, Clone)]
+pub enum DragState {
+    Idle,
+    Moving {
+        drag_start_pos: egui::Pos2,
+        initial_position: egui::Vec2,
+    },
+    Resizing {
+        handle: ResizeHandle,
+        drag_start_pos: egui::Pos2,
+        initial_rect: egui::Rect,
+    },
+}
+
+/// A pasted image floating over the canvas, waiting to be committed.
+pub struct FloatingSelection {
+    pub image: ColorImage,
+    pub texture: Option<egui::TextureHandle>,
+    pub position: egui::Vec2,
+    pub size: [usize; 2],
+    pub drag_state: DragState,
+}
+
 /// Edit session state for the image panel.
 pub enum EditState {
     Inactive,
     Drawing {
         history: ActionHistory,
         current_stroke: Option<StrokeBuilder>,
+    },
+    FloatingSelection {
+        selection: FloatingSelection,
+        history: ActionHistory,
     },
 }
 
@@ -296,6 +349,99 @@ impl ImagePanel {
         self.new_image_popup = false;
     }
 
+    /// Paste an image as a floating selection.
+    pub fn paste_image(&mut self, image: ColorImage) {
+        let size = image.size;
+
+        let make_selection = |img: ColorImage, sz: [usize; 2]| FloatingSelection {
+            image: img,
+            texture: None,
+            position: egui::Vec2::ZERO,
+            size: sz,
+            drag_state: DragState::Idle,
+        };
+
+        match std::mem::replace(&mut self.edit_state, EditState::Inactive) {
+            EditState::Inactive => {
+                // Enter edit mode first
+                if let Some(ref orig) = self.original_image {
+                    let [w, h] = orig.size;
+                    self.draw_layer = Some(ColorImage::new([w, h], egui::Color32::TRANSPARENT));
+                    self.draw_texture = None;
+                    self.draw_texture_dirty = true;
+                }
+                self.edit_state = EditState::FloatingSelection {
+                    selection: make_selection(image, size),
+                    history: ActionHistory::new(),
+                };
+            }
+            EditState::Drawing {
+                history,
+                current_stroke: _,
+            } => {
+                self.edit_state = EditState::FloatingSelection {
+                    selection: make_selection(image, size),
+                    history,
+                };
+            }
+            EditState::FloatingSelection {
+                selection: old_sel,
+                mut history,
+            } => {
+                // Commit the existing floating selection first
+                Self::do_commit(&mut self.draw_layer, &mut self.draw_texture_dirty, &old_sel, &mut history);
+                self.edit_state = EditState::FloatingSelection {
+                    selection: make_selection(image, size),
+                    history,
+                };
+            }
+        }
+    }
+
+    /// Commit the floating selection onto the draw layer.
+    pub fn commit_floating(&mut self) {
+        if let EditState::FloatingSelection { selection, mut history } =
+            std::mem::replace(&mut self.edit_state, EditState::Inactive)
+        {
+            Self::do_commit(&mut self.draw_layer, &mut self.draw_texture_dirty, &selection, &mut history);
+            self.edit_state = EditState::Drawing {
+                history,
+                current_stroke: None,
+            };
+        }
+    }
+
+    /// Cancel the floating selection (discard without committing).
+    pub fn cancel_floating(&mut self) {
+        if let EditState::FloatingSelection { history, .. } =
+            std::mem::replace(&mut self.edit_state, EditState::Inactive)
+        {
+            self.edit_state = EditState::Drawing {
+                history,
+                current_stroke: None,
+            };
+        }
+    }
+
+    /// Internal: blit the floating selection onto the draw layer and record the action.
+    fn do_commit(
+        draw_layer: &mut Option<ColorImage>,
+        dirty: &mut bool,
+        selection: &FloatingSelection,
+        history: &mut ActionHistory,
+    ) {
+        if let Some(layer) = draw_layer {
+            let [w, h] = layer.size;
+            blit_image(layer, &selection.image, selection.position, selection.size, w, h);
+            *dirty = true;
+        }
+        history.push(DrawAction::PasteImage {
+            image: selection.image.clone(),
+            position: selection.position,
+            size: selection.size,
+        });
+    }
+
     /// Begin a new stroke (called when mouse drag starts).
     pub fn start_stroke(&mut self) {
         if let EditState::Drawing { current_stroke, .. } = &mut self.edit_state {
@@ -350,6 +496,10 @@ impl ImagePanel {
 
     /// Undo the last drawing action.
     pub fn undo(&mut self) {
+        // If floating, commit first then undo
+        if matches!(self.edit_state, EditState::FloatingSelection { .. }) {
+            self.commit_floating();
+        }
         if let EditState::Drawing { history, .. } = &mut self.edit_state {
             if history.undo().is_some() {
                 if let Some(ref original) = self.original_image {
@@ -362,6 +512,9 @@ impl ImagePanel {
 
     /// Redo the last undone drawing action.
     pub fn redo(&mut self) {
+        if matches!(self.edit_state, EditState::FloatingSelection { .. }) {
+            self.commit_floating();
+        }
         if let EditState::Drawing { history, .. } = &mut self.edit_state {
             if history.redo().is_some() {
                 if let Some(ref original) = self.original_image {
@@ -374,19 +527,19 @@ impl ImagePanel {
 
     /// Check if undo is available.
     pub fn can_undo(&self) -> bool {
-        if let EditState::Drawing { history, .. } = &self.edit_state {
-            history.can_undo()
-        } else {
-            false
+        match &self.edit_state {
+            EditState::Drawing { history, .. } => history.can_undo(),
+            EditState::FloatingSelection { .. } => true, // can always undo (commit+undo)
+            _ => false,
         }
     }
 
     /// Check if redo is available.
     pub fn can_redo(&self) -> bool {
-        if let EditState::Drawing { history, .. } = &self.edit_state {
-            history.can_redo()
-        } else {
-            false
+        match &self.edit_state {
+            EditState::Drawing { history, .. } => history.can_redo(),
+            EditState::FloatingSelection { .. } => false,
+            _ => false,
         }
     }
 
@@ -403,6 +556,18 @@ impl ImagePanel {
                 let fg = layer.pixels[i];
                 composited.pixels[i] = alpha_blend(bg, fg);
             }
+        }
+
+        // Also composite any active floating selection
+        if let EditState::FloatingSelection { ref selection, .. } = self.edit_state {
+            blit_image(
+                &mut composited,
+                &selection.image,
+                selection.position,
+                selection.size,
+                w,
+                h,
+            );
         }
 
         // Encode as PNG using the image crate
@@ -546,6 +711,46 @@ fn bresenham_thick_line(
         let x = from.x + (to.x - from.x) * t;
         let y = from.y + (to.y - from.y) * t;
         fill_circle(layer, x, y, radius, color, w, h);
+    }
+}
+
+/// Blit a source image onto a target layer at the given position, scaled to `dest_size`.
+fn blit_image(
+    layer: &mut ColorImage,
+    src: &ColorImage,
+    position: egui::Vec2,
+    dest_size: [usize; 2],
+    layer_w: usize,
+    layer_h: usize,
+) {
+    let [src_w, src_h] = src.size;
+    let [dst_w, dst_h] = dest_size;
+    if src_w == 0 || src_h == 0 || dst_w == 0 || dst_h == 0 {
+        return;
+    }
+    let ox = position.x as i32;
+    let oy = position.y as i32;
+    for dy in 0..dst_h as i32 {
+        let py = oy + dy;
+        if py < 0 || py >= layer_h as i32 {
+            continue;
+        }
+        for dx in 0..dst_w as i32 {
+            let px = ox + dx;
+            if px < 0 || px >= layer_w as i32 {
+                continue;
+            }
+            // Nearest-neighbor sampling from source
+            let sx = (dx as usize * src_w) / dst_w;
+            let sy = (dy as usize * src_h) / dst_h;
+            let fg = src.pixels[sy * src_w + sx];
+            if fg.a() == 0 {
+                continue;
+            }
+            let idx = py as usize * layer_w + px as usize;
+            let bg = layer.pixels[idx];
+            layer.pixels[idx] = alpha_blend(bg, fg);
+        }
     }
 }
 
