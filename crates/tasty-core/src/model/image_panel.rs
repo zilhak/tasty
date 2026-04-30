@@ -15,6 +15,91 @@ const IMAGE_EXTENSIONS: &[&str] = &[
 pub const DEFAULT_BLANK_CANVAS_WIDTH: usize = 800;
 pub const DEFAULT_BLANK_CANVAS_HEIGHT: usize = 600;
 
+// ── Drawing action / history types ──
+
+/// A single undoable drawing action.
+#[derive(Clone)]
+pub enum DrawAction {
+    Stroke {
+        points: Vec<(egui::Pos2, egui::Pos2)>,
+        brush_size: f32,
+        color: egui::Color32,
+    },
+}
+
+/// Tracks drawing actions for undo/redo.
+pub struct ActionHistory {
+    actions: Vec<DrawAction>,
+    redo_stack: Vec<DrawAction>,
+}
+
+impl ActionHistory {
+    pub fn new() -> Self {
+        Self {
+            actions: Vec::new(),
+            redo_stack: Vec::new(),
+        }
+    }
+
+    pub fn push(&mut self, action: DrawAction) {
+        self.actions.push(action);
+        self.redo_stack.clear();
+    }
+
+    pub fn undo(&mut self) -> Option<DrawAction> {
+        let a = self.actions.pop()?;
+        self.redo_stack.push(a.clone());
+        Some(a)
+    }
+
+    pub fn redo(&mut self) -> Option<DrawAction> {
+        let a = self.redo_stack.pop()?;
+        self.actions.push(a.clone());
+        Some(a)
+    }
+
+    pub fn is_dirty(&self) -> bool {
+        !self.actions.is_empty()
+    }
+
+    /// Replay all actions onto a fresh transparent layer.
+    pub fn replay(&self, base_size: [usize; 2]) -> ColorImage {
+        let mut layer = ColorImage::new(base_size, egui::Color32::TRANSPARENT);
+        let [w, h] = base_size;
+        for action in &self.actions {
+            match action {
+                DrawAction::Stroke {
+                    points,
+                    brush_size,
+                    color,
+                } => {
+                    let radius = (*brush_size / 2.0).max(0.5);
+                    for &(from, to) in points {
+                        bresenham_thick_line(&mut layer, from, to, radius, *color, w, h);
+                    }
+                }
+            }
+        }
+        layer
+    }
+}
+
+/// In-progress stroke being built during a mouse drag.
+pub struct StrokeBuilder {
+    pub points: Vec<(egui::Pos2, egui::Pos2)>,
+    pub brush_size: f32,
+    pub color: egui::Color32,
+}
+
+/// Edit session state for the image panel.
+pub enum EditState {
+    Inactive,
+    Drawing {
+        history: ActionHistory,
+        current_stroke: Option<StrokeBuilder>,
+    },
+}
+
 /// A surface that displays an image with viewer and drawing capabilities.
 pub struct ImagePanel {
     pub id: u32,
@@ -29,13 +114,12 @@ pub struct ImagePanel {
     pub last_mtime: Option<SystemTime>,
 
     // ── Drawing state ──
-    pub edit_mode: bool,
+    pub edit_state: EditState,
     pub draw_layer: Option<ColorImage>,
     pub draw_texture: Option<egui::TextureHandle>,
     pub brush_size: f32,
     pub brush_color: egui::Color32,
     pub last_draw_pos: Option<egui::Pos2>,
-    pub is_dirty: bool,
     pub draw_texture_dirty: bool,
 
     // ── New image popup ──
@@ -65,13 +149,12 @@ impl ImagePanel {
             zoom: 1.0,
             pan_offset: egui::Vec2::ZERO,
             last_mtime,
-            edit_mode: false,
+            edit_state: EditState::Inactive,
             draw_layer: None,
             draw_texture: None,
             brush_size: 2.0,
             brush_color: egui::Color32::RED,
             last_draw_pos: None,
-            is_dirty: false,
             draw_texture_dirty: false,
             new_image_popup: false,
             new_image_width: DEFAULT_BLANK_CANVAS_WIDTH.to_string(),
@@ -98,13 +181,12 @@ impl ImagePanel {
             zoom: 1.0,
             pan_offset: egui::Vec2::ZERO,
             last_mtime: None,
-            edit_mode: false,
+            edit_state: EditState::Inactive,
             draw_layer: None,
             draw_texture: None,
             brush_size: 2.0,
             brush_color: egui::Color32::RED,
             last_draw_pos: None,
-            is_dirty: false,
             draw_texture_dirty: false,
             new_image_popup: false,
             new_image_width: DEFAULT_BLANK_CANVAS_WIDTH.to_string(),
@@ -116,9 +198,14 @@ impl ImagePanel {
         panel
     }
 
+    /// Whether the panel is in an active editing session.
+    pub fn is_editing(&self) -> bool {
+        !matches!(self.edit_state, EditState::Inactive)
+    }
+
     /// Navigate to the previous image in the directory.
     pub fn prev_image(&mut self) {
-        if self.dir_images.is_empty() || self.edit_mode {
+        if self.dir_images.is_empty() || self.is_editing() {
             return;
         }
         if self.current_index > 0 {
@@ -131,7 +218,7 @@ impl ImagePanel {
 
     /// Navigate to the next image in the directory.
     pub fn next_image(&mut self) {
-        if self.dir_images.is_empty() || self.edit_mode {
+        if self.dir_images.is_empty() || self.is_editing() {
             return;
         }
         self.current_index = (self.current_index + 1) % self.dir_images.len();
@@ -170,8 +257,10 @@ impl ImagePanel {
             let draw_layer = ColorImage::new([w, h], transparent);
             self.draw_layer = Some(draw_layer);
             self.draw_texture = None;
-            self.edit_mode = true;
-            self.is_dirty = false;
+            self.edit_state = EditState::Drawing {
+                history: ActionHistory::new(),
+                current_stroke: None,
+            };
             self.last_draw_pos = None;
             self.draw_texture_dirty = true;
         }
@@ -179,10 +268,9 @@ impl ImagePanel {
 
     /// Exit edit mode, discarding the draw layer.
     pub fn exit_edit_mode(&mut self) {
-        self.edit_mode = false;
+        self.edit_state = EditState::Inactive;
         self.draw_layer = None;
         self.draw_texture = None;
-        self.is_dirty = false;
         self.last_draw_pos = None;
         self.draw_texture_dirty = false;
     }
@@ -200,6 +288,36 @@ impl ImagePanel {
         self.new_image_popup = false;
     }
 
+    /// Begin a new stroke (called when mouse drag starts).
+    pub fn start_stroke(&mut self) {
+        if let EditState::Drawing { current_stroke, .. } = &mut self.edit_state {
+            *current_stroke = Some(StrokeBuilder {
+                points: Vec::new(),
+                brush_size: self.brush_size,
+                color: self.brush_color,
+            });
+        }
+    }
+
+    /// Finish the current stroke and commit it to the action history.
+    pub fn finish_stroke(&mut self) {
+        if let EditState::Drawing {
+            history,
+            current_stroke,
+        } = &mut self.edit_state
+        {
+            if let Some(stroke) = current_stroke.take() {
+                if !stroke.points.is_empty() {
+                    history.push(DrawAction::Stroke {
+                        points: stroke.points,
+                        brush_size: stroke.brush_size,
+                        color: stroke.color,
+                    });
+                }
+            }
+        }
+    }
+
     /// Draw a line segment on the draw layer using Bresenham's algorithm.
     pub fn draw_line(&mut self, from: egui::Pos2, to: egui::Pos2) {
         let layer = match self.draw_layer.as_mut() {
@@ -211,7 +329,14 @@ impl ImagePanel {
         let color = self.brush_color;
 
         bresenham_thick_line(layer, from, to, radius, color, w, h);
-        self.is_dirty = true;
+
+        // Record in current stroke
+        if let EditState::Drawing { current_stroke, .. } = &mut self.edit_state {
+            if let Some(stroke) = current_stroke {
+                stroke.points.push((from, to));
+            }
+        }
+
         self.draw_texture_dirty = true;
     }
 

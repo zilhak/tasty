@@ -24,7 +24,7 @@ pub fn draw_image(ui: &mut egui::Ui, panel: &mut ImagePanel) {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
 
-        if panel.edit_mode {
+        if panel.is_editing() {
             draw_edit_controls(ui, panel, &th);
         } else {
             draw_viewer_controls(ui, panel, &th);
@@ -56,7 +56,7 @@ pub fn draw_image(ui: &mut egui::Ui, panel: &mut ImagePanel) {
         }
 
         // Upload draw layer texture if needed
-        if panel.edit_mode {
+        if panel.is_editing() {
             if let Some(ref layer) = panel.draw_layer {
                 if panel.draw_texture.is_none() || panel.draw_texture_dirty {
                     panel.draw_texture = Some(ui.ctx().load_texture(
@@ -96,7 +96,7 @@ pub fn draw_image(ui: &mut egui::Ui, panel: &mut ImagePanel) {
         }
 
         // Draw the overlay layer
-        if panel.edit_mode {
+        if panel.is_editing() {
             if let Some(ref tex) = panel.draw_texture {
                 let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
                 ui.painter()
@@ -121,7 +121,7 @@ pub fn draw_image(ui: &mut egui::Ui, panel: &mut ImagePanel) {
             panel.pan_offset = egui::Vec2::ZERO;
         }
 
-        if panel.edit_mode {
+        if panel.is_editing() {
             // Drawing mode: drag to draw
             if response.dragged() {
                 if let Some(pos) = response.interact_pointer_pos() {
@@ -130,6 +130,9 @@ pub fn draw_image(ui: &mut egui::Ui, panel: &mut ImagePanel) {
                     let img_y = (pos.y - img_rect.min.y) / effective_zoom;
                     let img_pos = egui::pos2(img_x, img_y);
 
+                    if panel.last_draw_pos.is_none() {
+                        panel.start_stroke();
+                    }
                     if let Some(last) = panel.last_draw_pos {
                         panel.draw_line(last, img_pos);
                     } else {
@@ -138,6 +141,9 @@ pub fn draw_image(ui: &mut egui::Ui, panel: &mut ImagePanel) {
                     panel.last_draw_pos = Some(img_pos);
                 }
             } else {
+                if panel.last_draw_pos.is_some() {
+                    panel.finish_stroke();
+                }
                 panel.last_draw_pos = None;
             }
         } else {
