@@ -62,6 +62,14 @@ impl ActionHistory {
         !self.actions.is_empty()
     }
 
+    pub fn can_undo(&self) -> bool {
+        !self.actions.is_empty()
+    }
+
+    pub fn can_redo(&self) -> bool {
+        !self.redo_stack.is_empty()
+    }
+
     /// Replay all actions onto a fresh transparent layer.
     pub fn replay(&self, base_size: [usize; 2]) -> ColorImage {
         let mut layer = ColorImage::new(base_size, egui::Color32::TRANSPARENT);
@@ -338,6 +346,48 @@ impl ImagePanel {
         }
 
         self.draw_texture_dirty = true;
+    }
+
+    /// Undo the last drawing action.
+    pub fn undo(&mut self) {
+        if let EditState::Drawing { history, .. } = &mut self.edit_state {
+            if history.undo().is_some() {
+                if let Some(ref original) = self.original_image {
+                    self.draw_layer = Some(history.replay(original.size));
+                    self.draw_texture_dirty = true;
+                }
+            }
+        }
+    }
+
+    /// Redo the last undone drawing action.
+    pub fn redo(&mut self) {
+        if let EditState::Drawing { history, .. } = &mut self.edit_state {
+            if history.redo().is_some() {
+                if let Some(ref original) = self.original_image {
+                    self.draw_layer = Some(history.replay(original.size));
+                    self.draw_texture_dirty = true;
+                }
+            }
+        }
+    }
+
+    /// Check if undo is available.
+    pub fn can_undo(&self) -> bool {
+        if let EditState::Drawing { history, .. } = &self.edit_state {
+            history.can_undo()
+        } else {
+            false
+        }
+    }
+
+    /// Check if redo is available.
+    pub fn can_redo(&self) -> bool {
+        if let EditState::Drawing { history, .. } = &self.edit_state {
+            history.can_redo()
+        } else {
+            false
+        }
     }
 
     /// Save the composited image (original + overlay) as PNG.

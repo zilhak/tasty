@@ -22,6 +22,7 @@ pub enum KeybindingsSubTab {
     Surface,
     Clipboard,
     Zoom,
+    Image,
     Preset,
 }
 
@@ -98,6 +99,10 @@ pub fn draw_keybindings_tab(
                         (
                             KeybindingsSubTab::Zoom,
                             t("settings.keybindings.subtab.zoom"),
+                        ),
+                        (
+                            KeybindingsSubTab::Image,
+                            t("settings.keybindings.subtab.image"),
                         ),
                         (
                             KeybindingsSubTab::Preset,
@@ -359,6 +364,19 @@ pub fn draw_keybindings_tab(
                             ("zoom_in", "settings.keybindings.zoom_in_label"),
                             ("zoom_out", "settings.keybindings.zoom_out_label"),
                             ("zoom_reset", "settings.keybindings.zoom_reset_label"),
+                        ],
+                    );
+                }
+                KeybindingsSubTab::Image => {
+                    draw_keybinding_entries(
+                        ui,
+                        &mut settings.keybindings,
+                        recording_field,
+                        pending_binding,
+                        &captured,
+                        &[
+                            ("image_undo", "settings.keybindings.image_undo_label"),
+                            ("image_redo", "settings.keybindings.image_redo_label"),
                         ],
                     );
                 }

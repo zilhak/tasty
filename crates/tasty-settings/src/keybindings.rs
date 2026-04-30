@@ -136,6 +136,12 @@ pub struct KeybindingSettings {
     /// Open the subtitle rename dialog for the active workspace.
     #[serde(deserialize_with = "deserialize_binding")]
     pub rename_workspace_subtitle: Vec<String>,
+    /// Undo in image editor.
+    #[serde(default, deserialize_with = "deserialize_binding")]
+    pub image_undo: Vec<String>,
+    /// Redo in image editor.
+    #[serde(default, deserialize_with = "deserialize_binding")]
+    pub image_redo: Vec<String>,
 }
 
 impl KeybindingSettings {
@@ -239,6 +245,8 @@ impl KeybindingSettings {
             "rename_workspace_subtitle",
             "settings.keybindings.rename_workspace_subtitle_label",
         ),
+        ("image_undo", "settings.keybindings.image_undo_label"),
+        ("image_redo", "settings.keybindings.image_redo_label"),
     ];
 
     /// 필드 id로 Vec<String> 참조를 얻는다.
@@ -286,6 +294,8 @@ impl KeybindingSettings {
             "rename_tab" => self.rename_tab.as_slice(),
             "rename_workspace" => self.rename_workspace.as_slice(),
             "rename_workspace_subtitle" => self.rename_workspace_subtitle.as_slice(),
+            "image_undo" => self.image_undo.as_slice(),
+            "image_redo" => self.image_redo.as_slice(),
             _ => return None,
         })
     }
@@ -334,6 +344,8 @@ impl KeybindingSettings {
             "rename_tab" => &mut self.rename_tab,
             "rename_workspace" => &mut self.rename_workspace,
             "rename_workspace_subtitle" => &mut self.rename_workspace_subtitle,
+            "image_undo" => &mut self.image_undo,
+            "image_redo" => &mut self.image_redo,
             _ => return None,
         })
     }
@@ -557,6 +569,8 @@ impl KeybindingSettings {
             rename_tab: vec!["f2".into()],
             rename_workspace: vec!["f3".into()],
             rename_workspace_subtitle: vec!["f4".into()],
+            image_undo: vec!["ctrl+z".into(), "alt+z".into()],
+            image_redo: vec!["ctrl+shift+z".into(), "alt+shift+z".into()],
         }
     }
 
@@ -607,6 +621,8 @@ impl KeybindingSettings {
             rename_tab: vec!["f2".into()],
             rename_workspace: vec!["f3".into()],
             rename_workspace_subtitle: vec!["f4".into()],
+            image_undo: vec!["alt+z".into()],
+            image_redo: vec!["alt+shift+z".into()],
         }
     }
 
@@ -657,6 +673,8 @@ impl KeybindingSettings {
             rename_tab: vec!["f2".into()],
             rename_workspace: vec!["f3".into()],
             rename_workspace_subtitle: vec!["f4".into()],
+            image_undo: vec!["ctrl+z".into()],
+            image_redo: vec!["ctrl+shift+z".into()],
         }
     }
 
@@ -707,6 +725,8 @@ impl KeybindingSettings {
             rename_tab: vec!["f2".into()],
             rename_workspace: vec!["f3".into()],
             rename_workspace_subtitle: vec!["f4".into()],
+            image_undo: vec!["ctrl+z".into()],
+            image_redo: vec!["ctrl+shift+z".into()],
         }
     }
 
@@ -890,7 +910,7 @@ mod tests {
 
     #[test]
     fn general_binding_fields_count() {
-        assert_eq!(KeybindingSettings::GENERAL_BINDING_FIELDS.len(), 40);
+        assert_eq!(KeybindingSettings::GENERAL_BINDING_FIELDS.len(), 42);
     }
 
     #[test]

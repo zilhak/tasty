@@ -898,6 +898,36 @@ impl MainWindow {
             }
             return true;
         }
+        if matches_any_binding(&kb.image_undo, key, mods) {
+            if state.focused_surface_type() == crate::state::FocusedSurfaceType::Image {
+                if let Some(pane) = state.focused_pane_mut() {
+                    if let Some(tab) = pane.tabs.get_mut(pane.active_tab) {
+                        let focused = tab.focused_surface;
+                        if let Some(leaf) = tab.layout_mut().find_leaf_mut(focused) {
+                            if let Some(panel) = leaf.as_image_mut() {
+                                panel.undo();
+                            }
+                        }
+                    }
+                }
+                return true;
+            }
+        }
+        if matches_any_binding(&kb.image_redo, key, mods) {
+            if state.focused_surface_type() == crate::state::FocusedSurfaceType::Image {
+                if let Some(pane) = state.focused_pane_mut() {
+                    if let Some(tab) = pane.tabs.get_mut(pane.active_tab) {
+                        let focused = tab.focused_surface;
+                        if let Some(leaf) = tab.layout_mut().find_leaf_mut(focused) {
+                            if let Some(panel) = leaf.as_image_mut() {
+                                panel.redo();
+                            }
+                        }
+                    }
+                }
+                return true;
+            }
+        }
         if matches_any_binding(&kb.rename_workspace_subtitle, key, mods) {
             let ws_idx = state.active_workspace;
             if let Some(ws) = state.engine.workspaces.get(ws_idx) {

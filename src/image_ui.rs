@@ -266,6 +266,26 @@ fn draw_edit_controls(ui: &mut egui::Ui, panel: &mut ImagePanel, th: &theme::The
         panel.exit_edit_mode();
     }
 
+    // Undo button
+    let undo_enabled = panel.can_undo();
+    if ui
+        .add_enabled(undo_enabled, egui::Button::new("↶").min_size(egui::vec2(24.0, 20.0)))
+        .on_hover_text(t("image_viewer.undo"))
+        .clicked()
+    {
+        panel.undo();
+    }
+
+    // Redo button
+    let redo_enabled = panel.can_redo();
+    if ui
+        .add_enabled(redo_enabled, egui::Button::new("↷").min_size(egui::vec2(24.0, 20.0)))
+        .on_hover_text(t("image_viewer.redo"))
+        .clicked()
+    {
+        panel.redo();
+    }
+
     ui.separator();
 
     // Brush size
