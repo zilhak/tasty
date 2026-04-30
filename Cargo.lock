@@ -4762,6 +4762,7 @@ name = "tasty-settings"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "libc",
  "serde",
  "tasty-core",
  "toml 0.8.2",
