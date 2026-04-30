@@ -267,6 +267,14 @@ pub fn draw_explorer(
                                                 y: pos.y,
                                             });
                                     }
+                                    TreeAction::StartDrag => {
+                                        let paths: Vec<String> =
+                                            panel.selected_files.iter().cloned().collect();
+                                        if !paths.is_empty() {
+                                            explorer_action =
+                                                Some(ExplorerAction::StartDrag { paths });
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -437,6 +445,8 @@ enum TreeAction {
     },
     /// Right-click on background (empty area) — show context menu for cwd.
     BackgroundContextMenu(egui::Pos2),
+    /// Drag started on selected file(s).
+    StartDrag,
 }
 
 /// Action returned from `draw_explorer` for the caller to process.
@@ -465,6 +475,8 @@ pub enum ExplorerAction {
         x: f32,
         y: f32,
     },
+    /// Start a native file drag operation with the given paths.
+    StartDrag { paths: Vec<String> },
 }
 
 fn draw_file_node(
@@ -528,8 +540,11 @@ fn draw_file_node(
         };
 
         let resp = ui.selectable_label(is_in_selection, label);
+        let resp = resp.interact(egui::Sense::drag());
 
-        if resp.double_clicked() && action.is_none() {
+        if resp.drag_started() && action.is_none() {
+            *action = Some(TreeAction::StartDrag);
+        } else if resp.double_clicked() && action.is_none() {
             if node.is_directory {
                 *action = Some(TreeAction::ToggleDir(node.path.clone()));
             } else {

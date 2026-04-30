@@ -174,6 +174,14 @@ impl MainWindow {
         // Process pending native context menu (after egui frame, before webview sync)
         self.process_pending_native_menu();
 
+        // Process pending file drag (after egui frame)
+        if let Some(paths) = self.state.dialogs.pending_file_drag.take() {
+            let path_refs: Vec<&str> = paths.iter().map(|s| s.as_str()).collect();
+            if let Err(e) = crate::file_drag::start_file_drag(&*self.base.winit, &path_refs) {
+                tracing::warn!("File drag failed: {e}");
+            }
+        }
+
         // Sync webview lifecycle: create/destroy/reposition/visibility
         self.sync_webviews();
 

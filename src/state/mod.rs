@@ -162,6 +162,8 @@ pub struct DialogState {
     pub bookmark_input: Option<(u32, String, String)>,
     /// Clipboard viewer popup/surface 공유 상태.
     pub clipboard_viewer: crate::clipboard_viewer_ui::ClipboardViewerState,
+    /// Pending file drag request (paths to drag to external apps).
+    pub pending_file_drag: Option<Vec<String>>,
     /// Tab drag-and-drop state.
     pub tab_drag: Option<TabDragState>,
     /// Workspace drag-and-drop state.
@@ -202,6 +204,7 @@ impl DialogState {
             pending_popup_open: None,
             bookmark_input: None,
             clipboard_viewer: crate::clipboard_viewer_ui::ClipboardViewerState::default(),
+            pending_file_drag: None,
             tab_drag: None,
             ws_drag: None,
         }

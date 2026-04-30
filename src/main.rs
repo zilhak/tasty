@@ -17,6 +17,7 @@ pub mod engine_state;
 mod event_handler;
 mod explorer_ui;
 mod file_clipboard;
+mod file_drag;
 mod global_hooks;
 mod gpu;
 mod html_ui;

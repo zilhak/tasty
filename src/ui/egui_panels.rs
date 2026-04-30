@@ -314,6 +314,9 @@ pub fn draw_egui_panels(
                 state.dialogs.pending_native_menu =
                     Some(crate::state::PendingNativeMenu::BookmarkItem { path, name, x, y });
             }
+            crate::explorer_ui::ExplorerAction::StartDrag { paths } => {
+                state.dialogs.pending_file_drag = Some(paths);
+            }
         }
     }
 }
