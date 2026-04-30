@@ -21,3 +21,6 @@ tracing = "0.1"
 
 # Error handling
 anyhow = "1"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
