@@ -5,7 +5,7 @@ use crate::ui::popup::{CONTENT_MARGIN, PopupAction, TITLE_BAR_HEIGHT};
 
 /// Default size for the rename popup.
 pub fn rename_popup_default_size() -> egui::Vec2 {
-    egui::vec2(280.0, TITLE_BAR_HEIGHT + CONTENT_MARGIN * 2.0 + 60.0)
+    egui::vec2(280.0, TITLE_BAR_HEIGHT + CONTENT_MARGIN * 2.0 + 64.0)
 }
 
 /// Dynamic title for the rename popup (based on RenameTarget).
@@ -54,7 +54,7 @@ pub fn draw_rename_popup(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction
 
     let margin = 8.0;
     let available = ui.available_rect_before_wrap();
-    let inner_rect = available.shrink2(egui::vec2(margin, 0.0));
+    let inner_rect = available.shrink2(egui::vec2(margin, 2.0));
     let mut child_ui = ui.new_child(egui::UiBuilder::new().max_rect(inner_rect));
     let ui = &mut child_ui;
 
