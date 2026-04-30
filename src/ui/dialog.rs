@@ -88,7 +88,7 @@ pub fn draw_rename_popup(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction
 
     // Enter 키로 적용
     let mut confirm = false;
-    if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+    if resp.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
         confirm = true;
     }
 
