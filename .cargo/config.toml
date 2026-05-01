@@ -3,3 +3,11 @@
 # and running too many in parallel can exceed OS limits.
 [test]
 threads = 4
+
+# Statically link the MSVC C runtime so the Windows binary does not
+# require VC++ Redistributable (vcruntime140.dll) on the target machine.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
