@@ -26,14 +26,7 @@ jobs:
           echo "version=$TAG_VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Extract changelog from tag commit
-        id: changelog
-        run: |
-          BODY=$(git log -1 --format=%b)
-          {
-            echo "body<<EOF"
-            echo "$BODY"
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
+        run: git log -1 --format=%b > "$RUNNER_TEMP/release-notes.md"
 
       - name: Create draft release
         env:
@@ -42,7 +35,7 @@ jobs:
           gh release create "v${{ steps.version.outputs.version }}" \
             --draft \
             --title "v${{ steps.version.outputs.version }}" \
-            --notes "${{ steps.changelog.outputs.body }}"
+            --notes-file "$RUNNER_TEMP/release-notes.md"
 
   build-macos:
     needs: create-release
