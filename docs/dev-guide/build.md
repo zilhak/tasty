@@ -85,7 +85,19 @@ cargo build -p tasty-font
 # 배포
 cargo build --profile dist           # dist 프로필
 ./scripts/build-macos-dmg.sh         # macOS .app + .dmg
+./scripts/build-linux.sh             # Linux tar.gz (uname -m으로 x64/arm64 자동 감지)
+./scripts/build-windows.ps1          # Windows zip
 ```
+
+GitHub Actions(`.github/workflows/release.yml`)는 self-hosted runner로 동작한다.
+Linux 빌드는 아키텍처별 라벨로 분기:
+
+| 잡 | 러너 라벨 | 산출물 |
+|----|----------|--------|
+| `build-linux-x64` | `[self-hosted, Linux, X64]` | `tasty-{ver}-linux-x64.tar.gz` |
+| `build-linux-arm64` | `[self-hosted, Linux, ARM64]` | `tasty-{ver}-linux-arm64.tar.gz` |
+
+`workflow_dispatch`로 태그 없이 수동 검증 빌드도 가능 (release는 만들지 않음).
 
 ## 빌드 시간 측정
 

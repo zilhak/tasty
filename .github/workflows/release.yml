@@ -3,9 +3,11 @@ name: Release
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
 
 jobs:
   create-release:
+    if: github.event_name == 'push'
     runs-on: [self-hosted, Linux]
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -44,6 +46,7 @@ jobs:
 
   build-macos:
     needs: create-release
+    if: ${{ always() && (needs.create-release.result == 'success' || github.event_name == 'workflow_dispatch') }}
     runs-on: [self-hosted, macOS]
     steps:
       - uses: actions/checkout@v4
@@ -52,6 +55,7 @@ jobs:
         run: bash scripts/build-macos-dmg.sh
 
       - name: Upload to release
+        if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -60,6 +64,7 @@ jobs:
 
   build-windows:
     needs: create-release
+    if: ${{ always() && (needs.create-release.result == 'success' || github.event_name == 'workflow_dispatch') }}
     runs-on: [self-hosted, Windows]
     steps:
       - uses: actions/checkout@v4
@@ -68,6 +73,7 @@ jobs:
         run: powershell -ExecutionPolicy Bypass -File scripts/build-windows.ps1
 
       - name: Upload to release
+        if: github.event_name == 'push'
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -75,9 +81,10 @@ jobs:
           $VERSION = "${{ needs.create-release.outputs.version }}"
           gh release upload "v${VERSION}" "dist/tasty-${VERSION}-windows-x64.zip"
 
-  build-linux:
+  build-linux-x64:
     needs: create-release
-    runs-on: [self-hosted, Linux]
+    if: ${{ always() && (needs.create-release.result == 'success' || github.event_name == 'workflow_dispatch') }}
+    runs-on: [self-hosted, Linux, X64]
     steps:
       - uses: actions/checkout@v4
 
@@ -85,14 +92,34 @@ jobs:
         run: bash scripts/build-linux.sh
 
       - name: Upload to release
+        if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           VERSION="${{ needs.create-release.outputs.version }}"
           gh release upload "v${VERSION}" "dist/tasty-${VERSION}-linux-x64.tar.gz"
 
+  build-linux-arm64:
+    needs: create-release
+    if: ${{ always() && (needs.create-release.result == 'success' || github.event_name == 'workflow_dispatch') }}
+    runs-on: [self-hosted, Linux, ARM64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build tar.gz
+        run: bash scripts/build-linux.sh
+
+      - name: Upload to release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ needs.create-release.outputs.version }}"
+          gh release upload "v${VERSION}" "dist/tasty-${VERSION}-linux-arm64.tar.gz"
+
   publish-release:
-    needs: [create-release, build-macos, build-windows, build-linux]
+    needs: [create-release, build-macos, build-windows, build-linux-x64, build-linux-arm64]
+    if: github.event_name == 'push'
     runs-on: [self-hosted, Linux]
     steps:
       - uses: actions/checkout@v4

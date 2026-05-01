@@ -7,7 +7,7 @@
 #   ./scripts/build-linux.sh --debug   # debug build
 #
 # Output:
-#   dist/tasty-{version}-linux-x64.tar.gz
+#   dist/tasty-{version}-linux-{arch}.tar.gz   # arch: x64 | arm64
 
 set -euo pipefail
 
@@ -29,9 +29,17 @@ elif [[ "${1:-}" == "--release" ]]; then
     CARGO_FLAGS="--release"
 fi
 
+ARCH_RAW=$(uname -m)
+case "$ARCH_RAW" in
+    x86_64)  ARCH=x64 ;;
+    aarch64) ARCH=arm64 ;;
+    *) echo "Error: Unsupported architecture: $ARCH_RAW" >&2; exit 1 ;;
+esac
+
 VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
 DIST_DIR="dist"
-ARCHIVE_NAME="tasty-${VERSION}-linux-x64.tar.gz"
+PKG_DIR="tasty-linux-${ARCH}"
+ARCHIVE_NAME="tasty-${VERSION}-linux-${ARCH}.tar.gz"
 
 # Check build dependencies
 echo "==> Checking build dependencies..."
@@ -56,16 +64,16 @@ echo "==> Building tasty ($PROFILE)..."
 cargo build $CARGO_FLAGS
 
 echo "==> Assembling archive..."
-rm -rf "$DIST_DIR/tasty-linux"
-mkdir -p "$DIST_DIR/tasty-linux"
+rm -rf "$DIST_DIR/$PKG_DIR"
+mkdir -p "$DIST_DIR/$PKG_DIR"
 
-cp "target/$PROFILE/tasty" "$DIST_DIR/tasty-linux/tasty"
+cp "target/$PROFILE/tasty" "$DIST_DIR/$PKG_DIR/tasty"
 
 echo "==> Creating $ARCHIVE_NAME..."
 rm -f "$DIST_DIR/$ARCHIVE_NAME"
-tar -czf "$DIST_DIR/$ARCHIVE_NAME" -C "$DIST_DIR" "tasty-linux"
+tar -czf "$DIST_DIR/$ARCHIVE_NAME" -C "$DIST_DIR" "$PKG_DIR"
 
-rm -rf "$DIST_DIR/tasty-linux"
+rm -rf "$DIST_DIR/$PKG_DIR"
 
 echo ""
 echo "Done!"
