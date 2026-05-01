@@ -273,7 +273,7 @@
 - **파일 클립보드**: 선택된 파일/디렉토리를 Ctrl/Cmd+C/X로 OS 클립보드에 복사/잘라내기, Ctrl/Cmd+V로 붙여넣기. OS 파일 탐색기(Finder, Windows Explorer, Nautilus)와 호환
   - macOS: NSPasteboard writeObjects로 다중 파일 NSURL 전달, pasteboardItems로 다중 파일 읽기
   - Windows: CF_HDROP (TODO)
-  - Linux: text/uri-list (TODO)
+  - Linux: `x-special/gnome-copied-files`(GNOME/Thunar/Dolphin/Nemo) + `text/uri-list` 폴백. Wayland는 `wl-copy`/`wl-paste`, X11은 `xclip` 사용 (런타임 의존성 — `wl-clipboard` 또는 `xclip` 패키지 필요)
 - **붙여넣기 대상**: 선택된 디렉토리가 1개면 해당 디렉토리, 아니면 포커스 파일의 부모 디렉토리, 없으면 루트 디렉토리
 - **주소표시줄**: 상단에 현재 루트 경로를 표시하는 텍스트 입력 필드. 직접 경로를 입력하고 Enter로 해당 경로로 이동 가능
 - **우클릭 컨텍스트 메뉴**: 파일/폴더/배경에서 우클릭 시 상태에 따른 컨텍스트 메뉴 표시
