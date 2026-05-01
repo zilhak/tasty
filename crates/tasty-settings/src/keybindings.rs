@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use serde::{Deserialize, Deserializer, Serialize};
 
 /// 문자열과 Vec<String> 모두를 Vec<String>으로 역직렬화하는 필드 헬퍼.
@@ -137,10 +139,10 @@ pub struct KeybindingSettings {
     #[serde(deserialize_with = "deserialize_binding")]
     pub rename_workspace_subtitle: Vec<String>,
     /// Undo in image editor.
-    #[serde(default, deserialize_with = "deserialize_binding")]
+    #[serde(deserialize_with = "deserialize_binding")]
     pub image_undo: Vec<String>,
     /// Redo in image editor.
-    #[serde(default, deserialize_with = "deserialize_binding")]
+    #[serde(deserialize_with = "deserialize_binding")]
     pub image_redo: Vec<String>,
 }
 
@@ -444,6 +446,44 @@ impl KeybindingSettings {
             }
         }
         None
+    }
+
+    /// 기본값으로 채워진 필드에서 사용자 설정 필드와 충돌하는 바인딩을 제거한다.
+    ///
+    /// `existing_keys`: TOML에 실제로 존재했던 keybindings 키 목록.
+    /// existing_keys에 없는 필드(= 기본값으로 채워진 필드)의 바인딩 중,
+    /// 다른 필드와 중복되는 것을 제거한다.
+    pub fn remove_conflicts_from_defaults(&mut self, existing_keys: &HashSet<String>) {
+        // 먼저 모든 사용자 설정 바인딩을 수집
+        let mut user_combos: HashSet<String> = HashSet::new();
+        for (field_id, _) in Self::GENERAL_BINDING_FIELDS {
+            if existing_keys.contains(*field_id) {
+                if let Some(bindings) = self.get_bindings(field_id) {
+                    for combo in bindings {
+                        if !combo.is_empty() {
+                            user_combos.insert(combo.clone());
+                        }
+                    }
+                }
+            }
+        }
+
+        // 기본값 필드에서 사용자 바인딩과 충돌하는 combo 제거
+        for (field_id, _) in Self::GENERAL_BINDING_FIELDS {
+            if existing_keys.contains(*field_id) {
+                continue;
+            }
+            if let Some(vec) = self.get_bindings_mut(field_id) {
+                let before = vec.len();
+                vec.retain(|combo| !user_combos.contains(combo));
+                let removed = before - vec.len();
+                if removed > 0 {
+                    tracing::info!(
+                        "removed {removed} conflicting default binding(s) from '{field_id}'"
+                    );
+                }
+            }
+        }
     }
 
     /// field_id → 라벨 번역 키.
@@ -985,5 +1025,47 @@ copy = ["ctrl+c", "ctrl+shift+c"]
         assert_eq!(KeybindingSettings::format_display(""), "");
         assert_eq!(KeybindingSettings::format_display("ctrl+-"), "Ctrl+-");
         assert_eq!(KeybindingSettings::format_display("ctrl+="), "Ctrl+=");
+    }
+
+    /// TOML에 일부 필드만 있고 나머지가 누락된 경우,
+    /// 누락된 필드가 preset_tasty() 기본값을 따르는지 확인.
+    #[test]
+    fn missing_fields_fall_back_to_preset_not_empty() {
+        let toml = r#"new_workspace = ["alt+n"]"#;
+        let kb: KeybindingSettings = toml::from_str(toml).unwrap();
+        let preset = KeybindingSettings::preset_tasty();
+
+        for (field_id, _label) in KeybindingSettings::GENERAL_BINDING_FIELDS {
+            let deserialized = kb.get_bindings(field_id).unwrap();
+            let expected = preset.get_bindings(field_id).unwrap();
+            assert_eq!(
+                deserialized, expected,
+                "필드 '{field_id}'가 누락 시 preset 기본값이 아닌 빈 값이 됨"
+            );
+        }
+    }
+
+    /// 사용자가 설정한 바인딩과 충돌하는 기본값 바인딩이 제거되는지 확인.
+    #[test]
+    fn remove_conflicts_from_defaults_strips_conflicting_combos() {
+        // image_undo의 기본값은 ["ctrl+z", "alt+z"].
+        // 사용자가 new_tab = ["ctrl+z"]를 설정하면,
+        // image_undo에서 "ctrl+z"가 제거되어야 한다.
+        let toml = r#"new_tab = ["ctrl+z"]"#;
+        let mut kb: KeybindingSettings = toml::from_str(toml).unwrap();
+        let existing_keys: HashSet<String> = ["new_tab".to_string()].into_iter().collect();
+        kb.remove_conflicts_from_defaults(&existing_keys);
+
+        // new_tab은 사용자 설정이므로 그대로
+        assert_eq!(kb.new_tab, vec!["ctrl+z".to_string()]);
+        // image_undo에서 "ctrl+z"가 제거되고 "alt+z"만 남아야 함
+        assert!(
+            !kb.image_undo.contains(&"ctrl+z".to_string()),
+            "기본값 필드에서 사용자 바인딩과 충돌하는 combo가 제거되지 않음"
+        );
+        assert!(
+            kb.image_undo.contains(&"alt+z".to_string()),
+            "충돌하지 않는 combo까지 제거됨"
+        );
     }
 }

@@ -3,6 +3,7 @@ pub mod general;
 mod keybindings;
 mod types;
 
+use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
 
@@ -68,16 +69,29 @@ impl Settings {
         };
 
         match fs::read_to_string(&path) {
-            Ok(contents) => match toml::from_str::<Settings>(&contents) {
-                Ok(settings) => {
-                    tracing::info!("loaded settings from {}", path.display());
-                    settings
+            Ok(contents) => {
+                // TOML을 Value로 먼저 파싱하여 keybindings 키 목록 추출
+                let existing_kb_keys: HashSet<String> =
+                    toml::from_str::<toml::Value>(&contents)
+                        .ok()
+                        .and_then(|v| v.get("keybindings").and_then(|kb| kb.as_table().cloned()))
+                        .map(|t| t.keys().cloned().collect())
+                        .unwrap_or_default();
+
+                match toml::from_str::<Settings>(&contents) {
+                    Ok(mut settings) => {
+                        settings
+                            .keybindings
+                            .remove_conflicts_from_defaults(&existing_kb_keys);
+                        tracing::info!("loaded settings from {}", path.display());
+                        settings
+                    }
+                    Err(e) => {
+                        tracing::warn!("failed to parse settings file: {e}, using defaults");
+                        Self::default()
+                    }
                 }
-                Err(e) => {
-                    tracing::warn!("failed to parse settings file: {e}, using defaults");
-                    Self::default()
-                }
-            },
+            }
             Err(_) => {
                 tracing::info!("no settings file at {}, using defaults", path.display());
                 Self::default()
