@@ -25,13 +25,15 @@ Push-Location (Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Pa
 try {
 
 # Parse profile
-$Profile = "dist"
+# NOTE: $Profile is a PowerShell automatic variable (user profile script path).
+# Use $BuildProfile to avoid the name collision.
+$BuildProfile = "dist"
 $CargoFlags = @("--profile", "dist")
 if ($Debug) {
-    $Profile = "debug"
+    $BuildProfile = "debug"
     $CargoFlags = @()
 } elseif ($Release) {
-    $Profile = "release"
+    $BuildProfile = "release"
     $CargoFlags = @("--release")
 }
 
@@ -48,7 +50,7 @@ $DistDir = "dist"
 $ArchiveName = "tasty-${Version}-windows-x64.zip"
 $StageDir = Join-Path $DistDir "tasty-windows"
 
-Write-Host "==> Building tasty ($Profile)..."
+Write-Host "==> Building tasty ($BuildProfile)..."
 cargo build @CargoFlags
 if ($LASTEXITCODE -ne 0) {
     Write-Error "cargo build failed with exit code $LASTEXITCODE"
@@ -59,7 +61,7 @@ Write-Host "==> Assembling archive..."
 if (Test-Path $StageDir) { Remove-Item -Recurse -Force $StageDir }
 New-Item -ItemType Directory -Force -Path $StageDir | Out-Null
 
-$ExePath = Join-Path (Join-Path "target" $Profile) "tasty.exe"
+$ExePath = Join-Path (Join-Path "target" $BuildProfile) "tasty.exe"
 if (-not (Test-Path $ExePath)) {
     Write-Error "Build output not found: $ExePath"
     exit 1
@@ -67,7 +69,7 @@ if (-not (Test-Path $ExePath)) {
 Copy-Item $ExePath -Destination $StageDir
 
 # Collect any DLLs from the build output directory
-$BuildDir = Join-Path "target" $Profile
+$BuildDir = Join-Path "target" $BuildProfile
 Get-ChildItem -Path $BuildDir -Filter "*.dll" | ForEach-Object {
     Copy-Item $_.FullName -Destination $StageDir
 }
