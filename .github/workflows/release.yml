@@ -1,0 +1,114 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  create-release:
+    runs-on: [self-hosted, Linux]
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract and verify version
+        id: version
+        run: |
+          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+          CARGO_VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          if [ "$TAG_VERSION" != "$CARGO_VERSION" ]; then
+            echo "::error::Tag version ($TAG_VERSION) != Cargo.toml version ($CARGO_VERSION)"
+            exit 1
+          fi
+          echo "version=$TAG_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Extract changelog from tag commit
+        id: changelog
+        run: |
+          BODY=$(git log -1 --format=%b)
+          {
+            echo "body<<EOF"
+            echo "$BODY"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "v${{ steps.version.outputs.version }}" \
+            --draft \
+            --title "v${{ steps.version.outputs.version }}" \
+            --notes "${{ steps.changelog.outputs.body }}"
+
+  build-macos:
+    needs: create-release
+    runs-on: [self-hosted, macOS]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build DMG
+        run: bash scripts/build-macos-dmg.sh
+
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ needs.create-release.outputs.version }}"
+          gh release upload "v${VERSION}" "dist/Tasty-${VERSION}-macos.dmg"
+
+  build-windows:
+    needs: create-release
+    runs-on: [self-hosted, Windows]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build ZIP
+        run: powershell -ExecutionPolicy Bypass -File scripts/build-windows.ps1
+
+      - name: Upload to release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $VERSION = "${{ needs.create-release.outputs.version }}"
+          gh release upload "v${VERSION}" "dist/tasty-${VERSION}-windows-x64.zip"
+
+  build-linux:
+    needs: create-release
+    runs-on: [self-hosted, Linux]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build tar.gz
+        run: bash scripts/build-linux.sh
+
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ needs.create-release.outputs.version }}"
+          gh release upload "v${VERSION}" "dist/tasty-${VERSION}-linux-x64.tar.gz"
+
+  publish-release:
+    needs: [create-release, build-macos, build-windows, build-linux]
+    runs-on: [self-hosted, Linux]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Upload agent-guide docs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ needs.create-release.outputs.version }}"
+          for f in docs/agent-guide/*; do
+            [ -f "$f" ] && gh release upload "v${VERSION}" "$f" || true
+          done
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ needs.create-release.outputs.version }}"
+          gh release edit "v${VERSION}" --draft=false
