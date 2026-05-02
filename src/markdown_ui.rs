@@ -25,6 +25,7 @@ pub fn draw_markdown(
     egui::ScrollArea::vertical()
         .id_salt(format!("md_scroll_{}", id_suffix))
         .auto_shrink([false, false])
+        .drag_to_scroll(false)
         .show(ui, |ui| {
             if scroll_delta != 0.0 {
                 ui.scroll_with_delta(egui::vec2(0.0, scroll_delta));

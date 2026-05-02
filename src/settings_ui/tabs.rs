@@ -671,6 +671,7 @@ fn font_family_picker(
                 if let Some(families) = font_families {
                     egui::ScrollArea::vertical()
                         .max_height(250.0)
+                        .drag_to_scroll(false)
                         .show(ui, |ui| {
                             for family in families {
                                 if !filter_lower.is_empty()
@@ -1215,6 +1216,7 @@ fn draw_tastyrc_subtab(ui: &mut egui::Ui, bashrc_user_draft: &mut Option<String>
 
     egui::ScrollArea::vertical()
         .auto_shrink([false, false])
+        .drag_to_scroll(false)
         .show(ui, |ui| {
             ui.add(
                 egui::TextEdit::multiline(draft)

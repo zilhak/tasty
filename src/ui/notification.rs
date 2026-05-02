@@ -31,6 +31,7 @@ pub(crate) fn draw_notification_content_inner(ui: &mut egui::Ui, state: &mut App
     // Scrollable notification list (newest first)
     egui::ScrollArea::vertical()
         .auto_shrink([false, false])
+        .drag_to_scroll(false)
         .show(ui, |ui| {
             let notification_count = state.engine.notifications.all().len();
             if notification_count == 0 {

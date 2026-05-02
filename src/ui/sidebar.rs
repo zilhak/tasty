@@ -194,6 +194,7 @@ pub fn draw_full_sidebar(
             egui::ScrollArea::vertical()
                 .max_height(scroll_height)
                 .auto_shrink([false, false])
+                .drag_to_scroll(false)
                 .show(ui, |ui| {
                     ui.add_space(4.0);
 

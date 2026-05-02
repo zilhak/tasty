@@ -281,6 +281,7 @@ fn draw_inner(
         egui::ScrollArea::vertical()
             .max_height(list_h)
             .auto_shrink([false, false])
+            .drag_to_scroll(false)
             .show(ui, |ui| {
                 for (pos, row) in filtered.iter().enumerate() {
                     let is_selected = viewer.selected == Some(pos);

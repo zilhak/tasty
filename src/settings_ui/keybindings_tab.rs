@@ -456,6 +456,7 @@ fn draw_preset_subtab(
             egui::ScrollArea::vertical()
                 .max_height(ui.available_height() - 40.0)
                 .auto_shrink([false, false])
+                .drag_to_scroll(false)
                 .show(ui, |ui| {
                     egui::Grid::new("preset_preview_grid")
                         .num_columns(3)

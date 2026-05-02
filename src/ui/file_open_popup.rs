@@ -155,6 +155,7 @@ fn draw_file_open_content(
 
         egui::ScrollArea::vertical()
             .max_height(MAX_RECENT as f32 * ITEM_HEIGHT)
+            .drag_to_scroll(false)
             .show(ui, |ui| {
                 let mut clicked_path: Option<String> = None;
                 for entry in recent_list.iter().take(MAX_RECENT) {

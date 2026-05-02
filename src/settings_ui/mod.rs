@@ -194,6 +194,7 @@ pub fn draw_settings_panel(
 
             egui::ScrollArea::vertical()
                 .auto_shrink([false, false])
+                .drag_to_scroll(false)
                 .show(ui, |ui| match active_tab {
                     SettingsTab::General => draw_general_tab(ui, &mut draft),
                     SettingsTab::Appearance => draw_appearance_tab(

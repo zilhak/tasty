@@ -100,6 +100,7 @@ pub fn draw_explorer(
                 .max_height(tree_height)
                 .min_scrolled_height(tree_height)
                 .auto_shrink([false, false])
+                .drag_to_scroll(false)
                 .show(ui, |ui| {
                     let root = &mut panel.root_node;
                     if root.is_directory {
@@ -298,6 +299,7 @@ pub fn draw_explorer(
                 .max_height(bookmark_height)
                 .min_scrolled_height(bookmark_height)
                 .auto_shrink([false, false])
+                .drag_to_scroll(false)
                 .show(ui, |ui| {
                     let mut nav_path: Option<String> = None;
                     let bookmarks = crate::bookmarks::Bookmarks::load();
@@ -389,6 +391,7 @@ pub fn draw_explorer(
                     if let Some(ref content) = panel.file_content {
                         egui::ScrollArea::vertical()
                             .id_salt("explorer_viewer")
+                            .drag_to_scroll(false)
                             .show(ui, |ui| {
                                 ui.style_mut().interaction.selectable_labels = true;
                                 if panel.is_markdown {
