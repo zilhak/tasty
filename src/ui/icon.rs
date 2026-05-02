@@ -3,7 +3,8 @@
 //! 사용:
 //! ```ignore
 //! use crate::ui::icon::{Icon, Direction};
-//! let resp = Icon::Chevron { direction: Direction::Right }.show(ui);
+//! let row_h = font_size + ui.spacing().button_padding.y * 2.0;
+//! let resp = Icon::Chevron { direction: Direction::Right }.show_in_row(ui, row_h);
 //! if resp.clicked() { /* ... */ }
 //! ```
 
@@ -31,18 +32,23 @@ pub enum Icon {
 }
 
 impl Icon {
-    /// 기본 크기/색(theme.subtext1)으로 렌더.
-    pub fn show(&self, ui: &mut egui::Ui) -> egui::Response {
+    /// 행(line) 안에 끼워 넣을 때 사용. 가로는 `DEFAULT_SIZE`(아이콘 폭)를 쓰지만
+    /// 세로는 `row_h`를 통째로 점유해 같은 행에 있는 다른 위젯(예: selectable_label)과
+    /// 행 높이를 맞춘다. 아이콘 자체는 그 박스의 세로 중앙에 `DEFAULT_SIZE × DEFAULT_SIZE`
+    /// 사이즈로 그려진다. egui의 `Layout::left_to_right(Align::Center)`는 `allocate_exact_size`로
+    /// 먼저 잡힌 작은 rect를 사후에 재정렬하지 않기 때문에, 행 내에서 작은 아이콘이
+    /// 위로 치우쳐 보이는 문제를 막는다.
+    pub fn show_in_row(&self, ui: &mut egui::Ui, row_h: f32) -> egui::Response {
         let color = theme::theme().subtext1;
-        self.show_sized(ui, DEFAULT_SIZE, color)
-    }
-
-    /// 크기/색을 명시해서 렌더.
-    pub fn show_sized(&self, ui: &mut egui::Ui, size: f32, color: egui::Color32) -> egui::Response {
-        let (rect, resp) = ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::click());
+        let (rect, resp) =
+            ui.allocate_exact_size(egui::vec2(DEFAULT_SIZE, row_h), egui::Sense::click());
+        let icon_rect = egui::Rect::from_center_size(
+            rect.center(),
+            egui::vec2(DEFAULT_SIZE, DEFAULT_SIZE),
+        );
         let painter = ui.painter_at(rect);
         match self {
-            Icon::Chevron { direction } => draw_chevron(&painter, rect, *direction, color),
+            Icon::Chevron { direction } => draw_chevron(&painter, icon_rect, *direction, color),
         }
         resp
     }

@@ -494,6 +494,12 @@ fn draw_file_node(
     let is_in_selection = selected_files.contains(&node.path);
     let is_focus = focus_path == Some(&node.path);
 
+    // selectable_label이 만들 행 높이에 맞춘다. selectable_label은 텍스트 갤리 높이에
+    // button_padding.y를 위·아래로 더해 행 높이를 결정한다. 단일행 텍스트의 갤리 높이는
+    // 거의 정확히 font_size이므로 같은 식으로 추정한다. chevron은 이 높이를 통째로
+    // 점유하면서 안쪽에 12×12 시각 본체를 세로 중앙에 그린다.
+    let row_h = font_size + ui.spacing().button_padding.y * 2.0;
+
     ui.horizontal(|ui| {
         ui.add_space(indent);
 
@@ -504,7 +510,8 @@ fn draw_file_node(
             } else {
                 crate::ui::icon::Direction::Right
             };
-            let arrow_resp = crate::ui::icon::Icon::Chevron { direction: dir }.show(ui);
+            let arrow_resp =
+                crate::ui::icon::Icon::Chevron { direction: dir }.show_in_row(ui, row_h);
             if arrow_resp.clicked() && action.is_none() {
                 *action = Some(TreeAction::ToggleDir(node.path.clone()));
             }
