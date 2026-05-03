@@ -56,7 +56,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           VERSION="${{ needs.create-release.outputs.version }}"
-          gh release upload "v${VERSION}" "dist/Tasty-${VERSION}-macos.dmg"
+          gh release upload --clobber "v${VERSION}" "dist/Tasty-${VERSION}-macos.dmg"
 
   build-windows:
     needs: create-release
@@ -76,7 +76,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $VERSION = "${{ needs.create-release.outputs.version }}"
-          gh release upload "v${VERSION}" "dist/tasty-${VERSION}-windows-x64.zip"
+          gh release upload --clobber "v${VERSION}" "dist/tasty-${VERSION}-windows-x64.zip"
 
   build-linux-x64:
     needs: create-release
@@ -97,7 +97,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           VERSION="${{ needs.create-release.outputs.version }}"
-          gh release upload "v${VERSION}" "dist/tasty-${VERSION}-linux-x64.tar.gz"
+          gh release upload --clobber "v${VERSION}" "dist/tasty-${VERSION}-linux-x64.tar.gz"
 
   build-linux-arm64:
     needs: create-release
@@ -118,7 +118,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           VERSION="${{ needs.create-release.outputs.version }}"
-          gh release upload "v${VERSION}" "dist/tasty-${VERSION}-linux-arm64.tar.gz"
+          gh release upload --clobber "v${VERSION}" "dist/tasty-${VERSION}-linux-arm64.tar.gz"
 
   publish-release:
     needs: [create-release, build-macos, build-windows, build-linux-x64, build-linux-arm64]
@@ -133,7 +133,7 @@ jobs:
         run: |
           VERSION="${{ needs.create-release.outputs.version }}"
           for f in docs/agent-guide/*; do
-            [ -f "$f" ] && gh release upload "v${VERSION}" "$f" || true
+            [ -f "$f" ] && gh release upload --clobber "v${VERSION}" "$f" || true
           done
 
       - name: Publish release
