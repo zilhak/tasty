@@ -85,6 +85,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup Rust PATH
+        run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
       - name: Build tar.gz
         run: bash scripts/build-linux.sh
 
@@ -102,6 +105,9 @@ jobs:
     runs-on: [self-hosted, Linux, ARM64]
     steps:
       - uses: actions/checkout@v4
+
+      - name: Setup Rust PATH
+        run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
       - name: Build tar.gz
         run: bash scripts/build-linux.sh
