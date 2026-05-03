@@ -118,6 +118,7 @@ Tasty는 **Windows, macOS, Linux를 모두 지원하는 크로스 플랫폼 앱*
 - `docs/agent-guide/`: **사용자의 AI 에이전트**를 위한 Tasty 사용법 (IPC/CLI 레퍼런스). 릴리스 에셋으로 배포.
 - `docs/dev-guide/`: **개발 AI 에이전트**를 위한 개발 가이드. 관련 기능 구현 시 반드시 해당 문서를 먼저 읽고 규칙을 따를 것.
   - `build.md`: 워크스페이스 구조, 빌드 프로필(dev/release/dist), LTO, 빌드 시간 측정/최적화
+  - `release-runners.md`: GitHub Actions self-hosted 러너 인벤토리, 1회 도구 설치, 운영 명령
   - `context-menu.md`: 우클릭 컨텍스트 메뉴 구현 (네이티브 메뉴 필수, PendingNativeMenu 패턴)
   - `crash-diagnostics.md`: Crash & 에러 진단 방법 (로그, strace, gdb)
   - `linux.md`: Linux 환경 빌드/실행 가이드
