@@ -33,6 +33,26 @@ assets = [
     ["assets/icons/icon_512.png", "usr/share/icons/hicolor/512x512/apps/tasty.png", "644"],
 ]
 
+[package.metadata.generate-rpm]
+license = "MIT"
+summary = "Cross-platform GPU-accelerated terminal emulator for AI coding agents"
+# builtin: rpm-build 도구가 없는 빌더(Ubuntu 등)에서도 ELF 분석으로 의존성을 잡는다.
+auto-req = "builtin"
+assets = [
+    { source = "target/release/tasty", dest = "/usr/bin/tasty", mode = "755" },
+    { source = "assets/linux/tasty.desktop", dest = "/usr/share/applications/tasty.desktop", mode = "644" },
+    { source = "assets/icons/icon_16.png",  dest = "/usr/share/icons/hicolor/16x16/apps/tasty.png",   mode = "644" },
+    { source = "assets/icons/icon_32.png",  dest = "/usr/share/icons/hicolor/32x32/apps/tasty.png",   mode = "644" },
+    { source = "assets/icons/icon_64.png",  dest = "/usr/share/icons/hicolor/64x64/apps/tasty.png",   mode = "644" },
+    { source = "assets/icons/icon_128.png", dest = "/usr/share/icons/hicolor/128x128/apps/tasty.png", mode = "644" },
+    { source = "assets/icons/icon_256.png", dest = "/usr/share/icons/hicolor/256x256/apps/tasty.png", mode = "644" },
+    { source = "assets/icons/icon_512.png", dest = "/usr/share/icons/hicolor/512x512/apps/tasty.png", mode = "644" },
+]
+
+[package.metadata.generate-rpm.requires]
+freetype = "*"
+fontconfig = "*"
+
 [dependencies]
 # Workspace crates
 tasty-core = { path = "crates/tasty-core" }
