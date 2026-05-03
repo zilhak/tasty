@@ -89,7 +89,7 @@ jobs:
       - name: Setup Rust PATH
         run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
-      - name: Build tar.gz + deb + rpm
+      - name: Build tar.gz + deb + rpm + AppImage
         run: bash scripts/build-linux.sh
 
       - name: Upload to release
@@ -101,6 +101,7 @@ jobs:
           gh release upload --clobber "v${VERSION}" "dist/tasty-${VERSION}-linux-x64.tar.gz"
           gh release upload --clobber "v${VERSION}" "dist/tasty_${VERSION}-1_amd64.deb"
           gh release upload --clobber "v${VERSION}" "dist/tasty-${VERSION}-1.x86_64.rpm"
+          gh release upload --clobber "v${VERSION}" "dist/Tasty-${VERSION}-x86_64.AppImage"
 
   build-linux-arm64:
     needs: create-release
@@ -112,7 +113,7 @@ jobs:
       - name: Setup Rust PATH
         run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
-      - name: Build tar.gz + deb + rpm
+      - name: Build tar.gz + deb + rpm + AppImage
         run: bash scripts/build-linux.sh
 
       - name: Upload to release
@@ -124,6 +125,7 @@ jobs:
           gh release upload --clobber "v${VERSION}" "dist/tasty-${VERSION}-linux-arm64.tar.gz"
           gh release upload --clobber "v${VERSION}" "dist/tasty_${VERSION}-1_arm64.deb"
           gh release upload --clobber "v${VERSION}" "dist/tasty-${VERSION}-1.aarch64.rpm"
+          gh release upload --clobber "v${VERSION}" "dist/Tasty-${VERSION}-aarch64.AppImage"
 
   publish-release:
     needs: [create-release, build-macos, build-windows, build-linux-x64, build-linux-arm64]

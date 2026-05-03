@@ -85,7 +85,7 @@ cargo build -p tasty-font
 # 배포
 cargo build --profile dist           # dist 프로필
 ./scripts/build-macos-dmg.sh         # macOS .app + .dmg
-./scripts/build-linux.sh             # Linux tar.gz + .deb + .rpm (uname -m으로 x64/arm64 자동 감지)
+./scripts/build-linux.sh             # Linux tar.gz + .deb + .rpm + .AppImage (uname -m으로 x64/arm64 자동 감지)
 ./scripts/build-windows.ps1          # Windows zip + msi (cargo-wix + WiX 3.x 필요)
 ./scripts/build-windows.ps1 -SkipMsi # Windows zip만
 ```
@@ -108,6 +108,21 @@ cargo install cargo-generate-rpm     # 빌드 머신에 한 번만
 `.rpm`의 `auto-req = "builtin"`은 `rpm-build` 도구가 없는 빌더(Ubuntu 등)에서도
 ELF 분석으로 의존성을 잡기 위한 옵션이다. Fedora 등에서 빌드한다면 `auto`로 바꿔도 무방.
 
+`.AppImage`는 [`linuxdeploy`](https://github.com/linuxdeploy/linuxdeploy)로 만든다.
+`cargo install`로 받을 수 없으므로 빌드 머신에 한 번 직접 다운로드해야 한다:
+
+```bash
+curl -fsSL -o ~/.local/bin/linuxdeploy \
+  https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-$(uname -m).AppImage
+chmod +x ~/.local/bin/linuxdeploy
+```
+
+linuxdeploy가 ELF 의존 라이브러리(libwebkit2gtk, libwayland, libxcb 등 100여 개)를
+모두 AppDir에 번들하고 rpath를 `$ORIGIN`으로 설정하므로, 결과 AppImage는
+어떤 distro에서도 시스템 라이브러리 버전 의존 없이 동작한다 (산출물 ~83MB).
+`.desktop`의 `Icon=tasty` 엔트리를 만족시키기 위해 빌드 시 `--icon-filename tasty`로
+파일명을 명시적으로 지정한다.
+
 Windows MSI는 [`cargo-wix`](https://github.com/volks73/cargo-wix)로 만든다:
 
 ```powershell
@@ -125,8 +140,8 @@ Linux 빌드는 아키텍처별 라벨로 분기:
 
 | 잡 | 러너 라벨 | 산출물 |
 |----|----------|--------|
-| `build-linux-x64` | `[self-hosted, Linux, X64]` | `tasty-{ver}-linux-x64.tar.gz` + `tasty_{ver}-1_amd64.deb` + `tasty-{ver}-1.x86_64.rpm` |
-| `build-linux-arm64` | `[self-hosted, Linux, ARM64]` | `tasty-{ver}-linux-arm64.tar.gz` + `tasty_{ver}-1_arm64.deb` + `tasty-{ver}-1.aarch64.rpm` |
+| `build-linux-x64` | `[self-hosted, Linux, X64]` | tar.gz + deb + rpm + AppImage (x86_64) |
+| `build-linux-arm64` | `[self-hosted, Linux, ARM64]` | tar.gz + deb + rpm + AppImage (aarch64) |
 | `build-windows` | `[self-hosted, Windows]` | `tasty-{ver}-windows-x64.zip` + `.msi` |
 
 `workflow_dispatch`로 태그 없이 수동 검증 빌드도 가능 (release는 만들지 않음).

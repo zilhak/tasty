@@ -10,10 +10,15 @@
 #   dist/tasty-{version}-linux-{arch}.tar.gz       # arch: x64 | arm64
 #   dist/tasty_{version}-1_{deb-arch}.deb          # debug 제외, deb-arch: amd64 | arm64
 #   dist/tasty-{version}-1.{rpm-arch}.rpm          # debug 제외, rpm-arch: x86_64 | aarch64
+#   dist/Tasty-{version}-{rpm-arch}.AppImage       # debug 제외, distro-무관 단일 파일
 #
 # Requires:
 #   cargo install cargo-deb            # .deb 패키지 생성 (debug 빌드에선 생략)
 #   cargo install cargo-generate-rpm   # .rpm 패키지 생성 (debug 빌드에선 생략)
+#   linuxdeploy (PATH에 위치)          # .AppImage 생성. 다음 한 번만 실행:
+#     curl -fsSL -o ~/.local/bin/linuxdeploy \
+#       https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-$(uname -m).AppImage
+#     chmod +x ~/.local/bin/linuxdeploy
 
 set -euo pipefail
 
@@ -83,6 +88,7 @@ rm -rf "$DIST_DIR/$PKG_DIR"
 
 DEB_FILE=""
 RPM_FILE=""
+APPIMAGE_FILE=""
 if [[ "$PROFILE" != "debug" ]]; then
     if ! command -v cargo-deb &>/dev/null; then
         echo "Error: cargo-deb not found. Install with: cargo install cargo-deb" >&2
@@ -90,6 +96,10 @@ if [[ "$PROFILE" != "debug" ]]; then
     fi
     if ! command -v cargo-generate-rpm &>/dev/null; then
         echo "Error: cargo-generate-rpm not found. Install with: cargo install cargo-generate-rpm" >&2
+        exit 1
+    fi
+    if ! command -v linuxdeploy &>/dev/null; then
+        echo "Error: linuxdeploy not found in PATH. See header of this script for install instructions." >&2
         exit 1
     fi
 
@@ -104,10 +114,26 @@ if [[ "$PROFILE" != "debug" ]]; then
     RPM_SRC=$(ls -t target/generate-rpm/tasty-*.rpm | head -1)
     cp "$RPM_SRC" "$DIST_DIR/"
     RPM_FILE="$DIST_DIR/$(basename "$RPM_SRC")"
+
+    echo "==> Building .AppImage..."
+    APPIMAGE_NAME="Tasty-${VERSION}-${ARCH_RAW}.AppImage"
+    APPDIR="target/AppDir"
+    rm -rf "$APPDIR"
+    mkdir -p "$APPDIR"
+    VERSION="$VERSION" OUTPUT="$APPIMAGE_NAME" linuxdeploy \
+        --appdir "$APPDIR" \
+        --executable "target/$PROFILE/tasty" \
+        --desktop-file assets/linux/tasty.desktop \
+        --icon-file assets/icons/icon_256.png \
+        --icon-filename tasty \
+        --output appimage
+    mv "$APPIMAGE_NAME" "$DIST_DIR/"
+    APPIMAGE_FILE="$DIST_DIR/$APPIMAGE_NAME"
 fi
 
 echo ""
 echo "Done!"
-echo "  Archive: $DIST_DIR/$ARCHIVE_NAME"
-[[ -n "$DEB_FILE" ]] && echo "  Deb:     $DEB_FILE"
-[[ -n "$RPM_FILE" ]] && echo "  Rpm:     $RPM_FILE"
+echo "  Archive:  $DIST_DIR/$ARCHIVE_NAME"
+[[ -n "$DEB_FILE" ]]      && echo "  Deb:      $DEB_FILE"
+[[ -n "$RPM_FILE" ]]      && echo "  Rpm:      $RPM_FILE"
+[[ -n "$APPIMAGE_FILE" ]] && echo "  AppImage: $APPIMAGE_FILE"
