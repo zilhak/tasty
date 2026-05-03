@@ -19,6 +19,7 @@ pub fn draw_pane_tab_bars(
         pane_id: u32,
         tab_names: Vec<String>,
         tab_has_notification: Vec<bool>,
+        tab_is_busy: Vec<bool>,
         active_tab: usize,
         is_focused: bool,
         logical_x: f32,
@@ -39,10 +40,15 @@ pub fn draw_pane_tab_bars(
                 let sids = t.all_surface_ids();
                 state.engine.notifications.has_highlighted_surface(&sids)
             }).collect();
+            let tab_is_busy: Vec<bool> = pane.tabs.iter().map(|t| {
+                let sids = t.all_surface_ids();
+                sids.iter().any(|sid| state.engine.busy_surfaces.contains(sid))
+            }).collect();
             infos.push(PaneTabInfo {
                 pane_id,
                 tab_names: pane.tabs.iter().map(|t| t.display_name()).collect(),
                 tab_has_notification,
+                tab_is_busy,
                 active_tab: pane.active_tab,
                 is_focused: pane_id == focused_pane_id,
                 logical_x: (pane_rect.x.value() / scale_factor).round_ui(),
@@ -159,6 +165,7 @@ pub fn draw_pane_tab_bars(
 
                                 let is_active = i == info.active_tab;
                                 let has_notif = info.tab_has_notification.get(i).copied().unwrap_or(false);
+                                let is_busy = info.tab_is_busy.get(i).copied().unwrap_or(false);
                                 let tab_bg = if is_active { th.base } else { bg };
                                 let text_color = if is_active {
                                     th.text
@@ -181,6 +188,26 @@ pub fn draw_pane_tab_bars(
                                         egui::vec2(tab_w, 2.0),
                                     );
                                     painter.rect_filled(line_rect, 0.0, th.blue);
+                                }
+
+                                if is_busy {
+                                    let dot_radius = 3.0;
+                                    let dot_pad = 6.0;
+                                    let dot_center = egui::pos2(
+                                        tab_rect.max.x - dot_pad - dot_radius,
+                                        tab_rect.center().y,
+                                    );
+                                    let dot_color = if is_active {
+                                        th.green
+                                    } else {
+                                        egui::Color32::from_rgba_unmultiplied(
+                                            th.green.r(),
+                                            th.green.g(),
+                                            th.green.b(),
+                                            180,
+                                        )
+                                    };
+                                    painter.circle_filled(dot_center, dot_radius, dot_color);
                                 }
 
                                 // Truncate tab name with ellipsis if it exceeds available width
