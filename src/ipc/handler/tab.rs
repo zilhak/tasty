@@ -35,11 +35,13 @@ pub fn handle_tab_list(
                 let surface = tab.surface();
                 let surface_type = surface.type_name();
                 let surface_id = surface.surface_id();
+                let sids = tab.all_surface_ids();
                 let mut entry = json!({
                     "id": tab.id,
                     "name": tab.name,
                     "active": i == pane.active_tab,
                     "type": surface_type,
+                    "busy_count": state.busy_count(&sids),
                 });
                 if let Some(sid) = surface_id {
                     entry["surface_id"] = json!(sid);

@@ -92,7 +92,7 @@ pub(crate) fn handle_surface_list(state: &AppState, id: serde_json::Value) -> Js
         for &pane_id in &ws.pane_layout().all_pane_ids() {
             if let Some(pane) = ws.pane_layout().find_pane(pane_id) {
                 for (tab_idx, tab) in pane.tabs.iter().enumerate() {
-                    collect_tab_surface_info(tab, pane_id, ws.id, tab_idx, &mut surfaces);
+                    collect_tab_surface_info(state, tab, pane_id, ws.id, tab_idx, &mut surfaces);
                 }
             }
         }
@@ -101,6 +101,7 @@ pub(crate) fn handle_surface_list(state: &AppState, id: serde_json::Value) -> Js
 }
 
 fn collect_tab_surface_info(
+    state: &AppState,
     tab: &crate::model::Tab,
     pane_id: u32,
     workspace_id: u32,
@@ -109,7 +110,7 @@ fn collect_tab_surface_info(
 ) {
     if tab.is_split() {
         // Split tab: iterate through the layout
-        collect_surface_layout_info(tab.layout(), pane_id, workspace_id, tab_idx, out);
+        collect_surface_layout_info(state, tab.layout(), pane_id, workspace_id, tab_idx, out);
     } else {
         // Single surface tab
         let surface = tab.surface();
@@ -122,6 +123,7 @@ fn collect_tab_surface_info(
                 "type": "Terminal",
                 "cols": node.terminal.cols(),
                 "rows": node.terminal.rows(),
+                "busy": state.is_surface_busy(node.id),
             });
             if let Some(fg) = node.terminal.foreground_process_info() {
                 entry["foreground_process"] = json!(fg.name);
@@ -136,12 +138,14 @@ fn collect_tab_surface_info(
                 "workspace_id": workspace_id,
                 "tab_index": tab_idx,
                 "type": surface.type_name(),
+                "busy": false,
             }));
         }
     }
 }
 
 fn collect_surface_layout_info(
+    state: &AppState,
     layout: &crate::model::SurfaceLayout,
     pane_id: u32,
     workspace_id: u32,
@@ -157,6 +161,7 @@ fn collect_surface_layout_info(
                 "workspace_id": workspace_id,
                 "tab_index": tab_idx,
                 "type": surface.type_name(),
+                "busy": state.is_surface_busy(id),
             });
             if let Some(terminal) = surface.focused_terminal() {
                 entry["cols"] = json!(terminal.cols());
@@ -169,8 +174,8 @@ fn collect_surface_layout_info(
             out.push(entry);
         }
         crate::model::SurfaceLayout::Split { first, second, .. } => {
-            collect_surface_layout_info(first, pane_id, workspace_id, tab_idx, out);
-            collect_surface_layout_info(second, pane_id, workspace_id, tab_idx, out);
+            collect_surface_layout_info(state, first, pane_id, workspace_id, tab_idx, out);
+            collect_surface_layout_info(state, second, pane_id, workspace_id, tab_idx, out);
         }
     }
 }

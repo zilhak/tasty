@@ -10,6 +10,7 @@ pub fn handle_workspace_list(state: &AppState, id: serde_json::Value) -> JsonRpc
         .iter()
         .enumerate()
         .map(|(i, ws)| {
+            let sids = ws.all_surface_ids();
             json!({
                 "id": ws.id,
                 "name": ws.name,
@@ -17,6 +18,7 @@ pub fn handle_workspace_list(state: &AppState, id: serde_json::Value) -> JsonRpc
                 "description": ws.description,
                 "active": i == state.active_workspace,
                 "pane_count": ws.pane_layout().all_pane_ids().len(),
+                "busy_count": state.busy_count(&sids),
             })
         })
         .collect();
