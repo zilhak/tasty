@@ -125,6 +125,9 @@ impl ApplicationHandler<AppEvent> for App {
             AppEvent::ClipboardChanged(data) => {
                 self.record_clipboard_data(data);
             }
+            AppEvent::BusyPoll => {
+                self.poll_busy_states();
+            }
         }
     }
 
@@ -534,6 +537,24 @@ impl App {
                 );
                 w.base().winit.request_redraw();
             }
+        }
+    }
+
+    /// Refresh the busy-surface cache for every live AppState. Triggered ~1s
+    /// from the background ticker via `AppEvent::BusyPoll`. Marks any window
+    /// whose set actually changed as dirty so the indicators redraw.
+    fn poll_busy_states(&mut self) {
+        for w in self.windows.values_mut() {
+            let changed = match w.as_main_mut() {
+                Some(main) => main.state.refresh_busy_surfaces(),
+                None => false,
+            };
+            if changed {
+                w.mark_dirty();
+            }
+        }
+        for state in &mut self.parked_states {
+            let _ = state.refresh_busy_surfaces();
         }
     }
 

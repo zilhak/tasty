@@ -9,6 +9,31 @@ pub struct ForegroundProcessInfo {
     pub pid: u32,
 }
 
+/// Whether `name` matches a recognised interactive shell. Used to classify a
+/// terminal as idle when its foreground process is the shell itself rather
+/// than a user-launched program.
+pub fn is_known_shell_name(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    let stem = lower.strip_suffix(".exe").unwrap_or(&lower);
+    matches!(
+        stem,
+        "bash"
+            | "zsh"
+            | "fish"
+            | "sh"
+            | "dash"
+            | "ksh"
+            | "tcsh"
+            | "csh"
+            | "nu"
+            | "xonsh"
+            | "elvish"
+            | "pwsh"
+            | "powershell"
+            | "cmd"
+    )
+}
+
 /// Get the foreground process info for a given shell PID.
 pub fn get_foreground_process(shell_pid: u32) -> Option<ForegroundProcessInfo> {
     #[cfg(target_os = "linux")]

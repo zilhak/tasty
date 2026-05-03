@@ -141,6 +141,10 @@ pub struct EngineState {
     pub(crate) surface_next_message_id: u32,
     pub last_key_input: HashMap<u32, std::time::Instant>,
 
+    // ── Busy state cache (foreground process != shell). Updated by BusyPoll.
+    // Set membership = busy. Surfaces missing from the set are treated as idle.
+    pub busy_surfaces: std::collections::HashSet<u32>,
+
     /// Event loop proxy for targeted waker creation. Set by App after EngineState creation.
     pub waker_factory: Option<winit::event_loop::EventLoopProxy<crate::AppEvent>>,
 
@@ -179,6 +183,7 @@ impl EngineState {
             surface_messages: HashMap::new(),
             surface_next_message_id: 0,
             last_key_input: HashMap::new(),
+            busy_surfaces: std::collections::HashSet::new(),
             waker_factory: None,
             layout_dirty: crate::layout_persistence::LayoutDirtyTracker::new(),
             restored_active_workspace: None,

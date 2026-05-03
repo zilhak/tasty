@@ -842,6 +842,22 @@ impl Terminal {
         foreground_process::get_foreground_process(shell_pid)
     }
 
+    /// Whether the terminal is currently running a foreground program other
+    /// than the shell itself (e.g. `vim`, `cargo build`). Returns false when
+    /// the shell is at its prompt or when foreground info cannot be resolved.
+    pub fn is_busy(&self) -> bool {
+        let Some(shell_pid) = self.child.process_id() else {
+            return false;
+        };
+        let Some(info) = foreground_process::get_foreground_process(shell_pid) else {
+            return false;
+        };
+        if info.pid == shell_pid {
+            return false;
+        }
+        !foreground_process::is_known_shell_name(&info.name)
+    }
+
     /// Get the current working directory of the child process.
     /// Returns the CWD cached from OSC 7 sequences. If no OSC 7 has been
     /// received yet, falls back to an OS-level query (proc_pidinfo on macOS,

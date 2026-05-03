@@ -4850,6 +4850,7 @@ dependencies = [
  "termwiz",
  "tracing",
  "unicode-width 0.2.2",
+ "windows 0.61.3",
 ]
 
 [[package]]
