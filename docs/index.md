@@ -91,6 +91,7 @@ cmux의 기능을 크로스 플랫폼(Windows, macOS, Linux) GPU 가속 네이�
 | [design/cwd-policy.md](design/cwd-policy.md) | CWD 정책 — OSC 7 기반 CWD 감지 (모든 플랫폼 공통) |
 | [design/explorer-context-menu.md](design/explorer-context-menu.md) | Explorer 컨텍스트 메뉴 — 우클릭 대상 결정, 메뉴 항목 분기, 액션 동작 정의 |
 | [design/linux-system-tray.md](design/linux-system-tray.md) | Linux 시스템 트레이 미지원 결정 — DE 분열, GNOME 기본 미지원, 태스크바 유지로 충분 |
+| [design/busy-indicator.md](design/busy-indicator.md) | 실행 중 표시 — 탭/워크스페이스 busy 판정 정책, 시각 표시, 플랫폼별 foreground 감지 |
 
 ## 아키텍처 문서
 
