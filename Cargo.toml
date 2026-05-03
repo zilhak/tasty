@@ -11,6 +11,28 @@ license = "MIT"
 description = "Cross-platform GPU-accelerated terminal emulator for AI coding agents"
 repository = "https://github.com/zilhak/tasty"
 
+[package.metadata.deb]
+maintainer = "zilhak <zilhak1@gmail.com>"
+copyright = "2026, zilhak <zilhak1@gmail.com>"
+extended-description = """
+Tasty is a cross-platform GPU-accelerated terminal emulator with first-class
+support for AI coding agents. Built on wgpu (Vulkan/DX12/Metal) and winit,
+it exposes both an IPC API and a CLI surface so agents can drive the
+terminal programmatically alongside human use."""
+depends = "$auto, libfreetype6, libfontconfig1"
+section = "utils"
+priority = "optional"
+assets = [
+    ["target/release/tasty", "usr/bin/", "755"],
+    ["assets/linux/tasty.desktop", "usr/share/applications/", "644"],
+    ["assets/icons/icon_16.png",  "usr/share/icons/hicolor/16x16/apps/tasty.png",   "644"],
+    ["assets/icons/icon_32.png",  "usr/share/icons/hicolor/32x32/apps/tasty.png",   "644"],
+    ["assets/icons/icon_64.png",  "usr/share/icons/hicolor/64x64/apps/tasty.png",   "644"],
+    ["assets/icons/icon_128.png", "usr/share/icons/hicolor/128x128/apps/tasty.png", "644"],
+    ["assets/icons/icon_256.png", "usr/share/icons/hicolor/256x256/apps/tasty.png", "644"],
+    ["assets/icons/icon_512.png", "usr/share/icons/hicolor/512x512/apps/tasty.png", "644"],
+]
+
 [dependencies]
 # Workspace crates
 tasty-core = { path = "crates/tasty-core" }

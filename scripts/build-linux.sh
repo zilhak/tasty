@@ -1,13 +1,17 @@
 #!/usr/bin/env bash
-# Build a Linux tar.gz archive for Tasty.
+# Build Linux distribution artifacts for Tasty.
 #
 # Usage:
 #   ./scripts/build-linux.sh           # dist build (full LTO, 배포용)
 #   ./scripts/build-linux.sh --release # release build (thin LTO, 빠른 빌드)
-#   ./scripts/build-linux.sh --debug   # debug build
+#   ./scripts/build-linux.sh --debug   # debug build (tar.gz만)
 #
 # Output:
-#   dist/tasty-{version}-linux-{arch}.tar.gz   # arch: x64 | arm64
+#   dist/tasty-{version}-linux-{arch}.tar.gz       # arch: x64 | arm64
+#   dist/tasty_{version}-1_{deb-arch}.deb          # debug 제외, deb-arch: amd64 | arm64
+#
+# Requires:
+#   cargo install cargo-deb   # .deb 패키지 생성 (debug 빌드에선 생략)
 
 set -euo pipefail
 
@@ -75,6 +79,20 @@ tar -czf "$DIST_DIR/$ARCHIVE_NAME" -C "$DIST_DIR" "$PKG_DIR"
 
 rm -rf "$DIST_DIR/$PKG_DIR"
 
+DEB_FILE=""
+if [[ "$PROFILE" != "debug" ]]; then
+    if ! command -v cargo-deb &>/dev/null; then
+        echo "Error: cargo-deb not found. Install with: cargo install cargo-deb" >&2
+        exit 1
+    fi
+    echo "==> Building .deb package..."
+    cargo deb --no-build --profile "$PROFILE"
+    DEB_SRC=$(ls -t target/debian/tasty_*.deb | head -1)
+    cp "$DEB_SRC" "$DIST_DIR/"
+    DEB_FILE="$DIST_DIR/$(basename "$DEB_SRC")"
+fi
+
 echo ""
 echo "Done!"
 echo "  Archive: $DIST_DIR/$ARCHIVE_NAME"
+[[ -n "$DEB_FILE" ]] && echo "  Package: $DEB_FILE"

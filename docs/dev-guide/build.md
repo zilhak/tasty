@@ -85,10 +85,22 @@ cargo build -p tasty-font
 # 배포
 cargo build --profile dist           # dist 프로필
 ./scripts/build-macos-dmg.sh         # macOS .app + .dmg
-./scripts/build-linux.sh             # Linux tar.gz (uname -m으로 x64/arm64 자동 감지)
+./scripts/build-linux.sh             # Linux tar.gz + .deb (uname -m으로 x64/arm64 자동 감지)
 ./scripts/build-windows.ps1          # Windows zip + msi (cargo-wix + WiX 3.x 필요)
 ./scripts/build-windows.ps1 -SkipMsi # Windows zip만
 ```
+
+Linux `.deb`는 [`cargo-deb`](https://github.com/kornelski/cargo-deb)으로 만든다:
+
+```bash
+cargo install cargo-deb              # 빌드 머신에 한 번만
+```
+
+패키지 메타데이터(아이콘 경로, depends, .desktop 등)는 `Cargo.toml`의
+`[package.metadata.deb]` 섹션에 정의되어 있다. `depends = "$auto, libfreetype6, libfontconfig1"`로
+시스템 라이브러리 의존성을 자동 분석하며, hicolor 표준 경로
+(`/usr/share/icons/hicolor/{N}x{N}/apps/tasty.png`)에 16~512px 아이콘을 설치한다.
+`build-linux.sh`는 debug 빌드에선 `.deb` 단계를 생략한다.
 
 Windows MSI는 [`cargo-wix`](https://github.com/volks73/cargo-wix)로 만든다:
 
@@ -107,8 +119,8 @@ Linux 빌드는 아키텍처별 라벨로 분기:
 
 | 잡 | 러너 라벨 | 산출물 |
 |----|----------|--------|
-| `build-linux-x64` | `[self-hosted, Linux, X64]` | `tasty-{ver}-linux-x64.tar.gz` |
-| `build-linux-arm64` | `[self-hosted, Linux, ARM64]` | `tasty-{ver}-linux-arm64.tar.gz` |
+| `build-linux-x64` | `[self-hosted, Linux, X64]` | `tasty-{ver}-linux-x64.tar.gz` + `tasty_{ver}-1_amd64.deb` |
+| `build-linux-arm64` | `[self-hosted, Linux, ARM64]` | `tasty-{ver}-linux-arm64.tar.gz` + `tasty_{ver}-1_arm64.deb` |
 | `build-windows` | `[self-hosted, Windows]` | `tasty-{ver}-windows-x64.zip` + `.msi` |
 
 `workflow_dispatch`로 태그 없이 수동 검증 빌드도 가능 (release는 만들지 않음).

@@ -89,7 +89,7 @@ jobs:
       - name: Setup Rust PATH
         run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
-      - name: Build tar.gz
+      - name: Build tar.gz + deb
         run: bash scripts/build-linux.sh
 
       - name: Upload to release
@@ -99,6 +99,7 @@ jobs:
         run: |
           VERSION="${{ needs.create-release.outputs.version }}"
           gh release upload --clobber "v${VERSION}" "dist/tasty-${VERSION}-linux-x64.tar.gz"
+          gh release upload --clobber "v${VERSION}" "dist/tasty_${VERSION}-1_amd64.deb"
 
   build-linux-arm64:
     needs: create-release
@@ -110,7 +111,7 @@ jobs:
       - name: Setup Rust PATH
         run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
-      - name: Build tar.gz
+      - name: Build tar.gz + deb
         run: bash scripts/build-linux.sh
 
       - name: Upload to release
@@ -120,6 +121,7 @@ jobs:
         run: |
           VERSION="${{ needs.create-release.outputs.version }}"
           gh release upload --clobber "v${VERSION}" "dist/tasty-${VERSION}-linux-arm64.tar.gz"
+          gh release upload --clobber "v${VERSION}" "dist/tasty_${VERSION}-1_arm64.deb"
 
   publish-release:
     needs: [create-release, build-macos, build-windows, build-linux-x64, build-linux-arm64]
