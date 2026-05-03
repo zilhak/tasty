@@ -1,16 +1,19 @@
-# Build a Windows ZIP archive for Tasty.
+# Build Windows distributables for Tasty.
 #
 # Usage:
 #   .\scripts\build-windows.ps1           # dist build (full LTO, 배포용)
 #   .\scripts\build-windows.ps1 -Release  # release build (thin LTO, 빠른 빌드)
 #   .\scripts\build-windows.ps1 -Debug    # debug build
+#   .\scripts\build-windows.ps1 -SkipMsi  # ZIP만 만들고 MSI는 건너뜀
 #
 # Output:
-#   dist\tasty-{version}-windows-x64.zip
+#   dist\tasty-{version}-windows-x64.zip   (portable)
+#   dist\tasty-{version}-windows-x64.msi   (installer, requires WiX 3.x)
 
 param(
     [switch]$Release,
-    [switch]$Debug
+    [switch]$Debug,
+    [switch]$SkipMsi
 )
 
 Set-StrictMode -Version Latest
@@ -82,8 +85,42 @@ Compress-Archive -Path (Join-Path $StageDir "*") -DestinationPath $ArchivePath
 Remove-Item -Recurse -Force $StageDir
 
 Write-Host ""
+Write-Host "Portable archive: $DistDir\$ArchiveName"
+
+# === MSI installer (cargo-wix) ===
+if (-not $SkipMsi) {
+    Write-Host ""
+    Write-Host "==> Building MSI installer..."
+
+    # cargo-wix는 release/dist 프로필만 지원 (debug는 의미 없음)
+    if ($BuildProfile -eq "debug") {
+        Write-Host "  (skipping MSI for debug build)"
+    } else {
+        $cargoWix = Get-Command cargo-wix -ErrorAction SilentlyContinue
+        if (-not $cargoWix) {
+            Write-Warning "cargo-wix not found. Install with: cargo install cargo-wix"
+            Write-Warning "Skipping MSI build."
+        } else {
+            $WixArgs = @(
+                "wix",
+                "--package", "tasty",
+                "--profile", $BuildProfile,
+                "--no-build",
+                "--nocapture",
+                "--output", (Join-Path $DistDir "tasty-${Version}-windows-x64.msi")
+            )
+            cargo @WixArgs
+            if ($LASTEXITCODE -ne 0) {
+                Write-Error "cargo wix failed with exit code $LASTEXITCODE"
+                exit 1
+            }
+            Write-Host "Installer: $DistDir\tasty-${Version}-windows-x64.msi"
+        }
+    }
+}
+
+Write-Host ""
 Write-Host "Done!"
-Write-Host "  Archive: $DistDir\$ArchiveName"
 
 } finally {
     Pop-Location

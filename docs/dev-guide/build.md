@@ -86,8 +86,21 @@ cargo build -p tasty-font
 cargo build --profile dist           # dist 프로필
 ./scripts/build-macos-dmg.sh         # macOS .app + .dmg
 ./scripts/build-linux.sh             # Linux tar.gz (uname -m으로 x64/arm64 자동 감지)
-./scripts/build-windows.ps1          # Windows zip
+./scripts/build-windows.ps1          # Windows zip + msi (cargo-wix + WiX 3.x 필요)
+./scripts/build-windows.ps1 -SkipMsi # Windows zip만
 ```
+
+Windows MSI는 [`cargo-wix`](https://github.com/volks73/cargo-wix)로 만든다:
+
+```powershell
+cargo install cargo-wix              # 빌드 머신에 한 번만
+# WiX Toolset 3.14는 별도 설치 (winget install WiXToolset.WiXToolset, 관리자 권한 필요)
+```
+
+템플릿은 `wix/main.wxs`에 들어 있다. UpgradeCode GUID(`722A590A-...`)는
+업그레이드 식별자이므로 **절대 변경하지 말 것** — 바뀌면 새 제품으로 인식되어
+구버전과 공존하게 된다. MSI는 시작 메뉴 바로가기, "프로그램 추가/제거" 등록,
+사용자 선택 기반 PATH 추가 기능을 포함한다.
 
 GitHub Actions(`.github/workflows/release.yml`)는 self-hosted runner로 동작한다.
 Linux 빌드는 아키텍처별 라벨로 분기:
@@ -96,6 +109,7 @@ Linux 빌드는 아키텍처별 라벨로 분기:
 |----|----------|--------|
 | `build-linux-x64` | `[self-hosted, Linux, X64]` | `tasty-{ver}-linux-x64.tar.gz` |
 | `build-linux-arm64` | `[self-hosted, Linux, ARM64]` | `tasty-{ver}-linux-arm64.tar.gz` |
+| `build-windows` | `[self-hosted, Windows]` | `tasty-{ver}-windows-x64.zip` + `.msi` |
 
 `workflow_dispatch`로 태그 없이 수동 검증 빌드도 가능 (release는 만들지 않음).
 

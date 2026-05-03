@@ -65,7 +65,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build ZIP
+      - name: Build ZIP and MSI
         shell: pwsh
         run: ./scripts/build-windows.ps1
 
@@ -77,6 +77,7 @@ jobs:
         run: |
           $VERSION = "${{ needs.create-release.outputs.version }}"
           gh release upload --clobber "v${VERSION}" "dist/tasty-${VERSION}-windows-x64.zip"
+          gh release upload --clobber "v${VERSION}" "dist/tasty-${VERSION}-windows-x64.msi"
 
   build-linux-x64:
     needs: create-release

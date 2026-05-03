@@ -6,6 +6,7 @@ resolver = "2"
 name = "tasty"
 version = "0.2.3"
 edition = "2024"
+authors = ["zilhak <zilhak1@gmail.com>"]
 license = "MIT"
 description = "Cross-platform GPU-accelerated terminal emulator for AI coding agents"
 repository = "https://github.com/zilhak/tasty"
