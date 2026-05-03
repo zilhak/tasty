@@ -1,11 +1,14 @@
 //! IME (Input Method Editor) handling — OS별 분리.
 //!
 //! OS마다 winit의 IME 이벤트 모델이 다르다:
-//! - **macOS / Linux**: composition 세션당 `Enabled` 1회, 조합 중 `Preedit` 여러 번,
+//! - **macOS (NSTextInputClient)**: composition 세션당 `Enabled` 1회, 조합 중 `Preedit` 여러 번,
 //!   마지막에 `Commit`, 세션 종료 시 `Disabled`. 즉 `Disabled`는 실제 IME OFF 시그널.
 //! - **Windows (IMM/TSF)**: **매 글자마다** `Enabled` → `Preedit(...)` ... → `Preedit("")`
-//!   → `Commit(...)` → `Disabled` 사이클을 돈다. `Disabled`는 "이번 글자 composition 종료"
-//!   일 뿐, IME 전체 상태 리셋이 아니다.
+//!   → `Commit(...)` → `Disabled` 사이클. `Disabled`는 "이번 글자 composition 종료"일 뿐,
+//!   IME 전체 상태 리셋이 아니다.
+//! - **Linux (ibus / fcitx 등 text-input)**: Windows와 유사하게 매 commit 전후로 빈 `Preedit("")`이
+//!   여러 번 발사된다. 즉 빈 Preedit을 "세션 종료"로 해석하면 안 되며, advance 보정 상태(advance/base)는
+//!   유지하고 preedit overlay만 비워야 한다.
 //!
 //! 이 차이 때문에 "composition 종료(빈 Preedit, Disabled)에서 advance 보정 상태를 완전히
 //! 리셋할지"가 OS별로 달라져야 한다. 그 외 로직(reconcile, commit 시 advance 누적 등)은
@@ -121,8 +124,9 @@ pub(super) fn clear_preedit(w: &mut MainWindow) {
     w.mark_dirty();
 }
 
-/// 완전 리셋 — 비-Windows의 composition 세션 종료(`Disabled`/`Preedit("")`)에서만 호출.
-#[cfg_attr(windows, allow(dead_code))]
+/// 완전 리셋 — composition 세션 종료(`Disabled`/`Preedit("")`)에서 advance까지 0으로 미는 경로.
+/// macOS만 호출한다 (Windows/Linux는 매 글자마다 빈 시그널이 들어와 advance를 보존해야 함).
+#[cfg(target_os = "macos")]
 fn clear_all(w: &mut MainWindow) {
     w.ime_preedit = None;
     w.ime_cursor_advance = 0;
@@ -195,14 +199,19 @@ pub(crate) fn ipc_commit(w: &mut MainWindow, text: &str) {
 
 /// composition 종료(`Ime::Disabled`, `Preedit("")`). OS별 분기의 유일한 지점.
 ///
-/// Windows는 매 글자마다 이 시그널이 오므로 preedit overlay만 지우고 advance/base는
-/// 다음 글자의 PTY 에코 보정을 위해 유지한다. 그 외 OS는 실제 IME 세션 종료이므로 리셋.
+/// Windows / Linux: 매 글자마다 이 시그널이 오므로 preedit overlay만 지우고 advance/base는
+/// 다음 글자의 PTY 에코 보정을 위해 유지한다.
+/// macOS: 실제 IME 세션 종료이므로 advance/base까지 완전 리셋.
 fn on_composition_end(w: &mut MainWindow) {
     #[cfg(windows)]
     {
         w.ime_preedit = None;
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    {
+        w.ime_preedit = None;
+    }
+    #[cfg(target_os = "macos")]
     {
         clear_all(w);
     }
