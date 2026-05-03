@@ -163,10 +163,10 @@ tasty claude hook stop --surface 5  # 특정 surface 지정 (또는 TASTY_SURFAC
 
 | 메서드 | 파라미터 | 설명 |
 |--------|---------|------|
-| `workspace.list` | 없음 | 전체 워크스페이스 목록 (id, name, subtitle, description, active) |
+| `workspace.list` | 없음 | 전체 워크스페이스 목록 (id, name, subtitle, description, active, pane_count, busy_count) |
 | `workspace.create` | `name?, subtitle?, description?, cwd?` | 새 워크스페이스 생성 후 활성화 |
 | `workspace.update` | `index?\|id?, name?, subtitle?, description?` | 워크스페이스 정보 수정 (생략 시 활성 워크스페이스) |
-| `tree` | 없음 | 전체 계층 구조 (워크스페이스 → 패인 → 탭) |
+| `tree` | 없음 | 전체 계층 구조 (워크스페이스 → 패인 → 탭). 모든 노드에 `busy_count`, surface 리프에 `busy` 부여 |
 
 ### 패인
 
@@ -180,7 +180,7 @@ tasty claude hook stop --surface 5  # 특정 surface 지정 (또는 TASTY_SURFAC
 
 | 메서드 | 파라미터 | 설명 |
 |--------|---------|------|
-| `tab.list` | `pane_id` | 지정 패인의 탭 목록 (id, name, type, surface_id, active) |
+| `tab.list` | `pane_id` | 지정 패인의 탭 목록 (id, name, type, surface_id, active, busy_count) |
 | `tab.create` | `pane_id`, `type?`, `cwd?`, `file?`, `path?`, `url?` | 새 탭 생성. type: terminal(기본)/markdown/explorer/html/image |
 | `tab.close` | `tab_id` | 탭 닫기 |
 
@@ -188,7 +188,7 @@ tasty claude hook stop --surface 5  # 특정 surface 지정 (또는 TASTY_SURFAC
 
 | 메서드 | 파라미터 | 설명 |
 |--------|---------|------|
-| `surface.list` | 없음 | 모든 서피스 목록 (id, pane_id, cols, rows) |
+| `surface.list` | 없음 | 모든 서피스 목록 (id, pane_id, workspace_id, tab_index, type, cols, rows, busy, foreground_process?, foreground_pid?) |
 | `surface.send` | `text, surface_id` | 텍스트 전송. `\r`로 Enter |
 | `surface.send_to` | `text, surface_id` | 특정 서피스에 텍스트 전송 |
 | `surface.send_key` | `key, surface_id` | 키 이름 전송 (enter, tab, escape, up, down 등) |

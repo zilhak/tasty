@@ -365,6 +365,17 @@
 - 축소 사이드바: 워크스페이스 번호 버튼에 파란색 테두리 강조
 - 모든 하이라이트된 surface를 방문하면 배지 자동 소멸
 
+### Busy Indicator (실행 중 표시)
+- PTY foreground 프로세스를 1초 간격으로 폴링하여 surface별 busy 상태를 캐시(`busy_surfaces`)
+- 판정: shell 자신이 foreground이면 idle, 다른 자식이 foreground이면 busy
+- 플랫폼별 메커니즘: Linux `/proc/<pid>/stat` tpgid, macOS `ps -o tpgid=`, Windows `CreateToolhelp32Snapshot` 기반 자손 트리 탐색
+- 집계: 탭/워크스페이스는 포함된 surface 중 하나라도 busy면 busy (OR)
+- 시각 표시:
+  - 탭 라벨 우측에 녹색 점 (active 탭은 진한, inactive 탭은 dim 알파)
+  - 워크스페이스 사이드바: 접힘 모드는 번호 버튼 우상단의 점, 펼침 모드는 카드 우측의 점 + 카운트
+- IPC: `surface.list`에 `busy: bool`, `tab.list` / `workspace.list` / `tree`에 `busy_count: number`
+- focus와 무관하게 동작 (focus-policy.md §6 참조). 상세: `docs/design/busy-indicator.md`
+
 ### 알림 패널 (Ctrl+I) — Popup (Window 스코프)
 - Popup으로 분류: 터미널 입력을 차단하지 않으며, 포커스를 빼앗지 않음
 - Window 스코프: 워크스페이스 전환과 무관하게 항상 보임
