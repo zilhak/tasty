@@ -42,13 +42,14 @@ cmux의 Sparkle 프레임워크와 유사한 UX를 크로스 플랫폼으로 구
 
 ### 배포 채널별 업데이트 방법
 
+현재 배포 채널은 GitHub Releases 단일 — 인앱 self-update 형태로 처리한다.
+
 | 채널 | 업데이트 방법 |
 |------|-------------|
 | **GitHub Releases** | 인앱 자동 업데이트 (self-update) |
-| **Homebrew** (macOS) | `brew upgrade tasty` |
-| **Cargo** | `cargo install tasty` |
-| **Scoop/WinGet** (Windows) | `scoop update tasty` / `winget upgrade tasty` |
-| **AUR** (Arch Linux) | `yay -Syu tasty` |
+
+> 패키지 매니저(Homebrew/Scoop/WinGet/AUR/Cargo) 통합은 현재 계획에 없다. 추후 도입 시
+> 각 채널은 자체 업데이트 메커니즘을 따르므로 인앱 self-update를 비활성화하는 분기가 필요해진다.
 
 ### self-update 구현
 
