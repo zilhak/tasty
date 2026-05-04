@@ -571,12 +571,13 @@
 - `ui.state`: GUI 오버레이 상태 조회 (settings_open, notification_panel_open, active_workspace, workspace_count, pane_count, tab_count)
 - `ui.screenshot`: 현재 화면을 PNG로 저장
 - `debug.info`: 개발용 디버그 정보 조회 (scale_factor, cell 크기, viewport 등). `src/debug_info.rs`를 수정하여 커스텀 정보 추가 가능
-- `debug.cell_info`: 특정 셀(row, col)의 텍스트, 색상(fg/bg), 속성(bold/italic/underline/strikethrough/inverse), 너비 조회
-- `debug.screen_attrs`: 특정 행 전체의 셀 속성을 일괄 조회
+- `debug.cell_info`: 특정 셀(row, col)의 텍스트, 색상(fg/bg), 속성을 termwiz `CellAttributes` 단계에서 조회. 노출 필드: `text`, `fg`, `bg`, `bold`, `italic`, `underline`, `strikethrough`, `inverse`, `width`, `intensity` (`normal`/`bold`/`half`), `underline_style` (`none`/`single`/`double`/`curly`/`dotted`/`dashed`), `underline_color`, `blink` (`none`/`slow`/`rapid`), `invisible`, `overline`, `vertical_align` (`baseline`/`super`/`sub`)
+- `debug.screen_attrs`: 특정 행 전체의 셀 속성을 일괄 조회 (필드 구성은 `cell_info`와 동일, `col` 추가)
+- `debug.glyph_color`: 특정 셀에 대해 **렌더러가 GPU에 push하는 (bg, fg) RGBA**를 반환. `cell_info`가 termwiz 단계의 속성을 보여준다면 이쪽은 그 속성이 실제 색상 결정에 반영되었는지를 검증한다 (`bg_mode: "focused" | "unfocused"` 옵션)
 - `debug.inject_mouse`: SGR 마우스 이벤트를 PTY에 주입 (`--enable-input-simulation` 필요)
 - `debug.inject_key`: 임의 바이트/텍스트를 PTY에 주입 (`--enable-input-simulation` 필요)
 - `--enable-input-simulation` CLI 플래그: debug 빌드에서 입력 시뮬레이션 IPC를 활성화. 이 플래그 없이는 inject_mouse/inject_key가 거부됨 (2단계 게이트: 컴파일 + 런타임)
-- `debug` CLI 서브커맨드: `tasty debug info`, `tasty debug ime-*`, `tasty debug cell-info`, `tasty debug screen-attrs` 등 디버그 관련 CLI 명령
+- `debug` CLI 서브커맨드: `tasty debug info`, `tasty debug ime-*`, `tasty debug cell-info`, `tasty debug screen-attrs`, `tasty debug glyph-color` 등 디버그 관련 CLI 명령
 
 #### 워크스페이스
 - `workspace.list`: 전체 워크스페이스 목록 (이름, 활성 여부, 패인 수)

@@ -184,17 +184,64 @@ tasty debug screen-attrs --row 2
 
 **`debug.cell_info` 응답 필드:**
 
+termwiz가 파싱한 `CellAttributes` 단계의 정보를 그대로 노출한다. **렌더러가 실제로 그 속성을 GPU 출력에 반영했는지는 별도로 `debug.glyph_color`로 확인해야 한다.**
+
 | 필드 | 타입 | 설명 |
 |------|------|------|
 | `text` | string | 셀의 문자 ("X", "한", " " 등) |
 | `fg` | string | 전경색: `"default"`, `"palette:N"`, `"#rrggbb"` |
 | `bg` | string | 배경색: 위와 동일 형식 |
-| `bold` | bool | 볼드 여부 |
+| `bold` | bool | (호환용) `intensity == "bold"`와 동치 |
 | `italic` | bool | 이탤릭 여부 |
-| `underline` | bool | 밑줄 여부 |
+| `underline` | bool | (호환용) `underline_style != "none"`과 동치 |
 | `strikethrough` | bool | 취소선 여부 |
-| `inverse` | bool | 반전 여부 |
+| `inverse` | bool | SGR 7 반전 여부 |
 | `width` | int | 셀 너비 (1 또는 2, 전각 문자는 2) |
+| `intensity` | string | `"normal"` \| `"bold"` \| `"half"` (faint/dim, SGR 2) |
+| `underline_style` | string | `"none"` \| `"single"` \| `"double"` \| `"curly"` \| `"dotted"` \| `"dashed"` |
+| `underline_color` | string | 밑줄 색 (fg/bg와 동일 포맷) |
+| `blink` | string | `"none"` \| `"slow"` \| `"rapid"` |
+| `invisible` | bool | SGR 8 |
+| `overline` | bool | SGR 53 |
+| `vertical_align` | string | `"baseline"` \| `"super"` \| `"sub"` |
+
+> **주의**: `overline`, `underline_color`, `vertical_align`은 termwiz `CellAttributes`에는 존재하지만 termwiz의 `AttributeChange` enum에는 해당 variant가 없어서 현재 SGR 파이프라인이 이 속성들을 셀에 전달하지 못한다 (`crates/tasty-terminal/src/vte_handler.rs`의 `Sgr::Overline | UnderlineColor | VerticalAlign` 분기 참조). 따라서 SGR로 입력해도 항상 기본값이 반환된다. 검증 인프라만 먼저 준비된 상태이며, 실제 전달은 termwiz API 확장 또는 우회 구현이 필요하다.
+
+### debug.glyph_color (debug 빌드 전용)
+
+특정 셀에 대해 **렌더러가 GPU에 push하는 (bg, fg) RGBA**를 반환한다. `debug.cell_info`가 termwiz 단계의 속성을 보여준다면, 이쪽은 그 속성이 실제 색상 결정에 반영되었는지를 검증한다.
+
+```bash
+tasty debug glyph-color --row 0 --col 0
+tasty debug glyph-color --row 0 --col 0 --bg-mode unfocused
+tasty debug glyph-color --row 0 --col 0 --surface 3
+```
+
+**응답 필드:**
+
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| `row`, `col` | int | 요청한 좌표 |
+| `in_bounds` | bool | 좌표에 셀이 존재하는지 |
+| `bg_mode` | string | `"focused"` \| `"unfocused"` (어떤 default bg를 적용했는지) |
+| `default_bg` | object | `{ r, g, b, a, hex }` — 결정에 쓰인 기본 배경 |
+| `bg` | object | 같은 형식. 셀에 실제 적용된 배경 |
+| `fg` | object | 같은 형식. 셀에 실제 적용된 전경 |
+
+**검증 예시 (faint/dim 회귀 방지):**
+
+```bash
+# 1. tasty-tui-sim에 SGR 2 (dim) 후 텍스트 출력
+echo -e "dim\nprint Hint\nquit" | tasty-tui-sim ...
+# 2. termwiz 단계 검증: intensity 가 "half"로 들어왔는지
+tasty debug cell-info --row 0 --col 0
+# → { ..., "intensity": "half", ... }
+# 3. 렌더러 단계 검증: fg가 어둡게 적용되었는지
+tasty debug glyph-color --row 0 --col 0
+# → bg 위에서 fg가 dim 처리되었는지 hex로 비교
+```
+
+`compute_cell_colors`(`src/renderer/palette.rs`)가 GPU 인스턴스 버퍼에 들어가는 색을 계산하는 단일 진실 원천이다. 렌더러 코드와 `debug.glyph_color`가 모두 이 함수를 사용하므로, 함수 내 처리가 누락된 SGR 속성은 `debug.glyph_color` 결과에서 즉시 드러난다.
 
 ### 입력 시뮬레이션 IPC (debug + `--enable-input-simulation` 필요)
 

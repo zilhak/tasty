@@ -4,7 +4,7 @@ use crate::font::GlyphKey;
 use crate::selection::NormalizedSelection;
 use crate::terminal_link::LinkHighlight;
 
-use super::palette::{DEFAULT_FG, color_attr_to_rgba};
+use super::palette::compute_cell_colors;
 use super::types::{BgInstance, GlyphInstance};
 use super::{CellRenderer, unicode_width};
 
@@ -24,13 +24,7 @@ impl CellRenderer {
         absolute_row: usize,
         link: Option<&LinkHighlight>,
     ) {
-        let (mut bg_color, mut fg_color) = (
-            color_attr_to_rgba(&attrs.background(), default_bg),
-            color_attr_to_rgba(&attrs.foreground(), DEFAULT_FG),
-        );
-        if attrs.reverse() {
-            std::mem::swap(&mut bg_color, &mut fg_color);
-        }
+        let (mut bg_color, mut fg_color) = compute_cell_colors(attrs, default_bg);
 
         // Selection: override bg color
         if let Some((sel, sel_bg)) = selection {

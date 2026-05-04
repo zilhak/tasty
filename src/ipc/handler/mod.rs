@@ -88,6 +88,8 @@ pub fn handle(state: &mut AppState, request: &JsonRpcRequest) -> JsonRpcResponse
         #[cfg(debug_assertions)]
         "debug.screen_attrs" => handle_debug_screen_attrs(state, id, &request.params),
         #[cfg(debug_assertions)]
+        "debug.glyph_color" => handle_debug_glyph_color(state, id, &request.params),
+        #[cfg(debug_assertions)]
         "debug.inject_mouse" => handle_debug_inject_mouse(state, id, &request.params),
         #[cfg(debug_assertions)]
         "debug.inject_key" => handle_debug_inject_key(state, id, &request.params),
@@ -217,26 +219,35 @@ fn handle_debug_cell_info(
     };
     if let Some(terminal) = state.find_terminal_by_id(surface_id) {
         if let Some(info) = terminal.cell_info(row, col) {
-            JsonRpcResponse::success(
-                id,
-                json!({
-                    "text": info.text,
-                    "fg": info.fg,
-                    "bg": info.bg,
-                    "bold": info.bold,
-                    "italic": info.italic,
-                    "underline": info.underline,
-                    "strikethrough": info.strikethrough,
-                    "inverse": info.inverse,
-                    "width": info.width,
-                }),
-            )
+            JsonRpcResponse::success(id, cell_info_to_json(&info))
         } else {
             JsonRpcResponse::success(id, json!({"text": "", "fg": "default", "bg": "default"}))
         }
     } else {
         JsonRpcResponse::invalid_params(id, format!("Surface {} not found", surface_id))
     }
+}
+
+#[cfg(debug_assertions)]
+fn cell_info_to_json(info: &tasty_terminal::CellInfo) -> serde_json::Value {
+    json!({
+        "text": info.text,
+        "fg": info.fg,
+        "bg": info.bg,
+        "bold": info.bold,
+        "italic": info.italic,
+        "underline": info.underline,
+        "strikethrough": info.strikethrough,
+        "inverse": info.inverse,
+        "width": info.width,
+        "intensity": info.intensity,
+        "underline_style": info.underline_style,
+        "underline_color": info.underline_color,
+        "blink": info.blink,
+        "invisible": info.invisible,
+        "overline": info.overline,
+        "vertical_align": info.vertical_align,
+    })
 }
 
 #[cfg(debug_assertions)]
@@ -258,24 +269,113 @@ fn handle_debug_screen_attrs(
             .row_cells(row)
             .into_iter()
             .map(|(col, info)| {
-                json!({
-                    "col": col,
-                    "text": info.text,
-                    "fg": info.fg,
-                    "bg": info.bg,
-                    "bold": info.bold,
-                    "italic": info.italic,
-                    "underline": info.underline,
-                    "strikethrough": info.strikethrough,
-                    "inverse": info.inverse,
-                    "width": info.width,
-                })
+                let mut obj = cell_info_to_json(&info);
+                if let Some(map) = obj.as_object_mut() {
+                    map.insert("col".into(), json!(col));
+                }
+                obj
             })
             .collect();
         JsonRpcResponse::success(id, json!({"row": row, "cells": cells}))
     } else {
         JsonRpcResponse::invalid_params(id, format!("Surface {} not found", surface_id))
     }
+}
+
+/// Returns the (bg, fg) RGBA pair the renderer would push to the GPU for a single
+/// cell, given only its `CellAttributes` and the surface's default background.
+///
+/// This intentionally bypasses contextual overrides (selection, link hover, cursor,
+/// IME preedit) — the goal is to verify the renderer's per-cell color resolution.
+/// If the renderer omits a transformation (e.g. SGR 2 dim handling), this method
+/// will report colors that match the (broken) GPU output, exposing the gap.
+#[cfg(debug_assertions)]
+fn handle_debug_glyph_color(
+    state: &AppState,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
+    let surface_id = match require_surface_id(params, &id) {
+        Ok(sid) => sid,
+        Err(e) => return e,
+    };
+    let row = match params.get("row").and_then(|v| v.as_u64()) {
+        Some(r) => r as usize,
+        None => return JsonRpcResponse::invalid_params(id, "Missing 'row' parameter"),
+    };
+    let col = match params.get("col").and_then(|v| v.as_u64()) {
+        Some(c) => c as usize,
+        None => return JsonRpcResponse::invalid_params(id, "Missing 'col' parameter"),
+    };
+    // bg_mode: "focused" (default) | "unfocused"
+    let bg_mode = params
+        .get("bg_mode")
+        .and_then(|v| v.as_str())
+        .unwrap_or("focused");
+    let default_bg = match bg_mode {
+        "focused" => state
+            .engine
+            .settings
+            .appearance
+            .terminal_colors
+            .focused_bg
+            .to_float(),
+        "unfocused" => state
+            .engine
+            .settings
+            .appearance
+            .terminal_colors
+            .unfocused_bg
+            .to_float(),
+        other => {
+            return JsonRpcResponse::invalid_params(
+                id,
+                format!("bg_mode must be 'focused' or 'unfocused', got '{}'", other),
+            );
+        }
+    };
+    let Some(terminal) = state.find_terminal_by_id(surface_id) else {
+        return JsonRpcResponse::invalid_params(id, format!("Surface {} not found", surface_id));
+    };
+    let Some(attrs) = terminal.cell_attrs(row, col) else {
+        return JsonRpcResponse::success(
+            id,
+            json!({
+                "row": row,
+                "col": col,
+                "in_bounds": false,
+            }),
+        );
+    };
+    let (bg, fg) = crate::renderer::resolve_cell_colors(&attrs, default_bg);
+    JsonRpcResponse::success(
+        id,
+        json!({
+            "row": row,
+            "col": col,
+            "in_bounds": true,
+            "bg_mode": bg_mode,
+            "default_bg": rgba_to_json(default_bg),
+            "bg": rgba_to_json(bg),
+            "fg": rgba_to_json(fg),
+        }),
+    )
+}
+
+#[cfg(debug_assertions)]
+fn rgba_to_json(rgba: [f32; 4]) -> serde_json::Value {
+    json!({
+        "r": rgba[0],
+        "g": rgba[1],
+        "b": rgba[2],
+        "a": rgba[3],
+        "hex": format!(
+            "#{:02x}{:02x}{:02x}",
+            (rgba[0].clamp(0.0, 1.0) * 255.0).round() as u8,
+            (rgba[1].clamp(0.0, 1.0) * 255.0).round() as u8,
+            (rgba[2].clamp(0.0, 1.0) * 255.0).round() as u8,
+        ),
+    })
 }
 
 #[cfg(debug_assertions)]

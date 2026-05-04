@@ -36,7 +36,8 @@ pub fn unicode_width(ch: char) -> usize {
     }
 }
 
-use palette::{DEFAULT_FG, color_attr_to_rgba};
+use palette::{DEFAULT_FG, compute_cell_colors};
+pub use palette::compute_cell_colors as resolve_cell_colors;
 use types::{BgInstance, GlyphInstance, Uniforms};
 
 pub struct RenderPreedit {
@@ -139,13 +140,7 @@ impl CellRenderer {
                     }
                     _ => false,
                 };
-                let (mut bg_color, mut fg_color) = (
-                    color_attr_to_rgba(&attrs.background(), default_bg),
-                    color_attr_to_rgba(&attrs.foreground(), DEFAULT_FG),
-                );
-                if attrs.reverse() {
-                    std::mem::swap(&mut bg_color, &mut fg_color);
-                }
+                let (mut bg_color, mut fg_color) = compute_cell_colors(attrs, default_bg);
                 if is_cursor {
                     std::mem::swap(&mut bg_color, &mut fg_color);
                 }

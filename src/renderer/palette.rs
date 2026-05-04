@@ -1,3 +1,4 @@
+use termwiz::cell::CellAttributes;
 use termwiz::color::ColorAttribute;
 
 pub(crate) const DEFAULT_FG: [f32; 4] = [0.804, 0.839, 0.957, 1.0]; // Text #cdd6f4
@@ -44,6 +45,27 @@ pub(crate) fn palette_index_to_rgb(idx: u8) -> [f32; 3] {
         let level = (8 + 10 * (idx - 232) as u16) as f32 / 255.0;
         [level, level, level]
     }
+}
+
+/// Resolve the (bg, fg) RGBA pair that the renderer sends to the GPU for a cell
+/// **based purely on its `CellAttributes`**.
+///
+/// Includes:
+/// - foreground/background lookup against `default_bg` and `DEFAULT_FG`
+/// - SGR 7 (reverse) swap
+///
+/// Does NOT include:
+/// - per-cell context overrides (selection bg, link highlight, cursor swap, IME preedit)
+/// - SGR 2 (dim/`Intensity::Half`) — currently unhandled by the renderer.
+///   The IPC `debug.glyph_color` deliberately reflects the renderer's actual output
+///   so that missing handling is visible to debug tooling.
+pub fn compute_cell_colors(attrs: &CellAttributes, default_bg: [f32; 4]) -> ([f32; 4], [f32; 4]) {
+    let mut bg = color_attr_to_rgba(&attrs.background(), default_bg);
+    let mut fg = color_attr_to_rgba(&attrs.foreground(), DEFAULT_FG);
+    if attrs.reverse() {
+        std::mem::swap(&mut bg, &mut fg);
+    }
+    (bg, fg)
 }
 
 pub(crate) fn color_attr_to_rgba(attr: &ColorAttribute, default: [f32; 4]) -> [f32; 4] {

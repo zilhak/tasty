@@ -676,6 +676,21 @@ pub enum DebugCommands {
         #[arg(long)]
         surface: Option<u32>,
     },
+    /// Get the resolved RGBA bg/fg the renderer would push to the GPU for a cell
+    GlyphColor {
+        /// Row (0-indexed)
+        #[arg(long)]
+        row: u64,
+        /// Column (0-indexed)
+        #[arg(long)]
+        col: u64,
+        /// Surface ID (default: focused)
+        #[arg(long)]
+        surface: Option<u32>,
+        /// Background mode: "focused" or "unfocused" (default: focused)
+        #[arg(long, default_value = "focused")]
+        bg_mode: String,
+    },
     /// Switch macOS input source (e.g. Korean IME)
     SwitchInputSource {
         /// Input source ID (e.g. "com.apple.inputmethod.Korean.2SetKorean")

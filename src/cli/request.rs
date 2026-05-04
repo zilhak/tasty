@@ -478,6 +478,20 @@ fn debug_command_to_method_params(command: &DebugCommands) -> (&'static str, ser
                 "row": row,
             }),
         ),
+        DebugCommands::GlyphColor {
+            row,
+            col,
+            surface,
+            bg_mode,
+        } => (
+            "debug.glyph_color",
+            serde_json::json!({
+                "surface_id": resolve_surface_id(*surface),
+                "row": row,
+                "col": col,
+                "bg_mode": bg_mode,
+            }),
+        ),
         DebugCommands::SwitchInputSource { source_id } => (
             "surface.switch_input_source",
             serde_json::json!({ "source_id": source_id }),
