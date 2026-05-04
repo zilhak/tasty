@@ -132,6 +132,51 @@ fn all_e2e_tests() {
     );
     assert_eq!(result["sent"], true);
 
+    // ========== Dim (SGR 2) renderer regression ==========
+    // printf is a posix builtin; shell on Windows is cmd.exe by default which does not
+    // interpret \033 escapes the same way, so we restrict to Unix.
+    #[cfg(not(windows))]
+    {
+        tasty.set_mark(sid);
+        tasty.send_text(sid, "clear; printf '\\033[2mD\\033[0mN\\n'\n");
+        tasty.wait_for_output(sid, "DN", Duration::from_secs(5));
+        // Allow the renderer one frame to apply the SGR before querying cell state.
+        std::thread::sleep(Duration::from_millis(200));
+
+        let text = tasty.screen_text_of(sid);
+        let row = text
+            .lines()
+            .position(|l| l.starts_with("DN"))
+            .expect("DN row not found in screen_text") as u64;
+
+        let dim = tasty.call(
+            "debug.cell_info",
+            json!({"surface_id": sid, "row": row, "col": 0}),
+        );
+        assert_eq!(dim["text"], "D");
+        assert_eq!(dim["intensity"], "half");
+
+        let normal = tasty.call(
+            "debug.cell_info",
+            json!({"surface_id": sid, "row": row, "col": 1}),
+        );
+        assert_eq!(normal["text"], "N");
+        assert_eq!(normal["intensity"], "normal");
+
+        let dim_glyph = tasty.call(
+            "debug.glyph_color",
+            json!({"surface_id": sid, "row": row, "col": 0}),
+        );
+        let normal_glyph = tasty.call(
+            "debug.glyph_color",
+            json!({"surface_id": sid, "row": row, "col": 1}),
+        );
+        assert_ne!(
+            dim_glyph["fg"]["hex"], normal_glyph["fg"]["hex"],
+            "renderer must dim fg distinctly from normal fg",
+        );
+    }
+
     // ========== Hooks ==========
 
     let hook_result = tasty.call(

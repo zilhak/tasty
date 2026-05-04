@@ -76,6 +76,7 @@
 - xterm-256color 팔레트: ANSI 16색, 216색 큐브, 24단계 그레이스케일
 - TrueColor (24-bit RGB) 지원
 - SGR을 통한 전경색/배경색 개별 설정
+- SGR 2 (dim, `Intensity::Half`): 전경색을 배경과 50:50 블렌딩하여 흐리게 렌더링 (reverse swap 후 적용). 디스크 스크롤백에서도 보존된다.
 
 ### 윈도우 관리
 - winit 기반 크로스 플랫폼 윈도우 생성

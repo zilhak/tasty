@@ -414,6 +414,7 @@ fn scenario_attrs_inline(out: &mut io::Stdout) {
     write!(out, "\x1b[4;1H\x1b[9mSTRIKE\x1b[0m").unwrap();
     write!(out, "\x1b[5;1H\x1b[7mINVERSE\x1b[0m").unwrap();
     write!(out, "\x1b[6;1H\x1b[1;3;4mCOMBO\x1b[0m").unwrap();
+    write!(out, "\x1b[7;1H\x1b[2mDIM\x1b[0m").unwrap();
 }
 
 fn scenario_unicode_inline(out: &mut io::Stdout) {

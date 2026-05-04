@@ -444,14 +444,15 @@ ANSI 16색과 TrueColor 출력.
 
 각 행에 하나의 텍스트 속성을 적용하여 출력.
 
-| row | text | bold | italic | underline | strikethrough | inverse |
-|-----|------|------|--------|-----------|---------------|---------|
-| 0 | `BOLD` | true | false | false | false | false |
-| 1 | `ITALIC` | false | true | false | false | false |
-| 2 | `UNDERLINE` | false | false | true | false | false |
-| 3 | `STRIKE` | false | false | false | true | false |
-| 4 | `INVERSE` | false | false | false | false | true |
-| 5 | `COMBO` | true | true | true | false | false |
+| row | text | bold | italic | underline | strikethrough | inverse | intensity |
+|-----|------|------|--------|-----------|---------------|---------|-----------|
+| 0 | `BOLD` | true | false | false | false | false | `bold` |
+| 1 | `ITALIC` | false | true | false | false | false | `normal` |
+| 2 | `UNDERLINE` | false | false | true | false | false | `normal` |
+| 3 | `STRIKE` | false | false | false | true | false | `normal` |
+| 4 | `INVERSE` | false | false | false | false | true | `normal` |
+| 5 | `COMBO` | true | true | true | false | false | `bold` |
+| 6 | `DIM` | false | false | false | false | false | `half` |
 
 ### altscreen
 
