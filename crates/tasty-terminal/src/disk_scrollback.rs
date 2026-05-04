@@ -108,10 +108,14 @@ fn serialize_line(line: &[(String, CellAttributes)]) -> Vec<u8> {
         // Background color
         serialize_color(&attrs.background(), &mut buf);
 
-        // Flags: bold, italic, underline, strikethrough
+        // Flags: bit0=bold, bit1=italic, bit2=underline, bit3=strikethrough, bit4=dim (Intensity::Half).
+        // Bold and Half are mutually exclusive (termwiz Intensity is a single enum), but the bits
+        // are stored independently so existing scrollback files (bit4=0) decode as Normal/Bold.
         let mut flags: u8 = 0;
-        if attrs.intensity() == termwiz::cell::Intensity::Bold {
-            flags |= 1;
+        match attrs.intensity() {
+            termwiz::cell::Intensity::Bold => flags |= 1,
+            termwiz::cell::Intensity::Half => flags |= 16,
+            termwiz::cell::Intensity::Normal => {}
         }
         if attrs.italic() {
             flags |= 2;
@@ -185,6 +189,8 @@ fn deserialize_line(data: &[u8]) -> Vec<(String, CellAttributes)> {
         attrs.set_background(bg);
         if flags & 1 != 0 {
             attrs.set_intensity(termwiz::cell::Intensity::Bold);
+        } else if flags & 16 != 0 {
+            attrs.set_intensity(termwiz::cell::Intensity::Half);
         }
         if flags & 2 != 0 {
             attrs.set_italic(true);
@@ -226,5 +232,65 @@ fn deserialize_color(data: &[u8]) -> (ColorAttribute, usize) {
             (ColorAttribute::TrueColorWithDefaultFallback(c), 4)
         }
         _ => (ColorAttribute::Default, 1),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use termwiz::cell::{Intensity, Underline};
+
+    fn round_trip(input: Vec<(String, CellAttributes)>) -> Vec<(String, CellAttributes)> {
+        let bytes = serialize_line(&input);
+        deserialize_line(&bytes)
+    }
+
+    #[test]
+    fn preserves_intensity_half() {
+        let mut a = CellAttributes::default();
+        a.set_intensity(Intensity::Half);
+        let out = round_trip(vec![("D".into(), a)]);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].0, "D");
+        assert_eq!(out[0].1.intensity(), Intensity::Half);
+    }
+
+    #[test]
+    fn preserves_intensity_bold() {
+        let mut a = CellAttributes::default();
+        a.set_intensity(Intensity::Bold);
+        let out = round_trip(vec![("B".into(), a)]);
+        assert_eq!(out[0].1.intensity(), Intensity::Bold);
+    }
+
+    #[test]
+    fn preserves_other_attrs_alongside_half() {
+        let mut a = CellAttributes::default();
+        a.set_intensity(Intensity::Half);
+        a.set_italic(true);
+        a.set_underline(Underline::Single);
+        a.set_strikethrough(true);
+        let out = round_trip(vec![("X".into(), a)]);
+        let r = &out[0].1;
+        assert_eq!(r.intensity(), Intensity::Half);
+        assert!(r.italic());
+        assert_ne!(r.underline(), Underline::None);
+        assert!(r.strikethrough());
+    }
+
+    #[test]
+    fn legacy_files_without_dim_bit_decode_as_normal() {
+        // Pre-dim files only used bits 0..=3. Synthesize such a payload directly.
+        let mut buf: Vec<u8> = Vec::new();
+        buf.extend_from_slice(&1u32.to_le_bytes()); // 1 cell
+        let text = "x";
+        buf.extend_from_slice(&(text.len() as u16).to_le_bytes());
+        buf.extend_from_slice(text.as_bytes());
+        buf.push(0); // fg = Default
+        buf.push(0); // bg = Default
+        buf.push(0); // flags = 0 (no bits set)
+        let out = deserialize_line(&buf);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].1.intensity(), Intensity::Normal);
     }
 }
