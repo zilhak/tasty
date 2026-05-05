@@ -368,7 +368,7 @@
 
 ### Busy Indicator (실행 중 표시)
 - PTY foreground 프로세스를 1초 간격으로 폴링하여 surface별 busy 상태를 캐시(`busy_surfaces`)
-- 판정: shell 자신이 foreground이면 idle, 다른 자식이 foreground이면 busy
+- 판정: foreground가 shell 자신이거나 알려진 shell 이름이면 idle. 그 외에는 **최근 2초 안에 PTY 출력이 있었을 때만** busy. 즉 `claude`/`vim` 같은 TUI를 띄워둔 채 가만히 있으면 idle로 떨어지고, 토큰을 흘리거나 `cargo build`처럼 출력이 나오는 동안에만 busy로 표시됨 (tmux/iTerm2의 activity monitor와 동일한 시멘틱)
 - 플랫폼별 메커니즘: Linux `/proc/<pid>/stat` tpgid, macOS `ps -o tpgid=`, Windows `CreateToolhelp32Snapshot` 기반 자손 트리 탐색
 - 집계: 탭/워크스페이스는 포함된 surface 중 하나라도 busy면 busy (OR)
 - 시각 표시:

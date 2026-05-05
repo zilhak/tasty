@@ -6,16 +6,22 @@
 
 ## 1. 정의
 
-**Busy 한 surface (terminal)** = 해당 PTY 자식 쉘이 자기 자신이 아닌 다른 자식 프로세스를 foreground로 실행 중인 상태.
+**Busy 한 surface (terminal)** = 두 조건을 **모두** 만족하는 상태.
 
-쉘이 prompt를 띄우고 입력을 기다리는 상태는 **idle**.
-`vim`, `cargo build`, `node server.js` 같은 게 돌고 있으면 **busy**.
+1. PTY의 foreground 프로세스가 shell 자신도 아니고 알려진 shell 이름(`bash`/`zsh`/`fish`/`sh`/`pwsh`/`powershell`/`cmd`)도 아니다.
+2. 최근 `BUSY_OUTPUT_WINDOW`(현재 2초) 안에 PTY로부터 출력 바이트를 처리한 적이 있다.
+
+쉘이 prompt를 띄우고 입력을 기다리는 상태는 (1) 위반으로 **idle**.
+`vim`을 띄워두고 화면이 정적이거나 `claude`가 사용자 입력을 기다리는 상태는 (2) 위반으로 **idle**.
+`cargo build`처럼 출력이 흘러나오거나 `claude`가 응답 토큰을 흘리는 동안에는 **busy**.
+
+(2)는 tmux/iTerm2/WezTerm의 activity-monitor와 같은 시멘틱이며, foreground 프로세스 검사만으로는 잡히지 않던 "프로세스는 떠 있지만 일하고 있지 않다" 상태를 걸러낸다.
 
 ## 2. 집계 정책
 
 | 단위 | Busy 판정 |
 |------|----------|
-| Surface (terminal) | foreground 프로세스가 쉘 자신이 아니면 busy |
+| Surface (terminal) | foreground가 shell이 아니고 + 최근 2초 안에 PTY 출력이 있으면 busy |
 | Tab | 탭이 포함하는 surface 중 **하나라도 busy면 busy** |
 | Pane | (집계 표시 없음 — 탭바가 직접 보여줌) |
 | Workspace | 워크스페이스가 포함하는 surface 중 **하나라도 busy면 busy** |
@@ -54,7 +60,7 @@ Windows에는 Unix의 `tcgetpgrp`에 대응하는 직접 API가 없다. ConPTY�
 - foreground 프로세스 이름이 `bash`, `zsh`, `fish`, `sh`, `pwsh`, `powershell`, `cmd` 중 하나이고
 - 그 PID가 PTY가 spawn한 shell PID와 같거나, 그 shell의 직계 자손이 아닐 때
 
-→ idle로 판정. 그 외에는 busy.
+→ idle로 판정. 그 외에 한해서 (2)의 출력 활동 검사로 한 번 더 거른 뒤 busy로 판정.
 
 ## 6. CLI/IPC 노출
 

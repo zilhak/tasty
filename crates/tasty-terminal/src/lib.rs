@@ -120,7 +120,17 @@ pub struct Terminal {
     pending_pty_resize: Option<(usize, usize)>,
     /// Timestamp of the last actual PTY resize flush. Used for throttling.
     last_pty_flush: std::time::Instant,
+    /// Timestamp of the most recent non-empty PTY output processed by this terminal.
+    /// Used by `is_busy()` to drop the busy state when a foreground program goes
+    /// quiet (e.g. claude waiting for the next prompt).
+    last_output_at: std::time::Instant,
 }
+
+/// How long after the last PTY output a terminal still counts as busy.
+/// Tuned so that bursty token streams (claude, llms, tail -f) stay marked
+/// while genuinely idle TUIs (vim sitting still, claude waiting for input)
+/// drop out within a couple of polling intervals.
+const BUSY_OUTPUT_WINDOW: std::time::Duration = std::time::Duration::from_secs(2);
 
 impl Terminal {
     /// Create a new terminal.
@@ -256,6 +266,7 @@ impl Terminal {
             saved_line_tails: Vec::new(),
             pending_pty_resize: None,
             last_pty_flush: std::time::Instant::now(),
+            last_output_at: std::time::Instant::now(),
         })
     }
 
@@ -268,6 +279,9 @@ impl Terminal {
 
         while let Ok(data) = self.action_rx.try_recv() {
             self.output.append(&data);
+            if !data.is_empty() {
+                self.last_output_at = std::time::Instant::now();
+            }
 
             let actions = self.parser.parse_as_vec(&data);
             for action in actions {
@@ -528,6 +542,9 @@ impl Terminal {
     /// Process raw bytes through the VTE parser and apply to the surface.
     /// This is useful for testing without a real PTY.
     pub fn process_bytes(&mut self, data: &[u8]) {
+        if !data.is_empty() {
+            self.last_output_at = std::time::Instant::now();
+        }
         let actions = self.parser.parse_as_vec(data);
         for action in actions {
             if let Action::CSI(CSI::Mode(ref mode)) = action {
@@ -896,9 +913,15 @@ impl Terminal {
         foreground_process::get_foreground_process(shell_pid)
     }
 
-    /// Whether the terminal is currently running a foreground program other
-    /// than the shell itself (e.g. `vim`, `cargo build`). Returns false when
-    /// the shell is at its prompt or when foreground info cannot be resolved.
+    /// Whether the terminal is currently considered "active" — that is, a
+    /// non-shell foreground program is running AND the PTY has produced output
+    /// within the last `BUSY_OUTPUT_WINDOW`. The output-window check lets idle
+    /// TUIs (claude waiting for input, vim sitting still) drop out of the busy
+    /// set while bursty programs (token streams, builds, tails) stay marked.
+    ///
+    /// Returns false when the shell is at its prompt, when foreground info
+    /// cannot be resolved, or when the foreground program has been quiet long
+    /// enough to look idle.
     pub fn is_busy(&self) -> bool {
         let Some(shell_pid) = self.child.process_id() else {
             return false;
@@ -909,7 +932,10 @@ impl Terminal {
         if info.pid == shell_pid {
             return false;
         }
-        !foreground_process::is_known_shell_name(&info.name)
+        if foreground_process::is_known_shell_name(&info.name) {
+            return false;
+        }
+        self.last_output_at.elapsed() < BUSY_OUTPUT_WINDOW
     }
 
     /// Get the current working directory of the child process.
