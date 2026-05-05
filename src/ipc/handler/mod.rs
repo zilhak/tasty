@@ -90,6 +90,8 @@ pub fn handle(state: &mut AppState, request: &JsonRpcRequest) -> JsonRpcResponse
         #[cfg(debug_assertions)]
         "debug.glyph_color" => handle_debug_glyph_color(state, id, &request.params),
         #[cfg(debug_assertions)]
+        "debug.feed_bytes" => handle_debug_feed_bytes(state, id, &request.params),
+        #[cfg(debug_assertions)]
         "debug.inject_mouse" => handle_debug_inject_mouse(state, id, &request.params),
         #[cfg(debug_assertions)]
         "debug.inject_key" => handle_debug_inject_key(state, id, &request.params),
@@ -280,6 +282,47 @@ fn handle_debug_screen_attrs(
     } else {
         JsonRpcResponse::invalid_params(id, format!("Surface {} not found", surface_id))
     }
+}
+
+/// Inject raw VTE bytes directly into a surface's terminal, bypassing the PTY
+/// and the shell. Useful for renderer/parser tests that need deterministic
+/// escape sequences without depending on shell escaping rules.
+///
+/// Accepts either `bytes` (hex string) or `text` (UTF-8 string with optional
+/// `\xHH` escape support disabled — the text is fed verbatim).
+#[cfg(debug_assertions)]
+fn handle_debug_feed_bytes(
+    state: &mut AppState,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
+    let surface_id = match require_surface_id(params, &id) {
+        Ok(sid) => sid,
+        Err(e) => return e,
+    };
+    let bytes: Vec<u8> = if let Some(hex) = params.get("bytes").and_then(|v| v.as_str()) {
+        let hex = hex.trim();
+        if hex.len() % 2 != 0 {
+            return JsonRpcResponse::invalid_params(id, "'bytes' hex must have even length");
+        }
+        let mut out = Vec::with_capacity(hex.len() / 2);
+        for i in (0..hex.len()).step_by(2) {
+            match u8::from_str_radix(&hex[i..i + 2], 16) {
+                Ok(b) => out.push(b),
+                Err(_) => return JsonRpcResponse::invalid_params(id, "Invalid hex in 'bytes'"),
+            }
+        }
+        out
+    } else if let Some(t) = params.get("text").and_then(|v| v.as_str()) {
+        t.as_bytes().to_vec()
+    } else {
+        return JsonRpcResponse::invalid_params(id, "Missing 'bytes' or 'text' parameter");
+    };
+    let Some(terminal) = state.find_terminal_by_id_mut(surface_id) else {
+        return JsonRpcResponse::invalid_params(id, format!("Surface {} not found", surface_id));
+    };
+    terminal.process_bytes(&bytes);
+    JsonRpcResponse::success(id, json!({"fed": bytes.len()}))
 }
 
 /// Returns the (bg, fg) RGBA pair the renderer would push to the GPU for a single

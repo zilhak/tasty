@@ -264,6 +264,83 @@ fn all_e2e_tests() {
     let result = tasty.call("tab.close", json!({"tab_id": sole_tab_id}));
     assert_eq!(result["closed"], false);
 
+    // ========== Renderer color resolution (debug.glyph_color) ==========
+
+    // Inject deterministic VTE: clear screen, home cursor, plain Z, then dim Z.
+    // - col 0 row 0: plain Z (intensity = normal)
+    // - col 1 row 0: dim Z (intensity = half)
+    //
+    // Sequence: ESC[2J ESC[H Z ESC[2m Z ESC[0m
+    // Hex:      1b5b324a 1b5b48 5a 1b5b326d 5a 1b5b306d
+    let dim_seq = "1b5b324a1b5b485a1b5b326d5a1b5b306d";
+    let fed = tasty.call(
+        "debug.feed_bytes",
+        json!({"surface_id": sid, "bytes": dim_seq}),
+    );
+    assert!(fed["fed"].as_u64().unwrap() > 0);
+
+    let plain = tasty.call(
+        "debug.cell_info",
+        json!({"surface_id": sid, "row": 0, "col": 0}),
+    );
+    assert_eq!(plain["text"], "Z", "plain cell text mismatch");
+    assert_eq!(
+        plain["intensity"], "normal",
+        "plain cell should have intensity=normal"
+    );
+
+    let dim = tasty.call(
+        "debug.cell_info",
+        json!({"surface_id": sid, "row": 0, "col": 1}),
+    );
+    assert_eq!(dim["text"], "Z", "dim cell text mismatch");
+    assert_eq!(
+        dim["intensity"], "half",
+        "dim cell should have intensity=half (SGR 2 reached termwiz)"
+    );
+
+    let plain_color = tasty.call(
+        "debug.glyph_color",
+        json!({"surface_id": sid, "row": 0, "col": 0}),
+    );
+    let dim_color = tasty.call(
+        "debug.glyph_color",
+        json!({"surface_id": sid, "row": 0, "col": 1}),
+    );
+    assert_eq!(plain_color["in_bounds"], true);
+    assert_eq!(dim_color["in_bounds"], true);
+
+    let plain_fg = &plain_color["fg"];
+    let dim_fg = &dim_color["fg"];
+
+    // The plain cell's fg must be the default fg (no SGR fg color was set).
+    let pr = plain_fg["r"].as_f64().unwrap();
+    let pg = plain_fg["g"].as_f64().unwrap();
+    let pb = plain_fg["b"].as_f64().unwrap();
+    assert!(pr > 0.5 && pg > 0.5 && pb > 0.5, "plain fg should be bright");
+
+    // palette::compute_cell_colors blends fg toward bg for Intensity::Half,
+    // so the dim cell's fg must differ from a plain cell's fg on the same row.
+    assert_ne!(
+        plain_fg, dim_fg,
+        "dim cell fg should differ from plain cell fg (SGR 2 must dim)",
+    );
+
+    // Each channel of the dim fg should sit between the plain fg and the bg
+    // (i.e. moved toward the background, not past it or in some other direction).
+    let plain_bg = &plain_color["bg"];
+    let br = plain_bg["r"].as_f64().unwrap();
+    let bg = plain_bg["g"].as_f64().unwrap();
+    let bb = plain_bg["b"].as_f64().unwrap();
+    let dr = dim_fg["r"].as_f64().unwrap();
+    let dg = dim_fg["g"].as_f64().unwrap();
+    let db = dim_fg["b"].as_f64().unwrap();
+    let between = |a: f64, b: f64, x: f64| (a.min(b)..=a.max(b)).contains(&x);
+    assert!(
+        between(pr, br, dr) && between(pg, bg, dg) && between(pb, bb, db),
+        "dim fg ({dr},{dg},{db}) must lie between plain fg ({pr},{pg},{pb}) and bg ({br},{bg},{bb})",
+    );
+
     // ========== Error paths ==========
 
     // method_not_found
