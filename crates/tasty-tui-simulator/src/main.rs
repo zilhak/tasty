@@ -209,6 +209,69 @@ fn interactive_mode() {
             "dim" => {
                 write!(out, "\x1b[2m").unwrap();
             }
+            "blink" => {
+                // SGR 5 — slow blink
+                write!(out, "\x1b[5m").unwrap();
+            }
+            "blink-rapid" => {
+                // SGR 6 — rapid blink
+                write!(out, "\x1b[6m").unwrap();
+            }
+            "blink-off" => {
+                // SGR 25
+                write!(out, "\x1b[25m").unwrap();
+            }
+            "invisible" => {
+                // SGR 8
+                write!(out, "\x1b[8m").unwrap();
+            }
+            "invisible-off" => {
+                // SGR 28
+                write!(out, "\x1b[28m").unwrap();
+            }
+            "overline" => {
+                // SGR 53
+                write!(out, "\x1b[53m").unwrap();
+            }
+            "overline-off" => {
+                // SGR 55
+                write!(out, "\x1b[55m").unwrap();
+            }
+            "underline-double" => {
+                // SGR 21
+                write!(out, "\x1b[21m").unwrap();
+            }
+            "underline-curly" => {
+                // SGR 4:3 (extended SGR sub-parameter)
+                write!(out, "\x1b[4:3m").unwrap();
+            }
+            "underline-dotted" => {
+                // SGR 4:4
+                write!(out, "\x1b[4:4m").unwrap();
+            }
+            "underline-dashed" => {
+                // SGR 4:5
+                write!(out, "\x1b[4:5m").unwrap();
+            }
+            "underline-color" => {
+                // underline-color <N> for palette, or "<r;g;b>" for truecolor
+                if let Some(idx) = args.parse::<u8>().ok() {
+                    write!(out, "\x1b[58:5:{idx}m").unwrap();
+                } else if !args.is_empty() {
+                    write!(out, "\x1b[58:2::{args}m").unwrap();
+                } else {
+                    // SGR 59 — default underline color
+                    write!(out, "\x1b[59m").unwrap();
+                }
+            }
+            "intensity-off" => {
+                // SGR 22 — neither bold nor faint
+                write!(out, "\x1b[22m").unwrap();
+            }
+            "underline-off" => {
+                // SGR 24
+                write!(out, "\x1b[24m").unwrap();
+            }
 
             // ── Erase ──
             "erase-display" => {

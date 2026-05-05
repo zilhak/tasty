@@ -75,12 +75,22 @@ tasty-tui-sim interactive  # 명시적으로도 가능
 |------|------|
 | `sgr <params>` | SGR 시퀀스 출력 (예: `sgr 1` = bold, `sgr 38;5;1` = red fg) |
 | `sgr-reset` | SGR 리셋 |
-| `bold` | 볼드 |
-| `italic` | 이탤릭 |
-| `underline` | 밑줄 |
-| `strikethrough` | 취소선 |
-| `inverse` | 반전 |
-| `dim` | 흐리게 |
+| `bold` | 볼드 (SGR 1) |
+| `italic` | 이탤릭 (SGR 3) |
+| `underline` | 밑줄 (SGR 4) — 단일 |
+| `underline-double` | 이중 밑줄 (SGR 21) |
+| `underline-curly` | 곡선 밑줄 (SGR 4:3) |
+| `underline-dotted` | 점선 밑줄 (SGR 4:4) |
+| `underline-dashed` | 파선 밑줄 (SGR 4:5) |
+| `underline-color [N\|r;g;b\|<empty>]` | 밑줄 색 (SGR 58/59) |
+| `underline-off` | 밑줄 해제 (SGR 24) |
+| `strikethrough` | 취소선 (SGR 9) |
+| `inverse` | 반전 (SGR 7) |
+| `dim` | 흐리게 (SGR 2) |
+| `intensity-off` | bold/dim 모두 해제 (SGR 22) |
+| `blink` / `blink-rapid` / `blink-off` | 깜빡임 (SGR 5/6/25) |
+| `invisible` / `invisible-off` | 비표시 (SGR 8/28) |
+| `overline` / `overline-off` | 윗줄 (SGR 53/55) |
 | `fg <N>` 또는 `fg <r;g;b>` | 전경색 (팔레트 인덱스 또는 TrueColor) |
 | `bg <N>` 또는 `bg <r;g;b>` | 배경색 |
 
