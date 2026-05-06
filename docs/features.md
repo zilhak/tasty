@@ -366,6 +366,12 @@
 - 축소 사이드바: 워크스페이스 번호 버튼에 파란색 테두리 강조
 - 모든 하이라이트된 surface를 방문하면 배지 자동 소멸
 
+### 도구 메뉴
+- 사이드바 하단의 "도구" 버튼을 클릭하면 버튼 위쪽에 headless 팝업(타이틀바 없음)이 표시
+- 팝업에는 사용 가능한 도구 목록이 메뉴 형태로 나열됨
+- 현재 도구: 클립보드 히스토리
+- 바깥 클릭 시 자동으로 닫힘 (`close_on_outside_click`)
+
 ### Busy Indicator (실행 중 표시)
 - PTY foreground 프로세스를 1초 간격으로 폴링하여 surface별 busy 상태를 캐시(`busy_surfaces`)
 - 판정: foreground가 shell 자신이거나 알려진 shell 이름이면 idle. 그 외에는 **최근 2초 안에 PTY 출력이 있었을 때만** busy. 즉 `claude`/`vim` 같은 TUI를 띄워둔 채 가만히 있으면 idle로 떨어지고, 토큰을 흘리거나 `cargo build`처럼 출력이 나오는 동안에만 busy로 표시됨 (tmux/iTerm2의 activity monitor와 동일한 시멘틱)
