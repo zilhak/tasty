@@ -125,6 +125,12 @@ pub fn is_selected(col: usize, absolute_row: usize, sel: &NormalizedSelection) -
 }
 
 /// Extract selected text from the terminal.
+///
+/// Soft-wrapped lines (lines that the terminal auto-wrapped because content
+/// reached the right edge) are rejoined into a single logical line on copy:
+/// the wrap point is treated as no separator at all, while real `\n` line
+/// breaks are preserved. This matches WezTerm/Alacritty behavior for shell
+/// prompts that wrap a long command across multiple visual rows.
 pub fn extract_selected_text(
     terminal: &tasty_terminal::Terminal,
     selection: &TextSelection,
@@ -132,28 +138,68 @@ pub fn extract_selected_text(
     let norm = selection.normalized();
     let scrollback_len = terminal.scrollback_len();
     let surface = terminal.surface();
+    let (cols, _) = surface.dimensions();
     let screen_lines = surface.screen_lines();
-    let mut result = Vec::new();
 
+    // Collect (raw_text_without_trim, wrapped) per row in selection.
+    let mut rows: Vec<(String, bool)> = Vec::new();
     for abs_row in norm.start.absolute_row..=norm.end.absolute_row {
-        let line_text = if abs_row < scrollback_len {
-            // Scrollback line
-            extract_scrollback_line(terminal, abs_row, &norm, abs_row)
+        let (text, wrapped) = if abs_row < scrollback_len {
+            let raw = extract_scrollback_line(terminal, abs_row, &norm, abs_row);
+            let wrapped = terminal.scrollback_line_wrapped(abs_row).unwrap_or(false);
+            (raw, wrapped)
         } else {
-            // Screen line
             let screen_row = abs_row - scrollback_len;
-            if screen_row < screen_lines.len() {
-                extract_surface_line(&screen_lines[screen_row], &norm, abs_row)
+            if let Some(line) = screen_lines.get(screen_row) {
+                let raw = extract_surface_line(line, &norm, abs_row);
+                (raw, screen_line_soft_wrapped(line, cols))
             } else {
-                String::new()
+                (String::new(), false)
             }
         };
-        result.push(line_text);
+        rows.push((text, wrapped));
     }
 
-    // Join with newline, trim trailing empty lines
-    let text = result.join("\n");
-    text.trim_end_matches('\n').to_string()
+    // Join: a wrapped row glues directly to the next; a non-wrapped row gets
+    // its trailing whitespace trimmed and a `\n` appended. The final row only
+    // gets trim_end (wrap flag irrelevant — there is no next row to join).
+    // Whole-screen selections drag in trailing blank rows; strip them so we
+    // don't tack a sea of `\n`s onto the clipboard.
+    let mut out = String::new();
+    let last = rows.len().saturating_sub(1);
+    for (i, (text, wrapped)) in rows.iter().enumerate() {
+        if i == last {
+            out.push_str(text.trim_end());
+        } else if *wrapped {
+            // Soft wrap: keep raw text (no trim), no separator.
+            out.push_str(text);
+        } else {
+            out.push_str(text.trim_end());
+            out.push('\n');
+        }
+    }
+    while out.ends_with('\n') {
+        out.pop();
+    }
+    out
+}
+
+/// Same heuristic as `Terminal::line_was_soft_wrapped`, applied to the
+/// currently-visible screen surface (where termwiz also fails to set the
+/// `last_cell_was_wrapped` bit because `Surface::print_text` skips it).
+fn screen_line_soft_wrapped(line: &termwiz::surface::line::Line, cols: usize) -> bool {
+    if cols == 0 {
+        return false;
+    }
+    for cell in line.visible_cells() {
+        let idx = cell.cell_index();
+        let width = cell.width().max(1);
+        if idx + width == cols {
+            let s = cell.str();
+            return !s.is_empty() && s.trim() != "";
+        }
+    }
+    false
 }
 
 fn extract_scrollback_line(
@@ -181,7 +227,7 @@ fn extract_scrollback_line(
         }
         col_idx += width;
     }
-    text.trim_end().to_string()
+    text
 }
 
 fn extract_surface_line(
@@ -200,7 +246,7 @@ fn extract_surface_line(
             text.push_str(cell_ref.str());
         }
     }
-    text.trim_end().to_string()
+    text
 }
 
 fn is_col_in_range(col: usize, abs_row: usize, sel: &NormalizedSelection) -> bool {
@@ -212,5 +258,94 @@ fn is_col_in_range(col: usize, abs_row: usize, sel: &NormalizedSelection) -> boo
         col <= sel.end.col
     } else {
         true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+    use tasty_terminal::{Terminal, TerminalConfig};
+
+    fn term(cols: usize, rows: usize) -> Terminal {
+        let waker: tasty_terminal::Waker = Arc::new(|| {});
+        Terminal::new(
+            TerminalConfig {
+                cols,
+                rows,
+                shell: None,
+                args: &[],
+                surface_id: 0,
+                working_dir: None,
+            },
+            waker,
+        )
+        .expect("terminal creation")
+    }
+
+    fn select_all(terminal: &Terminal) -> TextSelection {
+        let scrollback_len = terminal.scrollback_len();
+        let (cols, rows) = terminal.surface().dimensions();
+        TextSelection {
+            anchor: SelectionPoint {
+                col: 0,
+                absolute_row: 0,
+            },
+            cursor: SelectionPoint {
+                col: cols.saturating_sub(1),
+                absolute_row: scrollback_len + rows.saturating_sub(1),
+            },
+            mode: SelectionMode::Normal,
+            surface_id: 0,
+            dragging: false,
+        }
+    }
+
+    #[test]
+    fn soft_wrapped_screen_lines_are_joined_into_one_line() {
+        // 10-col, 4-row terminal. Write 25 chars on a single logical line —
+        // termwiz auto-wraps into rows 0..2. Selecting all should produce one
+        // contiguous string, not three lines separated by `\n`.
+        let mut t = term(10, 4);
+        let payload: Vec<u8> = (b'a'..=b'y').collect(); // 25 chars
+        t.process_bytes(&payload);
+
+        let sel = select_all(&t);
+        let text = extract_selected_text(&t, &sel);
+        let expected: String = (b'a'..=b'y').map(|b| b as char).collect();
+        assert_eq!(
+            text, expected,
+            "soft-wrapped lines must be rejoined into a single string"
+        );
+    }
+
+    #[test]
+    fn hard_newline_lines_keep_their_separator() {
+        let mut t = term(20, 4);
+        t.process_bytes(b"hello\r\nworld");
+        let sel = select_all(&t);
+        let text = extract_selected_text(&t, &sel);
+        assert_eq!(text, "hello\nworld");
+    }
+
+    #[test]
+    fn soft_wrap_in_scrollback_still_joins() {
+        // Wrap a long command, then push the wrapped lines into scrollback by
+        // emitting more rows than the screen can hold. The wrap flag must
+        // survive scrollback capture so the selection rejoins into one line.
+        let mut t = term(10, 3);
+        let payload: Vec<u8> = (b'a'..=b'y').collect(); // 25 chars → 3 wrapped rows
+        t.process_bytes(&payload);
+        // Force enough hard newlines to push every wrapped row into scrollback.
+        t.process_bytes(b"\r\nA\r\nB\r\nC\r\nD");
+
+        assert!(t.scrollback_len() >= 3);
+        let sel = select_all(&t);
+        let text = extract_selected_text(&t, &sel);
+        // Expect: the wrapped command rejoined as one line, then the trailing
+        // hard-newline-separated rows.
+        let head: String = (b'a'..=b'y').map(|b| b as char).collect();
+        let expected = format!("{head}\nA\nB\nC\nD");
+        assert_eq!(text, expected);
     }
 }

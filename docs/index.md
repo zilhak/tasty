@@ -236,7 +236,7 @@ OS 클립보드 직접 접근. arboard 크레이트 기반 크로스 플랫폼 �
 **현재 구현된 기능:**
 - arboard 기반 시스템 클립보드 읽기/쓰기
 - 텍스트 선택: 마우스 드래그(Normal), 더블클릭(Word), 트리플클릭(Line) 모드. 스크롤백/화면 영역 통합. 선택 영역 시각적 하이라이트
-- 복사: Ctrl+C (Windows, 선택 시 복사 / 미선택 시 SIGINT), Ctrl+Shift+C (Linux), Alt+C (macOS). 설정에서 개별 활성화/비활성화
+- 복사: Ctrl+C (Windows, 선택 시 복사 / 미선택 시 SIGINT), Ctrl+Shift+C (Linux), Alt+C (macOS). 설정에서 개별 활성화/비활성화. 셸 자동 줄바꿈된 명령은 한 줄로 다시 합쳐서 복사 (soft-wrap aware)
 - 붙여넣기: Ctrl+V (Windows), Ctrl+Shift+V (Linux), Alt+V (macOS). 설정에서 개별 활성화/비활성화
 - 브래킷 붙여넣기 모드 (DECSET 2004) 지원
 - OSC 52 클립보드 설정: 터미널 프로그램이 시스템 클립보드에 텍스트 설정 가능
