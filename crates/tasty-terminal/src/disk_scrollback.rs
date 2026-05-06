@@ -5,6 +5,15 @@ use std::path::PathBuf;
 use termwiz::cell::CellAttributes;
 use termwiz::color::ColorAttribute;
 
+use crate::scrollback::ScrollbackLine;
+
+/// Magic + version stamped at the head of every disk scrollback file. Bumped
+/// whenever the on-disk layout changes; old files are simply truncated and
+/// re-created (no backwards compatibility — Tasty is pre-1.0).
+const FILE_MAGIC: &[u8; 4] = b"TSSB";
+const FORMAT_VERSION: u32 = 2;
+const HEADER_LEN: u64 = 8; // 4-byte magic + 4-byte version
+
 /// Disk-backed scrollback storage. Older lines are written to a temp file,
 /// while recent lines remain in memory for fast access.
 pub struct DiskScrollback {
@@ -22,21 +31,21 @@ impl DiskScrollback {
         let dir = std::env::temp_dir().join("tasty-scrollback");
         std::fs::create_dir_all(&dir)?;
         let file_path = dir.join(format!("surface-{}.scrollback", surface_id));
-        // Truncate any existing file
-        File::create(&file_path)?;
+        // Truncate any existing file and write the header.
+        let mut f = File::create(&file_path)?;
+        f.write_all(FILE_MAGIC)?;
+        f.write_all(&FORMAT_VERSION.to_le_bytes())?;
+        f.flush()?;
         Ok(Self {
             file_path,
             disk_line_count: 0,
             line_offsets: Vec::new(),
-            file_size: 0,
+            file_size: HEADER_LEN,
         })
     }
 
     /// Write lines to disk. Returns number of lines written.
-    pub fn push_lines(
-        &mut self,
-        lines: &[Vec<(String, CellAttributes)>],
-    ) -> std::io::Result<usize> {
+    pub fn push_lines(&mut self, lines: &[ScrollbackLine]) -> std::io::Result<usize> {
         let file = OpenOptions::new().append(true).open(&self.file_path)?;
         let mut writer = BufWriter::new(file);
 
@@ -55,10 +64,7 @@ impl DiskScrollback {
     }
 
     /// Read a line from disk by index.
-    pub fn read_line(
-        &self,
-        index: usize,
-    ) -> std::io::Result<Option<Vec<(String, CellAttributes)>>> {
+    pub fn read_line(&self, index: usize) -> std::io::Result<Option<ScrollbackLine>> {
         if index >= self.disk_line_count {
             return Ok(None);
         }
@@ -90,13 +96,15 @@ impl Drop for DiskScrollback {
 }
 
 /// Serialize a scrollback line to bytes.
-/// Format per cell: [text_len:u16][text_bytes][fg_type:u8][fg_data:0-3 bytes][bg_type:u8][bg_data:0-3 bytes][flags:u8]
-fn serialize_line(line: &[(String, CellAttributes)]) -> Vec<u8> {
+/// Layout: [wrapped:u8][cell_count:u32] then per cell:
+///   [text_len:u16][text_bytes][fg_type:u8][fg_data:0-3][bg_type:u8][bg_data:0-3][flags:u8]
+fn serialize_line(line: &ScrollbackLine) -> Vec<u8> {
     let mut buf = Vec::new();
-    let cell_count = line.len() as u32;
+    buf.push(if line.wrapped { 1 } else { 0 });
+    let cell_count = line.cells.len() as u32;
     buf.extend_from_slice(&cell_count.to_le_bytes());
 
-    for (text, attrs) in line {
+    for (text, attrs) in &line.cells {
         // Text
         let text_bytes = text.as_bytes();
         let text_len = text_bytes.len() as u16;
@@ -109,8 +117,6 @@ fn serialize_line(line: &[(String, CellAttributes)]) -> Vec<u8> {
         serialize_color(&attrs.background(), &mut buf);
 
         // Flags: bit0=bold, bit1=italic, bit2=underline, bit3=strikethrough, bit4=dim (Intensity::Half).
-        // Bold and Half are mutually exclusive (termwiz Intensity is a single enum), but the bits
-        // are stored independently so existing scrollback files (bit4=0) decode as Normal/Bold.
         let mut flags: u8 = 0;
         match attrs.intensity() {
             termwiz::cell::Intensity::Bold => flags |= 1,
@@ -149,16 +155,20 @@ fn serialize_color(color: &ColorAttribute, buf: &mut Vec<u8>) {
     }
 }
 
-fn deserialize_line(data: &[u8]) -> Vec<(String, CellAttributes)> {
+fn deserialize_line(data: &[u8]) -> ScrollbackLine {
     let mut pos = 0;
-    if data.len() < 4 {
-        return Vec::new();
+    if data.len() < 5 {
+        return ScrollbackLine::new(Vec::new(), false);
     }
 
-    let cell_count = u32::from_le_bytes([data[0], data[1], data[2], data[3]]) as usize;
+    let wrapped = data[0] != 0;
+    pos += 1;
+
+    let cell_count = u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+        as usize;
     pos += 4;
 
-    let mut line = Vec::with_capacity(cell_count);
+    let mut cells = Vec::with_capacity(cell_count);
 
     for _ in 0..cell_count {
         if pos + 2 > data.len() {
@@ -202,9 +212,9 @@ fn deserialize_line(data: &[u8]) -> Vec<(String, CellAttributes)> {
             attrs.set_strikethrough(true);
         }
 
-        line.push((text, attrs));
+        cells.push((text, attrs));
     }
-    line
+    ScrollbackLine::new(cells, wrapped)
 }
 
 fn deserialize_color(data: &[u8]) -> (ColorAttribute, usize) {
@@ -240,7 +250,7 @@ mod tests {
     use super::*;
     use termwiz::cell::{Intensity, Underline};
 
-    fn round_trip(input: Vec<(String, CellAttributes)>) -> Vec<(String, CellAttributes)> {
+    fn round_trip(input: ScrollbackLine) -> ScrollbackLine {
         let bytes = serialize_line(&input);
         deserialize_line(&bytes)
     }
@@ -249,18 +259,19 @@ mod tests {
     fn preserves_intensity_half() {
         let mut a = CellAttributes::default();
         a.set_intensity(Intensity::Half);
-        let out = round_trip(vec![("D".into(), a)]);
-        assert_eq!(out.len(), 1);
-        assert_eq!(out[0].0, "D");
-        assert_eq!(out[0].1.intensity(), Intensity::Half);
+        let out = round_trip(ScrollbackLine::new(vec![("D".into(), a)], false));
+        assert_eq!(out.cells.len(), 1);
+        assert_eq!(out.cells[0].0, "D");
+        assert_eq!(out.cells[0].1.intensity(), Intensity::Half);
+        assert!(!out.wrapped);
     }
 
     #[test]
     fn preserves_intensity_bold() {
         let mut a = CellAttributes::default();
         a.set_intensity(Intensity::Bold);
-        let out = round_trip(vec![("B".into(), a)]);
-        assert_eq!(out[0].1.intensity(), Intensity::Bold);
+        let out = round_trip(ScrollbackLine::new(vec![("B".into(), a)], false));
+        assert_eq!(out.cells[0].1.intensity(), Intensity::Bold);
     }
 
     #[test]
@@ -270,8 +281,8 @@ mod tests {
         a.set_italic(true);
         a.set_underline(Underline::Single);
         a.set_strikethrough(true);
-        let out = round_trip(vec![("X".into(), a)]);
-        let r = &out[0].1;
+        let out = round_trip(ScrollbackLine::new(vec![("X".into(), a)], false));
+        let r = &out.cells[0].1;
         assert_eq!(r.intensity(), Intensity::Half);
         assert!(r.italic());
         assert_ne!(r.underline(), Underline::None);
@@ -279,18 +290,10 @@ mod tests {
     }
 
     #[test]
-    fn legacy_files_without_dim_bit_decode_as_normal() {
-        // Pre-dim files only used bits 0..=3. Synthesize such a payload directly.
-        let mut buf: Vec<u8> = Vec::new();
-        buf.extend_from_slice(&1u32.to_le_bytes()); // 1 cell
-        let text = "x";
-        buf.extend_from_slice(&(text.len() as u16).to_le_bytes());
-        buf.extend_from_slice(text.as_bytes());
-        buf.push(0); // fg = Default
-        buf.push(0); // bg = Default
-        buf.push(0); // flags = 0 (no bits set)
-        let out = deserialize_line(&buf);
-        assert_eq!(out.len(), 1);
-        assert_eq!(out[0].1.intensity(), Intensity::Normal);
+    fn preserves_wrapped_flag() {
+        let a = CellAttributes::default();
+        let out = round_trip(ScrollbackLine::new(vec![("W".into(), a)], true));
+        assert!(out.wrapped);
+        assert_eq!(out.cells[0].0, "W");
     }
 }

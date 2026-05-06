@@ -760,7 +760,7 @@ impl Terminal {
         }
 
         // Pop from scrollback (most recent first = back of deque)
-        let mut to_restore: Vec<Vec<(String, CellAttributes)>> = Vec::new();
+        let mut to_restore: Vec<crate::scrollback::ScrollbackLine> = Vec::new();
         for _ in 0..restore_count {
             if let Some(line) = self.scrollback.pop_back() {
                 to_restore.push(line);
@@ -777,13 +777,15 @@ impl Terminal {
             scroll_count: actual_restored,
         });
 
-        // Write restored lines at the top
-        for (row, line_cells) in to_restore.iter().enumerate() {
+        // Write restored lines at the top. Wrap flag is dropped: termwiz tracks
+        // wrap on the live surface itself, and lines reinstated this way are
+        // treated as fresh screen content (no longer "scrolled-off wrap").
+        for (row, line) in to_restore.iter().enumerate() {
             self.primary_surface.add_change(Change::CursorPosition {
                 x: Position::Absolute(0),
                 y: Position::Absolute(row),
             });
-            for (text, attrs) in line_cells {
+            for (text, attrs) in &line.cells {
                 self.primary_surface
                     .add_change(Change::AllAttributes(attrs.clone()));
                 self.primary_surface.add_change(Change::Text(text.clone()));
@@ -809,6 +811,28 @@ impl Terminal {
             }
         }
         true
+    }
+
+    /// Heuristic: returns true when the line's rightmost cell is occupied by
+    /// a non-space grapheme — the signature of a soft-wrap (the cursor
+    /// reached the right edge and overflow advanced to the next row). Hard
+    /// newlines almost always leave at least one trailing space, so this
+    /// distinguishes the two cases without needing a wrap bit from termwiz
+    /// (which `Surface::print_text` does not maintain).
+    fn line_was_soft_wrapped(line: &termwiz::surface::line::Line, cols: usize) -> bool {
+        if cols == 0 {
+            return false;
+        }
+        for cell in line.visible_cells() {
+            let idx = cell.cell_index();
+            let width = cell.width().max(1);
+            // A cell that occupies the rightmost column has its right edge at `cols`.
+            if idx + width == cols {
+                let s = cell.str();
+                return !s.is_empty() && s.trim() != "";
+            }
+        }
+        false
     }
 
     /// Before termwiz truncates lines, capture cells that would be lost (cols shrinking)
@@ -1110,17 +1134,37 @@ impl Terminal {
         self.scrollback.line_owned(index)
     }
 
+    /// Returns whether the scrollback line at `index` ends in a soft wrap
+    /// (auto-wrap at the right edge). Used by selection extraction to rejoin
+    /// wrapped lines on copy. Returns `None` if `index` is out of range.
+    pub fn scrollback_line_wrapped(&self, index: usize) -> Option<bool> {
+        self.scrollback.line_wrapped(index)
+    }
+
     /// Capture the top line(s) from the surface before a scroll change is applied.
-    fn capture_top_lines(&self, count: usize) -> Vec<Vec<(String, CellAttributes)>> {
+    ///
+    /// Each captured line is tagged with a `wrapped` flag so the next line is
+    /// known to be a logical continuation (used by wrap-aware copy). termwiz
+    /// `Surface::print_text` does NOT set its own wrap bit when the cursor
+    /// runs off the right edge — it just advances `ypos` — so we recover the
+    /// flag heuristically: a line is treated as soft-wrapped when its
+    /// rightmost cell is occupied by a non-space grapheme. Lines that ended in
+    /// a real `\n` almost always have trailing whitespace; lines that wrapped
+    /// at the right edge filled the last column. False positives (a hard
+    /// newline that happened to fill the row) merge two lines on copy, which
+    /// is a strictly better outcome than the prior unconditional `\n` join.
+    fn capture_top_lines(&self, count: usize) -> Vec<crate::scrollback::ScrollbackLine> {
         let surface = self.surface();
+        let cols = self.cols;
         let lines = surface.screen_lines();
         let mut result = Vec::new();
         for i in 0..count.min(lines.len()) {
-            let line: Vec<(String, CellAttributes)> = lines[i]
+            let cells: Vec<(String, CellAttributes)> = lines[i]
                 .visible_cells()
                 .map(|cell| (cell.str().to_string(), cell.attrs().clone()))
                 .collect();
-            result.push(line);
+            let wrapped = Self::line_was_soft_wrapped(&lines[i], cols);
+            result.push(crate::scrollback::ScrollbackLine::new(cells, wrapped));
         }
         result
     }
@@ -1435,4 +1479,43 @@ mod tests {
         assert_eq!(first_scrollback_text(&terminal, 0), "row0");
     }
 
+    // ---- Soft-wrap flag is captured into scrollback ----
+
+    #[test]
+    fn soft_wrapped_line_records_wrap_flag_in_scrollback() {
+        // 10-col terminal, write 25 chars on one logical line then a real LF.
+        // termwiz auto-wraps at col 10, producing 3 visual rows. With only
+        // 4 screen rows, hitting LF after the wrap pushes the first wrapped
+        // row into scrollback — and that scrollback line must keep wrapped=true.
+        let mut terminal = test_terminal(10, 4);
+        let payload: Vec<u8> = (b'a'..=b'y').collect(); // 25 chars
+        terminal.process_bytes(&payload);
+        // Force two extra LFs at the bottom to flush wrapped lines into scrollback.
+        terminal.process_bytes(b"\r\nnext\r\nmore\r\nfinal");
+
+        assert!(
+            terminal.scrollback_len() >= 1,
+            "expected wrapped lines to be pushed into scrollback"
+        );
+        // The first scrollback line is the head of the wrapped command, which
+        // continues on the next line — it must be marked wrapped.
+        assert_eq!(
+            terminal.scrollback_line_wrapped(0),
+            Some(true),
+            "first scrollback line was a soft-wrap continuation point"
+        );
+    }
+
+    #[test]
+    fn hard_newline_line_is_not_wrapped() {
+        let mut terminal = test_terminal(10, 4);
+        // "row0\nrow1\nrow2\nrow3\nrow4" — row0 ends with a real LF, no wrap.
+        terminal.process_bytes(b"row0\r\nrow1\r\nrow2\r\nrow3\r\nrow4");
+        assert!(terminal.scrollback_len() >= 1);
+        assert_eq!(
+            terminal.scrollback_line_wrapped(0),
+            Some(false),
+            "row0 ended in a hard newline, not a wrap"
+        );
+    }
 }
