@@ -124,6 +124,10 @@ pub struct Terminal {
     /// Used by `is_busy()` to drop the busy state when a foreground program goes
     /// quiet (e.g. claude waiting for the next prompt).
     last_output_at: std::time::Instant,
+    /// Timestamp of the most recent user input sent to the PTY via `send_key()`
+    /// or `send_bytes()`. Used by `is_busy()` to distinguish user-typing echo
+    /// from genuine program output.
+    last_input_at: std::time::Instant,
 }
 
 /// How long after the last PTY output a terminal still counts as busy.
@@ -131,6 +135,12 @@ pub struct Terminal {
 /// while genuinely idle TUIs (vim sitting still, claude waiting for input)
 /// drop out within a couple of polling intervals.
 const BUSY_OUTPUT_WINDOW: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// Maximum delay between user input and its PTY echo. Output arriving within
+/// this window after the last `send_key()`/`send_bytes()` is treated as echo
+/// and does NOT count toward the busy indicator. Program-generated output
+/// (token streams, build logs) arrives well after this threshold.
+const INPUT_ECHO_WINDOW: std::time::Duration = std::time::Duration::from_millis(200);
 
 impl Terminal {
     /// Create a new terminal.
@@ -267,6 +277,8 @@ impl Terminal {
             pending_pty_resize: None,
             last_pty_flush: std::time::Instant::now(),
             last_output_at: std::time::Instant::now(),
+            // Start in the past so the first PTY output is never mistaken for echo.
+            last_input_at: std::time::Instant::now() - INPUT_ECHO_WINDOW,
         })
     }
 
@@ -559,7 +571,8 @@ impl Terminal {
     }
 
     /// Send keyboard input to PTY (non-blocking, queued to writer thread).
-    pub fn send_key(&self, text: &str) {
+    pub fn send_key(&mut self, text: &str) {
+        self.last_input_at = std::time::Instant::now();
         let _ = self.pty_write_tx.send(text.as_bytes().to_vec());
     }
 
@@ -592,7 +605,8 @@ impl Terminal {
     }
 
     /// Send raw bytes to PTY (non-blocking, queued to writer thread).
-    pub fn send_bytes(&self, bytes: &[u8]) {
+    pub fn send_bytes(&mut self, bytes: &[u8]) {
+        self.last_input_at = std::time::Instant::now();
         let _ = self.pty_write_tx.send(bytes.to_vec());
     }
 
@@ -943,6 +957,10 @@ impl Terminal {
     /// TUIs (claude waiting for input, vim sitting still) drop out of the busy
     /// set while bursty programs (token streams, builds, tails) stay marked.
     ///
+    /// Output that arrives within `INPUT_ECHO_WINDOW` after the last user
+    /// keystroke is treated as echo and ignored, so typing into a waiting
+    /// TUI (e.g. Claude prompt) does not trigger the busy indicator.
+    ///
     /// Returns false when the shell is at its prompt, when foreground info
     /// cannot be resolved, or when the foreground program has been quiet long
     /// enough to look idle.
@@ -957,6 +975,10 @@ impl Terminal {
             return false;
         }
         if foreground_process::is_known_shell_name(&info.name) {
+            return false;
+        }
+        // Ignore output that looks like echo of recent user input.
+        if self.last_output_at <= self.last_input_at + INPUT_ECHO_WINDOW {
             return false;
         }
         self.last_output_at.elapsed() < BUSY_OUTPUT_WINDOW
