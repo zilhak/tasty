@@ -71,6 +71,16 @@ cargo install cargo-wix
 winget install WiXToolset.WiXToolset    # 관리자 권한
 ```
 
+WiX winget 패키지는 `WIX` 환경변수만 등록하고 **`%WIX%\bin`을 PATH에 추가하지
+않는다**. `build-windows.ps1`이 MSI 단계 시작 시 `$env:WIX\bin`을 현재
+프로세스 PATH에 자동으로 prepend하므로 머신 PATH 수정이나 러너 서비스
+재시작은 필요 없다. 단 `WIX` 환경변수가 보여야 하므로 winget 설치 후 러너
+서비스가 새 환경변수를 인식하지 못하면 한 번 재시작:
+
+```powershell
+Restart-Service "actions.runner.zilhak-tasty.tasty-win-runner"
+```
+
 ### macOS 러너
 
 `build-macos-dmg.sh`는 Xcode Command Line Tools와 `create-dmg` (Homebrew)를 요구한다.
@@ -149,4 +159,5 @@ sudo systemctl disable actions.runner.zilhak-tasty.<runner-name>.service
 | `cmake`/`freetype`/`fontconfig` 빠짐 | `build-linux.sh`가 시작 시 명시적 에러로 안내. 메시지대로 `apt install` |
 | 러너가 GitHub에서 offline | `systemctl status`로 서비스 상태 확인. 정지되었으면 `restart` |
 | 빌드는 성공했는데 release upload 실패 | `GH_TOKEN` 권한 또는 release tag 이름 확인. `--clobber`로 재업로드 가능 |
+| Windows에서 `compiler application (candle) could not be found in the PATH` | WiX Toolset 3.x 미설치 또는 `WIX` 환경변수 누락. `winget install WiXToolset.WiXToolset` 후 러너 서비스 재시작. PATH에 `%WIX%\bin`을 직접 추가할 필요는 없다 (`build-windows.ps1`이 자동 처리) |
 | AppImage 실행 시 `fuse: failed to exec fusermount` | 타깃 사용자 환경 문제 (FUSE 미지원). 해결: 사용자가 `./Tasty-x.y.z-x86_64.AppImage --appimage-extract-and-run`으로 실행 |

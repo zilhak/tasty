@@ -128,6 +128,9 @@ Windows MSI는 [`cargo-wix`](https://github.com/volks73/cargo-wix)로 만든다:
 ```powershell
 cargo install cargo-wix              # 빌드 머신에 한 번만
 # WiX Toolset 3.14는 별도 설치 (winget install WiXToolset.WiXToolset, 관리자 권한 필요)
+# winget 패키지는 WIX 환경변수만 등록하고 PATH는 안 건드린다.
+# build-windows.ps1이 MSI 단계에서 $env:WIX\bin을 자동으로 PATH에 prepend하므로
+# 추가 설정은 불필요하다.
 ```
 
 템플릿은 `wix/main.wxs`에 들어 있다. UpgradeCode GUID(`722A590A-...`)는
