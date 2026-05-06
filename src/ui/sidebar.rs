@@ -3,16 +3,17 @@ use crate::state::AppState;
 use crate::theme;
 
 /// Draw the collapsed sidebar (workspace numbers + tools/expand/settings buttons).
-/// Returns (expand_clicked, settings_clicked, tools_clicked, switch_ws, add_ws).
+/// Returns (expand_clicked, settings_clicked, tools_rect, switch_ws, add_ws).
+/// `tools_rect` is Some(rect) when the tools button was clicked (rect = button position).
 pub fn draw_collapsed_sidebar(
     ctx: &egui::Context,
     state: &AppState,
     sidebar_width: f32,
-) -> (bool, bool, bool, Option<usize>, bool) {
+) -> (bool, bool, Option<egui::Rect>, Option<usize>, bool) {
     let th = theme::theme();
     let mut expand_clicked = false;
     let mut settings_clicked = false;
-    let mut tools_clicked = false;
+    let mut tools_rect: Option<egui::Rect> = None;
     let mut switch_ws: Option<usize> = None;
     let mut add_ws = false;
 
@@ -104,14 +105,15 @@ pub fn draw_collapsed_sidebar(
                 ui.separator();
                 ui.add_space(2.0);
 
-                // Tools button "[T]" — opens clipboard viewer popup
-                let (tools_rect, tools_resp) =
+                // Tools button "[T]" — opens tools menu popup
+                let (tools_btn_rect, tools_resp) =
                     ui.allocate_exact_size(egui::vec2(32.0, 22.0), egui::Sense::click());
                 if tools_resp.hovered() {
-                    ui.painter().rect_filled(tools_rect, 4.0, th.hover_overlay);
+                    ui.painter()
+                        .rect_filled(tools_btn_rect, 4.0, th.hover_overlay);
                 }
                 ui.painter().text(
-                    tools_rect.center(),
+                    tools_btn_rect.center(),
                     egui::Align2::CENTER_CENTER,
                     "T",
                     egui::FontId::proportional(12.0),
@@ -123,7 +125,7 @@ pub fn draw_collapsed_sidebar(
                 );
                 let tools_resp = tools_resp.on_hover_text(t("sidebar.tools_button"));
                 if tools_resp.clicked() {
-                    tools_clicked = true;
+                    tools_rect = Some(tools_btn_rect);
                 }
                 ui.add_space(2.0);
 
@@ -176,23 +178,23 @@ pub fn draw_collapsed_sidebar(
     (
         expand_clicked,
         settings_clicked,
-        tools_clicked,
+        tools_rect,
         switch_ws,
         add_ws,
     )
 }
 
 /// Draw the full (expanded) sidebar with workspace cards.
-/// Returns (collapse_clicked, settings_clicked, tools_clicked).
+/// Returns (collapse_clicked, settings_clicked, tools_rect).
 pub fn draw_full_sidebar(
     ctx: &egui::Context,
     state: &mut AppState,
     sidebar_width: f32,
-) -> (bool, bool, bool) {
+) -> (bool, bool, Option<egui::Rect>) {
     let th = theme::theme();
     let mut sidebar_collapse = false;
     let mut sidebar_settings = false;
-    let mut sidebar_tools = false;
+    let mut sidebar_tools_rect: Option<egui::Rect> = None;
 
     egui::SidePanel::left("workspace_sidebar")
         .exact_width(sidebar_width)
@@ -467,7 +469,7 @@ pub fn draw_full_sidebar(
                     },
                 );
                 if resp.clicked() {
-                    sidebar_tools = true;
+                    sidebar_tools_rect = Some(rect);
                 }
             }
 
@@ -528,5 +530,5 @@ pub fn draw_full_sidebar(
             ui.add_space(8.0);
         });
 
-    (sidebar_collapse, sidebar_settings, sidebar_tools)
+    (sidebar_collapse, sidebar_settings, sidebar_tools_rect)
 }

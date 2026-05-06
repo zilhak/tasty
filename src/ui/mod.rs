@@ -13,6 +13,7 @@ pub mod popup;
 pub(crate) mod popup_defs;
 mod sidebar;
 mod tab_bar;
+pub(crate) mod tools_menu;
 pub mod toast;
 
 pub use divider::{draw_pane_dividers, draw_surface_highlights};
@@ -26,6 +27,17 @@ pub use toast::{ToastManager, ToastScope};
 use crate::model::Rect;
 use crate::state::AppState;
 
+/// 도구 버튼 위쪽, 좌측에 붙여서 tools_menu 팝업을 연다.
+fn open_tools_menu(state: &mut AppState, btn_rect: egui::Rect) {
+    // tools_menu의 default_size를 popup_defs에서 가져온다
+    let menu_size = popup_defs::find("tools_menu")
+        .map(|d| d.default_size)
+        .unwrap_or(egui::vec2(160.0, 36.0));
+    // 버튼 좌측에 맞추고, 버튼 위쪽으로 올라가도록 배치
+    let pos = egui::pos2(btn_rect.min.x, btn_rect.min.y - menu_size.y);
+    state.popups.open_at_focused("tools_menu", pos);
+}
+
 /// Render the egui UI and return the remaining terminal area rect (in physical pixels).
 pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> Rect {
     let sidebar_width = state.sidebar_width.value();
@@ -33,7 +45,7 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
     if !state.sidebar_visible {
         // Sidebar hidden — skip rendering entirely
     } else if state.sidebar_collapsed {
-        let (expand, settings, tools, switch_ws, add_ws) =
+        let (expand, settings, tools_rect, switch_ws, add_ws) =
             sidebar::draw_collapsed_sidebar(ctx, state, sidebar_width);
 
         if expand {
@@ -42,8 +54,8 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
         if settings {
             state.settings_open = true;
         }
-        if tools {
-            crate::clipboard_viewer_ui::open_clipboard_viewer_popup(state);
+        if let Some(btn_rect) = tools_rect {
+            open_tools_menu(state, btn_rect);
         }
         if let Some(i) = switch_ws {
             state.switch_workspace(i);
@@ -54,7 +66,8 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
             }
         }
     } else {
-        let (collapse, settings, tools) = sidebar::draw_full_sidebar(ctx, state, sidebar_width);
+        let (collapse, settings, tools_rect) =
+            sidebar::draw_full_sidebar(ctx, state, sidebar_width);
 
         if collapse {
             state.sidebar_collapsed = true;
@@ -62,8 +75,8 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
         if settings {
             state.settings_open = true;
         }
-        if tools {
-            crate::clipboard_viewer_ui::open_clipboard_viewer_popup(state);
+        if let Some(btn_rect) = tools_rect {
+            open_tools_menu(state, btn_rect);
         }
     }
 

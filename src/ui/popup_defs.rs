@@ -17,6 +17,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 sizer: None,
                 default_scope: PopupScope::Window,
                 close_on_outside_click: false,
+                headless: false,
                 draw_fn: super::notification_popup::draw_notification_popup,
             },
             PopupDef {
@@ -27,6 +28,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 sizer: None,
                 default_scope: PopupScope::Window,
                 close_on_outside_click: true,
+                headless: false,
                 draw_fn: super::convert_popup::draw_convert_popup,
             },
             PopupDef {
@@ -37,6 +39,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 sizer: Some(super::file_open_popup::markdown_popup_sizer),
                 default_scope: PopupScope::Window,
                 close_on_outside_click: false,
+                headless: false,
                 draw_fn: super::file_open_popup::draw_markdown_open_popup,
             },
             PopupDef {
@@ -47,6 +50,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 sizer: Some(super::file_open_popup::html_popup_sizer),
                 default_scope: PopupScope::Window,
                 close_on_outside_click: false,
+                headless: false,
                 draw_fn: super::file_open_popup::draw_html_open_popup,
             },
             PopupDef {
@@ -57,6 +61,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 sizer: None,
                 default_scope: PopupScope::Window,
                 close_on_outside_click: false,
+                headless: false,
                 draw_fn: super::bookmark_popup::draw_bookmark_popup,
             },
             PopupDef {
@@ -67,6 +72,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 sizer: None,
                 default_scope: PopupScope::Window,
                 close_on_outside_click: true,
+                headless: false,
                 draw_fn: crate::clipboard_viewer_ui::draw_clipboard_viewer_popup,
             },
             PopupDef {
@@ -77,7 +83,19 @@ pub fn all_defs() -> &'static [PopupDef] {
                 sizer: None,
                 default_scope: PopupScope::Window,
                 close_on_outside_click: false,
+                headless: false,
                 draw_fn: super::dialog::draw_rename_popup,
+            },
+            PopupDef {
+                id: "tools_menu",
+                title_key: "tools_menu.title",
+                title_fn: None,
+                default_size: egui::vec2(160.0, 36.0),
+                sizer: None,
+                default_scope: PopupScope::Window,
+                close_on_outside_click: true,
+                headless: true,
+                draw_fn: super::tools_menu::draw_tools_menu,
             },
         ]
     })

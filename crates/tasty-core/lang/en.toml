@@ -321,6 +321,10 @@ result_counter = "{} / {}"
 clear_confirm = "Clear all clipboard history?"
 hint_bar = "Enter: copy & close    Delete: remove    Shift+Delete: clear all    Esc: close"
 
+[tools_menu]
+title = "Tools"
+clipboard_history = "Clipboard History"
+
 [settings.misc.subtab]
 tastyrc = "tastyrc"
 

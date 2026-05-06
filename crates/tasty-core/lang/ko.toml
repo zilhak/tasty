@@ -321,6 +321,10 @@ result_counter = "{} / {}"
 clear_confirm = "모든 클립보드 히스토리를 비우시겠습니까?"
 hint_bar = "Enter: 복사 후 닫기    Delete: 삭제    Shift+Delete: 전체 비우기    Esc: 닫기"
 
+[tools_menu]
+title = "도구"
+clipboard_history = "클립보드 히스토리"
+
 [settings.misc.subtab]
 tastyrc = "tastyrc"
 

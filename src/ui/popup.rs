@@ -38,6 +38,8 @@ pub struct PopupDef {
     pub sizer: Option<fn(&AppState) -> egui::Vec2>,
     pub default_scope: PopupScope,
     pub close_on_outside_click: bool,
+    /// true면 타이틀바·닫기 버튼 없이 콘텐츠만 렌더링한다 (컨텍스트 메뉴 스타일).
+    pub headless: bool,
     /// 렌더링 함수. 매 프레임 호출. AppState에서 필요한 데이터를 꺼낸다.
     pub draw_fn: fn(&mut egui::Ui, &mut AppState) -> PopupAction,
 }
@@ -83,6 +85,8 @@ pub struct PopupState {
     pub focused: bool,
     /// If true, clicking outside this popup will close it (not just unfocus).
     pub close_on_outside_click: bool,
+    /// true면 타이틀바·닫기 버튼 없이 콘텐츠만 렌더링한다.
+    pub headless: bool,
     /// If true, PopupManager will center this popup on the next draw and clear the flag.
     pub request_center: bool,
 }
@@ -103,6 +107,7 @@ impl PopupState {
             scope: PopupScope::Window,
             focused: false,
             close_on_outside_click: false,
+            headless: false,
             request_center: false,
         }
     }
@@ -119,6 +124,12 @@ impl PopupState {
         self
     }
 
+    /// Set headless mode (no title bar / close button).
+    pub fn with_headless(mut self, v: bool) -> Self {
+        self.headless = v;
+        self
+    }
+
     fn popup_rect(&self) -> egui::Rect {
         egui::Rect::from_min_size(self.pos, self.size)
     }
@@ -129,11 +140,13 @@ impl PopupState {
 
     fn content_rect(&self) -> egui::Rect {
         let popup = self.popup_rect();
+        let top_offset = if self.headless {
+            CONTENT_MARGIN
+        } else {
+            TITLE_BAR_HEIGHT + CONTENT_MARGIN
+        };
         egui::Rect::from_min_max(
-            egui::pos2(
-                popup.min.x + CONTENT_MARGIN,
-                popup.min.y + TITLE_BAR_HEIGHT + CONTENT_MARGIN,
-            ),
+            egui::pos2(popup.min.x + CONTENT_MARGIN, popup.min.y + top_offset),
             egui::pos2(popup.max.x - CONTENT_MARGIN, popup.max.y - CONTENT_MARGIN),
         )
     }
@@ -179,7 +192,8 @@ impl PopupManager {
         }
         let popup = PopupState::new(def.id, crate::i18n::t(def.title_key), def.default_size)
             .with_scope(def.default_scope.clone())
-            .with_close_on_outside_click(def.close_on_outside_click);
+            .with_close_on_outside_click(def.close_on_outside_click)
+            .with_headless(def.headless);
         self.popups.push(popup);
     }
 
@@ -237,6 +251,18 @@ impl PopupManager {
             self.popups[i].focused = true;
             self.popups[i].request_center = true;
             self.popups[i].scope = scope;
+            let popup = self.popups.remove(i);
+            self.popups.push(popup);
+        }
+    }
+
+    /// Open a popup at a specific position, with focus.
+    pub fn open_at_focused(&mut self, id: PopupId, pos: egui::Pos2) {
+        if let Some(i) = self.popups.iter().position(|p| p.id == id) {
+            self.popups[i].open = true;
+            self.popups[i].focused = true;
+            self.popups[i].pos = pos;
+            self.popups[i].request_center = false;
             let popup = self.popups.remove(i);
             self.popups.push(popup);
         }
@@ -327,10 +353,12 @@ impl PopupManager {
                 let popup = &self.popups[idx];
                 if popup.popup_rect().contains(pos) {
                     hovered_popup = Some(popup.id);
-                    if popup.close_btn_rect().contains(pos) {
-                        hovered_close = Some(popup.id);
-                    } else if popup.title_rect().contains(pos) {
-                        hovered_title = Some(popup.id);
+                    if !popup.headless {
+                        if popup.close_btn_rect().contains(pos) {
+                            hovered_close = Some(popup.id);
+                        } else if popup.title_rect().contains(pos) {
+                            hovered_title = Some(popup.id);
+                        }
                     }
                     break; // topmost popup wins
                 }
@@ -429,10 +457,9 @@ impl PopupManager {
             popup.clamp_to_screen(clamp_rect);
 
             let popup_id = popup.id;
+            let is_headless = popup.headless;
             let popup_rect = popup.popup_rect();
-            let title_rect = popup.title_rect();
             let content_rect = popup.content_rect();
-            let close_btn_rect = popup.close_btn_rect();
 
             let layer_id = egui::LayerId::new(
                 egui::Order::Foreground,
@@ -450,61 +477,66 @@ impl PopupManager {
                 egui::StrokeKind::Outside,
             );
 
-            // Title bar
-            let cr = th.corner_radius.value() as u8;
-            painter.rect_filled(
-                title_rect,
-                egui::CornerRadius {
-                    nw: cr,
-                    ne: cr,
-                    sw: 0,
-                    se: 0,
-                },
-                th.mantle,
-            );
-            painter.line_segment(
-                [
-                    egui::pos2(title_rect.min.x, title_rect.max.y),
-                    egui::pos2(title_rect.max.x, title_rect.max.y),
-                ],
-                egui::Stroke::new(th.border_width.value(), th.surface1),
-            );
+            if !is_headless {
+                let title_rect = popup.title_rect();
+                let close_btn_rect = popup.close_btn_rect();
 
-            // Title text (centered)
-            painter.text(
-                title_rect.center(),
-                egui::Align2::CENTER_CENTER,
-                &popup.title,
-                egui::FontId::proportional(th.font_size_body.value()),
-                th.text,
-            );
+                // Title bar
+                let cr = th.corner_radius.value() as u8;
+                painter.rect_filled(
+                    title_rect,
+                    egui::CornerRadius {
+                        nw: cr,
+                        ne: cr,
+                        sw: 0,
+                        se: 0,
+                    },
+                    th.mantle,
+                );
+                painter.line_segment(
+                    [
+                        egui::pos2(title_rect.min.x, title_rect.max.y),
+                        egui::pos2(title_rect.max.x, title_rect.max.y),
+                    ],
+                    egui::Stroke::new(th.border_width.value(), th.surface1),
+                );
 
-            // Close button
-            let is_close_hovered = hovered_close == Some(popup_id);
-            if is_close_hovered {
-                painter.rect_filled(close_btn_rect, 2.0, th.hover_overlay);
+                // Title text (centered)
+                painter.text(
+                    title_rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    &popup.title,
+                    egui::FontId::proportional(th.font_size_body.value()),
+                    th.text,
+                );
+
+                // Close button
+                let is_close_hovered = hovered_close == Some(popup_id);
+                if is_close_hovered {
+                    painter.rect_filled(close_btn_rect, 2.0, th.hover_overlay);
+                }
+                let x_size = 5.0;
+                let x_color = if is_close_hovered {
+                    th.red
+                } else {
+                    th.subtext0
+                };
+                let center = close_btn_rect.center();
+                painter.line_segment(
+                    [
+                        center - egui::vec2(x_size, x_size),
+                        center + egui::vec2(x_size, x_size),
+                    ],
+                    egui::Stroke::new(1.5, x_color),
+                );
+                painter.line_segment(
+                    [
+                        center + egui::vec2(-x_size, x_size),
+                        center + egui::vec2(x_size, -x_size),
+                    ],
+                    egui::Stroke::new(1.5, x_color),
+                );
             }
-            let x_size = 5.0;
-            let x_color = if is_close_hovered {
-                th.red
-            } else {
-                th.subtext0
-            };
-            let center = close_btn_rect.center();
-            painter.line_segment(
-                [
-                    center - egui::vec2(x_size, x_size),
-                    center + egui::vec2(x_size, x_size),
-                ],
-                egui::Stroke::new(1.5, x_color),
-            );
-            painter.line_segment(
-                [
-                    center + egui::vec2(-x_size, x_size),
-                    center + egui::vec2(x_size, -x_size),
-                ],
-                egui::Stroke::new(1.5, x_color),
-            );
 
             // Content
             {

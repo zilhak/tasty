@@ -321,6 +321,10 @@ result_counter = "{} / {}"
 clear_confirm = "クリップボード履歴をすべて消去しますか？"
 hint_bar = "Enter: コピーして閉じる    Delete: 削除    Shift+Delete: 全削除    Esc: 閉じる"
 
+[tools_menu]
+title = "ツール"
+clipboard_history = "クリップボード履歴"
+
 [settings.misc.subtab]
 tastyrc = "tastyrc"
 
