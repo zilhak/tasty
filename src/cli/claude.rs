@@ -10,6 +10,7 @@ pub fn run_claude_hook(
     conn: &mut IpcConnection,
     event: &str,
     surface_arg: Option<u32>,
+    session: Option<&str>,
 ) -> Result<()> {
     // Resolve surface_id: --surface arg > TASTY_SURFACE_ID env var > null (server uses focused)
     let surface_id = surface_arg.or_else(|| {
@@ -24,14 +25,38 @@ pub fn run_claude_hook(
     };
 
     match event {
-        "stop" | "session-end" | "subagent-stop" => {
-            // Claude finished (main agent stopped, session ended, or sub-agent stopped)
+        "stop" | "subagent-stop" => {
+            // Claude finished (main agent stopped or sub-agent stopped)
             // → set idle and fire claude-idle hook.
             let req1 = make_request(
                 "claude.set_idle_state",
                 serde_json::json!({ "surface_id": surface_param, "idle": true }),
             );
             conn.send(&req1)?;
+
+            let req2 = make_request(
+                "surface.fire_hook",
+                serde_json::json!({ "surface_id": surface_param, "event": "claude-idle" }),
+            );
+            let result = conn.send(&req2)?;
+            println!("{}", serde_json::to_string_pretty(&result)?);
+        }
+        "session-end" => {
+            // Session ended → set idle, fire hook, and clear session metadata.
+            let req1 = make_request(
+                "claude.set_idle_state",
+                serde_json::json!({ "surface_id": surface_param, "idle": true }),
+            );
+            conn.send(&req1)?;
+
+            // Clear claude-session-id so a stale session isn't restored on next launch.
+            let req_meta = make_request(
+                "surface.meta_unset",
+                serde_json::json!({ "surface_id": surface_param, "key": "claude-session-id" }),
+            );
+            if let Err(e) = conn.send(&req_meta) {
+                tracing::warn!("Failed to clear claude-session-id meta: {e}");
+            }
 
             let req2 = make_request(
                 "surface.fire_hook",
@@ -63,6 +88,21 @@ pub fn run_claude_hook(
             );
             let result = conn.send(&req)?;
             println!("{}", serde_json::to_string_pretty(&result)?);
+
+            // If session ID was provided (SessionStart hook), store it in surface metadata.
+            if let Some(session_id) = session {
+                let req_meta = make_request(
+                    "surface.meta_set",
+                    serde_json::json!({
+                        "surface_id": surface_param,
+                        "key": "claude-session-id",
+                        "value": session_id,
+                    }),
+                );
+                if let Err(e) = conn.send(&req_meta) {
+                    tracing::warn!("Failed to store claude-session-id meta: {e}");
+                }
+            }
         }
         _ => {
             eprintln!(
@@ -91,11 +131,13 @@ pub fn run_claude_hook(
 /// - `Notification`: 권한 요청 / idle 알림 (needs-input 신호의 핵심)
 /// - `SessionEnd`: 세션 종료 (exited 정확도 향상)
 /// - `SubagentStop`: subagent(Task tool) 종료 (idle 정확도 향상)
+/// - `SessionStart`: 세션 시작 (세션 ID 캡처 → 레이아웃 복원 시 `claude -r` 사용)
 const MANAGED_HOOKS: &[(&str, &str)] = &[
     ("Stop", "stop"),
     ("Notification", "notification"),
     ("SessionEnd", "session-end"),
     ("SubagentStop", "subagent-stop"),
+    ("SessionStart", "session-start"),
 ];
 
 /// `entry_matches_marker`가 식별자로 사용하는 substring.
@@ -108,10 +150,17 @@ fn tasty_hook_marker(event_token: &str) -> String {
 /// settings.json에 실제로 기록되는 명령 문자열.
 /// `TASTY_SURFACE_ID`가 없는 환경(claude를 tasty 외부에서 실행 중인 경우)에서는
 /// 무조건 성공 종료(`true`)하도록 가드를 걸어 Claude 측에 영향을 주지 않는다.
+///
+/// `session-start` 이벤트는 `--session ${CLAUDE_SESSION_ID}`를 추가한다.
+/// Claude Code가 `${CLAUDE_SESSION_ID}`를 실제 세션 UUID로 치환해 준다.
 fn tasty_hook_command(event_token: &str) -> String {
+    let extra_args = match event_token {
+        "session-start" => " --session ${CLAUDE_SESSION_ID}",
+        _ => "",
+    };
     format!(
-        "[ -n \"$TASTY_SURFACE_ID\" ] && tasty claude hook {} || true",
-        event_token
+        "[ -n \"$TASTY_SURFACE_ID\" ] && tasty claude hook {}{} || true",
+        event_token, extra_args
     )
 }
 
@@ -166,7 +215,7 @@ pub fn is_tasty_stop_hook_installed() -> Result<bool> {
     Ok(is_marker_installed_in_value(&root, "Stop", &marker))
 }
 
-/// settings.json 루트 값에 4종 hook을 idempotent하게 추가.
+/// settings.json 루트 값에 hook을 idempotent하게 추가.
 /// 이미 있으면 건너뛰고, 추가된 이벤트 이름 목록을 반환한다.
 fn install_hooks_in_value(root: &mut Value) -> Result<Vec<&'static str>> {
     let root_obj = root
@@ -211,7 +260,7 @@ fn install_hooks_in_value(root: &mut Value) -> Result<Vec<&'static str>> {
     Ok(added)
 }
 
-/// settings.json 루트 값에서 4종 hook의 tasty entry를 제거.
+/// settings.json 루트 값에서 tasty hook entry를 제거.
 /// 빈 이벤트 배열과 빈 hooks 객체도 정리한다. 제거된 이벤트 이름 목록을 반환.
 fn uninstall_hooks_from_value(root: &mut Value) -> Vec<&'static str> {
     let Some(root_obj) = root.as_object_mut() else {
@@ -395,10 +444,10 @@ mod tests {
     }
 
     #[test]
-    fn install_in_empty_value_adds_all_four_events() {
+    fn install_in_empty_value_adds_all_events() {
         let mut root = json!({});
         let added = install_hooks_in_value(&mut root).expect("install");
-        assert_eq!(added.len(), 4);
+        assert_eq!(added.len(), MANAGED_HOOKS.len());
         for (event_name, token) in MANAGED_HOOKS {
             let marker = tasty_hook_marker(token);
             assert_eq!(
@@ -450,11 +499,11 @@ mod tests {
     }
 
     #[test]
-    fn uninstall_removes_all_four() {
+    fn uninstall_removes_all() {
         let mut root = json!({});
         let _ = install_hooks_in_value(&mut root).expect("install");
         let removed = uninstall_hooks_from_value(&mut root);
-        assert_eq!(removed.len(), 4);
+        assert_eq!(removed.len(), MANAGED_HOOKS.len());
         // hooks 객체 자체가 사라져야 함
         assert!(root.get("hooks").is_none(), "empty hooks should be removed");
     }
@@ -491,5 +540,20 @@ mod tests {
         assert!(!is_marker_installed_in_value(&root, "Stop", &marker));
         let _ = install_hooks_in_value(&mut root).expect("install");
         assert!(is_marker_installed_in_value(&root, "Stop", &marker));
+    }
+
+    #[test]
+    fn session_start_hook_includes_session_id_placeholder() {
+        let mut root = json!({});
+        let _ = install_hooks_in_value(&mut root).expect("install");
+        let arr = root["hooks"]["SessionStart"].as_array().unwrap();
+        assert_eq!(arr.len(), 1);
+        let cmd = arr[0]["hooks"][0]["command"].as_str().unwrap();
+        assert!(
+            cmd.contains("${CLAUDE_SESSION_ID}"),
+            "SessionStart hook should contain ${{CLAUDE_SESSION_ID}} placeholder, got: {}",
+            cmd
+        );
+        assert!(cmd.contains("--session"));
     }
 }

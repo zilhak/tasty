@@ -586,6 +586,9 @@ pub enum ClaudeCommands {
         /// Surface ID (auto-detected from TASTY_SURFACE_ID env var if not provided)
         #[arg(long)]
         surface: Option<u32>,
+        /// Claude Code session ID (provided by ${CLAUDE_SESSION_ID} substitution)
+        #[arg(long)]
+        session: Option<String>,
     },
 }
 
@@ -951,10 +954,11 @@ pub fn run_client(command: Commands) -> Result<()> {
         command: ClaudeCommands::Hook {
             ref event,
             ref surface,
+            ref session,
         },
     } = command
     {
-        run_claude_hook(&mut conn, event, *surface)?;
+        run_claude_hook(&mut conn, event, *surface, session.as_deref())?;
         return Ok(());
     }
 
