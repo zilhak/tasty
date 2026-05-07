@@ -546,7 +546,11 @@ impl App {
     fn poll_busy_states(&mut self) {
         for w in self.windows.values_mut() {
             let changed = match w.as_main_mut() {
-                Some(main) => main.state.refresh_busy_surfaces(),
+                Some(main) => {
+                    // Drain pending restore commands (queued during layout restore).
+                    drain_restore_commands(&mut main.state);
+                    main.state.refresh_busy_surfaces()
+                }
                 None => false,
             };
             if changed {
@@ -554,6 +558,7 @@ impl App {
             }
         }
         for state in &mut self.parked_states {
+            drain_restore_commands(state);
             let _ = state.refresh_busy_surfaces();
         }
     }
@@ -696,4 +701,15 @@ pub(crate) fn encode_clipboard_image(
         width: w,
         height: h,
     })
+}
+
+/// Send queued restore commands to their target terminals.
+/// Commands are sent once and removed from the queue.
+fn drain_restore_commands(state: &mut crate::state::AppState) {
+    let commands: Vec<(u32, String)> = state.engine.pending_restore_commands.drain(..).collect();
+    for (surface_id, cmd) in commands {
+        if let Some(terminal) = state.find_terminal_by_id_mut(surface_id) {
+            terminal.send_key(&format!("{}\r", cmd));
+        }
+    }
 }
