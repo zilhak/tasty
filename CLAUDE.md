@@ -181,6 +181,8 @@ Conventional Commits 형식을 따른다.
 
 ### 릴리스 규칙
 
+릴리스 절차(버전 올리기 → 체인지로그 커밋 → 태그 → push)는 `docs/dev-guide/release.md`를 따른다.
+
 GitHub에 릴리스를 배포할 때, `docs/agent-guide/` 폴더의 문서들을 릴리스 에셋으로 함께 업로드한다. AI 에이전트가 Tasty를 조작하기 위한 가이드 문서다.
 
 ### 코드 컨벤션
