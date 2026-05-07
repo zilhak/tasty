@@ -79,7 +79,13 @@ pub enum SavedSplitDirection {
 
 #[derive(Serialize, Deserialize)]
 pub enum SavedSurface {
-    Terminal { cwd: Option<String> },
+    Terminal {
+        cwd: Option<String>,
+        /// Command to re-launch the TUI app that was running (e.g. "claude -r <session-id>").
+        /// Populated from surface-meta `claude-session-id` at capture time.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        restore_command: Option<String>,
+    },
     Markdown { path: String },
     Explorer { root_path: String },
     Html { url: String },
@@ -213,8 +219,15 @@ impl SavedSurfaceLayout {
 impl SavedSurface {
     fn capture_surface(surface: &dyn Surface) -> Self {
         if let Some(ts) = surface.as_terminal_surface() {
+            let restore_command = crate::surface_meta::SurfaceMetaStore::get(
+                ts.id,
+                "claude-session-id",
+            )
+            .map(|session_id| format!("claude -r {}", session_id));
+
             return SavedSurface::Terminal {
                 cwd: ts.terminal.get_cwd().map(|p| p.to_string_lossy().to_string()),
+                restore_command,
             };
         }
         if let Some(md) = surface.as_markdown() {
@@ -455,7 +468,11 @@ impl SavedSurface {
     /// 비활성 워크스페이스 터미널은 deferred, 그 외는 즉시 생성.
     fn restore_result(self, engine: &mut EngineState, is_active: bool) -> Option<RestoreResult> {
         if !is_active {
-            if let SavedSurface::Terminal { ref cwd } = self {
+            if let SavedSurface::Terminal {
+                ref cwd,
+                ref restore_command,
+            } = self
+            {
                 let surface_id = engine.next_ids.next_surface();
                 let sh = ShellConfig::from_settings(&engine.settings);
                 let waker = engine.make_waker(surface_id);
@@ -467,6 +484,9 @@ impl SavedSurface {
                     waker,
                     working_dir: cwd.as_ref().map(PathBuf::from),
                 };
+                if let Some(cmd) = restore_command {
+                    engine.pending_restore_commands.push((surface_id, cmd.clone()));
+                }
                 return Some(RestoreResult::Deferred { surface_id, spawn });
             }
         }
@@ -478,7 +498,10 @@ impl SavedSurface {
     fn restore_immediate(self, engine: &mut EngineState) -> Option<Box<dyn Surface>> {
         let surface_id = engine.next_ids.next_surface();
         match self {
-            SavedSurface::Terminal { cwd } => {
+            SavedSurface::Terminal {
+                cwd,
+                restore_command,
+            } => {
                 let sh = ShellConfig::from_settings(&engine.settings);
                 let waker = engine.make_waker(surface_id);
                 let working_dir = cwd.as_ref().map(PathBuf::from);
@@ -500,6 +523,9 @@ impl SavedSurface {
                     }
                 };
                 engine.send_fast_init(surface_id);
+                if let Some(cmd) = restore_command {
+                    engine.pending_restore_commands.push((surface_id, cmd));
+                }
                 Some(Box::new(TerminalSurface {
                     id: surface_id,
                     terminal,

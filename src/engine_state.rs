@@ -154,6 +154,9 @@ pub struct EngineState {
     pub layout_dirty: crate::layout_persistence::LayoutDirtyTracker,
     /// Active workspace index restored from layout.json. Consumed once by AppState::new().
     pub restored_active_workspace: Option<usize>,
+    /// Restore commands queued during layout restore. (surface_id, command).
+    /// Consumed by AppState after shell initialization.
+    pub pending_restore_commands: Vec<(u32, String)>,
 
     /// Whether input simulation IPC is enabled (debug builds only, --enable-input-simulation).
     #[cfg(debug_assertions)]
@@ -187,6 +190,7 @@ impl EngineState {
             waker_factory: None,
             layout_dirty: crate::layout_persistence::LayoutDirtyTracker::new(),
             restored_active_workspace: None,
+            pending_restore_commands: Vec::new(),
             #[cfg(debug_assertions)]
             input_simulation_enabled: false,
         };
