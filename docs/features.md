@@ -1021,6 +1021,16 @@ egui 기반 Image Surface 타입. 이미지 파일을 로드하여 표시하고,
 - `layout.json` 파싱 실패 또는 파일 없음 시 기본 "Workspace 1"로 폴백
 - 개별 서피스 복원 실패 시 해당 서피스만 스킵하고 나머지 계속 복원
 
+### TUI 세션 복원
+
+Claude Code 등 TUI 앱이 실행 중이던 터미널을 복원할 때, 해당 앱의 세션을 자동으로 재개한다.
+
+- `tasty claude install`로 `SessionStart` hook이 등록되면, Claude Code 세션 시작 시 세션 ID가 surface 메타데이터(`claude-session-id`)에 저장됨
+- 레이아웃 저장 시 세션 ID가 있는 터미널은 `restore_command` (예: `claude -r <uuid>`)를 함께 저장
+- 레이아웃 복원 시 셸 초기화 후 `restore_command`를 자동 실행하여 이전 세션 재개
+- `SessionEnd` hook에서 세션 메타를 자동 삭제하여 종료된 세션은 복원 시도하지 않음
+- Claude Code의 `${CLAUDE_SESSION_ID}` 치환 기능을 활용하므로 파일 파싱이나 PID 매칭 불필요
+
 ### 저장하지 않는 것
 - 화면 내용 (screen/scrollback)
 - PTY 상태, 환경변수, 실행 중인 명령
