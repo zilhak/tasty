@@ -48,6 +48,7 @@ impl GpuState {
         settings: &crate::settings::AppearanceSettings,
         preedit: Option<&super::ImePreeditState>,
         link_hover: Option<(u32, &crate::terminal_link::LinkHighlight)>,
+        search: Option<&crate::search_state::SearchState>,
     ) {
         let theme = crate::theme::theme();
 
@@ -91,6 +92,19 @@ impl GpuState {
                     .filter(|(sid, _)| sid == surface_id)
                     .map(|(_, h)| h);
 
+                // Build search match highlights for this surface.
+                let search_highlights = search
+                    .filter(|s| s.surface_id == *surface_id && !s.matches.is_empty())
+                    .map(|s| {
+                        crate::renderer::SearchHighlights {
+                            matches: &s.matches,
+                            active_index: s.current_index,
+                            inactive_bg: theme.search_match_bg,
+                            active_bg: theme.search_match_active_bg,
+                        }
+                    });
+                let search_ref = search_highlights.as_ref();
+
                 self.renderer.prepare_terminal_viewport(
                     terminal,
                     &self.queue,
@@ -102,6 +116,7 @@ impl GpuState {
                     sel_ref,
                     render_preedit_ref,
                     link_for_this,
+                    search_ref,
                 );
 
                 let mut encoder =

@@ -70,6 +70,10 @@ pub struct Theme {
     pub terminal_fg: [f32; 4],
     pub terminal_bg: [f32; 4],
     pub selection_bg: [f32; 4],
+    /// Background for search matches (inactive).
+    pub search_match_bg: [f32; 4],
+    /// Background for the currently active search match.
+    pub search_match_active_bg: [f32; 4],
     pub ansi_colors: [[f32; 3]; 16],
 }
 
@@ -139,6 +143,8 @@ impl Theme {
         terminal_fg: [0.804, 0.839, 0.957, 1.0], // Text #cdd6f4
         terminal_bg: [0.118, 0.118, 0.180, 1.0], // Base #1e1e2e
         selection_bg: [0.345, 0.357, 0.439, 1.0], // Surface2 #585b70
+        search_match_bg: [0.976, 0.886, 0.686, 0.3],     // yellow with 30% alpha
+        search_match_active_bg: [0.976, 0.886, 0.686, 0.7], // yellow with 70% alpha
         ansi_colors: [
             [0.176, 0.176, 0.271], // 0: black      (Surface1 #45475a)
             [0.953, 0.545, 0.659], // 1: red         (#f38ba8)
@@ -224,6 +230,8 @@ impl Theme {
         terminal_fg: [0.298, 0.310, 0.412, 1.0], // Text #4c4f69
         terminal_bg: [0.937, 0.945, 0.961, 1.0], // Base #eff1f5
         selection_bg: [0.675, 0.686, 0.714, 1.0], // Surface0 #acb0be
+        search_match_bg: [0.875, 0.557, 0.114, 0.3],     // yellow with 30% alpha
+        search_match_active_bg: [0.875, 0.557, 0.114, 0.7], // yellow with 70% alpha
         ansi_colors: [
             [0.675, 0.686, 0.714], // 0: black      (Surface1 #bcc0cc)
             [0.824, 0.059, 0.224], // 1: red         (#d20f39)

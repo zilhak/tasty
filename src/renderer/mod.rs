@@ -5,6 +5,14 @@ use crate::model::Rect;
 use crate::selection::NormalizedSelection;
 use crate::terminal_link::LinkHighlight;
 
+/// Search match highlights to pass into the renderer.
+pub struct SearchHighlights<'a> {
+    pub matches: &'a [tasty_terminal::search::SearchMatch],
+    pub active_index: usize,
+    pub inactive_bg: [f32; 4],
+    pub active_bg: [f32; 4],
+}
+
 mod line_render;
 mod palette;
 mod pipeline;
@@ -115,6 +123,7 @@ impl CellRenderer {
         row_offset: usize,
         preedit: Option<&RenderPreedit>,
         link: Option<&LinkHighlight>,
+        search: Option<&SearchHighlights<'_>>,
     ) {
         let (cols, rows) = surface.dimensions();
         let lines = surface.screen_lines();
@@ -155,6 +164,18 @@ impl CellRenderer {
                     if link.covers(col_idx, abs_row) {
                         bg_color = link.bg;
                         fg_color = link.fg;
+                    }
+                }
+                if let Some(sh) = search {
+                    for (i, m) in sh.matches.iter().enumerate() {
+                        if m.row == abs_row && col_idx >= m.col_start && col_idx < m.col_end {
+                            bg_color = if i == sh.active_index {
+                                sh.active_bg
+                            } else {
+                                sh.inactive_bg
+                            };
+                            break;
+                        }
                     }
                 }
 
@@ -290,6 +311,7 @@ impl CellRenderer {
         selection: Option<&(NormalizedSelection, [f32; 4])>,
         preedit: Option<&RenderPreedit>,
         link: Option<&LinkHighlight>,
+        search: Option<&SearchHighlights<'_>>,
     ) {
         let uniforms = Uniforms {
             cell_size: [
@@ -335,6 +357,7 @@ impl CellRenderer {
                 row_offset,
                 preedit,
                 link,
+                search,
             );
             self.append_preedit_overlay(preedit, queue, cols, rows, 0);
             return;
@@ -373,6 +396,7 @@ impl CellRenderer {
                         selection,
                         source_line,
                         link,
+                        search,
                     );
                 }
             } else {
@@ -387,6 +411,7 @@ impl CellRenderer {
                         selection,
                         source_line,
                         link,
+                        search,
                     );
                 }
             }

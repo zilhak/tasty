@@ -332,6 +332,11 @@ impl GpuState {
         let clear_ms = t0.elapsed().as_secs_f64() * 1000.0;
 
         let t0 = std::time::Instant::now();
+        let search_state = if state.search.matches.is_empty() {
+            None
+        } else {
+            Some(&state.search)
+        };
         self.render_terminals(
             &view,
             &regions,
@@ -340,6 +345,7 @@ impl GpuState {
             &state.engine.settings.appearance,
             preedit,
             link_hover,
+            search_state,
         );
         let terminals_ms = t0.elapsed().as_secs_f64() * 1000.0;
 

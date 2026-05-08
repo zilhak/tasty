@@ -23,6 +23,7 @@ impl CellRenderer {
         selection: Option<&(NormalizedSelection, [f32; 4])>,
         absolute_row: usize,
         link: Option<&LinkHighlight>,
+        search: Option<&super::SearchHighlights<'_>>,
     ) {
         let (mut bg_color, mut fg_color) = compute_cell_colors(attrs, default_bg);
 
@@ -37,6 +38,19 @@ impl CellRenderer {
             if link.covers(col_idx, absolute_row) {
                 bg_color = link.bg;
                 fg_color = link.fg;
+            }
+        }
+        // Search match highlight
+        if let Some(sh) = search {
+            for (i, m) in sh.matches.iter().enumerate() {
+                if m.row == absolute_row && col_idx >= m.col_start && col_idx < m.col_end {
+                    bg_color = if i == sh.active_index {
+                        sh.active_bg
+                    } else {
+                        sh.inactive_bg
+                    };
+                    break;
+                }
             }
         }
 
@@ -86,6 +100,7 @@ impl CellRenderer {
         selection: Option<&(NormalizedSelection, [f32; 4])>,
         absolute_row: usize,
         link: Option<&LinkHighlight>,
+        search: Option<&super::SearchHighlights<'_>>,
     ) {
         let mut col_idx: usize = 0;
         for (text, attrs) in line.iter() {
@@ -106,6 +121,7 @@ impl CellRenderer {
                 selection,
                 absolute_row,
                 link,
+                search,
             );
             col_idx += width;
         }
@@ -130,6 +146,7 @@ impl CellRenderer {
         selection: Option<&(NormalizedSelection, [f32; 4])>,
         absolute_row: usize,
         link: Option<&LinkHighlight>,
+        search: Option<&super::SearchHighlights<'_>>,
     ) {
         let mut last_col = 0usize;
         for cell_ref in line.visible_cells() {
@@ -156,6 +173,7 @@ impl CellRenderer {
                 selection,
                 absolute_row,
                 link,
+                search,
             );
             last_col = col_idx + width;
         }
