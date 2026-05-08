@@ -303,8 +303,7 @@ impl AppState {
             if let Some(tab) = pane.tabs.get(active) {
                 let snapshot = crate::model::closed_item::ClosedTab::from_tab(tab);
                 self.engine
-                    .closed_items
-                    .push(crate::model::ClosedItem::Tab(snapshot));
+                    .push_closed_item(crate::model::ClosedItem::Tab(snapshot));
             }
         }
         // Collect surface IDs (mutable borrow)

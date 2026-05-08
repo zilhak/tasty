@@ -1026,10 +1026,13 @@ egui 기반 Image Surface 타입. 이미지 파일을 로드하여 표시하고,
 Claude Code 등 TUI 앱이 실행 중이던 터미널을 복원할 때, 해당 앱의 세션을 자동으로 재개한다.
 
 - `tasty claude install`로 `SessionStart` hook이 등록되면, Claude Code 세션 시작 시 세션 ID가 surface 메타데이터(`claude-session-id`)에 저장됨
-- 레이아웃 저장 시 세션 ID가 있는 터미널은 `restore_command` (예: `claude -r <uuid>`)를 함께 저장
-- 레이아웃 복원 시 셸 초기화 후 `restore_command`를 자동 실행하여 이전 세션 재개
 - `SessionEnd` hook에서 세션 메타를 자동 삭제하여 종료된 세션은 복원 시도하지 않음
 - Claude Code의 `${CLAUDE_SESSION_ID}` 치환 기능을 활용하므로 파일 파싱이나 PID 매칭 불필요
+- `tasty claude install` 없이 사용해도 오류 없이 일반 셸로 복원됨
+
+복원이 발동하는 경로:
+1. **앱 재시작 (레이아웃 복원)**: `restore_layout` 설정 활성화 시, 레이아웃 저장 시점에 세션 ID가 있는 터미널은 `restore_command`를 함께 저장. 복원 시 셸 초기화 후 자동 실행
+2. **닫힌 항목 복원 (Ctrl+Shift+T)**: surface/tab/workspace 닫기 시 `ClosedSurface`에 `restore_command`를 포함하여 스냅샷. 복원 시 셸 시작 후 `restore_command` 자동 실행
 
 ### 저장하지 않는 것
 - 화면 내용 (screen/scrollback)

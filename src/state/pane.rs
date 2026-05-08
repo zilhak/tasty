@@ -386,8 +386,7 @@ impl AppState {
                     let snapshot =
                         crate::model::closed_item::ClosedSurface::from_surface_node(node);
                     self.engine
-                        .closed_items
-                        .push(crate::model::ClosedItem::Surface {
+                        .push_closed_item(crate::model::ClosedItem::Surface {
                             surface: snapshot,
                             tab_name: tab.display_name().to_string(),
                         });
@@ -408,18 +407,21 @@ impl AppState {
 
         // Case 2: Surface is the sole content of this tab — close the tab
         {
-            let ws = &mut self.engine.workspaces[ws_idx];
-            let pane = ws.pane_layout_mut().find_pane_mut(pane_id).unwrap();
-            if pane.tabs.len() > 1 {
-                // Capture tab snapshot before removing (user actions only)
-                if save_snapshot {
+            // Capture tab snapshot before removing (user actions only).
+            // Must be done in a separate scope to avoid borrow conflicts.
+            if save_snapshot {
+                let ws = &self.engine.workspaces[ws_idx];
+                let pane = ws.pane_layout().find_pane(pane_id).unwrap();
+                if pane.tabs.len() > 1 {
                     let snapshot =
                         crate::model::closed_item::ClosedTab::from_tab(&pane.tabs[tab_idx]);
                     self.engine
-                        .closed_items
-                        .push(crate::model::ClosedItem::Tab(snapshot));
+                        .push_closed_item(crate::model::ClosedItem::Tab(snapshot));
                 }
-
+            }
+            let ws = &mut self.engine.workspaces[ws_idx];
+            let pane = ws.pane_layout_mut().find_pane_mut(pane_id).unwrap();
+            if pane.tabs.len() > 1 {
                 pane.tabs.remove(tab_idx);
                 if pane.active_tab >= pane.tabs.len() {
                     pane.active_tab = pane.tabs.len() - 1;
@@ -453,9 +455,8 @@ impl AppState {
         // Capture workspace snapshot before removing (user actions only)
         if save_snapshot {
             let ws = &self.engine.workspaces[ws_idx];
-            self.engine
-                .closed_items
-                .push(crate::model::ClosedItem::from_workspace(ws));
+            let item = crate::model::ClosedItem::from_workspace(ws);
+            self.engine.push_closed_item(item);
         }
         self.engine.workspaces.remove(ws_idx);
         if self.active_workspace >= self.engine.workspaces.len()

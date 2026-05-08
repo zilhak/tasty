@@ -12,6 +12,8 @@ const MAX_CLOSED_ITEMS: usize = 10;
 pub struct ClosedSurface {
     pub id: SurfaceId,
     pub cwd: Option<PathBuf>,
+    /// Command to re-launch the TUI app that was running (e.g. "claude -r <session-id>").
+    pub restore_command: Option<String>,
     /// Screen content: rows of (text, attrs) cells.
     pub screen: Vec<Vec<(String, CellAttributes)>>,
     /// Scrollback buffer (oldest first).
@@ -96,6 +98,11 @@ pub enum ClosedItem {
 impl ClosedSurface {
     /// Capture a snapshot from a live TerminalSurface.
     pub fn from_surface_node(node: &super::TerminalSurface) -> Self {
+        Self::from_surface_node_with_restore(node, None)
+    }
+
+    /// Capture a snapshot with an optional restore command (e.g. "claude -r <session-id>").
+    pub fn from_surface_node_with_restore(node: &super::TerminalSurface, restore_command: Option<String>) -> Self {
         let terminal = &node.terminal;
         let surface = terminal.surface();
         let lines = surface.screen_lines();
@@ -121,6 +128,7 @@ impl ClosedSurface {
         Self {
             id: node.id,
             cwd: terminal.get_cwd(),
+            restore_command,
             screen,
             scrollback,
         }
@@ -139,6 +147,7 @@ impl ClosedSurfaceLayout {
                     ClosedSurfaceLayout::Single(ClosedSurface {
                         id: surface.surface_id().unwrap_or(0),
                         cwd: None,
+                        restore_command: None,
                         screen: Vec::new(),
                         scrollback: VecDeque::new(),
                     })
@@ -252,6 +261,56 @@ impl ClosedItem {
             subtitle: ws.subtitle.clone(),
             pane_layout: ClosedPaneNode::from_pane_node(ws.pane_layout()),
             focused_pane: ws.focused_pane,
+        }
+    }
+}
+
+/// Inject restore_command into all ClosedSurface nodes using a lookup function.
+/// Called after capture to populate restore commands from surface metadata.
+pub fn inject_restore_commands(item: &mut ClosedItem, lookup: &dyn Fn(SurfaceId) -> Option<String>) {
+    match item {
+        ClosedItem::Surface { surface, .. } => {
+            surface.restore_command = lookup(surface.id);
+        }
+        ClosedItem::Tab(tab) => inject_into_panel(&mut tab.panel, lookup),
+        ClosedItem::Workspace { pane_layout, .. } => {
+            inject_into_pane_node(pane_layout, lookup);
+        }
+    }
+}
+
+fn inject_into_panel(panel: &mut ClosedPanel, lookup: &dyn Fn(SurfaceId) -> Option<String>) {
+    match panel {
+        ClosedPanel::Terminal(s) => {
+            s.restore_command = lookup(s.id);
+        }
+        ClosedPanel::Tab { layout, .. } => inject_into_surface_layout(layout, lookup),
+        _ => {}
+    }
+}
+
+fn inject_into_surface_layout(layout: &mut ClosedSurfaceLayout, lookup: &dyn Fn(SurfaceId) -> Option<String>) {
+    match layout {
+        ClosedSurfaceLayout::Single(s) => {
+            s.restore_command = lookup(s.id);
+        }
+        ClosedSurfaceLayout::Split { first, second, .. } => {
+            inject_into_surface_layout(first, lookup);
+            inject_into_surface_layout(second, lookup);
+        }
+    }
+}
+
+fn inject_into_pane_node(node: &mut ClosedPaneNode, lookup: &dyn Fn(SurfaceId) -> Option<String>) {
+    match node {
+        ClosedPaneNode::Leaf(pane) => {
+            for tab in &mut pane.tabs {
+                inject_into_panel(&mut tab.panel, lookup);
+            }
+        }
+        ClosedPaneNode::Split { first, second, .. } => {
+            inject_into_pane_node(first, lookup);
+            inject_into_pane_node(second, lookup);
         }
     }
 }

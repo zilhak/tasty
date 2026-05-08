@@ -284,6 +284,15 @@ impl EngineState {
         }
     }
 
+    /// Push a closed item, automatically injecting restore commands from surface metadata.
+    pub fn push_closed_item(&mut self, mut item: crate::model::ClosedItem) {
+        crate::model::closed_item::inject_restore_commands(&mut item, &|sid| {
+            crate::surface_meta::SurfaceMetaStore::get(sid, "claude-session-id")
+                .map(|session_id| format!("claude -r {}", session_id))
+        });
+        self.closed_items.push(item);
+    }
+
     /// Record that the user typed on the given surface.
     pub fn record_typing(&mut self, surface_id: u32) {
         self.last_key_input

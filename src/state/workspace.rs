@@ -205,7 +205,7 @@ impl AppState {
         let ws_idx = self.active_workspace;
         // Capture workspace snapshot before closing
         let snapshot = crate::model::ClosedItem::from_workspace(&self.engine.workspaces[ws_idx]);
-        self.engine.closed_items.push(snapshot);
+        self.engine.push_closed_item(snapshot);
         // Collect all surface IDs for cleanup
         let surface_ids = self.engine.workspaces[ws_idx].all_surface_ids();
         self.engine.workspaces.remove(ws_idx);
