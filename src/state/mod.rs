@@ -78,6 +78,8 @@ pub struct AppState {
     pub tab_bar_height: PhysicalPx,
     /// Popup manager for internal popups (notification panel, etc.).
     pub popups: crate::ui::PopupManager,
+    /// Terminal text search state.
+    pub search: crate::search_state::SearchState,
     /// Toast manager for transient in-app notifications (copy feedback, etc.).
     /// 사용자 행동에서만 발사한다. CLI/IPC 경유 동작은 토스트를 만들지 않는다.
     pub toasts: crate::ui::ToastManager,
@@ -281,6 +283,7 @@ impl AppState {
                 }
                 pm
             },
+            search: crate::search_state::SearchState::new(),
             toasts: crate::ui::ToastManager::new(),
         })
     }

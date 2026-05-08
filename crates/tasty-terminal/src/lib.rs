@@ -1140,6 +1140,13 @@ impl Terminal {
         self.scrollback.scroll_to_bottom();
     }
 
+    /// Set scroll offset directly (for search navigation).
+    /// Clamped to [0, scrollback_len].
+    pub fn set_scroll_offset(&mut self, offset: usize) {
+        let max = self.scrollback.total_len();
+        self.scrollback.scroll_offset = offset.min(max);
+    }
+
     /// Number of lines in the scrollback buffer (memory + disk).
     pub fn scrollback_len(&self) -> usize {
         self.scrollback.total_len()

@@ -357,3 +357,8 @@ copied_path = "Path copied"
 copied_files = "Files copied"
 cut_files = "Files cut"
 ctrl_c_ignored_after_paste = "Ctrl+C suppressed right after paste"
+
+[search]
+placeholder = "Search..."
+no_matches = "No matches"
+match_count = "{current}/{total}"

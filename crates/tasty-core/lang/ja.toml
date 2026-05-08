@@ -357,3 +357,8 @@ copied_path = "パスをコピーしました"
 copied_files = "ファイルをコピーしました"
 cut_files = "ファイルを切り取りました"
 ctrl_c_ignored_after_paste = "貼り付け直後のCtrl+Cを無視しました"
+
+[search]
+placeholder = "検索..."
+no_matches = "一致なし"
+match_count = "{current}/{total}"

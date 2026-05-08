@@ -31,6 +31,7 @@ mod native_menu;
 mod notification;
 mod recent_files;
 mod renderer;
+mod search_state;
 mod selection;
 mod terminal_link;
 mod settings_ui;

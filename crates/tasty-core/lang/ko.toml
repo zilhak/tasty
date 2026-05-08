@@ -357,3 +357,8 @@ copied_path = "경로 복사됨"
 copied_files = "파일 복사됨"
 cut_files = "파일 잘라냄"
 ctrl_c_ignored_after_paste = "붙여넣기 직후의 Ctrl+C가 무시되었습니다"
+
+[search]
+placeholder = "검색..."
+no_matches = "일치 항목 없음"
+match_count = "{current}/{total}"

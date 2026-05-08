@@ -94,6 +94,18 @@ pub fn all_defs() -> &'static [PopupDef] {
                 draw_fn: super::dialog::draw_rename_popup,
             },
             PopupDef {
+                id: "search_bar",
+                title_key: "search.placeholder",
+                title_fn: None,
+                default_size: egui::vec2(360.0, 28.0),
+                sizer: None,
+                default_scope: PopupScope::Window,
+                close_on_outside_click: false,
+                headless: true,
+                sticky_focus: true,
+                draw_fn: super::search_bar::draw_search_bar,
+            },
+            PopupDef {
                 id: "tools_menu",
                 title_key: "tools_menu.title",
                 title_fn: None,

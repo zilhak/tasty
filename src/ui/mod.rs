@@ -13,6 +13,7 @@ pub mod popup;
 pub(crate) mod popup_defs;
 mod sidebar;
 mod tab_bar;
+pub(crate) mod search_bar;
 pub(crate) mod tools_menu;
 pub mod toast;
 
