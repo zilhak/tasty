@@ -40,6 +40,9 @@ pub struct PopupDef {
     pub close_on_outside_click: bool,
     /// true면 타이틀바·닫기 버튼 없이 콘텐츠만 렌더링한다 (컨텍스트 메뉴 스타일).
     pub headless: bool,
+    /// true면 팝업 바깥 클릭해도 키보드 포커스가 유지된다.
+    /// 닫기(Escape 등)로만 포커스 해제 가능. 검색 바 같은 오버레이용.
+    pub sticky_focus: bool,
     /// 렌더링 함수. 매 프레임 호출. AppState에서 필요한 데이터를 꺼낸다.
     pub draw_fn: fn(&mut egui::Ui, &mut AppState) -> PopupAction,
 }
@@ -87,6 +90,8 @@ pub struct PopupState {
     pub close_on_outside_click: bool,
     /// true면 타이틀바·닫기 버튼 없이 콘텐츠만 렌더링한다.
     pub headless: bool,
+    /// true면 팝업 바깥 클릭해도 키보드 포커스가 유지된다.
+    pub sticky_focus: bool,
     /// If true, PopupManager will center this popup on the next draw and clear the flag.
     pub request_center: bool,
 }
@@ -108,6 +113,7 @@ impl PopupState {
             focused: false,
             close_on_outside_click: false,
             headless: false,
+            sticky_focus: false,
             request_center: false,
         }
     }
@@ -127,6 +133,12 @@ impl PopupState {
     /// Set headless mode (no title bar / close button).
     pub fn with_headless(mut self, v: bool) -> Self {
         self.headless = v;
+        self
+    }
+
+    /// Set sticky focus (keyboard focus persists even when clicking outside).
+    pub fn with_sticky_focus(mut self, v: bool) -> Self {
+        self.sticky_focus = v;
         self
     }
 
@@ -193,7 +205,8 @@ impl PopupManager {
         let popup = PopupState::new(def.id, crate::i18n::t(def.title_key), def.default_size)
             .with_scope(def.default_scope.clone())
             .with_close_on_outside_click(def.close_on_outside_click)
-            .with_headless(def.headless);
+            .with_headless(def.headless)
+            .with_sticky_focus(def.sticky_focus);
         self.popups.push(popup);
     }
 
@@ -381,7 +394,10 @@ impl PopupManager {
                     if popup.open && popup.close_on_outside_click {
                         closed.push(popup.id);
                     }
-                    popup.focused = false;
+                    // sticky_focus popups keep keyboard focus when clicking outside.
+                    if !popup.sticky_focus {
+                        popup.focused = false;
+                    }
                 }
             }
         }
