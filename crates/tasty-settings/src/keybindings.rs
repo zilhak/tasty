@@ -105,6 +105,9 @@ pub struct KeybindingSettings {
     /// Toggle the clipboard history viewer popup.
     #[serde(deserialize_with = "deserialize_binding")]
     pub toggle_clipboard_viewer: Vec<String>,
+    /// Open terminal text search bar.
+    #[serde(deserialize_with = "deserialize_binding")]
+    pub find: Vec<String>,
     /// Copy selection (or inject egui Copy event) from focused surface.
     #[serde(deserialize_with = "deserialize_binding")]
     pub copy: Vec<String>,
@@ -230,6 +233,7 @@ impl KeybindingSettings {
             "toggle_clipboard_viewer",
             "settings.keybindings.toggle_clipboard_viewer_label",
         ),
+        ("find", "settings.keybindings.find_label"),
         ("copy", "settings.keybindings.copy_label"),
         ("copy_path", "settings.keybindings.copy_path_label"),
         ("cut", "settings.keybindings.cut_label"),
@@ -285,6 +289,7 @@ impl KeybindingSettings {
             "next_tab" => self.next_tab.as_slice(),
             "prev_tab" => self.prev_tab.as_slice(),
             "toggle_clipboard_viewer" => self.toggle_clipboard_viewer.as_slice(),
+            "find" => self.find.as_slice(),
             "copy" => self.copy.as_slice(),
             "copy_path" => self.copy_path.as_slice(),
             "cut" => self.cut.as_slice(),
@@ -335,6 +340,7 @@ impl KeybindingSettings {
             "next_tab" => &mut self.next_tab,
             "prev_tab" => &mut self.prev_tab,
             "toggle_clipboard_viewer" => &mut self.toggle_clipboard_viewer,
+            "find" => &mut self.find,
             "copy" => &mut self.copy,
             "copy_path" => &mut self.copy_path,
             "cut" => &mut self.cut,
@@ -593,6 +599,7 @@ impl KeybindingSettings {
             next_tab: Vec::new(),
             prev_tab: Vec::new(),
             toggle_clipboard_viewer: vec!["ctrl+shift+h".into()],
+            find: vec!["ctrl+f".into(), "alt+f".into()],
             copy: vec!["ctrl+c".into(), "alt+c".into(), "ctrl+shift+c".into()],
             copy_path: vec!["alt+shift+c".into()],
             cut: vec!["ctrl+x".into(), "alt+x".into()],
@@ -650,6 +657,7 @@ impl KeybindingSettings {
             next_tab: Vec::new(),
             prev_tab: Vec::new(),
             toggle_clipboard_viewer: vec!["alt+shift+h".into()],
+            find: vec!["alt+f".into()],
             copy: vec!["alt+c".into()],
             copy_path: vec!["alt+shift+c".into()],
             cut: vec!["alt+x".into()],
@@ -702,6 +710,7 @@ impl KeybindingSettings {
             next_tab: Vec::new(),
             prev_tab: Vec::new(),
             toggle_clipboard_viewer: vec!["ctrl+shift+h".into()],
+            find: vec!["ctrl+f".into()],
             copy: vec!["ctrl+c".into()],
             copy_path: vec!["alt+shift+c".into()],
             cut: vec!["ctrl+x".into()],
@@ -754,6 +763,7 @@ impl KeybindingSettings {
             next_tab: Vec::new(),
             prev_tab: Vec::new(),
             toggle_clipboard_viewer: vec!["ctrl+shift+h".into()],
+            find: vec!["ctrl+f".into()],
             copy: vec!["ctrl+shift+c".into()],
             copy_path: vec!["alt+shift+c".into()],
             cut: vec!["ctrl+shift+x".into()],

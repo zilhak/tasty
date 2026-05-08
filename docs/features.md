@@ -991,6 +991,33 @@ egui 기반 Image Surface 타입. 이미지 파일을 로드하여 표시하고,
 - 이미지 탭 닫기 시 ClosedItem에 파일 경로 저장
 - Ctrl+Shift+T로 복원 시 같은 이미지를 다시 로드
 
+## 터미널 검색
+
+### 개요
+터미널의 스크롤백 + 화면 전체를 대상으로 텍스트 검색. GPU 렌더러에서 매치를 하이라이트하며, 현재 매치(active)와 나머지 매치(inactive)를 다른 색으로 구분한다.
+
+### 단축키
+- Tasty 프리셋: `Ctrl+F` / `Alt+F`
+- Mac 프리셋: `Cmd+F` (`alt+f`)
+- Windows 프리셋: `Ctrl+F`
+- Linux 프리셋: `Ctrl+F`
+- Escape: 검색 바 닫기
+- Enter: 다음 매치
+- Shift+Enter: 이전 매치
+- 화살표 ↑/↓: 매치 탐색
+
+### 기능
+- 대소문자 무시 검색 (기본), 토글 버튼으로 대소문자 감도 전환
+- 매치 카운터 표시 (예: 3/42)
+- 매치 선택 시 해당 위치로 자동 스크롤
+- 검색 바는 sticky_focus PopupDef로 구현: 키보드는 검색 바가 받고, 마우스는 터미널에 전달
+
+### 구현
+- 검색 엔진: `tasty-terminal/src/search.rs` (Terminal::search)
+- UI 상태: `src/search_state.rs` (SearchState)
+- 검색 바: `src/ui/search_bar.rs` (PopupDef, headless + sticky_focus)
+- 하이라이트: `src/renderer/mod.rs` (SearchHighlights → 셀별 bg 오버라이드)
+
 ## 레이아웃 영속화
 
 ### 개요

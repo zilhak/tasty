@@ -728,6 +728,15 @@ impl MainWindow {
             }
             return true;
         }
+        if matches_any_binding(&kb.find, key, mods) {
+            if state.popups.is_open("search_bar") {
+                state.search.clear();
+                state.popups.close("search_bar");
+            } else {
+                state.popups.open_at_focused("search_bar", egui::pos2(100.0, 8.0));
+            }
+            return true;
+        }
         if matches_any_binding(&kb.toggle_clipboard_viewer, key, mods) {
             if state.popups.is_open("clipboard_viewer") {
                 state.popups.close("clipboard_viewer");
