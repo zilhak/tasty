@@ -56,6 +56,8 @@ PopupDef {
     sizer: None,                            // 동적 크기가 필요하면 Some(fn)
     default_scope: PopupScope::Window,
     close_on_outside_click: false,
+    headless: false,                        // true면 타이틀바 없이 콘텐츠만
+    sticky_focus: false,                    // true면 바깥 클릭해도 키보드 포커스 유지
     draw_fn: super::my_popup::draw_my_popup,
 },
 ```

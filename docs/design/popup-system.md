@@ -56,6 +56,8 @@ pub struct PopupDef {
     pub sizer: Option<fn(&AppState) -> egui::Vec2>,  // 동적 크기(선택)
     pub default_scope: PopupScope,
     pub close_on_outside_click: bool,
+    pub headless: bool,                // 타이틀바·닫기 버튼 없이 콘텐츠만 렌더링
+    pub sticky_focus: bool,            // 바깥 클릭해도 키보드 포커스 유지
     pub draw_fn: fn(&mut egui::Ui, &mut AppState) -> PopupAction,
 }
 ```
@@ -94,14 +96,14 @@ pub struct PopupDef {
 
 ### 등록된 팝업
 
-| ID | draw_fn | 스코프 | 외부 클릭 닫기 |
-|---|---|---|---|
-| `notifications` | `notification_popup::draw_notification_popup` | Window | No |
-| `convert_surface` | `convert_popup::draw_convert_popup` | Surface (동적) | Yes |
-| `markdown_open` | `file_open_popup::draw_markdown_open_popup` | Window | No |
-| `html_open` | `file_open_popup::draw_html_open_popup` | Window | No |
-| `bookmark_name` | `bookmark_popup::draw_bookmark_popup` | Window | No |
-| `rename` | `dialog::draw_rename_popup` | Tab/Workspace (동적) | No |
+| ID | draw_fn | 스코프 | 외부 클릭 닫기 | 포커스 고정 |
+|---|---|---|---|---|
+| `notifications` | `notification_popup::draw_notification_popup` | Window | No | No |
+| `convert_surface` | `convert_popup::draw_convert_popup` | Surface (동적) | Yes | No |
+| `markdown_open` | `file_open_popup::draw_markdown_open_popup` | Window | No | No |
+| `html_open` | `file_open_popup::draw_html_open_popup` | Window | No | No |
+| `bookmark_name` | `bookmark_popup::draw_bookmark_popup` | Window | No | No |
+| `rename` | `dialog::draw_rename_popup` | Tab/Workspace (동적) | No | No |
 
 ## 외부 클릭 닫기
 
@@ -120,6 +122,15 @@ pub struct PopupDef {
 - `PopupManager::has_focused()`: 포커스된 팝업 존재 여부 확인
 
 이는 Modal의 전역 입력 독점과 다르다. 팝업 포커스는 **키보드만 차단**한다. 마우스 이벤트는 입력 계층(Input Layer)에 따라 팝업이 소비한다. 상세는 `input-layer.md` 참조.
+
+### 포커스 고정 (sticky focus)
+
+`PopupDef`에 `sticky_focus: bool` 속성이 있다. 기본값은 `false`.
+
+- `false` (기본): 팝업 바깥 클릭 시 언포커스됨. 키보드 입력이 터미널로 돌아간다.
+- `true`: 팝업 바깥을 클릭해도 **키보드 포커스가 팝업에 유지**된다. 마우스 이벤트는 정상적으로 터미널에 전달된다. 포커스 해제는 **팝업 닫기(Escape 등)**로만 가능.
+
+용도: 검색 바처럼 열려있는 동안 키보드 입력을 항상 자신이 받아야 하면서, 터미널에서의 마우스 조작(스크롤, 텍스트 선택 등)은 허용해야 하는 오버레이.
 
 ## 팝업 스코프
 
