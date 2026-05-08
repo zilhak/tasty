@@ -17,6 +17,7 @@ mod events;
 pub mod foreground_process;
 mod modes;
 mod output_buffer;
+pub mod search;
 mod scrollback;
 pub mod test_helpers;
 mod vte_handler;
