@@ -4836,7 +4836,6 @@ dependencies = [
  "tasty-core",
  "toml 0.8.2",
  "tracing",
- "winit",
 ]
 
 [[package]]

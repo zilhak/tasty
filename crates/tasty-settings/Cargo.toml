@@ -9,9 +9,6 @@ description = "Settings types and persistence for Tasty (appearance, keybindings
 # Workspace crates
 tasty-core = { path = "../tasty-core" }
 
-# Winit modifiers/keys for keybinding capture
-winit = "0.30"
-
 # Serialization
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"

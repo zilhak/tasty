@@ -23,7 +23,8 @@ impl MainWindow {
         });
 
         let modifier = LinkModifier::parse(&self.state.engine.settings.general.link_click_modifier);
-        let matches_mods = modifier.matches(&self.base.modifiers);
+        let mods = &self.base.modifiers;
+        let matches_mods = modifier.matches(mods.control_key(), mods.alt_key(), mods.super_key());
 
         let new_link = if !matches_mods {
             None
@@ -205,8 +206,9 @@ impl MainWindow {
                 let modifier = LinkModifier::parse(
                     &self.state.engine.settings.general.link_click_modifier,
                 );
+                let mods = &self.base.modifiers;
                 let link_mods_match = !matches!(modifier, LinkModifier::None)
-                    && modifier.matches(&self.base.modifiers);
+                    && modifier.matches(mods.control_key(), mods.alt_key(), mods.super_key());
                 if link_mods_match && button_state == ElementState::Pressed {
                     if terminal_rect.contains(PhysicalPx(x), PhysicalPx(y)) {
                         if self.state.focus_pane_at_position(x, y, terminal_rect) {

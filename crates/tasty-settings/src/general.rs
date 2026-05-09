@@ -101,10 +101,11 @@ impl LinkModifier {
     }
 
     /// 현재 modifier 상태가 링크 클릭 트리거 조건을 만족하는지.
-    pub fn matches(&self, mods: &winit::keyboard::ModifiersState) -> bool {
+    /// 호출자가 winit/macos 등 GUI 레이어에서 추출한 boolean을 그대로 넘긴다.
+    pub fn matches(&self, ctrl: bool, alt: bool, super_key: bool) -> bool {
         match self {
-            Self::Ctrl => mods.control_key() && !mods.alt_key() && !mods.super_key(),
-            Self::Alt => mods.alt_key() && !mods.control_key() && !mods.super_key(),
+            Self::Ctrl => ctrl && !alt && !super_key,
+            Self::Alt => alt && !ctrl && !super_key,
             Self::None => true,
         }
     }
