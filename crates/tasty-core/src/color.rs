@@ -72,6 +72,11 @@ impl HexColor {
     /// alpha < 255인 경우 egui가 sRGB → linear → premultiply → sRGB 순서로
     /// 변환하므로, RGB 채널이 단순히 `r * a / 255`가 아니라 감마 보정된 값으로
     /// 저장된다.
+    ///
+    /// `egui-compat` 기능이 켜져 있을 때만 노출된다. 헤드리스 플러그인 프로세스는
+    /// `default-features = false`로 컴파일하면 이 변환 헬퍼 없이 `HexColor` 자체만
+    /// 사용한다.
+    #[cfg(feature = "egui-compat")]
     pub fn to_egui(self) -> egui::Color32 {
         egui::Color32::from_rgba_unmultiplied(self.r, self.g, self.b, self.a)
     }
@@ -82,6 +87,7 @@ impl HexColor {
     /// 거의 쓸 일이 없지만, egui 0.31의 `from_rgba_premultiplied`와 비트 단위로
     /// 동일한 결과가 필요할 때(예: 과거 시각 결과를 정확히 재현해야 하는 회귀
     /// 케이스) 사용한다.
+    #[cfg(feature = "egui-compat")]
     pub fn to_egui_premultiplied(self) -> egui::Color32 {
         egui::Color32::from_rgba_premultiplied(self.r, self.g, self.b, self.a)
     }
@@ -104,6 +110,7 @@ impl HexColor {
     }
 }
 
+#[cfg(feature = "egui-compat")]
 impl From<HexColor> for egui::Color32 {
     fn from(c: HexColor) -> Self {
         c.to_egui()
@@ -183,6 +190,7 @@ mod tests {
         assert_eq!(HexColor::from_hex("123456"), Some(c));
     }
 
+    #[cfg(feature = "egui-compat")]
     #[test]
     fn straight_alpha_round_trip_via_egui() {
         // hover_overlay (DARK): white at ~8% alpha. egui는 gamma-aware premultiply를
@@ -210,6 +218,7 @@ mod tests {
         assert_eq!(opaque.a(), 255);
     }
 
+    #[cfg(feature = "egui-compat")]
     #[test]
     fn to_egui_premultiplied_bypasses_gamma() {
         // 과거의 `Color32::from_rgba_premultiplied(20, 20, 20, 20)`와 비트 동일.

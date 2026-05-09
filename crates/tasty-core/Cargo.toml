@@ -5,12 +5,19 @@ edition = "2024"
 license = "MIT"
 description = "Shared data types, theme, i18n and path helpers for Tasty"
 
+[features]
+# Default: include thin egui Color32 conversion helpers on `HexColor` (used by the host bin).
+# Disable in plugin/headless processes that don't link egui:
+#   tasty-core = { path = "...", default-features = false }
+default = ["egui-compat"]
+egui-compat = ["dep:egui"]
+
 [dependencies]
 # Workspace crates
 tasty-terminal = { path = "../tasty-terminal" }
 
-# UI types (Color32, TextureHandle, Vec2, Pos2, ColorImage)
-egui = "0.31"
+# Optional egui Color32 conversion shim (color.rs only). Gated behind `egui-compat`.
+egui = { version = "0.31", optional = true }
 
 # Cell attributes for closed-item history
 termwiz = "0.22"
@@ -28,9 +35,3 @@ tracing = "0.1"
 
 # Error handling (model::workspace, model::pane)
 anyhow = "1"
-
-# Image loading/saving (model::image_panel)
-image = { version = "0.25", default-features = false, features = ["png", "jpeg", "bmp", "webp", "ico", "tiff"] }
-
-# Markdown rendering cache (model::markdown_panel)
-egui_commonmark = "0.20.0"

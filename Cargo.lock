@@ -4799,8 +4799,6 @@ dependencies = [
  "anyhow",
  "directories",
  "egui",
- "egui_commonmark",
- "image",
  "serde",
  "serde_json",
  "tasty-terminal",
