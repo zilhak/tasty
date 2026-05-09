@@ -1,31 +1,16 @@
-//! ClipboardViewer surface — 탭 내부에 고정 뷰어로 배치. 각 인스턴스가 자체
-//! 검색어/선택 상태를 가진다 (popup의 `DialogState.clipboard_viewer`와 독립).
+//! ClipboardViewer surface — 탭 내부에 고정 뷰어로 배치. 검색어/선택/clear 확인
+//! 같은 휘발성 GUI 상태는 host의 `ClipboardViewerViewStore`에 둔다.
 
 use super::SurfaceId;
 use super::surface_trait::Surface;
 
-/// Popup/Surface 양쪽에서 유지하는 뷰어 상태.
-#[derive(Debug, Default, Clone)]
-pub struct ClipboardViewerState {
-    /// 검색어. 빈 문자열이면 전체 표시.
-    pub search: String,
-    /// 키보드 선택 인덱스 (필터된 결과 기준).
-    pub selected: Option<usize>,
-    /// 전체 비우기 확인 대기 플래그.
-    pub pending_clear: bool,
-}
-
 pub struct ClipboardViewerPanel {
     pub id: SurfaceId,
-    pub state: ClipboardViewerState,
 }
 
 impl ClipboardViewerPanel {
     pub fn new(id: SurfaceId) -> Self {
-        Self {
-            id,
-            state: ClipboardViewerState::default(),
-        }
+        Self { id }
     }
 }
 

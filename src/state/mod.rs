@@ -107,6 +107,11 @@ pub struct AppState {
     /// buffer, focus tracking, refresh timer, preview cache). `ExplorerPanel` itself only
     /// holds `root_path` and `root_node`; everything GUI-bound lives here.
     pub explorer_views: crate::ui::explorer_view::ExplorerViewStore,
+
+    /// Per-surface host view state for `ClipboardViewerPanel` (search query, selected
+    /// index, pending clear flag). `ClipboardViewerPanel` itself only holds `id`.
+    /// 별개로 popup용 단일 인스턴스는 `dialogs.clipboard_viewer`에 있음.
+    pub clipboard_viewer_views: crate::clipboard_viewer_ui::ClipboardViewerViewStore,
 }
 
 /// A pending native context menu request.
@@ -301,6 +306,7 @@ impl AppState {
             markdown_views: Default::default(),
             image_views: Default::default(),
             explorer_views: Default::default(),
+            clipboard_viewer_views: Default::default(),
         })
     }
 
@@ -323,6 +329,7 @@ impl AppState {
         self.markdown_views.drop_view(surface_id);
         self.image_views.drop_view(surface_id);
         self.explorer_views.drop_view(surface_id);
+        self.clipboard_viewer_views.drop_view(surface_id);
     }
 
     pub fn active_workspace(&self) -> &crate::model::Workspace {

@@ -1,8 +1,11 @@
 //! 클립보드 히스토리 뷰어의 공유 렌더링 로직. Popup과 Surface 모두에서 동일한
 //! UI를 보여주기 위해 한 함수를 재사용한다.
 
+use std::collections::HashMap;
+
 use crate::clipboard_history::{ClipboardEntry, ClipboardHistory, ClipboardSource};
 use crate::i18n::t;
+use crate::model::{ClipboardViewerPanel, SurfaceId};
 use crate::state::AppState;
 use crate::theme;
 use crate::ui::popup::PopupAction;
@@ -12,7 +15,33 @@ const PREVIEW_MAX_CHARS: usize = 200;
 /// 검색 매칭 시 비교하는 최대 문자수. 너무 긴 텍스트의 검색 비용 방어.
 const SEARCH_MATCH_MAX_CHARS: usize = 1000;
 
-pub use crate::model::ClipboardViewerState;
+/// Popup/Surface 양쪽에서 유지하는 뷰어 휘발 상태. Popup은 `dialogs.clipboard_viewer`
+/// 단일 인스턴스를, Surface는 `ClipboardViewerViewStore`로 surface별 인스턴스를 관리.
+#[derive(Debug, Default, Clone)]
+pub struct ClipboardViewerState {
+    /// 검색어. 빈 문자열이면 전체 표시.
+    pub search: String,
+    /// 키보드 선택 인덱스 (필터된 결과 기준).
+    pub selected: Option<usize>,
+    /// 전체 비우기 확인 대기 플래그.
+    pub pending_clear: bool,
+}
+
+/// Surface별 ClipboardViewer 휘발 상태 저장소.
+#[derive(Default)]
+pub struct ClipboardViewerViewStore {
+    views: HashMap<SurfaceId, ClipboardViewerState>,
+}
+
+impl ClipboardViewerViewStore {
+    pub fn get_or_init(&mut self, panel: &ClipboardViewerPanel) -> &mut ClipboardViewerState {
+        self.views.entry(panel.id).or_default()
+    }
+
+    pub fn drop_view(&mut self, sid: SurfaceId) {
+        self.views.remove(&sid);
+    }
+}
 
 struct ViewerConfig {
     /// Popup 모드에서 "Esc로 닫기" 등 안내 힌트를 추가로 보여줄지.

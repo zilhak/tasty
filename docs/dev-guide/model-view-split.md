@@ -140,7 +140,7 @@ state.foo_views = foo_views;  // 반드시 복원 (이후 state 접근 전에)
 | `HtmlPanel` (url) | (없음 — 모델 자체가 슬림. native WebView는 `MainWindow::webviews`) | — |
 | `TerminalSurface` | (없음 — 터미널 자체가 호스트와 분리되어 있고 GPU 렌더링) | — |
 | `EmptySurface` | (없음 — id만 보유) | — |
-| `ClipboardViewerPanel` | (모델 안에 검색·선택 상태 보유 — 03B에서 분리 예정) | — |
+| `ClipboardViewerPanel` (id) | `ClipboardViewerState` (search, selected, pending_clear) | `AppState::clipboard_viewer_views` |
 
 신규 surface 추가 시 위 표에 줄을 추가하라.
 

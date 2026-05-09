@@ -219,7 +219,7 @@ pub fn draw_egui_panels(
                 crate::image_ui::draw_image(ui, image_panel, view);
             });
         } else if surface.as_clipboard_viewer().is_some() {
-            // Defer: we need both engine.clipboard_history and cv.state together,
+            // Defer: we need both engine.clipboard_history and clipboard_viewer_views together,
             // which requires dropping the current surface borrow chain first.
             pending_clipboard_viewer_renders.push(PendingClipboardViewerRender {
                 pane_id: info.pane_id,
@@ -250,12 +250,14 @@ pub fn draw_egui_panels(
             logical_h: pending.logical_h,
             is_keyboard_target: false, // egui TextEdit handles focus internally
         };
-        // Temporarily take history so it can be borrowed mutably alongside the surface.
+        // Temporarily take history + view store so they can be borrowed mutably
+        // alongside the surface (which lives under state.engine.workspaces).
         let history_max = state.engine.settings.clipboard.history_max;
         let mut history = std::mem::replace(
             &mut state.engine.clipboard_history,
             crate::clipboard_history::ClipboardHistory::new(1),
         );
+        let mut clipboard_viewer_views = std::mem::take(&mut state.clipboard_viewer_views);
 
         let ws = state.active_workspace_mut();
         let mut paste_index: Option<usize> = None;
@@ -265,12 +267,18 @@ pub fn draw_egui_panels(
                 {
                     match tab.layout_mut().find_leaf_mut(sid) {
                         Some(leaf) => leaf.as_mut(),
-                        None => continue,
+                        None => {
+                            history.set_max(history_max);
+                            state.engine.clipboard_history = history;
+                            state.clipboard_viewer_views = clipboard_viewer_views;
+                            continue;
+                        }
                     }
                 } else {
                     tab.surface_mut()
                 };
                 if let Some(cv) = surface.as_clipboard_viewer_mut() {
+                    let viewer = clipboard_viewer_views.get_or_init(cv);
                     paste_index = draw_panel_frame(
                         ctx,
                         &format!("clipboard_viewer_{}", pending.id_suffix),
@@ -281,7 +289,7 @@ pub fn draw_egui_panels(
                             crate::clipboard_viewer_ui::draw_clipboard_viewer_surface(
                                 ui,
                                 &mut history,
-                                &mut cv.state,
+                                viewer,
                             )
                         },
                     );
@@ -291,6 +299,7 @@ pub fn draw_egui_panels(
 
         history.set_max(history_max);
         state.engine.clipboard_history = history;
+        state.clipboard_viewer_views = clipboard_viewer_views;
         if let Some(orig) = paste_index {
             crate::clipboard_viewer_ui::paste_from_history(state, orig);
         }
