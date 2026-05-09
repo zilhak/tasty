@@ -2,19 +2,27 @@
 //!
 //! Captures the structural tree (workspaces → pane nodes → panes → tabs → surface layouts)
 //! with minimal per-surface info (cwd, file path, url). No screen/scrollback content.
+//!
+//! # Versions
+//!
+//! - **v1** (legacy): `SavedSurface` had explicit `Markdown / Explorer / Html / Image / Empty`
+//!   variants alongside `Terminal`. v1 files are auto-migrated to v2 on load.
+//! - **v2** (current): `SavedSurface` is `Terminal` + `Generic { kind, data }`. New surface
+//!   kinds (including plugins, eventually) round-trip via the SurfaceKindRegistry without
+//!   touching this file.
 
 use std::path::PathBuf;
 use std::time::Instant;
 
+use serde::de::{self, Deserializer};
 use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
 
 use crate::engine_state::{EngineState, ShellConfig};
-use crate::model::{
-    ExplorerPanel, HtmlPanel, ImagePanel, MarkdownPanel, Pane, PaneNode, SplitDirection, Surface,
-    SurfaceLayout, Tab, TerminalSurface, Workspace,
-};
+use crate::model::{Pane, PaneNode, SplitDirection, Surface, SurfaceLayout, Tab, TerminalSurface, Workspace};
+use crate::surface_registry::SurfaceKindRegistry;
 
-const LAYOUT_VERSION: u32 = 1;
+const LAYOUT_VERSION: u32 = 2;
 const DEBOUNCE_MS: u128 = 500;
 
 // ── Serializable structs ──
@@ -77,7 +85,17 @@ pub enum SavedSplitDirection {
     Vertical,
 }
 
-#[derive(Serialize, Deserialize)]
+/// Persistent surface representation.
+///
+/// `Terminal` stays its own variant because PTY spawn is host-managed and needs
+/// engine state (cols/rows/shell/waker) at restore time; routing it through the
+/// registry would muddle that path. Every other surface kind goes through `Generic`
+/// where the per-kind shape is opaque JSON, defined by the `SurfaceKindDef::snapshot`
+/// / `restore` pair in the registry.
+///
+/// v1 files (separate `Markdown / Explorer / Html / Image / Empty` variants) are
+/// transparently migrated by the manual `Deserialize` impl below.
+#[derive(Serialize)]
 pub enum SavedSurface {
     Terminal {
         cwd: Option<String>,
@@ -86,11 +104,118 @@ pub enum SavedSurface {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         restore_command: Option<String>,
     },
-    Markdown { path: String },
-    Explorer { root_path: String },
-    Html { url: String },
-    Image { path: Option<String> },
-    Empty,
+    Generic {
+        kind: String,
+        data: Value,
+    },
+}
+
+impl<'de> Deserialize<'de> for SavedSurface {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = Value::deserialize(d)?;
+        // v1 unit variant was serialised as the bare string "Empty".
+        if let Some(s) = v.as_str() {
+            return match s {
+                "Empty" => Ok(SavedSurface::Generic {
+                    kind: "empty".into(),
+                    data: json!({}),
+                }),
+                other => Err(de::Error::unknown_variant(
+                    other,
+                    &["Terminal", "Generic", "Empty"],
+                )),
+            };
+        }
+        let obj = v
+            .as_object()
+            .ok_or_else(|| de::Error::custom("SavedSurface must be an object or 'Empty' string"))?;
+        if obj.len() != 1 {
+            return Err(de::Error::custom(
+                "SavedSurface object must have exactly one variant key",
+            ));
+        }
+        let (key, inner) = obj.iter().next().unwrap();
+        match key.as_str() {
+            "Terminal" => {
+                let cwd = inner
+                    .get("cwd")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                let restore_command = inner
+                    .get("restore_command")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                Ok(SavedSurface::Terminal {
+                    cwd,
+                    restore_command,
+                })
+            }
+            "Generic" => {
+                let kind = inner
+                    .get("kind")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| de::Error::custom("Generic missing 'kind'"))?
+                    .to_string();
+                let data = inner.get("data").cloned().unwrap_or_else(|| json!({}));
+                Ok(SavedSurface::Generic { kind, data })
+            }
+            // ── v1 migration ───────────────────────────────────────────────
+            "Markdown" => {
+                let path = inner
+                    .get("path")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| de::Error::custom("v1 Markdown missing 'path'"))?
+                    .to_string();
+                Ok(SavedSurface::Generic {
+                    kind: "markdown".into(),
+                    data: json!({ "path": path }),
+                })
+            }
+            "Explorer" => {
+                let root = inner
+                    .get("root_path")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| de::Error::custom("v1 Explorer missing 'root_path'"))?
+                    .to_string();
+                Ok(SavedSurface::Generic {
+                    kind: "explorer".into(),
+                    data: json!({ "path": root }),
+                })
+            }
+            "Html" => {
+                let url = inner
+                    .get("url")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| de::Error::custom("v1 Html missing 'url'"))?
+                    .to_string();
+                Ok(SavedSurface::Generic {
+                    kind: "html".into(),
+                    data: json!({ "url": url }),
+                })
+            }
+            "Image" => {
+                // v1 Image: path is Option<String> — null/absent means blank canvas.
+                let path = inner
+                    .get("path")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                Ok(SavedSurface::Generic {
+                    kind: "image".into(),
+                    data: json!({ "path": path }),
+                })
+            }
+            "Empty" => Ok(SavedSurface::Generic {
+                kind: "empty".into(),
+                data: json!({}),
+            }),
+            other => Err(de::Error::unknown_variant(
+                other,
+                &[
+                    "Terminal", "Generic", "Markdown", "Explorer", "Html", "Image", "Empty",
+                ],
+            )),
+        }
+    }
 }
 
 // ── Direction conversion ──
@@ -118,10 +243,11 @@ impl From<SavedSplitDirection> for SplitDirection {
 impl SavedLayout {
     /// Capture current layout from engine state.
     pub fn capture(engine: &EngineState, active_workspace: usize) -> Self {
+        let registry = engine.surface_registry.as_ref();
         let workspaces = engine
             .workspaces
             .iter()
-            .map(SavedWorkspace::capture)
+            .map(|ws| SavedWorkspace::capture(ws, registry))
             .collect();
         Self {
             version: LAYOUT_VERSION,
@@ -132,8 +258,8 @@ impl SavedLayout {
 }
 
 impl SavedWorkspace {
-    fn capture(ws: &Workspace) -> Self {
-        let pane_layout = SavedPaneNode::capture(ws.pane_layout());
+    fn capture(ws: &Workspace, registry: &SurfaceKindRegistry) -> Self {
+        let pane_layout = SavedPaneNode::capture(ws.pane_layout(), registry);
         // Find the index of the focused pane among all leaf panes.
         let all_ids = ws.pane_layout().all_pane_ids();
         let focused_pane_index = all_ids
@@ -151,9 +277,9 @@ impl SavedWorkspace {
 }
 
 impl SavedPaneNode {
-    fn capture(node: &PaneNode) -> Self {
+    fn capture(node: &PaneNode, registry: &SurfaceKindRegistry) -> Self {
         match node {
-            PaneNode::Leaf(pane) => SavedPaneNode::Leaf(SavedPane::capture(pane)),
+            PaneNode::Leaf(pane) => SavedPaneNode::Leaf(SavedPane::capture(pane, registry)),
             PaneNode::Split {
                 direction,
                 ratio,
@@ -162,16 +288,20 @@ impl SavedPaneNode {
             } => SavedPaneNode::Split {
                 direction: (*direction).into(),
                 ratio: *ratio,
-                first: Box::new(SavedPaneNode::capture(first)),
-                second: Box::new(SavedPaneNode::capture(second)),
+                first: Box::new(SavedPaneNode::capture(first, registry)),
+                second: Box::new(SavedPaneNode::capture(second, registry)),
             },
         }
     }
 }
 
 impl SavedPane {
-    fn capture(pane: &Pane) -> Self {
-        let tabs = pane.tabs.iter().map(SavedTab::capture).collect();
+    fn capture(pane: &Pane, registry: &SurfaceKindRegistry) -> Self {
+        let tabs = pane
+            .tabs
+            .iter()
+            .map(|t| SavedTab::capture(t, registry))
+            .collect();
         Self {
             tabs,
             active_tab: pane.active_tab,
@@ -180,11 +310,11 @@ impl SavedPane {
 }
 
 impl SavedTab {
-    fn capture(tab: &Tab) -> Self {
+    fn capture(tab: &Tab, registry: &SurfaceKindRegistry) -> Self {
         let surface = if tab.is_split() {
-            SavedSurfaceLayout::capture_layout(tab.layout())
+            SavedSurfaceLayout::capture_layout(tab.layout(), registry)
         } else {
-            SavedSurfaceLayout::Leaf(SavedSurface::capture_surface(tab.surface()))
+            SavedSurfaceLayout::Leaf(SavedSurface::capture_surface(tab.surface(), registry))
         };
         Self {
             name: tab.name.clone(),
@@ -195,11 +325,11 @@ impl SavedTab {
 }
 
 impl SavedSurfaceLayout {
-    fn capture_layout(layout: &SurfaceLayout) -> Self {
+    fn capture_layout(layout: &SurfaceLayout, registry: &SurfaceKindRegistry) -> Self {
         match layout {
-            SurfaceLayout::Leaf(surface) => {
-                SavedSurfaceLayout::Leaf(SavedSurface::capture_surface(&**surface))
-            }
+            SurfaceLayout::Leaf(surface) => SavedSurfaceLayout::Leaf(
+                SavedSurface::capture_surface(&**surface, registry),
+            ),
             SurfaceLayout::Split {
                 direction,
                 ratio,
@@ -209,15 +339,15 @@ impl SavedSurfaceLayout {
             } => SavedSurfaceLayout::Split {
                 direction: (*direction).into(),
                 ratio: *ratio,
-                first: Box::new(SavedSurfaceLayout::capture_layout(first)),
-                second: Box::new(SavedSurfaceLayout::capture_layout(second)),
+                first: Box::new(SavedSurfaceLayout::capture_layout(first, registry)),
+                second: Box::new(SavedSurfaceLayout::capture_layout(second, registry)),
             },
         }
     }
 }
 
 impl SavedSurface {
-    fn capture_surface(surface: &dyn Surface) -> Self {
+    fn capture_surface(surface: &dyn Surface, registry: &SurfaceKindRegistry) -> Self {
         if let Some(ts) = surface.as_terminal_surface() {
             let restore_command = crate::surface_meta::SurfaceMetaStore::get(
                 ts.id,
@@ -230,28 +360,18 @@ impl SavedSurface {
                 restore_command,
             };
         }
-        if let Some(md) = surface.as_markdown() {
-            return SavedSurface::Markdown {
-                path: md.file_path.clone(),
-            };
+        let kind = surface.kind().to_string();
+        if let Some(def) = registry.get(&kind) {
+            if let Some(data) = (def.snapshot)(surface) {
+                return SavedSurface::Generic { kind, data };
+            }
         }
-        if let Some(ex) = surface.as_explorer() {
-            return SavedSurface::Explorer {
-                root_path: ex.root_path.clone(),
-            };
+        // snapshot 함수가 None을 반환했거나 (예: ClipboardViewer는 휘발성)
+        // registry에 없는 kind면 Empty로 fallback.
+        SavedSurface::Generic {
+            kind: "empty".into(),
+            data: json!({}),
         }
-        if let Some(html) = surface.as_html() {
-            return SavedSurface::Html {
-                url: html.url.clone(),
-            };
-        }
-        if let Some(img) = surface.as_image() {
-            return SavedSurface::Image {
-                path: img.file_path.clone(),
-            };
-        }
-        // ClipboardViewer, Empty, etc. — store as Empty
-        SavedSurface::Empty
     }
 }
 
@@ -532,19 +652,25 @@ impl SavedSurface {
                     deferred_spawn: None,
                 }))
             }
-            SavedSurface::Markdown { path } => {
-                Some(Box::new(MarkdownPanel::new(surface_id, path)))
-            }
-            SavedSurface::Explorer { root_path } => {
-                Some(Box::new(ExplorerPanel::new(surface_id, root_path)))
-            }
-            SavedSurface::Html { url } => Some(Box::new(HtmlPanel::new(surface_id, url))),
-            SavedSurface::Image { path } => match path {
-                Some(p) => Some(Box::new(ImagePanel::new(surface_id, p))),
-                None => Some(Box::new(ImagePanel::new_blank(surface_id))),
-            },
-            SavedSurface::Empty => {
-                Some(Box::new(crate::model::EmptySurface::new(surface_id)))
+            SavedSurface::Generic { kind, data } => {
+                let registry = engine.surface_registry.clone();
+                let def = match registry.get(&kind) {
+                    Some(d) => d,
+                    None => {
+                        tracing::warn!(
+                            "Generic restore skipped: unknown kind '{}' (plugin not loaded?)",
+                            kind
+                        );
+                        return None;
+                    }
+                };
+                match (def.restore)(surface_id, &data) {
+                    Ok(s) => Some(s),
+                    Err(e) => {
+                        tracing::warn!("Generic restore failed (kind={kind}): {e}");
+                        None
+                    }
+                }
             }
         }
     }
@@ -660,5 +786,131 @@ impl LayoutDirtyTracker {
     /// Force check if dirty (for shutdown flush).
     pub fn is_dirty(&self) -> bool {
         self.dirty
+    }
+}
+
+#[cfg(test)]
+mod migration_tests {
+    use super::*;
+
+    fn parse(s: &str) -> SavedSurface {
+        serde_json::from_str(s).unwrap_or_else(|e| panic!("parse failed for {s:?}: {e}"))
+    }
+
+    #[test]
+    fn v1_markdown_migrates_to_generic() {
+        match parse(r#"{"Markdown":{"path":"/tmp/x.md"}}"#) {
+            SavedSurface::Generic { kind, data } => {
+                assert_eq!(kind, "markdown");
+                assert_eq!(data["path"], "/tmp/x.md");
+            }
+            other => panic!("expected Generic, got {:?}", serde_json::to_string(&other)),
+        }
+    }
+
+    #[test]
+    fn v1_explorer_renames_root_path_to_path() {
+        match parse(r#"{"Explorer":{"root_path":"/home/u/proj"}}"#) {
+            SavedSurface::Generic { kind, data } => {
+                assert_eq!(kind, "explorer");
+                assert_eq!(data["path"], "/home/u/proj");
+            }
+            _ => panic!("expected Generic"),
+        }
+    }
+
+    #[test]
+    fn v1_html_migrates() {
+        match parse(r#"{"Html":{"url":"https://example.com"}}"#) {
+            SavedSurface::Generic { kind, data } => {
+                assert_eq!(kind, "html");
+                assert_eq!(data["url"], "https://example.com");
+            }
+            _ => panic!("expected Generic"),
+        }
+    }
+
+    #[test]
+    fn v1_image_with_path_migrates() {
+        match parse(r#"{"Image":{"path":"/tmp/p.png"}}"#) {
+            SavedSurface::Generic { kind, data } => {
+                assert_eq!(kind, "image");
+                assert_eq!(data["path"], "/tmp/p.png");
+            }
+            _ => panic!("expected Generic"),
+        }
+    }
+
+    #[test]
+    fn v1_image_with_null_path_migrates_to_blank() {
+        match parse(r#"{"Image":{"path":null}}"#) {
+            SavedSurface::Generic { kind, data } => {
+                assert_eq!(kind, "image");
+                assert!(data["path"].is_null());
+            }
+            _ => panic!("expected Generic"),
+        }
+    }
+
+    #[test]
+    fn v1_empty_string_form_migrates() {
+        // v1 unit variant serialised as bare "Empty".
+        match parse(r#""Empty""#) {
+            SavedSurface::Generic { kind, data } => {
+                assert_eq!(kind, "empty");
+                assert!(data.is_object());
+            }
+            _ => panic!("expected Generic"),
+        }
+    }
+
+    #[test]
+    fn v1_empty_object_form_migrates() {
+        // {"Empty": {}} 또는 {"Empty": null} 형태도 가능.
+        match parse(r#"{"Empty":{}}"#) {
+            SavedSurface::Generic { kind, .. } => {
+                assert_eq!(kind, "empty");
+            }
+            _ => panic!("expected Generic"),
+        }
+    }
+
+    #[test]
+    fn v2_terminal_round_trips() {
+        let s = SavedSurface::Terminal {
+            cwd: Some("/tmp".into()),
+            restore_command: None,
+        };
+        let json = serde_json::to_string(&s).unwrap();
+        match parse(&json) {
+            SavedSurface::Terminal { cwd, restore_command } => {
+                assert_eq!(cwd.as_deref(), Some("/tmp"));
+                assert!(restore_command.is_none());
+            }
+            _ => panic!("expected Terminal"),
+        }
+    }
+
+    #[test]
+    fn v2_generic_round_trips() {
+        let s = SavedSurface::Generic {
+            kind: "markdown".into(),
+            data: json!({"path": "/x.md"}),
+        };
+        let json = serde_json::to_string(&s).unwrap();
+        match parse(&json) {
+            SavedSurface::Generic { kind, data } => {
+                assert_eq!(kind, "markdown");
+                assert_eq!(data["path"], "/x.md");
+            }
+            _ => panic!("expected Generic"),
+        }
+    }
+
+    #[test]
+    fn unknown_variant_is_rejected() {
+        let result: Result<SavedSurface, _> =
+            serde_json::from_str(r#"{"Bogus":{}}"#);
+        assert!(result.is_err());
     }
 }
