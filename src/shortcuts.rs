@@ -73,7 +73,10 @@ fn focused_image_surface_id(state: &crate::state::AppState) -> Option<u32> {
     let tab = pane.tabs.get(pane.active_tab)?;
     let focused = tab.focused_surface;
     let surface = tab.layout().find_surface(focused)?;
-    surface.as_image().map(|p| p.id)
+    surface
+        .as_any()
+        .downcast_ref::<crate::model::ImagePanel>()
+        .map(|p| p.id)
 }
 
 fn matches_any_binding(bindings: &[String], key: &Key, mods: ModifiersState) -> bool {
@@ -572,8 +575,7 @@ impl MainWindow {
     }
 
     fn handle_explorer_shortcuts(&mut self, key: &Key, mods: ModifiersState) -> bool {
-        let st = self.state.focused_surface_type();
-        if !matches!(st, crate::state::FocusedSurfaceType::Explorer) {
+        if !self.state.focused_surface_type().is_kind("explorer") {
             return false;
         }
 
@@ -608,8 +610,7 @@ impl MainWindow {
             return false;
         }
         // Explorer에서 선택된 파일 경로를 텍스트로 클립보드에 복사
-        let st = self.state.focused_surface_type();
-        if !matches!(st, crate::state::FocusedSurfaceType::Explorer) {
+        if !self.state.focused_surface_type().is_kind("explorer") {
             return false;
         }
         let text = self.state.focused_explorer_selected_paths();
@@ -653,7 +654,7 @@ impl MainWindow {
             return true;
         }
         let st = self.state.focused_surface_type();
-        if matches!(st, crate::state::FocusedSurfaceType::Explorer) {
+        if st.is_kind("explorer") {
             // Explorer: 파일을 OS 파일 클립보드에 복사
             if self.state.explorer_file_copy() {
                 let scope =
@@ -665,7 +666,7 @@ impl MainWindow {
             }
             return true;
         }
-        if matches!(st, crate::state::FocusedSurfaceType::Markdown) {
+        if st.is_kind("markdown") {
             self.base
                 .gpu
                 .egui_ctx
@@ -917,7 +918,7 @@ impl MainWindow {
             return true;
         }
         if matches_any_binding(&kb.image_undo, key, mods) {
-            if state.focused_surface_type() == crate::state::FocusedSurfaceType::Image {
+            if state.focused_surface_type().is_kind("image") {
                 if let Some(sid) = focused_image_surface_id(state) {
                     if let Some(view) = state.image_views.get_mut(sid) {
                         view.undo();
@@ -927,7 +928,7 @@ impl MainWindow {
             }
         }
         if matches_any_binding(&kb.image_redo, key, mods) {
-            if state.focused_surface_type() == crate::state::FocusedSurfaceType::Image {
+            if state.focused_surface_type().is_kind("image") {
                 if let Some(sid) = focused_image_surface_id(state) {
                     if let Some(view) = state.image_views.get_mut(sid) {
                         view.redo();
@@ -1004,12 +1005,12 @@ impl MainWindow {
             return false;
         }
         let st = self.state.focused_surface_type();
-        if matches!(st, crate::state::FocusedSurfaceType::Explorer) {
+        if st.is_kind("explorer") {
             self.state.explorer_file_paste();
             self.mark_dirty();
             return true;
         }
-        if matches!(st, crate::state::FocusedSurfaceType::Image) {
+        if st.is_kind("image") {
             if self.paste_to_image() {
                 self.mark_dirty();
             }
@@ -1035,9 +1036,9 @@ impl MainWindow {
         }
 
         // Pick which surface override the shortcut targets based on focus.
-        let kind = state.focused_surface_type();
+        let focus = state.focused_surface_type();
         let appearance = &mut state.engine.settings.appearance;
-        let (override_ref, current_effective_size) = match kind {
+        let (override_ref, current_effective_size) = match &focus {
             FocusedSurfaceType::Terminal => {
                 let size = appearance
                     .default_font
@@ -1045,14 +1046,14 @@ impl MainWindow {
                     .font_size;
                 (&mut appearance.terminal_font, size)
             }
-            FocusedSurfaceType::Markdown => {
+            FocusedSurfaceType::Kind(k) if k == "markdown" => {
                 let size = appearance
                     .default_font
                     .apply_override(&appearance.markdown_font)
                     .font_size;
                 (&mut appearance.markdown_font, size)
             }
-            FocusedSurfaceType::Explorer => {
+            FocusedSurfaceType::Kind(k) if k == "explorer" => {
                 let size = appearance
                     .default_font
                     .apply_override(&appearance.explorer_font)

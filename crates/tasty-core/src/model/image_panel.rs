@@ -117,12 +117,6 @@ impl Surface for ImagePanel {
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| "Image".to_string())
     }
-    fn as_image(&self) -> Option<&ImagePanel> {
-        Some(self)
-    }
-    fn as_image_mut(&mut self) -> Option<&mut ImagePanel> {
-        Some(self)
-    }
     fn source_cwd(&self) -> Option<PathBuf> {
         self.file_path
             .as_ref()

@@ -31,12 +31,4 @@ impl Surface for ClipboardViewerPanel {
     fn display_name(&self) -> String {
         crate::i18n::t("clipboard_viewer.tab_title").to_string()
     }
-
-    fn as_clipboard_viewer(&self) -> Option<&ClipboardViewerPanel> {
-        Some(self)
-    }
-
-    fn as_clipboard_viewer_mut(&mut self) -> Option<&mut ClipboardViewerPanel> {
-        Some(self)
-    }
 }

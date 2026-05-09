@@ -1,10 +1,7 @@
 use std::any::Any;
 use std::path::PathBuf;
 
-use super::{
-    ClipboardViewerPanel, EmptySurface, ExplorerPanel, HtmlPanel, ImagePanel, MarkdownPanel, Rect,
-    SurfaceId, TerminalSurface,
-};
+use super::{Rect, SurfaceId, TerminalSurface};
 use tasty_terminal::Terminal;
 
 /// Common behavior for all Surface types.
@@ -81,45 +78,15 @@ pub trait Surface: Any {
     /// Visit all terminals with their surface IDs. Object-safe signature.
     fn for_each_terminal_mut(&mut self, _f: &mut dyn FnMut(SurfaceId, &mut Terminal)) {}
 
-    // ── Downcast methods ──
+    // ── Terminal-only fast accessors ──
+    //
+    // PTY 입출력 경로가 별도라 Terminal만 trait 메서드로 둔다. 그 외 panel은
+    // `surface.as_any().downcast_ref::<XxxPanel>()` 또는 `surface.kind()`로 식별한다.
 
     fn as_terminal_surface(&self) -> Option<&TerminalSurface> {
         None
     }
     fn as_terminal_surface_mut(&mut self) -> Option<&mut TerminalSurface> {
-        None
-    }
-    fn as_markdown(&self) -> Option<&MarkdownPanel> {
-        None
-    }
-    fn as_markdown_mut(&mut self) -> Option<&mut MarkdownPanel> {
-        None
-    }
-    fn as_explorer(&self) -> Option<&ExplorerPanel> {
-        None
-    }
-    fn as_explorer_mut(&mut self) -> Option<&mut ExplorerPanel> {
-        None
-    }
-    fn as_html(&self) -> Option<&HtmlPanel> {
-        None
-    }
-    fn as_html_mut(&mut self) -> Option<&mut HtmlPanel> {
-        None
-    }
-    fn as_empty_surface(&self) -> Option<&EmptySurface> {
-        None
-    }
-    fn as_clipboard_viewer(&self) -> Option<&ClipboardViewerPanel> {
-        None
-    }
-    fn as_clipboard_viewer_mut(&mut self) -> Option<&mut ClipboardViewerPanel> {
-        None
-    }
-    fn as_image(&self) -> Option<&ImagePanel> {
-        None
-    }
-    fn as_image_mut(&mut self) -> Option<&mut ImagePanel> {
         None
     }
 

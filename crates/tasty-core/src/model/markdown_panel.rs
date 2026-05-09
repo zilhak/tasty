@@ -76,12 +76,6 @@ impl Surface for MarkdownPanel {
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| "Markdown".to_string())
     }
-    fn as_markdown(&self) -> Option<&MarkdownPanel> {
-        Some(self)
-    }
-    fn as_markdown_mut(&mut self) -> Option<&mut MarkdownPanel> {
-        Some(self)
-    }
     fn source_cwd(&self) -> Option<std::path::PathBuf> {
         std::path::Path::new(&self.file_path)
             .parent()

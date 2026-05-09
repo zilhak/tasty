@@ -24,7 +24,4 @@ impl Surface for EmptySurface {
     fn surface_id(&self) -> Option<SurfaceId> {
         Some(self.id)
     }
-    fn as_empty_surface(&self) -> Option<&EmptySurface> {
-        Some(self)
-    }
 }

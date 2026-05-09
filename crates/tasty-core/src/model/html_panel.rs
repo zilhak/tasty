@@ -57,12 +57,6 @@ impl Surface for HtmlPanel {
             self.url.clone()
         }
     }
-    fn as_html(&self) -> Option<&HtmlPanel> {
-        Some(self)
-    }
-    fn as_html_mut(&mut self) -> Option<&mut HtmlPanel> {
-        Some(self)
-    }
     fn html_url(&self) -> Option<&str> {
         Some(&self.url)
     }

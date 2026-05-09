@@ -188,17 +188,18 @@ impl ClosedPanel {
         if let Some(node) = surface.as_terminal_surface() {
             return ClosedPanel::Terminal(ClosedSurface::from_surface_node(node));
         }
-        if let Some(md) = surface.as_markdown() {
+        let any = surface.as_any();
+        if let Some(md) = any.downcast_ref::<super::MarkdownPanel>() {
             return ClosedPanel::Markdown {
                 path: PathBuf::from(&md.file_path),
             };
         }
-        if let Some(ex) = surface.as_explorer() {
+        if let Some(ex) = any.downcast_ref::<super::ExplorerPanel>() {
             return ClosedPanel::Explorer {
                 path: Some(PathBuf::from(&ex.root_path)),
             };
         }
-        if let Some(img) = surface.as_image() {
+        if let Some(img) = any.downcast_ref::<super::ImagePanel>() {
             return ClosedPanel::Image {
                 path: img.file_path.as_ref().map(PathBuf::from),
             };

@@ -18,15 +18,22 @@ use crate::settings_ui::SettingsUiState;
 use tasty_terminal::{Terminal, TerminalEvent, Waker};
 
 /// Type of the currently focused surface, used for keyboard routing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// Terminal은 PTY 입출력 경로가 별도라 빠른 분기 위해 전용 variant로 둔다.
+/// 나머지는 surface kind 식별자 기반의 `Kind(String)`으로 일반화 — 외부 plugin도
+/// 추가 enum 변경 없이 동작한다.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FocusedSurfaceType {
-    Terminal,
-    Explorer,
-    Markdown,
-    Html,
-    Image,
-    Empty,
     None,
+    Terminal,
+    Kind(String),
+}
+
+impl FocusedSurfaceType {
+    /// 이 surface가 주어진 kind 식별자에 해당하는지 검사.
+    pub fn is_kind(&self, kind: &str) -> bool {
+        matches!(self, Self::Kind(k) if k == kind)
+    }
 }
 
 /// A keyboard event destined for a non-terminal surface (Explorer, Markdown, etc.).
@@ -435,25 +442,10 @@ impl AppState {
     }
 
     fn surface_to_type(surface: &dyn crate::model::Surface) -> FocusedSurfaceType {
-        if surface.as_terminal_surface().is_some() {
-            return FocusedSurfaceType::Terminal;
+        match surface.kind() {
+            "terminal" => FocusedSurfaceType::Terminal,
+            other => FocusedSurfaceType::Kind(other.to_string()),
         }
-        if surface.as_explorer().is_some() {
-            return FocusedSurfaceType::Explorer;
-        }
-        if surface.as_markdown().is_some() {
-            return FocusedSurfaceType::Markdown;
-        }
-        if surface.as_html().is_some() {
-            return FocusedSurfaceType::Html;
-        }
-        if surface.as_image().is_some() {
-            return FocusedSurfaceType::Image;
-        }
-        if surface.as_empty_surface().is_some() {
-            return FocusedSurfaceType::Empty;
-        }
-        FocusedSurfaceType::None
     }
 
     /// Explorer에서 선택된 파일 경로들을 줄바꿈으로 결합하여 반환.
@@ -624,7 +616,7 @@ impl AppState {
         let pane = self.focused_pane()?;
         let tab = pane.tabs.get(pane.active_tab)?;
         let surface = tab.layout().find_surface(tab.focused_surface)?;
-        surface.as_explorer()
+        surface.as_any().downcast_ref::<crate::model::ExplorerPanel>()
     }
 
     fn focused_explorer_mut(&mut self) -> Option<&mut crate::model::ExplorerPanel> {
@@ -632,7 +624,8 @@ impl AppState {
         let tab = pane.tabs.get_mut(pane.active_tab)?;
         let focused = tab.focused_surface;
         let leaf = tab.layout_mut().find_leaf_mut(focused)?;
-        leaf.as_explorer_mut()
+        leaf.as_any_mut()
+            .downcast_mut::<crate::model::ExplorerPanel>()
     }
 
     /// Record that the user typed on the given surface (updates last_key_input timestamp).
@@ -716,7 +709,10 @@ impl AppState {
         let pane = self.focused_pane_mut()?;
         let tab = pane.tabs.get_mut(pane.active_tab)?;
         let focused = tab.focused_surface;
-        tab.layout_mut().find_leaf_mut(focused)?.as_image_mut()
+        tab.layout_mut()
+            .find_leaf_mut(focused)?
+            .as_any_mut()
+            .downcast_mut::<crate::model::ImagePanel>()
     }
 
     /// Refresh the cached display name of the tab containing a given surface ID.

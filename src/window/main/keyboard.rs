@@ -133,9 +133,9 @@ impl MainWindow {
                     }
                 }
             }
-            FocusedSurfaceType::Explorer
-            | FocusedSurfaceType::Markdown
-            | FocusedSurfaceType::Image => {
+            FocusedSurfaceType::Kind(ref kind)
+                if kind == "explorer" || kind == "markdown" || kind == "image" =>
+            {
                 // If egui consumed the event (e.g. TextEdit has focus), skip
                 // the PendingKeyEvent queue to avoid double-handling.
                 if !egui_consumed {
@@ -148,7 +148,7 @@ impl MainWindow {
                 self.mark_dirty();
             }
             _ => {
-                // Html, Empty, None — no keyboard handling needed
+                // html, empty, clipboard_viewer, None — no keyboard handling needed here
             }
         }
 

@@ -348,12 +348,6 @@ impl Surface for ExplorerPanel {
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| "Explorer".to_string())
     }
-    fn as_explorer(&self) -> Option<&ExplorerPanel> {
-        Some(self)
-    }
-    fn as_explorer_mut(&mut self) -> Option<&mut ExplorerPanel> {
-        Some(self)
-    }
     /// 실제로 트리가 가리키는 `root_path`만 사용한다 (주소바 편집 버퍼는 view에 있음).
     fn source_cwd(&self) -> Option<std::path::PathBuf> {
         if self.root_path.is_empty() {

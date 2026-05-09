@@ -295,7 +295,7 @@ fn resolve_inherit_cwd_from_explorer_surface() {
             if let Some(p) = ws.pane_layout().find_pane(pid) {
                 for tab in &p.tabs {
                     if let Some(s) = tab.layout().find_surface(tab.focused_surface) {
-                        if s.as_explorer().is_some() {
+                        if s.kind() == "explorer" {
                             explorer_sid = s.surface_id();
                         }
                     }
@@ -327,7 +327,7 @@ fn resolve_inherit_cwd_from_surface_respects_toggle_off() {
             if let Some(p) = ws.pane_layout().find_pane(pid) {
                 for tab in &p.tabs {
                     if let Some(s) = tab.layout().find_surface(tab.focused_surface) {
-                        if s.as_explorer().is_some() {
+                        if s.kind() == "explorer" {
                             explorer_sid = s.surface_id();
                         }
                     }

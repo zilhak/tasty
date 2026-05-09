@@ -213,7 +213,7 @@ impl Window for MainWindow {
         // that need direct keyboard events from egui's input system.
         let egui_surface = matches!(
             self.state.focused_surface_type(),
-            FocusedSurfaceType::Explorer | FocusedSurfaceType::Markdown
+            FocusedSurfaceType::Kind(ref k) if k == "explorer" || k == "markdown"
         );
 
         let is_redraw_event = matches!(&event, WindowEvent::RedrawRequested);

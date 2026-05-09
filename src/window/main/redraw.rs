@@ -636,7 +636,11 @@ impl MainWindow {
                         {
                             let idx = pane.active_tab.min(pane.tabs.len().saturating_sub(1));
                             if let Some(tab) = pane.tabs.get_mut(idx) {
-                                if let Some(panel) = tab.surface_mut().as_explorer_mut() {
+                                if let Some(panel) = tab
+                                    .surface_mut()
+                                    .as_any_mut()
+                                    .downcast_mut::<crate::model::ExplorerPanel>()
+                                {
                                     panel.navigate_to(path);
                                 }
                             }

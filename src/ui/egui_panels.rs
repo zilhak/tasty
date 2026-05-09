@@ -136,7 +136,10 @@ pub fn draw_egui_panels(
             tab.surface_mut()
         };
 
-        if let Some(md_panel) = surface.as_markdown_mut() {
+        if let Some(md_panel) = surface
+            .as_any_mut()
+            .downcast_mut::<crate::model::MarkdownPanel>()
+        {
             let scroll_line = 24.0;
             let scroll_page = info.logical_h * 0.8;
             let key_scroll_y = if info.is_keyboard_target {
@@ -169,7 +172,10 @@ pub fn draw_egui_panels(
                     &markdown_font,
                 );
             });
-        } else if let Some(exp_panel) = surface.as_explorer_mut() {
+        } else if let Some(exp_panel) = surface
+            .as_any_mut()
+            .downcast_mut::<crate::model::ExplorerPanel>()
+        {
             let is_focused = info.is_keyboard_target;
             let keys = if is_focused { &surface_keys[..] } else { &[] };
             let view = explorer_views.get_or_init(exp_panel);
@@ -203,22 +209,31 @@ pub fn draw_egui_panels(
                     pending_explorer_action = Some((info.pane_id, info.surface_id, act));
                 }
             });
-        } else if let Some(html_panel) = surface.as_html() {
+        } else if let Some(html_panel) = surface
+            .as_any()
+            .downcast_ref::<crate::model::HtmlPanel>()
+        {
             draw_panel_frame(ctx, &format!("html_panel_{}", id_suffix), info, 0, None, |ui| {
                 crate::html_ui::draw_html(ui, html_panel);
             });
-        } else if let Some(empty) = surface.as_empty_surface() {
+        } else if let Some(empty) = surface
+            .as_any()
+            .downcast_ref::<crate::model::EmptySurface>()
+        {
             draw_panel_frame_no_margin(ctx, &format!("empty_panel_{}", id_suffix), info, |ui| {
                 if let Some(act) = crate::empty_ui::draw_empty(ui, empty) {
                     pending_empty_action = Some(act);
                 }
             });
-        } else if let Some(image_panel) = surface.as_image_mut() {
+        } else if let Some(image_panel) = surface
+            .as_any_mut()
+            .downcast_mut::<crate::model::ImagePanel>()
+        {
             let view = image_views.get_or_init(image_panel);
             draw_panel_frame(ctx, &format!("image_panel_{}", id_suffix), info, 4, None, |ui| {
                 crate::image_ui::draw_image(ui, image_panel, view);
             });
-        } else if surface.as_clipboard_viewer().is_some() {
+        } else if surface.kind() == "clipboard_viewer" {
             // Defer: we need both engine.clipboard_history and clipboard_viewer_views together,
             // which requires dropping the current surface borrow chain first.
             pending_clipboard_viewer_renders.push(PendingClipboardViewerRender {
@@ -277,7 +292,10 @@ pub fn draw_egui_panels(
                 } else {
                     tab.surface_mut()
                 };
-                if let Some(cv) = surface.as_clipboard_viewer_mut() {
+                if let Some(cv) = surface
+                    .as_any_mut()
+                    .downcast_mut::<crate::model::ClipboardViewerPanel>()
+                {
                     let viewer = clipboard_viewer_views.get_or_init(cv);
                     paste_index = draw_panel_frame(
                         ctx,
