@@ -1,3 +1,5 @@
+use serde_json::{Value, json};
+
 use super::AppState;
 
 impl AppState {
@@ -72,96 +74,78 @@ impl AppState {
         Ok(())
     }
 
-    /// Add a Markdown viewer tab in the focused pane.
-    pub fn add_markdown_tab(&mut self, file_path: String) -> anyhow::Result<()> {
+    /// Generic kind+params 기반 탭 추가. SurfaceKindRegistry를 통해 surface를 만들고
+    /// 포커스된 pane에 부착한다. Returns (tab_id, surface_id) on success.
+    pub fn add_kind_tab(
+        &mut self,
+        kind: &str,
+        params: &Value,
+    ) -> anyhow::Result<(u32, u32)> {
         let tab_id = self.engine.next_ids.next_tab();
         let surface_id = self.engine.next_ids.next_surface();
-        let name = file_path
-            .split(['/', '\\'])
-            .last()
-            .unwrap_or("Markdown")
-            .to_string();
-        let surface: Box<dyn crate::model::Surface> =
-            Box::new(crate::model::MarkdownPanel::new(surface_id, file_path));
+        let surface = self.create_surface_via_registry(kind, surface_id, params)?;
+        let name = super::pane::default_tab_name_for_kind(kind, params);
         if let Some(pane) = self.focused_pane_mut() {
             pane.add_surface_tab(tab_id, name, surface);
             self.engine.mark_layout_dirty();
+            Ok((tab_id, surface_id))
+        } else {
+            anyhow::bail!("no focused pane to add tab to")
         }
-        Ok(())
+    }
+
+    /// kind+params 탭을 특정 pane에 추가 (cross-workspace).
+    pub fn add_kind_tab_to_pane(
+        &mut self,
+        pane_id: u32,
+        kind: &str,
+        params: &Value,
+    ) -> anyhow::Result<(u32, u32)> {
+        let tab_id = self.engine.next_ids.next_tab();
+        let surface_id = self.engine.next_ids.next_surface();
+        let surface = self.create_surface_via_registry(kind, surface_id, params)?;
+        let name = super::pane::default_tab_name_for_kind(kind, params);
+        if let Some(pane) = self.find_pane_by_id_mut(pane_id) {
+            pane.add_surface_tab(tab_id, name, surface);
+            self.engine.mark_layout_dirty();
+            Ok((tab_id, surface_id))
+        } else {
+            anyhow::bail!("pane {} not found", pane_id)
+        }
+    }
+
+    /// Add a Markdown viewer tab in the focused pane.
+    pub fn add_markdown_tab(&mut self, file_path: String) -> anyhow::Result<()> {
+        self.add_kind_tab("markdown", &json!({"file": file_path}))
+            .map(|_| ())
     }
 
     /// Add a file explorer tab in the focused pane.
     pub fn add_explorer_tab(&mut self, root_path: String) -> anyhow::Result<()> {
-        let tab_id = self.engine.next_ids.next_tab();
-        let surface_id = self.engine.next_ids.next_surface();
-        let name = root_path
-            .split(['/', '\\'])
-            .last()
-            .unwrap_or("Explorer")
-            .to_string();
-        let surface: Box<dyn crate::model::Surface> =
-            Box::new(crate::model::ExplorerPanel::new(surface_id, root_path));
-        if let Some(pane) = self.focused_pane_mut() {
-            pane.add_surface_tab(tab_id, name, surface);
-            self.engine.mark_layout_dirty();
-        }
-        Ok(())
+        self.add_kind_tab("explorer", &json!({"path": root_path}))
+            .map(|_| ())
     }
 
     /// Add an HTML viewer tab in the focused pane.
     pub fn add_html_tab(&mut self, url: String) -> anyhow::Result<()> {
-        let tab_id = self.engine.next_ids.next_tab();
-        let surface_id = self.engine.next_ids.next_surface();
-        let surface: Box<dyn crate::model::Surface> =
-            Box::new(crate::model::HtmlPanel::new(surface_id, url));
-        if let Some(pane) = self.focused_pane_mut() {
-            pane.add_surface_tab(tab_id, "HTML".to_string(), surface);
-            self.engine.mark_layout_dirty();
-        }
-        Ok(())
+        self.add_kind_tab("html", &json!({"url": url})).map(|_| ())
     }
 
     /// Add a clipboard viewer tab in the focused pane.
     pub fn add_clipboard_viewer_tab(&mut self) -> anyhow::Result<()> {
-        let tab_id = self.engine.next_ids.next_tab();
-        let surface_id = self.engine.next_ids.next_surface();
-        let surface: Box<dyn crate::model::Surface> =
-            Box::new(crate::model::ClipboardViewerPanel::new(surface_id));
-        let name = crate::i18n::t("clipboard_viewer.tab_title").to_string();
-        if let Some(pane) = self.focused_pane_mut() {
-            pane.add_surface_tab(tab_id, name, surface);
-            self.engine.mark_layout_dirty();
-        }
-        Ok(())
+        self.add_kind_tab("clipboard_viewer", &Value::Null)
+            .map(|_| ())
     }
 
     /// Add a clipboard viewer tab to the specified pane (cross-workspace).
     pub fn add_clipboard_viewer_tab_to_pane(&mut self, pane_id: u32) -> anyhow::Result<()> {
-        let tab_id = self.engine.next_ids.next_tab();
-        let surface_id = self.engine.next_ids.next_surface();
-        let surface: Box<dyn crate::model::Surface> =
-            Box::new(crate::model::ClipboardViewerPanel::new(surface_id));
-        let name = crate::i18n::t("clipboard_viewer.tab_title").to_string();
-        if let Some(pane) = self.find_pane_by_id_mut(pane_id) {
-            pane.add_surface_tab(tab_id, name, surface);
-            self.engine.mark_layout_dirty();
-        }
-        Ok(())
+        self.add_kind_tab_to_pane(pane_id, "clipboard_viewer", &Value::Null)
+            .map(|_| ())
     }
 
     /// Add an empty placeholder tab in the focused pane. Returns (tab_id, surface_id).
     pub fn add_empty_tab(&mut self) -> Option<(u32, u32)> {
-        let tab_id = self.engine.next_ids.next_tab();
-        let surface_id = self.engine.next_ids.next_surface();
-        let surface: Box<dyn crate::model::Surface> =
-            Box::new(crate::model::EmptySurface::new(surface_id));
-        if let Some(pane) = self.focused_pane_mut() {
-            pane.add_surface_tab(tab_id, "Empty".to_string(), surface);
-            self.engine.mark_layout_dirty();
-            Some((tab_id, surface_id))
-        } else {
-            None
-        }
+        self.add_kind_tab("empty", &Value::Null).ok()
     }
 
     /// Add a new tab in the specified pane (by ID, cross-workspace) without switching active tab.
@@ -396,20 +380,8 @@ impl AppState {
 
     /// Add an image viewer tab in the focused pane.
     pub fn add_image_tab(&mut self, file_path: String) -> anyhow::Result<()> {
-        let tab_id = self.engine.next_ids.next_tab();
-        let surface_id = self.engine.next_ids.next_surface();
-        let name = file_path
-            .split(['/', '\\'])
-            .last()
-            .unwrap_or("Image")
-            .to_string();
-        let surface: Box<dyn crate::model::Surface> =
-            Box::new(crate::model::ImagePanel::new(surface_id, file_path));
-        if let Some(pane) = self.focused_pane_mut() {
-            pane.add_surface_tab(tab_id, name, surface);
-            self.engine.mark_layout_dirty();
-        }
-        Ok(())
+        self.add_kind_tab("image", &json!({"file": file_path}))
+            .map(|_| ())
     }
 
     /// Convert a surface to Image type (blank canvas).

@@ -34,56 +34,42 @@ pub fn handle_workspace_create(
         .get("cwd")
         .and_then(|v| v.as_str())
         .map(std::path::PathBuf::from);
-    let surface_type = match params
+    let kind = params
         .get("type")
         .and_then(|v| v.as_str())
-        .unwrap_or("terminal")
-    {
+        .unwrap_or("terminal");
+
+    // 필수 파라미터 검증 (registry create 함수도 검사하지만, 명확한 에러 메시지를 위해 선검증)
+    match kind {
         "markdown" => {
-            let file = params
+            if params
                 .get("file")
                 .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            if file.is_empty() {
+                .map(str::is_empty)
+                .unwrap_or(true)
+            {
                 return JsonRpcResponse::invalid_params(
                     id,
                     "Missing 'file' parameter for markdown type",
                 );
             }
-            crate::model::SurfaceType::Markdown { file }
-        }
-        "explorer" => {
-            let path = params
-                .get("path")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
-            crate::model::SurfaceType::Explorer { path }
         }
         "html" => {
-            let url = params
+            if params
                 .get("url")
                 .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            if url.is_empty() {
+                .map(str::is_empty)
+                .unwrap_or(true)
+            {
                 return JsonRpcResponse::invalid_params(
                     id,
                     "Missing 'url' parameter for html type",
                 );
             }
-            crate::model::SurfaceType::Html { url }
         }
-        "image" => {
-            let file = params
-                .get("file")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
-            crate::model::SurfaceType::Image { file }
-        }
-        _ => crate::model::SurfaceType::Terminal,
-    };
-    match state.add_workspace_background(cwd, surface_type) {
+        _ => {}
+    }
+    match state.add_workspace_background(cwd, kind, params) {
         Ok(idx) => {
             if let Some(name) = params.get("name").and_then(|v| v.as_str()) {
                 if !name.is_empty() {

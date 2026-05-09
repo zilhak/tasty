@@ -137,55 +137,41 @@ pub fn handle_split(
         .get("cwd")
         .and_then(|v| v.as_str())
         .map(std::path::PathBuf::from);
-    let surface_type = match params
+    let kind = params
         .get("type")
         .and_then(|v| v.as_str())
-        .unwrap_or("terminal")
-    {
+        .unwrap_or("terminal");
+
+    // 필수 파라미터 선검증
+    match kind {
         "markdown" => {
-            let file = params
+            if params
                 .get("file")
                 .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            if file.is_empty() {
+                .map(str::is_empty)
+                .unwrap_or(true)
+            {
                 return JsonRpcResponse::invalid_params(
                     id,
                     "Missing 'file' parameter for markdown type",
                 );
             }
-            crate::model::SurfaceType::Markdown { file }
-        }
-        "explorer" => {
-            let path = params
-                .get("path")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
-            crate::model::SurfaceType::Explorer { path }
         }
         "html" => {
-            let url = params
+            if params
                 .get("url")
                 .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            if url.is_empty() {
+                .map(str::is_empty)
+                .unwrap_or(true)
+            {
                 return JsonRpcResponse::invalid_params(
                     id,
                     "Missing 'url' parameter for html type",
                 );
             }
-            crate::model::SurfaceType::Html { url }
         }
-        "image" => {
-            let file = params
-                .get("file")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
-            crate::model::SurfaceType::Image { file }
-        }
-        _ => crate::model::SurfaceType::Terminal,
-    };
+        _ => {}
+    }
 
     match level {
         "pane" => {
@@ -199,7 +185,7 @@ pub fn handle_split(
                 None
             };
 
-            match state.split_pane_targeted(resolved_pane_id, direction, cwd, surface_type) {
+            match state.split_pane_targeted(resolved_pane_id, direction, cwd, kind, params) {
                 Ok((new_pane_id, new_surface_id)) => {
                     apply_meta(new_surface_id, meta);
                     JsonRpcResponse::success(
@@ -225,7 +211,7 @@ pub fn handle_split(
                 }
             };
 
-            match state.split_surface_targeted(Some(sid), direction, cwd, surface_type) {
+            match state.split_surface_targeted(Some(sid), direction, cwd, kind, params) {
                 Ok(new_surface_id) => {
                     apply_meta(new_surface_id, meta);
                     JsonRpcResponse::success(

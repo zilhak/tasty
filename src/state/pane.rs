@@ -1,3 +1,5 @@
+use serde_json::Value;
+
 use crate::model::SplitDirection;
 
 use super::AppState;
@@ -43,7 +45,8 @@ impl AppState {
             target_surface_id,
             direction,
             None,
-            crate::model::SurfaceType::Terminal,
+            "terminal",
+            &Value::Null,
         )?;
 
         // 단축키(사용자 행위)로 split한 경우 새 surface로 포커스 이동
@@ -59,12 +62,16 @@ impl AppState {
     }
 
     /// Split a pane group with cross-workspace target support and optional cwd. Does NOT move focus.
+    ///
+    /// `kind` is a SurfaceKindRegistry identifier. `"terminal"`은 호스트 PTY spawn 경로를 사용하고,
+    /// 그 외 kind는 `engine.surface_registry`의 create 함수를 호출한다.
     pub fn split_pane_targeted(
         &mut self,
         target_pane_id: Option<u32>,
         direction: SplitDirection,
         explicit_cwd: Option<std::path::PathBuf>,
-        surface_type: crate::model::SurfaceType,
+        kind: &str,
+        params: &Value,
     ) -> anyhow::Result<(u32, u32)> {
         let (ws_idx, resolved_pane_id) = match target_pane_id {
             Some(pid) => {
@@ -83,87 +90,32 @@ impl AppState {
         let new_tab_id = self.engine.next_ids.next_tab();
         let new_surface_id = self.engine.next_ids.next_surface();
 
-        let new_pane = match surface_type {
-            crate::model::SurfaceType::Terminal => {
-                let cwd = explicit_cwd.or_else(|| {
-                    let ws = &self.engine.workspaces[ws_idx];
-                    let pane = ws.pane_layout().find_pane(resolved_pane_id)?;
-                    let tab = pane.tabs.get(pane.active_tab)?;
-                    let sid = tab.focused_surface_id()?;
-                    self.resolve_inherit_cwd_from_surface(sid)
-                });
-                let cols = self.engine.default_cols;
-                let rows = self.engine.default_rows;
-                let sh = crate::engine_state::ShellConfig::from_settings(&self.engine.settings);
-                crate::model::Pane::new_with_shell(
-                    new_pane_id,
-                    new_tab_id,
-                    new_surface_id,
-                    cols,
-                    rows,
-                    sh.shell_ref(),
-                    &sh.args_ref(),
-                    self.engine.make_waker(new_surface_id),
-                    cwd.as_deref(),
-                )?
-            }
-            crate::model::SurfaceType::Markdown { file } => {
-                let surface: Box<dyn crate::model::Surface> =
-                    Box::new(crate::model::MarkdownPanel::new(new_surface_id, file));
-                crate::model::Pane::new_with_surface(
-                    new_pane_id,
-                    new_tab_id,
-                    "Markdown".to_string(),
-                    surface,
-                )
-            }
-            crate::model::SurfaceType::Explorer { path } => {
-                let root = path.unwrap_or_else(|| {
-                    directories::BaseDirs::new()
-                        .map(|d| d.home_dir().to_string_lossy().to_string())
-                        .unwrap_or_else(|| ".".to_string())
-                });
-                let surface: Box<dyn crate::model::Surface> =
-                    Box::new(crate::model::ExplorerPanel::new(new_surface_id, root));
-                crate::model::Pane::new_with_surface(
-                    new_pane_id,
-                    new_tab_id,
-                    "Explorer".to_string(),
-                    surface,
-                )
-            }
-            crate::model::SurfaceType::Html { url } => {
-                let surface: Box<dyn crate::model::Surface> =
-                    Box::new(crate::model::HtmlPanel::new(new_surface_id, url));
-                crate::model::Pane::new_with_surface(
-                    new_pane_id,
-                    new_tab_id,
-                    "HTML".to_string(),
-                    surface,
-                )
-            }
-            crate::model::SurfaceType::Image { file } => {
-                let surface: Box<dyn crate::model::Surface> = match file {
-                    Some(path) => Box::new(crate::model::ImagePanel::new(new_surface_id, path)),
-                    None => Box::new(crate::model::ImagePanel::new_blank(new_surface_id)),
-                };
-                crate::model::Pane::new_with_surface(
-                    new_pane_id,
-                    new_tab_id,
-                    "Image".to_string(),
-                    surface,
-                )
-            }
-            crate::model::SurfaceType::Empty => {
-                let surface: Box<dyn crate::model::Surface> =
-                    Box::new(crate::model::EmptySurface::new(new_surface_id));
-                crate::model::Pane::new_with_surface(
-                    new_pane_id,
-                    new_tab_id,
-                    "Empty".to_string(),
-                    surface,
-                )
-            }
+        let new_pane = if kind == "terminal" {
+            let cwd = explicit_cwd.or_else(|| {
+                let ws = &self.engine.workspaces[ws_idx];
+                let pane = ws.pane_layout().find_pane(resolved_pane_id)?;
+                let tab = pane.tabs.get(pane.active_tab)?;
+                let sid = tab.focused_surface_id()?;
+                self.resolve_inherit_cwd_from_surface(sid)
+            });
+            let cols = self.engine.default_cols;
+            let rows = self.engine.default_rows;
+            let sh = crate::engine_state::ShellConfig::from_settings(&self.engine.settings);
+            crate::model::Pane::new_with_shell(
+                new_pane_id,
+                new_tab_id,
+                new_surface_id,
+                cols,
+                rows,
+                sh.shell_ref(),
+                &sh.args_ref(),
+                self.engine.make_waker(new_surface_id),
+                cwd.as_deref(),
+            )?
+        } else {
+            let surface = self.create_surface_via_registry(kind, new_surface_id, params)?;
+            let name = default_tab_name_for_kind(kind, params);
+            crate::model::Pane::new_with_surface(new_pane_id, new_tab_id, name, surface)
         };
 
         let ws = &mut self.engine.workspaces[ws_idx];
@@ -176,64 +128,44 @@ impl AppState {
     }
 
     /// Split a surface with cross-workspace target support and optional cwd. Does NOT move focus.
-    /// Supports all surface types (Terminal, Markdown, Explorer, Html).
+    /// Supports all surface kinds via SurfaceKindRegistry. `"terminal"`은 PTY spawn 경로를 사용한다.
     pub fn split_surface_targeted(
         &mut self,
         target_surface_id: Option<u32>,
         direction: SplitDirection,
         explicit_cwd: Option<std::path::PathBuf>,
-        surface_type: crate::model::SurfaceType,
+        kind: &str,
+        params: &Value,
     ) -> anyhow::Result<u32> {
         let new_surface_id = self.engine.next_ids.next_surface();
 
-        let new_surface: Box<dyn crate::model::Surface> = match surface_type {
-            crate::model::SurfaceType::Terminal => {
-                let cwd = explicit_cwd.or_else(|| match target_surface_id {
-                    Some(sid) => self.resolve_inherit_cwd_from_surface(sid),
-                    None => self.resolve_inherit_cwd(),
-                });
-                let cols = self.engine.default_cols;
-                let rows = self.engine.default_rows;
-                let sh = crate::engine_state::ShellConfig::from_settings(&self.engine.settings);
-                let waker = self.engine.make_waker(new_surface_id);
-                let terminal = tasty_terminal::Terminal::new(
-                    tasty_terminal::TerminalConfig {
-                        cols,
-                        rows,
-                        shell: sh.shell_ref(),
-                        args: &sh.args_ref(),
-                        surface_id: new_surface_id,
-                        working_dir: cwd.as_deref(),
-                    },
-                    waker,
-                )?;
-                Box::new(crate::model::TerminalSurface {
-                    id: new_surface_id,
-                    terminal,
-                    deferred_spawn: None,
-                })
-            }
-            crate::model::SurfaceType::Markdown { file } => {
-                Box::new(crate::model::MarkdownPanel::new(new_surface_id, file))
-            }
-            crate::model::SurfaceType::Explorer { path } => {
-                let root = path.unwrap_or_else(|| {
-                    directories::BaseDirs::new()
-                        .map(|d| d.home_dir().to_string_lossy().to_string())
-                        .unwrap_or_else(|| ".".to_string())
-                });
-                Box::new(crate::model::ExplorerPanel::new(new_surface_id, root))
-            }
-            crate::model::SurfaceType::Html { url } => {
-                Box::new(crate::model::HtmlPanel::new(new_surface_id, url))
-            }
-            crate::model::SurfaceType::Image { file } => match file {
-                Some(path) => Box::new(crate::model::ImagePanel::new(new_surface_id, path)),
-                None => Box::new(crate::model::ImagePanel::new_blank(new_surface_id)),
-            },
-            crate::model::SurfaceType::Empty => {
-                Box::new(crate::model::EmptySurface::new(new_surface_id))
-            }
+        let new_surface: Box<dyn crate::model::Surface> = if kind == "terminal" {
+            let cwd = explicit_cwd.or_else(|| match target_surface_id {
+                Some(sid) => self.resolve_inherit_cwd_from_surface(sid),
+                None => self.resolve_inherit_cwd(),
+            });
+            let cols = self.engine.default_cols;
+            let rows = self.engine.default_rows;
+            let sh = crate::engine_state::ShellConfig::from_settings(&self.engine.settings);
+            let waker = self.engine.make_waker(new_surface_id);
+            let terminal = tasty_terminal::Terminal::new(
+                tasty_terminal::TerminalConfig {
+                    cols,
+                    rows,
+                    shell: sh.shell_ref(),
+                    args: &sh.args_ref(),
+                    surface_id: new_surface_id,
+                    working_dir: cwd.as_deref(),
+                },
+                waker,
+            )?;
+            Box::new(crate::model::TerminalSurface {
+                id: new_surface_id,
+                terminal,
+                deferred_spawn: None,
+            })
+        } else {
+            self.create_surface_via_registry(kind, new_surface_id, params)?
         };
 
         match target_surface_id {
@@ -536,5 +468,55 @@ impl AppState {
             self.engine.mark_layout_dirty();
         }
         removed
+    }
+
+    /// SurfaceKindRegistry를 통해 새 surface 인스턴스를 만든다.
+    /// `"terminal"`은 호출자가 PTY spawn 경로로 분기 처리해야 하므로 여기서는 처리하지 않는다.
+    pub(crate) fn create_surface_via_registry(
+        &self,
+        kind: &str,
+        surface_id: u32,
+        params: &Value,
+    ) -> anyhow::Result<Box<dyn crate::model::Surface>> {
+        let def = self
+            .engine
+            .surface_registry
+            .get(kind)
+            .ok_or_else(|| anyhow::anyhow!("unknown surface kind: {}", kind))?;
+        (def.create)(surface_id, params)
+    }
+}
+
+/// kind+params로부터 합리적인 탭 표시명을 도출한다.
+/// 경로/URL이 있으면 마지막 segment, 없으면 kind에 대응되는 정적 이름을 사용한다.
+pub(crate) fn default_tab_name_for_kind(kind: &str, params: &Value) -> String {
+    fn basename_or(path: &str, fallback: &str) -> String {
+        path.split(['/', '\\'])
+            .filter(|s| !s.is_empty())
+            .last()
+            .unwrap_or(fallback)
+            .to_string()
+    }
+    match kind {
+        "markdown" => params
+            .get("file")
+            .and_then(|v| v.as_str())
+            .map(|p| basename_or(p, "Markdown"))
+            .unwrap_or_else(|| "Markdown".to_string()),
+        "explorer" => params
+            .get("path")
+            .and_then(|v| v.as_str())
+            .map(|p| basename_or(p, "Explorer"))
+            .unwrap_or_else(|| "Explorer".to_string()),
+        "html" => "HTML".to_string(),
+        "image" => params
+            .get("file")
+            .and_then(|v| v.as_str())
+            .map(|p| basename_or(p, "Image"))
+            .unwrap_or_else(|| "Image".to_string()),
+        "empty" => "Empty".to_string(),
+        "clipboard_viewer" => crate::i18n::t("clipboard_viewer.tab_title").to_string(),
+        "terminal" => "terminal".to_string(),
+        other => other.to_string(),
     }
 }

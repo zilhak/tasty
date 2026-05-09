@@ -16,7 +16,7 @@ pub(crate) fn handle_claude_launch(
     let directory = params.get("directory").and_then(|v| v.as_str());
     let task = params.get("task").and_then(|v| v.as_str());
 
-    let ws_idx = match state.add_workspace_background(None, crate::model::SurfaceType::Terminal) {
+    let ws_idx = match state.add_workspace_background(None, "terminal", &serde_json::Value::Null) {
         Ok(idx) => idx,
         Err(e) => return JsonRpcResponse::internal_error(id, e.to_string()),
     };
@@ -157,7 +157,8 @@ fn spawn_in_workspace(
                 Some(any_pane_id),
                 SplitDirection::Vertical,
                 None,
-                crate::model::SurfaceType::Terminal,
+                "terminal",
+                &serde_json::Value::Null,
             ) {
                 Ok((new_pane_id, _new_surface_id)) => {
                     state

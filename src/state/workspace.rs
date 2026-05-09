@@ -1,3 +1,5 @@
+use serde_json::Value;
+
 use crate::model::Workspace;
 
 use super::AppState;
@@ -39,12 +41,15 @@ impl AppState {
         Ok(())
     }
 
-    /// Add a new workspace without switching to it, with optional explicit cwd and surface type. Used by IPC/CLI.
+    /// Add a new workspace without switching to it. Used by IPC/CLI.
+    /// `kind`은 SurfaceKindRegistry 식별자. `"terminal"`은 PTY spawn 경로,
+    /// 그 외는 registry.create로 생성한다. `"empty"`로 워크스페이스를 만들 수는 없다.
     /// Returns the new workspace index.
     pub fn add_workspace_background(
         &mut self,
         explicit_cwd: Option<std::path::PathBuf>,
-        surface_type: crate::model::SurfaceType,
+        kind: &str,
+        params: &Value,
     ) -> anyhow::Result<usize> {
         let ws_id = self.engine.next_ids.next_workspace();
         let pane_id = self.engine.next_ids.next_pane();
@@ -52,86 +57,37 @@ impl AppState {
         let surface_id = self.engine.next_ids.next_surface();
 
         let name = format!("Workspace {}", self.engine.workspaces.len() + 1);
-        let is_terminal = matches!(surface_type, crate::model::SurfaceType::Terminal);
+        let is_terminal = kind == "terminal";
 
-        let ws = match surface_type {
-            crate::model::SurfaceType::Terminal => {
-                let cwd = explicit_cwd.or_else(|| self.resolve_inherit_cwd());
-                let shell = if self.engine.settings.general.shell.is_empty() {
-                    None
-                } else {
-                    Some(self.engine.settings.general.shell.as_str())
-                };
-                let shell_args_owned = self.engine.settings.general.effective_shell_args();
-                let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
-                Workspace::new_with_shell(
-                    ws_id,
-                    name,
-                    self.engine.default_cols,
-                    self.engine.default_rows,
-                    pane_id,
-                    tab_id,
-                    surface_id,
-                    shell,
-                    &shell_args,
-                    self.engine.make_waker(surface_id),
-                    cwd.as_deref(),
-                )?
-            }
-            crate::model::SurfaceType::Markdown { file } => {
-                let surface: Box<dyn crate::model::Surface> =
-                    Box::new(crate::model::MarkdownPanel::new(surface_id, file));
-                let pane = crate::model::Pane::new_with_surface(
-                    pane_id,
-                    tab_id,
-                    "Markdown".to_string(),
-                    surface,
-                );
-                Workspace::new_with_pane(ws_id, name, pane)
-            }
-            crate::model::SurfaceType::Explorer { path } => {
-                let root = path.unwrap_or_else(|| {
-                    directories::BaseDirs::new()
-                        .map(|d| d.home_dir().to_string_lossy().to_string())
-                        .unwrap_or_else(|| ".".to_string())
-                });
-                let surface: Box<dyn crate::model::Surface> =
-                    Box::new(crate::model::ExplorerPanel::new(surface_id, root));
-                let pane = crate::model::Pane::new_with_surface(
-                    pane_id,
-                    tab_id,
-                    "Explorer".to_string(),
-                    surface,
-                );
-                Workspace::new_with_pane(ws_id, name, pane)
-            }
-            crate::model::SurfaceType::Html { url } => {
-                let surface: Box<dyn crate::model::Surface> =
-                    Box::new(crate::model::HtmlPanel::new(surface_id, url));
-                let pane = crate::model::Pane::new_with_surface(
-                    pane_id,
-                    tab_id,
-                    "Html".to_string(),
-                    surface,
-                );
-                Workspace::new_with_pane(ws_id, name, pane)
-            }
-            crate::model::SurfaceType::Image { file } => {
-                let surface: Box<dyn crate::model::Surface> = match file {
-                    Some(path) => Box::new(crate::model::ImagePanel::new(surface_id, path)),
-                    None => Box::new(crate::model::ImagePanel::new_blank(surface_id)),
-                };
-                let pane = crate::model::Pane::new_with_surface(
-                    pane_id,
-                    tab_id,
-                    "Image".to_string(),
-                    surface,
-                );
-                Workspace::new_with_pane(ws_id, name, pane)
-            }
-            crate::model::SurfaceType::Empty => {
-                anyhow::bail!("Cannot create workspace with empty surface type");
-            }
+        let ws = if kind == "terminal" {
+            let cwd = explicit_cwd.or_else(|| self.resolve_inherit_cwd());
+            let shell = if self.engine.settings.general.shell.is_empty() {
+                None
+            } else {
+                Some(self.engine.settings.general.shell.as_str())
+            };
+            let shell_args_owned = self.engine.settings.general.effective_shell_args();
+            let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
+            Workspace::new_with_shell(
+                ws_id,
+                name,
+                self.engine.default_cols,
+                self.engine.default_rows,
+                pane_id,
+                tab_id,
+                surface_id,
+                shell,
+                &shell_args,
+                self.engine.make_waker(surface_id),
+                cwd.as_deref(),
+            )?
+        } else if kind == "empty" {
+            anyhow::bail!("Cannot create workspace with empty surface kind");
+        } else {
+            let surface = self.create_surface_via_registry(kind, surface_id, params)?;
+            let tab_name = super::pane::default_tab_name_for_kind(kind, params);
+            let pane = crate::model::Pane::new_with_surface(pane_id, tab_id, tab_name, surface);
+            Workspace::new_with_pane(ws_id, name, pane)
         };
 
         self.engine.workspaces.push(ws);
