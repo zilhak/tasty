@@ -232,7 +232,7 @@
 - Ctrl+Shift+I: 알림 패널 토글
 - Ctrl+,: 설정 모달 윈도우 열기 (독립 OS 윈도우, 모달 활성 시 다른 윈도우 입력 차단)
 - Ctrl+D: 터미널에 전달 (EOF). 이전에는 Surface 수직 분할이었으나, Ctrl+Shift+D로 변경
-- winit ModifiersState를 이용한 수정자 키 추적
+- 호스트(`src/window/main`)에서 winit `ModifiersState`로 수정자 키를 추적. `tasty-settings`는 winit에 의존하지 않으며, `LinkModifier::matches`는 `(ctrl, alt, super)` 원시 bool을 받는다
 
 ### 마우스 인터랙션
 - **클릭으로 Pane 포커스**: 터미널 영역 좌클릭 시 해당 Pane이 포커스됨. `cursor_position` 추적 + `focus_pane_at_position()`으로 어떤 Pane인지 판별

@@ -51,6 +51,18 @@ let th = crate::theme::theme();
 let color = th.blue;
 ```
 
+### `Theme` 필드 타입과 변환 헬퍼
+
+`Theme`의 모든 색상 필드는 GUI-free `HexColor { r, g, b, a: u8 }` (straight RGBA, unmultiplied) 타입이다. egui로 넘길 때는 두 변환 헬퍼 중 하나를 쓴다:
+
+| 변환 | 동작 | 사용처 |
+|------|------|--------|
+| `c.to_egui()` | `Color32::from_rgba_unmultiplied` 위임 (sRGB-aware premultiplication) | 일반 색상 (대부분) |
+| `c.to_egui_premultiplied()` | `Color32::from_rgba_premultiplied` 위임 (저장된 바이트를 그대로 사용) | hover/active overlay, separator 등 premultiplied 바이트로 저장된 반투명 색상 |
+| `c.to_float()` | `[f32; 4]` straight RGBA | GPU 셰이더 입력 |
+
+`From<HexColor> for egui::Color32` impl이 있어서 `painter.rect_filled(rect, 0.0, th.blue)` 같은 호출 사이트에서는 `.into()`만 써도 된다.
+
 ### Surface 배경색·글자색은 설정값에서 가져온다
 
 터미널/마크다운/익스플로러의 배경색·글자색은 `theme()`이 아니라 `settings.appearance.terminal_colors` 등에서 가져온다. 사용자가 커스텀한 값이 반영되어야 하기 때문이다.
@@ -65,15 +77,19 @@ let bg = settings.terminal_colors.focused_bg.to_float();
 
 ### egui premultiplied alpha 주의
 
+`HexColor`를 거치므로 일반 호출에서는 `c.to_egui()`만 쓰면 된다 (내부적으로 `from_rgba_unmultiplied`로 위임).
+
+다만 `Theme`의 `hover_overlay` / `active_overlay` / `separator`는 **premultiplied 바이트**를 저장하는 예외다(`HexColor::from_rgba(20, 20, 20, 20)` 등). 이들은 호출 사이트에서 반드시 `c.to_egui_premultiplied()`를 사용해야 시각 결과가 보존된다. `to_egui()`로 잘못 넘기면 sRGB-aware premultiplication이 한 번 더 적용되어 색이 바뀐다.
+
 ```rust
-// BAD — RGB가 알파보다 크면 거의 불투명으로 해석됨
-Color32::from_rgba_premultiplied(255, 255, 255, 20)
+// 일반 색상
+ui.painter().rect_filled(rect, 0.0, th.blue.to_egui());
+// 또는 .into()
+ui.painter().rect_filled(rect, 0.0, th.blue);
 
-// GOOD — egui가 내부적으로 곱셈 처리
-Color32::from_rgba_unmultiplied(255, 255, 255, 20)
+// hover/active overlay는 premultiplied
+ui.painter().rect_filled(rect, 0.0, th.hover_overlay.to_egui_premultiplied());
 ```
-
-**규칙: 반투명 색상에는 항상 `from_rgba_unmultiplied`를 사용한다.** `from_rgba_premultiplied`는 이미 곱해진 값을 직접 다루거나 const 문맥에서만 사용.
 
 ## `Theme` 필드 레퍼런스
 

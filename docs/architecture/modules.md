@@ -17,14 +17,18 @@
 | `pane_tree.rs` | PaneNode 이진 트리 (상위 분할). split/close/rect계산/디바이더탐색/방향포커스 |
 | `pane.rs` | Pane 구조체. 탭 관리 (생성/닫기/전환), Terminal 생성, Surface 분할 |
 | `tab.rs` | Tab 구조체. `SurfaceLayout`을 직접 소유. 분할/포커스/복원 로직 |
-| `surface_trait.rs` | `Surface` trait 정의. 모든 콘텐츠 타입의 공통 인터페이스 (downcast 메서드 포함) |
+| `surface_trait.rs` | `Surface` trait 정의. `kind()`(소문자 식별자) + `type_name()`(표시용) 분리, downcast 메서드 포함. GUI 의존 없음 (egui CursorIcon, is_egui_surface 등 제거됨) |
 | `terminal_surface.rs` | TerminalSurface (단일 터미널). Surface impl |
 | `surface_layout.rs` | SurfaceLayout 이진 트리 (하위 분할) + SurfaceRegion. pane_tree.rs와 동일한 패턴 |
 | `markdown_panel.rs` | MarkdownPanel. Surface impl. 마크다운 파일 경로 + 파싱 캐시 |
 | `explorer_panel.rs` | ExplorerPanel. Surface impl. 파일 탐색기 트리 상태 |
 | `html_panel.rs` | HtmlPanel. Surface impl. WebView URL 보유 |
+| `image_panel.rs` | ImagePanel. Surface impl. 이미지 파일 + 줌/팬/편집 상태 |
 | `empty_surface.rs` | EmptySurface. Surface impl. 변환 버튼 표시 |
+| `clipboard_viewer_panel.rs` | ClipboardViewerPanel. Surface impl. 클립보드 히스토리 뷰어 |
 | `tests.rs` | Rect/PaneNode/SurfaceLayout 유닛 테스트 |
+
+`Surface::kind()`는 `"terminal"`, `"markdown"`, `"explorer"`, `"html"`, `"image"`, `"empty"`, `"clipboard_viewer"` 7종 식별자를 반환한다. IPC/registry/플러그인이 이 값으로 surface 타입을 식별하며, `type_name()`은 표시 전용이라 식별 비교에 쓰면 안 된다.
 
 pane_tree.rs와 surface_layout.rs는 재귀 이진 트리 구조로, `match self { Leaf/Split }` 패턴의 반복이 본질적이다.
 
@@ -46,7 +50,7 @@ AppState 구조체를 mod.rs에서 정의하고, 각 서브모듈이 도메인�
 | `claude.rs` | Claude 부모-자식 관계 등록/해제/상태 관리 |
 | `message.rs` | Surface 간 메시지 송수신 (큐 기반) |
 | `layout.rs` | resize_all, surface_regions, process_all, update_grid_size |
-| `mouse.rs` | 디바이더 탐색/드래그, winit_cursor_icon_at |
+| `mouse.rs` | 디바이더 탐색/드래그, `winit_cursor_icon_at` (디바이더 위 ResizeHorizontal/Vertical, terminal kind는 Text, 그 외 None) |
 | `mark.rs` | Read mark, 타이핑 감지 |
 | `tests.rs` | 유닛 테스트 |
 
@@ -214,7 +218,7 @@ keybindings_tab.rs의 egui_key_to_string 매핑 테이블은 키 목록을 1:1 �
 | `engine_state.rs` | 270 | EngineState (워크스페이스 Vec, 설정, HookManager, 알림, waker factory) |
 | `shortcuts.rs` | 439 | 키보드 단축키: physical→logical 변환, binding 매칭, 카테고리별 핸들러 |
 | `font.rs` | 408 | FontConfig (cosmic-text 측정) + GlyphAtlas (shelf packing + 래스터라이징) |
-| `theme.rs` | 223 | Catppuccin Mocha 테마 구조체, egui 스타일 적용 |
+| `theme_bridge.rs` | ~50 | `apply_theme_to_egui()` — `tasty_core::Theme`을 egui Visuals/Style/TextStyle/Stroke로 변환. 호스트 측에 위치해 GUI 의존 격리. Theme 구조체 자체는 `tasty-core/src/theme.rs`에 있다 (`HexColor` 필드 사용, GUI-free) |
 | `selection.rs` | 220 | NormalizedSelection, 좌표 정규화, is_selected() |
 | `click_cursor.rs` | 217 | 클릭 좌표 → 터미널 그리드 → 커서 이동 명령 생성 |
 | `notification.rs` | 248 | NotificationStore (FIFO, 병합, 읽음 추적) + OS 네이티브 알림 |
