@@ -99,6 +99,8 @@ impl ImagePanel {
 }
 
 impl Surface for ImagePanel {
+    crate::impl_surface_any!();
+
     fn kind(&self) -> &'static str {
         "image"
     }

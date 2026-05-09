@@ -15,6 +15,8 @@ impl ClipboardViewerPanel {
 }
 
 impl Surface for ClipboardViewerPanel {
+    crate::impl_surface_any!();
+
     fn kind(&self) -> &'static str {
         "clipboard_viewer"
     }

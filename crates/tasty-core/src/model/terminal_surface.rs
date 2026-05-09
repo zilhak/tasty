@@ -32,6 +32,8 @@ impl TerminalSurface {
 }
 
 impl Surface for TerminalSurface {
+    crate::impl_surface_any!();
+
     fn kind(&self) -> &'static str {
         "terminal"
     }

@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::path::PathBuf;
 
 use super::{
@@ -11,11 +12,18 @@ use tasty_terminal::Terminal;
 /// Each surface type (TerminalSurface, MarkdownPanel, ExplorerPanel,
 /// HtmlPanel, EmptySurface, ImagePanel) implements this trait.
 /// All methods have default implementations suitable for non-terminal surfaces.
-pub trait Surface {
+pub trait Surface: Any {
     /// Stable identifier for this surface kind (lowercase, snake_case).
     /// 예: `"terminal"`, `"markdown"`, `"explorer"`. IPC/registry/플러그인이
     /// 식별자로 쓰며, 절대 변경되지 않는다.
     fn kind(&self) -> &'static str;
+
+    /// Any-cast accessor. Used by the surface registry's render/snapshot/restore
+    /// closures and other callers that need to recover the concrete surface type
+    /// without a per-kind downcast method on the trait.
+    /// 모든 구현체는 `tasty_core::impl_surface_any!()` 매크로 한 줄로 채울 수 있다.
+    fn as_any(&self) -> &dyn Any;
+    fn as_any_mut(&mut self) -> &mut dyn Any;
 
     /// Display-only type name (e.g. "Terminal", "Markdown"). 사용자에게 보이는
     /// 라벨이며 식별 비교에는 `kind()`를 써야 한다. 향후 i18n 적용 가능.

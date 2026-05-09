@@ -13,6 +13,8 @@ impl EmptySurface {
 }
 
 impl Surface for EmptySurface {
+    crate::impl_surface_any!();
+
     fn kind(&self) -> &'static str {
         "empty"
     }

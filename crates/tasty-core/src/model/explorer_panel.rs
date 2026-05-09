@@ -331,6 +331,8 @@ pub fn is_previewable_file(path: &str, ext: &str) -> bool {
 }
 
 impl Surface for ExplorerPanel {
+    crate::impl_surface_any!();
+
     fn kind(&self) -> &'static str {
         "explorer"
     }

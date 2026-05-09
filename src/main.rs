@@ -40,6 +40,7 @@ mod state;
 mod theme_bridge;
 mod storage;
 mod surface_meta;
+mod surface_registry;
 #[cfg(windows)]
 mod system_tray;
 mod ui;

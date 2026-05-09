@@ -39,6 +39,8 @@ impl HtmlPanel {
 }
 
 impl Surface for HtmlPanel {
+    crate::impl_surface_any!();
+
     fn kind(&self) -> &'static str {
         "html"
     }

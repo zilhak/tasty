@@ -1,10 +1,12 @@
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use crate::global_hooks::GlobalHookManager;
 use crate::model::Workspace;
 use crate::notification::NotificationStore;
 use crate::settings::Settings;
 use crate::state::{ClaudeChildEntry, SurfaceMessage};
+use crate::surface_registry::SurfaceKindRegistry;
 use tasty_hooks::HookManager;
 use tasty_terminal::{Terminal, TerminalEvent, Waker};
 
@@ -150,6 +152,11 @@ pub struct EngineState {
 
     // ── CWD polling (round-robin) ──
     // macOS/Linux 전용. Windows에서는 폴링을 돌지 않아 필드 자체가 없음.
+    // ── Surface kind registry ──
+    /// Surface 종류별 메타·동작 lookup. 단계 03C에서는 빈 레지스트리만 보유한다 —
+    /// 03D에서 본체 7종이 등록되며, 단계 05에서 plugin이 추가될 예정.
+    pub surface_registry: Arc<SurfaceKindRegistry>,
+
     // ── Layout persistence ──
     pub layout_dirty: crate::layout_persistence::LayoutDirtyTracker,
     /// Active workspace index restored from layout.json. Consumed once by AppState::new().
@@ -188,6 +195,7 @@ impl EngineState {
             last_key_input: HashMap::new(),
             busy_surfaces: std::collections::HashSet::new(),
             waker_factory: None,
+            surface_registry: Arc::new(SurfaceKindRegistry::new()),
             layout_dirty: crate::layout_persistence::LayoutDirtyTracker::new(),
             restored_active_workspace: None,
             pending_restore_commands: Vec::new(),
