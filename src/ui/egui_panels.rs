@@ -52,7 +52,13 @@ pub fn draw_egui_panels(
                 height: (pane_rect.height - tab_bar_h)
                     .max(crate::model::length::PhysicalPx(1.0)),
             };
-            for r in tab.layout().surface_regions(content_rect).into_iter().filter(|r| r.surface.is_egui_surface()) {
+            // egui로 그려지는 surface = terminal 외 모든 종류.
+            for r in tab
+                .layout()
+                .surface_regions(content_rect)
+                .into_iter()
+                .filter(|r| r.surface.kind() != "terminal")
+            {
                 infos.push(EguiPanelInfo {
                     pane_id,
                     surface_id: Some(r.id),

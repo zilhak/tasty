@@ -27,13 +27,16 @@ impl AppState {
             });
         }
 
-        // 2. Surface check — ask the surface for its cursor
+        // 2. Surface check — terminal surface는 텍스트 커서, 그 외는 기본.
         for (_pane_id, _pane_rect, regions) in &self.surface_regions(terminal_rect) {
             for r in regions {
                 if r.rect.contains(PhysicalPx(x), PhysicalPx(y)) {
-                    let local_x = x - r.rect.x.value();
-                    let local_y = y - r.rect.y.value();
-                    return r.surface.cursor_icon_at(local_x, local_y);
+                    let _local = (x - r.rect.x.value(), y - r.rect.y.value());
+                    return if r.surface.kind() == "terminal" {
+                        Some(egui::CursorIcon::Text)
+                    } else {
+                        None
+                    };
                 }
             }
         }

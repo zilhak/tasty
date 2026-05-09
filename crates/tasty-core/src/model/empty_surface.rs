@@ -13,6 +13,9 @@ impl EmptySurface {
 }
 
 impl Surface for EmptySurface {
+    fn kind(&self) -> &'static str {
+        "empty"
+    }
     fn type_name(&self) -> &'static str {
         "Empty"
     }

@@ -12,7 +12,13 @@ use tasty_terminal::Terminal;
 /// HtmlPanel, EmptySurface, ImagePanel) implements this trait.
 /// All methods have default implementations suitable for non-terminal surfaces.
 pub trait Surface {
-    /// Surface type name (e.g. "Terminal", "Markdown").
+    /// Stable identifier for this surface kind (lowercase, snake_case).
+    /// 예: `"terminal"`, `"markdown"`, `"explorer"`. IPC/registry/플러그인이
+    /// 식별자로 쓰며, 절대 변경되지 않는다.
+    fn kind(&self) -> &'static str;
+
+    /// Display-only type name (e.g. "Terminal", "Markdown"). 사용자에게 보이는
+    /// 라벨이며 식별 비교에는 `kind()`를 써야 한다. 향후 i18n 적용 가능.
     fn type_name(&self) -> &'static str;
 
     /// Get this surface's ID.
@@ -31,18 +37,6 @@ pub trait Surface {
     /// Whether this surface contains the given surface ID.
     fn contains_surface(&self, surface_id: SurfaceId) -> bool {
         self.all_surface_ids().contains(&surface_id)
-    }
-
-    /// Whether this surface is an egui surface (rendered by egui, not GPU shader).
-    fn is_egui_surface(&self) -> bool {
-        true
-    }
-
-    /// Determine the cursor icon at the given surface-local position.
-    /// Returns Some(icon) if this surface wants to set the cursor, None to leave it unchanged.
-    /// Coordinates are in physical pixels, relative to the surface's top-left corner.
-    fn cursor_icon_at(&self, _local_x: f32, _local_y: f32) -> Option<egui::CursorIcon> {
-        None
     }
 
     /// Get the focused terminal (immutable).
@@ -150,7 +144,8 @@ pub trait Surface {
     /// Produce a JSON tree representation of this surface.
     fn to_tree_json(&self) -> serde_json::Value {
         let mut obj = serde_json::json!({
-            "type": self.type_name(),
+            "kind": self.kind(),
+            "type": self.type_name(), // 호환성을 위한 별칭. 신규 코드는 `kind` 사용.
         });
         if let Some(id) = self.surface_id() {
             obj["id"] = serde_json::json!(id);

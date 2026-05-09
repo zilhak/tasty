@@ -39,6 +39,9 @@ impl HtmlPanel {
 }
 
 impl Surface for HtmlPanel {
+    fn kind(&self) -> &'static str {
+        "html"
+    }
     fn type_name(&self) -> &'static str {
         "Html"
     }

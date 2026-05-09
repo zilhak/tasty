@@ -72,6 +72,9 @@ impl MarkdownPanel {
 }
 
 impl Surface for MarkdownPanel {
+    fn kind(&self) -> &'static str {
+        "markdown"
+    }
     fn type_name(&self) -> &'static str {
         "Markdown"
     }

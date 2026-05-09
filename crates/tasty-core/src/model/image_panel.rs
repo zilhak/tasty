@@ -597,6 +597,9 @@ impl ImagePanel {
 }
 
 impl Surface for ImagePanel {
+    fn kind(&self) -> &'static str {
+        "image"
+    }
     fn type_name(&self) -> &'static str {
         "Image"
     }

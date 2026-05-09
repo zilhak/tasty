@@ -32,20 +32,16 @@ impl TerminalSurface {
 }
 
 impl Surface for TerminalSurface {
+    fn kind(&self) -> &'static str {
+        "terminal"
+    }
+
     fn type_name(&self) -> &'static str {
         "Terminal"
     }
 
     fn surface_id(&self) -> Option<SurfaceId> {
         Some(self.id)
-    }
-
-    fn is_egui_surface(&self) -> bool {
-        false
-    }
-
-    fn cursor_icon_at(&self, _local_x: f32, _local_y: f32) -> Option<egui::CursorIcon> {
-        Some(egui::CursorIcon::Text)
     }
 
     fn source_cwd(&self) -> Option<std::path::PathBuf> {

@@ -30,6 +30,9 @@ impl ClipboardViewerPanel {
 }
 
 impl Surface for ClipboardViewerPanel {
+    fn kind(&self) -> &'static str {
+        "clipboard_viewer"
+    }
     fn type_name(&self) -> &'static str {
         "ClipboardViewer"
     }
