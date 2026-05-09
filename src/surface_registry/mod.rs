@@ -1,17 +1,67 @@
 //! Surface 종류별 메타·동작 정의 레지스트리.
 //!
-//! 단계 03C에서는 *골격*만 도입한다 (kind 문자열만 보유, factory/render/snapshot 등은 03D에서 채움).
-//! 본체 7종(Markdown/Explorer/Html/Image/Empty/ClipboardViewer/Terminal)이 단계 03D에서 등록된다.
+//! 본체 7종(Terminal/Markdown/Explorer/Html/Image/Empty/ClipboardViewer)이 부팅 시 등록된다.
 //! 외부 plugin은 단계 05에서 같은 레지스트리에 추가될 예정.
+//!
+//! # 단계
+//!
+//! - **03C**: 빈 골격(kind 식별자만).
+//! - **03D-A** (현재): `create` / `restore` / `snapshot` 함수 포인터 등록. 03E에서
+//!   `SavedSurface::Generic`이 snapshot/restore를 호출하고, 03F에서 IPC handler가
+//!   create를 호출한다.
+//! - **추후**: render 함수 + RenderStores + SurfaceCtx + SurfaceAction을 도입해
+//!   `egui_panels::draw_egui_panels`의 다운캐스트 분기를 dispatch로 대체한다 (이후
+//!   단계에서 다운캐스트 메서드 6종 제거).
+
+mod builtins;
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
-/// surface 종류별 메타 정보. 03C는 식별자만 둔다 — 03D에서 create/render/snapshot/restore/on_close
-/// 함수 포인터들을 채운다.
+use tasty_core::model::{Surface, SurfaceId};
+
+pub use builtins::register_builtin_kinds;
+
+/// surface 종류별 메타 + 동작 함수 묶음.
+///
+/// 모든 함수는 `Send + Sync + 'static`이며, `Arc<SurfaceKindDef>` 단위로 보관되어
+/// 매 프레임 lookup 비용을 Arc clone 한 번으로 제한한다.
 pub struct SurfaceKindDef {
     /// 안정 식별자 (lowercase snake_case). 예: `"terminal"`, `"markdown"`.
     pub kind: &'static str,
+
+    /// 사용자에게 표시되는 표시명 i18n 키. 예: `"surface.kind.markdown"`.
+    /// 03D-A에서는 자리만 둔다 — 현재 표시명은 surface 자체의 `display_name()` 메서드를 사용.
+    pub display_name_i18n_key: &'static str,
+
+    /// 새 surface 인스턴스를 만든다. 03F에서 IPC handler / `add_kind_tab` /
+    /// `split_pane_targeted` 가 이 함수를 호출하여 종류별 분기를 일원화한다.
+    ///
+    /// `params`는 IPC/CLI에서 받은 JSON. 종류별로 필요한 키가 다르다 (예: markdown은 `"file"`,
+    /// html은 `"url"`).
+    #[allow(clippy::type_complexity)]
+    pub create: Arc<
+        dyn Fn(SurfaceId, &serde_json::Value) -> anyhow::Result<Box<dyn Surface>>
+            + Send
+            + Sync,
+    >,
+
+    /// 영속화된 데이터(`SavedSurface::Generic.data`)에서 surface를 복원한다.
+    /// 03E에서 layout.json v1→v2 마이그레이션 후 사용된다.
+    ///
+    /// Terminal은 PTY spawn이 호스트 책임이라 별도 경로(`SavedSurface::Terminal`)를 거치며,
+    /// terminal builtin의 `restore`는 호출되지 않는다 (안전한 sentinel을 반환).
+    #[allow(clippy::type_complexity)]
+    pub restore: Arc<
+        dyn Fn(SurfaceId, &serde_json::Value) -> anyhow::Result<Box<dyn Surface>>
+            + Send
+            + Sync,
+    >,
+
+    /// surface의 직렬화 가능한 영속 데이터를 반환한다. `None`이면 영속화에서 제외.
+    /// 03E의 `SavedSurface::capture_surface`가 호출한다. ClipboardViewer 같은
+    /// 휘발성 surface는 `None`을 반환하여 layout 저장에서 빠진다.
+    pub snapshot: Arc<dyn Fn(&dyn Surface) -> Option<serde_json::Value> + Send + Sync>,
 }
 
 /// surface 종류 lookup 테이블. `Arc<SurfaceKindRegistry>` 단위로 EngineState에 보관되어
@@ -46,29 +96,66 @@ impl SurfaceKindRegistry {
     pub fn iter(&self) -> impl Iterator<Item = (&&'static str, &Arc<SurfaceKindDef>)> {
         self.kinds.iter()
     }
+
+    pub fn len(&self) -> usize {
+        self.kinds.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.kinds.is_empty()
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn dummy_def(kind: &'static str) -> SurfaceKindDef {
+        SurfaceKindDef {
+            kind,
+            display_name_i18n_key: "test.dummy",
+            create: Arc::new(|_, _| Err(anyhow::anyhow!("dummy"))),
+            restore: Arc::new(|_, _| Err(anyhow::anyhow!("dummy"))),
+            snapshot: Arc::new(|_| None),
+        }
+    }
+
     #[test]
     fn register_and_lookup() {
         let mut reg = SurfaceKindRegistry::new();
-        reg.register(SurfaceKindDef { kind: "alpha" });
-        reg.register(SurfaceKindDef { kind: "beta" });
+        reg.register(dummy_def("alpha"));
+        reg.register(dummy_def("beta"));
         assert!(reg.contains("alpha"));
         assert!(reg.contains("beta"));
         assert!(!reg.contains("gamma"));
         assert_eq!(reg.get("alpha").unwrap().kind, "alpha");
+        assert_eq!(reg.len(), 2);
     }
 
     #[test]
     fn duplicate_register_overwrites() {
         let mut reg = SurfaceKindRegistry::new();
-        reg.register(SurfaceKindDef { kind: "x" });
-        reg.register(SurfaceKindDef { kind: "x" });
-        // No panic; second register overwrites silently (warn logged).
+        reg.register(dummy_def("x"));
+        reg.register(dummy_def("x"));
         assert!(reg.contains("x"));
+        assert_eq!(reg.len(), 1);
+    }
+
+    #[test]
+    fn builtin_registers_seven_kinds() {
+        let mut reg = SurfaceKindRegistry::new();
+        register_builtin_kinds(&mut reg);
+        for kind in [
+            "terminal",
+            "markdown",
+            "explorer",
+            "html",
+            "image",
+            "empty",
+            "clipboard_viewer",
+        ] {
+            assert!(reg.contains(kind), "missing builtin kind: {kind}");
+        }
+        assert_eq!(reg.len(), 7);
     }
 }
