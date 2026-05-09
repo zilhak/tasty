@@ -141,6 +141,13 @@ pub trait Surface {
         self.type_name().to_string()
     }
 
+    /// HtmlPanel URL accessor. Returns `Some(&url)` for HTML surfaces, `None` for others.
+    /// 호스트의 native WebView 동기화(`sync_webviews`/`find_html_url`)가 이 메서드로
+    /// 식별·URL을 함께 얻어 `as_html()` 다운캐스트 의존을 줄인다.
+    fn html_url(&self) -> Option<&str> {
+        None
+    }
+
     /// Produce a JSON tree representation of this surface.
     fn to_tree_json(&self) -> serde_json::Value {
         let mut obj = serde_json::json!({

@@ -248,8 +248,10 @@ impl MainWindow {
             for (pane_id, pane_rect) in &pane_rects {
                 if let Some(pane) = ws.pane_layout().find_pane(*pane_id) {
                     for (tab_idx, tab) in pane.tabs.iter().enumerate() {
-                        if let Some(html) = tab.surface().as_html() {
-                            all_html_ids.push(html.id);
+                        let surface = tab.surface();
+                        if surface.html_url().is_some() {
+                            let Some(sid) = surface.surface_id() else { continue };
+                            all_html_ids.push(sid);
                             // Only visible if: active workspace AND active tab
                             let is_active_tab = tab_idx == pane.active_tab;
                             if ws_idx == active_ws && is_active_tab {
@@ -266,7 +268,7 @@ impl MainWindow {
                                         .max(1.0)
                                         / scale_factor,
                                 };
-                                active_html.insert(html.id, bounds);
+                                active_html.insert(sid, bounds);
                             }
                         }
                     }
@@ -343,9 +345,10 @@ impl MainWindow {
             for &pid in &ws.pane_layout().all_pane_ids() {
                 if let Some(pane) = ws.pane_layout().find_pane(pid) {
                     for tab in &pane.tabs {
-                        if let Some(html) = tab.surface().as_html() {
-                            if html.id == surface_id {
-                                return Some(html.url.clone());
+                        let surface = tab.surface();
+                        if surface.surface_id() == Some(surface_id) {
+                            if let Some(url) = surface.html_url() {
+                                return Some(url.to_string());
                             }
                         }
                     }

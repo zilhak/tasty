@@ -61,6 +61,9 @@ impl Surface for HtmlPanel {
     fn as_html_mut(&mut self) -> Option<&mut HtmlPanel> {
         Some(self)
     }
+    fn html_url(&self) -> Option<&str> {
+        Some(&self.url)
+    }
     fn source_cwd(&self) -> Option<PathBuf> {
         self.url_to_local_path()
             .as_deref()
