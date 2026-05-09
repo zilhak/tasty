@@ -67,6 +67,15 @@ pub(crate) fn physical_key_to_logical(physical: &PhysicalKey) -> Option<Key> {
 }
 
 /// 바인딩 목록 중 하나라도 매칭되면 true.
+/// Returns the surface ID of the focused image surface, if any.
+fn focused_image_surface_id(state: &crate::state::AppState) -> Option<u32> {
+    let pane = state.focused_pane()?;
+    let tab = pane.tabs.get(pane.active_tab)?;
+    let focused = tab.focused_surface;
+    let surface = tab.layout().find_surface(focused)?;
+    surface.as_image().map(|p| p.id)
+}
+
 fn matches_any_binding(bindings: &[String], key: &Key, mods: ModifiersState) -> bool {
     bindings.iter().any(|b| matches_binding(b, key, mods))
 }
@@ -909,14 +918,9 @@ impl MainWindow {
         }
         if matches_any_binding(&kb.image_undo, key, mods) {
             if state.focused_surface_type() == crate::state::FocusedSurfaceType::Image {
-                if let Some(pane) = state.focused_pane_mut() {
-                    if let Some(tab) = pane.tabs.get_mut(pane.active_tab) {
-                        let focused = tab.focused_surface;
-                        if let Some(leaf) = tab.layout_mut().find_leaf_mut(focused) {
-                            if let Some(panel) = leaf.as_image_mut() {
-                                panel.undo();
-                            }
-                        }
+                if let Some(sid) = focused_image_surface_id(state) {
+                    if let Some(view) = state.image_views.get_mut(sid) {
+                        view.undo();
                     }
                 }
                 return true;
@@ -924,14 +928,9 @@ impl MainWindow {
         }
         if matches_any_binding(&kb.image_redo, key, mods) {
             if state.focused_surface_type() == crate::state::FocusedSurfaceType::Image {
-                if let Some(pane) = state.focused_pane_mut() {
-                    if let Some(tab) = pane.tabs.get_mut(pane.active_tab) {
-                        let focused = tab.focused_surface;
-                        if let Some(leaf) = tab.layout_mut().find_leaf_mut(focused) {
-                            if let Some(panel) = leaf.as_image_mut() {
-                                panel.redo();
-                            }
-                        }
+                if let Some(sid) = focused_image_surface_id(state) {
+                    if let Some(view) = state.image_views.get_mut(sid) {
+                        view.redo();
                     }
                 }
                 return true;

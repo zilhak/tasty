@@ -98,6 +98,10 @@ pub struct AppState {
     /// Per-surface host view state for `MarkdownPanel` (content cache, scroll, commonmark cache).
     /// `MarkdownPanel` itself only holds `file_path` + reload tracking; everything GUI-bound lives here.
     pub markdown_views: crate::ui::markdown_view::MarkdownViewStore,
+
+    /// Per-surface host view state for `ImagePanel` (pixel buffer, textures, edit state,
+    /// undo history, brush settings, popup buffers).
+    pub image_views: crate::ui::image_view::ImageViewStore,
 }
 
 /// A pending native context menu request.
@@ -290,6 +294,7 @@ impl AppState {
             search: crate::search_state::SearchState::new(),
             toasts: crate::ui::ToastManager::new(),
             markdown_views: Default::default(),
+            image_views: Default::default(),
         })
     }
 
@@ -310,6 +315,7 @@ impl AppState {
         self.mark_parent_closed(surface_id);
         crate::surface_meta::SurfaceMetaStore::remove(surface_id);
         self.markdown_views.drop_view(surface_id);
+        self.image_views.drop_view(surface_id);
     }
 
     pub fn active_workspace(&self) -> &crate::model::Workspace {

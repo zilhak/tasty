@@ -28,12 +28,19 @@ impl MainWindow {
             pixels,
         };
 
-        if let Some(panel) = self.state.focused_image_mut() {
-            panel.paste_image(color_image);
+        // Borrow conflict workaround: temporarily extract image_views so we can hold
+        // `&mut ImageView` from the store while resolving the focused panel from
+        // `state.engine.workspaces`.
+        let mut image_views = std::mem::take(&mut self.state.image_views);
+        let pasted = if let Some(panel) = self.state.focused_image_mut() {
+            let view = image_views.get_or_init(panel);
+            view.paste_image(color_image);
             true
         } else {
             false
-        }
+        };
+        self.state.image_views = image_views;
+        pasted
     }
 
     pub fn paste_to_terminal(&mut self) {
