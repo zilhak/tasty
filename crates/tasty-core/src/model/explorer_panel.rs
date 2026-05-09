@@ -12,33 +12,12 @@ pub struct FileNode {
     pub is_expanded: bool,
 }
 
-/// A panel that shows a file explorer with a tree view and file preview.
+/// 파일 탐색기 surface 모델. 디렉터리 트리 데이터(`root_node`)와 루트 경로만 보유.
+/// 선택/스크롤/주소바 편집 등 휘발성 GUI 상태는 호스트의 `ExplorerView`에 둔다.
 pub struct ExplorerPanel {
     pub id: u32,
     pub root_path: String,
     pub root_node: FileNode,
-    /// The last clicked/navigated item — used for right-side preview.
-    pub selected_file: Option<String>,
-    /// All currently selected items (for multi-selection & clipboard).
-    pub selected_files: HashSet<String>,
-    /// Anchor point for Shift+click range selection.
-    pub selection_anchor: Option<String>,
-    pub file_content: Option<String>,
-    pub is_markdown: bool,
-    pub scroll_offset: f32,
-    pub tree_scroll_offset: f32,
-    /// Address bar editing state. When Some, the text field is being edited.
-    pub address_bar_text: String,
-    /// Whether the address bar is actively being edited (has focus).
-    pub address_bar_editing: bool,
-    /// Whether the file preview panel is visible.
-    pub show_preview: bool,
-    /// Tree panel width ratio (0.0..1.0) when preview is shown. Default 0.35.
-    pub tree_ratio: f32,
-    /// 직전 프레임에 이 surface가 focused였는지 추적. 포커스 획득 시 트리 갱신용.
-    pub was_focused: bool,
-    /// 마지막 자동 갱신 시각. focused 상태에서 2초마다 증분 갱신.
-    pub last_refresh: std::time::Instant,
 }
 
 impl ExplorerPanel {
@@ -57,21 +36,8 @@ impl ExplorerPanel {
         Self::load_directory(&mut root_node);
         Self {
             id,
-            root_path: root_path.clone(),
+            root_path,
             root_node,
-            selected_file: None,
-            selected_files: HashSet::new(),
-            selection_anchor: None,
-            file_content: None,
-            is_markdown: false,
-            scroll_offset: 0.0,
-            tree_scroll_offset: 0.0,
-            address_bar_text: root_path,
-            address_bar_editing: false,
-            show_preview: true,
-            tree_ratio: 0.35,
-            was_focused: false,
-            last_refresh: std::time::Instant::now(),
         }
     }
 
@@ -193,92 +159,28 @@ impl ExplorerPanel {
         }
     }
 
-    /// Single-click select: clear all selections, select one item, set anchor.
-    pub fn select_single(&mut self, path: &str) {
-        self.selected_files.clear();
-        self.selected_files.insert(path.to_string());
-        self.selection_anchor = Some(path.to_string());
-        self.set_preview(path);
-    }
-
-    /// Ctrl/Cmd+click: toggle one item in the selection set.
-    pub fn toggle_select(&mut self, path: &str) {
-        if self.selected_files.contains(path) {
-            self.selected_files.remove(path);
-        } else {
-            self.selected_files.insert(path.to_string());
-        }
-        self.selection_anchor = Some(path.to_string());
-        self.set_preview(path);
-    }
-
-    /// Shift+click: range select from anchor to target (inclusive).
-    /// `visible_paths` must be the current ordered list of visible tree nodes.
-    pub fn range_select(&mut self, target: &str, visible_paths: &[String]) {
-        let anchor = self
-            .selection_anchor
-            .clone()
-            .unwrap_or_else(|| target.to_string());
-        let anchor_idx = visible_paths.iter().position(|p| p == &anchor);
-        let target_idx = visible_paths.iter().position(|p| p == target);
-        if let (Some(a), Some(t)) = (anchor_idx, target_idx) {
-            let (start, end) = if a <= t { (a, t) } else { (t, a) };
-            self.selected_files.clear();
-            for p in &visible_paths[start..=end] {
-                self.selected_files.insert(p.clone());
-            }
-        }
-        self.set_preview(target);
-    }
-
-    /// Select all visible items.
-    pub fn select_all(&mut self, visible_paths: &[String]) {
-        self.selected_files.clear();
-        for p in visible_paths {
-            self.selected_files.insert(p.clone());
-        }
-    }
-
-    /// Navigate to a new root path. Reloads the directory tree.
-    pub fn navigate_to(&mut self, path: String) {
+    /// 새 루트 경로로 트리를 다시 로드한다. 디렉터리가 아니면 false 반환.
+    /// view 측 selection/scroll/address bar 리셋은 호출자가 별도로 처리한다
+    /// (`ExplorerView::reset_after_navigate`).
+    pub fn navigate_to(&mut self, path: String) -> bool {
         if !std::path::Path::new(&path).is_dir() {
-            return;
+            return false;
         }
         self.root_path = path.clone();
         self.root_node = FileNode {
             name: path.split(['/', '\\']).last().unwrap_or("root").to_string(),
-            path: path.clone(),
+            path,
             is_directory: true,
             children: None,
             is_expanded: true,
         };
         Self::load_directory(&mut self.root_node);
-        self.address_bar_text = path;
-        self.selected_file = None;
-        self.selected_files.clear();
-        self.selection_anchor = None;
-        self.file_content = None;
-    }
-
-    /// Update the right-side preview for the given path.
-    fn set_preview(&mut self, path: &str) {
-        let ext = path.rsplit('.').next().unwrap_or("").to_lowercase();
-        self.is_markdown = ext == "md" || ext == "markdown";
-        self.selected_file = Some(path.to_string());
-        self.scroll_offset = 0.0;
-
-        // Only load preview for files (not directories)
-        let is_dir = std::path::Path::new(path).is_dir();
-        if !is_dir && is_previewable_file(path, &ext) {
-            self.file_content = std::fs::read_to_string(path).ok();
-        } else {
-            self.file_content = None;
-        }
+        true
     }
 }
 
-/// Check if a file is likely a text file suitable for preview.
-fn is_previewable_file(path: &str, ext: &str) -> bool {
+/// 파일이 미리보기 가능한 텍스트 포맷인지 판정. ExplorerView에서 호출.
+pub fn is_previewable_file(path: &str, ext: &str) -> bool {
     const TEXT_EXTENSIONS: &[&str] = &[
         // Markup / Doc
         "md",
@@ -450,8 +352,7 @@ impl Surface for ExplorerPanel {
     fn as_explorer_mut(&mut self) -> Option<&mut ExplorerPanel> {
         Some(self)
     }
-    /// 주소바에 편집 중인 텍스트(`address_bar_text`)는 무시하고 실제로 트리가
-    /// 보이고 있는 `root_path`만 사용한다.
+    /// 실제로 트리가 가리키는 `root_path`만 사용한다 (주소바 편집 버퍼는 view에 있음).
     fn source_cwd(&self) -> Option<std::path::PathBuf> {
         if self.root_path.is_empty() {
             None

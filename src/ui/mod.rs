@@ -3,6 +3,7 @@ pub(crate) mod convert_popup;
 pub(crate) mod dialog;
 mod divider;
 mod egui_panels;
+pub mod explorer_view;
 pub mod image_view;
 pub mod markdown_view;
 pub(crate) mod file_open_popup;

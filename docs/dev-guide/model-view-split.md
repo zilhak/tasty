@@ -136,8 +136,14 @@ state.foo_views = foo_views;  // 반드시 복원 (이후 state 접근 전에)
 |-------|------|-------|
 | `MarkdownPanel` (file_path + mtime) | `MarkdownView` (content, scroll_offset, commonmark_cache) | `AppState::markdown_views` |
 | `ImagePanel` (file_path, dir_images, current_index) | `ImageView` (original_image, texture, edit_state, brush, popup buffers) | `AppState::image_views` |
+| `ExplorerPanel` (root_path, root_node) | `ExplorerView` (selection, scroll, address bar 버퍼, focus 추적, refresh 타이머, preview 캐시) | `AppState::explorer_views` |
 | `HtmlPanel` (url) | (없음 — 모델 자체가 슬림. native WebView는 `MainWindow::webviews`) | — |
 | `TerminalSurface` | (없음 — 터미널 자체가 호스트와 분리되어 있고 GPU 렌더링) | — |
-| `ExplorerPanel` | (모델 안에 트리 expansion 상태 보유 — 추후 분리 검토) | — |
+| `EmptySurface` | (없음 — id만 보유) | — |
+| `ClipboardViewerPanel` | (모델 안에 검색·선택 상태 보유 — 03B에서 분리 예정) | — |
 
 신규 surface 추가 시 위 표에 줄을 추가하라.
+
+> **참고**: `ExplorerPanel.root_node`(파일 트리 + expand 플래그)는 GUI 의존이 없는
+> *데이터*이므로 model에 유지한다. 플러그인 프로세스에서도 같은 트리 데이터를 다루기
+> 때문이다. 휘발성 GUI 상태(선택, 스크롤, 주소바 편집)만 view로 분리한다.

@@ -102,11 +102,12 @@ pub fn draw_egui_panels(
     let markdown_font = state.engine.settings.appearance.effective_markdown_font();
     let explorer_font = state.engine.settings.appearance.effective_explorer_font();
 
-    // Temporarily extract markdown_views/image_views so we can hold a `&mut View` from
+    // Temporarily extract view stores so we can hold a `&mut View` from
     // the store at the same time as `&mut Panel` from `state.engine.workspaces`.
     // (Same pattern used below for clipboard_history.)
     let mut markdown_views = std::mem::take(&mut state.markdown_views);
     let mut image_views = std::mem::take(&mut state.image_views);
+    let mut explorer_views = std::mem::take(&mut state.explorer_views);
 
     for info in &infos {
         let id_suffix = info
@@ -171,28 +172,34 @@ pub fn draw_egui_panels(
         } else if let Some(exp_panel) = surface.as_explorer_mut() {
             let is_focused = info.is_keyboard_target;
             let keys = if is_focused { &surface_keys[..] } else { &[] };
+            let view = explorer_views.get_or_init(exp_panel);
             // 포커스 획득 시 즉시 갱신 + focused 상태에서 2초마다 자동 갱신
-            let should_refresh = if is_focused && !exp_panel.was_focused {
+            let should_refresh = if is_focused && !view.was_focused {
                 true
-            } else if is_focused && exp_panel.last_refresh.elapsed().as_secs() >= 2 {
+            } else if is_focused && view.last_refresh.elapsed().as_secs() >= 2 {
                 true
             } else {
                 false
             };
             if should_refresh {
                 exp_panel.refresh_expanded_dirs();
-                exp_panel.last_refresh = std::time::Instant::now();
+                view.last_refresh = std::time::Instant::now();
             }
-            exp_panel.was_focused = is_focused;
+            view.was_focused = is_focused;
             let exp_bg = if is_focused {
                 explorer_colors.focused_bg.to_egui()
             } else {
                 explorer_colors.unfocused_bg.to_egui()
             };
             draw_panel_frame(ctx, &format!("explorer_{}", id_suffix), info, 4, Some(exp_bg), |ui| {
-                if let Some(act) =
-                    crate::explorer_ui::draw_explorer(ui, exp_panel, keys, &explorer_font, &markdown_font)
-                {
+                if let Some(act) = crate::explorer_ui::draw_explorer(
+                    ui,
+                    exp_panel,
+                    view,
+                    keys,
+                    &explorer_font,
+                    &markdown_font,
+                ) {
                     pending_explorer_action = Some((info.pane_id, info.surface_id, act));
                 }
             });
@@ -229,6 +236,7 @@ pub fn draw_egui_panels(
     // Restore extracted view stores before any further `state` access below.
     state.markdown_views = markdown_views;
     state.image_views = image_views;
+    state.explorer_views = explorer_views;
 
     // Render clipboard viewer surfaces now. The main loop is done, so we have
     // exclusive access to state again and can safely borrow engine + surface.

@@ -102,6 +102,11 @@ pub struct AppState {
     /// Per-surface host view state for `ImagePanel` (pixel buffer, textures, edit state,
     /// undo history, brush settings, popup buffers).
     pub image_views: crate::ui::image_view::ImageViewStore,
+
+    /// Per-surface host view state for `ExplorerPanel` (selection, scroll, address bar
+    /// buffer, focus tracking, refresh timer, preview cache). `ExplorerPanel` itself only
+    /// holds `root_path` and `root_node`; everything GUI-bound lives here.
+    pub explorer_views: crate::ui::explorer_view::ExplorerViewStore,
 }
 
 /// A pending native context menu request.
@@ -295,6 +300,7 @@ impl AppState {
             toasts: crate::ui::ToastManager::new(),
             markdown_views: Default::default(),
             image_views: Default::default(),
+            explorer_views: Default::default(),
         })
     }
 
@@ -316,6 +322,7 @@ impl AppState {
         crate::surface_meta::SurfaceMetaStore::remove(surface_id);
         self.markdown_views.drop_view(surface_id);
         self.image_views.drop_view(surface_id);
+        self.explorer_views.drop_view(surface_id);
     }
 
     pub fn active_workspace(&self) -> &crate::model::Workspace {
@@ -444,24 +451,15 @@ impl AppState {
 
     /// Explorer에서 선택된 파일 경로들을 줄바꿈으로 결합하여 반환.
     pub fn focused_explorer_selected_paths(&self) -> String {
-        let pane = match self.focused_pane() {
-            Some(p) => p,
-            None => return String::new(),
-        };
-        let tab = match pane.tabs.get(pane.active_tab) {
-            Some(t) => t,
-            None => return String::new(),
-        };
-        let surface = match tab.layout().find_surface(tab.focused_surface) {
-            Some(s) => s,
-            None => return String::new(),
-        };
-        let explorer = match surface.as_explorer() {
+        let explorer = match self.focused_explorer() {
             Some(e) => e,
             None => return String::new(),
         };
-        explorer
-            .selected_files
+        let view = match self.explorer_views.get(explorer.id) {
+            Some(v) => v,
+            None => return String::new(),
+        };
+        view.selected_files
             .iter()
             .cloned()
             .collect::<Vec<_>>()
@@ -474,10 +472,14 @@ impl AppState {
             Some(e) => e,
             None => return false,
         };
-        if explorer.selected_files.is_empty() {
+        let view = match self.explorer_views.get(explorer.id) {
+            Some(v) => v,
+            None => return false,
+        };
+        if view.selected_files.is_empty() {
             return false;
         }
-        let paths: Vec<&str> = explorer.selected_files.iter().map(|s| s.as_str()).collect();
+        let paths: Vec<&str> = view.selected_files.iter().map(|s| s.as_str()).collect();
         match crate::file_clipboard::set_file_clipboard(
             &paths,
             crate::file_clipboard::FileClipboardOp::Copy,
@@ -496,10 +498,14 @@ impl AppState {
             Some(e) => e,
             None => return false,
         };
-        if explorer.selected_files.is_empty() {
+        let view = match self.explorer_views.get(explorer.id) {
+            Some(v) => v,
+            None => return false,
+        };
+        if view.selected_files.is_empty() {
             return false;
         }
-        let paths: Vec<&str> = explorer.selected_files.iter().map(|s| s.as_str()).collect();
+        let paths: Vec<&str> = view.selected_files.iter().map(|s| s.as_str()).collect();
         match crate::file_clipboard::set_file_clipboard(
             &paths,
             crate::file_clipboard::FileClipboardOp::Cut,
@@ -519,7 +525,11 @@ impl AppState {
                 Some(e) => e,
                 None => return,
             };
-            crate::explorer_ui::paste_destination_for(explorer)
+            let sid = explorer.id;
+            match self.explorer_views.get(sid) {
+                Some(view) => crate::explorer_ui::paste_destination_for(explorer, view),
+                None => explorer.root_path.clone(),
+            }
         };
         if let Ok(Some((sources, op))) = crate::file_clipboard::get_file_clipboard() {
             for src in &sources {
@@ -589,10 +599,17 @@ impl AppState {
 
     /// Explorer: 전체 선택.
     pub fn explorer_select_all(&mut self) {
-        if let Some(explorer) = self.focused_explorer_mut() {
+        let (sid, visible) = {
+            let explorer = match self.focused_explorer() {
+                Some(e) => e,
+                None => return,
+            };
             let mut visible = Vec::new();
             crate::explorer_ui::collect_visible_paths_pub(&explorer.root_node, &mut visible);
-            explorer.select_all(&visible);
+            (explorer.id, visible)
+        };
+        if let Some(view) = self.explorer_views.get_mut(sid) {
+            view.select_all(&visible);
         }
     }
 

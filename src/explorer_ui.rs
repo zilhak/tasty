@@ -7,6 +7,7 @@ use crate::model::{ExplorerPanel, FileNode};
 use crate::settings::EffectiveFont;
 use crate::state::PendingKeyEvent;
 use crate::theme;
+use crate::ui::explorer_view::ExplorerView;
 use crate::ui::font_registry;
 
 /// Check if a specific key was pressed in the pending key events.
@@ -20,6 +21,8 @@ fn has_shift(keys: &[PendingKeyEvent]) -> bool {
 }
 
 /// Draw the explorer panel with a file tree on the left and a file viewer on the right.
+/// `panel` holds the directory tree data (root_path, root_node).
+/// `view` holds GUI-bound state (selection, scroll, address bar buffer, etc.).
 /// `keys` contains keyboard events routed by the central dispatcher — only present
 /// when this explorer is the focused surface.
 /// `font` is the explorer surface's effective font (controls tree/address bar size).
@@ -27,6 +30,7 @@ fn has_shift(keys: &[PendingKeyEvent]) -> bool {
 pub fn draw_explorer(
     ui: &mut egui::Ui,
     panel: &mut ExplorerPanel,
+    view: &mut ExplorerView,
     keys: &[PendingKeyEvent],
     font: &EffectiveFont,
     md_font: &EffectiveFont,
@@ -36,8 +40,8 @@ pub fn draw_explorer(
     let explorer_family = font_registry::explorer_family();
     let mut explorer_action: Option<ExplorerAction> = None;
     let available_width = ui.available_width();
-    let tree_width = if panel.show_preview {
-        (available_width * panel.tree_ratio)
+    let tree_width = if view.show_preview {
+        (available_width * view.tree_ratio)
             .max(80.0)
             .min(available_width - 80.0)
             .round_ui()
@@ -51,13 +55,15 @@ pub fn draw_explorer(
         ui.set_height(address_bar_h);
         let resp = ui.add_sized(
             [ui.available_width(), address_bar_h],
-            egui::TextEdit::singleline(&mut panel.address_bar_text)
+            egui::TextEdit::singleline(&mut view.address_bar_text)
                 .font(egui::FontId::new(font_size, explorer_family.clone()))
                 .margin(egui::Margin::symmetric(4, 2)),
         );
         if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-            let path = panel.address_bar_text.clone();
-            panel.navigate_to(path);
+            let path = view.address_bar_text.clone();
+            if panel.navigate_to(path.clone()) {
+                view.reset_after_navigate(&path);
+            }
         }
     });
     ui.add_space(2.0);
@@ -69,7 +75,7 @@ pub fn draw_explorer(
 
             // ── Toolbar above file tree ──
             ui.horizontal(|ui| {
-                let label = if panel.show_preview {
+                let label = if view.show_preview {
                     crate::i18n::t("explorer.hide_preview")
                 } else {
                     crate::i18n::t("explorer.show_preview")
@@ -82,7 +88,7 @@ pub fn draw_explorer(
                     )
                     .clicked()
                 {
-                    panel.show_preview = !panel.show_preview;
+                    view.show_preview = !view.show_preview;
                 }
             });
             ui.separator();
@@ -118,8 +124,8 @@ pub fn draw_explorer(
                                     ui,
                                     child,
                                     0,
-                                    &panel.selected_files,
-                                    panel.selected_file.as_deref(),
+                                    &view.selected_files,
+                                    view.selected_file.as_deref(),
                                     &mut action,
                                     font_size,
                                     &explorer_family,
@@ -135,7 +141,7 @@ pub fn draw_explorer(
                             let key_enter = key_pressed(keys, NamedKey::Enter);
 
                             if (key_up || key_down || key_enter) && action.is_none() {
-                                let current_idx = panel
+                                let current_idx = view
                                     .selected_file
                                     .as_ref()
                                     .and_then(|sel| visible.iter().position(|p| p == sel));
@@ -159,7 +165,7 @@ pub fn draw_explorer(
                                         }
                                     }
                                 } else if key_enter {
-                                    if let Some(sel) = &panel.selected_file {
+                                    if let Some(sel) = &view.selected_file {
                                         let is_dir = find_node(&panel.root_node, sel)
                                             .is_some_and(|n| n.is_directory);
                                         if is_dir {
@@ -189,13 +195,13 @@ pub fn draw_explorer(
                             if let Some(act) = action {
                                 match act {
                                     TreeAction::SelectFile(path) => {
-                                        panel.select_single(&path);
+                                        view.select_single(&path);
                                     }
                                     TreeAction::ToggleSelect(path) => {
-                                        panel.toggle_select(&path);
+                                        view.toggle_select(&path);
                                     }
                                     TreeAction::RangeSelect(path) => {
-                                        panel.range_select(&path, &visible);
+                                        view.range_select(&path, &visible);
                                     }
                                     TreeAction::DoubleClickFile(path) => {
                                         let ext =
@@ -210,7 +216,7 @@ pub fn draw_explorer(
                                                     Some(ExplorerAction::OpenHtmlTab(path));
                                             }
                                             _ => {
-                                                panel.select_single(&path);
+                                                view.select_single(&path);
                                             }
                                         }
                                     }
@@ -227,10 +233,10 @@ pub fn draw_explorer(
                                         let has_directories: bool;
                                         let has_files: bool;
 
-                                        if panel.selected_files.contains(&path) {
+                                        if view.selected_files.contains(&path) {
                                             // Right-clicked on a selected item → all selected are targets
                                             targets =
-                                                panel.selected_files.iter().cloned().collect();
+                                                view.selected_files.iter().cloned().collect();
                                             has_directories = targets.iter().any(|p| {
                                                 find_node(&panel.root_node, p)
                                                     .is_some_and(|n| n.is_directory)
@@ -241,7 +247,7 @@ pub fn draw_explorer(
                                             });
                                         } else {
                                             // Right-clicked outside selection → clear + select only this
-                                            panel.select_single(&path);
+                                            view.select_single(&path);
                                             targets = vec![path];
                                             has_directories = is_directory;
                                             has_files = !is_directory;
@@ -270,7 +276,7 @@ pub fn draw_explorer(
                                     }
                                     TreeAction::StartDrag => {
                                         let paths: Vec<String> =
-                                            panel.selected_files.iter().cloned().collect();
+                                            view.selected_files.iter().cloned().collect();
                                         if !paths.is_empty() {
                                             explorer_action =
                                                 Some(ExplorerAction::StartDrag { paths });
@@ -332,12 +338,14 @@ pub fn draw_explorer(
                         );
                     }
                     if let Some(path) = nav_path {
-                        panel.navigate_to(path);
+                        if panel.navigate_to(path.clone()) {
+                            view.reset_after_navigate(&path);
+                        }
                     }
                 });
         });
 
-        if panel.show_preview {
+        if view.show_preview {
             // Draggable divider between tree and preview
             let divider_width = 6.0;
             let divider_rect = {
@@ -375,7 +383,7 @@ pub fn draw_explorer(
                 let delta = divider_resp.drag_delta().x;
                 if delta != 0.0 {
                     let new_width = tree_width + delta;
-                    panel.tree_ratio = (new_width / available_width).clamp(0.15, 0.85);
+                    view.tree_ratio = (new_width / available_width).clamp(0.15, 0.85);
                 }
             }
             ui.advance_cursor_after_rect(divider_rect);
@@ -383,18 +391,18 @@ pub fn draw_explorer(
             // Right: File viewer
             ui.vertical(|ui| {
                 ui.set_min_width(ui.available_width());
-                if let Some(ref path) = panel.selected_file {
+                if let Some(ref path) = view.selected_file {
                     // File path header
                     ui.label(egui::RichText::new(path).small().color(egui::Color32::GRAY));
                     ui.separator();
 
-                    if let Some(ref content) = panel.file_content {
+                    if let Some(ref content) = view.file_content {
                         egui::ScrollArea::vertical()
                             .id_salt("explorer_viewer")
                             .drag_to_scroll(false)
                             .show(ui, |ui| {
                                 ui.style_mut().interaction.selectable_labels = true;
-                                if panel.is_markdown {
+                                if view.is_markdown {
                                     crate::markdown_ui::render_markdown(ui, content, md_font);
                                 } else {
                                     // Render as plain text with monospace font
@@ -600,8 +608,8 @@ fn draw_file_node(
 
 /// Determine the paste destination directory.
 /// 외부에서 호출 가능한 paste 목적지 결정 함수.
-pub fn paste_destination_for(panel: &ExplorerPanel) -> String {
-    paste_destination(panel)
+pub fn paste_destination_for(panel: &ExplorerPanel, view: &ExplorerView) -> String {
+    paste_destination(panel, view)
 }
 
 /// 외부에서 호출 가능한 visible paths 수집.
@@ -609,16 +617,16 @@ pub fn collect_visible_paths_pub(node: &FileNode, out: &mut Vec<String>) {
     collect_visible_paths(node, out);
 }
 
-fn paste_destination(panel: &ExplorerPanel) -> String {
+fn paste_destination(panel: &ExplorerPanel, view: &ExplorerView) -> String {
     // If exactly one directory is selected, paste into it
-    if panel.selected_files.len() == 1 {
-        let path = panel.selected_files.iter().next().unwrap();
+    if view.selected_files.len() == 1 {
+        let path = view.selected_files.iter().next().unwrap();
         if std::path::Path::new(path).is_dir() {
             return path.clone();
         }
     }
     // If the focused file exists, paste into its parent directory
-    if let Some(ref sel) = panel.selected_file {
+    if let Some(ref sel) = view.selected_file {
         if let Some(parent) = std::path::Path::new(sel).parent() {
             return parent.to_string_lossy().to_string();
         }
