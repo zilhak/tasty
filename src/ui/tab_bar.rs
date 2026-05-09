@@ -94,7 +94,7 @@ pub fn draw_pane_tab_bars(
                 };
 
                 egui::Frame::new()
-                    .fill(bg)
+                    .fill(bg.into())
                     .inner_margin(egui::Margin::ZERO)
                     .show(ui, |ui| {
                         ui.set_min_width(info.logical_w);
@@ -121,7 +121,7 @@ pub fn draw_pane_tab_bars(
                                     egui::Align2::CENTER_CENTER,
                                     "<",
                                     egui::FontId::proportional(th.font_size_caption.value()),
-                                    arrow_color,
+                                    arrow_color.into(),
                                 );
                                 if resp.clicked() && can_left {
                                     actions.push((info.pane_id, PaneTabAction::ScrollLeft));
@@ -197,8 +197,8 @@ pub fn draw_pane_tab_bars(
                                         tab_rect.max.x - dot_pad - dot_radius,
                                         tab_rect.center().y,
                                     );
-                                    let dot_color = if is_active {
-                                        th.green
+                                    let dot_color: egui::Color32 = if is_active {
+                                        th.green.into()
                                     } else {
                                         egui::Color32::from_rgba_unmultiplied(
                                             th.green.r(),
@@ -218,7 +218,7 @@ pub fn draw_pane_tab_bars(
                                 let galley = painter.layout_no_wrap(
                                     name.clone(),
                                     font_id.clone(),
-                                    text_color,
+                                    text_color.into(),
                                 );
                                 if galley.size().x > available_w {
                                     // Binary-ish search: trim characters until it fits
@@ -229,7 +229,7 @@ pub fn draw_pane_tab_bars(
                                         let g = painter.layout_no_wrap(
                                             candidate.clone(),
                                             font_id.clone(),
-                                            text_color,
+                                            text_color.into(),
                                         );
                                         if g.size().x <= available_w {
                                             let text_x = tab_rect.min.x + h_padding;
@@ -237,14 +237,14 @@ pub fn draw_pane_tab_bars(
                                             painter.galley(
                                                 egui::pos2(text_x, text_y),
                                                 g,
-                                                text_color,
+                                                text_color.into(),
                                             );
                                             break;
                                         }
                                     }
                                 } else {
                                     let text_pos = tab_rect.center() - galley.size() / 2.0;
-                                    painter.galley(text_pos, galley, text_color);
+                                    painter.galley(text_pos, galley, text_color.into());
                                 }
 
                                 // Click & drag detection
@@ -323,7 +323,7 @@ pub fn draw_pane_tab_bars(
                                         egui::Align2::CENTER_CENTER,
                                         "+",
                                         egui::FontId::proportional(th.font_size_body.value()),
-                                        th.subtext0,
+                                        th.subtext0.into(),
                                     );
                                     if resp.clicked() {
                                         actions.push((info.pane_id, PaneTabAction::AddTab));
@@ -347,7 +347,7 @@ pub fn draw_pane_tab_bars(
                                     egui::Align2::CENTER_CENTER,
                                     ">",
                                     egui::FontId::proportional(th.font_size_caption.value()),
-                                    arrow_color,
+                                    arrow_color.into(),
                                 );
                                 if resp.clicked() && can_right {
                                     actions.push((info.pane_id, PaneTabAction::ScrollRight));

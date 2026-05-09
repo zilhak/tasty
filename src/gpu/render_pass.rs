@@ -8,7 +8,7 @@ impl GpuState {
     pub(super) fn render_clear_pass(&self, view: &wgpu::TextureView, state: &AppState) {
         let bg_alpha = state.engine.settings.appearance.background_opacity as f64;
         let th = crate::theme::theme();
-        let bg = crate::theme::Theme::to_float(th.base);
+        let bg = th.base.to_float();
 
         let mut encoder = self
             .device
@@ -83,8 +83,8 @@ impl GpuState {
                         cursor: ime.cursor,
                         anchor_col: ime.anchor_col,
                         anchor_row: ime.anchor_row,
-                        bg_color: crate::theme::Theme::to_float(theme.blue),
-                        fg_color: crate::theme::Theme::to_float(theme.base),
+                        bg_color: theme.blue.to_float(),
+                        fg_color: theme.base.to_float(),
                     });
                 let render_preedit_ref = render_preedit.as_ref();
 

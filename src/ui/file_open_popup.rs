@@ -165,7 +165,7 @@ fn draw_file_open_content(
                         egui::Sense::click(),
                     );
                     if resp.hovered() {
-                        ui.painter().rect_filled(rect, 0.0, th.hover_overlay);
+                        ui.painter().rect_filled(rect, 0.0, th.hover_overlay.to_egui_premultiplied());
                         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
                     }
                     ui.painter().text(
@@ -176,7 +176,7 @@ fn draw_file_open_content(
                         egui::Align2::LEFT_TOP,
                         &display,
                         egui::FontId::proportional(th.font_size_caption.value()),
-                        th.subtext0,
+                        th.subtext0.into(),
                     );
                     if resp.clicked() {
                         clicked_path = Some(entry.clone());

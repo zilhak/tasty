@@ -37,6 +37,7 @@ mod terminal_link;
 mod settings_ui;
 mod shortcuts;
 mod state;
+mod theme_bridge;
 mod storage;
 mod surface_meta;
 #[cfg(windows)]

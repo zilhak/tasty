@@ -291,7 +291,7 @@ fn draw_inner(
                         egui::Sense::click(),
                     );
                     if is_selected || resp.hovered() {
-                        ui.painter().rect_filled(rect, 2.0, th.hover_overlay);
+                        ui.painter().rect_filled(rect, 2.0, th.hover_overlay.to_egui_premultiplied());
                     }
                     if resp.hovered() {
                         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
@@ -310,7 +310,7 @@ fn draw_inner(
                         egui::Align2::LEFT_TOP,
                         format!("{}{}", prefix, preview),
                         egui::FontId::proportional(th.font_size_body.value()),
-                        th.text,
+                        th.text.into(),
                     );
                     resp.clone().on_hover_text(&row.text);
 

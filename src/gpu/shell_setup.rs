@@ -34,7 +34,7 @@ impl GpuState {
 
             // Apply theme from theme module
             let th = crate::theme::theme();
-            th.apply_to_egui(ctx, 1.0);
+            crate::theme_bridge::apply_theme_to_egui(&th, ctx, 1.0);
 
             // Local aliases for this function
             let bg_panel = th.crust;
@@ -48,7 +48,7 @@ impl GpuState {
 
             // Dark background panel
             egui::CentralPanel::default()
-                .frame(egui::Frame::new().fill(bg_panel))
+                .frame(egui::Frame::new().fill(bg_panel.into()))
                 .show(ctx, |_| {});
 
             // Centered window dialog
@@ -61,7 +61,7 @@ impl GpuState {
                 .fixed_size(egui::vec2(content_w, 0.0))
                 .frame(
                     egui::Frame::new()
-                        .fill(bg_card)
+                        .fill(bg_card.into())
                         .stroke(egui::Stroke::new(1.0, border))
                         .corner_radius(egui::CornerRadius::same(12))
                         .inner_margin(egui::Margin::symmetric(32, 28))
@@ -69,7 +69,7 @@ impl GpuState {
                             offset: [0, 8],
                             blur: 24,
                             spread: 0,
-                            color: th.crust,
+                            color: th.crust.into(),
                         }),
                 )
                 .show(ctx, |ui| {
@@ -95,7 +95,7 @@ impl GpuState {
 
                     // ── Warning ────────────────────────────────────
                     egui::Frame::new()
-                        .fill(th.surface0)
+                        .fill(th.surface0.into())
                         .stroke(egui::Stroke::new(1.0, th.surface1))
                         .corner_radius(egui::CornerRadius::same(6))
                         .inner_margin(egui::Margin::symmetric(12, 10))

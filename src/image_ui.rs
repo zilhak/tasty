@@ -169,7 +169,7 @@ pub fn draw_image(ui: &mut egui::Ui, panel: &mut ImagePanel) {
             egui::Align2::CENTER_CENTER,
             text,
             egui::FontId::proportional(th.font_size_body.value()),
-            th.subtext0,
+            th.subtext0.into(),
         );
     }
 }

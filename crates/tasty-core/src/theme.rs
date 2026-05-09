@@ -1,49 +1,57 @@
-use egui::emath::GuiRounding as _;
-
+use crate::color::HexColor;
 use crate::model::LogicalPx;
 
 /// UI theme colors used across all rendering (egui + GPU).
 /// All colors are in the Catppuccin Mocha palette for the dark theme.
+///
+/// 색상은 모두 **straight RGBA**(`HexColor`)로 보관한다. egui로 그릴 때는
+/// 호스트 측 `theme_bridge::apply_theme_to_egui` 또는 `HexColor::to_egui()`로
+/// 변환된다 (premultiplied 표현은 변환 시점에 계산).
 
 #[derive(Debug, Clone, Copy)]
 pub struct Theme {
     // ── Surfaces (low → high elevation) ──
-    pub crust: egui::Color32,
-    pub mantle: egui::Color32,
-    pub base: egui::Color32,
-    pub surface0: egui::Color32,
-    pub surface1: egui::Color32,
-    pub surface2: egui::Color32,
+    pub crust: HexColor,
+    pub mantle: HexColor,
+    pub base: HexColor,
+    pub surface0: HexColor,
+    pub surface1: HexColor,
+    pub surface2: HexColor,
 
     // ── Overlays ──
-    pub overlay0: egui::Color32,
-    pub overlay1: egui::Color32,
-    pub overlay2: egui::Color32,
+    pub overlay0: HexColor,
+    pub overlay1: HexColor,
+    pub overlay2: HexColor,
 
     // ── Text ──
-    pub text: egui::Color32,
-    pub subtext1: egui::Color32,
-    pub subtext0: egui::Color32,
+    pub text: HexColor,
+    pub subtext1: HexColor,
+    pub subtext0: HexColor,
 
     // ── Accent colors ──
-    pub blue: egui::Color32,
-    pub green: egui::Color32,
-    pub red: egui::Color32,
-    pub yellow: egui::Color32,
-    pub peach: egui::Color32,
-    pub mauve: egui::Color32,
-    pub teal: egui::Color32,
-    pub sky: egui::Color32,
-    pub lavender: egui::Color32,
-    pub flamingo: egui::Color32,
-    pub pink: egui::Color32,
-    pub maroon: egui::Color32,
-    pub rosewater: egui::Color32,
+    pub blue: HexColor,
+    pub green: HexColor,
+    pub red: HexColor,
+    pub yellow: HexColor,
+    pub peach: HexColor,
+    pub mauve: HexColor,
+    pub teal: HexColor,
+    pub sky: HexColor,
+    pub lavender: HexColor,
+    pub flamingo: HexColor,
+    pub pink: HexColor,
+    pub maroon: HexColor,
+    pub rosewater: HexColor,
 
-    // ── Semantic aliases ──
-    pub hover_overlay: egui::Color32,
-    pub active_overlay: egui::Color32,
-    pub separator: egui::Color32,
+    // ── Semantic aliases (translucent — see note below) ──
+    /// `hover_overlay`/`active_overlay`/`separator`는 GUI 레거시와의 시각 일치를
+    /// 위해 **premultiplied sRGB 바이트**를 저장한다. egui에 보낼 때는
+    /// `HexColor::to_egui_premultiplied()`로 변환해 과거 `Color32::from_rgba_premultiplied`와
+    /// 비트 동일한 결과를 얻는다. 이 외 모든 색상은 straight RGBA(`HexColor::to_egui()`)로
+    /// 처리된다.
+    pub hover_overlay: HexColor,
+    pub active_overlay: HexColor,
+    pub separator: HexColor,
 
     // ── UI Typography (not terminal font) ──
     pub font_size_caption: LogicalPx,
@@ -81,42 +89,44 @@ impl Theme {
     /// Catppuccin Mocha dark theme (const so it can initialize the global RwLock).
     pub const DARK: Self = Self {
         // Surfaces
-        crust: egui::Color32::from_rgb(17, 17, 27), // #11111b
-        mantle: egui::Color32::from_rgb(24, 24, 37), // #181825
-        base: egui::Color32::from_rgb(30, 30, 46),  // #1e1e2e
-        surface0: egui::Color32::from_rgb(49, 50, 68), // #313244
-        surface1: egui::Color32::from_rgb(69, 71, 90), // #45475a
-        surface2: egui::Color32::from_rgb(88, 91, 112), // #585b70
+        crust: HexColor::from_rgb(17, 17, 27), // #11111b
+        mantle: HexColor::from_rgb(24, 24, 37), // #181825
+        base: HexColor::from_rgb(30, 30, 46),  // #1e1e2e
+        surface0: HexColor::from_rgb(49, 50, 68), // #313244
+        surface1: HexColor::from_rgb(69, 71, 90), // #45475a
+        surface2: HexColor::from_rgb(88, 91, 112), // #585b70
 
         // Overlays
-        overlay0: egui::Color32::from_rgb(108, 112, 134), // #6c7086
-        overlay1: egui::Color32::from_rgb(127, 132, 156), // #7f849c
-        overlay2: egui::Color32::from_rgb(147, 153, 178), // #9399b2
+        overlay0: HexColor::from_rgb(108, 112, 134), // #6c7086
+        overlay1: HexColor::from_rgb(127, 132, 156), // #7f849c
+        overlay2: HexColor::from_rgb(147, 153, 178), // #9399b2
 
         // Text
-        text: egui::Color32::from_rgb(205, 214, 244), // #cdd6f4
-        subtext1: egui::Color32::from_rgb(186, 194, 222), // #bac2de
-        subtext0: egui::Color32::from_rgb(166, 173, 200), // #a6adc8
+        text: HexColor::from_rgb(205, 214, 244), // #cdd6f4
+        subtext1: HexColor::from_rgb(186, 194, 222), // #bac2de
+        subtext0: HexColor::from_rgb(166, 173, 200), // #a6adc8
 
         // Accent colors
-        blue: egui::Color32::from_rgb(137, 180, 250), // #89b4fa
-        green: egui::Color32::from_rgb(166, 227, 161), // #a6e3a1
-        red: egui::Color32::from_rgb(243, 139, 168),  // #f38ba8
-        yellow: egui::Color32::from_rgb(249, 226, 175), // #f9e2af
-        peach: egui::Color32::from_rgb(250, 179, 135), // #fab387
-        mauve: egui::Color32::from_rgb(203, 166, 247), // #cba6f7
-        teal: egui::Color32::from_rgb(148, 226, 213), // #94e2d5
-        sky: egui::Color32::from_rgb(137, 220, 235),  // #89dceb
-        lavender: egui::Color32::from_rgb(180, 190, 254), // #b4befe
-        flamingo: egui::Color32::from_rgb(242, 205, 205), // #f2cdcd
-        pink: egui::Color32::from_rgb(245, 194, 231), // #f5c2e7
-        maroon: egui::Color32::from_rgb(235, 160, 172), // #eba0ac
-        rosewater: egui::Color32::from_rgb(245, 224, 220), // #f5e0dc
+        blue: HexColor::from_rgb(137, 180, 250), // #89b4fa
+        green: HexColor::from_rgb(166, 227, 161), // #a6e3a1
+        red: HexColor::from_rgb(243, 139, 168),  // #f38ba8
+        yellow: HexColor::from_rgb(249, 226, 175), // #f9e2af
+        peach: HexColor::from_rgb(250, 179, 135), // #fab387
+        mauve: HexColor::from_rgb(203, 166, 247), // #cba6f7
+        teal: HexColor::from_rgb(148, 226, 213), // #94e2d5
+        sky: HexColor::from_rgb(137, 220, 235),  // #89dceb
+        lavender: HexColor::from_rgb(180, 190, 254), // #b4befe
+        flamingo: HexColor::from_rgb(242, 205, 205), // #f2cdcd
+        pink: HexColor::from_rgb(245, 194, 231), // #f5c2e7
+        maroon: HexColor::from_rgb(235, 160, 172), // #eba0ac
+        rosewater: HexColor::from_rgb(245, 224, 220), // #f5e0dc
 
-        // Semantic (premultiplied: white at ~8% / ~12% alpha)
-        hover_overlay: egui::Color32::from_rgba_premultiplied(20, 20, 20, 20),  // ~8%
-        active_overlay: egui::Color32::from_rgba_premultiplied(31, 31, 31, 31), // ~12%
-        separator: egui::Color32::from_rgba_premultiplied(20, 20, 20, 20),      // ~8%
+        // Semantic — premultiplied sRGB bytes for legacy parity. 과거의
+        // `Color32::from_rgba_premultiplied(20,20,20,20)` 등을 비트 동일하게 보존한다.
+        // 호출자는 `.to_egui_premultiplied()`로 변환할 것.
+        hover_overlay: HexColor::from_rgba(20, 20, 20, 20),   // white-ish ~8%
+        active_overlay: HexColor::from_rgba(31, 31, 31, 31),  // white-ish ~12%
+        separator: HexColor::from_rgba(20, 20, 20, 20),       // white-ish ~8%
 
         // UI Typography
         font_size_caption: LogicalPx(11.0),
@@ -168,42 +178,42 @@ impl Theme {
     /// Catppuccin Latte light theme.
     pub const LATTE: Self = Self {
         // Surfaces
-        crust: egui::Color32::from_rgb(220, 224, 232),    // #dce0e8
-        mantle: egui::Color32::from_rgb(230, 233, 239),   // #e6e9ef
-        base: egui::Color32::from_rgb(239, 241, 245),     // #eff1f5
-        surface0: egui::Color32::from_rgb(204, 208, 218), // #ccd0da
-        surface1: egui::Color32::from_rgb(188, 192, 204), // #bcc0cc
-        surface2: egui::Color32::from_rgb(172, 176, 190), // #acb0be
+        crust: HexColor::from_rgb(220, 224, 232),    // #dce0e8
+        mantle: HexColor::from_rgb(230, 233, 239),   // #e6e9ef
+        base: HexColor::from_rgb(239, 241, 245),     // #eff1f5
+        surface0: HexColor::from_rgb(204, 208, 218), // #ccd0da
+        surface1: HexColor::from_rgb(188, 192, 204), // #bcc0cc
+        surface2: HexColor::from_rgb(172, 176, 190), // #acb0be
 
         // Overlays
-        overlay0: egui::Color32::from_rgb(156, 160, 176), // #9ca0b0
-        overlay1: egui::Color32::from_rgb(140, 143, 161), // #8c8fa1
-        overlay2: egui::Color32::from_rgb(124, 127, 147), // #7c7f93
+        overlay0: HexColor::from_rgb(156, 160, 176), // #9ca0b0
+        overlay1: HexColor::from_rgb(140, 143, 161), // #8c8fa1
+        overlay2: HexColor::from_rgb(124, 127, 147), // #7c7f93
 
         // Text
-        text: egui::Color32::from_rgb(76, 79, 105),       // #4c4f69
-        subtext1: egui::Color32::from_rgb(92, 95, 119),   // #5c5f77
-        subtext0: egui::Color32::from_rgb(108, 111, 133), // #6c6f85
+        text: HexColor::from_rgb(76, 79, 105),       // #4c4f69
+        subtext1: HexColor::from_rgb(92, 95, 119),   // #5c5f77
+        subtext0: HexColor::from_rgb(108, 111, 133), // #6c6f85
 
         // Accent colors
-        blue: egui::Color32::from_rgb(30, 102, 245),      // #1e66f5
-        green: egui::Color32::from_rgb(64, 160, 43),      // #40a02b
-        red: egui::Color32::from_rgb(210, 15, 57),        // #d20f39
-        yellow: egui::Color32::from_rgb(223, 142, 29),    // #df8e1d
-        peach: egui::Color32::from_rgb(254, 100, 11),     // #fe640b
-        mauve: egui::Color32::from_rgb(136, 57, 239),     // #8839ef
-        teal: egui::Color32::from_rgb(23, 146, 153),      // #179299
-        sky: egui::Color32::from_rgb(4, 165, 229),        // #04a5e5
-        lavender: egui::Color32::from_rgb(114, 135, 253), // #7287fd
-        flamingo: egui::Color32::from_rgb(221, 120, 120), // #dd7878
-        pink: egui::Color32::from_rgb(234, 118, 203),     // #ea76cb
-        maroon: egui::Color32::from_rgb(230, 69, 83),     // #e64553
-        rosewater: egui::Color32::from_rgb(220, 138, 120), // #dc8a78
+        blue: HexColor::from_rgb(30, 102, 245),      // #1e66f5
+        green: HexColor::from_rgb(64, 160, 43),      // #40a02b
+        red: HexColor::from_rgb(210, 15, 57),        // #d20f39
+        yellow: HexColor::from_rgb(223, 142, 29),    // #df8e1d
+        peach: HexColor::from_rgb(254, 100, 11),     // #fe640b
+        mauve: HexColor::from_rgb(136, 57, 239),     // #8839ef
+        teal: HexColor::from_rgb(23, 146, 153),      // #179299
+        sky: HexColor::from_rgb(4, 165, 229),        // #04a5e5
+        lavender: HexColor::from_rgb(114, 135, 253), // #7287fd
+        flamingo: HexColor::from_rgb(221, 120, 120), // #dd7878
+        pink: HexColor::from_rgb(234, 118, 203),     // #ea76cb
+        maroon: HexColor::from_rgb(230, 69, 83),     // #e64553
+        rosewater: HexColor::from_rgb(220, 138, 120), // #dc8a78
 
-        // Semantic (premultiplied: black at ~8% / ~12% alpha)
-        hover_overlay: egui::Color32::from_rgba_premultiplied(0, 0, 0, 20),  // ~8%
-        active_overlay: egui::Color32::from_rgba_premultiplied(0, 0, 0, 31), // ~12%
-        separator: egui::Color32::from_rgba_premultiplied(0, 0, 0, 20),      // ~8%
+        // Semantic — premultiplied sRGB bytes for legacy parity (black at ~8%/~12%).
+        hover_overlay: HexColor::from_rgba(0, 0, 0, 20),
+        active_overlay: HexColor::from_rgba(0, 0, 0, 31),
+        separator: HexColor::from_rgba(0, 0, 0, 20),
 
         // UI Typography (same as dark)
         font_size_caption: LogicalPx(11.0),
@@ -251,66 +261,6 @@ impl Theme {
             [0.298, 0.310, 0.412], // 15: bright white(Text #4c4f69)
         ],
     };
-
-    /// Convert an egui Color32 to GPU float format [r, g, b, a].
-    pub fn to_float(c: egui::Color32) -> [f32; 4] {
-        [
-            c.r() as f32 / 255.0,
-            c.g() as f32 / 255.0,
-            c.b() as f32 / 255.0,
-            c.a() as f32 / 255.0,
-        ]
-    }
-
-    /// Apply this theme to an egui context with UI scale factor.
-    pub fn apply_to_egui(&self, ctx: &egui::Context, ui_scale: f32) {
-        let mut visuals = egui::Visuals::dark();
-        visuals.panel_fill = self.mantle;
-        visuals.window_fill = self.base;
-        visuals.window_stroke = egui::Stroke::new(1.0, self.surface0);
-        visuals.extreme_bg_color = self.crust;
-        visuals.widgets.inactive.bg_fill = self.base;
-        visuals.widgets.inactive.bg_stroke = egui::Stroke::new(1.0, self.surface0);
-        visuals.widgets.hovered.bg_fill = self.surface0;
-        visuals.widgets.hovered.bg_stroke = egui::Stroke::new(1.0, self.surface1);
-        visuals.widgets.active.bg_fill = self.surface1;
-        visuals.override_text_color = Some(self.text);
-        ctx.set_visuals(visuals);
-
-        // Apply scaled UI text sizes and spacing
-        let mut style = (*ctx.style()).clone();
-        style.text_styles.insert(
-            egui::TextStyle::Body,
-            egui::FontId::proportional((self.font_size_body.value() * ui_scale).round_ui()),
-        );
-        style.text_styles.insert(
-            egui::TextStyle::Small,
-            egui::FontId::proportional((self.font_size_caption.value() * ui_scale).round_ui()),
-        );
-        style.text_styles.insert(
-            egui::TextStyle::Heading,
-            egui::FontId::proportional(
-                (self.font_size_heading.value() * ui_scale * 1.15).round_ui(),
-            ),
-        );
-        style.text_styles.insert(
-            egui::TextStyle::Button,
-            egui::FontId::proportional((self.font_size_body.value() * ui_scale).round_ui()),
-        );
-        style.text_styles.insert(
-            egui::TextStyle::Monospace,
-            egui::FontId::monospace((self.font_size_body.value() * ui_scale).round_ui()),
-        );
-        style.spacing.item_spacing = egui::vec2(
-            (self.spacing_sm.value() * ui_scale).round_ui(),
-            (self.spacing_xs.value() * ui_scale).round_ui(),
-        );
-        style.spacing.button_padding = egui::vec2(
-            (self.spacing_sm.value() * ui_scale).round_ui(),
-            (self.spacing_xs.value() * ui_scale).round_ui(),
-        );
-        ctx.set_style(style);
-    }
 }
 
 /// A theme preset: UI theme + default surface colors for each surface type.

@@ -165,7 +165,7 @@ pub fn draw_appearance_tab(
     ui.horizontal_top(|ui| {
         // ── Left: sub-tab selector ──
         egui::Frame::new()
-            .fill(th.crust)
+            .fill(th.crust.into())
             .stroke(egui::Stroke::new(1.0, th.surface0))
             .corner_radius(4.0)
             .inner_margin(egui::Margin::symmetric(6, 6))
@@ -513,11 +513,22 @@ fn draw_surface_font_section(
 fn draw_color_row(ui: &mut egui::Ui, label: &str, color: &mut HexColor) {
     ui.label(label);
     ui.horizontal(|ui| {
+        // egui color picker는 mutable Color32 참조를 요구하므로 임시 변환 후 반영.
+        let mut egui_color = color.to_egui();
         egui::widgets::color_picker::color_edit_button_srgba(
             ui,
-            &mut color.0,
+            &mut egui_color,
             egui::color_picker::Alpha::Opaque,
         );
+        if egui_color != color.to_egui() {
+            // egui 픽커가 alpha를 안 건드리므로 RGB만 수확.
+            *color = HexColor::from_rgba(
+                egui_color.r(),
+                egui_color.g(),
+                egui_color.b(),
+                color.a,
+            );
+        }
         let mut hex = color.to_hex();
         let response = ui.add(egui::TextEdit::singleline(&mut hex).desired_width(80.0));
         if response.changed() {
@@ -962,9 +973,9 @@ fn draw_font_preview(
         "\u{30A2}\u{30AB}\u{30B5}\u{30BF}\u{30CA}\u{30CF}\u{30DE}\u{30E9}\u{30E4}\u{30EF}", // アカサタナハマラヤワ
     ];
 
-    let focused_bg32 = colors.focused_bg.0;
-    let unfocused_bg32 = colors.unfocused_bg.0;
-    let fg32 = colors.focused_fg.0;
+    let focused_bg32 = colors.focused_bg.to_egui();
+    let unfocused_bg32 = colors.unfocused_bg.to_egui();
+    let fg32 = colors.focused_fg.to_egui();
 
     let font_size = eff.font_size.max(1.0);
     let preview_font = egui::FontId::new(font_size, preview_family);
@@ -1160,7 +1171,7 @@ pub fn draw_misc_tab(
 
     ui.horizontal_top(|ui| {
         egui::Frame::new()
-            .fill(th.crust)
+            .fill(th.crust.into())
             .stroke(egui::Stroke::new(1.0, th.surface0))
             .corner_radius(4.0)
             .inner_margin(egui::Margin::symmetric(6, 6))

@@ -179,7 +179,7 @@ impl ToastManager {
                     f.layout(
                         body_text.to_string(),
                         font.clone(),
-                        th.text,
+                        th.text.into(),
                         max_width - PADDING_X * 2.0 - ACCENT_BAR_WIDTH,
                     )
                 });
@@ -229,7 +229,7 @@ impl ToastManager {
                     rect.min.x + ACCENT_BAR_WIDTH + PADDING_X,
                     rect.min.y + PADDING_Y,
                 );
-                painter.galley(text_pos, galley, th.text.gamma_multiply(alpha));
+                painter.galley(text_pos, galley, th.text.gamma_multiply(alpha).into());
 
                 cursor_y = top_y - TOAST_GAP;
             }
@@ -253,10 +253,10 @@ impl ToastManager {
 
     fn accent_color(kind: ToastKind, th: &theme::Theme) -> egui::Color32 {
         match kind {
-            ToastKind::Info => th.blue,
-            ToastKind::Success => th.green,
-            ToastKind::Warning => th.yellow,
-            ToastKind::Error => th.red,
+            ToastKind::Info => th.blue.into(),
+            ToastKind::Success => th.green.into(),
+            ToastKind::Warning => th.yellow.into(),
+            ToastKind::Error => th.red.into(),
         }
     }
 

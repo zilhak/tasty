@@ -18,14 +18,14 @@ pub fn draw_tools_menu(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction {
         ui.allocate_exact_size(egui::vec2(width, 28.0), egui::Sense::click());
     if resp.hovered() {
         ui.painter()
-            .rect_filled(rect, 4.0, th.hover_overlay);
+            .rect_filled(rect, 4.0, th.hover_overlay.to_egui_premultiplied());
     }
     ui.painter().text(
         egui::pos2(rect.min.x + 8.0, rect.center().y),
         egui::Align2::LEFT_CENTER,
         t("tools_menu.clipboard_history"),
         egui::FontId::proportional(th.font_size_body.value()),
-        if resp.hovered() { th.text } else { th.subtext0 },
+        if resp.hovered() { th.text.into() } else { th.subtext0.into() },
     );
     if resp.clicked() {
         crate::clipboard_viewer_ui::open_clipboard_viewer_popup(state);

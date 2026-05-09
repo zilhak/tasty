@@ -56,14 +56,14 @@ pub fn draw_collapsed_sidebar(
                         );
                     }
                     if resp.hovered() {
-                        ui.painter().rect_filled(rect, 4.0, th.hover_overlay);
+                        ui.painter().rect_filled(rect, 4.0, th.hover_overlay.to_egui_premultiplied());
                     }
                     ui.painter().text(
                         rect.center(),
                         egui::Align2::CENTER_CENTER,
                         &label,
                         egui::FontId::proportional(12.0),
-                        text_color,
+                        text_color.into(),
                     );
                     if ws_busy_count > 0 {
                         let dot_radius = 3.0;
@@ -84,14 +84,14 @@ pub fn draw_collapsed_sidebar(
                 let (rect, resp) =
                     ui.allocate_exact_size(egui::vec2(32.0, 22.0), egui::Sense::click());
                 if resp.hovered() {
-                    ui.painter().rect_filled(rect, 4.0, th.hover_overlay);
+                    ui.painter().rect_filled(rect, 4.0, th.hover_overlay.to_egui_premultiplied());
                 }
                 ui.painter().text(
                     rect.center(),
                     egui::Align2::CENTER_CENTER,
                     "+",
                     egui::FontId::proportional(14.0),
-                    th.overlay0,
+                    th.overlay0.into(),
                 );
                 if resp.clicked() {
                     add_ws = true;
@@ -110,7 +110,7 @@ pub fn draw_collapsed_sidebar(
                     ui.allocate_exact_size(egui::vec2(32.0, 22.0), egui::Sense::click());
                 if tools_resp.hovered() {
                     ui.painter()
-                        .rect_filled(tools_btn_rect, 4.0, th.hover_overlay);
+                        .rect_filled(tools_btn_rect, 4.0, th.hover_overlay.to_egui_premultiplied());
                 }
                 ui.painter().text(
                     tools_btn_rect.center(),
@@ -118,9 +118,9 @@ pub fn draw_collapsed_sidebar(
                     "T",
                     egui::FontId::proportional(12.0),
                     if tools_resp.hovered() {
-                        th.subtext1
+                        th.subtext1.into()
                     } else {
-                        th.overlay0
+                        th.overlay0.into()
                     },
                 );
                 let tools_resp = tools_resp.on_hover_text(t("sidebar.tools_button"));
@@ -133,7 +133,7 @@ pub fn draw_collapsed_sidebar(
                 let (rect, resp) =
                     ui.allocate_exact_size(egui::vec2(32.0, 22.0), egui::Sense::click());
                 if resp.hovered() {
-                    ui.painter().rect_filled(rect, 4.0, th.hover_overlay);
+                    ui.painter().rect_filled(rect, 4.0, th.hover_overlay.to_egui_premultiplied());
                 }
                 ui.painter().text(
                     rect.center(),
@@ -141,9 +141,9 @@ pub fn draw_collapsed_sidebar(
                     ">",
                     egui::FontId::proportional(14.0),
                     if resp.hovered() {
-                        th.subtext1
+                        th.subtext1.into()
                     } else {
-                        th.overlay0
+                        th.overlay0.into()
                     },
                 );
                 if resp.clicked() {
@@ -155,7 +155,7 @@ pub fn draw_collapsed_sidebar(
                 let (rect, resp) =
                     ui.allocate_exact_size(egui::vec2(32.0, 22.0), egui::Sense::click());
                 if resp.hovered() {
-                    ui.painter().rect_filled(rect, 4.0, th.hover_overlay);
+                    ui.painter().rect_filled(rect, 4.0, th.hover_overlay.to_egui_premultiplied());
                 }
                 ui.painter().text(
                     rect.center(),
@@ -163,9 +163,9 @@ pub fn draw_collapsed_sidebar(
                     "\u{2699}", // ⚙
                     egui::FontId::proportional(14.0),
                     if resp.hovered() {
-                        th.subtext1
+                        th.subtext1.into()
                     } else {
-                        th.overlay0
+                        th.overlay0.into()
                     },
                 );
                 if resp.clicked() {
@@ -227,11 +227,15 @@ pub fn draw_full_sidebar(
                         let ws_busy_count = state.busy_count(&ws_surface_ids);
 
                         let bg = if is_active {
-                            th.surface0
+                            th.surface0.to_egui()
                         } else {
                             egui::Color32::TRANSPARENT
                         };
-                        let border = if is_active { th.blue } else { th.surface0 };
+                        let border = if is_active {
+                            th.blue.to_egui()
+                        } else {
+                            th.surface0.to_egui()
+                        };
 
                         let frame = egui::Frame::new()
                             .fill(bg)
@@ -270,7 +274,7 @@ pub fn draw_full_sidebar(
                                                 egui::Align2::CENTER_CENTER,
                                                 "!",
                                                 egui::FontId::proportional(10.0),
-                                                th.blue,
+                                                th.blue.into(),
                                             );
                                         }
 
@@ -455,7 +459,7 @@ pub fn draw_full_sidebar(
                     egui::Sense::click().union(egui::Sense::hover()),
                 );
                 if resp.hovered() {
-                    ui.painter().rect_filled(rect, 4.0, th.hover_overlay);
+                    ui.painter().rect_filled(rect, 4.0, th.hover_overlay.to_egui_premultiplied());
                 }
                 ui.painter().text(
                     rect.center(),
@@ -463,9 +467,9 @@ pub fn draw_full_sidebar(
                     t("sidebar.tools_button"),
                     egui::FontId::proportional(11.0),
                     if resp.hovered() {
-                        th.subtext1
+                        th.subtext1.into()
                     } else {
-                        th.overlay0
+                        th.overlay0.into()
                     },
                 );
                 if resp.clicked() {
@@ -483,7 +487,7 @@ pub fn draw_full_sidebar(
                 );
                 if collapse_resp.hovered() {
                     ui.painter()
-                        .rect_filled(collapse_rect, 4.0, th.hover_overlay);
+                        .rect_filled(collapse_rect, 4.0, th.hover_overlay.to_egui_premultiplied());
                 }
                 ui.painter().text(
                     collapse_rect.center(),
@@ -491,9 +495,9 @@ pub fn draw_full_sidebar(
                     "<  Collapse",
                     egui::FontId::proportional(11.0),
                     if collapse_resp.hovered() {
-                        th.subtext1
+                        th.subtext1.into()
                     } else {
-                        th.overlay0
+                        th.overlay0.into()
                     },
                 );
                 if collapse_resp.clicked() {
@@ -514,14 +518,14 @@ pub fn draw_full_sidebar(
                     th.overlay0
                 };
                 if response.hovered() {
-                    ui.painter().rect_filled(rect, 4.0, th.hover_overlay);
+                    ui.painter().rect_filled(rect, 4.0, th.hover_overlay.to_egui_premultiplied());
                 }
                 ui.painter().text(
                     rect.center(),
                     egui::Align2::CENTER_CENTER,
                     t("button.settings"),
                     egui::FontId::proportional(12.0),
-                    text_color,
+                    text_color.into(),
                 );
                 if response.clicked() {
                     sidebar_settings = true;

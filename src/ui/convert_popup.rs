@@ -171,7 +171,7 @@ pub fn draw_convert_content(ui: &mut egui::Ui, state: &mut AppState) -> Option<C
         // Highlight: hover or keyboard selection
         let highlight = (!is_current && resp.hovered()) || is_selected;
         if highlight {
-            ui.painter().rect_filled(rect, 0.0, th.hover_overlay);
+            ui.painter().rect_filled(rect, 0.0, th.hover_overlay.to_egui_premultiplied());
         }
         if !is_current && resp.hovered() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
@@ -186,7 +186,7 @@ pub fn draw_convert_content(ui: &mut egui::Ui, state: &mut AppState) -> Option<C
             egui::Align2::LEFT_TOP,
             &label,
             egui::FontId::proportional(th.font_size_body.value()),
-            text_color,
+            text_color.into(),
         );
 
         if resp.clicked() && !is_current {

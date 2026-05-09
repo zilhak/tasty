@@ -523,13 +523,13 @@ impl PopupManager {
                     egui::Align2::CENTER_CENTER,
                     &popup.title,
                     egui::FontId::proportional(th.font_size_body.value()),
-                    th.text,
+                    th.text.into(),
                 );
 
                 // Close button
                 let is_close_hovered = hovered_close == Some(popup_id);
                 if is_close_hovered {
-                    painter.rect_filled(close_btn_rect, 2.0, th.hover_overlay);
+                    painter.rect_filled(close_btn_rect, 2.0, th.hover_overlay.to_egui_premultiplied());
                 }
                 let x_size = 5.0;
                 let x_color = if is_close_hovered {

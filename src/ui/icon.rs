@@ -48,7 +48,7 @@ impl Icon {
         );
         let painter = ui.painter_at(rect);
         match self {
-            Icon::Chevron { direction } => draw_chevron(&painter, icon_rect, *direction, color),
+            Icon::Chevron { direction } => draw_chevron(&painter, icon_rect, *direction, color.into()),
         }
         resp
     }

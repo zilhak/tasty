@@ -62,7 +62,7 @@ pub fn draw_keybindings_tab(
 
     ui.horizontal_top(|ui| {
         egui::Frame::new()
-            .fill(th.crust)
+            .fill(th.crust.into())
             .stroke(egui::Stroke::new(1.0, th.surface0))
             .corner_radius(4.0)
             .inner_margin(egui::Margin::symmetric(6, 6))
@@ -417,7 +417,7 @@ fn draw_preset_subtab(
     ui.horizontal_top(|ui| {
         // 좌측: 프리셋 목록
         egui::Frame::new()
-            .fill(th.mantle)
+            .fill(th.mantle.into())
             .stroke(egui::Stroke::new(1.0, th.surface0))
             .corner_radius(4.0)
             .inner_margin(egui::Margin::symmetric(8, 8))

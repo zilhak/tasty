@@ -142,9 +142,9 @@ pub fn draw_egui_panels(
                 0.0
             };
             let md_bg = if info.is_keyboard_target {
-                markdown_colors.focused_bg.0
+                markdown_colors.focused_bg.to_egui()
             } else {
-                markdown_colors.unfocused_bg.0
+                markdown_colors.unfocused_bg.to_egui()
             };
             draw_panel_frame(ctx, &format!("md_panel_{}", id_suffix), info, 8, Some(md_bg), |ui| {
                 crate::markdown_ui::draw_markdown(
@@ -172,9 +172,9 @@ pub fn draw_egui_panels(
             }
             exp_panel.was_focused = is_focused;
             let exp_bg = if is_focused {
-                explorer_colors.focused_bg.0
+                explorer_colors.focused_bg.to_egui()
             } else {
-                explorer_colors.unfocused_bg.0
+                explorer_colors.unfocused_bg.to_egui()
             };
             draw_panel_frame(ctx, &format!("explorer_{}", id_suffix), info, 4, Some(exp_bg), |ui| {
                 if let Some(act) =
@@ -337,7 +337,7 @@ where
     R: Default,
 {
     let th = theme::theme();
-    let bg = bg_color.unwrap_or(th.crust);
+    let bg = bg_color.unwrap_or(th.crust.into());
     let mut out: R = R::default();
     egui::Area::new(egui::Id::new(id))
         .fixed_pos(egui::pos2(info.logical_x, info.logical_y))

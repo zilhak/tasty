@@ -38,9 +38,9 @@ pub fn draw_markdown(
 
             // Apply theme colors to egui visuals for commonmark rendering
             let visuals = &mut ui.style_mut().visuals;
-            visuals.override_text_color = Some(th.subtext1);
-            visuals.hyperlink_color = th.blue;
-            visuals.code_bg_color = th.surface0;
+            visuals.override_text_color = Some(th.subtext1.into());
+            visuals.hyperlink_color = th.blue.into();
+            visuals.code_bg_color = th.surface0.into();
 
             let content = panel.content.clone();
             egui_commonmark::CommonMarkViewer::new().show(
@@ -63,9 +63,9 @@ pub fn render_markdown(ui: &mut egui::Ui, content: &str, font: &EffectiveFont) {
     apply_font_text_styles(ui, font);
 
     let visuals = &mut ui.style_mut().visuals;
-    visuals.override_text_color = Some(th.subtext1);
-    visuals.hyperlink_color = th.blue;
-    visuals.code_bg_color = th.surface0;
+    visuals.override_text_color = Some(th.subtext1.into());
+    visuals.hyperlink_color = th.blue.into();
+    visuals.code_bg_color = th.surface0.into();
 
     let mut cache = egui_commonmark::CommonMarkCache::default();
     egui_commonmark::CommonMarkViewer::new().show(ui, &mut cache, content);
