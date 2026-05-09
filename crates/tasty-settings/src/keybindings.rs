@@ -960,7 +960,7 @@ mod tests {
 
     #[test]
     fn general_binding_fields_count() {
-        assert_eq!(KeybindingSettings::GENERAL_BINDING_FIELDS.len(), 42);
+        assert_eq!(KeybindingSettings::GENERAL_BINDING_FIELDS.len(), 43);
     }
 
     #[test]
