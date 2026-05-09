@@ -23,4 +23,5 @@
 | 컨텍스트 메뉴 구현 | [context-menu.md](context-menu.md) |
 | Popup 구현 | [popup-implementation.md](popup-implementation.md) |
 | GPU 렌더링 구조 | [gpu-rendering.md](gpu-rendering.md) |
+| Model + Host View 분리 (surface 추가/뷰 상태 관리) | [model-view-split.md](model-view-split.md) |
 | TUI 테스트 | [tui-testing.md](tui-testing.md) |

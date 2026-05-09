@@ -4,11 +4,11 @@
 
 ---
 
-## model/ — 데이터 모델
+## model/ — 데이터 모델 (`tasty-core`)
 
 **책임:** Workspace → PaneNode → Pane → Tab → SurfaceLayout의 계층 데이터 구조 정의. 레이아웃 계산(Rect 분할, 디바이더 탐색), 터미널 순회, 리사이즈.
 
-렌더링이나 UI에 의존하지 않는 순수 데이터 계층. `tasty-terminal` 크레이트만 참조한다.
+**GUI-free.** `tasty-core` 크레이트는 기본적으로 egui/wgpu/image 등 GUI 라이브러리를 *데이터 구조에서* 사용하지 않는다. `tasty-terminal` + `serde` + `termwiz` + `directories`만 참조한다. egui와의 변환은 optional feature `egui-compat` (default 활성)으로 격리되어 있어, 헤드리스 플러그인 프로세스는 `tasty-core = { default-features = false }`로 컴파일 가능하다.
 
 | 파일 | 역할 |
 |------|------|
@@ -17,18 +17,30 @@
 | `pane_tree.rs` | PaneNode 이진 트리 (상위 분할). split/close/rect계산/디바이더탐색/방향포커스 |
 | `pane.rs` | Pane 구조체. 탭 관리 (생성/닫기/전환), Terminal 생성, Surface 분할 |
 | `tab.rs` | Tab 구조체. `SurfaceLayout`을 직접 소유. 분할/포커스/복원 로직 |
-| `surface_trait.rs` | `Surface` trait 정의. `kind()`(소문자 식별자) + `type_name()`(표시용) 분리, downcast 메서드 포함. GUI 의존 없음 (egui CursorIcon, is_egui_surface 등 제거됨) |
+| `surface_trait.rs` | `Surface` trait 정의. `kind()`(소문자 식별자) + `type_name()`(표시용) 분리, `html_url()` 안정 메서드, downcast 메서드 포함. GUI 의존 없음 |
 | `terminal_surface.rs` | TerminalSurface (단일 터미널). Surface impl |
 | `surface_layout.rs` | SurfaceLayout 이진 트리 (하위 분할) + SurfaceRegion. pane_tree.rs와 동일한 패턴 |
-| `markdown_panel.rs` | MarkdownPanel. Surface impl. 마크다운 파일 경로 + 파싱 캐시 |
+| `markdown_panel.rs` | MarkdownPanel. Surface impl. **`file_path` + mtime poll만 보유** — 콘텐츠/스크롤/CommonMark 캐시는 호스트 `MarkdownView`로 분리 |
 | `explorer_panel.rs` | ExplorerPanel. Surface impl. 파일 탐색기 트리 상태 |
-| `html_panel.rs` | HtmlPanel. Surface impl. WebView URL 보유 |
-| `image_panel.rs` | ImagePanel. Surface impl. 이미지 파일 + 줌/팬/편집 상태 |
+| `html_panel.rs` | HtmlPanel. Surface impl. URL만 보유. `Surface::html_url()` 노출로 native WebView 동기화 가능 |
+| `image_panel.rs` | ImagePanel. Surface impl. **`file_path`, `dir_images`, `current_index`만 보유** — 픽셀/텍스처/편집 상태는 호스트 `ImageView`로 분리 |
 | `empty_surface.rs` | EmptySurface. Surface impl. 변환 버튼 표시 |
 | `clipboard_viewer_panel.rs` | ClipboardViewerPanel. Surface impl. 클립보드 히스토리 뷰어 |
 | `tests.rs` | Rect/PaneNode/SurfaceLayout 유닛 테스트 |
 
 `Surface::kind()`는 `"terminal"`, `"markdown"`, `"explorer"`, `"html"`, `"image"`, `"empty"`, `"clipboard_viewer"` 7종 식별자를 반환한다. IPC/registry/플러그인이 이 값으로 surface 타입을 식별하며, `type_name()`은 표시 전용이라 식별 비교에 쓰면 안 된다.
+
+### Model + Host View 분리 패턴
+
+GUI 휘발성 상태(콘텐츠 캐시, 텍스처, 편집 세션, 스크롤 오프셋, 팝업 버퍼 등)는 모델에 두지 않고 호스트 측 **View** 구조체에 둔다. 각 View는 surface ID를 키로 하는 **Store** (`HashMap<SurfaceId, View>`)에 보관되며, surface가 닫힐 때 `AppState::cleanup_surface(sid)`가 모든 store에서 `drop_view(sid)`를 호출한다.
+
+| Model | View | Store 위치 |
+|-------|------|-----------|
+| `MarkdownPanel` (file_path + mtime) | `MarkdownView` (content, scroll_offset, commonmark_cache) | `AppState::markdown_views` |
+| `ImagePanel` (file_path, dir_images) | `ImageView` (original_image, texture, edit_state, undo history, brush, popup buffers) | `AppState::image_views` |
+| `HtmlPanel` (url) | (없음 — 모델이 충분히 슬림. native WebView는 `MainWindow::webviews`에서 직접 관리) | — |
+
+이 분리로 모델은 직렬화 친화적인 식별 정보만 남고, GUI 라이브러리(egui)에 묶이지 않는다 → 향후 플러그인 프로세스에서 동일한 모델을 그대로 사용 가능.
 
 pane_tree.rs와 surface_layout.rs는 재귀 이진 트리 구조로, `match self { Leaf/Split }` 패턴의 반복이 본질적이다.
 
@@ -111,7 +123,9 @@ pipeline.rs는 wgpu RenderPipelineDescriptor의 장황한 선언 코드가 대�
 | `context_menu.rs` | 우클릭 메뉴 (armed 상태머신) |
 | `dialog.rs` | 워크스페이스 이름변경 + 마크다운 경로 다이얼로그 |
 | `divider.rs` | 분할선 + 서피스 하이라이트 |
-| `egui_panels.rs` | egui 기반 Surface 패널 렌더링 (Markdown/Explorer/Html/Empty) |
+| `egui_panels.rs` | egui 기반 Surface 패널 렌더링 (Markdown/Explorer/Html/Empty/Image). `mem::take` 패턴으로 view store를 임시 추출해 모델과 view 동시 mutable 접근 |
+| `markdown_view.rs` | `MarkdownView`/`MarkdownViewStore` — content, scroll_offset, commonmark_cache 보관. `get_or_init(panel)`이 mtime poll까지 자동 처리 |
+| `image_view.rs` | `ImageView`/`ImageViewStore` — 픽셀, 텍스처, 편집 상태(EditState/DragState/ResizeHandle/FloatingSelection/ActionHistory/StrokeBuilder), brush, popup 버퍼 보관. `bresenham_thick_line`/`blit_image`/`load_image_from_path` 등 헬퍼 자유 함수 |
 
 ---
 
@@ -232,5 +246,7 @@ keybindings_tab.rs의 egui_key_to_string 매핑 테이블은 키 목록을 1:1 �
 | `window/quit.rs` | ~170 | QuitWindow (종료 확인 모달, impl Window + ModalWindow) |
 | `i18n.rs` | ~100 | TOML 기반 번역 (en/ko/ja 내장 + 사용자 오버라이드) |
 | `crash_report.rs` | 243 | panic hook + 크래시 로그 수집 |
-| `markdown_ui.rs` | 259 | egui 마크다운 렌더링 (제목/목록/코드블록/테이블) |
+| `markdown_ui.rs` | ~100 | egui 마크다운 렌더링 (제목/목록/코드블록/테이블). 시그니처: `(ui, &mut MarkdownView, scroll_delta, id, font)` |
+| `image_ui.rs` | ~600 | 이미지 뷰어/에디터 렌더링. 시그니처: `(ui, &mut ImagePanel, &mut ImageView)` — 모델은 디렉터리 탐색용, view는 픽셀/편집 상태용 |
+| `html_ui.rs` | ~20 | HTML placeholder (URL 라벨만 표시; 실제 콘텐츠는 native WebView가 오버레이) |
 | `explorer_ui.rs` | 171 | egui 파일 탐색기 렌더링 (트리 + 미리보기) |

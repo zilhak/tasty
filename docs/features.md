@@ -107,9 +107,13 @@
 - PaneNode: Pane의 상위 레이아웃 트리. Leaf(Pane) 또는 Split. 탭 전환과 무관하게 고정
 - Pane: **독립적인 탭 바**를 가진 화면 영역. 여러 Tab을 포함
 - Tab: 탭 하나. `SurfaceLayout`을 직접 소유. 단일 Leaf = 분할 안 된 상태, Split = 탭 내부 분할
-- Surface trait: 모든 콘텐츠 타입의 공통 인터페이스. 각 타입이 독립 struct로 구현
+- Surface trait: 모든 콘텐츠 타입의 공통 인터페이스. 각 타입이 독립 struct로 구현. **`tasty-core`는 GUI-free** — 모델은 식별 정보와 직렬화 가능한 상태만 보유한다 (egui는 optional `egui-compat` feature, 헤드리스 플러그인은 비활성 가능)
+  - `kind()`: 소문자 식별자 (`"terminal"`, `"markdown"` 등 7종) — IPC/registry/플러그인이 식별자로 사용
+  - `type_name()`: 표시용 라벨. 식별 비교 금지
+  - `html_url()`: HtmlPanel만 `Some(&url)` 반환. native WebView 동기화가 다운캐스트 없이 사용
   - TerminalSurface: 단일 PTY 터미널
-  - MarkdownPanel, ExplorerPanel, HtmlPanel, EmptySurface: 비터미널 콘텐츠
+  - MarkdownPanel, ExplorerPanel, HtmlPanel, ImagePanel, EmptySurface, ClipboardViewerPanel: 비터미널 콘텐츠
+- **Model + Host View 분리**: 휘발성 GUI 상태(콘텐츠 캐시, 텍스처, 편집 세션, 스크롤, 팝업 버퍼)는 호스트 측 View로 분리되어 `AppState::markdown_views` / `image_views` (HashMap<SurfaceId, View>) 에 보관. surface 닫힘 시 `cleanup_surface(sid)`가 모든 store에서 `drop_view(sid)` 호출
 - AppState: 전체 워크스페이스 목록과 활성 상태를 관리하는 중앙 상태 (IdGenerator 포함)
 
 ### egui UI 오버레이
