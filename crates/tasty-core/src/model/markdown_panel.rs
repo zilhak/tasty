@@ -3,15 +3,12 @@ use std::time::{Instant, SystemTime};
 use super::SurfaceId;
 use super::surface_trait::Surface;
 
-/// A surface that displays a Markdown file rendered with egui.
-/// Supports automatic reload when the file changes on disk.
+/// A surface that displays a Markdown file. Holds only identification + reload-tracking
+/// state; render content (`String`), scroll offset, and `egui_commonmark` cache live in
+/// the host's `MarkdownView` so this model is GUI-free.
 pub struct MarkdownPanel {
     pub id: u32,
     pub file_path: String,
-    pub content: String,
-    pub scroll_offset: f32,
-    /// Cache for egui_commonmark parsed markdown.
-    pub commonmark_cache: egui_commonmark::CommonMarkCache,
     /// Last known modification time of the file.
     last_mtime: Option<SystemTime>,
     /// When we last checked the file's mtime (throttle to avoid excessive stat calls).
@@ -23,51 +20,41 @@ const RELOAD_CHECK_INTERVAL_SECS: f64 = 1.0;
 
 impl MarkdownPanel {
     pub fn new(id: u32, file_path: String) -> Self {
-        let content =
-            std::fs::read_to_string(&file_path).unwrap_or_else(|e| format!("Error: {}", e));
         let mtime = std::fs::metadata(&file_path)
             .and_then(|m| m.modified())
             .ok();
         Self {
             id,
             file_path,
-            content,
-            scroll_offset: 0.0,
-            commonmark_cache: egui_commonmark::CommonMarkCache::default(),
             last_mtime: mtime,
             last_check: Instant::now(),
         }
     }
 
-    pub fn reload(&mut self) {
-        self.content =
-            std::fs::read_to_string(&self.file_path).unwrap_or_else(|e| format!("Error: {}", e));
-        self.last_mtime = std::fs::metadata(&self.file_path)
-            .and_then(|m| m.modified())
-            .ok();
-    }
-
-    /// Check if the file has been modified since last read, and reload if so.
-    /// Throttled to avoid excessive filesystem access.
-    pub fn check_reload(&mut self) {
+    /// Throttled mtime poll. Returns the file's new content when it has changed since
+    /// the last successful read; the host view is responsible for caching it.
+    pub fn poll_reload(&mut self) -> Option<String> {
         if self.last_check.elapsed().as_secs_f64() < RELOAD_CHECK_INTERVAL_SECS {
-            return;
+            return None;
         }
         self.last_check = Instant::now();
 
-        let current_mtime = match std::fs::metadata(&self.file_path).and_then(|m| m.modified()) {
-            Ok(t) => t,
-            Err(_) => return,
-        };
-
-        let changed = match self.last_mtime {
-            Some(prev) => current_mtime != prev,
-            None => true,
-        };
-
-        if changed {
-            self.reload();
+        let current = std::fs::metadata(&self.file_path).and_then(|m| m.modified()).ok()?;
+        let changed = self.last_mtime.map_or(true, |prev| current != prev);
+        if !changed {
+            return None;
         }
+        self.last_mtime = Some(current);
+        std::fs::read_to_string(&self.file_path).ok()
+    }
+
+    /// Force a reload regardless of throttle/mtime. Returns new content on success.
+    pub fn force_reload(&mut self) -> Option<String> {
+        self.last_mtime = std::fs::metadata(&self.file_path)
+            .and_then(|m| m.modified())
+            .ok();
+        self.last_check = Instant::now();
+        std::fs::read_to_string(&self.file_path).ok()
     }
 }
 

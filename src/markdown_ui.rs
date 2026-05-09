@@ -1,23 +1,23 @@
 /// Markdown renderer using egui_commonmark.
 /// Supports CommonMark spec: tables, checkboxes, links, code blocks, etc.
-use crate::model::MarkdownPanel;
 use crate::settings::EffectiveFont;
 use crate::theme;
 use crate::ui::font_registry;
+use crate::ui::markdown_view::MarkdownView;
 
-/// Draw a MarkdownPanel surface: file reload check + scroll area + content render.
+/// Draw a Markdown surface from its host-side view: scroll area + content render.
+/// The caller (egui_panels) is responsible for refreshing `view.content` from the
+/// model's `MarkdownPanel::poll_reload` before calling.
 /// `scroll_delta` is applied before the ScrollArea (positive = scroll up).
 /// `id_suffix` uniquifies egui ids when multiple panels share a context.
 /// `font` carries the markdown surface's effective font settings.
 pub fn draw_markdown(
     ui: &mut egui::Ui,
-    panel: &mut MarkdownPanel,
+    view: &mut MarkdownView,
     scroll_delta: f32,
     id_suffix: &str,
     font: &EffectiveFont,
 ) {
-    panel.check_reload();
-
     let th = theme::theme();
 
     // Force the frame content to fill the available width
@@ -42,10 +42,10 @@ pub fn draw_markdown(
             visuals.hyperlink_color = th.blue.into();
             visuals.code_bg_color = th.surface0.into();
 
-            let content = panel.content.clone();
+            let content = view.content.clone();
             egui_commonmark::CommonMarkViewer::new().show(
                 ui,
-                &mut panel.commonmark_cache,
+                &mut view.commonmark_cache,
                 &content,
             );
 

@@ -94,6 +94,10 @@ pub struct AppState {
     pub captured_double_tap: Option<String>,
     /// Keyboard events for non-terminal surfaces, consumed during egui rendering.
     pub pending_surface_keys: Vec<PendingKeyEvent>,
+
+    /// Per-surface host view state for `MarkdownPanel` (content cache, scroll, commonmark cache).
+    /// `MarkdownPanel` itself only holds `file_path` + reload tracking; everything GUI-bound lives here.
+    pub markdown_views: crate::ui::markdown_view::MarkdownViewStore,
 }
 
 /// A pending native context menu request.
@@ -285,6 +289,7 @@ impl AppState {
             },
             search: crate::search_state::SearchState::new(),
             toasts: crate::ui::ToastManager::new(),
+            markdown_views: Default::default(),
         })
     }
 
@@ -299,11 +304,12 @@ impl AppState {
     }
 
     /// Clean up all state associated with a closed surface:
-    /// Claude agent relationships, parent tracking, and surface metadata.
+    /// Claude agent relationships, parent tracking, surface metadata, and per-surface host view state.
     pub(crate) fn cleanup_surface(&mut self, surface_id: u32) {
         self.unregister_child(surface_id);
         self.mark_parent_closed(surface_id);
         crate::surface_meta::SurfaceMetaStore::remove(surface_id);
+        self.markdown_views.drop_view(surface_id);
     }
 
     pub fn active_workspace(&self) -> &crate::model::Workspace {

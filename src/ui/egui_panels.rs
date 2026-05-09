@@ -102,6 +102,11 @@ pub fn draw_egui_panels(
     let markdown_font = state.engine.settings.appearance.effective_markdown_font();
     let explorer_font = state.engine.settings.appearance.effective_explorer_font();
 
+    // Temporarily extract markdown_views so we can hold a `&mut MarkdownView` from the
+    // store at the same time as `&mut MarkdownPanel` from `state.engine.workspaces`.
+    // (Same pattern used below for clipboard_history.)
+    let mut markdown_views = std::mem::take(&mut state.markdown_views);
+
     for info in &infos {
         let id_suffix = info
             .surface_id
@@ -152,10 +157,11 @@ pub fn draw_egui_panels(
             } else {
                 markdown_colors.unfocused_bg.to_egui()
             };
+            let view = markdown_views.get_or_init(md_panel);
             draw_panel_frame(ctx, &format!("md_panel_{}", id_suffix), info, 8, Some(md_bg), |ui| {
                 crate::markdown_ui::draw_markdown(
                     ui,
-                    md_panel,
+                    view,
                     key_scroll_y,
                     &id_suffix,
                     &markdown_font,
@@ -217,6 +223,9 @@ pub fn draw_egui_panels(
             });
         }
     }
+
+    // Restore extracted markdown_views before any further `state` access below.
+    state.markdown_views = markdown_views;
 
     // Render clipboard viewer surfaces now. The main loop is done, so we have
     // exclusive access to state again and can safely borrow engine + surface.
