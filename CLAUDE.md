@@ -121,6 +121,7 @@ Tasty는 **Windows, macOS, Linux를 모두 지원하는 크로스 플랫폼 앱*
   - `release-runners.md`: GitHub Actions self-hosted 러너 인벤토리, 1회 도구 설치, 운영 명령
   - `context-menu.md`: 우클릭 컨텍스트 메뉴 구현 (네이티브 메뉴 필수, PendingNativeMenu 패턴)
   - `crash-diagnostics.md`: Crash & 에러 진단 방법 (로그, strace, gdb)
+  - `debug-ipc.md`: Debug 빌드 전용 IPC 메서드 (사용자 입력 재현, popup 트리거 등)
   - `linux.md`: Linux 환경 빌드/실행 가이드
   - `popup-implementation.md`: Popup 구현 (PopupDef 시스템, egui::Window 직접 사용 금지)
   - `gpu-rendering.md`: GPU 렌더링 구조 (공유 버퍼 + submit 분리 규칙)

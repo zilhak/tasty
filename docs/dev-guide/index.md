@@ -20,6 +20,7 @@
 | 릴리스 절차 | [release.md](release.md) |
 | 릴리스 러너 설정 | [release-runners.md](release-runners.md) |
 | Crash & 에러 진단 | [crash-diagnostics.md](crash-diagnostics.md) |
+| Debug 전용 IPC | [debug-ipc.md](debug-ipc.md) |
 | 컨텍스트 메뉴 구현 | [context-menu.md](context-menu.md) |
 | Popup 구현 | [popup-implementation.md](popup-implementation.md) |
 | GPU 렌더링 구조 | [gpu-rendering.md](gpu-rendering.md) |
