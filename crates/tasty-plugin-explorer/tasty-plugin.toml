@@ -1,0 +1,16 @@
+manifest_version = 1
+id = "com.tasty.explorer"
+name = "File Explorer"
+version = "0.1.0"
+description = "Built-in file explorer plugin for Tasty"
+api_version = "1"
+permissions = ["surface.read", "surface.write", "fs.read"]
+
+[entry]
+type = "process"
+command = "tasty-plugin-explorer"
+
+[[surface_kinds]]
+kind = "explorer"
+display_name_i18n_key = "surface.kind.explorer"
+icon = "📁"
