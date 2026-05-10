@@ -9,7 +9,6 @@
 //! plugin이 응답할 때마다 `last_pong`이 갱신된다. 헬스체크는 `since_last_pong()` 비교.
 
 use std::io::{BufRead, BufReader, Write};
-use std::net::TcpStream;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::{mpsc, Arc, Mutex};
@@ -28,6 +27,8 @@ pub struct PluginProcess {
     pub resp_rx: mpsc::Receiver<PluginResponse>,
     pub event_rx: mpsc::Receiver<PluginEvent>,
     last_pong: Arc<Mutex<Instant>>,
+    /// 자식 stdout/stderr가 redirect된 파일 경로. 디버깅/검증 시 직접 참조.
+    #[allow(dead_code)]
     pub log_path: PathBuf,
 }
 

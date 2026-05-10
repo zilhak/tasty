@@ -10,11 +10,17 @@ use serde_json::Value;
 use crate::plugin::ui_tree::{UiEvent, UiNode};
 
 /// `RemoteSurface`의 내부 상태에 manager가 외부에서 접근하기 위한 핸들.
+///
+/// `snapshot_cache`/`invalidated`는 manager가 향후 영속화·redraw 시점 결정에서
+/// 사용할 surface로 노출돼 있다. 현재 pump 흐름이 모두 활용하지 않더라도
+/// 핸들 묶음의 일관성을 위해 함께 클론된다.
 #[derive(Clone)]
 pub struct SurfaceHandles {
     pub tree: Arc<Mutex<Option<UiNode>>>,
     pub pending_events: Arc<Mutex<Vec<UiEvent>>>,
+    #[allow(dead_code)]
     pub snapshot_cache: Arc<Mutex<Option<Value>>>,
+    #[allow(dead_code)]
     pub invalidated: Arc<Mutex<bool>>,
     pub display_name: Arc<Mutex<String>>,
 }

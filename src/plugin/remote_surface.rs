@@ -7,6 +7,12 @@
 //! `Surface` trait의 `kind() -> &'static str` 제약 때문에 plugin manifest의
 //! 동적 kind 문자열은 `register_remote_kind`에서 `Box::leak`으로 한 번 정적화한다
 //! (plugin 등록 시 1회, 메모리 누수는 plugin 종류 수만큼이라 무시 가능).
+//!
+//! 일부 메서드는 `SurfaceHandles`를 통한 외부 접근용 surface로 노출돼 있고,
+//! 호스트 본문이 직접 호출하지는 않는다 (pump가 핸들 Arc로 직접 동기화) —
+//! 향후 view에서 사용 가능하도록 유지.
+
+#![allow(dead_code)]
 
 use std::sync::{Arc, Mutex};
 

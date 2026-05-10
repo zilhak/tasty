@@ -89,6 +89,7 @@ impl CallerContext {
         }
     }
 
+    #[allow(dead_code)]
     pub fn is_plugin(&self) -> bool {
         matches!(self, CallerContext::Plugin { .. })
     }

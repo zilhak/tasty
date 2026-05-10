@@ -1,6 +1,12 @@
 //! Plugin 매니페스트 정의 + 파싱 + 검증.
 //!
 //! `~/.tasty/plugins/<plugin-id>/tasty-plugin.toml` 형식.
+//!
+//! 일부 필드(authors/homepage/contributes/icon 등)는 deserialize surface로 정의돼
+//! 있지만 호스트 본문이 아직 모두 활용하지는 않는다 — 매니페스트 schema를 한 곳에서
+//! 정확히 표현하기 위해 의도적으로 남겨둔다.
+
+#![allow(dead_code)]
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};

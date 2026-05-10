@@ -22,7 +22,6 @@ use crate::plugin::protocol::{
     self, IpcCallResult, PluginEvent, PluginRequest, PluginResponse, SurfaceResult,
 };
 use crate::plugin::registry_state::PluginsConfig;
-use crate::plugin::ui_tree::UiEvent;
 use crate::surface_registry::SurfaceKindRegistry;
 
 const HEALTHCHECK_TIMEOUT: Duration = Duration::from_secs(60);
@@ -31,6 +30,7 @@ const RESTART_FAILURE_WINDOW: Duration = Duration::from_secs(10);
 const RESTART_FAILURE_LIMIT: usize = 3;
 
 /// pending host→plugin request의 종류. 응답 수신 시 어떤 후처리를 할지 식별.
+#[allow(dead_code)]
 enum PendingRequestKind {
     SurfaceCreate { surface_id: u32 },
     SurfaceEvent { surface_id: u32 },
@@ -127,6 +127,9 @@ impl PluginManager {
     }
 
     /// plugin의 현재 권한 set. 등록되지 않은 plugin은 빈 set.
+    /// (외부 caller surface로 노출 — `process_plugin_ipc_calls`는 이미 PendingPluginCall에
+    /// 권한을 cache해 사용하므로 직접 호출자는 없다.)
+    #[allow(dead_code)]
     pub fn plugin_permissions(&self, plugin_id: &str) -> Arc<HashSet<Permission>> {
         self.plugin_permissions
             .get(plugin_id)
@@ -164,6 +167,10 @@ impl PluginManager {
         }
     }
 
+    /// register_remote_kind에 전달하는 채널 sender. 내부적으로 hello 처리에서
+    /// 자체 사용하므로 외부 caller가 직접 쓰지는 않지만, 통합 테스트에서 surface 등록을
+    /// 흉내낼 때 노출 필요.
+    #[allow(dead_code)]
     pub fn host_cmd_sender(&self) -> Sender<HostCmd> {
         self.host_cmd_tx.clone()
     }
@@ -618,6 +625,8 @@ impl PluginManager {
         self.log_dir.join(format!("{plugin_id}.log"))
     }
 
+    /// 호스트 listener의 포트. 디버깅·테스트용.
+    #[allow(dead_code)]
     pub fn listener_port(&self) -> Option<u16> {
         self.listener.as_ref().map(|l| l.port())
     }
