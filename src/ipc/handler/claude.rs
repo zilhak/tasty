@@ -136,9 +136,8 @@ fn spawn_in_workspace(
     };
     let ws_id = state.engine.workspaces[ws_idx].id;
 
-    // Save and restore focus
-    let saved_workspace = state.active_workspace;
-    let saved_pane = state.engine.workspaces[saved_workspace].focused_pane;
+    // 03F 이후 split_pane_targeted는 포커스를 옮기지 않으므로 save/restore 불필요.
+    // CLAUDE.md "포커스 독립성" — IPC 경로에서 사용자 포커스 변경 금지.
 
     // Check if spawn pane exists and is still valid
     let spawn_pane_key = (parent_surface_id, ws_id);
@@ -193,10 +192,6 @@ fn spawn_in_workspace(
     state.register_child(parent_surface_id, entry);
 
     start_claude_in_surface(state, child_surface_id, cwd.as_deref(), prompt.as_deref());
-
-    // Restore focus
-    state.active_workspace = saved_workspace;
-    state.engine.workspaces[saved_workspace].focused_pane = saved_pane;
 
     JsonRpcResponse::success(
         id,

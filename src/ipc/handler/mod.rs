@@ -19,23 +19,61 @@ mod workspace;
 
 /// Handle a JSON-RPC request against the application state.
 /// Returns a JSON-RPC response.
+///
+/// 라우터 구조:
+/// 1. **engine 핸들러** (`route_engine_handler`): AppState UI 필드를 만지지 않는
+///    핸들러 60+개. `&mut AppState`를 받지만 본문이 `state.engine`만 접근하거나
+///    AppState 메서드(현재는 engine-only)만 호출한다. 단계 07에서 plugin 권한
+///    게이트가 이 진입점에서 동작한다.
+/// 2. **GUI 의존 핸들러** (`route_gui_handler`): UI state(popups/dialogs/active_workspace)
+///    를 만져야 하는 소수 핸들러. 권한 게이트 대상 외부.
+/// 3. **debug 핸들러** (`route_debug_handler`): debug build 전용. release에서는 정의 안 됨.
 pub fn handle(state: &mut AppState, request: &JsonRpcRequest) -> JsonRpcResponse {
     let id = request.id.clone().unwrap_or(serde_json::Value::Null);
 
-    match request.method.as_str() {
+    if let Some(resp) = route_engine_handler(state, request, id.clone()) {
+        return resp;
+    }
+
+    if let Some(resp) = route_gui_handler(state, request, id.clone()) {
+        return resp;
+    }
+
+    #[cfg(debug_assertions)]
+    if let Some(resp) = route_debug_handler(state, request, id.clone()) {
+        return resp;
+    }
+
+    JsonRpcResponse::method_not_found(id, &request.method)
+}
+
+/// engine-substate handlers — UI에 의존하지 않음. 단계 07 권한 게이트 대상.
+///
+/// 현재는 시그니처가 `&mut AppState`이지만 본문이 GUI를 만지지 않는다. 향후
+/// AppState 메서드들이 `EngineState`로 이전되면 시그니처를 `&mut EngineState`로
+/// 좁힐 예정 (별도 작업).
+fn route_engine_handler(
+    state: &mut AppState,
+    request: &JsonRpcRequest,
+    id: serde_json::Value,
+) -> Option<JsonRpcResponse> {
+    Some(match request.method.as_str() {
         "system.info" => handle_system_info(state, id),
+        // workspace
         "workspace.list" => workspace::handle_workspace_list(state, id),
         "workspace.create" => workspace::handle_workspace_create(state, id, &request.params),
         "workspace.update" => workspace::handle_workspace_update(state, id, &request.params),
         "workspace.move" => workspace::handle_workspace_move(state, id, &request.params),
-        // workspace.select removed: focus is user-only (shortcuts/clicks).
+        // pane / split
         "pane.list" => pane::handle_pane_list(state, id),
+        "pane.close" => pane::handle_pane_close(state, id, &request.params),
         "split" => pane::handle_split(state, id, &request.params),
+        // tab
         "tab.list" => tab::handle_tab_list(state, id, &request.params),
         "tab.create" => tab::handle_tab_create(state, id, &request.params),
         "tab.close" => tab::handle_tab_close(state, id, &request.params),
         "tab.move" => tab::handle_tab_move(state, id, &request.params),
-        "pane.close" => pane::handle_pane_close(state, id, &request.params),
+        // surface
         "surface.close" => surface::handle_surface_close(state, id, &request.params),
         "surface.close_self" => surface::handle_surface_close_self(state, id, &request.params),
         "surface.list" => surface::handle_surface_list(state, id),
@@ -43,21 +81,25 @@ pub fn handle(state: &mut AppState, request: &JsonRpcRequest) -> JsonRpcResponse
         "surface.send_key" => surface::handle_surface_send_key(state, id, &request.params),
         "surface.send_combo" => surface::handle_surface_send_combo(state, id, &request.params),
         "surface.send_to" => surface::handle_surface_send_to(state, id, &request.params),
-        // surface.focus / pane.focus removed: focus is user-only (shortcuts/clicks).
-        "notification.list" => notification::handle_notification_list(state, id),
-        "notification.create" => {
-            notification::handle_notification_create(state, id, &request.params)
-        }
-        "tree" => handle_tree(state, id),
-        "hook.set" => hooks::handle_hook_set(state, id, &request.params),
-        "hook.list" => hooks::handle_hook_list(state, id, &request.params),
-        "hook.unset" => hooks::handle_hook_unset(state, id, &request.params),
         "surface.set_mark" => surface::handle_set_mark(state, id, &request.params),
         "surface.read_since_mark" => surface::handle_read_since_mark(state, id, &request.params),
         "surface.screen_text" => surface::handle_screen_text(state, id, &request.params),
         "surface.cursor_position" => surface::handle_cursor_position(state, id, &request.params),
         "surface.is_typing" => handle_is_typing(state, id, &request.params),
         "surface.send_wait_idle" => handle_send_wait_idle(state, id, &request.params),
+        "surface.fire_hook" => hooks::handle_surface_fire_hook(state, id, &request.params),
+        "surface.meta_set" => meta::handle_surface_meta_set(state, id, &request.params),
+        "surface.meta_get" => meta::handle_surface_meta_get(state, id, &request.params),
+        "surface.meta_unset" => meta::handle_surface_meta_unset(state, id, &request.params),
+        "surface.meta_list" => meta::handle_surface_meta_list(state, id, &request.params),
+        // hooks
+        "hook.set" => hooks::handle_hook_set(state, id, &request.params),
+        "hook.list" => hooks::handle_hook_list(state, id, &request.params),
+        "hook.unset" => hooks::handle_hook_unset(state, id, &request.params),
+        "global_hook.set" => hooks::handle_global_hook_set(state, id, &request.params),
+        "global_hook.list" => hooks::handle_global_hook_list(state, id),
+        "global_hook.unset" => hooks::handle_global_hook_unset(state, id, &request.params),
+        // claude
         "claude.launch" => claude::handle_claude_launch(state, id, &request.params),
         "claude.spawn" => claude::handle_claude_spawn(state, id, &request.params),
         "claude.children" => claude::handle_claude_children(state, id, &request.params),
@@ -71,48 +113,70 @@ pub fn handle(state: &mut AppState, request: &JsonRpcRequest) -> JsonRpcResponse
         "claude.broadcast" => claude::handle_claude_broadcast(state, id, &request.params),
         "claude.tell" => claude::handle_claude_tell(state, id, &request.params),
         "claude.wait" => claude::handle_claude_wait(state, id, &request.params),
-        "surface.fire_hook" => hooks::handle_surface_fire_hook(state, id, &request.params),
-        "global_hook.set" => hooks::handle_global_hook_set(state, id, &request.params),
-        "global_hook.list" => hooks::handle_global_hook_list(state, id),
-        "global_hook.unset" => hooks::handle_global_hook_unset(state, id, &request.params),
-        "surface.meta_set" => meta::handle_surface_meta_set(state, id, &request.params),
-        "surface.meta_get" => meta::handle_surface_meta_get(state, id, &request.params),
-        "surface.meta_unset" => meta::handle_surface_meta_unset(state, id, &request.params),
-        "surface.meta_list" => meta::handle_surface_meta_list(state, id, &request.params),
-        // focus.direction removed: focus is user-only (shortcuts/clicks).
-        // tab.open_markdown / tab.open_explorer removed: use tab.create with type parameter
-        #[cfg(debug_assertions)]
-        "ui.state" => handle_ui_state(state, id),
-        #[cfg(debug_assertions)]
-        "debug.cell_info" => handle_debug_cell_info(state, id, &request.params),
-        #[cfg(debug_assertions)]
-        "debug.screen_attrs" => handle_debug_screen_attrs(state, id, &request.params),
-        #[cfg(debug_assertions)]
-        "debug.glyph_color" => handle_debug_glyph_color(state, id, &request.params),
-        #[cfg(debug_assertions)]
-        "debug.feed_bytes" => handle_debug_feed_bytes(state, id, &request.params),
-        #[cfg(debug_assertions)]
-        "debug.inject_mouse" => handle_debug_inject_mouse(state, id, &request.params),
-        #[cfg(debug_assertions)]
-        "debug.inject_key" => handle_debug_inject_key(state, id, &request.params),
+        // tree
+        "tree" => handle_tree(state, id),
+        // message
         "message.send" => message::handle_message_send(state, id, &request.params),
         "message.read" => message::handle_message_read(state, id, &request.params),
         "message.count" => message::handle_message_count(state, id, &request.params),
         "message.clear" => message::handle_message_clear(state, id, &request.params),
+        // tool.clipboard (read/write only — viewer_open is GUI)
+        "tool.clipboard.list" => clipboard::handle_list(state, id, &request.params),
+        "tool.clipboard.get" => clipboard::handle_get(state, id, &request.params),
+        "tool.clipboard.paste" => clipboard::handle_paste(state, id, &request.params),
+        "tool.clipboard.remove" => clipboard::handle_remove(state, id, &request.params),
+        "tool.clipboard.clear" => clipboard::handle_clear(state, id),
+        // input source (macOS)
         #[cfg(target_os = "macos")]
         "surface.switch_input_source" => {
             input_source::handle_switch_input_source(id, &request.params)
         }
         #[cfg(target_os = "macos")]
         "surface.raw_key" => input_source::handle_raw_key(id, &request.params),
-        "tool.clipboard.list" => clipboard::handle_list(state, id, &request.params),
-        "tool.clipboard.get" => clipboard::handle_get(state, id, &request.params),
-        "tool.clipboard.paste" => clipboard::handle_paste(state, id, &request.params),
-        "tool.clipboard.remove" => clipboard::handle_remove(state, id, &request.params),
-        "tool.clipboard.clear" => clipboard::handle_clear(state, id),
+        // notification.list (read-only, no UI mutation)
+        "notification.list" => notification::handle_notification_list(state, id),
+        _ => return None,
+    })
+}
+
+/// GUI-dependent handlers — UI 상태(popups/dialogs/active_workspace)를 직접
+/// 만지므로 권한 게이트 대상 외부에 있다.
+///
+/// 현재 후보:
+/// - `notification.create`: `state.active_workspace()` 사용 (포커스 의존). **04C에서
+///   `workspace_id` 필수화하여 engine 핸들러로 이동 예정.**
+/// - `tool.clipboard.viewer_open`: popup 오픈. **04C에서 release IPC 제거 + debug
+///   전용으로 격리 예정.**
+fn route_gui_handler(
+    state: &mut AppState,
+    request: &JsonRpcRequest,
+    id: serde_json::Value,
+) -> Option<JsonRpcResponse> {
+    Some(match request.method.as_str() {
+        "notification.create" => {
+            notification::handle_notification_create(state, id, &request.params)
+        }
         "tool.clipboard.viewer_open" => clipboard::handle_viewer_open(state, id),
-        _ => JsonRpcResponse::method_not_found(id, &request.method),
-    }
+        _ => return None,
+    })
+}
+
+#[cfg(debug_assertions)]
+fn route_debug_handler(
+    state: &mut AppState,
+    request: &JsonRpcRequest,
+    id: serde_json::Value,
+) -> Option<JsonRpcResponse> {
+    Some(match request.method.as_str() {
+        "ui.state" => handle_ui_state(state, id),
+        "debug.cell_info" => handle_debug_cell_info(state, id, &request.params),
+        "debug.screen_attrs" => handle_debug_screen_attrs(state, id, &request.params),
+        "debug.glyph_color" => handle_debug_glyph_color(state, id, &request.params),
+        "debug.feed_bytes" => handle_debug_feed_bytes(state, id, &request.params),
+        "debug.inject_mouse" => handle_debug_inject_mouse(state, id, &request.params),
+        "debug.inject_key" => handle_debug_inject_key(state, id, &request.params),
+        _ => return None,
+    })
 }
 
 /// Extract a required surface_id from params. Returns Err(JsonRpcResponse) if missing.
