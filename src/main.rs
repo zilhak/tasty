@@ -178,6 +178,9 @@ struct App {
     /// Whether input simulation IPC is enabled (debug builds only).
     #[cfg(debug_assertions)]
     input_simulation_enabled: bool,
+    /// Plugin host manager. None until the first AppState is created
+    /// (which provides the WakerFactory).
+    plugin_manager: Option<plugin::PluginManager>,
 }
 
 /// State for the modal window shake animation.
@@ -210,6 +213,7 @@ impl App {
             modal_shake: None,
             #[cfg(debug_assertions)]
             input_simulation_enabled,
+            plugin_manager: None,
         }
     }
 
@@ -236,7 +240,7 @@ impl App {
 
     /// Create an AppState from a GPU state, computing grid size from the sidebar width.
     fn create_app_state(
-        &self,
+        &mut self,
         gpu: &GpuState,
         sidebar_width: crate::model::LogicalPx,
     ) -> crate::state::AppState {
@@ -259,7 +263,14 @@ impl App {
 
         let mut state =
             crate::state::AppState::new(cols, rows, waker).expect("failed to create app state");
-        state.engine.waker_factory = Some(factory);
+        state.engine.waker_factory = Some(factory.clone());
+
+        // 첫 윈도우 생성 시 plugin manager 한 번만 초기화.
+        if self.plugin_manager.is_none() {
+            let mut mgr = plugin::PluginManager::new(factory);
+            mgr.discover_and_start();
+            self.plugin_manager = Some(mgr);
+        }
         #[cfg(debug_assertions)]
         {
             state.engine.input_simulation_enabled = self.input_simulation_enabled;

@@ -2,6 +2,7 @@
 
 pub mod discovery;
 pub mod listener;
+pub mod manager;
 pub mod manifest;
 pub mod process;
 pub mod protocol;
@@ -9,6 +10,7 @@ pub mod registry_state;
 
 pub use discovery::{discover, plugin_root};
 pub use listener::HostListener;
+pub use manager::PluginManager;
 pub use manifest::{Manifest, PluginPackage, HOST_API_VERSION};
 pub use process::PluginProcess;
 pub use protocol::{AuthMessage, PluginEvent, PluginRequest, PluginResponse};

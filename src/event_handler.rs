@@ -65,6 +65,9 @@ impl ApplicationHandler<AppEvent> for App {
             }
             AppEvent::Shutdown => {
                 self.flush_layout_persistence_final();
+                if let Some(ref mut mgr) = self.plugin_manager {
+                    mgr.shutdown_all();
+                }
                 event_loop.exit();
             }
             AppEvent::Minimize => {
@@ -376,6 +379,11 @@ impl ApplicationHandler<AppEvent> for App {
             if let Some(w) = self.focused_window_mut() {
                 w.mark_dirty();
             }
+        }
+
+        // Plugin host pump — process plugin events, run health checks, restart unresponsive.
+        if let Some(ref mut mgr) = self.plugin_manager {
+            mgr.pump();
         }
 
         // Poll system tray menu events (Windows only)
