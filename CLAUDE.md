@@ -127,6 +127,8 @@ Tasty는 **Windows, macOS, Linux를 모두 지원하는 크로스 플랫폼 앱*
   - `gpu-rendering.md`: GPU 렌더링 구조 (공유 버퍼 + submit 분리 규칙)
   - `model-view-split.md`: Model + Host View 분리 패턴 (tasty-core GUI-free 유지, ViewStore + mem::take 패턴)
   - `tui-testing.md`: TUI 테스트 — 터미널 버그 재현 → 시나리오 추가 → E2E 테스트 순서
+  - `plugin-development.md`: 외부 plugin 제작 가이드 (크레이트 골격, Plugin trait, UI 빌더, snapshot/restore, 빌드/설치)
+  - `plugin-permissions.md`: Plugin 권한 모델 (method_meta, CallerContext, grant/revoke 흐름)
 - `.claude-workspace/plans/`: 구현 작업 계획. 구현 완료 후 삭제.
 - `.claude-workspace/temp/`: 임시 파일. 작업 후 정리.
 

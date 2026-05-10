@@ -64,6 +64,8 @@ cmux의 기능을 크로스 플랫폼(Windows, macOS, Linux) GPU 가속 네이�
 | [dev-guide/release-runners.md](dev-guide/release-runners.md) | self-hosted 러너 인벤토리, 1회 도구 설치, 운영 명령 |
 | [dev-guide/linux.md](dev-guide/linux.md) | Linux 개발 환경 가이드 |
 | [dev-guide/tui-testing.md](dev-guide/tui-testing.md) | TUI 테스트 — 터미널 에뮬레이션 버그 재현 및 자동 검증 |
+| [dev-guide/plugin-development.md](dev-guide/plugin-development.md) | Plugin 제작 가이드 — 크레이트 골격, Plugin trait, UI 빌더, snapshot/restore, 빌드/설치 |
+| [dev-guide/plugin-permissions.md](dev-guide/plugin-permissions.md) | Plugin 권한 모델 — method_meta, CallerContext, grant/revoke 흐름 |
 
 ## AI 자체 검증 지침
 
