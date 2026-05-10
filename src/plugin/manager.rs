@@ -195,6 +195,10 @@ impl PluginManager {
             super::command_registry::PluginCommandRegistry::new();
         for pkg in &self.packages {
             self.command_registry.register_plugin(&pkg.manifest);
+            // i18n namespace 등록 — 비활성 plugin도 설정 UI에서 command title을
+            // 번역해서 보여줘야 하므로 disabled 여부와 무관하게 등록한다.
+            let lang_dir = pkg.dir.join(&pkg.manifest.lang_dir);
+            tasty_core::i18n::register_namespace(&pkg.manifest.id, &lang_dir);
         }
 
         let to_start: Vec<String> = self
