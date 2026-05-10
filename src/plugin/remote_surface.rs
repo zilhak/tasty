@@ -1,0 +1,176 @@
+//! Plugin이 제공하는 surface를 본체 layout에 끼울 수 있는 stand-in.
+//!
+//! 매 프레임 호스트는 `RemoteSurface::tree`에 캐시된 UiNode를 egui로 렌더하고,
+//! 사용자 입력을 `pending_events`에 모은다. PluginManager가 다음 tick에서
+//! pending_events를 비워 plugin에 `surface.event` 메시지로 송신한다.
+//!
+//! `Surface` trait의 `kind() -> &'static str` 제약 때문에 plugin manifest의
+//! 동적 kind 문자열은 `register_remote_kind`에서 `Box::leak`으로 한 번 정적화한다
+//! (plugin 등록 시 1회, 메모리 누수는 plugin 종류 수만큼이라 무시 가능).
+
+use std::sync::{Arc, Mutex};
+
+use serde_json::Value;
+use tasty_core::model::{Surface, SurfaceId};
+
+use crate::plugin::ui_tree::{UiEvent, UiNode};
+
+pub struct RemoteSurface {
+    pub id: SurfaceId,
+    /// `Box::leak` 으로 정적화된 plugin kind. registry에 등록 시 한 번만 leak.
+    pub kind_static: &'static str,
+    pub plugin_id: String,
+    /// 가장 최근 plugin이 보낸 트리. 매 프레임 호스트가 렌더.
+    pub tree: Arc<Mutex<Option<UiNode>>>,
+    /// 호스트에서 모은 사용자 이벤트. 다음 pump tick에 plugin에 송신.
+    pub pending_events: Arc<Mutex<Vec<UiEvent>>>,
+    /// snapshot 데이터 캐시 — plugin이 미리 보낸 값. 영속화 시 사용.
+    pub snapshot_cache: Arc<Mutex<Option<Value>>>,
+    /// surface가 plugin에 의해 invalidated 됐는지 — true면 호스트가 다음 프레임에 redraw.
+    pub invalidated: Arc<Mutex<bool>>,
+    /// 탭 제목 등에 표시되는 이름. plugin이 surface.create / event 응답에서 갱신 가능.
+    pub display_name: Arc<Mutex<String>>,
+}
+
+impl RemoteSurface {
+    pub fn new(
+        id: SurfaceId,
+        kind_static: &'static str,
+        plugin_id: String,
+        initial_name: String,
+    ) -> Self {
+        Self {
+            id,
+            kind_static,
+            plugin_id,
+            tree: Arc::new(Mutex::new(None)),
+            pending_events: Arc::new(Mutex::new(Vec::new())),
+            snapshot_cache: Arc::new(Mutex::new(None)),
+            invalidated: Arc::new(Mutex::new(true)),
+            display_name: Arc::new(Mutex::new(initial_name)),
+        }
+    }
+
+    /// 호스트 ↔ plugin 송신용. 호출 후 buffer를 비운다.
+    pub fn drain_pending_events(&self) -> Vec<UiEvent> {
+        self.pending_events
+            .lock()
+            .map(|mut v| std::mem::take(&mut *v))
+            .unwrap_or_default()
+    }
+
+    pub fn push_event(&self, event: UiEvent) {
+        if let Ok(mut v) = self.pending_events.lock() {
+            v.push(event);
+        }
+    }
+
+    pub fn set_tree(&self, tree: Option<UiNode>) {
+        if let (Some(new_tree), Ok(mut slot)) = (tree, self.tree.lock()) {
+            *slot = Some(new_tree);
+        }
+    }
+
+    pub fn set_display_name(&self, name: String) {
+        if let Ok(mut slot) = self.display_name.lock() {
+            *slot = name;
+        }
+    }
+
+    pub fn take_invalidated(&self) -> bool {
+        match self.invalidated.lock() {
+            Ok(mut slot) => {
+                let was = *slot;
+                *slot = false;
+                was
+            }
+            Err(_) => false,
+        }
+    }
+
+    pub fn mark_invalidated(&self) {
+        if let Ok(mut slot) = self.invalidated.lock() {
+            *slot = true;
+        }
+    }
+
+    pub fn cache_snapshot(&self, data: Value) {
+        if let Ok(mut slot) = self.snapshot_cache.lock() {
+            *slot = Some(data);
+        }
+    }
+}
+
+impl Surface for RemoteSurface {
+    tasty_core::impl_surface_any!();
+
+    fn kind(&self) -> &'static str {
+        self.kind_static
+    }
+
+    fn type_name(&self) -> &'static str {
+        "Remote"
+    }
+
+    fn surface_id(&self) -> Option<SurfaceId> {
+        Some(self.id)
+    }
+
+    fn display_name(&self) -> String {
+        self.display_name
+            .lock()
+            .map(|n| n.clone())
+            .unwrap_or_else(|_| self.kind_static.to_string())
+    }
+
+    fn to_tree_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "kind": self.kind_static,
+            "type": "Remote",
+            "id": self.id,
+            "plugin_id": self.plugin_id,
+            "display_name": self.display_name(),
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pending_events_drain() {
+        let s = RemoteSurface::new(1, "explorer", "com.x".into(), "Files".into());
+        s.push_event(UiEvent::Click {
+            node_id: "btn".into(),
+        });
+        s.push_event(UiEvent::FocusChanged { focused: true });
+        let drained = s.drain_pending_events();
+        assert_eq!(drained.len(), 2);
+        assert!(s.drain_pending_events().is_empty());
+    }
+
+    #[test]
+    fn invalidated_take_resets() {
+        let s = RemoteSurface::new(1, "explorer", "com.x".into(), "Files".into());
+        assert!(s.take_invalidated()); // 초기값 true
+        assert!(!s.take_invalidated());
+        s.mark_invalidated();
+        assert!(s.take_invalidated());
+    }
+
+    #[test]
+    fn surface_kind_returns_static() {
+        let s = RemoteSurface::new(1, "explorer", "com.x".into(), "Files".into());
+        assert_eq!(s.kind(), "explorer");
+        assert_eq!(s.type_name(), "Remote");
+        assert_eq!(s.display_name(), "Files");
+    }
+
+    #[test]
+    fn set_display_name_updates() {
+        let s = RemoteSurface::new(1, "explorer", "com.x".into(), "Files".into());
+        s.set_display_name("Browser".into());
+        assert_eq!(s.display_name(), "Browser");
+    }
+}
