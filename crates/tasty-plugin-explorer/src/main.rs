@@ -9,7 +9,8 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 use tasty_plugin_sdk::{
-    Plugin, SurfaceCreateCtx, SurfaceEventCtx, SurfaceResult, SurfaceRestoreCtx, UiEvent, UiNode,
+    CommandInvokeCtx, Plugin, SurfaceCreateCtx, SurfaceEventCtx, SurfaceResult, SurfaceRestoreCtx,
+    UiEvent, UiNode,
     ui::{addressbar, hbox, label, scroll_v, splitter, tree_view, vbox},
 };
 use tasty_plugin_sdk::{SelectionMode, SplitDir, TreeNode};
@@ -258,6 +259,45 @@ impl Plugin for ExplorerPlugin {
 
     fn destroy_surface(&mut self, surface_id: u32) {
         self.surfaces.remove(&surface_id);
+    }
+
+    fn handle_command(&mut self, ctx: CommandInvokeCtx) -> SurfaceResult {
+        let Some(surface) = self.surfaces.get_mut(&ctx.surface_id) else {
+            return SurfaceResult {
+                tree: None,
+                display_name: None,
+            };
+        };
+        match ctx.command_id.as_str() {
+            // 매니페스트의 [[contributes.commands]] id와 매칭.
+            "explorer.refresh" => {
+                surface.refresh_preview();
+                SurfaceResult {
+                    tree: Some(surface.build_tree()),
+                    display_name: None,
+                }
+            }
+            "explorer.go_up" => {
+                if let Some(parent) = surface.root.parent().map(PathBuf::from) {
+                    surface.root = parent.clone();
+                    surface.expanded.clear();
+                    surface.expanded.insert(parent);
+                    surface.selected = None;
+                    surface.preview = None;
+                }
+                SurfaceResult {
+                    tree: Some(surface.build_tree()),
+                    display_name: None,
+                }
+            }
+            other => {
+                tracing::warn!("explorer plugin received unknown command '{other}'");
+                SurfaceResult {
+                    tree: None,
+                    display_name: None,
+                }
+            }
+        }
     }
 }
 

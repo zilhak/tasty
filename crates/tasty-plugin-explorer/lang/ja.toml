@@ -1,0 +1,3 @@
+[explorer.cmd]
+refresh = "ツリーを更新"
+go_up = "親ディレクトリへ移動"

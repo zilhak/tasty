@@ -91,7 +91,34 @@ fn ensure_dev_bundle(exe_dir: &Path) -> Option<PathBuf> {
         tracing::warn!("dev bundle: copy binary failed: {e}");
         return None;
     }
+    // plugin lang/ 디렉토리도 함께 동기화 (i18n 키 호스트 머지에 필요).
+    let src_lang = workspace
+        .join("crates")
+        .join("tasty-plugin-explorer")
+        .join("lang");
+    if src_lang.is_dir() {
+        let dest_lang = dest_dir.join("lang");
+        if let Err(e) = sync_dir_if_newer(&src_lang, &dest_lang) {
+            tracing::warn!("dev bundle: copy lang failed: {e}");
+        }
+    }
     Some(bundle_root)
+}
+
+#[cfg(debug_assertions)]
+fn sync_dir_if_newer(src: &Path, dst: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dst)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let ty = entry.file_type()?;
+        let dest_path = dst.join(entry.file_name());
+        if ty.is_dir() {
+            sync_dir_if_newer(&entry.path(), &dest_path)?;
+        } else {
+            copy_if_newer(&entry.path(), &dest_path)?;
+        }
+    }
+    Ok(())
 }
 
 /// src가 dest보다 더 최신이거나 dest가 없으면 복사. 이미 같거나 dest가 더 최신이면 no-op.

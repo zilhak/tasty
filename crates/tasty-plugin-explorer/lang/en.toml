@@ -1,0 +1,3 @@
+[explorer.cmd]
+refresh = "Refresh tree"
+go_up = "Go up to parent directory"

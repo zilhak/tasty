@@ -5,6 +5,7 @@ version = "0.1.0"
 description = "Built-in file explorer plugin for Tasty"
 api_version = "1"
 permissions = ["surface.read", "surface.write", "fs.read"]
+lang_dir = "lang"
 
 [entry]
 type = "process"
@@ -14,3 +15,15 @@ command = "tasty-plugin-explorer"
 kind = "explorer"
 display_name_i18n_key = "surface.kind.explorer"
 icon = "📁"
+
+[[contributes.commands]]
+id = "explorer.refresh"
+title_i18n_key = "explorer.cmd.refresh"
+default_keybinding = "F5"
+binding_mode = "independent"
+
+[[contributes.commands]]
+id = "explorer.go_up"
+title_i18n_key = "explorer.cmd.go_up"
+default_keybinding = "alt+up"
+binding_mode = "independent"
