@@ -41,6 +41,7 @@ mod theme_bridge;
 mod storage;
 mod surface_meta;
 mod surface_registry;
+mod waker_factory_winit;
 #[cfg(windows)]
 mod system_tray;
 mod ui;
@@ -250,14 +251,14 @@ impl App {
         };
         let (cols, rows) = gpu.grid_size_for_rect(&terminal_rect);
 
-        let proxy = self.engine.proxy.clone();
-        let waker: crate::terminal::Waker = Arc::new(move || {
-            let _ = proxy.send_event(AppEvent::TerminalOutput(None));
-        });
+        let factory: tasty_core::SharedWakerFactory = Arc::new(
+            crate::waker_factory_winit::WinitWakerFactory::new(self.engine.proxy.clone()),
+        );
+        let waker: crate::terminal::Waker = factory.make_default_waker();
 
         let mut state =
             crate::state::AppState::new(cols, rows, waker).expect("failed to create app state");
-        state.engine.waker_factory = Some(self.engine.proxy.clone());
+        state.engine.waker_factory = Some(factory);
         #[cfg(debug_assertions)]
         {
             state.engine.input_simulation_enabled = self.input_simulation_enabled;

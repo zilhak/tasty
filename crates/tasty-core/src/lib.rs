@@ -10,6 +10,9 @@ pub mod i18n;
 pub mod model;
 pub mod paths;
 pub mod theme;
+pub mod waker;
+
+pub use waker::{NoopWakerFactory, SharedWakerFactory, WakerFactory};
 
 /// `Surface::as_any` / `as_any_mut` 구현을 한 줄로 채우는 매크로.
 ///

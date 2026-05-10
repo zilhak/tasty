@@ -147,8 +147,10 @@ pub struct EngineState {
     // Set membership = busy. Surfaces missing from the set are treated as idle.
     pub busy_surfaces: std::collections::HashSet<u32>,
 
-    /// Event loop proxy for targeted waker creation. Set by App after EngineState creation.
-    pub waker_factory: Option<winit::event_loop::EventLoopProxy<crate::AppEvent>>,
+    /// Targeted waker creation. winit `EventLoopProxy`를 직접 들지 않고 trait 뒤로
+    /// 추상화하여 헤드리스/플러그인 호스트 컨텍스트에서도 동일 인터페이스를 쓴다.
+    /// `App`이 EngineState 생성 후 본체에서 `WinitWakerFactory`를 주입한다.
+    pub waker_factory: Option<tasty_core::SharedWakerFactory>,
 
     // ── CWD polling (round-robin) ──
     // macOS/Linux 전용. Windows에서는 폴링을 돌지 않아 필드 자체가 없음.
@@ -259,24 +261,14 @@ impl EngineState {
     /// the waker includes the surface_id so only that terminal is processed.
     /// Otherwise, returns the shared waker (all terminals polled).
     pub fn make_waker(&self, surface_id: u32) -> Waker {
+        // targeted_pty_polling이 켜져 있고 factory가 주입되어 있으면 surface별 waker 생성.
+        // 그 외에는 EngineState 생성 시 받은 base waker(`TerminalOutput(None)`)를 그대로 공유.
         if self.settings.performance.targeted_pty_polling {
-            // Import the proxy-based waker creation from the base waker
-            // The base waker sends TerminalOutput(None). We create one that sends TerminalOutput(Some(id)).
-            // We need access to the EventLoopProxy, which is captured in self.waker.
-            // However, self.waker is a generic Fn(), not tied to proxy.
-            // So we store a waker_factory alongside waker.
             if let Some(factory) = &self.waker_factory {
-                let proxy = factory.clone();
-                let sid = surface_id;
-                std::sync::Arc::new(move || {
-                    let _ = proxy.send_event(crate::AppEvent::TerminalOutput(Some(sid)));
-                })
-            } else {
-                self.waker.clone()
+                return factory.make_targeted_waker(surface_id);
             }
-        } else {
-            self.waker.clone()
         }
+        self.waker.clone()
     }
 
     pub fn send_fast_init(&mut self, surface_id: u32) {
