@@ -185,20 +185,20 @@ inherit 가능한 host action 목록 (현재 4종, 추후 확장):
 
 ### 사용자가 결정할 수 있는 것
 
-설정 → 단축키 → **Plugins** 탭에서 다음을 조정할 수 있다.
+설정 → 단축키 → **Plugins** 탭에서 다음을 확인할 수 있다 (현재 read-only 표시).
 
 1. 좌측 사이드 카테고리에서 `Plugins` 선택
 2. 상단 드롭다운으로 plugin 선택 (단축키를 contribute한 plugin만 노출)
-3. 해당 plugin이 선언한 command 목록 표시. 각 항목별로:
-   - **inherit가 가능한 command** (매니페스트가 `inherit:...`로 선언한 경우):
-     - 토글: "호스트 설정 따라가기" / "독립 설정"
-     - 독립 설정으로 바꾸면 매니페스트 `default_keybinding`이 시작값으로 들어오고, 사용자가 변경 가능
-     - 호스트 설정 따라가기로 되돌리면 사용자 키는 버려지고 다시 동행
-   - **independent로 선언된 command**: inherit 불가. 키만 변경 가능
+3. 해당 plugin이 선언한 command 목록과 현재 적용 중인 effective binding 표시:
+   - **inherit 모드**: `Follows <host_action> (현재 키)` 형태로 호스트 액션에 동행함을 표시
+   - **independent 모드**: 매니페스트의 `default_keybinding` 또는 사용자 오버라이드 값을 표시
 4. focused surface가 plugin 소유면 plugin 단축키가 **무조건 우선**한다.
    매칭되면 이벤트가 소모되어 호스트 액션은 트리거되지 않는다 (inherit 모드도
    동일 — plugin이 받는 것으로 끝). 그 외 영역(터미널, 다른 surface)에서는
    호스트 키가 정상 동작.
+
+> 변경 UI(모드 토글 / 키 캡처)는 현재 단계에서 제공되지 않는다. 사용자가
+> override를 적용하려면 직접 `~/.tasty/plugins.toml`을 편집해야 한다.
 
 ### 영속화
 
@@ -259,18 +259,21 @@ lang_dir = "i18n"        # 매니페스트 디렉터리 기준 상대 경로
 
 ### 키 명명 규칙 / 충돌
 
-- 호스트 i18n registry는 모든 키를 평면 namespace로 보관한다
-- plugin이 자기 키를 `<plugin_id_short>.command.<...>` 같이 prefix하는 것을
-  강하게 권장 (예: `explorer.command.refresh`)
-- 동일 키가 호스트나 다른 plugin에 이미 등록돼 있으면 **먼저 등록된 쪽이
-  이김** + warn 로그. plugin이 호스트 키를 덮어쓸 수 없다
+- 호스트 i18n registry는 base(호스트 lang 파일)와 plugin 별 namespace overlay로
+  구성된다.
+- lookup 순서: **base가 먼저** → 못 찾으면 plugin namespace를 순회.
+  base에 동일 키가 있으면 plugin은 호스트 키를 덮어쓸 수 없다.
+- plugin 간 키 충돌 시 선택은 보장되지 않으므로, plugin이 자기 키를
+  `<plugin_id_short>.<...>` 같이 prefix하는 것을 강하게 권장 (예:
+  `explorer.cmd.refresh`).
 
 ### locale 협상
 
-호스트가 plugin spawn 시 `TASTY_LOCALE` 환경변수로 현재 locale을 전달한다.
-plugin SDK는 자기 프로세스에서도 동일 locale의 lang 파일을 읽어 `t()` 함수로
-노출한다. 호스트와 plugin은 각자 독립적으로 lang 파일을 읽지만 같은 locale을
-바라본다.
+호스트가 부팅 시 활성 locale을 결정하고, plugin이 발견될 때 plugin의
+`lang_dir/{locale}.toml`을 읽어 namespace에 머지한다. en은 fallback으로 항상
+같이 머지된다. plugin 자체 프로세스에서 동일 키를 번역해 쓰려면 plugin이 자기
+SDK에서 lang 파일을 별도로 로드하거나, IPC로 호스트에 위임해야 한다 (현재
+SDK에는 i18n 헬퍼가 없음).
 
 ## 생명주기 동작
 

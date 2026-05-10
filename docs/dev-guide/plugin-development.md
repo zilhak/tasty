@@ -231,9 +231,26 @@ independent로 선언한 command를 사용자가 호스트에 inherit시킬 수�
   "params": { "command_id": "explorer.refresh", "surface_id": 42 } }
 ```
 
-SDK는 이를 `Plugin::handle_command(&mut self, ctx: CommandCtx)` 콜백으로
-전달한다 (계획). inherit 모드인 command도 plugin 입장에서는 동일 메시지로
-도착 — 호스트 키가 매핑되어 있을 뿐 dispatch 경로는 같다.
+SDK는 이를 `Plugin::handle_command(&mut self, ctx: CommandInvokeCtx)` 콜백으로
+전달한다. 응답 형태는 `surface.event`와 동일한 `SurfaceResult { tree, display_name }`
+이라 새 트리로 화면이 갱신된다. inherit 모드인 command도 plugin 입장에서는
+동일 메시지로 도착 — 호스트 키가 매핑되어 있을 뿐 dispatch 경로는 같다.
+
+```rust
+use tasty_plugin_sdk::{CommandInvokeCtx, Plugin, SurfaceResult};
+
+impl Plugin for MyPlugin {
+    fn handle_command(&mut self, ctx: CommandInvokeCtx) -> SurfaceResult {
+        match ctx.command_id.as_str() {
+            "myplugin.refresh" => {
+                self.reload(ctx.surface_id);
+                SurfaceResult { tree: Some(self.build_tree()), display_name: None }
+            }
+            _ => SurfaceResult { tree: None, display_name: None },
+        }
+    }
+}
+```
 
 ### 충돌 우선순위
 

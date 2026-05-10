@@ -1132,8 +1132,25 @@ Claude Code 등 TUI 앱이 실행 중이던 터미널을 복원할 때, 해당 �
 - `env::PluginEnv`로 호스트 환경변수 일괄 로딩
 
 ### 동봉 plugin 예시
-- `tasty-plugin-explorer`: 외부 binary로 작성된 시연용 파일 탐색기. SDK만 의존하며 호스트 코드 의존 없음. 디렉터리 트리/미리보기/주소창 입력으로 root 변경 지원
-- 호스트의 빌트인 `ExplorerPanel`은 별도로 동작 — plugin 탐색기와의 기능 동등성이 검증된 후 제거 예정 (단계 08D)
+- `tasty-plugin-explorer`: 외부 binary로 작성된 파일 탐색기. SDK만 의존하며 호스트 코드 의존 없음. 디렉터리 트리/미리보기/주소창 입력으로 root 변경 지원
+- 매니페스트 `[[contributes.commands]]`: `explorer.refresh` (F5), `explorer.go_up` (alt+up)
+- 호스트의 빌트인 `ExplorerPanel`은 단계 08D에서 제거되어 plugin으로 일원화
+
+### Plugin 단축키
+- 매니페스트 `[[contributes.commands]]`로 plugin이 자기 surface에서 받을 단축키를 선언. `id`, `title_i18n_key`, `default_keybinding`, `binding_mode` 필드
+- `binding_mode`:
+  - `"independent"` (기본): plugin 자체 키. 호스트 키와 무관
+  - `"inherit:<host_action>"`: 호스트의 의미론적 액션을 따라감. 화이트리스트는 `clipboard.copy`, `clipboard.paste`, `clipboard.cut`, `select_all`
+- 매칭 우선순위: focused surface가 plugin RemoteSurface일 때 plugin 키가 호스트 액션보다 먼저 매칭. 매칭 시 이벤트 소모 → 호스트 액션은 트리거되지 않음 (`src/plugin/key_dispatch.rs`)
+- 호스트 → plugin: `command.invoke` IPC 메시지 (`{ surface_id, command_id }`). SDK는 `Plugin::handle_command(CommandInvokeCtx)` 콜백으로 전달
+- 사용자 오버라이드 영속화: `~/.tasty/plugins.toml`의 `[keybindings."<plugin-id>"]` 섹션. 형태: `mode = "key" | "inherit" | "none"` + 부속 필드
+- 설정 → 단축키 → **Plugins** 탭: 좌측 카테고리에서 `Plugins` 선택, 상단 드롭다운으로 plugin 선택, 각 command의 effective binding read-only 표시 (변경 UI는 후속 작업)
+
+### Plugin i18n
+- 매니페스트 `lang_dir` (기본 `"lang"`): plugin 디렉터리 내 lang 파일들이 위치
+- 호스트는 plugin 디스커버리 시 `<lang_dir>/en.toml`(fallback) + `<lang_dir>/<active>.toml`을 읽어 namespace overlay로 호스트 i18n registry에 머지
+- lookup 순서: 호스트 base → plugin namespaces. base에 동일 키가 있으면 plugin은 호스트 키를 덮어쓸 수 없음
+- plugin install 시 `register_namespace`, remove 시 `unregister_namespace` (`crates/tasty-core/src/i18n.rs`)
 
 ### 한계
 - IPC 게이트는 plugin이 호스트를 통한 호출만 막음. plugin이 직접 fs를 쓰면 호스트가 알 수 없음 — 향후 OS-level 샌드박스/WASM으로 보강
