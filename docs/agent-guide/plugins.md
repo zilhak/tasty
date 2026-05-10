@@ -185,20 +185,24 @@ inherit 가능한 host action 목록 (현재 4종, 추후 확장):
 
 ### 사용자가 결정할 수 있는 것
 
-설정 → 단축키 → **Plugins** 탭에서 다음을 확인할 수 있다 (현재 read-only 표시).
+설정 → 단축키 → **Plugins** 탭에서 다음을 조정할 수 있다.
 
 1. 좌측 사이드 카테고리에서 `Plugins` 선택
 2. 상단 드롭다운으로 plugin 선택 (단축키를 contribute한 plugin만 노출)
-3. 해당 plugin이 선언한 command 목록과 현재 적용 중인 effective binding 표시:
-   - **inherit 모드**: `Follows <host_action> (현재 키)` 형태로 호스트 액션에 동행함을 표시
-   - **independent 모드**: 매니페스트의 `default_keybinding` 또는 사용자 오버라이드 값을 표시
-4. focused surface가 plugin 소유면 plugin 단축키가 **무조건 우선**한다.
+3. 해당 plugin이 선언한 command 목록 표시. 각 항목별로:
+   - **Mode 콤보**: `Inherit` / `Custom` / `(disabled)` 중 선택
+     - `Inherit`: 호스트의 의미론적 액션 키를 따라감. source 콤보로 화이트리스트
+       (clipboard.copy/paste/cut, select_all) 중 선택. 호스트 키가 바뀌면 자동 동행
+     - `Custom`: 단일 라인 텍스트 입력에 직접 키 조합을 적는다 (예: `ctrl+f5`,
+       콤마로 다중 키도 가능)
+     - `(disabled)`: 명시적으로 키를 비활성
+   - **Reset 버튼**: override를 제거하고 매니페스트 `default_keybinding`으로 복귀
+4. 변경한 내용은 설정 모달을 **저장하지 않고 닫을 때도 반영**된다 (settings.toml과
+   달리 plugin shortcut override는 모달 close 시점에 디스크에 즉시 기록됨).
+5. focused surface가 plugin 소유면 plugin 단축키가 **무조건 우선**한다.
    매칭되면 이벤트가 소모되어 호스트 액션은 트리거되지 않는다 (inherit 모드도
    동일 — plugin이 받는 것으로 끝). 그 외 영역(터미널, 다른 surface)에서는
    호스트 키가 정상 동작.
-
-> 변경 UI(모드 토글 / 키 캡처)는 현재 단계에서 제공되지 않는다. 사용자가
-> override를 적용하려면 직접 `~/.tasty/plugins.toml`을 편집해야 한다.
 
 ### 영속화
 

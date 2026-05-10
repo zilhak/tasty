@@ -1144,7 +1144,7 @@ Claude Code 등 TUI 앱이 실행 중이던 터미널을 복원할 때, 해당 �
 - 매칭 우선순위: focused surface가 plugin RemoteSurface일 때 plugin 키가 호스트 액션보다 먼저 매칭. 매칭 시 이벤트 소모 → 호스트 액션은 트리거되지 않음 (`src/plugin/key_dispatch.rs`)
 - 호스트 → plugin: `command.invoke` IPC 메시지 (`{ surface_id, command_id }`). SDK는 `Plugin::handle_command(CommandInvokeCtx)` 콜백으로 전달
 - 사용자 오버라이드 영속화: `~/.tasty/plugins.toml`의 `[keybindings."<plugin-id>"]` 섹션. 형태: `mode = "key" | "inherit" | "none"` + 부속 필드
-- 설정 → 단축키 → **Plugins** 탭: 좌측 카테고리에서 `Plugins` 선택, 상단 드롭다운으로 plugin 선택, 각 command의 effective binding read-only 표시 (변경 UI는 후속 작업)
+- 설정 → 단축키 → **Plugins** 탭: 좌측 카테고리에서 `Plugins` 선택 → 상단 드롭다운으로 plugin 선택 → 각 command별로 Mode 콤보(Inherit/Custom/None) + Inherit source 콤보(화이트리스트 4종) 또는 Custom 키 텍스트 입력 + Reset 버튼. 변경은 모달 close 시점에 plugins.toml에 기록
 
 ### Plugin i18n
 - 매니페스트 `lang_dir` (기본 `"lang"`): plugin 디렉터리 내 lang 파일들이 위치
