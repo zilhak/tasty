@@ -1,24 +1,21 @@
 //! Per-surface font registration into egui.
 //!
-//! Markdown / Explorer surfaces render with egui rather than the GPU cell
-//! renderer, so they need their own families inside egui's `FontDefinitions`.
-//! This module registers two named families — "font_markdown" and
-//! "font_explorer" — and re-runs the registration whenever the user changes
-//! the relevant settings.
+//! Markdown surfaces render with egui rather than the GPU cell renderer, so they
+//! need their own family inside egui's `FontDefinitions`. This module registers
+//! one named family — "font_markdown" — and re-runs the registration whenever
+//! the user changes the relevant settings.
 
 use std::sync::Arc;
 
 use crate::settings::{AppearanceSettings, EffectiveFont};
 
 const MARKDOWN_FAMILY: &str = "font_markdown";
-const EXPLORER_FAMILY: &str = "font_explorer";
 
 /// Track the most recently applied surface font signatures so we only
 /// re-register fonts when something actually changed.
 #[derive(Default, Debug, Clone)]
 pub struct SurfaceFontState {
     markdown_sig: String,
-    explorer_sig: String,
     initialized: bool,
 }
 
@@ -26,40 +23,33 @@ pub fn markdown_family() -> egui::FontFamily {
     egui::FontFamily::Name(MARKDOWN_FAMILY.into())
 }
 
-pub fn explorer_family() -> egui::FontFamily {
-    egui::FontFamily::Name(EXPLORER_FAMILY.into())
-}
-
 fn signature(font: &EffectiveFont) -> String {
     format!("{}|{}", font.font_family, font.custom_font_path)
 }
 
-/// Refresh the markdown/explorer font families in egui if the relevant
-/// settings have changed since the last call.
+/// Refresh the markdown font family in egui if the relevant settings have
+/// changed since the last call.
 pub fn refresh_surface_fonts(
     ctx: &egui::Context,
     appearance: &AppearanceSettings,
     state: &mut SurfaceFontState,
 ) {
     let md = appearance.effective_markdown_font();
-    let exp = appearance.effective_explorer_font();
     let new_md_sig = signature(&md);
-    let new_exp_sig = signature(&exp);
 
-    if state.initialized && state.markdown_sig == new_md_sig && state.explorer_sig == new_exp_sig {
+    if state.initialized && state.markdown_sig == new_md_sig {
         return;
     }
 
     let fonts = build_font_definitions(appearance, None);
     ctx.set_fonts(fonts);
     state.markdown_sig = new_md_sig;
-    state.explorer_sig = new_exp_sig;
     state.initialized = true;
 }
 
 /// Build a `FontDefinitions` containing the egui defaults, CJK fallback, and
-/// the per-surface markdown/explorer named families. Optionally also
-/// registers a `preview` named family loaded from the given font.
+/// the per-surface markdown named family. Optionally also registers a
+/// `preview` named family loaded from the given font.
 ///
 /// Settings UI calls this with a preview font to ensure that when it issues
 /// `set_fonts(...)` for live preview, it does not clobber the surface
@@ -87,9 +77,7 @@ pub fn build_font_definitions(
     }
 
     let md = appearance.effective_markdown_font();
-    let exp = appearance.effective_explorer_font();
     register_surface_family(&mut fonts, MARKDOWN_FAMILY, "md", &md, cjk_data.is_some());
-    register_surface_family(&mut fonts, EXPLORER_FAMILY, "exp", &exp, cjk_data.is_some());
 
     if let Some((slot, eff)) = preview {
         let prefix = format!("preview_{}", slot);

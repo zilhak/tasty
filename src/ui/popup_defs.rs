@@ -58,18 +58,6 @@ pub fn all_defs() -> &'static [PopupDef] {
                 draw_fn: super::file_open_popup::draw_html_open_popup,
             },
             PopupDef {
-                id: "bookmark_name",
-                title_key: "explorer.bookmark_add",
-                title_fn: None,
-                default_size: super::bookmark_popup::bookmark_popup_default_size(),
-                sizer: None,
-                default_scope: PopupScope::Window,
-                close_on_outside_click: false,
-                headless: false,
-                sticky_focus: false,
-                draw_fn: super::bookmark_popup::draw_bookmark_popup,
-            },
-            PopupDef {
                 id: "clipboard_viewer",
                 title_key: "clipboard_viewer.title",
                 title_fn: None,

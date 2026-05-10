@@ -246,9 +246,9 @@ impl GpuState {
         let layout_ms = render_start.elapsed().as_secs_f64() * 1000.0;
 
         // 2. Pre-egui updates: register surface fonts before drawing.
-        // Explorer/Markdown panels reference named font families ("font_explorer",
-        // "font_markdown"). These must be registered before run_egui_frame, or the
-        // first frame panics with "FontFamily::Name(...) is not bound to any fonts".
+        // Markdown panels reference the named font family "font_markdown". It must
+        // be registered before run_egui_frame, or the first frame panics with
+        // "FontFamily::Name(...) is not bound to any fonts".
         let prev_theme = state.engine.settings.appearance.theme.clone();
         crate::ui::font_registry::refresh_surface_fonts(
             &self.egui_ctx,

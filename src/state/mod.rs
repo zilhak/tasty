@@ -165,8 +165,6 @@ pub struct DialogState {
     pub file_open_error: Option<String>,
     /// Deferred popup open request: (popup_id, scope). Processed after popup draw loop.
     pub pending_popup_open: Option<(&'static str, crate::ui::popup::PopupScope)>,
-    /// Bookmark name input: (pane_id, path, name_buffer)
-    pub bookmark_input: Option<(u32, String, String)>,
     /// Clipboard viewer popup/surface 공유 상태.
     pub clipboard_viewer: crate::clipboard_viewer_ui::ClipboardViewerState,
     /// Pending file drag request (paths to drag to external apps).
@@ -209,7 +207,6 @@ impl DialogState {
             file_popup_cancel: false,
             file_open_error: None,
             pending_popup_open: None,
-            bookmark_input: None,
             clipboard_viewer: crate::clipboard_viewer_ui::ClipboardViewerState::default(),
             pending_file_drag: None,
             tab_drag: None,
