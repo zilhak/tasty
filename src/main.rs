@@ -559,6 +559,21 @@ impl App {
                         id,
                         &cmd.request.params,
                     ),
+                    "plugin.permissions" => ipc::handler::plugin::handle_permissions(
+                        self.plugin_manager.as_ref(),
+                        id,
+                        &cmd.request.params,
+                    ),
+                    "plugin.grant" => ipc::handler::plugin::handle_grant(
+                        self.plugin_manager.as_mut(),
+                        id,
+                        &cmd.request.params,
+                    ),
+                    "plugin.revoke" => ipc::handler::plugin::handle_revoke(
+                        self.plugin_manager.as_mut(),
+                        id,
+                        &cmd.request.params,
+                    ),
                     other => ipc::protocol::JsonRpcResponse::method_not_found(id, other),
                 };
                 let _ = cmd.response_tx.send(response);

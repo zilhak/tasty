@@ -194,6 +194,25 @@ pub enum PluginCommands {
         #[arg(long)]
         follow: bool,
     },
+    /// Show a plugin's manifest permissions and currently granted set.
+    Permissions {
+        /// Plugin id.
+        id: String,
+    },
+    /// Grant a permission to a plugin (must be declared in its manifest).
+    Grant {
+        /// Plugin id.
+        id: String,
+        /// Permission token (e.g. fs.read, surface.write).
+        permission: String,
+    },
+    /// Revoke a previously-granted permission from a plugin.
+    Revoke {
+        /// Plugin id.
+        id: String,
+        /// Permission token.
+        permission: String,
+    },
 }
 
 #[derive(Subcommand)]

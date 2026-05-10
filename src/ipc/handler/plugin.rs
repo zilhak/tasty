@@ -4,6 +4,7 @@
 use serde_json::{json, Value};
 
 use crate::ipc::protocol::JsonRpcResponse;
+use crate::plugin::manifest::Permission;
 use crate::plugin::{Manifest, PluginManager};
 
 pub fn handle_list(mgr: Option<&PluginManager>, id: Value) -> JsonRpcResponse {
@@ -74,6 +75,14 @@ pub fn handle_install(
     }
     // discover + try to start the new plugin
     mgr.packages = crate::plugin::discovery::discover();
+    // 첫 설치 시: 매니페스트의 모든 권한을 grant (CLI 기반 install은 사용자가
+    // 직접 명령을 실행했으므로 동의로 간주). GUI install 흐름이 추가되면 이
+    // 자동 grant는 빼고 동의 모달에서 결정한다.
+    let tokens: Vec<String> = manifest.permissions.clone();
+    mgr.config.set_granted(&manifest.id, tokens);
+    if let Err(e) = mgr.config.save() {
+        tracing::warn!("plugins.toml save failed: {e}");
+    }
     if !mgr.config.is_disabled(&manifest.id) {
         if let Err(e) = mgr.enable(&manifest.id) {
             return JsonRpcResponse::error(id, -32000, &format!("enable after install failed: {e}"));
@@ -153,6 +162,144 @@ pub fn handle_disable(
         Ok(()) => JsonRpcResponse::success(id, json!({ "disabled": plugin_id })),
         Err(e) => JsonRpcResponse::error(id, -32000, &format!("disable failed: {e}")),
     }
+}
+
+pub fn handle_permissions(
+    mgr: Option<&PluginManager>,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
+    let mgr = match mgr {
+        Some(m) => m,
+        None => return JsonRpcResponse::error(id, -32000, "plugin manager not initialized"),
+    };
+    let plugin_id = match params.get("id").and_then(|v| v.as_str()) {
+        Some(s) => s.to_string(),
+        None => return JsonRpcResponse::invalid_params(id, "Missing 'id' parameter"),
+    };
+    let pkg = match mgr.packages.iter().find(|p| p.manifest.id == plugin_id) {
+        Some(p) => p,
+        None => {
+            return JsonRpcResponse::error(
+                id,
+                -32003,
+                &format!("plugin '{plugin_id}' not installed"),
+            );
+        }
+    };
+    let manifest_perms: Vec<&str> = pkg
+        .manifest
+        .permissions
+        .iter()
+        .map(|s| s.as_str())
+        .collect();
+    let granted: Vec<String> = mgr
+        .config
+        .granted_permissions(&plugin_id)
+        .into_iter()
+        .collect();
+    JsonRpcResponse::success(
+        id,
+        json!({
+            "id": plugin_id,
+            "manifest": manifest_perms,
+            "granted": granted,
+        }),
+    )
+}
+
+pub fn handle_grant(
+    mgr: Option<&mut PluginManager>,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
+    let mgr = match mgr {
+        Some(m) => m,
+        None => return JsonRpcResponse::error(id, -32000, "plugin manager not initialized"),
+    };
+    let plugin_id = match params.get("id").and_then(|v| v.as_str()) {
+        Some(s) => s.to_string(),
+        None => return JsonRpcResponse::invalid_params(id, "Missing 'id' parameter"),
+    };
+    let token = match params.get("permission").and_then(|v| v.as_str()) {
+        Some(s) => s.to_string(),
+        None => return JsonRpcResponse::invalid_params(id, "Missing 'permission' parameter"),
+    };
+    if Permission::from_token(&token).is_none() {
+        return JsonRpcResponse::error(id, -32001, &format!("unknown permission '{token}'"));
+    }
+    let pkg = match mgr.packages.iter().find(|p| p.manifest.id == plugin_id) {
+        Some(p) => p.clone(),
+        None => {
+            return JsonRpcResponse::error(
+                id,
+                -32003,
+                &format!("plugin '{plugin_id}' not installed"),
+            );
+        }
+    };
+    if !pkg.manifest.permissions.iter().any(|p| p == &token) {
+        return JsonRpcResponse::error(
+            id,
+            -32002,
+            &format!(
+                "plugin '{plugin_id}' does not declare permission '{token}' in its manifest"
+            ),
+        );
+    }
+    let added = mgr.config.grant(&plugin_id, &token);
+    if let Err(e) = mgr.config.save() {
+        tracing::warn!("plugins.toml save failed: {e}");
+    }
+    refresh_plugin_permissions(mgr, &plugin_id);
+    JsonRpcResponse::success(
+        id,
+        json!({ "id": plugin_id, "permission": token, "added": added }),
+    )
+}
+
+pub fn handle_revoke(
+    mgr: Option<&mut PluginManager>,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
+    let mgr = match mgr {
+        Some(m) => m,
+        None => return JsonRpcResponse::error(id, -32000, "plugin manager not initialized"),
+    };
+    let plugin_id = match params.get("id").and_then(|v| v.as_str()) {
+        Some(s) => s.to_string(),
+        None => return JsonRpcResponse::invalid_params(id, "Missing 'id' parameter"),
+    };
+    let token = match params.get("permission").and_then(|v| v.as_str()) {
+        Some(s) => s.to_string(),
+        None => return JsonRpcResponse::invalid_params(id, "Missing 'permission' parameter"),
+    };
+    let removed = mgr.config.revoke(&plugin_id, &token);
+    if let Err(e) = mgr.config.save() {
+        tracing::warn!("plugins.toml save failed: {e}");
+    }
+    refresh_plugin_permissions(mgr, &plugin_id);
+    JsonRpcResponse::success(
+        id,
+        json!({ "id": plugin_id, "permission": token, "removed": removed }),
+    )
+}
+
+/// 매니페스트 + granted를 다시 교집합하여 manager의 in-memory 권한 set을 갱신.
+fn refresh_plugin_permissions(mgr: &mut PluginManager, plugin_id: &str) {
+    let Some(pkg) = mgr.packages.iter().find(|p| p.manifest.id == plugin_id).cloned() else {
+        return;
+    };
+    let granted = mgr.config.granted_permissions(plugin_id);
+    let perms: std::collections::HashSet<Permission> = pkg
+        .manifest
+        .parsed_permissions()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|p| granted.contains(p.as_token()))
+        .collect();
+    mgr.set_plugin_permissions(plugin_id, perms);
 }
 
 fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {

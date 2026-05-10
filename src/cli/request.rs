@@ -578,5 +578,17 @@ fn plugin_command_to_method_params(command: &PluginCommands) -> (&'static str, s
         PluginCommands::Disable { id } => ("plugin.disable", serde_json::json!({ "id": id })),
         // Logs는 IPC를 거치지 않음 — run_client에서 special-case로 처리.
         PluginCommands::Logs { .. } => ("plugin.list", serde_json::json!({})),
+        PluginCommands::Permissions { id } => (
+            "plugin.permissions",
+            serde_json::json!({ "id": id }),
+        ),
+        PluginCommands::Grant { id, permission } => (
+            "plugin.grant",
+            serde_json::json!({ "id": id, "permission": permission }),
+        ),
+        PluginCommands::Revoke { id, permission } => (
+            "plugin.revoke",
+            serde_json::json!({ "id": id, "permission": permission }),
+        ),
     }
 }
