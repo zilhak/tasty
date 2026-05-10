@@ -51,10 +51,27 @@ impl PluginProcess {
             .env("TASTY_HOST_API_VERSION", HOST_API_VERSION)
             .env("TASTY_HOST_IPC_PORT", listener.port().to_string())
             .env("TASTY_PLUGIN_TOKEN", &token)
+            .env("TASTY_PLUGIN_DIR", &package.dir)
             .current_dir(&package.dir)
             .stdin(Stdio::null())
             .stdout(Stdio::from(log_file))
             .stderr(Stdio::from(log_clone));
+
+        // plugin별 격리 디렉터리. 디렉터리 생성은 호스트가 미리 보장한다 — plugin이
+        // fs.write 권한 없이도 자기 영역만은 자유롭게 쓸 수 있도록.
+        if let Some(home) = tasty_core::paths::tasty_home() {
+            let data_dir = home.join("plugin-data").join(&package.manifest.id);
+            let config_path = home
+                .join("plugin-config")
+                .join(format!("{}.toml", &package.manifest.id));
+            let _ = std::fs::create_dir_all(&data_dir);
+            if let Some(parent) = config_path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            cmd.env("TASTY_PLUGIN_DATA_DIR", &data_dir);
+            cmd.env("TASTY_PLUGIN_CONFIG_PATH", &config_path);
+            cmd.env("TASTY_PLUGIN_LOG_PATH", &log_path);
+        }
 
         let child = cmd.spawn().map_err(|e| {
             anyhow::anyhow!(
