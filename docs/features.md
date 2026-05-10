@@ -1113,6 +1113,16 @@ Claude Code 등 TUI 앱이 실행 중이던 터미널을 복원할 때, 해당 �
 - plugin이 `PluginEvent::IpcCall {call_id, method, params}` 송신
 - 호스트가 권한 게이트 통과 시 라우터로 디스패치, 결과를 `ipc.result` 요청으로 회신 (`call_id`로 매칭)
 
-### 한계 (단계 08에서 해결)
-- plugin 작성용 SDK 크레이트(`tasty-plugin-sdk`)는 단계 08
+### Plugin SDK
+- `crates/tasty-plugin-protocol`: 호스트와 plugin이 공유하는 wire 타입 (UI tree DSL, JSON-RPC envelope). serde 외 의존성 없음
+- `crates/tasty-plugin-sdk`: plugin 작성용 SDK — `Plugin` trait 구현 후 `tasty_plugin_sdk::run(plugin)` 호출이면 핸드셰이크/메시지 루프 자동 처리
+- `ui::*` 빌더 헬퍼 (vbox/hbox/scroll/splitter/label/button/tree/addressbar)
+- `env::PluginEnv`로 호스트 환경변수 일괄 로딩
+
+### 동봉 plugin 예시
+- `tasty-plugin-explorer`: 외부 binary로 작성된 시연용 파일 탐색기. SDK만 의존하며 호스트 코드 의존 없음. 디렉터리 트리/미리보기/주소창 입력으로 root 변경 지원
+- 호스트의 빌트인 `ExplorerPanel`은 별도로 동작 — plugin 탐색기와의 기능 동등성이 검증된 후 제거 예정 (단계 08D)
+
+### 한계
 - IPC 게이트는 plugin이 호스트를 통한 호출만 막음. plugin이 직접 fs를 쓰면 호스트가 알 수 없음 — 향후 OS-level 샌드박스/WASM으로 보강
+- 호스트의 빌트인 ExplorerPanel은 단계 08D에서 외부 plugin으로 일원화 예정 (1300+ 줄 침습적 refactor라 별도 작업으로 분리)
