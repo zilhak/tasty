@@ -215,6 +215,16 @@ clipboard = "클립보드"
 zoom = "줌"
 image = "이미지"
 preset = "프리셋"
+plugins = "플러그인"
+
+[settings.keybindings.plugins]
+no_plugins_with_commands = "단축키를 등록한 플러그인이 없습니다."
+none_selected = "왼쪽에서 플러그인을 선택하세요."
+plugin_label = "플러그인:"
+mode_inherit = "기본 상속"
+mode_custom = "독립 설정"
+mode_none_label = "(미할당)"
+inherit_source_prefix = "상속"
 
 [settings.performance]
 heading = "성능"

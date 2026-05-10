@@ -215,6 +215,16 @@ clipboard = "Clipboard"
 zoom = "Zoom"
 image = "Image"
 preset = "Preset"
+plugins = "Plugins"
+
+[settings.keybindings.plugins]
+no_plugins_with_commands = "No installed plugin contributes commands."
+none_selected = "Select a plugin to configure its shortcuts."
+plugin_label = "Plugin:"
+mode_inherit = "Inherit"
+mode_custom = "Custom"
+mode_none_label = "(disabled)"
+inherit_source_prefix = "Follows"
 
 [settings.performance]
 heading = "Performance"

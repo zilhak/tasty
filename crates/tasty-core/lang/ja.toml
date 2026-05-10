@@ -215,6 +215,16 @@ clipboard = "クリップボード"
 zoom = "ズーム"
 image = "画像"
 preset = "プリセット"
+plugins = "プラグイン"
+
+[settings.keybindings.plugins]
+no_plugins_with_commands = "ショートカットを提供するプラグインがインストールされていません。"
+none_selected = "左から設定するプラグインを選択してください。"
+plugin_label = "プラグイン:"
+mode_inherit = "ホスト継承"
+mode_custom = "独自設定"
+mode_none_label = "(未割当)"
+inherit_source_prefix = "継承元"
 
 [settings.performance]
 heading = "パフォーマンス"

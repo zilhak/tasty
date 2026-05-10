@@ -24,6 +24,7 @@ pub enum KeybindingsSubTab {
     Zoom,
     Image,
     Preset,
+    Plugins,
 }
 
 /// 녹화 중인 필드 식별자 — 어떤 필드의 어느 슬롯을 기록 중인지.
@@ -107,6 +108,10 @@ pub fn draw_keybindings_tab(
                         (
                             KeybindingsSubTab::Preset,
                             t("settings.keybindings.subtab.preset"),
+                        ),
+                        (
+                            KeybindingsSubTab::Plugins,
+                            t("settings.keybindings.subtab.plugins"),
                         ),
                     ];
 
@@ -377,6 +382,17 @@ pub fn draw_keybindings_tab(
                 }
                 KeybindingsSubTab::Preset => {
                     draw_preset_subtab(ui, &mut settings.keybindings, selected_preset);
+                }
+                KeybindingsSubTab::Plugins => {
+                    // 본문은 단계 E-b에서 plugin command snapshot을 인자로 받아 채운다.
+                    // 지금은 placeholder만 표시한다.
+                    ui.add_space(8.0);
+                    ui.label(
+                        egui::RichText::new(t(
+                            "settings.keybindings.plugins.no_plugins_with_commands",
+                        ))
+                        .color(th.subtext0),
+                    );
                 }
             }
 
