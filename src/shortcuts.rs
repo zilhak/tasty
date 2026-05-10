@@ -79,7 +79,7 @@ fn focused_image_surface_id(state: &crate::state::AppState) -> Option<u32> {
         .map(|p| p.id)
 }
 
-fn matches_any_binding(bindings: &[String], key: &Key, mods: ModifiersState) -> bool {
+pub(crate) fn matches_any_binding(bindings: &[String], key: &Key, mods: ModifiersState) -> bool {
     bindings.iter().any(|b| matches_binding(b, key, mods))
 }
 

@@ -972,6 +972,71 @@ impl App {
         }
     }
 
+    /// 단계 F: focused surface가 plugin RemoteSurface인 경우 plugin command와
+    /// 키 매칭. 매칭 성공 시 `dispatch_plugin_command`를 호출하고 `true` 반환 →
+    /// 호출자(event_handler)는 normal window dispatch를 skip해 host action이
+    /// trigger되지 않게 한다.
+    pub(crate) fn try_plugin_shortcut(
+        &mut self,
+        id: winit::window::WindowId,
+        ke: &winit::event::KeyEvent,
+    ) -> bool {
+        use winit::event::ElementState;
+        if ke.state != ElementState::Pressed {
+            return false;
+        }
+        // Modal이 활성화되면 plugin shortcut은 동작하지 않는다.
+        if self.engine.is_modal_active() {
+            return false;
+        }
+        let Some(w) = self.windows.get(&id) else {
+            return false;
+        };
+        let Some(main) = w.as_main() else {
+            return false;
+        };
+        // overlay/popup이 키를 가져갈 상태면 patcher
+        if main.state.settings_open
+            || main.state.has_input_dialog_open()
+            || main.state.popups.has_focused()
+        {
+            return false;
+        }
+        let Some((plugin_id, surface_id)) =
+            plugin::key_dispatch::focused_plugin_surface(&main.state)
+        else {
+            return false;
+        };
+        // physical key fallback (IME 영향 회피) — keyboard.rs와 동일 규칙
+        let mods = main.base.modifiers;
+        let shortcut_key = if mods.control_key() || mods.super_key() || mods.alt_key() {
+            shortcuts::physical_key_to_logical(&ke.physical_key)
+                .unwrap_or_else(|| ke.logical_key.clone())
+        } else {
+            ke.logical_key.clone()
+        };
+        let host_kb = main.state.engine.settings.keybindings.clone();
+        let cmd_id = {
+            let Some(mgr) = self.plugin_manager.as_ref() else {
+                return false;
+            };
+            plugin::key_dispatch::match_plugin_shortcut(
+                mgr,
+                &plugin_id,
+                &shortcut_key,
+                mods,
+                &host_kb,
+            )
+        };
+        let Some(cmd_id) = cmd_id else {
+            return false;
+        };
+        if let Some(mgr) = self.plugin_manager.as_mut() {
+            plugin::key_dispatch::dispatch_plugin_command(mgr, &plugin_id, &cmd_id, surface_id);
+        }
+        true
+    }
+
     /// caller를 명시한 라우터 디스패치. Plugin caller도 처리할 수 있도록 핸들러
     /// 진입점에 caller를 주입한다. 호스트 자체 메서드(window.*/plugin.*)는
     /// `process_ipc`가 별도로 처리하므로 여기서는 라우터에만 위임한다.

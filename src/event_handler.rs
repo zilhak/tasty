@@ -345,6 +345,18 @@ impl ApplicationHandler<AppEvent> for App {
             }
         }
 
+        // Plugin shortcut interception (단계 F): focused surface가 plugin
+        // RemoteSurface면 host action 매칭 전에 plugin command와 비교한다.
+        // 매칭 시 plugin에 dispatch + 이벤트 소모 → window.handle_event로 흐르지 않음.
+        let plugin_consumed = if let WindowEvent::KeyboardInput { event: ke, .. } = &event {
+            self.try_plugin_shortcut(id, ke)
+        } else {
+            false
+        };
+        if plugin_consumed {
+            return;
+        }
+
         if let Some(w) = self.windows.get_mut(&id) {
             let modal_active = self.engine.is_modal_active();
             let mut ctx = WindowCtx {
