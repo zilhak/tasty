@@ -4,6 +4,7 @@
 
 pub mod builtin;
 pub mod discovery;
+pub mod host_actions;
 pub mod host_cmd;
 pub mod listener;
 pub mod manager;
