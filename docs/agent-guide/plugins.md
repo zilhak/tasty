@@ -74,10 +74,16 @@ kind = "explorer"                     # 소문자 + '_' + 숫자만
 display_name_i18n_key = "surface.kind.explorer"
 icon = "📁"
 
-[[contributes.commands]]              # 단계 06에서 활용
+[[contributes.commands]]
 id = "explorer.refresh"
 title_i18n_key = "explorer.command.refresh"
 default_keybinding = "F5"
+# binding_mode 옵션:
+#   "independent"  (기본) — plugin이 자기 키를 갖는다. 사용자는 설정에서 따로 변경
+#   "inherit:<host action>" — 호스트 액션(예: "clipboard.copy")의 사용자 설정을 그대로 따라간다
+#                             plugin이 작성자 의도로 inherit를 선택한 command는
+#                             설정 UI에서 사용자가 "독립 설정"으로 떼어낼 수 있다
+binding_mode = "independent"
 ```
 
 검증 규칙 (위반 시 plugin 로드 거부):
@@ -149,6 +155,71 @@ tasty plugin revoke <id> <permission>      # 권한 제거
 | `plugin.permissions` | `id: string` | `{id, manifest:[...], granted:[...]}` |
 | `plugin.grant` | `id: string, permission: string` | granted에 추가 (매니페스트에 선언된 권한만) |
 | `plugin.revoke` | `id: string, permission: string` | granted에서 제거 |
+
+## 단축키 (Plugin Shortcuts)
+
+Plugin이 자체 surface를 추가하는 경우, 그 surface 위에서 동작하는 단축키 역시
+plugin이 매니페스트의 `[[contributes.commands]]`로 선언한다. 호스트는 이를 모아
+설정 UI와 단축키 매칭 로직에 통합한다.
+
+### 작성자가 결정하는 두 가지 정책
+
+각 command는 매니페스트에서 `binding_mode`를 선언한다. 이건 **plugin 작성자가
+이 command가 호스트 설정과 의미상 동일한지를 판단해 주는** 필드다.
+
+| 값 | 의미 |
+|----|------|
+| `"independent"` (기본) | 호스트 단축키와 무관한 자기 키를 갖는다. 사용자가 설정에서 변경해도 호스트 설정에 영향 없음 |
+| `"inherit:<host_action>"` | 호스트의 의미론적 액션(예: `clipboard.copy`)에 위임. 호스트 키가 바뀌면 plugin도 자동 동행 |
+
+예: 파일 탐색기 plugin의 "선택한 파일 복사"를 호스트의 클립보드 복사 단축키와
+동일하게 두고 싶다면 `binding_mode = "inherit:clipboard.copy"`. 반대로 plugin
+고유의 동작(예: "트리 새로 고침")이라면 `"independent"`.
+
+### 사용자가 결정할 수 있는 것
+
+설정 → 단축키 → **Plugins** 탭에서 다음을 조정할 수 있다.
+
+1. 좌측 사이드 카테고리에서 `Plugins` 선택
+2. 상단 드롭다운으로 plugin 선택 (단축키를 contribute한 plugin만 노출)
+3. 해당 plugin이 선언한 command 목록 표시. 각 항목별로:
+   - **inherit가 가능한 command** (매니페스트가 `inherit:...`로 선언한 경우):
+     - 토글: "호스트 설정 따라가기" / "독립 설정"
+     - 독립 설정으로 바꾸면 매니페스트 `default_keybinding`이 시작값으로 들어오고, 사용자가 변경 가능
+     - 호스트 설정 따라가기로 되돌리면 사용자 키는 버려지고 다시 동행
+   - **independent로 선언된 command**: inherit 불가. 키만 변경 가능
+4. plugin이 호스트 설정과 충돌하는 키를 선언했을 때, plugin 키가 surface 포커스
+   안에서만 우선하고 그 외 영역은 호스트 키가 동작한다 (surface-scoped 우선순위)
+
+### 영속화
+
+사용자가 plugin 단축키를 수정/오버라이드한 결과는 `~/.tasty/plugins.toml`에
+plugin별 섹션으로 저장된다.
+
+```toml
+[keybindings."com.example.explorer"]
+"explorer.refresh" = { mode = "key", value = ["F6"] }       # 사용자 변경
+"explorer.copy"    = { mode = "inherit", source = "clipboard.copy" }  # 호스트 따라가기
+```
+
+매니페스트 기본값과 사용자 오버라이드가 모두 없으면 해당 command는 키 없이
+메뉴/팔레트에서만 호출 가능한 상태가 된다.
+
+### Plugin 측 구현
+
+호스트가 매칭에 성공하면 `surface.event` 형식과 별개의 `command.invoke` IPC
+메시지를 plugin에 송신한다.
+
+```jsonc
+// 호스트 → plugin
+{ "method": "command.invoke",
+  "params": { "command_id": "explorer.refresh",
+              "surface_id": 42 } }
+```
+
+Plugin은 자기 SDK 콜백에서 받아 처리하면 된다. inherit 모드인 command도 plugin
+입장에서는 동일한 메시지로 도착한다 — 호스트 키가 매핑되어 있을 뿐 dispatch
+경로는 같다.
 
 ## 생명주기 동작
 

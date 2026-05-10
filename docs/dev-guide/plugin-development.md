@@ -195,6 +195,52 @@ fn main() -> anyhow::Result<()> {
 
 이벤트로 인한 부수 효과(예: 디렉터리 다시 읽기)는 동기적으로 처리해도 된다 — 호스트는 plugin 응답을 기다리지 않고 다음 프레임을 그린다(이전 tree 사용). 응답이 도착하면 새 tree로 교체된다.
 
+## 4-1. 단축키 (commands & shortcuts)
+
+Plugin이 surface를 추가하는 경우, 그 위에서 동작하는 단축키는 plugin이 매니페스트로 선언한다. 호스트가 이를 모아 설정 UI(설정 → 단축키 → Plugins 탭)와 키 매칭 로직에 통합한다.
+
+### 매니페스트 선언
+
+```toml
+[[contributes.commands]]
+id = "explorer.refresh"                # plugin 내 유일 식별자
+title_i18n_key = "explorer.command.refresh"
+default_keybinding = "F5"              # 사용자가 변경하지 않았을 때의 기본 키
+binding_mode = "independent"           # 또는 "inherit:<host_action>"
+```
+
+### binding_mode 두 정책
+
+| 값 | 의미 | 사용 예 |
+|----|------|---------|
+| `"independent"` (기본) | 호스트와 무관한 plugin 자체 키. 사용자가 따로 변경 가능 | "트리 새로 고침", "특정 plugin UI 열기" |
+| `"inherit:<host_action>"` | 호스트의 의미론적 액션 키를 따라간다. 호스트 키가 바뀌면 plugin도 동행 | Explorer의 "선택 파일 복사" → `inherit:clipboard.copy` |
+
+inherit는 plugin **작성자가 의미가 같다고 판단했을 때**만 선택한다. 사용자도
+설정 UI에서 inherit를 풀어 독립 키로 떼어낼 수 있다 (반대로 plugin이
+independent로 선언한 command를 사용자가 호스트에 inherit시킬 수는 없다 —
+의미론적 매핑은 작성자만 안다).
+
+### 호스트 → plugin 디스패치
+
+호스트가 키 매칭에 성공하면 다음 IPC 메시지가 plugin에 도착한다.
+
+```jsonc
+// surface.event 와 별개의 메시지
+{ "method": "command.invoke",
+  "params": { "command_id": "explorer.refresh", "surface_id": 42 } }
+```
+
+SDK는 이를 `Plugin::handle_command(&mut self, ctx: CommandCtx)` 콜백으로
+전달한다 (계획). inherit 모드인 command도 plugin 입장에서는 동일 메시지로
+도착 — 호스트 키가 매핑되어 있을 뿐 dispatch 경로는 같다.
+
+### 충돌 우선순위
+
+plugin 키와 호스트 키가 겹치면 **focused surface가 plugin 소유일 때만** plugin
+키가 우선한다. 그 외 영역(터미널, 다른 plugin surface)에서는 호스트 키가
+정상 동작한다.
+
 ## 5. 영속화 (snapshot/restore)
 
 세션 복원이 필요한 경우 두 메서드를 구현한다.
