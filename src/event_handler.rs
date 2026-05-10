@@ -15,6 +15,9 @@ impl ApplicationHandler<AppEvent> for App {
             AppEvent::OpenSettings => {
                 self.open_settings_modal(event_loop);
             }
+            AppEvent::OpenPlugins => {
+                self.open_plugins_modal(event_loop);
+            }
             AppEvent::TerminalOutput(surface_id) => {
                 if let Some(sid) = surface_id {
                     // Targeted polling: process only the specific terminal, then wake its window
@@ -387,6 +390,8 @@ impl ApplicationHandler<AppEvent> for App {
         }
         // plugin이 보낸 IPC 호출들을 라우터로 디스패치 (권한 게이트 적용).
         self.process_plugin_ipc_calls();
+        // PluginsWindow 모달의 사용자 액션을 manager에 적용 + 모달 snapshot 갱신.
+        self.process_plugins_window_actions();
 
         // Poll system tray menu events (Windows only)
         #[cfg(windows)]

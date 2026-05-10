@@ -49,37 +49,41 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
     if !state.sidebar_visible {
         // Sidebar hidden — skip rendering entirely
     } else if state.sidebar_collapsed {
-        let (expand, settings, tools_rect, switch_ws, add_ws) =
-            sidebar::draw_collapsed_sidebar(ctx, state, sidebar_width);
+        let r = sidebar::draw_collapsed_sidebar(ctx, state, sidebar_width);
 
-        if expand {
+        if r.expand_clicked {
             state.sidebar_collapsed = false;
         }
-        if settings {
+        if r.plugins_clicked {
+            state.plugins_open = true;
+        }
+        if r.settings_clicked {
             state.settings_open = true;
         }
-        if let Some(btn_rect) = tools_rect {
+        if let Some(btn_rect) = r.tools_rect {
             open_tools_menu(state, btn_rect);
         }
-        if let Some(i) = switch_ws {
+        if let Some(i) = r.switch_ws {
             state.switch_workspace(i);
         }
-        if add_ws {
+        if r.add_ws {
             if let Err(e) = state.add_workspace() {
                 tracing::warn!("add_workspace failed: {e}");
             }
         }
     } else {
-        let (collapse, settings, tools_rect) =
-            sidebar::draw_full_sidebar(ctx, state, sidebar_width);
+        let r = sidebar::draw_full_sidebar(ctx, state, sidebar_width);
 
-        if collapse {
+        if r.collapse_clicked {
             state.sidebar_collapsed = true;
         }
-        if settings {
+        if r.plugins_clicked {
+            state.plugins_open = true;
+        }
+        if r.settings_clicked {
             state.settings_open = true;
         }
-        if let Some(btn_rect) = tools_rect {
+        if let Some(btn_rect) = r.tools_rect {
             open_tools_menu(state, btn_rect);
         }
     }

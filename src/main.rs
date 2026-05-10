@@ -30,6 +30,7 @@ mod markdown_ui;
 mod native_menu;
 mod notification;
 mod plugin;
+mod plugins_ui;
 mod recent_files;
 mod renderer;
 mod search_state;
@@ -124,6 +125,8 @@ enum AppEvent {
     CreateWindow,
     /// Request to open settings modal.
     OpenSettings,
+    /// Request to open plugins modal.
+    OpenPlugins,
     /// Request to shut down the entire application.
     Shutdown,
     /// Request to minimize (park state, close windows).
@@ -269,6 +272,10 @@ impl App {
         if self.plugin_manager.is_none() {
             let mut mgr = plugin::PluginManager::new(factory);
             mgr.set_surface_registry(state.engine.surface_registry.clone());
+            // 기본 제공 플러그인이 설치되지 않았으면 번들에서 복사. 사용자가
+            // 명시적으로 제거한 항목 (`removed_builtins`)은 건드리지 않는다.
+            plugin::install_builtins_if_needed(&mut mgr);
+            mgr.packages = plugin::discover();
             mgr.discover_and_start();
             self.plugin_manager = Some(mgr);
         }
@@ -431,6 +438,179 @@ impl App {
         tracing::info!("opened settings modal {:?}", modal_window_id);
     }
 
+    /// Build a snapshot of currently installed plugins for the plugins modal.
+    fn snapshot_plugins(&self) -> plugins_ui::PluginsSnapshot {
+        let Some(mgr) = self.plugin_manager.as_ref() else {
+            return plugins_ui::PluginsSnapshot::default();
+        };
+        let plugins = mgr
+            .packages
+            .iter()
+            .map(|pkg| {
+                let id = &pkg.manifest.id;
+                let granted: Vec<String> = mgr
+                    .config
+                    .granted_permissions(id)
+                    .into_iter()
+                    .collect();
+                plugins_ui::PluginEntry {
+                    id: id.clone(),
+                    name: pkg.manifest.name.clone(),
+                    version: pkg.manifest.version.clone(),
+                    description: pkg.manifest.description.clone(),
+                    authors: pkg.manifest.authors.clone(),
+                    homepage: pkg.manifest.homepage.clone(),
+                    enabled: !mgr.config.is_disabled(id),
+                    running: mgr.is_running(id),
+                    builtin: plugin::is_builtin_plugin(id),
+                    surface_kinds: pkg
+                        .manifest
+                        .surface_kinds
+                        .iter()
+                        .map(|k| k.kind.clone())
+                        .collect(),
+                    manifest_permissions: pkg.manifest.permissions.clone(),
+                    granted_permissions: granted,
+                    log_path: mgr.log_path(id).to_string_lossy().into_owned(),
+                }
+            })
+            .collect();
+        plugins_ui::PluginsSnapshot { plugins }
+    }
+
+    /// Open the plugins modal window.
+    fn open_plugins_modal(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
+        if self.engine.is_modal_active() {
+            return;
+        }
+
+        use winit::window::WindowAttributes;
+
+        let mut attrs = WindowAttributes::default()
+            .with_title("Tasty Plugins")
+            .with_inner_size(winit::dpi::LogicalSize::new(880, 560))
+            .with_min_inner_size(winit::dpi::LogicalSize::new(720, 480))
+            .with_visible(false);
+        if let Some(icon) = crate::app_icon::winit_window_icon() {
+            attrs = attrs.with_window_icon(Some(icon));
+        }
+
+        let window = Arc::new(
+            event_loop
+                .create_window(attrs)
+                .expect("failed to create plugins window"),
+        );
+
+        let appearance = self
+            .focused_window()
+            .map(|w| w.state.engine.settings.appearance.clone())
+            .unwrap_or_else(|| crate::settings::Settings::load().appearance);
+
+        let gpu = pollster::block_on(crate::gpu::GpuState::new(
+            window.clone(),
+            &appearance,
+            self.engine.proxy.clone(),
+        ))
+        .expect("failed to initialize GPU for plugins window");
+
+        let snapshot = self.snapshot_plugins();
+        let modal_window_id = window.id();
+        let mut modal = window::PluginsWindow::new(gpu, window, snapshot);
+        #[cfg(windows)]
+        {
+            use window::Window as _;
+            modal.render();
+        }
+        #[cfg(not(windows))]
+        {
+            use window::Window as _;
+            modal.mark_dirty();
+        }
+        self.open_modal(Box::new(modal), modal_window_id);
+        tracing::info!("opened plugins modal {:?}", modal_window_id);
+    }
+
+    /// Drain pending actions from the plugins modal and apply them to the manager.
+    /// Refreshes the modal's snapshot after applying.
+    fn process_plugins_window_actions(&mut self) {
+        let Some(modal_id) = self.engine.active_modal_id else {
+            return;
+        };
+        let Some(modal) = self.windows.get_mut(&modal_id) else {
+            return;
+        };
+        let Some(plugins_window) = modal.as_any_mut().downcast_mut::<window::PluginsWindow>()
+        else {
+            return;
+        };
+        let actions = std::mem::take(&mut plugins_window.pending_actions);
+        if actions.is_empty() {
+            return;
+        }
+
+        let Some(mgr) = self.plugin_manager.as_mut() else {
+            return;
+        };
+
+        for action in actions {
+            match action {
+                plugins_ui::PluginsAction::SetEnabled { id, enabled } => {
+                    let result = if enabled { mgr.enable(&id) } else { mgr.disable(&id) };
+                    if let Err(e) = result {
+                        tracing::warn!("plugins modal: set_enabled({id}, {enabled}) failed: {e}");
+                    }
+                }
+                plugins_ui::PluginsAction::Grant { id, permission } => {
+                    let resp = ipc::handler::plugin::handle_grant(
+                        Some(mgr),
+                        serde_json::json!(0),
+                        &serde_json::json!({ "id": id, "permission": permission }),
+                    );
+                    if resp.error.is_some() {
+                        tracing::warn!(
+                            "plugins modal: grant({id}, {permission}) failed: {:?}",
+                            resp.error
+                        );
+                    }
+                }
+                plugins_ui::PluginsAction::Revoke { id, permission } => {
+                    let resp = ipc::handler::plugin::handle_revoke(
+                        Some(mgr),
+                        serde_json::json!(0),
+                        &serde_json::json!({ "id": id, "permission": permission }),
+                    );
+                    if resp.error.is_some() {
+                        tracing::warn!(
+                            "plugins modal: revoke({id}, {permission}) failed: {:?}",
+                            resp.error
+                        );
+                    }
+                }
+                plugins_ui::PluginsAction::Uninstall { id } => {
+                    let resp = ipc::handler::plugin::handle_remove(
+                        Some(mgr),
+                        serde_json::json!(0),
+                        &serde_json::json!({ "id": id }),
+                    );
+                    if resp.error.is_some() {
+                        tracing::warn!("plugins modal: uninstall({id}) failed: {:?}", resp.error);
+                    } else {
+                        plugin::mark_builtin_removed(mgr, &id);
+                    }
+                }
+            }
+        }
+
+        let snapshot = self.snapshot_plugins();
+        if let Some(modal) = self.windows.get_mut(&modal_id) {
+            if let Some(plugins_window) =
+                modal.as_any_mut().downcast_mut::<window::PluginsWindow>()
+            {
+                plugins_window.refresh_snapshot(snapshot);
+            }
+        }
+    }
+
     /// Open a modal, registering it in the unified window map.
     /// 모달도 일반 윈도우와 같은 `windows` 맵에 저장되며, `active_modal_id`로 식별된다.
     fn open_modal(&mut self, modal: Box<dyn window::Window>, window_id: WindowId) {
@@ -456,6 +636,11 @@ impl App {
             }
             if let Err(e) = new_settings.save() {
                 tracing::warn!("failed to save settings: {e}");
+            }
+        } else if modal.as_any().is::<window::PluginsWindow>() {
+            for main in self.main_windows_iter_mut() {
+                main.state.plugins_open = false;
+                main.mark_dirty();
             }
         }
     }

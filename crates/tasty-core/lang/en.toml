@@ -11,12 +11,33 @@ new_workspace = "+ New Workspace"
 mark_all_read = "Mark all read"
 jump_to_workspace = "Jump"
 settings = "Settings"
+plugins = "Plugins"
 
 [tooltip]
 jump_to_workspace = "Switch to this workspace"
 
 [badge]
 overflow = "99+"
+
+[plugins]
+title = "Plugins"
+empty = "No plugins installed."
+none_selected = "Select a plugin from the left."
+none = "(none)"
+status = "Status"
+enabled = "Enabled"
+disabled = "Disabled"
+running = "Running"
+authors = "Authors"
+homepage = "Homepage"
+surface_kinds = "Surface kinds"
+permissions = "Permissions"
+log_path = "Log"
+uninstall = "Uninstall"
+uninstall_confirm = "Confirm uninstall"
+uninstall_warning = "All files of this plugin will be deleted."
+uninstall_builtin_warning = "This is a built-in plugin. Once removed, it will not be auto-reinstalled on next launch."
+builtin_badge = "built-in"
 
 [settings]
 [settings.window]

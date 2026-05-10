@@ -11,12 +11,33 @@ new_workspace = "+ 새 워크스페이스"
 mark_all_read = "모두 읽음"
 jump_to_workspace = "이동"
 settings = "설정"
+plugins = "플러그인"
 
 [tooltip]
 jump_to_workspace = "이 워크스페이스로 전환"
 
 [badge]
 overflow = "99+"
+
+[plugins]
+title = "플러그인"
+empty = "설치된 플러그인이 없습니다."
+none_selected = "왼쪽에서 플러그인을 선택하세요."
+none = "(없음)"
+status = "상태"
+enabled = "활성화"
+disabled = "비활성"
+running = "실행 중"
+authors = "작성자"
+homepage = "홈페이지"
+surface_kinds = "Surface 종류"
+permissions = "권한"
+log_path = "로그"
+uninstall = "제거"
+uninstall_confirm = "정말 제거"
+uninstall_warning = "이 플러그인의 모든 파일이 삭제됩니다."
+uninstall_builtin_warning = "기본 제공 플러그인입니다. 제거하면 다음 실행에서도 자동 설치되지 않습니다."
+builtin_badge = "기본 제공"
 
 [settings]
 [settings.window]

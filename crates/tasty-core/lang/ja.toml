@@ -11,12 +11,33 @@ new_workspace = "+ 新しいワークスペース"
 mark_all_read = "すべて既読"
 jump_to_workspace = "移動"
 settings = "設定"
+plugins = "プラグイン"
 
 [tooltip]
 jump_to_workspace = "このワークスペースに切り替え"
 
 [badge]
 overflow = "99+"
+
+[plugins]
+title = "プラグイン"
+empty = "インストール済みのプラグインはありません。"
+none_selected = "左側からプラグインを選択してください。"
+none = "(なし)"
+status = "状態"
+enabled = "有効"
+disabled = "無効"
+running = "実行中"
+authors = "作者"
+homepage = "ホームページ"
+surface_kinds = "Surface 種別"
+permissions = "権限"
+log_path = "ログ"
+uninstall = "削除"
+uninstall_confirm = "本当に削除"
+uninstall_warning = "このプラグインのすべてのファイルが削除されます。"
+uninstall_builtin_warning = "デフォルトプラグインです。削除すると次回起動時にも自動再インストールされません。"
+builtin_badge = "デフォルト"
 
 [settings]
 [settings.window]

@@ -13,6 +13,7 @@
 pub mod base;
 pub mod main;
 pub mod modal;
+pub mod plugins;
 pub mod quit;
 pub mod settings;
 pub mod terminal_host;
@@ -20,6 +21,7 @@ pub mod terminal_host;
 pub use base::WindowBase;
 pub use main::MainWindow;
 pub use modal::ModalWindow;
+pub use plugins::PluginsWindow;
 pub use quit::QuitWindow;
 pub use settings::SettingsWindow;
 pub use terminal_host::TerminalHostWindow;

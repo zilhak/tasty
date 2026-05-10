@@ -5,6 +5,9 @@
 //! [disabled]
 //! ids = ["com.example.broken"]
 //!
+//! [removed_builtins]
+//! ids = ["com.tasty.explorer"]
+//!
 //! [grants."com.example.explorer"]
 //! granted = ["fs.read", "surface.write"]
 //! ```
@@ -20,6 +23,10 @@ const FILE_NAME: &str = "plugins.toml";
 pub struct PluginsConfig {
     #[serde(default)]
     pub disabled: PluginsDisabled,
+    /// 사용자가 제거한 기본 제공 플러그인 id 목록. 다음 부팅 시 bundle에서
+    /// 자동 재설치되지 않도록 차단한다.
+    #[serde(default)]
+    pub removed_builtins: PluginsDisabled,
     /// plugin id → grant entry. 키가 plugin id이므로 BTreeMap으로 정렬 보장.
     #[serde(default)]
     pub grants: BTreeMap<String, PluginGrants>,
@@ -79,6 +86,26 @@ impl PluginsConfig {
 
     pub fn is_disabled(&self, id: &str) -> bool {
         self.disabled.ids.iter().any(|x| x == id)
+    }
+
+    pub fn is_builtin_removed(&self, id: &str) -> bool {
+        self.removed_builtins.ids.iter().any(|x| x == id)
+    }
+
+    pub fn mark_builtin_removed(&mut self, id: &str) -> bool {
+        if self.is_builtin_removed(id) {
+            false
+        } else {
+            self.removed_builtins.ids.push(id.to_string());
+            true
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn unmark_builtin_removed(&mut self, id: &str) -> bool {
+        let before = self.removed_builtins.ids.len();
+        self.removed_builtins.ids.retain(|x| x != id);
+        before != self.removed_builtins.ids.len()
     }
 
     pub fn enable(&mut self, id: &str) -> bool {

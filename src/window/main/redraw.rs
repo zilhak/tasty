@@ -11,6 +11,11 @@ impl MainWindow {
             self.state.settings_open = false;
             let _ = self.proxy.send_event(crate::AppEvent::OpenSettings);
         }
+        // Same flow for plugins modal.
+        if self.state.plugins_open {
+            self.state.plugins_open = false;
+            let _ = self.proxy.send_event(crate::AppEvent::OpenPlugins);
+        }
 
         // When targeted_pty_polling is off, process all terminals every frame.
         // When on, individual terminals are processed via TerminalOutput(Some(id)) events,

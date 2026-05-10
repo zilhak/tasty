@@ -71,6 +71,8 @@ pub struct AppState {
     pub active_workspace: usize,
     /// Whether the settings window is open.
     pub settings_open: bool,
+    /// Whether the plugins window is open.
+    pub plugins_open: bool,
     /// Persistent UI state for the settings window.
     pub settings_ui_state: SettingsUiState,
     /// Cached sidebar width from settings (logical pixels).
@@ -291,6 +293,7 @@ impl AppState {
             engine,
             active_workspace,
             settings_open: false,
+            plugins_open: false,
             settings_ui_state: SettingsUiState::new(),
             sidebar_width,
             sidebar_visible: true,
@@ -324,7 +327,10 @@ impl AppState {
 
     /// Returns true if any egui overlay is visible.
     pub fn has_egui_overlay_open(&self) -> bool {
-        self.settings_open || self.dialogs.has_any_overlay() || self.popups.has_any_open()
+        self.settings_open
+            || self.plugins_open
+            || self.dialogs.has_any_overlay()
+            || self.popups.has_any_open()
     }
 
     /// Clean up all state associated with a closed surface:

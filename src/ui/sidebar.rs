@@ -3,15 +3,25 @@ use crate::state::AppState;
 use crate::theme;
 
 /// Draw the collapsed sidebar (workspace numbers + tools/expand/settings buttons).
-/// Returns (expand_clicked, settings_clicked, tools_rect, switch_ws, add_ws).
+/// Returns `CollapsedSidebarResult`.
 /// `tools_rect` is Some(rect) when the tools button was clicked (rect = button position).
+pub struct CollapsedSidebarResult {
+    pub expand_clicked: bool,
+    pub plugins_clicked: bool,
+    pub settings_clicked: bool,
+    pub tools_rect: Option<egui::Rect>,
+    pub switch_ws: Option<usize>,
+    pub add_ws: bool,
+}
+
 pub fn draw_collapsed_sidebar(
     ctx: &egui::Context,
     state: &AppState,
     sidebar_width: f32,
-) -> (bool, bool, Option<egui::Rect>, Option<usize>, bool) {
+) -> CollapsedSidebarResult {
     let th = theme::theme();
     let mut expand_clicked = false;
+    let mut plugins_clicked = false;
     let mut settings_clicked = false;
     let mut tools_rect: Option<egui::Rect> = None;
     let mut switch_ws: Option<usize> = None;
@@ -150,6 +160,28 @@ pub fn draw_collapsed_sidebar(
                     expand_clicked = true;
                 }
 
+                // Plugins icon (puzzle piece)
+                ui.add_space(2.0);
+                let (rect, resp) =
+                    ui.allocate_exact_size(egui::vec2(32.0, 22.0), egui::Sense::click());
+                if resp.hovered() {
+                    ui.painter().rect_filled(rect, 4.0, th.hover_overlay.to_egui_premultiplied());
+                }
+                ui.painter().text(
+                    rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    "\u{1F9E9}", // 🧩
+                    egui::FontId::proportional(14.0),
+                    if resp.hovered() {
+                        th.subtext1.into()
+                    } else {
+                        th.overlay0.into()
+                    },
+                );
+                if resp.clicked() {
+                    plugins_clicked = true;
+                }
+
                 // Settings icon (gear)
                 ui.add_space(2.0);
                 let (rect, resp) =
@@ -175,24 +207,32 @@ pub fn draw_collapsed_sidebar(
             });
         });
 
-    (
+    CollapsedSidebarResult {
         expand_clicked,
+        plugins_clicked,
         settings_clicked,
         tools_rect,
         switch_ws,
         add_ws,
-    )
+    }
 }
 
 /// Draw the full (expanded) sidebar with workspace cards.
-/// Returns (collapse_clicked, settings_clicked, tools_rect).
+pub struct FullSidebarResult {
+    pub collapse_clicked: bool,
+    pub plugins_clicked: bool,
+    pub settings_clicked: bool,
+    pub tools_rect: Option<egui::Rect>,
+}
+
 pub fn draw_full_sidebar(
     ctx: &egui::Context,
     state: &mut AppState,
     sidebar_width: f32,
-) -> (bool, bool, Option<egui::Rect>) {
+) -> FullSidebarResult {
     let th = theme::theme();
     let mut sidebar_collapse = false;
+    let mut sidebar_plugins = false;
     let mut sidebar_settings = false;
     let mut sidebar_tools_rect: Option<egui::Rect> = None;
 
@@ -523,6 +563,32 @@ pub fn draw_full_sidebar(
                 ui.painter().text(
                     rect.center(),
                     egui::Align2::CENTER_CENTER,
+                    t("button.plugins"),
+                    egui::FontId::proportional(12.0),
+                    text_color.into(),
+                );
+                if response.clicked() {
+                    sidebar_plugins = true;
+                }
+            }
+            ui.add_space(2.0);
+            {
+                let full_width = ui.available_width();
+                let (rect, response) = ui.allocate_exact_size(
+                    egui::vec2(full_width, 28.0),
+                    egui::Sense::click().union(egui::Sense::hover()),
+                );
+                let text_color = if response.hovered() {
+                    th.subtext1
+                } else {
+                    th.overlay0
+                };
+                if response.hovered() {
+                    ui.painter().rect_filled(rect, 4.0, th.hover_overlay.to_egui_premultiplied());
+                }
+                ui.painter().text(
+                    rect.center(),
+                    egui::Align2::CENTER_CENTER,
                     t("button.settings"),
                     egui::FontId::proportional(12.0),
                     text_color.into(),
@@ -534,5 +600,10 @@ pub fn draw_full_sidebar(
             ui.add_space(8.0);
         });
 
-    (sidebar_collapse, sidebar_settings, sidebar_tools_rect)
+    FullSidebarResult {
+        collapse_clicked: sidebar_collapse,
+        plugins_clicked: sidebar_plugins,
+        settings_clicked: sidebar_settings,
+        tools_rect: sidebar_tools_rect,
+    }
 }

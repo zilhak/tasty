@@ -2,6 +2,7 @@
 
 #![allow(unused_imports)]
 
+pub mod builtin;
 pub mod discovery;
 pub mod host_cmd;
 pub mod listener;
@@ -15,6 +16,10 @@ pub mod remote_surface;
 pub mod ui_tree;
 pub mod ui_tree_render;
 
+pub use builtin::{
+    bundle_root, install_builtins_if_needed, is_builtin_plugin, mark_builtin_removed,
+    BUILTIN_PLUGIN_IDS,
+};
 pub use discovery::{discover, plugin_root};
 pub use listener::HostListener;
 pub use manager::PluginManager;
