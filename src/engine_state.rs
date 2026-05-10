@@ -166,6 +166,9 @@ pub struct EngineState {
     /// Restore commands queued during layout restore. (surface_id, command).
     /// Consumed by AppState after shell initialization.
     pub pending_restore_commands: Vec<(u32, String)>,
+    /// 첫 plugin pump 후 적용할 layout. plugin이 제공하는 surface kind가
+    /// 등록되기 전에 복원하면 사라지므로 한 번 미뤄둔다. `App::apply_pending_layout_restore`가 소비.
+    pub pending_layout_restore: Option<crate::layout_persistence::SavedLayout>,
 
     /// Whether input simulation IPC is enabled (debug builds only, --enable-input-simulation).
     #[cfg(debug_assertions)]
@@ -205,6 +208,7 @@ impl EngineState {
             layout_dirty: crate::layout_persistence::LayoutDirtyTracker::new(),
             restored_active_workspace: None,
             pending_restore_commands: Vec::new(),
+            pending_layout_restore: None,
             #[cfg(debug_assertions)]
             input_simulation_enabled: false,
         };
@@ -218,14 +222,17 @@ impl EngineState {
             .clipboard_history
             .set_max(engine.settings.clipboard.history_max);
 
-        // Try restoring saved layout
+        // Try restoring saved layout. plugin이 제공하는 surface kind(예: explorer)는
+        // PluginManager가 hello를 처리한 후에야 registry에 등록되므로, 여기서 즉시
+        // 복원하면 그런 surface가 사라진다. 따라서 layout 복원은 첫 plugin pump 후로
+        // 지연한다 (`App::apply_pending_layout_restore`).
         let mut restored = false;
         if restore_layout {
             if let Some(saved) = crate::layout_persistence::load_from_disk() {
-                restored = saved.restore(&mut engine);
-                if restored {
-                    tracing::info!("Layout restored from layout.json");
-                }
+                engine.pending_layout_restore = Some(saved);
+                // 첫 화면이 비지 않도록 default workspace는 일단 fallback에서 만들고,
+                // pending_layout_restore가 적용될 때 교체된다.
+                restored = false;
             }
         }
 

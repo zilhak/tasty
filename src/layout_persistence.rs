@@ -378,6 +378,49 @@ impl SavedSurface {
 // ── Restore: SavedLayout → live model ──
 
 impl SavedLayout {
+    /// Layout 안의 모든 Generic surface kind 토큰을 수집. 호출자는 첫 plugin pump
+    /// 후에 registry에 이 kind들이 등록됐는지 확인하여 복원 시점을 결정한다.
+    pub fn required_plugin_kinds(&self) -> Vec<String> {
+        let mut kinds = std::collections::HashSet::new();
+        for ws in &self.workspaces {
+            Self::collect_kinds_in_pane(&ws.pane_layout, &mut kinds);
+        }
+        kinds.into_iter().collect()
+    }
+
+    fn collect_kinds_in_pane(
+        node: &SavedPaneNode,
+        out: &mut std::collections::HashSet<String>,
+    ) {
+        match node {
+            SavedPaneNode::Leaf(pane) => {
+                for tab in &pane.tabs {
+                    Self::collect_kinds_in_layout(&tab.surface, out);
+                }
+            }
+            SavedPaneNode::Split { first, second, .. } => {
+                Self::collect_kinds_in_pane(first, out);
+                Self::collect_kinds_in_pane(second, out);
+            }
+        }
+    }
+
+    fn collect_kinds_in_layout(
+        layout: &SavedSurfaceLayout,
+        out: &mut std::collections::HashSet<String>,
+    ) {
+        match layout {
+            SavedSurfaceLayout::Leaf(SavedSurface::Generic { kind, .. }) => {
+                out.insert(kind.clone());
+            }
+            SavedSurfaceLayout::Leaf(_) => {}
+            SavedSurfaceLayout::Split { first, second, .. } => {
+                Self::collect_kinds_in_layout(first, out);
+                Self::collect_kinds_in_layout(second, out);
+            }
+        }
+    }
+
     /// Restore layout into engine state. Returns true on success.
     /// On failure, engine state is left unchanged (caller should create default workspace).
     pub fn restore(self, engine: &mut EngineState) -> bool {

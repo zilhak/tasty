@@ -279,6 +279,30 @@ impl App {
             mgr.discover_and_start();
             self.plugin_manager = Some(mgr);
         }
+
+        // pending_layout_restore가 있으면, plugin이 surface_kinds를 등록할 시간을
+        // 잠깐 주고 적용한다. 시간 내에 hello가 도착하지 않은 plugin이 제공하는
+        // kind는 복원에서 일단 skip되며, 추후 정상 흐름으로 새로 만들 수 있다.
+        if let Some(saved) = state.engine.pending_layout_restore.take() {
+            if let Some(mgr) = self.plugin_manager.as_mut() {
+                use std::time::{Duration, Instant};
+                let deadline = Instant::now() + Duration::from_millis(300);
+                let needed: Vec<String> = saved.required_plugin_kinds();
+                while Instant::now() < deadline {
+                    mgr.pump();
+                    let registered_all = needed
+                        .iter()
+                        .all(|k| state.engine.surface_registry.get(k).is_some());
+                    if registered_all {
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+            }
+            if saved.restore(&mut state.engine) {
+                tracing::info!("Layout restored from layout.json (deferred)");
+            }
+        }
         #[cfg(debug_assertions)]
         {
             state.engine.input_simulation_enabled = self.input_simulation_enabled;

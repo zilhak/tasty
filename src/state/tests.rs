@@ -280,30 +280,30 @@ fn move_focus_forward_two_panes() {
 // ---- resolve_inherit_cwd_from_surface ----
 
 #[test]
-fn resolve_inherit_cwd_from_explorer_surface() {
+fn resolve_inherit_cwd_from_markdown_surface() {
+    // explorer가 plugin으로 옮겨졌으므로 host-only kind인 markdown으로 동등 검증.
     let mut state = test_state();
     #[cfg(windows)]
-    let root = "C:\\workspace\\proj";
+    let (root, file) = ("C:\\workspace\\proj", "C:\\workspace\\proj\\readme.md");
     #[cfg(not(windows))]
-    let root = "/workspace/proj";
-    state.add_explorer_tab(root.to_string()).unwrap();
+    let (root, file) = ("/workspace/proj", "/workspace/proj/readme.md");
+    state.add_markdown_tab(file.to_string()).unwrap();
 
-    // 새로 추가된 explorer surface ID 찾기
-    let mut explorer_sid = None;
+    let mut sid_opt = None;
     for ws in &state.engine.workspaces {
         for pid in ws.pane_layout().all_pane_ids() {
             if let Some(p) = ws.pane_layout().find_pane(pid) {
                 for tab in &p.tabs {
                     if let Some(s) = tab.layout().find_surface(tab.focused_surface) {
-                        if s.kind() == "explorer" {
-                            explorer_sid = s.surface_id();
+                        if s.kind() == "markdown" {
+                            sid_opt = s.surface_id();
                         }
                     }
                 }
             }
         }
     }
-    let sid = explorer_sid.expect("explorer surface should exist");
+    let sid = sid_opt.expect("markdown surface should exist");
     assert_eq!(
         state.resolve_inherit_cwd_from_surface(sid),
         Some(std::path::PathBuf::from(root))
@@ -316,26 +316,26 @@ fn resolve_inherit_cwd_from_surface_respects_toggle_off() {
     state.engine.settings.general.inherit_cwd = false;
 
     #[cfg(windows)]
-    let root = "C:\\workspace\\proj";
+    let file = "C:\\workspace\\proj\\readme.md";
     #[cfg(not(windows))]
-    let root = "/workspace/proj";
-    state.add_explorer_tab(root.to_string()).unwrap();
+    let file = "/workspace/proj/readme.md";
+    state.add_markdown_tab(file.to_string()).unwrap();
 
-    let mut explorer_sid = None;
+    let mut sid_opt = None;
     for ws in &state.engine.workspaces {
         for pid in ws.pane_layout().all_pane_ids() {
             if let Some(p) = ws.pane_layout().find_pane(pid) {
                 for tab in &p.tabs {
                     if let Some(s) = tab.layout().find_surface(tab.focused_surface) {
-                        if s.kind() == "explorer" {
-                            explorer_sid = s.surface_id();
+                        if s.kind() == "markdown" {
+                            sid_opt = s.surface_id();
                         }
                     }
                 }
             }
         }
     }
-    let sid = explorer_sid.expect("explorer surface should exist");
+    let sid = sid_opt.expect("markdown surface should exist");
     assert_eq!(state.resolve_inherit_cwd_from_surface(sid), None);
 }
 

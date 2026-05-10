@@ -8,17 +8,17 @@ use std::sync::Arc;
 use serde_json::{Value, json};
 
 use tasty_core::model::{
-    ClipboardViewerPanel, EmptySurface, ExplorerPanel, HtmlPanel, ImagePanel, MarkdownPanel,
-    Surface,
+    ClipboardViewerPanel, EmptySurface, HtmlPanel, ImagePanel, MarkdownPanel, Surface,
 };
 
 use super::{SurfaceKindDef, SurfaceKindRegistry};
 
-/// 부팅 시 호출. EngineState 생성 직전에 빈 SurfaceKindRegistry에 본체 7종을 등록한다.
+/// 부팅 시 호출. EngineState 생성 직전에 빈 SurfaceKindRegistry에 호스트 내장 6종을 등록한다.
+/// "explorer" kind는 `com.tasty.explorer` plugin이 hello를 보낼 때
+/// `register_remote_kind`로 등록한다 — 호스트는 직접 등록하지 않는다.
 pub fn register_builtin_kinds(registry: &SurfaceKindRegistry) {
     register_terminal(registry);
     register_markdown(registry);
-    register_explorer(registry);
     register_html(registry);
     register_image(registry);
     register_empty(registry);
@@ -70,43 +70,6 @@ fn register_markdown(registry: &SurfaceKindRegistry) {
             Some(json!({"path": md.file_path}))
         }),
     });
-}
-
-// ── Explorer ────────────────────────────────────────────────────────────────
-
-fn register_explorer(registry: &SurfaceKindRegistry) {
-    registry.register(SurfaceKindDef {
-        kind: "explorer",
-        display_name_i18n_key: "surface.kind.explorer",
-        create: Arc::new(|sid, params| {
-            let path = params
-                .get("path")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string())
-                .unwrap_or_else(default_explorer_root);
-            Ok(Box::new(ExplorerPanel::new(sid, path)) as Box<dyn Surface>)
-        }),
-        restore: Arc::new(|sid, data| {
-            // 옛 형식(`root_path`)도 받기 위해 두 키 모두 시도.
-            let path = data
-                .get("path")
-                .and_then(|v| v.as_str())
-                .or_else(|| data.get("root_path").and_then(|v| v.as_str()))
-                .map(|s| s.to_string())
-                .unwrap_or_else(default_explorer_root);
-            Ok(Box::new(ExplorerPanel::new(sid, path)) as Box<dyn Surface>)
-        }),
-        snapshot: Arc::new(|s| {
-            let exp = s.as_any().downcast_ref::<ExplorerPanel>()?;
-            Some(json!({"path": exp.root_path}))
-        }),
-    });
-}
-
-fn default_explorer_root() -> String {
-    directories::BaseDirs::new()
-        .map(|d| d.home_dir().to_string_lossy().to_string())
-        .unwrap_or_else(|| ".".to_string())
 }
 
 // ── Html ────────────────────────────────────────────────────────────────────
@@ -244,15 +207,6 @@ mod tests {
         let s = (def.create)(3, &json!({})).unwrap();
         let img = s.as_any().downcast_ref::<ImagePanel>().unwrap();
         assert!(img.is_blank());
-    }
-
-    #[test]
-    fn explorer_restore_accepts_legacy_root_path_key() {
-        let reg = registry_with_builtins();
-        let def = reg.get("explorer").unwrap();
-        // 03E v1→v2 마이그레이션이 변환해주지만, 직접 root_path 형태로 들어와도 받는다.
-        let s = (def.restore)(2, &json!({"root_path": "/tmp"})).unwrap();
-        assert_eq!(s.kind(), "explorer");
     }
 
     #[test]

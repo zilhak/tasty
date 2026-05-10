@@ -74,90 +74,34 @@ pub fn handle_tab_create(
         .and_then(|v| v.as_str())
         .unwrap_or("terminal");
 
-    let panel_id = state.engine.next_ids.next_surface();
+    // explorer는 path 미지정 시 home으로 보정 (외부 plugin이 path를 받음).
+    let mut params = params.clone();
+    if surface_type == "explorer" && params.get("path").and_then(|v| v.as_str()).is_none() {
+        let home = directories::BaseDirs::new()
+            .map(|d| d.home_dir().to_string_lossy().to_string())
+            .unwrap_or_else(|| ".".to_string());
+        if let Some(obj) = params.as_object_mut() {
+            obj.insert("path".into(), serde_json::Value::String(home));
+        } else {
+            params = serde_json::json!({ "path": home });
+        }
+    }
+
     let result = match surface_type {
-        "markdown" => {
-            let file_path = match params
-                .get("file")
-                .or_else(|| params.get("file_path"))
-                .and_then(|v| v.as_str())
-            {
-                Some(p) => p.to_string(),
-                None => {
-                    return JsonRpcResponse::invalid_params(
-                        id,
-                        "Missing 'file' parameter for markdown type",
-                    );
-                }
-            };
-            let name = file_path
-                .split(['/', '\\'])
-                .last()
-                .unwrap_or("Markdown")
-                .to_string();
-            let surface: Box<dyn crate::model::Surface> =
-                Box::new(crate::model::MarkdownPanel::new(panel_id, file_path));
-            state.add_surface_tab_to_pane(pane_id, name, surface);
-            Ok(())
-        }
-        "html" => {
-            let url = match params.get("url").and_then(|v| v.as_str()) {
-                Some(u) => u.to_string(),
-                None => {
-                    return JsonRpcResponse::invalid_params(
-                        id,
-                        "Missing 'url' parameter for html type",
-                    );
-                }
-            };
-            let surface: Box<dyn crate::model::Surface> =
-                Box::new(crate::model::HtmlPanel::new(panel_id, url));
-            state.add_surface_tab_to_pane(pane_id, "HTML".to_string(), surface);
-            Ok(())
-        }
-        "explorer" => {
-            let path = params
-                .get("path")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| {
-                    directories::BaseDirs::new()
-                        .map(|d| d.home_dir().to_string_lossy().to_string())
-                        .unwrap_or_else(|| ".".to_string())
-                });
-            let name = path
-                .split(['/', '\\'])
-                .last()
-                .unwrap_or("Explorer")
-                .to_string();
-            let surface: Box<dyn crate::model::Surface> =
-                Box::new(crate::model::ExplorerPanel::new(panel_id, path));
-            state.add_surface_tab_to_pane(pane_id, name, surface);
-            Ok(())
-        }
-        "image" => {
-            let file_path = params
-                .get("file")
-                .or_else(|| params.get("file_path"))
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
-            let name = file_path
-                .as_ref()
-                .and_then(|p| p.split(['/', '\\']).last().map(|s| s.to_string()))
-                .unwrap_or_else(|| "Image".to_string());
-            let surface: Box<dyn crate::model::Surface> = match file_path {
-                Some(path) => Box::new(crate::model::ImagePanel::new(panel_id, path)),
-                None => Box::new(crate::model::ImagePanel::new_blank(panel_id)),
-            };
-            state.add_surface_tab_to_pane(pane_id, name, surface);
-            Ok(())
-        }
-        "terminal" | _ => {
+        "terminal" => {
             let cwd = params
                 .get("cwd")
                 .and_then(|v| v.as_str())
                 .map(std::path::PathBuf::from);
             state.add_tab_to_pane(pane_id, cwd)
+        }
+        other => {
+            // markdown/html/explorer/image/clipboard_viewer/empty + plugin remote_kind
+            // 모두 SurfaceKindRegistry로 일원화. 등록되지 않은 kind면 Err 반환되어
+            // 사용자에게 unknown surface kind 메시지가 전달된다.
+            state
+                .add_kind_tab_to_pane(pane_id, other, &params)
+                .map(|_| ())
         }
     };
 
