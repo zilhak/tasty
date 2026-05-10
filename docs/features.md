@@ -108,11 +108,12 @@
 - Pane: **독립적인 탭 바**를 가진 화면 영역. 여러 Tab을 포함
 - Tab: 탭 하나. `SurfaceLayout`을 직접 소유. 단일 Leaf = 분할 안 된 상태, Split = 탭 내부 분할
 - Surface trait: 모든 콘텐츠 타입의 공통 인터페이스. 각 타입이 독립 struct로 구현. **`tasty-core`는 GUI-free** — 모델은 식별 정보와 직렬화 가능한 상태만 보유한다 (egui는 optional `egui-compat` feature, 헤드리스 플러그인은 비활성 가능)
-  - `kind()`: 소문자 식별자 (`"terminal"`, `"markdown"` 등 7종) — IPC/registry/플러그인이 식별자로 사용
+  - `kind()`: 소문자 식별자 — 호스트 빌트인 6종(`"terminal"`, `"markdown"`, `"html"`, `"image"`, `"empty"`, `"clipboard_viewer"`) + plugin 등록 kind(예: `"explorer"`). IPC/registry/플러그인이 식별자로 사용
   - `type_name()`: 표시용 라벨. 식별 비교 금지
   - `html_url()`: HtmlPanel만 `Some(&url)` 반환. native WebView 동기화가 다운캐스트 없이 사용
   - TerminalSurface: 단일 PTY 터미널
-  - MarkdownPanel, ExplorerPanel, HtmlPanel, ImagePanel, EmptySurface, ClipboardViewerPanel: 비터미널 콘텐츠
+  - MarkdownPanel, HtmlPanel, ImagePanel, EmptySurface, ClipboardViewerPanel: 호스트 빌트인 비터미널 콘텐츠
+  - RemoteSurface: plugin이 IPC로 제공하는 surface (예: 기본 제공 Explorer plugin)
 - **Model + Host View 분리**: 휘발성 GUI 상태(콘텐츠 캐시, 텍스처, 편집 세션, 스크롤, 팝업 버퍼)는 호스트 측 View로 분리되어 `AppState::markdown_views` / `image_views` (HashMap<SurfaceId, View>) 에 보관. surface 닫힘 시 `cleanup_surface(sid)`가 모든 store에서 `drop_view(sid)` 호출
 - AppState: 전체 워크스페이스 목록과 활성 상태를 관리하는 중앙 상태 (IdGenerator 포함)
 
@@ -135,7 +136,7 @@
 - 단일 Leaf 탭이 분할 시 자동으로 Split 구조로 변환
 - **패닉 없는 분할 구현**: PTY/Terminal을 구조적 변경 이전에 선행 생성 — 리소스 생성 실패 시 레이아웃이 변경되지 않음
 - `PaneNode::split_pane_in_place`: `std::mem::replace` 2-step 패턴으로 소유권 이동 없이 트리 내부 노드를 in-place 변경
-- `SurfaceLayout::split_with_surface`: 소유권 기반 infallible 분할 — 사전 생성된 `Box<dyn Surface>`를 받아 모든 surface 타입(Terminal, Markdown, Explorer, Html) 지원. `split_with_node`는 TerminalSurface 전용 편의 래퍼
+- `SurfaceLayout::split_with_surface`: 소유권 기반 infallible 분할 — 사전 생성된 `Box<dyn Surface>`를 받아 모든 surface 타입(Terminal, Markdown, Html, RemoteSurface 등) 지원. `split_with_node`는 TerminalSurface 전용 편의 래퍼
 - Workspace/Tab 내부 Option 래핑 + take/put 패턴: split 함수가 infallible이므로 take 이후 put이 항상 실행됨 보장
 - 각 Surface를 scissor rect로 독립 렌더링
 - 뷰포트별 유니폼 갱신 (grid_offset을 각 Surface rect에 맞게 조정)
@@ -251,9 +252,10 @@
 - **탭/워크스페이스 우클릭 이동**: 탭 우클릭 → Move Left / Move Right, 워크스페이스 우클릭 → Move Up / Move Down. 끝에 있으면 비활성화
 - 관련 모델 메서드: `Rect::contains()`, `PaneNode::find_divider_at()`, `PaneNode::update_ratio_for_rect()`, `SurfaceLayout::find_divider_at()`, `SurfaceLayout::update_ratio_for_rect()`, `SurfaceLayout::find_surface_at()`
 
-### 추가 Surface 타입 (Markdown / Explorer / HTML / Empty)
+### 추가 Surface 타입 (Markdown / HTML / Empty + plugin 기반 Explorer)
 - 모든 Surface 타입은 고유 surface_id를 가지며, 닫기/포커스/리스트 등 공통 surface 동작이 동일하게 적용됨
-- Markdown/Explorer/Empty: egui로 렌더링
+- Markdown/Empty: 호스트가 egui로 렌더링
+- Explorer: **com.tasty.explorer 기본 제공 plugin**이 RemoteSurface로 제공 — UiTree 트리를 IPC로 호스트에 전송, 호스트는 egui로 그대로 렌더링
 - HTML: OS 네이티브 WebView (macOS: WKWebView, Windows: WebView2, Linux: WebKitGTK)를 wgpu 윈도우 위에 child view로 오버레이
 - Empty: 빈 placeholder. 중앙에 타입 전환 버튼 표시
 
@@ -265,8 +267,8 @@
 - 탭으로 열리며 파일명이 탭 이름이 됨
 - surface 전체 너비를 채우며, 텍스트는 surface 너비에 맞춰 자동 줄바꿈
 
-#### Explorer
-- 디렉토리 트리와 파일 미리보기를 제공하는 파일 탐색기
+#### Explorer (기본 제공 plugin)
+- `com.tasty.explorer` 외부 plugin 바이너리가 디렉토리 트리와 파일 미리보기를 제공한다. 호스트는 plugin이 보낸 UiTree를 egui로 렌더링할 뿐, 모델/IO를 직접 다루지 않는다. plugin 메뉴에서 비활성/제거 가능 (제거 시 `removed_builtins`에 기록되어 재실행 시 다시 설치되지 않음)
 - 왼쪽 트리 + 오른쪽 뷰어의 2-컬럼 레이아웃, **divider 드래그로 비율 조절** 가능 (0.15~0.85)
 - .md 파일 선택 시 마크다운 렌더링, 기타 파일은 모노스페이스 텍스트 표시
 - 숨김 파일 기본 제외 (.env, .gitignore, .claude는 표시)
@@ -296,30 +298,28 @@
 #### 컨텍스트 메뉴
 - 터미널 영역 또는 탭 바 빈 공간에서 마우스 우클릭 시 컨텍스트 메뉴 표시
 - "Open Markdown..." → 파일 경로 입력 다이얼로그 → 마크다운 탭 열기
-- "Open Explorer" → 홈 디렉토리를 루트로 하는 탐색기 탭 열기
 - "Open HTML..." → URL 입력 다이얼로그 → HTML WebView 탭 열기
 - "새 이미지" → 빈 이미지 surface 탭 생성 (기본 800×600 흰 캔버스가 즉시 그려진 상태로 시작, 다른 크기를 원하면 surface 안의 `+` 버튼으로 팝업 호출)
 - 좌클릭 또는 Cancel로 메뉴 닫기
 
 #### 키보드 단축키
 - `open_markdown`: 마크다운 열기 (파일 경로 입력 다이얼로그 표시)
-- `open_explorer`: 탐색기 열기 (홈 디렉토리를 루트로 탭 생성)
 - 기본값 미설정 (설정 UI에서 Pane 서브탭에서 바인딩 가능)
 
 #### Surface 타입 전환
-- `convert_surface` 단축키 (기본 `Alt+'`): Surface 스코프 팝업으로 전환 메뉴 표시 — Terminal(T) / Markdown(M)... / Explorer(E) / HTML(H)... 팝업은 해당 surface 영역 중앙에 배치되며, 항목 수에 맞게 크기 자동 계산
-- `convert_to_markdown` / `convert_to_explorer`: 직접 전환 단축키 (기본값 없음, 설정에서 할당)
+- `convert_surface` 단축키 (기본 `Alt+'`): Surface 스코프 팝업으로 전환 메뉴 표시 — Terminal(T) / Markdown(M)... / HTML(H)... / Image(I). 팝업은 해당 surface 영역 중앙에 배치되며, 항목 수에 맞게 크기 자동 계산. (Explorer 등 plugin 제공 surface는 plugin 자신이 변환을 다룬다)
+- `convert_to_markdown`: 직접 전환 단축키 (기본값 없음, 설정에서 할당)
 - 현재 타입과 동일한 항목은 체크 표시 + 비활성
 - Markdown 전환 시 파일 경로 입력 다이얼로그 표시
-- Terminal 전환 시 새 PTY 생성, Explorer 전환 시 CWD 또는 홈 디렉토리 사용
+- Terminal 전환 시 새 PTY 생성
 - Esc / 외부 클릭 / X 버튼으로 팝업 닫기
 - 키보드 탐색: Up/Down 방향키로 항목 이동, Enter로 선택 확정
-- 단축키: T/M/E/H 키로 즉시 선택
+- 단축키: T/M/H/I 키로 즉시 선택
 - 팝업이 열려 있으면 키보드 입력이 터미널로 전달되지 않음 (PopupManager 포커스 자동 관리)
 - **개별 surface 교체 원칙**: 타입 전환은 대상 surface의 구현체만 교체한다. 기존 구현체는 메모리에서 해제되고 새 구현체로 대체된다. 탭 레이아웃, 다른 surface 등 주변 구조에는 어떤 영향도 주지 않는다.
   - 탭 내부 분할의 surface를 전환해도 다른 surface는 그대로 유지됨
   - 단독 surface(탭에 1개)를 전환하면 탭의 surface가 교체됨. Terminal로 전환 시 탭 이름이 자동(CWD 기반)으로 복원됨
-  - 비터미널 surface(Markdown, Explorer, Html, Empty)는 탭 내부 분할에서도 올바르게 렌더링됨 (egui 렌더링)
+  - 비터미널 surface(Markdown, Html, Empty, RemoteSurface)는 탭 내부 분할에서도 올바르게 렌더링됨 (egui 렌더링)
 
 #### HTML WebView
 - OS 네이티브 WebView를 wgpu 윈도우 위에 child view로 오버레이
@@ -1076,10 +1076,22 @@ Claude Code 등 TUI 앱이 실행 중이던 터미널을 복원할 때, 해당 �
 외부 plugin 프로세스를 별도 OS 프로세스로 띄워 surface 종류를 확장한다.
 릴리스 에셋의 `plugins.md` 참조.
 
+### 기본 제공 plugin (built-in)
+- Tasty 바이너리에 함께 묶여 배포되는 plugin은 첫 실행 시 `~/.tasty/plugins/<id>/`에 자동 설치된다 (`BUILTIN_PLUGIN_IDS` 목록)
+- 현재 기본 제공: `com.tasty.explorer` (파일 탐색기 surface)
+- 사용자가 plugin 메뉴에서 "제거"를 선택하면 `removed_builtins`에 기록되어 다음 실행에서 자동 재설치되지 않는다 — 외부 plugin과 완전히 동일한 라이프사이클 적용
+- 번들 위치 탐색 순서: `TASTY_BUILTIN_PLUGINS_DIR` env > 실행 파일 옆 `plugins/` > dev 빌드 시 `target/<profile>/builtin-plugins/` (workspace 자동 부트스트랩)
+
+### Plugin 관리 모달
+- 사이드바 좌측 메뉴의 🧩 버튼으로 PluginsWindow 모달 진입 (Settings 모달과 동일 패턴)
+- 좌측 plugin 목록 + 우측 상세: 이름/버전/설명/저자/홈페이지, 활성 토글, 등록 surface kinds, 매니페스트 권한 / grant 상태, 로그 파일 경로
+- 권한 grant/revoke 버튼으로 즉시 반영 (process 재시작 없이)
+- "제거" 버튼은 사전 확인 다이얼로그를 거친 뒤 plugin 실행 종료 + 디스크 삭제. built-in plugin인 경우 추가 경고 표시
+
 ### 매니페스트 + 디스커버리
 - `~/.tasty/plugins/<id>/tasty-plugin.toml` 형식 (manifest_version=1, api_version=1)
 - 부팅 시 자동 스캔, 매니페스트 검증 실패한 plugin은 warn 로그 후 스킵
-- `~/.tasty/plugins.toml`로 활성/비활성 영속화
+- `~/.tasty/plugins.toml`로 활성/비활성 + `removed_builtins` 영속화
 
 ### 프로세스 생명주기
 - 호스트가 `127.0.0.1:0` 으로 listen, plugin이 token 들고 connect 하는 인증 방식

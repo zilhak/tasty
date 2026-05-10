@@ -21,14 +21,13 @@
 | `terminal_surface.rs` | TerminalSurface (단일 터미널). Surface impl |
 | `surface_layout.rs` | SurfaceLayout 이진 트리 (하위 분할) + SurfaceRegion. pane_tree.rs와 동일한 패턴 |
 | `markdown_panel.rs` | MarkdownPanel. Surface impl. **`file_path` + mtime poll만 보유** — 콘텐츠/스크롤/CommonMark 캐시는 호스트 `MarkdownView`로 분리 |
-| `explorer_panel.rs` | ExplorerPanel. Surface impl. 파일 탐색기 트리 상태 |
 | `html_panel.rs` | HtmlPanel. Surface impl. URL만 보유. `Surface::html_url()` 노출로 native WebView 동기화 가능 |
 | `image_panel.rs` | ImagePanel. Surface impl. **`file_path`, `dir_images`, `current_index`만 보유** — 픽셀/텍스처/편집 상태는 호스트 `ImageView`로 분리 |
 | `empty_surface.rs` | EmptySurface. Surface impl. 변환 버튼 표시 |
 | `clipboard_viewer_panel.rs` | ClipboardViewerPanel. Surface impl. 클립보드 히스토리 뷰어 |
 | `tests.rs` | Rect/PaneNode/SurfaceLayout 유닛 테스트 |
 
-`Surface::kind()`는 `"terminal"`, `"markdown"`, `"explorer"`, `"html"`, `"image"`, `"empty"`, `"clipboard_viewer"` 7종 식별자를 반환한다. IPC/registry/플러그인이 이 값으로 surface 타입을 식별하며, `type_name()`은 표시 전용이라 식별 비교에 쓰면 안 된다.
+`Surface::kind()`는 호스트 빌트인으로 `"terminal"`, `"markdown"`, `"html"`, `"image"`, `"empty"`, `"clipboard_viewer"` 6종을 반환하고, plugin이 등록하는 `RemoteSurface`는 plugin이 선언한 kind(예: `"explorer"`)를 그대로 노출한다. IPC/registry/플러그인이 이 값으로 surface 타입을 식별하며, `type_name()`은 표시 전용이라 식별 비교에 쓰면 안 된다.
 
 ### Model + Host View 분리 패턴
 
@@ -110,7 +109,7 @@ pipeline.rs는 wgpu RenderPipelineDescriptor의 장황한 선언 코드가 대�
 
 ## ui/ — egui UI 컴포넌트
 
-**책임:** egui로 그리는 모든 UI. 사이드바, 탭바, 알림 패널, 다이얼로그, egui 기반 Surface 패널(Markdown/Explorer/Empty).
+**책임:** egui로 그리는 모든 UI. 사이드바, 탭바, 알림 패널, 다이얼로그, egui 기반 Surface 패널(Markdown/Html/Empty/Image + plugin RemoteSurface).
 
 각 파일이 하나의 독립 UI 컴포넌트를 담당한다.
 
@@ -123,7 +122,7 @@ pipeline.rs는 wgpu RenderPipelineDescriptor의 장황한 선언 코드가 대�
 | `context_menu.rs` | 우클릭 메뉴 (armed 상태머신) |
 | `dialog.rs` | 워크스페이스 이름변경 + 마크다운 경로 다이얼로그 |
 | `divider.rs` | 분할선 + 서피스 하이라이트 |
-| `egui_panels.rs` | egui 기반 Surface 패널 렌더링 (Markdown/Explorer/Html/Empty/Image). `mem::take` 패턴으로 view store를 임시 추출해 모델과 view 동시 mutable 접근 |
+| `egui_panels.rs` | egui 기반 Surface 패널 렌더링 (Markdown/Html/Empty/Image/RemoteSurface). `mem::take` 패턴으로 view store를 임시 추출해 모델과 view 동시 mutable 접근 |
 | `markdown_view.rs` | `MarkdownView`/`MarkdownViewStore` — content, scroll_offset, commonmark_cache 보관. `get_or_init(panel)`이 mtime poll까지 자동 처리 |
 | `image_view.rs` | `ImageView`/`ImageViewStore` — 픽셀, 텍스처, 편집 상태(EditState/DragState/ResizeHandle/FloatingSelection/ActionHistory/StrokeBuilder), brush, popup 버퍼 보관. `bresenham_thick_line`/`blit_image`/`load_image_from_path` 등 헬퍼 자유 함수 |
 
@@ -182,7 +181,7 @@ cli/mod.rs는 clap `#[derive(Subcommand)]` enum이 35+ variant를 가진다.
 | `mod.rs` | handle() dispatch match + 유틸 (apply_meta, resolve_target_param) |
 | `workspace.rs` | workspace.list/create/update |
 | `pane.rs` | pane.list/close, split |
-| `tab.rs` | tab.list/create/close (type 파라미터로 markdown/explorer/html 통합) |
+| `tab.rs` | tab.list/create/close (type 파라미터로 markdown/html/image + plugin kind 통합) |
 | `surface.rs` | surface.send/send_key/send_combo/send_to/close/close_self + mark/screen_text/cursor_position |
 | `claude.rs` | claude.launch/spawn/children/parent/kill/respawn/set_idle/set_needs_input/broadcast/wait |
 | `hooks.rs` | hook.set/list/unset, global_hook.set/list/unset, surface.fire_hook |
@@ -249,4 +248,3 @@ keybindings_tab.rs의 egui_key_to_string 매핑 테이블은 키 목록을 1:1 �
 | `markdown_ui.rs` | ~100 | egui 마크다운 렌더링 (제목/목록/코드블록/테이블). 시그니처: `(ui, &mut MarkdownView, scroll_delta, id, font)` |
 | `image_ui.rs` | ~600 | 이미지 뷰어/에디터 렌더링. 시그니처: `(ui, &mut ImagePanel, &mut ImageView)` — 모델은 디렉터리 탐색용, view는 픽셀/편집 상태용 |
 | `html_ui.rs` | ~20 | HTML placeholder (URL 라벨만 표시; 실제 콘텐츠는 native WebView가 오버레이) |
-| `explorer_ui.rs` | 171 | egui 파일 탐색기 렌더링 (트리 + 미리보기) |

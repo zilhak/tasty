@@ -53,7 +53,6 @@ tasty/
     │   ├── terminal_surface.rs # TerminalSurface + DeferredSpawn
     │   ├── surface_layout.rs   # SurfaceLayout 이진 트리 (하위 분할) + SurfaceRegion
     │   ├── markdown_panel.rs   # 마크다운 뷰어 데이터
-    │   ├── explorer_panel.rs   # 파일 탐색기 데이터
     │   └── tests.rs            # 모델 유닛 테스트
     │
     ├── gpu/                    # GPU 상태 관리
@@ -112,7 +111,7 @@ tasty/
     │       ├── mod.rs          # 라우터 dispatch
     │       ├── workspace.rs    # workspace.* 핸들러
     │       ├── pane.rs         # pane.*, split
-    │       ├── tab.rs          # tab.list/create/close (type으로 markdown/explorer 통합)
+    │       ├── tab.rs          # tab.list/create/close (type으로 markdown/html/image + plugin kind 통합)
     │       ├── surface.rs      # surface.* 핸들러
     │       ├── claude.rs       # claude.* 핸들러 (spawn/kill/broadcast 등)
     │       ├── hooks.rs        # hook.*, global_hook.*, surface.fire_hook
@@ -142,8 +141,7 @@ tasty/
     ├── surface_meta.rs         # Surface별 메타데이터 저장소
     ├── i18n.rs                 # 국제화 (TOML 번역)
     ├── crash_report.rs         # 크래시 리포트 수집
-    ├── markdown_ui.rs          # 마크다운 렌더링 (egui)
-    └── explorer_ui.rs          # 파일 탐색기 렌더링 (egui)
+    └── markdown_ui.rs          # 마크다운 렌더링 (egui)
 ```
 
 ## 모듈 의존성 (DAG)
