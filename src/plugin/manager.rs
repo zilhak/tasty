@@ -9,19 +9,43 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::{Duration, Instant};
 
+use serde_json::json;
+
+use crate::plugin::host_cmd::{HostCmd, SurfaceHandles};
 use crate::plugin::listener::HostListener;
 use crate::plugin::manifest::PluginPackage;
 use crate::plugin::process::PluginProcess;
-use crate::plugin::protocol::PluginEvent;
+use crate::plugin::protocol::{
+    self, PluginEvent, PluginRequest, PluginResponse, SurfaceResult,
+};
 use crate::plugin::registry_state::PluginsConfig;
+use crate::plugin::ui_tree::UiEvent;
 use crate::surface_registry::SurfaceKindRegistry;
 
 const HEALTHCHECK_TIMEOUT: Duration = Duration::from_secs(60);
 const PING_INTERVAL: Duration = Duration::from_secs(15);
 const RESTART_FAILURE_WINDOW: Duration = Duration::from_secs(10);
 const RESTART_FAILURE_LIMIT: usize = 3;
+
+/// pending host→plugin request의 종류. 응답 수신 시 어떤 후처리를 할지 식별.
+enum PendingRequestKind {
+    SurfaceCreate { surface_id: u32 },
+    SurfaceEvent { surface_id: u32 },
+    SurfaceRestore { surface_id: u32 },
+    Ping,
+    /// 그 외 (host.hello 등) — 응답 무시.
+    Other,
+}
+
+struct RemoteSurfaceEntry {
+    plugin_id: String,
+    #[allow(dead_code)]
+    kind: String,
+    handles: SurfaceHandles,
+}
 
 pub struct PluginManager {
     pub packages: Vec<PluginPackage>,
@@ -41,6 +65,13 @@ pub struct PluginManager {
     pub surface_registry: Option<Arc<SurfaceKindRegistry>>,
     /// 이미 registry에 등록된 plugin id (hello를 여러 번 받아도 1회만 등록).
     registered_plugins: std::collections::HashSet<String>,
+    /// registry create/restore closure가 새 RemoteSurface 등록을 보내는 채널.
+    host_cmd_tx: Sender<HostCmd>,
+    host_cmd_rx: Receiver<HostCmd>,
+    /// surface_id → RemoteSurface handle. 라이프사이클 동안 유지.
+    surfaces: HashMap<u32, RemoteSurfaceEntry>,
+    /// host → plugin 요청 ID → 종류. 응답 수신 시 후처리 dispatch용.
+    pending_requests: HashMap<u64, PendingRequestKind>,
 }
 
 impl PluginManager {
@@ -49,6 +80,7 @@ impl PluginManager {
             .map(|d| d.join("plugins-logs"))
             .unwrap_or_else(|| PathBuf::from("./plugin-logs"));
         let _ = std::fs::create_dir_all(&log_dir);
+        let (host_cmd_tx, host_cmd_rx) = mpsc::channel();
         Self {
             packages: Vec::new(),
             processes: HashMap::new(),
@@ -62,7 +94,15 @@ impl PluginManager {
             auto_disabled: std::collections::HashSet::new(),
             surface_registry: None,
             registered_plugins: std::collections::HashSet::new(),
+            host_cmd_tx,
+            host_cmd_rx,
+            surfaces: HashMap::new(),
+            pending_requests: HashMap::new(),
         }
+    }
+
+    pub fn host_cmd_sender(&self) -> Sender<HostCmd> {
+        self.host_cmd_tx.clone()
     }
 
     pub fn set_surface_registry(&mut self, registry: Arc<SurfaceKindRegistry>) {
@@ -192,26 +232,38 @@ impl PluginManager {
         // hello를 처음 받은 plugin의 surface_kinds를 registry에 등록.
         if !to_register.is_empty() {
             if let Some(registry) = self.surface_registry.clone() {
+                let tx = self.host_cmd_tx.clone();
                 for plugin_id in &to_register {
                     if let Some(pkg) =
                         self.packages.iter().find(|p| &p.manifest.id == plugin_id)
                     {
                         for decl in &pkg.manifest.surface_kinds {
                             crate::plugin::remote_kind::register_remote_kind(
-                                &registry, plugin_id, decl,
+                                &registry,
+                                plugin_id,
+                                decl,
+                                tx.clone(),
                             );
                         }
                     }
                     self.registered_plugins.insert(plugin_id.clone());
                 }
             } else {
-                // registry 미설정 — 등록 보류 (다음에 set_surface_registry 후 재시도 가능)
                 tracing::debug!(
                     "plugin manager has no surface_registry; deferring registration of {} plugin(s)",
                     to_register.len()
                 );
             }
         }
+
+        // 2. 새로 만들어진 RemoteSurface 등록 + plugin에 surface.create/restore 송신.
+        self.drain_host_cmds();
+
+        // 3. RemoteSurface가 모은 사용자 이벤트 → plugin에 surface.event 송신.
+        self.flush_pending_events();
+
+        // 4. plugin → 호스트 응답 처리 (tree 동기화).
+        self.drain_plugin_responses();
 
         // 2. 주기적 ping
         if self.last_ping.elapsed() >= PING_INTERVAL {
@@ -246,6 +298,179 @@ impl PluginManager {
             if let Some(pkg) = self.packages.iter().find(|p| p.manifest.id == id).cloned() {
                 self.start_plugin_internal(&pkg);
             }
+        }
+    }
+
+    fn drain_host_cmds(&mut self) {
+        loop {
+            let cmd = match self.host_cmd_rx.try_recv() {
+                Ok(c) => c,
+                Err(_) => break,
+            };
+            match cmd {
+                HostCmd::RemoteSurfaceCreated {
+                    surface_id,
+                    plugin_id,
+                    kind,
+                    params,
+                    handles,
+                } => {
+                    self.surfaces.insert(
+                        surface_id,
+                        RemoteSurfaceEntry {
+                            plugin_id: plugin_id.clone(),
+                            kind: kind.clone(),
+                            handles,
+                        },
+                    );
+                    self.send_surface_request(
+                        &plugin_id,
+                        protocol::METHOD_SURFACE_CREATE,
+                        json!({
+                            "surface_id": surface_id,
+                            "kind": kind,
+                            "params": params,
+                        }),
+                        PendingRequestKind::SurfaceCreate { surface_id },
+                    );
+                }
+                HostCmd::RemoteSurfaceRestored {
+                    surface_id,
+                    plugin_id,
+                    kind,
+                    data,
+                    handles,
+                } => {
+                    self.surfaces.insert(
+                        surface_id,
+                        RemoteSurfaceEntry {
+                            plugin_id: plugin_id.clone(),
+                            kind: kind.clone(),
+                            handles,
+                        },
+                    );
+                    self.send_surface_request(
+                        &plugin_id,
+                        protocol::METHOD_SURFACE_RESTORE,
+                        json!({
+                            "surface_id": surface_id,
+                            "kind": kind,
+                            "data": data,
+                        }),
+                        PendingRequestKind::SurfaceRestore { surface_id },
+                    );
+                }
+            }
+        }
+    }
+
+    fn flush_pending_events(&mut self) {
+        let surface_ids: Vec<u32> = self.surfaces.keys().copied().collect();
+        for sid in surface_ids {
+            let (plugin_id, events) = match self.surfaces.get(&sid) {
+                Some(entry) => {
+                    let events = entry
+                        .handles
+                        .pending_events
+                        .lock()
+                        .map(|mut v| std::mem::take(&mut *v))
+                        .unwrap_or_default();
+                    (entry.plugin_id.clone(), events)
+                }
+                None => continue,
+            };
+            for ev in events {
+                self.send_surface_request(
+                    &plugin_id,
+                    protocol::METHOD_SURFACE_EVENT,
+                    json!({
+                        "surface_id": sid,
+                        "event": ev,
+                    }),
+                    PendingRequestKind::SurfaceEvent { surface_id: sid },
+                );
+            }
+        }
+    }
+
+    fn drain_plugin_responses(&mut self) {
+        let plugin_ids: Vec<String> = self.processes.keys().cloned().collect();
+        for plugin_id in plugin_ids {
+            // Drain all responses without holding a borrow on `self.processes`.
+            let mut responses: Vec<PluginResponse> = Vec::new();
+            if let Some(proc) = self.processes.get(&plugin_id) {
+                while let Ok(resp) = proc.resp_rx.try_recv() {
+                    responses.push(resp);
+                }
+            }
+            for resp in responses {
+                self.handle_plugin_response(&plugin_id, resp);
+            }
+        }
+    }
+
+    fn handle_plugin_response(&mut self, plugin_id: &str, resp: PluginResponse) {
+        let kind = self.pending_requests.remove(&resp.id);
+        if let Some(err) = &resp.error {
+            tracing::warn!("plugin '{plugin_id}' response error (id={}): {err}", resp.id);
+        }
+        let kind = match kind {
+            Some(k) => k,
+            None => return,
+        };
+        match kind {
+            PendingRequestKind::SurfaceCreate { surface_id }
+            | PendingRequestKind::SurfaceEvent { surface_id }
+            | PendingRequestKind::SurfaceRestore { surface_id } => {
+                let result_value = match resp.result {
+                    Some(v) => v,
+                    None => return,
+                };
+                let parsed: SurfaceResult = match serde_json::from_value(result_value) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        tracing::warn!(
+                            "plugin '{plugin_id}' surface response decode error: {e}"
+                        );
+                        return;
+                    }
+                };
+                if let Some(entry) = self.surfaces.get(&surface_id) {
+                    if let Some(tree) = parsed.tree {
+                        if let Ok(mut slot) = entry.handles.tree.lock() {
+                            *slot = Some(tree);
+                        }
+                    }
+                    if let Some(name) = parsed.display_name {
+                        if let Ok(mut slot) = entry.handles.display_name.lock() {
+                            *slot = name;
+                        }
+                    }
+                }
+            }
+            PendingRequestKind::Ping | PendingRequestKind::Other => {}
+        }
+    }
+
+    fn send_surface_request(
+        &mut self,
+        plugin_id: &str,
+        method: &str,
+        params: serde_json::Value,
+        kind: PendingRequestKind,
+    ) {
+        let proc = match self.processes.get(plugin_id) {
+            Some(p) => p,
+            None => return,
+        };
+        let id = self.next_request_id.fetch_add(1, Ordering::Relaxed);
+        let req = PluginRequest {
+            method: method.to_string(),
+            params,
+            id,
+        };
+        if proc.req_tx.send(req).is_ok() {
+            self.pending_requests.insert(id, kind);
         }
     }
 
