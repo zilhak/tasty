@@ -3,9 +3,6 @@
 Tasty는 외부 plugin을 별도 OS 프로세스로 실행하여 surface 종류를 추가할 수
 있다. 호스트 ↔ plugin은 TCP + JSON 메시지로 통신한다.
 
-> 단계 05까지 구현된 범위: plugin 디스커버리·spawn·핸드셰이크·헬스체크·생명주기 관리.
-> Plugin이 surface를 그리는 동작(UI tree DSL, RemoteSurface 어댑터)은 단계 06.
-
 ## 설치 위치
 
 | OS | Plugin 루트 |
@@ -20,14 +17,37 @@ Tasty는 외부 plugin을 별도 OS 프로세스로 실행하여 surface 종류�
   tasty-plugin-explorer  # entry binary (또는 PATH 의존 가능)
 ```
 
-비활성화/활성화 상태는 `~/.tasty/plugins.toml`에 영속화된다.
+비활성화/활성화 상태와 권한 grant는 `~/.tasty/plugins.toml`에 영속화된다.
 
 ```toml
 [disabled]
 ids = ["com.example.broken"]
+
+[grants."com.example.explorer"]
+granted = ["fs.read", "surface.write"]
 ```
 
-로그는 `~/.tasty/plugins-logs/<id>.log`에 누적 (stdout/stderr 자동 redirect).
+추가 격리 디렉터리:
+
+| 디렉터리 | 용도 |
+|----------|------|
+| `~/.tasty/plugins/<id>/` | plugin 본체 (실행파일·매니페스트·정적 자산) |
+| `~/.tasty/plugin-data/<id>/` | plugin 런타임 데이터 (DB, 캐시 등) — 업그레이드 시 보존 |
+| `~/.tasty/plugin-config/<id>.toml` | 사용자 편집 설정 |
+| `~/.tasty/plugins-logs/<id>.log` | stdout/stderr (자동 redirect) |
+
+호스트가 spawn 시 자식 프로세스에 다음 환경변수를 주입한다.
+
+| 환경변수 | 값 |
+|----------|------|
+| `TASTY_PLUGIN_ID` | plugin id (예: `com.example.explorer`) |
+| `TASTY_PLUGIN_DIR` | 본체 디렉터리 절대 경로 |
+| `TASTY_PLUGIN_DATA_DIR` | 데이터 디렉터리 절대 경로 |
+| `TASTY_PLUGIN_CONFIG_PATH` | 설정 파일 절대 경로 |
+| `TASTY_PLUGIN_LOG_PATH` | 로그 파일 절대 경로 |
+| `TASTY_HOST_IPC_PORT` | 호스트 listener port |
+| `TASTY_PLUGIN_TOKEN` | 핸드셰이크 토큰 (1회용) |
+| `TASTY_HOST_API_VERSION` | 호스트 protocol 메이저 버전 |
 
 ## 매니페스트
 
@@ -42,7 +62,7 @@ authors = ["alice@example.com"]
 description = "File explorer surface for tasty"
 homepage = "https://example.com/explorer"
 api_version = "1"                     # 호스트 protocol 메이저 버전과 일치 필요
-permissions = []                      # 단계 07에서 본격 적용
+permissions = ["fs.read", "surface.write", "notification"]  # 권한 토큰 (아래 표 참조)
 
 [entry]
 type = "process"                      # 향후 "wasm" 추가 가능
@@ -69,15 +89,50 @@ default_keybinding = "F5"
 
 > **TOML 주의**: top-level 키(`permissions = [...]` 등)는 모든 `[table]` 헤더보다 *먼저* 와야 한다. 그렇지 않으면 가장 가까운 테이블 안의 키로 해석된다.
 
+## 권한 모델
+
+Plugin이 호스트 IPC를 호출하려면 매니페스트의 `permissions`에 권한 토큰을 선언하고
+사용자가 `tasty plugin grant`로 동의해야 한다. CLI install은 사용자 의도적 명령이므로
+매니페스트의 모든 권한이 자동 grant된다.
+
+| 권한 토큰 | 허용되는 IPC 카테고리 |
+|-----------|-----------------------|
+| `surface.read` | `surface.list`, `tab.list`, `pane.list`, `workspace.list`, `tree`, meta 조회 |
+| `surface.write` | `tab.create`, `surface.close`, `pane.close`, `split`, `tab.move`, `workspace.create/update/move`, hooks |
+| `notification` | `notification.create`, `notification.list` |
+| `clipboard.read` | `tool.clipboard.list/get` |
+| `clipboard.write` | `tool.clipboard.paste/remove/clear` |
+| `fs.read` | (예약 — `tool.read_file` 등) |
+| `fs.write` | (예약 — `tool.write_file` 등) |
+| `process.spawn` | (예약 — `tool.run_shell` 등) |
+| `terminal.spawn` | `claude.launch`, `claude.spawn` |
+| `terminal.write` | `surface.send/send_key/send_combo/send_to/send_wait_idle` |
+| `terminal.read` | `surface.set_mark/read_since_mark/screen_text/cursor_position/is_typing` |
+| `claude.read` | `claude.children/parent/wait` |
+| `claude.invoke` | `claude.kill/respawn/set_idle_state/set_needs_input/broadcast/tell/launch/spawn` |
+| `network` | (예약) |
+
+Local-only 메서드 (CLI/사용자만, plugin은 항상 거부):
+
+- `plugin.*`, `window.*` — plugin/window 관리
+- `surface.ime_*` — IME 입력
+- `system.shutdown`, `debug.*`, `ui.state`, `ui.screenshot` — debug 빌드 전용
+
+권한 변경은 plugin process 재시작 없이 즉시 반영된다. Plugin이 권한 없는 메서드를
+호출하면 JSON-RPC 에러 코드 `-32001`로 거부되고 호스트 로그에 `permission_denied`가 남는다.
+
 ## CLI
 
 ```
 tasty plugin list                          # 설치된 plugin 일람
-tasty plugin install <path>                # 디렉터리를 plugins/로 복사
+tasty plugin install <path>                # 디렉터리를 plugins/로 복사 (매니페스트 권한 자동 grant)
 tasty plugin remove <id>                   # graceful shutdown + 디렉터리 삭제
 tasty plugin enable <id>                   # 활성화 + spawn
 tasty plugin disable <id>                  # graceful shutdown + plugins.toml 갱신
 tasty plugin logs <id> [--follow]          # ~/.tasty/plugins-logs/<id>.log 출력
+tasty plugin permissions <id>              # 매니페스트 + granted 표시
+tasty plugin grant <id> <permission>       # 권한 추가 (매니페스트에 선언된 경우만)
+tasty plugin revoke <id> <permission>      # 권한 제거
 ```
 
 `logs`는 호스트 IPC를 거치지 않고 파일을 직접 읽는다 — 호스트가 죽었을 때도 동작.
@@ -87,10 +142,13 @@ tasty plugin logs <id> [--follow]          # ~/.tasty/plugins-logs/<id>.log 출�
 | 메서드 | 파라미터 | 설명 |
 |--------|---------|------|
 | `plugin.list` | 없음 | `{plugins: [{id,name,version,description,enabled,running,surface_kinds,log_path}]}` |
-| `plugin.install` | `path: string` | 매니페스트 검증 후 `plugins/<id>/`로 재귀 복사 + 자동 활성화 시 spawn |
+| `plugin.install` | `path: string` | 매니페스트 검증 후 `plugins/<id>/`로 재귀 복사 + 매니페스트 권한 자동 grant + 자동 활성화 시 spawn |
 | `plugin.remove` | `id: string` | graceful shutdown + 디렉터리 삭제 |
 | `plugin.enable` | `id: string` | 활성화 + spawn |
 | `plugin.disable` | `id: string` | graceful shutdown |
+| `plugin.permissions` | `id: string` | `{id, manifest:[...], granted:[...]}` |
+| `plugin.grant` | `id: string, permission: string` | granted에 추가 (매니페스트에 선언된 권한만) |
+| `plugin.revoke` | `id: string, permission: string` | granted에서 제거 |
 
 ## 생명주기 동작
 
@@ -106,8 +164,9 @@ tasty plugin logs <id> [--follow]          # ~/.tasty/plugins-logs/<id>.log 출�
 - plugin은 그 포트로 connect 후 첫 줄에 `{plugin_id, token}`을 보내야 인증 통과.
 - 토큰 mismatch 시 connection을 즉시 끊는다.
 
-## 단계 05의 한계 (단계 06+에서 해결)
+## 한계
 
-- plugin이 hello 이외의 메시지(`SurfaceInvalidated`, `NotifyHost`)를 보내도 호스트는 로그만 남김 — surface 렌더링 처리는 단계 06.
-- plugin 권한 모델 미적용 — plugin이 호출 가능한 IPC 제한이 단계 07.
-- plugin 작성용 SDK 크레이트 (`tasty-plugin-sdk`)는 단계 08.
+- 권한 게이트는 IPC 호출만 막는다. Plugin이 직접 `std::fs::write`로 임의 경로에 쓰면 호스트는
+  알 수 없다 — 매니페스트 위반이지만 OS 샌드박스가 없는 한 강제 불가. (향후 WASM 또는
+  OS-level 샌드박스로 보강 가능.)
+- plugin 작성용 SDK 크레이트 (`tasty-plugin-sdk`)는 단계 08에서 추가.

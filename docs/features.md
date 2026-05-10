@@ -1088,12 +1088,31 @@ Claude Code 등 TUI 앱이 실행 중이던 터미널을 복원할 때, 해당 �
 - 10초 내 spawn 실패 3회 시 자동 비활성화 (사용자 수동 enable까지 정지)
 - 종료 시 모든 plugin에 graceful shutdown 송신 후 2초 timeout, 그 후 kill
 
+### Surface 렌더링 (UI tree DSL)
+- plugin이 JSON UI tree를 보내면 호스트가 egui로 렌더 (vbox/hbox/scroll/splitter/label/icon/button/tree/addressbar/text_preview/spacer)
+- 호스트가 사용자 이벤트를 모아 `surface.event`로 plugin에 송신 (click/key/tree_*/addressbar_*/scroll/focus_changed/resize)
+- `RemoteSurface` 어댑터가 layout tree에 끼워지므로 본체 surface와 동등하게 split/tab 가능
+
+### 권한 모델
+- 매니페스트의 `permissions = [...]`에 14가지 권한 토큰 (surface.read/write, notification, clipboard.read/write, fs.read/write, process.spawn, terminal.*, claude.*, network) 선언
+- IPC 라우터 진입에서 plugin caller일 때 `method_meta` 테이블과 매니페스트 권한 대조 — 권한 미선언 시 -32001 거부
+- `plugin.*`, `window.*`, `surface.ime_*`, debug.* 메서드는 항상 plugin 호출 불가 (local-only)
+- `~/.tasty/plugins.toml`의 `[grants."<id>"].granted = [...]`로 grant 영속화. CLI install은 매니페스트 권한 자동 grant (사용자 의도적 명령으로 간주)
+- 권한 변경은 plugin process 재시작 없이 즉시 반영
+
+### 격리 디렉터리
+- 호스트가 spawn 시 환경변수 주입: `TASTY_PLUGIN_DIR / DATA_DIR / CONFIG_PATH / LOG_PATH`
+- `~/.tasty/plugin-data/<id>/` 런타임 데이터 (업그레이드 시 보존), `~/.tasty/plugin-config/<id>.toml` 사용자 설정
+
 ### 관리 IPC/CLI
-- `plugin.list / install / remove / enable / disable` IPC
-- `tasty plugin list / install <path> / remove <id> / enable <id> / disable <id> / logs <id> [--follow]`
+- `plugin.list / install / remove / enable / disable / permissions / grant / revoke` IPC
+- `tasty plugin list / install <path> / remove <id> / enable <id> / disable <id> / logs <id> [--follow] / permissions <id> / grant <id> <perm> / revoke <id> <perm>`
 - `logs`는 호스트 IPC 무관 — 파일 직접 출력 (호스트 죽었을 때도 동작)
 
-### 한계 (단계 06+에서 해결)
-- plugin이 surface를 그리는 동작(UI tree DSL, RemoteSurface 어댑터)은 단계 06
-- 권한 모델은 단계 07 — 현재는 plugin이 모든 IPC 호출 가능
-- plugin 작성용 SDK 크레이트는 단계 08
+### plugin → 호스트 IPC 호출
+- plugin이 `PluginEvent::IpcCall {call_id, method, params}` 송신
+- 호스트가 권한 게이트 통과 시 라우터로 디스패치, 결과를 `ipc.result` 요청으로 회신 (`call_id`로 매칭)
+
+### 한계 (단계 08에서 해결)
+- plugin 작성용 SDK 크레이트(`tasty-plugin-sdk`)는 단계 08
+- IPC 게이트는 plugin이 호스트를 통한 호출만 막음. plugin이 직접 fs를 쓰면 호스트가 알 수 없음 — 향후 OS-level 샌드박스/WASM으로 보강

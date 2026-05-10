@@ -337,8 +337,11 @@ tasty unset global-hook --hook HOOK_ID
 | `plugin.remove` | `id: string` | 살아있는 process를 graceful shutdown 후 plugin 디렉터리 삭제 |
 | `plugin.enable` | `id: string` | plugin 활성화 + 즉시 spawn (이전에 비활성화되어 있던 plugin) |
 | `plugin.disable` | `id: string` | plugin 비활성화 + 살아있으면 graceful shutdown |
+| `plugin.permissions` | `id: string` | `{id, manifest:[...], granted:[...]}` 매니페스트 권한 + 현재 grant된 권한 |
+| `plugin.grant` | `id: string, permission: string` | 매니페스트에 선언된 권한 토큰을 granted에 추가 |
+| `plugin.revoke` | `id: string, permission: string` | granted에서 권한 제거 |
 
-상세는 `plugins.md` 참조.
+상세는 `plugins.md` (권한 토큰 매핑 표 포함) 참조.
 
 ### Claude 전용
 
