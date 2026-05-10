@@ -133,32 +133,25 @@ fn route_engine_handler(
         }
         #[cfg(target_os = "macos")]
         "surface.raw_key" => input_source::handle_raw_key(id, &request.params),
-        // notification.list (read-only, no UI mutation)
+        // notification (focus-independent — workspace_id/surface_id로 라우팅)
         "notification.list" => notification::handle_notification_list(state, id),
+        "notification.create" => {
+            notification::handle_notification_create(state, id, &request.params)
+        }
         _ => return None,
     })
 }
 
-/// GUI-dependent handlers — UI 상태(popups/dialogs/active_workspace)를 직접
-/// 만지므로 권한 게이트 대상 외부에 있다.
-///
-/// 현재 후보:
-/// - `notification.create`: `state.active_workspace()` 사용 (포커스 의존). **04C에서
-///   `workspace_id` 필수화하여 engine 핸들러로 이동 예정.**
-/// - `tool.clipboard.viewer_open`: popup 오픈. **04C에서 release IPC 제거 + debug
-///   전용으로 격리 예정.**
+/// GUI-dependent handlers — UI 상태(popups/dialogs)를 직접 만지므로 권한 게이트
+/// 대상 외부에 있다. release 빌드에서는 비어 있다 — 사용자 입력 재현용 GUI
+/// 동작은 모두 debug 전용으로 격리됨.
+#[allow(unused_variables)]
 fn route_gui_handler(
     state: &mut AppState,
     request: &JsonRpcRequest,
     id: serde_json::Value,
 ) -> Option<JsonRpcResponse> {
-    Some(match request.method.as_str() {
-        "notification.create" => {
-            notification::handle_notification_create(state, id, &request.params)
-        }
-        "tool.clipboard.viewer_open" => clipboard::handle_viewer_open(state, id),
-        _ => return None,
-    })
+    None
 }
 
 #[cfg(debug_assertions)]
@@ -175,6 +168,8 @@ fn route_debug_handler(
         "debug.feed_bytes" => handle_debug_feed_bytes(state, id, &request.params),
         "debug.inject_mouse" => handle_debug_inject_mouse(state, id, &request.params),
         "debug.inject_key" => handle_debug_inject_key(state, id, &request.params),
+        // 사용자 입력 재현 — 단축키로 여는 popup의 IPC 트리거. release에서는 미노출.
+        "debug.clipboard_viewer_open" => clipboard::handle_viewer_open(state, id),
         _ => return None,
     })
 }

@@ -189,7 +189,8 @@ pub enum ClipboardCommands {
     },
     /// Clear all clipboard history.
     Clear,
-    /// Open the clipboard viewer popup (focus not stolen — agent action).
+    /// Open the clipboard viewer popup (debug only — replays user input).
+    #[cfg(debug_assertions)]
     Viewer,
 }
 

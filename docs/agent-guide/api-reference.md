@@ -317,7 +317,7 @@ tasty unset global-hook --hook HOOK_ID
 | 메서드 | 파라미터 | 설명 |
 |--------|---------|------|
 | `notification.list` | 없음 | 최근 50개 알림 |
-| `notification.create` | `title?, body?` | 알림 생성 |
+| `notification.create` | `workspace_id` 또는 `surface_id`, `title?, body?` | 알림 생성. **포커스 독립**: 알림이 붙을 워크스페이스를 명시해야 한다. `surface_id`가 주어지면 그 surface 소속 워크스페이스로 자동 라우팅. 워크스페이스가 1개뿐일 때만 둘 다 생략 가능 (호환성 폴백, 향후 제거 예정) |
 
 ### 메시지 패싱 (Surface 간 통신)
 

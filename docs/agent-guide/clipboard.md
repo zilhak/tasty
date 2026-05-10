@@ -20,7 +20,6 @@ tasty tool clipboard get --index 0
 tasty tool clipboard paste --index 2
 tasty tool clipboard remove --index 5
 tasty tool clipboard clear
-tasty tool clipboard viewer        # focus 없이 팝업 열기
 ```
 
 `list` 출력 예시 (JSON):
@@ -38,8 +37,6 @@ tasty tool clipboard viewer        # focus 없이 팝업 열기
 
 - `index 0 = 최신`. 내림차순.
 - `paste`: 해당 항목을 시스템 클립보드에 다시 써넣음(+ 내부 기록으로 재등록).
-- `viewer`: **포커스를 가져가지 않는다**. 사용자가 작업 중인 터미널/UI 포커스는
-  유지된다. 사용자가 viewer에 포커스를 주려면 직접 클릭하거나 단축키를 눌러야 함.
 
 ## IPC (JSON-RPC)
 
@@ -50,13 +47,15 @@ tasty tool clipboard viewer        # focus 없이 팝업 열기
 | `tool.clipboard.paste` | `{ "index": number }` | 시스템 클립보드에 재기입 |
 | `tool.clipboard.remove` | `{ "index": number }` | 단건 삭제 |
 | `tool.clipboard.clear` | `{}` | 전체 삭제 |
-| `tool.clipboard.viewer_open` | `{}` | focus 없이 팝업 open |
 
 인덱스 범위 초과 시 `invalid_params` 에러.
+
+> **참고**: 클립보드 viewer popup을 IPC로 여는 기능은 **debug 빌드 전용**으로
+> 격리되었다 (`debug.clipboard_viewer_open`). release 빌드에는 노출되지 않는다.
+> 자세한 내용은 `docs/dev-guide/debug-ipc.md` 참조.
 
 ## 포커스 독립성
 
 - 모든 `tool.clipboard.*` 명령은 활성 워크스페이스/탭/서피스 포커스에 **의존하지
   않는다**. Window가 여러 개여도 history는 각 Window의 EngineState에 독립 저장되며,
   IPC가 라우팅되는 Window의 history를 대상으로 동작한다.
-- `viewer_open`이 focus를 훔치지 않는다는 보장은 이 원칙의 구체 예다.

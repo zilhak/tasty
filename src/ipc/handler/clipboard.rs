@@ -131,6 +131,12 @@ pub fn handle_clear(state: &mut AppState, id: Value) -> JsonRpcResponse {
     JsonRpcResponse::success(id, json!({ "ok": true }))
 }
 
+/// Open the clipboard viewer popup.
+///
+/// **Debug-only**: 사용자가 단축키(Ctrl+Shift+H)로 여는 popup을 IPC로 트리거하는
+/// 디버그 기능. CLAUDE.md "사용자 입력 = 사용자 행동" 원칙에 따라 release IPC
+/// 표면에서는 노출되지 않는다.
+#[cfg(debug_assertions)]
 pub fn handle_viewer_open(state: &mut AppState, id: Value) -> JsonRpcResponse {
     state.dialogs.clipboard_viewer = crate::clipboard_viewer_ui::ClipboardViewerState::default();
     state.popups.open_centered("clipboard_viewer");
