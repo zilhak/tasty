@@ -444,6 +444,7 @@ impl App {
 
         let modal_window_id = window.id();
         let mut modal = window::SettingsWindow::new(gpu, window, settings);
+        modal.set_plugin_shortcuts(self.snapshot_plugin_shortcuts());
         // On Windows, hidden windows do not receive RedrawRequested events,
         // so render the first frame immediately instead of waiting for the event loop.
         // On other platforms, mark_dirty() + request_redraw() is sufficient.
@@ -459,6 +460,40 @@ impl App {
         }
         self.open_modal(Box::new(modal), modal_window_id);
         tracing::info!("opened settings modal {:?}", modal_window_id);
+    }
+
+    /// Plugins 키바인딩 서브탭에 표시할 snapshot.
+    fn snapshot_plugin_shortcuts(&self) -> settings_ui::PluginShortcutSnapshot {
+        let Some(mgr) = self.plugin_manager.as_ref() else {
+            return settings_ui::PluginShortcutSnapshot::default();
+        };
+        // plugin_id → display name map (매니페스트의 name).
+        let name_for: std::collections::HashMap<&str, &str> = mgr
+            .packages
+            .iter()
+            .map(|p| (p.manifest.id.as_str(), p.manifest.name.as_str()))
+            .collect();
+
+        let rows: Vec<settings_ui::PluginShortcutRow> = mgr
+            .command_registry
+            .iter_all()
+            .map(|e| settings_ui::PluginShortcutRow {
+                plugin_id: e.plugin_id.clone(),
+                plugin_name: name_for
+                    .get(e.plugin_id.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| e.plugin_id.clone()),
+                command_id: e.command_id.clone(),
+                title_i18n_key: e.title_i18n_key.clone(),
+                binding_mode: e.binding_mode.clone(),
+                manifest_default: e.manifest_default.clone(),
+                current_override: mgr
+                    .config
+                    .shortcut_override(&e.plugin_id, &e.command_id)
+                    .cloned(),
+            })
+            .collect();
+        settings_ui::PluginShortcutSnapshot { rows }
     }
 
     /// Build a snapshot of currently installed plugins for the plugins modal.

@@ -118,6 +118,11 @@ impl PluginCommandRegistry {
     pub fn len(&self) -> usize {
         self.by_plugin.values().map(|v| v.len()).sum()
     }
+
+    /// 전체 entry 순회 — 설정 UI에서 plugin별 command snapshot을 만들 때 사용.
+    pub fn iter_all(&self) -> impl Iterator<Item = &PluginCommandEntry> {
+        self.by_plugin.values().flat_map(|v| v.iter())
+    }
 }
 
 /// 한 plugin command에 실제 적용되는 단축키.

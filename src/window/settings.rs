@@ -5,7 +5,7 @@ use winit::event::WindowEvent;
 use crate::gpu::GpuState;
 use crate::i18n::t;
 use crate::settings::Settings;
-use crate::settings_ui::{self, SettingsUiState};
+use crate::settings_ui::{self, PluginShortcutSnapshot, SettingsUiState};
 use crate::ui::{LayoutContext, ToastManager, ToastScope};
 use crate::window::{
     ModalWindow, Modality, Window, WindowAction, WindowBase, WindowCtx, modal::MODAL_MODALITY,
@@ -40,6 +40,11 @@ impl SettingsWindow {
 
     pub fn render_settings(&mut self) {
         self.render();
+    }
+
+    /// Plugins 서브탭에서 표시할 plugin command snapshot을 주입한다.
+    pub fn set_plugin_shortcuts(&mut self, snapshot: PluginShortcutSnapshot) {
+        self.settings_ui_state.plugin_shortcuts = snapshot;
     }
 }
 

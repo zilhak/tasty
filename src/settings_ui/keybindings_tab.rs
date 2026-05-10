@@ -1,5 +1,9 @@
 use crate::i18n::t;
+use crate::plugin::host_actions;
+use crate::plugin::manifest::BindingMode;
+use crate::plugin::registry_state::ShortcutOverride;
 use crate::settings::{KeybindingSettings, Settings};
+use crate::settings_ui::{PluginShortcutRow, PluginShortcutSnapshot};
 
 /// 녹화 완료 시 발견된 단축키 충돌의 확인 대기 상태.
 #[derive(Debug, Clone)]
@@ -55,6 +59,8 @@ pub fn draw_keybindings_tab(
     pending_binding: &mut Option<PendingBinding>,
     captured_double_tap: &mut Option<String>,
     captured_winit_combo: &mut Option<KeyCapture>,
+    plugin_shortcuts: &PluginShortcutSnapshot,
+    plugin_shortcuts_selected: &mut Option<String>,
 ) {
     let th = crate::theme::theme();
     ui.add_space(8.0);
@@ -384,19 +390,19 @@ pub fn draw_keybindings_tab(
                     draw_preset_subtab(ui, &mut settings.keybindings, selected_preset);
                 }
                 KeybindingsSubTab::Plugins => {
-                    // 본문은 단계 E-b에서 plugin command snapshot을 인자로 받아 채운다.
-                    // 지금은 placeholder만 표시한다.
-                    ui.add_space(8.0);
-                    ui.label(
-                        egui::RichText::new(t(
-                            "settings.keybindings.plugins.no_plugins_with_commands",
-                        ))
-                        .color(th.subtext0),
+                    draw_plugins_subtab(
+                        ui,
+                        plugin_shortcuts,
+                        plugin_shortcuts_selected,
+                        &settings.keybindings,
                     );
                 }
             }
 
-            if *sub_tab != KeybindingsSubTab::Preset {
+            if !matches!(
+                *sub_tab,
+                KeybindingsSubTab::Preset | KeybindingsSubTab::Plugins
+            ) {
                 ui.add_space(8.0);
                 ui.label(
                     egui::RichText::new(t("settings.keybindings.hint_esc_to_clear"))
@@ -527,6 +533,158 @@ fn draw_preset_subtab(
             });
         });
     });
+}
+
+/// Plugins 서브탭 본문 (단계 E-b: read-only 표시).
+///
+/// 사용자 override 변경 UI는 이후 단계에서 추가. 지금은 매니페스트 default +
+/// 사용자 override를 합성한 effective binding을 보여주기만 한다.
+fn draw_plugins_subtab(
+    ui: &mut egui::Ui,
+    snapshot: &PluginShortcutSnapshot,
+    selected: &mut Option<String>,
+    host_kb: &KeybindingSettings,
+) {
+    let th = crate::theme::theme();
+
+    if snapshot.rows.is_empty() {
+        ui.add_space(8.0);
+        ui.label(
+            egui::RichText::new(t("settings.keybindings.plugins.no_plugins_with_commands"))
+                .color(th.subtext0),
+        );
+        return;
+    }
+
+    // plugin_id별 distinct 목록 생성 — 등록 순서 유지하지 않고 알파벳 정렬.
+    let mut plugin_ids: Vec<(&str, &str)> = Vec::new();
+    for row in &snapshot.rows {
+        if !plugin_ids.iter().any(|(id, _)| *id == row.plugin_id) {
+            plugin_ids.push((row.plugin_id.as_str(), row.plugin_name.as_str()));
+        }
+    }
+    plugin_ids.sort_by(|a, b| a.1.cmp(b.1));
+
+    // 현재 선택이 유효하지 않으면 첫 plugin으로 초기화.
+    if selected
+        .as_deref()
+        .is_none_or(|s| !plugin_ids.iter().any(|(id, _)| *id == s))
+    {
+        *selected = plugin_ids.first().map(|(id, _)| id.to_string());
+    }
+
+    ui.add_space(8.0);
+    ui.horizontal(|ui| {
+        ui.label(t("settings.keybindings.plugins.plugin_label"));
+        let current_label = selected
+            .as_deref()
+            .and_then(|sel| plugin_ids.iter().find(|(id, _)| *id == sel).map(|(_, n)| *n))
+            .unwrap_or("");
+        egui::ComboBox::from_id_salt("plugin_shortcuts_combo")
+            .selected_text(current_label)
+            .show_ui(ui, |ui| {
+                for (id, name) in &plugin_ids {
+                    ui.selectable_value(selected, Some(id.to_string()), *name);
+                }
+            });
+    });
+    ui.add_space(8.0);
+
+    let Some(active_id) = selected.clone() else {
+        ui.label(t("settings.keybindings.plugins.none_selected"));
+        return;
+    };
+
+    let rows: Vec<&PluginShortcutRow> = snapshot
+        .rows
+        .iter()
+        .filter(|r| r.plugin_id == active_id)
+        .collect();
+
+    egui::ScrollArea::vertical()
+        .auto_shrink([false, false])
+        .drag_to_scroll(false)
+        .show(ui, |ui| {
+            egui::Grid::new("plugin_shortcuts_grid")
+                .num_columns(2)
+                .spacing([16.0, 6.0])
+                .striped(true)
+                .show(ui, |ui| {
+                    for row in &rows {
+                        ui.label(t(&row.title_i18n_key));
+                        ui.label(format_effective_binding(row, host_kb));
+                        ui.end_row();
+                    }
+                });
+        });
+}
+
+fn format_effective_binding(row: &PluginShortcutRow, host_kb: &KeybindingSettings) -> String {
+    // override 우선
+    if let Some(ov) = &row.current_override {
+        match ov {
+            ShortcutOverride::Key { value } => {
+                if value.is_empty() {
+                    return t("settings.keybindings.plugins.mode_none_label").to_string();
+                }
+                return value
+                    .iter()
+                    .map(|s| KeybindingSettings::format_display(s))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+            }
+            ShortcutOverride::Inherit { source } => {
+                let resolved = host_actions::host_action_for(host_kb, source)
+                    .map(|v| {
+                        v.iter()
+                            .map(|s| KeybindingSettings::format_display(s))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    })
+                    .unwrap_or_default();
+                return format!(
+                    "{} {} ({})",
+                    t("settings.keybindings.plugins.inherit_source_prefix"),
+                    source,
+                    if resolved.is_empty() {
+                        t("settings.keybindings.hint_none").to_string()
+                    } else {
+                        resolved
+                    }
+                );
+            }
+            ShortcutOverride::None => {
+                return t("settings.keybindings.plugins.mode_none_label").to_string();
+            }
+        }
+    }
+    // 매니페스트 default
+    match &row.binding_mode {
+        BindingMode::InheritHost(action) => {
+            let resolved = host_actions::host_action_for(host_kb, action)
+                .map(|v| {
+                    v.iter()
+                        .map(|s| KeybindingSettings::format_display(s))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                })
+                .unwrap_or_default();
+            format!(
+                "{} {} ({})",
+                t("settings.keybindings.plugins.inherit_source_prefix"),
+                action,
+                if resolved.is_empty() {
+                    t("settings.keybindings.hint_none").to_string()
+                } else {
+                    resolved
+                }
+            )
+        }
+        BindingMode::Independent => match &row.manifest_default {
+            Some(s) if !s.is_empty() => KeybindingSettings::format_display(s),
+            _ => t("settings.keybindings.plugins.mode_none_label").to_string(),
+        },
+    }
 }
 
 fn draw_keybinding_entries(

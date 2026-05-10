@@ -2,12 +2,34 @@ mod keybindings_tab;
 mod tabs;
 
 use crate::i18n::t;
+use crate::plugin::manifest::BindingMode;
+use crate::plugin::registry_state::ShortcutOverride;
 use crate::settings::Settings;
 use crate::ui::popup::{PopupManager, PopupState};
 
 pub use keybindings_tab::{KeyCapture, capture_winit_key_combo};
 use keybindings_tab::{KeybindingsSubTab, PendingBinding, RecordingSlot, draw_keybindings_tab};
 use tabs::*;
+
+/// 단계 E: Plugins 서브탭에서 표시할 한 row.
+///
+/// `current_override`는 사용자가 plugins.toml에 저장해 둔 값 (없으면 매니페스트
+/// default 사용). UI는 read-only 표시이므로 변경은 다음 단계에서 추가.
+#[derive(Debug, Clone)]
+pub struct PluginShortcutRow {
+    pub plugin_id: String,
+    pub plugin_name: String,
+    pub command_id: String,
+    pub title_i18n_key: String,
+    pub binding_mode: BindingMode,
+    pub manifest_default: Option<String>,
+    pub current_override: Option<ShortcutOverride>,
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct PluginShortcutSnapshot {
+    pub rows: Vec<PluginShortcutRow>,
+}
 
 /// Sub-tab within the Appearance tab.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -72,6 +94,10 @@ pub struct SettingsUiState {
     pub(crate) bashrc_user_draft: Option<String>,
     /// winit KeyboardInput에서 직접 캡처한 키 조합 (녹화 중일 때 사용).
     pub captured_winit_combo: Option<KeyCapture>,
+    /// Plugins 서브탭이 표시할 plugin command snapshot (모달 오픈 시 1회 채워짐).
+    pub plugin_shortcuts: PluginShortcutSnapshot,
+    /// Plugins 서브탭에서 현재 선택된 plugin id.
+    pub plugin_shortcuts_selected: Option<String>,
 }
 
 impl SettingsUiState {
@@ -107,6 +133,8 @@ impl SettingsUiState {
             preview_font_loaded: std::collections::HashMap::new(),
             bashrc_user_draft: None,
             captured_winit_combo: None,
+            plugin_shortcuts: PluginShortcutSnapshot::default(),
+            plugin_shortcuts_selected: None,
         }
     }
 }
@@ -215,6 +243,8 @@ pub fn draw_settings_panel(
                         &mut ui_state.pending_binding,
                         captured_double_tap,
                         &mut ui_state.captured_winit_combo,
+                        &ui_state.plugin_shortcuts,
+                        &mut ui_state.plugin_shortcuts_selected,
                     ),
                     SettingsTab::Language => draw_language_tab(ui, &mut draft),
                     SettingsTab::Performance => draw_performance_tab(ui, &mut draft),
