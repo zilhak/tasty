@@ -1070,3 +1070,30 @@ Claude Code 등 TUI 앱이 실행 중이던 터미널을 복원할 때, 해당 �
 - PTY 상태, 환경변수, 실행 중인 명령
 - 팝업 상태
 - ClipboardViewerPanel (Empty로 대체)
+
+## Plugin 시스템
+
+외부 plugin 프로세스를 별도 OS 프로세스로 띄워 surface 종류를 확장한다.
+릴리스 에셋의 `plugins.md` 참조.
+
+### 매니페스트 + 디스커버리
+- `~/.tasty/plugins/<id>/tasty-plugin.toml` 형식 (manifest_version=1, api_version=1)
+- 부팅 시 자동 스캔, 매니페스트 검증 실패한 plugin은 warn 로그 후 스킵
+- `~/.tasty/plugins.toml`로 활성/비활성 영속화
+
+### 프로세스 생명주기
+- 호스트가 `127.0.0.1:0` 으로 listen, plugin이 token 들고 connect 하는 인증 방식
+- stdout/stderr 자동 redirect → `~/.tasty/plugins-logs/<id>.log`
+- 15초 ping / 60초 timeout 헬스체크, 비응답 시 자동 재시작
+- 10초 내 spawn 실패 3회 시 자동 비활성화 (사용자 수동 enable까지 정지)
+- 종료 시 모든 plugin에 graceful shutdown 송신 후 2초 timeout, 그 후 kill
+
+### 관리 IPC/CLI
+- `plugin.list / install / remove / enable / disable` IPC
+- `tasty plugin list / install <path> / remove <id> / enable <id> / disable <id> / logs <id> [--follow]`
+- `logs`는 호스트 IPC 무관 — 파일 직접 출력 (호스트 죽었을 때도 동작)
+
+### 한계 (단계 06+에서 해결)
+- plugin이 surface를 그리는 동작(UI tree DSL, RemoteSurface 어댑터)은 단계 06
+- 권한 모델은 단계 07 — 현재는 plugin이 모든 IPC 호출 가능
+- plugin 작성용 SDK 크레이트는 단계 08

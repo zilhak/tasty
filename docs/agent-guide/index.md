@@ -15,3 +15,10 @@ Tasty를 **사용하는** AI 에이전트를 위한 가이드. IPC/CLI로 Tasty�
 ## API 레퍼런스
 
 IPC/CLI 전체 메서드는 [api-reference.md](api-reference.md) 참조.
+
+## 주제별 가이드
+
+| 주제 | 문서 |
+|------|------|
+| 클립보드 히스토리 | [clipboard.md](clipboard.md) |
+| Plugin 시스템 | [plugins.md](plugins.md) |

@@ -328,6 +328,18 @@ tasty unset global-hook --hook HOOK_ID
 | `message.count` | `surface_id?: number` | 대기 중인 메시지 수. 응답: `{ count: N }` |
 | `message.clear` | `surface_id?: number` | 메시지 큐 전체 삭제. 응답: `{ cleared: true }` |
 
+### Plugin 관리
+
+| 메서드 | 파라미터 | 설명 |
+|--------|---------|------|
+| `plugin.list` | 없음 | 설치된 plugin 목록 (id, name, version, enabled, running, surface_kinds, log_path) |
+| `plugin.install` | `path: string` | path는 `tasty-plugin.toml`이 있는 디렉터리. 매니페스트 검증 후 `~/.tasty/plugins/<id>/`로 재귀 복사하고 활성화되어 있으면 즉시 spawn |
+| `plugin.remove` | `id: string` | 살아있는 process를 graceful shutdown 후 plugin 디렉터리 삭제 |
+| `plugin.enable` | `id: string` | plugin 활성화 + 즉시 spawn (이전에 비활성화되어 있던 plugin) |
+| `plugin.disable` | `id: string` | plugin 비활성화 + 살아있으면 graceful shutdown |
+
+상세는 `plugins.md` 참조.
+
 ### Claude 전용
 
 | 메서드 | 파라미터 | 설명 |
