@@ -41,7 +41,7 @@ pub struct SurfaceEventParams<'a> {
 }
 
 /// 호스트 → plugin 요청.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct PluginRequest {
     pub method: String,
     pub params: serde_json::Value,

@@ -4835,6 +4835,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "tasty-plugin-sdk"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
+ "tasty-plugin-protocol",
+ "tracing",
+]
+
+[[package]]
 name = "tasty-settings"
 version = "0.1.0"
 dependencies = [
