@@ -7,6 +7,7 @@ pub mod manifest;
 pub mod process;
 pub mod protocol;
 pub mod registry_state;
+pub mod ui_tree;
 
 pub use discovery::{discover, plugin_root};
 pub use listener::HostListener;

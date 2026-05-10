@@ -8,6 +8,35 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::plugin::ui_tree::{UiEvent, UiNode};
+
+// ── Host → plugin method names ──
+pub const METHOD_PING: &str = "ping";
+pub const METHOD_SHUTDOWN: &str = "shutdown";
+pub const METHOD_HOST_HELLO: &str = "host.hello";
+pub const METHOD_SURFACE_CREATE: &str = "surface.create";
+pub const METHOD_SURFACE_EVENT: &str = "surface.event";
+pub const METHOD_SURFACE_SNAPSHOT: &str = "surface.snapshot";
+pub const METHOD_SURFACE_RESTORE: &str = "surface.restore";
+pub const METHOD_SURFACE_DESTROY: &str = "surface.destroy";
+
+/// `surface.create` / `surface.event` / `surface.restore` 응답에 포함되는 standard 결과.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct SurfaceResult {
+    /// 새로 그릴 트리. `None`이면 호스트는 이전 트리를 그대로 사용 (변경 없음).
+    #[serde(default)]
+    pub tree: Option<UiNode>,
+    #[serde(default)]
+    pub display_name: Option<String>,
+}
+
+/// `surface.event` params — 호스트가 plugin에 보낼 사용자 이벤트.
+#[derive(Debug, Clone, Serialize)]
+pub struct SurfaceEventParams<'a> {
+    pub surface_id: u32,
+    pub event: &'a UiEvent,
+}
+
 /// 호스트 → plugin 요청.
 #[derive(Debug, Clone, Serialize)]
 pub struct PluginRequest {
