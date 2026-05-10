@@ -40,6 +40,15 @@ pub struct Manifest {
     pub permissions: Vec<String>,
     #[serde(default)]
     pub contributes: Contributes,
+    /// plugin이 동봉한 lang 파일 디렉터리 (매니페스트 디렉터리 기준 상대).
+    /// 기본 `"lang"`. 호스트는 `<plugin_dir>/<lang_dir>/<locale>.toml`을 i18n
+    /// registry에 머지한다.
+    #[serde(default = "default_lang_dir")]
+    pub lang_dir: String,
+}
+
+fn default_lang_dir() -> String {
+    "lang".to_string()
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -154,6 +163,55 @@ pub struct CommandDecl {
     pub title_i18n_key: String,
     #[serde(default)]
     pub default_keybinding: Option<String>,
+    /// 단축키를 호스트의 의미론적 액션과 어떻게 묶을지 plugin 작성자가 선언한다.
+    /// `"independent"` (기본) 또는 `"inherit:<host_action>"`.
+    #[serde(default)]
+    pub binding_mode: BindingMode,
+}
+
+/// command가 호스트 액션 키와 어떤 관계를 갖는지.
+///
+/// - `Independent`: plugin 자체 키. 사용자가 설정에서 자유롭게 변경 가능.
+/// - `InheritHost(action)`: 호스트의 의미론적 액션(예: `"clipboard.copy"`)
+///   키 설정을 그대로 따라감. 사용자가 설정 UI에서 떼어내 독립 키로 만들 수 있다.
+///
+/// TOML 표기: `binding_mode = "independent"` 또는
+/// `binding_mode = "inherit:clipboard.copy"`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BindingMode {
+    Independent,
+    InheritHost(String),
+}
+
+impl Default for BindingMode {
+    fn default() -> Self {
+        BindingMode::Independent
+    }
+}
+
+impl<'de> Deserialize<'de> for BindingMode {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        if s == "independent" {
+            return Ok(BindingMode::Independent);
+        }
+        if let Some(action) = s.strip_prefix("inherit:") {
+            let action = action.trim();
+            if action.is_empty() {
+                return Err(serde::de::Error::custom(
+                    "binding_mode 'inherit:' must be followed by a host action id",
+                ));
+            }
+            return Ok(BindingMode::InheritHost(action.to_string()));
+        }
+        Err(serde::de::Error::custom(format!(
+            "invalid binding_mode '{}': expected 'independent' or 'inherit:<host_action>'",
+            s
+        )))
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -440,5 +498,107 @@ mod tests {
         assert_eq!(m.surface_kinds[0].kind, "explorer");
         assert_eq!(m.permissions.len(), 2);
         assert_eq!(m.contributes.commands.len(), 1);
+        // binding_mode 미지정 → Independent 기본값
+        assert_eq!(m.contributes.commands[0].binding_mode, BindingMode::Independent);
+        // lang_dir 미지정 → "lang" 기본값
+        assert_eq!(m.lang_dir, "lang");
+    }
+
+    #[test]
+    fn binding_mode_independent() {
+        let s = r#"
+            manifest_version = 1
+            id = "com.example.x"
+            name = "X"
+            version = "0.1"
+            api_version = "1"
+            [entry]
+            type = "process"
+            command = "x"
+            [[contributes.commands]]
+            id = "x.foo"
+            title_i18n_key = "x.foo"
+            binding_mode = "independent"
+        "#;
+        let m = parse(s).expect("should parse");
+        assert_eq!(m.contributes.commands[0].binding_mode, BindingMode::Independent);
+    }
+
+    #[test]
+    fn binding_mode_inherit() {
+        let s = r#"
+            manifest_version = 1
+            id = "com.example.x"
+            name = "X"
+            version = "0.1"
+            api_version = "1"
+            [entry]
+            type = "process"
+            command = "x"
+            [[contributes.commands]]
+            id = "x.copy"
+            title_i18n_key = "x.copy"
+            binding_mode = "inherit:clipboard.copy"
+        "#;
+        let m = parse(s).expect("should parse");
+        match &m.contributes.commands[0].binding_mode {
+            BindingMode::InheritHost(action) => assert_eq!(action, "clipboard.copy"),
+            _ => panic!("expected InheritHost"),
+        }
+    }
+
+    #[test]
+    fn binding_mode_inherit_empty_action_rejected() {
+        let s = r#"
+            manifest_version = 1
+            id = "com.example.x"
+            name = "X"
+            version = "0.1"
+            api_version = "1"
+            [entry]
+            type = "process"
+            command = "x"
+            [[contributes.commands]]
+            id = "x.copy"
+            title_i18n_key = "x.copy"
+            binding_mode = "inherit:"
+        "#;
+        assert!(parse(s).is_err());
+    }
+
+    #[test]
+    fn binding_mode_unknown_value_rejected() {
+        let s = r#"
+            manifest_version = 1
+            id = "com.example.x"
+            name = "X"
+            version = "0.1"
+            api_version = "1"
+            [entry]
+            type = "process"
+            command = "x"
+            [[contributes.commands]]
+            id = "x.foo"
+            title_i18n_key = "x.foo"
+            binding_mode = "wat"
+        "#;
+        assert!(parse(s).is_err());
+    }
+
+    #[test]
+    fn lang_dir_custom() {
+        let s = r#"
+            manifest_version = 1
+            id = "com.example.x"
+            name = "X"
+            version = "0.1"
+            api_version = "1"
+            lang_dir = "i18n"
+            [entry]
+            type = "process"
+            command = "x"
+        "#;
+        let m = parse(s).expect("should parse");
+        assert_eq!(m.lang_dir, "i18n");
     }
 }
