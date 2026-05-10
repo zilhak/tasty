@@ -31,9 +31,6 @@ pub enum ClosedPanel {
     Markdown {
         path: PathBuf,
     },
-    Explorer {
-        path: Option<PathBuf>,
-    },
     Image {
         path: Option<PathBuf>,
     },
@@ -170,63 +167,63 @@ impl ClosedSurfaceLayout {
 }
 
 impl ClosedPanel {
-    /// Capture from a live Tab.
-    pub fn from_tab(tab: &super::tab::Tab) -> Self {
+    /// Capture from a live Tab. Returns `None` for surfaces that are not
+    /// restorable by the host (plugin-provided RemoteSurface, Html, Empty 등).
+    pub fn from_tab(tab: &super::tab::Tab) -> Option<Self> {
         if tab.is_split() {
-            return ClosedPanel::Tab {
+            return Some(ClosedPanel::Tab {
                 layout: ClosedSurfaceLayout::from_layout(tab.layout()),
                 focused_surface: tab.focused_surface,
-            };
+            });
         }
         // Single surface tab
         let surface = tab.surface();
         Self::from_surface(surface)
     }
 
-    /// Capture from a single Surface (trait object).
-    pub fn from_surface(surface: &dyn super::Surface) -> Self {
+    /// Capture from a single Surface (trait object). Returns `None` if the
+    /// surface kind is not restorable (e.g. plugin RemoteSurface, Html, Empty,
+    /// ClipboardViewer).
+    pub fn from_surface(surface: &dyn super::Surface) -> Option<Self> {
         if let Some(node) = surface.as_terminal_surface() {
-            return ClosedPanel::Terminal(ClosedSurface::from_surface_node(node));
+            return Some(ClosedPanel::Terminal(ClosedSurface::from_surface_node(node)));
         }
         let any = surface.as_any();
         if let Some(md) = any.downcast_ref::<super::MarkdownPanel>() {
-            return ClosedPanel::Markdown {
+            return Some(ClosedPanel::Markdown {
                 path: PathBuf::from(&md.file_path),
-            };
-        }
-        if let Some(ex) = any.downcast_ref::<super::ExplorerPanel>() {
-            return ClosedPanel::Explorer {
-                path: Some(PathBuf::from(&ex.root_path)),
-            };
+            });
         }
         if let Some(img) = any.downcast_ref::<super::ImagePanel>() {
-            return ClosedPanel::Image {
+            return Some(ClosedPanel::Image {
                 path: img.file_path.as_ref().map(PathBuf::from),
-            };
+            });
         }
-        // Html, Empty, etc. — not restorable
-        ClosedPanel::Explorer { path: None }
+        // Html, Empty, ClipboardViewer, RemoteSurface — not restorable by host.
+        None
     }
 }
 
 impl ClosedTab {
-    /// Capture from a live Tab.
-    pub fn from_tab(tab: &super::tab::Tab) -> Self {
-        Self {
+    /// Capture from a live Tab. Returns `None` if the tab's surface is not
+    /// restorable (plugin RemoteSurface 등).
+    pub fn from_tab(tab: &super::tab::Tab) -> Option<Self> {
+        let panel = ClosedPanel::from_tab(tab)?;
+        Some(Self {
             id: tab.id,
             name: tab.name.clone(),
             explicit_name: tab.explicit_name.clone(),
-            panel: ClosedPanel::from_tab(tab),
-        }
+            panel,
+        })
     }
 }
 
 impl ClosedPane {
-    /// Capture from a live Pane.
+    /// Capture from a live Pane. Tabs that are not restorable are skipped.
     pub fn from_pane(pane: &super::Pane) -> Self {
         Self {
             id: pane.id,
-            tabs: pane.tabs.iter().map(ClosedTab::from_tab).collect(),
+            tabs: pane.tabs.iter().filter_map(ClosedTab::from_tab).collect(),
             active_tab: pane.active_tab,
         }
     }

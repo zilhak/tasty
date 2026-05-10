@@ -344,9 +344,10 @@ impl AppState {
             if save_snapshot {
                 let ws = &self.engine.workspaces[ws_idx];
                 let pane = ws.pane_layout().find_pane(pane_id).unwrap();
-                if pane.tabs.len() > 1 {
-                    let snapshot =
-                        crate::model::closed_item::ClosedTab::from_tab(&pane.tabs[tab_idx]);
+                if pane.tabs.len() > 1
+                    && let Some(snapshot) =
+                        crate::model::closed_item::ClosedTab::from_tab(&pane.tabs[tab_idx])
+                {
                     self.engine
                         .push_closed_item(crate::model::ClosedItem::Tab(snapshot));
                 }

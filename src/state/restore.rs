@@ -152,9 +152,6 @@ impl AppState {
                     ))),
                 }
             }
-            // Explorer는 plugin으로 옮겨졌고 host에서 재생성할 수 없으므로 복원 스킵.
-            // F 단계에서 ClosedPanel::Remote 도입 후 처리할 예정.
-            ClosedPanel::Explorer { .. } => None,
         }
     }
 

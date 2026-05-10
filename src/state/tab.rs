@@ -120,12 +120,6 @@ impl AppState {
             .map(|_| ())
     }
 
-    /// Add a file explorer tab in the focused pane.
-    pub fn add_explorer_tab(&mut self, root_path: String) -> anyhow::Result<()> {
-        self.add_kind_tab("explorer", &json!({"path": root_path}))
-            .map(|_| ())
-    }
-
     /// Add an HTML viewer tab in the focused pane.
     pub fn add_html_tab(&mut self, url: String) -> anyhow::Result<()> {
         self.add_kind_tab("html", &json!({"url": url})).map(|_| ())
@@ -284,8 +278,9 @@ impl AppState {
         // Capture tab snapshot before closing (immutable borrow)
         if let Some(pane) = self.focused_pane() {
             let active = pane.active_tab;
-            if let Some(tab) = pane.tabs.get(active) {
-                let snapshot = crate::model::closed_item::ClosedTab::from_tab(tab);
+            if let Some(tab) = pane.tabs.get(active)
+                && let Some(snapshot) = crate::model::closed_item::ClosedTab::from_tab(tab)
+            {
                 self.engine
                     .push_closed_item(crate::model::ClosedItem::Tab(snapshot));
             }
@@ -362,20 +357,6 @@ impl AppState {
             .file_name()
             .map(|f| f.to_string_lossy().to_string());
         self.replace_surface_for_id(surface_id, surface, Some(name))
-    }
-
-    /// Convert a surface to Explorer type.
-    pub fn convert_surface_to_explorer(&mut self, surface_id: u32) -> bool {
-        let root = self
-            .resolve_inherit_cwd()
-            .map(|p| p.to_string_lossy().to_string())
-            .or_else(|| {
-                directories::BaseDirs::new().map(|d| d.home_dir().to_string_lossy().to_string())
-            })
-            .unwrap_or_else(|| ".".to_string());
-        let surface: Box<dyn crate::model::Surface> =
-            Box::new(crate::model::ExplorerPanel::new(surface_id, root));
-        self.replace_surface_for_id(surface_id, surface, Some(Some("Explorer".to_string())))
     }
 
     /// Add an image viewer tab in the focused pane.

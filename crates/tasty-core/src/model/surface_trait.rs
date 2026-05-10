@@ -6,12 +6,12 @@ use tasty_terminal::Terminal;
 
 /// Common behavior for all Surface types.
 ///
-/// Each surface type (TerminalSurface, MarkdownPanel, ExplorerPanel,
-/// HtmlPanel, EmptySurface, ImagePanel) implements this trait.
+/// Each surface type (TerminalSurface, MarkdownPanel, HtmlPanel, EmptySurface,
+/// ImagePanel, ClipboardViewerPanel, RemoteSurface) implements this trait.
 /// All methods have default implementations suitable for non-terminal surfaces.
 pub trait Surface: Any {
     /// Stable identifier for this surface kind (lowercase, snake_case).
-    /// 예: `"terminal"`, `"markdown"`, `"explorer"`. IPC/registry/플러그인이
+    /// 예: `"terminal"`, `"markdown"`, `"html"`. IPC/registry/플러그인이
     /// 식별자로 쓰며, 절대 변경되지 않는다.
     fn kind(&self) -> &'static str;
 
@@ -103,7 +103,6 @@ pub trait Surface: Any {
     /// 이 값을 시작 cwd로 상속한다.
     ///
     /// - TerminalSurface: 터미널의 OSC 7 cwd
-    /// - ExplorerPanel: `root_path`
     /// - MarkdownPanel: 파일의 부모 디렉터리
     /// - HtmlPanel: `file://` 또는 로컬 절대경로일 때 부모 디렉터리, 아니면 None
     /// - 그 외(Image/Empty/ClipboardViewer): None

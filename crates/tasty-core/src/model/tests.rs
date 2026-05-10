@@ -790,22 +790,6 @@ fn compute_terminal_rect_zero_sidebar() {
 // ---- Surface::source_cwd ----
 
 #[test]
-fn source_cwd_explorer_returns_root_path() {
-    #[cfg(windows)]
-    let root = "C:\\Users\\me\\proj";
-    #[cfg(not(windows))]
-    let root = "/home/me/proj";
-    let exp = ExplorerPanel::new(1, root.to_string());
-    assert_eq!(exp.source_cwd(), Some(std::path::PathBuf::from(root)));
-}
-
-#[test]
-fn source_cwd_explorer_empty_root_is_none() {
-    let exp = ExplorerPanel::new(1, String::new());
-    assert_eq!(exp.source_cwd(), None);
-}
-
-#[test]
 fn source_cwd_markdown_returns_parent_dir() {
     #[cfg(windows)]
     let (file, parent) = ("C:\\docs\\readme.md", "C:\\docs");
