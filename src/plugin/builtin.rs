@@ -25,9 +25,11 @@ pub fn is_builtin_plugin(id: &str) -> bool {
 
 /// 번들 plugin 디렉터리들이 있는 루트 경로.
 ///
-/// - 첫째: 실행 파일 옆 `plugins/` (release/dist에서 packaging 시 함께 복사).
-/// - 둘째: dev 환경 보조 — `target/<profile>/builtin-plugins/` (build helper가 채움).
-/// - 환경 변수 `TASTY_BUILTIN_PLUGINS_DIR`로 강제 override 가능.
+/// - 첫째: `TASTY_BUILTIN_PLUGINS_DIR` 환경 변수 강제 override.
+/// - 둘째: 실행 파일 옆 `plugins/` (release/dist에서 packaging 시 함께 복사).
+/// - 셋째: dev 빌드일 때 workspace 자동 탐색 — `target/<profile>/builtin-plugins/`에
+///   `crates/tasty-plugin-explorer/tasty-plugin.toml`과 빌드된 plugin binary를
+///   매 부팅마다 mtime 비교 후 갱신. `cargo build`만 하면 자동 반영됨.
 pub fn bundle_root() -> Option<PathBuf> {
     if let Ok(p) = std::env::var("TASTY_BUILTIN_PLUGINS_DIR") {
         let path = PathBuf::from(p);
@@ -41,11 +43,68 @@ pub fn bundle_root() -> Option<PathBuf> {
     if next_to_exe.is_dir() {
         return Some(next_to_exe);
     }
+    #[cfg(debug_assertions)]
+    if let Some(dev) = ensure_dev_bundle(exe_dir) {
+        return Some(dev);
+    }
     let dev_bundle = exe_dir.join("builtin-plugins");
     if dev_bundle.is_dir() {
         return Some(dev_bundle);
     }
     None
+}
+
+/// dev 빌드에서 workspace를 자동 탐색하여 `target/<profile>/builtin-plugins/`에
+/// builtin plugin들의 manifest+binary를 동기화. mtime이 더 새것일 때만 복사하므로
+/// 매 부팅 비용은 작다. workspace를 못 찾거나 plugin binary가 없으면 None.
+#[cfg(debug_assertions)]
+fn ensure_dev_bundle(exe_dir: &Path) -> Option<PathBuf> {
+    // exe_dir = .../target/<profile>
+    let target_dir = exe_dir.parent()?; // .../target
+    let workspace = target_dir.parent()?; // workspace root
+
+    let bin_name = if cfg!(windows) {
+        "tasty-plugin-explorer.exe"
+    } else {
+        "tasty-plugin-explorer"
+    };
+    let plugin_bin = exe_dir.join(bin_name);
+    let src_manifest = workspace
+        .join("crates")
+        .join("tasty-plugin-explorer")
+        .join("tasty-plugin.toml");
+    if !plugin_bin.exists() || !src_manifest.exists() {
+        return None;
+    }
+
+    let bundle_root = exe_dir.join("builtin-plugins");
+    let dest_dir = bundle_root.join("com.tasty.explorer");
+    if let Err(e) = std::fs::create_dir_all(&dest_dir) {
+        tracing::warn!("dev bundle: mkdir {} failed: {e}", dest_dir.display());
+        return None;
+    }
+    if let Err(e) = copy_if_newer(&src_manifest, &dest_dir.join("tasty-plugin.toml")) {
+        tracing::warn!("dev bundle: copy manifest failed: {e}");
+        return None;
+    }
+    if let Err(e) = copy_if_newer(&plugin_bin, &dest_dir.join(bin_name)) {
+        tracing::warn!("dev bundle: copy binary failed: {e}");
+        return None;
+    }
+    Some(bundle_root)
+}
+
+/// src가 dest보다 더 최신이거나 dest가 없으면 복사. 이미 같거나 dest가 더 최신이면 no-op.
+fn copy_if_newer(src: &Path, dest: &Path) -> std::io::Result<()> {
+    if let (Ok(src_meta), Ok(dest_meta)) = (std::fs::metadata(src), std::fs::metadata(dest)) {
+        if let (Ok(sm), Ok(dm)) = (src_meta.modified(), dest_meta.modified()) {
+            if sm <= dm {
+                return Ok(());
+            }
+        }
+    }
+    std::fs::copy(src, dest)?;
+    Ok(())
 }
 
 /// 모든 기본 제공 플러그인을 점검: 사용자 디렉터리에 없고 `removed_builtins`
