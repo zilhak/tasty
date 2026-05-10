@@ -1,5 +1,6 @@
 use serde_json::json;
 
+use crate::ipc::caller::CallerContext;
 use crate::ipc::protocol::{JsonRpcRequest, JsonRpcResponse};
 use crate::state::AppState;
 
@@ -30,7 +31,25 @@ mod workspace;
 ///    를 만져야 하는 소수 핸들러. 권한 게이트 대상 외부.
 /// 3. **debug 핸들러** (`route_debug_handler`): debug build 전용. release에서는 정의 안 됨.
 pub fn handle(state: &mut AppState, request: &JsonRpcRequest) -> JsonRpcResponse {
+    handle_with_caller(state, request, &CallerContext::Local)
+}
+
+/// caller가 명시된 라우터 진입점. CLI/네트워크 IPC는 [`CallerContext::Local`],
+/// plugin process가 호출한 명령은 [`CallerContext::Plugin`]을 전달한다.
+///
+/// 권한 게이트는 라우터의 가장 바깥에서 한 번만 실행된다. plugin이 호출한
+/// 명령이 권한을 통과하지 못하면 `permission_denied` 에러로 즉시 회신.
+pub fn handle_with_caller(
+    state: &mut AppState,
+    request: &JsonRpcRequest,
+    caller: &CallerContext,
+) -> JsonRpcResponse {
     let id = request.id.clone().unwrap_or(serde_json::Value::Null);
+
+    if let Err(e) = caller.ensure_allowed(&request.method) {
+        tracing::warn!("ipc permission denied: {e}");
+        return JsonRpcResponse::error(id, -32001, &format!("permission_denied: {e}"));
+    }
 
     if let Some(resp) = route_engine_handler(state, request, id.clone()) {
         return resp;
