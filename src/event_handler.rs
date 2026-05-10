@@ -385,6 +385,8 @@ impl ApplicationHandler<AppEvent> for App {
         if let Some(ref mut mgr) = self.plugin_manager {
             mgr.pump();
         }
+        // plugin이 보낸 IPC 호출들을 라우터로 디스패치 (권한 게이트 적용).
+        self.process_plugin_ipc_calls();
 
         // Poll system tray menu events (Windows only)
         #[cfg(windows)]

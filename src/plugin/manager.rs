@@ -5,7 +5,7 @@
 //! - 매 메인 루프 tick에서 `pump()` 호출 → plugin 알림 처리 + 헬스체크 + 재시작
 //! - 종료 시 `shutdown_all()`
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -16,10 +16,10 @@ use serde_json::json;
 
 use crate::plugin::host_cmd::{HostCmd, SurfaceHandles};
 use crate::plugin::listener::HostListener;
-use crate::plugin::manifest::PluginPackage;
+use crate::plugin::manifest::{Permission, PluginPackage};
 use crate::plugin::process::PluginProcess;
 use crate::plugin::protocol::{
-    self, PluginEvent, PluginRequest, PluginResponse, SurfaceResult,
+    self, IpcCallResult, PluginEvent, PluginRequest, PluginResponse, SurfaceResult,
 };
 use crate::plugin::registry_state::PluginsConfig;
 use crate::plugin::ui_tree::UiEvent;
@@ -72,6 +72,22 @@ pub struct PluginManager {
     surfaces: HashMap<u32, RemoteSurfaceEntry>,
     /// host → plugin 요청 ID → 종류. 응답 수신 시 후처리 dispatch용.
     pending_requests: HashMap<u64, PendingRequestKind>,
+    /// 각 plugin에 grant된 권한. 매니페스트 + plugins.toml의 granted를 교집합한 결과.
+    /// `Arc`로 공유하여 CallerContext가 동시 호출 시 안전.
+    plugin_permissions: HashMap<String, Arc<HashSet<Permission>>>,
+    /// plugin이 보낸 IpcCall을 호스트의 main loop에서 라우팅 처리하기 위해 모으는 큐.
+    /// `App::process_plugin_ipc_calls()`가 매 tick에 비운다.
+    pending_plugin_calls: Vec<PendingPluginCall>,
+}
+
+/// plugin → host IPC 호출 한 건. 라우팅 후 결과를 plugin에 회신해야 함.
+#[derive(Debug, Clone)]
+pub struct PendingPluginCall {
+    pub plugin_id: String,
+    pub call_id: u64,
+    pub method: String,
+    pub params: serde_json::Value,
+    pub permissions: Arc<HashSet<Permission>>,
 }
 
 impl PluginManager {
@@ -98,6 +114,53 @@ impl PluginManager {
             host_cmd_rx,
             surfaces: HashMap::new(),
             pending_requests: HashMap::new(),
+            plugin_permissions: HashMap::new(),
+            pending_plugin_calls: Vec::new(),
+        }
+    }
+
+    /// plugin에 grant된 권한 set을 갱신. 매니페스트 hello 시점 또는 사용자가
+    /// grant/revoke 했을 때 호출. plugin process 재시작 없이 즉시 반영된다.
+    pub fn set_plugin_permissions(&mut self, plugin_id: &str, perms: HashSet<Permission>) {
+        self.plugin_permissions
+            .insert(plugin_id.to_string(), Arc::new(perms));
+    }
+
+    /// plugin의 현재 권한 set. 등록되지 않은 plugin은 빈 set.
+    pub fn plugin_permissions(&self, plugin_id: &str) -> Arc<HashSet<Permission>> {
+        self.plugin_permissions
+            .get(plugin_id)
+            .cloned()
+            .unwrap_or_else(|| Arc::new(HashSet::new()))
+    }
+
+    /// 호스트 main loop이 라우팅하기 위해 plugin IPC 호출을 모두 가져간다.
+    pub fn take_pending_plugin_calls(&mut self) -> Vec<PendingPluginCall> {
+        std::mem::take(&mut self.pending_plugin_calls)
+    }
+
+    /// 라우터가 처리한 결과를 plugin에 송신.
+    pub fn send_ipc_result(
+        &mut self,
+        plugin_id: &str,
+        call_id: u64,
+        result: Option<serde_json::Value>,
+        error: Option<String>,
+    ) {
+        let req = PluginRequest {
+            method: protocol::METHOD_IPC_RESULT.to_string(),
+            params: serde_json::to_value(IpcCallResult {
+                call_id,
+                result,
+                error,
+            })
+            .unwrap_or(serde_json::Value::Null),
+            id: self.next_request_id.fetch_add(1, Ordering::Relaxed),
+        };
+        if let Some(proc) = self.processes.get(plugin_id) {
+            if let Err(e) = proc.req_tx.send(req) {
+                tracing::warn!("plugin {plugin_id}: failed to send ipc.result: {e}");
+            }
         }
     }
 
@@ -200,6 +263,7 @@ impl PluginManager {
         // 1. plugin → 호스트 이벤트 처리
         let mut hello_log: Vec<(String, String)> = Vec::new();
         let mut to_register: Vec<String> = Vec::new();
+        let mut new_calls: Vec<PendingPluginCall> = Vec::new();
         for (id, proc) in &self.processes {
             while let Ok(ev) = proc.event_rx.try_recv() {
                 match ev {
@@ -223,14 +287,50 @@ impl PluginManager {
                     PluginEvent::NotifyHost { .. } => {
                         // 단계 06에서 처리
                     }
+                    PluginEvent::IpcCall {
+                        call_id,
+                        method,
+                        params,
+                    } => {
+                        let perms = self
+                            .plugin_permissions
+                            .get(id)
+                            .cloned()
+                            .unwrap_or_else(|| Arc::new(HashSet::new()));
+                        new_calls.push(PendingPluginCall {
+                            plugin_id: id.clone(),
+                            call_id,
+                            method,
+                            params,
+                            permissions: perms,
+                        });
+                    }
                 }
             }
+        }
+        if !new_calls.is_empty() {
+            self.pending_plugin_calls.extend(new_calls);
         }
         for (plugin_id, version) in hello_log {
             tracing::info!("plugin hello: {} v{}", plugin_id, version);
         }
-        // hello를 처음 받은 plugin의 surface_kinds를 registry에 등록.
+        // hello를 처음 받은 plugin의 surface_kinds를 registry에 등록 + 권한 set 초기화.
         if !to_register.is_empty() {
+            // 권한 — registry 유무와 무관하게 항상 갱신.
+            for plugin_id in &to_register {
+                if let Some(pkg) = self.packages.iter().find(|p| &p.manifest.id == plugin_id) {
+                    let granted = self.config.granted_permissions(plugin_id);
+                    let perms: HashSet<Permission> = pkg
+                        .manifest
+                        .parsed_permissions()
+                        .unwrap_or_default()
+                        .into_iter()
+                        .filter(|p| granted.contains(p.as_token()))
+                        .collect();
+                    self.plugin_permissions
+                        .insert(plugin_id.clone(), Arc::new(perms));
+                }
+            }
             if let Some(registry) = self.surface_registry.clone() {
                 let tx = self.host_cmd_tx.clone();
                 for plugin_id in &to_register {

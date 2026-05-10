@@ -19,6 +19,9 @@ pub const METHOD_SURFACE_EVENT: &str = "surface.event";
 pub const METHOD_SURFACE_SNAPSHOT: &str = "surface.snapshot";
 pub const METHOD_SURFACE_RESTORE: &str = "surface.restore";
 pub const METHOD_SURFACE_DESTROY: &str = "surface.destroy";
+/// host → plugin: plugin이 보낸 ipc.call에 대한 결과.
+/// params에 [`IpcCallResult`].
+pub const METHOD_IPC_RESULT: &str = "ipc.result";
 
 /// `surface.create` / `surface.event` / `surface.restore` 응답에 포함되는 standard 결과.
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -74,6 +77,23 @@ pub enum PluginEvent {
     },
     /// plugin 측 로그 (호스트 로그에 합쳐짐).
     Log { level: String, message: String },
+    /// plugin → 호스트 IPC 호출. 호스트가 권한을 검사하고 라우터에 보낸 뒤,
+    /// 결과를 `ipc.result` 요청으로 회신한다 (`call_id`로 매칭).
+    IpcCall {
+        call_id: u64,
+        method: String,
+        params: serde_json::Value,
+    },
+}
+
+/// `ipc.result` 요청의 params — plugin의 ipc.call에 대한 호스트의 응답.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct IpcCallResult {
+    pub call_id: u64,
+    #[serde(default)]
+    pub result: Option<serde_json::Value>,
+    #[serde(default)]
+    pub error: Option<String>,
 }
 
 /// plugin이 connection 직후 첫 줄로 보내는 인증 메시지.

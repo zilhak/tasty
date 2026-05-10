@@ -684,6 +684,58 @@ impl App {
         }
         processed
     }
+
+    /// plugin process가 보낸 IPC 호출들을 라우터로 디스패치하고 결과를 plugin에 회신.
+    /// CallerContext::Plugin으로 들어가므로 권한 게이트가 적용된다.
+    fn process_plugin_ipc_calls(&mut self) {
+        let calls = match self.plugin_manager.as_mut() {
+            Some(mgr) => mgr.take_pending_plugin_calls(),
+            None => return,
+        };
+        for call in calls {
+            let caller = ipc::caller::CallerContext::Plugin {
+                plugin_id: call.plugin_id.clone(),
+                permissions: call.permissions.clone(),
+            };
+            let request = ipc::protocol::JsonRpcRequest {
+                jsonrpc: "2.0".to_string(),
+                id: Some(serde_json::Value::from(call.call_id)),
+                method: call.method.clone(),
+                params: call.params.clone(),
+            };
+            let response = self.dispatch_with_caller(&request, &caller);
+            let (result, error) = match response.error {
+                Some(err) => (None, Some(err.message)),
+                None => (response.result, None),
+            };
+            if let Some(mgr) = self.plugin_manager.as_mut() {
+                mgr.send_ipc_result(&call.plugin_id, call.call_id, result, error);
+            }
+        }
+    }
+
+    /// caller를 명시한 라우터 디스패치. Plugin caller도 처리할 수 있도록 핸들러
+    /// 진입점에 caller를 주입한다. 호스트 자체 메서드(window.*/plugin.*)는
+    /// `process_ipc`가 별도로 처리하므로 여기서는 라우터에만 위임한다.
+    fn dispatch_with_caller(
+        &mut self,
+        request: &ipc::protocol::JsonRpcRequest,
+        caller: &ipc::caller::CallerContext,
+    ) -> ipc::protocol::JsonRpcResponse {
+        let focused_id = self.engine.focused_window_id;
+        if let Some(id) = focused_id {
+            if let Some(w) = self.windows.get_mut(&id).and_then(|w| w.as_main_mut()) {
+                let response = ipc::handler::handle_with_caller(&mut w.state, request, caller);
+                w.base.dirty = true;
+                return response;
+            }
+        }
+        if let Some(state) = self.parked_states.first_mut() {
+            return ipc::handler::handle_with_caller(state, request, caller);
+        }
+        let id = request.id.clone().unwrap_or(serde_json::Value::Null);
+        ipc::protocol::JsonRpcResponse::error(id, -32000, "no application state available")
+    }
 }
 
 fn main() -> Result<()> {
