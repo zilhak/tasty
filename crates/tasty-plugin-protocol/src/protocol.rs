@@ -22,6 +22,11 @@ pub const METHOD_SURFACE_DESTROY: &str = "surface.destroy";
 /// host → plugin: plugin이 보낸 ipc.call에 대한 결과.
 /// params에 [`IpcCallResult`].
 pub const METHOD_IPC_RESULT: &str = "ipc.result";
+/// host → plugin: 사용자 단축키 매칭으로 plugin command가 트리거됨.
+/// params에 [`CommandInvokeParams`]. plugin은 그에 따라 surface state를 변경하고,
+/// 변경 결과는 `surface.event`와 동일하게 `SurfaceResult` 형태로 응답한다 (tree
+/// 또는 display_name 갱신).
+pub const METHOD_COMMAND_INVOKE: &str = "command.invoke";
 
 /// `surface.create` / `surface.event` / `surface.restore` 응답에 포함되는 standard 결과.
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -38,6 +43,13 @@ pub struct SurfaceResult {
 pub struct SurfaceEventParams<'a> {
     pub surface_id: u32,
     pub event: &'a UiEvent,
+}
+
+/// `command.invoke` params — 사용자 단축키 매칭 시 호스트가 plugin에 보내는 명령.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct CommandInvokeParams {
+    pub surface_id: u32,
+    pub command_id: String,
 }
 
 /// 호스트 → plugin 요청.

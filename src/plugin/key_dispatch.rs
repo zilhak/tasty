@@ -55,19 +55,19 @@ pub fn match_plugin_shortcut(
     None
 }
 
-/// Plugin command를 plugin 프로세스에 전달. 단계 F는 stub — 실제 IPC 송신은
-/// 단계 G에서 `PluginRequest::CommandInvoke` variant 추가와 함께 구현한다.
+/// Plugin command를 plugin 프로세스에 전달. 단계 G에서 IPC `command.invoke`로
+/// 실제 송신. 응답은 surface tree/display_name을 갱신할 수 있다.
 pub fn dispatch_plugin_command(
-    _mgr: &mut PluginManager,
+    mgr: &mut PluginManager,
     plugin_id: &str,
     command_id: &str,
     surface_id: u32,
 ) {
-    tracing::info!(
-        "plugin shortcut matched: plugin='{}' command='{}' surface={} (dispatch stub)",
+    tracing::debug!(
+        "plugin shortcut matched: plugin='{}' command='{}' surface={}",
         plugin_id,
         command_id,
         surface_id
     );
-    // TODO(stage-G): mgr.send_request(PluginRequest::CommandInvoke { ... })
+    mgr.send_command_invoke(plugin_id, surface_id, command_id);
 }

@@ -35,6 +35,9 @@ enum PendingRequestKind {
     SurfaceCreate { surface_id: u32 },
     SurfaceEvent { surface_id: u32 },
     SurfaceRestore { surface_id: u32 },
+    /// 단계 G: 단축키 매칭으로 plugin command가 트리거된 경우. 응답은
+    /// SurfaceResult 형태로 surface tree/display_name을 갱신할 수 있다.
+    CommandInvoke { surface_id: u32 },
     Ping,
     /// 그 외 (host.hello 등) — 응답 무시.
     Other,
@@ -546,7 +549,8 @@ impl PluginManager {
         match kind {
             PendingRequestKind::SurfaceCreate { surface_id }
             | PendingRequestKind::SurfaceEvent { surface_id }
-            | PendingRequestKind::SurfaceRestore { surface_id } => {
+            | PendingRequestKind::SurfaceRestore { surface_id }
+            | PendingRequestKind::CommandInvoke { surface_id } => {
                 let result_value = match resp.result {
                     Some(v) => v,
                     None => return,
@@ -597,6 +601,28 @@ impl PluginManager {
         if proc.req_tx.send(req).is_ok() {
             self.pending_requests.insert(id, kind);
         }
+    }
+
+    /// 단계 G: 사용자 단축키 매칭으로 plugin command를 trigger. 응답은
+    /// `SurfaceResult` 형태로 받아 tree/display_name을 갱신할 수 있다.
+    pub fn send_command_invoke(&mut self, plugin_id: &str, surface_id: u32, command_id: &str) {
+        if !self.processes.contains_key(plugin_id) {
+            tracing::warn!(
+                "command.invoke: plugin '{}' is not running, dropping command '{}'",
+                plugin_id,
+                command_id
+            );
+            return;
+        }
+        self.send_surface_request(
+            plugin_id,
+            protocol::METHOD_COMMAND_INVOKE,
+            json!({
+                "surface_id": surface_id,
+                "command_id": command_id,
+            }),
+            PendingRequestKind::CommandInvoke { surface_id },
+        );
     }
 
     /// 종료 시 모든 plugin graceful shutdown.

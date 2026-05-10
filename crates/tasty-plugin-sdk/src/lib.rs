@@ -10,7 +10,8 @@ pub mod runtime;
 pub mod ui;
 
 pub use plugin::{
-    Plugin, SurfaceCreateCtx, SurfaceEventCtx, SurfaceRestoreCtx, SurfaceResult, SurfaceSnapshotCtx,
+    CommandInvokeCtx, Plugin, SurfaceCreateCtx, SurfaceEventCtx, SurfaceRestoreCtx, SurfaceResult,
+    SurfaceSnapshotCtx,
 };
 pub use runtime::run;
 

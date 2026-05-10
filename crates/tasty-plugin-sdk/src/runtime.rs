@@ -10,15 +10,16 @@ use anyhow::Result;
 use serde_json::Value;
 
 use tasty_plugin_protocol::{
-    METHOD_PING, METHOD_SHUTDOWN, METHOD_SURFACE_CREATE, METHOD_SURFACE_DESTROY,
-    METHOD_SURFACE_EVENT, METHOD_SURFACE_RESTORE, METHOD_SURFACE_SNAPSHOT, PluginEvent,
-    PluginResponse,
+    METHOD_COMMAND_INVOKE, METHOD_PING, METHOD_SHUTDOWN, METHOD_SURFACE_CREATE,
+    METHOD_SURFACE_DESTROY, METHOD_SURFACE_EVENT, METHOD_SURFACE_RESTORE, METHOD_SURFACE_SNAPSHOT,
+    PluginEvent, PluginResponse,
 };
 
 use crate::connection::{Connection, HostMessage};
 use crate::env::PluginEnv;
 use crate::plugin::{
-    Plugin, SurfaceCreateCtx, SurfaceEventCtx, SurfaceRestoreCtx, SurfaceSnapshotCtx,
+    CommandInvokeCtx, Plugin, SurfaceCreateCtx, SurfaceEventCtx, SurfaceRestoreCtx,
+    SurfaceSnapshotCtx,
 };
 
 pub fn run<P: Plugin>(mut plugin: P) -> Result<()> {
@@ -128,6 +129,19 @@ fn dispatch<P: Plugin>(plugin: &mut P, method: &str, params: &Value) -> Result<V
             let surface_id = require_surface_id(params)?;
             plugin.destroy_surface(surface_id);
             Ok(Value::Null)
+        }
+        METHOD_COMMAND_INVOKE => {
+            let surface_id = require_surface_id(params)?;
+            let command_id = params
+                .get("command_id")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| anyhow::anyhow!("command.invoke params missing 'command_id'"))?
+                .to_string();
+            let result = plugin.handle_command(CommandInvokeCtx {
+                surface_id,
+                command_id,
+            });
+            Ok(serde_json::to_value(result)?)
         }
         other => Err(anyhow::anyhow!("plugin does not handle method '{other}'")),
     }

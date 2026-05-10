@@ -55,6 +55,14 @@ pub struct SurfaceSnapshotCtx {
     pub surface_id: u32,
 }
 
+/// 매니페스트 `[[contributes.commands]]`로 등록한 command가 사용자 단축키
+/// 매칭으로 호출됐을 때 전달되는 컨텍스트.
+#[derive(Debug, Clone)]
+pub struct CommandInvokeCtx {
+    pub surface_id: u32,
+    pub command_id: String,
+}
+
 /// Plugin 생명주기 진입점. 모든 메서드는 동기적으로 호출되고, plugin 로직은
 /// 내부에서 자유롭게 thread/async runtime을 사용할 수 있다.
 pub trait Plugin: Send + 'static {
@@ -90,5 +98,15 @@ pub trait Plugin: Send + 'static {
     /// `surface.destroy` — 호스트가 surface를 닫을 때 호출. 자원 해제용.
     fn destroy_surface(&mut self, surface_id: u32) {
         let _ = surface_id;
+    }
+
+    /// `command.invoke` — 매니페스트로 등록한 command가 사용자 단축키 매칭으로
+    /// 호출됨. tree가 None이면 호스트는 이전 tree 유지. 기본 구현은 no-op.
+    fn handle_command(&mut self, ctx: CommandInvokeCtx) -> SurfaceResult {
+        let _ = ctx;
+        SurfaceResult {
+            tree: None,
+            display_name: None,
+        }
     }
 }
