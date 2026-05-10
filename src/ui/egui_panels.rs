@@ -245,6 +245,13 @@ pub fn draw_egui_panels(
                 logical_w: info.logical_w,
                 logical_h: info.logical_h,
             });
+        } else if let Some(remote) = surface
+            .as_any()
+            .downcast_ref::<crate::plugin::remote_surface::RemoteSurface>()
+        {
+            draw_panel_frame(ctx, &format!("remote_panel_{}", id_suffix), info, 4, None, |ui| {
+                crate::plugin::ui_tree_render::render_remote_surface(ui, remote);
+            });
         }
     }
 
