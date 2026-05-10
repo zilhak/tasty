@@ -2,6 +2,7 @@
 //!
 //! `~/.tasty/plugins/<plugin-id>/tasty-plugin.toml` 형식.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
@@ -46,6 +47,83 @@ pub enum Entry {
     },
     // 향후 옵션:
     // #[serde(rename = "wasm")] Wasm { module: String },
+}
+
+/// Plugin이 매니페스트에 선언할 수 있는 권한 카테고리.
+///
+/// 평면 enum — `fs.write`는 `fs.read`를 자동 포함하지 않는다.
+/// 매니페스트에 두 권한이 모두 필요하면 명시적으로 선언해야 한다.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+pub enum Permission {
+    /// surface/tab/workspace 트리 조회
+    SurfaceRead,
+    /// surface 생성/닫기/이동
+    SurfaceWrite,
+    /// 알림 생성/관리
+    Notification,
+    /// 클립보드 읽기
+    ClipboardRead,
+    /// 클립보드 쓰기
+    ClipboardWrite,
+    /// 호스트 노출 fs 읽기
+    FsRead,
+    /// 파일 쓰기
+    FsWrite,
+    /// 외부 프로세스 실행
+    ProcessSpawn,
+    /// 새 터미널 surface 생성
+    TerminalSpawn,
+    /// 터미널 입력 송신
+    TerminalWrite,
+    /// 터미널 출력/scrollback 읽기
+    TerminalRead,
+    /// 호스트를 통한 네트워크 (예약)
+    Network,
+    /// Claude 세션 메타데이터 조회 (예약)
+    ClaudeRead,
+    /// Claude API 호출 위임 (예약)
+    ClaudeInvoke,
+}
+
+impl Permission {
+    pub fn from_token(s: &str) -> Option<Self> {
+        Some(match s {
+            "surface.read" => Self::SurfaceRead,
+            "surface.write" => Self::SurfaceWrite,
+            "notification" => Self::Notification,
+            "clipboard.read" => Self::ClipboardRead,
+            "clipboard.write" => Self::ClipboardWrite,
+            "fs.read" => Self::FsRead,
+            "fs.write" => Self::FsWrite,
+            "process.spawn" => Self::ProcessSpawn,
+            "terminal.spawn" => Self::TerminalSpawn,
+            "terminal.write" => Self::TerminalWrite,
+            "terminal.read" => Self::TerminalRead,
+            "network" => Self::Network,
+            "claude.read" => Self::ClaudeRead,
+            "claude.invoke" => Self::ClaudeInvoke,
+            _ => return None,
+        })
+    }
+
+    pub fn as_token(self) -> &'static str {
+        match self {
+            Self::SurfaceRead => "surface.read",
+            Self::SurfaceWrite => "surface.write",
+            Self::Notification => "notification",
+            Self::ClipboardRead => "clipboard.read",
+            Self::ClipboardWrite => "clipboard.write",
+            Self::FsRead => "fs.read",
+            Self::FsWrite => "fs.write",
+            Self::ProcessSpawn => "process.spawn",
+            Self::TerminalSpawn => "terminal.spawn",
+            Self::TerminalWrite => "terminal.write",
+            Self::TerminalRead => "terminal.read",
+            Self::Network => "network",
+            Self::ClaudeRead => "claude.read",
+            Self::ClaudeInvoke => "claude.invoke",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -120,7 +198,30 @@ impl Manifest {
                 );
             }
         }
+        for raw in &self.permissions {
+            if Permission::from_token(raw).is_none() {
+                anyhow::bail!(
+                    "unknown permission '{}' in manifest (host may be older than plugin)",
+                    raw
+                );
+            }
+        }
         Ok(())
+    }
+
+    /// 매니페스트에 선언된 권한을 파싱한 set으로 반환.
+    /// `validate()`가 통과한 매니페스트에 대해 호출되면 절대 실패하지 않는다.
+    pub fn parsed_permissions(&self) -> anyhow::Result<HashSet<Permission>> {
+        let mut out = HashSet::with_capacity(self.permissions.len());
+        for raw in &self.permissions {
+            match Permission::from_token(raw) {
+                Some(p) => {
+                    out.insert(p);
+                }
+                None => anyhow::bail!("unknown permission '{}'", raw),
+            }
+        }
+        Ok(out)
     }
 }
 
@@ -262,6 +363,44 @@ mod tests {
     }
 
     #[test]
+    fn rejects_unknown_permission() {
+        let s = r#"
+            manifest_version = 1
+            id = "com.example.x"
+            name = "X"
+            version = "0.1"
+            api_version = "1"
+            permissions = ["fs.read", "made.up.permission"]
+            [entry]
+            type = "process"
+            command = "x"
+        "#;
+        let err = parse(s).unwrap_err().to_string();
+        assert!(err.contains("unknown permission"), "got: {err}");
+    }
+
+    #[test]
+    fn parsed_permissions_returns_enum_set() {
+        let s = r#"
+            manifest_version = 1
+            id = "com.example.x"
+            name = "X"
+            version = "0.1"
+            api_version = "1"
+            permissions = ["fs.read", "surface.write", "notification"]
+            [entry]
+            type = "process"
+            command = "x"
+        "#;
+        let m = parse(s).expect("should parse");
+        let perms = m.parsed_permissions().expect("should resolve");
+        assert!(perms.contains(&Permission::FsRead));
+        assert!(perms.contains(&Permission::SurfaceWrite));
+        assert!(perms.contains(&Permission::Notification));
+        assert_eq!(perms.len(), 3);
+    }
+
+    #[test]
     fn accepts_full_manifest() {
         // TOML rule: top-level keys must come before any table headers.
         let s = r#"
@@ -273,7 +412,7 @@ mod tests {
             description = "File explorer"
             homepage = "https://example.com"
             api_version = "1"
-            permissions = ["fs.read", "ipc.surface.list"]
+            permissions = ["fs.read", "surface.read"]
 
             [entry]
             type = "process"
