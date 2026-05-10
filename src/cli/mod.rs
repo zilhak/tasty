@@ -1,7 +1,10 @@
 mod claude;
 mod format;
+mod plugin;
 mod request;
 mod transport;
+
+use plugin::run_plugin_logs;
 
 use std::net::TcpStream;
 
@@ -153,6 +156,43 @@ pub enum Commands {
     Tool {
         #[command(subcommand)]
         command: ToolCommands,
+    },
+    /// Manage plugins (list, install, remove, enable, disable, logs)
+    Plugin {
+        #[command(subcommand)]
+        command: PluginCommands,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum PluginCommands {
+    /// List installed plugins (id, version, enabled, running).
+    List,
+    /// Install a plugin from a directory containing tasty-plugin.toml.
+    Install {
+        /// Path to plugin directory (must contain tasty-plugin.toml).
+        path: String,
+    },
+    /// Remove an installed plugin by id.
+    Remove {
+        /// Plugin id (e.g. com.example.explorer).
+        id: String,
+    },
+    /// Enable a disabled plugin and start it.
+    Enable {
+        id: String,
+    },
+    /// Disable a plugin (graceful shutdown if running).
+    Disable {
+        id: String,
+    },
+    /// Print the contents of a plugin's log file.
+    Logs {
+        /// Plugin id.
+        id: String,
+        /// Tail and follow new output (Ctrl-C to stop).
+        #[arg(long)]
+        follow: bool,
     },
 }
 
@@ -937,6 +977,13 @@ pub fn run_client(command: Commands) -> Result<()> {
     } = &command
     {
         return run_claude_uninstall();
+    }
+    // plugin logs is local-only — read the log file directly.
+    if let Commands::Plugin {
+        command: PluginCommands::Logs { id, follow },
+    } = &command
+    {
+        return run_plugin_logs(id, *follow);
     }
 
     let port = IpcServer::read_port_file()?;

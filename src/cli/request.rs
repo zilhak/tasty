@@ -2,8 +2,8 @@
 use super::DebugCommands;
 use super::{
     ClaudeCommands, ClipboardCommands, CloseCommands, Commands, ListCommands, MoveCommands,
-    NewCommands, ReadCommands, SendCommands, SetCommands, SurfaceMetaCommands, ToolCommands,
-    UnsetCommands,
+    NewCommands, PluginCommands, ReadCommands, SendCommands, SetCommands, SurfaceMetaCommands,
+    ToolCommands, UnsetCommands,
 };
 use crate::ipc::protocol::JsonRpcRequest;
 
@@ -111,6 +111,7 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
             serde_json::json!({ "surface_id": resolve_surface_id(*surface) }),
         ),
         Commands::Tool { command } => tool_command_to_method_params(command),
+        Commands::Plugin { command } => plugin_command_to_method_params(command),
     };
 
     JsonRpcRequest {
@@ -562,5 +563,20 @@ fn tool_command_to_method_params(command: &ToolCommands) -> (&'static str, serde
             #[cfg(debug_assertions)]
             ClipboardCommands::Viewer => ("debug.clipboard_viewer_open", serde_json::json!({})),
         },
+    }
+}
+
+fn plugin_command_to_method_params(command: &PluginCommands) -> (&'static str, serde_json::Value) {
+    match command {
+        PluginCommands::List => ("plugin.list", serde_json::json!({})),
+        PluginCommands::Install { path } => (
+            "plugin.install",
+            serde_json::json!({ "path": path }),
+        ),
+        PluginCommands::Remove { id } => ("plugin.remove", serde_json::json!({ "id": id })),
+        PluginCommands::Enable { id } => ("plugin.enable", serde_json::json!({ "id": id })),
+        PluginCommands::Disable { id } => ("plugin.disable", serde_json::json!({ "id": id })),
+        // Logs는 IPC를 거치지 않음 — run_client에서 special-case로 처리.
+        PluginCommands::Logs { .. } => ("plugin.list", serde_json::json!({})),
     }
 }
