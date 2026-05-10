@@ -1,4 +1,4 @@
-//! `~/.tasty/plugins.toml` — plugin enabled/disabled + 권한 grant 영속화.
+//! `~/.tasty/plugins.toml` — plugin enabled/disabled + 권한 grant + 단축키 영속화.
 //!
 //! 형식:
 //! ```toml
@@ -10,6 +10,14 @@
 //!
 //! [grants."com.example.explorer"]
 //! granted = ["fs.read", "surface.write"]
+//!
+//! [keybindings."com.example.explorer"."explorer.refresh"]
+//! mode = "key"
+//! value = ["F6"]
+//!
+//! [keybindings."com.example.explorer"."explorer.copy_paths"]
+//! mode = "inherit"
+//! source = "clipboard.copy"
 //! ```
 
 use std::collections::{BTreeMap, HashSet};
@@ -30,6 +38,25 @@ pub struct PluginsConfig {
     /// plugin id → grant entry. 키가 plugin id이므로 BTreeMap으로 정렬 보장.
     #[serde(default)]
     pub grants: BTreeMap<String, PluginGrants>,
+    /// plugin id → command id → 사용자가 매니페스트 기본값을 덮어쓴 단축키 설정.
+    /// 항목이 없으면 매니페스트의 `default_keybinding` + `binding_mode`가 그대로 적용.
+    #[serde(default)]
+    pub keybindings: BTreeMap<String, BTreeMap<String, ShortcutOverride>>,
+}
+
+/// 사용자가 plugin 단축키를 어떻게 덮어쓰는지 표현.
+///
+/// - `Key { value }`: plugin 매니페스트가 inherit를 선언했더라도 사용자가
+///   독립 키로 떼어낸 경우 또는 매니페스트가 independent였던 경우.
+/// - `Inherit { source }`: plugin이 inherit를 선언한 command를 사용자가
+///   그대로 두거나, plugin이 inherit 가능한 host action으로 명시 변경한 경우.
+/// - `None`: 사용자가 의도적으로 단축키를 비워둠. 매니페스트 기본값보다 우선.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(tag = "mode", rename_all = "lowercase")]
+pub enum ShortcutOverride {
+    Key { value: Vec<String> },
+    Inherit { source: String },
+    None,
 }
 
 #[derive(Debug, Default, Clone, Deserialize, Serialize)]
@@ -159,6 +186,36 @@ impl PluginsConfig {
         entry.granted.retain(|t| t != token);
         before != entry.granted.len()
     }
+
+    /// 사용자가 plugin command 단축키에 적용한 override를 조회. 없으면 None.
+    pub fn shortcut_override(&self, plugin_id: &str, command_id: &str) -> Option<&ShortcutOverride> {
+        self.keybindings.get(plugin_id).and_then(|m| m.get(command_id))
+    }
+
+    /// override를 설정. 같은 키가 있으면 덮어씀.
+    pub fn set_shortcut_override(
+        &mut self,
+        plugin_id: &str,
+        command_id: &str,
+        ov: ShortcutOverride,
+    ) {
+        self.keybindings
+            .entry(plugin_id.to_string())
+            .or_default()
+            .insert(command_id.to_string(), ov);
+    }
+
+    /// override를 제거 (매니페스트 기본값으로 되돌림). 실제 제거됐는지 반환.
+    pub fn clear_shortcut_override(&mut self, plugin_id: &str, command_id: &str) -> bool {
+        let Some(map) = self.keybindings.get_mut(plugin_id) else {
+            return false;
+        };
+        let removed = map.remove(command_id).is_some();
+        if map.is_empty() {
+            self.keybindings.remove(plugin_id);
+        }
+        removed
+    }
 }
 
 #[cfg(test)]
@@ -228,5 +285,58 @@ mod tests {
         assert!(cfg.is_disabled("com.example.broken"));
         assert!(cfg.is_disabled("com.foo.bar"));
         assert!(!cfg.is_disabled("com.example.good"));
+    }
+
+    #[test]
+    fn shortcut_override_round_trip() {
+        let mut cfg = PluginsConfig::default();
+        assert!(cfg.shortcut_override("com.example.x", "x.refresh").is_none());
+        cfg.set_shortcut_override(
+            "com.example.x",
+            "x.refresh",
+            ShortcutOverride::Key { value: vec!["F6".into()] },
+        );
+        match cfg.shortcut_override("com.example.x", "x.refresh") {
+            Some(ShortcutOverride::Key { value }) => assert_eq!(value, &vec!["F6".to_string()]),
+            other => panic!("unexpected: {other:?}"),
+        }
+        assert!(cfg.clear_shortcut_override("com.example.x", "x.refresh"));
+        assert!(cfg.shortcut_override("com.example.x", "x.refresh").is_none());
+        // plugin 항목이 비면 자체 제거됨
+        assert!(!cfg.keybindings.contains_key("com.example.x"));
+    }
+
+    #[test]
+    fn shortcut_override_serialization() {
+        let mut cfg = PluginsConfig::default();
+        cfg.set_shortcut_override(
+            "com.example.x",
+            "x.refresh",
+            ShortcutOverride::Key { value: vec!["F6".into()] },
+        );
+        cfg.set_shortcut_override(
+            "com.example.x",
+            "x.copy",
+            ShortcutOverride::Inherit { source: "clipboard.copy".into() },
+        );
+        cfg.set_shortcut_override(
+            "com.example.x",
+            "x.paste",
+            ShortcutOverride::None,
+        );
+        let s = toml::to_string_pretty(&cfg).unwrap();
+        let restored: PluginsConfig = toml::from_str(&s).unwrap();
+        assert!(matches!(
+            restored.shortcut_override("com.example.x", "x.refresh"),
+            Some(ShortcutOverride::Key { .. })
+        ));
+        assert!(matches!(
+            restored.shortcut_override("com.example.x", "x.copy"),
+            Some(ShortcutOverride::Inherit { .. })
+        ));
+        assert!(matches!(
+            restored.shortcut_override("com.example.x", "x.paste"),
+            Some(ShortcutOverride::None)
+        ));
     }
 }

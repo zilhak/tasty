@@ -11,8 +11,11 @@
 
 use std::collections::HashMap;
 
+use tasty_settings::KeybindingSettings;
+
 use super::host_actions;
 use super::manifest::{BindingMode, CommandDecl, Manifest};
+use super::registry_state::ShortcutOverride;
 
 /// 한 plugin이 등록한 한 command의 메타데이터.
 #[derive(Debug, Clone)]
@@ -114,6 +117,78 @@ impl PluginCommandRegistry {
 
     pub fn len(&self) -> usize {
         self.by_plugin.values().map(|v| v.len()).sum()
+    }
+}
+
+/// 한 plugin command에 실제 적용되는 단축키.
+///
+/// 매니페스트 default + binding_mode + 사용자 override를 합성한 결과.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EffectiveBinding {
+    /// plugin 자체 키 (사용자 또는 매니페스트 default).
+    Keys(Vec<String>),
+    /// 호스트 액션 키를 따라간다. `keys`는 호스트 KeybindingSettings에서
+    /// 즉시 해석한 결과 (편의용 cache — 호스트 설정이 바뀌면 다시 조회 필요).
+    Inherit { source: String, keys: Vec<String> },
+    /// 단축키 미할당 (매니페스트도 default 없음, 사용자도 None으로 설정).
+    None,
+}
+
+/// command entry + 사용자 override + 호스트 keybindings를 합성해 실제로 매칭에
+/// 사용할 키 목록을 결정.
+pub fn effective_binding(
+    entry: &PluginCommandEntry,
+    user_override: Option<&ShortcutOverride>,
+    host_kb: &KeybindingSettings,
+) -> EffectiveBinding {
+    // 1. 사용자 override가 우선
+    if let Some(ov) = user_override {
+        match ov {
+            ShortcutOverride::Key { value } => {
+                if value.is_empty() {
+                    return EffectiveBinding::None;
+                }
+                return EffectiveBinding::Keys(value.clone());
+            }
+            ShortcutOverride::Inherit { source } => {
+                if !host_actions::is_inheritable(source) {
+                    tracing::warn!(
+                        "user override inherit:{source} on '{}/{}' refers to non-inheritable action — ignoring",
+                        entry.plugin_id,
+                        entry.command_id
+                    );
+                    return manifest_default(entry, host_kb);
+                }
+                let keys = host_actions::host_action_for(host_kb, source)
+                    .cloned()
+                    .unwrap_or_default();
+                return EffectiveBinding::Inherit {
+                    source: source.clone(),
+                    keys,
+                };
+            }
+            ShortcutOverride::None => return EffectiveBinding::None,
+        }
+    }
+    // 2. 매니페스트 default
+    manifest_default(entry, host_kb)
+}
+
+fn manifest_default(entry: &PluginCommandEntry, host_kb: &KeybindingSettings) -> EffectiveBinding {
+    match &entry.binding_mode {
+        BindingMode::InheritHost(action) => {
+            let keys = host_actions::host_action_for(host_kb, action)
+                .cloned()
+                .unwrap_or_default();
+            EffectiveBinding::Inherit {
+                source: action.clone(),
+                keys,
+            }
+        }
+        BindingMode::Independent => match &entry.manifest_default {
+            Some(s) if !s.is_empty() => EffectiveBinding::Keys(vec![s.clone()]),
+            _ => EffectiveBinding::None,
+        },
     }
 }
 
@@ -238,5 +313,109 @@ mod tests {
         ));
         let plugins = reg.plugins_with_commands();
         assert_eq!(plugins, vec!["com.example.alpha", "com.example.zebra"]);
+    }
+
+    fn entry(plugin: &str, id: &str, mode: BindingMode, default: Option<&str>) -> PluginCommandEntry {
+        PluginCommandEntry {
+            plugin_id: plugin.to_string(),
+            command_id: id.to_string(),
+            title_i18n_key: format!("{id}.title"),
+            manifest_default: default.map(|s| s.to_string()),
+            binding_mode: mode,
+        }
+    }
+
+    #[test]
+    fn effective_user_key_override_wins() {
+        let kb = KeybindingSettings::preset_tasty();
+        let e = entry("p", "p.refresh", BindingMode::Independent, Some("F5"));
+        let ov = ShortcutOverride::Key { value: vec!["F6".into()] };
+        match effective_binding(&e, Some(&ov), &kb) {
+            EffectiveBinding::Keys(v) => assert_eq!(v, vec!["F6".to_string()]),
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn effective_user_key_override_empty_means_none() {
+        let kb = KeybindingSettings::preset_tasty();
+        let e = entry("p", "p.refresh", BindingMode::Independent, Some("F5"));
+        let ov = ShortcutOverride::Key { value: vec![] };
+        assert!(matches!(effective_binding(&e, Some(&ov), &kb), EffectiveBinding::None));
+    }
+
+    #[test]
+    fn effective_user_inherit_override_resolves_host_keys() {
+        let kb = KeybindingSettings::preset_tasty();
+        let e = entry("p", "p.copy", BindingMode::Independent, None);
+        let ov = ShortcutOverride::Inherit { source: "clipboard.copy".into() };
+        match effective_binding(&e, Some(&ov), &kb) {
+            EffectiveBinding::Inherit { source, keys } => {
+                assert_eq!(source, "clipboard.copy");
+                assert_eq!(keys, kb.copy);
+            }
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn effective_user_inherit_override_non_inheritable_falls_back_to_manifest() {
+        let kb = KeybindingSettings::preset_tasty();
+        let e = entry("p", "p.refresh", BindingMode::Independent, Some("F5"));
+        let ov = ShortcutOverride::Inherit { source: "tab.new".into() };
+        match effective_binding(&e, Some(&ov), &kb) {
+            EffectiveBinding::Keys(v) => assert_eq!(v, vec!["F5".to_string()]),
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn effective_user_none_override_means_none() {
+        let kb = KeybindingSettings::preset_tasty();
+        let e = entry("p", "p.refresh", BindingMode::Independent, Some("F5"));
+        let ov = ShortcutOverride::None;
+        assert!(matches!(effective_binding(&e, Some(&ov), &kb), EffectiveBinding::None));
+    }
+
+    #[test]
+    fn effective_no_override_manifest_inherit_resolves_host() {
+        let kb = KeybindingSettings::preset_tasty();
+        let e = entry(
+            "p",
+            "p.copy",
+            BindingMode::InheritHost("clipboard.copy".into()),
+            None,
+        );
+        match effective_binding(&e, None, &kb) {
+            EffectiveBinding::Inherit { source, keys } => {
+                assert_eq!(source, "clipboard.copy");
+                assert_eq!(keys, kb.copy);
+            }
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn effective_no_override_manifest_independent_with_default() {
+        let kb = KeybindingSettings::preset_tasty();
+        let e = entry("p", "p.refresh", BindingMode::Independent, Some("F5"));
+        match effective_binding(&e, None, &kb) {
+            EffectiveBinding::Keys(v) => assert_eq!(v, vec!["F5".to_string()]),
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn effective_no_override_manifest_independent_without_default() {
+        let kb = KeybindingSettings::preset_tasty();
+        let e = entry("p", "p.refresh", BindingMode::Independent, None);
+        assert!(matches!(effective_binding(&e, None, &kb), EffectiveBinding::None));
+    }
+
+    #[test]
+    fn effective_no_override_manifest_independent_empty_default() {
+        let kb = KeybindingSettings::preset_tasty();
+        let e = entry("p", "p.refresh", BindingMode::Independent, Some(""));
+        assert!(matches!(effective_binding(&e, None, &kb), EffectiveBinding::None));
     }
 }
