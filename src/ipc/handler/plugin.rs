@@ -75,6 +75,8 @@ pub fn handle_install(
     }
     // discover + try to start the new plugin
     mgr.packages = crate::plugin::discovery::discover();
+    // 새 plugin의 단축키 command 등록 (설정 UI/단축키 매칭이 즉시 인식)
+    mgr.command_registry.register_plugin(&manifest);
     // 첫 설치 시: 매니페스트의 모든 권한을 grant (CLI 기반 install은 사용자가
     // 직접 명령을 실행했으므로 동의로 간주). GUI install 흐름이 추가되면 이
     // 자동 grant는 빼고 동의 모달에서 결정한다.
@@ -123,6 +125,7 @@ pub fn handle_remove(
         return JsonRpcResponse::error(id, -32000, &format!("remove dir failed: {e}"));
     }
     mgr.packages.retain(|p| p.manifest.id != plugin_id);
+    mgr.command_registry.unregister_plugin(&plugin_id);
     JsonRpcResponse::success(id, json!({ "removed": plugin_id }))
 }
 

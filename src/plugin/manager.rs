@@ -78,6 +78,9 @@ pub struct PluginManager {
     /// plugin이 보낸 IpcCall을 호스트의 main loop에서 라우팅 처리하기 위해 모으는 큐.
     /// `App::process_plugin_ipc_calls()`가 매 tick에 비운다.
     pending_plugin_calls: Vec<PendingPluginCall>,
+    /// plugin이 매니페스트로 선언한 단축키 command 일람. plugin
+    /// enable/disable/install/remove 시 갱신됨.
+    pub command_registry: super::command_registry::PluginCommandRegistry,
 }
 
 /// plugin → host IPC 호출 한 건. 라우팅 후 결과를 plugin에 회신해야 함.
@@ -116,6 +119,7 @@ impl PluginManager {
             pending_requests: HashMap::new(),
             plugin_permissions: HashMap::new(),
             pending_plugin_calls: Vec::new(),
+            command_registry: super::command_registry::PluginCommandRegistry::new(),
         }
     }
 
@@ -183,6 +187,16 @@ impl PluginManager {
     /// plugin이 없으면 listener 자체를 만들지 않음 (포트 점유 회피).
     pub fn discover_and_start(&mut self) {
         self.packages = crate::plugin::discovery::discover();
+
+        // command registry에 모든 발견된 plugin의 commands를 등록.
+        // disabled 여부와 무관 — 설정 UI는 비활성 plugin도 단축키 항목을
+        // 보여줘야 사용자가 미리 키를 잡아둘 수 있다.
+        self.command_registry =
+            super::command_registry::PluginCommandRegistry::new();
+        for pkg in &self.packages {
+            self.command_registry.register_plugin(&pkg.manifest);
+        }
+
         let to_start: Vec<String> = self
             .packages
             .iter()
