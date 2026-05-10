@@ -170,7 +170,14 @@ plugin이 매니페스트의 `[[contributes.commands]]`로 선언한다. 호스�
 | 값 | 의미 |
 |----|------|
 | `"independent"` (기본) | 호스트 단축키와 무관한 자기 키를 갖는다. 사용자가 설정에서 변경해도 호스트 설정에 영향 없음 |
-| `"inherit:<host_action>"` | 호스트의 의미론적 액션(예: `clipboard.copy`)에 위임. 호스트 키가 바뀌면 plugin도 자동 동행 |
+| `"inherit:<host_action>"` | 호스트의 의미론적 액션에 위임. 호스트 키가 바뀌면 plugin도 자동 동행 |
+
+inherit 가능한 host action 목록 (현재 4종, 추후 확장):
+
+- `clipboard.copy`
+- `clipboard.paste`
+- `clipboard.cut`
+- `select_all`
 
 예: 파일 탐색기 plugin의 "선택한 파일 복사"를 호스트의 클립보드 복사 단축키와
 동일하게 두고 싶다면 `binding_mode = "inherit:clipboard.copy"`. 반대로 plugin
@@ -188,8 +195,10 @@ plugin이 매니페스트의 `[[contributes.commands]]`로 선언한다. 호스�
      - 독립 설정으로 바꾸면 매니페스트 `default_keybinding`이 시작값으로 들어오고, 사용자가 변경 가능
      - 호스트 설정 따라가기로 되돌리면 사용자 키는 버려지고 다시 동행
    - **independent로 선언된 command**: inherit 불가. 키만 변경 가능
-4. plugin이 호스트 설정과 충돌하는 키를 선언했을 때, plugin 키가 surface 포커스
-   안에서만 우선하고 그 외 영역은 호스트 키가 동작한다 (surface-scoped 우선순위)
+4. focused surface가 plugin 소유면 plugin 단축키가 **무조건 우선**한다.
+   매칭되면 이벤트가 소모되어 호스트 액션은 트리거되지 않는다 (inherit 모드도
+   동일 — plugin이 받는 것으로 끝). 그 외 영역(터미널, 다른 surface)에서는
+   호스트 키가 정상 동작.
 
 ### 영속화
 
@@ -220,6 +229,48 @@ plugin별 섹션으로 저장된다.
 Plugin은 자기 SDK 콜백에서 받아 처리하면 된다. inherit 모드인 command도 plugin
 입장에서는 동일한 메시지로 도착한다 — 호스트 키가 매핑되어 있을 뿐 dispatch
 경로는 같다.
+
+## 국제화 (i18n)
+
+Plugin은 자체 lang 파일을 동봉할 수 있고, 호스트는 이를 자동으로 호스트
+i18n registry에 합쳐 둔다. 그 결과:
+
+- plugin 매니페스트의 `title_i18n_key` 같은 키를 호스트 설정 UI에서도 번역해서
+  표시할 수 있다
+- plugin 자체 코드에서도 동일 키를 `tasty_plugin_sdk::t(key)`로 호출 가능
+
+### 디렉터리 구조
+
+```
+~/.tasty/plugins/com.example.explorer/
+  tasty-plugin.toml
+  tasty-plugin-explorer
+  lang/
+    en.toml
+    ko.toml
+    ja.toml
+```
+
+매니페스트에서 `lang_dir`을 명시하지 않으면 기본 `"lang"`. 다른 경로를 쓰려면:
+
+```toml
+lang_dir = "i18n"        # 매니페스트 디렉터리 기준 상대 경로
+```
+
+### 키 명명 규칙 / 충돌
+
+- 호스트 i18n registry는 모든 키를 평면 namespace로 보관한다
+- plugin이 자기 키를 `<plugin_id_short>.command.<...>` 같이 prefix하는 것을
+  강하게 권장 (예: `explorer.command.refresh`)
+- 동일 키가 호스트나 다른 plugin에 이미 등록돼 있으면 **먼저 등록된 쪽이
+  이김** + warn 로그. plugin이 호스트 키를 덮어쓸 수 없다
+
+### locale 협상
+
+호스트가 plugin spawn 시 `TASTY_LOCALE` 환경변수로 현재 locale을 전달한다.
+plugin SDK는 자기 프로세스에서도 동일 locale의 lang 파일을 읽어 `t()` 함수로
+노출한다. 호스트와 plugin은 각자 독립적으로 lang 파일을 읽지만 같은 locale을
+바라본다.
 
 ## 생명주기 동작
 
