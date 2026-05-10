@@ -7,6 +7,7 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
@@ -15,6 +16,7 @@ use crate::plugin::manifest::PluginPackage;
 use crate::plugin::process::PluginProcess;
 use crate::plugin::protocol::PluginEvent;
 use crate::plugin::registry_state::PluginsConfig;
+use crate::surface_registry::SurfaceKindRegistry;
 
 const HEALTHCHECK_TIMEOUT: Duration = Duration::from_secs(60);
 const PING_INTERVAL: Duration = Duration::from_secs(15);
@@ -34,6 +36,11 @@ pub struct PluginManager {
     spawn_failures: HashMap<String, Vec<Instant>>,
     /// 자동 disable되어 사용자가 수동 enable하기 전까지 더 이상 spawn 시도 안 함.
     auto_disabled: std::collections::HashSet<String>,
+    /// hello 받은 plugin의 surface_kinds를 등록하기 위한 registry 핸들. None이면
+    /// registry 등록 동작이 비활성 (헤드리스/테스트).
+    pub surface_registry: Option<Arc<SurfaceKindRegistry>>,
+    /// 이미 registry에 등록된 plugin id (hello를 여러 번 받아도 1회만 등록).
+    registered_plugins: std::collections::HashSet<String>,
 }
 
 impl PluginManager {
@@ -53,7 +60,13 @@ impl PluginManager {
             last_ping: Instant::now(),
             spawn_failures: HashMap::new(),
             auto_disabled: std::collections::HashSet::new(),
+            surface_registry: None,
+            registered_plugins: std::collections::HashSet::new(),
         }
+    }
+
+    pub fn set_surface_registry(&mut self, registry: Arc<SurfaceKindRegistry>) {
+        self.surface_registry = Some(registry);
     }
 
     /// 디스커버리 + 활성 plugin 모두 spawn. listener도 여기서 한 번만 bind.
@@ -146,6 +159,7 @@ impl PluginManager {
     pub fn pump(&mut self) {
         // 1. plugin → 호스트 이벤트 처리
         let mut hello_log: Vec<(String, String)> = Vec::new();
+        let mut to_register: Vec<String> = Vec::new();
         for (id, proc) in &self.processes {
             while let Ok(ev) = proc.event_rx.try_recv() {
                 match ev {
@@ -153,7 +167,10 @@ impl PluginManager {
                         plugin_id,
                         version,
                     } => {
-                        hello_log.push((plugin_id, version));
+                        hello_log.push((plugin_id.clone(), version));
+                        if !self.registered_plugins.contains(&plugin_id) {
+                            to_register.push(plugin_id);
+                        }
                     }
                     PluginEvent::Log { level, message } => match level.as_str() {
                         "error" => tracing::error!("[plugin {}] {}", id, message),
@@ -171,6 +188,29 @@ impl PluginManager {
         }
         for (plugin_id, version) in hello_log {
             tracing::info!("plugin hello: {} v{}", plugin_id, version);
+        }
+        // hello를 처음 받은 plugin의 surface_kinds를 registry에 등록.
+        if !to_register.is_empty() {
+            if let Some(registry) = self.surface_registry.clone() {
+                for plugin_id in &to_register {
+                    if let Some(pkg) =
+                        self.packages.iter().find(|p| &p.manifest.id == plugin_id)
+                    {
+                        for decl in &pkg.manifest.surface_kinds {
+                            crate::plugin::remote_kind::register_remote_kind(
+                                &registry, plugin_id, decl,
+                            );
+                        }
+                    }
+                    self.registered_plugins.insert(plugin_id.clone());
+                }
+            } else {
+                // registry 미설정 — 등록 보류 (다음에 set_surface_registry 후 재시도 가능)
+                tracing::debug!(
+                    "plugin manager has no surface_registry; deferring registration of {} plugin(s)",
+                    to_register.len()
+                );
+            }
         }
 
         // 2. 주기적 ping

@@ -268,6 +268,7 @@ impl App {
         // 첫 윈도우 생성 시 plugin manager 한 번만 초기화.
         if self.plugin_manager.is_none() {
             let mut mgr = plugin::PluginManager::new(factory);
+            mgr.set_surface_registry(state.engine.surface_registry.clone());
             mgr.discover_and_start();
             self.plugin_manager = Some(mgr);
         }

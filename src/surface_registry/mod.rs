@@ -16,7 +16,7 @@
 mod builtins;
 
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use tasty_core::model::{Surface, SurfaceId};
 
@@ -66,43 +66,63 @@ pub struct SurfaceKindDef {
 
 /// surface 종류 lookup 테이블. `Arc<SurfaceKindRegistry>` 단위로 EngineState에 보관되어
 /// 매 프레임 dispatch에 사용된다.
+///
+/// 내부적으로 `RwLock`을 사용하여 plugin이 부팅 후 동적으로 kind를 등록할 수 있게
+/// 한다. Builtin은 부팅 시 한 번 register되고 read만 일어나는 hot path는 read-lock
+/// 한 번이므로 사실상 lock-free에 가깝다.
 #[derive(Default)]
 pub struct SurfaceKindRegistry {
-    kinds: HashMap<&'static str, Arc<SurfaceKindDef>>,
+    kinds: RwLock<HashMap<&'static str, Arc<SurfaceKindDef>>>,
 }
 
 impl SurfaceKindRegistry {
     pub fn new() -> Self {
         Self {
-            kinds: HashMap::new(),
+            kinds: RwLock::new(HashMap::new()),
         }
     }
 
-    pub fn register(&mut self, def: SurfaceKindDef) {
+    /// `&self`만 받으므로 `Arc<SurfaceKindRegistry>` 너머에서도 호출 가능.
+    /// plugin 매니저가 hello 받은 후 호출.
+    pub fn register(&self, def: SurfaceKindDef) {
         let kind = def.kind;
-        if self.kinds.insert(kind, Arc::new(def)).is_some() {
+        let mut map = match self.kinds.write() {
+            Ok(m) => m,
+            Err(e) => {
+                tracing::error!("SurfaceKindRegistry write lock poisoned: {e}");
+                return;
+            }
+        };
+        if map.insert(kind, Arc::new(def)).is_some() {
             tracing::warn!("SurfaceKindRegistry: kind '{}' overwritten", kind);
         }
     }
 
     pub fn get(&self, kind: &str) -> Option<Arc<SurfaceKindDef>> {
-        self.kinds.get(kind).cloned()
+        self.kinds.read().ok()?.get(kind).cloned()
     }
 
     pub fn contains(&self, kind: &str) -> bool {
-        self.kinds.contains_key(kind)
+        self.kinds
+            .read()
+            .map(|m| m.contains_key(kind))
+            .unwrap_or(false)
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (&&'static str, &Arc<SurfaceKindDef>)> {
-        self.kinds.iter()
+    /// 등록된 kind 목록을 스냅샷으로 반환 (lock 해제 후 안전히 사용).
+    pub fn kinds_snapshot(&self) -> Vec<(&'static str, Arc<SurfaceKindDef>)> {
+        self.kinds
+            .read()
+            .map(|m| m.iter().map(|(k, v)| (*k, v.clone())).collect())
+            .unwrap_or_default()
     }
 
     pub fn len(&self) -> usize {
-        self.kinds.len()
+        self.kinds.read().map(|m| m.len()).unwrap_or(0)
     }
 
     pub fn is_empty(&self) -> bool {
-        self.kinds.is_empty()
+        self.kinds.read().map(|m| m.is_empty()).unwrap_or(true)
     }
 }
 
@@ -122,7 +142,7 @@ mod tests {
 
     #[test]
     fn register_and_lookup() {
-        let mut reg = SurfaceKindRegistry::new();
+        let reg = SurfaceKindRegistry::new();
         reg.register(dummy_def("alpha"));
         reg.register(dummy_def("beta"));
         assert!(reg.contains("alpha"));
@@ -134,7 +154,7 @@ mod tests {
 
     #[test]
     fn duplicate_register_overwrites() {
-        let mut reg = SurfaceKindRegistry::new();
+        let reg = SurfaceKindRegistry::new();
         reg.register(dummy_def("x"));
         reg.register(dummy_def("x"));
         assert!(reg.contains("x"));
@@ -143,8 +163,8 @@ mod tests {
 
     #[test]
     fn builtin_registers_seven_kinds() {
-        let mut reg = SurfaceKindRegistry::new();
-        register_builtin_kinds(&mut reg);
+        let reg = SurfaceKindRegistry::new();
+        register_builtin_kinds(&reg);
         for kind in [
             "terminal",
             "markdown",

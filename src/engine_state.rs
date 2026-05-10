@@ -198,8 +198,8 @@ impl EngineState {
             busy_surfaces: std::collections::HashSet::new(),
             waker_factory: None,
             surface_registry: {
-                let mut reg = SurfaceKindRegistry::new();
-                crate::surface_registry::register_builtin_kinds(&mut reg);
+                let reg = SurfaceKindRegistry::new();
+                crate::surface_registry::register_builtin_kinds(&reg);
                 Arc::new(reg)
             },
             layout_dirty: crate::layout_persistence::LayoutDirtyTracker::new(),

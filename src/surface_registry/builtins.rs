@@ -15,7 +15,7 @@ use tasty_core::model::{
 use super::{SurfaceKindDef, SurfaceKindRegistry};
 
 /// 부팅 시 호출. EngineState 생성 직전에 빈 SurfaceKindRegistry에 본체 7종을 등록한다.
-pub fn register_builtin_kinds(registry: &mut SurfaceKindRegistry) {
+pub fn register_builtin_kinds(registry: &SurfaceKindRegistry) {
     register_terminal(registry);
     register_markdown(registry);
     register_explorer(registry);
@@ -31,7 +31,7 @@ pub fn register_builtin_kinds(registry: &mut SurfaceKindRegistry) {
 // 생성하지 않는다. 호출자(IPC handler / split_pane_targeted / SavedSurface::Terminal
 // 복원)가 별도 경로를 거치므로, 여기서는 안전한 sentinel만 반환한다.
 
-fn register_terminal(registry: &mut SurfaceKindRegistry) {
+fn register_terminal(registry: &SurfaceKindRegistry) {
     registry.register(SurfaceKindDef {
         kind: "terminal",
         display_name_i18n_key: "surface.kind.terminal",
@@ -47,7 +47,7 @@ fn register_terminal(registry: &mut SurfaceKindRegistry) {
 
 // ── Markdown ────────────────────────────────────────────────────────────────
 
-fn register_markdown(registry: &mut SurfaceKindRegistry) {
+fn register_markdown(registry: &SurfaceKindRegistry) {
     registry.register(SurfaceKindDef {
         kind: "markdown",
         display_name_i18n_key: "surface.kind.markdown",
@@ -74,7 +74,7 @@ fn register_markdown(registry: &mut SurfaceKindRegistry) {
 
 // ── Explorer ────────────────────────────────────────────────────────────────
 
-fn register_explorer(registry: &mut SurfaceKindRegistry) {
+fn register_explorer(registry: &SurfaceKindRegistry) {
     registry.register(SurfaceKindDef {
         kind: "explorer",
         display_name_i18n_key: "surface.kind.explorer",
@@ -111,7 +111,7 @@ fn default_explorer_root() -> String {
 
 // ── Html ────────────────────────────────────────────────────────────────────
 
-fn register_html(registry: &mut SurfaceKindRegistry) {
+fn register_html(registry: &SurfaceKindRegistry) {
     registry.register(SurfaceKindDef {
         kind: "html",
         display_name_i18n_key: "surface.kind.html",
@@ -138,7 +138,7 @@ fn register_html(registry: &mut SurfaceKindRegistry) {
 
 // ── Image ───────────────────────────────────────────────────────────────────
 
-fn register_image(registry: &mut SurfaceKindRegistry) {
+fn register_image(registry: &SurfaceKindRegistry) {
     registry.register(SurfaceKindDef {
         kind: "image",
         display_name_i18n_key: "surface.kind.image",
@@ -166,7 +166,7 @@ fn register_image(registry: &mut SurfaceKindRegistry) {
 
 // ── Empty ───────────────────────────────────────────────────────────────────
 
-fn register_empty(registry: &mut SurfaceKindRegistry) {
+fn register_empty(registry: &SurfaceKindRegistry) {
     registry.register(SurfaceKindDef {
         kind: "empty",
         display_name_i18n_key: "surface.kind.empty",
@@ -182,7 +182,7 @@ fn register_empty(registry: &mut SurfaceKindRegistry) {
 
 // ── ClipboardViewer ─────────────────────────────────────────────────────────
 
-fn register_clipboard_viewer(registry: &mut SurfaceKindRegistry) {
+fn register_clipboard_viewer(registry: &SurfaceKindRegistry) {
     registry.register(SurfaceKindDef {
         kind: "clipboard_viewer",
         display_name_i18n_key: "surface.kind.clipboard_viewer",
