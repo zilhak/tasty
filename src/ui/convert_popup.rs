@@ -30,10 +30,9 @@ pub fn draw_convert_popup(ui: &mut egui::Ui, state: &mut AppState) -> PopupActio
 }
 
 /// Menu items for the convert surface popup.
-const ITEMS: [(&str, &str, char); 5] = [
+const ITEMS: [(&str, &str, char); 4] = [
     ("Terminal", "convert_popup.terminal", 'T'),
     ("Markdown", "convert_popup.markdown", 'M'),
-    ("Explorer", "convert_popup.explorer", 'E'),
     ("Html", "convert_popup.html", 'H'),
     ("Image", "convert_popup.image", 'I'),
 ];
@@ -133,9 +132,6 @@ pub fn draw_convert_content(ui: &mut egui::Ui, state: &mut AppState) -> Option<C
                     egui::Key::M if current_type != Some("Markdown") => {
                         action = Some(ConvertAction::Markdown);
                     }
-                    egui::Key::E if current_type != Some("Explorer") => {
-                        action = Some(ConvertAction::Explorer);
-                    }
                     egui::Key::H if current_type != Some("Html") => {
                         action = Some(ConvertAction::Html);
                     }
@@ -215,9 +211,6 @@ pub fn apply_convert_action(state: &mut AppState, action: ConvertAction) {
             state.dialogs.pending_popup_open =
                 Some(("markdown_open", popup::PopupScope::Surface(surface_id)));
         }
-        ConvertAction::Explorer => {
-            state.convert_surface_to_explorer(surface_id);
-        }
         ConvertAction::Html => {
             let pane_id = state.active_workspace().focused_pane;
             state.dialogs.html_convert_surface_id = Some(surface_id);
@@ -236,7 +229,6 @@ pub fn apply_convert_action(state: &mut AppState, action: ConvertAction) {
 pub enum ConvertAction {
     Terminal,
     Markdown,
-    Explorer,
     Html,
     Image,
 }
@@ -245,8 +237,7 @@ fn action_for_index(idx: usize) -> ConvertAction {
     match idx {
         0 => ConvertAction::Terminal,
         1 => ConvertAction::Markdown,
-        2 => ConvertAction::Explorer,
-        3 => ConvertAction::Html,
+        2 => ConvertAction::Html,
         _ => ConvertAction::Image,
     }
 }

@@ -141,15 +141,6 @@ impl AppState {
                     crate::model::MarkdownPanel::new(id, path.to_string_lossy().to_string()),
                 )))
             }
-            ClosedPanel::Explorer { path } => {
-                let id = self.engine.next_ids.next_surface();
-                let root = path
-                    .map(|p| p.to_string_lossy().to_string())
-                    .unwrap_or_else(|| ".".to_string());
-                Some(RebuildResult::Single(Box::new(
-                    crate::model::ExplorerPanel::new(id, root),
-                )))
-            }
             ClosedPanel::Image { path } => {
                 let id = self.engine.next_ids.next_surface();
                 match path {
@@ -161,6 +152,9 @@ impl AppState {
                     ))),
                 }
             }
+            // Explorer는 plugin으로 옮겨졌고 host에서 재생성할 수 없으므로 복원 스킵.
+            // F 단계에서 ClosedPanel::Remote 도입 후 처리할 예정.
+            ClosedPanel::Explorer { .. } => None,
         }
     }
 

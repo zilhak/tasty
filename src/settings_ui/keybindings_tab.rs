@@ -261,7 +261,6 @@ pub fn draw_keybindings_tab(
                         &[
                             ("new_tab", "settings.keybindings.new_tab_label"),
                             ("open_markdown", "settings.keybindings.open_markdown_label"),
-                            ("open_explorer", "settings.keybindings.open_explorer_label"),
                             ("next_tab", "settings.keybindings.next_tab_label"),
                             ("prev_tab", "settings.keybindings.prev_tab_label"),
                             ("rename_tab", "settings.keybindings.rename_tab_label"),
@@ -328,10 +327,6 @@ pub fn draw_keybindings_tab(
                             (
                                 "convert_to_markdown",
                                 "settings.keybindings.convert_to_markdown_label",
-                            ),
-                            (
-                                "convert_to_explorer",
-                                "settings.keybindings.convert_to_explorer_label",
                             ),
                             ("close_surface", "settings.keybindings.close_surface_label"),
                         ],

@@ -78,11 +78,6 @@ pub fn draw_egui_panels(
     let surface_keys: Vec<PendingKeyEvent> = state.pending_surface_keys.drain(..).collect();
 
     // Second pass: render each egui panel.
-    let mut pending_explorer_action: Option<(
-        u32,
-        Option<u32>,
-        crate::explorer_ui::ExplorerAction,
-    )> = None;
     let mut pending_empty_action: Option<crate::empty_ui::EmptyAction> = None;
     // Clipboard viewer surfaces are rendered after the main loop to sidestep the
     // borrow conflict between surface (via state.workspaces) and state.engine.clipboard_history.
@@ -98,16 +93,13 @@ pub fn draw_egui_panels(
     let mut pending_clipboard_viewer_renders: Vec<PendingClipboardViewerRender> = Vec::new();
 
     let markdown_colors = state.engine.settings.appearance.markdown_colors.clone();
-    let explorer_colors = state.engine.settings.appearance.explorer_colors.clone();
     let markdown_font = state.engine.settings.appearance.effective_markdown_font();
-    let explorer_font = state.engine.settings.appearance.effective_explorer_font();
 
     // Temporarily extract view stores so we can hold a `&mut View` from
     // the store at the same time as `&mut Panel` from `state.engine.workspaces`.
     // (Same pattern used below for clipboard_history.)
     let mut markdown_views = std::mem::take(&mut state.markdown_views);
     let mut image_views = std::mem::take(&mut state.image_views);
-    let mut explorer_views = std::mem::take(&mut state.explorer_views);
 
     for info in &infos {
         let id_suffix = info
@@ -172,43 +164,6 @@ pub fn draw_egui_panels(
                     &markdown_font,
                 );
             });
-        } else if let Some(exp_panel) = surface
-            .as_any_mut()
-            .downcast_mut::<crate::model::ExplorerPanel>()
-        {
-            let is_focused = info.is_keyboard_target;
-            let keys = if is_focused { &surface_keys[..] } else { &[] };
-            let view = explorer_views.get_or_init(exp_panel);
-            // 포커스 획득 시 즉시 갱신 + focused 상태에서 2초마다 자동 갱신
-            let should_refresh = if is_focused && !view.was_focused {
-                true
-            } else if is_focused && view.last_refresh.elapsed().as_secs() >= 2 {
-                true
-            } else {
-                false
-            };
-            if should_refresh {
-                exp_panel.refresh_expanded_dirs();
-                view.last_refresh = std::time::Instant::now();
-            }
-            view.was_focused = is_focused;
-            let exp_bg = if is_focused {
-                explorer_colors.focused_bg.to_egui()
-            } else {
-                explorer_colors.unfocused_bg.to_egui()
-            };
-            draw_panel_frame(ctx, &format!("explorer_{}", id_suffix), info, 4, Some(exp_bg), |ui| {
-                if let Some(act) = crate::explorer_ui::draw_explorer(
-                    ui,
-                    exp_panel,
-                    view,
-                    keys,
-                    &explorer_font,
-                    &markdown_font,
-                ) {
-                    pending_explorer_action = Some((info.pane_id, info.surface_id, act));
-                }
-            });
         } else if let Some(html_panel) = surface
             .as_any()
             .downcast_ref::<crate::model::HtmlPanel>()
@@ -258,7 +213,6 @@ pub fn draw_egui_panels(
     // Restore extracted view stores before any further `state` access below.
     state.markdown_views = markdown_views;
     state.image_views = image_views;
-    state.explorer_views = explorer_views;
 
     // Render clipboard viewer surfaces now. The main loop is done, so we have
     // exclusive access to state again and can safely borrow engine + surface.
@@ -340,45 +294,6 @@ pub fn draw_egui_panels(
         );
     }
 
-    // Process deferred explorer actions (requires state mutation outside the render loop)
-    if let Some((pane_id, surface_id, action)) = pending_explorer_action {
-        state.active_workspace_mut().focused_pane = pane_id;
-        match action {
-            crate::explorer_ui::ExplorerAction::OpenMarkdownTab(path) => {
-                let _ = state.add_markdown_tab(path);
-            }
-            crate::explorer_ui::ExplorerAction::OpenHtmlTab(path) => {
-                let url = crate::ui::file_open_popup::local_path_to_file_uri(&path);
-                let _ = state.add_html_tab(url);
-            }
-            crate::explorer_ui::ExplorerAction::TreeContextMenu {
-                targets,
-                has_directories,
-                has_files,
-                is_background,
-                x,
-                y,
-            } => {
-                state.dialogs.pending_native_menu =
-                    Some(crate::state::PendingNativeMenu::ExplorerTree {
-                        surface_id: surface_id.unwrap_or(0),
-                        targets,
-                        has_directories,
-                        has_files,
-                        is_background,
-                        x,
-                        y,
-                    });
-            }
-            crate::explorer_ui::ExplorerAction::BookmarkContextMenu { path, name, x, y } => {
-                state.dialogs.pending_native_menu =
-                    Some(crate::state::PendingNativeMenu::BookmarkItem { path, name, x, y });
-            }
-            crate::explorer_ui::ExplorerAction::StartDrag { paths } => {
-                state.dialogs.pending_file_drag = Some(paths);
-            }
-        }
-    }
 }
 
 /// 공통 egui Area + Frame 껍데기. `margin`만큼 내부 여백을 준다.

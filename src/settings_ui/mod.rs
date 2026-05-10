@@ -17,7 +17,6 @@ pub(crate) enum AppearanceSubTab {
     Tasty,
     Terminal,
     Markdown,
-    Explorer,
     HtmlViewer,
 }
 

@@ -443,12 +443,6 @@ impl MainWindow {
                         self.state.dialogs.markdown_open_buffer.clear();
                         self.state.popups.open_centered_focused("markdown_open");
                     }
-                    "open_explorer" => {
-                        let home = directories::BaseDirs::new()
-                            .map(|d| d.home_dir().to_string_lossy().to_string())
-                            .unwrap_or_else(|| ".".to_string());
-                        let _ = self.state.add_explorer_tab(home);
-                    }
                     "convert_surface" => {
                         if let Some(sid) = self.state.focused_surface_id() {
                             self.state.dialogs.convert_popup = Some(sid);
@@ -472,9 +466,10 @@ impl MainWindow {
                         }
                     }
                     "convert_to_explorer" => {
-                        if let Some(sid) = self.state.focused_surface_id() {
-                            self.state.convert_surface_to_explorer(sid);
-                        }
+                        // explorer는 com.tasty.explorer plugin이 제공하므로
+                        // 호스트 측 즉시 변환은 더 이상 동작하지 않는다. 단축키
+                        // 자체는 보존하되 동작은 후속 단계에서 plugin RemoteSurface
+                        // swap으로 복구할 예정.
                     }
                     "close_active" => {
                         if !self.state.close_active_tab() {
@@ -515,16 +510,6 @@ impl MainWindow {
         let terminal_rect = self.compute_terminal_rect();
         let cell_w = self.base.gpu.cell_width();
         let cell_h = self.base.gpu.cell_height();
-
-        // Copy path (Explorer only) — must check before generic copy
-        if self.handle_copy_path_shortcut(key, mods) {
-            return true;
-        }
-
-        // Explorer: cut, select_all
-        if self.handle_explorer_shortcuts(key, mods) {
-            return true;
-        }
 
         // Clipboard copy (needs &self before state borrow)
         if self.handle_copy_shortcut(key, mods) {
@@ -574,60 +559,6 @@ impl MainWindow {
         false
     }
 
-    fn handle_explorer_shortcuts(&mut self, key: &Key, mods: ModifiersState) -> bool {
-        if !self.state.focused_surface_type().is_kind("explorer") {
-            return false;
-        }
-
-        let kb = &self.state.engine.settings.keybindings;
-
-        // Cut
-        if matches_any_binding(&kb.cut, key, mods) {
-            if self.state.explorer_file_cut() {
-                let scope =
-                    crate::ui::ToastScope::Surface(self.state.focused_surface_id().unwrap_or(0));
-                self.state
-                    .toasts
-                    .push_info(crate::i18n::t("toast.cut_files"), scope);
-                self.mark_dirty();
-            }
-            return true;
-        }
-
-        // Select all
-        if matches_any_binding(&kb.select_all, key, mods) {
-            self.state.explorer_select_all();
-            self.mark_dirty();
-            return true;
-        }
-
-        false
-    }
-
-    fn handle_copy_path_shortcut(&mut self, key: &Key, mods: ModifiersState) -> bool {
-        let bindings = self.state.engine.settings.keybindings.copy_path.clone();
-        if !matches_any_binding(&bindings, key, mods) {
-            return false;
-        }
-        // Explorer에서 선택된 파일 경로를 텍스트로 클립보드에 복사
-        if !self.state.focused_surface_type().is_kind("explorer") {
-            return false;
-        }
-        let text = self.state.focused_explorer_selected_paths();
-        if text.is_empty() {
-            return false;
-        }
-        self.base.gpu.egui_state.set_clipboard_text(text);
-        let scope = crate::ui::ToastScope::Surface(
-            self.state.focused_surface_id().unwrap_or(0)
-        );
-        self.state
-            .toasts
-            .push_info(crate::i18n::t("toast.copied_path"), scope);
-        self.mark_dirty();
-        true
-    }
-
     fn handle_copy_shortcut(&mut self, key: &Key, mods: ModifiersState) -> bool {
         let bindings = self.state.engine.settings.keybindings.copy.clone();
         if !matches_any_binding(&bindings, key, mods) {
@@ -654,18 +585,6 @@ impl MainWindow {
             return true;
         }
         let st = self.state.focused_surface_type();
-        if st.is_kind("explorer") {
-            // Explorer: 파일을 OS 파일 클립보드에 복사
-            if self.state.explorer_file_copy() {
-                let scope =
-                    crate::ui::ToastScope::Surface(self.state.focused_surface_id().unwrap_or(0));
-                self.state
-                    .toasts
-                    .push_info(crate::i18n::t("toast.copied_files"), scope);
-                self.mark_dirty();
-            }
-            return true;
-        }
         if st.is_kind("markdown") {
             self.base
                 .gpu
@@ -830,13 +749,6 @@ impl MainWindow {
             state.popups.open_centered_focused("markdown_open");
             return true;
         }
-        if matches_any_binding(&kb.open_explorer, key, mods) {
-            let home = directories::BaseDirs::new()
-                .map(|d| d.home_dir().to_string_lossy().to_string())
-                .unwrap_or_else(|| ".".to_string());
-            let _ = state.add_explorer_tab(home);
-            return true;
-        }
         if matches_any_binding(&kb.convert_surface, key, mods) {
             if let Some(sid) = state.focused_surface_id() {
                 state.dialogs.convert_popup = Some(sid);
@@ -857,12 +769,6 @@ impl MainWindow {
                 state
                     .popups
                     .open_with_scope("markdown_open", crate::ui::popup::PopupScope::Surface(sid));
-            }
-            return true;
-        }
-        if matches_any_binding(&kb.convert_to_explorer, key, mods) {
-            if let Some(sid) = state.focused_surface_id() {
-                state.convert_surface_to_explorer(sid);
             }
             return true;
         }
@@ -1005,11 +911,6 @@ impl MainWindow {
             return false;
         }
         let st = self.state.focused_surface_type();
-        if st.is_kind("explorer") {
-            self.state.explorer_file_paste();
-            self.mark_dirty();
-            return true;
-        }
         if st.is_kind("image") {
             if self.paste_to_image() {
                 self.mark_dirty();
@@ -1052,13 +953,6 @@ impl MainWindow {
                     .apply_override(&appearance.markdown_font)
                     .font_size;
                 (&mut appearance.markdown_font, size)
-            }
-            FocusedSurfaceType::Kind(k) if k == "explorer" => {
-                let size = appearance
-                    .default_font
-                    .apply_override(&appearance.explorer_font)
-                    .font_size;
-                (&mut appearance.explorer_font, size)
             }
             // Other surfaces don't expose a font_size shortcut.
             _ => return false,

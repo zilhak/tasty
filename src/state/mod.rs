@@ -112,11 +112,6 @@ pub struct AppState {
     /// undo history, brush settings, popup buffers).
     pub image_views: crate::ui::image_view::ImageViewStore,
 
-    /// Per-surface host view state for `ExplorerPanel` (selection, scroll, address bar
-    /// buffer, focus tracking, refresh timer, preview cache). `ExplorerPanel` itself only
-    /// holds `root_path` and `root_node`; everything GUI-bound lives here.
-    pub explorer_views: crate::ui::explorer_view::ExplorerViewStore,
-
     /// Per-surface host view state for `ClipboardViewerPanel` (search query, selected
     /// index, pending clear flag). `ClipboardViewerPanel` itself only holds `id`.
     /// 별개로 popup용 단일 인스턴스는 `dialogs.clipboard_viewer`에 있음.
@@ -135,23 +130,6 @@ pub enum PendingNativeMenu {
     },
     /// Pane/empty area right-click: Open Markdown... / Open Explorer / Open HTML...
     Pane { pane_id: u32, x: f32, y: f32 },
-    /// Explorer tree right-click: unified context menu for file/folder/background/multi-selection
-    ExplorerTree {
-        surface_id: u32,
-        targets: Vec<String>,
-        has_directories: bool,
-        has_files: bool,
-        is_background: bool,
-        x: f32,
-        y: f32,
-    },
-    /// Bookmark item right-click: Remove / Navigate
-    BookmarkItem {
-        path: String,
-        name: String,
-        x: f32,
-        y: f32,
-    },
     /// Workspace right-click in sidebar: Rename title / Rename subtitle
     Workspace {
         ws_idx: usize,
@@ -315,7 +293,6 @@ impl AppState {
             toasts: crate::ui::ToastManager::new(),
             markdown_views: Default::default(),
             image_views: Default::default(),
-            explorer_views: Default::default(),
             clipboard_viewer_views: Default::default(),
         })
     }
@@ -341,7 +318,6 @@ impl AppState {
         crate::surface_meta::SurfaceMetaStore::remove(surface_id);
         self.markdown_views.drop_view(surface_id);
         self.image_views.drop_view(surface_id);
-        self.explorer_views.drop_view(surface_id);
         self.clipboard_viewer_views.drop_view(surface_id);
     }
 
@@ -454,185 +430,9 @@ impl AppState {
         }
     }
 
-    /// Explorer에서 선택된 파일 경로들을 줄바꿈으로 결합하여 반환.
-    pub fn focused_explorer_selected_paths(&self) -> String {
-        let explorer = match self.focused_explorer() {
-            Some(e) => e,
-            None => return String::new(),
-        };
-        let view = match self.explorer_views.get(explorer.id) {
-            Some(v) => v,
-            None => return String::new(),
-        };
-        view.selected_files
-            .iter()
-            .cloned()
-            .collect::<Vec<_>>()
-            .join("\n")
-    }
-
-    /// Explorer: 선택된 파일을 OS 파일 클립보드에 복사. 성공 시 true.
-    pub fn explorer_file_copy(&self) -> bool {
-        let explorer = match self.focused_explorer() {
-            Some(e) => e,
-            None => return false,
-        };
-        let view = match self.explorer_views.get(explorer.id) {
-            Some(v) => v,
-            None => return false,
-        };
-        if view.selected_files.is_empty() {
-            return false;
-        }
-        let paths: Vec<&str> = view.selected_files.iter().map(|s| s.as_str()).collect();
-        match crate::file_clipboard::set_file_clipboard(
-            &paths,
-            crate::file_clipboard::FileClipboardOp::Copy,
-        ) {
-            Ok(()) => true,
-            Err(e) => {
-                tracing::warn!("file copy failed: {e}");
-                false
-            }
-        }
-    }
-
-    /// Explorer: 선택된 파일을 잘라내기 (OS 파일 클립보드). 성공 시 true.
-    pub fn explorer_file_cut(&self) -> bool {
-        let explorer = match self.focused_explorer() {
-            Some(e) => e,
-            None => return false,
-        };
-        let view = match self.explorer_views.get(explorer.id) {
-            Some(v) => v,
-            None => return false,
-        };
-        if view.selected_files.is_empty() {
-            return false;
-        }
-        let paths: Vec<&str> = view.selected_files.iter().map(|s| s.as_str()).collect();
-        match crate::file_clipboard::set_file_clipboard(
-            &paths,
-            crate::file_clipboard::FileClipboardOp::Cut,
-        ) {
-            Ok(()) => true,
-            Err(e) => {
-                tracing::warn!("file cut failed: {e}");
-                false
-            }
-        }
-    }
-
-    /// Explorer: OS 파일 클립보드에서 파일 붙여넣기.
-    pub fn explorer_file_paste(&mut self) {
-        let dest_dir = {
-            let explorer = match self.focused_explorer() {
-                Some(e) => e,
-                None => return,
-            };
-            let sid = explorer.id;
-            match self.explorer_views.get(sid) {
-                Some(view) => crate::explorer_ui::paste_destination_for(explorer, view),
-                None => explorer.root_path.clone(),
-            }
-        };
-        if let Ok(Some((sources, op))) = crate::file_clipboard::get_file_clipboard() {
-            for src in &sources {
-                let file_name = std::path::Path::new(src)
-                    .file_name()
-                    .map(|n| n.to_string_lossy().to_string())
-                    .unwrap_or_default();
-                let dest = std::path::Path::new(&dest_dir).join(&file_name);
-                if op == crate::file_clipboard::FileClipboardOp::Cut {
-                    if let Err(e) = std::fs::rename(src, &dest) {
-                        tracing::warn!("file move failed: {e}");
-                    }
-                } else if std::path::Path::new(src).is_dir() {
-                    if let Err(e) =
-                        crate::explorer_ui::copy_dir_recursive_pub(src, &dest.to_string_lossy())
-                    {
-                        tracing::warn!("dir copy failed: {e}");
-                    }
-                } else {
-                    if let Err(e) = std::fs::copy(src, &dest) {
-                        tracing::warn!("file copy failed: {e}");
-                    }
-                }
-            }
-            // Refresh explorer
-            if let Some(explorer) = self.focused_explorer_mut() {
-                crate::model::ExplorerPanel::load_directory(&mut explorer.root_node);
-            }
-        }
-    }
-
-    /// Explorer: 지정된 경로들을 OS 휴지통으로 이동. 성공한 개수 반환.
-    pub fn explorer_trash_paths(&mut self, paths: &[String]) -> usize {
-        let mut count = 0;
-        for path in paths {
-            match trash::delete(path) {
-                Ok(()) => count += 1,
-                Err(e) => tracing::warn!("trash failed for {path}: {e}"),
-            }
-        }
-        if count > 0 {
-            // Refresh explorer tree
-            if let Some(explorer) = self.focused_explorer_mut() {
-                crate::model::ExplorerPanel::load_directory(&mut explorer.root_node);
-            }
-        }
-        count
-    }
-
-    /// Explorer: 선택된 파일/폴더를 특정 대상 경로들로 OS 파일 클립보드에 복사.
-    pub fn explorer_file_copy_paths(&self, paths: &[String]) -> bool {
-        if paths.is_empty() {
-            return false;
-        }
-        let refs: Vec<&str> = paths.iter().map(|s| s.as_str()).collect();
-        match crate::file_clipboard::set_file_clipboard(
-            &refs,
-            crate::file_clipboard::FileClipboardOp::Copy,
-        ) {
-            Ok(()) => true,
-            Err(e) => {
-                tracing::warn!("file copy failed: {e}");
-                false
-            }
-        }
-    }
-
-    /// Explorer: 전체 선택.
-    pub fn explorer_select_all(&mut self) {
-        let (sid, visible) = {
-            let explorer = match self.focused_explorer() {
-                Some(e) => e,
-                None => return,
-            };
-            let mut visible = Vec::new();
-            crate::explorer_ui::collect_visible_paths_pub(&explorer.root_node, &mut visible);
-            (explorer.id, visible)
-        };
-        if let Some(view) = self.explorer_views.get_mut(sid) {
-            view.select_all(&visible);
-        }
-    }
-
-    fn focused_explorer(&self) -> Option<&crate::model::ExplorerPanel> {
-        let pane = self.focused_pane()?;
-        let tab = pane.tabs.get(pane.active_tab)?;
-        let surface = tab.layout().find_surface(tab.focused_surface)?;
-        surface.as_any().downcast_ref::<crate::model::ExplorerPanel>()
-    }
-
-    fn focused_explorer_mut(&mut self) -> Option<&mut crate::model::ExplorerPanel> {
-        let pane = self.focused_pane_mut()?;
-        let tab = pane.tabs.get_mut(pane.active_tab)?;
-        let focused = tab.focused_surface;
-        let leaf = tab.layout_mut().find_leaf_mut(focused)?;
-        leaf.as_any_mut()
-            .downcast_mut::<crate::model::ExplorerPanel>()
-    }
+    // Explorer 관련 호스트 헬퍼 (focused_explorer_*, explorer_file_*, explorer_select_all
+    // 등)는 ExplorerPanel과 함께 제거됨 — 동일 동작을 com.tasty.explorer plugin이
+    // 자체 RemoteSurface 안에서 처리한다.
 
     /// Record that the user typed on the given surface (updates last_key_input timestamp).
     pub fn record_typing(&mut self, surface_id: u32) {

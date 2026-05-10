@@ -134,7 +134,7 @@ impl MainWindow {
                 }
             }
             FocusedSurfaceType::Kind(ref kind)
-                if kind == "explorer" || kind == "markdown" || kind == "image" =>
+                if kind == "markdown" || kind == "image" =>
             {
                 // If egui consumed the event (e.g. TextEdit has focus), skip
                 // the PendingKeyEvent queue to avoid double-handling.

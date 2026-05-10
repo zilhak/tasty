@@ -192,7 +192,6 @@ pub fn draw_appearance_tab(
                             AppearanceSubTab::Markdown,
                             t("settings.appearance.subtab.markdown"),
                         ),
-                        (AppearanceSubTab::Explorer, "Explorer"),
                         (AppearanceSubTab::HtmlViewer, "HTML"),
                     ];
                     for (tab, label) in &sub_tabs {
@@ -228,15 +227,6 @@ pub fn draw_appearance_tab(
             }
             AppearanceSubTab::Markdown => {
                 draw_appearance_markdown(
-                    ui,
-                    settings,
-                    font_families,
-                    font_filter,
-                    preview_font_loaded,
-                );
-            }
-            AppearanceSubTab::Explorer => {
-                draw_appearance_explorer(
                     ui,
                     settings,
                     font_families,
@@ -422,7 +412,6 @@ fn draw_appearance_terminal(
 enum SurfaceFontTarget {
     Terminal,
     Markdown,
-    Explorer,
 }
 
 impl SurfaceFontTarget {
@@ -430,7 +419,6 @@ impl SurfaceFontTarget {
         match self {
             SurfaceFontTarget::Terminal => "terminal",
             SurfaceFontTarget::Markdown => "markdown",
-            SurfaceFontTarget::Explorer => "explorer",
         }
     }
 
@@ -438,7 +426,6 @@ impl SurfaceFontTarget {
         match self {
             SurfaceFontTarget::Terminal => &mut app.terminal_font,
             SurfaceFontTarget::Markdown => &mut app.markdown_font,
-            SurfaceFontTarget::Explorer => &mut app.explorer_font,
         }
     }
 
@@ -446,7 +433,6 @@ impl SurfaceFontTarget {
         match self {
             SurfaceFontTarget::Terminal => app.effective_terminal_font(),
             SurfaceFontTarget::Markdown => app.effective_markdown_font(),
-            SurfaceFontTarget::Explorer => app.effective_explorer_font(),
         }
     }
 
@@ -457,7 +443,6 @@ impl SurfaceFontTarget {
         match self {
             SurfaceFontTarget::Terminal => &app.terminal_colors,
             SurfaceFontTarget::Markdown => &app.markdown_colors,
-            SurfaceFontTarget::Explorer => &app.explorer_colors,
         }
     }
 }
@@ -599,30 +584,6 @@ fn draw_appearance_markdown(
     ui.add_space(8.0);
 
     draw_surface_colors(ui, "markdown", &mut settings.appearance.markdown_colors);
-}
-
-/// Appearance > Explorer: font override + color settings.
-fn draw_appearance_explorer(
-    ui: &mut egui::Ui,
-    settings: &mut Settings,
-    font_families: &mut Option<Vec<String>>,
-    font_filter: &mut HashMap<String, String>,
-    preview_font_loaded: &mut HashMap<String, String>,
-) {
-    draw_surface_font_section(
-        ui,
-        settings,
-        font_families,
-        font_filter,
-        preview_font_loaded,
-        SurfaceFontTarget::Explorer,
-    );
-
-    ui.add_space(16.0);
-    ui.separator();
-    ui.add_space(8.0);
-
-    draw_surface_colors(ui, "explorer", &mut settings.appearance.explorer_colors);
 }
 
 /// Placeholder for sub-tabs not yet populated with settings.
