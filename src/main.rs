@@ -531,6 +531,39 @@ impl App {
                 processed = true;
                 continue;
             }
+            // ── Plugin management (App-level — App holds the PluginManager) ──
+            if cmd.request.method.starts_with("plugin.") {
+                let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
+                let response = match cmd.request.method.as_str() {
+                    "plugin.list" => {
+                        ipc::handler::plugin::handle_list(self.plugin_manager.as_ref(), id)
+                    }
+                    "plugin.install" => ipc::handler::plugin::handle_install(
+                        self.plugin_manager.as_mut(),
+                        id,
+                        &cmd.request.params,
+                    ),
+                    "plugin.remove" => ipc::handler::plugin::handle_remove(
+                        self.plugin_manager.as_mut(),
+                        id,
+                        &cmd.request.params,
+                    ),
+                    "plugin.enable" => ipc::handler::plugin::handle_enable(
+                        self.plugin_manager.as_mut(),
+                        id,
+                        &cmd.request.params,
+                    ),
+                    "plugin.disable" => ipc::handler::plugin::handle_disable(
+                        self.plugin_manager.as_mut(),
+                        id,
+                        &cmd.request.params,
+                    ),
+                    other => ipc::protocol::JsonRpcResponse::method_not_found(id, other),
+                };
+                let _ = cmd.response_tx.send(response);
+                processed = true;
+                continue;
+            }
             if cmd.request.method == "window.list" {
                 let focused_id = self.engine.focused_window_id;
                 let list: Vec<_> = self

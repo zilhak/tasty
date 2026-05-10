@@ -13,6 +13,7 @@ mod message;
 mod meta;
 mod notification;
 mod pane;
+pub mod plugin;
 mod surface;
 mod tab;
 mod workspace;
