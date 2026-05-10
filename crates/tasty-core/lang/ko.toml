@@ -225,6 +225,8 @@ mode_inherit = "기본 상속"
 mode_custom = "독립 설정"
 mode_none_label = "(미할당)"
 inherit_source_prefix = "상속"
+reset_button = "초기화"
+reset_hint = "오버라이드를 버리고 매니페스트 기본값으로 되돌립니다."
 
 [settings.performance]
 heading = "성능"

@@ -98,6 +98,15 @@ pub struct SettingsUiState {
     pub plugin_shortcuts: PluginShortcutSnapshot,
     /// Plugins 서브탭에서 현재 선택된 plugin id.
     pub plugin_shortcuts_selected: Option<String>,
+    /// 사용자가 Plugins 서브탭에서 변경한 override draft.
+    /// 키 = (plugin_id, command_id), 값:
+    /// - `Some(ShortcutOverride)`: 새 override 적용
+    /// - `None`: clear (매니페스트 default로 복귀)
+    ///
+    /// 모달 close 시 main App이 회수해 `PluginsConfig.keybindings`에 반영하고
+    /// 디스크에 저장한다.
+    pub plugin_shortcuts_draft:
+        std::collections::BTreeMap<(String, String), Option<ShortcutOverride>>,
 }
 
 impl SettingsUiState {
@@ -135,6 +144,7 @@ impl SettingsUiState {
             captured_winit_combo: None,
             plugin_shortcuts: PluginShortcutSnapshot::default(),
             plugin_shortcuts_selected: None,
+            plugin_shortcuts_draft: std::collections::BTreeMap::new(),
         }
     }
 }
@@ -245,6 +255,7 @@ pub fn draw_settings_panel(
                         &mut ui_state.captured_winit_combo,
                         &ui_state.plugin_shortcuts,
                         &mut ui_state.plugin_shortcuts_selected,
+                        &mut ui_state.plugin_shortcuts_draft,
                     ),
                     SettingsTab::Language => draw_language_tab(ui, &mut draft),
                     SettingsTab::Performance => draw_performance_tab(ui, &mut draft),

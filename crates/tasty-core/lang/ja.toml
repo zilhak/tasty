@@ -225,6 +225,8 @@ mode_inherit = "ホスト継承"
 mode_custom = "独自設定"
 mode_none_label = "(未割当)"
 inherit_source_prefix = "継承元"
+reset_button = "リセット"
+reset_hint = "オーバーライドを破棄してマニフェストのデフォルトに戻します。"
 
 [settings.performance]
 heading = "パフォーマンス"

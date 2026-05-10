@@ -462,6 +462,43 @@ impl App {
         tracing::info!("opened settings modal {:?}", modal_window_id);
     }
 
+    /// SettingsWindow가 회수해 온 plugin shortcut override draft를 PluginsConfig에
+    /// 반영하고 디스크에 저장. 값이 `Some(ov)`이면 set, `None`이면 clear.
+    fn apply_plugin_shortcut_draft(
+        &mut self,
+        draft: std::collections::BTreeMap<
+            (String, String),
+            Option<plugin::registry_state::ShortcutOverride>,
+        >,
+    ) {
+        if draft.is_empty() {
+            return;
+        }
+        let Some(mgr) = self.plugin_manager.as_mut() else {
+            tracing::warn!("plugin shortcut draft dropped: plugin manager not initialized");
+            return;
+        };
+        let mut changed = false;
+        for ((plugin_id, command_id), value) in draft {
+            match value {
+                Some(ov) => {
+                    mgr.config.set_shortcut_override(&plugin_id, &command_id, ov);
+                    changed = true;
+                }
+                None => {
+                    if mgr.config.clear_shortcut_override(&plugin_id, &command_id) {
+                        changed = true;
+                    }
+                }
+            }
+        }
+        if changed {
+            if let Err(e) = mgr.config.save() {
+                tracing::warn!("plugins.toml save failed after shortcut update: {e}");
+            }
+        }
+    }
+
     /// Plugins 키바인딩 서브탭에 표시할 snapshot.
     fn snapshot_plugin_shortcuts(&self) -> settings_ui::PluginShortcutSnapshot {
         let Some(mgr) = self.plugin_manager.as_ref() else {
@@ -681,12 +718,14 @@ impl App {
         let Some(modal_id) = self.engine.active_modal_id.take() else {
             return;
         };
-        let Some(modal) = self.windows.remove(&modal_id) else {
+        let Some(mut modal) = self.windows.remove(&modal_id) else {
             return;
         };
         // If it was a settings modal, apply settings to all main windows
-        if let Some(settings_modal) = modal.as_any().downcast_ref::<window::SettingsWindow>() {
+        if let Some(settings_modal) = modal.as_any_mut().downcast_mut::<window::SettingsWindow>() {
             let new_settings = settings_modal.settings.clone();
+            // Plugin shortcut override draft 회수 — 변경된 키만 plugins.toml에 반영.
+            let plugin_draft = settings_modal.take_plugin_shortcut_draft();
             for main in self.main_windows_iter_mut() {
                 main.state.engine.settings = new_settings.clone();
                 main.state.settings_open = false;
@@ -695,6 +734,7 @@ impl App {
             if let Err(e) = new_settings.save() {
                 tracing::warn!("failed to save settings: {e}");
             }
+            self.apply_plugin_shortcut_draft(plugin_draft);
         } else if modal.as_any().is::<window::PluginsWindow>() {
             for main in self.main_windows_iter_mut() {
                 main.state.plugins_open = false;

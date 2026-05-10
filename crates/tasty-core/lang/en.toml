@@ -225,6 +225,8 @@ mode_inherit = "Inherit"
 mode_custom = "Custom"
 mode_none_label = "(disabled)"
 inherit_source_prefix = "Follows"
+reset_button = "Reset"
+reset_hint = "Discard override and use the manifest default."
 
 [settings.performance]
 heading = "Performance"

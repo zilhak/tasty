@@ -46,6 +46,17 @@ impl SettingsWindow {
     pub fn set_plugin_shortcuts(&mut self, snapshot: PluginShortcutSnapshot) {
         self.settings_ui_state.plugin_shortcuts = snapshot;
     }
+
+    /// 사용자가 Plugins 서브탭에서 변경한 override draft를 가져간다.
+    /// 호출 후에는 빈 draft가 남는다. 모달 close 시 main App이 회수.
+    pub fn take_plugin_shortcut_draft(
+        &mut self,
+    ) -> std::collections::BTreeMap<
+        (String, String),
+        Option<crate::plugin::registry_state::ShortcutOverride>,
+    > {
+        std::mem::take(&mut self.settings_ui_state.plugin_shortcuts_draft)
+    }
 }
 
 impl Window for SettingsWindow {
