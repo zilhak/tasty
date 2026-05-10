@@ -58,6 +58,7 @@ fontconfig = "*"
 tasty-core = { path = "crates/tasty-core" }
 tasty-font = { path = "crates/tasty-font" }
 tasty-hooks = { path = "crates/tasty-hooks" }
+tasty-plugin-protocol = { path = "crates/tasty-plugin-protocol" }
 tasty-settings = { path = "crates/tasty-settings" }
 tasty-terminal = { path = "crates/tasty-terminal" }
 # Window & Input

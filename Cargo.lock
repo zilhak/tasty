@@ -4775,6 +4775,7 @@ dependencies = [
  "tasty-core",
  "tasty-font",
  "tasty-hooks",
+ "tasty-plugin-protocol",
  "tasty-settings",
  "tasty-terminal",
  "termwiz",
@@ -4823,6 +4824,14 @@ version = "0.1.0"
 dependencies = [
  "regex",
  "serde",
+]
+
+[[package]]
+name = "tasty-plugin-protocol"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
