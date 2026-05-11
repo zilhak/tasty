@@ -195,19 +195,12 @@ impl MainWindow {
 
         // Claude Code uses a virtual cursor that doesn't match terminal grid positions,
         // so arrow-key-based cursor movement doesn't work correctly. Skip entirely.
-        let surface_id = self.state.focused_surface_id().unwrap_or(0);
         let is_claude = self
             .state
-            .engine
-            .claude
-            .parent_children
-            .contains_key(&surface_id)
-            || self
-                .state
-                .engine
-                .claude
-                .child_parent
-                .contains_key(&surface_id);
+            .focused_terminal()
+            .and_then(|t| t.foreground_process_info())
+            .map(|info| info.name == "claude")
+            .unwrap_or(false);
         if is_claude {
             return;
         }
