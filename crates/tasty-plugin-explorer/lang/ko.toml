@@ -1,3 +1,6 @@
+[surface.kind]
+explorer = "탐색기"
+
 [explorer.cmd]
 refresh = "트리 새로고침"
 go_up = "상위 디렉터리로 이동"

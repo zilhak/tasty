@@ -2,15 +2,34 @@ use crate::i18n::t;
 use crate::state::AppState;
 use crate::theme;
 use crate::ui::popup::{self, PopupAction};
+use serde_json::json;
 
 /// Item height in the convert popup menu.
 const ITEM_HEIGHT: f32 = 24.0;
+/// 빌트인 비표시 kind (변환 메뉴에 등장하면 안 됨).
+const HIDDEN_KINDS: &[&str] = &["empty", "clipboard_viewer"];
+/// 빌트인 우선 표시 순서. 이 목록에 없는 kind는 알파벳순으로 뒤따른다.
+const PREFERRED_ORDER: &[&str] = &["terminal", "markdown", "html", "image"];
 
-/// Default size for the convert surface popup.
+/// Sizer: 등록된 변환 가능 kind 수에 맞춰 popup 크기를 계산.
+/// notification.rs가 프레임마다 호출하므로 plugin이 새 kind를 등록한 직후
+/// 자동으로 popup 높이가 맞춰진다.
+pub fn convert_popup_sizer(state: &AppState) -> egui::Vec2 {
+    let count = enumerate_convertible_kinds(state).len();
+    convert_popup_size_for(count)
+}
+
+/// Default size used when the popup is first registered (registry가 비어 있을 수 있는 시점).
 pub fn convert_popup_default_size() -> egui::Vec2 {
+    // builtin 4종 + explorer 1 = 5 정도를 가정. sizer가 매 프레임 재계산함.
+    convert_popup_size_for(5)
+}
+
+fn convert_popup_size_for(count: usize) -> egui::Vec2 {
+    let count = count.max(1);
     let item_spacing = 3.0;
     let content_h =
-        ITEMS.len() as f32 * ITEM_HEIGHT + (ITEMS.len().saturating_sub(1)) as f32 * item_spacing;
+        count as f32 * ITEM_HEIGHT + (count.saturating_sub(1)) as f32 * item_spacing;
     egui::vec2(
         200.0,
         popup::TITLE_BAR_HEIGHT + popup::CONTENT_MARGIN * 2.0 + content_h,
@@ -29,13 +48,82 @@ pub fn draw_convert_popup(ui: &mut egui::Ui, state: &mut AppState) -> PopupActio
     }
 }
 
-/// Menu items for the convert surface popup.
-const ITEMS: [(&str, &str, char); 4] = [
-    ("Terminal", "convert_popup.terminal", 'T'),
-    ("Markdown", "convert_popup.markdown", 'M'),
-    ("Html", "convert_popup.html", 'H'),
-    ("Image", "convert_popup.image", 'I'),
-];
+/// 변환 가능한 surface kind 한 항목.
+struct ConvertItem {
+    kind: &'static str,
+    label: String,
+    shortcut: Option<char>,
+}
+
+/// SurfaceKindRegistry로부터 변환 가능한 kind 목록을 생성.
+/// - `empty` / `clipboard_viewer` 같은 시스템 kind는 제외.
+/// - 빌트인은 PREFERRED_ORDER, 그 외 plugin kind는 알파벳순.
+/// - label: `convert_popup.<kind>`가 번역되어 있으면 그 값, 아니면 registry의
+///   `display_name_i18n_key`, 그것도 미번역이면 kind 자체를 대문자로.
+/// - shortcut: kind 첫 글자(영문)을 대문자 단축키로. 충돌 시 뒷 항목은 단축키 없음.
+fn enumerate_convertible_kinds(state: &AppState) -> Vec<ConvertItem> {
+    let snapshot = state.engine.surface_registry.kinds_snapshot();
+    let mut kinds: Vec<&'static str> = snapshot
+        .iter()
+        .map(|(k, _)| *k)
+        .filter(|k| !HIDDEN_KINDS.contains(k))
+        .collect();
+    kinds.sort_by(|a, b| {
+        let ia = PREFERRED_ORDER.iter().position(|p| *p == *a);
+        let ib = PREFERRED_ORDER.iter().position(|p| *p == *b);
+        match (ia, ib) {
+            (Some(x), Some(y)) => x.cmp(&y),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => a.cmp(b),
+        }
+    });
+
+    let mut used_shortcuts: Vec<char> = Vec::new();
+    let mut items = Vec::with_capacity(kinds.len());
+    for kind in kinds {
+        let label = resolve_label(state, kind);
+        let shortcut = kind
+            .chars()
+            .next()
+            .filter(|c| c.is_ascii_alphabetic())
+            .map(|c| c.to_ascii_uppercase())
+            .filter(|c| !used_shortcuts.contains(c));
+        if let Some(c) = shortcut {
+            used_shortcuts.push(c);
+        }
+        items.push(ConvertItem {
+            kind,
+            label,
+            shortcut,
+        });
+    }
+    items
+}
+
+fn resolve_label(state: &AppState, kind: &str) -> String {
+    let popup_key = format!("convert_popup.{kind}");
+    let tr = t(&popup_key);
+    if tr != popup_key.as_str() {
+        return tr.to_string();
+    }
+    if let Some(def) = state.engine.surface_registry.get(kind) {
+        let key = def.display_name_i18n_key;
+        let tr = t(key);
+        if tr != key {
+            return tr.to_string();
+        }
+    }
+    capitalize_ascii(kind)
+}
+
+fn capitalize_ascii(s: &str) -> String {
+    let mut c = s.chars();
+    match c.next() {
+        None => String::new(),
+        Some(f) => f.to_ascii_uppercase().to_string() + c.as_str(),
+    }
+}
 
 /// Result of drawing the convert popup content.
 pub enum ConvertResult {
@@ -46,33 +134,29 @@ pub enum ConvertResult {
 }
 
 /// Draw the convert surface popup content inside PopupManager.
-/// Returns a ConvertResult if user made a choice or wants to close.
 pub fn draw_convert_content(ui: &mut egui::Ui, state: &mut AppState) -> Option<ConvertResult> {
     let surface_id = state.dialogs.convert_popup?;
 
     let th = theme::theme();
-    let current_type = current_surface_type(state, surface_id);
-    let mut action: Option<ConvertAction> = None;
-
-    let selected = state.dialogs.convert_popup_selected;
+    let current_kind = current_surface_kind(state, surface_id);
     let popup_w = ui.available_width();
 
-    // Build selectable (non-current) indices
-    let selectable_indices: Vec<usize> = ITEMS
+    let items = enumerate_convertible_kinds(state);
+    let selectable_indices: Vec<usize> = items
         .iter()
         .enumerate()
-        .filter(|(_, (type_name, _, _))| current_type != Some(type_name))
+        .filter(|(_, it)| Some(it.kind) != current_kind)
         .map(|(i, _)| i)
         .collect();
 
     let ctx = ui.ctx().clone();
 
-    // Escape key: close popup
     if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
         return Some(ConvertResult::Close);
     }
 
-    // Keyboard: Up/Down navigation
+    let selected = state.dialogs.convert_popup_selected;
+
     if ctx.input(|i| i.key_pressed(egui::Key::ArrowDown)) && !selectable_indices.is_empty() {
         let new_sel = match selected {
             None => selectable_indices[0],
@@ -102,18 +186,17 @@ pub fn draw_convert_content(ui: &mut egui::Ui, state: &mut AppState) -> Option<C
         state.dialogs.convert_popup_selected = Some(new_sel);
     }
 
-    // Enter key: execute selected item
+    let mut action: Option<ConvertAction> = None;
+
     if ctx.input(|i| i.key_pressed(egui::Key::Enter))
         && let Some(sel) = state.dialogs.convert_popup_selected
         && selectable_indices.contains(&sel)
     {
-        action = Some(action_for_index(sel));
+        action = Some(action_for_kind(items[sel].kind));
     }
 
-    // Shortcut keys: T/M/E/H/I
-    // physical_key를 사용하여 한글 IME 활성 시에도 올바르게 매칭한다.
-    // 팝업이 열리면 gpu/mod.rs에서 set_ime_allowed(false)를 호출하여
-    // OS가 KeyboardInput을 직접 발생시키므로 physical_key가 항상 유효하다.
+    // 단축키: physical_key 사용 (한글 IME 활성 시에도 영문 매칭 보장).
+    // 팝업 open 시 set_ime_allowed(false)로 IME가 비활성화되어 있다.
     ctx.input(|i| {
         for event in &i.events {
             if let egui::Event::Key {
@@ -123,37 +206,27 @@ pub fn draw_convert_content(ui: &mut egui::Ui, state: &mut AppState) -> Option<C
                 ..
             } = event
                 && modifiers.is_none()
+                && let Some(key) = physical_key
+                && let Some(ch) = letter_key_to_char(key)
+                && let Some(item) = items
+                    .iter()
+                    .find(|it| it.shortcut == Some(ch) && Some(it.kind) != current_kind)
             {
-                let matched_key = physical_key.as_ref().unwrap_or(&egui::Key::Escape);
-                match matched_key {
-                    egui::Key::T if current_type != Some("Terminal") => {
-                        action = Some(ConvertAction::Terminal);
-                    }
-                    egui::Key::M if current_type != Some("Markdown") => {
-                        action = Some(ConvertAction::Markdown);
-                    }
-                    egui::Key::H if current_type != Some("Html") => {
-                        action = Some(ConvertAction::Html);
-                    }
-                    egui::Key::I if current_type != Some("Image") => {
-                        action = Some(ConvertAction::Image);
-                    }
-                    _ => {}
-                }
+                action = Some(action_for_kind(item.kind));
             }
         }
     });
 
-    // Draw menu items
     let selected = state.dialogs.convert_popup_selected;
-    for (idx, (type_name, label_key, shortcut)) in ITEMS.iter().enumerate() {
-        let is_current = current_type == Some(type_name);
+    for (idx, item) in items.iter().enumerate() {
+        let is_current = Some(item.kind) == current_kind;
         let is_selected = selected == Some(idx);
 
+        let shortcut_str: String = item.shortcut.map(|c| c.to_string()).unwrap_or_default();
         let label = if is_current {
-            format!("  \u{2713} {}    {}", t(label_key), shortcut)
+            format!("  \u{2713} {}    {}", item.label, shortcut_str)
         } else {
-            format!("    {}    {}", t(label_key), shortcut)
+            format!("    {}    {}", item.label, shortcut_str)
         };
         let text_color = if is_current { th.overlay0 } else { th.text };
 
@@ -162,9 +235,8 @@ pub fn draw_convert_content(ui: &mut egui::Ui, state: &mut AppState) -> Option<C
         } else {
             egui::Sense::click()
         };
-        let (rect, resp) = ui.allocate_exact_size(egui::vec2(popup_w, 24.0), sense);
+        let (rect, resp) = ui.allocate_exact_size(egui::vec2(popup_w, ITEM_HEIGHT), sense);
 
-        // Highlight: hover or keyboard selection
         let highlight = (!is_current && resp.hovered()) || is_selected;
         if highlight {
             ui.painter().rect_filled(rect, 0.0, th.hover_overlay.to_egui_premultiplied());
@@ -186,7 +258,7 @@ pub fn draw_convert_content(ui: &mut egui::Ui, state: &mut AppState) -> Option<C
         );
 
         if resp.clicked() && !is_current {
-            action = Some(action_for_index(idx));
+            action = Some(action_for_kind(item.kind));
         }
     }
 
@@ -222,6 +294,9 @@ pub fn apply_convert_action(state: &mut AppState, action: ConvertAction) {
         ConvertAction::Image => {
             state.convert_surface_to_image(surface_id);
         }
+        ConvertAction::Kind(kind) => {
+            state.convert_surface_to_kind(surface_id, &kind, &json!({}));
+        }
     }
 }
 
@@ -231,20 +306,37 @@ pub enum ConvertAction {
     Markdown,
     Html,
     Image,
+    /// Plugin이 제공하는 kind 또는 별도 인자 없이 생성 가능한 kind.
+    Kind(String),
 }
 
-fn action_for_index(idx: usize) -> ConvertAction {
-    match idx {
-        0 => ConvertAction::Terminal,
-        1 => ConvertAction::Markdown,
-        2 => ConvertAction::Html,
-        _ => ConvertAction::Image,
+fn action_for_kind(kind: &str) -> ConvertAction {
+    match kind {
+        "terminal" => ConvertAction::Terminal,
+        "markdown" => ConvertAction::Markdown,
+        "html" => ConvertAction::Html,
+        "image" => ConvertAction::Image,
+        other => ConvertAction::Kind(other.to_string()),
     }
 }
 
-/// Get the type name for a specific surface ID.
-/// If the surface is inside a split tab, returns the individual leaf's type.
-fn current_surface_type(state: &AppState, surface_id: u32) -> Option<&'static str> {
+fn letter_key_to_char(key: &egui::Key) -> Option<char> {
+    use egui::Key;
+    Some(match key {
+        Key::A => 'A', Key::B => 'B', Key::C => 'C', Key::D => 'D',
+        Key::E => 'E', Key::F => 'F', Key::G => 'G', Key::H => 'H',
+        Key::I => 'I', Key::J => 'J', Key::K => 'K', Key::L => 'L',
+        Key::M => 'M', Key::N => 'N', Key::O => 'O', Key::P => 'P',
+        Key::Q => 'Q', Key::R => 'R', Key::S => 'S', Key::T => 'T',
+        Key::U => 'U', Key::V => 'V', Key::W => 'W', Key::X => 'X',
+        Key::Y => 'Y', Key::Z => 'Z',
+        _ => return None,
+    })
+}
+
+/// Get the current surface kind for a specific surface ID.
+/// Split tab의 leaf surface도 정확히 식별한다.
+fn current_surface_kind(state: &AppState, surface_id: u32) -> Option<&'static str> {
     for ws in &state.engine.workspaces {
         for &pid in &ws.pane_layout().all_pane_ids() {
             if let Some(pane) = ws.pane_layout().find_pane(pid) {
@@ -252,12 +344,10 @@ fn current_surface_type(state: &AppState, surface_id: u32) -> Option<&'static st
                     if !tab.contains_surface(surface_id) {
                         continue;
                     }
-                    // Find the specific leaf in the layout.
                     if let Some(leaf) = tab.layout().find_surface(surface_id) {
-                        return Some(leaf.type_name());
+                        return Some(leaf.kind());
                     }
-                    // Fallback: return the focused surface's type.
-                    return Some(tab.surface().type_name());
+                    return Some(tab.surface().kind());
                 }
             }
         }

@@ -379,6 +379,27 @@ impl AppState {
         self.replace_surface_for_id(surface_id, surface, Some(Some("HTML".to_string())))
     }
 
+    /// Convert a surface to an arbitrary registered kind via the surface registry.
+    /// Plugin이 제공하는 kind(예: "explorer") 변환에 사용된다. 빌트인 중 특수
+    /// 파라미터(파일 경로, URL 등)가 필요한 kind는 전용 메서드 (`convert_surface_to_markdown` 등)
+    /// 를 사용해야 한다.
+    pub fn convert_surface_to_kind(
+        &mut self,
+        surface_id: u32,
+        kind: &str,
+        params: &Value,
+    ) -> bool {
+        let new_surface = match self.create_surface_via_registry(kind, surface_id, params) {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::warn!("convert_surface_to_kind('{}') failed: {}", kind, e);
+                return false;
+            }
+        };
+        // 변환 시 explicit_name은 클리어. tab 표시명은 surface 자체의 display_name을 따른다.
+        self.replace_surface_for_id(surface_id, new_surface, Some(None))
+    }
+
     /// Replace a specific surface by ID. If the surface is inside a split tab,
     /// only that individual leaf is replaced — other surfaces in the tab are unaffected.
     /// If it's the sole surface in a tab, the tab's surface is replaced entirely.

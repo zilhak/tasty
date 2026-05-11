@@ -307,14 +307,14 @@
 - 기본값 미설정 (설정 UI에서 Pane 서브탭에서 바인딩 가능)
 
 #### Surface 타입 전환
-- `convert_surface` 단축키 (기본 `Alt+'`): Surface 스코프 팝업으로 전환 메뉴 표시 — Terminal(T) / Markdown(M)... / HTML(H)... / Image(I). 팝업은 해당 surface 영역 중앙에 배치되며, 항목 수에 맞게 크기 자동 계산. (Explorer 등 plugin 제공 surface는 plugin 자신이 변환을 다룬다)
+- `convert_surface` 단축키 (기본 `Alt+'`): Surface 스코프 팝업으로 전환 메뉴 표시. **항목은 `SurfaceKindRegistry`에 등록된 모든 kind에서 동적으로 enumerate된다** — 빌트인 Terminal(T)/Markdown(M)/HTML(H)/Image(I) + plugin 제공 kind (예: Explorer(E)). `empty`·`clipboard_viewer` 같은 시스템 kind는 제외. 팝업 크기는 항목 수에 맞춰 sizer가 매 프레임 재계산
 - `convert_to_markdown`: 직접 전환 단축키 (기본값 없음, 설정에서 할당)
 - 현재 타입과 동일한 항목은 체크 표시 + 비활성
 - Markdown 전환 시 파일 경로 입력 다이얼로그 표시
 - Terminal 전환 시 새 PTY 생성
 - Esc / 외부 클릭 / X 버튼으로 팝업 닫기
 - 키보드 탐색: Up/Down 방향키로 항목 이동, Enter로 선택 확정
-- 단축키: T/M/H/I 키로 즉시 선택
+- 단축키: 각 kind 첫 글자(영문)로 즉시 선택 — 빌트인은 T/M/H/I, plugin은 kind 첫 글자(중복 시 뒷 항목 무시)
 - 팝업이 열려 있으면 키보드 입력이 터미널로 전달되지 않음 (PopupManager 포커스 자동 관리)
 - **개별 surface 교체 원칙**: 타입 전환은 대상 surface의 구현체만 교체한다. 기존 구현체는 메모리에서 해제되고 새 구현체로 대체된다. 탭 레이아웃, 다른 surface 등 주변 구조에는 어떤 영향도 주지 않는다.
   - 탭 내부 분할의 surface를 전환해도 다른 surface는 그대로 유지됨

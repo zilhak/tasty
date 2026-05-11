@@ -26,7 +26,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 title_key: "convert_popup.title",
                 title_fn: None,
                 default_size: super::convert_popup::convert_popup_default_size(),
-                sizer: None,
+                sizer: Some(super::convert_popup::convert_popup_sizer),
                 default_scope: PopupScope::Window,
                 close_on_outside_click: true,
                 headless: false,
