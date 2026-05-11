@@ -94,6 +94,9 @@ pub struct PopupState {
     pub sticky_focus: bool,
     /// If true, PopupManager will center this popup on the next draw and clear the flag.
     pub request_center: bool,
+    /// If true, PopupManager will position this popup at the top of its scope on the
+    /// next draw (horizontally centered, small margin from top) and clear the flag.
+    pub request_top: bool,
 }
 
 pub const TITLE_BAR_HEIGHT: f32 = 28.0;
@@ -115,6 +118,7 @@ impl PopupState {
             headless: false,
             sticky_focus: false,
             request_center: false,
+            request_top: false,
         }
     }
 
@@ -263,6 +267,20 @@ impl PopupManager {
             self.popups[i].open = true;
             self.popups[i].focused = true;
             self.popups[i].request_center = true;
+            self.popups[i].scope = scope;
+            let popup = self.popups.remove(i);
+            self.popups.push(popup);
+        }
+    }
+
+    /// Open a popup at the top of a specific scope, with focus.
+    /// scope rect의 상단에 가로 중앙 정렬로 배치한다.
+    pub fn open_at_top_of_scope(&mut self, id: PopupId, scope: PopupScope) {
+        if let Some(i) = self.popups.iter().position(|p| p.id == id) {
+            self.popups[i].open = true;
+            self.popups[i].focused = true;
+            self.popups[i].request_center = false;
+            self.popups[i].request_top = true;
             self.popups[i].scope = scope;
             let popup = self.popups.remove(i);
             self.popups.push(popup);
@@ -451,6 +469,18 @@ impl PopupManager {
                     center_rect.center().y - popup.size.y / 2.0,
                 );
                 popup.request_center = false;
+            }
+        }
+
+        // Handle request_top — scope rect 상단 가로 중앙 정렬 (margin 8px).
+        for popup in &mut self.popups {
+            if popup.request_top && popup.open {
+                let anchor_rect = Self::scope_rect(&popup.scope, draw_ctx).unwrap_or(screen_rect);
+                popup.pos = egui::pos2(
+                    anchor_rect.center().x - popup.size.x / 2.0,
+                    anchor_rect.min.y + 8.0,
+                );
+                popup.request_top = false;
             }
         }
 

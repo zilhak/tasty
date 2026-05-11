@@ -661,8 +661,12 @@ impl MainWindow {
             if state.popups.is_open("search_bar") {
                 state.search.clear();
                 state.popups.close("search_bar");
-            } else {
-                state.popups.open_at_focused("search_bar", egui::pos2(100.0, 8.0));
+            } else if let Some(sid) = state.focused_surface_id() {
+                state.search.surface_id = sid;
+                state.popups.open_at_top_of_scope(
+                    "search_bar",
+                    crate::ui::popup::PopupScope::Surface(sid),
+                );
             }
             return true;
         }
