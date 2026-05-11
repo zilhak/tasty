@@ -69,64 +69,9 @@ fn render_node(ui: &mut Ui, node: &UiNode, surface: &RemoteSurface) {
             ratio,
             first,
             second,
+            id,
         } => {
-            // 가용 영역을 비율로 나눠 두 child에 정확한 max_rect를 할당.
-            // ui.allocate_ui + ui.horizontal 조합은 내부 위젯의 auto_shrink로
-            // 실제 사용 width가 가변이라 두 pane이 시각적으로 겹쳐 보일 수 있다.
-            // scope_builder + max_rect로 명시적 직사각형을 할당하면 ScrollArea 등
-            // 어떤 위젯이 와도 정해진 pane 영역을 채운다.
-            let avail = ui.available_rect_before_wrap();
-            let r = ratio.clamp(0.05, 0.95);
-            match direction {
-                SplitDir::Horizontal => {
-                    let split_x = avail.min.x + avail.width() * r;
-                    let first_rect = egui::Rect::from_min_max(
-                        avail.min,
-                        egui::pos2(split_x, avail.max.y),
-                    );
-                    let second_rect = egui::Rect::from_min_max(
-                        egui::pos2(split_x, avail.min.y),
-                        avail.max,
-                    );
-                    ui.scope_builder(
-                        egui::UiBuilder::new().max_rect(first_rect),
-                        |ui| {
-                            ui.push_id("split_first", |ui| render_node(ui, first, surface));
-                        },
-                    );
-                    ui.scope_builder(
-                        egui::UiBuilder::new().max_rect(second_rect),
-                        |ui| {
-                            ui.push_id("split_second", |ui| render_node(ui, second, surface));
-                        },
-                    );
-                    ui.advance_cursor_after_rect(avail);
-                }
-                SplitDir::Vertical => {
-                    let split_y = avail.min.y + avail.height() * r;
-                    let first_rect = egui::Rect::from_min_max(
-                        avail.min,
-                        egui::pos2(avail.max.x, split_y),
-                    );
-                    let second_rect = egui::Rect::from_min_max(
-                        egui::pos2(avail.min.x, split_y),
-                        avail.max,
-                    );
-                    ui.scope_builder(
-                        egui::UiBuilder::new().max_rect(first_rect),
-                        |ui| {
-                            ui.push_id("split_first", |ui| render_node(ui, first, surface));
-                        },
-                    );
-                    ui.scope_builder(
-                        egui::UiBuilder::new().max_rect(second_rect),
-                        |ui| {
-                            ui.push_id("split_second", |ui| render_node(ui, second, surface));
-                        },
-                    );
-                    ui.advance_cursor_after_rect(avail);
-                }
-            }
+            render_splitter(ui, *direction, *ratio, id.as_deref(), first, second, surface);
         }
         UiNode::Label { text, style, color } => {
             let mut rt = egui::RichText::new(text);
@@ -216,6 +161,162 @@ fn render_node(ui: &mut Ui, node: &UiNode, surface: &RemoteSurface) {
             ui.add_space(*size as f32);
         }
     }
+}
+
+/// Splitter 렌더링. `id`가 `Some`이면 divider를 드래그해 비율을 조절할 수 있으며,
+/// 변경된 ratio는 매 프레임 plugin에 `SplitterDrag` 이벤트로 전달된다.
+///
+/// 부드러운 시각 피드백을 위해 사용자가 드래그한 ratio를 egui 메모리에 저장해
+/// 다음 프레임 plugin 응답이 오기 전에도 즉시 반영한다. plugin이 동일한 ratio로
+/// 다시 그려 보내면 메모리 값이 보존되고, 다른 ratio로 보내면(plugin 측 clamp 등)
+/// 그 값으로 동기화된다.
+#[allow(clippy::too_many_arguments)]
+fn render_splitter(
+    ui: &mut Ui,
+    direction: SplitDir,
+    protocol_ratio: f32,
+    id: Option<&str>,
+    first: &UiNode,
+    second: &UiNode,
+    surface: &RemoteSurface,
+) {
+    const HANDLE_THICKNESS: f32 = 6.0;
+    const MIN_PANE_PX: f32 = 40.0;
+
+    let avail = ui.available_rect_before_wrap();
+    let effective_ratio = if let Some(id) = id {
+        let (mem_id, last_protocol_id) = splitter_memory_ids(surface, id);
+        let ctx = ui.ctx();
+        let stored = ctx.memory(|m| {
+            (
+                m.data.get_temp::<f32>(mem_id),
+                m.data.get_temp::<f32>(last_protocol_id),
+            )
+        });
+        // protocol ratio가 바뀌면 사용자 메모리를 새 값으로 동기화 — plugin이
+        // clamp / 외부 변경한 경우를 반영.
+        let user_ratio = match stored {
+            (Some(user), Some(last)) if (last - protocol_ratio).abs() < f32::EPSILON => user,
+            _ => protocol_ratio,
+        };
+        ctx.memory_mut(|m| {
+            m.data.insert_temp(mem_id, user_ratio);
+            m.data.insert_temp(last_protocol_id, protocol_ratio);
+        });
+        user_ratio
+    } else {
+        protocol_ratio
+    };
+    let r = effective_ratio.clamp(0.05, 0.95);
+
+    let (first_rect, second_rect, handle_rect, axis_size, axis_min) = match direction {
+        SplitDir::Horizontal => {
+            let split_x = avail.min.x + avail.width() * r;
+            let first_rect =
+                egui::Rect::from_min_max(avail.min, egui::pos2(split_x, avail.max.y));
+            let second_rect =
+                egui::Rect::from_min_max(egui::pos2(split_x, avail.min.y), avail.max);
+            let handle_rect = egui::Rect::from_min_max(
+                egui::pos2(split_x - HANDLE_THICKNESS * 0.5, avail.min.y),
+                egui::pos2(split_x + HANDLE_THICKNESS * 0.5, avail.max.y),
+            );
+            (first_rect, second_rect, handle_rect, avail.width(), avail.min.x)
+        }
+        SplitDir::Vertical => {
+            let split_y = avail.min.y + avail.height() * r;
+            let first_rect =
+                egui::Rect::from_min_max(avail.min, egui::pos2(avail.max.x, split_y));
+            let second_rect =
+                egui::Rect::from_min_max(egui::pos2(avail.min.x, split_y), avail.max);
+            let handle_rect = egui::Rect::from_min_max(
+                egui::pos2(avail.min.x, split_y - HANDLE_THICKNESS * 0.5),
+                egui::pos2(avail.max.x, split_y + HANDLE_THICKNESS * 0.5),
+            );
+            (first_rect, second_rect, handle_rect, avail.height(), avail.min.y)
+        }
+    };
+
+    ui.scope_builder(egui::UiBuilder::new().max_rect(first_rect), |ui| {
+        ui.push_id("split_first", |ui| render_node(ui, first, surface));
+    });
+    ui.scope_builder(egui::UiBuilder::new().max_rect(second_rect), |ui| {
+        ui.push_id("split_second", |ui| render_node(ui, second, surface));
+    });
+
+    if let Some(id_str) = id {
+        let handle_id = ui.make_persistent_id(("splitter_handle", surface.id, id_str));
+        let resp = ui.interact(handle_rect, handle_id, egui::Sense::click_and_drag());
+        let cursor = match direction {
+            SplitDir::Horizontal => egui::CursorIcon::ResizeHorizontal,
+            SplitDir::Vertical => egui::CursorIcon::ResizeVertical,
+        };
+        if resp.hovered() || resp.dragged() {
+            ui.ctx().set_cursor_icon(cursor);
+        }
+        let th = crate::theme::theme();
+        let painter = ui.painter();
+        let handle_color = if resp.hovered() || resp.dragged() {
+            th.blue
+        } else {
+            th.surface1
+        };
+        // 시각적으로 얇은 가운데 선만 그린다 (handle_rect 자체는 hit-test용 두꺼운 영역).
+        match direction {
+            SplitDir::Horizontal => {
+                let cx = handle_rect.center().x;
+                painter.line_segment(
+                    [
+                        egui::pos2(cx, handle_rect.min.y),
+                        egui::pos2(cx, handle_rect.max.y),
+                    ],
+                    egui::Stroke::new(1.0, handle_color),
+                );
+            }
+            SplitDir::Vertical => {
+                let cy = handle_rect.center().y;
+                painter.line_segment(
+                    [
+                        egui::pos2(handle_rect.min.x, cy),
+                        egui::pos2(handle_rect.max.x, cy),
+                    ],
+                    egui::Stroke::new(1.0, handle_color),
+                );
+            }
+        }
+        if resp.dragged()
+            && let Some(ptr) = resp.interact_pointer_pos()
+        {
+            let coord = match direction {
+                SplitDir::Horizontal => ptr.x,
+                SplitDir::Vertical => ptr.y,
+            };
+            let raw_ratio = (coord - axis_min) / axis_size.max(1.0);
+            // 양쪽 pane이 최소 MIN_PANE_PX 픽셀은 유지되도록 ratio를 clamp.
+            let min_ratio = (MIN_PANE_PX / axis_size.max(1.0)).min(0.45);
+            let max_ratio = 1.0 - min_ratio;
+            let new_ratio = raw_ratio.clamp(min_ratio, max_ratio);
+            let (mem_id, _) = splitter_memory_ids(surface, id_str);
+            ui.ctx()
+                .memory_mut(|m| m.data.insert_temp(mem_id, new_ratio));
+            // 매 frame 송신은 부담이 클 수 있으나 plugin은 단순 ratio 저장만 하면 되므로
+            // 실용상 문제 없음. 필요시 release 시점으로 throttle 가능.
+            surface.push_event(UiEvent::SplitterDrag {
+                node_id: id_str.to_string(),
+                ratio: new_ratio,
+            });
+            ui.ctx().request_repaint();
+        }
+    }
+
+    ui.advance_cursor_after_rect(avail);
+}
+
+/// Splitter의 egui memory 키 — 사용자가 조절한 ratio와 직전 protocol ratio를 분리 저장.
+fn splitter_memory_ids(surface: &RemoteSurface, node_id: &str) -> (egui::Id, egui::Id) {
+    let base = ("splitter_state", surface.id, node_id);
+    let user = egui::Id::new(("user", base));
+    let last_protocol = egui::Id::new(("last_protocol", base));
+    (user, last_protocol)
 }
 
 fn render_tree_node(

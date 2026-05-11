@@ -33,6 +33,11 @@ pub enum UiNode {
         ratio: f32,
         first: Box<UiNode>,
         second: Box<UiNode>,
+        /// 설정 시 사용자가 divider를 드래그해 ratio를 조절할 수 있다.
+        /// 호스트는 drag 중 `UiEvent::SplitterDrag { node_id, ratio }`를 plugin에
+        /// 송신한다. `None`이면 고정 비율(드래그 불가).
+        #[serde(default)]
+        id: Option<String>,
     },
 
     Label {
@@ -168,6 +173,11 @@ pub enum UiEvent {
         node_id: String,
         delta_y: f32,
     },
+    /// 사용자가 draggable splitter divider를 드래그해 비율이 변경됨.
+    SplitterDrag {
+        node_id: String,
+        ratio: f32,
+    },
     FocusChanged {
         focused: bool,
     },
@@ -235,6 +245,7 @@ mod tests {
                 style: LabelStyle::Body,
                 color: None,
             }),
+            id: None,
         };
         let s = serde_json::to_string(&n).unwrap();
         assert!(s.contains("\"direction\":\"horizontal\""));

@@ -49,6 +49,25 @@ pub fn splitter(direction: SplitDir, ratio: f32, first: UiNode, second: UiNode) 
         ratio,
         first: Box::new(first),
         second: Box::new(second),
+        id: None,
+    }
+}
+
+/// id 지정 splitter — 사용자가 divider를 드래그할 수 있으며, 그때마다
+/// `UiEvent::SplitterDrag { node_id, ratio }`가 plugin에 전달된다.
+pub fn splitter_id(
+    id: impl Into<String>,
+    direction: SplitDir,
+    ratio: f32,
+    first: UiNode,
+    second: UiNode,
+) -> UiNode {
+    UiNode::Splitter {
+        direction,
+        ratio,
+        first: Box::new(first),
+        second: Box::new(second),
+        id: Some(id.into()),
     }
 }
 
