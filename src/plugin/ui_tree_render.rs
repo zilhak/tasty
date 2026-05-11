@@ -35,16 +35,19 @@ fn render_node(ui: &mut Ui, node: &UiNode, surface: &RemoteSurface) {
         UiNode::Vbox { spacing, children } => {
             ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing.y = *spacing as f32;
-                for c in children {
-                    render_node(ui, c, surface);
+                for (i, c) in children.iter().enumerate() {
+                    // 자식별로 push_id로 id_salt를 분리 → 같은 종류의 stateful
+                    // 위젯(ScrollArea, CollapsingHeader 등)이 형제 위치에 있어도
+                    // egui ID가 충돌하지 않는다.
+                    ui.push_id(i, |ui| render_node(ui, c, surface));
                 }
             });
         }
         UiNode::Hbox { spacing, children } => {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = *spacing as f32;
-                for c in children {
-                    render_node(ui, c, surface);
+                for (i, c) in children.iter().enumerate() {
+                    ui.push_id(i, |ui| render_node(ui, c, surface));
                 }
             });
         }
@@ -67,29 +70,27 @@ fn render_node(ui: &mut Ui, node: &UiNode, surface: &RemoteSurface) {
             // egui native splitter 위젯이 없으므로 두 영역을 allocate.
             let avail = ui.available_size();
             let r = ratio.clamp(0.05, 0.95);
+            // Splitter의 두 자식 영역도 push_id로 분리한다. 같은 line에서 호출되는
+            // first/second가 같은 종류의 stateful widget을 포함하면 ID가 충돌한다.
             match direction {
                 SplitDir::Horizontal => {
                     ui.horizontal(|ui| {
-                        ui.allocate_ui(
-                            egui::vec2(avail.x * r, avail.y),
-                            |ui| render_node(ui, first, surface),
-                        );
-                        ui.allocate_ui(
-                            egui::vec2(avail.x * (1.0 - r), avail.y),
-                            |ui| render_node(ui, second, surface),
-                        );
+                        ui.allocate_ui(egui::vec2(avail.x * r, avail.y), |ui| {
+                            ui.push_id("split_first", |ui| render_node(ui, first, surface));
+                        });
+                        ui.allocate_ui(egui::vec2(avail.x * (1.0 - r), avail.y), |ui| {
+                            ui.push_id("split_second", |ui| render_node(ui, second, surface));
+                        });
                     });
                 }
                 SplitDir::Vertical => {
                     ui.vertical(|ui| {
-                        ui.allocate_ui(
-                            egui::vec2(avail.x, avail.y * r),
-                            |ui| render_node(ui, first, surface),
-                        );
-                        ui.allocate_ui(
-                            egui::vec2(avail.x, avail.y * (1.0 - r)),
-                            |ui| render_node(ui, second, surface),
-                        );
+                        ui.allocate_ui(egui::vec2(avail.x, avail.y * r), |ui| {
+                            ui.push_id("split_first", |ui| render_node(ui, first, surface));
+                        });
+                        ui.allocate_ui(egui::vec2(avail.x, avail.y * (1.0 - r)), |ui| {
+                            ui.push_id("split_second", |ui| render_node(ui, second, surface));
+                        });
                     });
                 }
             }
