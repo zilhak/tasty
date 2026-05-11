@@ -107,10 +107,12 @@ pub fn draw_collapsed_sidebar(
                     add_ws = true;
                 }
 
-                // Bottom: tools + expand + settings
+                // Bottom: tools + expand + plugins + settings.
+                // 높이 합 = separator(6) + 4*(22) + 4*(2 space) + 끝 padding(12) = 114.
+                // plugins 버튼 추가로 인해 마진 포함 120 reserve.
                 let available = ui.available_height();
-                if available > 104.0 {
-                    ui.add_space(available - 104.0);
+                if available > 120.0 {
+                    ui.add_space(available - 120.0);
                 }
                 ui.separator();
                 ui.add_space(2.0);
@@ -240,7 +242,10 @@ pub fn draw_full_sidebar(
         .exact_width(sidebar_width)
         .resizable(false)
         .show(ctx, |ui| {
-            let bottom_height = 108.0;
+            // Bottom 섹션 높이 = separator(6) + (tools 22+2) + (collapse 22+2)
+            //                  + (plugins 28+2) + (settings 28) + 끝 padding 8 = 120.
+            // 약간 여유를 두어 128.
+            let bottom_height = 128.0;
             let scroll_height = (ui.available_height() - bottom_height).max(50.0);
 
             egui::ScrollArea::vertical()
