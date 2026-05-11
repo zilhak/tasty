@@ -56,9 +56,13 @@ fn render_node(ui: &mut Ui, node: &UiNode, surface: &RemoteSurface) {
             horizontal,
             child,
         } => {
-            egui::ScrollArea::new([*horizontal, *vertical]).show(ui, |ui| {
-                render_node(ui, child, surface);
-            });
+            // auto_shrink=false: 부모(splitter 등)가 할당한 max_rect 전체를 채우게 한다.
+            // 기본값(true)은 콘텐츠 크기로 축소되어 splitter 우측 영역이 시각적으로 사라진다.
+            egui::ScrollArea::new([*horizontal, *vertical])
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    render_node(ui, child, surface);
+                });
         }
         UiNode::Splitter {
             direction,
@@ -66,32 +70,61 @@ fn render_node(ui: &mut Ui, node: &UiNode, surface: &RemoteSurface) {
             first,
             second,
         } => {
-            // 단순 구현: 가용 영역을 비율로 나눠 두 child를 배치.
-            // egui native splitter 위젯이 없으므로 두 영역을 allocate.
-            let avail = ui.available_size();
+            // 가용 영역을 비율로 나눠 두 child에 정확한 max_rect를 할당.
+            // ui.allocate_ui + ui.horizontal 조합은 내부 위젯의 auto_shrink로
+            // 실제 사용 width가 가변이라 두 pane이 시각적으로 겹쳐 보일 수 있다.
+            // scope_builder + max_rect로 명시적 직사각형을 할당하면 ScrollArea 등
+            // 어떤 위젯이 와도 정해진 pane 영역을 채운다.
+            let avail = ui.available_rect_before_wrap();
             let r = ratio.clamp(0.05, 0.95);
-            // Splitter의 두 자식 영역도 push_id로 분리한다. 같은 line에서 호출되는
-            // first/second가 같은 종류의 stateful widget을 포함하면 ID가 충돌한다.
             match direction {
                 SplitDir::Horizontal => {
-                    ui.horizontal(|ui| {
-                        ui.allocate_ui(egui::vec2(avail.x * r, avail.y), |ui| {
+                    let split_x = avail.min.x + avail.width() * r;
+                    let first_rect = egui::Rect::from_min_max(
+                        avail.min,
+                        egui::pos2(split_x, avail.max.y),
+                    );
+                    let second_rect = egui::Rect::from_min_max(
+                        egui::pos2(split_x, avail.min.y),
+                        avail.max,
+                    );
+                    ui.scope_builder(
+                        egui::UiBuilder::new().max_rect(first_rect),
+                        |ui| {
                             ui.push_id("split_first", |ui| render_node(ui, first, surface));
-                        });
-                        ui.allocate_ui(egui::vec2(avail.x * (1.0 - r), avail.y), |ui| {
+                        },
+                    );
+                    ui.scope_builder(
+                        egui::UiBuilder::new().max_rect(second_rect),
+                        |ui| {
                             ui.push_id("split_second", |ui| render_node(ui, second, surface));
-                        });
-                    });
+                        },
+                    );
+                    ui.advance_cursor_after_rect(avail);
                 }
                 SplitDir::Vertical => {
-                    ui.vertical(|ui| {
-                        ui.allocate_ui(egui::vec2(avail.x, avail.y * r), |ui| {
+                    let split_y = avail.min.y + avail.height() * r;
+                    let first_rect = egui::Rect::from_min_max(
+                        avail.min,
+                        egui::pos2(avail.max.x, split_y),
+                    );
+                    let second_rect = egui::Rect::from_min_max(
+                        egui::pos2(avail.min.x, split_y),
+                        avail.max,
+                    );
+                    ui.scope_builder(
+                        egui::UiBuilder::new().max_rect(first_rect),
+                        |ui| {
                             ui.push_id("split_first", |ui| render_node(ui, first, surface));
-                        });
-                        ui.allocate_ui(egui::vec2(avail.x, avail.y * (1.0 - r)), |ui| {
+                        },
+                    );
+                    ui.scope_builder(
+                        egui::UiBuilder::new().max_rect(second_rect),
+                        |ui| {
                             ui.push_id("split_second", |ui| render_node(ui, second, surface));
-                        });
-                    });
+                        },
+                    );
+                    ui.advance_cursor_after_rect(avail);
                 }
             }
         }
