@@ -171,6 +171,14 @@ pub fn count_arrows(
     count
 }
 
+/// Check if a process name is a known shell.
+pub fn is_shell_process(name: &str) -> bool {
+    matches!(
+        name,
+        "zsh" | "bash" | "fish" | "sh" | "dash" | "ksh" | "tcsh" | "csh" | "pwsh" | "powershell"
+    )
+}
+
 /// Convert pixel coordinates to grid (col, row) within a terminal viewport.
 pub fn pixel_to_grid(
     x: f32,

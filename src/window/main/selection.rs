@@ -193,15 +193,16 @@ impl MainWindow {
             return;
         }
 
-        // Claude Code uses a virtual cursor that doesn't match terminal grid positions,
-        // so arrow-key-based cursor movement doesn't work correctly. Skip entirely.
-        let is_claude = self
+        // Only move cursor when a shell is in the foreground.
+        // Non-shell programs have their own cursor semantics that don't match
+        // terminal grid positions, so arrow-key injection would be incorrect.
+        let is_shell = self
             .state
             .focused_terminal()
             .and_then(|t| t.foreground_process_info())
-            .map(|info| info.name == "claude")
+            .map(|info| crate::click_cursor::is_shell_process(&info.name))
             .unwrap_or(false);
-        if is_claude {
+        if !is_shell {
             return;
         }
 
