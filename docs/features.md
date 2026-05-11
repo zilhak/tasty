@@ -1103,8 +1103,9 @@ Claude Code 등 TUI 앱이 실행 중이던 터미널을 복원할 때, 해당 �
 
 ### Surface 렌더링 (UI tree DSL)
 - plugin이 JSON UI tree를 보내면 호스트가 egui로 렌더 (vbox/hbox/scroll/splitter/label/icon/button/tree/addressbar/text_preview/spacer)
-- 호스트가 사용자 이벤트를 모아 `surface.event`로 plugin에 송신 (click/key/tree_*/addressbar_*/scroll/focus_changed/resize)
+- 호스트가 사용자 이벤트를 모아 `surface.event`로 plugin에 송신 (click/key/tree_*/addressbar_*/scroll/splitter_drag/focus_changed/resize)
 - `RemoteSurface` 어댑터가 layout tree에 끼워지므로 본체 surface와 동등하게 split/tab 가능
+- **Draggable splitter**: `UiNode::Splitter`의 `id: Option<String>`이 `Some`이면 호스트가 divider에 6px hit-test 영역 + 1px 중앙선을 그리고, 드래그하면 `UiEvent::SplitterDrag { node_id, ratio }`를 plugin에 송신. 부드러운 시각 피드백을 위해 egui memory에 사용자 ratio를 저장하며 plugin이 다른 값으로 응답 시 동기화. 양쪽 pane은 최소 40px 보장. SDK 헬퍼: `ui::splitter_id(id, dir, ratio, first, second)`
 
 ### 권한 모델
 - 매니페스트의 `permissions = [...]`에 14가지 권한 토큰 (surface.read/write, notification, clipboard.read/write, fs.read/write, process.spawn, terminal.*, claude.*, network) 선언
@@ -1133,7 +1134,9 @@ Claude Code 등 TUI 앱이 실행 중이던 터미널을 복원할 때, 해당 �
 - `env::PluginEnv`로 호스트 환경변수 일괄 로딩
 
 ### 동봉 plugin 예시
-- `tasty-plugin-explorer`: 외부 binary로 작성된 파일 탐색기. SDK만 의존하며 호스트 코드 의존 없음. 디렉터리 트리/미리보기/주소창 입력으로 root 변경 지원
+- `tasty-plugin-explorer`: 외부 binary로 작성된 파일 탐색기. SDK만 의존하며 호스트 코드 의존 없음
+- 레이아웃: 상단 주소바 + ★+ 즐겨찾기 추가 버튼 / 좌측(트리+즐겨찾기 vertical split, drag로 비율 조절) ↔ 우측(미리보기) horizontal split, drag 가능. 비율은 `tree_ratio` / `left_inner_ratio` 두 splitter ID로 추적되어 layout snapshot에 영속화
+- 즐겨찾기: `TASTY_PLUGIN_DATA_DIR/bookmarks.json`에 `{entries: [{name, path}]}` JSON으로 저장. 선택된 항목이 있고 미등록 상태일 때만 ★+ 버튼 활성. 즐겨찾기 항목 클릭 시 디렉터리면 root 이동, 파일이면 select+preview, ✕ 버튼으로 삭제
 - 매니페스트 `[[contributes.commands]]`: `explorer.refresh` (F5), `explorer.go_up` (alt+up)
 - 호스트의 빌트인 `ExplorerPanel`은 단계 08D에서 제거되어 plugin으로 일원화
 

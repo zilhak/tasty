@@ -1,31 +1,116 @@
 //! Tasty File Explorer — 외부 plugin.
 //!
 //! 호스트의 `~/.tasty/plugins/com.tasty.explorer/`에 설치되어 spawn 된다.
-//! 디렉터리 트리를 표시하고 사용자 선택을 처리한다. 본체 호스트 코드에는
-//! 의존하지 않으며, `tasty-plugin-sdk`만 사용한다.
+//! 디렉터리 트리 + 우측 preview pane + 좌측 하단 즐겨찾기를 제공한다.
+//! 본체 호스트 코드에는 의존하지 않으며, `tasty-plugin-sdk`만 사용한다.
 
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tasty_plugin_sdk::{
-    CommandInvokeCtx, Plugin, SurfaceCreateCtx, SurfaceEventCtx, SurfaceResult, SurfaceRestoreCtx,
-    UiEvent, UiNode,
-    ui::{addressbar, hbox, label, scroll_v, splitter, tree_view, vbox},
+    ButtonStyle, CommandInvokeCtx, Plugin, SurfaceCreateCtx, SurfaceEventCtx, SurfaceResult,
+    SurfaceRestoreCtx, UiEvent, UiNode,
+    ui::{addressbar, hbox, label, label_color, scroll_v, splitter_id, tree_view, vbox},
 };
 use tasty_plugin_sdk::{SelectionMode, SplitDir, TreeNode};
+
+fn make_button(id: &str, label_text: impl Into<String>, enabled: bool) -> UiNode {
+    UiNode::Button {
+        id: id.into(),
+        label: label_text.into(),
+        enabled,
+        style: ButtonStyle::Secondary,
+        tooltip_i18n_key: None,
+    }
+}
 
 const PLUGIN_ID: &str = "com.tasty.explorer";
 const PLUGIN_VERSION: &str = "0.1.0";
 const TREE_NODE_ID: &str = "explorer.tree";
 const ADDRESSBAR_ID: &str = "explorer.address";
+const MAIN_SPLIT_ID: &str = "main_split";
+const LEFT_SPLIT_ID: &str = "left_split";
+const ADD_BOOKMARK_BTN: &str = "btn.add_bookmark";
+const BOOKMARK_NAV_PREFIX: &str = "bm.nav.";
+const BOOKMARK_RM_PREFIX: &str = "bm.rm.";
 const PREVIEW_LIMIT_BYTES: usize = 16 * 1024;
+const DEFAULT_TREE_RATIO: f32 = 0.4;
+const DEFAULT_LEFT_INNER_RATIO: f32 = 0.7;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Bookmark {
+    name: String,
+    path: String,
+}
+
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
+struct BookmarkStore {
+    entries: Vec<Bookmark>,
+}
+
+impl BookmarkStore {
+    fn path() -> Option<PathBuf> {
+        std::env::var_os("TASTY_PLUGIN_DATA_DIR")
+            .map(|d| PathBuf::from(d).join("bookmarks.json"))
+    }
+
+    fn load() -> Self {
+        let Some(p) = Self::path() else {
+            return Self::default();
+        };
+        let Ok(s) = std::fs::read_to_string(&p) else {
+            return Self::default();
+        };
+        serde_json::from_str(&s).unwrap_or_default()
+    }
+
+    fn save(&self) {
+        let Some(p) = Self::path() else { return };
+        if let Some(parent) = p.parent()
+            && let Err(e) = std::fs::create_dir_all(parent)
+        {
+            tracing::warn!("bookmarks save mkdir failed: {e}");
+            return;
+        }
+        match serde_json::to_string_pretty(self) {
+            Ok(s) => {
+                if let Err(e) = std::fs::write(&p, s) {
+                    tracing::warn!("bookmarks save write failed: {e}");
+                }
+            }
+            Err(e) => tracing::warn!("bookmarks save serialize failed: {e}"),
+        }
+    }
+
+    fn add(&mut self, name: String, path: String) {
+        self.entries.retain(|b| b.path != path);
+        self.entries.insert(0, Bookmark { name, path });
+        self.save();
+    }
+
+    fn remove_index(&mut self, idx: usize) {
+        if idx < self.entries.len() {
+            self.entries.remove(idx);
+            self.save();
+        }
+    }
+
+    fn has(&self, path: &str) -> bool {
+        self.entries.iter().any(|b| b.path == path)
+    }
+}
 
 struct ExplorerSurface {
     root: PathBuf,
     expanded: HashSet<PathBuf>,
     selected: Option<PathBuf>,
     preview: Option<String>,
+    /// 좌(트리+즐겨찾기) vs 우(preview)의 가로 비율.
+    tree_ratio: f32,
+    /// 좌측 내부 세로 비율: 위(트리) vs 아래(즐겨찾기).
+    left_inner_ratio: f32,
 }
 
 impl ExplorerSurface {
@@ -37,35 +122,84 @@ impl ExplorerSurface {
             expanded,
             selected: None,
             preview: None,
+            tree_ratio: DEFAULT_TREE_RATIO,
+            left_inner_ratio: DEFAULT_LEFT_INNER_RATIO,
         }
     }
 
-    fn build_tree(&self) -> UiNode {
+    fn build_tree(&self, bookmarks: &BookmarkStore) -> UiNode {
         let root_node = build_node(&self.root, &self.expanded, &self.selected, 0);
-        let tree = scroll_v(tree_view(
+        let tree_pane = scroll_v(tree_view(
             TREE_NODE_ID,
             vec![root_node],
             SelectionMode::Single,
         ));
+
+        let bookmark_pane = scroll_v(build_bookmarks_section(bookmarks));
+
+        let left_column = splitter_id(
+            LEFT_SPLIT_ID,
+            SplitDir::Vertical,
+            self.left_inner_ratio,
+            tree_pane,
+            bookmark_pane,
+        );
+
+        let preview = match &self.preview {
+            Some(text) => label(text.clone()),
+            None => label_color("Select a file to preview", "subtext0"),
+        };
+        let preview_pane = scroll_v(preview);
+
+        let split = splitter_id(
+            MAIN_SPLIT_ID,
+            SplitDir::Horizontal,
+            self.tree_ratio,
+            left_column,
+            preview_pane,
+        );
+
         let address_text = self
             .selected
             .as_ref()
             .unwrap_or(&self.root)
             .to_string_lossy()
             .to_string();
-        let preview = match &self.preview {
-            Some(text) => label(text.clone()),
-            None => label("Select a file to preview"),
-        };
+        let can_bookmark = self.selected.is_some()
+            && !bookmarks.has(&address_text);
         vbox([
-            hbox([addressbar(ADDRESSBAR_ID, address_text)]),
-            splitter(SplitDir::Horizontal, 0.4, tree, scroll_v(preview)),
+            hbox([
+                addressbar(ADDRESSBAR_ID, address_text),
+                make_button(ADD_BOOKMARK_BTN, "\u{2605} +", can_bookmark),
+            ]),
+            split,
         ])
     }
 
     fn refresh_preview(&mut self) {
         self.preview = self.selected.as_ref().and_then(|p| read_preview(p));
     }
+}
+
+fn build_bookmarks_section(bookmarks: &BookmarkStore) -> UiNode {
+    if bookmarks.entries.is_empty() {
+        return vbox([
+            label_color("\u{2605} Bookmarks", "subtext1"),
+            label_color("(empty)", "subtext0"),
+        ]);
+    }
+    let mut children: Vec<UiNode> = Vec::with_capacity(1 + bookmarks.entries.len());
+    children.push(label_color("\u{2605} Bookmarks", "subtext1"));
+    for (i, bm) in bookmarks.entries.iter().enumerate() {
+        let nav_id = format!("{BOOKMARK_NAV_PREFIX}{i}");
+        let rm_id = format!("{BOOKMARK_RM_PREFIX}{i}");
+        let label_text = format!("\u{2605} {}", bm.name);
+        children.push(hbox([
+            make_button(&nav_id, label_text, true),
+            make_button(&rm_id, "\u{2716}", true),
+        ]));
+    }
+    vbox(children)
 }
 
 fn build_node(
@@ -83,7 +217,7 @@ fn build_node(
     let is_selected = selected.as_deref() == Some(path);
 
     let children: Vec<TreeNode> = if is_dir && is_expanded {
-        let _ = depth; // 향후 깊이 제한용
+        let _ = depth;
         list_children(path)
             .into_iter()
             .map(|child_path| build_node(&child_path, expanded, selected, depth + 1))
@@ -95,7 +229,7 @@ fn build_node(
     TreeNode {
         id: path.to_string_lossy().to_string(),
         label: name,
-        icon: Some(if is_dir { "📁".into() } else { "📄".into() }),
+        icon: Some(if is_dir { "\u{1F4C1}".into() } else { "\u{1F4C4}".into() }),
         expanded: is_expanded,
         selected: is_selected,
         children,
@@ -147,12 +281,14 @@ fn read_preview(path: &Path) -> Option<String> {
 
 struct ExplorerPlugin {
     surfaces: BTreeMap<u32, ExplorerSurface>,
+    bookmarks: BookmarkStore,
 }
 
 impl ExplorerPlugin {
     fn new() -> Self {
         Self {
             surfaces: BTreeMap::new(),
+            bookmarks: BookmarkStore::load(),
         }
     }
 
@@ -172,10 +308,11 @@ impl ExplorerPlugin {
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_else(|| "Files".to_string());
         SurfaceResult {
-            tree: Some(surface.build_tree()),
+            tree: Some(surface.build_tree(&self.bookmarks)),
             display_name: Some(display_name),
         }
     }
+
 }
 
 impl Plugin for ExplorerPlugin {
@@ -202,7 +339,13 @@ impl Plugin for ExplorerPlugin {
             .and_then(|v| v.as_str())
             .map(PathBuf::from)
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
-        let surface = ExplorerSurface::new(root);
+        let mut surface = ExplorerSurface::new(root);
+        if let Some(tr) = ctx.data.get("tree_ratio").and_then(|v| v.as_f64()) {
+            surface.tree_ratio = tr as f32;
+        }
+        if let Some(li) = ctx.data.get("left_inner_ratio").and_then(|v| v.as_f64()) {
+            surface.left_inner_ratio = li as f32;
+        }
         let result = self.surface_result(&surface);
         self.surfaces.insert(ctx.surface_id, surface);
         result
@@ -242,17 +385,60 @@ impl Plugin for ExplorerPlugin {
                     surface.preview = None;
                 }
             }
+            UiEvent::SplitterDrag { node_id, ratio } => match node_id.as_str() {
+                MAIN_SPLIT_ID => surface.tree_ratio = ratio,
+                LEFT_SPLIT_ID => surface.left_inner_ratio = ratio,
+                other => {
+                    tracing::warn!("unknown splitter id '{other}' in drag event");
+                }
+            },
+            UiEvent::Click { node_id } => {
+                if node_id == ADD_BOOKMARK_BTN {
+                    if let Some(sel) = surface.selected.clone() {
+                        let path_s = sel.to_string_lossy().to_string();
+                        let name = sel
+                            .file_name()
+                            .map(|s| s.to_string_lossy().to_string())
+                            .unwrap_or_else(|| path_s.clone());
+                        self.bookmarks.add(name, path_s);
+                    }
+                } else if let Some(rest) = node_id.strip_prefix(BOOKMARK_NAV_PREFIX) {
+                    if let Ok(idx) = rest.parse::<usize>()
+                        && let Some(bm) = self.bookmarks.entries.get(idx).cloned()
+                    {
+                        let p = PathBuf::from(&bm.path);
+                        if p.is_dir() {
+                            surface.root = p.clone();
+                            surface.expanded.clear();
+                            surface.expanded.insert(p);
+                            surface.selected = None;
+                            surface.preview = None;
+                        } else if p.is_file() {
+                            surface.selected = Some(p);
+                            surface.refresh_preview();
+                        }
+                    }
+                } else if let Some(rest) = node_id.strip_prefix(BOOKMARK_RM_PREFIX)
+                    && let Ok(idx) = rest.parse::<usize>()
+                {
+                    self.bookmarks.remove_index(idx);
+                }
+            }
             _ => {}
         }
         SurfaceResult {
-            tree: Some(surface.build_tree()),
+            tree: Some(surface.build_tree(&self.bookmarks)),
             display_name: None,
         }
     }
 
     fn snapshot_surface(&mut self, ctx: tasty_plugin_sdk::SurfaceSnapshotCtx) -> Value {
         match self.surfaces.get(&ctx.surface_id) {
-            Some(s) => serde_json::json!({ "root": s.root.to_string_lossy() }),
+            Some(s) => serde_json::json!({
+                "root": s.root.to_string_lossy(),
+                "tree_ratio": s.tree_ratio,
+                "left_inner_ratio": s.left_inner_ratio,
+            }),
             None => Value::Null,
         }
     }
@@ -268,14 +454,10 @@ impl Plugin for ExplorerPlugin {
                 display_name: None,
             };
         };
-        match ctx.command_id.as_str() {
-            // 매니페스트의 [[contributes.commands]] id와 매칭.
+        let result = match ctx.command_id.as_str() {
             "explorer.refresh" => {
                 surface.refresh_preview();
-                SurfaceResult {
-                    tree: Some(surface.build_tree()),
-                    display_name: None,
-                }
+                true
             }
             "explorer.go_up" => {
                 if let Some(parent) = surface.root.parent().map(PathBuf::from) {
@@ -285,17 +467,22 @@ impl Plugin for ExplorerPlugin {
                     surface.selected = None;
                     surface.preview = None;
                 }
-                SurfaceResult {
-                    tree: Some(surface.build_tree()),
-                    display_name: None,
-                }
+                true
             }
             other => {
                 tracing::warn!("explorer plugin received unknown command '{other}'");
-                SurfaceResult {
-                    tree: None,
-                    display_name: None,
-                }
+                false
+            }
+        };
+        if result {
+            SurfaceResult {
+                tree: Some(surface.build_tree(&self.bookmarks)),
+                display_name: None,
+            }
+        } else {
+            SurfaceResult {
+                tree: None,
+                display_name: None,
             }
         }
     }
