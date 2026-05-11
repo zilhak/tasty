@@ -108,11 +108,13 @@ pub fn draw_collapsed_sidebar(
                 }
 
                 // Bottom: tools + expand + plugins + settings.
-                // 높이 합 = separator(6) + 4*(22) + 4*(2 space) + 끝 padding(12) = 114.
-                // plugins 버튼 추가로 인해 마진 포함 120 reserve.
+                // item_spacing.y=0 강제 후 정확한 높이:
+                // separator(6) + 3*add_space(2) + 4*(22) + 끝 padding(12) = 112.
+                // 여유 +18 = 130.
+                ui.spacing_mut().item_spacing.y = 0.0;
                 let available = ui.available_height();
-                if available > 120.0 {
-                    ui.add_space(available - 120.0);
+                if available > 130.0 {
+                    ui.add_space(available - 130.0);
                 }
                 ui.separator();
                 ui.add_space(2.0);
@@ -242,10 +244,11 @@ pub fn draw_full_sidebar(
         .exact_width(sidebar_width)
         .resizable(false)
         .show(ctx, |ui| {
-            // Bottom 섹션 높이 = separator(6) + (tools 22+2) + (collapse 22+2)
-            //                  + (plugins 28+2) + (settings 28) + 끝 padding 8 = 120.
-            // 약간 여유를 두어 128.
-            let bottom_height = 128.0;
+            // Bottom 섹션 높이 (item_spacing.y=0 강제):
+            // separator(6) + add_space(2) + tools(22) + add_space(2) + collapse(22)
+            // + add_space(2) + plugins(28) + add_space(2) + settings(28) + 끝 padding(8) = 122.
+            // SidePanel 자체 inner margin·item_spacing 잔여분 흡수용 여유 +18 = 140.
+            let bottom_height = 140.0;
             let scroll_height = (ui.available_height() - bottom_height).max(50.0);
 
             egui::ScrollArea::vertical()
@@ -492,7 +495,9 @@ pub fn draw_full_sidebar(
                     ui.add_space(4.0);
                 });
 
-            // === Fixed bottom: Tools + Collapse + Settings ===
+            // === Fixed bottom: Tools + Collapse + Plugins + Settings ===
+            // item_spacing.y를 0으로 강제해 add_space만으로 높이 제어가 가능하게 한다.
+            ui.spacing_mut().item_spacing.y = 0.0;
             ui.separator();
             ui.add_space(2.0);
 
