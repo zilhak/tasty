@@ -1015,6 +1015,7 @@ egui 기반 Image Surface 타입. 이미지 파일을 로드하여 표시하고,
 - 매치 카운터 표시 (예: 3/42)
 - 매치 선택 시 해당 위치로 자동 스크롤
 - 검색 바는 sticky_focus PopupDef로 구현: 키보드는 검색 바가 받고, 마우스는 터미널에 전달
+- 검색 바는 `PopupScope::Surface(focused_surface_id)`로 열려 포커스된 surface 영역 상단(가로 중앙)에 anchor된다. 사이드바·탭 바 위에 떠 있지 않는다.
 
 ### 구현
 - 검색 엔진: `tasty-terminal/src/search.rs` (Terminal::search)
