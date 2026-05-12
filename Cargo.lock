@@ -4778,6 +4778,7 @@ dependencies = [
  "tasty-plugin-protocol",
  "tasty-settings",
  "tasty-terminal",
+ "tempfile",
  "termwiz",
  "toml 0.8.2",
  "tracing",

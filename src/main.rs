@@ -1123,10 +1123,17 @@ fn main() -> Result<()> {
         }
     }
 
-    // Parse CLI arguments (custom error handling for contextual messages)
+    // Parse CLI arguments. 정적 `Cli`가 알 수 없는 서브커맨드라고 실패하면 plugin
+    // CLI 동적 등록에서 한 번 더 매칭 시도. 정적이 항상 우선이므로 plugin이 호스트
+    // 명령을 가릴 수 없다.
     let cli = match cli::Cli::try_parse() {
         Ok(cli) => cli,
         Err(err) => {
+            if matches!(err.kind(), clap::error::ErrorKind::InvalidSubcommand) {
+                if let Some(result) = cli::try_run_plugin_cli() {
+                    return result;
+                }
+            }
             cli::format_parse_error(err);
             unreachable!();
         }

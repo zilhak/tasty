@@ -1,4 +1,5 @@
 mod claude;
+pub mod dynamic;
 mod format;
 mod plugin;
 mod request;
@@ -990,6 +991,61 @@ pub fn format_parse_error(err: clap::Error) {
         }
     }
     std::process::exit(2);
+}
+
+/// 정적 `Cli` 파싱이 `InvalidSubcommand`로 실패했을 때 마지막 시도로 plugin
+/// CLI에서 매칭한다. 매칭되면 IPC로 전송, 매칭 실패면 None을 반환해 호출자가
+/// 원래 에러를 출력하도록 한다.
+pub fn try_run_plugin_cli() -> Option<Result<()>> {
+    let plugins_root = match crate::plugin::plugin_root() {
+        Some(p) => p,
+        None => return None,
+    };
+    let entries = dynamic::discover_plugin_clis(&plugins_root);
+    if entries.is_empty() {
+        return None;
+    }
+    let augmented = dynamic::build_augmented_cli(&entries);
+    let matches = match augmented.try_get_matches() {
+        Ok(m) => m,
+        Err(_) => return None,
+    };
+    let (top_name, _) = matches.subcommand()?;
+    if !entries.iter().any(|e| e.cli.name == top_name) {
+        return None;
+    }
+    let request = match dynamic::matches_to_request(&entries, &matches) {
+        Ok(r) => r,
+        Err(e) => return Some(Err(e)),
+    };
+    Some(run_dynamic_client(request))
+}
+
+fn run_dynamic_client(request: crate::ipc::protocol::JsonRpcRequest) -> Result<()> {
+    let port = IpcServer::read_port_file()?;
+    let stream = TcpStream::connect(format!("127.0.0.1:{}", port)).map_err(|e| {
+        anyhow::anyhow!(
+            "Could not connect to tasty instance on port {}: {}. Is tasty running?",
+            port,
+            e
+        )
+    })?;
+    let mut conn = IpcConnection::new(stream)?;
+    match conn.send(&request) {
+        Ok(value) => {
+            println!("{}", serde_json::to_string_pretty(&value).unwrap_or_default());
+            Ok(())
+        }
+        Err(e) => {
+            let msg = e.to_string();
+            if let Some(rest) = msg.strip_prefix("Error (") {
+                eprintln!("Error ({}", rest);
+            } else {
+                eprintln!("{}", msg);
+            }
+            std::process::exit(1);
+        }
+    }
 }
 
 /// Run the CLI client: connect to a running tasty instance and execute the command.

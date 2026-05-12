@@ -175,6 +175,7 @@ winresource = "0.1"
 [dev-dependencies]
 serde_json = "1"
 enigo = "0.6"
+tempfile = "3"
 
 
 # TODO: winit PR #4478 (https://github.com/rust-windowing/winit/pull/4478) 머지 후 공식 버전으로 교체
