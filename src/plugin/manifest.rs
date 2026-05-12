@@ -174,6 +174,32 @@ pub struct Contributes {
     pub ipc_namespace: Vec<IpcNamespaceDecl>,
     #[serde(default)]
     pub cli: Vec<CliCommandDecl>,
+    /// 다른 surface의 lifecycle 이벤트를 구독한다. `surface.destroy`와 달리
+    /// 자기 소유가 아닌 surface의 변화도 받기 위함. event 종류는 fixed enum이라
+    /// 알 수 없는 값은 serde에서 reject된다.
+    #[serde(default)]
+    pub surface_observer: Vec<SurfaceObserverDecl>,
+}
+
+/// 다른 surface의 lifecycle 이벤트 구독 선언.
+///
+/// 매니페스트 예:
+/// ```toml
+/// [[contributes.surface_observer]]
+/// event = "closed"
+/// ```
+///
+/// 구독하려면 매니페스트의 `permissions`에 `surface.read`가 포함되어야 한다.
+#[derive(Debug, Clone, Deserialize)]
+pub struct SurfaceObserverDecl {
+    pub event: ObserverEvent,
+}
+
+/// 매니페스트의 surface_observer가 구독할 수 있는 event 종류.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ObserverEvent {
+    Closed,
 }
 
 /// Plugin이 점유할 IPC 메서드 namespace prefix.
@@ -366,6 +392,27 @@ impl Manifest {
             }
         }
         self.validate_contributes()?;
+        self.validate_observer_permissions()?;
+        Ok(())
+    }
+
+    /// `surface_observer` contributes는 `surface.read` 권한이 있어야 한다.
+    /// 통지 payload(`surface_id` + `kind`)가 `surface.list`로도 얻을 수 있는 정보이므로
+    /// 별도 권한을 추가하는 대신 같은 토큰으로 통합한다.
+    fn validate_observer_permissions(&self) -> anyhow::Result<()> {
+        if self.contributes.surface_observer.is_empty() {
+            return Ok(());
+        }
+        let has_surface_read = self
+            .permissions
+            .iter()
+            .any(|p| p == "surface.read");
+        if !has_surface_read {
+            anyhow::bail!(
+                "manifest declares [[contributes.surface_observer]] but is missing \
+                 'surface.read' permission required to receive lifecycle notifications"
+            );
+        }
         Ok(())
     }
 
@@ -1184,5 +1231,90 @@ mod tests {
         "#;
         let m = parse(s).expect("should parse");
         assert_eq!(m.lang_dir, "i18n");
+    }
+
+    #[test]
+    fn surface_observer_parses() {
+        let s = r#"
+            manifest_version = 1
+            id = "com.example.x"
+            name = "X"
+            version = "0.1"
+            api_version = "1"
+            permissions = ["surface.read"]
+            [entry]
+            type = "process"
+            command = "x"
+            [[contributes.surface_observer]]
+            event = "closed"
+        "#;
+        let m = parse(s).expect("should parse");
+        assert_eq!(m.contributes.surface_observer.len(), 1);
+        assert_eq!(m.contributes.surface_observer[0].event, ObserverEvent::Closed);
+    }
+
+    #[test]
+    fn surface_observer_requires_surface_read_permission() {
+        let s = r#"
+            manifest_version = 1
+            id = "com.example.x"
+            name = "X"
+            version = "0.1"
+            api_version = "1"
+            permissions = ["notification"]
+            [entry]
+            type = "process"
+            command = "x"
+            [[contributes.surface_observer]]
+            event = "closed"
+        "#;
+        let err = parse(s).expect_err("should reject missing surface.read");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("surface.read"),
+            "expected error to mention 'surface.read', got: {msg}"
+        );
+    }
+
+    #[test]
+    fn surface_observer_rejects_unknown_event() {
+        let s = r#"
+            manifest_version = 1
+            id = "com.example.x"
+            name = "X"
+            version = "0.1"
+            api_version = "1"
+            permissions = ["surface.read"]
+            [entry]
+            type = "process"
+            command = "x"
+            [[contributes.surface_observer]]
+            event = "exploded"
+        "#;
+        // serde가 알 수 없는 enum variant를 거부 (toml::from_str 단계에서 실패).
+        assert!(parse(s).is_err());
+    }
+
+    #[test]
+    fn surface_observer_allows_duplicate_event() {
+        // 동일 event를 두 번 선언해도 매니페스트 검증은 통과한다.
+        // 호스트 측에서 HashSet으로 dedupe하므로 의미 없는 중복일 뿐.
+        let s = r#"
+            manifest_version = 1
+            id = "com.example.x"
+            name = "X"
+            version = "0.1"
+            api_version = "1"
+            permissions = ["surface.read"]
+            [entry]
+            type = "process"
+            command = "x"
+            [[contributes.surface_observer]]
+            event = "closed"
+            [[contributes.surface_observer]]
+            event = "closed"
+        "#;
+        let m = parse(s).expect("should parse");
+        assert_eq!(m.contributes.surface_observer.len(), 2);
     }
 }

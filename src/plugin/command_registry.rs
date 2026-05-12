@@ -220,9 +220,7 @@ mod tests {
             permissions: vec![],
             contributes: Contributes {
                 commands: cmds,
-                menu_items: vec![],
-                ipc_namespace: vec![],
-                cli: vec![],
+                ..Default::default()
             },
             lang_dir: "lang".to_string(),
         }
