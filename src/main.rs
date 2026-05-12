@@ -300,6 +300,13 @@ impl App {
             }
             if saved.restore(&mut state.engine) {
                 tracing::info!("Layout restored from layout.json (deferred)");
+                // AppState::new 시점에는 layout이 아직 복원되지 않아 state.active_workspace=0.
+                // restore가 끝난 지금 실제 활성 인덱스로 sync해야 사용자가 보는 화면이
+                // 일치한다 (sync 없으면 첫 화면이 비활성 workspace[0]의 deferred
+                // placeholder들로 채워진다).
+                if let Some(restored_idx) = state.engine.restored_active_workspace.take() {
+                    state.switch_workspace(restored_idx);
+                }
             }
         }
         #[cfg(debug_assertions)]
