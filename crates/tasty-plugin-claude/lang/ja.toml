@@ -1,0 +1,2 @@
+[claude.cli]
+desc = "Claude Code の子セッションを管理します"

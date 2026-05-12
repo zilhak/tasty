@@ -1,0 +1,2 @@
+[claude.cli]
+desc = "Claude Code 자식 세션을 관리합니다"
