@@ -22,16 +22,16 @@ use serde_json::Value;
 use tasty_plugin_protocol::{
     IpcCallResult, IpcInvokeParams, METHOD_COMMAND_INVOKE, METHOD_IPC_INVOKE, METHOD_IPC_RESULT,
     METHOD_PING, METHOD_SHUTDOWN, METHOD_SURFACE_CREATE, METHOD_SURFACE_DESTROY,
-    METHOD_SURFACE_EVENT, METHOD_SURFACE_RESTORE, METHOD_SURFACE_SNAPSHOT, PluginEvent,
-    PluginRequest, PluginResponse,
+    METHOD_SURFACE_EVENT, METHOD_SURFACE_LIFECYCLE, METHOD_SURFACE_RESTORE, METHOD_SURFACE_SNAPSHOT,
+    PluginEvent, PluginRequest, PluginResponse, SurfaceLifecycleParams,
 };
 
 use crate::connection::Connection;
 use crate::env::PluginEnv;
 use crate::host::{deliver_ipc_result, HostHandle, PendingCalls};
 use crate::plugin::{
-    CommandInvokeCtx, IpcMethodCtx, Plugin, SurfaceCreateCtx, SurfaceEventCtx, SurfaceRestoreCtx,
-    SurfaceSnapshotCtx,
+    CommandInvokeCtx, IpcMethodCtx, Plugin, SurfaceCreateCtx, SurfaceEventCtx, SurfaceLifecycleCtx,
+    SurfaceRestoreCtx, SurfaceSnapshotCtx,
 };
 
 /// dispatch 내부에서만 쓰이는 에러. JSON-RPC 에러 코드를 보존한다.
@@ -306,6 +306,23 @@ pub(crate) fn dispatch<P: Plugin>(
                 Err(err) => Err(DispatchError::with_code(err.message, err.code)),
             }
         }
+        METHOD_SURFACE_LIFECYCLE => {
+            let parsed: SurfaceLifecycleParams = serde_json::from_value(params.clone())
+                .map_err(|e| {
+                    DispatchError::with_code(
+                        format!("invalid surface.lifecycle params: {e}"),
+                        -32602,
+                    )
+                })?;
+            plugin.on_surface_lifecycle(SurfaceLifecycleCtx {
+                event: parsed.event,
+                surface_id: parsed.surface_id,
+                kind: parsed.kind,
+                reason: parsed.reason,
+            });
+            // 호스트는 응답을 무시한다. fire-and-forget이라 null 반환.
+            Ok(Value::Null)
+        }
         other => Err(DispatchError::with_code(
             format!("plugin does not handle method '{other}'"),
             -32601,
@@ -487,5 +504,90 @@ mod tests {
         let host = dummy_host();
         let resp = build_response(5, dispatch(&mut plugin, "nonsense", &Value::Null, &host));
         assert_eq!(resp.error_code, Some(-32601));
+    }
+
+    struct LifecycleRecorder {
+        last: Arc<Mutex<Option<SurfaceLifecycleCtx>>>,
+    }
+
+    impl Plugin for LifecycleRecorder {
+        fn id(&self) -> &str {
+            "test.lifecycle"
+        }
+        fn create_surface(&mut self, _ctx: SurfaceCreateCtx) -> SurfaceResult {
+            SurfaceResult {
+                tree: None,
+                display_name: None,
+            }
+        }
+        fn handle_event(&mut self, _ctx: SurfaceEventCtx) -> SurfaceResult {
+            SurfaceResult {
+                tree: None,
+                display_name: None,
+            }
+        }
+        fn on_surface_lifecycle(&mut self, ctx: SurfaceLifecycleCtx) {
+            *self.last.lock().unwrap() = Some(ctx);
+        }
+    }
+
+    #[test]
+    fn surface_lifecycle_dispatches_to_callback() {
+        let last = Arc::new(Mutex::new(None));
+        let mut plugin = LifecycleRecorder { last: last.clone() };
+        let host = dummy_host();
+        let params = json!({
+            "event": "closed",
+            "surface_id": 42,
+            "kind": "terminal",
+            "reason": "user_close",
+        });
+        let resp = build_response(
+            9,
+            dispatch(&mut plugin, METHOD_SURFACE_LIFECYCLE, &params, &host),
+        );
+        assert!(resp.error.is_none());
+        let ctx = last.lock().unwrap().clone().expect("callback fired");
+        assert_eq!(ctx.surface_id, 42);
+        assert_eq!(ctx.kind, "terminal");
+        assert_eq!(
+            ctx.reason,
+            tasty_plugin_protocol::protocol::SurfaceCloseReason::UserClose
+        );
+    }
+
+    #[test]
+    fn surface_lifecycle_default_impl_is_noop_and_returns_null() {
+        let mut plugin = DefaultPlugin;
+        let host = dummy_host();
+        let params = json!({
+            "event": "closed",
+            "surface_id": 1,
+            "kind": "terminal",
+            "reason": "agent_close",
+        });
+        let resp = build_response(
+            10,
+            dispatch(&mut plugin, METHOD_SURFACE_LIFECYCLE, &params, &host),
+        );
+        assert!(resp.error.is_none());
+        assert_eq!(resp.result, Some(Value::Null));
+    }
+
+    #[test]
+    fn surface_lifecycle_invalid_params_returns_minus_32602() {
+        let mut plugin = DefaultPlugin;
+        let host = dummy_host();
+        // missing 'kind' field
+        let params = json!({
+            "event": "closed",
+            "surface_id": 1,
+            "reason": "user_close",
+        });
+        let resp = build_response(
+            11,
+            dispatch(&mut plugin, METHOD_SURFACE_LIFECYCLE, &params, &host),
+        );
+        assert_eq!(resp.error_code, Some(-32602));
     }
 }

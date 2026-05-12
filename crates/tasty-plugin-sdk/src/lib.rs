@@ -16,8 +16,9 @@ pub use host::HostHandle;
 #[allow(deprecated)]
 pub use host::HostCallError;
 pub use plugin::{
-    CommandInvokeCtx, IpcMethodCtx, IpcMethodError, Plugin, SurfaceCreateCtx, SurfaceEventCtx,
-    SurfaceRestoreCtx, SurfaceResult, SurfaceSnapshotCtx,
+    CommandInvokeCtx, IpcMethodCtx, IpcMethodError, Plugin, SurfaceCloseReason, SurfaceCreateCtx,
+    SurfaceEventCtx, SurfaceLifecycleCtx, SurfaceLifecycleEvent, SurfaceRestoreCtx, SurfaceResult,
+    SurfaceSnapshotCtx,
 };
 pub use runtime::run;
 
