@@ -171,6 +171,62 @@ mod tests {
     }
 
     #[test]
+    fn no_duplicate_method_names() {
+        let mut seen = std::collections::HashSet::new();
+        for (name, _) in METHOD_TABLE {
+            assert!(seen.insert(*name), "duplicate method name: {name}");
+        }
+    }
+
+    /// 모든 등록 메서드는 명명 규칙을 따라야 한다 (docs/dev-guide/cli-naming.md):
+    ///
+    /// 1. `<namespace>.<verb>` 또는 `<namespace>.<sub>.<verb>` 3단까지
+    /// 2. 또는 [`ROOT_EXCEPTIONS`]에 등록된 root 메서드
+    /// 3. 각 부분은 소문자 알파벳/숫자/`_` 만 허용
+    #[test]
+    fn all_registered_methods_match_naming_policy() {
+        const ROOT_EXCEPTIONS: &[&str] = &["split", "tree"];
+
+        for (name, _) in METHOD_TABLE {
+            if ROOT_EXCEPTIONS.contains(name) {
+                continue;
+            }
+            let parts: Vec<&str> = name.split('.').collect();
+            assert!(
+                parts.len() >= 2 && parts.len() <= 3,
+                "method '{name}' must be <namespace>.<verb> or <namespace>.<sub>.<verb> \
+                 (or registered in ROOT_EXCEPTIONS)"
+            );
+            for part in &parts {
+                assert!(
+                    !part.is_empty(),
+                    "method '{name}' has empty segment"
+                );
+                assert!(
+                    part.chars()
+                        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_'),
+                    "method '{name}': segment '{part}' has invalid characters \
+                     (only lowercase a-z, 0-9, _)"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn prefix_rules_target_valid_namespaces() {
+        for (prefix, _) in PREFIX_RULES {
+            assert!(
+                prefix.contains('.'),
+                "prefix '{prefix}' must include a namespace separator"
+            );
+            assert!(
+                prefix.ends_with('_') || prefix.ends_with('.'),
+                "prefix '{prefix}' should end with `_` or `.` to avoid mid-token matches"
+            );
+        }
+    }
+
+    #[test]
     fn debug_methods_are_local_only() {
         let m = method_meta("debug.inject_key").expect("registered");
         assert!(!m.plugin_callable);
