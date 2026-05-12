@@ -29,3 +29,4 @@
 | Plugin 제작 | [plugin-development.md](plugin-development.md) |
 | Plugin 권한 모델 | [plugin-permissions.md](plugin-permissions.md) |
 | Plugin 생태계 정책 (1.0 전 결정) | [plugin-ecosystem.md](plugin-ecosystem.md) |
+| CLI/IPC 명명 규칙 | [cli-naming.md](cli-naming.md) |
