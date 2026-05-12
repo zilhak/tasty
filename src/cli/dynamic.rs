@@ -76,7 +76,11 @@ fn leak_static(s: &str) -> &'static str {
 }
 
 fn build_cli_subcommand(decl: &CliCommandDecl) -> Command {
-    let mut top = Command::new(leak_static(&decl.name)).subcommand_required(true);
+    // arg_required_else_help: subcommand 누락 시 에러 메시지 대신 풀 도움말을 출력 —
+    // 호스트의 derive 기반 CLI(tasty claude 등)와 동일한 UX.
+    let mut top = Command::new(leak_static(&decl.name))
+        .subcommand_required(true)
+        .arg_required_else_help(true);
     if let Some(desc) = decl.description.as_deref().filter(|s| !s.is_empty()) {
         top = top.about(leak_static(desc));
     }
