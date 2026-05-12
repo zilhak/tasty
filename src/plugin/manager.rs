@@ -18,10 +18,11 @@ use crate::ipc::protocol::JsonRpcResponse;
 use crate::plugin::host_cmd::{HostCmd, SurfaceHandles};
 use crate::plugin::ipc_namespace::IpcNamespaceRegistry;
 use crate::plugin::listener::HostListener;
-use crate::plugin::manifest::{Permission, PluginPackage};
+use crate::plugin::manifest::{ObserverEvent, Permission, PluginPackage};
 use crate::plugin::process::PluginProcess;
 use crate::plugin::protocol::{
-    self, IpcCallResult, PluginEvent, PluginRequest, PluginResponse, SurfaceResult,
+    self, IpcCallResult, PluginEvent, PluginRequest, PluginResponse, SurfaceCloseReason,
+    SurfaceLifecycleEvent, SurfaceResult,
 };
 use crate::plugin::registry_state::PluginsConfig;
 use crate::surface_registry::SurfaceKindRegistry;
@@ -60,6 +61,9 @@ enum PendingRequestKind {
         /// caller plugin이 ipc.call 시점에 발급한 call_id.
         call_id: u64,
     },
+    /// surface.lifecycle broadcast. 응답은 fire-and-forget이라 폐기. surface_id는
+    /// 디버그 로그용.
+    SurfaceLifecycle { surface_id: u32 },
 }
 
 struct RemoteSurfaceEntry {
@@ -107,6 +111,9 @@ pub struct PluginManager {
     /// 실행 중일 때만 등록되며, 호스트 IPC dispatcher가 namespace 메서드를
     /// 어느 plugin에 forward할지 해결할 때 조회한다.
     pub ipc_namespaces: IpcNamespaceRegistry,
+    /// surface lifecycle 구독자 일람. event → 구독 plugin id 집합. plugin이
+    /// 실행 중일 때만 등록된다. `notify_surface_closed`가 이 set을 순회해 broadcast.
+    surface_observers: HashMap<ObserverEvent, HashSet<String>>,
 }
 
 /// plugin → host IPC 호출 한 건. 라우팅 후 결과를 plugin에 회신해야 함.
@@ -147,6 +154,7 @@ impl PluginManager {
             pending_plugin_calls: Vec::new(),
             command_registry: super::command_registry::PluginCommandRegistry::new(),
             ipc_namespaces: IpcNamespaceRegistry::new(),
+            surface_observers: HashMap::new(),
         }
     }
 
@@ -294,6 +302,13 @@ impl PluginManager {
                             e
                         );
                     }
+                }
+                // surface_observer 구독 등록 (HashSet으로 dedupe).
+                for decl in &pkg.manifest.contributes.surface_observer {
+                    self.surface_observers
+                        .entry(decl.event)
+                        .or_default()
+                        .insert(pkg.manifest.id.clone());
                 }
             }
             Err(e) => {
@@ -460,11 +475,22 @@ impl PluginManager {
                 proc.shutdown(Duration::from_secs(2));
             }
             self.ipc_namespaces.unregister_plugin(&id);
+            self.unregister_observers(&id);
             self.cancel_pending_namespace_calls(&id, "plugin restarting");
             if let Some(pkg) = self.packages.iter().find(|p| p.manifest.id == id).cloned() {
                 self.start_plugin_internal(&pkg);
             }
         }
+    }
+
+    /// plugin이 종료/재시작될 때 surface_observers 구독 정리.
+    /// start_plugin_internal에서 다시 구독되므로 재시작 시 일관성 유지.
+    fn unregister_observers(&mut self, plugin_id: &str) {
+        for subs in self.surface_observers.values_mut() {
+            subs.remove(plugin_id);
+        }
+        // 빈 set은 제거해 다음 dispatch에서 빈 순회를 피한다.
+        self.surface_observers.retain(|_, subs| !subs.is_empty());
     }
 
     fn drain_host_cmds(&mut self) {
@@ -838,6 +864,42 @@ impl PluginManager {
                 // 받은 표준 form 그대로(메시지에 합쳐서 전달).
                 self.send_ipc_result(&caller_plugin_id, call_id, resp.result, resp.error);
             }
+            PendingRequestKind::SurfaceLifecycle { surface_id } => {
+                // fire-and-forget — 응답 본문은 폐기. 에러만 trace 레벨로 기록.
+                if let Some(err) = resp.error {
+                    tracing::trace!(
+                        "plugin '{plugin_id}' surface.lifecycle(surface={surface_id}) returned error: {err}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// surface 닫힘을 구독 plugin들에게 broadcast. fire-and-forget — 응답 무시.
+    /// 호출자(close 경로)가 `reason`을 부여한다.
+    pub fn notify_surface_closed(
+        &mut self,
+        surface_id: u32,
+        kind: &str,
+        reason: SurfaceCloseReason,
+    ) {
+        let subs = match self.surface_observers.get(&ObserverEvent::Closed) {
+            Some(s) if !s.is_empty() => s.clone(),
+            _ => return,
+        };
+        let params = json!({
+            "event": SurfaceLifecycleEvent::Closed,
+            "surface_id": surface_id,
+            "kind": kind,
+            "reason": reason,
+        });
+        for plugin_id in subs {
+            self.send_surface_request(
+                &plugin_id,
+                protocol::METHOD_SURFACE_LIFECYCLE,
+                params.clone(),
+                PendingRequestKind::SurfaceLifecycle { surface_id },
+            );
         }
     }
 
@@ -919,6 +981,7 @@ impl PluginManager {
             proc.shutdown(Duration::from_secs(2));
         }
         self.ipc_namespaces.unregister_plugin(plugin_id);
+        self.unregister_observers(plugin_id);
         self.cancel_pending_namespace_calls(plugin_id, "plugin disabled");
         Ok(())
     }
@@ -1035,5 +1098,53 @@ mod tests {
     /// 헬퍼를 위임 호출한다.
     fn stub_process() -> PluginProcess {
         PluginProcess::stub_for_test("stub")
+    }
+
+    #[test]
+    fn unregister_observers_removes_plugin_and_cleans_empty_sets() {
+        let mut mgr = PluginManager::new(empty_waker());
+        mgr.surface_observers
+            .entry(ObserverEvent::Closed)
+            .or_default()
+            .insert("com.example.a".to_string());
+        mgr.surface_observers
+            .entry(ObserverEvent::Closed)
+            .or_default()
+            .insert("com.example.b".to_string());
+
+        mgr.unregister_observers("com.example.a");
+        let subs = mgr
+            .surface_observers
+            .get(&ObserverEvent::Closed)
+            .expect("event still has subscribers");
+        assert_eq!(subs.len(), 1);
+        assert!(subs.contains("com.example.b"));
+
+        mgr.unregister_observers("com.example.b");
+        // 빈 set은 retain으로 제거되어야 한다.
+        assert!(!mgr.surface_observers.contains_key(&ObserverEvent::Closed));
+    }
+
+    #[test]
+    fn notify_surface_closed_without_subscribers_is_noop() {
+        let mut mgr = PluginManager::new(empty_waker());
+        let before = mgr.pending_requests.len();
+        mgr.notify_surface_closed(7, "terminal", SurfaceCloseReason::UserClose);
+        // 구독자가 없으면 dispatch 자체를 시도하지 않음 → pending_requests 변화 없음.
+        assert_eq!(mgr.pending_requests.len(), before);
+    }
+
+    #[test]
+    fn notify_surface_closed_skips_when_target_process_missing() {
+        // 구독은 등록되어 있지만 plugin process가 죽어있는 경우 — send_surface_request가
+        // processes.get(plugin_id).is_none() → 조용히 무시.
+        let mut mgr = PluginManager::new(empty_waker());
+        mgr.surface_observers
+            .entry(ObserverEvent::Closed)
+            .or_default()
+            .insert("com.example.ghost".to_string());
+        let before = mgr.pending_requests.len();
+        mgr.notify_surface_closed(7, "terminal", SurfaceCloseReason::AgentClose);
+        assert_eq!(mgr.pending_requests.len(), before);
     }
 }
