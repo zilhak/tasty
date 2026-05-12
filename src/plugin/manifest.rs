@@ -60,8 +60,8 @@ pub enum Entry {
         #[serde(default)]
         args: Vec<String>,
     },
-    // 향후 옵션:
-    // #[serde(rename = "wasm")] Wasm { module: String },
+    // WASM entry는 1.0 이후 재검토. 보류 이유는 docs/dev-guide/plugin-ecosystem.md
+    // §1 참조 (강제 가능한 sandbox 가치 vs. 1.0 전 보안/도구체인 비용).
 }
 
 /// Plugin이 매니페스트에 선언할 수 있는 권한 카테고리.
