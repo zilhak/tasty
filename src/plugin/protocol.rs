@@ -7,8 +7,8 @@
 #![allow(unused_imports)]
 
 pub use tasty_plugin_protocol::protocol::{
-    AuthMessage, CommandInvokeParams, IpcCallResult, PluginEvent, PluginRequest, PluginResponse,
-    SurfaceEventParams, SurfaceResult,
+    AuthAck, AuthAckEnvelope, AuthMessage, CommandInvokeParams, IpcCallResult, PluginEvent,
+    PluginRequest, PluginResponse, SurfaceEventParams, SurfaceResult,
 };
 pub use tasty_plugin_protocol::protocol::{
     METHOD_COMMAND_INVOKE, METHOD_HOST_HELLO, METHOD_IPC_RESULT, METHOD_PING, METHOD_SHUTDOWN,

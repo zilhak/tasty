@@ -7,12 +7,12 @@
 //! 매칭되는 spawn 측에 stream을 전달.
 
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 
-use crate::plugin::protocol::AuthMessage;
+use crate::plugin::protocol::{AuthAck, AuthAckEnvelope, AuthMessage};
 
 const AUTH_READ_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -102,6 +102,13 @@ fn handle_incoming(
         .and_then(|mut p| p.remove(&auth.token));
     match tx_opt {
         Some(tx) => {
+            if let Err(e) = send_auth_ack(&stream, true, None) {
+                tracing::warn!(
+                    "plugin '{}' auth_ack send failed: {e} — dropping",
+                    auth.plugin_id
+                );
+                return;
+            }
             tracing::info!("plugin '{}' authenticated", auth.plugin_id);
             let _ = tx.send(stream);
         }
@@ -110,9 +117,27 @@ fn handle_incoming(
                 "plugin auth with unknown/expired token (plugin_id={})",
                 auth.plugin_id
             );
-            // stream auto-drops → connection closed
+            // 명시적 거부 ack 송신 후 drop — SDK가 즉시 HandshakeRejected로 실패.
+            if let Err(e) = send_auth_ack(&stream, false, Some("token mismatch")) {
+                tracing::debug!("plugin auth_ack(false) send failed: {e}");
+            }
         }
     }
+}
+
+fn send_auth_ack(stream: &TcpStream, ok: bool, reason: Option<&str>) -> std::io::Result<()> {
+    let env = AuthAckEnvelope {
+        auth_ack: AuthAck {
+            ok,
+            reason: reason.map(|s| s.to_string()),
+        },
+    };
+    let line = serde_json::to_string(&env)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    let mut w = stream;
+    w.write_all(line.as_bytes())?;
+    w.write_all(b"\n")?;
+    w.flush()
 }
 
 #[cfg(test)]
