@@ -14,13 +14,13 @@
 ## [Unreleased]
 
 ### Added
-- (없음)
+- IPC alias 정규화 layer — 옛 메서드 이름이 새 이름과 같은 핸들러로 라우팅된다.
 
 ### Changed
-- (없음)
+- `surface.meta_set` / `meta_get` / `meta_unset` / `meta_list`이 `surface.meta.set` / `meta.get` / `meta.unset` / `meta.list`(점 표기)로 정규화됨. 핸들러/method_meta는 새 이름만 등록.
 
 ### Deprecated
-- (없음)
+- `surface.meta_set` / `surface.meta_get` / `surface.meta_unset` / `surface.meta_list` — 1.0 tag 직전에 alias가 제거된다. 새 호출자는 점 표기 사용.
 
 ### Removed
 - (없음)

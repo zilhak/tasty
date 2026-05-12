@@ -250,10 +250,12 @@ tasty debug ime-disable
 
 | 메서드 | 파라미터 | 설명 |
 |--------|---------|------|
-| `surface.meta_set` | `surface_id?, key: string, value: string` | 키-값 설정. 응답: `{ ok: true }` |
-| `surface.meta_get` | `surface_id?, key: string` | 값 조회. 응답: `{ value: "..." }` 또는 `{ value: null }` |
-| `surface.meta_unset` | `surface_id?, key: string` | 키 삭제. 응답: `{ ok: true }` |
-| `surface.meta_list` | `surface_id?` | 전체 메타데이터 객체 반환 |
+| `surface.meta.set` | `surface_id?, key: string, value: string` | 키-값 설정. 응답: `{ ok: true }` |
+| `surface.meta.get` | `surface_id?, key: string` | 값 조회. 응답: `{ value: "..." }` 또는 `{ value: null }` |
+| `surface.meta.unset` | `surface_id?, key: string` | 키 삭제. 응답: `{ ok: true }` |
+| `surface.meta.list` | `surface_id?` | 전체 메타데이터 객체 반환 |
+
+> **Deprecated alias**: 옛 이름 `surface.meta_set` / `meta_get` / `meta_unset` / `meta_list`(underscore 합성)는 호스트가 자동 정규화하지만 `tracing::warn`이 출력된다. **1.0 tag 직전에 일괄 제거**되므로 새 호출자는 점 표기(`surface.meta.*`)를 사용한다.
 
 **CLI 사용 예시:**
 
