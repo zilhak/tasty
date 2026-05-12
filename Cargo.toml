@@ -11,6 +11,12 @@ resolver = "2"
 undocumented_unsafe_blocks = "deny"
 multiple_unsafe_ops_per_block = "warn"
 
+# `unsafe fn` 내부의 unsafe op도 명시적 unsafe block을 강제. 호출 사이트에서
+# unsafe 의도가 항상 드러난다. Rust 2024 edition에선 기본 deny지만, 워크스페이스
+# 일관성을 위해 명시.
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
 [package]
 name = "tasty"
 version = "0.3.1"
