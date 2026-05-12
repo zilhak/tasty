@@ -354,15 +354,15 @@ impl EngineState {
     }
 
     /// Return `true` if the given surface_id is a deferred placeholder waiting
-    /// for lazy PTY spawn (i.e. owned by a tab with `is_deferred()` and matching
-    /// `deferred_surface_id`).
+    /// for lazy PTY spawn (i.e. an `EmptySurface { deferred_spawn: Some(..) }` leaf
+    /// in any tab layout).
     pub fn is_surface_deferred(&self, surface_id: u32) -> bool {
         for ws in &self.workspaces {
             let pane_ids = ws.pane_layout().all_pane_ids();
             for pane_id in pane_ids {
                 if let Some(pane) = ws.pane_layout().find_pane(pane_id) {
                     for tab in &pane.tabs {
-                        if tab.is_deferred() && tab.deferred_surface_id == Some(surface_id) {
+                        if tab.is_surface_deferred(surface_id) {
                             return true;
                         }
                     }
@@ -387,12 +387,14 @@ impl EngineState {
             for pane_id in pane_ids {
                 if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
                     for tab in &mut pane.tabs {
-                        if tab.is_deferred() && tab.deferred_surface_id == Some(surface_id) {
-                            if tab.ensure_initialized(surface_id) {
-                                spawned = true;
-                            }
+                        if tab.ensure_initialized(surface_id) {
+                            spawned = true;
+                            break;
                         }
                     }
+                }
+                if spawned {
+                    break;
                 }
             }
             if spawned {

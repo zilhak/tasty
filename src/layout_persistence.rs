@@ -533,82 +533,27 @@ impl SavedPane {
 impl SavedTab {
     fn restore(self, engine: &mut EngineState, is_active: bool) -> Option<Tab> {
         let tab_id = engine.next_ids.next_tab();
-        let result = self.surface.restore(engine, is_active)?;
-        match result {
-            RestoreResult::Ready(layout) => {
-                let focused_surface = layout.first_surface_id().unwrap_or(0);
-                Some(Tab {
-                    id: tab_id,
-                    name: self.name,
-                    explicit_name: self.explicit_name,
-                    layout_opt: Some(layout),
-                    focused_surface,
-                    deferred_spawn: None,
-                    deferred_surface_id: None,
-                    cached_display_name: None,
-                })
-            }
-            RestoreResult::Deferred {
-                surface_id,
-                spawn,
-            } => {
-                // Placeholder surface — replaced by actual terminal on workspace switch.
-                let placeholder = crate::model::EmptySurface::new(surface_id);
-                Some(Tab {
-                    id: tab_id,
-                    name: self.name,
-                    explicit_name: self.explicit_name,
-                    layout_opt: Some(SurfaceLayout::Leaf(Box::new(placeholder))),
-                    focused_surface: surface_id,
-                    deferred_spawn: Some(spawn),
-                    deferred_surface_id: Some(surface_id),
-                    cached_display_name: None,
-                })
-            }
-        }
+        let layout = self.surface.restore(engine, is_active)?;
+        let focused_surface = layout.first_surface_id().unwrap_or(0);
+        Some(Tab {
+            id: tab_id,
+            name: self.name,
+            explicit_name: self.explicit_name,
+            layout_opt: Some(layout),
+            focused_surface,
+            cached_display_name: None,
+        })
     }
-}
-
-/// Result of restoring a surface: either ready (PTY spawned) or deferred.
-enum RestoreResult {
-    Ready(SurfaceLayout),
-    Deferred {
-        surface_id: u32,
-        spawn: crate::model::DeferredSpawn,
-    },
 }
 
 impl SavedSurfaceLayout {
-    fn restore(self, engine: &mut EngineState, is_active: bool) -> Option<RestoreResult> {
-        match self {
-            SavedSurfaceLayout::Leaf(saved) => saved.restore_result(engine, is_active),
-            SavedSurfaceLayout::Split {
-                direction,
-                ratio,
-                first,
-                second,
-            } => {
-                // Split surfaces: 내부에 deferred가 섞이면 복잡해지므로,
-                // 비활성이어도 split 내부는 즉시 생성한다.
-                // (split이 있는 탭은 보통 1~2개 surface이므로 부담 적음)
-                let first = first.restore_ready(engine)?;
-                let second = second.restore_ready(engine)?;
-                Some(RestoreResult::Ready(SurfaceLayout::Split {
-                    direction: direction.into(),
-                    ratio,
-                    first: Box::new(first),
-                    second: Box::new(second),
-                    focus_second: false,
-                }))
-            }
-        }
-    }
-
-    /// 항상 즉시 생성 (split 내부용).
-    fn restore_ready(self, engine: &mut EngineState) -> Option<SurfaceLayout> {
+    /// is_active=false면 Terminal leaf를 deferred EmptySurface placeholder로 변환한다.
+    /// is_active=true면 모든 leaf를 즉시 spawn한다. Split 노드는 재귀적으로 처리해
+    /// 비활성 split 내부의 Terminal들도 deferred로 남는다.
+    fn restore(self, engine: &mut EngineState, is_active: bool) -> Option<SurfaceLayout> {
         match self {
             SavedSurfaceLayout::Leaf(saved) => {
-                let surface = saved.restore_immediate(engine)?;
+                let surface = saved.restore_leaf(engine, is_active)?;
                 Some(SurfaceLayout::Leaf(surface))
             }
             SavedSurfaceLayout::Split {
@@ -617,8 +562,8 @@ impl SavedSurfaceLayout {
                 first,
                 second,
             } => {
-                let first = first.restore_ready(engine)?;
-                let second = second.restore_ready(engine)?;
+                let first = first.restore(engine, is_active)?;
+                let second = second.restore(engine, is_active)?;
                 Some(SurfaceLayout::Split {
                     direction: direction.into(),
                     ratio,
@@ -632,15 +577,15 @@ impl SavedSurfaceLayout {
 }
 
 impl SavedSurface {
-    /// 비활성 워크스페이스 터미널은 deferred, 그 외는 즉시 생성.
-    fn restore_result(self, engine: &mut EngineState, is_active: bool) -> Option<RestoreResult> {
-        if !is_active {
-            if let SavedSurface::Terminal {
-                ref cwd,
-                ref restore_command,
-            } = self
-            {
-                let surface_id = engine.next_ids.next_surface();
+    /// 단일 leaf 복원. Terminal이면 is_active에 따라 즉시 spawn 또는 deferred placeholder.
+    /// Generic surface는 is_active와 관계없이 즉시 복원 (PTY가 아니므로 cheap).
+    fn restore_leaf(self, engine: &mut EngineState, is_active: bool) -> Option<Box<dyn Surface>> {
+        let surface_id = engine.next_ids.next_surface();
+        match self {
+            SavedSurface::Terminal {
+                cwd,
+                restore_command,
+            } if !is_active => {
                 let sh = ShellConfig::from_settings(&engine.settings);
                 let waker = engine.make_waker(surface_id);
                 let spawn = crate::model::DeferredSpawn {
@@ -652,18 +597,22 @@ impl SavedSurface {
                     working_dir: cwd.as_ref().map(PathBuf::from),
                 };
                 if let Some(cmd) = restore_command {
-                    engine.pending_restore_commands.push((surface_id, cmd.clone()));
+                    engine.pending_restore_commands.push((surface_id, cmd));
                 }
-                return Some(RestoreResult::Deferred { surface_id, spawn });
+                let placeholder =
+                    crate::model::EmptySurface::new_deferred(surface_id, spawn);
+                Some(Box::new(placeholder))
             }
+            other => other.restore_immediate_inner(engine, surface_id),
         }
-        let surface = self.restore_immediate(engine)?;
-        Some(RestoreResult::Ready(SurfaceLayout::Leaf(surface)))
     }
 
-    /// 항상 즉시 PTY를 spawn하여 Surface를 반환.
-    fn restore_immediate(self, engine: &mut EngineState) -> Option<Box<dyn Surface>> {
-        let surface_id = engine.next_ids.next_surface();
+    /// 항상 즉시 PTY를 spawn하거나 generic surface를 만들어 반환.
+    fn restore_immediate_inner(
+        self,
+        engine: &mut EngineState,
+        surface_id: u32,
+    ) -> Option<Box<dyn Surface>> {
         match self {
             SavedSurface::Terminal {
                 cwd,

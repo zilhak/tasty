@@ -11,14 +11,12 @@ pub struct Tab {
     /// Explicitly set tab name. When Some, overrides the auto-generated name.
     pub explicit_name: Option<String>,
     /// The layout tree of surfaces. Always a binary tree; a single leaf = unsplit state.
-    /// Temporarily `None` during structural mutations or when lazy_pty_init is enabled.
+    /// Temporarily `None` during structural mutations (take_layout/put_layout pattern).
+    /// Deferred terminals live inside the layout as `EmptySurface { deferred_spawn: Some(..) }`
+    /// placeholders, NOT as a None layout.
     pub layout_opt: Option<SurfaceLayout>,
     /// The focused surface ID within this tab's layout.
     pub focused_surface: SurfaceId,
-    /// When lazy_pty_init is enabled, stores parameters to spawn PTY on first access.
-    pub deferred_spawn: Option<super::terminal_surface::DeferredSpawn>,
-    /// Surface ID reserved for deferred spawn (set when lazy_pty_init creates the tab).
-    pub deferred_surface_id: Option<SurfaceId>,
     /// Cached display name. Updated on CwdChanged/explicit_name change, not every frame.
     pub cached_display_name: Option<String>,
 }
@@ -33,8 +31,6 @@ impl Tab {
             explicit_name: None,
             layout_opt: Some(SurfaceLayout::Leaf(surface)),
             focused_surface: surface_id,
-            deferred_spawn: None,
-            deferred_surface_id: None,
             cached_display_name: None,
         }
     }
@@ -312,47 +308,74 @@ impl Tab {
 
     // ── Initialization ──
 
-    /// Ensure the surface is initialized (lazy spawn if needed). Returns true if spawned.
-    /// If the tab has a placeholder surface (from deferred layout restore), replaces it.
+    /// 특정 surface_id에 해당하는 deferred placeholder를 찾아 PTY를 spawn하고
+    /// `TerminalSurface`로 교체. spawn된 경우 true.
     pub fn ensure_initialized(&mut self, surface_id: SurfaceId) -> bool {
-        if self.deferred_spawn.is_none() {
+        let Some(layout) = self.layout_opt.as_mut() else {
             return false;
-        }
-        let spawn = self.deferred_spawn.take().unwrap();
-        let shell_ref = spawn.shell.as_deref();
-        let shell_args: Vec<&str> = spawn.shell_args.iter().map(|s| s.as_str()).collect();
-        let working_dir = spawn.working_dir.as_deref();
-        match Terminal::new(
-            tasty_terminal::TerminalConfig {
-                cols: spawn.cols,
-                rows: spawn.rows,
-                shell: shell_ref,
-                args: &shell_args,
-                surface_id,
-                working_dir,
-            },
-            spawn.waker,
-        ) {
-            Ok(terminal) => {
-                let ts = TerminalSurface {
+        };
+        let Some(leaf) = layout.find_leaf_mut(surface_id) else {
+            return false;
+        };
+        let Some(empty) = leaf.as_any_mut().downcast_mut::<super::EmptySurface>() else {
+            return false;
+        };
+        let Some(spawn) = empty.take_deferred_spawn() else {
+            return false;
+        };
+        match spawn_terminal_from_deferred(surface_id, spawn) {
+            Some(terminal) => {
+                let ts: Box<dyn Surface> = Box::new(TerminalSurface {
                     id: surface_id,
                     terminal,
                     deferred_spawn: None,
-                };
-                self.layout_opt = Some(SurfaceLayout::Leaf(Box::new(ts)));
-                self.focused_surface = surface_id;
+                });
+                *leaf = ts;
                 true
             }
-            Err(e) => {
-                tracing::error!("lazy PTY init failed: {e}");
-                false
-            }
+            None => false,
         }
     }
 
-    /// Returns true if this tab has a deferred spawn pending.
+    /// 이 탭의 layout 안에 deferred placeholder로 남아있는 모든 surface ID를 spawn.
+    /// 반환값은 새로 spawn된 surface_id 목록.
+    pub fn ensure_all_initialized(&mut self) -> Vec<SurfaceId> {
+        let ids = self.deferred_surface_ids();
+        let mut spawned = Vec::with_capacity(ids.len());
+        for sid in ids {
+            if self.ensure_initialized(sid) {
+                spawned.push(sid);
+            }
+        }
+        spawned
+    }
+
+    /// layout 안에 deferred EmptySurface placeholder가 하나라도 있으면 true.
     pub fn is_deferred(&self) -> bool {
-        self.deferred_spawn.is_some()
+        !self.deferred_surface_ids().is_empty()
+    }
+
+    /// layout 안의 모든 deferred EmptySurface placeholder의 surface_id 목록.
+    pub fn deferred_surface_ids(&self) -> Vec<SurfaceId> {
+        let mut out = Vec::new();
+        if let Some(layout) = self.layout_opt.as_ref() {
+            collect_deferred_ids(layout, &mut out);
+        }
+        out
+    }
+
+    /// 주어진 surface_id가 이 탭의 deferred placeholder인지 확인.
+    pub fn is_surface_deferred(&self, surface_id: SurfaceId) -> bool {
+        let Some(layout) = self.layout_opt.as_ref() else {
+            return false;
+        };
+        let Some(leaf) = layout.find_surface(surface_id) else {
+            return false;
+        };
+        leaf.as_any()
+            .downcast_ref::<super::EmptySurface>()
+            .map(|e| e.is_deferred())
+            .unwrap_or(false)
     }
 
     /// Replace the entire layout with a single surface.
@@ -432,23 +455,13 @@ impl Tab {
                 "focused_surface": self.focused_surface,
                 "surfaces": self.all_surface_ids(),
             })
-        } else if self.is_deferred() {
-            // Restored-but-not-yet-spawned terminal: surface is an EmptySurface
-            // placeholder. Report it as a Terminal with `pty_ready: false` so
-            // agents see a uniform tree across active/inactive workspaces.
-            let spawn = self.deferred_spawn.as_ref();
-            let cols = spawn.map(|s| s.cols).unwrap_or(0);
-            let rows = spawn.map(|s| s.rows).unwrap_or(0);
-            serde_json::json!({
-                "type": "Terminal",
-                "id": self.deferred_surface_id.unwrap_or(0),
-                "cols": cols,
-                "rows": rows,
-                "pty_ready": false,
-            })
         } else {
+            // Single-leaf tab. EmptySurface(deferred) renders itself with pty_ready: false.
+            // For a live TerminalSurface, append pty_ready: true.
             let mut v = self.surface().to_tree_json();
-            if v.get("type").and_then(|t| t.as_str()) == Some("Terminal") {
+            if v.get("type").and_then(|t| t.as_str()) == Some("Terminal")
+                && !v.as_object().map(|o| o.contains_key("pty_ready")).unwrap_or(false)
+            {
                 if let Some(obj) = v.as_object_mut() {
                     obj.insert("pty_ready".into(), serde_json::json!(true));
                 }
@@ -460,6 +473,48 @@ impl Tab {
             "name": self.display_name(),
             "surface": layout_json,
         })
+    }
+}
+
+fn collect_deferred_ids(layout: &SurfaceLayout, out: &mut Vec<SurfaceId>) {
+    match layout {
+        SurfaceLayout::Leaf(surface) => {
+            if let Some(empty) = surface.as_any().downcast_ref::<super::EmptySurface>() {
+                if empty.is_deferred() {
+                    out.push(empty.id);
+                }
+            }
+        }
+        SurfaceLayout::Split { first, second, .. } => {
+            collect_deferred_ids(first, out);
+            collect_deferred_ids(second, out);
+        }
+    }
+}
+
+fn spawn_terminal_from_deferred(
+    surface_id: SurfaceId,
+    spawn: super::terminal_surface::DeferredSpawn,
+) -> Option<Terminal> {
+    let shell_ref = spawn.shell.as_deref();
+    let shell_args: Vec<&str> = spawn.shell_args.iter().map(|s| s.as_str()).collect();
+    let working_dir = spawn.working_dir.as_deref();
+    match Terminal::new(
+        tasty_terminal::TerminalConfig {
+            cols: spawn.cols,
+            rows: spawn.rows,
+            shell: shell_ref,
+            args: &shell_args,
+            surface_id,
+            working_dir,
+        },
+        spawn.waker,
+    ) {
+        Ok(terminal) => Some(terminal),
+        Err(e) => {
+            tracing::error!("lazy PTY init failed: {e}");
+            None
+        }
     }
 }
 

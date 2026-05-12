@@ -137,7 +137,7 @@ fn collect_tab_surface_info(
             // expose `type: "Terminal"` so agents can target them like any
             // other terminal — they just report `pty_ready: false` until the
             // PTY is spawned (auto on send, manual via `tasty wake`).
-            let deferred = tab.is_deferred() && tab.deferred_surface_id == Some(id);
+            let deferred = tab.is_surface_deferred(id);
             let mut entry = json!({
                 "id": id,
                 "pane_id": pane_id,

@@ -726,8 +726,6 @@ fn tab_close_surface_in_split() {
         explicit_name: None,
         layout_opt: Some(split_layout),
         focused_surface: 10,
-        deferred_spawn: None,
-        deferred_surface_id: None,
         cached_display_name: None,
     };
     let closed = tab.close_surface(10);
@@ -750,6 +748,108 @@ fn surface_layout_all_surface_ids_three_way() {
     assert!(ids.contains(&1));
     assert!(ids.contains(&2));
     assert!(ids.contains(&3));
+}
+
+// ---- Deferred placeholder tests ----
+
+fn test_deferred_placeholder(id: SurfaceId) -> super::EmptySurface {
+    let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
+    let spawn = super::terminal_surface::DeferredSpawn {
+        shell: None,
+        shell_args: Vec::new(),
+        cols: 80,
+        rows: 24,
+        waker,
+        working_dir: None,
+    };
+    super::EmptySurface::new_deferred(id, spawn)
+}
+
+#[test]
+fn tab_is_deferred_detects_placeholder_leaf() {
+    let placeholder = test_deferred_placeholder(42);
+    let tab = Tab {
+        id: 1,
+        name: "Shell".to_string(),
+        explicit_name: None,
+        layout_opt: Some(SurfaceLayout::Leaf(Box::new(placeholder))),
+        focused_surface: 42,
+        cached_display_name: None,
+    };
+    assert!(tab.is_deferred());
+    assert_eq!(tab.deferred_surface_ids(), vec![42]);
+    assert!(tab.is_surface_deferred(42));
+    assert!(!tab.is_surface_deferred(99));
+}
+
+#[test]
+fn tab_is_deferred_walks_split_layout() {
+    // Layout: Split(EmptySurface(deferred=Some, id=10), EmptySurface(deferred=Some, id=20))
+    let p1 = test_deferred_placeholder(10);
+    let p2 = test_deferred_placeholder(20);
+    let layout = SurfaceLayout::Split {
+        direction: SplitDirection::Vertical,
+        ratio: 0.5,
+        first: Box::new(SurfaceLayout::Leaf(Box::new(p1))),
+        second: Box::new(SurfaceLayout::Leaf(Box::new(p2))),
+        focus_second: false,
+    };
+    let tab = Tab {
+        id: 1,
+        name: "Shell".to_string(),
+        explicit_name: None,
+        layout_opt: Some(layout),
+        focused_surface: 10,
+        cached_display_name: None,
+    };
+    assert!(tab.is_deferred());
+    let ids = tab.deferred_surface_ids();
+    assert_eq!(ids.len(), 2);
+    assert!(ids.contains(&10));
+    assert!(ids.contains(&20));
+}
+
+#[test]
+fn tab_is_not_deferred_with_real_terminal() {
+    let node = test_surface_node(7);
+    let tab = Tab {
+        id: 1,
+        name: "Shell".to_string(),
+        explicit_name: None,
+        layout_opt: Some(SurfaceLayout::Leaf(Box::new(node))),
+        focused_surface: 7,
+        cached_display_name: None,
+    };
+    assert!(!tab.is_deferred());
+    assert_eq!(tab.deferred_surface_ids(), Vec::<SurfaceId>::new());
+    assert!(!tab.is_surface_deferred(7));
+}
+
+#[test]
+fn tab_ensure_initialized_replaces_placeholder_in_split() {
+    let p1 = test_deferred_placeholder(11);
+    let p2 = test_deferred_placeholder(12);
+    let layout = SurfaceLayout::Split {
+        direction: SplitDirection::Horizontal,
+        ratio: 0.5,
+        first: Box::new(SurfaceLayout::Leaf(Box::new(p1))),
+        second: Box::new(SurfaceLayout::Leaf(Box::new(p2))),
+        focus_second: false,
+    };
+    let mut tab = Tab {
+        id: 1,
+        name: "Shell".to_string(),
+        explicit_name: None,
+        layout_opt: Some(layout),
+        focused_surface: 11,
+        cached_display_name: None,
+    };
+    // Only wake id=11. id=12 must remain deferred.
+    let spawned = tab.ensure_initialized(11);
+    assert!(spawned);
+    assert!(!tab.is_surface_deferred(11));
+    assert!(tab.is_surface_deferred(12));
+    assert_eq!(tab.deferred_surface_ids(), vec![12]);
 }
 
 // ---- compute_terminal_rect tests ----

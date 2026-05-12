@@ -371,20 +371,18 @@ pub fn draw_pane_tab_bars(
     for (pane_id, action) in actions {
         match action {
             PaneTabAction::SwitchTab(idx) => {
-                let mut to_wake: Option<u32> = None;
+                let mut to_wake: Vec<u32> = Vec::new();
                 if let Some(pane) = state
                     .active_workspace_mut()
                     .pane_layout_mut()
                     .find_pane_mut(pane_id)
                 {
                     pane.active_tab = idx;
-                    if let Some(tab) = pane.tabs.get(idx)
-                        && tab.is_deferred()
-                    {
-                        to_wake = tab.deferred_surface_id;
+                    if let Some(tab) = pane.tabs.get(idx) {
+                        to_wake = tab.deferred_surface_ids();
                     }
                 }
-                if let Some(sid) = to_wake {
+                for sid in to_wake {
                     state.engine.ensure_surface_initialized(sid);
                 }
             }

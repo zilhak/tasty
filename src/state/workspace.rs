@@ -127,8 +127,9 @@ impl AppState {
         true
     }
 
-    /// 활성 workspace에서 사용자가 보고 있는 active_tab의 deferred surface만 PTY를
-    /// spawn. 같은 pane의 비활성 tab은 deferred로 남았다가 tab 전환 시 깨어남.
+    /// 활성 workspace에서 사용자가 보고 있는 active_tab의 deferred surface(들)만 PTY를
+    /// spawn. 같은 pane의 비활성 tab은 deferred로 남았다가 tab 전환 시 깨어난다.
+    /// active_tab이 split layout이면 그 안의 모든 deferred placeholder를 한번에 spawn한다.
     fn ensure_active_workspace_initialized(&mut self) {
         let mut spawned_ids = Vec::new();
         {
@@ -138,12 +139,8 @@ impl AppState {
                 if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
                     let active_idx = pane.active_tab;
                     if let Some(tab) = pane.tabs.get_mut(active_idx) {
-                        if tab.is_deferred() {
-                            let surface_id = tab.deferred_surface_id.unwrap_or(0);
-                            if tab.ensure_initialized(surface_id) {
-                                spawned_ids.push(surface_id);
-                            }
-                        }
+                        let mut ids = tab.ensure_all_initialized();
+                        spawned_ids.append(&mut ids);
                     }
                 }
             }

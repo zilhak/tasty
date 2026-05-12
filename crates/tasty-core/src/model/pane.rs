@@ -145,6 +145,7 @@ impl Pane {
     }
 
     /// Add a deferred tab (lazy PTY init). The terminal will be spawned when the tab is first accessed.
+    /// 내부적으로 layout에 deferred_spawn을 가진 `EmptySurface` placeholder를 둔다.
     pub fn add_tab_deferred(
         &mut self,
         tab_id: TabId,
@@ -156,21 +157,22 @@ impl Pane {
         waker: Waker,
         working_dir: Option<&std::path::Path>,
     ) {
+        let spawn = super::terminal_surface::DeferredSpawn {
+            shell: shell.map(|s| s.to_string()),
+            shell_args: shell_args.iter().map(|s| s.to_string()).collect(),
+            cols,
+            rows,
+            waker,
+            working_dir: working_dir.map(|p| p.to_path_buf()),
+        };
+        let placeholder = super::empty_surface::EmptySurface::new_deferred(surface_id, spawn);
+        let surface: Box<dyn super::Surface> = Box::new(placeholder);
         let tab = Tab {
             id: tab_id,
             name: "Shell".to_string(),
-            deferred_spawn: Some(super::terminal_surface::DeferredSpawn {
-                shell: shell.map(|s| s.to_string()),
-                shell_args: shell_args.iter().map(|s| s.to_string()).collect(),
-                cols,
-                rows,
-                waker,
-                working_dir: working_dir.map(|p| p.to_path_buf()),
-            }),
-            layout_opt: None,
-            focused_surface: 0,
             explicit_name: None,
-            deferred_surface_id: Some(surface_id),
+            layout_opt: Some(super::SurfaceLayout::Leaf(surface)),
+            focused_surface: surface_id,
             cached_display_name: None,
         };
         self.tabs.push(tab);
@@ -185,13 +187,13 @@ impl Pane {
         ids
     }
 
-    /// Ensure the active tab is initialized (lazy PTY spawn). Returns true if spawned.
-    pub fn ensure_active_tab_initialized(&mut self, surface_id: SurfaceId) -> bool {
+    /// 활성 tab 안의 모든 deferred placeholder를 spawn. 반환은 spawn된 surface_id 목록.
+    pub fn ensure_active_tab_initialized_all(&mut self) -> Vec<SurfaceId> {
         if self.tabs.is_empty() {
-            return false;
+            return Vec::new();
         }
         let idx = self.active_tab.min(self.tabs.len() - 1);
-        self.tabs[idx].ensure_initialized(surface_id)
+        self.tabs[idx].ensure_all_initialized()
     }
 
     /// Split the active panel's focused surface with a custom shell and optional working directory.
