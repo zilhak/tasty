@@ -8,7 +8,7 @@
 
 #![allow(dead_code)]
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
@@ -155,6 +155,77 @@ pub struct Contributes {
     pub commands: Vec<CommandDecl>,
     #[serde(default)]
     pub menu_items: Vec<MenuItemDecl>,
+    #[serde(default)]
+    pub ipc_namespace: Vec<IpcNamespaceDecl>,
+    #[serde(default)]
+    pub cli: Vec<CliCommandDecl>,
+}
+
+/// Plugin이 점유할 IPC 메서드 namespace prefix.
+///
+/// 호스트는 `<prefix>.*` 패턴의 모든 IPC 메서드를 등록된 plugin에 forward한다.
+/// 예: prefix="codex" → "codex.spawn", "codex.wait" 등을 모두 그 plugin이 처리.
+#[derive(Debug, Clone, Deserialize)]
+pub struct IpcNamespaceDecl {
+    pub prefix: String,
+    #[serde(default)]
+    pub description_i18n_key: Option<String>,
+}
+
+/// Plugin이 contributes하는 최상위 CLI 명령. `tasty <name> <sub>` 형태로 노출된다.
+#[derive(Debug, Clone, Deserialize)]
+pub struct CliCommandDecl {
+    pub name: String,
+    #[serde(default)]
+    pub description_i18n_key: Option<String>,
+    #[serde(default)]
+    pub subcommands: Vec<CliSubcommandDecl>,
+    /// arg group 이름 → 정의. subcommand가 `args = "<key>"`로 참조한다.
+    #[serde(default)]
+    pub arg_groups: HashMap<String, CliArgGroup>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CliSubcommandDecl {
+    pub name: String,
+    /// 이 서브커맨드가 호출할 IPC 메서드 (예: "codex.spawn").
+    /// plugin 자기 namespace prefix로 시작해야 한다.
+    pub ipc_method: String,
+    /// `arg_groups`의 키. 비어있는 그룹이라도 명시적으로 가리켜야 한다.
+    pub args: String,
+    #[serde(default)]
+    pub description_i18n_key: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct CliArgGroup {
+    #[serde(default)]
+    pub positional: Vec<CliArg>,
+    #[serde(default)]
+    pub flags: Vec<CliArg>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CliArg {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub ty: CliArgType,
+    /// `flags`에 들어가는 인자에만 존재. `positional`에서는 None.
+    #[serde(default)]
+    pub flag: Option<String>,
+    #[serde(default)]
+    pub required: bool,
+    #[serde(default)]
+    pub default: Option<toml::Value>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CliArgType {
+    U32,
+    I64,
+    String,
+    Bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -270,6 +341,131 @@ impl Manifest {
                 );
             }
         }
+        self.validate_contributes()?;
+        Ok(())
+    }
+
+    fn validate_contributes(&self) -> anyhow::Result<()> {
+        let mut seen_prefixes = HashSet::new();
+        for ns in &self.contributes.ipc_namespace {
+            if !is_valid_ipc_prefix(&ns.prefix) {
+                anyhow::bail!(
+                    "invalid ipc_namespace prefix '{}': must be lowercase ascii + digits + '_', \
+                     start with a letter, length ≤ 32, no '.'",
+                    ns.prefix
+                );
+            }
+            if is_reserved_ipc_prefix(&ns.prefix) {
+                anyhow::bail!(
+                    "ipc_namespace prefix '{}' is reserved by the host",
+                    ns.prefix
+                );
+            }
+            if !seen_prefixes.insert(ns.prefix.clone()) {
+                anyhow::bail!(
+                    "ipc_namespace prefix '{}' declared twice in this manifest",
+                    ns.prefix
+                );
+            }
+        }
+
+        let mut seen_cli_names = HashSet::new();
+        for cli in &self.contributes.cli {
+            if !is_valid_cli_name(&cli.name) {
+                anyhow::bail!(
+                    "invalid cli name '{}': must be lowercase ascii + digits + '-', \
+                     start with a letter, length ≤ 32",
+                    cli.name
+                );
+            }
+            if is_reserved_cli_name(&cli.name) {
+                anyhow::bail!("cli name '{}' is reserved by the host", cli.name);
+            }
+            if !seen_cli_names.insert(cli.name.clone()) {
+                anyhow::bail!(
+                    "cli name '{}' declared twice in this manifest",
+                    cli.name
+                );
+            }
+
+            let mut seen_sub_names = HashSet::new();
+            for sub in &cli.subcommands {
+                if !is_valid_cli_name(&sub.name) {
+                    anyhow::bail!(
+                        "invalid cli subcommand name '{}' under '{}'",
+                        sub.name,
+                        cli.name
+                    );
+                }
+                if !seen_sub_names.insert(sub.name.clone()) {
+                    anyhow::bail!(
+                        "cli subcommand name '{}' declared twice under '{}'",
+                        sub.name,
+                        cli.name
+                    );
+                }
+                if !cli.arg_groups.contains_key(&sub.args) {
+                    anyhow::bail!(
+                        "cli subcommand '{} {}' references unknown arg group '{}'",
+                        cli.name,
+                        sub.name,
+                        sub.args
+                    );
+                }
+                // ipc_method는 plugin 자기 namespace로 시작해야 한다.
+                let Some(dot) = sub.ipc_method.find('.') else {
+                    anyhow::bail!(
+                        "cli subcommand '{} {}' ipc_method '{}' has no namespace prefix",
+                        cli.name,
+                        sub.name,
+                        sub.ipc_method
+                    );
+                };
+                let prefix = &sub.ipc_method[..dot];
+                if !seen_prefixes.contains(prefix) {
+                    anyhow::bail!(
+                        "cli subcommand '{} {}' ipc_method '{}' uses prefix '{}' \
+                         which is not declared in this plugin's ipc_namespace",
+                        cli.name,
+                        sub.name,
+                        sub.ipc_method,
+                        prefix
+                    );
+                }
+            }
+
+            // arg group 내부 정합성: flag는 flags에만, positional은 flag 필드 없음.
+            for (group_name, group) in &cli.arg_groups {
+                for arg in &group.positional {
+                    if arg.flag.is_some() {
+                        anyhow::bail!(
+                            "arg group '{}.{}' positional arg '{}' must not have a 'flag' field",
+                            cli.name,
+                            group_name,
+                            arg.name
+                        );
+                    }
+                }
+                for arg in &group.flags {
+                    let Some(flag) = &arg.flag else {
+                        anyhow::bail!(
+                            "arg group '{}.{}' flag arg '{}' is missing 'flag' field",
+                            cli.name,
+                            group_name,
+                            arg.name
+                        );
+                    };
+                    if !flag.starts_with("--") {
+                        anyhow::bail!(
+                            "arg group '{}.{}' flag '{}' must start with '--'",
+                            cli.name,
+                            group_name,
+                            flag
+                        );
+                    }
+                }
+            }
+        }
         Ok(())
     }
 
@@ -300,6 +496,87 @@ fn is_valid_kind(s: &str) -> bool {
     !s.is_empty()
         && s.chars()
             .all(|c| c.is_ascii_lowercase() || c == '_' || c.is_ascii_digit())
+}
+
+/// IPC namespace prefix 형식 검증.
+/// 소문자 ascii + 숫자 + `_`. 알파벳으로 시작. 길이 1..=32. `.` 포함 불가.
+fn is_valid_ipc_prefix(s: &str) -> bool {
+    if s.is_empty() || s.len() > 32 {
+        return false;
+    }
+    let mut chars = s.chars();
+    let first = chars.next().unwrap();
+    if !first.is_ascii_lowercase() {
+        return false;
+    }
+    s.chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+}
+
+/// 호스트가 자기 IPC 메서드에 쓰는 prefix들. plugin이 점유하면 호스트 메서드가 가려진다.
+fn is_reserved_ipc_prefix(s: &str) -> bool {
+    matches!(
+        s,
+        "claude"
+            | "plugin"
+            | "system"
+            | "surface"
+            | "tab"
+            | "pane"
+            | "workspace"
+            | "split"
+            | "tree"
+            | "hook"
+            | "global_hook"
+            | "message"
+            | "tool"
+            | "notification"
+            | "window"
+            | "debug"
+            | "ui"
+            | "ime"
+            | "ipc"
+    )
+}
+
+/// CLI 명령 이름 형식 검증.
+/// 소문자 ascii + 숫자 + `-`. 알파벳으로 시작. 길이 1..=32.
+fn is_valid_cli_name(s: &str) -> bool {
+    if s.is_empty() || s.len() > 32 {
+        return false;
+    }
+    let first = s.chars().next().unwrap();
+    if !first.is_ascii_lowercase() {
+        return false;
+    }
+    s.chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
+/// 호스트가 자기 CLI 서브커맨드로 쓰는 명령들. plugin이 가로채면 호스트가 가려진다.
+fn is_reserved_cli_name(s: &str) -> bool {
+    matches!(
+        s,
+        "claude"
+            | "plugin"
+            | "new"
+            | "close"
+            | "list"
+            | "set"
+            | "send"
+            | "read"
+            | "move"
+            | "split"
+            | "tree"
+            | "debug"
+            | "wait"
+            | "send-key"
+            | "send-combo"
+            | "surface-meta"
+            | "is-typing"
+            | "notify"
+            | "unset"
+    )
 }
 
 /// 매니페스트가 들어 있는 디렉터리 핸들 — 디렉터리 + 파싱된 매니페스트 묶음.
@@ -583,6 +860,238 @@ mod tests {
             binding_mode = "wat"
         "#;
         assert!(parse(s).is_err());
+    }
+
+    #[test]
+    fn manifest_with_ipc_namespace_parses() {
+        let s = r#"
+            manifest_version = 1
+            id = "com.example.codex"
+            name = "Codex"
+            version = "0.1.0"
+            api_version = "1"
+            [entry]
+            type = "process"
+            command = "tasty-plugin-codex"
+            [[contributes.ipc_namespace]]
+            prefix = "codex"
+            description_i18n_key = "codex.namespace.desc"
+        "#;
+        let m = parse(s).expect("should parse");
+        assert_eq!(m.contributes.ipc_namespace.len(), 1);
+        assert_eq!(m.contributes.ipc_namespace[0].prefix, "codex");
+    }
+
+    #[test]
+    fn manifest_with_cli_parses() {
+        let s = r#"
+            manifest_version = 1
+            id = "com.example.codex"
+            name = "Codex"
+            version = "0.1.0"
+            api_version = "1"
+
+            [entry]
+            type = "process"
+            command = "tasty-plugin-codex"
+
+            [[contributes.ipc_namespace]]
+            prefix = "codex"
+
+            [[contributes.cli]]
+            name = "codex"
+            subcommands = [
+              { name = "spawn", ipc_method = "codex.spawn", args = "spawn_args" },
+              { name = "wait",  ipc_method = "codex.wait",  args = "no_args" },
+            ]
+
+            [contributes.cli.arg_groups.spawn_args]
+            flags = [
+              { name = "surface", type = "u32",    flag = "--surface", required = false },
+              { name = "prompt",  type = "string", flag = "--prompt",  required = false },
+            ]
+
+            [contributes.cli.arg_groups.no_args]
+        "#;
+        let m = parse(s).expect("should parse");
+        assert_eq!(m.contributes.cli.len(), 1);
+        let cli = &m.contributes.cli[0];
+        assert_eq!(cli.name, "codex");
+        assert_eq!(cli.subcommands.len(), 2);
+        assert!(cli.arg_groups.contains_key("spawn_args"));
+        assert!(cli.arg_groups.contains_key("no_args"));
+        let spawn_args = &cli.arg_groups["spawn_args"];
+        assert_eq!(spawn_args.flags.len(), 2);
+        assert_eq!(spawn_args.flags[0].ty, CliArgType::U32);
+    }
+
+    #[test]
+    fn manifest_reserved_ipc_prefix_rejected() {
+        let s = r#"
+            manifest_version = 1
+            id = "com.example.evil"
+            name = "Evil"
+            version = "0.1.0"
+            api_version = "1"
+            [entry]
+            type = "process"
+            command = "x"
+            [[contributes.ipc_namespace]]
+            prefix = "surface"
+        "#;
+        let err = parse(s).unwrap_err().to_string();
+        assert!(err.contains("reserved"), "got: {err}");
+    }
+
+    #[test]
+    fn manifest_reserved_cli_name_rejected() {
+        let s = r#"
+            manifest_version = 1
+            id = "com.example.evil"
+            name = "Evil"
+            version = "0.1.0"
+            api_version = "1"
+            [entry]
+            type = "process"
+            command = "x"
+            [[contributes.cli]]
+            name = "split"
+        "#;
+        let err = parse(s).unwrap_err().to_string();
+        assert!(err.contains("reserved"), "got: {err}");
+    }
+
+    #[test]
+    fn manifest_cli_args_ref_missing_rejected() {
+        let s = r#"
+            manifest_version = 1
+            id = "com.example.codex"
+            name = "Codex"
+            version = "0.1.0"
+            api_version = "1"
+
+            [entry]
+            type = "process"
+            command = "x"
+
+            [[contributes.ipc_namespace]]
+            prefix = "codex"
+
+            [[contributes.cli]]
+            name = "codex"
+            subcommands = [
+              { name = "spawn", ipc_method = "codex.spawn", args = "missing" },
+            ]
+        "#;
+        let err = parse(s).unwrap_err().to_string();
+        assert!(err.contains("unknown arg group"), "got: {err}");
+    }
+
+    #[test]
+    fn manifest_ipc_method_outside_namespace_rejected() {
+        let s = r#"
+            manifest_version = 1
+            id = "com.example.codex"
+            name = "Codex"
+            version = "0.1.0"
+            api_version = "1"
+
+            [entry]
+            type = "process"
+            command = "x"
+
+            [[contributes.ipc_namespace]]
+            prefix = "codex"
+
+            [[contributes.cli]]
+            name = "codex"
+            subcommands = [
+              { name = "evil", ipc_method = "claude.spawn", args = "no_args" },
+            ]
+
+            [contributes.cli.arg_groups.no_args]
+        "#;
+        let err = parse(s).unwrap_err().to_string();
+        assert!(err.contains("not declared"), "got: {err}");
+    }
+
+    #[test]
+    fn manifest_cli_ipc_method_no_prefix_rejected() {
+        let s = r#"
+            manifest_version = 1
+            id = "com.example.codex"
+            name = "Codex"
+            version = "0.1.0"
+            api_version = "1"
+
+            [entry]
+            type = "process"
+            command = "x"
+
+            [[contributes.ipc_namespace]]
+            prefix = "codex"
+
+            [[contributes.cli]]
+            name = "codex"
+            subcommands = [
+              { name = "evil", ipc_method = "noprefix", args = "no_args" },
+            ]
+
+            [contributes.cli.arg_groups.no_args]
+        "#;
+        let err = parse(s).unwrap_err().to_string();
+        assert!(err.contains("no namespace prefix"), "got: {err}");
+    }
+
+    #[test]
+    fn manifest_duplicate_ipc_prefix_rejected() {
+        let s = r#"
+            manifest_version = 1
+            id = "com.example.codex"
+            name = "Codex"
+            version = "0.1.0"
+            api_version = "1"
+            [entry]
+            type = "process"
+            command = "x"
+            [[contributes.ipc_namespace]]
+            prefix = "codex"
+            [[contributes.ipc_namespace]]
+            prefix = "codex"
+        "#;
+        let err = parse(s).unwrap_err().to_string();
+        assert!(err.contains("declared twice"), "got: {err}");
+    }
+
+    #[test]
+    fn manifest_flag_without_double_dash_rejected() {
+        let s = r#"
+            manifest_version = 1
+            id = "com.example.codex"
+            name = "Codex"
+            version = "0.1.0"
+            api_version = "1"
+
+            [entry]
+            type = "process"
+            command = "x"
+
+            [[contributes.ipc_namespace]]
+            prefix = "codex"
+
+            [[contributes.cli]]
+            name = "codex"
+            subcommands = [
+              { name = "spawn", ipc_method = "codex.spawn", args = "spawn_args" },
+            ]
+
+            [contributes.cli.arg_groups.spawn_args]
+            flags = [
+              { name = "surface", type = "u32", flag = "-s", required = false },
+            ]
+        "#;
+        let err = parse(s).unwrap_err().to_string();
+        assert!(err.contains("must start with '--'"), "got: {err}");
     }
 
     #[test]

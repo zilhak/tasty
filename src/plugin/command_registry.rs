@@ -221,6 +221,8 @@ mod tests {
             contributes: Contributes {
                 commands: cmds,
                 menu_items: vec![],
+                ipc_namespace: vec![],
+                cli: vec![],
             },
             lang_dir: "lang".to_string(),
         }

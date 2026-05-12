@@ -6,8 +6,11 @@
 //! 이 크레이트는 `serde`/`serde_json` 외 의존성이 없도록 유지한다 — plugin은
 //! 무거운 host 의존(예: egui/wgpu) 없이 컴파일 가능해야 한다.
 
+pub mod ipc_method;
 pub mod protocol;
 pub mod ui_tree;
+
+pub use ipc_method::{IpcInvokeParams, METHOD_IPC_INVOKE};
 
 pub use protocol::{
     AuthMessage, CommandInvokeParams, IpcCallResult, PluginEvent, PluginRequest, PluginResponse,
