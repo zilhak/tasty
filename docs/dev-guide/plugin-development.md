@@ -16,11 +16,20 @@ Plugin은 별도 OS 프로세스로 실행되어 호스트와 TCP+JSON으로 통
 
 호스트가 알아서 처리하는 것 (SDK가 감춤):
 
-- TCP connect + 토큰 핸드셰이크
+- TCP connect + 토큰 핸드셰이크 (호스트 AuthAck 5초 대기 포함 — 거부 시 `PluginError::HandshakeRejected`, 무응답 시 `HandshakeTimeout`)
 - NDJSON 직렬화/역직렬화
 - 메시지 dispatch loop
 - ping 응답
 - shutdown 처리
+
+### 핸드셰이크 진단
+
+`tasty_plugin_sdk::run()`은 내부에서 [`Connection::connect_and_authenticate`]를 호출한다. 토큰 검증에 문제가 있으면 plugin은 silent hang 없이 다음 에러로 즉시 종료된다:
+
+- `PluginError::HandshakeRejected { reason }` — 호스트가 명시적으로 거부 (예: 토큰 만료/불일치). `reason`은 호스트가 AuthAck에 담아 보낸 사유.
+- `PluginError::HandshakeTimeout` — 5초 안에 AuthAck를 받지 못함. 호스트가 spawn 직후 죽었거나 네트워크가 막혔을 가능성.
+
+진단을 직접 제어하고 싶다면 (`run()`을 쓰지 않고 SDK 저수준 API 사용 시) `Connection::connect`로 TCP만 연결한 뒤 `Connection::authenticate`를 분리 호출할 수 있다.
 
 ## 1. 크레이트 골격
 
@@ -366,6 +375,8 @@ variant 요약:
 | `EnvParse { var, message }` | 환경변수 파싱 실패 (예: 포트 번호 형식 오류) |
 | `Connect { port, source }` | TCP 호스트 connect 실패 |
 | `HostClosed` | 호스트가 연결을 닫음 |
+| `HandshakeRejected { reason }` | 호스트가 AuthAck `ok=false`로 거부 (토큰 불일치 등) |
+| `HandshakeTimeout` | 호스트 AuthAck가 5초 안에 도착 안함 |
 | `HostCall { method, message }` | 호스트가 에러 응답을 보냄 (permission_denied 등) |
 | `HostCallTimeout { method, timeout }` | 호스트 응답이 timeout 안에 도착 안함 |
 | `Io(io::Error)` | 일반 IO 에러 |

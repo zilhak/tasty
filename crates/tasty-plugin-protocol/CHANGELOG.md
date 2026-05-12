@@ -15,6 +15,7 @@
 
 ### Added
 - IPC alias 정규화 layer — 옛 메서드 이름이 새 이름과 같은 핸들러로 라우팅된다.
+- `AuthAck { ok, reason }` + `AuthAckEnvelope { auth_ack }` — plugin이 `AuthMessage` 송신 후 호스트로부터 받는 단일 노티. ok=true면 메인 루프 진입, ok=false면 즉시 거부. 메인 루프의 `PluginRequest`와 다른 envelope(`auth_ack` 키)로 파서가 분리된다. SDK 측에서 `PluginError::HandshakeRejected`/`HandshakeTimeout`으로 매핑됨. (additive, api_version 유지)
 
 ### Changed
 - `surface.meta_set` / `meta_get` / `meta_unset` / `meta_list`이 `surface.meta.set` / `meta.get` / `meta.unset` / `meta.list`(점 표기)로 정규화됨. 핸들러/method_meta는 새 이름만 등록.
