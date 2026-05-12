@@ -9,11 +9,10 @@ use std::io::{BufRead, BufReader, Write};
 use std::net::TcpStream;
 use std::time::Duration;
 
-use anyhow::Result;
-
 use tasty_plugin_protocol::{AuthMessage, PluginEvent, PluginRequest, PluginResponse};
 
 use crate::env::PluginEnv;
+use crate::error::{PluginError, Result};
 
 pub struct Connection {
     writer: TcpStream,
@@ -28,7 +27,12 @@ pub enum HostMessage {
 
 impl Connection {
     pub fn connect_and_authenticate(env: &PluginEnv) -> Result<Self> {
-        let stream = TcpStream::connect(("127.0.0.1", env.host_port))?;
+        let stream = TcpStream::connect(("127.0.0.1", env.host_port)).map_err(|source| {
+            PluginError::Connect {
+                port: env.host_port,
+                source,
+            }
+        })?;
         // 짧은 read timeout으로 try_recv 패턴을 흉내낼 수 있게 한다.
         stream.set_read_timeout(Some(Duration::from_millis(50)))?;
         let mut writer = stream.try_clone()?;
@@ -66,7 +70,7 @@ impl Connection {
     pub fn try_recv(&mut self) -> Result<Option<HostMessage>> {
         let mut line = String::new();
         match self.reader.read_line(&mut line) {
-            Ok(0) => Err(anyhow::anyhow!("host closed connection")),
+            Ok(0) => Err(PluginError::HostClosed),
             Ok(_) => {
                 let trim = line.trim();
                 if trim.is_empty() {
@@ -81,7 +85,7 @@ impl Connection {
             {
                 Ok(None)
             }
-            Err(e) => Err(anyhow::anyhow!("recv error: {e}")),
+            Err(e) => Err(PluginError::Io(e)),
         }
     }
 }
