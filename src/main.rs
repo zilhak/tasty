@@ -1004,13 +1004,29 @@ impl App {
     }
 
     /// plugin process가 보낸 IPC 호출들을 라우터로 디스패치하고 결과를 plugin에 회신.
-    /// CallerContext::Plugin으로 들어가므로 권한 게이트가 적용된다.
+    /// CallerContext::Plugin으로 들어가므로 권한 게이트가 적용된다. 호출 메서드가
+    /// 다른 plugin이 점유한 namespace prefix와 매칭되면 `forward_namespace_call_from_plugin`
+    /// 경로로 우회 (응답은 target plugin이 줄 때까지 보류되며 main loop 다음 tick에서
+    /// caller plugin에 `ipc.result`로 회신).
     fn process_plugin_ipc_calls(&mut self) {
         let calls = match self.plugin_manager.as_mut() {
             Some(mgr) => mgr.take_pending_plugin_calls(),
             None => return,
         };
         for call in calls {
+            // namespace forward 경로: 메서드가 다른 plugin의 prefix에 매칭되면
+            // 검증/forward를 plugin_manager에 위임한다. 응답은 비동기.
+            if let Some(mgr) = self.plugin_manager.as_mut() {
+                if mgr.ipc_namespaces.resolve(&call.method).is_some() {
+                    mgr.forward_namespace_call_from_plugin(
+                        &call.method,
+                        call.params.clone(),
+                        &call.plugin_id,
+                        call.call_id,
+                    );
+                    continue;
+                }
+            }
             let caller = ipc::caller::CallerContext::Plugin {
                 plugin_id: call.plugin_id.clone(),
                 permissions: call.permissions.clone(),

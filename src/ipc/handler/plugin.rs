@@ -304,7 +304,7 @@ fn refresh_plugin_permissions(mgr: &mut PluginManager, plugin_id: &str) {
         .parsed_permissions()
         .unwrap_or_default()
         .into_iter()
-        .filter(|p| granted.contains(p.as_token()))
+        .filter(|p| granted.contains(&p.as_token()))
         .collect();
     mgr.set_plugin_permissions(plugin_id, perms);
 }

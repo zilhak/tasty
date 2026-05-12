@@ -50,6 +50,16 @@ enum PendingRequestKind {
         response_tx: mpsc::SyncSender<JsonRpcResponse>,
         original_id: serde_json::Value,
     },
+    /// 다른 plugin이 보낸 IpcCall이 namespace 메서드인 경우. target plugin이 응답을
+    /// 주면 caller plugin에 `ipc.result`로 회신한다.
+    PluginToPluginNamespace {
+        /// forward 받은 target plugin (응답을 주는 쪽).
+        plugin_id: String,
+        /// 호출한 plugin (응답을 받을 쪽).
+        caller_plugin_id: String,
+        /// caller plugin이 ipc.call 시점에 발급한 call_id.
+        call_id: u64,
+    },
 }
 
 struct RemoteSurfaceEntry {
@@ -379,7 +389,7 @@ impl PluginManager {
                         .parsed_permissions()
                         .unwrap_or_default()
                         .into_iter()
-                        .filter(|p| granted.contains(p.as_token()))
+                        .filter(|p| granted.contains(&p.as_token()))
                         .collect();
                     self.plugin_permissions
                         .insert(plugin_id.clone(), Arc::new(perms));
@@ -562,58 +572,22 @@ impl PluginManager {
         original_id: serde_json::Value,
         response_tx: mpsc::SyncSender<JsonRpcResponse>,
     ) {
-        let Some(plugin_id) = self.ipc_namespaces.resolve(method).map(str::to_string)
-        else {
-            let _ = response_tx.send(JsonRpcResponse::method_not_found(
-                original_id,
-                method,
-            ));
-            return;
-        };
-        if let Some(caller) = caller_plugin_id {
-            if caller == plugin_id {
-                let _ = response_tx.send(JsonRpcResponse::error(
-                    original_id,
-                    -32001,
-                    &format!(
-                        "plugin '{caller}' cannot invoke its own namespace method '{method}'"
-                    ),
-                ));
-                return;
-            }
-        }
-        let proc = match self.processes.get(&plugin_id) {
-            Some(p) => p,
-            None => {
-                let _ = response_tx.send(JsonRpcResponse::error(
-                    original_id,
-                    -32002,
-                    &format!("plugin '{plugin_id}' is not running"),
-                ));
+        let plugin_id = match self.validate_namespace_call(method, caller_plugin_id) {
+            Ok(id) => id,
+            Err((code, msg)) => {
+                let _ = response_tx.send(JsonRpcResponse::error(original_id, code, &msg));
                 return;
             }
         };
-        let req_id = self.next_request_id.fetch_add(1, Ordering::Relaxed);
-        let req = PluginRequest {
-            method: tasty_plugin_protocol::ipc_method::METHOD_IPC_INVOKE.to_string(),
-            params: json!({
-                "method": method,
-                "params": params,
-                "caller_plugin_id": caller_plugin_id,
-            }),
-            id: req_id,
+        let req_id = match self.send_namespace_invoke(&plugin_id, method, &params, caller_plugin_id)
+        {
+            Ok(id) => id,
+            Err(msg) => {
+                let _ =
+                    response_tx.send(JsonRpcResponse::error(original_id, -32003, &msg));
+                return;
+            }
         };
-        if let Err(e) = proc.req_tx.send(req) {
-            tracing::warn!(
-                "plugin '{plugin_id}': failed to forward ipc.invoke: {e}"
-            );
-            let _ = response_tx.send(JsonRpcResponse::error(
-                original_id,
-                -32003,
-                &format!("plugin '{plugin_id}' send failed: {e}"),
-            ));
-            return;
-        }
         self.pending_requests.insert(
             req_id,
             PendingRequestKind::NamespaceInvoke {
@@ -624,8 +598,120 @@ impl PluginManager {
         );
     }
 
+    /// plugin이 보낸 IpcCall이 namespace 메서드인 경우의 forward.
+    /// 응답은 caller plugin에 `ipc.result`로 회신한다 (`process_plugin_ipc_calls`와
+    /// 같은 방식).
+    pub fn forward_namespace_call_from_plugin(
+        &mut self,
+        method: &str,
+        params: serde_json::Value,
+        caller_plugin_id: &str,
+        call_id: u64,
+    ) {
+        let plugin_id = match self.validate_namespace_call(method, Some(caller_plugin_id)) {
+            Ok(id) => id,
+            Err((_code, msg)) => {
+                self.send_ipc_result(caller_plugin_id, call_id, None, Some(msg));
+                return;
+            }
+        };
+        let req_id =
+            match self.send_namespace_invoke(&plugin_id, method, &params, Some(caller_plugin_id)) {
+                Ok(id) => id,
+                Err(msg) => {
+                    self.send_ipc_result(caller_plugin_id, call_id, None, Some(msg));
+                    return;
+                }
+            };
+        self.pending_requests.insert(
+            req_id,
+            PendingRequestKind::PluginToPluginNamespace {
+                plugin_id,
+                caller_plugin_id: caller_plugin_id.to_string(),
+                call_id,
+            },
+        );
+    }
+
+    /// namespace 메서드 호출의 유효성 검사. 성공 시 target plugin id를 반환.
+    /// 실패 시 (JSON-RPC code, message) 페어를 반환.
+    fn validate_namespace_call(
+        &self,
+        method: &str,
+        caller_plugin_id: Option<&str>,
+    ) -> Result<String, (i32, String)> {
+        let plugin_id = self
+            .ipc_namespaces
+            .resolve(method)
+            .map(str::to_string)
+            .ok_or_else(|| (-32601, format!("method '{method}' not found")))?;
+        if let Some(caller) = caller_plugin_id {
+            if caller == plugin_id {
+                return Err((
+                    -32001,
+                    format!(
+                        "plugin '{caller}' cannot invoke its own namespace method '{method}'"
+                    ),
+                ));
+            }
+            let prefix = method.split('.').next().unwrap_or("");
+            let required = Permission::IpcInvoke(prefix.to_string());
+            let allowed = self
+                .plugin_permissions
+                .get(caller)
+                .map(|set| set.contains(&required))
+                .unwrap_or(false);
+            if !allowed {
+                return Err((
+                    -32001,
+                    format!(
+                        "permission_denied: plugin '{caller}' lacks 'ipc.invoke:{prefix}' \
+                         permission for namespace method '{method}'"
+                    ),
+                ));
+            }
+        }
+        if !self.processes.contains_key(&plugin_id) {
+            return Err((
+                -32002,
+                format!("plugin '{plugin_id}' is not running"),
+            ));
+        }
+        Ok(plugin_id)
+    }
+
+    /// target plugin에 `ipc.invoke` 요청을 송신한다. 성공 시 발급된 host→plugin
+    /// request id를 반환. caller는 pending_requests에 추적 kind를 직접 삽입한다.
+    fn send_namespace_invoke(
+        &self,
+        plugin_id: &str,
+        method: &str,
+        params: &serde_json::Value,
+        caller_plugin_id: Option<&str>,
+    ) -> Result<u64, String> {
+        let proc = self
+            .processes
+            .get(plugin_id)
+            .ok_or_else(|| format!("plugin '{plugin_id}' is not running"))?;
+        let req_id = self.next_request_id.fetch_add(1, Ordering::Relaxed);
+        let req = PluginRequest {
+            method: tasty_plugin_protocol::ipc_method::METHOD_IPC_INVOKE.to_string(),
+            params: json!({
+                "method": method,
+                "params": params,
+                "caller_plugin_id": caller_plugin_id,
+            }),
+            id: req_id,
+        };
+        proc.req_tx
+            .send(req)
+            .map_err(|e| format!("plugin '{plugin_id}' send failed: {e}"))?;
+        Ok(req_id)
+    }
+
     /// 죽거나 비활성화된 plugin이 가진 모든 namespace pending에 에러 응답을 보내고
-    /// pending에서 제거한다.
+    /// pending에서 제거한다. CLI/Local caller에게는 response_tx로, plugin caller에게는
+    /// `ipc.result`로 회신한다.
     fn cancel_pending_namespace_calls(&mut self, plugin_id: &str, reason: &str) {
         let to_cancel: Vec<u64> = self
             .pending_requests
@@ -633,22 +719,39 @@ impl PluginManager {
             .filter_map(|(id, kind)| match kind {
                 PendingRequestKind::NamespaceInvoke {
                     plugin_id: pid, ..
+                }
+                | PendingRequestKind::PluginToPluginNamespace {
+                    plugin_id: pid, ..
                 } if pid == plugin_id => Some(*id),
                 _ => None,
             })
             .collect();
         for id in to_cancel {
-            if let Some(PendingRequestKind::NamespaceInvoke {
-                response_tx,
-                original_id,
-                ..
-            }) = self.pending_requests.remove(&id)
-            {
-                let _ = response_tx.send(JsonRpcResponse::error(
+            match self.pending_requests.remove(&id) {
+                Some(PendingRequestKind::NamespaceInvoke {
+                    response_tx,
                     original_id,
-                    -32004,
-                    &format!("plugin '{plugin_id}' unavailable: {reason}"),
-                ));
+                    ..
+                }) => {
+                    let _ = response_tx.send(JsonRpcResponse::error(
+                        original_id,
+                        -32004,
+                        &format!("plugin '{plugin_id}' unavailable: {reason}"),
+                    ));
+                }
+                Some(PendingRequestKind::PluginToPluginNamespace {
+                    caller_plugin_id,
+                    call_id,
+                    ..
+                }) => {
+                    self.send_ipc_result(
+                        &caller_plugin_id,
+                        call_id,
+                        None,
+                        Some(format!("plugin '{plugin_id}' unavailable: {reason}")),
+                    );
+                }
+                _ => {}
             }
         }
     }
@@ -725,6 +828,15 @@ impl PluginManager {
                     )
                 };
                 let _ = response_tx.send(response);
+            }
+            PendingRequestKind::PluginToPluginNamespace {
+                plugin_id: _,
+                caller_plugin_id,
+                call_id,
+            } => {
+                // plugin caller에는 ipc.result로 회신. error_code는 plugin 측이
+                // 받은 표준 form 그대로(메시지에 합쳐서 전달).
+                self.send_ipc_result(&caller_plugin_id, call_id, resp.result, resp.error);
             }
         }
     }
@@ -823,5 +935,105 @@ impl PluginManager {
     #[allow(dead_code)]
     pub fn listener_port(&self) -> Option<u16> {
         self.listener.as_ref().map(|l| l.port())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn empty_waker() -> tasty_core::SharedWakerFactory {
+        // headless 환경에서 PluginManager가 사용하는 waker — 실제 wake는 no-op로 충분.
+        Arc::new(tasty_core::waker::NoopWakerFactory)
+    }
+
+    /// validate_namespace_call의 분기를 직접 검증하기 위한 mgr 초기화.
+    /// process는 spawn하지 않고 ipc_namespaces와 plugin_permissions만 직접 채운다.
+    fn mgr_with_namespace_owner(owner: &str, prefix: &str) -> PluginManager {
+        let mut mgr = PluginManager::new(empty_waker());
+        mgr.ipc_namespaces
+            .register(owner, prefix)
+            .expect("test prefix should be unique");
+        mgr
+    }
+
+    #[test]
+    fn validate_namespace_call_method_not_found() {
+        let mgr = PluginManager::new(empty_waker());
+        let err = mgr
+            .validate_namespace_call("nope.method", None)
+            .unwrap_err();
+        assert_eq!(err.0, -32601);
+    }
+
+    #[test]
+    fn validate_namespace_call_local_caller_allowed_when_target_running() {
+        let mut mgr = mgr_with_namespace_owner("com.example.codex", "codex");
+        // process 가짜 entry 삽입 — request 전송은 안 한다, 검증만.
+        mgr.processes.insert(
+            "com.example.codex".into(),
+            stub_process(),
+        );
+        let id = mgr
+            .validate_namespace_call("codex.spawn", None)
+            .expect("local caller should pass");
+        assert_eq!(id, "com.example.codex");
+    }
+
+    #[test]
+    fn validate_namespace_call_target_not_running() {
+        let mgr = mgr_with_namespace_owner("com.example.codex", "codex");
+        let err = mgr
+            .validate_namespace_call("codex.spawn", None)
+            .unwrap_err();
+        assert_eq!(err.0, -32002);
+    }
+
+    #[test]
+    fn validate_namespace_call_self_invocation_rejected() {
+        let mut mgr = mgr_with_namespace_owner("com.example.codex", "codex");
+        mgr.processes.insert("com.example.codex".into(), stub_process());
+        let err = mgr
+            .validate_namespace_call("codex.spawn", Some("com.example.codex"))
+            .unwrap_err();
+        assert_eq!(err.0, -32001);
+        assert!(err.1.contains("its own namespace"));
+    }
+
+    #[test]
+    fn validate_namespace_call_plugin_caller_without_grant_denied() {
+        let mut mgr = mgr_with_namespace_owner("com.example.codex", "codex");
+        mgr.processes.insert("com.example.codex".into(), stub_process());
+        // caller plugin은 ipc.invoke:codex 권한 없음
+        mgr.set_plugin_permissions(
+            "com.example.helper",
+            HashSet::from([Permission::SurfaceRead]),
+        );
+        let err = mgr
+            .validate_namespace_call("codex.spawn", Some("com.example.helper"))
+            .unwrap_err();
+        assert_eq!(err.0, -32001);
+        assert!(err.1.contains("permission_denied"));
+        assert!(err.1.contains("ipc.invoke:codex"));
+    }
+
+    #[test]
+    fn validate_namespace_call_plugin_caller_with_grant_allowed() {
+        let mut mgr = mgr_with_namespace_owner("com.example.codex", "codex");
+        mgr.processes.insert("com.example.codex".into(), stub_process());
+        mgr.set_plugin_permissions(
+            "com.example.helper",
+            HashSet::from([Permission::IpcInvoke("codex".into())]),
+        );
+        let id = mgr
+            .validate_namespace_call("codex.spawn", Some("com.example.helper"))
+            .expect("granted caller should pass");
+        assert_eq!(id, "com.example.codex");
+    }
+
+    /// validate 만 보는 테스트용 stub. PluginProcess는 process.rs의 cfg(test)
+    /// 헬퍼를 위임 호출한다.
+    fn stub_process() -> PluginProcess {
+        PluginProcess::stub_for_test("stub")
     }
 }

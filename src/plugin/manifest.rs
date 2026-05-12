@@ -68,7 +68,10 @@ pub enum Entry {
 ///
 /// 평면 enum — `fs.write`는 `fs.read`를 자동 포함하지 않는다.
 /// 매니페스트에 두 권한이 모두 필요하면 명시적으로 선언해야 한다.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+///
+/// `IpcInvoke(prefix)`는 동적 토큰을 보유하므로 `Copy`를 derive할 수 없다.
+/// 정적 enum variant도 함께 `Clone`만 derive하여 일관성을 유지한다.
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum Permission {
     /// surface/tab/workspace 트리 조회
     SurfaceRead,
@@ -98,6 +101,9 @@ pub enum Permission {
     ClaudeRead,
     /// Claude API 호출 위임 (예약)
     ClaudeInvoke,
+    /// 다른 plugin이 점유한 IPC namespace prefix의 메서드 호출.
+    /// 토큰 형식: `ipc.invoke:<prefix>` (예: `ipc.invoke:codex`).
+    IpcInvoke(String),
 }
 
 impl Permission {
@@ -117,26 +123,35 @@ impl Permission {
             "network" => Self::Network,
             "claude.read" => Self::ClaudeRead,
             "claude.invoke" => Self::ClaudeInvoke,
-            _ => return None,
+            other => {
+                let prefix = other.strip_prefix("ipc.invoke:")?;
+                if !is_valid_ipc_prefix(prefix) || is_reserved_ipc_prefix(prefix) {
+                    return None;
+                }
+                return Some(Self::IpcInvoke(prefix.to_string()));
+            }
         })
     }
 
-    pub fn as_token(self) -> &'static str {
+    /// 권한의 토큰 문자열 형태. `IpcInvoke`는 prefix를 포함하므로 owned `String`을
+    /// 반환한다. 비교/저장에는 `&token`을 그대로 사용하면 된다.
+    pub fn as_token(&self) -> String {
         match self {
-            Self::SurfaceRead => "surface.read",
-            Self::SurfaceWrite => "surface.write",
-            Self::Notification => "notification",
-            Self::ClipboardRead => "clipboard.read",
-            Self::ClipboardWrite => "clipboard.write",
-            Self::FsRead => "fs.read",
-            Self::FsWrite => "fs.write",
-            Self::ProcessSpawn => "process.spawn",
-            Self::TerminalSpawn => "terminal.spawn",
-            Self::TerminalWrite => "terminal.write",
-            Self::TerminalRead => "terminal.read",
-            Self::Network => "network",
-            Self::ClaudeRead => "claude.read",
-            Self::ClaudeInvoke => "claude.invoke",
+            Self::SurfaceRead => "surface.read".into(),
+            Self::SurfaceWrite => "surface.write".into(),
+            Self::Notification => "notification".into(),
+            Self::ClipboardRead => "clipboard.read".into(),
+            Self::ClipboardWrite => "clipboard.write".into(),
+            Self::FsRead => "fs.read".into(),
+            Self::FsWrite => "fs.write".into(),
+            Self::ProcessSpawn => "process.spawn".into(),
+            Self::TerminalSpawn => "terminal.spawn".into(),
+            Self::TerminalWrite => "terminal.write".into(),
+            Self::TerminalRead => "terminal.read".into(),
+            Self::Network => "network".into(),
+            Self::ClaudeRead => "claude.read".into(),
+            Self::ClaudeInvoke => "claude.invoke".into(),
+            Self::IpcInvoke(prefix) => format!("ipc.invoke:{prefix}"),
         }
     }
 }
@@ -1092,6 +1107,57 @@ mod tests {
         "#;
         let err = parse(s).unwrap_err().to_string();
         assert!(err.contains("must start with '--'"), "got: {err}");
+    }
+
+    #[test]
+    fn permission_ipc_invoke_token_round_trip() {
+        let p = Permission::from_token("ipc.invoke:codex").expect("should parse");
+        match &p {
+            Permission::IpcInvoke(prefix) => assert_eq!(prefix, "codex"),
+            _ => panic!("expected IpcInvoke"),
+        }
+        assert_eq!(p.as_token(), "ipc.invoke:codex");
+    }
+
+    #[test]
+    fn permission_ipc_invoke_empty_prefix_rejected() {
+        assert!(Permission::from_token("ipc.invoke:").is_none());
+    }
+
+    #[test]
+    fn permission_ipc_invoke_invalid_prefix_rejected() {
+        // 대문자 거부 (lowercase ascii only)
+        assert!(Permission::from_token("ipc.invoke:Codex").is_none());
+        // '.' 포함 거부
+        assert!(Permission::from_token("ipc.invoke:co.dex").is_none());
+        // 숫자 시작 거부
+        assert!(Permission::from_token("ipc.invoke:1codex").is_none());
+    }
+
+    #[test]
+    fn permission_ipc_invoke_reserved_prefix_rejected() {
+        // 호스트 예약 prefix는 plugin이 점유할 수 없으므로 토큰도 거부.
+        assert!(Permission::from_token("ipc.invoke:surface").is_none());
+        assert!(Permission::from_token("ipc.invoke:claude").is_none());
+    }
+
+    #[test]
+    fn manifest_accepts_ipc_invoke_permission() {
+        let s = r#"
+            manifest_version = 1
+            id = "com.example.codex-helper"
+            name = "Helper"
+            version = "0.1.0"
+            api_version = "1"
+            permissions = ["ipc.invoke:codex", "surface.read"]
+            [entry]
+            type = "process"
+            command = "x"
+        "#;
+        let m = parse(s).expect("should parse");
+        let perms = m.parsed_permissions().expect("resolve");
+        assert!(perms.contains(&Permission::IpcInvoke("codex".into())));
+        assert!(perms.contains(&Permission::SurfaceRead));
     }
 
     #[test]

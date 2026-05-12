@@ -32,6 +32,26 @@ pub struct PluginProcess {
     pub log_path: PathBuf,
 }
 
+#[cfg(test)]
+impl PluginProcess {
+    /// 단위 테스트 전용 stub. child/last_pong 등 외부에서 접근 불가능한 필드를
+    /// 합리적인 기본값으로 채운다. 송수신 채널은 dangling이라 실제로 사용하면 안 된다.
+    pub(crate) fn stub_for_test(plugin_id: &str) -> Self {
+        let (req_tx, _req_rx) = mpsc::channel();
+        let (_resp_tx, resp_rx) = mpsc::channel();
+        let (_event_tx, event_rx) = mpsc::channel();
+        Self {
+            plugin_id: plugin_id.into(),
+            child: None,
+            req_tx,
+            resp_rx,
+            event_rx,
+            last_pong: Arc::new(Mutex::new(Instant::now())),
+            log_path: PathBuf::new(),
+        }
+    }
+}
+
 impl PluginProcess {
     pub fn spawn(
         package: &PluginPackage,

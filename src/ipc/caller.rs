@@ -80,7 +80,7 @@ impl CallerContext {
                         return Err(CallerError::MissingPermission {
                             plugin_id: plugin_id.clone(),
                             method: method.to_string(),
-                            permission: *needed,
+                            permission: needed.clone(),
                         });
                     }
                 }
@@ -102,7 +102,7 @@ mod tests {
     fn plugin_with(perms: &[Permission]) -> CallerContext {
         CallerContext::Plugin {
             plugin_id: "com.example.test".into(),
-            permissions: Arc::new(perms.iter().copied().collect()),
+            permissions: Arc::new(perms.iter().cloned().collect()),
         }
     }
 
@@ -170,5 +170,20 @@ mod tests {
         let c = plugin_with(&[]);
         let err = c.ensure_allowed("not.a.real.method").unwrap_err();
         assert!(matches!(err, CallerError::UnknownMethod(_)));
+    }
+
+    #[test]
+    fn plugin_ipc_invoke_permission_does_not_unlock_static_methods() {
+        // ipc.invoke 권한은 namespace forward 경로에서만 의미가 있고,
+        // 정적 method_meta 권한 검사를 우회하지 않는다.
+        let c = plugin_with(&[Permission::IpcInvoke("codex".into())]);
+        let err = c.ensure_allowed("tab.create").unwrap_err();
+        assert!(matches!(
+            err,
+            CallerError::MissingPermission {
+                permission: Permission::SurfaceWrite,
+                ..
+            }
+        ));
     }
 }
