@@ -5,11 +5,13 @@
 
 pub mod connection;
 pub mod env;
+pub mod error;
 pub mod host;
 pub mod plugin;
 pub mod runtime;
 pub mod ui;
 
+pub use error::{PluginError, Result};
 pub use host::{HostCallError, HostHandle};
 pub use plugin::{
     CommandInvokeCtx, IpcMethodCtx, IpcMethodError, Plugin, SurfaceCreateCtx, SurfaceEventCtx,
