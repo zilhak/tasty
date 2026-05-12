@@ -327,7 +327,11 @@ pub(crate) fn handle_surface_close(
             );
         }
     }
+    let kind = state.surface_kind(surface_id);
     if state.close_surface_by_id_no_snapshot(surface_id) {
+        if let Some(k) = kind {
+            state.enqueue_surface_closed(surface_id, k, false);
+        }
         JsonRpcResponse::success(id, json!({ "closed": true, "surface_id": surface_id }))
     } else {
         JsonRpcResponse::success(
@@ -347,7 +351,11 @@ pub(crate) fn handle_surface_close_self(
         Ok(sid) => sid,
         Err(e) => return e,
     };
+    let kind = state.surface_kind(surface_id);
     if state.close_surface_by_id_no_snapshot(surface_id) {
+        if let Some(k) = kind {
+            state.enqueue_surface_closed(surface_id, k, false);
+        }
         JsonRpcResponse::success(id, json!({ "closed": true, "surface_id": surface_id }))
     } else {
         JsonRpcResponse::success(

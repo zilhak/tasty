@@ -61,6 +61,16 @@ pub struct ClaudeChildEntry {
     pub nickname: Option<String>,
 }
 
+/// Surface가 닫혔다는 사실을 plugin 측에 broadcast하기 위해 메인 루프가 소비할
+/// 큐 항목. `state/`는 `plugin/` 의존이 없으므로 enum 대신 `is_user_close: bool`로
+/// reason을 담고, App 메인 루프에서 `SurfaceCloseReason`으로 매핑한다.
+#[derive(Debug, Clone)]
+pub struct PendingSurfaceClosed {
+    pub surface_id: u32,
+    pub kind: &'static str,
+    pub is_user_close: bool,
+}
+
 // IdGenerator is now in engine_state.rs
 
 pub struct AppState {
@@ -103,6 +113,10 @@ pub struct AppState {
     pub captured_double_tap: Option<String>,
     /// Keyboard events for non-terminal surfaces, consumed during egui rendering.
     pub pending_surface_keys: Vec<PendingKeyEvent>,
+    /// Surface close lifecycle 알림 큐. close 직후 enqueue되고, App 메인 루프가
+    /// drain하여 `PluginManager::notify_surface_closed`로 dispatch한다.
+    /// `state/`는 `plugin/` 의존이 없어 별도 plain struct로 둔다.
+    pub pending_lifecycle_events: Vec<PendingSurfaceClosed>,
 
     /// Per-surface host view state for `MarkdownPanel` (content cache, scroll, commonmark cache).
     /// `MarkdownPanel` itself only holds `file_path` + reload tracking; everything GUI-bound lives here.
@@ -277,6 +291,7 @@ impl AppState {
             tab_bar_height: PhysicalPx(24.0),
             captured_double_tap: None,
             pending_surface_keys: Vec::new(),
+            pending_lifecycle_events: Vec::new(),
             popup_hovered: false,
             recent_files: crate::recent_files::RecentFiles::load(),
             popups: {
@@ -469,6 +484,32 @@ impl AppState {
             }
         }
         None
+    }
+
+    /// Surface가 close되기 직전에 `kind` 식별자를 얻는다. plugin lifecycle 알림에
+    /// payload로 채워 보낸다. None이면 lifecycle 알림을 발행하지 않는다.
+    pub fn surface_kind(&self, surface_id: u32) -> Option<&'static str> {
+        self.find_surface_by_id(surface_id).map(|s| s.kind())
+    }
+
+    /// Surface close lifecycle 알림 큐에 항목을 추가한다. App 메인 루프가
+    /// `take_pending_lifecycle_events`로 drain해서 plugin manager로 dispatch한다.
+    pub fn enqueue_surface_closed(
+        &mut self,
+        surface_id: u32,
+        kind: &'static str,
+        is_user_close: bool,
+    ) {
+        self.pending_lifecycle_events.push(PendingSurfaceClosed {
+            surface_id,
+            kind,
+            is_user_close,
+        });
+    }
+
+    /// Surface close lifecycle 큐를 비우고 항목을 반환한다.
+    pub fn take_pending_lifecycle_events(&mut self) -> Vec<PendingSurfaceClosed> {
+        std::mem::take(&mut self.pending_lifecycle_events)
     }
 
     /// Get the working directory to inherit from the focused surface, if enabled.

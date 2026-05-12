@@ -413,10 +413,15 @@ impl MainWindow {
                         self.state.move_surface_focus_backward();
                     }
                     "close_surface" => {
-                        if !self.state.close_active_surface() {
-                            if !self.state.close_active_pane() {
-                                self.state.close_active_workspace();
+                        let target_sid = self.state.focused_surface_id();
+                        let target_kind = target_sid.and_then(|s| self.state.surface_kind(s));
+                        let closed = self.state.close_active_surface();
+                        if closed {
+                            if let (Some(sid), Some(k)) = (target_sid, target_kind) {
+                                self.state.enqueue_surface_closed(sid, k, true);
                             }
+                        } else if !self.state.close_active_pane() {
+                            self.state.close_active_workspace();
                         }
                         if self.state.engine.workspaces.is_empty() {
                             self.request_close();
@@ -695,10 +700,15 @@ impl MainWindow {
             return true;
         }
         if matches_any_binding(&kb.close_surface, key, mods) {
-            if !state.close_active_surface() {
-                if !state.close_active_pane() {
-                    state.close_active_workspace();
+            let target_sid = state.focused_surface_id();
+            let target_kind = target_sid.and_then(|s| state.surface_kind(s));
+            let closed = state.close_active_surface();
+            if closed {
+                if let (Some(sid), Some(k)) = (target_sid, target_kind) {
+                    state.enqueue_surface_closed(sid, k, true);
                 }
+            } else if !state.close_active_pane() {
+                state.close_active_workspace();
             }
             if !state.engine.workspaces.is_empty() {
                 state.resize_all(terminal_rect, cell_w, cell_h);

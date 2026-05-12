@@ -110,7 +110,14 @@ impl MainWindow {
                         .engine
                         .hook_manager
                         .check_and_fire(surface_id, &hook_events);
-                    self.state.close_surface_by_id_no_snapshot(surface_id);
+                    let kind = self.state.surface_kind(surface_id);
+                    if self.state.close_surface_by_id_no_snapshot(surface_id) {
+                        if let Some(k) = kind {
+                            // ProcessExited는 PTY 종료 등 사용자가 직접 닫은 행위가 아니지만
+                            // 에이전트 명령도 아니다. 닫힌 항목 복원 정책상 user-close로 분류한다.
+                            self.state.enqueue_surface_closed(surface_id, k, true);
+                        }
+                    }
                     self.base.dirty = true;
                 }
             }
@@ -429,16 +436,18 @@ impl MainWindow {
                     }
                     Some(2) => {
                         // Close
-                        if let Some(pane) = self
+                        let target_sid = self
                             .state
                             .active_workspace()
                             .pane_layout()
                             .find_pane(pane_id)
-                        {
-                            if let Some(tab) = pane.tabs.get(tab_index) {
-                                let ids = tab.all_surface_ids();
-                                if let Some(&sid) = ids.first() {
-                                    self.state.close_surface_by_id(sid);
+                            .and_then(|p| p.tabs.get(tab_index))
+                            .and_then(|tab| tab.all_surface_ids().first().copied());
+                        if let Some(sid) = target_sid {
+                            let kind = self.state.surface_kind(sid);
+                            if self.state.close_surface_by_id(sid) {
+                                if let Some(k) = kind {
+                                    self.state.enqueue_surface_closed(sid, k, true);
                                 }
                             }
                         }
