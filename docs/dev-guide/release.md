@@ -12,6 +12,18 @@ version = "0.3.1"  # 패치 버전 +1
 
 `cargo build`를 실행하여 `Cargo.lock`을 갱신한다.
 
+## 1-A. CHANGELOG 갱신
+
+릴리스 직전:
+
+1. `CHANGELOG.md`의 `## [Unreleased]` 절을 새 버전 헤더로 옮긴다:
+   ```markdown
+   ## [0.3.1] - 2026-05-12
+   ```
+2. 새 `## [Unreleased]` 절을 비어 있는 상태로 다시 추가한다 (`tests/changelog_unreleased.rs`가 강제).
+3. `crates/tasty-plugin-protocol/CHANGELOG.md`에 schema 관련 변경이 있었다면 동일 처리.
+4. break/deprecation 항목이 있는지 한 번 더 확인. 분류 기준은 [`ipc-stability.md`](ipc-stability.md).
+
 ## 2. 커밋 작성
 
 `Cargo.toml` + `Cargo.lock`을 함께 커밋한다. **커밋 body에 체인지로그를 작성**한다.
