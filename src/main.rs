@@ -1239,10 +1239,7 @@ fn main() -> Result<()> {
 
     // Inside a tasty terminal without subcommand: show help instead of launching GUI
     if !cli.launch && std::env::var("TASTY_SURFACE_ID").is_ok() {
-        use clap::CommandFactory;
-        let mut cmd = cli::Cli::command();
-        cmd.print_help()?;
-        println!();
+        cli::print_augmented_help()?;
         return Ok(());
     }
 

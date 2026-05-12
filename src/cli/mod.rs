@@ -993,6 +993,24 @@ pub fn format_parse_error(err: clap::Error) {
     std::process::exit(2);
 }
 
+/// plugin contributes.cli가 합쳐진 도움말 출력. plugin 디스커버리에 실패해도
+/// 정적 CLI 도움말은 항상 보장한다.
+pub fn print_augmented_help() -> Result<()> {
+    use clap::CommandFactory;
+    let entries = match crate::plugin::plugin_root() {
+        Some(root) => dynamic::discover_plugin_clis(&root),
+        None => Vec::new(),
+    };
+    let mut cmd = if entries.is_empty() {
+        Cli::command()
+    } else {
+        dynamic::build_augmented_cli(&entries)
+    };
+    cmd.print_help()?;
+    println!();
+    Ok(())
+}
+
 /// 정적 `Cli` 파싱이 `InvalidSubcommand`로 실패했을 때 마지막 시도로 plugin
 /// CLI에서 매칭한다. 매칭되면 IPC로 전송, 매칭 실패면 None을 반환해 호출자가
 /// 원래 에러를 출력하도록 한다.
