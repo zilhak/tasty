@@ -30,6 +30,8 @@ use serde_json::Value;
 use tasty_plugin_protocol::ui_tree::UiEvent;
 pub use tasty_plugin_protocol::SurfaceResult;
 
+use crate::host::HostHandle;
+
 #[derive(Debug, Clone)]
 pub struct SurfaceCreateCtx {
     pub surface_id: u32,
@@ -65,7 +67,7 @@ pub struct CommandInvokeCtx {
 
 /// 매니페스트 `[[contributes.ipc_namespace]]`로 점유한 prefix의 메서드가
 /// IPC 라우터로부터 forward됐을 때 plugin에 전달되는 컨텍스트.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct IpcMethodCtx {
     /// 호스트가 받은 원본 메서드 이름 (예: "codex.spawn"). plugin은 이걸로
     /// 내부 dispatch한다.
@@ -73,6 +75,20 @@ pub struct IpcMethodCtx {
     pub params: Value,
     /// caller가 plugin이면 그 plugin id, CLI/사용자면 `None`.
     pub caller_plugin_id: Option<String>,
+    /// 호스트 IPC 메서드를 동기로 호출할 수 있는 핸들. `clone()`해 자기 스레드로
+    /// 옮길 수도 있다.
+    pub host: HostHandle,
+}
+
+impl std::fmt::Debug for IpcMethodCtx {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("IpcMethodCtx")
+            .field("method", &self.method)
+            .field("params", &self.params)
+            .field("caller_plugin_id", &self.caller_plugin_id)
+            .field("host", &"HostHandle { .. }")
+            .finish()
+    }
 }
 
 /// `handle_ipc_method`에서 반환할 에러. JSON-RPC 에러 코드와 메시지를 담아

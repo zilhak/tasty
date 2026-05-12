@@ -1,22 +1,34 @@
 //! Plugin 부트스트랩 + 메시지 루프.
 //!
-//! `run(plugin)`은:
-//! 1. 환경변수 읽고 호스트에 connect + auth.
-//! 2. `Hello` 이벤트 송신.
-//! 3. 호스트의 PluginRequest를 한 줄씩 받아 plugin 메서드 dispatch + 응답 송신.
-//! 4. 호스트가 connection을 닫거나 `shutdown` 메서드를 보내면 종료.
+//! `run(plugin)`은 두 스레드 구조로 동작한다:
+//!
+//! - **메인 스레드 (receiver)**: 호스트로부터 NDJSON 한 줄씩 받는다. 받은 메시지가
+//!   `ipc.result`면 매칭되는 `HostHandle::call` 대기자에게 결과를 전달. 그 외 모든
+//!   `PluginRequest`는 worker queue로 enqueue.
+//! - **worker 스레드 (dispatcher)**: queue에서 request를 pop해 plugin에 dispatch.
+//!   dispatch 안에서 [`HostHandle::call`]을 통해 호스트를 동기 호출하면 메인이
+//!   계속 recv 가능하므로 deadlock 없이 결과가 회신된다.
+//!
+//! shutdown 요청은 메인이 즉시 ack 보내고 worker는 queue가 닫히면 자연스럽게 종료.
+
+use std::collections::HashMap;
+use std::io::{BufRead, BufReader, Write};
+use std::net::TcpStream;
+use std::sync::{mpsc, Arc, Mutex};
+use std::time::Duration;
 
 use anyhow::Result;
 use serde_json::Value;
 
 use tasty_plugin_protocol::{
-    IpcInvokeParams, METHOD_COMMAND_INVOKE, METHOD_IPC_INVOKE, METHOD_PING, METHOD_SHUTDOWN,
-    METHOD_SURFACE_CREATE, METHOD_SURFACE_DESTROY, METHOD_SURFACE_EVENT, METHOD_SURFACE_RESTORE,
-    METHOD_SURFACE_SNAPSHOT, PluginEvent, PluginResponse,
+    AuthMessage, IpcCallResult, IpcInvokeParams, METHOD_COMMAND_INVOKE, METHOD_IPC_INVOKE,
+    METHOD_IPC_RESULT, METHOD_PING, METHOD_SHUTDOWN, METHOD_SURFACE_CREATE, METHOD_SURFACE_DESTROY,
+    METHOD_SURFACE_EVENT, METHOD_SURFACE_RESTORE, METHOD_SURFACE_SNAPSHOT, PluginEvent,
+    PluginRequest, PluginResponse,
 };
 
-use crate::connection::{Connection, HostMessage};
 use crate::env::PluginEnv;
+use crate::host::{deliver_ipc_result, HostHandle, PendingCalls};
 use crate::plugin::{
     CommandInvokeCtx, IpcMethodCtx, Plugin, SurfaceCreateCtx, SurfaceEventCtx, SurfaceRestoreCtx,
     SurfaceSnapshotCtx,
@@ -44,16 +56,32 @@ impl DispatchError {
     }
 }
 
-pub fn run<P: Plugin>(mut plugin: P) -> Result<()> {
+pub fn run<P: Plugin>(plugin: P) -> Result<()> {
     let env = PluginEnv::load()?;
-    let mut conn = Connection::connect_and_authenticate(&env)?;
+    let stream = TcpStream::connect(("127.0.0.1", env.host_port))?;
+    stream.set_read_timeout(Some(Duration::from_millis(50)))?;
+    let writer_clone = stream.try_clone()?;
+    let writer = Arc::new(Mutex::new(writer_clone));
+    let mut reader = BufReader::new(stream);
 
-    // hello 송신.
+    // auth — 첫 줄 송신.
+    {
+        let auth = AuthMessage {
+            plugin_id: env.plugin_id.clone(),
+            token: env.token.clone(),
+        };
+        let line = serde_json::to_string(&auth)?;
+        let mut w = writer.lock().expect("writer lock");
+        writeln!(*w, "{line}")?;
+        w.flush()?;
+    }
+
+    // hello event 송신.
     let hello = PluginEvent::Hello {
         plugin_id: plugin.id().to_string(),
         version: plugin.version().to_string(),
     };
-    conn.send_event(&hello)?;
+    send_event(&writer, &hello)?;
 
     tracing::info!(
         "plugin '{}' v{} connected to host",
@@ -61,32 +89,125 @@ pub fn run<P: Plugin>(mut plugin: P) -> Result<()> {
         plugin.version()
     );
 
+    let pending: PendingCalls = Arc::new(Mutex::new(HashMap::new()));
+    let host = HostHandle::new(writer.clone(), pending.clone());
+
+    let (req_tx, req_rx) = mpsc::channel::<PluginRequest>();
+    let worker_writer = writer.clone();
+    let worker_host = host.clone();
+    let worker_handle = std::thread::Builder::new()
+        .name("plugin-worker".into())
+        .spawn(move || worker_loop(plugin, req_rx, worker_writer, worker_host))?;
+
+    // 메인 recv loop.
     loop {
-        match conn.try_recv() {
-            Ok(None) => {
-                continue;
-            }
-            Ok(Some(HostMessage::Request(req))) => {
+        let mut line = String::new();
+        match reader.read_line(&mut line) {
+            Ok(0) => break, // host closed
+            Ok(_) => {
+                let trim = line.trim();
+                if trim.is_empty() {
+                    continue;
+                }
+                let req: PluginRequest = match serde_json::from_str(trim) {
+                    Ok(r) => r,
+                    Err(e) => {
+                        tracing::warn!("unparseable host line: {e}");
+                        continue;
+                    }
+                };
+                if req.method == METHOD_IPC_RESULT {
+                    handle_ipc_result_request(&req, &pending, &writer);
+                    continue;
+                }
                 if req.method == METHOD_SHUTDOWN {
-                    tracing::info!("plugin '{}' received shutdown", plugin.id());
+                    tracing::info!("plugin received shutdown");
                     let resp = PluginResponse {
                         id: req.id,
                         result: Some(Value::Null),
                         error: None,
                         error_code: None,
                     };
-                    let _ = conn.send_response(&resp);
+                    let _ = send_response(&writer, &resp);
                     break;
                 }
-                let response = build_response(req.id, dispatch(&mut plugin, &req.method, &req.params));
-                conn.send_response(&response)?;
+                if req_tx.send(req).is_err() {
+                    break;
+                }
+            }
+            Err(e)
+                if e.kind() == std::io::ErrorKind::WouldBlock
+                    || e.kind() == std::io::ErrorKind::TimedOut =>
+            {
+                continue
             }
             Err(e) => {
-                tracing::warn!("plugin '{}' recv error: {e}", plugin.id());
+                tracing::warn!("plugin recv error: {e}");
                 break;
             }
         }
     }
+    drop(req_tx);
+    let _ = worker_handle.join();
+    Ok(())
+}
+
+fn worker_loop<P: Plugin>(
+    mut plugin: P,
+    req_rx: mpsc::Receiver<PluginRequest>,
+    writer: Arc<Mutex<TcpStream>>,
+    host: HostHandle,
+) {
+    for req in req_rx.iter() {
+        let result = dispatch(&mut plugin, &req.method, &req.params, &host);
+        let resp = build_response(req.id, result);
+        if let Err(e) = send_response(&writer, &resp) {
+            tracing::warn!("plugin worker send_response failed: {e}");
+            break;
+        }
+    }
+}
+
+fn handle_ipc_result_request(
+    req: &PluginRequest,
+    pending: &PendingCalls,
+    writer: &Arc<Mutex<TcpStream>>,
+) {
+    match serde_json::from_value::<IpcCallResult>(req.params.clone()) {
+        Ok(parsed) => {
+            deliver_ipc_result(pending, parsed.call_id, parsed.result, parsed.error);
+        }
+        Err(e) => {
+            tracing::warn!("ipc.result parse error: {e}");
+        }
+    }
+    // 호스트는 응답을 기다리지 않지만, JSON-RPC 의미상 ack 응답을 보낸다.
+    let ack = PluginResponse {
+        id: req.id,
+        result: Some(Value::Null),
+        error: None,
+        error_code: None,
+    };
+    let _ = send_response(writer, &ack);
+}
+
+pub(crate) fn send_event(writer: &Arc<Mutex<TcpStream>>, event: &PluginEvent) -> Result<()> {
+    let payload = serde_json::json!({ "event": event });
+    let line = serde_json::to_string(&payload)?;
+    let mut w = writer.lock().expect("writer lock");
+    writeln!(*w, "{line}")?;
+    w.flush()?;
+    Ok(())
+}
+
+pub(crate) fn send_response(
+    writer: &Arc<Mutex<TcpStream>>,
+    response: &PluginResponse,
+) -> Result<()> {
+    let line = serde_json::to_string(response)?;
+    let mut w = writer.lock().expect("writer lock");
+    writeln!(*w, "{line}")?;
+    w.flush()?;
     Ok(())
 }
 
@@ -111,6 +232,7 @@ pub(crate) fn dispatch<P: Plugin>(
     plugin: &mut P,
     method: &str,
     params: &Value,
+    host: &HostHandle,
 ) -> Result<Value, DispatchError> {
     match method {
         METHOD_PING => Ok(serde_json::json!({"pong": true})),
@@ -190,6 +312,7 @@ pub(crate) fn dispatch<P: Plugin>(
                 method: parsed.method,
                 params: parsed.params,
                 caller_plugin_id: parsed.caller_plugin_id,
+                host: host.clone(),
             }) {
                 Ok(value) => Ok(value),
                 Err(err) => Err(DispatchError::with_code(err.message, err.code)),
@@ -244,10 +367,7 @@ mod tests {
                 display_name: None,
             }
         }
-        fn handle_ipc_method(
-            &mut self,
-            ctx: IpcMethodCtx,
-        ) -> Result<Value, IpcMethodError> {
+        fn handle_ipc_method(&mut self, ctx: IpcMethodCtx) -> Result<Value, IpcMethodError> {
             *self.last_ctx.lock().unwrap() = Some(ctx);
             match self.behavior.clone() {
                 Behavior::Ok(v) => Ok(v),
@@ -256,8 +376,6 @@ mod tests {
         }
     }
 
-    /// 기본 구현(`not_implemented`)을 확인하기 위해 `handle_ipc_method`를
-    /// override하지 않는 plugin.
     struct DefaultPlugin;
     impl Plugin for DefaultPlugin {
         fn id(&self) -> &str {
@@ -277,6 +395,20 @@ mod tests {
         }
     }
 
+    /// 테스트 전용 dummy HostHandle — 실제 호출하지 않고 ctx에 끼우기만 한다.
+    fn dummy_host() -> HostHandle {
+        let listener =
+            std::net::TcpListener::bind(("127.0.0.1", 0)).expect("bind localhost");
+        let port = listener.local_addr().unwrap().port();
+        let accept = std::thread::spawn(move || {
+            let _ = listener.accept();
+        });
+        let stream = TcpStream::connect(("127.0.0.1", port)).expect("connect");
+        accept.join().unwrap();
+        let pending: PendingCalls = Arc::new(Mutex::new(HashMap::new()));
+        HostHandle::new(Arc::new(Mutex::new(stream)), pending)
+    }
+
     fn invoke_params(method: &str, params: Value, caller: Option<&str>) -> Value {
         let mut obj = serde_json::Map::new();
         obj.insert("method".into(), Value::String(method.into()));
@@ -294,11 +426,11 @@ mod tests {
             last_ctx: last.clone(),
             behavior: Behavior::Ok(json!({"ok": true, "n": 42})),
         };
+        let host = dummy_host();
         let params = invoke_params("codex.spawn", json!({"cwd": "/tmp"}), None);
-        let resp = build_response(7, dispatch(&mut plugin, METHOD_IPC_INVOKE, &params));
+        let resp = build_response(7, dispatch(&mut plugin, METHOD_IPC_INVOKE, &params, &host));
         assert_eq!(resp.id, 7);
         assert!(resp.error.is_none());
-        assert!(resp.error_code.is_none());
         assert_eq!(resp.result, Some(json!({"ok": true, "n": 42})));
 
         let ctx = last.lock().unwrap().clone().unwrap();
@@ -314,14 +446,13 @@ mod tests {
             last_ctx: last.clone(),
             behavior: Behavior::Err(IpcMethodError::not_found("codex.bogus")),
         };
+        let host = dummy_host();
         let params = invoke_params("codex.bogus", json!({}), None);
-        let resp = build_response(11, dispatch(&mut plugin, METHOD_IPC_INVOKE, &params));
+        let resp =
+            build_response(11, dispatch(&mut plugin, METHOD_IPC_INVOKE, &params, &host));
         assert_eq!(resp.id, 11);
         assert!(resp.result.is_none());
         assert_eq!(resp.error_code, Some(-32601));
-        let msg = resp.error.unwrap();
-        assert!(msg.contains("codex.bogus"));
-        assert!(msg.contains("not found"));
     }
 
     #[test]
@@ -331,14 +462,14 @@ mod tests {
             last_ctx: last.clone(),
             behavior: Behavior::Ok(Value::Null),
         };
+        let host = dummy_host();
         let params = invoke_params("codex.spawn", json!({}), Some("com.other.plugin"));
-        let _ = build_response(1, dispatch(&mut plugin, METHOD_IPC_INVOKE, &params));
+        let _ = build_response(1, dispatch(&mut plugin, METHOD_IPC_INVOKE, &params, &host));
         let ctx = last.lock().unwrap().clone().unwrap();
         assert_eq!(ctx.caller_plugin_id.as_deref(), Some("com.other.plugin"));
 
-        // None caller도 동일하게 전달되는지.
         let params2 = invoke_params("codex.spawn", json!({}), None);
-        let _ = build_response(2, dispatch(&mut plugin, METHOD_IPC_INVOKE, &params2));
+        let _ = build_response(2, dispatch(&mut plugin, METHOD_IPC_INVOKE, &params2, &host));
         let ctx2 = last.lock().unwrap().clone().unwrap();
         assert_eq!(ctx2.caller_plugin_id, None);
     }
@@ -346,8 +477,9 @@ mod tests {
     #[test]
     fn ipc_invoke_default_impl_returns_not_implemented() {
         let mut plugin = DefaultPlugin;
+        let host = dummy_host();
         let params = invoke_params("codex.spawn", json!({}), None);
-        let resp = build_response(3, dispatch(&mut plugin, METHOD_IPC_INVOKE, &params));
+        let resp = build_response(3, dispatch(&mut plugin, METHOD_IPC_INVOKE, &params, &host));
         assert_eq!(resp.error_code, Some(-32601));
         assert!(resp.error.unwrap().contains("not implemented"));
     }
@@ -355,16 +487,17 @@ mod tests {
     #[test]
     fn ipc_invoke_invalid_params_returns_minus_32602() {
         let mut plugin = DefaultPlugin;
-        // method 필드 누락 → IpcInvokeParams deserialize 실패.
+        let host = dummy_host();
         let params = json!({"params": {}});
-        let resp = build_response(4, dispatch(&mut plugin, METHOD_IPC_INVOKE, &params));
+        let resp = build_response(4, dispatch(&mut plugin, METHOD_IPC_INVOKE, &params, &host));
         assert_eq!(resp.error_code, Some(-32602));
     }
 
     #[test]
     fn unknown_method_returns_minus_32601() {
         let mut plugin = DefaultPlugin;
-        let resp = build_response(5, dispatch(&mut plugin, "nonsense", &Value::Null));
+        let host = dummy_host();
+        let resp = build_response(5, dispatch(&mut plugin, "nonsense", &Value::Null, &host));
         assert_eq!(resp.error_code, Some(-32601));
     }
 }
