@@ -32,129 +32,133 @@ const fn local_only() -> MethodMeta {
     }
 }
 
+/// 등록된 IPC 메서드 — 단일 진실 원천. lint/검증 테스트가 이 테이블 위에서
+/// 동작한다. 새 메서드는 여기에 추가한다.
+///
+/// prefix-기반 fallback(`surface.ime_*` 등)은 [`PREFIX_RULES`] 참조.
+pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
+    use Permission::*;
+    &[
+        // ── 호스트 system ─────────────────────────────────────────────
+        ("system.info", plugin(&[])),
+        // ── workspace (read/write) ────────────────────────────────────
+        ("workspace.list", plugin(&[SurfaceRead])),
+        ("workspace.create", plugin(&[SurfaceWrite])),
+        ("workspace.update", plugin(&[SurfaceWrite])),
+        ("workspace.move", plugin(&[SurfaceWrite])),
+        // ── pane / split ──────────────────────────────────────────────
+        ("pane.list", plugin(&[SurfaceRead])),
+        ("pane.close", plugin(&[SurfaceWrite])),
+        ("split", plugin(&[SurfaceWrite])),
+        // ── tab ───────────────────────────────────────────────────────
+        ("tab.list", plugin(&[SurfaceRead])),
+        ("tab.create", plugin(&[SurfaceWrite])),
+        ("tab.close", plugin(&[SurfaceWrite])),
+        ("tab.move", plugin(&[SurfaceWrite])),
+        // ── surface (구조 조작) ───────────────────────────────────────
+        ("surface.list", plugin(&[SurfaceRead])),
+        ("surface.close", plugin(&[SurfaceWrite])),
+        ("surface.close_self", plugin(&[SurfaceWrite])),
+        // tree/meta는 read 권한
+        ("tree", plugin(&[SurfaceRead])),
+        ("surface.meta_get", plugin(&[SurfaceRead])),
+        ("surface.meta_list", plugin(&[SurfaceRead])),
+        ("surface.meta_set", plugin(&[SurfaceWrite])),
+        ("surface.meta_unset", plugin(&[SurfaceWrite])),
+        // ── terminal I/O ──────────────────────────────────────────────
+        ("surface.send", plugin(&[TerminalWrite])),
+        ("surface.send_key", plugin(&[TerminalWrite])),
+        ("surface.send_combo", plugin(&[TerminalWrite])),
+        ("surface.send_to", plugin(&[TerminalWrite])),
+        ("surface.send_wait_idle", plugin(&[TerminalWrite])),
+        ("surface.wake", plugin(&[TerminalSpawn])),
+        ("surface.set_mark", plugin(&[TerminalRead])),
+        ("surface.read_since_mark", plugin(&[TerminalRead])),
+        ("surface.screen_text", plugin(&[TerminalRead])),
+        ("surface.cursor_position", plugin(&[TerminalRead])),
+        ("surface.is_typing", plugin(&[TerminalRead])),
+        ("surface.fire_hook", plugin(&[SurfaceWrite])),
+        // ── hooks ─────────────────────────────────────────────────────
+        ("hook.set", plugin(&[SurfaceWrite])),
+        ("hook.list", plugin(&[SurfaceRead])),
+        ("hook.unset", plugin(&[SurfaceWrite])),
+        ("global_hook.set", plugin(&[SurfaceWrite])),
+        ("global_hook.list", plugin(&[SurfaceRead])),
+        ("global_hook.unset", plugin(&[SurfaceWrite])),
+        // ── claude ────────────────────────────────────────────────────
+        ("claude.launch", plugin(&[ClaudeInvoke, TerminalSpawn])),
+        ("claude.spawn", plugin(&[ClaudeInvoke, TerminalSpawn])),
+        ("claude.children", plugin(&[ClaudeRead])),
+        ("claude.parent", plugin(&[ClaudeRead])),
+        ("claude.kill", plugin(&[ClaudeInvoke])),
+        ("claude.respawn", plugin(&[ClaudeInvoke])),
+        ("claude.set_idle_state", plugin(&[ClaudeInvoke])),
+        ("claude.set_needs_input", plugin(&[ClaudeInvoke])),
+        ("claude.broadcast", plugin(&[ClaudeInvoke])),
+        ("claude.tell", plugin(&[ClaudeInvoke])),
+        ("claude.wait", plugin(&[ClaudeRead])),
+        // ── message (surface 간 메시지 큐) ─────────────────────────────
+        ("message.send", plugin(&[SurfaceWrite])),
+        ("message.read", plugin(&[SurfaceRead])),
+        ("message.count", plugin(&[SurfaceRead])),
+        ("message.clear", plugin(&[SurfaceWrite])),
+        // ── tool.clipboard ────────────────────────────────────────────
+        ("tool.clipboard.list", plugin(&[ClipboardRead])),
+        ("tool.clipboard.get", plugin(&[ClipboardRead])),
+        ("tool.clipboard.paste", plugin(&[ClipboardWrite])),
+        ("tool.clipboard.remove", plugin(&[ClipboardWrite])),
+        ("tool.clipboard.clear", plugin(&[ClipboardWrite])),
+        // ── notification ──────────────────────────────────────────────
+        ("notification.list", plugin(&[Notification])),
+        ("notification.create", plugin(&[Notification])),
+        // ── input source (macOS) ──────────────────────────────────────
+        ("surface.switch_input_source", plugin(&[TerminalWrite])),
+        ("surface.raw_key", plugin(&[TerminalWrite])),
+        // ── 호스트 자체 메서드 (plugin/window 관리) — local-only ──────
+        ("plugin.list", local_only()),
+        ("plugin.install", local_only()),
+        ("plugin.remove", local_only()),
+        ("plugin.enable", local_only()),
+        ("plugin.disable", local_only()),
+        ("plugin.permissions", local_only()),
+        ("plugin.grant", local_only()),
+        ("plugin.revoke", local_only()),
+        ("window.create", local_only()),
+        ("window.close", local_only()),
+        ("window.focus", local_only()),
+        ("window.list", local_only()),
+        // ── debug / ui 메서드 — 항상 plugin 호출 불가 ────────────────
+        ("system.shutdown", local_only()),
+        ("ui.state", local_only()),
+        ("ui.screenshot", local_only()),
+        ("debug.info", local_only()),
+        ("debug.cell_info", local_only()),
+        ("debug.screen_attrs", local_only()),
+        ("debug.glyph_color", local_only()),
+        ("debug.feed_bytes", local_only()),
+        ("debug.inject_mouse", local_only()),
+        ("debug.inject_key", local_only()),
+        ("debug.clipboard_viewer_open", local_only()),
+    ]
+};
+
+/// prefix 기반 fallback. METHOD_TABLE에 없는 메서드를 prefix로 매칭한다.
+/// 현재는 IME 메서드만 (window 의존, 사용자 입력 영역).
+pub const PREFIX_RULES: &[(&str, MethodMeta)] = &[("surface.ime_", local_only())];
+
 /// 알려진 메서드의 메타. 미등록 메서드는 `None`.
 pub fn method_meta(method: &str) -> Option<MethodMeta> {
-    use Permission::*;
-    Some(match method {
-        // ── 호스트 system ─────────────────────────────────────────────
-        "system.info" => plugin(&[]),
-
-        // ── workspace (read/write) ────────────────────────────────────
-        "workspace.list" => plugin(&[SurfaceRead]),
-        "workspace.create" => plugin(&[SurfaceWrite]),
-        "workspace.update" => plugin(&[SurfaceWrite]),
-        "workspace.move" => plugin(&[SurfaceWrite]),
-
-        // ── pane / split ──────────────────────────────────────────────
-        "pane.list" => plugin(&[SurfaceRead]),
-        "pane.close" => plugin(&[SurfaceWrite]),
-        "split" => plugin(&[SurfaceWrite]),
-
-        // ── tab ───────────────────────────────────────────────────────
-        "tab.list" => plugin(&[SurfaceRead]),
-        "tab.create" => plugin(&[SurfaceWrite]),
-        "tab.close" => plugin(&[SurfaceWrite]),
-        "tab.move" => plugin(&[SurfaceWrite]),
-
-        // ── surface (구조 조작) ───────────────────────────────────────
-        "surface.list" => plugin(&[SurfaceRead]),
-        "surface.close" => plugin(&[SurfaceWrite]),
-        "surface.close_self" => plugin(&[SurfaceWrite]),
-        // tree/meta는 read 권한
-        "tree" => plugin(&[SurfaceRead]),
-        "surface.meta_get" => plugin(&[SurfaceRead]),
-        "surface.meta_list" => plugin(&[SurfaceRead]),
-        "surface.meta_set" => plugin(&[SurfaceWrite]),
-        "surface.meta_unset" => plugin(&[SurfaceWrite]),
-
-        // ── terminal I/O ──────────────────────────────────────────────
-        "surface.send" => plugin(&[TerminalWrite]),
-        "surface.send_key" => plugin(&[TerminalWrite]),
-        "surface.send_combo" => plugin(&[TerminalWrite]),
-        "surface.send_to" => plugin(&[TerminalWrite]),
-        "surface.send_wait_idle" => plugin(&[TerminalWrite]),
-        "surface.wake" => plugin(&[TerminalSpawn]),
-        "surface.set_mark" => plugin(&[TerminalRead]),
-        "surface.read_since_mark" => plugin(&[TerminalRead]),
-        "surface.screen_text" => plugin(&[TerminalRead]),
-        "surface.cursor_position" => plugin(&[TerminalRead]),
-        "surface.is_typing" => plugin(&[TerminalRead]),
-        "surface.fire_hook" => plugin(&[SurfaceWrite]),
-
-        // ── hooks ─────────────────────────────────────────────────────
-        "hook.set" => plugin(&[SurfaceWrite]),
-        "hook.list" => plugin(&[SurfaceRead]),
-        "hook.unset" => plugin(&[SurfaceWrite]),
-        "global_hook.set" => plugin(&[SurfaceWrite]),
-        "global_hook.list" => plugin(&[SurfaceRead]),
-        "global_hook.unset" => plugin(&[SurfaceWrite]),
-
-        // ── claude ────────────────────────────────────────────────────
-        "claude.launch" => plugin(&[ClaudeInvoke, TerminalSpawn]),
-        "claude.spawn" => plugin(&[ClaudeInvoke, TerminalSpawn]),
-        "claude.children" => plugin(&[ClaudeRead]),
-        "claude.parent" => plugin(&[ClaudeRead]),
-        "claude.kill" => plugin(&[ClaudeInvoke]),
-        "claude.respawn" => plugin(&[ClaudeInvoke]),
-        "claude.set_idle_state" => plugin(&[ClaudeInvoke]),
-        "claude.set_needs_input" => plugin(&[ClaudeInvoke]),
-        "claude.broadcast" => plugin(&[ClaudeInvoke]),
-        "claude.tell" => plugin(&[ClaudeInvoke]),
-        "claude.wait" => plugin(&[ClaudeRead]),
-
-        // ── message (surface 간 메시지 큐) ─────────────────────────────
-        "message.send" => plugin(&[SurfaceWrite]),
-        "message.read" => plugin(&[SurfaceRead]),
-        "message.count" => plugin(&[SurfaceRead]),
-        "message.clear" => plugin(&[SurfaceWrite]),
-
-        // ── tool.clipboard ────────────────────────────────────────────
-        "tool.clipboard.list" => plugin(&[ClipboardRead]),
-        "tool.clipboard.get" => plugin(&[ClipboardRead]),
-        "tool.clipboard.paste" => plugin(&[ClipboardWrite]),
-        "tool.clipboard.remove" => plugin(&[ClipboardWrite]),
-        "tool.clipboard.clear" => plugin(&[ClipboardWrite]),
-
-        // ── notification ──────────────────────────────────────────────
-        "notification.list" => plugin(&[Notification]),
-        "notification.create" => plugin(&[Notification]),
-
-        // ── input source (macOS) ──────────────────────────────────────
-        "surface.switch_input_source" => plugin(&[TerminalWrite]),
-        "surface.raw_key" => plugin(&[TerminalWrite]),
-
-        // ── 호스트 자체 메서드 (plugin/window 관리) — local-only ──────
-        "plugin.list" => local_only(),
-        "plugin.install" => local_only(),
-        "plugin.remove" => local_only(),
-        "plugin.enable" => local_only(),
-        "plugin.disable" => local_only(),
-        "plugin.permissions" => local_only(),
-        "plugin.grant" => local_only(),
-        "plugin.revoke" => local_only(),
-        "window.create" => local_only(),
-        "window.close" => local_only(),
-        "window.focus" => local_only(),
-        "window.list" => local_only(),
-
-        // ── IME (window 의존, 사용자 입력 영역) — local-only ──────────
-        m if m.starts_with("surface.ime_") => local_only(),
-
-        // ── debug 메서드 — 항상 plugin 호출 불가 ──────────────────────
-        "system.shutdown" => local_only(),
-        "ui.state" => local_only(),
-        "ui.screenshot" => local_only(),
-        "debug.info" => local_only(),
-        "debug.cell_info" => local_only(),
-        "debug.screen_attrs" => local_only(),
-        "debug.glyph_color" => local_only(),
-        "debug.feed_bytes" => local_only(),
-        "debug.inject_mouse" => local_only(),
-        "debug.inject_key" => local_only(),
-        "debug.clipboard_viewer_open" => local_only(),
-
-        _ => return None,
-    })
+    for (name, meta) in METHOD_TABLE {
+        if *name == method {
+            return Some(*meta);
+        }
+    }
+    for (prefix, meta) in PREFIX_RULES {
+        if method.starts_with(prefix) {
+            return Some(*meta);
+        }
+    }
+    None
 }
 
 #[cfg(test)]
