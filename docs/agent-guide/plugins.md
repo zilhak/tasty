@@ -137,6 +137,12 @@ flags = [
 우선 매칭되며, plugin은 그 위에 동적으로 합쳐진다 (plugin이 호스트 명령을
 가릴 수 없다).
 
+서브커맨드를 빠뜨리고 `tasty <name>`만 입력하면 호스트 정적 명령(`tasty claude`
+등)과 동일하게 풀 도움말이 출력된다. 매니페스트가 `surface` 이름의 `u32` 인자를
+정의한 경우, 사용자가 `--surface`를 명시하지 않으면 호출자 surface의
+`TASTY_SURFACE_ID` 환경변수에서 자동으로 채워진다 — `tasty claude tell` 등
+호스트 명령의 `resolve_surface_id` 동작과 동일.
+
 ### 다른 plugin namespace 호출
 
 자기 plugin이 다른 plugin의 IPC namespace를 호출하려면 매니페스트 권한에

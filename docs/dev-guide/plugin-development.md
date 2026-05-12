@@ -363,6 +363,24 @@ tasty plugin install ./
 
 `tasty plugin install` 은 매니페스트의 모든 권한을 자동 grant한다 (사용자 의도적 명령으로 간주). 이후 호스트가 자동으로 spawn한다.
 
+### Builtin plugin 자동 sync (workspace 내 plugin 개발)
+
+`src/plugin/builtin.rs`의 `BUILTINS` 목록에 등록된 plugin(예: `tasty-plugin-explorer`, `tasty-plugin-codex`)은 매번 수동 복사할 필요가 없다. dev 빌드일 때 호스트가 부팅 직후 다음 두 단계를 자동 수행한다:
+
+1. **번들 동기화** (`ensure_dev_bundle`): workspace의 `crates/<crate>/tasty-plugin.toml` + `target/<profile>/<bin>` + `crates/<crate>/lang/`을 `target/<profile>/builtin-plugins/<id>/`로 복사. mtime이 더 새것일 때만 덮어쓰므로 매 부팅 비용은 작다.
+2. **사용자 디렉터리 sync** (`install_builtins_if_needed`): 위 번들 → `~/.tasty/plugins/<id>/`로 sync. 기존 설치본도 번들이 더 새것이면 자동 갱신.
+
+호스트 CLI는 부팅 시 `~/.tasty/plugins/*/tasty-plugin.toml`을 다시 읽어 dynamic clap을 구성하므로, **매니페스트 변경분은 호스트만 재시작하면 즉시 `tasty <plugin> --help`에 반영**된다. plugin 바이너리 변경분은 호스트가 plugin process를 (재)spawn할 때 반영된다.
+
+주의 — workspace 루트의 `cargo build` 또는 `cargo run`은 **현재 패키지(루트 `tasty`)만 빌드**하므로 plugin 코드를 고치면 다음 중 하나가 필요하다:
+
+```bash
+cargo build -p tasty-plugin-codex    # 특정 plugin만
+cargo build --workspace              # 워크스페이스 전체
+```
+
+위 명령으로 plugin 바이너리를 다시 빌드해야 다음 `cargo run` 부팅 시 sync 메커니즘이 새 binary를 사용자 디렉터리로 복사한다.
+
 ### 디버깅
 
 ```bash
