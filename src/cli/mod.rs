@@ -996,6 +996,10 @@ pub fn format_parse_error(err: clap::Error) {
 /// 정적 `Cli` 파싱이 `InvalidSubcommand`로 실패했을 때 마지막 시도로 plugin
 /// CLI에서 매칭한다. 매칭되면 IPC로 전송, 매칭 실패면 None을 반환해 호출자가
 /// 원래 에러를 출력하도록 한다.
+///
+/// `tasty <plugin>` 단독, `tasty <plugin> --help`, `tasty <plugin> --version` 처럼
+/// 사용자가 plugin command를 입력했지만 augmented 파싱이 도움말/버전/서브커맨드
+/// 누락 등으로 실패한 경우는 clap의 표준 출력을 그대로 보여준다.
 pub fn try_run_plugin_cli() -> Option<Result<()>> {
     let plugins_root = match crate::plugin::plugin_root() {
         Some(p) => p,
@@ -1005,10 +1009,23 @@ pub fn try_run_plugin_cli() -> Option<Result<()>> {
     if entries.is_empty() {
         return None;
     }
+    // 사용자가 입력한 첫 인자가 plugin command 이름인지 확인. plugin 명령이 맞다면
+    // clap 에러도 자체 출력으로 처리한다 (정적 CLI의 "unrecognized subcommand"가
+    // 대신 뜨면 안 됨).
+    let first_arg = std::env::args().nth(1);
+    let is_plugin_cmd = first_arg
+        .as_deref()
+        .map(|name| entries.iter().any(|e| e.cli.name == name))
+        .unwrap_or(false);
     let augmented = dynamic::build_augmented_cli(&entries);
     let matches = match augmented.try_get_matches() {
         Ok(m) => m,
-        Err(_) => return None,
+        Err(err) => {
+            if is_plugin_cmd {
+                err.exit();
+            }
+            return None;
+        }
     };
     let (top_name, _) = matches.subcommand()?;
     if !entries.iter().any(|e| e.cli.name == top_name) {
