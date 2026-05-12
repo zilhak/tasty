@@ -77,8 +77,14 @@ fn leak_static(s: &str) -> &'static str {
 
 fn build_cli_subcommand(decl: &CliCommandDecl) -> Command {
     let mut top = Command::new(leak_static(&decl.name)).subcommand_required(true);
+    if let Some(desc) = decl.description.as_deref().filter(|s| !s.is_empty()) {
+        top = top.about(leak_static(desc));
+    }
     for sub in &decl.subcommands {
         let mut sc = Command::new(leak_static(&sub.name));
+        if let Some(desc) = sub.description.as_deref().filter(|s| !s.is_empty()) {
+            sc = sc.about(leak_static(desc));
+        }
         if let Some(group) = decl.arg_groups.get(&sub.args) {
             sc = apply_arg_group(sc, group);
         }
@@ -115,6 +121,9 @@ fn build_arg(arg: &CliArg, positional_index: Option<usize>) -> Arg {
             other => other.to_string(),
         };
         a = a.default_value(leak_static(&s));
+    }
+    if let Some(help) = arg.help.as_deref().filter(|s| !s.is_empty()) {
+        a = a.help(leak_static(help));
     }
     a
 }

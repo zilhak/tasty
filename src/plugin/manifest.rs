@@ -191,6 +191,10 @@ pub struct IpcNamespaceDecl {
 #[derive(Debug, Clone, Deserialize)]
 pub struct CliCommandDecl {
     pub name: String,
+    /// CLI help용 한 줄 설명. plain text는 plugin manager 없이 동작하는 CLI 클라이언트
+    /// 진입 경로(`tasty <plugin> --help`)에서도 곧장 사용할 수 있다.
+    #[serde(default)]
+    pub description: Option<String>,
     #[serde(default)]
     pub description_i18n_key: Option<String>,
     #[serde(default)]
@@ -208,6 +212,8 @@ pub struct CliSubcommandDecl {
     pub ipc_method: String,
     /// `arg_groups`의 키. 비어있는 그룹이라도 명시적으로 가리켜야 한다.
     pub args: String,
+    #[serde(default)]
+    pub description: Option<String>,
     #[serde(default)]
     pub description_i18n_key: Option<String>,
 }
@@ -232,6 +238,9 @@ pub struct CliArg {
     pub required: bool,
     #[serde(default)]
     pub default: Option<toml::Value>,
+    /// 한 줄 도움말. clap의 `Arg::help`에 그대로 전달된다.
+    #[serde(default)]
+    pub help: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
