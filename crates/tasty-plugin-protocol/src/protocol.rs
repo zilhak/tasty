@@ -119,6 +119,28 @@ pub struct AuthMessage {
     pub token: String,
 }
 
+/// 호스트 → plugin 인증 단계 전용 ack. plugin이 [`AuthMessage`]를 보낸 뒤
+/// 메인 메시지 루프에 진입하기 전, **단 한 번** 같은 NDJSON 채널로 수신한다.
+///
+/// `ok=false`이면 plugin SDK가 [`crate::PluginError::HandshakeRejected`](
+/// 같은 이름의 SDK variant)로 즉시 실패한다. 호스트 측은
+/// `src/plugin/listener.rs`에서 토큰 검증 결과에 따라 송신한다.
+///
+/// envelope: `{"auth_ack": { "ok": true }}` 또는 `{"auth_ack": { "ok": false, "reason": "..." }}`.
+/// 메인 루프의 `PluginRequest`와 다른 envelope를 사용해 파서 분리.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct AuthAck {
+    pub ok: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+/// AuthAck의 envelope wrapper. NDJSON 한 줄에 담기는 최상위 구조.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct AuthAckEnvelope {
+    pub auth_ack: AuthAck,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -186,6 +208,34 @@ mod tests {
         assert!(s.contains("\"error_code\":-32601"));
         let parsed: PluginResponse = serde_json::from_str(&s).unwrap();
         assert_eq!(parsed.error_code, Some(-32601));
+    }
+
+    #[test]
+    fn auth_ack_envelope_round_trip() {
+        let env = AuthAckEnvelope {
+            auth_ack: AuthAck {
+                ok: false,
+                reason: Some("token mismatch".into()),
+            },
+        };
+        let s = serde_json::to_string(&env).unwrap();
+        assert!(s.contains("\"auth_ack\""));
+        assert!(s.contains("\"ok\":false"));
+        let parsed: AuthAckEnvelope = serde_json::from_str(&s).unwrap();
+        assert!(!parsed.auth_ack.ok);
+        assert_eq!(parsed.auth_ack.reason.as_deref(), Some("token mismatch"));
+    }
+
+    #[test]
+    fn auth_ack_omits_reason_when_ok() {
+        let env = AuthAckEnvelope {
+            auth_ack: AuthAck {
+                ok: true,
+                reason: None,
+            },
+        };
+        let s = serde_json::to_string(&env).unwrap();
+        assert!(!s.contains("reason"));
     }
 
     #[test]

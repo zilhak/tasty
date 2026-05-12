@@ -13,8 +13,8 @@ pub mod ui_tree;
 pub use ipc_method::{IpcInvokeParams, METHOD_IPC_INVOKE};
 
 pub use protocol::{
-    AuthMessage, CommandInvokeParams, IpcCallResult, PluginEvent, PluginRequest, PluginResponse,
-    SurfaceEventParams, SurfaceResult,
+    AuthAck, AuthAckEnvelope, AuthMessage, CommandInvokeParams, IpcCallResult, PluginEvent,
+    PluginRequest, PluginResponse, SurfaceEventParams, SurfaceResult,
 };
 pub use protocol::{
     METHOD_COMMAND_INVOKE, METHOD_HOST_HELLO, METHOD_IPC_RESULT, METHOD_PING, METHOD_SHUTDOWN,
