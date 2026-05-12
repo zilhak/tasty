@@ -29,70 +29,71 @@ prefix = "codex"
 
 [[contributes.cli]]
 name = "codex"
+description = "Codex CLI integration (launch, spawn, kill, wait, etc.)"
 description_i18n_key = "codex.cli.desc"
 subcommands = [
-    { name = "spawn",     ipc_method = "codex.spawn",     args = "spawn_args" },
-    { name = "children",  ipc_method = "codex.children",  args = "children_args" },
-    { name = "wait",      ipc_method = "codex.wait",      args = "wait_args" },
-    { name = "broadcast", ipc_method = "codex.broadcast", args = "broadcast_args" },
-    { name = "kill",      ipc_method = "codex.kill",      args = "kill_args" },
-    { name = "respawn",   ipc_method = "codex.respawn",   args = "respawn_args" },
-    { name = "install",   ipc_method = "codex.install",   args = "no_args" },
-    { name = "uninstall", ipc_method = "codex.uninstall", args = "no_args" },
-    { name = "hook",      ipc_method = "codex.hook",      args = "hook_args" },
+    { name = "spawn",     ipc_method = "codex.spawn",     args = "spawn_args",     description = "Spawn a child Codex instance in a split surface" },
+    { name = "children",  ipc_method = "codex.children",  args = "children_args",  description = "List children of the specified Codex parent" },
+    { name = "wait",      ipc_method = "codex.wait",      args = "wait_args",      description = "Wait for a child Codex instance to become idle / needs_input / exited" },
+    { name = "broadcast", ipc_method = "codex.broadcast", args = "broadcast_args", description = "Broadcast text to all children of a parent Codex instance" },
+    { name = "kill",      ipc_method = "codex.kill",      args = "kill_args",      description = "Kill a child Codex instance by child index" },
+    { name = "respawn",   ipc_method = "codex.respawn",   args = "respawn_args",   description = "Respawn a child Codex instance" },
+    { name = "install",   ipc_method = "codex.install",   args = "no_args",        description = "Install Tasty hook into Codex CLI configuration" },
+    { name = "uninstall", ipc_method = "codex.uninstall", args = "no_args",        description = "Uninstall Tasty hook from Codex CLI configuration" },
+    { name = "hook",      ipc_method = "codex.hook",      args = "hook_args",      description = "Codex hook integration (called by Codex CLI's hook system)" },
 ]
 
 [contributes.cli.arg_groups.spawn_args]
 flags = [
-    { name = "surface",  type = "u32",    flag = "--surface",  required = false },
-    { name = "cwd",      type = "string", flag = "--cwd",      required = false },
-    { name = "prompt",   type = "string", flag = "--prompt",   required = false },
-    { name = "role",     type = "string", flag = "--role",     required = false },
-    { name = "nickname", type = "string", flag = "--nickname", required = false },
+    { name = "surface",  type = "u32",    flag = "--surface",  required = false, help = "Parent surface ID (defaults to the focused Codex surface)" },
+    { name = "cwd",      type = "string", flag = "--cwd",      required = false, help = "Working directory for the child Codex process" },
+    { name = "prompt",   type = "string", flag = "--prompt",   required = false, help = "Initial prompt sent to the child after spawn" },
+    { name = "role",     type = "string", flag = "--role",     required = false, help = "Role label attached to the child (used by broadcast --role)" },
+    { name = "nickname", type = "string", flag = "--nickname", required = false, help = "Display nickname shown on the tab" },
 ]
 
 [contributes.cli.arg_groups.children_args]
 flags = [
-    { name = "surface", type = "u32", flag = "--surface", required = false },
+    { name = "surface", type = "u32", flag = "--surface", required = false, help = "Parent surface ID (defaults to the focused Codex surface)" },
 ]
 
 [contributes.cli.arg_groups.wait_args]
 flags = [
-    { name = "surface", type = "u32", flag = "--surface", required = false },
-    { name = "child",   type = "u32", flag = "--child",   required = true },
+    { name = "surface", type = "u32", flag = "--surface", required = false, help = "Parent surface ID (defaults to the focused Codex surface)" },
+    { name = "child",   type = "u32", flag = "--child",   required = true,  help = "Child index returned by `codex children` / `codex spawn`" },
 ]
 
 [contributes.cli.arg_groups.broadcast_args]
 positional = [
-    { name = "text", type = "string", required = true },
+    { name = "text", type = "string", required = true, help = "Text to broadcast. Use \\r to submit (e.g. \"hello\\r\")" },
 ]
 flags = [
-    { name = "surface", type = "u32",    flag = "--surface", required = false },
-    { name = "role",    type = "string", flag = "--role",    required = false },
+    { name = "surface", type = "u32",    flag = "--surface", required = false, help = "Parent surface ID (defaults to the focused Codex surface)" },
+    { name = "role",    type = "string", flag = "--role",    required = false, help = "Only send to children with this role label" },
 ]
 
 [contributes.cli.arg_groups.kill_args]
 flags = [
-    { name = "surface", type = "u32", flag = "--surface", required = false },
-    { name = "child",   type = "u32", flag = "--child",   required = true },
+    { name = "surface", type = "u32", flag = "--surface", required = false, help = "Parent surface ID (defaults to the focused Codex surface)" },
+    { name = "child",   type = "u32", flag = "--child",   required = true,  help = "Child index to kill" },
 ]
 
 [contributes.cli.arg_groups.respawn_args]
 flags = [
-    { name = "surface",  type = "u32",    flag = "--surface",  required = false },
-    { name = "child",    type = "u32",    flag = "--child",    required = true },
-    { name = "cwd",      type = "string", flag = "--cwd",      required = false },
-    { name = "prompt",   type = "string", flag = "--prompt",   required = false },
-    { name = "role",     type = "string", flag = "--role",     required = false },
-    { name = "nickname", type = "string", flag = "--nickname", required = false },
+    { name = "surface",  type = "u32",    flag = "--surface",  required = false, help = "Parent surface ID (defaults to the focused Codex surface)" },
+    { name = "child",    type = "u32",    flag = "--child",    required = true,  help = "Child index to respawn" },
+    { name = "cwd",      type = "string", flag = "--cwd",      required = false, help = "Override working directory for the respawned process" },
+    { name = "prompt",   type = "string", flag = "--prompt",   required = false, help = "Initial prompt sent to the respawned child" },
+    { name = "role",     type = "string", flag = "--role",     required = false, help = "Replace the role label of the child" },
+    { name = "nickname", type = "string", flag = "--nickname", required = false, help = "Replace the display nickname of the child" },
 ]
 
 [contributes.cli.arg_groups.hook_args]
 positional = [
-    { name = "event", type = "string", required = true },
+    { name = "event", type = "string", required = true, help = "Hook event name (e.g. stop, notification, prompt-submit, session-start)" },
 ]
 flags = [
-    { name = "surface", type = "u32", flag = "--surface", required = false },
+    { name = "surface", type = "u32", flag = "--surface", required = false, help = "Surface ID the hook is firing for" },
 ]
 
 [contributes.cli.arg_groups.no_args]
