@@ -62,9 +62,10 @@ tasty close pane --pane ID
 tasty close tab --tab ID
 
 # 서피스 (Surface)
-tasty list surfaces           # 서피스 목록 (id, type, cols, rows — 비터미널 포함)
-tasty send text "ls -la\r" [--surface ID]   # 텍스트 전송 (\r = Enter)
-tasty send key enter [--surface ID]         # 키 전송
+tasty list surfaces           # 서피스 목록 (id, type, cols, rows, pty_ready — 비터미널 포함)
+tasty send text "ls -la\r" [--surface ID]   # 텍스트 전송 (\r = Enter). deferred 자동 wake
+tasty send key enter [--surface ID]         # 키 전송. deferred 자동 wake
+tasty wake [--surface ID]                   # deferred 터미널의 PTY를 명시적으로 spawn (입력 없이)
 tasty set mark [--surface ID]               # 출력 마크 설정
 tasty read since-mark [--surface ID] [--strip-ansi]  # 마크 이후 출력 읽기
 tasty read screen [--surface ID]            # 현재 화면 텍스트 읽기
@@ -166,7 +167,7 @@ tasty claude hook stop --surface 5  # 특정 surface 지정 (또는 TASTY_SURFAC
 | `workspace.list` | 없음 | 전체 워크스페이스 목록 (id, name, subtitle, description, active, pane_count, busy_count) |
 | `workspace.create` | `name?, subtitle?, description?, cwd?` | 새 워크스페이스 생성 후 활성화 |
 | `workspace.update` | `index?\|id?, name?, subtitle?, description?` | 워크스페이스 정보 수정 (생략 시 활성 워크스페이스) |
-| `tree` | 없음 | 전체 계층 구조 (워크스페이스 → 패인 → 탭). 모든 노드에 `busy_count`, surface 리프에 `busy` 부여 |
+| `tree` | 없음 | 전체 계층 구조 (워크스페이스 → 패인 → 탭). 모든 노드에 `busy_count`, surface 리프에 `busy` 부여. 터미널 리프에는 `pty_ready` 플래그가 붙는다 (deferred 복원 상태이면 `false`). |
 
 ### 패인
 
@@ -188,11 +189,12 @@ tasty claude hook stop --surface 5  # 특정 surface 지정 (또는 TASTY_SURFAC
 
 | 메서드 | 파라미터 | 설명 |
 |--------|---------|------|
-| `surface.list` | 없음 | 모든 서피스 목록 (id, pane_id, workspace_id, tab_index, type, cols, rows, busy, foreground_process?, foreground_pid?) |
-| `surface.send` | `text, surface_id` | 텍스트 전송. `\r`로 Enter |
-| `surface.send_to` | `text, surface_id` | 특정 서피스에 텍스트 전송 |
-| `surface.send_key` | `key, surface_id` | 키 이름 전송 (enter, tab, escape, up, down 등) |
-| `surface.send_combo` | `key, modifiers[], surface_id` | 수정자 키 조합 전송 (Ctrl+C 등) |
+| `surface.list` | 없음 | 모든 서피스 목록 (id, pane_id, workspace_id, tab_index, type, cols, rows, busy, foreground_process?, foreground_pid?, **pty_ready**?). 터미널 서피스에는 `pty_ready: true`, 레이아웃 복원으로 만들어졌지만 아직 PTY가 spawn되지 않은 deferred 터미널에는 `pty_ready: false`가 표시된다. |
+| `surface.send` | `text, surface_id` | 텍스트 전송. `\r`로 Enter. 대상이 deferred 상태면 **자동으로 PTY를 spawn**한 뒤 전송한다. |
+| `surface.send_to` | `text, surface_id` | 특정 서피스에 텍스트 전송. deferred 자동 wake. |
+| `surface.send_key` | `key, surface_id` | 키 이름 전송 (enter, tab, escape, up, down 등). deferred 자동 wake. |
+| `surface.send_combo` | `key, modifiers[], surface_id` | 수정자 키 조합 전송 (Ctrl+C 등). deferred 자동 wake. |
+| `surface.wake` | `surface_id` | deferred 터미널의 PTY를 명시적으로 spawn. 반환: `{ woke, pty_ready, surface_id }`. 이미 살아있거나 deferred가 아니면 `woke: false`. send 계열은 자동 wake되므로 이 메서드는 "PTY는 띄우되 아직 아무 명령도 보내고 싶지 않을 때"만 필요하다. |
 | `surface.close` | `surface_id` | 서피스 닫기 |
 | `surface.close_self` | `surface_id` | 호출한 서피스 자신을 닫기 |
 | `surface.screen_text` | `surface_id` | 현재 화면의 텍스트 반환 |
@@ -200,7 +202,7 @@ tasty claude hook stop --surface 5  # 특정 surface 지정 (또는 TASTY_SURFAC
 | `surface.read_since_mark` | `surface_id, strip_ansi?: bool` | 마크 이후 새 출력 반환 |
 | `surface.cursor_position` | `surface_id` | 커서 위치 (x, y) 반환 |
 | `surface.is_typing` | `surface_id` | 최근 5초 내 키 입력 여부. 반환: `{ typing, idle_seconds }` |
-| `surface.send_wait_idle` | `surface_id, text` | 유휴 시에만 텍스트 전송. 타이핑 중이면 `{ sent: false }` |
+| `surface.send_wait_idle` | `surface_id, text` | 유휴 시에만 텍스트 전송. 타이핑 중이면 `{ sent: false }`. deferred 자동 wake. |
 
 ### IME 시뮬레이션
 

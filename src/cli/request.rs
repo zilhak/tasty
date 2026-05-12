@@ -110,6 +110,10 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
             "surface.is_typing",
             serde_json::json!({ "surface_id": resolve_surface_id(*surface) }),
         ),
+        Commands::Wake { surface } => (
+            "surface.wake",
+            serde_json::json!({ "surface_id": resolve_surface_id(*surface) }),
+        ),
         Commands::Tool { command } => tool_command_to_method_params(command),
         Commands::Plugin { command } => plugin_command_to_method_params(command),
     };

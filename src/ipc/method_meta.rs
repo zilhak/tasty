@@ -73,6 +73,7 @@ pub fn method_meta(method: &str) -> Option<MethodMeta> {
         "surface.send_combo" => plugin(&[TerminalWrite]),
         "surface.send_to" => plugin(&[TerminalWrite]),
         "surface.send_wait_idle" => plugin(&[TerminalWrite]),
+        "surface.wake" => plugin(&[TerminalSpawn]),
         "surface.set_mark" => plugin(&[TerminalRead]),
         "surface.read_since_mark" => plugin(&[TerminalRead]),
         "surface.screen_text" => plugin(&[TerminalRead]),

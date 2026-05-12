@@ -353,6 +353,58 @@ impl EngineState {
         None
     }
 
+    /// Return `true` if the given surface_id is a deferred placeholder waiting
+    /// for lazy PTY spawn (i.e. owned by a tab with `is_deferred()` and matching
+    /// `deferred_surface_id`).
+    pub fn is_surface_deferred(&self, surface_id: u32) -> bool {
+        for ws in &self.workspaces {
+            let pane_ids = ws.pane_layout().all_pane_ids();
+            for pane_id in pane_ids {
+                if let Some(pane) = ws.pane_layout().find_pane(pane_id) {
+                    for tab in &pane.tabs {
+                        if tab.is_deferred() && tab.deferred_surface_id == Some(surface_id) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    /// Lazy PTY init for a deferred surface. Returns `true` if a PTY was just
+    /// spawned for this surface, `false` otherwise (already initialized or the
+    /// surface_id isn't a known deferred placeholder).
+    ///
+    /// This is the IPC/CLI-facing counterpart to the workspace-switch path
+    /// (`ensure_active_workspace_initialized`). It does *not* change focus,
+    /// active workspace, or active tab — only the target surface's underlying
+    /// PTY is materialized.
+    pub fn ensure_surface_initialized(&mut self, surface_id: u32) -> bool {
+        let mut spawned = false;
+        for ws in &mut self.workspaces {
+            let pane_ids: Vec<u32> = ws.pane_layout().all_pane_ids();
+            for pane_id in pane_ids {
+                if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
+                    for tab in &mut pane.tabs {
+                        if tab.is_deferred() && tab.deferred_surface_id == Some(surface_id) {
+                            if tab.ensure_initialized(surface_id) {
+                                spawned = true;
+                            }
+                        }
+                    }
+                }
+            }
+            if spawned {
+                break;
+            }
+        }
+        if spawned {
+            self.send_fast_init(surface_id);
+        }
+        spawned
+    }
+
     /// Replace the terminal in a TerminalSurface, keeping the surface/layout intact.
     /// The old terminal's PTY process is dropped (SIGHUP sent).
     /// Returns Ok(()) on success, Err if the surface was not found.

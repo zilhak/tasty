@@ -101,6 +101,7 @@ fn route_engine_handler(
         "surface.send_key" => surface::handle_surface_send_key(state, id, &request.params),
         "surface.send_combo" => surface::handle_surface_send_combo(state, id, &request.params),
         "surface.send_to" => surface::handle_surface_send_to(state, id, &request.params),
+        "surface.wake" => surface::handle_surface_wake(state, id, &request.params),
         "surface.set_mark" => surface::handle_set_mark(state, id, &request.params),
         "surface.read_since_mark" => surface::handle_read_since_mark(state, id, &request.params),
         "surface.screen_text" => surface::handle_screen_text(state, id, &request.params),
@@ -738,6 +739,7 @@ fn handle_send_wait_idle(
     if state.is_typing(surface_id) {
         return JsonRpcResponse::success(id, json!({ "sent": false, "reason": "typing" }));
     }
+    state.engine.ensure_surface_initialized(surface_id);
     if let Some(terminal) = state.find_terminal_by_id_mut(surface_id) {
         terminal.send_key(&text);
         JsonRpcResponse::success(id, json!({ "sent": true }))

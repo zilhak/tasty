@@ -432,8 +432,28 @@ impl Tab {
                 "focused_surface": self.focused_surface,
                 "surfaces": self.all_surface_ids(),
             })
+        } else if self.is_deferred() {
+            // Restored-but-not-yet-spawned terminal: surface is an EmptySurface
+            // placeholder. Report it as a Terminal with `pty_ready: false` so
+            // agents see a uniform tree across active/inactive workspaces.
+            let spawn = self.deferred_spawn.as_ref();
+            let cols = spawn.map(|s| s.cols).unwrap_or(0);
+            let rows = spawn.map(|s| s.rows).unwrap_or(0);
+            serde_json::json!({
+                "type": "Terminal",
+                "id": self.deferred_surface_id.unwrap_or(0),
+                "cols": cols,
+                "rows": rows,
+                "pty_ready": false,
+            })
         } else {
-            self.surface().to_tree_json()
+            let mut v = self.surface().to_tree_json();
+            if v.get("type").and_then(|t| t.as_str()) == Some("Terminal") {
+                if let Some(obj) = v.as_object_mut() {
+                    obj.insert("pty_ready".into(), serde_json::json!(true));
+                }
+            }
+            v
         };
         serde_json::json!({
             "id": self.id,

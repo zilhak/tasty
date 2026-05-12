@@ -124,6 +124,7 @@ fn collect_tab_surface_info(
                 "cols": node.terminal.cols(),
                 "rows": node.terminal.rows(),
                 "busy": state.is_surface_busy(node.id),
+                "pty_ready": true,
             });
             if let Some(fg) = node.terminal.foreground_process_info() {
                 entry["foreground_process"] = json!(fg.name);
@@ -132,14 +133,23 @@ fn collect_tab_surface_info(
             out.push(entry);
         } else if let Some(id) = surface.surface_id() {
             // Non-terminal surfaces (Markdown, Explorer, Html, Empty)
-            out.push(json!({
+            // EmptySurface placeholders backing a deferred terminal still
+            // expose `type: "Terminal"` so agents can target them like any
+            // other terminal — they just report `pty_ready: false` until the
+            // PTY is spawned (auto on send, manual via `tasty wake`).
+            let deferred = tab.is_deferred() && tab.deferred_surface_id == Some(id);
+            let mut entry = json!({
                 "id": id,
                 "pane_id": pane_id,
                 "workspace_id": workspace_id,
                 "tab_index": tab_idx,
-                "type": surface.type_name(),
+                "type": if deferred { "Terminal" } else { surface.type_name() },
                 "busy": false,
-            }));
+            });
+            if deferred {
+                entry["pty_ready"] = json!(false);
+            }
+            out.push(entry);
         }
     }
 }
@@ -166,6 +176,7 @@ fn collect_surface_layout_info(
             if let Some(terminal) = surface.focused_terminal() {
                 entry["cols"] = json!(terminal.cols());
                 entry["rows"] = json!(terminal.rows());
+                entry["pty_ready"] = json!(true);
                 if let Some(fg) = terminal.foreground_process_info() {
                     entry["foreground_process"] = json!(fg.name);
                     entry["foreground_pid"] = json!(fg.pid);
@@ -193,6 +204,7 @@ pub(crate) fn handle_surface_send(
         Some(t) => t,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'text' parameter"),
     };
+    state.engine.ensure_surface_initialized(surface_id);
     if let Some(terminal) = state.find_terminal_by_id_mut(surface_id) {
         terminal.send_key(text);
         JsonRpcResponse::success(id, json!({ "sent": true, "surface_id": surface_id }))
@@ -214,6 +226,8 @@ pub(crate) fn handle_surface_send_key(
         Some(k) => k,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'key' parameter"),
     };
+
+    state.engine.ensure_surface_initialized(surface_id);
 
     let bytes: Vec<u8> = match key {
         "enter" => b"\r".to_vec(),
@@ -264,6 +278,35 @@ pub(crate) fn handle_surface_send_key(
         terminal.send_bytes(&bytes);
     }
     JsonRpcResponse::success(id, json!({ "sent": true, "surface_id": surface_id }))
+}
+
+/// Force-spawn the PTY of a deferred surface without sending any input.
+///
+/// Returns `{ "woke": true }` if this call spawned the PTY, `{ "woke": false }`
+/// otherwise (already initialized or not a deferred surface). Returns
+/// `invalid_params` if the surface_id refers to neither a live terminal nor a
+/// deferred placeholder.
+pub(crate) fn handle_surface_wake(
+    state: &mut AppState,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
+    let surface_id = match require_surface_id(params, &id) {
+        Ok(sid) => sid,
+        Err(e) => return e,
+    };
+    let was_deferred = state.engine.is_surface_deferred(surface_id);
+    let woke = state.engine.ensure_surface_initialized(surface_id);
+    if !woke && !was_deferred && state.engine.find_terminal_by_id(surface_id).is_none() {
+        return JsonRpcResponse::invalid_params(
+            id,
+            format!("Surface {} not found", surface_id),
+        );
+    }
+    JsonRpcResponse::success(
+        id,
+        json!({ "woke": woke, "surface_id": surface_id, "pty_ready": true }),
+    )
 }
 
 pub(crate) fn handle_surface_close(
@@ -413,6 +456,8 @@ pub(crate) fn handle_surface_send_combo(
     let has_ctrl = modifiers.iter().any(|m| m == "ctrl");
     let has_alt = modifiers.iter().any(|m| m == "alt");
 
+    state.engine.ensure_surface_initialized(surface_id);
+
     let mut bytes_to_send: Vec<u8> = Vec::new();
 
     if has_ctrl && key.len() == 1 {
@@ -458,6 +503,7 @@ pub(crate) fn handle_surface_send_to(
         Some(sid) => sid as u32,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'surface_id' parameter"),
     };
+    state.engine.ensure_surface_initialized(surface_id);
     if let Some(terminal) = state.find_terminal_by_id_mut(surface_id) {
         terminal.send_key(text);
         JsonRpcResponse::success(id, json!({ "sent": true }))
