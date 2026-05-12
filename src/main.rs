@@ -574,6 +574,7 @@ impl App {
                     manifest_permissions: pkg.manifest.permissions.clone(),
                     granted_permissions: granted,
                     log_path: mgr.log_path(id).to_string_lossy().into_owned(),
+                    install_dir: pkg.dir.to_string_lossy().into_owned(),
                 }
             })
             .collect();
@@ -654,6 +655,8 @@ impl App {
             return;
         };
 
+        let mut pending_toasts: Vec<(String, crate::ui::ToastKind)> = Vec::new();
+
         for action in actions {
             match action {
                 plugins_ui::PluginsAction::SetEnabled { id, enabled } => {
@@ -700,6 +703,39 @@ impl App {
                         plugin::mark_builtin_removed(mgr, &id);
                     }
                 }
+                plugins_ui::PluginsAction::OpenInstallDir { path } => {
+                    if !crate::terminal_link::open_uri(&path) {
+                        tracing::warn!("plugins modal: open install dir failed: {path}");
+                    }
+                }
+                plugins_ui::PluginsAction::Install { src_path } => {
+                    let resp = ipc::handler::plugin::handle_install(
+                        Some(mgr),
+                        serde_json::json!(0),
+                        &serde_json::json!({ "path": src_path }),
+                    );
+                    pending_toasts.push(match (resp.error, resp.result) {
+                        (Some(err), _) => (
+                            crate::i18n::t_fmt("plugins.add_install_failed", &err.message),
+                            crate::ui::ToastKind::Error,
+                        ),
+                        (None, Some(result)) => {
+                            let installed = result
+                                .get("installed")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            (
+                                crate::i18n::t_fmt("plugins.add_installed", &installed),
+                                crate::ui::ToastKind::Success,
+                            )
+                        }
+                        (None, None) => (
+                            crate::i18n::t_fmt("plugins.add_install_failed", "unknown error"),
+                            crate::ui::ToastKind::Error,
+                        ),
+                    });
+                }
             }
         }
 
@@ -709,6 +745,9 @@ impl App {
                 modal.as_any_mut().downcast_mut::<window::PluginsWindow>()
             {
                 plugins_window.refresh_snapshot(snapshot);
+                for (msg, kind) in pending_toasts {
+                    plugins_window.push_toast(msg, kind);
+                }
             }
         }
     }

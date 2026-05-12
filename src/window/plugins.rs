@@ -49,6 +49,13 @@ impl PluginsWindow {
         self.snapshot = snapshot;
         self.mark_dirty();
     }
+
+    /// 모달 윈도우 영역에 toast를 띄운다. `Add` 탭에서 설치 성공/실패 알림 등에 사용.
+    pub fn push_toast(&mut self, message: impl Into<String>, kind: crate::ui::ToastKind) {
+        self.toasts
+            .push(message, kind, crate::ui::ToastScope::Window);
+        self.mark_dirty();
+    }
 }
 
 impl Window for PluginsWindow {

@@ -24,7 +24,7 @@ pub use layout_context::LayoutContext;
 pub use notification::draw_popups;
 pub use popup::{PopupAction, PopupManager};
 pub use tab_bar::draw_pane_tab_bars;
-pub use toast::{ToastManager, ToastScope};
+pub use toast::{ToastKind, ToastManager, ToastScope};
 
 use crate::model::Rect;
 use crate::state::AppState;
