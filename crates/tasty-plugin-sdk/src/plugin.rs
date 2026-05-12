@@ -137,6 +137,14 @@ impl IpcMethodError {
     }
 }
 
+/// Plugin 핸들러 안에서 SDK 호출이 실패하면 `?` 한 번으로 IPC 응답까지
+/// 흘려보낼 수 있게 자동 변환을 제공한다. JSON-RPC 코드는 server error(-32000).
+impl From<crate::error::PluginError> for IpcMethodError {
+    fn from(err: crate::error::PluginError) -> Self {
+        IpcMethodError::new(err.to_string())
+    }
+}
+
 /// Plugin 생명주기 진입점. 모든 메서드는 동기적으로 호출되고, plugin 로직은
 /// 내부에서 자유롭게 thread/async runtime을 사용할 수 있다.
 pub trait Plugin: Send + 'static {
