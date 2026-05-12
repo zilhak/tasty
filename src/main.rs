@@ -1094,6 +1094,36 @@ impl App {
         }
     }
 
+    /// 모든 윈도우/parked state의 surface close lifecycle 큐를 비우고 구독 plugin에
+    /// broadcast한다. `is_user_close` bool → `SurfaceCloseReason` enum 매핑은
+    /// 여기서 수행 (state/ 레이어가 plugin/ 의존을 갖지 않게).
+    pub(crate) fn dispatch_pending_surface_lifecycle(&mut self) {
+        use plugin::protocol::SurfaceCloseReason;
+        let mut drained: Vec<crate::state::PendingSurfaceClosed> = Vec::new();
+        for w in self.windows.values_mut() {
+            if let Some(main) = w.as_main_mut() {
+                drained.extend(main.state.take_pending_lifecycle_events());
+            }
+        }
+        for s in &mut self.parked_states {
+            drained.extend(s.take_pending_lifecycle_events());
+        }
+        if drained.is_empty() {
+            return;
+        }
+        let Some(mgr) = self.plugin_manager.as_mut() else {
+            return;
+        };
+        for ev in drained {
+            let reason = if ev.is_user_close {
+                SurfaceCloseReason::UserClose
+            } else {
+                SurfaceCloseReason::AgentClose
+            };
+            mgr.notify_surface_closed(ev.surface_id, ev.kind, reason);
+        }
+    }
+
     /// 단계 F: focused surface가 plugin RemoteSurface인 경우 plugin command와
     /// 키 매칭. 매칭 성공 시 `dispatch_plugin_command`를 호출하고 `true` 반환 →
     /// 호출자(event_handler)는 normal window dispatch를 skip해 host action이

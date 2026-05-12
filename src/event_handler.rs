@@ -402,6 +402,8 @@ impl ApplicationHandler<AppEvent> for App {
         }
         // plugin이 보낸 IPC 호출들을 라우터로 디스패치 (권한 게이트 적용).
         self.process_plugin_ipc_calls();
+        // surface close lifecycle 알림 drain → 구독 plugin에 broadcast.
+        self.dispatch_pending_surface_lifecycle();
         // PluginsWindow 모달의 사용자 액션을 manager에 적용 + 모달 snapshot 갱신.
         self.process_plugins_window_actions();
 
