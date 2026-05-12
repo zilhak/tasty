@@ -258,6 +258,49 @@ plugin 키와 호스트 키가 겹치면 **focused surface가 plugin 소유일 �
 키가 우선한다. 그 외 영역(터미널, 다른 plugin surface)에서는 호스트 키가
 정상 동작한다.
 
+## 4-2. IPC namespace 처리 (handle_ipc_method)
+
+매니페스트에 `[[contributes.ipc_namespace]]`를 선언한 plugin은 해당 prefix로
+시작하는 모든 IPC 메서드를 받는다. SDK가 자동으로 dispatch하므로 작성자는
+`handle_ipc_method` 콜백만 구현하면 된다.
+
+```rust
+use tasty_plugin_sdk::{IpcMethodCtx, IpcMethodError, Plugin};
+use serde_json::Value;
+
+impl Plugin for MyPlugin {
+    fn handle_ipc_method(&mut self, ctx: IpcMethodCtx) -> Result<Value, IpcMethodError> {
+        match ctx.method.as_str() {
+            "codex.spawn" => self.handle_spawn(ctx.params),
+            "codex.wait"  => self.handle_wait(ctx.params),
+            other => Err(IpcMethodError::not_found(other)),
+        }
+    }
+}
+```
+
+- `ctx.params`는 CLI에서 들어온 경우 매니페스트의 arg 스키마대로 직렬화된 JSON,
+  다른 plugin이 호출한 경우 호출자가 보낸 임의 JSON. plugin은 자기 namespace
+  내 모든 메서드의 시그니처를 책임진다.
+- `ctx.caller_plugin_id`로 호출자가 plugin인지(`Some("com.example.other")`)
+  사용자(CLI/IPC)인지(`None`) 구분 가능.
+- `Ok(value)`를 반환하면 호스트가 JSON-RPC success response로 client에 전달,
+  `Err(IpcMethodError)`이면 error response로 전달. 표준 코드 헬퍼:
+  `IpcMethodError::not_found(method)` / `invalid_params(msg)` / `with_code(msg, code)`.
+
+### 매니페스트 검증 / 예약 prefix
+
+namespace prefix는 소문자 + 숫자 + `_` 만 허용되며, 다음 호스트 예약어는 사용
+불가: `system`, `surface`, `tab`, `pane`, `workspace`, `claude`, `plugin`,
+`hook`, `global_hook`, `message`, `tool`, `notification`, `window`, `debug`,
+`ui`, `ime`, `split`, `tree`. CLI 서브커맨드의 `ipc_method`는 같은 plugin이
+contribute한 namespace prefix와 매칭되어야 한다 (그래야 라우팅이 자기 자신으로
+돌아온다).
+
+다른 plugin의 namespace를 호출하려면 매니페스트 권한에
+`"ipc.invoke:<prefix>"`를 선언하고 사용자가 grant해야 한다. 자기 namespace를
+자기가 호출하는 무한 forward는 호스트가 `-32001`로 거부한다.
+
 ## 5. 영속화 (snapshot/restore)
 
 세션 복원이 필요한 경우 두 메서드를 구현한다.

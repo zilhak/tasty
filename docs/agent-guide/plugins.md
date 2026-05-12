@@ -95,6 +95,54 @@ binding_mode = "independent"
 
 > **TOML 주의**: top-level 키(`permissions = [...]` 등)는 모든 `[table]` 헤더보다 *먼저* 와야 한다. 그렇지 않으면 가장 가까운 테이블 안의 키로 해석된다.
 
+## 호스트 CLI / IPC 확장 (1st-class plugin commands)
+
+Plugin은 매니페스트에 자기 CLI 서브커맨드와 IPC namespace prefix를 선언하여,
+`tasty <name> <subcommand>` 형태로 호출되고 `<prefix>.<method>` IPC 메서드를
+받을 수 있다. 호스트 코드는 plugin의 메서드 이름이나 인자를 알 필요가 없다.
+
+### 매니페스트 — IPC namespace
+
+```toml
+[[contributes.ipc_namespace]]
+prefix = "codex"
+```
+
+선언된 prefix로 시작하는 모든 IPC 메서드는 해당 plugin으로 forward된다. 예약
+prefix(`system`, `surface`, `tab`, `pane`, `workspace`, `claude`, `plugin`,
+`hook`, `global_hook`, `message`, `tool`, `notification`, `window`, `debug`,
+`ui`, `ime`, `split`, `tree`)는 사용 불가. 같은 prefix를 두 plugin이 동시에
+선언하면 나중에 로드된 쪽은 거부된다.
+
+### 매니페스트 — CLI
+
+```toml
+[[contributes.cli]]
+name = "codex"
+description_i18n_key = "codex.cli.desc"
+subcommands = [
+  { name = "spawn", ipc_method = "codex.spawn", args = "spawn_args" },
+]
+
+[contributes.cli.arg_groups.spawn_args]
+flags = [
+  { name = "surface", type = "u32",    flag = "--surface", required = false },
+  { name = "prompt",  type = "string", flag = "--prompt",  required = false },
+]
+```
+
+플러그인 등록 시 호스트 CLI는 `tasty codex spawn --prompt "hi"` 같이 호출
+가능해진다. 인자는 자동으로 JSON-RPC params 객체로 직렬화되어 plugin에
+`{ "surface": ..., "prompt": "hi" }` 형태로 전달된다. 정적 호스트 명령이 항상
+우선 매칭되며, plugin은 그 위에 동적으로 합쳐진다 (plugin이 호스트 명령을
+가릴 수 없다).
+
+### 다른 plugin namespace 호출
+
+자기 plugin이 다른 plugin의 IPC namespace를 호출하려면 매니페스트 권한에
+`"ipc.invoke:<prefix>"`를 추가하고 사용자의 grant를 받아야 한다. 자기 자신을
+호출하는 무한 forward는 호스트가 거부한다.
+
 ## 권한 모델
 
 Plugin이 호스트 IPC를 호출하려면 매니페스트의 `permissions`에 권한 토큰을 선언하고
@@ -116,6 +164,7 @@ Plugin이 호스트 IPC를 호출하려면 매니페스트의 `permissions`에 �
 | `terminal.read` | `surface.set_mark/read_since_mark/screen_text/cursor_position/is_typing` |
 | `claude.read` | `claude.children/parent/wait` |
 | `claude.invoke` | `claude.kill/respawn/set_idle_state/set_needs_input/broadcast/tell/launch/spawn` |
+| `ipc.invoke:<prefix>` | 다른 plugin의 namespace 메서드 호출 (`<prefix>`는 호출 대상 plugin이 contribute한 IPC namespace) |
 | `network` | (예약) |
 
 Local-only 메서드 (CLI/사용자만, plugin은 항상 거부):

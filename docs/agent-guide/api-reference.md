@@ -340,10 +340,20 @@ tasty unset global-hook --hook HOOK_ID
 | `plugin.enable` | `id: string` | plugin 활성화 + 즉시 spawn (이전에 비활성화되어 있던 plugin) |
 | `plugin.disable` | `id: string` | plugin 비활성화 + 살아있으면 graceful shutdown |
 | `plugin.permissions` | `id: string` | `{id, manifest:[...], granted:[...]}` 매니페스트 권한 + 현재 grant된 권한 |
-| `plugin.grant` | `id: string, permission: string` | 매니페스트에 선언된 권한 토큰을 granted에 추가 |
+| `plugin.grant` | `id: string, permission: string` | 매니페스트에 선언된 권한 토큰을 granted에 추가. `ipc.invoke:<prefix>` 형식의 토큰은 다른 plugin의 namespace 호출 허용 |
 | `plugin.revoke` | `id: string, permission: string` | granted에서 권한 제거 |
 
 상세는 `plugins.md` (권한 토큰 매핑 표 포함) 참조.
+
+#### Plugin contributed CLI / IPC
+
+설치된 plugin이 매니페스트에 `[[contributes.cli]]`를 선언했다면
+`tasty <plugin-name> <subcommand>` 형태로 사용 가능. 사용 가능한 명령은
+`tasty --help`에서 확인한다 (정적 호스트 명령에 이어 plugin 명령이 표시된다).
+
+마찬가지로 plugin이 `[[contributes.ipc_namespace]]`를 선언했다면 `<prefix>.<method>`
+IPC 메서드를 직접 호출할 수 있다 — 호스트는 메서드 이름과 params를 그대로
+plugin으로 forward하므로, 실제 시그니처/응답은 각 plugin의 문서를 참조해야 한다.
 
 ### Claude 전용
 
