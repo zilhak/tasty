@@ -321,11 +321,56 @@ fn restore_surface(&mut self, ctx: SurfaceRestoreCtx) -> SurfaceResult {
 
 ## 6. 호스트 IPC 호출
 
-Plugin이 호스트의 IPC API(예: `notification.create`, `surface.list`)를 호출하려면 매니페스트에 해당 권한을 선언하고 `PluginEvent::IpcCall`을 송신한다.
+Plugin이 호스트의 IPC API(예: `notification.create`, `surface.list`)를 호출하려면 매니페스트에 해당 권한을 선언하고 `HostHandle::call`을 사용한다. `IpcMethodCtx`의 `host` 필드로 제공된다.
 
-> **주의**: 현재 SDK 0.1은 `Plugin` trait에서 IPC 호출 헬퍼를 제공하지 않는다 — `connection::Connection::send_event`를 직접 사용해야 한다. 향후 `PluginContext` 추가 예정.
+```rust
+use tasty_plugin_sdk::{HostHandle, IpcMethodCtx, IpcMethodError};
 
-권한 토큰 → IPC 메서드 매핑은 `docs/agent-guide/plugins.md`의 권한 표 참조. 권한이 없는 메서드를 호출하면 `ipc.result`에 `permission_denied` 에러가 담겨 회신된다.
+fn handle_my_method(host: &HostHandle, params: Value) -> Result<Value, IpcMethodError> {
+    // ? 한 번으로 PluginError → IpcMethodError 자동 변환.
+    let surfaces = host.call("surface.list", serde_json::json!({}))?;
+    Ok(serde_json::json!({ "count": surfaces.as_array().map(|a| a.len()).unwrap_or(0) }))
+}
+```
+
+권한 토큰 → IPC 메서드 매핑은 `docs/agent-guide/plugins.md`의 권한 표 참조. 권한이 없는 메서드를 호출하면 `host.call(...)`이 `PluginError::HostCall { message: "permission_denied: ..." }`로 회신된다.
+
+### 에러 분기
+
+대부분의 경우 `?`만으로 충분하지만, host 호출 실패와 호스트 응답 에러를 구분해서 처리해야 할 때는 `PluginError` variant로 매칭한다.
+
+```rust
+use tasty_plugin_sdk::{HostHandle, PluginError};
+
+fn fetch_surface_meta(host: &HostHandle, id: u32) -> Result<Value, IpcMethodError> {
+    match host.call("surface.meta.get", serde_json::json!({"surface_id": id})) {
+        Ok(v) => Ok(v),
+        Err(PluginError::HostCallTimeout { method, timeout }) => {
+            tracing::warn!("'{method}' timed out after {timeout:?}; returning empty meta");
+            Ok(Value::Null)
+        }
+        Err(PluginError::HostCall { method, message }) if message.contains("not_found") => {
+            tracing::warn!("'{method}' returned not_found; surface gone?");
+            Ok(Value::Null)
+        }
+        Err(other) => Err(other.into()), // 그 외는 IPC 응답으로 전파.
+    }
+}
+```
+
+variant 요약:
+
+| variant | 의미 |
+|---------|------|
+| `EnvMissing(name)` | 필수 환경변수 누락 — bootstrap 단계에서만 발생 |
+| `EnvParse { var, message }` | 환경변수 파싱 실패 (예: 포트 번호 형식 오류) |
+| `Connect { port, source }` | TCP 호스트 connect 실패 |
+| `HostClosed` | 호스트가 연결을 닫음 |
+| `HostCall { method, message }` | 호스트가 에러 응답을 보냄 (permission_denied 등) |
+| `HostCallTimeout { method, timeout }` | 호스트 응답이 timeout 안에 도착 안함 |
+| `Io(io::Error)` | 일반 IO 에러 |
+| `Json(serde_json::Error)` | 인코딩/디코딩 실패 |
+| `LockPoisoned(name)` | 내부 mutex poison (다른 thread의 패닉 후) |
 
 ## 7. 환경변수
 
