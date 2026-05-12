@@ -107,6 +107,11 @@ impl CodexState {
         true
     }
 
+    /// child surface로 parent surface를 역인덱싱한다.
+    pub fn parent_of_child(&self, child_surface: u32) -> Option<u32> {
+        self.parent_of.get(&child_surface).copied()
+    }
+
     pub fn remove_child(&mut self, parent: u32, index: u32) -> Option<ChildEntry> {
         let list = self.children.get_mut(&parent)?;
         let pos = list.iter().position(|c| c.index == index)?;

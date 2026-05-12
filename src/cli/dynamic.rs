@@ -159,6 +159,21 @@ pub fn matches_to_request(
                 params.insert(arg.name.clone(), v);
             }
         }
+        // claude CLI의 resolve_surface_id와 동일한 폴백 규칙. plugin이 정의한
+        // `surface` (u32) 인자가 사용자 입력에 없으면 TASTY_SURFACE_ID env로 채운다.
+        let defines_surface = g
+            .flags
+            .iter()
+            .chain(g.positional.iter())
+            .any(|a| a.name == "surface" && matches!(a.ty, CliArgType::U32));
+        if defines_surface && !params.contains_key("surface") {
+            if let Some(sid) = std::env::var("TASTY_SURFACE_ID")
+                .ok()
+                .and_then(|s| s.parse::<u32>().ok())
+            {
+                params.insert("surface".into(), Value::from(sid));
+            }
+        }
     }
 
     Ok(JsonRpcRequest {
@@ -205,6 +220,7 @@ mod tests {
                         flag: Some("--surface".into()),
                         required: false,
                         default: None,
+                        help: None,
                     },
                     CliArg {
                         name: "prompt".into(),
@@ -212,6 +228,7 @@ mod tests {
                         flag: Some("--prompt".into()),
                         required: false,
                         default: None,
+                        help: None,
                     },
                     CliArg {
                         name: "force".into(),
@@ -219,6 +236,7 @@ mod tests {
                         flag: Some("--force".into()),
                         required: false,
                         default: None,
+                        help: None,
                     },
                 ],
             },
@@ -232,6 +250,7 @@ mod tests {
                     flag: None,
                     required: true,
                     default: None,
+                    help: None,
                 }],
                 flags: vec![CliArg {
                     name: "timeout".into(),
@@ -239,6 +258,7 @@ mod tests {
                     flag: Some("--timeout".into()),
                     required: false,
                     default: Some(toml::Value::Integer(60)),
+                    help: None,
                 }],
             },
         );
@@ -246,18 +266,21 @@ mod tests {
             plugin_id: "com.example.codex".into(),
             cli: CliCommandDecl {
                 name: "codex".into(),
+                description: None,
                 description_i18n_key: None,
                 subcommands: vec![
                     CliSubcommandDecl {
                         name: "spawn".into(),
                         ipc_method: "codex.spawn".into(),
                         args: "spawn_args".into(),
+                        description: None,
                         description_i18n_key: None,
                     },
                     CliSubcommandDecl {
                         name: "broadcast".into(),
                         ipc_method: "codex.broadcast".into(),
                         args: "broadcast_args".into(),
+                        description: None,
                         description_i18n_key: None,
                     },
                 ],

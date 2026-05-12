@@ -1079,7 +1079,7 @@ Claude Code 등 TUI 앱이 실행 중이던 터미널을 복원할 때, 해당 �
 
 ### 기본 제공 plugin (built-in)
 - Tasty 바이너리에 함께 묶여 배포되는 plugin은 첫 실행 시 `~/.tasty/plugins/<id>/`에 자동 설치된다 (`builtin::BUILTINS` 목록)
-- 현재 기본 제공: `com.tasty.explorer` (파일 탐색기 surface), `com.tasty.codex` (Codex CLI 통합)
+- 현재 기본 제공: `com.tasty.explorer` (파일 탐색기 surface), `com.tasty.codex` (Codex CLI 통합 — `tasty codex launch|spawn|children|parent|tell|wait|broadcast|kill|respawn|install|uninstall|hook`. `tasty claude *` 사용법과 동일하며 `--surface` 미지정 시 호출자 surface의 `TASTY_SURFACE_ID` env로 fallback)
 - 사용자가 plugin 메뉴에서 "제거"를 선택하면 `removed_builtins`에 기록되어 다음 실행에서 자동 재설치되지 않는다 — 외부 plugin과 완전히 동일한 라이프사이클 적용
 - 번들 위치 탐색 순서: `TASTY_BUILTIN_PLUGINS_DIR` env > 실행 파일 옆 `plugins/` > dev 빌드 시 `target/<profile>/builtin-plugins/` (workspace 자동 부트스트랩, 등록된 모든 builtin 동기화)
 - **권한 자동 복구**: builtin plugin이 사용자 디렉터리에는 있지만 `plugins.toml`에 grant 엔트리가 없는 경우(예: 이전 버전에서 builtin으로 인식되지 않은 채 외부 plugin처럼 설치됨), 부팅 시 매니페스트의 모든 권한을 자동 grant. `granted = []`로 명시 비워둔 경우는 entry가 있으니 건드리지 않음

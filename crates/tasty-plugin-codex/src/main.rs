@@ -69,8 +69,11 @@ impl Plugin for CodexPlugin {
             ..
         } = ctx;
         match method.as_str() {
+            "codex.launch" => handlers::handle_launch(&mut self.state, &host, params),
             "codex.spawn" => handlers::handle_spawn(&mut self.state, &host, params),
             "codex.children" => handlers::handle_children(&self.state, params),
+            "codex.parent" => handlers::handle_parent(&self.state, params),
+            "codex.tell" => handlers::handle_tell(&host, params),
             "codex.wait" => handlers::handle_wait(&self.state, params),
             "codex.broadcast" => handlers::handle_broadcast(&self.state, &host, params),
             "codex.kill" => handlers::handle_kill(&mut self.state, &host, params),

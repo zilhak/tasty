@@ -55,6 +55,132 @@ fn make_codex_command(prompt: Option<&str>) -> String {
     }
 }
 
+/// shell escape: cd 등의 인자로 쓸 수 있도록 single-quote로 감싸고 내부 작은따옴표를 escape.
+fn shell_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('\'');
+    for ch in s.chars() {
+        if ch == '\'' {
+            out.push_str("'\\''");
+        } else {
+            out.push(ch);
+        }
+    }
+    out.push('\'');
+    out
+}
+
+/// codex 메시지를 PTY로 보낼 escape된 문자열을 만든다.
+/// claude의 `handle_claude_tell`과 동일한 규칙:
+/// - 줄바꿈(`\n`)은 `\` + `\r`로 변환 (codex CLI에서 newline 입력)
+/// - 마지막 라인이 `\`로 끝나면 공백 추가 (`\r`이 escape되지 않도록)
+/// - 끝에 `\r` 추가 = submit
+fn build_tell_payload(message: &str) -> String {
+    let lines: Vec<&str> = message.split('\n').collect();
+    let mut pty_text = String::new();
+    for (i, line) in lines.iter().enumerate() {
+        pty_text.push_str(line);
+        if i < lines.len() - 1 {
+            pty_text.push('\\');
+            pty_text.push('\r');
+        }
+    }
+    if pty_text.ends_with('\\') {
+        pty_text.push(' ');
+    }
+    pty_text.push('\r');
+    pty_text
+}
+
+pub fn handle_launch(
+    _state: &mut CodexState,
+    host: &HostHandle,
+    params: Value,
+) -> Result<Value, IpcMethodError> {
+    let workspace_name = params
+        .get("workspace")
+        .and_then(|v| v.as_str())
+        .unwrap_or("codex")
+        .to_string();
+    let directory = optional_str(&params, "directory");
+    let task = optional_str(&params, "task");
+
+    let mut ws_params = Map::new();
+    ws_params.insert("name".into(), Value::String(workspace_name.clone()));
+    ws_params.insert("type".into(), Value::String("terminal".into()));
+    let ws_result = host_call(host, "workspace.create", Value::Object(ws_params))?;
+    let workspace_id = ws_result
+        .get("id")
+        .and_then(|v| v.as_u64())
+        .ok_or_else(|| {
+            IpcMethodError::new(format!(
+                "workspace.create response missing 'id': {ws_result}"
+            ))
+        })? as u32;
+    let surface_id = ws_result
+        .get("surface_id")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32);
+
+    if let Some(sid) = surface_id {
+        if let Some(dir) = directory.as_deref() {
+            let normalized = dir.replace('\\', "/");
+            let escaped = shell_escape(&normalized);
+            let cd_cmd = format!("cd {}\r", escaped);
+            host_call(
+                host,
+                "surface.send",
+                json!({"surface_id": sid, "text": cd_cmd}),
+            )?;
+        }
+        let mut cmd = "codex".to_string();
+        if let Some(t) = task.as_deref() {
+            cmd.push_str(&format!(" --task {}", shell_escape(t)));
+        }
+        cmd.push('\r');
+        host_call(
+            host,
+            "surface.send",
+            json!({"surface_id": sid, "text": cmd}),
+        )?;
+    }
+
+    Ok(json!({
+        "workspace_id": workspace_id,
+        "workspace_name": workspace_name,
+        "surface_id": surface_id,
+    }))
+}
+
+pub fn handle_parent(state: &CodexState, params: Value) -> Result<Value, IpcMethodError> {
+    let child_surface = require_u32(&params, "surface")?;
+    match state.parent_of_child(child_surface) {
+        Some(parent_id) => Ok(json!({
+            "parent_surface_id": parent_id,
+            "status": "active",
+        })),
+        None => Ok(json!({
+            "parent_surface_id": Value::Null,
+            "status": "none",
+        })),
+    }
+}
+
+pub fn handle_tell(host: &HostHandle, params: Value) -> Result<Value, IpcMethodError> {
+    let surface_id = require_u32(&params, "surface")?;
+    let message = params
+        .get("message")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| IpcMethodError::invalid_params("missing 'message'"))?;
+    let payload = build_tell_payload(message);
+    host_call(
+        host,
+        "surface.send",
+        json!({"surface_id": surface_id, "text": payload}),
+    )?;
+    Ok(json!({ "sent": true, "surface_id": surface_id }))
+}
+
 pub fn handle_spawn(
     state: &mut CodexState,
     host: &HostHandle,

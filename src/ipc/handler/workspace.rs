@@ -84,6 +84,13 @@ pub fn handle_workspace_create(
             }
             state.engine.mark_layout_dirty();
             let ws = &state.engine.workspaces[idx];
+            let surface_id = {
+                let pane_id = ws.focused_pane;
+                ws.pane_layout()
+                    .find_pane(pane_id)
+                    .and_then(|pane| pane.tabs.get(pane.active_tab))
+                    .and_then(|tab| tab.focused_surface_id())
+            };
             JsonRpcResponse::success(
                 id,
                 json!({
@@ -92,6 +99,7 @@ pub fn handle_workspace_create(
                     "subtitle": ws.subtitle,
                     "description": ws.description,
                     "index": idx,
+                    "surface_id": surface_id,
                 }),
             )
         }
