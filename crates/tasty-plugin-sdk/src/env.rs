@@ -12,6 +12,8 @@
 
 use std::path::PathBuf;
 
+use crate::error::{PluginError, Result};
+
 #[derive(Debug, Clone)]
 pub struct PluginEnv {
     pub plugin_id: String,
@@ -26,15 +28,17 @@ pub struct PluginEnv {
 
 impl PluginEnv {
     /// 환경변수에서 plugin 부트스트랩 정보를 읽는다. 필수 변수가 없으면 에러.
-    pub fn load() -> anyhow::Result<Self> {
+    pub fn load() -> Result<Self> {
         let plugin_id = std::env::var("TASTY_PLUGIN_ID")
-            .map_err(|_| anyhow::anyhow!("TASTY_PLUGIN_ID env var missing"))?;
-        let host_port = std::env::var("TASTY_HOST_IPC_PORT")
-            .map_err(|_| anyhow::anyhow!("TASTY_HOST_IPC_PORT env var missing"))?
-            .parse::<u16>()
-            .map_err(|e| anyhow::anyhow!("TASTY_HOST_IPC_PORT parse error: {e}"))?;
+            .map_err(|_| PluginError::EnvMissing("TASTY_PLUGIN_ID"))?;
+        let port_raw = std::env::var("TASTY_HOST_IPC_PORT")
+            .map_err(|_| PluginError::EnvMissing("TASTY_HOST_IPC_PORT"))?;
+        let host_port = port_raw.parse::<u16>().map_err(|e| PluginError::EnvParse {
+            var: "TASTY_HOST_IPC_PORT",
+            message: e.to_string(),
+        })?;
         let token = std::env::var("TASTY_PLUGIN_TOKEN")
-            .map_err(|_| anyhow::anyhow!("TASTY_PLUGIN_TOKEN env var missing"))?;
+            .map_err(|_| PluginError::EnvMissing("TASTY_PLUGIN_TOKEN"))?;
         let host_api_version =
             std::env::var("TASTY_HOST_API_VERSION").unwrap_or_else(|_| "1".to_string());
         Ok(Self {
