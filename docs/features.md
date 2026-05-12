@@ -577,7 +577,7 @@
 - `system.info`: 버전, 워크스페이스 수, 활성 워크스페이스 인덱스
 
 #### 디버그 전용 (debug 빌드에서만 사용 가능)
-다음 메서드들은 `cfg(debug_assertions)` 게이트로 릴리즈 빌드에서 제외된다. 개발 및 테스트 용도로만 존재한다.
+다음 메서드들은 `cfg(debug_assertions)` 게이트로 릴리즈 빌드에서 제외된다. 개발 및 테스트 용도로만 존재한다. release 빌드에서는 `src/ipc/method_meta.rs::DEBUG_METHODS`가 빈 슬라이스로 컴파일되어 `method_meta(name)` lookup이 `None`을 반환한다 (자세한 동작은 [dev-guide/debug-ipc.md](dev-guide/debug-ipc.md) 참조).
 
 - `system.shutdown`: 테스트 종료 시 프로세스 정상 종료
 - `ui.state`: GUI 오버레이 상태 조회 (settings_open, notification_panel_open, active_workspace, workspace_count, pane_count, tab_count)

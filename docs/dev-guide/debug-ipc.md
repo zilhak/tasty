@@ -42,9 +42,21 @@ CLI 서브커맨드도 동일하게 debug 빌드에서만 등록된다. 예를 �
 
 1. 핸들러를 `#[cfg(debug_assertions)]`로 감싼다.
 2. `route_debug_handler`의 match 분기에 추가한다.
-3. CLI에서 호출할 일이 있으면 CLI 서브커맨드 variant도 `#[cfg(debug_assertions)]`로 감싼다.
-4. 본 문서에 메서드를 추가한다.
-5. **`docs/agent-guide/`에는 작성하지 않는다.** 릴리스 에셋에 포함되지 않아야 한다.
+3. **`src/ipc/method_meta.rs`의 `DEBUG_METHODS` 표에 등록한다** (METHOD_TABLE이 아님).
+4. CLI에서 호출할 일이 있으면 CLI 서브커맨드 variant도 `#[cfg(debug_assertions)]`로 감싼다.
+5. 본 문서에 메서드를 추가한다.
+6. **`docs/agent-guide/`에는 작성하지 않는다.** 릴리스 에셋에 포함되지 않아야 한다.
+
+## release 빌드에서의 동작
+
+release 빌드(`cargo build --release` 또는 `--profile dist`)에서는:
+
+- `DEBUG_METHODS` 상수 자체가 빈 슬라이스로 컴파일된다 (`#[cfg(not(debug_assertions))]`).
+- `method_meta("debug.inject_key")` 같은 lookup이 `None`을 반환한다.
+- plugin이 debug 메서드 호출을 시도하면 `CallerError::UnknownMethod`로 거부된다 (debug 빌드의 `NotPluginCallable`과 메시지는 다르지만 거부라는 결과는 동일).
+- local caller(CLI/네트워크 IPC)는 라우터가 해당 분기 자체를 컴파일하지 않으므로 `method_not_found`로 떨어진다.
+
+회귀 방지: `src/ipc/method_meta.rs::tests::debug_methods_absent_in_release` 및 `src/ipc/caller.rs::tests::plugin_call_to_debug_method_is_unknown_in_release`가 release 표면에서 debug 메서드 노출 0건을 검증한다.
 
 ## 참고
 
