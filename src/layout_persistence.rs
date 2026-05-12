@@ -502,11 +502,15 @@ impl SavedPaneNode {
 }
 
 impl SavedPane {
-    fn restore(self, engine: &mut EngineState, is_active: bool) -> Option<Pane> {
+    fn restore(self, engine: &mut EngineState, is_active_workspace: bool) -> Option<Pane> {
         let pane_id = engine.next_ids.next_pane();
+        let saved_active_tab = self.active_tab.min(self.tabs.len().saturating_sub(1));
         let mut tabs = Vec::new();
-        for saved_tab in self.tabs {
-            match saved_tab.restore(engine, is_active) {
+        for (idx, saved_tab) in self.tabs.into_iter().enumerate() {
+            // 활성 workspace 안에서도 사용자가 보고 있는 active_tab만 즉시 PTY spawn.
+            // 나머지 tab은 비활성 workspace와 동일하게 deferred — tab 전환 시 깨워짐.
+            let tab_is_active = is_active_workspace && idx == saved_active_tab;
+            match saved_tab.restore(engine, tab_is_active) {
                 Some(tab) => tabs.push(tab),
                 None => {
                     tracing::warn!("Failed to restore tab, skipping");
@@ -516,7 +520,7 @@ impl SavedPane {
         if tabs.is_empty() {
             return None;
         }
-        let active_tab = self.active_tab.min(tabs.len() - 1);
+        let active_tab = saved_active_tab.min(tabs.len() - 1);
         Some(Pane {
             id: pane_id,
             tabs,

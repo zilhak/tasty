@@ -127,8 +127,8 @@ impl AppState {
         true
     }
 
-    /// Ensure all deferred tabs in the active workspace are initialized.
-    /// Called on workspace switch to lazily spawn PTYs for restored terminals.
+    /// 활성 workspace에서 사용자가 보고 있는 active_tab의 deferred surface만 PTY를
+    /// spawn. 같은 pane의 비활성 tab은 deferred로 남았다가 tab 전환 시 깨어남.
     fn ensure_active_workspace_initialized(&mut self) {
         let mut spawned_ids = Vec::new();
         {
@@ -136,7 +136,8 @@ impl AppState {
             let pane_ids: Vec<u32> = ws.pane_layout().all_pane_ids();
             for pane_id in pane_ids {
                 if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
-                    for tab in &mut pane.tabs {
+                    let active_idx = pane.active_tab;
+                    if let Some(tab) = pane.tabs.get_mut(active_idx) {
                         if tab.is_deferred() {
                             let surface_id = tab.deferred_surface_id.unwrap_or(0);
                             if tab.ensure_initialized(surface_id) {
