@@ -68,6 +68,10 @@ pub struct PluginResponse {
     pub result: Option<serde_json::Value>,
     #[serde(default)]
     pub error: Option<String>,
+    /// JSON-RPC 에러 코드. 없으면 host가 -32000 (server error)으로 간주.
+    /// 예: -32601 method not found, -32602 invalid params.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error_code: Option<i32>,
 }
 
 /// plugin → 호스트 비동기 알림 (요청 응답이 아님).
@@ -118,6 +122,7 @@ pub struct AuthMessage {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::Value;
 
     #[test]
     fn auth_round_trip() {
@@ -156,6 +161,7 @@ mod tests {
         assert_eq!(parsed.id, 42);
         assert_eq!(parsed.error.as_deref(), Some("boom"));
         assert!(parsed.result.is_none());
+        assert!(parsed.error_code.is_none());
     }
 
     #[test]
@@ -165,5 +171,32 @@ mod tests {
         assert_eq!(parsed.id, 7);
         assert!(parsed.result.is_some());
         assert!(parsed.error.is_none());
+        assert!(parsed.error_code.is_none());
+    }
+
+    #[test]
+    fn response_with_error_code() {
+        let resp = PluginResponse {
+            id: 1,
+            result: None,
+            error: Some("method not found".into()),
+            error_code: Some(-32601),
+        };
+        let s = serde_json::to_string(&resp).unwrap();
+        assert!(s.contains("\"error_code\":-32601"));
+        let parsed: PluginResponse = serde_json::from_str(&s).unwrap();
+        assert_eq!(parsed.error_code, Some(-32601));
+    }
+
+    #[test]
+    fn response_omits_error_code_when_none() {
+        let resp = PluginResponse {
+            id: 1,
+            result: Some(Value::Null),
+            error: None,
+            error_code: None,
+        };
+        let s = serde_json::to_string(&resp).unwrap();
+        assert!(!s.contains("error_code"));
     }
 }

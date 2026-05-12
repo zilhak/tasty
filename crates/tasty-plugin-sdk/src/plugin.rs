@@ -63,6 +63,64 @@ pub struct CommandInvokeCtx {
     pub command_id: String,
 }
 
+/// 매니페스트 `[[contributes.ipc_namespace]]`로 점유한 prefix의 메서드가
+/// IPC 라우터로부터 forward됐을 때 plugin에 전달되는 컨텍스트.
+#[derive(Debug, Clone)]
+pub struct IpcMethodCtx {
+    /// 호스트가 받은 원본 메서드 이름 (예: "codex.spawn"). plugin은 이걸로
+    /// 내부 dispatch한다.
+    pub method: String,
+    pub params: Value,
+    /// caller가 plugin이면 그 plugin id, CLI/사용자면 `None`.
+    pub caller_plugin_id: Option<String>,
+}
+
+/// `handle_ipc_method`에서 반환할 에러. JSON-RPC 에러 코드와 메시지를 담아
+/// 호스트가 원 caller에게 그대로 전달한다.
+#[derive(Debug, Clone)]
+pub struct IpcMethodError {
+    pub message: String,
+    /// JSON-RPC 에러 코드. 기본 -32000 (server error).
+    pub code: i32,
+}
+
+impl IpcMethodError {
+    pub fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            code: -32000,
+        }
+    }
+
+    pub fn with_code(message: impl Into<String>, code: i32) -> Self {
+        Self {
+            message: message.into(),
+            code,
+        }
+    }
+
+    pub fn not_found(method: &str) -> Self {
+        Self {
+            message: format!("method '{method}' not found"),
+            code: -32601,
+        }
+    }
+
+    pub fn not_implemented() -> Self {
+        Self {
+            message: "method not implemented".into(),
+            code: -32601,
+        }
+    }
+
+    pub fn invalid_params(msg: &str) -> Self {
+        Self {
+            message: format!("invalid params: {msg}"),
+            code: -32602,
+        }
+    }
+}
+
 /// Plugin 생명주기 진입점. 모든 메서드는 동기적으로 호출되고, plugin 로직은
 /// 내부에서 자유롭게 thread/async runtime을 사용할 수 있다.
 pub trait Plugin: Send + 'static {
@@ -108,5 +166,14 @@ pub trait Plugin: Send + 'static {
             tree: None,
             display_name: None,
         }
+    }
+
+    /// `ipc.invoke` — 매니페스트 `[[contributes.ipc_namespace]]`로 점유한 prefix에
+    /// 해당하는 IPC 메서드 호출이 호스트로부터 forward됨. plugin은 method 이름으로
+    /// 자체 dispatch하고 JSON 결과 또는 [`IpcMethodError`]를 반환한다.
+    /// 기본 구현은 `not_implemented` 에러.
+    fn handle_ipc_method(&mut self, ctx: IpcMethodCtx) -> Result<Value, IpcMethodError> {
+        let _ = ctx;
+        Err(IpcMethodError::not_implemented())
     }
 }

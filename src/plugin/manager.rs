@@ -716,7 +716,8 @@ impl PluginManager {
                 original_id,
             } => {
                 let response = if let Some(err) = resp.error {
-                    JsonRpcResponse::error(original_id, -32000, &err)
+                    let code = resp.error_code.unwrap_or(-32000);
+                    JsonRpcResponse::error(original_id, code, &err)
                 } else {
                     JsonRpcResponse::success(
                         original_id,
