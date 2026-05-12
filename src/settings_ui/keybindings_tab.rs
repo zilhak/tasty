@@ -784,7 +784,7 @@ fn draw_plugin_command_row(
                     egui::TextEdit::singleline(&mut buf)
                         .id_salt(edit_id)
                         .desired_width(180.0)
-                        .hint_text("ctrl+f5"),
+                        .hint_text(crate::theme_bridge::hint_text("ctrl+f5")),
                 );
                 if resp.changed() {
                     let parsed: Vec<String> = buf

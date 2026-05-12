@@ -638,7 +638,7 @@ fn draw_save_path_popup(
                 [ui.available_width() - 40.0, 22.0],
                 egui::TextEdit::singleline(&mut view.save_path_buffer)
                     .font(egui::FontId::proportional(th.font_size_body.value()))
-                    .hint_text("path/to/image.png"),
+                    .hint_text(crate::theme_bridge::hint_text("path/to/image.png")),
             );
             if !resp.has_focus() && view.save_path_buffer.is_empty() {
                 resp.request_focus();

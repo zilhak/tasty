@@ -625,7 +625,9 @@ fn font_family_picker(
             .show_ui(ui, |ui| {
                 ui.add(
                     egui::TextEdit::singleline(filter)
-                        .hint_text(t("settings.appearance.search_hint"))
+                        .hint_text(crate::theme_bridge::hint_text(t(
+                            "settings.appearance.search_hint",
+                        )))
                         .desired_width(190.0),
                 );
                 ui.separator();

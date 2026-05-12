@@ -123,7 +123,9 @@ impl GpuState {
                     let response = ui.add_sized(
                         [ui.available_width(), 32.0],
                         egui::TextEdit::singleline(shell_path)
-                            .hint_text("C:/Program Files/Git/bin/bash.exe")
+                            .hint_text(crate::theme_bridge::hint_text(
+                                "C:/Program Files/Git/bin/bash.exe",
+                            ))
                             .font(egui::TextStyle::Monospace),
                     );
 

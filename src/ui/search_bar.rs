@@ -18,7 +18,7 @@ pub fn draw_search_bar(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction {
         // Search input field
         let response = ui.add(
             egui::TextEdit::singleline(&mut state.search.query)
-                .hint_text(t("search.placeholder"))
+                .hint_text(crate::theme_bridge::hint_text(t("search.placeholder")))
                 .desired_width(200.0)
                 .font(egui::TextStyle::Body),
         );

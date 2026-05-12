@@ -27,6 +27,9 @@ pub struct Theme {
     pub text: HexColor,
     pub subtext1: HexColor,
     pub subtext0: HexColor,
+    /// 입력 위젯 placeholder/hint text 전용 색상.
+    /// 본문보다 충분히 흐려 입력값과 시각적으로 구분돼야 한다.
+    pub placeholder: HexColor,
 
     // ── Accent colors ──
     pub blue: HexColor,
@@ -105,6 +108,7 @@ impl Theme {
         text: HexColor::from_rgb(205, 214, 244), // #cdd6f4
         subtext1: HexColor::from_rgb(186, 194, 222), // #bac2de
         subtext0: HexColor::from_rgb(166, 173, 200), // #a6adc8
+        placeholder: HexColor::from_rgb(108, 112, 134), // overlay0 #6c7086
 
         // Accent colors
         blue: HexColor::from_rgb(137, 180, 250), // #89b4fa
@@ -194,6 +198,7 @@ impl Theme {
         text: HexColor::from_rgb(76, 79, 105),       // #4c4f69
         subtext1: HexColor::from_rgb(92, 95, 119),   // #5c5f77
         subtext0: HexColor::from_rgb(108, 111, 133), // #6c6f85
+        placeholder: HexColor::from_rgb(156, 160, 176), // overlay0 #9ca0b0
 
         // Accent colors
         blue: HexColor::from_rgb(30, 102, 245),      // #1e66f5

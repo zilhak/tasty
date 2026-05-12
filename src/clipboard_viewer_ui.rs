@@ -176,7 +176,9 @@ fn draw_inner(
     // ── 검색 입력 ──
     let resp = ui.add(
         egui::TextEdit::singleline(&mut viewer.search)
-            .hint_text(t("clipboard_viewer.search_placeholder"))
+            .hint_text(crate::theme_bridge::hint_text(t(
+                "clipboard_viewer.search_placeholder",
+            )))
             .desired_width(f32::INFINITY),
     );
     if !resp.has_focus() && viewer.search.is_empty() {

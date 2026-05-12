@@ -119,6 +119,7 @@ ui.painter().rect_filled(rect, 0.0, th.hover_overlay.to_egui_premultiplied());
 | `text` | 주요 텍스트 |
 | `subtext1` | 보조 텍스트 |
 | `subtext0` | 비활성 텍스트, 설명 |
+| `placeholder` | 입력 위젯 placeholder/hint text. 본문보다 충분히 흐려 입력값과 구분되어야 함. 호스트 측 `theme_bridge::hint_text(s)` 헬퍼로 `TextEdit::hint_text`에 전달. |
 
 ### 강조색
 

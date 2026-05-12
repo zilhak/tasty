@@ -134,7 +134,7 @@ fn render_node(ui: &mut Ui, node: &UiNode, surface: &RemoteSurface) {
                 .unwrap_or_default();
             let resp = ui.add(
                 egui::TextEdit::singleline(&mut buf)
-                    .hint_text(placeholder)
+                    .hint_text(crate::theme_bridge::hint_text(placeholder))
                     .desired_width(f32::INFINITY),
             );
             if resp.changed() {

@@ -7,6 +7,15 @@
 use egui::emath::GuiRounding as _;
 use tasty_core::theme::Theme;
 
+/// `TextEdit::hint_text`에 넘길 placeholder 텍스트를 디자인 시스템의
+/// `Theme::placeholder` 색상으로 래핑한다. egui의 기본 `weak_text_color`는
+/// `override_text_color`(우리는 `Theme::text`로 설정)에서 파생되므로 다크
+/// 테마에서도 본문과 비슷한 밝기로 나오기 쉽다 — 명시적으로 색을 박는다.
+pub fn hint_text(text: impl Into<String>) -> egui::RichText {
+    let th = tasty_core::theme::theme();
+    egui::RichText::new(text).color(egui::Color32::from(th.placeholder))
+}
+
 /// Apply this theme to an egui context with UI scale factor.
 pub fn apply_theme_to_egui(theme: &Theme, ctx: &egui::Context, ui_scale: f32) {
     let mut visuals = egui::Visuals::dark();

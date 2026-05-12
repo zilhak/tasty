@@ -379,7 +379,9 @@ fn draw_add_input(
     let mut submitted = false;
     ui.horizontal(|ui| {
         let edit = egui::TextEdit::singleline(&mut ui_state.add_path_input)
-            .hint_text(t("plugins.add_path_placeholder"))
+            .hint_text(crate::theme_bridge::hint_text(t(
+                "plugins.add_path_placeholder",
+            )))
             .desired_width(ui.available_width() - 90.0);
         let resp = ui.add(edit);
         if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
