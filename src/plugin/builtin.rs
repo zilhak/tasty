@@ -1,6 +1,6 @@
 //! 기본 제공 플러그인 (built-in) 인프라.
 //!
-//! Tasty는 일부 plugin (예: explorer)을 본 바이너리와 함께 배포한다. 이들은:
+//! Tasty는 일부 plugin (예: explorer, codex)을 본 바이너리와 함께 배포한다. 이들은:
 //!
 //! 1. **번들 위치**에서 디스커버됨 — release/dist 빌드: 실행 파일 옆 `plugins/`
 //!    디렉터리, dev 빌드: `target/<profile>/builtin-plugins/` (build helper로 채움).
@@ -16,11 +16,45 @@ use std::path::{Path, PathBuf};
 use crate::plugin::manifest::Manifest;
 use crate::plugin::{discovery, PluginManager};
 
-/// 기본 제공 플러그인 id 목록. dev/release 모두 동일.
-pub const BUILTIN_PLUGIN_IDS: &[&str] = &["com.tasty.explorer"];
+/// 한 builtin plugin의 패키지 메타 — id, dev workspace crate 경로, plugin 바이너리 이름.
+struct BuiltinSpec {
+    id: &'static str,
+    /// `crates/<crate_dir>/` — dev 빌드의 매니페스트/lang 원본 위치.
+    crate_dir: &'static str,
+    /// `target/<profile>/<bin_name>` — dev 빌드된 plugin 실행 바이너리 이름.
+    bin_name: &'static str,
+}
+
+#[cfg(windows)]
+const BUILTINS: &[BuiltinSpec] = &[
+    BuiltinSpec {
+        id: "com.tasty.explorer",
+        crate_dir: "tasty-plugin-explorer",
+        bin_name: "tasty-plugin-explorer.exe",
+    },
+    BuiltinSpec {
+        id: "com.tasty.codex",
+        crate_dir: "tasty-plugin-codex",
+        bin_name: "tasty-plugin-codex.exe",
+    },
+];
+
+#[cfg(not(windows))]
+const BUILTINS: &[BuiltinSpec] = &[
+    BuiltinSpec {
+        id: "com.tasty.explorer",
+        crate_dir: "tasty-plugin-explorer",
+        bin_name: "tasty-plugin-explorer",
+    },
+    BuiltinSpec {
+        id: "com.tasty.codex",
+        crate_dir: "tasty-plugin-codex",
+        bin_name: "tasty-plugin-codex",
+    },
+];
 
 pub fn is_builtin_plugin(id: &str) -> bool {
-    BUILTIN_PLUGIN_IDS.iter().any(|b| *b == id)
+    BUILTINS.iter().any(|b| b.id == id)
 }
 
 /// 번들 plugin 디렉터리들이 있는 루트 경로.
@@ -28,8 +62,8 @@ pub fn is_builtin_plugin(id: &str) -> bool {
 /// - 첫째: `TASTY_BUILTIN_PLUGINS_DIR` 환경 변수 강제 override.
 /// - 둘째: 실행 파일 옆 `plugins/` (release/dist에서 packaging 시 함께 복사).
 /// - 셋째: dev 빌드일 때 workspace 자동 탐색 — `target/<profile>/builtin-plugins/`에
-///   `crates/tasty-plugin-explorer/tasty-plugin.toml`과 빌드된 plugin binary를
-///   매 부팅마다 mtime 비교 후 갱신. `cargo build`만 하면 자동 반영됨.
+///   각 builtin plugin의 매니페스트와 빌드된 바이너리를 mtime 비교 후 갱신.
+///   `cargo build`만 하면 자동 반영됨.
 pub fn bundle_root() -> Option<PathBuf> {
     if let Ok(p) = std::env::var("TASTY_BUILTIN_PLUGINS_DIR") {
         let path = PathBuf::from(p);
@@ -55,54 +89,75 @@ pub fn bundle_root() -> Option<PathBuf> {
 }
 
 /// dev 빌드에서 workspace를 자동 탐색하여 `target/<profile>/builtin-plugins/`에
-/// builtin plugin들의 manifest+binary를 동기화. mtime이 더 새것일 때만 복사하므로
-/// 매 부팅 비용은 작다. workspace를 못 찾거나 plugin binary가 없으면 None.
+/// 등록된 builtin plugin들의 manifest+binary+lang을 동기화. mtime이 더 새것일
+/// 때만 복사하므로 매 부팅 비용은 작다. 한 plugin이라도 동기화에 성공했으면
+/// Some(bundle_root). workspace를 못 찾으면 None.
 #[cfg(debug_assertions)]
 fn ensure_dev_bundle(exe_dir: &Path) -> Option<PathBuf> {
     // exe_dir = .../target/<profile>
     let target_dir = exe_dir.parent()?; // .../target
     let workspace = target_dir.parent()?; // workspace root
 
-    let bin_name = if cfg!(windows) {
-        "tasty-plugin-explorer.exe"
+    let bundle_root = exe_dir.join("builtin-plugins");
+    let mut any_synced = false;
+    for spec in BUILTINS {
+        if sync_builtin_dev(workspace, exe_dir, &bundle_root, spec) {
+            any_synced = true;
+        }
+    }
+    if any_synced {
+        Some(bundle_root)
     } else {
-        "tasty-plugin-explorer"
-    };
-    let plugin_bin = exe_dir.join(bin_name);
+        // bundle_root가 이미 존재할 수도 있다 (이전 부팅에서 동기화됨).
+        // 그 경우엔 bundle_root() 호출자가 별도 분기에서 fallback으로 발견.
+        if bundle_root.is_dir() {
+            Some(bundle_root)
+        } else {
+            None
+        }
+    }
+}
+
+/// 한 builtin plugin을 dev bundle로 동기화. 바이너리 또는 매니페스트가
+/// workspace에 없으면 (예: codex만 빌드 안 됨) false 반환.
+#[cfg(debug_assertions)]
+fn sync_builtin_dev(
+    workspace: &Path,
+    exe_dir: &Path,
+    bundle_root: &Path,
+    spec: &BuiltinSpec,
+) -> bool {
+    let plugin_bin = exe_dir.join(spec.bin_name);
     let src_manifest = workspace
         .join("crates")
-        .join("tasty-plugin-explorer")
+        .join(spec.crate_dir)
         .join("tasty-plugin.toml");
     if !plugin_bin.exists() || !src_manifest.exists() {
-        return None;
+        return false;
     }
 
-    let bundle_root = exe_dir.join("builtin-plugins");
-    let dest_dir = bundle_root.join("com.tasty.explorer");
+    let dest_dir = bundle_root.join(spec.id);
     if let Err(e) = std::fs::create_dir_all(&dest_dir) {
         tracing::warn!("dev bundle: mkdir {} failed: {e}", dest_dir.display());
-        return None;
+        return false;
     }
     if let Err(e) = copy_if_newer(&src_manifest, &dest_dir.join("tasty-plugin.toml")) {
-        tracing::warn!("dev bundle: copy manifest failed: {e}");
-        return None;
+        tracing::warn!("dev bundle: copy manifest for {} failed: {e}", spec.id);
+        return false;
     }
-    if let Err(e) = copy_if_newer(&plugin_bin, &dest_dir.join(bin_name)) {
-        tracing::warn!("dev bundle: copy binary failed: {e}");
-        return None;
+    if let Err(e) = copy_if_newer(&plugin_bin, &dest_dir.join(spec.bin_name)) {
+        tracing::warn!("dev bundle: copy binary for {} failed: {e}", spec.id);
+        return false;
     }
     // plugin lang/ 디렉토리도 함께 동기화 (i18n 키 호스트 머지에 필요).
-    let src_lang = workspace
-        .join("crates")
-        .join("tasty-plugin-explorer")
-        .join("lang");
+    let src_lang = workspace.join("crates").join(spec.crate_dir).join("lang");
     if src_lang.is_dir() {
         let dest_lang = dest_dir.join("lang");
         if let Err(e) = sync_dir_if_newer(&src_lang, &dest_lang) {
-            tracing::warn!("dev bundle: copy lang failed: {e}");
+            tracing::warn!("dev bundle: copy lang for {} failed: {e}", spec.id);
         }
     }
-    Some(bundle_root)
+    true
 }
 
 #[cfg(debug_assertions)]
@@ -134,8 +189,13 @@ fn copy_if_newer(src: &Path, dest: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// 모든 기본 제공 플러그인을 점검: 사용자 디렉터리에 없고 `removed_builtins`
-/// 목록에도 없으면 번들에서 복사. 호출자는 이후 `discover()`를 다시 돌려야 함.
+/// 모든 기본 제공 플러그인을 점검:
+/// 1. 사용자 디렉터리에 없고 `removed_builtins` 목록에도 없으면 번들에서 복사 +
+///    매니페스트 권한을 자동 grant.
+/// 2. 이미 사용자 디렉터리에 있지만 `plugins.toml`에 grant 엔트리가 한 번도
+///    기록된 적 없는 builtin은 매니페스트 권한을 자동 grant (이전 버전에서
+///    builtin으로 인식되지 않은 채 설치된 plugin 복구). 사용자가 명시적으로
+///    빈 리스트로 둔 경우(`granted = []`)는 entry는 있으니 건드리지 않는다.
 ///
 /// 실패한 항목은 warn 로그만 남기고 계속 진행 (다른 builtin은 영향 없음).
 pub fn install_builtins_if_needed(mgr: &mut PluginManager) {
@@ -146,49 +206,56 @@ pub fn install_builtins_if_needed(mgr: &mut PluginManager) {
             return;
         }
     };
-    let bundle = match bundle_root() {
-        Some(p) => p,
-        None => {
-            // 번들이 없는 환경 (예: dev 빌드에서 build helper를 아직 안 돌림).
-            // 이 경우 묵묵히 넘어간다 — 외부 plugin만 사용하는 흐름과 동일.
-            return;
-        }
-    };
+    let bundle = bundle_root();
 
-    let mut installed_any = false;
-    for id in BUILTIN_PLUGIN_IDS {
-        let dest = dest_root.join(id);
-        if dest.exists() {
-            continue;
+    let mut config_dirty = false;
+    for spec in BUILTINS {
+        let dest = dest_root.join(spec.id);
+        let already_present = dest.exists();
+
+        // Step 1: 번들에서 복사 (필요한 경우만).
+        if !already_present && !mgr.config.is_builtin_removed(spec.id) {
+            if let Some(bundle) = bundle.as_ref() {
+                let src = bundle.join(spec.id);
+                if !src.is_dir() {
+                    tracing::debug!(
+                        "builtin plugin '{}' not in bundle ({}), skipping",
+                        spec.id,
+                        src.display()
+                    );
+                } else {
+                    if let Err(e) = std::fs::create_dir_all(&dest_root) {
+                        tracing::warn!(
+                            "install_builtins: mkdir {} failed: {e}",
+                            dest_root.display()
+                        );
+                        continue;
+                    }
+                    if let Err(e) = copy_dir_recursive(&src, &dest) {
+                        tracing::warn!("install_builtins: copy '{}' failed: {e}", spec.id);
+                        continue;
+                    }
+                    tracing::info!("installed builtin plugin '{}' from bundle", spec.id);
+                }
+            }
         }
-        if mgr.config.is_builtin_removed(id) {
-            continue;
+
+        // Step 2: dest가 존재하고 grant entry가 없으면 매니페스트 권한 자동 grant.
+        if dest.exists() && !mgr.config.grants.contains_key(spec.id) {
+            if let Ok(manifest) = Manifest::load(&dest) {
+                if !manifest.permissions.is_empty() {
+                    mgr.config
+                        .set_granted(spec.id, manifest.permissions.clone());
+                    config_dirty = true;
+                    tracing::info!(
+                        "auto-granted manifest permissions for builtin '{}'",
+                        spec.id
+                    );
+                }
+            }
         }
-        let src = bundle.join(id);
-        if !src.is_dir() {
-            tracing::debug!(
-                "builtin plugin '{}' not in bundle ({}), skipping",
-                id,
-                src.display()
-            );
-            continue;
-        }
-        if let Err(e) = std::fs::create_dir_all(&dest_root) {
-            tracing::warn!("install_builtins: mkdir {} failed: {e}", dest_root.display());
-            continue;
-        }
-        if let Err(e) = copy_dir_recursive(&src, &dest) {
-            tracing::warn!("install_builtins: copy '{id}' failed: {e}");
-            continue;
-        }
-        // 매니페스트의 모든 권한을 grant (built-in은 사용자가 명시 거부하기 전엔 신뢰).
-        if let Ok(manifest) = Manifest::load(&dest) {
-            mgr.config.set_granted(&manifest.id, manifest.permissions.clone());
-        }
-        tracing::info!("installed builtin plugin '{id}' from bundle");
-        installed_any = true;
     }
-    if installed_any {
+    if config_dirty {
         if let Err(e) = mgr.config.save() {
             tracing::warn!("install_builtins: save plugins.toml failed: {e}");
         }
@@ -231,6 +298,11 @@ mod tests {
     #[test]
     fn explorer_is_builtin() {
         assert!(is_builtin_plugin("com.tasty.explorer"));
+    }
+
+    #[test]
+    fn codex_is_builtin() {
+        assert!(is_builtin_plugin("com.tasty.codex"));
     }
 
     #[test]

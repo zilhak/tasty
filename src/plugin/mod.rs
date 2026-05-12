@@ -22,7 +22,6 @@ pub mod ui_tree_render;
 
 pub use builtin::{
     bundle_root, install_builtins_if_needed, is_builtin_plugin, mark_builtin_removed,
-    BUILTIN_PLUGIN_IDS,
 };
 pub use discovery::{discover, plugin_root};
 pub use listener::HostListener;
