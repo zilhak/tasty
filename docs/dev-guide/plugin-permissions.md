@@ -27,6 +27,19 @@ Plugin이 호스트 IPC를 호출할 때 적용되는 권한 게이트의 동작
 
 debug 메서드 / 호스트 자체 메서드(`plugin.*`, `window.*`)는 `local_only()`로 등록한다.
 
+## 매니페스트 contributes 권한 게이트
+
+IPC 메서드 외에도 `contributes` 일부 항목은 권한 매핑을 강제한다. 검증은
+plugin 로드 단계에서 `manifest::validate_*_permissions` 함수가 수행하며,
+누락 시 plugin 시작이 거부된다.
+
+| contributes 항목 | 요구 권한 | 검증 함수 |
+|----------------|----------|----------|
+| `surface_observer` (event = "closed") | `surface.read` | `validate_observer_permissions` |
+
+새 contributes 항목을 추가할 때 권한 게이트가 필요하다면 동일 패턴으로 검증
+함수를 만들고 `PluginManifest::validate_permissions`에서 호출한다.
+
 ## 새 권한 카테고리 추가
 
 1. `Permission` enum에 variant 추가

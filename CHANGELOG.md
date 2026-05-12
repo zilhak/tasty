@@ -20,6 +20,7 @@
 - IPC 메서드 별칭 정규화 layer (`src/ipc/alias.rs`). 옛 이름은 호스트가 새 이름으로 자동 매핑하면서 `tracing::warn`을 출력.
 - 명명 규칙 자동 검증 테스트 (`src/ipc/method_meta.rs::all_registered_methods_match_naming_policy`).
 - Plugin SDK에 `PluginError` 도메인 에러 + `From<PluginError> for IpcMethodError`.
+- Plugin surface lifecycle observer — 매니페스트 `[[contributes.surface_observer]] event = "closed"`(`surface.read` 권한 필수)로 구독하면 다른 surface가 닫혔을 때 `Plugin::on_surface_lifecycle(SurfaceLifecycleCtx { event, surface_id, kind, reason })` 콜백을 받는다. fire-and-forget. reason은 `UserClose`(PTY 종료/단축키/탭 우클릭) 또는 `AgentClose`(IPC `surface.close*`). SDK에 `SurfaceLifecycleCtx` / `SurfaceLifecycleEvent` / `SurfaceCloseReason` 노출.
 
 ### Changed
 - `surface.meta_set` / `meta_get` / `meta_unset` / `meta_list` → `surface.meta.set` / `meta.get` / `meta.unset` / `meta.list` (점 표기). 옛 이름은 alias로 동작하지만 deprecated.

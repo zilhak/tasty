@@ -310,6 +310,57 @@ contribute한 namespace prefix와 매칭되어야 한다 (그래야 라우팅이
 `"ipc.invoke:<prefix>"`를 선언하고 사용자가 grant해야 한다. 자기 namespace를
 자기가 호출하는 무한 forward는 호스트가 `-32001`로 거부한다.
 
+## 4-3. Surface 닫힘 알림 (surface_observer)
+
+다른 plugin이나 사용자가 surface를 닫았을 때 알림을 받고 싶다면 매니페스트에
+`[[contributes.surface_observer]]`를 선언한다. (자기 자신이 만든 surface의
+정리는 `destroy_surface`가 별도로 호출되므로 observer가 필요 없다.)
+
+```toml
+permissions = ["surface.read"]   # 필수
+
+[[contributes.surface_observer]]
+event = "closed"   # 현재 지원되는 유일한 값
+```
+
+- `permissions`에 `"surface.read"`가 없으면 호스트가 매니페스트 검증 단계에서
+  로드를 거부한다. lifecycle 알림은 다른 surface 정보를 받는 행위이기 때문.
+- 같은 plugin이 같은 event를 두 번 선언해도 중복 등록되지 않는다 (호스트가
+  `HashSet`으로 dedupe).
+
+`Plugin::on_surface_lifecycle` 트레이트 메서드를 구현하면 SDK가 fire-and-forget
+으로 호출한다. 응답값은 무시되므로 무거운 작업은 자체 스레드/큐로 처리한다.
+
+```rust
+use tasty_plugin_sdk::{Plugin, SurfaceCloseReason, SurfaceLifecycleCtx};
+
+impl Plugin for MyPlugin {
+    fn on_surface_lifecycle(&mut self, ctx: SurfaceLifecycleCtx) {
+        match ctx.reason {
+            SurfaceCloseReason::UserClose => {
+                // 사용자가 직접 닫음 — 닫힌 항목 복원 정책상 사용자 stack에 들어감.
+            }
+            SurfaceCloseReason::AgentClose => {
+                // 다른 plugin/CLI가 IPC로 닫음 — 사용자 undo stack에 추가되지 않는다.
+            }
+        }
+        // ctx.surface_id / ctx.kind 로 어떤 surface가 닫혔는지 알 수 있다.
+    }
+}
+```
+
+### close 사이트 분류
+
+| close 경로 | reason |
+|----------|---------|
+| PTY ProcessExited (자연 종료) | `UserClose` |
+| 단축키 `close_surface` | `UserClose` |
+| 탭 우클릭 → Close | `UserClose` |
+| IPC `surface.close` / `surface.close_self` | `AgentClose` |
+
+cascade 닫힘(탭/팬/워크스페이스 전체 삭제로 따라가는 surface)은 현재
+broadcast 대상이 아니다. 명시적으로 close된 surface_id 만 알림이 발사된다.
+
 ## 5. 영속화 (snapshot/restore)
 
 세션 복원이 필요한 경우 두 메서드를 구현한다.
