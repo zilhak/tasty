@@ -963,6 +963,26 @@ impl App {
                 continue;
             }
 
+            // Plugin namespace IPC: 메서드가 plugin이 contribute한 prefix에 매칭되면
+            // owner plugin에 forward. 응답은 plugin이 줄 때까지 보류되며 main loop
+            // 다음 tick에서 `plugin_manager.handle_plugin_response`가 client에 회신.
+            // 정적/GUI 분기를 모두 통과하지 못한 메서드만 여기 도달하므로, plugin이
+            // 호스트 명령을 가릴 수 없다.
+            if let Some(mgr) = self.plugin_manager.as_mut() {
+                if mgr.ipc_namespaces.resolve(&cmd.request.method).is_some() {
+                    let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
+                    mgr.forward_namespace_call(
+                        &cmd.request.method,
+                        cmd.request.params.clone(),
+                        None, // CLI/사용자 호출. plugin → plugin 호출은 step 04에서.
+                        id,
+                        cmd.response_tx.clone(),
+                    );
+                    processed = true;
+                    continue;
+                }
+            }
+
             // All other commands: route to focused MainWindow or parked state
             let focused_id = self.engine.focused_window_id;
             if let Some(id) = focused_id {

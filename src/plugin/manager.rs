@@ -14,7 +14,9 @@ use std::time::{Duration, Instant};
 
 use serde_json::json;
 
+use crate::ipc::protocol::JsonRpcResponse;
 use crate::plugin::host_cmd::{HostCmd, SurfaceHandles};
+use crate::plugin::ipc_namespace::IpcNamespaceRegistry;
 use crate::plugin::listener::HostListener;
 use crate::plugin::manifest::{Permission, PluginPackage};
 use crate::plugin::process::PluginProcess;
@@ -41,6 +43,13 @@ enum PendingRequestKind {
     Ping,
     /// 그 외 (host.hello 등) — 응답 무시.
     Other,
+    /// Client IPC 요청을 plugin namespace로 forward한 경우. plugin이 응답을 주면
+    /// 보관한 response_tx로 client에 회신한다.
+    NamespaceInvoke {
+        plugin_id: String,
+        response_tx: mpsc::SyncSender<JsonRpcResponse>,
+        original_id: serde_json::Value,
+    },
 }
 
 struct RemoteSurfaceEntry {
@@ -84,6 +93,10 @@ pub struct PluginManager {
     /// plugin이 매니페스트로 선언한 단축키 command 일람. plugin
     /// enable/disable/install/remove 시 갱신됨.
     pub command_registry: super::command_registry::PluginCommandRegistry,
+    /// plugin이 매니페스트로 선언한 IPC namespace prefix 일람. plugin이
+    /// 실행 중일 때만 등록되며, 호스트 IPC dispatcher가 namespace 메서드를
+    /// 어느 plugin에 forward할지 해결할 때 조회한다.
+    pub ipc_namespaces: IpcNamespaceRegistry,
 }
 
 /// plugin → host IPC 호출 한 건. 라우팅 후 결과를 plugin에 회신해야 함.
@@ -123,6 +136,7 @@ impl PluginManager {
             plugin_permissions: HashMap::new(),
             pending_plugin_calls: Vec::new(),
             command_registry: super::command_registry::PluginCommandRegistry::new(),
+            ipc_namespaces: IpcNamespaceRegistry::new(),
         }
     }
 
@@ -259,6 +273,18 @@ impl PluginManager {
                 tracing::info!("plugin started: {}", p.plugin_id);
                 self.processes.insert(pkg.manifest.id.clone(), p);
                 self.spawn_failures.remove(&pkg.manifest.id);
+                // manifest의 ipc_namespace contribute를 registry에 흡수.
+                for ns in &pkg.manifest.contributes.ipc_namespace {
+                    if let Err(e) =
+                        self.ipc_namespaces.register(&pkg.manifest.id, &ns.prefix)
+                    {
+                        tracing::warn!(
+                            "plugin '{}' ipc namespace registration failed: {}",
+                            pkg.manifest.id,
+                            e
+                        );
+                    }
+                }
             }
             Err(e) => {
                 tracing::error!("plugin '{}' spawn failed: {}", pkg.manifest.id, e);
@@ -423,6 +449,8 @@ impl PluginManager {
             if let Some(proc) = self.processes.remove(&id) {
                 proc.shutdown(Duration::from_secs(2));
             }
+            self.ipc_namespaces.unregister_plugin(&id);
+            self.cancel_pending_namespace_calls(&id, "plugin restarting");
             if let Some(pkg) = self.packages.iter().find(|p| p.manifest.id == id).cloned() {
                 self.start_plugin_internal(&pkg);
             }
@@ -521,6 +549,110 @@ impl PluginManager {
         }
     }
 
+    /// 호스트 IPC dispatcher가 받은 namespace 메서드를 owner plugin에 forward.
+    /// 응답이 도착하면 `response_tx`로 client에 회신된다. 매칭이 없거나 plugin이
+    /// 실행 중이 아니면 즉시 에러 응답을 `response_tx`로 송신.
+    ///
+    /// caller plugin이 target plugin과 같으면 self-deadlock 위험이 있어 거부한다.
+    pub fn forward_namespace_call(
+        &mut self,
+        method: &str,
+        params: serde_json::Value,
+        caller_plugin_id: Option<&str>,
+        original_id: serde_json::Value,
+        response_tx: mpsc::SyncSender<JsonRpcResponse>,
+    ) {
+        let Some(plugin_id) = self.ipc_namespaces.resolve(method).map(str::to_string)
+        else {
+            let _ = response_tx.send(JsonRpcResponse::method_not_found(
+                original_id,
+                method,
+            ));
+            return;
+        };
+        if let Some(caller) = caller_plugin_id {
+            if caller == plugin_id {
+                let _ = response_tx.send(JsonRpcResponse::error(
+                    original_id,
+                    -32001,
+                    &format!(
+                        "plugin '{caller}' cannot invoke its own namespace method '{method}'"
+                    ),
+                ));
+                return;
+            }
+        }
+        let proc = match self.processes.get(&plugin_id) {
+            Some(p) => p,
+            None => {
+                let _ = response_tx.send(JsonRpcResponse::error(
+                    original_id,
+                    -32002,
+                    &format!("plugin '{plugin_id}' is not running"),
+                ));
+                return;
+            }
+        };
+        let req_id = self.next_request_id.fetch_add(1, Ordering::Relaxed);
+        let req = PluginRequest {
+            method: tasty_plugin_protocol::ipc_method::METHOD_IPC_INVOKE.to_string(),
+            params: json!({
+                "method": method,
+                "params": params,
+                "caller_plugin_id": caller_plugin_id,
+            }),
+            id: req_id,
+        };
+        if let Err(e) = proc.req_tx.send(req) {
+            tracing::warn!(
+                "plugin '{plugin_id}': failed to forward ipc.invoke: {e}"
+            );
+            let _ = response_tx.send(JsonRpcResponse::error(
+                original_id,
+                -32003,
+                &format!("plugin '{plugin_id}' send failed: {e}"),
+            ));
+            return;
+        }
+        self.pending_requests.insert(
+            req_id,
+            PendingRequestKind::NamespaceInvoke {
+                plugin_id,
+                response_tx,
+                original_id,
+            },
+        );
+    }
+
+    /// 죽거나 비활성화된 plugin이 가진 모든 namespace pending에 에러 응답을 보내고
+    /// pending에서 제거한다.
+    fn cancel_pending_namespace_calls(&mut self, plugin_id: &str, reason: &str) {
+        let to_cancel: Vec<u64> = self
+            .pending_requests
+            .iter()
+            .filter_map(|(id, kind)| match kind {
+                PendingRequestKind::NamespaceInvoke {
+                    plugin_id: pid, ..
+                } if pid == plugin_id => Some(*id),
+                _ => None,
+            })
+            .collect();
+        for id in to_cancel {
+            if let Some(PendingRequestKind::NamespaceInvoke {
+                response_tx,
+                original_id,
+                ..
+            }) = self.pending_requests.remove(&id)
+            {
+                let _ = response_tx.send(JsonRpcResponse::error(
+                    original_id,
+                    -32004,
+                    &format!("plugin '{plugin_id}' unavailable: {reason}"),
+                ));
+            }
+        }
+    }
+
     fn drain_plugin_responses(&mut self) {
         let plugin_ids: Vec<String> = self.processes.keys().cloned().collect();
         for plugin_id in plugin_ids {
@@ -578,6 +710,21 @@ impl PluginManager {
                 }
             }
             PendingRequestKind::Ping | PendingRequestKind::Other => {}
+            PendingRequestKind::NamespaceInvoke {
+                plugin_id: _,
+                response_tx,
+                original_id,
+            } => {
+                let response = if let Some(err) = resp.error {
+                    JsonRpcResponse::error(original_id, -32000, &err)
+                } else {
+                    JsonRpcResponse::success(
+                        original_id,
+                        resp.result.unwrap_or(serde_json::Value::Null),
+                    )
+                };
+                let _ = response_tx.send(response);
+            }
         }
     }
 
@@ -658,6 +805,8 @@ impl PluginManager {
         if let Some(proc) = self.processes.remove(plugin_id) {
             proc.shutdown(Duration::from_secs(2));
         }
+        self.ipc_namespaces.unregister_plugin(plugin_id);
+        self.cancel_pending_namespace_calls(plugin_id, "plugin disabled");
         Ok(())
     }
 
