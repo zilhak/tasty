@@ -213,8 +213,11 @@ pub fn install_builtins_if_needed(mgr: &mut PluginManager) {
         let dest = dest_root.join(spec.id);
         let already_present = dest.exists();
 
-        // Step 1: 번들에서 복사 (필요한 경우만).
-        if !already_present && !mgr.config.is_builtin_removed(spec.id) {
+        // Step 1: 번들에서 복사. 신규 설치 + 기존 설치된 builtin의 manifest/binary
+        // 갱신을 동일 경로에서 처리한다. builtin은 호스트 소유 리소스이므로 사용자
+        // 디렉터리에 있더라도 번들이 더 새것이면 덮어쓴다 (사용자가 직접 편집하는
+        // 용도가 아님).
+        if !mgr.config.is_builtin_removed(spec.id) {
             if let Some(bundle) = bundle.as_ref() {
                 let src = bundle.join(spec.id);
                 if !src.is_dir() {
@@ -231,11 +234,18 @@ pub fn install_builtins_if_needed(mgr: &mut PluginManager) {
                         );
                         continue;
                     }
-                    if let Err(e) = copy_dir_recursive(&src, &dest) {
-                        tracing::warn!("install_builtins: copy '{}' failed: {e}", spec.id);
-                        continue;
+                    if already_present {
+                        if let Err(e) = sync_dir_recursive_if_newer(&src, &dest) {
+                            tracing::warn!("install_builtins: sync '{}' failed: {e}", spec.id);
+                            continue;
+                        }
+                    } else {
+                        if let Err(e) = copy_dir_recursive(&src, &dest) {
+                            tracing::warn!("install_builtins: copy '{}' failed: {e}", spec.id);
+                            continue;
+                        }
+                        tracing::info!("installed builtin plugin '{}' from bundle", spec.id);
                     }
-                    tracing::info!("installed builtin plugin '{}' from bundle", spec.id);
                 }
             }
         }
@@ -289,6 +299,35 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
         }
     }
     Ok(())
+}
+
+/// `copy_dir_recursive`의 idempotent 버전. `src`의 각 파일이 `dst`보다 더 새것일
+/// 때만 복사한다. 사용자 디렉터리에 이미 설치된 builtin을 번들 최신본으로 갱신할
+/// 때 사용 — 동일한 manifest는 건너뛰고, 매니페스트/바이너리 변경분만 반영한다.
+fn sync_dir_recursive_if_newer(src: &Path, dst: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dst)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let ty = entry.file_type()?;
+        let dest_path = dst.join(entry.file_name());
+        if ty.is_dir() {
+            sync_dir_recursive_if_newer(&entry.path(), &dest_path)?;
+        } else {
+            copy_file_if_newer(&entry.path(), &dest_path)?;
+        }
+    }
+    Ok(())
+}
+
+fn copy_file_if_newer(src: &Path, dst: &Path) -> std::io::Result<()> {
+    if let (Ok(src_meta), Ok(dst_meta)) = (std::fs::metadata(src), std::fs::metadata(dst)) {
+        if let (Ok(sm), Ok(dm)) = (src_meta.modified(), dst_meta.modified()) {
+            if sm <= dm {
+                return Ok(());
+            }
+        }
+    }
+    std::fs::copy(src, dst).map(|_| ())
 }
 
 #[cfg(test)]
