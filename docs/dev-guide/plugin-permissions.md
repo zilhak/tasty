@@ -77,3 +77,7 @@ plugin → PluginEvent::IpcCall { call_id, method, params }
 ## 한계
 
 권한 게이트는 **호스트 IPC 호출만 막는다**. Plugin이 자기 프로세스에서 직접 `std::fs::write`로 임의 경로에 쓰면 호스트는 알 수 없다. 진정한 격리는 OS-level 샌드박스(seccomp / sandbox-exec / WASM 등)가 필요하며 현재 범위 외다.
+
+따라서 매니페스트의 `permissions[]`는 **"호스트 API를 호출할 권한"** 이지 "OS 자원에 대한 시스템 권한"이 아니다. UI/문서에서 사용자에게 grant를 요청할 때 이 표현을 유지해야 false security를 만들지 않는다.
+
+1.0까지의 정책 선택과 재검토 trigger는 [plugin-ecosystem.md §3](plugin-ecosystem.md) 참조.
