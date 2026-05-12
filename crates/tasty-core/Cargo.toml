@@ -35,3 +35,6 @@ tracing = "0.1"
 
 # Error handling (model::workspace, model::pane)
 anyhow = "1"
+
+[lints]
+workspace = true

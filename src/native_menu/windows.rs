@@ -21,6 +21,11 @@ pub fn show_context_menu(
         _ => return None,
     };
 
+    // SAFETY: 네이티브 컨텍스트 메뉴는 winit 윈도우의 main thread (winit event loop)
+    // 에서만 호출된다 (PendingNativeMenu 패턴, docs/dev-guide/context-menu.md 참조).
+    // hwnd는 위에서 RawWindowHandle::Win32에서 가져온 활성 윈도우 핸들이고, AppendMenuW에
+    // 넘기는 PCWSTR은 호출 직전에 만든 local Vec<u16>의 포인터로 TrackPopupMenu 종료까지
+    // 살아있다. DestroyMenu는 마지막에 호출 (아래 정리부).
     unsafe {
         let hmenu = CreatePopupMenu().ok()?;
 

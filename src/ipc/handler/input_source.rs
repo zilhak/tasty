@@ -89,6 +89,9 @@ const K_CF_STRING_ENCODING_UTF8: u32 = 0x0800_0100;
 
 fn cf_string(s: &str) -> *const c_void {
     let c_str = std::ffi::CString::new(s).unwrap();
+    // SAFETY: c_str은 호출 끝까지 살아 있는 local CString — CFStringCreateWithCString이
+    // 내부 복사를 만들어 caller로부터 독립한다 (CF는 immutable copy semantics).
+    // 반환 포인터는 CFStringRef로, caller가 CFRelease 책임을 진다 (switch_input_source에서 처리).
     unsafe {
         CFStringCreateWithCString(
             std::ptr::null(),
@@ -99,6 +102,11 @@ fn cf_string(s: &str) -> *const c_void {
 }
 
 fn switch_input_source(source_id: &str) -> Result<(), String> {
+    // SAFETY: 전체 시퀀스는 TIS(Text Input Source) 표준 사용 패턴.
+    // - cf_string으로 만든 key/val은 CFDictionaryCreate에 넘기면 dict가 retain.
+    // - TISCreateInputSourceList는 CFArrayRef를 +1 retain count로 반환 → CFRelease로 정리.
+    // - 모든 호출은 IPC 핸들러 스레드(또는 main)에서 수행되며, TIS API는 process-wide
+    //   thread-safe하다 (Apple 문서).
     unsafe {
         let key = cf_string("TISPropertyInputSourceID");
         let val = cf_string(source_id);
@@ -133,6 +141,10 @@ fn switch_input_source(source_id: &str) -> Result<(), String> {
 }
 
 fn post_key_event(keycode: u16, key_down: bool) {
+    // SAFETY: CGEventSourceCreate → CGEventCreateKeyboardEvent → CGEventPost는 CoreGraphics
+    // 표준 키 시뮬레이션 패턴. 반환된 source/event는 CF object로 ARC 없이는 leak되지만,
+    // 이는 debug-only `debug.raw_key` 경로에서 호출되어 leak 영향이 미미하고 별도 fix 대상.
+    // 본 SAFETY 보증 범위는 호출 자체의 UB 부재.
     unsafe {
         // kCGEventSourceStateCombinedSessionState = 0
         let source = CGEventSourceCreate(0);

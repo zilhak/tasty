@@ -51,11 +51,14 @@ unsafe extern "C-unwind" fn dock_menu(
     let menu = NSMenu::new(mtm);
     let item = NSMenuItem::new(mtm);
     item.setTitle(&NSString::from_str("New Window"));
+    // SAFETY: 본 함수는 unsafe extern "C-unwind" — main thread NSApplicationDelegate
+    // 콜백으로 ObjC 런타임이 호출. setAction은 AppKit main-thread-only이며 invariant 충족.
     unsafe { item.setAction(Some(sel!(tastyNewWindow:))) };
     menu.addItem(&item);
 
     let ptr: *mut NSMenu = Retained::into_raw(menu);
-    let _: *mut AnyObject = msg_send![ptr, autorelease];
+    // SAFETY: autorelease는 NSObject 표준 메서드 — main thread 호출이므로 ObjC runtime 안전.
+    let _: *mut AnyObject = unsafe { msg_send![ptr, autorelease] };
     ptr.cast()
 }
 
@@ -90,6 +93,12 @@ pub fn inject_delegate_methods() {
         }
     };
 
+    // SAFETY: 본 블록은 winit의 NSApplicationDelegate 클래스에 메서드 3개를 주입하는
+    // class_addMethod 호출 시퀀스. 호출은 `resumed()` 흐름의 main thread에서만 수행된다
+    // (MainThreadMarker로 위에서 검증). 주입하는 함수 포인터(handle_reopen 등)는 모두
+    // 'static fn이므로 lifetime 안전. transmute는 unsafe extern fn → Imp (둘 다 raw fn ptr)
+    // 캐스팅이며 ObjC runtime이 ABI-compatible로 받음을 objc2 문서가 보장. 시그니처 인코딩
+    // 문자열(c"B@:@B" 등)은 'static C string.
     unsafe {
         // Get the class of winit's delegate and inject our methods into it.
         let cls: *mut AnyClass = msg_send![&*delegate, class];
@@ -126,6 +135,8 @@ pub fn inject_delegate_methods() {
     }
 
     // Set up app menu
+    // SAFETY: delegate는 Retained<dyn>, msg_send![,self]는 self pointer를 얻는 ObjC 표준 호출.
+    // main thread에서 호출됨.
     let delegate_ptr: *mut AnyObject = unsafe { msg_send![&*delegate, self] };
     setup_main_menu(&app, mtm, delegate_ptr);
 
@@ -150,6 +161,9 @@ fn setup_main_menu(app: &NSApplication, mtm: MainThreadMarker, delegate: *mut An
 
     let new_window_item = NSMenuItem::new(mtm);
     new_window_item.setTitle(&NSString::from_str("New Window"));
+    // SAFETY: 호출자가 main thread(mtm)에서 호출. delegate는 AnyObject 포인터로,
+    // winit의 NSApplicationDelegate를 가리키며 app이 살아있는 동안 valid.
+    // NSEventModifierFlags 조합은 bitflag로 ObjC API에서 받아들이는 표준 값.
     unsafe {
         new_window_item.setAction(Some(sel!(tastyNewWindow:)));
         new_window_item.setTarget(Some(&*delegate.cast()));
@@ -198,6 +212,7 @@ fn set_dock_icon(app: &NSApplication) {
     let data = NSData::with_bytes(png_bytes);
     let image = NSImage::initWithData(NSImage::alloc(), &data);
     if let Some(image) = image {
+        // SAFETY: setApplicationIconImage은 main thread NSApplication 메서드. 호출자가 보장.
         unsafe { app.setApplicationIconImage(Some(&image)) };
     } else {
         tracing::warn!("Failed to create NSImage for dock icon");

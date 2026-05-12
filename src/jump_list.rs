@@ -28,6 +28,12 @@ pub fn setup_jump_list() {
 }
 
 fn setup_jump_list_inner() -> Result<(), Box<dyn std::error::Error>> {
+    // SAFETY: 전체 Windows Jump List COM 시퀀스를 단일 thread (main)에서 실행.
+    // CoCreateInstance는 process-wide COM init 후 호출되며(main.rs에서 보장),
+    // 모든 PCWSTR 인자는 'static w!() 매크로 또는 호출 끝까지 살아있는
+    // local Vec<u16>의 ptr이다. shell_link.cast()는 같은 객체의 COM interface
+    // re-query로 safe. IObjectArray/ICustomDestinationList 등 모든 호출은
+    // 같은 thread에서 순차 실행되며 COM 객체는 Drop으로 자동 Release.
     unsafe {
         // Get the current executable path
         let exe_path = std::env::current_exe().map_err(|e| format!("current_exe failed: {e}"))?;

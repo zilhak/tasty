@@ -32,6 +32,12 @@ impl PlatformWebView {
             _ => return Err("Not a Win32 window".to_string()),
         };
 
+        // SAFETY: WebView2 컨트롤러는 main thread (winit event loop)에서만 생성/소멸한다.
+        // WNDCLASSEXW.lpfnWndProc에 DefWindowProcW를 transmute로 함수 포인터로 대입하는데,
+        // DefWindowProcW의 시그니처와 WNDPROC 시그니처가 호환됨을 windows-rs가 보장.
+        // CreateWindowExW의 parent HWND는 winit이 살아있는 동안 valid.
+        // CreateCoreWebView2EnvironmentWithOptions/Controller는 async 핸들러를 통해
+        // mpsc로 결과를 회수하며 wait_with_pump가 메시지 펌프를 돌려 deadlock 방지.
         unsafe {
             let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
 
@@ -132,6 +138,8 @@ impl PlatformWebView {
         let w = (bounds.width * scale_factor) as i32;
         let h = (bounds.height * scale_factor) as i32;
 
+        // SAFETY: SetBounds/SetWindowPos는 self가 살아있는 동안 hwnd/controller가 valid
+        // 함을 Drop 시점에 정리. 호출은 main thread에서 일어남.
         unsafe {
             let _ = self.controller.SetBounds(RECT {
                 left: 0,
@@ -152,6 +160,7 @@ impl PlatformWebView {
     }
 
     pub fn set_visible(&self, visible: bool) {
+        // SAFETY: self가 살아있으면 hwnd/controller 모두 valid (Drop이 정리).
         unsafe {
             let _ = ShowWindow(self.hwnd, if visible { SW_SHOW } else { SW_HIDE });
             let _ = self.controller.SetIsVisible(visible);
@@ -159,6 +168,7 @@ impl PlatformWebView {
     }
 
     pub fn load_url(&self, url: &str) {
+        // SAFETY: HSTRING은 호출 끝까지 살아있고 Navigate는 main thread 호출.
         unsafe {
             let url = HSTRING::from(url);
             let _ = self.webview.Navigate(&url);
@@ -166,6 +176,7 @@ impl PlatformWebView {
     }
 
     pub fn load_html(&self, html: &str) {
+        // SAFETY: HSTRING은 호출 끝까지 살아있고 NavigateToString은 main thread 호출.
         unsafe {
             let html = HSTRING::from(html);
             let _ = self.webview.NavigateToString(&html);
@@ -175,6 +186,9 @@ impl PlatformWebView {
 
 impl Drop for PlatformWebView {
     fn drop(&mut self) {
+        // SAFETY: controller.Close()는 webview2 자원 해제, DestroyWindow는 child HWND 정리.
+        // 둘 다 self가 처음 만들어진 main thread에서 Drop이 호출된다는 전제 (PlatformWebView는
+        // !Send/!Sync 기본 — COM 객체 포함).
         unsafe {
             let _ = self.controller.Close();
             let _ = DestroyWindow(self.hwnd);

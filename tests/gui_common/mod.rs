@@ -45,11 +45,15 @@ pub fn shared() -> std::sync::MutexGuard<'static, GuiTestInstance> {
                         .status();
                 }
                 #[cfg(not(target_os = "windows"))]
+                // SAFETY: SIGTERM 송신은 thread-safe POSIX. pid가 이미 종료된 상태여도
+                // kill은 errno만 set하고 UB 없음.
                 unsafe {
                     libc::kill(pid as i32, libc::SIGTERM);
                 }
             }
         }
+        // SAFETY: atexit는 process-lifetime callback을 등록. on_exit는 'static fn 포인터.
+        // shared() 첫 호출 시 한 번만 등록되며 (OnceLock get_or_init), 중복 등록 없음.
         unsafe {
             libc::atexit(on_exit);
         }
@@ -69,6 +73,15 @@ pub struct GuiTestInstance {
     #[cfg(target_os = "windows")]
     hwnd: HWND,
 }
+
+// SAFETY: GuiTestInstance는 OnceLock<Mutex<>> 안에 들어가 모든 접근이 Mutex로 직렬화된다.
+// HWND(*mut c_void) 자체는 OS thread affinity 측면에서 보면 main thread 윈도우 객체지만,
+// 테스트 코드는 (1) instance를 단일 thread에서만 spawn하고 (2) HWND를 SetForegroundWindow
+// 등 thread-safe Win32 호출에만 전달한다. 따라서 임의 스레드에서 HWND를 "소유"하는 게
+// 아니라 단지 포인터 값을 전달하는 수준이므로 Send/Sync 추가가 안전하다.
+unsafe impl Send for GuiTestInstance {}
+// SAFETY: 위 Send와 동일 근거 — Mutex 직렬화 + 단순 포인터 값 전달.
+unsafe impl Sync for GuiTestInstance {}
 
 impl GuiTestInstance {
     /// Spawn a tasty GUI instance for testing.
@@ -137,6 +150,8 @@ impl GuiTestInstance {
     /// Focus the tasty window.
     pub fn focus(&self) {
         #[cfg(target_os = "windows")]
+        // SAFETY: self.hwnd는 spawn 시 FindWindowW로 찾은 활성 윈도우 핸들.
+        // 본 instance가 살아있는 동안 valid (Drop이 process 종료를 보장).
         unsafe {
             let _ = ShowWindow(self.hwnd, SW_RESTORE);
             let _ = SetForegroundWindow(self.hwnd);
@@ -325,6 +340,7 @@ impl GuiTestInstance {
     #[allow(dead_code)]
     pub fn client_size(&self) -> (i32, i32) {
         let mut rect = windows::Win32::Foundation::RECT::default();
+        // SAFETY: self.hwnd valid (위 focus 주석과 동일). GetClientRect는 thread-safe.
         unsafe {
             let _ = GetClientRect(self.hwnd, &mut rect);
         }
@@ -337,6 +353,7 @@ impl GuiTestInstance {
     fn client_to_screen(&self, x: i32, y: i32) -> (i32, i32) {
         let mut window_rect = windows::Win32::Foundation::RECT::default();
         let mut client_rect = windows::Win32::Foundation::RECT::default();
+        // SAFETY: self.hwnd valid. GetWindowRect/GetClientRect는 thread-safe Win32 호출.
         unsafe {
             let _ = GetWindowRect(self.hwnd, &mut window_rect);
             let _ = GetClientRect(self.hwnd, &mut client_rect);
@@ -399,6 +416,7 @@ impl GuiTestInstance {
             if start.elapsed() > timeout {
                 panic!("Window '{}' did not appear within {:?}", title, timeout);
             }
+            // SAFETY: wide_title은 null-terminated UTF-16 local Vec, 호출 동안 살아있음.
             let hwnd = unsafe { FindWindowW(None, windows::core::PCWSTR(wide_title.as_ptr())) };
             match hwnd {
                 Ok(h) if !h.is_invalid() => return h,

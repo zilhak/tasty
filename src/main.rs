@@ -1187,8 +1187,8 @@ fn main() -> Result<()> {
     #[cfg(all(windows, not(debug_assertions)))]
     {
         use windows::Win32::System::Console::{ATTACH_PARENT_PROCESS, AttachConsole};
-        // 부모 프로세스에 콘솔이 있으면 attach (ConPTY 포함). 부모가 GUI 셸이면
-        // 호출은 실패하지만 무해하므로 결과를 의도적으로 무시한다.
+        // SAFETY: AttachConsole은 thread-safe Win32 호출. main 진입 첫 단계로,
+        // 다른 thread가 아직 spawn되지 않은 시점. 결과 무시는 의도적 (부모가 GUI 셸이면 실패).
         unsafe {
             let _ = AttachConsole(ATTACH_PARENT_PROCESS);
         }

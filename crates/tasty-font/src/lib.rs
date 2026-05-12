@@ -169,14 +169,12 @@ impl FontConfig {
         // Measure the width of 'M' by looking at layout runs
         let mut cell_width = font_size * 0.6; // fallback
         let mut baseline = line_height * 0.8; // fallback
-        for run in buffer.layout_runs() {
-            for glyph in run.glyphs.iter() {
+        if let Some(run) = buffer.layout_runs().next() {
+            if let Some(glyph) = run.glyphs.first() {
                 cell_width = glyph.w;
-                break;
             }
             // line_y is the baseline position within the layout
             baseline = run.line_y;
-            break;
         }
 
         FontMetrics {
@@ -411,17 +409,12 @@ impl GlyphAtlas {
         );
         buffer.shape_until_scroll(&mut font_config.font_system, false);
 
-        // Find the glyph in the layout
-        let mut found_glyph = None;
-        for run in buffer.layout_runs() {
-            for glyph in run.glyphs.iter() {
-                found_glyph = Some((glyph.physical((0.0, 0.0), 1.0), run.line_y));
-                break;
-            }
-            if found_glyph.is_some() {
-                break;
-            }
-        }
+        // Find the first glyph in the first layout run.
+        let found_glyph = buffer.layout_runs().find_map(|run| {
+            run.glyphs
+                .first()
+                .map(|g| (g.physical((0.0, 0.0), 1.0), run.line_y))
+        });
 
         let (physical_glyph, _line_y) = found_glyph?;
 

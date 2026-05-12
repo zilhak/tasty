@@ -22,6 +22,9 @@ pub fn show_context_menu(
         RawWindowHandle::AppKit(w) => w.ns_view.as_ptr(),
         _ => return None,
     };
+    // SAFETY: ns_view_ptr는 winit의 활성 윈도우 RawWindowHandle에서 얻은 NSView 포인터.
+    // 본 함수는 mtm 검증 통과 후 main thread에서만 실행되고, 호출 동안 윈도우(따라서 ns_view)는
+    // valid 상태로 유지된다 (winit의 event loop가 호출 끝까지 윈도우를 살려둠).
     let ns_view: &NSView = unsafe { &*(ns_view_ptr as *const NSView) };
 
     let menu = NSMenu::new(mtm);

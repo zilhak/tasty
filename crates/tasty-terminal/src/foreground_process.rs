@@ -126,12 +126,21 @@ fn windows_foreground_process(shell_pid: u32) -> Option<ForegroundProcessInfo> {
     struct HandleGuard(HANDLE);
     impl Drop for HandleGuard {
         fn drop(&mut self) {
+            // SAFETY: CloseHandle on a HANDLE obtained from
+            // CreateToolhelp32Snapshot is the documented release path.
+            // self.0이 INVALID_HANDLE_VALUE이거나 이미 닫혔어도 CloseHandle은
+            // Err만 반환하고 UB를 일으키지 않는다 (Win32 보장).
             unsafe {
                 let _ = CloseHandle(self.0);
             }
         }
     }
 
+    // SAFETY: 본 블록은 ToolHelp snapshot 위에서 Process32FirstW/NextW를
+    // 순차 호출하는 표준 패턴. 모든 호출은 PTY worker thread에서 단일
+    // 흐름으로 실행되며 snapshot HANDLE은 HandleGuard로 Drop-시 close된다.
+    // PROCESSENTRY32W는 dwSize를 명시한 뒤 zeroed로 초기화 — Win32 API 요구사항.
+    // 반환된 entry.szExeFile은 함수 호출 후 entry가 살아있는 동안만 valid.
     unsafe {
         let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0).ok()?;
         let _guard = HandleGuard(snapshot);

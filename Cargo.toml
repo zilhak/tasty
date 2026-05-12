@@ -2,6 +2,15 @@
 members = ["crates/*"]
 resolver = "2"
 
+# 워크스페이스 공통 lint.
+# `undocumented_unsafe_blocks`: 모든 unsafe 블록 위에 `// SAFETY:` 주석 필수.
+# `multiple_unsafe_ops_per_block`: 한 블록에 두 개 이상의 unsafe op 적발 (현재는 warn).
+#   FFI 묶음(Win32 등)이 자연스럽게 한 블록인 경우가 많아 deny로 올리기 전 비용 측정 단계.
+# 각 member crate 및 본 패키지의 `[lints]` 절에서 `workspace = true`로 상속.
+[workspace.lints.clippy]
+undocumented_unsafe_blocks = "deny"
+multiple_unsafe_ops_per_block = "warn"
+
 [package]
 name = "tasty"
 version = "0.3.1"
@@ -181,6 +190,9 @@ tempfile = "3"
 # TODO: winit PR #4478 (https://github.com/rust-windowing/winit/pull/4478) 머지 후 공식 버전으로 교체
 [patch.crates-io]
 winit = { git = "https://github.com/zilhak/winit-ime-fix.git", branch = "fix-korean-ime" }
+
+[lints]
+workspace = true
 
 [profile.release]
 lto = "thin"

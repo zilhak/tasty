@@ -28,8 +28,12 @@ impl PlatformWebView {
             RawWindowHandle::AppKit(w) => w.ns_view.as_ptr(),
             _ => return Err("Not an AppKit window".to_string()),
         };
+        // SAFETY: ns_view_ptr는 winit이 만든 활성 NSView로, 본 함수 호출 동안 살아있다
+        // (winit이 윈도우를 drop하지 않는 한). mtm 검증 통과로 main thread 확정.
         let ns_view: &NSView = unsafe { &*(ns_view_ptr as *const NSView) };
 
+        // SAFETY: mtm으로 main thread 확정. WKWebView/WKPreferences API는 main thread only.
+        // msg_send![setValue:forKey:]는 NSString 두 객체에 대한 KVC — 같은 thread, 같은 호출 흐름.
         unsafe {
             let config = WKWebViewConfiguration::new(mtm);
 
@@ -52,6 +56,8 @@ impl PlatformWebView {
 
     /// Update the webview position and size.
     pub fn set_bounds(&self, bounds: WebViewBounds, scale_factor: f64) {
+        // SAFETY: main thread에서만 호출 — PlatformWebView는 main thread 객체
+        // (Retained<WKWebView>이므로 !Send/!Sync 기본). logical_to_nsrect도 main thread.
         unsafe {
             if let Some(parent) = self.webview.superview() {
                 let frame = logical_to_nsrect(&parent, bounds, scale_factor);
@@ -70,6 +76,7 @@ impl PlatformWebView {
     /// parent directory as the access scope, so relative resources (CSS, JS,
     /// images, iframes) in the same directory tree are accessible.
     pub fn load_url(&self, url: &str) {
+        // SAFETY: main thread WKWebView API. NSString/NSURL은 호출 동안 살아있는 local Retained.
         unsafe {
             if let Some(path) = url.strip_prefix("file://") {
                 // Use fileURLWithPath for proper percent-encoding of CJK paths
@@ -95,6 +102,7 @@ impl PlatformWebView {
 
     /// Load HTML string directly.
     pub fn load_html(&self, html: &str) {
+        // SAFETY: main thread WKWebView API. NSString/NSURL은 호출 동안 살아있는 local Retained.
         unsafe {
             let ns_html = NSString::from_str(html);
             let base_url = NSURL::URLWithString(&NSString::from_str("about:blank"));

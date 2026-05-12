@@ -184,6 +184,7 @@ impl GeneralSettings {
     #[cfg(not(windows))]
     fn login_shell_from_passwd() -> Option<String> {
         use std::io::BufRead;
+        // SAFETY: getuid는 POSIX thread-safe 시스템콜, errno도 안 set한다.
         let uid = unsafe { libc::getuid() };
         let file = std::fs::File::open("/etc/passwd").ok()?;
         for line in std::io::BufReader::new(file).lines() {

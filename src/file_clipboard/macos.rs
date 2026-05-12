@@ -36,6 +36,8 @@ pub fn set_file_clipboard(paths: &[&str], _op: FileClipboardOp) -> Result<(), St
 /// Reads all pasteboard items to support multiple files (e.g. from Finder).
 pub fn get_file_clipboard() -> Result<Option<(Vec<String>, FileClipboardOp)>, String> {
     let pasteboard = NSPasteboard::generalPasteboard();
+    // SAFETY: NSPasteboardTypeFileURL은 AppKit이 노출하는 static NSString 상수 — 'static lifetime.
+    // 단순 reference 캐스팅이므로 main thread 제약 없음.
     let file_url_type: &NSString = unsafe { objc2_app_kit::NSPasteboardTypeFileURL };
 
     let mut paths = Vec::new();

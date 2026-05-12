@@ -57,6 +57,10 @@ impl PlatformWebView {
         let h = (bounds.height * scale_factor) as u32;
 
         // Get X11 display
+        // SAFETY: XOpenDisplay(null)는 DISPLAY env에서 기본 디스플레이를 연다.
+        // 호출 실패 시 null 반환 — 아래 is_null 체크로 처리.
+        // PlatformWebView::new는 winit event loop (main thread)에서만 호출되므로
+        // Xlib 단일 thread 가정 충족.
         let display = if x11_display_ptr.is_null() {
             unsafe { (xlib.XOpenDisplay)(std::ptr::null()) }
         } else {
@@ -68,6 +72,8 @@ impl PlatformWebView {
         }
 
         // Create X11 child window
+        // SAFETY: display는 위에서 null 체크 통과한 유효한 X11 Display*.
+        // parent_xid는 winit이 만든 활성 X11 윈도우. 호출은 main thread.
         let x11_window = unsafe {
             (xlib.XCreateSimpleWindow)(display, parent_xid as _, x, y, w.max(1), h.max(1), 0, 0, 0)
         };
@@ -76,6 +82,7 @@ impl PlatformWebView {
             return Err("XCreateSimpleWindow failed".to_string());
         }
 
+        // SAFETY: 방금 만든 x11_window를 같은 display에 map → flush. 단일 thread, 같은 호출.
         unsafe {
             (xlib.XMapWindow)(display, x11_window);
             (xlib.XFlush)(display);
@@ -124,6 +131,8 @@ impl PlatformWebView {
         let w = (bounds.width * scale_factor) as i32;
         let h = (bounds.height * scale_factor) as i32;
 
+        // SAFETY: self가 살아있으면 x11_display/x11_window 모두 valid (Drop이 정리).
+        // 호출은 main thread (winit event loop) 흐름에서만 일어남.
         unsafe {
             (self.xlib.XMoveResizeWindow)(
                 self.x11_display as _,
@@ -141,12 +150,14 @@ impl PlatformWebView {
 
     pub fn set_visible(&self, visible: bool) {
         if visible {
+            // SAFETY: self valid; main thread.
             unsafe {
                 (self.xlib.XMapWindow)(self.x11_display as _, self.x11_window);
                 (self.xlib.XFlush)(self.x11_display as _);
             }
             self.gtk_window.show_all();
         } else {
+            // SAFETY: self valid; main thread.
             unsafe {
                 (self.xlib.XUnmapWindow)(self.x11_display as _, self.x11_window);
                 (self.xlib.XFlush)(self.x11_display as _);
@@ -166,6 +177,9 @@ impl PlatformWebView {
 
 impl Drop for PlatformWebView {
     fn drop(&mut self) {
+        // SAFETY: Drop은 self가 마지막으로 살아있는 시점. webview.destroy()와
+        // XDestroyWindow는 같은 display 인스턴스에서 한 번씩 호출. 호출은
+        // PlatformWebView가 생성된 main thread에서만 일어난다 (!Send 기본).
         unsafe {
             self.webview.destroy();
             (self.xlib.XDestroyWindow)(self.x11_display as _, self.x11_window);
@@ -174,5 +188,7 @@ impl Drop for PlatformWebView {
     }
 }
 
-// Safety: WebView is managed on the main thread only
+// SAFETY: PlatformWebView는 main thread에서만 생성/조작되지만, AppState 보관 목적상
+// Send를 요구하는 컨테이너에 넣어야 한다. 실제 thread 이동은 발생하지 않음 (단일 thread
+// affinity가 호출 측에서 유지됨). Sync는 의도적으로 추가하지 않는다.
 unsafe impl Send for PlatformWebView {}
