@@ -12,21 +12,21 @@
 //! shutdown 요청은 메인이 즉시 ack 보내고 worker는 queue가 닫히면 자연스럽게 종료.
 
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, Write};
 use std::net::TcpStream;
 use std::sync::{mpsc, Arc, Mutex};
-use std::time::Duration;
 
 use anyhow::Result;
 use serde_json::Value;
 
 use tasty_plugin_protocol::{
-    AuthMessage, IpcCallResult, IpcInvokeParams, METHOD_COMMAND_INVOKE, METHOD_IPC_INVOKE,
-    METHOD_IPC_RESULT, METHOD_PING, METHOD_SHUTDOWN, METHOD_SURFACE_CREATE, METHOD_SURFACE_DESTROY,
+    IpcCallResult, IpcInvokeParams, METHOD_COMMAND_INVOKE, METHOD_IPC_INVOKE, METHOD_IPC_RESULT,
+    METHOD_PING, METHOD_SHUTDOWN, METHOD_SURFACE_CREATE, METHOD_SURFACE_DESTROY,
     METHOD_SURFACE_EVENT, METHOD_SURFACE_RESTORE, METHOD_SURFACE_SNAPSHOT, PluginEvent,
     PluginRequest, PluginResponse,
 };
 
+use crate::connection::Connection;
 use crate::env::PluginEnv;
 use crate::host::{deliver_ipc_result, HostHandle, PendingCalls};
 use crate::plugin::{
@@ -58,23 +58,11 @@ impl DispatchError {
 
 pub fn run<P: Plugin>(plugin: P) -> Result<()> {
     let env = PluginEnv::load()?;
-    let stream = TcpStream::connect(("127.0.0.1", env.host_port))?;
-    stream.set_read_timeout(Some(Duration::from_millis(50)))?;
-    let writer_clone = stream.try_clone()?;
-    let writer = Arc::new(Mutex::new(writer_clone));
-    let mut reader = BufReader::new(stream);
-
-    // auth — 첫 줄 송신.
-    {
-        let auth = AuthMessage {
-            plugin_id: env.plugin_id.clone(),
-            token: env.token.clone(),
-        };
-        let line = serde_json::to_string(&auth)?;
-        let mut w = writer.lock().expect("writer lock");
-        writeln!(*w, "{line}")?;
-        w.flush()?;
-    }
+    // connect + AuthMessage 송신 + AuthAck 5s 대기.
+    // 호스트가 토큰을 거부하면 PluginError::HandshakeRejected가 즉시 올라온다.
+    let conn = Connection::connect_and_authenticate(&env)?;
+    let (writer_stream, mut reader) = conn.into_parts();
+    let writer = Arc::new(Mutex::new(writer_stream));
 
     // hello event 송신.
     let hello = PluginEvent::Hello {

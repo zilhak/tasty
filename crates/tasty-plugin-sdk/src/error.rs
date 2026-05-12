@@ -35,6 +35,16 @@ pub enum PluginError {
     #[error("host closed connection")]
     HostClosed,
 
+    /// 호스트가 핸드셰이크를 거부함 (토큰 불일치 등). reason은 호스트가
+    /// AuthAck에 담아 보낸 사유.
+    #[error("host rejected handshake: {}", reason.as_deref().unwrap_or("(no reason)"))]
+    HandshakeRejected { reason: Option<String> },
+
+    /// 호스트가 AuthAck를 보내기 전 타임아웃. 호스트가 죽었거나, 토큰
+    /// 매칭 단계에서 stream을 silent drop했을 가능성.
+    #[error("host did not send auth_ack within timeout")]
+    HandshakeTimeout,
+
     /// 호스트 호출 응답에 호스트가 명시한 에러.
     #[error("host call '{method}' failed: {message}")]
     HostCall { method: String, message: String },
