@@ -26,3 +26,6 @@
 | GPU 렌더링 구조 | [gpu-rendering.md](gpu-rendering.md) |
 | Model + Host View 분리 (surface 추가/뷰 상태 관리) | [model-view-split.md](model-view-split.md) |
 | TUI 테스트 | [tui-testing.md](tui-testing.md) |
+| Plugin 제작 | [plugin-development.md](plugin-development.md) |
+| Plugin 권한 모델 | [plugin-permissions.md](plugin-permissions.md) |
+| Plugin 생태계 정책 (1.0 전 결정) | [plugin-ecosystem.md](plugin-ecosystem.md) |
