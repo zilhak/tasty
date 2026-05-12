@@ -51,7 +51,7 @@ pub fn run_claude_hook(
 
             // Clear claude-session-id so a stale session isn't restored on next launch.
             let req_meta = make_request(
-                "surface.meta_unset",
+                "surface.meta.unset",
                 serde_json::json!({ "surface_id": surface_param, "key": "claude-session-id" }),
             );
             if let Err(e) = conn.send(&req_meta) {
@@ -92,7 +92,7 @@ pub fn run_claude_hook(
             // If session ID was provided (SessionStart hook), store it in surface metadata.
             if let Some(session_id) = session {
                 let req_meta = make_request(
-                    "surface.meta_set",
+                    "surface.meta.set",
                     serde_json::json!({
                         "surface_id": surface_param,
                         "key": "claude-session-id",

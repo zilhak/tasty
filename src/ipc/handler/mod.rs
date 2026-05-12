@@ -1,5 +1,8 @@
+use std::borrow::Cow;
+
 use serde_json::json;
 
+use crate::ipc::alias;
 use crate::ipc::caller::CallerContext;
 use crate::ipc::protocol::{JsonRpcRequest, JsonRpcResponse};
 use crate::state::AppState;
@@ -46,10 +49,31 @@ pub fn handle_with_caller(
 ) -> JsonRpcResponse {
     let id = request.id.clone().unwrap_or(serde_json::Value::Null);
 
-    if let Err(e) = caller.ensure_allowed(&request.method) {
+    let canonical = alias::canonicalize(&request.method);
+    if alias::is_deprecated(&request.method) {
+        tracing::warn!(
+            "ipc method '{}' is deprecated; use '{canonical}' (will be removed at 1.0)",
+            request.method
+        );
+    }
+
+    if let Err(e) = caller.ensure_allowed(canonical) {
         tracing::warn!("ipc permission denied: {e}");
         return JsonRpcResponse::error(id, -32001, &format!("permission_denied: {e}"));
     }
+
+    // 옛 이름이면 method를 새 이름으로 교체한 임시 request를 라우터에 전달.
+    let routed: Cow<JsonRpcRequest> = if canonical == request.method {
+        Cow::Borrowed(request)
+    } else {
+        Cow::Owned(JsonRpcRequest {
+            jsonrpc: request.jsonrpc.clone(),
+            method: canonical.to_string(),
+            params: request.params.clone(),
+            id: request.id.clone(),
+        })
+    };
+    let request = routed.as_ref();
 
     if let Some(resp) = route_engine_handler(state, request, id.clone()) {
         return resp;
@@ -109,10 +133,10 @@ fn route_engine_handler(
         "surface.is_typing" => handle_is_typing(state, id, &request.params),
         "surface.send_wait_idle" => handle_send_wait_idle(state, id, &request.params),
         "surface.fire_hook" => hooks::handle_surface_fire_hook(state, id, &request.params),
-        "surface.meta_set" => meta::handle_surface_meta_set(state, id, &request.params),
-        "surface.meta_get" => meta::handle_surface_meta_get(state, id, &request.params),
-        "surface.meta_unset" => meta::handle_surface_meta_unset(state, id, &request.params),
-        "surface.meta_list" => meta::handle_surface_meta_list(state, id, &request.params),
+        "surface.meta.set" => meta::handle_surface_meta_set(state, id, &request.params),
+        "surface.meta.get" => meta::handle_surface_meta_get(state, id, &request.params),
+        "surface.meta.unset" => meta::handle_surface_meta_unset(state, id, &request.params),
+        "surface.meta.list" => meta::handle_surface_meta_list(state, id, &request.params),
         // hooks
         "hook.set" => hooks::handle_hook_set(state, id, &request.params),
         "hook.list" => hooks::handle_hook_list(state, id, &request.params),

@@ -1,3 +1,4 @@
+pub mod alias;
 pub mod caller;
 pub mod handler;
 pub mod method_meta;

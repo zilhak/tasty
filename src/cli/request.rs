@@ -516,7 +516,7 @@ fn surface_meta_command_to_method_params(
             value,
             surface,
         } => (
-            "surface.meta_set",
+            "surface.meta.set",
             serde_json::json!({
                 "surface_id": resolve_surface_id(*surface),
                 "key": key,
@@ -524,21 +524,21 @@ fn surface_meta_command_to_method_params(
             }),
         ),
         SurfaceMetaCommands::Get { key, surface } => (
-            "surface.meta_get",
+            "surface.meta.get",
             serde_json::json!({
                 "surface_id": resolve_surface_id(*surface),
                 "key": key,
             }),
         ),
         SurfaceMetaCommands::Unset { key, surface } => (
-            "surface.meta_unset",
+            "surface.meta.unset",
             serde_json::json!({
                 "surface_id": resolve_surface_id(*surface),
                 "key": key,
             }),
         ),
         SurfaceMetaCommands::List { surface } => (
-            "surface.meta_list",
+            "surface.meta.list",
             serde_json::json!({
                 "surface_id": resolve_surface_id(*surface),
             }),

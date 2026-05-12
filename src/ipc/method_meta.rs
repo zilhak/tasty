@@ -61,10 +61,10 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("surface.close_self", plugin(&[SurfaceWrite])),
         // tree/meta는 read 권한
         ("tree", plugin(&[SurfaceRead])),
-        ("surface.meta_get", plugin(&[SurfaceRead])),
-        ("surface.meta_list", plugin(&[SurfaceRead])),
-        ("surface.meta_set", plugin(&[SurfaceWrite])),
-        ("surface.meta_unset", plugin(&[SurfaceWrite])),
+        ("surface.meta.get", plugin(&[SurfaceRead])),
+        ("surface.meta.list", plugin(&[SurfaceRead])),
+        ("surface.meta.set", plugin(&[SurfaceWrite])),
+        ("surface.meta.unset", plugin(&[SurfaceWrite])),
         // ── terminal I/O ──────────────────────────────────────────────
         ("surface.send", plugin(&[TerminalWrite])),
         ("surface.send_key", plugin(&[TerminalWrite])),
