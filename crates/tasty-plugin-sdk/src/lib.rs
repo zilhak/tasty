@@ -12,7 +12,9 @@ pub mod runtime;
 pub mod ui;
 
 pub use error::{PluginError, Result};
-pub use host::{HostCallError, HostHandle};
+pub use host::HostHandle;
+#[allow(deprecated)]
+pub use host::HostCallError;
 pub use plugin::{
     CommandInvokeCtx, IpcMethodCtx, IpcMethodError, Plugin, SurfaceCreateCtx, SurfaceEventCtx,
     SurfaceRestoreCtx, SurfaceResult, SurfaceSnapshotCtx,

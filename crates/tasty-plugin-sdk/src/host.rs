@@ -15,30 +15,16 @@ use std::time::Duration;
 use serde_json::Value;
 use tasty_plugin_protocol::PluginEvent;
 
-pub(crate) type HostCallResult = Result<Value, HostCallError>;
+use crate::error::PluginError;
+
+/// 호스트 호출 결과. 워크스페이스 plugin이 `match` 분기에 쓰지 않고 `?`로만
+/// 흘려보내는 경우가 대부분이라, 표준 [`PluginError`]로 합쳤다.
+pub(crate) type HostCallResult = Result<Value, PluginError>;
 pub(crate) type PendingCalls = Arc<Mutex<HashMap<u64, mpsc::Sender<HostCallResult>>>>;
 
-/// 호스트 호출 실패 (timeout / 에러 응답 / write 실패 등).
-#[derive(Debug, Clone)]
-pub struct HostCallError {
-    pub message: String,
-}
-
-impl HostCallError {
-    pub fn new(message: impl Into<String>) -> Self {
-        Self {
-            message: message.into(),
-        }
-    }
-}
-
-impl std::fmt::Display for HostCallError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.message)
-    }
-}
-
-impl std::error::Error for HostCallError {}
+/// 옛 이름 호환을 위한 alias. 신규 코드는 [`PluginError`] 사용.
+#[deprecated(note = "PluginError로 통합됨. 새 코드는 PluginError 사용.")]
+pub type HostCallError = PluginError;
 
 /// Plugin 코드가 호스트 IPC 메서드를 동기로 호출하는 진입점.
 ///
@@ -68,34 +54,31 @@ impl HostHandle {
         &self,
         method: impl Into<String>,
         params: Value,
-    ) -> Result<Value, HostCallError> {
+    ) -> Result<Value, PluginError> {
+        let method_str = method.into();
         let call_id = self.next_call_id.fetch_add(1, Ordering::Relaxed);
         let (tx, rx) = mpsc::channel::<HostCallResult>();
         {
             let mut p = self
                 .pending
                 .lock()
-                .map_err(|_| HostCallError::new("pending lock poisoned"))?;
+                .map_err(|_| PluginError::LockPoisoned("host pending"))?;
             p.insert(call_id, tx);
         }
-        let method_str = method.into();
         let event = PluginEvent::IpcCall {
             call_id,
-            method: method_str,
+            method: method_str.clone(),
             params,
         };
         let payload = serde_json::json!({ "event": event });
-        let line = serde_json::to_string(&payload)
-            .map_err(|e| HostCallError::new(format!("encode error: {e}")))?;
+        let line = serde_json::to_string(&payload)?;
         {
             let mut w = self
                 .writer
                 .lock()
-                .map_err(|_| HostCallError::new("writer lock poisoned"))?;
-            writeln!(*w, "{line}")
-                .map_err(|e| HostCallError::new(format!("write error: {e}")))?;
-            w.flush()
-                .map_err(|e| HostCallError::new(format!("flush error: {e}")))?;
+                .map_err(|_| PluginError::LockPoisoned("host writer"))?;
+            writeln!(*w, "{line}")?;
+            w.flush()?;
         }
         match rx.recv_timeout(self.timeout) {
             Ok(result) => result,
@@ -103,10 +86,10 @@ impl HostHandle {
                 if let Ok(mut p) = self.pending.lock() {
                     p.remove(&call_id);
                 }
-                Err(HostCallError::new(format!(
-                    "host call timeout after {:?}",
-                    self.timeout
-                )))
+                Err(PluginError::HostCallTimeout {
+                    method: method_str,
+                    timeout: self.timeout,
+                })
             }
         }
     }
@@ -114,6 +97,10 @@ impl HostHandle {
 
 /// 메인 recv 스레드가 호스트로부터 받은 `ipc.result` 요청을 처리한다.
 /// `result`/`error`를 매칭되는 oneshot sender로 전달.
+///
+/// 메서드 이름은 pending map에 저장하지 않으므로 에러 표시에는 `call#<id>`를
+/// 쓴다. 호출자가 [`HostHandle::call`]의 반환 에러를 보면 timeout variant에는
+/// method가 들어있다 (HostCall variant는 호스트 에러 응답일 때만 사용).
 pub(crate) fn deliver_ipc_result(
     pending: &PendingCalls,
     call_id: u64,
@@ -123,7 +110,10 @@ pub(crate) fn deliver_ipc_result(
     let sender = pending.lock().ok().and_then(|mut p| p.remove(&call_id));
     if let Some(tx) = sender {
         let out = match error {
-            Some(msg) => Err(HostCallError::new(msg)),
+            Some(message) => Err(PluginError::HostCall {
+                method: format!("call#{call_id}"),
+                message,
+            }),
             None => Ok(result.unwrap_or(Value::Null)),
         };
         let _ = tx.send(out);
@@ -173,8 +163,11 @@ mod tests {
         let (tx, rx) = mpsc::channel::<HostCallResult>();
         handle.pending.lock().unwrap().insert(5, tx);
         deliver_ipc_result(&handle.pending, 5, None, Some("denied".into()));
-        let result = rx.recv().unwrap();
-        assert_eq!(result.unwrap_err().message, "denied");
+        let err = rx.recv().unwrap().unwrap_err();
+        match err {
+            PluginError::HostCall { message, .. } => assert_eq!(message, "denied"),
+            other => panic!("expected HostCall variant, got {other:?}"),
+        }
     }
 
     #[test]
