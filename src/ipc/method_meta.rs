@@ -127,20 +127,34 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("window.close", local_only()),
         ("window.focus", local_only()),
         ("window.list", local_only()),
-        // ── debug / ui 메서드 — 항상 plugin 호출 불가 ────────────────
-        ("system.shutdown", local_only()),
-        ("ui.state", local_only()),
-        ("ui.screenshot", local_only()),
-        ("debug.info", local_only()),
-        ("debug.cell_info", local_only()),
-        ("debug.screen_attrs", local_only()),
-        ("debug.glyph_color", local_only()),
-        ("debug.feed_bytes", local_only()),
-        ("debug.inject_mouse", local_only()),
-        ("debug.inject_key", local_only()),
-        ("debug.clipboard_viewer_open", local_only()),
     ]
 };
+
+/// debug 빌드에서만 등록되는 메서드. release에서는 [`method_meta`]가 `None`을
+/// 반환해 IPC 표면에서 완전히 사라진다. 핸들러 함수 본체와 라우터 분기는
+/// 이미 `#[cfg(debug_assertions)]`로 보호되어 있으므로, 표 등록만 게이트하면
+/// 일관된 release 표면이 된다.
+///
+/// 카테고리:
+/// - `system.shutdown` — 호스트 종료 (사용자가 직접 종료해야 하는 동작)
+/// - `ui.state` / `ui.screenshot` — UI 상태 dump (디버깅용)
+/// - `debug.*` — 사용자 입력 재현 / 디버그 dump
+#[cfg(debug_assertions)]
+pub const DEBUG_METHODS: &[(&str, MethodMeta)] = &[
+    ("system.shutdown", local_only()),
+    ("ui.state", local_only()),
+    ("ui.screenshot", local_only()),
+    ("debug.info", local_only()),
+    ("debug.cell_info", local_only()),
+    ("debug.screen_attrs", local_only()),
+    ("debug.glyph_color", local_only()),
+    ("debug.feed_bytes", local_only()),
+    ("debug.inject_mouse", local_only()),
+    ("debug.inject_key", local_only()),
+    ("debug.clipboard_viewer_open", local_only()),
+];
+#[cfg(not(debug_assertions))]
+pub const DEBUG_METHODS: &[(&str, MethodMeta)] = &[];
 
 /// prefix 기반 fallback. METHOD_TABLE에 없는 메서드를 prefix로 매칭한다.
 /// 현재는 IME 메서드만 (window 의존, 사용자 입력 영역).
@@ -149,6 +163,11 @@ pub const PREFIX_RULES: &[(&str, MethodMeta)] = &[("surface.ime_", local_only())
 /// 알려진 메서드의 메타. 미등록 메서드는 `None`.
 pub fn method_meta(method: &str) -> Option<MethodMeta> {
     for (name, meta) in METHOD_TABLE {
+        if *name == method {
+            return Some(*meta);
+        }
+    }
+    for (name, meta) in DEBUG_METHODS {
         if *name == method {
             return Some(*meta);
         }
@@ -227,9 +246,18 @@ mod tests {
     }
 
     #[test]
+    #[cfg(debug_assertions)]
     fn debug_methods_are_local_only() {
-        let m = method_meta("debug.inject_key").expect("registered");
+        let m = method_meta("debug.inject_key").expect("registered (debug build)");
         assert!(!m.plugin_callable);
+    }
+
+    #[test]
+    #[cfg(not(debug_assertions))]
+    fn debug_methods_absent_in_release() {
+        assert!(method_meta("debug.inject_key").is_none());
+        assert!(method_meta("system.shutdown").is_none());
+        assert!(method_meta("ui.screenshot").is_none());
     }
 
     #[test]

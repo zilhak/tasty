@@ -150,6 +150,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(debug_assertions)]
     fn plugin_cannot_call_debug_method_even_with_all_perms() {
         let all: Vec<Permission> = [
             Permission::SurfaceRead,
@@ -163,6 +164,17 @@ mod tests {
         let c = plugin_with(&all);
         let err = c.ensure_allowed("debug.inject_key").unwrap_err();
         assert!(matches!(err, CallerError::NotPluginCallable { .. }));
+    }
+
+    /// release 빌드에서는 debug 메서드가 method_meta에 아예 등록되지 않는다.
+    /// 따라서 plugin이 호출하면 `NotPluginCallable`이 아니라 `UnknownMethod`로
+    /// 떨어진다 — 호출 거부라는 결과는 같지만 메시지가 다르다.
+    #[test]
+    #[cfg(not(debug_assertions))]
+    fn plugin_call_to_debug_method_is_unknown_in_release() {
+        let c = plugin_with(&[]);
+        let err = c.ensure_allowed("debug.inject_key").unwrap_err();
+        assert!(matches!(err, CallerError::UnknownMethod(_)));
     }
 
     #[test]
