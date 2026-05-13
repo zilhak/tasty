@@ -1,9 +1,9 @@
 #[cfg(debug_assertions)]
 use super::DebugCommands;
 use super::{
-    ClaudeCommands, ClipboardCommands, CloseCommands, Commands, ListCommands, MoveCommands,
-    NewCommands, PluginCommands, ReadCommands, SendCommands, SetCommands, SurfaceMetaCommands,
-    ToolCommands, UnsetCommands,
+    ClipboardCommands, CloseCommands, Commands, ListCommands, MoveCommands, NewCommands,
+    PluginCommands, ReadCommands, SendCommands, SetCommands, SurfaceMetaCommands, ToolCommands,
+    UnsetCommands,
 };
 use crate::ipc::protocol::JsonRpcRequest;
 
@@ -57,7 +57,6 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
         Commands::List { command } => list_command_to_method_params(command),
         Commands::Set { command } => set_command_to_method_params(command),
         Commands::Move { command } => move_command_to_method_params(command),
-        Commands::Claude { command } => claude_command_to_method_params(command),
         #[cfg(debug_assertions)]
         Commands::Debug { command } => debug_command_to_method_params(command),
         // ── standalone ──
@@ -360,97 +359,6 @@ fn unset_command_to_method_params(command: &UnsetCommands) -> (&'static str, ser
         UnsetCommands::GlobalHook { hook } => {
             ("global_hook.unset", serde_json::json!({ "hook_id": hook }))
         }
-    }
-}
-
-fn claude_command_to_method_params(command: &ClaudeCommands) -> (&'static str, serde_json::Value) {
-    match command {
-        ClaudeCommands::Launch {
-            workspace,
-            directory,
-            task,
-        } => (
-            "claude.launch",
-            serde_json::json!({
-                "workspace": workspace,
-                "directory": directory,
-                "task": task,
-            }),
-        ),
-        ClaudeCommands::Spawn {
-            workspace,
-            cwd,
-            role,
-            nickname,
-            prompt,
-        } => (
-            "claude.spawn",
-            serde_json::json!({
-                "caller_surface_id": resolve_surface_id(None),
-                "workspace": workspace,
-                "cwd": cwd,
-                "role": role,
-                "nickname": nickname,
-                "prompt": prompt,
-            }),
-        ),
-        ClaudeCommands::Children { surface } => (
-            "claude.children",
-            serde_json::json!({ "surface_id": resolve_surface_id(*surface) }),
-        ),
-        ClaudeCommands::Parent { surface } => (
-            "claude.parent",
-            serde_json::json!({ "surface_id": resolve_surface_id(*surface) }),
-        ),
-        ClaudeCommands::Kill { child, surface } => (
-            "claude.kill",
-            serde_json::json!({
-                "surface_id": resolve_surface_id(*surface),
-                "child_index": child,
-            }),
-        ),
-        ClaudeCommands::Respawn {
-            child,
-            surface,
-            cwd,
-            role,
-            nickname,
-            prompt,
-        } => (
-            "claude.respawn",
-            serde_json::json!({
-                "surface_id": resolve_surface_id(*surface),
-                "child_index": child,
-                "cwd": cwd,
-                "role": role,
-                "nickname": nickname,
-                "prompt": prompt,
-            }),
-        ),
-        ClaudeCommands::Broadcast {
-            text,
-            surface,
-            role,
-        } => (
-            "claude.broadcast",
-            serde_json::json!({
-                "surface_id": resolve_surface_id(*surface),
-                "text": text,
-                "role": role,
-            }),
-        ),
-        ClaudeCommands::Tell { message, surface } => (
-            "claude.tell",
-            serde_json::json!({
-                "surface_id": resolve_surface_id(*surface),
-                "message": message,
-            }),
-        ),
-        // Hook, Wait, Install, Uninstall are handled separately in run_client
-        ClaudeCommands::Hook { .. } => unreachable!("ClaudeHook is handled in run_client"),
-        ClaudeCommands::Wait { .. } => unreachable!("ClaudeWait is handled in run_client"),
-        ClaudeCommands::Install => unreachable!("Install is handled in run_client"),
-        ClaudeCommands::Uninstall => unreachable!("Uninstall is handled in run_client"),
     }
 }
 

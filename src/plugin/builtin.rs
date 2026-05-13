@@ -37,6 +37,11 @@ const BUILTINS: &[BuiltinSpec] = &[
         crate_dir: "tasty-plugin-codex",
         bin_name: "tasty-plugin-codex.exe",
     },
+    BuiltinSpec {
+        id: "com.tasty.claude",
+        crate_dir: "tasty-plugin-claude",
+        bin_name: "tasty-plugin-claude.exe",
+    },
 ];
 
 #[cfg(not(windows))]
@@ -50,6 +55,11 @@ const BUILTINS: &[BuiltinSpec] = &[
         id: "com.tasty.codex",
         crate_dir: "tasty-plugin-codex",
         bin_name: "tasty-plugin-codex",
+    },
+    BuiltinSpec {
+        id: "com.tasty.claude",
+        crate_dir: "tasty-plugin-claude",
+        bin_name: "tasty-plugin-claude",
     },
 ];
 
@@ -342,6 +352,11 @@ mod tests {
     #[test]
     fn codex_is_builtin() {
         assert!(is_builtin_plugin("com.tasty.codex"));
+    }
+
+    #[test]
+    fn claude_is_builtin() {
+        assert!(is_builtin_plugin("com.tasty.claude"));
     }
 
     #[test]

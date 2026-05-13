@@ -1,11 +1,11 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::global_hooks::GlobalHookManager;
 use crate::model::Workspace;
 use crate::notification::NotificationStore;
 use crate::settings::Settings;
-use crate::state::{ClaudeChildEntry, SurfaceMessage};
+use crate::state::SurfaceMessage;
 use crate::surface_registry::SurfaceKindRegistry;
 use tasty_hooks::HookManager;
 use tasty_terminal::{Terminal, TerminalEvent, Waker};
@@ -53,37 +53,6 @@ impl IdGenerator {
     }
 }
 
-/// All Claude agent relationship state.
-pub struct ClaudeState {
-    pub parent_children: HashMap<u32, Vec<ClaudeChildEntry>>,
-    pub child_parent: HashMap<u32, u32>,
-    pub closed_parents: HashSet<u32>,
-    pub(crate) next_child_index: HashMap<u32, u32>,
-    pub idle_state: HashMap<u32, bool>,
-    pub needs_input_state: HashMap<u32, bool>,
-    /// Maps (parent_surface_id, workspace_id) → spawn_pane_id for --workspace spawning.
-    pub spawn_panes: HashMap<(u32, u32), u32>,
-    /// Surfaces for which the ClaudeError PTY scanner should run on every redraw.
-    /// Populated automatically when a Claude child is spawned via
-    /// `claude.spawn` / `claude.launch`; never populated for plain shells.
-    pub error_scan_enabled: HashSet<u32>,
-}
-
-impl ClaudeState {
-    pub fn new() -> Self {
-        Self {
-            parent_children: HashMap::new(),
-            child_parent: HashMap::new(),
-            closed_parents: HashSet::new(),
-            next_child_index: HashMap::new(),
-            idle_state: HashMap::new(),
-            needs_input_state: HashMap::new(),
-            spawn_panes: HashMap::new(),
-            error_scan_enabled: HashSet::new(),
-        }
-    }
-}
-
 /// Helper to extract shell configuration from settings, avoiding boilerplate.
 pub struct ShellConfig {
     pub shell: String,
@@ -128,9 +97,6 @@ pub struct EngineState {
     pub notifications: NotificationStore,
     pub hook_manager: HookManager,
     pub global_hook_manager: GlobalHookManager,
-
-    // ── Claude agent relationships ──
-    pub claude: ClaudeState,
 
     // ── Closed item history ──
     pub closed_items: crate::model::ClosedItemStore,
@@ -192,7 +158,6 @@ impl EngineState {
             notifications: NotificationStore::with_coalesce_ms(500),
             hook_manager: HookManager::new(),
             global_hook_manager: GlobalHookManager::new(),
-            claude: ClaudeState::new(),
             closed_items: crate::model::ClosedItemStore::new(),
             clipboard_history: crate::clipboard_history::ClipboardHistory::new(100),
             surface_messages: HashMap::new(),

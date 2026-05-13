@@ -88,18 +88,6 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("global_hook.set", plugin(&[SurfaceWrite])),
         ("global_hook.list", plugin(&[SurfaceRead])),
         ("global_hook.unset", plugin(&[SurfaceWrite])),
-        // ── claude ────────────────────────────────────────────────────
-        ("claude.launch", plugin(&[ClaudeInvoke, TerminalSpawn])),
-        ("claude.spawn", plugin(&[ClaudeInvoke, TerminalSpawn])),
-        ("claude.children", plugin(&[ClaudeRead])),
-        ("claude.parent", plugin(&[ClaudeRead])),
-        ("claude.kill", plugin(&[ClaudeInvoke])),
-        ("claude.respawn", plugin(&[ClaudeInvoke])),
-        ("claude.set_idle_state", plugin(&[ClaudeInvoke])),
-        ("claude.set_needs_input", plugin(&[ClaudeInvoke])),
-        ("claude.broadcast", plugin(&[ClaudeInvoke])),
-        ("claude.tell", plugin(&[ClaudeInvoke])),
-        ("claude.wait", plugin(&[ClaudeRead])),
         // ── message (surface 간 메시지 큐) ─────────────────────────────
         ("message.send", plugin(&[SurfaceWrite])),
         ("message.read", plugin(&[SurfaceRead])),

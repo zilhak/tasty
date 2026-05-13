@@ -195,7 +195,7 @@ impl AppState {
         let ws = self.active_workspace_mut();
         let target_id = ws.focused_pane;
 
-        // Collect all surface IDs in the pane being closed for claude cleanup
+        // Collect all surface IDs in the pane being closed for cleanup.
         let mut surface_ids = Vec::new();
         if let Some(pane) = ws.pane_layout_mut().find_pane_mut(target_id) {
             for tab in &mut pane.tabs {
@@ -211,7 +211,7 @@ impl AppState {
             if let Some(first) = ws.pane_layout().first_pane() {
                 ws.focused_pane = first.id;
             }
-            // Claude parent-child cleanup + surface meta cleanup
+            // Surface meta + per-surface view cleanup.
             for sid in surface_ids {
                 self.cleanup_surface(sid);
             }
@@ -241,7 +241,7 @@ impl AppState {
         } else {
             return false;
         }
-        // Claude parent-child cleanup + surface meta cleanup
+        // Surface meta + per-surface view cleanup.
         self.cleanup_surface(surface_id);
         self.engine.mark_layout_dirty();
         true
@@ -328,8 +328,6 @@ impl AppState {
             let pane = ws.pane_layout_mut().find_pane_mut(pane_id).unwrap();
             let tab = &mut pane.tabs[tab_idx];
             if tab.close_surface(surface_id) {
-                self.unregister_child(surface_id);
-                self.mark_parent_closed(surface_id);
                 crate::surface_meta::SurfaceMetaStore::remove(surface_id);
                 self.engine.mark_layout_dirty();
                 return true;
@@ -359,8 +357,6 @@ impl AppState {
                 if pane.active_tab >= pane.tabs.len() {
                     pane.active_tab = pane.tabs.len() - 1;
                 }
-                self.unregister_child(surface_id);
-                self.mark_parent_closed(surface_id);
                 crate::surface_meta::SurfaceMetaStore::remove(surface_id);
                 self.engine.mark_layout_dirty();
                 return true;
@@ -376,8 +372,6 @@ impl AppState {
                 if let Some(first) = ws.pane_layout().first_pane() {
                     ws.focused_pane = first.id;
                 }
-                self.unregister_child(surface_id);
-                self.mark_parent_closed(surface_id);
                 crate::surface_meta::SurfaceMetaStore::remove(surface_id);
                 self.engine.mark_layout_dirty();
                 return true;

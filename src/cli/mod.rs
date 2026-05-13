@@ -1,4 +1,3 @@
-mod claude;
 pub mod dynamic;
 mod format;
 mod plugin;
@@ -14,7 +13,6 @@ use clap::{Parser, Subcommand};
 
 use crate::ipc::server::IpcServer;
 
-use claude::{run_claude_hook, run_claude_install, run_claude_uninstall, run_claude_wait};
 use format::format_output;
 use request::command_to_request;
 use transport::IpcConnection;
@@ -69,11 +67,6 @@ pub enum Commands {
     Set {
         #[command(subcommand)]
         command: SetCommands,
-    },
-    /// Claude Code integration (launch, spawn, kill, wait, etc.)
-    Claude {
-        #[command(subcommand)]
-        command: ClaudeCommands,
     },
     /// Move/reorder a resource (tab, workspace)
     Move {
@@ -539,131 +532,6 @@ pub enum CloseCommands {
 }
 
 #[derive(Subcommand)]
-pub enum ClaudeCommands {
-    /// Launch Claude Code in a new workspace
-    Launch {
-        /// Workspace name (default: "claude")
-        #[arg(long)]
-        workspace: Option<String>,
-        /// Working directory
-        #[arg(long)]
-        directory: Option<String>,
-        /// Task description to pass to claude
-        #[arg(long)]
-        task: Option<String>,
-    },
-    /// Spawn a child Claude instance
-    Spawn {
-        /// Target workspace (ID or name) — auto-manages spawn pane placement
-        #[arg(long)]
-        workspace: String,
-        /// Working directory for the child
-        #[arg(long)]
-        cwd: Option<String>,
-        /// Role label for the child
-        #[arg(long)]
-        role: Option<String>,
-        /// Nickname for the child
-        #[arg(long)]
-        nickname: Option<String>,
-        /// Initial prompt to send to claude
-        #[arg(long)]
-        prompt: Option<String>,
-    },
-    /// List children of the specified Claude parent
-    Children {
-        /// Parent surface ID (default: TASTY_SURFACE_ID)
-        #[arg(long)]
-        surface: Option<u32>,
-    },
-    /// Show the parent of the specified Claude child
-    Parent {
-        /// Child surface ID (default: TASTY_SURFACE_ID)
-        #[arg(long)]
-        surface: Option<u32>,
-    },
-    /// Kill a child Claude instance by child index
-    Kill {
-        /// Child index to kill
-        #[arg(long)]
-        child: u32,
-        /// Parent surface ID (default: TASTY_SURFACE_ID)
-        #[arg(long)]
-        surface: Option<u32>,
-    },
-    /// Respawn a child Claude instance
-    Respawn {
-        /// Child index to respawn
-        #[arg(long)]
-        child: u32,
-        /// Parent surface ID (default: TASTY_SURFACE_ID)
-        #[arg(long)]
-        surface: Option<u32>,
-        /// Working directory for the new child
-        #[arg(long)]
-        cwd: Option<String>,
-        /// Role label for the new child
-        #[arg(long)]
-        role: Option<String>,
-        /// Nickname for the new child
-        #[arg(long)]
-        nickname: Option<String>,
-        /// Initial prompt to send to claude
-        #[arg(long)]
-        prompt: Option<String>,
-    },
-    /// Broadcast text to all children of a parent Claude instance
-    Broadcast {
-        /// Text to send to all children
-        #[arg()]
-        text: String,
-        /// Parent surface ID (default: TASTY_SURFACE_ID)
-        #[arg(long)]
-        surface: Option<u32>,
-        /// Filter children by role
-        #[arg(long)]
-        role: Option<String>,
-    },
-    /// Wait for a specific child Claude instance to become idle/needs_input/exited
-    Wait {
-        /// Child index to wait for
-        #[arg(long)]
-        child: u32,
-        /// Parent surface ID (default: TASTY_SURFACE_ID)
-        #[arg(long)]
-        surface: Option<u32>,
-        /// Timeout in seconds (default: 30)
-        #[arg(long, default_value = "30")]
-        timeout: u64,
-    },
-    /// Send a message to a Claude Code instance and guarantee submission
-    Tell {
-        /// Message to send (multi-line supported)
-        #[arg()]
-        message: String,
-        /// Target surface ID
-        #[arg(long)]
-        surface: Option<u32>,
-    },
-    /// Install tasty Stop hook into Claude Code's ~/.claude/settings.json
-    Install,
-    /// Uninstall tasty Stop hook from Claude Code's ~/.claude/settings.json
-    Uninstall,
-    /// Claude Code hook integration (called by Claude Code's hook system)
-    Hook {
-        /// Hook event type: stop, notification, prompt-submit, session-start
-        #[arg()]
-        event: String,
-        /// Surface ID (auto-detected from TASTY_SURFACE_ID env var if not provided)
-        #[arg(long)]
-        surface: Option<u32>,
-        /// Claude Code session ID (provided by ${CLAUDE_SESSION_ID} substitution)
-        #[arg(long)]
-        session: Option<String>,
-    },
-}
-
-#[derive(Subcommand)]
 pub enum SurfaceMetaCommands {
     /// Set a metadata key-value pair on a surface
     Set {
@@ -1085,19 +953,6 @@ fn run_dynamic_client(request: crate::ipc::protocol::JsonRpcRequest) -> Result<(
 
 /// Run the CLI client: connect to a running tasty instance and execute the command.
 pub fn run_client(command: Commands) -> Result<()> {
-    // Install/Uninstall are local-only commands — no IPC needed
-    if let Commands::Claude {
-        command: ClaudeCommands::Install,
-    } = &command
-    {
-        return run_claude_install();
-    }
-    if let Commands::Claude {
-        command: ClaudeCommands::Uninstall,
-    } = &command
-    {
-        return run_claude_uninstall();
-    }
     // plugin logs is local-only — read the log file directly.
     if let Commands::Plugin {
         command: PluginCommands::Logs { id, follow },
@@ -1116,34 +971,6 @@ pub fn run_client(command: Commands) -> Result<()> {
     })?;
 
     let mut conn = IpcConnection::new(stream)?;
-
-    // ClaudeHook is special: it may send multiple requests
-    if let Commands::Claude {
-        command: ClaudeCommands::Hook {
-            ref event,
-            ref surface,
-            ref session,
-        },
-    } = command
-    {
-        run_claude_hook(&mut conn, event, *surface, session.as_deref())?;
-        return Ok(());
-    }
-
-    // ClaudeWait is special: it polls until the child reaches a terminal state
-    if let Commands::Claude {
-        command:
-            ClaudeCommands::Wait {
-                child,
-                surface,
-                timeout,
-            },
-    } = command
-    {
-        let surface_id = request::resolve_surface_id(surface);
-        run_claude_wait(&mut conn, child, surface_id, timeout)?;
-        return Ok(());
-    }
 
     let request = command_to_request(&command);
     let result = conn.send(&request);

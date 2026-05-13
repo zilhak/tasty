@@ -97,10 +97,6 @@ pub enum Permission {
     TerminalRead,
     /// 호스트를 통한 네트워크 (예약)
     Network,
-    /// Claude 세션 메타데이터 조회 (예약)
-    ClaudeRead,
-    /// Claude API 호출 위임 (예약)
-    ClaudeInvoke,
     /// 다른 plugin이 점유한 IPC namespace prefix의 메서드 호출.
     /// 토큰 형식: `ipc.invoke:<prefix>` (예: `ipc.invoke:codex`).
     IpcInvoke(String),
@@ -121,8 +117,6 @@ impl Permission {
             "terminal.write" => Self::TerminalWrite,
             "terminal.read" => Self::TerminalRead,
             "network" => Self::Network,
-            "claude.read" => Self::ClaudeRead,
-            "claude.invoke" => Self::ClaudeInvoke,
             other => {
                 let prefix = other.strip_prefix("ipc.invoke:")?;
                 if !is_valid_ipc_prefix(prefix) || is_reserved_ipc_prefix(prefix) {
@@ -149,8 +143,6 @@ impl Permission {
             Self::TerminalWrite => "terminal.write".into(),
             Self::TerminalRead => "terminal.read".into(),
             Self::Network => "network".into(),
-            Self::ClaudeRead => "claude.read".into(),
-            Self::ClaudeInvoke => "claude.invoke".into(),
             Self::IpcInvoke(prefix) => format!("ipc.invoke:{prefix}"),
         }
     }
@@ -588,8 +580,7 @@ fn is_valid_ipc_prefix(s: &str) -> bool {
 fn is_reserved_ipc_prefix(s: &str) -> bool {
     matches!(
         s,
-        "claude"
-            | "plugin"
+        "plugin"
             | "system"
             | "surface"
             | "tab"
@@ -628,8 +619,7 @@ fn is_valid_cli_name(s: &str) -> bool {
 fn is_reserved_cli_name(s: &str) -> bool {
     matches!(
         s,
-        "claude"
-            | "plugin"
+        "plugin"
             | "new"
             | "close"
             | "list"
@@ -1194,7 +1184,7 @@ mod tests {
     fn permission_ipc_invoke_reserved_prefix_rejected() {
         // 호스트 예약 prefix는 plugin이 점유할 수 없으므로 토큰도 거부.
         assert!(Permission::from_token("ipc.invoke:surface").is_none());
-        assert!(Permission::from_token("ipc.invoke:claude").is_none());
+        assert!(Permission::from_token("ipc.invoke:pane").is_none());
     }
 
     #[test]

@@ -7,7 +7,6 @@ use crate::ipc::caller::CallerContext;
 use crate::ipc::protocol::{JsonRpcRequest, JsonRpcResponse};
 use crate::state::AppState;
 
-mod claude;
 mod clipboard;
 mod hooks;
 pub mod ime;
@@ -151,20 +150,6 @@ fn route_engine_handler(
         "global_hook.set" => hooks::handle_global_hook_set(state, id, &request.params),
         "global_hook.list" => hooks::handle_global_hook_list(state, id),
         "global_hook.unset" => hooks::handle_global_hook_unset(state, id, &request.params),
-        // claude
-        "claude.launch" => claude::handle_claude_launch(state, id, &request.params),
-        "claude.spawn" => claude::handle_claude_spawn(state, id, &request.params),
-        "claude.children" => claude::handle_claude_children(state, id, &request.params),
-        "claude.parent" => claude::handle_claude_parent(state, id, &request.params),
-        "claude.kill" => claude::handle_claude_kill(state, id, &request.params),
-        "claude.respawn" => claude::handle_claude_respawn(state, id, &request.params),
-        "claude.set_idle_state" => claude::handle_claude_set_idle_state(state, id, &request.params),
-        "claude.set_needs_input" => {
-            claude::handle_claude_set_needs_input(state, id, &request.params)
-        }
-        "claude.broadcast" => claude::handle_claude_broadcast(state, id, &request.params),
-        "claude.tell" => claude::handle_claude_tell(state, id, &request.params),
-        "claude.wait" => claude::handle_claude_wait(state, id, &request.params),
         // tree
         "tree" => handle_tree(state, id),
         // message

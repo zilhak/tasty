@@ -1,5 +1,3 @@
-mod claude;
-pub mod claude_error;
 mod focus;
 mod layout;
 mod mark;
@@ -52,15 +50,6 @@ pub struct SurfaceMessage {
     pub content: String,
 }
 
-#[derive(Debug, Clone)]
-pub struct ClaudeChildEntry {
-    pub child_surface_id: u32,
-    pub index: u32,
-    pub cwd: Option<String>,
-    pub role: Option<String>,
-    pub nickname: Option<String>,
-}
-
 /// Surface가 닫혔다는 사실을 plugin 측에 broadcast하기 위해 메인 루프가 소비할
 /// 큐 항목. `state/`는 `plugin/` 의존이 없으므로 enum 대신 `is_user_close: bool`로
 /// reason을 담고, App 메인 루프에서 `SurfaceCloseReason`으로 매핑한다.
@@ -74,7 +63,7 @@ pub struct PendingSurfaceClosed {
 // IdGenerator is now in engine_state.rs
 
 pub struct AppState {
-    /// Engine-level shared state (workspaces, terminals, settings, hooks, claude, etc.)
+    /// Engine-level shared state (workspaces, terminals, settings, hooks, etc.)
     pub engine: EngineState,
 
     // ── Window-level UI state ──
@@ -323,10 +312,8 @@ impl AppState {
     }
 
     /// Clean up all state associated with a closed surface:
-    /// Claude agent relationships, parent tracking, surface metadata, and per-surface host view state.
+    /// surface metadata and per-surface host view state.
     pub(crate) fn cleanup_surface(&mut self, surface_id: u32) {
-        self.unregister_child(surface_id);
-        self.mark_parent_closed(surface_id);
         crate::surface_meta::SurfaceMetaStore::remove(surface_id);
         self.markdown_views.drop_view(surface_id);
         self.image_views.drop_view(surface_id);

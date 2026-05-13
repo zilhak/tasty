@@ -151,7 +151,7 @@ impl AppState {
     }
 
     /// Close the active workspace. Returns true if the workspace was removed.
-    /// Cleans up all surfaces (claude parent-child, surface meta) in the workspace.
+    /// Cleans up all surfaces (surface meta + per-surface view state) in the workspace.
     pub fn close_active_workspace(&mut self) -> bool {
         if self.engine.workspaces.is_empty() {
             return false;

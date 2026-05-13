@@ -165,11 +165,9 @@ Plugin이 호스트 IPC를 호출하려면 매니페스트의 `permissions`에 �
 | `fs.read` | (예약 — `tool.read_file` 등) |
 | `fs.write` | (예약 — `tool.write_file` 등) |
 | `process.spawn` | (예약 — `tool.run_shell` 등) |
-| `terminal.spawn` | `claude.launch`, `claude.spawn` |
+| `terminal.spawn` | 신규 PTY 생성을 동반하는 메서드 (예: `surface.respawn_terminal`, plugin의 child 생성) |
 | `terminal.write` | `surface.send/send_key/send_combo/send_to/send_wait_idle` |
 | `terminal.read` | `surface.set_mark/read_since_mark/screen_text/cursor_position/is_typing` |
-| `claude.read` | `claude.children/parent/wait` |
-| `claude.invoke` | `claude.kill/respawn/set_idle_state/set_needs_input/broadcast/tell/launch/spawn` |
 | `ipc.invoke:<prefix>` | 다른 plugin의 namespace 메서드 호출 (`<prefix>`는 호출 대상 plugin이 contribute한 IPC namespace) |
 | `network` | (예약) |
 
