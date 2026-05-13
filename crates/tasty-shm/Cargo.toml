@@ -1,0 +1,22 @@
+[package]
+name = "tasty-shm"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Cross-platform shared memory + FD/HANDLE passing primitives for tasty plugins"
+
+[dependencies]
+thiserror = "1"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_System_Memory",
+    "Win32_System_Threading",
+] }
+
+[lints]
+workspace = true

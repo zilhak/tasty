@@ -4910,6 +4910,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "tasty-shm"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "thiserror 1.0.69",
+ "windows-sys 0.59.0",
+]
+
+[[package]]
 name = "tasty-terminal"
 version = "0.1.0"
 dependencies = [
