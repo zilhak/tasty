@@ -465,6 +465,51 @@ pub(crate) fn handle_foreground_process(
     )
 }
 
+/// 동일 surface_id를 유지한 채 PTY를 새 프로세스로 교체.
+/// 호스트 `replace_terminal_by_id` 1:1 노출 — 기존 terminal은 drop되며 SIGHUP을
+/// 보낸다. cwd가 주어지면 새 PTY의 working_dir로 지정.
+///
+/// 플러그인이 claude.respawn에서 사용. 그 핸들러는 본 IPC로 PTY를 갈아끼운 뒤
+/// surface.send로 `claude` 명령을 재송신한다.
+pub(crate) fn handle_surface_respawn_terminal(
+    state: &mut AppState,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
+    let surface_id = match require_surface_id(params, &id) {
+        Ok(sid) => sid,
+        Err(e) => return e,
+    };
+    let cwd = params
+        .get("cwd")
+        .and_then(|v| v.as_str())
+        .map(std::path::PathBuf::from);
+
+    let cols = state.engine.default_cols;
+    let rows = state.engine.default_rows;
+    let sh = crate::engine_state::ShellConfig::from_settings(&state.engine.settings);
+    let waker = state.engine.make_waker(surface_id);
+    let new_terminal = match tasty_terminal::Terminal::new(
+        tasty_terminal::TerminalConfig {
+            cols,
+            rows,
+            shell: sh.shell_ref(),
+            args: &sh.args_ref(),
+            surface_id,
+            working_dir: cwd.as_deref(),
+        },
+        waker,
+    ) {
+        Ok(t) => t,
+        Err(e) => return JsonRpcResponse::internal_error(id, e.to_string()),
+    };
+
+    match state.engine.replace_terminal_by_id(surface_id, new_terminal) {
+        Ok(()) => JsonRpcResponse::success(id, json!({ "ok": true, "surface_id": surface_id })),
+        Err(e) => JsonRpcResponse::invalid_params(id, e.to_string()),
+    }
+}
+
 /// surface_id를 포함하는 pane을 찾아 `pane_id`와 존재 여부를 반환.
 /// 플러그인이 자기 자식 surface를 죽이거나 wait할 때, 호스트 트리에 여전히
 /// 살아있는지 확인하기 위해 사용한다.

@@ -78,6 +78,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("surface.cursor_position", plugin(&[TerminalRead])),
         ("surface.foreground_process", plugin(&[TerminalRead])),
         ("surface.locate", plugin(&[SurfaceRead])),
+        ("surface.respawn_terminal", plugin(&[TerminalSpawn])),
         ("surface.is_typing", plugin(&[TerminalRead])),
         ("surface.fire_hook", plugin(&[SurfaceWrite])),
         // ── hooks ─────────────────────────────────────────────────────
