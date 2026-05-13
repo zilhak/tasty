@@ -96,6 +96,10 @@ impl Plugin for ClaudePlugin {
             "claude.children" => handle_children(&self.state, &ctx.host, &ctx.params),
             "claude.wait" => handle_wait(&self.state, &ctx.host, &ctx.params),
             "claude.kill" => handle_kill(&mut self.state, &ctx.host, &ctx.params),
+            // step 04c: PTY 송신 핸들러. surface.send IPC를 통해 자식 terminal에
+            // text를 보낸다.
+            "claude.broadcast" => handle_broadcast(&self.state, &ctx.host, &ctx.params),
+            "claude.tell" => handle_tell(&ctx.host, &ctx.params),
             other => Err(IpcMethodError::not_found(other)),
         }
     }
@@ -349,6 +353,108 @@ fn kill_finalize(state: &mut ClaudeState, child_surface_id: u32) {
     state.save();
 }
 
+/// 호스트 `handle_claude_broadcast` 1:1 이주.
+///
+/// **주의 — 미세한 동작 차이**: 호스트는 `find_terminal_by_id_mut`로 직접
+/// terminal에 송신하지만, 플러그인은 `surface.send` IPC를 거치므로 deferred
+/// surface에 대해 PTY가 자동 초기화된다. 일상 시나리오(spawn → broadcast)에서는
+/// 차이가 관측되지 않는다.
+fn handle_broadcast(
+    state: &ClaudeState,
+    host: &HostHandle,
+    params: &Value,
+) -> Result<Value, IpcMethodError> {
+    let parent_surface_id = require_surface_id(params)?;
+    let text = params
+        .get("text")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| IpcMethodError::invalid_params("Missing 'text' parameter"))?;
+    let role_filter = params.get("role").and_then(|v| v.as_str()).map(String::from);
+
+    let child_ids = broadcast_targets(state, parent_surface_id, role_filter.as_deref());
+
+    let mut sent_count = 0usize;
+    for sid in &child_ids {
+        if host
+            .call("surface.send", json!({ "surface_id": sid, "text": text }))
+            .is_ok()
+        {
+            sent_count += 1;
+        }
+    }
+
+    Ok(json!({
+        "sent_count": sent_count,
+        "children": child_ids,
+    }))
+}
+
+/// state만으로 결정 가능한 broadcast 대상 child_surface_id 목록.
+/// role_filter=Some이면 그 role을 가진 자식만, None이면 전체.
+fn broadcast_targets(
+    state: &ClaudeState,
+    parent_surface_id: u32,
+    role_filter: Option<&str>,
+) -> Vec<u32> {
+    state
+        .list_children(parent_surface_id)
+        .iter()
+        .filter(|c| match role_filter {
+            Some(r) => c.role.as_deref() == Some(r),
+            None => true,
+        })
+        .map(|c| c.child_surface_id)
+        .collect()
+}
+
+/// 호스트 `handle_claude_tell` 1:1 이주.
+///
+/// Claude Code의 handleEnter 로직과 맞물리는 PTY 시퀀스를 만들어 surface.send로
+/// 보낸다 — 줄바꿈은 `\` + `\r` (newline 삽입), 마지막 `\r`이 submit.
+///
+/// **주의 — 미세한 동작 차이**: `handle_broadcast`와 동일하게 surface.send를
+/// 거치므로 deferred surface는 auto-init된다.
+fn handle_tell(host: &HostHandle, params: &Value) -> Result<Value, IpcMethodError> {
+    let surface_id = require_surface_id(params)?;
+    let message = params
+        .get("message")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| IpcMethodError::invalid_params("Missing 'message' parameter"))?;
+    let pty_text = build_tell_pty_text(message);
+
+    let resp = host
+        .call(
+            "surface.send",
+            json!({ "surface_id": surface_id, "text": pty_text }),
+        )
+        .map_err(IpcMethodError::from)?;
+
+    // surface.send는 `{sent: true, surface_id}` 응답. 호스트 claude.tell과 동일
+    // 필드 구성이므로 그대로 반환.
+    Ok(resp)
+}
+
+/// 호스트 코드의 PTY 시퀀스 생성 로직을 1:1 옮긴 순수 함수.
+/// - 라인 사이: `\` + `\r` (Claude Code에서 newline 삽입)
+/// - 마지막 라인이 `\`로 끝나면 ` ` 한 칸을 덧붙여 final `\r`이 submit으로 해석되게
+/// - 끝에 `\r` 추가 = submit
+fn build_tell_pty_text(message: &str) -> String {
+    let lines: Vec<&str> = message.split('\n').collect();
+    let mut pty_text = String::new();
+    for (i, line) in lines.iter().enumerate() {
+        pty_text.push_str(line);
+        if i < lines.len() - 1 {
+            pty_text.push('\\');
+            pty_text.push('\r');
+        }
+    }
+    if pty_text.ends_with('\\') {
+        pty_text.push(' ');
+    }
+    pty_text.push('\r');
+    pty_text
+}
+
 fn handle_parent(state: &ClaudeState, params: &Value) -> Result<Value, IpcMethodError> {
     let child_surface_id = require_surface_id(params)?;
     match state.parent_of_child(child_surface_id) {
@@ -542,6 +648,90 @@ mod handler_tests {
         assert_eq!(state.list_children(10)[0].index, 2);
         // unregister된 자식의 idle/needs_input 데이터도 함께 사라져야 한다.
         assert_eq!(state.parent_of_child(100), None);
+    }
+
+    // ─── step 04c: broadcast/tell helper tests ──────────────────────────────
+
+    #[test]
+    fn broadcast_targets_includes_all_children_without_filter() {
+        let mut state = ClaudeState::default();
+        state.register_child(10, entry(100, 1));
+        state.register_child(10, entry(101, 2));
+        let ids = broadcast_targets(&state, 10, None);
+        assert_eq!(ids, vec![100, 101]);
+    }
+
+    #[test]
+    fn broadcast_targets_filters_by_role() {
+        let mut state = ClaudeState::default();
+        state.register_child(
+            10,
+            ChildEntry {
+                child_surface_id: 100,
+                index: 1,
+                cwd: None,
+                role: Some("planner".into()),
+                nickname: None,
+            },
+        );
+        state.register_child(
+            10,
+            ChildEntry {
+                child_surface_id: 101,
+                index: 2,
+                cwd: None,
+                role: Some("worker".into()),
+                nickname: None,
+            },
+        );
+        state.register_child(
+            10,
+            ChildEntry {
+                child_surface_id: 102,
+                index: 3,
+                cwd: None,
+                role: Some("worker".into()),
+                nickname: None,
+            },
+        );
+        let ids = broadcast_targets(&state, 10, Some("worker"));
+        assert_eq!(ids, vec![101, 102]);
+    }
+
+    #[test]
+    fn broadcast_targets_empty_when_unknown_parent() {
+        let state = ClaudeState::default();
+        assert!(broadcast_targets(&state, 999, None).is_empty());
+    }
+
+    #[test]
+    fn build_tell_pty_text_single_line_ends_with_cr() {
+        assert_eq!(build_tell_pty_text("hello"), "hello\r");
+    }
+
+    #[test]
+    fn build_tell_pty_text_multi_line_uses_backslash_cr() {
+        // "a\nb" → "a\<CR>b<CR>"
+        assert_eq!(build_tell_pty_text("a\nb"), "a\\\rb\r");
+    }
+
+    #[test]
+    fn build_tell_pty_text_trailing_backslash_gets_space() {
+        // 마지막 라인이 `\`로 끝나면 ` ` 삽입 후 `\r`.
+        // "foo\\" → "foo\\ \r"
+        assert_eq!(build_tell_pty_text("foo\\"), "foo\\ \r");
+    }
+
+    #[test]
+    fn build_tell_pty_text_three_lines() {
+        // "x\ny\nz" → "x\<CR>y\<CR>z<CR>"
+        assert_eq!(build_tell_pty_text("x\ny\nz"), "x\\\ry\\\rz\r");
+    }
+
+    #[test]
+    fn build_tell_pty_text_empty_message() {
+        // "" → "\r" (single empty line + submit)
+        assert_eq!(build_tell_pty_text(""), "\r");
     }
 
     #[test]
