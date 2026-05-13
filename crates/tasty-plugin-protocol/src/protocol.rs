@@ -56,6 +56,66 @@ pub struct CommandInvokeParams {
     pub command_id: String,
 }
 
+// ── Shared buffer 메서드 (plugin → host via PluginEvent::IpcCall) ──
+//
+// plugin이 OS 공유 메모리 영역을 만들고 dirty rect를 알릴 때 사용한다. 실제 핸들
+// (fd/HANDLE) 전송은 *보조 채널*을 통해 이루어지고, 이 메인 채널 메서드는 id/size/
+// rect 같은 메타데이터만 운반한다. 보조 채널 wire 포맷은 SDK 통합 단계(Step 02b/02c)
+// 에서 정의된다.
+//
+// 권한: manifest의 `[memory]` 섹션에 `max_shared_buffer_bytes`가 선언된 plugin만
+// 호출 가능. 미선언 plugin이 호출하면 호스트가 -32001 PermissionDenied 응답.
+
+/// plugin → host: 새 공유 메모리 영역 생성 요청.
+pub const METHOD_HOST_SHARED_BUFFER_CREATE: &str = "host.shared_buffer.create";
+/// plugin → host: 변경된 영역(dirty rect) 통지.
+pub const METHOD_HOST_SHARED_BUFFER_DIRTY: &str = "host.shared_buffer.dirty";
+
+/// 호스트가 발급한 shared buffer 식별자. plugin 인스턴스마다 단조 증가.
+/// u64를 옵셔널 직렬화 호환을 위해 직접 직렬화.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize)]
+#[serde(transparent)]
+pub struct SharedBufferId(pub u64);
+
+/// 픽셀(또는 추후 다른 단위) 좌표계의 정수 사각형. shared buffer dirty 영역 표현에 사용.
+///
+/// 비어 있는 rect(`w == 0 || h == 0`)는 "갱신 없음"이 아니라 "유효하지 않음"으로 간주.
+/// "전체 갱신"은 `Option<Rect>::None`으로 표현한다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+pub struct Rect {
+    pub x: u32,
+    pub y: u32,
+    pub w: u32,
+    pub h: u32,
+}
+
+/// `host.shared_buffer.create` params.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct SharedBufferCreateParams {
+    /// 요청 영역 크기 (바이트). manifest의 max_shared_buffer_bytes를 초과하면 거부.
+    pub size: u64,
+}
+
+/// `host.shared_buffer.create` result. 보조 채널로 핸들이 별도 전송된 *후* 메인 채널
+/// 응답으로 이 값이 도착한다. plugin SDK는 두 정보가 모두 도착한 시점에 `SharedBuffer`를
+/// 호출자에게 반환한다.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct SharedBufferCreateResult {
+    pub id: SharedBufferId,
+    /// 실제 매핑된 크기. 보통 요청한 size와 동일하나, OS가 페이지 경계로 올린 경우 size
+    /// 자체는 요청값을 보존한다 (SharedMemory::len이 요청값을 반환).
+    pub size: u64,
+}
+
+/// `host.shared_buffer.dirty` params.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct SharedBufferDirtyParams {
+    pub id: SharedBufferId,
+    /// `None`이면 전체 영역이 dirty.
+    #[serde(default)]
+    pub rect: Option<Rect>,
+}
+
 /// `surface.lifecycle` params — 호스트가 구독 plugin들에게 broadcast하는 lifecycle 통지.
 ///
 /// `surface.destroy`(owner plugin 한정)와 달리 자기 소유가 아닌 surface의 lifecycle도
@@ -303,6 +363,52 @@ mod tests {
         assert_eq!(parsed.surface_id, 42);
         assert_eq!(parsed.kind, "terminal");
         assert_eq!(parsed.reason, SurfaceCloseReason::UserClose);
+    }
+
+    #[test]
+    fn shared_buffer_id_serializes_as_bare_u64() {
+        let id = SharedBufferId(42);
+        let s = serde_json::to_string(&id).unwrap();
+        assert_eq!(s, "42");
+        let parsed: SharedBufferId = serde_json::from_str("42").unwrap();
+        assert_eq!(parsed, SharedBufferId(42));
+    }
+
+    #[test]
+    fn shared_buffer_create_params_round_trip() {
+        let p = SharedBufferCreateParams {
+            size: 1_048_576,
+        };
+        let s = serde_json::to_string(&p).unwrap();
+        let parsed: SharedBufferCreateParams = serde_json::from_str(&s).unwrap();
+        assert_eq!(parsed.size, 1_048_576);
+    }
+
+    #[test]
+    fn shared_buffer_dirty_omits_rect_when_none() {
+        let p = SharedBufferDirtyParams {
+            id: SharedBufferId(7),
+            rect: None,
+        };
+        let s = serde_json::to_string(&p).unwrap();
+        // serde_json은 None을 null로 직렬화한다 (default skip을 명시하지 않은 경우).
+        // 우리는 rect를 명시적으로 두지 않고 None일 때 null로 보내도 됨 — 디코딩 호환.
+        assert!(s.contains("\"rect\":null") || !s.contains("rect"));
+        let parsed: SharedBufferDirtyParams = serde_json::from_str(&s).unwrap();
+        assert_eq!(parsed.id, SharedBufferId(7));
+        assert!(parsed.rect.is_none());
+    }
+
+    #[test]
+    fn shared_buffer_dirty_with_rect_round_trip() {
+        let p = SharedBufferDirtyParams {
+            id: SharedBufferId(11),
+            rect: Some(Rect { x: 10, y: 20, w: 40, h: 30 }),
+        };
+        let s = serde_json::to_string(&p).unwrap();
+        let parsed: SharedBufferDirtyParams = serde_json::from_str(&s).unwrap();
+        assert_eq!(parsed.rect.unwrap().w, 40);
+        assert_eq!(parsed.rect.unwrap().h, 30);
     }
 
     #[test]

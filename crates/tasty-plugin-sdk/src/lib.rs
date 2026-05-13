@@ -27,4 +27,4 @@ pub use runtime::run;
 pub use tasty_plugin_protocol::ui_tree::{
     ButtonStyle, LabelStyle, SelectionMode, SplitDir, TreeNode, UiEvent, UiNode,
 };
-pub use tasty_plugin_protocol::PluginEvent;
+pub use tasty_plugin_protocol::{PluginEvent, Rect, SharedBufferId};
