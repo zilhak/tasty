@@ -220,4 +220,12 @@ pub trait Plugin: Send + 'static {
     fn on_surface_lifecycle(&mut self, ctx: SurfaceLifecycleCtx) {
         let _ = ctx;
     }
+
+    /// Plugin 부트스트랩이 끝나고 worker가 첫 dispatch에 들어가기 직전 1회 호출.
+    /// plugin이 자체 background thread를 spawn해 polling 등 능동 작업을 시작할
+    /// 때 사용한다. 전달된 [`HostHandle`]은 `Clone`이므로 spawn한 thread로 옮길
+    /// 수 있다. 기본 구현은 no-op.
+    fn on_start(&mut self, host: HostHandle) {
+        let _ = host;
+    }
 }

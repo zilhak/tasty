@@ -146,6 +146,10 @@ fn worker_loop<P: Plugin>(
     writer: Arc<Mutex<TcpStream>>,
     host: HostHandle,
 ) {
+    // dispatch가 시작되기 전에 plugin에 1회 시작 알림. plugin이 여기서 자체
+    // background thread를 spawn하면 host call이 안전하게 동작한다 (메인 recv
+    // 루프가 이미 동작 중이므로 ipc.result delivery 가능).
+    plugin.on_start(host.clone());
     for req in req_rx.iter() {
         let result = dispatch(&mut plugin, &req.method, &req.params, &host);
         let resp = build_response(req.id, result);
@@ -589,5 +593,57 @@ mod tests {
             dispatch(&mut plugin, METHOD_SURFACE_LIFECYCLE, &params, &host),
         );
         assert_eq!(resp.error_code, Some(-32602));
+    }
+
+    struct OnStartRecorder {
+        called: Arc<Mutex<u32>>,
+    }
+    impl Plugin for OnStartRecorder {
+        fn id(&self) -> &str {
+            "test.on_start"
+        }
+        fn create_surface(&mut self, _ctx: SurfaceCreateCtx) -> SurfaceResult {
+            SurfaceResult {
+                tree: None,
+                display_name: None,
+            }
+        }
+        fn handle_event(&mut self, _ctx: SurfaceEventCtx) -> SurfaceResult {
+            SurfaceResult {
+                tree: None,
+                display_name: None,
+            }
+        }
+        fn on_start(&mut self, _host: HostHandle) {
+            *self.called.lock().unwrap() += 1;
+        }
+    }
+
+    /// worker_loop이 dispatch 전에 on_start를 정확히 1회 호출해야 한다.
+    /// req_rx를 닫아 worker가 즉시 종료하면 on_start만 실행되고 끝.
+    #[test]
+    fn worker_loop_invokes_on_start_once_before_dispatch() {
+        let called = Arc::new(Mutex::new(0u32));
+        let plugin = OnStartRecorder {
+            called: called.clone(),
+        };
+        let host = dummy_host();
+        // dummy writer: 어디로도 안 가는 TcpStream 페어
+        let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let accept = std::thread::spawn(move || {
+            let _ = listener.accept();
+        });
+        let stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
+        accept.join().unwrap();
+        let writer = Arc::new(Mutex::new(stream));
+
+        let (tx, rx) = mpsc::channel::<PluginRequest>();
+        drop(tx); // queue 즉시 닫기 — worker_loop은 on_start 후 iter()로 빠져나간다.
+        let join = std::thread::spawn(move || {
+            worker_loop(plugin, rx, writer, host);
+        });
+        join.join().unwrap();
+        assert_eq!(*called.lock().unwrap(), 1);
     }
 }
