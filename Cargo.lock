@@ -4832,6 +4832,7 @@ name = "tasty-plugin-claude"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "directories",
  "regex",
  "serde",
  "serde_json",
