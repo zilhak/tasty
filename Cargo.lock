@@ -4836,6 +4836,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+ "shell-escape",
  "tasty-plugin-sdk",
  "tracing",
  "tracing-subscriber",

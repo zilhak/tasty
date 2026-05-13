@@ -100,6 +100,8 @@ impl Plugin for ClaudePlugin {
             // text를 보낸다.
             "claude.broadcast" => handle_broadcast(&self.state, &ctx.host, &ctx.params),
             "claude.tell" => handle_tell(&ctx.host, &ctx.params),
+            // step 04d.1: 새 workspace에 claude 띄우기.
+            "claude.launch" => handle_launch(&self.scanner, &ctx.host, &ctx.params),
             other => Err(IpcMethodError::not_found(other)),
         }
     }
@@ -434,6 +436,95 @@ fn handle_tell(host: &HostHandle, params: &Value) -> Result<Value, IpcMethodErro
     Ok(resp)
 }
 
+/// 호스트 `handle_claude_launch` 1:1 이주.
+///
+/// 1. `workspace.create { type: "terminal", name }`로 새 워크스페이스 + 초기
+///    터미널 생성.
+/// 2. 디렉터리 인자가 있으면 `cd <escaped>\r`을 PTY로 송신 (호스트와 동일하게
+///    workspace.create의 cwd가 아니라 PTY cd 사용 — 사용자가 cd 명령 echo를
+///    볼 수 있는 동작 보존).
+/// 3. `claude` (+ optional `--task <escaped>`)을 PTY로 송신.
+/// 4. plugin 자체 error scanner에 surface 등록.
+///
+/// 호스트가 호출하던 `terminal.set_output_scan_mark()`는 plugin이 가진 IPC
+/// (`surface.read_since_mark`)와 서로 다른 mark이므로 1:1 대응이 없다. error_scan
+/// 모듈은 `surface.read_since_mark`로 읽고 200자 dedupe로 중복 fire를 막으므로
+/// 누락이 아니라 false positive 위험이 미세하게 늘 뿐이며, 정규식이 Claude API
+/// 응답에 매우 특이적이라 실측 영향은 거의 없다.
+fn handle_launch(
+    scanner: &Arc<Mutex<ErrorScanner>>,
+    host: &HostHandle,
+    params: &Value,
+) -> Result<Value, IpcMethodError> {
+    let workspace_name = params
+        .get("workspace")
+        .and_then(|v| v.as_str())
+        .unwrap_or("claude")
+        .to_string();
+    let directory = params
+        .get("directory")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+    let task = params
+        .get("task")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+
+    let ws_resp = host
+        .call(
+            "workspace.create",
+            json!({
+                "type": "terminal",
+                "name": workspace_name,
+            }),
+        )
+        .map_err(IpcMethodError::from)?;
+
+    let workspace_id = ws_resp
+        .get("id")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32)
+        .ok_or_else(|| IpcMethodError::new("workspace.create returned no 'id'"))?;
+    let surface_id = ws_resp.get("surface_id").and_then(|v| v.as_u64()).map(|v| v as u32);
+
+    if let Some(sid) = surface_id {
+        if let Some(dir) = directory.as_deref() {
+            let normalized = dir.replace('\\', "/");
+            let escaped = shell_escape::escape(normalized.into());
+            let _ = host.call(
+                "surface.send",
+                json!({ "surface_id": sid, "text": format!("cd {escaped}\r") }),
+            );
+        }
+
+        let cmd = build_launch_command(task.as_deref());
+        let _ = host.call(
+            "surface.send",
+            json!({ "surface_id": sid, "text": format!("{cmd}\r") }),
+        );
+
+        if let Ok(mut s) = scanner.lock() {
+            s.enable(sid);
+        }
+    }
+
+    Ok(json!({
+        "workspace_id": workspace_id,
+        "workspace_name": workspace_name,
+        "surface_id": surface_id,
+    }))
+}
+
+/// `claude` 또는 `claude --task <escaped>`. host 측 launch와 동일한 escape 사용.
+fn build_launch_command(task: Option<&str>) -> String {
+    let mut cmd = "claude".to_string();
+    if let Some(t) = task {
+        let escaped = shell_escape::escape(t.into());
+        cmd.push_str(&format!(" --task {escaped}"));
+    }
+    cmd
+}
+
 /// 호스트 코드의 PTY 시퀀스 생성 로직을 1:1 옮긴 순수 함수.
 /// - 라인 사이: `\` + `\r` (Claude Code에서 newline 삽입)
 /// - 마지막 라인이 `\`로 끝나면 ` ` 한 칸을 덧붙여 final `\r`이 submit으로 해석되게
@@ -732,6 +823,32 @@ mod handler_tests {
     fn build_tell_pty_text_empty_message() {
         // "" → "\r" (single empty line + submit)
         assert_eq!(build_tell_pty_text(""), "\r");
+    }
+
+    // ─── step 04d.1: launch helper tests ────────────────────────────────────
+
+    #[test]
+    fn build_launch_command_no_task() {
+        assert_eq!(build_launch_command(None), "claude");
+    }
+
+    #[test]
+    fn build_launch_command_with_simple_task() {
+        // shell_escape는 안전한 문자열을 그대로 둔다.
+        assert_eq!(build_launch_command(Some("fix")), "claude --task fix");
+    }
+
+    #[test]
+    fn build_launch_command_with_spaces_gets_escaped() {
+        // 공백이 있으면 quote가 붙는다 — shell_escape의 표준 동작.
+        let out = build_launch_command(Some("fix the bug"));
+        assert!(
+            out.starts_with("claude --task "),
+            "prefix wrong: {out}"
+        );
+        // 'fix the bug'으로 single-quote escape 되거나 다른 안전 escape.
+        assert!(out.contains("fix the bug"), "task body missing: {out}");
+        assert_ne!(out, "claude --task fix the bug", "must be escaped");
     }
 
     #[test]
