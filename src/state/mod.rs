@@ -139,6 +139,12 @@ pub enum PendingNativeMenu {
         x: f32,
         y: f32,
     },
+    /// Terminal surface right-click: Copy surface id (좌표는 logical px 기준)
+    TerminalSurface {
+        surface_id: u32,
+        x: f32,
+        y: f32,
+    },
 }
 
 /// All transient UI dialog/popup state, grouped to avoid AppState bloat.

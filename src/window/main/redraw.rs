@@ -546,6 +546,25 @@ impl MainWindow {
                 }
                 self.mark_dirty();
             }
+            PendingNativeMenu::TerminalSurface { surface_id, x, y } => {
+                let items = [MenuItem::new(
+                    1,
+                    crate::i18n::t("terminal_context_menu.copy_surface_id"),
+                )];
+                let result =
+                    show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
+                if let Some(1) = result {
+                    let text = surface_id.to_string();
+                    if let Some(cb) = &mut self.clipboard {
+                        cb.set_text(&text);
+                    }
+                    self.state.toasts.push_info(
+                        crate::i18n::t("toast.copied"),
+                        crate::ui::ToastScope::Surface(surface_id),
+                    );
+                }
+                self.mark_dirty();
+            }
         }
     }
 }

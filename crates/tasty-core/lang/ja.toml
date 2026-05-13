@@ -315,6 +315,9 @@ new_explorer = "新規エクスプローラー"
 new_html = "新規HTML..."
 new_image = "新規画像"
 
+[terminal_context_menu]
+copy_surface_id = "ターミナルIDをコピー"
+
 [notification_panel]
 window_title = "通知"
 unread_count = "{}件の未読"

@@ -315,6 +315,9 @@ new_explorer = "New Explorer"
 new_html = "New HTML..."
 new_image = "New Image"
 
+[terminal_context_menu]
+copy_surface_id = "Copy Terminal ID"
+
 [notification_panel]
 window_title = "Notifications"
 unread_count = "{} unread"
