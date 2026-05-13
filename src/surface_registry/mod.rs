@@ -22,6 +22,14 @@ use tasty_core::model::{Surface, SurfaceId};
 
 pub use builtins::register_builtin_kinds;
 
+/// `ClosedPanel::from_*` 가족이 받는 snapshot 클로저를 registry 위에서 만든다.
+/// 호출자는 결과를 `&mut`로 가지고 한 capture 트랜잭션 동안 reuse한다.
+pub fn snapshot_fn_for(
+    registry: &SurfaceKindRegistry,
+) -> impl FnMut(&dyn Surface) -> Option<serde_json::Value> + '_ {
+    move |s| registry.get(s.kind()).and_then(|def| (def.snapshot)(s))
+}
+
 /// surface 종류별 메타 + 동작 함수 묶음.
 ///
 /// 모든 함수는 `Send + Sync + 'static`이며, `Arc<SurfaceKindDef>` 단위로 보관되어

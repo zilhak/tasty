@@ -3,7 +3,11 @@ use std::path::PathBuf;
 
 use termwiz::cell::CellAttributes;
 
-use super::{PaneId, SplitDirection, SurfaceId, TabId, WorkspaceId};
+use super::{PaneId, SplitDirection, Surface, SurfaceId, TabId, WorkspaceId};
+
+/// `&dyn Surface` → snapshot JSON. `None`이면 영속화에서 제외(휘발성 surface).
+/// 호출자가 `SurfaceKindRegistry`를 캡처해 넘긴다 — core는 registry 타입을 알지 않는다.
+pub type SnapshotFn<'a> = &'a mut dyn FnMut(&dyn Surface) -> Option<serde_json::Value>;
 
 /// Maximum number of closed items to keep.
 const MAX_CLOSED_ITEMS: usize = 10;
@@ -27,12 +31,12 @@ pub enum ClosedPanel {
         layout: ClosedSurfaceLayout,
         focused_surface: SurfaceId,
     },
-    /// Panels without PTY store just enough to recreate.
-    Markdown {
-        path: PathBuf,
-    },
-    Image {
-        path: Option<PathBuf>,
+    /// Non-terminal surface — captured via SurfaceKindRegistry snapshot. `kind`은
+    /// surface kind 식별자(예: `"markdown"`, `"image"`), `snapshot`은 해당 kind의
+    /// `restore` 콜백이 받을 JSON. core는 kind별 분기를 알지 않는다.
+    Generic {
+        kind: String,
+        snapshot: serde_json::Value,
     },
 }
 
@@ -169,7 +173,10 @@ impl ClosedSurfaceLayout {
 impl ClosedPanel {
     /// Capture from a live Tab. Returns `None` for surfaces that are not
     /// restorable by the host (plugin-provided RemoteSurface, Html, Empty 등).
-    pub fn from_tab(tab: &super::tab::Tab) -> Option<Self> {
+    ///
+    /// `snapshot`은 비-터미널 surface에 대해 `SurfaceKindRegistry.snapshot(s)`을
+    /// 호출하는 클로저. 호출자가 registry를 캡처해 넘긴다.
+    pub fn from_tab(tab: &super::tab::Tab, snapshot: SnapshotFn<'_>) -> Option<Self> {
         if tab.is_split() {
             return Some(ClosedPanel::Tab {
                 layout: ClosedSurfaceLayout::from_layout(tab.layout()),
@@ -178,37 +185,30 @@ impl ClosedPanel {
         }
         // Single surface tab
         let surface = tab.surface();
-        Self::from_surface(surface)
+        Self::from_surface(surface, snapshot)
     }
 
-    /// Capture from a single Surface (trait object). Returns `None` if the
-    /// surface kind is not restorable (e.g. plugin RemoteSurface, Html, Empty,
-    /// ClipboardViewer).
-    pub fn from_surface(surface: &dyn super::Surface) -> Option<Self> {
+    /// Capture from a single Surface (trait object). Terminal은 PTY 로직이 별도라
+    /// 직접 처리하고, 그 외는 모두 `snapshot` 클로저를 통해 registry 경로로 간다.
+    /// 클로저가 `None`을 반환하면 (Html/Empty/ClipboardViewer/RemoteSurface 등 휘발성)
+    /// 함수도 `None`을 반환한다.
+    pub fn from_surface(surface: &dyn Surface, snapshot: SnapshotFn<'_>) -> Option<Self> {
         if let Some(node) = surface.as_terminal_surface() {
             return Some(ClosedPanel::Terminal(ClosedSurface::from_surface_node(node)));
         }
-        let any = surface.as_any();
-        if let Some(md) = any.downcast_ref::<super::MarkdownPanel>() {
-            return Some(ClosedPanel::Markdown {
-                path: PathBuf::from(&md.file_path),
-            });
-        }
-        if let Some(img) = any.downcast_ref::<super::ImagePanel>() {
-            return Some(ClosedPanel::Image {
-                path: img.file_path.as_ref().map(PathBuf::from),
-            });
-        }
-        // Html, Empty, ClipboardViewer, RemoteSurface — not restorable by host.
-        None
+        let snap = snapshot(surface)?;
+        Some(ClosedPanel::Generic {
+            kind: surface.kind().to_string(),
+            snapshot: snap,
+        })
     }
 }
 
 impl ClosedTab {
     /// Capture from a live Tab. Returns `None` if the tab's surface is not
     /// restorable (plugin RemoteSurface 등).
-    pub fn from_tab(tab: &super::tab::Tab) -> Option<Self> {
-        let panel = ClosedPanel::from_tab(tab)?;
+    pub fn from_tab(tab: &super::tab::Tab, snapshot: SnapshotFn<'_>) -> Option<Self> {
+        let panel = ClosedPanel::from_tab(tab, snapshot)?;
         Some(Self {
             id: tab.id,
             name: tab.name.clone(),
@@ -220,10 +220,14 @@ impl ClosedTab {
 
 impl ClosedPane {
     /// Capture from a live Pane. Tabs that are not restorable are skipped.
-    pub fn from_pane(pane: &super::Pane) -> Self {
+    pub fn from_pane(pane: &super::Pane, snapshot: SnapshotFn<'_>) -> Self {
         Self {
             id: pane.id,
-            tabs: pane.tabs.iter().filter_map(ClosedTab::from_tab).collect(),
+            tabs: pane
+                .tabs
+                .iter()
+                .filter_map(|t| ClosedTab::from_tab(t, snapshot))
+                .collect(),
             active_tab: pane.active_tab,
         }
     }
@@ -231,9 +235,11 @@ impl ClosedPane {
 
 impl ClosedPaneNode {
     /// Capture from a live PaneNode.
-    pub fn from_pane_node(node: &super::PaneNode) -> Self {
+    pub fn from_pane_node(node: &super::PaneNode, snapshot: SnapshotFn<'_>) -> Self {
         match node {
-            super::PaneNode::Leaf(pane) => ClosedPaneNode::Leaf(ClosedPane::from_pane(pane)),
+            super::PaneNode::Leaf(pane) => {
+                ClosedPaneNode::Leaf(ClosedPane::from_pane(pane, snapshot))
+            }
             super::PaneNode::Split {
                 direction,
                 ratio,
@@ -243,8 +249,8 @@ impl ClosedPaneNode {
             } => ClosedPaneNode::Split {
                 direction: *direction,
                 ratio: *ratio,
-                first: Box::new(Self::from_pane_node(first)),
-                second: Box::new(Self::from_pane_node(second)),
+                first: Box::new(Self::from_pane_node(first, snapshot)),
+                second: Box::new(Self::from_pane_node(second, snapshot)),
             },
         }
     }
@@ -252,12 +258,12 @@ impl ClosedPaneNode {
 
 impl ClosedItem {
     /// Capture a workspace snapshot.
-    pub fn from_workspace(ws: &super::Workspace) -> Self {
+    pub fn from_workspace(ws: &super::Workspace, snapshot: SnapshotFn<'_>) -> Self {
         ClosedItem::Workspace {
             id: ws.id,
             name: ws.name.clone(),
             subtitle: ws.subtitle.clone(),
-            pane_layout: ClosedPaneNode::from_pane_node(ws.pane_layout()),
+            pane_layout: ClosedPaneNode::from_pane_node(ws.pane_layout(), snapshot),
             focused_pane: ws.focused_pane,
         }
     }

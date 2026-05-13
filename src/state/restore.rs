@@ -133,21 +133,15 @@ impl AppState {
                 let first_id = rebuilt_layout.first_surface_id().unwrap_or(0);
                 Some(RebuildResult::Layout(rebuilt_layout, first_id))
             }
-            ClosedPanel::Markdown { path } => {
+            ClosedPanel::Generic { kind, snapshot } => {
                 let id = self.engine.next_ids.next_surface();
-                Some(RebuildResult::Single(Box::new(
-                    crate::model::MarkdownPanel::new(id, path.to_string_lossy().to_string()),
-                )))
-            }
-            ClosedPanel::Image { path } => {
-                let id = self.engine.next_ids.next_surface();
-                match path {
-                    Some(p) => Some(RebuildResult::Single(Box::new(
-                        crate::model::ImagePanel::new(id, p.to_string_lossy().to_string()),
-                    ))),
-                    None => Some(RebuildResult::Single(Box::new(
-                        crate::model::ImagePanel::new_blank(id),
-                    ))),
+                let def = self.engine.surface_registry.get(&kind)?;
+                match (def.restore)(id, &snapshot) {
+                    Ok(surface) => Some(RebuildResult::Single(surface)),
+                    Err(e) => {
+                        tracing::warn!("restore failed for kind '{}': {e}", kind);
+                        None
+                    }
                 }
             }
         }

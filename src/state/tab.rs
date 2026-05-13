@@ -278,11 +278,17 @@ impl AppState {
         // Capture tab snapshot before closing (immutable borrow)
         if let Some(pane) = self.focused_pane() {
             let active = pane.active_tab;
-            if let Some(tab) = pane.tabs.get(active)
-                && let Some(snapshot) = crate::model::closed_item::ClosedTab::from_tab(tab)
-            {
-                self.engine
-                    .push_closed_item(crate::model::ClosedItem::Tab(snapshot));
+            if let Some(tab) = pane.tabs.get(active) {
+                let snapshot_opt = {
+                    let mut snap_fn = crate::surface_registry::snapshot_fn_for(
+                        &self.engine.surface_registry,
+                    );
+                    crate::model::closed_item::ClosedTab::from_tab(tab, &mut snap_fn)
+                };
+                if let Some(snapshot) = snapshot_opt {
+                    self.engine
+                        .push_closed_item(crate::model::ClosedItem::Tab(snapshot));
+                }
             }
         }
         // Collect surface IDs (mutable borrow)
