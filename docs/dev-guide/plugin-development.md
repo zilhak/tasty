@@ -448,8 +448,25 @@ variant 요약:
 | `TASTY_PLUGIN_DATA_DIR` | 런타임 데이터 (DB, 캐시) — 업그레이드 시 보존 |
 | `TASTY_PLUGIN_CONFIG_PATH` | 사용자 편집 설정 파일 경로 |
 | `TASTY_PLUGIN_LOG_PATH` | stdout/stderr가 자동 redirect되는 로그 파일 |
+| `TASTY_PLUGIN_HANDLE_ENDPOINT` | (선택) 보조 핸들 채널 endpoint — Unix: socket path, Windows: pipe 이름. 없거나 빈 문자열이면 SDK가 보조 채널을 skip한다. |
 
 호스트가 디렉터리들을 미리 만들어두므로 plugin은 `fs.write` 권한 없이도 자기 영역에 자유롭게 쓸 수 있다. (단, IPC 게이트는 plugin이 호스트 fs API를 호출하는 경우에만 적용된다 — plugin 자체 프로세스의 직접 fs 접근은 OS-level 샌드박스가 없는 한 강제되지 않는다.)
+
+### 보조 핸들 채널 (TASTY_PLUGIN_HANDLE_ENDPOINT)
+
+메인 채널은 NDJSON TCP라 fd/HANDLE 같은 OS 리소스를 운반할 수 없다. shared buffer
+등 핸들 전달이 필요한 기능을 위해 호스트는 **보조 채널**을 별도 endpoint로 연다:
+
+- Unix (Linux/macOS): `std::env::temp_dir()` 안의 `tasty-handle-<pid>-<nonce>.sock` `AF_UNIX` 소켓
+- Windows: `\\.\pipe\tasty-handle-<random>` Named Pipe (구현 진행 중)
+
+SDK `tasty_plugin_sdk::run`이 메인 채널 인증 직후 자동으로 connect를 시도한다.
+endpoint env가 없거나 connect/auth가 실패해도 fatal이 아니라 `warn` 로그만 남기고
+본 루프를 계속 진행한다 — 보조 채널을 안 쓰는 plugin은 그대로 동작한다.
+
+인증 메시지는 메인 채널과 동일한 `AuthMessage`/`AuthAckEnvelope`을 재사용 (구분은
+endpoint 자체로 함). plugin 작성자가 직접 보조 채널을 다룰 일은 없으며, shared
+buffer 같은 상위 API를 통해 간접적으로 사용된다.
 
 ## 8. 빌드 & 설치
 
