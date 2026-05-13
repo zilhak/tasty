@@ -130,6 +130,12 @@ impl ClaudeState {
         self.children.contains_key(&parent_surface)
     }
 
+    /// 주어진 부모 surface가 "닫힘" 상태(`mark_parent_closed`로 마킹됐고 자식이
+    /// 아직 남아 있는 상태)에 있는지. `claude.parent` 응답의 status 결정에 사용.
+    pub fn is_parent_closed(&self, parent_surface: u32) -> bool {
+        self.closed_parents.contains(&parent_surface)
+    }
+
     /// 자식을 한 명 제거하고, 그 자식의 idle/needs_input 데이터도 함께 삭제한다.
     /// 호스트 `unregister_child`와 동일하게, 자식 제거 후 부모가 closed_parents에 있고
     /// 자식이 0명이면 부모 관련 데이터도 함께 정리한다.
@@ -297,6 +303,19 @@ mod tests {
         s.set_needs_input(50, true);
         s.set_idle(50, false);
         assert_eq!(s.state_of(50), "active");
+    }
+
+    #[test]
+    fn is_parent_closed_reflects_mark_parent_closed_state() {
+        let mut s = ClaudeState::default();
+        s.register_child(10, entry(100, 1));
+        assert!(!s.is_parent_closed(10));
+        s.mark_parent_closed(10);
+        // 자식이 남아 있으므로 closed_parents 마킹은 유지된다.
+        assert!(s.is_parent_closed(10));
+        s.unregister_child(100);
+        // 마지막 자식 unregister 시 closed_parents에서도 제거된다.
+        assert!(!s.is_parent_closed(10));
     }
 
     #[test]

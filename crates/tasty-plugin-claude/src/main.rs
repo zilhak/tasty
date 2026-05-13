@@ -74,11 +74,9 @@ impl Plugin for ClaudePlugin {
     }
 
     fn handle_ipc_method(&mut self, ctx: IpcMethodCtx) -> Result<Value, IpcMethodError> {
-        // step 03: hook/install/uninstall만 plugin이 처리. 나머지 claude.* 메서드
-        // (launch/spawn/children/parent/kill/respawn/tell/wait/broadcast)는 step 04
-        // cutover에서 합류한다. 그 전까지는 호스트 정적 핸들러가 살아 있고, plugin은
-        // BUILTINS에 미등록이라 IPC가 forward되지 않으므로 이 분기들은 실 트래픽을
-        // 받지 않는다. 단위 테스트 + cutover 시점 동작을 위해 미리 연결.
+        // 분기를 작게 cutover-안전 단계로 채워나간다. BUILTINS 미등록 동안엔 모든
+        // claude.* 트래픽이 호스트로 가므로 본 분기는 실제로는 단위 테스트로만 검증.
+        // 호스트 핸들러 제거 + BUILTINS 등록은 step 04e cutover에서 atomic으로.
         match ctx.method.as_str() {
             "claude.hook" => hook::handle_claude_hook(&mut self.state, &ctx.host, &ctx.params),
             "claude.install" => match install::run_install() {
@@ -89,6 +87,10 @@ impl Plugin for ClaudePlugin {
                 Ok(removed) => Ok(json!({ "uninstalled": removed })),
                 Err(e) => Err(IpcMethodError::new(format!("uninstall failed: {e}"))),
             },
+            // step 04a: plugin 자기 ClaudeState만 보면 응답 가능한 핸들러들.
+            "claude.set_idle_state" => handle_set_idle_state(&mut self.state, &ctx.params),
+            "claude.set_needs_input" => handle_set_needs_input(&mut self.state, &ctx.params),
+            "claude.parent" => handle_parent(&self.state, &ctx.params),
             other => Err(IpcMethodError::not_found(other)),
         }
     }
@@ -123,6 +125,185 @@ impl Plugin for ClaudePlugin {
             .name("claude-error-scan".into())
             .spawn(move || error_scan_loop(scanner, host))
             .expect("spawn claude-error-scan thread");
+    }
+}
+
+// ─── step 04a 핸들러들 ───────────────────────────────────────────────────────
+//
+// 호스트 src/ipc/handler/claude.rs의 응답 JSON과 byte-for-byte 동일해야 cutover
+// 후 CLI 출력 회귀가 없다. param 키 이름 / 응답 필드 / 누락된 surface_id의 에러
+// 분기까지 1:1 보존한다.
+
+fn require_surface_id(params: &Value) -> Result<u32, IpcMethodError> {
+    params
+        .get("surface_id")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32)
+        .ok_or_else(|| IpcMethodError::invalid_params("Missing required 'surface_id' parameter"))
+}
+
+fn handle_set_idle_state(state: &mut ClaudeState, params: &Value) -> Result<Value, IpcMethodError> {
+    let surface_id = params
+        .get("surface_id")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32)
+        .ok_or_else(|| IpcMethodError::new("No focused surface"))?;
+    let idle = params
+        .get("idle")
+        .and_then(|v| v.as_bool())
+        .ok_or_else(|| IpcMethodError::invalid_params("Missing 'idle' parameter (bool)"))?;
+    state.set_idle(surface_id, idle);
+    state.save();
+    Ok(json!({ "ok": true }))
+}
+
+fn handle_set_needs_input(
+    state: &mut ClaudeState,
+    params: &Value,
+) -> Result<Value, IpcMethodError> {
+    let surface_id = params
+        .get("surface_id")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32)
+        .ok_or_else(|| IpcMethodError::new("No focused surface"))?;
+    let needs_input = params
+        .get("needs_input")
+        .and_then(|v| v.as_bool())
+        .ok_or_else(|| {
+            IpcMethodError::invalid_params("Missing 'needs_input' parameter (bool)")
+        })?;
+    state.set_needs_input(surface_id, needs_input);
+    state.save();
+    Ok(json!({ "ok": true }))
+}
+
+fn handle_parent(state: &ClaudeState, params: &Value) -> Result<Value, IpcMethodError> {
+    let child_surface_id = require_surface_id(params)?;
+    match state.parent_of_child(child_surface_id) {
+        Some(parent_id) => {
+            let status = if state.is_parent_closed(parent_id) {
+                "closed"
+            } else {
+                "active"
+            };
+            Ok(json!({
+                "parent_surface_id": parent_id,
+                "status": status,
+            }))
+        }
+        None => Ok(json!({
+            "parent_surface_id": null,
+            "status": "none",
+        })),
+    }
+}
+
+#[cfg(test)]
+mod handler_tests {
+    use super::*;
+    use state::{ChildEntry, ClaudeState};
+
+    fn entry(child_surface_id: u32, index: u32) -> ChildEntry {
+        ChildEntry {
+            child_surface_id,
+            index,
+            cwd: None,
+            role: None,
+            nickname: None,
+        }
+    }
+
+    #[test]
+    fn set_idle_state_true_sets_idle() {
+        let mut state = ClaudeState::default();
+        let res = handle_set_idle_state(
+            &mut state,
+            &json!({ "surface_id": 5, "idle": true }),
+        )
+        .unwrap();
+        assert_eq!(res, json!({ "ok": true }));
+        assert_eq!(state.state_of(5), "idle");
+    }
+
+    #[test]
+    fn set_idle_state_false_clears_idle_and_needs_input() {
+        let mut state = ClaudeState::default();
+        state.set_idle(5, true);
+        state.set_needs_input(5, true);
+        let _ = handle_set_idle_state(
+            &mut state,
+            &json!({ "surface_id": 5, "idle": false }),
+        )
+        .unwrap();
+        assert_eq!(state.state_of(5), "active");
+    }
+
+    #[test]
+    fn set_idle_state_missing_surface_id_returns_error() {
+        let mut state = ClaudeState::default();
+        let err = handle_set_idle_state(&mut state, &json!({ "idle": true })).unwrap_err();
+        // 호스트는 No focused surface (-32000) 반환 — 호환 보존.
+        assert_eq!(err.code, -32000);
+    }
+
+    #[test]
+    fn set_idle_state_missing_idle_param_returns_invalid_params() {
+        let mut state = ClaudeState::default();
+        let err =
+            handle_set_idle_state(&mut state, &json!({ "surface_id": 5 })).unwrap_err();
+        assert_eq!(err.code, -32602);
+    }
+
+    #[test]
+    fn set_needs_input_true() {
+        let mut state = ClaudeState::default();
+        let res = handle_set_needs_input(
+            &mut state,
+            &json!({ "surface_id": 7, "needs_input": true }),
+        )
+        .unwrap();
+        assert_eq!(res, json!({ "ok": true }));
+        assert_eq!(state.state_of(7), "needs_input");
+    }
+
+    #[test]
+    fn parent_returns_active_when_known() {
+        let mut state = ClaudeState::default();
+        state.register_child(10, entry(100, 1));
+        let res = handle_parent(&state, &json!({ "surface_id": 100 })).unwrap();
+        assert_eq!(
+            res,
+            json!({ "parent_surface_id": 10, "status": "active" })
+        );
+    }
+
+    #[test]
+    fn parent_returns_closed_when_marked() {
+        let mut state = ClaudeState::default();
+        state.register_child(10, entry(100, 1));
+        state.mark_parent_closed(10);
+        let res = handle_parent(&state, &json!({ "surface_id": 100 })).unwrap();
+        assert_eq!(
+            res,
+            json!({ "parent_surface_id": 10, "status": "closed" })
+        );
+    }
+
+    #[test]
+    fn parent_returns_none_when_not_registered() {
+        let state = ClaudeState::default();
+        let res = handle_parent(&state, &json!({ "surface_id": 999 })).unwrap();
+        assert_eq!(
+            res,
+            json!({ "parent_surface_id": null, "status": "none" })
+        );
+    }
+
+    #[test]
+    fn parent_missing_surface_id_is_invalid_params() {
+        let state = ClaudeState::default();
+        let err = handle_parent(&state, &json!({})).unwrap_err();
+        assert_eq!(err.code, -32602);
     }
 }
 
