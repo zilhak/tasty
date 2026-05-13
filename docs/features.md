@@ -667,8 +667,9 @@
 - `surface.meta_unset`: `surface_id?`, `key` — 메타데이터 키 삭제. 응답: `{ ok: true }`
 - `surface.meta_list`: `surface_id?` — 전체 메타데이터 객체 반환
 
-#### 에이전트 전용
-- `claude.launch`: Claude Code 전용 워크스페이스 생성 및 실행
+#### 에이전트 전용 (번들 plugin이 제공)
+- `claude.launch`: Claude Code 전용 워크스페이스 생성 및 실행 — `com.tasty.claude` plugin이 등록
+- `codex.launch`: Codex CLI 전용 워크스페이스 생성 및 실행 — `com.tasty.codex` plugin이 등록
 
 ### 멀티 윈도우
 - `window.create` IPC 또는 `tasty new window` CLI로 새 독립 윈도우 생성
@@ -719,7 +720,7 @@
 
 ### CLI 클라이언트 (cli.rs)
 - `tasty` 명령에 서브커맨드가 있으면 CLI 모드, 없으면 GUI 모드로 동작
-- clap 기반 그룹형 서브커맨드: `new`, `close`, `list`, `set`, `send`, `read`, `unset`, `claude`, `notify`, `surface-meta`, `is-typing`, `debug`
+- clap 기반 그룹형 서브커맨드: `new`, `close`, `list`, `set`, `send`, `read`, `unset`, `notify`, `surface-meta`, `is-typing`, `debug` (`claude`, `codex` 등은 번들 plugin이 자체적으로 등록)
 - 포트 파일에서 포트 번호를 읽어 TCP 연결 후 JSON-RPC 요청/응답
 - `list tree` 커맨드: 워크스페이스/패인/탭 계층을 트리 형태로 표시 (ID, surface type 포함)
 - `list tabs --pane ID` 커맨드: 지정 패인의 탭 목록 조회 (id, name, type, surface_id)
@@ -772,66 +773,64 @@ Surface별 이벤트 훅을 등록하여 특정 이벤트 발생 시 셸 명령�
 - CLI: `tasty set mark`, `tasty read since-mark --strip-ansi`
 - IPC: `surface.set_mark`, `surface.read_since_mark` 메서드
 
-### Claude Code 런처 (claude.launch)
+### Claude Code 통합 (com.tasty.claude plugin)
 
-Claude Code를 새 워크스페이스에서 자동으로 실행하는 전용 런처.
+Claude Code 워크스페이스 런처, parent-child 자식 관리, hook 통합 전체가 번들 plugin
+`com.tasty.claude`로 이전되었다. 호스트는 plugin 등록만 처리하고, 모든 claude.*
+IPC 메서드와 `tasty claude *` CLI 서브커맨드는 plugin이 자체적으로 노출한다.
 
+#### Claude 워크스페이스 런처 (claude.launch)
 - 새 워크스페이스 자동 생성 및 이름 설정
 - 지정된 디렉토리로 이동 후 `claude` 명령 실행 (shell-escape로 인젝션 방지)
 - `--task` 옵션으로 작업 설명 전달 가능 (shell-escape 적용)
 - CLI: `tasty claude launch --workspace "my-project" --directory "/path/to/project" --task "Fix the bug"`
 - IPC: `claude.launch` 메서드 (workspace, directory, task 파라미터)
 
-### Claude Parent-Child 관계 관리
+#### Parent-Child 관계 관리
+부모 Claude 인스턴스가 자식 Claude 인스턴스를 생성·관리하는 시스템. AI 에이전트가
+멀티 에이전트 워크플로우를 구성할 때 사용한다.
 
-부모 Claude 인스턴스가 자식 Claude 인스턴스를 생성하고 관리하는 시스템. AI 에이전트가 멀티 에이전트 워크플로우를 구성할 때 사용한다.
-
-- **ClaudeChildEntry**: 자식 surface ID, 인덱스, cwd, role, nickname을 추적하는 데이터 구조
-- **부모-자식 매핑**: `HashMap<u32, Vec<ClaudeChildEntry>>`로 부모별 자식 목록 관리, `HashMap<u32, u32>`로 자식에서 부모 역참조
-- **자동 정리**: 부모 또는 자식 surface가 닫힐 때 관계를 자동으로 정리. 부모가 먼저 닫혀도 자식이 살아있는 동안 관계 유지 (ghost cleanup)
+- **자식 추적**: plugin 내부 state에서 surface ID, 인덱스, cwd, role, nickname을 보존
+- **자동 정리**: 부모 또는 자식 surface가 닫힐 때 관계를 자동으로 정리. 부모가 먼저
+  닫혀도 자식이 살아있는 동안 관계 유지 (ghost cleanup)
 - **claude.spawn**: 두 가지 모드 지원:
-  - **`--surface` 모드** (기존): 대상 surface의 pane을 분할하여 새 터미널 생성 후 `claude` 명령 자동 실행. `--surface`는 pane 분할 위치만 결정
-  - **`--workspace` 모드** (신규): workspace를 지정하면 tasty가 spawn pane을 자동 관리. parent surface마다 지정된 workspace 내에 전용 spawn pane을 갖고, 2×2 그리드 알고리즘으로 최적 배치 (1→좌우분할→좌측상하분할→우측상하분할→새탭). 4개 초과 시 탭 확장
+  - **`--surface` 모드**: 대상 surface의 pane을 분할하여 새 터미널 생성 후 `claude` 명령 자동 실행
+  - **`--workspace` 모드**: workspace를 지정하면 plugin이 spawn pane을 자동 관리. parent surface마다
+    지정된 workspace 내에 전용 spawn pane을 갖고, 2×2 그리드 알고리즘으로 최적 배치
+    (1→좌우분할→좌측상하분할→우측상하분할→새탭). 4개 초과 시 탭 확장
   - `--workspace`와 `--surface`는 동시 사용 불가
-  - workspace는 ID(숫자) 또는 이름(문자열)으로 지정 가능
   - 부모(parent)는 항상 spawn 명령을 실행한 surface(`TASTY_SURFACE_ID`). cwd, role, nickname, prompt 파라미터 지원
-- **claude.children**: 부모 surface의 자식 목록 조회. 각 자식의 surface ID, 인덱스, 메타데이터 반환
-- **claude.parent**: 자식 surface의 부모 조회. 부모의 surface ID와 상태(active/closed) 반환
-- **claude.kill**: 자식 surface를 종료하고 관계를 정리
-- **claude.respawn**: 기존 자식 surface의 터미널 프로세스만 종료하고 같은 surface에서 새 쉘 + `claude`를 재시작. 레이아웃(pane/surface 구조)은 변경하지 않는다. child index와 부모-자식 관계도 유지. cwd, role, nickname, prompt 재설정 가능
-- **claude.broadcast**: 부모의 모든 자식에게 텍스트를 동시에 전송. `role` 파라미터로 특정 역할의 자식에만 필터링 가능. 반환: `{ sent_count, children }`
-- **claude.wait**: 자식 surface의 현재 상태를 조회. surface가 존재하지 않으면 "exited" 반환. 반환: `{ state: "idle"|"needs_input"|"active"|"exited" }`. CLI에서 폴링 루프로 대기 구현. CLI(`tasty claude wait`)는 시작 시 `~/.claude/settings.json`의 tasty Stop 훅 등록 여부를 점검하며, 미설치 시 stderr에 안내 메시지를 출력하고 비정상 종료(exit 1)한다 (Stop 훅이 없으면 idle/needs-input 이벤트가 fire되지 않아 wait이 영원히 진행되지 않기 때문)
+- **claude.children / claude.parent / claude.kill / claude.respawn / claude.broadcast / claude.wait**:
+  자식 목록 조회, 부모 역참조, 자식 종료, 자식 재시작(레이아웃 유지), 일괄 전송,
+  상태 폴링(idle|needs_input|active|exited). CLI 동일.
 - CLI: `tasty claude spawn --direction vertical --cwd /path --role worker --nickname "agent-1" --prompt "Fix bugs"`
 - CLI: `tasty claude children`, `tasty claude parent`, `tasty claude kill --child 1`, `tasty claude respawn --child 1`
 - CLI: `tasty claude broadcast "text\r" [--role ROLE]`, `tasty claude wait --child 1 [--timeout SECS]`
-- `--child` 파라미터는 child index를 받는다 (spawn 시 반환되는 `child_index` 값)
-- IPC: `claude.spawn`, `claude.children`, `claude.parent`, `claude.kill`, `claude.respawn`, `claude.broadcast`, `claude.wait` 메서드
+- `--child`는 child index를 받는다 (spawn 시 반환되는 `child_index` 값)
 
-### Claude Hook 통합
-
-Claude Code의 훅 시스템과 연동하여 Claude의 활동 상태를 추적하고, 상태 변화 시 등록된 훅을 실행하는 시스템.
-
-- **상태 추적**: surface별로 idle/needs_input 상태를 HashMap으로 관리
-- **claude.set_idle_state**: surface의 idle 상태 설정. idle=false 시 needs_input 상태도 자동 해제
-- **claude.set_needs_input**: surface의 needs_input 상태 설정
-- **claude_state_of()**: surface의 현재 상태를 "needs_input", "idle", "active" 중 하나로 반환
-- **claude.children 상태 반영**: 자식 목록 조회 시 각 자식의 실제 Claude 상태가 state 필드에 반영됨
-- **surface.fire_hook**: 특정 이벤트의 등록된 훅을 수동으로 실행 (hook_manager.check_and_fire 호출)
-- **HookEvent 확장**: ClaudeIdle, NeedsInput 이벤트 타입 추가 ("claude-idle", "needs-input"으로 등록)
-- **자동 정리**: surface가 닫힐 때 (unregister_child, mark_parent_closed) idle/needs_input/error_scan_enabled 상태 자동 제거
-- **ClaudeError 자동 감시**: `claude.spawn` / `claude.launch`로 만들어진 child surface는 PTY 출력에 대한 패턴 스캐너가 자동으로 활성화된다. 매 redraw에서 `Terminal::output_since_scan_mark`로 새 출력 슬라이스를 ANSI strip 후 catalog 정규식과 매칭하고, 매칭되면 `claude-error` 훅을 fire한다. 카탈로그(`src/state/claude_error.rs`): `API Error`, `Output blocked by content filtering policy`, `overloaded_error`, `rate_limit_error`, `Bad Request`, `Internal Server Error`, `network error` (대소문자 무시). 일반 셸 surface는 영향 없음. 사용자도 `tasty set hook --event claude-error --surface ID --command ...`로 추가 hook을 걸 수 있다.
-- **`tasty claude install` / `uninstall`**: `~/.claude/settings.json`의 `hooks` 객체에 4종 hook entry를
-  idempotent하게 추가/제거한다. 등록 대상: `Stop`(메인 응답 종료), `Notification`(권한 요청·idle 알림),
-  `SessionEnd`(세션 종료), `SubagentStop`(Task tool 종료). 각 entry의 command는
-  `[ -n "$TASTY_SURFACE_ID" ] && tasty claude hook <token> || true` 형태로, tasty 외부에서 claude를 실행할 때는
-  무해하게 통과한다. 매칭은 `tasty claude hook <token>` substring 기준으로 동작하며, 사용자가 손수 등록한 다른
-  hook entry는 보존한다. 제거 시 빈 이벤트 배열과 빈 `hooks` 객체도 함께 정리한다.
-- **wait의 사전 요구사항 점검**: `tasty claude wait`는 시작 시 `is_tasty_stop_hook_installed()` 헬퍼로 Stop 훅
-  등록 여부를 확인하고, 미설치(또는 settings.json 파싱 실패)면 안내 메시지를 stderr에 출력하고 exit code 1로
-  종료한다. 점검은 install과 동일한 marker 기반 매칭(`is_marker_installed_in_value`)을 공유하므로 등록 판정이
-  자동으로 일치한다.
+#### Hook 통합
+- **상태 추적**: plugin이 surface별 idle/needs_input 상태를 자체 관리
+- **claude.hook**: stop, notification, session-end, subagent-stop, prompt-submit, session-start 이벤트를
+  받아 상태 갱신 + host의 `surface.fire_hook` / `surface.meta.set` / `surface.meta.unset` 호출
+- **상태 priority**: needs_input > idle > active. claude.children 응답의 `state` 필드에 반영
+- **자동 정리**: surface가 닫힐 때 plugin state에서 자식·상태·error scan plate 함께 정리
+- **HookEvent**: 호스트 측 `ClaudeIdle`/`NeedsInput`/`ClaudeError` 이벤트 타입 유지
+  (`claude-idle`, `needs-input`, `claude-error` 키). plugin이 host의 fire_hook IPC로 발화
+- **ClaudeError 자동 감시**: `claude.spawn` / `claude.launch`로 만들어진 child surface는 PTY 출력에
+  대한 패턴 스캐너가 plugin 안에서 자동 활성화된다. plugin이 `surface.read_since_mark`로 새
+  출력 슬라이스를 받아 ANSI strip 후 catalog 정규식과 매칭하고, 매칭되면 `surface.fire_hook`으로
+  `claude-error` 훅을 fire한다. 카탈로그(plugin 내장): `API Error`, `Output blocked by content
+  filtering policy`, `overloaded_error`, `rate_limit_error`, `Bad Request`, `Internal Server Error`,
+  `network error` (대소문자 무시). 일반 셸 surface는 영향 없음.
+- **`tasty claude install` / `uninstall`**: `~/.claude/settings.json`의 `hooks` 객체에
+  Stop/Notification/SessionEnd/SubagentStop 4종 entry를 idempotent하게 추가·제거한다. 각 entry의
+  command는 `[ -n "$TASTY_SURFACE_ID" ] && tasty claude hook <token> || true` 형태로 tasty 외부에서
+  claude를 실행할 때는 무해하게 통과한다.
+- **wait의 사전 요구사항 점검**: `tasty claude wait`는 시작 시 Stop 훅 등록 여부를 확인하고
+  미설치면 안내 메시지를 stderr에 출력하고 exit code 1로 종료한다.
 - CLI: `tasty claude install`, `tasty claude uninstall`, `tasty claude hook stop|notification|session-end|subagent-stop|prompt-submit|session-start [--surface ID]`
-- IPC: `claude.set_idle_state`, `claude.set_needs_input`, `surface.fire_hook` 메서드
+- IPC: `claude.hook`, `claude.launch`, `claude.spawn`, `claude.children`, `claude.parent`, `claude.kill`,
+  `claude.respawn`, `claude.broadcast`, `claude.wait` 메서드. 권한 토큰: `ipc.invoke:claude`
 
 ### Surface Metadata Store (surface_meta.rs)
 
@@ -1057,10 +1056,12 @@ egui 기반 Image Surface 타입. 이미지 파일을 로드하여 표시하고,
 
 Claude Code 등 TUI 앱이 실행 중이던 터미널을 복원할 때, 해당 앱의 세션을 자동으로 재개한다.
 
-- `tasty claude install`로 `SessionStart` hook이 등록되면, Claude Code 세션 시작 시 세션 ID가 surface 메타데이터(`claude-session-id`)에 저장됨
-- `SessionEnd` hook에서 세션 메타를 자동 삭제하여 종료된 세션은 복원 시도하지 않음
+- `tasty claude install`로 `SessionStart`/`SessionEnd` hook이 등록되면, plugin이 세션 시작 시
+  `restore.command` (예: `claude -r <session-id>`) 및 `claude-session-id` 메타키를 surface 메타데이터에
+  set/unset 한다. 호스트는 agent-agnostic하게 `restore.command` 값만 읽어 복원에 사용한다.
 - Claude Code의 `${CLAUDE_SESSION_ID}` 치환 기능을 활용하므로 파일 파싱이나 PID 매칭 불필요
-- `tasty claude install` 없이 사용해도 오류 없이 일반 셸로 복원됨
+- plugin이 비활성화되거나 `tasty claude install` 없이 사용해도 오류 없이 일반 셸로 복원됨
+- 다른 agent plugin도 `restore.command` 메타키만 set하면 동일한 메커니즘으로 자체 세션 복원을 지원할 수 있음
 
 복원이 발동하는 경로:
 1. **앱 재시작 (레이아웃 복원)**: `restore_layout` 설정 활성화 시, 레이아웃 저장 시점에 세션 ID가 있는 터미널은 `restore_command`를 함께 저장. 복원 시 셸 초기화 후 자동 실행
@@ -1079,7 +1080,10 @@ Claude Code 등 TUI 앱이 실행 중이던 터미널을 복원할 때, 해당 �
 
 ### 기본 제공 plugin (built-in)
 - Tasty 바이너리에 함께 묶여 배포되는 plugin은 첫 실행 시 `~/.tasty/plugins/<id>/`에 자동 설치된다 (`builtin::BUILTINS` 목록)
-- 현재 기본 제공: `com.tasty.explorer` (파일 탐색기 surface), `com.tasty.codex` (Codex CLI 통합 — `tasty codex launch|spawn|children|parent|tell|wait|broadcast|kill|respawn|install|uninstall|hook`. `tasty claude *` 사용법과 동일하며 `--surface` 미지정 시 호출자 surface의 `TASTY_SURFACE_ID` env로 fallback)
+- 현재 기본 제공:
+  - `com.tasty.explorer` (파일 탐색기 surface)
+  - `com.tasty.claude` (Claude Code 통합 — `tasty claude launch|spawn|children|parent|broadcast|wait|kill|respawn|install|uninstall|hook`)
+  - `com.tasty.codex` (Codex CLI 통합 — `tasty codex launch|spawn|children|parent|tell|wait|broadcast|kill|respawn|install|uninstall|hook`. claude plugin과 동일 사용법, `--surface` 미지정 시 호출자 surface의 `TASTY_SURFACE_ID` env로 fallback)
 - 사용자가 plugin 메뉴에서 "제거"를 선택하면 `removed_builtins`에 기록되어 다음 실행에서 자동 재설치되지 않는다 — 외부 plugin과 완전히 동일한 라이프사이클 적용
 - 번들 위치 탐색 순서: `TASTY_BUILTIN_PLUGINS_DIR` env > 실행 파일 옆 `plugins/` > dev 빌드 시 `target/<profile>/builtin-plugins/` (workspace 자동 부트스트랩, 등록된 모든 builtin 동기화)
 - **권한 자동 복구**: builtin plugin이 사용자 디렉터리에는 있지만 `plugins.toml`에 grant 엔트리가 없는 경우(예: 이전 버전에서 builtin으로 인식되지 않은 채 외부 plugin처럼 설치됨), 부팅 시 매니페스트의 모든 권한을 자동 grant. `granted = []`로 명시 비워둔 경우는 entry가 있으니 건드리지 않음
@@ -1111,7 +1115,7 @@ Claude Code 등 TUI 앱이 실행 중이던 터미널을 복원할 때, 해당 �
 - **Draggable splitter**: `UiNode::Splitter`의 `id: Option<String>`이 `Some`이면 호스트가 divider에 6px hit-test 영역 + 1px 중앙선을 그리고, 드래그하면 `UiEvent::SplitterDrag { node_id, ratio }`를 plugin에 송신. 부드러운 시각 피드백을 위해 egui memory에 사용자 ratio를 저장하며 plugin이 다른 값으로 응답 시 동기화. 양쪽 pane은 최소 40px 보장. SDK 헬퍼: `ui::splitter_id(id, dir, ratio, first, second)`
 
 ### 권한 모델
-- 매니페스트의 `permissions = [...]`에 14가지 권한 토큰 (surface.read/write, notification, clipboard.read/write, fs.read/write, process.spawn, terminal.*, claude.*, network) 선언
+- 매니페스트의 `permissions = [...]`에 권한 토큰 (surface.read/write, notification, clipboard.read/write, fs.read/write, process.spawn, terminal.*, network, 그리고 `ipc.invoke:<plugin-prefix>`로 다른 plugin의 namespace 호출 권한) 선언
 - IPC 라우터 진입에서 plugin caller일 때 `method_meta` 테이블과 매니페스트 권한 대조 — 권한 미선언 시 -32001 거부
 - `plugin.*`, `window.*`, `surface.ime_*`, debug.* 메서드는 항상 plugin 호출 불가 (local-only)
 - `~/.tasty/plugins.toml`의 `[grants."<id>"].granted = [...]`로 grant 영속화. CLI install은 매니페스트 권한 자동 grant (사용자 의도적 명령으로 간주)
@@ -1158,7 +1162,7 @@ Claude Code 등 TUI 앱이 실행 중이던 터미널을 복원할 때, 해당 �
 - 호스트 CLI는 부팅 시 `~/.tasty/plugins/*/tasty-plugin.toml`을 스캔하여 매니페스트 기반 clap 서브커맨드를 정적 명령에 이어 동적으로 합친다. 정적 명령이 항상 우선 매칭되어 plugin이 호스트 명령을 가릴 수 없다
 - CLI 인자는 매니페스트의 `arg_groups` 스키마대로 JSON-RPC params 객체로 직렬화되어 plugin에 전달된다
 - IPC dispatcher는 정적 라우팅에 매칭되지 않은 메서드를 namespace registry에서 lookup하여 owner plugin에 `ipc.invoke` 메시지로 forward한다. 응답은 비동기로 도착하며, 호스트가 client 응답 채널에 연결해둔다
-- 예약 prefix(`system`, `surface`, `tab`, `pane`, `workspace`, `claude`, `plugin`, `hook`, `global_hook`, `message`, `tool`, `notification`, `window`, `debug`, `ui`, `ime`, `split`, `tree`)는 사용 불가. 같은 prefix를 두 plugin이 동시에 선언하면 나중에 로드된 쪽은 거부
+- 예약 prefix(`system`, `surface`, `tab`, `pane`, `workspace`, `plugin`, `hook`, `global_hook`, `message`, `tool`, `notification`, `window`, `debug`, `ui`, `ime`, `ipc`, `split`, `tree`)는 사용 불가. 같은 prefix를 두 plugin이 동시에 선언하면 나중에 로드된 쪽은 거부 (참고: `claude`/`codex` 등 번들 plugin이 점유한 prefix는 외부 plugin이 중복 선언 시 동일하게 거부됨)
 - 다른 plugin namespace 호출은 `ipc.invoke:<prefix>` 권한이 필요하다. 자기 자신을 호출하는 무한 forward는 호스트가 `-32001`로 거부
 - SDK: plugin은 `Plugin::handle_ipc_method(IpcMethodCtx) -> Result<Value, IpcMethodError>` 콜백 하나로 namespace 전체 dispatch를 처리. `ctx.caller_plugin_id`로 호출자가 plugin인지 사용자(CLI/IPC)인지 구분
 

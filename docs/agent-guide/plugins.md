@@ -109,10 +109,11 @@ prefix = "codex"
 ```
 
 선언된 prefix로 시작하는 모든 IPC 메서드는 해당 plugin으로 forward된다. 예약
-prefix(`system`, `surface`, `tab`, `pane`, `workspace`, `claude`, `plugin`,
+prefix(`system`, `surface`, `tab`, `pane`, `workspace`, `plugin`,
 `hook`, `global_hook`, `message`, `tool`, `notification`, `window`, `debug`,
-`ui`, `ime`, `split`, `tree`)는 사용 불가. 같은 prefix를 두 plugin이 동시에
-선언하면 나중에 로드된 쪽은 거부된다.
+`ui`, `ime`, `ipc`, `split`, `tree`)는 사용 불가. 같은 prefix를 두 plugin이 동시에
+선언하면 나중에 로드된 쪽은 거부된다. `claude`, `codex` 같은 번들 plugin이 이미
+점유한 prefix를 외부 plugin이 중복 선언해도 동일하게 거부된다.
 
 ### 매니페스트 — CLI
 

@@ -200,7 +200,7 @@ GPU 렌더링된 사이드바에 Git 브랜치, PR 상태, 작업 디렉토리, 
 `tasty` 명령으로 워크스페이스 생성, 알림 전송, 키 입력 등을 자동화. IPC로 실행 중인 GUI 앱과 통신.
 
 **현재 구현된 기능:**
-- clap 기반 서브커맨드 그룹: new {window|workspace|tab}, close {tab|pane|surface|self}, list {workspaces|windows|tree|surfaces|panes|tabs|info|notifications|hooks|global-hooks|queue}, set {hook|mark|workspace|global-hook}, unset {hook|global-hook}, send {text|key|queue}, read {since-mark|queue|screen}, split, claude {launch|spawn|children|parent|kill|respawn|broadcast|wait|hook}, notify, surface-meta {set|get|unset|list}, is-typing, debug {info|ime-enable|ime-disable|ime-preedit|ime-commit|ime-status}
+- clap 기반 서브커맨드 그룹: new {window|workspace|tab}, close {tab|pane|surface|self}, list {workspaces|windows|tree|surfaces|panes|tabs|info|notifications|hooks|global-hooks|queue}, set {hook|mark|workspace|global-hook}, unset {hook|global-hook}, send {text|key|queue}, read {since-mark|queue|screen}, split, notify, surface-meta {set|get|unset|list}, is-typing, debug {info|ime-enable|ime-disable|ime-preedit|ime-commit|ime-status}. 번들 plugin이 자체적으로 `claude {launch|spawn|children|parent|kill|respawn|broadcast|wait|install|uninstall|hook}`, `codex {...}` 등을 등록한다.
 - 포트 파일(`~/.tasty/tasty.port`) 기반 자동 연결
 - 서브커맨드 없으면 GUI 모드, 있으면 CLI 모드
 - 상세: [features.md](features.md)
@@ -210,7 +210,7 @@ GPU 렌더링된 사이드바에 Git 브랜치, PR 상태, 작업 디렉토리, 
 
 **현재 구현된 기능:**
 - TCP 기반 JSON-RPC 2.0 서버 (127.0.0.1, 랜덤 포트)
-- 프로덕션 메서드 (macOS 전용 2개 포함): system.info, workspace.list/create/update, window.list/create/close/focus, pane.list/close, split, tab.list/create/close, surface.list/close/close_self/send/send_key/send_combo/send_to/set_mark/read_since_mark/screen_text/cursor_position/is_typing/send_wait_idle/fire_hook/meta_set/meta_get/meta_unset/meta_list/ime_enable/ime_disable/ime_preedit/ime_commit/ime_status, notification.list/create, tree, hook.set/list/unset, global_hook.set/list/unset, claude.launch/spawn/children/parent/kill/respawn/broadcast/wait/set_idle_state/set_needs_input, message.send/read/count/clear
+- 프로덕션 메서드 (macOS 전용 2개 포함): system.info, workspace.list/create/update, window.list/create/close/focus, pane.list/close, split, tab.list/create/close, surface.list/close/close_self/send/send_key/send_combo/send_to/set_mark/read_since_mark/screen_text/cursor_position/is_typing/send_wait_idle/fire_hook/meta_set/meta_get/meta_unset/meta_list/ime_enable/ime_disable/ime_preedit/ime_commit/ime_status, notification.list/create, tree, hook.set/list/unset, global_hook.set/list/unset, message.send/read/count/clear. 번들 plugin이 `claude.launch/spawn/children/parent/kill/respawn/broadcast/wait/hook`, `codex.*` namespace를 자체 등록 (사용자 시점에서는 동일한 IPC dispatch)
 - 디버그 전용 메서드 (debug 빌드에서만 사용 가능): system.shutdown, ui.state, ui.screenshot, debug.info
 - 메인 스레드 채널 통신으로 스레드 안전한 상태 접근
 - 앱 시작 시 자동 기동, 종료 시 포트 파일 자동 삭제
@@ -221,7 +221,7 @@ GPU 렌더링된 사이드바에 Git 브랜치, PR 상태, 작업 디렉토리, 
 - 상세: [features.md](features.md)
 
 ### 세션 복원
-앱 재시작 시 워크스페이스 레이아웃, 작업 디렉토리, 스크롤백, 윈도우 위치/크기를 복원. Claude Code 등 TUI 앱의 세션 ID를 `SessionStart` hook으로 캡처하여, 복원 시 `claude -r <session-id>`로 자동 재개.
+앱 재시작 시 워크스페이스 레이아웃, 작업 디렉토리, 스크롤백, 윈도우 위치/크기를 복원. TUI 앱의 세션은 plugin이 surface 메타데이터 `restore.command` 키에 복원 명령을 set하면 자동 재개된다 (Claude Code의 경우 `com.tasty.claude` plugin이 `claude -r <session-id>`를 set).
 
 ### 명령 팔레트
 VS Code 스타일 GPU 렌더링 명령 팔레트. 퍼지 검색, 카테고리 필터링, 키보드 단축키 표시.
@@ -261,8 +261,10 @@ GUI 업데이트 다이얼로그. 새 버전 자동 감지, 다운로드 진행�
 ### 설정 시스템
 TOML 기반 설정 파일 + GUI 설정 윈도우. 라이브 리로드.
 
-### Claude Code 통합
-Claude Code 훅 연동, 활동 상태 추적(idle/needs_input/active), 전용 런처, 멀티 에이전트 워크플로우. `claude-hook` CLI 서브커맨드로 Claude Code의 훅 시스템에서 직접 호출 가능.
+### Claude Code 통합 (com.tasty.claude plugin)
+Claude Code 훅 연동, 활동 상태 추적(idle/needs_input/active), 전용 런처, 멀티 에이전트 워크플로우.
+번들 plugin `com.tasty.claude`로 제공되며 호스트는 plugin 등록만 처리한다. `tasty claude hook`
+CLI 서브커맨드로 Claude Code의 훅 시스템에서 직접 호출 가능.
 
 ### 마크다운 뷰어 & 파일 탐색기
 egui 기반 추가 Surface 타입. 마크다운 뷰어(제목/목록/인용/코드 블록/인라인 서식 렌더링)와 파일 탐색기(트리 + 미리보기)를 탭으로 열 수 있다. IPC/CLI/우클릭 컨텍스트 메뉴로 사용 가능.
@@ -317,15 +319,17 @@ Surface별 이벤트 훅 등록 API. 프로세스 종료, 출력 패턴 매칭 �
 ### 에이전트 자동화
 AI 에이전트 간 자동화 통합 기능. Claude Code 전용 런처, 멀티 에이전트 배치 실행, 에이전트 상태 추적 및 사이드바 표시. tasty의 핵심 차별점으로 "에이전트가 에이전트를 제어하는 자동화"를 제공한다.
 
-**현재 구현된 기능:**
-- Claude Code 런처: 새 워크스페이스 생성 + 디렉토리 이동 + claude 실행
-- Claude Parent-Child 관계 관리: 부모 Claude가 자식 Claude를 생성/조회/종료/재시작
+**현재 구현된 기능 (번들 plugin 제공):**
+- `com.tasty.claude` plugin: Claude Code 런처, parent-child 관계 관리, hook 통합 전체
+- `com.tasty.codex` plugin: Codex CLI 런처, parent-child 관계 관리, hook 통합 전체
+- 호스트는 plugin 등록만 처리. claude.*/codex.* IPC와 `tasty claude *` / `tasty codex *` CLI는 plugin이 자체 노출
 - CLI: tasty claude launch --workspace NAME --directory DIR --task TASK
 - CLI: tasty claude spawn/children/parent/kill/respawn/broadcast/wait
 - CLI: tasty claude install / uninstall (~/.claude/settings.json에 Stop/Notification/SessionEnd/SubagentStop 4종 등록·제거; wait/이벤트 훅 사용 전 필수)
-- CLI: tasty claude hook stop|notification|session-end|subagent-stop|prompt-submit|session-start (Claude Code 훅 통합)
+- CLI: tasty claude hook stop|notification|session-end|subagent-stop|prompt-submit|session-start
 - tasty claude wait는 시작 시 Stop 훅 설치 여부를 점검하여 미설치 시 안내 메시지와 함께 즉시 종료
-- IPC: claude.launch, claude.spawn, claude.children, claude.parent, claude.kill, claude.respawn, claude.set_idle_state, claude.set_needs_input, surface.fire_hook 메서드
+- IPC: claude.launch, claude.spawn, claude.children, claude.parent, claude.kill, claude.respawn, claude.broadcast, claude.wait, claude.hook 메서드 (plugin이 노출)
+- 권한 토큰: 다른 plugin이 claude namespace를 호출하려면 `ipc.invoke:claude`가 필요
 - Surface Hook + Read Mark API와 조합하여 완전한 에이전트 자동화 파이프라인 구성 가능
 - 상세: [features.md](features.md)
 
