@@ -170,20 +170,16 @@ mod tests {
     }
 
     #[test]
-    fn builtin_registers_six_kinds() {
+    fn builtin_registers_five_kinds() {
         let reg = SurfaceKindRegistry::new();
         register_builtin_kinds(&reg);
-        // explorer는 builtin이 아니라 com.tasty.explorer plugin이 hello에서 등록한다.
-        for kind in [
-            "terminal",
-            "markdown",
-            "html",
-            "image",
-            "empty",
-            "clipboard_viewer",
-        ] {
+        // explorer는 com.tasty.explorer plugin이, image는 com.tasty.image plugin이
+        // 각각 hello 시에 등록한다.
+        for kind in ["terminal", "markdown", "html", "empty", "clipboard_viewer"] {
             assert!(reg.contains(kind), "missing builtin kind: {kind}");
         }
-        assert_eq!(reg.len(), 6);
+        assert_eq!(reg.len(), 5);
+        assert!(!reg.contains("image"));
+        assert!(!reg.contains("explorer"));
     }
 }

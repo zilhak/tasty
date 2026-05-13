@@ -13,14 +13,16 @@ use tasty_core::model::{
 
 use super::{SurfaceKindDef, SurfaceKindRegistry};
 
-/// 부팅 시 호출. EngineState 생성 직전에 빈 SurfaceKindRegistry에 호스트 내장 6종을 등록한다.
-/// "explorer" kind는 `com.tasty.explorer` plugin이 hello를 보낼 때
-/// `register_remote_kind`로 등록한다 — 호스트는 직접 등록하지 않는다.
+/// 부팅 시 호출. EngineState 생성 직전에 빈 SurfaceKindRegistry에 호스트 내장 kind를 등록한다.
+///
+/// 등록되지 않는 kind:
+/// - `"explorer"`: `com.tasty.explorer` plugin이 hello 시 remote kind로 등록.
+/// - `"image"`: `com.tasty.image` plugin이 hello 시 `rendering = "host"` 매니페스트로
+///   호스트 화이트리스트 매칭 후 [`register_image`]를 호출하여 등록.
 pub fn register_builtin_kinds(registry: &SurfaceKindRegistry) {
     register_terminal(registry);
     register_markdown(registry);
     register_html(registry);
-    register_image(registry);
     register_empty(registry);
     register_clipboard_viewer(registry);
 }
@@ -206,11 +208,24 @@ mod tests {
 
     #[test]
     fn image_create_blank_when_no_file() {
-        let reg = registry_with_builtins();
+        // image kind는 register_builtin_kinds가 아닌 com.tasty.image plugin 활성화
+        // 경로에서 등록된다. 본 테스트는 host가 제공하는 SurfaceKindDef 자체의
+        // 동작을 검증하므로 직접 register_image를 호출한다.
+        let reg = SurfaceKindRegistry::new();
+        register_image(&reg);
         let def = reg.get("image").unwrap();
         let s = (def.create)(3, &json!({})).unwrap();
         let img = s.as_any().downcast_ref::<ImagePanel>().unwrap();
         assert!(img.is_blank());
+    }
+
+    #[test]
+    fn builtin_kinds_no_longer_include_image() {
+        let reg = registry_with_builtins();
+        assert!(
+            reg.get("image").is_none(),
+            "image kind must be registered via com.tasty.image plugin, not register_builtin_kinds"
+        );
     }
 
     #[test]

@@ -147,8 +147,14 @@ flags = [
 ### 다른 plugin namespace 호출
 
 자기 plugin이 다른 plugin의 IPC namespace를 호출하려면 매니페스트 권한에
-`"ipc.invoke:<prefix>"`를 추가하고 사용자의 grant를 받아야 한다. 자기 자신을
-호출하는 무한 forward는 호스트가 거부한다.
+`"ipc.invoke:<prefix>"`를 추가하고 사용자의 grant를 받아야 한다.
+
+plugin이 자기 namespace 메서드를 `host.call("<자기 prefix>.method", ...)`로
+호출하면 호스트는 forward를 건너뛰고 호스트 dispatcher로 통과시킨다. 무한
+forward 루프 없이 plugin이 자기 namespace의 구현을 호스트 본문으로 위임할 수
+있다 (예: `com.tasty.image` plugin은 모든 `image.*` 호출을 호스트의 동명 IPC로
+trampoline한다). 호스트에 동명 메서드가 없으면 일반 `-32601 method not found`가
+반환된다.
 
 ## 권한 모델
 

@@ -269,8 +269,8 @@ CLI 서브커맨드로 Claude Code의 훅 시스템에서 직접 호출 가능.
 ### 마크다운 뷰어 & 파일 탐색기
 egui 기반 추가 Surface 타입. 마크다운 뷰어(제목/목록/인용/코드 블록/인라인 서식 렌더링)와 파일 탐색기(트리 + 미리보기)를 탭으로 열 수 있다. IPC/CLI/우클릭 컨텍스트 메뉴로 사용 가능.
 
-### 이미지 뷰어 & 그림판
-egui 기반 Image Surface 타입. 이미지 파일을 로드하여 표시(PNG/JPEG/BMP/WebP/ICO/TIFF), 폴더 내 이전/다음 탐색, 줌/팬, 편집 모드(연필 드로잉, 브러시 크기/색상 조절), PNG 저장, 새 이미지(빈 캔버스) 생성을 지원한다.
+### 이미지 뷰어 & 그림판 (com.tasty.image plugin)
+egui 기반 Image Surface 타입. 이미지 파일을 로드하여 표시(PNG/JPEG/BMP/WebP/ICO/TIFF), 폴더 내 이전/다음 탐색, 줌/팬, 편집 모드(연필 드로잉, 브러시 크기/색상 조절), PNG 저장, 새 이미지(빈 캔버스) 생성을 지원한다. 번들 plugin `com.tasty.image`가 surface kind 등록(`rendering = "host"`)과 `image.*` IPC 네임스페이스를 점유하며, `tasty image {open|save|export|next|prev|paste|list}` CLI를 노출한다. 픽셀 렌더링과 편집은 호스트 본문이 담당한다.
 
 **현재 구현된 기능:**
 - Panel enum에 Markdown/Explorer/Html/Empty 변형 추가 (egui 렌더링 패널)
@@ -322,6 +322,7 @@ AI 에이전트 간 자동화 통합 기능. Claude Code 전용 런처, 멀티 �
 **현재 구현된 기능 (번들 plugin 제공):**
 - `com.tasty.claude` plugin: Claude Code 런처, parent-child 관계 관리, hook 통합 전체
 - `com.tasty.codex` plugin: Codex CLI 런처, parent-child 관계 관리, hook 통합 전체
+- `com.tasty.image` plugin: image surface kind 등록(`rendering = "host"`) + `image.*` IPC trampoline + `tasty image *` CLI
 - 호스트는 plugin 등록만 처리. claude.*/codex.* IPC와 `tasty claude *` / `tasty codex *` CLI는 plugin이 자체 노출
 - CLI: tasty claude launch --workspace NAME --directory DIR --task TASK
 - CLI: tasty claude spawn/children/parent/kill/respawn/broadcast/wait

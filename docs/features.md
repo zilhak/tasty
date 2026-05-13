@@ -108,7 +108,7 @@
 - Pane: **독립적인 탭 바**를 가진 화면 영역. 여러 Tab을 포함
 - Tab: 탭 하나. `SurfaceLayout`을 직접 소유. 단일 Leaf = 분할 안 된 상태, Split = 탭 내부 분할
 - Surface trait: 모든 콘텐츠 타입의 공통 인터페이스. 각 타입이 독립 struct로 구현. **`tasty-core`는 GUI-free** — 모델은 식별 정보와 직렬화 가능한 상태만 보유한다 (egui는 optional `egui-compat` feature, 헤드리스 플러그인은 비활성 가능)
-  - `kind()`: 소문자 식별자 — 호스트 빌트인 6종(`"terminal"`, `"markdown"`, `"html"`, `"image"`, `"empty"`, `"clipboard_viewer"`) + plugin 등록 kind(예: `"explorer"`). IPC/registry/플러그인이 식별자로 사용
+  - `kind()`: 소문자 식별자 — 호스트 빌트인 5종(`"terminal"`, `"markdown"`, `"html"`, `"empty"`, `"clipboard_viewer"`) + plugin 등록 kind(예: `"explorer"`, `"image"`). IPC/registry/플러그인이 식별자로 사용
   - `type_name()`: 표시용 라벨. 식별 비교 금지
   - `html_url()`: HtmlPanel만 `Some(&url)` 반환. native WebView 동기화가 다운캐스트 없이 사용
   - TerminalSurface: 단일 PTY 터미널
@@ -961,7 +961,10 @@ IPC 메서드와 `tasty claude *` CLI 서브커맨드는 plugin이 자체적으�
 
 ## 이미지 뷰어 & 그림판
 
-egui 기반 Image Surface 타입. 이미지 파일을 로드하여 표시하고, 간단한 드로잉 편집이 가능하다.
+`com.tasty.image` 번들 plugin이 제공하는 image surface kind. plugin이 surface kind
+등록(`rendering = "host"`)과 `image.*` IPC 네임스페이스를 점유하고, 픽셀 렌더링과
+편집은 호스트 본문이 직접 담당한다. plugin이 비활성화되면 image surface 항목은
+convert popup / pane context menu에서 사라진다.
 
 ### 뷰어 기능
 - **이미지 표시**: PNG, JPEG, BMP, WebP, ICO, TIFF 포맷 로드 및 egui 텍스처 렌더링
@@ -985,6 +988,20 @@ egui 기반 Image Surface 타입. 이미지 파일을 로드하여 표시하고,
 - 새 이미지: 사용자가 파일 경로 지정
 
 ### CLI/IPC
+
+`tasty image <sub>` CLI (plugin `[[contributes.cli]]`이 노출):
+
+| 서브커맨드 | IPC 메서드 | 설명 |
+|------------|------------|------|
+| `tasty image open <path> --surface ID` | `image.open` | surface를 image kind로 변환하고 파일 로드 |
+| `tasty image save --surface ID [--path PATH]` | `image.save` | 현재 image surface를 PNG로 저장 (path 생략 시 원본 경로의 `.png`) |
+| `tasty image export <path> --surface ID` | `image.export_png` | 명시한 경로로 PNG 내보내기 |
+| `tasty image next --surface ID` | `image.next` | 같은 폴더의 다음 이미지로 이동 |
+| `tasty image prev --surface ID` | `image.prev` | 이전 이미지로 이동 |
+| `tasty image paste --surface ID` | `image.paste` | 클립보드의 이미지를 floating selection으로 붙여넣기 |
+| `tasty image list` | `image.list` | 열려 있는 모든 image surface의 ID + 경로 |
+
+기존 호스트 CLI도 그대로 동작 (변환/생성 경로):
 - `tasty split --type image --file <path>`: 이미지 뷰어로 분할
 - `tasty split --type image`: 새 이미지 (빈 캔버스)
 - `tasty new tab --pane ID --type image --file <path>`: 이미지 탭 생성
@@ -992,8 +1009,8 @@ egui 기반 Image Surface 타입. 이미지 파일을 로드하여 표시하고,
 - Surface 타입 변환 팝업에서 Image 옵션 선택 가능
 
 ### 닫기/복원
-- 이미지 탭 닫기 시 ClosedItem에 파일 경로 저장
-- Ctrl+Shift+T로 복원 시 같은 이미지를 다시 로드
+- 이미지 탭 닫기 시 ClosedItem에 surface kind + snapshot이 저장됨 (generic 경로)
+- Ctrl+Shift+T로 복원 시 surface registry의 image kind `restore`가 호출되어 같은 이미지를 다시 로드
 
 ## 터미널 검색
 
