@@ -8,12 +8,14 @@
 //! 호스트 코드에는 의존하지 않으며 `tasty-plugin-sdk`만 사용한다.
 
 mod error_scan;
+mod hook;
+mod install;
 mod state;
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use serde_json::Value;
+use serde_json::{json, Value};
 use tasty_plugin_sdk::{
     HostHandle, IpcMethodCtx, IpcMethodError, Plugin, SurfaceCreateCtx, SurfaceEventCtx,
     SurfaceLifecycleCtx, SurfaceResult,
@@ -71,11 +73,24 @@ impl Plugin for ClaudePlugin {
         }
     }
 
-    fn handle_ipc_method(&mut self, _ctx: IpcMethodCtx) -> Result<Value, IpcMethodError> {
-        // 핸들러 본문은 Phase 2 후속 단계(step 03 hook routing, step 04 cutover)에서
-        // 채운다. 지금은 호스트가 모든 claude.* 메서드를 직접 처리하므로 plugin으로는
-        // forward되지 않는다.
-        Err(IpcMethodError::not_implemented())
+    fn handle_ipc_method(&mut self, ctx: IpcMethodCtx) -> Result<Value, IpcMethodError> {
+        // step 03: hook/install/uninstall만 plugin이 처리. 나머지 claude.* 메서드
+        // (launch/spawn/children/parent/kill/respawn/tell/wait/broadcast)는 step 04
+        // cutover에서 합류한다. 그 전까지는 호스트 정적 핸들러가 살아 있고, plugin은
+        // BUILTINS에 미등록이라 IPC가 forward되지 않으므로 이 분기들은 실 트래픽을
+        // 받지 않는다. 단위 테스트 + cutover 시점 동작을 위해 미리 연결.
+        match ctx.method.as_str() {
+            "claude.hook" => hook::handle_claude_hook(&mut self.state, &ctx.host, &ctx.params),
+            "claude.install" => match install::run_install() {
+                Ok(added) => Ok(json!({ "installed": added })),
+                Err(e) => Err(IpcMethodError::new(format!("install failed: {e}"))),
+            },
+            "claude.uninstall" => match install::run_uninstall() {
+                Ok(removed) => Ok(json!({ "uninstalled": removed })),
+                Err(e) => Err(IpcMethodError::new(format!("uninstall failed: {e}"))),
+            },
+            other => Err(IpcMethodError::not_found(other)),
+        }
     }
 
     fn on_surface_lifecycle(&mut self, ctx: SurfaceLifecycleCtx) {
