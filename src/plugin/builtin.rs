@@ -205,7 +205,40 @@ fn copy_if_newer(src: &Path, dest: &Path) -> std::io::Result<()> {
             }
         }
     }
-    std::fs::copy(src, dest)?;
+    copy_atomic(src, dest)
+}
+
+/// `std::fs::copy`의 안전 대체 — temp 파일에 쓰고 atomic rename으로 dest에 swap.
+///
+/// macOS에서 같은 경로에 binary를 in-place 덮어쓰면 kernel이 캐시한 code signature가
+/// invalid로 판정되어 다음 exec 시 `SIGKILL (Code Signature Invalid)`로 죽는다
+/// (Taskgated). rename은 inode를 교체하므로 kernel이 새 시그니처를 다시 읽는다.
+///
+/// Linux/Windows에서도 동일하게 동작 — partial-write race 방지 효과까지 덤으로 얻는다.
+fn copy_atomic(src: &Path, dest: &Path) -> std::io::Result<()> {
+    let parent = dest.parent().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "destination path has no parent",
+        )
+    })?;
+    // 같은 디렉터리 안에 temp를 만들어야 rename이 cross-filesystem 에러를 안 낸다.
+    let pid = std::process::id();
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(0);
+    let file_name = dest.file_name().and_then(|s| s.to_str()).unwrap_or("file");
+    let tmp = parent.join(format!(".{file_name}.tmp.{pid}.{nanos:x}"));
+
+    if let Err(e) = std::fs::copy(src, &tmp) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e);
+    }
+    if let Err(e) = std::fs::rename(&tmp, dest) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e);
+    }
     Ok(())
 }
 
@@ -315,7 +348,7 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
         if ty.is_dir() {
             copy_dir_recursive(&entry.path(), &dest_path)?;
         } else {
-            std::fs::copy(entry.path(), &dest_path)?;
+            copy_atomic(&entry.path(), &dest_path)?;
         }
     }
     Ok(())
@@ -347,7 +380,7 @@ fn copy_file_if_newer(src: &Path, dst: &Path) -> std::io::Result<()> {
             }
         }
     }
-    std::fs::copy(src, dst).map(|_| ())
+    copy_atomic(src, dst)
 }
 
 #[cfg(test)]
