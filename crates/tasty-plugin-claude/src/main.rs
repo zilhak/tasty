@@ -91,6 +91,11 @@ impl Plugin for ClaudePlugin {
             "claude.set_idle_state" => handle_set_idle_state(&mut self.state, &ctx.params),
             "claude.set_needs_input" => handle_set_needs_input(&mut self.state, &ctx.params),
             "claude.parent" => handle_parent(&self.state, &ctx.params),
+            // step 04b: 호스트 IPC(surface.foreground_process / surface.locate /
+            // pane.close)와 ClaudeState를 함께 조합하는 핸들러들.
+            "claude.children" => handle_children(&self.state, &ctx.host, &ctx.params),
+            "claude.wait" => handle_wait(&self.state, &ctx.host, &ctx.params),
+            "claude.kill" => handle_kill(&mut self.state, &ctx.host, &ctx.params),
             other => Err(IpcMethodError::not_found(other)),
         }
     }
@@ -175,6 +180,173 @@ fn handle_set_needs_input(
     state.set_needs_input(surface_id, needs_input);
     state.save();
     Ok(json!({ "ok": true }))
+}
+
+/// 호스트 `handle_claude_children` 1:1 이주. 자식 목록을 ClaudeState에서 읽고,
+/// 각 자식의 PTY 전경 프로세스는 `surface.foreground_process` IPC로 조회한다.
+/// IPC 실패는 무시 (host가 terminal을 못 찾으면 필드를 안 넣고 응답하던 동작과
+/// 동일하게 None이 들어가 그 키들은 생략됨).
+fn handle_children(
+    state: &ClaudeState,
+    host: &HostHandle,
+    params: &Value,
+) -> Result<Value, IpcMethodError> {
+    let parent_surface_id = require_surface_id(params)?;
+    let mut entries = children_base_entries(state, parent_surface_id);
+    for entry in &mut entries {
+        let sid = entry
+            .get("child_surface_id")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as u32);
+        let Some(sid) = sid else { continue };
+        if let Ok(resp) = host.call(
+            "surface.foreground_process",
+            json!({ "surface_id": sid }),
+        ) {
+            if let Some(name) = resp.get("name").and_then(|v| v.as_str()) {
+                entry["foreground_process"] = json!(name);
+            }
+            if let Some(pid) = resp.get("pid").and_then(|v| v.as_u64()) {
+                entry["foreground_pid"] = json!(pid);
+            }
+        }
+    }
+    Ok(json!(entries))
+}
+
+/// `handle_children`의 순수 부분: state만으로 결정 가능한 baseline entry 리스트.
+/// 호스트 응답의 foreground_process / foreground_pid는 여기 포함되지 않는다.
+fn children_base_entries(state: &ClaudeState, parent_surface_id: u32) -> Vec<Value> {
+    state
+        .list_children(parent_surface_id)
+        .iter()
+        .map(|c| {
+            json!({
+                "child_surface_id": c.child_surface_id,
+                "index": c.index,
+                "cwd": c.cwd,
+                "role": c.role,
+                "nickname": c.nickname,
+                "state": state.state_of(c.child_surface_id),
+            })
+        })
+        .collect()
+}
+
+/// 호스트 `handle_claude_wait` 1:1 이주. 한 번의 호출은 1회 상태 스냅샷이며,
+/// CLI 측 polling(`run_claude_wait`)이 idle/needs_input/exited 도달까지 반복
+/// 호출한다. 본 함수는 그 polling tick 1개를 처리한다.
+fn handle_wait(
+    state: &ClaudeState,
+    host: &HostHandle,
+    params: &Value,
+) -> Result<Value, IpcMethodError> {
+    let parent_surface_id = require_surface_id(params)?;
+    let child_index = params
+        .get("child_index")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32)
+        .ok_or_else(|| IpcMethodError::invalid_params("Missing 'child_index' parameter"))?;
+
+    let decision = wait_decide(state, parent_surface_id, child_index);
+    let response_state = match decision {
+        WaitDecision::Exited => "exited",
+        WaitDecision::CheckExistence(child_surface_id) => {
+            let exists = host
+                .call("surface.locate", json!({ "surface_id": child_surface_id }))
+                .ok()
+                .and_then(|v| v.get("exists").and_then(|e| e.as_bool()))
+                .unwrap_or(false);
+            if !exists {
+                "exited"
+            } else {
+                state.state_of(child_surface_id)
+            }
+        }
+    };
+    Ok(json!({ "state": response_state }))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WaitDecision {
+    /// child가 ClaudeState에 없다 → 즉시 "exited".
+    Exited,
+    /// child가 state에 있다 → 호스트 트리에 surface가 살아있는지 확인 필요.
+    /// 살아있으면 `state.state_of(child_surface_id)`, 죽었으면 "exited".
+    CheckExistence(u32),
+}
+
+/// state만으로 결정 가능한 wait 분기. host IPC 없이 단위 테스트 가능.
+fn wait_decide(state: &ClaudeState, parent_surface_id: u32, child_index: u32) -> WaitDecision {
+    match state.find_child(parent_surface_id, child_index) {
+        Some(c) => WaitDecision::CheckExistence(c.child_surface_id),
+        None => WaitDecision::Exited,
+    }
+}
+
+/// 호스트 `handle_claude_kill` 1:1 이주.
+/// 1. ClaudeState에서 (parent_surface_id, child_index) → child_surface_id 해석
+/// 2. `surface.locate` IPC로 pane_id 조회 (호스트의 `find_pane_for_surface`)
+/// 3. `pane.close` IPC로 pane 제거 (호스트의 `close_pane_by_id` + 부수 효과)
+/// 4. 성공 시 plugin state 정리 (unregister_child + mark_parent_closed)
+fn handle_kill(
+    state: &mut ClaudeState,
+    host: &HostHandle,
+    params: &Value,
+) -> Result<Value, IpcMethodError> {
+    let parent_surface_id = require_surface_id(params)?;
+    let child_index = params
+        .get("child_index")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32)
+        .ok_or_else(|| IpcMethodError::invalid_params("Missing 'child_index' parameter"))?;
+
+    let child_surface_id = state
+        .find_child(parent_surface_id, child_index)
+        .map(|c| c.child_surface_id)
+        .ok_or_else(|| {
+            IpcMethodError::invalid_params(&format!(
+                "Child index {} not found for parent {}",
+                child_index, parent_surface_id
+            ))
+        })?;
+
+    let locate = host
+        .call(
+            "surface.locate",
+            json!({ "surface_id": child_surface_id }),
+        )
+        .map_err(|e| IpcMethodError::new(format!("surface.locate failed: {e}")))?;
+    let pane_id = locate
+        .get("pane_id")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32)
+        .ok_or_else(|| {
+            IpcMethodError::invalid_params(&format!("Surface {} not found", child_surface_id))
+        })?;
+
+    let close_resp = host
+        .call("pane.close", json!({ "pane_id": pane_id }))
+        .map_err(|e| IpcMethodError::new(format!("pane.close failed: {e}")))?;
+    let killed = close_resp
+        .get("closed")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    if killed {
+        kill_finalize(state, child_surface_id);
+    }
+
+    Ok(json!({ "killed": killed }))
+}
+
+/// pane.close 성공 후의 state mutation. 호스트와 동일하게 child_surface_id를
+/// `mark_parent_closed`에도 넘긴다 — 그 자식이 또 다른 parent를 가진 nested
+/// claude 시나리오에서만 의미가 있고, 그렇지 않으면 no-op.
+fn kill_finalize(state: &mut ClaudeState, child_surface_id: u32) {
+    state.unregister_child(child_surface_id);
+    state.mark_parent_closed(child_surface_id);
+    state.save();
 }
 
 fn handle_parent(state: &ClaudeState, params: &Value) -> Result<Value, IpcMethodError> {
@@ -304,6 +476,89 @@ mod handler_tests {
         let state = ClaudeState::default();
         let err = handle_parent(&state, &json!({})).unwrap_err();
         assert_eq!(err.code, -32602);
+    }
+
+    // ─── step 04b: children/wait/kill helper tests ──────────────────────────
+
+    #[test]
+    fn children_base_entries_empty_when_no_children() {
+        let state = ClaudeState::default();
+        assert!(children_base_entries(&state, 10).is_empty());
+    }
+
+    #[test]
+    fn children_base_entries_includes_state_and_metadata() {
+        let mut state = ClaudeState::default();
+        state.register_child(
+            10,
+            ChildEntry {
+                child_surface_id: 100,
+                index: 1,
+                cwd: Some("/tmp".into()),
+                role: Some("worker".into()),
+                nickname: Some("alpha".into()),
+            },
+        );
+        state.set_needs_input(100, true);
+        let entries = children_base_entries(&state, 10);
+        assert_eq!(entries.len(), 1);
+        let e = &entries[0];
+        assert_eq!(e["child_surface_id"], 100);
+        assert_eq!(e["index"], 1);
+        assert_eq!(e["cwd"], "/tmp");
+        assert_eq!(e["role"], "worker");
+        assert_eq!(e["nickname"], "alpha");
+        assert_eq!(e["state"], "needs_input");
+        // foreground_process/foreground_pid는 IPC enrichment 단계 — 본 layer에서는
+        // 키 자체가 존재하지 않아야 한다.
+        assert!(e.get("foreground_process").is_none());
+        assert!(e.get("foreground_pid").is_none());
+    }
+
+    #[test]
+    fn wait_decide_returns_exited_when_child_unknown() {
+        let state = ClaudeState::default();
+        assert_eq!(wait_decide(&state, 10, 1), WaitDecision::Exited);
+    }
+
+    #[test]
+    fn wait_decide_returns_check_existence_when_child_in_state() {
+        let mut state = ClaudeState::default();
+        state.register_child(10, entry(100, 2));
+        assert_eq!(
+            wait_decide(&state, 10, 2),
+            WaitDecision::CheckExistence(100)
+        );
+    }
+
+    #[test]
+    fn kill_finalize_removes_child_and_persists_only_when_needed() {
+        let mut state = ClaudeState::default();
+        state.register_child(10, entry(100, 1));
+        state.register_child(10, entry(101, 2));
+        assert_eq!(state.list_children(10).len(), 2);
+        kill_finalize(&mut state, 100);
+        assert_eq!(state.list_children(10).len(), 1);
+        assert_eq!(state.list_children(10)[0].index, 2);
+        // unregister된 자식의 idle/needs_input 데이터도 함께 사라져야 한다.
+        assert_eq!(state.parent_of_child(100), None);
+    }
+
+    #[test]
+    fn kill_finalize_handles_nested_parent_case() {
+        // child가 또 다른 parent를 가진 경우 (nested claude). mark_parent_closed가
+        // 그 자식을 parent로 보고 closed_parents에 넣어야 한다.
+        let mut state = ClaudeState::default();
+        // 100은 10의 자식이면서 200/201의 부모.
+        state.register_child(10, entry(100, 1));
+        state.register_child(100, entry(200, 1));
+        state.register_child(100, entry(201, 2));
+        kill_finalize(&mut state, 100);
+        // 100 자체는 10의 자식 자리에서 사라진다.
+        assert_eq!(state.list_children(10).len(), 0);
+        // 그러나 100을 부모로 하는 자식들은 그대로이고, 100이 closed로 마킹된다.
+        assert!(state.is_parent_closed(100));
+        assert_eq!(state.list_children(100).len(), 2);
     }
 }
 
