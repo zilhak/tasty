@@ -102,6 +102,8 @@ impl Plugin for ClaudePlugin {
             "claude.tell" => handle_tell(&ctx.host, &ctx.params),
             // step 04d.1: 새 workspace에 claude 띄우기.
             "claude.launch" => handle_launch(&self.scanner, &ctx.host, &ctx.params),
+            // step 04d.2: 자식 surface의 PTY를 갈아끼우고 claude 재시작.
+            "claude.respawn" => handle_respawn(&mut self.state, &ctx.host, &ctx.params),
             other => Err(IpcMethodError::not_found(other)),
         }
     }
@@ -525,6 +527,141 @@ fn build_launch_command(task: Option<&str>) -> String {
     cmd
 }
 
+/// 호스트 `handle_claude_respawn` 1:1 이주. 자식 surface의 PTY를 새 프로세스로
+/// 교체하고 `claude` 명령을 재송신한다.
+///
+/// 호스트 코드와 동일한 절차:
+/// 1. (parent_surface_id, child_index) → child_surface_id 해석.
+/// 2. `surface.respawn_terminal` IPC로 PTY 갈아끼움 — working_dir는 항상 None
+///    (호스트도 그렇게 하고 PTY로 `cd` echo).
+/// 3. 새 metadata(cwd/role/nickname)가 주어진 경우에만 child entry 업데이트.
+/// 4. cwd cd → prompt가 있으면 prompt 파일 + `claude "$(cat ...)"\r`,
+///    아니면 `claude\r`.
+fn handle_respawn(
+    state: &mut ClaudeState,
+    host: &HostHandle,
+    params: &Value,
+) -> Result<Value, IpcMethodError> {
+    let parent_surface_id = require_surface_id(params)?;
+    let child_index = params
+        .get("child_index")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32)
+        .ok_or_else(|| IpcMethodError::invalid_params("Missing 'child_index' parameter"))?;
+    let cwd = params
+        .get("cwd")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+    let role = params.get("role").and_then(|v| v.as_str()).map(String::from);
+    let nickname = params
+        .get("nickname")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+    let prompt = params
+        .get("prompt")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+
+    let child_surface_id = state
+        .find_child(parent_surface_id, child_index)
+        .map(|c| c.child_surface_id)
+        .ok_or_else(|| {
+            IpcMethodError::invalid_params(&format!(
+                "Child index {} not found for parent {}",
+                child_index, parent_surface_id
+            ))
+        })?;
+
+    host.call(
+        "surface.respawn_terminal",
+        json!({ "surface_id": child_surface_id }),
+    )
+    .map_err(IpcMethodError::from)?;
+
+    let updated = update_child_metadata(
+        state,
+        parent_surface_id,
+        child_index,
+        cwd.as_deref(),
+        role.as_deref(),
+        nickname.as_deref(),
+    );
+    if updated {
+        state.save();
+    }
+
+    start_claude_in_surface(host, child_surface_id, cwd.as_deref(), prompt.as_deref());
+
+    Ok(json!({
+        "child_surface_id": child_surface_id,
+        "child_index": child_index,
+        "parent_surface_id": parent_surface_id,
+    }))
+}
+
+/// host code line 591-602의 metadata 부분 갱신 로직. None은 기존 값을 보존.
+/// 반환: 한 필드라도 갱신됐는지 여부 (false면 save 호출 생략 가능).
+fn update_child_metadata(
+    state: &mut ClaudeState,
+    parent_surface_id: u32,
+    child_index: u32,
+    cwd: Option<&str>,
+    role: Option<&str>,
+    nickname: Option<&str>,
+) -> bool {
+    let any = cwd.is_some() || role.is_some() || nickname.is_some();
+    if !any {
+        return false;
+    }
+    state.update_child(parent_surface_id, child_index, |entry| {
+        if let Some(v) = cwd {
+            entry.cwd = Some(v.to_string());
+        }
+        if let Some(v) = role {
+            entry.role = Some(v.to_string());
+        }
+        if let Some(v) = nickname {
+            entry.nickname = Some(v.to_string());
+        }
+    })
+}
+
+/// 호스트 `start_claude_in_surface` 1:1 이주. 인자는 동일하나 IPC 경유.
+fn start_claude_in_surface(
+    host: &HostHandle,
+    surface_id: u32,
+    cwd: Option<&str>,
+    prompt: Option<&str>,
+) {
+    if let Some(dir) = cwd {
+        let normalized = dir.replace('\\', "/");
+        let escaped = shell_escape::escape(normalized.into());
+        let _ = host.call(
+            "surface.send",
+            json!({ "surface_id": surface_id, "text": format!("cd {escaped}\r") }),
+        );
+    }
+
+    if let Some(p) = prompt {
+        let prompt_path = std::env::temp_dir().join(format!("tasty-prompt-{}.txt", surface_id));
+        if let Err(e) = std::fs::write(&prompt_path, p) {
+            tracing::warn!("Failed to write prompt file: {e}");
+        }
+        let _ = host.call(
+            "surface.send",
+            json!({
+                "surface_id": surface_id,
+                "text": format!("claude \"$(cat '{}')\"\r", prompt_path.display()),
+            }),
+        );
+    } else {
+        let _ = host.call(
+            "surface.send",
+            json!({ "surface_id": surface_id, "text": "claude\r" }),
+        );
+    }
+}
+
 /// 호스트 코드의 PTY 시퀀스 생성 로직을 1:1 옮긴 순수 함수.
 /// - 라인 사이: `\` + `\r` (Claude Code에서 newline 삽입)
 /// - 마지막 라인이 `\`로 끝나면 ` ` 한 칸을 덧붙여 final `\r`이 submit으로 해석되게
@@ -836,6 +973,48 @@ mod handler_tests {
     fn build_launch_command_with_simple_task() {
         // shell_escape는 안전한 문자열을 그대로 둔다.
         assert_eq!(build_launch_command(Some("fix")), "claude --task fix");
+    }
+
+    // ─── step 04d.2: respawn helper tests ───────────────────────────────────
+
+    #[test]
+    fn update_child_metadata_noop_when_all_none() {
+        let mut state = ClaudeState::default();
+        state.register_child(10, entry(100, 1));
+        let updated = update_child_metadata(&mut state, 10, 1, None, None, None);
+        assert!(!updated, "should report no update when all fields are None");
+    }
+
+    #[test]
+    fn update_child_metadata_overwrites_only_given_fields() {
+        let mut state = ClaudeState::default();
+        state.register_child(
+            10,
+            ChildEntry {
+                child_surface_id: 100,
+                index: 1,
+                cwd: Some("/old".into()),
+                role: Some("old_role".into()),
+                nickname: Some("old_nick".into()),
+            },
+        );
+        let updated =
+            update_child_metadata(&mut state, 10, 1, Some("/new"), None, Some("new_nick"));
+        assert!(updated);
+        let e = state.find_child(10, 1).unwrap();
+        assert_eq!(e.cwd.as_deref(), Some("/new"));
+        // role은 None이었으므로 보존되어야 한다.
+        assert_eq!(e.role.as_deref(), Some("old_role"));
+        assert_eq!(e.nickname.as_deref(), Some("new_nick"));
+    }
+
+    #[test]
+    fn update_child_metadata_returns_false_when_child_missing() {
+        let mut state = ClaudeState::default();
+        // 자식 등록 없음. 그래도 cwd가 주어졌으므로 attempt는 발생 — 그러나
+        // update_child가 child 없음으로 false 반환 → wrapper도 false.
+        let updated = update_child_metadata(&mut state, 10, 1, Some("/x"), None, None);
+        assert!(!updated);
     }
 
     #[test]
