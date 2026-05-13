@@ -1,0 +1,8 @@
+[surface.kind]
+image = "画像"
+
+[image.cli]
+desc = "画像ビューア / ペイントキャンバス"
+
+[image.namespace]
+desc = "Image surface IPC ネームスペース"

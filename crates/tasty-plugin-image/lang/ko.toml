@@ -1,0 +1,8 @@
+[surface.kind]
+image = "이미지"
+
+[image.cli]
+desc = "이미지 뷰어 및 페인트 캔버스"
+
+[image.namespace]
+desc = "Image surface IPC 네임스페이스"

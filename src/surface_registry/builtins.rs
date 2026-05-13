@@ -100,8 +100,12 @@ fn register_html(registry: &SurfaceKindRegistry) {
 }
 
 // ── Image ───────────────────────────────────────────────────────────────────
+//
+// Image kind는 `com.tasty.image` plugin이 `rendering = "host"`로 선언한
+// host-rendered kind다. plugin manager가 매니페스트를 화이트리스트에 매칭한 뒤
+// 본 함수를 호출해 실제 `SurfaceKindDef`를 호스트가 제공한다.
 
-fn register_image(registry: &SurfaceKindRegistry) {
+pub fn register_image(registry: &SurfaceKindRegistry) {
     registry.register(SurfaceKindDef {
         kind: "image",
         display_name_i18n_key: "surface.kind.image",

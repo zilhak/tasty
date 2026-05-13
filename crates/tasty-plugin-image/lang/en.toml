@@ -1,0 +1,8 @@
+[surface.kind]
+image = "Image"
+
+[image.cli]
+desc = "Image viewer and paint canvas"
+
+[image.namespace]
+desc = "Image surface IPC namespace"

@@ -42,6 +42,11 @@ const BUILTINS: &[BuiltinSpec] = &[
         crate_dir: "tasty-plugin-claude",
         bin_name: "tasty-plugin-claude.exe",
     },
+    BuiltinSpec {
+        id: "com.tasty.image",
+        crate_dir: "tasty-plugin-image",
+        bin_name: "tasty-plugin-image.exe",
+    },
 ];
 
 #[cfg(not(windows))]
@@ -60,6 +65,11 @@ const BUILTINS: &[BuiltinSpec] = &[
         id: "com.tasty.claude",
         crate_dir: "tasty-plugin-claude",
         bin_name: "tasty-plugin-claude",
+    },
+    BuiltinSpec {
+        id: "com.tasty.image",
+        crate_dir: "tasty-plugin-image",
+        bin_name: "tasty-plugin-image",
     },
 ];
 
@@ -357,6 +367,11 @@ mod tests {
     #[test]
     fn claude_is_builtin() {
         assert!(is_builtin_plugin("com.tasty.claude"));
+    }
+
+    #[test]
+    fn image_is_builtin() {
+        assert!(is_builtin_plugin("com.tasty.image"));
     }
 
     #[test]

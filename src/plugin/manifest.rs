@@ -154,6 +154,23 @@ pub struct SurfaceKindDecl {
     pub display_name_i18n_key: String,
     #[serde(default)]
     pub icon: Option<String>,
+    /// surface 렌더링을 호스트 GUI가 직접 담당하는지(`Host`), plugin이 UiNode tree를
+    /// 보내는 일반 remote 방식인지(`Remote`). 호스트가 화이트리스트로 등록한 kind에만
+    /// `Host`를 허용한다. 기본 `Remote`.
+    #[serde(default)]
+    pub rendering: SurfaceKindRendering,
+}
+
+/// surface kind의 렌더링 방식. plugin 매니페스트 `rendering = "host" | "remote"`.
+#[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum SurfaceKindRendering {
+    /// plugin이 UiNode tree로 화면을 그린다 (일반 plugin surface). 기본값.
+    #[default]
+    Remote,
+    /// 호스트 본문이 직접 egui로 그린다. 매니페스트는 등록(메타데이터)만 담당하고
+    /// 픽셀 처리는 호스트가 한다. 호스트 화이트리스트 매칭이 필요하다.
+    Host,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -1282,6 +1299,65 @@ mod tests {
             event = "exploded"
         "#;
         // serde가 알 수 없는 enum variant를 거부 (toml::from_str 단계에서 실패).
+        assert!(parse(s).is_err());
+    }
+
+    #[test]
+    fn surface_kind_rendering_defaults_to_remote() {
+        let s = r#"
+            manifest_version = 1
+            id = "com.example.x"
+            name = "X"
+            version = "0.1"
+            api_version = "1"
+            [entry]
+            type = "process"
+            command = "x"
+            [[surface_kinds]]
+            kind = "explorer"
+            display_name_i18n_key = "k"
+        "#;
+        let m = parse(s).expect("should parse");
+        assert_eq!(m.surface_kinds[0].rendering, SurfaceKindRendering::Remote);
+    }
+
+    #[test]
+    fn surface_kind_rendering_host_parses() {
+        let s = r#"
+            manifest_version = 1
+            id = "com.tasty.image"
+            name = "Image"
+            version = "0.1"
+            api_version = "1"
+            [entry]
+            type = "process"
+            command = "x"
+            [[surface_kinds]]
+            kind = "image"
+            display_name_i18n_key = "surface.kind.image"
+            rendering = "host"
+        "#;
+        let m = parse(s).expect("should parse");
+        assert_eq!(m.surface_kinds[0].rendering, SurfaceKindRendering::Host);
+    }
+
+    #[test]
+    fn surface_kind_rendering_unknown_value_rejected() {
+        let s = r#"
+            manifest_version = 1
+            id = "com.example.x"
+            name = "X"
+            version = "0.1"
+            api_version = "1"
+            [entry]
+            type = "process"
+            command = "x"
+            [[surface_kinds]]
+            kind = "explorer"
+            display_name_i18n_key = "k"
+            rendering = "exotic"
+        "#;
+        // serde가 lowercase enum의 알 수 없는 variant를 reject.
         assert!(parse(s).is_err());
     }
 

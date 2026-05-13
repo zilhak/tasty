@@ -13,7 +13,7 @@
 //!   `egui_panels::draw_egui_panels`의 다운캐스트 분기를 dispatch로 대체한다 (이후
 //!   단계에서 다운캐스트 메서드 6종 제거).
 
-mod builtins;
+pub mod builtins;
 
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};

@@ -1,0 +1,72 @@
+manifest_version = 1
+id = "com.tasty.image"
+name = "Image"
+version = "0.1.0"
+description = "Image surface viewer / paint canvas"
+api_version = "1"
+permissions = [
+    "surface.read",
+    "surface.write",
+    "clipboard.read",
+    "fs.read",
+    "fs.write",
+    "ipc.invoke:image",
+]
+lang_dir = "lang"
+
+[entry]
+type = "process"
+command = "tasty-plugin-image"
+
+[[surface_kinds]]
+kind = "image"
+display_name_i18n_key = "surface.kind.image"
+icon = "🖼️"
+rendering = "host"
+
+[[contributes.ipc_namespace]]
+prefix = "image"
+description_i18n_key = "image.namespace.desc"
+
+[[contributes.cli]]
+name = "image"
+description = "Image surface viewer and paint canvas"
+description_i18n_key = "image.cli.desc"
+subcommands = [
+    { name = "open",   ipc_method = "image.open",       args = "open_args",   description = "Convert a surface to image kind and load the given file" },
+    { name = "save",   ipc_method = "image.save",       args = "save_args",   description = "Save the current image surface to disk (PNG)" },
+    { name = "export", ipc_method = "image.export_png", args = "export_args", description = "Export the current image surface to the given PNG path" },
+    { name = "next",   ipc_method = "image.next",       args = "nav_args",    description = "Step to the next image in the same directory" },
+    { name = "prev",   ipc_method = "image.prev",       args = "nav_args",    description = "Step to the previous image in the same directory" },
+    { name = "paste",  ipc_method = "image.paste",      args = "nav_args",    description = "Paste a clipboard image as a floating selection" },
+    { name = "list",   ipc_method = "image.list",       args = "no_args",     description = "List all open image surfaces" },
+]
+
+[contributes.cli.arg_groups.open_args]
+positional = [
+    { name = "path", type = "string", required = true, help = "Path to the image file to open" },
+]
+flags = [
+    { name = "surface", type = "u32", flag = "--surface", required = true, help = "Target surface ID" },
+]
+
+[contributes.cli.arg_groups.save_args]
+flags = [
+    { name = "surface", type = "u32",    flag = "--surface", required = true,  help = "Target surface ID" },
+    { name = "path",    type = "string", flag = "--path",    required = false, help = "Override save path (defaults to the surface's open file with .png extension)" },
+]
+
+[contributes.cli.arg_groups.export_args]
+positional = [
+    { name = "path", type = "string", required = true, help = "PNG file path to export to" },
+]
+flags = [
+    { name = "surface", type = "u32", flag = "--surface", required = true, help = "Target surface ID" },
+]
+
+[contributes.cli.arg_groups.nav_args]
+flags = [
+    { name = "surface", type = "u32", flag = "--surface", required = true, help = "Target surface ID" },
+]
+
+[contributes.cli.arg_groups.no_args]

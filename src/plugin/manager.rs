@@ -417,12 +417,21 @@ impl PluginManager {
                         self.packages.iter().find(|p| &p.manifest.id == plugin_id)
                     {
                         for decl in &pkg.manifest.surface_kinds {
-                            crate::plugin::remote_kind::register_remote_kind(
-                                &registry,
-                                plugin_id,
-                                decl,
-                                tx.clone(),
-                            );
+                            match decl.rendering {
+                                crate::plugin::manifest::SurfaceKindRendering::Remote => {
+                                    crate::plugin::remote_kind::register_remote_kind(
+                                        &registry,
+                                        plugin_id,
+                                        decl,
+                                        tx.clone(),
+                                    );
+                                }
+                                crate::plugin::manifest::SurfaceKindRendering::Host => {
+                                    crate::plugin::host_rendered_kind::register_host_rendered_kind(
+                                        &registry, plugin_id, &decl.kind,
+                                    );
+                                }
+                            }
                         }
                     }
                     self.registered_plugins.insert(plugin_id.clone());

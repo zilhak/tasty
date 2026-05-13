@@ -7,6 +7,7 @@ pub mod command_registry;
 pub mod discovery;
 pub mod host_actions;
 pub mod host_cmd;
+pub mod host_rendered_kind;
 pub mod ipc_namespace;
 pub mod key_dispatch;
 pub mod listener;
