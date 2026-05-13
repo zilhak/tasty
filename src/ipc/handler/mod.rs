@@ -130,6 +130,10 @@ fn route_engine_handler(
         "surface.read_since_mark" => surface::handle_read_since_mark(state, id, &request.params),
         "surface.screen_text" => surface::handle_screen_text(state, id, &request.params),
         "surface.cursor_position" => surface::handle_cursor_position(state, id, &request.params),
+        "surface.foreground_process" => {
+            surface::handle_foreground_process(state, id, &request.params)
+        }
+        "surface.locate" => surface::handle_surface_locate(state, id, &request.params),
         "surface.is_typing" => handle_is_typing(state, id, &request.params),
         "surface.send_wait_idle" => handle_send_wait_idle(state, id, &request.params),
         "surface.fire_hook" => hooks::handle_surface_fire_hook(state, id, &request.params),

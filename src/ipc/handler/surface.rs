@@ -438,6 +438,56 @@ pub(crate) fn handle_cursor_position(
     }
 }
 
+/// 터미널 PTY의 전경(foreground) 프로세스 이름/PID 조회.
+/// 플러그인이 `claude` 같은 자식 프로세스가 살아있는지 판단하기 위해 사용한다.
+/// 터미널이 없으면 `name`/`pid`가 모두 `null`로 반환된다.
+pub(crate) fn handle_foreground_process(
+    state: &AppState,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
+    let surface_id = match require_surface_id(params, &id) {
+        Ok(sid) => sid,
+        Err(e) => return e,
+    };
+    let (name, pid) = state
+        .find_terminal_by_id(surface_id)
+        .and_then(|t| t.foreground_process_info())
+        .map(|fg| (Some(fg.name.clone()), Some(fg.pid)))
+        .unwrap_or((None, None));
+    JsonRpcResponse::success(
+        id,
+        json!({
+            "surface_id": surface_id,
+            "name": name,
+            "pid": pid,
+        }),
+    )
+}
+
+/// surface_id를 포함하는 pane을 찾아 `pane_id`와 존재 여부를 반환.
+/// 플러그인이 자기 자식 surface를 죽이거나 wait할 때, 호스트 트리에 여전히
+/// 살아있는지 확인하기 위해 사용한다.
+pub(crate) fn handle_surface_locate(
+    state: &AppState,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
+    let surface_id = match require_surface_id(params, &id) {
+        Ok(sid) => sid,
+        Err(e) => return e,
+    };
+    let pane_id = state.find_pane_for_surface(surface_id);
+    JsonRpcResponse::success(
+        id,
+        json!({
+            "surface_id": surface_id,
+            "pane_id": pane_id,
+            "exists": pane_id.is_some(),
+        }),
+    )
+}
+
 pub(crate) fn handle_surface_send_combo(
     state: &mut AppState,
     id: serde_json::Value,
