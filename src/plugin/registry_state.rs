@@ -88,7 +88,10 @@ impl PluginsConfig {
         }
         match std::fs::read_to_string(&path) {
             Ok(s) => match toml::from_str::<PluginsConfig>(&s) {
-                Ok(cfg) => cfg,
+                Ok(mut cfg) => {
+                    cfg.migrate_legacy_tokens();
+                    cfg
+                }
                 Err(e) => {
                     tracing::warn!("plugins.toml parse error: {} — using defaults", e);
                     Self::default()
@@ -97,6 +100,38 @@ impl PluginsConfig {
             Err(e) => {
                 tracing::warn!("plugins.toml read error: {} — using defaults", e);
                 Self::default()
+            }
+        }
+    }
+
+    /// Phase 1 plugin extension 이전에 발급되었던 host-side `claude.read` /
+    /// `claude.invoke` 권한 토큰을 통합 `ipc.invoke:claude`로 자동 변환한다.
+    /// 사용자가 수동으로 plugins.toml을 수정할 필요가 없도록 한다.
+    fn migrate_legacy_tokens(&mut self) {
+        for grants in self.grants.values_mut() {
+            let mut changed = false;
+            let mut new_tokens: Vec<String> = Vec::with_capacity(grants.granted.len());
+            for tok in grants.granted.drain(..) {
+                match tok.as_str() {
+                    "claude.read" | "claude.invoke" => {
+                        changed = true;
+                        let unified = "ipc.invoke:claude".to_string();
+                        if !new_tokens.contains(&unified) {
+                            new_tokens.push(unified);
+                        }
+                    }
+                    _ => {
+                        if !new_tokens.contains(&tok) {
+                            new_tokens.push(tok);
+                        }
+                    }
+                }
+            }
+            grants.granted = new_tokens;
+            if changed {
+                tracing::info!(
+                    "plugins.toml: migrated legacy claude.read/claude.invoke tokens to ipc.invoke:claude"
+                );
             }
         }
     }
@@ -304,6 +339,45 @@ mod tests {
         assert!(cfg.shortcut_override("com.example.x", "x.refresh").is_none());
         // plugin 항목이 비면 자체 제거됨
         assert!(!cfg.keybindings.contains_key("com.example.x"));
+    }
+
+    #[test]
+    fn migrate_legacy_claude_tokens_to_ipc_invoke() {
+        let mut cfg = PluginsConfig::default();
+        cfg.set_granted(
+            "com.tasty.claude",
+            vec![
+                "claude.read".into(),
+                "claude.invoke".into(),
+                "fs.read".into(),
+            ],
+        );
+        cfg.migrate_legacy_tokens();
+        let g = cfg.granted_permissions("com.tasty.claude");
+        assert!(g.contains("ipc.invoke:claude"));
+        assert!(g.contains("fs.read"));
+        assert!(!g.contains("claude.read"));
+        assert!(!g.contains("claude.invoke"));
+        // 중복 ipc.invoke:claude는 1개로 통합
+        let entry = cfg.grants.get("com.tasty.claude").unwrap();
+        let count = entry
+            .granted
+            .iter()
+            .filter(|t| *t == "ipc.invoke:claude")
+            .count();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn migrate_legacy_tokens_is_idempotent() {
+        let mut cfg = PluginsConfig::default();
+        cfg.set_granted(
+            "com.tasty.claude",
+            vec!["ipc.invoke:claude".into(), "fs.read".into()],
+        );
+        cfg.migrate_legacy_tokens();
+        let entry = cfg.grants.get("com.tasty.claude").unwrap();
+        assert_eq!(entry.granted, vec!["ipc.invoke:claude", "fs.read"]);
     }
 
     #[test]
