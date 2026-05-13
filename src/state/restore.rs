@@ -186,7 +186,7 @@ impl AppState {
 
         self.engine.send_fast_init(surface_id);
 
-        // Queue restore command for TUI session resumption (e.g. "claude -r <uuid>").
+        // Queue restore command for TUI session resumption (plugin-provided, e.g. "claude -r <uuid>").
         if let Some(cmd) = closed.restore_command {
             self.engine.pending_restore_commands.push((surface_id, cmd));
         }

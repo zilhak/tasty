@@ -80,6 +80,10 @@ pub fn apply_hook(
                 surface_id,
                 key: "claude-session-id",
             });
+            calls.push(HostCall::MetaUnset {
+                surface_id,
+                key: "restore.command",
+            });
             calls.push(HostCall::FireHook {
                 surface_id,
                 event: "claude-idle",
@@ -101,6 +105,11 @@ pub fn apply_hook(
                         surface_id,
                         key: "claude-session-id",
                         value: session_id.to_string(),
+                    });
+                    calls.push(HostCall::MetaSet {
+                        surface_id,
+                        key: "restore.command",
+                        value: format!("claude -r {session_id}"),
                     });
                 }
             }
@@ -211,6 +220,10 @@ mod tests {
                     surface_id: 100,
                     key: "claude-session-id",
                 },
+                HostCall::MetaUnset {
+                    surface_id: 100,
+                    key: "restore.command",
+                },
                 HostCall::FireHook {
                     surface_id: 100,
                     event: "claude-idle",
@@ -245,11 +258,18 @@ mod tests {
         assert_eq!(state.state_of(100), "active");
         assert_eq!(
             calls,
-            vec![HostCall::MetaSet {
-                surface_id: 100,
-                key: "claude-session-id",
-                value: "sess-abc".into(),
-            }]
+            vec![
+                HostCall::MetaSet {
+                    surface_id: 100,
+                    key: "claude-session-id",
+                    value: "sess-abc".into(),
+                },
+                HostCall::MetaSet {
+                    surface_id: 100,
+                    key: "restore.command",
+                    value: "claude -r sess-abc".into(),
+                },
+            ]
         );
     }
 

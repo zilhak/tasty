@@ -261,10 +261,10 @@ impl EngineState {
     }
 
     /// Push a closed item, automatically injecting restore commands from surface metadata.
+    /// Plugins write the `restore.command` meta key directly (host stays agent-agnostic).
     pub fn push_closed_item(&mut self, mut item: crate::model::ClosedItem) {
         crate::model::closed_item::inject_restore_commands(&mut item, &|sid| {
-            crate::surface_meta::SurfaceMetaStore::get(sid, "claude-session-id")
-                .map(|session_id| format!("claude -r {}", session_id))
+            crate::surface_meta::SurfaceMetaStore::get(sid, "restore.command")
         });
         self.closed_items.push(item);
     }

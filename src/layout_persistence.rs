@@ -100,7 +100,7 @@ pub enum SavedSurface {
     Terminal {
         cwd: Option<String>,
         /// Command to re-launch the TUI app that was running (e.g. "claude -r <session-id>").
-        /// Populated from surface-meta `claude-session-id` at capture time.
+        /// Populated from surface-meta `restore.command` at capture time; plugins own the format.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         restore_command: Option<String>,
     },
@@ -349,11 +349,8 @@ impl SavedSurfaceLayout {
 impl SavedSurface {
     fn capture_surface(surface: &dyn Surface, registry: &SurfaceKindRegistry) -> Self {
         if let Some(ts) = surface.as_terminal_surface() {
-            let restore_command = crate::surface_meta::SurfaceMetaStore::get(
-                ts.id,
-                "claude-session-id",
-            )
-            .map(|session_id| format!("claude -r {}", session_id));
+            let restore_command =
+                crate::surface_meta::SurfaceMetaStore::get(ts.id, "restore.command");
 
             return SavedSurface::Terminal {
                 cwd: ts.terminal.get_cwd().map(|p| p.to_string_lossy().to_string()),
