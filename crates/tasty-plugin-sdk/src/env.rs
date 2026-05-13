@@ -9,6 +9,9 @@
 //! - `TASTY_HOST_IPC_PORT`
 //! - `TASTY_PLUGIN_TOKEN`
 //! - `TASTY_HOST_API_VERSION`
+//! - `TASTY_PLUGIN_HANDLE_ENDPOINT` (선택) — Unix는 socket path, Windows는 Named Pipe 이름.
+//!   호스트가 보조 핸들 채널을 활성화한 경우에만 주입된다. plugin은 이 값이 있으면
+//!   메인 채널 인증 후 보조 채널에도 connect를 시도한다.
 
 use std::path::PathBuf;
 
@@ -24,6 +27,10 @@ pub struct PluginEnv {
     pub data_dir: Option<PathBuf>,
     pub config_path: Option<PathBuf>,
     pub log_path: Option<PathBuf>,
+    /// 보조 핸들 채널 endpoint. 호스트가 활성화한 경우에만 `Some`.
+    /// Unix는 socket path (`/tmp/.../tasty-handle.sock`), Windows는 Named Pipe 이름
+    /// (`\\.\pipe\tasty-handle-<random>`).
+    pub handle_endpoint: Option<String>,
 }
 
 impl PluginEnv {
@@ -50,6 +57,9 @@ impl PluginEnv {
             data_dir: std::env::var_os("TASTY_PLUGIN_DATA_DIR").map(PathBuf::from),
             config_path: std::env::var_os("TASTY_PLUGIN_CONFIG_PATH").map(PathBuf::from),
             log_path: std::env::var_os("TASTY_PLUGIN_LOG_PATH").map(PathBuf::from),
+            handle_endpoint: std::env::var("TASTY_PLUGIN_HANDLE_ENDPOINT")
+                .ok()
+                .filter(|s| !s.is_empty()),
         })
     }
 }

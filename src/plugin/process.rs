@@ -14,6 +14,7 @@ use std::process::{Child, Command, Stdio};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use crate::plugin::handle_channel::{HandleListener, HandleStream};
 use crate::plugin::listener::HostListener;
 use crate::plugin::manifest::{PluginPackage, HOST_API_VERSION};
 use crate::plugin::protocol::{PluginEvent, PluginRequest, PluginResponse};
@@ -30,6 +31,12 @@ pub struct PluginProcess {
     /// 자식 stdout/stderr가 redirect된 파일 경로. 디버깅/검증 시 직접 참조.
     #[allow(dead_code)]
     pub log_path: PathBuf,
+    /// 보조 핸들 채널 stream을 받을 mailbox. plugin spawn 시 [`HandleListener::register_token`]
+    /// 으로 미리 등록되고, plugin SDK가 connect하면 listener accept thread가 stream을
+    /// 채워 넣는다. spawn은 blocking 없이 즉시 반환하며, 02c에서 shared buffer를 만들
+    /// 때 `try_recv` 또는 `recv_timeout`으로 stream을 가져온다.
+    #[allow(dead_code)]
+    handle_stream_rx: Option<mpsc::Receiver<HandleStream>>,
 }
 
 #[cfg(test)]
@@ -48,6 +55,7 @@ impl PluginProcess {
             event_rx,
             last_pong: Arc::new(Mutex::new(Instant::now())),
             log_path: PathBuf::new(),
+            handle_stream_rx: None,
         }
     }
 }
@@ -56,6 +64,7 @@ impl PluginProcess {
     pub fn spawn(
         package: &PluginPackage,
         listener: &HostListener,
+        handle_listener: Option<&HandleListener>,
         log_dir: &Path,
         waker: tasty_core::SharedWakerFactory,
     ) -> anyhow::Result<Self> {
@@ -77,6 +86,18 @@ impl PluginProcess {
             .stdin(Stdio::null())
             .stdout(Stdio::from(log_file))
             .stderr(Stdio::from(log_clone));
+
+        // 보조 채널 endpoint를 plugin에 알려주고, mailbox를 미리 등록한다. listener가
+        // 없거나 stub인 경우 env를 주입하지 않아 plugin SDK가 보조 채널을 skip한다.
+        //
+        // 중요: mailbox 등록은 *child spawn 전*에 일어나야 한다. 그래야 SDK가 빠르게
+        // connect해도 accept thread가 호출 시점에 매핑할 sender를 찾을 수 있다.
+        let handle_stream_rx = if let Some(hl) = handle_listener {
+            cmd.env("TASTY_PLUGIN_HANDLE_ENDPOINT", hl.endpoint());
+            Some(hl.register_token(&token))
+        } else {
+            None
+        };
 
         // plugin별 격리 디렉터리. 디렉터리 생성은 호스트가 미리 보장한다 — plugin이
         // fs.write 권한 없이도 자기 영역만은 자유롭게 쓸 수 있도록.
@@ -114,6 +135,10 @@ impl PluginProcess {
                 );
             }
         };
+
+        // 보조 채널은 별도 mailbox로 받는다 — blocking하지 않는다. plugin이 connect하면
+        // listener accept thread가 stream을 receiver로 넣어 둠. shared buffer 사용 시점에
+        // 비로소 try_recv로 가져온다. plugin이 영영 connect 안 해도 startup 지연 0.
 
         let last_pong = Arc::new(Mutex::new(Instant::now()));
         let (req_tx, req_rx) = mpsc::channel::<PluginRequest>();
@@ -183,6 +208,7 @@ impl PluginProcess {
             event_rx,
             last_pong,
             log_path,
+            handle_stream_rx,
         })
     }
 

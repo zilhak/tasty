@@ -28,6 +28,7 @@ use tasty_plugin_protocol::{
 
 use crate::connection::Connection;
 use crate::env::PluginEnv;
+use crate::handle_channel::HandleClient;
 use crate::host::{deliver_ipc_result, HostHandle, PendingCalls};
 use crate::plugin::{
     CommandInvokeCtx, IpcMethodCtx, Plugin, SurfaceCreateCtx, SurfaceEventCtx, SurfaceLifecycleCtx,
@@ -63,6 +64,23 @@ pub fn run<P: Plugin>(plugin: P) -> Result<()> {
     let conn = Connection::connect_and_authenticate(&env)?;
     let (writer_stream, mut reader) = conn.into_parts();
     let writer = Arc::new(Mutex::new(writer_stream));
+
+    // 보조 핸들 채널이 활성화되어 있으면 connect한다. 실패는 fatal이 아니라 warn만 남긴다 —
+    // 보조 채널을 안 쓰는 plugin이라면 그대로 동작해야 한다 (shared buffer 기능만 비활성).
+    let _handle_client: Option<HandleClient> = if env.handle_endpoint.is_some() {
+        match HandleClient::connect(&env) {
+            Ok(c) => {
+                tracing::info!("plugin handle channel connected");
+                Some(c)
+            }
+            Err(e) => {
+                tracing::warn!("plugin handle channel connect failed: {e}");
+                None
+            }
+        }
+    } else {
+        None
+    };
 
     // hello event 송신.
     let hello = PluginEvent::Hello {

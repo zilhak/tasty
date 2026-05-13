@@ -257,6 +257,7 @@ mod tests {
             data_dir: None,
             config_path: None,
             log_path: None,
+            handle_endpoint: None,
         }
     }
 

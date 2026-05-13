@@ -15,6 +15,7 @@ use std::time::{Duration, Instant};
 use serde_json::json;
 
 use crate::ipc::protocol::JsonRpcResponse;
+use crate::plugin::handle_channel::HandleListener;
 use crate::plugin::host_cmd::{HostCmd, SurfaceHandles};
 use crate::plugin::ipc_namespace::IpcNamespaceRegistry;
 use crate::plugin::listener::HostListener;
@@ -79,6 +80,9 @@ pub struct PluginManager {
     pub config: PluginsConfig,
     waker: tasty_core::SharedWakerFactory,
     listener: Option<HostListener>,
+    /// 보조 핸들 채널 listener. shared buffer 핸들 전송에 사용. Windows에서는 02c까지
+    /// `None`으로 유지된다 (HandleListener::bind가 Unsupported를 반환).
+    handle_listener: Option<HandleListener>,
     pub log_dir: PathBuf,
     next_request_id: AtomicU64,
     last_ping: Instant,
@@ -139,6 +143,7 @@ impl PluginManager {
             config: PluginsConfig::load(),
             waker,
             listener: None,
+            handle_listener: None,
             log_dir,
             next_request_id: AtomicU64::new(1),
             last_ping: Instant::now(),
@@ -258,16 +263,28 @@ impl PluginManager {
     }
 
     fn ensure_listener(&mut self) {
-        if self.listener.is_some() {
-            return;
-        }
-        match HostListener::bind() {
-            Ok(l) => {
-                tracing::info!("plugin host listener on 127.0.0.1:{}", l.port());
-                self.listener = Some(l);
+        if self.listener.is_none() {
+            match HostListener::bind() {
+                Ok(l) => {
+                    tracing::info!("plugin host listener on 127.0.0.1:{}", l.port());
+                    self.listener = Some(l);
+                }
+                Err(e) => {
+                    tracing::error!("plugin host listener bind failed: {e}");
+                }
             }
-            Err(e) => {
-                tracing::error!("plugin host listener bind failed: {e}");
+        }
+        if self.handle_listener.is_none() {
+            match HandleListener::bind() {
+                Ok(l) => {
+                    tracing::info!("plugin handle channel listener at {}", l.endpoint());
+                    self.handle_listener = Some(l);
+                }
+                Err(e) => {
+                    // 보조 채널 없이도 plugin 본 기능은 동작. shared buffer를 쓰는 plugin만
+                    // 이후 핸드셰이크 단계에서 실패.
+                    tracing::warn!("plugin handle channel listener bind failed: {e}");
+                }
             }
         }
     }
@@ -286,7 +303,13 @@ impl PluginManager {
                 return;
             }
         };
-        match PluginProcess::spawn(pkg, listener, &self.log_dir, self.waker.clone()) {
+        match PluginProcess::spawn(
+            pkg,
+            listener,
+            self.handle_listener.as_ref(),
+            &self.log_dir,
+            self.waker.clone(),
+        ) {
             Ok(p) => {
                 tracing::info!("plugin started: {}", p.plugin_id);
                 self.processes.insert(pkg.manifest.id.clone(), p);

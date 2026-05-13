@@ -6,6 +6,7 @@
 pub mod connection;
 pub mod env;
 pub mod error;
+pub mod handle_channel;
 pub mod host;
 pub mod plugin;
 pub mod runtime;

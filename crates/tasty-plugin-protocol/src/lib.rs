@@ -13,10 +13,10 @@ pub mod ui_tree;
 pub use ipc_method::{IpcInvokeParams, METHOD_IPC_INVOKE};
 
 pub use protocol::{
-    AuthAck, AuthAckEnvelope, AuthMessage, CommandInvokeParams, IpcCallResult, PluginEvent,
-    PluginRequest, PluginResponse, Rect, SharedBufferCreateParams, SharedBufferCreateResult,
-    SharedBufferDirtyParams, SharedBufferId, SurfaceCloseReason, SurfaceEventParams,
-    SurfaceLifecycleEvent, SurfaceLifecycleParams, SurfaceResult,
+    AuthAck, AuthAckEnvelope, AuthMessage, CommandInvokeParams, HandleChannelMessage,
+    IpcCallResult, PluginEvent, PluginRequest, PluginResponse, Rect, SharedBufferCreateParams,
+    SharedBufferCreateResult, SharedBufferDirtyParams, SharedBufferId, SurfaceCloseReason,
+    SurfaceEventParams, SurfaceLifecycleEvent, SurfaceLifecycleParams, SurfaceResult,
 };
 pub use protocol::{
     METHOD_COMMAND_INVOKE, METHOD_HOST_HELLO, METHOD_HOST_SHARED_BUFFER_CREATE,

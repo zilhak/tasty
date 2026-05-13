@@ -238,6 +238,30 @@ pub struct AuthAckEnvelope {
     pub auth_ack: AuthAck,
 }
 
+// ── 보조 핸들 채널 (Step 02b/02c) ──
+//
+// 메인 TCP 채널은 fd/HANDLE을 운반할 수 없으므로 보조 채널을 별도로 둔다. Unix는
+// AF_UNIX (SCM_RIGHTS 가능), Windows는 Named Pipe (DuplicateHandle 가능). 이 채널의
+// wire 포맷은 NDJSON이며, 02c에서 NDJSON 한 줄 직후 OS-네이티브 ancillary data로
+// 핸들을 함께 전송한다.
+//
+// 인증 단계는 메인 채널의 [`AuthMessage`] / [`AuthAckEnvelope`]를 그대로 재사용한다 —
+// endpoint가 다르므로 채널 라우팅 혼선 위험이 없고, 토큰은 동일한 plugin spawn 토큰이다.
+
+/// 보조 채널 위에서 양쪽이 주고받는 NDJSON 메시지.
+///
+/// 02b에서는 ping/pong 만 정의된다. 02c에서 `HandleAttach` (host → plugin: 새 buffer
+/// 핸들의 메타) 와 `Dirty` (plugin → host: dirty rect 알림)가 추가된다.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum HandleChannelMessage {
+    /// 살아있는지 확인용. host 또는 plugin 어느 쪽이든 보낼 수 있고, 받은 쪽은 동일한
+    /// `seq`로 [`HandleChannelMessage::Pong`]을 응답한다.
+    Ping { seq: u64 },
+    /// [`HandleChannelMessage::Ping`]의 응답.
+    Pong { seq: u64 },
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -409,6 +433,23 @@ mod tests {
         let parsed: SharedBufferDirtyParams = serde_json::from_str(&s).unwrap();
         assert_eq!(parsed.rect.unwrap().w, 40);
         assert_eq!(parsed.rect.unwrap().h, 30);
+    }
+
+    #[test]
+    fn handle_channel_ping_round_trip() {
+        let msg = HandleChannelMessage::Ping { seq: 7 };
+        let s = serde_json::to_string(&msg).unwrap();
+        assert!(s.contains("\"kind\":\"ping\""));
+        assert!(s.contains("\"seq\":7"));
+        let parsed: HandleChannelMessage = serde_json::from_str(&s).unwrap();
+        assert_eq!(parsed, HandleChannelMessage::Ping { seq: 7 });
+    }
+
+    #[test]
+    fn handle_channel_pong_round_trip() {
+        let s = r#"{"kind":"pong","seq":42}"#;
+        let parsed: HandleChannelMessage = serde_json::from_str(s).unwrap();
+        assert_eq!(parsed, HandleChannelMessage::Pong { seq: 42 });
     }
 
     #[test]
