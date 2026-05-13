@@ -7,27 +7,39 @@
 //!
 //! 호스트 코드에는 의존하지 않으며 `tasty-plugin-sdk`만 사용한다.
 
+mod error_scan;
 mod state;
+
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use serde_json::Value;
 use tasty_plugin_sdk::{
-    IpcMethodCtx, IpcMethodError, Plugin, SurfaceCreateCtx, SurfaceEventCtx, SurfaceLifecycleCtx,
-    SurfaceResult,
+    HostHandle, IpcMethodCtx, IpcMethodError, Plugin, SurfaceCreateCtx, SurfaceEventCtx,
+    SurfaceLifecycleCtx, SurfaceResult,
 };
 
+use error_scan::ErrorScanner;
 use state::ClaudeState;
 
 const PLUGIN_ID: &str = "com.tasty.claude";
 const PLUGIN_VERSION: &str = "0.1.0";
 
+/// PTY 에러 폴링 간격. 호스트 메모리 스캔(O(1))과의 정확도 차이를 좁히기 위해
+/// 짧게. 자식 N명에 대해 N IPC/주기지만 N이 10 이하인 일상 시나리오에서는 무시
+/// 가능한 부하 (8 calls/sec @ 10 children).
+const ERROR_SCAN_INTERVAL: Duration = Duration::from_millis(800);
+
 struct ClaudePlugin {
     state: ClaudeState,
+    scanner: Arc<Mutex<ErrorScanner>>,
 }
 
 impl ClaudePlugin {
     fn new() -> Self {
         Self {
             state: ClaudeState::load(),
+            scanner: Arc::new(Mutex::new(ErrorScanner::new())),
         }
     }
 }
@@ -60,27 +72,64 @@ impl Plugin for ClaudePlugin {
     }
 
     fn handle_ipc_method(&mut self, _ctx: IpcMethodCtx) -> Result<Value, IpcMethodError> {
-        // 핸들러 본문은 Phase 2 후속 단계(02~04)에서 호스트 IPC 핸들러를 plugin으로
-        // 이주하면서 채운다. 지금은 호스트가 모든 claude.* 메서드를 직접 처리하므로
-        // plugin으로는 forward되지 않는다.
+        // 핸들러 본문은 Phase 2 후속 단계(step 03 hook routing, step 04 cutover)에서
+        // 채운다. 지금은 호스트가 모든 claude.* 메서드를 직접 처리하므로 plugin으로는
+        // forward되지 않는다.
         Err(IpcMethodError::not_implemented())
     }
 
     fn on_surface_lifecycle(&mut self, ctx: SurfaceLifecycleCtx) {
         // 호스트가 일반 terminal surface가 닫혔다고 알려준다. 그 surface가 claude
         // 자식이었다면 child registry에서 제거하고, parent였다면 closed_parents로
-        // 마킹한다. plugin은 어떤 surface_id가 자기 자식/부모인지 자체 state로 알고
-        // 있으므로 host에 별도 질의는 필요 없다.
+        // 마킹한다. error scan에서도 함께 제외한다.
         let sid = ctx.surface_id;
         let parent_was_child = self.state.parent_of_child(sid).is_some();
         if parent_was_child {
             self.state.unregister_child(sid);
             self.state.save();
+            if let Ok(mut s) = self.scanner.lock() {
+                s.disable(sid);
+            }
             return;
         }
         if self.state.is_known_parent(sid) {
             self.state.mark_parent_closed(sid);
             self.state.save();
+        }
+    }
+
+    fn on_start(&mut self, host: HostHandle) {
+        // worker dispatch가 시작되기 직전에 1회 호출. PTY error scan을 위한
+        // background polling thread를 띄운다. 호스트가 메모리 스캔하던 패턴을
+        // 1:1로 옮겼고 (`error_scan.rs::CLAUDE_ERROR_PATTERN`), polling 간격은
+        // 800ms로 호스트 tick에 근접하게 맞춘다.
+        let scanner = self.scanner.clone();
+        std::thread::Builder::new()
+            .name("claude-error-scan".into())
+            .spawn(move || error_scan_loop(scanner, host))
+            .expect("spawn claude-error-scan thread");
+    }
+}
+
+fn error_scan_loop(scanner: Arc<Mutex<ErrorScanner>>, host: HostHandle) {
+    loop {
+        std::thread::sleep(ERROR_SCAN_INTERVAL);
+        // lock을 짧게 잡고 snapshot만 떠서 IPC 호출 동안 다른 메서드(enable/disable)가
+        // 끼어들 수 있게 한다. snapshot 후 surface가 disable되면 다음 tick에 자연
+        // 반영.
+        let surfaces = match scanner.lock() {
+            Ok(s) => s.enabled_snapshot(),
+            Err(e) => {
+                tracing::error!("claude scanner mutex poisoned: {e}");
+                return;
+            }
+        };
+        for sid in surfaces {
+            // 각 IPC call은 최대 60초까지 block 가능하지만 정상 응답은 ms 단위.
+            // 한 surface에서 timeout이 나도 나머지에 영향 없도록 그냥 진행.
+            if let Ok(mut s) = scanner.lock() {
+                let _ = s.scan_one(&host, sid);
+            }
         }
     }
 }
