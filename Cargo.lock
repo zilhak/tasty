@@ -4777,6 +4777,7 @@ dependencies = [
  "tasty-hooks",
  "tasty-plugin-protocol",
  "tasty-settings",
+ "tasty-shm",
  "tasty-terminal",
  "tempfile",
  "termwiz",
@@ -4890,9 +4891,11 @@ name = "tasty-plugin-sdk"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "libc",
  "serde",
  "serde_json",
  "tasty-plugin-protocol",
+ "tasty-shm",
  "thiserror 1.0.69",
  "tracing",
 ]

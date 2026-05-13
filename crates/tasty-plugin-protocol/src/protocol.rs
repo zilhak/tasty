@@ -250,8 +250,12 @@ pub struct AuthAckEnvelope {
 
 /// 보조 채널 위에서 양쪽이 주고받는 NDJSON 메시지.
 ///
-/// 02b에서는 ping/pong 만 정의된다. 02c에서 `HandleAttach` (host → plugin: 새 buffer
-/// 핸들의 메타) 와 `Dirty` (plugin → host: dirty rect 알림)가 추가된다.
+/// 02b에서는 ping/pong만 정의됐고, 02c에서 `HandleAttach`(host → plugin: 새 buffer
+/// 핸들의 메타)와 `Dirty`(plugin → host: dirty rect 알림)가 추가됐다.
+///
+/// `HandleAttach`는 NDJSON 한 줄 *직후* OS-네이티브 ancillary data(SCM_RIGHTS / 직렬화된
+/// HANDLE)를 함께 전송한다 — 같은 sendmsg/write 호출 안에 묶여 전달되어야 plugin이 핸들과
+/// 메타를 일관되게 짝지을 수 있다.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum HandleChannelMessage {
@@ -260,6 +264,24 @@ pub enum HandleChannelMessage {
     Ping { seq: u64 },
     /// [`HandleChannelMessage::Ping`]의 응답.
     Pong { seq: u64 },
+    /// host → plugin: 새로 만든 shared buffer 핸들이 ancillary data로 동행한다.
+    /// `request_id`는 메인 채널의 `host.shared_buffer.create` call_id와 1:1 매칭.
+    HandleAttach {
+        /// 메인 채널 `host.shared_buffer.create` 요청의 call_id.
+        request_id: u64,
+        /// 호스트가 부여한 shared buffer id.
+        id: SharedBufferId,
+        /// 매핑 크기. SDK가 `tasty_shm::receive`에 그대로 넣는다.
+        size: u64,
+    },
+    /// plugin → host: 특정 buffer의 dirty 영역을 통지. fire-and-forget.
+    Dirty {
+        /// 어떤 buffer가 dirty한지.
+        id: SharedBufferId,
+        /// `None`이면 전체 영역.
+        #[serde(default)]
+        rect: Option<Rect>,
+    },
 }
 
 #[cfg(test)]
@@ -450,6 +472,44 @@ mod tests {
         let s = r#"{"kind":"pong","seq":42}"#;
         let parsed: HandleChannelMessage = serde_json::from_str(s).unwrap();
         assert_eq!(parsed, HandleChannelMessage::Pong { seq: 42 });
+    }
+
+    #[test]
+    fn handle_channel_handle_attach_round_trip() {
+        let msg = HandleChannelMessage::HandleAttach {
+            request_id: 9,
+            id: SharedBufferId(1),
+            size: 4096,
+        };
+        let s = serde_json::to_string(&msg).unwrap();
+        assert!(s.contains("\"kind\":\"handle_attach\""));
+        let parsed: HandleChannelMessage = serde_json::from_str(&s).unwrap();
+        assert_eq!(parsed, msg);
+    }
+
+    #[test]
+    fn handle_channel_dirty_with_rect_round_trip() {
+        let msg = HandleChannelMessage::Dirty {
+            id: SharedBufferId(2),
+            rect: Some(Rect { x: 1, y: 2, w: 3, h: 4 }),
+        };
+        let s = serde_json::to_string(&msg).unwrap();
+        assert!(s.contains("\"kind\":\"dirty\""));
+        let parsed: HandleChannelMessage = serde_json::from_str(&s).unwrap();
+        assert_eq!(parsed, msg);
+    }
+
+    #[test]
+    fn handle_channel_dirty_full_buffer_round_trip() {
+        let s = r#"{"kind":"dirty","id":3}"#;
+        let parsed: HandleChannelMessage = serde_json::from_str(s).unwrap();
+        assert_eq!(
+            parsed,
+            HandleChannelMessage::Dirty {
+                id: SharedBufferId(3),
+                rect: None,
+            }
+        );
     }
 
     #[test]

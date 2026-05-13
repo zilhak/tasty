@@ -3,20 +3,15 @@
 //! 메인 TCP 채널([`crate::plugin::listener::HostListener`])은 fd/HANDLE을 운반할 수
 //! 없으므로, 보조 채널을 별도로 둔다. Unix는 `AF_UNIX` socket, Windows는 Named Pipe.
 //!
-//! 02b 단계에서는 두 가지 동작만 검증한다:
-//! 1. plugin이 endpoint로 connect → [`crate::plugin::protocol::AuthMessage`] 한 줄 송신.
-//! 2. host가 토큰 검증 후 [`tasty_plugin_protocol::AuthAckEnvelope`] 응답, 보조 채널
-//!    소켓을 `expect_connection`을 호출한 caller에게 분배.
-//!
-//! 02c에서 이 [`HandleStream`] 위로 SCM_RIGHTS/DuplicateHandle 핸들 전송이 추가될
-//! 예정.
+//! 02b에서 인증 핸드셰이크 + 채널 분배만 구현됐고, 02c에서 [`HandleStream::send_handle`]
+//! (SCM_RIGHTS / DuplicateHandle)과 [`HandleStreamReader`](dirty 메시지 수신)가 추가됐다.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::io::{self, BufRead, BufReader, Write};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 
-use tasty_plugin_protocol::{AuthAck, AuthAckEnvelope};
+use tasty_plugin_protocol::{AuthAck, AuthAckEnvelope, HandleChannelMessage};
 
 use crate::plugin::protocol::AuthMessage;
 
@@ -25,8 +20,8 @@ const AUTH_READ_TIMEOUT: Duration = Duration::from_secs(5);
 /// 호스트 ↔ plugin 보조 채널의 OS-네이티브 stream 추상.
 ///
 /// Unix는 [`std::os::unix::net::UnixStream`], Windows는 Named Pipe handle을 감싼다.
-/// 02b에서는 단순히 NDJSON 라인 송수신만 노출되고, 02c에서 ancillary data 송수신
-/// API가 추가된다.
+/// 송신은 [`HandleStream::send_message`] / [`HandleStream::send_handle`]을 통해 일어나고,
+/// 수신은 [`HandleStream::reader`]가 반환하는 [`HandleStreamReader`]가 담당한다.
 pub struct HandleStream {
     #[cfg(unix)]
     inner: std::os::unix::net::UnixStream,
@@ -35,6 +30,13 @@ pub struct HandleStream {
 }
 
 impl HandleStream {
+    /// fd 없는 NDJSON 한 줄 송신 (예: ping/pong).
+    pub fn send_message(&mut self, msg: &HandleChannelMessage) -> io::Result<()> {
+        let line = serde_json::to_string(msg)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        self.write_line(&line)
+    }
+
     /// 한 줄을 NDJSON으로 송신.
     pub fn write_line(&mut self, line: &str) -> io::Result<()> {
         let mut buf = line.as_bytes().to_vec();
@@ -42,18 +44,66 @@ impl HandleStream {
         self.write_all(&buf)
     }
 
-    /// 임의 바이트 송신. 02c에서 핸들 직후 ancillary data와 함께 호출됨.
+    /// NDJSON 한 줄과 함께 ancillary data로 fd/HANDLE을 송신한다.
+    ///
+    /// `msg`는 [`HandleChannelMessage::HandleAttach`]여야 한다 (호출자가 보장).
+    /// Unix는 `sendmsg(2)` + `SCM_RIGHTS`, Windows는 Named Pipe write로 직렬화된
+    /// HANDLE u64를 NDJSON 라인 뒤에 이어 보낸다 (02c는 Unix만 구현).
+    #[cfg(unix)]
+    pub fn send_handle(
+        &mut self,
+        msg: &HandleChannelMessage,
+        fd: std::os::fd::RawFd,
+    ) -> io::Result<()> {
+        debug_assert!(matches!(msg, HandleChannelMessage::HandleAttach { .. }));
+        let mut line = serde_json::to_string(msg)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        line.push('\n');
+        unix_wire::send_with_fd(&self.inner, line.as_bytes(), Some(fd))
+    }
+
+    /// Windows 측 stub. 02c-Windows에서 구현 예정.
+    #[cfg(windows)]
+    pub fn send_handle(
+        &mut self,
+        _msg: &HandleChannelMessage,
+        _handle: u64,
+    ) -> io::Result<()> {
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "handle channel send_handle not implemented on Windows yet",
+        ))
+    }
+
+    /// 임의 바이트 송신. write_line 내부 헬퍼.
     pub fn write_all(&mut self, bytes: &[u8]) -> io::Result<()> {
         #[cfg(unix)]
         {
-            self.inner.write_all(bytes)?;
-            self.inner.flush()
+            (&self.inner).write_all(bytes)?;
+            (&self.inner).flush()
         }
         #[cfg(windows)]
         {
             self.inner.write_all(bytes)?;
             self.inner.flush()
         }
+    }
+
+    /// 수신 측 reader를 분리해서 반환. write 핸들은 self에 남는다.
+    /// Unix: [`std::os::unix::net::UnixStream::try_clone`]으로 fd를 dup.
+    /// Windows: 미구현.
+    #[cfg(unix)]
+    pub fn reader(&self) -> io::Result<HandleStreamReader> {
+        let cloned = self.inner.try_clone()?;
+        Ok(HandleStreamReader::from_unix(cloned))
+    }
+
+    #[cfg(windows)]
+    pub fn reader(&self) -> io::Result<HandleStreamReader> {
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "handle channel reader not implemented on Windows yet",
+        ))
     }
 }
 
@@ -69,6 +119,82 @@ impl HandleStream {
     #[allow(dead_code)]
     fn from_pipe(stream: platform::PipeServerStream) -> Self {
         Self { inner: stream }
+    }
+}
+
+/// 보조 채널에서 들어오는 NDJSON 메시지를 한 줄씩 파싱해 돌려준다.
+///
+/// host 측에서는 [`HandleChannelMessage::Dirty`] 같은 plugin 측 알림을 받기 위해 사용한다.
+/// fd 수신 경로는 host에서 사용하지 않지만(현재 host는 fd를 보내기만 함), API 일관성을 위해
+/// 동일한 reader 타입을 노출한다.
+pub struct HandleStreamReader {
+    #[cfg(unix)]
+    inner: std::os::unix::net::UnixStream,
+    #[cfg(unix)]
+    carry: Vec<u8>,
+    #[cfg(unix)]
+    fd_queue: VecDeque<std::os::fd::RawFd>,
+    #[cfg(windows)]
+    _phantom: std::marker::PhantomData<()>,
+}
+
+impl HandleStreamReader {
+    #[cfg(unix)]
+    fn from_unix(stream: std::os::unix::net::UnixStream) -> Self {
+        Self {
+            inner: stream,
+            carry: Vec::with_capacity(4096),
+            fd_queue: VecDeque::new(),
+        }
+    }
+
+    /// 다음 메시지 한 건을 blocking으로 받는다. `HandleAttach`의 ancillary fd가 있으면
+    /// 같이 반환한다. 연결이 닫히면 `UnexpectedEof` io 에러.
+    #[cfg(unix)]
+    pub fn recv_message(
+        &mut self,
+    ) -> io::Result<(HandleChannelMessage, Option<std::os::fd::RawFd>)> {
+        loop {
+            if let Some(nl) = self.carry.iter().position(|&b| b == b'\n') {
+                let line_bytes: Vec<u8> = self.carry.drain(..=nl).collect();
+                let line_str = std::str::from_utf8(&line_bytes[..nl])
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?
+                    .trim();
+                if line_str.is_empty() {
+                    continue;
+                }
+                let msg: HandleChannelMessage = serde_json::from_str(line_str)
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+                let aux_fd = match msg {
+                    HandleChannelMessage::HandleAttach { .. } => self.fd_queue.pop_front(),
+                    _ => None,
+                };
+                return Ok((msg, aux_fd));
+            }
+
+            let mut buf = [0u8; 4096];
+            let (n, fds) = unix_wire::recv_with_fd(&self.inner, &mut buf)?;
+            if n == 0 {
+                return Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "handle channel closed",
+                ));
+            }
+            self.carry.extend_from_slice(&buf[..n]);
+            for fd in fds {
+                self.fd_queue.push_back(fd);
+            }
+        }
+    }
+
+    #[cfg(windows)]
+    pub fn recv_message(
+        &mut self,
+    ) -> io::Result<(HandleChannelMessage, Option<u64>)> {
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "handle channel recv_message not implemented on Windows yet",
+        ))
     }
 }
 
@@ -268,6 +394,169 @@ fn send_auth_ack_unix(
     w.flush()
 }
 
+#[cfg(unix)]
+mod unix_wire {
+    //! Unix `sendmsg`/`recvmsg` + `SCM_RIGHTS` 헬퍼.
+    //!
+    //! 보조 채널은 stream socket이지만, fd 전달이 필요한 메시지는 라인 바이트와
+    //! ancillary control message를 같은 `sendmsg`로 묶어 보낸다. 수신측은 `recvmsg`로
+    //! 둘을 한꺼번에 꺼낸다.
+    use std::io;
+    use std::mem;
+    use std::os::fd::{AsRawFd, RawFd};
+    use std::os::unix::net::UnixStream;
+
+    /// `cmsghdr`의 alignment 요구사항을 만족하는 cmsg 버퍼.
+    /// `cmsghdr`는 보통 long-aligned이므로 `u64` 백킹 배열로 8B 정렬 보장.
+    #[repr(C)]
+    union CmsgBuf {
+        bytes: [u8; 64],
+        _align: [u64; 8],
+    }
+
+    impl CmsgBuf {
+        fn new() -> Self {
+            Self { bytes: [0u8; 64] }
+        }
+        fn as_mut_ptr(&mut self) -> *mut u8 {
+            // SAFETY: union의 두 필드는 같은 메모리를 공유. bytes 포인터는 항상 유효.
+            unsafe { self.bytes.as_mut_ptr() }
+        }
+        fn len(&self) -> usize {
+            64
+        }
+    }
+
+    /// 한 fd만 담을 수 있는 cmsg 공간.
+    fn cmsg_space_one_fd() -> u32 {
+        // SAFETY: CMSG_SPACE는 입력에 대한 부수효과가 없는 macro/inline 함수.
+        unsafe { libc::CMSG_SPACE(mem::size_of::<libc::c_int>() as u32) }
+    }
+
+    pub(super) fn send_with_fd(
+        stream: &UnixStream,
+        bytes: &[u8],
+        aux_fd: Option<RawFd>,
+    ) -> io::Result<()> {
+        let iov = libc::iovec {
+            iov_base: bytes.as_ptr() as *mut _,
+            iov_len: bytes.len(),
+        };
+        // SAFETY: zero-initialized msghdr는 sendmsg에 안전한 초기 상태.
+        let mut msg: libc::msghdr = unsafe { mem::zeroed() };
+        msg.msg_iov = &iov as *const _ as *mut _;
+        msg.msg_iovlen = 1;
+
+        // cmsg 버퍼 — fd 1개 분량, 8B alignment 보장.
+        let mut cmsg_buf = CmsgBuf::new();
+        if let Some(fd) = aux_fd {
+            let cmsg_space = cmsg_space_one_fd() as usize;
+            assert!(cmsg_buf.len() >= cmsg_space);
+            msg.msg_control = cmsg_buf.as_mut_ptr() as *mut _;
+            msg.msg_controllen = cmsg_space as _;
+
+            // SAFETY: msg.msg_control이 유효한 64B 버퍼를 가리키고 msg.msg_controllen이 그 안에 들어감.
+            unsafe {
+                let cmsg_ptr = libc::CMSG_FIRSTHDR(&msg);
+                if cmsg_ptr.is_null() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::Other,
+                        "CMSG_FIRSTHDR returned null",
+                    ));
+                }
+                (*cmsg_ptr).cmsg_level = libc::SOL_SOCKET;
+                (*cmsg_ptr).cmsg_type = libc::SCM_RIGHTS;
+                (*cmsg_ptr).cmsg_len =
+                    libc::CMSG_LEN(mem::size_of::<libc::c_int>() as u32) as _;
+                let data_ptr = libc::CMSG_DATA(cmsg_ptr) as *mut libc::c_int;
+                std::ptr::write_unaligned(data_ptr, fd);
+            }
+        }
+
+        let stream_fd = stream.as_raw_fd();
+        // SAFETY: stream_fd는 open된 socket, msg는 위에서 모두 valid하게 채움.
+        let n = unsafe { libc::sendmsg(stream_fd, &msg, 0) };
+        if n < 0 {
+            return Err(io::Error::last_os_error());
+        }
+        // 짧게 보냈으면 에러로 — 우리는 한 줄을 한 번에 보내야 SCM_RIGHTS와 묶임이 깨지지 않는다.
+        if (n as usize) != bytes.len() {
+            return Err(io::Error::new(
+                io::ErrorKind::WriteZero,
+                format!(
+                    "handle channel sendmsg short write: {} of {}",
+                    n,
+                    bytes.len()
+                ),
+            ));
+        }
+        Ok(())
+    }
+
+    /// 한 번의 `recvmsg`로 최대 `buf.len()` 바이트와 ancillary fd 목록을 받는다.
+    /// 반환된 fds의 소유권은 caller에게 이전 — Drop 시 close하지 않으면 leak.
+    pub(super) fn recv_with_fd(
+        stream: &UnixStream,
+        buf: &mut [u8],
+    ) -> io::Result<(usize, Vec<RawFd>)> {
+        let mut iov = libc::iovec {
+            iov_base: buf.as_mut_ptr() as *mut _,
+            iov_len: buf.len(),
+        };
+        // SAFETY: zero-initialized msghdr는 recvmsg에 안전한 초기 상태.
+        let mut msg: libc::msghdr = unsafe { mem::zeroed() };
+        msg.msg_iov = &mut iov;
+        msg.msg_iovlen = 1;
+
+        // 여유 있게 fd 4개까지. 8B 정렬 보장.
+        #[repr(C)]
+        union RecvCmsgBuf {
+            bytes: [u8; 256],
+            _align: [u64; 32],
+        }
+        // SAFETY: union 두 필드 같은 영역 공유, bytes 패턴으로 zero-init.
+        let mut cmsg_buf = unsafe { RecvCmsgBuf { bytes: [0u8; 256] } };
+        // SAFETY: cmsg_buf의 bytes 필드 포인터.
+        msg.msg_control = unsafe { cmsg_buf.bytes.as_mut_ptr() } as *mut _;
+        msg.msg_controllen = 256 as _;
+
+        let stream_fd = stream.as_raw_fd();
+        // SAFETY: stream_fd는 open된 socket, msg는 위에서 valid하게 초기화.
+        let n = unsafe { libc::recvmsg(stream_fd, &mut msg, 0) };
+        if n < 0 {
+            return Err(io::Error::last_os_error());
+        }
+
+        let mut fds = Vec::new();
+        // SAFETY: msg는 위에서 valid한 cmsg buffer를 가짐.
+        let mut cmsg = unsafe { libc::CMSG_FIRSTHDR(&msg) };
+        while !cmsg.is_null() {
+            // SAFETY: cmsg는 non-null이고 msg가 가진 cmsg buffer 내부 포인터.
+            let (level, ty, len) = unsafe {
+                let h = &*cmsg;
+                (h.cmsg_level, h.cmsg_type, h.cmsg_len)
+            };
+            if level == libc::SOL_SOCKET && ty == libc::SCM_RIGHTS {
+                // SAFETY: CMSG_LEN(0)으로 헤더 크기 추출.
+                let header_len = unsafe { libc::CMSG_LEN(0) } as usize;
+                let data_len = (len as usize).saturating_sub(header_len);
+                let n_fds = data_len / mem::size_of::<libc::c_int>();
+                // SAFETY: CMSG_DATA는 cmsg 안의 data 시작 포인터.
+                let data_ptr = unsafe { libc::CMSG_DATA(cmsg) } as *const libc::c_int;
+                for i in 0..n_fds {
+                    // SAFETY: data_ptr부터 n_fds * sizeof(c_int) 범위 내.
+                    let fd = unsafe { std::ptr::read_unaligned(data_ptr.add(i)) };
+                    fds.push(fd);
+                }
+            }
+            // SAFETY: 동일 msg에 대한 다음 cmsg.
+            cmsg = unsafe { libc::CMSG_NXTHDR(&msg, cmsg) };
+        }
+
+        Ok((n as usize, fds))
+    }
+}
+
 // Windows Named Pipe 구현은 02c에서 채워진다. 02b에서는 module이 빈 placeholder를
 // 가지지만, type 참조가 컴파일되도록 stub 타입만 둔다.
 #[cfg(windows)]
@@ -354,6 +643,44 @@ mod tests {
             let stream = listener.expect_connection(&token, Duration::from_secs(2));
             assert!(stream.is_some(), "expected handle stream to be received");
         });
+    }
+
+    #[test]
+    fn send_handle_delivers_fd_via_scm_rights() {
+        use std::os::fd::AsRawFd;
+        use tasty_plugin_protocol::SharedBufferId;
+
+        // socketpair로 host/plugin 양쪽 simulate.
+        let (host_raw, plugin_raw) = UnixStream::pair().expect("socketpair");
+        let mut host_stream = HandleStream::from_unix(host_raw);
+
+        // /dev/null fd 하나를 cmsg에 실어 보낸다.
+        let f = std::fs::File::open("/dev/null").expect("open /dev/null");
+        let send_fd = f.as_raw_fd();
+        let msg = HandleChannelMessage::HandleAttach {
+            request_id: 1,
+            id: SharedBufferId(42),
+            size: 4096,
+        };
+        host_stream.send_handle(&msg, send_fd).expect("send_handle");
+
+        // plugin 측에서 recvmsg로 받기 — unix_wire::recv_with_fd 직접 호출.
+        let mut buf = [0u8; 4096];
+        let (n, fds) = unix_wire::recv_with_fd(&plugin_raw, &mut buf).expect("recv");
+        assert!(n > 0);
+        assert_eq!(fds.len(), 1, "정확히 fd 1개가 와야 함");
+        let recv_fd = fds[0];
+        assert_ne!(recv_fd, send_fd, "kernel이 dup해서 다른 번호의 fd 전달");
+
+        // bytes에는 JSON 한 줄.
+        let line = std::str::from_utf8(&buf[..n]).expect("utf8").trim();
+        let got: HandleChannelMessage = serde_json::from_str(line).expect("json");
+        assert_eq!(got, msg);
+
+        // SAFETY: 받은 fd close — leak 방지. recv_fd는 방금 dup된 valid한 file descriptor.
+        unsafe {
+            libc::close(recv_fd);
+        }
     }
 
     #[test]

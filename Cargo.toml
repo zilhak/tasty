@@ -75,6 +75,7 @@ tasty-font = { path = "crates/tasty-font" }
 tasty-hooks = { path = "crates/tasty-hooks" }
 tasty-plugin-protocol = { path = "crates/tasty-plugin-protocol" }
 tasty-settings = { path = "crates/tasty-settings" }
+tasty-shm = { path = "crates/tasty-shm" }
 tasty-terminal = { path = "crates/tasty-terminal" }
 # Window & Input
 winit = "0.30"
