@@ -552,6 +552,24 @@ impl AppState {
             .downcast_mut::<crate::model::ImagePanel>()
     }
 
+    /// Find an image panel by its surface ID across all workspaces (mutable).
+    /// Used by IPC handlers that target a specific surface — focus-independent.
+    pub fn image_panel_mut(&mut self, surface_id: u32) -> Option<&mut crate::model::ImagePanel> {
+        let (ws_idx, pid) = self.find_workspace_index_for_surface(surface_id)?;
+        let workspace = self.engine.workspaces.get_mut(ws_idx)?;
+        let pane = workspace.pane_layout_mut().find_pane_mut(pid)?;
+        for tab in &mut pane.tabs {
+            if tab.contains_surface(surface_id) {
+                return tab
+                    .layout_mut()
+                    .find_leaf_mut(surface_id)?
+                    .as_any_mut()
+                    .downcast_mut::<crate::model::ImagePanel>();
+            }
+        }
+        None
+    }
+
     /// Refresh the cached display name of the tab containing a given surface ID.
     pub fn refresh_tab_display_name(&mut self, surface_id: u32) {
         for workspace in &mut self.engine.workspaces {
