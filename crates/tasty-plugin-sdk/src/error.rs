@@ -64,4 +64,13 @@ pub enum PluginError {
     /// Mutex가 poison된 상태에서 lock 시도.
     #[error("mutex poisoned: {0}")]
     LockPoisoned(&'static str),
+
+    /// 보조 핸들 채널이 필요한 동작을 호출했으나 채널이 활성화되지 않았다 (host가 endpoint를
+    /// 전달하지 않았거나 SDK가 connect에 실패함).
+    #[error("plugin handle channel not available — shared buffer features disabled")]
+    HandleChannelUnavailable,
+
+    /// `tasty-shm` 영역 매핑 실패.
+    #[error("shared memory error: {0}")]
+    Shm(String),
 }

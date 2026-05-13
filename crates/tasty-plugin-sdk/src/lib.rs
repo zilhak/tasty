@@ -10,10 +10,12 @@ pub mod handle_channel;
 pub mod host;
 pub mod plugin;
 pub mod runtime;
+pub mod shared_buffer;
 pub mod ui;
 
 pub use error::{PluginError, Result};
 pub use host::HostHandle;
+pub use shared_buffer::SharedBuffer;
 #[allow(deprecated)]
 pub use host::HostCallError;
 pub use plugin::{

@@ -20,16 +20,17 @@ use anyhow::Result;
 use serde_json::Value;
 
 use tasty_plugin_protocol::{
-    IpcCallResult, IpcInvokeParams, METHOD_COMMAND_INVOKE, METHOD_IPC_INVOKE, METHOD_IPC_RESULT,
-    METHOD_PING, METHOD_SHUTDOWN, METHOD_SURFACE_CREATE, METHOD_SURFACE_DESTROY,
-    METHOD_SURFACE_EVENT, METHOD_SURFACE_LIFECYCLE, METHOD_SURFACE_RESTORE, METHOD_SURFACE_SNAPSHOT,
-    PluginEvent, PluginRequest, PluginResponse, SurfaceLifecycleParams,
+    HandleChannelMessage, IpcCallResult, IpcInvokeParams, METHOD_COMMAND_INVOKE,
+    METHOD_IPC_INVOKE, METHOD_IPC_RESULT, METHOD_PING, METHOD_SHUTDOWN, METHOD_SURFACE_CREATE,
+    METHOD_SURFACE_DESTROY, METHOD_SURFACE_EVENT, METHOD_SURFACE_LIFECYCLE,
+    METHOD_SURFACE_RESTORE, METHOD_SURFACE_SNAPSHOT, PluginEvent, PluginRequest,
+    PluginResponse, SurfaceLifecycleParams,
 };
 
 use crate::connection::Connection;
 use crate::env::PluginEnv;
 use crate::handle_channel::HandleClient;
-use crate::host::{deliver_ipc_result, HostHandle, PendingCalls};
+use crate::host::{deliver_ipc_result, HostHandle, PendingCalls, SharedBufferFdPending};
 use crate::plugin::{
     CommandInvokeCtx, IpcMethodCtx, Plugin, SurfaceCreateCtx, SurfaceEventCtx, SurfaceLifecycleCtx,
     SurfaceRestoreCtx, SurfaceSnapshotCtx,
@@ -67,7 +68,7 @@ pub fn run<P: Plugin>(plugin: P) -> Result<()> {
 
     // 보조 핸들 채널이 활성화되어 있으면 connect한다. 실패는 fatal이 아니라 warn만 남긴다 —
     // 보조 채널을 안 쓰는 plugin이라면 그대로 동작해야 한다 (shared buffer 기능만 비활성).
-    let _handle_client: Option<HandleClient> = if env.handle_endpoint.is_some() {
+    let handle_client: Option<HandleClient> = if env.handle_endpoint.is_some() {
         match HandleClient::connect(&env) {
             Ok(c) => {
                 tracing::info!("plugin handle channel connected");
@@ -96,7 +97,45 @@ pub fn run<P: Plugin>(plugin: P) -> Result<()> {
     );
 
     let pending: PendingCalls = Arc::new(Mutex::new(HashMap::new()));
-    let host = HostHandle::new(writer.clone(), pending.clone());
+    let shared_buffer_fd_pending: SharedBufferFdPending =
+        Arc::new(Mutex::new(HashMap::new()));
+    let mut host = HostHandle::new(writer.clone(), pending.clone());
+
+    // 보조 채널이 살아 있으면 reader thread 띄우고 HostHandle에 writer 연결.
+    let _handle_reader_thread: Option<std::thread::JoinHandle<()>> = match handle_client {
+        Some(client) => {
+            #[cfg(unix)]
+            {
+                match client.reader() {
+                    Ok(reader) => {
+                        let handle_writer = Arc::new(Mutex::new(client));
+                        host = host.with_handle_channel(
+                            handle_writer.clone(),
+                            shared_buffer_fd_pending.clone(),
+                        );
+                        let fd_pending_clone = shared_buffer_fd_pending.clone();
+                        let writer_clone = handle_writer.clone();
+                        let handle = std::thread::Builder::new()
+                            .name("plugin-handle-reader".into())
+                            .spawn(move || {
+                                handle_reader_loop(reader, fd_pending_clone, writer_clone);
+                            })?;
+                        Some(handle)
+                    }
+                    Err(e) => {
+                        tracing::warn!("plugin handle channel reader split failed: {e}");
+                        None
+                    }
+                }
+            }
+            #[cfg(not(unix))]
+            {
+                let _ = client; // Windows에서는 보조 채널 미구현.
+                None
+            }
+        }
+        None => None,
+    };
 
     let (req_tx, req_rx) = mpsc::channel::<PluginRequest>();
     let worker_writer = writer.clone();
@@ -156,6 +195,73 @@ pub fn run<P: Plugin>(plugin: P) -> Result<()> {
     drop(req_tx);
     let _ = worker_handle.join();
     Ok(())
+}
+
+/// 보조 채널의 reader thread loop. host가 보낸 `HandleAttach`의 fd를 fd_pending에
+/// 매칭해 `HostHandle::create_shared_buffer` 대기자에게 push하고, ping을 받으면 pong을
+/// 회신한다. 연결이 닫히면 조용히 종료.
+#[cfg(unix)]
+fn handle_reader_loop(
+    mut reader: crate::handle_channel::HandleClientReader,
+    fd_pending: SharedBufferFdPending,
+    writer: Arc<Mutex<HandleClient>>,
+) {
+    loop {
+        match reader.recv_message() {
+            Ok((msg, aux_fd)) => match msg {
+                HandleChannelMessage::HandleAttach { request_id, .. } => match aux_fd {
+                    Some(fd) => {
+                        let sender = fd_pending
+                            .lock()
+                            .ok()
+                            .and_then(|mut m| m.remove(&request_id));
+                        match sender {
+                            Some(tx) => {
+                                if tx.send(fd).is_err() {
+                                    tracing::warn!(
+                                        "handle channel: orphan fd for request_id={request_id} (waiter dropped)"
+                                    );
+                                    // SAFETY: fd는 방금 SCM_RIGHTS로 받은 valid한 file descriptor.
+                                    // 매칭되는 waiter가 사라졌으니 leak 방지 위해 close.
+                                    unsafe { libc::close(fd) };
+                                }
+                            }
+                            None => {
+                                tracing::warn!(
+                                    "handle channel: unsolicited HandleAttach (request_id={request_id})"
+                                );
+                                // SAFETY: 위와 동일 — 미수령 fd는 close해서 leak 방지.
+                                unsafe { libc::close(fd) };
+                            }
+                        }
+                    }
+                    None => {
+                        tracing::warn!(
+                            "handle channel: HandleAttach without fd (request_id={request_id})"
+                        );
+                    }
+                },
+                HandleChannelMessage::Ping { seq } => {
+                    let pong = HandleChannelMessage::Pong { seq };
+                    if let Ok(mut w) = writer.lock() {
+                        if let Err(e) = w.send_message(&pong) {
+                            tracing::warn!("handle channel: pong send failed: {e}");
+                        }
+                    }
+                }
+                HandleChannelMessage::Pong { .. } => {
+                    // plugin이 ping을 안 보내므로 도착할 일이 없지만 와도 무해.
+                }
+                HandleChannelMessage::Dirty { .. } => {
+                    tracing::warn!("handle channel: plugin received Dirty (unexpected)");
+                }
+            },
+            Err(e) => {
+                tracing::debug!("handle channel reader exiting: {e}");
+                break;
+            }
+        }
+    }
 }
 
 fn worker_loop<P: Plugin>(

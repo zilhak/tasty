@@ -285,9 +285,8 @@ mod unix_wire {
             bytes: [u8; 256],
             _align: [u64; 32],
         }
-        // SAFETY: union 두 필드 같은 영역 공유.
-        let mut cmsg_buf = unsafe { RecvCmsgBuf { bytes: [0u8; 256] } };
-        // SAFETY: bytes 필드 포인터.
+        let mut cmsg_buf = RecvCmsgBuf { bytes: [0u8; 256] };
+        // SAFETY: bytes 필드 접근. union 두 필드 같은 메모리 공유.
         msg.msg_control = unsafe { cmsg_buf.bytes.as_mut_ptr() } as *mut _;
         msg.msg_controllen = 256 as _;
 
@@ -451,12 +450,11 @@ mod tests {
             bytes: [u8; 64],
             _align: [u64; 8],
         }
-        // SAFETY: union 두 필드 같은 영역.
-        let mut cmsg_buf = unsafe { SendCmsgBuf { bytes: [0u8; 64] } };
+        let mut cmsg_buf = SendCmsgBuf { bytes: [0u8; 64] };
         // SAFETY: CMSG_SPACE는 부수효과 없음.
         let cmsg_space = unsafe { libc::CMSG_SPACE(mem::size_of::<libc::c_int>() as u32) }
             as usize;
-        // SAFETY: bytes 필드 포인터.
+        // SAFETY: bytes 필드 접근. union 두 필드 같은 메모리 공유.
         msg.msg_control = unsafe { cmsg_buf.bytes.as_mut_ptr() } as *mut _;
         msg.msg_controllen = cmsg_space as _;
         // SAFETY: cmsg_buf에 64B 여유. cmsg 헤더 채우기.

@@ -13,14 +13,26 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 
 use serde_json::Value;
-use tasty_plugin_protocol::PluginEvent;
+use tasty_plugin_protocol::{
+    PluginEvent, SharedBufferCreateResult, METHOD_HOST_SHARED_BUFFER_CREATE,
+};
 
 use crate::error::PluginError;
+use crate::handle_channel::HandleClient;
+use crate::shared_buffer::SharedBuffer;
 
 /// 호스트 호출 결과. 워크스페이스 plugin이 `match` 분기에 쓰지 않고 `?`로만
 /// 흘려보내는 경우가 대부분이라, 표준 [`PluginError`]로 합쳤다.
 pub(crate) type HostCallResult = Result<Value, PluginError>;
 pub(crate) type PendingCalls = Arc<Mutex<HashMap<u64, mpsc::Sender<HostCallResult>>>>;
+
+/// `host.shared_buffer.create` RPC와 동일한 call_id로 매칭되는 fd waiter 맵.
+/// 보조 채널 reader가 `HandleAttach`를 받으면 여기 등록된 mpsc로 fd를 push한다.
+#[cfg(unix)]
+pub(crate) type SharedBufferFdPending =
+    Arc<Mutex<HashMap<u64, mpsc::Sender<std::os::fd::RawFd>>>>;
+#[cfg(windows)]
+pub(crate) type SharedBufferFdPending = Arc<Mutex<HashMap<u64, mpsc::Sender<u64>>>>;
 
 /// 옛 이름 호환을 위한 alias. 신규 코드는 [`PluginError`] 사용.
 #[deprecated(note = "PluginError로 통합됨. 새 코드는 PluginError 사용.")]
@@ -37,6 +49,10 @@ pub struct HostHandle {
     next_call_id: Arc<AtomicU64>,
     /// host call의 최대 대기 시간. 기본 60초. 호출 전에 변경 가능.
     pub timeout: Duration,
+    /// 보조 핸들 채널의 writer. 없으면 shared buffer 기능 비활성.
+    handle_writer: Option<Arc<Mutex<HandleClient>>>,
+    /// `host.shared_buffer.create` RPC에 대한 fd 도착 알림 맵.
+    shared_buffer_fd_pending: SharedBufferFdPending,
 }
 
 impl HostHandle {
@@ -46,7 +62,20 @@ impl HostHandle {
             pending,
             next_call_id: Arc::new(AtomicU64::new(1)),
             timeout: Duration::from_secs(60),
+            handle_writer: None,
+            shared_buffer_fd_pending: Arc::new(Mutex::new(HashMap::new())),
         }
+    }
+
+    /// 보조 핸들 채널을 등록한다. runtime이 [`HandleClient::connect`] 성공 시 호출.
+    pub(crate) fn with_handle_channel(
+        mut self,
+        handle_writer: Arc<Mutex<HandleClient>>,
+        shared_buffer_fd_pending: SharedBufferFdPending,
+    ) -> Self {
+        self.handle_writer = Some(handle_writer);
+        self.shared_buffer_fd_pending = shared_buffer_fd_pending;
+        self
     }
 
     /// 호스트 IPC 메서드를 동기로 호출한다. 응답까지 [`Self::timeout`]만큼 block.
@@ -57,6 +86,15 @@ impl HostHandle {
     ) -> Result<Value, PluginError> {
         let method_str = method.into();
         let call_id = self.next_call_id.fetch_add(1, Ordering::Relaxed);
+        self.call_with_id(call_id, method_str, params)
+    }
+
+    fn call_with_id(
+        &self,
+        call_id: u64,
+        method: String,
+        params: Value,
+    ) -> Result<Value, PluginError> {
         let (tx, rx) = mpsc::channel::<HostCallResult>();
         {
             let mut p = self
@@ -67,7 +105,7 @@ impl HostHandle {
         }
         let event = PluginEvent::IpcCall {
             call_id,
-            method: method_str.clone(),
+            method: method.clone(),
             params,
         };
         let payload = serde_json::json!({ "event": event });
@@ -87,11 +125,80 @@ impl HostHandle {
                     p.remove(&call_id);
                 }
                 Err(PluginError::HostCallTimeout {
-                    method: method_str,
+                    method,
                     timeout: self.timeout,
                 })
             }
         }
+    }
+
+    /// 새 공유 메모리 buffer를 호스트에 요청한다. 메인 채널로 메타데이터 RPC가 가고,
+    /// 보조 채널로 fd/HANDLE이 동행해서 도착한다 — 둘 다 모인 시점에 [`SharedBuffer`]를
+    /// 반환.
+    ///
+    /// 보조 채널이 활성화되지 않은 plugin이면 [`PluginError::HandleChannelUnavailable`].
+    #[cfg(unix)]
+    pub fn create_shared_buffer(&self, size: usize) -> Result<SharedBuffer, PluginError> {
+        let handle_writer = self
+            .handle_writer
+            .clone()
+            .ok_or(PluginError::HandleChannelUnavailable)?;
+
+        let call_id = self.next_call_id.fetch_add(1, Ordering::Relaxed);
+
+        // fd 도착 알림 채널을 *RPC 송신 전에* 등록 — race 방지.
+        let (fd_tx, fd_rx) = mpsc::channel::<std::os::fd::RawFd>();
+        {
+            let mut m = self
+                .shared_buffer_fd_pending
+                .lock()
+                .map_err(|_| PluginError::LockPoisoned("shared_buffer_fd_pending"))?;
+            m.insert(call_id, fd_tx);
+        }
+
+        // RPC 송신. 결과로 {id, size}가 회신된다.
+        let rpc_result = self.call_with_id(
+            call_id,
+            METHOD_HOST_SHARED_BUFFER_CREATE.to_string(),
+            serde_json::json!({ "size": size as u64 }),
+        );
+        let parsed: SharedBufferCreateResult = match rpc_result {
+            Ok(v) => serde_json::from_value(v)?,
+            Err(e) => {
+                if let Ok(mut m) = self.shared_buffer_fd_pending.lock() {
+                    m.remove(&call_id);
+                }
+                return Err(e);
+            }
+        };
+
+        // 보조 채널로 도착하는 fd 대기. RPC 응답보다 먼저 와 있을 수도, 뒤에 올 수도 있음.
+        let fd = match fd_rx.recv_timeout(self.timeout) {
+            Ok(fd) => fd,
+            Err(_) => {
+                if let Ok(mut m) = self.shared_buffer_fd_pending.lock() {
+                    m.remove(&call_id);
+                }
+                return Err(PluginError::HostCallTimeout {
+                    method: format!("{} (handle attach)", METHOD_HOST_SHARED_BUFFER_CREATE),
+                    timeout: self.timeout,
+                });
+            }
+        };
+
+        // 받은 fd를 tasty_shm::receive로 매핑.
+        let payload = tasty_shm::ReceivedPayload::Fd {
+            fd,
+            size: parsed.size as usize,
+        };
+        let mem = tasty_shm::receive(payload).map_err(|e| PluginError::Shm(e.to_string()))?;
+
+        Ok(SharedBuffer::new(parsed.id, mem, handle_writer))
+    }
+
+    #[cfg(windows)]
+    pub fn create_shared_buffer(&self, _size: usize) -> Result<SharedBuffer, PluginError> {
+        Err(PluginError::HandleChannelUnavailable)
     }
 }
 
