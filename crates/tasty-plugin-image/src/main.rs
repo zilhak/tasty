@@ -2,11 +2,15 @@
 //!
 //! `image` surface kind와 `image.*` IPC 네임스페이스를 점유한다. 실제 픽셀
 //! 렌더링은 호스트가 담당하는 host-rendered kind(`rendering = "host"`)이며,
-//! plugin은 manifest 등록과 `image.*` IPC trampoline만 제공한다.
+//! 모든 `image.*` IPC 메서드는 호스트의 동명 메서드로 trampoline한다.
+//!
+//! self-call(caller==owner)이 들어오면 plugin manager가 namespace forward를
+//! 건너뛰고 호스트 dispatcher로 통과시키므로 무한 루프가 발생하지 않는다.
 
 use serde_json::Value;
 use tasty_plugin_sdk::{
-    IpcMethodCtx, IpcMethodError, Plugin, SurfaceCreateCtx, SurfaceEventCtx, SurfaceResult,
+    host::HostHandle, IpcMethodCtx, IpcMethodError, Plugin, SurfaceCreateCtx, SurfaceEventCtx,
+    SurfaceResult,
 };
 
 const PLUGIN_ID: &str = "com.tasty.image";
@@ -24,6 +28,7 @@ impl Plugin for ImagePlugin {
     }
 
     fn create_surface(&mut self, _ctx: SurfaceCreateCtx) -> SurfaceResult {
+        // host-rendered kind라 plugin이 tree를 만들지 않는다. 호스트가 직접 그린다.
         SurfaceResult {
             tree: None,
             display_name: None,
@@ -45,10 +50,16 @@ impl Plugin for ImagePlugin {
             | "image.next"
             | "image.prev"
             | "image.paste"
-            | "image.list" => Err(IpcMethodError::not_implemented()),
+            | "image.list" => trampoline(&ctx.host, &ctx.method, ctx.params),
             other => Err(IpcMethodError::not_found(other)),
         }
     }
+}
+
+/// `image.*` 메서드를 호스트의 동명 IPC로 위임한다. plugin manager가 self-call을
+/// 호스트 dispatcher로 우회시키므로 무한 forward 루프는 발생하지 않는다.
+fn trampoline(host: &HostHandle, method: &str, params: Value) -> Result<Value, IpcMethodError> {
+    Ok(host.call(method, params)?)
 }
 
 fn main() -> anyhow::Result<()> {

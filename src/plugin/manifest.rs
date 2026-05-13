@@ -1302,6 +1302,30 @@ mod tests {
         assert!(parse(s).is_err());
     }
 
+    /// 번들된 com.tasty.image plugin의 실제 매니페스트가 파서를 통과하고
+    /// surface_kind가 host-rendered로 인식되는지 확인.
+    #[test]
+    fn bundled_image_plugin_manifest_validates() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("crates")
+            .join("tasty-plugin-image");
+        let m = Manifest::load(&path).expect("image plugin manifest should load");
+        assert_eq!(m.id, "com.tasty.image");
+        assert_eq!(m.surface_kinds.len(), 1);
+        assert_eq!(m.surface_kinds[0].kind, "image");
+        assert_eq!(
+            m.surface_kinds[0].rendering,
+            SurfaceKindRendering::Host
+        );
+        // ipc_namespace prefix가 "image"여야 하고 cli 매핑이 모두 image.* 메서드.
+        assert!(m
+            .contributes
+            .ipc_namespace
+            .iter()
+            .any(|n| n.prefix == "image"));
+        assert!(m.contributes.cli.iter().any(|c| c.name == "image"));
+    }
+
     #[test]
     fn surface_kind_rendering_defaults_to_remote() {
         let s = r#"

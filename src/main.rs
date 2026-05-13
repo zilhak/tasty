@@ -1062,15 +1062,22 @@ impl App {
         for call in calls {
             // namespace forward 경로: 메서드가 다른 plugin의 prefix에 매칭되면
             // 검증/forward를 plugin_manager에 위임한다. 응답은 비동기.
+            //
+            // self-call(caller가 prefix owner와 동일)인 경우는 forward하지 않고
+            // 호스트 dispatcher로 통과시킨다. plugin이 자기 namespace 메서드의
+            // 구현을 호스트 본문에 위임하는 trampoline 패턴(예: com.tasty.image)을
+            // 지원하기 위함. 호스트에 동명 메서드가 없으면 일반 -32601이 떨어진다.
             if let Some(mgr) = self.plugin_manager.as_mut() {
-                if mgr.ipc_namespaces.resolve(&call.method).is_some() {
-                    mgr.forward_namespace_call_from_plugin(
-                        &call.method,
-                        call.params.clone(),
-                        &call.plugin_id,
-                        call.call_id,
-                    );
-                    continue;
+                if let Some(owner) = mgr.ipc_namespaces.resolve(&call.method) {
+                    if owner != call.plugin_id {
+                        mgr.forward_namespace_call_from_plugin(
+                            &call.method,
+                            call.params.clone(),
+                            &call.plugin_id,
+                            call.call_id,
+                        );
+                        continue;
+                    }
                 }
             }
             let caller = ipc::caller::CallerContext::Plugin {
