@@ -168,30 +168,57 @@ fn draw_list_tab(
             egui::ScrollArea::vertical().show(ui, |ui| {
                 for entry in &snapshot.plugins {
                     let selected = ui_state.selected_id.as_ref() == Some(&entry.id);
-                    let label = if entry.builtin {
+                    let name_text = if entry.builtin {
                         format!("{}  •", entry.name)
                     } else {
                         entry.name.clone()
                     };
-                    let resp = ui.add_sized(
-                        egui::vec2(ui.available_width(), 28.0),
-                        egui::SelectableLabel::new(selected, label),
-                    );
-                    if resp.clicked() {
-                        ui_state.selected_id = Some(entry.id.clone());
-                    }
                     let mut sub = format!("v{}", entry.version);
                     if !entry.enabled {
                         sub.push_str(&format!("  ·  {}", t("plugins.disabled")));
                     } else if entry.running {
                         sub.push_str(&format!("  ·  {}", t("plugins.running")));
                     }
-                    ui.label(
-                        egui::RichText::new(sub)
-                            .small()
-                            .color(egui::Color32::from(th.subtext0)),
+
+                    // 이름 + 버전 부제를 한 클릭 영역으로 묶기 위해 직접 그린다.
+                    // SelectableLabel은 한 줄만 자연스럽게 표현하므로 painter로 selected/hover
+                    // 배경과 두 줄 텍스트를 그려 동일한 visual을 재현.
+                    let row_h = 40.0;
+                    let (rect, resp) = ui.allocate_exact_size(
+                        egui::vec2(ui.available_width(), row_h),
+                        egui::Sense::click(),
                     );
-                    ui.add_space(4.0);
+                    let visuals = ui.style().interact_selectable(&resp, selected);
+                    if selected || resp.hovered() {
+                        ui.painter().rect(
+                            rect,
+                            visuals.corner_radius,
+                            visuals.weak_bg_fill,
+                            visuals.bg_stroke,
+                            egui::StrokeKind::Inside,
+                        );
+                    }
+                    let pad = egui::vec2(8.0, 6.0);
+                    let name_pos = rect.min + pad;
+                    ui.painter().text(
+                        name_pos,
+                        egui::Align2::LEFT_TOP,
+                        &name_text,
+                        egui::FontId::proportional(13.0),
+                        visuals.text_color(),
+                    );
+                    let sub_pos = name_pos + egui::vec2(0.0, 18.0);
+                    ui.painter().text(
+                        sub_pos,
+                        egui::Align2::LEFT_TOP,
+                        &sub,
+                        egui::FontId::proportional(10.0),
+                        egui::Color32::from(th.subtext0),
+                    );
+                    if resp.clicked() {
+                        ui_state.selected_id = Some(entry.id.clone());
+                    }
+                    ui.add_space(2.0);
                 }
             });
         });
