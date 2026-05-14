@@ -1,70 +1,99 @@
-//! `PRAGMA user_version` 기반의 단순 마이그레이션 체인.
+//! 단일 schema 모델.
 //!
-//! 새 버전 추가 절차:
-//! 1. `MIGRATIONS` 배열 끝에 `(new_version, sql)` 튜플 추가.
-//! 2. new_version은 앞 버전 + 1.
-//! 3. SQL은 트랜잭션 안에서 실행된다. 중간 실패 시 롤백.
+//! 0.4 fresh-start 정책: 하위 호환을 위한 마이그레이션 체인은 제거됐다.
+//! 신규 DB(`user_version == 0`)는 `SCHEMA_SQL`을 한 번 적용하고 `user_version`을
+//! `SCHEMA_VERSION`으로 박는다. 이미 같은 버전이면 no-op. 다른 버전이면
+//! `SchemaMismatch` 에러를 반환해서 호출자가 사용자에게 안내한 뒤 종료한다.
 
-use anyhow::{Context, Result};
 use rusqlite::Connection;
 
-const MIGRATIONS: &[(u32, &str)] = &[(
-    1,
-    r#"
-        CREATE TABLE IF NOT EXISTS meta (
-            key TEXT PRIMARY KEY,
-            value TEXT NOT NULL
-        );
+pub const SCHEMA_VERSION: u32 = 1;
 
-        CREATE TABLE IF NOT EXISTS recent_markdown (
-            path TEXT PRIMARY KEY,
-            opened_at INTEGER NOT NULL
-        );
+const SCHEMA_SQL: &str = r#"
+    CREATE TABLE IF NOT EXISTS meta (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    );
 
-        CREATE TABLE IF NOT EXISTS recent_html (
-            url TEXT PRIMARY KEY,
-            opened_at INTEGER NOT NULL
-        );
+    CREATE TABLE IF NOT EXISTS recent_markdown (
+        path TEXT PRIMARY KEY,
+        opened_at INTEGER NOT NULL
+    );
 
-        -- 클립보드 히스토리 테이블(스키마 자리만 확보).
-        -- 실제 write 연결은 후속 작업에서.
-        CREATE TABLE IF NOT EXISTS clipboard_history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            kind TEXT NOT NULL,     -- 'text' | 'image'
-            text TEXT,              -- kind='text'일 때 값
-            data BLOB,              -- kind='image'일 때 값
-            source TEXT NOT NULL,   -- 'system' | 'internal'
-            created_at INTEGER NOT NULL
-        );
-        CREATE INDEX IF NOT EXISTS idx_clipboard_history_created_at
-            ON clipboard_history(created_at DESC);
-        "#,
-)];
+    CREATE TABLE IF NOT EXISTS recent_html (
+        url TEXT PRIMARY KEY,
+        opened_at INTEGER NOT NULL
+    );
 
-pub fn run(conn: &mut Connection) -> Result<()> {
-    let current: u32 = conn
-        .query_row(
-            "SELECT COALESCE(MIN(user_version), 0) FROM pragma_user_version()",
-            [],
-            |r| r.get(0),
-        )
-        .unwrap_or(0);
+    -- 클립보드 히스토리 테이블(스키마 자리만 확보).
+    -- 실제 write 연결은 후속 작업에서.
+    CREATE TABLE IF NOT EXISTS clipboard_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        kind TEXT NOT NULL,     -- 'text' | 'image'
+        text TEXT,              -- kind='text'일 때 값
+        data BLOB,              -- kind='image'일 때 값
+        source TEXT NOT NULL,   -- 'system' | 'internal'
+        created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_clipboard_history_created_at
+        ON clipboard_history(created_at DESC);
+"#;
 
-    for (version, sql) in MIGRATIONS {
-        if *version <= current {
-            continue;
+#[derive(Debug)]
+pub enum DbSchemaError {
+    SchemaMismatch { expected: u32, found: u32 },
+    Sql(rusqlite::Error),
+}
+
+impl std::fmt::Display for DbSchemaError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DbSchemaError::SchemaMismatch { expected, found } => write!(
+                f,
+                "schema version mismatch (expected {expected}, found {found})"
+            ),
+            DbSchemaError::Sql(e) => write!(f, "{e}"),
         }
-        let tx = conn.transaction().context("begin migration tx")?;
-        tx.execute_batch(sql)
-            .with_context(|| format!("apply migration v{version}"))?;
-        // PRAGMA user_version는 트랜잭션 내부에서도 설정 가능.
-        tx.pragma_update(None, "user_version", version)
-            .with_context(|| format!("set user_version to {version}"))?;
-        tx.commit()
-            .with_context(|| format!("commit migration v{version}"))?;
-        tracing::info!("state.db migrated to v{version}");
     }
-    Ok(())
+}
+
+impl std::error::Error for DbSchemaError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            DbSchemaError::Sql(e) => Some(e),
+            _ => None,
+        }
+    }
+}
+
+impl From<rusqlite::Error> for DbSchemaError {
+    fn from(e: rusqlite::Error) -> Self {
+        DbSchemaError::Sql(e)
+    }
+}
+
+/// 새 DB라면 schema를 적용하고, 같은 버전이면 no-op, 다른 버전이면 mismatch.
+pub fn ensure_schema(conn: &mut Connection) -> Result<(), DbSchemaError> {
+    let current: u32 =
+        conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
+
+    if current == 0 {
+        let tx = conn.transaction()?;
+        tx.execute_batch(SCHEMA_SQL)?;
+        tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
+        tx.commit()?;
+        tracing::info!("state.db schema initialized at v{SCHEMA_VERSION}");
+        return Ok(());
+    }
+
+    if current == SCHEMA_VERSION {
+        return Ok(());
+    }
+
+    Err(DbSchemaError::SchemaMismatch {
+        expected: SCHEMA_VERSION,
+        found: current,
+    })
 }
 
 #[cfg(test)]
@@ -72,9 +101,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn migrations_create_expected_tables() {
+    fn fresh_db_initializes_schema() {
         let mut conn = Connection::open_in_memory().unwrap();
-        run(&mut conn).unwrap();
+        ensure_schema(&mut conn).unwrap();
 
         let count: i64 = conn
             .query_row(
@@ -85,18 +114,44 @@ mod tests {
             .unwrap();
         assert_eq!(count, 4);
 
-        // user_version is set.
         let ver: u32 = conn
             .pragma_query_value(None, "user_version", |r| r.get(0))
             .unwrap();
-        assert_eq!(ver, 1);
+        assert_eq!(ver, SCHEMA_VERSION);
     }
 
     #[test]
-    fn migrations_are_idempotent() {
+    fn second_call_is_noop() {
         let mut conn = Connection::open_in_memory().unwrap();
-        run(&mut conn).unwrap();
-        // 두 번 호출해도 에러 없이 끝난다.
-        run(&mut conn).unwrap();
+        ensure_schema(&mut conn).unwrap();
+        ensure_schema(&mut conn).unwrap();
+        let ver: u32 = conn
+            .pragma_query_value(None, "user_version", |r| r.get(0))
+            .unwrap();
+        assert_eq!(ver, SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn schema_mismatch_returns_specific_error() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "user_version", 999u32).unwrap();
+        let err = ensure_schema(&mut conn).unwrap_err();
+        match err {
+            DbSchemaError::SchemaMismatch { expected, found } => {
+                assert_eq!(expected, SCHEMA_VERSION);
+                assert_eq!(found, 999);
+            }
+            _ => panic!("expected SchemaMismatch, got {err:?}"),
+        }
+    }
+
+    #[test]
+    fn older_user_version_is_mismatch() {
+        // 0.4 이전 DB가 user_version=1로 박혀 있었다면 SCHEMA_VERSION이 같아 OK가 맞다.
+        // 하지만 명시적으로 다른 값을 갖고 있으면 mismatch.
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "user_version", 2u32).unwrap();
+        let err = ensure_schema(&mut conn).unwrap_err();
+        assert!(matches!(err, DbSchemaError::SchemaMismatch { found: 2, .. }));
     }
 }

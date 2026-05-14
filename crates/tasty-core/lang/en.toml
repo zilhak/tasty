@@ -412,3 +412,13 @@ match_count = "{current}/{total}"
 [theme_error]
 title = "Theme not found"
 body = "Theme \"{}\" does not exist. Falling back to Catppuccin Mocha."
+
+[db_error]
+title = "Database initialization error"
+home_missing = "Cannot determine home directory."
+permission_denied = "Permission denied accessing database file: {}"
+busy = "The database is locked. Another Tasty instance may be running: {}"
+disk_full = "Disk full. Free some space and try again."
+corrupt = "Database file is corrupted: {}. Back up and delete the file to start fresh."
+schema_mismatch = "Database schema version mismatch (expected {}, found {}). Backward compatibility was removed in 0.4. Back up and delete ~/.tasty/state.db to start fresh."
+other = "Database initialization failed: {}"

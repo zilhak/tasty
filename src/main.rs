@@ -373,6 +373,10 @@ impl App {
         );
         window.set_ime_allowed(true);
 
+        // state.db 초기화. 실패하면 InfoModal로 안내 후 종료(Exit 1).
+        // create_app_state 이전에 호출해야 plugin/recent_files 등이 정상 동작.
+        let db_init_error = crate::storage::init().err();
+
         let mut settings = crate::settings::Settings::load();
         // Apply saved theme preset at startup. theme 이름이 preset에 없으면
         // catppuccin-mocha로 fallback하고 사용자에게 InfoModal로 알린다.
@@ -413,6 +417,25 @@ impl App {
 
         // Ensure at least one workspace exists for the new window
         state.ensure_workspace_exists();
+
+        // DB 초기화 실패 알림. 가장 먼저 푸시해서 큐 head에 둠 → [확인] 시 Exit(1).
+        if let Some(err) = db_init_error {
+            tracing::error!("state.db init failed: {err}");
+            let (key, args) = err.user_message_i18n();
+            let body = match args.len() {
+                0 => crate::i18n::t(key).to_string(),
+                1 => crate::i18n::t_fmt(key, &args[0]),
+                _ => crate::i18n::t_fmt2(key, &args[0], &args[1]),
+            };
+            crate::ui::info_modal::show_info_modal(
+                &mut state,
+                crate::ui::info_modal::InfoModal {
+                    title: crate::i18n::t("db_error.title").to_string(),
+                    body,
+                    on_close: crate::ui::info_modal::InfoModalAction::Exit(1),
+                },
+            );
+        }
 
         // Theme fallback 알림 (잘못된 theme 이름이었던 경우).
         if let Some(invalid) = invalid_theme_name {
@@ -1309,8 +1332,8 @@ fn main() -> Result<()> {
     let lang_settings = settings::Settings::load();
     i18n::init(&lang_settings.general.language);
 
-    // Initialize state.db (SQLite). 실패 시 인메모리 폴백.
-    storage::init();
+    // state.db 초기화는 GUI 부팅 시점(create_new_window)으로 이동됨.
+    // 실패 시 InfoModal로 사용자에게 안내 후 Exit(1).
 
     // If a subcommand was provided, run in CLI client mode
     if let Some(command) = cli.command {

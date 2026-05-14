@@ -285,15 +285,10 @@
 - **주소표시줄**: 상단에 현재 루트 경로를 표시하는 텍스트 입력 필드. 직접 경로를 입력하고 Enter로 해당 경로로 이동 가능
 - **우클릭 컨텍스트 메뉴**: 파일/폴더/배경에서 우클릭 시 상태에 따른 컨텍스트 메뉴 표시
   - **경로 복사**: 대상 경로를 OS 클립보드에 복사. 다중 선택 시 개행 구분. 배경 우클릭 시 cwd 경로
-  - **즐겨찾기 추가/삭제**: 단일 폴더 선택 또는 배경 우클릭에서만 표시. 다중 선택 시 숨김
   - **복사**: 선택된 파일/폴더를 OS 파일 클립보드에 복사
   - **삭제**: OS 휴지통으로 이동 (`trash` 크레이트 사용)
   - 우클릭 대상이 현재 선택 목록에 포함되면 선택 전체가 메뉴 대상, 포함되지 않으면 선택 초기화 후 클릭 항목만 대상 (VS Code 방식)
   - 상세 동작 분기: `docs/design/explorer-context-menu.md` 참조
-- **즐겨찾기**: 좌측 하단 영역에 즐겨찾기 목록 표시
-  - 추가 시 이름 입력 팝업 표시. 비워두면 폴더명 사용
-  - 즐겨찾기를 더블클릭하면 해당 경로로 탐색기 루트 이동
-  - `~/.tasty/state.db` (SQLite)의 `bookmarks` 테이블에 persist. 모든 Explorer 패널이 동일한 즐겨찾기를 공유. 구 `bookmarks.json`은 첫 실행 시 자동 이관되고 `bookmarks.json.bak`으로 이름이 바뀜
 
 #### 컨텍스트 메뉴
 - 터미널 영역 또는 탭 바 빈 공간에서 마우스 우클릭 시 컨텍스트 메뉴 표시
@@ -460,8 +455,7 @@
 - `custom_font_path`: 커스텀 폰트 파일(.ttf/.otf) 경로. 지정 시 FontSystem 또는 egui FontDefinitions에 해당 파일을 추가 로드한 후 `font_family`로 참조 가능
 - `line_height`: 행간 배수. 1.0(기본, 틈 없음 - ASCII 아트에 최적) ~ 2.0. 값이 클수록 행 간격이 넓어짐
 - `font_scale_mode`: "auto"는 `font_size * scale_factor`(고DPI에서 동일 물리 크기 유지), "fixed"는 픽셀 크기 고정
-- 레거시 평면 형식(`appearance.font_family = ...` 등)은 자동으로 `default_font`로 마이그레이션되어 기존 설정 파일이 그대로 동작
-- `settings.appearance.theme`: 테마 프리셋 ID. "catppuccin-mocha"(기본 다크), "catppuccin-latte"(라이트). 설정 저장 시 `set_theme()`로 런타임 반영. 레거시 "dark"/"light"는 시작 시 자동 마이그레이션
+- `settings.appearance.theme`: 테마 프리셋 ID. "catppuccin-mocha"(기본 다크), "catppuccin-latte"(라이트). 설정 저장 시 `set_theme()`로 런타임 반영. 알려지지 않은 ID는 첫 윈도우 생성 시 InfoModal 안내 후 기본값(catppuccin-mocha)으로 fallback
 - `settings.appearance.background_opacity`: wgpu clear color의 알파 값으로 적용. 0.0(투명)~1.0(불투명)
 - `settings.appearance.terminal_colors`: 터미널 surface의 focused/unfocused 배경색·글자색 (HexColor, 기본 focused_bg `#000000`)
 - `settings.appearance.markdown_colors`: 마크다운 surface의 focused/unfocused 배경색·글자색

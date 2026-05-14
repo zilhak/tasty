@@ -10,16 +10,18 @@
 //! 접근 규칙:
 //! - 메인 프로세스 단독 접근. 자식 CLI 프로세스는 IPC로 메인에 위임한다.
 //! - 전역 `static` 싱글톤을 통해 어떤 코드라도 `with_db(|db| ...)`로 접근 가능.
-//! - `init(path)`가 먼저 호출되어야 함. 실패 시 앱은 `:memory:` 인메모리
-//!   DB로 폴백하여 세션 한정으로만 동작.
+//! - `init()`이 먼저 호출되어야 함. 실패하면 `DbInitError`로 반환되며,
+//!   호출자는 사용자에게 안내한 뒤 종료해야 한다 — 인메모리 폴백 없음.
 
 mod migrations;
 
+use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
-use anyhow::{Context, Result};
-use rusqlite::Connection;
+use rusqlite::{Connection, ErrorCode};
+
+pub use migrations::DbSchemaError;
 
 pub struct Db {
     pub conn: Connection,
@@ -27,32 +29,123 @@ pub struct Db {
 
 impl Db {
     /// 디스크 경로로 엶. 실패 시 Err.
-    pub fn open(path: &Path) -> Result<Self> {
+    pub fn open(path: &Path) -> Result<Self, DbInitError> {
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)
-                .with_context(|| format!("create dir {}", parent.display()))?;
+            std::fs::create_dir_all(parent).map_err(|e| classify_io(e, parent))?;
         }
-        let conn =
-            Connection::open(path).with_context(|| format!("open sqlite at {}", path.display()))?;
-        Self::prepare(conn)
+        let conn = Connection::open(path).map_err(|e| classify_sql(e, path))?;
+        Self::prepare(conn, path)
     }
 
-    /// 인메모리 DB. DB 열기 실패 시 폴백.
-    pub fn open_in_memory() -> Result<Self> {
-        let conn = Connection::open_in_memory().context("open :memory: sqlite")?;
-        Self::prepare(conn)
-    }
-
-    fn prepare(mut conn: Connection) -> Result<Self> {
+    fn prepare(mut conn: Connection, path: &Path) -> Result<Self, DbInitError> {
         // WAL: 동시 read/write 부담 완화. synchronous=NORMAL: WAL과 궁합 좋음.
         // foreign_keys: PK 제약 정확성.
         conn.pragma_update(None, "journal_mode", "WAL").ok();
         conn.pragma_update(None, "synchronous", "NORMAL").ok();
         conn.pragma_update(None, "foreign_keys", "ON").ok();
 
-        migrations::run(&mut conn).context("run migrations")?;
+        migrations::ensure_schema(&mut conn).map_err(|e| match e {
+            DbSchemaError::SchemaMismatch { expected, found } => {
+                DbInitError::SchemaMismatch { expected, found }
+            }
+            DbSchemaError::Sql(e) => classify_sql(e, path),
+        })?;
         Ok(Self { conn })
     }
+}
+
+/// `init()` 결과. 각 variant가 사용자에게 보여줄 i18n key와 인자를 알고 있다.
+#[derive(Debug)]
+pub enum DbInitError {
+    HomeDirMissing,
+    PermissionDenied(PathBuf),
+    Busy(PathBuf),
+    DiskFull,
+    Corrupt(PathBuf),
+    SchemaMismatch { expected: u32, found: u32 },
+    Other(String),
+}
+
+impl DbInitError {
+    /// i18n key와 포맷용 인자 0~2개. main 쪽에서 `t`/`t_fmt`/`t_fmt2`로 분기한다.
+    pub fn user_message_i18n(&self) -> (&'static str, Vec<String>) {
+        match self {
+            DbInitError::HomeDirMissing => ("db_error.home_missing", vec![]),
+            DbInitError::PermissionDenied(p) => (
+                "db_error.permission_denied",
+                vec![p.display().to_string()],
+            ),
+            DbInitError::Busy(p) => ("db_error.busy", vec![p.display().to_string()]),
+            DbInitError::DiskFull => ("db_error.disk_full", vec![]),
+            DbInitError::Corrupt(p) => ("db_error.corrupt", vec![p.display().to_string()]),
+            DbInitError::SchemaMismatch { expected, found } => (
+                "db_error.schema_mismatch",
+                vec![expected.to_string(), found.to_string()],
+            ),
+            DbInitError::Other(msg) => ("db_error.other", vec![msg.clone()]),
+        }
+    }
+}
+
+impl std::fmt::Display for DbInitError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DbInitError::HomeDirMissing => write!(f, "home directory missing"),
+            DbInitError::PermissionDenied(p) => {
+                write!(f, "permission denied: {}", p.display())
+            }
+            DbInitError::Busy(p) => write!(f, "database busy: {}", p.display()),
+            DbInitError::DiskFull => write!(f, "disk full"),
+            DbInitError::Corrupt(p) => write!(f, "database corrupted: {}", p.display()),
+            DbInitError::SchemaMismatch { expected, found } => write!(
+                f,
+                "schema mismatch (expected {expected}, found {found})"
+            ),
+            DbInitError::Other(msg) => write!(f, "{msg}"),
+        }
+    }
+}
+
+impl std::error::Error for DbInitError {}
+
+fn classify_io(err: io::Error, path: &Path) -> DbInitError {
+    match err.kind() {
+        io::ErrorKind::PermissionDenied => DbInitError::PermissionDenied(path.to_path_buf()),
+        // io::ErrorKind::StorageFull은 nightly. raw OS 코드로 우회 가능하지만
+        // 실용성이 낮으므로 메시지에 의존한다.
+        _ if err.raw_os_error() == Some(libc_enospc()) => DbInitError::DiskFull,
+        _ => DbInitError::Other(format!("{path:?}: {err}", path = path.display())),
+    }
+}
+
+#[cfg(unix)]
+fn libc_enospc() -> i32 {
+    28 // ENOSPC
+}
+
+#[cfg(windows)]
+fn libc_enospc() -> i32 {
+    112 // ERROR_DISK_FULL
+}
+
+fn classify_sql(err: rusqlite::Error, path: &Path) -> DbInitError {
+    if let rusqlite::Error::SqliteFailure(sqlite_err, _) = &err {
+        match sqlite_err.code {
+            ErrorCode::DatabaseBusy | ErrorCode::DatabaseLocked => {
+                return DbInitError::Busy(path.to_path_buf());
+            }
+            ErrorCode::DatabaseCorrupt | ErrorCode::NotADatabase => {
+                return DbInitError::Corrupt(path.to_path_buf());
+            }
+            ErrorCode::DiskFull => return DbInitError::DiskFull,
+            ErrorCode::PermissionDenied | ErrorCode::CannotOpen => {
+                // CANTOPEN은 권한/존재/디렉터리 등 복합 원인 — 권한으로 묶는다.
+                return DbInitError::PermissionDenied(path.to_path_buf());
+            }
+            _ => {}
+        }
+    }
+    DbInitError::Other(format!("{}: {err}", path.display()))
 }
 
 static DB: OnceLock<Mutex<Db>> = OnceLock::new();
@@ -62,32 +155,16 @@ pub fn default_db_path() -> Option<PathBuf> {
     directories::BaseDirs::new().map(|dirs| dirs.home_dir().join(".tasty").join("state.db"))
 }
 
-/// 앱 시작 시 1회 호출. 실패 시 인메모리 폴백.
-/// 호출 이후부터 `with_db`가 유효.
-pub fn init() {
+/// 앱 시작 시 1회 호출. 실패하면 호출자가 사용자에게 안내하고 종료해야 한다.
+pub fn init() -> Result<(), DbInitError> {
     if DB.get().is_some() {
-        return;
+        return Ok(());
     }
-    let db = match default_db_path() {
-        Some(path) => match Db::open(&path) {
-            Ok(db) => {
-                tracing::info!("opened state.db at {}", path.display());
-                db
-            }
-            Err(e) => {
-                tracing::error!(
-                    "failed to open state.db at {}: {e}. falling back to in-memory (no persistence).",
-                    path.display()
-                );
-                Db::open_in_memory().expect("in-memory sqlite should always open")
-            }
-        },
-        None => {
-            tracing::error!("cannot determine ~/.tasty path; using in-memory state.db");
-            Db::open_in_memory().expect("in-memory sqlite should always open")
-        }
-    };
+    let path = default_db_path().ok_or(DbInitError::HomeDirMissing)?;
+    let db = Db::open(&path)?;
+    tracing::info!("opened state.db at {}", path.display());
     let _ = DB.set(Mutex::new(db));
+    Ok(())
 }
 
 /// 테스트용: 이미 열린 Db를 싱글톤으로 등록. 이미 등록되어 있으면 no-op.
@@ -101,4 +178,68 @@ pub fn with_db<T>(f: impl FnOnce(&mut Db) -> T) -> Option<T> {
     let mutex = DB.get()?;
     let mut guard: MutexGuard<'_, Db> = mutex.lock().ok()?;
     Some(f(&mut guard))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn classify_sql_busy() {
+        let err = rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_BUSY),
+            None,
+        );
+        let classified = classify_sql(err, Path::new("/tmp/x.db"));
+        assert!(matches!(classified, DbInitError::Busy(_)));
+    }
+
+    #[test]
+    fn classify_sql_corrupt() {
+        let err = rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CORRUPT),
+            None,
+        );
+        let classified = classify_sql(err, Path::new("/tmp/x.db"));
+        assert!(matches!(classified, DbInitError::Corrupt(_)));
+    }
+
+    #[test]
+    fn classify_sql_notadb_is_corrupt() {
+        let err = rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_NOTADB),
+            None,
+        );
+        let classified = classify_sql(err, Path::new("/tmp/x.db"));
+        assert!(matches!(classified, DbInitError::Corrupt(_)));
+    }
+
+    #[test]
+    fn user_message_keys_are_stable() {
+        let cases: &[(DbInitError, &str)] = &[
+            (DbInitError::HomeDirMissing, "db_error.home_missing"),
+            (
+                DbInitError::PermissionDenied(PathBuf::from("/a")),
+                "db_error.permission_denied",
+            ),
+            (DbInitError::Busy(PathBuf::from("/a")), "db_error.busy"),
+            (DbInitError::DiskFull, "db_error.disk_full"),
+            (
+                DbInitError::Corrupt(PathBuf::from("/a")),
+                "db_error.corrupt",
+            ),
+            (
+                DbInitError::SchemaMismatch {
+                    expected: 1,
+                    found: 2,
+                },
+                "db_error.schema_mismatch",
+            ),
+            (DbInitError::Other("x".into()), "db_error.other"),
+        ];
+        for (err, expected_key) in cases {
+            let (key, _args) = err.user_message_i18n();
+            assert_eq!(key, *expected_key, "mismatch for {err:?}");
+        }
+    }
 }

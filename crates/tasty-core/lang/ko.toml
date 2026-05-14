@@ -412,3 +412,13 @@ match_count = "{current}/{total}"
 [theme_error]
 title = "테마를 찾을 수 없습니다"
 body = "theme \"{}\" 가 존재하지 않습니다. Catppuccin Mocha 테마로 변경되었습니다."
+
+[db_error]
+title = "데이터베이스 초기화 오류"
+home_missing = "홈 디렉터리를 찾을 수 없습니다."
+permission_denied = "DB 파일에 접근 권한이 없습니다: {}"
+busy = "DB가 잠겨 있습니다. 다른 Tasty 인스턴스가 실행 중일 수 있습니다: {}"
+disk_full = "디스크 공간이 부족합니다. 공간을 확보한 뒤 다시 시도하세요."
+corrupt = "DB 파일이 손상되었습니다: {}. 파일을 백업한 뒤 삭제하면 새로 시작됩니다."
+schema_mismatch = "DB 스키마 버전이 맞지 않습니다 (expected {}, found {}). 0.4 버전부터 하위 호환이 끊겼습니다. ~/.tasty/state.db 를 백업한 뒤 삭제하면 새로 시작됩니다."
+other = "DB 초기화에 실패했습니다: {}"
