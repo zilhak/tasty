@@ -12,8 +12,9 @@ Plugin이 호스트에 contribute하는 카테고리(상세는 `docs/agent-guide
 
 1. 새 Window 추가 — 현재 매니페스트 schema 없음(향후)
 2. 새 Surface 추가 — `[[surface_kinds]]`
-3. 새 Tool 추가 (좌측 사이드바 도구 메뉴 항목) — `[[contributes.menu_items]]` (schema 정의됨, 호스트 wiring 진행 중)
-4. 이벤트별 동작 추가 — `[[contributes.commands]]`(키 입력) / `[[contributes.surface_observer]]`(다른 surface lifecycle) / `[[contributes.ipc_namespace]]`(IPC 호출) / `[[contributes.cli]]`(CLI 호출)
+3. 새 Popup 추가 — 현재 매니페스트 schema 없음(향후). 그 전까지는 호스트가 popup 본문을 그리고 plugin은 IPC로 데이터만 공급하거나, surface로 대체한다.
+4. 새 Tool 추가 (좌측 사이드바 도구 메뉴 항목) — `[[contributes.menu_items]]` (schema 정의됨, 호스트 wiring 진행 중)
+5. 이벤트별 동작 추가 — `[[contributes.commands]]`(키 입력) / `[[contributes.surface_observer]]`(다른 surface lifecycle) / `[[contributes.ipc_namespace]]`(IPC 호출) / `[[contributes.cli]]`(CLI 호출)
 
 작성자가 다뤄야 할 것:
 

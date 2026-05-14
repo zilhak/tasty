@@ -3,14 +3,15 @@
 Tasty는 외부 plugin을 별도 OS 프로세스로 실행하여 호스트를 확장할 수 있다.
 호스트 ↔ plugin은 TCP + JSON 메시지로 통신한다.
 
-## Plugin이 할 수 있는 것 — 4가지 카테고리
+## Plugin이 할 수 있는 것 — 5가지 카테고리
 
-Plugin의 근본 역할은 다음 4가지로 분류된다.
+Plugin의 근본 역할은 다음 5가지로 분류된다.
 
 1. **새 Window 추가** — OS-level 별도 윈도우. 현재 매니페스트 schema 없음(향후 추가 예정).
 2. **새 Surface 추가** — 탭/스플릿 안에서 생성 가능한 새 surface 종류를 등록한다.
-3. **새 Tool 추가** — 좌측 사이드바 하단의 "도구" 메뉴에 항목을 꽂는다.
-4. **이벤트별 동작 추가** — 외부 이벤트(사용자 키 입력, 다른 surface lifecycle, IPC/CLI 호출 등)에 반응한다.
+3. **새 Popup 추가** — Window 내부 가상 창. 포커스를 빼앗지 않고 터미널/surface 위에 떠 있는다 (`PopupDef` + `PopupManager` 기반, 상세는 `docs/design/popup-system.md`). 클립보드 히스토리, 알림 패널 같은 일시적 UI가 이 카테고리. 현재 매니페스트 schema 없음(향후 추가 예정).
+4. **새 Tool 추가** — 좌측 사이드바 하단의 "도구" 메뉴에 항목을 꽂는다.
+5. **이벤트별 동작 추가** — 외부 이벤트(사용자 키 입력, 다른 surface lifecycle, IPC/CLI 호출 등)에 반응한다.
 
 매니페스트 contribute 키와의 매핑:
 
@@ -18,6 +19,7 @@ Plugin의 근본 역할은 다음 4가지로 분류된다.
 |---------|-------------|------|
 | 새 Window | _(없음)_ | 미구현 |
 | 새 Surface | `[[surface_kinds]]` | ✅ |
+| 새 Popup | _(없음)_ | 미구현 |
 | 새 Tool (도구 메뉴 항목) | `[[contributes.menu_items]]` | schema 정의됨, 호스트 wiring 진행 중 |
 | 이벤트: 사용자 키 입력 | `[[contributes.commands]]` | ✅ (plugin 소유 surface 위에서만 매칭) |
 | 이벤트: 다른 surface lifecycle | `[[contributes.surface_observer]]` | ✅ |
@@ -25,6 +27,8 @@ Plugin의 근본 역할은 다음 4가지로 분류된다.
 | 이벤트: CLI 서브커맨드 호출 | `[[contributes.cli]]` | ✅ |
 
 이벤트의 "사용자 키 입력 **등**"은 단축키만이 아니라 surface lifecycle / IPC / CLI 호출 등 **모든 외부 트리거**를 포함한다. 어떤 카테고리를 몇 개 contribute할지는 plugin이 자유롭게 정한다 — 0개여도 valid다.
+
+> **Window / Surface / Popup의 차이**는 `docs/design/ubiquitous-language.md` 참조. 요약하면: Window는 OS-level 별도 창, Surface는 탭/스플릿 안의 콘텐츠 영역, Popup은 Window 내부에 떠 있으며 포커스를 빼앗지 않는 일시적 가상 창이다. 휘발성 알림인 Toast는 plugin contribute 대상이 아니다 — Toast는 사용자 행동에서만 발사된다는 원칙(`docs/design/toast-system.md`) 때문.
 
 ### 매니페스트 선언 원칙
 
@@ -41,6 +45,19 @@ Plugin의 근본 역할은 다음 4가지로 분류된다.
 없는 사항)을 위한 **별도 매니페스트 항목은 존재하지 않는다**. 자유 텍스트인
 `description`에 사람을 위한 메모로 기입해 두는 것은 막지 않으며, 호스트는
 `description` 내용을 해석하지 않는다.
+
+### 미구현 카테고리(Window, Popup)
+
+Plugin이 자기 Window 또는 Popup을 직접 띄우는 매니페스트 schema는 아직 없다.
+Popup의 경우 호스트 본문에 한해 `PopupDef` + `PopupManager`로 구현되어 있으며,
+plugin이 contribute하려면 SDK 표면 확장이 필요하다 — 이 작업이 끝나기 전까지
+"popup으로 보여주고 싶은 plugin 기능"은 다음 두 가지 우회로를 쓴다.
+
+- **호스트가 popup을 그리고 데이터만 plugin에서 받기**: 호스트 popup 본문이
+  남고 plugin은 IPC로 데이터를 제공한다. 클립보드 히스토리·알림 패널 같이
+  표준화된 popup을 호스트가 계속 보유할 때 적합.
+- **Surface로 대체**: popup 대신 탭/스플릿 안의 surface로 띄운다. plugin이 UI tree를
+  완전히 소유하는 대신 포커스/배치 모델이 popup과 다르다.
 
 ### contribute가 0개인 plugin
 
