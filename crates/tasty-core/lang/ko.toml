@@ -328,12 +328,6 @@ select_file = "파일을 선택하세요"
 unsupported_format = "미리보기가 지원되지 않는 파일 형식입니다"
 show_preview = "미리보기 열기"
 hide_preview = "미리보기 닫기"
-bookmark_add = "즐겨찾기에 추가"
-bookmark_remove = "즐겨찾기에서 삭제"
-bookmark_navigate = "즐겨찾기로 이동"
-bookmark_name_label = "즐겨찾기 이름:"
-bookmarks_heading = "즐겨찾기"
-bookmarks_empty = "폴더를 우클릭하여 추가"
 
 [explorer.context_menu]
 copy_path = "경로 복사"

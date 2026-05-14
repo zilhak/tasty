@@ -328,12 +328,6 @@ select_file = "ファイルを選択してください"
 unsupported_format = "このファイル形式はプレビューできません"
 show_preview = "プレビューを開く"
 hide_preview = "プレビューを閉じる"
-bookmark_add = "ブックマークに追加"
-bookmark_remove = "ブックマークから削除"
-bookmark_navigate = "ブックマークへ移動"
-bookmark_name_label = "ブックマーク名:"
-bookmarks_heading = "ブックマーク"
-bookmarks_empty = "フォルダを右クリックして追加"
 
 [explorer.context_menu]
 copy_path = "パスをコピー"

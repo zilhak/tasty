@@ -328,12 +328,6 @@ select_file = "Select a file"
 unsupported_format = "Preview not available for this file type"
 show_preview = "Show Preview"
 hide_preview = "Hide Preview"
-bookmark_add = "Add to Bookmarks"
-bookmark_remove = "Remove from Bookmarks"
-bookmark_navigate = "Go to Bookmark"
-bookmark_name_label = "Bookmark name:"
-bookmarks_heading = "Bookmarks"
-bookmarks_empty = "Right-click a folder to add"
 
 [explorer.context_menu]
 copy_path = "Copy Path"

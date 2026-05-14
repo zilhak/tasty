@@ -16,12 +16,6 @@ const MIGRATIONS: &[(u32, &str)] = &[(
             value TEXT NOT NULL
         );
 
-        CREATE TABLE IF NOT EXISTS bookmarks (
-            path TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            created_at INTEGER NOT NULL
-        );
-
         CREATE TABLE IF NOT EXISTS recent_markdown (
             path TEXT PRIMARY KEY,
             opened_at INTEGER NOT NULL
@@ -84,12 +78,12 @@ mod tests {
 
         let count: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('meta','bookmarks','recent_markdown','recent_html','clipboard_history')",
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('meta','recent_markdown','recent_html','clipboard_history')",
                 [],
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(count, 5);
+        assert_eq!(count, 4);
 
         // user_version is set.
         let ver: u32 = conn
