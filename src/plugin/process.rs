@@ -21,6 +21,11 @@ use crate::plugin::protocol::{PluginEvent, PluginRequest, PluginResponse};
 
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// 보조 채널 stream을 mailbox에서 가져올 때 첫 호출 한도. plugin SDK가 HandleClient::connect
+/// 완료 → 호스트 accept thread가 stream을 우편함에 채울 때까지 ms 단위 정도면 충분하지만,
+/// startup 직후 호출 가능성을 고려해 500ms 여유.
+const HANDLE_STREAM_MATERIALIZE_TIMEOUT: Duration = Duration::from_millis(500);
+
 pub struct PluginProcess {
     pub plugin_id: String,
     child: Option<Child>,
@@ -33,10 +38,12 @@ pub struct PluginProcess {
     pub log_path: PathBuf,
     /// 보조 핸들 채널 stream을 받을 mailbox. plugin spawn 시 [`HandleListener::register_token`]
     /// 으로 미리 등록되고, plugin SDK가 connect하면 listener accept thread가 stream을
-    /// 채워 넣는다. spawn은 blocking 없이 즉시 반환하며, 02c에서 shared buffer를 만들
-    /// 때 `try_recv` 또는 `recv_timeout`으로 stream을 가져온다.
-    #[allow(dead_code)]
-    handle_stream_rx: Option<mpsc::Receiver<HandleStream>>,
+    /// 채워 넣는다. spawn은 blocking 없이 즉시 반환하며, 첫 shared buffer 호출 시
+    /// `recv_timeout`으로 stream을 가져와 [`Self::handle_stream`]에 캐싱한다.
+    handle_stream_rx: Mutex<Option<mpsc::Receiver<HandleStream>>>,
+    /// 캐싱된 HandleStream. None이면 아직 materialize 안 됐거나 plugin이 보조 채널 미지원.
+    /// send_handle은 직렬화돼야 하므로 Mutex로 보호.
+    handle_stream: Mutex<Option<HandleStream>>,
 }
 
 #[cfg(test)]
@@ -55,7 +62,8 @@ impl PluginProcess {
             event_rx,
             last_pong: Arc::new(Mutex::new(Instant::now())),
             log_path: PathBuf::new(),
-            handle_stream_rx: None,
+            handle_stream_rx: Mutex::new(None),
+            handle_stream: Mutex::new(None),
         }
     }
 }
@@ -208,8 +216,45 @@ impl PluginProcess {
             event_rx,
             last_pong,
             log_path,
-            handle_stream_rx,
+            handle_stream_rx: Mutex::new(handle_stream_rx),
+            handle_stream: Mutex::new(None),
         })
+    }
+
+    /// 보조 핸들 채널 stream을 받아 캐시하고 closure로 노출한다.
+    ///
+    /// 첫 호출은 mailbox에서 짧은 timeout(`HANDLE_STREAM_MATERIALIZE_TIMEOUT`)으로 대기.
+    /// 이후 호출은 캐시 즉시 사용. 보조 채널이 활성화되지 않은 plugin이면 `None`.
+    pub fn with_handle_stream<F, R>(&self, f: F) -> Option<R>
+    where
+        F: FnOnce(&mut HandleStream) -> R,
+    {
+        // 캐시가 비어 있으면 mailbox에서 가져와 채운다.
+        {
+            let mut cache = self.handle_stream.lock().ok()?;
+            if cache.is_none() {
+                let mut rx_guard = self.handle_stream_rx.lock().ok()?;
+                let rx = rx_guard.as_mut()?;
+                match rx.recv_timeout(HANDLE_STREAM_MATERIALIZE_TIMEOUT) {
+                    Ok(stream) => *cache = Some(stream),
+                    Err(_) => {
+                        tracing::warn!(
+                            "plugin '{}' handle stream not yet available",
+                            self.plugin_id
+                        );
+                        return None;
+                    }
+                }
+            }
+            let stream = cache.as_mut()?;
+            Some(f(stream))
+        }
+    }
+
+    /// 자식 프로세스의 OS PID. Windows의 `DuplicateHandle` 대상 식별에 필요.
+    /// `shutdown` 이후나 stub 인스턴스에서는 `None`.
+    pub fn child_pid(&self) -> Option<u32> {
+        self.child.as_ref().map(|c| c.id())
     }
 
     pub fn ping(&self, next_id: u64) {

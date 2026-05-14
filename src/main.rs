@@ -1060,6 +1060,36 @@ impl App {
             None => return,
         };
         for call in calls {
+            // shared buffer 생성은 main 채널 + 보조 채널을 동시에 다뤄야 해서
+            // dispatcher에 노출하지 않고 매니저가 직접 처리한다. params에서 size를
+            // 꺼내 manager에 위임 → 매니저가 fd/HANDLE 송신 + RPC 응답을 모두 처리.
+            if call.method == tasty_plugin_protocol::METHOD_HOST_SHARED_BUFFER_CREATE {
+                let size = call
+                    .params
+                    .get("size")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                if let Some(mgr) = self.plugin_manager.as_mut() {
+                    let (result, error) = match mgr.create_shared_buffer_for(
+                        &call.plugin_id,
+                        call.call_id,
+                        size,
+                    ) {
+                        Ok(r) => (
+                            serde_json::to_value(&r).ok(),
+                            None,
+                        ),
+                        Err(e) => (None, Some(e)),
+                    };
+                    mgr.send_ipc_result(
+                        &call.plugin_id,
+                        call.call_id,
+                        result,
+                        error,
+                    );
+                }
+                continue;
+            }
             // namespace forward 경로: 메서드가 다른 plugin의 prefix에 매칭되면
             // 검증/forward를 plugin_manager에 위임한다. 응답은 비동기.
             //

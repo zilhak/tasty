@@ -13,6 +13,12 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::{Duration, Instant};
 
 use serde_json::json;
+use tasty_plugin_protocol::{
+    HandleChannelMessage, SharedBufferCreateResult, SharedBufferId,
+};
+#[cfg(unix)]
+use tasty_shm::PeerPid;
+use tasty_shm::SharedMemory;
 
 use crate::ipc::protocol::JsonRpcResponse;
 use crate::plugin::handle_channel::HandleListener;
@@ -118,6 +124,14 @@ pub struct PluginManager {
     /// surface lifecycle 구독자 일람. event → 구독 plugin id 집합. plugin이
     /// 실행 중일 때만 등록된다. `notify_surface_closed`가 이 set을 순회해 broadcast.
     surface_observers: HashMap<ObserverEvent, HashSet<String>>,
+    /// plugin id → (buffer id → 매핑 영역). 호스트가 `host.shared_buffer.create`로
+    /// 발급한 영역의 매핑 유지(=OS region keep-alive)와 dirty 수신 시 lookup용.
+    /// plugin process가 종료/재시작되면 해당 plugin 슬롯이 통째로 drop되어
+    /// 매핑이 해제된다.
+    plugin_buffers: HashMap<String, HashMap<SharedBufferId, SharedMemory>>,
+    /// 호스트 전체에서 단조 증가하는 shared buffer id. plugin 간 충돌 회피 + 디버그
+    /// 추적을 단순화하기 위해 글로벌 카운터로 둔다.
+    next_buffer_id: AtomicU64,
 }
 
 /// plugin → host IPC 호출 한 건. 라우팅 후 결과를 plugin에 회신해야 함.
@@ -160,6 +174,8 @@ impl PluginManager {
             command_registry: super::command_registry::PluginCommandRegistry::new(),
             ipc_namespaces: IpcNamespaceRegistry::new(),
             surface_observers: HashMap::new(),
+            plugin_buffers: HashMap::new(),
+            next_buffer_id: AtomicU64::new(1),
         }
     }
 
@@ -209,6 +225,103 @@ impl PluginManager {
                 tracing::warn!("plugin {plugin_id}: failed to send ipc.result: {e}");
             }
         }
+    }
+
+    /// `host.shared_buffer.create` 처리. 새 공유 메모리 영역을 만들어
+    /// 메인 채널 결과(`SharedBufferCreateResult`)와 보조 채널 핸들(`HandleAttach`)을
+    /// 양쪽 모두 전송한다.
+    ///
+    /// - main 채널 응답은 caller(`App::process_plugin_ipc_calls`)가
+    ///   `send_ipc_result`로 회신.
+    /// - 보조 채널 핸들은 본 메서드가 직접 송신 (plugin SDK는 같은 call_id로
+    ///   매칭되는 `HandleAttach`를 기다린다).
+    ///
+    /// 핸들 전송이 실패하면 SharedMemory를 등록하지 않고 에러를 반환한다 — plugin은
+    /// `host_call_timeout` 등으로 인식한다.
+    #[cfg(unix)]
+    pub fn create_shared_buffer_for(
+        &mut self,
+        plugin_id: &str,
+        call_id: u64,
+        size: u64,
+    ) -> Result<SharedBufferCreateResult, String> {
+        const MAX_BYTES: u64 = 1 << 30; // 1 GiB. manifest 권한 도입 전 임시 상한.
+        if size == 0 {
+            return Err("shared_buffer.create: size must be > 0".into());
+        }
+        if size > MAX_BYTES {
+            return Err(format!(
+                "shared_buffer.create: size {size} exceeds host cap {MAX_BYTES}"
+            ));
+        }
+        let proc = self
+            .processes
+            .get(plugin_id)
+            .ok_or_else(|| format!("plugin '{plugin_id}' is not running"))?;
+        // 보조 채널이 없으면 핸들 전송이 불가능. 즉시 거절.
+        if self.handle_listener.is_none() {
+            return Err(
+                "shared_buffer.create: host handle channel not available".into(),
+            );
+        }
+
+        let (mem, sendable) = tasty_shm::create(size as usize)
+            .map_err(|e| format!("shared_buffer.create: tasty_shm::create failed: {e}"))?;
+        // Unix는 peer pid를 무시하지만 의도 명시를 위해 child pid를 넘긴다.
+        let peer = match proc.child_pid() {
+            Some(pid) => PeerPid::Other(pid),
+            None => PeerPid::Same,
+        };
+        let payload = tasty_shm::prepare_send(sendable, peer)
+            .map_err(|e| format!("shared_buffer.create: prepare_send failed: {e}"))?;
+
+        let id = SharedBufferId(self.next_buffer_id.fetch_add(1, Ordering::Relaxed));
+        let actual_size = mem.len() as u64;
+        let msg = HandleChannelMessage::HandleAttach {
+            request_id: call_id,
+            id,
+            size: actual_size,
+        };
+        let raw_fd = payload.raw_fd();
+        let send_result = proc.with_handle_stream(|stream| stream.send_handle(&msg, raw_fd));
+        match send_result {
+            Some(Ok(())) => {}
+            Some(Err(e)) => {
+                return Err(format!(
+                    "shared_buffer.create: handle channel send failed: {e}"
+                ));
+            }
+            None => {
+                return Err(
+                    "shared_buffer.create: plugin handle channel not connected".into(),
+                );
+            }
+        }
+        // SharedMemory를 매니저가 보관 — Drop이 일어나면 OS region이 회수되므로
+        // plugin이 매핑을 잡고 있는 한 살아있어야 한다. payload는 method 끝에서
+        // Drop되며 송신 fd가 닫힌다(매핑 fd는 mem 안에 별도로 보존).
+        self.plugin_buffers
+            .entry(plugin_id.to_string())
+            .or_default()
+            .insert(id, mem);
+        drop(payload);
+        Ok(SharedBufferCreateResult {
+            id,
+            size: actual_size,
+        })
+    }
+
+    /// Windows는 보조 채널 핸들 전송이 02c에서 미구현. plugin SDK 측이 미리
+    /// `HandleChannelUnavailable`을 반환하므로 실제로 호출되지 않지만, 호스트
+    /// 측에서도 명시적으로 거절한다.
+    #[cfg(windows)]
+    pub fn create_shared_buffer_for(
+        &mut self,
+        _plugin_id: &str,
+        _call_id: u64,
+        _size: u64,
+    ) -> Result<SharedBufferCreateResult, String> {
+        Err("shared_buffer.create: windows host-side not implemented".into())
     }
 
     /// register_remote_kind에 전달하는 채널 sender. 내부적으로 hello 처리에서
@@ -509,6 +622,7 @@ impl PluginManager {
             self.ipc_namespaces.unregister_plugin(&id);
             self.unregister_observers(&id);
             self.cancel_pending_namespace_calls(&id, "plugin restarting");
+            self.plugin_buffers.remove(&id);
             if let Some(pkg) = self.packages.iter().find(|p| p.manifest.id == id).cloned() {
                 self.start_plugin_internal(&pkg);
             }
@@ -984,6 +1098,7 @@ impl PluginManager {
         for (_, proc) in self.processes.drain() {
             proc.shutdown(Duration::from_secs(2));
         }
+        self.plugin_buffers.clear();
     }
 
     /// CLI/IPC용 — plugin 활성화. 활성화 즉시 spawn 시도.
@@ -1015,6 +1130,7 @@ impl PluginManager {
         self.ipc_namespaces.unregister_plugin(plugin_id);
         self.unregister_observers(plugin_id);
         self.cancel_pending_namespace_calls(plugin_id, "plugin disabled");
+        self.plugin_buffers.remove(plugin_id);
         Ok(())
     }
 
@@ -1178,5 +1294,41 @@ mod tests {
         let before = mgr.pending_requests.len();
         mgr.notify_surface_closed(7, "terminal", SurfaceCloseReason::AgentClose);
         assert_eq!(mgr.pending_requests.len(), before);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn create_shared_buffer_rejects_zero_size() {
+        let mut mgr = PluginManager::new(empty_waker());
+        mgr.processes
+            .insert("com.example.x".into(), stub_process());
+        let err = mgr
+            .create_shared_buffer_for("com.example.x", 1, 0)
+            .unwrap_err();
+        assert!(err.contains("size must be > 0"), "got: {err}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn create_shared_buffer_rejects_unknown_plugin() {
+        let mut mgr = PluginManager::new(empty_waker());
+        let err = mgr
+            .create_shared_buffer_for("com.example.ghost", 1, 4096)
+            .unwrap_err();
+        assert!(err.contains("not running"), "got: {err}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn create_shared_buffer_rejects_when_handle_listener_missing() {
+        // stub mgr는 handle_listener를 bind하지 않으므로 즉시 거절되어야 한다.
+        let mut mgr = PluginManager::new(empty_waker());
+        mgr.processes
+            .insert("com.example.x".into(), stub_process());
+        assert!(mgr.handle_listener.is_none());
+        let err = mgr
+            .create_shared_buffer_for("com.example.x", 1, 4096)
+            .unwrap_err();
+        assert!(err.contains("handle channel not available"), "got: {err}");
     }
 }
