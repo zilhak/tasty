@@ -468,6 +468,33 @@ endpoint env가 없거나 connect/auth가 실패해도 fatal이 아니라 `warn`
 endpoint 자체로 함). plugin 작성자가 직접 보조 채널을 다룰 일은 없으며, shared
 buffer 같은 상위 API를 통해 간접적으로 사용된다.
 
+#### 보조 채널 위에서 운반되는 메시지 (`HandleChannelMessage`)
+
+| kind | 방향 | 내용 |
+|------|------|------|
+| `ping` / `pong` | 양방향 | 살아있는지 확인. 받은 쪽은 동일 `seq`로 응답. |
+| `handle_attach` | host → plugin | NDJSON 본문 + SCM_RIGHTS로 fd 동행. `request_id`는 메인 채널 `host.shared_buffer.create` call_id와 1:1. plugin은 `tasty_shm::receive`로 매핑. |
+| `dirty` | plugin → host | 특정 buffer의 dirty 영역(`Option<Rect>`, `None`=전체). fire-and-forget. host 리더가 union(coalesce). |
+
+호스트는 plugin마다 보조 채널 reader 스레드 1개를 띄워 `dirty`/`ping`을 수신하고,
+같은 stream의 write 쪽으로 `pong`을 회신한다. `dirty` 누적 결과는
+`PluginManager::take_plugin_dirty_rects(plugin_id)`로 drain한다.
+
+#### `host.shared_buffer.create` 와이어 흐름
+
+1. plugin SDK가 `HostHandle::create_shared_buffer(size)` 호출.
+2. SDK가 메인 채널로 `IpcCall { method: "host.shared_buffer.create", params: {size} }` 송신.
+3. host가 `tasty_shm::create` → `prepare_send`로 fd payload를 만들고, **먼저 보조
+   채널로 `HandleAttach { request_id, id, size }` + fd 동행 전송**, 그 후
+   메인 채널로 `SharedBufferCreateResult { id, size }`를 회신.
+4. plugin SDK는 양쪽이 같은 `request_id == call_id`로 매칭될 때까지 wait. 두
+   정보가 모인 시점에 `SharedBuffer` 핸들을 호출자에게 반환.
+5. plugin은 `as_mut_slice`로 직접 쓰고, 필요 시 `SharedBuffer::mark_dirty(rect)`로
+   host에 변경 영역 통지.
+
+manifest 한도(`max_shared_buffer_bytes`) 도입 전까지는 host가 1 GiB 임시 상한으로
+거절한다. 0 크기 요청은 무조건 reject.
+
 ## 8. 빌드 & 설치
 
 ### 개발 중

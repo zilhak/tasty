@@ -683,6 +683,92 @@ mod tests {
         }
     }
 
+    /// 02c-6 happy path: 호스트에서 shm을 만들어 fd를 보내고, plugin 측에서 받아
+    /// 매핑한 뒤 동일 영역에 쓴 바이트가 호스트에서 보이는지 확인.
+    /// 또한 plugin 측에서 Dirty를 보내고 호스트의 HandleStreamReader가 디코드하는지도
+    /// 검증.
+    #[cfg(unix)]
+    #[test]
+    fn shared_buffer_roundtrip_via_handle_channel() {
+        use std::os::unix::io::AsRawFd;
+        use tasty_plugin_protocol::{Rect, SharedBufferId};
+
+        let (host_raw, plugin_raw) = UnixStream::pair().expect("socketpair");
+        let mut host_stream = HandleStream::from_unix(host_raw);
+        let host_reader_stream = host_stream.reader().expect("reader split");
+
+        // host: shm 영역 생성 + sendable 핸들 준비.
+        let (host_mem, sendable) = tasty_shm::create(4096).expect("shm create");
+        let payload = tasty_shm::prepare_send(sendable, tasty_shm::PeerPid::Same)
+            .expect("prepare_send");
+
+        // host → plugin: HandleAttach + SCM_RIGHTS(fd).
+        let id = SharedBufferId(7);
+        let attach = HandleChannelMessage::HandleAttach {
+            request_id: 1,
+            id,
+            size: 4096,
+        };
+        host_stream
+            .send_handle(&attach, payload.raw_fd())
+            .expect("send_handle");
+
+        // plugin 측: raw socket에서 recvmsg로 fd를 받는다.
+        let mut buf = [0u8; 4096];
+        let (n, fds) =
+            unix_wire::recv_with_fd(&plugin_raw, &mut buf).expect("plugin recv");
+        assert!(n > 0);
+        assert_eq!(fds.len(), 1, "정확히 fd 1개가 도착");
+        let line = std::str::from_utf8(&buf[..n]).expect("utf8").trim();
+        let got_msg: HandleChannelMessage =
+            serde_json::from_str(line).expect("decode HandleAttach");
+        assert_eq!(got_msg, attach);
+
+        // plugin 측: 받은 fd를 tasty_shm::receive로 매핑.
+        let plugin_mem = tasty_shm::receive(tasty_shm::ReceivedPayload::Fd {
+            fd: fds[0],
+            size: 4096,
+        })
+        .expect("receive map");
+        assert_eq!(plugin_mem.len(), 4096);
+        assert_eq!(host_mem.len(), 4096);
+
+        // plugin 측에서 영역 전체를 0xAB로 채운다.
+        // SAFETY: 단일 스레드 테스트 — host는 아직 동시 mutate하지 않음.
+        unsafe {
+            plugin_mem.as_mut_slice().fill(0xAB);
+        }
+
+        // host 측에서도 같은 영역이 보여야 한다.
+        // SAFETY: plugin 쪽이 write를 마쳤고 후속 동시 mutate 없음.
+        let host_view = unsafe { host_mem.as_slice() };
+        assert!(host_view.iter().all(|&b| b == 0xAB), "공유 매핑이 동일해야 함");
+
+        // plugin → host: Dirty 메시지 송신 (raw write, fd 없이).
+        let dirty = HandleChannelMessage::Dirty {
+            id,
+            rect: Some(Rect { x: 0, y: 0, w: 32, h: 32 }),
+        };
+        let mut dirty_line = serde_json::to_string(&dirty).expect("encode dirty");
+        dirty_line.push('\n');
+        unix_wire::send_with_fd(&plugin_raw, dirty_line.as_bytes(), None)
+            .expect("plugin send dirty");
+
+        // host: HandleStreamReader로 Dirty 디코드.
+        let mut reader = host_reader_stream;
+        let (got_dirty, aux) = reader.recv_message().expect("host recv dirty");
+        assert!(aux.is_none(), "Dirty에는 ancillary fd 없음");
+        assert_eq!(got_dirty, dirty);
+
+        // SAFETY: payload는 method scope 끝까지 살아 있어야 send 측 fd가 유효.
+        // 명시적 drop으로 의도 표시.
+        drop(payload);
+        // plugin이 받은 매핑은 plugin_mem이 자체 소유 (Drop에서 munmap).
+        // recv_with_fd가 반환한 fds[0]은 tasty_shm::receive로 소유권 이전됨.
+        // host_mem도 Drop에서 자체 정리.
+        let _ = (host_mem, plugin_mem);
+    }
+
     #[test]
     fn auth_flow_rejects_unknown_token() {
         let listener = HandleListener::bind().expect("bind");
