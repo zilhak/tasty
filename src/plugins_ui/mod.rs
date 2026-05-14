@@ -128,7 +128,6 @@ pub fn draw_plugins_panel(
                 }
             });
             ui.add_space(2.0);
-            ui.separator();
         });
 
     match ui_state.active_tab {
