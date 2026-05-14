@@ -8,11 +8,20 @@
 
 Plugin은 별도 OS 프로세스로 실행되어 호스트와 TCP+JSON으로 통신한다. 호스트는 `~/.tasty/plugins/<id>/` 디렉터리에서 매니페스트를 발견하면 자동으로 spawn한다.
 
+Plugin이 호스트에 contribute하는 카테고리(상세는 `docs/agent-guide/plugins.md`):
+
+1. 새 Window 추가 — 현재 매니페스트 schema 없음(향후)
+2. 새 Surface 추가 — `[[surface_kinds]]`
+3. 새 Tool 추가 (좌측 사이드바 도구 메뉴 항목) — `[[contributes.menu_items]]` (schema 정의됨, 호스트 wiring 진행 중)
+4. 이벤트별 동작 추가 — `[[contributes.commands]]`(키 입력) / `[[contributes.surface_observer]]`(다른 surface lifecycle) / `[[contributes.ipc_namespace]]`(IPC 호출) / `[[contributes.cli]]`(CLI 호출)
+
 작성자가 다뤄야 할 것:
 
-- **매니페스트** (`tasty-plugin.toml`) — id, surface kind, 권한 선언
-- **`Plugin` trait 구현** — `create_surface` / `handle_event` / `restore_surface` / `snapshot_surface`
-- **UI tree 빌드** — `ui::*` 헬퍼로 `UiNode`를 조립
+- **매니페스트** (`tasty-plugin.toml`) — `id`, `name`, `version`, `api_version`, `entry`는 필수. 위 카테고리 중 plugin이 실제로 contribute하는 항목만 선언한다. **contribute가 0개여도 valid**다 (예: 다른 plugin 모니터링만 하는 보조 plugin).
+- **`Plugin` trait 구현** — contribute한 항목에 대응하는 콜백만 채우면 된다. surface를 추가하지 않으면 `create_surface` 등은 호출되지 않는다.
+- **UI tree 빌드** (surface가 있을 때) — `ui::*` 헬퍼로 `UiNode`를 조립
+
+> **다른 plugin을 확장하는 plugin**: 매니페스트 권한에 `"ipc.invoke:<대상 prefix>"`를 추가하고 사용자가 grant하면 `host.call("<대상 prefix>.<method>", ...)`로 다른 plugin의 메서드를 호출할 수 있다. 대상 plugin이 미설치/비활성이면 호스트가 `method not found`로 회신하므로 plugin이 분기 처리하면 된다. 설치 여부를 사전에 확인하려면 `plugin.list` IPC를 사용한다.
 
 호스트가 알아서 처리하는 것 (SDK가 감춤):
 
@@ -67,11 +76,13 @@ anyhow = "1"
 
 ### tasty-plugin.toml
 
+surface kind를 contribute하는 일반적인 plugin:
+
 ```toml
 manifest_version = 1
 id = "com.example.myplugin"           # 역도메인, 전역 유일
 name = "My Plugin"
-version = "0.1.0"
+version = "0.1.0"                      # plugin 자체 버전 (필수). semver 권장
 api_version = "1"                      # 호스트 protocol 메이저 버전
 permissions = ["fs.read", "surface.write"]
 
@@ -85,7 +96,26 @@ display_name_i18n_key = "surface.kind.myplugin"
 icon = "🔌"
 ```
 
-매니페스트 검증 규칙은 `docs/agent-guide/plugins.md` 참조.
+surface도 contribute도 없는 최소 plugin (예: 다른 surface 닫힘만 관찰하는 보조 plugin):
+
+```toml
+manifest_version = 1
+id = "com.example.observer"
+name = "Surface Observer"
+version = "0.1.0"
+api_version = "1"
+permissions = ["surface.read"]         # surface_observer가 surface.read 권한을 요구
+
+[entry]
+type = "process"
+command = "my-observer"
+
+[[contributes.surface_observer]]
+event = "closed"
+```
+
+매니페스트 검증 규칙(version 등 필수 필드, ipc_namespace 예약어, 옵셔널 필드 등)은
+`docs/agent-guide/plugins.md` 참조.
 
 ## 2. Plugin trait 구현
 

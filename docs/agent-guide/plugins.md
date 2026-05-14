@@ -1,7 +1,63 @@
 # Plugin 시스템
 
-Tasty는 외부 plugin을 별도 OS 프로세스로 실행하여 surface 종류를 추가할 수
-있다. 호스트 ↔ plugin은 TCP + JSON 메시지로 통신한다.
+Tasty는 외부 plugin을 별도 OS 프로세스로 실행하여 호스트를 확장할 수 있다.
+호스트 ↔ plugin은 TCP + JSON 메시지로 통신한다.
+
+## Plugin이 할 수 있는 것 — 4가지 카테고리
+
+Plugin의 근본 역할은 다음 4가지로 분류된다.
+
+1. **새 Window 추가** — OS-level 별도 윈도우. 현재 매니페스트 schema 없음(향후 추가 예정).
+2. **새 Surface 추가** — 탭/스플릿 안에서 생성 가능한 새 surface 종류를 등록한다.
+3. **새 Tool 추가** — 좌측 사이드바 하단의 "도구" 메뉴에 항목을 꽂는다.
+4. **이벤트별 동작 추가** — 외부 이벤트(사용자 키 입력, 다른 surface lifecycle, IPC/CLI 호출 등)에 반응한다.
+
+매니페스트 contribute 키와의 매핑:
+
+| 카테고리 | 매니페스트 키 | 상태 |
+|---------|-------------|------|
+| 새 Window | _(없음)_ | 미구현 |
+| 새 Surface | `[[surface_kinds]]` | ✅ |
+| 새 Tool (도구 메뉴 항목) | `[[contributes.menu_items]]` | schema 정의됨, 호스트 wiring 진행 중 |
+| 이벤트: 사용자 키 입력 | `[[contributes.commands]]` | ✅ (plugin 소유 surface 위에서만 매칭) |
+| 이벤트: 다른 surface lifecycle | `[[contributes.surface_observer]]` | ✅ |
+| 이벤트: 호스트/다른 plugin/CLI의 IPC 호출 | `[[contributes.ipc_namespace]]` | ✅ |
+| 이벤트: CLI 서브커맨드 호출 | `[[contributes.cli]]` | ✅ |
+
+이벤트의 "사용자 키 입력 **등**"은 단축키만이 아니라 surface lifecycle / IPC / CLI 호출 등 **모든 외부 트리거**를 포함한다. 어떤 카테고리를 몇 개 contribute할지는 plugin이 자유롭게 정한다 — 0개여도 valid다.
+
+### 매니페스트 선언 원칙
+
+매니페스트는 호스트가 **라우팅·등록·UI 합성에 사용하는 정보**를 담는 곳이다.
+호스트가 인지해야 동작하는 항목은 반드시 선언해야 한다:
+
+- 새 surface 종류 (호스트가 surface kind registry에 등록)
+- 도구 메뉴 항목 (호스트가 메뉴 렌더링에 합성)
+- 단축키 (호스트가 키 매칭 로직에 합성)
+- IPC namespace prefix (호스트가 라우팅)
+- CLI 서브커맨드 (호스트가 dynamic clap 구성)
+
+반대로 plugin 내부 구현 디테일(정렬/캐싱/렌더링 알고리즘 등 호스트가 알 필요
+없는 사항)을 위한 **별도 매니페스트 항목은 존재하지 않는다**. 자유 텍스트인
+`description`에 사람을 위한 메모로 기입해 두는 것은 막지 않으며, 호스트는
+`description` 내용을 해석하지 않는다.
+
+### contribute가 0개인 plugin
+
+매니페스트에 surface kind / menu item / command / observer / IPC / CLI 어느 것도
+선언하지 않은 plugin도 valid다. 호스트는 이런 plugin을 spawn해 살려두기만 하고
+별도 dispatch 대상으로 삼지 않는다. plugin은 자기 프로세스 안에서 스레드/타이머
+/외부 입력 등으로 동작하면 되며, 필요할 때 `host.call`로 호스트 IPC를
+호출하거나 `ipc.invoke:<prefix>` 권한으로 다른 plugin의 메서드를 호출할 수 있다.
+
+### 다른 plugin을 확장하는 plugin
+
+Plugin A가 plugin B의 IPC namespace를 호출하려면 매니페스트 권한에
+`"ipc.invoke:<B의 prefix>"`를 선언하고 사용자가 `tasty plugin grant`로 동의해야
+한다. B가 설치되지 않았거나 비활성이면 호출은 `-32601 method not found`로
+회신되므로 A 쪽에서 분기 처리하면 된다. 설치 여부를 사전에 확인하고 싶다면
+`plugin.list` IPC를 활용한다. 자기 plugin은 별도 contribute 없이 다른 plugin만
+활용하는 형태도 valid하다.
 
 ## 설치 위치
 
@@ -86,12 +142,26 @@ default_keybinding = "F5"
 binding_mode = "independent"
 ```
 
-검증 규칙 (위반 시 plugin 로드 거부):
+필수 필드 (없으면 plugin 로드 거부):
 
-- `manifest_version`은 정확히 `1`
-- `api_version`은 호스트 버전과 일치 (현재 `"1"`)
-- `id`는 역도메인 형식 (소문자 + 숫자 + `.-_`, `.` 포함 필수)
+- `manifest_version` — 정확히 `1`
+- `id` — 역도메인 형식 (소문자 + 숫자 + `.-_`, `.` 포함 필수)
+- `name` — 표시용 이름
+- `version` — plugin 자체 버전 문자열 (semver 권장 — 호스트는 표시·로그에 사용)
+- `api_version` — 호스트 protocol 메이저 버전과 일치 (현재 `"1"`)
+- `entry` — 실행 진입점 (`type = "process"`, `command = ...`)
+
+옵셔널 필드 (없어도 valid, 기본값으로 처리):
+
+- `authors`, `homepage`, `description`, `lang_dir`(기본 `"lang"`)
+- `permissions` (기본 빈 배열)
+- `surface_kinds`, `contributes.*` (모두 기본 빈 배열 — **0개여도 됨**)
+
+추가 검증 규칙 (위반 시 plugin 로드 거부):
+
 - `surface_kinds[].kind`는 소문자 + `_` + 숫자만
+- `contributes.ipc_namespace[].prefix`는 호스트 예약어 사용 금지 (아래 IPC namespace 절 참조)
+- `contributes.surface_observer`를 선언하면 `permissions`에 `surface.read` 포함 필수
 
 > **TOML 주의**: top-level 키(`permissions = [...]` 등)는 모든 `[table]` 헤더보다 *먼저* 와야 한다. 그렇지 않으면 가장 가까운 테이블 안의 키로 해석된다.
 
