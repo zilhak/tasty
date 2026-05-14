@@ -31,6 +31,124 @@ pub fn draw_collapsed_sidebar(
         .exact_width(sidebar_width)
         .resizable(false)
         .show(ctx, |ui| {
+            // 바닥 고정 섹션 — TopBottomPanel::bottom으로 anchor.
+            // 픽셀 계산 없이 자기 콘텐츠 높이만큼만 점유하고 나머지는 위쪽 ui가 사용.
+            egui::TopBottomPanel::bottom("workspace_sidebar_collapsed_bottom")
+                .frame(egui::Frame::NONE)
+                .show_separator_line(false)
+                .show_inside(ui, |ui| {
+                    ui.vertical_centered(|ui| {
+                        ui.spacing_mut().item_spacing.y = 0.0;
+                        ui.separator();
+                        ui.add_space(2.0);
+
+                        // Tools button "[T]" — opens tools menu popup
+                        let (tools_btn_rect, tools_resp) =
+                            ui.allocate_exact_size(egui::vec2(32.0, 22.0), egui::Sense::click());
+                        if tools_resp.hovered() {
+                            ui.painter().rect_filled(
+                                tools_btn_rect,
+                                4.0,
+                                th.hover_overlay.to_egui_premultiplied(),
+                            );
+                        }
+                        ui.painter().text(
+                            tools_btn_rect.center(),
+                            egui::Align2::CENTER_CENTER,
+                            "T",
+                            egui::FontId::proportional(12.0),
+                            if tools_resp.hovered() {
+                                th.subtext1.into()
+                            } else {
+                                th.overlay0.into()
+                            },
+                        );
+                        let tools_resp = tools_resp.on_hover_text(t("sidebar.tools_button"));
+                        if tools_resp.clicked() {
+                            tools_rect = Some(tools_btn_rect);
+                        }
+                        ui.add_space(2.0);
+
+                        // Expand button ">"
+                        let (rect, resp) =
+                            ui.allocate_exact_size(egui::vec2(32.0, 22.0), egui::Sense::click());
+                        if resp.hovered() {
+                            ui.painter().rect_filled(
+                                rect,
+                                4.0,
+                                th.hover_overlay.to_egui_premultiplied(),
+                            );
+                        }
+                        ui.painter().text(
+                            rect.center(),
+                            egui::Align2::CENTER_CENTER,
+                            ">",
+                            egui::FontId::proportional(14.0),
+                            if resp.hovered() {
+                                th.subtext1.into()
+                            } else {
+                                th.overlay0.into()
+                            },
+                        );
+                        if resp.clicked() {
+                            expand_clicked = true;
+                        }
+
+                        // Plugins icon (puzzle piece)
+                        ui.add_space(2.0);
+                        let (rect, resp) =
+                            ui.allocate_exact_size(egui::vec2(32.0, 22.0), egui::Sense::click());
+                        if resp.hovered() {
+                            ui.painter().rect_filled(
+                                rect,
+                                4.0,
+                                th.hover_overlay.to_egui_premultiplied(),
+                            );
+                        }
+                        ui.painter().text(
+                            rect.center(),
+                            egui::Align2::CENTER_CENTER,
+                            "\u{1F9E9}", // 🧩
+                            egui::FontId::proportional(14.0),
+                            if resp.hovered() {
+                                th.subtext1.into()
+                            } else {
+                                th.overlay0.into()
+                            },
+                        );
+                        if resp.clicked() {
+                            plugins_clicked = true;
+                        }
+
+                        // Settings icon (gear)
+                        ui.add_space(2.0);
+                        let (rect, resp) =
+                            ui.allocate_exact_size(egui::vec2(32.0, 22.0), egui::Sense::click());
+                        if resp.hovered() {
+                            ui.painter().rect_filled(
+                                rect,
+                                4.0,
+                                th.hover_overlay.to_egui_premultiplied(),
+                            );
+                        }
+                        ui.painter().text(
+                            rect.center(),
+                            egui::Align2::CENTER_CENTER,
+                            "\u{2699}", // ⚙
+                            egui::FontId::proportional(14.0),
+                            if resp.hovered() {
+                                th.subtext1.into()
+                            } else {
+                                th.overlay0.into()
+                            },
+                        );
+                        if resp.clicked() {
+                            settings_clicked = true;
+                        }
+                        ui.add_space(12.0);
+                    });
+                });
+
             ui.vertical_centered(|ui| {
                 ui.add_space(4.0);
 
@@ -107,107 +225,6 @@ pub fn draw_collapsed_sidebar(
                     add_ws = true;
                 }
 
-                // Bottom: tools + expand + plugins + settings.
-                // item_spacing.y=0 강제 후 정확한 높이:
-                // separator(6) + 3*add_space(2) + 4*(22) + 끝 padding(12) = 112.
-                // 여유 +18 = 130.
-                ui.spacing_mut().item_spacing.y = 0.0;
-                let available = ui.available_height();
-                if available > 130.0 {
-                    ui.add_space(available - 130.0);
-                }
-                ui.separator();
-                ui.add_space(2.0);
-
-                // Tools button "[T]" — opens tools menu popup
-                let (tools_btn_rect, tools_resp) =
-                    ui.allocate_exact_size(egui::vec2(32.0, 22.0), egui::Sense::click());
-                if tools_resp.hovered() {
-                    ui.painter()
-                        .rect_filled(tools_btn_rect, 4.0, th.hover_overlay.to_egui_premultiplied());
-                }
-                ui.painter().text(
-                    tools_btn_rect.center(),
-                    egui::Align2::CENTER_CENTER,
-                    "T",
-                    egui::FontId::proportional(12.0),
-                    if tools_resp.hovered() {
-                        th.subtext1.into()
-                    } else {
-                        th.overlay0.into()
-                    },
-                );
-                let tools_resp = tools_resp.on_hover_text(t("sidebar.tools_button"));
-                if tools_resp.clicked() {
-                    tools_rect = Some(tools_btn_rect);
-                }
-                ui.add_space(2.0);
-
-                // Expand button ">"
-                let (rect, resp) =
-                    ui.allocate_exact_size(egui::vec2(32.0, 22.0), egui::Sense::click());
-                if resp.hovered() {
-                    ui.painter().rect_filled(rect, 4.0, th.hover_overlay.to_egui_premultiplied());
-                }
-                ui.painter().text(
-                    rect.center(),
-                    egui::Align2::CENTER_CENTER,
-                    ">",
-                    egui::FontId::proportional(14.0),
-                    if resp.hovered() {
-                        th.subtext1.into()
-                    } else {
-                        th.overlay0.into()
-                    },
-                );
-                if resp.clicked() {
-                    expand_clicked = true;
-                }
-
-                // Plugins icon (puzzle piece)
-                ui.add_space(2.0);
-                let (rect, resp) =
-                    ui.allocate_exact_size(egui::vec2(32.0, 22.0), egui::Sense::click());
-                if resp.hovered() {
-                    ui.painter().rect_filled(rect, 4.0, th.hover_overlay.to_egui_premultiplied());
-                }
-                ui.painter().text(
-                    rect.center(),
-                    egui::Align2::CENTER_CENTER,
-                    "\u{1F9E9}", // 🧩
-                    egui::FontId::proportional(14.0),
-                    if resp.hovered() {
-                        th.subtext1.into()
-                    } else {
-                        th.overlay0.into()
-                    },
-                );
-                if resp.clicked() {
-                    plugins_clicked = true;
-                }
-
-                // Settings icon (gear)
-                ui.add_space(2.0);
-                let (rect, resp) =
-                    ui.allocate_exact_size(egui::vec2(32.0, 22.0), egui::Sense::click());
-                if resp.hovered() {
-                    ui.painter().rect_filled(rect, 4.0, th.hover_overlay.to_egui_premultiplied());
-                }
-                ui.painter().text(
-                    rect.center(),
-                    egui::Align2::CENTER_CENTER,
-                    "\u{2699}", // ⚙
-                    egui::FontId::proportional(14.0),
-                    if resp.hovered() {
-                        th.subtext1.into()
-                    } else {
-                        th.overlay0.into()
-                    },
-                );
-                if resp.clicked() {
-                    settings_clicked = true;
-                }
-                ui.add_space(12.0);
             });
         });
 
@@ -244,15 +261,141 @@ pub fn draw_full_sidebar(
         .exact_width(sidebar_width)
         .resizable(false)
         .show(ctx, |ui| {
-            // Bottom 섹션 높이 (item_spacing.y=0 강제):
-            // separator(6) + add_space(2) + tools(22) + add_space(2) + collapse(22)
-            // + add_space(2) + plugins(28) + add_space(2) + settings(28) + 끝 padding(8) = 122.
-            // SidePanel 자체 inner margin·item_spacing 잔여분 흡수용 여유 +18 = 140.
-            let bottom_height = 140.0;
-            let scroll_height = (ui.available_height() - bottom_height).max(50.0);
+            // 바닥 고정 섹션 — TopBottomPanel::bottom으로 anchor.
+            // 픽셀 계산 없이 자기 콘텐츠 높이만큼만 점유하고 나머지를 ScrollArea가 사용.
+            egui::TopBottomPanel::bottom("workspace_sidebar_bottom")
+                .frame(egui::Frame::NONE)
+                .show_separator_line(false)
+                .show_inside(ui, |ui| {
+                    ui.spacing_mut().item_spacing.y = 0.0;
+                    ui.separator();
+                    ui.add_space(2.0);
+
+                    // Tools button
+                    {
+                        let full_width = ui.available_width();
+                        let (rect, resp) = ui.allocate_exact_size(
+                            egui::vec2(full_width, 22.0),
+                            egui::Sense::click().union(egui::Sense::hover()),
+                        );
+                        if resp.hovered() {
+                            ui.painter().rect_filled(
+                                rect,
+                                4.0,
+                                th.hover_overlay.to_egui_premultiplied(),
+                            );
+                        }
+                        ui.painter().text(
+                            rect.center(),
+                            egui::Align2::CENTER_CENTER,
+                            t("sidebar.tools_button"),
+                            egui::FontId::proportional(11.0),
+                            if resp.hovered() {
+                                th.subtext1.into()
+                            } else {
+                                th.overlay0.into()
+                            },
+                        );
+                        if resp.clicked() {
+                            sidebar_tools_rect = Some(rect);
+                        }
+                    }
+
+                    ui.add_space(2.0);
+
+                    {
+                        let full_width = ui.available_width();
+                        let (collapse_rect, collapse_resp) = ui.allocate_exact_size(
+                            egui::vec2(full_width, 22.0),
+                            egui::Sense::click().union(egui::Sense::hover()),
+                        );
+                        if collapse_resp.hovered() {
+                            ui.painter().rect_filled(
+                                collapse_rect,
+                                4.0,
+                                th.hover_overlay.to_egui_premultiplied(),
+                            );
+                        }
+                        ui.painter().text(
+                            collapse_rect.center(),
+                            egui::Align2::CENTER_CENTER,
+                            "<  Collapse",
+                            egui::FontId::proportional(11.0),
+                            if collapse_resp.hovered() {
+                                th.subtext1.into()
+                            } else {
+                                th.overlay0.into()
+                            },
+                        );
+                        if collapse_resp.clicked() {
+                            sidebar_collapse = true;
+                        }
+                    }
+
+                    ui.add_space(2.0);
+                    {
+                        let full_width = ui.available_width();
+                        let (rect, response) = ui.allocate_exact_size(
+                            egui::vec2(full_width, 28.0),
+                            egui::Sense::click().union(egui::Sense::hover()),
+                        );
+                        let text_color = if response.hovered() {
+                            th.subtext1
+                        } else {
+                            th.overlay0
+                        };
+                        if response.hovered() {
+                            ui.painter().rect_filled(
+                                rect,
+                                4.0,
+                                th.hover_overlay.to_egui_premultiplied(),
+                            );
+                        }
+                        ui.painter().text(
+                            rect.center(),
+                            egui::Align2::CENTER_CENTER,
+                            t("button.plugins"),
+                            egui::FontId::proportional(12.0),
+                            text_color.into(),
+                        );
+                        if response.clicked() {
+                            sidebar_plugins = true;
+                        }
+                    }
+                    ui.add_space(2.0);
+                    {
+                        let full_width = ui.available_width();
+                        let (rect, response) = ui.allocate_exact_size(
+                            egui::vec2(full_width, 28.0),
+                            egui::Sense::click().union(egui::Sense::hover()),
+                        );
+                        let text_color = if response.hovered() {
+                            th.subtext1
+                        } else {
+                            th.overlay0
+                        };
+                        if response.hovered() {
+                            ui.painter().rect_filled(
+                                rect,
+                                4.0,
+                                th.hover_overlay.to_egui_premultiplied(),
+                            );
+                        }
+                        ui.painter().text(
+                            rect.center(),
+                            egui::Align2::CENTER_CENTER,
+                            t("button.settings"),
+                            egui::FontId::proportional(12.0),
+                            text_color.into(),
+                        );
+                        if response.clicked() {
+                            sidebar_settings = true;
+                        }
+                    }
+                    ui.add_space(8.0);
+                });
 
             egui::ScrollArea::vertical()
-                .max_height(scroll_height)
                 .auto_shrink([false, false])
                 .drag_to_scroll(false)
                 .show(ui, |ui| {
@@ -494,120 +637,6 @@ pub fn draw_full_sidebar(
                     }
                     ui.add_space(4.0);
                 });
-
-            // === Fixed bottom: Tools + Collapse + Plugins + Settings ===
-            // item_spacing.y를 0으로 강제해 add_space만으로 높이 제어가 가능하게 한다.
-            ui.spacing_mut().item_spacing.y = 0.0;
-            ui.separator();
-            ui.add_space(2.0);
-
-            // Tools button
-            {
-                let full_width = ui.available_width();
-                let (rect, resp) = ui.allocate_exact_size(
-                    egui::vec2(full_width, 22.0),
-                    egui::Sense::click().union(egui::Sense::hover()),
-                );
-                if resp.hovered() {
-                    ui.painter().rect_filled(rect, 4.0, th.hover_overlay.to_egui_premultiplied());
-                }
-                ui.painter().text(
-                    rect.center(),
-                    egui::Align2::CENTER_CENTER,
-                    t("sidebar.tools_button"),
-                    egui::FontId::proportional(11.0),
-                    if resp.hovered() {
-                        th.subtext1.into()
-                    } else {
-                        th.overlay0.into()
-                    },
-                );
-                if resp.clicked() {
-                    sidebar_tools_rect = Some(rect);
-                }
-            }
-
-            ui.add_space(2.0);
-
-            {
-                let full_width = ui.available_width();
-                let (collapse_rect, collapse_resp) = ui.allocate_exact_size(
-                    egui::vec2(full_width, 22.0),
-                    egui::Sense::click().union(egui::Sense::hover()),
-                );
-                if collapse_resp.hovered() {
-                    ui.painter()
-                        .rect_filled(collapse_rect, 4.0, th.hover_overlay.to_egui_premultiplied());
-                }
-                ui.painter().text(
-                    collapse_rect.center(),
-                    egui::Align2::CENTER_CENTER,
-                    "<  Collapse",
-                    egui::FontId::proportional(11.0),
-                    if collapse_resp.hovered() {
-                        th.subtext1.into()
-                    } else {
-                        th.overlay0.into()
-                    },
-                );
-                if collapse_resp.clicked() {
-                    sidebar_collapse = true;
-                }
-            }
-
-            ui.add_space(2.0);
-            {
-                let full_width = ui.available_width();
-                let (rect, response) = ui.allocate_exact_size(
-                    egui::vec2(full_width, 28.0),
-                    egui::Sense::click().union(egui::Sense::hover()),
-                );
-                let text_color = if response.hovered() {
-                    th.subtext1
-                } else {
-                    th.overlay0
-                };
-                if response.hovered() {
-                    ui.painter().rect_filled(rect, 4.0, th.hover_overlay.to_egui_premultiplied());
-                }
-                ui.painter().text(
-                    rect.center(),
-                    egui::Align2::CENTER_CENTER,
-                    t("button.plugins"),
-                    egui::FontId::proportional(12.0),
-                    text_color.into(),
-                );
-                if response.clicked() {
-                    sidebar_plugins = true;
-                }
-            }
-            ui.add_space(2.0);
-            {
-                let full_width = ui.available_width();
-                let (rect, response) = ui.allocate_exact_size(
-                    egui::vec2(full_width, 28.0),
-                    egui::Sense::click().union(egui::Sense::hover()),
-                );
-                let text_color = if response.hovered() {
-                    th.subtext1
-                } else {
-                    th.overlay0
-                };
-                if response.hovered() {
-                    ui.painter().rect_filled(rect, 4.0, th.hover_overlay.to_egui_premultiplied());
-                }
-                ui.painter().text(
-                    rect.center(),
-                    egui::Align2::CENTER_CENTER,
-                    t("button.settings"),
-                    egui::FontId::proportional(12.0),
-                    text_color.into(),
-                );
-                if response.clicked() {
-                    sidebar_settings = true;
-                }
-            }
-            ui.add_space(8.0);
         });
 
     FullSidebarResult {
