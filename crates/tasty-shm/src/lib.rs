@@ -28,6 +28,7 @@
 #![deny(missing_docs)]
 
 mod error;
+pub mod footer;
 mod platform;
 
 pub use error::ShmError;

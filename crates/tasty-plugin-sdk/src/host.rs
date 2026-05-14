@@ -136,6 +136,9 @@ impl HostHandle {
     /// 보조 채널로 fd/HANDLE이 동행해서 도착한다 — 둘 다 모인 시점에 [`SharedBuffer`]를
     /// 반환.
     ///
+    /// `size`는 plugin이 실제로 쓸 수 있는 사용자 영역의 크기다. 호스트에는 footer
+    /// ([`tasty_shm::footer::SIZE`])를 더한 OS 영역 크기로 요청이 나간다.
+    ///
     /// 보조 채널이 활성화되지 않은 plugin이면 [`PluginError::HandleChannelUnavailable`].
     #[cfg(unix)]
     pub fn create_shared_buffer(&self, size: usize) -> Result<SharedBuffer, PluginError> {
@@ -156,11 +159,16 @@ impl HostHandle {
             m.insert(call_id, fd_tx);
         }
 
+        // OS 영역 = footer + user area. plugin 사용자에게는 footer가 보이지 않음.
+        let total_size = size
+            .checked_add(tasty_shm::footer::SIZE)
+            .ok_or(PluginError::Shm("size overflow with footer".into()))?;
+
         // RPC 송신. 결과로 {id, size}가 회신된다.
         let rpc_result = self.call_with_id(
             call_id,
             METHOD_HOST_SHARED_BUFFER_CREATE.to_string(),
-            serde_json::json!({ "size": size as u64 }),
+            serde_json::json!({ "size": total_size as u64 }),
         );
         let parsed: SharedBufferCreateResult = match rpc_result {
             Ok(v) => serde_json::from_value(v)?,

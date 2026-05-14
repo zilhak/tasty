@@ -185,6 +185,13 @@ impl HandleClient {
             "handle channel reader not implemented on Windows yet",
         )))
     }
+
+    /// Test 전용: 외부에서 만든 `UnixStream`을 그대로 감싸 `HandleClient`로 사용.
+    /// 핸드셰이크 없이 사용하므로 단위 테스트에서만 호출한다.
+    #[cfg(all(unix, test))]
+    pub(crate) fn from_unix_stream(stream: std::os::unix::net::UnixStream) -> Self {
+        Self { inner: stream }
+    }
 }
 
 /// 보조 채널 위의 NDJSON 메시지를 한 줄씩 받는다. host가 보내는
