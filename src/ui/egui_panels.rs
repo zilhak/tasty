@@ -26,6 +26,7 @@ pub fn draw_egui_panels(
     state: &mut AppState,
     pane_rects: &[(u32, Rect)],
     scale_factor: f32,
+    canvas_cache: &crate::gpu::canvas_texture::CanvasTextureCache,
 ) {
     // First pass: gather info about egui-rendered panels (read-only).
     let mut infos = Vec::new();
@@ -205,7 +206,7 @@ pub fn draw_egui_panels(
             .downcast_ref::<crate::plugin::remote_surface::RemoteSurface>()
         {
             draw_panel_frame(ctx, &format!("remote_panel_{}", id_suffix), info, 4, None, |ui| {
-                crate::plugin::ui_tree_render::render_remote_surface(ui, remote);
+                crate::plugin::ui_tree_render::render_remote_surface(ui, remote, canvas_cache);
             });
         }
     }

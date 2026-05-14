@@ -187,6 +187,17 @@ impl CanvasTextureCache {
     pub fn len(&self) -> usize {
         self.entries.len()
     }
+
+    /// (plugin_id, buffer_id)에 대해 등록된 egui TextureId를 반환. 미등록이면 None.
+    ///
+    /// linear scan: 한 윈도우 내 활성 plugin canvas 개수는 보통 < 10이라 충분히 빠르다.
+    /// hash 기반 키로 바꾸려면 `Cow<str>` 또는 `Borrow` 트릭이 필요해서 의도적으로 단순 구현.
+    pub fn get(&self, plugin_id: &str, buffer_id: SharedBufferId) -> Option<TextureId> {
+        self.entries
+            .iter()
+            .find(|(k, _)| k.plugin_id == plugin_id && k.buffer_id == buffer_id)
+            .map(|(_, e)| e.egui_id)
+    }
 }
 
 impl Default for CanvasTextureCache {

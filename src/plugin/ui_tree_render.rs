@@ -4,15 +4,21 @@
 
 use egui::Ui;
 
+use crate::gpu::canvas_texture::CanvasTextureCache;
 use crate::plugin::remote_surface::RemoteSurface;
 use crate::plugin::ui_tree::{
-    ButtonStyle, LabelStyle, SplitDir, TreeNode, UiEvent, UiNode,
+    ButtonStyle, CanvasPointerButton, CanvasPointerPhase, LabelStyle, PixelFilter, SharedBufferId,
+    SplitDir, TreeNode, UiEvent, UiNode,
 };
 
-pub fn render_remote_surface(ui: &mut Ui, surface: &RemoteSurface) {
+pub fn render_remote_surface(
+    ui: &mut Ui,
+    surface: &RemoteSurface,
+    canvas_cache: &CanvasTextureCache,
+) {
     let tree_opt = surface.tree.lock().ok().and_then(|t| t.clone());
     match tree_opt {
-        Some(node) => render_node(ui, &node, surface),
+        Some(node) => render_node(ui, &node, surface, canvas_cache),
         None => {
             ui.vertical_centered(|ui| {
                 ui.add_space(20.0);
@@ -30,7 +36,12 @@ pub fn render_remote_surface(ui: &mut Ui, surface: &RemoteSurface) {
     }
 }
 
-fn render_node(ui: &mut Ui, node: &UiNode, surface: &RemoteSurface) {
+fn render_node(
+    ui: &mut Ui,
+    node: &UiNode,
+    surface: &RemoteSurface,
+    canvas_cache: &CanvasTextureCache,
+) {
     match node {
         UiNode::Vbox { spacing, children } => {
             ui.vertical(|ui| {
@@ -39,7 +50,7 @@ fn render_node(ui: &mut Ui, node: &UiNode, surface: &RemoteSurface) {
                     // 자식별로 push_id로 id_salt를 분리 → 같은 종류의 stateful
                     // 위젯(ScrollArea, CollapsingHeader 등)이 형제 위치에 있어도
                     // egui ID가 충돌하지 않는다.
-                    ui.push_id(i, |ui| render_node(ui, c, surface));
+                    ui.push_id(i, |ui| render_node(ui, c, surface, canvas_cache));
                 }
             });
         }
@@ -47,7 +58,7 @@ fn render_node(ui: &mut Ui, node: &UiNode, surface: &RemoteSurface) {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = *spacing as f32;
                 for (i, c) in children.iter().enumerate() {
-                    ui.push_id(i, |ui| render_node(ui, c, surface));
+                    ui.push_id(i, |ui| render_node(ui, c, surface, canvas_cache));
                 }
             });
         }
@@ -61,7 +72,7 @@ fn render_node(ui: &mut Ui, node: &UiNode, surface: &RemoteSurface) {
             egui::ScrollArea::new([*horizontal, *vertical])
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
-                    render_node(ui, child, surface);
+                    render_node(ui, child, surface, canvas_cache);
                 });
         }
         UiNode::Splitter {
@@ -71,7 +82,16 @@ fn render_node(ui: &mut Ui, node: &UiNode, surface: &RemoteSurface) {
             second,
             id,
         } => {
-            render_splitter(ui, *direction, *ratio, id.as_deref(), first, second, surface);
+            render_splitter(
+                ui,
+                *direction,
+                *ratio,
+                id.as_deref(),
+                first,
+                second,
+                surface,
+                canvas_cache,
+            );
         }
         UiNode::Label { text, style, color } => {
             let mut rt = egui::RichText::new(text);
@@ -161,17 +181,64 @@ fn render_node(ui: &mut Ui, node: &UiNode, surface: &RemoteSurface) {
             ui.add_space(*size as f32);
         }
         UiNode::Canvas {
-            buffer_id: _,
+            buffer_id,
             width,
             height,
             format: _,
             filter: _,
             commit_seq: _,
-            id: _,
+            id,
         } => {
-            // 03d에서 GPU 텍스처 합성으로 교체된다. 현재는 자리 표시자 사각형.
-            let size = egui::vec2(*width as f32, *height as f32);
-            let (rect, _resp) = ui.allocate_exact_size(size, egui::Sense::hover());
+            render_canvas(
+                ui,
+                surface,
+                canvas_cache,
+                *buffer_id,
+                *width,
+                *height,
+                id.as_deref(),
+            );
+        }
+    }
+}
+
+/// Plugin Canvas node 렌더링 + 마우스 이벤트 dispatch.
+///
+/// - cache에 등록된 [`egui::TextureId`]가 있으면 [`egui::Image`]로 그린다 (03e가 cache를 채움).
+///   없으면 자리 표시자 회색 사각형으로 placehold.
+/// - `id`가 있으면 click/drag/hover를 [`UiEvent::CanvasPointer`]로 plugin에 송신.
+/// - 좌표는 canvas-local 픽셀 좌표 (0..width, 0..height). egui는 logical px이므로 canvas
+///   rect 내 normalize 후 `width`/`height`를 곱해 픽셀 좌표로 변환한다.
+/// - Move/Drag는 frame 당 자연스럽게 1회 emit (egui Response의 invariant). Leave는
+///   직전 frame의 hovered 상태를 egui memory에 저장해 false 전이 시점에 송신.
+fn render_canvas(
+    ui: &mut Ui,
+    surface: &RemoteSurface,
+    canvas_cache: &CanvasTextureCache,
+    buffer_id: SharedBufferId,
+    width: u32,
+    height: u32,
+    node_id: Option<&str>,
+) {
+    let size = egui::vec2(width as f32, height as f32);
+    let sense = if node_id.is_some() {
+        egui::Sense::click_and_drag()
+    } else {
+        egui::Sense::hover()
+    };
+    let (rect, resp) = ui.allocate_exact_size(size, sense);
+
+    // 1. 그리기: cache 등록 텍스처가 있으면 Image, 없으면 placeholder.
+    match canvas_cache.get(&surface.plugin_id, buffer_id) {
+        Some(tex_id) => {
+            ui.painter().image(
+                tex_id,
+                rect,
+                egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                egui::Color32::WHITE,
+            );
+        }
+        None => {
             ui.painter().rect_filled(
                 rect,
                 0.0,
@@ -179,6 +246,84 @@ fn render_node(ui: &mut Ui, node: &UiNode, surface: &RemoteSurface) {
             );
         }
     }
+
+    // 2. 이벤트 dispatch (id가 있을 때만).
+    let Some(node_id) = node_id else {
+        return;
+    };
+
+    // canvas-local 픽셀 좌표 변환: ui 좌표(rect) → (0..width, 0..height).
+    let to_canvas_local = |p: egui::Pos2| -> (f32, f32) {
+        let nx = ((p.x - rect.min.x) / rect.width().max(1.0)).clamp(0.0, 1.0);
+        let ny = ((p.y - rect.min.y) / rect.height().max(1.0)).clamp(0.0, 1.0);
+        (nx * width as f32, ny * height as f32)
+    };
+
+    // Click → Down + Up (primary). egui Response는 클릭 완료 시 한 번만 true.
+    if resp.clicked() {
+        if let Some(p) = resp.interact_pointer_pos() {
+            let (x, y) = to_canvas_local(p);
+            surface.push_event(UiEvent::CanvasPointer {
+                node_id: node_id.to_string(),
+                x,
+                y,
+                phase: CanvasPointerPhase::Down,
+                button: Some(CanvasPointerButton::Primary),
+            });
+            surface.push_event(UiEvent::CanvasPointer {
+                node_id: node_id.to_string(),
+                x,
+                y,
+                phase: CanvasPointerPhase::Up,
+                button: Some(CanvasPointerButton::Primary),
+            });
+        }
+    } else if resp.dragged() {
+        if let Some(p) = resp.interact_pointer_pos() {
+            let (x, y) = to_canvas_local(p);
+            surface.push_event(UiEvent::CanvasPointer {
+                node_id: node_id.to_string(),
+                x,
+                y,
+                phase: CanvasPointerPhase::Drag,
+                button: Some(CanvasPointerButton::Primary),
+            });
+        }
+    } else if resp.hovered() {
+        // 단순 hover: 포인터 위치만 Move로 전달. egui Response는 frame당 한번만 hovered=true,
+        // 그리고 Move 이벤트는 캐주얼한 위젯에서 흔하지 않으므로 throttle 자체는 충분.
+        if let Some(p) = ui.ctx().input(|i| i.pointer.hover_pos()) {
+            let (x, y) = to_canvas_local(p);
+            surface.push_event(UiEvent::CanvasPointer {
+                node_id: node_id.to_string(),
+                x,
+                y,
+                phase: CanvasPointerPhase::Move,
+                button: None,
+            });
+        }
+    }
+
+    // Leave 감지: 직전 frame에 hovered였는데 이번 frame은 아니면 송신.
+    let mem_id = egui::Id::new(("canvas_hovered", surface.id, node_id));
+    let was_hovered: bool = ui.ctx().memory(|m| m.data.get_temp(mem_id).unwrap_or(false));
+    let is_hovered = resp.hovered() || resp.dragged() || resp.clicked();
+    if was_hovered && !is_hovered {
+        // 마지막으로 알려진 hover 위치가 없을 수 있으므로 (-1, -1) 대신 영역 외 표시.
+        // 보통 plugin은 phase만 보고 추적 상태를 초기화한다.
+        surface.push_event(UiEvent::CanvasPointer {
+            node_id: node_id.to_string(),
+            x: -1.0,
+            y: -1.0,
+            phase: CanvasPointerPhase::Leave,
+            button: None,
+        });
+    }
+    ui.ctx()
+        .memory_mut(|m| m.data.insert_temp(mem_id, is_hovered));
+
+    // filter는 ensure() 단계에서 텍스처에 적용되므로 여기서는 PixelFilter 참조 불필요.
+    let _ = PixelFilter::Linear;
 }
 
 /// Splitter 렌더링. `id`가 `Some`이면 divider를 드래그해 비율을 조절할 수 있으며,
@@ -197,6 +342,7 @@ fn render_splitter(
     first: &UiNode,
     second: &UiNode,
     surface: &RemoteSurface,
+    canvas_cache: &CanvasTextureCache,
 ) {
     const HANDLE_THICKNESS: f32 = 6.0;
     const MIN_PANE_PX: f32 = 40.0;
@@ -255,10 +401,10 @@ fn render_splitter(
     };
 
     ui.scope_builder(egui::UiBuilder::new().max_rect(first_rect), |ui| {
-        ui.push_id("split_first", |ui| render_node(ui, first, surface));
+        ui.push_id("split_first", |ui| render_node(ui, first, surface, canvas_cache));
     });
     ui.scope_builder(egui::UiBuilder::new().max_rect(second_rect), |ui| {
-        ui.push_id("split_second", |ui| render_node(ui, second, surface));
+        ui.push_id("split_second", |ui| render_node(ui, second, surface, canvas_cache));
     });
 
     if let Some(id_str) = id {
