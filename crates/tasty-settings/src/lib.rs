@@ -144,12 +144,12 @@ mod tests {
     fn settings_partial_toml_uses_defaults() {
         let partial = r#"
 [appearance]
-font_size = 18.0
+ui_scale = "large"
 "#;
         let parsed: Settings = toml::from_str(partial).unwrap();
-        // Legacy flat font_size should migrate into default_font.
-        assert_eq!(parsed.appearance.default_font.font_size, 18.0);
-        // Other fields should be defaults
+        assert_eq!(parsed.appearance.ui_scale, "large");
+        // Other fields fall back to defaults.
+        assert_eq!(parsed.appearance.default_font.font_size, 14.0);
         assert!(parsed.notification.enabled);
         assert!(!parsed.general.shell.is_empty());
     }
@@ -172,25 +172,6 @@ font_size = 18.0
     fn settings_font_family_default() {
         let settings = Settings::default();
         assert_eq!(settings.appearance.default_font.font_family, "");
-    }
-
-    #[test]
-    fn legacy_settings_toml_migrates_into_default_font() {
-        let legacy = r#"
-[appearance]
-font_size = 18.0
-font_family = "Fira Code"
-line_height = 1.25
-font_scale_mode = "auto"
-"#;
-        let parsed: Settings = toml::from_str(legacy).unwrap();
-        assert_eq!(parsed.appearance.default_font.font_size, 18.0);
-        assert_eq!(parsed.appearance.default_font.font_family, "Fira Code");
-        assert_eq!(parsed.appearance.default_font.line_height, 1.25);
-        assert_eq!(parsed.appearance.default_font.font_scale_mode, "auto");
-        assert!(parsed.appearance.terminal_font.font_size.is_none());
-        assert!(parsed.appearance.markdown_font.font_size.is_none());
-        assert!(parsed.appearance.explorer_font.font_size.is_none());
     }
 
     #[test]

@@ -1,151 +1,88 @@
 use std::collections::HashSet;
 
-use serde::{Deserialize, Deserializer, Serialize};
-
-/// 문자열과 Vec<String> 모두를 Vec<String>으로 역직렬화하는 필드 헬퍼.
-/// 구 포맷(`new_tab = "alt+t"`)을 새 포맷(`new_tab = ["alt+t"]`)으로 자동 승격한다.
-fn deserialize_binding<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    #[derive(Deserialize)]
-    #[serde(untagged)]
-    enum StringOrVec {
-        S(String),
-        V(Vec<String>),
-    }
-    match StringOrVec::deserialize(deserializer)? {
-        StringOrVec::S(s) => Ok(if s.is_empty() { Vec::new() } else { vec![s] }),
-        StringOrVec::V(v) => Ok(v.into_iter().filter(|s| !s.is_empty()).collect()),
-    }
-}
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct KeybindingSettings {
-    #[serde(deserialize_with = "deserialize_binding")]
     pub new_workspace: Vec<String>,
-    #[serde(deserialize_with = "deserialize_binding")]
     pub new_tab: Vec<String>,
-    #[serde(deserialize_with = "deserialize_binding")]
     pub split_pane_vertical: Vec<String>,
-    #[serde(deserialize_with = "deserialize_binding")]
     pub split_pane_horizontal: Vec<String>,
-    #[serde(deserialize_with = "deserialize_binding")]
     pub split_surface_vertical: Vec<String>,
-    #[serde(deserialize_with = "deserialize_binding")]
     pub split_surface_horizontal: Vec<String>,
-    #[serde(deserialize_with = "deserialize_binding")]
     pub toggle_settings: Vec<String>,
-    #[serde(deserialize_with = "deserialize_binding")]
     pub toggle_notifications: Vec<String>,
-    #[serde(deserialize_with = "deserialize_binding")]
     pub close_pane: Vec<String>,
-    #[serde(deserialize_with = "deserialize_binding")]
     pub close_surface: Vec<String>,
-    #[serde(deserialize_with = "deserialize_binding")]
     pub close_workspace: Vec<String>,
-    #[serde(deserialize_with = "deserialize_binding")]
     pub focus_pane_next: Vec<String>,
-    #[serde(deserialize_with = "deserialize_binding")]
     pub focus_pane_prev: Vec<String>,
-    #[serde(deserialize_with = "deserialize_binding")]
     pub focus_surface_next: Vec<String>,
-    #[serde(deserialize_with = "deserialize_binding")]
     pub focus_surface_prev: Vec<String>,
     /// Modifier for tab switch (number keys): "ctrl" or "alt"
     pub tab_switch_modifier: String,
     /// Modifier for workspace switch (number keys): "ctrl" or "alt"
     pub workspace_switch_modifier: String,
     /// Toggle sidebar visibility (completely hidden/shown).
-    #[serde(deserialize_with = "deserialize_binding")]
     pub toggle_sidebar: Vec<String>,
     /// Toggle sidebar collapse (full/compact mode).
-    #[serde(deserialize_with = "deserialize_binding")]
     pub toggle_sidebar_collapse: Vec<String>,
     /// Restore the most recently closed surface/tab/workspace.
-    #[serde(deserialize_with = "deserialize_binding")]
     pub restore_closed: Vec<String>,
     /// Quit: follows close_behavior setting (ask/minimize/quit).
-    #[serde(deserialize_with = "deserialize_binding")]
     pub quit: Vec<String>,
     /// Immediate quit: force exit, close everything.
-    #[serde(deserialize_with = "deserialize_binding")]
     pub quit_immediate: Vec<String>,
     /// Minimize to background (park state).
-    #[serde(deserialize_with = "deserialize_binding")]
     pub quit_minimize: Vec<String>,
     /// Open Markdown viewer (shows path dialog).
-    #[serde(deserialize_with = "deserialize_binding")]
     pub open_markdown: Vec<String>,
     /// Open file Explorer tab.
-    #[serde(deserialize_with = "deserialize_binding")]
     pub open_explorer: Vec<String>,
     /// Open Surface type convert popup.
-    #[serde(deserialize_with = "deserialize_binding")]
     pub convert_surface: Vec<String>,
     /// Direct convert to Markdown (shows path dialog).
-    #[serde(deserialize_with = "deserialize_binding")]
     pub convert_to_markdown: Vec<String>,
     /// Direct convert to Explorer.
-    #[serde(deserialize_with = "deserialize_binding")]
     pub convert_to_explorer: Vec<String>,
     /// Open a new window.
-    #[serde(deserialize_with = "deserialize_binding")]
     pub new_window: Vec<String>,
     /// Close nearest: tab → pane → workspace.
-    #[serde(deserialize_with = "deserialize_binding")]
     pub close_active: Vec<String>,
     /// Focus next tab in the current pane.
-    #[serde(deserialize_with = "deserialize_binding")]
     pub next_tab: Vec<String>,
     /// Focus previous tab in the current pane.
-    #[serde(deserialize_with = "deserialize_binding")]
     pub prev_tab: Vec<String>,
     /// Toggle the clipboard history viewer popup.
-    #[serde(deserialize_with = "deserialize_binding")]
     pub toggle_clipboard_viewer: Vec<String>,
     /// Open terminal text search bar.
-    #[serde(deserialize_with = "deserialize_binding")]
     pub find: Vec<String>,
     /// Copy selection (or inject egui Copy event) from focused surface.
-    #[serde(deserialize_with = "deserialize_binding")]
     pub copy: Vec<String>,
     /// Copy selected file paths as text (Explorer only).
-    #[serde(deserialize_with = "deserialize_binding")]
     pub copy_path: Vec<String>,
     /// Cut selected files (Explorer only).
-    #[serde(deserialize_with = "deserialize_binding")]
     pub cut: Vec<String>,
     /// Select all files (Explorer only).
-    #[serde(deserialize_with = "deserialize_binding")]
     pub select_all: Vec<String>,
     /// Paste clipboard content into focused terminal / paste files in Explorer.
-    #[serde(deserialize_with = "deserialize_binding")]
     pub paste: Vec<String>,
     /// Increase font size.
-    #[serde(deserialize_with = "deserialize_binding")]
     pub zoom_in: Vec<String>,
     /// Decrease font size.
-    #[serde(deserialize_with = "deserialize_binding")]
     pub zoom_out: Vec<String>,
     /// Reset font size.
-    #[serde(deserialize_with = "deserialize_binding")]
     pub zoom_reset: Vec<String>,
     /// Open the rename dialog for the focused tab.
-    #[serde(deserialize_with = "deserialize_binding")]
     pub rename_tab: Vec<String>,
     /// Open the name rename dialog for the active workspace.
-    #[serde(deserialize_with = "deserialize_binding")]
     pub rename_workspace: Vec<String>,
     /// Open the subtitle rename dialog for the active workspace.
-    #[serde(deserialize_with = "deserialize_binding")]
     pub rename_workspace_subtitle: Vec<String>,
     /// Undo in image editor.
-    #[serde(deserialize_with = "deserialize_binding")]
     pub image_undo: Vec<String>,
     /// Redo in image editor.
-    #[serde(deserialize_with = "deserialize_binding")]
     pub image_redo: Vec<String>,
 }
 
@@ -989,21 +926,15 @@ mod tests {
         assert_eq!(KeybindingSettings::label_key_for("nonexistent"), None);
     }
 
-    /// 구 포맷(단일 String) TOML이 Vec<String>으로 자동 승격되는지 확인.
+    /// 0.4 fresh-start: 단일 string 형식은 reject (Vec 필수).
     #[test]
-    fn legacy_string_format_deserializes_as_single_element_vec() {
-        let toml_str = r#"
-new_tab = "alt+x"
-close_pane = ""
-copy = ["ctrl+c", "ctrl+shift+c"]
-"#;
-        let kb: KeybindingSettings = toml::from_str(toml_str).unwrap();
-        assert_eq!(kb.new_tab, vec!["alt+x".to_string()]);
-        // 빈 문자열은 빈 Vec으로.
-        assert!(kb.close_pane.is_empty());
-        assert_eq!(
-            kb.copy,
-            vec!["ctrl+c".to_string(), "ctrl+shift+c".to_string()]
+    fn single_string_keybinding_rejected() {
+        let toml_str = r#"new_tab = "alt+x""#;
+        let result: Result<KeybindingSettings, _> = toml::from_str(toml_str);
+        assert!(
+            result.is_err(),
+            "single string should be rejected, got: {:?}",
+            result
         );
     }
 

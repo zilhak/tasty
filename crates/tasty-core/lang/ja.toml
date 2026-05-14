@@ -408,3 +408,7 @@ ctrl_c_ignored_after_paste = "貼り付け直後のCtrl+Cを無視しました"
 placeholder = "検索..."
 no_matches = "一致なし"
 match_count = "{current}/{total}"
+
+[theme_error]
+title = "テーマが見つかりません"
+body = "テーマ \"{}\" は存在しません。Catppuccin Mocha にフォールバックしました。"

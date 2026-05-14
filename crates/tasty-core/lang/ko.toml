@@ -408,3 +408,7 @@ ctrl_c_ignored_after_paste = "붙여넣기 직후의 Ctrl+C가 무시되었습�
 placeholder = "검색..."
 no_matches = "일치 항목 없음"
 match_count = "{current}/{total}"
+
+[theme_error]
+title = "테마를 찾을 수 없습니다"
+body = "theme \"{}\" 가 존재하지 않습니다. Catppuccin Mocha 테마로 변경되었습니다."

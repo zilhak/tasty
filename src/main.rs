@@ -374,17 +374,23 @@ impl App {
         window.set_ime_allowed(true);
 
         let mut settings = crate::settings::Settings::load();
-        // Migrate legacy theme names
-        match settings.appearance.theme.as_str() {
-            "dark" => settings.appearance.theme = "catppuccin-mocha".to_string(),
-            "light" => settings.appearance.theme = "catppuccin-latte".to_string(),
-            _ => {}
-        }
-        // Apply saved theme preset at startup
+        // Apply saved theme preset at startup. theme 이름이 preset에 없으면
+        // catppuccin-mocha로 fallback하고 사용자에게 InfoModal로 알린다.
         let presets = crate::theme::presets();
-        if let Some(preset) = presets.iter().find(|p| p.id == settings.appearance.theme) {
+        let invalid_theme_name = if let Some(preset) =
+            presets.iter().find(|p| p.id == settings.appearance.theme)
+        {
             crate::theme::set_theme(preset.theme);
-        }
+            None
+        } else {
+            let invalid = settings.appearance.theme.clone();
+            let fallback_id = "catppuccin-mocha";
+            settings.appearance.theme = fallback_id.to_string();
+            if let Some(default_preset) = presets.iter().find(|p| p.id == fallback_id) {
+                crate::theme::set_theme(default_preset.theme);
+            }
+            Some(invalid)
+        };
         let gpu = pollster::block_on(crate::gpu::GpuState::new(
             window.clone(),
             &settings.appearance,
@@ -407,6 +413,18 @@ impl App {
 
         // Ensure at least one workspace exists for the new window
         state.ensure_workspace_exists();
+
+        // Theme fallback 알림 (잘못된 theme 이름이었던 경우).
+        if let Some(invalid) = invalid_theme_name {
+            crate::ui::info_modal::show_info_modal(
+                &mut state,
+                crate::ui::info_modal::InfoModal {
+                    title: crate::i18n::t("theme_error.title").to_string(),
+                    body: crate::i18n::t_fmt("theme_error.body", &invalid),
+                    on_close: crate::ui::info_modal::InfoModalAction::Continue,
+                },
+            );
+        }
 
         self.register_window(gpu, state, window);
         tracing::info!("created new window {:?}", self.engine.focused_window_id);

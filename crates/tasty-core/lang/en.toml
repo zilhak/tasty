@@ -408,3 +408,7 @@ ctrl_c_ignored_after_paste = "Ctrl+C suppressed right after paste"
 placeholder = "Search..."
 no_matches = "No matches"
 match_count = "{current}/{total}"
+
+[theme_error]
+title = "Theme not found"
+body = "Theme \"{}\" does not exist. Falling back to Catppuccin Mocha."
