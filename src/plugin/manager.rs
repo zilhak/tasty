@@ -227,6 +227,20 @@ impl PluginManager {
         }
     }
 
+    /// plugin이 보조 채널로 알린 dirty rect를 drain. 호스트 렌더링 레이어가 frame
+    /// 합성 직전에 호출한다. 반환된 map의 value가 `None`이면 "전체 갱신" sticky.
+    /// plugin이 죽었거나 보조 채널이 미연결이면 빈 map.
+    #[allow(dead_code)] // 02c-6 통합 테스트 + 렌더링 레이어 연결 시 사용.
+    pub fn take_plugin_dirty_rects(
+        &self,
+        plugin_id: &str,
+    ) -> HashMap<SharedBufferId, Option<tasty_plugin_protocol::Rect>> {
+        self.processes
+            .get(plugin_id)
+            .map(|p| p.take_dirty_rects())
+            .unwrap_or_default()
+    }
+
     /// `host.shared_buffer.create` 처리. 새 공유 메모리 영역을 만들어
     /// 메인 채널 결과(`SharedBufferCreateResult`)와 보조 채널 핸들(`HandleAttach`)을
     /// 양쪽 모두 전송한다.

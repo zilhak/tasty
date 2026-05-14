@@ -8,13 +8,16 @@
 //!
 //! plugin이 응답할 때마다 `last_pong`이 갱신된다. 헬스체크는 `since_last_pong()` 비교.
 
-use std::io::{BufRead, BufReader, Write};
+use std::collections::HashMap;
+use std::io::{self, BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use crate::plugin::handle_channel::{HandleListener, HandleStream};
+use tasty_plugin_protocol::{HandleChannelMessage, Rect, SharedBufferId};
+
+use crate::plugin::handle_channel::{HandleListener, HandleStream, HandleStreamReader};
 use crate::plugin::listener::HostListener;
 use crate::plugin::manifest::{PluginPackage, HOST_API_VERSION};
 use crate::plugin::protocol::{PluginEvent, PluginRequest, PluginResponse};
@@ -26,6 +29,20 @@ const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 /// startup 직후 호출 가능성을 고려해 500ms 여유.
 const HANDLE_STREAM_MATERIALIZE_TIMEOUT: Duration = Duration::from_millis(500);
 
+/// 보조 핸들 채널 상태 머신. spawn 시점에 Pending(rx) 또는 Unavailable로 초기화되고,
+/// 첫 사용 시 Pending → Ready(stream)으로 전이. Ready 전이 시 reader 스레드도 함께
+/// 시작되어 plugin이 보내는 Dirty 메시지를 수신한다.
+enum HandleStreamState {
+    /// 아직 plugin이 보조 채널에 connect하지 않음. mailbox에서 try-recv 대기.
+    Pending(mpsc::Receiver<HandleStream>),
+    /// 한 번 materialize 완료. write 핸들은 Arc로 공유 — reader 스레드가 Pong을
+    /// 응답할 때도 같은 stream을 쓴다.
+    Ready(Arc<Mutex<HandleStream>>),
+    /// 보조 채널 미지원 (handle_listener bind 실패 / Windows stub) 또는 reader
+    /// 분리 실패. 향후 호출이 항상 None을 반환하도록 sticky.
+    Unavailable,
+}
+
 pub struct PluginProcess {
     pub plugin_id: String,
     child: Option<Child>,
@@ -36,14 +53,12 @@ pub struct PluginProcess {
     /// 자식 stdout/stderr가 redirect된 파일 경로. 디버깅/검증 시 직접 참조.
     #[allow(dead_code)]
     pub log_path: PathBuf,
-    /// 보조 핸들 채널 stream을 받을 mailbox. plugin spawn 시 [`HandleListener::register_token`]
-    /// 으로 미리 등록되고, plugin SDK가 connect하면 listener accept thread가 stream을
-    /// 채워 넣는다. spawn은 blocking 없이 즉시 반환하며, 첫 shared buffer 호출 시
-    /// `recv_timeout`으로 stream을 가져와 [`Self::handle_stream`]에 캐싱한다.
-    handle_stream_rx: Mutex<Option<mpsc::Receiver<HandleStream>>>,
-    /// 캐싱된 HandleStream. None이면 아직 materialize 안 됐거나 plugin이 보조 채널 미지원.
-    /// send_handle은 직렬화돼야 하므로 Mutex로 보호.
-    handle_stream: Mutex<Option<HandleStream>>,
+    /// 보조 핸들 채널 상태. 첫 사용 시 Pending → Ready 전이하며 reader 스레드 시작.
+    handle_state: Mutex<HandleStreamState>,
+    /// reader 스레드가 누적하는 dirty rect. `Some(rect)`는 union된 영역, `None`은
+    /// "전체 갱신" sticky flag. 호스트 main loop이 frame 합성 시 `take_dirty_rects`로
+    /// drain한다.
+    dirty_rects: Arc<Mutex<HashMap<SharedBufferId, Option<Rect>>>>,
 }
 
 #[cfg(test)]
@@ -62,8 +77,8 @@ impl PluginProcess {
             event_rx,
             last_pong: Arc::new(Mutex::new(Instant::now())),
             log_path: PathBuf::new(),
-            handle_stream_rx: Mutex::new(None),
-            handle_stream: Mutex::new(None),
+            handle_state: Mutex::new(HandleStreamState::Unavailable),
+            dirty_rects: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }
@@ -208,6 +223,10 @@ impl PluginProcess {
                 }
             })?;
 
+        let initial_state = match handle_stream_rx {
+            Some(rx) => HandleStreamState::Pending(rx),
+            None => HandleStreamState::Unavailable,
+        };
         Ok(Self {
             plugin_id: package.manifest.id.clone(),
             child: Some(child),
@@ -216,39 +235,93 @@ impl PluginProcess {
             event_rx,
             last_pong,
             log_path,
-            handle_stream_rx: Mutex::new(handle_stream_rx),
-            handle_stream: Mutex::new(None),
+            handle_state: Mutex::new(initial_state),
+            dirty_rects: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 
-    /// 보조 핸들 채널 stream을 받아 캐시하고 closure로 노출한다.
+    /// 보조 핸들 채널 stream을 첫 호출 시 materialize한 뒤 closure로 노출한다.
     ///
-    /// 첫 호출은 mailbox에서 짧은 timeout(`HANDLE_STREAM_MATERIALIZE_TIMEOUT`)으로 대기.
-    /// 이후 호출은 캐시 즉시 사용. 보조 채널이 활성화되지 않은 plugin이면 `None`.
+    /// 첫 호출은 mailbox에서 짧은 timeout(`HANDLE_STREAM_MATERIALIZE_TIMEOUT`)으로
+    /// 대기하며, 성공하면 reader 스레드를 함께 spawn해 dirty 수신을 시작한다.
+    /// 이후 호출은 캐시된 stream을 lock한 뒤 closure에 넘긴다. 보조 채널이
+    /// 활성화되지 않은 plugin이면 `None`.
     pub fn with_handle_stream<F, R>(&self, f: F) -> Option<R>
     where
         F: FnOnce(&mut HandleStream) -> R,
     {
-        // 캐시가 비어 있으면 mailbox에서 가져와 채운다.
-        {
-            let mut cache = self.handle_stream.lock().ok()?;
-            if cache.is_none() {
-                let mut rx_guard = self.handle_stream_rx.lock().ok()?;
-                let rx = rx_guard.as_mut()?;
-                match rx.recv_timeout(HANDLE_STREAM_MATERIALIZE_TIMEOUT) {
-                    Ok(stream) => *cache = Some(stream),
-                    Err(_) => {
-                        tracing::warn!(
-                            "plugin '{}' handle stream not yet available",
-                            self.plugin_id
-                        );
-                        return None;
-                    }
-                }
-            }
-            let stream = cache.as_mut()?;
-            Some(f(stream))
+        let arc = self.ensure_handle_stream()?;
+        let mut g = arc.lock().ok()?;
+        Some(f(&mut g))
+    }
+
+    fn ensure_handle_stream(&self) -> Option<Arc<Mutex<HandleStream>>> {
+        let mut state = self.handle_state.lock().ok()?;
+        match &*state {
+            HandleStreamState::Ready(arc) => return Some(arc.clone()),
+            HandleStreamState::Unavailable => return None,
+            HandleStreamState::Pending(_) => {}
         }
+        // Pending → recv_timeout 안에 plugin이 connect했는지 시도.
+        // 실패 시 rx를 다시 Pending에 넣어 후속 호출이 재시도할 수 있게 한다.
+        let rx = match std::mem::replace(&mut *state, HandleStreamState::Unavailable) {
+            HandleStreamState::Pending(rx) => rx,
+            other => {
+                *state = other;
+                return None;
+            }
+        };
+        let stream = match rx.recv_timeout(HANDLE_STREAM_MATERIALIZE_TIMEOUT) {
+            Ok(s) => s,
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                tracing::warn!(
+                    "plugin '{}' handle stream not yet available",
+                    self.plugin_id
+                );
+                *state = HandleStreamState::Pending(rx);
+                return None;
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                // accept thread가 종료됨. 영구적으로 사용 불가.
+                return None;
+            }
+        };
+        let reader = match stream.reader() {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::warn!(
+                    "plugin '{}' handle stream reader split failed: {e}",
+                    self.plugin_id
+                );
+                return None;
+            }
+        };
+        let arc = Arc::new(Mutex::new(stream));
+        let dirty = self.dirty_rects.clone();
+        let writer = arc.clone();
+        let plugin_id = self.plugin_id.clone();
+        if let Err(e) = std::thread::Builder::new()
+            .name(format!("plugin-aux-rx-{}", sanitize_id(&plugin_id)))
+            .spawn(move || aux_reader_loop(reader, dirty, writer, plugin_id))
+        {
+            tracing::warn!(
+                "plugin '{}' aux reader thread spawn failed: {e}",
+                self.plugin_id
+            );
+            return None;
+        }
+        *state = HandleStreamState::Ready(arc.clone());
+        Some(arc)
+    }
+
+    /// reader 스레드가 누적한 dirty rect를 drain. 호스트 main loop이 frame 합성 직전에
+    /// 호출. 반환된 map의 value가 `None`이면 "전체 갱신".
+    #[allow(dead_code)] // 02c-6 통합 테스트에서 사용.
+    pub fn take_dirty_rects(&self) -> HashMap<SharedBufferId, Option<Rect>> {
+        self.dirty_rects
+            .lock()
+            .map(|mut m| std::mem::take(&mut *m))
+            .unwrap_or_default()
     }
 
     /// 자식 프로세스의 OS PID. Windows의 `DuplicateHandle` 대상 식별에 필요.
@@ -347,6 +420,100 @@ fn handle_incoming_line(
     }
 }
 
+/// 보조 채널 reader 스레드의 메시지 처리 루프.
+///
+/// - `Dirty`: `dirty_rects`에 union(coalesce)해 누적.
+/// - `Ping`: 동일 `seq`로 `Pong` 응답.
+/// - `Pong`: 호스트는 ping을 보내지 않으므로 무시(트레이스 로그만).
+/// - `HandleAttach`: plugin→host로 오는 일은 없어야 함. 받으면 fd 즉시 close 후 경고.
+///
+/// EOF가 도착하면 (plugin 종료/재시작 또는 정상 shutdown) 조용히 종료.
+fn aux_reader_loop(
+    mut reader: HandleStreamReader,
+    dirty: Arc<Mutex<HashMap<SharedBufferId, Option<Rect>>>>,
+    writer: Arc<Mutex<HandleStream>>,
+    plugin_id: String,
+) {
+    loop {
+        match reader.recv_message() {
+            Ok((HandleChannelMessage::Dirty { id, rect }, _)) => {
+                merge_dirty(&dirty, id, rect);
+            }
+            Ok((HandleChannelMessage::Ping { seq }, _)) => {
+                if let Ok(mut w) = writer.lock() {
+                    if let Err(e) = w.send_message(&HandleChannelMessage::Pong { seq }) {
+                        tracing::warn!(
+                            "plugin '{plugin_id}' aux Pong send failed: {e}"
+                        );
+                    }
+                }
+            }
+            Ok((HandleChannelMessage::Pong { .. }, _)) => {
+                // 호스트가 Ping을 보내지 않으므로 정상 시나리오에서는 도착하지 않는다.
+            }
+            Ok((HandleChannelMessage::HandleAttach { .. }, aux)) => {
+                tracing::warn!(
+                    "plugin '{plugin_id}' sent unexpected HandleAttach on aux channel"
+                );
+                #[cfg(unix)]
+                if let Some(fd) = aux {
+                    // SAFETY: 동행 fd가 있다면 우리가 SCM_RIGHTS로 받은 새 fd 소유권.
+                    // 사용처가 없으므로 leak 방지를 위해 close.
+                    unsafe { libc::close(fd) };
+                }
+                #[cfg(windows)]
+                let _ = aux;
+            }
+            Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => break,
+            Err(e) => {
+                tracing::warn!(
+                    "plugin '{plugin_id}' aux channel reader error: {e}"
+                );
+                break;
+            }
+        }
+    }
+}
+
+/// 한 buffer의 dirty 상태를 incoming rect와 union한다. value가 `None`이면 "전체 갱신"
+/// sticky flag — 더 이상 좁히지 않는다.
+fn merge_dirty(
+    map: &Arc<Mutex<HashMap<SharedBufferId, Option<Rect>>>>,
+    id: SharedBufferId,
+    incoming: Option<Rect>,
+) {
+    let Ok(mut m) = map.lock() else {
+        return;
+    };
+    match (m.get(&id).copied(), incoming) {
+        (Some(None), _) => {} // 이미 full — 무시.
+        (_, None) => {
+            m.insert(id, None);
+        }
+        (None, Some(r)) => {
+            m.insert(id, Some(r));
+        }
+        (Some(Some(existing)), Some(r)) => {
+            m.insert(id, Some(union_rect(existing, r)));
+        }
+    }
+}
+
+/// 두 정수 rect의 bounding union. tasty-plugin-protocol의 Rect는 (x, y, w, h)이고
+/// w/h=0은 invalid 취급이지만 reader는 wire 그대로 union한다 (필터링은 호출자).
+fn union_rect(a: Rect, b: Rect) -> Rect {
+    let x1 = a.x.min(b.x);
+    let y1 = a.y.min(b.y);
+    let x2 = a.x.saturating_add(a.w).max(b.x.saturating_add(b.w));
+    let y2 = a.y.saturating_add(a.h).max(b.y.saturating_add(b.h));
+    Rect {
+        x: x1,
+        y: y1,
+        w: x2.saturating_sub(x1),
+        h: y2.saturating_sub(y1),
+    }
+}
+
 fn sanitize_id(id: &str) -> String {
     id.chars()
         .map(|c| {
@@ -386,5 +553,53 @@ mod tests {
     fn sanitize_strips_special() {
         assert_eq!(sanitize_id("com.foo/bar:baz"), "com.foo_bar_baz");
         assert_eq!(sanitize_id("com.example-x"), "com.example-x");
+    }
+
+    #[test]
+    fn union_rect_combines_bbox() {
+        let a = Rect { x: 0, y: 0, w: 10, h: 10 };
+        let b = Rect { x: 5, y: 5, w: 10, h: 10 };
+        let u = union_rect(a, b);
+        assert_eq!(u, Rect { x: 0, y: 0, w: 15, h: 15 });
+    }
+
+    #[test]
+    fn union_rect_disjoint_gives_outer_bbox() {
+        let a = Rect { x: 0, y: 0, w: 4, h: 4 };
+        let b = Rect { x: 10, y: 10, w: 5, h: 5 };
+        let u = union_rect(a, b);
+        assert_eq!(u, Rect { x: 0, y: 0, w: 15, h: 15 });
+    }
+
+    #[test]
+    fn merge_dirty_full_is_sticky() {
+        let map: Arc<Mutex<HashMap<SharedBufferId, Option<Rect>>>> =
+            Arc::new(Mutex::new(HashMap::new()));
+        let id = SharedBufferId(1);
+        merge_dirty(&map, id, None);
+        // 이후 Some이 와도 None 유지.
+        merge_dirty(&map, id, Some(Rect { x: 0, y: 0, w: 2, h: 2 }));
+        assert_eq!(map.lock().unwrap().get(&id).copied(), Some(None));
+    }
+
+    #[test]
+    fn merge_dirty_some_unions_with_existing() {
+        let map: Arc<Mutex<HashMap<SharedBufferId, Option<Rect>>>> =
+            Arc::new(Mutex::new(HashMap::new()));
+        let id = SharedBufferId(2);
+        merge_dirty(&map, id, Some(Rect { x: 0, y: 0, w: 5, h: 5 }));
+        merge_dirty(&map, id, Some(Rect { x: 10, y: 10, w: 5, h: 5 }));
+        let got = map.lock().unwrap().get(&id).copied().flatten();
+        assert_eq!(got, Some(Rect { x: 0, y: 0, w: 15, h: 15 }));
+    }
+
+    #[test]
+    fn merge_dirty_some_then_full_becomes_full() {
+        let map: Arc<Mutex<HashMap<SharedBufferId, Option<Rect>>>> =
+            Arc::new(Mutex::new(HashMap::new()));
+        let id = SharedBufferId(3);
+        merge_dirty(&map, id, Some(Rect { x: 0, y: 0, w: 5, h: 5 }));
+        merge_dirty(&map, id, None);
+        assert_eq!(map.lock().unwrap().get(&id).copied(), Some(None));
     }
 }
