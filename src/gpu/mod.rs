@@ -1,3 +1,4 @@
+pub mod canvas_texture;
 mod egui_bridge;
 mod fonts;
 mod render_pass;
@@ -46,6 +47,8 @@ pub struct GpuState {
     pub(super) scale_factor: f32,
     /// Tracks per-surface egui font signatures so we re-register only on change.
     pub(super) surface_font_state: crate::ui::font_registry::SurfaceFontState,
+    /// Plugin Canvas SharedBuffer → wgpu texture cache.
+    pub(super) canvas_textures: canvas_texture::CanvasTextureCache,
     /// When set, the next render will capture the frame to this path as PNG.
     pub pending_screenshot: Option<std::path::PathBuf>,
 }
@@ -184,6 +187,7 @@ impl GpuState {
             egui_renderer,
             scale_factor,
             surface_font_state: crate::ui::font_registry::SurfaceFontState::default(),
+            canvas_textures: canvas_texture::CanvasTextureCache::new(),
             pending_screenshot: None,
         })
     }
