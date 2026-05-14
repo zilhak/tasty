@@ -7,6 +7,7 @@ pub mod markdown_view;
 pub(crate) mod file_open_popup;
 pub mod font_registry;
 pub mod icon;
+pub(crate) mod info_modal;
 pub mod layout_context;
 pub(crate) mod notification;
 pub(crate) mod notification_popup;

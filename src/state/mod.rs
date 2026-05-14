@@ -10,9 +10,12 @@ mod tab;
 mod tests;
 mod workspace;
 
+use std::collections::VecDeque;
+
 use crate::engine_state::EngineState;
 use crate::model::{LogicalPx, PhysicalPx};
 use crate::settings_ui::SettingsUiState;
+use crate::ui::info_modal::InfoModal;
 use tasty_terminal::{Terminal, TerminalEvent, Waker};
 
 /// Type of the currently focused surface, used for keyboard routing.
@@ -182,6 +185,9 @@ pub struct DialogState {
     pub tab_drag: Option<TabDragState>,
     /// Workspace drag-and-drop state.
     pub ws_drag: Option<WsDragState>,
+    /// 부팅 시점 정보/에러 알림용 modal 큐. 큐 head를 [확인] 버튼으로 처리한다.
+    /// `crate::ui::info_modal::show_info_modal()`로 push.
+    pub info_modal_queue: VecDeque<InfoModal>,
 }
 
 /// Tab drag-and-drop state (UI-only, not persisted).
@@ -220,6 +226,7 @@ impl DialogState {
             pending_file_drag: None,
             tab_drag: None,
             ws_drag: None,
+            info_modal_queue: VecDeque::new(),
         }
     }
 

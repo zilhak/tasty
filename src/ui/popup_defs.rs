@@ -94,6 +94,18 @@ pub fn all_defs() -> &'static [PopupDef] {
                 draw_fn: super::search_bar::draw_search_bar,
             },
             PopupDef {
+                id: super::info_modal::INFO_MODAL_ID,
+                title_key: "button.ok",
+                title_fn: Some(super::info_modal::info_modal_title),
+                default_size: egui::vec2(440.0, 160.0),
+                sizer: Some(super::info_modal::info_modal_sizer),
+                default_scope: PopupScope::Window,
+                close_on_outside_click: false,
+                headless: false,
+                sticky_focus: false,
+                draw_fn: super::info_modal::draw_info_modal,
+            },
+            PopupDef {
                 id: "tools_menu",
                 title_key: "tools_menu.title",
                 title_fn: None,
