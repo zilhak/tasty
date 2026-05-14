@@ -3,13 +3,8 @@
 //! Captures the structural tree (workspaces → pane nodes → panes → tabs → surface layouts)
 //! with minimal per-surface info (cwd, file path, url). No screen/scrollback content.
 //!
-//! # Versions
-//!
-//! - **v1** (legacy): `SavedSurface` had explicit `Markdown / Explorer / Html / Image / Empty`
-//!   variants alongside `Terminal`. v1 files are auto-migrated to v2 on load.
-//! - **v2** (current): `SavedSurface` is `Terminal` + `Generic { kind, data }`. New surface
-//!   kinds (including plugins, eventually) round-trip via the SurfaceKindRegistry without
-//!   touching this file.
+//! `SavedSurface` is `Terminal` + `Generic { kind, data }`. New surface kinds (including
+//! plugins) round-trip via the SurfaceKindRegistry without touching this file.
 
 use std::path::PathBuf;
 use std::time::Instant;
@@ -92,9 +87,6 @@ pub enum SavedSplitDirection {
 /// registry would muddle that path. Every other surface kind goes through `Generic`
 /// where the per-kind shape is opaque JSON, defined by the `SurfaceKindDef::snapshot`
 /// / `restore` pair in the registry.
-///
-/// v1 files (separate `Markdown / Explorer / Html / Image / Empty` variants) are
-/// transparently migrated by the manual `Deserialize` impl below.
 #[derive(Serialize)]
 pub enum SavedSurface {
     Terminal {
@@ -113,22 +105,9 @@ pub enum SavedSurface {
 impl<'de> Deserialize<'de> for SavedSurface {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let v = Value::deserialize(d)?;
-        // v1 unit variant was serialised as the bare string "Empty".
-        if let Some(s) = v.as_str() {
-            return match s {
-                "Empty" => Ok(SavedSurface::Generic {
-                    kind: "empty".into(),
-                    data: json!({}),
-                }),
-                other => Err(de::Error::unknown_variant(
-                    other,
-                    &["Terminal", "Generic", "Empty"],
-                )),
-            };
-        }
         let obj = v
             .as_object()
-            .ok_or_else(|| de::Error::custom("SavedSurface must be an object or 'Empty' string"))?;
+            .ok_or_else(|| de::Error::custom("SavedSurface must be an object"))?;
         if obj.len() != 1 {
             return Err(de::Error::custom(
                 "SavedSurface object must have exactly one variant key",
@@ -159,61 +138,7 @@ impl<'de> Deserialize<'de> for SavedSurface {
                 let data = inner.get("data").cloned().unwrap_or_else(|| json!({}));
                 Ok(SavedSurface::Generic { kind, data })
             }
-            // ── v1 migration ───────────────────────────────────────────────
-            "Markdown" => {
-                let path = inner
-                    .get("path")
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| de::Error::custom("v1 Markdown missing 'path'"))?
-                    .to_string();
-                Ok(SavedSurface::Generic {
-                    kind: "markdown".into(),
-                    data: json!({ "path": path }),
-                })
-            }
-            "Explorer" => {
-                let root = inner
-                    .get("root_path")
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| de::Error::custom("v1 Explorer missing 'root_path'"))?
-                    .to_string();
-                Ok(SavedSurface::Generic {
-                    kind: "explorer".into(),
-                    data: json!({ "path": root }),
-                })
-            }
-            "Html" => {
-                let url = inner
-                    .get("url")
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| de::Error::custom("v1 Html missing 'url'"))?
-                    .to_string();
-                Ok(SavedSurface::Generic {
-                    kind: "html".into(),
-                    data: json!({ "url": url }),
-                })
-            }
-            "Image" => {
-                // v1 Image: path is Option<String> — null/absent means blank canvas.
-                let path = inner
-                    .get("path")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string());
-                Ok(SavedSurface::Generic {
-                    kind: "image".into(),
-                    data: json!({ "path": path }),
-                })
-            }
-            "Empty" => Ok(SavedSurface::Generic {
-                kind: "empty".into(),
-                data: json!({}),
-            }),
-            other => Err(de::Error::unknown_variant(
-                other,
-                &[
-                    "Terminal", "Generic", "Markdown", "Explorer", "Html", "Image", "Empty",
-                ],
-            )),
+            other => Err(de::Error::unknown_variant(other, &["Terminal", "Generic"])),
         }
     }
 }
@@ -791,81 +716,10 @@ mod migration_tests {
     }
 
     #[test]
-    fn v1_markdown_migrates_to_generic() {
-        match parse(r#"{"Markdown":{"path":"/tmp/x.md"}}"#) {
-            SavedSurface::Generic { kind, data } => {
-                assert_eq!(kind, "markdown");
-                assert_eq!(data["path"], "/tmp/x.md");
-            }
-            other => panic!("expected Generic, got {:?}", serde_json::to_string(&other)),
-        }
-    }
-
-    #[test]
-    fn v1_explorer_renames_root_path_to_path() {
-        match parse(r#"{"Explorer":{"root_path":"/home/u/proj"}}"#) {
-            SavedSurface::Generic { kind, data } => {
-                assert_eq!(kind, "explorer");
-                assert_eq!(data["path"], "/home/u/proj");
-            }
-            _ => panic!("expected Generic"),
-        }
-    }
-
-    #[test]
-    fn v1_html_migrates() {
-        match parse(r#"{"Html":{"url":"https://example.com"}}"#) {
-            SavedSurface::Generic { kind, data } => {
-                assert_eq!(kind, "html");
-                assert_eq!(data["url"], "https://example.com");
-            }
-            _ => panic!("expected Generic"),
-        }
-    }
-
-    #[test]
-    fn v1_image_with_path_migrates() {
-        match parse(r#"{"Image":{"path":"/tmp/p.png"}}"#) {
-            SavedSurface::Generic { kind, data } => {
-                assert_eq!(kind, "image");
-                assert_eq!(data["path"], "/tmp/p.png");
-            }
-            _ => panic!("expected Generic"),
-        }
-    }
-
-    #[test]
-    fn v1_image_with_null_path_migrates_to_blank() {
-        match parse(r#"{"Image":{"path":null}}"#) {
-            SavedSurface::Generic { kind, data } => {
-                assert_eq!(kind, "image");
-                assert!(data["path"].is_null());
-            }
-            _ => panic!("expected Generic"),
-        }
-    }
-
-    #[test]
-    fn v1_empty_string_form_migrates() {
-        // v1 unit variant serialised as bare "Empty".
-        match parse(r#""Empty""#) {
-            SavedSurface::Generic { kind, data } => {
-                assert_eq!(kind, "empty");
-                assert!(data.is_object());
-            }
-            _ => panic!("expected Generic"),
-        }
-    }
-
-    #[test]
-    fn v1_empty_object_form_migrates() {
-        // {"Empty": {}} 또는 {"Empty": null} 형태도 가능.
-        match parse(r#"{"Empty":{}}"#) {
-            SavedSurface::Generic { kind, .. } => {
-                assert_eq!(kind, "empty");
-            }
-            _ => panic!("expected Generic"),
-        }
+    fn v1_markdown_now_fails_to_parse() {
+        let result: Result<SavedSurface, _> =
+            serde_json::from_str(r#"{"Markdown":{"path":"/tmp/x.md"}}"#);
+        assert!(result.is_err());
     }
 
     #[test]
