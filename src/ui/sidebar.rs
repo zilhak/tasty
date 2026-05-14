@@ -275,7 +275,7 @@ pub fn draw_full_sidebar(
                     {
                         let full_width = ui.available_width();
                         let (rect, resp) = ui.allocate_exact_size(
-                            egui::vec2(full_width, 22.0),
+                            egui::vec2(full_width, 28.0),
                             egui::Sense::click().union(egui::Sense::hover()),
                         );
                         if resp.hovered() {
@@ -289,7 +289,7 @@ pub fn draw_full_sidebar(
                             rect.center(),
                             egui::Align2::CENTER_CENTER,
                             t("sidebar.tools_button"),
-                            egui::FontId::proportional(11.0),
+                            egui::FontId::proportional(12.0),
                             if resp.hovered() {
                                 th.subtext1.into()
                             } else {
@@ -306,7 +306,7 @@ pub fn draw_full_sidebar(
                     {
                         let full_width = ui.available_width();
                         let (collapse_rect, collapse_resp) = ui.allocate_exact_size(
-                            egui::vec2(full_width, 22.0),
+                            egui::vec2(full_width, 28.0),
                             egui::Sense::click().union(egui::Sense::hover()),
                         );
                         if collapse_resp.hovered() {
@@ -320,7 +320,7 @@ pub fn draw_full_sidebar(
                             collapse_rect.center(),
                             egui::Align2::CENTER_CENTER,
                             "<  Collapse",
-                            egui::FontId::proportional(11.0),
+                            egui::FontId::proportional(12.0),
                             if collapse_resp.hovered() {
                                 th.subtext1.into()
                             } else {
