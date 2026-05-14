@@ -67,6 +67,9 @@ pub struct WindowCtx<'a> {
     pub event_loop: &'a ActiveEventLoop,
     /// 현재 모달 윈도우가 활성 상태인지. true면 비모달 윈도우는 입력을 차단해야 한다.
     pub modal_active: bool,
+    /// 현재 active plugin manager. 메인 윈도우가 frame prepare 시 plugin canvas의
+    /// SharedMemory와 dirty rect에 접근하기 위해 사용한다. plugin 비활성 빌드/초기 시점에는 None.
+    pub plugin_manager: Option<&'a crate::plugin::PluginManager>,
 }
 
 /// Sealed 모듈 — 외부에서 `Window`를 직접 구현하지 못하게 차단한다.

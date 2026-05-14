@@ -301,7 +301,7 @@ impl Window for MainWindow {
                 self.handle_mouse_wheel(delta, egui_consumed);
             }
             WindowEvent::RedrawRequested => {
-                self.handle_redraw(ctx.event_loop);
+                self.handle_redraw(ctx.event_loop, ctx.plugin_manager);
             }
             _ => {}
         }

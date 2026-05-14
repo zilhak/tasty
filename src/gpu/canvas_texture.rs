@@ -229,7 +229,9 @@ fn create_entry(
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format: wgpu_format,
-        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING
+            | wgpu::TextureUsages::COPY_DST
+            | wgpu::TextureUsages::COPY_SRC,
         view_formats: &[],
     });
     let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
@@ -276,6 +278,150 @@ fn clip_rect(r: Rect, tex_w: u32, tex_h: u32) -> Option<ClippedRect> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::Ordering;
+
+    /// 32×32 RGBA를 plugin SharedMemory에 채우고 footer.fetch_add → host가 wgpu
+    /// 텍스처에 업로드 → 다시 staging buffer로 readback → 픽셀이 보존되는지 확인.
+    ///
+    /// `#[ignore]`로 표시: 일부 CI 환경에 GPU adapter가 없거나 unsafe driver라 hang/abort.
+    /// 로컬에서 `cargo test --bin tasty -- --ignored canvas_e2e` 로 검증.
+    #[test]
+    #[ignore = "GPU adapter 필요 — 로컬에서만 실행"]
+    fn canvas_e2e_upload_and_readback() {
+        const W: u32 = 32;
+        const H: u32 = 32;
+        const BPP: usize = 4;
+        const ROW_BYTES: u32 = W * (BPP as u32);
+        // wgpu copy_texture_to_buffer는 bytes_per_row를 256 align 요구.
+        const PADDED_ROW_BYTES: u32 = 256;
+
+        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::all(),
+            ..Default::default()
+        });
+        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+            power_preference: wgpu::PowerPreference::default(),
+            compatible_surface: None,
+            force_fallback_adapter: false,
+        }))
+        .expect("no GPU adapter");
+        let (device, queue) = pollster::block_on(adapter.request_device(
+            &wgpu::DeviceDescriptor {
+                label: Some("canvas_e2e_device"),
+                required_features: wgpu::Features::empty(),
+                required_limits: wgpu::Limits::default(),
+                memory_hints: wgpu::MemoryHints::Performance,
+                ..Default::default()
+            },
+            None,
+        ))
+        .expect("device");
+
+        // egui renderer는 ensure에 필요하지만 본 테스트는 readback만 본다.
+        let mut egui_renderer =
+            egui_wgpu::Renderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb, None, 1, false);
+
+        // SharedMemory 생성: user data 영역 = W*H*BPP, footer 별도.
+        let total = (W as usize) * (H as usize) * BPP + tasty_shm::footer::SIZE;
+        let (mem, _send) = tasty_shm::create(total).expect("shm create");
+
+        // Plugin 측: 픽셀 채우고 footer fetch_add(Release).
+        // SAFETY: 본 테스트가 SharedMemory의 유일한 사용자. 단일 스레드에서 write 후 read만 한다.
+        unsafe {
+            let raw = mem.as_mut_slice();
+            let user = tasty_shm::footer::user_slice_mut(raw);
+            // 픽셀당 (R=0xAB, G=0xCD, B=0xEF, A=0xFF).
+            for px in user.chunks_exact_mut(BPP) {
+                px[0] = 0xAB;
+                px[1] = 0xCD;
+                px[2] = 0xEF;
+                px[3] = 0xFF;
+            }
+            let prev = tasty_shm::footer::fetch_add(raw, 1, Ordering::Release);
+            assert_eq!(prev, 0);
+        }
+
+        // Host 측: ensure + upload.
+        let key = CanvasKey {
+            plugin_id: "test".to_string(),
+            buffer_id: SharedBufferId(1),
+        };
+        let mut cache = CanvasTextureCache::new();
+        cache.ensure(
+            &key,
+            &device,
+            &mut egui_renderer,
+            W,
+            H,
+            PixelFormat::Rgba8,
+            PixelFilter::Linear,
+        );
+        // SAFETY: 동일 SharedMemory에 다른 writer가 없다.
+        unsafe {
+            let raw = mem.as_slice();
+            let generation = tasty_shm::footer::load(raw, Ordering::Acquire);
+            assert_eq!(generation, 1);
+            let user = tasty_shm::footer::user_slice(raw);
+            cache.upload_if_dirty(&key, &queue, user, generation, None);
+        }
+
+        // Readback: texture → padded staging buffer → map.
+        let entry = cache.entries.get(&key).expect("cache entry");
+        let staging = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("canvas_e2e_readback"),
+            size: (PADDED_ROW_BYTES * H) as u64,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("canvas_e2e_encoder"),
+        });
+        encoder.copy_texture_to_buffer(
+            wgpu::TexelCopyTextureInfo {
+                texture: &entry._texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyBufferInfo {
+                buffer: &staging,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(PADDED_ROW_BYTES),
+                    rows_per_image: Some(H),
+                },
+            },
+            wgpu::Extent3d {
+                width: W,
+                height: H,
+                depth_or_array_layers: 1,
+            },
+        );
+        queue.submit(std::iter::once(encoder.finish()));
+
+        let buffer_slice = staging.slice(..);
+        let (tx, rx) = std::sync::mpsc::channel();
+        buffer_slice.map_async(wgpu::MapMode::Read, move |res| {
+            let _ = tx.send(res);
+        });
+        device.poll(wgpu::Maintain::Wait);
+        rx.recv().expect("map_async result").expect("map ok");
+        let data = buffer_slice.get_mapped_range();
+
+        // 각 row의 첫 ROW_BYTES만 유효, 나머지는 padding.
+        for row in 0..H as usize {
+            let off = row * (PADDED_ROW_BYTES as usize);
+            assert_eq!(data[off], 0xAB, "row {row} pixel 0 R");
+            assert_eq!(data[off + 1], 0xCD, "row {row} pixel 0 G");
+            assert_eq!(data[off + 2], 0xEF, "row {row} pixel 0 B");
+            assert_eq!(data[off + 3], 0xFF, "row {row} pixel 0 A");
+            // row의 마지막 픽셀도 확인.
+            let last_px_off = off + (ROW_BYTES as usize) - BPP;
+            assert_eq!(data[last_px_off], 0xAB, "row {row} last R");
+        }
+        drop(data);
+        staging.unmap();
+    }
 
     #[test]
     fn clip_rect_within_bounds() {

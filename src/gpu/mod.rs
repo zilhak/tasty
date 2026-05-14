@@ -1,3 +1,4 @@
+mod canvas_prepare;
 pub mod canvas_texture;
 mod egui_bridge;
 mod fonts;
@@ -222,6 +223,7 @@ impl GpuState {
         preedit: Option<&ImePreeditState>,
         selection: Option<&crate::selection::TextSelection>,
         link_hover: Option<(u32, &crate::terminal_link::LinkHighlight)>,
+        plugin_manager: Option<&crate::plugin::PluginManager>,
     ) -> Result<(), wgpu::SurfaceError> {
         let render_start = std::time::Instant::now();
 
@@ -259,6 +261,11 @@ impl GpuState {
             &state.engine.settings.appearance,
             &mut self.surface_font_state,
         );
+
+        // 2b. Plugin Canvas 텍스처 prepare. egui 프레임 시작 전 GPU 자원 갱신.
+        if let Some(mgr) = plugin_manager {
+            self.prepare_plugin_canvases(state, mgr);
+        }
 
         // 3. Run egui frame (UI drawing)
         let t0 = std::time::Instant::now();

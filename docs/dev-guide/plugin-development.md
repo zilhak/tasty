@@ -185,6 +185,28 @@ fn main() -> anyhow::Result<()> {
 
 `id`는 plugin이 정한 문자열로, 이벤트 라우팅에 그대로 echo된다.
 
+### 캔버스 (픽셀 출력)
+
+플러그인이 픽셀 단위 그림을 그리는 경로 — 이미지 디코딩, 차트, 픽셀 아트 등.
+
+| 빌더 | 설명 |
+|------|------|
+| `canvas(buffer_id, w, h)` | RGBA8 sRGB + Linear filter, hit-test 비활성 |
+| `canvas_with_id(id, buffer_id, w, h)` | 마우스 입력을 받는 canvas (`UiEvent::CanvasPointer` 라우팅) |
+| `canvas_full(id, buffer_id, w, h, fmt, filter)` | 포맷·필터 직접 지정 (`PixelFormat::{Rgba8,Bgra8}` / `PixelFilter::{Linear,Nearest}`) |
+
+1. `host.shared_buffer.create(size)`로 SharedBuffer 확보 — 크기는 `w × h × bpp + tasty_shm::footer::SIZE`.
+2. `SharedBuffer::as_mut_slice()`로 user 영역에 RGBA 직접 write (footer는 SDK가 가린다).
+3. `SharedBuffer::commit(rect)` — atomic generation을 1 증가하고 host에 dirty 영역 통지. `rect=None`은 전체 갱신.
+4. 다음 frame에서 호스트가 `(plugin_id, buffer_id) → wgpu::Texture` 캐시에 부분 업로드 후 egui로 합성.
+
+**입력**: 호스트가 캔버스 hit-test 결과를 `UiEvent::CanvasPointer { node_id, x, y, phase, button }`으로 전달. 좌표는 canvas-local 픽셀 단위. `phase`는 `Move/Down/Up/Drag/Leave`.
+
+**제한** (Phase 1):
+- 한 buffer 위에서 동시에 mutate하지 말 것 — 같은 frame 안에서는 한 `commit`만.
+- `width × height × bpp + footer > buffer.len()`이면 호스트가 frame 단위로 거부하고 warn 로그.
+- 텍스처 격리 GC는 plugin 종료 시 일괄 처리. 한 plugin이 buffer를 destroy해도 그 entry는 plugin 전체가 끝날 때까지 cache에 머문다 (Phase 1 한계).
+
 ## 4. 이벤트 처리
 
 `UiEvent`는 호스트가 사용자 입력을 모아 `surface.event`로 한 번에 보낸다. plugin은 `handle_event`에서 받아 처리하고 새 tree를 반환하면 된다.

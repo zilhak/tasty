@@ -4,8 +4,9 @@
 //! 모양을 함수로 노출한다.
 
 use tasty_plugin_protocol::ui_tree::{
-    ButtonStyle, LabelStyle, SelectionMode, SplitDir, TreeNode, UiNode,
+    ButtonStyle, LabelStyle, PixelFilter, PixelFormat, SelectionMode, SplitDir, TreeNode, UiNode,
 };
+use tasty_plugin_protocol::SharedBufferId;
 
 pub fn vbox(children: impl IntoIterator<Item = UiNode>) -> UiNode {
     UiNode::Vbox {
@@ -155,4 +156,57 @@ pub fn text_preview_lang(content: impl Into<String>, language: impl Into<String>
 
 pub fn spacer(size: u32) -> UiNode {
     UiNode::Spacer { size }
+}
+
+/// Plugin Canvas — RGBA8 sRGB + Linear filter 기본. hit-test 비활성.
+///
+/// SharedBuffer 크기는 `width * height * 4 + tasty_shm::footer::SIZE`이어야 한다.
+pub fn canvas(buffer_id: SharedBufferId, width: u32, height: u32) -> UiNode {
+    UiNode::Canvas {
+        buffer_id,
+        width,
+        height,
+        format: PixelFormat::Rgba8,
+        filter: PixelFilter::Linear,
+        commit_seq: 0,
+        id: None,
+    }
+}
+
+/// hit-test 가능한 canvas — 마우스 입력이 [`tasty_plugin_protocol::UiEvent::CanvasPointer`]로 전달된다.
+pub fn canvas_with_id(
+    id: impl Into<String>,
+    buffer_id: SharedBufferId,
+    width: u32,
+    height: u32,
+) -> UiNode {
+    UiNode::Canvas {
+        buffer_id,
+        width,
+        height,
+        format: PixelFormat::Rgba8,
+        filter: PixelFilter::Linear,
+        commit_seq: 0,
+        id: Some(id.into()),
+    }
+}
+
+/// 포맷/필터를 직접 지정하는 canvas. 일반적으로 [`canvas`]·[`canvas_with_id`]면 충분하다.
+pub fn canvas_full(
+    id: Option<String>,
+    buffer_id: SharedBufferId,
+    width: u32,
+    height: u32,
+    format: PixelFormat,
+    filter: PixelFilter,
+) -> UiNode {
+    UiNode::Canvas {
+        buffer_id,
+        width,
+        height,
+        format,
+        filter,
+        commit_seq: 0,
+        id,
+    }
 }

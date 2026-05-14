@@ -230,7 +230,6 @@ impl PluginManager {
     /// plugin이 보조 채널로 알린 dirty rect를 drain. 호스트 렌더링 레이어가 frame
     /// 합성 직전에 호출한다. 반환된 map의 value가 `None`이면 "전체 갱신" sticky.
     /// plugin이 죽었거나 보조 채널이 미연결이면 빈 map.
-    #[allow(dead_code)] // 02c-6 통합 테스트 + 렌더링 레이어 연결 시 사용.
     pub fn take_plugin_dirty_rects(
         &self,
         plugin_id: &str,
@@ -239,6 +238,22 @@ impl PluginManager {
             .get(plugin_id)
             .map(|p| p.take_dirty_rects())
             .unwrap_or_default()
+    }
+
+    /// (plugin_id, buffer_id)에 해당하는 호스트 측 매핑된 [`SharedMemory`] 참조.
+    /// 캔버스 렌더 시 atomic generation + user data를 읽기 위해 사용.
+    pub fn plugin_buffer(
+        &self,
+        plugin_id: &str,
+        buffer_id: SharedBufferId,
+    ) -> Option<&SharedMemory> {
+        self.plugin_buffers.get(plugin_id)?.get(&buffer_id)
+    }
+
+    /// 활성 plugin 목록 (`SharedBuffer`를 보유 중인 plugin만). canvas prepare가 iterating
+    /// 시 사용.
+    pub fn plugin_ids_with_buffers(&self) -> Vec<String> {
+        self.plugin_buffers.keys().cloned().collect()
     }
 
     /// `host.shared_buffer.create` 처리. 새 공유 메모리 영역을 만들어

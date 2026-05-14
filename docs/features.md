@@ -1131,6 +1131,7 @@ Claude Code 등 TUI 앱이 실행 중이던 터미널을 복원할 때, 해당 �
 - 호스트가 사용자 이벤트를 모아 `surface.event`로 plugin에 송신 (click/key/tree_*/addressbar_*/scroll/splitter_drag/focus_changed/resize)
 - `RemoteSurface` 어댑터가 layout tree에 끼워지므로 본체 surface와 동등하게 split/tab 가능
 - **Draggable splitter**: `UiNode::Splitter`의 `id: Option<String>`이 `Some`이면 호스트가 divider에 6px hit-test 영역 + 1px 중앙선을 그리고, 드래그하면 `UiEvent::SplitterDrag { node_id, ratio }`를 plugin에 송신. 부드러운 시각 피드백을 위해 egui memory에 사용자 ratio를 저장하며 plugin이 다른 값으로 응답 시 동기화. 양쪽 pane은 최소 40px 보장. SDK 헬퍼: `ui::splitter_id(id, dir, ratio, first, second)`
+- **Canvas (픽셀 출력)**: `UiNode::Canvas { buffer_id, width, height, format, filter }` — plugin이 SharedBuffer에 RGBA 픽셀을 직접 쓰면 호스트가 wgpu 텍스처에 dirty rect만 부분 업로드해 egui로 합성. `tasty-shm` footer 8B `AtomicU64` generation으로 tear-free 동기화 (plugin Release-fetch_add → host Acquire-load). 포맷은 `Rgba8`/`Bgra8` (sRGB 해석), 샘플링 필터는 `Linear`/`Nearest`. `id`가 있으면 마우스 입력이 `UiEvent::CanvasPointer { node_id, x, y, phase, button }`로 라우팅 (phase: Move/Down/Up/Drag/Leave). SDK 헬퍼: `ui::canvas`, `ui::canvas_with_id`, `ui::canvas_full`
 
 ### 권한 모델
 - 매니페스트의 `permissions = [...]`에 권한 토큰 (surface.read/write, notification, clipboard.read/write, fs.read/write, process.spawn, terminal.*, network, 그리고 `ipc.invoke:<plugin-prefix>`로 다른 plugin의 namespace 호출 권한) 선언

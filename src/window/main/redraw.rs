@@ -1,11 +1,16 @@
 use winit::event_loop::ActiveEventLoop;
 
+use crate::plugin::PluginManager;
 use crate::window::Window;
 
 use super::MainWindow;
 
 impl MainWindow {
-    pub(super) fn handle_redraw(&mut self, _event_loop: &ActiveEventLoop) {
+    pub(super) fn handle_redraw(
+        &mut self,
+        _event_loop: &ActiveEventLoop,
+        plugin_manager: Option<&PluginManager>,
+    ) {
         // Check if settings button was clicked (ui.rs sets state.settings_open = true)
         if self.state.settings_open {
             self.state.settings_open = false;
@@ -157,6 +162,7 @@ impl MainWindow {
                 self.ime_preedit.as_ref(),
                 self.text_selection.as_ref(),
                 link_hover,
+                plugin_manager,
             ) {
                 Ok(()) => {}
                 Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {

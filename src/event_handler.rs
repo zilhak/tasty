@@ -267,6 +267,7 @@ impl ApplicationHandler<AppEvent> for App {
                     let mut ctx = WindowCtx {
                         event_loop,
                         modal_active: false,
+                        plugin_manager: self.plugin_manager.as_ref(),
                     };
                     modal.handle_event(event, &mut ctx)
                 } else {
@@ -362,6 +363,7 @@ impl ApplicationHandler<AppEvent> for App {
             let mut ctx = WindowCtx {
                 event_loop,
                 modal_active,
+                plugin_manager: self.plugin_manager.as_ref(),
             };
             let _ = w.handle_event(event, &mut ctx);
 
