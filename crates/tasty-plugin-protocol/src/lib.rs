@@ -25,5 +25,6 @@ pub use protocol::{
     METHOD_SURFACE_RESTORE, METHOD_SURFACE_SNAPSHOT,
 };
 pub use ui_tree::{
-    ButtonStyle, LabelStyle, SelectionMode, SplitDir, TreeNode, UiEvent, UiNode,
+    ButtonStyle, CanvasPointerButton, CanvasPointerPhase, LabelStyle, PixelFilter, PixelFormat,
+    SelectionMode, SplitDir, TreeNode, UiEvent, UiNode,
 };

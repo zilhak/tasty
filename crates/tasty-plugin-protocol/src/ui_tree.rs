@@ -4,9 +4,11 @@
 //! null이면 호스트는 이전 트리를 그대로 사용 (변경 없음).
 //!
 //! 위젯 v1: vbox/hbox/scroll/splitter, label/icon, button/tree/addressbar/text_preview,
-//! spacer. 더 풍부한 위젯은 호스트 버전 업과 함께 추가.
+//! spacer, canvas. 더 풍부한 위젯은 호스트 버전 업과 함께 추가.
 
 use serde::{Deserialize, Serialize};
+
+use crate::protocol::SharedBufferId;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -82,6 +84,35 @@ pub enum UiNode {
     Spacer {
         size: u32,
     },
+
+    /// SharedBuffer에 plugin이 직접 그린 raster를 노출하는 텍스처 영역.
+    ///
+    /// 호스트는 `(plugin_id, buffer_id)`를 키로 GPU 텍스처를 캐시하고, `Dirty` 메시지를
+    /// 받은 영역만 staging 경로로 부분 업로드한다. plugin은 [`crate::SharedBufferId`]를
+    /// 받아 영역에 픽셀을 쓰고 commit하면 호스트가 일관된 frame을 합성한다.
+    ///
+    /// `id`가 있으면 마우스 입력이 [`UiEvent::CanvasPointer`]로 라우팅된다.
+    Canvas {
+        /// 호스트가 부여한 SharedBuffer id. plugin이 `host.create_shared_buffer`로 받음.
+        buffer_id: SharedBufferId,
+        /// 픽셀 width. `width * height * format.bytes_per_pixel() + 8(footer) ≤ buffer.len()`
+        /// 이어야 한다 (호스트가 검증).
+        width: u32,
+        /// 픽셀 height.
+        height: u32,
+        /// 픽셀 포맷.
+        format: PixelFormat,
+        /// 텍스처 샘플링 보간. 기본 [`PixelFilter::Linear`].
+        #[serde(default)]
+        filter: PixelFilter,
+        /// 이 트리 스냅샷이 짝지어진 commit generation 번호 (디버깅·일관성 보조 용도).
+        /// 호스트는 atomic load 값을 우선 사용한다.
+        #[serde(default)]
+        commit_seq: u64,
+        /// 마우스 입력을 받기 위한 node id. None이면 hit-test 비활성.
+        #[serde(default)]
+        id: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -129,6 +160,42 @@ pub enum SelectionMode {
     #[default]
     Single,
     Multi,
+}
+
+/// `UiNode::Canvas` 픽셀 포맷.
+///
+/// 두 variant 모두 4바이트/픽셀이며 **sRGB 채널로 해석**된다. 호스트는 wgpu에서
+/// `Rgba8UnormSrgb` / `Bgra8UnormSrgb`로 매핑하므로 plugin이 8-bit per channel sRGB로
+/// 그대로 쓰면 감마 보정이 GPU에서 자동 적용된다. 향후 linear-space variant
+/// (`Rgba8Linear`)가 추가될 수 있으며 wire는 backward-compatible하다.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PixelFormat {
+    /// 4바이트/픽셀 RGBA8, sRGB.
+    #[default]
+    Rgba8,
+    /// 4바이트/픽셀 BGRA8, sRGB (Windows/Direct2D 호환 채널 순서).
+    Bgra8,
+}
+
+impl PixelFormat {
+    /// 픽셀당 바이트 수.
+    pub fn bytes_per_pixel(self) -> u32 {
+        match self {
+            PixelFormat::Rgba8 | PixelFormat::Bgra8 => 4,
+        }
+    }
+}
+
+/// `UiNode::Canvas` 텍스처 샘플링 필터.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum PixelFilter {
+    /// 최근접 픽셀. dot art / 픽셀 정렬이 중요할 때.
+    Nearest,
+    /// 양선형 보간. 일반적인 이미지/비디오.
+    #[default]
+    Linear,
 }
 
 fn default_true() -> bool {
@@ -185,6 +252,47 @@ pub enum UiEvent {
         width: u32,
         height: u32,
     },
+    /// `UiNode::Canvas` 영역 위 마우스 포인터 이벤트.
+    ///
+    /// 좌표는 canvas-local 픽셀 좌표 (0..width, 0..height). 호스트는 frame 당 최대 1개로
+    /// throttling — 빠른 마우스 이동에서는 마지막 sample만 plugin에 전달된다.
+    CanvasPointer {
+        node_id: String,
+        x: f32,
+        y: f32,
+        phase: CanvasPointerPhase,
+        /// 눌려있는 버튼 (Down/Drag에 의미). Move/Leave에선 보통 None.
+        #[serde(default)]
+        button: Option<CanvasPointerButton>,
+    },
+}
+
+/// `UiEvent::CanvasPointer` 포인터 단계.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum CanvasPointerPhase {
+    /// 버튼 없이 포인터 이동.
+    Move,
+    /// 버튼이 canvas 영역 안에서 눌림.
+    Down,
+    /// 버튼이 해제됨 (canvas 밖에서 해제되어도 forward).
+    Up,
+    /// Down 이후 버튼 유지 채 이동.
+    Drag,
+    /// 포인터가 canvas 영역을 벗어남.
+    Leave,
+}
+
+/// `UiEvent::CanvasPointer` 버튼 종류.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum CanvasPointerButton {
+    /// 주 버튼 (보통 왼쪽).
+    Primary,
+    /// 보조 버튼 (보통 오른쪽).
+    Secondary,
+    /// 가운데 버튼.
+    Middle,
 }
 
 #[cfg(test)]
@@ -300,5 +408,109 @@ mod tests {
         assert!(s.contains("\"kind\":\"tree_select\""));
         let parsed: UiEvent = serde_json::from_str(&s).unwrap();
         assert_eq!(parsed, ev);
+    }
+
+    #[test]
+    fn canvas_round_trip_with_defaults() {
+        // filter/commit_seq/id를 생략하면 wire에 빠지고, 디코딩 시 기본값(Linear / 0 / None)
+        // 으로 채워진다.
+        let n = UiNode::Canvas {
+            buffer_id: SharedBufferId(7),
+            width: 320,
+            height: 200,
+            format: PixelFormat::Rgba8,
+            filter: PixelFilter::Linear,
+            commit_seq: 0,
+            id: None,
+        };
+        let s = serde_json::to_string(&n).unwrap();
+        assert!(s.contains("\"type\":\"canvas\""));
+        assert!(s.contains("\"format\":\"rgba8\""));
+        let parsed: UiNode = serde_json::from_str(&s).unwrap();
+        assert_eq!(parsed, n);
+
+        // 명시적으로 filter/id를 지정해도 round-trip.
+        let n2 = UiNode::Canvas {
+            buffer_id: SharedBufferId(9),
+            width: 16,
+            height: 16,
+            format: PixelFormat::Bgra8,
+            filter: PixelFilter::Nearest,
+            commit_seq: 42,
+            id: Some("draw".into()),
+        };
+        let s2 = serde_json::to_string(&n2).unwrap();
+        assert!(s2.contains("\"filter\":\"nearest\""));
+        assert!(s2.contains("\"commit_seq\":42"));
+        let parsed2: UiNode = serde_json::from_str(&s2).unwrap();
+        assert_eq!(parsed2, n2);
+    }
+
+    #[test]
+    fn canvas_minimal_json_decodes() {
+        // plugin 쪽이 optional 필드를 생략한 최소 페이로드를 보내도 디코딩이 성공해야 한다.
+        let json = r#"{
+            "type": "canvas",
+            "buffer_id": 11,
+            "width": 64,
+            "height": 64,
+            "format": "rgba8"
+        }"#;
+        let parsed: UiNode = serde_json::from_str(json).unwrap();
+        match parsed {
+            UiNode::Canvas {
+                buffer_id,
+                width,
+                height,
+                format,
+                filter,
+                commit_seq,
+                id,
+            } => {
+                assert_eq!(buffer_id.0, 11);
+                assert_eq!(width, 64);
+                assert_eq!(height, 64);
+                assert_eq!(format, PixelFormat::Rgba8);
+                assert_eq!(filter, PixelFilter::Linear);
+                assert_eq!(commit_seq, 0);
+                assert_eq!(id, None);
+            }
+            other => panic!("expected Canvas, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn pixel_format_bytes_per_pixel() {
+        assert_eq!(PixelFormat::Rgba8.bytes_per_pixel(), 4);
+        assert_eq!(PixelFormat::Bgra8.bytes_per_pixel(), 4);
+    }
+
+    #[test]
+    fn ui_event_canvas_pointer_round_trip() {
+        let ev = UiEvent::CanvasPointer {
+            node_id: "draw".into(),
+            x: 12.5,
+            y: 7.0,
+            phase: CanvasPointerPhase::Drag,
+            button: Some(CanvasPointerButton::Primary),
+        };
+        let s = serde_json::to_string(&ev).unwrap();
+        assert!(s.contains("\"kind\":\"canvas_pointer\""));
+        assert!(s.contains("\"phase\":\"drag\""));
+        assert!(s.contains("\"button\":\"primary\""));
+        let parsed: UiEvent = serde_json::from_str(&s).unwrap();
+        assert_eq!(parsed, ev);
+
+        // button 생략(Move/Leave 등).
+        let ev2 = UiEvent::CanvasPointer {
+            node_id: "draw".into(),
+            x: 0.0,
+            y: 0.0,
+            phase: CanvasPointerPhase::Move,
+            button: None,
+        };
+        let s2 = serde_json::to_string(&ev2).unwrap();
+        let parsed2: UiEvent = serde_json::from_str(&s2).unwrap();
+        assert_eq!(parsed2, ev2);
     }
 }

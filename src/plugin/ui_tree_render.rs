@@ -160,6 +160,24 @@ fn render_node(ui: &mut Ui, node: &UiNode, surface: &RemoteSurface) {
         UiNode::Spacer { size } => {
             ui.add_space(*size as f32);
         }
+        UiNode::Canvas {
+            buffer_id: _,
+            width,
+            height,
+            format: _,
+            filter: _,
+            commit_seq: _,
+            id: _,
+        } => {
+            // 03d에서 GPU 텍스처 합성으로 교체된다. 현재는 자리 표시자 사각형.
+            let size = egui::vec2(*width as f32, *height as f32);
+            let (rect, _resp) = ui.allocate_exact_size(size, egui::Sense::hover());
+            ui.painter().rect_filled(
+                rect,
+                0.0,
+                egui::Color32::from_rgba_unmultiplied(40, 40, 40, 255),
+            );
+        }
     }
 }
 
