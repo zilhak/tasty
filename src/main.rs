@@ -1226,7 +1226,7 @@ impl App {
         use tasty_plugin_protocol::EventScope;
         use tasty_plugin_protocol::events::payloads::{
             SurfaceCreated, SurfaceCreatedBy, SurfaceFocused, SurfaceResized, SurfaceTitleChanged,
-            WorkspaceActivated, WorkspaceRenamed,
+            TabFocused, TabRenamed, WorkspaceActivated, WorkspaceRenamed,
         };
 
         let mut drained: Vec<crate::state::PendingHostEvent> = Vec::new();
@@ -1234,12 +1234,14 @@ impl App {
             if let Some(main) = w.as_main_mut() {
                 main.state.detect_focus_change();
                 main.state.detect_workspace_activation();
+                main.state.detect_tab_focus_change();
                 drained.extend(main.state.take_pending_host_events());
             }
         }
         for s in &mut self.parked_states {
             s.detect_focus_change();
             s.detect_workspace_activation();
+            s.detect_tab_focus_change();
             drained.extend(s.take_pending_host_events());
         }
         if drained.is_empty() {
@@ -1326,6 +1328,22 @@ impl App {
                         description,
                     };
                     mgr.emit_host_event("workspace.renamed", &payload, EventScope::System);
+                }
+                crate::state::PendingHostEvent::TabFocused {
+                    tab_id,
+                    pane_id,
+                    prev_tab_id,
+                } => {
+                    let payload = TabFocused {
+                        tab_id,
+                        pane_id,
+                        prev_tab_id,
+                    };
+                    mgr.emit_host_event("tab.focused", &payload, EventScope::System);
+                }
+                crate::state::PendingHostEvent::TabRenamed { tab_id, title } => {
+                    let payload = TabRenamed { tab_id, title };
+                    mgr.emit_host_event("tab.renamed", &payload, EventScope::System);
                 }
             }
         }

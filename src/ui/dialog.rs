@@ -156,6 +156,7 @@ fn apply_rename(state: &mut AppState, target: RenameTarget, buffer: String) {
             tab_index,
         } => {
             let name = buffer.trim().to_string();
+            let mut renamed: Option<(u32, String)> = None;
             if let Some(pane) = state
                 .active_workspace_mut()
                 .pane_layout_mut()
@@ -165,9 +166,16 @@ fn apply_rename(state: &mut AppState, target: RenameTarget, buffer: String) {
                     if name.is_empty() {
                         tab.explicit_name = None;
                     } else {
-                        tab.explicit_name = Some(name);
+                        tab.explicit_name = Some(name.clone());
                     }
+                    renamed = Some((tab.id, tab.display_name().to_string()));
                 }
+            }
+            if let Some((tab_id, title)) = renamed {
+                state.enqueue_host_event(crate::state::PendingHostEvent::TabRenamed {
+                    tab_id,
+                    title,
+                });
             }
         }
     }

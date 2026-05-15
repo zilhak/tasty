@@ -102,6 +102,15 @@ pub enum PendingHostEvent {
         subtitle: Option<String>,
         description: Option<String>,
     },
+    TabFocused {
+        tab_id: u32,
+        pane_id: u32,
+        prev_tab_id: Option<u32>,
+    },
+    TabRenamed {
+        tab_id: u32,
+        title: String,
+    },
 }
 
 // IdGenerator is now in engine_state.rs
@@ -161,6 +170,10 @@ pub struct AppState {
     /// 가리키는 워크스페이스 ID를 기록해 두고, 다음 tick에서 달라졌다면
     /// `WorkspaceActivated`를 enqueue한다.
     pub last_active_workspace_id: Option<u32>,
+    /// `tab.focused` 발화용 변화 감지 상태. 활성 워크스페이스의 focused pane이 보유한
+    /// 현재 active tab의 (pane_id, tab_id)를 기록. 다음 tick에서 달라졌다면
+    /// `TabFocused`를 enqueue한다. pane 전환·in-pane tab 전환을 한꺼번에 다룬다.
+    pub last_focused_tab: Option<(u32, u32)>,
 
     /// Per-surface host view state for `MarkdownPanel` (content cache, scroll, commonmark cache).
     /// `MarkdownPanel` itself only holds `file_path` + reload tracking; everything GUI-bound lives here.
@@ -349,6 +362,7 @@ impl AppState {
             pending_host_events: Vec::new(),
             last_focused_surface_id: None,
             last_active_workspace_id: None,
+            last_focused_tab: None,
             popup_hovered: false,
             recent_files: crate::recent_files::RecentFiles::load(),
             popups: {
@@ -613,6 +627,27 @@ impl AppState {
             self.enqueue_host_event(PendingHostEvent::WorkspaceActivated {
                 workspace_id,
                 prev_workspace_id: prev,
+            });
+        }
+    }
+
+    /// focused pane의 active tab을 마지막 기록과 비교해 달라졌다면 `TabFocused`
+    /// 이벤트를 enqueue. tab 전환 경로(클릭, next/prev/goto 단축키, close 후 인접
+    /// 탭으로 shift, pane 전환에 의한 focused tab 변화 등)가 여럿이라 polling 채택.
+    pub fn detect_tab_focus_change(&mut self) {
+        let current = self.focused_pane().and_then(|pane| {
+            pane.tabs.get(pane.active_tab).map(|tab| (pane.id, tab.id))
+        });
+        if current == self.last_focused_tab {
+            return;
+        }
+        let prev_tab_id = self.last_focused_tab.map(|(_, tab_id)| tab_id);
+        self.last_focused_tab = current;
+        if let Some((pane_id, tab_id)) = current {
+            self.enqueue_host_event(PendingHostEvent::TabFocused {
+                tab_id,
+                pane_id,
+                prev_tab_id,
             });
         }
     }
