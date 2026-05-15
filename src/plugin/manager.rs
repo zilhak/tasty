@@ -134,6 +134,10 @@ pub struct PluginManager {
     next_buffer_id: AtomicU64,
     /// Event Bus 1.0 라우터. 호스트 본문과 plugin 간 broadcast 이벤트를 fan-out.
     pub event_bus: super::event_bus::EventBus,
+    /// 고빈도 이벤트(`surface.resized`, `split.ratio_changed`)용 throttle 상태.
+    throttler: super::event_throttle::EventThrottler,
+    /// 호스트가 발화하는 envelope의 `meta.trace_id` 카운터.
+    event_trace_seq: AtomicU64,
 }
 
 /// plugin → host IPC 호출 한 건. 라우팅 후 결과를 plugin에 회신해야 함.
@@ -179,6 +183,8 @@ impl PluginManager {
             plugin_buffers: HashMap::new(),
             next_buffer_id: AtomicU64::new(1),
             event_bus: super::event_bus::EventBus::new(),
+            throttler: super::event_throttle::EventThrottler::new(),
+            event_trace_seq: AtomicU64::new(1),
         }
     }
 
@@ -235,6 +241,70 @@ impl PluginManager {
     pub fn publish_host_event(&mut self, envelope: tasty_plugin_protocol::EventEnvelope) {
         let dispatches = self.event_bus.publish_from_host(envelope);
         self.send_event_dispatches(dispatches);
+    }
+
+    /// `EventScope`/origin/trace_id를 호스트 기본값으로 채워 envelope을 만든다.
+    pub fn build_host_envelope<P: serde::Serialize>(
+        &self,
+        key: &str,
+        payload: &P,
+        scope: tasty_plugin_protocol::EventScope,
+    ) -> tasty_plugin_protocol::EventEnvelope {
+        let trace_seq = self.event_trace_seq.fetch_add(1, Ordering::Relaxed);
+        tasty_plugin_protocol::EventEnvelope {
+            key: key.to_string(),
+            payload: serde_json::to_value(payload).unwrap_or(serde_json::Value::Null),
+            meta: tasty_plugin_protocol::EventMeta {
+                trace_id: format!("h{trace_seq:x}"),
+                hop: 0,
+                origin: tasty_plugin_protocol::EventOrigin::Host,
+                scope,
+            },
+        }
+    }
+
+    /// 호스트가 직접 한 줄로 발화. envelope을 만드는 호출자가 거의 모든 곳이라
+    /// 편의 헬퍼.
+    pub fn emit_host_event<P: serde::Serialize>(
+        &mut self,
+        key: &str,
+        payload: &P,
+        scope: tasty_plugin_protocol::EventScope,
+    ) {
+        let envelope = self.build_host_envelope(key, payload, scope);
+        self.publish_host_event(envelope);
+    }
+
+    /// 고빈도 이벤트용 throttled 발화. 윈도우 내 호출은 마지막 payload만 보관됐다가
+    /// trailing tick에서 [`Self::pump_throttled_events`]가 발화한다.
+    pub fn emit_host_event_throttled<P: serde::Serialize>(
+        &mut self,
+        key: &str,
+        scope_id: u64,
+        payload: &P,
+        scope: tasty_plugin_protocol::EventScope,
+    ) {
+        let envelope = self.build_host_envelope(key, payload, scope);
+        let throttle_key = super::event_throttle::ThrottleKey {
+            event_key: key.to_string(),
+            scope_id,
+        };
+        match self.throttler.attempt(throttle_key, envelope) {
+            super::event_throttle::ThrottleDecision::EmitNow(env) => {
+                self.publish_host_event(env);
+            }
+            super::event_throttle::ThrottleDecision::Deferred => {
+                // pump 시점에 처리.
+            }
+        }
+    }
+
+    /// throttler의 만료된 pending envelope을 발화. 호스트 main tick에서 매번 호출.
+    pub fn pump_throttled_events(&mut self) {
+        let due = self.throttler.drain_due();
+        for envelope in due {
+            self.publish_host_event(envelope);
+        }
     }
 
     /// plugin이 보낸 publish를 라우팅. 권한/origin/hop 검사 실패 시 경고 로그.
@@ -695,6 +765,9 @@ impl PluginManager {
 
         // 4. plugin → 호스트 응답 처리 (tree 동기화).
         self.drain_plugin_responses();
+
+        // 4b. Event Bus throttle: 만료된 pending envelope 발화.
+        self.pump_throttled_events();
 
         // 2. 주기적 ping
         if self.last_ping.elapsed() >= PING_INTERVAL {

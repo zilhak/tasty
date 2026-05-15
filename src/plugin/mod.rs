@@ -6,6 +6,7 @@ pub mod builtin;
 pub mod command_registry;
 pub mod discovery;
 pub mod event_bus;
+pub mod event_throttle;
 pub mod handle_channel;
 pub mod host_actions;
 pub mod host_cmd;

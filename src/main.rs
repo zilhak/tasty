@@ -1174,8 +1174,15 @@ impl App {
     /// 모든 윈도우/parked state의 surface close lifecycle 큐를 비우고 구독 plugin에
     /// broadcast한다. `is_user_close` bool → `SurfaceCloseReason` enum 매핑은
     /// 여기서 수행 (state/ 레이어가 plugin/ 의존을 갖지 않게).
+    ///
+    /// 두 경로로 발화한다:
+    /// - 옛 `surface.lifecycle` IPC (PR 4에서 폐기) — `notify_surface_closed`
+    /// - 새 Event Bus 1.0 `surface.closed` (`emit_host_event`)
     pub(crate) fn dispatch_pending_surface_lifecycle(&mut self) {
         use plugin::protocol::SurfaceCloseReason;
+        use tasty_plugin_protocol::EventScope;
+        use tasty_plugin_protocol::events::LifecycleReason;
+        use tasty_plugin_protocol::events::payloads::SurfaceClosed;
         let mut drained: Vec<crate::state::PendingSurfaceClosed> = Vec::new();
         for w in self.windows.values_mut() {
             if let Some(main) = w.as_main_mut() {
@@ -1198,6 +1205,17 @@ impl App {
                 SurfaceCloseReason::AgentClose
             };
             mgr.notify_surface_closed(ev.surface_id, ev.kind, reason);
+            let bus_reason = if ev.is_user_close {
+                LifecycleReason::User
+            } else {
+                LifecycleReason::Ipc
+            };
+            let payload = SurfaceClosed {
+                surface_id: ev.surface_id,
+                kind: ev.kind.to_string(),
+                reason: bus_reason,
+            };
+            mgr.emit_host_event("surface.closed", &payload, EventScope::Surface);
         }
     }
 
