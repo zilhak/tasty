@@ -1578,6 +1578,30 @@ impl App {
         }
     }
 
+    /// `ToolAction::OpenPopup` 클릭으로 enqueue된 popup 큐를 모든 AppState에서 drain해
+    /// `PluginManager::open_popup_instance`로 dispatch한다. plugin이 실행 중이 아니면
+    /// `open_popup_instance`가 자체적으로 warn 후 무시.
+    pub(crate) fn dispatch_pending_popup_opens(&mut self) {
+        let mut drained: Vec<(String, String, serde_json::Value)> = Vec::new();
+        for w in self.windows.values_mut() {
+            if let Some(main) = w.as_main_mut() {
+                drained.append(&mut main.state.pending_popup_opens);
+            }
+        }
+        for s in &mut self.parked_states {
+            drained.append(&mut s.pending_popup_opens);
+        }
+        if drained.is_empty() {
+            return;
+        }
+        let Some(mgr) = self.plugin_manager.as_mut() else {
+            return;
+        };
+        for (plugin_id, popup_id, context) in drained {
+            mgr.open_popup_instance(&plugin_id, &popup_id, context);
+        }
+    }
+
     /// 호스트 자동 발화 큐(`PendingHostEvent`)를 모든 AppState에서 drain해 Event Bus
     /// 1.0 wire payload로 변환·발화한다. focus처럼 발화 시점을 일일이 hook하기 번거로운
     /// 이벤트는 먼저 `detect_focus_change()`로 변화 검사 후 queue에 push된다.

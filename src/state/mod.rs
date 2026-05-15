@@ -278,6 +278,11 @@ pub struct AppState {
     /// 가지므로 PluginManager에 직접 접근할 수 없어, 클릭 시점에 enqueue하고 App 메인
     /// 루프가 drain해 `PluginManager::emit_host_event`로 발화한다.
     pub pending_tool_events: Vec<(String, serde_json::Value)>,
+
+    /// `ToolAction::OpenPopup` 클릭 시 열어야 할 popup 큐.
+    /// (plugin_id, popup_id, context). App 메인 루프가 drain해
+    /// `PluginManager::open_popup_instance`로 dispatch.
+    pub pending_popup_opens: Vec<(String, String, serde_json::Value)>,
 }
 
 /// A pending native context menu request.
@@ -474,6 +479,7 @@ impl AppState {
             clipboard_viewer_views: Default::default(),
             tool_registry: crate::plugin::tool_registry::ToolRegistry::with_builtins(),
             pending_tool_events: Vec::new(),
+            pending_popup_opens: Vec::new(),
         })
     }
 

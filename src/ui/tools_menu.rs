@@ -102,12 +102,21 @@ pub fn invoke_tool(state: &mut AppState, item: &ToolItem) {
             }
         }
         ToolAction::OpenPopup { popup_id } => {
-            // phase2-popup 도입 전까지는 plugin popup contribute가 존재하지 않으므로
-            // 표시할 수 없다. 매니페스트 검증은 통과시키되 실행 시점에만 warn.
-            tracing::warn!(
-                "invoke_tool: open_popup '{}' is not yet supported (phase2-popup pending)",
-                popup_id
-            );
+            // `<plugin_id>/<popup_id>` 형식 (manifest validation에서 강제). split하여
+            // plugin_manager로 dispatch할 수 있도록 pending_popup_opens에 enqueue.
+            // App 메인 루프가 drain해 `open_popup_instance`를 호출한다.
+            if let Some((plugin_id, local_id)) = popup_id.split_once('/') {
+                state.pending_popup_opens.push((
+                    plugin_id.to_string(),
+                    local_id.to_string(),
+                    serde_json::Value::Null,
+                ));
+            } else {
+                tracing::warn!(
+                    "invoke_tool: open_popup '{}' is not in '<plugin_id>/<id>' form",
+                    popup_id
+                );
+            }
         }
     }
 }

@@ -438,6 +438,8 @@ impl ApplicationHandler<AppEvent> for App {
         self.dispatch_pending_host_events();
         // 도구 메뉴 클릭으로 enqueue된 이벤트 publish.
         self.dispatch_pending_tool_events();
+        // 도구 메뉴 ToolAction::OpenPopup 클릭으로 enqueue된 popup open dispatch.
+        self.dispatch_pending_popup_opens();
         // PluginsWindow 모달의 사용자 액션을 manager에 적용 + 모달 snapshot 갱신.
         self.process_plugins_window_actions();
 

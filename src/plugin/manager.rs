@@ -382,8 +382,36 @@ impl PluginManager {
     /// 호스트 본문이 새 envelope를 발화. 호스트는 모든 namespace에 publish 가능.
     /// 매칭되는 모든 plugin 구독자에게 `event.dispatch` 송신.
     pub fn publish_host_event(&mut self, envelope: tasty_plugin_protocol::EventEnvelope) {
+        let event_key = envelope.key.clone();
+        let payload = envelope.payload.clone();
         let dispatches = self.event_bus.publish_from_host(envelope);
         self.send_event_dispatches(dispatches);
+        self.fire_popup_triggers(&event_key, &payload);
+    }
+
+    /// `[[contributes.popup]] trigger.kind = "event"`로 선언된 popup 중 방금 발화된
+    /// 이벤트 key에 매칭되는 것을 자동으로 연다. plugin process가 살아 있어야 한다.
+    /// payload는 popup.open IPC의 `context`로 그대로 전달된다.
+    fn fire_popup_triggers(&mut self, event_key: &str, payload: &serde_json::Value) {
+        let matches: Vec<(String, String)> = self
+            .packages
+            .iter()
+            .filter(|pkg| self.processes.contains_key(&pkg.manifest.id))
+            .flat_map(|pkg| {
+                let plugin_id = pkg.manifest.id.clone();
+                pkg.manifest.contributes.popup.iter().filter_map(move |p| {
+                    if let super::manifest::PopupTrigger::Event { event_key: ek } = &p.trigger {
+                        if ek == event_key {
+                            return Some((plugin_id.clone(), p.id.clone()));
+                        }
+                    }
+                    None
+                })
+            })
+            .collect();
+        for (plugin_id, popup_id) in matches {
+            self.open_popup_instance(&plugin_id, &popup_id, payload.clone());
+        }
     }
 
     /// `EventScope`/origin/trace_id를 호스트 기본값으로 채워 envelope을 만든다.
@@ -506,8 +534,12 @@ impl PluginManager {
         envelope: tasty_plugin_protocol::EventEnvelope,
     ) {
         let key_for_log = envelope.key.clone();
+        let payload = envelope.payload.clone();
         match self.event_bus.publish_from_plugin(plugin_id, envelope) {
-            Ok(dispatches) => self.send_event_dispatches(dispatches),
+            Ok(dispatches) => {
+                self.send_event_dispatches(dispatches);
+                self.fire_popup_triggers(&key_for_log, &payload);
+            }
             Err(e) => {
                 tracing::warn!(
                     "plugin '{plugin_id}' publish '{key_for_log}' rejected: {e}"
