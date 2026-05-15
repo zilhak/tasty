@@ -670,6 +670,9 @@ pub enum DebugCommands {
     /// Tool menu inspection and invocation (debug builds only)
     #[command(subcommand)]
     Tool(ToolDebugCommands),
+    /// Plugin popup inspection and open/close (debug builds only)
+    #[command(subcommand)]
+    Popup(PopupDebugCommands),
 }
 
 #[cfg(debug_assertions)]
@@ -682,6 +685,31 @@ pub enum ToolDebugCommands {
         /// Tool item key (e.g. "builtin:clipboard_history" or "<plugin_id>/<tool_id>")
         #[arg(long)]
         key: String,
+    },
+}
+
+#[cfg(debug_assertions)]
+#[derive(Subcommand)]
+pub enum PopupDebugCommands {
+    /// List all popup contributes + currently open instances
+    List,
+    /// Open a plugin popup instance
+    Open {
+        /// Plugin id (e.g. "com.example.popper")
+        #[arg(long)]
+        plugin_id: String,
+        /// Popup id within the plugin
+        #[arg(long)]
+        popup_id: String,
+        /// Optional context JSON to send as the popup.open payload
+        #[arg(long)]
+        context: Option<String>,
+    },
+    /// Close a popup instance by id
+    Close {
+        /// Popup instance id returned by `popup open`
+        #[arg(long)]
+        instance_id: u64,
     },
 }
 

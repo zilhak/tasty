@@ -1287,6 +1287,30 @@ impl App {
                 processed = true;
                 continue;
             }
+            #[cfg(debug_assertions)]
+            if cmd.request.method.starts_with("debug.popup.") {
+                let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
+                let response = match cmd.request.method.as_str() {
+                    "debug.popup.list" => ipc::handler::popup::handle_list(
+                        self.plugin_manager.as_ref(),
+                        id,
+                    ),
+                    "debug.popup.open" => ipc::handler::popup::handle_open(
+                        self.plugin_manager.as_mut(),
+                        id,
+                        &cmd.request.params,
+                    ),
+                    "debug.popup.close" => ipc::handler::popup::handle_close(
+                        self.plugin_manager.as_mut(),
+                        id,
+                        &cmd.request.params,
+                    ),
+                    other => ipc::protocol::JsonRpcResponse::method_not_found(id, other),
+                };
+                let _ = cmd.response_tx.send(response);
+                processed = true;
+                continue;
+            }
             if cmd.request.method == "window.list" {
                 let focused_id = self.engine.focused_window_id;
                 let list: Vec<_> = self

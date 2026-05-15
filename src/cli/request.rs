@@ -415,6 +415,39 @@ fn debug_command_to_method_params(command: &DebugCommands) -> (&'static str, ser
         DebugCommands::EventBus(sub) => event_bus_command_to_method_params(sub),
         DebugCommands::Extension(sub) => extension_debug_command_to_method_params(sub),
         DebugCommands::Tool(sub) => tool_debug_command_to_method_params(sub),
+        DebugCommands::Popup(sub) => popup_debug_command_to_method_params(sub),
+    }
+}
+
+#[cfg(debug_assertions)]
+fn popup_debug_command_to_method_params(
+    command: &crate::cli::PopupDebugCommands,
+) -> (&'static str, serde_json::Value) {
+    use crate::cli::PopupDebugCommands;
+    match command {
+        PopupDebugCommands::List => ("debug.popup.list", serde_json::json!({})),
+        PopupDebugCommands::Open {
+            plugin_id,
+            popup_id,
+            context,
+        } => {
+            let ctx_value: serde_json::Value = match context {
+                Some(s) => serde_json::from_str(s).unwrap_or(serde_json::Value::Null),
+                None => serde_json::Value::Null,
+            };
+            (
+                "debug.popup.open",
+                serde_json::json!({
+                    "plugin_id": plugin_id,
+                    "popup_id": popup_id,
+                    "context": ctx_value,
+                }),
+            )
+        }
+        PopupDebugCommands::Close { instance_id } => (
+            "debug.popup.close",
+            serde_json::json!({ "instance_id": instance_id }),
+        ),
     }
 }
 

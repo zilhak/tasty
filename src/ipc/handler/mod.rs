@@ -18,6 +18,8 @@ mod meta;
 mod notification;
 mod pane;
 pub mod plugin;
+#[cfg(debug_assertions)]
+pub mod popup;
 mod surface;
 mod tab;
 #[cfg(debug_assertions)]
