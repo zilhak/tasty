@@ -244,7 +244,11 @@ impl EngineState {
     }
 
     pub fn send_fast_init(&mut self, surface_id: u32) {
-        crate::surface_meta::SurfaceMetaStore::ensure_created(surface_id);
+        if let Err(e) = crate::surface_meta::SurfaceMetaStore::ensure_created(surface_id) {
+            tracing::warn!(
+                "surface_meta ensure_created failed for surface {surface_id}: {e}"
+            );
+        }
         let scrollback_limit = self.settings.general.scrollback_lines;
         let disk_swap = self.settings.performance.scrollback_disk_swap;
         if let Some(terminal) = self.find_terminal_by_id_mut(surface_id) {

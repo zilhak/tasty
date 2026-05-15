@@ -268,7 +268,9 @@ fn apply_open(state: &mut AppState, file_type: FileType, path: &str) {
                     .file_open_pane_id
                     .unwrap_or(state.active_workspace().focused_pane);
                 state.active_workspace_mut().focused_pane = pane_id;
-                let _ = state.add_markdown_tab(file_path);
+                if let Err(e) = state.add_markdown_tab(file_path) {
+                    tracing::warn!("add_markdown_tab failed: {e}");
+                }
             }
         }
         FileType::Html => {
@@ -289,7 +291,9 @@ fn apply_open(state: &mut AppState, file_type: FileType, path: &str) {
                     .file_open_pane_id
                     .unwrap_or(state.active_workspace().focused_pane);
                 state.active_workspace_mut().focused_pane = pane_id;
-                let _ = state.add_html_tab(url);
+                if let Err(e) = state.add_html_tab(url) {
+                    tracing::warn!("add_html_tab failed: {e}");
+                }
             }
         }
     }

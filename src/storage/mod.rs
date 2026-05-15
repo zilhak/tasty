@@ -163,6 +163,9 @@ pub fn init() -> Result<(), DbInitError> {
     let path = default_db_path().ok_or(DbInitError::HomeDirMissing)?;
     let db = Db::open(&path)?;
     tracing::info!("opened state.db at {}", path.display());
+    // OnceLock::set은 이미 set된 경우(Err)에만 실패하며, 위의 is_some() 검사가
+    // 통과해 여기 도달했으므로 race(다른 스레드가 동시 호출)인 경우만 Err.
+    // 두 스레드가 동일한 default_db_path를 두고 경쟁하는 케이스라 결과는 동일하다.
     let _ = DB.set(Mutex::new(db));
     Ok(())
 }
@@ -170,6 +173,7 @@ pub fn init() -> Result<(), DbInitError> {
 /// 테스트용: 이미 열린 Db를 싱글톤으로 등록. 이미 등록되어 있으면 no-op.
 #[cfg(test)]
 pub fn init_with(db: Db) {
+    // 동일 OnceLock 패턴 — 이미 등록되었으면 의도적 no-op.
     let _ = DB.set(Mutex::new(db));
 }
 

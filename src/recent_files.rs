@@ -43,7 +43,9 @@ impl RecentFiles {
         self.markdown.insert(0, path.clone());
         self.markdown.truncate(MAX_ENTRIES);
         let ts = now_secs();
-        let _ = crate::storage::with_db(|db| upsert_markdown(&db.conn, &path, ts));
+        if crate::storage::with_db(|db| upsert_markdown(&db.conn, &path, ts)).is_none() {
+            tracing::trace!("recent_files markdown upsert skipped: storage unavailable");
+        }
         prune_table("recent_markdown", "path");
     }
 
@@ -52,7 +54,9 @@ impl RecentFiles {
         self.html.insert(0, url.clone());
         self.html.truncate(MAX_ENTRIES);
         let ts = now_secs();
-        let _ = crate::storage::with_db(|db| upsert_html(&db.conn, &url, ts));
+        if crate::storage::with_db(|db| upsert_html(&db.conn, &url, ts)).is_none() {
+            tracing::trace!("recent_files html upsert skipped: storage unavailable");
+        }
         prune_table("recent_html", "url");
     }
 }
@@ -108,10 +112,14 @@ fn prune_table(table: &str, key_col: &str) {
         table = table,
         key_col = key_col,
     );
-    let _ = crate::storage::with_db(|db| {
+    if crate::storage::with_db(|db| {
         if let Err(e) = db.conn.execute(&sql, rusqlite::params![MAX_ENTRIES as i64]) {
             tracing::warn!("prune {table} failed: {e}");
         }
-    });
+    })
+    .is_none()
+    {
+        tracing::trace!("recent_files prune skipped: storage unavailable");
+    }
 }
 

@@ -21,6 +21,7 @@ use tasty_shm::PeerPid;
 use tasty_shm::SharedMemory;
 
 use crate::ipc::protocol::JsonRpcResponse;
+use crate::ipc::server::send_response;
 use crate::plugin::handle_channel::HandleListener;
 use crate::plugin::host_cmd::{HostCmd, SurfaceHandles};
 use crate::plugin::ipc_namespace::IpcNamespaceRegistry;
@@ -295,7 +296,9 @@ impl PluginManager {
         let log_dir = tasty_core::paths::tasty_home()
             .map(|d| d.join("plugins-logs"))
             .unwrap_or_else(|| PathBuf::from("./plugin-logs"));
-        let _ = std::fs::create_dir_all(&log_dir);
+        if let Err(e) = std::fs::create_dir_all(&log_dir) {
+            tracing::warn!("plugin log dir {} create failed: {e}", log_dir.display());
+        }
         let (host_cmd_tx, host_cmd_rx) = mpsc::channel();
         Self {
             packages: Vec::new(),
@@ -1279,7 +1282,7 @@ impl PluginManager {
         let plugin_id = match self.validate_namespace_call(method, caller_plugin_id) {
             Ok(id) => id,
             Err((code, msg)) => {
-                let _ = response_tx.send(JsonRpcResponse::error(original_id, code, &msg));
+                send_response(&response_tx, JsonRpcResponse::error(original_id, code, &msg));
                 return;
             }
         };
@@ -1602,7 +1605,7 @@ impl PluginManager {
     fn send_final_error(&mut self, final_caller: FinalCaller, code: i32, message: String) {
         match final_caller {
             FinalCaller::Local { response_tx, original_id } => {
-                let _ = response_tx.send(JsonRpcResponse::error(original_id, code, &message));
+                send_response(&response_tx, JsonRpcResponse::error(original_id, code, &message));
             }
             FinalCaller::Plugin { caller_plugin_id, call_id } => {
                 self.send_ipc_result(&caller_plugin_id, call_id, None, Some(message));
@@ -1614,7 +1617,7 @@ impl PluginManager {
     fn send_final_success(&mut self, final_caller: FinalCaller, result: serde_json::Value) {
         match final_caller {
             FinalCaller::Local { response_tx, original_id } => {
-                let _ = response_tx.send(JsonRpcResponse::success(original_id, result));
+                send_response(&response_tx, JsonRpcResponse::success(original_id, result));
             }
             FinalCaller::Plugin { caller_plugin_id, call_id } => {
                 self.send_ipc_result(&caller_plugin_id, call_id, Some(result), None);
@@ -1745,7 +1748,7 @@ impl PluginManager {
                     original_id,
                     ..
                 }) => {
-                    let _ = response_tx.send(JsonRpcResponse::error(
+                    send_response(&response_tx, JsonRpcResponse::error(
                         original_id,
                         -32004,
                         &msg,
@@ -1895,7 +1898,7 @@ impl PluginManager {
                         resp.result.unwrap_or(serde_json::Value::Null),
                     )
                 };
-                let _ = response_tx.send(response);
+                send_response(&response_tx, response);
             }
             PendingRequestKind::PluginToPluginNamespace {
                 plugin_id: _,
@@ -2005,7 +2008,7 @@ impl PluginManager {
                         resp.result.unwrap_or(serde_json::Value::Null),
                     )
                 };
-                let _ = response_tx.send(response);
+                send_response(&response_tx, response);
             }
         }
     }
@@ -2025,7 +2028,7 @@ impl PluginManager {
         response_tx: mpsc::SyncSender<JsonRpcResponse>,
     ) {
         if !self.processes.contains_key(extension_id) {
-            let _ = response_tx.send(JsonRpcResponse::error(
+            send_response(&response_tx, JsonRpcResponse::error(
                 original_id,
                 -32002,
                 &format!("extension '{extension_id}' is not running"),
@@ -2043,7 +2046,7 @@ impl PluginManager {
                 );
             }
             Err(msg) => {
-                let _ = response_tx.send(JsonRpcResponse::error(original_id, -32003, &msg));
+                send_response(&response_tx, JsonRpcResponse::error(original_id, -32003, &msg));
             }
         }
     }

@@ -170,11 +170,16 @@ pub fn send_system_notification(title: &str, body: &str) {
     let title = title.to_string();
     let body = body.to_string();
     std::thread::spawn(move || {
-        let _ = notify_rust::Notification::new()
+        // OS 알림 백엔드(DBus/Notification Center/Windows toast)가 없는 환경
+        // (가상머신, headless SSH 등)에서는 항상 실패. trace로만 남긴다.
+        if let Err(e) = notify_rust::Notification::new()
             .summary(&title)
             .body(&body)
             .appname("Tasty")
-            .show();
+            .show()
+        {
+            tracing::trace!("system notification failed: {e}");
+        }
     });
 }
 

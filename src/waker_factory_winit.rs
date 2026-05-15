@@ -25,14 +25,14 @@ impl WakerFactory for WinitWakerFactory {
     fn make_targeted_waker(&self, surface_id: u32) -> Waker {
         let proxy = self.proxy.clone();
         Arc::new(move || {
-            let _ = proxy.send_event(AppEvent::TerminalOutput(Some(surface_id)));
+            crate::shortcuts::send_app_event(&proxy, AppEvent::TerminalOutput(Some(surface_id)));
         })
     }
 
     fn make_default_waker(&self) -> Waker {
         let proxy = self.proxy.clone();
         Arc::new(move || {
-            let _ = proxy.send_event(AppEvent::TerminalOutput(None));
+            crate::shortcuts::send_app_event(&proxy, AppEvent::TerminalOutput(None));
         })
     }
 }

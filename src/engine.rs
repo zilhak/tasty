@@ -31,7 +31,7 @@ impl Engine {
     pub fn start_ipc(&mut self) {
         let ipc_proxy = self.proxy.clone();
         let ipc_waker: crate::ipc::server::IpcWaker = std::sync::Arc::new(move || {
-            let _ = ipc_proxy.send_event(AppEvent::IpcReady);
+            crate::shortcuts::send_app_event(&ipc_proxy, AppEvent::IpcReady);
         });
         match IpcServer::start_with_port_file(self.port_file.take(), Some(ipc_waker)) {
             Ok(ipc) => {

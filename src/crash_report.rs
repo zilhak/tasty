@@ -146,7 +146,11 @@ fn init_tracing() {
 
     // Try to set up file logging; fall back to stderr-only if it fails
     if let Some(dir) = tasty_home() {
-        let _ = fs::create_dir_all(&dir);
+        // 로거 초기화 이전이라 tracing 사용 불가. 디렉토리 생성 실패는 아래
+        // fs::File::create가 실패하면서 자연스럽게 fall back 경로로 진입한다.
+        if let Err(e) = fs::create_dir_all(&dir) {
+            eprintln!("tasty: failed to create log dir {}: {e}", dir.display());
+        }
         let log_filename = if cfg!(debug_assertions) {
             "debug-dev.log"
         } else {

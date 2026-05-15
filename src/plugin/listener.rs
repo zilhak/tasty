@@ -74,7 +74,9 @@ fn handle_incoming(
     stream: TcpStream,
     pending: &Arc<Mutex<HashMap<String, mpsc::Sender<TcpStream>>>>,
 ) {
-    let _ = stream.set_read_timeout(Some(AUTH_READ_TIMEOUT));
+    if let Err(e) = stream.set_read_timeout(Some(AUTH_READ_TIMEOUT)) {
+        tracing::warn!("plugin listener: set_read_timeout failed: {e}");
+    }
     let cloned = match stream.try_clone() {
         Ok(s) => s,
         Err(e) => {
@@ -95,7 +97,9 @@ fn handle_incoming(
             return;
         }
     };
-    let _ = stream.set_read_timeout(None);
+    if let Err(e) = stream.set_read_timeout(None) {
+        tracing::warn!("plugin listener: clearing read_timeout failed: {e}");
+    }
     let tx_opt = pending
         .lock()
         .ok()
@@ -110,7 +114,9 @@ fn handle_incoming(
                 return;
             }
             tracing::info!("plugin '{}' authenticated", auth.plugin_id);
-            let _ = tx.send(stream);
+            if let Err(e) = tx.send(stream) {
+                tracing::warn!("plugin '{}' stream handoff failed: {e}", auth.plugin_id);
+            }
         }
         None => {
             tracing::warn!(

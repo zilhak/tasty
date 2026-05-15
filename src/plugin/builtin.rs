@@ -242,10 +242,13 @@ fn copy_atomic(src: &Path, dest: &Path) -> std::io::Result<()> {
     let tmp = parent.join(format!(".{file_name}.tmp.{pid}.{nanos:x}"));
 
     if let Err(e) = std::fs::copy(src, &tmp) {
+        // best-effort temp 정리. copy 실패 시 src/dest 권한 문제가 원인일 확률이 높고
+        // remove_file도 함께 실패해도 알릴 곳이 없으므로 의도적으로 무시.
         let _ = std::fs::remove_file(&tmp);
         return Err(e);
     }
     if let Err(e) = std::fs::rename(&tmp, dest) {
+        // 위와 동일: rename 실패 시 temp 잔여물은 best-effort로만 정리.
         let _ = std::fs::remove_file(&tmp);
         return Err(e);
     }

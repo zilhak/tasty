@@ -129,9 +129,13 @@ impl PluginProcess {
             let config_path = home
                 .join("plugin-config")
                 .join(format!("{}.toml", &package.manifest.id));
-            let _ = std::fs::create_dir_all(&data_dir);
+            if let Err(e) = std::fs::create_dir_all(&data_dir) {
+                tracing::warn!("plugin data dir {} create failed: {e}", data_dir.display());
+            }
             if let Some(parent) = config_path.parent() {
-                let _ = std::fs::create_dir_all(parent);
+                if let Err(e) = std::fs::create_dir_all(parent) {
+                    tracing::warn!("plugin config dir {} create failed: {e}", parent.display());
+                }
             }
             cmd.env("TASTY_PLUGIN_DATA_DIR", &data_dir);
             cmd.env("TASTY_PLUGIN_CONFIG_PATH", &config_path);
@@ -331,11 +335,13 @@ impl PluginProcess {
     }
 
     pub fn ping(&self, next_id: u64) {
-        let _ = self.req_tx.send(PluginRequest {
+        if let Err(e) = self.req_tx.send(PluginRequest {
             method: "ping".into(),
             params: serde_json::json!({}),
             id: next_id,
-        });
+        }) {
+            tracing::trace!("plugin ping send dropped (writer exited): {e}");
+        }
     }
 
     pub fn since_last_pong(&self) -> Duration {
@@ -346,11 +352,13 @@ impl PluginProcess {
     }
 
     pub fn shutdown(mut self, timeout: Duration) {
-        let _ = self.req_tx.send(PluginRequest {
+        if let Err(e) = self.req_tx.send(PluginRequest {
             method: "shutdown".into(),
             params: serde_json::json!({}),
             id: u64::MAX,
-        });
+        }) {
+            tracing::trace!("plugin shutdown send dropped (writer exited): {e}");
+        }
         if let Some(mut child) = self.child.take() {
             let deadline = Instant::now() + timeout;
             loop {
@@ -365,8 +373,15 @@ impl PluginProcess {
                     Err(_) => break,
                 }
             }
-            let _ = child.kill();
-            let _ = child.wait();
+            // shutdown 메시지 전송 실패 / 타임아웃 시 강제 종료. kill 실패는 이미
+            // 죽은 프로세스(`ESRCH`)거나 OS 권한 문제이며, 어느 쪽이든 호스트가
+            // 추가로 할 수 있는 일이 없으므로 trace로만 흔적을 남긴다.
+            if let Err(e) = child.kill() {
+                tracing::trace!("plugin child kill failed (already exited?): {e}");
+            }
+            if let Err(e) = child.wait() {
+                tracing::trace!("plugin child wait failed: {e}");
+            }
         }
     }
 }
@@ -374,8 +389,12 @@ impl PluginProcess {
 impl Drop for PluginProcess {
     fn drop(&mut self) {
         if let Some(mut child) = self.child.take() {
-            let _ = child.kill();
-            let _ = child.wait();
+            if let Err(e) = child.kill() {
+                tracing::trace!("plugin child kill on drop failed: {e}");
+            }
+            if let Err(e) = child.wait() {
+                tracing::trace!("plugin child wait on drop failed: {e}");
+            }
         }
     }
 }
@@ -400,7 +419,9 @@ fn handle_incoming_line(
                 if let Ok(mut p) = last_pong.lock() {
                     *p = Instant::now();
                 }
-                let _ = resp_tx.send(resp);
+                if let Err(e) = resp_tx.send(resp) {
+                    tracing::trace!("plugin response forward dropped (consumer exited): {e}");
+                }
             }
             Err(e) => {
                 tracing::warn!("plugin '{plugin_id}' response decode error: {e}");
@@ -411,7 +432,9 @@ fn handle_incoming_line(
     if let Some(ev_value) = v.get("event") {
         match serde_json::from_value::<PluginEvent>(ev_value.clone()) {
             Ok(ev) => {
-                let _ = event_tx.send(ev);
+                if let Err(e) = event_tx.send(ev) {
+                    tracing::trace!("plugin event forward dropped (consumer exited): {e}");
+                }
             }
             Err(e) => {
                 tracing::warn!("plugin '{plugin_id}' event decode error: {e}");

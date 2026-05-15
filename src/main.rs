@@ -88,7 +88,9 @@ impl ClipboardContext {
     }
 
     fn set_text(&mut self, text: &str) {
-        let _ = self.inner.set_text(text.to_string());
+        if let Err(e) = self.inner.set_text(text.to_string()) {
+            tracing::warn!("clipboard set_text failed: {e}");
+        }
     }
 }
 
@@ -306,10 +308,11 @@ fn handle_debug_extension_invoke_hook(
     response_tx: std::sync::mpsc::SyncSender<ipc::protocol::JsonRpcResponse>,
 ) {
     use ipc::protocol::JsonRpcResponse;
+    use ipc::server::send_response;
     let mgr = match mgr {
         Some(m) => m,
         None => {
-            let _ = response_tx.send(JsonRpcResponse::error(
+            send_response(&response_tx, JsonRpcResponse::error(
                 id,
                 -32000,
                 "plugin manager not initialized",
@@ -320,7 +323,7 @@ fn handle_debug_extension_invoke_hook(
     let extension_id = match params.get("extension_id").and_then(|v| v.as_str()) {
         Some(s) => s.to_string(),
         None => {
-            let _ = response_tx.send(JsonRpcResponse::invalid_params(id, "missing 'extension_id'"));
+            send_response(&response_tx, JsonRpcResponse::invalid_params(id, "missing 'extension_id'"));
             return;
         }
     };
@@ -328,7 +331,7 @@ fn handle_debug_extension_invoke_hook(
         Some("event") => tasty_plugin_protocol::ExtensionHookKind::Event,
         Some("ipc") => tasty_plugin_protocol::ExtensionHookKind::Ipc,
         _ => {
-            let _ = response_tx.send(JsonRpcResponse::invalid_params(
+            send_response(&response_tx, JsonRpcResponse::invalid_params(
                 id,
                 "missing/invalid 'kind' (expected 'event' or 'ipc')",
             ));
@@ -339,7 +342,7 @@ fn handle_debug_extension_invoke_hook(
         Some("pre") => tasty_plugin_protocol::ExtensionHookPhase::Pre,
         Some("post") => tasty_plugin_protocol::ExtensionHookPhase::Post,
         _ => {
-            let _ = response_tx.send(JsonRpcResponse::invalid_params(
+            send_response(&response_tx, JsonRpcResponse::invalid_params(
                 id,
                 "missing/invalid 'phase' (expected 'pre' or 'post')",
             ));
@@ -351,7 +354,7 @@ fn handle_debug_extension_invoke_hook(
         Some("filter") => crate::plugin::manifest::HookMode::Filter,
         Some("observe") => crate::plugin::manifest::HookMode::Observe,
         _ => {
-            let _ = response_tx.send(JsonRpcResponse::invalid_params(
+            send_response(&response_tx, JsonRpcResponse::invalid_params(
                 id,
                 "missing/invalid 'mode' (expected 'transform', 'filter', or 'observe')",
             ));
@@ -361,7 +364,7 @@ fn handle_debug_extension_invoke_hook(
     let target = match params.get("target").and_then(|v| v.as_str()) {
         Some(s) => s.to_string(),
         None => {
-            let _ = response_tx.send(JsonRpcResponse::invalid_params(id, "missing 'target'"));
+            send_response(&response_tx, JsonRpcResponse::invalid_params(id, "missing 'target'"));
             return;
         }
     };
@@ -1115,6 +1118,7 @@ impl App {
 
     /// Process pending IPC commands. Returns true if any commands were processed.
     fn process_ipc(&mut self) -> bool {
+        use crate::ipc::server::send_response;
         let ipc = match &self.engine.ipc_server {
             Some(ipc) => ipc,
             None => return false,
@@ -1130,17 +1134,17 @@ impl App {
                     cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
                     serde_json::json!({"shutdown": true}),
                 );
-                let _ = cmd.response_tx.send(response);
-                let _ = self.engine.proxy.send_event(AppEvent::Shutdown);
+                send_response(&cmd.response_tx, response);
+                crate::shortcuts::send_app_event(&self.engine.proxy, AppEvent::Shutdown);
                 return true;
             }
             if cmd.request.method == "window.create" {
-                let _ = self.engine.proxy.send_event(AppEvent::CreateWindow);
+                crate::shortcuts::send_app_event(&self.engine.proxy, AppEvent::CreateWindow);
                 let response = ipc::protocol::JsonRpcResponse::success(
                     cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
                     serde_json::json!({"scheduled": true}),
                 );
-                let _ = cmd.response_tx.send(response);
+                send_response(&cmd.response_tx, response);
                 processed = true;
                 continue;
             }
@@ -1154,7 +1158,7 @@ impl App {
                     cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
                     serde_json::json!({"closed": true}),
                 );
-                let _ = cmd.response_tx.send(response);
+                send_response(&cmd.response_tx, response);
                 processed = true;
                 continue;
             }
@@ -1182,7 +1186,7 @@ impl App {
                     cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
                     serde_json::json!({"focused": found}),
                 );
-                let _ = cmd.response_tx.send(response);
+                send_response(&cmd.response_tx, response);
                 processed = true;
                 continue;
             }
@@ -1255,7 +1259,7 @@ impl App {
                 ) {
                     tool_registry_dirty = true;
                 }
-                let _ = cmd.response_tx.send(response);
+                send_response(&cmd.response_tx, response);
                 processed = true;
                 continue;
             }
@@ -1269,7 +1273,7 @@ impl App {
                     &cmd.request.params,
                     id,
                 );
-                let _ = cmd.response_tx.send(response);
+                send_response(&cmd.response_tx, response);
                 processed = true;
                 continue;
             }
@@ -1305,7 +1309,7 @@ impl App {
                     ),
                     other => ipc::protocol::JsonRpcResponse::method_not_found(id, other),
                 };
-                let _ = cmd.response_tx.send(response);
+                send_response(&cmd.response_tx, response);
                 processed = true;
                 continue;
             }
@@ -1327,7 +1331,7 @@ impl App {
                     cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
                     serde_json::json!(list),
                 );
-                let _ = cmd.response_tx.send(response);
+                send_response(&cmd.response_tx, response);
                 processed = true;
                 continue;
             }
@@ -1350,7 +1354,7 @@ impl App {
                             -32000,
                             "No window available for this command",
                         );
-                        let _ = cmd.response_tx.send(response);
+                        send_response(&cmd.response_tx, response);
                         processed = true;
                         continue;
                     }
@@ -1371,7 +1375,7 @@ impl App {
                         cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
                         debug_data,
                     );
-                    let _ = cmd.response_tx.send(response);
+                    send_response(&cmd.response_tx, response);
                     processed = true;
                     continue;
                 }
@@ -1390,7 +1394,7 @@ impl App {
                         cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
                         serde_json::json!({"path": path, "scheduled": true}),
                     );
-                    let _ = cmd.response_tx.send(response);
+                    send_response(&cmd.response_tx, response);
                     processed = true;
                     continue;
                 }
@@ -1402,7 +1406,7 @@ impl App {
                         &cmd.request.params,
                         id,
                     );
-                    let _ = cmd.response_tx.send(response);
+                    send_response(&cmd.response_tx, response);
                     w.base.dirty = true;
                 }
                 processed = true;
@@ -1434,7 +1438,7 @@ impl App {
             if let Some(id) = focused_id {
                 if let Some(w) = self.windows.get_mut(&id).and_then(|w| w.as_main_mut()) {
                     let response = ipc::handler::handle(&mut w.state, &cmd.request);
-                    let _ = cmd.response_tx.send(response);
+                    send_response(&cmd.response_tx, response);
                     w.base.dirty = true;
                     processed = true;
                     continue;
@@ -1442,7 +1446,7 @@ impl App {
             }
             if let Some(state) = self.parked_states.first_mut() {
                 let response = ipc::handler::handle(state, &cmd.request);
-                let _ = cmd.response_tx.send(response);
+                send_response(&cmd.response_tx, response);
                 processed = true;
             }
         }

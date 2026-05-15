@@ -14,12 +14,12 @@ impl MainWindow {
         // Check if settings button was clicked (ui.rs sets state.settings_open = true)
         if self.state.settings_open {
             self.state.settings_open = false;
-            let _ = self.proxy.send_event(crate::AppEvent::OpenSettings);
+            crate::shortcuts::send_app_event(&self.proxy, crate::AppEvent::OpenSettings);
         }
         // Same flow for plugins modal.
         if self.state.plugins_open {
             self.state.plugins_open = false;
-            let _ = self.proxy.send_event(crate::AppEvent::OpenPlugins);
+            crate::shortcuts::send_app_event(&self.proxy, crate::AppEvent::OpenPlugins);
         }
 
         // When targeted_pty_polling is off, process all terminals every frame.

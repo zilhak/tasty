@@ -16,6 +16,18 @@ pub struct IpcCommand {
     pub response_tx: mpsc::SyncSender<JsonRpcResponse>,
 }
 
+/// IPC 응답 송신용 헬퍼. 클라이언트가 응답 전에 연결을 끊었거나 receiver가 drop된
+/// 경우(`SendError`)에는 trace로만 흔적을 남긴다 — 정상적인 take-and-go 케이스라
+/// warn 레벨로 올릴 만한 사건은 아니다.
+pub fn send_response(
+    tx: &mpsc::SyncSender<JsonRpcResponse>,
+    response: JsonRpcResponse,
+) {
+    if let Err(e) = tx.send(response) {
+        tracing::trace!("IPC response dropped (client disconnected): {e}");
+    }
+}
+
 /// Callback to wake the main event loop when an IPC command arrives.
 pub type IpcWaker = Arc<dyn Fn() + Send + Sync>;
 
@@ -139,8 +151,12 @@ impl IpcServer {
                         -32700,
                         format!("Parse error: {}", e),
                     );
-                    let _ = writeln!(writer, "{}", serde_json::to_string(&err_resp).unwrap());
-                    let _ = writer.flush();
+                    if let Err(e) = writeln!(writer, "{}", serde_json::to_string(&err_resp).unwrap()) {
+                        tracing::trace!("IPC parse-error response write failed: {e}");
+                    }
+                    if let Err(e) = writer.flush() {
+                        tracing::trace!("IPC parse-error response flush failed: {e}");
+                    }
                     continue;
                 }
             };
@@ -254,9 +270,14 @@ impl Drop for IpcServer {
     fn drop(&mut self) {
         // Signal the accept thread to stop
         self.shutdown.store(true, Ordering::Relaxed);
-        // Clean up port file
+        // Clean up port file. 파일이 이미 사라졌거나 권한이 없는 케이스도 정상 종료
+        // 흐름에서 발생 가능 — trace 레벨로만 기록한다.
         if let Some(path) = self.effective_port_file_path() {
-            let _ = std::fs::remove_file(path);
+            if let Err(e) = std::fs::remove_file(&path) {
+                if e.kind() != std::io::ErrorKind::NotFound {
+                    tracing::trace!("port file {} remove failed: {e}", path.display());
+                }
+            }
         }
     }
 }

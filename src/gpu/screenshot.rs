@@ -51,7 +51,9 @@ impl GpuState {
         let buffer_slice = buffer.slice(..);
         let (tx, rx) = std::sync::mpsc::channel();
         buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
-            let _ = tx.send(result);
+            if let Err(e) = tx.send(result) {
+                tracing::warn!("screenshot map_async result send failed: {e}");
+            }
         });
         self.device.poll(wgpu::Maintain::Wait);
 
@@ -80,8 +82,11 @@ impl GpuState {
                 encoder.set_color(png::ColorType::Rgb);
                 encoder.set_depth(png::BitDepth::Eight);
                 if let Ok(mut writer) = encoder.write_header() {
-                    let _ = writer.write_image_data(&pixels);
-                    tracing::info!("screenshot saved to {}", path.display());
+                    if let Err(e) = writer.write_image_data(&pixels) {
+                        tracing::warn!("screenshot write_image_data failed: {e}");
+                    } else {
+                        tracing::info!("screenshot saved to {}", path.display());
+                    }
                 }
             }
         } else {

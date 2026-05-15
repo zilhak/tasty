@@ -159,7 +159,7 @@ impl GpuState {
         // Settings window to appear only after the next user input.
         let repaint_proxy = proxy;
         egui_ctx.set_request_repaint_callback(move |_| {
-            let _ = repaint_proxy.send_event(AppEvent::EguiRepaint);
+            crate::shortcuts::send_app_event(&repaint_proxy, AppEvent::EguiRepaint);
         });
 
         // Apply theme from settings

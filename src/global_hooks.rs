@@ -182,18 +182,19 @@ impl GlobalHookManager {
     }
 
     /// Execute a shell command in a fire-and-forget fashion.
+    /// Spawn 실패는 사용자 hook이 발동했다고 보이지만 실제로는 자식이 안 뜬 상태라
+    /// 디버깅이 어렵다. warn으로 흔적을 남긴다.
     pub fn execute_command(command: &str) {
         #[cfg(windows)]
-        {
-            let _ = std::process::Command::new("cmd")
-                .args(["/C", command])
-                .spawn();
-        }
+        let result = std::process::Command::new("cmd")
+            .args(["/C", command])
+            .spawn();
         #[cfg(not(windows))]
-        {
-            let _ = std::process::Command::new("sh")
-                .args(["-c", command])
-                .spawn();
+        let result = std::process::Command::new("sh")
+            .args(["-c", command])
+            .spawn();
+        if let Err(e) = result {
+            tracing::warn!("global hook command spawn failed: {e}; cmd: {command}");
         }
     }
 }

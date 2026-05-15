@@ -1,8 +1,20 @@
+use winit::event_loop::EventLoopProxy;
 use winit::keyboard::{Key, KeyCode, ModifiersState, NamedKey, PhysicalKey};
 
 use crate::model::SplitDirection;
 use crate::window::Window as _;
 use crate::window::main::MainWindow;
+
+/// Best-effort `EventLoopProxy::send_event` dispatch.
+///
+/// `send_event`는 event loop가 이미 종료된 뒤에만 Err를 돌려준다. quit/shutdown
+/// 단축키 직후의 자투리 입력 race에서만 발생하며, 이미 종료 중인 상황이라 무해
+/// — 다만 디버깅에 도움 되도록 trace 레벨로 흔적은 남긴다.
+pub(crate) fn send_app_event(proxy: &EventLoopProxy<crate::AppEvent>, event: crate::AppEvent) {
+    if let Err(e) = proxy.send_event(event) {
+        tracing::trace!("AppEvent send dropped (event loop closing): {e}");
+    }
+}
 
 /// Convert a physical key code to a Key::Character for shortcut matching.
 /// On macOS, when IME is composing (e.g. Korean), logical_key may contain
@@ -303,7 +315,7 @@ impl MainWindow {
 
         let has_dt = |bindings: &[String]| bindings.iter().any(|b| b == dt_str);
         if has_dt(&kb.toggle_settings) {
-            let _ = self.proxy.send_event(crate::AppEvent::OpenSettings);
+            send_app_event(&self.proxy, crate::AppEvent::OpenSettings);
             return true;
         }
         if has_dt(&kb.toggle_notifications) {
@@ -434,13 +446,13 @@ impl MainWindow {
                         self.state.resize_all(terminal_rect, cell_w, cell_h);
                     }
                     "quit" => {
-                        let _ = self.proxy.send_event(crate::AppEvent::QuitRequested);
+                        send_app_event(&self.proxy, crate::AppEvent::QuitRequested);
                     }
                     "quit_immediate" => {
-                        let _ = self.proxy.send_event(crate::AppEvent::Shutdown);
+                        send_app_event(&self.proxy, crate::AppEvent::Shutdown);
                     }
                     "quit_minimize" => {
-                        let _ = self.proxy.send_event(crate::AppEvent::Minimize);
+                        send_app_event(&self.proxy, crate::AppEvent::Minimize);
                     }
                     "open_markdown" => {
                         let pane_id = self.state.active_workspace().focused_pane;
@@ -652,7 +664,7 @@ impl MainWindow {
             return true;
         }
         if matches_any_binding(&kb.toggle_settings, key, mods) {
-            let _ = proxy.send_event(crate::AppEvent::OpenSettings);
+            send_app_event(proxy, crate::AppEvent::OpenSettings);
             return true;
         }
         if matches_any_binding(&kb.toggle_notifications, key, mods) {
@@ -745,15 +757,15 @@ impl MainWindow {
             return true;
         }
         if matches_any_binding(&kb.quit_immediate, key, mods) {
-            let _ = proxy.send_event(crate::AppEvent::Shutdown);
+            send_app_event(proxy, crate::AppEvent::Shutdown);
             return true;
         }
         if matches_any_binding(&kb.quit_minimize, key, mods) {
-            let _ = proxy.send_event(crate::AppEvent::Minimize);
+            send_app_event(proxy, crate::AppEvent::Minimize);
             return true;
         }
         if matches_any_binding(&kb.quit, key, mods) {
-            let _ = proxy.send_event(crate::AppEvent::QuitRequested);
+            send_app_event(proxy, crate::AppEvent::QuitRequested);
             return true;
         }
         if matches_any_binding(&kb.open_markdown, key, mods) {
@@ -787,7 +799,7 @@ impl MainWindow {
             return true;
         }
         if matches_any_binding(&kb.new_window, key, mods) {
-            let _ = proxy.send_event(crate::AppEvent::CreateWindow);
+            send_app_event(proxy, crate::AppEvent::CreateWindow);
             return true;
         }
         if matches_any_binding(&kb.close_active, key, mods) {

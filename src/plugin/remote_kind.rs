@@ -61,13 +61,15 @@ pub fn register_remote_kind(
                 initial_name,
             );
             let handles = surface.handles();
-            let _ = tx_create.send(HostCmd::RemoteSurfaceCreated {
+            if let Err(e) = tx_create.send(HostCmd::RemoteSurfaceCreated {
                 surface_id: sid,
                 plugin_id: plugin_id_for_create.clone(),
                 kind: kind_static.to_string(),
                 params: params.clone(),
                 handles,
-            });
+            }) {
+                tracing::warn!("RemoteSurfaceCreated host cmd send failed: {e}");
+            }
             Ok(Box::new(surface) as Box<dyn Surface>)
         }),
         restore: Arc::new(move |sid, data| {
@@ -78,13 +80,15 @@ pub fn register_remote_kind(
                 kind_static.to_string(),
             );
             let handles = surface.handles();
-            let _ = tx_restore.send(HostCmd::RemoteSurfaceRestored {
+            if let Err(e) = tx_restore.send(HostCmd::RemoteSurfaceRestored {
                 surface_id: sid,
                 plugin_id: plugin_id_for_restore.clone(),
                 kind: kind_static.to_string(),
                 data: data.clone(),
                 handles,
-            });
+            }) {
+                tracing::warn!("RemoteSurfaceRestored host cmd send failed: {e}");
+            }
             Ok(Box::new(surface) as Box<dyn Surface>)
         }),
         snapshot: Arc::new(|s: &dyn Surface| {

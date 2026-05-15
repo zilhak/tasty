@@ -22,7 +22,12 @@ pub fn handle_surface_meta_set(
         Some(v) => v,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'value' parameter"),
     };
-    crate::surface_meta::SurfaceMetaStore::set(surface_id, key, value);
+    if let Err(e) = crate::surface_meta::SurfaceMetaStore::set(surface_id, key, value) {
+        return JsonRpcResponse::internal_error(
+            id,
+            format!("surface meta set failed: {e}"),
+        );
+    }
     JsonRpcResponse::success(id, json!({ "ok": true, "surface_id": surface_id }))
 }
 
@@ -56,7 +61,12 @@ pub fn handle_surface_meta_unset(
         Some(k) => k,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'key' parameter"),
     };
-    crate::surface_meta::SurfaceMetaStore::unset(surface_id, key);
+    if let Err(e) = crate::surface_meta::SurfaceMetaStore::unset(surface_id, key) {
+        return JsonRpcResponse::internal_error(
+            id,
+            format!("surface meta unset failed: {e}"),
+        );
+    }
     JsonRpcResponse::success(id, json!({ "ok": true, "surface_id": surface_id }))
 }
 

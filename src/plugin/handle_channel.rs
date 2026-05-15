@@ -319,7 +319,9 @@ fn handle_incoming_unix(
     stream: std::os::unix::net::UnixStream,
     pending: &Arc<Mutex<HashMap<String, mpsc::Sender<HandleStream>>>>,
 ) {
-    let _ = stream.set_read_timeout(Some(AUTH_READ_TIMEOUT));
+    if let Err(e) = stream.set_read_timeout(Some(AUTH_READ_TIMEOUT)) {
+        tracing::warn!("handle channel: set_read_timeout failed: {e}");
+    }
     let cloned = match stream.try_clone() {
         Ok(s) => s,
         Err(e) => {
@@ -340,7 +342,9 @@ fn handle_incoming_unix(
             return;
         }
     };
-    let _ = stream.set_read_timeout(None);
+    if let Err(e) = stream.set_read_timeout(None) {
+        tracing::warn!("handle channel: clearing read_timeout failed: {e}");
+    }
 
     let tx_opt = pending
         .lock()
@@ -360,7 +364,12 @@ fn handle_incoming_unix(
                 "handle channel: plugin '{}' authenticated on aux channel",
                 auth.plugin_id
             );
-            let _ = tx.send(HandleStream::from_unix(stream));
+            if let Err(e) = tx.send(HandleStream::from_unix(stream)) {
+                tracing::warn!(
+                    "handle channel: plugin '{}' handle stream handoff failed: {e}",
+                    auth.plugin_id
+                );
+            }
         }
         None => {
             tracing::warn!(

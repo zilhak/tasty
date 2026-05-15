@@ -272,7 +272,11 @@ fn apply_meta(surface_id: u32, meta: Option<&serde_json::Map<String, serde_json:
     if let Some(map) = meta {
         for (key, value) in map {
             if let Some(v) = value.as_str() {
-                crate::surface_meta::SurfaceMetaStore::set(surface_id, key, v);
+                if let Err(e) = crate::surface_meta::SurfaceMetaStore::set(surface_id, key, v) {
+                    tracing::warn!(
+                        "surface_meta set failed for surface {surface_id} key '{key}': {e}"
+                    );
+                }
             }
         }
     }

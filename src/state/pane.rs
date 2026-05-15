@@ -338,7 +338,11 @@ impl AppState {
             let pane = ws.pane_layout_mut().find_pane_mut(pane_id).unwrap();
             let tab = &mut pane.tabs[tab_idx];
             if tab.close_surface(surface_id) {
-                crate::surface_meta::SurfaceMetaStore::remove(surface_id);
+                if let Err(e) = crate::surface_meta::SurfaceMetaStore::remove(surface_id) {
+                    tracing::warn!(
+                        "surface_meta remove failed for surface {surface_id}: {e}"
+                    );
+                }
                 self.engine.mark_layout_dirty();
                 return true;
             }
@@ -375,7 +379,11 @@ impl AppState {
                 if pane.active_tab >= pane.tabs.len() {
                     pane.active_tab = pane.tabs.len() - 1;
                 }
-                crate::surface_meta::SurfaceMetaStore::remove(surface_id);
+                if let Err(e) = crate::surface_meta::SurfaceMetaStore::remove(surface_id) {
+                    tracing::warn!(
+                        "surface_meta remove failed for surface {surface_id}: {e}"
+                    );
+                }
                 self.engine.mark_layout_dirty();
                 return true;
             }
@@ -390,7 +398,11 @@ impl AppState {
                 if let Some(first) = ws.pane_layout().first_pane() {
                     ws.focused_pane = first.id;
                 }
-                crate::surface_meta::SurfaceMetaStore::remove(surface_id);
+                if let Err(e) = crate::surface_meta::SurfaceMetaStore::remove(surface_id) {
+                    tracing::warn!(
+                        "surface_meta remove failed for surface {surface_id}: {e}"
+                    );
+                }
                 self.engine.mark_layout_dirty();
                 return true;
             }

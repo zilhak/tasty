@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::fs;
+use std::io;
 use std::path::PathBuf;
 
 /// File-based per-surface metadata store.
@@ -16,18 +17,23 @@ impl SurfaceMetaStore {
         Self::meta_dir(surface_id).join("meta.json")
     }
 
-    pub fn ensure_created(surface_id: u32) {
+    pub fn ensure_created(surface_id: u32) -> io::Result<()> {
         let dir = Self::meta_dir(surface_id);
-        let _ = fs::create_dir_all(&dir);
+        fs::create_dir_all(&dir)?;
         let path = Self::meta_path(surface_id);
         if !path.exists() {
-            let _ = fs::write(&path, "{}");
+            fs::write(&path, "{}")?;
         }
+        Ok(())
     }
 
-    pub fn remove(surface_id: u32) {
+    pub fn remove(surface_id: u32) -> io::Result<()> {
         let dir = Self::meta_dir(surface_id);
-        let _ = fs::remove_dir_all(&dir);
+        match fs::remove_dir_all(&dir) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(e),
+        }
     }
 
     fn read_all(surface_id: u32) -> HashMap<String, String> {
@@ -38,28 +44,28 @@ impl SurfaceMetaStore {
         }
     }
 
-    fn write_all(surface_id: u32, data: &HashMap<String, String>) {
-        Self::ensure_created(surface_id);
+    fn write_all(surface_id: u32, data: &HashMap<String, String>) -> io::Result<()> {
+        Self::ensure_created(surface_id)?;
         let path = Self::meta_path(surface_id);
-        if let Ok(json) = serde_json::to_string_pretty(data) {
-            let _ = fs::write(&path, json);
-        }
+        let json = serde_json::to_string_pretty(data)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        fs::write(&path, json)
     }
 
-    pub fn set(surface_id: u32, key: &str, value: &str) {
+    pub fn set(surface_id: u32, key: &str, value: &str) -> io::Result<()> {
         let mut data = Self::read_all(surface_id);
         data.insert(key.to_string(), value.to_string());
-        Self::write_all(surface_id, &data);
+        Self::write_all(surface_id, &data)
     }
 
     pub fn get(surface_id: u32, key: &str) -> Option<String> {
         Self::read_all(surface_id).get(key).cloned()
     }
 
-    pub fn unset(surface_id: u32, key: &str) {
+    pub fn unset(surface_id: u32, key: &str) -> io::Result<()> {
         let mut data = Self::read_all(surface_id);
         data.remove(key);
-        Self::write_all(surface_id, &data);
+        Self::write_all(surface_id, &data)
     }
 
     pub fn list(surface_id: u32) -> HashMap<String, String> {

@@ -506,7 +506,9 @@ impl AppState {
     /// Clean up all state associated with a closed surface:
     /// surface metadata and per-surface host view state.
     pub(crate) fn cleanup_surface(&mut self, surface_id: u32) {
-        crate::surface_meta::SurfaceMetaStore::remove(surface_id);
+        if let Err(e) = crate::surface_meta::SurfaceMetaStore::remove(surface_id) {
+            tracing::warn!("surface_meta remove failed for surface {surface_id}: {e}");
+        }
         self.markdown_views.drop_view(surface_id);
         self.image_views.drop_view(surface_id);
     }

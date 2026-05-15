@@ -292,7 +292,7 @@ impl ApplicationHandler<AppEvent> for App {
                     }
                     WindowAction::CloseWithEvent(app_event) => {
                         self.close_active_modal();
-                        let _ = self.engine.proxy.send_event(app_event);
+                        crate::shortcuts::send_app_event(&self.engine.proxy, app_event);
                     }
                 }
                 return;
@@ -450,11 +450,11 @@ impl ApplicationHandler<AppEvent> for App {
         if let Some(ref ids) = self.tray_menu_ids {
             if let Some(menu_id) = crate::system_tray::poll_menu_event() {
                 if menu_id == ids.show_window {
-                    let _ = self.engine.proxy.send_event(AppEvent::TrayShowWindow);
+                    crate::shortcuts::send_app_event(&self.engine.proxy, AppEvent::TrayShowWindow);
                 } else if menu_id == ids.new_window {
-                    let _ = self.engine.proxy.send_event(AppEvent::CreateWindow);
+                    crate::shortcuts::send_app_event(&self.engine.proxy, AppEvent::CreateWindow);
                 } else if menu_id == ids.quit {
-                    let _ = self.engine.proxy.send_event(AppEvent::Shutdown);
+                    crate::shortcuts::send_app_event(&self.engine.proxy, AppEvent::Shutdown);
                 }
             }
         }
@@ -718,7 +718,7 @@ impl App {
                 event_loop.exit();
             }
             "minimize" => {
-                let _ = self.engine.proxy.send_event(AppEvent::Minimize);
+                crate::shortcuts::send_app_event(&self.engine.proxy, AppEvent::Minimize);
             }
             _ => {
                 // "ask" — close any existing modal, then show quit modal
