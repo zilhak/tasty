@@ -36,6 +36,7 @@ pub fn handle(state: &mut AppState, request: &JsonRpcRequest) -> JsonRpcResponse
 | `debug.event_bus.list_subscribers` | `key` | 해당 키에 매칭되는 plugin 구독 목록 (`plugin_id`, `sub_id`, 매니페스트 패턴) |
 | `debug.event_bus.publish` | `key, payload(json string), scope("system"\|"surface")` | 임의 키로 host envelope 발화. 응답에 `trace_id` 포함 |
 | `debug.event_bus.trace` | `trace_id` | 최근 256개 envelope 링버퍼에서 같은 trace_id를 가진 envelope들을 발화 순서로 반환 |
+| `debug.extension.invoke_hook` | `extension_id, kind("event"\|"ipc"), phase("pre"\|"post"), mode("transform"\|"filter"\|"observe"), target, payload` | 매니페스트 hook 매칭을 우회하여 extension의 `handle_extension_hook`을 직접 호출. 응답에 `modified_payload`, `pass`가 그대로 전달된다. fail-open/backoff 우회 — 테스트/디버그 전용. |
 
 `debug.event_bus.*`는 `App`-level dispatch에서 `PluginManager::event_bus`를 직접 호출한다 (다른 `debug.*`처럼 `route_debug_handler`를 거치지 않는다 — `AppState`가 PluginManager를 들고 있지 않기 때문). CLI는 `tasty debug event-bus {list-subscribers|publish|trace}` 서브커맨드로 노출된다.
 

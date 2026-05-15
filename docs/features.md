@@ -1185,6 +1185,15 @@ Claude Code 등 TUI 앱이 실행 중이던 터미널을 복원할 때, 해당 �
 - 호스트가 fire-and-forget으로 fan-out 하며 plugin 응답은 무시. SDK는 `Plugin::on_event(EventDispatchCtx)` 트레이트 메서드로 dispatch
 - cascade 닫힘(탭/팬/워크스페이스 전체 삭제로 따라가는 surface)은 envelope 대상이 아니며, 명시적으로 close된 surface_id만 발사된다
 
+### Plugin extension (다른 plugin 확장)
+- 매니페스트 `[extends]` 블록으로 특정 target plugin의 IPC 호출/이벤트 발화를 가로채는 extension plugin을 작성 가능. 단일 A+ 제약: target 1개당 활성 extension은 최대 1개 (lexicographic 우선순위로 winner 결정, 나머지는 `Conflict` 상태)
+- hook 종류: `pre_event` / `post_event` / `pre_ipc` / `post_ipc`. mode: `transform`(payload 교체) / `filter`(`pass: bool` 차단) / `observe`(관찰만)
+- 권한: `[extends]` 선언 plugin은 `permissions[]`에 `ext:<target_id>` 토큰 필수
+- 상태: `Active` / `Pending(reason)` (대상 미설치/버전 불일치 등) / `Disabled` / `Conflict`. 대상 install/enable 시 자동 승격
+- Fail-open: hook timeout/에러 시 원래 값 사용, 흐름은 계속. `(extension_id, target_key)` 연속 3회 실패 → 60초 backoff. self-loop(caller == extension_id) skip
+- SDK: `Plugin::handle_extension_hook(ctx) -> ExtensionHookOutcome` (`pass()` / `block()` / `transformed(v)`). 작성 가이드: `docs/dev-guide/plugin-development.md` §6-1
+- CLI: `tasty plugin extension list`로 전체 extension 상태 조회 (`plugin.extension.list` IPC)
+
 ### Plugin i18n
 - 매니페스트 `lang_dir` (기본 `"lang"`): plugin 디렉터리 내 lang 파일들이 위치
 - 호스트는 plugin 디스커버리 시 `<lang_dir>/en.toml`(fallback) + `<lang_dir>/<active>.toml`을 읽어 namespace overlay로 호스트 i18n registry에 머지

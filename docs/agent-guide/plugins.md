@@ -303,6 +303,7 @@ tasty plugin logs <id> [--follow]          # ~/.tasty/plugins-logs/<id>.log 출�
 tasty plugin permissions <id>              # 매니페스트 + granted 표시
 tasty plugin grant <id> <permission>       # 권한 추가 (매니페스트에 선언된 경우만)
 tasty plugin revoke <id> <permission>      # 권한 제거
+tasty plugin extension list                # 모든 extension의 상태 일람 (active/pending/disabled/conflict)
 ```
 
 `logs`는 호스트 IPC를 거치지 않고 파일을 직접 읽는다 — 호스트가 죽었을 때도 동작.
@@ -320,6 +321,7 @@ tasty plugin revoke <id> <permission>      # 권한 제거
 | `plugin.permissions` | `id: string` | `{id, manifest:[...], granted:[...]}` |
 | `plugin.grant` | `id: string, permission: string` | granted에 추가 (매니페스트에 선언된 권한만) |
 | `plugin.revoke` | `id: string, permission: string` | granted에서 제거 |
+| `plugin.extension.list` | 없음 | 모든 extension의 `{extensions: [{extension_id, target_id?, state:{status,...}}]}`. `status`는 `active` / `pending` / `disabled` / `conflict`. extension(=`[extends]` 블록 선언) plugin만 포함. |
 
 ## Event Bus
 

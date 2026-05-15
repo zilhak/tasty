@@ -473,6 +473,126 @@ variant 요약:
 | `Json(serde_json::Error)` | 인코딩/디코딩 실패 |
 | `LockPoisoned(name)` | 내부 mutex poison (다른 thread의 패닉 후) |
 
+## 6-1. Extension (다른 plugin 확장)
+
+특정 plugin(target)의 이벤트 발화/IPC 호출을 가로채는 **extension plugin**을 작성할 수 있다. extension은 매니페스트에 `[extends]` 블록을 선언하고 SDK의 `Plugin::handle_extension_hook`을 구현한다.
+
+대상 plugin 1개당 활성 extension은 최대 1개다 (단일 A+ 제약). 동일 target을 가리키는 extension이 둘 이상이면 lexicographic 우선순위로 winner 1개만 `Active`가 되고 나머지는 `Conflict` 상태로 비활성화된다.
+
+### 매니페스트 `[extends]`
+
+```toml
+id = "com.example.clipboard-redactor"
+name = "Clipboard Redactor"
+version = "0.1.0"
+api_version = "1"
+entry = { command = "clipboard-redactor" }
+
+permissions = ["ext:com.tasty.clipboard"]
+
+[extends]
+plugin_id = "com.tasty.clipboard"
+version_req = ">=0.1, <0.2"
+api_version = "1"
+
+[[extends.pre_ipc]]
+method = "clipboard.add"
+mode = "transform"
+timeout_ms = 200
+modifies = ["text"]
+
+[[extends.post_event]]
+event = "clipboard.changed"
+mode = "observe"
+timeout_ms = 100
+```
+
+필드 의미:
+
+- `plugin_id`: 확장 대상 plugin id (정확 일치).
+- `version_req`: 대상 버전 범위 (semver). 대상이 이 범위를 벗어나면 extension은 `Pending` 상태로 대기한다.
+- `api_version`: extension 자체가 따르는 호스트 protocol 버전. 호스트의 `HOST_API_VERSION`과 같아야 한다.
+- `pre_event` / `post_event`: 대상이 publisher인 envelope의 fan-out **이전**/**이후**에 fire.
+- `pre_ipc` / `post_ipc`: 대상 namespace의 IPC 호출의 invoke **이전**(`params` 가공)/**응답 이후**(`result` 가공)에 fire.
+- 각 hook 항목은 정확한 키(이벤트 키 또는 IPC method)와 `mode`, `timeout_ms`를 지정한다. 와일드카드 불가. `timeout_ms` 상한은 `HOOK_TIMEOUT_MS_MAX = 1000`.
+
+`mode`:
+
+- `transform` — payload를 새 값으로 교체할 수 있다. 가장 강력.
+- `filter` — `pass: bool`만 반환. 차단 가능하지만 payload 변경 불가.
+- `observe` — 응답은 호스트가 무시. 단순 관찰/로깅. timeout/실패도 후속 흐름에 영향 없음.
+
+### 권한 토큰 `ext:<target>`
+
+`[extends]` 블록을 선언한 plugin은 매니페스트 `permissions[]`에 `ext:<plugin_id>` 토큰을 반드시 포함해야 한다 (검증 실패 시 매니페스트 거부). 사용자가 `tasty plugin install`로 grant하면 extension이 등록된다.
+
+### SDK 훅 구현
+
+`Plugin::handle_extension_hook(&mut self, ctx: ExtensionHookCtx) -> ExtensionHookOutcome`을 구현한다.
+
+```rust
+use tasty_plugin_sdk::{ExtensionHookCtx, ExtensionHookOutcome, Plugin};
+use tasty_plugin_protocol::{ExtensionHookKind, ExtensionHookMode, ExtensionHookPhase};
+
+impl Plugin for ClipboardRedactor {
+    fn handle_extension_hook(&mut self, ctx: ExtensionHookCtx) -> ExtensionHookOutcome {
+        match (ctx.kind, ctx.phase, ctx.mode, ctx.target.as_str()) {
+            (ExtensionHookKind::Ipc, ExtensionHookPhase::Pre,
+             ExtensionHookMode::Transform, "clipboard.add") => {
+                let mut params = ctx.payload;
+                if let Some(text) = params.get_mut("text").and_then(|v| v.as_str()) {
+                    let redacted = redact_secrets(text);
+                    params["text"] = serde_json::Value::String(redacted);
+                }
+                ExtensionHookOutcome::transformed(params)
+            }
+            (ExtensionHookKind::Event, ExtensionHookPhase::Post,
+             ExtensionHookMode::Observe, "clipboard.changed") => {
+                tracing::info!(target = %ctx.target, "observed clipboard.changed");
+                ExtensionHookOutcome::pass()
+            }
+            _ => ExtensionHookOutcome::pass(),
+        }
+    }
+}
+```
+
+헬퍼:
+
+- `ExtensionHookOutcome::pass()` — observe / filter pass / transform no-op 공통.
+- `ExtensionHookOutcome::block()` — filter mode에서 흐름 차단.
+- `ExtensionHookOutcome::transformed(new_payload)` — transform mode에서 payload 교체.
+
+`ctx.payload`는 phase에 따라 다르다:
+
+| kind | phase | payload |
+|---|---|---|
+| event | pre | envelope.payload (fan-out 직전) |
+| event | post | envelope.payload (fan-out 직후 — observe-only 효과) |
+| ipc | pre | 호출 `params` (target invoke 직전) |
+| ipc | post | 호출 `result` (target 응답 후, caller에게 반환 직전) |
+
+### 상태 머신
+
+호스트가 각 extension에 대해 추적하는 상태:
+
+| 상태 | 설명 |
+|---|---|
+| `Active` | hook이 정상 fire 중. |
+| `Pending(reason)` | 활성화 대기. reason 예: `target_missing`(대상 plugin 미설치), `target_version_mismatch`, `api_version_mismatch`, `host_starting`. 대상이 install/enable되면 자동 전환. |
+| `Disabled` | 사용자가 disable 또는 권한 미부여. |
+| `Conflict` | 동일 target에 다른 winner가 이미 있어 비활성. winner가 떠나면 lexicographic 다음 후보가 `Active`로 승격. |
+
+CLI: `tasty plugin extension list`로 전체 extension의 상태를 조회.
+
+### Fail-open 정책
+
+hook 호출 결과가 timeout/에러/체인 통신 실패면 호스트는 **원래 값을 그대로 사용**하고 흐름을 계속한다 (요청 전체를 막지 않음). 같은 `(extension_id, target_key)` 쌍에 대해 연속 3회 실패가 누적되면 60초 backoff 동안 그 hook은 skip된다. 성공 시 카운터는 reset.
+
+### Self-loop 방지
+
+extension plugin이 자기가 hook 거는 target의 IPC를 호출하더라도 caller_plugin_id가 자신과 같으면 hook은 skip된다. 무한 재귀를 막기 위함.
+
 ## 7. 환경변수
 
 `tasty_plugin_sdk::env::PluginEnv::load()`가 일괄 로딩하지만 직접 읽을 수도 있다.
