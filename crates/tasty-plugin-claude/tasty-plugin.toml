@@ -15,6 +15,7 @@ permissions = [
     "notification",
 ]
 lang_dir = "lang"
+event_subscribe = ["surface.closed"]
 
 [entry]
 type = "process"
@@ -22,9 +23,6 @@ command = "tasty-plugin-claude"
 
 [[contributes.ipc_namespace]]
 prefix = "claude"
-
-[[contributes.surface_observer]]
-event = "closed"
 
 [[contributes.cli]]
 name = "claude"

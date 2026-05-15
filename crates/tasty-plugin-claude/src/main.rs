@@ -17,8 +17,8 @@ use std::time::Duration;
 
 use serde_json::{json, Value};
 use tasty_plugin_sdk::{
-    HostHandle, IpcMethodCtx, IpcMethodError, Plugin, SurfaceCreateCtx, SurfaceEventCtx,
-    SurfaceLifecycleCtx, SurfaceResult,
+    EventDispatchCtx, HostHandle, IpcMethodCtx, IpcMethodError, Plugin, SurfaceCreateCtx,
+    SurfaceEventCtx, SurfaceResult,
 };
 
 use error_scan::ErrorScanner;
@@ -112,11 +112,17 @@ impl Plugin for ClaudePlugin {
         }
     }
 
-    fn on_surface_lifecycle(&mut self, ctx: SurfaceLifecycleCtx) {
-        // 호스트가 일반 terminal surface가 닫혔다고 알려준다. 그 surface가 claude
+    fn on_event(&mut self, ctx: EventDispatchCtx) {
+        // Event Bus 1.0: `surface.closed` 구독 시 호출. 닫힌 surface가 claude
         // 자식이었다면 child registry에서 제거하고, parent였다면 closed_parents로
         // 마킹한다. error scan에서도 함께 제외한다.
-        let sid = ctx.surface_id;
+        if ctx.envelope.key != "surface.closed" {
+            return;
+        }
+        let sid = match ctx.envelope.payload.get("surface_id").and_then(|v| v.as_u64()) {
+            Some(v) => v as u32,
+            None => return,
+        };
         let parent_was_child = self.state.parent_of_child(sid).is_some();
         if parent_was_child {
             self.state.unregister_child(sid);
@@ -132,11 +138,16 @@ impl Plugin for ClaudePlugin {
         }
     }
 
-    fn on_start(&mut self, host: HostHandle, _bus: tasty_plugin_sdk::BusHandle) {
-        // worker dispatch가 시작되기 직전에 1회 호출. PTY error scan을 위한
-        // background polling thread를 띄운다. 호스트가 메모리 스캔하던 패턴을
-        // 1:1로 옮겼고 (`error_scan.rs::CLAUDE_ERROR_PATTERN`), polling 간격은
-        // 800ms로 호스트 tick에 근접하게 맞춘다.
+    fn on_start(&mut self, host: HostHandle, bus: tasty_plugin_sdk::BusHandle) {
+        // worker dispatch가 시작되기 직전에 1회 호출.
+        // - `surface.closed` 이벤트 구독 (Event Bus 1.0). 옛 surface_observer
+        //   매니페스트 필드의 대체 경로.
+        // - PTY error scan을 위한 background polling thread spawn. 호스트가
+        //   메모리 스캔하던 패턴을 1:1로 옮겼고 (`error_scan.rs::CLAUDE_ERROR_PATTERN`),
+        //   polling 간격은 800ms로 호스트 tick에 근접하게 맞춘다.
+        if let Err(e) = bus.subscribe("surface.closed") {
+            tracing::warn!("subscribe surface.closed failed: {e}");
+        }
         let scanner = self.scanner.clone();
         std::thread::Builder::new()
             .name("claude-error-scan".into())
