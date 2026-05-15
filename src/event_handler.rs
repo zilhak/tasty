@@ -310,6 +310,15 @@ impl ApplicationHandler<AppEvent> for App {
             if main_window_count > 1 {
                 // Multiple windows: just close this one
                 self.windows.remove(&id);
+                if let Some(mgr) = self.plugin_manager.as_mut() {
+                    use tasty_plugin_protocol::{EventScope, LifecycleReason};
+                    use tasty_plugin_protocol::events::payloads::WindowClosed;
+                    let payload = WindowClosed {
+                        window_id: u64::from(id),
+                        reason: LifecycleReason::User,
+                    };
+                    mgr.emit_host_event("window.closed", &payload, EventScope::System);
+                }
                 if self.engine.focused_window_id == Some(id) {
                     self.engine.focused_window_id = self
                         .windows
@@ -334,6 +343,14 @@ impl ApplicationHandler<AppEvent> for App {
                 .unwrap_or(false);
             if is_main {
                 self.engine.focused_window_id = Some(id);
+            }
+            if let Some(mgr) = self.plugin_manager.as_mut() {
+                use tasty_plugin_protocol::EventScope;
+                use tasty_plugin_protocol::events::payloads::WindowFocused;
+                let payload = WindowFocused {
+                    window_id: u64::from(id),
+                };
+                mgr.emit_host_event("window.focused", &payload, EventScope::System);
             }
             // If a modal is active, bring it to the front so it's not buried
             if let Some(modal_id) = self.engine.active_modal_id {

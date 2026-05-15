@@ -326,6 +326,16 @@ impl App {
         let main = window::main::MainWindow::new(gpu, state, window, self.engine.proxy.clone());
         self.windows.insert(window_id, Box::new(main));
         self.engine.focused_window_id = Some(window_id);
+        if let Some(mgr) = self.plugin_manager.as_mut() {
+            use tasty_plugin_protocol::EventScope;
+            use tasty_plugin_protocol::events::payloads::{WindowCreated, WindowModality};
+            let payload = WindowCreated {
+                window_id: u64::from(window_id),
+                kind: "main".to_string(),
+                modality: WindowModality::Modeless,
+            };
+            mgr.emit_host_event("window.created", &payload, EventScope::System);
+        }
     }
 
     /// Initialize the full app state (terminal, IPC server, etc.) after shell is confirmed.
