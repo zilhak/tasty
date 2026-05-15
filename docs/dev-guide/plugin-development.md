@@ -13,7 +13,7 @@ Plugin이 호스트에 contribute하는 카테고리(상세는 `docs/agent-guide
 1. 새 Window 추가 — 현재 매니페스트 schema 없음(향후)
 2. 새 Surface 추가 — `[[surface_kinds]]`
 3. 새 Popup 추가 — 현재 매니페스트 schema 없음(향후). 그 전까지는 호스트가 popup 본문을 그리고 plugin은 IPC로 데이터만 공급하거나, surface로 대체한다.
-4. 새 Tool 추가 (좌측 사이드바 도구 메뉴 항목) — `[[contributes.menu_items]]` (schema 정의됨, 호스트 wiring 진행 중)
+4. 새 Tool 추가 (좌측 사이드바 도구 메뉴 항목) — `[[contributes.tool]]` + `permissions = ["ui.tool_item"]`. 클릭 시 dispatch는 `kind = "event"` (Event Bus 발화) / `"open_surface"` (탭 추가) / `"open_popup"` (popup 미구현, 검증만 통과)
 5. 이벤트별 동작 추가 — `[[contributes.commands]]`(키 입력) / `event_subscribe`(Event Bus 구독, 예: `"surface.closed"`) / `[[contributes.ipc_namespace]]`(IPC 호출) / `[[contributes.cli]]`(CLI 호출)
 
 작성자가 다뤄야 할 것:
@@ -318,6 +318,63 @@ impl Plugin for MyPlugin {
 plugin 키와 호스트 키가 겹치면 **focused surface가 plugin 소유일 때만** plugin
 키가 우선한다. 그 외 영역(터미널, 다른 plugin surface)에서는 호스트 키가
 정상 동작한다.
+
+## 4-1-A. 도구 메뉴 항목 (Tool Contribute)
+
+좌측 사이드바 하단 "도구" 팝업에 항목을 꽂는다. 호스트 빌트인(클립보드 히스토리
+등)과 plugin 항목이 같은 메뉴에 합쳐져 표시된다.
+
+### 매니페스트
+
+```toml
+permissions = ["ui.tool_item"]
+
+[[contributes.tool]]
+id = "todo"
+label_i18n_key = "com.example.todo.tool.label"
+icon = "✅"
+order_hint = 100
+
+[contributes.tool.action]
+kind = "event"
+event_key = "com.example.todo.menu_clicked"
+```
+
+세 가지 `action.kind`별 동작:
+
+| kind | 추가 필드 | 클릭 시 동작 |
+|------|----------|------------|
+| `event` | `event_key` | 호스트가 Event Bus로 `event_key` 발화 (payload `{"tool_id": "<plugin_id>/<tool_id>"}`). plugin은 `event_subscribe`에 같은 키를 선언해 받는다. |
+| `open_surface` | `surface_kind` | 포커스된 pane에 해당 kind의 새 탭을 추가. `surface_kind`는 같은 매니페스트의 `[[surface_kinds]]`에 선언돼 있어야 한다. |
+| `open_popup` | `popup_id` | (미구현) 매니페스트 검증은 통과시키되 클릭 시 warn 로그만 남기고 무시. |
+
+### plugin 측 처리
+
+`kind = "event"`로 선언한 경우 plugin은 SDK의 이벤트 콜백에서 받는다:
+
+```rust
+event_subscribe = ["com.example.todo.menu_clicked"]
+```
+
+`Plugin::handle_event` 콜백이 `event_key == "com.example.todo.menu_clicked"`로
+호출된다. payload의 `tool_id`는 plugin이 여러 도구 항목을 contribute했을 때
+어떤 항목이 트리거됐는지 식별하는 용도.
+
+`kind = "open_surface"`는 plugin이 별도 코드를 작성할 필요가 없다 — 호스트가
+`AppState::add_kind_tab`으로 탭을 생성하고, plugin의 `create_surface` 콜백이
+일반 surface 생성 흐름과 동일하게 호출된다.
+
+### 표시 조건과 정렬
+
+- `permissions = ["ui.tool_item"]`이 매니페스트에 있고 사용자가 grant했을 때만 노출.
+- plugin을 disable하거나 권한을 revoke하면 즉시 메뉴에서 사라진다.
+- 전체 메뉴는 `order_hint` 오름차순 (기본 100), 동률은 키 순. 호스트 빌트인 `0..99`.
+- 항목 키는 호스트가 합성: `<plugin_id>/<tool_id>` 형식.
+
+### 디버그/테스트
+
+debug 빌드에서 `tasty debug tool list` / `tasty debug tool invoke --key <key>`로
+실제 메뉴 렌더링을 거치지 않고 IPC로 검증할 수 있다 (`docs/dev-guide/debug-ipc.md`).
 
 ## 4-2. IPC namespace 처리 (handle_ipc_method)
 

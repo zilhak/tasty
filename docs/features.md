@@ -369,8 +369,17 @@
 ### 도구 메뉴
 - 사이드바 하단의 "도구" 버튼을 클릭하면 버튼 위쪽에 headless 팝업(타이틀바 없음)이 표시
 - 팝업에는 사용 가능한 도구 목록이 메뉴 형태로 나열됨
-- 현재 도구: 클립보드 히스토리
+- 항목 출처:
+  - **호스트 빌트인** — 클립보드 히스토리 등 (`ToolSource::Builtin`)
+  - **Plugin contribute** — `[[contributes.tool]]` + `ui.tool_item` 권한 grant된 활성 plugin
+- 클릭 dispatch (`ToolAction`):
+  - `event` — Event Bus로 `event_key` 발화 (payload `{"tool_id": "<key>"}`)
+  - `open_surface` — 포커스된 pane에 `surface_kind` 새 탭 추가
+  - `open_popup` — 미구현 (검증만 통과, 클릭 시 warn 로그)
+- 정렬: `order_hint` 오름차순 (호스트 빌트인 0..99, plugin 기본 100), 동률은 키 순
+- 라벨: `label_i18n_key`를 `t()`로 번역. 키가 catalog에 없으면 키 자체를 fallback 표시
 - 바깥 클릭 시 자동으로 닫힘 (`close_on_outside_click`)
+- 디버그: `tasty debug tool list` / `tasty debug tool invoke --key <key>`로 IPC 조작 가능 (debug 빌드 한정)
 
 ### Busy Indicator (실행 중 표시)
 - PTY foreground 프로세스를 1초 간격으로 폴링하여 surface별 busy 상태를 캐시(`busy_surfaces`)

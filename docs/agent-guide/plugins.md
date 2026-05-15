@@ -20,7 +20,7 @@ Plugin의 근본 역할은 다음 5가지로 분류된다.
 | 새 Window | _(없음)_ | 미구현 |
 | 새 Surface | `[[surface_kinds]]` | ✅ |
 | 새 Popup | _(없음)_ | 미구현 |
-| 새 Tool (도구 메뉴 항목) | `[[contributes.menu_items]]` | schema 정의됨, 호스트 wiring 진행 중 |
+| 새 Tool (도구 메뉴 항목) | `[[contributes.tool]]` | ✅ |
 | 이벤트: 사용자 키 입력 | `[[contributes.commands]]` | ✅ (plugin 소유 surface 위에서만 매칭) |
 | 이벤트: 다른 surface lifecycle | `event_subscribe = ["surface.closed"]` (Event Bus) | ✅ |
 | 이벤트: 호스트/다른 plugin/CLI의 IPC 호출 | `[[contributes.ipc_namespace]]` | ✅ |
@@ -258,6 +258,57 @@ forward 루프 없이 plugin이 자기 namespace의 구현을 호스트 본문�
 trampoline한다). 호스트에 동명 메서드가 없으면 일반 `-32601 method not found`가
 반환된다.
 
+## 도구 메뉴 항목 (Tool Contribute)
+
+좌측 사이드바 하단의 "도구" 팝업에 항목을 꽂는다. 호스트 빌트인(클립보드
+히스토리 등) 위에 plugin 항목이 합쳐져 한 메뉴로 표시된다.
+
+### 매니페스트
+
+```toml
+permissions = ["ui.tool_item"]
+
+[[contributes.tool]]
+id = "todo"                                          # plugin 내 유일, 소문자+숫자+'-'
+label_i18n_key = "com.example.todo.tool.label"       # 메뉴에 표시할 라벨 (i18n 키)
+icon = "✅"                                          # 옵션 (1자 이모지/짧은 문자열)
+order_hint = 100                                     # 정렬 가중치 (작을수록 위, 기본 100)
+
+[contributes.tool.action]
+kind = "event"                                       # "event" | "open_surface" | "open_popup"
+event_key = "com.example.todo.menu_clicked"          # plugin namespace의 이벤트 키
+```
+
+`action.kind`별 필드:
+
+- **`event`** — 클릭 시 호스트가 `event_key`로 Event Bus 이벤트를 발화한다.
+  payload는 `{"tool_id": "<plugin_id>/<tool_id>"}`. plugin은 `event_subscribe`에
+  같은 키를 선언해 받는다 (자기 namespace 이벤트도 명시 구독 필요).
+- **`open_surface`** — 클릭 시 포커스된 pane에 `surface_kind`로 새 탭을 연다.
+  `surface_kind`는 같은 매니페스트의 `[[surface_kinds]]`에 선언된 kind여야 한다.
+- **`open_popup`** — 클릭 시 `popup_id` popup을 띄운다. plugin popup contribute는
+  아직 미구현 — 매니페스트 검증은 통과시키되 클릭 시 warn 로그 후 무시한다.
+
+### 정렬과 키
+
+전체 메뉴 항목은 `order_hint` 오름차순으로 정렬되며 동률이면 키 순. 호스트 빌트인은
+`0..99`, plugin 기본값은 `100` — 같은 가중치에서는 안정 정렬이다. 항목 키는
+호스트가 자동으로 합성한다:
+
+- 호스트 빌트인: `builtin:<name>` (예: `builtin:clipboard_history`)
+- plugin: `<plugin_id>/<tool_id>` (예: `com.example.todo/todo`)
+
+### 표시 조건
+
+매니페스트에 `permissions = ["ui.tool_item"]`이 선언되고 사용자가 grant한 경우에만
+메뉴에 노출된다. plugin을 disable하면 항목도 자동으로 사라진다. 권한이 회수되면
+같은 효과로 즉시 사라진다.
+
+### i18n fallback
+
+`label_i18n_key`에 해당하는 키가 catalog에 등록돼 있지 않으면 키 자체를 표시한다.
+plugin 측 `lang/<locale>.toml`이나 호스트 `lang/`에 키를 추가해 둘 것.
+
 ## 권한 모델
 
 Plugin이 호스트 IPC를 호출하려면 매니페스트의 `permissions`에 권한 토큰을 선언하고
@@ -277,6 +328,7 @@ Plugin이 호스트 IPC를 호출하려면 매니페스트의 `permissions`에 �
 | `terminal.spawn` | 신규 PTY 생성을 동반하는 메서드 (예: `surface.respawn_terminal`, plugin의 child 생성) |
 | `terminal.write` | `surface.send/send_key/send_combo/send_to/send_wait_idle` |
 | `terminal.read` | `surface.set_mark/read_since_mark/screen_text/cursor_position/is_typing` |
+| `ui.tool_item` | `[[contributes.tool]]`로 도구 메뉴 항목을 노출할 수 있음 (호스트 IPC 호출은 아님 — UI 카테고리 권한) |
 | `ipc.invoke:<prefix>` | 다른 plugin의 namespace 메서드 호출 (`<prefix>`는 호출 대상 plugin이 contribute한 IPC namespace) |
 | `ext:<target_plugin_id>` | `[extends]` 블록으로 다른 plugin의 IPC/이벤트 흐름을 가로채는 권한. target plugin 단위 단일 토큰 — 세부 mode(transform/filter/observe)와 hook 대상은 매니페스트의 `[[extends.*]]`로 표현된다 |
 | `network` | (예약) |
