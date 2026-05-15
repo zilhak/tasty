@@ -16,6 +16,7 @@ tasty/
     ├── tasty-font/                  # 폰트 atlas, 글리프 래스터라이징 + 내장 D2Coding
     ├── tasty-terminal/              # PTY/VTE 파싱 (termwiz 래퍼)
     ├── tasty-hooks/                 # Surface Hook 매니저
+    ├── tasty-memory/                # 에이전트 영속 메모리 (~/.tasty/memory.db, SQLite WAL)
     ├── tasty-shm/                   # 크로스 플랫폼 공유 메모리 + 핸들 전달 (SCM_RIGHTS/DuplicateHandle)
     ├── tasty-plugin-protocol/       # 호스트↔plugin 와이어 프로토콜 (envelope, 메서드 enum 등)
     ├── tasty-plugin-sdk/            # 외부 plugin 제작용 SDK (Plugin trait, transport, snapshot 헬퍼)

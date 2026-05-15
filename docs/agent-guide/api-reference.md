@@ -111,6 +111,17 @@ tasty plugin grant --id ID --permission TOKEN
 tasty plugin revoke --id ID --permission TOKEN
 tasty plugin extension list                                    # plugin이 등록한 extension 포인트
 
+# 에이전트 메모리 (~/.tasty/memory.db, scope: global/account/window/workspace/surface)
+tasty memory put --workspace 7 --key task.plan --value "..."   # 텍스트/JSON 자동 추론
+tasty memory put --surface 3 --key buf --value @/tmp/buf.txt   # @파일은 UTF-8 텍스트로 로드
+tasty memory get --workspace 7 --key task.plan
+tasty memory delete --workspace 7 --key task.plan [--cas N]
+tasty memory list --workspace 7 [--prefix task.] [--limit 50]
+tasty memory exists --workspace 7 --key task.plan
+tasty memory count --workspace 7 [--prefix task.]
+tasty memory scopes                                            # 사용 중인 스코프 목록
+tasty memory stats [--workspace 7]                             # entries + bytes
+
 # 이미지 (com.tasty.image plugin)
 tasty image open <path> [--surface ID]
 tasty image save [--surface ID]
@@ -321,6 +332,73 @@ tasty surface-meta get --key role
 tasty surface-meta unset --key role
 tasty surface-meta list
 tasty surface-meta list --surface 3   # 특정 서피스 지정
+```
+
+### 에이전트 메모리 (`memory.*`)
+
+`~/.tasty/memory.db` (SQLite, WAL 모드)에 저장되는 영속 키-값 스토어. 재시작 후에도 보존되며, **스코프**로 가시성을 제어한다.
+
+스코프 토큰: `global` | `account:<userid>` | `window:<id>` | `workspace:<id>` | `surface:<id>`.
+
+키 규칙: 1..256자 `[a-z0-9._-]+`. 점으로 계층(`task.123.plan`). 예약 prefix: `tasty.` (호스트 내부), `plugin.<plugin-id>.` (각 plugin namespace).
+
+값: `text/plain` (문자열) | `application/json` (임의 JSON) | `application/octet-stream` (base64). 단일 값 ≤ 1 MiB.
+
+| 메서드 | 파라미터 | 설명 |
+|--------|---------|------|
+| `memory.put` | `scope, key, value 또는 value_b64, content_type?, expires_at?, cas?` | 저장(upsert). 응답: `{ ok: true, version: N }` |
+| `memory.get` | `scope, key` | 단건 조회. 응답: entry 객체 또는 `null` |
+| `memory.delete` | `scope, key, cas?` | 삭제. 응답: `{ ok: true }` |
+| `memory.list` | `scope, prefix?, limit?` | 엔트리 목록. 응답: `{ entries: [...], count: N }` |
+| `memory.exists` | `scope, key` | 존재 여부. 응답: `{ exists: bool }` |
+| `memory.count` | `scope, prefix?` | 갯수. 응답: `{ count: N }` |
+| `memory.scopes` | _없음_ | 사용 중인 스코프 목록. 응답: `{ scopes: [...] }` |
+| `memory.stats` | `scope?` | 엔트리 갯수 + byte 합계. 응답: `{ scope, entries, bytes }` |
+
+**Entry 객체**:
+
+```json
+{
+  "scope": "surface:3",
+  "key": "task.plan",
+  "kind": "text",                              // "text" | "json" | "binary"
+  "content_type": "text/plain",
+  "value": "...",                              // text/json일 때
+  "value_b64": "...", "size": 1234,            // binary일 때
+  "version": 2,
+  "created_at": 1715800000000,
+  "updated_at": 1715800001234,
+  "expires_at": null
+}
+```
+
+**CAS**: `put`/`delete`에 `cas: <expected_version>` 지정. 일치하지 않으면 `cas_conflict` 에러.
+
+**Plugin 권한**: `memory.read` (읽기 4종), `memory.write` (`put`/`delete`).
+
+**CLI 사용 예시:**
+
+```bash
+# 텍스트 저장 (scope alias: --global / --surface 3 / --workspace 7 / --window 42 / --account foo)
+tasty memory put --workspace 7 --key task.plan --value "step 1: ..."
+
+# JSON 저장 — 파싱되면 자동으로 application/json
+tasty memory put --workspace 7 --key task.steps --value '{"n":3,"done":1}'
+
+# 파일에서 읽기 (UTF-8)
+tasty memory put --surface 3 --key buffer --value @/tmp/buf.txt
+
+# 조회/삭제
+tasty memory get --workspace 7 --key task.plan
+tasty memory delete --workspace 7 --key task.plan --cas 1
+
+# 리스트 + 카운트
+tasty memory list --workspace 7 --prefix task. --limit 50
+tasty memory count --workspace 7 --prefix task.
+
+# 메타
+tasty memory scopes
+tasty memory stats --workspace 7
 ```
 
 ### 훅

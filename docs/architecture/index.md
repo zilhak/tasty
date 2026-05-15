@@ -29,6 +29,7 @@ Tasty는 Cargo 워크스페이스 기반 크로스 플랫폼 GPU 가속 터미�
 | `tasty-font` | 폰트 atlas, 글리프 래스터라이징, 내장 D2Coding |
 | `tasty-terminal` | PTY + termwiz VTE 래퍼 |
 | `tasty-hooks` | Surface Hook 매니저 (process-exit, output-match, idle-timeout 등) |
+| `tasty-memory` | 에이전트 영속 키-값 저장소 (`~/.tasty/memory.db`, SQLite WAL) |
 | `tasty-shm` | 크로스 플랫폼 공유 메모리 + 핸들 전달 |
 | `tasty-plugin-protocol` | 호스트↔plugin 와이어 프로토콜 (envelope, 메서드 enum) |
 | `tasty-plugin-sdk` | 외부 plugin 제작용 SDK (Plugin trait, transport, snapshot 헬퍼) |
@@ -133,6 +134,7 @@ tasty-settings ← tasty-core
 tasty-font ← tasty-core
 tasty-terminal ← tasty-core
 tasty-hooks ← tasty-core
+tasty-memory ← (rusqlite + serde, OS 의존 없음)
 tasty-shm ← (OS API만)
 tasty-plugin-protocol ← tasty-core, tasty-shm
 tasty-plugin-sdk ← tasty-plugin-protocol, tasty-shm

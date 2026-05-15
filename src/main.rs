@@ -590,6 +590,14 @@ impl App {
         // create_app_state 이전에 호출해야 plugin/recent_files 등이 정상 동작.
         let db_init_error = crate::storage::init().err();
 
+        // memory.db 초기화. state.db와 독립 파일(~/.tasty/memory.db). 현재는
+        // 에이전트 memory.* IPC만 의존하므로 실패해도 앱을 종료시키지 않는다 —
+        // 핸들러가 호출 시점에 "store not initialized"를 응답한다. 1.5에서
+        // surface.meta.* 포워딩이 들어가면 정책 재검토.
+        if let Err(e) = tasty_memory::init() {
+            tracing::warn!("memory.db init failed: {e}");
+        }
+
         let mut settings = crate::settings::Settings::load();
         // Apply saved theme preset at startup. theme 이름이 preset에 없으면
         // catppuccin-mocha로 fallback하고 사용자에게 InfoModal로 알린다.

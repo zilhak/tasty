@@ -166,6 +166,11 @@ pub enum Commands {
         #[command(subcommand)]
         command: PluginCommands,
     },
+    /// Agent memory store (~/.tasty/memory.db) — persistent key-value
+    Memory {
+        #[command(subcommand)]
+        command: MemoryCommands,
+    },
 }
 
 #[derive(Subcommand)]
@@ -241,6 +246,162 @@ pub enum ToolCommands {
     Clipboard {
         #[command(subcommand)]
         command: ClipboardCommands,
+    },
+}
+
+/// Agent memory CLI. Scope formats:
+/// `global`, `account:<userid>`, `window:<id>`, `workspace:<id>`, `surface:<id>`.
+/// `--surface <id>` 같은 alias가 대응 scope로 정규화된다.
+#[derive(Subcommand)]
+pub enum MemoryCommands {
+    /// Store a value at scope/key. Default content type inferred from value
+    /// (string → text/plain, JSON literal → application/json).
+    Put {
+        /// Scope token (`global`, `surface:3`, `workspace:7`, ...).
+        #[arg(long, conflicts_with_all = ["surface", "workspace", "window", "account", "global"])]
+        scope: Option<String>,
+        /// Alias: `--surface 3` → `surface:3`.
+        #[arg(long, conflicts_with_all = ["scope", "workspace", "window", "account", "global"])]
+        surface: Option<u32>,
+        /// Alias: `--workspace 7` → `workspace:7`.
+        #[arg(long, conflicts_with_all = ["scope", "surface", "window", "account", "global"])]
+        workspace: Option<u32>,
+        /// Alias: `--window 42` → `window:42`.
+        #[arg(long, conflicts_with_all = ["scope", "surface", "workspace", "account", "global"])]
+        window: Option<u64>,
+        /// Alias: `--account zilhak` → `account:zilhak`.
+        #[arg(long, conflicts_with_all = ["scope", "surface", "workspace", "window", "global"])]
+        account: Option<String>,
+        /// Alias: `--global` → `global`.
+        #[arg(long, conflicts_with_all = ["scope", "surface", "workspace", "window", "account"])]
+        global: bool,
+        /// Key (1..256 `[a-z0-9._-]+`).
+        #[arg(long)]
+        key: String,
+        /// Value. Treated as JSON if it parses, otherwise as a plain text string.
+        /// Prefix with `@path` to read from a file (UTF-8 only; binary needs --value-b64).
+        #[arg(long)]
+        value: Option<String>,
+        /// Base64-encoded binary payload. Overrides --value.
+        #[arg(long)]
+        value_b64: Option<String>,
+        /// Force content type. Defaults: text/plain (string), application/json (JSON literal),
+        /// application/octet-stream (with --value-b64).
+        #[arg(long)]
+        content_type: Option<String>,
+        /// Absolute expiry timestamp (unix ms). No-op if omitted.
+        #[arg(long)]
+        expires_at: Option<i64>,
+        /// CAS version (must match current entry, otherwise cas_conflict).
+        #[arg(long)]
+        cas: Option<u64>,
+    },
+    /// Read a single entry.
+    Get {
+        #[arg(long, conflicts_with_all = ["surface", "workspace", "window", "account", "global"])]
+        scope: Option<String>,
+        #[arg(long, conflicts_with_all = ["scope", "workspace", "window", "account", "global"])]
+        surface: Option<u32>,
+        #[arg(long, conflicts_with_all = ["scope", "surface", "window", "account", "global"])]
+        workspace: Option<u32>,
+        #[arg(long, conflicts_with_all = ["scope", "surface", "workspace", "account", "global"])]
+        window: Option<u64>,
+        #[arg(long, conflicts_with_all = ["scope", "surface", "workspace", "window", "global"])]
+        account: Option<String>,
+        #[arg(long, conflicts_with_all = ["scope", "surface", "workspace", "window", "account"])]
+        global: bool,
+        #[arg(long)]
+        key: String,
+    },
+    /// Delete a key.
+    Delete {
+        #[arg(long, conflicts_with_all = ["surface", "workspace", "window", "account", "global"])]
+        scope: Option<String>,
+        #[arg(long, conflicts_with_all = ["scope", "workspace", "window", "account", "global"])]
+        surface: Option<u32>,
+        #[arg(long, conflicts_with_all = ["scope", "surface", "window", "account", "global"])]
+        workspace: Option<u32>,
+        #[arg(long, conflicts_with_all = ["scope", "surface", "workspace", "account", "global"])]
+        window: Option<u64>,
+        #[arg(long, conflicts_with_all = ["scope", "surface", "workspace", "window", "global"])]
+        account: Option<String>,
+        #[arg(long, conflicts_with_all = ["scope", "surface", "workspace", "window", "account"])]
+        global: bool,
+        #[arg(long)]
+        key: String,
+        /// CAS version; if specified and mismatched, returns cas_conflict.
+        #[arg(long)]
+        cas: Option<u64>,
+    },
+    /// Check existence.
+    Exists {
+        #[arg(long, conflicts_with_all = ["surface", "workspace", "window", "account", "global"])]
+        scope: Option<String>,
+        #[arg(long, conflicts_with_all = ["scope", "workspace", "window", "account", "global"])]
+        surface: Option<u32>,
+        #[arg(long, conflicts_with_all = ["scope", "surface", "window", "account", "global"])]
+        workspace: Option<u32>,
+        #[arg(long, conflicts_with_all = ["scope", "surface", "workspace", "account", "global"])]
+        window: Option<u64>,
+        #[arg(long, conflicts_with_all = ["scope", "surface", "workspace", "window", "global"])]
+        account: Option<String>,
+        #[arg(long, conflicts_with_all = ["scope", "surface", "workspace", "window", "account"])]
+        global: bool,
+        #[arg(long)]
+        key: String,
+    },
+    /// List entries in a scope (prefix + limit).
+    List {
+        #[arg(long, conflicts_with_all = ["surface", "workspace", "window", "account", "global"])]
+        scope: Option<String>,
+        #[arg(long, conflicts_with_all = ["scope", "workspace", "window", "account", "global"])]
+        surface: Option<u32>,
+        #[arg(long, conflicts_with_all = ["scope", "surface", "window", "account", "global"])]
+        workspace: Option<u32>,
+        #[arg(long, conflicts_with_all = ["scope", "surface", "workspace", "account", "global"])]
+        window: Option<u64>,
+        #[arg(long, conflicts_with_all = ["scope", "surface", "workspace", "window", "global"])]
+        account: Option<String>,
+        #[arg(long, conflicts_with_all = ["scope", "surface", "workspace", "window", "account"])]
+        global: bool,
+        #[arg(long)]
+        prefix: Option<String>,
+        #[arg(long)]
+        limit: Option<usize>,
+    },
+    /// Count entries in a scope (prefix optional).
+    Count {
+        #[arg(long, conflicts_with_all = ["surface", "workspace", "window", "account", "global"])]
+        scope: Option<String>,
+        #[arg(long, conflicts_with_all = ["scope", "workspace", "window", "account", "global"])]
+        surface: Option<u32>,
+        #[arg(long, conflicts_with_all = ["scope", "surface", "window", "account", "global"])]
+        workspace: Option<u32>,
+        #[arg(long, conflicts_with_all = ["scope", "surface", "workspace", "account", "global"])]
+        window: Option<u64>,
+        #[arg(long, conflicts_with_all = ["scope", "surface", "workspace", "window", "global"])]
+        account: Option<String>,
+        #[arg(long, conflicts_with_all = ["scope", "surface", "workspace", "window", "account"])]
+        global: bool,
+        #[arg(long)]
+        prefix: Option<String>,
+    },
+    /// List scopes currently in use.
+    Scopes,
+    /// Stats: total entries + bytes (per scope or aggregate).
+    Stats {
+        #[arg(long, conflicts_with_all = ["surface", "workspace", "window", "account", "global"])]
+        scope: Option<String>,
+        #[arg(long, conflicts_with_all = ["scope", "workspace", "window", "account", "global"])]
+        surface: Option<u32>,
+        #[arg(long, conflicts_with_all = ["scope", "surface", "window", "account", "global"])]
+        workspace: Option<u32>,
+        #[arg(long, conflicts_with_all = ["scope", "surface", "workspace", "account", "global"])]
+        window: Option<u64>,
+        #[arg(long, conflicts_with_all = ["scope", "surface", "workspace", "window", "global"])]
+        account: Option<String>,
+        #[arg(long, conflicts_with_all = ["scope", "surface", "workspace", "window", "account"])]
+        global: bool,
     },
 }
 
