@@ -414,6 +414,20 @@ fn debug_command_to_method_params(command: &DebugCommands) -> (&'static str, ser
         }
         DebugCommands::EventBus(sub) => event_bus_command_to_method_params(sub),
         DebugCommands::Extension(sub) => extension_debug_command_to_method_params(sub),
+        DebugCommands::Tool(sub) => tool_debug_command_to_method_params(sub),
+    }
+}
+
+#[cfg(debug_assertions)]
+fn tool_debug_command_to_method_params(
+    command: &crate::cli::ToolDebugCommands,
+) -> (&'static str, serde_json::Value) {
+    use crate::cli::ToolDebugCommands;
+    match command {
+        ToolDebugCommands::List => ("debug.tool.list", serde_json::json!({})),
+        ToolDebugCommands::Invoke { key } => {
+            ("debug.tool.invoke", serde_json::json!({ "key": key }))
+        }
     }
 }
 

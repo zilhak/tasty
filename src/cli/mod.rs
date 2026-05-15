@@ -667,6 +667,22 @@ pub enum DebugCommands {
     /// Extension hook inspection and manual invocation (debug builds only)
     #[command(subcommand)]
     Extension(ExtensionDebugCommands),
+    /// Tool menu inspection and invocation (debug builds only)
+    #[command(subcommand)]
+    Tool(ToolDebugCommands),
+}
+
+#[cfg(debug_assertions)]
+#[derive(Subcommand)]
+pub enum ToolDebugCommands {
+    /// List all tool menu items in display order
+    List,
+    /// Invoke a tool menu item by key
+    Invoke {
+        /// Tool item key (e.g. "builtin:clipboard_history" or "<plugin_id>/<tool_id>")
+        #[arg(long)]
+        key: String,
+    },
 }
 
 #[cfg(debug_assertions)]
