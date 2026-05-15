@@ -569,6 +569,18 @@ impl PluginManager {
                 tracing::info!("plugin started: {}", p.plugin_id);
                 self.processes.insert(pkg.manifest.id.clone(), p);
                 self.spawn_failures.remove(&pkg.manifest.id);
+                // Event Bus 1.0: `plugin.loaded` 발화. spawn 성공 시점에서 broadcast.
+                // 핸드셰이크 완료 전에 발화하지만, plugin이 실제로 stable한지 판정하기
+                // 어려워 spawn-success를 단일 기준으로 잡는다.
+                {
+                    use tasty_plugin_protocol::EventScope;
+                    use tasty_plugin_protocol::events::payloads::PluginLoaded;
+                    let payload = PluginLoaded {
+                        plugin_id: pkg.manifest.id.clone(),
+                        version: pkg.manifest.version.clone(),
+                    };
+                    self.emit_host_event("plugin.loaded", &payload, EventScope::System);
+                }
                 // manifest의 ipc_namespace contribute를 registry에 흡수.
                 for ns in &pkg.manifest.contributes.ipc_namespace {
                     if let Err(e) =
@@ -1298,6 +1310,16 @@ impl PluginManager {
                 self.start_plugin_internal(&pkg);
             }
         }
+        // Event Bus 1.0: `plugin.enabled` 발화. spawn 결과와 별개로 enable 상태 변경
+        // 그 자체를 알린다 (plugin.loaded는 process spawn 성공 시 별도 발화).
+        {
+            use tasty_plugin_protocol::EventScope;
+            use tasty_plugin_protocol::events::payloads::PluginEnableToggled;
+            let payload = PluginEnableToggled {
+                plugin_id: plugin_id.to_string(),
+            };
+            self.emit_host_event("plugin.enabled", &payload, EventScope::System);
+        }
         Ok(())
     }
 
@@ -1305,14 +1327,36 @@ impl PluginManager {
     pub fn disable(&mut self, plugin_id: &str) -> anyhow::Result<()> {
         self.config.disable(plugin_id);
         self.config.save()?;
+        let was_running = self.processes.contains_key(plugin_id);
         if let Some(proc) = self.processes.remove(plugin_id) {
             proc.shutdown(Duration::from_secs(2));
         }
         self.ipc_namespaces.unregister_plugin(plugin_id);
         self.unregister_observers(plugin_id);
+        // disable로 인한 unload 이벤트는 event_bus.clear_plugin 직전에 발화 — 본인의
+        // 구독도 들어와 있을 수 있어 broadcast 우선 후 정리.
+        if was_running {
+            use tasty_plugin_protocol::EventScope;
+            use tasty_plugin_protocol::events::LifecycleReason;
+            use tasty_plugin_protocol::events::payloads::PluginUnloaded;
+            let payload = PluginUnloaded {
+                plugin_id: plugin_id.to_string(),
+                reason: LifecycleReason::Ipc,
+            };
+            self.emit_host_event("plugin.unloaded", &payload, EventScope::System);
+        }
         self.event_bus.clear_plugin(plugin_id);
         self.cancel_pending_namespace_calls(plugin_id, "plugin disabled");
         self.plugin_buffers.remove(plugin_id);
+        // Event Bus 1.0: `plugin.disabled` 발화. plugin.unloaded와 짝.
+        {
+            use tasty_plugin_protocol::EventScope;
+            use tasty_plugin_protocol::events::payloads::PluginEnableToggled;
+            let payload = PluginEnableToggled {
+                plugin_id: plugin_id.to_string(),
+            };
+            self.emit_host_event("plugin.disabled", &payload, EventScope::System);
+        }
         Ok(())
     }
 

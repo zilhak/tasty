@@ -91,7 +91,13 @@ impl MainWindow {
                         .check_and_fire(surface_id, &hook_events);
                     self.base.dirty = true;
                 }
-                crate::terminal::TerminalEventKind::TitleChanged(_) => {
+                crate::terminal::TerminalEventKind::TitleChanged(title) => {
+                    self.state.enqueue_host_event(
+                        crate::state::PendingHostEvent::SurfaceTitleChanged {
+                            surface_id,
+                            title: title.clone(),
+                        },
+                    );
                     self.base.dirty = true;
                 }
                 crate::terminal::TerminalEventKind::CwdChanged(_) => {

@@ -619,6 +619,32 @@ impl App {
                 }
             }
         }
+        // Event Bus 1.0: `clipboard.copied` 발화. 시스템 클립보드 변경은 OS 차원
+        // 단일 이벤트라 모든 plugin에 1회만 broadcast. image의 base64는 전송 비용이
+        // 커서 None으로 두고, plugin은 필요 시 `clipboard.get_*` IPC로 가져가게 한다.
+        if let Some(mgr) = self.plugin_manager.as_mut() {
+            use tasty_plugin_protocol::EventScope;
+            use tasty_plugin_protocol::events::payloads::{ClipboardCopied, ClipboardKind};
+            let timestamp_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            let payload = match &data {
+                crate::ClipboardData::Text(text) => ClipboardCopied {
+                    kind: ClipboardKind::Text,
+                    text: Some(text.clone()),
+                    image_b64: None,
+                    timestamp_ms,
+                },
+                crate::ClipboardData::Image(_) => ClipboardCopied {
+                    kind: ClipboardKind::Image,
+                    text: None,
+                    image_b64: None,
+                    timestamp_ms,
+                },
+            };
+            mgr.emit_host_event("clipboard.copied", &payload, EventScope::System);
+        }
     }
 
 
