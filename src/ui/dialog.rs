@@ -123,14 +123,32 @@ fn apply_rename(state: &mut AppState, target: RenameTarget, buffer: String) {
     match target {
         RenameTarget::WorkspaceName { ws_idx } => {
             if !buffer.is_empty() {
+                let workspace_id = state.engine.workspaces.get(ws_idx).map(|w| w.id);
                 if let Some(ws) = state.engine.workspaces.get_mut(ws_idx) {
-                    ws.name = buffer;
+                    ws.name = buffer.clone();
+                }
+                if let Some(workspace_id) = workspace_id {
+                    state.enqueue_host_event(crate::state::PendingHostEvent::WorkspaceRenamed {
+                        workspace_id,
+                        name: Some(buffer),
+                        subtitle: None,
+                        description: None,
+                    });
                 }
             }
         }
         RenameTarget::WorkspaceSubtitle { ws_idx } => {
+            let workspace_id = state.engine.workspaces.get(ws_idx).map(|w| w.id);
             if let Some(ws) = state.engine.workspaces.get_mut(ws_idx) {
-                ws.subtitle = buffer;
+                ws.subtitle = buffer.clone();
+            }
+            if let Some(workspace_id) = workspace_id {
+                state.enqueue_host_event(crate::state::PendingHostEvent::WorkspaceRenamed {
+                    workspace_id,
+                    name: None,
+                    subtitle: Some(buffer),
+                    description: None,
+                });
             }
         }
         RenameTarget::TabName {

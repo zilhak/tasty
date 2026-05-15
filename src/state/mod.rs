@@ -90,6 +90,18 @@ pub enum PendingHostEvent {
         /// `None`이면 user-initiated, `Some(plugin_id)`면 agent(plugin)이 spawn한 결과.
         created_by_plugin: Option<String>,
     },
+    WorkspaceActivated {
+        workspace_id: u32,
+        prev_workspace_id: Option<u32>,
+    },
+    /// 이름/부제/설명 중 변경된 필드만 `Some`. 호스트 발화 측 어디서나 partial
+    /// update가 가능하도록 모두 Optional로 둔다.
+    WorkspaceRenamed {
+        workspace_id: u32,
+        name: Option<String>,
+        subtitle: Option<String>,
+        description: Option<String>,
+    },
 }
 
 // IdGenerator is now in engine_state.rs
@@ -145,6 +157,10 @@ pub struct AppState {
     /// 비교해 달라졌으면 `SurfaceFocused`를 enqueue한다. focus 전환 경로가 많아
     /// (키보드/마우스/IPC/탭전환/워크스페이스전환) 각각을 hook하기보다 polling이 단순.
     pub last_focused_surface_id: Option<u32>,
+    /// `workspace.activated` 발화용 변화 감지 상태. `active_workspace` 인덱스가
+    /// 가리키는 워크스페이스 ID를 기록해 두고, 다음 tick에서 달라졌다면
+    /// `WorkspaceActivated`를 enqueue한다.
+    pub last_active_workspace_id: Option<u32>,
 
     /// Per-surface host view state for `MarkdownPanel` (content cache, scroll, commonmark cache).
     /// `MarkdownPanel` itself only holds `file_path` + reload tracking; everything GUI-bound lives here.
@@ -332,6 +348,7 @@ impl AppState {
             pending_lifecycle_events: Vec::new(),
             pending_host_events: Vec::new(),
             last_focused_surface_id: None,
+            last_active_workspace_id: None,
             popup_hovered: false,
             recent_files: crate::recent_files::RecentFiles::load(),
             popups: {
@@ -574,6 +591,28 @@ impl AppState {
             self.enqueue_host_event(PendingHostEvent::SurfaceFocused {
                 surface_id,
                 prev_surface_id: prev,
+            });
+        }
+    }
+
+    /// 현재 활성 워크스페이스 ID를 마지막 기록과 비교해 달라졌다면 `WorkspaceActivated`
+    /// 이벤트를 enqueue한다. workspace 활성화 경로(사이드바 클릭, 단축키, IPC 등)가
+    /// 여럿이라 focused와 동일하게 polling으로 처리.
+    pub fn detect_workspace_activation(&mut self) {
+        let current = self
+            .engine
+            .workspaces
+            .get(self.active_workspace)
+            .map(|w| w.id);
+        if current == self.last_active_workspace_id {
+            return;
+        }
+        let prev = self.last_active_workspace_id;
+        self.last_active_workspace_id = current;
+        if let Some(workspace_id) = current {
+            self.enqueue_host_event(PendingHostEvent::WorkspaceActivated {
+                workspace_id,
+                prev_workspace_id: prev,
             });
         }
     }

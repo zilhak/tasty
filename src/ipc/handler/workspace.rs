@@ -71,18 +71,36 @@ pub fn handle_workspace_create(
     }
     match state.add_workspace_background(cwd, kind, params) {
         Ok(idx) => {
+            let mut renamed_name: Option<String> = None;
+            let mut renamed_subtitle: Option<String> = None;
+            let mut renamed_description: Option<String> = None;
             if let Some(name) = params.get("name").and_then(|v| v.as_str()) {
                 if !name.is_empty() {
                     state.engine.workspaces[idx].name = name.to_string();
+                    renamed_name = Some(name.to_string());
                 }
             }
             if let Some(subtitle) = params.get("subtitle").and_then(|v| v.as_str()) {
                 state.engine.workspaces[idx].subtitle = subtitle.to_string();
+                renamed_subtitle = Some(subtitle.to_string());
             }
             if let Some(desc) = params.get("description").and_then(|v| v.as_str()) {
                 state.engine.workspaces[idx].description = desc.to_string();
+                renamed_description = Some(desc.to_string());
             }
             state.engine.mark_layout_dirty();
+            let workspace_id = state.engine.workspaces[idx].id;
+            if renamed_name.is_some()
+                || renamed_subtitle.is_some()
+                || renamed_description.is_some()
+            {
+                state.enqueue_host_event(crate::state::PendingHostEvent::WorkspaceRenamed {
+                    workspace_id,
+                    name: renamed_name,
+                    subtitle: renamed_subtitle,
+                    description: renamed_description,
+                });
+            }
             let ws = &state.engine.workspaces[idx];
             let surface_id = {
                 let pane_id = ws.focused_pane;
@@ -144,17 +162,33 @@ pub fn handle_workspace_update(
         );
     }
 
+    let mut renamed_name: Option<String> = None;
+    let mut renamed_subtitle: Option<String> = None;
+    let mut renamed_description: Option<String> = None;
+    let workspace_id;
     {
         let ws = &mut state.engine.workspaces[idx];
+        workspace_id = ws.id;
         if let Some(name) = params.get("name").and_then(|v| v.as_str()) {
             ws.name = name.to_string();
+            renamed_name = Some(name.to_string());
         }
         if let Some(subtitle) = params.get("subtitle").and_then(|v| v.as_str()) {
             ws.subtitle = subtitle.to_string();
+            renamed_subtitle = Some(subtitle.to_string());
         }
         if let Some(desc) = params.get("description").and_then(|v| v.as_str()) {
             ws.description = desc.to_string();
+            renamed_description = Some(desc.to_string());
         }
+    }
+    if renamed_name.is_some() || renamed_subtitle.is_some() || renamed_description.is_some() {
+        state.enqueue_host_event(crate::state::PendingHostEvent::WorkspaceRenamed {
+            workspace_id,
+            name: renamed_name,
+            subtitle: renamed_subtitle,
+            description: renamed_description,
+        });
     }
     state.engine.mark_layout_dirty();
     let ws = &state.engine.workspaces[idx];

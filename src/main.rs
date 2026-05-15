@@ -1226,17 +1226,20 @@ impl App {
         use tasty_plugin_protocol::EventScope;
         use tasty_plugin_protocol::events::payloads::{
             SurfaceCreated, SurfaceCreatedBy, SurfaceFocused, SurfaceResized, SurfaceTitleChanged,
+            WorkspaceActivated, WorkspaceRenamed,
         };
 
         let mut drained: Vec<crate::state::PendingHostEvent> = Vec::new();
         for w in self.windows.values_mut() {
             if let Some(main) = w.as_main_mut() {
                 main.state.detect_focus_change();
+                main.state.detect_workspace_activation();
                 drained.extend(main.state.take_pending_host_events());
             }
         }
         for s in &mut self.parked_states {
             s.detect_focus_change();
+            s.detect_workspace_activation();
             drained.extend(s.take_pending_host_events());
         }
         if drained.is_empty() {
@@ -1299,6 +1302,30 @@ impl App {
                         created_by,
                     };
                     mgr.emit_host_event("surface.created", &payload, EventScope::Surface);
+                }
+                crate::state::PendingHostEvent::WorkspaceActivated {
+                    workspace_id,
+                    prev_workspace_id,
+                } => {
+                    let payload = WorkspaceActivated {
+                        workspace_id,
+                        prev_workspace_id,
+                    };
+                    mgr.emit_host_event("workspace.activated", &payload, EventScope::System);
+                }
+                crate::state::PendingHostEvent::WorkspaceRenamed {
+                    workspace_id,
+                    name,
+                    subtitle,
+                    description,
+                } => {
+                    let payload = WorkspaceRenamed {
+                        workspace_id,
+                        name,
+                        subtitle,
+                        description,
+                    };
+                    mgr.emit_host_event("workspace.renamed", &payload, EventScope::System);
                 }
             }
         }
