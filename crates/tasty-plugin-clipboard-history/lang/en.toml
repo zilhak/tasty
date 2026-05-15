@@ -1,0 +1,7 @@
+[clipboard_history.namespace]
+desc = "Clipboard history viewer IPC namespace"
+
+[clipboard_history.popup]
+title = "Clipboard History"
+empty = "No clipboard entries yet"
+image_preview = "[image %{w}x%{h}]"

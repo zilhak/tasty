@@ -1,0 +1,34 @@
+manifest_version = 1
+id = "com.tasty.clipboard-history"
+name = "Clipboard History"
+version = "0.1.0"
+description = "OS 클립보드 복사 항목 viewer popup"
+api_version = "1"
+permissions = [
+    "clipboard.read",
+    "clipboard.write",
+    "ui.popup",
+    "ui.tool_item",
+]
+lang_dir = "lang"
+
+[entry]
+type = "process"
+command = "tasty-plugin-clipboard-history"
+
+[[contributes.ipc_namespace]]
+prefix = "clipboard-history"
+description_i18n_key = "clipboard_history.namespace.desc"
+
+[[contributes.popup]]
+id = "viewer"
+trigger = { kind = "event", event_key = "shortcut.toggle_clipboard_viewer" }
+size_hint = { width = 480, height = 360 }
+anchor = "screen-center"
+dismiss_on_outside_click = true
+
+[[contributes.tool]]
+id = "open-viewer"
+label_i18n_key = "tools_menu.clipboard_history"
+action = { kind = "open_popup", popup_id = "com.tasty.clipboard-history/viewer" }
+order_hint = 100

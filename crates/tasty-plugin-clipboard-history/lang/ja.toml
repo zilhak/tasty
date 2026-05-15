@@ -1,0 +1,7 @@
+[clipboard_history.namespace]
+desc = "クリップボード履歴 viewer IPC namespace"
+
+[clipboard_history.popup]
+title = "クリップボード履歴"
+empty = "コピーされた項目はまだありません"
+image_preview = "[画像 %{w}x%{h}]"

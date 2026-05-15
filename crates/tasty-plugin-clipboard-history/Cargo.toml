@@ -1,0 +1,22 @@
+[package]
+name = "tasty-plugin-clipboard-history"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "External Tasty plugin: clipboard history viewer popup"
+repository = "https://github.com/zilhak/tasty"
+
+[[bin]]
+name = "tasty-plugin-clipboard-history"
+path = "src/main.rs"
+
+[dependencies]
+tasty-plugin-sdk = { path = "../tasty-plugin-sdk" }
+tasty-plugin-protocol = { path = "../tasty-plugin-protocol" }
+serde_json = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow = "1"
+
+[lints]
+workspace = true
