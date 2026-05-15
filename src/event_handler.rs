@@ -69,6 +69,17 @@ impl ApplicationHandler<AppEvent> for App {
             AppEvent::Shutdown => {
                 self.flush_layout_persistence_final();
                 if let Some(ref mut mgr) = self.plugin_manager {
+                    // Event Bus 1.0: `system.shutdown_initiated`는 plugin 종료 전에
+                    // broadcast해 구독자가 cleanup hook을 돌릴 시간을 준다.
+                    use tasty_plugin_protocol::EventScope;
+                    use tasty_plugin_protocol::events::payloads::SystemShutdownInitiated;
+                    mgr.emit_host_event(
+                        "system.shutdown_initiated",
+                        &SystemShutdownInitiated {
+                            reason: "user_quit".to_string(),
+                        },
+                        EventScope::System,
+                    );
                     mgr.shutdown_all();
                 }
                 event_loop.exit();

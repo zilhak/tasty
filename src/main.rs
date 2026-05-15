@@ -347,6 +347,17 @@ impl App {
 
         self.engine.start_ipc();
         self.register_window(gpu, state, window);
+        // Event Bus 1.0: `system.startup_complete`는 부팅 완료 직후 1회 발화.
+        // init_app_state는 첫 윈도우 등록 시 한 번만 호출되므로 별도 once 가드 불필요.
+        if let Some(mgr) = self.plugin_manager.as_mut() {
+            use tasty_plugin_protocol::EventScope;
+            use tasty_plugin_protocol::events::payloads::SystemStartupComplete;
+            mgr.emit_host_event(
+                "system.startup_complete",
+                &SystemStartupComplete::default(),
+                EventScope::System,
+            );
+        }
     }
 
     /// Create a new window with its own terminal.
