@@ -163,6 +163,12 @@ pub enum PendingHostEvent {
     WorkspaceClosed {
         workspace_id: u32,
     },
+    /// Pane 분할. polling으로는 direction을 알 수 없어 호출 사이트에서 직접 enqueue.
+    PaneSplit {
+        original_pane: u32,
+        new_pane: u32,
+        direction: crate::model::SplitDirection,
+    },
 }
 
 // IdGenerator is now in engine_state.rs

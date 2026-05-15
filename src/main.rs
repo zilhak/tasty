@@ -1270,10 +1270,10 @@ impl App {
         use tasty_plugin_protocol::EventScope;
         use tasty_plugin_protocol::LifecycleReason;
         use tasty_plugin_protocol::events::payloads::{
-            NotificationCreated, PaneClosed, PaneCreated, ProcessExited, SurfaceCreated,
-            SurfaceCreatedBy, SurfaceFocused, SurfaceResized, SurfaceTitleChanged, TabClosed,
-            TabCreated, TabFocused, TabMoved, TabRenamed, WorkspaceActivated, WorkspaceClosed,
-            WorkspaceCreated, WorkspaceRenamed,
+            NotificationCreated, PaneClosed, PaneCreated, PaneSplit, ProcessExited, SplitDirection,
+            SurfaceCreated, SurfaceCreatedBy, SurfaceFocused, SurfaceResized, SurfaceTitleChanged,
+            TabClosed, TabCreated, TabFocused, TabMoved, TabRenamed, WorkspaceActivated,
+            WorkspaceClosed, WorkspaceCreated, WorkspaceRenamed,
         };
 
         let mut drained: Vec<crate::state::PendingHostEvent> = Vec::new();
@@ -1496,6 +1496,22 @@ impl App {
                         reason: LifecycleReason::User,
                     };
                     mgr.emit_host_event("workspace.closed", &payload, EventScope::System);
+                }
+                crate::state::PendingHostEvent::PaneSplit {
+                    original_pane,
+                    new_pane,
+                    direction,
+                } => {
+                    let direction = match direction {
+                        crate::model::SplitDirection::Horizontal => SplitDirection::Horizontal,
+                        crate::model::SplitDirection::Vertical => SplitDirection::Vertical,
+                    };
+                    let payload = PaneSplit {
+                        original_pane,
+                        new_pane,
+                        direction,
+                    };
+                    mgr.emit_host_event("pane.split", &payload, EventScope::System);
                 }
             }
         }
