@@ -4776,6 +4776,7 @@ dependencies = [
  "tasty-core",
  "tasty-font",
  "tasty-hooks",
+ "tasty-memory",
  "tasty-plugin-protocol",
  "tasty-settings",
  "tasty-shm",
@@ -4827,6 +4828,19 @@ version = "0.1.0"
 dependencies = [
  "regex",
  "serde",
+ "tracing",
+]
+
+[[package]]
+name = "tasty-memory"
+version = "0.1.0"
+dependencies = [
+ "directories",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
  "tracing",
 ]
 
