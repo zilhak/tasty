@@ -118,6 +118,10 @@ pub enum Permission {
     TerminalRead,
     /// 호스트를 통한 네트워크 (예약)
     Network,
+    /// 에이전트 메모리(`memory.*`) 읽기
+    MemoryRead,
+    /// 에이전트 메모리(`memory.*`) 쓰기
+    MemoryWrite,
     /// 다른 plugin이 점유한 IPC namespace prefix의 메서드 호출.
     /// 토큰 형식: `ipc.invoke:<prefix>` (예: `ipc.invoke:codex`).
     IpcInvoke(String),
@@ -155,6 +159,8 @@ impl Permission {
             "terminal.write" => Self::TerminalWrite,
             "terminal.read" => Self::TerminalRead,
             "network" => Self::Network,
+            "memory.read" => Self::MemoryRead,
+            "memory.write" => Self::MemoryWrite,
             "ui.tool_item" => Self::UiToolItem,
             "ui.popup" => Self::UiPopup,
             other => {
@@ -191,6 +197,8 @@ impl Permission {
             Self::TerminalWrite => "terminal.write".into(),
             Self::TerminalRead => "terminal.read".into(),
             Self::Network => "network".into(),
+            Self::MemoryRead => "memory.read".into(),
+            Self::MemoryWrite => "memory.write".into(),
             Self::IpcInvoke(prefix) => format!("ipc.invoke:{prefix}"),
             Self::Extension(target) => format!("ext:{target}"),
             Self::UiToolItem => "ui.tool_item".into(),
@@ -2590,6 +2598,20 @@ mod tests {
             Some(Permission::UiPopup)
         );
         assert_eq!(Permission::UiPopup.as_token(), "ui.popup");
+    }
+
+    #[test]
+    fn memory_permission_tokens_parse() {
+        assert_eq!(
+            Permission::from_token("memory.read"),
+            Some(Permission::MemoryRead)
+        );
+        assert_eq!(
+            Permission::from_token("memory.write"),
+            Some(Permission::MemoryWrite)
+        );
+        assert_eq!(Permission::MemoryRead.as_token(), "memory.read");
+        assert_eq!(Permission::MemoryWrite.as_token(), "memory.write");
     }
 
     fn popup_skeleton(extra: &str) -> String {
