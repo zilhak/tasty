@@ -1219,6 +1219,91 @@ impl App {
         }
     }
 
+    /// 호스트 자동 발화 큐(`PendingHostEvent`)를 모든 AppState에서 drain해 Event Bus
+    /// 1.0 wire payload로 변환·발화한다. focus처럼 발화 시점을 일일이 hook하기 번거로운
+    /// 이벤트는 먼저 `detect_focus_change()`로 변화 검사 후 queue에 push된다.
+    pub(crate) fn dispatch_pending_host_events(&mut self) {
+        use tasty_plugin_protocol::EventScope;
+        use tasty_plugin_protocol::events::payloads::{
+            SurfaceCreated, SurfaceCreatedBy, SurfaceFocused, SurfaceResized, SurfaceTitleChanged,
+        };
+
+        let mut drained: Vec<crate::state::PendingHostEvent> = Vec::new();
+        for w in self.windows.values_mut() {
+            if let Some(main) = w.as_main_mut() {
+                main.state.detect_focus_change();
+                drained.extend(main.state.take_pending_host_events());
+            }
+        }
+        for s in &mut self.parked_states {
+            s.detect_focus_change();
+            drained.extend(s.take_pending_host_events());
+        }
+        if drained.is_empty() {
+            return;
+        }
+        let Some(mgr) = self.plugin_manager.as_mut() else {
+            return;
+        };
+        for ev in drained {
+            match ev {
+                crate::state::PendingHostEvent::SurfaceFocused {
+                    surface_id,
+                    prev_surface_id,
+                } => {
+                    let payload = SurfaceFocused {
+                        surface_id,
+                        prev_surface_id,
+                    };
+                    mgr.emit_host_event("surface.focused", &payload, EventScope::Surface);
+                }
+                crate::state::PendingHostEvent::SurfaceResized {
+                    surface_id,
+                    width_px,
+                    height_px,
+                } => {
+                    let payload = SurfaceResized {
+                        surface_id,
+                        width_px,
+                        height_px,
+                    };
+                    mgr.emit_host_event_throttled(
+                        "surface.resized",
+                        surface_id as u64,
+                        &payload,
+                        EventScope::Surface,
+                    );
+                }
+                crate::state::PendingHostEvent::SurfaceTitleChanged { surface_id, title } => {
+                    let payload = SurfaceTitleChanged { surface_id, title };
+                    mgr.emit_host_event("surface.title_changed", &payload, EventScope::Surface);
+                }
+                crate::state::PendingHostEvent::SurfaceCreated {
+                    surface_id,
+                    kind,
+                    tab_id,
+                    pane_id,
+                    workspace_id,
+                    created_by_plugin,
+                } => {
+                    let created_by = match created_by_plugin {
+                        Some(pid) => SurfaceCreatedBy::Agent { source_plugin: pid },
+                        None => SurfaceCreatedBy::User,
+                    };
+                    let payload = SurfaceCreated {
+                        surface_id,
+                        kind: kind.to_string(),
+                        tab_id,
+                        pane_id,
+                        workspace_id,
+                        created_by,
+                    };
+                    mgr.emit_host_event("surface.created", &payload, EventScope::Surface);
+                }
+            }
+        }
+    }
+
     /// 단계 F: focused surface가 plugin RemoteSurface인 경우 plugin command와
     /// 키 매칭. 매칭 성공 시 `dispatch_plugin_command`를 호출하고 `true` 반환 →
     /// 호출자(event_handler)는 normal window dispatch를 skip해 host action이

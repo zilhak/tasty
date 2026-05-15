@@ -63,6 +63,35 @@ pub struct PendingSurfaceClosed {
     pub is_user_close: bool,
 }
 
+/// Event Bus 1.0 호스트 자동 발화용 큐 항목. `state/`가 `plugin/`/`tasty-plugin-protocol`
+/// 의존을 갖지 않게, payload 필드는 wire 타입이 아닌 plain 데이터로 보관하고 App
+/// 메인 루프가 [`tasty_plugin_protocol`] 타입으로 변환해 발화한다.
+#[derive(Debug, Clone)]
+pub enum PendingHostEvent {
+    SurfaceFocused {
+        surface_id: u32,
+        prev_surface_id: Option<u32>,
+    },
+    SurfaceResized {
+        surface_id: u32,
+        width_px: u32,
+        height_px: u32,
+    },
+    SurfaceTitleChanged {
+        surface_id: u32,
+        title: String,
+    },
+    SurfaceCreated {
+        surface_id: u32,
+        kind: &'static str,
+        tab_id: u32,
+        pane_id: u32,
+        workspace_id: u32,
+        /// `None`이면 user-initiated, `Some(plugin_id)`면 agent(plugin)이 spawn한 결과.
+        created_by_plugin: Option<String>,
+    },
+}
+
 // IdGenerator is now in engine_state.rs
 
 pub struct AppState {
@@ -109,6 +138,13 @@ pub struct AppState {
     /// drain하여 `PluginManager::notify_surface_closed`로 dispatch한다.
     /// `state/`는 `plugin/` 의존이 없어 별도 plain struct로 둔다.
     pub pending_lifecycle_events: Vec<PendingSurfaceClosed>,
+    /// Event Bus 1.0 호스트 자동 발화 큐. 호스트 코드 곳곳에서 `enqueue_host_event`로
+    /// push하고, App 메인 루프가 drain해 wire payload로 변환·발화한다.
+    pub pending_host_events: Vec<PendingHostEvent>,
+    /// `surface.focused` 발화용 변화 감지 상태. tick마다 `focused_surface_id()`와
+    /// 비교해 달라졌으면 `SurfaceFocused`를 enqueue한다. focus 전환 경로가 많아
+    /// (키보드/마우스/IPC/탭전환/워크스페이스전환) 각각을 hook하기보다 polling이 단순.
+    pub last_focused_surface_id: Option<u32>,
 
     /// Per-surface host view state for `MarkdownPanel` (content cache, scroll, commonmark cache).
     /// `MarkdownPanel` itself only holds `file_path` + reload tracking; everything GUI-bound lives here.
@@ -294,6 +330,8 @@ impl AppState {
             captured_double_tap: None,
             pending_surface_keys: Vec::new(),
             pending_lifecycle_events: Vec::new(),
+            pending_host_events: Vec::new(),
+            last_focused_surface_id: None,
             popup_hovered: false,
             recent_files: crate::recent_files::RecentFiles::load(),
             popups: {
@@ -510,6 +548,34 @@ impl AppState {
     /// Surface close lifecycle 큐를 비우고 항목을 반환한다.
     pub fn take_pending_lifecycle_events(&mut self) -> Vec<PendingSurfaceClosed> {
         std::mem::take(&mut self.pending_lifecycle_events)
+    }
+
+    /// Event Bus 자동 발화 큐에 항목을 추가한다.
+    pub fn enqueue_host_event(&mut self, event: PendingHostEvent) {
+        self.pending_host_events.push(event);
+    }
+
+    /// Event Bus 자동 발화 큐를 비우고 항목을 반환한다.
+    pub fn take_pending_host_events(&mut self) -> Vec<PendingHostEvent> {
+        std::mem::take(&mut self.pending_host_events)
+    }
+
+    /// 현재 focused surface id를 마지막 기록과 비교해 달라졌다면 `SurfaceFocused`
+    /// 이벤트를 enqueue하고 기록을 갱신한다. focus 전환 경로(키/마우스/IPC/탭/워크
+    /// 스페이스)가 많아 각각 hook하는 대신 main loop tick에서 polling으로 처리한다.
+    pub fn detect_focus_change(&mut self) {
+        let current = self.focused_surface_id();
+        if current == self.last_focused_surface_id {
+            return;
+        }
+        let prev = self.last_focused_surface_id;
+        self.last_focused_surface_id = current;
+        if let Some(surface_id) = current {
+            self.enqueue_host_event(PendingHostEvent::SurfaceFocused {
+                surface_id,
+                prev_surface_id: prev,
+            });
+        }
     }
 
     /// Get the working directory to inherit from the focused surface, if enabled.
