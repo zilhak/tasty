@@ -108,11 +108,12 @@
 - Pane: **독립적인 탭 바**를 가진 화면 영역. 여러 Tab을 포함
 - Tab: 탭 하나. `SurfaceLayout`을 직접 소유. 단일 Leaf = 분할 안 된 상태, Split = 탭 내부 분할
 - Surface trait: 모든 콘텐츠 타입의 공통 인터페이스. 각 타입이 독립 struct로 구현. **`tasty-core`는 GUI-free** — 모델은 식별 정보와 직렬화 가능한 상태만 보유한다 (egui는 optional `egui-compat` feature, 헤드리스 플러그인은 비활성 가능)
-  - `kind()`: 소문자 식별자 — 호스트 빌트인 5종(`"terminal"`, `"markdown"`, `"html"`, `"empty"`, `"clipboard_viewer"`) + plugin 등록 kind(예: `"explorer"`, `"image"`). IPC/registry/플러그인이 식별자로 사용
+  - `kind()`: 소문자 식별자 — 호스트 빌트인 4종(`"terminal"`, `"markdown"`, `"html"`, `"empty"`) + plugin 등록 kind(예: `"explorer"`, `"image"`). IPC/registry/플러그인이 식별자로 사용
   - `type_name()`: 표시용 라벨. 식별 비교 금지
   - `html_url()`: HtmlPanel만 `Some(&url)` 반환. native WebView 동기화가 다운캐스트 없이 사용
   - TerminalSurface: 단일 PTY 터미널
-  - MarkdownPanel, HtmlPanel, ImagePanel, EmptySurface, ClipboardViewerPanel: 호스트 빌트인 비터미널 콘텐츠
+  - MarkdownPanel, HtmlPanel, EmptySurface: 호스트 빌트인 비터미널 콘텐츠
+  - ImagePanel: `com.tasty.image` plugin이 host-rendered kind로 등록하는 비터미널 콘텐츠
   - RemoteSurface: plugin이 IPC로 제공하는 surface (예: 기본 제공 Explorer plugin)
 - **Model + Host View 분리**: 휘발성 GUI 상태(콘텐츠 캐시, 텍스처, 편집 세션, 스크롤, 팝업 버퍼)는 호스트 측 View로 분리되어 `AppState::markdown_views` / `image_views` (HashMap<SurfaceId, View>) 에 보관. surface 닫힘 시 `cleanup_surface(sid)`가 모든 store에서 `drop_view(sid)` 호출
 - AppState: 전체 워크스페이스 목록과 활성 상태를 관리하는 중앙 상태 (IdGenerator 포함)
@@ -303,7 +304,7 @@
 - 기본값 미설정 (설정 UI에서 Pane 서브탭에서 바인딩 가능)
 
 #### Surface 타입 전환
-- `convert_surface` 단축키 (기본 `Alt+'`): Surface 스코프 팝업으로 전환 메뉴 표시. **항목은 `SurfaceKindRegistry`에 등록된 모든 kind에서 동적으로 enumerate된다** — 빌트인 Terminal(T)/Markdown(M)/HTML(H)/Image(I) + plugin 제공 kind (예: Explorer(E)). `empty`·`clipboard_viewer` 같은 시스템 kind는 제외. 팝업 크기는 항목 수에 맞춰 sizer가 매 프레임 재계산
+- `convert_surface` 단축키 (기본 `Alt+'`): Surface 스코프 팝업으로 전환 메뉴 표시. **항목은 `SurfaceKindRegistry`에 등록된 모든 kind에서 동적으로 enumerate된다** — 빌트인 Terminal(T)/Markdown(M)/HTML(H) + plugin 제공 kind (예: Image(I), Explorer(E)). `empty` 같은 시스템 kind는 제외. 팝업 크기는 항목 수에 맞춰 sizer가 매 프레임 재계산
 - `convert_to_markdown`: 직접 전환 단축키 (기본값 없음, 설정에서 할당)
 - 현재 타입과 동일한 항목은 체크 표시 + 비활성
 - Markdown 전환 시 파일 경로 입력 다이얼로그 표시
@@ -369,14 +370,12 @@
 ### 도구 메뉴
 - 사이드바 하단의 "도구" 버튼을 클릭하면 버튼 위쪽에 headless 팝업(타이틀바 없음)이 표시
 - 팝업에는 사용 가능한 도구 목록이 메뉴 형태로 나열됨
-- 항목 출처:
-  - **호스트 빌트인** — 클립보드 히스토리 등 (`ToolSource::Builtin`)
-  - **Plugin contribute** — `[[contributes.tool]]` + `ui.tool_item` 권한 grant된 활성 plugin
+- 항목 출처: **Plugin contribute** 전용. `[[contributes.tool]]` + `ui.tool_item` 권한 grant된 활성 plugin이 항목을 제공한다 (호스트 자체 빌트인 항목은 없음 — 클립보드 히스토리 등은 모두 plugin이 contribute한다)
 - 클릭 dispatch (`ToolAction`):
   - `event` — Event Bus로 `event_key` 발화 (payload `{"tool_id": "<key>"}`)
   - `open_surface` — 포커스된 pane에 `surface_kind` 새 탭 추가
   - `open_popup` — `[[contributes.popup]]`로 contribute된 popup 인스턴스를 새로 open (`popup_id`는 `<plugin_id>/<id>` 형식)
-- 정렬: `order_hint` 오름차순 (호스트 빌트인 0..99, plugin 기본 100), 동률은 키 순
+- 정렬: `order_hint` 오름차순 (기본 100), 동률은 키 순
 - 라벨: `label_i18n_key`를 `t()`로 번역. 키가 catalog에 없으면 키 자체를 fallback 표시
 - 바깥 클릭 시 자동으로 닫힘 (`close_on_outside_click`)
 - 디버그: `tasty debug tool list` / `tasty debug tool invoke --key <key>`로 IPC 조작 가능 (debug 빌드 한정)
@@ -554,13 +553,14 @@
 - termwiz의 `SetSelection` 파싱을 활용하여 이벤트 발생 → main.rs에서 arboard로 클립보드에 반영
 
 ### 시스템 클립보드 히스토리
-- `EngineState.clipboard_history`(메모리 전용)에 시스템 클립보드 변경 기록
+- `EngineState.clipboard_history`(메모리 전용)에 시스템 클립보드 변경 기록 (호스트가 소유)
 - 별도 스레드가 `settings.clipboard.poll_interval_ms`(기본 500ms) 주기로 `AppEvent::ClipboardTick` 발송 → 메인 스레드가 arboard로 현재 값을 읽어 모든 Window의 history에 기록
 - 연속 중복 자동 제거 (`last_seen` 비교), 빈 문자열 무시
 - 출처 태그: `ClipboardSource::System`(외부 앱) / `Internal`(Tasty 내부 복사). 내부 복사 지점(터미널 선택 복사, OSC 52)에서는 즉시 `record_internal_copy`로 기록
 - 설정: `clipboard.history_enabled`(기본 on), `history_max`(기본 100), `poll_interval_ms`(재시작 필요)
 - 주의: 비밀번호 관리자 등 민감 정보도 기록된다. OS 레벨 민감 플래그를 구분할 수단이 제한적이라 1차는 필터 없음
 - 재시작 시 휘발(디스크 영속화는 별도 TODO)
+- 사용자 viewer는 빌트인 `com.tasty.clipboard-history` plugin이 popup으로 제공 (단축키 `toggle_clipboard_viewer`, 기본 `Ctrl+Shift+H`). plugin이 `tool.clipboard.list`/`paste` IPC로 호스트 history를 읽어 표시하고 항목 클릭 시 paste 트리거
 
 ## CLI 도구 & 소켓 API
 
@@ -1092,7 +1092,6 @@ Claude Code 등 TUI 앱이 실행 중이던 터미널을 복원할 때, 해당 �
 - 화면 내용 (screen/scrollback)
 - PTY 상태, 환경변수, 실행 중인 명령
 - 팝업 상태
-- ClipboardViewerPanel (Empty로 대체)
 
 ## Plugin 시스템
 

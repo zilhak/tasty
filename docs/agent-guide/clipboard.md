@@ -50,9 +50,10 @@ tasty tool clipboard clear
 
 인덱스 범위 초과 시 `invalid_params` 에러.
 
-> **참고**: 클립보드 viewer popup을 IPC로 여는 기능은 **debug 빌드 전용**으로
-> 격리되었다 (`debug.clipboard_viewer_open`). release 빌드에는 노출되지 않는다.
-> 자세한 내용은 `docs/dev-guide/debug-ipc.md` 참조.
+> **참고**: 사용자가 보는 클립보드 viewer popup은 빌트인 `com.tasty.clipboard-history`
+> plugin이 contribute한 popup이다. 사용자는 단축키 `toggle_clipboard_viewer`(기본
+> `Ctrl+Shift+H`)로 직접 토글하며, IPC로 viewer를 여는 release API는 제공되지 않는다.
+> 에이전트는 위 `tool.clipboard.*` API로 직접 history를 다루면 된다.
 
 ## 포커스 독립성
 

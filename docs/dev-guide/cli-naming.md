@@ -86,7 +86,6 @@ CLI 명령:  tasty <namespace> <verb> [--<option>]
 | `screen_text`, `screen_attrs`, `cell_info`, `cursor_position`, `is_typing`, `glyph_color` | 터미널 내부 상태 조회 | `read` 또는 `state` |
 | `feed_bytes`, `inject_mouse`, `inject_key`, `raw_key`, `send_key`, `send_combo` | 사용자 입력 재현 | (debug 전용, 명명 자유로움) |
 | `fire_hook` | hook 트리거 강제 | (sample size 1, 일관 규칙 정착 보류) |
-| `clipboard_viewer_open` | UI 창 열기 | `window.create` 등 분리 검토 |
 
 ## modifier 패턴
 
