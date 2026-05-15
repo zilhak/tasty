@@ -20,11 +20,11 @@ use anyhow::Result;
 use serde_json::Value;
 
 use tasty_plugin_protocol::{
-    HandleChannelMessage, IpcCallResult, IpcInvokeParams, METHOD_COMMAND_INVOKE,
-    METHOD_IPC_INVOKE, METHOD_IPC_RESULT, METHOD_PING, METHOD_SHUTDOWN, METHOD_SURFACE_CREATE,
-    METHOD_SURFACE_DESTROY, METHOD_SURFACE_EVENT, METHOD_SURFACE_LIFECYCLE,
-    METHOD_SURFACE_RESTORE, METHOD_SURFACE_SNAPSHOT, PluginEvent, PluginRequest,
-    PluginResponse, SurfaceLifecycleParams,
+    EventDispatchParams, HandleChannelMessage, IpcCallResult, IpcInvokeParams,
+    METHOD_COMMAND_INVOKE, METHOD_EVENT_DISPATCH, METHOD_IPC_INVOKE, METHOD_IPC_RESULT,
+    METHOD_PING, METHOD_SHUTDOWN, METHOD_SURFACE_CREATE, METHOD_SURFACE_DESTROY,
+    METHOD_SURFACE_EVENT, METHOD_SURFACE_LIFECYCLE, METHOD_SURFACE_RESTORE,
+    METHOD_SURFACE_SNAPSHOT, PluginEvent, PluginRequest, PluginResponse, SurfaceLifecycleParams,
 };
 
 use crate::connection::Connection;
@@ -273,7 +273,8 @@ fn worker_loop<P: Plugin>(
     // dispatch가 시작되기 전에 plugin에 1회 시작 알림. plugin이 여기서 자체
     // background thread를 spawn하면 host call이 안전하게 동작한다 (메인 recv
     // 루프가 이미 동작 중이므로 ipc.result delivery 가능).
-    plugin.on_start(host.clone());
+    let bus = crate::bus::BusHandle::new(writer.clone(), plugin.id().to_string());
+    plugin.on_start(host.clone(), bus);
     for req in req_rx.iter() {
         let result = dispatch(&mut plugin, &req.method, &req.params, &host);
         let resp = build_response(req.id, result);
@@ -433,6 +434,21 @@ pub(crate) fn dispatch<P: Plugin>(
                 Ok(value) => Ok(value),
                 Err(err) => Err(DispatchError::with_code(err.message, err.code)),
             }
+        }
+        METHOD_EVENT_DISPATCH => {
+            let parsed: EventDispatchParams = serde_json::from_value(params.clone())
+                .map_err(|e| {
+                    DispatchError::with_code(
+                        format!("invalid event.dispatch params: {e}"),
+                        -32602,
+                    )
+                })?;
+            plugin.on_event(crate::plugin::EventDispatchCtx {
+                sub_id: parsed.sub_id,
+                envelope: parsed.envelope,
+            });
+            // 호스트는 응답을 무시한다. fire-and-forget이라 null 반환.
+            Ok(Value::Null)
         }
         METHOD_SURFACE_LIFECYCLE => {
             let parsed: SurfaceLifecycleParams = serde_json::from_value(params.clone())
@@ -738,7 +754,7 @@ mod tests {
                 display_name: None,
             }
         }
-        fn on_start(&mut self, _host: HostHandle) {
+        fn on_start(&mut self, _host: HostHandle, _bus: crate::bus::BusHandle) {
             *self.called.lock().unwrap() += 1;
         }
     }

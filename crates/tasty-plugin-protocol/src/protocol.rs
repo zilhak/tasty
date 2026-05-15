@@ -8,6 +8,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::events::EventEnvelope;
 use crate::ui_tree::{UiEvent, UiNode};
 
 // ── Host → plugin method names ──
@@ -26,6 +27,9 @@ pub const METHOD_SURFACE_LIFECYCLE: &str = "surface.lifecycle";
 /// host → plugin: plugin이 보낸 ipc.call에 대한 결과.
 /// params에 [`IpcCallResult`].
 pub const METHOD_IPC_RESULT: &str = "ipc.result";
+/// host → plugin: Event Bus dispatch. params에 [`EventDispatchParams`].
+/// 응답은 fire-and-forget — broadcast 모델이라 응답 합치기 없음.
+pub const METHOD_EVENT_DISPATCH: &str = "event.dispatch";
 /// host → plugin: 사용자 단축키 매칭으로 plugin command가 트리거됨.
 /// params에 [`CommandInvokeParams`]. plugin은 그에 따라 surface state를 변경하고,
 /// 변경 결과는 `surface.event`와 동일하게 `SurfaceResult` 형태로 응답한다 (tree
@@ -197,6 +201,25 @@ pub enum PluginEvent {
         method: String,
         params: serde_json::Value,
     },
+    /// plugin → 호스트: Event Bus에 이벤트 publish.
+    /// 호스트가 권한(매니페스트 `event_publish` 패턴)을 검증하고 hop을 증가시킨 뒤
+    /// 구독자에게 fan-out한다. fire-and-forget.
+    EventPublish { envelope: EventEnvelope },
+    /// plugin → 호스트: 이벤트 키 패턴 구독.
+    /// `pattern`은 정확한 키 또는 `<namespace>.*` 와일드카드.
+    /// 호스트는 매니페스트 `event_subscribe`로 허용된 패턴 안에 들어가는지 검증한다.
+    EventSubscribe { sub_id: u64, pattern: String },
+    /// plugin → 호스트: 이전 [`PluginEvent::EventSubscribe`]의 구독 해제.
+    EventUnsubscribe { sub_id: u64 },
+}
+
+/// [`METHOD_EVENT_DISPATCH`] params — 호스트가 구독자 plugin에게 보내는 이벤트.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct EventDispatchParams {
+    /// plugin이 구독 등록 시 발급한 `sub_id`. 같은 plugin이 여러 패턴을 구독한 경우
+    /// 어느 구독에 매칭됐는지 구분하기 위한 식별자.
+    pub sub_id: u64,
+    pub envelope: EventEnvelope,
 }
 
 /// `ipc.result` 요청의 params — plugin의 ipc.call에 대한 호스트의 응답.

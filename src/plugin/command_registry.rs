@@ -218,6 +218,8 @@ mod tests {
             },
             surface_kinds: vec![],
             permissions: vec![],
+            event_subscribe: vec![],
+            event_publish: vec![],
             contributes: Contributes {
                 commands: cmds,
                 ..Default::default()

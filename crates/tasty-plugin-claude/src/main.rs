@@ -132,7 +132,7 @@ impl Plugin for ClaudePlugin {
         }
     }
 
-    fn on_start(&mut self, host: HostHandle) {
+    fn on_start(&mut self, host: HostHandle, _bus: tasty_plugin_sdk::BusHandle) {
         // worker dispatch가 시작되기 직전에 1회 호출. PTY error scan을 위한
         // background polling thread를 띄운다. 호스트가 메모리 스캔하던 패턴을
         // 1:1로 옮겼고 (`error_scan.rs::CLAUDE_ERROR_PATTERN`), polling 간격은

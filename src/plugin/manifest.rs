@@ -38,6 +38,15 @@ pub struct Manifest {
     pub surface_kinds: Vec<SurfaceKindDecl>,
     #[serde(default)]
     pub permissions: Vec<String>,
+    /// Event Bus 구독 허용 패턴 일람. 정확한 키 또는 `<namespace>.*` 와일드카드.
+    /// 비어 있으면 plugin은 이벤트를 구독할 수 없다.
+    #[serde(default)]
+    pub event_subscribe: Vec<String>,
+    /// Event Bus 발화 허용 패턴 일람. plugin이 자기 namespace로 publish할 때 필요.
+    /// 예약 네임스페이스(`surface.*`, `system.*` 등)는 호스트만 publish 가능 — plugin이
+    /// 적어도 매니페스트 검증 단계에서 거부된다.
+    #[serde(default)]
+    pub event_publish: Vec<String>,
     #[serde(default)]
     pub contributes: Contributes,
     /// plugin이 동봉한 lang 파일 디렉터리 (매니페스트 디렉터리 기준 상대).
@@ -402,6 +411,45 @@ impl Manifest {
         }
         self.validate_contributes()?;
         self.validate_observer_permissions()?;
+        self.validate_event_patterns()?;
+        Ok(())
+    }
+
+    /// `event_subscribe`/`event_publish` 패턴 검증.
+    ///
+    /// 규칙:
+    /// - 빈 문자열, 단독 `"*"` 거부 (모든 이벤트 일괄 매칭 금지)
+    /// - 와일드카드는 끝의 `.<segment>` 자리에만 허용 (`foo.*`, `foo.bar.*`)
+    /// - 중간/시작 와일드카드(`*.bar`, `f*`) 거부
+    /// - 각 세그먼트: 소문자 ascii + 숫자 + `_`. 알파벳으로 시작.
+    /// - `event_publish`는 예약 네임스페이스(`surface`, `system`, `tab`, ...)를 거부.
+    fn validate_event_patterns(&self) -> anyhow::Result<()> {
+        for p in &self.event_subscribe {
+            if !is_valid_event_pattern(p) {
+                anyhow::bail!(
+                    "invalid event_subscribe pattern '{}': must be a key or '<ns>.*' \
+                     (segments: lowercase ascii + digits + '_', start with a letter)",
+                    p
+                );
+            }
+        }
+        for p in &self.event_publish {
+            if !is_valid_event_pattern(p) {
+                anyhow::bail!(
+                    "invalid event_publish pattern '{}': must be a key or '<ns>.*'",
+                    p
+                );
+            }
+            let ns = event_pattern_namespace(p);
+            if is_reserved_event_namespace(ns) {
+                anyhow::bail!(
+                    "event_publish pattern '{}' uses reserved namespace '{}' — \
+                     only the host may publish in this namespace",
+                    p,
+                    ns
+                );
+            }
+        }
         Ok(())
     }
 
@@ -654,6 +702,80 @@ fn is_reserved_cli_name(s: &str) -> bool {
             | "is-typing"
             | "notify"
             | "unset"
+    )
+}
+
+/// Event Bus 패턴 검증. 정확한 키 또는 `<namespace>(.<segment>)*.*` 형태.
+///
+/// - `surface.created`: 정확한 key → 허용
+/// - `surface.*`: namespace 와일드카드 → 허용
+/// - `surface.lifecycle.*`: 깊이 2 와일드카드 → 허용
+/// - `*`, `*.bar`, `foo.*.bar`, `foo*`, 빈 문자열 → 거부
+fn is_valid_event_pattern(s: &str) -> bool {
+    if s.is_empty() {
+        return false;
+    }
+    let segments: Vec<&str> = s.split('.').collect();
+    if segments.len() < 2 {
+        // 모든 이벤트는 `<namespace>.<name>` 최소 2 세그먼트.
+        return false;
+    }
+    for (i, seg) in segments.iter().enumerate() {
+        let is_last = i + 1 == segments.len();
+        if *seg == "*" {
+            if !is_last {
+                return false;
+            }
+            continue;
+        }
+        if !is_valid_event_segment(seg) {
+            return false;
+        }
+    }
+    true
+}
+
+fn is_valid_event_segment(s: &str) -> bool {
+    if s.is_empty() {
+        return false;
+    }
+    let mut chars = s.chars();
+    let first = chars.next().unwrap();
+    if !first.is_ascii_lowercase() {
+        return false;
+    }
+    s.chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+}
+
+/// 패턴의 최상위 namespace 세그먼트. 검증 통과 후 호출하면 절대 빈 값을 반환하지 않는다.
+fn event_pattern_namespace(s: &str) -> &str {
+    s.split('.').next().unwrap_or("")
+}
+
+/// 호스트만 publish 가능한 예약 네임스페이스.
+/// plugin은 자기 도메인의 namespace로만 발화할 수 있다.
+fn is_reserved_event_namespace(ns: &str) -> bool {
+    matches!(
+        ns,
+        "surface"
+            | "tab"
+            | "pane"
+            | "split"
+            | "workspace"
+            | "window"
+            | "clipboard"
+            | "plugin"
+            | "extension"
+            | "tool"
+            | "command"
+            | "ime"
+            | "theme"
+            | "language"
+            | "notification"
+            | "hook"
+            | "process"
+            | "system"
     )
 }
 
@@ -1383,6 +1505,156 @@ mod tests {
         "#;
         // serde가 lowercase enum의 알 수 없는 variant를 reject.
         assert!(parse(s).is_err());
+    }
+
+    #[test]
+    fn event_subscribe_accepts_exact_key_and_wildcard() {
+        let s = r#"
+            manifest_version = 1
+            id = "com.example.x"
+            name = "X"
+            version = "0.1"
+            api_version = "1"
+            event_subscribe = ["surface.created", "surface.*", "command.invoked"]
+            [entry]
+            type = "process"
+            command = "x"
+        "#;
+        let m = parse(s).expect("should parse");
+        assert_eq!(m.event_subscribe.len(), 3);
+    }
+
+    #[test]
+    fn event_subscribe_rejects_bare_wildcard() {
+        let s = r#"
+            manifest_version = 1
+            id = "com.example.x"
+            name = "X"
+            version = "0.1"
+            api_version = "1"
+            event_subscribe = ["*"]
+            [entry]
+            type = "process"
+            command = "x"
+        "#;
+        let err = parse(s).unwrap_err().to_string();
+        assert!(err.contains("invalid event_subscribe pattern"), "got: {err}");
+    }
+
+    #[test]
+    fn event_subscribe_rejects_leading_wildcard() {
+        let s = r#"
+            manifest_version = 1
+            id = "com.example.x"
+            name = "X"
+            version = "0.1"
+            api_version = "1"
+            event_subscribe = ["*.created"]
+            [entry]
+            type = "process"
+            command = "x"
+        "#;
+        assert!(parse(s).is_err());
+    }
+
+    #[test]
+    fn event_subscribe_rejects_middle_wildcard() {
+        let s = r#"
+            manifest_version = 1
+            id = "com.example.x"
+            name = "X"
+            version = "0.1"
+            api_version = "1"
+            event_subscribe = ["surface.*.created"]
+            [entry]
+            type = "process"
+            command = "x"
+        "#;
+        assert!(parse(s).is_err());
+    }
+
+    #[test]
+    fn event_subscribe_rejects_single_segment() {
+        let s = r#"
+            manifest_version = 1
+            id = "com.example.x"
+            name = "X"
+            version = "0.1"
+            api_version = "1"
+            event_subscribe = ["surface"]
+            [entry]
+            type = "process"
+            command = "x"
+        "#;
+        assert!(parse(s).is_err());
+    }
+
+    #[test]
+    fn event_subscribe_rejects_partial_wildcard() {
+        let s = r#"
+            manifest_version = 1
+            id = "com.example.x"
+            name = "X"
+            version = "0.1"
+            api_version = "1"
+            event_subscribe = ["surf*.created"]
+            [entry]
+            type = "process"
+            command = "x"
+        "#;
+        assert!(parse(s).is_err());
+    }
+
+    #[test]
+    fn event_publish_rejects_reserved_namespace() {
+        let s = r#"
+            manifest_version = 1
+            id = "com.example.evil"
+            name = "Evil"
+            version = "0.1"
+            api_version = "1"
+            event_publish = ["surface.created"]
+            [entry]
+            type = "process"
+            command = "x"
+        "#;
+        let err = parse(s).unwrap_err().to_string();
+        assert!(err.contains("reserved namespace"), "got: {err}");
+    }
+
+    #[test]
+    fn event_publish_accepts_plugin_namespace() {
+        let s = r#"
+            manifest_version = 1
+            id = "com.example.claude"
+            name = "Claude"
+            version = "0.1"
+            api_version = "1"
+            event_publish = ["claude.activity.changed", "claude.session.*"]
+            [entry]
+            type = "process"
+            command = "x"
+        "#;
+        let m = parse(s).expect("should parse");
+        assert_eq!(m.event_publish.len(), 2);
+    }
+
+    #[test]
+    fn event_subscribe_accepts_reserved_namespace() {
+        // subscribe는 어떤 namespace도 허용 (예약은 publish 전용 제약).
+        let s = r#"
+            manifest_version = 1
+            id = "com.example.x"
+            name = "X"
+            version = "0.1"
+            api_version = "1"
+            event_subscribe = ["surface.*", "system.shutdown"]
+            [entry]
+            type = "process"
+            command = "x"
+        "#;
+        let m = parse(s).expect("should parse");
+        assert_eq!(m.event_subscribe.len(), 2);
     }
 
     #[test]

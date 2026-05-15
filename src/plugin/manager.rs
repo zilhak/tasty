@@ -132,6 +132,8 @@ pub struct PluginManager {
     /// 호스트 전체에서 단조 증가하는 shared buffer id. plugin 간 충돌 회피 + 디버그
     /// 추적을 단순화하기 위해 글로벌 카운터로 둔다.
     next_buffer_id: AtomicU64,
+    /// Event Bus 1.0 라우터. 호스트 본문과 plugin 간 broadcast 이벤트를 fan-out.
+    pub event_bus: super::event_bus::EventBus,
 }
 
 /// plugin → host IPC 호출 한 건. 라우팅 후 결과를 plugin에 회신해야 함.
@@ -176,6 +178,7 @@ impl PluginManager {
             surface_observers: HashMap::new(),
             plugin_buffers: HashMap::new(),
             next_buffer_id: AtomicU64::new(1),
+            event_bus: super::event_bus::EventBus::new(),
         }
     }
 
@@ -223,6 +226,46 @@ impl PluginManager {
         if let Some(proc) = self.processes.get(plugin_id) {
             if let Err(e) = proc.req_tx.send(req) {
                 tracing::warn!("plugin {plugin_id}: failed to send ipc.result: {e}");
+            }
+        }
+    }
+
+    /// 호스트 본문이 새 envelope를 발화. 호스트는 모든 namespace에 publish 가능.
+    /// 매칭되는 모든 plugin 구독자에게 `event.dispatch` 송신.
+    pub fn publish_host_event(&mut self, envelope: tasty_plugin_protocol::EventEnvelope) {
+        let dispatches = self.event_bus.publish_from_host(envelope);
+        self.send_event_dispatches(dispatches);
+    }
+
+    /// plugin이 보낸 publish를 라우팅. 권한/origin/hop 검사 실패 시 경고 로그.
+    fn route_plugin_event_publish(
+        &mut self,
+        plugin_id: &str,
+        envelope: tasty_plugin_protocol::EventEnvelope,
+    ) {
+        let key_for_log = envelope.key.clone();
+        match self.event_bus.publish_from_plugin(plugin_id, envelope) {
+            Ok(dispatches) => self.send_event_dispatches(dispatches),
+            Err(e) => {
+                tracing::warn!(
+                    "plugin '{plugin_id}' publish '{key_for_log}' rejected: {e}"
+                );
+            }
+        }
+    }
+
+    fn send_event_dispatches(&mut self, dispatches: Vec<super::event_bus::PluginDispatch>) {
+        for d in dispatches {
+            let mut req = super::event_bus::EventBus::build_dispatch_request(&d);
+            req.id = self.next_request_id.fetch_add(1, Ordering::Relaxed);
+            if let Some(proc) = self.processes.get(&d.plugin_id) {
+                if let Err(e) = proc.req_tx.send(req) {
+                    tracing::warn!(
+                        "plugin '{}' event.dispatch send failed: {}",
+                        d.plugin_id,
+                        e
+                    );
+                }
             }
         }
     }
@@ -508,6 +551,10 @@ impl PluginManager {
         let mut hello_log: Vec<(String, String)> = Vec::new();
         let mut to_register: Vec<String> = Vec::new();
         let mut new_calls: Vec<PendingPluginCall> = Vec::new();
+        let mut new_event_publishes: Vec<(String, tasty_plugin_protocol::EventEnvelope)> =
+            Vec::new();
+        let mut new_event_subscribes: Vec<(String, u64, String)> = Vec::new();
+        let mut new_event_unsubscribes: Vec<(String, u64)> = Vec::new();
         for (id, proc) in &self.processes {
             while let Ok(ev) = proc.event_rx.try_recv() {
                 match ev {
@@ -549,6 +596,15 @@ impl PluginManager {
                             permissions: perms,
                         });
                     }
+                    PluginEvent::EventPublish { envelope } => {
+                        new_event_publishes.push((id.clone(), envelope));
+                    }
+                    PluginEvent::EventSubscribe { sub_id, pattern } => {
+                        new_event_subscribes.push((id.clone(), sub_id, pattern));
+                    }
+                    PluginEvent::EventUnsubscribe { sub_id } => {
+                        new_event_unsubscribes.push((id.clone(), sub_id));
+                    }
                 }
             }
         }
@@ -573,6 +629,12 @@ impl PluginManager {
                         .collect();
                     self.plugin_permissions
                         .insert(plugin_id.clone(), Arc::new(perms));
+                    // Event Bus subscribe/publish 패턴 동기화.
+                    self.event_bus.set_plugin_permissions(
+                        plugin_id,
+                        pkg.manifest.event_subscribe.clone(),
+                        pkg.manifest.event_publish.clone(),
+                    );
                 }
             }
             if let Some(registry) = self.surface_registry.clone() {
@@ -607,6 +669,22 @@ impl PluginManager {
                     to_register.len()
                 );
             }
+        }
+
+        // Event Bus: plugin이 보낸 subscribe/unsubscribe/publish 처리.
+        for (plugin_id, sub_id, pattern) in new_event_subscribes {
+            if let Err(e) = self
+                .event_bus
+                .subscribe_plugin(&plugin_id, sub_id, pattern.clone())
+            {
+                tracing::warn!("plugin '{plugin_id}' event.subscribe rejected: {e}");
+            }
+        }
+        for (plugin_id, sub_id) in new_event_unsubscribes {
+            self.event_bus.unsubscribe_plugin(&plugin_id, sub_id);
+        }
+        for (plugin_id, envelope) in new_event_publishes {
+            self.route_plugin_event_publish(&plugin_id, envelope);
         }
 
         // 2. 새로 만들어진 RemoteSurface 등록 + plugin에 surface.create/restore 송신.
@@ -650,6 +728,7 @@ impl PluginManager {
             }
             self.ipc_namespaces.unregister_plugin(&id);
             self.unregister_observers(&id);
+            self.event_bus.clear_plugin(&id);
             self.cancel_pending_namespace_calls(&id, "plugin restarting");
             self.plugin_buffers.remove(&id);
             if let Some(pkg) = self.packages.iter().find(|p| p.manifest.id == id).cloned() {
@@ -1158,6 +1237,7 @@ impl PluginManager {
         }
         self.ipc_namespaces.unregister_plugin(plugin_id);
         self.unregister_observers(plugin_id);
+        self.event_bus.clear_plugin(plugin_id);
         self.cancel_pending_namespace_calls(plugin_id, "plugin disabled");
         self.plugin_buffers.remove(plugin_id);
         Ok(())

@@ -3,6 +3,7 @@
 //! 작성자는 [`Plugin`] trait를 구현하고 [`run`]을 호출하면 된다. SDK가
 //! 호스트와의 핸드셰이크/메시지 루프/JSON 직렬화를 처리한다.
 
+pub mod bus;
 pub mod connection;
 pub mod env;
 pub mod error;
@@ -13,6 +14,7 @@ pub mod runtime;
 pub mod shared_buffer;
 pub mod ui;
 
+pub use bus::BusHandle;
 pub use error::{PluginError, Result};
 pub use host::HostHandle;
 pub use shared_buffer::SharedBuffer;
@@ -30,4 +32,7 @@ pub use runtime::run;
 pub use tasty_plugin_protocol::ui_tree::{
     ButtonStyle, LabelStyle, SelectionMode, SplitDir, TreeNode, UiEvent, UiNode,
 };
-pub use tasty_plugin_protocol::{PluginEvent, Rect, SharedBufferId};
+pub use tasty_plugin_protocol::{
+    EventEnvelope, EventMeta, EventOrigin, EventScope, LifecycleReason, PluginEvent, Rect,
+    SharedBufferId,
+};

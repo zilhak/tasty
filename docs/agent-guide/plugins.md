@@ -136,6 +136,8 @@ description = "File explorer surface for tasty"
 homepage = "https://example.com/explorer"
 api_version = "1"                     # 호스트 protocol 메이저 버전과 일치 필요
 permissions = ["fs.read", "surface.write", "notification"]  # 권한 토큰 (아래 표 참조)
+event_subscribe = ["surface.created", "clipboard.*"]          # Event Bus 구독 패턴
+event_publish = ["com.example.explorer.refreshed"]            # Event Bus 발화 패턴 (자기 namespace만)
 
 [entry]
 type = "process"                      # 향후 "wasm" 추가 가능
@@ -172,6 +174,7 @@ binding_mode = "independent"
 
 - `authors`, `homepage`, `description`, `lang_dir`(기본 `"lang"`)
 - `permissions` (기본 빈 배열)
+- `event_subscribe`, `event_publish` (기본 빈 배열 — Event Bus 사용 안 함)
 - `surface_kinds`, `contributes.*` (모두 기본 빈 배열 — **0개여도 됨**)
 
 추가 검증 규칙 (위반 시 plugin 로드 거부):
@@ -179,6 +182,8 @@ binding_mode = "independent"
 - `surface_kinds[].kind`는 소문자 + `_` + 숫자만
 - `contributes.ipc_namespace[].prefix`는 호스트 예약어 사용 금지 (아래 IPC namespace 절 참조)
 - `contributes.surface_observer`를 선언하면 `permissions`에 `surface.read` 포함 필수
+- `event_subscribe[]` / `event_publish[]` 패턴은 정확 키(`surface.created`) 또는 끝의 namespace 와일드카드(`surface.*`)만 허용. 단독 `"*"`·중간/시작 와일드카드는 거부
+- `event_publish[]`는 예약 namespace(`surface`, `system`, `tab`, ...) 거부 — 호스트만 발화 가능. 자기 plugin 도메인의 namespace로만 발화할 것
 
 > **TOML 주의**: top-level 키(`permissions = [...]` 등)는 모든 `[table]` 헤더보다 *먼저* 와야 한다. 그렇지 않으면 가장 가까운 테이블 안의 키로 해석된다.
 
@@ -302,6 +307,50 @@ tasty plugin revoke <id> <permission>      # 권한 제거
 | `plugin.permissions` | `id: string` | `{id, manifest:[...], granted:[...]}` |
 | `plugin.grant` | `id: string, permission: string` | granted에 추가 (매니페스트에 선언된 권한만) |
 | `plugin.revoke` | `id: string, permission: string` | granted에서 제거 |
+
+## Event Bus
+
+Plugin은 Event Bus 1.0을 통해 호스트가 자동 발화한 사건(surface 생성/종료, 클립보드 변경 등)을 구독하거나, 자기 namespace의 사건을 다른 plugin에 broadcast 할 수 있다. wire 계약 전체는 [event-catalog.md](event-catalog.md) 참조.
+
+### 구독·발화 권한
+
+매니페스트의 `event_subscribe` / `event_publish` 패턴이 권한 게이트다. 매니페스트에 선언되지 않은 패턴은 SDK가 호스트에 알려도 호스트가 거부하고 경고 로그만 남긴다.
+
+```toml
+event_subscribe = ["surface.*", "clipboard.entry_added"]
+event_publish = ["com.example.explorer.refreshed", "com.example.explorer.bookmark.*"]
+```
+
+- `event_subscribe`는 어떤 namespace든 허용 (호스트 발화 이벤트도 구독 가능).
+- `event_publish`는 예약 namespace 금지 — `surface`, `system`, `tab`, `pane`, `split`, `workspace`, `window`, `clipboard`, `plugin`, `extension`, `tool`, `command`, `ime`, `theme`, `language`, `notification`, `hook`, `process` 등은 호스트만 발화한다.
+- 와일드카드는 namespace 단위 마지막 세그먼트에만 허용 (`foo.*`, `foo.bar.*`). 단독 `"*"`나 중간 와일드카드는 거부.
+
+### SDK 사용
+
+```rust
+use tasty_plugin_sdk::{BusHandle, EventDispatchCtx, EventScope, HostHandle, Plugin};
+
+impl Plugin for MyPlugin {
+    fn on_start(&mut self, _host: HostHandle, bus: BusHandle) {
+        // 패턴 구독 — sub_id를 보관해 두면 나중에 unsubscribe 가능
+        self.surface_sub = bus.subscribe("surface.*").ok();
+        // 자기 namespace 이벤트 발화
+        let _ = bus.publish_fresh(
+            "com.example.explorer.refreshed",
+            serde_json::json!({ "files": 42 }),
+            EventScope::System,
+        );
+    }
+
+    fn on_event(&mut self, ctx: EventDispatchCtx) {
+        // ctx.envelope.key / payload / meta (origin, hop, trace_id, scope)
+        if ctx.envelope.key == "surface.closed" { /* ... */ }
+    }
+}
+```
+
+- `BusHandle::publish_fresh`는 `trace_id` 생성과 `EventOrigin::Plugin`을 자동 채워 broadcast 한다. 다른 plugin의 이벤트를 받아 재발화하려면 받은 envelope의 hop을 `+1` 한 채로 [`BusHandle::publish`]에 직접 넘긴다 (`MAX_HOP=16` 초과 시 호스트가 폐기).
+- fan-out은 fire-and-forget. plugin은 응답을 돌려주지 않으며 다른 구독자에게 영향을 주지 않는다.
 
 ## 단축키 (Plugin Shortcuts)
 

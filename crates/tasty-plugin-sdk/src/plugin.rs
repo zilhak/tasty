@@ -221,11 +221,34 @@ pub trait Plugin: Send + 'static {
         let _ = ctx;
     }
 
+    /// `event.dispatch` — [`BusHandle::subscribe`]로 등록한 패턴이 매칭되는
+    /// 이벤트가 fan-out돼 도착했을 때 호출된다. fire-and-forget이라 반환값은 없다.
+    /// 기본 구현은 no-op.
+    fn on_event(&mut self, ctx: EventDispatchCtx) {
+        let _ = ctx;
+    }
+
     /// Plugin 부트스트랩이 끝나고 worker가 첫 dispatch에 들어가기 직전 1회 호출.
     /// plugin이 자체 background thread를 spawn해 polling 등 능동 작업을 시작할
     /// 때 사용한다. 전달된 [`HostHandle`]은 `Clone`이므로 spawn한 thread로 옮길
     /// 수 있다. 기본 구현은 no-op.
-    fn on_start(&mut self, host: HostHandle) {
+    ///
+    /// `bus`는 plugin이 Event Bus에 publish/subscribe할 때 사용. 매니페스트의
+    /// `event_subscribe`/`event_publish` 패턴이 비어 있으면 호스트가 등록을 거부하므로
+    /// 핸들은 받아도 의미 없는 호출만 가능하다.
+    fn on_start(&mut self, host: HostHandle, bus: BusHandle) {
         let _ = host;
+        let _ = bus;
     }
 }
+
+/// `event.dispatch` 콜백 컨텍스트.
+#[derive(Debug, Clone)]
+pub struct EventDispatchCtx {
+    /// plugin이 [`BusHandle::subscribe`] 시 받은 sub_id. 한 plugin이 여러 구독을
+    /// 유지할 때 어떤 구독이 fire 됐는지 식별.
+    pub sub_id: u64,
+    pub envelope: tasty_plugin_protocol::EventEnvelope,
+}
+
+use crate::bus::BusHandle;
