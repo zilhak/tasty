@@ -4769,6 +4769,7 @@ dependencies = [
  "regex",
  "rfd",
  "rusqlite",
+ "semver 1.0.27",
  "serde",
  "serde_json",
  "shell-escape",

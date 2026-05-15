@@ -129,6 +129,34 @@ pub fn handle_show(
         .map(|n| json!({ "prefix": n.prefix }))
         .collect();
 
+    let extends = manifest.extends.as_ref().map(|d| {
+        let to_event_hook = |h: &crate::plugin::manifest::EventHookDecl| {
+            json!({
+                "event": h.event,
+                "modifies": h.modifies,
+                "mode": format!("{:?}", h.mode).to_lowercase(),
+                "timeout_ms": h.timeout_ms,
+            })
+        };
+        let to_ipc_hook = |h: &crate::plugin::manifest::IpcHookDecl| {
+            json!({
+                "method": h.method,
+                "modifies": h.modifies,
+                "mode": format!("{:?}", h.mode).to_lowercase(),
+                "timeout_ms": h.timeout_ms,
+            })
+        };
+        json!({
+            "plugin_id": d.plugin_id,
+            "version_req": d.version_req,
+            "api_version": d.api_version,
+            "pre_event": d.pre_event.iter().map(to_event_hook).collect::<Vec<_>>(),
+            "post_event": d.post_event.iter().map(to_event_hook).collect::<Vec<_>>(),
+            "pre_ipc": d.pre_ipc.iter().map(to_ipc_hook).collect::<Vec<_>>(),
+            "post_ipc": d.post_ipc.iter().map(to_ipc_hook).collect::<Vec<_>>(),
+        })
+    });
+
     let cli: Vec<Value> = manifest
         .contributes
         .cli
@@ -171,6 +199,7 @@ pub fn handle_show(
             "menu_items": menu_items,
             "ipc_namespace": ipc_namespace,
             "cli": cli,
+            "extends": extends,
         }),
     )
 }

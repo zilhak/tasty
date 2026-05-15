@@ -56,6 +56,11 @@ pub struct Manifest {
     pub events_emitted: Vec<EventEmittedDecl>,
     #[serde(default)]
     pub contributes: Contributes,
+    /// Extension 선언. 존재 시 이 plugin은 다른 plugin의 IPC/이벤트 흐름을 가로채는
+    /// 확장 plugin이 된다. 일반 contribute(`commands`, `surface_kinds`, …)와 공존 가능.
+    /// 한 plugin은 정확히 하나의 target만 지정 가능 (1.0 제약).
+    #[serde(default)]
+    pub extends: Option<ExtendsDecl>,
     /// plugin이 동봉한 lang 파일 디렉터리 (매니페스트 디렉터리 기준 상대).
     /// 기본 `"lang"`. 호스트는 `<plugin_dir>/<lang_dir>/<locale>.toml`을 i18n
     /// registry에 머지한다.
@@ -217,6 +222,70 @@ pub enum SurfaceKindRendering {
     /// 픽셀 처리는 호스트가 한다. 호스트 화이트리스트 매칭이 필요하다.
     Host,
 }
+
+/// Plugin extension 선언. 대상(plugin_id + version_req) 하나에 대해
+/// pre/post IPC/event hook을 걸 수 있다.
+///
+/// - `plugin_id`: 확장 대상 plugin id (정확 일치)
+/// - `version_req`: 대상 버전 범위 (semver). 벗어나면 extension은 pending.
+/// - `api_version`: extension 자체가 따르는 호스트 protocol 버전. `HOST_API_VERSION`과 같아야.
+/// - `pre_event` / `post_event`: 대상이 publisher인 envelope의 fan-out 전/후 hook
+/// - `pre_ipc` / `post_ipc`: 대상이 caller 또는 callee인 IPC 호출의 invoke 전/응답 후 hook
+#[derive(Debug, Clone, Deserialize)]
+pub struct ExtendsDecl {
+    pub plugin_id: String,
+    pub version_req: String,
+    pub api_version: String,
+    #[serde(default)]
+    pub pre_event: Vec<EventHookDecl>,
+    #[serde(default)]
+    pub post_event: Vec<EventHookDecl>,
+    #[serde(default)]
+    pub pre_ipc: Vec<IpcHookDecl>,
+    #[serde(default)]
+    pub post_ipc: Vec<IpcHookDecl>,
+}
+
+/// Event hook 한 항목. `[[extends.pre_event]]` 또는 `[[extends.post_event]]`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct EventHookDecl {
+    /// 정확한 이벤트 키. 와일드카드 불가. 대상 plugin의 `events_emitted`에 선언된 키여야
+    /// 한다 (실 매칭은 ExtensionRegistry 활성화 시점에 검증).
+    pub event: String,
+    /// transform 모드에서 변경하려는 payload 경로 일람. observe/filter는 빈 배열 가능.
+    #[serde(default)]
+    pub modifies: Vec<String>,
+    pub mode: HookMode,
+    pub timeout_ms: u32,
+}
+
+/// IPC hook 한 항목. `[[extends.pre_ipc]]` 또는 `[[extends.post_ipc]]`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct IpcHookDecl {
+    /// 정확한 IPC 메서드 이름 (예: `clipboard.add`). 대상 plugin의 IPC namespace prefix에
+    /// 속해야 한다 (실 매칭은 ExtensionRegistry 활성화 시점에 검증).
+    pub method: String,
+    #[serde(default)]
+    pub modifies: Vec<String>,
+    pub mode: HookMode,
+    pub timeout_ms: u32,
+}
+
+/// Hook의 동작 모드.
+///
+/// - `Transform`: payload를 변경할 수 있다 (반환값으로 덮어쓰기). 가장 강력.
+/// - `Filter`: `pass: bool`만 반환. 차단 가능하지만 payload 변경 불가.
+/// - `Observe`: 결과는 호스트가 무시. 단순 관찰/로깅. timeout/실패도 체인에 영향 없음.
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum HookMode {
+    Transform,
+    Filter,
+    Observe,
+}
+
+/// hook 항목의 `timeout_ms` 상한. 1초를 넘는 hook은 거부.
+pub const HOOK_TIMEOUT_MS_MAX: u32 = 1000;
 
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct Contributes {
@@ -440,6 +509,77 @@ impl Manifest {
         self.validate_contributes()?;
         self.validate_event_patterns()?;
         self.validate_events_emitted()?;
+        self.validate_extends()?;
+        Ok(())
+    }
+
+    /// `[extends]` 블록 검증.
+    ///
+    /// - `plugin_id`는 유효한 plugin id 형식, 자기 자신을 가리키면 거부.
+    /// - `version_req`는 semver 문법 (`semver::VersionReq::parse`로 검사).
+    /// - `api_version`은 호스트의 `HOST_API_VERSION`과 일치.
+    /// - hook 항목 최소 1개 필수 (zero hooks면 `[extends]` 무의미).
+    /// - 각 hook: `timeout_ms ∈ [1, HOOK_TIMEOUT_MS_MAX]`.
+    /// - event hook의 `event` 키는 정확한 키 (와일드카드 금지).
+    /// - IPC hook의 `method`는 비어 있지 않은 정규 메서드 이름.
+    ///
+    /// 권한 매칭(`ext.modify_output:*`, `ext.modify_input:*`)과 target 호환성 검증은
+    /// ExtensionRegistry 활성화 단계에서 수행한다 (target 매니페스트가 필요하므로).
+    fn validate_extends(&self) -> anyhow::Result<()> {
+        let Some(decl) = &self.extends else {
+            return Ok(());
+        };
+        if !is_valid_plugin_id(&decl.plugin_id) {
+            anyhow::bail!(
+                "invalid extends.plugin_id '{}': must be lowercase reverse-domain",
+                decl.plugin_id
+            );
+        }
+        if decl.plugin_id == self.id {
+            anyhow::bail!("extends.plugin_id must differ from this plugin's own id");
+        }
+        if let Err(e) = semver::VersionReq::parse(&decl.version_req) {
+            anyhow::bail!(
+                "invalid extends.version_req '{}': {}",
+                decl.version_req,
+                e
+            );
+        }
+        if decl.api_version != HOST_API_VERSION {
+            anyhow::bail!(
+                "extends.api_version '{}' incompatible with host '{}'",
+                decl.api_version,
+                HOST_API_VERSION
+            );
+        }
+        let total =
+            decl.pre_event.len() + decl.post_event.len() + decl.pre_ipc.len() + decl.post_ipc.len();
+        if total == 0 {
+            anyhow::bail!(
+                "[extends] block must declare at least one hook (pre_event / post_event / pre_ipc / post_ipc)"
+            );
+        }
+
+        for h in decl.pre_event.iter().chain(decl.post_event.iter()) {
+            validate_hook_timeout(h.timeout_ms, &h.event)?;
+            if !is_valid_event_key(&h.event) {
+                anyhow::bail!(
+                    "extends event hook key '{}' must be a concrete event key (no '*')",
+                    h.event
+                );
+            }
+            validate_hook_mode_modifies(h.mode, &h.modifies, &h.event)?;
+        }
+        for h in decl.pre_ipc.iter().chain(decl.post_ipc.iter()) {
+            validate_hook_timeout(h.timeout_ms, &h.method)?;
+            if h.method.is_empty() || h.method.contains('*') {
+                anyhow::bail!(
+                    "extends ipc hook method '{}' must be a concrete method name",
+                    h.method
+                );
+            }
+            validate_hook_mode_modifies(h.mode, &h.modifies, &h.method)?;
+        }
         Ok(())
     }
 
@@ -661,6 +801,45 @@ impl Manifest {
         }
         Ok(out)
     }
+}
+
+fn validate_hook_timeout(timeout_ms: u32, target: &str) -> anyhow::Result<()> {
+    if timeout_ms == 0 {
+        anyhow::bail!("extends hook for '{target}': timeout_ms must be > 0");
+    }
+    if timeout_ms > HOOK_TIMEOUT_MS_MAX {
+        anyhow::bail!(
+            "extends hook for '{target}': timeout_ms {timeout_ms} exceeds maximum {HOOK_TIMEOUT_MS_MAX}"
+        );
+    }
+    Ok(())
+}
+
+fn validate_hook_mode_modifies(
+    mode: HookMode,
+    modifies: &[String],
+    target: &str,
+) -> anyhow::Result<()> {
+    match mode {
+        HookMode::Transform => {
+            if modifies.is_empty() {
+                anyhow::bail!(
+                    "extends hook for '{target}': mode=transform requires non-empty 'modifies'"
+                );
+            }
+        }
+        HookMode::Filter | HookMode::Observe => {
+            // filter는 bool 반환만 하므로 modifies 무시. observe도 변경 권한 없음.
+            // 매니페스트에 적혀 있어도 거부하지는 않지만 silently 무시되지 않게 경고 로깅.
+            if !modifies.is_empty() {
+                tracing::warn!(
+                    "extends hook for '{target}': mode={:?} ignores 'modifies' field",
+                    mode
+                );
+            }
+        }
+    }
+    Ok(())
 }
 
 fn is_valid_plugin_id(s: &str) -> bool {
@@ -1796,5 +1975,215 @@ mod tests {
         let decl = &m.events_emitted[0];
         assert_eq!(decl.stability, EventStability::Experimental);
         assert_eq!(decl.payload_schema.as_deref(), Some("schemas/alpha.json"));
+    }
+
+    // ── extends 블록 검증 ────────────────────────────────────────────────
+
+    fn extends_skeleton(extra: &str) -> String {
+        format!(
+            r#"
+                manifest_version = 1
+                id = "com.example.ext"
+                name = "Ext"
+                version = "0.1.0"
+                api_version = "1"
+                [entry]
+                type = "process"
+                command = "x"
+                [extends]
+                plugin_id = "com.tasty.clipboard"
+                version_req = ">=0.2.0, <0.3.0"
+                api_version = "1"
+                {extra}
+            "#
+        )
+    }
+
+    #[test]
+    fn extends_accepts_valid_hooks() {
+        let s = extends_skeleton(
+            r#"
+                [[extends.pre_ipc]]
+                method = "clipboard.add"
+                modifies = ["entry"]
+                mode = "transform"
+                timeout_ms = 100
+
+                [[extends.post_event]]
+                event = "clipboard.entry_added"
+                mode = "observe"
+                timeout_ms = 50
+            "#,
+        );
+        let m = parse(&s).expect("should parse");
+        let decl = m.extends.as_ref().expect("extends present");
+        assert_eq!(decl.plugin_id, "com.tasty.clipboard");
+        assert_eq!(decl.pre_ipc.len(), 1);
+        assert_eq!(decl.post_event.len(), 1);
+        assert_eq!(decl.pre_ipc[0].mode, HookMode::Transform);
+        assert_eq!(decl.post_event[0].mode, HookMode::Observe);
+    }
+
+    #[test]
+    fn extends_rejects_zero_hooks() {
+        let s = extends_skeleton("");
+        let err = parse(&s).unwrap_err().to_string();
+        assert!(err.contains("at least one hook"), "got: {err}");
+    }
+
+    #[test]
+    fn extends_rejects_self_target() {
+        let s = r#"
+            manifest_version = 1
+            id = "com.example.ext"
+            name = "Ext"
+            version = "0.1.0"
+            api_version = "1"
+            [entry]
+            type = "process"
+            command = "x"
+            [extends]
+            plugin_id = "com.example.ext"
+            version_req = ">=0.1.0"
+            api_version = "1"
+            [[extends.pre_ipc]]
+            method = "x.run"
+            modifies = ["entry"]
+            mode = "transform"
+            timeout_ms = 100
+        "#;
+        let err = parse(s).unwrap_err().to_string();
+        assert!(err.contains("differ from this plugin"), "got: {err}");
+    }
+
+    #[test]
+    fn extends_rejects_invalid_version_req() {
+        let s = extends_skeleton(
+            r#"
+                [[extends.pre_ipc]]
+                method = "clipboard.add"
+                modifies = ["entry"]
+                mode = "transform"
+                timeout_ms = 100
+            "#,
+        )
+        .replace(">=0.2.0, <0.3.0", "not-a-semver-req~~");
+        let err = parse(&s).unwrap_err().to_string();
+        assert!(err.contains("version_req"), "got: {err}");
+    }
+
+    #[test]
+    fn extends_rejects_mismatched_api_version() {
+        let s = r#"
+            manifest_version = 1
+            id = "com.example.ext"
+            name = "Ext"
+            version = "0.1.0"
+            api_version = "1"
+            [entry]
+            type = "process"
+            command = "x"
+            [extends]
+            plugin_id = "com.tasty.clipboard"
+            version_req = ">=0.2.0, <0.3.0"
+            api_version = "999"
+            [[extends.pre_ipc]]
+            method = "clipboard.add"
+            modifies = ["entry"]
+            mode = "transform"
+            timeout_ms = 100
+        "#;
+        let err = parse(s).unwrap_err().to_string();
+        assert!(err.contains("api_version"), "got: {err}");
+    }
+
+    #[test]
+    fn extends_rejects_timeout_over_max() {
+        let s = extends_skeleton(
+            r#"
+                [[extends.pre_ipc]]
+                method = "clipboard.add"
+                modifies = ["entry"]
+                mode = "transform"
+                timeout_ms = 5000
+            "#,
+        );
+        let err = parse(&s).unwrap_err().to_string();
+        assert!(err.contains("exceeds maximum"), "got: {err}");
+    }
+
+    #[test]
+    fn extends_rejects_zero_timeout() {
+        let s = extends_skeleton(
+            r#"
+                [[extends.pre_ipc]]
+                method = "clipboard.add"
+                modifies = ["entry"]
+                mode = "transform"
+                timeout_ms = 0
+            "#,
+        );
+        let err = parse(&s).unwrap_err().to_string();
+        assert!(err.contains("timeout_ms"), "got: {err}");
+    }
+
+    #[test]
+    fn extends_rejects_event_wildcard() {
+        let s = extends_skeleton(
+            r#"
+                [[extends.pre_event]]
+                event = "clipboard.*"
+                modifies = ["payload"]
+                mode = "transform"
+                timeout_ms = 100
+            "#,
+        );
+        let err = parse(&s).unwrap_err().to_string();
+        assert!(err.contains("concrete event key"), "got: {err}");
+    }
+
+    #[test]
+    fn extends_rejects_ipc_wildcard() {
+        let s = extends_skeleton(
+            r#"
+                [[extends.pre_ipc]]
+                method = "clipboard.*"
+                modifies = ["entry"]
+                mode = "transform"
+                timeout_ms = 100
+            "#,
+        );
+        let err = parse(&s).unwrap_err().to_string();
+        assert!(err.contains("concrete method"), "got: {err}");
+    }
+
+    #[test]
+    fn extends_rejects_transform_without_modifies() {
+        let s = extends_skeleton(
+            r#"
+                [[extends.pre_ipc]]
+                method = "clipboard.add"
+                modifies = []
+                mode = "transform"
+                timeout_ms = 100
+            "#,
+        );
+        let err = parse(&s).unwrap_err().to_string();
+        assert!(err.contains("non-empty 'modifies'"), "got: {err}");
+    }
+
+    #[test]
+    fn extends_filter_mode_allows_empty_modifies() {
+        let s = extends_skeleton(
+            r#"
+                [[extends.pre_ipc]]
+                method = "clipboard.add"
+                modifies = []
+                mode = "filter"
+                timeout_ms = 100
+            "#,
+        );
+        let m = parse(&s).expect("filter without modifies should parse");
+        assert_eq!(m.extends.unwrap().pre_ipc[0].mode, HookMode::Filter);
     }
 }

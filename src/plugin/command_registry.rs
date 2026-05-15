@@ -227,6 +227,7 @@ mod tests {
                 commands: cmds,
                 ..Default::default()
             },
+            extends: None,
             lang_dir: "lang".to_string(),
         }
     }

@@ -311,7 +311,7 @@ tasty plugin revoke <id> <permission>      # 권한 제거
 | 메서드 | 파라미터 | 설명 |
 |--------|---------|------|
 | `plugin.list` | 없음 | `{plugins: [{id,name,version,description,enabled,running,surface_kinds,log_path}]}` |
-| `plugin.show` | `id: string` | 단일 plugin의 매니페스트 전체 + runtime 상태. `{id,name,version,description,authors,homepage,api_version,manifest_version,dir,enabled,running,log_path,permissions:{manifest,granted},event_subscribe,event_publish,events_emitted,surface_kinds,commands,menu_items,ipc_namespace,cli}` |
+| `plugin.show` | `id: string` | 단일 plugin의 매니페스트 전체 + runtime 상태. `{id,name,version,description,authors,homepage,api_version,manifest_version,dir,enabled,running,log_path,permissions:{manifest,granted},event_subscribe,event_publish,events_emitted,surface_kinds,commands,menu_items,ipc_namespace,cli,extends?}`. `extends`는 `[extends]` 블록을 선언한 extension plugin일 때만 채워진다. |
 | `plugin.install` | `path: string` | 매니페스트 검증 후 `plugins/<id>/`로 재귀 복사 + 매니페스트 권한 자동 grant + 자동 활성화 시 spawn |
 | `plugin.remove` | `id: string` | graceful shutdown + 디렉터리 삭제 |
 | `plugin.enable` | `id: string` | 활성화 + spawn |
