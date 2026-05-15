@@ -16,7 +16,7 @@
 ### Added
 - IPC alias 정규화 layer — 옛 메서드 이름이 새 이름과 같은 핸들러로 라우팅된다.
 - `AuthAck { ok, reason }` + `AuthAckEnvelope { auth_ack }` — plugin이 `AuthMessage` 송신 후 호스트로부터 받는 단일 노티. ok=true면 메인 루프 진입, ok=false면 즉시 거부. 메인 루프의 `PluginRequest`와 다른 envelope(`auth_ack` 키)로 파서가 분리된다. SDK 측에서 `PluginError::HandshakeRejected`/`HandshakeTimeout`으로 매핑됨. (additive, api_version 유지)
-- `METHOD_SURFACE_LIFECYCLE = "surface.lifecycle"` + `SurfaceLifecycleParams { event, surface_id, kind, reason }` + `SurfaceLifecycleEvent::Closed` + `SurfaceCloseReason::{UserClose, AgentClose}` — 호스트가 매니페스트로 구독한 plugin들에게 broadcast하는 surface lifecycle 통지. `surface.destroy`(owner plugin 한정)와 별도. 응답은 fire-and-forget. (additive, api_version 유지)
+- (PR 4에서 제거됨)
 
 ### Changed
 - `surface.meta_set` / `meta_get` / `meta_unset` / `meta_list`이 `surface.meta.set` / `meta.get` / `meta.unset` / `meta.list`(점 표기)로 정규화됨. 핸들러/method_meta는 새 이름만 등록.
@@ -25,7 +25,7 @@
 - `surface.meta_set` / `surface.meta_get` / `surface.meta_unset` / `surface.meta_list` — 1.0 tag 직전에 alias가 제거된다. 새 호출자는 점 표기 사용.
 
 ### Removed
-- (없음)
+- `METHOD_SURFACE_LIFECYCLE = "surface.lifecycle"` + `SurfaceLifecycleParams` + `SurfaceLifecycleEvent` + `SurfaceCloseReason` — Event Bus 1.0 `surface.closed`로 일원화. 옛 매니페스트 `[[contributes.surface_observer]]`도 함께 제거. plugin은 `event_subscribe = ["surface.closed"]`로 마이그레이션. (api_version 유지 — 머지 전이라 baseline에는 추가된 적 없음)
 
 ### Fixed
 - (없음)

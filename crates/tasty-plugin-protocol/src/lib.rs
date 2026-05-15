@@ -19,14 +19,13 @@ pub use protocol::{
     AuthAck, AuthAckEnvelope, AuthMessage, CommandInvokeParams, EventDispatchParams,
     HandleChannelMessage, IpcCallResult, PluginEvent, PluginRequest, PluginResponse, Rect,
     SharedBufferCreateParams, SharedBufferCreateResult, SharedBufferDirtyParams, SharedBufferId,
-    SurfaceCloseReason, SurfaceEventParams, SurfaceLifecycleEvent, SurfaceLifecycleParams,
-    SurfaceResult,
+    SurfaceEventParams, SurfaceResult,
 };
 pub use protocol::{
     METHOD_COMMAND_INVOKE, METHOD_EVENT_DISPATCH, METHOD_HOST_HELLO,
     METHOD_HOST_SHARED_BUFFER_CREATE, METHOD_HOST_SHARED_BUFFER_DIRTY, METHOD_IPC_RESULT,
     METHOD_PING, METHOD_SHUTDOWN, METHOD_SURFACE_CREATE, METHOD_SURFACE_DESTROY,
-    METHOD_SURFACE_EVENT, METHOD_SURFACE_LIFECYCLE, METHOD_SURFACE_RESTORE, METHOD_SURFACE_SNAPSHOT,
+    METHOD_SURFACE_EVENT, METHOD_SURFACE_RESTORE, METHOD_SURFACE_SNAPSHOT,
 };
 pub use ui_tree::{
     ButtonStyle, CanvasPointerButton, CanvasPointerPhase, LabelStyle, PixelFilter, PixelFormat,

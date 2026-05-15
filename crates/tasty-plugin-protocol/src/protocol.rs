@@ -20,10 +20,6 @@ pub const METHOD_SURFACE_EVENT: &str = "surface.event";
 pub const METHOD_SURFACE_SNAPSHOT: &str = "surface.snapshot";
 pub const METHOD_SURFACE_RESTORE: &str = "surface.restore";
 pub const METHOD_SURFACE_DESTROY: &str = "surface.destroy";
-/// host → plugin: lifecycle 통지 (다구독 broadcast). 매니페스트에 surface_observer로
-/// 구독한 plugin들이 받는다. params에 [`SurfaceLifecycleParams`].
-/// 응답은 fire-and-forget — 호스트가 무시한다.
-pub const METHOD_SURFACE_LIFECYCLE: &str = "surface.lifecycle";
 /// host → plugin: plugin이 보낸 ipc.call에 대한 결과.
 /// params에 [`IpcCallResult`].
 pub const METHOD_IPC_RESULT: &str = "ipc.result";
@@ -118,39 +114,6 @@ pub struct SharedBufferDirtyParams {
     /// `None`이면 전체 영역이 dirty.
     #[serde(default)]
     pub rect: Option<Rect>,
-}
-
-/// `surface.lifecycle` params — 호스트가 구독 plugin들에게 broadcast하는 lifecycle 통지.
-///
-/// `surface.destroy`(owner plugin 한정)와 달리 자기 소유가 아닌 surface의 lifecycle도
-/// 알리기 위한 메서드. 매니페스트의 `[[contributes.surface_observer]]`로 명시적
-/// opt-in한 plugin만 받는다.
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct SurfaceLifecycleParams {
-    pub event: SurfaceLifecycleEvent,
-    pub surface_id: u32,
-    /// surface kind 문자열 (예: "terminal", "explorer"). plugin이 빠르게 필터링하기 위함.
-    pub kind: String,
-    pub reason: SurfaceCloseReason,
-}
-
-/// `surface.lifecycle`의 event 종류. 현재 `closed`만 정의. 향후 `before_close`/`created`
-/// 등이 추가될 수 있으나, 호환성을 위해 plugin은 알 수 없는 값을 무시해야 한다.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SurfaceLifecycleEvent {
-    Closed,
-}
-
-/// surface 닫힘 원인. 호출 컨텍스트에서 호스트가 부여한다.
-///
-/// - `UserClose`: 사용자 단축키/마우스로 닫음 (예: pane 닫기 단축키, 탭 우클릭 닫기)
-/// - `AgentClose`: IPC/CLI를 통해 에이전트가 명시적으로 닫음 (예: `tasty close surface`)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SurfaceCloseReason {
-    UserClose,
-    AgentClose,
 }
 
 /// 호스트 → plugin 요청.
@@ -417,24 +380,6 @@ mod tests {
     }
 
     #[test]
-    fn surface_lifecycle_params_round_trip() {
-        let params = SurfaceLifecycleParams {
-            event: SurfaceLifecycleEvent::Closed,
-            surface_id: 42,
-            kind: "terminal".into(),
-            reason: SurfaceCloseReason::UserClose,
-        };
-        let s = serde_json::to_string(&params).unwrap();
-        assert!(s.contains("\"event\":\"closed\""));
-        assert!(s.contains("\"reason\":\"user_close\""));
-        let parsed: SurfaceLifecycleParams = serde_json::from_str(&s).unwrap();
-        assert_eq!(parsed.event, SurfaceLifecycleEvent::Closed);
-        assert_eq!(parsed.surface_id, 42);
-        assert_eq!(parsed.kind, "terminal");
-        assert_eq!(parsed.reason, SurfaceCloseReason::UserClose);
-    }
-
-    #[test]
     fn shared_buffer_id_serializes_as_bare_u64() {
         let id = SharedBufferId(42);
         let s = serde_json::to_string(&id).unwrap();
@@ -535,17 +480,4 @@ mod tests {
         );
     }
 
-    #[test]
-    fn surface_close_reason_agent_serializes_snake_case() {
-        let params = SurfaceLifecycleParams {
-            event: SurfaceLifecycleEvent::Closed,
-            surface_id: 7,
-            kind: "explorer".into(),
-            reason: SurfaceCloseReason::AgentClose,
-        };
-        let s = serde_json::to_string(&params).unwrap();
-        assert!(s.contains("\"reason\":\"agent_close\""));
-        let parsed: SurfaceLifecycleParams = serde_json::from_str(&s).unwrap();
-        assert_eq!(parsed.reason, SurfaceCloseReason::AgentClose);
-    }
 }

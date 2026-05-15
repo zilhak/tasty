@@ -21,9 +21,8 @@ pub use shared_buffer::SharedBuffer;
 #[allow(deprecated)]
 pub use host::HostCallError;
 pub use plugin::{
-    CommandInvokeCtx, IpcMethodCtx, IpcMethodError, Plugin, SurfaceCloseReason, SurfaceCreateCtx,
-    SurfaceEventCtx, SurfaceLifecycleCtx, SurfaceLifecycleEvent, SurfaceRestoreCtx, SurfaceResult,
-    SurfaceSnapshotCtx,
+    CommandInvokeCtx, EventDispatchCtx, IpcMethodCtx, IpcMethodError, Plugin, SurfaceCreateCtx,
+    SurfaceEventCtx, SurfaceRestoreCtx, SurfaceResult, SurfaceSnapshotCtx,
 };
 pub use runtime::run;
 

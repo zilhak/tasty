@@ -28,7 +28,6 @@
 
 use serde_json::Value;
 use tasty_plugin_protocol::ui_tree::UiEvent;
-pub use tasty_plugin_protocol::protocol::{SurfaceCloseReason, SurfaceLifecycleEvent};
 pub use tasty_plugin_protocol::SurfaceResult;
 
 use crate::host::HostHandle;
@@ -64,18 +63,6 @@ pub struct SurfaceSnapshotCtx {
 pub struct CommandInvokeCtx {
     pub surface_id: u32,
     pub command_id: String,
-}
-
-/// `surface.lifecycle` 알림 컨텍스트. 매니페스트
-/// `[[contributes.surface_observer]] event = "closed"`로 구독한 plugin이 받는다.
-/// 호스트는 fire-and-forget으로 알리며 plugin 응답은 무시된다.
-#[derive(Debug, Clone)]
-pub struct SurfaceLifecycleCtx {
-    pub event: SurfaceLifecycleEvent,
-    pub surface_id: u32,
-    /// 닫힌 surface의 kind 식별자 (예: `"terminal"`, `"markdown"`).
-    pub kind: String,
-    pub reason: SurfaceCloseReason,
 }
 
 /// 매니페스트 `[[contributes.ipc_namespace]]`로 점유한 prefix의 메서드가
@@ -212,13 +199,6 @@ pub trait Plugin: Send + 'static {
     fn handle_ipc_method(&mut self, ctx: IpcMethodCtx) -> Result<Value, IpcMethodError> {
         let _ = ctx;
         Err(IpcMethodError::not_implemented())
-    }
-
-    /// `surface.lifecycle` — 매니페스트 `[[contributes.surface_observer]]`로 구독한
-    /// 이벤트(현재 `closed`만 지원)가 발생했을 때 호출. fire-and-forget이라
-    /// 반환값은 없다. 기본 구현은 no-op.
-    fn on_surface_lifecycle(&mut self, ctx: SurfaceLifecycleCtx) {
-        let _ = ctx;
     }
 
     /// `event.dispatch` — [`BusHandle::subscribe`]로 등록한 패턴이 매칭되는
