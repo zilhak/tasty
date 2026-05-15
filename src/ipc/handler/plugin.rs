@@ -129,6 +129,11 @@ pub fn handle_show(
         .map(|n| json!({ "prefix": n.prefix }))
         .collect();
 
+    let extension_state =
+        mgr.extensions
+            .state(&plugin_id)
+            .map(|s| extension_state_to_json(s));
+
     let extends = manifest.extends.as_ref().map(|d| {
         let to_event_hook = |h: &crate::plugin::manifest::EventHookDecl| {
             json!({
@@ -200,8 +205,47 @@ pub fn handle_show(
             "ipc_namespace": ipc_namespace,
             "cli": cli,
             "extends": extends,
+            "extension_state": extension_state,
         }),
     )
+}
+
+fn extension_state_to_json(state: &crate::plugin::extension_registry::ExtensionState) -> Value {
+    use crate::plugin::extension_registry::{ExtensionState, PendingReason};
+    match state {
+        ExtensionState::Active {
+            target_id,
+            target_version,
+        } => json!({
+            "status": "active",
+            "target_id": target_id,
+            "target_version": target_version,
+        }),
+        ExtensionState::Pending(reason) => {
+            let r = match reason {
+                PendingReason::TargetMissing => json!({ "kind": "target_missing" }),
+                PendingReason::TargetDisabled => json!({ "kind": "target_disabled" }),
+                PendingReason::VersionMismatch {
+                    target_version,
+                    required,
+                } => json!({
+                    "kind": "version_mismatch",
+                    "target_version": target_version,
+                    "required": required,
+                }),
+                PendingReason::InvalidTargetVersion { target_version } => json!({
+                    "kind": "invalid_target_version",
+                    "target_version": target_version,
+                }),
+            };
+            json!({ "status": "pending", "reason": r })
+        }
+        ExtensionState::Disabled => json!({ "status": "disabled" }),
+        ExtensionState::Conflict { other_extension_id } => json!({
+            "status": "conflict",
+            "other_extension_id": other_extension_id,
+        }),
+    }
 }
 
 pub fn handle_install(
@@ -251,6 +295,8 @@ pub fn handle_install(
     mgr.packages = crate::plugin::discovery::discover();
     // 새 plugin의 단축키 command 등록 (설정 UI/단축키 매칭이 즉시 인식)
     mgr.command_registry.register_plugin(&manifest);
+    // extension 상태 재계산 — 새 plugin이 extension이거나 다른 extension의 target일 수 있음.
+    mgr.recompute_extensions();
     // i18n namespace 등록 — 설치 직후부터 plugin 키 번역이 동작하도록
     let lang_dir = dest.join(&manifest.lang_dir);
     tasty_core::i18n::register_namespace(&manifest.id, &lang_dir);
@@ -304,6 +350,8 @@ pub fn handle_remove(
     mgr.packages.retain(|p| p.manifest.id != plugin_id);
     mgr.command_registry.unregister_plugin(&plugin_id);
     tasty_core::i18n::unregister_namespace(&plugin_id);
+    // extension 상태 재계산 — 제거된 plugin이 다른 extension의 target이었으면 Pending으로 강등.
+    mgr.recompute_extensions();
     JsonRpcResponse::success(id, json!({ "removed": plugin_id }))
 }
 

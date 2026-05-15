@@ -125,6 +125,10 @@ pub struct PluginManager {
     /// 호스트 전체에서 단조 증가하는 shared buffer id. plugin 간 충돌 회피 + 디버그
     /// 추적을 단순화하기 위해 글로벌 카운터로 둔다.
     next_buffer_id: AtomicU64,
+    /// Plugin extension 상태 추적. `[extends]` 블록을 선언한 plugin들의
+    /// active/pending/disabled/conflict 상태를 보관한다. PR 4/5에서 event/IPC
+    /// hook dispatch 시 `active_extension_for_target`을 조회한다.
+    pub extensions: super::extension_registry::ExtensionRegistry,
     /// Event Bus 1.0 라우터. 호스트 본문과 plugin 간 broadcast 이벤트를 fan-out.
     pub event_bus: super::event_bus::EventBus,
     /// 고빈도 이벤트(`surface.resized`, `split.ratio_changed`)용 throttle 상태.
@@ -174,6 +178,7 @@ impl PluginManager {
             ipc_namespaces: IpcNamespaceRegistry::new(),
             plugin_buffers: HashMap::new(),
             next_buffer_id: AtomicU64::new(1),
+            extensions: super::extension_registry::ExtensionRegistry::new(),
             event_bus: super::event_bus::EventBus::new(),
             throttler: super::event_throttle::EventThrottler::new(),
             event_trace_seq: AtomicU64::new(1),
@@ -510,6 +515,8 @@ impl PluginManager {
             let lang_dir = pkg.dir.join(&pkg.manifest.lang_dir);
             tasty_core::i18n::register_namespace(&pkg.manifest.id, &lang_dir);
         }
+
+        self.recompute_extensions();
 
         let to_start: Vec<String> = self
             .packages
@@ -1284,6 +1291,7 @@ impl PluginManager {
         self.config.enable(plugin_id);
         self.config.save()?;
         self.auto_disabled.remove(plugin_id);
+        self.recompute_extensions();
         if !self.processes.contains_key(plugin_id) {
             self.ensure_listener();
             if let Some(pkg) = self
@@ -1312,6 +1320,7 @@ impl PluginManager {
     pub fn disable(&mut self, plugin_id: &str) -> anyhow::Result<()> {
         self.config.disable(plugin_id);
         self.config.save()?;
+        self.recompute_extensions();
         let was_running = self.processes.contains_key(plugin_id);
         if let Some(proc) = self.processes.remove(plugin_id) {
             proc.shutdown(Duration::from_secs(2));
@@ -1346,6 +1355,16 @@ impl PluginManager {
 
     pub fn is_running(&self, plugin_id: &str) -> bool {
         self.processes.contains_key(plugin_id)
+    }
+
+    /// 현재 `packages` + `config.is_disabled`를 기준으로 extension 상태를 재계산.
+    /// 디스커버리/enable/disable/install/remove 후 매번 호출한다.
+    pub fn recompute_extensions(&mut self) {
+        let manifests: Vec<&super::manifest::Manifest> =
+            self.packages.iter().map(|p| &p.manifest).collect();
+        let disabled = &self.config;
+        self.extensions
+            .recompute(&manifests, &|id| disabled.is_disabled(id));
     }
 
     pub fn log_path(&self, plugin_id: &str) -> PathBuf {
