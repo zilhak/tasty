@@ -273,6 +273,11 @@ pub struct AppState {
     /// 항목을 합쳐 관리. PluginManager가 plugin 라이프사이클 변경 시
     /// `set_plugin_items(mgr.plugin_tool_items())`로 갱신한다.
     pub tool_registry: crate::plugin::tool_registry::ToolRegistry,
+
+    /// 도구 메뉴 항목 클릭 시 publish해야 할 이벤트 큐. tools_menu가 `&mut AppState`만
+    /// 가지므로 PluginManager에 직접 접근할 수 없어, 클릭 시점에 enqueue하고 App 메인
+    /// 루프가 drain해 `PluginManager::emit_host_event`로 발화한다.
+    pub pending_tool_events: Vec<(String, serde_json::Value)>,
 }
 
 /// A pending native context menu request.
@@ -468,6 +473,7 @@ impl AppState {
             image_views: Default::default(),
             clipboard_viewer_views: Default::default(),
             tool_registry: crate::plugin::tool_registry::ToolRegistry::with_builtins(),
+            pending_tool_events: Vec::new(),
         })
     }
 

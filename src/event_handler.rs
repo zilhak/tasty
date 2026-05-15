@@ -436,6 +436,8 @@ impl ApplicationHandler<AppEvent> for App {
         self.dispatch_pending_surface_lifecycle();
         // Event Bus 1.0 호스트 자동 발화 큐 drain (focus 변화 감지 포함).
         self.dispatch_pending_host_events();
+        // 도구 메뉴 클릭으로 enqueue된 이벤트 publish.
+        self.dispatch_pending_tool_events();
         // PluginsWindow 모달의 사용자 액션을 manager에 적용 + 모달 snapshot 갱신.
         self.process_plugins_window_actions();
 
