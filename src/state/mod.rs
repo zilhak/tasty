@@ -283,6 +283,14 @@ pub struct AppState {
     /// (plugin_id, popup_id, context). App 메인 루프가 drain해
     /// `PluginManager::open_popup_instance`로 dispatch.
     pub pending_popup_opens: Vec<(String, String, serde_json::Value)>,
+
+    /// plugin popup 렌더 중 수집된 사용자 입력. App 메인 루프가 drain해
+    /// `PluginManager::send_popup_event`로 forward한다.
+    pub plugin_popup_events: Vec<(u64, tasty_plugin_protocol::ui_tree::UiEvent)>,
+
+    /// plugin popup 렌더 중 감지된 close 사유 (outside-click / Escape).
+    /// App 메인 루프가 drain해 `PluginManager::close_popup_instance`를 호출한다.
+    pub plugin_popup_closes: Vec<(u64, tasty_plugin_protocol::PopupCloseReason)>,
 }
 
 /// A pending native context menu request.
@@ -480,6 +488,8 @@ impl AppState {
             tool_registry: crate::plugin::tool_registry::ToolRegistry::with_builtins(),
             pending_tool_events: Vec::new(),
             pending_popup_opens: Vec::new(),
+            plugin_popup_events: Vec::new(),
+            plugin_popup_closes: Vec::new(),
         })
     }
 

@@ -269,7 +269,14 @@ impl GpuState {
 
         // 3. Run egui frame (UI drawing)
         let t0 = std::time::Instant::now();
-        let mut full_output = self.run_egui_frame(state, window, &pane_rects, &dividers, terminal_rect);
+        let mut full_output = self.run_egui_frame(
+            state,
+            window,
+            &pane_rects,
+            &dividers,
+            terminal_rect,
+            plugin_manager,
+        );
         let egui_frame_ms = t0.elapsed().as_secs_f64() * 1000.0;
 
         // 3. Cursor decision: egui first, then winit area (dividers + surfaces)

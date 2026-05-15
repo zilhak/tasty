@@ -14,6 +14,7 @@ impl GpuState {
         pane_rects: &[(u32, Rect)],
         dividers: &[Rect],
         terminal_rect: Rect,
+        plugin_manager: Option<&crate::plugin::PluginManager>,
     ) -> egui::FullOutput {
         let raw_input = self.egui_state.take_egui_input(window);
         let scale_factor = self.scale_factor;
@@ -27,6 +28,13 @@ impl GpuState {
             ui::draw_egui_panels(ctx, state, pane_rects, scale_factor, canvas_cache);
             // Context menus are now handled via native OS menus (see process_pending_native_menu)
             ui::draw_popups(ctx, state, pane_rects, terminal_rect, scale_factor);
+            // Plugin popup 인스턴스(동적 instance_id) — host PopupManager와 별도 경로.
+            crate::plugin::popup_render::draw_plugin_popups(
+                ctx,
+                state,
+                plugin_manager,
+                canvas_cache,
+            );
 
             // Settings UI is now rendered in the modal window (ModalWindow)
         })
