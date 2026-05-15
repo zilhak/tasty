@@ -193,6 +193,14 @@ pub(crate) fn handle_surface_fire_hook(
     let fired = state
         .engine
         .hook_manager
-        .check_and_fire(surface_id, &[event]);
+        .check_and_fire(surface_id, &[event.clone()]);
+    let event_kind = event.to_display_string();
+    for hook_id in &fired {
+        state.enqueue_host_event(crate::state::PendingHostEvent::HookFired {
+            hook_id: *hook_id,
+            event_kind: event_kind.clone(),
+            surface_id,
+        });
+    }
     JsonRpcResponse::success(id, json!({ "fired": fired.len() }))
 }

@@ -169,6 +169,13 @@ pub enum PendingHostEvent {
         new_pane: u32,
         direction: crate::model::SplitDirection,
     },
+    /// `tasty-hooks`의 surface hook 발화. `check_and_fire` 호출자가 fired hook_id
+    /// 리스트와 매칭된 event를 묶어 enqueue. surface_id가 0이면 global hook.
+    HookFired {
+        hook_id: u64,
+        event_kind: String,
+        surface_id: u32,
+    },
 }
 
 // IdGenerator is now in engine_state.rs

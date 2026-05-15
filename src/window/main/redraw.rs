@@ -67,10 +67,20 @@ impl MainWindow {
                         }
                     }
                     let hook_events = vec![tasty_hooks::HookEvent::Notification];
-                    self.state
+                    let fired = self
+                        .state
                         .engine
                         .hook_manager
                         .check_and_fire(surface_id, &hook_events);
+                    for hook_id in fired {
+                        self.state.enqueue_host_event(
+                            crate::state::PendingHostEvent::HookFired {
+                                hook_id,
+                                event_kind: "notification".to_string(),
+                                surface_id,
+                            },
+                        );
+                    }
                     self.base.dirty = true;
                 }
                 crate::terminal::TerminalEventKind::BellRing => {
@@ -105,10 +115,20 @@ impl MainWindow {
                         crate::notification::send_system_notification("Tasty", "Bell");
                     }
                     let hook_events = vec![tasty_hooks::HookEvent::Bell];
-                    self.state
+                    let fired = self
+                        .state
                         .engine
                         .hook_manager
                         .check_and_fire(surface_id, &hook_events);
+                    for hook_id in fired {
+                        self.state.enqueue_host_event(
+                            crate::state::PendingHostEvent::HookFired {
+                                hook_id,
+                                event_kind: "bell".to_string(),
+                                surface_id,
+                            },
+                        );
+                    }
                     self.base.dirty = true;
                 }
                 crate::terminal::TerminalEventKind::TitleChanged(title) => {
@@ -132,10 +152,20 @@ impl MainWindow {
                 }
                 crate::terminal::TerminalEventKind::ProcessExited => {
                     let hook_events = vec![tasty_hooks::HookEvent::ProcessExit];
-                    self.state
+                    let fired = self
+                        .state
                         .engine
                         .hook_manager
                         .check_and_fire(surface_id, &hook_events);
+                    for hook_id in fired {
+                        self.state.enqueue_host_event(
+                            crate::state::PendingHostEvent::HookFired {
+                                hook_id,
+                                event_kind: "process-exit".to_string(),
+                                surface_id,
+                            },
+                        );
+                    }
                     // Event Bus 1.0: `process.exited`. close 발화 이전에 enqueue해야
                     // surface_id를 plugin이 의미 있는 컨텍스트에서 받을 수 있다.
                     self.state.enqueue_host_event(

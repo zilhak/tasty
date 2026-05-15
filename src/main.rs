@@ -1280,10 +1280,10 @@ impl App {
         use tasty_plugin_protocol::EventScope;
         use tasty_plugin_protocol::LifecycleReason;
         use tasty_plugin_protocol::events::payloads::{
-            NotificationCreated, PaneClosed, PaneCreated, PaneSplit, ProcessExited, SplitDirection,
-            SurfaceCreated, SurfaceCreatedBy, SurfaceFocused, SurfaceResized, SurfaceTitleChanged,
-            TabClosed, TabCreated, TabFocused, TabMoved, TabRenamed, WorkspaceActivated,
-            WorkspaceClosed, WorkspaceCreated, WorkspaceRenamed,
+            HookFired, NotificationCreated, PaneClosed, PaneCreated, PaneSplit, ProcessExited,
+            SplitDirection, SurfaceCreated, SurfaceCreatedBy, SurfaceFocused, SurfaceResized,
+            SurfaceTitleChanged, TabClosed, TabCreated, TabFocused, TabMoved, TabRenamed,
+            WorkspaceActivated, WorkspaceClosed, WorkspaceCreated, WorkspaceRenamed,
         };
 
         let mut drained: Vec<crate::state::PendingHostEvent> = Vec::new();
@@ -1506,6 +1506,24 @@ impl App {
                         reason: LifecycleReason::User,
                     };
                     mgr.emit_host_event("workspace.closed", &payload, EventScope::System);
+                }
+                crate::state::PendingHostEvent::HookFired {
+                    hook_id,
+                    event_kind,
+                    surface_id,
+                } => {
+                    let scope = if surface_id != 0 {
+                        EventScope::Surface
+                    } else {
+                        EventScope::System
+                    };
+                    let payload = HookFired {
+                        hook_id: hook_id.to_string(),
+                        event_kind,
+                        surface_id: if surface_id != 0 { Some(surface_id) } else { None },
+                        payload: serde_json::Value::Null,
+                    };
+                    mgr.emit_host_event("hook.fired", &payload, scope);
                 }
                 crate::state::PendingHostEvent::PaneSplit {
                     original_pane,
