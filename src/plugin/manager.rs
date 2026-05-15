@@ -1362,9 +1362,15 @@ impl PluginManager {
     pub fn recompute_extensions(&mut self) {
         let manifests: Vec<&super::manifest::Manifest> =
             self.packages.iter().map(|p| &p.manifest).collect();
-        let disabled = &self.config;
-        self.extensions
-            .recompute(&manifests, &|id| disabled.is_disabled(id));
+        let cfg = &self.config;
+        self.extensions.recompute(
+            &manifests,
+            &|id| cfg.is_disabled(id),
+            &|ext_id, target_id| {
+                let token = format!("ext:{target_id}");
+                cfg.granted_permissions(ext_id).contains(&token)
+            },
+        );
     }
 
     pub fn log_path(&self, plugin_id: &str) -> PathBuf {

@@ -121,6 +121,15 @@ pub enum Permission {
     /// 다른 plugin이 점유한 IPC namespace prefix의 메서드 호출.
     /// 토큰 형식: `ipc.invoke:<prefix>` (예: `ipc.invoke:codex`).
     IpcInvoke(String),
+    /// 다른 plugin(target)의 IPC/이벤트 흐름을 가로채는 extension 권한.
+    /// 토큰 형식: `ext:<target_plugin_id>` (예: `ext:com.tasty.clipboard`).
+    ///
+    /// `[extends]` 블록을 선언한 plugin은 매니페스트의 `permissions`에 반드시 이 토큰을
+    /// 포함해야 한다. 사용자가 grant하기 전까지 extension은 `Pending(PermissionNotGranted)`
+    /// 상태로 유지된다. 세부 mode(transform/filter/observe)와 hook 대상(event/method)은
+    /// 매니페스트의 `[[extends.*]]` 항목으로 표현되며 별도 권한 grant는 받지 않는다 —
+    /// 사용자 인지 부하를 낮추기 위해 target plugin 단위 단일 토큰만 노출.
+    Extension(String),
 }
 
 impl Permission {
@@ -139,11 +148,19 @@ impl Permission {
             "terminal.read" => Self::TerminalRead,
             "network" => Self::Network,
             other => {
-                let prefix = other.strip_prefix("ipc.invoke:")?;
-                if !is_valid_ipc_prefix(prefix) || is_reserved_ipc_prefix(prefix) {
-                    return None;
+                if let Some(prefix) = other.strip_prefix("ipc.invoke:") {
+                    if !is_valid_ipc_prefix(prefix) || is_reserved_ipc_prefix(prefix) {
+                        return None;
+                    }
+                    return Some(Self::IpcInvoke(prefix.to_string()));
                 }
-                return Some(Self::IpcInvoke(prefix.to_string()));
+                if let Some(target) = other.strip_prefix("ext:") {
+                    if !is_valid_plugin_id(target) {
+                        return None;
+                    }
+                    return Some(Self::Extension(target.to_string()));
+                }
+                return None;
             }
         })
     }
@@ -165,6 +182,7 @@ impl Permission {
             Self::TerminalRead => "terminal.read".into(),
             Self::Network => "network".into(),
             Self::IpcInvoke(prefix) => format!("ipc.invoke:{prefix}"),
+            Self::Extension(target) => format!("ext:{target}"),
         }
     }
 }
@@ -550,6 +568,12 @@ impl Manifest {
                 "extends.api_version '{}' incompatible with host '{}'",
                 decl.api_version,
                 HOST_API_VERSION
+            );
+        }
+        let required_token = format!("ext:{}", decl.plugin_id);
+        if !self.permissions.iter().any(|p| p == &required_token) {
+            anyhow::bail!(
+                "[extends] requires permission '{required_token}' to be declared in manifest permissions[]"
             );
         }
         let total =
@@ -1987,6 +2011,7 @@ mod tests {
                 name = "Ext"
                 version = "0.1.0"
                 api_version = "1"
+                permissions = ["ext:com.tasty.clipboard"]
                 [entry]
                 type = "process"
                 command = "x"
@@ -2039,6 +2064,7 @@ mod tests {
             name = "Ext"
             version = "0.1.0"
             api_version = "1"
+            permissions = ["ext:com.example.ext"]
             [entry]
             type = "process"
             command = "x"
@@ -2080,6 +2106,7 @@ mod tests {
             name = "Ext"
             version = "0.1.0"
             api_version = "1"
+            permissions = ["ext:com.tasty.clipboard"]
             [entry]
             type = "process"
             command = "x"
@@ -2170,6 +2197,39 @@ mod tests {
         );
         let err = parse(&s).unwrap_err().to_string();
         assert!(err.contains("non-empty 'modifies'"), "got: {err}");
+    }
+
+    #[test]
+    fn extends_requires_ext_permission_in_manifest() {
+        // skeleton에는 ext:com.tasty.clipboard 권한이 들어 있다. 그걸 빼면 거부되어야.
+        let s = extends_skeleton(
+            r#"
+                [[extends.pre_ipc]]
+                method = "clipboard.add"
+                modifies = ["entry"]
+                mode = "transform"
+                timeout_ms = 100
+            "#,
+        )
+        .replace("permissions = [\"ext:com.tasty.clipboard\"]", "permissions = []");
+        let err = parse(&s).unwrap_err().to_string();
+        assert!(err.contains("ext:com.tasty.clipboard"), "got: {err}");
+    }
+
+    #[test]
+    fn ext_permission_token_parses() {
+        assert_eq!(
+            Permission::from_token("ext:com.tasty.clipboard"),
+            Some(Permission::Extension("com.tasty.clipboard".into()))
+        );
+        // 잘못된 plugin id는 거부.
+        assert_eq!(Permission::from_token("ext:Bad-Id"), None);
+        assert_eq!(Permission::from_token("ext:"), None);
+        // round trip.
+        assert_eq!(
+            Permission::Extension("com.x.y".into()).as_token(),
+            "ext:com.x.y"
+        );
     }
 
     #[test]

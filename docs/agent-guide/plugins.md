@@ -278,6 +278,7 @@ Plugin이 호스트 IPC를 호출하려면 매니페스트의 `permissions`에 �
 | `terminal.write` | `surface.send/send_key/send_combo/send_to/send_wait_idle` |
 | `terminal.read` | `surface.set_mark/read_since_mark/screen_text/cursor_position/is_typing` |
 | `ipc.invoke:<prefix>` | 다른 plugin의 namespace 메서드 호출 (`<prefix>`는 호출 대상 plugin이 contribute한 IPC namespace) |
+| `ext:<target_plugin_id>` | `[extends]` 블록으로 다른 plugin의 IPC/이벤트 흐름을 가로채는 권한. target plugin 단위 단일 토큰 — 세부 mode(transform/filter/observe)와 hook 대상은 매니페스트의 `[[extends.*]]`로 표현된다 |
 | `network` | (예약) |
 
 Local-only 메서드 (CLI/사용자만, plugin은 항상 거부):

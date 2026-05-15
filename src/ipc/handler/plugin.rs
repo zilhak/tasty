@@ -237,6 +237,9 @@ fn extension_state_to_json(state: &crate::plugin::extension_registry::ExtensionS
                     "kind": "invalid_target_version",
                     "target_version": target_version,
                 }),
+                PendingReason::PermissionNotGranted => {
+                    json!({ "kind": "permission_not_granted" })
+                }
             };
             json!({ "status": "pending", "reason": r })
         }
@@ -481,6 +484,9 @@ pub fn handle_grant(
         tracing::warn!("plugins.toml save failed: {e}");
     }
     refresh_plugin_permissions(mgr, &plugin_id);
+    if token.starts_with("ext:") {
+        mgr.recompute_extensions();
+    }
     JsonRpcResponse::success(
         id,
         json!({ "id": plugin_id, "permission": token, "added": added }),
@@ -509,6 +515,9 @@ pub fn handle_revoke(
         tracing::warn!("plugins.toml save failed: {e}");
     }
     refresh_plugin_permissions(mgr, &plugin_id);
+    if token.starts_with("ext:") {
+        mgr.recompute_extensions();
+    }
     JsonRpcResponse::success(
         id,
         json!({ "id": plugin_id, "permission": token, "removed": removed }),
