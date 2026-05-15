@@ -267,6 +267,29 @@ impl PluginManager {
         self.publish_host_event(envelope);
     }
 
+    /// owner unicast 발화 — envelope를 정확히 한 plugin에만 전달. 호스트가 명시적으로
+    /// 보내는 메시지이므로 구독 등록 여부와 무관하다. `command.invoked`처럼
+    /// "broadcast 아님"으로 지정된 이벤트에 사용. plugin이 실행 중이 아니면 조용히 폐기.
+    pub fn emit_host_event_to_plugin<P: serde::Serialize>(
+        &mut self,
+        plugin_id: &str,
+        key: &str,
+        payload: &P,
+        scope: tasty_plugin_protocol::EventScope,
+    ) {
+        if !self.processes.contains_key(plugin_id) {
+            tracing::trace!(
+                "emit_host_event_to_plugin: plugin '{}' not running, dropping '{}'",
+                plugin_id,
+                key
+            );
+            return;
+        }
+        let envelope = self.build_host_envelope(key, payload, scope);
+        let dispatch = self.event_bus.unicast_to_plugin(plugin_id, envelope);
+        self.send_event_dispatches(vec![dispatch]);
+    }
+
     /// 고빈도 이벤트용 throttled 발화. 윈도우 내 호출은 마지막 payload만 보관됐다가
     /// trailing tick에서 [`Self::pump_throttled_events`]가 발화한다.
     pub fn emit_host_event_throttled<P: serde::Serialize>(

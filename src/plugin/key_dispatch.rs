@@ -55,8 +55,14 @@ pub fn match_plugin_shortcut(
     None
 }
 
-/// Plugin command를 plugin 프로세스에 전달. 단계 G에서 IPC `command.invoke`로
-/// 실제 송신. 응답은 surface tree/display_name을 갱신할 수 있다.
+/// Plugin command를 plugin 프로세스에 전달.
+///
+/// 두 경로로 발화한다:
+/// - Event Bus 1.0 `command.invoked` owner-unicast (PR 5 — Option D 기본 경로).
+///   sub_id=0 sentinel. 다른 plugin이 `command.invoked` 구독해도 보이지 않는다.
+/// - 옛 `command.invoke` IPC. plugin이 `SurfaceResult`로 tree/display_name을 갱신할 수
+///   있게 응답 기반 형태. 두 경로는 당분간 병행 — plugin이 새 경로로 자연 마이그레이션
+///   하면 옛 IPC는 후속 PR에서 정리된다.
 pub fn dispatch_plugin_command(
     mgr: &mut PluginManager,
     plugin_id: &str,
@@ -69,5 +75,26 @@ pub fn dispatch_plugin_command(
         command_id,
         surface_id
     );
+    {
+        use tasty_plugin_protocol::EventScope;
+        use tasty_plugin_protocol::events::payloads::{
+            CommandInvoked, CommandScope, CommandTrigger,
+        };
+        let payload = CommandInvoked {
+            plugin_id: plugin_id.to_string(),
+            command_id: command_id.to_string(),
+            // PR 5는 매니페스트 `scope` 필드를 아직 받지 않으므로 Global로 통일.
+            // 후속 PR에서 CommandDecl.scope를 도입하면서 분기 처리한다.
+            scope: CommandScope::Global,
+            source_surface_id: Some(surface_id),
+            trigger: CommandTrigger::Shortcut,
+        };
+        mgr.emit_host_event_to_plugin(
+            plugin_id,
+            "command.invoked",
+            &payload,
+            EventScope::System,
+        );
+    }
     mgr.send_command_invoke(plugin_id, surface_id, command_id);
 }

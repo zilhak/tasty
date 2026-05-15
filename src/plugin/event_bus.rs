@@ -186,6 +186,22 @@ impl EventBus {
         self.fan_out(envelope, None)
     }
 
+    /// owner unicast — envelope를 정확히 한 plugin에만 전달한다. 일반 fan-out과 달리
+    /// 호스트/다른 plugin 구독자는 무시. `command.invoked`처럼 의도적으로 owner만 받아야 하는
+    /// 이벤트에 사용한다. 구독 권한도 검사하지 않는다 (호스트가 명시적으로 보내는 메시지).
+    /// 반환값은 송신용 [`PluginDispatch`] (sub_id=0 sentinel).
+    pub fn unicast_to_plugin(
+        &self,
+        plugin_id: &str,
+        envelope: EventEnvelope,
+    ) -> PluginDispatch {
+        PluginDispatch {
+            plugin_id: plugin_id.to_string(),
+            sub_id: 0,
+            envelope,
+        }
+    }
+
     /// plugin이 발화한 envelope. publish 권한 매칭 + hop count 검사 후 fan-out.
     pub fn publish_from_plugin(
         &self,
@@ -483,5 +499,21 @@ mod tests {
         );
         let res = bus.publish_from_plugin("p1", envelope);
         assert!(matches!(res, Err(EventBusError::PublishDenied { .. })));
+    }
+
+    #[test]
+    fn unicast_to_plugin_bypasses_subscribers_and_uses_zero_sub_id() {
+        // unicast는 fan-out과 별개 경로. 호스트/다른 plugin이 구독해도 envelope를 받지 않는다.
+        let bus = EventBus::new();
+        let (tx, rx) = mpsc::channel();
+        bus.subscribe_host("command.*", tx);
+        bus.set_plugin_permissions("p2", vec!["command.*".into()], vec![]);
+        bus.subscribe_plugin("p2", 1, "command.*".into()).unwrap();
+        let envelope = env("command.invoked", EventOrigin::Host);
+        let dispatch = bus.unicast_to_plugin("p1", envelope);
+        assert_eq!(dispatch.plugin_id, "p1");
+        assert_eq!(dispatch.sub_id, 0);
+        // 호스트/p2 구독자는 아무것도 받지 않는다.
+        assert!(rx.try_recv().is_err());
     }
 }
