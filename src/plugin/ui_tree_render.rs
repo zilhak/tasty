@@ -1,6 +1,10 @@
 //! `UiNode` → egui 위젯 렌더링.
 //!
-//! 사용자 입력은 `RemoteSurface::pending_events`로 push 되어 다음 pump tick에 plugin에 송신.
+//! 사용자 입력은 [`UiSink::push_event`]를 통해 호스트가 보관해 두었다가 다음 pump tick에
+//! plugin에 송신한다. surface([`RemoteSurface`])와 popup 인스턴스 모두 동일 렌더러를
+//! 공유하기 위해 sink 추상화를 사용한다.
+
+use std::cell::RefCell;
 
 use egui::Ui;
 
@@ -10,6 +14,64 @@ use crate::plugin::ui_tree::{
     ButtonStyle, CanvasPointerButton, CanvasPointerPhase, LabelStyle, PixelFilter, SharedBufferId,
     SplitDir, TreeNode, UiEvent, UiNode,
 };
+
+/// 렌더러가 plugin tree를 그리는 동안 사용하는 추상 sink.
+///
+/// - `push_event`: 사용자 입력을 plugin에 보낼 큐에 적재.
+/// - `plugin_id`: canvas 텍스처 캐시 lookup 키.
+/// - `salt`: egui memory id 충돌 방지용 disambiguator. surface는 `SurfaceId`, popup은
+///   `instance_id`를 사용.
+pub trait UiSink {
+    fn push_event(&self, event: UiEvent);
+    fn plugin_id(&self) -> &str;
+    fn salt(&self) -> u64;
+}
+
+impl UiSink for RemoteSurface {
+    fn push_event(&self, event: UiEvent) {
+        RemoteSurface::push_event(self, event);
+    }
+    fn plugin_id(&self) -> &str {
+        &self.plugin_id
+    }
+    fn salt(&self) -> u64 {
+        self.id as u64
+    }
+}
+
+/// Popup 한 인스턴스의 입력 sink. 매 프레임 새로 만들고, 렌더 종료 후 `into_events()`로
+/// 모아진 이벤트를 꺼내 `PluginManager::send_popup_event`로 dispatch.
+pub struct PopupSink<'a> {
+    plugin_id: &'a str,
+    salt: u64,
+    events: RefCell<Vec<UiEvent>>,
+}
+
+impl<'a> PopupSink<'a> {
+    pub fn new(plugin_id: &'a str, instance_id: u64) -> Self {
+        Self {
+            plugin_id,
+            salt: instance_id,
+            events: RefCell::new(Vec::new()),
+        }
+    }
+
+    pub fn into_events(self) -> Vec<UiEvent> {
+        self.events.into_inner()
+    }
+}
+
+impl<'a> UiSink for PopupSink<'a> {
+    fn push_event(&self, event: UiEvent) {
+        self.events.borrow_mut().push(event);
+    }
+    fn plugin_id(&self) -> &str {
+        self.plugin_id
+    }
+    fn salt(&self) -> u64 {
+        self.salt
+    }
+}
 
 pub fn render_remote_surface(
     ui: &mut Ui,
@@ -36,10 +98,21 @@ pub fn render_remote_surface(
     }
 }
 
+/// Plugin popup의 UI tree를 렌더한다. surface와 달리 popup 인스턴스는 호스트 측
+/// `PluginPopupInstance.tree`에 직접 보관된 [`UiNode`]를 그대로 받는다.
+pub fn render_popup_tree(
+    ui: &mut Ui,
+    tree: &UiNode,
+    sink: &PopupSink<'_>,
+    canvas_cache: &CanvasTextureCache,
+) {
+    render_node(ui, tree, sink, canvas_cache);
+}
+
 fn render_node(
     ui: &mut Ui,
     node: &UiNode,
-    surface: &RemoteSurface,
+    sink: &dyn UiSink,
     canvas_cache: &CanvasTextureCache,
 ) {
     match node {
@@ -50,7 +123,7 @@ fn render_node(
                     // 자식별로 push_id로 id_salt를 분리 → 같은 종류의 stateful
                     // 위젯(ScrollArea, CollapsingHeader 등)이 형제 위치에 있어도
                     // egui ID가 충돌하지 않는다.
-                    ui.push_id(i, |ui| render_node(ui, c, surface, canvas_cache));
+                    ui.push_id(i, |ui| render_node(ui, c, sink, canvas_cache));
                 }
             });
         }
@@ -58,7 +131,7 @@ fn render_node(
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = *spacing as f32;
                 for (i, c) in children.iter().enumerate() {
-                    ui.push_id(i, |ui| render_node(ui, c, surface, canvas_cache));
+                    ui.push_id(i, |ui| render_node(ui, c, sink, canvas_cache));
                 }
             });
         }
@@ -72,7 +145,7 @@ fn render_node(
             egui::ScrollArea::new([*horizontal, *vertical])
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
-                    render_node(ui, child, surface, canvas_cache);
+                    render_node(ui, child, sink, canvas_cache);
                 });
         }
         UiNode::Splitter {
@@ -89,7 +162,7 @@ fn render_node(
                 id.as_deref(),
                 first,
                 second,
-                surface,
+                sink,
                 canvas_cache,
             );
         }
@@ -128,7 +201,7 @@ fn render_node(
                 None => resp,
             };
             if resp.clicked() {
-                surface.push_event(UiEvent::Click {
+                sink.push_event(UiEvent::Click {
                     node_id: id.clone(),
                 });
             }
@@ -139,7 +212,7 @@ fn render_node(
             selection_mode: _,
         } => {
             for n in nodes {
-                render_tree_node(ui, id, n, "", surface);
+                render_tree_node(ui, id, n, "", sink);
             }
         }
         UiNode::Addressbar {
@@ -158,13 +231,13 @@ fn render_node(
                     .desired_width(f32::INFINITY),
             );
             if resp.changed() {
-                surface.push_event(UiEvent::AddressbarChange {
+                sink.push_event(UiEvent::AddressbarChange {
                     node_id: id.clone(),
                     text: buf.clone(),
                 });
             }
             if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                surface.push_event(UiEvent::AddressbarSubmit {
+                sink.push_event(UiEvent::AddressbarSubmit {
                     node_id: id.clone(),
                     text: buf,
                 });
@@ -191,7 +264,7 @@ fn render_node(
         } => {
             render_canvas(
                 ui,
-                surface,
+                sink,
                 canvas_cache,
                 *buffer_id,
                 *width,
@@ -213,7 +286,7 @@ fn render_node(
 ///   직전 frame의 hovered 상태를 egui memory에 저장해 false 전이 시점에 송신.
 fn render_canvas(
     ui: &mut Ui,
-    surface: &RemoteSurface,
+    sink: &dyn UiSink,
     canvas_cache: &CanvasTextureCache,
     buffer_id: SharedBufferId,
     width: u32,
@@ -229,7 +302,7 @@ fn render_canvas(
     let (rect, resp) = ui.allocate_exact_size(size, sense);
 
     // 1. 그리기: cache 등록 텍스처가 있으면 Image, 없으면 placeholder.
-    match canvas_cache.get(&surface.plugin_id, buffer_id) {
+    match canvas_cache.get(sink.plugin_id(), buffer_id) {
         Some(tex_id) => {
             ui.painter().image(
                 tex_id,
@@ -263,14 +336,14 @@ fn render_canvas(
     if resp.clicked() {
         if let Some(p) = resp.interact_pointer_pos() {
             let (x, y) = to_canvas_local(p);
-            surface.push_event(UiEvent::CanvasPointer {
+            sink.push_event(UiEvent::CanvasPointer {
                 node_id: node_id.to_string(),
                 x,
                 y,
                 phase: CanvasPointerPhase::Down,
                 button: Some(CanvasPointerButton::Primary),
             });
-            surface.push_event(UiEvent::CanvasPointer {
+            sink.push_event(UiEvent::CanvasPointer {
                 node_id: node_id.to_string(),
                 x,
                 y,
@@ -281,7 +354,7 @@ fn render_canvas(
     } else if resp.dragged() {
         if let Some(p) = resp.interact_pointer_pos() {
             let (x, y) = to_canvas_local(p);
-            surface.push_event(UiEvent::CanvasPointer {
+            sink.push_event(UiEvent::CanvasPointer {
                 node_id: node_id.to_string(),
                 x,
                 y,
@@ -294,7 +367,7 @@ fn render_canvas(
         // 그리고 Move 이벤트는 캐주얼한 위젯에서 흔하지 않으므로 throttle 자체는 충분.
         if let Some(p) = ui.ctx().input(|i| i.pointer.hover_pos()) {
             let (x, y) = to_canvas_local(p);
-            surface.push_event(UiEvent::CanvasPointer {
+            sink.push_event(UiEvent::CanvasPointer {
                 node_id: node_id.to_string(),
                 x,
                 y,
@@ -305,13 +378,13 @@ fn render_canvas(
     }
 
     // Leave 감지: 직전 frame에 hovered였는데 이번 frame은 아니면 송신.
-    let mem_id = egui::Id::new(("canvas_hovered", surface.id, node_id));
+    let mem_id = egui::Id::new(("canvas_hovered", sink.salt(), node_id));
     let was_hovered: bool = ui.ctx().memory(|m| m.data.get_temp(mem_id).unwrap_or(false));
     let is_hovered = resp.hovered() || resp.dragged() || resp.clicked();
     if was_hovered && !is_hovered {
         // 마지막으로 알려진 hover 위치가 없을 수 있으므로 (-1, -1) 대신 영역 외 표시.
         // 보통 plugin은 phase만 보고 추적 상태를 초기화한다.
-        surface.push_event(UiEvent::CanvasPointer {
+        sink.push_event(UiEvent::CanvasPointer {
             node_id: node_id.to_string(),
             x: -1.0,
             y: -1.0,
@@ -341,7 +414,7 @@ fn render_splitter(
     id: Option<&str>,
     first: &UiNode,
     second: &UiNode,
-    surface: &RemoteSurface,
+    sink: &dyn UiSink,
     canvas_cache: &CanvasTextureCache,
 ) {
     const HANDLE_THICKNESS: f32 = 6.0;
@@ -349,7 +422,7 @@ fn render_splitter(
 
     let avail = ui.available_rect_before_wrap();
     let effective_ratio = if let Some(id) = id {
-        let (mem_id, last_protocol_id) = splitter_memory_ids(surface, id);
+        let (mem_id, last_protocol_id) = splitter_memory_ids(sink, id);
         let ctx = ui.ctx();
         let stored = ctx.memory(|m| {
             (
@@ -401,14 +474,14 @@ fn render_splitter(
     };
 
     ui.scope_builder(egui::UiBuilder::new().max_rect(first_rect), |ui| {
-        ui.push_id("split_first", |ui| render_node(ui, first, surface, canvas_cache));
+        ui.push_id("split_first", |ui| render_node(ui, first, sink, canvas_cache));
     });
     ui.scope_builder(egui::UiBuilder::new().max_rect(second_rect), |ui| {
-        ui.push_id("split_second", |ui| render_node(ui, second, surface, canvas_cache));
+        ui.push_id("split_second", |ui| render_node(ui, second, sink, canvas_cache));
     });
 
     if let Some(id_str) = id {
-        let handle_id = ui.make_persistent_id(("splitter_handle", surface.id, id_str));
+        let handle_id = ui.make_persistent_id(("splitter_handle", sink.salt(), id_str));
         let resp = ui.interact(handle_rect, handle_id, egui::Sense::click_and_drag());
         let cursor = match direction {
             SplitDir::Horizontal => egui::CursorIcon::ResizeHorizontal,
@@ -459,12 +532,12 @@ fn render_splitter(
             let min_ratio = (MIN_PANE_PX / axis_size.max(1.0)).min(0.45);
             let max_ratio = 1.0 - min_ratio;
             let new_ratio = raw_ratio.clamp(min_ratio, max_ratio);
-            let (mem_id, _) = splitter_memory_ids(surface, id_str);
+            let (mem_id, _) = splitter_memory_ids(sink, id_str);
             ui.ctx()
                 .memory_mut(|m| m.data.insert_temp(mem_id, new_ratio));
             // 매 frame 송신은 부담이 클 수 있으나 plugin은 단순 ratio 저장만 하면 되므로
             // 실용상 문제 없음. 필요시 release 시점으로 throttle 가능.
-            surface.push_event(UiEvent::SplitterDrag {
+            sink.push_event(UiEvent::SplitterDrag {
                 node_id: id_str.to_string(),
                 ratio: new_ratio,
             });
@@ -476,8 +549,8 @@ fn render_splitter(
 }
 
 /// Splitter의 egui memory 키 — 사용자가 조절한 ratio와 직전 protocol ratio를 분리 저장.
-fn splitter_memory_ids(surface: &RemoteSurface, node_id: &str) -> (egui::Id, egui::Id) {
-    let base = ("splitter_state", surface.id, node_id);
+fn splitter_memory_ids(sink: &dyn UiSink, node_id: &str) -> (egui::Id, egui::Id) {
+    let base = ("splitter_state", sink.salt(), node_id);
     let user = egui::Id::new(("user", base));
     let last_protocol = egui::Id::new(("last_protocol", base));
     (user, last_protocol)
@@ -488,7 +561,7 @@ fn render_tree_node(
     tree_id: &str,
     n: &TreeNode,
     parent_path: &str,
-    surface: &RemoteSurface,
+    sink: &dyn UiSink,
 ) {
     let path = if parent_path.is_empty() {
         n.id.clone()
@@ -501,7 +574,7 @@ fn render_tree_node(
     };
     if n.children.is_empty() {
         if ui.selectable_label(n.selected, label).clicked() {
-            surface.push_event(UiEvent::TreeSelect {
+            sink.push_event(UiEvent::TreeSelect {
                 node_id: tree_id.to_string(),
                 selected: vec![path.clone()],
             });
@@ -513,12 +586,12 @@ fn render_tree_node(
             .default_open(n.expanded)
             .show(ui, |ui| {
                 for child in &n.children {
-                    render_tree_node(ui, tree_id, child, &path, surface);
+                    render_tree_node(ui, tree_id, child, &path, sink);
                 }
             });
         if resp.header_response.clicked() {
             // 헤더 영역 클릭 자체로 selection 신호.
-            surface.push_event(UiEvent::TreeSelect {
+            sink.push_event(UiEvent::TreeSelect {
                 node_id: tree_id.to_string(),
                 selected: vec![path.clone()],
             });
@@ -528,7 +601,7 @@ fn render_tree_node(
         // 단계 06+에서 메모리화 개선.
         let now_open = resp.openness > 0.5;
         if now_open != n.expanded {
-            surface.push_event(UiEvent::TreeExpand {
+            sink.push_event(UiEvent::TreeExpand {
                 node_id: tree_id.to_string(),
                 path: path.clone(),
                 expanded: now_open,
