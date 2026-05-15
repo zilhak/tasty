@@ -603,6 +603,16 @@ impl PluginManager {
             }
             Err(e) => {
                 tracing::error!("plugin '{}' spawn failed: {}", pkg.manifest.id, e);
+                {
+                    use tasty_plugin_protocol::EventScope;
+                    use tasty_plugin_protocol::events::payloads::PluginError;
+                    let payload = PluginError {
+                        plugin_id: pkg.manifest.id.clone(),
+                        error_kind: "spawn_failed".to_string(),
+                        message: e.to_string(),
+                    };
+                    self.emit_host_event("plugin.error", &payload, EventScope::System);
+                }
                 self.record_spawn_failure(&pkg.manifest.id);
             }
         }
@@ -808,6 +818,20 @@ impl PluginManager {
                 id,
                 HEALTHCHECK_TIMEOUT.as_secs()
             );
+            {
+                use tasty_plugin_protocol::EventScope;
+                use tasty_plugin_protocol::events::payloads::PluginError;
+                let payload = PluginError {
+                    plugin_id: id.clone(),
+                    error_kind: "unresponsive".to_string(),
+                    message: format!(
+                        "plugin '{}' did not respond to ping for {}s — restarting",
+                        id,
+                        HEALTHCHECK_TIMEOUT.as_secs()
+                    ),
+                };
+                self.emit_host_event("plugin.error", &payload, EventScope::System);
+            }
             if let Some(proc) = self.processes.remove(&id) {
                 proc.shutdown(Duration::from_secs(2));
             }
