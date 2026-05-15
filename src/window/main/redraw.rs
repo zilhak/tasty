@@ -49,12 +49,22 @@ impl MainWindow {
                     }
                     if self.state.engine.settings.notification.enabled {
                         let ws_id = self.state.active_workspace().id;
-                        self.state.engine.notifications.add(
+                        let created_id = self.state.engine.notifications.add(
                             ws_id,
                             surface_id,
                             title.clone(),
                             body.clone(),
                         );
+                        if let Some(nid) = created_id {
+                            self.state.enqueue_host_event(
+                                crate::state::PendingHostEvent::NotificationCreated {
+                                    id: nid,
+                                    title: title.clone(),
+                                    body: body.clone(),
+                                    source: "host".to_string(),
+                                },
+                            );
+                        }
                     }
                     let hook_events = vec![tasty_hooks::HookEvent::Notification];
                     self.state
@@ -66,12 +76,22 @@ impl MainWindow {
                 crate::terminal::TerminalEventKind::BellRing => {
                     if self.state.engine.settings.notification.enabled {
                         let ws_id = self.state.active_workspace().id;
-                        self.state.engine.notifications.add(
+                        let created_id = self.state.engine.notifications.add(
                             ws_id,
                             surface_id,
                             "Bell".to_string(),
                             String::new(),
                         );
+                        if let Some(nid) = created_id {
+                            self.state.enqueue_host_event(
+                                crate::state::PendingHostEvent::NotificationCreated {
+                                    id: nid,
+                                    title: "Bell".to_string(),
+                                    body: String::new(),
+                                    source: "host".to_string(),
+                                },
+                            );
+                        }
                     }
                     if self.state.engine.settings.notification.enabled
                         && self.state.engine.settings.notification.system_notification
@@ -116,6 +136,11 @@ impl MainWindow {
                         .engine
                         .hook_manager
                         .check_and_fire(surface_id, &hook_events);
+                    // Event Bus 1.0: `process.exited`. close 발화 이전에 enqueue해야
+                    // surface_id를 plugin이 의미 있는 컨텍스트에서 받을 수 있다.
+                    self.state.enqueue_host_event(
+                        crate::state::PendingHostEvent::ProcessExited { surface_id },
+                    );
                     let kind = self.state.surface_kind(surface_id);
                     if self.state.close_surface_by_id_no_snapshot(surface_id) {
                         if let Some(k) = kind {

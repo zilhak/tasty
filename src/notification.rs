@@ -44,13 +44,15 @@ impl NotificationStore {
     }
 
     /// Add a notification, coalescing if the same source sent one within the coalesce window.
+    /// Returns `Some(id)` for a newly-created notification, `None` when the call coalesced
+    /// into an existing entry (Event Bus 발화 시 신규 알림만 broadcast하기 위한 분기).
     pub fn add(
         &mut self,
         source_workspace: WorkspaceId,
         source_surface: SurfaceId,
         title: String,
         body: String,
-    ) {
+    ) -> Option<u64> {
         let now = Instant::now();
         let coalesce_window = Duration::from_millis(self.coalesce_ms);
 
@@ -71,7 +73,7 @@ impl NotificationStore {
                 existing.title = title;
             }
             existing.timestamp = now;
-            return;
+            return None;
         }
 
         // FIFO eviction
@@ -96,6 +98,7 @@ impl NotificationStore {
             timestamp: now,
             read: false,
         });
+        Some(id)
     }
 
     /// Total unread notification count.

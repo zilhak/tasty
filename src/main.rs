@@ -1269,8 +1269,9 @@ impl App {
     pub(crate) fn dispatch_pending_host_events(&mut self) {
         use tasty_plugin_protocol::EventScope;
         use tasty_plugin_protocol::events::payloads::{
-            SurfaceCreated, SurfaceCreatedBy, SurfaceFocused, SurfaceResized, SurfaceTitleChanged,
-            TabFocused, TabRenamed, WorkspaceActivated, WorkspaceRenamed,
+            NotificationCreated, ProcessExited, SurfaceCreated, SurfaceCreatedBy, SurfaceFocused,
+            SurfaceResized, SurfaceTitleChanged, TabFocused, TabRenamed, WorkspaceActivated,
+            WorkspaceRenamed,
         };
 
         let mut drained: Vec<crate::state::PendingHostEvent> = Vec::new();
@@ -1388,6 +1389,27 @@ impl App {
                 crate::state::PendingHostEvent::TabRenamed { tab_id, title } => {
                     let payload = TabRenamed { tab_id, title };
                     mgr.emit_host_event("tab.renamed", &payload, EventScope::System);
+                }
+                crate::state::PendingHostEvent::ProcessExited { surface_id } => {
+                    let payload = ProcessExited {
+                        surface_id,
+                        exit_code: None,
+                    };
+                    mgr.emit_host_event("process.exited", &payload, EventScope::Surface);
+                }
+                crate::state::PendingHostEvent::NotificationCreated {
+                    id,
+                    title,
+                    body,
+                    source,
+                } => {
+                    let payload = NotificationCreated {
+                        id: id.to_string(),
+                        title,
+                        body,
+                        source,
+                    };
+                    mgr.emit_host_event("notification.created", &payload, EventScope::System);
                 }
             }
         }

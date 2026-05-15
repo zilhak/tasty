@@ -81,6 +81,18 @@ pub fn handle_notification_create(
             }
         }
     };
-    state.engine.notifications.add(ws_id, surface_id, title, body);
+    let created_id =
+        state
+            .engine
+            .notifications
+            .add(ws_id, surface_id, title.clone(), body.clone());
+    if let Some(nid) = created_id {
+        state.enqueue_host_event(crate::state::PendingHostEvent::NotificationCreated {
+            id: nid,
+            title,
+            body,
+            source: "host".to_string(),
+        });
+    }
     JsonRpcResponse::success(id, json!({ "created": true }))
 }

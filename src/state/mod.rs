@@ -111,6 +111,18 @@ pub enum PendingHostEvent {
         tab_id: u32,
         title: String,
     },
+    /// 자식 프로세스 종료. exit_code는 현재 terminal 이벤트가 노출하지 않아 `None` 고정.
+    ProcessExited {
+        surface_id: u32,
+    },
+    /// `NotificationStore::add` 결과. source는 발화 측에서 채워 push (host=`"host"`,
+    /// plugin=plugin_id).
+    NotificationCreated {
+        id: u64,
+        title: String,
+        body: String,
+        source: String,
+    },
 }
 
 // IdGenerator is now in engine_state.rs
