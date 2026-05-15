@@ -35,6 +35,9 @@ pub fn handle(state: &mut AppState, request: &JsonRpcRequest) -> JsonRpcResponse
 | `debug.clipboard_viewer_open` | `{}` | 클립보드 viewer popup 열기 (Ctrl+Shift+H 단축키 재현) |
 | `debug.tool.list` | `{}` | 도구 메뉴 항목 전체를 표시 순서대로 반환 (`source`, `action`, `order_hint` 포함) |
 | `debug.tool.invoke` | `key` | 도구 항목 key(`builtin:<n>` 또는 `<plugin_id>/<tool_id>`)로 사용자 클릭과 동일한 dispatch 실행 |
+| `debug.popup.list` | `{}` | 매니페스트로 contribute된 popup 정의 + 현재 열린 instance 반환 |
+| `debug.popup.open` | `plugin_id, popup_id, context?` | popup 인스턴스를 강제로 open. 응답에 `instance_id`. |
+| `debug.popup.close` | `instance_id` | popup 인스턴스를 강제로 close (PluginRequest 사유) |
 | `debug.event_bus.list_subscribers` | `key` | 해당 키에 매칭되는 plugin 구독 목록 (`plugin_id`, `sub_id`, 매니페스트 패턴) |
 | `debug.event_bus.publish` | `key, payload(json string), scope("system"\|"surface")` | 임의 키로 host envelope 발화. 응답에 `trace_id` 포함 |
 | `debug.event_bus.trace` | `trace_id` | 최근 256개 envelope 링버퍼에서 같은 trace_id를 가진 envelope들을 발화 순서로 반환 |

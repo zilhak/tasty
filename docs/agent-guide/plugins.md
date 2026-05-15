@@ -9,7 +9,7 @@ Plugin의 근본 역할은 다음 5가지로 분류된다.
 
 1. **새 Window 추가** — OS-level 별도 윈도우. 현재 매니페스트 schema 없음(향후 추가 예정).
 2. **새 Surface 추가** — 탭/스플릿 안에서 생성 가능한 새 surface 종류를 등록한다.
-3. **새 Popup 추가** — Window 내부 가상 창. 포커스를 빼앗지 않고 터미널/surface 위에 떠 있는다 (`PopupDef` + `PopupManager` 기반, 상세는 `docs/design/popup-system.md`). 클립보드 히스토리, 알림 패널 같은 일시적 UI가 이 카테고리. 현재 매니페스트 schema 없음(향후 추가 예정).
+3. **새 Popup 추가** — Window 내부 가상 창. 포커스를 빼앗지 않고 터미널/surface 위에 떠 있는다 (`PopupDef` + `PopupManager` 기반, 상세는 `docs/design/popup-system.md`). 클립보드 히스토리, 알림 패널 같은 일시적 UI가 이 카테고리. plugin이 `[[contributes.popup]]`으로 contribute 가능.
 4. **새 Tool 추가** — 좌측 사이드바 하단의 "도구" 메뉴에 항목을 꽂는다.
 5. **이벤트별 동작 추가** — 외부 이벤트(사용자 키 입력, 다른 surface lifecycle, IPC/CLI 호출 등)에 반응한다.
 
@@ -19,7 +19,7 @@ Plugin의 근본 역할은 다음 5가지로 분류된다.
 |---------|-------------|------|
 | 새 Window | _(없음)_ | 미구현 |
 | 새 Surface | `[[surface_kinds]]` | ✅ |
-| 새 Popup | _(없음)_ | 미구현 |
+| 새 Popup | `[[contributes.popup]]` | ✅ (UI 렌더 통합 진행 중) |
 | 새 Tool (도구 메뉴 항목) | `[[contributes.tool]]` | ✅ |
 | 이벤트: 사용자 키 입력 | `[[contributes.commands]]` | ✅ (plugin 소유 surface 위에서만 매칭) |
 | 이벤트: 다른 surface lifecycle | `event_subscribe = ["surface.closed"]` (Event Bus) | ✅ |
@@ -46,18 +46,45 @@ Plugin의 근본 역할은 다음 5가지로 분류된다.
 `description`에 사람을 위한 메모로 기입해 두는 것은 막지 않으며, 호스트는
 `description` 내용을 해석하지 않는다.
 
-### 미구현 카테고리(Window, Popup)
+### 미구현 카테고리(Window)
 
-Plugin이 자기 Window 또는 Popup을 직접 띄우는 매니페스트 schema는 아직 없다.
-Popup의 경우 호스트 본문에 한해 `PopupDef` + `PopupManager`로 구현되어 있으며,
-plugin이 contribute하려면 SDK 표면 확장이 필요하다 — 이 작업이 끝나기 전까지
-"popup으로 보여주고 싶은 plugin 기능"은 다음 두 가지 우회로를 쓴다.
+Plugin이 자기 Window를 직접 띄우는 매니페스트 schema는 아직 없다. 우회로:
 
-- **호스트가 popup을 그리고 데이터만 plugin에서 받기**: 호스트 popup 본문이
-  남고 plugin은 IPC로 데이터를 제공한다. 클립보드 히스토리·알림 패널 같이
-  표준화된 popup을 호스트가 계속 보유할 때 적합.
-- **Surface로 대체**: popup 대신 탭/스플릿 안의 surface로 띄운다. plugin이 UI tree를
-  완전히 소유하는 대신 포커스/배치 모델이 popup과 다르다.
+- **Surface로 대체**: 탭/스플릿 안의 surface로 띄운다. plugin이 UI tree를
+  완전히 소유하는 대신 포커스/배치 모델이 Window와 다르다.
+
+### Popup contribute
+
+Plugin은 `[[contributes.popup]]`으로 자기 popup을 등록할 수 있다 (권한
+`ui.popup` 필요). popup은 `<plugin_id>/<popup_id>` 전역 식별자를 갖는다.
+
+```toml
+permissions = ["ui.popup"]
+
+[[contributes.popup]]
+id = "search"
+trigger = { kind = "event", event_key = "com.example.search.opened" }
+size_hint = { width = 480, height = 320 }
+anchor = "screen-center"            # 또는 "active-surface-center" / "cursor"
+dismiss_on_outside_click = true
+
+[[contributes.popup]]
+id = "result"
+trigger = { kind = "ipc" }          # plugin이 host IPC `popup.open`으로 명시 open
+```
+
+- `trigger.kind = "event"`: 매니페스트의 `event_key`가 host/plugin 어디서든
+  발화되면 호스트가 자동으로 popup 인스턴스를 만든다. envelope payload가
+  popup.open IPC의 `context`로 전달된다.
+- `trigger.kind = "ipc"`: plugin이 직접 host IPC를 호출해 popup을 연다 (현재는
+  debug IPC 경로만 노출 — production용 host method는 PR 6 이후 도입 예정).
+- `[[contributes.tool]] action = { kind = "open_popup", popup_id = "<plugin_id>/<id>" }`
+  로 도구 메뉴 항목에서 popup을 띄울 수도 있다.
+
+호스트는 popup마다 `instance_id`(u64)를 발급해 동일 popup_id의 여러 인스턴스를
+구분하며, plugin이 `popup.event` 응답에 `close=true`를 실으면 호스트가 자동으로
+인스턴스를 닫는다. release 빌드에서 사용 가능한 host IPC `popup.close`는 PR 6
+이후 노출된다.
 
 ### contribute가 0개인 plugin
 
@@ -286,8 +313,9 @@ event_key = "com.example.todo.menu_clicked"          # plugin namespace의 이�
   같은 키를 선언해 받는다 (자기 namespace 이벤트도 명시 구독 필요).
 - **`open_surface`** — 클릭 시 포커스된 pane에 `surface_kind`로 새 탭을 연다.
   `surface_kind`는 같은 매니페스트의 `[[surface_kinds]]`에 선언된 kind여야 한다.
-- **`open_popup`** — 클릭 시 `popup_id` popup을 띄운다. plugin popup contribute는
-  아직 미구현 — 매니페스트 검증은 통과시키되 클릭 시 warn 로그 후 무시한다.
+- **`open_popup`** — 클릭 시 `popup_id`(`<plugin_id>/<id>` 형식) popup을 띄운다.
+  popup이 contribute되어 있어야 하며 plugin이 실행 중이어야 한다. 매니페스트
+  검증 단계에서 같은 plugin의 popup id를 가리키면 존재 여부를 cross-check 한다.
 
 ### 정렬과 키
 

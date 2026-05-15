@@ -12,8 +12,8 @@ Plugin이 호스트에 contribute하는 카테고리(상세는 `docs/agent-guide
 
 1. 새 Window 추가 — 현재 매니페스트 schema 없음(향후)
 2. 새 Surface 추가 — `[[surface_kinds]]`
-3. 새 Popup 추가 — 현재 매니페스트 schema 없음(향후). 그 전까지는 호스트가 popup 본문을 그리고 plugin은 IPC로 데이터만 공급하거나, surface로 대체한다.
-4. 새 Tool 추가 (좌측 사이드바 도구 메뉴 항목) — `[[contributes.tool]]` + `permissions = ["ui.tool_item"]`. 클릭 시 dispatch는 `kind = "event"` (Event Bus 발화) / `"open_surface"` (탭 추가) / `"open_popup"` (popup 미구현, 검증만 통과)
+3. 새 Popup 추가 — `[[contributes.popup]]` + `permissions = ["ui.popup"]`. trigger는 `event`(host/plugin event 발화 시 자동 open) 또는 `ipc`(plugin 명시 호출). SDK trait의 `open_popup/handle_popup_event/on_popup_closed`로 구현한다.
+4. 새 Tool 추가 (좌측 사이드바 도구 메뉴 항목) — `[[contributes.tool]]` + `permissions = ["ui.tool_item"]`. 클릭 시 dispatch는 `kind = "event"` (Event Bus 발화) / `"open_surface"` (탭 추가) / `"open_popup"` (`[[contributes.popup]]` 인스턴스 open, `popup_id`는 `<plugin_id>/<id>` 형식)
 5. 이벤트별 동작 추가 — `[[contributes.commands]]`(키 입력) / `event_subscribe`(Event Bus 구독, 예: `"surface.closed"`) / `[[contributes.ipc_namespace]]`(IPC 호출) / `[[contributes.cli]]`(CLI 호출)
 
 작성자가 다뤄야 할 것:
@@ -346,7 +346,7 @@ event_key = "com.example.todo.menu_clicked"
 |------|----------|------------|
 | `event` | `event_key` | 호스트가 Event Bus로 `event_key` 발화 (payload `{"tool_id": "<plugin_id>/<tool_id>"}`). plugin은 `event_subscribe`에 같은 키를 선언해 받는다. |
 | `open_surface` | `surface_kind` | 포커스된 pane에 해당 kind의 새 탭을 추가. `surface_kind`는 같은 매니페스트의 `[[surface_kinds]]`에 선언돼 있어야 한다. |
-| `open_popup` | `popup_id` | (미구현) 매니페스트 검증은 통과시키되 클릭 시 warn 로그만 남기고 무시. |
+| `open_popup` | `popup_id` | `<plugin_id>/<id>` 형식. 매니페스트의 `[[contributes.popup]]`에 같은 id가 선언돼 있어야 한다. 클릭 시 호스트가 popup 인스턴스를 만들어 plugin에 `popup.open` IPC를 보낸다. |
 
 ### plugin 측 처리
 
@@ -375,6 +375,91 @@ event_subscribe = ["com.example.todo.menu_clicked"]
 
 debug 빌드에서 `tasty debug tool list` / `tasty debug tool invoke --key <key>`로
 실제 메뉴 렌더링을 거치지 않고 IPC로 검증할 수 있다 (`docs/dev-guide/debug-ipc.md`).
+
+## 4-1-B. Popup 항목 (Popup Contribute)
+
+Plugin이 자기 popup을 contribute할 수 있다. host는 popup마다 `instance_id`(u64)를
+발급해 동일 `popup_id`의 여러 인스턴스를 동시에 띄울 수 있게 추적한다.
+
+### 매니페스트
+
+```toml
+permissions = ["ui.popup"]
+
+[[contributes.popup]]
+id = "search"
+size_hint = { width = 480, height = 320 }
+anchor = "screen-center"            # "active-surface-center" | "cursor" 도 가능
+dismiss_on_outside_click = true
+
+[contributes.popup.trigger]
+kind = "event"
+event_key = "com.example.search.opened"
+
+[[contributes.popup]]
+id = "result"
+[contributes.popup.trigger]
+kind = "ipc"
+```
+
+`trigger` 종류별 동작:
+
+| kind | 추가 필드 | 동작 |
+|------|----------|------|
+| `event` | `event_key` | 매칭 envelope이 host/plugin 어디서든 발화되면 호스트가 자동으로 popup을 open. envelope payload가 `popup.open` IPC의 `context`로 전달된다. |
+| `ipc` | — | 외부(다른 plugin/도구 메뉴/debug CLI)가 명시적으로 open할 때만. |
+
+`[[contributes.tool]] action = { kind = "open_popup", popup_id = "com.example.foo/search" }`
+로 도구 메뉴 항목과 연결할 수 있다 (cross-reference 검증).
+
+### plugin 측 콜백
+
+SDK가 popup 라이프사이클을 trait 콜백으로 노출한다:
+
+```rust
+use tasty_plugin_sdk::{
+    Plugin, PopupOpenCtx, PopupEventCtx, PopupClosedCtx,
+    PopupOpenResult, PopupEventResult,
+};
+
+impl Plugin for SearchPlugin {
+    fn open_popup(&mut self, ctx: PopupOpenCtx) -> PopupOpenResult {
+        // ctx.instance_id로 인스턴스를 식별. ctx.context는 매니페스트에 선언된
+        // event_key의 payload (또는 ipc trigger의 명시 인자).
+        PopupOpenResult {
+            tree: Some(self.build_search_tree(&ctx.context)),
+        }
+    }
+
+    fn handle_popup_event(&mut self, ctx: PopupEventCtx) -> PopupEventResult {
+        // ctx.event는 UiEvent (Click, AddressbarChange, TreeSelect 등).
+        let close_now = self.process_event(ctx.instance_id, ctx.event);
+        PopupEventResult {
+            tree: Some(self.rebuild_tree(ctx.instance_id)),
+            close: close_now,           // true면 호스트가 자동 close
+        }
+    }
+
+    fn on_popup_closed(&mut self, ctx: PopupClosedCtx) {
+        // ctx.reason: OutsideClick | Escape | PluginRequest | HostShutdown
+        self.cleanup_state(ctx.instance_id);
+    }
+}
+```
+
+핵심 invariant:
+- 동일 `popup_id`라도 `instance_id`가 다르면 별개 인스턴스다. plugin이 인스턴스
+  상태를 보관할 때는 `instance_id`를 키로 쓴다.
+- `popup.event` 응답의 `close=true`는 plugin이 능동 close를 요청하는 신호.
+  호스트는 인스턴스를 즉시 제거하고 `popup.closed`를 `PluginRequest` 사유로 보낸다.
+- `popup.open` 응답의 `tree=None`은 "아직 그릴 트리 없음" 의미 (호스트는 인스턴스를
+  계속 추적, 다음 event 응답에서 tree를 세팅 가능).
+
+### 디버그/테스트
+
+debug 빌드에서 `tasty debug popup list` / `tasty debug popup open` /
+`tasty debug popup close --instance-id <N>`로 IPC 경로를 직접 호출 가능
+(`docs/dev-guide/debug-ipc.md`).
 
 ## 4-2. IPC namespace 처리 (handle_ipc_method)
 

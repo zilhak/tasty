@@ -375,7 +375,7 @@
 - 클릭 dispatch (`ToolAction`):
   - `event` — Event Bus로 `event_key` 발화 (payload `{"tool_id": "<key>"}`)
   - `open_surface` — 포커스된 pane에 `surface_kind` 새 탭 추가
-  - `open_popup` — 미구현 (검증만 통과, 클릭 시 warn 로그)
+  - `open_popup` — `[[contributes.popup]]`로 contribute된 popup 인스턴스를 새로 open (`popup_id`는 `<plugin_id>/<id>` 형식)
 - 정렬: `order_hint` 오름차순 (호스트 빌트인 0..99, plugin 기본 100), 동률은 키 순
 - 라벨: `label_i18n_key`를 `t()`로 번역. 키가 catalog에 없으면 키 자체를 fallback 표시
 - 바깥 클릭 시 자동으로 닫힘 (`close_on_outside_click`)
