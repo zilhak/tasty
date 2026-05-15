@@ -47,6 +47,13 @@ pub struct Manifest {
     /// 적어도 매니페스트 검증 단계에서 거부된다.
     #[serde(default)]
     pub event_publish: Vec<String>,
+    /// plugin이 publish하는 이벤트 카탈로그. 검토 항목 #6 — 1.0에 포함.
+    /// `event_publish` 권한 패턴이 *허용 범위*라면, `events_emitted`는 그 안에서
+    /// 실제로 어떤 정확 키를 발화하는지 plugin이 사전 선언하는 *카탈로그*다.
+    /// 외부 tool(`tasty plugin show`)이 어떤 이벤트가 나오는지 확인할 수 있게 하고,
+    /// extension plugin이 hook 대상으로 참조 가능하게 한다.
+    #[serde(default, rename = "events_emitted")]
+    pub events_emitted: Vec<EventEmittedDecl>,
     #[serde(default)]
     pub contributes: Contributes,
     /// plugin이 동봉한 lang 파일 디렉터리 (매니페스트 디렉터리 기준 상대).
@@ -155,6 +162,35 @@ impl Permission {
             Self::IpcInvoke(prefix) => format!("ipc.invoke:{prefix}"),
         }
     }
+}
+
+/// plugin이 publish할 이벤트 카탈로그 항목. `events_emitted = [...]`로 선언.
+///
+/// - `key`: 정확한 이벤트 키 (와일드카드 불가, 예약 네임스페이스 불가).
+///   `event_publish` 권한 패턴 안에 포함되어야 한다 (그렇지 않으면 publish 시점에 호스트가 거부).
+/// - `description`: 사람용 짧은 설명.
+/// - `stability`: 이벤트 안정성 등급. 기본 `stable`. 새 이벤트를 도입할 때 plugin 작성자가
+///   `experimental`로 표기해 호환성 약속을 약화시킬 수 있다.
+/// - `payload_schema`: 옵션. 페이로드 JSON Schema 파일의 매니페스트 디렉터리 기준 상대 경로.
+///   1.0에서는 호스트가 검증에 사용하지 않고 카탈로그용으로만 보유한다.
+#[derive(Debug, Clone, Deserialize)]
+pub struct EventEmittedDecl {
+    pub key: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub stability: EventStability,
+    #[serde(default)]
+    pub payload_schema: Option<String>,
+}
+
+/// `events_emitted` 항목의 안정성 등급. `event-catalog.md`의 정책을 따른다.
+#[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum EventStability {
+    #[default]
+    Stable,
+    Experimental,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -385,6 +421,49 @@ impl Manifest {
         }
         self.validate_contributes()?;
         self.validate_event_patterns()?;
+        self.validate_events_emitted()?;
+        Ok(())
+    }
+
+    /// `events_emitted` 카탈로그 검증.
+    ///
+    /// - key는 정확한 이벤트 키여야 한다 (와일드카드 불가).
+    /// - key는 예약 네임스페이스를 쓸 수 없다.
+    /// - key는 매니페스트의 `event_publish` 패턴 중 하나에 의해 *cover*되어야 한다.
+    ///   (실제 publish 시점에도 같은 검사가 적용되므로 일관성 보장)
+    /// - 같은 key를 두 번 선언하면 거부 (의미 없는 중복).
+    fn validate_events_emitted(&self) -> anyhow::Result<()> {
+        let mut seen: HashSet<&str> = HashSet::new();
+        for decl in &self.events_emitted {
+            if !is_valid_event_key(&decl.key) {
+                anyhow::bail!(
+                    "invalid events_emitted key '{}': must be a concrete event key (no '*')",
+                    decl.key
+                );
+            }
+            let ns = event_pattern_namespace(&decl.key);
+            if is_reserved_event_namespace(ns) {
+                anyhow::bail!(
+                    "events_emitted key '{}' uses reserved namespace '{}' — \
+                     only the host may publish in this namespace",
+                    decl.key,
+                    ns
+                );
+            }
+            let covered = self
+                .event_publish
+                .iter()
+                .any(|p| event_pattern_covers(p, &decl.key));
+            if !covered {
+                anyhow::bail!(
+                    "events_emitted key '{}' is not covered by any event_publish pattern",
+                    decl.key
+                );
+            }
+            if !seen.insert(decl.key.as_str()) {
+                anyhow::bail!("events_emitted key '{}' declared twice", decl.key);
+            }
+        }
         Ok(())
     }
 
@@ -686,6 +765,34 @@ fn is_valid_event_pattern(s: &str) -> bool {
         }
     }
     true
+}
+
+/// 와일드카드를 허용하지 않는 정확 이벤트 키 검증. `events_emitted.key`에 사용.
+fn is_valid_event_key(s: &str) -> bool {
+    if s.is_empty() {
+        return false;
+    }
+    let segments: Vec<&str> = s.split('.').collect();
+    if segments.len() < 2 {
+        return false;
+    }
+    segments.iter().all(|seg| is_valid_event_segment(seg))
+}
+
+/// publish 패턴이 정확 키를 cover하는지. 매니페스트 검증된 패턴만 받는다.
+///
+/// - 패턴이 정확 키와 같으면 cover.
+/// - 패턴이 `<prefix>.*`이고 키가 `<prefix>.<segment>` 형태면 cover.
+fn event_pattern_covers(pattern: &str, key: &str) -> bool {
+    if pattern == key {
+        return true;
+    }
+    if let Some(prefix) = pattern.strip_suffix(".*") {
+        if let Some(rest) = key.strip_prefix(prefix) {
+            return rest.starts_with('.') && rest.len() > 1;
+        }
+    }
+    false
 }
 
 fn is_valid_event_segment(s: &str) -> bool {
@@ -1548,4 +1655,128 @@ mod tests {
         assert_eq!(m.event_subscribe.len(), 2);
     }
 
+    #[test]
+    fn events_emitted_parses_and_defaults_stable() {
+        let s = r#"
+            manifest_version = 1
+            id = "com.example.x"
+            name = "X"
+            version = "0.1"
+            api_version = "1"
+            event_publish = ["com.example.x.*"]
+            [[events_emitted]]
+            key = "com.example.x.child_state_changed"
+            description = "child state"
+            [entry]
+            type = "process"
+            command = "x"
+        "#;
+        let m = parse(s).expect("should parse");
+        assert_eq!(m.events_emitted.len(), 1);
+        let decl = &m.events_emitted[0];
+        assert_eq!(decl.key, "com.example.x.child_state_changed");
+        assert_eq!(decl.stability, EventStability::Stable);
+        assert!(decl.payload_schema.is_none());
+    }
+
+    #[test]
+    fn events_emitted_rejects_wildcard_key() {
+        let s = r#"
+            manifest_version = 1
+            id = "com.example.x"
+            name = "X"
+            version = "0.1"
+            api_version = "1"
+            event_publish = ["com.example.x.*"]
+            [[events_emitted]]
+            key = "com.example.x.*"
+            [entry]
+            type = "process"
+            command = "x"
+        "#;
+        let err = parse(s).unwrap_err().to_string();
+        assert!(err.contains("invalid events_emitted key"), "got: {err}");
+    }
+
+    #[test]
+    fn events_emitted_rejects_reserved_namespace() {
+        let s = r#"
+            manifest_version = 1
+            id = "com.example.x"
+            name = "X"
+            version = "0.1"
+            api_version = "1"
+            event_publish = ["surface.created"]
+            [[events_emitted]]
+            key = "surface.created"
+            [entry]
+            type = "process"
+            command = "x"
+        "#;
+        // event_publish 검증이 먼저 reserved를 잡지만, 다른 검증 단계라도 결국 거부됨.
+        assert!(parse(s).is_err());
+    }
+
+    #[test]
+    fn events_emitted_rejects_uncovered_key() {
+        let s = r#"
+            manifest_version = 1
+            id = "com.example.x"
+            name = "X"
+            version = "0.1"
+            api_version = "1"
+            event_publish = ["com.example.x.foo.*"]
+            [[events_emitted]]
+            key = "com.example.x.bar"
+            [entry]
+            type = "process"
+            command = "x"
+        "#;
+        let err = parse(s).unwrap_err().to_string();
+        assert!(err.contains("not covered by"), "got: {err}");
+    }
+
+    #[test]
+    fn events_emitted_rejects_duplicate_key() {
+        let s = r#"
+            manifest_version = 1
+            id = "com.example.x"
+            name = "X"
+            version = "0.1"
+            api_version = "1"
+            event_publish = ["com.example.x.*"]
+            [[events_emitted]]
+            key = "com.example.x.foo"
+            [[events_emitted]]
+            key = "com.example.x.foo"
+            [entry]
+            type = "process"
+            command = "x"
+        "#;
+        let err = parse(s).unwrap_err().to_string();
+        assert!(err.contains("declared twice"), "got: {err}");
+    }
+
+    #[test]
+    fn events_emitted_accepts_experimental_stability() {
+        let s = r#"
+            manifest_version = 1
+            id = "com.example.x"
+            name = "X"
+            version = "0.1"
+            api_version = "1"
+            event_publish = ["com.example.x.*"]
+            [[events_emitted]]
+            key = "com.example.x.alpha"
+            stability = "experimental"
+            payload_schema = "schemas/alpha.json"
+            [entry]
+            type = "process"
+            command = "x"
+        "#;
+        let m = parse(s).expect("should parse");
+        let decl = &m.events_emitted[0];
+        assert_eq!(decl.stability, EventStability::Experimental);
+        assert_eq!(decl.payload_schema.as_deref(), Some("schemas/alpha.json"));
+    }
 }

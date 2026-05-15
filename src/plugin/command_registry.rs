@@ -220,6 +220,7 @@ mod tests {
             permissions: vec![],
             event_subscribe: vec![],
             event_publish: vec![],
+            events_emitted: vec![],
             contributes: Contributes {
                 commands: cmds,
                 ..Default::default()
