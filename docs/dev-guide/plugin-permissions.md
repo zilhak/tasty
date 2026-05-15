@@ -35,10 +35,11 @@ plugin 로드 단계에서 `manifest::validate_*_permissions` 함수가 수행�
 
 | contributes 항목 | 요구 권한 | 검증 함수 |
 |----------------|----------|----------|
-| `surface_observer` (event = "closed") | `surface.read` | `validate_observer_permissions` |
+| `events_emitted[].key` | 매니페스트 `event_publish` 패턴이 해당 키를 커버해야 함 | `validate_events_emitted` |
 
-새 contributes 항목을 추가할 때 권한 게이트가 필요하다면 동일 패턴으로 검증
-함수를 만들고 `PluginManifest::validate_permissions`에서 호출한다.
+surface lifecycle 알림 같은 broadcast 이벤트는 Event Bus의 `event_subscribe` 패턴으로 받는다 (요구 권한 별도 없음 — 패턴 자체가 권한 게이트).
+
+새 contributes 항목을 추가할 때 권한 게이트가 필요하다면 동일 패턴으로 검증 함수를 만들고 `PluginManifest::validate_permissions`에서 호출한다.
 
 ## 새 권한 카테고리 추가
 

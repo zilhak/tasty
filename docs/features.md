@@ -1179,11 +1179,11 @@ Claude Code 등 TUI 앱이 실행 중이던 터미널을 복원할 때, 해당 �
 - 다른 plugin namespace 호출은 `ipc.invoke:<prefix>` 권한이 필요하다. 자기 자신을 호출하는 무한 forward는 호스트가 `-32001`로 거부
 - SDK: plugin은 `Plugin::handle_ipc_method(IpcMethodCtx) -> Result<Value, IpcMethodError>` 콜백 하나로 namespace 전체 dispatch를 처리. `ctx.caller_plugin_id`로 호출자가 plugin인지 사용자(CLI/IPC)인지 구분
 
-### Plugin Surface lifecycle observer
-- 매니페스트 `[[contributes.surface_observer]] event = "closed"`로 구독한 plugin은 다른 surface가 닫혔을 때 호스트로부터 `surface.lifecycle` 알림을 받는다 (`surface.read` 권한 필수)
-- 알림 payload: `{ event, surface_id, kind, reason }`. reason은 `user_close`(PTY 종료/단축키/탭 우클릭) 또는 `agent_close`(IPC `surface.close` / `surface.close_self`)
-- 호스트가 fire-and-forget으로 broadcast 하며 plugin 응답은 무시. SDK는 `Plugin::on_surface_lifecycle(SurfaceLifecycleCtx)` 트레이트 메서드로 dispatch (기본 구현은 no-op)
-- cascade 닫힘(탭/팬/워크스페이스 전체 삭제로 따라가는 surface)은 broadcast 대상이 아니며, 명시적으로 close된 surface_id만 알림이 발사된다
+### Plugin Surface lifecycle (Event Bus)
+- 매니페스트 `event_subscribe = ["surface.closed"]`로 구독한 plugin은 다른 surface가 닫혔을 때 Event Bus를 통해 `surface.closed` envelope을 받는다
+- 알림 payload: `{ surface_id, kind, reason }`. reason은 `"user"`(PTY 종료/단축키/탭 우클릭) / `"ipc"`(IPC `surface.close` / `surface.close_self`) / `"crash"`(plugin 프로세스 크래시 cascade)
+- 호스트가 fire-and-forget으로 fan-out 하며 plugin 응답은 무시. SDK는 `Plugin::on_event(EventDispatchCtx)` 트레이트 메서드로 dispatch
+- cascade 닫힘(탭/팬/워크스페이스 전체 삭제로 따라가는 surface)은 envelope 대상이 아니며, 명시적으로 close된 surface_id만 발사된다
 
 ### Plugin i18n
 - 매니페스트 `lang_dir` (기본 `"lang"`): plugin 디렉터리 내 lang 파일들이 위치

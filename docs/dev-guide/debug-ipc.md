@@ -33,6 +33,11 @@ pub fn handle(state: &mut AppState, request: &JsonRpcRequest) -> JsonRpcResponse
 | `debug.inject_mouse` | `surface_id, button, x, y, ...` | SGR mouse(1006) 시퀀스로 마우스 이벤트 주입 |
 | `debug.inject_key` | `surface_id, key, modifiers` | 키 이벤트 주입 |
 | `debug.clipboard_viewer_open` | `{}` | 클립보드 viewer popup 열기 (Ctrl+Shift+H 단축키 재현) |
+| `debug.event_bus.list_subscribers` | `key` | 해당 키에 매칭되는 plugin 구독 목록 (`plugin_id`, `sub_id`, 매니페스트 패턴) |
+| `debug.event_bus.publish` | `key, payload(json string), scope("system"\|"surface")` | 임의 키로 host envelope 발화. 응답에 `trace_id` 포함 |
+| `debug.event_bus.trace` | `trace_id` | 최근 256개 envelope 링버퍼에서 같은 trace_id를 가진 envelope들을 발화 순서로 반환 |
+
+`debug.event_bus.*`는 `App`-level dispatch에서 `PluginManager::event_bus`를 직접 호출한다 (다른 `debug.*`처럼 `route_debug_handler`를 거치지 않는다 — `AppState`가 PluginManager를 들고 있지 않기 때문). CLI는 `tasty debug event-bus {list-subscribers|publish|trace}` 서브커맨드로 노출된다.
 
 ## CLI 노출
 

@@ -22,7 +22,7 @@ Plugin의 근본 역할은 다음 5가지로 분류된다.
 | 새 Popup | _(없음)_ | 미구현 |
 | 새 Tool (도구 메뉴 항목) | `[[contributes.menu_items]]` | schema 정의됨, 호스트 wiring 진행 중 |
 | 이벤트: 사용자 키 입력 | `[[contributes.commands]]` | ✅ (plugin 소유 surface 위에서만 매칭) |
-| 이벤트: 다른 surface lifecycle | `[[contributes.surface_observer]]` | ✅ |
+| 이벤트: 다른 surface lifecycle | `event_subscribe = ["surface.closed"]` (Event Bus) | ✅ |
 | 이벤트: 호스트/다른 plugin/CLI의 IPC 호출 | `[[contributes.ipc_namespace]]` | ✅ |
 | 이벤트: CLI 서브커맨드 호출 | `[[contributes.cli]]` | ✅ |
 
@@ -159,6 +159,16 @@ default_keybinding = "F5"
 #                             plugin이 작성자 의도로 inherit를 선택한 command는
 #                             설정 UI에서 사용자가 "독립 설정"으로 떼어낼 수 있다
 binding_mode = "independent"
+# scope 옵션:
+#   "global"  (기본) — 어디서나 동작. 단축키는 조합키 권장
+#   "surface" — owner plugin이 만든 surface에 포커스가 있을 때만 동작. 단일 키 허용
+scope = "global"
+
+[[events_emitted]]                    # plugin이 publish하는 이벤트 카탈로그 (optional)
+key = "com.example.explorer.refreshed"
+description = "Explorer surface re-scanned the file tree"
+stability = "stable"                  # "stable" (기본) | "experimental"
+# payload_schema = "{ \"path\": \"string\", \"count\": \"u32\" }"  # 자유 텍스트
 ```
 
 필수 필드 (없으면 plugin 로드 거부):
@@ -181,9 +191,9 @@ binding_mode = "independent"
 
 - `surface_kinds[].kind`는 소문자 + `_` + 숫자만
 - `contributes.ipc_namespace[].prefix`는 호스트 예약어 사용 금지 (아래 IPC namespace 절 참조)
-- `contributes.surface_observer`를 선언하면 `permissions`에 `surface.read` 포함 필수
 - `event_subscribe[]` / `event_publish[]` 패턴은 정확 키(`surface.created`) 또는 끝의 namespace 와일드카드(`surface.*`)만 허용. 단독 `"*"`·중간/시작 와일드카드는 거부
 - `event_publish[]`는 예약 namespace(`surface`, `system`, `tab`, ...) 거부 — 호스트만 발화 가능. 자기 plugin 도메인의 namespace로만 발화할 것
+- `[[events_emitted]]` 키는 매니페스트의 카탈로그 선언. plugin이 publish할 키마다 `key` / `description` / 옵션 `stability`("stable"|"experimental", 기본 stable) / 옵션 `payload_schema`를 적는다. `event_publish` 권한 패턴으로 커버되는 키만 선언 가능 (검증 실패 시 로드 거부)
 
 > **TOML 주의**: top-level 키(`permissions = [...]` 등)는 모든 `[table]` 헤더보다 *먼저* 와야 한다. 그렇지 않으면 가장 가까운 테이블 안의 키로 해석된다.
 
@@ -351,6 +361,28 @@ impl Plugin for MyPlugin {
 
 - `BusHandle::publish_fresh`는 `trace_id` 생성과 `EventOrigin::Plugin`을 자동 채워 broadcast 한다. 다른 plugin의 이벤트를 받아 재발화하려면 받은 envelope의 hop을 `+1` 한 채로 [`BusHandle::publish`]에 직접 넘긴다 (`MAX_HOP=16` 초과 시 호스트가 폐기).
 - fan-out은 fire-and-forget. plugin은 응답을 돌려주지 않으며 다른 구독자에게 영향을 주지 않는다.
+
+### Command 이벤트 (Option D)
+
+Plugin이 `[[contributes.commands]]`로 command_id를 선언하면 단축키 매핑은 호스트가 관리한다. 사용자가 키를 눌러 매칭되면 호스트가 owner plugin에 `command.invoked`를 **owner-unicast**로 보낸다 (`sub_id=0` 센티넬, 구독 없이 직접 전달, 다른 plugin은 같은 envelope을 보지 못함).
+
+- 받는 페이로드: `CommandInvoked { plugin_id, command_id, scope, source_surface_id?, trigger }`
+- 사용자가 설정 UI에서 매핑을 바꾸면 `command.shortcut_changed` System scope broadcast가 발화된다 (`plugin_id`, `command_id`, `shortcut?`, `prev_shortcut?`). 표시용 단축키 문자열이며, 정확한 상태가 필요하면 IPC로 재조회한다.
+
+### 옛 surface_observer 마이그레이션
+
+`[[contributes.surface_observer]]` 매니페스트 필드는 제거됐다. 같은 효과는 Event Bus 구독으로 얻는다:
+
+```toml
+# 이전 (제거됨):
+# [[contributes.surface_observer]]
+# event = "closed"
+
+# 현재:
+event_subscribe = ["surface.closed"]
+```
+
+SDK 측에서는 `BusHandle::subscribe("surface.closed")` 호출 후 `on_event` 콜백에서 `ctx.envelope.payload`의 `surface_id`를 꺼내 처리한다. 옛 `on_surface_lifecycle` 트레이트 메서드도 함께 제거됐다.
 
 ## 단축키 (Plugin Shortcuts)
 
