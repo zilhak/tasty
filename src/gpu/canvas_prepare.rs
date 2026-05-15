@@ -48,7 +48,7 @@ impl GpuState {
         state: &AppState,
         plugin_manager: &PluginManager,
     ) {
-        let pending = collect_canvas_requests(state);
+        let pending = collect_canvas_requests(state, plugin_manager);
         if pending.is_empty() {
             return;
         }
@@ -139,10 +139,13 @@ impl GpuState {
     }
 }
 
-/// 활성 workspace에서 visible plugin Canvas 노드 일람.
+/// 활성 workspace에서 visible plugin Canvas 노드 일람 + 모든 plugin popup instance.
 ///
 /// 본 함수는 GPU 자원에 손대지 않는다 — 순수 데이터 수집. 다음 단계에서 ensure + upload.
-fn collect_canvas_requests(state: &AppState) -> Vec<PendingCanvas> {
+fn collect_canvas_requests(
+    state: &AppState,
+    plugin_manager: &PluginManager,
+) -> Vec<PendingCanvas> {
     let mut out: Vec<PendingCanvas> = Vec::new();
     let ws = state.active_workspace();
     let pane_ids = ws.pane_layout().all_pane_ids();
@@ -170,6 +173,13 @@ fn collect_canvas_requests(state: &AppState) -> Vec<PendingCanvas> {
             if let Some(node) = tree_opt.as_ref() {
                 collect_canvases_in_node(node, &remote.plugin_id, &mut out);
             }
+        }
+    }
+    // Plugin popup 인스턴스도 자기 plugin_id 컨텍스트에서 Canvas 노드를 가질 수 있다.
+    // popup_instances는 워크스페이스 무관 전역이므로 항상 전부 순회.
+    for (_id, inst) in plugin_manager.popup_instances() {
+        if let Some(node) = inst.tree.as_ref() {
+            collect_canvases_in_node(node, &inst.plugin_id, &mut out);
         }
     }
     out
