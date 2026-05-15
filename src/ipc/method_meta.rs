@@ -110,6 +110,15 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("image.prev", plugin(&[SurfaceWrite])),
         ("image.paste", plugin(&[SurfaceWrite, ClipboardRead])),
         ("image.list", plugin(&[SurfaceRead])),
+        // ── memory (영속 키-값) ───────────────────────────────────────
+        ("memory.put", plugin(&[MemoryWrite])),
+        ("memory.get", plugin(&[MemoryRead])),
+        ("memory.delete", plugin(&[MemoryWrite])),
+        ("memory.list", plugin(&[MemoryRead])),
+        ("memory.exists", plugin(&[MemoryRead])),
+        ("memory.count", plugin(&[MemoryRead])),
+        ("memory.scopes", plugin(&[MemoryRead])),
+        ("memory.stats", plugin(&[MemoryRead])),
         // ── notification ──────────────────────────────────────────────
         ("notification.list", plugin(&[Notification])),
         ("notification.create", plugin(&[Notification])),

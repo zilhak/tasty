@@ -13,6 +13,7 @@ pub mod ime;
 mod image;
 #[cfg(target_os = "macos")]
 mod input_source;
+mod memory;
 mod message;
 mod meta;
 mod notification;
@@ -189,6 +190,15 @@ fn route_engine_handler(
         "image.prev" => image::handle_prev(state, id, &request.params),
         "image.paste" => image::handle_paste(state, id, &request.params),
         "image.list" => image::handle_list(state, id),
+        // memory (영속 키-값 store)
+        "memory.put" => memory::handle_put(state, id, &request.params),
+        "memory.get" => memory::handle_get(state, id, &request.params),
+        "memory.delete" => memory::handle_delete(state, id, &request.params),
+        "memory.list" => memory::handle_list(state, id, &request.params),
+        "memory.exists" => memory::handle_exists(state, id, &request.params),
+        "memory.count" => memory::handle_count(state, id, &request.params),
+        "memory.scopes" => memory::handle_scopes(state, id, &request.params),
+        "memory.stats" => memory::handle_stats(state, id, &request.params),
         _ => return None,
     })
 }
