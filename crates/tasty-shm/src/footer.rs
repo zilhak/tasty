@@ -157,6 +157,6 @@ mod tests {
         let g2 = unsafe { load(raw, Ordering::Acquire) };
         assert_eq!(g2, 2);
 
-        let _ = backing;
+        drop(backing);
     }
 }

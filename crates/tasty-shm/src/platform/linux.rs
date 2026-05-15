@@ -29,7 +29,6 @@ impl Drop for PlatformMapping {
             }
         }
         // fd는 OwnedFd가 자동으로 close.
-        let _ = &self.fd;
     }
 }
 
@@ -115,11 +114,10 @@ pub(crate) fn create(size: usize) -> Result<(SharedMemory, SendableHandle), ShmE
 
 pub(crate) fn prepare_send(
     sendable: PlatformSendable,
-    size: usize,
+    _size: usize,
     _peer: PeerPid,
 ) -> Result<PlatformPayload, ShmError> {
     // Unix에선 peer PID가 필요 없다 (SCM_RIGHTS가 커널 매개).
-    let _ = size;
     Ok(PlatformPayload { fd: sendable.fd })
 }
 

@@ -130,7 +130,8 @@ pub fn run<P: Plugin>(plugin: P) -> Result<()> {
             }
             #[cfg(not(unix))]
             {
-                let _ = client; // Windows에서는 보조 채널 미구현.
+                // Windows에서는 보조 채널 미구현 — client는 drop된다.
+                let _client = client;
                 None
             }
         }
@@ -173,7 +174,9 @@ pub fn run<P: Plugin>(plugin: P) -> Result<()> {
                         error: None,
                         error_code: None,
                     };
-                    let _ = send_response(&writer, &resp);
+                    if let Err(e) = send_response(&writer, &resp) {
+                        tracing::trace!("shutdown ack send failed (host closing): {e}");
+                    }
                     break;
                 }
                 if req_tx.send(req).is_err() {
@@ -193,7 +196,9 @@ pub fn run<P: Plugin>(plugin: P) -> Result<()> {
         }
     }
     drop(req_tx);
-    let _ = worker_handle.join();
+    if let Err(e) = worker_handle.join() {
+        tracing::warn!("plugin worker thread panicked: {e:?}");
+    }
     Ok(())
 }
 
@@ -305,7 +310,9 @@ fn handle_ipc_result_request(
         error: None,
         error_code: None,
     };
-    let _ = send_response(writer, &ack);
+    if let Err(e) = send_response(writer, &ack) {
+        tracing::trace!("ipc.result ack send failed: {e}");
+    }
 }
 
 pub(crate) fn send_event(writer: &Arc<Mutex<TcpStream>>, event: &PluginEvent) -> Result<()> {
@@ -594,7 +601,8 @@ mod tests {
             std::net::TcpListener::bind(("127.0.0.1", 0)).expect("bind localhost");
         let port = listener.local_addr().unwrap().port();
         let accept = std::thread::spawn(move || {
-            let _ = listener.accept();
+            // 호출자(stream)와 대응하는 server 측 accept — 결과는 즉시 drop.
+            let _accepted = listener.accept();
         });
         let stream = TcpStream::connect(("127.0.0.1", port)).expect("connect");
         accept.join().unwrap();
@@ -657,12 +665,12 @@ mod tests {
         };
         let host = dummy_host();
         let params = invoke_params("codex.spawn", json!({}), Some("com.other.plugin"));
-        let _ = build_response(1, dispatch(&mut plugin, METHOD_IPC_INVOKE, &params, &host));
+        build_response(1, dispatch(&mut plugin, METHOD_IPC_INVOKE, &params, &host));
         let ctx = last.lock().unwrap().clone().unwrap();
         assert_eq!(ctx.caller_plugin_id.as_deref(), Some("com.other.plugin"));
 
         let params2 = invoke_params("codex.spawn", json!({}), None);
-        let _ = build_response(2, dispatch(&mut plugin, METHOD_IPC_INVOKE, &params2, &host));
+        build_response(2, dispatch(&mut plugin, METHOD_IPC_INVOKE, &params2, &host));
         let ctx2 = last.lock().unwrap().clone().unwrap();
         assert_eq!(ctx2.caller_plugin_id, None);
     }
@@ -879,7 +887,7 @@ mod tests {
         let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
         let port = listener.local_addr().unwrap().port();
         let accept = std::thread::spawn(move || {
-            let _ = listener.accept();
+            let _accepted = listener.accept();
         });
         let stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
         accept.join().unwrap();

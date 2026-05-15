@@ -484,8 +484,11 @@ fn aux_reader_loop(
                     // 사용처가 없으므로 leak 방지를 위해 close.
                     unsafe { libc::close(fd) };
                 }
+                // Windows: aux는 DuplicateHandle 결과인데 unexpected HandleAttach라 사용처
+                // 없음. windows-rs OwnedHandle을 받았다면 Drop이 CloseHandle 처리하므로
+                // 별도 액션 불필요 — drop만 시키면 된다.
                 #[cfg(windows)]
-                let _ = aux;
+                drop(aux);
             }
             Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => break,
             Err(e) => {

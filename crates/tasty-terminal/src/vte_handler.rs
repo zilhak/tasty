@@ -477,8 +477,9 @@ impl Terminal {
                     },
                 ]
             }
-            Edit::Repeat(n) => {
-                let _ = n;
+            Edit::Repeat(_n) => {
+                // REP (CSI b) — 마지막 문자 반복. 우리는 termwiz Surface 위에서
+                // 합성하는 구조라 "마지막 문자" 컨텍스트가 없어 미구현.
                 vec![]
             }
         }

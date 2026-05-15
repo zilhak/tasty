@@ -39,8 +39,10 @@ pub struct CanvasKey {
 struct Entry {
     /// 텍스처 자체. drop 시 wgpu가 해제.
     _texture: wgpu::Texture,
-    /// 텍스처 view. egui_renderer에 등록할 때 참조.
-    view: wgpu::TextureView,
+    /// 텍스처 view. egui_renderer에 등록 시 참조를 가져갔고, 등록이 유효한 동안
+    /// 우리 쪽에서도 잡고 있어야 한다 (egui가 내부에서 Clone하지만 안전 마진).
+    /// 직접 사용처는 없으므로 `_view`로 이름 짓고 dead_code 경고를 피한다.
+    _view: wgpu::TextureView,
     /// egui가 사용하는 핸들. dimensions/format/filter가 바뀌면 재등록 필요.
     egui_id: TextureId,
     width: u32,
@@ -166,8 +168,6 @@ impl CanvasTextureCache {
             },
         );
         e.last_uploaded_gen = atomic_gen;
-        // view는 별도 사용 안 함 — egui_renderer가 등록 시점에 참조를 가져갔다.
-        let _ = &e.view;
     }
 
     /// (plugin_id, buffer_id)에 대해 등록된 egui TextureId를 반환. 미등록이면 None.
@@ -224,7 +224,7 @@ fn create_entry(
     let egui_id = egui_renderer.register_native_texture(device, &view, wgpu_filter);
     Entry {
         _texture: texture,
-        view,
+        _view: view,
         egui_id,
         width,
         height,
@@ -384,7 +384,7 @@ mod tests {
         let buffer_slice = staging.slice(..);
         let (tx, rx) = std::sync::mpsc::channel();
         buffer_slice.map_async(wgpu::MapMode::Read, move |res| {
-            let _ = tx.send(res);
+            tx.send(res).expect("map_async result send");
         });
         device.poll(wgpu::Maintain::Wait);
         rx.recv().expect("map_async result").expect("map ok");

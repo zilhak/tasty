@@ -217,7 +217,6 @@ fn build_node(
     let is_selected = selected.as_deref() == Some(path);
 
     let children: Vec<TreeNode> = if is_dir && is_expanded {
-        let _ = depth;
         list_children(path)
             .into_iter()
             .map(|child_path| build_node(&child_path, expanded, selected, depth + 1))

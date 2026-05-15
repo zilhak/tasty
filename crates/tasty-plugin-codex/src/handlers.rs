@@ -285,11 +285,16 @@ pub fn handle_broadcast(
                 continue;
             }
         }
-        let _ = host_call(
+        if let Err(e) = host_call(
             host,
             "surface.send",
             json!({"surface_id": child.child_surface_id, "text": text}),
-        );
+        ) {
+            tracing::warn!(
+                "codex broadcast surface.send (sid={}) failed: {e:?}",
+                child.child_surface_id
+            );
+        }
         sent_ids.push(child.child_surface_id);
     }
     Ok(json!({

@@ -393,7 +393,14 @@ impl ApplicationHandler<AppEvent> for App {
                 modal_active,
                 plugin_manager: self.plugin_manager.as_ref(),
             };
-            let _ = w.handle_event(event, &mut ctx);
+            // MainWindow.handle_event는 현재 항상 WindowAction::None을 반환한다.
+            // Close/CloseWithEvent는 modal 전용 경로(line 274)에서 처리되며 여기로
+            // 흘러오지 않는다. 향후 비-modal 윈도우가 Close를 반환하면 debug에서 잡힌다.
+            let action = w.handle_event(event, &mut ctx);
+            debug_assert!(
+                matches!(action, WindowAction::None),
+                "non-modal window returned non-None action"
+            );
 
             // Check if the window requested to close (e.g. last workspace removed)
             if w.base().close_requested {
@@ -626,7 +633,8 @@ impl App {
         }
         for state in &mut self.parked_states {
             drain_restore_commands(state);
-            let _ = state.refresh_busy_surfaces();
+            // parked state는 윈도우가 없어 redraw 의미가 없다. bool 반환값은 무의미.
+            state.refresh_busy_surfaces();
         }
     }
 

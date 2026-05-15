@@ -39,7 +39,14 @@ impl PlatformWebView {
         // CreateCoreWebView2EnvironmentWithOptions/Controller는 async 핸들러를 통해
         // mpsc로 결과를 회수하며 wait_with_pump가 메시지 펌프를 돌려 deadlock 방지.
         unsafe {
-            let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+            // CoInitializeEx는 같은 thread에서 이전에 APARTMENTTHREADED로 초기화돼 있으면
+            // S_FALSE를, 다른 모드로 초기화돼 있으면 RPC_E_CHANGED_MODE를 돌려준다 — WebView2는
+            // 두 케이스 모두에서 동작하므로 결과를 다음 호출 분기 재료로 쓰지 않는다.
+            // (다른 모드여도 이후 CreateCoreWebView2EnvironmentWithOptions가 자체적으로 실패.)
+            let hr = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+            if hr.is_err() {
+                tracing::trace!("CoInitializeEx returned non-success HRESULT: {hr:?}");
+            }
 
             // Create container child HWND
             let class_name = w!("TASTY_WEBVIEW");
@@ -82,7 +89,9 @@ impl PlatformWebView {
                 None,
                 &CreateCoreWebView2EnvironmentCompletedHandler::create(Box::new(
                     move |_hr, env| {
-                        let _ = env_tx.send(env);
+                        if let Err(e) = env_tx.send(env) {
+                            tracing::warn!("WebView2 env handoff failed: {e}");
+                        }
                         Ok(())
                     },
                 )),
@@ -99,7 +108,9 @@ impl PlatformWebView {
                 hwnd,
                 &CreateCoreWebView2ControllerCompletedHandler::create(Box::new(
                     move |_hr, ctrl| {
-                        let _ = ctrl_tx.send(ctrl);
+                        if let Err(e) = ctrl_tx.send(ctrl) {
+                            tracing::warn!("WebView2 controller handoff failed: {e}");
+                        }
                         Ok(())
                     },
                 )),
@@ -141,13 +152,15 @@ impl PlatformWebView {
         // SAFETY: SetBounds/SetWindowPos는 self가 살아있는 동안 hwnd/controller가 valid
         // 함을 Drop 시점에 정리. 호출은 main thread에서 일어남.
         unsafe {
-            let _ = self.controller.SetBounds(RECT {
+            if let Err(e) = self.controller.SetBounds(RECT {
                 left: 0,
                 top: 0,
                 right: w,
                 bottom: h,
-            });
-            let _ = SetWindowPos(
+            }) {
+                tracing::warn!("WebView2 SetBounds failed: {e}");
+            }
+            if let Err(e) = SetWindowPos(
                 self.hwnd,
                 None,
                 x,
@@ -155,15 +168,21 @@ impl PlatformWebView {
                 w,
                 h,
                 SWP_ASYNCWINDOWPOS | SWP_NOACTIVATE | SWP_NOZORDER,
-            );
+            ) {
+                tracing::warn!("SetWindowPos failed: {e}");
+            }
         }
     }
 
     pub fn set_visible(&self, visible: bool) {
         // SAFETY: self가 살아있으면 hwnd/controller 모두 valid (Drop이 정리).
         unsafe {
+            // ShowWindow는 BOOL을 반환하지만 windows-rs는 Result로 wrapping —
+            // "이전 상태가 visible이었는가"라서 첫 호출 시 Err 형태일 수 있다. 무해.
             let _ = ShowWindow(self.hwnd, if visible { SW_SHOW } else { SW_HIDE });
-            let _ = self.controller.SetIsVisible(visible);
+            if let Err(e) = self.controller.SetIsVisible(visible) {
+                tracing::warn!("WebView2 SetIsVisible failed: {e}");
+            }
         }
     }
 
@@ -171,7 +190,9 @@ impl PlatformWebView {
         // SAFETY: HSTRING은 호출 끝까지 살아있고 Navigate는 main thread 호출.
         unsafe {
             let url = HSTRING::from(url);
-            let _ = self.webview.Navigate(&url);
+            if let Err(e) = self.webview.Navigate(&url) {
+                tracing::warn!("WebView2 Navigate failed: {e}");
+            }
         }
     }
 
@@ -179,7 +200,9 @@ impl PlatformWebView {
         // SAFETY: HSTRING은 호출 끝까지 살아있고 NavigateToString은 main thread 호출.
         unsafe {
             let html = HSTRING::from(html);
-            let _ = self.webview.NavigateToString(&html);
+            if let Err(e) = self.webview.NavigateToString(&html) {
+                tracing::warn!("WebView2 NavigateToString failed: {e}");
+            }
         }
     }
 }
@@ -190,8 +213,14 @@ impl Drop for PlatformWebView {
         // 둘 다 self가 처음 만들어진 main thread에서 Drop이 호출된다는 전제 (PlatformWebView는
         // !Send/!Sync 기본 — COM 객체 포함).
         unsafe {
-            let _ = self.controller.Close();
-            let _ = DestroyWindow(self.hwnd);
+            // Drop 정리 — 이미 닫혔거나 HWND가 사라진 경우(예: 윈도우가 먼저 죽음)에도
+            // 호스트가 추가로 할 수 있는 일이 없으므로 trace로만 흔적.
+            if let Err(e) = self.controller.Close() {
+                tracing::trace!("WebView2 controller Close failed: {e}");
+            }
+            if let Err(e) = DestroyWindow(self.hwnd) {
+                tracing::trace!("DestroyWindow failed: {e}");
+            }
         }
     }
 }

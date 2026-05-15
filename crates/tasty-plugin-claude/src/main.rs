@@ -508,17 +508,21 @@ fn handle_launch(
         if let Some(dir) = directory.as_deref() {
             let normalized = dir.replace('\\', "/");
             let escaped = shell_escape::escape(normalized.into());
-            let _ = host.call(
+            if let Err(e) = host.call(
                 "surface.send",
                 json!({ "surface_id": sid, "text": format!("cd {escaped}\r") }),
-            );
+            ) {
+                tracing::warn!("surface.send (cd) failed: {e}");
+            }
         }
 
         let cmd = build_launch_command(task.as_deref());
-        let _ = host.call(
+        if let Err(e) = host.call(
             "surface.send",
             json!({ "surface_id": sid, "text": format!("{cmd}\r") }),
-        );
+        ) {
+            tracing::warn!("surface.send (launch) failed: {e}");
+        }
 
         if let Ok(mut s) = scanner.lock() {
             s.enable(sid);
@@ -651,10 +655,12 @@ fn start_claude_in_surface(
     if let Some(dir) = cwd {
         let normalized = dir.replace('\\', "/");
         let escaped = shell_escape::escape(normalized.into());
-        let _ = host.call(
+        if let Err(e) = host.call(
             "surface.send",
             json!({ "surface_id": surface_id, "text": format!("cd {escaped}\r") }),
-        );
+        ) {
+            tracing::warn!("surface.send (cd) failed: {e}");
+        }
     }
 
     if let Some(p) = prompt {
@@ -662,18 +668,22 @@ fn start_claude_in_surface(
         if let Err(e) = std::fs::write(&prompt_path, p) {
             tracing::warn!("Failed to write prompt file: {e}");
         }
-        let _ = host.call(
+        if let Err(e) = host.call(
             "surface.send",
             json!({
                 "surface_id": surface_id,
                 "text": format!("claude \"$(cat '{}')\"\r", prompt_path.display()),
             }),
-        );
+        ) {
+            tracing::warn!("surface.send (claude with prompt) failed: {e}");
+        }
     } else {
-        let _ = host.call(
+        if let Err(e) = host.call(
             "surface.send",
             json!({ "surface_id": surface_id, "text": "claude\r" }),
-        );
+        ) {
+            tracing::warn!("surface.send (claude) failed: {e}");
+        }
     }
 }
 
@@ -1009,7 +1019,7 @@ mod handler_tests {
         let mut state = ClaudeState::default();
         state.set_idle(5, true);
         state.set_needs_input(5, true);
-        let _ = handle_set_idle_state(
+        handle_set_idle_state(
             &mut state,
             &json!({ "surface_id": 5, "idle": false }),
         )
@@ -1408,7 +1418,8 @@ fn error_scan_loop(scanner: Arc<Mutex<ErrorScanner>>, host: HostHandle) {
             // 각 IPC call은 최대 60초까지 block 가능하지만 정상 응답은 ms 단위.
             // 한 surface에서 timeout이 나도 나머지에 영향 없도록 그냥 진행.
             if let Ok(mut s) = scanner.lock() {
-                let _ = s.scan_one(&host, sid);
+                // 반환값(매치된 snippet)은 단위 테스트용. polling 루프에서는 무시.
+                s.scan_one(&host, sid);
             }
         }
     }

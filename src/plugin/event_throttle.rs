@@ -135,9 +135,9 @@ mod tests {
     fn within_window_defers_and_overwrites_pending() {
         let mut t = EventThrottler::new();
         let t0 = Instant::now();
-        let _ = t.attempt_at(k("surface.resized", 1), env("surface.resized", 1), t0);
-        let _ = t.attempt_at(k("surface.resized", 1), env("surface.resized", 2), t0);
-        let _ = t.attempt_at(k("surface.resized", 1), env("surface.resized", 3), t0);
+        t.attempt_at(k("surface.resized", 1), env("surface.resized", 1), t0);
+        t.attempt_at(k("surface.resized", 1), env("surface.resized", 2), t0);
+        t.attempt_at(k("surface.resized", 1), env("surface.resized", 3), t0);
         // 윈도우 안 → 마지막 envelope이 pending에 남아 있어야 함.
         let due = t.drain_due_at(t0 + Duration::from_millis(50));
         assert!(due.is_empty()); // 만료 전 — 비어야 함
@@ -150,7 +150,7 @@ mod tests {
     fn separate_scope_ids_dont_block_each_other() {
         let mut t = EventThrottler::new();
         let t0 = Instant::now();
-        let _ = t.attempt_at(k("surface.resized", 1), env("surface.resized", 1), t0);
+        t.attempt_at(k("surface.resized", 1), env("surface.resized", 1), t0);
         match t.attempt_at(k("surface.resized", 2), env("surface.resized", 2), t0) {
             ThrottleDecision::EmitNow(_) => {}
             _ => panic!("different scope should emit immediately"),
@@ -161,7 +161,7 @@ mod tests {
     fn after_window_passes_attempt_emits_again() {
         let mut t = EventThrottler::new();
         let t0 = Instant::now();
-        let _ = t.attempt_at(k("surface.resized", 1), env("surface.resized", 1), t0);
+        t.attempt_at(k("surface.resized", 1), env("surface.resized", 1), t0);
         match t.attempt_at(
             k("surface.resized", 1),
             env("surface.resized", 9),
@@ -176,8 +176,8 @@ mod tests {
     fn drain_due_clears_pending() {
         let mut t = EventThrottler::new();
         let t0 = Instant::now();
-        let _ = t.attempt_at(k("surface.resized", 1), env("surface.resized", 1), t0);
-        let _ = t.attempt_at(k("surface.resized", 1), env("surface.resized", 2), t0);
+        t.attempt_at(k("surface.resized", 1), env("surface.resized", 1), t0);
+        t.attempt_at(k("surface.resized", 1), env("surface.resized", 2), t0);
         let due = t.drain_due_at(t0 + THROTTLE_WINDOW);
         assert_eq!(due.len(), 1);
         // 다음 drain은 비어 있어야 함 (재발화는 새 attempt 필요).

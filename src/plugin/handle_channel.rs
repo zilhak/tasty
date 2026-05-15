@@ -230,7 +230,15 @@ impl HandleListener {
             .join(format!("tasty-handle-{pid}-{:x}.sock", nanos as u64));
 
         // stale 파일이 남아 있으면 unlink. 다음 bind를 위한 idempotent 정리.
-        let _ = std::fs::remove_file(&socket_path);
+        // NotFound는 정상 — 그 외 에러는 bind도 실패할 가능성이 높아 알린다.
+        if let Err(e) = std::fs::remove_file(&socket_path) {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                tracing::warn!(
+                    "stale handle socket {} unlink failed: {e}",
+                    socket_path.display()
+                );
+            }
+        }
 
         let listener = UnixListener::bind(&socket_path)?;
         let endpoint = socket_path.to_string_lossy().into_owned();
@@ -310,7 +318,15 @@ impl HandleListener {
 impl Drop for HandleListener {
     fn drop(&mut self) {
         // 임시 socket 파일 정리. listener thread는 process exit과 함께 사라진다.
-        let _ = std::fs::remove_file(&self._socket_path);
+        // NotFound는 race(테스트가 직접 정리한 경우 등)에서 정상.
+        if let Err(e) = std::fs::remove_file(&self._socket_path) {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                tracing::trace!(
+                    "handle socket {} drop unlink failed: {e}",
+                    self._socket_path.display()
+                );
+            }
+        }
     }
 }
 
@@ -773,8 +789,9 @@ mod tests {
         drop(payload);
         // plugin이 받은 매핑은 plugin_mem이 자체 소유 (Drop에서 munmap).
         // recv_with_fd가 반환한 fds[0]은 tasty_shm::receive로 소유권 이전됨.
-        // host_mem도 Drop에서 자체 정리.
-        let _ = (host_mem, plugin_mem);
+        // 명시적 drop으로 scope 끝 정리 시점을 코드에 박아둔다 (host_mem도 동일).
+        drop(host_mem);
+        drop(plugin_mem);
     }
 
     #[test]
@@ -792,11 +809,13 @@ mod tests {
                     token: "unknown-token".into(),
                 };
                 let line = serde_json::to_string(&auth).unwrap() + "\n";
-                let _ = stream.write_all(line.as_bytes());
-                let _ = stream.flush();
+                stream.write_all(line.as_bytes()).expect("test auth write");
+                stream.flush().expect("test auth flush");
                 let cloned = stream.try_clone().unwrap();
                 let mut reader = BufReader::new(cloned);
                 let mut ack = String::new();
+                // 호스트가 ack(false)를 보낸 뒤 stream을 닫으므로 read_line이 EOF로 끝날 수
+                // 있다 — 아래 assert가 본 검증이라 read 결과 자체는 무시.
                 let _ = reader.read_line(&mut ack);
                 assert!(ack.contains("\"ok\":false"));
             });

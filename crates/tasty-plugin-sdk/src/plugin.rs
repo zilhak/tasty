@@ -258,8 +258,7 @@ pub trait Plugin: Send + 'static {
     fn handle_event(&mut self, ctx: SurfaceEventCtx) -> SurfaceResult;
 
     /// `surface.restore`에 응답. 영속화된 데이터로부터 surface 복원.
-    fn restore_surface(&mut self, ctx: SurfaceRestoreCtx) -> SurfaceResult {
-        let _ = ctx;
+    fn restore_surface(&mut self, _ctx: SurfaceRestoreCtx) -> SurfaceResult {
         SurfaceResult {
             tree: None,
             display_name: None,
@@ -267,20 +266,16 @@ pub trait Plugin: Send + 'static {
     }
 
     /// `surface.snapshot` — 영속화할 데이터 반환. 기본 구현은 null.
-    fn snapshot_surface(&mut self, ctx: SurfaceSnapshotCtx) -> Value {
-        let _ = ctx;
+    fn snapshot_surface(&mut self, _ctx: SurfaceSnapshotCtx) -> Value {
         Value::Null
     }
 
     /// `surface.destroy` — 호스트가 surface를 닫을 때 호출. 자원 해제용.
-    fn destroy_surface(&mut self, surface_id: u32) {
-        let _ = surface_id;
-    }
+    fn destroy_surface(&mut self, _surface_id: u32) {}
 
     /// `command.invoke` — 매니페스트로 등록한 command가 사용자 단축키 매칭으로
     /// 호출됨. tree가 None이면 호스트는 이전 tree 유지. 기본 구현은 no-op.
-    fn handle_command(&mut self, ctx: CommandInvokeCtx) -> SurfaceResult {
-        let _ = ctx;
+    fn handle_command(&mut self, _ctx: CommandInvokeCtx) -> SurfaceResult {
         SurfaceResult {
             tree: None,
             display_name: None,
@@ -291,31 +286,26 @@ pub trait Plugin: Send + 'static {
     /// 해당하는 IPC 메서드 호출이 호스트로부터 forward됨. plugin은 method 이름으로
     /// 자체 dispatch하고 JSON 결과 또는 [`IpcMethodError`]를 반환한다.
     /// 기본 구현은 `not_implemented` 에러.
-    fn handle_ipc_method(&mut self, ctx: IpcMethodCtx) -> Result<Value, IpcMethodError> {
-        let _ = ctx;
+    fn handle_ipc_method(&mut self, _ctx: IpcMethodCtx) -> Result<Value, IpcMethodError> {
         Err(IpcMethodError::not_implemented())
     }
 
     /// `event.dispatch` — [`BusHandle::subscribe`]로 등록한 패턴이 매칭되는
     /// 이벤트가 fan-out돼 도착했을 때 호출된다. fire-and-forget이라 반환값은 없다.
     /// 기본 구현은 no-op.
-    fn on_event(&mut self, ctx: EventDispatchCtx) {
-        let _ = ctx;
-    }
+    fn on_event(&mut self, _ctx: EventDispatchCtx) {}
 
     /// `popup.open` — 매니페스트 `[[contributes.popup]]`로 contribute한 popup의
     /// 새 인스턴스가 열림. plugin은 초기 UI tree를 [`PopupOpenResult`]에 담아 반환.
     /// 기본 구현은 빈 트리.
-    fn open_popup(&mut self, ctx: PopupOpenCtx) -> PopupOpenResult {
-        let _ = ctx;
+    fn open_popup(&mut self, _ctx: PopupOpenCtx) -> PopupOpenResult {
         PopupOpenResult { tree: None }
     }
 
     /// `popup.event` — popup 인스턴스 위에서 사용자 이벤트 발생. plugin은
     /// 갱신된 트리(없으면 None)와 자체 닫기 신호(`close=true`)를 반환한다.
     /// 기본 구현은 변경 없음.
-    fn handle_popup_event(&mut self, ctx: PopupEventCtx) -> PopupEventResult {
-        let _ = ctx;
+    fn handle_popup_event(&mut self, _ctx: PopupEventCtx) -> PopupEventResult {
         PopupEventResult {
             tree: None,
             close: false,
@@ -324,9 +314,7 @@ pub trait Plugin: Send + 'static {
 
     /// `popup.closed` — popup 인스턴스가 닫혔음을 통보. fire-and-forget.
     /// plugin은 인스턴스별 자체 상태를 정리한다. 기본 구현은 no-op.
-    fn on_popup_closed(&mut self, ctx: PopupClosedCtx) {
-        let _ = ctx;
-    }
+    fn on_popup_closed(&mut self, _ctx: PopupClosedCtx) {}
 
     /// `extension.invoke_hook` — 이 plugin이 다른 plugin(target)의 IPC 또는 이벤트
     /// 흐름을 가로채는 extension일 때, host가 매니페스트 `[[extends.*]]` 항목에 매칭되는
@@ -339,8 +327,7 @@ pub trait Plugin: Send + 'static {
     ///
     /// 기본 구현은 `pass()` — extension이 아니거나 hook을 처리하지 않는 plugin은
     /// 안전하게 통과시킨다.
-    fn handle_extension_hook(&mut self, ctx: ExtensionHookCtx) -> ExtensionHookOutcome {
-        let _ = ctx;
+    fn handle_extension_hook(&mut self, _ctx: ExtensionHookCtx) -> ExtensionHookOutcome {
         ExtensionHookOutcome::pass()
     }
 
@@ -352,10 +339,7 @@ pub trait Plugin: Send + 'static {
     /// `bus`는 plugin이 Event Bus에 publish/subscribe할 때 사용. 매니페스트의
     /// `event_subscribe`/`event_publish` 패턴이 비어 있으면 호스트가 등록을 거부하므로
     /// 핸들은 받아도 의미 없는 호출만 가능하다.
-    fn on_start(&mut self, host: HostHandle, bus: BusHandle) {
-        let _ = host;
-        let _ = bus;
-    }
+    fn on_start(&mut self, _host: HostHandle, _bus: BusHandle) {}
 }
 
 /// `event.dispatch` 콜백 컨텍스트.

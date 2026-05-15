@@ -53,7 +53,7 @@ pub fn get_foreground_process(shell_pid: u32) -> Option<ForegroundProcessInfo> {
 
     #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
     {
-        let _ = shell_pid;
+        let _shell_pid = shell_pid;
         None
     }
 }
@@ -131,7 +131,11 @@ fn windows_foreground_process(shell_pid: u32) -> Option<ForegroundProcessInfo> {
             // self.0이 INVALID_HANDLE_VALUE이거나 이미 닫혔어도 CloseHandle은
             // Err만 반환하고 UB를 일으키지 않는다 (Win32 보장).
             unsafe {
-                let _ = CloseHandle(self.0);
+                // CloseHandle은 invalid handle에 대해 ERROR_INVALID_HANDLE을 반환할 뿐
+                // UB를 일으키지 않는다. Drop 경로에서 추가로 로그를 남길 가치 없음.
+                if let Err(e) = CloseHandle(self.0) {
+                    tracing::trace!("ToolHelp snapshot CloseHandle: {e}");
+                }
             }
         }
     }

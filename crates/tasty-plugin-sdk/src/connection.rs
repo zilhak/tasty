@@ -222,20 +222,22 @@ mod tests {
             let cloned = stream.try_clone().expect("clone");
             let mut reader = BufReader::new(cloned);
             let mut line = String::new();
-            let _ = reader.read_line(&mut line);
+            reader.read_line(&mut line).expect("fake host: read auth");
             match behavior {
                 FakeHostBehavior::AckOk => {
-                    let _ = writeln!(stream, "{{\"auth_ack\":{{\"ok\":true}}}}");
-                    let _ = stream.flush();
+                    writeln!(stream, "{{\"auth_ack\":{{\"ok\":true}}}}")
+                        .expect("fake host: write ack");
+                    stream.flush().expect("fake host: flush ack");
                     // 메시지 루프 빠져나가지 않도록 잠시 대기.
                     thread::sleep(Duration::from_millis(200));
                 }
                 FakeHostBehavior::AckReject(reason) => {
-                    let _ = writeln!(
+                    writeln!(
                         stream,
                         "{{\"auth_ack\":{{\"ok\":false,\"reason\":\"{reason}\"}}}}"
-                    );
-                    let _ = stream.flush();
+                    )
+                    .expect("fake host: write reject");
+                    stream.flush().expect("fake host: flush reject");
                     thread::sleep(Duration::from_millis(50));
                 }
                 FakeHostBehavior::DropWithoutAck => {
@@ -268,7 +270,7 @@ mod tests {
         let mut conn = Connection::connect(&env).expect("connect");
         conn.authenticate(&env).expect("auth ok");
         drop(conn);
-        let _ = handle.join();
+        handle.join().expect("fake host thread");
     }
 
     #[test]
@@ -283,7 +285,7 @@ mod tests {
             }
             other => panic!("expected HandshakeRejected, got {other:?}"),
         }
-        let _ = handle.join();
+        handle.join().expect("fake host thread");
     }
 
     #[test]
@@ -299,7 +301,7 @@ mod tests {
             matches!(err, PluginError::HandshakeTimeout),
             "expected HandshakeTimeout, got {err:?}"
         );
-        let _ = handle.join();
+        handle.join().expect("fake host thread");
     }
 
     #[test]
@@ -308,7 +310,7 @@ mod tests {
         let env = env_for(port);
         let conn = Connection::connect_and_authenticate(&env).expect("ok");
         drop(conn);
-        let _ = handle.join();
+        handle.join().expect("fake host thread");
     }
 
     /// 핸드셰이크 동시성 — 두 plugin이 거의 동시에 connect해도 각각 정확한 ack를 받는다.
@@ -340,8 +342,8 @@ mod tests {
             matches!(r2, Err(PluginError::HandshakeRejected { .. })),
             "concurrent reject-host should be rejected: {r2:?}"
         );
-        let _ = h1.join();
-        let _ = h2.join();
+        h1.join().expect("fake host1 thread");
+        h2.join().expect("fake host2 thread");
     }
 
     /// 다른 stream으로 connect → host가 stream을 종료하면 timeout(0 bytes) 분기로 떨어진다.
@@ -363,7 +365,7 @@ mod tests {
             matches!(err, PluginError::HandshakeTimeout | PluginError::Io(_)),
             "expected timeout or io error after host close, got {err:?}"
         );
-        let _ = handle.join();
+        handle.join().expect("fake host thread");
     }
 
     /// 호스트가 깨진 envelope를 보내면 JSON 에러로 떨어진다 (Handshake* 가 아님).
@@ -377,9 +379,9 @@ mod tests {
             let cloned = stream.try_clone().unwrap();
             let mut reader = BufReader::new(cloned);
             let mut line = String::new();
-            let _ = reader.read_line(&mut line);
-            let _ = writeln!(stream, "not-json garbage");
-            let _ = stream.flush();
+            reader.read_line(&mut line).expect("fake host: read auth");
+            writeln!(stream, "not-json garbage").expect("fake host: write garbage");
+            stream.flush().expect("fake host: flush garbage");
             thread::sleep(Duration::from_millis(50));
         });
         let env = env_for(port);
@@ -389,7 +391,7 @@ mod tests {
             matches!(err, PluginError::Json(_)),
             "expected Json error, got {err:?}"
         );
-        let _ = handle.join();
+        handle.join().expect("fake host thread");
     }
 
     /// keep the unused TcpStream import legitimate (env_for/spawn_fake_host references TcpStream indirectly via std).

@@ -15,7 +15,8 @@ fn parse_key_combo(input: &str) -> Option<Vec<u8>> {
     }
 
     let mut has_ctrl = false;
-    let mut has_shift = false;
+    // shift-only 시퀀스는 현재 미지원 — 프리픽스만 떼어내고 modifier로는 사용하지 않는다.
+    let mut _has_shift = false;
     let mut has_alt = false;
     let mut rest = input;
     loop {
@@ -23,8 +24,8 @@ fn parse_key_combo(input: &str) -> Option<Vec<u8>> {
         if !has_ctrl && lower.starts_with("ctrl+") {
             has_ctrl = true;
             rest = &rest[5..];
-        } else if !has_shift && lower.starts_with("shift+") {
-            has_shift = true;
+        } else if !_has_shift && lower.starts_with("shift+") {
+            _has_shift = true;
             rest = &rest[6..];
         } else if !has_alt && lower.starts_with("alt+") {
             has_alt = true;
@@ -33,7 +34,6 @@ fn parse_key_combo(input: &str) -> Option<Vec<u8>> {
             break;
         }
     }
-    let _ = has_shift; // 현재 shift-only 시퀀스는 미지원. 파싱만 한다.
 
     if rest.is_empty() {
         return None;

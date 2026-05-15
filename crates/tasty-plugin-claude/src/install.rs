@@ -251,7 +251,7 @@ mod tests {
     #[test]
     fn install_is_idempotent() {
         let mut root = json!({});
-        let _ = install_hooks_in_value(&mut root).expect("install 1");
+        install_hooks_in_value(&mut root).expect("install 1");
         let added2 = install_hooks_in_value(&mut root).expect("install 2");
         assert!(added2.is_empty(), "second install should add nothing");
         for (event_name, token) in MANAGED_HOOKS {
@@ -272,7 +272,7 @@ mod tests {
                 ]
             }
         });
-        let _ = install_hooks_in_value(&mut root).expect("install");
+        install_hooks_in_value(&mut root).expect("install");
 
         assert_eq!(
             root["hooks"]["PreToolUse"]
@@ -288,7 +288,7 @@ mod tests {
     #[test]
     fn uninstall_removes_all() {
         let mut root = json!({});
-        let _ = install_hooks_in_value(&mut root).expect("install");
+        install_hooks_in_value(&mut root).expect("install");
         let removed = uninstall_hooks_from_value(&mut root);
         assert_eq!(removed.len(), MANAGED_HOOKS.len());
         assert!(root.get("hooks").is_none(), "empty hooks should be removed");
@@ -303,8 +303,9 @@ mod tests {
                 ]
             }
         });
-        let _ = install_hooks_in_value(&mut root).expect("install");
-        let _ = uninstall_hooks_from_value(&mut root);
+        install_hooks_in_value(&mut root).expect("install");
+        // 반환값(제거된 항목 목록)은 다음 assert가 root 구조로 검증하므로 무시.
+        uninstall_hooks_from_value(&mut root);
         let stop_arr = root["hooks"]["Stop"].as_array().unwrap();
         assert_eq!(stop_arr.len(), 1);
         let cmd = stop_arr[0]["hooks"][0]["command"].as_str().unwrap();
@@ -323,14 +324,14 @@ mod tests {
         let mut root = json!({});
         let marker = tasty_hook_marker("stop");
         assert!(!is_marker_installed_in_value(&root, "Stop", &marker));
-        let _ = install_hooks_in_value(&mut root).expect("install");
+        install_hooks_in_value(&mut root).expect("install");
         assert!(is_marker_installed_in_value(&root, "Stop", &marker));
     }
 
     #[test]
     fn session_start_hook_includes_session_id_placeholder() {
         let mut root = json!({});
-        let _ = install_hooks_in_value(&mut root).expect("install");
+        install_hooks_in_value(&mut root).expect("install");
         let arr = root["hooks"]["SessionStart"].as_array().unwrap();
         assert_eq!(arr.len(), 1);
         let cmd = arr[0]["hooks"][0]["command"].as_str().unwrap();

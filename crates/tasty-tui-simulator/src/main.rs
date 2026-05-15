@@ -511,7 +511,10 @@ fn finish(out: &mut io::Stdout, marker: &str, exit: bool) {
     write!(out, "\x1b[999;1H{marker}").unwrap();
     out.flush().unwrap();
     if !exit {
-        let _ = crossterm::event::read();
+        // "keep open" 모드: stdin이 닫히면 Err — 정상적인 종료 신호이므로 무시.
+        if let Err(e) = crossterm::event::read() {
+            eprintln!("tasty-tui-sim: event wait ended: {e}");
+        }
     }
 }
 
@@ -546,7 +549,10 @@ fn scenario_altscreen(exit: bool) {
     write!(out, "\x1b[999;1HALTSCREEN_TEST_DONE").unwrap();
     out.flush().unwrap();
     if !exit {
-        let _ = crossterm::event::read();
+        // "keep open" 모드: stdin이 닫히면 Err — 정상적인 종료 신호이므로 무시.
+        if let Err(e) = crossterm::event::read() {
+            eprintln!("tasty-tui-sim: event wait ended: {e}");
+        }
     }
     write!(out, "\x1b[?1049l").unwrap();
     out.flush().unwrap();

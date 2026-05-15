@@ -8,6 +8,7 @@ description = "Event-based shell command hook system"
 [dependencies]
 regex = "1"
 serde = { version = "1", features = ["derive"] }
+tracing = "0.1"
 
 [lints]
 workspace = true

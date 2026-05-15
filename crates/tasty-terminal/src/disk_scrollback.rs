@@ -91,7 +91,14 @@ impl DiskScrollback {
 
 impl Drop for DiskScrollback {
     fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.file_path);
+        if let Err(e) = std::fs::remove_file(&self.file_path) {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                tracing::trace!(
+                    "scrollback temp file {} cleanup failed: {e}",
+                    self.file_path.display()
+                );
+            }
+        }
     }
 }
 

@@ -65,7 +65,6 @@ impl Drop for PlatformMapping {
             }
         }
         // handle은 OwnedHandle이 자동 close.
-        let _ = &self.handle;
     }
 }
 

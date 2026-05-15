@@ -19,7 +19,7 @@ pub fn get_cwd_of_pid(pid: u32) -> Option<PathBuf> {
 
     #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     {
-        let _ = pid;
+        let _pid = pid;
         None
     }
 }

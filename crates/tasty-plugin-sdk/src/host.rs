@@ -231,7 +231,10 @@ pub(crate) fn deliver_ipc_result(
             }),
             None => Ok(result.unwrap_or(Value::Null)),
         };
-        let _ = tx.send(out);
+        // 호출자가 timeout 등으로 이미 rx를 drop했을 수 있음 — 무시 가능.
+        if let Err(e) = tx.send(out) {
+            tracing::trace!("host call#{call_id} result dropped (waiter gone): {e}");
+        }
     }
 }
 
@@ -249,7 +252,7 @@ mod tests {
             std::net::TcpListener::bind(("127.0.0.1", 0)).expect("bind localhost");
         let port = listener.local_addr().unwrap().port();
         let accept_handle = std::thread::spawn(move || {
-            let _ = listener.accept();
+            let _accepted = listener.accept();
         });
         let stream = TcpStream::connect(("127.0.0.1", port)).expect("connect");
         accept_handle.join().unwrap();

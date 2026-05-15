@@ -11,7 +11,7 @@ use egui::Ui;
 use crate::gpu::canvas_texture::CanvasTextureCache;
 use crate::plugin::remote_surface::RemoteSurface;
 use crate::plugin::ui_tree::{
-    ButtonStyle, CanvasPointerButton, CanvasPointerPhase, LabelStyle, PixelFilter, SharedBufferId,
+    ButtonStyle, CanvasPointerButton, CanvasPointerPhase, LabelStyle, SharedBufferId,
     SplitDir, TreeNode, UiEvent, UiNode,
 };
 
@@ -394,9 +394,6 @@ fn render_canvas(
     }
     ui.ctx()
         .memory_mut(|m| m.data.insert_temp(mem_id, is_hovered));
-
-    // filter는 ensure() 단계에서 텍스처에 적용되므로 여기서는 PixelFilter 참조 불필요.
-    let _ = PixelFilter::Linear;
 }
 
 /// Splitter 렌더링. `id`가 `Some`이면 divider를 드래그해 비율을 조절할 수 있으며,

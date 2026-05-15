@@ -71,7 +71,9 @@ impl ClaudeState {
             return;
         };
         if let Some(parent) = path.parent() {
-            let _ = std::fs::create_dir_all(parent);
+            if let Err(e) = std::fs::create_dir_all(parent) {
+                tracing::warn!("claude state dir {} create failed: {e}", parent.display());
+            }
         }
         match serde_json::to_string_pretty(self) {
             Ok(text) => {

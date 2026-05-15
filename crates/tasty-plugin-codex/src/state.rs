@@ -54,7 +54,9 @@ impl CodexState {
             return;
         };
         if let Some(parent) = path.parent() {
-            let _ = std::fs::create_dir_all(parent);
+            if let Err(e) = std::fs::create_dir_all(parent) {
+                tracing::warn!("codex state mkdir {} failed: {e}", parent.display());
+            }
         }
         match serde_json::to_string_pretty(self) {
             Ok(text) => {

@@ -31,7 +31,9 @@ pub fn show_context_menu(
 
         for item in items {
             if item.is_separator() {
-                let _ = AppendMenuW(hmenu, MF_SEPARATOR, 0, PCWSTR::null());
+                if let Err(e) = AppendMenuW(hmenu, MF_SEPARATOR, 0, PCWSTR::null()) {
+                    tracing::warn!("AppendMenuW separator failed: {e}");
+                }
             } else {
                 let flags = MF_STRING | if item.enabled { MF_ENABLED } else { MF_GRAYED };
                 // Encode label as null-terminated UTF-16.
@@ -40,7 +42,9 @@ pub fn show_context_menu(
                     .encode_utf16()
                     .chain(std::iter::once(0))
                     .collect();
-                let _ = AppendMenuW(hmenu, flags, item.id as usize, PCWSTR(wide.as_ptr()));
+                if let Err(e) = AppendMenuW(hmenu, flags, item.id as usize, PCWSTR(wide.as_ptr())) {
+                    tracing::warn!("AppendMenuW item '{}' failed: {e}", item.label);
+                }
             }
         }
 
@@ -49,7 +53,9 @@ pub fn show_context_menu(
             x: x as i32,
             y: y as i32,
         };
-        let _ = windows::Win32::Graphics::Gdi::ClientToScreen(hwnd, &mut pt);
+        if let Err(e) = windows::Win32::Graphics::Gdi::ClientToScreen(hwnd, &mut pt) {
+            tracing::warn!("ClientToScreen failed: {e}");
+        }
 
         let selected = TrackPopupMenu(
             hmenu,
@@ -61,7 +67,9 @@ pub fn show_context_menu(
             None,
         );
 
-        let _ = DestroyMenu(hmenu);
+        if let Err(e) = DestroyMenu(hmenu) {
+            tracing::warn!("DestroyMenu failed: {e}");
+        }
 
         let id = selected.0 as u32;
         if id == 0 { None } else { Some(id) }

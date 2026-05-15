@@ -889,7 +889,9 @@ pub fn print_command_tree() {
     );
     println!();
 
-    fn print_node(cmd: &clap::Command, prefix: &str, connector: &str) {
+    // `_connector`는 leaf print_node에서는 쓰지 않지만, 시그니처를 재귀 호출 측과
+    // 동일하게 유지하기 위해 받기만 한다 (caller가 자식 노드 prefix 조립에 사용).
+    fn print_node(cmd: &clap::Command, prefix: &str, _connector: &str) {
         let about = cmd.get_about().map(|s| s.to_string()).unwrap_or_default();
         let args = format_args(cmd);
         if args.is_empty() {
@@ -897,7 +899,6 @@ pub fn print_command_tree() {
         } else {
             println!("{}{} {} — {}", prefix, cmd.get_name(), args, about);
         }
-        let _ = connector; // used by caller for children
     }
 
     let subs: Vec<_> = visible_subcommands(&cmd);

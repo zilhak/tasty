@@ -195,9 +195,9 @@ fn leak_str(s: String) -> &'static str {
 
 /// Initialize the global translation store. Call once at startup.
 pub fn init(language: &str) {
-    // OnceLock::set은 이미 set되었으면 Err — i18n은 부팅 시 한 번만 호출되는 시드
-    // 데이터라 두 번째 호출은 의도적 no-op.
-    let _ = TRANSLATIONS.set(Translations::load(language));
+    // OnceLock::set은 이미 set된 경우만 Err. i18n은 부팅 시 1회만 호출되는 시드
+    // 데이터라 두 번째 호출은 의도적 no-op — Err를 panic이나 로그 없이 그대로 무시.
+    let _already_set: Result<_, _> = TRANSLATIONS.set(Translations::load(language));
 }
 
 /// Get a translated string by key.

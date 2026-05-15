@@ -317,11 +317,11 @@ mod tests {
 
         // wrap forward
         let resp = handle_next(&mut state, Value::Null, &json!({ "surface_id": sid }));
-        let _ = resp.result.expect("wraps to first");
+        resp.result.expect("wraps to first");
 
         // step back
         let resp = handle_prev(&mut state, Value::Null, &json!({ "surface_id": sid }));
-        let _ = resp.result.expect("prev ok");
+        resp.result.expect("prev ok");
     }
 
     #[test]

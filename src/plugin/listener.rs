@@ -200,8 +200,8 @@ mod tests {
                     token: "unknown-token".into(),
                 };
                 let line = serde_json::to_string(&auth).unwrap() + "\n";
-                let _ = stream.write_all(line.as_bytes());
-                let _ = stream.flush();
+                stream.write_all(line.as_bytes()).expect("test auth write");
+                stream.flush().expect("test auth flush");
             });
 
             let stream = listener.expect_connection("expected-token", Duration::from_millis(800));

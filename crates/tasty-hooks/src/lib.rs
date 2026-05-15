@@ -168,12 +168,16 @@ impl HookManager {
                 if hook.event.matches(event, hook.compiled_regex.as_ref()) {
                     // Fire the hook command in background
                     let cmd = hook.command.clone();
+                    let hook_id = hook.id;
                     std::thread::spawn(move || {
-                        let _ = if cfg!(windows) {
+                        let result = if cfg!(windows) {
                             Command::new("cmd").args(["/C", &cmd]).output()
                         } else {
                             Command::new("sh").args(["-c", &cmd]).output()
                         };
+                        if let Err(e) = result {
+                            tracing::warn!("hook {hook_id:?} spawn failed: {e}");
+                        }
                     });
                     fired.push(hook.id);
                 }

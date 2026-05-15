@@ -373,7 +373,12 @@ mod tests {
     #[test]
     fn connect_succeeds_when_host_acks_ok() {
         let path = unique_socket_path("ok");
-        let _ = std::fs::remove_file(&path);
+        // 이전 테스트 잔여 socket 제거 (NotFound는 정상).
+        if let Err(e) = std::fs::remove_file(&path) {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                panic!("pre-cleanup {} failed: {e}", path.display());
+            }
+        }
         let listener = UnixListener::bind(&path).unwrap();
         let path_clone = path.clone();
         let server = thread::spawn(move || {
@@ -382,12 +387,16 @@ mod tests {
             let mut reader = BufReader::new(cloned);
             let mut line = String::new();
             reader.read_line(&mut line).unwrap();
-            let _ = writeln!(stream, "{{\"auth_ack\":{{\"ok\":true}}}}");
-            let _ = stream.flush();
+            writeln!(stream, "{{\"auth_ack\":{{\"ok\":true}}}}").expect("fake host: ack");
+            stream.flush().expect("fake host: flush");
             thread::sleep(Duration::from_millis(200));
             drop(stream);
-            // cleanup
-            let _ = std::fs::remove_file(&path_clone);
+            // cleanup — server thread 종료 시 socket file 삭제. NotFound는 정상.
+            if let Err(e) = std::fs::remove_file(&path_clone) {
+                if e.kind() != std::io::ErrorKind::NotFound {
+                    tracing::trace!("post-test socket cleanup failed: {e}");
+                }
+            }
         });
         let env = env_for(path.to_str().unwrap());
         let client = HandleClient::connect(&env).expect("auth ok");
@@ -398,7 +407,11 @@ mod tests {
     #[test]
     fn connect_returns_rejected_when_host_acks_false() {
         let path = unique_socket_path("reject");
-        let _ = std::fs::remove_file(&path);
+        if let Err(e) = std::fs::remove_file(&path) {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                panic!("pre-cleanup {} failed: {e}", path.display());
+            }
+        }
         let listener = UnixListener::bind(&path).unwrap();
         let path_clone = path.clone();
         let server = thread::spawn(move || {
@@ -407,13 +420,18 @@ mod tests {
             let mut reader = BufReader::new(cloned);
             let mut line = String::new();
             reader.read_line(&mut line).unwrap();
-            let _ = writeln!(
+            writeln!(
                 stream,
                 "{{\"auth_ack\":{{\"ok\":false,\"reason\":\"nope\"}}}}"
-            );
-            let _ = stream.flush();
+            )
+            .expect("fake host: reject");
+            stream.flush().expect("fake host: flush");
             thread::sleep(Duration::from_millis(50));
-            let _ = std::fs::remove_file(&path_clone);
+            if let Err(e) = std::fs::remove_file(&path_clone) {
+                if e.kind() != std::io::ErrorKind::NotFound {
+                    tracing::trace!("post-test socket cleanup failed: {e}");
+                }
+            }
         });
         let env = env_for(path.to_str().unwrap());
         let err = HandleClient::connect(&env).expect_err("should be rejected");

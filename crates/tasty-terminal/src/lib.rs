@@ -574,11 +574,15 @@ impl Terminal {
     /// Send keyboard input to PTY (non-blocking, queued to writer thread).
     pub fn send_key(&mut self, text: &str) {
         self.last_input_at = std::time::Instant::now();
-        let _ = self.pty_write_tx.send(text.as_bytes().to_vec());
+        if let Err(e) = self.pty_write_tx.send(text.as_bytes().to_vec()) {
+            tracing::warn!("pty writer channel closed during send_key: {e}");
+        }
     }
 
     pub(crate) fn send_terminal_response(&self, response: &str) {
-        let _ = self.pty_write_tx.send(response.as_bytes().to_vec());
+        if let Err(e) = self.pty_write_tx.send(response.as_bytes().to_vec()) {
+            tracing::warn!("pty writer channel closed during terminal response: {e}");
+        }
     }
 
     pub(crate) fn apply_or_stage_change(&mut self, change: Change) {
@@ -608,7 +612,9 @@ impl Terminal {
     /// Send raw bytes to PTY (non-blocking, queued to writer thread).
     pub fn send_bytes(&mut self, bytes: &[u8]) {
         self.last_input_at = std::time::Instant::now();
-        let _ = self.pty_write_tx.send(bytes.to_vec());
+        if let Err(e) = self.pty_write_tx.send(bytes.to_vec()) {
+            tracing::warn!("pty writer channel closed during send_bytes: {e}");
+        }
     }
 
     pub fn resize(&mut self, cols: usize, rows: usize) {

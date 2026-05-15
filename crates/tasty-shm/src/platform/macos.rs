@@ -16,6 +16,8 @@ use super::MAX_SIZE;
 pub(crate) struct PlatformMapping {
     ptr: *mut u8,
     len: usize,
+    /// fd는 mmap 영역의 backing — munmap 이후 자동 close. 명시 사용처는 없다.
+    #[allow(dead_code)]
     fd: OwnedFd,
 }
 
@@ -27,7 +29,6 @@ impl Drop for PlatformMapping {
                 libc::munmap(self.ptr as *mut libc::c_void, self.len);
             }
         }
-        let _ = &self.fd;
     }
 }
 
