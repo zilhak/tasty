@@ -452,6 +452,9 @@ impl Plugin for SearchPlugin {
   상태를 보관할 때는 `instance_id`를 키로 쓴다.
 - `popup.event` 응답의 `close=true`는 plugin이 능동 close를 요청하는 신호.
   호스트는 인스턴스를 즉시 제거하고 `popup.closed`를 `PluginRequest` 사유로 보낸다.
+- 비동기로 close하고 싶으면 host IPC `popup.close`를 호출한다 (`ui.popup` 권한 필요):
+  `host.call("popup.close", json!({"instance_id": id}))`. 자기 plugin이 소유한
+  인스턴스만 닫을 수 있다 (다른 plugin의 instance_id를 넘기면 에러).
 - `popup.open` 응답의 `tree=None`은 "아직 그릴 트리 없음" 의미 (호스트는 인스턴스를
   계속 추적, 다음 event 응답에서 tree를 세팅 가능).
 

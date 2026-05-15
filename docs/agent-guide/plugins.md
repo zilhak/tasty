@@ -77,14 +77,18 @@ trigger = { kind = "ipc" }          # plugin이 host IPC `popup.open`으로 명�
   발화되면 호스트가 자동으로 popup 인스턴스를 만든다. envelope payload가
   popup.open IPC의 `context`로 전달된다.
 - `trigger.kind = "ipc"`: plugin이 직접 host IPC를 호출해 popup을 연다 (현재는
-  debug IPC 경로만 노출 — production용 host method는 PR 6 이후 도입 예정).
+  debug IPC 경로만 production-노출. 도구 메뉴 액션이나 자기 event 발화로 우회
+  가능 — 아래 참고).
 - `[[contributes.tool]] action = { kind = "open_popup", popup_id = "<plugin_id>/<id>" }`
   로 도구 메뉴 항목에서 popup을 띄울 수도 있다.
 
 호스트는 popup마다 `instance_id`(u64)를 발급해 동일 popup_id의 여러 인스턴스를
-구분하며, plugin이 `popup.event` 응답에 `close=true`를 실으면 호스트가 자동으로
-인스턴스를 닫는다. release 빌드에서 사용 가능한 host IPC `popup.close`는 PR 6
-이후 노출된다.
+구분한다. 인스턴스를 닫는 방법:
+
+- plugin이 `popup.event` 응답에 `close=true`를 실으면 호스트가 자동으로 close.
+- plugin이 host IPC `popup.close`(`{"instance_id": <id>}`, `ui.popup` 권한)를 호출하면
+  `PluginRequest` 사유로 close. 자기 plugin이 소유한 인스턴스만 닫을 수 있다.
+- 사용자가 popup 바깥을 클릭(`dismiss_on_outside_click=true`) 또는 Escape.
 
 ### contribute가 0개인 plugin
 

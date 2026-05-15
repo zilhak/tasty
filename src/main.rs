@@ -1495,6 +1495,59 @@ impl App {
                 }
                 continue;
             }
+            // popup.close 인터셉트 — PluginManager가 App에 있어 일반 라우터로 도달 불가.
+            // ensure_allowed로 method_meta 권한 게이트(ui.popup)를 통과한 뒤,
+            // instance_id가 호출자 plugin 소유인지 확인하고 PluginRequest 사유로 close.
+            if call.method == "popup.close" {
+                let caller = ipc::caller::CallerContext::Plugin {
+                    plugin_id: call.plugin_id.clone(),
+                    permissions: call.permissions.clone(),
+                };
+                let (result, error) = match caller.ensure_allowed(&call.method) {
+                    Err(e) => (None, Some(e.to_string())),
+                    Ok(()) => {
+                        let instance_id = call.params.get("instance_id").and_then(|v| v.as_u64());
+                        match instance_id {
+                            None => (
+                                None,
+                                Some("popup.close: missing 'instance_id'".to_string()),
+                            ),
+                            Some(id) => {
+                                let mgr = self.plugin_manager.as_mut();
+                                let owns = mgr
+                                    .as_ref()
+                                    .and_then(|m| {
+                                        m.popup_instances()
+                                            .find(|(iid, _)| *iid == id)
+                                            .map(|(_, inst)| inst.plugin_id == call.plugin_id)
+                                    })
+                                    .unwrap_or(false);
+                                if !owns {
+                                    (
+                                        None,
+                                        Some(format!(
+                                            "popup.close: instance {id} not owned by plugin '{}'",
+                                            call.plugin_id
+                                        )),
+                                    )
+                                } else if let Some(m) = mgr {
+                                    m.close_popup_instance(
+                                        id,
+                                        tasty_plugin_protocol::PopupCloseReason::PluginRequest,
+                                    );
+                                    (Some(serde_json::Value::Object(Default::default())), None)
+                                } else {
+                                    (None, Some("popup.close: plugin manager unavailable".into()))
+                                }
+                            }
+                        }
+                    }
+                };
+                if let Some(mgr) = self.plugin_manager.as_mut() {
+                    mgr.send_ipc_result(&call.plugin_id, call.call_id, result, error);
+                }
+                continue;
+            }
             // namespace forward 경로: 메서드가 다른 plugin의 prefix에 매칭되면
             // 검증/forward를 plugin_manager에 위임한다. 응답은 비동기.
             //

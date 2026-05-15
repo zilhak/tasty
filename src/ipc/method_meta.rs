@@ -113,6 +113,11 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // ── notification ──────────────────────────────────────────────
         ("notification.list", plugin(&[Notification])),
         ("notification.create", plugin(&[Notification])),
+        // ── popup (plugin → host) ─────────────────────────────────────
+        // 자기 contribute popup 인스턴스를 명시적으로 닫는다. METHOD_POPUP_CLOSED
+        // (host → plugin)와는 다른 방향. plugin은 자기 instance_id만 닫을 수 있다 —
+        // 다른 plugin의 인스턴스 close 요청은 만들어진 응답에서 거부.
+        ("popup.close", plugin(&[UiPopup])),
         // ── input source (macOS) ──────────────────────────────────────
         ("surface.switch_input_source", plugin(&[TerminalWrite])),
         ("surface.raw_key", plugin(&[TerminalWrite])),
