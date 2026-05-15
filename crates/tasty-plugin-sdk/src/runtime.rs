@@ -435,6 +435,25 @@ pub(crate) fn dispatch<P: Plugin>(
                 Err(err) => Err(DispatchError::with_code(err.message, err.code)),
             }
         }
+        tasty_plugin_protocol::METHOD_EXTENSION_INVOKE_HOOK => {
+            let parsed: tasty_plugin_protocol::ExtensionHookInvokeParams =
+                serde_json::from_value(params.clone()).map_err(|e| {
+                    DispatchError::with_code(
+                        format!("invalid extension.invoke_hook params: {e}"),
+                        -32602,
+                    )
+                })?;
+            let outcome = plugin.handle_extension_hook(crate::plugin::ExtensionHookCtx {
+                kind: parsed.kind,
+                phase: parsed.phase,
+                mode: parsed.mode,
+                target: parsed.target,
+                payload: parsed.payload,
+                host: host.clone(),
+            });
+            serde_json::to_value(outcome.into_proto())
+                .map_err(|e| DispatchError::from_anyhow(e.into()))
+        }
         METHOD_EVENT_DISPATCH => {
             let parsed: EventDispatchParams = serde_json::from_value(params.clone())
                 .map_err(|e| {
@@ -655,6 +674,154 @@ mod tests {
         fn on_start(&mut self, _host: HostHandle, _bus: crate::bus::BusHandle) {
             *self.called.lock().unwrap() += 1;
         }
+    }
+
+    struct ExtensionStubPlugin {
+        last_ctx: Arc<Mutex<Option<(
+            tasty_plugin_protocol::ExtensionHookKind,
+            tasty_plugin_protocol::ExtensionHookPhase,
+            tasty_plugin_protocol::ExtensionHookMode,
+            String,
+            Value,
+        )>>>,
+        outcome: crate::plugin::ExtensionHookOutcome,
+    }
+    impl Plugin for ExtensionStubPlugin {
+        fn id(&self) -> &str {
+            "test.extension"
+        }
+        fn create_surface(&mut self, _ctx: SurfaceCreateCtx) -> SurfaceResult {
+            SurfaceResult {
+                tree: None,
+                display_name: None,
+            }
+        }
+        fn handle_event(&mut self, _ctx: SurfaceEventCtx) -> SurfaceResult {
+            SurfaceResult {
+                tree: None,
+                display_name: None,
+            }
+        }
+        fn handle_extension_hook(
+            &mut self,
+            ctx: crate::plugin::ExtensionHookCtx,
+        ) -> crate::plugin::ExtensionHookOutcome {
+            *self.last_ctx.lock().unwrap() =
+                Some((ctx.kind, ctx.phase, ctx.mode, ctx.target, ctx.payload));
+            self.outcome.clone()
+        }
+    }
+
+    #[test]
+    fn extension_invoke_hook_transform_returns_modified_payload() {
+        let last = Arc::new(Mutex::new(None));
+        let mut plugin = ExtensionStubPlugin {
+            last_ctx: last.clone(),
+            outcome: crate::plugin::ExtensionHookOutcome::transformed(json!({"x": 99})),
+        };
+        let host = dummy_host();
+        let params = json!({
+            "kind": "ipc",
+            "phase": "pre",
+            "mode": "transform",
+            "target": "com.target/method.foo",
+            "payload": {"x": 1},
+        });
+        let resp = build_response(
+            21,
+            dispatch(
+                &mut plugin,
+                tasty_plugin_protocol::METHOD_EXTENSION_INVOKE_HOOK,
+                &params,
+                &host,
+            ),
+        );
+        assert_eq!(resp.id, 21);
+        assert!(resp.error.is_none());
+        let result = resp.result.expect("result present");
+        assert_eq!(
+            result.get("modified_payload"),
+            Some(&json!({"x": 99}))
+        );
+        assert!(result.get("pass").is_none() || result.get("pass") == Some(&Value::Null));
+
+        let (kind, phase, mode, target, payload) = last.lock().unwrap().clone().unwrap();
+        assert_eq!(kind, tasty_plugin_protocol::ExtensionHookKind::Ipc);
+        assert_eq!(phase, tasty_plugin_protocol::ExtensionHookPhase::Pre);
+        assert_eq!(mode, tasty_plugin_protocol::ExtensionHookMode::Transform);
+        assert_eq!(target, "com.target/method.foo");
+        assert_eq!(payload, json!({"x": 1}));
+    }
+
+    #[test]
+    fn extension_invoke_hook_filter_block_returns_pass_false() {
+        let last = Arc::new(Mutex::new(None));
+        let mut plugin = ExtensionStubPlugin {
+            last_ctx: last.clone(),
+            outcome: crate::plugin::ExtensionHookOutcome::block(),
+        };
+        let host = dummy_host();
+        let params = json!({
+            "kind": "event",
+            "phase": "pre",
+            "mode": "filter",
+            "target": "com.target/event.bar",
+            "payload": {},
+        });
+        let resp = build_response(
+            22,
+            dispatch(
+                &mut plugin,
+                tasty_plugin_protocol::METHOD_EXTENSION_INVOKE_HOOK,
+                &params,
+                &host,
+            ),
+        );
+        let result = resp.result.expect("result present");
+        assert_eq!(result.get("pass"), Some(&Value::Bool(false)));
+    }
+
+    #[test]
+    fn extension_invoke_hook_default_impl_returns_pass() {
+        let mut plugin = DefaultPlugin;
+        let host = dummy_host();
+        let params = json!({
+            "kind": "ipc",
+            "phase": "post",
+            "mode": "observe",
+            "target": "com.target/method.foo",
+            "payload": {},
+        });
+        let resp = build_response(
+            23,
+            dispatch(
+                &mut plugin,
+                tasty_plugin_protocol::METHOD_EXTENSION_INVOKE_HOOK,
+                &params,
+                &host,
+            ),
+        );
+        assert!(resp.error.is_none());
+        let result = resp.result.expect("result present");
+        // pass() = default Outcome → both fields skipped from serialization.
+        assert!(result.as_object().unwrap().is_empty());
+    }
+
+    #[test]
+    fn extension_invoke_hook_invalid_params_returns_minus_32602() {
+        let mut plugin = DefaultPlugin;
+        let host = dummy_host();
+        let params = json!({"kind": "ipc"}); // missing required fields
+        let resp = build_response(
+            24,
+            dispatch(
+                &mut plugin,
+                tasty_plugin_protocol::METHOD_EXTENSION_INVOKE_HOOK,
+                &params,
+                &host,
+            ),
+        );
+        assert_eq!(resp.error_code, Some(-32602));
     }
 
     /// worker_loop이 dispatch 전에 on_start를 정확히 1회 호출해야 한다.

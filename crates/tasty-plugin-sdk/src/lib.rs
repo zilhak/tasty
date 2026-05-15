@@ -21,8 +21,9 @@ pub use shared_buffer::SharedBuffer;
 #[allow(deprecated)]
 pub use host::HostCallError;
 pub use plugin::{
-    CommandInvokeCtx, EventDispatchCtx, IpcMethodCtx, IpcMethodError, Plugin, SurfaceCreateCtx,
-    SurfaceEventCtx, SurfaceRestoreCtx, SurfaceResult, SurfaceSnapshotCtx,
+    CommandInvokeCtx, EventDispatchCtx, ExtensionHookCtx, ExtensionHookOutcome, IpcMethodCtx,
+    IpcMethodError, Plugin, SurfaceCreateCtx, SurfaceEventCtx, SurfaceRestoreCtx, SurfaceResult,
+    SurfaceSnapshotCtx,
 };
 pub use runtime::run;
 
@@ -32,6 +33,6 @@ pub use tasty_plugin_protocol::ui_tree::{
     ButtonStyle, LabelStyle, SelectionMode, SplitDir, TreeNode, UiEvent, UiNode,
 };
 pub use tasty_plugin_protocol::{
-    EventEnvelope, EventMeta, EventOrigin, EventScope, LifecycleReason, PluginEvent, Rect,
-    SharedBufferId,
+    EventEnvelope, EventMeta, EventOrigin, EventScope, ExtensionHookKind, ExtensionHookMode,
+    ExtensionHookPhase, LifecycleReason, PluginEvent, Rect, SharedBufferId,
 };

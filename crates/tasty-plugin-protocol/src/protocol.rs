@@ -31,6 +31,10 @@ pub const METHOD_EVENT_DISPATCH: &str = "event.dispatch";
 /// 변경 결과는 `surface.event`와 동일하게 `SurfaceResult` 형태로 응답한다 (tree
 /// 또는 display_name 갱신).
 pub const METHOD_COMMAND_INVOKE: &str = "command.invoke";
+/// host → extension plugin: extension의 pre/post hook 호출.
+/// params에 [`ExtensionHookInvokeParams`]. plugin은 mode에 따라 transform/filter/observe
+/// 의미로 [`ExtensionHookResult`]를 반환한다 (PluginResponse.result).
+pub const METHOD_EXTENSION_INVOKE_HOOK: &str = "extension.invoke_hook";
 
 /// `surface.create` / `surface.event` / `surface.restore` 응답에 포함되는 standard 결과.
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -54,6 +58,63 @@ pub struct SurfaceEventParams<'a> {
 pub struct CommandInvokeParams {
     pub surface_id: u32,
     pub command_id: String,
+}
+
+/// hook 호출이 이벤트인지 IPC인지 구분.
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ExtensionHookKind {
+    Event,
+    Ipc,
+}
+
+/// hook이 pre인지 post인지.
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ExtensionHookPhase {
+    Pre,
+    Post,
+}
+
+/// hook의 동작 모드. host는 mode에 따라 plugin 응답을 다르게 해석한다.
+/// 매니페스트의 `HookMode`와 1:1 대응.
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ExtensionHookMode {
+    Transform,
+    Filter,
+    Observe,
+}
+
+/// `extension.invoke_hook` params — host가 extension plugin에 hook 호출을 위임.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ExtensionHookInvokeParams {
+    /// hook 종류 (event/ipc).
+    pub kind: ExtensionHookKind,
+    pub phase: ExtensionHookPhase,
+    pub mode: ExtensionHookMode,
+    /// 매칭된 hook의 대상. `kind=event`면 event key, `kind=ipc`면 IPC method 이름.
+    pub target: String,
+    /// hook이 가공할 페이로드.
+    /// - `kind=event`: envelope.payload
+    /// - `kind=ipc, phase=pre`: 호출 params
+    /// - `kind=ipc, phase=post`: 응답 result
+    pub payload: serde_json::Value,
+}
+
+/// `extension.invoke_hook` 응답. mode별 의미:
+///
+/// - **transform**: `modified_payload`가 Some이면 host가 그 값으로 덮어쓴다.
+///   None이면 원본 유지.
+/// - **filter**: `pass`가 Some(false)면 host는 흐름을 차단한다.
+///   None 또는 Some(true)면 통과. `modified_payload`는 무시.
+/// - **observe**: 모든 필드 무시. plugin이 단순 관찰만 한 결과.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct ExtensionHookResult {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub modified_payload: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pass: Option<bool>,
 }
 
 // ── Shared buffer 메서드 (plugin → host via PluginEvent::IpcCall) ──

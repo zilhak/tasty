@@ -65,6 +65,75 @@ pub struct CommandInvokeCtx {
     pub command_id: String,
 }
 
+/// `extension.invoke_hook` 컨텍스트. extension plugin이 hook 호출을 받았을 때.
+#[derive(Clone)]
+pub struct ExtensionHookCtx {
+    /// event(이벤트 발화 가로채기) / ipc(IPC 호출 가로채기).
+    pub kind: tasty_plugin_protocol::ExtensionHookKind,
+    /// pre(흐름 시작 전) / post(흐름 종료 후).
+    pub phase: tasty_plugin_protocol::ExtensionHookPhase,
+    /// transform(payload 수정) / filter(차단 결정) / observe(관찰).
+    pub mode: tasty_plugin_protocol::ExtensionHookMode,
+    /// 매칭된 hook의 대상 — event key 또는 IPC method.
+    pub target: String,
+    /// 가공/관찰 대상 payload (envelope.payload, IPC params, IPC result 중 하나).
+    pub payload: Value,
+    pub host: HostHandle,
+}
+
+impl std::fmt::Debug for ExtensionHookCtx {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ExtensionHookCtx")
+            .field("kind", &self.kind)
+            .field("phase", &self.phase)
+            .field("mode", &self.mode)
+            .field("target", &self.target)
+            .field("payload", &self.payload)
+            .field("host", &"HostHandle { .. }")
+            .finish()
+    }
+}
+
+/// extension hook의 응답. host에 `ExtensionHookResult`로 직렬화되어 전달된다.
+///
+/// 헬퍼 생성자(`Self::pass`, `Self::block`, `Self::transformed`, `Self::observed`)를
+/// 사용하면 mode와 의미가 맞지 않는 잘못된 조합을 피하기 쉽다.
+#[derive(Debug, Clone, Default)]
+pub struct ExtensionHookOutcome {
+    pub modified_payload: Option<Value>,
+    pub pass: Option<bool>,
+}
+
+impl ExtensionHookOutcome {
+    /// observe / filter pass / transform no-op 모두에 사용할 수 있는 "그대로 통과" 결과.
+    pub fn pass() -> Self {
+        Self::default()
+    }
+
+    /// filter mode에서 흐름을 차단.
+    pub fn block() -> Self {
+        Self {
+            pass: Some(false),
+            modified_payload: None,
+        }
+    }
+
+    /// transform mode에서 payload를 새 값으로 교체.
+    pub fn transformed(payload: Value) -> Self {
+        Self {
+            pass: None,
+            modified_payload: Some(payload),
+        }
+    }
+
+    pub(crate) fn into_proto(self) -> tasty_plugin_protocol::ExtensionHookResult {
+        tasty_plugin_protocol::ExtensionHookResult {
+            modified_payload: self.modified_payload,
+            pass: self.pass,
+        }
+    }
+}
+
 /// 매니페스트 `[[contributes.ipc_namespace]]`로 점유한 prefix의 메서드가
 /// IPC 라우터로부터 forward됐을 때 plugin에 전달되는 컨텍스트.
 #[derive(Clone)]
@@ -206,6 +275,22 @@ pub trait Plugin: Send + 'static {
     /// 기본 구현은 no-op.
     fn on_event(&mut self, ctx: EventDispatchCtx) {
         let _ = ctx;
+    }
+
+    /// `extension.invoke_hook` — 이 plugin이 다른 plugin(target)의 IPC 또는 이벤트
+    /// 흐름을 가로채는 extension일 때, host가 매니페스트 `[[extends.*]]` 항목에 매칭되는
+    /// 시점에 호출한다.
+    ///
+    /// 반환값은 [`ExtensionHookOutcome`]. mode에 맞는 헬퍼를 사용하면 안전:
+    /// - `transform` → `ExtensionHookOutcome::transformed(new_payload)` 또는 `pass()`
+    /// - `filter` → `block()` 또는 `pass()`
+    /// - `observe` → `pass()` (반환값은 호스트가 무시)
+    ///
+    /// 기본 구현은 `pass()` — extension이 아니거나 hook을 처리하지 않는 plugin은
+    /// 안전하게 통과시킨다.
+    fn handle_extension_hook(&mut self, ctx: ExtensionHookCtx) -> ExtensionHookOutcome {
+        let _ = ctx;
+        ExtensionHookOutcome::pass()
     }
 
     /// Plugin 부트스트랩이 끝나고 worker가 첫 dispatch에 들어가기 직전 1회 호출.
