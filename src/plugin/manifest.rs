@@ -134,6 +134,10 @@ pub enum Permission {
     /// `[[contributes.tool]]` 항목을 선언한 plugin은 매니페스트의 `permissions`에 반드시
     /// 이 토큰을 포함해야 한다.
     UiToolItem,
+    /// Popup contribute 권한. 토큰 `ui.popup`.
+    /// `[[contributes.popup]]` 항목을 선언한 plugin은 매니페스트의 `permissions`에
+    /// 반드시 이 토큰을 포함해야 한다.
+    UiPopup,
 }
 
 impl Permission {
@@ -152,6 +156,7 @@ impl Permission {
             "terminal.read" => Self::TerminalRead,
             "network" => Self::Network,
             "ui.tool_item" => Self::UiToolItem,
+            "ui.popup" => Self::UiPopup,
             other => {
                 if let Some(prefix) = other.strip_prefix("ipc.invoke:") {
                     if !is_valid_ipc_prefix(prefix) || is_reserved_ipc_prefix(prefix) {
@@ -189,6 +194,7 @@ impl Permission {
             Self::IpcInvoke(prefix) => format!("ipc.invoke:{prefix}"),
             Self::Extension(target) => format!("ext:{target}"),
             Self::UiToolItem => "ui.tool_item".into(),
+            Self::UiPopup => "ui.popup".into(),
         }
     }
 }
@@ -325,6 +331,65 @@ pub struct Contributes {
     /// surface 열기, popup 열기) 발생. 항목당 `[[contributes.tool]]` 한 블록.
     #[serde(default)]
     pub tool: Vec<ToolContribute>,
+    /// Plugin이 띄울 수 있는 popup 정의. trigger 종류에 따라 자동으로 열리거나
+    /// 명시적인 IPC 호출로 열린다.
+    #[serde(default)]
+    pub popup: Vec<PopupContribute>,
+}
+
+/// Plugin이 contribute하는 popup의 정의.
+///
+/// - `id`: plugin 내 고유 (소문자+숫자+`-`, 글자로 시작, 길이 ≤ 64).
+///   호스트는 `<plugin_id>/<popup_id>`로 전역 식별.
+/// - `trigger`: 어떤 조건으로 popup을 여는지. `event` 또는 `ipc`.
+/// - `size_hint`: 옵션. 호스트가 LogicalPx 단위로 popup 크기에 적용.
+/// - `anchor`: 옵션. 위치 정책. 기본 `screen-center`.
+/// - `dismiss_on_outside_click`: 옵션. 기본 true.
+#[derive(Debug, Clone, Deserialize)]
+pub struct PopupContribute {
+    pub id: String,
+    pub trigger: PopupTrigger,
+    #[serde(default)]
+    pub size_hint: Option<PopupSizeHint>,
+    #[serde(default = "default_popup_anchor")]
+    pub anchor: PopupAnchor,
+    #[serde(default = "default_dismiss_on_outside_click")]
+    pub dismiss_on_outside_click: bool,
+}
+
+fn default_dismiss_on_outside_click() -> bool {
+    true
+}
+
+fn default_popup_anchor() -> PopupAnchor {
+    PopupAnchor::ScreenCenter
+}
+
+/// popup이 열리는 조건.
+///
+/// - `event`: 매니페스트에 적힌 이벤트가 발화하면 자동으로 열림. plugin은 같은 키를
+///   `event_subscribe` 또는 `event_publish`로 매니페스트에 노출해야 한다 (자기 plugin이
+///   발화한 이벤트로 자기 popup을 여는 흐름이 일반적).
+/// - `ipc`: plugin이 host IPC `popup.open`을 호출해 명시적으로 연다.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum PopupTrigger {
+    Event { event_key: String },
+    Ipc,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+pub struct PopupSizeHint {
+    pub width: u32,
+    pub height: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum PopupAnchor {
+    ScreenCenter,
+    ActiveSurfaceCenter,
+    Cursor,
 }
 
 /// 사이드바 도구 메뉴 항목. plugin이 자기 동작을 사용자 진입점으로 노출하는 방식.
@@ -918,6 +983,66 @@ impl Manifest {
                                 tool.id
                             );
                         }
+                    }
+                }
+            }
+        }
+
+        // [[contributes.popup]] 검증.
+        if !self.contributes.popup.is_empty() {
+            if !self.permissions.iter().any(|p| p == "ui.popup") {
+                anyhow::bail!(
+                    "[[contributes.popup]] requires permission 'ui.popup' to be declared in manifest permissions[]"
+                );
+            }
+            let mut seen_popup_ids = HashSet::new();
+            for popup in &self.contributes.popup {
+                if !is_valid_tool_id(&popup.id) {
+                    anyhow::bail!(
+                        "invalid contributes.popup id '{}': must be lowercase ascii + digits + '-', \
+                         start with a letter, length ≤ 64",
+                        popup.id
+                    );
+                }
+                if !seen_popup_ids.insert(popup.id.clone()) {
+                    anyhow::bail!(
+                        "contributes.popup id '{}' declared twice in this manifest",
+                        popup.id
+                    );
+                }
+                if let PopupTrigger::Event { event_key } = &popup.trigger
+                    && !is_valid_event_key(event_key)
+                {
+                    anyhow::bail!(
+                        "contributes.popup '{}': trigger.event_key '{}' must be a concrete event key",
+                        popup.id,
+                        event_key
+                    );
+                }
+                if let Some(sz) = &popup.size_hint
+                    && (sz.width == 0 || sz.height == 0)
+                {
+                    anyhow::bail!(
+                        "contributes.popup '{}': size_hint width/height must be > 0",
+                        popup.id
+                    );
+                }
+            }
+
+            // [[contributes.tool]] action.open_popup이 이 plugin의 popup id를 가리킬 때
+            // 해당 id가 실제로 존재해야 한다.
+            let popup_ids: HashSet<&str> =
+                self.contributes.popup.iter().map(|p| p.id.as_str()).collect();
+            for tool in &self.contributes.tool {
+                if let ToolAction::OpenPopup { popup_id } = &tool.action {
+                    if let Some(local_id) = popup_id.strip_prefix(&format!("{}/", self.id))
+                        && !popup_ids.contains(local_id)
+                    {
+                        anyhow::bail!(
+                            "contributes.tool '{}': action.popup_id '{}' references unknown popup in this plugin",
+                            tool.id,
+                            popup_id
+                        );
                     }
                 }
             }
@@ -2456,6 +2581,124 @@ mod tests {
             Some(Permission::UiToolItem)
         );
         assert_eq!(Permission::UiToolItem.as_token(), "ui.tool_item");
+    }
+
+    #[test]
+    fn ui_popup_permission_token_parses() {
+        assert_eq!(
+            Permission::from_token("ui.popup"),
+            Some(Permission::UiPopup)
+        );
+        assert_eq!(Permission::UiPopup.as_token(), "ui.popup");
+    }
+
+    fn popup_skeleton(extra: &str) -> String {
+        format!(
+            r#"
+            manifest_version = 1
+            id = "com.example.popper"
+            name = "Popper"
+            version = "0.1.0"
+            api_version = "1"
+            permissions = ["ui.popup"]
+            event_publish = ["com.example.popper.search_requested"]
+            [entry]
+            type = "process"
+            command = "popper"
+            [contributes]
+            {extra}
+            "#,
+        )
+    }
+
+    #[test]
+    fn popup_event_trigger_parses_with_defaults() {
+        let s = popup_skeleton(
+            r#"
+                [[contributes.popup]]
+                id = "search"
+                trigger = { kind = "event", event_key = "com.example.popper.search_requested" }
+            "#,
+        );
+        let m = parse(&s).expect("popup with event trigger should parse");
+        assert_eq!(m.contributes.popup.len(), 1);
+        let p = &m.contributes.popup[0];
+        assert_eq!(p.id, "search");
+        match &p.trigger {
+            PopupTrigger::Event { event_key } => {
+                assert_eq!(event_key, "com.example.popper.search_requested")
+            }
+            other => panic!("expected event trigger, got {other:?}"),
+        }
+        assert_eq!(p.anchor, PopupAnchor::ScreenCenter);
+        assert!(p.dismiss_on_outside_click);
+        assert!(p.size_hint.is_none());
+    }
+
+    #[test]
+    fn popup_ipc_trigger_with_size_and_anchor() {
+        let s = popup_skeleton(
+            r#"
+                [[contributes.popup]]
+                id = "panel"
+                trigger = { kind = "ipc" }
+                size_hint = { width = 480, height = 360 }
+                anchor = "cursor"
+                dismiss_on_outside_click = false
+            "#,
+        );
+        let m = parse(&s).expect("popup with ipc trigger should parse");
+        let p = &m.contributes.popup[0];
+        assert!(matches!(p.trigger, PopupTrigger::Ipc));
+        assert_eq!(p.anchor, PopupAnchor::Cursor);
+        assert!(!p.dismiss_on_outside_click);
+        let sz = p.size_hint.expect("size_hint set");
+        assert_eq!(sz.width, 480);
+        assert_eq!(sz.height, 360);
+    }
+
+    #[test]
+    fn popup_requires_ui_popup_permission() {
+        let s = popup_skeleton(
+            r#"
+                [[contributes.popup]]
+                id = "search"
+                trigger = { kind = "ipc" }
+            "#,
+        )
+        .replace("permissions = [\"ui.popup\"]", "permissions = []");
+        let err = parse(&s).unwrap_err().to_string();
+        assert!(err.contains("ui.popup"), "got: {err}");
+    }
+
+    #[test]
+    fn popup_id_must_be_unique() {
+        let s = popup_skeleton(
+            r#"
+                [[contributes.popup]]
+                id = "dup"
+                trigger = { kind = "ipc" }
+                [[contributes.popup]]
+                id = "dup"
+                trigger = { kind = "ipc" }
+            "#,
+        );
+        let err = parse(&s).unwrap_err().to_string();
+        assert!(err.contains("declared twice"), "got: {err}");
+    }
+
+    #[test]
+    fn popup_size_hint_zero_rejected() {
+        let s = popup_skeleton(
+            r#"
+                [[contributes.popup]]
+                id = "search"
+                trigger = { kind = "ipc" }
+                size_hint = { width = 0, height = 360 }
+            "#,
+        );
+        let err = parse(&s).unwrap_err().to_string();
+        assert!(err.contains("size_hint"), "got: {err}");
     }
 
     #[test]
