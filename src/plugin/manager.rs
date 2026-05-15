@@ -2356,6 +2356,40 @@ impl PluginManager {
         self.log_dir.join(format!("{plugin_id}.log"))
     }
 
+    /// 현재 활성(=설치됨 + 비활성 아님 + `ui.tool_item` 권한 grant)인 plugin들의
+    /// `[[contributes.tool]]` 항목을 `ToolItem` 목록으로 수집한다.
+    ///
+    /// 호스트는 plugin 라이프사이클이 바뀔 때(init/enable/disable/install/remove)
+    /// 이 메서드를 호출해 결과를 `AppState::tool_registry`에 set해야 한다.
+    pub fn plugin_tool_items(&self) -> Vec<super::tool_registry::ToolItem> {
+        use super::tool_registry::{ToolItem, ToolSource};
+        let mut out = Vec::new();
+        for pkg in &self.packages {
+            if self.config.is_disabled(&pkg.manifest.id) {
+                continue;
+            }
+            // ui.tool_item 권한이 grant되어야 메뉴에 노출.
+            let granted = self.config.granted_permissions(&pkg.manifest.id);
+            if !granted.contains(&"ui.tool_item".to_string()) {
+                continue;
+            }
+            for tool in &pkg.manifest.contributes.tool {
+                out.push(ToolItem {
+                    source: ToolSource::Plugin {
+                        plugin_id: pkg.manifest.id.clone(),
+                        tool_id: tool.id.clone(),
+                    },
+                    key: format!("{}/{}", pkg.manifest.id, tool.id),
+                    label_i18n_key: tool.label_i18n_key.clone(),
+                    icon: tool.icon.clone(),
+                    action: tool.action.clone(),
+                    order_hint: tool.order_hint,
+                });
+            }
+        }
+        out
+    }
+
     /// 호스트 listener의 포트. 디버깅·테스트용.
     #[allow(dead_code)]
     pub fn listener_port(&self) -> Option<u16> {

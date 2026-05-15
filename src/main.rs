@@ -465,6 +465,7 @@ impl App {
             plugin::install_builtins_if_needed(&mut mgr);
             mgr.packages = plugin::discover();
             mgr.discover_and_start();
+            state.tool_registry.set_plugin_items(mgr.plugin_tool_items());
             self.plugin_manager = Some(mgr);
         }
 
@@ -907,6 +908,19 @@ impl App {
         tracing::info!("opened plugins modal {:?}", modal_window_id);
     }
 
+    /// PluginManager의 현재 `plugin_tool_items()`를 모든 MainWindow의 AppState로
+    /// 푸시한다. plugin 라이프사이클 변경 후(install/enable/disable/grant ui.tool_item
+    /// /revoke ui.tool_item/uninstall) 호출해야 사이드바 도구 메뉴가 갱신된다.
+    fn refresh_tool_registry(&mut self) {
+        let items = match self.plugin_manager.as_ref() {
+            Some(mgr) => mgr.plugin_tool_items(),
+            None => return,
+        };
+        for main in self.main_windows_iter_mut() {
+            main.state.tool_registry.set_plugin_items(items.clone());
+        }
+    }
+
     /// Drain pending actions from the plugins modal and apply them to the manager.
     /// Refreshes the modal's snapshot after applying.
     fn process_plugins_window_actions(&mut self) {
@@ -1013,6 +1027,11 @@ impl App {
             }
         }
 
+        // 모든 lifecycle action 이후 도구 메뉴를 갱신. install/enable/disable/grant/
+        // revoke/uninstall 어떤 경로든 ui.tool_item 권한 또는 plugin 활성 상태가
+        // 바뀌었을 수 있으므로 매번 다시 수집한다 (low-cost).
+        self.refresh_tool_registry();
+
         let snapshot = self.snapshot_plugins();
         if let Some(modal) = self.windows.get_mut(&modal_id) {
             if let Some(plugins_window) =
@@ -1104,6 +1123,7 @@ impl App {
         };
 
         let mut processed = false;
+        let mut tool_registry_dirty = false;
         while let Ok(cmd) = ipc.try_recv() {
             // App-level IPC methods (don't need focused window)
             #[cfg(debug_assertions)]
@@ -1223,6 +1243,20 @@ impl App {
                     ),
                     other => ipc::protocol::JsonRpcResponse::method_not_found(id, other),
                 };
+                // plugin 라이프사이클이 바뀌었을 수 있는 메서드만 도구 메뉴 재집계
+                // 표시. list/show/permissions/extension.list는 read-only이므로 skip.
+                // (실제 refresh는 IPC drain 루프 종료 후 — 루프 안에서는 ipc borrow가 살아있음)
+                if matches!(
+                    cmd.request.method.as_str(),
+                    "plugin.install"
+                        | "plugin.remove"
+                        | "plugin.enable"
+                        | "plugin.disable"
+                        | "plugin.grant"
+                        | "plugin.revoke"
+                ) {
+                    tool_registry_dirty = true;
+                }
                 let _ = cmd.response_tx.send(response);
                 processed = true;
                 continue;
@@ -1389,6 +1423,9 @@ impl App {
                 let _ = cmd.response_tx.send(response);
                 processed = true;
             }
+        }
+        if tool_registry_dirty {
+            self.refresh_tool_registry();
         }
         processed
     }

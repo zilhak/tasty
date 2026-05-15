@@ -22,6 +22,7 @@ pub mod protocol;
 pub mod registry_state;
 pub mod remote_kind;
 pub mod remote_surface;
+pub mod tool_registry;
 pub mod ui_tree;
 pub mod ui_tree_render;
 

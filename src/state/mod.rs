@@ -268,6 +268,11 @@ pub struct AppState {
     /// index, pending clear flag). `ClipboardViewerPanel` itself only holds `id`.
     /// 별개로 popup용 단일 인스턴스는 `dialogs.clipboard_viewer`에 있음.
     pub clipboard_viewer_views: crate::clipboard_viewer_ui::ClipboardViewerViewStore,
+
+    /// 사이드바 도구 메뉴 항목. 호스트 빌트인 + 활성 plugin의 `[[contributes.tool]]`
+    /// 항목을 합쳐 관리. PluginManager가 plugin 라이프사이클 변경 시
+    /// `set_plugin_items(mgr.plugin_tool_items())`로 갱신한다.
+    pub tool_registry: crate::plugin::tool_registry::ToolRegistry,
 }
 
 /// A pending native context menu request.
@@ -462,6 +467,7 @@ impl AppState {
             markdown_views: Default::default(),
             image_views: Default::default(),
             clipboard_viewer_views: Default::default(),
+            tool_registry: crate::plugin::tool_registry::ToolRegistry::with_builtins(),
         })
     }
 
