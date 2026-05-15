@@ -115,6 +115,13 @@ enum PendingRequestKind {
         post_hook_decl: IpcHookDecl,
         final_caller: FinalCaller,
     },
+    /// debug 빌드 한정 — `debug.extension.invoke_hook`이 보낸 hook 응답을 그대로
+    /// caller(local CLI)에 회신.
+    #[cfg(debug_assertions)]
+    DebugExtensionInvokeHook {
+        response_tx: mpsc::SyncSender<JsonRpcResponse>,
+        original_id: serde_json::Value,
+    },
     /// extension의 pre-event hook을 dispatch한 뒤 응답 대기. 응답이 오면
     /// (transform이면 envelope.payload 교체, filter면 fan-out 차단)
     /// event_bus.fan_out으로 진행. post_event가 있으면 함께 둔다.
@@ -1886,6 +1893,60 @@ impl PluginManager {
                     self.record_hook_success(&extension_plugin_id, &event_key);
                 }
                 // post-event는 결과를 무시 (이미 fan-out 완료).
+            }
+            #[cfg(debug_assertions)]
+            PendingRequestKind::DebugExtensionInvokeHook {
+                response_tx,
+                original_id,
+            } => {
+                let response = if let Some(err) = resp.error {
+                    let code = resp.error_code.unwrap_or(-32000);
+                    JsonRpcResponse::error(original_id, code, &err)
+                } else {
+                    JsonRpcResponse::success(
+                        original_id,
+                        resp.result.unwrap_or(serde_json::Value::Null),
+                    )
+                };
+                let _ = response_tx.send(response);
+            }
+        }
+    }
+
+    /// debug 빌드 한정 — extension에 직접 hook을 송신하고 응답을 caller에 회신.
+    /// 테스트 도구. 정상 트래픽(IPC/event)이 아니라 디버그 path.
+    #[cfg(debug_assertions)]
+    pub fn debug_invoke_extension_hook(
+        &mut self,
+        extension_id: &str,
+        kind: tasty_plugin_protocol::ExtensionHookKind,
+        phase: tasty_plugin_protocol::ExtensionHookPhase,
+        mode: HookMode,
+        target: &str,
+        payload: serde_json::Value,
+        original_id: serde_json::Value,
+        response_tx: mpsc::SyncSender<JsonRpcResponse>,
+    ) {
+        if !self.processes.contains_key(extension_id) {
+            let _ = response_tx.send(JsonRpcResponse::error(
+                original_id,
+                -32002,
+                &format!("extension '{extension_id}' is not running"),
+            ));
+            return;
+        }
+        match self.send_extension_invoke_hook(extension_id, kind, phase, mode, target, payload) {
+            Ok(req_id) => {
+                self.pending_requests.insert(
+                    req_id,
+                    PendingRequestKind::DebugExtensionInvokeHook {
+                        response_tx,
+                        original_id,
+                    },
+                );
+            }
+            Err(msg) => {
+                let _ = response_tx.send(JsonRpcResponse::error(original_id, -32003, &msg));
             }
         }
     }

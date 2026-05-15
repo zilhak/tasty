@@ -413,6 +413,38 @@ fn debug_command_to_method_params(command: &DebugCommands) -> (&'static str, ser
             ("surface.raw_key", serde_json::json!({ "keycode": keycode }))
         }
         DebugCommands::EventBus(sub) => event_bus_command_to_method_params(sub),
+        DebugCommands::Extension(sub) => extension_debug_command_to_method_params(sub),
+    }
+}
+
+#[cfg(debug_assertions)]
+fn extension_debug_command_to_method_params(
+    command: &crate::cli::ExtensionDebugCommands,
+) -> (&'static str, serde_json::Value) {
+    use crate::cli::ExtensionDebugCommands;
+    match command {
+        ExtensionDebugCommands::InvokeHook {
+            extension_id,
+            kind,
+            phase,
+            mode,
+            target,
+            payload,
+        } => {
+            let parsed_payload: serde_json::Value =
+                serde_json::from_str(payload).unwrap_or(serde_json::Value::Null);
+            (
+                "debug.extension.invoke_hook",
+                serde_json::json!({
+                    "extension_id": extension_id,
+                    "kind": kind,
+                    "phase": phase,
+                    "mode": mode,
+                    "target": target,
+                    "payload": parsed_payload,
+                }),
+            )
+        }
     }
 }
 
@@ -532,5 +564,10 @@ fn plugin_command_to_method_params(command: &PluginCommands) -> (&'static str, s
             "plugin.revoke",
             serde_json::json!({ "id": id, "permission": permission }),
         ),
+        PluginCommands::Extension { command } => match command {
+            crate::cli::ExtensionCommands::List => {
+                ("plugin.extension.list", serde_json::json!({}))
+            }
+        },
     }
 }

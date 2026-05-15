@@ -297,6 +297,92 @@ fn handle_debug_event_bus(
     }
 }
 
+/// debug 빌드 한정 — `debug.extension.invoke_hook` IPC.
+/// extension에 hook을 직접 fire하고 응답을 그대로 caller에 회신한다.
+/// 비동기: response_tx로 회신 (main loop의 handle_plugin_response가 처리).
+#[cfg(debug_assertions)]
+fn handle_debug_extension_invoke_hook(
+    mgr: Option<&mut plugin::PluginManager>,
+    params: &serde_json::Value,
+    id: serde_json::Value,
+    response_tx: std::sync::mpsc::SyncSender<ipc::protocol::JsonRpcResponse>,
+) {
+    use ipc::protocol::JsonRpcResponse;
+    let mgr = match mgr {
+        Some(m) => m,
+        None => {
+            let _ = response_tx.send(JsonRpcResponse::error(
+                id,
+                -32000,
+                "plugin manager not initialized",
+            ));
+            return;
+        }
+    };
+    let extension_id = match params.get("extension_id").and_then(|v| v.as_str()) {
+        Some(s) => s.to_string(),
+        None => {
+            let _ = response_tx.send(JsonRpcResponse::invalid_params(id, "missing 'extension_id'"));
+            return;
+        }
+    };
+    let kind = match params.get("kind").and_then(|v| v.as_str()) {
+        Some("event") => tasty_plugin_protocol::ExtensionHookKind::Event,
+        Some("ipc") => tasty_plugin_protocol::ExtensionHookKind::Ipc,
+        _ => {
+            let _ = response_tx.send(JsonRpcResponse::invalid_params(
+                id,
+                "missing/invalid 'kind' (expected 'event' or 'ipc')",
+            ));
+            return;
+        }
+    };
+    let phase = match params.get("phase").and_then(|v| v.as_str()) {
+        Some("pre") => tasty_plugin_protocol::ExtensionHookPhase::Pre,
+        Some("post") => tasty_plugin_protocol::ExtensionHookPhase::Post,
+        _ => {
+            let _ = response_tx.send(JsonRpcResponse::invalid_params(
+                id,
+                "missing/invalid 'phase' (expected 'pre' or 'post')",
+            ));
+            return;
+        }
+    };
+    let mode = match params.get("mode").and_then(|v| v.as_str()) {
+        Some("transform") => crate::plugin::manifest::HookMode::Transform,
+        Some("filter") => crate::plugin::manifest::HookMode::Filter,
+        Some("observe") => crate::plugin::manifest::HookMode::Observe,
+        _ => {
+            let _ = response_tx.send(JsonRpcResponse::invalid_params(
+                id,
+                "missing/invalid 'mode' (expected 'transform', 'filter', or 'observe')",
+            ));
+            return;
+        }
+    };
+    let target = match params.get("target").and_then(|v| v.as_str()) {
+        Some(s) => s.to_string(),
+        None => {
+            let _ = response_tx.send(JsonRpcResponse::invalid_params(id, "missing 'target'"));
+            return;
+        }
+    };
+    let payload = params
+        .get("payload")
+        .cloned()
+        .unwrap_or(serde_json::Value::Null);
+    mgr.debug_invoke_extension_hook(
+        &extension_id,
+        kind,
+        phase,
+        mode,
+        &target,
+        payload,
+        id,
+        response_tx,
+    );
+}
+
 impl App {
     fn new(
         proxy: EventLoopProxy<AppEvent>,
@@ -1094,6 +1180,12 @@ impl App {
                         id,
                         &cmd.request.params,
                     ),
+                    "plugin.extension.list" => {
+                        ipc::handler::plugin::handle_extension_list(
+                            self.plugin_manager.as_ref(),
+                            id,
+                        )
+                    }
                     "plugin.install" => ipc::handler::plugin::handle_install(
                         self.plugin_manager.as_mut(),
                         id,
@@ -1146,6 +1238,18 @@ impl App {
                     id,
                 );
                 let _ = cmd.response_tx.send(response);
+                processed = true;
+                continue;
+            }
+            #[cfg(debug_assertions)]
+            if cmd.request.method == "debug.extension.invoke_hook" {
+                let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
+                handle_debug_extension_invoke_hook(
+                    self.plugin_manager.as_mut(),
+                    &cmd.request.params,
+                    id,
+                    cmd.response_tx.clone(),
+                );
                 processed = true;
                 continue;
             }

@@ -119,6 +119,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // ── 호스트 자체 메서드 (plugin/window 관리) — local-only ──────
         ("plugin.list", local_only()),
         ("plugin.show", local_only()),
+        ("plugin.extension.list", local_only()),
         ("plugin.install", local_only()),
         ("plugin.remove", local_only()),
         ("plugin.enable", local_only()),
@@ -158,6 +159,7 @@ pub const DEBUG_METHODS: &[(&str, MethodMeta)] = &[
     ("debug.event_bus.list_subscribers", local_only()),
     ("debug.event_bus.publish", local_only()),
     ("debug.event_bus.trace", local_only()),
+    ("debug.extension.invoke_hook", local_only()),
 ];
 #[cfg(not(debug_assertions))]
 pub const DEBUG_METHODS: &[(&str, MethodMeta)] = &[];

@@ -222,6 +222,17 @@ pub enum PluginCommands {
         /// Permission token.
         permission: String,
     },
+    /// Inspect plugin extensions (extends-blocks).
+    Extension {
+        #[command(subcommand)]
+        command: ExtensionCommands,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum ExtensionCommands {
+    /// List all extensions and their current state.
+    List,
 }
 
 #[derive(Subcommand)]
@@ -653,6 +664,36 @@ pub enum DebugCommands {
     /// Event Bus inspection and injection (debug builds only)
     #[command(subcommand)]
     EventBus(EventBusCommands),
+    /// Extension hook inspection and manual invocation (debug builds only)
+    #[command(subcommand)]
+    Extension(ExtensionDebugCommands),
+}
+
+#[cfg(debug_assertions)]
+#[derive(Subcommand)]
+pub enum ExtensionDebugCommands {
+    /// Fire an extension hook manually (sends extension.invoke_hook to the
+    /// specified extension and returns the response).
+    InvokeHook {
+        /// Extension plugin id (must be installed and running).
+        #[arg(long)]
+        extension_id: String,
+        /// Hook kind: "event" or "ipc".
+        #[arg(long)]
+        kind: String,
+        /// Hook phase: "pre" or "post".
+        #[arg(long)]
+        phase: String,
+        /// Hook mode: "transform", "filter", or "observe".
+        #[arg(long)]
+        mode: String,
+        /// Target: event key (e.g. "foo.bar") or IPC method (e.g. "codex.spawn").
+        #[arg(long)]
+        target: String,
+        /// JSON payload to pass as the hook input (default: `{}`).
+        #[arg(long, default_value = "{}")]
+        payload: String,
+    },
 }
 
 #[cfg(debug_assertions)]

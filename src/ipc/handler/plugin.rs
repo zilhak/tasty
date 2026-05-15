@@ -210,6 +210,37 @@ pub fn handle_show(
     )
 }
 
+/// `plugin.extension.list` — 모든 extension의 현재 상태를 반환.
+/// `[extends]` 블록이 없는 plugin은 결과에 포함되지 않는다.
+pub fn handle_extension_list(mgr: Option<&PluginManager>, id: Value) -> JsonRpcResponse {
+    let mgr = match mgr {
+        Some(m) => m,
+        None => return JsonRpcResponse::error(id, -32000, "plugin manager not initialized"),
+    };
+    let mut entries: Vec<Value> = mgr
+        .extensions
+        .iter()
+        .map(|(ext_id, state)| {
+            let target_id = mgr
+                .packages
+                .iter()
+                .find(|p| p.manifest.id == ext_id)
+                .and_then(|p| p.manifest.extends.as_ref().map(|e| e.plugin_id.clone()));
+            json!({
+                "extension_id": ext_id,
+                "target_id": target_id,
+                "state": extension_state_to_json(state),
+            })
+        })
+        .collect();
+    entries.sort_by(|a, b| {
+        a.get("extension_id")
+            .and_then(|v| v.as_str())
+            .cmp(&b.get("extension_id").and_then(|v| v.as_str()))
+    });
+    JsonRpcResponse::success(id, json!({ "extensions": entries }))
+}
+
 fn extension_state_to_json(state: &crate::plugin::extension_registry::ExtensionState) -> Value {
     use crate::plugin::extension_registry::{ExtensionState, PendingReason};
     match state {
