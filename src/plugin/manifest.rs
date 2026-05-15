@@ -130,6 +130,10 @@ pub enum Permission {
     /// 매니페스트의 `[[extends.*]]` 항목으로 표현되며 별도 권한 grant는 받지 않는다 —
     /// 사용자 인지 부하를 낮추기 위해 target plugin 단위 단일 토큰만 노출.
     Extension(String),
+    /// 사이드바 도구 메뉴에 항목을 contribute할 수 있는 권한. 토큰 `ui.tool_item`.
+    /// `[[contributes.tool]]` 항목을 선언한 plugin은 매니페스트의 `permissions`에 반드시
+    /// 이 토큰을 포함해야 한다.
+    UiToolItem,
 }
 
 impl Permission {
@@ -147,6 +151,7 @@ impl Permission {
             "terminal.write" => Self::TerminalWrite,
             "terminal.read" => Self::TerminalRead,
             "network" => Self::Network,
+            "ui.tool_item" => Self::UiToolItem,
             other => {
                 if let Some(prefix) = other.strip_prefix("ipc.invoke:") {
                     if !is_valid_ipc_prefix(prefix) || is_reserved_ipc_prefix(prefix) {
@@ -183,6 +188,7 @@ impl Permission {
             Self::Network => "network".into(),
             Self::IpcInvoke(prefix) => format!("ipc.invoke:{prefix}"),
             Self::Extension(target) => format!("ext:{target}"),
+            Self::UiToolItem => "ui.tool_item".into(),
         }
     }
 }
@@ -315,6 +321,48 @@ pub struct Contributes {
     pub ipc_namespace: Vec<IpcNamespaceDecl>,
     #[serde(default)]
     pub cli: Vec<CliCommandDecl>,
+    /// 사이드바 "도구" 팝업에 표시될 항목. 클릭 시 plugin이 정의한 동작(event publish,
+    /// surface 열기, popup 열기) 발생. 항목당 `[[contributes.tool]]` 한 블록.
+    #[serde(default)]
+    pub tool: Vec<ToolContribute>,
+}
+
+/// 사이드바 도구 메뉴 항목. plugin이 자기 동작을 사용자 진입점으로 노출하는 방식.
+///
+/// - `id`: plugin 내 고유. 호스트는 `<plugin_id>/<tool_id>`로 전역 식별.
+/// - `label_i18n_key`: 라벨. `t()` 카탈로그에 키가 없으면 원본 문자열 fallback.
+/// - `icon`: 옵션. 아이콘 이름 (호스트 catalog 또는 plugin 패키지 내 SVG path).
+/// - `action`: 클릭 시 수행할 동작.
+/// - `order_hint`: 작을수록 위. 호스트 내장은 0..=99, plugin은 100 이상 권장. 기본 100.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ToolContribute {
+    pub id: String,
+    pub label_i18n_key: String,
+    #[serde(default)]
+    pub icon: Option<String>,
+    pub action: ToolAction,
+    #[serde(default = "default_tool_order_hint")]
+    pub order_hint: i32,
+}
+
+fn default_tool_order_hint() -> i32 {
+    100
+}
+
+/// `[[contributes.tool]]` 클릭 시 수행되는 동작.
+///
+/// - `event`: 호스트가 envelope를 `publish_from_host`로 발화. plugin이 자기 namespace의
+///   key를 subscribe하고 있으면 받음. payload는 `{ "tool_id": "<plugin_id>/<tool_id>" }`.
+/// - `open_surface`: 활성 tab에 해당 surface kind를 추가. plugin이 `[[surface_kinds]]`로
+///   선언한 kind만 허용.
+/// - `open_popup`: plugin이 contribute한 popup을 연다. (phase2-popup이 완성되기 전까지는
+///   호스트가 warn 로그를 남기고 무시.)
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ToolAction {
+    Event { event_key: String },
+    OpenSurface { surface_kind: String },
+    OpenPopup { popup_id: String },
 }
 
 /// Plugin이 점유할 IPC 메서드 namespace prefix.
@@ -808,6 +856,72 @@ impl Manifest {
                 }
             }
         }
+
+        // [[contributes.tool]] 검증.
+        if !self.contributes.tool.is_empty() {
+            if !self
+                .permissions
+                .iter()
+                .any(|p| p == "ui.tool_item")
+            {
+                anyhow::bail!(
+                    "[[contributes.tool]] requires permission 'ui.tool_item' to be declared in manifest permissions[]"
+                );
+            }
+            let mut seen_tool_ids = HashSet::new();
+            let surface_kinds: HashSet<&str> =
+                self.surface_kinds.iter().map(|k| k.kind.as_str()).collect();
+            for tool in &self.contributes.tool {
+                if !is_valid_tool_id(&tool.id) {
+                    anyhow::bail!(
+                        "invalid contributes.tool id '{}': must be lowercase ascii + digits + '-', \
+                         start with a letter, length ≤ 64",
+                        tool.id
+                    );
+                }
+                if !seen_tool_ids.insert(tool.id.clone()) {
+                    anyhow::bail!(
+                        "contributes.tool id '{}' declared twice in this manifest",
+                        tool.id
+                    );
+                }
+                if tool.label_i18n_key.is_empty() {
+                    anyhow::bail!(
+                        "contributes.tool '{}': label_i18n_key must not be empty",
+                        tool.id
+                    );
+                }
+                match &tool.action {
+                    ToolAction::Event { event_key } => {
+                        if !is_valid_event_key(event_key) {
+                            anyhow::bail!(
+                                "contributes.tool '{}': action.event_key '{}' must be a concrete event key",
+                                tool.id,
+                                event_key
+                            );
+                        }
+                    }
+                    ToolAction::OpenSurface { surface_kind } => {
+                        if !surface_kinds.contains(surface_kind.as_str()) {
+                            anyhow::bail!(
+                                "contributes.tool '{}': action.surface_kind '{}' is not declared in this plugin's [[surface_kinds]]",
+                                tool.id,
+                                surface_kind
+                            );
+                        }
+                    }
+                    ToolAction::OpenPopup { popup_id } => {
+                        // popup contribute는 phase2-popup에서 도입. 그 전까지 형식만 검사.
+                        if popup_id.is_empty() {
+                            anyhow::bail!(
+                                "contributes.tool '{}': action.popup_id must not be empty",
+                                tool.id
+                            );
+                        }
+                    }
+                }
+            }
+        }
         Ok(())
     }
 
@@ -921,6 +1035,18 @@ fn is_reserved_ipc_prefix(s: &str) -> bool {
 
 /// CLI 명령 이름 형식 검증.
 /// 소문자 ascii + 숫자 + `-`. 알파벳으로 시작. 길이 1..=32.
+fn is_valid_tool_id(s: &str) -> bool {
+    if s.is_empty() || s.len() > 64 {
+        return false;
+    }
+    let first = s.chars().next().unwrap();
+    if !first.is_ascii_lowercase() {
+        return false;
+    }
+    s.chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
 fn is_valid_cli_name(s: &str) -> bool {
     if s.is_empty() || s.len() > 32 {
         return false;
@@ -2230,6 +2356,106 @@ mod tests {
             Permission::Extension("com.x.y".into()).as_token(),
             "ext:com.x.y"
         );
+    }
+
+    fn tool_skeleton(extra: &str) -> String {
+        format!(
+            r#"
+            manifest_version = 1
+            id = "com.example.tooly"
+            name = "Tooly"
+            version = "0.1.0"
+            api_version = "1"
+            permissions = ["ui.tool_item"]
+            [entry]
+            type = "process"
+            command = "tooly"
+            [[surface_kinds]]
+            kind = "tooly_panel"
+            display_name_i18n_key = "tooly.surface"
+            [contributes]
+            {extra}
+            "#,
+        )
+    }
+
+    #[test]
+    fn tool_event_action_parses() {
+        let s = tool_skeleton(
+            r#"
+                [[contributes.tool]]
+                id = "open-search"
+                label_i18n_key = "tooly.tool.open_search"
+                action = { kind = "event", event_key = "tooly.search_requested" }
+            "#,
+        );
+        let m = parse(&s).expect("event tool should parse");
+        assert_eq!(m.contributes.tool.len(), 1);
+        match &m.contributes.tool[0].action {
+            ToolAction::Event { event_key } => assert_eq!(event_key, "tooly.search_requested"),
+            other => panic!("expected event action, got {other:?}"),
+        }
+        // 기본 order_hint = 100
+        assert_eq!(m.contributes.tool[0].order_hint, 100);
+    }
+
+    #[test]
+    fn tool_open_surface_must_reference_declared_kind() {
+        let s = tool_skeleton(
+            r#"
+                [[contributes.tool]]
+                id = "open-panel"
+                label_i18n_key = "tooly.tool.open_panel"
+                action = { kind = "open_surface", surface_kind = "not_declared" }
+            "#,
+        );
+        let err = parse(&s).unwrap_err().to_string();
+        assert!(
+            err.contains("not declared in this plugin's [[surface_kinds]]"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn tool_requires_ui_tool_item_permission() {
+        let s = tool_skeleton(
+            r#"
+                [[contributes.tool]]
+                id = "open-search"
+                label_i18n_key = "tooly.tool.open_search"
+                action = { kind = "event", event_key = "tooly.search_requested" }
+            "#,
+        )
+        .replace("permissions = [\"ui.tool_item\"]", "permissions = []");
+        let err = parse(&s).unwrap_err().to_string();
+        assert!(err.contains("ui.tool_item"), "got: {err}");
+    }
+
+    #[test]
+    fn tool_id_must_be_unique() {
+        let s = tool_skeleton(
+            r#"
+                [[contributes.tool]]
+                id = "dup"
+                label_i18n_key = "a"
+                action = { kind = "event", event_key = "tooly.a" }
+                [[contributes.tool]]
+                id = "dup"
+                label_i18n_key = "b"
+                action = { kind = "event", event_key = "tooly.b" }
+            "#,
+        );
+        let err = parse(&s).unwrap_err().to_string();
+        assert!(err.contains("declared twice"), "got: {err}");
+    }
+
+    #[test]
+    fn ui_tool_item_permission_token_parses() {
+        assert_eq!(
+            Permission::from_token("ui.tool_item"),
+            Some(Permission::UiToolItem)
+        );
+        assert_eq!(Permission::UiToolItem.as_token(), "ui.tool_item");
     }
 
     #[test]
