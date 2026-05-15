@@ -153,6 +153,16 @@ pub enum PendingHostEvent {
     PaneClosed {
         pane_id: u32,
     },
+    /// Workspace 생성. polling으로 감지. `window_id`는 caller가 전달.
+    WorkspaceCreated {
+        workspace_id: u32,
+        window_id: u64,
+        name: String,
+    },
+    /// Workspace 종료. reason은 현재 항상 `User`.
+    WorkspaceClosed {
+        workspace_id: u32,
+    },
 }
 
 // IdGenerator is now in engine_state.rs
@@ -224,6 +234,9 @@ pub struct AppState {
     /// `pane.created`/`pane.closed` polling 상태. pane_id → workspace_id 스냅샷.
     /// `last_tab_locations`와 동일한 초기 베이스라인 정책 적용.
     pub last_pane_locations: Option<std::collections::HashMap<u32, u32>>,
+    /// `workspace.created`/`workspace.closed` polling 상태. workspace_id → name
+    /// 스냅샷. 첫 호출에서는 베이스라인만 기록.
+    pub last_workspace_snapshot: Option<std::collections::HashMap<u32, String>>,
 
     /// Per-surface host view state for `MarkdownPanel` (content cache, scroll, commonmark cache).
     /// `MarkdownPanel` itself only holds `file_path` + reload tracking; everything GUI-bound lives here.
@@ -415,6 +428,7 @@ impl AppState {
             last_focused_tab: None,
             last_tab_locations: None,
             last_pane_locations: None,
+            last_workspace_snapshot: None,
             popup_hovered: false,
             recent_files: crate::recent_files::RecentFiles::load(),
             popups: {
@@ -805,6 +819,47 @@ impl AppState {
         }
 
         self.last_pane_locations = Some(current);
+    }
+
+    /// Workspace 생성/종료를 polling으로 감지. `window_id`는 caller가 전달하며
+    /// (이 `AppState`가 속한 main window의 winit::WindowId를 u64로 변환), 신규
+    /// workspace가 발견되면 `WorkspaceCreated`에 채워 넣는다.
+    pub fn detect_workspace_lifecycle(&mut self, window_id: u64) {
+        use std::collections::HashMap;
+
+        let mut current: HashMap<u32, String> = HashMap::new();
+        for ws in &self.engine.workspaces {
+            current.insert(ws.id, ws.name.clone());
+        }
+
+        let prev = match self.last_workspace_snapshot.take() {
+            Some(p) => p,
+            None => {
+                self.last_workspace_snapshot = Some(current);
+                return;
+            }
+        };
+
+        for (workspace_id, name) in &current {
+            if !prev.contains_key(workspace_id) {
+                self.pending_host_events
+                    .push(PendingHostEvent::WorkspaceCreated {
+                        workspace_id: *workspace_id,
+                        window_id,
+                        name: name.clone(),
+                    });
+            }
+        }
+        for workspace_id in prev.keys() {
+            if !current.contains_key(workspace_id) {
+                self.pending_host_events
+                    .push(PendingHostEvent::WorkspaceClosed {
+                        workspace_id: *workspace_id,
+                    });
+            }
+        }
+
+        self.last_workspace_snapshot = Some(current);
     }
 
     /// Get the working directory to inherit from the focused surface, if enabled.

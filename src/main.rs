@@ -1272,17 +1272,19 @@ impl App {
         use tasty_plugin_protocol::events::payloads::{
             NotificationCreated, PaneClosed, PaneCreated, ProcessExited, SurfaceCreated,
             SurfaceCreatedBy, SurfaceFocused, SurfaceResized, SurfaceTitleChanged, TabClosed,
-            TabCreated, TabFocused, TabMoved, TabRenamed, WorkspaceActivated, WorkspaceRenamed,
+            TabCreated, TabFocused, TabMoved, TabRenamed, WorkspaceActivated, WorkspaceClosed,
+            WorkspaceCreated, WorkspaceRenamed,
         };
 
         let mut drained: Vec<crate::state::PendingHostEvent> = Vec::new();
-        for w in self.windows.values_mut() {
+        for (win_id, w) in self.windows.iter_mut() {
             if let Some(main) = w.as_main_mut() {
                 main.state.detect_focus_change();
                 main.state.detect_workspace_activation();
                 main.state.detect_tab_focus_change();
                 main.state.detect_tab_lifecycle();
                 main.state.detect_pane_lifecycle();
+                main.state.detect_workspace_lifecycle(u64::from(*win_id));
                 drained.extend(main.state.take_pending_host_events());
             }
         }
@@ -1292,6 +1294,12 @@ impl App {
             s.detect_tab_focus_change();
             s.detect_tab_lifecycle();
             s.detect_pane_lifecycle();
+            // parked AppState은 더 이상 window에 붙어있지 않으므로 workspace.created
+            // 발화에 의미 있는 window_id를 채울 수 없다. workspace.closed만 의도하는
+            // 경우라도 polling은 새 workspace를 detect할 수 없게 베이스라인부터
+            // 비교가 필요하다. window 분리 직전의 detect에서 이미 베이스라인이
+            // 형성됐다고 가정하고 동일 호출 — window_id는 0 (sentinel).
+            s.detect_workspace_lifecycle(0);
             drained.extend(s.take_pending_host_events());
         }
         if drained.is_empty() {
@@ -1467,6 +1475,25 @@ impl App {
                         reason: LifecycleReason::User,
                     };
                     mgr.emit_host_event("pane.closed", &payload, EventScope::System);
+                }
+                crate::state::PendingHostEvent::WorkspaceCreated {
+                    workspace_id,
+                    window_id,
+                    name,
+                } => {
+                    let payload = WorkspaceCreated {
+                        workspace_id,
+                        window_id,
+                        name,
+                    };
+                    mgr.emit_host_event("workspace.created", &payload, EventScope::System);
+                }
+                crate::state::PendingHostEvent::WorkspaceClosed { workspace_id } => {
+                    let payload = WorkspaceClosed {
+                        workspace_id,
+                        reason: LifecycleReason::User,
+                    };
+                    mgr.emit_host_event("workspace.closed", &payload, EventScope::System);
                 }
             }
         }
