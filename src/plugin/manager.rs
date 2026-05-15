@@ -91,6 +91,8 @@ enum PendingRequestKind {
         pre_hook_mode: HookMode,
         final_caller: FinalCaller,
         post_hook: Option<IpcHookDecl>,
+        /// hook 응답이 도착해야 하는 시각. 지나면 timeout으로 처리.
+        deadline: Instant,
     },
     /// extension의 post-IPC hook을 dispatch한 뒤 응답 대기. extension이 응답을 주면
     /// (transform이면 payload 교체, filter면 ignored — post는 차단 무의미)
@@ -102,6 +104,7 @@ enum PendingRequestKind {
         /// target plugin의 응답을 그대로 들고 온 것. Ok면 result, Err면 (msg, code).
         target_outcome: TargetOutcome,
         final_caller: FinalCaller,
+        deadline: Instant,
     },
     /// pre-hook 없이 target에 직접 ipc.invoke한 뒤, 매칭 post-hook이 있어
     /// 응답이 오면 post-hook으로 chain해야 하는 경우의 pending.
@@ -112,6 +115,18 @@ enum PendingRequestKind {
         post_hook_decl: IpcHookDecl,
         final_caller: FinalCaller,
     },
+}
+
+/// 연속 실패 hook의 backoff 윈도우. 3회 연속 실패 후 60초 동안 hook 우회.
+const HOOK_FAIL_BACKOFF: Duration = Duration::from_secs(60);
+const HOOK_FAIL_LIMIT: u8 = 3;
+
+/// (ext_id, method) 단위 hook 실패 추적. consecutive_failures가 HOOK_FAIL_LIMIT에 도달하면
+/// backoff_until로 설정해 그 동안 hook을 우회한다.
+#[derive(Debug, Clone, Default)]
+struct HookFailureState {
+    consecutive_failures: u8,
+    backoff_until: Option<Instant>,
 }
 
 /// target plugin의 ipc.invoke 응답 결과. post-hook 진입 시 보존해 둔다.
@@ -212,6 +227,8 @@ pub struct PluginManager {
     /// active/pending/disabled/conflict 상태를 보관한다. PR 4/5에서 event/IPC
     /// hook dispatch 시 `active_extension_for_target`을 조회한다.
     pub extensions: super::extension_registry::ExtensionRegistry,
+    /// (ext_id, method) 단위 hook 실패 추적. 3회 연속 실패하면 60초간 backoff.
+    hook_failures: HashMap<(String, String), HookFailureState>,
     /// Event Bus 1.0 라우터. 호스트 본문과 plugin 간 broadcast 이벤트를 fan-out.
     pub event_bus: super::event_bus::EventBus,
     /// 고빈도 이벤트(`surface.resized`, `split.ratio_changed`)용 throttle 상태.
@@ -262,6 +279,7 @@ impl PluginManager {
             plugin_buffers: HashMap::new(),
             next_buffer_id: AtomicU64::new(1),
             extensions: super::extension_registry::ExtensionRegistry::new(),
+            hook_failures: HashMap::new(),
             event_bus: super::event_bus::EventBus::new(),
             throttler: super::event_throttle::EventThrottler::new(),
             event_trace_seq: AtomicU64::new(1),
@@ -886,6 +904,9 @@ impl PluginManager {
         // 4. plugin → 호스트 응답 처리 (tree 동기화).
         self.drain_plugin_responses();
 
+        // 4a. 타임아웃된 extension hook을 fail-open 처리.
+        self.sweep_expired_hooks();
+
         // 4b. Event Bus throttle: 만료된 pending envelope 발화.
         self.pump_throttled_events();
 
@@ -1122,62 +1143,74 @@ impl PluginManager {
             if extension_self { None } else { self.find_active_ipc_hooks(&target_plugin_id, &method) };
 
         match active_ext_with_hooks {
-            Some((ext_id, Some(pre), post)) => {
-                // pre-hook 우선 송신.
-                let payload = serde_json::json!({
-                    "method": method,
-                    "params": params,
-                    "caller_plugin_id": caller_plugin_id,
-                });
-                match self.send_extension_invoke_hook(
-                    &ext_id,
-                    tasty_plugin_protocol::ExtensionHookKind::Ipc,
-                    tasty_plugin_protocol::ExtensionHookPhase::Pre,
-                    pre.mode,
-                    &method,
-                    payload,
-                ) {
-                    Ok(req_id) => {
-                        self.pending_requests.insert(
-                            req_id,
-                            PendingRequestKind::ExtensionPreIpcHook {
+            Some((ext_id, pre_opt, post_opt)) => {
+                // backoff 중인 hook은 우회.
+                let pre = pre_opt.filter(|p| !self.is_hook_in_backoff(&ext_id, &p.method));
+                let post = post_opt.filter(|p| !self.is_hook_in_backoff(&ext_id, &p.method));
+
+                if let Some(pre) = pre {
+                    let payload = serde_json::json!({
+                        "method": method,
+                        "params": params,
+                        "caller_plugin_id": caller_plugin_id,
+                    });
+                    let deadline = Instant::now() + Duration::from_millis(pre.timeout_ms as u64);
+                    match self.send_extension_invoke_hook(
+                        &ext_id,
+                        tasty_plugin_protocol::ExtensionHookKind::Ipc,
+                        tasty_plugin_protocol::ExtensionHookPhase::Pre,
+                        pre.mode,
+                        &method,
+                        payload,
+                    ) {
+                        Ok(req_id) => {
+                            self.pending_requests.insert(
+                                req_id,
+                                PendingRequestKind::ExtensionPreIpcHook {
+                                    target_plugin_id,
+                                    extension_plugin_id: ext_id,
+                                    method,
+                                    params,
+                                    pre_hook_mode: pre.mode,
+                                    final_caller,
+                                    post_hook: post,
+                                    deadline,
+                                },
+                            );
+                        }
+                        Err(msg) => {
+                            tracing::warn!("pre-hook dispatch failed: {msg}; bypassing hook");
+                            self.dispatch_target_invoke(
                                 target_plugin_id,
-                                extension_plugin_id: ext_id,
                                 method,
                                 params,
-                                pre_hook_mode: pre.mode,
+                                caller_plugin_id.as_deref(),
                                 final_caller,
-                                post_hook: post,
-                            },
-                        );
+                                post.map(|p| (ext_id.clone(), p)),
+                            );
+                        }
                     }
-                    Err(msg) => {
-                        // extension 송신 실패 — fallback으로 그냥 target에 forward.
-                        tracing::warn!("pre-hook dispatch failed: {msg}; bypassing hook");
-                        self.dispatch_target_invoke(
-                            target_plugin_id,
-                            method,
-                            params,
-                            caller_plugin_id.as_deref(),
-                            final_caller,
-                            None,
-                        );
-                    }
+                } else if let Some(post) = post {
+                    self.dispatch_target_invoke(
+                        target_plugin_id,
+                        method,
+                        params,
+                        caller_plugin_id.as_deref(),
+                        final_caller,
+                        Some((ext_id, post)),
+                    );
+                } else {
+                    self.dispatch_target_invoke(
+                        target_plugin_id,
+                        method,
+                        params,
+                        caller_plugin_id.as_deref(),
+                        final_caller,
+                        None,
+                    );
                 }
             }
-            Some((ext_id, None, Some(post))) => {
-                // pre 없음, post만 있음 — target에 바로 보내고 응답 시 post-hook chain.
-                self.dispatch_target_invoke(
-                    target_plugin_id,
-                    method,
-                    params,
-                    caller_plugin_id.as_deref(),
-                    final_caller,
-                    Some((ext_id, post)),
-                );
-            }
-            _ => {
-                // hook 없음 — 기존 경로.
+            None => {
                 self.dispatch_target_invoke(
                     target_plugin_id,
                     method,
@@ -1187,6 +1220,55 @@ impl PluginManager {
                     None,
                 );
             }
+        }
+    }
+
+    /// (ext_id, method) 페어가 backoff 중인지 검사. 만료되면 즉시 클리어해서 그 후
+    /// 호출은 정상 hook 경로를 탄다.
+    fn is_hook_in_backoff(&mut self, ext_id: &str, method: &str) -> bool {
+        let key = (ext_id.to_string(), method.to_string());
+        let now = Instant::now();
+        if let Some(state) = self.hook_failures.get(&key) {
+            if let Some(until) = state.backoff_until {
+                if now < until {
+                    return true;
+                }
+            }
+        }
+        // 만료 시 상태 정리.
+        if let Some(state) = self.hook_failures.get_mut(&key) {
+            if let Some(until) = state.backoff_until {
+                if now >= until {
+                    state.backoff_until = None;
+                    state.consecutive_failures = 0;
+                }
+            }
+        }
+        false
+    }
+
+    /// hook 응답에서 에러/타임아웃이 발생했을 때 호출. 연속 실패 카운터를 증가시키고
+    /// 임계를 넘으면 backoff 시작.
+    fn record_hook_failure(&mut self, ext_id: &str, method: &str) {
+        let key = (ext_id.to_string(), method.to_string());
+        let state = self.hook_failures.entry(key).or_default();
+        state.consecutive_failures = state.consecutive_failures.saturating_add(1);
+        if state.consecutive_failures >= HOOK_FAIL_LIMIT && state.backoff_until.is_none() {
+            state.backoff_until = Some(Instant::now() + HOOK_FAIL_BACKOFF);
+            tracing::warn!(
+                "extension '{ext_id}' hook on '{method}' entered {}s backoff after {} consecutive failures",
+                HOOK_FAIL_BACKOFF.as_secs(),
+                state.consecutive_failures
+            );
+        }
+    }
+
+    /// hook이 정상 응답하면 호출. 카운터를 0으로 리셋.
+    fn record_hook_success(&mut self, ext_id: &str, method: &str) {
+        let key = (ext_id.to_string(), method.to_string());
+        if let Some(state) = self.hook_failures.get_mut(&key) {
+            state.consecutive_failures = 0;
+            state.backoff_until = None;
         }
     }
 
@@ -1567,6 +1649,7 @@ impl PluginManager {
                 pre_hook_mode,
                 final_caller,
                 post_hook,
+                deadline: _,
             } => {
                 self.handle_pre_ipc_hook_response(
                     extension_plugin_id,
@@ -1595,12 +1678,18 @@ impl PluginManager {
                 );
             }
             PendingRequestKind::ExtensionPostIpcHook {
-                extension_plugin_id: _,
-                method: _,
+                extension_plugin_id,
+                method,
                 post_hook_mode,
                 target_outcome,
                 final_caller,
+                deadline: _,
             } => {
+                if resp.error.is_some() {
+                    self.record_hook_failure(&extension_plugin_id, &method);
+                } else {
+                    self.record_hook_success(&extension_plugin_id, &method);
+                }
                 self.handle_post_ipc_hook_response(
                     post_hook_mode,
                     target_outcome,
@@ -1623,6 +1712,11 @@ impl PluginManager {
         post_hook: Option<IpcHookDecl>,
         resp: PluginResponse,
     ) {
+        if resp.error.is_some() {
+            self.record_hook_failure(&extension_plugin_id, &method);
+        } else {
+            self.record_hook_success(&extension_plugin_id, &method);
+        }
         // hook 응답에서 outcome 추출. 에러/누락은 fail-open(original payload로 진행).
         let outcome = parse_hook_result(&resp);
         let post_pair = post_hook.map(|p| (extension_plugin_id.clone(), p));
@@ -1681,6 +1775,11 @@ impl PluginManager {
             TargetOutcome::Err { .. } => serde_json::Value::Null,
         };
 
+        if self.is_hook_in_backoff(&extension_plugin_id, &method) {
+            self.finalize_target_outcome(final_caller, target_outcome);
+            return;
+        }
+        let deadline = Instant::now() + Duration::from_millis(post_hook_decl.timeout_ms as u64);
         match self.send_extension_invoke_hook(
             &extension_plugin_id,
             tasty_plugin_protocol::ExtensionHookKind::Ipc,
@@ -1698,12 +1797,80 @@ impl PluginManager {
                         post_hook_mode: post_hook_decl.mode,
                         target_outcome,
                         final_caller,
+                        deadline,
                     },
                 );
             }
             Err(msg) => {
                 tracing::warn!("post-hook dispatch failed: {msg}; bypassing");
                 self.finalize_target_outcome(final_caller, target_outcome);
+            }
+        }
+    }
+
+    /// 타임아웃된 pre/post hook pending을 sweep해서 fail-open 처리.
+    fn sweep_expired_hooks(&mut self) {
+        let now = Instant::now();
+        let expired: Vec<u64> = self
+            .pending_requests
+            .iter()
+            .filter_map(|(id, kind)| match kind {
+                PendingRequestKind::ExtensionPreIpcHook { deadline, .. }
+                | PendingRequestKind::ExtensionPostIpcHook { deadline, .. } => {
+                    if now >= *deadline {
+                        Some(*id)
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            })
+            .collect();
+        for id in expired {
+            let kind = match self.pending_requests.remove(&id) {
+                Some(k) => k,
+                None => continue,
+            };
+            match kind {
+                PendingRequestKind::ExtensionPreIpcHook {
+                    target_plugin_id,
+                    extension_plugin_id,
+                    method,
+                    params,
+                    pre_hook_mode: _,
+                    final_caller,
+                    post_hook,
+                    deadline: _,
+                } => {
+                    tracing::warn!(
+                        "pre-hook timeout: ext='{extension_plugin_id}' method='{method}' — fail-open"
+                    );
+                    self.record_hook_failure(&extension_plugin_id, &method);
+                    let post_pair = post_hook.map(|p| (extension_plugin_id.clone(), p));
+                    self.dispatch_target_invoke(
+                        target_plugin_id,
+                        method,
+                        params,
+                        None,
+                        final_caller,
+                        post_pair,
+                    );
+                }
+                PendingRequestKind::ExtensionPostIpcHook {
+                    extension_plugin_id,
+                    method,
+                    post_hook_mode: _,
+                    target_outcome,
+                    final_caller,
+                    deadline: _,
+                } => {
+                    tracing::warn!(
+                        "post-hook timeout: ext='{extension_plugin_id}' method='{method}' — fail-open"
+                    );
+                    self.record_hook_failure(&extension_plugin_id, &method);
+                    self.finalize_target_outcome(final_caller, target_outcome);
+                }
+                _ => {}
             }
         }
     }
@@ -2050,6 +2217,33 @@ mod tests {
             None,
         );
         assert!(matches!(parse_hook_result(&resp), HookOutcome::Pass));
+    }
+
+    #[test]
+    fn record_hook_failure_triggers_backoff_after_limit() {
+        let mut mgr = PluginManager::new(empty_waker());
+        let ext = "com.example.ext";
+        let method = "codex.spawn";
+        assert!(!mgr.is_hook_in_backoff(ext, method));
+        for _ in 0..HOOK_FAIL_LIMIT {
+            mgr.record_hook_failure(ext, method);
+        }
+        assert!(mgr.is_hook_in_backoff(ext, method));
+    }
+
+    #[test]
+    fn record_hook_success_resets_counter() {
+        let mut mgr = PluginManager::new(empty_waker());
+        let ext = "com.example.ext";
+        let method = "codex.spawn";
+        mgr.record_hook_failure(ext, method);
+        mgr.record_hook_failure(ext, method);
+        mgr.record_hook_success(ext, method);
+        // 추가로 (HOOK_FAIL_LIMIT - 1)회 실패만으로는 backoff 진입 금지.
+        for _ in 0..(HOOK_FAIL_LIMIT - 1) {
+            mgr.record_hook_failure(ext, method);
+        }
+        assert!(!mgr.is_hook_in_backoff(ext, method));
     }
 
     #[test]
