@@ -1285,6 +1285,7 @@ impl App {
                 main.state.detect_tab_lifecycle();
                 main.state.detect_pane_lifecycle();
                 main.state.detect_workspace_lifecycle(u64::from(*win_id));
+                main.state.detect_surface_lifecycle();
                 drained.extend(main.state.take_pending_host_events());
             }
         }
@@ -1300,6 +1301,7 @@ impl App {
             // 비교가 필요하다. window 분리 직전의 detect에서 이미 베이스라인이
             // 형성됐다고 가정하고 동일 호출 — window_id는 0 (sentinel).
             s.detect_workspace_lifecycle(0);
+            s.detect_surface_lifecycle();
             drained.extend(s.take_pending_host_events());
         }
         if drained.is_empty() {
