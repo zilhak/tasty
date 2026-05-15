@@ -172,6 +172,11 @@ pub enum Commands {
 pub enum PluginCommands {
     /// List installed plugins (id, version, enabled, running).
     List,
+    /// Show full manifest, permissions, commands, and runtime state for a plugin.
+    Show {
+        /// Plugin id.
+        id: String,
+    },
     /// Install a plugin from a directory containing tasty-plugin.toml.
     Install {
         /// Path to plugin directory (must contain tasty-plugin.toml).

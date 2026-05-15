@@ -1089,6 +1089,11 @@ impl App {
                     "plugin.list" => {
                         ipc::handler::plugin::handle_list(self.plugin_manager.as_ref(), id)
                     }
+                    "plugin.show" => ipc::handler::plugin::handle_show(
+                        self.plugin_manager.as_ref(),
+                        id,
+                        &cmd.request.params,
+                    ),
                     "plugin.install" => ipc::handler::plugin::handle_install(
                         self.plugin_manager.as_mut(),
                         id,

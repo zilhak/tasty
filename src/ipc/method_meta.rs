@@ -118,6 +118,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("surface.raw_key", plugin(&[TerminalWrite])),
         // ── 호스트 자체 메서드 (plugin/window 관리) — local-only ──────
         ("plugin.list", local_only()),
+        ("plugin.show", local_only()),
         ("plugin.install", local_only()),
         ("plugin.remove", local_only()),
         ("plugin.enable", local_only()),

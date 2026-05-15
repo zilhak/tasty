@@ -510,6 +510,7 @@ fn tool_command_to_method_params(command: &ToolCommands) -> (&'static str, serde
 fn plugin_command_to_method_params(command: &PluginCommands) -> (&'static str, serde_json::Value) {
     match command {
         PluginCommands::List => ("plugin.list", serde_json::json!({})),
+        PluginCommands::Show { id } => ("plugin.show", serde_json::json!({ "id": id })),
         PluginCommands::Install { path } => (
             "plugin.install",
             serde_json::json!({ "path": path }),

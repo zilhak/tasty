@@ -293,6 +293,7 @@ Local-only 메서드 (CLI/사용자만, plugin은 항상 거부):
 
 ```
 tasty plugin list                          # 설치된 plugin 일람
+tasty plugin show <id>                     # 단일 plugin 전체 정보 (매니페스트 + 권한 + 명령어 + runtime 상태)
 tasty plugin install <path>                # 디렉터리를 plugins/로 복사 (매니페스트 권한 자동 grant)
 tasty plugin remove <id>                   # graceful shutdown + 디렉터리 삭제
 tasty plugin enable <id>                   # 활성화 + spawn
@@ -310,6 +311,7 @@ tasty plugin revoke <id> <permission>      # 권한 제거
 | 메서드 | 파라미터 | 설명 |
 |--------|---------|------|
 | `plugin.list` | 없음 | `{plugins: [{id,name,version,description,enabled,running,surface_kinds,log_path}]}` |
+| `plugin.show` | `id: string` | 단일 plugin의 매니페스트 전체 + runtime 상태. `{id,name,version,description,authors,homepage,api_version,manifest_version,dir,enabled,running,log_path,permissions:{manifest,granted},event_subscribe,event_publish,events_emitted,surface_kinds,commands,menu_items,ipc_namespace,cli}` |
 | `plugin.install` | `path: string` | 매니페스트 검증 후 `plugins/<id>/`로 재귀 복사 + 매니페스트 권한 자동 grant + 자동 활성화 시 spawn |
 | `plugin.remove` | `id: string` | graceful shutdown + 디렉터리 삭제 |
 | `plugin.enable` | `id: string` | 활성화 + spawn |
