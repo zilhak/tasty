@@ -123,6 +123,25 @@ pub enum PendingHostEvent {
         body: String,
         source: String,
     },
+    /// Tab 생성. `detect_tab_lifecycle` polling으로 발견.
+    TabCreated {
+        tab_id: u32,
+        pane_id: u32,
+        workspace_id: u32,
+        kind: String,
+    },
+    /// Tab 종료. polling이 사라진 tab_id를 발견하면 마지막 위치로 enqueue.
+    /// 현재 reason은 항상 User (PR 5의 caller context 도입 이후 Ipc 구분 예정).
+    TabClosed {
+        tab_id: u32,
+        pane_id: u32,
+    },
+    /// Tab이 다른 pane으로 이동. polling diff로 감지.
+    TabMoved {
+        tab_id: u32,
+        from_pane: u32,
+        to_pane: u32,
+    },
 }
 
 // IdGenerator is now in engine_state.rs
@@ -186,6 +205,11 @@ pub struct AppState {
     /// 현재 active tab의 (pane_id, tab_id)를 기록. 다음 tick에서 달라졌다면
     /// `TabFocused`를 enqueue한다. pane 전환·in-pane tab 전환을 한꺼번에 다룬다.
     pub last_focused_tab: Option<(u32, u32)>,
+    /// `tab.created`/`tab.closed`/`tab.moved` 발화용 polling 상태. tab_id →
+    /// (pane_id, workspace_id, kind) 스냅샷. `None`은 아직 한 번도 polling하지
+    /// 않은 상태(초기 로드된 탭에 대해 spurious `tab.created`가 발화되는 것을 막기
+    /// 위해 첫 호출에서는 스냅샷만 만들고 이벤트를 enqueue하지 않는다).
+    pub last_tab_locations: Option<std::collections::HashMap<u32, (u32, u32, String)>>,
 
     /// Per-surface host view state for `MarkdownPanel` (content cache, scroll, commonmark cache).
     /// `MarkdownPanel` itself only holds `file_path` + reload tracking; everything GUI-bound lives here.
@@ -375,6 +399,7 @@ impl AppState {
             last_focused_surface_id: None,
             last_active_workspace_id: None,
             last_focused_tab: None,
+            last_tab_locations: None,
             popup_hovered: false,
             recent_files: crate::recent_files::RecentFiles::load(),
             popups: {
@@ -662,6 +687,70 @@ impl AppState {
                 prev_tab_id,
             });
         }
+    }
+
+    /// 전체 워크스페이스를 순회하며 현재 (tab_id → pane_id, workspace_id, kind) 매핑을
+    /// 마지막 스냅샷과 비교해 `TabCreated`/`TabClosed`/`TabMoved` 이벤트를 enqueue한다.
+    /// 첫 호출(스냅샷이 `None`)에서는 이벤트를 발화하지 않고 베이스라인만 기록한다 —
+    /// 앱 시작 시 이미 로드된 탭들이 잘못 `tab.created`로 보고되지 않도록 하기 위함.
+    pub fn detect_tab_lifecycle(&mut self) {
+        use std::collections::HashMap;
+
+        let mut current: HashMap<u32, (u32, u32, String)> = HashMap::new();
+        for ws in &self.engine.workspaces {
+            let workspace_id = ws.id;
+            for pane_id in ws.pane_layout().all_pane_ids() {
+                if let Some(pane) = ws.pane_layout().find_pane(pane_id) {
+                    for tab in &pane.tabs {
+                        let kind = tab
+                            .focused_surface_id()
+                            .and_then(|sid| self.find_surface_by_id(sid))
+                            .map(|s| s.kind().to_string())
+                            .unwrap_or_else(|| "unknown".to_string());
+                        current.insert(tab.id, (pane_id, workspace_id, kind));
+                    }
+                }
+            }
+        }
+
+        let prev = match self.last_tab_locations.take() {
+            Some(p) => p,
+            None => {
+                self.last_tab_locations = Some(current);
+                return;
+            }
+        };
+
+        for (tab_id, (pane_id, workspace_id, kind)) in &current {
+            match prev.get(tab_id) {
+                None => {
+                    self.pending_host_events.push(PendingHostEvent::TabCreated {
+                        tab_id: *tab_id,
+                        pane_id: *pane_id,
+                        workspace_id: *workspace_id,
+                        kind: kind.clone(),
+                    });
+                }
+                Some((prev_pane, _, _)) if prev_pane != pane_id => {
+                    self.pending_host_events.push(PendingHostEvent::TabMoved {
+                        tab_id: *tab_id,
+                        from_pane: *prev_pane,
+                        to_pane: *pane_id,
+                    });
+                }
+                _ => {}
+            }
+        }
+        for (tab_id, (pane_id, _, _)) in &prev {
+            if !current.contains_key(tab_id) {
+                self.pending_host_events.push(PendingHostEvent::TabClosed {
+                    tab_id: *tab_id,
+                    pane_id: *pane_id,
+                });
+            }
+        }
+
+        self.last_tab_locations = Some(current);
     }
 
     /// Get the working directory to inherit from the focused surface, if enabled.

@@ -1268,10 +1268,11 @@ impl App {
     /// 이벤트는 먼저 `detect_focus_change()`로 변화 검사 후 queue에 push된다.
     pub(crate) fn dispatch_pending_host_events(&mut self) {
         use tasty_plugin_protocol::EventScope;
+        use tasty_plugin_protocol::LifecycleReason;
         use tasty_plugin_protocol::events::payloads::{
             NotificationCreated, ProcessExited, SurfaceCreated, SurfaceCreatedBy, SurfaceFocused,
-            SurfaceResized, SurfaceTitleChanged, TabFocused, TabRenamed, WorkspaceActivated,
-            WorkspaceRenamed,
+            SurfaceResized, SurfaceTitleChanged, TabClosed, TabCreated, TabFocused, TabMoved,
+            TabRenamed, WorkspaceActivated, WorkspaceRenamed,
         };
 
         let mut drained: Vec<crate::state::PendingHostEvent> = Vec::new();
@@ -1280,6 +1281,7 @@ impl App {
                 main.state.detect_focus_change();
                 main.state.detect_workspace_activation();
                 main.state.detect_tab_focus_change();
+                main.state.detect_tab_lifecycle();
                 drained.extend(main.state.take_pending_host_events());
             }
         }
@@ -1287,6 +1289,7 @@ impl App {
             s.detect_focus_change();
             s.detect_workspace_activation();
             s.detect_tab_focus_change();
+            s.detect_tab_lifecycle();
             drained.extend(s.take_pending_host_events());
         }
         if drained.is_empty() {
@@ -1410,6 +1413,40 @@ impl App {
                         source,
                     };
                     mgr.emit_host_event("notification.created", &payload, EventScope::System);
+                }
+                crate::state::PendingHostEvent::TabCreated {
+                    tab_id,
+                    pane_id,
+                    workspace_id,
+                    kind,
+                } => {
+                    let payload = TabCreated {
+                        tab_id,
+                        pane_id,
+                        workspace_id,
+                        kind,
+                    };
+                    mgr.emit_host_event("tab.created", &payload, EventScope::System);
+                }
+                crate::state::PendingHostEvent::TabClosed { tab_id, pane_id } => {
+                    let payload = TabClosed {
+                        tab_id,
+                        pane_id,
+                        reason: LifecycleReason::User,
+                    };
+                    mgr.emit_host_event("tab.closed", &payload, EventScope::System);
+                }
+                crate::state::PendingHostEvent::TabMoved {
+                    tab_id,
+                    from_pane,
+                    to_pane,
+                } => {
+                    let payload = TabMoved {
+                        tab_id,
+                        from_pane,
+                        to_pane,
+                    };
+                    mgr.emit_host_event("tab.moved", &payload, EventScope::System);
                 }
             }
         }
