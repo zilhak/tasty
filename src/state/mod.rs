@@ -142,6 +142,17 @@ pub enum PendingHostEvent {
         from_pane: u32,
         to_pane: u32,
     },
+    /// Pane 생성. polling으로 감지. `parent_pane_group`은 트리 구조 노출 비용이
+    /// 커 현재 `None` 고정 (필요해지면 PR 5 이후 확장).
+    PaneCreated {
+        pane_id: u32,
+        workspace_id: u32,
+    },
+    /// Pane 종료. polling이 사라진 pane_id를 발견하면 발화.
+    /// reason은 현재 항상 `User` (caller context 구분은 PR 5에서).
+    PaneClosed {
+        pane_id: u32,
+    },
 }
 
 // IdGenerator is now in engine_state.rs
@@ -210,6 +221,9 @@ pub struct AppState {
     /// 않은 상태(초기 로드된 탭에 대해 spurious `tab.created`가 발화되는 것을 막기
     /// 위해 첫 호출에서는 스냅샷만 만들고 이벤트를 enqueue하지 않는다).
     pub last_tab_locations: Option<std::collections::HashMap<u32, (u32, u32, String)>>,
+    /// `pane.created`/`pane.closed` polling 상태. pane_id → workspace_id 스냅샷.
+    /// `last_tab_locations`와 동일한 초기 베이스라인 정책 적용.
+    pub last_pane_locations: Option<std::collections::HashMap<u32, u32>>,
 
     /// Per-surface host view state for `MarkdownPanel` (content cache, scroll, commonmark cache).
     /// `MarkdownPanel` itself only holds `file_path` + reload tracking; everything GUI-bound lives here.
@@ -400,6 +414,7 @@ impl AppState {
             last_active_workspace_id: None,
             last_focused_tab: None,
             last_tab_locations: None,
+            last_pane_locations: None,
             popup_hovered: false,
             recent_files: crate::recent_files::RecentFiles::load(),
             popups: {
@@ -751,6 +766,45 @@ impl AppState {
         }
 
         self.last_tab_locations = Some(current);
+    }
+
+    /// Pane 생성/종료를 polling으로 감지. `last_tab_locations`와 동일하게 첫 호출
+    /// 에서는 베이스라인만 기록한다.
+    pub fn detect_pane_lifecycle(&mut self) {
+        use std::collections::HashMap;
+
+        let mut current: HashMap<u32, u32> = HashMap::new();
+        for ws in &self.engine.workspaces {
+            for pane_id in ws.pane_layout().all_pane_ids() {
+                current.insert(pane_id, ws.id);
+            }
+        }
+
+        let prev = match self.last_pane_locations.take() {
+            Some(p) => p,
+            None => {
+                self.last_pane_locations = Some(current);
+                return;
+            }
+        };
+
+        for (pane_id, workspace_id) in &current {
+            if !prev.contains_key(pane_id) {
+                self.pending_host_events.push(PendingHostEvent::PaneCreated {
+                    pane_id: *pane_id,
+                    workspace_id: *workspace_id,
+                });
+            }
+        }
+        for pane_id in prev.keys() {
+            if !current.contains_key(pane_id) {
+                self.pending_host_events.push(PendingHostEvent::PaneClosed {
+                    pane_id: *pane_id,
+                });
+            }
+        }
+
+        self.last_pane_locations = Some(current);
     }
 
     /// Get the working directory to inherit from the focused surface, if enabled.

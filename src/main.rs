@@ -1270,9 +1270,9 @@ impl App {
         use tasty_plugin_protocol::EventScope;
         use tasty_plugin_protocol::LifecycleReason;
         use tasty_plugin_protocol::events::payloads::{
-            NotificationCreated, ProcessExited, SurfaceCreated, SurfaceCreatedBy, SurfaceFocused,
-            SurfaceResized, SurfaceTitleChanged, TabClosed, TabCreated, TabFocused, TabMoved,
-            TabRenamed, WorkspaceActivated, WorkspaceRenamed,
+            NotificationCreated, PaneClosed, PaneCreated, ProcessExited, SurfaceCreated,
+            SurfaceCreatedBy, SurfaceFocused, SurfaceResized, SurfaceTitleChanged, TabClosed,
+            TabCreated, TabFocused, TabMoved, TabRenamed, WorkspaceActivated, WorkspaceRenamed,
         };
 
         let mut drained: Vec<crate::state::PendingHostEvent> = Vec::new();
@@ -1282,6 +1282,7 @@ impl App {
                 main.state.detect_workspace_activation();
                 main.state.detect_tab_focus_change();
                 main.state.detect_tab_lifecycle();
+                main.state.detect_pane_lifecycle();
                 drained.extend(main.state.take_pending_host_events());
             }
         }
@@ -1290,6 +1291,7 @@ impl App {
             s.detect_workspace_activation();
             s.detect_tab_focus_change();
             s.detect_tab_lifecycle();
+            s.detect_pane_lifecycle();
             drained.extend(s.take_pending_host_events());
         }
         if drained.is_empty() {
@@ -1447,6 +1449,24 @@ impl App {
                         to_pane,
                     };
                     mgr.emit_host_event("tab.moved", &payload, EventScope::System);
+                }
+                crate::state::PendingHostEvent::PaneCreated {
+                    pane_id,
+                    workspace_id,
+                } => {
+                    let payload = PaneCreated {
+                        pane_id,
+                        parent_pane_group: None,
+                        workspace_id,
+                    };
+                    mgr.emit_host_event("pane.created", &payload, EventScope::System);
+                }
+                crate::state::PendingHostEvent::PaneClosed { pane_id } => {
+                    let payload = PaneClosed {
+                        pane_id,
+                        reason: LifecycleReason::User,
+                    };
+                    mgr.emit_host_event("pane.closed", &payload, EventScope::System);
                 }
             }
         }
