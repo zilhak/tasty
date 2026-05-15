@@ -35,6 +35,18 @@ pub const METHOD_COMMAND_INVOKE: &str = "command.invoke";
 /// params에 [`ExtensionHookInvokeParams`]. plugin은 mode에 따라 transform/filter/observe
 /// 의미로 [`ExtensionHookResult`]를 반환한다 (PluginResponse.result).
 pub const METHOD_EXTENSION_INVOKE_HOOK: &str = "extension.invoke_hook";
+/// host → plugin: plugin이 contribute한 popup의 인스턴스가 열림. plugin은
+/// 응답으로 [`PopupOpenResult`]를 돌려준다 — 초기 UI tree를 포함.
+/// params에 [`PopupOpenParams`].
+pub const METHOD_POPUP_OPEN: &str = "popup.open";
+/// host → plugin: popup 인스턴스 위에서 사용자 이벤트 발생.
+/// params에 [`PopupEventParams`]. 응답으로 [`PopupEventResult`]를 돌려준다 —
+/// 갱신된 tree(없으면 None).
+pub const METHOD_POPUP_EVENT: &str = "popup.event";
+/// host → plugin: popup 인스턴스가 닫힘 (사용자 outside-click / Esc / plugin이
+/// host IPC로 명시 닫기 요청한 경우 모두 포함). fire-and-forget.
+/// params에 [`PopupClosedParams`].
+pub const METHOD_POPUP_CLOSED: &str = "popup.closed";
 
 /// `surface.create` / `surface.event` / `surface.restore` 응답에 포함되는 standard 결과.
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -331,6 +343,71 @@ pub enum HandleChannelMessage {
     },
 }
 
+// ── Popup wire types ──
+
+/// `popup.open` params — 호스트가 plugin에게 popup 인스턴스를 열도록 요청.
+///
+/// `instance_id`는 호스트가 발급한 인스턴스 식별자로, 같은 popup_id의 여러
+/// 인스턴스를 구분하기 위한 키. plugin은 응답으로 초기 트리를 [`PopupOpenResult`]에
+/// 담아 돌려준다.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct PopupOpenParams {
+    pub popup_id: String,
+    pub instance_id: u64,
+    /// 호스트가 trigger 시점에 알 수 있던 컨텍스트(예: trigger event payload). plugin이
+    /// 초기 트리 구성에 활용할 수 있다. 없으면 Null.
+    #[serde(default)]
+    pub context: serde_json::Value,
+}
+
+/// `popup.open` 응답.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct PopupOpenResult {
+    /// 초기 UI tree. None이면 빈 popup(호스트가 placeholder 표시).
+    #[serde(default)]
+    pub tree: Option<UiNode>,
+}
+
+/// `popup.event` params — popup 위에서 발생한 사용자 이벤트.
+#[derive(Debug, Clone, Serialize)]
+pub struct PopupEventParams<'a> {
+    pub instance_id: u64,
+    pub event: &'a UiEvent,
+}
+
+/// `popup.event` 응답.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct PopupEventResult {
+    /// 갱신된 tree. None이면 호스트는 이전 트리를 유지.
+    #[serde(default)]
+    pub tree: Option<UiNode>,
+    /// plugin이 popup을 자체적으로 닫고 싶다는 신호. true면 호스트가 인스턴스를
+    /// 정리하고 [`METHOD_POPUP_CLOSED`]를 다시 보내 cleanup 흐름 통일.
+    #[serde(default)]
+    pub close: bool,
+}
+
+/// `popup.closed` params — popup 인스턴스가 닫혔음을 plugin에 통보. fire-and-forget.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct PopupClosedParams {
+    pub instance_id: u64,
+    /// 닫힌 이유. 텍스트는 호스트가 결정한 카테고리.
+    pub reason: PopupCloseReason,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PopupCloseReason {
+    /// 사용자가 popup 바깥을 클릭했고 매니페스트가 dismiss_on_outside_click=true.
+    OutsideClick,
+    /// 사용자가 Esc 키를 눌렀음.
+    Escape,
+    /// plugin이 [`PopupEventResult::close`]=true 또는 host IPC `popup.close`로 닫기 요청.
+    PluginRequest,
+    /// 호스트 측에서 강제 닫힘 (plugin disable / unload 등).
+    HostShutdown,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -541,4 +618,50 @@ mod tests {
         );
     }
 
+    #[test]
+    fn popup_open_params_round_trip_with_context() {
+        let s = r#"{"popup_id":"search","instance_id":42,"context":{"q":"a"}}"#;
+        let p: PopupOpenParams = serde_json::from_str(s).unwrap();
+        assert_eq!(p.popup_id, "search");
+        assert_eq!(p.instance_id, 42);
+        assert_eq!(p.context["q"], "a");
+    }
+
+    #[test]
+    fn popup_open_params_context_defaults_to_null() {
+        let s = r#"{"popup_id":"search","instance_id":1}"#;
+        let p: PopupOpenParams = serde_json::from_str(s).unwrap();
+        assert!(p.context.is_null());
+    }
+
+    #[test]
+    fn popup_event_result_close_defaults_false() {
+        let s = r#"{}"#;
+        let r: PopupEventResult = serde_json::from_str(s).unwrap();
+        assert!(r.tree.is_none());
+        assert!(!r.close);
+    }
+
+    #[test]
+    fn popup_close_reason_serializes_snake_case() {
+        let cases = [
+            (PopupCloseReason::OutsideClick, "outside_click"),
+            (PopupCloseReason::Escape, "escape"),
+            (PopupCloseReason::PluginRequest, "plugin_request"),
+            (PopupCloseReason::HostShutdown, "host_shutdown"),
+        ];
+        for (r, expected) in cases {
+            let s = serde_json::to_string(&r).unwrap();
+            assert_eq!(s, format!("\"{expected}\""));
+            let parsed: PopupCloseReason = serde_json::from_str(&s).unwrap();
+            assert_eq!(parsed, r);
+        }
+    }
+
+    #[test]
+    fn popup_method_names_stable() {
+        assert_eq!(METHOD_POPUP_OPEN, "popup.open");
+        assert_eq!(METHOD_POPUP_EVENT, "popup.event");
+        assert_eq!(METHOD_POPUP_CLOSED, "popup.closed");
+    }
 }
