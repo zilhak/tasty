@@ -2395,6 +2395,39 @@ impl PluginManager {
     pub fn listener_port(&self) -> Option<u16> {
         self.listener.as_ref().map(|l| l.port())
     }
+
+    /// `[[contributes.popup]]` 항목을 활성 + `ui.popup` grant된 plugin에서만
+    /// 수집해 반환한다. 호스트의 popup 라우터(PR 4)가 trigger 매칭과 IPC 라우팅에
+    /// 사용한다.
+    pub fn plugin_popup_contributes(&self) -> Vec<PluginPopupEntry> {
+        let mut out = Vec::new();
+        for pkg in &self.packages {
+            if self.config.is_disabled(&pkg.manifest.id) {
+                continue;
+            }
+            let granted = self.config.granted_permissions(&pkg.manifest.id);
+            if !granted.contains(&"ui.popup".to_string()) {
+                continue;
+            }
+            for popup in &pkg.manifest.contributes.popup {
+                out.push(PluginPopupEntry {
+                    plugin_id: pkg.manifest.id.clone(),
+                    popup_id: popup.id.clone(),
+                    contribute: popup.clone(),
+                });
+            }
+        }
+        out
+    }
+}
+
+/// `[[contributes.popup]]` 한 항목 + 소유 plugin id. 호스트의 popup 라우터가
+/// trigger 매칭에 사용하기 위한 평탄 뷰.
+#[derive(Debug, Clone)]
+pub struct PluginPopupEntry {
+    pub plugin_id: String,
+    pub popup_id: String,
+    pub contribute: super::manifest::PopupContribute,
 }
 
 #[cfg(test)]

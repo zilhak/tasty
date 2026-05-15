@@ -29,6 +29,7 @@
 use serde_json::Value;
 use tasty_plugin_protocol::ui_tree::UiEvent;
 pub use tasty_plugin_protocol::SurfaceResult;
+pub use tasty_plugin_protocol::{PopupEventResult, PopupOpenResult};
 
 use crate::host::HostHandle;
 
@@ -63,6 +64,31 @@ pub struct SurfaceSnapshotCtx {
 pub struct CommandInvokeCtx {
     pub surface_id: u32,
     pub command_id: String,
+}
+
+/// `popup.open` 콜백 컨텍스트.
+#[derive(Debug, Clone)]
+pub struct PopupOpenCtx {
+    /// 매니페스트 `[[contributes.popup]]`의 `id` (plugin 내 로컬 id).
+    pub popup_id: String,
+    /// 같은 popup_id의 여러 인스턴스를 구분하기 위해 호스트가 발급한 id.
+    pub instance_id: u64,
+    /// trigger 시점에 호스트가 알 수 있던 컨텍스트 (event payload 등). 없으면 Null.
+    pub context: Value,
+}
+
+/// `popup.event` 콜백 컨텍스트.
+#[derive(Debug, Clone)]
+pub struct PopupEventCtx {
+    pub instance_id: u64,
+    pub event: UiEvent,
+}
+
+/// `popup.closed` 콜백 컨텍스트. fire-and-forget이므로 반환값 없음.
+#[derive(Debug, Clone)]
+pub struct PopupClosedCtx {
+    pub instance_id: u64,
+    pub reason: tasty_plugin_protocol::PopupCloseReason,
 }
 
 /// `extension.invoke_hook` 컨텍스트. extension plugin이 hook 호출을 받았을 때.
@@ -274,6 +300,31 @@ pub trait Plugin: Send + 'static {
     /// 이벤트가 fan-out돼 도착했을 때 호출된다. fire-and-forget이라 반환값은 없다.
     /// 기본 구현은 no-op.
     fn on_event(&mut self, ctx: EventDispatchCtx) {
+        let _ = ctx;
+    }
+
+    /// `popup.open` — 매니페스트 `[[contributes.popup]]`로 contribute한 popup의
+    /// 새 인스턴스가 열림. plugin은 초기 UI tree를 [`PopupOpenResult`]에 담아 반환.
+    /// 기본 구현은 빈 트리.
+    fn open_popup(&mut self, ctx: PopupOpenCtx) -> PopupOpenResult {
+        let _ = ctx;
+        PopupOpenResult { tree: None }
+    }
+
+    /// `popup.event` — popup 인스턴스 위에서 사용자 이벤트 발생. plugin은
+    /// 갱신된 트리(없으면 None)와 자체 닫기 신호(`close=true`)를 반환한다.
+    /// 기본 구현은 변경 없음.
+    fn handle_popup_event(&mut self, ctx: PopupEventCtx) -> PopupEventResult {
+        let _ = ctx;
+        PopupEventResult {
+            tree: None,
+            close: false,
+        }
+    }
+
+    /// `popup.closed` — popup 인스턴스가 닫혔음을 통보. fire-and-forget.
+    /// plugin은 인스턴스별 자체 상태를 정리한다. 기본 구현은 no-op.
+    fn on_popup_closed(&mut self, ctx: PopupClosedCtx) {
         let _ = ctx;
     }
 

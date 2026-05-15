@@ -22,7 +22,8 @@ pub use shared_buffer::SharedBuffer;
 pub use host::HostCallError;
 pub use plugin::{
     CommandInvokeCtx, EventDispatchCtx, ExtensionHookCtx, ExtensionHookOutcome, IpcMethodCtx,
-    IpcMethodError, Plugin, SurfaceCreateCtx, SurfaceEventCtx, SurfaceRestoreCtx, SurfaceResult,
+    IpcMethodError, Plugin, PopupClosedCtx, PopupEventCtx, PopupEventResult, PopupOpenCtx,
+    PopupOpenResult, SurfaceCreateCtx, SurfaceEventCtx, SurfaceRestoreCtx, SurfaceResult,
     SurfaceSnapshotCtx,
 };
 pub use runtime::run;

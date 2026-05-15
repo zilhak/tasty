@@ -20,11 +20,11 @@ use anyhow::Result;
 use serde_json::Value;
 
 use tasty_plugin_protocol::{
-    EventDispatchParams, HandleChannelMessage, IpcCallResult, IpcInvokeParams,
-    METHOD_COMMAND_INVOKE, METHOD_EVENT_DISPATCH, METHOD_IPC_INVOKE, METHOD_IPC_RESULT,
-    METHOD_PING, METHOD_SHUTDOWN, METHOD_SURFACE_CREATE, METHOD_SURFACE_DESTROY,
-    METHOD_SURFACE_EVENT, METHOD_SURFACE_RESTORE, METHOD_SURFACE_SNAPSHOT, PluginEvent,
-    PluginRequest, PluginResponse,
+    EventDispatchParams, HandleChannelMessage, IpcCallResult, IpcInvokeParams, PopupClosedParams,
+    PopupOpenParams, METHOD_COMMAND_INVOKE, METHOD_EVENT_DISPATCH, METHOD_IPC_INVOKE,
+    METHOD_IPC_RESULT, METHOD_PING, METHOD_POPUP_CLOSED, METHOD_POPUP_EVENT, METHOD_POPUP_OPEN,
+    METHOD_SHUTDOWN, METHOD_SURFACE_CREATE, METHOD_SURFACE_DESTROY, METHOD_SURFACE_EVENT,
+    METHOD_SURFACE_RESTORE, METHOD_SURFACE_SNAPSHOT, PluginEvent, PluginRequest, PluginResponse,
 };
 
 use crate::connection::Connection;
@@ -469,6 +469,48 @@ pub(crate) fn dispatch<P: Plugin>(
             // 호스트는 응답을 무시한다. fire-and-forget이라 null 반환.
             Ok(Value::Null)
         }
+        METHOD_POPUP_OPEN => {
+            let parsed: PopupOpenParams = serde_json::from_value(params.clone()).map_err(|e| {
+                DispatchError::with_code(format!("invalid popup.open params: {e}"), -32602)
+            })?;
+            let result = plugin.open_popup(crate::plugin::PopupOpenCtx {
+                popup_id: parsed.popup_id,
+                instance_id: parsed.instance_id,
+                context: parsed.context,
+            });
+            serde_json::to_value(result).map_err(|e| DispatchError::from_anyhow(e.into()))
+        }
+        METHOD_POPUP_EVENT => {
+            let instance_id = params
+                .get("instance_id")
+                .and_then(|v| v.as_u64())
+                .ok_or_else(|| DispatchError {
+                    message: "popup.event params missing 'instance_id'".into(),
+                    code: None,
+                })?;
+            let ev_value = params.get("event").ok_or_else(|| DispatchError {
+                message: "popup.event params missing 'event'".into(),
+                code: None,
+            })?;
+            let event = serde_json::from_value(ev_value.clone())
+                .map_err(|e| DispatchError::from_anyhow(e.into()))?;
+            let result = plugin.handle_popup_event(crate::plugin::PopupEventCtx {
+                instance_id,
+                event,
+            });
+            serde_json::to_value(result).map_err(|e| DispatchError::from_anyhow(e.into()))
+        }
+        METHOD_POPUP_CLOSED => {
+            let parsed: PopupClosedParams =
+                serde_json::from_value(params.clone()).map_err(|e| {
+                    DispatchError::with_code(format!("invalid popup.closed params: {e}"), -32602)
+                })?;
+            plugin.on_popup_closed(crate::plugin::PopupClosedCtx {
+                instance_id: parsed.instance_id,
+                reason: parsed.reason,
+            });
+            Ok(Value::Null)
+        }
         other => Err(DispatchError::with_code(
             format!("plugin does not handle method '{other}'"),
             -32601,
@@ -850,5 +892,121 @@ mod tests {
         });
         join.join().unwrap();
         assert_eq!(*called.lock().unwrap(), 1);
+    }
+
+    /// popup.open / popup.event / popup.closed 라우팅과 콜백 호출 검증.
+    struct PopupStubPlugin {
+        opened: Arc<Mutex<Vec<(String, u64, Value)>>>,
+        events: Arc<Mutex<Vec<(u64, tasty_plugin_protocol::UiEvent)>>>,
+        closed: Arc<Mutex<Vec<(u64, tasty_plugin_protocol::PopupCloseReason)>>>,
+        next_open_tree: Option<tasty_plugin_protocol::UiNode>,
+        request_close: bool,
+    }
+
+    impl Plugin for PopupStubPlugin {
+        fn id(&self) -> &str {
+            "test.popup"
+        }
+        fn create_surface(&mut self, _ctx: SurfaceCreateCtx) -> SurfaceResult {
+            SurfaceResult {
+                tree: None,
+                display_name: None,
+            }
+        }
+        fn handle_event(&mut self, _ctx: SurfaceEventCtx) -> SurfaceResult {
+            SurfaceResult {
+                tree: None,
+                display_name: None,
+            }
+        }
+        fn open_popup(
+            &mut self,
+            ctx: crate::plugin::PopupOpenCtx,
+        ) -> tasty_plugin_protocol::PopupOpenResult {
+            self.opened
+                .lock()
+                .unwrap()
+                .push((ctx.popup_id, ctx.instance_id, ctx.context));
+            tasty_plugin_protocol::PopupOpenResult {
+                tree: self.next_open_tree.take(),
+            }
+        }
+        fn handle_popup_event(
+            &mut self,
+            ctx: crate::plugin::PopupEventCtx,
+        ) -> tasty_plugin_protocol::PopupEventResult {
+            self.events.lock().unwrap().push((ctx.instance_id, ctx.event));
+            tasty_plugin_protocol::PopupEventResult {
+                tree: None,
+                close: self.request_close,
+            }
+        }
+        fn on_popup_closed(&mut self, ctx: crate::plugin::PopupClosedCtx) {
+            self.closed.lock().unwrap().push((ctx.instance_id, ctx.reason));
+        }
+    }
+
+    fn make_popup_plugin() -> PopupStubPlugin {
+        PopupStubPlugin {
+            opened: Arc::new(Mutex::new(Vec::new())),
+            events: Arc::new(Mutex::new(Vec::new())),
+            closed: Arc::new(Mutex::new(Vec::new())),
+            next_open_tree: None,
+            request_close: false,
+        }
+    }
+
+    #[test]
+    fn popup_open_calls_plugin_with_ctx_and_returns_tree() {
+        let mut plugin = make_popup_plugin();
+        plugin.next_open_tree = Some(tasty_plugin_protocol::UiNode::Spacer { size: 4 });
+        let opened = plugin.opened.clone();
+        let host = dummy_host();
+        let params = json!({
+            "popup_id": "search",
+            "instance_id": 7,
+            "context": {"q": "abc"},
+        });
+        let resp = build_response(1, dispatch(&mut plugin, METHOD_POPUP_OPEN, &params, &host));
+        assert!(resp.error.is_none(), "got error: {:?}", resp.error);
+        let tree = resp.result.unwrap().get("tree").cloned().unwrap();
+        assert!(!tree.is_null());
+
+        let opened = opened.lock().unwrap();
+        assert_eq!(opened.len(), 1);
+        assert_eq!(opened[0].0, "search");
+        assert_eq!(opened[0].1, 7);
+        assert_eq!(opened[0].2["q"], "abc");
+    }
+
+    #[test]
+    fn popup_event_request_close_propagates() {
+        let mut plugin = make_popup_plugin();
+        plugin.request_close = true;
+        let host = dummy_host();
+        let params = json!({
+            "instance_id": 11,
+            "event": {"kind": "click", "node_id": "btn"},
+        });
+        let resp = build_response(2, dispatch(&mut plugin, METHOD_POPUP_EVENT, &params, &host));
+        assert!(resp.error.is_none(), "got error: {:?}", resp.error);
+        let r = resp.result.unwrap();
+        assert_eq!(r.get("close"), Some(&Value::Bool(true)));
+    }
+
+    #[test]
+    fn popup_closed_dispatch_invokes_callback() {
+        let mut plugin = make_popup_plugin();
+        let closed = plugin.closed.clone();
+        let host = dummy_host();
+        let params = json!({"instance_id": 5, "reason": "outside_click"});
+        let resp = build_response(3, dispatch(&mut plugin, METHOD_POPUP_CLOSED, &params, &host));
+        assert!(resp.error.is_none(), "got error: {:?}", resp.error);
+        assert_eq!(resp.result, Some(Value::Null));
+
+        let c = closed.lock().unwrap();
+        assert_eq!(c.len(), 1);
+        assert_eq!(c[0].0, 5);
+        assert_eq!(c[0].1, tasty_plugin_protocol::PopupCloseReason::OutsideClick);
     }
 }
