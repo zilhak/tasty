@@ -25,7 +25,7 @@ use crate::plugin::handle_channel::HandleListener;
 use crate::plugin::host_cmd::{HostCmd, SurfaceHandles};
 use crate::plugin::ipc_namespace::IpcNamespaceRegistry;
 use crate::plugin::listener::HostListener;
-use crate::plugin::manifest::{Permission, PluginPackage};
+use crate::plugin::manifest::{HookMode, IpcHookDecl, Permission, PluginPackage};
 use crate::plugin::process::PluginProcess;
 use crate::plugin::protocol::{
     self, IpcCallResult, PluginEvent, PluginRequest, PluginResponse, SurfaceResult,
@@ -37,6 +37,19 @@ const HEALTHCHECK_TIMEOUT: Duration = Duration::from_secs(60);
 const PING_INTERVAL: Duration = Duration::from_secs(15);
 const RESTART_FAILURE_WINDOW: Duration = Duration::from_secs(10);
 const RESTART_FAILURE_LIMIT: usize = 3;
+
+/// IPC 응답을 최종적으로 어디로 회신해야 하는지를 식별. 호스트 외부 caller(CLI/사용자)는
+/// `Local`, 다른 plugin이면 `Plugin`.
+enum FinalCaller {
+    Local {
+        response_tx: mpsc::SyncSender<JsonRpcResponse>,
+        original_id: serde_json::Value,
+    },
+    Plugin {
+        caller_plugin_id: String,
+        call_id: u64,
+    },
+}
 
 /// pending host→plugin request의 종류. 응답 수신 시 어떤 후처리를 할지 식별.
 #[allow(dead_code)]
@@ -67,6 +80,76 @@ enum PendingRequestKind {
         /// caller plugin이 ipc.call 시점에 발급한 call_id.
         call_id: u64,
     },
+    /// extension의 pre-IPC hook을 dispatch한 뒤 응답 대기. extension이 응답을 주면
+    /// (transform이면 payload 교체, filter면 차단 결정) 그 결과로 target plugin에
+    /// 실제 ipc.invoke를 보낸다. post-hook이 있으면 함께 전달해 두 번째 phase에 사용.
+    ExtensionPreIpcHook {
+        target_plugin_id: String,
+        extension_plugin_id: String,
+        method: String,
+        params: serde_json::Value,
+        pre_hook_mode: HookMode,
+        final_caller: FinalCaller,
+        post_hook: Option<IpcHookDecl>,
+    },
+    /// extension의 post-IPC hook을 dispatch한 뒤 응답 대기. extension이 응답을 주면
+    /// (transform이면 payload 교체, filter면 ignored — post는 차단 무의미)
+    /// 그 결과로 caller에 최종 응답.
+    ExtensionPostIpcHook {
+        extension_plugin_id: String,
+        method: String,
+        post_hook_mode: HookMode,
+        /// target plugin의 응답을 그대로 들고 온 것. Ok면 result, Err면 (msg, code).
+        target_outcome: TargetOutcome,
+        final_caller: FinalCaller,
+    },
+    /// pre-hook 없이 target에 직접 ipc.invoke한 뒤, 매칭 post-hook이 있어
+    /// 응답이 오면 post-hook으로 chain해야 하는 경우의 pending.
+    NamespaceInvokeWithPostHook {
+        target_plugin_id: String,
+        method: String,
+        extension_plugin_id: String,
+        post_hook_decl: IpcHookDecl,
+        final_caller: FinalCaller,
+    },
+}
+
+/// target plugin의 ipc.invoke 응답 결과. post-hook 진입 시 보존해 둔다.
+enum TargetOutcome {
+    Ok(serde_json::Value),
+    Err { message: String, code: i32 },
+}
+
+/// extension hook 응답에서 추출한 결정.
+enum HookOutcome {
+    /// payload를 새 값으로 교체 (transform).
+    Modified(serde_json::Value),
+    /// 차단 (filter).
+    Block,
+    /// 그 외 — observe, filter pass, transform no-op, 응답 누락, 파싱 실패.
+    Pass,
+}
+
+/// `ExtensionHookResult` JSON에서 outcome 추출. 에러/누락은 fail-open(`Pass`).
+fn parse_hook_result(resp: &PluginResponse) -> HookOutcome {
+    if resp.error.is_some() {
+        return HookOutcome::Pass;
+    }
+    let result = match &resp.result {
+        Some(v) => v,
+        None => return HookOutcome::Pass,
+    };
+    if let Some(v) = result.get("modified_payload") {
+        if !v.is_null() {
+            return HookOutcome::Modified(v.clone());
+        }
+    }
+    if let Some(pass) = result.get("pass").and_then(|p| p.as_bool()) {
+        if !pass {
+            return HookOutcome::Block;
+        }
+    }
+    HookOutcome::Pass
 }
 
 struct RemoteSurfaceEntry {
@@ -972,19 +1055,12 @@ impl PluginManager {
                 return;
             }
         };
-        let req_id = match self.send_namespace_invoke(&plugin_id, method, &params, caller_plugin_id)
-        {
-            Ok(id) => id,
-            Err(msg) => {
-                let _ =
-                    response_tx.send(JsonRpcResponse::error(original_id, -32003, &msg));
-                return;
-            }
-        };
-        self.pending_requests.insert(
-            req_id,
-            PendingRequestKind::NamespaceInvoke {
-                plugin_id,
+        self.dispatch_namespace_or_hook(
+            plugin_id,
+            method.to_string(),
+            params,
+            caller_plugin_id.map(str::to_string),
+            FinalCaller::Local {
                 response_tx,
                 original_id,
             },
@@ -1008,22 +1084,253 @@ impl PluginManager {
                 return;
             }
         };
-        let req_id =
-            match self.send_namespace_invoke(&plugin_id, method, &params, Some(caller_plugin_id)) {
-                Ok(id) => id,
-                Err(msg) => {
-                    self.send_ipc_result(caller_plugin_id, call_id, None, Some(msg));
-                    return;
-                }
-            };
-        self.pending_requests.insert(
-            req_id,
-            PendingRequestKind::PluginToPluginNamespace {
-                plugin_id,
+        self.dispatch_namespace_or_hook(
+            plugin_id,
+            method.to_string(),
+            params,
+            Some(caller_plugin_id.to_string()),
+            FinalCaller::Plugin {
                 caller_plugin_id: caller_plugin_id.to_string(),
                 call_id,
             },
         );
+    }
+
+    /// validate를 통과한 namespace 호출을 hook-aware하게 분기.
+    ///
+    /// - 활성 extension이 있고 pre-hook이 매칭되면 → extension.invoke_hook 먼저 송신.
+    /// - 그 외에는 기존처럼 target에 바로 ipc.invoke 송신. 매칭 post-hook이 있으면
+    ///   응답 수신 시 post-hook으로 chain.
+    /// - caller가 extension 자신이면 self-loop 방지를 위해 hook을 건너뛴다.
+    fn dispatch_namespace_or_hook(
+        &mut self,
+        target_plugin_id: String,
+        method: String,
+        params: serde_json::Value,
+        caller_plugin_id: Option<String>,
+        final_caller: FinalCaller,
+    ) {
+        let extension_self = match (
+            caller_plugin_id.as_deref(),
+            self.extensions.active_extension_for_target(&target_plugin_id),
+        ) {
+            (Some(c), Some(e)) => c == e,
+            _ => false,
+        };
+
+        let active_ext_with_hooks =
+            if extension_self { None } else { self.find_active_ipc_hooks(&target_plugin_id, &method) };
+
+        match active_ext_with_hooks {
+            Some((ext_id, Some(pre), post)) => {
+                // pre-hook 우선 송신.
+                let payload = serde_json::json!({
+                    "method": method,
+                    "params": params,
+                    "caller_plugin_id": caller_plugin_id,
+                });
+                match self.send_extension_invoke_hook(
+                    &ext_id,
+                    tasty_plugin_protocol::ExtensionHookKind::Ipc,
+                    tasty_plugin_protocol::ExtensionHookPhase::Pre,
+                    pre.mode,
+                    &method,
+                    payload,
+                ) {
+                    Ok(req_id) => {
+                        self.pending_requests.insert(
+                            req_id,
+                            PendingRequestKind::ExtensionPreIpcHook {
+                                target_plugin_id,
+                                extension_plugin_id: ext_id,
+                                method,
+                                params,
+                                pre_hook_mode: pre.mode,
+                                final_caller,
+                                post_hook: post,
+                            },
+                        );
+                    }
+                    Err(msg) => {
+                        // extension 송신 실패 — fallback으로 그냥 target에 forward.
+                        tracing::warn!("pre-hook dispatch failed: {msg}; bypassing hook");
+                        self.dispatch_target_invoke(
+                            target_plugin_id,
+                            method,
+                            params,
+                            caller_plugin_id.as_deref(),
+                            final_caller,
+                            None,
+                        );
+                    }
+                }
+            }
+            Some((ext_id, None, Some(post))) => {
+                // pre 없음, post만 있음 — target에 바로 보내고 응답 시 post-hook chain.
+                self.dispatch_target_invoke(
+                    target_plugin_id,
+                    method,
+                    params,
+                    caller_plugin_id.as_deref(),
+                    final_caller,
+                    Some((ext_id, post)),
+                );
+            }
+            _ => {
+                // hook 없음 — 기존 경로.
+                self.dispatch_target_invoke(
+                    target_plugin_id,
+                    method,
+                    params,
+                    caller_plugin_id.as_deref(),
+                    final_caller,
+                    None,
+                );
+            }
+        }
+    }
+
+    /// target plugin에 실제 ipc.invoke 송신. post-hook이 주어지면 응답 후 chain.
+    fn dispatch_target_invoke(
+        &mut self,
+        target_plugin_id: String,
+        method: String,
+        params: serde_json::Value,
+        caller_plugin_id: Option<&str>,
+        final_caller: FinalCaller,
+        post_hook: Option<(String, IpcHookDecl)>,
+    ) {
+        let req_id = match self.send_namespace_invoke(
+            &target_plugin_id,
+            &method,
+            &params,
+            caller_plugin_id,
+        ) {
+            Ok(id) => id,
+            Err(msg) => {
+                self.send_final_error(final_caller, -32003, msg);
+                return;
+            }
+        };
+        let kind = match (final_caller, post_hook) {
+            (FinalCaller::Local { response_tx, original_id }, None) => {
+                PendingRequestKind::NamespaceInvoke {
+                    plugin_id: target_plugin_id,
+                    response_tx,
+                    original_id,
+                }
+            }
+            (FinalCaller::Plugin { caller_plugin_id, call_id }, None) => {
+                PendingRequestKind::PluginToPluginNamespace {
+                    plugin_id: target_plugin_id,
+                    caller_plugin_id,
+                    call_id,
+                }
+            }
+            (fc, Some((ext_id, decl))) => PendingRequestKind::NamespaceInvokeWithPostHook {
+                target_plugin_id,
+                method,
+                extension_plugin_id: ext_id,
+                post_hook_decl: decl,
+                final_caller: fc,
+            },
+        };
+        self.pending_requests.insert(req_id, kind);
+    }
+
+    /// 활성 extension이 있고 method에 매칭되는 pre/post IPC hook을 검색.
+    /// 둘 다 없으면 `None` 반환.
+    fn find_active_ipc_hooks(
+        &self,
+        target_plugin_id: &str,
+        method: &str,
+    ) -> Option<(String, Option<IpcHookDecl>, Option<IpcHookDecl>)> {
+        let ext_id = self.extensions.active_extension_for_target(target_plugin_id)?.to_string();
+        let pkg = self.packages.iter().find(|p| p.manifest.id == ext_id)?;
+        let extends = pkg.manifest.extends.as_ref()?;
+        let pre = extends
+            .pre_ipc
+            .iter()
+            .find(|h| h.method == method)
+            .cloned();
+        let post = extends
+            .post_ipc
+            .iter()
+            .find(|h| h.method == method)
+            .cloned();
+        if pre.is_none() && post.is_none() {
+            None
+        } else {
+            Some((ext_id, pre, post))
+        }
+    }
+
+    /// extension에 `extension.invoke_hook` 송신. 성공 시 req_id 반환.
+    fn send_extension_invoke_hook(
+        &self,
+        extension_plugin_id: &str,
+        kind: tasty_plugin_protocol::ExtensionHookKind,
+        phase: tasty_plugin_protocol::ExtensionHookPhase,
+        mode: HookMode,
+        target: &str,
+        payload: serde_json::Value,
+    ) -> Result<u64, String> {
+        let proc = self.processes.get(extension_plugin_id).ok_or_else(|| {
+            format!("extension plugin '{extension_plugin_id}' is not running")
+        })?;
+        let mode_str = match mode {
+            HookMode::Transform => "transform",
+            HookMode::Filter => "filter",
+            HookMode::Observe => "observe",
+        };
+        let kind_str = match kind {
+            tasty_plugin_protocol::ExtensionHookKind::Event => "event",
+            tasty_plugin_protocol::ExtensionHookKind::Ipc => "ipc",
+        };
+        let phase_str = match phase {
+            tasty_plugin_protocol::ExtensionHookPhase::Pre => "pre",
+            tasty_plugin_protocol::ExtensionHookPhase::Post => "post",
+        };
+        let req_id = self.next_request_id.fetch_add(1, Ordering::Relaxed);
+        let req = PluginRequest {
+            method: tasty_plugin_protocol::METHOD_EXTENSION_INVOKE_HOOK.to_string(),
+            params: serde_json::json!({
+                "kind": kind_str,
+                "phase": phase_str,
+                "mode": mode_str,
+                "target": target,
+                "payload": payload,
+            }),
+            id: req_id,
+        };
+        proc.req_tx
+            .send(req)
+            .map_err(|e| format!("extension '{extension_plugin_id}' send failed: {e}"))?;
+        Ok(req_id)
+    }
+
+    /// final_caller로 에러 응답 송신.
+    fn send_final_error(&mut self, final_caller: FinalCaller, code: i32, message: String) {
+        match final_caller {
+            FinalCaller::Local { response_tx, original_id } => {
+                let _ = response_tx.send(JsonRpcResponse::error(original_id, code, &message));
+            }
+            FinalCaller::Plugin { caller_plugin_id, call_id } => {
+                self.send_ipc_result(&caller_plugin_id, call_id, None, Some(message));
+            }
+        }
+    }
+
+    /// final_caller로 성공 응답 송신.
+    fn send_final_success(&mut self, final_caller: FinalCaller, result: serde_json::Value) {
+        match final_caller {
+            FinalCaller::Local { response_tx, original_id } => {
+                let _ = response_tx.send(JsonRpcResponse::success(original_id, result));
+            }
+            FinalCaller::Plugin { caller_plugin_id, call_id } => {
+                self.send_ipc_result(&caller_plugin_id, call_id, Some(result), None);
+            }
+        }
     }
 
     /// namespace 메서드 호출의 유효성 검사. 성공 시 target plugin id를 반환.
@@ -1115,11 +1422,25 @@ impl PluginManager {
                 }
                 | PendingRequestKind::PluginToPluginNamespace {
                     plugin_id: pid, ..
+                }
+                | PendingRequestKind::NamespaceInvokeWithPostHook {
+                    target_plugin_id: pid,
+                    ..
                 } if pid == plugin_id => Some(*id),
+                PendingRequestKind::ExtensionPreIpcHook {
+                    target_plugin_id: pid,
+                    extension_plugin_id: epid,
+                    ..
+                } if pid == plugin_id || epid == plugin_id => Some(*id),
+                PendingRequestKind::ExtensionPostIpcHook {
+                    extension_plugin_id: epid,
+                    ..
+                } if epid == plugin_id => Some(*id),
                 _ => None,
             })
             .collect();
         for id in to_cancel {
+            let msg = format!("plugin '{plugin_id}' unavailable: {reason}");
             match self.pending_requests.remove(&id) {
                 Some(PendingRequestKind::NamespaceInvoke {
                     response_tx,
@@ -1129,7 +1450,7 @@ impl PluginManager {
                     let _ = response_tx.send(JsonRpcResponse::error(
                         original_id,
                         -32004,
-                        &format!("plugin '{plugin_id}' unavailable: {reason}"),
+                        &msg,
                     ));
                 }
                 Some(PendingRequestKind::PluginToPluginNamespace {
@@ -1141,8 +1462,15 @@ impl PluginManager {
                         &caller_plugin_id,
                         call_id,
                         None,
-                        Some(format!("plugin '{plugin_id}' unavailable: {reason}")),
+                        Some(msg),
                     );
+                }
+                Some(PendingRequestKind::ExtensionPreIpcHook { final_caller, .. })
+                | Some(PendingRequestKind::ExtensionPostIpcHook { final_caller, .. })
+                | Some(PendingRequestKind::NamespaceInvokeWithPostHook {
+                    final_caller, ..
+                }) => {
+                    self.send_final_error(final_caller, -32004, msg);
                 }
                 _ => {}
             }
@@ -1230,6 +1558,177 @@ impl PluginManager {
                 // plugin caller에는 ipc.result로 회신. error_code는 plugin 측이
                 // 받은 표준 form 그대로(메시지에 합쳐서 전달).
                 self.send_ipc_result(&caller_plugin_id, call_id, resp.result, resp.error);
+            }
+            PendingRequestKind::ExtensionPreIpcHook {
+                target_plugin_id,
+                extension_plugin_id,
+                method,
+                params,
+                pre_hook_mode,
+                final_caller,
+                post_hook,
+            } => {
+                self.handle_pre_ipc_hook_response(
+                    extension_plugin_id,
+                    target_plugin_id,
+                    method,
+                    params,
+                    pre_hook_mode,
+                    final_caller,
+                    post_hook,
+                    resp,
+                );
+            }
+            PendingRequestKind::NamespaceInvokeWithPostHook {
+                target_plugin_id: _,
+                method,
+                extension_plugin_id,
+                post_hook_decl,
+                final_caller,
+            } => {
+                self.handle_target_response_with_post_hook(
+                    extension_plugin_id,
+                    method,
+                    post_hook_decl,
+                    final_caller,
+                    resp,
+                );
+            }
+            PendingRequestKind::ExtensionPostIpcHook {
+                extension_plugin_id: _,
+                method: _,
+                post_hook_mode,
+                target_outcome,
+                final_caller,
+            } => {
+                self.handle_post_ipc_hook_response(
+                    post_hook_mode,
+                    target_outcome,
+                    final_caller,
+                    resp,
+                );
+            }
+        }
+    }
+
+    /// pre-hook 응답을 처리. mode에 따라 transform/filter/observe 적용 후 target에 forward.
+    fn handle_pre_ipc_hook_response(
+        &mut self,
+        extension_plugin_id: String,
+        target_plugin_id: String,
+        method: String,
+        original_params: serde_json::Value,
+        mode: HookMode,
+        final_caller: FinalCaller,
+        post_hook: Option<IpcHookDecl>,
+        resp: PluginResponse,
+    ) {
+        // hook 응답에서 outcome 추출. 에러/누락은 fail-open(original payload로 진행).
+        let outcome = parse_hook_result(&resp);
+        let post_pair = post_hook.map(|p| (extension_plugin_id.clone(), p));
+
+        // payload는 hook 호출 시 {method, params, caller}로 래핑했으므로,
+        // transform이면 wrapper의 params 필드를 다시 꺼내 사용한다.
+        let final_params = match (mode, &outcome) {
+            (HookMode::Transform, HookOutcome::Modified(v)) => {
+                v.get("params").cloned().unwrap_or(original_params)
+            }
+            _ => original_params,
+        };
+
+        // filter mode에서 block이면 호출 자체 차단.
+        if matches!(mode, HookMode::Filter) && matches!(outcome, HookOutcome::Block) {
+            let msg = format!(
+                "extension '{extension_plugin_id}' filtered out method '{method}'"
+            );
+            // post-hook이 있어도 filter block이면 target 호출이 일어나지 않으므로 post도 skip.
+            self.send_final_error(final_caller, -32001, msg);
+            return;
+        }
+
+        // observe/transform/filter-pass → target에 정상 invoke.
+        self.dispatch_target_invoke(
+            target_plugin_id,
+            method,
+            final_params,
+            None, // caller_plugin_id는 검증을 이미 통과했으므로 target 측 caller 표시는 필요시만.
+            final_caller,
+            post_pair,
+        );
+    }
+
+    /// target plugin 응답을 받았을 때 post-hook으로 chain.
+    fn handle_target_response_with_post_hook(
+        &mut self,
+        extension_plugin_id: String,
+        method: String,
+        post_hook_decl: IpcHookDecl,
+        final_caller: FinalCaller,
+        resp: PluginResponse,
+    ) {
+        let target_outcome = if let Some(err) = resp.error.clone() {
+            TargetOutcome::Err {
+                message: err,
+                code: resp.error_code.unwrap_or(-32000),
+            }
+        } else {
+            TargetOutcome::Ok(resp.result.clone().unwrap_or(serde_json::Value::Null))
+        };
+
+        // post-hook payload: target의 result (에러면 null 전달).
+        let payload = match &target_outcome {
+            TargetOutcome::Ok(v) => v.clone(),
+            TargetOutcome::Err { .. } => serde_json::Value::Null,
+        };
+
+        match self.send_extension_invoke_hook(
+            &extension_plugin_id,
+            tasty_plugin_protocol::ExtensionHookKind::Ipc,
+            tasty_plugin_protocol::ExtensionHookPhase::Post,
+            post_hook_decl.mode,
+            &method,
+            payload,
+        ) {
+            Ok(req_id) => {
+                self.pending_requests.insert(
+                    req_id,
+                    PendingRequestKind::ExtensionPostIpcHook {
+                        extension_plugin_id,
+                        method,
+                        post_hook_mode: post_hook_decl.mode,
+                        target_outcome,
+                        final_caller,
+                    },
+                );
+            }
+            Err(msg) => {
+                tracing::warn!("post-hook dispatch failed: {msg}; bypassing");
+                self.finalize_target_outcome(final_caller, target_outcome);
+            }
+        }
+    }
+
+    /// post-hook 응답을 처리. transform이면 result 교체, 그 외는 원 target 응답 사용.
+    fn handle_post_ipc_hook_response(
+        &mut self,
+        mode: HookMode,
+        target_outcome: TargetOutcome,
+        final_caller: FinalCaller,
+        resp: PluginResponse,
+    ) {
+        let outcome = parse_hook_result(&resp);
+        let final_outcome = match (mode, outcome, target_outcome) {
+            (HookMode::Transform, HookOutcome::Modified(v), _) => TargetOutcome::Ok(v),
+            (_, _, original) => original,
+        };
+        self.finalize_target_outcome(final_caller, final_outcome);
+    }
+
+    fn finalize_target_outcome(&mut self, final_caller: FinalCaller, outcome: TargetOutcome) {
+        match outcome {
+            TargetOutcome::Ok(v) => self.send_final_success(final_caller, v),
+            TargetOutcome::Err { message, code } => {
+                self.send_final_error(final_caller, code, message);
             }
         }
     }
@@ -1503,6 +2002,60 @@ mod tests {
             .create_shared_buffer_for("com.example.ghost", 1, 4096)
             .unwrap_err();
         assert!(err.contains("not running"), "got: {err}");
+    }
+
+    fn make_response(result: Option<serde_json::Value>, error: Option<&str>) -> PluginResponse {
+        PluginResponse {
+            id: 1,
+            result,
+            error: error.map(String::from),
+            error_code: None,
+        }
+    }
+
+    #[test]
+    fn parse_hook_result_pass_on_missing_result() {
+        let resp = make_response(None, None);
+        assert!(matches!(parse_hook_result(&resp), HookOutcome::Pass));
+    }
+
+    #[test]
+    fn parse_hook_result_pass_on_error() {
+        let resp = make_response(Some(serde_json::json!({"pass": false})), Some("boom"));
+        assert!(matches!(parse_hook_result(&resp), HookOutcome::Pass));
+    }
+
+    #[test]
+    fn parse_hook_result_block_on_pass_false() {
+        let resp = make_response(Some(serde_json::json!({"pass": false})), None);
+        assert!(matches!(parse_hook_result(&resp), HookOutcome::Block));
+    }
+
+    #[test]
+    fn parse_hook_result_modified_payload_takes_precedence() {
+        let resp = make_response(
+            Some(serde_json::json!({"modified_payload": {"x": 1}, "pass": false})),
+            None,
+        );
+        match parse_hook_result(&resp) {
+            HookOutcome::Modified(v) => assert_eq!(v, serde_json::json!({"x": 1})),
+            other => panic!("expected Modified, got {:?}", std::mem::discriminant(&other)),
+        }
+    }
+
+    #[test]
+    fn parse_hook_result_pass_when_modified_null() {
+        let resp = make_response(
+            Some(serde_json::json!({"modified_payload": null})),
+            None,
+        );
+        assert!(matches!(parse_hook_result(&resp), HookOutcome::Pass));
+    }
+
+    #[test]
+    fn find_active_ipc_hooks_returns_none_when_no_extension() {
+        let mgr = mgr_with_namespace_owner("com.example.codex", "codex");
+        assert!(mgr.find_active_ipc_hooks("com.example.codex", "codex.spawn").is_none());
     }
 
     #[cfg(unix)]
