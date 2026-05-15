@@ -125,18 +125,6 @@ impl AppState {
         self.add_kind_tab("html", &json!({"url": url})).map(|_| ())
     }
 
-    /// Add a clipboard viewer tab in the focused pane.
-    pub fn add_clipboard_viewer_tab(&mut self) -> anyhow::Result<()> {
-        self.add_kind_tab("clipboard_viewer", &Value::Null)
-            .map(|_| ())
-    }
-
-    /// Add a clipboard viewer tab to the specified pane (cross-workspace).
-    pub fn add_clipboard_viewer_tab_to_pane(&mut self, pane_id: u32) -> anyhow::Result<()> {
-        self.add_kind_tab_to_pane(pane_id, "clipboard_viewer", &Value::Null)
-            .map(|_| ())
-    }
-
     /// Add an empty placeholder tab in the focused pane. Returns (tab_id, surface_id).
     pub fn add_empty_tab(&mut self) -> Option<(u32, u32)> {
         self.add_kind_tab("empty", &Value::Null).ok()

@@ -190,7 +190,7 @@ impl ClosedPanel {
 
     /// Capture from a single Surface (trait object). Terminal은 PTY 로직이 별도라
     /// 직접 처리하고, 그 외는 모두 `snapshot` 클로저를 통해 registry 경로로 간다.
-    /// 클로저가 `None`을 반환하면 (Html/Empty/ClipboardViewer/RemoteSurface 등 휘발성)
+    /// 클로저가 `None`을 반환하면 (Html/Empty/RemoteSurface 등 휘발성)
     /// 함수도 `None`을 반환한다.
     pub fn from_surface(surface: &dyn Surface, snapshot: SnapshotFn<'_>) -> Option<Self> {
         if let Some(node) = surface.as_terminal_surface() {

@@ -538,7 +538,6 @@ pub(crate) fn default_tab_name_for_kind(kind: &str, params: &Value) -> String {
             .map(|p| basename_or(p, "Image"))
             .unwrap_or_else(|| "Image".to_string()),
         "empty" => "Empty".to_string(),
-        "clipboard_viewer" => crate::i18n::t("clipboard_viewer.tab_title").to_string(),
         "terminal" => "terminal".to_string(),
         other => other.to_string(),
     }

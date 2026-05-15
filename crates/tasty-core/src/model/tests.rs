@@ -957,8 +957,3 @@ fn source_cwd_empty_surface_is_none() {
     assert_eq!(e.source_cwd(), None);
 }
 
-#[test]
-fn source_cwd_clipboard_viewer_is_none() {
-    let c = ClipboardViewerPanel::new(1);
-    assert_eq!(c.source_cwd(), None);
-}

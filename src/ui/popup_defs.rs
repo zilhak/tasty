@@ -58,18 +58,6 @@ pub fn all_defs() -> &'static [PopupDef] {
                 draw_fn: super::file_open_popup::draw_html_open_popup,
             },
             PopupDef {
-                id: "clipboard_viewer",
-                title_key: "clipboard_viewer.title",
-                title_fn: None,
-                default_size: egui::vec2(420.0, 520.0),
-                sizer: None,
-                default_scope: PopupScope::Window,
-                close_on_outside_click: true,
-                headless: false,
-                sticky_focus: false,
-                draw_fn: crate::clipboard_viewer_ui::draw_clipboard_viewer_popup,
-            },
-            PopupDef {
                 id: "rename",
                 title_key: "rename_dialog.tab_heading",
                 title_fn: Some(super::dialog::rename_popup_title),

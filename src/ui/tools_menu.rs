@@ -1,20 +1,18 @@
 //! 도구 메뉴 팝업. 사이드바의 "도구" 버튼 위에 떠서 도구 목록을 보여준다.
 //!
-//! 항목 출처:
-//! - 호스트 빌트인 (`ToolSource::Builtin`): 컴파일 시 박힌 항목 (예: Clipboard History).
-//! - Plugin (`ToolSource::Plugin`): 활성 + `ui.tool_item` 권한 grant된 plugin이
-//!   `[[contributes.tool]]`로 선언한 항목. `AppState::tool_registry`에 동기화돼 있다.
+//! 항목은 모두 plugin 출처 — 활성 + `ui.tool_item` 권한 grant된 plugin이
+//! `[[contributes.tool]]`로 선언한 항목. `AppState::tool_registry`에 동기화돼 있다.
+//! Clipboard History 등 과거 호스트 빌트인 항목은 builtin plugin으로 이전됨.
 //!
 //! 클릭 시 dispatch:
-//! - 빌트인 Clipboard History → `open_clipboard_viewer_popup`.
 //! - `ToolAction::Event` → `state.pending_tool_events`에 enqueue (App 메인 루프가
 //!   PluginManager로 발화).
 //! - `ToolAction::OpenSurface` → focused pane에 `add_kind_tab`.
-//! - `ToolAction::OpenPopup` → phase2-popup 구현 전이므로 warn 후 무시.
+//! - `ToolAction::OpenPopup` → pending_popup_opens enqueue.
 
 use crate::i18n::t;
 use crate::plugin::manifest::ToolAction;
-use crate::plugin::tool_registry::{ToolItem, ToolSource};
+use crate::plugin::tool_registry::ToolItem;
 use crate::state::AppState;
 use crate::theme;
 use crate::ui::popup::PopupAction;
@@ -65,28 +63,13 @@ pub fn draw_tools_menu(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction {
     PopupAction::None
 }
 
-/// 도구 항목을 실행한다. 호스트 빌트인은 직접 분기, plugin 항목은 action 종류별 처리.
+/// 도구 항목을 실행한다. plugin 항목의 action 종류별 처리.
 ///
 /// 이 함수는 사용자 클릭에서만 호출된다 (포커스 의존 동작 — focused pane에 surface
 /// 추가). IPC 경유 `debug.tool.invoke`는 별도 경로로 pane/tab id를 명시한다.
 pub fn invoke_tool(state: &mut AppState, item: &ToolItem) {
-    // 빌트인 분기: source가 Builtin이면 key로 분기.
-    if matches!(item.source, ToolSource::Builtin) {
-        match item.key.as_str() {
-            "builtin:clipboard_history" => {
-                crate::clipboard_viewer_ui::open_clipboard_viewer_popup(state);
-            }
-            other => {
-                tracing::warn!("invoke_tool: unknown builtin tool key '{}'", other);
-            }
-        }
-        return;
-    }
-
-    // Plugin 항목: action 종류별 처리.
     match &item.action {
         ToolAction::Event { event_key } => {
-            // payload는 항목 key를 포함해 plugin이 어떤 항목 트리거인지 식별할 수 있게 함.
             let payload = serde_json::json!({ "tool_id": item.key });
             state
                 .pending_tool_events
@@ -102,9 +85,8 @@ pub fn invoke_tool(state: &mut AppState, item: &ToolItem) {
             }
         }
         ToolAction::OpenPopup { popup_id } => {
-            // `<plugin_id>/<popup_id>` 형식 (manifest validation에서 강제). split하여
-            // plugin_manager로 dispatch할 수 있도록 pending_popup_opens에 enqueue.
-            // App 메인 루프가 drain해 `open_popup_instance`를 호출한다.
+            // `<plugin_id>/<popup_id>` 형식. split하여 plugin_manager로 dispatch할
+            // 수 있도록 pending_popup_opens에 enqueue. App 메인 루프가 drain.
             if let Some((plugin_id, local_id)) = popup_id.split_once('/') {
                 state.pending_popup_opens.push((
                     plugin_id.to_string(),

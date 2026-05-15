@@ -148,7 +148,7 @@ impl MainWindow {
                 self.mark_dirty();
             }
             _ => {
-                // html, empty, clipboard_viewer, None — no keyboard handling needed here
+                // html, empty, None — no keyboard handling needed here
             }
         }
 

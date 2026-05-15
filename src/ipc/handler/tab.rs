@@ -96,7 +96,7 @@ pub fn handle_tab_create(
             state.add_tab_to_pane(pane_id, cwd)
         }
         other => {
-            // markdown/html/explorer/image/clipboard_viewer/empty + plugin remote_kind
+            // markdown/html/explorer/image/empty + plugin remote_kind
             // 모두 SurfaceKindRegistry로 일원화. 등록되지 않은 kind면 Err 반환되어
             // 사용자에게 unknown surface kind 메시지가 전달된다.
             state

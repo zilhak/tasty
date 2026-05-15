@@ -80,18 +80,6 @@ pub fn draw_egui_panels(
 
     // Second pass: render each egui panel.
     let mut pending_empty_action: Option<crate::empty_ui::EmptyAction> = None;
-    // Clipboard viewer surfaces are rendered after the main loop to sidestep the
-    // borrow conflict between surface (via state.workspaces) and state.engine.clipboard_history.
-    struct PendingClipboardViewerRender {
-        pane_id: u32,
-        surface_id: Option<u32>,
-        id_suffix: String,
-        logical_x: f32,
-        logical_y: f32,
-        logical_w: f32,
-        logical_h: f32,
-    }
-    let mut pending_clipboard_viewer_renders: Vec<PendingClipboardViewerRender> = Vec::new();
 
     let markdown_colors = state.engine.settings.appearance.markdown_colors.clone();
     let markdown_font = state.engine.settings.appearance.effective_markdown_font();
@@ -189,18 +177,6 @@ pub fn draw_egui_panels(
             draw_panel_frame(ctx, &format!("image_panel_{}", id_suffix), info, 4, None, |ui| {
                 crate::image_ui::draw_image(ui, image_panel, view);
             });
-        } else if surface.kind() == "clipboard_viewer" {
-            // Defer: we need both engine.clipboard_history and clipboard_viewer_views together,
-            // which requires dropping the current surface borrow chain first.
-            pending_clipboard_viewer_renders.push(PendingClipboardViewerRender {
-                pane_id: info.pane_id,
-                surface_id: info.surface_id,
-                id_suffix: id_suffix.clone(),
-                logical_x: info.logical_x,
-                logical_y: info.logical_y,
-                logical_w: info.logical_w,
-                logical_h: info.logical_h,
-            });
         } else if let Some(remote) = surface
             .as_any()
             .downcast_ref::<crate::plugin::remote_surface::RemoteSurface>()
@@ -214,76 +190,6 @@ pub fn draw_egui_panels(
     // Restore extracted view stores before any further `state` access below.
     state.markdown_views = markdown_views;
     state.image_views = image_views;
-
-    // Render clipboard viewer surfaces now. The main loop is done, so we have
-    // exclusive access to state again and can safely borrow engine + surface.
-    for pending in &pending_clipboard_viewer_renders {
-        let info = EguiPanelInfo {
-            pane_id: pending.pane_id,
-            surface_id: pending.surface_id,
-            logical_x: pending.logical_x,
-            logical_y: pending.logical_y,
-            logical_w: pending.logical_w,
-            logical_h: pending.logical_h,
-            is_keyboard_target: false, // egui TextEdit handles focus internally
-        };
-        // Temporarily take history + view store so they can be borrowed mutably
-        // alongside the surface (which lives under state.engine.workspaces).
-        let history_max = state.engine.settings.clipboard.history_max;
-        let mut history = std::mem::replace(
-            &mut state.engine.clipboard_history,
-            crate::clipboard_history::ClipboardHistory::new(1),
-        );
-        let mut clipboard_viewer_views = std::mem::take(&mut state.clipboard_viewer_views);
-
-        let ws = state.active_workspace_mut();
-        let mut paste_index: Option<usize> = None;
-        if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pending.pane_id) {
-            if let Some(tab) = pane.active_tab_mut() {
-                let surface: &mut dyn crate::model::Surface = if let Some(sid) = pending.surface_id
-                {
-                    match tab.layout_mut().find_leaf_mut(sid) {
-                        Some(leaf) => leaf.as_mut(),
-                        None => {
-                            history.set_max(history_max);
-                            state.engine.clipboard_history = history;
-                            state.clipboard_viewer_views = clipboard_viewer_views;
-                            continue;
-                        }
-                    }
-                } else {
-                    tab.surface_mut()
-                };
-                if let Some(cv) = surface
-                    .as_any_mut()
-                    .downcast_mut::<crate::model::ClipboardViewerPanel>()
-                {
-                    let viewer = clipboard_viewer_views.get_or_init(cv);
-                    paste_index = draw_panel_frame(
-                        ctx,
-                        &format!("clipboard_viewer_{}", pending.id_suffix),
-                        &info,
-                        4,
-                        None,
-                        |ui| {
-                            crate::clipboard_viewer_ui::draw_clipboard_viewer_surface(
-                                ui,
-                                &mut history,
-                                viewer,
-                            )
-                        },
-                    );
-                }
-            }
-        }
-
-        history.set_max(history_max);
-        state.engine.clipboard_history = history;
-        state.clipboard_viewer_views = clipboard_viewer_views;
-        if let Some(orig) = paste_index {
-            crate::clipboard_viewer_ui::paste_from_history(state, orig);
-        }
-    }
 
     // Apply deferred empty surface action (must happen after render loop due to state mutation).
     if let Some(crate::empty_ui::EmptyAction::OpenConvertPopup(sid)) = pending_empty_action {

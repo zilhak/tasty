@@ -5,7 +5,6 @@ mod app_icon;
 mod cli;
 mod click_cursor;
 mod clipboard_history;
-mod clipboard_viewer_ui;
 mod crash_report;
 #[cfg(debug_assertions)]
 mod debug_info;
@@ -1980,6 +1979,9 @@ impl App {
                         direction,
                     };
                     mgr.emit_host_event("pane.split", &payload, EventScope::System);
+                }
+                crate::state::PendingHostEvent::Raw { key, payload } => {
+                    mgr.emit_host_event(&key, &payload, EventScope::System);
                 }
             }
         }

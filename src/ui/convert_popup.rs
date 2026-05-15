@@ -7,7 +7,7 @@ use serde_json::json;
 /// Item height in the convert popup menu.
 const ITEM_HEIGHT: f32 = 24.0;
 /// 빌트인 비표시 kind (변환 메뉴에 등장하면 안 됨).
-const HIDDEN_KINDS: &[&str] = &["empty", "clipboard_viewer"];
+const HIDDEN_KINDS: &[&str] = &["empty"];
 /// 빌트인 우선 표시 순서. 이 목록에 없는 kind는 알파벳순으로 뒤따른다.
 const PREFERRED_ORDER: &[&str] = &["terminal", "markdown", "html", "image"];
 
@@ -56,7 +56,7 @@ struct ConvertItem {
 }
 
 /// SurfaceKindRegistry로부터 변환 가능한 kind 목록을 생성.
-/// - `empty` / `clipboard_viewer` 같은 시스템 kind는 제외.
+/// - `empty` 같은 시스템 kind는 제외.
 /// - 빌트인은 PREFERRED_ORDER, 그 외 plugin kind는 알파벳순.
 /// - label: `convert_popup.<kind>`가 번역되어 있으면 그 값, 아니면 registry의
 ///   `display_name_i18n_key`, 그것도 미번역이면 kind 자체를 대문자로.

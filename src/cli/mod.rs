@@ -237,7 +237,7 @@ pub enum ExtensionCommands {
 
 #[derive(Subcommand)]
 pub enum ToolCommands {
-    /// Clipboard history operations (list, get, paste, remove, clear, viewer).
+    /// Clipboard history operations (list, get, paste, remove, clear).
     Clipboard {
         #[command(subcommand)]
         command: ClipboardCommands,
@@ -268,9 +268,6 @@ pub enum ClipboardCommands {
     },
     /// Clear all clipboard history.
     Clear,
-    /// Open the clipboard viewer popup (debug only — replays user input).
-    #[cfg(debug_assertions)]
-    Viewer,
 }
 
 #[derive(Subcommand)]

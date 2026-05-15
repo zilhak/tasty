@@ -219,8 +219,6 @@ fn route_debug_handler(
         "debug.feed_bytes" => handle_debug_feed_bytes(state, id, &request.params),
         "debug.inject_mouse" => handle_debug_inject_mouse(state, id, &request.params),
         "debug.inject_key" => handle_debug_inject_key(state, id, &request.params),
-        // 사용자 입력 재현 — 단축키로 여는 popup의 IPC 트리거. release에서는 미노출.
-        "debug.clipboard_viewer_open" => clipboard::handle_viewer_open(state, id),
         // 도구 메뉴 — 사용자 클릭 자동화. release 미노출.
         "debug.tool.list" => tool::handle_list(state, id),
         "debug.tool.invoke" => tool::handle_invoke(state, id, &request.params),

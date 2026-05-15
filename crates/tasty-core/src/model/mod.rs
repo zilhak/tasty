@@ -122,7 +122,6 @@ pub fn compute_terminal_rect(
     }
 }
 
-mod clipboard_viewer_panel;
 pub mod closed_item;
 mod empty_surface;
 mod html_panel;
@@ -136,7 +135,6 @@ mod surface_trait;
 mod tab;
 mod workspace;
 
-pub use clipboard_viewer_panel::*;
 pub use closed_item::{ClosedItem, ClosedItemStore};
 pub use empty_surface::*;
 pub use html_panel::*;

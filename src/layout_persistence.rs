@@ -288,8 +288,7 @@ impl SavedSurface {
                 return SavedSurface::Generic { kind, data };
             }
         }
-        // snapshot 함수가 None을 반환했거나 (예: ClipboardViewer는 휘발성)
-        // registry에 없는 kind면 Empty로 fallback.
+        // snapshot 함수가 None을 반환했거나 registry에 없는 kind면 Empty로 fallback.
         SavedSurface::Generic {
             kind: "empty".into(),
             data: json!({}),

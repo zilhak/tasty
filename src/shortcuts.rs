@@ -676,11 +676,11 @@ impl MainWindow {
             return true;
         }
         if matches_any_binding(&kb.toggle_clipboard_viewer, key, mods) {
-            if state.popups.is_open("clipboard_viewer") {
-                state.popups.close("clipboard_viewer");
-            } else {
-                crate::clipboard_viewer_ui::open_clipboard_viewer_popup(state);
-            }
+            // 호스트는 단축키 신호만 publish하고 viewer는 clipboard-history plugin이 책임.
+            state.enqueue_host_event(crate::state::PendingHostEvent::Raw {
+                key: "shortcut.toggle_clipboard_viewer".into(),
+                payload: serde_json::Value::Null,
+            });
             return true;
         }
         if matches_any_binding(&kb.close_workspace, key, mods) {

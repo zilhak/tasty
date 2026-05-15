@@ -18,17 +18,15 @@ pub fn handle_list(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {
         .visible_items()
         .into_iter()
         .map(|item| {
-            let source = match &item.source {
-                ToolSource::Builtin => json!({ "kind": "builtin" }),
-                ToolSource::Plugin {
-                    plugin_id,
-                    tool_id,
-                } => json!({
-                    "kind": "plugin",
-                    "plugin_id": plugin_id,
-                    "tool_id": tool_id,
-                }),
-            };
+            let ToolSource::Plugin {
+                plugin_id,
+                tool_id,
+            } = &item.source;
+            let source = json!({
+                "kind": "plugin",
+                "plugin_id": plugin_id,
+                "tool_id": tool_id,
+            });
             let action = match &item.action {
                 ToolAction::Event { event_key } => {
                     json!({ "kind": "event", "event_key": event_key })

@@ -160,7 +160,6 @@ pub const DEBUG_METHODS: &[(&str, MethodMeta)] = &[
     ("debug.feed_bytes", local_only()),
     ("debug.inject_mouse", local_only()),
     ("debug.inject_key", local_only()),
-    ("debug.clipboard_viewer_open", local_only()),
     ("debug.tool.list", local_only()),
     ("debug.tool.invoke", local_only()),
     ("debug.popup.list", local_only()),

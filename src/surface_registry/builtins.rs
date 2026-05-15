@@ -8,7 +8,7 @@ use std::sync::Arc;
 use serde_json::{Value, json};
 
 use tasty_core::model::{
-    ClipboardViewerPanel, EmptySurface, HtmlPanel, ImagePanel, MarkdownPanel, Surface,
+    EmptySurface, HtmlPanel, ImagePanel, MarkdownPanel, Surface,
 };
 
 use super::{SurfaceKindDef, SurfaceKindRegistry};
@@ -24,7 +24,6 @@ pub fn register_builtin_kinds(registry: &SurfaceKindRegistry) {
     register_markdown(registry);
     register_html(registry);
     register_empty(registry);
-    register_clipboard_viewer(registry);
 }
 
 // ── Terminal ────────────────────────────────────────────────────────────────
@@ -149,23 +148,6 @@ fn register_empty(registry: &SurfaceKindRegistry) {
     });
 }
 
-// ── ClipboardViewer ─────────────────────────────────────────────────────────
-
-fn register_clipboard_viewer(registry: &SurfaceKindRegistry) {
-    registry.register(SurfaceKindDef {
-        kind: "clipboard_viewer",
-        display_name_i18n_key: "surface.kind.clipboard_viewer",
-        create: Arc::new(|sid, _params| {
-            Ok(Box::new(ClipboardViewerPanel::new(sid)) as Box<dyn Surface>)
-        }),
-        // ClipboardViewer는 휘발성이라 영속화하지 않는다. 호출되면 빈 인스턴스 반환.
-        restore: Arc::new(|sid, _data| {
-            Ok(Box::new(ClipboardViewerPanel::new(sid)) as Box<dyn Surface>)
-        }),
-        snapshot: Arc::new(|_| None),
-    });
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -235,14 +217,6 @@ mod tests {
         let s = (def.create)(1, &json!({})).unwrap();
         let snap = (def.snapshot)(s.as_ref()).unwrap();
         assert!(snap.is_object());
-    }
-
-    #[test]
-    fn clipboard_viewer_snapshot_is_none() {
-        let reg = registry_with_builtins();
-        let def = reg.get("clipboard_viewer").unwrap();
-        let s = (def.create)(1, &json!({})).unwrap();
-        assert!((def.snapshot)(s.as_ref()).is_none());
     }
 
     #[test]

@@ -17,7 +17,7 @@ type = "process"
 command = "tasty-plugin-clipboard-history"
 
 [[contributes.ipc_namespace]]
-prefix = "clipboard-history"
+prefix = "clipboard_history"
 description_i18n_key = "clipboard_history.namespace.desc"
 
 [[contributes.popup]]

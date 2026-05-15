@@ -176,6 +176,12 @@ pub enum PendingHostEvent {
         event_kind: String,
         surface_id: u32,
     },
+    /// 임의의 host event 발화. shortcut 핸들러처럼 plugin_manager에 직접 접근 못
+    /// 하는 callsite에서 host event를 발화할 때 사용. `EventScope::System` 고정.
+    Raw {
+        key: String,
+        payload: serde_json::Value,
+    },
 }
 
 // IdGenerator is now in engine_state.rs
@@ -264,12 +270,7 @@ pub struct AppState {
     /// undo history, brush settings, popup buffers).
     pub image_views: crate::ui::image_view::ImageViewStore,
 
-    /// Per-surface host view state for `ClipboardViewerPanel` (search query, selected
-    /// index, pending clear flag). `ClipboardViewerPanel` itself only holds `id`.
-    /// 별개로 popup용 단일 인스턴스는 `dialogs.clipboard_viewer`에 있음.
-    pub clipboard_viewer_views: crate::clipboard_viewer_ui::ClipboardViewerViewStore,
-
-    /// 사이드바 도구 메뉴 항목. 호스트 빌트인 + 활성 plugin의 `[[contributes.tool]]`
+    /// 사이드바 도구 메뉴 항목. 활성 plugin의 `[[contributes.tool]]`
     /// 항목을 합쳐 관리. PluginManager가 plugin 라이프사이클 변경 시
     /// `set_plugin_items(mgr.plugin_tool_items())`로 갱신한다.
     pub tool_registry: crate::plugin::tool_registry::ToolRegistry,
@@ -346,8 +347,6 @@ pub struct DialogState {
     pub file_open_error: Option<String>,
     /// Deferred popup open request: (popup_id, scope). Processed after popup draw loop.
     pub pending_popup_open: Option<(&'static str, crate::ui::popup::PopupScope)>,
-    /// Clipboard viewer popup/surface 공유 상태.
-    pub clipboard_viewer: crate::clipboard_viewer_ui::ClipboardViewerState,
     /// Pending file drag request (paths to drag to external apps).
     pub pending_file_drag: Option<Vec<String>>,
     /// Tab drag-and-drop state.
@@ -391,7 +390,6 @@ impl DialogState {
             file_popup_cancel: false,
             file_open_error: None,
             pending_popup_open: None,
-            clipboard_viewer: crate::clipboard_viewer_ui::ClipboardViewerState::default(),
             pending_file_drag: None,
             tab_drag: None,
             ws_drag: None,
@@ -484,8 +482,7 @@ impl AppState {
             toasts: crate::ui::ToastManager::new(),
             markdown_views: Default::default(),
             image_views: Default::default(),
-            clipboard_viewer_views: Default::default(),
-            tool_registry: crate::plugin::tool_registry::ToolRegistry::with_builtins(),
+            tool_registry: crate::plugin::tool_registry::ToolRegistry::new(),
             pending_tool_events: Vec::new(),
             pending_popup_opens: Vec::new(),
             plugin_popup_events: Vec::new(),
@@ -512,7 +509,6 @@ impl AppState {
         crate::surface_meta::SurfaceMetaStore::remove(surface_id);
         self.markdown_views.drop_view(surface_id);
         self.image_views.drop_view(surface_id);
-        self.clipboard_viewer_views.drop_view(surface_id);
     }
 
     pub fn active_workspace(&self) -> &crate::model::Workspace {

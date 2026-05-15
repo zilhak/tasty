@@ -580,8 +580,6 @@ fn tool_command_to_method_params(command: &ToolCommands) -> (&'static str, serde
                 serde_json::json!({ "index": index }),
             ),
             ClipboardCommands::Clear => ("tool.clipboard.clear", serde_json::json!({})),
-            #[cfg(debug_assertions)]
-            ClipboardCommands::Viewer => ("debug.clipboard_viewer_open", serde_json::json!({})),
         },
     }
 }

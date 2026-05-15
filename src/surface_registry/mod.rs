@@ -1,6 +1,7 @@
 //! Surface 종류별 메타·동작 정의 레지스트리.
 //!
-//! 본체 7종(Terminal/Markdown/Explorer/Html/Image/Empty/ClipboardViewer)이 부팅 시 등록된다.
+//! 본체 4종(Terminal/Markdown/Html/Empty)이 부팅 시 등록된다. Explorer/Image/ClipboardHistory
+//! 등은 plugin이 hello 시점에 같은 레지스트리에 자기 kind를 추가한다.
 //! 외부 plugin은 단계 05에서 같은 레지스트리에 추가될 예정.
 //!
 //! # 단계
@@ -67,8 +68,8 @@ pub struct SurfaceKindDef {
     >,
 
     /// surface의 직렬화 가능한 영속 데이터를 반환한다. `None`이면 영속화에서 제외.
-    /// 03E의 `SavedSurface::capture_surface`가 호출한다. ClipboardViewer 같은
-    /// 휘발성 surface는 `None`을 반환하여 layout 저장에서 빠진다.
+    /// 03E의 `SavedSurface::capture_surface`가 호출한다. 휘발성 surface는 `None`을
+    /// 반환하여 layout 저장에서 빠진다.
     pub snapshot: Arc<dyn Fn(&dyn Surface) -> Option<serde_json::Value> + Send + Sync>,
 }
 
@@ -170,16 +171,17 @@ mod tests {
     }
 
     #[test]
-    fn builtin_registers_five_kinds() {
+    fn builtin_registers_four_kinds() {
         let reg = SurfaceKindRegistry::new();
         register_builtin_kinds(&reg);
         // explorer는 com.tasty.explorer plugin이, image는 com.tasty.image plugin이
         // 각각 hello 시에 등록한다.
-        for kind in ["terminal", "markdown", "html", "empty", "clipboard_viewer"] {
+        for kind in ["terminal", "markdown", "html", "empty"] {
             assert!(reg.contains(kind), "missing builtin kind: {kind}");
         }
-        assert_eq!(reg.len(), 5);
+        assert_eq!(reg.len(), 4);
         assert!(!reg.contains("image"));
         assert!(!reg.contains("explorer"));
+        assert!(!reg.contains("clipboard_viewer"));
     }
 }
