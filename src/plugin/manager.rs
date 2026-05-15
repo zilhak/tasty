@@ -25,7 +25,7 @@ use crate::plugin::handle_channel::HandleListener;
 use crate::plugin::host_cmd::{HostCmd, SurfaceHandles};
 use crate::plugin::ipc_namespace::IpcNamespaceRegistry;
 use crate::plugin::listener::HostListener;
-use crate::plugin::manifest::{HookMode, IpcHookDecl, Permission, PluginPackage};
+use crate::plugin::manifest::{EventHookDecl, HookMode, IpcHookDecl, Permission, PluginPackage};
 use crate::plugin::process::PluginProcess;
 use crate::plugin::protocol::{
     self, IpcCallResult, PluginEvent, PluginRequest, PluginResponse, SurfaceResult,
@@ -114,6 +114,24 @@ enum PendingRequestKind {
         extension_plugin_id: String,
         post_hook_decl: IpcHookDecl,
         final_caller: FinalCaller,
+    },
+    /// extension의 pre-event hook을 dispatch한 뒤 응답 대기. 응답이 오면
+    /// (transform이면 envelope.payload 교체, filter면 fan-out 차단)
+    /// event_bus.fan_out으로 진행. post_event가 있으면 함께 둔다.
+    ExtensionPreEventHook {
+        publisher_plugin_id: String,
+        extension_plugin_id: String,
+        envelope: tasty_plugin_protocol::EventEnvelope,
+        pre_hook_mode: HookMode,
+        post_hook: Option<super::manifest::EventHookDecl>,
+        deadline: Instant,
+    },
+    /// extension의 post-event hook을 dispatch한 뒤 응답 대기. event는 이미 fan-out 됐으므로
+    /// post 응답은 observe로만 의미가 있다 (transform/filter는 ignore).
+    ExtensionPostEventHook {
+        extension_plugin_id: String,
+        event_key: String,
+        deadline: Instant,
     },
 }
 
@@ -429,7 +447,33 @@ impl PluginManager {
     }
 
     /// plugin이 보낸 publish를 라우팅. 권한/origin/hop 검사 실패 시 경고 로그.
+    /// 활성 extension이 있고 pre_event hook이 매칭되면 hook을 먼저 dispatch한 뒤
+    /// 응답에 따라 fan-out 진행 (PR 6).
     fn route_plugin_event_publish(
+        &mut self,
+        plugin_id: &str,
+        envelope: tasty_plugin_protocol::EventEnvelope,
+    ) {
+        // hook이 적용되는 publisher인지 먼저 검사. caller가 extension 자신이면 self-loop 방지.
+        let hooks = self.find_active_event_hooks(plugin_id, &envelope.key);
+        match hooks {
+            Some((ext_id, pre_opt, post_opt)) => {
+                let pre = pre_opt.filter(|h| !self.is_hook_in_backoff(&ext_id, &h.event));
+                let post = post_opt.filter(|h| !self.is_hook_in_backoff(&ext_id, &h.event));
+                if let Some(pre) = pre {
+                    self.dispatch_pre_event_hook(plugin_id, ext_id, envelope, pre, post);
+                } else if post.is_some() {
+                    self.fan_out_then_post(plugin_id, envelope, ext_id, post);
+                } else {
+                    self.publish_and_dispatch(plugin_id, envelope);
+                }
+            }
+            None => self.publish_and_dispatch(plugin_id, envelope),
+        }
+    }
+
+    /// `publish_from_plugin` 호출 + 결과 dispatch. hook 없는 경로의 helper.
+    fn publish_and_dispatch(
         &mut self,
         plugin_id: &str,
         envelope: tasty_plugin_protocol::EventEnvelope,
@@ -441,6 +485,110 @@ impl PluginManager {
                 tracing::warn!(
                     "plugin '{plugin_id}' publish '{key_for_log}' rejected: {e}"
                 );
+            }
+        }
+    }
+
+    /// 활성 extension이 있고 publisher가 그 extension의 target이며 매칭 event hook이
+    /// 있으면 (ext_id, pre_hook, post_hook)을 반환. caller가 extension 자신이면 None.
+    fn find_active_event_hooks(
+        &self,
+        publisher_plugin_id: &str,
+        event_key: &str,
+    ) -> Option<(String, Option<EventHookDecl>, Option<EventHookDecl>)> {
+        let ext_id = self
+            .extensions
+            .active_extension_for_target(publisher_plugin_id)?
+            .to_string();
+        if ext_id == publisher_plugin_id {
+            return None;
+        }
+        let pkg = self.packages.iter().find(|p| p.manifest.id == ext_id)?;
+        let extends = pkg.manifest.extends.as_ref()?;
+        let pre = extends.pre_event.iter().find(|h| h.event == event_key).cloned();
+        let post = extends.post_event.iter().find(|h| h.event == event_key).cloned();
+        if pre.is_none() && post.is_none() {
+            None
+        } else {
+            Some((ext_id, pre, post))
+        }
+    }
+
+    fn dispatch_pre_event_hook(
+        &mut self,
+        publisher_plugin_id: &str,
+        ext_id: String,
+        envelope: tasty_plugin_protocol::EventEnvelope,
+        pre: EventHookDecl,
+        post: Option<EventHookDecl>,
+    ) {
+        let payload = envelope.payload.clone();
+        let deadline = Instant::now() + Duration::from_millis(pre.timeout_ms as u64);
+        match self.send_extension_invoke_hook(
+            &ext_id,
+            tasty_plugin_protocol::ExtensionHookKind::Event,
+            tasty_plugin_protocol::ExtensionHookPhase::Pre,
+            pre.mode,
+            &envelope.key,
+            payload,
+        ) {
+            Ok(req_id) => {
+                self.pending_requests.insert(
+                    req_id,
+                    PendingRequestKind::ExtensionPreEventHook {
+                        publisher_plugin_id: publisher_plugin_id.to_string(),
+                        extension_plugin_id: ext_id,
+                        envelope,
+                        pre_hook_mode: pre.mode,
+                        post_hook: post,
+                        deadline,
+                    },
+                );
+            }
+            Err(msg) => {
+                tracing::warn!("pre-event-hook dispatch failed: {msg}; bypassing");
+                self.fan_out_then_post(publisher_plugin_id, envelope, ext_id, post);
+            }
+        }
+    }
+
+    /// fan-out 실행 후 post_event hook이 있으면 dispatch.
+    fn fan_out_then_post(
+        &mut self,
+        publisher_plugin_id: &str,
+        envelope: tasty_plugin_protocol::EventEnvelope,
+        ext_id: String,
+        post: Option<EventHookDecl>,
+    ) {
+        let event_key = envelope.key.clone();
+        let payload = envelope.payload.clone();
+        self.publish_and_dispatch(publisher_plugin_id, envelope);
+        if let Some(post) = post {
+            if self.is_hook_in_backoff(&ext_id, &event_key) {
+                return;
+            }
+            let deadline = Instant::now() + Duration::from_millis(post.timeout_ms as u64);
+            match self.send_extension_invoke_hook(
+                &ext_id,
+                tasty_plugin_protocol::ExtensionHookKind::Event,
+                tasty_plugin_protocol::ExtensionHookPhase::Post,
+                post.mode,
+                &event_key,
+                payload,
+            ) {
+                Ok(req_id) => {
+                    self.pending_requests.insert(
+                        req_id,
+                        PendingRequestKind::ExtensionPostEventHook {
+                            extension_plugin_id: ext_id,
+                            event_key,
+                            deadline,
+                        },
+                    );
+                }
+                Err(msg) => {
+                    tracing::warn!("post-event-hook dispatch failed: {msg}; ignoring");
+                }
             }
         }
     }
@@ -1518,6 +1666,15 @@ impl PluginManager {
                     extension_plugin_id: epid,
                     ..
                 } if epid == plugin_id => Some(*id),
+                PendingRequestKind::ExtensionPreEventHook {
+                    publisher_plugin_id: pid,
+                    extension_plugin_id: epid,
+                    ..
+                } if pid == plugin_id || epid == plugin_id => Some(*id),
+                PendingRequestKind::ExtensionPostEventHook {
+                    extension_plugin_id: epid,
+                    ..
+                } if epid == plugin_id => Some(*id),
                 _ => None,
             })
             .collect();
@@ -1553,6 +1710,10 @@ impl PluginManager {
                     final_caller, ..
                 }) => {
                     self.send_final_error(final_caller, -32004, msg);
+                }
+                Some(PendingRequestKind::ExtensionPreEventHook { .. })
+                | Some(PendingRequestKind::ExtensionPostEventHook { .. }) => {
+                    // event는 fire-and-forget이라 caller에 회신할 필요 없음.
                 }
                 _ => {}
             }
@@ -1697,7 +1858,66 @@ impl PluginManager {
                     resp,
                 );
             }
+            PendingRequestKind::ExtensionPreEventHook {
+                publisher_plugin_id,
+                extension_plugin_id,
+                envelope,
+                pre_hook_mode,
+                post_hook,
+                deadline: _,
+            } => {
+                self.handle_pre_event_hook_response(
+                    publisher_plugin_id,
+                    extension_plugin_id,
+                    envelope,
+                    pre_hook_mode,
+                    post_hook,
+                    resp,
+                );
+            }
+            PendingRequestKind::ExtensionPostEventHook {
+                extension_plugin_id,
+                event_key,
+                deadline: _,
+            } => {
+                if resp.error.is_some() {
+                    self.record_hook_failure(&extension_plugin_id, &event_key);
+                } else {
+                    self.record_hook_success(&extension_plugin_id, &event_key);
+                }
+                // post-event는 결과를 무시 (이미 fan-out 완료).
+            }
         }
+    }
+
+    /// pre-event-hook 응답을 처리. mode에 따라 transform(payload 교체) / filter(차단) / observe.
+    fn handle_pre_event_hook_response(
+        &mut self,
+        publisher_plugin_id: String,
+        extension_plugin_id: String,
+        mut envelope: tasty_plugin_protocol::EventEnvelope,
+        mode: HookMode,
+        post_hook: Option<EventHookDecl>,
+        resp: PluginResponse,
+    ) {
+        if resp.error.is_some() {
+            self.record_hook_failure(&extension_plugin_id, &envelope.key);
+        } else {
+            self.record_hook_success(&extension_plugin_id, &envelope.key);
+        }
+        let outcome = parse_hook_result(&resp);
+
+        if matches!(mode, HookMode::Filter) && matches!(outcome, HookOutcome::Block) {
+            tracing::info!(
+                "extension '{extension_plugin_id}' filtered event '{}' from '{publisher_plugin_id}'",
+                envelope.key
+            );
+            return;
+        }
+        if let (HookMode::Transform, HookOutcome::Modified(new_payload)) = (mode, outcome) {
+            envelope.payload = new_payload;
+        }
+        self.fan_out_then_post(&publisher_plugin_id, envelope, extension_plugin_id, post_hook);
     }
 
     /// pre-hook 응답을 처리. mode에 따라 transform/filter/observe 적용 후 target에 forward.
@@ -1816,7 +2036,9 @@ impl PluginManager {
             .iter()
             .filter_map(|(id, kind)| match kind {
                 PendingRequestKind::ExtensionPreIpcHook { deadline, .. }
-                | PendingRequestKind::ExtensionPostIpcHook { deadline, .. } => {
+                | PendingRequestKind::ExtensionPostIpcHook { deadline, .. }
+                | PendingRequestKind::ExtensionPreEventHook { deadline, .. }
+                | PendingRequestKind::ExtensionPostEventHook { deadline, .. } => {
                     if now >= *deadline {
                         Some(*id)
                     } else {
@@ -1869,6 +2091,36 @@ impl PluginManager {
                     );
                     self.record_hook_failure(&extension_plugin_id, &method);
                     self.finalize_target_outcome(final_caller, target_outcome);
+                }
+                PendingRequestKind::ExtensionPreEventHook {
+                    publisher_plugin_id,
+                    extension_plugin_id,
+                    envelope,
+                    pre_hook_mode: _,
+                    post_hook,
+                    deadline: _,
+                } => {
+                    tracing::warn!(
+                        "pre-event-hook timeout: ext='{extension_plugin_id}' event='{}' — fail-open",
+                        envelope.key
+                    );
+                    self.record_hook_failure(&extension_plugin_id, &envelope.key);
+                    self.fan_out_then_post(
+                        &publisher_plugin_id,
+                        envelope,
+                        extension_plugin_id,
+                        post_hook,
+                    );
+                }
+                PendingRequestKind::ExtensionPostEventHook {
+                    extension_plugin_id,
+                    event_key,
+                    deadline: _,
+                } => {
+                    tracing::warn!(
+                        "post-event-hook timeout: ext='{extension_plugin_id}' event='{event_key}'"
+                    );
+                    self.record_hook_failure(&extension_plugin_id, &event_key);
                 }
                 _ => {}
             }
@@ -2250,6 +2502,12 @@ mod tests {
     fn find_active_ipc_hooks_returns_none_when_no_extension() {
         let mgr = mgr_with_namespace_owner("com.example.codex", "codex");
         assert!(mgr.find_active_ipc_hooks("com.example.codex", "codex.spawn").is_none());
+    }
+
+    #[test]
+    fn find_active_event_hooks_returns_none_when_no_extension() {
+        let mgr = PluginManager::new(empty_waker());
+        assert!(mgr.find_active_event_hooks("com.example.foo", "foo.bar").is_none());
     }
 
     #[cfg(unix)]
