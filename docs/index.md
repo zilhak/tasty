@@ -51,6 +51,9 @@ cmux의 기능을 크로스 플랫폼(Windows, macOS, Linux) GPU 가속 네이�
 |------|------|
 | [agent-guide/index.md](agent-guide/index.md) | 개요 + 환경별 링크 |
 | [agent-guide/api-reference.md](agent-guide/api-reference.md) | IPC/CLI 전체 레퍼런스 |
+| [agent-guide/clipboard.md](agent-guide/clipboard.md) | 클립보드 히스토리 (tool.clipboard.*) 사용 가이드 |
+| [agent-guide/plugins.md](agent-guide/plugins.md) | Plugin 설치/관리 (`tasty plugin ...`) 가이드 |
+| [agent-guide/event-catalog.md](agent-guide/event-catalog.md) | Surface Hook/Plugin 이벤트 카탈로그 |
 | [agent-guide/linux.md](agent-guide/linux.md) | Linux 사용 가이드 |
 
 ### 개발 AI 에이전트용 (Tasty 개발 가이드)
@@ -61,11 +64,22 @@ cmux의 기능을 크로스 플랫폼(Windows, macOS, Linux) GPU 가속 네이�
 |------|------|
 | [dev-guide/index.md](dev-guide/index.md) | 개요 + 환경별 링크 |
 | [dev-guide/build.md](dev-guide/build.md) | 워크스페이스 구조, 빌드 프로필(dev/release/dist), LTO, 빌드 시간 측정 |
+| [dev-guide/release.md](dev-guide/release.md) | 릴리스 절차 (버전 → 체인지로그 → 태그 → push) |
 | [dev-guide/release-runners.md](dev-guide/release-runners.md) | self-hosted 러너 인벤토리, 1회 도구 설치, 운영 명령 |
 | [dev-guide/linux.md](dev-guide/linux.md) | Linux 개발 환경 가이드 |
+| [dev-guide/context-menu.md](dev-guide/context-menu.md) | 우클릭 컨텍스트 메뉴 (네이티브 메뉴 필수, PendingNativeMenu 패턴) |
+| [dev-guide/popup-implementation.md](dev-guide/popup-implementation.md) | Popup 구현 (PopupDef 시스템, `egui::Window` 직접 사용 금지) |
+| [dev-guide/gpu-rendering.md](dev-guide/gpu-rendering.md) | GPU 렌더링 구조 (공유 버퍼 + submit 분리 규칙) |
+| [dev-guide/model-view-split.md](dev-guide/model-view-split.md) | Model + Host View 분리 패턴 (tasty-core GUI-free 유지) |
+| [dev-guide/debug-ipc.md](dev-guide/debug-ipc.md) | Debug 빌드 전용 IPC 메서드 (사용자 입력 재현, popup 트리거) |
+| [dev-guide/crash-diagnostics.md](dev-guide/crash-diagnostics.md) | Crash & 에러 진단 (로그, strace, gdb) |
 | [dev-guide/tui-testing.md](dev-guide/tui-testing.md) | TUI 테스트 — 터미널 에뮬레이션 버그 재현 및 자동 검증 |
+| [dev-guide/cli-naming.md](dev-guide/cli-naming.md) | CLI 명령 네이밍 규칙 |
+| [dev-guide/ipc-stability.md](dev-guide/ipc-stability.md) | IPC 메서드 안정성 정책 |
+| [dev-guide/unsafe-checklist.md](dev-guide/unsafe-checklist.md) | unsafe 블록 작성 체크리스트 |
 | [dev-guide/plugin-development.md](dev-guide/plugin-development.md) | Plugin 제작 가이드 — 크레이트 골격, Plugin trait, UI 빌더, snapshot/restore, 빌드/설치 |
 | [dev-guide/plugin-permissions.md](dev-guide/plugin-permissions.md) | Plugin 권한 모델 — method_meta, CallerContext, grant/revoke 흐름 |
+| [dev-guide/plugin-ecosystem.md](dev-guide/plugin-ecosystem.md) | Plugin 생태계 — 번들 plugin 목록과 책임 분담 |
 
 ## AI 자체 검증 지침
 
@@ -106,7 +120,7 @@ cmux의 기능을 크로스 플랫폼(Windows, macOS, Linux) GPU 가속 네이�
 
 | 문서 | 설명 |
 |------|------|
-| [아키텍처 개요](architecture/index.md) | 91개 파일 모듈 구조, 의존성 DAG, 계층 |
+| [아키텍처 개요](architecture/index.md) | 워크스페이스 크레이트 14개, 본 바이너리 모듈 구조, 의존성 DAG |
 | [모듈별 상세](architecture/modules.md) | 디렉토리 모듈별 책임, 설계 목적, 한계 |
 | [데이터 흐름](architecture/data-flows.md) | 5가지 주요 데이터 흐름 (파일+함수 기준) |
 | [리팩토링 분석](architecture/refactoring.md) | 남아있는 개선 가능성, 우선순위별 로드맵 |
@@ -200,7 +214,7 @@ GPU 렌더링된 사이드바에 Git 브랜치, PR 상태, 작업 디렉토리, 
 `tasty` 명령으로 워크스페이스 생성, 알림 전송, 키 입력 등을 자동화. IPC로 실행 중인 GUI 앱과 통신.
 
 **현재 구현된 기능:**
-- clap 기반 서브커맨드 그룹: new {window|workspace|tab}, close {tab|pane|surface|self}, list {workspaces|windows|tree|surfaces|panes|tabs|info|notifications|hooks|global-hooks|queue}, set {hook|mark|workspace|global-hook}, unset {hook|global-hook}, send {text|key|queue}, read {since-mark|queue|screen}, split, notify, surface-meta {set|get|unset|list}, is-typing, debug {info|ime-enable|ime-disable|ime-preedit|ime-commit|ime-status}. 번들 plugin이 자체적으로 `claude {launch|spawn|children|parent|kill|respawn|broadcast|wait|install|uninstall|hook}`, `codex {...}` 등을 등록한다.
+- clap 기반 서브커맨드 그룹: `new {window|workspace|tab}`, `close {tab|pane|surface|self}`, `list {workspaces|windows|tree|surfaces|panes|tabs|info|notifications|hooks|global-hooks|queue}`, `set {hook|mark|workspace|global-hook}`, `move {tab|workspace}`, `unset {hook|global-hook}`, `send {text|key|queue}`, `read {since-mark|queue|screen}`, `split`, `notify`, `surface-meta {set|get|unset|list}`, `is-typing`, `wake`, `tool clipboard {...}`, `plugin {list|show|install|remove|enable|disable|logs|permissions|grant|revoke|extension}`. debug 빌드에서만 `debug {info|cell-info|screen-attrs|glyph-color|feed-bytes|inject-key|inject-mouse|ime-...|tool|popup|extension|event-bus|switch-input-source|raw-key}` 가 추가된다. 번들 plugin이 자체적으로 `claude {launch|spawn|children|parent|kill|respawn|broadcast|wait|install|uninstall|hook|tell}`, `codex {...}`, `image {open|save|export|next|prev|paste|list}` 등을 등록한다.
 - 포트 파일(`~/.tasty/tasty.port`) 기반 자동 연결
 - 서브커맨드 없으면 GUI 모드, 있으면 CLI 모드
 - 상세: [features.md](features.md)
@@ -210,8 +224,8 @@ GPU 렌더링된 사이드바에 Git 브랜치, PR 상태, 작업 디렉토리, 
 
 **현재 구현된 기능:**
 - TCP 기반 JSON-RPC 2.0 서버 (127.0.0.1, 랜덤 포트)
-- 프로덕션 메서드 (macOS 전용 2개 포함): system.info, workspace.list/create/update, window.list/create/close/focus, pane.list/close, split, tab.list/create/close, surface.list/close/close_self/send/send_key/send_combo/send_to/set_mark/read_since_mark/screen_text/cursor_position/is_typing/send_wait_idle/fire_hook/meta_set/meta_get/meta_unset/meta_list/ime_enable/ime_disable/ime_preedit/ime_commit/ime_status, notification.list/create, tree, hook.set/list/unset, global_hook.set/list/unset, message.send/read/count/clear. 번들 plugin이 `claude.launch/spawn/children/parent/kill/respawn/broadcast/wait/hook`, `codex.*` namespace를 자체 등록 (사용자 시점에서는 동일한 IPC dispatch)
-- 디버그 전용 메서드 (debug 빌드에서만 사용 가능): system.shutdown, ui.state, ui.screenshot, debug.info
+- 프로덕션 메서드: system.info, tree, split, workspace.{list,create,update,move}, window.{list,create,close,focus}, pane.{list,close}, tab.{list,create,close,move}, surface.{list,close,close_self,send,send_key,send_combo,send_to,set_mark,read_since_mark,screen_text,cursor_position,is_typing,send_wait_idle,fire_hook,foreground_process,locate,respawn_terminal,wake,switch_input_source,raw_key,meta.{set,get,unset,list},ime_{enable,disable,preedit,commit,status}}, notification.{list,create}, hook.{set,list,unset}, global_hook.{set,list,unset}, message.{send,read,count,clear}, tool.clipboard.{list,get,paste,remove,clear}, image.{open,save,export_png,next,prev,paste,list}, plugin.{list,show,install,remove,enable,disable,permissions,grant,revoke,extension.list}. 번들 plugin이 `claude.{launch,spawn,children,parent,kill,respawn,broadcast,wait,hook,tell,install,uninstall,set_idle_state,set_needs_input}`, `codex.*` namespace를 자체 등록 (사용자 시점에서는 동일한 IPC dispatch)
+- 디버그 전용 메서드 (debug 빌드에서만): system.shutdown, ui.state, ui.screenshot, debug.{info,cell_info,screen_attrs,glyph_color,feed_bytes,inject_key,inject_mouse,tool.{list,invoke},popup.{list,open,close},extension.invoke_hook,event_bus.{list_subscribers,publish,trace}}
 - 메인 스레드 채널 통신으로 스레드 안전한 상태 접근
 - 앱 시작 시 자동 기동, 종료 시 포트 파일 자동 삭제
 - 헤드리스 모드: `--headless` 플래그로 GUI 없이 IPC 전용 실행 (E2E 테스트/CI 활용)

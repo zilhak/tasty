@@ -8,20 +8,32 @@ Tasty는 cargo workspace로 구성된 멀티 크레이트 프로젝트다.
 
 ```
 tasty/
-├── Cargo.toml            # 본 바이너리 + workspace 정의
-├── src/                  # tasty 바이너리 크레이트 (UI/window/state/ipc 등)
+├── Cargo.toml                       # 본 바이너리 + workspace 정의
+├── src/                             # tasty 바이너리 크레이트 (UI/window/state/ipc 등)
 └── crates/
-    ├── tasty-core/       # 공용 데이터 타입 (model, theme, i18n, paths, color)
-    ├── tasty-settings/   # 설정 스키마/직렬화 (appearance/keybindings/general/...)
-    ├── tasty-font/       # 폰트 atlas, 글리프 래스터라이징 + 내장 D2Coding
-    ├── tasty-terminal/   # PTY/VTE 파싱 (termwiz 래퍼)
-    ├── tasty-hooks/      # Surface Hook 매니저
-    └── tasty-tui-simulator/  # E2E TUI 테스트용 시뮬레이터
+    ├── tasty-core/                  # 공용 데이터 타입 (model, theme, i18n, paths, color)
+    ├── tasty-settings/              # 설정 스키마/직렬화 (appearance/keybindings/general/...)
+    ├── tasty-font/                  # 폰트 atlas, 글리프 래스터라이징 + 내장 D2Coding
+    ├── tasty-terminal/              # PTY/VTE 파싱 (termwiz 래퍼)
+    ├── tasty-hooks/                 # Surface Hook 매니저
+    ├── tasty-shm/                   # 크로스 플랫폼 공유 메모리 + 핸들 전달 (SCM_RIGHTS/DuplicateHandle)
+    ├── tasty-plugin-protocol/       # 호스트↔plugin 와이어 프로토콜 (envelope, 메서드 enum 등)
+    ├── tasty-plugin-sdk/            # 외부 plugin 제작용 SDK (Plugin trait, transport, snapshot 헬퍼)
+    ├── tasty-plugin-claude/         # 번들 plugin: Claude Code 통합 (claude.* IPC/CLI)
+    ├── tasty-plugin-codex/          # 번들 plugin: Codex CLI 통합 (codex.* IPC/CLI)
+    ├── tasty-plugin-image/          # 번들 plugin: 이미지 뷰어 surface kind + image.* IPC
+    ├── tasty-plugin-explorer/       # 번들 plugin: 파일 탐색기 surface kind
+    ├── tasty-plugin-clipboard-history/ # 번들 plugin: 클립보드 히스토리 (tool.clipboard.*)
+    └── tasty-tui-simulator/         # E2E TUI 테스트용 시뮬레이터
 ```
 
 본 바이너리(src/)에서는 `pub use tasty_core::{model, theme, i18n, paths};`,
 `pub use tasty_settings as settings;`, `pub use tasty_font as font;` 식으로
 재수출하므로 `crate::model::X` 같은 기존 경로가 그대로 동작한다.
+
+번들 plugin은 컴파일 시 본 바이너리에 정적으로 링크되거나 별도 dylib으로
+제공된다. 자세한 plugin 빌드/설치는 `dev-guide/plugin-development.md`,
+권한 모델은 `dev-guide/plugin-permissions.md` 참조.
 
 ## 빌드 프로필
 

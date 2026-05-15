@@ -87,6 +87,39 @@ tasty debug ime-status             # 현재 IME 상태 확인
 tasty debug ime-disable            # IME 비활성화 + preedit 클리어
 tasty debug info                   # 디버그 정보 조회
 
+# 이동/순서 변경 (인덱스는 0-based)
+tasty move tab --pane PANE_ID --from FROM_IDX --to TO_IDX      # 같은 pane 안에서 탭 순서 변경
+tasty move workspace --from FROM_IDX --to TO_IDX               # 워크스페이스 순서 변경
+
+# 도구 (내장 tool, 번들 plugin이 등록)
+tasty tool clipboard list                                      # 클립보드 히스토리 항목 목록
+tasty tool clipboard get --index N                             # 특정 항목 조회
+tasty tool clipboard paste --index N [--surface ID]            # 특정 항목 붙여넣기
+tasty tool clipboard remove --index N                          # 항목 삭제
+tasty tool clipboard clear                                     # 전체 비우기
+
+# Plugin 관리
+tasty plugin list                                              # 설치된 plugin 목록
+tasty plugin show --id ID                                      # plugin 상세
+tasty plugin install --path /path/to/plugin/dir                # 매니페스트가 있는 디렉터리 설치
+tasty plugin remove --id ID
+tasty plugin enable --id ID
+tasty plugin disable --id ID
+tasty plugin logs --id ID [--follow]
+tasty plugin permissions --id ID                               # 매니페스트 권한 + granted
+tasty plugin grant --id ID --permission TOKEN
+tasty plugin revoke --id ID --permission TOKEN
+tasty plugin extension list                                    # plugin이 등록한 extension 포인트
+
+# 이미지 (com.tasty.image plugin)
+tasty image open <path> [--surface ID]
+tasty image save [--surface ID]
+tasty image export --format png --out <path>
+tasty image next [--surface ID]                                # 폴더 내 다음 이미지
+tasty image prev [--surface ID]
+tasty image paste                                              # 클립보드 이미지 붙여넣기
+tasty image list
+
 # 훅
 tasty set hook --event process-exit --command "echo done"
 tasty list hooks
@@ -141,6 +174,7 @@ tasty claude hook stop --surface 5  # 특정 surface 지정 (또는 TASTY_SURFAC
 ### 디버그 전용 (debug 빌드에서만 사용 가능)
 
 다음 메서드들은 릴리즈 빌드에 포함되지 않는다. `cargo build` (debug)에서만 사용 가능.
+상세는 `dev-guide/debug-ipc.md` 참조.
 
 | 메서드 | 파라미터 | 설명 |
 |--------|---------|------|
@@ -148,6 +182,21 @@ tasty claude hook stop --surface 5  # 특정 surface 지정 (또는 TASTY_SURFAC
 | `ui.state` | 없음 | GUI 내부 상태 조회 (설정창/알림패널 열림 여부, 패인 수 등) |
 | `ui.screenshot` | `path?: string` | 스크린샷을 PNG로 저장 (GUI 모드 전용, 비동기) |
 | `debug.info` | 없음 | 디버그 정보 조회 (scale_factor, cell 크기, viewport 등) |
+| `debug.cell_info` | `surface_id, col, row` | 특정 셀의 문자/속성/색상 조회 |
+| `debug.screen_attrs` | `surface_id` | 화면 전체 SGR 속성 매트릭스 조회 |
+| `debug.glyph_color` | `surface_id, x, y` | 픽셀 좌표의 글리프 RGBA 색 추출 |
+| `debug.feed_bytes` | `surface_id, bytes` | PTY 출력 시뮬레이션 (VTE에 직접 주입) |
+| `debug.inject_key` | `key, modifiers[], surface_id?` | 사용자 키 입력 재현 |
+| `debug.inject_mouse` | `surface_id, x, y, button, kind` | 사용자 마우스 입력 재현 |
+| `debug.tool.list` | 없음 | 등록된 tool entry 전체 목록 |
+| `debug.tool.invoke` | `tool_id, params?` | tool 직접 호출 (권한 우회) |
+| `debug.popup.list` | 없음 | 현재 열려있는 popup 목록 |
+| `debug.popup.open` | `popup_id, params?` | popup 트리거 |
+| `debug.popup.close` | `popup_id?` | popup 닫기 (생략 시 전체) |
+| `debug.extension.invoke_hook` | `extension_id, event, params?` | plugin extension hook 직접 호출 |
+| `debug.event_bus.list_subscribers` | 없음 | 이벤트 버스 구독자 dump |
+| `debug.event_bus.publish` | `topic, payload` | 이벤트 버스에 강제 발행 |
+| `debug.event_bus.trace` | `enable: bool` | 이벤트 흐름 trace on/off |
 
 ### 윈도우
 
@@ -167,6 +216,7 @@ tasty claude hook stop --surface 5  # 특정 surface 지정 (또는 TASTY_SURFAC
 | `workspace.list` | 없음 | 전체 워크스페이스 목록 (id, name, subtitle, description, active, pane_count, busy_count) |
 | `workspace.create` | `name?, subtitle?, description?, cwd?` | 새 워크스페이스 생성 후 활성화 |
 | `workspace.update` | `index?\|id?, name?, subtitle?, description?` | 워크스페이스 정보 수정 (생략 시 활성 워크스페이스) |
+| `workspace.move` | `from: number, to: number` | 워크스페이스 순서 변경 (0-based 인덱스) |
 | `tree` | 없음 | 전체 계층 구조 (워크스페이스 → 패인 → 탭). 모든 노드에 `busy_count`, surface 리프에 `busy` 부여. 터미널 리프에는 `pty_ready` 플래그가 붙는다 (deferred 복원 상태이면 `false`). |
 
 ### 패인
@@ -184,6 +234,7 @@ tasty claude hook stop --surface 5  # 특정 surface 지정 (또는 TASTY_SURFAC
 | `tab.list` | `pane_id` | 지정 패인의 탭 목록 (id, name, type, surface_id, active, busy_count) |
 | `tab.create` | `pane_id`, `type?`, `cwd?`, `file?`, `path?`, `url?` | 새 탭 생성. type: terminal(기본)/markdown/explorer/html/image |
 | `tab.close` | `tab_id` | 탭 닫기 |
+| `tab.move` | `pane_id, from: number, to: number` | 같은 pane 내에서 탭 순서 변경 (0-based) |
 
 ### Surface (터미널 상호작용)
 
@@ -203,6 +254,11 @@ tasty claude hook stop --surface 5  # 특정 surface 지정 (또는 TASTY_SURFAC
 | `surface.cursor_position` | `surface_id` | 커서 위치 (x, y) 반환 |
 | `surface.is_typing` | `surface_id` | 최근 5초 내 키 입력 여부. 반환: `{ typing, idle_seconds }` |
 | `surface.send_wait_idle` | `surface_id, text` | 유휴 시에만 텍스트 전송. 타이핑 중이면 `{ sent: false }`. deferred 자동 wake. |
+| `surface.foreground_process` | `surface_id` | 현재 PTY foreground 프로세스 이름/pid. 플랫폼별 감지(macOS: `process_pid_path`, Linux: `/proc/.../stat`, Windows: WMI) |
+| `surface.locate` | `surface_id` | surface가 속한 window_id, workspace_id, pane_id, tab_id, tab_index를 한 번에 반환 |
+| `surface.respawn_terminal` | `surface_id, cwd?: string, command?: string[]` | 죽거나 살아있는 PTY를 종료 후 새 PTY로 교체 (같은 surface 유지) |
+| `surface.switch_input_source` | `surface_id, source: string` | OS 입력 소스 전환 (macOS 전용). source는 입력 소스 식별자 |
+| `surface.raw_key` | `surface_id, key, modifiers[], press: bool` | winit KeyEvent를 직접 dispatch (macOS 전용 — 사용자 입력 재현 용도) |
 
 ### IME 시뮬레이션
 
@@ -341,9 +397,11 @@ tasty unset global-hook --hook HOOK_ID
 | `plugin.remove` | `id: string` | 살아있는 process를 graceful shutdown 후 plugin 디렉터리 삭제 |
 | `plugin.enable` | `id: string` | plugin 활성화 + 즉시 spawn (이전에 비활성화되어 있던 plugin) |
 | `plugin.disable` | `id: string` | plugin 비활성화 + 살아있으면 graceful shutdown |
+| `plugin.show` | `id: string` | 단일 plugin의 매니페스트 + 런타임 상태 dump |
 | `plugin.permissions` | `id: string` | `{id, manifest:[...], granted:[...]}` 매니페스트 권한 + 현재 grant된 권한 |
 | `plugin.grant` | `id: string, permission: string` | 매니페스트에 선언된 권한 토큰을 granted에 추가. `ipc.invoke:<prefix>` 형식의 토큰은 다른 plugin의 namespace 호출 허용 |
 | `plugin.revoke` | `id: string, permission: string` | granted에서 권한 제거 |
+| `plugin.extension.list` | 없음 | plugin이 등록한 extension 포인트 전체 목록 |
 
 상세는 `plugins.md` (권한 토큰 매핑 표 포함) 참조.
 
@@ -356,6 +414,32 @@ tasty unset global-hook --hook HOOK_ID
 마찬가지로 plugin이 `[[contributes.ipc_namespace]]`를 선언했다면 `<prefix>.<method>`
 IPC 메서드를 직접 호출할 수 있다 — 호스트는 메서드 이름과 params를 그대로
 plugin으로 forward하므로, 실제 시그니처/응답은 각 plugin의 문서를 참조해야 한다.
+
+### 클립보드 히스토리 (com.tasty.clipboard-history)
+
+번들 plugin이 등록하는 도구. `tool.clipboard.*` namespace.
+
+| 메서드 | 파라미터 | 설명 |
+|--------|---------|------|
+| `tool.clipboard.list` | 없음 | 히스토리 항목 목록 (`{ index, preview, kind, ts }`) |
+| `tool.clipboard.get` | `index: number` | 항목 raw 데이터 조회 |
+| `tool.clipboard.paste` | `index: number, surface_id?` | 대상 surface에 항목 붙여넣기 |
+| `tool.clipboard.remove` | `index: number` | 특정 항목 삭제 |
+| `tool.clipboard.clear` | 없음 | 히스토리 전체 비우기 |
+
+### 이미지 (com.tasty.image)
+
+번들 plugin이 등록하는 surface kind. `image.*` namespace는 plugin이 자체 forward한다.
+
+| 메서드 | 파라미터 | 설명 |
+|--------|---------|------|
+| `image.open` | `path: string, surface_id?` | 이미지 파일 로드 |
+| `image.save` | `surface_id?` | 현재 편집 내용을 원본 위치에 저장 |
+| `image.export_png` | `surface_id?, out: string` | PNG로 export |
+| `image.next` | `surface_id?` | 같은 폴더의 다음 이미지로 이동 |
+| `image.prev` | `surface_id?` | 이전 이미지 |
+| `image.paste` | `surface_id?` | 클립보드 이미지 붙여넣기 |
+| `image.list` | 없음 | 열려있는 image surface 목록 |
 
 ### Claude 전용
 
@@ -371,6 +455,10 @@ plugin으로 forward하므로, 실제 시그니처/응답은 각 plugin의 문�
 | `claude.wait` | `surface_id?, child_index: number` | 자식의 현재 상태 조회. 반환: `{ state: "idle"\|"needs_input"\|"active"\|"exited" }`. CLI에서 폴링하여 대기 구현 가능. CLI(`tasty claude wait`)는 시작 시 `~/.claude/settings.json`의 tasty Stop 훅 설치 여부를 점검하며, 미설치 시 안내 메시지를 출력하고 즉시 종료한다 (먼저 `tasty claude install` 실행 필요) |
 | `claude.set_idle_state` | `surface_id?, idle: bool` | Claude idle 상태 설정 (idle=false 시 needs_input도 해제) |
 | `claude.set_needs_input` | `surface_id?, needs_input: bool` | Claude needs-input 상태 설정 |
+| `claude.tell` | `surface_id?, child_index?, text: string` | 특정 자식(또는 본인)에 텍스트 전송. `broadcast`와 달리 단일 대상 |
+| `claude.install` | 없음 | `~/.claude/settings.json`에 Stop/Notification/SessionEnd/SubagentStop/SessionStart 훅 등록 (idempotent) |
+| `claude.uninstall` | 없음 | 등록한 훅 제거 (사용자 entry는 보존) |
+| `claude.hook` | `kind: string, surface_id?, session?` | Claude Code 훅 시스템에서 호출되는 진입점 (stop/notification/session-end/subagent-stop/prompt-submit/session-start) |
 | `surface.fire_hook` | `surface_id?, event: string` | 특정 이벤트의 등록된 훅 수동 실행 |
 
 ## 일반적인 사용 패턴

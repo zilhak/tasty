@@ -1,240 +1,166 @@
 # 아키텍처 개요
 
-Tasty는 Cargo 워크스페이스 기반 크로스 플랫폼 GPU 가속 터미널 에뮬레이터다. 2개의 독립 크레이트(tasty-hooks, tasty-terminal)와 메인 바이너리로 구성된다.
+Tasty는 Cargo 워크스페이스 기반 크로스 플랫폼 GPU 가속 터미널 에뮬레이터다.
+본 바이너리(`src/`)와 14개의 라이브러리 크레이트(`crates/*`)로 구성된다.
 
 ## 기술 스택
 
-| 역할 | 라이브러리 | 버전 |
-|------|-----------|------|
-| 윈도우/입력 | winit | 0.30 |
-| GPU 렌더링 | wgpu | 24 |
-| UI 위젯 | egui + egui-wgpu + egui-winit | 0.31 |
-| VTE 파싱 | termwiz | 0.22 |
-| PTY | portable-pty (ConPTY/Unix) | 0.8 |
-| 폰트 래스터라이징 | cosmic-text + swash | - |
-| IPC 프로토콜 | serde_json (JSON-RPC 2.0) | - |
-| CLI | clap | - |
-| 설정 파일 | toml + directories | - |
-| OS 알림 | notify-rust | - |
+| 역할 | 라이브러리 |
+|------|-----------|
+| 윈도우/입력 | winit |
+| GPU 렌더링 | wgpu |
+| UI 위젯 | egui + egui-wgpu + egui-winit |
+| VTE 파싱 | termwiz |
+| PTY | portable-pty (ConPTY/Unix) |
+| 폰트 래스터라이징 | cosmic-text + swash |
+| IPC 프로토콜 | serde_json (JSON-RPC 2.0) |
+| CLI | clap |
+| 설정 파일 | toml + directories |
+| OS 알림 | notify-rust |
+| 공유 메모리 | tasty-shm (자체) — POSIX shm + SCM_RIGHTS / Windows DuplicateHandle |
 
-## 프로젝트 구조
+## 워크스페이스 크레이트
+
+| 크레이트 | 책임 |
+|----------|------|
+| `tasty` (본 바이너리, `src/`) | 윈도우/Engine/Window 계층, UI/GPU, IPC 라우터, CLI |
+| `tasty-core` | 공용 데이터 모델 (`model`, `theme`, `i18n`, `paths`, `color`) |
+| `tasty-settings` | 설정 스키마/직렬화 (appearance/keybindings/general/...) |
+| `tasty-font` | 폰트 atlas, 글리프 래스터라이징, 내장 D2Coding |
+| `tasty-terminal` | PTY + termwiz VTE 래퍼 |
+| `tasty-hooks` | Surface Hook 매니저 (process-exit, output-match, idle-timeout 등) |
+| `tasty-shm` | 크로스 플랫폼 공유 메모리 + 핸들 전달 |
+| `tasty-plugin-protocol` | 호스트↔plugin 와이어 프로토콜 (envelope, 메서드 enum) |
+| `tasty-plugin-sdk` | 외부 plugin 제작용 SDK (Plugin trait, transport, snapshot 헬퍼) |
+| `tasty-plugin-claude` | 번들 plugin: Claude Code (claude.* IPC/CLI, hook 4종 설치) |
+| `tasty-plugin-codex` | 번들 plugin: Codex CLI (codex.* IPC/CLI) |
+| `tasty-plugin-image` | 번들 plugin: 이미지 뷰어 surface kind (`rendering = "host"`) + image.* IPC |
+| `tasty-plugin-explorer` | 번들 plugin: 파일 탐색기 surface kind |
+| `tasty-plugin-clipboard-history` | 번들 plugin: 클립보드 히스토리 (tool.clipboard.*) |
+| `tasty-tui-simulator` | E2E TUI 테스트용 시뮬레이터 |
+
+본 바이너리는 `pub use tasty_core::{model, theme, i18n, paths};`,
+`pub use tasty_settings as settings;`, `pub use tasty_font as font;` 식으로
+재수출하므로 `crate::model::X` 같은 기존 경로가 그대로 동작한다.
+
+## 본 바이너리 모듈 (`src/`)
 
 ```
-tasty/
-├── Cargo.toml                  # 워크스페이스 루트
-├── crates/
-│   ├── tasty-hooks/            # 이벤트 훅 시스템 (독립 크레이트)
-│   └── tasty-terminal/         # PTY + VTE 터미널 에뮬레이터 (독립 크레이트)
-└── src/
-    ├── main.rs                 # 진입점, App 구조체, 윈도우 생성
-    ├── event_handler.rs        # winit ApplicationHandler impl
-    ├── engine.rs               # Engine (IPC 서버, 윈도우 ID 관리)
-    ├── engine_state.rs         # EngineState (워크스페이스, 설정, 훅, 알림 공유 상태)
-    │
-    ├── state/                  # 애플리케이션 상태 (윈도우당 1개)
-    │   ├── mod.rs              # AppState 구조체 + 접근자
-    │   ├── workspace.rs        # 워크스페이스 생성/전환/닫기
-    │   ├── tab.rs              # 탭 생성/이동
-    │   ├── pane.rs             # 패인 분할/닫기, close_surface_by_id
-    │   ├── focus.rs            # 포커스 이동 (방향, 순차)
-    │   ├── claude.rs           # Claude 자식 프로세스 관리
-    │   ├── message.rs          # Surface 간 메시징
-    │   ├── layout.rs           # 리사이즈, 렌더 리전 계산
-    │   ├── mouse.rs            # 디바이더 드래그, 커서 스타일
-    │   ├── mark.rs             # Read mark, 타이핑 감지
-    │   └── tests.rs            # 유닛 테스트
-    │
-    ├── model/                  # 데이터 모델 (Workspace/Pane/Tab/Panel/Surface)
-    │   ├── mod.rs              # Rect, SplitDirection, DividerInfo, 공통 타입
-    │   ├── workspace.rs        # Workspace 구조체
-    │   ├── pane_tree.rs        # PaneNode 이진 트리 (상위 분할)
-    │   ├── pane.rs             # Pane 구조체 + 탭 관리
-    │   ├── tab.rs              # Tab 구조체 (SurfaceLayout 직접 소유)
-    │   ├── terminal_surface.rs # TerminalSurface + DeferredSpawn
-    │   ├── surface_layout.rs   # SurfaceLayout 이진 트리 (하위 분할) + SurfaceRegion
-    │   ├── markdown_panel.rs   # 마크다운 뷰어 데이터
-    │   └── tests.rs            # 모델 유닛 테스트
-    │
-    ├── gpu/                    # GPU 상태 관리
-    │   ├── mod.rs              # GpuState 구조체, new(), render() 오케스트레이션
-    │   ├── render_pass.rs      # clear/terminal/egui 렌더 패스
-    │   ├── egui_bridge.rs      # egui 프레임 실행, IME preedit, 테마 적용
-    │   ├── fonts.rs            # CJK 폰트 로딩
-    │   ├── screenshot.rs       # 프레임 캡처 → PNG
-    │   └── shell_setup.rs      # 셸 경로 확인 UI
-    │
-    ├── renderer/               # wgpu 기반 셀 렌더러
-    │   ├── mod.rs              # CellRenderer, prepare, render_scissored
-    │   ├── pipeline.rs         # wgpu 파이프라인/바인드그룹 초기화
-    │   ├── line_render.rs      # scrollback/surface 라인 렌더 통합
-    │   ├── shaders.rs          # WGSL 셰이더 소스
-    │   ├── palette.rs          # ANSI 컬러 팔레트
-    │   └── types.rs            # GPU 데이터 타입 (Uniforms, BgInstance, GlyphInstance)
-    │
-    ├── ui/                     # egui UI 컴포넌트
-    │   ├── mod.rs              # draw_ui() 진입점
-    │   ├── sidebar.rs          # 사이드바 (축소/전체)
-    │   ├── tab_bar.rs          # 패인별 탭 바
-    │   ├── notification.rs     # 알림 패널
-    │   ├── context_menu.rs     # 우클릭 컨텍스트 메뉴
-    │   ├── dialog.rs           # 이름변경/마크다운 다이얼로그
-    │   ├── divider.rs          # 분할선/서피스 하이라이트
-    │   └── egui_panels.rs      # egui 기반 Surface 패널 렌더
-    │
-    ├── window/                 # Window 트레잇 계층 + 구현체
-    │   ├── mod.rs              # Window sealed trait, Modality, WindowAction, unbox_main
-    │   ├── base.rs             # WindowBase (공통 필드 composition)
-    │   ├── modal.rs            # ModalWindow supertrait
-    │   ├── terminal_host.rs    # TerminalHostWindow supertrait
-    │   ├── settings.rs         # SettingsWindow (모달, 설정 UI)
-    │   ├── quit.rs             # QuitWindow (모달, 종료 다이얼로그)
-    │   └── main/               # MainWindow (TerminalHostWindow)
-    │       ├── mod.rs          # MainWindow 구조체, handle_event dispatch
-    │       ├── keyboard.rs     # 키보드 입력, IME
-    │       ├── mouse.rs        # 마우스 클릭/이동/휠
-    │       ├── selection.rs    # 텍스트 선택 (Normal/Word/Line)
-    │       ├── redraw.rs       # 프레임 렌더, 터미널 이벤트 처리
-    │       └── clipboard.rs    # 붙여넣기, 이미지 저장
-    │
-    ├── cli/                    # CLI 클라이언트
-    │   ├── mod.rs              # Cli/Commands enum, run_client()
-    │   ├── request.rs          # Commands → JSON-RPC 변환
-    │   ├── format.rs           # 출력 포맷팅
-    │   ├── claude.rs           # claude-hook, claude-wait 처리
-    │   └── transport.rs        # TCP 통신
-    │
-    ├── ipc/                    # IPC 서버
-    │   ├── mod.rs
-    │   ├── protocol.rs         # JSON-RPC 2.0 프로토콜
-    │   ├── server.rs           # TCP 서버
-    │   └── handler/            # 요청 핸들러
-    │       ├── mod.rs          # 라우터 dispatch
-    │       ├── workspace.rs    # workspace.* 핸들러
-    │       ├── pane.rs         # pane.*, split
-    │       ├── tab.rs          # tab.list/create/close (type으로 markdown/html/image + plugin kind 통합)
-    │       ├── surface.rs      # surface.* 핸들러
-    │       ├── claude.rs       # claude.* 핸들러 (spawn/kill/broadcast 등)
-    │       ├── hooks.rs        # hook.*, global_hook.*, surface.fire_hook
-    │       ├── notification.rs # notification.*
-    │       ├── message.rs      # message.*
-    │       └── meta.rs         # surface.meta_*
-    │
-    ├── settings/               # 설정 시스템
-    │   ├── mod.rs              # Settings 구조체, load()/save()
-    │   ├── general.rs          # GeneralSettings + Shell 감지/검증
-    │   ├── appearance.rs       # AppearanceSettings + hex 색상 파싱
-    │   ├── keybindings.rs      # KeybindingSettings + preset
-    │   └── types.rs            # Clipboard/Zoom/Performance/Notification 설정
-    │
-    ├── settings_ui/            # 설정 UI
-    │   ├── mod.rs              # draw_settings_panel()
-    │   ├── keybindings_tab.rs  # 키바인딩 탭 (캡처/프리셋)
-    │   └── tabs.rs             # General/Appearance/Clipboard/Notification/Language/Performance 탭
-    │
-    ├── shortcuts.rs            # 키보드 단축키 매칭 + 실행
-    ├── font.rs                 # FontConfig + GlyphAtlas (래스터라이징)
-    ├── theme.rs                # Catppuccin Mocha 테마
-    ├── selection.rs            # 텍스트 선택 좌표 정규화
-    ├── click_cursor.rs         # 클릭→커서 이동
-    ├── notification.rs         # NotificationStore + OS 알림
-    ├── global_hooks.rs         # GlobalHookManager (타이머/파일 감시)
-    ├── surface_meta.rs         # Surface별 메타데이터 저장소
-    ├── i18n.rs                 # 국제화 (TOML 번역)
-    ├── crash_report.rs         # 크래시 리포트 수집
-    └── markdown_ui.rs          # 마크다운 렌더링 (egui)
+src/
+├── main.rs                 # 진입점, App 구조체, 일부 IPC dispatch (window.*, system.shutdown,
+│                           #   debug.info, ui.screenshot, surface.ime_* 등)
+├── event_handler.rs        # winit ApplicationHandler impl
+├── engine.rs               # Engine (IPC 서버, 윈도우 ID 관리)
+├── engine_state.rs         # EngineState (공유 상태: 워크스페이스/설정/훅/알림)
+├── waker_factory_winit.rs  # winit EventLoopProxy 기반 Waker 팩토리
+│
+├── state/                  # AppState (윈도우당 1개) — workspace/tab/pane/focus/layout/mouse/mark/restore/message
+├── window/                 # Window sealed trait + 구현체
+│   ├── mod.rs              # Window/Modality/WindowAction
+│   ├── base.rs             # WindowBase 공통 필드
+│   ├── modal.rs / terminal_host.rs   # supertrait
+│   ├── settings.rs / quit.rs / plugins.rs  # 모달 윈도우
+│   └── main/               # MainWindow (TerminalHostWindow): keyboard/mouse/ime/selection/redraw/clipboard
+│
+├── gpu/                    # GPU 상태 (GpuState/render_pass/egui_bridge/fonts/screenshot/shell_setup/
+│                           #   canvas_prepare/canvas_texture)
+├── renderer/               # wgpu 셀 렌더러 (pipeline/line_render/shaders/palette/types)
+├── ui/                     # egui UI 컴포넌트 (sidebar/tab_bar/notification/dialog/divider/popup/
+│                           #   toast/search_bar/tools_menu/file_open_popup/image_view/markdown_view/
+│                           #   notification_popup/info_modal/font_registry/popup_defs/convert_popup/
+│                           #   layout_context/egui_panels)
+├── settings_ui/            # 설정 윈도우 UI (mod/tabs/keybindings_tab)
+├── plugins_ui/             # plugin 관리 윈도우 UI
+│
+├── plugin/                 # plugin 호스트 — manifest/discovery/manager/process/protocol/listener/
+│                           #   command_registry/extension_registry/tool_registry/event_bus/event_throttle/
+│                           #   host_actions/host_cmd/host_rendered_kind/ipc_namespace/key_dispatch/
+│                           #   popup_render/registry_state/remote_kind/remote_surface/ui_tree(_render)/
+│                           #   builtin/handle_channel
+│
+├── cli/                    # CLI 클라이언트 (mod/request/format/transport/dynamic/plugin)
+├── ipc/                    # IPC 서버 + 핸들러
+│   ├── mod.rs / server.rs / protocol.rs / method_meta.rs / caller.rs / alias.rs
+│   └── handler/
+│       ├── mod.rs          # 라우터 (route_engine / route_gui / route_debug)
+│       ├── workspace.rs / pane.rs / tab.rs / surface.rs
+│       ├── hooks.rs / notification.rs / message.rs / meta.rs
+│       ├── plugin.rs / popup.rs / image.rs / ime.rs / tool.rs
+│       ├── clipboard.rs / input_source.rs
+│
+├── storage/                # 영구 저장소 (mod/migrations)
+├── surface_registry/       # Surface kind 레지스트리 (mod/builtins)
+├── native_menu/            # 네이티브 컨텍스트 메뉴 (linux/macos/windows)
+├── webview/                # WebView surface 래퍼 (linux/macos/windows)
+├── file_drag/              # 파일 드래그 (linux/macos/windows)
+│
+├── shortcuts.rs            # 키보드 단축키 매칭 + 실행
+├── theme.rs / theme_bridge.rs  # Catppuccin Mocha 테마 / egui 어댑터
+├── selection.rs            # 텍스트 선택 좌표 정규화
+├── click_cursor.rs         # 클릭→커서 이동
+├── double_tap.rs           # 더블탭 수식키
+├── notification.rs         # NotificationStore + OS 알림
+├── global_hooks.rs         # GlobalHookManager (타이머/파일 감시)
+├── surface_meta.rs         # Surface별 메타데이터 저장소
+├── crash_report.rs         # 크래시 리포트 수집
+├── debug_info.rs           # debug.info IPC 응답
+├── clipboard_history.rs    # 클립보드 히스토리 백엔드
+├── recent_files.rs / jump_list.rs / search_state.rs / layout_persistence.rs
+├── markdown_ui.rs / html_ui.rs / image_ui.rs / empty_ui.rs / terminal_link.rs
+├── app_icon.rs / macos_delegate.rs / system_tray.rs
+└── ...
 ```
 
 ## 모듈 의존성 (DAG)
 
 ```
 main.rs
-├── window/             ← Window 트레잇 계층 + 모든 구현체
-│   ├── main/           ← MainWindow (TerminalHostWindow 계열)
-│   │   ├── gpu/        ← GPU 렌더링 + egui
-│   │   │   ├── renderer/ ← 셀 렌더러
-│   │   │   │   └── font  ← 폰트/아틀라스
-│   │   │   └── ui/     ← egui UI 컴포넌트
-│   │   ├── state/      ← 애플리케이션 상태
-│   │   │   └── engine_state ← 공유 엔진 상태
-│   │   │       └── settings/ ← 설정 (최하위, 외부 의존 없음)
-│   │   └── shortcuts   ← 단축키 처리
-│   ├── settings.rs     ← SettingsWindow (모달)
-│   ├── quit.rs         ← QuitWindow (모달)
-│   ├── modal.rs        ← ModalWindow supertrait
-│   ├── terminal_host.rs ← TerminalHostWindow supertrait
-│   └── base.rs         ← WindowBase 공통 필드
-├── modal_window        ← 설정 모달 (Modal 구현)
-│   └── settings_ui/    ← 설정 UI
-├── quit_modal          ← 종료 확인 모달 (Modal 구현)
-└── cli/                ← CLI 클라이언트 (독립)
-    └── ipc/            ← IPC 서버 + 핸들러
+├── engine / engine_state           ← IPC 서버, 공유 상태
+├── window/                          ← Window 트레잇 + 구현체
+│   ├── main/                        ← MainWindow (TerminalHostWindow)
+│   │   ├── gpu/ → renderer/ → tasty-font
+│   │   ├── ui/ → state/
+│   │   └── shortcuts
+│   ├── settings.rs / quit.rs / plugins.rs   ← ModalWindow
+│   └── modal.rs / terminal_host.rs / base.rs
+├── plugin/                          ← plugin 호스트 (manifest/process/manager/registry/...)
+├── ipc/                             ← IPC 서버 + handler/
+└── cli/                             ← CLI 클라이언트 (GUI와 독립)
+
+workspace 크레이트:
+tasty-core ← (의존 없음, 다른 거의 모든 크레이트의 base)
+tasty-settings ← tasty-core
+tasty-font ← tasty-core
+tasty-terminal ← tasty-core
+tasty-hooks ← tasty-core
+tasty-shm ← (OS API만)
+tasty-plugin-protocol ← tasty-core, tasty-shm
+tasty-plugin-sdk ← tasty-plugin-protocol, tasty-shm
+tasty-plugin-{claude,codex,image,explorer,clipboard-history}
+              ← tasty-plugin-sdk
+tasty (binary) ← 모든 위 크레이트
 ```
 
-순환 의존 없음. settings가 최하위, main이 최상위.
-
-## 계층 구조
-
-### 기반 계층 (Foundation)
-
-| 모듈 | 역할 | 외부 의존 |
-|------|------|-----------|
-| `settings/` | TOML 설정 로드/저장 | toml, directories |
-| `model/` | 데이터 모델 (Workspace~Surface) | tasty-terminal |
-| `ipc/protocol` | JSON-RPC 2.0 타입 | serde_json |
-| `notification` | 알림 저장소 + OS 알림 | notify-rust |
-| `selection` | 텍스트 선택 좌표 | (없음) |
-
-### 중간 계층 (Services)
-
-| 모듈 | 의존 대상 |
-|------|-----------|
-| `font` | cosmic-text, wgpu |
-| `renderer/` | font, model, selection, wgpu |
-| `ipc/server` | ipc/protocol |
-| `ipc/handler/` | state, model, ipc/protocol |
-| `engine_state` | model, settings, notification |
-
-### 상위 계층 (Composition)
-
-| 모듈 | 의존 대상 |
-|------|-----------|
-| `state/` | engine_state, model, settings_ui |
-| `ui/` | state, model, theme |
-| `settings_ui/` | settings, theme |
-| `gpu/` | renderer, ui, state, settings |
-| `tasty_window/` | gpu, state, shortcuts, selection |
-
-### 최상위 계층 (Integration)
-
-| 모듈 | 역할 |
-|------|------|
-| `main.rs` | App 구조체, winit 이벤트 루프, 윈도우 관리, IPC 디스패치 |
-| `cli/` | CLI 클라이언트 (GUI와 독립) |
+순환 의존 없음. tasty-core가 최하위, 본 바이너리가 최상위.
 
 ## 데이터 흐름
 
-1. **키보드 입력 → 화면**: winit KeyEvent → MainWindow → shortcuts/send_key → Terminal → PTY → 리더 스레드 → EventLoopProxy → process → CellRenderer → wgpu
+1. **키보드 입력 → 화면**: winit KeyEvent → MainWindow → shortcuts/send_key → tasty-terminal → PTY → 리더 스레드 → EventLoopProxy → CellRenderer → wgpu
 2. **PTY 출력 → 렌더링**: PTY 리더 → Terminal::process → termwiz Parser → Surface → CellRenderer::prepare → 2-pass 렌더
-3. **IPC 요청 → 응답**: TCP → IpcServer → mpsc → main process_ipc → handler::handle → AppState → JsonRpcResponse → TCP
-4. **알림**: Terminal 이벤트 → NotificationStore → 사이드바 배지 + 알림 패널
+3. **IPC 요청 → 응답**: TCP → IpcServer → mpsc → main process_ipc → handler::handle (또는 main.rs 직접 dispatch) → AppState → JsonRpcResponse → TCP
+4. **Plugin 호출**: handler/plugin.rs → plugin/manager → plugin process (stdio) → tasty-plugin-sdk → 응답
+5. **알림**: Terminal 이벤트 → NotificationStore → 사이드바 배지 + 알림 패널
 
-## 모듈 크기 분포
+## 코드 규모
 
-91개 .rs 파일, 합계 16,635줄, 평균 182줄.
-
-300줄 이상 파일(16개)은 모두 본질적으로 큰 코드:
-- 재귀 바이너리 트리: pane_tree(456), surface_layout(380)
-- 테스트: tests(551, 278)
-- 매핑 테이블/enum: keybindings_tab(405), cli/mod(381)
-- wgpu 선언: pipeline(349)
-- 래스터라이저: font(408)
-- IPC 핸들러 집합: claude(425), surface(330)
+본 바이너리 약 160개 `.rs` (~49k 줄) + 워크스페이스 크레이트 78개 `.rs` (~24k 줄).
+정확한 수치는 `find src crates -name '*.rs' -not -path '*/target/*' | wc -l` 참조.
 
 ## 하위 문서
 
 | 문서 | 설명 |
 |------|------|
 | [모듈별 상세](modules.md) | 디렉토리 모듈별 책임, 설계 목적, 한계 |
-| [데이터 흐름](data-flows.md) | 5가지 주요 데이터 흐름 (파일+함수 기준 참조) |
+| [데이터 흐름](data-flows.md) | 주요 데이터 흐름 (파일+함수 기준 참조) |
 | [리팩토링 분석](refactoring.md) | 남아있는 개선 가능성, 우선순위별 로드맵 |
 | [라이브러리 분리 분석](library-separation/index.md) | 크레이트 분리 후보 다관점 분석 |
