@@ -1,5 +1,5 @@
 #[cfg(debug_assertions)]
-use super::DebugCommands;
+use super::{DebugCommands, EventBusCommands};
 use super::{
     ClipboardCommands, CloseCommands, Commands, ListCommands, MoveCommands, NewCommands,
     PluginCommands, ReadCommands, SendCommands, SetCommands, SurfaceMetaCommands, ToolCommands,
@@ -412,6 +412,35 @@ fn debug_command_to_method_params(command: &DebugCommands) -> (&'static str, ser
         DebugCommands::RawKey { keycode } => {
             ("surface.raw_key", serde_json::json!({ "keycode": keycode }))
         }
+        DebugCommands::EventBus(sub) => event_bus_command_to_method_params(sub),
+    }
+}
+
+#[cfg(debug_assertions)]
+fn event_bus_command_to_method_params(
+    command: &EventBusCommands,
+) -> (&'static str, serde_json::Value) {
+    match command {
+        EventBusCommands::ListSubscribers { key } => (
+            "debug.event_bus.list_subscribers",
+            serde_json::json!({ "key": key }),
+        ),
+        EventBusCommands::Publish {
+            key,
+            payload,
+            scope,
+        } => (
+            "debug.event_bus.publish",
+            serde_json::json!({
+                "key": key,
+                "payload": payload,
+                "scope": scope,
+            }),
+        ),
+        EventBusCommands::Trace { trace_id } => (
+            "debug.event_bus.trace",
+            serde_json::json!({ "trace_id": trace_id }),
+        ),
     }
 }
 

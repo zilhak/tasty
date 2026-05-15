@@ -645,6 +645,38 @@ pub enum DebugCommands {
         #[arg()]
         keycode: u16,
     },
+    /// Event Bus inspection and injection (debug builds only)
+    #[command(subcommand)]
+    EventBus(EventBusCommands),
+}
+
+#[cfg(debug_assertions)]
+#[derive(Subcommand)]
+pub enum EventBusCommands {
+    /// List plugins subscribing to the given event key
+    ListSubscribers {
+        /// Event key (e.g. "surface.closed")
+        #[arg()]
+        key: String,
+    },
+    /// Publish an arbitrary event from the host side
+    Publish {
+        /// Event key
+        #[arg()]
+        key: String,
+        /// JSON payload (default: `{}`)
+        #[arg(long, default_value = "{}")]
+        payload: String,
+        /// Event scope: "system" (default) or "surface"
+        #[arg(long, default_value = "system")]
+        scope: String,
+    },
+    /// Print recent envelopes with the given trace_id
+    Trace {
+        /// trace_id (e.g. "h2a")
+        #[arg()]
+        trace_id: String,
+    },
 }
 
 // ── Shared argument introspection ──

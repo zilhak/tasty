@@ -18,6 +18,8 @@
 //! - 호스트 publish는 권한 검사 없이 항상 통과 (origin = Host)
 
 use std::collections::HashMap;
+#[cfg(debug_assertions)]
+use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
@@ -66,7 +68,14 @@ struct Inner {
     plugin_subscribe_perms: HashMap<String, Vec<String>>,
     /// 매니페스트의 `event_publish` 패턴 (plugin_id → 패턴 목록).
     plugin_publish_perms: HashMap<String, Vec<String>>,
+    /// debug 빌드 한정 — 최근 발화된 envelope 링버퍼. `debug.event_bus.trace`
+    /// CLI가 trace_id로 조회.
+    #[cfg(debug_assertions)]
+    trace_ring: VecDeque<EventEnvelope>,
 }
+
+#[cfg(debug_assertions)]
+const TRACE_RING_CAPACITY: usize = 256;
 
 #[derive(Clone)]
 pub struct EventBus {
@@ -91,6 +100,8 @@ impl EventBus {
                 plugin_subs: Vec::new(),
                 plugin_subscribe_perms: HashMap::new(),
                 plugin_publish_perms: HashMap::new(),
+                #[cfg(debug_assertions)]
+                trace_ring: VecDeque::with_capacity(TRACE_RING_CAPACITY),
             })),
         }
     }
@@ -250,7 +261,15 @@ impl EventBus {
         envelope: EventEnvelope,
         publisher_plugin_id: Option<&str>,
     ) -> Vec<PluginDispatch> {
-        let inner = self.inner.lock().expect("event bus poisoned");
+        let mut inner = self.inner.lock().expect("event bus poisoned");
+        // debug 빌드: trace 링버퍼에 envelope 기록.
+        #[cfg(debug_assertions)]
+        {
+            if inner.trace_ring.len() == TRACE_RING_CAPACITY {
+                inner.trace_ring.pop_front();
+            }
+            inner.trace_ring.push_back(envelope.clone());
+        }
         // 호스트 구독자.
         let mut dead_host: Vec<u64> = Vec::new();
         for sub in &inner.host_subs {
@@ -293,6 +312,31 @@ impl EventBus {
             method: METHOD_EVENT_DISPATCH.to_string(),
             params: serde_json::to_value(&params).unwrap_or(serde_json::Value::Null),
         }
+    }
+
+    /// debug 한정 — 주어진 key에 매칭되는 plugin 구독을 모아 반환.
+    /// `(plugin_id, sub_id, 매니페스트의 구독 패턴)`.
+    #[cfg(debug_assertions)]
+    pub fn debug_list_subscribers(&self, key: &str) -> Vec<(String, u64, String)> {
+        let inner = self.inner.lock().expect("event bus poisoned");
+        inner
+            .plugin_subs
+            .iter()
+            .filter(|s| pattern_matches(&s.pattern, key))
+            .map(|s| (s.plugin_id.clone(), s.sub_id, s.pattern.clone()))
+            .collect()
+    }
+
+    /// debug 한정 — 링버퍼에서 `trace_id`가 일치하는 envelope들을 발화 순서로 반환.
+    #[cfg(debug_assertions)]
+    pub fn debug_trace(&self, trace_id: &str) -> Vec<EventEnvelope> {
+        let inner = self.inner.lock().expect("event bus poisoned");
+        inner
+            .trace_ring
+            .iter()
+            .filter(|e| e.meta.trace_id == trace_id)
+            .cloned()
+            .collect()
     }
 }
 
@@ -499,6 +543,44 @@ mod tests {
         );
         let res = bus.publish_from_plugin("p1", envelope);
         assert!(matches!(res, Err(EventBusError::PublishDenied { .. })));
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    fn debug_list_subscribers_matches_subscribed_plugins() {
+        let bus = EventBus::new();
+        bus.set_plugin_permissions("p1", vec!["surface.*".into()], vec![]);
+        bus.set_plugin_permissions("p2", vec!["surface.closed".into()], vec![]);
+        bus.subscribe_plugin("p1", 1, "surface.*".into()).unwrap();
+        bus.subscribe_plugin("p2", 7, "surface.closed".into()).unwrap();
+        let subs = bus.debug_list_subscribers("surface.closed");
+        assert_eq!(subs.len(), 2);
+        assert!(subs.iter().any(|(p, _, _)| p == "p1"));
+        assert!(subs.iter().any(|(p, sub, _)| p == "p2" && *sub == 7));
+        let none = bus.debug_list_subscribers("tab.created");
+        assert!(none.is_empty());
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    fn debug_trace_returns_recent_envelopes_by_id() {
+        let bus = EventBus::new();
+        // 3건 발화 — 같은 trace_id 2건 + 다른 1건.
+        let mut e1 = env("surface.created", EventOrigin::Host);
+        e1.meta.trace_id = "h1".into();
+        let mut e2 = env("surface.closed", EventOrigin::Host);
+        e2.meta.trace_id = "h1".into();
+        let mut e3 = env("tab.created", EventOrigin::Host);
+        e3.meta.trace_id = "h2".into();
+        bus.publish_from_host(e1);
+        bus.publish_from_host(e2);
+        bus.publish_from_host(e3);
+        let chain = bus.debug_trace("h1");
+        assert_eq!(chain.len(), 2);
+        assert_eq!(chain[0].key, "surface.created");
+        assert_eq!(chain[1].key, "surface.closed");
+        let other = bus.debug_trace("h99");
+        assert!(other.is_empty());
     }
 
     #[test]

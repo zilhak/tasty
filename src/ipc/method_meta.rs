@@ -154,6 +154,9 @@ pub const DEBUG_METHODS: &[(&str, MethodMeta)] = &[
     ("debug.inject_mouse", local_only()),
     ("debug.inject_key", local_only()),
     ("debug.clipboard_viewer_open", local_only()),
+    ("debug.event_bus.list_subscribers", local_only()),
+    ("debug.event_bus.publish", local_only()),
+    ("debug.event_bus.trace", local_only()),
 ];
 #[cfg(not(debug_assertions))]
 pub const DEBUG_METHODS: &[(&str, MethodMeta)] = &[];

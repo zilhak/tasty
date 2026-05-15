@@ -208,6 +208,95 @@ fn shortcut_override_display(
     }
 }
 
+/// debug 빌드 한정 — `debug.event_bus.*` IPC 처리. PluginManager의 EventBus를
+/// 직접 조회/조작한다. release 빌드에는 컴파일되지 않는다.
+#[cfg(debug_assertions)]
+fn handle_debug_event_bus(
+    mgr: Option<&mut plugin::PluginManager>,
+    method: &str,
+    params: &serde_json::Value,
+    id: serde_json::Value,
+) -> ipc::protocol::JsonRpcResponse {
+    use ipc::protocol::JsonRpcResponse;
+    let mgr = match mgr {
+        Some(m) => m,
+        None => return JsonRpcResponse::error(id, -32000, "plugin manager not initialized"),
+    };
+    match method {
+        "debug.event_bus.list_subscribers" => {
+            let key = match params.get("key").and_then(|v| v.as_str()) {
+                Some(k) => k.to_string(),
+                None => return JsonRpcResponse::invalid_params(id, "missing 'key'"),
+            };
+            let subs = mgr.event_bus.debug_list_subscribers(&key);
+            let result: Vec<_> = subs
+                .into_iter()
+                .map(|(plugin_id, sub_id, pattern)| {
+                    serde_json::json!({
+                        "plugin_id": plugin_id,
+                        "sub_id": sub_id,
+                        "pattern": pattern,
+                    })
+                })
+                .collect();
+            JsonRpcResponse::success(id, serde_json::json!({ "subscribers": result }))
+        }
+        "debug.event_bus.publish" => {
+            let key = match params.get("key").and_then(|v| v.as_str()) {
+                Some(k) => k.to_string(),
+                None => return JsonRpcResponse::invalid_params(id, "missing 'key'"),
+            };
+            let payload_str = params
+                .get("payload")
+                .and_then(|v| v.as_str())
+                .unwrap_or("{}");
+            let payload: serde_json::Value = match serde_json::from_str(payload_str) {
+                Ok(v) => v,
+                Err(e) => {
+                    return JsonRpcResponse::invalid_params(
+                        id,
+                        &format!("invalid JSON payload: {e}"),
+                    );
+                }
+            };
+            let scope_str = params
+                .get("scope")
+                .and_then(|v| v.as_str())
+                .unwrap_or("system");
+            let scope = match scope_str {
+                "system" => tasty_plugin_protocol::EventScope::System,
+                "surface" => tasty_plugin_protocol::EventScope::Surface,
+                other => {
+                    return JsonRpcResponse::invalid_params(
+                        id,
+                        &format!("unknown scope '{other}' (expected 'system' or 'surface')"),
+                    );
+                }
+            };
+            let envelope = mgr.build_host_envelope(&key, &payload, scope);
+            let trace_id = envelope.meta.trace_id.clone();
+            mgr.publish_host_event(envelope);
+            JsonRpcResponse::success(
+                id,
+                serde_json::json!({ "published": true, "trace_id": trace_id }),
+            )
+        }
+        "debug.event_bus.trace" => {
+            let trace_id = match params.get("trace_id").and_then(|v| v.as_str()) {
+                Some(t) => t,
+                None => return JsonRpcResponse::invalid_params(id, "missing 'trace_id'"),
+            };
+            let envelopes = mgr.event_bus.debug_trace(trace_id);
+            let result: Vec<_> = envelopes
+                .into_iter()
+                .map(|e| serde_json::to_value(&e).unwrap_or(serde_json::Value::Null))
+                .collect();
+            JsonRpcResponse::success(id, serde_json::json!({ "envelopes": result }))
+        }
+        _ => JsonRpcResponse::method_not_found(id, method),
+    }
+}
+
 impl App {
     fn new(
         proxy: EventLoopProxy<AppEvent>,
@@ -1037,6 +1126,20 @@ impl App {
                     ),
                     other => ipc::protocol::JsonRpcResponse::method_not_found(id, other),
                 };
+                let _ = cmd.response_tx.send(response);
+                processed = true;
+                continue;
+            }
+            // ── Debug Event Bus (App-level — needs PluginManager) ──
+            #[cfg(debug_assertions)]
+            if cmd.request.method.starts_with("debug.event_bus.") {
+                let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
+                let response = handle_debug_event_bus(
+                    self.plugin_manager.as_mut(),
+                    &cmd.request.method,
+                    &cmd.request.params,
+                    id,
+                );
                 let _ = cmd.response_tx.send(response);
                 processed = true;
                 continue;
