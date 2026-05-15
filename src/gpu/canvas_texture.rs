@@ -11,7 +11,6 @@
 //!   삭제하고 새로 생성하며 [`egui_wgpu::Renderer::register_native_texture`]도 재호출한다.
 //! - [`CanvasTextureCache::upload_if_dirty`]: plugin이 보고한 commit generation이 이전과
 //!   같으면 noop. 다르면 dirty rect만 staging 벡터로 잘라 `queue.write_texture`로 업로드.
-//! - [`CanvasTextureCache::release_plugin`]: plugin 종료 시 호출.
 //!
 //! # bytes_per_row
 //!
@@ -169,23 +168,6 @@ impl CanvasTextureCache {
         e.last_uploaded_gen = atomic_gen;
         // view는 별도 사용 안 함 — egui_renderer가 등록 시점에 참조를 가져갔다.
         let _ = &e.view;
-    }
-
-    /// 한 plugin이 종료되면 그 plugin이 보유한 모든 캔버스 텍스처를 풀어준다.
-    pub fn release_plugin(&mut self, plugin_id: &str, egui_renderer: &mut egui_wgpu::Renderer) {
-        self.entries.retain(|k, e| {
-            if k.plugin_id == plugin_id {
-                egui_renderer.free_texture(&e.egui_id);
-                false
-            } else {
-                true
-            }
-        });
-    }
-
-    /// 디버그용: 현재 cache 크기.
-    pub fn len(&self) -> usize {
-        self.entries.len()
     }
 
     /// (plugin_id, buffer_id)에 대해 등록된 egui TextureId를 반환. 미등록이면 None.

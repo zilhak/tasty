@@ -514,8 +514,7 @@ mod unix_wire {
             bytes: [u8; 256],
             _align: [u64; 32],
         }
-        // SAFETY: union 두 필드 같은 영역 공유, bytes 패턴으로 zero-init.
-        let mut cmsg_buf = unsafe { RecvCmsgBuf { bytes: [0u8; 256] } };
+        let mut cmsg_buf = RecvCmsgBuf { bytes: [0u8; 256] };
         // SAFETY: cmsg_buf의 bytes 필드 포인터.
         msg.msg_control = unsafe { cmsg_buf.bytes.as_mut_ptr() } as *mut _;
         msg.msg_controllen = 256 as _;

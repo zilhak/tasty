@@ -13,7 +13,6 @@ mod empty_ui;
 pub mod engine;
 pub mod engine_state;
 mod event_handler;
-mod file_clipboard;
 mod file_drag;
 mod global_hooks;
 mod gpu;

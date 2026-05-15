@@ -18,7 +18,6 @@ use crate::plugin::manifest::{
 /// 한 plugin이 contribute한 CLI 묶음.
 #[derive(Debug, Clone)]
 pub struct PluginCliEntry {
-    pub plugin_id: String,
     pub cli: CliCommandDecl,
 }
 
@@ -40,7 +39,6 @@ pub fn discover_plugin_clis(plugins_root: &Path) -> Vec<PluginCliEntry> {
             Ok(manifest) => {
                 for cli in &manifest.contributes.cli {
                     out.push(PluginCliEntry {
-                        plugin_id: manifest.id.clone(),
                         cli: cli.clone(),
                     });
                 }
@@ -267,7 +265,6 @@ mod tests {
             },
         );
         PluginCliEntry {
-            plugin_id: "com.example.codex".into(),
             cli: CliCommandDecl {
                 name: "codex".into(),
                 description: None,
@@ -394,7 +391,7 @@ subcommands = [
             .unwrap();
 
         let entries = discover_plugin_clis(dir.path());
-        let ids: Vec<&str> = entries.iter().map(|e| e.plugin_id.as_str()).collect();
-        assert_eq!(ids, vec!["com.example.a"]);
+        let names: Vec<&str> = entries.iter().map(|e| e.cli.name.as_str()).collect();
+        assert_eq!(names, vec!["a"]);
     }
 }

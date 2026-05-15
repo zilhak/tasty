@@ -55,22 +55,6 @@ pub fn draw_markdown(
         });
 }
 
-/// Render markdown content into an egui Ui (standalone, without MarkdownPanel).
-/// Uses a temporary cache per call — for cached rendering, use `draw_markdown` instead.
-pub fn render_markdown(ui: &mut egui::Ui, content: &str, font: &EffectiveFont) {
-    let th = theme::theme();
-
-    apply_font_text_styles(ui, font);
-
-    let visuals = &mut ui.style_mut().visuals;
-    visuals.override_text_color = Some(th.subtext1.into());
-    visuals.hyperlink_color = th.blue.into();
-    visuals.code_bg_color = th.surface0.into();
-
-    let mut cache = egui_commonmark::CommonMarkCache::default();
-    egui_commonmark::CommonMarkViewer::new().show(ui, &mut cache, content);
-}
-
 /// Override the standard egui text styles with the markdown surface's font.
 /// Headings scale proportionally to the body size.
 fn apply_font_text_styles(ui: &mut egui::Ui, font: &EffectiveFont) {
