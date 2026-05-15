@@ -316,6 +316,24 @@ pub struct CommandDecl {
     /// `"independent"` (기본) 또는 `"inherit:<host_action>"`.
     #[serde(default)]
     pub binding_mode: BindingMode,
+    /// command 발화 범위. `global`은 어디서나 동작(조합키 권장), `surface`는
+    /// owner plugin이 만든 surface에 포커스가 있을 때만 동작(단일 키 허용).
+    /// 기본 `global`.
+    #[serde(default)]
+    pub scope: CommandScope,
+}
+
+/// command가 어떤 포커스 컨텍스트에서 발화하는지.
+///
+/// - `Global`: 어디서나 동작. 단축키는 조합키만 권장.
+/// - `Surface`: owner plugin이 만든 surface에 포커스가 있을 때만 동작.
+///   단일 키도 허용.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum CommandScope {
+    #[default]
+    Global,
+    Surface,
 }
 
 /// command가 호스트 액션 키와 어떤 관계를 갖는지.

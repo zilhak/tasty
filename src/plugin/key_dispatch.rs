@@ -75,17 +75,26 @@ pub fn dispatch_plugin_command(
         command_id,
         surface_id
     );
+    let manifest_scope = mgr
+        .command_registry
+        .commands_for(plugin_id)
+        .iter()
+        .find(|e| e.command_id == command_id)
+        .map(|e| e.scope)
+        .unwrap_or_default();
     {
         use tasty_plugin_protocol::EventScope;
         use tasty_plugin_protocol::events::payloads::{
             CommandInvoked, CommandScope, CommandTrigger,
         };
+        let scope = match manifest_scope {
+            crate::plugin::manifest::CommandScope::Global => CommandScope::Global,
+            crate::plugin::manifest::CommandScope::Surface => CommandScope::Surface,
+        };
         let payload = CommandInvoked {
             plugin_id: plugin_id.to_string(),
             command_id: command_id.to_string(),
-            // PR 5는 매니페스트 `scope` 필드를 아직 받지 않으므로 Global로 통일.
-            // 후속 PR에서 CommandDecl.scope를 도입하면서 분기 처리한다.
-            scope: CommandScope::Global,
+            scope,
             source_surface_id: Some(surface_id),
             trigger: CommandTrigger::Shortcut,
         };

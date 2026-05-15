@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use tasty_settings::KeybindingSettings;
 
 use super::host_actions;
-use super::manifest::{BindingMode, CommandDecl, Manifest};
+use super::manifest::{BindingMode, CommandDecl, CommandScope, Manifest};
 use super::registry_state::ShortcutOverride;
 
 /// 한 plugin이 등록한 한 command의 메타데이터.
@@ -27,6 +27,7 @@ pub struct PluginCommandEntry {
     /// 사용자가 별도 override를 지정하지 않았을 때의 시작값. None이면 기본 키 없음.
     pub manifest_default: Option<String>,
     pub binding_mode: BindingMode,
+    pub scope: CommandScope,
 }
 
 impl PluginCommandEntry {
@@ -49,6 +50,7 @@ impl PluginCommandEntry {
             title_i18n_key: decl.title_i18n_key.clone(),
             manifest_default: decl.default_keybinding.clone(),
             binding_mode: mode,
+            scope: decl.scope,
         }
     }
 }
@@ -235,6 +237,7 @@ mod tests {
             title_i18n_key: format!("{id}.title"),
             default_keybinding: Some("F5".to_string()),
             binding_mode: mode,
+            scope: CommandScope::default(),
         }
     }
 
@@ -330,6 +333,7 @@ mod tests {
             title_i18n_key: format!("{id}.title"),
             manifest_default: default.map(|s| s.to_string()),
             binding_mode: mode,
+            scope: CommandScope::default(),
         }
     }
 
