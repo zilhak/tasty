@@ -171,15 +171,15 @@ mod tests {
     }
 
     #[test]
-    fn builtin_registers_four_kinds() {
+    fn builtin_registers_host_kinds() {
         let reg = SurfaceKindRegistry::new();
         register_builtin_kinds(&reg);
         // explorer는 com.tasty.explorer plugin이, image는 com.tasty.image plugin이
-        // 각각 hello 시에 등록한다.
-        for kind in ["terminal", "markdown", "html", "empty"] {
+        // 각각 hello 시에 등록한다. diff 는 host 빌트인.
+        for kind in ["terminal", "markdown", "html", "empty", "diff"] {
             assert!(reg.contains(kind), "missing builtin kind: {kind}");
         }
-        assert_eq!(reg.len(), 4);
+        assert_eq!(reg.len(), 5);
         assert!(!reg.contains("image"));
         assert!(!reg.contains("explorer"));
         assert!(!reg.contains("clipboard_viewer"));
