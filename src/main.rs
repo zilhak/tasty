@@ -520,7 +520,13 @@ impl App {
 
         // 첫 윈도우 생성 시 plugin manager 한 번만 초기화.
         if self.plugin_manager.is_none() {
-            let mut mgr = plugin::PluginManager::new(factory);
+            // EngineState 와 같은 file_format / file_handler Arc 를 공유해
+            // plugin enable/disable 시 EngineState 가 보유한 registry 가 그대로 갱신되도록 한다.
+            let mut mgr = plugin::PluginManager::with_registries(
+                factory,
+                state.engine.file_format.clone(),
+                state.engine.file_handler.clone(),
+            );
             mgr.set_surface_registry(state.engine.surface_registry.clone());
             // 기본 제공 플러그인이 설치되지 않았으면 번들에서 복사. 사용자가
             // 명시적으로 제거한 항목 (`removed_builtins`)은 건드리지 않는다.

@@ -145,6 +145,16 @@ pub struct EngineState {
     /// 03D에서 본체 7종이 등록되며, 단계 05에서 plugin이 추가될 예정.
     pub surface_registry: Arc<SurfaceKindRegistry>,
 
+    // ── File format / handler registries (file-handler-system) ──
+    /// 파일 식별기 — host default + plugin contribute + user config 통합.
+    /// `PluginManager` 와 같은 Arc 를 공유한다.
+    pub file_format: Arc<crate::file_format::FileFormatRegistry>,
+    /// 파일 핸들러 디스패치 테이블. `PluginManager` 와 같은 Arc 를 공유한다.
+    pub file_handler: Arc<crate::file_handler::FileHandlerRegistry>,
+    /// 사용자가 picker 에서 직접 고른 handler 의 LRU 기록 (보조 신호).
+    /// 부팅 시 디스크에서 로드, 매 선택마다 atomic save.
+    pub file_handler_recent: crate::file_handler_recent::RecentPicks,
+
     // ── Layout persistence ──
     pub layout_dirty: crate::layout_persistence::LayoutDirtyTracker,
     /// Active workspace index restored from layout.json. Consumed once by AppState::new().
@@ -196,6 +206,29 @@ impl EngineState {
                 crate::surface_registry::register_builtin_kinds(&reg);
                 Arc::new(reg)
             },
+            file_format: {
+                let reg = crate::file_format::FileFormatRegistry::new();
+                reg.install_host_defaults(include_str!(
+                    "file_format/defaults/default-file-format.toml"
+                ));
+                if let Some(path) = file_handler_user_config_path() {
+                    reg.install_user_config(&path);
+                }
+                Arc::new(reg)
+            },
+            file_handler: {
+                let reg = crate::file_handler::FileHandlerRegistry::new();
+                reg.install_host_defaults(include_str!(
+                    "file_handler/defaults/default-file-handlers.toml"
+                ));
+                if let Some(path) = file_handler_user_config_path() {
+                    reg.install_user_config(&path);
+                }
+                Arc::new(reg)
+            },
+            file_handler_recent: crate::file_handler_recent::RecentPicks::load(
+                &file_handler_recent_path(),
+            ),
             layout_dirty: crate::layout_persistence::LayoutDirtyTracker::new(),
             restored_active_workspace: None,
             pending_restore_commands: Vec::new(),
@@ -534,4 +567,29 @@ impl EngineState {
         ids
     }
 
+    /// 사용자 picker 선택 기록 — 즉시 디스크에 atomic save. 실패 시 warn 로그.
+    pub fn record_file_handler_pick(&mut self, id: &crate::file_handler::HandlerId) {
+        self.file_handler_recent.record(id);
+        let path = file_handler_recent_path();
+        if let Err(e) = self.file_handler_recent.save_atomic(&path) {
+            tracing::warn!(
+                path = %path.display(),
+                error = %e,
+                "file_handler_recent: atomic save failed",
+            );
+        }
+    }
+}
+
+/// `~/.tasty/file-handlers.toml` — 사용자 detector/handler 설정. 부팅 시 1회 로드.
+fn file_handler_user_config_path() -> Option<std::path::PathBuf> {
+    tasty_core::paths::tasty_home().map(|d| d.join("file-handlers.toml"))
+}
+
+/// `~/.tasty/file-handler-recent.json` — picker 선택 LRU. 부팅 시 로드, 매 선택마다 save.
+/// 홈을 못 찾으면 (CI 등) 임시 경로로 fallback — save 가 안 되더라도 in-memory 동작.
+fn file_handler_recent_path() -> std::path::PathBuf {
+    tasty_core::paths::tasty_home()
+        .map(|d| d.join("file-handler-recent.json"))
+        .unwrap_or_else(|| std::env::temp_dir().join("tasty-file-handler-recent.json"))
 }
