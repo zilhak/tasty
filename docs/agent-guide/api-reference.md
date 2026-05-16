@@ -318,7 +318,7 @@ tasty debug ime-disable
 
 ### Surface 메타데이터
 
-파일 기반 키-값 스토어. 어떤 프로세스(Claude Code 포함)든 서피스별 메타데이터를 읽고 쓸 수 있다.
+서피스별 키-값 스토어. 어떤 프로세스(Claude Code 포함)든 서피스별 메타데이터를 읽고 쓸 수 있다. 내부적으로는 `memory.*` 의 `scope=surface:<id>` 영역에 `text/plain` 값으로 저장되는 thin facade 다. 즉 `surface.meta.set` 와 `memory.put { scope: "surface:N", content_type: "text/plain", ... }` 는 같은 row 를 갱신한다 (소유자는 host).
 
 | 메서드 | 파라미터 | 설명 |
 |--------|---------|------|
@@ -326,6 +326,12 @@ tasty debug ime-disable
 | `surface.meta.get` | `surface_id?, key: string` | 값 조회. 응답: `{ value: "..." }` 또는 `{ value: null }` |
 | `surface.meta.unset` | `surface_id?, key: string` | 키 삭제. 응답: `{ ok: true }` |
 | `surface.meta.list` | `surface_id?` | 전체 메타데이터 객체 반환 |
+
+**키 형식**: `1..256` 자 `[a-z0-9._-]+` (memory 스토어 공통 규칙). 대문자/공백 키는 거부된다.
+
+**값 형식**: UTF-8 문자열만. memory.put 으로 같은 surface scope 에 JSON/binary 를 직접 넣은 경우 `surface.meta.get` 은 JSON 값을 stringified 형태로 변환해 반환하고 (`tracing::warn`), binary 는 `null` 로 응답한다.
+
+서피스가 닫히면 해당 scope 의 모든 키가 host 에 의해 즉시 purge 된다 (`memory.changed` `deleted` 이벤트로도 관측 가능).
 
 > **Deprecated alias**: 옛 이름 `surface.meta_set` / `meta_get` / `meta_unset` / `meta_list`(underscore 합성)는 호스트가 자동 정규화하지만 `tracing::warn`이 출력된다. **1.0 tag 직전에 일괄 제거**되므로 새 호출자는 점 표기(`surface.meta.*`)를 사용한다.
 

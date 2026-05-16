@@ -25,6 +25,7 @@
 ### Changed
 - `surface.meta_set` / `meta_get` / `meta_unset` / `meta_list` → `surface.meta.set` / `meta.get` / `meta.unset` / `meta.list` (점 표기). 옛 이름은 alias로 동작하지만 deprecated.
 - Plugin SDK `HostHandle::call` 반환 타입이 `Result<Value, HostCallError>` → `Result<Value, PluginError>`. `HostCallError`는 `PluginError`의 `#[deprecated]` alias로 유지.
+- `surface.meta.*` 가 파일 기반 (`~/.tasty/surfaces/<id>/meta.json` 풍의 임시 디렉터리) 에서 `tasty-memory` 위 `scope=surface:<id>` text/plain entry 로 통합 (응답 형태 동일). 같은 row 가 `memory.*` API 로도 보이며 `memory.changed` 이벤트로 변경이 전파된다. 키 형식 검증 (`[a-z0-9._-]+`, 1..=256) 이 새로 강제되므로 대문자/공백 키는 거부된다.
 
 ### Deprecated
 - `surface.meta_set` / `surface.meta_get` / `surface.meta_unset` / `surface.meta_list` (underscore 합성). 1.0 tag 직전에 alias 제거.
