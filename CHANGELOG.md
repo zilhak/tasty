@@ -25,6 +25,7 @@
 - 명명 규칙 자동 검증 테스트 (`src/ipc/method_meta.rs::all_registered_methods_match_naming_policy`).
 - Plugin SDK에 `PluginError` 도메인 에러 + `From<PluginError> for IpcMethodError`.
 - Plugin surface lifecycle observer — 매니페스트 `[[contributes.surface_observer]] event = "closed"`(`surface.read` 권한 필수)로 구독하면 다른 surface가 닫혔을 때 `Plugin::on_surface_lifecycle(SurfaceLifecycleCtx { event, surface_id, kind, reason })` 콜백을 받는다. fire-and-forget. reason은 `UserClose`(PTY 종료/단축키/탭 우클릭) 또는 `AgentClose`(IPC `surface.close*`). SDK에 `SurfaceLifecycleCtx` / `SurfaceLifecycleEvent` / `SurfaceCloseReason` 노출.
+- Plugin manifest 의 예약 IPC prefix 에 `memory`, `output` 추가 — 호스트 메서드와 충돌하지 않도록 plugin 이 해당 namespace 를 점유하면 매니페스트 검증 단계에서 거부된다.
 
 ### Changed
 - `surface.meta_set` / `meta_get` / `meta_unset` / `meta_list` → `surface.meta.set` / `meta.get` / `meta.unset` / `meta.list` (점 표기). 옛 이름은 alias로 동작하지만 deprecated.

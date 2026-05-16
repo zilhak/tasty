@@ -17,11 +17,13 @@ CLI 명령:  tasty <namespace> <verb> [--<option>]
 
 | namespace | 도메인 | 메서드 수 |
 |-----------|--------|----------|
-| `surface` | 레이아웃 surface — 구조 조작 / 터미널 I/O / IME prefix | 21 + `surface.ime_*` prefix |
+| `surface` | 레이아웃 surface — 구조 조작 / 터미널 I/O / OSC 133 명령 인덱싱 / `meta.*` / IME prefix | 24 + `surface.ime_*` / `surface.meta.*` prefix |
+| `memory` | 영속 키-값 store (`memory.*` + `memory.secret.*` sub-namespace) | 17 |
 | `claude` | Claude Code agent 통합 (spawn/wait/broadcast 등) | 11 |
 | `plugin` | plugin 관리 (install/enable/grant 등) — local-only | 8 |
 | `debug` | 디버그 (사용자 입력 재현) — local-only | 7 |
 | `tool.clipboard` | 클립보드 (`tool` namespace 2단 안의 서브) | 5 |
+| `output` | 출력 옵저버 (`observe_start/stop/list/info`) | 4 |
 | `workspace`, `tab`, `message`, `window` | 레이아웃·메시지 큐·window 관리 | 각 4 |
 | `notification`, `hook`, `global_hook` | 알림·hook | 각 2-3 |
 | `system`, `ui`, `pane` | 호스트 정보·UI 상태·pane 조작 | 각 1-2 |
@@ -122,7 +124,8 @@ plugin이 매니페스트에서 contribute하는 IPC namespace는 다음 호스�
 
 ```
 system, surface, tab, pane, workspace, claude, plugin, hook, global_hook,
-message, tool, notification, window, debug, ui, ime, split, tree
+message, tool, notification, window, debug, ui, ime, split, tree,
+memory, output
 ```
 
 (상세는 `docs/dev-guide/plugin-development.md` "매니페스트 검증 / 예약 prefix")

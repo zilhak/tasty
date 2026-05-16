@@ -1167,6 +1167,8 @@ fn is_reserved_ipc_prefix(s: &str) -> bool {
             | "ui"
             | "ime"
             | "ipc"
+            | "memory"
+            | "output"
     )
 }
 
