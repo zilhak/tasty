@@ -14,6 +14,127 @@ Plugin이 호스트 IPC를 호출할 때 적용되는 권한 게이트의 동작
 | `src/plugin/manager.rs::PluginManager::plugin_permissions` | plugin id → Arc<HashSet<Permission>> 캐시 |
 | `src/plugin/registry_state.rs::PluginsConfig::grants` | `~/.tasty/plugins.toml`의 grant 영속화 |
 
+## 권한 토큰 형식
+
+매니페스트의 `permissions = [...]` 에 들어가는 문자열 (이하 **토큰**) 의 전체 형식:
+
+```
+<name>[:<scope>]
+```
+
+두 기호의 의미가 다르다:
+
+| 기호 | 의미 | 설명 |
+|---|---|---|
+| `.` | **이름의 일부** | 토큰 식별자 안의 namespace dot. `surface.read` 의 `.` 는 "surface 카테고리의 read" 라고 분류해 부르는 단일 이름의 일부일 뿐, 호스트는 토큰을 dot 로 쪼개서 처리하지 않는다. |
+| `:` | **scope 구분자** | 권한 이름과 그 권한이 적용되는 "대상" 을 가른다. 권한 자체로는 의미가 너무 광범위해서, 적용 대상을 한정해야 의미가 생기는 권한에만 등장. |
+
+### Scope 없는 토큰 (단순 enum variant)
+
+대부분의 권한은 scope 없는 고정 문자열로 정의돼 있다. `Permission::from_token` (`src/plugin/manifest.rs`) 의 match arm 에 정확 일치로만 등록된다 — `surface.read` 라고 적으면 매칭되지만 `surface.Read` 나 `surface_read` 는 거부.
+
+현재 등록된 단순 토큰 전부:
+
+```
+surface.read       surface.write
+clipboard.read     clipboard.write
+fs.read            fs.write
+terminal.spawn     terminal.write      terminal.read
+process.spawn
+memory.read        memory.write        memory.secret
+notification
+network
+ui.popup           ui.tool_item
+```
+
+새 단순 권한을 추가하려면 `Permission` enum 에 variant 를 추가하고 `from_token` / `as_token` match 에 등록한다 (아래 "새 권한 카테고리 추가" 절차 참조).
+
+### Scope 있는 토큰 (파라미터화 권한)
+
+현재 scope 를 받는 토큰은 정확히 두 개:
+
+| 토큰 | scope 의미 | 예 |
+|---|---|---|
+| `ipc.invoke:<prefix>` | 호출 대상 IPC namespace prefix | `ipc.invoke:codex` → codex.* 메서드 호출 가능 |
+| `ext:<plugin_id>` | 확장 대상 plugin 의 reverse-DNS id | `ext:com.tasty.clipboard` → 해당 plugin 의 IPC/event 흐름에 hook |
+
+scope 부분의 검증 규칙:
+
+- `ipc.invoke:` 뒤: `is_valid_ipc_prefix()` 통과 (소문자로 시작 + 소문자/숫자/`_`, 1~32자) **그리고** `is_reserved_ipc_prefix()` 거부 (`system`, `surface`, `plugin`, `tab`, `pane`, `workspace`, `split`, `tree`, `hook`, `global_hook`, `message`, `tool`, `notification`, `window`, `debug`, `ui`, `ime`, `ipc`)
+- `ext:` 뒤: `is_valid_plugin_id()` 통과 (reverse-DNS 형식, 소문자+숫자+`-`+`.` 의 1~3 segment)
+
+조건을 어긋난 토큰이 매니페스트에 들어 있으면 plugin 로드 단계에서 거부된다 (`Permission::from_token` 가 `None` 반환 → `validate_permissions` 에서 reject).
+
+## Scope 의 출처
+
+**`ipc.invoke:<X>` 의 `X` 는 호스트가 미리 정의한 enum 이 아니다.** 각 plugin 의 매니페스트가 자기 namespace 를 `[[contributes.ipc_namespace]]` 로 선언함으로써 비로소 `X` 라는 scope 이름이 시스템에 존재하기 시작한다. 즉 scope 는 **plugin 생태계가 동적으로 만들어내는 이름공간** 이다.
+
+### 한 plugin 의 lifecycle
+
+```
+1. tasty-plugin-image 매니페스트:
+     [[contributes.ipc_namespace]]
+     prefix = "image"
+                ↓
+2. 호스트가 "image" namespace 를 image plugin 에 귀속
+   (이 시점에 "image" 라는 이름이 IPC scope 로 의미를 가진다)
+                ↓
+3. 다른 plugin (예: gallery) 매니페스트:
+     permissions = ["ipc.invoke:image"]
+                ↓
+4. 사용자 grant → gallery plugin 이
+   host.call("image.open", ...) 호출 가능
+```
+
+### Host 가 검증하는 것 / 검증하지 않는 것
+
+매니페스트 parse 시 `permissions = ["ipc.invoke:image"]` 를 만났을 때:
+
+| 검증한다 | 검증하지 않는다 |
+|---|---|
+| `image` 가 형식적으로 valid 한가 (소문자+숫자+`_`, ≤32자) | `image` 라는 namespace 를 점유한 plugin 이 실제로 설치돼 있는가 |
+| `image` 가 호스트 예약어가 아닌가 | 그 plugin 이 enable 상태인가 |
+| 토큰 prefix (`ipc.invoke:`) 가 알려진 권한 이름인가 | 그 plugin 이 지금 running 인가 |
+
+owner 존재를 검증하지 **않는** 의도적 이유:
+
+- **install 순서 무관성.** plugin A 가 plugin B 의 namespace 를 호출하는 경우, B 가 A 보다 늦게 설치돼도 A 의 매니페스트가 거부되면 안 된다. 사용자가 plugin 을 순서 가리지 않고 깔 수 있어야 한다.
+- **disable/enable cycle 견고성.** B 를 잠깐 disable 했을 때 A 의 매니페스트가 재검증으로 떨어지면 안 된다.
+- **dangling reference 는 runtime 에 명확히 실패한다.** owner 가 없는 namespace 를 호출하면 `-32601 method not found` 가 반환된다. silent 실패 / 흐릿한 에러가 아니다.
+
+### Scope owner 의 unique 보장
+
+같은 prefix 를 두 plugin 이 동시에 contribute 할 수 없다. 두 번째 plugin install 시점에 호스트가 충돌을 감지해 거부한다 (`agent-guide/plugins.md` 의 "중복 점유 거부" 절 참조). 따라서 임의 시점에 `image` 라는 scope 는:
+
+- 정확히 한 plugin 에 귀속 (정상 상태), 또는
+- 아무에게도 귀속되지 않음 (모든 contribute plugin 미설치 / disable 상태)
+
+둘 중 하나다. 한 scope 가 둘 이상의 plugin 에 동시 매핑되는 상태는 만들어질 수 없다.
+
+### Self-namespace permission 의 무용성
+
+자기 namespace 의 `ipc.invoke:<self>` 토큰을 자기 매니페스트에 두는 것은 무용하다. 호스트가 self-loop 를 차단하기 때문이다 (`-32001` 에러). plugin 이 자기 메서드를 부르려면 IPC 우회 없이 코드에서 직접 `handle_ipc_method` 안의 함수를 호출하면 된다. 따라서:
+
+```toml
+# 안티패턴 — image plugin 자기 매니페스트
+permissions = [..., "ipc.invoke:image"]   # ❌ 무용
+```
+
+호스트는 이 토큰을 거부하지는 않지만 (형식상 valid), 권한 grant prompt 의 정보 비대만 만든다. plugin 작성자는 self-namespace 토큰을 매니페스트에 두지 않는다.
+
+## 새 권한 토큰 형식을 추가할 때
+
+scope 가 필요한 새 권한을 추가할 때 (드물지만 발생할 수 있음):
+
+1. `Permission` enum 에 `<Name>(String)` variant 추가.
+2. `from_token` 의 fallback (`other => ...`) 안에서 `strip_prefix("<prefix>:")` 매칭 추가, scope 부분 검증 함수 호출.
+3. `as_token` 에 `format!("<prefix>:{scope}")` 추가.
+4. scope 값의 유효성 검증 함수 (`is_valid_<x>`) 작성 — 형식만 검증. owner 존재 여부는 검증하지 않는다 (위 "install 순서 무관성" 이유).
+5. 권한이 강제하는 동작 (runtime 게이트) 을 `manager.rs` 등에 추가.
+6. `agent-guide/plugins.md` 의 권한 표 갱신.
+
+이 패턴은 `ipc.invoke` / `ext` 두 사례 모두 동일하게 구현돼 있다 — 새로 추가할 때 reference 로 삼는다.
+
 ## 새 IPC 메서드 추가 절차
 
 핸들러를 추가했다면 **반드시** `src/ipc/method_meta.rs::method_meta`에도 매핑을 등록해야 한다.

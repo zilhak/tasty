@@ -799,6 +799,152 @@ buffer 같은 상위 API를 통해 간접적으로 사용된다.
 manifest 한도(`max_shared_buffer_bytes`) 도입 전까지는 host가 1 GiB 임시 상한으로
 거절한다. 0 크기 요청은 무조건 reject.
 
+## 7-1. 데이터 저장 위치
+
+Plugin 이 영속 데이터를 두는 곳은 성격에 따라 갈린다. 잘못 고르면 빌드 폴더에 두거나 memory.db 를 비대하게 만든다.
+
+| 데이터 성격 | 위치 | 비고 |
+|---|---|---|
+| 정적 자산 (아이콘, 템플릿, README, lang 파일) | `TASTY_PLUGIN_DIR` 아래 매니페스트와 함께 | 사용자가 plugin 을 업그레이드하면 통째 교체됨. plugin 빌드 산출물의 일부로 다룬다. |
+| 사용자 편집 설정 | `TASTY_PLUGIN_CONFIG_PATH` | 사용자가 직접 편집할 수 있는 single TOML/JSON. 업그레이드 시 보존. |
+| 자체 DB, 캐시, 큰 binary, 로그-스타일 누적 데이터 | `TASTY_PLUGIN_DATA_DIR` | 호스트가 미리 만들어둠. plugin 이 마음대로 파일 트리 구성. plugin uninstall 시 plugin 책임으로 삭제. |
+| **작업 메타데이터, 토큰, 진행 상태, 세션 메모** (KB ~ 1 MiB) | **`memory.*` / `memory.secret.*`** | 호스트가 SQLite + 암호화로 관리. 아래 7-2 참조. |
+
+### Memory 사용 원칙
+
+Tasty memory 는 **합리적인 한도 안에서는 범용적인 키-값 저장소** 다 — 토큰 같은 수 KB 부터 캐시된 응답이나 누적 작업 상태 같은 수백 KB ~ 1 MiB 까지. 다만 **"어떤 크기든 받아주는 만능 저장소" 는 아니다**. cap 을 넘는 데이터는 memory 가 책임지지 않는다.
+
+- 단일 entry 의 value 가 cap (default 1 MiB) 을 넘으면 `ValueTooLarge` 로 거부된다.
+- Plugin 별 secret quota (default 10 MiB) 또는 regular global quota (default 1 GiB) 를 넘으면 `QuotaExceeded`.
+
+cap 에 부딪쳤을 때 first response 는 "config 를 올리자" 가 아니라 **"이 데이터가 정말 memory 에 들어가야 하는가, 파일로 분리할 수 있는가"** 를 먼저 묻는 것이다.
+
+```rust
+// 안티패턴: 큰 blob 을 memory 에 직접
+host.call("memory.put", json!({
+    "scope": "workspace:1",
+    "key": "screenshot.png.b64",
+    "value": <2MB base64>,    // ❌ ValueTooLarge
+}))?;
+
+// 권장: filesystem + reference
+let path = data_dir.join("screenshot-2024.png");
+std::fs::write(&path, &bytes)?;
+host.call("memory.put", json!({
+    "scope": "workspace:1",
+    "key": "screenshot.path",
+    "value": path.display().to_string(),
+}))?;
+```
+
+상세 모델(regular/secret 두 계층, owner 자동 도출, quota 정책)은 [design/memory-system.md](../design/memory-system.md) 참조.
+
+### Regular vs Secret 선택 기준
+
+| 데이터 성격 | 영역 |
+|---|---|
+| 토큰, API 키, 사용자 자격 증명 | **secret** |
+| 다른 plugin 이 알아도 무방하거나 협업해야 하는 작업 상태 (예: 활성 세션 id, 진행률) | regular |
+| Plugin 내부 캐시·세션 메모 (다른 plugin 이 굳이 볼 필요 없음) | secret (격리가 default 가 안전) |
+
+**"몰라도 되는 데이터" 는 secret 에 두는 것이 default 라고 생각해도 된다.** Regular 는 "다른 plugin 과의 공유 가치가 있을 때" 의 선택. 다만 secret 은 keyring 부재 환경 (헤드리스 Linux 등) 에서 disable 될 수 있으니, plugin 동작에 critical 한 데이터는 secret 부재시 graceful 폴백을 준비한다.
+
+## 7-2. 매니페스트·코드 규약
+
+기존 번들 plugin (`com.tasty.claude` / `codex` / `image` / `explorer` / `clipboard-history`) 의 공통 규약. 새 plugin 도 같은 규약을 따른다.
+
+### 이름·식별자
+
+| 항목 | 규칙 | 예 |
+|---|---|---|
+| Crate 이름 | `tasty-plugin-<name>` | `tasty-plugin-clipboard-history` |
+| Binary 이름 | crate 이름과 동일 | `tasty-plugin-clipboard-history` |
+| Plugin id | reverse-DNS, 다어절은 hyphen | `com.tasty.clipboard-history` |
+| IPC namespace prefix | id 마지막 segment 의 underscore 변환 | `clipboard_history` |
+| i18n key root prefix | namespace prefix 와 동일 (`<prefix>.*`) | `clipboard_history.popup.title` |
+
+호스트가 IPC namespace 에서 hyphen 을 거부하므로 다어절 plugin id 는 IPC prefix 만 underscore 로 변환된다 — id 자체는 hyphen 유지.
+
+### Manifest 필드 순서
+
+다음 순서로 두면 grep 일관성이 유지된다:
+
+```toml
+manifest_version = 1
+id = "com.example.foo"
+name = "Foo"
+version = "0.1.0"
+description = "..."
+api_version = "1"
+permissions = [...]
+lang_dir = "lang"
+event_subscribe = [...]        # 있는 경우만
+
+[entry]
+type = "process"
+command = "tasty-plugin-foo"
+
+# 그 다음 contributes.*
+```
+
+`name` / `description` 류 자유 텍스트 필드는 **작성자가 원하는 언어로 자유롭게 적는다** — 강제 규칙 없음. 사용자에게 다국어로 보여야 하는 영역은 별도 i18n key 를 통해 노출하고, 매니페스트의 자유 텍스트 필드는 fallback / 기록용으로 작성자 편의대로 둔다.
+
+### i18n key namespace 규칙
+
+Plugin 의 i18n key 는 반드시 **자기 prefix (`<plugin_prefix>.*`) 안** 에 둔다.
+
+```toml
+# 좋음 — 자기 namespace
+label_i18n_key = "clipboard_history.tool.label"
+description_i18n_key = "clipboard_history.cli.desc"
+
+# 나쁨 — host namespace 침범
+label_i18n_key = "tools_menu.clipboard_history"
+```
+
+호스트가 합쳐 표시하는 surface kind 이름 (`surface.kind.<own_kind>`) 은 예외다 — host UI 가 같은 key 공간을 사용하므로 이 채널만 plugin 이 `surface.kind.<kind>` 키를 자기 lang 파일에서 정의한다. 그 외의 host namespace (`tools_menu.*`, `settings.*`, `popup.*` 등) 는 침범하지 않는다.
+
+### Cargo 의존성
+
+```toml
+[dependencies]
+tasty-plugin-sdk = { path = "../tasty-plugin-sdk" }
+serde = { version = "1", features = ["derive"] }      # 필요할 때만
+serde_json = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow = "1"
+```
+
+- **`tasty-plugin-protocol` 을 직접 의존하지 않는다.** SDK 가 `UiNode`/`UiEvent`/`Rect` 등 wire 타입을 re-export 한다. SDK 에서 못 가져오는 타입이 있으면 SDK 에 re-export 를 추가하는 PR 을 먼저 보낸다.
+- `[lints] workspace = true` 도 모든 plugin 이 동일하게 둔다 (workspace clippy 룰 적용).
+
+### 권한 표기
+
+- 매니페스트에는 **실제로 필요한 권한만** 둔다. unused 권한은 사용자 grant prompt 의 정보 비대만 만든다.
+- **자기 namespace 의 `ipc.invoke:<self>` 토큰 금지.** 호스트가 self-loop 를 차단하므로 무용하다. 자기 IPC 메서드는 `handle_ipc_method` 안에서 직접 호출하면 된다.
+- Memory 권한은 영역별로 분리: `memory.read` (regular 읽기), `memory.write` (regular 쓰기), `memory.secret` (자기 secret 영역 R/W).
+
+### src 모듈 분리
+
+main.rs 가 ~300줄을 넘기면 별 모듈로 추출한다. 권장 분할:
+
+| 파일 | 책임 |
+|---|---|
+| `src/main.rs` | `Plugin` trait impl + bootstrap (subscriber init, run) |
+| `src/state.rs` | plugin 내부 상태 구조 (Mutex 등) |
+| `src/handlers.rs` | IPC 메서드별 dispatch (`handle_ipc_method` 의 match 본문이 길어질 때) |
+| `src/install.rs` | 외부 시스템 설치/제거 (예: Claude `~/.claude/settings.json` hook 등록) |
+
+`tasty-plugin-codex` (state + handlers 분리) 와 `tasty-plugin-claude` (state + handlers + install + hook + error_scan) 가 reference. main.rs 만으로도 충분한 단순 plugin (image 73줄, codex 97줄) 은 분리하지 않아도 된다.
+
+### Plugin 데이터 위치 환경변수 사용
+
+`TASTY_PLUGIN_DIR` 와 `TASTY_PLUGIN_DATA_DIR` 를 헷갈리지 말 것:
+
+- `TASTY_PLUGIN_DIR` 은 plugin 의 매니페스트가 있는 곳 — **읽기 전용으로 다룬다**. 업그레이드시 통째 덮어쓰여지므로 여기에 사용자 데이터를 쓰면 다음 업그레이드때 사라진다.
+- `TASTY_PLUGIN_DATA_DIR` 은 사용자 데이터 영역 — **쓰기 OK**. 업그레이드시 보존된다.
+
 ## 8. 빌드 & 설치
 
 ### 개발 중
