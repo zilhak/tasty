@@ -1,0 +1,43 @@
+# 호스트 default handler 정의.
+#
+# OpenSurface 는 호스트 등록 surface_kind 사용, System 은 OS 기본 file opener
+# 위임 (Finder/Explorer/xdg-open). plugin handler 가 우선시되도록 priority 는
+# 50 으로 둔다 (plugin 권장 ≥100, user 임의).
+#
+# unknown(=identify None) 은 별도 handler 없음 — picker modal 이 처리.
+
+[[handler]]
+id = "markdown-viewer"
+detector = "markdown"
+priority = 50
+
+[handler.action]
+kind = "open_surface"
+surface_kind = "markdown"
+param_key = "file"
+
+[[handler]]
+id = "html-system"
+detector = "html"
+priority = 50
+
+[handler.action]
+kind = "system"
+
+[[handler]]
+id = "image-viewer"
+detector = "image"
+priority = 50
+
+[handler.action]
+kind = "open_surface"
+surface_kind = "image"
+param_key = "file"
+
+[[handler]]
+id = "directory-system"
+detector = "$directory"
+priority = 50
+
+[handler.action]
+kind = "system"

@@ -1,0 +1,39 @@
+# 호스트 default detector 정의.
+#
+# 이 파일은 `include_str!` 로 빌드에 임베드되어 EngineState 부팅 시 자동 등록된다.
+# 새 detector 추가 시 일반 사용자 표면 노출 없음 (생략 = 그대로 적용).
+# `$directory` 는 호스트만 정의 가능한 예약 id.
+#
+# `$unknown` 같은 sentinel detector 는 존재하지 않는다. identify 매칭 실패가
+# 곧 unknown 의미이며 호출자가 None 보고 picker modal 띄움.
+
+[[detector]]
+id = "markdown"
+display_name_i18n_key = "file_handler.format.markdown"
+
+[[detector.rule]]
+kind = "extension"
+values = ["md", "markdown"]
+
+[[detector]]
+id = "html"
+display_name_i18n_key = "file_handler.format.html"
+
+[[detector.rule]]
+kind = "extension"
+values = ["html", "htm"]
+
+[[detector]]
+id = "image"
+display_name_i18n_key = "file_handler.format.image"
+
+[[detector.rule]]
+kind = "extension"
+values = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "tiff", "tif"]
+
+[[detector]]
+id = "$directory"
+display_name_i18n_key = "file_handler.format.directory"
+
+[[detector.rule]]
+kind = "is-directory"
