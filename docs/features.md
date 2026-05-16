@@ -470,6 +470,12 @@
 - `AgentId`: 단계 4.0의 잠정 식별 모델. Plugin caller → manifest `plugin_id`, Local caller → env `TASTY_AGENT_ID` (없으면 `_host`). Phase 6의 session token 인증 도입 시 verifiable 로 승격됨 (자세한 한계: `docs/dev-guide/agent-identification.md`)
 - 키 컨벤션: `tasty.telemetry.event.{ts:013}.{seq:04}` (이벤트), `tasty.telemetry.bucket.{w}.{m}.{a}.{ws:013}` (롤업 버킷, 4.2+에서 사용). 같은 ms 안의 충돌을 막기 위해 `TelemetrySeq` AtomicU64 가 host singleton 으로 단조 시퀀스 발급
 
+### Dispatcher 자동 카운트 (Phase 4.2)
+- `handle_with_caller` 가 권한 검사 직후 `record_ipc_call(state, caller, method)` 호출 — 비-host caller 의 모든 IPC 가 자동으로 `ipc_calls` metric 으로 적재된다 (`method` 태그로 식별자 구분)
+- `_host` agent 와 `telemetry.*` 메서드 자체는 카운트 제외 (자기-측정 / 재귀 폭주 방지)
+- 실패는 best-effort warn 로그 — IPC dispatch 를 막지 않음
+- cap_eval 통합 (Phase 4.3) 은 같은 진입점에 후행 도입 예정
+
 ### IPC 5종 (Permission `Telemetry`)
 - `telemetry.record` — 단일 메트릭 이벤트 기록. `metric` (필수), `value`, `op` ∈ {set, inc, dec}, `agent` (선택, default caller agent), `workspace_id` (선택, default 활성 워크스페이스), `tags` (선택, string→string). 응답: `{ key, ts, agent, metric }`
 - `telemetry.record_batch` — `events: []` 배열을 한 번에. 모든 이벤트는 동일한 `ts` 와 단조 증가 `seq` 로 저장됨

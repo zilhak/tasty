@@ -110,7 +110,6 @@ impl CallerContext {
     ///
     /// Phase 6 의 session token 인증 도입 시 verifiable 로 승격된다.
     /// 위조 가능성과 보안 한계는 `docs/dev-guide/agent-identification.md` 참조.
-    #[allow(dead_code)] // Phase 4.1 dispatcher 미들웨어가 사용 예정
     pub fn agent_id(&self) -> tasty_core::AgentId {
         match self {
             CallerContext::Local => tasty_core::AgentId::from_env(),

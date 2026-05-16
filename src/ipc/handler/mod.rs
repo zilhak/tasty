@@ -70,6 +70,11 @@ pub fn handle_with_caller(
         return JsonRpcResponse::error(id, -32001, &format!("permission_denied: {e}"));
     }
 
+    // Phase 4.2 텔레메트리 미들웨어: 비-host caller 의 IPC 호출을 자동 카운트.
+    // `telemetry.*` 자체와 `_host` agent 는 카운트 제외 (재귀 폭주 / 자기-측정 방지).
+    // 카운트는 cap_eval 도입 전이라 best-effort 만 — 실패해도 dispatch 는 진행.
+    telemetry::record_ipc_call(state, caller, canonical);
+
     // 옛 이름이면 method를 새 이름으로 교체한 임시 request를 라우터에 전달.
     let routed: Cow<JsonRpcRequest> = if canonical == request.method {
         Cow::Borrowed(request)

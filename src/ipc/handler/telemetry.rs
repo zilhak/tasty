@@ -34,6 +34,44 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
+/// dispatcher 미들웨어용 자동 카운트 (Phase 4.2).
+///
+/// caller 가 `_host` 이거나 method 가 `telemetry.` 로 시작하면 skip한다 —
+/// 자기 자신을 측정하면 의미가 없고, telemetry 내부 호출은 재귀 폭주를 만든다.
+/// 메트릭 이름은 `ipc_calls`, 메서드 식별자는 `method` 태그로 들어간다 (도메인
+/// metric 검증이 `.` 을 허용하지 않으므로 `ipc_calls.<method>` 형태를 피한다).
+///
+/// 모든 실패는 best-effort. 호스트 stdout 의 IPC 정상 동작을 막지 않는다.
+pub(crate) fn record_ipc_call(state: &AppState, caller: &CallerContext, method: &str) {
+    if method.starts_with("telemetry.") {
+        return;
+    }
+    let agent = caller.agent_id();
+    if agent.is_host() {
+        return;
+    }
+    let ws = state
+        .engine
+        .workspaces
+        .get(state.active_workspace)
+        .map(|w| w.id);
+    let ts = now_ms();
+    let ev = match TelemetryEvent::new(agent.as_str(), "ipc_calls", 1.0, Op::Inc, ts) {
+        Ok(e) => e,
+        Err(e) => {
+            tracing::warn!("telemetry middleware: build event failed: {e}");
+            return;
+        }
+    };
+    let mut ev = ev.with_tag("method", method);
+    if let Some(w) = ws {
+        ev = ev.with_workspace(w);
+    }
+    if let Err(e) = persist_event(state, &ev) {
+        tracing::warn!("telemetry middleware: record failed: {e}");
+    }
+}
+
 fn scope_for(workspace_id: Option<u32>) -> Scope {
     match workspace_id {
         Some(w) => Scope::Workspace(w),
