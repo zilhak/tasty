@@ -3,7 +3,7 @@ use super::{DebugCommands, EventBusCommands};
 use super::{
     ApprovalCommands, ClipboardCommands, CloseCommands, Commands, ListCommands, MemoryCommands,
     MemorySecretCommands, MoveCommands, NewCommands, OutputCommands, OutputObserveCommands,
-    TelemetryCapCommands, TelemetryCommands,
+    TelemetryAnomalyCommands, TelemetryCapCommands, TelemetryCommands,
     PluginCommands, ReadCommands, SendCommands, SetCommands, SurfaceMetaCommands, ToolCommands,
     UnsetCommands,
 };
@@ -1027,6 +1027,36 @@ fn telemetry_command_to_method_params(
             ("telemetry.top", p)
         }
         Cap { command } => telemetry_cap_command_to_method_params(command),
+        Anomaly { command } => telemetry_anomaly_command_to_method_params(command),
+    }
+}
+
+fn telemetry_anomaly_command_to_method_params(
+    command: &TelemetryAnomalyCommands,
+) -> (&'static str, serde_json::Value) {
+    use TelemetryAnomalyCommands::*;
+    match command {
+        List {
+            agent,
+            kind,
+            since,
+            until,
+        } => {
+            let mut p = serde_json::json!({});
+            if let Some(a) = agent {
+                p["agent"] = serde_json::Value::String(a.clone());
+            }
+            if let Some(k) = kind {
+                p["kind"] = serde_json::Value::String(k.clone());
+            }
+            if let Some(s) = since {
+                p["since"] = serde_json::Value::from(*s);
+            }
+            if let Some(u) = until {
+                p["until"] = serde_json::Value::from(*u);
+            }
+            ("telemetry.anomaly.list", p)
+        }
     }
 }
 

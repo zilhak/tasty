@@ -117,6 +117,10 @@ pub struct EngineState {
     /// Telemetry 이벤트 시퀀스 — 같은 ms 안에서 event_key 충돌 방지용 단조 증가 카운터.
     pub telemetry_seq: std::sync::Arc<tasty_telemetry::TelemetrySeq>,
 
+    /// Telemetry 이상 탐지 — 호스트 singleton. in-memory sliding window 만 보관
+    /// (Phase 4.4). 검출된 anomaly 레코드는 호스트가 memory store 에 영속.
+    pub anomaly_detector: std::sync::Arc<tasty_telemetry::AnomalyDetector>,
+
     // ── Messaging / Typing detection ──
     pub surface_messages: HashMap<u32, Vec<SurfaceMessage>>,
     pub(crate) surface_next_message_id: u32,
@@ -177,6 +181,7 @@ impl EngineState {
             observer_router: crate::output_observer::ObserverRouter::new(),
             approval_store: std::sync::Arc::new(tasty_approval::ApprovalStore::new()),
             telemetry_seq: std::sync::Arc::new(tasty_telemetry::TelemetrySeq::new()),
+            anomaly_detector: std::sync::Arc::new(tasty_telemetry::AnomalyDetector::new()),
             surface_messages: HashMap::new(),
             surface_next_message_id: 0,
             last_key_input: HashMap::new(),

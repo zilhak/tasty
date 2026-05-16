@@ -263,6 +263,10 @@ fn route_engine_handler(
         "telemetry.cap.remove" => telemetry::handle_cap_remove(state, caller, id, &request.params),
         "telemetry.cap.status" => telemetry::handle_cap_status(state, caller, id, &request.params),
         "telemetry.cap.reset" => telemetry::handle_cap_reset(state, caller, id, &request.params),
+        // telemetry.anomaly — Phase 4.4 (영속 anomaly 조회만; 검출은 dispatcher 후크)
+        "telemetry.anomaly.list" => {
+            telemetry::handle_anomaly_list(state, caller, id, &request.params)
+        }
         _ => return None,
     })
 }

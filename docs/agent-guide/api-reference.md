@@ -623,6 +623,7 @@ tasty unset global-hook --hook HOOK_ID
 | `telemetry.cap.remove` | `Telemetry` | `{ id }` → `{ removed: true, id }` (없으면 `-32004 not_found`) |
 | `telemetry.cap.status` | `Telemetry` | `{ agent? }` → `{ entries: [CostCap + current_value + ratio], count }` |
 | `telemetry.cap.reset` | `Telemetry` | `{ id? } 또는 { agent? }` (둘 중 최소 하나) → `{ reset_ids: [], count }` — 매칭된 cap 들의 `triggered` 비움 |
+| `telemetry.anomaly.list` | `Telemetry` | `{ agent?, kind?∈{call_burst,slow_loop,rss_surge}, since?, until? }` → `{ entries: [Anomaly], count }` — `detected_at` 오름차순 |
 
 **Cost Cap 동작 (Phase 4.3d 까지)** — `record` / `record_batch` / dispatcher 자동 카운트 직후 inline 으로 cap 평가. agent+metric 가 일치하는 미발화 cap 의 `current_value` (윈도우 내 raw event sum) 가 `threshold` 이상이면 `triggered: { at, value }` 마크.
 
@@ -635,7 +636,11 @@ tasty unset global-hook --hook HOOK_ID
 
 `cap_blocked` 해제는 Local caller (CLI) 의 `telemetry.cap.reset` 만 가능 — 차단된 plugin 본인은 reset 도 막힌다.
 
-`CostCap` 스키마: `{ id, agent, metric, threshold, window, action, created_at, triggered?: { at, value } }`. `triggered` 가 있으면 이미 액션이 발화된 상태로 간주된다 (재발화는 `cap.reset` 필요). (Surface 간 통신)
+`CostCap` 스키마: `{ id, agent, metric, threshold, window, action, created_at, triggered?: { at, value } }`. `triggered` 가 있으면 이미 액션이 발화된 상태로 간주된다 (재발화는 `cap.reset` 필요).
+
+**이상 탐지 (Phase 4.4)** — `CallBurst` 휴리스틱이 활성. dispatcher 가 plugin IPC 를 카운트할 때마다 `AnomalyDetector` 가 (agent, method) 의 sliding window 를 갱신하고, 1분 내 1000 회 임계에 도달하면 발화한다. 발화 시 호스트는 `tasty.telemetry.anomaly.{ts:013}.{id}` 키로 Global scope 에 영속 + 활성 워크스페이스 알림. 같은 (agent, method) 의 연쇄 발화는 1분 쿨다운으로 dedup.
+
+`Anomaly` 스키마: `{ id, kind∈{call_burst,slow_loop,rss_surge}, agent, subject, detected_at, detail: { window_ms, threshold, count, ... } }`. `SlowLoop` / `RssSurge` 는 타입만 정의돼 있고 검출은 후속 sub-phase 에서 도입된다. (Surface 간 통신)
 
 | 메서드 | 파라미터 | 설명 |
 |--------|---------|------|

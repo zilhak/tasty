@@ -266,6 +266,29 @@ pub enum TelemetryCommands {
         #[command(subcommand)]
         command: TelemetryCapCommands,
     },
+    /// Anomaly records — detected unusual patterns (call burst, etc.).
+    Anomaly {
+        #[command(subcommand)]
+        command: TelemetryAnomalyCommands,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum TelemetryAnomalyCommands {
+    /// List persisted anomaly records. Optional filters.
+    List {
+        #[arg(long)]
+        agent: Option<String>,
+        /// Kind filter: call_burst | slow_loop | rss_surge.
+        #[arg(long)]
+        kind: Option<String>,
+        /// Lower bound on detection time (unix ms, inclusive).
+        #[arg(long)]
+        since: Option<u64>,
+        /// Upper bound on detection time (unix ms, exclusive).
+        #[arg(long)]
+        until: Option<u64>,
+    },
 }
 
 #[derive(Subcommand)]

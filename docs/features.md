@@ -501,9 +501,17 @@
 - 조회 시 workspace_id 명시되면 단일 scope 만, 아니면 store 의 모든 scope 순회 후 필터링
 - TTL 없음 (단계 4.1) — 추후 retention 정책은 cap/롤업과 함께 도입
 
+### 이상 탐지 (Phase 4.4)
+- `tasty-telemetry::AnomalyDetector` — in-memory sliding window 기반 휴리스틱. 호스트 재시작 시 윈도우 비워짐 (영속은 anomaly 레코드만)
+- **CallBurst (활성)**: 동일 (agent, method) 가 1분 내 1000 회 이상 호출되면 발화. dedup 쿨다운 1분 — 같은 burst 가 매 호출마다 spam 되지 않음
+- **SlowLoop / RssSurge (미활성)**: 타입만 정의됨. 추가 신호(메서드 시퀀스 패턴, agent RSS 보고)가 필요해 후속 sub-phase 에서 켜진다
+- 발화 시: notification 발행 + `tasty.telemetry.anomaly.{ts:013}.{id}` 키로 Global scope 영속
+- `telemetry.anomaly.list` IPC — `agent` / `kind` / `since` / `until` 필터, `detected_at` 오름차순. anomaly_rule.set/remove 는 후속 phase
+
 ### CLI
 - `tasty telemetry {record,summary,timeseries,top}` — 단일 record 기록 / 집계 조회
 - `tasty telemetry cap {set,list,remove,status,reset}` — Cost Cap CRUD
+- `tasty telemetry anomaly list` — 검출된 이상 신호 조회 (`--agent`, `--kind`, `--since`, `--until`)
 
 ## 설정 시스템
 
