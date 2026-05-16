@@ -186,6 +186,84 @@ pub enum Commands {
         #[command(subcommand)]
         command: TelemetryCommands,
     },
+    /// Agent collaboration primitives (task DAG; barrier/semaphore/lease/reducer/rate-limit follow)
+    Agent {
+        #[command(subcommand)]
+        command: AgentCommands,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum AgentCommands {
+    /// Create a new task within a workspace.
+    TaskCreate {
+        /// Workspace id (focus-independent — required).
+        #[arg(long)]
+        workspace_id: u32,
+        /// Display name.
+        #[arg(long)]
+        name: String,
+        /// TaskCommand as JSON (e.g. `{"kind":"run","command":["cargo","build"],"workspace_id":1}`).
+        /// Accepts inline JSON or `@path/to/file.json`.
+        #[arg(long)]
+        command: String,
+        /// Comma-separated dependency task IDs.
+        #[arg(long, value_delimiter = ',')]
+        depends_on: Vec<String>,
+        /// On-failure policy: abort | continue_downstream | fallback:<task_id> (default: abort).
+        #[arg(long, default_value = "abort")]
+        on_failure: String,
+        /// Metadata JSON (free-form, attached to the task).
+        #[arg(long)]
+        metadata: Option<String>,
+    },
+    /// List tasks in a workspace.
+    TaskList {
+        #[arg(long)]
+        workspace_id: u32,
+        /// Filter by state (waiting | ready | running | succeeded | failed | cancelled | skipped | unknown).
+        #[arg(long)]
+        state: Option<String>,
+    },
+    /// Fetch a single task.
+    TaskGet {
+        #[arg(long)]
+        workspace_id: u32,
+        #[arg(long)]
+        id: String,
+    },
+    /// Poll a task's current state (returns immediately — no blocking await yet).
+    TaskAwait {
+        #[arg(long)]
+        workspace_id: u32,
+        #[arg(long)]
+        id: String,
+    },
+    /// Cancel a task. Downstream is cascaded according to on_failure.
+    TaskCancel {
+        #[arg(long)]
+        workspace_id: u32,
+        #[arg(long)]
+        id: String,
+    },
+    /// Retry a Failed/Cancelled/Skipped/Unknown task.
+    TaskRetry {
+        #[arg(long)]
+        workspace_id: u32,
+        #[arg(long)]
+        id: String,
+        /// Also reset downstream Skipped/Failed tasks back to Waiting.
+        #[arg(long, default_value_t = false)]
+        reset_downstream: bool,
+    },
+    /// Output the task DAG as JSON or Graphviz dot.
+    TaskGraph {
+        #[arg(long)]
+        workspace_id: u32,
+        /// Format: json | dot. Default: json.
+        #[arg(long, default_value = "json")]
+        format: String,
+    },
 }
 
 #[derive(Subcommand)]

@@ -1,0 +1,20 @@
+[package]
+name = "tasty-agent"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Agent collaboration primitives: tasks (DAG), barrier, semaphore, lease, reducer, rate-limit (Phase 5)"
+
+[dependencies]
+tasty-core = { path = "../tasty-core" }
+tasty-memory = { path = "../tasty-memory" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing = "0.1"
+thiserror = "2"
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true

@@ -77,6 +77,7 @@ tasty-memory = { path = "crates/tasty-memory" }
 tasty-output = { path = "crates/tasty-output" }
 tasty-approval = { path = "crates/tasty-approval" }
 tasty-telemetry = { path = "crates/tasty-telemetry" }
+tasty-agent = { path = "crates/tasty-agent" }
 tasty-plugin-protocol = { path = "crates/tasty-plugin-protocol" }
 tasty-settings = { path = "crates/tasty-settings" }
 tasty-shm = { path = "crates/tasty-shm" }

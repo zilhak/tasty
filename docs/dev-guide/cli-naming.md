@@ -25,6 +25,7 @@ CLI 명령:  tasty <namespace> <verb> [--<option>]
 | `tool.clipboard` | 클립보드 (`tool` namespace 2단 안의 서브) | 5 |
 | `output` | 출력 옵저버 (`observe_start/stop/list/info`) | 4 |
 | `telemetry` | 텔레메트리 — 측정/집계/cap/이상 탐지/세션 요약 (`cap.*`, `anomaly.*` 서브 포함) | 13 |
+| `agent` | 다중 에이전트 협업 — `task_*` (Phase 5.1), 향후 `barrier_*`/`semaphore_*`/`lease_*`/`reduce`/`rate_limit_*` 추가 예정 | 7 |
 | `workspace`, `tab`, `message`, `window` | 레이아웃·메시지 큐·window 관리 | 각 4 |
 | `notification`, `hook`, `global_hook` | 알림·hook | 각 2-3 |
 | `system`, `ui`, `pane` | 호스트 정보·UI 상태·pane 조작 | 각 1-2 |
@@ -91,6 +92,8 @@ CLI 명령:  tasty <namespace> <verb> [--<option>]
 | `summary` / `timeseries` / `top` / `session_summary` (telemetry.*) | 집계 조회 (sum/시계열/top-N/세션 단위 묶음) | `list` (배열 반환) / `info` (단일) — 집계 결과는 컬렉션도 단일 객체도 아닌 "통계 표"라서 별도 명사 채택. `session_summary` 는 `.<sub>.<verb>` 3단 대신 단수 명사로 둔 이유: 세션 요약 자체가 단일 결과 객체이며 `summary` 와 의미가 겹치지 않게 prefix 차이로 구분 |
 | `anomaly.list` (telemetry.anomaly.*) | 영속 anomaly 레코드 조회 | 표준 `list` — 서브 namespace 만 별도 |
 | `cap.{set,list,remove,status,reset}` (telemetry.cap.*) | cost cap CRUD + 상태 + reset | 표준 verb 조합. `reset` 은 `triggered` 마크만 비우므로 `clear` 가 후보였으나 "발화 상태를 0 으로 되돌린다"는 도메인 의미상 `reset` 이 더 명확 |
+| `task_{create,list,get,await,cancel,retry,graph}` (agent.task_*) | task DAG primitive — Phase 5.1 | `<verb>_<modifier>` 패턴으로 통합한 의도적 결정. 별도 `task` namespace를 만들지 않은 이유: Phase 05 plan(`05-collaboration.md`) §"단일 namespace 결정"에서 `task/barrier/semaphore/lease/rate-limit/capability` 6개 namespace 분리안을 거부하고 단일 `agent` namespace + modifier로 통합. 신규 verb `await` (blocking 또는 poll-based 응답 대기)는 향후 `agent.barrier_await` 등에도 재사용. `graph` (DAG 시각화)는 단일 도메인 명사 — `list`/`info`가 부적합한 "구조 표"라서 별도 등록 |
+| `barrier_{create,signal,await,state}` / `semaphore_{create,acquire,release}` / `lease_{acquire,release,list}` / `rate_limit_{set,list,status}` / `task_reduce` (agent.*) | 동기화·자원 점유·rate-limit·결과 합성 — Phase 5.2-5.5 (예약) | 동일하게 `<verb>_<modifier>` 패턴. 본 sub-phase에선 미구현이지만 화이트리스트엔 미리 등록해두지 않고, 각 sub-phase 추가 시점에 PR description으로 정당화 |
 | `feed_bytes`, `inject_mouse`, `inject_key`, `raw_key`, `send_key`, `send_combo` | 사용자 입력 재현 | (debug 전용, 명명 자유로움) |
 | `fire_hook` | hook 트리거 강제 | (sample size 1, 일관 규칙 정착 보류) |
 

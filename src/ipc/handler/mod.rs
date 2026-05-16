@@ -7,6 +7,7 @@ use crate::ipc::caller::CallerContext;
 use crate::ipc::protocol::{JsonRpcRequest, JsonRpcResponse};
 use crate::state::AppState;
 
+pub mod agent;
 pub mod approval;
 mod clipboard;
 mod hooks;
@@ -271,6 +272,14 @@ fn route_engine_handler(
         "telemetry.session_summary" => {
             telemetry::handle_session_summary(state, caller, id, &request.params)
         }
+        // agent.task_* — Phase 5.1 (DAG + state 머신)
+        "agent.task_create" => agent::handle_task_create(state, caller, id, &request.params),
+        "agent.task_list" => agent::handle_task_list(state, caller, id, &request.params),
+        "agent.task_get" => agent::handle_task_get(state, caller, id, &request.params),
+        "agent.task_await" => agent::handle_task_await(state, caller, id, &request.params),
+        "agent.task_cancel" => agent::handle_task_cancel(state, caller, id, &request.params),
+        "agent.task_retry" => agent::handle_task_retry(state, caller, id, &request.params),
+        "agent.task_graph" => agent::handle_task_graph(state, caller, id, &request.params),
         _ => return None,
     })
 }

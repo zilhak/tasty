@@ -533,6 +533,48 @@
 - `tasty telemetry anomaly list` — 검출된 이상 신호 조회 (`--agent`, `--kind`, `--since`, `--until`)
 - `tasty telemetry session-summary` — 세션 요약 (`--workspace-id`, `--since`, `--until`, `--format`, `--top-n`)
 
+## 협업 primitive (Phase 5)
+
+다중 에이전트가 협업할 때 필요한 동기화·의존성·합성 primitive. 신규 단일 namespace `agent`에 Task/Barrier/Semaphore/Lease/Reducer/Rate Limit가 modifier로 묶인다. 신규 권한 토큰 `agent` (`Permission::AgentManage`).
+
+### Task primitive (Phase 5.1)
+
+**DAG + state 머신** — `tasty-agent` 크레이트에 `Task`/`TaskState`/`TaskCommand`/`TaskGraph`/`TaskStore` 정의. 영속은 `tasty.agent.task.<id>` 키, scope = `workspace:<id>`.
+
+- **TaskState 8종**: `Waiting` (의존성 미충족) / `Ready` / `Running` / `Succeeded` / `Failed { error }` / `Cancelled` / `Skipped` (의존성 실패로 자동 스킵) / `Unknown` (재시작 후 Running이던 task — 사용자가 retry/cancel 결정 필요)
+- **TaskCommand 4종**: `ClaudeSpawn` (claude.spawn 호출) / `Run` (terminal에서 명령 실행) / `Custom` (임의 IPC 위임) / `Reduce` (5종 reducer 전략) — 실제 실행 wiring은 후속 sub-phase
+- **OnFailure 3종**: `Abort` (downstream 모두 Skipped, 기본) / `ContinueDownstream` (실패를 성공처럼 취급) / `Fallback { task }` (대체 task로 우회 — 호스트가 fallback을 별도로 트리거)
+- **사이클 검출**: DFS 3-color로 `create()` 시점에 검증. unknown dependency도 같은 단계에서 거부
+- **자동 cascade**: 임의 task의 state가 바뀌면 transitive downstream을 재평가해 `Waiting → Ready/Skipped`로 자동 전이
+
+### IPC
+
+| method | 권한 | 동작 |
+|---|---|---|
+| `agent.task_create` | AgentManage | 새 task 생성. `workspace_id`/`name`/`command`/`depends_on?`/`on_failure?`/`metadata?` |
+| `agent.task_list` | AgentManage | 워크스페이스 task 목록. `state?` 필터 |
+| `agent.task_get` | AgentManage | 단건 조회 |
+| `agent.task_await` | AgentManage | 현 단계: `task_get`와 동일 (즉시 응답). 실제 blocking await는 scheduler 도입 후 |
+| `agent.task_cancel` | AgentManage | 명시적 취소. downstream cascade |
+| `agent.task_retry` | AgentManage | Failed/Cancelled/Skipped/Unknown task 재시작. `reset_downstream?`로 downstream도 Waiting으로 |
+| `agent.task_graph` | AgentManage | DAG 출력. `format`=`json` (기본) 또는 `dot` (Graphviz) |
+
+### CLI
+
+```
+tasty agent task-create --workspace-id <id> --name <n> --command @spec.json [--depends-on T1,T2] [--on-failure abort|continue_downstream|fallback:T3] [--metadata @meta.json]
+tasty agent task-list   --workspace-id <id> [--state <s>]
+tasty agent task-get    --workspace-id <id> --id <T>
+tasty agent task-await  --workspace-id <id> --id <T>
+tasty agent task-cancel --workspace-id <id> --id <T>
+tasty agent task-retry  --workspace-id <id> --id <T> [--reset-downstream]
+tasty agent task-graph  --workspace-id <id> [--format json|dot]
+```
+
+`--command`/`--metadata`는 인라인 JSON 또는 `@path` (파일 로드). `--on-failure fallback:<task_id>`처럼 `kind`만 단축 표기.
+
+본 sub-phase는 **state 머신 + 영속 + IPC/CLI 표면**만 책임진다. `Ready` task를 실제로 실행하는 스케줄러, blocking `task_await`, reducer 실행, barrier/semaphore/lease/rate-limit는 후속 sub-phase에서 추가된다.
+
 ## 설정 시스템
 
 ### TOML 기반 설정 파일

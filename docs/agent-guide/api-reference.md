@@ -641,7 +641,40 @@ tasty unset global-hook --hook HOOK_ID
 
 **이상 탐지 (Phase 4.4)** — `CallBurst` 휴리스틱이 활성. dispatcher 가 plugin IPC 를 카운트할 때마다 `AnomalyDetector` 가 (agent, method) 의 sliding window 를 갱신하고, 1분 내 1000 회 임계에 도달하면 발화한다. 발화 시 호스트는 `tasty.telemetry.anomaly.{ts:013}.{id}` 키로 Global scope 에 영속 + 활성 워크스페이스 알림. 같은 (agent, method) 의 연쇄 발화는 1분 쿨다운으로 dedup.
 
-`Anomaly` 스키마: `{ id, kind∈{call_burst,slow_loop,rss_surge}, agent, subject, detected_at, detail: { window_ms, threshold, count, ... } }`. `SlowLoop` / `RssSurge` 는 타입만 정의돼 있고 검출은 후속 sub-phase 에서 도입된다. (Surface 간 통신)
+`Anomaly` 스키마: `{ id, kind∈{call_burst,slow_loop,rss_surge}, agent, subject, detected_at, detail: { window_ms, threshold, count, ... } }`. `SlowLoop` / `RssSurge` 는 타입만 정의돼 있고 검출은 후속 sub-phase 에서 도입된다.
+
+### 협업 primitive (`agent.*`) — Phase 5
+
+다중 에이전트 협업 — 의존성 DAG, 동기화, 자원 점유 등을 1차 시민 primitive로 제공. 영속은 `tasty-memory`의 workspace scope에 저장 (`tasty.agent.task.<id>` 등). 신규 권한 토큰 `agent` (`Permission::AgentManage`).
+
+**Phase 5.1 — Task primitive (DAG + state 머신)**. 본 sub-phase는 모델·영속·IPC/CLI만 책임지며, `Ready` task를 자동 실행하는 스케줄러는 후속 단계.
+
+| 메서드 | Permission | 파라미터 / 응답 |
+|--------|------------|------------------|
+| `agent.task_create` | `AgentManage` | `{ workspace_id, name, command, depends_on?, on_failure?, metadata? }` → `Task`. 사이클·미존재 dep 검출 시 `-32602 invalid_params`. 초기 state는 dep이 빈 경우 `Ready`, 아니면 `Waiting` |
+| `agent.task_list` | `AgentManage` | `{ workspace_id, state? }` → `{ total, tasks: [Task] }`. `state` 값으로 필터 |
+| `agent.task_get` | `AgentManage` | `{ workspace_id, id }` → `Task` (없으면 `-32004`) |
+| `agent.task_await` | `AgentManage` | `{ workspace_id, id }` → `Task` (즉시 응답 — 본 단계에선 polling 어댑터). blocking await는 scheduler 도입 시 long-poll로 |
+| `agent.task_cancel` | `AgentManage` | `{ workspace_id, id }` → `{ task: Task, cascaded: [Task] }`. 이미 terminal이면 `-32008 already_terminal` |
+| `agent.task_retry` | `AgentManage` | `{ workspace_id, id, reset_downstream? }` → `Task`. Failed/Cancelled/Skipped/Unknown만 허용 |
+| `agent.task_graph` | `AgentManage` | `{ workspace_id, format?∈{json,dot}=json }` → `format`에 따라 `{ format, nodes, edges, cycle? }` 또는 `{ format, dot, cycle? }` |
+
+**Task 스키마**: `{ id, workspace_id, name, command, depends_on[], state, created_at, started_at?, finished_at?, result?, on_failure, metadata }`
+
+**TaskState 8종**: `waiting` (의존성 미충족) / `ready` / `running` / `succeeded` / `failed { error }` / `cancelled` / `skipped` (의존성 실패 자동 cascade) / `unknown` (재시작 후 running이던 task — 사용자 결정 필요)
+
+**TaskCommand 4종 (kind 필드)**:
+
+- `claude_spawn` — `{ kind, prompt, role?, nickname?, cwd?, parent_surface?, direction? }` (`claude.spawn` 호출 위임)
+- `run` — `{ kind, command: [string], workspace_id, cwd? }` (terminal에서 명령 실행)
+- `custom` — `{ kind, ipc_method, params }` (임의 IPC 위임. caller가 해당 메서드 권한 보유 필요)
+- `reduce` — `{ kind, inputs: [TaskId], strategy: { kind: first_success|all|merge_json|concat_text|custom, command? } }` (다른 task 결과 합성)
+
+**OnFailure 3종 (kind 필드)**: `abort` (downstream 모두 skipped) / `continue_downstream` (실패를 성공처럼 취급해 진행) / `fallback { task }` (대체 task로 우회 — 호스트가 별도 트리거)
+
+> Phase 5.2+에서 `agent.barrier_*`, `agent.semaphore_*`, `agent.lease_*`, `agent.rate_limit_*`, `agent.task_reduce`가 같은 namespace 안에 추가될 예정. 자세한 design은 `docs/dev-guide/cli-naming.md`의 `agent` 항목과 plan `05-collaboration.md`.
+
+### Surface 간 통신
 
 | 메서드 | 파라미터 | 설명 |
 |--------|---------|------|

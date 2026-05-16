@@ -17,6 +17,9 @@
 ## [Unreleased]
 
 ### Added
+- `tasty-agent` 크레이트 — 다중 에이전트 협업 primitive (Phase 5). 신규 namespace `agent.*` + 권한 토큰 `agent` (`Permission::AgentManage`).
+  - **Task primitive (Phase 5.1)**: DAG + state 머신. `agent.task_create / task_list / task_get / task_await / task_cancel / task_retry / task_graph` IPC. 영속은 workspace scope `tasty.agent.task.<id>`. TaskState 8종 (`waiting/ready/running/succeeded/failed/cancelled/skipped/unknown`), TaskCommand 4종 (`claude_spawn/run/custom/reduce`), OnFailure 3종 (`abort/continue_downstream/fallback`). `create()` 시 사이클·unknown dependency 검출, state 전이 시 transitive downstream 재평가 (cascade). `task_graph`는 `format=json`(기본) 또는 `format=dot`(Graphviz). 본 sub-phase는 모델/영속/IPC만 책임 — `Ready` 자동 실행 스케줄러, blocking `task_await`, reducer 실행은 후속.
+  - CLI: `tasty agent task-{create,list,get,await,cancel,retry,graph}`. `--command`/`--metadata`는 인라인 JSON 또는 `@path/to/file.json`. `--on-failure fallback:<task_id>` 단축 표기 지원
 - `tasty-telemetry` 크레이트 — AI 에이전트 관측/비용 계층. 신규 namespace `telemetry.*` (`Telemetry` 권한):
   - **기록**: `telemetry.record { agent?, metric, value, op?∈{set,inc}=set, workspace_id?, tags? }`, `telemetry.record_batch { events: [...] }`. 메트릭 이름은 `^[a-zA-Z][a-zA-Z0-9_]{0,63}$`. 영속 키: `tasty.telemetry.event.{ts:013}.{seq:04}` (workspace_id 있으면 `scope=workspace:<id>`, 없으면 `global`)
   - **조회**: `telemetry.summary { metric?, agent?, workspace_id?, since?, until? }`, `telemetry.timeseries { metric, window∈{1m,5m,1h,1d}, ... }`, `telemetry.top { by?∈{agent,workspace}, limit?=10, ... }` — 모두 raw event prefix scan + 순수 집계

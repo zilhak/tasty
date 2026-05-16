@@ -4773,6 +4773,7 @@ dependencies = [
  "serde",
  "serde_json",
  "shell-escape",
+ "tasty-agent",
  "tasty-approval",
  "tasty-core",
  "tasty-font",
@@ -4799,6 +4800,19 @@ dependencies = [
  "winit",
  "winresource",
  "x11-dl",
+]
+
+[[package]]
+name = "tasty-agent"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tasty-core",
+ "tasty-memory",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tracing",
 ]
 
 [[package]]

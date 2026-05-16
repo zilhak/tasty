@@ -130,6 +130,9 @@ pub enum Permission {
     /// Telemetry namespace 접근 (`telemetry.*`). 메트릭 기록·조회, cap/anomaly 관리.
     /// 토큰 `telemetry`.
     Telemetry,
+    /// Agent namespace 접근 (`agent.*`). Task/Barrier/Semaphore/Lease/Reducer/RateLimit
+    /// 협업 primitive 사용. 토큰 `agent`.
+    AgentManage,
     /// 다른 plugin이 점유한 IPC namespace prefix의 메서드 호출.
     /// 토큰 형식: `ipc.invoke:<prefix>` (예: `ipc.invoke:codex`).
     IpcInvoke(String),
@@ -172,6 +175,7 @@ impl Permission {
             "memory.secret" => Self::MemorySecret,
             "approval" => Self::Approval,
             "telemetry" => Self::Telemetry,
+            "agent" => Self::AgentManage,
             "ui.tool_item" => Self::UiToolItem,
             "ui.popup" => Self::UiPopup,
             other => {
@@ -213,6 +217,7 @@ impl Permission {
             Self::MemorySecret => "memory.secret".into(),
             Self::Approval => "approval".into(),
             Self::Telemetry => "telemetry".into(),
+            Self::AgentManage => "agent".into(),
             Self::IpcInvoke(prefix) => format!("ipc.invoke:{prefix}"),
             Self::Extension(target) => format!("ext:{target}"),
             Self::UiToolItem => "ui.tool_item".into(),
@@ -2616,6 +2621,15 @@ mod tests {
             Some(Permission::UiPopup)
         );
         assert_eq!(Permission::UiPopup.as_token(), "ui.popup");
+    }
+
+    #[test]
+    fn agent_permission_token_parses() {
+        assert_eq!(
+            Permission::from_token("agent"),
+            Some(Permission::AgentManage)
+        );
+        assert_eq!(Permission::AgentManage.as_token(), "agent");
     }
 
     #[test]

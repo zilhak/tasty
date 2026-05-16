@@ -168,6 +168,14 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("telemetry.cap.reset", plugin(&[Telemetry])),
         ("telemetry.anomaly.list", plugin(&[Telemetry])),
         ("telemetry.session_summary", plugin(&[Telemetry])),
+        // ── agent (협업 primitive — Phase 5) ─────────────────────────
+        ("agent.task_create", plugin(&[AgentManage])),
+        ("agent.task_list", plugin(&[AgentManage])),
+        ("agent.task_get", plugin(&[AgentManage])),
+        ("agent.task_await", plugin(&[AgentManage])),
+        ("agent.task_cancel", plugin(&[AgentManage])),
+        ("agent.task_retry", plugin(&[AgentManage])),
+        ("agent.task_graph", plugin(&[AgentManage])),
         // ── notification ──────────────────────────────────────────────
         ("notification.list", plugin(&[Notification])),
         ("notification.create", plugin(&[Notification])),
@@ -359,5 +367,25 @@ mod tests {
     fn plugin_management_is_local_only() {
         let m = method_meta("plugin.enable").expect("registered");
         assert!(!m.plugin_callable);
+    }
+
+    #[test]
+    fn agent_task_methods_require_agent_manage() {
+        for name in [
+            "agent.task_create",
+            "agent.task_list",
+            "agent.task_get",
+            "agent.task_await",
+            "agent.task_cancel",
+            "agent.task_retry",
+            "agent.task_graph",
+        ] {
+            let m = method_meta(name).unwrap_or_else(|| panic!("registered: {name}"));
+            assert!(m.plugin_callable, "{name} should be plugin-callable");
+            assert!(
+                m.required.contains(&Permission::AgentManage),
+                "{name} should require AgentManage"
+            );
+        }
     }
 }
