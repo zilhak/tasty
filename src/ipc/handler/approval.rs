@@ -245,6 +245,93 @@ pub fn handle_request(
     }
 }
 
+/// Phase 6.4a — capability_elevation 발행.
+///
+/// Agent caller 가 권한 부족으로 IPC 호출이 거부될 때 dispatcher 가 호출한다.
+/// `tasty.approval.<id>` 영속 + popup enqueue 까지 수행하고, 발행된 record 를
+/// 돌려준다. 호출자는 `record.request.id` 를 error.data 에 실어 agent 에게
+/// 전달하면 된다.
+///
+/// 같은 (agent_id, permission) 에 대한 미응답 elevation 이 이미 있으면 그것을
+/// 재사용 — 동일 거부가 반복돼도 알림 폭주를 막는다.
+pub(crate) fn publish_capability_elevation(
+    state: &mut AppState,
+    agent_id: &str,
+    method: &str,
+    permission: &str,
+    reason: Option<&str>,
+) -> Option<ApprovalRecord> {
+    // 이미 같은 agent+permission 으로 Pending elevation 이 있으면 재사용.
+    if let Some(existing) = state
+        .engine
+        .approval_store
+        .list()
+        .into_iter()
+        .find(|r| {
+            matches!(r.state, tasty_approval::ApprovalState::Pending)
+                && r.request.metadata.get("kind").and_then(|v| v.as_str())
+                    == Some("capability_elevation")
+                && r.request.metadata.get("agent_id").and_then(|v| v.as_str()) == Some(agent_id)
+                && r.request.metadata.get("permission").and_then(|v| v.as_str())
+                    == Some(permission)
+        })
+    {
+        return Some(existing);
+    }
+
+    let workspace_id = state
+        .engine
+        .workspaces
+        .get(state.active_workspace)
+        .map(|ws| ws.id);
+
+    let metadata = json!({
+        "kind": "capability_elevation",
+        "agent_id": agent_id,
+        "method": method,
+        "permission": permission,
+        "reason": reason,
+    });
+
+    let title = format!("Capability request: {permission}");
+    let body = Some(format!(
+        "Agent '{agent_id}' requires '{permission}' to call '{method}'.{}",
+        match reason {
+            Some(r) => format!(" Reason: {r}"),
+            None => String::new(),
+        }
+    ));
+
+    let req = ApprovalRequest {
+        id: ApprovalId::generate(),
+        requester: Requester::Plugin {
+            id: agent_id.to_string(),
+        },
+        workspace_id,
+        surface_id: None,
+        title,
+        body,
+        choices: vec![ApprovalChoice::approve(), ApprovalChoice::deny()],
+        default_choice: Some("deny".to_string()),
+        timeout_ms: None,
+        severity: Severity::Warn,
+        created_at: 0,
+        metadata,
+    };
+
+    match state.engine.approval_store.request(req) {
+        Ok(change) => {
+            persist_record(&change.record);
+            crate::ui::approval_popup::enqueue_approval(state, &change.record);
+            Some(change.record)
+        }
+        Err(e) => {
+            tracing::warn!("capability elevation publish failed: {e}");
+            None
+        }
+    }
+}
+
 /// `approval.respond` — 응답 제출. self-response 면 거부.
 pub fn handle_respond(
     state: &mut AppState,

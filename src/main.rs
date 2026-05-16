@@ -1224,11 +1224,50 @@ impl App {
             if !matches!(caller, ipc::caller::CallerContext::Local) {
                 if let Err(e) = caller.ensure_allowed(&cmd.request.method) {
                     tracing::warn!("ipc agent caller denied: {e}");
-                    let response = ipc::protocol::JsonRpcResponse::error(
-                        cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
+                    let rpc_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
+                    // Phase 6.4a — Agent caller 의 MissingPermission 은 elevation
+                    // 발행. NotPluginCallable/UnknownMethod 는 elevation 으로
+                    // 회복되지 않으므로 단순 deny.
+                    let mut data = serde_json::json!(null);
+                    if let (
+                        ipc::caller::CallerError::MissingPermission { permission, .. },
+                        ipc::caller::CallerContext::Agent { agent_id, .. },
+                    ) = (&e, &caller)
+                    {
+                        let agent_id = agent_id.clone();
+                        let perm_token = permission.as_token();
+                        let method = cmd.request.method.clone();
+                        let main_state = self
+                            .windows
+                            .values_mut()
+                            .find_map(|w| w.as_main_mut().map(|m| &mut m.state));
+                        if let Some(st) = main_state {
+                            if let Some(rec) = ipc::handler::approval::publish_capability_elevation(
+                                st,
+                                &agent_id,
+                                &method,
+                                &perm_token,
+                                None,
+                            ) {
+                                data = serde_json::json!({
+                                    "kind": "capability_elevation",
+                                    "approval_id": rec.request.id,
+                                    "permission": perm_token,
+                                    "method": method,
+                                });
+                            }
+                        }
+                    }
+                    let mut response = ipc::protocol::JsonRpcResponse::error(
+                        rpc_id,
                         -32001,
                         &format!("permission_denied: {e}"),
                     );
+                    if !data.is_null()
+                        && let Some(err) = response.error.as_mut()
+                    {
+                        err.data = Some(data);
+                    }
                     send_response(&cmd.response_tx, response);
                     processed = true;
                     continue;
