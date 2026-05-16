@@ -226,6 +226,7 @@ pub fn handle_request(
     match state.engine.approval_store.request(req) {
         Ok(change) => {
             persist_record(&change.record);
+            crate::ui::approval_popup::enqueue_approval(state, &change.record);
             JsonRpcResponse::success(
                 id,
                 json!({

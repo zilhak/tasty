@@ -211,6 +211,21 @@ pub fn draw_popups(
         state.dialogs.rename = None;
     }
 
+    // approval popup: 외부 닫기/X 발생 시 큐 head 만 비운다 (정책상 X 는 본문에서
+    // 막아 두지만 다른 경로로 닫힐 수 있다). 큐가 남아 있으면 다음 head 로 다시 연다.
+    let approval_closed =
+        dispatch_closed.contains(&crate::ui::approval_popup::APPROVAL_POPUP_ID)
+            || draw_result.closed.contains(&crate::ui::approval_popup::APPROVAL_POPUP_ID);
+    if approval_closed {
+        state.dialogs.approval_comment_buffer.clear();
+        if !state.dialogs.pending_approval_ids.is_empty() {
+            state.dialogs.pending_popup_open.get_or_insert((
+                crate::ui::approval_popup::APPROVAL_POPUP_ID,
+                crate::ui::popup::PopupScope::Window,
+            ));
+        }
+    }
+
     // Process deferred popup open requests (from popups that open other popups)
     if let Some((id, scope)) = state.dialogs.pending_popup_open.take() {
         state.popups.open_with_scope(id, scope);

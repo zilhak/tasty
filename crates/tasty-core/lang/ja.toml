@@ -422,3 +422,16 @@ disk_full = "ディスクの空き容量が不足しています。空きを確�
 corrupt = "データベースファイルが破損しています: {}. ファイルをバックアップしてから削除すると新規に開始できます。"
 schema_mismatch = "データベースのスキーマバージョンが一致しません (expected {}, found {})。0.4 で下位互換は削除されました。~/.tasty/state.db をバックアップしてから削除してください。"
 other = "データベースの初期化に失敗しました: {}"
+
+[approval.popup]
+title = "承認が必要"
+comment_label = "コメント (任意)"
+comment_hint = "理由またはコンテキスト"
+
+[approval.severity]
+info = "情報"
+warn = "注意"
+danger = "危険"
+
+[approval.notification]
+body_fallback = "応答待ちの承認リクエストがあります。"

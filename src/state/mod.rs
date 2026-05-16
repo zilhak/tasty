@@ -356,6 +356,11 @@ pub struct DialogState {
     /// 부팅 시점 정보/에러 알림용 modal 큐. 큐 head를 [확인] 버튼으로 처리한다.
     /// `crate::ui::info_modal::show_info_modal()`로 push.
     pub info_modal_queue: VecDeque<InfoModal>,
+    /// 휴먼 핸드오프 — 응답 대기 중인 approval 큐. popup 의 head 가 현재 화면.
+    /// `approval.request` IPC 가 push하고, 선택지 클릭 시 pop.
+    pub pending_approval_ids: VecDeque<tasty_approval::ApprovalId>,
+    /// approval popup 의 코멘트 입력 버퍼 (현재 head용 임시 상태).
+    pub approval_comment_buffer: String,
 }
 
 /// Tab drag-and-drop state (UI-only, not persisted).
@@ -394,6 +399,8 @@ impl DialogState {
             tab_drag: None,
             ws_drag: None,
             info_modal_queue: VecDeque::new(),
+            pending_approval_ids: VecDeque::new(),
+            approval_comment_buffer: String::new(),
         }
     }
 

@@ -94,6 +94,18 @@ pub fn all_defs() -> &'static [PopupDef] {
                 draw_fn: super::info_modal::draw_info_modal,
             },
             PopupDef {
+                id: super::approval_popup::APPROVAL_POPUP_ID,
+                title_key: "approval.popup.title",
+                title_fn: Some(super::approval_popup::approval_popup_title),
+                default_size: egui::vec2(480.0, 240.0),
+                sizer: Some(super::approval_popup::approval_popup_sizer),
+                default_scope: PopupScope::Window,
+                close_on_outside_click: false,
+                headless: false,
+                sticky_focus: false,
+                draw_fn: super::approval_popup::draw_approval_popup,
+            },
+            PopupDef {
                 id: "tools_menu",
                 title_key: "tools_menu.title",
                 title_fn: None,
