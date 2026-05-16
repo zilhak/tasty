@@ -369,6 +369,38 @@ pub enum AgentCommands {
         #[arg(long)]
         strategy: String,
     },
+    /// Configure a rate limit bucket for (agent, metric) — `limit` tokens per `per_ms` ms.
+    RateLimitSet {
+        /// Agent id.
+        #[arg(long)]
+        agent: String,
+        /// Metric name (e.g. `ipc_calls`).
+        #[arg(long)]
+        metric: String,
+        /// Token refill amount per window.
+        #[arg(long)]
+        limit: u32,
+        /// Window length in milliseconds (e.g. `60000` for per-minute).
+        #[arg(long)]
+        per_ms: u64,
+        /// Bucket capacity (defaults to `limit`).
+        #[arg(long)]
+        burst: Option<u32>,
+    },
+    /// List all configured rate limit buckets (with current token state).
+    RateLimitList,
+    /// Remove a rate limit bucket by id.
+    RateLimitRemove {
+        #[arg(long)]
+        id: String,
+    },
+    /// Inspect rate limit state, optionally filtered by agent and/or metric.
+    RateLimitStatus {
+        #[arg(long)]
+        agent: Option<String>,
+        #[arg(long)]
+        metric: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]

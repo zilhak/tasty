@@ -657,6 +657,37 @@ tasty agent lease-list    --workspace-id <id>
 tasty agent task-reduce --workspace-id <id> --inputs T1,T2,T3 --strategy first_success|all|merge_json|concat_text|custom:<command>
 ```
 
+### Rate limit (Phase 5.5)
+
+**시간당 비율 제한 (token bucket)** — `tasty-agent::rate_limit`. (agent, metric) 쌍에 대해 `limit` 토큰 / `per_ms` 윈도우의 보충률로 차감-기반 제한을 건다. 영속 키는 `tasty.agent.rate_limit.<id>`, scope = `Global` (워크스페이스 무관 — agent 전역 비율).
+
+**`telemetry.cap` (04) 과의 차이:**
+
+| 시스템 | 의미 | 차단 시점 |
+|---|---|---|
+| `telemetry.cap` | 누적 임계 (예: `input_tokens` 총합 ≥ 100000) | 합산값이 임계 도달 시 |
+| `agent.rate_limit` | 시간당 비율 (예: `ipc_calls` 100/분) | 윈도우 내 토큰 소진 시 |
+
+`burst` 가 비면 `burst = limit` 으로 기본값을 채워 burst-허용 없이 즉시 윈도우 동등 차감으로 동작. 등록되지 않은 (agent, metric) 쌍에 대한 `try_consume` 은 항상 허용 (rate_limit 미적용 = throttle 안 함). 본 단계(5.5)는 CRUD + `try_consume` 만 노출 — IPC dispatcher 자동 평가 미들웨어는 후속 단계에서 결합한다.
+
+#### IPC
+
+| method | 권한 | 동작 |
+|---|---|---|
+| `agent.rate_limit_set` | AgentManage | `agent`/`metric`/`limit`/`per_ms`/`burst?` upsert. 동일 (agent, metric) 은 같은 id 유지하며 버킷 reset |
+| `agent.rate_limit_list` | AgentManage | 전체 버킷 (refill 적용 후) `{ total, rate_limits: [...] }` |
+| `agent.rate_limit_remove` | AgentManage | `id` 로 삭제 |
+| `agent.rate_limit_status` | AgentManage | `agent?` / `metric?` 필터로 현재 상태 조회 |
+
+#### CLI
+
+```
+tasty agent rate-limit-set    --agent <id> --metric <name> --limit <n> --per-ms <ms> [--burst <n>]
+tasty agent rate-limit-list
+tasty agent rate-limit-remove --id <rate-limit-id>
+tasty agent rate-limit-status [--agent <id>] [--metric <name>]
+```
+
 ## 설정 시스템
 
 ### TOML 기반 설정 파일

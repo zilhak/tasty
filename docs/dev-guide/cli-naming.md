@@ -25,7 +25,7 @@ CLI 명령:  tasty <namespace> <verb> [--<option>]
 | `tool.clipboard` | 클립보드 (`tool` namespace 2단 안의 서브) | 5 |
 | `output` | 출력 옵저버 (`observe_start/stop/list/info`) | 4 |
 | `telemetry` | 텔레메트리 — 측정/집계/cap/이상 탐지/세션 요약 (`cap.*`, `anomaly.*` 서브 포함) | 13 |
-| `agent` | 다중 에이전트 협업 — `task_*` (Phase 5.1) + `barrier_*` / `semaphore_*` (Phase 5.2) + `lease_*` (Phase 5.3) + `task_reduce` (Phase 5.4), 향후 `rate_limit_*` 추가 예정 | 18 |
+| `agent` | 다중 에이전트 협업 — `task_*` (Phase 5.1) + `barrier_*` / `semaphore_*` (Phase 5.2) + `lease_*` (Phase 5.3) + `task_reduce` (Phase 5.4) + `rate_limit_*` (Phase 5.5) | 22 |
 | `workspace`, `tab`, `message`, `window` | 레이아웃·메시지 큐·window 관리 | 각 4 |
 | `notification`, `hook`, `global_hook` | 알림·hook | 각 2-3 |
 | `system`, `ui`, `pane` | 호스트 정보·UI 상태·pane 조작 | 각 1-2 |
@@ -96,7 +96,7 @@ CLI 명령:  tasty <namespace> <verb> [--<option>]
 | `barrier_{create,signal,await,state}` / `semaphore_{create,acquire,release}` (agent.*) | 동기화 primitive — Phase 5.2 | 동일하게 `<verb>_<modifier>` 패턴. `barrier_await` 와 `barrier_state` 는 poll-based 단계에선 같은 응답이지만 의미를 분리: `state` 는 "현재 상태 조회", `await` 는 "원하는 상태 도달 대기" — scheduler 도입 시 `await` 만 long-poll/wakeup 으로 분기. `semaphore` 는 `acquire`/`release` 로 점유 시멘틱을 명시 (`get`/`set` 으로 표현하면 의미 불명) |
 | `lease_{acquire,release,list}` (agent.*) | 협조적 자원 점유 — Phase 5.3 | 동일하게 `<verb>_<modifier>` 패턴. `acquire`/`release` 는 semaphore 와 같은 어휘로 점유 시멘틱 통일. `list` 는 표준 verb (workspace 의 lease 카탈로그 반환). 별도 `state`/`get` 동사를 도입하지 않은 이유: lease 는 본질적으로 "점유 holder 가 누구인가" 외 상태가 없어 `list` 의 단일 row 가 곧 단건 상태 |
 | `task_reduce` (agent.*) | task 결과 합성 — Phase 5.4 | `<verb>_<modifier>` 패턴. `task_*` 군과 한 namespace 에 두면서 reducer 동작을 modifier 로 구분. 별도 `reducer_*` namespace 를 피한 이유: reducer 는 task 결과를 입력으로 받는 task-domain 동사이지 독립적 카테고리가 아니다 |
-| `rate_limit_{set,list,status}` (agent.*) | rate-limit — Phase 5.5 (예약) | 동일하게 `<verb>_<modifier>` 패턴. 본 sub-phase에선 미구현이지만 화이트리스트엔 미리 등록해두지 않고, 각 sub-phase 추가 시점에 PR description으로 정당화 |
+| `rate_limit_{set,list,remove,status}` (agent.*) | rate-limit — Phase 5.5 | 동일하게 `<verb>_<modifier>` 패턴. `set` 은 (agent, metric) 쌍 upsert + 버킷 reset (이미 있으면 같은 id 유지). `remove` 는 id 기반 삭제 — (agent, metric) 으로 찾지 않는 이유: list/status 가 항상 id 를 반환하므로 호출자가 id 로 정확히 가리키게 한다. `status` 는 `list` 와 분리 — 필터(agent/metric) 가 있어 의미적으로 "특정 버킷 상태 조회"에 가깝다 |
 | `feed_bytes`, `inject_mouse`, `inject_key`, `raw_key`, `send_key`, `send_combo` | 사용자 입력 재현 | (debug 전용, 명명 자유로움) |
 | `fire_hook` | hook 트리거 강제 | (sample size 1, 일관 규칙 정착 보류) |
 

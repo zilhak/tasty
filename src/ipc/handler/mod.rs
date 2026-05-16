@@ -300,6 +300,15 @@ fn route_engine_handler(
         "agent.lease_list" => agent::handle_lease_list(state, caller, id, &request.params),
         // agent.task_reduce — Phase 5.4 (결과 합성: first_success / all / merge_json / concat_text / custom)
         "agent.task_reduce" => agent::handle_task_reduce(state, caller, id, &request.params),
+        // agent.rate_limit_* — Phase 5.5 (token bucket 시간당 비율 제한)
+        "agent.rate_limit_set" => agent::handle_rate_limit_set(state, caller, id, &request.params),
+        "agent.rate_limit_list" => agent::handle_rate_limit_list(state, caller, id, &request.params),
+        "agent.rate_limit_remove" => {
+            agent::handle_rate_limit_remove(state, caller, id, &request.params)
+        }
+        "agent.rate_limit_status" => {
+            agent::handle_rate_limit_status(state, caller, id, &request.params)
+        }
         _ => return None,
     })
 }

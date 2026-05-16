@@ -187,6 +187,10 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("agent.lease_release", plugin(&[AgentManage])),
         ("agent.lease_list", plugin(&[AgentManage])),
         ("agent.task_reduce", plugin(&[AgentManage])),
+        ("agent.rate_limit_set", plugin(&[AgentManage])),
+        ("agent.rate_limit_list", plugin(&[AgentManage])),
+        ("agent.rate_limit_remove", plugin(&[AgentManage])),
+        ("agent.rate_limit_status", plugin(&[AgentManage])),
         // ── notification ──────────────────────────────────────────────
         ("notification.list", plugin(&[Notification])),
         ("notification.create", plugin(&[Notification])),
@@ -426,6 +430,23 @@ mod tests {
             "agent.semaphore_create",
             "agent.semaphore_acquire",
             "agent.semaphore_release",
+        ] {
+            let m = method_meta(name).unwrap_or_else(|| panic!("registered: {name}"));
+            assert!(m.plugin_callable, "{name} should be plugin-callable");
+            assert!(
+                m.required.contains(&Permission::AgentManage),
+                "{name} should require AgentManage"
+            );
+        }
+    }
+
+    #[test]
+    fn agent_rate_limit_methods_require_agent_manage() {
+        for name in [
+            "agent.rate_limit_set",
+            "agent.rate_limit_list",
+            "agent.rate_limit_remove",
+            "agent.rate_limit_status",
         ] {
             let m = method_meta(name).unwrap_or_else(|| panic!("registered: {name}"));
             assert!(m.plugin_callable, "{name} should be plugin-callable");

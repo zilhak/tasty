@@ -712,7 +712,16 @@ tasty unset global-hook --hook HOOK_ID
 - `concat_text` — 모든 입력의 `output` 을 텍스트로 이어 붙임 (string 그대로, 다른 타입은 JSON 직렬화)
 - `custom` — `{ kind: "custom", command: "<shell command>" }`. 호스트 shell (`sh -c` / Windows `cmd /C`) 로 실행, stdin 에 `[output1, output2, ...]` JSON 배열을 흘려보내고 stdout 을 수확. stdout 이 JSON 이면 그대로, 아니면 string value 로 반환. exit code ≠ 0 이면 `-32602` + stderr 메시지
 
-> Phase 5.5+에서 `agent.rate_limit_*`가 같은 namespace 안에 추가될 예정. 자세한 design은 `docs/dev-guide/cli-naming.md`의 `agent` 항목과 plan `05-collaboration.md`.
+**Phase 5.5 — Rate limit (`agent.rate_limit_*`)**. (agent, metric) 쌍에 대한 token bucket 비율 제한. `telemetry.cap` 은 누적 임계 (합산값 ≥ 한도) 이고, `rate_limit` 은 시간당 비율 (`limit` 토큰 / `per_ms` ms). 영속은 `Global` scope — workspace 무관. 본 phase 는 CRUD + `try_consume` 만 노출하고, IPC dispatcher 자동 평가 미들웨어는 후속 phase 에서 결합한다.
+
+| 메서드 | 권한 | 파라미터 → 응답 |
+|--------|------|----------------|
+| `agent.rate_limit_set` | `AgentManage` | `{ agent, metric, limit: u32≥1, per_ms: u64≥1, burst?: u32 }` → `RateLimit`. 동일 (agent, metric) 은 같은 id 유지 + 버킷 reset |
+| `agent.rate_limit_list` | `AgentManage` | (no params) → `{ total, rate_limits: [RateLimit] }`. 호출 시점 기준 refill 후 반환 |
+| `agent.rate_limit_remove` | `AgentManage` | `{ id }` → `{ ok: true }` |
+| `agent.rate_limit_status` | `AgentManage` | `{ agent?, metric? }` → `{ total, rate_limits: [...] }`. 필터 후 반환 |
+
+`RateLimit` 필드: `id`, `agent`, `metric`, `limit`, `per_ms`, `burst`, `tokens` (현재 잔량, f64), `last_refill_ms`, `throttled_count` (누적 throttle 횟수).
 
 ### Surface 간 통신
 

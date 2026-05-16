@@ -1694,6 +1694,39 @@ fn agent_command_to_method_params(
                 }),
             )
         }
+        RateLimitSet {
+            agent,
+            metric,
+            limit,
+            per_ms,
+            burst,
+        } => {
+            let mut p = serde_json::json!({
+                "agent": agent,
+                "metric": metric,
+                "limit": *limit,
+                "per_ms": *per_ms,
+            });
+            if let Some(b) = burst {
+                p["burst"] = serde_json::json!(*b);
+            }
+            ("agent.rate_limit_set", p)
+        }
+        RateLimitList => ("agent.rate_limit_list", serde_json::json!({})),
+        RateLimitRemove { id } => (
+            "agent.rate_limit_remove",
+            serde_json::json!({ "id": id }),
+        ),
+        RateLimitStatus { agent, metric } => {
+            let mut p = serde_json::json!({});
+            if let Some(a) = agent {
+                p["agent"] = serde_json::json!(a);
+            }
+            if let Some(m) = metric {
+                p["metric"] = serde_json::json!(m);
+            }
+            ("agent.rate_limit_status", p)
+        }
     }
 }
 

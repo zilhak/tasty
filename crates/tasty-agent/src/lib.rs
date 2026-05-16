@@ -13,12 +13,14 @@
 
 pub mod barrier;
 pub mod lease;
+pub mod rate_limit;
 pub mod reducer;
 pub mod semaphore;
 pub mod task;
 
 pub use barrier::{Barrier, BarrierState, BarrierStore};
 pub use lease::{Lease, LeaseMode, LeaseStore};
+pub use rate_limit::{ConsumeOutcome, RateLimit, RateLimitStore};
 pub use reducer::{ReducerInput, reduce_in_process, reduce_with_custom};
 pub use semaphore::{AcquireOutcome, ReleaseOutcome, Semaphore, SemaphoreStore};
 pub use task::{
