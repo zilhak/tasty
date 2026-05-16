@@ -170,6 +170,55 @@ impl FileFormatRegistry {
         inner.dirty = true;
     }
 
+    /// 사용자 설정 파일을 다시 읽어 user origin contribution 만 교체. host + plugin 은 그대로.
+    ///
+    /// **Transactional**: 파일 read/parse 단계에서 실패하면 기존 user contribution 을 보존한다
+    /// (write lock 잡기 전에 검증). 파일이 없으면 user contribution 만 제거 (= 설정 삭제).
+    pub fn reload_user_config(&self, path: &Path) {
+        let decls = match std::fs::read_to_string(path) {
+            Ok(text) => match parse_detector_section(&text) {
+                Ok(d) => d,
+                Err(e) => {
+                    warn!(
+                        path = %path.display(),
+                        error = %e,
+                        "file_format: reload aborted — parse failed, keeping previous user config",
+                    );
+                    return;
+                }
+            },
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+            Err(e) => {
+                warn!(
+                    path = %path.display(),
+                    error = %e,
+                    "file_format: reload aborted — read failed, keeping previous user config",
+                );
+                return;
+            }
+        };
+        let mut inner = match self.inner.write() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
+        // 기존 user origin contribution 모두 제거.
+        let mut empty_ids = Vec::new();
+        for (id, contribs) in inner.contributions.iter_mut() {
+            contribs.retain(|c| !matches!(c.origin, RuleOrigin::User));
+            if contribs.is_empty() {
+                empty_ids.push(id.clone());
+            }
+        }
+        for id in empty_ids {
+            inner.contributions.remove(&id);
+        }
+        // 새 user contribution install.
+        for decl in decls {
+            install_one(&mut inner, decl, RuleOrigin::User, false);
+        }
+        inner.dirty = true;
+    }
+
     pub fn uninstall_plugin(&self, plugin_id: &str) {
         let mut inner = match self.inner.write() {
             Ok(g) => g,
@@ -481,6 +530,115 @@ mod tests {
             reg.identify(&t, DetectDepth::Deep),
             Some(DetectorId("png".into()))
         );
+    }
+
+    #[test]
+    fn reload_user_config_replaces_user_entries_keeps_host() {
+        let reg = FileFormatRegistry::new();
+        reg.install_host_defaults(
+            include_str!("defaults/default-file-format.toml"),
+        );
+        // 1차: 사용자가 pdf detector 추가.
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("file-handlers.toml");
+        std::fs::write(
+            &p,
+            r#"
+                [[detector]]
+                id = "pdf"
+                [[detector.rule]]
+                kind = "extension"
+                values = ["pdf"]
+            "#,
+        )
+        .unwrap();
+        reg.install_user_config(&p);
+        assert_eq!(
+            reg.identify(&target("a/b.pdf"), DetectDepth::Cheap),
+            Some(DetectorId("pdf".into()))
+        );
+
+        // 2차: 사용자가 pdf 를 빼고 csv 추가 → reload.
+        std::fs::write(
+            &p,
+            r#"
+                [[detector]]
+                id = "csv"
+                [[detector.rule]]
+                kind = "extension"
+                values = ["csv"]
+            "#,
+        )
+        .unwrap();
+        reg.reload_user_config(&p);
+
+        // pdf 는 host default 에 없으므로 (user 만) 사라져야 함.
+        assert_eq!(reg.identify(&target("a/b.pdf"), DetectDepth::Cheap), None);
+        // csv 는 새로 잡힘.
+        assert_eq!(
+            reg.identify(&target("a/b.csv"), DetectDepth::Cheap),
+            Some(DetectorId("csv".into()))
+        );
+        // host default markdown 은 그대로.
+        assert_eq!(
+            reg.identify(&target("a/b.md"), DetectDepth::Cheap),
+            Some(DetectorId("markdown".into()))
+        );
+    }
+
+    #[test]
+    fn reload_user_config_missing_file_clears_user_entries() {
+        let reg = FileFormatRegistry::new();
+        reg.install_host_defaults(
+            include_str!("defaults/default-file-format.toml"),
+        );
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("file-handlers.toml");
+        std::fs::write(
+            &p,
+            r#"
+                [[detector]]
+                id = "pdf"
+                [[detector.rule]]
+                kind = "extension"
+                values = ["pdf"]
+            "#,
+        )
+        .unwrap();
+        reg.install_user_config(&p);
+        assert!(reg.detector(&DetectorId("pdf".into())).is_some());
+
+        // 파일 삭제 후 reload → user origin 제거.
+        std::fs::remove_file(&p).unwrap();
+        reg.reload_user_config(&p);
+        assert!(reg.detector(&DetectorId("pdf".into())).is_none());
+        // host markdown 은 보존.
+        assert!(reg.detector(&DetectorId("markdown".into())).is_some());
+    }
+
+    #[test]
+    fn reload_user_config_parse_error_keeps_previous_state() {
+        let reg = FileFormatRegistry::new();
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("file-handlers.toml");
+        std::fs::write(
+            &p,
+            r#"
+                [[detector]]
+                id = "pdf"
+                [[detector.rule]]
+                kind = "extension"
+                values = ["pdf"]
+            "#,
+        )
+        .unwrap();
+        reg.install_user_config(&p);
+        assert!(reg.detector(&DetectorId("pdf".into())).is_some());
+
+        // 파일을 의도적으로 깨뜨림 → reload 는 거부, 기존 user 항목 보존.
+        std::fs::write(&p, "[[detector\n id = broken").unwrap();
+        reg.reload_user_config(&p);
+        assert!(reg.detector(&DetectorId("pdf".into())).is_some());
     }
 
     #[test]

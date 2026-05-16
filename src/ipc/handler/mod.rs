@@ -12,6 +12,7 @@ pub mod approval;
 pub mod audit;
 pub mod session;
 mod clipboard;
+mod file_handler;
 mod hooks;
 pub mod ime;
 mod image;
@@ -242,6 +243,8 @@ fn route_engine_handler(
         "notification.create" => {
             notification::handle_notification_create(state, id, &request.params)
         }
+        // file handler: 사용자 설정 reload (host 전용 — plugin 비노출).
+        "file_handler.reload" => file_handler::handle_reload(state, id),
         // image surface 조작 — com.tasty.image plugin이 외부에 노출하는 namespace의
         // 호스트 어댑터. plugin 비활성 상태에서도 CLI/직접 IPC로 호출 가능.
         "image.open" => image::handle_open(state, id, &request.params),

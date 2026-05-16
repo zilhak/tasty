@@ -191,6 +191,17 @@ pub enum Commands {
         #[command(subcommand)]
         command: AgentCommands,
     },
+    /// File handler — 사용자 설정 (`~/.tasty/file-handlers.toml`) 재로드.
+    FileHandler {
+        #[command(subcommand)]
+        command: FileHandlerCommands,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum FileHandlerCommands {
+    /// Reload `~/.tasty/file-handlers.toml`. host/plugin 항목은 영향 없음.
+    Reload,
 }
 
 #[derive(Subcommand)]

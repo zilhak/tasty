@@ -1,7 +1,7 @@
 #[cfg(debug_assertions)]
 use super::{DebugCommands, EventBusCommands};
 use super::{
-    AgentCommands, ApprovalCommands, ClipboardCommands, CloseCommands, Commands, ListCommands,
+    AgentCommands, ApprovalCommands, ClipboardCommands, CloseCommands, Commands, FileHandlerCommands, ListCommands,
     MemoryBbCommands, MemoryCacheCommands, MemoryCommands, MemoryPlanCommands, MemorySecretCommands, MoveCommands, NewCommands, OutputCommands,
     OutputObserveCommands, TelemetryAnomalyCommands, TelemetryCapCommands, TelemetryCommands,
     PluginCommands, ReadCommands, SendCommands, SetCommands, SurfaceMetaCommands, ToolCommands,
@@ -122,6 +122,7 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
         Commands::Approval { command } => approval_command_to_method_params(command),
         Commands::Telemetry { command } => telemetry_command_to_method_params(command),
         Commands::Agent { command } => agent_command_to_method_params(command),
+        Commands::FileHandler { command } => file_handler_command_to_method_params(command),
     };
 
     JsonRpcRequest {
@@ -2165,5 +2166,13 @@ fn parse_on_failure(s: &str) -> serde_json::Value {
         serde_json::json!({ "kind": "fallback", "task": task })
     } else {
         serde_json::json!({ "kind": s })
+    }
+}
+
+fn file_handler_command_to_method_params(
+    command: &FileHandlerCommands,
+) -> (&'static str, serde_json::Value) {
+    match command {
+        FileHandlerCommands::Reload => ("file_handler.reload", serde_json::Value::Null),
     }
 }

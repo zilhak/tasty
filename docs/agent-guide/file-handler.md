@@ -206,7 +206,28 @@ i18n 키 prefix: `file_handler.picker.*`.
 
 ---
 
-## 6. 디버깅
+## 6. 사용자 설정 reload
+
+`~/.tasty/file-handlers.toml` 을 편집한 뒤 reload 하려면:
+
+```
+tasty file-handler reload
+```
+
+또는 IPC 로 `file_handler.reload` 호출 (local-only — plugin 노출 안 됨).
+
+응답:
+
+```json
+{ "path": "/home/.../file-handlers.toml", "exists": true }
+```
+
+특징:
+- **Transactional**: 새 파일 parse 가 실패하면 기존 user 설정 그대로 보존 (warn 로그만 남김).
+- 파일이 없으면 user origin 항목 전부 제거 (host + plugin 만 남음).
+- **host / plugin contribution 은 영향 없음** — user 출처 항목만 swap.
+
+## 7. 디버깅
 
 | 확인 사항 | 방법 |
 |-----------|------|

@@ -231,6 +231,10 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // ── notification ──────────────────────────────────────────────
         ("notification.list", plugin(&[Notification])),
         ("notification.create", plugin(&[Notification])),
+        // ── file_handler.* (host config 관리 — local-only) ───────────
+        // user TOML 변경 후 재로드. plugin 이 호출할 일은 없으며 (자기 manifest
+        // 도 reload 영향 밖이라) local 전용.
+        ("file_handler.reload", local_only()),
         // ── popup (plugin → host) ─────────────────────────────────────
         // 자기 contribute popup 인스턴스를 명시적으로 닫는다. METHOD_POPUP_CLOSED
         // (host → plugin)와는 다른 방향. plugin은 자기 instance_id만 닫을 수 있다 —

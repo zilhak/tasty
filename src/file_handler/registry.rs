@@ -181,6 +181,53 @@ impl FileHandlerRegistry {
         inner.dirty = true;
     }
 
+    /// 사용자 설정 파일을 다시 읽어 user owner contribution 만 교체. host + plugin 은 그대로.
+    ///
+    /// **Transactional**: read/parse 실패 시 기존 user contribution 보존 (write lock 잡기 전에
+    /// 검증). 파일이 없으면 user contribution 만 제거.
+    pub fn reload_user_config(&self, path: &std::path::Path) {
+        let decls = match std::fs::read_to_string(path) {
+            Ok(text) => match parse_user_handler_section(&text) {
+                Ok(v) => v,
+                Err(e) => {
+                    warn!(
+                        path = %path.display(),
+                        error = %e,
+                        "file_handler: reload aborted — parse failed, keeping previous user config",
+                    );
+                    return;
+                }
+            },
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+            Err(e) => {
+                warn!(
+                    path = %path.display(),
+                    error = %e,
+                    "file_handler: reload aborted — read failed, keeping previous user config",
+                );
+                return;
+            }
+        };
+        let mut inner = match self.inner.write() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
+        let mut empty_ids = Vec::new();
+        for (id, contribs) in inner.contributions.iter_mut() {
+            contribs.retain(|c| !matches!(c.owner, HandlerOwner::User));
+            if contribs.is_empty() {
+                empty_ids.push(id.clone());
+            }
+        }
+        for id in empty_ids {
+            inner.contributions.remove(&id);
+        }
+        for decl in decls {
+            install_user(&mut inner, decl);
+        }
+        inner.dirty = true;
+    }
+
     fn ensure_finalized(&self) {
         let needs = self
             .inner
@@ -326,24 +373,24 @@ fn install_plugin(
 }
 
 fn install_user(inner: &mut Inner, decl: UserHandlerSettingsDecl) {
-    // user TOML 의 id 는 전역 id 형태로 적힐 수 있다 (예: "host/markdown-viewer" disable).
-    // 일반 user 신규 handler 는 "user/<short>" 형식.
+    // user TOML 의 id 는 전역 id 형태로 적힌다 — 예: 자작 "user/<short>", 또는 기존
+    // "host/<short>" / "<plugin>/<short>" 패치. 어느 경우든 contribution 의 owner 는
+    // 항상 `User` (= 출처가 사용자 TOML). 그래야 base contribution(원 출처) 가
+    // `push_contribution` 의 retain-by-owner 에서 보존되고, finalize 가 patch semantics
+    // 로 메타만 덮어쓴다.
     let id_str = decl.id.clone();
-    let owner = if id_str.starts_with("user/") {
-        HandlerOwner::User
-    } else if id_str.starts_with("host/") {
-        HandlerOwner::Host
-    } else if let Some((prefix, _)) = id_str.split_once('/') {
-        HandlerOwner::Plugin(prefix.to_string())
-    } else {
-        warn!(id = id_str.as_str(), "file_handler: user handler id missing owner prefix");
+    if !id_str.contains('/') {
+        warn!(
+            id = id_str.as_str(),
+            "file_handler: user handler id missing owner prefix",
+        );
         return;
-    };
+    }
     push_contribution(
         inner,
         HandlerId(id_str),
         HandlerContribution {
-            owner,
+            owner: HandlerOwner::User,
             detector: decl.detector,
             priority: decl.priority,
             display_name_i18n_key: decl.display_name_i18n_key,
@@ -487,6 +534,82 @@ mod tests {
         let v = reg.handlers_for(&DetectorId("markdown".into()));
         assert_eq!(v.len(), 1);
         assert_eq!(v[0].id.as_str(), "host/markdown-viewer");
+    }
+
+    #[test]
+    fn reload_user_config_replaces_user_handlers_keeps_host() {
+        let reg = FileHandlerRegistry::new();
+        load_host(&reg);
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("file-handlers.toml");
+        // 1차: user 가 markdown-viewer priority 만 override.
+        std::fs::write(
+            &p,
+            r#"
+                [[handler]]
+                id = "host/markdown-viewer"
+                priority = 10
+            "#,
+        )
+        .unwrap();
+        reg.install_user_config(&p);
+        let v = reg.handlers_for(&DetectorId("markdown".into()));
+        assert_eq!(v[0].priority, 10);
+
+        // 2차: user 가 priority override 빼고 새 user/handler 추가 → reload.
+        std::fs::write(
+            &p,
+            r#"
+                [[handler]]
+                id = "user/my-md"
+                detector = "markdown"
+                priority = 20
+                [handler.action]
+                kind = "system"
+            "#,
+        )
+        .unwrap();
+        reg.reload_user_config(&p);
+
+        let v = reg.handlers_for(&DetectorId("markdown".into()));
+        // host/markdown-viewer 는 호스트 default priority (= 50) 로 복귀.
+        let mdv = v.iter().find(|h| h.id.as_str() == "host/markdown-viewer").unwrap();
+        assert_eq!(mdv.priority, 50);
+        // user/my-md 가 잡혀야 함.
+        assert!(v.iter().any(|h| h.id.as_str() == "user/my-md"));
+    }
+
+    #[test]
+    fn reload_user_config_parse_error_keeps_previous_state() {
+        let reg = FileHandlerRegistry::new();
+        load_host(&reg);
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("file-handlers.toml");
+        std::fs::write(
+            &p,
+            r#"
+                [[handler]]
+                id = "user/my-md"
+                detector = "markdown"
+                priority = 20
+                [handler.action]
+                kind = "system"
+            "#,
+        )
+        .unwrap();
+        reg.install_user_config(&p);
+        assert!(reg
+            .handlers_for(&DetectorId("markdown".into()))
+            .iter()
+            .any(|h| h.id.as_str() == "user/my-md"));
+
+        // 파일을 깨뜨림 → reload 거부, 기존 user 항목 보존.
+        std::fs::write(&p, "[[handler\n id = broken").unwrap();
+        reg.reload_user_config(&p);
+        assert!(reg
+            .handlers_for(&DetectorId("markdown".into()))
+            .iter()
+            .any(|h| h.id.as_str() == "user/my-md"));
     }
 
     #[test]
