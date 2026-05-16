@@ -327,8 +327,8 @@ event_key = "com.example.todo.menu_clicked"          # plugin namespace의 이�
 `0..99`, plugin 기본값은 `100` — 같은 가중치에서는 안정 정렬이다. 항목 키는
 호스트가 자동으로 합성한다:
 
-- 호스트 빌트인: `builtin:<name>` (예: `builtin:clipboard_history`)
-- plugin: `<plugin_id>/<tool_id>` (예: `com.example.todo/todo`)
+- 호스트 빌트인: `builtin:<name>` (현재 등록된 빌트인 항목 없음 — 클립보드 히스토리도 plugin 으로 이전됨)
+- plugin: `<plugin_id>/<tool_id>` (예: `com.tasty.clipboard-history/open-viewer`)
 
 ### 표시 조건
 

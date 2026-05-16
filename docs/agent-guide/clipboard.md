@@ -50,13 +50,37 @@ tasty tool clipboard clear
 
 인덱스 범위 초과 시 `invalid_params` 에러.
 
-> **참고**: 사용자가 보는 클립보드 viewer popup은 빌트인 `com.tasty.clipboard-history`
-> plugin이 contribute한 popup이다. 사용자는 단축키 `toggle_clipboard_viewer`(기본
-> `Ctrl+Shift+H`)로 직접 토글하며, IPC로 viewer를 여는 release API는 제공되지 않는다.
-> 에이전트는 위 `tool.clipboard.*` API로 직접 history를 다루면 된다.
+> **참고**: 사용자가 보는 클립보드 viewer popup 은 빌트인
+> `com.tasty.clipboard-history` plugin 이 contribute 한 popup 이다. 단축키
+> `toggle_clipboard_viewer` (기본 `Ctrl+Shift+H`) 로 토글하며, IPC 로 viewer 를
+> 여는 release API 는 제공되지 않는다. 에이전트는 위 `tool.clipboard.*` API 로
+> 직접 history 를 다루면 된다. Viewer 내부에서 사용자는 항목 클릭 → paste,
+> × 버튼 → remove, 헤더 "Clear all" → clear 를 트리거할 수 있다 — 셋 다
+> `tool.clipboard.*` IPC 의 thin wrapper.
 
 ## 포커스 독립성
 
 - 모든 `tool.clipboard.*` 명령은 활성 워크스페이스/탭/서피스 포커스에 **의존하지
   않는다**. Window가 여러 개여도 history는 각 Window의 EngineState에 독립 저장되며,
   IPC가 라우팅되는 Window의 history를 대상으로 동작한다.
+
+## 수동 회귀 테스트 (Viewer)
+
+GUI 자동화 테스트는 없으므로 plugin viewer 변경 시 다음 시나리오를 수동으로 확인한다.
+
+1. **복사 → viewer → paste 골든 경로**
+   - 외부 앱에서 텍스트 A 복사 → 잠시 대기 (poll_interval_ms 만큼)
+   - `Ctrl+Shift+H` 로 viewer 열기 → 항목 A 가 최상단에 보이는지 확인
+   - 항목 A 클릭 → popup 자동 종료 + 시스템 클립보드에 A 가 다시 들어갔는지 (다른 앱에서 paste) 확인
+2. **단일 항목 제거 (×)**
+   - 2 개 이상 항목이 있는 상태에서 viewer 열기
+   - 한 항목 옆 × 클릭 → popup 닫히지 않고 해당 항목만 사라지는지
+   - `tasty tool clipboard list --json` 으로 동일하게 1 개 줄어들었는지
+3. **전체 비우기 (Clear all)**
+   - viewer 열기 → 헤더 "Clear all" 클릭
+   - popup 이 "No clipboard entries yet" 으로 바뀌는지 + `list --json` total=0
+4. **중복 인스턴스 가드**
+   - viewer 열린 상태에서 `Ctrl+Shift+H` 다시 누르기 → 두 번째 popup 은
+     "Clipboard viewer is already open" placeholder 만 표시되는지
+5. **빈 상태**
+   - history 가 비었을 때 viewer 열기 → "No clipboard entries yet" 표시

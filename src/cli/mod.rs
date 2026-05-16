@@ -1440,7 +1440,7 @@ pub enum ToolDebugCommands {
     List,
     /// Invoke a tool menu item by key
     Invoke {
-        /// Tool item key (e.g. "builtin:clipboard_history" or "<plugin_id>/<tool_id>")
+        /// Tool item key (`<plugin_id>/<tool_id>`, e.g. `com.tasty.clipboard-history/open-viewer`)
         #[arg(long)]
         key: String,
     },

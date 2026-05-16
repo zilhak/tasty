@@ -150,7 +150,7 @@
 - Explorer: `root_path` (주소바 편집 텍스트는 무시)
 - Markdown: 열려 있는 파일의 부모 디렉터리
 - HTML(`file://` 또는 로컬 절대경로): URL이 가리키는 파일의 부모 디렉터리. 그 외(http/https/about/data 등)는 None
-- Image / Empty / ClipboardViewer: None
+- Image / Empty: None (ClipboardViewer 는 surface 가 아닌 plugin popup 으로 이전됨)
 
 `general.inherit_cwd` 설정(default true)을 false로 바꾸면 모든 단축키 경로에서 fallback이 비활성화되어 셸의 home에서 시작한다. IPC/CLI에서 명시적으로 전달한 `cwd` 인자는 이 설정과 무관하게 그대로 사용된다.
 
@@ -674,7 +674,11 @@
 - 설정: `clipboard.history_enabled`(기본 on), `history_max`(기본 100), `poll_interval_ms`(재시작 필요)
 - 주의: 비밀번호 관리자 등 민감 정보도 기록된다. OS 레벨 민감 플래그를 구분할 수단이 제한적이라 1차는 필터 없음
 - 재시작 시 휘발(디스크 영속화는 별도 TODO)
-- 사용자 viewer는 빌트인 `com.tasty.clipboard-history` plugin이 popup으로 제공 (단축키 `toggle_clipboard_viewer`, 기본 `Ctrl+Shift+H`). plugin이 `tool.clipboard.list`/`paste` IPC로 호스트 history를 읽어 표시하고 항목 클릭 시 paste 트리거
+- 사용자 viewer 는 빌트인 `com.tasty.clipboard-history` plugin 이 popup 으로 제공 (단축키 `toggle_clipboard_viewer`, 기본 `Ctrl+Shift+H`). plugin 은 `tool.clipboard.list` 로 호스트 history 를 읽어 표시하고 다음 액션을 노출한다:
+  - **항목 클릭** → `tool.clipboard.paste { index }` 호출 후 popup 자동 종료
+  - **항목 옆 × 버튼** → `tool.clipboard.remove { index }` 호출 후 트리만 재렌더 (popup 유지)
+  - **헤더 Clear all** → `tool.clipboard.clear {}` 호출 후 트리 재렌더
+  - 이미 떠 있을 때 다시 토글하면 placeholder ("Clipboard viewer is already open") 만 표시 — outside-click / Esc 로 닫고 다시 열어야 한다
 
 ## CLI 도구 & 소켓 API
 
