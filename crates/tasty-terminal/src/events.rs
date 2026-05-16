@@ -24,6 +24,11 @@ pub enum TerminalEventKind {
     ProcessExited,
     /// Terminal requested clipboard set via OSC 52.
     ClipboardSet(String),
+    /// OSC 133 prompt / command boundary marker.
+    /// `phase` is one of `'A'` (prompt start), `'B'` (prompt end / cmd start point),
+    /// `'C'` (output start), `'D'` (command finished). `payload` is the raw
+    /// rest of the sequence (excluding terminator) — e.g. `B;cmd=ls`, `D;0`.
+    PromptBoundary { phase: char, payload: String },
 }
 
 /// Mouse tracking modes (DECSET 1000/1002/1003).

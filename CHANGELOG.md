@@ -19,6 +19,7 @@
 ### Added
 - `tasty-output` 크레이트 — surface 출력 시멘틱 파서 골격. 빌트인 4종: `path` (파일 경로 + line/col), `url` (http/https/ftp/ssh/file), `prompt_boundary` (OSC 133 A/B/C/D), `exit_code` (OSC 133 D 페이로드).
 - IPC: `surface.parse_since_mark { surface_id, parsers? }` — read_since_mark 결과를 파서들로 분해해 `items: [{ kind, line, byte_start, byte_end, data }]` 반환. CLI: `tasty read parse-since-mark`.
+- OSC 133 명령 인덱싱 — 셸 통합이 보내는 `\e]133;{A|B|C|D};...` 시퀀스를 추적해 surface 별로 `{ prompt_started_at, command_started_at, ended_at, exit_code, command }` JSON 레코드를 `tasty-memory` `scope=surface:<id>` 위에 `tasty.commands.<unix-ms>` 키로 영속화. 새 IPC: `surface.commands { surface_id, limit?, since? }`, `surface.last_command { surface_id }`, `surface.command_at { surface_id, index }` (음수 인덱스 지원, 모두 `TerminalRead` 권한). CLI: `tasty read commands`, `tasty read last-command`, `tasty read command-at --index N`. terminal 엔진에 `TerminalEventKind::PromptBoundary { phase, payload }` 이벤트 신설.
 - IPC 메서드 별칭 정규화 layer (`src/ipc/alias.rs`). 옛 이름은 호스트가 새 이름으로 자동 매핑하면서 `tracing::warn`을 출력.
 - 명명 규칙 자동 검증 테스트 (`src/ipc/method_meta.rs::all_registered_methods_match_naming_policy`).
 - Plugin SDK에 `PluginError` 도메인 에러 + `From<PluginError> for IpcMethodError`.

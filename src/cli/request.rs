@@ -293,6 +293,35 @@ fn read_command_to_method_params(command: &ReadCommands) -> (&'static str, serde
                 "lines": lines,
             }),
         ),
+        ReadCommands::Commands {
+            surface,
+            limit,
+            since,
+        } => {
+            let mut params = serde_json::json!({
+                "surface_id": resolve_surface_id(*surface),
+            });
+            if let Some(n) = limit {
+                params["limit"] = serde_json::Value::from(*n);
+            }
+            if let Some(ts) = since {
+                params["since"] = serde_json::Value::from(*ts);
+            }
+            ("surface.commands", params)
+        }
+        ReadCommands::LastCommand { surface } => (
+            "surface.last_command",
+            serde_json::json!({
+                "surface_id": resolve_surface_id(*surface),
+            }),
+        ),
+        ReadCommands::CommandAt { surface, index } => (
+            "surface.command_at",
+            serde_json::json!({
+                "surface_id": resolve_surface_id(*surface),
+                "index": index,
+            }),
+        ),
     }
 }
 

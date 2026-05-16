@@ -838,6 +838,35 @@ pub enum ReadCommands {
         #[arg(long)]
         lines: Option<usize>,
     },
+    /// List recorded shell commands (OSC 133) for a surface
+    Commands {
+        /// Surface ID (default: focused terminal)
+        #[arg(long)]
+        surface: Option<u32>,
+        /// Limit number of returned records
+        #[arg(long)]
+        limit: Option<usize>,
+        /// Only include records ended at or after this unix-ms timestamp
+        #[arg(long)]
+        since: Option<i64>,
+    },
+    /// Most recent recorded command for a surface
+    #[command(name = "last-command")]
+    LastCommand {
+        /// Surface ID (default: focused terminal)
+        #[arg(long)]
+        surface: Option<u32>,
+    },
+    /// Recorded command at index (negative = from end)
+    #[command(name = "command-at")]
+    CommandAt {
+        /// Surface ID (default: focused terminal)
+        #[arg(long)]
+        surface: Option<u32>,
+        /// 0-based index; negatives count from the end
+        #[arg(long, allow_hyphen_values = true)]
+        index: i64,
+    },
 }
 
 #[derive(Subcommand)]

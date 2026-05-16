@@ -602,6 +602,38 @@ impl Terminal {
             }
             OperatingSystemCommand::Unspecified(params) => {
                 if let Some(first) = params.first() {
+                    if first == b"133" {
+                        // OSC 133 ; <A|B|C|D> [; payload ...] (BEL or ST).
+                        // params[0] = "133", params[1] = "A"/"B"/"C"/"D" (or with payload),
+                        // params[2..] = extra payload tokens (often `cmd=...`, exit_code, etc).
+                        if let Some(second) = params.get(1)
+                            && let Some(&phase_byte) = second.first()
+                            && matches!(phase_byte, b'A' | b'B' | b'C' | b'D')
+                        {
+                            let phase = phase_byte as char;
+                            // Build payload as `<second_rest>[;param2][;param3]...`
+                            let mut payload = String::new();
+                            let second_str = String::from_utf8_lossy(second);
+                            if second_str.len() > 1 {
+                                // e.g. second = "D;0" → second_rest = "0"
+                                payload.push_str(&second_str[1..]);
+                                // Strip a leading ';' if present so the payload is
+                                // semicolon-joined without sentinels.
+                                payload = payload.trim_start_matches(';').to_string();
+                            }
+                            for extra in params.iter().skip(2) {
+                                if !payload.is_empty() {
+                                    payload.push(';');
+                                }
+                                payload.push_str(&String::from_utf8_lossy(extra));
+                            }
+                            self.events.push(TerminalEvent {
+                                surface_id: 0,
+                                kind: TerminalEventKind::PromptBoundary { phase, payload },
+                            });
+                        }
+                        return;
+                    }
                     if first == b"99" {
                         let mut title = String::new();
                         let mut body = String::new();

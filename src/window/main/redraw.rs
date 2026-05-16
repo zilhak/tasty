@@ -150,6 +150,9 @@ impl MainWindow {
                     }
                     self.state.engine.record_internal_copy(data);
                 }
+                crate::terminal::TerminalEventKind::PromptBoundary { phase, payload } => {
+                    self.state.engine.command_index.on_boundary(surface_id, *phase, payload);
+                }
                 crate::terminal::TerminalEventKind::ProcessExited => {
                     let hook_events = vec![tasty_hooks::HookEvent::ProcessExit];
                     let fired = self

@@ -5,6 +5,7 @@ mod app_icon;
 mod cli;
 mod click_cursor;
 mod clipboard_history;
+mod command_index;
 mod crash_report;
 #[cfg(debug_assertions)]
 mod debug_info;

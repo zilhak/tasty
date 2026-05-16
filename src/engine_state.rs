@@ -104,6 +104,10 @@ pub struct EngineState {
     // ── System clipboard history (memory-only) ──
     pub clipboard_history: crate::clipboard_history::ClipboardHistory,
 
+    /// OSC 133 기반 명령 인덱서. PromptBoundary 이벤트가 도달할 때마다 호스트가
+    /// 호출해 per-surface 상태를 업데이트하고, D phase 에서 memory 에 record 영속.
+    pub command_index: crate::command_index::CommandIndex,
+
     // ── Messaging / Typing detection ──
     pub surface_messages: HashMap<u32, Vec<SurfaceMessage>>,
     pub(crate) surface_next_message_id: u32,
@@ -160,6 +164,7 @@ impl EngineState {
             global_hook_manager: GlobalHookManager::new(),
             closed_items: crate::model::ClosedItemStore::new(),
             clipboard_history: crate::clipboard_history::ClipboardHistory::new(100),
+            command_index: crate::command_index::CommandIndex::new(),
             surface_messages: HashMap::new(),
             surface_next_message_id: 0,
             last_key_input: HashMap::new(),
