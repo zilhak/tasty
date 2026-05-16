@@ -114,6 +114,9 @@ pub struct EngineState {
     /// 휴먼 핸드오프 — approval 요청/응답 큐 + 대기자 채널.
     pub approval_store: std::sync::Arc<tasty_approval::ApprovalStore>,
 
+    /// Telemetry 이벤트 시퀀스 — 같은 ms 안에서 event_key 충돌 방지용 단조 증가 카운터.
+    pub telemetry_seq: std::sync::Arc<tasty_telemetry::TelemetrySeq>,
+
     // ── Messaging / Typing detection ──
     pub surface_messages: HashMap<u32, Vec<SurfaceMessage>>,
     pub(crate) surface_next_message_id: u32,
@@ -173,6 +176,7 @@ impl EngineState {
             command_index: crate::command_index::CommandIndex::new(),
             observer_router: crate::output_observer::ObserverRouter::new(),
             approval_store: std::sync::Arc::new(tasty_approval::ApprovalStore::new()),
+            telemetry_seq: std::sync::Arc::new(tasty_telemetry::TelemetrySeq::new()),
             surface_messages: HashMap::new(),
             surface_next_message_id: 0,
             last_key_input: HashMap::new(),

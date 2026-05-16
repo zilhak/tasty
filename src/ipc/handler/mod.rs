@@ -25,6 +25,7 @@ pub mod plugin;
 pub mod popup;
 mod surface;
 mod tab;
+mod telemetry;
 #[cfg(debug_assertions)]
 mod tool;
 mod workspace;
@@ -235,6 +236,14 @@ fn route_engine_handler(
         "approval.history" => approval::handle_history(state, caller, id, &request.params),
         "approval.summary.set" => approval::handle_summary_set(state, caller, id, &request.params),
         "approval.summary.get" => approval::handle_summary_get(state, caller, id, &request.params),
+        // telemetry (관측 / 비용) — 단계 4.1
+        "telemetry.record" => telemetry::handle_record(state, caller, id, &request.params),
+        "telemetry.record_batch" => {
+            telemetry::handle_record_batch(state, caller, id, &request.params)
+        }
+        "telemetry.summary" => telemetry::handle_summary(state, caller, id, &request.params),
+        "telemetry.timeseries" => telemetry::handle_timeseries(state, caller, id, &request.params),
+        "telemetry.top" => telemetry::handle_top(state, caller, id, &request.params),
         _ => return None,
     })
 }

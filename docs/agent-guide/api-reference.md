@@ -602,6 +602,23 @@ tasty unset global-hook --hook HOOK_ID
 | `approval.summary.set` | `Approval` + `MemoryWrite` | `{ workspace_id, content }` — workspace 별 markdown 요약 저장 |
 | `approval.summary.get` | `Approval` + `MemoryRead` | `{ workspace_id }` — 요약 조회 |
 
+### 에이전트 텔레메트리 (`telemetry.*`)
+
+비용·관측·이상 탐지의 기반. 단계 4.1 범위는 raw event 기록 + 즉시 집계 조회. dispatcher 자동 카운트와 cap/이상 탐지는 후속 단계에서 켜진다.
+
+- 식별자 검증: `metric` 은 `[a-z][a-z0-9_]*` (최대 64), `agent` 는 `[a-zA-Z0-9_-]+` (최대 64). 위반 시 `-32602 invalid_params`
+- `agent` 미지정 시 caller agent 가 자동 적용 — Plugin → manifest plugin_id, Local → env `TASTY_AGENT_ID` (없으면 `_host`)
+- `workspace_id` 미지정 시 활성 워크스페이스 id 가 적용됨
+- 영속화: `workspace_id` 가 붙은 이벤트는 `scope=workspace:<id>`, 없으면 `global`
+
+| 메서드 | Permission | 파라미터 / 응답 |
+|--------|------------|------------------|
+| `telemetry.record` | `Telemetry` | `{ metric, value, op?∈{set,inc,dec}=inc, agent?, workspace_id?, tags? }` → `{ key, ts, agent, metric }` |
+| `telemetry.record_batch` | `Telemetry` | `{ events: [...] }` 동일 ts 로 일괄 기록 → `{ recorded, keys[] }` |
+| `telemetry.summary` | `Telemetry` | `{ metric?, agent?, workspace_id?, since?, until? }` → `{ entries: [{ metric, agent, workspace_id?, count, sum, min, max, last }], count, total_events }` |
+| `telemetry.timeseries` | `Telemetry` | `{ metric, agent?, workspace_id?, window?∈{1m,1h,1d}=1m, since?, until? }` → `{ window, buckets: [{ metric, agent, window_start, window_size_ms, count, sum, min, max, last }], count }` |
+| `telemetry.top` | `Telemetry` | `{ by?∈{agent,workspace}=agent, limit?=10, metric?, agent?, workspace_id?, since?, until? }` → `{ by, entries: [{ key, sum, count }], count }` |
+
 ### 메시지 패싱 (Surface 간 통신)
 
 | 메서드 | 파라미터 | 설명 |

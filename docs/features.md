@@ -461,6 +461,30 @@
 ### CLI
 - `tasty approval {request,respond,await,cancel,get,list,history,summary {set,get}}`
 
+## 에이전트 텔레메트리 (Telemetry)
+
+비용·관측·이상 탐지의 기반이 되는 메트릭 수집 계층. `tasty-telemetry` 크레이트가 도메인 로직(이벤트 모델 / 키 컨벤션 / 순수 집계)을, 호스트가 `tasty-memory` 영속화와 IPC/CLI 어댑터를 담당한다. 단계 4.1은 raw event 기록 + 즉시 집계 조회까지만 제공하며, 자동 dispatcher 카운트와 cap/이상 탐지는 후속 sub-phase에서 켜진다.
+
+### 핵심 컴포넌트
+- `tasty-telemetry`: `TelemetryEvent` (agent / workspace_id / metric / value / op / ts / tags) + `MetricBucket` (1m/1h/1d 윈도우) + `Op::{Set,Inc,Dec}` + `summarize_events`/`aggregate_into_buckets`/`top_n` 같은 pure aggregation. `validate_metric` (`[a-z][a-z0-9_]*`, 1..=64) / `validate_agent_id` (`[a-zA-Z0-9_-]+`, 1..=64) 으로 키 안전성을 보장
+- `AgentId`: 단계 4.0의 잠정 식별 모델. Plugin caller → manifest `plugin_id`, Local caller → env `TASTY_AGENT_ID` (없으면 `_host`). Phase 6의 session token 인증 도입 시 verifiable 로 승격됨 (자세한 한계: `docs/dev-guide/agent-identification.md`)
+- 키 컨벤션: `tasty.telemetry.event.{ts:013}.{seq:04}` (이벤트), `tasty.telemetry.bucket.{w}.{m}.{a}.{ws:013}` (롤업 버킷, 4.2+에서 사용). 같은 ms 안의 충돌을 막기 위해 `TelemetrySeq` AtomicU64 가 host singleton 으로 단조 시퀀스 발급
+
+### IPC 5종 (Permission `Telemetry`)
+- `telemetry.record` — 단일 메트릭 이벤트 기록. `metric` (필수), `value`, `op` ∈ {set, inc, dec}, `agent` (선택, default caller agent), `workspace_id` (선택, default 활성 워크스페이스), `tags` (선택, string→string). 응답: `{ key, ts, agent, metric }`
+- `telemetry.record_batch` — `events: []` 배열을 한 번에. 모든 이벤트는 동일한 `ts` 와 단조 증가 `seq` 로 저장됨
+- `telemetry.summary` — (metric, agent) 별 집계 (`sum/count/min/max/last`). 필터: `metric`/`agent`/`workspace_id`/`since`/`until` (unix ms)
+- `telemetry.timeseries` — 윈도우 단위 버킷 시계열. `metric` 필수, `window` ∈ {1m, 1h, 1d, default 1m}. 단계 4.1은 raw event 에서 즉시 집계 (사전 롤업 캐시는 4.2+ 도입)
+- `telemetry.top` — `by` ∈ {agent, workspace} 기준 sum 내림차순 top-N (default limit 10)
+
+### 영속화 정책
+- workspace_id 있는 이벤트 → `scope=workspace:<id>`, 없으면 `global`
+- 조회 시 workspace_id 명시되면 단일 scope 만, 아니면 store 의 모든 scope 순회 후 필터링
+- TTL 없음 (단계 4.1) — 추후 retention 정책은 cap/롤업과 함께 도입
+
+### CLI
+- `tasty telemetry {record,summary,timeseries,top}` — 단일 record 기록 / 집계 조회
+
 ## 설정 시스템
 
 ### TOML 기반 설정 파일

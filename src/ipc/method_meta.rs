@@ -155,6 +155,12 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // 세션 요약 — workspace 별 markdown 텍스트. memory.* 와 분리된 표면.
         ("approval.summary.set", plugin(&[Approval, MemoryWrite])),
         ("approval.summary.get", plugin(&[Approval, MemoryRead])),
+        // ── telemetry (관측 / 비용) ───────────────────────────────────
+        ("telemetry.record", plugin(&[Telemetry])),
+        ("telemetry.record_batch", plugin(&[Telemetry])),
+        ("telemetry.summary", plugin(&[Telemetry])),
+        ("telemetry.timeseries", plugin(&[Telemetry])),
+        ("telemetry.top", plugin(&[Telemetry])),
         // ── notification ──────────────────────────────────────────────
         ("notification.list", plugin(&[Notification])),
         ("notification.create", plugin(&[Notification])),

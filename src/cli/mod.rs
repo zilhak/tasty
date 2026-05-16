@@ -181,6 +181,86 @@ pub enum Commands {
         #[command(subcommand)]
         command: ApprovalCommands,
     },
+    /// Agent telemetry (record metrics, summary, timeseries, top-N)
+    Telemetry {
+        #[command(subcommand)]
+        command: TelemetryCommands,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum TelemetryCommands {
+    /// Record a single metric event.
+    Record {
+        /// Metric name (lowercase `[a-z][a-z0-9_]*`, max 64).
+        #[arg(long)]
+        metric: String,
+        /// Numeric value.
+        #[arg(long)]
+        value: f64,
+        /// Operation: set | inc | dec. Default: inc.
+        #[arg(long, default_value = "inc")]
+        op: String,
+        /// Agent id (defaults to caller — env `TASTY_AGENT_ID` or `_host`).
+        #[arg(long)]
+        agent: Option<String>,
+        /// Workspace id binding (defaults to active workspace).
+        #[arg(long)]
+        workspace_id: Option<u32>,
+        /// Tags as JSON object (e.g. `{"model":"opus","src":"shell"}`).
+        #[arg(long)]
+        tags: Option<String>,
+    },
+    /// Aggregate summary across events. Filters: metric, agent, workspace_id, since/until.
+    Summary {
+        #[arg(long)]
+        metric: Option<String>,
+        #[arg(long)]
+        agent: Option<String>,
+        #[arg(long)]
+        workspace_id: Option<u32>,
+        /// Lower bound on unix ms (inclusive).
+        #[arg(long)]
+        since: Option<u64>,
+        /// Upper bound on unix ms (exclusive).
+        #[arg(long)]
+        until: Option<u64>,
+    },
+    /// Window-bucketed timeseries. `--metric` is required.
+    Timeseries {
+        #[arg(long)]
+        metric: String,
+        #[arg(long)]
+        agent: Option<String>,
+        #[arg(long)]
+        workspace_id: Option<u32>,
+        /// Window size: 1m | 1h | 1d. Default: 1m.
+        #[arg(long, default_value = "1m")]
+        window: String,
+        #[arg(long)]
+        since: Option<u64>,
+        #[arg(long)]
+        until: Option<u64>,
+    },
+    /// Top-N agents or workspaces by sum.
+    Top {
+        /// Grouping: agent | workspace.
+        #[arg(long, default_value = "agent")]
+        by: String,
+        /// Maximum entries. Default: 10.
+        #[arg(long, default_value_t = 10)]
+        limit: u64,
+        #[arg(long)]
+        metric: Option<String>,
+        #[arg(long)]
+        agent: Option<String>,
+        #[arg(long)]
+        workspace_id: Option<u32>,
+        #[arg(long)]
+        since: Option<u64>,
+        #[arg(long)]
+        until: Option<u64>,
+    },
 }
 
 #[derive(Subcommand)]

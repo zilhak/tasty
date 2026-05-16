@@ -2,7 +2,7 @@
 use super::{DebugCommands, EventBusCommands};
 use super::{
     ApprovalCommands, ClipboardCommands, CloseCommands, Commands, ListCommands, MemoryCommands,
-    MemorySecretCommands, MoveCommands, NewCommands, OutputCommands, OutputObserveCommands,
+    MemorySecretCommands, MoveCommands, NewCommands, OutputCommands, OutputObserveCommands, TelemetryCommands,
     PluginCommands, ReadCommands, SendCommands, SetCommands, SurfaceMetaCommands, ToolCommands,
     UnsetCommands,
 };
@@ -119,6 +119,7 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
         Commands::Memory { command } => memory_command_to_method_params(command),
         Commands::Output { command } => output_command_to_method_params(command),
         Commands::Approval { command } => approval_command_to_method_params(command),
+        Commands::Telemetry { command } => telemetry_command_to_method_params(command),
     };
 
     JsonRpcRequest {
@@ -904,6 +905,125 @@ fn approval_command_to_method_params(
                     serde_json::json!({ "workspace_id": *workspace_id }),
                 ),
             }
+        }
+    }
+}
+
+fn telemetry_command_to_method_params(
+    command: &TelemetryCommands,
+) -> (&'static str, serde_json::Value) {
+    use TelemetryCommands::*;
+    match command {
+        Record {
+            metric,
+            value,
+            op,
+            agent,
+            workspace_id,
+            tags,
+        } => {
+            let mut p = serde_json::json!({
+                "metric": metric,
+                "value": value,
+                "op": op,
+            });
+            if let Some(a) = agent {
+                p["agent"] = serde_json::Value::String(a.clone());
+            }
+            if let Some(w) = workspace_id {
+                p["workspace_id"] = serde_json::Value::from(*w);
+            }
+            if let Some(t) = tags {
+                match serde_json::from_str::<serde_json::Value>(t) {
+                    Ok(v) => p["tags"] = v,
+                    Err(e) => {
+                        eprintln!("Error: --tags must be valid JSON object: {e}");
+                        std::process::exit(2);
+                    }
+                }
+            }
+            ("telemetry.record", p)
+        }
+        Summary {
+            metric,
+            agent,
+            workspace_id,
+            since,
+            until,
+        } => {
+            let mut p = serde_json::json!({});
+            if let Some(m) = metric {
+                p["metric"] = serde_json::Value::String(m.clone());
+            }
+            if let Some(a) = agent {
+                p["agent"] = serde_json::Value::String(a.clone());
+            }
+            if let Some(w) = workspace_id {
+                p["workspace_id"] = serde_json::Value::from(*w);
+            }
+            if let Some(s) = since {
+                p["since"] = serde_json::Value::from(*s);
+            }
+            if let Some(u) = until {
+                p["until"] = serde_json::Value::from(*u);
+            }
+            ("telemetry.summary", p)
+        }
+        Timeseries {
+            metric,
+            agent,
+            workspace_id,
+            window,
+            since,
+            until,
+        } => {
+            let mut p = serde_json::json!({
+                "metric": metric,
+                "window": window,
+            });
+            if let Some(a) = agent {
+                p["agent"] = serde_json::Value::String(a.clone());
+            }
+            if let Some(w) = workspace_id {
+                p["workspace_id"] = serde_json::Value::from(*w);
+            }
+            if let Some(s) = since {
+                p["since"] = serde_json::Value::from(*s);
+            }
+            if let Some(u) = until {
+                p["until"] = serde_json::Value::from(*u);
+            }
+            ("telemetry.timeseries", p)
+        }
+        Top {
+            by,
+            limit,
+            metric,
+            agent,
+            workspace_id,
+            since,
+            until,
+        } => {
+            let mut p = serde_json::json!({
+                "by": by,
+                "limit": limit,
+            });
+            if let Some(m) = metric {
+                p["metric"] = serde_json::Value::String(m.clone());
+            }
+            if let Some(a) = agent {
+                p["agent"] = serde_json::Value::String(a.clone());
+            }
+            if let Some(w) = workspace_id {
+                p["workspace_id"] = serde_json::Value::from(*w);
+            }
+            if let Some(s) = since {
+                p["since"] = serde_json::Value::from(*s);
+            }
+            if let Some(u) = until {
+                p["until"] = serde_json::Value::from(*u);
+            }
+            ("telemetry.top", p)
         }
     }
 }
