@@ -1036,23 +1036,21 @@ fn telemetry_cap_command_to_method_params(
     use TelemetryCapCommands::*;
     match command {
         Set {
+            agent,
             metric,
             threshold,
             window,
             action,
-            agent,
-        } => {
-            let mut p = serde_json::json!({
+        } => (
+            "telemetry.cap.set",
+            serde_json::json!({
+                "agent": agent,
                 "metric": metric,
                 "threshold": threshold,
                 "window": window,
                 "action": action,
-            });
-            if let Some(a) = agent {
-                p["agent"] = serde_json::Value::String(a.clone());
-            }
-            ("telemetry.cap.set", p)
-        }
+            }),
+        ),
         List { agent } => {
             let mut p = serde_json::json!({});
             if let Some(a) = agent {
@@ -1064,14 +1062,27 @@ fn telemetry_cap_command_to_method_params(
             "telemetry.cap.remove",
             serde_json::json!({ "id": id }),
         ),
-        Status { id } => (
-            "telemetry.cap.status",
-            serde_json::json!({ "id": id }),
-        ),
-        Reset { id } => (
-            "telemetry.cap.reset",
-            serde_json::json!({ "id": id }),
-        ),
+        Status { agent } => {
+            let mut p = serde_json::json!({});
+            if let Some(a) = agent {
+                p["agent"] = serde_json::Value::String(a.clone());
+            }
+            ("telemetry.cap.status", p)
+        }
+        Reset { id, agent } => {
+            if id.is_none() && agent.is_none() {
+                eprintln!("Error: telemetry cap reset requires --id or --agent");
+                std::process::exit(2);
+            }
+            let mut p = serde_json::json!({});
+            if let Some(i) = id {
+                p["id"] = serde_json::Value::String(i.clone());
+            }
+            if let Some(a) = agent {
+                p["agent"] = serde_json::Value::String(a.clone());
+            }
+            ("telemetry.cap.reset", p)
+        }
     }
 }
 

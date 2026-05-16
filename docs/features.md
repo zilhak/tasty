@@ -486,11 +486,11 @@
 ### Cost Cap CRUD (Phase 4.3a, Permission `Telemetry`)
 - 도메인 타입: `CapWindow ∈ {Total, Hour, Day}`, `CapAction ∈ {Stop, Pause, RequireApproval, Notify}`, `CostCap { id, agent, metric, threshold, window, action, created_at, triggered? }`, `CapTriggered { at, value }`. 모두 `tasty-telemetry` 가 순수 도메인으로 보유
 - 영속: `Scope::Global` 의 `tasty.telemetry.cap.{id}` (workspace 비종속, agent 단위). cap id 는 `cap_{ts:013}{seq:04}` (`TelemetrySeq` 재사용)
-- `telemetry.cap.set` — 새 cap 정의. `{ metric, threshold, window?=total, action?=notify, agent? }` → `{ id }`
-- `telemetry.cap.list` — `{ agent? }` 필터로 cap 목록 조회 → `{ caps[], count }`
-- `telemetry.cap.remove` — `{ id }` → `{ removed: bool }`
-- `telemetry.cap.status` — `{ id }` → `{ id, current_value, threshold, exceeded, triggered? }`. `current_value` 는 cap 의 window 범위 안의 raw event sum 을 `summarize_events` 로 즉시 계산
-- `telemetry.cap.reset` — `{ id }` → `{ id, reset: true }`. `triggered` 필드를 비워 액션 재발화 가능 상태로 되돌림
+- `telemetry.cap.set` — 새 cap 정의. `{ agent, metric, threshold>0, window?=total∈{total,1h,1d}, action?=notify∈{stop,pause,require_approval,notify} }` → `CostCap` (생성된 `id` 포함)
+- `telemetry.cap.list` — `{ agent? }` 필터로 cap 목록 조회 → `{ entries[], count }` (created_at 오름차순)
+- `telemetry.cap.remove` — `{ id }` → `{ removed: true, id }` (없으면 `-32004 not_found`)
+- `telemetry.cap.status` — `{ agent? }` → `{ entries[], count }`. 각 entry 는 cap 본체 + `current_value` (윈도우 내 raw event sum) + `ratio` (current/threshold)
+- `telemetry.cap.reset` — `{ id? }` 또는 `{ agent? }` (둘 중 최소 하나) → `{ reset_ids[], count }`. 매칭된 cap 들의 `triggered` 필드를 비워 액션 재발화 가능 상태로 되돌림
 - 평가 / 액션 발화는 후속 sub-phase 4.3b-e 에서 도입 (CapEvaluator 1s TTL 캐시 → Notify → Stop → RequireApproval+Pause → claude.kill)
 
 ### 영속화 정책

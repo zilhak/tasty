@@ -618,13 +618,15 @@ tasty unset global-hook --hook HOOK_ID
 | `telemetry.summary` | `Telemetry` | `{ metric?, agent?, workspace_id?, since?, until? }` → `{ entries: [{ metric, agent, workspace_id?, count, sum, min, max, last }], count, total_events }` |
 | `telemetry.timeseries` | `Telemetry` | `{ metric, agent?, workspace_id?, window?∈{1m,1h,1d}=1m, since?, until? }` → `{ window, buckets: [{ metric, agent, window_start, window_size_ms, count, sum, min, max, last }], count }` |
 | `telemetry.top` | `Telemetry` | `{ by?∈{agent,workspace}=agent, limit?=10, metric?, agent?, workspace_id?, since?, until? }` → `{ by, entries: [{ key, sum, count }], count }` |
-| `telemetry.cap.set` | `Telemetry` | `{ metric, threshold, window?∈{total,hour,day}=total, action?∈{stop,pause,require_approval,notify}=notify, agent? }` → `{ id }` |
-| `telemetry.cap.list` | `Telemetry` | `{ agent? }` → `{ caps: [{ id, agent, metric, threshold, window, action, created_at, triggered? }], count }` |
-| `telemetry.cap.remove` | `Telemetry` | `{ id }` → `{ removed: bool }` |
-| `telemetry.cap.status` | `Telemetry` | `{ id }` → `{ id, current_value, threshold, exceeded, triggered? }` (현재 윈도우의 누적 합) |
-| `telemetry.cap.reset` | `Telemetry` | `{ id }` → `{ id, reset: true }` — `triggered` 상태 해제 (action 재발화 가능) |
+| `telemetry.cap.set` | `Telemetry` | `{ agent, metric, threshold>0, window?∈{total,1h,1d}=total, action?∈{stop,pause,require_approval,notify}=notify }` → `CostCap` (생성된 `id` 포함) |
+| `telemetry.cap.list` | `Telemetry` | `{ agent? }` → `{ entries: [CostCap], count }` (`created_at` 오름차순) |
+| `telemetry.cap.remove` | `Telemetry` | `{ id }` → `{ removed: true, id }` (없으면 `-32004 not_found`) |
+| `telemetry.cap.status` | `Telemetry` | `{ agent? }` → `{ entries: [CostCap + current_value + ratio], count }` |
+| `telemetry.cap.reset` | `Telemetry` | `{ id? } 또는 { agent? }` (둘 중 최소 하나) → `{ reset_ids: [], count }` — 매칭된 cap 들의 `triggered` 비움 |
 
-**Cost Cap 동작 (Phase 4.3a)** — 현재는 CRUD 만 동작하고 평가/액션 발화는 후속 단계(4.3b 이후)에서 구현된다. cap 은 `agent` 단위로 영속 저장되며 (workspace 비종속), `compute_current_value` 가 윈도우 내 raw event sum 을 즉시 계산한다. (Surface 간 통신)
+**Cost Cap 동작 (Phase 4.3a)** — 현재는 CRUD 만 동작하고 평가/액션 발화는 후속 단계(4.3b 이후)에서 구현된다. cap 은 `agent` 단위로 영속 저장되며 (workspace 비종속), `compute_current_value` 가 윈도우 내 raw event sum 을 즉시 계산한다.
+
+`CostCap` 스키마: `{ id, agent, metric, threshold, window, action, created_at, triggered?: { at, value } }`. `triggered` 가 있으면 이미 액션이 발화된 상태로 간주된다 (재발화는 `cap.reset` 필요). (Surface 간 통신)
 
 | 메서드 | 파라미터 | 설명 |
 |--------|---------|------|

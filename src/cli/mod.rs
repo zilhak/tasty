@@ -272,21 +272,21 @@ pub enum TelemetryCommands {
 pub enum TelemetryCapCommands {
     /// Define a new cap. Prints the generated cap id.
     Set {
+        /// Agent id this cap applies to (required — no caller default).
+        #[arg(long)]
+        agent: String,
         /// Metric name being capped.
         #[arg(long)]
         metric: String,
-        /// Threshold (sum across the window triggers the action).
+        /// Threshold (positive number; sum across the window triggers the action).
         #[arg(long)]
         threshold: f64,
-        /// Window: total | hour | day.
+        /// Window: total | 1h | 1d.
         #[arg(long, default_value = "total")]
         window: String,
         /// Action: stop | pause | require_approval | notify.
         #[arg(long, default_value = "notify")]
         action: String,
-        /// Agent id (defaults to caller).
-        #[arg(long)]
-        agent: Option<String>,
     },
     /// List caps. Optional `--agent` filter.
     List {
@@ -298,15 +298,17 @@ pub enum TelemetryCapCommands {
         #[arg(long)]
         id: String,
     },
-    /// Status: current cumulative value vs threshold for a cap.
+    /// Show current cumulative value vs threshold for caps. Optional `--agent` filter.
     Status {
         #[arg(long)]
-        id: String,
+        agent: Option<String>,
     },
-    /// Reset the triggered state (clears `triggered` field).
+    /// Reset the triggered state for matching caps. Provide `--id` or `--agent`.
     Reset {
         #[arg(long)]
-        id: String,
+        id: Option<String>,
+        #[arg(long)]
+        agent: Option<String>,
     },
 }
 
