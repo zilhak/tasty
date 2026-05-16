@@ -112,7 +112,7 @@ tasty plugin revoke --id ID --permission TOKEN
 tasty plugin extension list                                    # plugin이 등록한 extension 포인트
 
 # 에이전트 메모리 (~/.tasty/memory.db, scope: global/account/window/workspace/surface)
-tasty memory put --workspace 7 --key task.plan --value "..."   # 텍스트/JSON 자동 추론
+tasty memory put --workspace 7 --key task.plan --value "..."   # 공유 영역에 저장 (owner=_host)
 tasty memory put --surface 3 --key buf --value @/tmp/buf.txt   # @파일은 UTF-8 텍스트로 로드
 tasty memory get --workspace 7 --key task.plan
 tasty memory delete --workspace 7 --key task.plan [--cas N]
@@ -121,6 +121,11 @@ tasty memory exists --workspace 7 --key task.plan
 tasty memory count --workspace 7 [--prefix task.]
 tasty memory scopes                                            # 사용 중인 스코프 목록
 tasty memory stats [--workspace 7]                             # entries + bytes
+tasty memory secret put --global --key api.token --value "sk-..."  # 암호화 영역 (caller별 분리)
+tasty memory secret get --global --key api.token
+tasty memory secret list --global [--prefix api.]
+tasty memory secret delete --global --key api.token
+tasty memory secret stats
 
 # 이미지 (com.tasty.image plugin)
 tasty image open <path> [--surface ID]
@@ -334,15 +339,31 @@ tasty surface-meta list
 tasty surface-meta list --surface 3   # 특정 서피스 지정
 ```
 
-### 에이전트 메모리 (`memory.*`)
+### 에이전트 메모리 (`memory.*`, `memory.secret.*`)
 
-`~/.tasty/memory.db` (SQLite, WAL 모드)에 저장되는 영속 키-값 스토어. 재시작 후에도 보존되며, **스코프**로 가시성을 제어한다.
+`~/.tasty/memory.db` (SQLite, WAL 모드)에 저장되는 영속 키-값 스토어. 재시작 후에도 보존된다. 두 개의 영역이 같은 파일에 공존한다:
 
-스코프 토큰: `global` | `account:<userid>` | `window:<id>` | `workspace:<id>` | `surface:<id>`.
+- **Regular** (`memory.*`): 공유 네임스페이스. 모든 caller 가 모든 entry 를 **읽을** 수 있지만, **갱신·삭제는 해당 entry 를 만든 owner 본인** 또는 host (CLI / 사용자) 만 가능.
+- **Secret** (`memory.secret.*`): caller 별 사전 분할. owner 가 PK 일부라 다른 plugin 의 secret 영역은 IPC 표면에 **개념 자체가 존재하지 않는다**. 모든 secret value 는 디스크에 **AES-256-GCM** 으로 암호화 저장 (master key 는 OS keyring 보관).
 
-키 규칙: 1..256자 `[a-z0-9._-]+`. 점으로 계층(`task.123.plan`). 예약 prefix: `tasty.` (호스트 내부), `plugin.<plugin-id>.` (각 plugin namespace).
+**스코프 토큰**: `global` | `account:<userid>` | `window:<id>` | `workspace:<id>` | `surface:<id>`.
 
-값: `text/plain` (문자열) | `application/json` (임의 JSON) | `application/octet-stream` (base64). 단일 값 ≤ 1 MiB.
+**키 규칙**: 1..256자 `[a-z0-9._-]+`. 점으로 계층(`task.123.plan`). 예약 prefix: `tasty.` (호스트 내부), `plugin.<plugin-id>.` (각 plugin namespace).
+
+**값**: `text/plain` (문자열) | `application/json` (임의 JSON) | `application/octet-stream` (base64).
+
+**Owner**: caller 가 host 면 `_host`, plugin 이면 그 plugin id. **plugin 이 owner 를 직접 전달할 수 없으며**, 호스트가 `CallerContext` 로부터 자동 도출한다.
+
+**Config** (`~/.tasty/config.toml [memory]`):
+
+| 키 | 기본값 | 의미 |
+|----|--------|------|
+| `entry_max_mb` | `1` | 단일 entry 의 user-visible 값 최대 (MiB) |
+| `regular_quota_mb_total` | `1024` | Regular 영역 전체 합산 한도 (MiB) |
+| `secret_quota_mb_per_plugin` | `10` | Secret 영역 owner (plugin) 별 한도 (MiB). 저장된 암호문 byte 기준 |
+| `allow_plaintext_secret` | `false` | Linux 등 keyring 부재 환경에서 secret 영역 평문 폴백 허용 (시작 시 warning 로그) |
+
+#### Regular API (`memory.*`)
 
 | 메서드 | 파라미터 | 설명 |
 |--------|---------|------|
@@ -355,7 +376,22 @@ tasty surface-meta list --surface 3   # 특정 서피스 지정
 | `memory.scopes` | _없음_ | 사용 중인 스코프 목록. 응답: `{ scopes: [...] }` |
 | `memory.stats` | `scope?` | 엔트리 갯수 + byte 합계. 응답: `{ scope, entries, bytes }` |
 
-**Entry 객체**:
+#### Secret API (`memory.secret.*`)
+
+같은 (scope, key) 라도 caller 별로 완전히 분리된 값. 다른 plugin 의 secret 은 조회·열거 자체가 불가능하다.
+
+| 메서드 | 파라미터 | 설명 |
+|--------|---------|------|
+| `memory.secret.put` | `scope, key, value 또는 value_b64, content_type?, expires_at?, cas?` | 저장 (현재 caller 의 secret 영역). 응답: `{ ok: true, version: N }` |
+| `memory.secret.get` | `scope, key` | 단건 조회. 응답: entry 객체 또는 `null` |
+| `memory.secret.delete` | `scope, key, cas?` | 삭제. 응답: `{ ok: true }` |
+| `memory.secret.list` | `scope, prefix?, limit?` | 엔트리 목록. 응답: `{ entries: [...], count: N }` |
+| `memory.secret.exists` | `scope, key` | 존재 여부. 응답: `{ exists: bool }` |
+| `memory.secret.count` | `scope, prefix?` | 갯수. 응답: `{ count: N }` |
+| `memory.secret.scopes` | _없음_ | 사용 중인 스코프 목록. 응답: `{ scopes: [...] }` |
+| `memory.secret.stats` | `scope?` | 엔트리 갯수 + 저장된 byte 합계 (암호문 기준). 응답: `{ scope, entries, bytes }` |
+
+#### Entry 객체
 
 ```json
 {
@@ -368,15 +404,39 @@ tasty surface-meta list --surface 3   # 특정 서피스 지정
   "version": 2,
   "created_at": 1715800000000,
   "updated_at": 1715800001234,
-  "expires_at": null
+  "expires_at": null,
+  "owner": "com.example.todo"                  // regular 응답에만 포함 (secret 은 자기 영역이므로 생략)
 }
 ```
 
-**CAS**: `put`/`delete`에 `cas: <expected_version>` 지정. 일치하지 않으면 `cas_conflict` 에러.
+#### 동작 의미
 
-**Plugin 권한**: `memory.read` (읽기 4종), `memory.write` (`put`/`delete`).
+- **CAS**: `put`/`delete`에 `cas: <expected_version>` 지정. 일치하지 않으면 `cas_conflict` 에러.
+- **owner enforcement** (regular): 다른 owner 의 entry 를 갱신·삭제하려 하면 `owned_by_other` 에러. `_host` (CLI) 는 모든 entry 를 수정할 수 있는 root.
+- **읽기는 공유** (regular): 모든 caller 는 모든 owner 의 entry 를 읽을 수 있고, 응답에 `owner` 필드로 누가 만든 entry 인지 노출된다.
+- **암호화 at rest** (secret): 모든 value 는 `nonce(12) || ciphertext || tag(16)` 포맷으로 저장. AAD = `SHA256(owner ":" scope ":" key)` 로 entry 위치에 묶인다. master key 가 keyring 에서 변하면 기존 secret 은 복호 실패.
 
-**CLI 사용 예시:**
+#### 에러 코드
+
+| code | 의미 |
+|------|------|
+| `-32602` | invalid params (key/scope/content-type 검증 실패) |
+| `-32603` | DB 에러 등 internal |
+| `-32004` | `not_found` |
+| `-32005` | `cas_conflict` |
+| `-32006` | `owned_by_other` (regular 영역에서 다른 plugin 의 entry 를 수정·삭제 시도) |
+| `-32007` | `quota_exceeded` (`area`/`used`/`limit` 포함) |
+| `-32008` | `secret_unavailable` (keyring 없음 + `allow_plaintext_secret=false`) |
+
+#### Plugin 권한
+
+| 토큰 | 허용 메서드 |
+|------|------------|
+| `memory.read` | `memory.get` `memory.list` `memory.exists` `memory.count` `memory.scopes` `memory.stats` |
+| `memory.write` | `memory.put` `memory.delete` |
+| `memory.secret` | `memory.secret.*` 전체 (자기 영역만 접근 가능하므로 read/write 분리 불필요) |
+
+#### CLI 사용 예시
 
 ```bash
 # 텍스트 저장 (scope alias: --global / --surface 3 / --workspace 7 / --window 42 / --account foo)
@@ -399,6 +459,13 @@ tasty memory count --workspace 7 --prefix task.
 # 메타
 tasty memory scopes
 tasty memory stats --workspace 7
+
+# Secret 영역 (CLI는 owner=_host)
+tasty memory secret put --global --key api.token --value "sk-..."
+tasty memory secret get --global --key api.token
+tasty memory secret list --global --prefix api.
+tasty memory secret delete --global --key api.token
+tasty memory secret stats
 ```
 
 ### 훅
