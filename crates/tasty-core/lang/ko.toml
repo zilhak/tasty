@@ -435,3 +435,13 @@ danger = "위험"
 
 [approval.notification]
 body_fallback = "응답을 기다리는 승인 요청이 있습니다."
+
+[diff.button]
+apply = "적용"
+reject = "거절"
+
+[diff.toast]
+apply_copied = "Apply 명령을 클립보드에 복사했습니다."
+
+[surface.kind]
+diff = "Diff"

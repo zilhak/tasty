@@ -435,3 +435,13 @@ danger = "危険"
 
 [approval.notification]
 body_fallback = "応答待ちの承認リクエストがあります。"
+
+[diff.button]
+apply = "適用"
+reject = "拒否"
+
+[diff.toast]
+apply_copied = "適用コマンドをクリップボードにコピーしました。"
+
+[surface.kind]
+diff = "Diff"

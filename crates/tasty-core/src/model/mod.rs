@@ -123,6 +123,7 @@ pub fn compute_terminal_rect(
 }
 
 pub mod closed_item;
+mod diff_panel;
 mod empty_surface;
 mod html_panel;
 mod image_panel;
@@ -136,6 +137,7 @@ mod tab;
 mod workspace;
 
 pub use closed_item::{ClosedItem, ClosedItemStore};
+pub use diff_panel::*;
 pub use empty_surface::*;
 pub use html_panel::*;
 pub use image_panel::*;

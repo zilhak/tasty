@@ -9,6 +9,7 @@ mod command_index;
 mod crash_report;
 #[cfg(debug_assertions)]
 mod debug_info;
+mod diff_ui;
 mod double_tap;
 mod empty_ui;
 pub mod engine;

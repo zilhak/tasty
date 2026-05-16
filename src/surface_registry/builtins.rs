@@ -8,7 +8,7 @@ use std::sync::Arc;
 use serde_json::{Value, json};
 
 use tasty_core::model::{
-    EmptySurface, HtmlPanel, ImagePanel, MarkdownPanel, Surface,
+    DiffPanel, EmptySurface, HtmlPanel, ImagePanel, MarkdownPanel, Surface,
 };
 
 use super::{SurfaceKindDef, SurfaceKindRegistry};
@@ -24,6 +24,7 @@ pub fn register_builtin_kinds(registry: &SurfaceKindRegistry) {
     register_markdown(registry);
     register_html(registry);
     register_empty(registry);
+    register_diff(registry);
 }
 
 // ── Terminal ────────────────────────────────────────────────────────────────
@@ -128,6 +129,77 @@ pub fn register_image(registry: &SurfaceKindRegistry) {
             let img = s.as_any().downcast_ref::<ImagePanel>()?;
             // 빈 캔버스(미저장)은 path null로 직렬화 — 복원 시 다시 빈 캔버스.
             Some(json!({"path": img.file_path}))
+        }),
+    });
+}
+
+// ── Diff ────────────────────────────────────────────────────────────────────
+//
+// Diff surface 는 표시 전용. `before`/`after` 텍스트 또는 `before_file`/`after_file`
+// 경로 둘 중 한 쌍을 받는다. `apply_action` 은 사용자 Apply 클릭 시 실행될 명령으로
+// metadata 보관 — 도메인 layer 는 실행에 관여하지 않는다.
+
+fn read_diff_input(params: &Value, text_key: &str, file_key: &str) -> anyhow::Result<String> {
+    if let Some(s) = params.get(text_key).and_then(|v| v.as_str()) {
+        return Ok(s.to_string());
+    }
+    if let Some(path) = params.get(file_key).and_then(|v| v.as_str()) {
+        return std::fs::read_to_string(path)
+            .map_err(|e| anyhow::anyhow!("read '{path}' for diff surface failed: {e}"));
+    }
+    anyhow::bail!("diff surface requires '{text_key}' or '{file_key}'")
+}
+
+fn register_diff(registry: &SurfaceKindRegistry) {
+    registry.register(SurfaceKindDef {
+        kind: "diff",
+        display_name_i18n_key: "surface.kind.diff",
+        create: Arc::new(|sid, params| {
+            let before = read_diff_input(params, "before", "before_file")?;
+            let after = read_diff_input(params, "after", "after_file")?;
+            let title = params
+                .get("title")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let apply_action = params
+                .get("apply_action")
+                .and_then(|v| v.as_str())
+                .map(str::to_string);
+            Ok(Box::new(DiffPanel::new(sid, title, before, after).with_apply_action(apply_action))
+                as Box<dyn Surface>)
+        }),
+        restore: Arc::new(|sid, data| {
+            let title = data
+                .get("title")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let before = data
+                .get("before")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let after = data
+                .get("after")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let apply_action = data
+                .get("apply_action")
+                .and_then(|v| v.as_str())
+                .map(str::to_string);
+            Ok(Box::new(DiffPanel::new(sid, title, before, after).with_apply_action(apply_action))
+                as Box<dyn Surface>)
+        }),
+        snapshot: Arc::new(|s| {
+            let d = s.as_any().downcast_ref::<DiffPanel>()?;
+            Some(json!({
+                "title": d.title,
+                "before": d.before,
+                "after": d.after,
+                "apply_action": d.apply_action,
+            }))
         }),
     });
 }

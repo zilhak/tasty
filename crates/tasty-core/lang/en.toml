@@ -435,3 +435,13 @@ danger = "DANGER"
 
 [approval.notification]
 body_fallback = "An approval is waiting for your response."
+
+[diff.button]
+apply = "Apply"
+reject = "Reject"
+
+[diff.toast]
+apply_copied = "Apply command copied to clipboard."
+
+[surface.kind]
+diff = "Diff"
