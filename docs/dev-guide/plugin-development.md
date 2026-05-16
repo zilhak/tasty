@@ -843,11 +843,11 @@ host.call("memory.put", json!({
 
 | 데이터 성격 | 영역 |
 |---|---|
-| 토큰, API 키, 사용자 자격 증명 | **secret** |
 | 다른 plugin 이 알아도 무방하거나 협업해야 하는 작업 상태 (예: 활성 세션 id, 진행률) | regular |
-| Plugin 내부 캐시·세션 메모 (다른 plugin 이 굳이 볼 필요 없음) | secret (격리가 default 가 안전) |
+| Plugin 내부 캐시·세션 메모 / UI 옵션 (다른 plugin 이 굳이 볼 필요 없음) | secret (격리가 default 가 안전) |
+| 토큰, API 키, OAuth refresh token, 사용자 자격 증명 등 **진짜 민감 데이터** | **memory 아닌 OS keyring** (`docs/dev-guide/plugin-sensitive-data.md`) |
 
-**"몰라도 되는 데이터" 는 secret 에 두는 것이 default 라고 생각해도 된다.** Regular 는 "다른 plugin 과의 공유 가치가 있을 때" 의 선택. 다만 secret 은 keyring 부재 환경 (헤드리스 Linux 등) 에서 disable 될 수 있으니, plugin 동작에 critical 한 데이터는 secret 부재시 graceful 폴백을 준비한다.
+**"몰라도 되는 데이터" 는 secret 에 두는 것이 default 라고 생각해도 된다.** Regular 는 "다른 plugin 과의 공유 가치가 있을 때" 의 선택. **secret 영역의 보호는 "다른 plugin 의 IPC 접근 차단" 한 가지** — 디스크에는 평문 BLOB 으로 저장되므로, 디스크 노출 / 백업 sync / 도난을 견뎌야 하는 데이터는 secret 에 두지 말고 위 가이드 참고.
 
 ## 7-2. 매니페스트·코드 규약
 
