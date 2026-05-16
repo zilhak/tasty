@@ -156,6 +156,9 @@ directories = "6"
 
 # SQLite (state.db for bookmarks, recent files, clipboard history 등)
 rusqlite = { version = "0.32", features = ["bundled"] }
+
+# RNG (Phase 6.2: agent session token)
+rand = "0.9"
 egui_commonmark = "0.20.0"
 
 # WebView (macOS)

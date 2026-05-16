@@ -23,9 +23,12 @@ use crate::state::AppState;
 /// CallerContext → Requester.
 fn requester_from_caller(caller: &CallerContext) -> Requester {
     match caller {
-        CallerContext::Local => Requester::User,
+        CallerContext::Local | CallerContext::Internal => Requester::User,
         CallerContext::Plugin { plugin_id, .. } => Requester::Plugin {
             id: plugin_id.clone(),
+        },
+        CallerContext::Agent { agent_id, .. } => Requester::Plugin {
+            id: agent_id.clone(),
         },
     }
 }
@@ -33,9 +36,12 @@ fn requester_from_caller(caller: &CallerContext) -> Requester {
 /// CallerContext → Responder.
 fn responder_from_caller(caller: &CallerContext) -> Responder {
     match caller {
-        CallerContext::Local => Responder::User,
+        CallerContext::Local | CallerContext::Internal => Responder::User,
         CallerContext::Plugin { plugin_id, .. } => Responder::Agent {
             id: plugin_id.clone(),
+        },
+        CallerContext::Agent { agent_id, .. } => Responder::Agent {
+            id: agent_id.clone(),
         },
     }
 }
