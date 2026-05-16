@@ -1225,6 +1225,27 @@ impl App {
                 if let Err(e) = caller.ensure_allowed(&cmd.request.method) {
                     tracing::warn!("ipc agent caller denied: {e}");
                     let rpc_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
+                    // Phase 6.5a audit: app-level dispatcher 의 deny 도 기록.
+                    if let Some(st) = self
+                        .windows
+                        .values()
+                        .find_map(|w| w.as_main().map(|m| &m.state))
+                    {
+                        let ws = st
+                            .engine
+                            .workspaces
+                            .get(st.active_workspace)
+                            .map(|w| w.id);
+                        let seq = st.engine.telemetry_seq.next();
+                        ipc::audit::record(
+                            &caller,
+                            &cmd.request.method,
+                            ipc::audit::AuditDecision::Deny,
+                            Some(&format!("{e}")),
+                            ws,
+                            seq,
+                        );
+                    }
                     // Phase 6.4a — Agent caller 의 MissingPermission 은 elevation
                     // 발행. NotPluginCallable/UnknownMethod 는 elevation 으로
                     // 회복되지 않으므로 단순 deny.

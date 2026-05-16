@@ -61,8 +61,23 @@ pub fn handle_with_caller(
         );
     }
 
+    let workspace_id = state
+        .engine
+        .workspaces
+        .get(state.active_workspace)
+        .map(|w| w.id);
+
     if let Err(e) = caller.ensure_allowed(canonical) {
         tracing::warn!("ipc permission denied: {e}");
+        let seq = state.engine.telemetry_seq.next();
+        crate::ipc::audit::record(
+            caller,
+            canonical,
+            crate::ipc::audit::AuditDecision::Deny,
+            Some(&format!("{e}")),
+            workspace_id,
+            seq,
+        );
         return JsonRpcResponse::error(id, -32001, &format!("permission_denied: {e}"));
     }
 
@@ -71,6 +86,15 @@ pub fn handle_with_caller(
     // `telemetry.cap.reset` 으로 해제 가능.
     if let Some(reason) = telemetry::check_cap_block(caller, canonical) {
         tracing::warn!("ipc cap blocked: {reason}");
+        let seq = state.engine.telemetry_seq.next();
+        crate::ipc::audit::record(
+            caller,
+            canonical,
+            crate::ipc::audit::AuditDecision::Deny,
+            Some(&format!("cap_blocked: {reason}")),
+            workspace_id,
+            seq,
+        );
         return JsonRpcResponse::error(id, -32007, &format!("cap_blocked: {reason}"));
     }
 
@@ -78,6 +102,18 @@ pub fn handle_with_caller(
     // `telemetry.*` 자체와 `_host` agent 는 카운트 제외 (재귀 폭주 / 자기-측정 방지).
     // 카운트는 cap_eval 직후 호출되며 record 시 cap 평가도 함께 일어난다 (Phase 4.3b).
     telemetry::record_ipc_call(state, caller, canonical);
+
+    // Phase 6.5a audit: allow 경로도 기록. cap_blocked 와 마찬가지로 host 자신은
+    // 기록 의미가 적지만 일관성을 위해 전부 기록 (운영자가 query 시 filter).
+    let seq = state.engine.telemetry_seq.next();
+    crate::ipc::audit::record(
+        caller,
+        canonical,
+        crate::ipc::audit::AuditDecision::Allow,
+        None,
+        workspace_id,
+        seq,
+    );
 
     // 옛 이름이면 method를 새 이름으로 교체한 임시 request를 라우터에 전달.
     let routed: Cow<JsonRpcRequest> = if canonical == request.method {
