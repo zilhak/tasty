@@ -2,7 +2,7 @@ manifest_version = 1
 id = "com.tasty.clipboard-history"
 name = "Clipboard History"
 version = "0.1.0"
-description = "OS 클립보드 복사 항목 viewer popup"
+description = "Clipboard history viewer popup"
 api_version = "1"
 permissions = [
     "clipboard.read",
@@ -29,6 +29,6 @@ dismiss_on_outside_click = true
 
 [[contributes.tool]]
 id = "open-viewer"
-label_i18n_key = "tools_menu.clipboard_history"
+label_i18n_key = "clipboard_history.tool.label"
 action = { kind = "open_popup", popup_id = "com.tasty.clipboard-history/viewer" }
 order_hint = 100

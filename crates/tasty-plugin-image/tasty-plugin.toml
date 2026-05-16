@@ -10,7 +10,6 @@ permissions = [
     "clipboard.read",
     "fs.read",
     "fs.write",
-    "ipc.invoke:image",
 ]
 lang_dir = "lang"
 

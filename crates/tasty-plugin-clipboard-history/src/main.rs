@@ -11,11 +11,10 @@
 use std::sync::Mutex;
 
 use serde_json::{json, Value};
-use tasty_plugin_protocol::ui_tree::{UiEvent, UiNode};
 use tasty_plugin_sdk::{
     bus::BusHandle, host::HostHandle, IpcMethodCtx, IpcMethodError, Plugin, PopupClosedCtx,
     PopupEventCtx, PopupEventResult, PopupOpenCtx, PopupOpenResult, SurfaceCreateCtx,
-    SurfaceEventCtx, SurfaceResult,
+    SurfaceEventCtx, SurfaceResult, UiEvent, UiNode,
 };
 
 const PLUGIN_ID: &str = "com.tasty.clipboard-history";

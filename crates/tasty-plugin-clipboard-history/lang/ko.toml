@@ -1,6 +1,9 @@
 [clipboard_history.namespace]
 desc = "클립보드 히스토리 viewer IPC namespace"
 
+[clipboard_history.tool]
+label = "클립보드 히스토리"
+
 [clipboard_history.popup]
 title = "클립보드 기록"
 empty = "복사된 항목이 없습니다"

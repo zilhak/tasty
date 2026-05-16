@@ -1,6 +1,9 @@
 [clipboard_history.namespace]
 desc = "クリップボード履歴 viewer IPC namespace"
 
+[clipboard_history.tool]
+label = "クリップボード履歴"
+
 [clipboard_history.popup]
 title = "クリップボード履歴"
 empty = "コピーされた項目はまだありません"
