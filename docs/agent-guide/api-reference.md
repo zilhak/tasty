@@ -530,6 +530,102 @@ tasty memory put --workspace 7 --key cache --value "..." --expires-at 1715900000
 tasty memory gc                                                       # 만료 entry 일괄 DELETE
 ```
 
+### 공유 컨텍스트 — Blackboard (`memory.bb_*`, `memory.bb_snapshot_*`)
+
+워크스페이스 단위 명명된 키-값 컬렉션. 일반 `memory.*` 위에 키 컨벤션(`tasty.bb.<name>.*`) + schema 슬롯 + snapshot 을 입힌 얇은 래퍼. 모든 메서드는 `--workspace <id>` 필수.
+
+| 메서드 | 권한 | 파라미터 | 설명 |
+|--------|------|----------|------|
+| `memory.bb_create`           | `memory.write` | `workspace_id, name, schema?` | 새 blackboard 생성. `schema` 는 임의 JSON, 호스트는 검증하지 않는다. 중복 생성 시 `-32009` |
+| `memory.bb_put`              | `memory.write` | `workspace_id, name, field, value 또는 value_b64, content_type?, cas?` | field 쓰기. bb 가 없으면 `-32004` |
+| `memory.bb_get`              | `memory.read`  | `workspace_id, name, field` | 단일 field |
+| `memory.bb_get_all`          | `memory.read`  | `workspace_id, name` | 모든 field (`_meta` 제외). `{ entries, count }` |
+| `memory.bb_get_meta`         | `memory.read`  | `workspace_id, name` | `_meta` entry 또는 `null` |
+| `memory.bb_delete_field`     | `memory.write` | `workspace_id, name, field, cas?` | field 삭제 |
+| `memory.bb_delete`           | `memory.write` | `workspace_id, name` | bb 전체 (모든 field + snapshot + `_meta`) 삭제. `{ ok, removed }` |
+| `memory.bb_list`             | `memory.read`  | `workspace_id` | bb 이름 목록 |
+| `memory.bb_exists`           | `memory.read`  | `workspace_id, name` | `{ exists }` |
+| `memory.bb_snapshot`         | `memory.write` | `workspace_id, name, snapshot_id` | 현재 bb 상태 캡처. 동일 sid 재생성은 `-32009` |
+| `memory.bb_snapshot_get`     | `memory.read`  | `workspace_id, name, snapshot_id` | snapshot JSON 또는 `null` |
+| `memory.bb_snapshot_list`    | `memory.read`  | `workspace_id, name` | `{ snapshot_ids, count }` |
+| `memory.bb_snapshot_delete`  | `memory.write` | `workspace_id, name, snapshot_id` | snapshot 삭제 |
+| `memory.bb_snapshot_restore` | `memory.write` | `workspace_id, name, snapshot_id` | 현재 field 를 모두 지우고 snapshot 으로 복원. `{ ok, restored }` |
+
+상세 (snapshot 페이로드 구조, owner 규칙, 시나리오) 는 [`blackboard.md`](blackboard.md) 참조.
+
+CLI:
+
+```bash
+tasty memory bb create   --workspace 7 --name review [--schema '{"required":["title"]}']
+tasty memory bb put      --workspace 7 --name review --field title --value "first pass"
+tasty memory bb get-all  --workspace 7 --name review
+tasty memory bb snapshot --workspace 7 --name review --snapshot-id v1
+tasty memory bb snapshot-restore --workspace 7 --name review --snapshot-id v1
+tasty memory bb delete   --workspace 7 --name review
+```
+
+### 공유 컨텍스트 — Plan (`memory.plan_*`)
+
+워크스페이스 단위 선언적 work breakdown. 한 plan = `tasty.plan.<plan_id>` 단일 JSON entry. 호스트는 상태만 보관할 뿐 스케줄러가 아니다 — 실행 가능한 task DAG 는 [`agent.md`](agent.md) §"Task DAG" 참조.
+
+| 메서드 | 권한 | 파라미터 | 설명 |
+|--------|------|----------|------|
+| `memory.plan_create`      | `memory.write` | `workspace_id, plan_id, title, steps?` | 새 plan. `steps` 는 step 객체 배열 |
+| `memory.plan_get`         | `memory.read`  | `workspace_id, plan_id` | 전체 plan JSON 또는 `null` |
+| `memory.plan_list`        | `memory.read`  | `workspace_id` | plan id 목록 |
+| `memory.plan_delete`      | `memory.write` | `workspace_id, plan_id` | plan 삭제 |
+| `memory.plan_add_step`    | `memory.write` | `workspace_id, plan_id, step, position?, cas?` | step append/insert |
+| `memory.plan_remove_step` | `memory.write` | `workspace_id, plan_id, step_id, cas?` | step 제거. 다른 step 이 `depends_on` 으로 참조 중이면 거부 |
+| `memory.plan_update_step` | `memory.write` | `workspace_id, plan_id, step_id, state?, notes?, clear_notes?, cas?` | step 상태/메모 갱신 |
+
+검증 (모든 put 시점): step 수 ≤ 256, step id 중복 금지, `depends_on` 의 모든 id 가 같은 plan 의 다른 step 을 가리켜야 함, 자기 의존/사이클 금지.
+
+`PlanStepState`: `pending` | `in_progress` | `completed` | `failed` | `skipped`.
+
+CAS 는 plan entry 의 `version` 기준 — step 단건 version 은 없다 (plan 전체가 하나의 row).
+
+JSON Schema 와 시나리오는 [`plan.md`](plan.md), 기계가 읽을 스키마 파일은 [`plan.schema.json`](plan.schema.json) 참조.
+
+CLI:
+
+```bash
+tasty memory plan create  --workspace 7 --plan-id release-1.0 --title "1.0 release" \
+    --steps '[{"id":"qa","title":"QA"},{"id":"notes","title":"notes","depends_on":["qa"]}]'
+tasty memory plan add-step    --workspace 7 --plan-id release-1.0 \
+    --step '{"id":"announce","title":"announce","depends_on":["notes"]}'
+tasty memory plan update-step --workspace 7 --plan-id release-1.0 --step-id qa --state in_progress
+tasty memory plan update-step --workspace 7 --plan-id release-1.0 --step-id notes --clear-notes
+tasty memory plan remove-step --workspace 7 --plan-id release-1.0 --step-id announce --cas 5
+tasty memory plan get     --workspace 7 --plan-id release-1.0
+tasty memory plan delete  --workspace 7 --plan-id release-1.0
+```
+
+### 공유 컨텍스트 — Cache (`memory.cache_*`)
+
+워크스페이스 단위 TTL 캐시. `tasty.cache.<key>` 키 prefix + 필수 양수 `ttl_secs` 규약만 강제하는 얇은 래퍼.
+
+| 메서드 | 권한 | 파라미터 | 설명 |
+|--------|------|----------|------|
+| `memory.cache_put`        | `memory.write` | `workspace_id, key, value 또는 value_b64, content_type?, ttl_secs` | 저장. `ttl_secs > 0` 필수 |
+| `memory.cache_get`        | `memory.read`  | `workspace_id, key` | entry 또는 `null` (만료/미존재 동일) |
+| `memory.cache_invalidate` | `memory.write` | `workspace_id, key` | 단일 삭제 (없어도 성공 — idempotent) |
+| `memory.cache_clear`      | `memory.write` | `workspace_id` | workspace 의 모든 cache entry 삭제. owner 가 수정권 있는 entry 만 |
+| `memory.cache_list`       | `memory.read`  | `workspace_id` | 캐시 키 목록 (`tasty.cache.` prefix 제거된 형태) |
+
+`cache_get` 의 만료/미존재는 둘 다 `null` — 호출자가 "miss" 와 "expired" 를 구분할 필요 없음. 디스크 회수는 `memory.gc` 또는 surface/workspace 정리 시점.
+
+상세는 [`cache.md`](cache.md) 참조.
+
+CLI:
+
+```bash
+tasty memory cache put        --workspace 7 --key sha256.abcd --value "..." --ttl 3600
+tasty memory cache get        --workspace 7 --key sha256.abcd
+tasty memory cache invalidate --workspace 7 --key sha256.abcd
+tasty memory cache list       --workspace 7
+tasty memory cache clear      --workspace 7
+```
+
 ### 훅
 
 | 메서드 | 파라미터 | 설명 |

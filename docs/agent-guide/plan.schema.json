@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tasty.dev/schema/plan.schema.json",
+  "title": "Tasty Plan",
+  "description": "Workspace-scoped declarative work breakdown stored at memory key `tasty.plan.<id>` (value of one regular memory entry).",
+  "type": "object",
+  "required": ["id", "title", "created_at", "created_by", "updated_at", "steps"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_-]+$",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "created_at": { "type": "integer", "description": "Unix ms when the plan was created." },
+    "created_by": { "type": "string", "description": "Owner string — _host or plugin/agent id." },
+    "updated_at": { "type": "integer", "description": "Unix ms of last update." },
+    "steps": {
+      "type": "array",
+      "maxItems": 256,
+      "items": { "$ref": "#/$defs/Step" }
+    }
+  },
+  "$defs": {
+    "Step": {
+      "type": "object",
+      "required": ["id", "title"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9_-]+$",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "state": {
+          "type": "string",
+          "enum": ["pending", "in_progress", "completed", "failed", "skipped"],
+          "default": "pending"
+        },
+        "depends_on": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9_-]+$",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "default": []
+        },
+        "notes": {
+          "type": ["string", "null"],
+          "maxLength": 2048,
+          "default": null
+        }
+      }
+    }
+  }
+}
