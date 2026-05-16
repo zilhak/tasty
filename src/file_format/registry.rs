@@ -10,7 +10,7 @@ use std::sync::RwLock;
 use tracing::warn;
 
 use super::config::{validate_detector_decl, DetectorDecl, DetectorRuleDecl};
-use super::evaluator::evaluate_cheap;
+use super::evaluator::{evaluate_cheap, evaluate_deep, DeepCtx};
 use super::types::{
     DetectDepth, DetectorId, DetectorRule, DetectorRuleKind, FileFormatDetector, FileTarget,
     RuleOrigin,
@@ -67,10 +67,19 @@ impl FileFormatRegistry {
     }
 
     /// `target` 에 매칭되는 detector id 결정. 매칭 실패 시 `None` (= unknown).
+    ///
+    /// - `DetectDepth::Cheap`: file IO 없음. 확장자/glob/is-directory 만.
+    /// - `DetectDepth::Deep`: 같은 cheap rule 들 + magic/MIME 까지 평가. 한 호출 동안
+    ///   `DeepCtx` 로 head/MIME 캐시 → detector 가 여러 magic rule 을 가져도 head 는 1회만 read.
     pub fn identify(&self, target: &FileTarget, depth: DetectDepth) -> Option<DetectorId> {
         self.ensure_finalized();
         let inner = self.inner.read().ok()?;
         let is_dir = target.is_directory();
+
+        let mut deep_ctx = match depth {
+            DetectDepth::Deep => Some(DeepCtx::new()),
+            DetectDepth::Cheap => None,
+        };
 
         for (id, det) in inner.finalized.iter() {
             if det.disabled {
@@ -86,10 +95,12 @@ impl FileFormatRegistry {
                 continue;
             }
             // 매칭: OR — 하나라도 match 면 detector 매칭.
-            // Phase A 는 cheap 만. depth=Deep 도 같은 evaluator (B/D 단계에 확장).
-            let _ = depth;
             for rule in &det.rules {
-                if evaluate_cheap(&rule.kind, target) {
+                let matched = match deep_ctx.as_mut() {
+                    Some(ctx) => evaluate_deep(&rule.kind, target, ctx),
+                    None => evaluate_cheap(&rule.kind, target),
+                };
+                if matched {
                     return Some(id.clone());
                 }
             }
@@ -434,6 +445,42 @@ mod tests {
         // 파일 (확장자 없는 가짜 path) → IsDirectory 매칭 제외, 다른 detector 도 안 맞아 None
         let t = target("/nonexistent/file.no-such-ext");
         assert_eq!(reg.identify(&t, DetectDepth::Cheap), None);
+    }
+
+    #[test]
+    fn identify_deep_matches_magic_when_cheap_misses() {
+        let reg = FileFormatRegistry::new();
+        // 호스트 default 는 사용 안 함 — 확장자가 없는 파일이 magic byte 로 매칭되는지 확인.
+        // 사용자 정의 detector: extension 매칭 실패해도 magic 으로 매칭.
+        let user_toml = r#"
+            [[detector]]
+            id = "png"
+            [[detector.rule]]
+            kind = "extension"
+            values = ["png"]
+            [[detector.rule]]
+            kind = "magic"
+            offset = 0
+            bytes_hex = "89504E470D0A1A0A"
+        "#;
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = dir.path().join("file-handlers.toml");
+        std::fs::write(&cfg, user_toml).unwrap();
+        reg.install_user_config(&cfg);
+
+        // 확장자가 .dat 인 PNG 파일.
+        let png_sig = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+        let img_path = dir.path().join("masquerade.dat");
+        std::fs::write(&img_path, png_sig).unwrap();
+        let t = FileTarget::new(img_path);
+
+        // Cheap → 확장자 안 맞음, magic 평가 안 함 → None
+        assert_eq!(reg.identify(&t, DetectDepth::Cheap), None);
+        // Deep → magic 매칭 → Some("png")
+        assert_eq!(
+            reg.identify(&t, DetectDepth::Deep),
+            Some(DetectorId("png".into()))
+        );
     }
 
     #[test]

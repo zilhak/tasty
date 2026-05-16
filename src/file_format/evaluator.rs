@@ -1,7 +1,90 @@
-//! detector rule 평가자. Phase A 는 cheap path (확장자/glob/is-directory) 만.
-//! magic bytes / MIME / Lua / structure-check 는 Phase B-D 에서 본격 구현.
+//! detector rule 평가자.
+//!
+//! - **Cheap path**: 확장자/glob/is-directory. file IO 없음. hover/typing 등 hot path 용.
+//! - **Deep path**: magic bytes / MIME 까지. 8KB head read 1회 + `DeepCtx` 에 캐시.
+//!   Lua / structure-check 는 Phase C-D 에서 추가.
+//!
+//! `evaluate_cheap` 은 단독 호출 가능. `evaluate_deep` 은 `DeepCtx` 가 필요한데,
+//! 한 `identify` 호출 안에서 detector 여러 개가 같은 파일의 magic/MIME 을 평가해도
+//! head 는 1회만 read.
+
+use std::collections::HashMap;
+use std::path::PathBuf;
 
 use super::types::{DetectorRuleKind, FileTarget};
+
+/// head read 상한 — `magic` 의 offset+bytes 가 이 안에 들어와야 한다.
+pub const DEEP_HEAD_CAP: usize = 8 * 1024;
+
+/// 한 `identify` 호출 동안 같은 파일을 여러 번 IO 하지 않도록 캐시.
+#[derive(Default)]
+pub struct DeepCtx {
+    /// path → (metadata is_file, head bytes). head 가 `None` 이면 read 실패 또는 비 regular file.
+    cache: HashMap<PathBuf, DeepCacheEntry>,
+}
+
+#[derive(Debug, Clone)]
+struct DeepCacheEntry {
+    /// regular file 이면 true. directory / FIFO / socket / device 등은 false.
+    is_regular: bool,
+    /// 최대 `DEEP_HEAD_CAP` 바이트. regular file 이 아니거나 read 실패 시 `None`.
+    head: Option<Vec<u8>>,
+    /// `infer` 가 추정한 MIME. head 가 있을 때만 시도, 매칭 안되면 `None`.
+    mime: Option<String>,
+}
+
+impl DeepCtx {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    fn entry(&mut self, target: &FileTarget) -> &DeepCacheEntry {
+        let path = target.as_path().to_path_buf();
+        if !self.cache.contains_key(&path) {
+            let e = read_entry(&path);
+            self.cache.insert(path.clone(), e);
+        }
+        self.cache.get(&path).expect("just inserted")
+    }
+}
+
+fn read_entry(path: &std::path::Path) -> DeepCacheEntry {
+    let meta = match std::fs::metadata(path) {
+        Ok(m) => m,
+        Err(_) => {
+            return DeepCacheEntry {
+                is_regular: false,
+                head: None,
+                mime: None,
+            }
+        }
+    };
+    if !meta.is_file() {
+        return DeepCacheEntry {
+            is_regular: false,
+            head: None,
+            mime: None,
+        };
+    }
+    let head = read_head(path, DEEP_HEAD_CAP);
+    let mime = head
+        .as_ref()
+        .and_then(|h| infer::get(h).map(|k| k.mime_type().to_string()));
+    DeepCacheEntry {
+        is_regular: true,
+        head,
+        mime,
+    }
+}
+
+fn read_head(path: &std::path::Path, cap: usize) -> Option<Vec<u8>> {
+    use std::io::Read;
+    let mut f = std::fs::File::open(path).ok()?;
+    let mut buf = vec![0u8; cap];
+    let n = f.read(&mut buf).ok()?;
+    buf.truncate(n);
+    Some(buf)
+}
 
 /// 단일 rule 이 target 에 매칭되는지 평가. cheap path 만.
 ///
@@ -37,6 +120,57 @@ pub fn evaluate_cheap(rule: &DetectorRuleKind, target: &FileTarget) -> bool {
         | DetectorRuleKind::Lua { .. }
         | DetectorRuleKind::StructureCheck { .. }
         | DetectorRuleKind::Unknown { .. } => false,
+    }
+}
+
+/// Deep 평가. cheap kind 는 `evaluate_cheap` 으로 위임, magic/MIME 만 새로 처리.
+///
+/// `ctx` 는 같은 `identify` 호출 안에서 재사용. head/metadata 가 캐시된다.
+pub fn evaluate_deep(
+    rule: &DetectorRuleKind,
+    target: &FileTarget,
+    ctx: &mut DeepCtx,
+) -> bool {
+    match rule {
+        DetectorRuleKind::Magic { offset, bytes } => {
+            // safety: regular file 아닌 경우 read entry 가 is_regular=false 로 표시.
+            // FIFO / socket / device 에 head read 시도 안 함.
+            let entry = ctx.entry(target);
+            if !entry.is_regular {
+                return false;
+            }
+            let head = match entry.head.as_ref() {
+                Some(h) => h,
+                None => return false,
+            };
+            let start = *offset;
+            let end = start.saturating_add(bytes.len());
+            head.get(start..end)
+                .map(|slice| slice == bytes.as_slice())
+                .unwrap_or(false)
+        }
+
+        DetectorRuleKind::Mime { types } => {
+            let entry = ctx.entry(target);
+            if !entry.is_regular {
+                return false;
+            }
+            let mime = match entry.mime.as_ref() {
+                Some(m) => m,
+                None => return false,
+            };
+            types.iter().any(|t| t.eq_ignore_ascii_case(mime))
+        }
+
+        // Phase C-D 에서 평가. 현재는 false.
+        DetectorRuleKind::Lua { .. } | DetectorRuleKind::StructureCheck { .. } => false,
+
+        // cheap kind 는 IO 없이 그대로 평가.
+        DetectorRuleKind::Extension { .. }
+        | DetectorRuleKind::PathGlob { .. }
+        | DetectorRuleKind::IsDirectory => evaluate_cheap(rule, target),
+
+        DetectorRuleKind::Unknown { .. } => false,
     }
 }
 
@@ -118,5 +252,130 @@ mod tests {
             bytes: vec![0x25, 0x50, 0x44, 0x46],
         };
         assert!(!evaluate_cheap(&magic, &target("x.pdf")));
+    }
+
+    // ── deep path tests ─────────────────────────────────────────────
+
+    fn write_tmp(dir: &tempfile::TempDir, name: &str, bytes: &[u8]) -> PathBuf {
+        let p = dir.path().join(name);
+        std::fs::write(&p, bytes).expect("write tmp");
+        p
+    }
+
+    #[test]
+    fn deep_magic_matches_pdf_header() {
+        let dir = tempfile::tempdir().unwrap();
+        // %PDF-1.4 헤더
+        let p = write_tmp(&dir, "doc.pdf", b"%PDF-1.4\n... rest ...");
+        let rule = DetectorRuleKind::Magic {
+            offset: 0,
+            bytes: b"%PDF".to_vec(),
+        };
+        let mut ctx = DeepCtx::new();
+        assert!(evaluate_deep(&rule, &FileTarget::new(p), &mut ctx));
+    }
+
+    #[test]
+    fn deep_magic_does_not_match_wrong_offset() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = write_tmp(&dir, "doc.bin", b"AB%PDF-1.4");
+        let rule = DetectorRuleKind::Magic {
+            offset: 0,
+            bytes: b"%PDF".to_vec(),
+        };
+        let mut ctx = DeepCtx::new();
+        assert!(!evaluate_deep(&rule, &FileTarget::new(p.clone()), &mut ctx));
+        // offset=2 면 매칭.
+        let rule_off = DetectorRuleKind::Magic {
+            offset: 2,
+            bytes: b"%PDF".to_vec(),
+        };
+        assert!(evaluate_deep(&rule_off, &FileTarget::new(p), &mut ctx));
+    }
+
+    #[test]
+    fn deep_magic_skips_directory_target() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = FileTarget::new(dir.path().to_path_buf());
+        let rule = DetectorRuleKind::Magic {
+            offset: 0,
+            bytes: b"%PDF".to_vec(),
+        };
+        let mut ctx = DeepCtx::new();
+        assert!(!evaluate_deep(&rule, &target, &mut ctx));
+    }
+
+    #[test]
+    fn deep_magic_offset_beyond_head_cap_is_false() {
+        let dir = tempfile::tempdir().unwrap();
+        // 작은 파일에 head cap 보다 큰 offset 요구 → 매칭 실패 (panic 없음)
+        let p = write_tmp(&dir, "small.bin", b"hello");
+        let rule = DetectorRuleKind::Magic {
+            offset: 100,
+            bytes: b"world".to_vec(),
+        };
+        let mut ctx = DeepCtx::new();
+        assert!(!evaluate_deep(&rule, &FileTarget::new(p), &mut ctx));
+    }
+
+    #[test]
+    fn deep_mime_detects_png() {
+        let dir = tempfile::tempdir().unwrap();
+        // PNG 시그니처: 89 50 4E 47 0D 0A 1A 0A
+        let png_sig = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+        let mut bytes = png_sig.to_vec();
+        // padding 으로 infer 가 PNG 로 인식하기 충분히
+        bytes.extend_from_slice(&[0u8; 32]);
+        let p = write_tmp(&dir, "img.png", &bytes);
+        let rule = DetectorRuleKind::Mime {
+            types: vec!["image/png".into()],
+        };
+        let mut ctx = DeepCtx::new();
+        assert!(evaluate_deep(&rule, &FileTarget::new(p), &mut ctx));
+    }
+
+    #[test]
+    fn deep_mime_case_insensitive() {
+        let dir = tempfile::tempdir().unwrap();
+        let png_sig = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+        let mut bytes = png_sig.to_vec();
+        bytes.extend_from_slice(&[0u8; 32]);
+        let p = write_tmp(&dir, "img.png", &bytes);
+        let rule = DetectorRuleKind::Mime {
+            types: vec!["IMAGE/PNG".into()],
+        };
+        let mut ctx = DeepCtx::new();
+        assert!(evaluate_deep(&rule, &FileTarget::new(p), &mut ctx));
+    }
+
+    #[test]
+    fn deep_ctx_caches_head_across_rules() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = write_tmp(&dir, "doc.pdf", b"%PDF-1.4 contents");
+        let target = FileTarget::new(p);
+        let mut ctx = DeepCtx::new();
+        // 첫 호출 → 캐시 채움
+        let r1 = DetectorRuleKind::Magic {
+            offset: 0,
+            bytes: b"%PDF".to_vec(),
+        };
+        assert!(evaluate_deep(&r1, &target, &mut ctx));
+        assert_eq!(ctx.cache.len(), 1);
+        // 다른 rule 도 같은 파일 → 캐시 재사용 (entry 수 동일)
+        let r2 = DetectorRuleKind::Magic {
+            offset: 0,
+            bytes: b"%PDF-1.4".to_vec(),
+        };
+        assert!(evaluate_deep(&r2, &target, &mut ctx));
+        assert_eq!(ctx.cache.len(), 1);
+    }
+
+    #[test]
+    fn deep_falls_back_to_cheap_for_extension() {
+        let rule = DetectorRuleKind::Extension {
+            values: vec!["md".into()],
+        };
+        let mut ctx = DeepCtx::new();
+        assert!(evaluate_deep(&rule, &target("a.md"), &mut ctx));
     }
 }

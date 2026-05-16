@@ -2306,6 +2306,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "infer"
+version = "0.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bc150e5ce2330295b8616ce0e3f53250e53af31759a9dbedad1621ba29151847"
+
+[[package]]
 name = "ioctl-rs"
 version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4758,6 +4764,7 @@ dependencies = [
  "gdkx11",
  "gtk",
  "image",
+ "infer",
  "libc",
  "notify-rust",
  "objc2 0.6.4",

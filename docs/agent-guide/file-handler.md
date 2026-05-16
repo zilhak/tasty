@@ -38,7 +38,7 @@ pattern = "README.*"
 [[detector.rule]]
 kind = "magic"
 offset = 0
-bytes = "504446"  # %PDF (Phase B+ 에서 평가)
+bytes_hex = "255044462D"  # %PDF- — Phase B 이상에서 평가
 ```
 
 | kind | 필드 | Phase A 평가 |
@@ -46,8 +46,8 @@ bytes = "504446"  # %PDF (Phase B+ 에서 평가)
 | `extension` | `values: string[]` (대소문자 무시) | ✅ |
 | `path_glob` | `pattern: string` (`*` wildcard 만) | ✅ |
 | `is_directory` | (없음) | ✅ |
-| `mime` | `types: string[]` | ⏳ Phase B |
-| `magic` | `offset: int`, `bytes: hex string` | ⏳ Phase B |
+| `magic` | `offset: int`, `bytes_hex: hex string` (대소문자 무관, 짝수 길이) | ✅ Phase B |
+| `mime` | `types: string[]` (예: `["image/png"]`, infer 추정) | ✅ Phase B |
 | `lua` | `script: string` | ⏳ Phase D |
 | `structure_check` | `script: string` | ⏳ Phase C |
 

@@ -114,6 +114,9 @@ toml = "0.8"
 # Version range matching (plugin extension version_req)
 semver = "1"
 
+# File type detection (file_format Deep evaluator — magic bytes + MIME)
+infer = { version = "0.16", default-features = false }
+
 # CLI
 clap = { version = "4", features = ["derive"] }
 

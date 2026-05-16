@@ -1550,11 +1550,14 @@ URI/경로 입력을 받아 **(1) 파일 형식 식별 → (2) 등록된 핸들�
 
 ### 형식 식별 (`FileFormatRegistry`)
 - DetectorId 네임스페이스: 일반 `[a-z0-9-]{1,64}` (예: `markdown`), 호스트 예약 `$<word>` (예: `$directory`)
-- detector rule 종류 (Phase A 는 cheap path 만 평가):
-  - `extension`: 확장자 대소문자 무시 매칭
-  - `path_glob`: 파일명 wildcard (`*` 만, 본격 globset 도입은 Phase B)
-  - `is_directory`: 대상이 디렉토리
-  - `mime` / `magic` / `lua` / `structure_check`: deep 단계 (Phase B-D 에서 본격 평가, cheap 에서는 false)
+- detector rule 종류 (Cheap = file IO 없음, Deep = 8KB head read + `infer` MIME 추정):
+  - `extension`: 확장자 대소문자 무시 매칭 (Cheap)
+  - `path_glob`: 파일명 wildcard (`*` 만, 본격 globset 도입은 Phase B+) (Cheap)
+  - `is_directory`: 대상이 디렉토리 (Cheap)
+  - `magic`: `offset` + `bytes_hex` 매칭 (Deep, regular file 한정 / FIFO/socket/device skip)
+  - `mime`: `infer` 기반 MIME 추정 후 대소문자 무관 비교 (Deep)
+  - `lua` / `structure_check`: stub (Phase C-D 에서 평가)
+- Deep 평가는 한 `identify` 호출당 `DeepCtx` 가 head/MIME 캐시 → 같은 파일을 여러 detector 가 평가해도 IO 는 1회만
 - pre-filter: 디렉토리 대상은 `is_directory` rule 가진 detector 만, 파일 대상은 그 외만 평가 (cross-match 방지)
 - 호스트 default 는 `src/file_format/defaults/default-file-format.toml` 에 정의 — markdown, html, image, `$directory` 등
 
@@ -1598,7 +1601,8 @@ URI/경로 입력을 받아 **(1) 파일 형식 식별 → (2) 등록된 핸들�
 - 원자적 쓰기: `<path>.tmp` 작성 → rename. fsync 는 안 함 (UX 영향)
 - LRU dedupe + cap=10. parse 실패 시 빈 리스트로 시작 + warn
 
-### 한계 (Phase A)
-- mouse.rs 콜사이트 변경은 Phase A 범위 밖 — ctrl+click 시 여전히 기존 `terminal_link::open_uri` 가 동작
-- magic bytes / MIME / Lua / structure-check rule 평가는 stub (Phase B-D 에서 구현)
-- `path_glob` 은 단순 `*` wildcard 만, 본격 globset 도입은 Phase B
+### 한계 (Phase A + MB1)
+- mouse.rs 콜사이트 변경은 Phase A 범위 밖 — ctrl+click 시 여전히 기존 `terminal_link::open_uri` 가 동작 (콜사이트 전환은 Phase C 별 plan)
+- Lua / structure-check rule 평가는 stub (Phase C-D 에서 구현)
+- `path_glob` 은 단순 `*` wildcard 만, 본격 globset 도입은 Phase B+
+- Deep 평가는 sync — worker thread 분리 (`AppEvent::IdentifyDone`) 는 MB2 작업
