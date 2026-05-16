@@ -32,6 +32,7 @@
 
 pub mod blackboard;
 mod migrations;
+pub mod plan;
 mod scope;
 
 use std::path::{Path, PathBuf};
