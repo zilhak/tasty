@@ -114,7 +114,7 @@ impl RecentPicks {
             entries: self.entries.clone(),
         };
         let json = serde_json::to_string_pretty(&payload)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+            .map_err(io::Error::other)?;
 
         let tmp = tmp_path_for(path);
         std::fs::write(&tmp, json)?;

@@ -361,6 +361,8 @@ pub struct DialogState {
     pub pending_approval_ids: VecDeque<tasty_approval::ApprovalId>,
     /// approval popup 의 코멘트 입력 버퍼 (현재 head용 임시 상태).
     pub approval_comment_buffer: String,
+    /// file_handler_picker popup 의 입력/선택 상태. `None` 이면 popup 미오픈.
+    pub file_handler_picker: Option<FileHandlerPickerData>,
 }
 
 /// Tab drag-and-drop state (UI-only, not persisted).
@@ -401,6 +403,7 @@ impl DialogState {
             info_modal_queue: VecDeque::new(),
             pending_approval_ids: VecDeque::new(),
             approval_comment_buffer: String::new(),
+            file_handler_picker: None,
         }
     }
 
@@ -413,6 +416,44 @@ impl DialogState {
     pub fn has_any_overlay(&self) -> bool {
         self.has_text_input_open()
     }
+}
+
+/// file_handler picker popup 의 한 행 — handler 요약.
+#[derive(Debug, Clone)]
+pub struct PickerHandlerSummary {
+    pub id: crate::file_handler::HandlerId,
+    /// 표시용 라벨. i18n key 가 있으면 번역된 값, 없으면 handler id.
+    pub display: String,
+}
+
+/// file_handler picker popup 의 상태.
+///
+/// 호출자가 popup 을 띄울 때 채워 넣는다. picker 는 직접 dispatch 하지 않고
+/// 선택 결과를 [`FileHandlerPickerData::result`] 로 남긴다. host 본체 layer 가
+/// frame 끝에 result 를 확인해 실제 핸들러 실행 + RecentPicks 기록을 수행한다.
+#[derive(Debug, Clone)]
+pub struct FileHandlerPickerData {
+    /// 표시용 — picker 헤더에 보일 대상 (예: 파일 경로).
+    pub target_display: String,
+    /// 탐지된 detector — 없을 수도 있음 ($unknown 등 unmatched).
+    pub detector: Option<crate::file_format::DetectorId>,
+    /// 좌측 list 의 후보들 — handler id 사전순.
+    pub candidates: Vec<PickerHandlerSummary>,
+    /// 우측 list 의 recent handler ids — 현재 등록된 것만, 저장 파일 순서.
+    pub recent: Vec<PickerHandlerSummary>,
+    /// 현재 선택된 handler. 더블클릭/[열기]로 dispatch.
+    pub selected: Option<crate::file_handler::HandlerId>,
+    /// dispatch 결과. host 본체 layer 가 frame 끝에서 소비.
+    pub result: Option<FileHandlerPickerResult>,
+}
+
+/// picker 의 닫기 사유.
+#[derive(Debug, Clone)]
+pub enum FileHandlerPickerResult {
+    /// 사용자가 handler 선택. host 본체 layer 가 실행 + recent 기록.
+    Selected(crate::file_handler::HandlerId),
+    /// 취소 또는 ESC — dispatch 없음.
+    Cancelled,
 }
 
 /// What is being renamed.

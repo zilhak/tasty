@@ -5,6 +5,7 @@ mod divider;
 mod egui_panels;
 pub mod image_view;
 pub mod markdown_view;
+pub(crate) mod file_handler_picker_popup;
 pub(crate) mod file_open_popup;
 pub mod font_registry;
 pub(crate) mod info_modal;

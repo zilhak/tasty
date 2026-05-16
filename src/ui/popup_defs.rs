@@ -106,6 +106,18 @@ pub fn all_defs() -> &'static [PopupDef] {
                 draw_fn: super::approval_popup::draw_approval_popup,
             },
             PopupDef {
+                id: super::file_handler_picker_popup::PICKER_POPUP_ID,
+                title_key: "file_handler.picker.title",
+                title_fn: Some(super::file_handler_picker_popup::picker_title),
+                default_size: egui::vec2(480.0, 320.0),
+                sizer: Some(super::file_handler_picker_popup::picker_sizer),
+                default_scope: PopupScope::Window,
+                close_on_outside_click: false,
+                headless: false,
+                sticky_focus: false,
+                draw_fn: super::file_handler_picker_popup::draw_file_handler_picker,
+            },
+            PopupDef {
                 id: "tools_menu",
                 title_key: "tools_menu.title",
                 title_fn: None,

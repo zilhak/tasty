@@ -445,3 +445,13 @@ apply_copied = "Apply command copied to clipboard."
 
 [surface.kind]
 diff = "Diff"
+
+[file_handler.picker]
+title = "Choose file handler"
+target_label = "Target:"
+format_label = "Format:"
+unknown_format = "unknown"
+candidates_heading = "Candidates"
+recent_heading = "Recent"
+open_button = "Open"
+empty = "No handlers registered."

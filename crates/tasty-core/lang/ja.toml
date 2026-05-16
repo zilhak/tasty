@@ -445,3 +445,13 @@ apply_copied = "適用コマンドをクリップボードにコピーしまし�
 
 [surface.kind]
 diff = "Diff"
+
+[file_handler.picker]
+title = "ファイルハンドラを選択"
+target_label = "対象:"
+format_label = "形式:"
+unknown_format = "不明"
+candidates_heading = "候補"
+recent_heading = "最近の選択"
+open_button = "開く"
+empty = "登録されたハンドラがありません。"
