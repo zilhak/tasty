@@ -629,7 +629,7 @@ tasty unset global-hook --hook HOOK_ID
 | 액션 | 평가 시점 동작 | 후속 IPC 처리 |
 |------|---------------|--------------|
 | `notify` | 활성 워크스페이스에 알림 추가 | 변화 없음 |
-| `stop` | 알림 + `triggered` 기록 | plugin agent 모든 IPC `-32007 cap_blocked` 거부 (claude.kill 트리거는 4.3e) |
+| `stop` | 알림 + `triggered` 기록 | plugin agent 모든 IPC `-32007 cap_blocked` 거부 (OS 프로세스 kill 트리거는 별도 `claude.kill` IPC 도입 후 결합 — 현재 Pause 와 실효 동등) |
 | `pause` | 알림 + `triggered` 기록 | plugin agent 모든 IPC `-32007 cap_blocked` 거부 |
 | `require_approval` | `approval.request` 자동 발행 (severity=warn) + `triggered` 기록 | plugin agent 모든 IPC `-32007 cap_blocked` 거부 — 사용자가 popup 응답 후 `cap.reset` 으로 재개 |
 
