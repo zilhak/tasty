@@ -194,6 +194,674 @@ impl Parser for ExitCodeParser {
     }
 }
 
+// ============================================================
+// osc_link (OSC 8)
+// ============================================================
+
+pub struct OscLinkParser;
+
+static OSC_LINK_RE: LazyLock<Regex> = LazyLock::new(|| {
+    // \x1b]8;<params>;<url>(BEL|ST)<text>\x1b]8;;(BEL|ST)
+    // params 는 비어있거나 key=value;... 형태일 수 있음.
+    Regex::new(
+        r"\x1b\]8;(?P<params>[^;\x07\x1b]*);(?P<url>[^\x07\x1b]*)(?:\x07|\x1b\\)(?P<text>[^\x1b]*)\x1b\]8;;(?:\x07|\x1b\\)",
+    )
+    .unwrap()
+});
+
+impl Parser for OscLinkParser {
+    fn id(&self) -> &'static str {
+        "osc_link"
+    }
+
+    fn parse_line(&self, raw: &str, line_idx: u32, out: &mut Vec<ParsedItem>) {
+        for caps in OSC_LINK_RE.captures_iter(raw) {
+            let m = caps.get(0).unwrap();
+            let url = caps.name("url").unwrap().as_str();
+            let text = caps.name("text").unwrap().as_str();
+            let params = caps.name("params").unwrap().as_str();
+            out.push(ParsedItem {
+                kind: "osc_link",
+                line: line_idx,
+                byte_start: m.start(),
+                byte_end: m.end(),
+                data: json!({
+                    "kind": "osc_link",
+                    "url": url,
+                    "text": text,
+                    "params": if params.is_empty() { None } else { Some(params) },
+                }),
+            });
+        }
+    }
+}
+
+// ============================================================
+// osc_notification (OSC 9 / OSC 777)
+// ============================================================
+
+pub struct OscNotificationParser;
+
+static OSC_NOTIFY_RE: LazyLock<Regex> = LazyLock::new(|| {
+    // OSC 9 ; body  (iTerm2 style user notification)
+    // OSC 777 ; notify ; title ; body  (rxvt-unicode)
+    Regex::new(r"\x1b\](?P<id>9|777);(?P<body>[^\x07\x1b]*)(?:\x07|\x1b\\)").unwrap()
+});
+
+impl Parser for OscNotificationParser {
+    fn id(&self) -> &'static str {
+        "osc_notification"
+    }
+
+    fn parse_line(&self, raw: &str, line_idx: u32, out: &mut Vec<ParsedItem>) {
+        for caps in OSC_NOTIFY_RE.captures_iter(raw) {
+            let m = caps.get(0).unwrap();
+            let id = caps.name("id").unwrap().as_str();
+            let body = caps.name("body").unwrap().as_str();
+            // OSC 777 은 `notify;title;body` 형태가 표준. 분해 시도.
+            let (kind_field, title, message) = if id == "777" {
+                let parts: Vec<&str> = body.splitn(3, ';').collect();
+                match parts.as_slice() {
+                    [action, title, msg] => (Some(*action), Some(*title), Some(*msg)),
+                    [action, title] => (Some(*action), Some(*title), None),
+                    [action] => (Some(*action), None, None),
+                    _ => (None, None, None),
+                }
+            } else {
+                (None, None, Some(body))
+            };
+            out.push(ParsedItem {
+                kind: "osc_notification",
+                line: line_idx,
+                byte_start: m.start(),
+                byte_end: m.end(),
+                data: json!({
+                    "kind": "osc_notification",
+                    "osc": id.parse::<u32>().ok(),
+                    "action": kind_field,
+                    "title": title,
+                    "message": message.or(Some(body)),
+                }),
+            });
+        }
+    }
+}
+
+// ============================================================
+// progress
+// ============================================================
+
+pub struct ProgressParser;
+
+static PROGRESS_BAR_RE: LazyLock<Regex> = LazyLock::new(|| {
+    // [#####>....]  N%  / [====]   45.2%
+    Regex::new(r"\[(?P<bar>[#=>\-\.\s]{3,})\]\s*(?P<pct>\d{1,3}(?:\.\d+)?)\s*%").unwrap()
+});
+
+static PROGRESS_PCT_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?P<pct>\d{1,3}(?:\.\d+)?)\s*%").unwrap());
+
+static PROGRESS_SIZE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    // 50 MB / 200 MB,  50MiB/200MiB,  50.5 KB / 1.2 GB
+    Regex::new(
+        r"(?P<cur>\d+(?:\.\d+)?)\s*(?P<u1>[KMGTP]i?B|B)\s*/\s*(?P<tot>\d+(?:\.\d+)?)\s*(?P<u2>[KMGTP]i?B|B)",
+    )
+    .unwrap()
+});
+
+impl Parser for ProgressParser {
+    fn id(&self) -> &'static str {
+        "progress"
+    }
+
+    fn parse_line(&self, raw: &str, line_idx: u32, out: &mut Vec<ParsedItem>) {
+        let line = strip_ansi(raw);
+
+        // 1) bar + percent (가장 구체적)
+        if let Some(caps) = PROGRESS_BAR_RE.captures(&line) {
+            let m = caps.get(0).unwrap();
+            let pct: f64 = caps.name("pct").unwrap().as_str().parse().unwrap_or(0.0);
+            out.push(ParsedItem {
+                kind: "progress",
+                line: line_idx,
+                byte_start: m.start(),
+                byte_end: m.end(),
+                data: json!({
+                    "kind": "progress",
+                    "style": "bar",
+                    "percent": pct,
+                    "bar": caps.name("bar").unwrap().as_str(),
+                }),
+            });
+            return;
+        }
+
+        // 2) size / total
+        if let Some(caps) = PROGRESS_SIZE_RE.captures(&line) {
+            let m = caps.get(0).unwrap();
+            let cur: f64 = caps.name("cur").unwrap().as_str().parse().unwrap_or(0.0);
+            let tot: f64 = caps.name("tot").unwrap().as_str().parse().unwrap_or(0.0);
+            let pct = if tot > 0.0 {
+                Some((cur / tot * 100.0).round())
+            } else {
+                None
+            };
+            out.push(ParsedItem {
+                kind: "progress",
+                line: line_idx,
+                byte_start: m.start(),
+                byte_end: m.end(),
+                data: json!({
+                    "kind": "progress",
+                    "style": "size",
+                    "current": cur,
+                    "current_unit": caps.name("u1").unwrap().as_str(),
+                    "total": tot,
+                    "total_unit": caps.name("u2").unwrap().as_str(),
+                    "percent": pct,
+                }),
+            });
+            return;
+        }
+
+        // 3) 단순 N% — false-positive 가 높으므로 라인이 짧고 % 가 끝에 가까울 때만.
+        if line.len() <= 80
+            && let Some(caps) = PROGRESS_PCT_RE.captures(&line)
+        {
+            let m = caps.get(0).unwrap();
+            // 백분율 뒤에 다른 토큰이 거의 없을 때만.
+            let tail = line[m.end()..].trim();
+            if tail.len() > 8 {
+                return;
+            }
+            let pct: f64 = caps.name("pct").unwrap().as_str().parse().unwrap_or(0.0);
+            if pct > 100.0 {
+                return;
+            }
+            out.push(ParsedItem {
+                kind: "progress",
+                line: line_idx,
+                byte_start: m.start(),
+                byte_end: m.end(),
+                data: json!({
+                    "kind": "progress",
+                    "style": "percent",
+                    "percent": pct,
+                }),
+            });
+        }
+    }
+}
+
+// ============================================================
+// compile_error (multi-line)
+// ============================================================
+
+pub struct CompileErrorParser;
+
+static RUSTC_HEAD_RE: LazyLock<Regex> = LazyLock::new(|| {
+    // error[E0308]: mismatched types  |  warning: unused variable: `x`
+    Regex::new(r"^(?P<sev>error|warning)(?:\[(?P<code>[A-Z]\d+)\])?:\s*(?P<msg>.+)$").unwrap()
+});
+
+static RUSTC_LOC_RE: LazyLock<Regex> = LazyLock::new(|| {
+    // " --> src/main.rs:10:5"
+    Regex::new(r"^\s*-->\s*(?P<path>[^\s:][^:]*):(?P<line>\d+):(?P<col>\d+)\s*$").unwrap()
+});
+
+static GCC_RE: LazyLock<Regex> = LazyLock::new(|| {
+    // src/foo.c:10:5: error: msg   |   src/foo.c:10: warning: msg
+    Regex::new(
+        r"^(?P<path>[^:\s][^:]*):(?P<line>\d+)(?::(?P<col>\d+))?:\s*(?P<sev>error|warning|note|fatal error):\s*(?P<msg>.+)$",
+    )
+    .unwrap()
+});
+
+static TSC_RE: LazyLock<Regex> = LazyLock::new(|| {
+    // src/foo.ts(10,5): error TS2345: msg
+    Regex::new(
+        r"^(?P<path>[^\(\s][^\(]*)\((?P<line>\d+),(?P<col>\d+)\):\s*(?P<sev>error|warning)\s+(?P<code>TS\d+):\s*(?P<msg>.+)$",
+    )
+    .unwrap()
+});
+
+impl Parser for CompileErrorParser {
+    fn id(&self) -> &'static str {
+        "compile_error"
+    }
+
+    fn parse_block(&self, text: &str, out: &mut Vec<ParsedItem>) {
+        let lines: Vec<&str> = text.split_inclusive('\n').collect();
+        let mut i = 0;
+        while i < lines.len() {
+            let raw = lines[i];
+            let stripped = strip_ansi(raw);
+            let line = stripped.trim_end_matches(['\n', '\r']);
+
+            // rustc: header + (선택적) --> location
+            if let Some(caps) = RUSTC_HEAD_RE.captures(line) {
+                let mut path: Option<String> = None;
+                let mut ln: Option<u32> = None;
+                let mut col: Option<u32> = None;
+                let mut consumed = 1usize;
+                if let Some(next) = lines.get(i + 1) {
+                    let next_clean = strip_ansi(next);
+                    let next_trim = next_clean.trim_end_matches(['\n', '\r']);
+                    if let Some(loc) = RUSTC_LOC_RE.captures(next_trim) {
+                        path = Some(loc.name("path").unwrap().as_str().to_string());
+                        ln = loc.name("line").unwrap().as_str().parse().ok();
+                        col = loc.name("col").unwrap().as_str().parse().ok();
+                        consumed = 2;
+                    }
+                }
+                out.push(ParsedItem {
+                    kind: "compile_error",
+                    line: i as u32,
+                    byte_start: 0,
+                    byte_end: line.len(),
+                    data: json!({
+                        "kind": "compile_error",
+                        "tool": "rustc",
+                        "severity": caps.name("sev").unwrap().as_str(),
+                        "code": caps.name("code").map(|m| m.as_str()),
+                        "message": caps.name("msg").unwrap().as_str(),
+                        "path": path,
+                        "line_number": ln,
+                        "column": col,
+                    }),
+                });
+                i += consumed;
+                continue;
+            }
+
+            // tsc
+            if let Some(caps) = TSC_RE.captures(line) {
+                out.push(ParsedItem {
+                    kind: "compile_error",
+                    line: i as u32,
+                    byte_start: 0,
+                    byte_end: line.len(),
+                    data: json!({
+                        "kind": "compile_error",
+                        "tool": "tsc",
+                        "severity": caps.name("sev").unwrap().as_str(),
+                        "code": caps.name("code").unwrap().as_str(),
+                        "message": caps.name("msg").unwrap().as_str(),
+                        "path": caps.name("path").unwrap().as_str(),
+                        "line_number": caps.name("line").unwrap().as_str().parse::<u32>().ok(),
+                        "column": caps.name("col").unwrap().as_str().parse::<u32>().ok(),
+                    }),
+                });
+                i += 1;
+                continue;
+            }
+
+            // gcc/clang
+            if let Some(caps) = GCC_RE.captures(line) {
+                out.push(ParsedItem {
+                    kind: "compile_error",
+                    line: i as u32,
+                    byte_start: 0,
+                    byte_end: line.len(),
+                    data: json!({
+                        "kind": "compile_error",
+                        "tool": "gcc",
+                        "severity": caps.name("sev").unwrap().as_str(),
+                        "code": serde_json::Value::Null,
+                        "message": caps.name("msg").unwrap().as_str(),
+                        "path": caps.name("path").unwrap().as_str(),
+                        "line_number": caps.name("line").unwrap().as_str().parse::<u32>().ok(),
+                        "column": caps.name("col").and_then(|m| m.as_str().parse::<u32>().ok()),
+                    }),
+                });
+                i += 1;
+                continue;
+            }
+
+            i += 1;
+        }
+    }
+}
+
+// ============================================================
+// stack_trace (multi-line)
+// ============================================================
+
+pub struct StackTraceParser;
+
+static PY_TRACEBACK_HEAD: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"^Traceback \(most recent call last\):\s*$"#).unwrap());
+static PY_FRAME_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"^\s*File "(?P<path>[^"]+)", line (?P<line>\d+)(?:, in (?P<func>.+))?\s*$"#)
+        .unwrap()
+});
+static PY_EXC_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^(?P<exc>[A-Z][A-Za-z0-9_.]*Error|[A-Z][A-Za-z0-9_.]*Exception|Exception|KeyboardInterrupt|SystemExit|StopIteration|GeneratorExit)(?::\s*(?P<msg>.+))?$").unwrap());
+
+static RUST_PANIC_HEAD: LazyLock<Regex> = LazyLock::new(|| {
+    // thread 'main' panicked at 'msg', src/main.rs:10:5
+    Regex::new(
+        r"^thread\s+'(?P<thread>[^']+)'\s+panicked\s+at\s+(?:'(?P<msg>[^']*)',\s*)?(?P<path>[^:\s]+):(?P<line>\d+):(?P<col>\d+)\s*$",
+    )
+    .unwrap()
+});
+static RUST_BACKTRACE_HEAD: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^stack backtrace:\s*$").unwrap());
+static RUST_FRAME_RE: LazyLock<Regex> = LazyLock::new(|| {
+    // "   0: foo::bar::baz"  또는 "   0: 0x55... - foo::bar"
+    Regex::new(r"^\s*\d+:\s+(?:0x[0-9a-f]+\s+-\s+)?(?P<func>.+?)\s*$").unwrap()
+});
+
+static NODE_FRAME_RE: LazyLock<Regex> = LazyLock::new(|| {
+    // "    at funcName (file:line:col)"  |  "    at file:line:col"
+    // path 에 콜론이 포함될 수 있음 (예: node:internal/...). lazy 매칭 + 끝 anchor 로
+    // 마지막 ":line:col" 두 그룹을 분리한다.
+    Regex::new(
+        r"^\s*at\s+(?:(?P<func>[^\s(]+)\s+\()?(?P<path>.+?):(?P<line>\d+):(?P<col>\d+)\)?\s*$",
+    )
+    .unwrap()
+});
+
+static JAVA_FRAME_RE: LazyLock<Regex> = LazyLock::new(|| {
+    // "    at com.example.Foo.bar(Foo.java:42)"
+    Regex::new(
+        r"^\s*at\s+(?P<func>[\w.$<>]+)\((?P<file>[^:)]+)(?::(?P<line>\d+))?\)\s*$",
+    )
+    .unwrap()
+});
+
+impl Parser for StackTraceParser {
+    fn id(&self) -> &'static str {
+        "stack_trace"
+    }
+
+    fn parse_block(&self, text: &str, out: &mut Vec<ParsedItem>) {
+        let lines: Vec<&str> = text.split_inclusive('\n').collect();
+        let clean: Vec<String> = lines
+            .iter()
+            .map(|l| {
+                let s = strip_ansi(l);
+                s.trim_end_matches(['\n', '\r']).to_string()
+            })
+            .collect();
+
+        let mut i = 0;
+        while i < clean.len() {
+            let line = &clean[i];
+
+            // Python traceback
+            if PY_TRACEBACK_HEAD.is_match(line) {
+                let start = i;
+                let mut frames = Vec::new();
+                i += 1;
+                while i < clean.len() {
+                    if let Some(caps) = PY_FRAME_RE.captures(&clean[i]) {
+                        frames.push(json!({
+                            "path": caps.name("path").unwrap().as_str(),
+                            "line": caps.name("line").unwrap().as_str().parse::<u32>().ok(),
+                            "func": caps.name("func").map(|m| m.as_str().trim().to_string()),
+                        }));
+                        i += 1;
+                        // 다음 줄이 코드 컨텍스트 (들여쓰기) 면 skip.
+                        if i < clean.len()
+                            && !PY_FRAME_RE.is_match(&clean[i])
+                            && !PY_EXC_RE.is_match(&clean[i])
+                            && clean[i].starts_with("    ")
+                        {
+                            i += 1;
+                        }
+                    } else {
+                        break;
+                    }
+                }
+                let (exception, message) = if i < clean.len()
+                    && let Some(caps) = PY_EXC_RE.captures(&clean[i])
+                {
+                    let exc = caps.name("exc").unwrap().as_str().to_string();
+                    let msg = caps.name("msg").map(|m| m.as_str().to_string());
+                    i += 1;
+                    (Some(exc), msg)
+                } else {
+                    (None, None)
+                };
+                out.push(ParsedItem {
+                    kind: "stack_trace",
+                    line: start as u32,
+                    byte_start: 0,
+                    byte_end: line.len(),
+                    data: json!({
+                        "kind": "stack_trace",
+                        "language": "python",
+                        "exception": exception,
+                        "message": message,
+                        "frames": frames,
+                    }),
+                });
+                continue;
+            }
+
+            // Rust panic (단일 라인) + optional stack backtrace
+            if let Some(caps) = RUST_PANIC_HEAD.captures(line) {
+                let start = i;
+                let panic_path = caps.name("path").unwrap().as_str().to_string();
+                let panic_line: Option<u32> =
+                    caps.name("line").unwrap().as_str().parse().ok();
+                let panic_col: Option<u32> = caps.name("col").unwrap().as_str().parse().ok();
+                let thread = caps.name("thread").unwrap().as_str().to_string();
+                let msg = caps.name("msg").map(|m| m.as_str().to_string());
+                i += 1;
+                let mut frames = Vec::new();
+                if i < clean.len() && RUST_BACKTRACE_HEAD.is_match(&clean[i]) {
+                    i += 1;
+                    while i < clean.len() {
+                        if let Some(fc) = RUST_FRAME_RE.captures(&clean[i]) {
+                            frames.push(json!({
+                                "func": fc.name("func").unwrap().as_str(),
+                            }));
+                            i += 1;
+                        } else {
+                            break;
+                        }
+                    }
+                }
+                out.push(ParsedItem {
+                    kind: "stack_trace",
+                    line: start as u32,
+                    byte_start: 0,
+                    byte_end: line.len(),
+                    data: json!({
+                        "kind": "stack_trace",
+                        "language": "rust",
+                        "thread": thread,
+                        "message": msg,
+                        "path": panic_path,
+                        "line_number": panic_line,
+                        "column": panic_col,
+                        "frames": frames,
+                    }),
+                });
+                continue;
+            }
+
+            // Node / Java — at-frame 연속 블록
+            if NODE_FRAME_RE.is_match(line) || JAVA_FRAME_RE.is_match(line) {
+                let start = i;
+                let mut frames = Vec::new();
+                let mut lang_hint = "node";
+                while i < clean.len() {
+                    let l = &clean[i];
+                    if let Some(c) = NODE_FRAME_RE.captures(l) {
+                        frames.push(json!({
+                            "func": c.name("func").map(|m| m.as_str()),
+                            "path": c.name("path").unwrap().as_str(),
+                            "line": c.name("line").unwrap().as_str().parse::<u32>().ok(),
+                            "col": c.name("col").unwrap().as_str().parse::<u32>().ok(),
+                        }));
+                        i += 1;
+                    } else if let Some(c) = JAVA_FRAME_RE.captures(l) {
+                        lang_hint = "java";
+                        frames.push(json!({
+                            "func": c.name("func").unwrap().as_str(),
+                            "file": c.name("file").unwrap().as_str(),
+                            "line": c.name("line").and_then(|m| m.as_str().parse::<u32>().ok()),
+                        }));
+                        i += 1;
+                    } else {
+                        break;
+                    }
+                }
+                if !frames.is_empty() {
+                    out.push(ParsedItem {
+                        kind: "stack_trace",
+                        line: start as u32,
+                        byte_start: 0,
+                        byte_end: line.len(),
+                        data: json!({
+                            "kind": "stack_trace",
+                            "language": lang_hint,
+                            "frames": frames,
+                        }),
+                    });
+                }
+                continue;
+            }
+
+            i += 1;
+        }
+    }
+}
+
+// ============================================================
+// test_result (single-line summaries, but parser-level)
+// ============================================================
+
+pub struct TestResultParser;
+
+static CARGO_TEST_RE: LazyLock<Regex> = LazyLock::new(|| {
+    // test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+    Regex::new(
+        r"^test result:\s*(?P<status>ok|FAILED)\.\s*(?P<passed>\d+)\s+passed;\s*(?P<failed>\d+)\s+failed(?:;\s*(?P<ignored>\d+)\s+ignored)?(?:;\s*(?P<measured>\d+)\s+measured)?(?:;\s*(?P<filtered>\d+)\s+filtered out)?(?:;\s*finished in\s*(?P<dur>[0-9.]+)s)?",
+    )
+    .unwrap()
+});
+
+static PYTEST_RE: LazyLock<Regex> = LazyLock::new(|| {
+    // ===== 5 passed, 1 failed, 2 skipped in 0.34s =====
+    // 또는 ===== 5 passed in 0.12s =====
+    Regex::new(r"=+\s*(?P<body>[^=]+?)\s+in\s+(?P<dur>[0-9.]+)\s*s\s*=+").unwrap()
+});
+static PYTEST_TOKEN_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?P<n>\d+)\s+(?P<kind>passed|failed|skipped|error|errors|xfailed|xpassed|deselected|warnings?)").unwrap());
+
+static JEST_TESTS_RE: LazyLock<Regex> = LazyLock::new(|| {
+    // "Tests:       1 failed, 2 passed, 3 total"
+    Regex::new(r"^Tests:\s+(?P<body>.+?)$").unwrap()
+});
+static JEST_TOKEN_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?P<n>\d+)\s+(?P<kind>passed|failed|skipped|todo|total)").unwrap()
+});
+
+impl Parser for TestResultParser {
+    fn id(&self) -> &'static str {
+        "test_result"
+    }
+
+    fn parse_line(&self, raw: &str, line_idx: u32, out: &mut Vec<ParsedItem>) {
+        let stripped = strip_ansi(raw);
+        let line = stripped.trim();
+
+        if let Some(caps) = CARGO_TEST_RE.captures(line) {
+            let status = caps.name("status").unwrap().as_str();
+            out.push(ParsedItem {
+                kind: "test_result",
+                line: line_idx,
+                byte_start: 0,
+                byte_end: raw.len(),
+                data: json!({
+                    "kind": "test_result",
+                    "framework": "cargo",
+                    "status": if status == "ok" { "passed" } else { "failed" },
+                    "passed": caps.name("passed").unwrap().as_str().parse::<u32>().ok(),
+                    "failed": caps.name("failed").unwrap().as_str().parse::<u32>().ok(),
+                    "ignored": caps.name("ignored").and_then(|m| m.as_str().parse::<u32>().ok()),
+                    "measured": caps.name("measured").and_then(|m| m.as_str().parse::<u32>().ok()),
+                    "filtered": caps.name("filtered").and_then(|m| m.as_str().parse::<u32>().ok()),
+                    "duration_seconds": caps.name("dur").and_then(|m| m.as_str().parse::<f64>().ok()),
+                }),
+            });
+            return;
+        }
+
+        if let Some(caps) = PYTEST_RE.captures(line) {
+            let body = caps.name("body").unwrap().as_str();
+            let mut counts = serde_json::Map::new();
+            for c in PYTEST_TOKEN_RE.captures_iter(body) {
+                let n: u32 = c.name("n").unwrap().as_str().parse().unwrap_or(0);
+                let kind = c.name("kind").unwrap().as_str();
+                let key = if kind == "errors" { "error" } else { kind };
+                counts.insert(key.to_string(), json!(n));
+            }
+            if counts.is_empty() {
+                return;
+            }
+            let failed = counts
+                .get("failed")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            let errors = counts.get("error").and_then(|v| v.as_u64()).unwrap_or(0);
+            let status = if failed > 0 || errors > 0 {
+                "failed"
+            } else {
+                "passed"
+            };
+            out.push(ParsedItem {
+                kind: "test_result",
+                line: line_idx,
+                byte_start: 0,
+                byte_end: raw.len(),
+                data: json!({
+                    "kind": "test_result",
+                    "framework": "pytest",
+                    "status": status,
+                    "counts": counts,
+                    "duration_seconds": caps.name("dur").and_then(|m| m.as_str().parse::<f64>().ok()),
+                }),
+            });
+            return;
+        }
+
+        if let Some(caps) = JEST_TESTS_RE.captures(line) {
+            let body = caps.name("body").unwrap().as_str();
+            let mut counts = serde_json::Map::new();
+            for c in JEST_TOKEN_RE.captures_iter(body) {
+                let n: u32 = c.name("n").unwrap().as_str().parse().unwrap_or(0);
+                let kind = c.name("kind").unwrap().as_str();
+                counts.insert(kind.to_string(), json!(n));
+            }
+            if counts.is_empty() {
+                return;
+            }
+            let failed = counts
+                .get("failed")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            let status = if failed > 0 { "failed" } else { "passed" };
+            out.push(ParsedItem {
+                kind: "test_result",
+                line: line_idx,
+                byte_start: 0,
+                byte_end: raw.len(),
+                data: json!({
+                    "kind": "test_result",
+                    "framework": "jest",
+                    "status": status,
+                    "counts": counts,
+                }),
+            });
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -317,5 +985,241 @@ mod tests {
         let items = parse_buffer(text, ["path"]).unwrap();
         let p = first(&items, "path");
         assert_eq!(p.line, 2);
+    }
+
+    // ----- osc_link -----
+
+    #[test]
+    fn osc_link_basic() {
+        let text = "click \x1b]8;;https://example.com\x07here\x1b]8;;\x07 ok";
+        let items = parse_buffer(text, ["osc_link"]).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].data["url"], "https://example.com");
+        assert_eq!(items[0].data["text"], "here");
+    }
+
+    #[test]
+    fn osc_link_st_terminator() {
+        let text = "\x1b]8;;file:///tmp/x\x1b\\label\x1b]8;;\x1b\\";
+        let items = parse_buffer(text, ["osc_link"]).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].data["url"], "file:///tmp/x");
+        assert_eq!(items[0].data["text"], "label");
+    }
+
+    // ----- osc_notification -----
+
+    #[test]
+    fn osc_notification_9() {
+        let items = parse_buffer("\x1b]9;Build finished\x07", ["osc_notification"]).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].data["osc"], 9);
+        assert_eq!(items[0].data["message"], "Build finished");
+    }
+
+    #[test]
+    fn osc_notification_777_with_title() {
+        let items = parse_buffer(
+            "\x1b]777;notify;Compile;done\x07",
+            ["osc_notification"],
+        )
+        .unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].data["osc"], 777);
+        assert_eq!(items[0].data["action"], "notify");
+        assert_eq!(items[0].data["title"], "Compile");
+        assert_eq!(items[0].data["message"], "done");
+    }
+
+    // ----- progress -----
+
+    #[test]
+    fn progress_bar_with_percent() {
+        let items = parse_buffer("[====>     ] 45%", ["progress"]).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].data["style"], "bar");
+        assert_eq!(items[0].data["percent"], 45.0);
+    }
+
+    #[test]
+    fn progress_size_with_total() {
+        let items = parse_buffer("Downloading 50 MB / 200 MB", ["progress"]).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].data["style"], "size");
+        assert_eq!(items[0].data["current"], 50.0);
+        assert_eq!(items[0].data["total"], 200.0);
+        assert_eq!(items[0].data["percent"], 25.0);
+    }
+
+    #[test]
+    fn progress_plain_percent() {
+        let items = parse_buffer("Progress: 78%", ["progress"]).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].data["style"], "percent");
+        assert_eq!(items[0].data["percent"], 78.0);
+    }
+
+    #[test]
+    fn progress_ignores_percent_in_prose() {
+        // 백분율 뒤에 긴 토큰이 있으면 progress 가 아님.
+        let items = parse_buffer(
+            "We saw 50% improvement in test coverage and many bugs fixed.",
+            ["progress"],
+        )
+        .unwrap();
+        assert!(items.is_empty(), "got: {items:?}");
+    }
+
+    // ----- compile_error -----
+
+    #[test]
+    fn compile_error_rustc_with_location() {
+        let text = "error[E0308]: mismatched types\n --> src/main.rs:10:5\n";
+        let items = parse_buffer(text, ["compile_error"]).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].data["tool"], "rustc");
+        assert_eq!(items[0].data["severity"], "error");
+        assert_eq!(items[0].data["code"], "E0308");
+        assert_eq!(items[0].data["path"], "src/main.rs");
+        assert_eq!(items[0].data["line_number"], 10);
+        assert_eq!(items[0].data["column"], 5);
+    }
+
+    #[test]
+    fn compile_error_gcc() {
+        let items = parse_buffer(
+            "src/foo.c:42:10: error: 'x' undeclared",
+            ["compile_error"],
+        )
+        .unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].data["tool"], "gcc");
+        assert_eq!(items[0].data["path"], "src/foo.c");
+        assert_eq!(items[0].data["line_number"], 42);
+        assert_eq!(items[0].data["column"], 10);
+        assert_eq!(items[0].data["message"], "'x' undeclared");
+    }
+
+    #[test]
+    fn compile_error_tsc() {
+        let items = parse_buffer(
+            "src/foo.ts(10,5): error TS2345: Type 'string' is not assignable",
+            ["compile_error"],
+        )
+        .unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].data["tool"], "tsc");
+        assert_eq!(items[0].data["code"], "TS2345");
+        assert_eq!(items[0].data["line_number"], 10);
+        assert_eq!(items[0].data["column"], 5);
+    }
+
+    // ----- stack_trace -----
+
+    #[test]
+    fn stack_trace_python() {
+        let text = "\
+Traceback (most recent call last):
+  File \"app.py\", line 10, in main
+    raise ValueError('bad')
+ValueError: bad
+";
+        let items = parse_buffer(text, ["stack_trace"]).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].data["language"], "python");
+        assert_eq!(items[0].data["exception"], "ValueError");
+        assert_eq!(items[0].data["message"], "bad");
+        let frames = items[0].data["frames"].as_array().unwrap();
+        assert_eq!(frames.len(), 1);
+        assert_eq!(frames[0]["path"], "app.py");
+        assert_eq!(frames[0]["line"], 10);
+        assert_eq!(frames[0]["func"], "main");
+    }
+
+    #[test]
+    fn stack_trace_rust_panic() {
+        let text = "thread 'main' panicked at 'bad', src/main.rs:42:7\n";
+        let items = parse_buffer(text, ["stack_trace"]).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].data["language"], "rust");
+        assert_eq!(items[0].data["thread"], "main");
+        assert_eq!(items[0].data["message"], "bad");
+        assert_eq!(items[0].data["path"], "src/main.rs");
+        assert_eq!(items[0].data["line_number"], 42);
+    }
+
+    #[test]
+    fn stack_trace_node() {
+        let text = "\
+    at Object.<anonymous> (/app/index.js:10:13)
+    at Module._compile (node:internal/modules/cjs/loader:1234:14)
+";
+        let items = parse_buffer(text, ["stack_trace"]).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].data["language"], "node");
+        let frames = items[0].data["frames"].as_array().unwrap();
+        assert_eq!(frames.len(), 2);
+    }
+
+    #[test]
+    fn stack_trace_java() {
+        let text = "\
+    at com.example.Foo.bar(Foo.java:42)
+    at com.example.Main.main(Main.java:10)
+";
+        let items = parse_buffer(text, ["stack_trace"]).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].data["language"], "java");
+        let frames = items[0].data["frames"].as_array().unwrap();
+        assert_eq!(frames.len(), 2);
+        assert_eq!(frames[0]["func"], "com.example.Foo.bar");
+        assert_eq!(frames[0]["line"], 42);
+    }
+
+    // ----- test_result -----
+
+    #[test]
+    fn test_result_cargo() {
+        let line = "test result: ok. 5 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.12s";
+        let items = parse_buffer(line, ["test_result"]).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].data["framework"], "cargo");
+        assert_eq!(items[0].data["status"], "passed");
+        assert_eq!(items[0].data["passed"], 5);
+        assert_eq!(items[0].data["failed"], 0);
+        assert_eq!(items[0].data["ignored"], 1);
+        assert_eq!(items[0].data["duration_seconds"], 0.12);
+    }
+
+    #[test]
+    fn test_result_cargo_failed() {
+        let line = "test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out";
+        let items = parse_buffer(line, ["test_result"]).unwrap();
+        assert_eq!(items[0].data["status"], "failed");
+    }
+
+    #[test]
+    fn test_result_pytest() {
+        let line = "============== 5 passed, 1 failed, 2 skipped in 0.34s ==============";
+        let items = parse_buffer(line, ["test_result"]).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].data["framework"], "pytest");
+        assert_eq!(items[0].data["status"], "failed");
+        assert_eq!(items[0].data["counts"]["passed"], 5);
+        assert_eq!(items[0].data["counts"]["failed"], 1);
+        assert_eq!(items[0].data["counts"]["skipped"], 2);
+        assert_eq!(items[0].data["duration_seconds"], 0.34);
+    }
+
+    #[test]
+    fn test_result_jest() {
+        let line = "Tests:       1 failed, 2 passed, 3 total";
+        let items = parse_buffer(line, ["test_result"]).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].data["framework"], "jest");
+        assert_eq!(items[0].data["status"], "failed");
+        assert_eq!(items[0].data["counts"]["passed"], 2);
+        assert_eq!(items[0].data["counts"]["failed"], 1);
+        assert_eq!(items[0].data["counts"]["total"], 3);
     }
 }

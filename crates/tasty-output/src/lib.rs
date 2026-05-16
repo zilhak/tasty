@@ -33,15 +33,36 @@ pub struct ParsedItem {
 }
 
 /// 라인 단위 stateless 파서.
+///
+/// 단일 라인 파서는 [`parse_line`] 만 구현하면 된다 (기본 [`parse_block`] 이
+/// 라인별 dispatch). 멀티라인 파서 (compile_error, stack_trace 등) 는
+/// [`parse_block`] 을 override 하고 [`parse_line`] 은 no-op 으로 둔다.
+/// 옵저버 스트리밍 경로는 [`parse_line`] 만 호출하므로, 멀티라인 파서는
+/// `parse_buffer` (batch) 환경에서만 발화한다.
 pub trait Parser: Send + Sync {
     /// 파서 id. CLI/IPC 의 `--parsers` 리스트에서 사용.
     fn id(&self) -> &'static str;
 
-    /// `line_idx` 번 라인을 파싱해 발견한 항목을 `out` 에 push.
-    fn parse_line(&self, line: &str, line_idx: u32, out: &mut Vec<ParsedItem>);
+    /// 단일 라인 dispatch. stateless 단일 라인 파서가 구현.
+    fn parse_line(&self, _line: &str, _line_idx: u32, _out: &mut Vec<ParsedItem>) {}
+
+    /// 블록 dispatch. 기본은 `text` 를 `\n` 으로 쪼개 [`parse_line`] 반복.
+    /// 멀티라인 컨텍스트가 필요한 파서는 override.
+    fn parse_block(&self, text: &str, out: &mut Vec<ParsedItem>) {
+        for (idx, line) in text.split_inclusive('\n').enumerate() {
+            let trimmed = line.strip_suffix('\n').unwrap_or(line);
+            let trimmed = trimmed.strip_suffix('\r').unwrap_or(trimmed);
+            self.parse_line(trimmed, idx as u32, out);
+        }
+    }
 }
 
 /// 빌트인 파서 카탈로그. `ID` 문자열로 조회.
+///
+/// 처음 4종 (`path`/`url`/`prompt_boundary`/`exit_code`) 은 [`DEFAULT_PARSER_IDS`] 에
+/// 포함되어 기본 활성화된다. 나머지 6종 (`compile_error`/`stack_trace`/`test_result`/
+/// `progress`/`osc_link`/`osc_notification`) 은 false-positive 위험 또는 도메인 특수성
+/// 때문에 명시적으로 opt-in 해야 한다.
 pub fn registry() -> &'static [&'static dyn Parser] {
     static ENTRIES: LazyLock<Vec<&'static dyn Parser>> = LazyLock::new(|| {
         vec![
@@ -49,6 +70,12 @@ pub fn registry() -> &'static [&'static dyn Parser] {
             &parsers::UrlParser,
             &parsers::PromptBoundaryParser,
             &parsers::ExitCodeParser,
+            &parsers::CompileErrorParser,
+            &parsers::StackTraceParser,
+            &parsers::TestResultParser,
+            &parsers::ProgressParser,
+            &parsers::OscLinkParser,
+            &parsers::OscNotificationParser,
         ]
     });
     &ENTRIES
@@ -76,15 +103,12 @@ where
 }
 
 /// `parse_buffer` 와 동일하나 미리 lookup 한 parser 슬라이스를 받는다.
+/// 각 파서의 [`Parser::parse_block`] 을 호출 — 단일 라인 파서는 기본
+/// 구현으로 라인별 dispatch, 멀티라인 파서는 자체 처리.
 pub fn parse_buffer_with(text: &str, parsers: &[&'static dyn Parser]) -> Vec<ParsedItem> {
     let mut out = Vec::new();
-    for (idx, line) in text.split_inclusive('\n').enumerate() {
-        // `split_inclusive` 가 trailing `\n` 도 줄 끝에 남기므로 strip.
-        let trimmed = line.strip_suffix('\n').unwrap_or(line);
-        let trimmed = trimmed.strip_suffix('\r').unwrap_or(trimmed);
-        for p in parsers {
-            p.parse_line(trimmed, idx as u32, &mut out);
-        }
+    for p in parsers {
+        p.parse_block(text, &mut out);
     }
     out
 }
@@ -104,9 +128,32 @@ mod tests {
     use super::*;
 
     #[test]
-    fn registry_has_four_parsers() {
+    fn registry_contains_all_builtin_parsers() {
         let ids: Vec<&str> = registry().iter().map(|p| p.id()).collect();
-        assert_eq!(ids, ["path", "url", "prompt_boundary", "exit_code"]);
+        assert_eq!(
+            ids,
+            [
+                "path",
+                "url",
+                "prompt_boundary",
+                "exit_code",
+                "compile_error",
+                "stack_trace",
+                "test_result",
+                "progress",
+                "osc_link",
+                "osc_notification",
+            ]
+        );
+    }
+
+    #[test]
+    fn default_parser_ids_is_subset_of_registry() {
+        let registry_ids: std::collections::HashSet<&str> =
+            registry().iter().map(|p| p.id()).collect();
+        for id in DEFAULT_PARSER_IDS {
+            assert!(registry_ids.contains(id), "missing default id: {id}");
+        }
     }
 
     #[test]

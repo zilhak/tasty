@@ -23,3 +23,4 @@ IPC/CLI 전체 메서드는 [api-reference.md](api-reference.md) 참조.
 | 클립보드 히스토리 | [clipboard.md](clipboard.md) |
 | Plugin 시스템 | [plugins.md](plugins.md) |
 | Event 카탈로그 (Event Bus 1.0 wire) | [event-catalog.md](event-catalog.md) |
+| 출력 파서 카탈로그 (`tasty-output`) | [output-parsers.md](output-parsers.md) |

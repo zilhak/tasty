@@ -276,7 +276,7 @@ tasty claude hook stop --surface 5  # 특정 surface 지정 (또는 TASTY_SURFAC
 | `surface.screen_text` | `surface_id` | 현재 화면의 텍스트 반환 |
 | `surface.set_mark` | `surface_id` | 현재 출력 위치에 마크 설정 |
 | `surface.read_since_mark` | `surface_id, strip_ansi?: bool` | 마크 이후 새 출력 반환 |
-| `surface.parse_since_mark` | `surface_id, parsers?: string[] \| string` | 마크 이후 출력을 빌트인 파서로 분해. 응답: `{ surface_id, parsers, items: [{ kind, line, byte_start, byte_end, data }] }`. 알 수 없는 파서 id 면 `invalid_params`. 기본 파서 = `path,url,prompt_boundary,exit_code`. |
+| `surface.parse_since_mark` | `surface_id, parsers?: string[] \| string` | 마크 이후 출력을 빌트인 파서로 분해. 응답: `{ surface_id, parsers, items: [{ kind, line, byte_start, byte_end, data }] }`. 알 수 없는 파서 id 면 `invalid_params`. 기본 파서 = `path,url,prompt_boundary,exit_code`. 옵션: `compile_error,stack_trace,test_result,progress,osc_link,osc_notification` (전체 카탈로그: [output-parsers.md](output-parsers.md)). |
 | `surface.commands` | `surface_id, limit?: usize, since?: i64` | OSC 133 으로 인덱싱된 명령 목록. 각 record: `{ prompt_started_at, command_started_at, ended_at, exit_code, command }` (단위: unix-ms). 셸 통합이 미설치된 surface 는 빈 배열. |
 | `surface.last_command` | `surface_id` | 가장 최근 record. 없으면 `null`. |
 | `surface.command_at` | `surface_id, index: i64` | 0-based 인덱스 (음수면 끝에서부터). 범위 밖이면 `null`. |
