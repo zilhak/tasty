@@ -624,6 +624,7 @@ tasty unset global-hook --hook HOOK_ID
 | `telemetry.cap.status` | `Telemetry` | `{ agent? }` → `{ entries: [CostCap + current_value + ratio], count }` |
 | `telemetry.cap.reset` | `Telemetry` | `{ id? } 또는 { agent? }` (둘 중 최소 하나) → `{ reset_ids: [], count }` — 매칭된 cap 들의 `triggered` 비움 |
 | `telemetry.anomaly.list` | `Telemetry` | `{ agent?, kind?∈{call_burst,slow_loop,rss_surge}, since?, until? }` → `{ entries: [Anomaly], count }` — `detected_at` 오름차순 |
+| `telemetry.session_summary` | `Telemetry` | `{ workspace_id?, since?, until?, format?∈{markdown,json}=markdown, top_n?=10 }` → `{ format, summary }` — 결정론적 순수 집계 (tokens / ipc_calls / approvals / anomalies). `workspace_id` 미지정 시 전 workspace 합산 |
 
 **Cost Cap 동작 (Phase 4.3d 까지)** — `record` / `record_batch` / dispatcher 자동 카운트 직후 inline 으로 cap 평가. agent+metric 가 일치하는 미발화 cap 의 `current_value` (윈도우 내 raw event sum) 가 `threshold` 이상이면 `triggered: { at, value }` 마크.
 

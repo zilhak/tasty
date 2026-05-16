@@ -271,6 +271,24 @@ pub enum TelemetryCommands {
         #[command(subcommand)]
         command: TelemetryAnomalyCommands,
     },
+    /// Aggregate session summary (metrics + approvals + anomalies).
+    SessionSummary {
+        /// Restrict to a single workspace (defaults to all).
+        #[arg(long)]
+        workspace_id: Option<u32>,
+        /// Lower bound on event ts (unix ms, inclusive).
+        #[arg(long)]
+        since: Option<u64>,
+        /// Upper bound on event ts (unix ms, exclusive).
+        #[arg(long)]
+        until: Option<u64>,
+        /// Output format: markdown | json (default: markdown).
+        #[arg(long, default_value = "markdown")]
+        format: String,
+        /// Number of top entries for ipc_calls (default: 10).
+        #[arg(long)]
+        top_n: Option<u32>,
+    },
 }
 
 #[derive(Subcommand)]

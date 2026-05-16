@@ -267,6 +267,10 @@ fn route_engine_handler(
         "telemetry.anomaly.list" => {
             telemetry::handle_anomaly_list(state, caller, id, &request.params)
         }
+        // telemetry.session_summary — Phase 4.5 (메트릭/승인/이상 집계)
+        "telemetry.session_summary" => {
+            telemetry::handle_session_summary(state, caller, id, &request.params)
+        }
         _ => return None,
     })
 }

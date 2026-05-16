@@ -508,10 +508,22 @@
 - 발화 시: notification 발행 + `tasty.telemetry.anomaly.{ts:013}.{id}` 키로 Global scope 영속
 - `telemetry.anomaly.list` IPC — `agent` / `kind` / `since` / `until` 필터, `detected_at` 오름차순. anomaly_rule.set/remove 는 후속 phase
 
+### 세션 요약 (Phase 4.5)
+- `telemetry.session_summary` IPC — 결정론적 순수 집계 (LLM 호출 없음)
+- 파라미터: `workspace_id?` (없으면 전 workspace 합산), `since?`, `until?`, `format?∈{markdown,json}` (기본 `markdown`), `top_n?` (기본 10)
+- 집계 항목:
+  - **tokens**: `ipc_calls` 를 제외한 모든 metric 의 sum (k:v map)
+  - **ipc_calls**: `ipc_calls_total` 과 method 별 top-N (sort desc by count, tiebreak by method name)
+  - **approvals**: total / pending / responded / timed_out / cancelled + responded choice 별 count (`tasty.approval.*` 영속 레코드를 모든 scope 에서 prefix scan)
+  - **anomalies**: Global scope 에서 prefix scan, since/until 윈도우 적용
+- markdown 출력은 헤더+표 구조. json 은 동일한 SessionSummary 구조체를 그대로 직렬화
+- 영속(`tasty.telemetry.session_summary.*`) 은 옵션 — 본 sub-phase 에선 생략
+
 ### CLI
 - `tasty telemetry {record,summary,timeseries,top}` — 단일 record 기록 / 집계 조회
 - `tasty telemetry cap {set,list,remove,status,reset}` — Cost Cap CRUD
 - `tasty telemetry anomaly list` — 검출된 이상 신호 조회 (`--agent`, `--kind`, `--since`, `--until`)
+- `tasty telemetry session-summary` — 세션 요약 (`--workspace-id`, `--since`, `--until`, `--format`, `--top-n`)
 
 ## 설정 시스템
 

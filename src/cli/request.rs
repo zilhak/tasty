@@ -1028,6 +1028,29 @@ fn telemetry_command_to_method_params(
         }
         Cap { command } => telemetry_cap_command_to_method_params(command),
         Anomaly { command } => telemetry_anomaly_command_to_method_params(command),
+        SessionSummary {
+            workspace_id,
+            since,
+            until,
+            format,
+            top_n,
+        } => {
+            let mut p = serde_json::json!({});
+            if let Some(w) = workspace_id {
+                p["workspace_id"] = serde_json::Value::from(*w);
+            }
+            if let Some(s) = since {
+                p["since"] = serde_json::Value::from(*s);
+            }
+            if let Some(u) = until {
+                p["until"] = serde_json::Value::from(*u);
+            }
+            p["format"] = serde_json::Value::String(format.clone());
+            if let Some(n) = top_n {
+                p["top_n"] = serde_json::Value::from(*n);
+            }
+            ("telemetry.session_summary", p)
+        }
     }
 }
 
