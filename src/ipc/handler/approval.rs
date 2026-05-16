@@ -80,7 +80,7 @@ fn scope_for(record: &ApprovalRecord) -> Scope {
 
 /// 상태 전이마다 호출. memory store 가 초기화되지 않은 환경(테스트 등)에서는
 /// silent 통과 — 도메인 상태는 in-memory 에 이미 있다.
-fn persist_record(record: &ApprovalRecord) {
+pub(crate) fn persist_record(record: &ApprovalRecord) {
     let scope = scope_for(record);
     let key = format!("{}{}", APPROVAL_KEY_PREFIX, record.request.id);
     let value = match serde_json::to_value(record) {

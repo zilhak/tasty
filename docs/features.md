@@ -493,8 +493,8 @@
 - `telemetry.cap.reset` — `{ id? }` 또는 `{ agent? }` (둘 중 최소 하나) → `{ reset_ids[], count }`. 매칭된 cap 들의 `triggered` 필드를 비워 액션 재발화 가능 상태로 되돌림
 - **평가 (Phase 4.3b)**: `record` / `record_batch` / dispatcher 자동 카운트 직후 inline 으로 cap 평가 — agent+metric 가 일치하는 미발화 cap 들의 `current_value` 를 즉시 계산해 `threshold` 이상이면 `triggered: { at, value }` 마크 후 액션 발화. evaluate 자체는 best-effort warn 로그 — 실패해도 record 응답은 영향 없음
 - **Notify 액션 (Phase 4.3b)**: 활성 워크스페이스에 알림 추가 (`title="Cap '<metric>' 임계 도달"`, body 에 agent/metric/value/threshold/window/cap_id 포함). 차단 없음
-- **Stop / Pause 액션 (Phase 4.3c)**: cap 이 `triggered` 인 plugin agent 의 모든 IPC 는 dispatcher pre-check 에서 `-32007 cap_blocked` 로 거부된다. CLI/Local caller 는 검사 대상이 아니므로 `tasty telemetry cap reset --id <ID>` 로 해제 가능. `Stop` 의 claude.kill 트리거는 4.3e 에서 결합 (현재는 IPC 거부까지만)
-- **RequireApproval 액션 (4.3d 이후)**: 매 호출마다 `approval.request` 자동 발행 — 현재는 `triggered` 기록 + 로그만
+- **Stop / Pause 액션 (Phase 4.3c)**: cap 이 `triggered` 인 plugin agent 의 모든 IPC 는 dispatcher pre-check 에서 `-32007 cap_blocked` 로 거부된다. trigger 시점에 동시에 알림을 발행해 차단 사실이 사용자에게 보인다. CLI/Local caller 는 검사 대상이 아니므로 `tasty telemetry cap reset --id <ID>` 로 해제 가능. `Stop` 의 claude.kill 트리거는 4.3e 에서 결합 (현재는 IPC 거부까지만)
+- **RequireApproval 액션 (Phase 4.3d)**: cap 이 처음 triggered 되면 host 가 자동으로 `approval.request` 발행 (severity=warn, body 에 reset 명령 포함). 이후 plugin IPC 는 `Stop`/`Pause` 와 동일하게 `-32007 cap_blocked` 로 거부 — 사용자가 popup 에서 결정한 뒤 `cap.reset` 으로 재개
 
 ### 영속화 정책
 - workspace_id 있는 이벤트 → `scope=workspace:<id>`, 없으면 `global`

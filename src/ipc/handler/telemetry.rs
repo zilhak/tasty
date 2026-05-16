@@ -65,7 +65,10 @@ pub(crate) fn check_cap_block(caller: &CallerContext, _method: &str) -> Option<S
         if cap.triggered.is_none() {
             continue;
         }
-        if !matches!(cap.action, CapAction::Stop | CapAction::Pause) {
+        if !matches!(
+            cap.action,
+            CapAction::Stop | CapAction::Pause | CapAction::RequireApproval
+        ) {
             continue;
         }
         return Some(format!(
@@ -879,10 +882,14 @@ fn evaluate_caps_after_record(state: &mut AppState, ev: &TelemetryEvent) {
 fn fire_cap_action(state: &mut AppState, cap: &CostCap, current: f64) {
     match cap.action {
         CapAction::Notify => fire_notify(state, cap, current),
-        CapAction::Stop | CapAction::Pause | CapAction::RequireApproval => {
+        CapAction::RequireApproval => fire_require_approval(state, cap, current),
+        CapAction::Stop | CapAction::Pause => {
+            // 차단은 dispatcher 의 check_cap_block 이 담당. 여기서는 사용자에게
+            // 사실을 알리는 알림만 함께 띄운다 — 차단된 plugin 이 침묵 속에 멈춰
+            // 보이지 않도록.
+            fire_notify(state, cap, current);
             tracing::info!(
-                "cap triggered (action '{:?}' not yet wired in 4.3b): \
-                 cap={} agent={} metric={} value={} threshold={}",
+                "cap triggered (action {:?}): cap={} agent={} metric={} value={} threshold={}",
                 cap.action,
                 cap.id,
                 cap.agent,
@@ -890,6 +897,65 @@ fn fire_cap_action(state: &mut AppState, cap: &CostCap, current: f64) {
                 current,
                 cap.threshold,
             );
+        }
+    }
+}
+
+/// `RequireApproval` 액션 (Phase 4.3d): cap 이 처음 triggered 되는 시점에
+/// host 가 approval.request 를 자동 발행한다. 이후 plugin 의 모든 IPC 는
+/// `check_cap_block` 이 거부 — 사용자는 popup 에서 승인 후 `cap.reset` 으로
+/// triggered 를 풀어야 plugin 이 재개된다 (또는 거부 후 그대로 둠).
+///
+/// 매 호출마다 새 approval 을 발행하지 않고, **cap-당 1회**만 발행 (triggered 가
+/// 비어 있을 때만 fire_cap_action 가 호출되므로 자연스럽게 단발). 추가 발행이
+/// 필요하면 `cap.reset` 후 다음 record 가 임계를 다시 넘을 때 fire 된다.
+fn fire_require_approval(state: &mut AppState, cap: &CostCap, current: f64) {
+    let ws_id = state
+        .engine
+        .workspaces
+        .get(state.active_workspace)
+        .map(|w| w.id);
+    let title = format!("Cap '{}' — 승인 필요", cap.metric);
+    let body = format!(
+        "agent={} metric={} value={} ≥ threshold={} (window={:?}, cap={}). \
+         승인하면 `tasty telemetry cap reset --id {}` 으로 해제하세요.",
+        cap.agent, cap.metric, current, cap.threshold, cap.window, cap.id, cap.id,
+    );
+    let req = tasty_approval::ApprovalRequest {
+        id: tasty_approval::ApprovalId::generate(),
+        requester: tasty_approval::Requester::Agent {
+            id: tasty_memory::HOST_OWNER.to_string(),
+        },
+        workspace_id: ws_id,
+        surface_id: None,
+        title,
+        body: Some(body),
+        choices: Vec::new(),
+        default_choice: None,
+        timeout_ms: None,
+        severity: tasty_approval::Severity::Warn,
+        created_at: 0,
+        metadata: serde_json::json!({
+            "source": "telemetry.cap",
+            "cap_id": cap.id,
+            "agent": cap.agent,
+            "metric": cap.metric,
+            "value": current,
+            "threshold": cap.threshold,
+        }),
+    };
+    match state.engine.approval_store.request(req) {
+        Ok(change) => {
+            crate::ipc::handler::approval::persist_record(&change.record);
+            crate::ui::approval_popup::enqueue_approval(state, &change.record);
+            tracing::info!(
+                "cap require_approval: issued approval id={} for cap={}",
+                change.record.request.id.as_str(),
+                cap.id,
+            );
+        }
+        Err(e) => {
+            tracing::warn!("cap require_approval: approval.request failed for cap={}: {e}", cap.id);
         }
     }
 }
