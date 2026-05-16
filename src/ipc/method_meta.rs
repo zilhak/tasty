@@ -152,6 +152,14 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("memory.bb_delete", plugin(&[MemoryWrite])),
         ("memory.bb_list", plugin(&[MemoryRead])),
         ("memory.bb_exists", plugin(&[MemoryRead])),
+        // ── memory: plan (Phase 7.2 — workspace-scoped) ───────────────
+        ("memory.plan_create", plugin(&[MemoryWrite])),
+        ("memory.plan_get", plugin(&[MemoryRead])),
+        ("memory.plan_list", plugin(&[MemoryRead])),
+        ("memory.plan_delete", plugin(&[MemoryWrite])),
+        ("memory.plan_add_step", plugin(&[MemoryWrite])),
+        ("memory.plan_remove_step", plugin(&[MemoryWrite])),
+        ("memory.plan_update_step", plugin(&[MemoryWrite])),
         // ── approval (휴먼 핸드오프) ──────────────────────────────────
         ("approval.request", plugin(&[Approval])),
         ("approval.respond", plugin(&[Approval])),

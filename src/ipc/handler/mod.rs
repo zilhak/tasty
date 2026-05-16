@@ -286,6 +286,20 @@ fn route_engine_handler(
         "memory.bb_delete" => memory::handle_bb_delete(state, caller, id, &request.params),
         "memory.bb_list" => memory::handle_bb_list(state, caller, id, &request.params),
         "memory.bb_exists" => memory::handle_bb_exists(state, caller, id, &request.params),
+        // memory: plan (Phase 7.2 — workspace-scoped 선언적 work breakdown)
+        "memory.plan_create" => memory::handle_plan_create(state, caller, id, &request.params),
+        "memory.plan_get" => memory::handle_plan_get(state, caller, id, &request.params),
+        "memory.plan_list" => memory::handle_plan_list(state, caller, id, &request.params),
+        "memory.plan_delete" => memory::handle_plan_delete(state, caller, id, &request.params),
+        "memory.plan_add_step" => {
+            memory::handle_plan_add_step(state, caller, id, &request.params)
+        }
+        "memory.plan_remove_step" => {
+            memory::handle_plan_remove_step(state, caller, id, &request.params)
+        }
+        "memory.plan_update_step" => {
+            memory::handle_plan_update_step(state, caller, id, &request.params)
+        }
         // approval (휴먼 핸드오프) — await 는 process_ipc 에서 worker thread 로 분리 처리.
         "approval.request" => approval::handle_request(state, caller, id, &request.params),
         "approval.respond" => approval::handle_respond(state, caller, id, &request.params),
