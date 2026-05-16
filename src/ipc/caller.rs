@@ -102,6 +102,23 @@ impl CallerContext {
             CallerContext::Plugin { plugin_id, .. } => plugin_id.as_str(),
         }
     }
+
+    /// Phase 4 잠정 agent 식별자.
+    ///
+    /// - Plugin caller → manifest 의 `plugin_id`
+    /// - Local caller → env `TASTY_AGENT_ID` (없으면 `_host`)
+    ///
+    /// Phase 6 의 session token 인증 도입 시 verifiable 로 승격된다.
+    /// 위조 가능성과 보안 한계는 `docs/dev-guide/agent-identification.md` 참조.
+    #[allow(dead_code)] // Phase 4.1 dispatcher 미들웨어가 사용 예정
+    pub fn agent_id(&self) -> tasty_core::AgentId {
+        match self {
+            CallerContext::Local => tasty_core::AgentId::from_env(),
+            CallerContext::Plugin { plugin_id, .. } => {
+                tasty_core::AgentId::new(plugin_id.clone())
+            }
+        }
+    }
 }
 
 #[cfg(test)]

@@ -646,6 +646,11 @@ fn update_child_metadata(
 }
 
 /// 호스트 `start_claude_in_surface` 1:1 이주. 인자는 동일하나 IPC 경유.
+///
+/// `claude` 실행 시 `TASTY_AGENT_ID=claude_s<surface_id>` env 를 inline prefix 로
+/// 주입한다 — Phase 4 (관측/비용) 의 잠정 agent 식별 모델. shell 위에 한 줄 echo
+/// 되지만 history 에 명령이 남는 정상 동선과 동일하며, claude 프로세스만 해당 env
+/// 를 상속받아 host 의 `telemetry.record` 시 자기 agent_id 를 보고할 수 있다.
 fn start_claude_in_surface(
     host: &HostHandle,
     surface_id: u32,
@@ -663,6 +668,8 @@ fn start_claude_in_surface(
         }
     }
 
+    let agent_prefix = format!("TASTY_AGENT_ID=claude_s{surface_id} ");
+
     if let Some(p) = prompt {
         let prompt_path = std::env::temp_dir().join(format!("tasty-prompt-{}.txt", surface_id));
         if let Err(e) = std::fs::write(&prompt_path, p) {
@@ -672,18 +679,16 @@ fn start_claude_in_surface(
             "surface.send",
             json!({
                 "surface_id": surface_id,
-                "text": format!("claude \"$(cat '{}')\"\r", prompt_path.display()),
+                "text": format!("{agent_prefix}claude \"$(cat '{}')\"\r", prompt_path.display()),
             }),
         ) {
             tracing::warn!("surface.send (claude with prompt) failed: {e}");
         }
-    } else {
-        if let Err(e) = host.call(
-            "surface.send",
-            json!({ "surface_id": surface_id, "text": "claude\r" }),
-        ) {
-            tracing::warn!("surface.send (claude) failed: {e}");
-        }
+    } else if let Err(e) = host.call(
+        "surface.send",
+        json!({ "surface_id": surface_id, "text": format!("{agent_prefix}claude\r") }),
+    ) {
+        tracing::warn!("surface.send (claude) failed: {e}");
     }
 }
 

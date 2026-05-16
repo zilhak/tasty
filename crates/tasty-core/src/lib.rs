@@ -4,7 +4,9 @@
 //! - `theme`: Catppuccin 팔레트, UI 상수
 //! - `i18n`: 번역 로더 + `t()` 함수
 //! - `paths`: `~/.tasty/` 등 공용 경로 헬퍼
+//! - `agent_id`: 잠정 agent 식별자 (Phase 4 관측/비용)
 
+pub mod agent_id;
 pub mod color;
 pub mod i18n;
 pub mod model;
@@ -12,6 +14,7 @@ pub mod paths;
 pub mod theme;
 pub mod waker;
 
+pub use agent_id::AgentId;
 pub use waker::{NoopWakerFactory, SharedWakerFactory, WakerFactory};
 
 /// `Surface::as_any` / `as_any_mut` 구현을 한 줄로 채우는 매크로.
