@@ -4782,6 +4782,7 @@ dependencies = [
  "tasty-plugin-protocol",
  "tasty-settings",
  "tasty-shm",
+ "tasty-telemetry",
  "tasty-terminal",
  "tempfile",
  "termwiz",
@@ -4968,6 +4969,18 @@ dependencies = [
  "libc",
  "thiserror 1.0.69",
  "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "tasty-telemetry"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tasty-core",
+ "tasty-memory",
+ "thiserror 2.0.18",
+ "tracing",
 ]
 
 [[package]]

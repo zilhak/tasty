@@ -127,6 +127,9 @@ pub enum Permission {
     /// Approval namespace 접근 (`approval.*`). 휴먼 결정 게이트를 요청·응답·조회.
     /// 토큰 `approval`.
     Approval,
+    /// Telemetry namespace 접근 (`telemetry.*`). 메트릭 기록·조회, cap/anomaly 관리.
+    /// 토큰 `telemetry`.
+    Telemetry,
     /// 다른 plugin이 점유한 IPC namespace prefix의 메서드 호출.
     /// 토큰 형식: `ipc.invoke:<prefix>` (예: `ipc.invoke:codex`).
     IpcInvoke(String),
@@ -168,6 +171,7 @@ impl Permission {
             "memory.write" => Self::MemoryWrite,
             "memory.secret" => Self::MemorySecret,
             "approval" => Self::Approval,
+            "telemetry" => Self::Telemetry,
             "ui.tool_item" => Self::UiToolItem,
             "ui.popup" => Self::UiPopup,
             other => {
@@ -208,6 +212,7 @@ impl Permission {
             Self::MemoryWrite => "memory.write".into(),
             Self::MemorySecret => "memory.secret".into(),
             Self::Approval => "approval".into(),
+            Self::Telemetry => "telemetry".into(),
             Self::IpcInvoke(prefix) => format!("ipc.invoke:{prefix}"),
             Self::Extension(target) => format!("ext:{target}"),
             Self::UiToolItem => "ui.tool_item".into(),
