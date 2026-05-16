@@ -9,10 +9,12 @@ Plugin이 호스트 IPC를 호출할 때 적용되는 권한 게이트의 동작
 |------|------|
 | `src/plugin/manifest.rs::Permission` | 권한 enum + 토큰 매핑. 새 권한 카테고리 추가 시 여기 |
 | `src/ipc/method_meta.rs` | IPC 메서드 → 필요 권한 / plugin 호출 가능 여부 매핑 (단일 진실 원천) |
-| `src/ipc/caller.rs::CallerContext` | 호출자 종류 (Local / Plugin{plugin_id, permissions}) |
-| `src/ipc/handler/mod.rs::handle_with_caller` | 라우터 진입에서 ensure_allowed 호출 |
+| `src/ipc/caller.rs::CallerContext` | 호출자 종류 (Local / Internal / Plugin{plugin_id, permissions} / Agent{agent_id, parent, permissions, token}) |
+| `src/ipc/handler/mod.rs::handle_with_caller` | 라우터 진입에서 ensure_allowed 호출 + capability_elevation 자동 발행 + audit 기록 |
 | `src/plugin/manager.rs::PluginManager::plugin_permissions` | plugin id → Arc<HashSet<Permission>> 캐시 |
 | `src/plugin/registry_state.rs::PluginsConfig::grants` | `~/.tasty/plugins.toml`의 grant 영속화 |
+| `src/ipc/session.rs::SessionStore` | agent session token + base permissions + temp_grants (`tasty.session.<token>` Global scope) |
+| `src/ipc/audit.rs::AuditStore` | IPC 호출 audit log (`tasty.audit.{ts:013}.{seq:04}` Global scope, 기본 30일 retention) |
 
 ## 권한 토큰 형식
 
@@ -208,6 +210,79 @@ plugin → PluginEvent::IpcCall { call_id, method, params }
 
 - `caller.rs`의 `plugin_with(&[Permission::X])`으로 새 메서드가 정확한 권한을 요구하는지
 - 권한 부족 시 `MissingPermission` 에러가 적절한 토큰을 가리키는지
+
+## Agent caller — session token + temp grants
+
+`claude.spawn` 같은 호스트 launched 자식 프로세스는 launch 시 `session.issue` 로 64-char hex token 을 받아 `TASTY_SESSION_TOKEN` 환경변수로 전달받는다. 자식이 IPC 호출 시 envelope 의 `session_token` 필드로 첨부 → 호스트 dispatcher 가 `SessionStore::resolve` 로 `CallerContext::Agent { agent_id, parent, permissions, token }` 을 만든다.
+
+```
+[host: claude.spawn]
+  → session.issue { agent_id: "claude:child-1", permissions: [...] }
+  → SessionStore::issue → token 발급, AgentSession {base_permissions, temp_grants:[]} 영속
+  → 자식 process spawn (TASTY_SESSION_TOKEN=<hex> 주입)
+
+[child: IPC 호출]
+  → envelope.session_token = "<hex>"
+  → 호스트: SessionStore::resolve(token) → AgentSession
+  → CallerContext::Agent { agent_id, parent, permissions: base ∪ effective_temp_grants(now), token }
+  → ensure_allowed 평가
+```
+
+invalid / expired / revoked 토큰은 `-32001 permission_denied` 로 즉시 거부 — `CallerContext::Local` 로 fallback 하지 않는다 (환경변수 위조 방어).
+
+### Base vs temp_grants
+
+`AgentSession` 은 두 권한 슬롯을 분리해 둔다:
+
+- **base_permissions** — `session.issue` 시점에 정해진 권한. caller (Plugin / Agent) 자기 권한의 부분집합만 가능 (escalation 방지). Local 은 무제한.
+- **temp_grants: Vec<TempGrant{permission, expires_at_ms?}>** — runtime 에 `plugin.grant_agent_permission` 으로 추가. 만료 시점이 지나면 lazy evict (`resolve`/`list` 시).
+
+`effective_permission_set(now_ms) = base ∪ {non-expired temp_grants}`. 매 IPC 호출이 `resolve` 를 거치므로 별도 snapshot refresh 불필요.
+
+같은 token+permission 으로 grant 가 반복 호출되면 만료 시점만 갱신 — 가장 늦은 시점 또는 `None` (무기한) 우선. base 에 이미 있는 토큰은 noop (temp 슬롯 오염 방지).
+
+### Capability elevation 자동 발행
+
+`handle_with_caller` 의 `ensure_allowed` 거부 분기 안에서:
+
+```rust
+if caller is Agent && error is MissingPermission(perm) {
+    publish_capability_elevation(state, agent_id, method, perm, reason)
+        .map(|approval_id| error.data = {kind, approval_id, permission, method})
+}
+```
+
+`publish_capability_elevation` 은:
+
+1. 같은 `(agent_id, permission)` 의 Pending elevation 이 있으면 그 `approval_id` 재사용 (popup 폭주 방지).
+2. 없으면 `approval.request { kind: "capability_elevation", choices: [approve, approve_permanently, deny], metadata: { permission, agent_id, method, grant_ttl_secs: 3600 } }` 호출.
+
+`approval.respond` 에서:
+
+- `approve` → `metadata.grant_ttl_secs` 만큼 `SessionStore::grant_permission` (default 3600s).
+- `approve_permanently` → 무기한 grant (`ttl_ms=None`).
+- `deny` → grant 없음, 다음 호출도 거부.
+
+순수 결정 함수 `elevation_grant_decision(record, choice) -> Option<(agent_id, permission, ttl_ms)>` 와 I/O wrapper `apply_elevation_grant_if_any(record, choice)` 로 분리돼 unit test 가 grant 결정 로직만 검증 가능.
+
+## Audit log
+
+`handle_with_caller` 가 3 경로 모두에서 `audit::record` 를 호출한다:
+
+```rust
+// ensure_allowed deny
+crate::ipc::audit::record(caller, canonical, AuditDecision::Deny, Some(&format!("{e}")), workspace_id, seq);
+
+// cap_blocked deny (Phase 4.3c)
+crate::ipc::audit::record(caller, canonical, AuditDecision::Deny, Some(&format!("cap_blocked: {reason}")), workspace_id, seq);
+
+// allow
+crate::ipc::audit::record(caller, canonical, AuditDecision::Allow, None, workspace_id, seq);
+```
+
+`main.rs::process_ipc` 의 app-level plugin.* 라우터에서도 동일 hook (audit_query 자체도 기록 — query 호출이 audit 에 노이즈로 들어가지만 query 시 filter 가능). `seq` 는 `state.engine.telemetry_seq` 를 그대로 사용 — 같은 ms 안의 다중 호출도 단조 정렬.
+
+저장은 `AuditStore::append` → `tasty_memory::with_store` 로 `tasty.audit.{ts:013}.{seq:04}` Global scope. 운영자가 `plugin.audit_query / summary / follow / clear` 로 조회. 기본 30일 retention — `audit_query` 호출 시 lazy evict (별도 정리 스레드 없음).
 
 ## 한계
 

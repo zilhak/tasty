@@ -749,6 +749,37 @@ tasty unset global-hook --hook HOOK_ID
 
 상세는 `plugins.md` (권한 토큰 매핑 표 포함) 참조.
 
+### Agent 권한 / Capability elevation (`plugin.*` / `session.*`)
+
+agent (claude.spawn 등으로 호스트가 띄운 자식) 의 권한 관리와 capability elevation 흐름. 흐름 전체 설명은 [`capabilities.md`](capabilities.md) 참조.
+
+| 메서드 | 권한 | 설명 |
+|---|---|---|
+| `session.issue { agent_id, permissions?, ttl_ms? }` | `agent` (Local 무제한) | agent session token 발급. caller 의 권한 셋의 부분집합만 부여 가능 (escalation 금지). 응답: `{ token, agent_id, parent, expires_at_ms? }`. |
+| `session.revoke { token }` | local-only | 토큰 무효화. 응답: `{ revoked: bool }`. |
+| `session.list` | local-only | 활성 세션 목록 (base + temp grants 포함). |
+| `plugin.grant_agent_permission { agent_id, permission, ttl_secs? }` | local-only | 임시 grant 추가. base 와 별개 슬롯. 응답: `{ added: bool, expires_at_ms? }`. |
+| `plugin.revoke_agent_permission { agent_id, permission }` | local-only | 임시 grant 회수. base 는 영향 없음. |
+| `plugin.list_agent_permissions { agent_id? }` | plugin-callable readonly | 활성 세션의 base + temp grants. `{ agents: [{ agent_id, parent, base_permissions, temp_grants }] }`. |
+| `plugin.request_permission { agent_id?, permission, reason? }` | `approval` | capability_elevation popup 을 명시 발행. Agent caller 는 `agent_id` 생략 시 자기 id. `approve` 응답 시 자동 grant. 응답: `{ approval_id, agent_id, permission }`. |
+
+dispatcher 가 Agent + MissingPermission 케이스에서 자동으로 같은 popup 을 발행한다 — agent 가 미리 호출할 필요 없이, 거부 응답의 `error.data.approval_id` 를 `approval.await` 하면 된다.
+
+### Audit log (`plugin.audit_*`)
+
+모든 IPC 호출 (allow + deny) 을 영속하는 감사 로그. 운영자가 사후 추적 / 사고 분석 / agent 행동 모니터링에 사용. 모두 `local_only` — CLI/Local caller 만 호출 가능.
+
+| 메서드 | 파라미터 | 설명 |
+|---|---|---|
+| `plugin.audit_query` | `caller_kind?, caller_id?, method_prefix?, decision?, since_ms?, until_ms?, limit?` | 필터된 record 목록. `caller_kind` ∈ {`local`,`internal`,`plugin`,`agent`}. `method_prefix` 는 접두사 매칭 (`surface.` 처럼). `decision` ∈ {`allow`,`deny`}. 응답: `{ records: [{ ts_ms, seq, caller_kind, caller_id, method, decision, reason?, workspace_id? }], count }`. |
+| `plugin.audit_summary` | `...query 와 같은 필터, top_n?=10` | 집계. 응답: `{ total, allow, deny, by_caller: [{ caller_id, count }], by_method: [{ method, count }] }`. top_n 내림차순. |
+| `plugin.audit_follow` | `...필터, after_ts_ms?, after_seq?, limit?=100` | `(ts_ms, seq)` 커서 보다 strictly 큰 record. 커서 미지정 첫 호출은 빈 배열 + 현재 latest 커서 (`tail -f -n 0` 시멘틱). 응답: `{ records, count, next_after_ts_ms, next_after_seq }`. |
+| `plugin.audit_clear` | `before_ms?` | `before_ms` 이전 record 삭제 (생략 시 전체). 응답: `{ removed: N }`. |
+
+보존 정책: 기본 30 일 (`audit_query` 호출 시 lazy evict). 영속 키 `tasty.audit.{ts:013}.{seq:04}` (Global scope) — workspace 가 닫혀도 유지된다.
+
+CLI: `tasty plugin audit-{query,summary,follow,clear}`. `audit-follow` 는 CLI 측 polling 루프 — `--batch 100 --interval-ms 500` 으로 조정.
+
 #### Plugin contributed CLI / IPC
 
 설치된 plugin이 매니페스트에 `[[contributes.cli]]`를 선언했다면
