@@ -289,7 +289,21 @@ impl<'a> TaskGraph<'a> {
             match &dep.state {
                 TaskState::Succeeded => {}
                 TaskState::Failed { .. } | TaskState::Cancelled | TaskState::Skipped => {
-                    any_failed = true;
+                    // dep 가 Fallback{f} 정책이면 f 의 상태를 본다 — f 성공 = dep 충족.
+                    if let OnFailure::Fallback { task: fb_id } = &dep.on_failure {
+                        match self.tasks.get(fb_id).map(|t| &t.state) {
+                            Some(TaskState::Succeeded) => continue,
+                            Some(
+                                TaskState::Failed { .. }
+                                | TaskState::Cancelled
+                                | TaskState::Skipped,
+                            ) => any_failed = true,
+                            // fallback 진행 중(또는 미존재) → 대기.
+                            _ => return None,
+                        }
+                    } else {
+                        any_failed = true;
+                    }
                 }
                 _ => return None,
             }
@@ -472,11 +486,52 @@ impl<'a> TaskStore<'a> {
             }
             _ => {}
         }
-        task.state = new_state;
+        let became = task.state.clone();
+        task.state = new_state.clone();
         self.put(&task)?;
 
+        let mut transitioned = Vec::new();
+
+        // Failed 전이 + on_failure=Fallback{f} → f 를 자동 Ready 로 (가능하면).
+        if matches!(new_state, TaskState::Failed { .. })
+            && let OnFailure::Fallback { task: fb_id } = task.on_failure.clone()
+            && let Some(mut fb) = self.get(workspace_id, &fb_id)?
+        {
+            // fallback task 의 dep readiness 를 새로 평가.
+            let all_now = self.list(workspace_id)?;
+            if let Some(target) = TaskGraph::build(&all_now).evaluate_readiness(&fb_id)
+                && target != TaskState::Waiting
+                && is_valid_transition(&fb.state, &target)
+            {
+                fb.state = target;
+                self.put(&fb)?;
+                transitioned.push(fb);
+            }
+        }
+
         // downstream 재평가
-        let transitioned = self.cascade_downstream(workspace_id, id)?;
+        transitioned.extend(self.cascade_downstream(workspace_id, id)?);
+
+        // terminal 전이 시: 자기를 fallback 으로 지정한 main task 가 있으면 그 main
+        // 의 downstream 도 재평가 (main 입장에선 fallback 결과로 effective state 가 정해짐).
+        if matches!(
+            new_state,
+            TaskState::Succeeded
+                | TaskState::Failed { .. }
+                | TaskState::Cancelled
+                | TaskState::Skipped
+        ) {
+            let all_now = self.list(workspace_id)?;
+            let parent_main_ids: Vec<TaskId> = all_now
+                .iter()
+                .filter(|t| matches!(&t.on_failure, OnFailure::Fallback { task } if task == id))
+                .map(|t| t.id.clone())
+                .collect();
+            for main_id in parent_main_ids {
+                transitioned.extend(self.cascade_downstream(workspace_id, &main_id)?);
+            }
+        }
+        let _ = became;
         Ok((task, transitioned))
     }
 
@@ -881,6 +936,105 @@ mod tests {
         // B는 Waiting으로 돌아오고 cascade 후 A가 Ready라서 B는 Waiting 유지 (A 미완료)
         let b_after = store.get(1, &b.id).unwrap().unwrap();
         assert_eq!(b_after.state, TaskState::Waiting);
+    }
+
+    #[test]
+    fn fallback_triggers_when_main_fails() {
+        // A -> C (dep). A.on_failure = Fallback{A'}. A 실패 시 A' 가 자동 Ready.
+        let (_td, mut mem, seq) = fresh_store();
+        let mut store = TaskStore::new(&mut mem, "_host", &seq);
+        let a_prime = store
+            .create(1, "A_prime", run_cmd(), vec![], OnFailure::Abort, serde_json::Value::Null, 1000)
+            .unwrap();
+        let a = store
+            .create(
+                1,
+                "A",
+                run_cmd(),
+                vec![],
+                OnFailure::Fallback { task: a_prime.id.clone() },
+                serde_json::Value::Null,
+                1001,
+            )
+            .unwrap();
+        let c = store
+            .create(1, "C", run_cmd(), vec![a.id.clone()], OnFailure::Abort, serde_json::Value::Null, 1002)
+            .unwrap();
+        // A 실패 시 A_prime 도 이미 Ready 였으므로 변화 없음, C 는 Waiting 유지 (fallback 대기).
+        store.set_state(1, &a.id, TaskState::Running, 2000).unwrap();
+        store
+            .set_state(1, &a.id, TaskState::Failed { error: "boom".into() }, 3000)
+            .unwrap();
+        let c_after = store.get(1, &c.id).unwrap().unwrap();
+        assert_eq!(c_after.state, TaskState::Waiting, "C 는 fallback 대기");
+        let a_prime_after = store.get(1, &a_prime.id).unwrap().unwrap();
+        assert_eq!(a_prime_after.state, TaskState::Ready);
+    }
+
+    #[test]
+    fn fallback_success_propagates_to_main_downstream() {
+        // A.on_failure=Fallback{A'}, C depends on A. A 실패 → A' Succeed → C Ready.
+        let (_td, mut mem, seq) = fresh_store();
+        let mut store = TaskStore::new(&mut mem, "_host", &seq);
+        let a_prime = store
+            .create(1, "A_prime", run_cmd(), vec![], OnFailure::Abort, serde_json::Value::Null, 1000)
+            .unwrap();
+        let a = store
+            .create(
+                1,
+                "A",
+                run_cmd(),
+                vec![],
+                OnFailure::Fallback { task: a_prime.id.clone() },
+                serde_json::Value::Null,
+                1001,
+            )
+            .unwrap();
+        let c = store
+            .create(1, "C", run_cmd(), vec![a.id.clone()], OnFailure::Abort, serde_json::Value::Null, 1002)
+            .unwrap();
+        store.set_state(1, &a.id, TaskState::Running, 2000).unwrap();
+        store
+            .set_state(1, &a.id, TaskState::Failed { error: "boom".into() }, 3000)
+            .unwrap();
+        store.set_state(1, &a_prime.id, TaskState::Running, 3500).unwrap();
+        store.set_state(1, &a_prime.id, TaskState::Succeeded, 4000).unwrap();
+        let c_after = store.get(1, &c.id).unwrap().unwrap();
+        assert_eq!(c_after.state, TaskState::Ready, "fallback 성공으로 C 진행");
+    }
+
+    #[test]
+    fn fallback_failure_also_skips_main_downstream() {
+        // A.on_failure=Fallback{A'}, C depends on A. A 실패 → A' 도 실패 → C Skipped.
+        let (_td, mut mem, seq) = fresh_store();
+        let mut store = TaskStore::new(&mut mem, "_host", &seq);
+        let a_prime = store
+            .create(1, "A_prime", run_cmd(), vec![], OnFailure::Abort, serde_json::Value::Null, 1000)
+            .unwrap();
+        let a = store
+            .create(
+                1,
+                "A",
+                run_cmd(),
+                vec![],
+                OnFailure::Fallback { task: a_prime.id.clone() },
+                serde_json::Value::Null,
+                1001,
+            )
+            .unwrap();
+        let c = store
+            .create(1, "C", run_cmd(), vec![a.id.clone()], OnFailure::Abort, serde_json::Value::Null, 1002)
+            .unwrap();
+        store.set_state(1, &a.id, TaskState::Running, 2000).unwrap();
+        store
+            .set_state(1, &a.id, TaskState::Failed { error: "boom".into() }, 3000)
+            .unwrap();
+        store.set_state(1, &a_prime.id, TaskState::Running, 3500).unwrap();
+        store
+            .set_state(1, &a_prime.id, TaskState::Failed { error: "boom2".into() }, 4000)
+            .unwrap();
+        let c_after = store.get(1, &c.id).unwrap().unwrap();
+        assert_eq!(c_after.state, TaskState::Skipped, "fallback 도 실패면 C 도 Skip");
     }
 
     #[test]

@@ -543,7 +543,7 @@
 
 - **TaskState 8종**: `Waiting` (의존성 미충족) / `Ready` / `Running` / `Succeeded` / `Failed { error }` / `Cancelled` / `Skipped` (의존성 실패로 자동 스킵) / `Unknown` (재시작 후 Running이던 task — 사용자가 retry/cancel 결정 필요)
 - **TaskCommand 4종**: `ClaudeSpawn` (claude.spawn 호출) / `Run` (terminal에서 명령 실행) / `Custom` (임의 IPC 위임) / `Reduce` (5종 reducer 전략) — 실제 실행 wiring은 후속 sub-phase
-- **OnFailure 3종**: `Abort` (downstream 모두 Skipped, 기본) / `ContinueDownstream` (실패를 성공처럼 취급) / `Fallback { task }` (대체 task로 우회 — 호스트가 fallback을 별도로 트리거)
+- **OnFailure 3종**: `Abort` (downstream 모두 Skipped, 기본) / `ContinueDownstream` (실패를 성공처럼 취급) / `Fallback { task }` (대체 task로 우회 — Phase 5.6 부터 main 실패 시 fallback task 가 자동 Ready, fallback 의 succeed/fail 도 main 의 downstream 으로 전파됨)
 - **사이클 검출**: DFS 3-color로 `create()` 시점에 검증. unknown dependency도 같은 단계에서 거부
 - **자동 cascade**: 임의 task의 state가 바뀌면 transitive downstream을 재평가해 `Waiting → Ready/Skipped`로 자동 전이
 
@@ -687,6 +687,18 @@ tasty agent rate-limit-list
 tasty agent rate-limit-remove --id <rate-limit-id>
 tasty agent rate-limit-status [--agent <id>] [--metric <name>]
 ```
+
+### 실패 처리 / Retry (Phase 5.6)
+
+**3 가지 OnFailure 정책 + retry 의 downstream 리셋 옵션**:
+
+| 정책 | 메인 task 실패 시 동작 |
+|---|---|
+| `Abort` (기본) | downstream 전부 `Skipped` 로 cascade |
+| `ContinueDownstream` | 실패를 성공처럼 취급 — downstream 은 정상 `Ready` |
+| `Fallback { task }` | main 실패 시 fallback task 가 자동 `Ready`. fallback 이 `Succeed` 하면 main 의 downstream 도 `Ready`, fallback 도 실패하면 downstream `Skipped`. main 의 downstream 은 fallback 결과 나올 때까지 `Waiting` 유지 |
+
+`agent.task_retry { id, reset_downstream? }` — `Failed` / `Cancelled` / `Skipped` / `Unknown` 상태의 task 를 `Waiting` 으로 되돌려 dep 평가로 자동 재진행. `reset_downstream=true` 면 transitive downstream 중 `Skipped` / `Failed` / `Cancelled` 도 `Waiting` 으로 되돌려 한 번에 재시도 가능.
 
 ## 설정 시스템
 

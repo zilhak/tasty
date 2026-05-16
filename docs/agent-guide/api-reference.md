@@ -670,7 +670,7 @@ tasty unset global-hook --hook HOOK_ID
 - `custom` — `{ kind, ipc_method, params }` (임의 IPC 위임. caller가 해당 메서드 권한 보유 필요)
 - `reduce` — `{ kind, inputs: [TaskId], strategy: { kind: first_success|all|merge_json|concat_text|custom, command? } }` (다른 task 결과 합성)
 
-**OnFailure 3종 (kind 필드)**: `abort` (downstream 모두 skipped) / `continue_downstream` (실패를 성공처럼 취급해 진행) / `fallback { task }` (대체 task로 우회 — 호스트가 별도 트리거)
+**OnFailure 3종 (kind 필드)**: `abort` (downstream 모두 skipped) / `continue_downstream` (실패를 성공처럼 취급해 진행) / `fallback { task }` (대체 task로 우회 — main 실패 시 fallback 이 자동 `ready` 가 되고, fallback 의 결과가 main 의 downstream 평가에 반영된다. fallback 의 task 는 사전에 `task_create` 로 등록되어 있어야 한다)
 
 **Phase 5.2 — Barrier / Semaphore (poll-based 동기화 primitive)**. 본 sub-phase는 모델·영속·IPC/CLI를 제공하며 polling 기반이다. 진정한 blocking + wakeup은 scheduler 도입 후 추가.
 
