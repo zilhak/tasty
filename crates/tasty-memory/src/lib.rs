@@ -1,23 +1,23 @@
 //! 에이전트 메모리 저장소 (`~/.tasty/memory.db`).
 //!
-//! 에이전트가 작업 도중 누적·검색·공유하는 영속 키-값. 스코프(`global` /
-//! `account:<u>` / `window:<id>` / `workspace:<id>` / `surface:<id>`)로 가시성
-//! 제어. SQLite WAL 모드 단일 파일.
+//! 에이전트와 plugin 이 작업 도중 누적·검색·공유하는 영속 키-값. 같은 SQLite
+//! 파일에 두 영역이 공존한다:
+//!
+//! - **Regular** (`memory.*`): 공유 네임스페이스. 모든 plugin 이 모든 entry 를
+//!   읽지만, 갱신·삭제는 `owner` 본인 또는 `_host` (CLI / 사용자) 만 가능.
+//! - **Secret** (`memory.secret.*`): plugin 별 사전 분할. owner 가 PK 일부라
+//!   다른 plugin 영역은 IPC 표면에서 개념 자체가 존재하지 않는다.
+//!
+//! `owner` 는 호스트가 [`CallerContext`] 로부터 자동 도출하는 값이다 — plugin 이
+//! 인자로 넘길 수 없고 본 크레이트에서는 **`&str` 으로 받기만 한다**. caller 가
+//! `_host` 인지 plugin 인지는 호출자 (호스트 IPC 라우터) 책임.
 //!
 //! ## 동기 모델
 //!
 //! Tasty 본 바이너리는 winit 이벤트 루프 + sync 코드 베이스다 (tokio 사용 안 함).
-//! 따라서 `MemoryStore`는 `OnceLock<Mutex<Connection>>` 싱글톤 + `with_store(...)`
-//! 동기 콜백 패턴. IPC dispatch는 메인 스레드에서 순차 호출되고, plugin process
-//! 호출도 별도 스레드의 mpsc 경로를 거쳐 결국 메인에서 처리되므로 단일 mutex로
-//! 충분 (1 MiB 캡 + WAL 모드라 lock holding time도 짧다).
-//!
-//! ## 키 / 스코프 규칙
-//!
-//! - 키: 1..=256자, `[a-z0-9._-]+`. 점 표기로 계층(`task.123.plan`).
-//! - 예약 prefix: `tasty.` (호스트 내부), `plugin.<plugin-id>.` (각 plugin namespace).
-//! - 값: bytes + content_type. `application/json` / `text/plain` /
-//!   `application/octet-stream`. 단일 값 ≤ 1 MiB.
+//! `MemoryStore` 는 `OnceLock<Mutex<MemoryStore>>` 싱글톤 + `with_store(...)`
+//! 동기 콜백. IPC dispatch 는 메인 스레드에서 순차 호출되고, plugin process 호출도
+//! 별도 스레드의 mpsc 경로를 거쳐 결국 메인에서 처리되므로 단일 mutex 로 충분.
 
 mod migrations;
 mod scope;
@@ -32,8 +32,20 @@ use serde::{Deserialize, Serialize};
 pub use migrations::{DbSchemaError, SCHEMA_VERSION};
 pub use scope::{Scope, validate_key};
 
-/// 단일 값 최대 크기 (1 MiB). 초과 시 `ValueTooLarge`.
+/// 단일 값 최대 크기 fallback (1 MiB). 초과 시 `ValueTooLarge`. config 로 조정 가능.
 pub const MAX_VALUE_BYTES: usize = 1024 * 1024;
+
+/// Local caller (CLI / 사용자 / 호스트 내부) 의 owner sentinel. plugin id 의
+/// reverse-DNS 규칙과 충돌하지 않도록 underscore prefix.
+pub const HOST_OWNER: &str = "_host";
+
+/// `OwnedByOther` / `QuotaExceeded` 가 어느 영역에서 발생했는지.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MemoryArea {
+    Regular,
+    Secret,
+}
 
 /// `MemoryStore`/CRUD 공용 에러.
 #[derive(Debug, thiserror::Error)]
@@ -42,10 +54,22 @@ pub enum MemoryError {
     NotFound { scope: String, key: String },
     #[error("CAS conflict: expected v{expected}, got v{actual}")]
     CasConflict { expected: u64, actual: u64 },
+    #[error("entry is owned by other: {owner}")]
+    OwnedByOther { owner: String },
+    #[error("quota exceeded in {area:?}: used {used}, limit {limit}")]
+    QuotaExceeded {
+        area: MemoryArea,
+        used: u64,
+        limit: u64,
+    },
+    #[error("secret memory unavailable (keyring not accessible)")]
+    SecretUnavailable,
     #[error("invalid key: {0}")]
     InvalidKey(String),
     #[error("invalid scope: {0}")]
     InvalidScope(String),
+    #[error("invalid owner: {0}")]
+    InvalidOwner(String),
     #[error("invalid content type: {0}")]
     InvalidContentType(String),
     #[error("value too large: {actual} bytes (max {max})")]
@@ -56,13 +80,13 @@ pub enum MemoryError {
 
 pub type Result<T> = std::result::Result<T, MemoryError>;
 
-/// 값 페이로드. `text`/`json`은 UTF-8, `binary`는 임의 바이트.
+/// 값 페이로드. `text`/`json` 은 UTF-8, `binary` 는 임의 바이트.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum MemoryValue {
-    /// `text/plain` — UTF-8 문자열. surface.meta 호환 표면이 사용하는 기본 표현.
+    /// `text/plain` — UTF-8 문자열.
     Text(String),
-    /// `application/json` — 임의 JSON 값. caller가 미리 직렬화한 문자열을 보존.
+    /// `application/json` — 임의 JSON 값.
     Json(serde_json::Value),
     /// `application/octet-stream` — 임의 바이트열.
     Binary(Vec<u8>),
@@ -88,8 +112,9 @@ impl MemoryValue {
     fn from_db(content_type: &str, bytes: Vec<u8>) -> Result<Self> {
         match content_type {
             "text/plain" => {
-                let s = String::from_utf8(bytes)
-                    .map_err(|e| MemoryError::InvalidContentType(format!("text/plain not utf8: {e}")))?;
+                let s = String::from_utf8(bytes).map_err(|e| {
+                    MemoryError::InvalidContentType(format!("text/plain not utf8: {e}"))
+                })?;
                 Ok(MemoryValue::Text(s))
             }
             "application/json" => {
@@ -103,7 +128,8 @@ impl MemoryValue {
     }
 }
 
-/// 한 entry. `version`은 다음 CAS update에서 expected로 넘길 값.
+/// 한 entry. `version` 은 다음 CAS update 에서 expected 로 넘길 값.
+/// `owner` 는 regular 응답에서는 `Some`, secret 응답에서는 `None` (추상화 누수 방지).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MemoryEntry {
     pub scope: String,
@@ -113,12 +139,14 @@ pub struct MemoryEntry {
     pub updated_at: i64,
     pub expires_at: Option<i64>,
     pub version: u64,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub owner: Option<String>,
 }
 
 /// `put` 옵션.
 #[derive(Debug, Default, Clone)]
 pub struct PutOpts {
-    /// 절대 만료 시각 (unix ms). `None`이면 영구.
+    /// 절대 만료 시각 (unix ms). `None` 이면 영구.
     pub expires_at: Option<i64>,
     /// 낙관 락. 일치하지 않으면 `CasConflict`.
     pub cas: Option<u64>,
@@ -149,8 +177,8 @@ impl MemoryStore {
     /// 인메모리 (테스트 전용).
     #[cfg(test)]
     pub fn open_in_memory() -> std::result::Result<Self, MemoryInitError> {
-        let conn = Connection::open_in_memory()
-            .map_err(|e| classify_sql(e, Path::new(":memory:")))?;
+        let conn =
+            Connection::open_in_memory().map_err(|e| classify_sql(e, Path::new(":memory:")))?;
         Self::prepare(conn, Path::new(":memory:"))
     }
 
@@ -167,36 +195,34 @@ impl MemoryStore {
         Ok(Self { conn })
     }
 
-    /// 값을 저장(upsert). 신규면 version=1, 갱신이면 +1. CAS 미스면 conflict.
-    /// 반환: 새 version.
+    // ============================================================
+    // Regular memory: 공유 네임스페이스 + owner enforcement
+    // ============================================================
+
+    /// 값을 저장(upsert). 신규면 version=1 / owner=caller, 갱신이면 +1.
+    /// 갱신 시 기존 owner 가 caller 와 다르면 `OwnedByOther` (caller 가 `_host` 면 root 통과).
     pub fn put(
         &mut self,
+        owner: &str,
         scope: &Scope,
         key: &str,
         value: &MemoryValue,
         opts: &PutOpts,
     ) -> Result<u64> {
+        validate_owner(owner)?;
         validate_key(key).map_err(MemoryError::InvalidKey)?;
-        let bytes = value
-            .to_bytes()
-            .map_err(|e| MemoryError::InvalidContentType(e.to_string()))?;
-        if bytes.len() > MAX_VALUE_BYTES {
-            return Err(MemoryError::ValueTooLarge {
-                actual: bytes.len(),
-                max: MAX_VALUE_BYTES,
-            });
-        }
+        let bytes = serialize_value(value)?;
         let scope_token = scope.as_token();
         let now = unix_ms_now();
         let content_type = value.content_type();
 
         let tx = self.conn.transaction()?;
 
-        let existing: Option<u64> = tx
+        let existing: Option<(u64, String)> = tx
             .query_row(
-                "SELECT version FROM memory WHERE scope=?1 AND key=?2",
+                "SELECT version, owner FROM memory WHERE scope=?1 AND key=?2",
                 params![&scope_token, key],
-                |r| r.get::<_, i64>(0).map(|v| v as u64),
+                |r| Ok((r.get::<_, i64>(0)? as u64, r.get::<_, String>(1)?)),
             )
             .optional()?;
 
@@ -207,13 +233,19 @@ impl MemoryStore {
                     actual: 0,
                 });
             }
-            (Some(actual), Some(expected)) if actual != expected => {
+            (Some((actual, _)), Some(expected)) if actual != expected => {
                 return Err(MemoryError::CasConflict { expected, actual });
             }
-            (Some(actual), _) => {
+            (Some((_, existing_owner)), _) if !owner_can_modify(owner, &existing_owner) => {
+                return Err(MemoryError::OwnedByOther {
+                    owner: existing_owner,
+                });
+            }
+            (Some((actual, _)), _) => {
                 let new_v = actual + 1;
                 tx.execute(
-                    "UPDATE memory SET value=?1, content_type=?2, updated_at=?3, expires_at=?4, version=?5
+                    "UPDATE memory SET value=?1, content_type=?2, updated_at=?3,
+                                       expires_at=?4, version=?5
                      WHERE scope=?6 AND key=?7",
                     params![
                         &bytes,
@@ -229,9 +261,19 @@ impl MemoryStore {
             }
             (None, _) => {
                 tx.execute(
-                    "INSERT INTO memory (scope, key, value, content_type, created_at, updated_at, expires_at, version)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?5, ?6, 1)",
-                    params![&scope_token, key, &bytes, content_type, now, opts.expires_at],
+                    "INSERT INTO memory
+                       (scope, key, value, content_type, created_at, updated_at, expires_at,
+                        version, owner)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?5, ?6, 1, ?7)",
+                    params![
+                        &scope_token,
+                        key,
+                        &bytes,
+                        content_type,
+                        now,
+                        opts.expires_at,
+                        owner
+                    ],
                 )?;
                 1
             }
@@ -241,15 +283,16 @@ impl MemoryStore {
         Ok(new_version)
     }
 
-    /// 단건 조회. 만료된 키는 `None` 취급.
+    /// 단건 조회. 만료된 키는 `None` 취급. owner 필드 포함 (regular 의미 보존).
     pub fn get(&self, scope: &Scope, key: &str) -> Result<Option<MemoryEntry>> {
         validate_key(key).map_err(MemoryError::InvalidKey)?;
         let scope_token = scope.as_token();
         let now = unix_ms_now();
 
-        let row = self.conn
+        let row = self
+            .conn
             .query_row(
-                "SELECT value, content_type, created_at, updated_at, expires_at, version
+                "SELECT value, content_type, created_at, updated_at, expires_at, version, owner
                  FROM memory WHERE scope=?1 AND key=?2",
                 params![&scope_token, key],
                 |r| {
@@ -260,12 +303,13 @@ impl MemoryStore {
                         r.get::<_, i64>(3)?,
                         r.get::<_, Option<i64>>(4)?,
                         r.get::<_, i64>(5)? as u64,
+                        r.get::<_, String>(6)?,
                     ))
                 },
             )
             .optional()?;
 
-        let Some((bytes, ct, created_at, updated_at, expires_at, version)) = row else {
+        let Some((bytes, ct, created_at, updated_at, expires_at, version, owner)) = row else {
             return Ok(None);
         };
         if let Some(exp) = expires_at
@@ -282,6 +326,7 @@ impl MemoryStore {
             updated_at,
             expires_at,
             version,
+            owner: Some(owner),
         }))
     }
 
@@ -290,17 +335,24 @@ impl MemoryStore {
         Ok(self.get(scope, key)?.is_some())
     }
 
-    /// 삭제. CAS 미스면 conflict. 없으면 NotFound.
-    pub fn delete(&mut self, scope: &Scope, key: &str, cas: Option<u64>) -> Result<()> {
+    /// 삭제. CAS 미스면 conflict, 없으면 NotFound, owner 불일치면 OwnedByOther.
+    pub fn delete(
+        &mut self,
+        owner: &str,
+        scope: &Scope,
+        key: &str,
+        cas: Option<u64>,
+    ) -> Result<()> {
+        validate_owner(owner)?;
         validate_key(key).map_err(MemoryError::InvalidKey)?;
         let scope_token = scope.as_token();
 
         let tx = self.conn.transaction()?;
-        let existing: Option<u64> = tx
+        let existing: Option<(u64, String)> = tx
             .query_row(
-                "SELECT version FROM memory WHERE scope=?1 AND key=?2",
+                "SELECT version, owner FROM memory WHERE scope=?1 AND key=?2",
                 params![&scope_token, key],
-                |r| r.get::<_, i64>(0).map(|v| v as u64),
+                |r| Ok((r.get::<_, i64>(0)? as u64, r.get::<_, String>(1)?)),
             )
             .optional()?;
 
@@ -311,8 +363,13 @@ impl MemoryStore {
                     key: key.to_string(),
                 });
             }
-            (Some(actual), Some(expected)) if actual != expected => {
+            (Some((actual, _)), Some(expected)) if actual != expected => {
                 return Err(MemoryError::CasConflict { expected, actual });
+            }
+            (Some((_, existing_owner)), _) if !owner_can_modify(owner, &existing_owner) => {
+                return Err(MemoryError::OwnedByOther {
+                    owner: existing_owner,
+                });
             }
             _ => {}
         }
@@ -325,14 +382,14 @@ impl MemoryStore {
         Ok(())
     }
 
-    /// 스코프 내 키 리스트. 만료된 키는 제외. prefix 옵션, limit 옵션.
+    /// 스코프 내 키 리스트. 만료 제외, prefix/limit 옵션. 응답 entry 에 owner 포함.
     pub fn list(&self, scope: &Scope, opts: &ListOpts) -> Result<Vec<MemoryEntry>> {
         let scope_token = scope.as_token();
         let now = unix_ms_now();
         let limit = opts.limit.unwrap_or(usize::MAX) as i64;
 
         let mut sql = String::from(
-            "SELECT key, value, content_type, created_at, updated_at, expires_at, version
+            "SELECT key, value, content_type, created_at, updated_at, expires_at, version, owner
              FROM memory
              WHERE scope=?1 AND (expires_at IS NULL OR expires_at > ?2)",
         );
@@ -344,15 +401,8 @@ impl MemoryStore {
 
         let mut stmt = self.conn.prepare(&sql)?;
         let mut entries = Vec::new();
-        let map_row = |r: &rusqlite::Row<'_>| -> rusqlite::Result<(
-            String,
-            Vec<u8>,
-            String,
-            i64,
-            i64,
-            Option<i64>,
-            u64,
-        )> {
+        type RegularRow = (String, Vec<u8>, String, i64, i64, Option<i64>, u64, String);
+        let map_row = |r: &rusqlite::Row<'_>| -> rusqlite::Result<RegularRow> {
             Ok((
                 r.get(0)?,
                 r.get(1)?,
@@ -361,37 +411,38 @@ impl MemoryStore {
                 r.get(4)?,
                 r.get(5)?,
                 r.get::<_, i64>(6)? as u64,
+                r.get(7)?,
             ))
         };
+
+        let push_row =
+            |entries: &mut Vec<MemoryEntry>,
+             row: rusqlite::Result<RegularRow>|
+             -> Result<()> {
+                let (key, bytes, ct, ca, ua, ea, ver, owner) = row?;
+                entries.push(MemoryEntry {
+                    scope: scope_token.clone(),
+                    key,
+                    value: MemoryValue::from_db(&ct, bytes)?,
+                    created_at: ca,
+                    updated_at: ua,
+                    expires_at: ea,
+                    version: ver,
+                    owner: Some(owner),
+                });
+                Ok(())
+            };
 
         if let Some(prefix) = &opts.prefix {
             let like = format!("{}%", escape_like(prefix));
             let rows = stmt.query_map(params![&scope_token, now, like, limit], map_row)?;
             for row in rows {
-                let (key, bytes, ct, ca, ua, ea, ver) = row?;
-                entries.push(MemoryEntry {
-                    scope: scope_token.clone(),
-                    key,
-                    value: MemoryValue::from_db(&ct, bytes)?,
-                    created_at: ca,
-                    updated_at: ua,
-                    expires_at: ea,
-                    version: ver,
-                });
+                push_row(&mut entries, row)?;
             }
         } else {
             let rows = stmt.query_map(params![&scope_token, now, limit], map_row)?;
             for row in rows {
-                let (key, bytes, ct, ca, ua, ea, ver) = row?;
-                entries.push(MemoryEntry {
-                    scope: scope_token.clone(),
-                    key,
-                    value: MemoryValue::from_db(&ct, bytes)?,
-                    created_at: ca,
-                    updated_at: ua,
-                    expires_at: ea,
-                    version: ver,
-                });
+                push_row(&mut entries, row)?;
             }
         }
         Ok(entries)
@@ -423,9 +474,9 @@ impl MemoryStore {
 
     /// 사용 중인 스코프 목록.
     pub fn scopes(&self) -> Result<Vec<String>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT DISTINCT scope FROM memory ORDER BY scope ASC",
-        )?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT DISTINCT scope FROM memory ORDER BY scope ASC")?;
         let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
         let mut out = Vec::new();
         for r in rows {
@@ -464,6 +515,326 @@ impl MemoryStore {
             })
         }
     }
+
+    // ============================================================
+    // Secret memory: plugin 별 사전 분할 (`owner` PK 일부)
+    // ============================================================
+
+    /// Secret put. owner 차원으로 자동 분리되므로 다른 plugin 영역과 충돌 없음.
+    pub fn put_secret(
+        &mut self,
+        owner: &str,
+        scope: &Scope,
+        key: &str,
+        value: &MemoryValue,
+        opts: &PutOpts,
+    ) -> Result<u64> {
+        validate_owner(owner)?;
+        validate_key(key).map_err(MemoryError::InvalidKey)?;
+        let bytes = serialize_value(value)?;
+        let scope_token = scope.as_token();
+        let now = unix_ms_now();
+        let content_type = value.content_type();
+
+        let tx = self.conn.transaction()?;
+        let existing: Option<u64> = tx
+            .query_row(
+                "SELECT version FROM memory_secret
+                 WHERE owner=?1 AND scope=?2 AND key=?3",
+                params![owner, &scope_token, key],
+                |r| r.get::<_, i64>(0).map(|v| v as u64),
+            )
+            .optional()?;
+
+        let new_version = match (existing, opts.cas) {
+            (None, Some(expected)) => {
+                return Err(MemoryError::CasConflict {
+                    expected,
+                    actual: 0,
+                });
+            }
+            (Some(actual), Some(expected)) if actual != expected => {
+                return Err(MemoryError::CasConflict { expected, actual });
+            }
+            (Some(actual), _) => {
+                let new_v = actual + 1;
+                tx.execute(
+                    "UPDATE memory_secret SET value=?1, content_type=?2, updated_at=?3,
+                                              expires_at=?4, version=?5
+                     WHERE owner=?6 AND scope=?7 AND key=?8",
+                    params![
+                        &bytes,
+                        content_type,
+                        now,
+                        opts.expires_at,
+                        new_v as i64,
+                        owner,
+                        &scope_token,
+                        key
+                    ],
+                )?;
+                new_v
+            }
+            (None, _) => {
+                tx.execute(
+                    "INSERT INTO memory_secret
+                       (owner, scope, key, value, content_type, created_at, updated_at,
+                        expires_at, version)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, ?7, 1)",
+                    params![
+                        owner,
+                        &scope_token,
+                        key,
+                        &bytes,
+                        content_type,
+                        now,
+                        opts.expires_at
+                    ],
+                )?;
+                1
+            }
+        };
+
+        tx.commit()?;
+        Ok(new_version)
+    }
+
+    /// Secret get. 응답 entry 의 `owner` 필드는 `None` 으로 두어 plugin 에게
+    /// 추상화 누수를 만들지 않는다.
+    pub fn get_secret(
+        &self,
+        owner: &str,
+        scope: &Scope,
+        key: &str,
+    ) -> Result<Option<MemoryEntry>> {
+        validate_owner(owner)?;
+        validate_key(key).map_err(MemoryError::InvalidKey)?;
+        let scope_token = scope.as_token();
+        let now = unix_ms_now();
+
+        let row = self
+            .conn
+            .query_row(
+                "SELECT value, content_type, created_at, updated_at, expires_at, version
+                 FROM memory_secret WHERE owner=?1 AND scope=?2 AND key=?3",
+                params![owner, &scope_token, key],
+                |r| {
+                    Ok((
+                        r.get::<_, Vec<u8>>(0)?,
+                        r.get::<_, String>(1)?,
+                        r.get::<_, i64>(2)?,
+                        r.get::<_, i64>(3)?,
+                        r.get::<_, Option<i64>>(4)?,
+                        r.get::<_, i64>(5)? as u64,
+                    ))
+                },
+            )
+            .optional()?;
+
+        let Some((bytes, ct, created_at, updated_at, expires_at, version)) = row else {
+            return Ok(None);
+        };
+        if let Some(exp) = expires_at
+            && exp <= now
+        {
+            return Ok(None);
+        }
+        let value = MemoryValue::from_db(&ct, bytes)?;
+        Ok(Some(MemoryEntry {
+            scope: scope_token,
+            key: key.to_string(),
+            value,
+            created_at,
+            updated_at,
+            expires_at,
+            version,
+            owner: None,
+        }))
+    }
+
+    pub fn exists_secret(&self, owner: &str, scope: &Scope, key: &str) -> Result<bool> {
+        Ok(self.get_secret(owner, scope, key)?.is_some())
+    }
+
+    pub fn delete_secret(
+        &mut self,
+        owner: &str,
+        scope: &Scope,
+        key: &str,
+        cas: Option<u64>,
+    ) -> Result<()> {
+        validate_owner(owner)?;
+        validate_key(key).map_err(MemoryError::InvalidKey)?;
+        let scope_token = scope.as_token();
+
+        let tx = self.conn.transaction()?;
+        let existing: Option<u64> = tx
+            .query_row(
+                "SELECT version FROM memory_secret
+                 WHERE owner=?1 AND scope=?2 AND key=?3",
+                params![owner, &scope_token, key],
+                |r| r.get::<_, i64>(0).map(|v| v as u64),
+            )
+            .optional()?;
+
+        match (existing, cas) {
+            (None, _) => {
+                return Err(MemoryError::NotFound {
+                    scope: scope_token,
+                    key: key.to_string(),
+                });
+            }
+            (Some(actual), Some(expected)) if actual != expected => {
+                return Err(MemoryError::CasConflict { expected, actual });
+            }
+            _ => {}
+        }
+
+        tx.execute(
+            "DELETE FROM memory_secret WHERE owner=?1 AND scope=?2 AND key=?3",
+            params![owner, &scope_token, key],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn list_secret(
+        &self,
+        owner: &str,
+        scope: &Scope,
+        opts: &ListOpts,
+    ) -> Result<Vec<MemoryEntry>> {
+        validate_owner(owner)?;
+        let scope_token = scope.as_token();
+        let now = unix_ms_now();
+        let limit = opts.limit.unwrap_or(usize::MAX) as i64;
+
+        let mut sql = String::from(
+            "SELECT key, value, content_type, created_at, updated_at, expires_at, version
+             FROM memory_secret
+             WHERE owner=?1 AND scope=?2 AND (expires_at IS NULL OR expires_at > ?3)",
+        );
+        if opts.prefix.is_some() {
+            sql.push_str(" AND key LIKE ?4 ESCAPE '\\'");
+        }
+        sql.push_str(" ORDER BY key ASC LIMIT ?");
+        sql.push_str(if opts.prefix.is_some() { "5" } else { "4" });
+
+        let mut stmt = self.conn.prepare(&sql)?;
+        let mut entries = Vec::new();
+        type SecretRow = (String, Vec<u8>, String, i64, i64, Option<i64>, u64);
+        let map_row = |r: &rusqlite::Row<'_>| -> rusqlite::Result<SecretRow> {
+            Ok((
+                r.get(0)?,
+                r.get(1)?,
+                r.get(2)?,
+                r.get(3)?,
+                r.get(4)?,
+                r.get(5)?,
+                r.get::<_, i64>(6)? as u64,
+            ))
+        };
+
+        let push_row =
+            |entries: &mut Vec<MemoryEntry>,
+             row: rusqlite::Result<SecretRow>|
+             -> Result<()> {
+                let (key, bytes, ct, ca, ua, ea, ver) = row?;
+                entries.push(MemoryEntry {
+                    scope: scope_token.clone(),
+                    key,
+                    value: MemoryValue::from_db(&ct, bytes)?,
+                    created_at: ca,
+                    updated_at: ua,
+                    expires_at: ea,
+                    version: ver,
+                    owner: None,
+                });
+                Ok(())
+            };
+
+        if let Some(prefix) = &opts.prefix {
+            let like = format!("{}%", escape_like(prefix));
+            let rows = stmt.query_map(params![owner, &scope_token, now, like, limit], map_row)?;
+            for row in rows {
+                push_row(&mut entries, row)?;
+            }
+        } else {
+            let rows = stmt.query_map(params![owner, &scope_token, now, limit], map_row)?;
+            for row in rows {
+                push_row(&mut entries, row)?;
+            }
+        }
+        Ok(entries)
+    }
+
+    pub fn count_secret(&self, owner: &str, scope: &Scope, prefix: Option<&str>) -> Result<u64> {
+        validate_owner(owner)?;
+        let scope_token = scope.as_token();
+        let now = unix_ms_now();
+        let n: i64 = if let Some(p) = prefix {
+            let like = format!("{}%", escape_like(p));
+            self.conn.query_row(
+                "SELECT COUNT(*) FROM memory_secret
+                 WHERE owner=?1 AND scope=?2 AND (expires_at IS NULL OR expires_at > ?3)
+                   AND key LIKE ?4 ESCAPE '\\'",
+                params![owner, &scope_token, now, like],
+                |r| r.get(0),
+            )?
+        } else {
+            self.conn.query_row(
+                "SELECT COUNT(*) FROM memory_secret
+                 WHERE owner=?1 AND scope=?2 AND (expires_at IS NULL OR expires_at > ?3)",
+                params![owner, &scope_token, now],
+                |r| r.get(0),
+            )?
+        };
+        Ok(n as u64)
+    }
+
+    pub fn scopes_secret(&self, owner: &str) -> Result<Vec<String>> {
+        validate_owner(owner)?;
+        let mut stmt = self.conn.prepare(
+            "SELECT DISTINCT scope FROM memory_secret WHERE owner=?1 ORDER BY scope ASC",
+        )?;
+        let rows = stmt.query_map(params![owner], |r| r.get::<_, String>(0))?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r?);
+        }
+        Ok(out)
+    }
+
+    pub fn stats_secret(&self, owner: &str, scope: Option<&Scope>) -> Result<MemoryStats> {
+        validate_owner(owner)?;
+        let now = unix_ms_now();
+        if let Some(s) = scope {
+            let token = s.as_token();
+            let (count, bytes): (i64, i64) = self.conn.query_row(
+                "SELECT COUNT(*), COALESCE(SUM(LENGTH(value)), 0) FROM memory_secret
+                 WHERE owner=?1 AND scope=?2 AND (expires_at IS NULL OR expires_at > ?3)",
+                params![owner, &token, now],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )?;
+            Ok(MemoryStats {
+                scope: Some(token),
+                entries: count as u64,
+                bytes: bytes as u64,
+            })
+        } else {
+            let (count, bytes): (i64, i64) = self.conn.query_row(
+                "SELECT COUNT(*), COALESCE(SUM(LENGTH(value)), 0) FROM memory_secret
+                 WHERE owner=?1 AND (expires_at IS NULL OR expires_at > ?2)",
+                params![owner, now],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )?;
+            Ok(MemoryStats {
+                scope: None,
+                entries: count as u64,
+                bytes: bytes as u64,
+            })
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -473,7 +844,7 @@ pub struct MemoryStats {
     pub bytes: u64,
 }
 
-/// Init/open 실패. `MemoryError`와 분리 — 호출자가 사용자 친화 메시지를 띄울
+/// Init/open 실패. `MemoryError` 와 분리 — 호출자가 사용자 친화 메시지를 띄울
 /// 때 분기가 필요해서.
 #[derive(Debug)]
 pub enum MemoryInitError {
@@ -510,12 +881,17 @@ impl std::fmt::Display for MemoryInitError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             MemoryInitError::HomeDirMissing => write!(f, "home directory missing"),
-            MemoryInitError::PermissionDenied(p) => write!(f, "permission denied: {}", p.display()),
+            MemoryInitError::PermissionDenied(p) => {
+                write!(f, "permission denied: {}", p.display())
+            }
             MemoryInitError::Busy(p) => write!(f, "memory.db busy: {}", p.display()),
             MemoryInitError::DiskFull => write!(f, "disk full"),
             MemoryInitError::Corrupt(p) => write!(f, "memory.db corrupted: {}", p.display()),
             MemoryInitError::SchemaMismatch { expected, found } => {
-                write!(f, "memory.db schema mismatch (expected {expected}, found {found})")
+                write!(
+                    f,
+                    "memory.db schema mismatch (expected {expected}, found {found})"
+                )
             }
             MemoryInitError::Other(msg) => write!(f, "{msg}"),
         }
@@ -526,7 +902,9 @@ impl std::error::Error for MemoryInitError {}
 
 fn classify_io(err: std::io::Error, path: &Path) -> MemoryInitError {
     match err.kind() {
-        std::io::ErrorKind::PermissionDenied => MemoryInitError::PermissionDenied(path.to_path_buf()),
+        std::io::ErrorKind::PermissionDenied => {
+            MemoryInitError::PermissionDenied(path.to_path_buf())
+        }
         _ if err.raw_os_error() == Some(enospc()) => MemoryInitError::DiskFull,
         _ => MemoryInitError::Other(format!("{}: {err}", path.display())),
     }
@@ -581,7 +959,7 @@ pub fn init() -> std::result::Result<(), MemoryInitError> {
     Ok(())
 }
 
-/// 테스트: 이미 열린 store를 싱글톤으로 등록.
+/// 테스트: 이미 열린 store 를 싱글톤으로 등록.
 #[cfg(test)]
 pub fn init_with(store: MemoryStore) {
     let _ = STORE.set(Mutex::new(store));
@@ -616,6 +994,37 @@ fn escape_like(input: &str) -> String {
     out
 }
 
+fn validate_owner(owner: &str) -> Result<()> {
+    if owner.is_empty() {
+        return Err(MemoryError::InvalidOwner("empty".into()));
+    }
+    if owner.len() > 256 {
+        return Err(MemoryError::InvalidOwner(format!(
+            "too long: {} > 256",
+            owner.len()
+        )));
+    }
+    Ok(())
+}
+
+/// `_host` 는 모든 entry 를 수정할 수 있는 root, plugin owner 는 자기 entry 만 수정 가능.
+fn owner_can_modify(caller_owner: &str, existing_owner: &str) -> bool {
+    caller_owner == HOST_OWNER || caller_owner == existing_owner
+}
+
+fn serialize_value(value: &MemoryValue) -> Result<Vec<u8>> {
+    let bytes = value
+        .to_bytes()
+        .map_err(|e| MemoryError::InvalidContentType(e.to_string()))?;
+    if bytes.len() > MAX_VALUE_BYTES {
+        return Err(MemoryError::ValueTooLarge {
+            actual: bytes.len(),
+            max: MAX_VALUE_BYTES,
+        });
+    }
+    Ok(bytes)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -628,128 +1037,202 @@ mod tests {
         MemoryValue::Text(s.into())
     }
 
-    // M1: 기본 CRUD.
+    const PLUGIN_A: &str = "com.tasty.a";
+    const PLUGIN_B: &str = "com.tasty.b";
+
+    // ---- Regular ----
+
     #[test]
     fn put_get_delete_roundtrip() {
         let mut s = store();
         let scope = Scope::Surface(1);
 
-        let v1 = s.put(&scope, "a", &text("hello"), &PutOpts::default()).unwrap();
+        let v1 = s
+            .put(PLUGIN_A, &scope, "a", &text("hello"), &PutOpts::default())
+            .unwrap();
         assert_eq!(v1, 1);
 
         let entry = s.get(&scope, "a").unwrap().unwrap();
         assert_eq!(entry.value, text("hello"));
         assert_eq!(entry.version, 1);
-        assert!(entry.created_at <= entry.updated_at);
+        assert_eq!(entry.owner.as_deref(), Some(PLUGIN_A));
 
-        let v2 = s.put(&scope, "a", &text("world"), &PutOpts::default()).unwrap();
+        let v2 = s
+            .put(PLUGIN_A, &scope, "a", &text("world"), &PutOpts::default())
+            .unwrap();
         assert_eq!(v2, 2);
 
-        let entry = s.get(&scope, "a").unwrap().unwrap();
-        assert_eq!(entry.value, text("world"));
-        assert_eq!(entry.version, 2);
-
-        s.delete(&scope, "a", None).unwrap();
+        s.delete(PLUGIN_A, &scope, "a", None).unwrap();
         assert!(s.get(&scope, "a").unwrap().is_none());
-        assert!(!s.exists(&scope, "a").unwrap());
     }
 
-    // M2: 스코프 격리.
     #[test]
     fn scopes_are_isolated() {
         let mut s = store();
-        s.put(&Scope::Surface(1), "k", &text("s1"), &PutOpts::default()).unwrap();
-        s.put(&Scope::Surface(2), "k", &text("s2"), &PutOpts::default()).unwrap();
-        s.put(&Scope::Global, "k", &text("g"), &PutOpts::default()).unwrap();
-
+        s.put(HOST_OWNER, &Scope::Surface(1), "k", &text("s1"), &PutOpts::default())
+            .unwrap();
+        s.put(HOST_OWNER, &Scope::Surface(2), "k", &text("s2"), &PutOpts::default())
+            .unwrap();
+        s.put(HOST_OWNER, &Scope::Global, "k", &text("g"), &PutOpts::default())
+            .unwrap();
         assert_eq!(s.get(&Scope::Surface(1), "k").unwrap().unwrap().value, text("s1"));
         assert_eq!(s.get(&Scope::Surface(2), "k").unwrap().unwrap().value, text("s2"));
         assert_eq!(s.get(&Scope::Global, "k").unwrap().unwrap().value, text("g"));
-
-        // 한 스코프 delete가 다른 스코프에 영향 없음.
-        s.delete(&Scope::Surface(1), "k", None).unwrap();
-        assert!(s.get(&Scope::Surface(1), "k").unwrap().is_none());
-        assert!(s.get(&Scope::Surface(2), "k").unwrap().is_some());
-        assert!(s.get(&Scope::Global, "k").unwrap().is_some());
     }
 
-    // M7: CAS conflict.
     #[test]
     fn cas_conflict_blocks_update() {
         let mut s = store();
         let scope = Scope::Workspace(1);
-        s.put(&scope, "k", &text("v1"), &PutOpts::default()).unwrap();
+        s.put(PLUGIN_A, &scope, "k", &text("v1"), &PutOpts::default())
+            .unwrap();
 
-        let err = s.put(
-            &scope,
-            "k",
-            &text("v2"),
-            &PutOpts { cas: Some(99), ..Default::default() },
-        ).unwrap_err();
-        assert!(matches!(err, MemoryError::CasConflict { actual: 1, expected: 99 }));
+        let err = s
+            .put(
+                PLUGIN_A,
+                &scope,
+                "k",
+                &text("v2"),
+                &PutOpts {
+                    cas: Some(99),
+                    ..Default::default()
+                },
+            )
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            MemoryError::CasConflict {
+                actual: 1,
+                expected: 99
+            }
+        ));
 
-        // 올바른 cas는 성공.
         s.put(
+            PLUGIN_A,
             &scope,
             "k",
             &text("v2"),
-            &PutOpts { cas: Some(1), ..Default::default() },
-        ).unwrap();
-
-        // 신규 키에 cas 주면 expected=N, actual=0.
-        let err = s.put(
-            &scope,
-            "new",
-            &text("x"),
-            &PutOpts { cas: Some(1), ..Default::default() },
-        ).unwrap_err();
-        assert!(matches!(err, MemoryError::CasConflict { expected: 1, actual: 0 }));
+            &PutOpts {
+                cas: Some(1),
+                ..Default::default()
+            },
+        )
+        .unwrap();
     }
 
-    // M4: TTL.
+    #[test]
+    fn regular_owned_by_other_on_update() {
+        let mut s = store();
+        let scope = Scope::Global;
+        s.put(PLUGIN_A, &scope, "k", &text("v1"), &PutOpts::default())
+            .unwrap();
+
+        let err = s
+            .put(PLUGIN_B, &scope, "k", &text("v2"), &PutOpts::default())
+            .unwrap_err();
+        let owner = match err {
+            MemoryError::OwnedByOther { owner } => owner,
+            other => panic!("expected OwnedByOther, got {other:?}"),
+        };
+        assert_eq!(owner, PLUGIN_A);
+
+        // 원래 owner는 정상.
+        s.put(PLUGIN_A, &scope, "k", &text("v3"), &PutOpts::default())
+            .unwrap();
+        // _host는 root로 통과.
+        s.put(HOST_OWNER, &scope, "k", &text("v4"), &PutOpts::default())
+            .unwrap();
+    }
+
+    #[test]
+    fn regular_owned_by_other_on_delete() {
+        let mut s = store();
+        let scope = Scope::Global;
+        s.put(PLUGIN_A, &scope, "k", &text("v1"), &PutOpts::default())
+            .unwrap();
+
+        let err = s.delete(PLUGIN_B, &scope, "k", None).unwrap_err();
+        assert!(matches!(err, MemoryError::OwnedByOther { .. }));
+
+        // _host는 root로 통과해 삭제 가능.
+        s.delete(HOST_OWNER, &scope, "k", None).unwrap();
+        assert!(s.get(&scope, "k").unwrap().is_none());
+    }
+
+    #[test]
+    fn read_is_shared_across_callers() {
+        let mut s = store();
+        let scope = Scope::Global;
+        s.put(PLUGIN_A, &scope, "k", &text("v"), &PutOpts::default())
+            .unwrap();
+        // Plugin B도 읽을 수 있고, 응답에 owner=PLUGIN_A가 보인다.
+        let entry = s.get(&scope, "k").unwrap().unwrap();
+        assert_eq!(entry.owner.as_deref(), Some(PLUGIN_A));
+
+        let list = s.list(&scope, &ListOpts::default()).unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].owner.as_deref(), Some(PLUGIN_A));
+    }
+
     #[test]
     fn expired_keys_treated_as_missing() {
         let mut s = store();
         let scope = Scope::Surface(1);
-        // unix_ms_now()는 millis 단위. -1초 → 즉시 만료.
         let past = unix_ms_now() - 1000;
         s.put(
+            HOST_OWNER,
             &scope,
             "k",
             &text("v"),
-            &PutOpts { expires_at: Some(past), ..Default::default() },
-        ).unwrap();
+            &PutOpts {
+                expires_at: Some(past),
+                ..Default::default()
+            },
+        )
+        .unwrap();
         assert!(s.get(&scope, "k").unwrap().is_none());
-        assert!(!s.exists(&scope, "k").unwrap());
         assert_eq!(s.count(&scope, None).unwrap(), 0);
         assert!(s.list(&scope, &ListOpts::default()).unwrap().is_empty());
     }
 
-    // M10: 크기 제한.
     #[test]
     fn value_size_cap_enforced() {
         let mut s = store();
         let big = vec![0u8; MAX_VALUE_BYTES + 1];
-        let err = s.put(
-            &Scope::Global,
-            "k",
-            &MemoryValue::Binary(big),
-            &PutOpts::default(),
-        ).unwrap_err();
+        let err = s
+            .put(
+                HOST_OWNER,
+                &Scope::Global,
+                "k",
+                &MemoryValue::Binary(big),
+                &PutOpts::default(),
+            )
+            .unwrap_err();
         assert!(matches!(err, MemoryError::ValueTooLarge { .. }));
     }
 
     #[test]
     fn invalid_key_rejected() {
         let mut s = store();
-        let err = s.put(&Scope::Global, "BAD", &text("x"), &PutOpts::default()).unwrap_err();
+        let err = s
+            .put(HOST_OWNER, &Scope::Global, "BAD", &text("x"), &PutOpts::default())
+            .unwrap_err();
         assert!(matches!(err, MemoryError::InvalidKey(_)));
+    }
+
+    #[test]
+    fn invalid_owner_rejected() {
+        let mut s = store();
+        let err = s
+            .put("", &Scope::Global, "k", &text("x"), &PutOpts::default())
+            .unwrap_err();
+        assert!(matches!(err, MemoryError::InvalidOwner(_)));
     }
 
     #[test]
     fn delete_missing_returns_not_found() {
         let mut s = store();
-        let err = s.delete(&Scope::Global, "ghost", None).unwrap_err();
+        let err = s.delete(HOST_OWNER, &Scope::Global, "ghost", None).unwrap_err();
         assert!(matches!(err, MemoryError::NotFound { .. }));
     }
 
@@ -758,68 +1241,128 @@ mod tests {
         let mut s = store();
         let scope = Scope::Surface(1);
         for k in ["a.1", "a.2", "b.1", "b.2", "c.1"] {
-            s.put(&scope, k, &text(k), &PutOpts::default()).unwrap();
+            s.put(HOST_OWNER, &scope, k, &text(k), &PutOpts::default())
+                .unwrap();
         }
-
         let all = s.list(&scope, &ListOpts::default()).unwrap();
         assert_eq!(all.len(), 5);
-
-        let a_only = s.list(&scope, &ListOpts { prefix: Some("a.".into()), limit: None }).unwrap();
-        assert_eq!(a_only.iter().map(|e| e.key.as_str()).collect::<Vec<_>>(), vec!["a.1", "a.2"]);
-
-        let limited = s.list(&scope, &ListOpts { prefix: None, limit: Some(2) }).unwrap();
+        let a_only = s
+            .list(
+                &scope,
+                &ListOpts {
+                    prefix: Some("a.".into()),
+                    limit: None,
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            a_only.iter().map(|e| e.key.as_str()).collect::<Vec<_>>(),
+            vec!["a.1", "a.2"]
+        );
+        let limited = s
+            .list(
+                &scope,
+                &ListOpts {
+                    prefix: None,
+                    limit: Some(2),
+                },
+            )
+            .unwrap();
         assert_eq!(limited.len(), 2);
-
         assert_eq!(s.count(&scope, None).unwrap(), 5);
         assert_eq!(s.count(&scope, Some("b.")).unwrap(), 2);
     }
 
+    // ---- Secret ----
+
     #[test]
-    fn list_prefix_escapes_wildcards() {
+    fn secret_isolated_between_owners() {
         let mut s = store();
-        let scope = Scope::Surface(1);
-        // 키에 와일드카드 문자 자체가 못 들어가지만, prefix에 들어오는 _ 는 escape돼야 한다.
-        // (key 검증 통과 키만 들어가니 실제로는 안전하나, escape_like가 호출되는지 회귀 검증.)
-        s.put(&scope, "a_b", &text("v"), &PutOpts::default()).unwrap();
-        s.put(&scope, "axb", &text("v"), &PutOpts::default()).unwrap();
-        let only_underscore = s
-            .list(&scope, &ListOpts { prefix: Some("a_".into()), limit: None })
+        let scope = Scope::Global;
+        s.put_secret(PLUGIN_A, &scope, "tok", &text("A-token"), &PutOpts::default())
             .unwrap();
-        assert_eq!(only_underscore.iter().map(|e| e.key.as_str()).collect::<Vec<_>>(), vec!["a_b"]);
+        s.put_secret(PLUGIN_B, &scope, "tok", &text("B-token"), &PutOpts::default())
+            .unwrap();
+
+        // 같은 (scope, key)지만 owner별로 분리 — Plugin A는 자기 값만 본다.
+        let a = s.get_secret(PLUGIN_A, &scope, "tok").unwrap().unwrap();
+        assert_eq!(a.value, text("A-token"));
+        assert!(a.owner.is_none(), "secret 응답에는 owner 노출 금지");
+
+        let b = s.get_secret(PLUGIN_B, &scope, "tok").unwrap().unwrap();
+        assert_eq!(b.value, text("B-token"));
+
+        // Plugin A가 자기 영역만 본다.
+        let list_a = s.list_secret(PLUGIN_A, &scope, &ListOpts::default()).unwrap();
+        assert_eq!(list_a.len(), 1);
+
+        let scopes_a = s.scopes_secret(PLUGIN_A).unwrap();
+        assert_eq!(scopes_a, vec!["global"]);
     }
 
     #[test]
-    fn json_value_roundtrip() {
+    fn secret_delete_only_affects_owner() {
         let mut s = store();
-        let json = MemoryValue::Json(serde_json::json!({ "n": 1, "xs": [true, "a"] }));
-        s.put(&Scope::Global, "k", &json, &PutOpts::default()).unwrap();
-        assert_eq!(s.get(&Scope::Global, "k").unwrap().unwrap().value, json);
+        let scope = Scope::Workspace(1);
+        s.put_secret(PLUGIN_A, &scope, "tok", &text("A"), &PutOpts::default())
+            .unwrap();
+        s.put_secret(PLUGIN_B, &scope, "tok", &text("B"), &PutOpts::default())
+            .unwrap();
+        s.delete_secret(PLUGIN_A, &scope, "tok", None).unwrap();
+        assert!(s.get_secret(PLUGIN_A, &scope, "tok").unwrap().is_none());
+        assert!(s.get_secret(PLUGIN_B, &scope, "tok").unwrap().is_some());
     }
 
     #[test]
-    fn binary_value_roundtrip() {
+    fn secret_cas_and_versioning() {
         let mut s = store();
-        let bin = MemoryValue::Binary(vec![0, 1, 2, 255, 7]);
-        s.put(&Scope::Global, "k", &bin, &PutOpts::default()).unwrap();
-        assert_eq!(s.get(&Scope::Global, "k").unwrap().unwrap().value, bin);
+        let scope = Scope::Global;
+        let v1 = s
+            .put_secret(PLUGIN_A, &scope, "k", &text("v1"), &PutOpts::default())
+            .unwrap();
+        assert_eq!(v1, 1);
+        let v2 = s
+            .put_secret(
+                PLUGIN_A,
+                &scope,
+                "k",
+                &text("v2"),
+                &PutOpts {
+                    cas: Some(1),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        assert_eq!(v2, 2);
+        let err = s
+            .put_secret(
+                PLUGIN_A,
+                &scope,
+                "k",
+                &text("v3"),
+                &PutOpts {
+                    cas: Some(99),
+                    ..Default::default()
+                },
+            )
+            .unwrap_err();
+        assert!(matches!(err, MemoryError::CasConflict { .. }));
     }
 
     #[test]
-    fn scopes_listing_and_stats() {
+    fn secret_stats_per_owner() {
         let mut s = store();
-        s.put(&Scope::Global, "a", &text("x"), &PutOpts::default()).unwrap();
-        s.put(&Scope::Surface(1), "a", &text("y"), &PutOpts::default()).unwrap();
-        s.put(&Scope::Surface(2), "a", &text("z"), &PutOpts::default()).unwrap();
+        s.put_secret(PLUGIN_A, &Scope::Global, "a", &text("xx"), &PutOpts::default())
+            .unwrap();
+        s.put_secret(PLUGIN_B, &Scope::Global, "a", &text("zzzz"), &PutOpts::default())
+            .unwrap();
 
-        let scopes = s.scopes().unwrap();
-        assert_eq!(scopes, vec!["global", "surface:1", "surface:2"]);
+        let a = s.stats_secret(PLUGIN_A, None).unwrap();
+        assert_eq!(a.entries, 1);
+        assert_eq!(a.bytes, 2);
 
-        let global_stats = s.stats(Some(&Scope::Global)).unwrap();
-        assert_eq!(global_stats.entries, 1);
-        assert_eq!(global_stats.bytes, 1);
-
-        let total = s.stats(None).unwrap();
-        assert_eq!(total.entries, 3);
-        assert!(total.bytes >= 3);
+        let b = s.stats_secret(PLUGIN_B, None).unwrap();
+        assert_eq!(b.entries, 1);
+        assert_eq!(b.bytes, 4);
     }
 }

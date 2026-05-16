@@ -110,7 +110,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("image.prev", plugin(&[SurfaceWrite])),
         ("image.paste", plugin(&[SurfaceWrite, ClipboardRead])),
         ("image.list", plugin(&[SurfaceRead])),
-        // ── memory (영속 키-값) ───────────────────────────────────────
+        // ── memory: regular (공유 네임스페이스, owner enforcement) ────
         ("memory.put", plugin(&[MemoryWrite])),
         ("memory.get", plugin(&[MemoryRead])),
         ("memory.delete", plugin(&[MemoryWrite])),
@@ -119,6 +119,15 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("memory.count", plugin(&[MemoryRead])),
         ("memory.scopes", plugin(&[MemoryRead])),
         ("memory.stats", plugin(&[MemoryRead])),
+        // ── memory: secret (plugin 별 사전 분할) ──────────────────────
+        ("memory.secret.put", plugin(&[MemorySecret])),
+        ("memory.secret.get", plugin(&[MemorySecret])),
+        ("memory.secret.delete", plugin(&[MemorySecret])),
+        ("memory.secret.list", plugin(&[MemorySecret])),
+        ("memory.secret.exists", plugin(&[MemorySecret])),
+        ("memory.secret.count", plugin(&[MemorySecret])),
+        ("memory.secret.scopes", plugin(&[MemorySecret])),
+        ("memory.secret.stats", plugin(&[MemorySecret])),
         // ── notification ──────────────────────────────────────────────
         ("notification.list", plugin(&[Notification])),
         ("notification.create", plugin(&[Notification])),

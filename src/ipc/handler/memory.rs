@@ -1,14 +1,19 @@
-//! `memory.*` IPC 핸들러. `~/.tasty/memory.db` (tasty-memory 크레이트) 위에서
-//! 동작하며, 모든 호출은 메인 스레드에서 순차 처리된다.
+//! `memory.*` / `memory.secret.*` IPC 핸들러. `~/.tasty/memory.db`
+//! (tasty-memory 크레이트) 위에서 동작하며, 모든 호출은 메인 스레드에서 순차
+//! 처리된다.
 //!
-//! 스코프는 JSON 파라미터 `scope`로 받는다 (예: `"global"`, `"surface:3"`).
-//! 값은 `value`(텍스트/JSON) 또는 `value_b64`(base64 binary).
+//! 스코프는 JSON 파라미터 `scope` 로 받는다 (예: `"global"`, `"surface:3"`).
+//! 값은 `value` (텍스트/JSON) 또는 `value_b64` (base64 binary).
+//!
+//! `owner` 는 [`CallerContext`] 에서 도출하며 plugin 이 인자로 명시할 수 없다.
 
 use serde_json::{Value, json};
 use tasty_memory::{
-    ListOpts, MemoryError, MemoryEntry, MemoryStats, MemoryValue, PutOpts, Scope, with_store,
+    ListOpts, MemoryArea, MemoryEntry, MemoryError, MemoryStats, MemoryValue, PutOpts, Scope,
+    with_store,
 };
 
+use crate::ipc::caller::CallerContext;
 use crate::ipc::protocol::JsonRpcResponse;
 use crate::state::AppState;
 
@@ -37,24 +42,15 @@ fn optional_scope(params: &Value, id: &Value) -> Result<Option<Scope>, JsonRpcRe
     }
 }
 
-/// `params.value` (텍스트 또는 JSON 객체/배열/number/bool/null)와
-/// `params.value_b64` (base64 binary) 중 하나를 받아 `MemoryValue`로 변환.
-///
-/// - `content_type = "text/plain"` 강제 시 `value`는 반드시 string이어야 함.
-/// - `content_type = "application/json"` 시 임의 JSON 값.
-/// - `content_type = "application/octet-stream"` 시 `value_b64` 필수.
 fn parse_value(params: &Value, id: &Value) -> Result<MemoryValue, JsonRpcResponse> {
     let content_type = params
         .get("content_type")
         .and_then(|v| v.as_str())
-        .unwrap_or_else(|| {
-            // 명시 안 되면 value의 형태로 추론.
-            match params.get("value") {
-                Some(Value::String(_)) => "text/plain",
-                Some(_) => "application/json",
-                None if params.get("value_b64").is_some() => "application/octet-stream",
-                None => "application/json",
-            }
+        .unwrap_or_else(|| match params.get("value") {
+            Some(Value::String(_)) => "text/plain",
+            Some(_) => "application/json",
+            None if params.get("value_b64").is_some() => "application/octet-stream",
+            None => "application/json",
         });
     match content_type {
         "text/plain" => match params.get("value") {
@@ -91,8 +87,6 @@ fn parse_value(params: &Value, id: &Value) -> Result<MemoryValue, JsonRpcRespons
     }
 }
 
-/// `serde_json` 등 외부 base64 crate가 워크스페이스에 없으므로 자체 디코더.
-/// 표준 alphabet (`A-Z a-z 0-9 + /`) + `=` 패딩만 인식.
 fn decode_b64(s: &str) -> Result<Vec<u8>, String> {
     let s = s.trim();
     let bytes = s.as_bytes();
@@ -175,6 +169,7 @@ fn value_to_json(v: &MemoryValue) -> Value {
     }
 }
 
+/// Regular entry — `owner` 가 응답에 포함된다.
 fn entry_to_json(entry: &MemoryEntry) -> Value {
     let mut obj = serde_json::Map::new();
     obj.insert("scope".into(), json!(entry.scope));
@@ -183,9 +178,27 @@ fn entry_to_json(entry: &MemoryEntry) -> Value {
     obj.insert("created_at".into(), json!(entry.created_at));
     obj.insert("updated_at".into(), json!(entry.updated_at));
     obj.insert("expires_at".into(), json!(entry.expires_at));
-    let v = value_to_json(&entry.value);
-    // value 페이로드를 entry에 평탄화.
-    if let Some(map) = v.as_object() {
+    if let Some(owner) = &entry.owner {
+        obj.insert("owner".into(), json!(owner));
+    }
+    if let Some(map) = value_to_json(&entry.value).as_object() {
+        for (k, vv) in map {
+            obj.insert(k.clone(), vv.clone());
+        }
+    }
+    Value::Object(obj)
+}
+
+/// Secret entry — plugin 에게 `owner` 차원을 노출하지 않으므로 무조건 생략.
+fn secret_entry_to_json(entry: &MemoryEntry) -> Value {
+    let mut obj = serde_json::Map::new();
+    obj.insert("scope".into(), json!(entry.scope));
+    obj.insert("key".into(), json!(entry.key));
+    obj.insert("version".into(), json!(entry.version));
+    obj.insert("created_at".into(), json!(entry.created_at));
+    obj.insert("updated_at".into(), json!(entry.updated_at));
+    obj.insert("expires_at".into(), json!(entry.expires_at));
+    if let Some(map) = value_to_json(&entry.value).as_object() {
         for (k, vv) in map {
             obj.insert(k.clone(), vv.clone());
         }
@@ -204,23 +217,42 @@ fn stats_to_json(s: &MemoryStats) -> Value {
 fn map_error(id: Value, err: MemoryError) -> JsonRpcResponse {
     use MemoryError::*;
     match err {
-        NotFound { scope, key } => JsonRpcResponse::error(
-            id,
-            -32004,
-            format!("not_found: {scope}/{key}"),
-        ),
+        NotFound { scope, key } => {
+            JsonRpcResponse::error(id, -32004, format!("not_found: {scope}/{key}"))
+        }
         CasConflict { expected, actual } => JsonRpcResponse::error(
             id,
             -32005,
             format!("cas_conflict: expected v{expected}, got v{actual}"),
         ),
+        OwnedByOther { owner } => {
+            JsonRpcResponse::error(id, -32006, format!("owned_by_other: {owner}"))
+        }
+        QuotaExceeded { area, used, limit } => {
+            let area_str = match area {
+                MemoryArea::Regular => "regular",
+                MemoryArea::Secret => "secret",
+            };
+            JsonRpcResponse::error(
+                id,
+                -32007,
+                format!("quota_exceeded ({area_str}): used {used}, limit {limit}"),
+            )
+        }
+        SecretUnavailable => JsonRpcResponse::error(
+            id,
+            -32008,
+            "secret_unavailable: keyring missing and plaintext fallback disabled",
+        ),
         InvalidKey(msg) => JsonRpcResponse::invalid_params(id, format!("invalid_key: {msg}")),
         InvalidScope(msg) => JsonRpcResponse::invalid_params(id, format!("invalid_scope: {msg}")),
+        InvalidOwner(msg) => JsonRpcResponse::invalid_params(id, format!("invalid_owner: {msg}")),
         InvalidContentType(msg) => {
             JsonRpcResponse::invalid_params(id, format!("invalid_content_type: {msg}"))
         }
-        ValueTooLarge { actual, max } => JsonRpcResponse::invalid_params(
+        ValueTooLarge { actual, max } => JsonRpcResponse::error(
             id,
+            -32007,
             format!("value_too_large: {actual} bytes > {max}"),
         ),
         Db(e) => JsonRpcResponse::internal_error(id, format!("memory db error: {e}")),
@@ -238,7 +270,16 @@ fn require_store(id: &Value) -> Result<(), JsonRpcResponse> {
     }
 }
 
-pub fn handle_put(_state: &mut AppState, id: Value, params: &Value) -> JsonRpcResponse {
+// ============================================================
+// Regular `memory.*`
+// ============================================================
+
+pub fn handle_put(
+    _state: &mut AppState,
+    caller: &CallerContext,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
     if let Err(e) = require_store(&id) {
         return e;
     }
@@ -258,18 +299,22 @@ pub fn handle_put(_state: &mut AppState, id: Value, params: &Value) -> JsonRpcRe
         expires_at: params.get("expires_at").and_then(|v| v.as_i64()),
         cas: params.get("cas").and_then(|v| v.as_u64()),
     };
+    let owner = caller.owner().to_string();
 
-    let result = with_store(|s| s.put(&scope, &key, &value, &opts))
+    let result = with_store(|s| s.put(&owner, &scope, &key, &value, &opts))
         .expect("memory store presence verified");
     match result {
-        Ok(version) => {
-            JsonRpcResponse::success(id, json!({ "ok": true, "version": version }))
-        }
+        Ok(version) => JsonRpcResponse::success(id, json!({ "ok": true, "version": version })),
         Err(e) => map_error(id, e),
     }
 }
 
-pub fn handle_get(_state: &mut AppState, id: Value, params: &Value) -> JsonRpcResponse {
+pub fn handle_get(
+    _state: &mut AppState,
+    _caller: &CallerContext,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
     if let Err(e) = require_store(&id) {
         return e;
     }
@@ -289,7 +334,12 @@ pub fn handle_get(_state: &mut AppState, id: Value, params: &Value) -> JsonRpcRe
     }
 }
 
-pub fn handle_delete(_state: &mut AppState, id: Value, params: &Value) -> JsonRpcResponse {
+pub fn handle_delete(
+    _state: &mut AppState,
+    caller: &CallerContext,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
     if let Err(e) = require_store(&id) {
         return e;
     }
@@ -302,14 +352,21 @@ pub fn handle_delete(_state: &mut AppState, id: Value, params: &Value) -> JsonRp
         Err(e) => return e,
     };
     let cas = params.get("cas").and_then(|v| v.as_u64());
-    let result = with_store(|s| s.delete(&scope, &key, cas)).expect("memory store present");
+    let owner = caller.owner().to_string();
+    let result =
+        with_store(|s| s.delete(&owner, &scope, &key, cas)).expect("memory store present");
     match result {
         Ok(()) => JsonRpcResponse::success(id, json!({ "ok": true })),
         Err(e) => map_error(id, e),
     }
 }
 
-pub fn handle_list(_state: &mut AppState, id: Value, params: &Value) -> JsonRpcResponse {
+pub fn handle_list(
+    _state: &mut AppState,
+    _caller: &CallerContext,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
     if let Err(e) = require_store(&id) {
         return e;
     }
@@ -322,7 +379,10 @@ pub fn handle_list(_state: &mut AppState, id: Value, params: &Value) -> JsonRpcR
             .get("prefix")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string()),
-        limit: params.get("limit").and_then(|v| v.as_u64()).map(|v| v as usize),
+        limit: params
+            .get("limit")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as usize),
     };
     let result = with_store(|s| s.list(&scope, &opts)).expect("memory store present");
     match result {
@@ -334,7 +394,12 @@ pub fn handle_list(_state: &mut AppState, id: Value, params: &Value) -> JsonRpcR
     }
 }
 
-pub fn handle_exists(_state: &mut AppState, id: Value, params: &Value) -> JsonRpcResponse {
+pub fn handle_exists(
+    _state: &mut AppState,
+    _caller: &CallerContext,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
     if let Err(e) = require_store(&id) {
         return e;
     }
@@ -353,7 +418,12 @@ pub fn handle_exists(_state: &mut AppState, id: Value, params: &Value) -> JsonRp
     }
 }
 
-pub fn handle_count(_state: &mut AppState, id: Value, params: &Value) -> JsonRpcResponse {
+pub fn handle_count(
+    _state: &mut AppState,
+    _caller: &CallerContext,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
     if let Err(e) = require_store(&id) {
         return e;
     }
@@ -369,7 +439,12 @@ pub fn handle_count(_state: &mut AppState, id: Value, params: &Value) -> JsonRpc
     }
 }
 
-pub fn handle_scopes(_state: &mut AppState, id: Value, _params: &Value) -> JsonRpcResponse {
+pub fn handle_scopes(
+    _state: &mut AppState,
+    _caller: &CallerContext,
+    id: Value,
+    _params: &Value,
+) -> JsonRpcResponse {
     if let Err(e) = require_store(&id) {
         return e;
     }
@@ -380,7 +455,12 @@ pub fn handle_scopes(_state: &mut AppState, id: Value, _params: &Value) -> JsonR
     }
 }
 
-pub fn handle_stats(_state: &mut AppState, id: Value, params: &Value) -> JsonRpcResponse {
+pub fn handle_stats(
+    _state: &mut AppState,
+    _caller: &CallerContext,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
     if let Err(e) = require_store(&id) {
         return e;
     }
@@ -389,6 +469,222 @@ pub fn handle_stats(_state: &mut AppState, id: Value, params: &Value) -> JsonRpc
         Err(e) => return e,
     };
     let result = with_store(|s| s.stats(scope.as_ref())).expect("memory store present");
+    match result {
+        Ok(stats) => JsonRpcResponse::success(id, stats_to_json(&stats)),
+        Err(e) => map_error(id, e),
+    }
+}
+
+// ============================================================
+// Secret `memory.secret.*` — owner 자동 분기, 응답에 owner 미포함
+// ============================================================
+
+pub fn handle_secret_put(
+    _state: &mut AppState,
+    caller: &CallerContext,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
+    if let Err(e) = require_store(&id) {
+        return e;
+    }
+    let scope = match require_scope(params, &id) {
+        Ok(s) => s,
+        Err(e) => return e,
+    };
+    let key = match require_key(params, &id) {
+        Ok(k) => k.to_string(),
+        Err(e) => return e,
+    };
+    let value = match parse_value(params, &id) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    let opts = PutOpts {
+        expires_at: params.get("expires_at").and_then(|v| v.as_i64()),
+        cas: params.get("cas").and_then(|v| v.as_u64()),
+    };
+    let owner = caller.owner().to_string();
+
+    let result = with_store(|s| s.put_secret(&owner, &scope, &key, &value, &opts))
+        .expect("memory store present");
+    match result {
+        Ok(version) => JsonRpcResponse::success(id, json!({ "ok": true, "version": version })),
+        Err(e) => map_error(id, e),
+    }
+}
+
+pub fn handle_secret_get(
+    _state: &mut AppState,
+    caller: &CallerContext,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
+    if let Err(e) = require_store(&id) {
+        return e;
+    }
+    let scope = match require_scope(params, &id) {
+        Ok(s) => s,
+        Err(e) => return e,
+    };
+    let key = match require_key(params, &id) {
+        Ok(k) => k.to_string(),
+        Err(e) => return e,
+    };
+    let owner = caller.owner().to_string();
+    let result =
+        with_store(|s| s.get_secret(&owner, &scope, &key)).expect("memory store present");
+    match result {
+        Ok(Some(entry)) => JsonRpcResponse::success(id, secret_entry_to_json(&entry)),
+        Ok(None) => JsonRpcResponse::success(id, Value::Null),
+        Err(e) => map_error(id, e),
+    }
+}
+
+pub fn handle_secret_delete(
+    _state: &mut AppState,
+    caller: &CallerContext,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
+    if let Err(e) = require_store(&id) {
+        return e;
+    }
+    let scope = match require_scope(params, &id) {
+        Ok(s) => s,
+        Err(e) => return e,
+    };
+    let key = match require_key(params, &id) {
+        Ok(k) => k.to_string(),
+        Err(e) => return e,
+    };
+    let cas = params.get("cas").and_then(|v| v.as_u64());
+    let owner = caller.owner().to_string();
+    let result =
+        with_store(|s| s.delete_secret(&owner, &scope, &key, cas)).expect("memory store present");
+    match result {
+        Ok(()) => JsonRpcResponse::success(id, json!({ "ok": true })),
+        Err(e) => map_error(id, e),
+    }
+}
+
+pub fn handle_secret_list(
+    _state: &mut AppState,
+    caller: &CallerContext,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
+    if let Err(e) = require_store(&id) {
+        return e;
+    }
+    let scope = match require_scope(params, &id) {
+        Ok(s) => s,
+        Err(e) => return e,
+    };
+    let opts = ListOpts {
+        prefix: params
+            .get("prefix")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
+        limit: params
+            .get("limit")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as usize),
+    };
+    let owner = caller.owner().to_string();
+    let result =
+        with_store(|s| s.list_secret(&owner, &scope, &opts)).expect("memory store present");
+    match result {
+        Ok(entries) => {
+            let arr: Vec<Value> = entries.iter().map(secret_entry_to_json).collect();
+            JsonRpcResponse::success(id, json!({ "entries": arr, "count": arr.len() }))
+        }
+        Err(e) => map_error(id, e),
+    }
+}
+
+pub fn handle_secret_exists(
+    _state: &mut AppState,
+    caller: &CallerContext,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
+    if let Err(e) = require_store(&id) {
+        return e;
+    }
+    let scope = match require_scope(params, &id) {
+        Ok(s) => s,
+        Err(e) => return e,
+    };
+    let key = match require_key(params, &id) {
+        Ok(k) => k.to_string(),
+        Err(e) => return e,
+    };
+    let owner = caller.owner().to_string();
+    let result =
+        with_store(|s| s.exists_secret(&owner, &scope, &key)).expect("memory store present");
+    match result {
+        Ok(b) => JsonRpcResponse::success(id, json!({ "exists": b })),
+        Err(e) => map_error(id, e),
+    }
+}
+
+pub fn handle_secret_count(
+    _state: &mut AppState,
+    caller: &CallerContext,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
+    if let Err(e) = require_store(&id) {
+        return e;
+    }
+    let scope = match require_scope(params, &id) {
+        Ok(s) => s,
+        Err(e) => return e,
+    };
+    let prefix = params.get("prefix").and_then(|v| v.as_str());
+    let owner = caller.owner().to_string();
+    let result =
+        with_store(|s| s.count_secret(&owner, &scope, prefix)).expect("memory store present");
+    match result {
+        Ok(n) => JsonRpcResponse::success(id, json!({ "count": n })),
+        Err(e) => map_error(id, e),
+    }
+}
+
+pub fn handle_secret_scopes(
+    _state: &mut AppState,
+    caller: &CallerContext,
+    id: Value,
+    _params: &Value,
+) -> JsonRpcResponse {
+    if let Err(e) = require_store(&id) {
+        return e;
+    }
+    let owner = caller.owner().to_string();
+    let result = with_store(|s| s.scopes_secret(&owner)).expect("memory store present");
+    match result {
+        Ok(list) => JsonRpcResponse::success(id, json!({ "scopes": list })),
+        Err(e) => map_error(id, e),
+    }
+}
+
+pub fn handle_secret_stats(
+    _state: &mut AppState,
+    caller: &CallerContext,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
+    if let Err(e) = require_store(&id) {
+        return e;
+    }
+    let scope = match optional_scope(params, &id) {
+        Ok(s) => s,
+        Err(e) => return e,
+    };
+    let owner = caller.owner().to_string();
+    let result =
+        with_store(|s| s.stats_secret(&owner, scope.as_ref())).expect("memory store present");
     match result {
         Ok(stats) => JsonRpcResponse::success(id, stats_to_json(&stats)),
         Err(e) => map_error(id, e),
@@ -410,7 +706,7 @@ mod tests {
 
     #[test]
     fn base64_invalid_inputs_rejected() {
-        assert!(decode_b64("abc").is_err()); // length not multiple of 4
-        assert!(decode_b64("ab*=").is_err()); // invalid char
+        assert!(decode_b64("abc").is_err());
+        assert!(decode_b64("ab*=").is_err());
     }
 }

@@ -122,6 +122,8 @@ pub enum Permission {
     MemoryRead,
     /// 에이전트 메모리(`memory.*`) 쓰기
     MemoryWrite,
+    /// Secret memory(`memory.secret.*`) 접근. plugin 별 사전 분할이라 R/W를 분리하지 않는다.
+    MemorySecret,
     /// 다른 plugin이 점유한 IPC namespace prefix의 메서드 호출.
     /// 토큰 형식: `ipc.invoke:<prefix>` (예: `ipc.invoke:codex`).
     IpcInvoke(String),
@@ -161,6 +163,7 @@ impl Permission {
             "network" => Self::Network,
             "memory.read" => Self::MemoryRead,
             "memory.write" => Self::MemoryWrite,
+            "memory.secret" => Self::MemorySecret,
             "ui.tool_item" => Self::UiToolItem,
             "ui.popup" => Self::UiPopup,
             other => {
@@ -199,6 +202,7 @@ impl Permission {
             Self::Network => "network".into(),
             Self::MemoryRead => "memory.read".into(),
             Self::MemoryWrite => "memory.write".into(),
+            Self::MemorySecret => "memory.secret".into(),
             Self::IpcInvoke(prefix) => format!("ipc.invoke:{prefix}"),
             Self::Extension(target) => format!("ext:{target}"),
             Self::UiToolItem => "ui.tool_item".into(),

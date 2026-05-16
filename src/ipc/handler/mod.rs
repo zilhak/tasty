@@ -80,7 +80,7 @@ pub fn handle_with_caller(
     };
     let request = routed.as_ref();
 
-    if let Some(resp) = route_engine_handler(state, request, id.clone()) {
+    if let Some(resp) = route_engine_handler(state, caller, request, id.clone()) {
         return resp;
     }
 
@@ -103,6 +103,7 @@ pub fn handle_with_caller(
 /// 좁힐 예정 (별도 작업).
 fn route_engine_handler(
     state: &mut AppState,
+    caller: &CallerContext,
     request: &JsonRpcRequest,
     id: serde_json::Value,
 ) -> Option<JsonRpcResponse> {
@@ -190,15 +191,24 @@ fn route_engine_handler(
         "image.prev" => image::handle_prev(state, id, &request.params),
         "image.paste" => image::handle_paste(state, id, &request.params),
         "image.list" => image::handle_list(state, id),
-        // memory (영속 키-값 store)
-        "memory.put" => memory::handle_put(state, id, &request.params),
-        "memory.get" => memory::handle_get(state, id, &request.params),
-        "memory.delete" => memory::handle_delete(state, id, &request.params),
-        "memory.list" => memory::handle_list(state, id, &request.params),
-        "memory.exists" => memory::handle_exists(state, id, &request.params),
-        "memory.count" => memory::handle_count(state, id, &request.params),
-        "memory.scopes" => memory::handle_scopes(state, id, &request.params),
-        "memory.stats" => memory::handle_stats(state, id, &request.params),
+        // memory: regular (공유 네임스페이스 + owner enforcement)
+        "memory.put" => memory::handle_put(state, caller, id, &request.params),
+        "memory.get" => memory::handle_get(state, caller, id, &request.params),
+        "memory.delete" => memory::handle_delete(state, caller, id, &request.params),
+        "memory.list" => memory::handle_list(state, caller, id, &request.params),
+        "memory.exists" => memory::handle_exists(state, caller, id, &request.params),
+        "memory.count" => memory::handle_count(state, caller, id, &request.params),
+        "memory.scopes" => memory::handle_scopes(state, caller, id, &request.params),
+        "memory.stats" => memory::handle_stats(state, caller, id, &request.params),
+        // memory: secret (plugin 별 사전 분할)
+        "memory.secret.put" => memory::handle_secret_put(state, caller, id, &request.params),
+        "memory.secret.get" => memory::handle_secret_get(state, caller, id, &request.params),
+        "memory.secret.delete" => memory::handle_secret_delete(state, caller, id, &request.params),
+        "memory.secret.list" => memory::handle_secret_list(state, caller, id, &request.params),
+        "memory.secret.exists" => memory::handle_secret_exists(state, caller, id, &request.params),
+        "memory.secret.count" => memory::handle_secret_count(state, caller, id, &request.params),
+        "memory.secret.scopes" => memory::handle_secret_scopes(state, caller, id, &request.params),
+        "memory.secret.stats" => memory::handle_secret_stats(state, caller, id, &request.params),
         _ => return None,
     })
 }

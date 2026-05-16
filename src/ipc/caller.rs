@@ -93,6 +93,15 @@ impl CallerContext {
     pub fn is_plugin(&self) -> bool {
         matches!(self, CallerContext::Plugin { .. })
     }
+
+    /// memory.db `owner` 값 도출. Local 은 `_host` sentinel, plugin 은 자신의 id.
+    /// [`tasty_memory::HOST_OWNER`] 와 동기화돼야 한다.
+    pub fn owner(&self) -> &str {
+        match self {
+            CallerContext::Local => tasty_memory::HOST_OWNER,
+            CallerContext::Plugin { plugin_id, .. } => plugin_id.as_str(),
+        }
+    }
 }
 
 #[cfg(test)]

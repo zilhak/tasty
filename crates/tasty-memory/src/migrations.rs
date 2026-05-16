@@ -10,11 +10,13 @@ use rusqlite::Connection;
 pub const SCHEMA_VERSION: u32 = 1;
 
 const SCHEMA_SQL: &str = r#"
-    -- 에이전트 메모리. PK는 (scope, key).
+    -- Regular memory. 모든 plugin이 모든 entry를 읽을 수 있고, owner 본인 (또는
+    -- _host root)만 갱신·삭제할 수 있다.
     --   scope: 'global' | 'account:<userid>' | 'window:<id>' | 'workspace:<id>' | 'surface:<id>'
     --   key:   1..256 [a-z0-9._-]+
     --   value: 직렬화된 바이트열. content_type으로 해석 (application/json | text/plain | application/octet-stream).
     --   version: 낙관적 락(CAS). update마다 +1.
+    --   owner:  caller로부터 호스트가 도장찍는 값. plugin id(reverse-DNS) 또는 '_host'.
     CREATE TABLE IF NOT EXISTS memory (
         scope TEXT NOT NULL,
         key TEXT NOT NULL,
@@ -24,6 +26,7 @@ const SCHEMA_SQL: &str = r#"
         updated_at INTEGER NOT NULL,
         expires_at INTEGER,
         version INTEGER NOT NULL DEFAULT 1,
+        owner TEXT NOT NULL,
         PRIMARY KEY (scope, key)
     );
 
@@ -34,6 +37,33 @@ const SCHEMA_SQL: &str = r#"
     -- 스코프 prefix 스캔/리스트용 보조 인덱스.
     CREATE INDEX IF NOT EXISTS idx_memory_scope_key
         ON memory(scope, key);
+
+    -- Owner 필터 (regular 영역에서 plugin uninstall 정리, owner-specific stats 등에서 사용).
+    CREATE INDEX IF NOT EXISTS idx_memory_owner
+        ON memory(owner);
+
+    -- Secret memory. 각 plugin마다 자기 전용 영역 — owner가 PK 일부라 다른 plugin이
+    -- 같은 (scope, key)를 충돌 없이 가질 수 있다. value blob은 application-level
+    -- AES-256-GCM으로 암호화된 상태로 저장 (encryption layer는 lib.rs).
+    CREATE TABLE IF NOT EXISTS memory_secret (
+        owner TEXT NOT NULL,
+        scope TEXT NOT NULL,
+        key TEXT NOT NULL,
+        value BLOB NOT NULL,
+        content_type TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        expires_at INTEGER,
+        version INTEGER NOT NULL DEFAULT 1,
+        PRIMARY KEY (owner, scope, key)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_memory_secret_expires
+        ON memory_secret(expires_at) WHERE expires_at IS NOT NULL;
+
+    -- Owner 별 quota 합산, list/scan 최적화.
+    CREATE INDEX IF NOT EXISTS idx_memory_secret_owner
+        ON memory_secret(owner);
 "#;
 
 #[derive(Debug)]
@@ -101,14 +131,16 @@ mod tests {
         let mut conn = Connection::open_in_memory().unwrap();
         ensure_schema(&mut conn).unwrap();
 
-        let has_memory: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='memory'",
-                [],
-                |r| r.get(0),
-            )
-            .unwrap();
-        assert_eq!(has_memory, 1);
+        for table in ["memory", "memory_secret"] {
+            let n: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
+                    [table],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(n, 1, "missing table: {table}");
+        }
 
         let ver: u32 = conn
             .pragma_query_value(None, "user_version", |r| r.get(0))
