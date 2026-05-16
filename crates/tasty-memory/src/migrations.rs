@@ -43,8 +43,8 @@ const SCHEMA_SQL: &str = r#"
         ON memory(owner);
 
     -- Secret memory. 각 plugin마다 자기 전용 영역 — owner가 PK 일부라 다른 plugin이
-    -- 같은 (scope, key)를 충돌 없이 가질 수 있다. value blob은 application-level
-    -- AES-256-GCM으로 암호화된 상태로 저장 (encryption layer는 lib.rs).
+    -- 같은 (scope, key)를 충돌 없이 가질 수 있다. value blob은 평문 저장이며,
+    -- 보호 약속은 IPC 표면에서의 owner 격리 한 가지 (자세한 위협 모델은 lib.rs / memory-system.md).
     CREATE TABLE IF NOT EXISTS memory_secret (
         owner TEXT NOT NULL,
         scope TEXT NOT NULL,

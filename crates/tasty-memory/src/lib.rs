@@ -299,7 +299,7 @@ impl MemoryStore {
             .optional()?;
 
         // Quota: 추가될 byte 가 regular total 한도를 넘기지 않는지.
-        let existing_size = existing.as_ref().map(|(_, _, sz)| *sz as i64).unwrap_or(0);
+        let existing_size = existing.as_ref().map(|(_, _, sz)| *sz).unwrap_or(0);
         let current_used: i64 = tx.query_row(
             "SELECT COALESCE(SUM(LENGTH(value)), 0) FROM memory",
             [],
