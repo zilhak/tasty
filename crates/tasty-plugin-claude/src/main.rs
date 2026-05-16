@@ -647,10 +647,14 @@ fn update_child_metadata(
 
 /// 호스트 `start_claude_in_surface` 1:1 이주. 인자는 동일하나 IPC 경유.
 ///
-/// `claude` 실행 시 `TASTY_AGENT_ID=claude_s<surface_id>` env 를 inline prefix 로
-/// 주입한다 — Phase 4 (관측/비용) 의 잠정 agent 식별 모델. shell 위에 한 줄 echo
-/// 되지만 history 에 명령이 남는 정상 동선과 동일하며, claude 프로세스만 해당 env
-/// 를 상속받아 host 의 `telemetry.record` 시 자기 agent_id 를 보고할 수 있다.
+/// inline env prefix:
+/// - `TASTY_AGENT_ID=claude_s<surface_id>` — Phase 4 (관측/비용) agent 식별.
+///   shell history 에 echo 되지만 사용자가 직접 입력했을 때와 동일.
+/// - `TASTY_SESSION_TOKEN=<hex>` — Phase 6.2 신원 검증. `session.issue` 로
+///   호스트에서 발급받은 토큰. 자식이 IPC envelope 에 함께 보내면 호스트가
+///   `CallerContext::Agent` 로 분기. 발급 실패 시 token prefix 만 생략 — 자식은
+///   계속 `TASTY_AGENT_ID` 로 self-reporting 은 가능하나, agent 권한 게이트가
+///   필요한 메서드(agent.*/session.* 등)는 호출 불가.
 fn start_claude_in_surface(
     host: &HostHandle,
     surface_id: u32,
@@ -668,7 +672,12 @@ fn start_claude_in_surface(
         }
     }
 
-    let agent_prefix = format!("TASTY_AGENT_ID=claude_s{surface_id} ");
+    let agent_id = format!("claude_s{surface_id}");
+    let session_token = issue_session_token(host, &agent_id);
+    let agent_prefix = match session_token {
+        Some(tok) => format!("TASTY_AGENT_ID={agent_id} TASTY_SESSION_TOKEN={tok} "),
+        None => format!("TASTY_AGENT_ID={agent_id} "),
+    };
 
     if let Some(p) = prompt {
         let prompt_path = std::env::temp_dir().join(format!("tasty-prompt-{}.txt", surface_id));
@@ -690,6 +699,46 @@ fn start_claude_in_surface(
     ) {
         tracing::warn!("surface.send (claude) failed: {e}");
     }
+}
+
+/// 자식 Claude 에 발급할 SessionToken 을 호스트에서 가져온다.
+///
+/// 매니페스트 `permissions` 의 부분집합만 자식에게 줄 수 있다. 현재는 자식이
+/// Claude Code 의 정상 동선을 그대로 흉내내야 하므로 부모(claude plugin)의 권한을
+/// 그대로 상속한다 — 자식이 plugin 자체와 동일한 surface/terminal/fs 조작이 필요.
+/// 토큰 발급 실패는 치명적이지 않다 (Phase 6.2 권한 게이트 적용 메서드는 거부될
+/// 뿐, 기존 흐름은 유지). 그래서 `Option` 반환.
+fn issue_session_token(host: &HostHandle, agent_id: &str) -> Option<String> {
+    let resp = match host.call(
+        "session.issue",
+        json!({
+            "agent_id": agent_id,
+            // 자식이 사용할 권한. 호스트는 caller(claude plugin)의 권한 셋에
+            // 포함된 토큰만 발급한다 (escalation 방지). manifest 의 권한과
+            // 정확히 같지는 않아도 되며, 자식이 실제로 필요한 메서드를 위한
+            // 토큰만 명시.
+            "permissions": [
+                "surface.read",
+                "surface.write",
+                "terminal.write",
+                "terminal.read",
+                "notification",
+                "telemetry",
+                "agent",
+            ],
+        }),
+    ) {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::warn!("session.issue failed for child {agent_id}: {e}");
+            return None;
+        }
+    };
+    let token = resp.get("token").and_then(|v| v.as_str()).map(String::from);
+    if token.is_none() {
+        tracing::warn!("session.issue returned no 'token' field for child {agent_id}");
+    }
+    token
 }
 
 /// 호스트 `handle_claude_spawn` 1:1 이주.

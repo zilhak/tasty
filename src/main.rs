@@ -196,6 +196,61 @@ struct ModalShake {
 
 use winit::window::WindowId;
 
+/// Phase 6.2c — envelope 의 `session_token` 필드를 보고 caller 를 결정한다.
+///
+/// - `session_token` 가 None → `CallerContext::Local`
+/// - 형식이 잘못된 토큰(64-char hex 아님) → `Err(deny)`
+/// - 유효 형식이지만 store 에 없음/만료/revoked → `Err(deny)` (Local fallback 금지)
+/// - 유효 → `CallerContext::Agent { ... }`
+///
+/// memory store 가 초기화되지 않은 경우 (`with_store` 가 `None`): 토큰이 있어도
+/// 검증 불가이므로 `Err(deny)` 로 막는다 — 부팅 초기의 가장된 호출을 막는다.
+fn resolve_caller_from_envelope(
+    request: &ipc::protocol::JsonRpcRequest,
+) -> Result<ipc::caller::CallerContext, ipc::protocol::JsonRpcResponse> {
+    use std::collections::HashSet;
+    use std::sync::Arc;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let token_str = match request.session_token.as_deref() {
+        None => return Ok(ipc::caller::CallerContext::Local),
+        Some(s) => s,
+    };
+    let id = request.id.clone().unwrap_or(serde_json::Value::Null);
+    let deny = |msg: &str| {
+        ipc::protocol::JsonRpcResponse::error(
+            id.clone(),
+            -32001,
+            &format!("permission_denied: {msg}"),
+        )
+    };
+    let token = match ipc::caller::SessionToken::from_str(token_str) {
+        Some(t) => t,
+        None => return Err(deny("invalid session_token format (expect 64 hex chars)")),
+    };
+    let now_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    let resolved = tasty_memory::with_store(|mem| {
+        let mut store = ipc::session::SessionStore::new(mem, tasty_memory::HOST_OWNER);
+        store.resolve(&token, now_ms)
+    });
+    let session = match resolved {
+        None => return Err(deny("memory store not initialized")),
+        Some(Err(e)) => return Err(deny(&format!("session lookup failed: {e}"))),
+        Some(Ok(None)) => return Err(deny("session_token unknown/expired/revoked")),
+        Some(Ok(Some(s))) => s,
+    };
+    let perms: HashSet<plugin::manifest::Permission> = session.permission_set();
+    Ok(ipc::caller::CallerContext::Agent {
+        agent_id: session.agent_id,
+        parent: session.parent,
+        permissions: Arc::new(perms),
+        token,
+    })
+}
+
 /// `ShortcutOverride`를 `command.shortcut_changed` payload용 단순 문자열로 변환.
 /// `Key` 모드의 다중 키는 `, `로 join, `Inherit`는 `@source`로 표기, 비어 있거나
 /// `None` 모드는 `None` 반환. 정확한 상태는 plugin이 IPC로 재조회한다.
@@ -1150,6 +1205,35 @@ impl App {
         let mut processed = false;
         let mut tool_registry_dirty = false;
         while let Ok(cmd) = ipc.try_recv() {
+            // Phase 6.2c — envelope 의 session_token 을 검증해 caller 결정.
+            // 토큰이 없으면 Local. 있는데 invalid/expired/revoked 면 permission_denied
+            // 로 즉시 거부 (Local 로 fallback 하지 않는다 — 위조 방어).
+            // 검증을 통과한 caller 가 부적격 메서드(local_only 등)를 호출하면
+            // ensure_allowed 가 한 단계 위에서 차단한다.
+            let caller = match resolve_caller_from_envelope(&cmd.request) {
+                Ok(c) => c,
+                Err(resp) => {
+                    send_response(&cmd.response_tx, resp);
+                    processed = true;
+                    continue;
+                }
+            };
+            // Agent caller 는 모든 app-level/local-only 분기를 호출하면 안 된다.
+            // method_meta 기반으로 한 번에 차단하고, 통과한 경우에만 분기를 본다.
+            // Local caller 는 이전과 동일하게 통과.
+            if !matches!(caller, ipc::caller::CallerContext::Local) {
+                if let Err(e) = caller.ensure_allowed(&cmd.request.method) {
+                    tracing::warn!("ipc agent caller denied: {e}");
+                    let response = ipc::protocol::JsonRpcResponse::error(
+                        cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
+                        -32001,
+                        &format!("permission_denied: {e}"),
+                    );
+                    send_response(&cmd.response_tx, response);
+                    processed = true;
+                    continue;
+                }
+            }
             // App-level IPC methods (don't need focused window)
             #[cfg(debug_assertions)]
             if cmd.request.method == "system.shutdown" {
@@ -1498,7 +1582,8 @@ impl App {
             let focused_id = self.engine.focused_window_id;
             if let Some(id) = focused_id {
                 if let Some(w) = self.windows.get_mut(&id).and_then(|w| w.as_main_mut()) {
-                    let response = ipc::handler::handle(&mut w.state, &cmd.request);
+                    let response =
+                        ipc::handler::handle_with_caller(&mut w.state, &cmd.request, &caller);
                     send_response(&cmd.response_tx, response);
                     w.base.dirty = true;
                     processed = true;
@@ -1506,7 +1591,7 @@ impl App {
                 }
             }
             if let Some(state) = self.parked_states.first_mut() {
-                let response = ipc::handler::handle(state, &cmd.request);
+                let response = ipc::handler::handle_with_caller(state, &cmd.request, &caller);
                 send_response(&cmd.response_tx, response);
                 processed = true;
             }
@@ -1640,6 +1725,7 @@ impl App {
                 id: Some(serde_json::Value::from(call.call_id)),
                 method: call.method.clone(),
                 params: call.params.clone(),
+                session_token: None,
             };
             let response = self.dispatch_with_caller(&request, &caller);
             let (result, error) = match response.error {

@@ -183,6 +183,7 @@ pub fn matches_to_request(
         method: sub_decl.ipc_method.clone(),
         params: Value::Object(params),
         id: Some(Value::from(1)),
+        session_token: std::env::var("TASTY_SESSION_TOKEN").ok().filter(|s| !s.is_empty()),
     })
 }
 

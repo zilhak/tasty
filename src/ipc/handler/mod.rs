@@ -9,6 +9,7 @@ use crate::state::AppState;
 
 pub mod agent;
 pub mod approval;
+pub mod session;
 mod clipboard;
 mod hooks;
 pub mod ime;
@@ -31,8 +32,8 @@ mod telemetry;
 mod tool;
 mod workspace;
 
-/// Handle a JSON-RPC request against the application state.
-/// Returns a JSON-RPC response.
+/// caller가 명시된 라우터 진입점. CLI/네트워크 IPC는 [`CallerContext::Local`],
+/// plugin process가 호출한 명령은 [`CallerContext::Plugin`]을 전달한다.
 ///
 /// 라우터 구조:
 /// 1. **engine 핸들러** (`route_engine_handler`): AppState UI 필드를 만지지 않는
@@ -42,12 +43,6 @@ mod workspace;
 /// 2. **GUI 의존 핸들러** (`route_gui_handler`): UI state(popups/dialogs/active_workspace)
 ///    를 만져야 하는 소수 핸들러. 권한 게이트 대상 외부.
 /// 3. **debug 핸들러** (`route_debug_handler`): debug build 전용. release에서는 정의 안 됨.
-pub fn handle(state: &mut AppState, request: &JsonRpcRequest) -> JsonRpcResponse {
-    handle_with_caller(state, request, &CallerContext::Local)
-}
-
-/// caller가 명시된 라우터 진입점. CLI/네트워크 IPC는 [`CallerContext::Local`],
-/// plugin process가 호출한 명령은 [`CallerContext::Plugin`]을 전달한다.
 ///
 /// 권한 게이트는 라우터의 가장 바깥에서 한 번만 실행된다. plugin이 호출한
 /// 명령이 권한을 통과하지 못하면 `permission_denied` 에러로 즉시 회신.
@@ -93,6 +88,7 @@ pub fn handle_with_caller(
             method: canonical.to_string(),
             params: request.params.clone(),
             id: request.id.clone(),
+            session_token: request.session_token.clone(),
         })
     };
     let request = routed.as_ref();
@@ -309,6 +305,10 @@ fn route_engine_handler(
         "agent.rate_limit_status" => {
             agent::handle_rate_limit_status(state, caller, id, &request.params)
         }
+        // session.* — Phase 6.2c (자식 agent 신원 토큰 관리)
+        "session.issue" => session::handle_issue(caller, id, &request.params),
+        "session.revoke" => session::handle_revoke(id, &request.params),
+        "session.list" => session::handle_list(id),
         _ => return None,
     })
 }

@@ -81,14 +81,22 @@ pub enum CallerContext {
         /// 'child:1', 'claude:abc' 등 호스트-부여 식별자.
         agent_id: String,
         /// 부모 caller (plugin_id 또는 다른 agent_id). 없으면 Local 에서 직접 spawn.
+        ///
+        /// 현재는 audit/디버그 용도 — 권한 결정에는 사용하지 않는다. `approval`
+        /// 등의 후속 phase 에서 elevation 흐름을 부모에게 알릴 때 사용 예정.
+        #[allow(dead_code)]
         parent: Option<String>,
         /// 부모로부터 상속된 권한 + grant 로 보강된 권한.
         permissions: Arc<HashSet<Permission>>,
-        /// 토큰 검증을 통과한 시점의 SessionToken (debug/audit 용 — 메서드 통과
-        /// 자체는 permissions 만으로 결정).
+        /// 토큰 검증을 통과한 시점의 SessionToken (audit/추후 revoke 추적용 —
+        /// 메서드 통과 자체는 permissions 만으로 결정).
+        #[allow(dead_code)]
         token: SessionToken,
     },
     /// 호스트 내부(스케줄러, retry loop 등) 가 발행한 호출. 권한 검사 통과.
+    /// 현재 직접 생성하는 경로는 없지만, Phase 6.4+ 의 elevation 자동 회복
+    /// 흐름에서 사용 예정 — variant 정의를 미리 둔다.
+    #[allow(dead_code)]
     Internal,
 }
 

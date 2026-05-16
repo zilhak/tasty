@@ -7,6 +7,13 @@ pub struct JsonRpcRequest {
     #[serde(default)]
     pub params: serde_json::Value,
     pub id: Option<serde_json::Value>,
+    /// Phase 6.2 — 자식 agent (claude.spawn 등으로 호스트가 띄운 프로세스) 가
+    /// 호스트에 IPC 호출 시 자기 신원을 증명하는 token. 64-char lowercase hex.
+    /// 호스트는 [`crate::ipc::session::SessionStore`] 로 resolve 해 `CallerContext::Agent`
+    /// 를 만든다. 토큰이 invalid/expired/revoked 면 `permission_denied` 로 거부 —
+    /// Local 로 fallback 하지 않는다.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_token: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -74,11 +81,41 @@ mod tests {
             method: "workspace.list".into(),
             params: serde_json::json!({}),
             id: Some(serde_json::json!(1)),
+            session_token: None,
         };
         let json = serde_json::to_string(&req).unwrap();
         let parsed: JsonRpcRequest = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.method, "workspace.list");
         assert_eq!(parsed.jsonrpc, "2.0");
+        assert!(parsed.session_token.is_none());
+    }
+
+    #[test]
+    fn request_session_token_roundtrip() {
+        // 토큰이 None 이면 wire 에 안 나가야 한다(공간/노이즈 절감).
+        let req_none = JsonRpcRequest {
+            jsonrpc: "2.0".into(),
+            method: "x.y".into(),
+            params: serde_json::json!({}),
+            id: Some(serde_json::json!(1)),
+            session_token: None,
+        };
+        let json_none = serde_json::to_string(&req_none).unwrap();
+        assert!(!json_none.contains("session_token"));
+
+        // Some(_) 면 직렬화 + 역직렬화 보존.
+        let token = "a".repeat(64);
+        let req_some = JsonRpcRequest {
+            jsonrpc: "2.0".into(),
+            method: "x.y".into(),
+            params: serde_json::json!({}),
+            id: Some(serde_json::json!(1)),
+            session_token: Some(token.clone()),
+        };
+        let json_some = serde_json::to_string(&req_some).unwrap();
+        assert!(json_some.contains("session_token"));
+        let parsed: JsonRpcRequest = serde_json::from_str(&json_some).unwrap();
+        assert_eq!(parsed.session_token.as_deref(), Some(token.as_str()));
     }
 
     #[test]

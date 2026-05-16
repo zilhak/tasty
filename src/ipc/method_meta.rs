@@ -191,6 +191,13 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("agent.rate_limit_list", plugin(&[AgentManage])),
         ("agent.rate_limit_remove", plugin(&[AgentManage])),
         ("agent.rate_limit_status", plugin(&[AgentManage])),
+        // ── session.* (자식 agent 신원 토큰 — Phase 6.2c) ─────────────
+        // issue/revoke 는 plugin 도 호출 가능 (claude plugin 등이 자식에게
+        // 토큰을 발급해야 하므로). list 는 host 전용 — 감사/디버깅 목적이라
+        // plugin 노출 불필요.
+        ("session.issue", plugin(&[AgentManage])),
+        ("session.revoke", plugin(&[AgentManage])),
+        ("session.list", local_only()),
         // ── notification ──────────────────────────────────────────────
         ("notification.list", plugin(&[Notification])),
         ("notification.create", plugin(&[Notification])),
@@ -455,5 +462,23 @@ mod tests {
                 "{name} should require AgentManage"
             );
         }
+    }
+
+    #[test]
+    fn session_issue_revoke_require_agent_manage() {
+        for name in ["session.issue", "session.revoke"] {
+            let m = method_meta(name).unwrap_or_else(|| panic!("registered: {name}"));
+            assert!(m.plugin_callable, "{name} should be plugin-callable");
+            assert!(
+                m.required.contains(&Permission::AgentManage),
+                "{name} should require AgentManage"
+            );
+        }
+    }
+
+    #[test]
+    fn session_list_is_local_only() {
+        let m = method_meta("session.list").expect("registered");
+        assert!(!m.plugin_callable);
     }
 }

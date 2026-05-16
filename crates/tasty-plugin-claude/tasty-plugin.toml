@@ -14,6 +14,9 @@ permissions = [
     "fs.write",
     "notification",
     "telemetry",
+    # Phase 6.2: 자식 Claude 인스턴스에 session token 을 발급한다.
+    # 자식이 호스트에 IPC 호출 시 envelope.session_token 으로 신원을 증명.
+    "agent",
 ]
 lang_dir = "lang"
 event_subscribe = ["surface.closed"]
