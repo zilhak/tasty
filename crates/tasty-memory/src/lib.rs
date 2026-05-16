@@ -30,6 +30,7 @@
 //! 동기 콜백. IPC dispatch 는 메인 스레드에서 순차 호출되고, plugin process 호출도
 //! 별도 스레드의 mpsc 경로를 거쳐 결국 메인에서 처리되므로 단일 mutex 로 충분.
 
+pub mod blackboard;
 mod migrations;
 mod scope;
 
@@ -84,6 +85,8 @@ pub enum MemoryArea {
 pub enum MemoryError {
     #[error("memory entry not found: {scope} / {key}")]
     NotFound { scope: String, key: String },
+    #[error("memory entry already exists: {scope} / {key}")]
+    AlreadyExists { scope: String, key: String },
     #[error("CAS conflict: expected v{expected}, got v{actual}")]
     CasConflict { expected: u64, actual: u64 },
     #[error("entry is owned by other: {owner}")]

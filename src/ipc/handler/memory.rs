@@ -220,6 +220,9 @@ fn map_error(id: Value, err: MemoryError) -> JsonRpcResponse {
         NotFound { scope, key } => {
             JsonRpcResponse::error(id, -32004, format!("not_found: {scope}/{key}"))
         }
+        AlreadyExists { scope, key } => {
+            JsonRpcResponse::error(id, -32009, format!("already_exists: {scope}/{key}"))
+        }
         CasConflict { expected, actual } => JsonRpcResponse::error(
             id,
             -32005,
