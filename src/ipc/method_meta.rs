@@ -160,6 +160,12 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("memory.plan_add_step", plugin(&[MemoryWrite])),
         ("memory.plan_remove_step", plugin(&[MemoryWrite])),
         ("memory.plan_update_step", plugin(&[MemoryWrite])),
+        // ── memory: cache (Phase 7.3 — TTL 캐시) ──────────────────────
+        ("memory.cache_put", plugin(&[MemoryWrite])),
+        ("memory.cache_get", plugin(&[MemoryRead])),
+        ("memory.cache_invalidate", plugin(&[MemoryWrite])),
+        ("memory.cache_clear", plugin(&[MemoryWrite])),
+        ("memory.cache_list", plugin(&[MemoryRead])),
         // ── approval (휴먼 핸드오프) ──────────────────────────────────
         ("approval.request", plugin(&[Approval])),
         ("approval.respond", plugin(&[Approval])),

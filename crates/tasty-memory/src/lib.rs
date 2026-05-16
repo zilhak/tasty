@@ -31,6 +31,7 @@
 //! 별도 스레드의 mpsc 경로를 거쳐 결국 메인에서 처리되므로 단일 mutex 로 충분.
 
 pub mod blackboard;
+pub mod cache;
 mod migrations;
 pub mod plan;
 mod scope;
