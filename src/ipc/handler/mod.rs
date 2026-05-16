@@ -134,6 +134,9 @@ fn route_engine_handler(
         "surface.wake" => surface::handle_surface_wake(state, id, &request.params),
         "surface.set_mark" => surface::handle_set_mark(state, id, &request.params),
         "surface.read_since_mark" => surface::handle_read_since_mark(state, id, &request.params),
+        "surface.parse_since_mark" => {
+            surface::handle_parse_since_mark(state, id, &request.params)
+        }
         "surface.screen_text" => surface::handle_screen_text(state, id, &request.params),
         "surface.cursor_position" => surface::handle_cursor_position(state, id, &request.params),
         "surface.foreground_process" => {

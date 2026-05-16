@@ -68,6 +68,7 @@ tasty send key enter [--surface ID]         # 키 전송. deferred 자동 wake
 tasty wake [--surface ID]                   # deferred 터미널의 PTY를 명시적으로 spawn (입력 없이)
 tasty set mark [--surface ID]               # 출력 마크 설정
 tasty read since-mark [--surface ID] [--strip-ansi]  # 마크 이후 출력 읽기
+tasty read parse-since-mark [--surface ID] [--parsers path,url,...]  # 마크 이후 출력을 파서로 분해
 tasty read screen [--surface ID]            # 현재 화면 텍스트 읽기
 tasty close surface --surface ID
 tasty close self                            # 자기 자신 닫기 (TASTY_SURFACE_ID 사용)
@@ -267,6 +268,7 @@ tasty claude hook stop --surface 5  # 특정 surface 지정 (또는 TASTY_SURFAC
 | `surface.screen_text` | `surface_id` | 현재 화면의 텍스트 반환 |
 | `surface.set_mark` | `surface_id` | 현재 출력 위치에 마크 설정 |
 | `surface.read_since_mark` | `surface_id, strip_ansi?: bool` | 마크 이후 새 출력 반환 |
+| `surface.parse_since_mark` | `surface_id, parsers?: string[] \| string` | 마크 이후 출력을 빌트인 파서로 분해. 응답: `{ surface_id, parsers, items: [{ kind, line, byte_start, byte_end, data }] }`. 알 수 없는 파서 id 면 `invalid_params`. 기본 파서 = `path,url,prompt_boundary,exit_code`. |
 | `surface.cursor_position` | `surface_id` | 커서 위치 (x, y) 반환 |
 | `surface.is_typing` | `surface_id` | 최근 5초 내 키 입력 여부. 반환: `{ typing, idle_seconds }` |
 | `surface.send_wait_idle` | `surface_id, text` | 유휴 시에만 텍스트 전송. 타이핑 중이면 `{ sent: false }`. deferred 자동 wake. |

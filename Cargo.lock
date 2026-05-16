@@ -4777,6 +4777,7 @@ dependencies = [
  "tasty-font",
  "tasty-hooks",
  "tasty-memory",
+ "tasty-output",
  "tasty-plugin-protocol",
  "tasty-settings",
  "tasty-shm",
@@ -4841,6 +4842,16 @@ dependencies = [
  "serde_json",
  "tempfile",
  "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "tasty-output"
+version = "0.1.0"
+dependencies = [
+ "regex",
+ "serde",
+ "serde_json",
  "tracing",
 ]
 

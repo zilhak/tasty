@@ -17,6 +17,8 @@
 ## [Unreleased]
 
 ### Added
+- `tasty-output` 크레이트 — surface 출력 시멘틱 파서 골격. 빌트인 4종: `path` (파일 경로 + line/col), `url` (http/https/ftp/ssh/file), `prompt_boundary` (OSC 133 A/B/C/D), `exit_code` (OSC 133 D 페이로드).
+- IPC: `surface.parse_since_mark { surface_id, parsers? }` — read_since_mark 결과를 파서들로 분해해 `items: [{ kind, line, byte_start, byte_end, data }]` 반환. CLI: `tasty read parse-since-mark`.
 - IPC 메서드 별칭 정규화 layer (`src/ipc/alias.rs`). 옛 이름은 호스트가 새 이름으로 자동 매핑하면서 `tracing::warn`을 출력.
 - 명명 규칙 자동 검증 테스트 (`src/ipc/method_meta.rs::all_registered_methods_match_naming_policy`).
 - Plugin SDK에 `PluginError` 도메인 에러 + `From<PluginError> for IpcMethodError`.

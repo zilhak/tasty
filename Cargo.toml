@@ -74,6 +74,7 @@ tasty-core = { path = "crates/tasty-core" }
 tasty-font = { path = "crates/tasty-font" }
 tasty-hooks = { path = "crates/tasty-hooks" }
 tasty-memory = { path = "crates/tasty-memory" }
+tasty-output = { path = "crates/tasty-output" }
 tasty-plugin-protocol = { path = "crates/tasty-plugin-protocol" }
 tasty-settings = { path = "crates/tasty-settings" }
 tasty-shm = { path = "crates/tasty-shm" }

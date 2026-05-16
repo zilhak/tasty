@@ -804,6 +804,16 @@ pub enum ReadCommands {
         #[arg(long)]
         strip_ansi: bool,
     },
+    /// Parse output since last mark with builtin parsers (path/url/prompt_boundary/exit_code)
+    #[command(name = "parse-since-mark")]
+    ParseSinceMark {
+        /// Surface ID (default: focused terminal)
+        #[arg(long)]
+        surface: Option<u32>,
+        /// Comma-separated parser ids. Default = all builtins.
+        #[arg(long, value_delimiter = ',')]
+        parsers: Option<Vec<String>>,
+    },
     /// Read from a surface's message queue (consumes oldest message)
     Queue {
         /// Surface ID (default: focused)

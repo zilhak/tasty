@@ -253,6 +253,17 @@ fn read_command_to_method_params(command: &ReadCommands) -> (&'static str, serde
                 "strip_ansi": strip_ansi,
             }),
         ),
+        ReadCommands::ParseSinceMark { surface, parsers } => {
+            let mut params = serde_json::json!({
+                "surface_id": resolve_surface_id(*surface),
+            });
+            if let Some(ids) = parsers {
+                params["parsers"] = serde_json::Value::Array(
+                    ids.iter().map(|s| serde_json::Value::String(s.clone())).collect(),
+                );
+            }
+            ("surface.parse_since_mark", params)
+        }
         ReadCommands::Queue {
             surface,
             from,

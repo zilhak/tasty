@@ -74,6 +74,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("surface.wake", plugin(&[TerminalSpawn])),
         ("surface.set_mark", plugin(&[TerminalRead])),
         ("surface.read_since_mark", plugin(&[TerminalRead])),
+        ("surface.parse_since_mark", plugin(&[TerminalRead])),
         ("surface.screen_text", plugin(&[TerminalRead])),
         ("surface.cursor_position", plugin(&[TerminalRead])),
         ("surface.foreground_process", plugin(&[TerminalRead])),
