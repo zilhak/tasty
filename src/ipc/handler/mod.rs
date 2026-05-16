@@ -233,6 +233,8 @@ fn route_engine_handler(
         "approval.get" => approval::handle_get(state, caller, id, &request.params),
         "approval.list" => approval::handle_list(state, caller, id, &request.params),
         "approval.history" => approval::handle_history(state, caller, id, &request.params),
+        "approval.summary.set" => approval::handle_summary_set(state, caller, id, &request.params),
+        "approval.summary.get" => approval::handle_summary_get(state, caller, id, &request.params),
         _ => return None,
     })
 }

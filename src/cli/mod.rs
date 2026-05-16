@@ -255,6 +255,11 @@ pub enum ApprovalCommands {
         #[arg(long)]
         workspace_id: Option<u32>,
     },
+    /// Set or read the workspace markdown summary (manual write/read only).
+    Summary {
+        #[command(subcommand)]
+        command: ApprovalSummaryCommands,
+    },
     /// Persistent history query (sources from memory store).
     History {
         /// Only entries with memory `updated_at >= since` (unix ms).
@@ -278,6 +283,23 @@ pub enum ApprovalCommands {
         /// Maximum entries returned (after sort, newest-first).
         #[arg(long)]
         limit: Option<u64>,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum ApprovalSummaryCommands {
+    /// Overwrite the workspace summary with `content` (or `@file`).
+    Set {
+        #[arg(long)]
+        workspace_id: u32,
+        /// Inline content, or `@path` to read from a file.
+        #[arg(long)]
+        content: String,
+    },
+    /// Print the workspace summary.
+    Get {
+        #[arg(long)]
+        workspace_id: u32,
     },
 }
 

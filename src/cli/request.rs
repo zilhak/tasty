@@ -879,6 +879,32 @@ fn approval_command_to_method_params(
             }
             ("approval.history", p)
         }
+        Summary { command } => {
+            use crate::cli::ApprovalSummaryCommands::*;
+            match command {
+                Set { workspace_id, content } => {
+                    let resolved = if let Some(path) = content.strip_prefix('@') {
+                        match std::fs::read_to_string(path) {
+                            Ok(s) => s,
+                            Err(e) => {
+                                eprintln!("Error: failed to read --content file '{path}': {e}");
+                                std::process::exit(2);
+                            }
+                        }
+                    } else {
+                        content.clone()
+                    };
+                    (
+                        "approval.summary.set",
+                        serde_json::json!({ "workspace_id": *workspace_id, "content": resolved }),
+                    )
+                }
+                Get { workspace_id } => (
+                    "approval.summary.get",
+                    serde_json::json!({ "workspace_id": *workspace_id }),
+                ),
+            }
+        }
     }
 }
 

@@ -152,6 +152,9 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("approval.list", plugin(&[Approval])),
         ("approval.get", plugin(&[Approval])),
         ("approval.history", plugin(&[Approval])),
+        // 세션 요약 — workspace 별 markdown 텍스트. memory.* 와 분리된 표면.
+        ("approval.summary.set", plugin(&[Approval, MemoryWrite])),
+        ("approval.summary.get", plugin(&[Approval, MemoryRead])),
         // ── notification ──────────────────────────────────────────────
         ("notification.list", plugin(&[Notification])),
         ("notification.create", plugin(&[Notification])),
