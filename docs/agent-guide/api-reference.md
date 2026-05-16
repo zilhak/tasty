@@ -72,6 +72,11 @@ tasty read parse-since-mark [--surface ID] [--parsers path,url,...]  # 마크 �
 tasty read commands [--surface ID] [--limit N] [--since UNIX_MS]      # OSC 133 으로 인덱싱된 명령 목록
 tasty read last-command [--surface ID]      # 가장 최근 명령 1건
 tasty read command-at --index N [--surface ID]  # 0-based 인덱스 (음수면 끝에서부터)
+tasty output observe start [--surface ID] [--parsers path,url] [--kinds path] \
+    [--sink memory|file] [--path FILE] [--max-records N]   # 옵저버 등록
+tasty output observe stop --observer ID         # 옵저버 종료
+tasty output observe list                       # 활성 옵저버 목록
+tasty output observe info --observer ID         # 옵저버 통계
 tasty read screen [--surface ID]            # 현재 화면 텍스트 읽기
 tasty close surface --surface ID
 tasty close self                            # 자기 자신 닫기 (TASTY_SURFACE_ID 사용)
@@ -275,6 +280,10 @@ tasty claude hook stop --surface 5  # 특정 surface 지정 (또는 TASTY_SURFAC
 | `surface.commands` | `surface_id, limit?: usize, since?: i64` | OSC 133 으로 인덱싱된 명령 목록. 각 record: `{ prompt_started_at, command_started_at, ended_at, exit_code, command }` (단위: unix-ms). 셸 통합이 미설치된 surface 는 빈 배열. |
 | `surface.last_command` | `surface_id` | 가장 최근 record. 없으면 `null`. |
 | `surface.command_at` | `surface_id, index: i64` | 0-based 인덱스 (음수면 끝에서부터). 범위 밖이면 `null`. |
+| `output.observe_start` | `surface_id?, parsers?, kinds?, sink: { type, ... }` | 옵저버 등록. `sink.type = "memory"` 이면 `max_records` (기본 10000, 0=무한 ring buffer), `"file"` 이면 `path?` (생략 시 `~/.tasty/observers/<id>.jsonl`). 반환: `{ observer_id, info }`. 알 수 없는 파서 / 경로 오픈 실패 시 `invalid_params` / `internal_error`. |
+| `output.observe_stop` | `observer_id` | 옵저버 종료. sink worker thread 정리. |
+| `output.observe_list` | — | 활성 옵저버 전체 목록 (`{ observers: [info, ...] }`). |
+| `output.observe_info` | `observer_id` | 단일 옵저버 상태: `{ id, surface_id, parsers, kinds, sink, total_in, total_out, dropped, last_event_ms }`. |
 | `surface.cursor_position` | `surface_id` | 커서 위치 (x, y) 반환 |
 | `surface.is_typing` | `surface_id` | 최근 5초 내 키 입력 여부. 반환: `{ typing, idle_seconds }` |
 | `surface.send_wait_idle` | `surface_id, text` | 유휴 시에만 텍스트 전송. 타이핑 중이면 `{ sent: false }`. deferred 자동 wake. |

@@ -11,9 +11,20 @@ impl Terminal {
     /// Convert a parsed VT action into Surface changes.
     pub(crate) fn action_to_changes(&mut self, action: Action) -> Vec<Change> {
         match action {
-            Action::Print(c) => vec![Change::Text(c.to_string())],
-            Action::PrintString(s) => vec![Change::Text(s)],
-            Action::Control(code) => self.map_control(code),
+            Action::Print(c) => {
+                self.emit_output_text(c.to_string());
+                vec![Change::Text(c.to_string())]
+            }
+            Action::PrintString(s) => {
+                self.emit_output_text(s.clone());
+                vec![Change::Text(s)]
+            }
+            Action::Control(code) => {
+                if matches!(code, ControlCode::LineFeed) {
+                    self.emit_output_text("\n".to_string());
+                }
+                self.map_control(code)
+            }
             Action::CSI(csi) => self.map_csi(csi),
             Action::Esc(esc) => self.map_esc(esc),
             Action::OperatingSystemCommand(osc) => {
@@ -22,6 +33,18 @@ impl Terminal {
             }
             _ => vec![],
         }
+    }
+
+    /// Push an `OutputAppended` event for the observer router.
+    /// `surface_id = 0` here; the host fills it on `collect_events`.
+    fn emit_output_text(&mut self, text: String) {
+        if text.is_empty() {
+            return;
+        }
+        self.events.push(TerminalEvent {
+            surface_id: 0,
+            kind: TerminalEventKind::OutputAppended { text },
+        });
     }
 
     /// Perform a line feed (Index): move cursor down one line.

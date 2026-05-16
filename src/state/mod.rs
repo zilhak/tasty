@@ -512,6 +512,8 @@ impl AppState {
         }
         self.markdown_views.drop_view(surface_id);
         self.image_views.drop_view(surface_id);
+        self.engine.command_index.drop_surface(surface_id);
+        self.engine.observer_router.drop_surface(surface_id);
         let scope = tasty_memory::Scope::Surface(surface_id);
         tasty_memory::with_store(|s| match s.purge_scope(&scope) {
             Ok(stats) if stats.regular + stats.secret > 0 => tracing::debug!(

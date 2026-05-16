@@ -78,6 +78,11 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("surface.commands", plugin(&[TerminalRead])),
         ("surface.last_command", plugin(&[TerminalRead])),
         ("surface.command_at", plugin(&[TerminalRead])),
+        // ── output observer ─────────────────────────────────────────
+        ("output.observe_start", plugin(&[TerminalRead])),
+        ("output.observe_stop", plugin(&[TerminalRead])),
+        ("output.observe_list", plugin(&[TerminalRead])),
+        ("output.observe_info", plugin(&[TerminalRead])),
         ("surface.screen_text", plugin(&[TerminalRead])),
         ("surface.cursor_position", plugin(&[TerminalRead])),
         ("surface.foreground_process", plugin(&[TerminalRead])),

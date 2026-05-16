@@ -153,6 +153,12 @@ impl MainWindow {
                 crate::terminal::TerminalEventKind::PromptBoundary { phase, payload } => {
                     self.state.engine.command_index.on_boundary(surface_id, *phase, payload);
                 }
+                crate::terminal::TerminalEventKind::OutputAppended { text } => {
+                    self.state
+                        .engine
+                        .observer_router
+                        .dispatch_text(surface_id, text);
+                }
                 crate::terminal::TerminalEventKind::ProcessExited => {
                     let hook_events = vec![tasty_hooks::HookEvent::ProcessExit];
                     let fired = self

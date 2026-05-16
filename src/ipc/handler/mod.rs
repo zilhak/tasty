@@ -17,6 +17,7 @@ mod memory;
 mod message;
 mod meta;
 mod notification;
+mod output;
 mod pane;
 pub mod plugin;
 #[cfg(debug_assertions)]
@@ -140,6 +141,10 @@ fn route_engine_handler(
         "surface.commands" => surface::handle_commands(state, id, &request.params),
         "surface.last_command" => surface::handle_last_command(state, id, &request.params),
         "surface.command_at" => surface::handle_command_at(state, id, &request.params),
+        "output.observe_start" => output::handle_observe_start(state, id, &request.params),
+        "output.observe_stop" => output::handle_observe_stop(state, id, &request.params),
+        "output.observe_list" => output::handle_observe_list(state, id),
+        "output.observe_info" => output::handle_observe_info(state, id, &request.params),
         "surface.screen_text" => surface::handle_screen_text(state, id, &request.params),
         "surface.cursor_position" => surface::handle_cursor_position(state, id, &request.params),
         "surface.foreground_process" => {

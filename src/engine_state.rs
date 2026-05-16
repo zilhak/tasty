@@ -108,6 +108,9 @@ pub struct EngineState {
     /// 호출해 per-surface 상태를 업데이트하고, D phase 에서 memory 에 record 영속.
     pub command_index: crate::command_index::CommandIndex,
 
+    /// 출력 옵저버 라우터. OutputAppended 이벤트마다 dispatch 호출.
+    pub observer_router: crate::output_observer::ObserverRouter,
+
     // ── Messaging / Typing detection ──
     pub surface_messages: HashMap<u32, Vec<SurfaceMessage>>,
     pub(crate) surface_next_message_id: u32,
@@ -165,6 +168,7 @@ impl EngineState {
             closed_items: crate::model::ClosedItemStore::new(),
             clipboard_history: crate::clipboard_history::ClipboardHistory::new(100),
             command_index: crate::command_index::CommandIndex::new(),
+            observer_router: crate::output_observer::ObserverRouter::new(),
             surface_messages: HashMap::new(),
             surface_next_message_id: 0,
             last_key_input: HashMap::new(),

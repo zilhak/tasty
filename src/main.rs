@@ -26,6 +26,7 @@ mod jump_list;
 mod markdown_ui;
 mod native_menu;
 mod notification;
+mod output_observer;
 mod plugin;
 mod plugins_ui;
 mod recent_files;

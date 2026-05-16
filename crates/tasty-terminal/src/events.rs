@@ -29,6 +29,11 @@ pub enum TerminalEventKind {
     /// `'C'` (output start), `'D'` (command finished). `payload` is the raw
     /// rest of the sequence (excluding terminator) — e.g. `B;cmd=ls`, `D;0`.
     PromptBoundary { phase: char, payload: String },
+    /// Printable text emitted by the terminal. The host accumulates these
+    /// chunks into lines (splitting on `\n`) and feeds them to the output
+    /// observer router. Control sequences are stripped — only `Print` /
+    /// `PrintString` actions and `LineFeed` (as `"\n"`) reach this event.
+    OutputAppended { text: String },
 }
 
 /// Mouse tracking modes (DECSET 1000/1002/1003).
