@@ -1407,6 +1407,30 @@ impl App {
                             &cmd.request.params,
                         )
                     }
+                    "plugin.request_permission" => {
+                        // 첫 main window 의 state 를 빌려 사용 (모든 window 가
+                        // 같은 approval_store Arc 공유). main 이 하나도 없으면
+                        // elevation popup 표시 자체가 의미 없으므로 internal_error.
+                        let main_state = self
+                            .windows
+                            .values_mut()
+                            .find_map(|w| w.as_main_mut().map(|m| &mut m.state));
+                        match main_state {
+                            Some(st) => {
+                                ipc::handler::session::handle_request_permission(
+                                    st,
+                                    &caller,
+                                    id,
+                                    &cmd.request.params,
+                                )
+                            }
+                            None => ipc::protocol::JsonRpcResponse::error(
+                                id,
+                                -32603,
+                                "no main window available for elevation popup",
+                            ),
+                        }
+                    }
                     other => ipc::protocol::JsonRpcResponse::method_not_found(id, other),
                 };
                 // plugin 라이프사이클이 바뀌었을 수 있는 메서드만 도구 메뉴 재집계

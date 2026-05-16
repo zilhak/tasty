@@ -225,6 +225,10 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("plugin.grant_agent_permission", local_only()),
         ("plugin.revoke_agent_permission", local_only()),
         ("plugin.list_agent_permissions", plugin(&[])),
+        // Phase 6.4c — agent 가 자기 권한 부족을 미리 알고 elevation 을 명시
+        // 발행할 entry point. approval.request 와 동일한 의미이므로 Approval
+        // 권한이 필요.
+        ("plugin.request_permission", plugin(&[Approval])),
         ("window.create", local_only()),
         ("window.close", local_only()),
         ("window.focus", local_only()),
@@ -503,5 +507,15 @@ mod tests {
         let m = method_meta("plugin.list_agent_permissions").expect("registered");
         assert!(m.plugin_callable);
         assert!(m.required.is_empty(), "list should not require permissions");
+    }
+
+    #[test]
+    fn request_permission_is_plugin_callable_with_approval() {
+        let m = method_meta("plugin.request_permission").expect("registered");
+        assert!(m.plugin_callable, "agents must be able to self-request");
+        assert!(
+            m.required.contains(&Permission::Approval),
+            "should require Approval"
+        );
     }
 }

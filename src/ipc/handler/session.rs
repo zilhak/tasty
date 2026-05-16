@@ -345,6 +345,78 @@ pub fn handle_list_agent_permissions(id: Value, params: &Value) -> JsonRpcRespon
     }
 }
 
+/// Phase 6.4c — `plugin.request_permission` 핸들러. agent 가 자기 권한 부족을
+/// 미리 알고 capability_elevation approval 을 자체 발행할 entry point.
+///
+/// params:
+/// - `agent_id` (str) — 대상. Agent caller 면 미지정 시 caller 자신의 agent_id
+///   로 기본값. Plugin/Local caller 는 필수 (운영자가 대신 발행).
+/// - `permission` (str, 필수) — 요청 권한 토큰.
+/// - `reason` (str, 옵션) — 사용자에게 보여줄 사유.
+///
+/// 응답: `{ approval_id }`. dedupe 로직 (같은 agent+permission Pending 재사용)
+/// 은 publish_capability_elevation 안에서 처리.
+pub fn handle_request_permission(
+    state: &mut crate::state::AppState,
+    caller: &CallerContext,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
+    let agent_id = params
+        .get("agent_id")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .or_else(|| match caller {
+            CallerContext::Agent { agent_id, .. } => Some(agent_id.clone()),
+            _ => None,
+        });
+    let agent_id = match agent_id {
+        Some(s) => s,
+        None => {
+            return JsonRpcResponse::invalid_params(
+                id,
+                "Missing 'agent_id' (required for non-agent callers)",
+            );
+        }
+    };
+    let permission = match params.get("permission").and_then(|v| v.as_str()) {
+        Some(s) if !s.is_empty() => s.to_string(),
+        _ => return JsonRpcResponse::invalid_params(id, "Missing or empty 'permission'"),
+    };
+    if Permission::from_token(&permission).is_none() {
+        return JsonRpcResponse::invalid_params(
+            id,
+            format!("unknown permission token: {permission}"),
+        );
+    }
+    let reason = params
+        .get("reason")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty());
+    let method = params
+        .get("method")
+        .and_then(|v| v.as_str())
+        .unwrap_or("(self-request)");
+    match crate::ipc::handler::approval::publish_capability_elevation(
+        state,
+        &agent_id,
+        method,
+        &permission,
+        reason,
+    ) {
+        Some(rec) => JsonRpcResponse::success(
+            id,
+            json!({
+                "approval_id": rec.request.id,
+                "agent_id": agent_id,
+                "permission": permission,
+            }),
+        ),
+        None => JsonRpcResponse::error(id, -32603, "elevation publish failed"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     //! `handle_issue` / `handle_revoke` 의 with_store 호출 *이전* 경로만 unit-test.

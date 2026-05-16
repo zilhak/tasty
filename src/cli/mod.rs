@@ -819,6 +819,20 @@ pub enum PluginCommands {
         #[arg(long)]
         agent: Option<String>,
     },
+    /// Manually publish a capability elevation approval. Useful for operators
+    /// pre-granting a permission before the agent's first call. The popup is
+    /// the same one shown by automatic elevation on permission_denied.
+    RequestPermission {
+        /// Agent id to grant on approval.
+        #[arg(long)]
+        agent: String,
+        /// Permission token (e.g. fs.write).
+        #[arg(long)]
+        permission: String,
+        /// Reason shown to the user in the popup body.
+        #[arg(long)]
+        reason: Option<String>,
+    },
     /// Inspect plugin extensions (extends-blocks).
     Extension {
         #[command(subcommand)]

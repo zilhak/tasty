@@ -682,6 +682,18 @@ fn plugin_command_to_method_params(command: &PluginCommands) -> (&'static str, s
             "plugin.list_agent_permissions",
             serde_json::json!({ "agent_id": agent }),
         ),
+        PluginCommands::RequestPermission {
+            agent,
+            permission,
+            reason,
+        } => (
+            "plugin.request_permission",
+            serde_json::json!({
+                "agent_id": agent,
+                "permission": permission,
+                "reason": reason,
+            }),
+        ),
         PluginCommands::Extension { command } => match command {
             crate::cli::ExtensionCommands::List => {
                 ("plugin.extension.list", serde_json::json!({}))
