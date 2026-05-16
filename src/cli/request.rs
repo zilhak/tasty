@@ -772,6 +772,8 @@ fn plugin_command_to_method_params(command: &PluginCommands) -> (&'static str, s
             }
             ("plugin.audit_clear", serde_json::Value::Object(p))
         }
+        // AuditFollow는 IPC를 거치지 않음 — run_client에서 special-case로 처리.
+        PluginCommands::AuditFollow { .. } => ("plugin.list", serde_json::json!({})),
     }
 }
 

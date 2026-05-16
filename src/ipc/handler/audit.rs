@@ -142,6 +142,43 @@ pub fn handle_summary(id: Value, params: &Value) -> JsonRpcResponse {
     }
 }
 
+/// `plugin.audit_follow` — `after_ts_ms` / `after_seq` 커서 이후의 새 record.
+/// 커서 미지정 시 빈 배열 + 현재 latest 커서를 반환해 호출자가 그 다음부터
+/// 폴링하게 한다 (`tail -f -n 0` 시멘틱).
+pub fn handle_follow(id: Value, params: &Value) -> JsonRpcResponse {
+    let q = match build_query(params, &id) {
+        Ok(q) => q,
+        Err(resp) => return resp,
+    };
+    let after_ts_ms = params.get("after_ts_ms").and_then(|v| v.as_u64());
+    let after_seq = params.get("after_seq").and_then(|v| v.as_u64());
+    let limit = params
+        .get("limit")
+        .and_then(|v| v.as_u64())
+        .map(|n| n as usize);
+    let now = now_ms();
+    let result = tasty_memory::with_store(|mem| {
+        let mut store = AuditStore::new(mem, tasty_memory::HOST_OWNER);
+        store.follow(&q, after_ts_ms, after_seq, DEFAULT_RETENTION_MS, now, limit)
+    });
+    match result {
+        None => JsonRpcResponse::error(id, -32603, "memory store not initialized"),
+        Some(Ok((records, next_ts, next_seq))) => {
+            let arr: Vec<Value> = records.iter().map(record_to_json).collect();
+            JsonRpcResponse::success(
+                id,
+                json!({
+                    "records": arr,
+                    "count": arr.len(),
+                    "next_after_ts_ms": next_ts,
+                    "next_after_seq": next_seq,
+                }),
+            )
+        }
+        Some(Err(e)) => audit_err_to_response(id, e),
+    }
+}
+
 /// `plugin.audit_clear` — `before_ms` 이전 record 삭제 (생략 시 전체).
 /// 반환: `{ removed: N }`.
 pub fn handle_clear(id: Value, params: &Value) -> JsonRpcResponse {
@@ -176,6 +213,12 @@ mod tests {
     #[test]
     fn summary_rejects_unknown_caller_kind() {
         let r = handle_summary(json!(1), &json!({"caller_kind": "x"}));
+        assert_eq!(r.error.unwrap().code, -32602);
+    }
+
+    #[test]
+    fn follow_rejects_unknown_decision() {
+        let r = handle_follow(json!(1), &json!({"decision": "perhaps"}));
         assert_eq!(r.error.unwrap().code, -32602);
     }
 }

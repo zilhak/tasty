@@ -232,6 +232,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // Phase 6.5b — audit log 조회/집계/삭제. 운영자 전용.
         ("plugin.audit_query", local_only()),
         ("plugin.audit_summary", local_only()),
+        ("plugin.audit_follow", local_only()),
         ("plugin.audit_clear", local_only()),
         ("window.create", local_only()),
         ("window.close", local_only()),
@@ -525,7 +526,12 @@ mod tests {
 
     #[test]
     fn audit_methods_are_local_only() {
-        for name in ["plugin.audit_query", "plugin.audit_summary", "plugin.audit_clear"] {
+        for name in [
+            "plugin.audit_query",
+            "plugin.audit_summary",
+            "plugin.audit_follow",
+            "plugin.audit_clear",
+        ] {
             let m = method_meta(name).unwrap_or_else(|| panic!("registered: {name}"));
             assert!(!m.plugin_callable, "{name} should be local-only");
         }

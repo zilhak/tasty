@@ -2,7 +2,7 @@ pub mod dynamic;
 mod format;
 mod plugin;
 mod request;
-mod transport;
+pub(crate) mod transport;
 
 use plugin::run_plugin_logs;
 
@@ -891,6 +891,28 @@ pub enum PluginCommands {
         /// Delete records with ts < before_ms. Omit to clear everything.
         #[arg(long)]
         before_ms: Option<u64>,
+    },
+    /// Tail audit records as they arrive. Polls every `interval_ms` ms until
+    /// Ctrl-C. Filters are the same as `audit-query`.
+    AuditFollow {
+        /// Filter by caller kind: local | internal | plugin | agent.
+        #[arg(long)]
+        caller_kind: Option<String>,
+        /// Filter by caller id.
+        #[arg(long)]
+        caller_id: Option<String>,
+        /// Filter to methods starting with this prefix.
+        #[arg(long)]
+        method_prefix: Option<String>,
+        /// Filter by decision: allow | deny.
+        #[arg(long)]
+        decision: Option<String>,
+        /// Per-poll cap on record batch size.
+        #[arg(long, default_value_t = 100)]
+        batch: u64,
+        /// Polling interval in milliseconds.
+        #[arg(long, default_value_t = 500)]
+        interval_ms: u64,
     },
 }
 
@@ -2153,6 +2175,28 @@ pub fn run_client(command: Commands) -> Result<()> {
     } = &command
     {
         return run_plugin_logs(id, *follow);
+    }
+    // plugin audit-follow is a polling loop over plugin.audit_follow IPC.
+    if let Commands::Plugin {
+        command:
+            PluginCommands::AuditFollow {
+                caller_kind,
+                caller_id,
+                method_prefix,
+                decision,
+                batch,
+                interval_ms,
+            },
+    } = &command
+    {
+        return crate::cli::plugin::run_audit_follow(
+            caller_kind.as_deref(),
+            caller_id.as_deref(),
+            method_prefix.as_deref(),
+            decision.as_deref(),
+            *batch,
+            *interval_ms,
+        );
     }
 
     let port = IpcServer::read_port_file()?;

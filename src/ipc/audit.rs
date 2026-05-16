@@ -17,7 +17,6 @@ use crate::ipc::caller::CallerContext;
 pub const AUDIT_KEY_PREFIX: &str = "tasty.audit.";
 /// 30일 (ms). 운영자가 변경하고 싶으면 `audit_clear` 로 명시 삭제하거나 후속
 /// phase 에서 정책 설정 IPC 를 추가한다.
-#[allow(dead_code)] // Phase 6.5b 의 IPC handler 에서 사용 예정.
 pub const DEFAULT_RETENTION_MS: u64 = 30 * 24 * 60 * 60 * 1_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -164,7 +163,6 @@ pub struct AuditStore<'a> {
     owner: String,
 }
 
-#[allow(dead_code)] // Phase 6.5b 의 IPC handler 에서 사용 예정.
 impl<'a> AuditStore<'a> {
     pub fn new(mem: &'a mut MemoryStore, owner: impl Into<String>) -> Self {
         Self {
@@ -265,6 +263,44 @@ impl<'a> AuditStore<'a> {
         Ok(s)
     }
 
+    /// `tail -f` 스타일 폴링. `(after_ts_ms, after_seq)` 보다 strictly 큰 record
+    /// 만 시간 순으로 반환. 커서가 없으면 현재 latest record 의 (ts, seq) 를
+    /// 그대로 돌려준다 — 호출자가 그 다음 호출부터 새로 들어온 것만 받게 된다
+    /// (`tail -f -n 0` 시멘틱). `limit` 가 있으면 cap.
+    ///
+    /// 반환 `next_after_ts_ms` / `next_after_seq` 는 마지막 반환된 record 의 값,
+    /// 새 record 가 없으면 입력 커서 그대로.
+    pub fn follow(
+        &mut self,
+        q: &AuditQuery,
+        after_ts_ms: Option<u64>,
+        after_seq: Option<u64>,
+        retention_ms: u64,
+        now_ms: u64,
+        limit: Option<usize>,
+    ) -> Result<(Vec<AuditRecord>, u64, u64)> {
+        let all = self.list(retention_ms, now_ms)?;
+        let cursor = (after_ts_ms.unwrap_or(0), after_seq.unwrap_or(0));
+        let cursor_given = after_ts_ms.is_some() || after_seq.is_some();
+        if !cursor_given {
+            // 초기 호출: latest 의 (ts,seq) 만 반환, record 는 빈 배열.
+            let last = all.last().map(|r| (r.ts_ms, r.seq)).unwrap_or((0, 0));
+            return Ok((Vec::new(), last.0, last.1));
+        }
+        let mut out: Vec<AuditRecord> = all
+            .into_iter()
+            .filter(|r| (r.ts_ms, r.seq) > cursor && q.matches(r))
+            .collect();
+        if let Some(cap) = limit {
+            out.truncate(cap);
+        }
+        let next = out
+            .last()
+            .map(|r| (r.ts_ms, r.seq))
+            .unwrap_or(cursor);
+        Ok((out, next.0, next.1))
+    }
+
     /// 전체 삭제. `before_ms` 가 있으면 그 시점 이전 record 만 삭제.
     /// 반환: 삭제 개수.
     pub fn clear(&mut self, before_ms: Option<u64>) -> Result<usize> {
@@ -296,7 +332,6 @@ impl<'a> AuditStore<'a> {
     }
 }
 
-#[allow(dead_code)] // Phase 6.5b 의 IPC handler 에서 사용 예정.
 fn top_counts(
     map: std::collections::BTreeMap<String, u64>,
     top_n: usize,
@@ -451,6 +486,54 @@ mod tests {
         assert_eq!(s.by_caller, vec![("a".into(), 3), ("b".into(), 1)]);
         // by_method: memory.put=2, memory.get=1, surface.list=1 (tie 는 알파벳).
         assert_eq!(s.by_method[0], ("memory.put".into(), 2));
+    }
+
+    #[test]
+    fn follow_returns_only_new_records_since_cursor() {
+        let (_td, mut mem) = fresh();
+        let mut store = AuditStore::new(&mut mem, "_host");
+        for (ts, seq) in [(10, 0), (10, 1), (20, 0), (30, 0)] {
+            store.append(&rec(ts, seq, AuditCallerKind::Agent, "a", "x.y", AuditDecision::Allow)).unwrap();
+        }
+        // 초기 호출: cursor 없음 → 빈 + latest 커서.
+        let (recs, next_ts, next_seq) = store.follow(&AuditQuery::default(), None, None, 0, 1_000, None).unwrap();
+        assert!(recs.is_empty());
+        assert_eq!((next_ts, next_seq), (30, 0));
+
+        // 새 record 가 들어옴.
+        store.append(&rec(40, 0, AuditCallerKind::Agent, "a", "x.y", AuditDecision::Allow)).unwrap();
+        store.append(&rec(40, 1, AuditCallerKind::Agent, "a", "x.y", AuditDecision::Allow)).unwrap();
+
+        // 직전 커서 (30, 0) 으로 다시 호출 → 40,0 과 40,1 만.
+        let (recs, next_ts, next_seq) = store.follow(&AuditQuery::default(), Some(30), Some(0), 0, 1_000, None).unwrap();
+        assert_eq!(recs.len(), 2);
+        assert_eq!((recs[0].ts_ms, recs[0].seq), (40, 0));
+        assert_eq!((recs[1].ts_ms, recs[1].seq), (40, 1));
+        assert_eq!((next_ts, next_seq), (40, 1));
+
+        // 또 호출 → 새 게 없으면 빈 + 커서 그대로.
+        let (recs, next_ts, next_seq) = store.follow(&AuditQuery::default(), Some(40), Some(1), 0, 1_000, None).unwrap();
+        assert!(recs.is_empty());
+        assert_eq!((next_ts, next_seq), (40, 1));
+    }
+
+    #[test]
+    fn follow_respects_filter_and_limit() {
+        let (_td, mut mem) = fresh();
+        let mut store = AuditStore::new(&mut mem, "_host");
+        store.append(&rec(10, 0, AuditCallerKind::Agent, "a", "memory.put", AuditDecision::Allow)).unwrap();
+        store.append(&rec(11, 0, AuditCallerKind::Agent, "b", "surface.list", AuditDecision::Deny)).unwrap();
+        store.append(&rec(12, 0, AuditCallerKind::Agent, "a", "memory.get", AuditDecision::Allow)).unwrap();
+
+        // 필터 caller=a, cursor=(0,0).
+        let q = AuditQuery { caller_id: Some("a".into()), ..Default::default() };
+        let (recs, _, _) = store.follow(&q, Some(0), Some(0), 0, 1_000, None).unwrap();
+        assert_eq!(recs.len(), 2);
+
+        // limit=1.
+        let (recs, next_ts, next_seq) = store.follow(&q, Some(0), Some(0), 0, 1_000, Some(1)).unwrap();
+        assert_eq!(recs.len(), 1);
+        assert_eq!((next_ts, next_seq), (10, 0)); // 첫 매칭만.
     }
 
     #[test]

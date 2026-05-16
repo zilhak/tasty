@@ -1434,6 +1434,9 @@ impl App {
                     "plugin.audit_summary" => {
                         ipc::handler::audit::handle_summary(id, &cmd.request.params)
                     }
+                    "plugin.audit_follow" => {
+                        ipc::handler::audit::handle_follow(id, &cmd.request.params)
+                    }
                     "plugin.audit_clear" => {
                         ipc::handler::audit::handle_clear(id, &cmd.request.params)
                     }
