@@ -32,12 +32,36 @@ use serde::{Deserialize, Serialize};
 pub use migrations::{DbSchemaError, SCHEMA_VERSION};
 pub use scope::{Scope, validate_key};
 
-/// 단일 값 최대 크기 fallback (1 MiB). 초과 시 `ValueTooLarge`. config 로 조정 가능.
+/// 단일 값 최대 크기 fallback (1 MiB). config 미주입 시 사용. 실제 cap 은
+/// `MemoryConfig::entry_max_bytes` 가 결정한다.
 pub const MAX_VALUE_BYTES: usize = 1024 * 1024;
 
 /// Local caller (CLI / 사용자 / 호스트 내부) 의 owner sentinel. plugin id 의
 /// reverse-DNS 규칙과 충돌하지 않도록 underscore prefix.
 pub const HOST_OWNER: &str = "_host";
+
+/// `MemoryStore` 의 정책 설정. 모든 cap 은 bytes 단위 (config 에서는 MiB 단위로
+/// 들어와 호출자가 변환). default 는 design doc 의 fallback 값 (1 MiB / 10 MiB /
+/// 1 GiB / plaintext disabled).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MemoryConfig {
+    pub entry_max_bytes: u64,
+    pub secret_quota_per_owner_bytes: u64,
+    pub regular_quota_total_bytes: u64,
+    /// Keyring 부재 환경에서 secret 영역 평문 폴백 허용 여부 (Stage C 에서 사용).
+    pub allow_plaintext_secret: bool,
+}
+
+impl Default for MemoryConfig {
+    fn default() -> Self {
+        Self {
+            entry_max_bytes: 1024 * 1024,
+            secret_quota_per_owner_bytes: 10 * 1024 * 1024,
+            regular_quota_total_bytes: 1024 * 1024 * 1024,
+            allow_plaintext_secret: false,
+        }
+    }
+}
 
 /// `OwnedByOther` / `QuotaExceeded` 가 어느 영역에서 발생했는지.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -162,16 +186,25 @@ pub struct ListOpts {
 /// MemoryStore. 디스크 파일을 단독으로 열어 mutex 보호. clone 불가.
 pub struct MemoryStore {
     conn: Connection,
+    config: MemoryConfig,
 }
 
 impl MemoryStore {
-    /// 디스크 파일 열기. 부모 디렉터리는 필요 시 생성. 스키마는 자동 적용/검증.
+    /// 기본 config 로 열기. 부모 디렉터리는 필요 시 생성. 스키마는 자동 적용/검증.
     pub fn open(path: &Path) -> std::result::Result<Self, MemoryInitError> {
+        Self::open_with_config(path, MemoryConfig::default())
+    }
+
+    /// 명시적 config 로 열기.
+    pub fn open_with_config(
+        path: &Path,
+        config: MemoryConfig,
+    ) -> std::result::Result<Self, MemoryInitError> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| classify_io(e, parent))?;
         }
         let conn = Connection::open(path).map_err(|e| classify_sql(e, path))?;
-        Self::prepare(conn, path)
+        Self::prepare(conn, path, config)
     }
 
     /// 인메모리 (테스트 전용).
@@ -179,10 +212,23 @@ impl MemoryStore {
     pub fn open_in_memory() -> std::result::Result<Self, MemoryInitError> {
         let conn =
             Connection::open_in_memory().map_err(|e| classify_sql(e, Path::new(":memory:")))?;
-        Self::prepare(conn, Path::new(":memory:"))
+        Self::prepare(conn, Path::new(":memory:"), MemoryConfig::default())
     }
 
-    fn prepare(mut conn: Connection, path: &Path) -> std::result::Result<Self, MemoryInitError> {
+    #[cfg(test)]
+    pub fn open_in_memory_with_config(
+        config: MemoryConfig,
+    ) -> std::result::Result<Self, MemoryInitError> {
+        let conn =
+            Connection::open_in_memory().map_err(|e| classify_sql(e, Path::new(":memory:")))?;
+        Self::prepare(conn, Path::new(":memory:"), config)
+    }
+
+    fn prepare(
+        mut conn: Connection,
+        path: &Path,
+        config: MemoryConfig,
+    ) -> std::result::Result<Self, MemoryInitError> {
         conn.pragma_update(None, "journal_mode", "WAL").ok();
         conn.pragma_update(None, "synchronous", "NORMAL").ok();
         conn.pragma_update(None, "foreign_keys", "ON").ok();
@@ -192,7 +238,22 @@ impl MemoryStore {
             }
             DbSchemaError::Sql(e) => classify_sql(e, path),
         })?;
-        Ok(Self { conn })
+        Ok(Self { conn, config })
+    }
+
+    /// 현재 적용 중인 정책.
+    pub fn config(&self) -> &MemoryConfig {
+        &self.config
+    }
+
+    fn check_entry_size(&self, bytes_len: usize) -> Result<()> {
+        if (bytes_len as u64) > self.config.entry_max_bytes {
+            return Err(MemoryError::ValueTooLarge {
+                actual: bytes_len,
+                max: self.config.entry_max_bytes as usize,
+            });
+        }
+        Ok(())
     }
 
     // ============================================================
@@ -212,19 +273,42 @@ impl MemoryStore {
         validate_owner(owner)?;
         validate_key(key).map_err(MemoryError::InvalidKey)?;
         let bytes = serialize_value(value)?;
+        self.check_entry_size(bytes.len())?;
         let scope_token = scope.as_token();
         let now = unix_ms_now();
         let content_type = value.content_type();
 
         let tx = self.conn.transaction()?;
 
-        let existing: Option<(u64, String)> = tx
+        let existing: Option<(u64, String, i64)> = tx
             .query_row(
-                "SELECT version, owner FROM memory WHERE scope=?1 AND key=?2",
+                "SELECT version, owner, LENGTH(value) FROM memory WHERE scope=?1 AND key=?2",
                 params![&scope_token, key],
-                |r| Ok((r.get::<_, i64>(0)? as u64, r.get::<_, String>(1)?)),
+                |r| {
+                    Ok((
+                        r.get::<_, i64>(0)? as u64,
+                        r.get::<_, String>(1)?,
+                        r.get::<_, i64>(2)?,
+                    ))
+                },
             )
             .optional()?;
+
+        // Quota: 추가될 byte 가 regular total 한도를 넘기지 않는지.
+        let existing_size = existing.as_ref().map(|(_, _, sz)| *sz as i64).unwrap_or(0);
+        let current_used: i64 = tx.query_row(
+            "SELECT COALESCE(SUM(LENGTH(value)), 0) FROM memory",
+            [],
+            |r| r.get(0),
+        )?;
+        let projected = current_used - existing_size + bytes.len() as i64;
+        if (projected as u64) > self.config.regular_quota_total_bytes {
+            return Err(MemoryError::QuotaExceeded {
+                area: MemoryArea::Regular,
+                used: projected.max(0) as u64,
+                limit: self.config.regular_quota_total_bytes,
+            });
+        }
 
         let new_version = match (existing, opts.cas) {
             (None, Some(expected)) => {
@@ -233,15 +317,15 @@ impl MemoryStore {
                     actual: 0,
                 });
             }
-            (Some((actual, _)), Some(expected)) if actual != expected => {
+            (Some((actual, _, _)), Some(expected)) if actual != expected => {
                 return Err(MemoryError::CasConflict { expected, actual });
             }
-            (Some((_, existing_owner)), _) if !owner_can_modify(owner, &existing_owner) => {
+            (Some((_, existing_owner, _)), _) if !owner_can_modify(owner, &existing_owner) => {
                 return Err(MemoryError::OwnedByOther {
                     owner: existing_owner,
                 });
             }
-            (Some((actual, _)), _) => {
+            (Some((actual, _, _)), _) => {
                 let new_v = actual + 1;
                 tx.execute(
                     "UPDATE memory SET value=?1, content_type=?2, updated_at=?3,
@@ -532,19 +616,36 @@ impl MemoryStore {
         validate_owner(owner)?;
         validate_key(key).map_err(MemoryError::InvalidKey)?;
         let bytes = serialize_value(value)?;
+        self.check_entry_size(bytes.len())?;
         let scope_token = scope.as_token();
         let now = unix_ms_now();
         let content_type = value.content_type();
 
         let tx = self.conn.transaction()?;
-        let existing: Option<u64> = tx
+        let existing: Option<(u64, i64)> = tx
             .query_row(
-                "SELECT version FROM memory_secret
+                "SELECT version, LENGTH(value) FROM memory_secret
                  WHERE owner=?1 AND scope=?2 AND key=?3",
                 params![owner, &scope_token, key],
-                |r| r.get::<_, i64>(0).map(|v| v as u64),
+                |r| Ok((r.get::<_, i64>(0)? as u64, r.get::<_, i64>(1)?)),
             )
             .optional()?;
+
+        // Quota: per-owner secret 한도.
+        let existing_size = existing.as_ref().map(|(_, sz)| *sz).unwrap_or(0);
+        let current_used: i64 = tx.query_row(
+            "SELECT COALESCE(SUM(LENGTH(value)), 0) FROM memory_secret WHERE owner=?1",
+            params![owner],
+            |r| r.get(0),
+        )?;
+        let projected = current_used - existing_size + bytes.len() as i64;
+        if (projected as u64) > self.config.secret_quota_per_owner_bytes {
+            return Err(MemoryError::QuotaExceeded {
+                area: MemoryArea::Secret,
+                used: projected.max(0) as u64,
+                limit: self.config.secret_quota_per_owner_bytes,
+            });
+        }
 
         let new_version = match (existing, opts.cas) {
             (None, Some(expected)) => {
@@ -553,10 +654,10 @@ impl MemoryStore {
                     actual: 0,
                 });
             }
-            (Some(actual), Some(expected)) if actual != expected => {
+            (Some((actual, _)), Some(expected)) if actual != expected => {
                 return Err(MemoryError::CasConflict { expected, actual });
             }
-            (Some(actual), _) => {
+            (Some((actual, _)), _) => {
                 let new_v = actual + 1;
                 tx.execute(
                     "UPDATE memory_secret SET value=?1, content_type=?2, updated_at=?3,
@@ -947,13 +1048,19 @@ pub fn default_db_path() -> Option<PathBuf> {
 
 static STORE: OnceLock<Mutex<MemoryStore>> = OnceLock::new();
 
-/// 앱 시작 시 1회. 실패 시 호출자가 사용자에게 안내 후 종료.
+/// 앱 시작 시 1회. 기본 config 로 연다.
 pub fn init() -> std::result::Result<(), MemoryInitError> {
+    init_with_config(MemoryConfig::default())
+}
+
+/// 앱 시작 시 1회. Settings.memory 에서 도출한 [`MemoryConfig`] 로 연다.
+/// 이미 초기화된 상태면 no-op (덮어쓰기 안 함).
+pub fn init_with_config(config: MemoryConfig) -> std::result::Result<(), MemoryInitError> {
     if STORE.get().is_some() {
         return Ok(());
     }
     let path = default_db_path().ok_or(MemoryInitError::HomeDirMissing)?;
-    let store = MemoryStore::open(&path)?;
+    let store = MemoryStore::open_with_config(&path, config)?;
     tracing::info!("opened memory.db at {}", path.display());
     let _ = STORE.set(Mutex::new(store));
     Ok(())
@@ -1013,16 +1120,9 @@ fn owner_can_modify(caller_owner: &str, existing_owner: &str) -> bool {
 }
 
 fn serialize_value(value: &MemoryValue) -> Result<Vec<u8>> {
-    let bytes = value
+    value
         .to_bytes()
-        .map_err(|e| MemoryError::InvalidContentType(e.to_string()))?;
-    if bytes.len() > MAX_VALUE_BYTES {
-        return Err(MemoryError::ValueTooLarge {
-            actual: bytes.len(),
-            max: MAX_VALUE_BYTES,
-        });
-    }
-    Ok(bytes)
+        .map_err(|e| MemoryError::InvalidContentType(e.to_string()))
 }
 
 #[cfg(test)]
@@ -1198,7 +1298,8 @@ mod tests {
     #[test]
     fn value_size_cap_enforced() {
         let mut s = store();
-        let big = vec![0u8; MAX_VALUE_BYTES + 1];
+        let cap = s.config().entry_max_bytes as usize;
+        let big = vec![0u8; cap + 1];
         let err = s
             .put(
                 HOST_OWNER,
@@ -1209,6 +1310,82 @@ mod tests {
             )
             .unwrap_err();
         assert!(matches!(err, MemoryError::ValueTooLarge { .. }));
+    }
+
+    #[test]
+    fn entry_max_configurable() {
+        let mut s = MemoryStore::open_in_memory_with_config(MemoryConfig {
+            entry_max_bytes: 16,
+            ..MemoryConfig::default()
+        })
+        .unwrap();
+        s.put(HOST_OWNER, &Scope::Global, "k", &text("0123456789ab"), &PutOpts::default())
+            .unwrap();
+        let err = s
+            .put(
+                HOST_OWNER,
+                &Scope::Global,
+                "big",
+                &text("0123456789abcdefghij"),
+                &PutOpts::default(),
+            )
+            .unwrap_err();
+        assert!(matches!(err, MemoryError::ValueTooLarge { actual, max } if max == 16 && actual == 20));
+    }
+
+    #[test]
+    fn regular_quota_exceeded() {
+        let mut s = MemoryStore::open_in_memory_with_config(MemoryConfig {
+            entry_max_bytes: 1024,
+            regular_quota_total_bytes: 20,
+            ..MemoryConfig::default()
+        })
+        .unwrap();
+        // 12 byte 저장: 합산 12 ≤ 20 통과.
+        s.put(HOST_OWNER, &Scope::Global, "a", &text("0123456789ab"), &PutOpts::default())
+            .unwrap();
+        // 새 entry 12 byte 추가 시 projected=24 → 거부.
+        let err = s
+            .put(HOST_OWNER, &Scope::Global, "b", &text("0123456789ab"), &PutOpts::default())
+            .unwrap_err();
+        match err {
+            MemoryError::QuotaExceeded { area, used, limit } => {
+                assert_eq!(area, MemoryArea::Regular);
+                assert_eq!(used, 24);
+                assert_eq!(limit, 20);
+            }
+            other => panic!("expected QuotaExceeded, got {other:?}"),
+        }
+        // 기존 entry 의 in-place 갱신은 existing_size 만큼 차감 후 평가 → 같은 크기면 통과.
+        s.put(HOST_OWNER, &Scope::Global, "a", &text("ABCDEFGHIJKL"), &PutOpts::default())
+            .unwrap();
+    }
+
+    #[test]
+    fn secret_quota_exceeded_per_owner() {
+        let mut s = MemoryStore::open_in_memory_with_config(MemoryConfig {
+            entry_max_bytes: 1024,
+            secret_quota_per_owner_bytes: 20,
+            ..MemoryConfig::default()
+        })
+        .unwrap();
+        // Plugin A: 12 byte 통과.
+        s.put_secret(PLUGIN_A, &Scope::Global, "a", &text("0123456789ab"), &PutOpts::default())
+            .unwrap();
+        // Plugin A 가 추가 12 byte → 24 거부.
+        let err = s
+            .put_secret(PLUGIN_A, &Scope::Global, "b", &text("0123456789ab"), &PutOpts::default())
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            MemoryError::QuotaExceeded {
+                area: MemoryArea::Secret,
+                ..
+            }
+        ));
+        // Plugin B 영역은 독립 — 동일 12 byte 가능.
+        s.put_secret(PLUGIN_B, &Scope::Global, "a", &text("0123456789ab"), &PutOpts::default())
+            .unwrap();
     }
 
     #[test]

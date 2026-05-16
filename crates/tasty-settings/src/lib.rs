@@ -15,7 +15,7 @@ pub use appearance::{
 };
 pub use general::{GeneralSettings, LinkModifier};
 pub use keybindings::KeybindingSettings;
-pub use types::{ClipboardSettings, NotificationSettings, PerformanceSettings};
+pub use types::{ClipboardSettings, MemorySettings, NotificationSettings, PerformanceSettings};
 
 use tasty_core::paths::tasty_home;
 
@@ -28,6 +28,7 @@ pub struct Settings {
     pub notification: NotificationSettings,
     pub keybindings: KeybindingSettings,
     pub performance: PerformanceSettings,
+    pub memory: MemorySettings,
 }
 
 impl Default for Settings {
@@ -39,6 +40,7 @@ impl Default for Settings {
             notification: NotificationSettings::default(),
             keybindings: KeybindingSettings::default(),
             performance: PerformanceSettings::default(),
+            memory: MemorySettings::default(),
         }
     }
 }
