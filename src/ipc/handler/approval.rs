@@ -391,6 +391,135 @@ pub fn handle_list(
 }
 
 // ============================================================
+// History — memory 의 `tasty.approval.<id>` 키 전체를 시간 기준으로 조회
+// ============================================================
+
+/// `approval.history` — 영속 기록 조회. memory 에서 모든 scope 의 approval 항목을
+/// 읽어 필터링한다. 필터: `since`/`until` (unix ms, memory updated_at 기준),
+/// `workspace_id`, `requester_id`, `decision`, `state`, `limit`.
+///
+/// 응답: `{ entries: [...], count, returned }`.
+pub fn handle_history(
+    _state: &mut AppState,
+    _caller: &CallerContext,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
+    let since = params.get("since").and_then(|v| v.as_i64());
+    let until = params.get("until").and_then(|v| v.as_i64());
+    let workspace_filter = params
+        .get("workspace_id")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32);
+    let requester_filter = params
+        .get("requester_id")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
+    let decision_filter = params
+        .get("decision")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
+    let state_filter = params.get("state").and_then(|v| v.as_str()).map(str::to_string);
+    let limit = params
+        .get("limit")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as usize);
+
+    let scopes_result = with_store(|s| s.scopes());
+    let scopes: Vec<String> = match scopes_result {
+        Some(Ok(s)) => s,
+        Some(Err(e)) => {
+            return JsonRpcResponse::error(id, -32603, format!("memory scopes failed: {e}"));
+        }
+        None => return JsonRpcResponse::success(id, json!({ "entries": [], "count": 0, "returned": 0 })),
+    };
+
+    let mut collected: Vec<ApprovalRecord> = Vec::new();
+    for scope_str in scopes {
+        let Ok(scope) = Scope::parse(&scope_str) else {
+            continue;
+        };
+        if let Some(wid) = workspace_filter
+            && !matches!(scope, Scope::Workspace(s) if s == wid)
+        {
+            continue;
+        }
+        let list_opts = tasty_memory::ListOpts {
+            prefix: Some(APPROVAL_KEY_PREFIX.to_string()),
+            limit: None,
+            since,
+            until,
+            offset: None,
+        };
+        let Some(Ok(entries)) = with_store(|s| s.list(&scope, &list_opts)) else {
+            continue;
+        };
+        for entry in entries {
+            // summary 키는 history 결과에서 제외 (3.5 에서 사용).
+            if entry.key == "tasty.approval.summary" {
+                continue;
+            }
+            let MemoryValue::Json(v) = entry.value else { continue };
+            let Ok(record) = serde_json::from_value::<ApprovalRecord>(v) else { continue };
+            collected.push(record);
+        }
+    }
+
+    if let Some(ref rid) = requester_filter {
+        collected.retain(|r| match &r.request.requester {
+            tasty_approval::Requester::User => rid == "user",
+            tasty_approval::Requester::Plugin { id } => id == rid,
+            tasty_approval::Requester::Agent { id } => id == rid,
+        });
+    }
+    if let Some(ref decision) = decision_filter {
+        collected.retain(|r| match &r.state {
+            tasty_approval::ApprovalState::Responded { choice, .. } => choice == decision,
+            _ => false,
+        });
+    }
+    if let Some(ref sf) = state_filter {
+        use tasty_approval::ApprovalState as S;
+        collected.retain(|r| {
+            matches!(
+                (sf.as_str(), &r.state),
+                ("pending", S::Pending)
+                    | ("responded", S::Responded { .. })
+                    | ("timed_out", S::TimedOut { .. })
+                    | ("cancelled", S::Cancelled { .. })
+            ) || (sf == "terminal" && r.state.is_terminal())
+        });
+    }
+
+    // 시간 역순 — 최신 응답이 위로.
+    collected.sort_by(|a, b| {
+        let ta = transition_at(&a.state).unwrap_or(a.request.created_at);
+        let tb = transition_at(&b.state).unwrap_or(b.request.created_at);
+        tb.cmp(&ta)
+    });
+
+    let total = collected.len();
+    if let Some(n) = limit {
+        collected.truncate(n);
+    }
+    let returned = collected.len();
+    let arr: Vec<Value> = collected.iter().map(record_to_json).collect();
+    JsonRpcResponse::success(
+        id,
+        json!({ "entries": arr, "count": total, "returned": returned }),
+    )
+}
+
+/// state 가 가진 timestamp(있다면) 를 추출.
+fn transition_at(state: &tasty_approval::ApprovalState) -> Option<u64> {
+    use tasty_approval::ApprovalState as S;
+    match state {
+        S::Pending => None,
+        S::Responded { at, .. } | S::TimedOut { at, .. } | S::Cancelled { at, .. } => Some(*at),
+    }
+}
+
+// ============================================================
 // 부팅 시 memory 에서 rehydrate
 // ============================================================
 

@@ -846,6 +846,39 @@ fn approval_command_to_method_params(
             }
             ("approval.list", p)
         }
+        History {
+            since,
+            until,
+            workspace_id,
+            requester_id,
+            decision,
+            state,
+            limit,
+        } => {
+            let mut p = serde_json::json!({});
+            if let Some(s) = since {
+                p["since"] = serde_json::Value::from(*s);
+            }
+            if let Some(u) = until {
+                p["until"] = serde_json::Value::from(*u);
+            }
+            if let Some(w) = workspace_id {
+                p["workspace_id"] = serde_json::Value::from(*w);
+            }
+            if let Some(r) = requester_id {
+                p["requester_id"] = serde_json::Value::String(r.clone());
+            }
+            if let Some(d) = decision {
+                p["decision"] = serde_json::Value::String(d.clone());
+            }
+            if let Some(s) = state {
+                p["state"] = serde_json::Value::String(s.clone());
+            }
+            if let Some(l) = limit {
+                p["limit"] = serde_json::Value::from(*l);
+            }
+            ("approval.history", p)
+        }
     }
 }
 

@@ -232,6 +232,7 @@ fn route_engine_handler(
         "approval.cancel" => approval::handle_cancel(state, caller, id, &request.params),
         "approval.get" => approval::handle_get(state, caller, id, &request.params),
         "approval.list" => approval::handle_list(state, caller, id, &request.params),
+        "approval.history" => approval::handle_history(state, caller, id, &request.params),
         _ => return None,
     })
 }

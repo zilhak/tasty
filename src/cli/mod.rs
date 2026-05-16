@@ -255,6 +255,30 @@ pub enum ApprovalCommands {
         #[arg(long)]
         workspace_id: Option<u32>,
     },
+    /// Persistent history query (sources from memory store).
+    History {
+        /// Only entries with memory `updated_at >= since` (unix ms).
+        #[arg(long)]
+        since: Option<i64>,
+        /// Only entries with memory `updated_at < until` (unix ms).
+        #[arg(long)]
+        until: Option<i64>,
+        /// Filter by workspace id.
+        #[arg(long)]
+        workspace_id: Option<u32>,
+        /// Filter by requester id (plugin/agent id or "user").
+        #[arg(long)]
+        requester_id: Option<String>,
+        /// Filter by chosen decision key (only matches Responded).
+        #[arg(long)]
+        decision: Option<String>,
+        /// Filter by state: pending | responded | timed_out | cancelled | terminal.
+        #[arg(long)]
+        state: Option<String>,
+        /// Maximum entries returned (after sort, newest-first).
+        #[arg(long)]
+        limit: Option<u64>,
+    },
 }
 
 #[derive(Subcommand)]

@@ -151,6 +151,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("approval.cancel", plugin(&[Approval])),
         ("approval.list", plugin(&[Approval])),
         ("approval.get", plugin(&[Approval])),
+        ("approval.history", plugin(&[Approval])),
         // ── notification ──────────────────────────────────────────────
         ("notification.list", plugin(&[Notification])),
         ("notification.create", plugin(&[Notification])),
