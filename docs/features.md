@@ -633,6 +633,30 @@ tasty agent lease-release --workspace-id <id> --resource <r> --holder <h>
 tasty agent lease-list    --workspace-id <id>
 ```
 
+### Reducer (Phase 5.4)
+
+**N개 task 의 결과를 단일 값으로 합성** — `tasty-agent::reducer` 모듈에 4종 in-process 전략 + 1종 host-bridged 전략(`custom`). 본 단계는 동기적으로 동작 — 입력 task 가 아직 끝나지 않았으면 `output` 은 `null` 로 들어간다 (완료 보장은 호출자 책임).
+
+| 전략 | 동작 |
+|---|---|
+| `first_success` | 첫 `Succeeded` task 의 `output`. 성공한 입력이 없으면 `-32602` |
+| `all` | 모든 입력 `output` 을 순서대로 JSON 배열로 (상태 무관) |
+| `merge_json` | 모든 입력 `output` (JSON object) 을 left-to-right deep merge. non-object 는 거부 |
+| `concat_text` | 모든 입력 `output` 을 텍스트로 이어 붙임 |
+| `custom` | 호스트 shell (`sh -c` / `cmd /C`) 로 명령 실행, stdin 에 `[output1, output2, ...]` JSON 배열, stdout 이 결과 (JSON 시도 → 실패 시 string) |
+
+#### IPC
+
+| method | 권한 | 동작 |
+|---|---|---|
+| `agent.task_reduce` | AgentManage | `workspace_id`/`inputs: [TaskId]`/`strategy: { kind, command? }` → `{ value }`. 입력 task 부재는 `-32004` |
+
+#### CLI
+
+```
+tasty agent task-reduce --workspace-id <id> --inputs T1,T2,T3 --strategy first_success|all|merge_json|concat_text|custom:<command>
+```
+
 ## 설정 시스템
 
 ### TOML 기반 설정 파일

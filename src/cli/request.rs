@@ -1675,6 +1675,36 @@ fn agent_command_to_method_params(
             "agent.lease_list",
             serde_json::json!({ "workspace_id": *workspace_id }),
         ),
+        TaskReduce {
+            workspace_id,
+            inputs,
+            strategy,
+        } => {
+            if inputs.is_empty() {
+                eprintln!("Error: --inputs must contain at least one task id");
+                std::process::exit(1);
+            }
+            let strategy_val = parse_reducer_strategy(strategy);
+            (
+                "agent.task_reduce",
+                serde_json::json!({
+                    "workspace_id": *workspace_id,
+                    "inputs": inputs,
+                    "strategy": strategy_val,
+                }),
+            )
+        }
+    }
+}
+
+/// `--strategy` 파싱:
+/// - `first_success` / `all` / `merge_json` / `concat_text` → `{ "kind": "<x>" }`
+/// - `custom:<command>` → `{ "kind": "custom", "command": "<command>" }`
+fn parse_reducer_strategy(s: &str) -> serde_json::Value {
+    if let Some(cmd) = s.strip_prefix("custom:") {
+        serde_json::json!({ "kind": "custom", "command": cmd })
+    } else {
+        serde_json::json!({ "kind": s })
     }
 }
 

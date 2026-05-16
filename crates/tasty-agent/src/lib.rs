@@ -13,11 +13,13 @@
 
 pub mod barrier;
 pub mod lease;
+pub mod reducer;
 pub mod semaphore;
 pub mod task;
 
 pub use barrier::{Barrier, BarrierState, BarrierStore};
 pub use lease::{Lease, LeaseMode, LeaseStore};
+pub use reducer::{ReducerInput, reduce_in_process, reduce_with_custom};
 pub use semaphore::{AcquireOutcome, ReleaseOutcome, Semaphore, SemaphoreStore};
 pub use task::{
     OnFailure, ReducerStrategy, Task, TaskCommand, TaskGraph, TaskId, TaskResult, TaskState,

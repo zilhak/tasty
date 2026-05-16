@@ -186,6 +186,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("agent.lease_acquire", plugin(&[AgentManage])),
         ("agent.lease_release", plugin(&[AgentManage])),
         ("agent.lease_list", plugin(&[AgentManage])),
+        ("agent.task_reduce", plugin(&[AgentManage])),
         // ── notification ──────────────────────────────────────────────
         ("notification.list", plugin(&[Notification])),
         ("notification.create", plugin(&[Notification])),

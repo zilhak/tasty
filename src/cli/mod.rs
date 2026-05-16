@@ -358,6 +358,17 @@ pub enum AgentCommands {
         #[arg(long)]
         workspace_id: u32,
     },
+    /// Combine results from N tasks into one value (strategies: first_success | all | merge_json | concat_text | custom:<cmd>).
+    TaskReduce {
+        #[arg(long)]
+        workspace_id: u32,
+        /// Comma-separated input task IDs (in reduce order).
+        #[arg(long, value_delimiter = ',')]
+        inputs: Vec<String>,
+        /// Strategy: `first_success` | `all` | `merge_json` | `concat_text` | `custom:<command>`.
+        #[arg(long)]
+        strategy: String,
+    },
 }
 
 #[derive(Subcommand)]

@@ -298,6 +298,8 @@ fn route_engine_handler(
         "agent.lease_acquire" => agent::handle_lease_acquire(state, caller, id, &request.params),
         "agent.lease_release" => agent::handle_lease_release(state, caller, id, &request.params),
         "agent.lease_list" => agent::handle_lease_list(state, caller, id, &request.params),
+        // agent.task_reduce — Phase 5.4 (결과 합성: first_success / all / merge_json / concat_text / custom)
+        "agent.task_reduce" => agent::handle_task_reduce(state, caller, id, &request.params),
         _ => return None,
     })
 }

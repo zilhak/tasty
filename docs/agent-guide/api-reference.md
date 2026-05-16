@@ -698,7 +698,21 @@ tasty unset global-hook --hook HOOK_ID
 
 **Lease 스키마**: `{ workspace_id, resource, holder, acquired_at, expires_at? }`
 
-> Phase 5.4+에서 `agent.rate_limit_*`, `agent.task_reduce`가 같은 namespace 안에 추가될 예정. 자세한 design은 `docs/dev-guide/cli-naming.md`의 `agent` 항목과 plan `05-collaboration.md`.
+**Phase 5.4 — Reducer (`agent.task_reduce`)**. N개 task 의 결과를 단일 값으로 합성. 입력 task 들은 모두 같은 workspace 에 존재해야 하며, 본 호출은 동기적으로 수행된다 (입력 task 가 아직 끝나지 않았다면 `output` 은 `null` 로 들어간다 — task 완료 보장은 호출자 책임).
+
+| 메서드 | 권한 | 파라미터 → 응답 |
+|--------|------|----------------|
+| `agent.task_reduce` | `AgentManage` | `{ workspace_id, inputs: [TaskId], strategy: { kind, command? } }` → `{ value }`. 입력 task 가 없으면 `-32004 task_not_found` |
+
+**전략 5종** (`strategy.kind`):
+
+- `first_success` — 첫 `Succeeded` task 의 `output`. 성공한 입력이 없으면 `-32602`
+- `all` — 모든 입력의 `output` 을 순서대로 JSON 배열로 (상태 무관)
+- `merge_json` — 모든 입력의 `output`(JSON object) 을 left-to-right deep merge. non-object 가 끼면 `-32602`. `null` 은 skip
+- `concat_text` — 모든 입력의 `output` 을 텍스트로 이어 붙임 (string 그대로, 다른 타입은 JSON 직렬화)
+- `custom` — `{ kind: "custom", command: "<shell command>" }`. 호스트 shell (`sh -c` / Windows `cmd /C`) 로 실행, stdin 에 `[output1, output2, ...]` JSON 배열을 흘려보내고 stdout 을 수확. stdout 이 JSON 이면 그대로, 아니면 string value 로 반환. exit code ≠ 0 이면 `-32602` + stderr 메시지
+
+> Phase 5.5+에서 `agent.rate_limit_*`가 같은 namespace 안에 추가될 예정. 자세한 design은 `docs/dev-guide/cli-naming.md`의 `agent` 항목과 plan `05-collaboration.md`.
 
 ### Surface 간 통신
 

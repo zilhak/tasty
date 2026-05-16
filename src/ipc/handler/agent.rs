@@ -10,8 +10,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{Value, json};
 use tasty_agent::{
-    AgentError, BarrierStore, LeaseMode, LeaseStore, OnFailure, SemaphoreStore, Task, TaskCommand,
-    TaskGraph, TaskId, TaskState, TaskStore,
+    AgentError, BarrierStore, LeaseMode, LeaseStore, OnFailure, ReducerInput, ReducerStrategy,
+    SemaphoreStore, Task, TaskCommand, TaskGraph, TaskId, TaskState, TaskStore,
+    reduce_with_custom,
 };
 use tasty_memory::with_store;
 
@@ -696,4 +697,118 @@ pub fn handle_lease_list(
         let leases = store.list(workspace_id, Some(now))?;
         Ok(json!({ "total": leases.len(), "leases": leases }))
     })
+}
+
+// ============================================================
+// agent.task_reduce — 다른 task 결과 합성
+// ============================================================
+
+pub fn handle_task_reduce(
+    state: &mut AppState,
+    _caller: &CallerContext,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
+    let workspace_id = match workspace_id_param(params, &id) {
+        Ok(w) => w,
+        Err(e) => return e,
+    };
+    let inputs: Vec<TaskId> = match params.get("inputs").and_then(|v| v.as_array()) {
+        Some(arr) if !arr.is_empty() => arr
+            .iter()
+            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+            .collect(),
+        _ => {
+            return JsonRpcResponse::invalid_params(
+                id,
+                "Missing or empty 'inputs' (array of task ids)",
+            );
+        }
+    };
+    let strategy_val = match params.get("strategy") {
+        Some(v) => v.clone(),
+        None => return JsonRpcResponse::invalid_params(id, "Missing 'strategy'"),
+    };
+    let strategy: ReducerStrategy = match serde_json::from_value(strategy_val) {
+        Ok(s) => s,
+        Err(e) => {
+            return JsonRpcResponse::invalid_params(id, format!("invalid 'strategy': {e}"));
+        }
+    };
+
+    // 1단계: task 결과 수집 (memory access 안에서).
+    let seq = state.engine.agent_seq.clone();
+    let collected: Option<Result<Vec<ReducerInput>, AgentError>> = with_store(|mem| {
+        let store = TaskStore::new(mem, tasty_memory::HOST_OWNER, seq.as_ref());
+        let mut out: Vec<ReducerInput> = Vec::with_capacity(inputs.len());
+        for tid in &inputs {
+            let task = match store.get(workspace_id, tid) {
+                Ok(Some(t)) => t,
+                Ok(None) => return Err(AgentError::TaskNotFound(tid.clone())),
+                Err(e) => return Err(e),
+            };
+            let succeeded = matches!(task.state, TaskState::Succeeded);
+            let output = task
+                .result
+                .and_then(|r| r.output)
+                .unwrap_or(Value::Null);
+            out.push(ReducerInput { succeeded, output });
+        }
+        Ok(out)
+    });
+    let collected = match collected {
+        None => return JsonRpcResponse::error(id, -32603, "memory store not initialized"),
+        Some(Err(e)) => return agent_err_to_response(id, e),
+        Some(Ok(v)) => v,
+    };
+
+    // 2단계: reducer 실행 (memory lock 바깥에서; custom shell 은 stdin/stdout I/O).
+    let result = reduce_with_custom(&strategy, &collected, run_custom_shell);
+    match result {
+        Ok(value) => JsonRpcResponse::success(id, json!({ "value": value })),
+        Err(e) => agent_err_to_response(id, e),
+    }
+}
+
+/// `Custom { command }` 실행기. `command` 를 시스템 셸로 실행하고 stdin 으로
+/// JSON 배열을 흘려보낸 뒤 stdout 을 수확한다. Windows 는 `cmd /C`, 그 외는
+/// `sh -c`.
+fn run_custom_shell(command: &str, stdin_json: &str) -> std::io::Result<String> {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
+    #[cfg(windows)]
+    let mut cmd = {
+        let mut c = Command::new("cmd");
+        c.args(["/C", command]);
+        c
+    };
+    #[cfg(not(windows))]
+    let mut cmd = {
+        let mut c = Command::new("sh");
+        c.args(["-c", command]);
+        c
+    };
+
+    let mut child = cmd
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    if let Some(mut sin) = child.stdin.take() {
+        sin.write_all(stdin_json.as_bytes())?;
+    }
+    let out = child.wait_with_output()?;
+    if !out.status.success() {
+        let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!(
+                "exit_code={}, stderr={}",
+                out.status.code().unwrap_or(-1),
+                stderr.trim()
+            ),
+        ));
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
