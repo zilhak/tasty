@@ -1428,6 +1428,15 @@ impl App {
                             &cmd.request.params,
                         )
                     }
+                    "plugin.audit_query" => {
+                        ipc::handler::audit::handle_query(id, &cmd.request.params)
+                    }
+                    "plugin.audit_summary" => {
+                        ipc::handler::audit::handle_summary(id, &cmd.request.params)
+                    }
+                    "plugin.audit_clear" => {
+                        ipc::handler::audit::handle_clear(id, &cmd.request.params)
+                    }
                     "plugin.request_permission" => {
                         // 첫 main window 의 state 를 빌려 사용 (모든 window 가
                         // 같은 approval_store Arc 공유). main 이 하나도 없으면

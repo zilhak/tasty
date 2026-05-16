@@ -699,6 +699,79 @@ fn plugin_command_to_method_params(command: &PluginCommands) -> (&'static str, s
                 ("plugin.extension.list", serde_json::json!({}))
             }
         },
+        PluginCommands::AuditQuery {
+            caller_kind,
+            caller_id,
+            method_prefix,
+            decision,
+            since_ms,
+            until_ms,
+            limit,
+        } => {
+            let mut p = serde_json::Map::new();
+            if let Some(v) = caller_kind {
+                p.insert("caller_kind".into(), serde_json::json!(v));
+            }
+            if let Some(v) = caller_id {
+                p.insert("caller_id".into(), serde_json::json!(v));
+            }
+            if let Some(v) = method_prefix {
+                p.insert("method_prefix".into(), serde_json::json!(v));
+            }
+            if let Some(v) = decision {
+                p.insert("decision".into(), serde_json::json!(v));
+            }
+            if let Some(v) = since_ms {
+                p.insert("since_ms".into(), serde_json::json!(v));
+            }
+            if let Some(v) = until_ms {
+                p.insert("until_ms".into(), serde_json::json!(v));
+            }
+            if let Some(v) = limit {
+                p.insert("limit".into(), serde_json::json!(v));
+            }
+            ("plugin.audit_query", serde_json::Value::Object(p))
+        }
+        PluginCommands::AuditSummary {
+            caller_kind,
+            caller_id,
+            method_prefix,
+            decision,
+            since_ms,
+            until_ms,
+            top_n,
+        } => {
+            let mut p = serde_json::Map::new();
+            if let Some(v) = caller_kind {
+                p.insert("caller_kind".into(), serde_json::json!(v));
+            }
+            if let Some(v) = caller_id {
+                p.insert("caller_id".into(), serde_json::json!(v));
+            }
+            if let Some(v) = method_prefix {
+                p.insert("method_prefix".into(), serde_json::json!(v));
+            }
+            if let Some(v) = decision {
+                p.insert("decision".into(), serde_json::json!(v));
+            }
+            if let Some(v) = since_ms {
+                p.insert("since_ms".into(), serde_json::json!(v));
+            }
+            if let Some(v) = until_ms {
+                p.insert("until_ms".into(), serde_json::json!(v));
+            }
+            if let Some(v) = top_n {
+                p.insert("top_n".into(), serde_json::json!(v));
+            }
+            ("plugin.audit_summary", serde_json::Value::Object(p))
+        }
+        PluginCommands::AuditClear { before_ms } => {
+            let mut p = serde_json::Map::new();
+            if let Some(v) = before_ms {
+                p.insert("before_ms".into(), serde_json::json!(v));
+            }
+            ("plugin.audit_clear", serde_json::Value::Object(p))
+        }
     }
 }
 

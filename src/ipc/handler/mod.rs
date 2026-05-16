@@ -9,6 +9,7 @@ use crate::state::AppState;
 
 pub mod agent;
 pub mod approval;
+pub mod audit;
 pub mod session;
 mod clipboard;
 mod hooks;

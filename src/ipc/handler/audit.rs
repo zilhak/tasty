@@ -1,0 +1,181 @@
+//! Phase 6.5b — `plugin.audit_*` IPC 핸들러.
+//!
+//! audit log 조회/집계/삭제. CallerContext 검사는 method_meta 의 `local_only`
+//! 가 dispatcher 레벨에서 거른다 (운영자 전용).
+
+use serde_json::{Value, json};
+
+use crate::ipc::audit::{
+    AuditCallerKind, AuditDecision, AuditError, AuditQuery, AuditRecord, AuditStore,
+    DEFAULT_RETENTION_MS,
+};
+use crate::ipc::protocol::JsonRpcResponse;
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+fn audit_err_to_response(id: Value, err: AuditError) -> JsonRpcResponse {
+    JsonRpcResponse::error(id, -32603, &err.to_string())
+}
+
+fn parse_caller_kind(s: &str) -> Option<AuditCallerKind> {
+    match s {
+        "local" => Some(AuditCallerKind::Local),
+        "internal" => Some(AuditCallerKind::Internal),
+        "plugin" => Some(AuditCallerKind::Plugin),
+        "agent" => Some(AuditCallerKind::Agent),
+        _ => None,
+    }
+}
+
+fn parse_decision(s: &str) -> Option<AuditDecision> {
+    match s {
+        "allow" => Some(AuditDecision::Allow),
+        "deny" => Some(AuditDecision::Deny),
+        _ => None,
+    }
+}
+
+fn record_to_json(r: &AuditRecord) -> Value {
+    serde_json::to_value(r).unwrap_or(Value::Null)
+}
+
+fn build_query(params: &Value, id: &Value) -> std::result::Result<AuditQuery, JsonRpcResponse> {
+    let mut q = AuditQuery::default();
+    if let Some(s) = params.get("caller_kind").and_then(|v| v.as_str()) {
+        q.caller_kind = Some(parse_caller_kind(s).ok_or_else(|| {
+            JsonRpcResponse::invalid_params(id.clone(), format!("unknown caller_kind '{s}'"))
+        })?);
+    }
+    if let Some(s) = params
+        .get("caller_id")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+    {
+        q.caller_id = Some(s.to_string());
+    }
+    if let Some(s) = params
+        .get("method_prefix")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+    {
+        q.method_prefix = Some(s.to_string());
+    }
+    if let Some(s) = params.get("decision").and_then(|v| v.as_str()) {
+        q.decision = Some(parse_decision(s).ok_or_else(|| {
+            JsonRpcResponse::invalid_params(id.clone(), format!("unknown decision '{s}'"))
+        })?);
+    }
+    if let Some(n) = params.get("since_ms").and_then(|v| v.as_u64()) {
+        q.since_ms = Some(n);
+    }
+    if let Some(n) = params.get("until_ms").and_then(|v| v.as_u64()) {
+        q.until_ms = Some(n);
+    }
+    if let Some(n) = params.get("limit").and_then(|v| v.as_u64()) {
+        q.limit = Some(n as usize);
+    }
+    Ok(q)
+}
+
+/// `plugin.audit_query` — 필터된 audit record 목록.
+pub fn handle_query(id: Value, params: &Value) -> JsonRpcResponse {
+    let q = match build_query(params, &id) {
+        Ok(q) => q,
+        Err(resp) => return resp,
+    };
+    let now = now_ms();
+    let result = tasty_memory::with_store(|mem| {
+        let mut store = AuditStore::new(mem, tasty_memory::HOST_OWNER);
+        store.query(&q, DEFAULT_RETENTION_MS, now)
+    });
+    match result {
+        None => JsonRpcResponse::error(id, -32603, "memory store not initialized"),
+        Some(Ok(records)) => {
+            let arr: Vec<Value> = records.iter().map(record_to_json).collect();
+            JsonRpcResponse::success(
+                id,
+                json!({
+                    "records": arr,
+                    "count": records.len(),
+                }),
+            )
+        }
+        Some(Err(e)) => audit_err_to_response(id, e),
+    }
+}
+
+/// `plugin.audit_summary` — 필터된 record 의 집계.
+/// `top_n` (옵션, 기본 10) 으로 by_caller / by_method 상위 개수 제한.
+pub fn handle_summary(id: Value, params: &Value) -> JsonRpcResponse {
+    let q = match build_query(params, &id) {
+        Ok(q) => q,
+        Err(resp) => return resp,
+    };
+    let top_n = params
+        .get("top_n")
+        .and_then(|v| v.as_u64())
+        .map(|n| n as usize)
+        .unwrap_or(10);
+    let now = now_ms();
+    let result = tasty_memory::with_store(|mem| {
+        let mut store = AuditStore::new(mem, tasty_memory::HOST_OWNER);
+        store.summary(&q, DEFAULT_RETENTION_MS, now, top_n)
+    });
+    match result {
+        None => JsonRpcResponse::error(id, -32603, "memory store not initialized"),
+        Some(Ok(s)) => JsonRpcResponse::success(
+            id,
+            json!({
+                "total": s.total,
+                "allow": s.allow,
+                "deny": s.deny,
+                "by_caller": s.by_caller.into_iter().map(|(k, v)| json!({"caller_id": k, "count": v})).collect::<Vec<_>>(),
+                "by_method": s.by_method.into_iter().map(|(k, v)| json!({"method": k, "count": v})).collect::<Vec<_>>(),
+            }),
+        ),
+        Some(Err(e)) => audit_err_to_response(id, e),
+    }
+}
+
+/// `plugin.audit_clear` — `before_ms` 이전 record 삭제 (생략 시 전체).
+/// 반환: `{ removed: N }`.
+pub fn handle_clear(id: Value, params: &Value) -> JsonRpcResponse {
+    let before_ms = params.get("before_ms").and_then(|v| v.as_u64());
+    let result = tasty_memory::with_store(|mem| {
+        let mut store = AuditStore::new(mem, tasty_memory::HOST_OWNER);
+        store.clear(before_ms)
+    });
+    match result {
+        None => JsonRpcResponse::error(id, -32603, "memory store not initialized"),
+        Some(Ok(n)) => JsonRpcResponse::success(id, json!({ "removed": n })),
+        Some(Err(e)) => audit_err_to_response(id, e),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn query_rejects_unknown_caller_kind() {
+        let r = handle_query(json!(1), &json!({"caller_kind": "nope"}));
+        assert_eq!(r.error.unwrap().code, -32602);
+    }
+
+    #[test]
+    fn query_rejects_unknown_decision() {
+        let r = handle_query(json!(1), &json!({"decision": "maybe"}));
+        assert_eq!(r.error.unwrap().code, -32602);
+    }
+
+    #[test]
+    fn summary_rejects_unknown_caller_kind() {
+        let r = handle_summary(json!(1), &json!({"caller_kind": "x"}));
+        assert_eq!(r.error.unwrap().code, -32602);
+    }
+}

@@ -838,6 +838,60 @@ pub enum PluginCommands {
         #[command(subcommand)]
         command: ExtensionCommands,
     },
+    /// Query the IPC audit log. Returns filtered records with allow/deny decisions.
+    AuditQuery {
+        /// Filter by caller kind: local | internal | plugin | agent.
+        #[arg(long)]
+        caller_kind: Option<String>,
+        /// Filter by caller id (plugin id or agent id).
+        #[arg(long)]
+        caller_id: Option<String>,
+        /// Filter to methods starting with this prefix (e.g. `surface.`).
+        #[arg(long)]
+        method_prefix: Option<String>,
+        /// Filter by decision: allow | deny.
+        #[arg(long)]
+        decision: Option<String>,
+        /// Lower bound on timestamp (unix ms, inclusive).
+        #[arg(long)]
+        since_ms: Option<u64>,
+        /// Upper bound on timestamp (unix ms, exclusive).
+        #[arg(long)]
+        until_ms: Option<u64>,
+        /// Cap on number of records returned.
+        #[arg(long)]
+        limit: Option<u64>,
+    },
+    /// Aggregate audit records into totals + top callers/methods.
+    AuditSummary {
+        /// Filter by caller kind: local | internal | plugin | agent.
+        #[arg(long)]
+        caller_kind: Option<String>,
+        /// Filter by caller id.
+        #[arg(long)]
+        caller_id: Option<String>,
+        /// Filter to methods starting with this prefix.
+        #[arg(long)]
+        method_prefix: Option<String>,
+        /// Filter by decision: allow | deny.
+        #[arg(long)]
+        decision: Option<String>,
+        /// Lower bound on timestamp (unix ms, inclusive).
+        #[arg(long)]
+        since_ms: Option<u64>,
+        /// Upper bound on timestamp (unix ms, exclusive).
+        #[arg(long)]
+        until_ms: Option<u64>,
+        /// Top-N cap for by_caller / by_method lists. Default: 10.
+        #[arg(long)]
+        top_n: Option<u64>,
+    },
+    /// Delete audit records older than `before_ms`, or all if omitted.
+    AuditClear {
+        /// Delete records with ts < before_ms. Omit to clear everything.
+        #[arg(long)]
+        before_ms: Option<u64>,
+    },
 }
 
 #[derive(Subcommand)]
