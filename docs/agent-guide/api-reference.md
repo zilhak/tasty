@@ -688,7 +688,17 @@ tasty unset global-hook --hook HOOK_ID
 
 **Semaphore 스키마**: `{ workspace_id, name, permits_total, permits_available, holders: [string], created_at }`
 
-> Phase 5.3+에서 `agent.lease_*`, `agent.rate_limit_*`, `agent.task_reduce`가 같은 namespace 안에 추가될 예정. 자세한 design은 `docs/dev-guide/cli-naming.md`의 `agent` 항목과 plan `05-collaboration.md`.
+**Phase 5.3 — Lease (협조적 점유 마커 + TTL)**. 다중 에이전트가 임의의 resource 점유 상태를 공유하기 위한 advisory marker. OS 락이 아니므로 lease 를 무시한 채 resource 를 만지는 행위 자체는 막지 못한다.
+
+| 메서드 | 권한 | 파라미터 → 응답 |
+|--------|------|----------------|
+| `agent.lease_acquire` | `AgentManage` | `{ workspace_id, resource, holder, ttl_ms?, mode?∈{fail,block}=fail }` → `{ acquired: bool, lease }`. 충돌 시 `mode=fail` 은 `-32009 lease_conflict`, `mode=block` 은 `acquired:false`. 같은 holder 재요청은 idempotent (TTL 재설정) |
+| `agent.lease_release` | `AgentManage` | `{ workspace_id, resource, holder }` → `{ released: bool, lease? }`. 점유 holder 가 아니면 `released:false` (no-op) |
+| `agent.lease_list` | `AgentManage` | `{ workspace_id }` → `{ total, leases: [Lease] }`. 조회 시점에 만료 lease 자동 evict |
+
+**Lease 스키마**: `{ workspace_id, resource, holder, acquired_at, expires_at? }`
+
+> Phase 5.4+에서 `agent.rate_limit_*`, `agent.task_reduce`가 같은 namespace 안에 추가될 예정. 자세한 design은 `docs/dev-guide/cli-naming.md`의 `agent` 항목과 plan `05-collaboration.md`.
 
 ### Surface 간 통신
 

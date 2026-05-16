@@ -608,6 +608,31 @@ tasty agent semaphore-acquire --workspace-id <id> --name <n> --holder <h>
 tasty agent semaphore-release --workspace-id <id> --name <n> --holder <h>
 ```
 
+### Lease primitive (Phase 5.3)
+
+**협조적(advisory) 자원 점유 + TTL** — `tasty-agent::lease`. 다중 에이전트가 임의 resource(예: `file:/path`, `workspace:foo`)의 점유 상태를 공유하기 위한 마커. OS 락이 아니므로 lease 를 무시한 채 resource 를 만지는 행위 자체는 막지 못한다. 영속 키는 `tasty.agent.lease.<encoded-resource>`, scope = `workspace:<id>`. resource 문자열은 memory 키 허용 문자(`[a-z0-9._-]`)로 escape 되어 저장 (디코딩 불필요 — 원본은 JSON 에 같이 저장).
+
+- **상태**: `{ workspace_id, resource, holder, acquired_at, expires_at? }`. `ttl_ms` 가 있으면 `expires_at = acquired_at + ttl_ms`. 만료 lease 는 다음 `acquire` 또는 `list` 호출 시점에 lazy 하게 evict
+- **모드**: `fail` (기본 — 충돌 시 `-32009 lease_conflict` 즉시 실패) / `block` (충돌 시 `acquired:false` 반환, 호출자가 polling)
+- **점유 규칙**: 같은 holder 재acquire 는 idempotent 갱신 (TTL 재설정). release 는 점유 holder 만 가능 — 다른 holder 호출은 no-op
+- **한계**: 협조적 마커이므로 lease 를 보지 않는 외부 프로세스의 접근은 차단되지 않는다. 진정한 락이 필요하면 OS flock/fcntl 을 별도로 써야 한다
+
+#### IPC
+
+| method | 권한 | 동작 |
+|---|---|---|
+| `agent.lease_acquire` | AgentManage | `workspace_id`/`resource`/`holder`/`ttl_ms?`/`mode?`. 충돌 + `fail` 시 `-32009 lease_conflict`, `block` 시 `acquired:false` |
+| `agent.lease_release` | AgentManage | `{ released, lease? }`. 점유 중이 아니면 no-op |
+| `agent.lease_list` | AgentManage | `{ total, leases: [...] }`. 만료 lease 자동 evict |
+
+#### CLI
+
+```
+tasty agent lease-acquire --workspace-id <id> --resource <r> --holder <h> [--ttl-ms <ms>] [--mode fail|block]
+tasty agent lease-release --workspace-id <id> --resource <r> --holder <h>
+tasty agent lease-list    --workspace-id <id>
+```
+
 ## 설정 시스템
 
 ### TOML 기반 설정 파일

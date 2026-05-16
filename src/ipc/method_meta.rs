@@ -183,6 +183,9 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("agent.semaphore_create", plugin(&[AgentManage])),
         ("agent.semaphore_acquire", plugin(&[AgentManage])),
         ("agent.semaphore_release", plugin(&[AgentManage])),
+        ("agent.lease_acquire", plugin(&[AgentManage])),
+        ("agent.lease_release", plugin(&[AgentManage])),
+        ("agent.lease_list", plugin(&[AgentManage])),
         // ── notification ──────────────────────────────────────────────
         ("notification.list", plugin(&[Notification])),
         ("notification.create", plugin(&[Notification])),
@@ -386,6 +389,22 @@ mod tests {
             "agent.task_cancel",
             "agent.task_retry",
             "agent.task_graph",
+        ] {
+            let m = method_meta(name).unwrap_or_else(|| panic!("registered: {name}"));
+            assert!(m.plugin_callable, "{name} should be plugin-callable");
+            assert!(
+                m.required.contains(&Permission::AgentManage),
+                "{name} should require AgentManage"
+            );
+        }
+    }
+
+    #[test]
+    fn agent_lease_methods_require_agent_manage() {
+        for name in [
+            "agent.lease_acquire",
+            "agent.lease_release",
+            "agent.lease_list",
         ] {
             let m = method_meta(name).unwrap_or_else(|| panic!("registered: {name}"));
             assert!(m.plugin_callable, "{name} should be plugin-callable");

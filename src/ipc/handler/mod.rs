@@ -294,6 +294,10 @@ fn route_engine_handler(
         "agent.semaphore_release" => {
             agent::handle_semaphore_release(state, caller, id, &request.params)
         }
+        // agent.lease_* — Phase 5.3 (협조적 점유 마커 + TTL)
+        "agent.lease_acquire" => agent::handle_lease_acquire(state, caller, id, &request.params),
+        "agent.lease_release" => agent::handle_lease_release(state, caller, id, &request.params),
+        "agent.lease_list" => agent::handle_lease_list(state, caller, id, &request.params),
         _ => return None,
     })
 }

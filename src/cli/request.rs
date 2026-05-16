@@ -1641,6 +1641,40 @@ fn agent_command_to_method_params(
                 "holder": holder,
             }),
         ),
+        LeaseAcquire {
+            workspace_id,
+            resource,
+            holder,
+            ttl_ms,
+            mode,
+        } => {
+            let mut p = serde_json::json!({
+                "workspace_id": *workspace_id,
+                "resource": resource,
+                "holder": holder,
+                "mode": mode,
+            });
+            if let Some(t) = ttl_ms {
+                p["ttl_ms"] = serde_json::Value::from(*t);
+            }
+            ("agent.lease_acquire", p)
+        }
+        LeaseRelease {
+            workspace_id,
+            resource,
+            holder,
+        } => (
+            "agent.lease_release",
+            serde_json::json!({
+                "workspace_id": *workspace_id,
+                "resource": resource,
+                "holder": holder,
+            }),
+        ),
+        LeaseList { workspace_id } => (
+            "agent.lease_list",
+            serde_json::json!({ "workspace_id": *workspace_id }),
+        ),
     }
 }
 

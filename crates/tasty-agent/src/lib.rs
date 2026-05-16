@@ -12,10 +12,12 @@
 #![allow(clippy::result_large_err)]
 
 pub mod barrier;
+pub mod lease;
 pub mod semaphore;
 pub mod task;
 
 pub use barrier::{Barrier, BarrierState, BarrierStore};
+pub use lease::{Lease, LeaseMode, LeaseStore};
 pub use semaphore::{AcquireOutcome, ReleaseOutcome, Semaphore, SemaphoreStore};
 pub use task::{
     OnFailure, ReducerStrategy, Task, TaskCommand, TaskGraph, TaskId, TaskResult, TaskState,
@@ -39,6 +41,8 @@ pub enum AgentError {
     AlreadyTerminal(String),
     #[error("invalid argument: {0}")]
     InvalidArgument(String),
+    #[error("lease conflict: '{resource}' held by '{holder}'")]
+    LeaseConflict { resource: String, holder: String },
     #[error("memory: {0}")]
     Memory(#[from] tasty_memory::MemoryError),
     #[error("serde: {0}")]

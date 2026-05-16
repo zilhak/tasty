@@ -327,6 +327,37 @@ pub enum AgentCommands {
         #[arg(long)]
         holder: String,
     },
+    /// Acquire a lease on an arbitrary resource (advisory, cooperative).
+    LeaseAcquire {
+        #[arg(long)]
+        workspace_id: u32,
+        /// Resource identifier (e.g. `file:/path`, `workspace:foo`).
+        #[arg(long)]
+        resource: String,
+        /// Holder id (must be non-empty).
+        #[arg(long)]
+        holder: String,
+        /// Time-to-live in milliseconds.
+        #[arg(long)]
+        ttl_ms: Option<u64>,
+        /// Conflict mode: fail | block (default: fail).
+        #[arg(long, default_value = "fail")]
+        mode: String,
+    },
+    /// Release a lease. Only the current holder can release.
+    LeaseRelease {
+        #[arg(long)]
+        workspace_id: u32,
+        #[arg(long)]
+        resource: String,
+        #[arg(long)]
+        holder: String,
+    },
+    /// List all leases in a workspace (expired leases auto-evicted).
+    LeaseList {
+        #[arg(long)]
+        workspace_id: u32,
+    },
 }
 
 #[derive(Subcommand)]
