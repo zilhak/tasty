@@ -24,6 +24,7 @@ CLI 명령:  tasty <namespace> <verb> [--<option>]
 | `debug` | 디버그 (사용자 입력 재현) — local-only | 7 |
 | `tool.clipboard` | 클립보드 (`tool` namespace 2단 안의 서브) | 5 |
 | `output` | 출력 옵저버 (`observe_start/stop/list/info`) | 4 |
+| `telemetry` | 텔레메트리 — 측정/집계/cap/이상 탐지/세션 요약 (`cap.*`, `anomaly.*` 서브 포함) | 13 |
 | `workspace`, `tab`, `message`, `window` | 레이아웃·메시지 큐·window 관리 | 각 4 |
 | `notification`, `hook`, `global_hook` | 알림·hook | 각 2-3 |
 | `system`, `ui`, `pane` | 호스트 정보·UI 상태·pane 조작 | 각 1-2 |
@@ -86,6 +87,10 @@ CLI 명령:  tasty <namespace> <verb> [--<option>]
 | `wake` (surface.wake) | 잠든 surface 깨우기 | `send` 또는 신규 verb |
 | `parent` / `children` (claude.*) | 트리 탐색 | `info` (relation 필드) |
 | `screen_text`, `screen_attrs`, `cell_info`, `cursor_position`, `is_typing`, `glyph_color` | 터미널 내부 상태 조회 | `read` 또는 `state` |
+| `record` (telemetry.record / record_batch) | 메트릭 1건 / N건 영속 기록 | `create` — 단, `record` 가 "측정 사건의 기록"이라는 도메인 의미가 명확해 채택. write-only side-effect 가 핵심이라 `create` 의 "객체 생성 후 id 반환" 어휘와 어긋남 |
+| `summary` / `timeseries` / `top` / `session_summary` (telemetry.*) | 집계 조회 (sum/시계열/top-N/세션 단위 묶음) | `list` (배열 반환) / `info` (단일) — 집계 결과는 컬렉션도 단일 객체도 아닌 "통계 표"라서 별도 명사 채택. `session_summary` 는 `.<sub>.<verb>` 3단 대신 단수 명사로 둔 이유: 세션 요약 자체가 단일 결과 객체이며 `summary` 와 의미가 겹치지 않게 prefix 차이로 구분 |
+| `anomaly.list` (telemetry.anomaly.*) | 영속 anomaly 레코드 조회 | 표준 `list` — 서브 namespace 만 별도 |
+| `cap.{set,list,remove,status,reset}` (telemetry.cap.*) | cost cap CRUD + 상태 + reset | 표준 verb 조합. `reset` 은 `triggered` 마크만 비우므로 `clear` 가 후보였으나 "발화 상태를 0 으로 되돌린다"는 도메인 의미상 `reset` 이 더 명확 |
 | `feed_bytes`, `inject_mouse`, `inject_key`, `raw_key`, `send_key`, `send_combo` | 사용자 입력 재현 | (debug 전용, 명명 자유로움) |
 | `fire_hook` | hook 트리거 강제 | (sample size 1, 일관 규칙 정착 보류) |
 
@@ -125,7 +130,7 @@ plugin이 매니페스트에서 contribute하는 IPC namespace는 다음 호스�
 ```
 system, surface, tab, pane, workspace, claude, plugin, hook, global_hook,
 message, tool, notification, window, debug, ui, ime, split, tree,
-memory, output
+memory, output, approval, telemetry
 ```
 
 (상세는 `docs/dev-guide/plugin-development.md` "매니페스트 검증 / 예약 prefix")

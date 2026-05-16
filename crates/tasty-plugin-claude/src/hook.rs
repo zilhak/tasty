@@ -18,7 +18,7 @@ use tasty_plugin_sdk::{HostHandle, IpcMethodError};
 use crate::state::ClaudeState;
 
 /// hook 처리 후 plugin이 호스트에 보낼 IPC 호출 1건.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum HostCall {
     /// `surface.fire_hook { surface_id, event }`
     FireHook { surface_id: u32, event: &'static str },
@@ -32,6 +32,16 @@ pub enum HostCall {
     MetaUnset {
         surface_id: u32,
         key: &'static str,
+    },
+    /// `telemetry.record { metric, value, op, workspace_id?, agent?, tags? }`
+    ///
+    /// Phase 4.6 — claude hook 이 자동 발행하는 메트릭. `agent` 는
+    /// host 측에서 plugin id (`tasty.com.tasty.claude`) 로 자동 결정되므로
+    /// 여기선 omit 한다. `surface_id` 는 tags 에 string 으로 담는다.
+    TelemetryRecord {
+        metric: &'static str,
+        value: f64,
+        surface_id: u32,
     },
 }
 
@@ -47,14 +57,102 @@ pub fn handle_claude_hook(
 
     let surface_id = resolve_surface_id(params)?;
     let session = params.get("session").and_then(|v| v.as_str()).map(String::from);
+    let message = params.get("message").and_then(|v| v.as_str());
+    let now_ms = now_ms();
 
-    let calls = apply_hook(state, event, surface_id, session.as_deref())?;
+    let mut calls = apply_hook(state, event, surface_id, session.as_deref())?;
+    calls.extend(telemetry_for_hook(state, event, surface_id, message, now_ms));
     state.save();
 
     for call in calls {
         deliver(host, &call);
     }
     Ok(json!({ "ok": true, "surface_id": surface_id, "event": event }))
+}
+
+fn now_ms() -> u64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// hook event → telemetry HostCall 매핑. 순수 함수 (host 미사용) — 테스트가
+/// 직접 검증한다.
+///
+/// - `session-start` → state 에 시작 시각 기록 (HostCall 없음)
+/// - `stop` / `subagent-stop` / `session-end` → wall_time_ms 가 있으면 발행
+/// - `notification` → message 에서 `\btokens?:\s*(\d+)\b` 매칭되면 input_tokens 발행
+pub fn telemetry_for_hook(
+    state: &mut ClaudeState,
+    event: &str,
+    surface_id: u32,
+    message: Option<&str>,
+    now_ms: u64,
+) -> Vec<HostCall> {
+    let mut out = Vec::new();
+    match event {
+        "session-start" => {
+            state.mark_session_start(surface_id, now_ms);
+        }
+        "stop" | "subagent-stop" | "session-end" => {
+            if let Some(elapsed) = state.take_wall_time(surface_id, now_ms) {
+                out.push(HostCall::TelemetryRecord {
+                    metric: "wall_time_ms",
+                    value: elapsed as f64,
+                    surface_id,
+                });
+            }
+        }
+        "notification" => {
+            if let Some(text) = message
+                && let Some(n) = extract_tokens(text)
+            {
+                out.push(HostCall::TelemetryRecord {
+                    metric: "input_tokens",
+                    value: n as f64,
+                    surface_id,
+                });
+            }
+        }
+        _ => {}
+    }
+    out
+}
+
+/// `\btokens?:\s*(\d+)\b` 휴리스틱. 정규식 dep 추가를 피하려고 수동 스캔.
+fn extract_tokens(text: &str) -> Option<u64> {
+    let bytes = text.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        // word boundary: i==0 또는 이전 char 가 alnum 아니면 통과
+        let prev_ok = i == 0 || !bytes[i - 1].is_ascii_alphanumeric();
+        if prev_ok && (bytes[i..].starts_with(b"token") || bytes[i..].starts_with(b"Token")) {
+            let mut j = i + 5;
+            if j < bytes.len() && (bytes[j] == b's' || bytes[j] == b'S') {
+                j += 1;
+            }
+            if j < bytes.len() && bytes[j] == b':' {
+                j += 1;
+                while j < bytes.len() && (bytes[j] == b' ' || bytes[j] == b'\t') {
+                    j += 1;
+                }
+                let start = j;
+                while j < bytes.len() && bytes[j].is_ascii_digit() {
+                    j += 1;
+                }
+                if j > start {
+                    let after_ok = j == bytes.len() || !bytes[j].is_ascii_alphanumeric();
+                    if after_ok && let Ok(n) = std::str::from_utf8(&bytes[start..j]).unwrap().parse::<u64>() {
+                        return Some(n);
+                    }
+                }
+            }
+        }
+        i += 1;
+    }
+    None
 }
 
 /// state를 변이하고 호스트에 보낼 IPC 호출 목록을 반환. host에 의존하지 않으므로
@@ -140,6 +238,18 @@ fn deliver(host: &HostHandle, call: &HostCall) {
         HostCall::MetaUnset { surface_id, key } => (
             "surface.meta.unset",
             json!({ "surface_id": surface_id, "key": key }),
+        ),
+        HostCall::TelemetryRecord {
+            metric,
+            value,
+            surface_id,
+        } => (
+            "telemetry.record",
+            json!({
+                "metric": metric,
+                "value": value,
+                "tags": { "surface_id": surface_id.to_string() },
+            }),
         ),
     };
     if let Err(e) = host.call(method, params) {
@@ -291,6 +401,78 @@ mod tests {
             resolve_surface_id(&json!({ "surface_id": 7 })).unwrap(),
             7
         );
+    }
+
+    #[test]
+    fn telemetry_session_start_marks_then_stop_emits_wall_time() {
+        let mut state = ClaudeState::default();
+        let started = telemetry_for_hook(&mut state, "session-start", 7, None, 1_000);
+        assert!(started.is_empty(), "session-start emits no host calls");
+        let stopped = telemetry_for_hook(&mut state, "stop", 7, None, 5_000);
+        assert_eq!(
+            stopped,
+            vec![HostCall::TelemetryRecord {
+                metric: "wall_time_ms",
+                value: 4_000.0,
+                surface_id: 7,
+            }]
+        );
+        // 두번째 stop 은 start 가 없으므로 발행 안 함.
+        let again = telemetry_for_hook(&mut state, "stop", 7, None, 9_000);
+        assert!(again.is_empty());
+    }
+
+    #[test]
+    fn telemetry_session_end_also_emits_wall_time() {
+        let mut state = ClaudeState::default();
+        telemetry_for_hook(&mut state, "session-start", 1, None, 100);
+        let calls = telemetry_for_hook(&mut state, "session-end", 1, None, 250);
+        assert_eq!(
+            calls,
+            vec![HostCall::TelemetryRecord {
+                metric: "wall_time_ms",
+                value: 150.0,
+                surface_id: 1,
+            }]
+        );
+    }
+
+    #[test]
+    fn telemetry_notification_extracts_tokens() {
+        let mut state = ClaudeState::default();
+        let calls = telemetry_for_hook(
+            &mut state,
+            "notification",
+            42,
+            Some("Claude used tokens: 12345 in this turn"),
+            0,
+        );
+        assert_eq!(
+            calls,
+            vec![HostCall::TelemetryRecord {
+                metric: "input_tokens",
+                value: 12345.0,
+                surface_id: 42,
+            }]
+        );
+    }
+
+    #[test]
+    fn telemetry_notification_no_match_no_record() {
+        let mut state = ClaudeState::default();
+        let calls =
+            telemetry_for_hook(&mut state, "notification", 1, Some("approval needed"), 0);
+        assert!(calls.is_empty());
+    }
+
+    #[test]
+    fn extract_tokens_variants() {
+        assert_eq!(extract_tokens("tokens: 99"), Some(99));
+        assert_eq!(extract_tokens("token:5"), Some(5));
+        assert_eq!(extract_tokens("Tokens:   1000  used"), Some(1000));
+        assert_eq!(extract_tokens("notokens: 5"), None);
+        assert_eq!(extract_tokens("tokens 5"), None); // 콜론 없음
+        assert_eq!(extract_tokens("xtoken: 5"), None); // 워드 경계 위반
     }
 
     #[test]

@@ -46,6 +46,11 @@ pub struct ClaudeState {
     /// IPC로 검증한다 (`pane.list`).
     #[serde(skip)]
     spawn_panes: HashMap<(u32, u32), u32>,
+    /// surface → session-start 시각 (unix ms). stop/session-end 시 `wall_time_ms`
+    /// 텔레메트리 기록에 사용. 재시작 시 휘발되므로 spans 가 끊겨도 누락만
+    /// 발생하고 잘못된 값은 나오지 않는다.
+    #[serde(skip)]
+    wall_time_starts: HashMap<u32, u64>,
     /// 영속화 경로 (load 시 결정; serde 직렬화 제외)
     #[serde(skip)]
     path: Option<PathBuf>,
@@ -202,6 +207,17 @@ impl ClaudeState {
         } else {
             "active"
         }
+    }
+
+    /// `session-start` 시각을 기록 — 호스트 재시작 시 휘발.
+    pub fn mark_session_start(&mut self, surface: u32, ts_ms: u64) {
+        self.wall_time_starts.insert(surface, ts_ms);
+    }
+
+    /// 기록된 session-start 시각을 꺼내고 (있으면) elapsed 를 반환.
+    pub fn take_wall_time(&mut self, surface: u32, now_ms: u64) -> Option<u64> {
+        let start = self.wall_time_starts.remove(&surface)?;
+        Some(now_ms.saturating_sub(start))
     }
 
     /// `claude.spawn`의 (parent, workspace) → spawn_pane 조회.

@@ -26,3 +26,4 @@ IPC/CLI 전체 메서드는 [api-reference.md](api-reference.md) 참조.
 | 터미널 출력 구조화 (parse_since_mark / commands / observer) | [output.md](output.md) |
 | 출력 파서 카탈로그 (`tasty-output`) | [output-parsers.md](output-parsers.md) |
 | 휴먼 핸드오프 (approval / diff surface) | [approval.md](approval.md) |
+| 텔레메트리 (관측 / 비용 / 이상 탐지 / 세션 요약) | [telemetry.md](telemetry.md) |

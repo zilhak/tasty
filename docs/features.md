@@ -519,6 +519,14 @@
 - markdown 출력은 헤더+표 구조. json 은 동일한 SessionSummary 구조체를 그대로 직렬화
 - 영속(`tasty.telemetry.session_summary.*`) 은 옵션 — 본 sub-phase 에선 생략
 
+### Claude Code hook 통합 (Phase 4.6)
+- `tasty-plugin-claude` 가 `claude.hook` 이벤트를 텔레메트리에 자동 적재 (manifest 에 `telemetry` 권한 추가)
+- `session-start`: state 에 시작 시각 기록 (HostCall 없음)
+- `stop` / `subagent-stop` / `session-end`: 시작 시각이 있으면 `wall_time_ms = now - start` 를 `telemetry.record` 로 발행 (`tags.surface_id` 포함)
+- `notification --message <text>`: 텍스트에 `\btokens?:\s*(\d+)\b` (정규식 없이 수동 스캔, 워드 경계 검증) 매칭 시 매칭값으로 `input_tokens` 발행
+- 측정 주체 agent 는 `tasty.com.tasty.claude`. 호스트 재시작 시 wall_time_starts 휘발 — 진행 중 세션은 누락만 발생하고 잘못된 값은 나오지 않는다
+- CLI: `tasty claude hook <event> [--surface] [--session] [--message]`
+
 ### CLI
 - `tasty telemetry {record,summary,timeseries,top}` — 단일 record 기록 / 집계 조회
 - `tasty telemetry cap {set,list,remove,status,reset}` — Cost Cap CRUD

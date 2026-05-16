@@ -13,6 +13,7 @@ permissions = [
     "fs.read",
     "fs.write",
     "notification",
+    "telemetry",
 ]
 lang_dir = "lang"
 event_subscribe = ["surface.closed"]
@@ -116,6 +117,7 @@ positional = [
 flags = [
     { name = "surface", type = "u32",    flag = "--surface", required = false, help = "Surface ID the hook is firing for (defaults to caller's TASTY_SURFACE_ID)" },
     { name = "session", type = "string", flag = "--session", required = false, help = "Claude Code session ID (substituted by Claude Code's ${CLAUDE_SESSION_ID})" },
+    { name = "message", type = "string", flag = "--message", required = false, help = "Hook message text (used for notification token extraction)" },
 ]
 
 [contributes.cli.arg_groups.no_args]
