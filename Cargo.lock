@@ -4773,6 +4773,7 @@ dependencies = [
  "serde",
  "serde_json",
  "shell-escape",
+ "tasty-approval",
  "tasty-core",
  "tasty-font",
  "tasty-hooks",
@@ -4797,6 +4798,16 @@ dependencies = [
  "winit",
  "winresource",
  "x11-dl",
+]
+
+[[package]]
+name = "tasty-approval"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tracing",
 ]
 
 [[package]]

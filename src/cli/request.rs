@@ -1,7 +1,7 @@
 #[cfg(debug_assertions)]
 use super::{DebugCommands, EventBusCommands};
 use super::{
-    ClipboardCommands, CloseCommands, Commands, ListCommands, MemoryCommands,
+    ApprovalCommands, ClipboardCommands, CloseCommands, Commands, ListCommands, MemoryCommands,
     MemorySecretCommands, MoveCommands, NewCommands, OutputCommands, OutputObserveCommands,
     PluginCommands, ReadCommands, SendCommands, SetCommands, SurfaceMetaCommands, ToolCommands,
     UnsetCommands,
@@ -118,6 +118,7 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
         Commands::Plugin { command } => plugin_command_to_method_params(command),
         Commands::Memory { command } => memory_command_to_method_params(command),
         Commands::Output { command } => output_command_to_method_params(command),
+        Commands::Approval { command } => approval_command_to_method_params(command),
     };
 
     JsonRpcRequest {
@@ -749,6 +750,102 @@ fn output_command_to_method_params(
                 serde_json::json!({ "observer_id": observer }),
             ),
         },
+    }
+}
+
+fn approval_command_to_method_params(
+    command: &ApprovalCommands,
+) -> (&'static str, serde_json::Value) {
+    use ApprovalCommands::*;
+    match command {
+        Request {
+            title,
+            body,
+            choices,
+            default_choice,
+            timeout_ms,
+            severity,
+            workspace_id,
+            surface_id,
+            metadata,
+        } => {
+            let mut p = serde_json::json!({ "title": title });
+            if let Some(b) = body {
+                p["body"] = serde_json::Value::String(b.clone());
+            }
+            if let Some(raw) = choices {
+                let arr: Vec<serde_json::Value> = raw
+                    .split(',')
+                    .filter(|s| !s.is_empty())
+                    .map(|spec| {
+                        let mut parts = spec.split(':');
+                        let key = parts.next().unwrap_or("").to_string();
+                        let label = parts.next().map(str::to_string).unwrap_or_else(|| key.clone());
+                        let destructive = matches!(parts.next(), Some("1") | Some("true"));
+                        serde_json::json!({
+                            "key": key,
+                            "label": label,
+                            "destructive": destructive,
+                        })
+                    })
+                    .collect();
+                p["choices"] = serde_json::Value::Array(arr);
+            }
+            if let Some(d) = default_choice {
+                p["default_choice"] = serde_json::Value::String(d.clone());
+            }
+            if let Some(t) = timeout_ms {
+                p["timeout_ms"] = serde_json::Value::from(*t);
+            }
+            if let Some(s) = severity {
+                p["severity"] = serde_json::Value::String(s.clone());
+            }
+            if let Some(w) = workspace_id {
+                p["workspace_id"] = serde_json::Value::from(*w);
+            }
+            if let Some(s) = surface_id {
+                p["surface_id"] = serde_json::Value::from(*s);
+            }
+            if let Some(m) = metadata {
+                match serde_json::from_str::<serde_json::Value>(m) {
+                    Ok(v) => p["metadata"] = v,
+                    Err(e) => {
+                        eprintln!("Error: --metadata must be valid JSON: {e}");
+                        std::process::exit(2);
+                    }
+                }
+            }
+            ("approval.request", p)
+        }
+        Respond { id, choice, comment } => {
+            let mut p = serde_json::json!({ "id": id, "choice": choice });
+            if let Some(c) = comment {
+                p["comment"] = serde_json::Value::String(c.clone());
+            }
+            ("approval.respond", p)
+        }
+        Cancel { id } => ("approval.cancel", serde_json::json!({ "id": id })),
+        Await { id, timeout_ms } => {
+            let mut p = serde_json::json!({ "id": id });
+            if let Some(t) = timeout_ms {
+                p["timeout_ms"] = serde_json::Value::from(*t);
+            }
+            ("approval.await", p)
+        }
+        Get { id } => ("approval.get", serde_json::json!({ "id": id })),
+        List {
+            state,
+            workspace_id,
+        } => {
+            let mut p = serde_json::json!({});
+            if let Some(s) = state {
+                p["state"] = serde_json::Value::String(s.clone());
+            }
+            if let Some(w) = workspace_id {
+                p["workspace_id"] = serde_json::Value::from(*w);
+            }
+            ("approval.list", p)
+        }
     }
 }
 

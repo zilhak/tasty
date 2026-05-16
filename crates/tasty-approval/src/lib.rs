@@ -1,0 +1,803 @@
+//! 휴먼 핸드오프 — 에이전트 ↔ 휴먼 동기 결정 게이트.
+//!
+//! 에이전트가 [`ApprovalStore::request`] 로 결정 요청을 만들고,
+//! [`ApprovalStore::await_response`] 로 응답을 기다린다 (blocking + timeout).
+//! 응답은 GUI 클릭, CLI `tasty approval respond`, 또는 다른 에이전트 등
+//! 어떤 채널이든 [`ApprovalStore::respond`] 로 수렴한다.
+//!
+//! ## 책임 범위
+//!
+//! - 도메인 타입 ([`ApprovalRequest`], [`ApprovalChoice`], [`ApprovalState`])
+//! - in-memory pending 큐 + 응답 대기자 (oneshot channel)
+//! - 상태 전이 검증 (이미 응답된 요청에 재응답 거부, self-response 거부 등)
+//! - 짧은 ID 생성 (`req_<12자>`)
+//!
+//! ## 비-책임 (호스트가 처리)
+//!
+//! - **영속**: 호스트가 상태 전이마다 `tasty-memory` 에 write.
+//! - **CallerContext 매핑**: `Requester` / `Responder` 의 식별자는 호스트가
+//!   `CallerContext` 로부터 도출해 set 한다.
+//! - **GUI Popup**: `PopupManager` 에 `PopupDef::Approval` 등록은 호스트가.
+//! - **notification**: severity 별 `notification.create` 발행도 호스트.
+//!
+//! ## 동기 모델
+//!
+//! sync. `Arc<Mutex<...>>` 로 보호된 단일 store. 응답 대기는
+//! `std::sync::mpsc::sync_channel(1)` — capacity 1, sender drop / recv timeout
+//! 모두 자연스러운 cancel/timeout 시그널이 된다.
+
+use std::collections::HashMap;
+use std::sync::mpsc::{Receiver, RecvTimeoutError, SyncSender, sync_channel};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+use serde::{Deserialize, Serialize};
+use thiserror::Error;
+
+// ============================================================
+// ID
+// ============================================================
+
+/// Approval 요청 식별자. `req_` + base32 (Crockford) 12자.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct ApprovalId(pub String);
+
+impl ApprovalId {
+    /// 새 ID 생성. unix-ms (5 바이트) + 호출 시점 nanos 일부 (3 바이트) → 8 바이트
+    /// base32 인코딩 (Crockford 알파벳, 13자) 의 앞 12자.
+    ///
+    /// **충돌 처리는 호출자 책임** — 같은 호스트 인스턴스에서는 ApprovalStore 가
+    /// 내부 HashMap key 충돌을 reject. 글로벌 유일성은 보장하지 않는다 (CLI 입력
+    /// 편의가 우선).
+    pub fn generate() -> Self {
+        let now = SystemTime::now();
+        let ms = now.duration_since(UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0) as u64;
+        let nanos = now.duration_since(UNIX_EPOCH).map(|d| d.subsec_nanos()).unwrap_or(0) as u64;
+        let mixed = (ms << 24) | (nanos & 0xFF_FFFF);
+        let s = encode_crockford(mixed);
+        Self(format!("req_{}", &s[..12]))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for ApprovalId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+/// Crockford base32 (`0-9A-Z` 제외 I/L/O/U). 0-padding 없는 가변 길이지만,
+/// `u64` 인 입력은 항상 13자 이내라서 안전.
+fn encode_crockford(mut n: u64) -> String {
+    const ALPHA: &[u8; 32] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+    if n == 0 {
+        return "0".repeat(13);
+    }
+    let mut buf = [0u8; 13];
+    for i in 0..13 {
+        buf[12 - i] = ALPHA[(n & 0x1F) as usize];
+        n >>= 5;
+    }
+    String::from_utf8(buf.to_vec()).expect("alphabet ascii")
+}
+
+// ============================================================
+// 도메인 타입
+// ============================================================
+
+/// 요청자. CLI/사용자 = `User`, plugin = `Plugin(prefix)`, child agent = `Agent(id)`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub enum Requester {
+    User,
+    Plugin { id: String },
+    Agent { id: String },
+}
+
+impl Requester {
+    /// 같은 caller 신원인지. self-response 검증에 사용.
+    pub fn matches_responder(&self, r: &Responder) -> bool {
+        match (self, r) {
+            // User caller (Local CallerContext) 는 항상 다른 신원으로 간주 (응답 허용).
+            (Requester::User, _) => false,
+            (Requester::Plugin { id: a }, Responder::Agent { id: b }) => a == b,
+            (Requester::Plugin { .. }, Responder::System) => false,
+            (Requester::Agent { id: a }, Responder::Agent { id: b }) => a == b,
+            _ => false,
+        }
+    }
+
+    pub fn wire_id(&self) -> String {
+        match self {
+            Requester::User => "local".to_string(),
+            Requester::Plugin { id } => format!("plugin:{id}"),
+            Requester::Agent { id } => format!("agent:{id}"),
+        }
+    }
+}
+
+/// 응답자. GUI 사용자 = `User`, 다른 에이전트 = `Agent`, 호스트 자동 (timeout/cancel) = `System`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub enum Responder {
+    User,
+    Agent { id: String },
+    System,
+}
+
+impl Responder {
+    pub fn wire_id(&self) -> String {
+        match self {
+            Responder::User => "local".to_string(),
+            Responder::Agent { id } => format!("agent:{id}"),
+            Responder::System => "_system".to_string(),
+        }
+    }
+}
+
+/// 한 요청이 제시하는 선택지. `key` 가 응답 식별, `label` 은 GUI 표시.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ApprovalChoice {
+    pub key: String,
+    pub label: String,
+    #[serde(default)]
+    pub destructive: bool,
+}
+
+impl ApprovalChoice {
+    pub fn approve() -> Self {
+        Self {
+            key: "approve".to_string(),
+            label: "Approve".to_string(),
+            destructive: false,
+        }
+    }
+
+    pub fn deny() -> Self {
+        Self {
+            key: "deny".to_string(),
+            label: "Deny".to_string(),
+            destructive: true,
+        }
+    }
+}
+
+/// 위험도. UI/notification 채널 선택에 사용.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum Severity {
+    Info,
+    Warn,
+    Danger,
+}
+
+impl Default for Severity {
+    fn default() -> Self {
+        Severity::Info
+    }
+}
+
+/// 요청 본문.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApprovalRequest {
+    pub id: ApprovalId,
+    pub requester: Requester,
+    pub workspace_id: Option<u32>,
+    pub surface_id: Option<u32>,
+    pub title: String,
+    pub body: Option<String>,
+    pub choices: Vec<ApprovalChoice>,
+    pub default_choice: Option<String>,
+    pub timeout_ms: Option<u64>,
+    pub severity: Severity,
+    pub created_at: u64,
+    /// 관용 필드. `diff_surface_id`, `command`, `cwd` 등을 호스트/CLI 가 인식.
+    #[serde(default)]
+    pub metadata: serde_json::Value,
+}
+
+/// 상태 머신.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum ApprovalState {
+    Pending,
+    Responded {
+        choice: String,
+        by: Responder,
+        comment: Option<String>,
+        at: u64,
+    },
+    TimedOut {
+        default_choice: Option<String>,
+        at: u64,
+    },
+    Cancelled {
+        at: u64,
+    },
+}
+
+impl ApprovalState {
+    pub fn is_terminal(&self) -> bool {
+        !matches!(self, ApprovalState::Pending)
+    }
+}
+
+/// 한 history 전이. 모든 상태 변화는 여기에 append.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HistoryEntry {
+    pub at: u64,
+    pub transition: String, // "created" | "responded" | "timed_out" | "cancelled"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub choice: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub by: Option<Responder>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comment: Option<String>,
+}
+
+/// store 안에서 한 요청을 들고 있는 entry.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApprovalRecord {
+    pub request: ApprovalRequest,
+    pub state: ApprovalState,
+    pub history: Vec<HistoryEntry>,
+}
+
+impl ApprovalRecord {
+    pub fn new(request: ApprovalRequest) -> Self {
+        let at = request.created_at;
+        Self {
+            history: vec![HistoryEntry {
+                at,
+                transition: "created".to_string(),
+                choice: None,
+                by: None,
+                comment: None,
+            }],
+            request,
+            state: ApprovalState::Pending,
+        }
+    }
+}
+
+// ============================================================
+// 에러
+// ============================================================
+
+#[derive(Debug, Error)]
+pub enum ApprovalError {
+    #[error("approval not found: {0}")]
+    NotFound(String),
+    #[error("already responded: {0}")]
+    AlreadyResponded(ApprovalId),
+    #[error("self-response forbidden: requester and responder are the same caller")]
+    SelfResponse,
+    #[error("invalid choice: {0}")]
+    InvalidChoice(String),
+    #[error("invalid request: {0}")]
+    InvalidRequest(String),
+    #[error("timed out")]
+    TimedOut,
+    #[error("cancelled")]
+    Cancelled,
+}
+
+// ============================================================
+// Store
+// ============================================================
+
+/// Approval 들을 담는 메인 컨테이너. 호스트는 단일 인스턴스를 `engine_state` 에
+/// 들고 모든 IPC handler 가 공유한다. 내부 `Mutex` 로 thread-safe.
+pub struct ApprovalStore {
+    inner: Arc<Mutex<Inner>>,
+}
+
+struct Inner {
+    records: HashMap<ApprovalId, ApprovalRecord>,
+    waiters: HashMap<ApprovalId, Vec<SyncSender<WaitResult>>>,
+}
+
+/// 상태 전이가 일어났을 때 호스트가 받을 후처리 정보. memory 영속, popup 닫기,
+/// notification 발행 등에 쓰인다.
+#[derive(Debug, Clone)]
+pub struct StateChange {
+    pub record: ApprovalRecord,
+    pub kind: ChangeKind,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum ChangeKind {
+    Created,
+    Responded,
+    TimedOut,
+    Cancelled,
+}
+
+/// `await_response` 의 반환 변종.
+#[derive(Debug, Clone)]
+pub enum WaitOutcome {
+    Responded {
+        choice: String,
+        by: Responder,
+        comment: Option<String>,
+    },
+    TimedOut {
+        default_choice: Option<String>,
+    },
+    Cancelled,
+}
+
+#[derive(Debug, Clone)]
+enum WaitResult {
+    Responded {
+        choice: String,
+        by: Responder,
+        comment: Option<String>,
+    },
+    TimedOut {
+        default_choice: Option<String>,
+    },
+    Cancelled,
+}
+
+impl Default for ApprovalStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ApprovalStore {
+    pub fn new() -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(Inner {
+                records: HashMap::new(),
+                waiters: HashMap::new(),
+            })),
+        }
+    }
+
+    /// 신규 요청 등록. `choices` 가 비면 `Approve/Deny` 기본 채택. `default_choice` 가
+    /// 명시되면 choices 안에 있어야 한다.
+    pub fn request(&self, mut request: ApprovalRequest) -> Result<StateChange, ApprovalError> {
+        if request.title.is_empty() {
+            return Err(ApprovalError::InvalidRequest("title is empty".into()));
+        }
+        if request.choices.is_empty() {
+            request.choices = vec![ApprovalChoice::approve(), ApprovalChoice::deny()];
+        }
+        if let Some(default) = &request.default_choice
+            && !request.choices.iter().any(|c| &c.key == default)
+        {
+            return Err(ApprovalError::InvalidChoice(format!(
+                "default_choice '{default}' not in choices"
+            )));
+        }
+        if request.created_at == 0 {
+            request.created_at = now_ms();
+        }
+        let id = request.id.clone();
+        let record = ApprovalRecord::new(request);
+        let mut g = self.inner.lock().expect("approval store mutex");
+        if g.records.contains_key(&id) {
+            return Err(ApprovalError::InvalidRequest(format!(
+                "duplicate id: {id}"
+            )));
+        }
+        g.records.insert(id.clone(), record.clone());
+        Ok(StateChange {
+            record,
+            kind: ChangeKind::Created,
+        })
+    }
+
+    /// 응답 적용. 이미 종료된 요청이면 `AlreadyResponded`. self-response 면 `SelfResponse`.
+    pub fn respond(
+        &self,
+        id: &ApprovalId,
+        choice: String,
+        by: Responder,
+        comment: Option<String>,
+    ) -> Result<StateChange, ApprovalError> {
+        let mut g = self.inner.lock().expect("approval store mutex");
+        let record = g
+            .records
+            .get_mut(id)
+            .ok_or_else(|| ApprovalError::NotFound(id.to_string()))?;
+        if record.state.is_terminal() {
+            return Err(ApprovalError::AlreadyResponded(id.clone()));
+        }
+        if record.request.requester.matches_responder(&by) {
+            return Err(ApprovalError::SelfResponse);
+        }
+        if !record.request.choices.iter().any(|c| c.key == choice) {
+            return Err(ApprovalError::InvalidChoice(choice));
+        }
+        let at = now_ms();
+        record.state = ApprovalState::Responded {
+            choice: choice.clone(),
+            by: by.clone(),
+            comment: comment.clone(),
+            at,
+        };
+        record.history.push(HistoryEntry {
+            at,
+            transition: "responded".to_string(),
+            choice: Some(choice.clone()),
+            by: Some(by.clone()),
+            comment: comment.clone(),
+        });
+        let record = record.clone();
+        if let Some(waiters) = g.waiters.remove(id) {
+            for tx in waiters {
+                let _ = tx.try_send(WaitResult::Responded {
+                    choice: choice.clone(),
+                    by: by.clone(),
+                    comment: comment.clone(),
+                });
+            }
+        }
+        Ok(StateChange {
+            record,
+            kind: ChangeKind::Responded,
+        })
+    }
+
+    /// 요청 취소. self-cancel 검증 없음 — 어느 caller 든 가능. (사용자 / 권한
+    /// 검증은 IPC handler 단에서 처리.)
+    pub fn cancel(&self, id: &ApprovalId) -> Result<StateChange, ApprovalError> {
+        let mut g = self.inner.lock().expect("approval store mutex");
+        let record = g
+            .records
+            .get_mut(id)
+            .ok_or_else(|| ApprovalError::NotFound(id.to_string()))?;
+        if record.state.is_terminal() {
+            return Err(ApprovalError::AlreadyResponded(id.clone()));
+        }
+        let at = now_ms();
+        record.state = ApprovalState::Cancelled { at };
+        record.history.push(HistoryEntry {
+            at,
+            transition: "cancelled".to_string(),
+            choice: None,
+            by: None,
+            comment: None,
+        });
+        let record = record.clone();
+        if let Some(waiters) = g.waiters.remove(id) {
+            for tx in waiters {
+                let _ = tx.try_send(WaitResult::Cancelled);
+            }
+        }
+        Ok(StateChange {
+            record,
+            kind: ChangeKind::Cancelled,
+        })
+    }
+
+    /// 응답 대기. blocking. timeout 만료되면 자동으로 TimedOut 상태로 전이하고
+    /// `WaitOutcome::TimedOut` 반환. `timeout_ms` 가 None 이면 무한 대기.
+    /// 이미 종료된 요청이면 즉시 결과 반환.
+    pub fn await_response(
+        &self,
+        id: &ApprovalId,
+        timeout_ms: Option<u64>,
+    ) -> Result<WaitOutcome, ApprovalError> {
+        let rx = {
+            let mut g = self.inner.lock().expect("approval store mutex");
+            let record = g
+                .records
+                .get(id)
+                .ok_or_else(|| ApprovalError::NotFound(id.to_string()))?;
+            if let Some(outcome) = terminal_to_outcome(&record.state) {
+                return Ok(outcome);
+            }
+            let (tx, rx) = sync_channel::<WaitResult>(1);
+            g.waiters.entry(id.clone()).or_default().push(tx);
+            rx
+        };
+        let result = match timeout_ms {
+            Some(ms) => self.wait_with_timeout(id, &rx, Duration::from_millis(ms)),
+            None => match rx.recv() {
+                Ok(r) => r,
+                Err(_) => WaitResult::Cancelled,
+            },
+        };
+        Ok(match result {
+            WaitResult::Responded { choice, by, comment } => {
+                WaitOutcome::Responded { choice, by, comment }
+            }
+            WaitResult::TimedOut { default_choice } => WaitOutcome::TimedOut { default_choice },
+            WaitResult::Cancelled => WaitOutcome::Cancelled,
+        })
+    }
+
+    /// 응답 대기 — timeout 만료 처리. 만료되면 store 상태를 TimedOut 으로 전이.
+    fn wait_with_timeout(
+        &self,
+        id: &ApprovalId,
+        rx: &Receiver<WaitResult>,
+        timeout: Duration,
+    ) -> WaitResult {
+        match rx.recv_timeout(timeout) {
+            Ok(r) => r,
+            Err(RecvTimeoutError::Timeout) => {
+                // store 상태 전이. 이미 누군가 응답했으면 (race) 그 결과를 받아 사용.
+                let mut g = self.inner.lock().expect("approval store mutex");
+                let Some(record) = g.records.get_mut(id) else {
+                    return WaitResult::Cancelled;
+                };
+                if let Some(outcome) = terminal_to_outcome(&record.state) {
+                    return match outcome {
+                        WaitOutcome::Responded { choice, by, comment } => WaitResult::Responded {
+                            choice,
+                            by,
+                            comment,
+                        },
+                        WaitOutcome::TimedOut { default_choice } => {
+                            WaitResult::TimedOut { default_choice }
+                        }
+                        WaitOutcome::Cancelled => WaitResult::Cancelled,
+                    };
+                }
+                let default_choice = record.request.default_choice.clone();
+                let at = now_ms();
+                record.state = ApprovalState::TimedOut {
+                    default_choice: default_choice.clone(),
+                    at,
+                };
+                record.history.push(HistoryEntry {
+                    at,
+                    transition: "timed_out".to_string(),
+                    choice: default_choice.clone(),
+                    by: Some(Responder::System),
+                    comment: None,
+                });
+                // 같은 id 의 다른 waiter 도 모두 깨운다.
+                if let Some(waiters) = g.waiters.remove(id) {
+                    for tx in waiters {
+                        let _ = tx.try_send(WaitResult::TimedOut {
+                            default_choice: default_choice.clone(),
+                        });
+                    }
+                }
+                WaitResult::TimedOut { default_choice }
+            }
+            Err(RecvTimeoutError::Disconnected) => WaitResult::Cancelled,
+        }
+    }
+
+    /// 단일 record 조회.
+    pub fn get(&self, id: &ApprovalId) -> Option<ApprovalRecord> {
+        let g = self.inner.lock().expect("approval store mutex");
+        g.records.get(id).cloned()
+    }
+
+    /// 모든 record. 필터는 호출자가 적용.
+    pub fn list(&self) -> Vec<ApprovalRecord> {
+        let g = self.inner.lock().expect("approval store mutex");
+        g.records.values().cloned().collect()
+    }
+
+    /// 외부 (e.g. memory rehydrate) 가 record 를 강제 주입. 이미 같은 id 있으면 덮어쓴다.
+    /// 호스트 부팅 시 memory 에서 복원하는 시나리오용.
+    pub fn insert(&self, record: ApprovalRecord) {
+        let mut g = self.inner.lock().expect("approval store mutex");
+        g.records.insert(record.request.id.clone(), record);
+    }
+}
+
+fn terminal_to_outcome(state: &ApprovalState) -> Option<WaitOutcome> {
+    match state {
+        ApprovalState::Pending => None,
+        ApprovalState::Responded { choice, by, comment, .. } => Some(WaitOutcome::Responded {
+            choice: choice.clone(),
+            by: by.clone(),
+            comment: comment.clone(),
+        }),
+        ApprovalState::TimedOut { default_choice, .. } => Some(WaitOutcome::TimedOut {
+            default_choice: default_choice.clone(),
+        }),
+        ApprovalState::Cancelled { .. } => Some(WaitOutcome::Cancelled),
+    }
+}
+
+fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::thread;
+
+    fn req(id: &str, requester: Requester) -> ApprovalRequest {
+        ApprovalRequest {
+            id: ApprovalId(id.to_string()),
+            requester,
+            workspace_id: None,
+            surface_id: None,
+            title: "test".to_string(),
+            body: None,
+            choices: Vec::new(),
+            default_choice: None,
+            timeout_ms: None,
+            severity: Severity::Info,
+            created_at: 0,
+            metadata: serde_json::Value::Null,
+        }
+    }
+
+    #[test]
+    fn id_generate_format() {
+        let id = ApprovalId::generate();
+        assert!(id.as_str().starts_with("req_"));
+        assert_eq!(id.as_str().len(), 4 + 12);
+    }
+
+    #[test]
+    fn request_default_choices() {
+        let s = ApprovalStore::new();
+        let ch = s
+            .request(req("req_a", Requester::Plugin { id: "x".into() }))
+            .unwrap();
+        assert_eq!(ch.record.request.choices.len(), 2);
+        assert_eq!(ch.record.request.choices[0].key, "approve");
+        assert_eq!(ch.record.request.choices[1].key, "deny");
+    }
+
+    #[test]
+    fn request_duplicate_id_rejected() {
+        let s = ApprovalStore::new();
+        s.request(req("req_a", Requester::User)).unwrap();
+        let e = s.request(req("req_a", Requester::User)).unwrap_err();
+        assert!(matches!(e, ApprovalError::InvalidRequest(_)));
+    }
+
+    #[test]
+    fn respond_resolves_pending_waiter() {
+        let s = Arc::new(ApprovalStore::new());
+        s.request(req("req_a", Requester::User)).unwrap();
+        let s2 = s.clone();
+        let h = thread::spawn(move || {
+            s2.await_response(&ApprovalId("req_a".into()), Some(2000))
+                .unwrap()
+        });
+        thread::sleep(Duration::from_millis(50));
+        s.respond(
+            &ApprovalId("req_a".into()),
+            "approve".into(),
+            Responder::User,
+            None,
+        )
+        .unwrap();
+        let out = h.join().unwrap();
+        assert!(matches!(out, WaitOutcome::Responded { ref choice, .. } if choice == "approve"));
+    }
+
+    #[test]
+    fn respond_twice_rejected() {
+        let s = ApprovalStore::new();
+        s.request(req("req_a", Requester::User)).unwrap();
+        s.respond(
+            &ApprovalId("req_a".into()),
+            "approve".into(),
+            Responder::User,
+            None,
+        )
+        .unwrap();
+        let e = s
+            .respond(
+                &ApprovalId("req_a".into()),
+                "deny".into(),
+                Responder::User,
+                None,
+            )
+            .unwrap_err();
+        assert!(matches!(e, ApprovalError::AlreadyResponded(_)));
+    }
+
+    #[test]
+    fn self_response_blocked() {
+        let s = ApprovalStore::new();
+        s.request(req(
+            "req_a",
+            Requester::Plugin {
+                id: "alice".into(),
+            },
+        ))
+        .unwrap();
+        // 같은 caller (Agent.id == Plugin.id) 가 본인 요청에 응답하면 거부.
+        let e = s
+            .respond(
+                &ApprovalId("req_a".into()),
+                "approve".into(),
+                Responder::Agent {
+                    id: "alice".into(),
+                },
+                None,
+            )
+            .unwrap_err();
+        assert!(matches!(e, ApprovalError::SelfResponse));
+    }
+
+    #[test]
+    fn user_responder_always_allowed_even_if_requester_user() {
+        let s = ApprovalStore::new();
+        s.request(req("req_a", Requester::User)).unwrap();
+        s.respond(
+            &ApprovalId("req_a".into()),
+            "approve".into(),
+            Responder::User,
+            None,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn timeout_transitions_to_timed_out() {
+        let s = ApprovalStore::new();
+        let mut r = req("req_a", Requester::User);
+        r.default_choice = Some("deny".into());
+        s.request(r).unwrap();
+        let out = s
+            .await_response(&ApprovalId("req_a".into()), Some(60))
+            .unwrap();
+        assert!(matches!(out, WaitOutcome::TimedOut { default_choice: Some(ref d) } if d == "deny"));
+        let rec = s.get(&ApprovalId("req_a".into())).unwrap();
+        assert!(matches!(rec.state, ApprovalState::TimedOut { .. }));
+    }
+
+    #[test]
+    fn cancel_resolves_waiters() {
+        let s = Arc::new(ApprovalStore::new());
+        s.request(req("req_a", Requester::User)).unwrap();
+        let s2 = s.clone();
+        let h = thread::spawn(move || {
+            s2.await_response(&ApprovalId("req_a".into()), Some(2000))
+                .unwrap()
+        });
+        thread::sleep(Duration::from_millis(30));
+        s.cancel(&ApprovalId("req_a".into())).unwrap();
+        let out = h.join().unwrap();
+        assert!(matches!(out, WaitOutcome::Cancelled));
+    }
+
+    #[test]
+    fn await_on_already_responded() {
+        let s = ApprovalStore::new();
+        s.request(req("req_a", Requester::User)).unwrap();
+        s.respond(
+            &ApprovalId("req_a".into()),
+            "approve".into(),
+            Responder::User,
+            None,
+        )
+        .unwrap();
+        let out = s
+            .await_response(&ApprovalId("req_a".into()), Some(50))
+            .unwrap();
+        assert!(matches!(out, WaitOutcome::Responded { ref choice, .. } if choice == "approve"));
+    }
+
+    #[test]
+    fn invalid_choice_rejected() {
+        let s = ApprovalStore::new();
+        s.request(req("req_a", Requester::User)).unwrap();
+        let e = s
+            .respond(
+                &ApprovalId("req_a".into()),
+                "maybe".into(),
+                Responder::User,
+                None,
+            )
+            .unwrap_err();
+        assert!(matches!(e, ApprovalError::InvalidChoice(_)));
+    }
+}

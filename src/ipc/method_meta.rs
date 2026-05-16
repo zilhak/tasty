@@ -142,6 +142,15 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("memory.secret.stats", plugin(&[MemorySecret])),
         // ── memory: 유지 보수 (host 전용) ─────────────────────────────
         ("memory.gc", local_only()),
+        // ── approval (휴먼 핸드오프) ──────────────────────────────────
+        ("approval.request", plugin(&[Approval])),
+        ("approval.respond", plugin(&[Approval])),
+        // await 는 blocking + timeout 이라 main thread 가 막히면 안 됨.
+        // process_ipc 에서 worker thread 로 분리 처리되며, plugin 호출은 미지원.
+        ("approval.await", local_only()),
+        ("approval.cancel", plugin(&[Approval])),
+        ("approval.list", plugin(&[Approval])),
+        ("approval.get", plugin(&[Approval])),
         // ── notification ──────────────────────────────────────────────
         ("notification.list", plugin(&[Notification])),
         ("notification.create", plugin(&[Notification])),

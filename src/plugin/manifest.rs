@@ -124,6 +124,9 @@ pub enum Permission {
     MemoryWrite,
     /// Secret memory(`memory.secret.*`) 접근. plugin 별 사전 분할이라 R/W를 분리하지 않는다.
     MemorySecret,
+    /// Approval namespace 접근 (`approval.*`). 휴먼 결정 게이트를 요청·응답·조회.
+    /// 토큰 `approval`.
+    Approval,
     /// 다른 plugin이 점유한 IPC namespace prefix의 메서드 호출.
     /// 토큰 형식: `ipc.invoke:<prefix>` (예: `ipc.invoke:codex`).
     IpcInvoke(String),
@@ -164,6 +167,7 @@ impl Permission {
             "memory.read" => Self::MemoryRead,
             "memory.write" => Self::MemoryWrite,
             "memory.secret" => Self::MemorySecret,
+            "approval" => Self::Approval,
             "ui.tool_item" => Self::UiToolItem,
             "ui.popup" => Self::UiPopup,
             other => {
@@ -203,6 +207,7 @@ impl Permission {
             Self::MemoryRead => "memory.read".into(),
             Self::MemoryWrite => "memory.write".into(),
             Self::MemorySecret => "memory.secret".into(),
+            Self::Approval => "approval".into(),
             Self::IpcInvoke(prefix) => format!("ipc.invoke:{prefix}"),
             Self::Extension(target) => format!("ext:{target}"),
             Self::UiToolItem => "ui.tool_item".into(),
@@ -1169,6 +1174,7 @@ fn is_reserved_ipc_prefix(s: &str) -> bool {
             | "ipc"
             | "memory"
             | "output"
+            | "approval"
     )
 }
 

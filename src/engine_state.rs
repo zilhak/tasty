@@ -111,6 +111,9 @@ pub struct EngineState {
     /// 출력 옵저버 라우터. OutputAppended 이벤트마다 dispatch 호출.
     pub observer_router: crate::output_observer::ObserverRouter,
 
+    /// 휴먼 핸드오프 — approval 요청/응답 큐 + 대기자 채널.
+    pub approval_store: std::sync::Arc<tasty_approval::ApprovalStore>,
+
     // ── Messaging / Typing detection ──
     pub surface_messages: HashMap<u32, Vec<SurfaceMessage>>,
     pub(crate) surface_next_message_id: u32,
@@ -169,6 +172,7 @@ impl EngineState {
             clipboard_history: crate::clipboard_history::ClipboardHistory::new(100),
             command_index: crate::command_index::CommandIndex::new(),
             observer_router: crate::output_observer::ObserverRouter::new(),
+            approval_store: std::sync::Arc::new(tasty_approval::ApprovalStore::new()),
             surface_messages: HashMap::new(),
             surface_next_message_id: 0,
             last_key_input: HashMap::new(),

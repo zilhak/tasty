@@ -1435,6 +1435,44 @@ impl App {
                 continue;
             }
 
+            // approval.await: blocking + timeout. 메인 스레드가 막히지 않게 워커
+            // 스레드에 위임. Arc<ApprovalStore> 만 클론하면 도메인 단독으로 동작한다.
+            if cmd.request.method == "approval.await" {
+                let store_opt = self
+                    .windows
+                    .values()
+                    .find_map(|w| w.as_main().map(|w| w.state.engine.approval_store.clone()))
+                    .or_else(|| {
+                        self.parked_states
+                            .first()
+                            .map(|s| s.engine.approval_store.clone())
+                    });
+                let rpc_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
+                match store_opt {
+                    Some(store) => {
+                        let params = cmd.request.params.clone();
+                        let response_tx = cmd.response_tx.clone();
+                        std::thread::spawn(move || {
+                            let resp =
+                                ipc::handler::approval::await_blocking(&store, rpc_id, &params);
+                            send_response(&response_tx, resp);
+                        });
+                    }
+                    None => {
+                        send_response(
+                            &cmd.response_tx,
+                            ipc::protocol::JsonRpcResponse::error(
+                                rpc_id,
+                                -32000,
+                                "no application state available",
+                            ),
+                        );
+                    }
+                }
+                processed = true;
+                continue;
+            }
+
             // Plugin namespace IPC: 메서드가 plugin이 contribute한 prefix에 매칭되면
             // owner plugin에 forward. 응답은 plugin이 줄 때까지 보류되며 main loop
             // 다음 tick에서 `plugin_manager.handle_plugin_response`가 client에 회신.

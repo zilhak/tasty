@@ -7,6 +7,7 @@ use crate::ipc::caller::CallerContext;
 use crate::ipc::protocol::{JsonRpcRequest, JsonRpcResponse};
 use crate::state::AppState;
 
+pub mod approval;
 mod clipboard;
 mod hooks;
 pub mod ime;
@@ -225,6 +226,12 @@ fn route_engine_handler(
         "memory.secret.stats" => memory::handle_secret_stats(state, caller, id, &request.params),
         // memory: 유지 보수 (host 전용)
         "memory.gc" => memory::handle_gc(state, caller, id, &request.params),
+        // approval (휴먼 핸드오프) — await 는 process_ipc 에서 worker thread 로 분리 처리.
+        "approval.request" => approval::handle_request(state, caller, id, &request.params),
+        "approval.respond" => approval::handle_respond(state, caller, id, &request.params),
+        "approval.cancel" => approval::handle_cancel(state, caller, id, &request.params),
+        "approval.get" => approval::handle_get(state, caller, id, &request.params),
+        "approval.list" => approval::handle_list(state, caller, id, &request.params),
         _ => return None,
     })
 }
