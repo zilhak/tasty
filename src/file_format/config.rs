@@ -1,8 +1,16 @@
-//! Detector TOML schema + 파서. M2 에서 manual `Deserialize` 본격 구현.
+//! Detector TOML schema + 파서.
+//!
+//! `DetectorRuleDecl` 은 manual `Deserialize` 구현으로 미지의 `kind` 도
+//! payload (`toml::Value`) 를 손실 없이 보존한다 (forward-compat).
 
-use serde::Deserialize;
+use serde::de::{self, MapAccess, Visitor};
+use serde::{Deserialize, Deserializer};
+use std::fmt;
 
-/// detector 정의 TOML entry. M2 에서 manual `Deserialize` 로 교체.
+/// detector 정의 TOML entry.
+///
+/// 같은 id 를 여러 출처(host/plugin/user)가 정의하면 registry merge 시 rule union +
+/// 메타 patch semantics 적용 (자세히는 `02-config-and-merge.md`).
 #[derive(Debug, Clone, Deserialize)]
 pub struct DetectorDecl {
     pub id: String,
@@ -16,29 +24,391 @@ pub struct DetectorDecl {
     pub rule: Vec<DetectorRuleDecl>,
 }
 
-/// detector rule 정의. M2 에서 manual `Deserialize` 로 교체해 Unknown variant 보존.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+/// detector rule 정의.
+///
+/// **manual `Deserialize`** — 알려지지 않은 `kind` 는 `Unknown { kind_name, raw }`
+/// 로 보존하여 forward-compat. 호스트 본문(`HostDetectorRuleDecl::Lua`) 외에
+/// plugin 표면에서는 Lua 가 노출되지 않으므로 plugin TOML 의 `kind = "lua"` 는
+/// 같은 Unknown 경로로 떨어진다 — 추가 reject 로직 없음.
+#[derive(Debug, Clone)]
 pub enum DetectorRuleDecl {
-    Extension {
-        values: Vec<String>,
-    },
-    PathGlob {
-        pattern: String,
-    },
-    Mime {
-        types: Vec<String>,
-    },
-    Magic {
-        #[serde(default)]
-        offset: Option<usize>,
-        bytes_hex: String,
-    },
+    Extension { values: Vec<String> },
+    PathGlob { pattern: String },
+    Mime { types: Vec<String> },
+    Magic { offset: usize, bytes_hex: String },
     IsDirectory,
-    Lua {
-        script: String,
-    },
-    StructureCheck {
-        spec: String,
-    },
+    Lua { script: String },
+    StructureCheck { spec: String },
+    Unknown { kind_name: String, raw: toml::Value },
+}
+
+impl<'de> Deserialize<'de> for DetectorRuleDecl {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_map(DetectorRuleDeclVisitor)
+    }
+}
+
+struct DetectorRuleDeclVisitor;
+
+impl<'de> Visitor<'de> for DetectorRuleDeclVisitor {
+    type Value = DetectorRuleDecl;
+
+    fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("a detector rule table with a `kind` field")
+    }
+
+    fn visit_map<A>(self, mut map: A) -> Result<DetectorRuleDecl, A::Error>
+    where
+        A: MapAccess<'de>,
+    {
+        // 모든 key/value 를 toml::Value 로 미리 모은다 — manual Deserialize 의
+        // 단점: 두 번 순회. 그러나 schema 가 작아 비용 무시 가능.
+        let mut table = toml::value::Table::new();
+        while let Some(key) = map.next_key::<String>()? {
+            let value: toml::Value = map.next_value()?;
+            table.insert(key, value);
+        }
+
+        let kind = table
+            .get("kind")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| de::Error::missing_field("kind"))?
+            .to_string();
+
+        match kind.as_str() {
+            "extension" => {
+                let values = take_string_array(&table, "values")
+                    .ok_or_else(|| de::Error::missing_field("values"))?;
+                Ok(DetectorRuleDecl::Extension { values })
+            }
+            "path-glob" | "path_glob" => {
+                let pattern = take_string(&table, "pattern")
+                    .ok_or_else(|| de::Error::missing_field("pattern"))?;
+                Ok(DetectorRuleDecl::PathGlob { pattern })
+            }
+            "mime" => {
+                let types = take_string_array(&table, "types")
+                    .ok_or_else(|| de::Error::missing_field("types"))?;
+                Ok(DetectorRuleDecl::Mime { types })
+            }
+            "magic" => {
+                let offset = table
+                    .get("offset")
+                    .and_then(|v| v.as_integer())
+                    .map(|n| n as usize)
+                    .unwrap_or(0);
+                let bytes_hex = take_string(&table, "bytes_hex")
+                    .ok_or_else(|| de::Error::missing_field("bytes_hex"))?;
+                Ok(DetectorRuleDecl::Magic { offset, bytes_hex })
+            }
+            "is-directory" | "is_directory" => Ok(DetectorRuleDecl::IsDirectory),
+            "lua" => {
+                let script = take_string(&table, "script")
+                    .ok_or_else(|| de::Error::missing_field("script"))?;
+                Ok(DetectorRuleDecl::Lua { script })
+            }
+            "structure-check" | "structure_check" => {
+                let spec = take_string(&table, "spec")
+                    .ok_or_else(|| de::Error::missing_field("spec"))?;
+                Ok(DetectorRuleDecl::StructureCheck { spec })
+            }
+            other => Ok(DetectorRuleDecl::Unknown {
+                kind_name: other.to_string(),
+                raw: toml::Value::Table(table),
+            }),
+        }
+    }
+}
+
+fn take_string(table: &toml::value::Table, key: &str) -> Option<String> {
+    table.get(key).and_then(|v| v.as_str()).map(String::from)
+}
+
+fn take_string_array(table: &toml::value::Table, key: &str) -> Option<Vec<String>> {
+    table.get(key).and_then(|v| v.as_array()).map(|arr| {
+        arr.iter()
+            .filter_map(|v| v.as_str().map(String::from))
+            .collect()
+    })
+}
+
+/// Decl 단계 schema 검증. install 단계 cross-ref 와는 별개로, 자기 자신만 검사.
+#[derive(Debug, Clone)]
+pub enum DetectorDeclError {
+    InvalidId(String),
+    ReservedIdFromPlugin(String),
+    EmptyExtensionValues { detector: String },
+    BadMagicHex { detector: String, got: String },
+    EmptyPathGlob { detector: String },
+    StructureCheckEscape { detector: String },
+    UnknownRuleKind { detector: String, kind: String },
+}
+
+impl fmt::Display for DetectorDeclError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidId(id) => write!(f, "invalid detector id '{id}'"),
+            Self::ReservedIdFromPlugin(id) => write!(
+                f,
+                "plugin cannot define reserved (`$`-prefixed) detector id '{id}'"
+            ),
+            Self::EmptyExtensionValues { detector } => write!(
+                f,
+                "detector '{detector}': extension rule values must not be empty"
+            ),
+            Self::BadMagicHex { detector, got } => write!(
+                f,
+                "detector '{detector}': magic bytes_hex must be even length hex-only (got '{got}')"
+            ),
+            Self::EmptyPathGlob { detector } => write!(
+                f,
+                "detector '{detector}': path-glob pattern must not be empty"
+            ),
+            Self::StructureCheckEscape { detector } => write!(
+                f,
+                "detector '{detector}': structure-check spec path must not escape manifest dir"
+            ),
+            Self::UnknownRuleKind { detector, kind } => write!(
+                f,
+                "detector '{detector}': unsupported rule kind '{kind}' (skipped at runtime)"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for DetectorDeclError {}
+
+/// `from_plugin = true` 면 `$`-prefix id 거부, `kind = "lua"` Unknown 도 warn 후보.
+pub fn validate_detector_decl(
+    decl: &DetectorDecl,
+    from_plugin: bool,
+) -> Result<Vec<DetectorDeclError>, DetectorDeclError> {
+    use super::types::is_valid_detector_id;
+
+    if !is_valid_detector_id(&decl.id) {
+        return Err(DetectorDeclError::InvalidId(decl.id.clone()));
+    }
+    if from_plugin && decl.id.starts_with('$') {
+        return Err(DetectorDeclError::ReservedIdFromPlugin(decl.id.clone()));
+    }
+
+    let mut warnings = Vec::new();
+    for rule in &decl.rule {
+        match rule {
+            DetectorRuleDecl::Extension { values } => {
+                if values.is_empty() {
+                    return Err(DetectorDeclError::EmptyExtensionValues {
+                        detector: decl.id.clone(),
+                    });
+                }
+            }
+            DetectorRuleDecl::PathGlob { pattern } => {
+                if pattern.is_empty() {
+                    return Err(DetectorDeclError::EmptyPathGlob {
+                        detector: decl.id.clone(),
+                    });
+                }
+            }
+            DetectorRuleDecl::Magic { bytes_hex, .. } => {
+                if bytes_hex.len() % 2 != 0
+                    || !bytes_hex.chars().all(|c| c.is_ascii_hexdigit())
+                {
+                    return Err(DetectorDeclError::BadMagicHex {
+                        detector: decl.id.clone(),
+                        got: bytes_hex.clone(),
+                    });
+                }
+            }
+            DetectorRuleDecl::StructureCheck { spec } => {
+                if spec.contains("..") {
+                    return Err(DetectorDeclError::StructureCheckEscape {
+                        detector: decl.id.clone(),
+                    });
+                }
+            }
+            DetectorRuleDecl::Unknown { kind_name, .. } => {
+                warnings.push(DetectorDeclError::UnknownRuleKind {
+                    detector: decl.id.clone(),
+                    kind: kind_name.clone(),
+                });
+            }
+            _ => {}
+        }
+    }
+    Ok(warnings)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Deserialize)]
+    struct DetectorWrap {
+        #[serde(rename = "detector")]
+        detectors: Vec<DetectorDecl>,
+    }
+
+    fn parse(toml: &str) -> Vec<DetectorDecl> {
+        toml::from_str::<DetectorWrap>(toml).expect("parse").detectors
+    }
+
+    #[test]
+    fn parses_known_kinds() {
+        let t = r#"
+            [[detector]]
+            id = "pdf"
+            display_name_i18n_key = "format.pdf"
+            icon = "📄"
+
+            [[detector.rule]]
+            kind = "extension"
+            values = ["pdf"]
+
+            [[detector.rule]]
+            kind = "magic"
+            offset = 0
+            bytes_hex = "25504446"
+
+            [[detector.rule]]
+            kind = "path-glob"
+            pattern = "Dockerfile"
+
+            [[detector.rule]]
+            kind = "mime"
+            types = ["application/pdf"]
+
+            [[detector.rule]]
+            kind = "is-directory"
+        "#;
+        let d = parse(t);
+        assert_eq!(d.len(), 1);
+        assert_eq!(d[0].id, "pdf");
+        assert_eq!(d[0].rule.len(), 5);
+        matches!(d[0].rule[0], DetectorRuleDecl::Extension { .. });
+        matches!(d[0].rule[1], DetectorRuleDecl::Magic { .. });
+        matches!(d[0].rule[2], DetectorRuleDecl::PathGlob { .. });
+        matches!(d[0].rule[3], DetectorRuleDecl::Mime { .. });
+        matches!(d[0].rule[4], DetectorRuleDecl::IsDirectory);
+    }
+
+    #[test]
+    fn preserves_unknown_kind_payload() {
+        let t = r#"
+            [[detector]]
+            id = "exotic"
+
+            [[detector.rule]]
+            kind = "future-thing"
+            magic_field = 42
+            another = "yes"
+        "#;
+        let d = parse(t);
+        assert_eq!(d.len(), 1);
+        match &d[0].rule[0] {
+            DetectorRuleDecl::Unknown { kind_name, raw } => {
+                assert_eq!(kind_name, "future-thing");
+                let tbl = raw.as_table().unwrap();
+                assert_eq!(tbl.get("magic_field").and_then(|v| v.as_integer()), Some(42));
+                assert_eq!(
+                    tbl.get("another").and_then(|v| v.as_str()),
+                    Some("yes")
+                );
+            }
+            other => panic!("expected Unknown, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn plugin_reserved_id_rejected() {
+        let decl = DetectorDecl {
+            id: "$something".into(),
+            display_name_i18n_key: None,
+            icon: None,
+            disabled: false,
+            rule: vec![],
+        };
+        let res = validate_detector_decl(&decl, true);
+        assert!(matches!(res, Err(DetectorDeclError::ReservedIdFromPlugin(_))));
+    }
+
+    #[test]
+    fn host_reserved_id_allowed() {
+        let decl = DetectorDecl {
+            id: "$directory".into(),
+            display_name_i18n_key: None,
+            icon: None,
+            disabled: false,
+            rule: vec![DetectorRuleDecl::IsDirectory],
+        };
+        assert!(validate_detector_decl(&decl, false).is_ok());
+    }
+
+    #[test]
+    fn magic_bad_hex_rejected() {
+        let decl = DetectorDecl {
+            id: "x".into(),
+            display_name_i18n_key: None,
+            icon: None,
+            disabled: false,
+            rule: vec![DetectorRuleDecl::Magic {
+                offset: 0,
+                bytes_hex: "ZZZ".into(),
+            }],
+        };
+        assert!(matches!(
+            validate_detector_decl(&decl, false),
+            Err(DetectorDeclError::BadMagicHex { .. })
+        ));
+    }
+
+    #[test]
+    fn empty_extension_rejected() {
+        let decl = DetectorDecl {
+            id: "x".into(),
+            display_name_i18n_key: None,
+            icon: None,
+            disabled: false,
+            rule: vec![DetectorRuleDecl::Extension { values: vec![] }],
+        };
+        assert!(matches!(
+            validate_detector_decl(&decl, false),
+            Err(DetectorDeclError::EmptyExtensionValues { .. })
+        ));
+    }
+
+    #[test]
+    fn structure_check_escape_rejected() {
+        let decl = DetectorDecl {
+            id: "x".into(),
+            display_name_i18n_key: None,
+            icon: None,
+            disabled: false,
+            rule: vec![DetectorRuleDecl::StructureCheck {
+                spec: "../etc/passwd".into(),
+            }],
+        };
+        assert!(matches!(
+            validate_detector_decl(&decl, false),
+            Err(DetectorDeclError::StructureCheckEscape { .. })
+        ));
+    }
+
+    #[test]
+    fn unknown_kind_returns_warning_not_error() {
+        let decl = DetectorDecl {
+            id: "x".into(),
+            display_name_i18n_key: None,
+            icon: None,
+            disabled: false,
+            rule: vec![DetectorRuleDecl::Unknown {
+                kind_name: "future".into(),
+                raw: toml::Value::String("dummy".into()),
+            }],
+        };
+        let warnings = validate_detector_decl(&decl, false).expect("ok");
+        assert_eq!(warnings.len(), 1);
+    }
 }
