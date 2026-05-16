@@ -534,4 +534,83 @@ mod tests {
         // host default 4개
         assert_eq!(v.len(), 4);
     }
+
+    // ── cross-module integration: file_format + file_handler ──────────
+    //
+    // 시나리오: 사용자가 PDF 로 새 detector 와 핸들러를 등록한 뒤
+    // 1) `identify(*.pdf)` 가 user detector 를 반환하고
+    // 2) `handlers_for(pdf)` 가 user handler 를 반환하는지 확인.
+
+    use crate::file_format::{
+        DetectDepth, FileFormatRegistry, FileTarget,
+    };
+
+    fn make_user_toml(toml_text: &str) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("file-handlers.toml");
+        std::fs::write(&p, toml_text).unwrap();
+        dir
+    }
+
+    #[test]
+    fn user_pdf_detector_and_handler_round_trip() {
+        let formats = FileFormatRegistry::new();
+        formats.install_host_defaults(include_str!(
+            "../file_format/defaults/default-file-format.toml"
+        ));
+
+        let handlers = FileHandlerRegistry::new();
+        load_host(&handlers);
+
+        let user_toml = r#"
+            [[detector]]
+            id = "pdf"
+            [[detector.rule]]
+            kind = "extension"
+            values = ["pdf"]
+
+            [[handler]]
+            id = "user/pdf-preview"
+            detector = "pdf"
+            priority = 30
+            [handler.action]
+            kind = "system"
+        "#;
+        let dir = make_user_toml(user_toml);
+        let p = dir.path().join("file-handlers.toml");
+        formats.install_user_config(&p);
+        handlers.install_user_config(&p);
+
+        // identify
+        let id = formats.identify(
+            &FileTarget::new(std::path::PathBuf::from("docs/spec.pdf")),
+            DetectDepth::Cheap,
+        );
+        assert_eq!(id, Some(crate::file_format::DetectorId("pdf".into())));
+
+        // handlers_for
+        let v = handlers.handlers_for(&crate::file_format::DetectorId("pdf".into()));
+        assert_eq!(v.len(), 1);
+        assert_eq!(v[0].id.as_str(), "user/pdf-preview");
+        assert!(matches!(v[0].action, HandlerAction::System));
+    }
+
+    #[test]
+    fn directory_target_does_not_match_file_detectors() {
+        let formats = FileFormatRegistry::new();
+        formats.install_host_defaults(include_str!(
+            "../file_format/defaults/default-file-format.toml"
+        ));
+        let handlers = FileHandlerRegistry::new();
+        load_host(&handlers);
+
+        let dir = tempfile::tempdir().unwrap();
+        let target = FileTarget::new(dir.path().to_path_buf());
+        let id = formats
+            .identify(&target, DetectDepth::Cheap)
+            .expect("directory should identify");
+        assert_eq!(id.as_str(), "$directory");
+        let v = handlers.handlers_for(&id);
+        assert!(!v.is_empty(), "host should register a directory handler");
+    }
 }

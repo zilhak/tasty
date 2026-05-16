@@ -1543,3 +1543,62 @@ Claude Code 등 TUI 앱이 실행 중이던 터미널을 복원할 때, 해당 �
 ### 한계
 - IPC 게이트는 plugin이 호스트를 통한 호출만 막음. plugin이 직접 fs를 쓰면 호스트가 알 수 없음 — 향후 OS-level 샌드박스/WASM으로 보강
 - 호스트의 빌트인 ExplorerPanel은 단계 08D에서 외부 plugin으로 일원화 예정 (1300+ 줄 침습적 refactor라 별도 작업으로 분리)
+
+## 파일 핸들러 시스템 (file-handler-system)
+
+URI/경로 입력을 받아 **(1) 파일 형식 식별 → (2) 등록된 핸들러 디스패치** 두 단계를 거치는 통합 라우팅 시스템. 두 단계는 독립 모듈(`src/file_format/`, `src/file_handler/`)로 분리되어 있고, `file_handler` 만 `file_format::DetectorId` 를 import 하는 단방향 의존 관계를 가진다.
+
+### 형식 식별 (`FileFormatRegistry`)
+- DetectorId 네임스페이스: 일반 `[a-z0-9-]{1,64}` (예: `markdown`), 호스트 예약 `$<word>` (예: `$directory`)
+- detector rule 종류 (Phase A 는 cheap path 만 평가):
+  - `extension`: 확장자 대소문자 무시 매칭
+  - `path_glob`: 파일명 wildcard (`*` 만, 본격 globset 도입은 Phase B)
+  - `is_directory`: 대상이 디렉토리
+  - `mime` / `magic` / `lua` / `structure_check`: deep 단계 (Phase B-D 에서 본격 평가, cheap 에서는 false)
+- pre-filter: 디렉토리 대상은 `is_directory` rule 가진 detector 만, 파일 대상은 그 외만 평가 (cross-match 방지)
+- 호스트 default 는 `src/file_format/defaults/default-file-format.toml` 에 정의 — markdown, html, image, `$directory` 등
+
+### 핸들러 디스패치 (`FileHandlerRegistry`)
+- HandlerId 형식: `host/<name>`, `<plugin_id>/<name>`, `user/<name>` (`<name>` 은 `[a-z0-9-]{1,32}`)
+- HandlerAction: `OpenSurface { surface_kind, param_key }`, `Ipc { method, owner_plugin_id }`, `System` (OS 기본 열기 위임)
+- actor 별 schema 강제:
+  - host TOML: OpenSurface / Ipc / System 전부 허용
+  - plugin TOML: System 금지 (serde reject) — sandbox 일관성
+  - user TOML: 전부 허용 (사용자가 자기 시스템에 명시 위임)
+- `handlers_for(detector)` 정렬: priority asc → tie 시 owner 우선 `user > plugin > host` → handler id 사전순
+- `all_handlers()`: picker 용 전체 enabled 목록
+
+### Contribution-based registry
+- 두 registry 모두 출처별(Host/Plugin(id)/User) contribution 을 보관하고, finalize 시 patch semantics 로 머지 (last-writer-wins, `None` 은 덮어쓰지 않음). rules 는 union + dedupe.
+- plugin uninstall 시 그 plugin 의 contribution 만 제거 — host default / user 설정은 그대로 유지.
+
+### Plugin 통합
+- 매니페스트 `[[contributes.detector]]` / `[[contributes.handler]]` 로 추가. validate 단계:
+  - detector: `$` prefix(예약 sentinel) plugin 추가 금지, 매직바이트 hex 검증, path traversal 차단
+  - handler: short-name 패턴 검증, detector 참조 cross-check, surface_kind/ipc_prefix 등록 여부 확인
+- 권한:
+  - `file_handler.define`: 새 detector + handler 추가 권한
+  - `file_handler.extend:<id>`: 기존 detector 에 rule 추가
+  - `file_handler.handle:<id>`: 기존 detector 에 handler 만 추가
+  - `$unknown` 같은 sentinel 은 모든 토큰에서 reject (예약어)
+
+### User config
+- `~/.tasty/file-handlers.toml` — 한 파일에 `[[detector]]` + `[[handler]]` 섹션 혼재 가능, 부팅 시 1회 로드
+- patch 가능 필드: priority, display_name_i18n_key, disabled, action — `disabled = true` 만 명시 override (false 는 무시)
+- 파일 없음 → 정상 (사용자 설정 없는 상태). parse 실패 시 warn + 전체 무시. entry 단위 schema 오류는 그 entry 만 reject.
+
+### Picker popup
+- `file_handler_picker` PopupDef (480x동적). 헤더(대상/형식) + 두 열(후보/최근) + [열기]/[취소]
+- 좌측: handler id 사전순, 우측: `~/.tasty/file-handler-recent.json` LRU(cap 10) 순서 — 현재 등록 안 된 id 는 표시만 제외(저장 파일은 유지)
+- 더블클릭 또는 [열기] → Selected dispatch + recent 기록 / [취소]/ESC/X → Cancelled
+- picker 자체는 dispatch 하지 않고 `state.dialogs.file_handler_picker.result` 로만 결과를 남김 — 호스트 본체 layer 가 frame 끝에 소비해 실행 + atomic save
+
+### RecentPicks
+- 저장: `~/.tasty/file-handler-recent.json` (홈 못 찾으면 임시 디렉토리로 fallback)
+- 원자적 쓰기: `<path>.tmp` 작성 → rename. fsync 는 안 함 (UX 영향)
+- LRU dedupe + cap=10. parse 실패 시 빈 리스트로 시작 + warn
+
+### 한계 (Phase A)
+- mouse.rs 콜사이트 변경은 Phase A 범위 밖 — ctrl+click 시 여전히 기존 `terminal_link::open_uri` 가 동작
+- magic bytes / MIME / Lua / structure-check rule 평가는 stub (Phase B-D 에서 구현)
+- `path_glob` 은 단순 `*` wildcard 만, 본격 globset 도입은 Phase B
