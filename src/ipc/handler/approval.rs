@@ -285,12 +285,15 @@ pub(crate) fn publish_capability_elevation(
         .get(state.active_workspace)
         .map(|ws| ws.id);
 
+    // approve → 기본 TTL (1시간), approve_permanently → 무기한.
+    // grant_ttl_secs metadata 는 respond 핸들러가 grant_permission ttl 로 사용.
     let metadata = json!({
         "kind": "capability_elevation",
         "agent_id": agent_id,
         "method": method,
         "permission": permission,
         "reason": reason,
+        "grant_ttl_secs": 3600u64,
     });
 
     let title = format!("Capability request: {permission}");
@@ -311,7 +314,15 @@ pub(crate) fn publish_capability_elevation(
         surface_id: None,
         title,
         body,
-        choices: vec![ApprovalChoice::approve(), ApprovalChoice::deny()],
+        choices: vec![
+            ApprovalChoice::approve(),
+            ApprovalChoice {
+                key: "approve_permanently".to_string(),
+                label: "Approve permanently".to_string(),
+                destructive: false,
+            },
+            ApprovalChoice::deny(),
+        ],
         default_choice: Some("deny".to_string()),
         timeout_ms: None,
         severity: Severity::Warn,
@@ -353,12 +364,190 @@ pub fn handle_respond(
         .map(str::to_string);
     let by = responder_from_caller(caller);
 
-    match state.engine.approval_store.respond(&req_id, choice, by, comment) {
+    match state
+        .engine
+        .approval_store
+        .respond(&req_id, choice.clone(), by, comment)
+    {
         Ok(change) => {
             persist_record(&change.record);
+            // Phase 6.4b — capability_elevation 이 approve* 로 응답되면 대상
+            // agent 에 임시 grant 를 적용한다. 실패해도 응답 자체는 유지
+            // (grant 가 실패해도 agent 는 retry 시 다시 elevation 을 받게 됨).
+            apply_elevation_grant_if_any(&change.record, &choice);
             JsonRpcResponse::success(id, record_to_json(&change.record))
         }
         Err(e) => map_error(id, e),
+    }
+}
+
+/// Phase 6.4b — elevation record 와 응답 choice 로부터 grant 매개변수를 결정.
+///
+/// `None` 반환 = grant 안 함 (다른 종류 요청이거나 deny). `Some` 의 ttl_ms 는
+/// `None` 이면 무기한 grant, `Some(n)` 이면 n ms 후 만료.
+pub(crate) fn elevation_grant_decision(
+    record: &ApprovalRecord,
+    choice: &str,
+) -> Option<(String, String, Option<u64>)> {
+    if record.request.metadata.get("kind").and_then(|v| v.as_str())
+        != Some("capability_elevation")
+    {
+        return None;
+    }
+    let agent_id = record
+        .request
+        .metadata
+        .get("agent_id")
+        .and_then(|v| v.as_str())?
+        .to_string();
+    let permission = record
+        .request
+        .metadata
+        .get("permission")
+        .and_then(|v| v.as_str())?
+        .to_string();
+    let ttl_secs = match choice {
+        "approve" => record
+            .request
+            .metadata
+            .get("grant_ttl_secs")
+            .and_then(|v| v.as_u64()),
+        "approve_permanently" => None,
+        _ => return None, // deny / 그 외는 grant 없음.
+    };
+    let ttl_ms = ttl_secs.map(|s| s.saturating_mul(1000));
+    Some((agent_id, permission, ttl_ms))
+}
+
+/// I/O wrapper — `elevation_grant_decision` 결과를 SessionStore 에 적용.
+fn apply_elevation_grant_if_any(record: &ApprovalRecord, choice: &str) {
+    let Some((agent_id, permission, ttl_ms)) = elevation_grant_decision(record, choice) else {
+        return;
+    };
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    let result = with_store(|mem| {
+        let mut store = crate::ipc::session::SessionStore::new(mem, tasty_memory::HOST_OWNER);
+        let token = match store.find_by_agent_id(&agent_id, now_ms)? {
+            Some((t, _)) => t,
+            None => {
+                return Err(crate::ipc::session::SessionError::InvalidArgument(format!(
+                    "no active session for agent_id '{agent_id}'"
+                )));
+            }
+        };
+        store.grant_permission(&token, &permission, ttl_ms, now_ms)
+    });
+    match result {
+        Some(Ok(added)) => {
+            tracing::info!(
+                agent_id,
+                permission,
+                ttl_ms,
+                added,
+                "capability_elevation grant applied"
+            );
+        }
+        Some(Err(e)) => {
+            tracing::warn!(
+                agent_id,
+                permission,
+                "capability_elevation grant failed: {e}"
+            );
+        }
+        None => {
+            tracing::warn!("capability_elevation grant skipped: memory store not initialized");
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tasty_approval::ApprovalState;
+
+    fn elevation_record(extra_metadata: Value) -> ApprovalRecord {
+        let mut md = json!({
+            "kind": "capability_elevation",
+            "agent_id": "child:1",
+            "permission": "fs.write",
+            "grant_ttl_secs": 3600u64,
+        });
+        if let (Value::Object(base), Value::Object(extra)) = (&mut md, extra_metadata) {
+            for (k, v) in extra {
+                base.insert(k, v);
+            }
+        }
+        ApprovalRecord {
+            request: ApprovalRequest {
+                id: ApprovalId::generate(),
+                requester: Requester::Plugin {
+                    id: "child:1".into(),
+                },
+                workspace_id: None,
+                surface_id: None,
+                title: "t".into(),
+                body: None,
+                choices: vec![],
+                default_choice: None,
+                timeout_ms: None,
+                severity: Severity::Warn,
+                created_at: 0,
+                metadata: md,
+            },
+            state: ApprovalState::Pending,
+            history: vec![],
+        }
+    }
+
+    #[test]
+    fn approve_yields_finite_ttl_from_metadata() {
+        let rec = elevation_record(json!({}));
+        let (aid, perm, ttl) = elevation_grant_decision(&rec, "approve").expect("decision");
+        assert_eq!(aid, "child:1");
+        assert_eq!(perm, "fs.write");
+        assert_eq!(ttl, Some(3_600_000));
+    }
+
+    #[test]
+    fn approve_permanently_yields_no_ttl() {
+        let rec = elevation_record(json!({}));
+        let (_, _, ttl) =
+            elevation_grant_decision(&rec, "approve_permanently").expect("decision");
+        assert_eq!(ttl, None);
+    }
+
+    #[test]
+    fn deny_yields_no_grant() {
+        let rec = elevation_record(json!({}));
+        assert!(elevation_grant_decision(&rec, "deny").is_none());
+    }
+
+    #[test]
+    fn non_elevation_record_skipped() {
+        let mut rec = elevation_record(json!({}));
+        rec.request.metadata = json!({"kind": "other"});
+        assert!(elevation_grant_decision(&rec, "approve").is_none());
+    }
+
+    #[test]
+    fn missing_required_metadata_skipped() {
+        let mut rec = elevation_record(json!({}));
+        rec.request.metadata = json!({"kind": "capability_elevation"});
+        assert!(elevation_grant_decision(&rec, "approve").is_none());
+    }
+
+    #[test]
+    fn approve_without_grant_ttl_secs_is_indefinite_in_metadata() {
+        // grant_ttl_secs 누락 시 approve 는 None (무기한) 으로 fallback.
+        let mut rec = elevation_record(json!({}));
+        if let Value::Object(m) = &mut rec.request.metadata {
+            m.remove("grant_ttl_secs");
+        }
+        let (_, _, ttl) = elevation_grant_decision(&rec, "approve").expect("decision");
+        assert_eq!(ttl, None);
     }
 }
 
