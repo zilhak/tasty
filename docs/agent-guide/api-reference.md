@@ -396,6 +396,24 @@ tasty surface-meta list --surface 3   # 특정 서피스 지정
 |--------|---------|------|
 | `memory.gc` | _없음_ | 만료된 entry (regular + secret) 일괄 DELETE. **local-only** (plugin 불가). 응답: `{ regular: N, secret: M }`. read 경로는 항상 만료 필터를 거치므로 사용자에게 보이는 동작은 변하지 않고 디스크 + quota 만 회복된다. CLI: `tasty memory gc`. 호스트는 surface/workspace 가 닫힐 때 해당 scope 의 entry 를 자동 정리하므로, 보통은 명시 호출이 불필요하다 — 만료 위주 정리 또는 진단용. |
 
+#### 변경 이벤트 (`memory.changed`)
+
+별도 watch IPC 가 아니라 **Event Bus 1.0 의 host event** 로 노출된다. plugin 은 매니페스트의 `event_subscribe = ["memory.changed"]` + `permissions = ["memory.read"]` 로 구독한다.
+
+```json
+// memory.changed payload (scope=System)
+{ "scope": "surface:42", "key": "task.plan", "kind": "created",  "version": 1 }
+{ "scope": "surface:42", "key": "task.plan", "kind": "updated",  "version": 2 }
+{ "scope": "surface:42", "key": "task.plan", "kind": "deleted" }
+{ "scope": "workspace:1", "key": "tmp",      "kind": "expired" }
+```
+
+- `kind` 는 `created` / `updated` / `deleted` / `expired`.
+- `scope` 는 token 문자열 (`surface:42`, `workspace:1`, `window:3`, `global`, `account:default`).
+- **Secret 영역 변경은 발화하지 않는다.** owner/key 정보 누설을 막기 위함. 자기 plugin 의 secret 상태는 직접 호출한 IPC 응답으로만 관찰한다.
+- 호스트가 1 변경 = 1 envelope 으로 발화한다. surface/workspace 닫힘으로 다수 key 가 한번에 사라지면 각 key 마다 별도 `deleted` 이벤트가 도착한다.
+- 자세한 카탈로그 등록 정보는 `event-catalog.md` 의 "Memory" 섹션 참조.
+
 #### Entry 객체
 
 ```json

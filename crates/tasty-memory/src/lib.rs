@@ -189,10 +189,37 @@ pub struct ListOpts {
     pub limit: Option<usize>,
 }
 
+/// 변경 이벤트. put / delete / purge 후 호스트가 [`MemoryStore::take_pending_changes`]
+/// 로 가져가 Event Bus 의 `memory.changed` 로 broadcast 한다. **regular 영역만** 기록한다
+/// — secret 변경은 다른 plugin 에 노출하면 안 되므로 발화하지 않는다.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MemoryChange {
+    /// `surface:42` 같은 scope token (`Scope::as_token`).
+    pub scope: String,
+    pub key: String,
+    pub kind: MemoryChangeKind,
+    /// 새 version (Created/Updated 시). Deleted/Expired 는 `None`.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub version: Option<u64>,
+}
+
+/// 변경 종류.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MemoryChangeKind {
+    Created,
+    Updated,
+    Deleted,
+    Expired,
+}
+
 /// MemoryStore. 디스크 파일을 단독으로 열어 mutex 보호. clone 불가.
 pub struct MemoryStore {
     conn: Connection,
     config: MemoryConfig,
+    /// Regular 영역 변경 누적 버퍼. 호스트가 매 tick `take_pending_changes()` 로
+    /// drain 해 `memory.changed` host event 로 발화한다.
+    pending_changes: Vec<MemoryChange>,
 }
 
 impl MemoryStore {
@@ -242,7 +269,11 @@ impl MemoryStore {
             }
             DbSchemaError::Sql(e) => classify_sql(e, path),
         })?;
-        Ok(Self { conn, config })
+        Ok(Self {
+            conn,
+            config,
+            pending_changes: Vec::new(),
+        })
     }
 
     /// 현재 적용 중인 정책.
@@ -314,7 +345,7 @@ impl MemoryStore {
             });
         }
 
-        let new_version = match (existing, opts.cas) {
+        let (new_version, change_kind) = match (existing, opts.cas) {
             (None, Some(expected)) => {
                 return Err(MemoryError::CasConflict {
                     expected,
@@ -345,7 +376,7 @@ impl MemoryStore {
                         key
                     ],
                 )?;
-                new_v
+                (new_v, MemoryChangeKind::Updated)
             }
             (None, _) => {
                 tx.execute(
@@ -363,11 +394,17 @@ impl MemoryStore {
                         owner
                     ],
                 )?;
-                1
+                (1, MemoryChangeKind::Created)
             }
         };
 
         tx.commit()?;
+        self.pending_changes.push(MemoryChange {
+            scope: scope_token,
+            key: key.to_string(),
+            kind: change_kind,
+            version: Some(new_version),
+        });
         Ok(new_version)
     }
 
@@ -467,6 +504,12 @@ impl MemoryStore {
             params![&scope_token, key],
         )?;
         tx.commit()?;
+        self.pending_changes.push(MemoryChange {
+            scope: scope_token,
+            key: key.to_string(),
+            kind: MemoryChangeKind::Deleted,
+            version: None,
+        });
         Ok(())
     }
 
@@ -951,6 +994,18 @@ impl MemoryStore {
     /// 주기적으로 또는 `memory.gc` 명령으로 이 함수를 호출해 청소한다.
     pub fn purge_expired(&mut self) -> Result<PurgeStats> {
         let now = unix_ms_now();
+        // Regular: 발화할 key 목록을 먼저 수집한 뒤 delete (secret 은 발화하지 않으므로
+        // 단순 count 만 필요).
+        let expired_regular: Vec<(String, String)> = {
+            let mut stmt = self.conn.prepare(
+                "SELECT scope, key FROM memory
+                 WHERE expires_at IS NOT NULL AND expires_at <= ?1",
+            )?;
+            let rows = stmt.query_map(params![now], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+            })?;
+            rows.collect::<rusqlite::Result<Vec<_>>>()?
+        };
         let regular = self.conn.execute(
             "DELETE FROM memory WHERE expires_at IS NOT NULL AND expires_at <= ?1",
             params![now],
@@ -959,6 +1014,14 @@ impl MemoryStore {
             "DELETE FROM memory_secret WHERE expires_at IS NOT NULL AND expires_at <= ?1",
             params![now],
         )?;
+        for (scope, key) in expired_regular {
+            self.pending_changes.push(MemoryChange {
+                scope,
+                key,
+                kind: MemoryChangeKind::Expired,
+                version: None,
+            });
+        }
         Ok(PurgeStats {
             regular: regular as u64,
             secret: secret as u64,
@@ -969,16 +1032,38 @@ impl MemoryStore {
     /// workspace 가 닫힐 때 호스트가 호출해 해당 수명에 묶인 키를 정리한다.
     pub fn purge_scope(&mut self, scope: &Scope) -> Result<PurgeStats> {
         let token = scope.as_token();
+        // Regular keys 발화용 수집 (secret 은 발화 안 함).
+        let cleared_keys: Vec<String> = {
+            let mut stmt = self
+                .conn
+                .prepare("SELECT key FROM memory WHERE scope=?1")?;
+            let rows = stmt.query_map(params![&token], |r| r.get::<_, String>(0))?;
+            rows.collect::<rusqlite::Result<Vec<_>>>()?
+        };
         let regular = self
             .conn
             .execute("DELETE FROM memory WHERE scope=?1", params![&token])?;
         let secret = self
             .conn
             .execute("DELETE FROM memory_secret WHERE scope=?1", params![&token])?;
+        for key in cleared_keys {
+            self.pending_changes.push(MemoryChange {
+                scope: token.clone(),
+                key,
+                kind: MemoryChangeKind::Deleted,
+                version: None,
+            });
+        }
         Ok(PurgeStats {
             regular: regular as u64,
             secret: secret as u64,
         })
+    }
+
+    /// Pending change buffer 를 비우고 반환. 호스트가 매 tick 호출해
+    /// Event Bus 의 `memory.changed` 로 broadcast.
+    pub fn take_pending_changes(&mut self) -> Vec<MemoryChange> {
+        std::mem::take(&mut self.pending_changes)
     }
 }
 
@@ -1706,5 +1791,111 @@ mod tests {
         assert!(s.get_secret(PLUGIN_A, &target, "sa").unwrap().is_none());
         assert!(s.get_secret(PLUGIN_B, &target, "sb").unwrap().is_none());
         assert!(s.get(&other, "keep").unwrap().is_some());
+    }
+
+    // ---- Change events ----
+
+    #[test]
+    fn put_records_created_then_updated_change() {
+        let mut s = store();
+        let scope = Scope::Workspace(3);
+        let _ = s.take_pending_changes();
+
+        let v1 = s.put(PLUGIN_A, &scope, "k", &text("v1"), &PutOpts::default()).unwrap();
+        let changes = s.take_pending_changes();
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].kind, MemoryChangeKind::Created);
+        assert_eq!(changes[0].key, "k");
+        assert_eq!(changes[0].scope, scope.as_token());
+        assert_eq!(changes[0].version, Some(v1));
+
+        let v2 = s.put(PLUGIN_A, &scope, "k", &text("v2"), &PutOpts::default()).unwrap();
+        let changes = s.take_pending_changes();
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].kind, MemoryChangeKind::Updated);
+        assert_eq!(changes[0].version, Some(v2));
+
+        // 두 번째 take 는 빈 vec
+        assert!(s.take_pending_changes().is_empty());
+    }
+
+    #[test]
+    fn delete_records_deleted_change() {
+        let mut s = store();
+        let scope = Scope::Workspace(3);
+        s.put(PLUGIN_A, &scope, "k", &text("v"), &PutOpts::default()).unwrap();
+        let _ = s.take_pending_changes();
+
+        s.delete(PLUGIN_A, &scope, "k", None).unwrap();
+        let changes = s.take_pending_changes();
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].kind, MemoryChangeKind::Deleted);
+        assert_eq!(changes[0].key, "k");
+        assert!(changes[0].version.is_none());
+    }
+
+    #[test]
+    fn secret_change_does_not_emit_event() {
+        let mut s = store();
+        let scope = Scope::Workspace(3);
+        let _ = s.take_pending_changes();
+
+        s.put_secret(PLUGIN_A, &scope, "sk", &text("v"), &PutOpts::default())
+            .unwrap();
+        s.delete_secret(PLUGIN_A, &scope, "sk", None).unwrap();
+        assert!(
+            s.take_pending_changes().is_empty(),
+            "secret changes must not be broadcast"
+        );
+    }
+
+    #[test]
+    fn purge_expired_records_expired_changes_for_regular_only() {
+        let mut s = store();
+        let scope = Scope::Workspace(3);
+        s.put(
+            PLUGIN_A,
+            &scope,
+            "exp_r",
+            &text("r"),
+            &PutOpts { expires_at: Some(1), cas: None },
+        )
+        .unwrap();
+        s.put_secret(
+            PLUGIN_A,
+            &scope,
+            "exp_s",
+            &text("s"),
+            &PutOpts { expires_at: Some(1), cas: None },
+        )
+        .unwrap();
+        let _ = s.take_pending_changes();
+
+        let stats = s.purge_expired().unwrap();
+        assert_eq!(stats.regular, 1);
+        assert_eq!(stats.secret, 1);
+        let changes = s.take_pending_changes();
+        assert_eq!(changes.len(), 1, "only regular expired key emits event");
+        assert_eq!(changes[0].kind, MemoryChangeKind::Expired);
+        assert_eq!(changes[0].key, "exp_r");
+    }
+
+    #[test]
+    fn purge_scope_records_deleted_for_each_regular_key() {
+        let mut s = store();
+        let scope = Scope::Surface(11);
+        s.put(PLUGIN_A, &scope, "a", &text("x"), &PutOpts::default()).unwrap();
+        s.put(PLUGIN_A, &scope, "b", &text("y"), &PutOpts::default()).unwrap();
+        s.put_secret(PLUGIN_A, &scope, "sa", &text("z"), &PutOpts::default()).unwrap();
+        let _ = s.take_pending_changes();
+
+        s.purge_scope(&scope).unwrap();
+        let mut changes = s.take_pending_changes();
+        changes.sort_by(|a, b| a.key.cmp(&b.key));
+        assert_eq!(changes.len(), 2);
+        assert_eq!(changes[0].kind, MemoryChangeKind::Deleted);
+        assert_eq!(changes[0].key, "a");
+        assert_eq!(changes[1].kind, MemoryChangeKind::Deleted);
+        assert_eq!(changes[1].key, "b");
     }
 }

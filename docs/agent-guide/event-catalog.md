@@ -224,6 +224,17 @@ scope=global인 command의 단축키는 **조합키만** 허용 (`Ctrl`/`Alt`/`C
 
 호스트가 정규식 매칭을 해주는 `process.output_match`는 1.0에 포함되지 않는다. plugin이 자기 state transition 시점에 비파괴 read IPC로 화면을 peek하고 클라이언트 측에서 매칭하면 된다. 사용자가 등록한 `tasty-hooks` 패턴 결과는 `hook.fired`로 받을 수 있다.
 
+### Memory
+
+| 키 | 시점 | Payload (요약) | scope | 등급 |
+|---|---|---|---|---|
+| `memory.changed` | `tasty-memory` regular entry 의 put/delete/expire/scope cleanup 직후 | `scope, key, kind ∈ {created,updated,deleted,expired}, version?` | system | Stable |
+
+- **Secret 영역 변경은 발화하지 않는다.** owner/key 노출을 막기 위함. 자기 plugin 의 secret 상태는 직접 호출한 IPC 응답으로만 관찰한다.
+- `scope` 값은 `surface:42`, `workspace:1`, `window:3`, `global`, `account:default` 같은 token 문자열.
+- 호스트가 1 변경 = 1 envelope 으로 발화한다. surface/workspace 가 닫혀 한 번에 다수 key 가 사라질 때는 각각 별도 `deleted` 이벤트가 온다.
+- Subscribe 예: `event_subscribe = ["memory.changed"]`. 권한: `MemoryRead`.
+
 ### System / Debug
 
 | 키 | 시점 | Payload (요약) | scope | 등급 |

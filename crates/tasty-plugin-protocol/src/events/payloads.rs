@@ -444,6 +444,34 @@ pub struct ProcessExited {
     pub exit_code: Option<i32>,
 }
 
+// ── Memory ───────────────────────────────────────────────────────────────────
+
+/// `memory.changed` 페이로드. scope=System.
+///
+/// `tasty-memory` 의 regular 영역에서 put/delete/expire/scope cleanup 이
+/// 일어날 때 호스트가 발화. **secret 영역 변경은 발화하지 않는다** — 다른
+/// plugin 에 owner/key 정보를 누설하지 않기 위함.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct MemoryChanged {
+    /// `surface:42`, `workspace:1`, `global` 등 scope token.
+    pub scope: String,
+    pub key: String,
+    pub kind: MemoryChangeKind,
+    /// 새 version (Created/Updated). Deleted/Expired 는 생략.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<u64>,
+}
+
+/// `memory.changed` 의 변경 종류.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MemoryChangeKind {
+    Created,
+    Updated,
+    Deleted,
+    Expired,
+}
+
 // ── System ───────────────────────────────────────────────────────────────────
 
 /// `system.startup_complete` 페이로드. scope=System.

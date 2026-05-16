@@ -1319,6 +1319,7 @@ fn is_reserved_event_namespace(ns: &str) -> bool {
             | "notification"
             | "hook"
             | "process"
+            | "memory"
             | "system"
     )
 }
