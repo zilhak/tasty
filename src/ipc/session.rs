@@ -32,6 +32,23 @@ fn session_key(token: &SessionToken) -> String {
     format!("{SESSION_KEY_PREFIX}{}", token.as_str())
 }
 
+/// Phase 6.3 — 임시 권한 grant. base `permissions` 외에 런타임에 추가/회수되는
+/// 권한을 별도로 관리해 base 와 분리한다. `expires_at_ms=None` 이면 명시적
+/// revoke 전까지 유효, `Some` 이면 시점 도달 시 자동 만료.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct TempGrant {
+    /// `Permission::as_token` 직렬화 (forward-compat 동일 정책).
+    pub permission: String,
+    /// unix ms. `None` 이면 무기한.
+    pub expires_at_ms: Option<u64>,
+}
+
+impl TempGrant {
+    fn is_expired(&self, now_ms: u64) -> bool {
+        matches!(self.expires_at_ms, Some(exp) if now_ms >= exp)
+    }
+}
+
 /// 디스크에 저장되는 세션 레코드.
 ///
 /// `permissions` 는 `Permission::as_token` 으로 직렬화 — Permission enum 자체에
@@ -45,8 +62,12 @@ pub struct AgentSession {
     /// 부모 caller 식별자 — 보통 plugin_id (claude plugin 이 자식을 spawn 한 경우).
     /// `None` 이면 Local/Internal 이 직접 발급.
     pub parent: Option<String>,
-    /// `Permission::as_token` 직렬화. 일부 토큰은 `ipc.invoke:<prefix>` 동적 형태.
+    /// 발급 시 부여된 base permission. `Permission::as_token` 직렬화.
+    /// 일부 토큰은 `ipc.invoke:<prefix>` 동적 형태.
     pub permissions: Vec<String>,
+    /// Phase 6.3 — 런타임에 추가된 임시 grant. base 와 합쳐 effective set 을 만든다.
+    #[serde(default)]
+    pub temp_grants: Vec<TempGrant>,
     /// unix ms.
     pub created_at_ms: u64,
     /// unix ms. 없으면 자식 프로세스 lifetime 과 동일 (revoke 만으로 종료).
@@ -57,16 +78,42 @@ pub struct AgentSession {
 }
 
 impl AgentSession {
-    /// `Permission` 셋으로 변환 (알 수 없는 토큰은 drop).
+    /// base + 만료되지 않은 temp grant 의 합집합. 알 수 없는 토큰은 drop.
     pub fn permission_set(&self) -> HashSet<Permission> {
+        // now 미지정 호출 호환을 위해 만료 검사 없이 모두 합친다 — 만료된 항목은
+        // store level 에서 evict 후 호출돼야 한다. 호출자가 만료를 신경 쓰지 않는
+        // 진단/덤프 용도면 stale 가 섞일 수 있으니 `effective_permission_set` 권장.
         self.permissions
             .iter()
+            .chain(self.temp_grants.iter().map(|g| &g.permission))
+            .filter_map(|t| Permission::from_token(t))
+            .collect()
+    }
+
+    /// `now_ms` 시점의 effective 권한. 만료된 temp grant 는 제외.
+    #[allow(dead_code)] // Phase 6.3b 의 IPC handler 에서 사용 예정.
+    pub fn effective_permission_set(&self, now_ms: u64) -> HashSet<Permission> {
+        self.permissions
+            .iter()
+            .chain(
+                self.temp_grants
+                    .iter()
+                    .filter(|g| !g.is_expired(now_ms))
+                    .map(|g| &g.permission),
+            )
             .filter_map(|t| Permission::from_token(t))
             .collect()
     }
 
     fn is_expired(&self, now_ms: u64) -> bool {
         matches!(self.expires_at_ms, Some(exp) if now_ms >= exp)
+    }
+
+    /// 만료된 temp grant 제거. 변화가 있었으면 `true`.
+    fn evict_expired_grants(&mut self, now_ms: u64) -> bool {
+        let before = self.temp_grants.len();
+        self.temp_grants.retain(|g| !g.is_expired(now_ms));
+        before != self.temp_grants.len()
     }
 }
 
@@ -141,6 +188,7 @@ impl<'a> SessionStore<'a> {
             agent_id,
             parent,
             permissions,
+            temp_grants: Vec::new(),
             created_at_ms: now_ms,
             expires_at_ms,
             revoked: false,
@@ -177,8 +225,9 @@ impl<'a> SessionStore<'a> {
 
     /// 토큰을 검증. 만료/revoked 세션은 `Ok(None)`.
     /// 만료된 항목은 디스크에서도 함께 정리 (lazy gc).
+    /// 만료된 temp grant 는 leave 시 evict 후 persist 한다.
     pub fn resolve(&mut self, token: &SessionToken, now_ms: u64) -> Result<Option<AgentSession>> {
-        let session = match self.get_raw(token)? {
+        let mut session = match self.get_raw(token)? {
             Some(s) => s,
             None => return Ok(None),
         };
@@ -189,7 +238,128 @@ impl<'a> SessionStore<'a> {
             self.delete(token)?;
             return Ok(None);
         }
+        if session.evict_expired_grants(now_ms) {
+            self.put(token, &session)?;
+        }
         Ok(Some(session))
+    }
+
+    /// 임시 권한 grant. 이미 같은 token 의 grant 가 있으면 `expires_at_ms` 를 갱신
+    /// (가장 늦은 만료 시점 또는 None=무기한 우선). base permission 에 이미 있는
+    /// token 은 grant 가 의미 없으므로 skip 하고 `Ok(false)`.
+    /// 알 수 없는 토큰은 InvalidArgument.
+    #[allow(dead_code)] // Phase 6.3b 의 IPC handler 에서 사용 예정.
+    pub fn grant_permission(
+        &mut self,
+        token: &SessionToken,
+        permission: &str,
+        ttl_ms: Option<u64>,
+        now_ms: u64,
+    ) -> Result<bool> {
+        if Permission::from_token(permission).is_none() {
+            return Err(SessionError::InvalidArgument(format!(
+                "unknown permission token: {permission}"
+            )));
+        }
+        let mut session = match self.get_raw(token)? {
+            Some(s) => s,
+            None => {
+                return Err(SessionError::InvalidArgument(
+                    "session token not found".into(),
+                ));
+            }
+        };
+        if session.revoked || session.is_expired(now_ms) {
+            return Err(SessionError::InvalidArgument(
+                "session is revoked or expired".into(),
+            ));
+        }
+        session.evict_expired_grants(now_ms);
+        if session.permissions.iter().any(|p| p == permission) {
+            return Ok(false);
+        }
+        let new_expires = ttl_ms.map(|t| now_ms.saturating_add(t));
+        if let Some(existing) = session
+            .temp_grants
+            .iter_mut()
+            .find(|g| g.permission == permission)
+        {
+            existing.expires_at_ms = match (existing.expires_at_ms, new_expires) {
+                (None, _) | (_, None) => None,
+                (Some(a), Some(b)) => Some(a.max(b)),
+            };
+        } else {
+            session.temp_grants.push(TempGrant {
+                permission: permission.to_string(),
+                expires_at_ms: new_expires,
+            });
+        }
+        self.put(token, &session)?;
+        Ok(true)
+    }
+
+    /// 임시 권한 회수. 해당 grant 가 없으면 `Ok(false)`. base permission 은 건드리지
+    /// 않는다 (revoke 의미가 다름 — 발급 시점에 통제).
+    #[allow(dead_code)] // Phase 6.3b 의 IPC handler 에서 사용 예정.
+    pub fn revoke_permission(
+        &mut self,
+        token: &SessionToken,
+        permission: &str,
+        now_ms: u64,
+    ) -> Result<bool> {
+        let mut session = match self.get_raw(token)? {
+            Some(s) => s,
+            None => return Ok(false),
+        };
+        let before = session.temp_grants.len();
+        session.temp_grants.retain(|g| g.permission != permission);
+        let removed = before != session.temp_grants.len();
+        // 만료 evict 도 함께 — 어차피 저장하니까.
+        let evicted = session.evict_expired_grants(now_ms);
+        if removed || evicted {
+            self.put(token, &session)?;
+        }
+        Ok(removed)
+    }
+
+    /// agent_id 로 활성 세션 검색. 동일 agent_id 가 여러 개면 첫 매치 반환.
+    /// 만료된 temp grant 는 evict 후 반환.
+    #[allow(dead_code)] // Phase 6.3b 의 IPC handler 에서 사용 예정.
+    pub fn find_by_agent_id(
+        &mut self,
+        agent_id: &str,
+        now_ms: u64,
+    ) -> Result<Option<(SessionToken, AgentSession)>> {
+        let opts = ListOpts {
+            prefix: Some(SESSION_KEY_PREFIX.to_string()),
+            ..Default::default()
+        };
+        let entries = self.mem.list(&Scope::Global, &opts)?;
+        for e in entries {
+            let MemoryValue::Json(v) = e.value else {
+                continue;
+            };
+            let mut session: AgentSession = match serde_json::from_value(v) {
+                Ok(s) => s,
+                Err(_) => continue,
+            };
+            if session.agent_id != agent_id {
+                continue;
+            }
+            if session.revoked || session.is_expired(now_ms) {
+                continue;
+            }
+            let token_str = e.key.strip_prefix(SESSION_KEY_PREFIX).unwrap_or(&e.key);
+            let token = match SessionToken::from_str(token_str) {
+                Some(t) => t,
+                None => continue,
+            };
+            if session.evict_expired_grants(now_ms) {
+                self.put(&token, &session)?;
+            }
+            return Ok(Some((token, session)));
+        }
+        Ok(None)
     }
 
     /// 토큰 무효화. 존재하지 않으면 `Ok(false)`.
@@ -209,7 +379,7 @@ impl<'a> SessionStore<'a> {
         Ok(())
     }
 
-    /// 모든 활성 세션 반환. 만료 항목은 evict.
+    /// 모든 활성 세션 반환. 만료된 세션은 evict, 만료된 temp grant 는 persist 갱신.
     pub fn list(&mut self, now_ms: u64) -> Result<Vec<AgentSession>> {
         let opts = ListOpts {
             prefix: Some(SESSION_KEY_PREFIX.to_string()),
@@ -218,22 +388,32 @@ impl<'a> SessionStore<'a> {
         let entries = self.mem.list(&Scope::Global, &opts)?;
         let mut alive = Vec::with_capacity(entries.len());
         let mut to_evict: Vec<String> = Vec::new();
+        let mut to_resave: Vec<(SessionToken, AgentSession)> = Vec::new();
         for e in entries {
             let MemoryValue::Json(v) = e.value else {
                 continue;
             };
-            let session: AgentSession = match serde_json::from_value(v) {
+            let mut session: AgentSession = match serde_json::from_value(v) {
                 Ok(s) => s,
                 Err(_) => continue,
             };
             if session.revoked || session.is_expired(now_ms) {
                 to_evict.push(e.key);
-            } else {
-                alive.push(session);
+                continue;
             }
+            if session.evict_expired_grants(now_ms) {
+                let token_str = e.key.strip_prefix(SESSION_KEY_PREFIX).unwrap_or(&e.key);
+                if let Some(t) = SessionToken::from_str(token_str) {
+                    to_resave.push((t, session.clone()));
+                }
+            }
+            alive.push(session);
         }
         for key in to_evict {
             let _ = self.mem.delete(&self.owner, &Scope::Global, &key, None);
+        }
+        for (t, s) in to_resave {
+            let _ = self.put(&t, &s);
         }
         Ok(alive)
     }
@@ -336,6 +516,153 @@ mod tests {
         let mut store = SessionStore::new(&mut mem, "_host");
         let err = store.issue("", None, perms(&[]), None, 0).unwrap_err();
         assert!(matches!(err, SessionError::InvalidArgument(_)));
+    }
+
+    #[test]
+    fn grant_then_effective_set_includes_temp() {
+        let (_td, mut mem) = fresh();
+        let mut store = SessionStore::new(&mut mem, "_host");
+        let (token, _) = store
+            .issue("a", None, perms(&[Permission::SurfaceRead]), None, 0)
+            .unwrap();
+        assert!(store
+            .grant_permission(&token, "fs.write", Some(10_000), 1_000)
+            .unwrap());
+        let s = store.resolve(&token, 2_000).unwrap().unwrap();
+        let eff = s.effective_permission_set(2_000);
+        assert!(eff.contains(&Permission::SurfaceRead));
+        assert!(eff.contains(&Permission::FsWrite));
+    }
+
+    #[test]
+    fn grant_then_revoke_removes_temp() {
+        let (_td, mut mem) = fresh();
+        let mut store = SessionStore::new(&mut mem, "_host");
+        let (token, _) = store
+            .issue("a", None, perms(&[Permission::SurfaceRead]), None, 0)
+            .unwrap();
+        store
+            .grant_permission(&token, "fs.write", None, 0)
+            .unwrap();
+        assert!(store.revoke_permission(&token, "fs.write", 1_000).unwrap());
+        // 두 번째 revoke 는 false (이미 없음).
+        assert!(!store.revoke_permission(&token, "fs.write", 1_000).unwrap());
+        let s = store.resolve(&token, 1_000).unwrap().unwrap();
+        assert!(!s.effective_permission_set(1_000).contains(&Permission::FsWrite));
+    }
+
+    #[test]
+    fn grant_with_ttl_expires_via_resolve() {
+        let (_td, mut mem) = fresh();
+        let mut store = SessionStore::new(&mut mem, "_host");
+        let (token, _) = store.issue("a", None, perms(&[]), None, 0).unwrap();
+        store
+            .grant_permission(&token, "fs.write", Some(1_000), 0)
+            .unwrap();
+        // now=1_000 → grant 만료 (now>=expires).
+        let s = store.resolve(&token, 1_000).unwrap().unwrap();
+        assert!(s.temp_grants.is_empty(), "expired grant evicted on resolve");
+        assert!(!s.effective_permission_set(1_000).contains(&Permission::FsWrite));
+    }
+
+    #[test]
+    fn grant_duplicate_extends_expiry() {
+        let (_td, mut mem) = fresh();
+        let mut store = SessionStore::new(&mut mem, "_host");
+        let (token, _) = store.issue("a", None, perms(&[]), None, 0).unwrap();
+        // 첫 grant: 짧은 TTL.
+        store
+            .grant_permission(&token, "fs.write", Some(100), 0)
+            .unwrap();
+        // 두 번째 grant: 더 긴 TTL → 갱신되어야 함.
+        store
+            .grant_permission(&token, "fs.write", Some(10_000), 0)
+            .unwrap();
+        let s = store.resolve(&token, 200).unwrap().unwrap();
+        assert_eq!(s.temp_grants.len(), 1);
+        assert_eq!(s.temp_grants[0].expires_at_ms, Some(10_000));
+        assert!(s.effective_permission_set(200).contains(&Permission::FsWrite));
+    }
+
+    #[test]
+    fn grant_none_ttl_overrides_finite() {
+        let (_td, mut mem) = fresh();
+        let mut store = SessionStore::new(&mut mem, "_host");
+        let (token, _) = store.issue("a", None, perms(&[]), None, 0).unwrap();
+        store
+            .grant_permission(&token, "fs.write", Some(100), 0)
+            .unwrap();
+        // None TTL → 무기한으로 격상.
+        store
+            .grant_permission(&token, "fs.write", None, 0)
+            .unwrap();
+        let s = store.resolve(&token, 100_000).unwrap().unwrap();
+        assert_eq!(s.temp_grants.len(), 1);
+        assert_eq!(s.temp_grants[0].expires_at_ms, None);
+    }
+
+    #[test]
+    fn grant_existing_base_permission_skips() {
+        let (_td, mut mem) = fresh();
+        let mut store = SessionStore::new(&mut mem, "_host");
+        let (token, _) = store
+            .issue("a", None, perms(&[Permission::SurfaceRead]), None, 0)
+            .unwrap();
+        // base 에 이미 있으므로 grant 가 noop.
+        let added = store
+            .grant_permission(&token, "surface.read", Some(1_000), 0)
+            .unwrap();
+        assert!(!added);
+        let s = store.resolve(&token, 100).unwrap().unwrap();
+        assert!(s.temp_grants.is_empty());
+    }
+
+    #[test]
+    fn grant_unknown_permission_rejected() {
+        let (_td, mut mem) = fresh();
+        let mut store = SessionStore::new(&mut mem, "_host");
+        let (token, _) = store.issue("a", None, perms(&[]), None, 0).unwrap();
+        let err = store
+            .grant_permission(&token, "not.a.real.perm", None, 0)
+            .unwrap_err();
+        assert!(matches!(err, SessionError::InvalidArgument(_)));
+    }
+
+    #[test]
+    fn grant_on_unknown_token_rejected() {
+        let (_td, mut mem) = fresh();
+        let mut store = SessionStore::new(&mut mem, "_host");
+        let fake = SessionToken::generate();
+        let err = store
+            .grant_permission(&fake, "fs.write", None, 0)
+            .unwrap_err();
+        assert!(matches!(err, SessionError::InvalidArgument(_)));
+    }
+
+    #[test]
+    fn find_by_agent_id_returns_match() {
+        let (_td, mut mem) = fresh();
+        let mut store = SessionStore::new(&mut mem, "_host");
+        let (token, _) = store
+            .issue("child:42", None, perms(&[Permission::SurfaceRead]), None, 0)
+            .unwrap();
+        let (found_token, found) = store
+            .find_by_agent_id("child:42", 1_000)
+            .unwrap()
+            .expect("should find");
+        assert_eq!(found.agent_id, "child:42");
+        assert_eq!(found_token.as_str(), token.as_str());
+    }
+
+    #[test]
+    fn find_by_agent_id_skips_revoked_and_expired() {
+        let (_td, mut mem) = fresh();
+        let mut store = SessionStore::new(&mut mem, "_host");
+        let (rt, _) = store.issue("dup", None, perms(&[]), None, 0).unwrap();
+        store.revoke(&rt).unwrap();
+        let (_et, _) = store.issue("dup", None, perms(&[]), Some(1), 0).unwrap();
+        // 두 후보가 모두 invalid (revoked + expired) → None.
+        assert!(store.find_by_agent_id("dup", 10_000).unwrap().is_none());
     }
 
     #[test]
