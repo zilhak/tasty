@@ -58,6 +58,11 @@ cmux의 기능을 크로스 플랫폼(Windows, macOS, Linux) GPU 가속 네이�
 | [agent-guide/output-parsers.md](agent-guide/output-parsers.md) | 출력 파서 카탈로그 (tasty-output 빌트인 10종) |
 | [agent-guide/approval.md](agent-guide/approval.md) | 휴먼 핸드오프 — approval / diff surface |
 | [agent-guide/telemetry.md](agent-guide/telemetry.md) | 텔레메트리 — 관측 / 비용 / 이상 탐지 / 세션 요약 |
+| [agent-guide/agent.md](agent-guide/agent.md) | 다중 에이전트 협업 — task DAG / barrier / semaphore / lease / reducer / rate-limit |
+| [agent-guide/capabilities.md](agent-guide/capabilities.md) | 권한 / capability_elevation / audit log |
+| [agent-guide/blackboard.md](agent-guide/blackboard.md) | 공유 컨텍스트 — Blackboard (`memory.bb_*`, snapshot 포함) |
+| [agent-guide/plan.md](agent-guide/plan.md) | 공유 컨텍스트 — Plan (`memory.plan_*`) + [plan.schema.json](agent-guide/plan.schema.json) |
+| [agent-guide/cache.md](agent-guide/cache.md) | 공유 컨텍스트 — Cache (`memory.cache_*`) |
 | [agent-guide/linux.md](agent-guide/linux.md) | Linux 사용 가이드 |
 
 ### 개발 AI 에이전트용 (Tasty 개발 가이드)
