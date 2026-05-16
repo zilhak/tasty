@@ -70,9 +70,17 @@ pub fn handle_with_caller(
         return JsonRpcResponse::error(id, -32001, &format!("permission_denied: {e}"));
     }
 
+    // Phase 4.3c 텔레메트리 cap 차단: triggered + (Stop|Pause) 인 cap 이 있는
+    // plugin agent 는 모든 IPC 가 거부된다. CLI/Local 은 검사 대상이 아니므로
+    // `telemetry.cap.reset` 으로 해제 가능.
+    if let Some(reason) = telemetry::check_cap_block(caller, canonical) {
+        tracing::warn!("ipc cap blocked: {reason}");
+        return JsonRpcResponse::error(id, -32007, &format!("cap_blocked: {reason}"));
+    }
+
     // Phase 4.2 텔레메트리 미들웨어: 비-host caller 의 IPC 호출을 자동 카운트.
     // `telemetry.*` 자체와 `_host` agent 는 카운트 제외 (재귀 폭주 / 자기-측정 방지).
-    // 카운트는 cap_eval 도입 전이라 best-effort 만 — 실패해도 dispatch 는 진행.
+    // 카운트는 cap_eval 직후 호출되며 record 시 cap 평가도 함께 일어난다 (Phase 4.3b).
     telemetry::record_ipc_call(state, caller, canonical);
 
     // 옛 이름이면 method를 새 이름으로 교체한 임시 request를 라우터에 전달.

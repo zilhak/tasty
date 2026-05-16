@@ -35,6 +35,47 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
+/// 호출 전 cap 차단 체크 (Phase 4.3c).
+///
+/// Plugin caller 의 agent 에 대해, `triggered` 가 있고 action 이 `Stop` 또는
+/// `Pause` 인 cap 이 하나라도 있으면 차단 사유 문자열을 반환한다.
+///
+/// 모든 메서드를 차단한다 (telemetry.* 포함). `telemetry.cap.reset` 으로 해제는
+/// **Local caller (CLI/사용자)** 만 가능 — Local 은 본 함수의 검사 대상이 아니므로
+/// 차단되지 않는다.
+///
+/// 차단 메시지는 cap_id / metric / action 을 포함해 디버깅을 돕는다.
+pub(crate) fn check_cap_block(caller: &CallerContext, _method: &str) -> Option<String> {
+    if !caller.is_plugin() {
+        return None;
+    }
+    let agent_id = caller.agent_id();
+    let agent = agent_id.as_str();
+    let caps = match load_all_caps() {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::warn!("cap block check: load failed: {e}");
+            return None;
+        }
+    };
+    for cap in &caps {
+        if cap.agent != agent {
+            continue;
+        }
+        if cap.triggered.is_none() {
+            continue;
+        }
+        if !matches!(cap.action, CapAction::Stop | CapAction::Pause) {
+            continue;
+        }
+        return Some(format!(
+            "cap_triggered: cap={} action={:?} metric={} agent={}",
+            cap.id, cap.action, cap.metric, cap.agent,
+        ));
+    }
+    None
+}
+
 /// dispatcher 미들웨어용 자동 카운트 (Phase 4.2).
 ///
 /// caller 가 `_host` 이거나 method 가 `telemetry.` 로 시작하면 skip한다 —

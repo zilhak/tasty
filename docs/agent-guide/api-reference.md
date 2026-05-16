@@ -624,7 +624,16 @@ tasty unset global-hook --hook HOOK_ID
 | `telemetry.cap.status` | `Telemetry` | `{ agent? }` → `{ entries: [CostCap + current_value + ratio], count }` |
 | `telemetry.cap.reset` | `Telemetry` | `{ id? } 또는 { agent? }` (둘 중 최소 하나) → `{ reset_ids: [], count }` — 매칭된 cap 들의 `triggered` 비움 |
 
-**Cost Cap 동작 (Phase 4.3b 까지)** — `record` / `record_batch` / dispatcher 자동 카운트 직후 inline 으로 cap 평가. agent+metric 가 일치하는 미발화 cap 의 `current_value` (윈도우 내 raw event sum) 가 `threshold` 이상이면 `triggered: { at, value }` 마크. `Notify` 액션은 활성 워크스페이스에 알림 추가. `Stop`/`Pause`/`RequireApproval` 은 현재 `triggered` 기록 + 로그만 — 호출 차단은 후속 sub-phase (4.3c 이후).
+**Cost Cap 동작 (Phase 4.3c 까지)** — `record` / `record_batch` / dispatcher 자동 카운트 직후 inline 으로 cap 평가. agent+metric 가 일치하는 미발화 cap 의 `current_value` (윈도우 내 raw event sum) 가 `threshold` 이상이면 `triggered: { at, value }` 마크.
+
+| 액션 | 평가 시점 동작 | 후속 IPC 처리 |
+|------|---------------|--------------|
+| `notify` | 활성 워크스페이스에 알림 추가 | 변화 없음 |
+| `stop` | `triggered` 기록 + 로그 | plugin agent 모든 IPC `-32007 cap_blocked` 거부 (claude.kill 트리거는 4.3e) |
+| `pause` | `triggered` 기록 + 로그 | plugin agent 모든 IPC `-32007 cap_blocked` 거부 |
+| `require_approval` | `triggered` 기록 + 로그 | 현재 차단 없음 (4.3d 이후 approval.request 자동 발행 예정) |
+
+`cap_blocked` 해제는 Local caller (CLI) 의 `telemetry.cap.reset` 만 가능 — 차단된 plugin 본인은 reset 도 막힌다.
 
 `CostCap` 스키마: `{ id, agent, metric, threshold, window, action, created_at, triggered?: { at, value } }`. `triggered` 가 있으면 이미 액션이 발화된 상태로 간주된다 (재발화는 `cap.reset` 필요). (Surface 간 통신)
 
