@@ -142,6 +142,16 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("memory.secret.stats", plugin(&[MemorySecret])),
         // ── memory: 유지 보수 (host 전용) ─────────────────────────────
         ("memory.gc", local_only()),
+        // ── memory: blackboard (Phase 7.1 — workspace-scoped) ─────────
+        ("memory.bb_create", plugin(&[MemoryWrite])),
+        ("memory.bb_put", plugin(&[MemoryWrite])),
+        ("memory.bb_get", plugin(&[MemoryRead])),
+        ("memory.bb_get_all", plugin(&[MemoryRead])),
+        ("memory.bb_get_meta", plugin(&[MemoryRead])),
+        ("memory.bb_delete_field", plugin(&[MemoryWrite])),
+        ("memory.bb_delete", plugin(&[MemoryWrite])),
+        ("memory.bb_list", plugin(&[MemoryRead])),
+        ("memory.bb_exists", plugin(&[MemoryRead])),
         // ── approval (휴먼 핸드오프) ──────────────────────────────────
         ("approval.request", plugin(&[Approval])),
         ("approval.respond", plugin(&[Approval])),

@@ -274,6 +274,18 @@ fn route_engine_handler(
         "memory.secret.stats" => memory::handle_secret_stats(state, caller, id, &request.params),
         // memory: 유지 보수 (host 전용)
         "memory.gc" => memory::handle_gc(state, caller, id, &request.params),
+        // memory: blackboard (Phase 7.1 — workspace-scoped 키-값 컬렉션)
+        "memory.bb_create" => memory::handle_bb_create(state, caller, id, &request.params),
+        "memory.bb_put" => memory::handle_bb_put(state, caller, id, &request.params),
+        "memory.bb_get" => memory::handle_bb_get(state, caller, id, &request.params),
+        "memory.bb_get_all" => memory::handle_bb_get_all(state, caller, id, &request.params),
+        "memory.bb_get_meta" => memory::handle_bb_get_meta(state, caller, id, &request.params),
+        "memory.bb_delete_field" => {
+            memory::handle_bb_delete_field(state, caller, id, &request.params)
+        }
+        "memory.bb_delete" => memory::handle_bb_delete(state, caller, id, &request.params),
+        "memory.bb_list" => memory::handle_bb_list(state, caller, id, &request.params),
+        "memory.bb_exists" => memory::handle_bb_exists(state, caller, id, &request.params),
         // approval (휴먼 핸드오프) — await 는 process_ipc 에서 worker thread 로 분리 처리.
         "approval.request" => approval::handle_request(state, caller, id, &request.params),
         "approval.respond" => approval::handle_respond(state, caller, id, &request.params),
