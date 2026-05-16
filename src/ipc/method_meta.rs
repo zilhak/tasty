@@ -220,6 +220,11 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("plugin.permissions", local_only()),
         ("plugin.grant", local_only()),
         ("plugin.revoke", local_only()),
+        // Phase 6.3 — agent 임시 grant. grant/revoke 는 user/operator 만, list 는
+        // readonly 라 plugin/agent 도 self-introspection 가능.
+        ("plugin.grant_agent_permission", local_only()),
+        ("plugin.revoke_agent_permission", local_only()),
+        ("plugin.list_agent_permissions", plugin(&[])),
         ("window.create", local_only()),
         ("window.close", local_only()),
         ("window.focus", local_only()),
@@ -480,5 +485,23 @@ mod tests {
     fn session_list_is_local_only() {
         let m = method_meta("session.list").expect("registered");
         assert!(!m.plugin_callable);
+    }
+
+    #[test]
+    fn agent_grant_revoke_are_local_only() {
+        for name in [
+            "plugin.grant_agent_permission",
+            "plugin.revoke_agent_permission",
+        ] {
+            let m = method_meta(name).unwrap_or_else(|| panic!("registered: {name}"));
+            assert!(!m.plugin_callable, "{name} should be local-only");
+        }
+    }
+
+    #[test]
+    fn agent_list_permissions_is_plugin_readonly() {
+        let m = method_meta("plugin.list_agent_permissions").expect("registered");
+        assert!(m.plugin_callable);
+        assert!(m.required.is_empty(), "list should not require permissions");
     }
 }

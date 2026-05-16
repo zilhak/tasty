@@ -1350,6 +1350,24 @@ impl App {
                         id,
                         &cmd.request.params,
                     ),
+                    "plugin.grant_agent_permission" => {
+                        ipc::handler::session::handle_grant_agent_permission(
+                            id,
+                            &cmd.request.params,
+                        )
+                    }
+                    "plugin.revoke_agent_permission" => {
+                        ipc::handler::session::handle_revoke_agent_permission(
+                            id,
+                            &cmd.request.params,
+                        )
+                    }
+                    "plugin.list_agent_permissions" => {
+                        ipc::handler::session::handle_list_agent_permissions(
+                            id,
+                            &cmd.request.params,
+                        )
+                    }
                     other => ipc::protocol::JsonRpcResponse::method_not_found(id, other),
                 };
                 // plugin 라이프사이클이 바뀌었을 수 있는 메서드만 도구 메뉴 재집계
