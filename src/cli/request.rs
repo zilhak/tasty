@@ -2,7 +2,8 @@
 use super::{DebugCommands, EventBusCommands};
 use super::{
     ApprovalCommands, ClipboardCommands, CloseCommands, Commands, ListCommands, MemoryCommands,
-    MemorySecretCommands, MoveCommands, NewCommands, OutputCommands, OutputObserveCommands, TelemetryCommands,
+    MemorySecretCommands, MoveCommands, NewCommands, OutputCommands, OutputObserveCommands,
+    TelemetryCapCommands, TelemetryCommands,
     PluginCommands, ReadCommands, SendCommands, SetCommands, SurfaceMetaCommands, ToolCommands,
     UnsetCommands,
 };
@@ -1025,6 +1026,52 @@ fn telemetry_command_to_method_params(
             }
             ("telemetry.top", p)
         }
+        Cap { command } => telemetry_cap_command_to_method_params(command),
+    }
+}
+
+fn telemetry_cap_command_to_method_params(
+    command: &TelemetryCapCommands,
+) -> (&'static str, serde_json::Value) {
+    use TelemetryCapCommands::*;
+    match command {
+        Set {
+            metric,
+            threshold,
+            window,
+            action,
+            agent,
+        } => {
+            let mut p = serde_json::json!({
+                "metric": metric,
+                "threshold": threshold,
+                "window": window,
+                "action": action,
+            });
+            if let Some(a) = agent {
+                p["agent"] = serde_json::Value::String(a.clone());
+            }
+            ("telemetry.cap.set", p)
+        }
+        List { agent } => {
+            let mut p = serde_json::json!({});
+            if let Some(a) = agent {
+                p["agent"] = serde_json::Value::String(a.clone());
+            }
+            ("telemetry.cap.list", p)
+        }
+        Remove { id } => (
+            "telemetry.cap.remove",
+            serde_json::json!({ "id": id }),
+        ),
+        Status { id } => (
+            "telemetry.cap.status",
+            serde_json::json!({ "id": id }),
+        ),
+        Reset { id } => (
+            "telemetry.cap.reset",
+            serde_json::json!({ "id": id }),
+        ),
     }
 }
 

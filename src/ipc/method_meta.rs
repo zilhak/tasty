@@ -161,6 +161,11 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("telemetry.summary", plugin(&[Telemetry])),
         ("telemetry.timeseries", plugin(&[Telemetry])),
         ("telemetry.top", plugin(&[Telemetry])),
+        ("telemetry.cap.set", plugin(&[Telemetry])),
+        ("telemetry.cap.list", plugin(&[Telemetry])),
+        ("telemetry.cap.remove", plugin(&[Telemetry])),
+        ("telemetry.cap.status", plugin(&[Telemetry])),
+        ("telemetry.cap.reset", plugin(&[Telemetry])),
         // ── notification ──────────────────────────────────────────────
         ("notification.list", plugin(&[Notification])),
         ("notification.create", plugin(&[Notification])),

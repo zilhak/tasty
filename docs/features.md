@@ -463,7 +463,7 @@
 
 ## 에이전트 텔레메트리 (Telemetry)
 
-비용·관측·이상 탐지의 기반이 되는 메트릭 수집 계층. `tasty-telemetry` 크레이트가 도메인 로직(이벤트 모델 / 키 컨벤션 / 순수 집계)을, 호스트가 `tasty-memory` 영속화와 IPC/CLI 어댑터를 담당한다. 단계 4.1은 raw event 기록 + 즉시 집계 조회까지만 제공하며, 자동 dispatcher 카운트와 cap/이상 탐지는 후속 sub-phase에서 켜진다.
+비용·관측·이상 탐지의 기반이 되는 메트릭 수집 계층. `tasty-telemetry` 크레이트가 도메인 로직(이벤트 모델 / 키 컨벤션 / 순수 집계 / Cost Cap 타입)을, 호스트가 `tasty-memory` 영속화와 IPC/CLI 어댑터를 담당한다. 단계 4.1-4.2 는 raw event 기록 / 즉시 집계 / dispatcher 자동 카운트, 4.3a 는 Cost Cap CRUD. cap 평가 (Notify/Stop/Pause/RequireApproval) 와 이상 탐지·자동 요약은 후속 sub-phase 에서 켜진다.
 
 ### 핵심 컴포넌트
 - `tasty-telemetry`: `TelemetryEvent` (agent / workspace_id / metric / value / op / ts / tags) + `MetricBucket` (1m/1h/1d 윈도우) + `Op::{Set,Inc,Dec}` + `summarize_events`/`aggregate_into_buckets`/`top_n` 같은 pure aggregation. `validate_metric` (`[a-z][a-z0-9_]*`, 1..=64) / `validate_agent_id` (`[a-zA-Z0-9_-]+`, 1..=64) 으로 키 안전성을 보장
@@ -476,12 +476,22 @@
 - 실패는 best-effort warn 로그 — IPC dispatch 를 막지 않음
 - cap_eval 통합 (Phase 4.3) 은 같은 진입점에 후행 도입 예정
 
-### IPC 5종 (Permission `Telemetry`)
+### IPC 측정 5종 (Permission `Telemetry`)
 - `telemetry.record` — 단일 메트릭 이벤트 기록. `metric` (필수), `value`, `op` ∈ {set, inc, dec}, `agent` (선택, default caller agent), `workspace_id` (선택, default 활성 워크스페이스), `tags` (선택, string→string). 응답: `{ key, ts, agent, metric }`
 - `telemetry.record_batch` — `events: []` 배열을 한 번에. 모든 이벤트는 동일한 `ts` 와 단조 증가 `seq` 로 저장됨
 - `telemetry.summary` — (metric, agent) 별 집계 (`sum/count/min/max/last`). 필터: `metric`/`agent`/`workspace_id`/`since`/`until` (unix ms)
 - `telemetry.timeseries` — 윈도우 단위 버킷 시계열. `metric` 필수, `window` ∈ {1m, 1h, 1d, default 1m}. 단계 4.1은 raw event 에서 즉시 집계 (사전 롤업 캐시는 4.2+ 도입)
 - `telemetry.top` — `by` ∈ {agent, workspace} 기준 sum 내림차순 top-N (default limit 10)
+
+### Cost Cap CRUD (Phase 4.3a, Permission `Telemetry`)
+- 도메인 타입: `CapWindow ∈ {Total, Hour, Day}`, `CapAction ∈ {Stop, Pause, RequireApproval, Notify}`, `CostCap { id, agent, metric, threshold, window, action, created_at, triggered? }`, `CapTriggered { at, value }`. 모두 `tasty-telemetry` 가 순수 도메인으로 보유
+- 영속: `Scope::Global` 의 `tasty.telemetry.cap.{id}` (workspace 비종속, agent 단위). cap id 는 `cap_{ts:013}{seq:04}` (`TelemetrySeq` 재사용)
+- `telemetry.cap.set` — 새 cap 정의. `{ metric, threshold, window?=total, action?=notify, agent? }` → `{ id }`
+- `telemetry.cap.list` — `{ agent? }` 필터로 cap 목록 조회 → `{ caps[], count }`
+- `telemetry.cap.remove` — `{ id }` → `{ removed: bool }`
+- `telemetry.cap.status` — `{ id }` → `{ id, current_value, threshold, exceeded, triggered? }`. `current_value` 는 cap 의 window 범위 안의 raw event sum 을 `summarize_events` 로 즉시 계산
+- `telemetry.cap.reset` — `{ id }` → `{ id, reset: true }`. `triggered` 필드를 비워 액션 재발화 가능 상태로 되돌림
+- 평가 / 액션 발화는 후속 sub-phase 4.3b-e 에서 도입 (CapEvaluator 1s TTL 캐시 → Notify → Stop → RequireApproval+Pause → claude.kill)
 
 ### 영속화 정책
 - workspace_id 있는 이벤트 → `scope=workspace:<id>`, 없으면 `global`
@@ -490,6 +500,7 @@
 
 ### CLI
 - `tasty telemetry {record,summary,timeseries,top}` — 단일 record 기록 / 집계 조회
+- `tasty telemetry cap {set,list,remove,status,reset}` — Cost Cap CRUD
 
 ## 설정 시스템
 

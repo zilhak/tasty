@@ -604,7 +604,7 @@ tasty unset global-hook --hook HOOK_ID
 
 ### 에이전트 텔레메트리 (`telemetry.*`)
 
-비용·관측·이상 탐지의 기반. 단계 4.1 범위는 raw event 기록 + 즉시 집계 조회. dispatcher 자동 카운트와 cap/이상 탐지는 후속 단계에서 켜진다.
+비용·관측·이상 탐지의 기반. raw event 기록 + 즉시 집계 조회 + dispatcher 자동 카운트(`ipc_calls` 메트릭, `method` 태그) + Cost Cap CRUD. 이상 탐지와 자동 요약은 후속 단계에서 켜진다.
 
 - 식별자 검증: `metric` 은 `[a-z][a-z0-9_]*` (최대 64), `agent` 는 `[a-zA-Z0-9_-]+` (최대 64). 위반 시 `-32602 invalid_params`
 - `agent` 미지정 시 caller agent 가 자동 적용 — Plugin → manifest plugin_id, Local → env `TASTY_AGENT_ID` (없으면 `_host`)
@@ -618,8 +618,13 @@ tasty unset global-hook --hook HOOK_ID
 | `telemetry.summary` | `Telemetry` | `{ metric?, agent?, workspace_id?, since?, until? }` → `{ entries: [{ metric, agent, workspace_id?, count, sum, min, max, last }], count, total_events }` |
 | `telemetry.timeseries` | `Telemetry` | `{ metric, agent?, workspace_id?, window?∈{1m,1h,1d}=1m, since?, until? }` → `{ window, buckets: [{ metric, agent, window_start, window_size_ms, count, sum, min, max, last }], count }` |
 | `telemetry.top` | `Telemetry` | `{ by?∈{agent,workspace}=agent, limit?=10, metric?, agent?, workspace_id?, since?, until? }` → `{ by, entries: [{ key, sum, count }], count }` |
+| `telemetry.cap.set` | `Telemetry` | `{ metric, threshold, window?∈{total,hour,day}=total, action?∈{stop,pause,require_approval,notify}=notify, agent? }` → `{ id }` |
+| `telemetry.cap.list` | `Telemetry` | `{ agent? }` → `{ caps: [{ id, agent, metric, threshold, window, action, created_at, triggered? }], count }` |
+| `telemetry.cap.remove` | `Telemetry` | `{ id }` → `{ removed: bool }` |
+| `telemetry.cap.status` | `Telemetry` | `{ id }` → `{ id, current_value, threshold, exceeded, triggered? }` (현재 윈도우의 누적 합) |
+| `telemetry.cap.reset` | `Telemetry` | `{ id }` → `{ id, reset: true }` — `triggered` 상태 해제 (action 재발화 가능) |
 
-### 메시지 패싱 (Surface 간 통신)
+**Cost Cap 동작 (Phase 4.3a)** — 현재는 CRUD 만 동작하고 평가/액션 발화는 후속 단계(4.3b 이후)에서 구현된다. cap 은 `agent` 단위로 영속 저장되며 (workspace 비종속), `compute_current_value` 가 윈도우 내 raw event sum 을 즉시 계산한다. (Surface 간 통신)
 
 | 메서드 | 파라미터 | 설명 |
 |--------|---------|------|

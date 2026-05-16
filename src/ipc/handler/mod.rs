@@ -249,6 +249,12 @@ fn route_engine_handler(
         "telemetry.summary" => telemetry::handle_summary(state, caller, id, &request.params),
         "telemetry.timeseries" => telemetry::handle_timeseries(state, caller, id, &request.params),
         "telemetry.top" => telemetry::handle_top(state, caller, id, &request.params),
+        // telemetry.cap — Phase 4.3 (CRUD; eval/action wiring 은 후속)
+        "telemetry.cap.set" => telemetry::handle_cap_set(state, caller, id, &request.params),
+        "telemetry.cap.list" => telemetry::handle_cap_list(state, caller, id, &request.params),
+        "telemetry.cap.remove" => telemetry::handle_cap_remove(state, caller, id, &request.params),
+        "telemetry.cap.status" => telemetry::handle_cap_status(state, caller, id, &request.params),
+        "telemetry.cap.reset" => telemetry::handle_cap_reset(state, caller, id, &request.params),
         _ => return None,
     })
 }

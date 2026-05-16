@@ -261,6 +261,53 @@ pub enum TelemetryCommands {
         #[arg(long)]
         until: Option<u64>,
     },
+    /// Cost caps — threshold-based actions (stop/pause/approval/notify).
+    Cap {
+        #[command(subcommand)]
+        command: TelemetryCapCommands,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum TelemetryCapCommands {
+    /// Define a new cap. Prints the generated cap id.
+    Set {
+        /// Metric name being capped.
+        #[arg(long)]
+        metric: String,
+        /// Threshold (sum across the window triggers the action).
+        #[arg(long)]
+        threshold: f64,
+        /// Window: total | hour | day.
+        #[arg(long, default_value = "total")]
+        window: String,
+        /// Action: stop | pause | require_approval | notify.
+        #[arg(long, default_value = "notify")]
+        action: String,
+        /// Agent id (defaults to caller).
+        #[arg(long)]
+        agent: Option<String>,
+    },
+    /// List caps. Optional `--agent` filter.
+    List {
+        #[arg(long)]
+        agent: Option<String>,
+    },
+    /// Remove a cap by id.
+    Remove {
+        #[arg(long)]
+        id: String,
+    },
+    /// Status: current cumulative value vs threshold for a cap.
+    Status {
+        #[arg(long)]
+        id: String,
+    },
+    /// Reset the triggered state (clears `triggered` field).
+    Reset {
+        #[arg(long)]
+        id: String,
+    },
 }
 
 #[derive(Subcommand)]
