@@ -12,7 +12,7 @@ use crate::file_format::DetectorId;
 /// - User:   `user/<short-name>` (예: `user/my-pdf-opener`)
 ///
 /// `<short-name>` 패턴: `[a-z0-9-]{1,32}`. slash 추가 금지.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
 pub struct HandlerId(pub String);
 
 impl HandlerId {

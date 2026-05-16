@@ -18,6 +18,7 @@ mod event_handler;
 mod file_drag;
 mod file_format;
 mod file_handler;
+mod file_handler_recent;
 mod global_hooks;
 mod gpu;
 mod html_ui;
