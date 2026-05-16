@@ -12,6 +12,17 @@
 //! 인자로 넘길 수 없고 본 크레이트에서는 **`&str` 으로 받기만 한다**. caller 가
 //! `_host` 인지 plugin 인지는 호출자 (호스트 IPC 라우터) 책임.
 //!
+//! ## Secret 의 보호 수준
+//!
+//! Secret value 는 **평문 BLOB** 으로 저장된다. AES-GCM/keyring 같은 데이터-앳-레스트
+//! 암호화는 하지 않는다. 현 시점에서 plugin process 가 OS-level sandbox 없이 호스트와
+//! 같은 권한으로 돌기 때문에, 어떤 종류의 디스크 암호화도 plugin 이 우회 가능하다
+//! (자세한 결정 배경은 `docs/design/memory-system.md`).
+//!
+//! 따라서 secret 의 격리 약속은 **"plugin 간 IPC 격리"** 까지로 좁혀져 있다:
+//! plugin A 가 IPC 로 plugin B 의 secret 을 요청하면 owner 분리로 차단된다.
+//! 사용자/host, 그리고 DB 파일을 직접 여는 모든 행위자는 secret 을 평문으로 본다.
+//!
 //! ## 동기 모델
 //!
 //! Tasty 본 바이너리는 winit 이벤트 루프 + sync 코드 베이스다 (tokio 사용 안 함).
@@ -19,7 +30,6 @@
 //! 동기 콜백. IPC dispatch 는 메인 스레드에서 순차 호출되고, plugin process 호출도
 //! 별도 스레드의 mpsc 경로를 거쳐 결국 메인에서 처리되므로 단일 mutex 로 충분.
 
-mod crypto;
 mod migrations;
 mod scope;
 
@@ -30,7 +40,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use rusqlite::{Connection, ErrorCode, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 
-use crate::crypto::SecretCipher;
 pub use migrations::{DbSchemaError, SCHEMA_VERSION};
 pub use scope::{Scope, validate_key};
 
@@ -44,14 +53,12 @@ pub const HOST_OWNER: &str = "_host";
 
 /// `MemoryStore` 의 정책 설정. 모든 cap 은 bytes 단위 (config 에서는 MiB 단위로
 /// 들어와 호출자가 변환). default 는 design doc 의 fallback 값 (1 MiB / 10 MiB /
-/// 1 GiB / plaintext disabled).
+/// 1 GiB).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MemoryConfig {
     pub entry_max_bytes: u64,
     pub secret_quota_per_owner_bytes: u64,
     pub regular_quota_total_bytes: u64,
-    /// Keyring 부재 환경에서 secret 영역 평문 폴백 허용 여부 (Stage C 에서 사용).
-    pub allow_plaintext_secret: bool,
 }
 
 impl Default for MemoryConfig {
@@ -60,7 +67,6 @@ impl Default for MemoryConfig {
             entry_max_bytes: 1024 * 1024,
             secret_quota_per_owner_bytes: 10 * 1024 * 1024,
             regular_quota_total_bytes: 1024 * 1024 * 1024,
-            allow_plaintext_secret: false,
         }
     }
 }
@@ -88,8 +94,6 @@ pub enum MemoryError {
         used: u64,
         limit: u64,
     },
-    #[error("secret memory unavailable (keyring not accessible)")]
-    SecretUnavailable,
     #[error("invalid key: {0}")]
     InvalidKey(String),
     #[error("invalid scope: {0}")]
@@ -189,12 +193,10 @@ pub struct ListOpts {
 pub struct MemoryStore {
     conn: Connection,
     config: MemoryConfig,
-    secret_cipher: SecretCipher,
 }
 
 impl MemoryStore {
     /// 기본 config 로 열기. 부모 디렉터리는 필요 시 생성. 스키마는 자동 적용/검증.
-    /// Secret cipher 는 OS keyring 에서 로드 (없으면 신규 생성·저장).
     pub fn open(path: &Path) -> std::result::Result<Self, MemoryInitError> {
         Self::open_with_config(path, MemoryConfig::default())
     }
@@ -208,12 +210,10 @@ impl MemoryStore {
             std::fs::create_dir_all(parent).map_err(|e| classify_io(e, parent))?;
         }
         let conn = Connection::open(path).map_err(|e| classify_sql(e, path))?;
-        let cipher = SecretCipher::from_keyring(config.allow_plaintext_secret);
-        Self::prepare(conn, path, config, cipher)
+        Self::prepare(conn, path, config)
     }
 
-    /// 인메모리 (테스트 전용). secret cipher 는 고정 키 (deterministic) 로 주입 —
-    /// 테스트마다 keyring 을 건드리지 않도록.
+    /// 인메모리 (테스트 전용).
     #[cfg(test)]
     pub fn open_in_memory() -> std::result::Result<Self, MemoryInitError> {
         Self::open_in_memory_with_config(MemoryConfig::default())
@@ -225,26 +225,13 @@ impl MemoryStore {
     ) -> std::result::Result<Self, MemoryInitError> {
         let conn =
             Connection::open_in_memory().map_err(|e| classify_sql(e, Path::new(":memory:")))?;
-        let cipher = SecretCipher::with_key(crypto::MasterKey::from_bytes([0xAB; 32]));
-        Self::prepare(conn, Path::new(":memory:"), config, cipher)
-    }
-
-    /// 테스트: secret cipher 동작 모드를 직접 지정 (Plaintext / Unavailable 분기 검증용).
-    #[cfg(test)]
-    pub fn open_in_memory_with_cipher(
-        config: MemoryConfig,
-        cipher: SecretCipher,
-    ) -> std::result::Result<Self, MemoryInitError> {
-        let conn =
-            Connection::open_in_memory().map_err(|e| classify_sql(e, Path::new(":memory:")))?;
-        Self::prepare(conn, Path::new(":memory:"), config, cipher)
+        Self::prepare(conn, Path::new(":memory:"), config)
     }
 
     fn prepare(
         mut conn: Connection,
         path: &Path,
         config: MemoryConfig,
-        secret_cipher: SecretCipher,
     ) -> std::result::Result<Self, MemoryInitError> {
         conn.pragma_update(None, "journal_mode", "WAL").ok();
         conn.pragma_update(None, "synchronous", "NORMAL").ok();
@@ -255,31 +242,7 @@ impl MemoryStore {
             }
             DbSchemaError::Sql(e) => classify_sql(e, path),
         })?;
-        Ok(Self {
-            conn,
-            config,
-            secret_cipher,
-        })
-    }
-
-    fn encode_secret(&self, owner: &str, scope: &str, key: &str, plain: &[u8]) -> Result<Vec<u8>> {
-        match &self.secret_cipher {
-            SecretCipher::Encrypted(k) => crypto::encrypt(k, owner, scope, key, plain).map_err(
-                |e| MemoryError::InvalidContentType(format!("secret encrypt: {e}")),
-            ),
-            SecretCipher::Plaintext => Ok(plain.to_vec()),
-            SecretCipher::Unavailable => Err(MemoryError::SecretUnavailable),
-        }
-    }
-
-    fn decode_secret(&self, owner: &str, scope: &str, key: &str, blob: Vec<u8>) -> Result<Vec<u8>> {
-        match &self.secret_cipher {
-            SecretCipher::Encrypted(k) => crypto::decrypt(k, owner, scope, key, &blob).map_err(
-                |e| MemoryError::InvalidContentType(format!("secret decrypt: {e}")),
-            ),
-            SecretCipher::Plaintext => Ok(blob),
-            SecretCipher::Unavailable => Err(MemoryError::SecretUnavailable),
-        }
+        Ok(Self { conn, config })
     }
 
     /// 현재 적용 중인 정책.
@@ -646,6 +609,7 @@ impl MemoryStore {
     // ============================================================
 
     /// Secret put. owner 차원으로 자동 분리되므로 다른 plugin 영역과 충돌 없음.
+    /// Value 는 평문 BLOB 그대로 저장 — 보호 수준은 plugin 간 IPC 격리까지.
     pub fn put_secret(
         &mut self,
         owner: &str,
@@ -656,11 +620,9 @@ impl MemoryStore {
     ) -> Result<u64> {
         validate_owner(owner)?;
         validate_key(key).map_err(MemoryError::InvalidKey)?;
-        let plaintext = serialize_value(value)?;
-        // entry_max 는 user-visible 값 크기 기준 (암호화 overhead 제외).
-        self.check_entry_size(plaintext.len())?;
+        let bytes = serialize_value(value)?;
+        self.check_entry_size(bytes.len())?;
         let scope_token = scope.as_token();
-        let blob = self.encode_secret(owner, &scope_token, key, &plaintext)?;
         let now = unix_ms_now();
         let content_type = value.content_type();
 
@@ -674,14 +636,14 @@ impl MemoryStore {
             )
             .optional()?;
 
-        // Quota: per-owner secret 한도. 저장된 (암호문) byte 기준.
+        // Quota: per-owner secret 한도. 평문 byte 기준.
         let existing_size = existing.as_ref().map(|(_, sz)| *sz).unwrap_or(0);
         let current_used: i64 = tx.query_row(
             "SELECT COALESCE(SUM(LENGTH(value)), 0) FROM memory_secret WHERE owner=?1",
             params![owner],
             |r| r.get(0),
         )?;
-        let projected = current_used - existing_size + blob.len() as i64;
+        let projected = current_used - existing_size + bytes.len() as i64;
         if (projected as u64) > self.config.secret_quota_per_owner_bytes {
             return Err(MemoryError::QuotaExceeded {
                 area: MemoryArea::Secret,
@@ -707,7 +669,7 @@ impl MemoryStore {
                                               expires_at=?4, version=?5
                      WHERE owner=?6 AND scope=?7 AND key=?8",
                     params![
-                        &blob,
+                        &bytes,
                         content_type,
                         now,
                         opts.expires_at,
@@ -729,7 +691,7 @@ impl MemoryStore {
                         owner,
                         &scope_token,
                         key,
-                        &blob,
+                        &bytes,
                         content_type,
                         now,
                         opts.expires_at
@@ -775,7 +737,7 @@ impl MemoryStore {
             )
             .optional()?;
 
-        let Some((blob, ct, created_at, updated_at, expires_at, version)) = row else {
+        let Some((bytes, ct, created_at, updated_at, expires_at, version)) = row else {
             return Ok(None);
         };
         if let Some(exp) = expires_at
@@ -783,8 +745,7 @@ impl MemoryStore {
         {
             return Ok(None);
         }
-        let plain = self.decode_secret(owner, &scope_token, key, blob)?;
-        let value = MemoryValue::from_db(&ct, plain)?;
+        let value = MemoryValue::from_db(&ct, bytes)?;
         Ok(Some(MemoryEntry {
             scope: scope_token,
             key: key.to_string(),
@@ -883,12 +844,11 @@ impl MemoryStore {
         let push_row = |entries: &mut Vec<MemoryEntry>,
                         row: rusqlite::Result<SecretRow>|
          -> Result<()> {
-            let (entry_key, blob, ct, ca, ua, ea, ver) = row?;
-            let plain = self.decode_secret(owner, &scope_token, &entry_key, blob)?;
+            let (entry_key, bytes, ct, ca, ua, ea, ver) = row?;
             entries.push(MemoryEntry {
                 scope: scope_token.clone(),
                 key: entry_key,
-                value: MemoryValue::from_db(&ct, plain)?,
+                value: MemoryValue::from_db(&ct, bytes)?,
                 created_at: ca,
                 updated_at: ua,
                 expires_at: ea,
@@ -1405,15 +1365,12 @@ mod tests {
             .unwrap();
     }
 
-    /// Secret entry 1개당 암호화 오버헤드 (nonce 12 + tag 16).
-    const SECRET_OVERHEAD: u64 = 28;
-
     #[test]
     fn secret_quota_exceeded_per_owner() {
-        // entry 1개 = 12 + 28 = 40 byte 저장. 한도 60 이면 1 통과, 2 거부.
+        // entry 1개 = 12 byte. 한도 20 이면 1 통과, 2 거부.
         let mut s = MemoryStore::open_in_memory_with_config(MemoryConfig {
             entry_max_bytes: 1024,
-            secret_quota_per_owner_bytes: 12 + SECRET_OVERHEAD + 10,
+            secret_quota_per_owner_bytes: 20,
             ..MemoryConfig::default()
         })
         .unwrap();
@@ -1580,21 +1537,20 @@ mod tests {
         s.put_secret(PLUGIN_B, &Scope::Global, "a", &text("zzzz"), &PutOpts::default())
             .unwrap();
 
-        // stats 는 실제 디스크 byte (= plaintext + nonce/tag) 를 보고한다.
+        // stats 는 평문 byte 를 그대로 보고한다 (암호화 안 함).
         let a = s.stats_secret(PLUGIN_A, None).unwrap();
         assert_eq!(a.entries, 1);
-        assert_eq!(a.bytes, 2 + SECRET_OVERHEAD);
+        assert_eq!(a.bytes, 2);
 
         let b = s.stats_secret(PLUGIN_B, None).unwrap();
         assert_eq!(b.entries, 1);
-        assert_eq!(b.bytes, 4 + SECRET_OVERHEAD);
+        assert_eq!(b.bytes, 4);
     }
 
-    // ---- 암호화 ----
-
+    /// Secret value 는 평문 BLOB 으로 저장된다. 보호는 IPC owner 분리까지만.
+    /// DB 파일을 직접 여는 행위자는 secret 을 평문으로 본다.
     #[test]
-    fn secret_is_encrypted_at_rest() {
-        // Plaintext payload 의 ASCII 시그니처가 raw row 에 그대로 보이면 안 된다.
+    fn secret_at_rest_is_plaintext() {
         let mut s = store();
         let secret = "hunter2-supersecret-token-zzz";
         s.put_secret(
@@ -1613,53 +1569,6 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        // nonce(12) + ct(plain.len()) + tag(16).
-        assert_eq!(blob.len(), secret.len() + 28);
-        let needle = b"hunter2";
-        assert!(
-            !blob.windows(needle.len()).any(|w| w == needle),
-            "plaintext leaked into raw row"
-        );
-        // Round-trip 은 정상 복호 — 같은 값 복원.
-        let entry = s.get_secret(PLUGIN_A, &Scope::Global, "tok").unwrap().unwrap();
-        assert_eq!(entry.value, text(secret));
-    }
-
-    #[test]
-    fn secret_unavailable_returns_error() {
-        let mut s = MemoryStore::open_in_memory_with_cipher(
-            MemoryConfig::default(),
-            SecretCipher::Unavailable,
-        )
-        .unwrap();
-        let err = s
-            .put_secret(PLUGIN_A, &Scope::Global, "k", &text("x"), &PutOpts::default())
-            .unwrap_err();
-        assert!(matches!(err, MemoryError::SecretUnavailable));
-    }
-
-    #[test]
-    fn secret_plaintext_fallback_stores_raw() {
-        let mut s = MemoryStore::open_in_memory_with_cipher(
-            MemoryConfig {
-                allow_plaintext_secret: true,
-                ..MemoryConfig::default()
-            },
-            SecretCipher::Plaintext,
-        )
-        .unwrap();
-        s.put_secret(PLUGIN_A, &Scope::Global, "k", &text("raw"), &PutOpts::default())
-            .unwrap();
-        let blob: Vec<u8> = s
-            .conn
-            .query_row(
-                "SELECT value FROM memory_secret WHERE owner=?1",
-                params![PLUGIN_A],
-                |r| r.get(0),
-            )
-            .unwrap();
-        assert_eq!(blob, b"raw");
-        let entry = s.get_secret(PLUGIN_A, &Scope::Global, "k").unwrap().unwrap();
-        assert_eq!(entry.value, text("raw"));
+        assert_eq!(blob, secret.as_bytes());
     }
 }

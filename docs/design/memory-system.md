@@ -239,7 +239,6 @@ tasty memory secret stats [--scope S]
 | `CasConflict { expected, actual }` | `-32005` | 낙관적 락 미스 |
 | `OwnedByOther { owner }` | `-32006` | regular entry 의 owner 가 caller 와 다름 (root 아닌 경우) |
 | `QuotaExceeded { used, limit, scope }` | `-32007` | secret (plugin 별) 또는 regular (global) 용량 초과. `scope` = `"secret"` \| `"regular"` |
-| `SecretUnavailable` | `-32008` | keyring 미가용 + `allow_plaintext_secret = false` 상태에서 secret 메서드 호출 |
 | `InvalidKey(_)` | `-32602` | invalid params |
 | `InvalidScope(_)` | `-32602` | invalid params |
 | `InvalidContentType(_)` | `-32602` | invalid params |
@@ -258,63 +257,60 @@ tasty memory secret stats [--scope S]
 
 | 시나리오 | Regular | Secret |
 |---|---|---|
+| Plugin A 가 IPC 로 plugin B 의 secret 요청 | — | **차단** (owner 분리, 개념 자체가 없음) |
+| Plugin A 가 IPC 로 plugin B 의 regular entry 갱신 | **차단** (`OwnedByOther`) | — |
+| 사용자/host 가 모든 entry 조회·수정 | 허용 | 허용 |
+| Plugin 이 `~/.tasty/memory.db` 파일 직접 열기 | 평문 노출 (책임 범위 밖) | **평문 노출** (책임 범위 밖, 자세한 결정 배경은 아래) |
 | 다른 OS user 가 `~/.tasty/memory.db` 접근 | filesystem 권한으로 차단 | filesystem 권한으로 차단 |
-| 같은 OS user 의 다른 프로세스가 DB 파일 직접 열기 | 평문 노출 | **AES-GCM 으로 보호** (키체인 접근 필요) |
-| `~/.tasty/` 가 백업/클라우드 동기화 대상에 포함 | 평문 노출 | **차단** (디바이스 키체인 없는 백업본은 복호화 불가) |
-| 디바이스 도난, 디스크 암호화 없음 | 평문 | **차단** |
-| Plugin A 가 IPC 로 plugin B 의 secret 요청 | — | 차단 (개념 자체가 없음) |
-| Plugin A 가 IPC 로 plugin B 의 regular entry 갱신 | `OwnedByOther` 로 차단 | — |
+| `~/.tasty/` 가 백업/클라우드 동기화 대상에 포함 | 평문 노출 (책임 범위 밖) | 평문 노출 (책임 범위 밖) |
+| 디바이스 도난 + 디스크 암호화 없음 | 평문 (책임 범위 밖) | 평문 (책임 범위 밖) |
 
-Secret 의 위협 모델은 **"디스크에 정착한 secret 데이터"** 보호다. "런타임에 메모리 위에서 plugin 이 자기 secret 을 읽고 있을 때 다른 프로세스가 훔쳐본다" 같은 시나리오는 OS 책임이지 Tasty 책임이 아니다.
+Secret 영역의 격리 약속은 **"plugin 간 IPC 격리"** 한 가지로 좁혀져 있다. plugin A 는 IPC 표면에서 plugin B 의 secret 의 *존재 자체* 를 볼 수 없다. 그게 전부다. 사용자/host 는 secret 을 자유롭게 들여다보고, 디스크 파일을 여는 모든 행위자도 평문을 본다.
 
-### Secret 암호화
+### 왜 암호화를 하지 않는가
 
-Secret 영역의 `value` blob 은 **application-level AES-256-GCM** 으로 암호화한다. SQLCipher 같은 page-level 암호화 대신 application-level 인 이유:
+Tasty 의 메모리 시스템은 초기 설계 단계에서 secret 영역을 **AES-256-GCM + OS keyring** 으로 암호화하려고 했다. 본래 목적은 *plugin process 가 IPC 를 우회해 sqlite 파일을 직접 열어 다른 plugin 의 secret 을 빼가는 것* 을 막는 것이었다. 하지만 이 모델은 **현재 plugin 실행 모델과 trust boundary 가 맞지 않는다**:
 
-- Regular 와 Secret 이 같은 DB 파일에 산다. Regular 까지 같이 암호화할 이유가 없음.
-- `secret` 테이블의 `scope` / `key` / `created_at` 등 metadata 는 평문이어도 위협 가치가 낮음 — 어차피 IPC schema 로 keyspace 가 알려져 있다.
-- 핵심 가치는 `value` 자체. value blob 만 외과적으로 암호화.
+1. **Plugin sandbox 부재**: plugin process 는 `Command::new(entry_path).spawn()` 으로 띄워지고 OS-level 격리(`chroot` / `seccomp` / `sandbox-exec` / `landlock` / `AppContainer`) 가 없다. 호스트와 같은 OS user 권한의 일반 process.
+2. **Keyring 도 우회 가능**: 같은 user 권한이면 OS keyring API 도 plugin 이 직접 호출 가능 (Linux secret-service, Windows Credential Manager 는 같은 user 의 다른 process 를 막지 않음). 즉 *마음먹은 plugin 은 master key 를 빼내 ciphertext 를 복호할 수 있다.* AES-GCM 의 보호가 결정적이지 않다.
+3. **환경 흔들림**: keyring 가용성은 환경에 따라 변한다 (Linux 헤드리스/WSL/CI). 평문 폴백을 옵트인으로 두면 환경 전환 시 row 별로 "암호화/평문" 이 섞여 데이터 손상 위험이 생긴다.
 
-**암호화 구조**:
+이런 상태에서 AES-GCM 을 유지하는 것은 *false sense of security* 였다 — 약속을 진짜로 지킬 수 없는데 plugin 개발자와 사용자에게 "secret 은 안전하다" 는 잘못된 신호를 준다. 차라리 보호 약속을 정직하게 좁히는 게 낫다는 결론.
 
-```text
-encrypted_blob = nonce(12B) || ciphertext || tag(16B)
-```
+**현재 결정**:
 
-- 알고리즘: AES-256-GCM (NIST 표준, AEAD)
-- nonce: 매 write 마다 새로 생성 (random 12 bytes)
-- AAD (associated data): `owner || scope || key` 의 SHA-256 — entry 정체성을 ciphertext 에 묶어 row 단위 swap 공격 방지
-- master key: 32 bytes, OS 키체인에 보관
+- Secret value 는 평문 BLOB 으로 저장한다.
+- 격리 약속은 IPC owner 분리 까지만.
+- 디스크 파일 직접 노출 / 디스크 도난 / 백업 sync 같은 시나리오는 **명시적으로 책임지지 않는다**.
+- 정말 민감한 데이터 (사용자의 master password, OAuth refresh token, API 결제 key 등) 는 plugin 이 secret 영역에 두지 *말고* 자체적으로 OS keyring 을 호출하거나 외부 보관소에 두라고 권고. 자세한 가이드는 `docs/dev-guide/plugin-sensitive-data.md`.
 
-`content_type` 컬럼은 평문 유지 (Text/Json/Binary 분기에 필요). `version` `expires_at` 등 메타도 평문.
+### 미래 경로 — sandbox 가 도입되면
 
-### 마스터 키 보관
+언젠가 plugin sandbox (sandbox-exec / landlock / AppContainer) 가 들어오면:
 
-`keyring` 크레이트로 OS 키체인에 master key 보관:
+- plugin 이 `~/.tasty/memory.db` 자체를 못 열게 된다.
+- plugin 이 OS keyring 도 못 호출하게 된다.
+- 그 시점에 secret 영역의 IPC 격리만으로 진짜 격리가 완성된다.
 
-| OS | Storage |
-|---|---|
-| macOS | Keychain (`com.tasty.memory` / `master-key`) |
-| Windows | Credential Manager |
-| Linux | Secret Service (GNOME Keyring, KWallet, KeePassXC 등) |
+이 결정은 **sandbox 가 들어오면 추가 코드 없이 자동으로 강해진다**. 미래에 다시 AES-GCM 을 끼워넣을 필요도 없다. sandbox 가 디스크 접근 자체를 막아주니까.
 
-첫 실행시 키가 없으면 생성하여 저장. 이후 실행마다 키체인에서 로드.
+sandbox 도입은 별도 큰 작업이라 0.x 메모리 시스템 결정과 분리한다.
 
-### Keyring 부재 시 정책
+### IPC transport 의 trust boundary
 
-Linux 헤드리스·SSH·CI 환경에서는 Secret Service 가 없을 수 있다. 이 경우 **명시적 에러로 실패**한다:
+현재 IPC 는 `127.0.0.1:<port>` TCP 로 떠 있고, 같은 머신의 어떤 프로세스라도 포트만 알면 `Local` caller 로 붙어 `_host` 권한을 가진다. 단일 사용자 데스크탑/노트북에서는 OS user 격리가 trust boundary 와 일치하므로 문제가 되지 않는다 — 같은 user 의 임의 프로세스는 어차피 `~/.tasty/memory.db` 와 keyring 에 직접 접근 가능하기 때문.
 
-- 시작 시 keyring 가용 여부 probe → 실패하면 `MemoryInitError::KeyringUnavailable`.
-- 호스트는 사용자에게 안내 메시지 표시 후 **secret 기능을 disable 상태로 시작**한다 (regular 영역은 정상 동작).
-- Secret IPC 메서드 호출 시 `SecretUnavailable` 에러 반환.
-- 사용자가 의도적으로 평문 폴백을 원하면 `config.toml` 의 `[memory] allow_plaintext_secret = true` 명시 설정 필요. 이 경우 `~/.tasty/.secret-key` 에 키를 평문 저장하고 시작 시 warning 로그 + UI 알림.
+이 가정이 깨지는 시점:
 
-평문 폴백을 default 로 두지 않는 이유: `secret` 이라는 이름은 약속이다. 약속을 깨려면 사용자가 명시적으로 동의해야 한다.
+- **공유 머신에서 다른 OS user 가 tasty 인스턴스에 접근** (예: 원격 ssh 서버에 user A 가 tasty daemon 띄워두고 user B 가 같은 머신 사용). loopback TCP 는 user 격리를 안 하므로 user B 가 user A 의 메모리/secret 을 다 읽는다.
+- **multi-tenant 데몬 모델** (한 tasty 인스턴스을 여러 사용자가 공유).
+
+이 두 시나리오가 진짜 들어올 때 IPC transport 를 Unix socket + file mode 0600 (Windows: named pipe ACL) 로 바꾸고, 필요하면 user-level owner 분리까지 도입해야 한다. **현재로서는 tmux 류 attach/detach 모델을 시도하다 포기한 상태이므로 우선순위가 낮다** — 이 메모는 그 결정이 뒤집힐 때 다시 꺼내 보기 위한 핀이다.
 
 ### 신뢰 한계
 
-- **Plugin process 가 호스트를 우회해 직접 `memory.db` 를 여는 경우**는 막지 않는다. 다만 secret value 는 암호화돼 있어 키체인 접근 권한이 없으면 못 읽는다. 키체인은 같은 OS user 권한이면 일반적으로 접근 가능하므로, 결국 **악의적 native plugin** 시나리오는 부분적으로만 차단된다. 이런 신뢰 한계는 plugin 권한 시스템 전체에 공통.
-- `memory.write` 권한이 있어도 `OwnedByOther` 로 막힌다는 점은, plugin 간 데이터 격리를 권한 grant 의 미세 조정 없이도 강제한다. "이 plugin 에게 memory write 권한을 주면 다른 plugin 데이터를 망가뜨릴 수 있나?" → 못 한다.
+- **Plugin process 가 IPC 를 우회해 디스크/keyring/외부 자원에 직접 접근하는 경우**는 sandbox 가 부재한 현 시점에서 막을 수 없다. 이건 메모리 시스템 한정 문제가 아니라 plugin 실행 모델 전체의 한계.
+- `memory.write` 권한이 있어도 `OwnedByOther` 로 막힌다는 점은, plugin 간 데이터 격리를 권한 grant 의 미세 조정 없이도 강제한다. "이 plugin 에게 memory write 권한을 주면 다른 plugin 데이터를 망가뜨릴 수 있나?" → IPC 표면에서는 못 한다.
 
 ## 용량 제한
 
@@ -350,9 +346,6 @@ secret_quota_mb_per_plugin = 10
 
 # Regular 영역 총합 최대 byte (default: 1 GiB)
 regular_quota_mb_total = 1024
-
-# Linux keyring 부재시 평문 폴백 허용 (default: false)
-allow_plaintext_secret = false
 ```
 
 용량 값은 `MiB` 단위 정수. 0 또는 음수는 invalid 로 reject. 누락된 항목은 위 default 로 폴백.

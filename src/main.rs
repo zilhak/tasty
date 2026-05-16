@@ -606,7 +606,6 @@ impl App {
                 .memory
                 .regular_quota_mb_total
                 .saturating_mul(1024 * 1024),
-            allow_plaintext_secret: settings.memory.allow_plaintext_secret,
         };
         if let Err(e) = tasty_memory::init_with_config(memory_config) {
             tracing::warn!("memory.db init failed: {e}");

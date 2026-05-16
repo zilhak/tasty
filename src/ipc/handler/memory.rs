@@ -239,11 +239,6 @@ fn map_error(id: Value, err: MemoryError) -> JsonRpcResponse {
                 format!("quota_exceeded ({area_str}): used {used}, limit {limit}"),
             )
         }
-        SecretUnavailable => JsonRpcResponse::error(
-            id,
-            -32008,
-            "secret_unavailable: keyring missing and plaintext fallback disabled",
-        ),
         InvalidKey(msg) => JsonRpcResponse::invalid_params(id, format!("invalid_key: {msg}")),
         InvalidScope(msg) => JsonRpcResponse::invalid_params(id, format!("invalid_scope: {msg}")),
         InvalidOwner(msg) => JsonRpcResponse::invalid_params(id, format!("invalid_owner: {msg}")),

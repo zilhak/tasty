@@ -121,7 +121,7 @@ tasty memory exists --workspace 7 --key task.plan
 tasty memory count --workspace 7 [--prefix task.]
 tasty memory scopes                                            # 사용 중인 스코프 목록
 tasty memory stats [--workspace 7]                             # entries + bytes
-tasty memory secret put --global --key api.token --value "sk-..."  # 암호화 영역 (caller별 분리)
+tasty memory secret put --global --key api.token --value "sk-..."  # secret 영역 (caller별 분리)
 tasty memory secret get --global --key api.token
 tasty memory secret list --global [--prefix api.]
 tasty memory secret delete --global --key api.token
@@ -344,7 +344,7 @@ tasty surface-meta list --surface 3   # 특정 서피스 지정
 `~/.tasty/memory.db` (SQLite, WAL 모드)에 저장되는 영속 키-값 스토어. 재시작 후에도 보존된다. 두 개의 영역이 같은 파일에 공존한다:
 
 - **Regular** (`memory.*`): 공유 네임스페이스. 모든 caller 가 모든 entry 를 **읽을** 수 있지만, **갱신·삭제는 해당 entry 를 만든 owner 본인** 또는 host (CLI / 사용자) 만 가능.
-- **Secret** (`memory.secret.*`): caller 별 사전 분할. owner 가 PK 일부라 다른 plugin 의 secret 영역은 IPC 표면에 **개념 자체가 존재하지 않는다**. 모든 secret value 는 디스크에 **AES-256-GCM** 으로 암호화 저장 (master key 는 OS keyring 보관).
+- **Secret** (`memory.secret.*`): caller 별 사전 분할. owner 가 PK 일부라 다른 plugin 의 secret 영역은 IPC 표면에 **개념 자체가 존재하지 않는다**. 디스크에는 평문 BLOB 으로 저장된다 — 보호 약속은 "다른 plugin 의 IPC 접근 차단" 한 가지. DB 파일을 직접 여는 경우/디스크 도난/백업 sync 는 보호 범위 밖이다. 진짜 민감 데이터는 `docs/dev-guide/plugin-sensitive-data.md` 가이드를 따라 별도 관리할 것.
 
 **스코프 토큰**: `global` | `account:<userid>` | `window:<id>` | `workspace:<id>` | `surface:<id>`.
 
@@ -360,8 +360,7 @@ tasty surface-meta list --surface 3   # 특정 서피스 지정
 |----|--------|------|
 | `entry_max_mb` | `1` | 단일 entry 의 user-visible 값 최대 (MiB) |
 | `regular_quota_mb_total` | `1024` | Regular 영역 전체 합산 한도 (MiB) |
-| `secret_quota_mb_per_plugin` | `10` | Secret 영역 owner (plugin) 별 한도 (MiB). 저장된 암호문 byte 기준 |
-| `allow_plaintext_secret` | `false` | Linux 등 keyring 부재 환경에서 secret 영역 평문 폴백 허용 (시작 시 warning 로그) |
+| `secret_quota_mb_per_plugin` | `10` | Secret 영역 owner (plugin) 별 한도 (MiB) |
 
 #### Regular API (`memory.*`)
 
@@ -389,7 +388,7 @@ tasty surface-meta list --surface 3   # 특정 서피스 지정
 | `memory.secret.exists` | `scope, key` | 존재 여부. 응답: `{ exists: bool }` |
 | `memory.secret.count` | `scope, prefix?` | 갯수. 응답: `{ count: N }` |
 | `memory.secret.scopes` | _없음_ | 사용 중인 스코프 목록. 응답: `{ scopes: [...] }` |
-| `memory.secret.stats` | `scope?` | 엔트리 갯수 + 저장된 byte 합계 (암호문 기준). 응답: `{ scope, entries, bytes }` |
+| `memory.secret.stats` | `scope?` | 엔트리 갯수 + 저장된 byte 합계. 응답: `{ scope, entries, bytes }` |
 
 #### Entry 객체
 
@@ -414,7 +413,7 @@ tasty surface-meta list --surface 3   # 특정 서피스 지정
 - **CAS**: `put`/`delete`에 `cas: <expected_version>` 지정. 일치하지 않으면 `cas_conflict` 에러.
 - **owner enforcement** (regular): 다른 owner 의 entry 를 갱신·삭제하려 하면 `owned_by_other` 에러. `_host` (CLI) 는 모든 entry 를 수정할 수 있는 root.
 - **읽기는 공유** (regular): 모든 caller 는 모든 owner 의 entry 를 읽을 수 있고, 응답에 `owner` 필드로 누가 만든 entry 인지 노출된다.
-- **암호화 at rest** (secret): 모든 value 는 `nonce(12) || ciphertext || tag(16)` 포맷으로 저장. AAD = `SHA256(owner ":" scope ":" key)` 로 entry 위치에 묶인다. master key 가 keyring 에서 변하면 기존 secret 은 복호 실패.
+- **저장 형태** (secret): 디스크에는 평문 BLOB 으로 저장된다. secret 영역의 보호는 owner 격리(IPC 표면에서 다른 plugin 의 entry 가 노출되지 않음) 한 가지에 한정된다. `memory.db` 파일을 직접 여는 경우, 백업/cloud sync, 디스크 도난 시나리오는 보호 범위 밖.
 
 #### 에러 코드
 
@@ -426,7 +425,6 @@ tasty surface-meta list --surface 3   # 특정 서피스 지정
 | `-32005` | `cas_conflict` |
 | `-32006` | `owned_by_other` (regular 영역에서 다른 plugin 의 entry 를 수정·삭제 시도) |
 | `-32007` | `quota_exceeded` (`area`/`used`/`limit` 포함) |
-| `-32008` | `secret_unavailable` (keyring 없음 + `allow_plaintext_secret=false`) |
 
 #### Plugin 권한
 
