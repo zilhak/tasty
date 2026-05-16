@@ -12,6 +12,11 @@ serde_json = "1"
 tracing = "0.1"
 thiserror = "2"
 directories = "6"
+aes-gcm = { version = "0.10", default-features = false, features = ["aes", "alloc", "getrandom"] }
+sha2 = "0.10"
+rand = "0.8"
+base64 = "0.22"
+keyring = { version = "3", default-features = false, features = ["apple-native", "windows-native", "linux-native"] }
 
 [dev-dependencies]
 tempfile = "3"
