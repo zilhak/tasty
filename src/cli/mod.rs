@@ -789,6 +789,36 @@ pub enum PluginCommands {
         /// Permission token.
         permission: String,
     },
+    /// Grant a temporary permission to an active agent session.
+    /// Permission lives until TTL expiry or explicit revoke; base permissions
+    /// (issued at session.issue) are unaffected.
+    GrantAgentPermission {
+        /// Agent id (e.g. `claude:child-1`).
+        #[arg(long)]
+        agent: String,
+        /// Permission token (e.g. fs.write, surface.write).
+        #[arg(long)]
+        permission: String,
+        /// Time-to-live in seconds. Omit for indefinite (until revoke).
+        #[arg(long)]
+        ttl: Option<u64>,
+    },
+    /// Revoke a previously-granted temporary permission from an agent session.
+    /// Does not affect base permissions assigned at issue time.
+    RevokeAgentPermission {
+        /// Agent id.
+        #[arg(long)]
+        agent: String,
+        /// Permission token.
+        #[arg(long)]
+        permission: String,
+    },
+    /// List base + temporary permissions for active agent sessions.
+    ListAgentPermissions {
+        /// Filter to a specific agent. Omit to list all active sessions.
+        #[arg(long)]
+        agent: Option<String>,
+    },
     /// Inspect plugin extensions (extends-blocks).
     Extension {
         #[command(subcommand)]
