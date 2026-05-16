@@ -586,6 +586,22 @@ tasty unset global-hook --hook HOOK_ID
 | `notification.list` | 없음 | 최근 50개 알림 |
 | `notification.create` | `workspace_id` 또는 `surface_id`, `title?, body?` | 알림 생성. **포커스 독립**: 알림이 붙을 워크스페이스를 명시해야 한다. `surface_id`가 주어지면 그 surface 소속 워크스페이스로 자동 라우팅. 워크스페이스가 1개뿐일 때만 둘 다 생략 가능 (호환성 폴백, 향후 제거 예정) |
 
+### 휴먼 핸드오프 (Approval)
+
+`notification.create` 와 달리 **요청-응답** 워크플로우. 상세 가이드: [`approval.md`](approval.md).
+
+| 메서드 | 권한 | 설명 |
+|--------|------|------|
+| `approval.request` | `Approval` | 새 결정 요청 생성. `severity` ∈ {`info`, `warn`, `danger`}. 응답: `{ id, record }` |
+| `approval.respond` | `Approval` | `{ id, choice, comment? }`. self-response 금지 (`-32011`) |
+| `approval.await` | local-only | `{ id, timeout_ms? }` blocking. `{ outcome, choice?, by?, default_choice? }` |
+| `approval.cancel` | `Approval` | `{ id }` — 종료되지 않은 요청 취소 |
+| `approval.get` | `Approval` | `{ id }` — 단일 record |
+| `approval.list` | `Approval` | `{ state?, workspace_id? }` — in-memory 조회 (현 세션) |
+| `approval.history` | `Approval` | `{ since?, until?, workspace_id?, requester_id?, decision?, state?, limit? }` — 영속 기록 조회 (재시작 후에도 유지) |
+| `approval.summary.set` | `Approval` + `MemoryWrite` | `{ workspace_id, content }` — workspace 별 markdown 요약 저장 |
+| `approval.summary.get` | `Approval` + `MemoryRead` | `{ workspace_id }` — 요약 조회 |
+
 ### 메시지 패싱 (Surface 간 통신)
 
 | 메서드 | 파라미터 | 설명 |
