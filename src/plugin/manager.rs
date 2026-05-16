@@ -269,6 +269,11 @@ pub struct PluginManager {
     popup_instances: HashMap<u64, PopupInstance>,
     /// 다음 popup `instance_id`. 1부터 시작해 단조 증가.
     next_popup_instance_id: u64,
+    /// 파일 형식 식별 시스템. plugin enable/disable 시 detector 추가/제거.
+    /// 호스트 본문이 EngineState 와 같은 Arc 를 공유.
+    pub file_format: Arc<crate::file_format::FileFormatRegistry>,
+    /// 파일 핸들러 시스템. plugin enable/disable 시 handler 추가/제거.
+    pub file_handler: Arc<crate::file_handler::FileHandlerRegistry>,
 }
 
 /// 호스트가 추적 중인 popup 인스턴스 한 건. plugin process가 죽으면 함께 제거된다.
@@ -293,6 +298,19 @@ pub struct PendingPluginCall {
 
 impl PluginManager {
     pub fn new(waker: tasty_core::SharedWakerFactory) -> Self {
+        Self::with_registries(
+            waker,
+            Arc::new(crate::file_format::FileFormatRegistry::new()),
+            Arc::new(crate::file_handler::FileHandlerRegistry::new()),
+        )
+    }
+
+    /// EngineState 와 같은 Arc 를 공유하기 위한 생성자.
+    pub fn with_registries(
+        waker: tasty_core::SharedWakerFactory,
+        file_format: Arc<crate::file_format::FileFormatRegistry>,
+        file_handler: Arc<crate::file_handler::FileHandlerRegistry>,
+    ) -> Self {
         let log_dir = tasty_core::paths::tasty_home()
             .map(|d| d.join("plugins-logs"))
             .unwrap_or_else(|| PathBuf::from("./plugin-logs"));
@@ -331,6 +349,8 @@ impl PluginManager {
             event_trace_seq: AtomicU64::new(1),
             popup_instances: HashMap::new(),
             next_popup_instance_id: 1,
+            file_format,
+            file_handler,
         }
     }
 
@@ -2483,14 +2503,21 @@ impl PluginManager {
         self.config.save()?;
         self.auto_disabled.remove(plugin_id);
         self.recompute_extensions();
-        if !self.processes.contains_key(plugin_id) {
-            self.ensure_listener();
-            if let Some(pkg) = self
-                .packages
-                .iter()
-                .find(|p| p.manifest.id == plugin_id)
-                .cloned()
-            {
+        if let Some(pkg) = self
+            .packages
+            .iter()
+            .find(|p| p.manifest.id == plugin_id)
+            .cloned()
+        {
+            // file_format / file_handler 두 registry 에 plugin 의 contribute 등록.
+            // plugin process spawn 과 별개로 정적 contribute 는 즉시 활성화한다.
+            self.file_format
+                .install_plugin_detectors(plugin_id, &pkg.manifest.contributes.detector);
+            self.file_handler
+                .install_plugin_handlers(plugin_id, &pkg.manifest.contributes.handler);
+
+            if !self.processes.contains_key(plugin_id) {
+                self.ensure_listener();
                 self.start_plugin_internal(&pkg);
             }
         }
@@ -2517,6 +2544,9 @@ impl PluginManager {
             proc.shutdown(Duration::from_secs(2));
         }
         self.ipc_namespaces.unregister_plugin(plugin_id);
+        // file_format / file_handler 두 registry 에서 plugin 의 contribute 제거.
+        self.file_format.uninstall_plugin(plugin_id);
+        self.file_handler.uninstall_plugin(plugin_id);
         // disable로 인한 unload 이벤트는 event_bus.clear_plugin 직전에 발화 — 본인의
         // 구독도 들어와 있을 수 있어 broadcast 우선 후 정리.
         if was_running {

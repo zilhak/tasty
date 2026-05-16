@@ -153,6 +153,16 @@ pub enum Permission {
     /// `[[contributes.popup]]` 항목을 선언한 plugin은 매니페스트의 `permissions`에
     /// 반드시 이 토큰을 포함해야 한다.
     UiPopup,
+    /// 새 detector 정의 권한. 토큰 `file_handler.define`.
+    /// `[[contributes.detector]]` 로 **신규** detector id 를 선언할 때 필요.
+    /// 기존 id 재선언(rule 추가)은 `FileHandlerExtend` 가 담당.
+    FileHandlerDefine,
+    /// 기존 detector 재선언(rule 추가) 권한. 토큰 형식: `file_handler.extend:<id>`.
+    /// `$unknown` 은 존재하지 않는 detector 라서 token parse 단계에서 reject.
+    FileHandlerExtend(String),
+    /// 특정 detector 에 handler attach 권한. 토큰 형식: `file_handler.handle:<id>`.
+    /// `$unknown` 은 reject. `$directory` 등 실 등록된 reserved id 는 허용.
+    FileHandlerHandle(String),
 }
 
 impl Permission {
@@ -178,6 +188,7 @@ impl Permission {
             "agent" => Self::AgentManage,
             "ui.tool_item" => Self::UiToolItem,
             "ui.popup" => Self::UiPopup,
+            "file_handler.define" => Self::FileHandlerDefine,
             other => {
                 if let Some(prefix) = other.strip_prefix("ipc.invoke:") {
                     if !is_valid_ipc_prefix(prefix) || is_reserved_ipc_prefix(prefix) {
@@ -190,6 +201,18 @@ impl Permission {
                         return None;
                     }
                     return Some(Self::Extension(target.to_string()));
+                }
+                if let Some(id) = other.strip_prefix("file_handler.extend:") {
+                    if !crate::file_format::is_valid_detector_id(id) || id == "$unknown" {
+                        return None;
+                    }
+                    return Some(Self::FileHandlerExtend(id.to_string()));
+                }
+                if let Some(id) = other.strip_prefix("file_handler.handle:") {
+                    if !crate::file_format::is_valid_detector_id(id) || id == "$unknown" {
+                        return None;
+                    }
+                    return Some(Self::FileHandlerHandle(id.to_string()));
                 }
                 return None;
             }
@@ -222,6 +245,9 @@ impl Permission {
             Self::Extension(target) => format!("ext:{target}"),
             Self::UiToolItem => "ui.tool_item".into(),
             Self::UiPopup => "ui.popup".into(),
+            Self::FileHandlerDefine => "file_handler.define".into(),
+            Self::FileHandlerExtend(id) => format!("file_handler.extend:{id}"),
+            Self::FileHandlerHandle(id) => format!("file_handler.handle:{id}"),
         }
     }
 }
@@ -362,6 +388,19 @@ pub struct Contributes {
     /// 명시적인 IPC 호출로 열린다.
     #[serde(default)]
     pub popup: Vec<PopupContribute>,
+    /// 새 detector 정의 또는 기존 detector 재선언(rule 추가 + 메타 patch).
+    /// 같은 id 가 host/다른 plugin/user 에 이미 있으면 rule union, 메타는
+    /// last-writer-wins (install 순서 host → plugin → user).
+    /// `$`-시작 id 는 plugin 이 신규 정의할 수 없음 (manifest validation reject).
+    #[serde(default)]
+    pub detector: Vec<crate::file_format::config::DetectorDecl>,
+    /// 파일 핸들러 contribute. plugin 은 `OpenSurface` / `Ipc` 만 사용 가능 — `System`
+    /// variant 자체가 plugin schema 에 없어 `kind = "system"` 적으면 deserialize 단계에서
+    /// reject.
+    #[serde(default)]
+    pub handler: Vec<crate::file_handler::config::HandlerDecl<
+        crate::file_handler::config::PluginHandlerActionDecl,
+    >>,
 }
 
 /// Plugin이 contribute하는 popup의 정의.
@@ -1074,6 +1113,97 @@ impl Manifest {
                 }
             }
         }
+
+        // [[contributes.detector]] 검증.
+        let mut seen_detector_ids = HashSet::new();
+        for decl in &self.contributes.detector {
+            if !crate::file_format::is_valid_detector_id(&decl.id) {
+                anyhow::bail!(
+                    "invalid contributes.detector id '{}': must be lowercase ascii + digits + '-', length ≤ 64",
+                    decl.id
+                );
+            }
+            if decl.id.starts_with('$') {
+                anyhow::bail!(
+                    "contributes.detector '{}': plugin cannot define reserved ($-prefixed) detector ids",
+                    decl.id
+                );
+            }
+            if !seen_detector_ids.insert(decl.id.clone()) {
+                anyhow::bail!(
+                    "contributes.detector id '{}' declared twice in this manifest",
+                    decl.id
+                );
+            }
+            // 각 rule schema 검증 (cross-ref 인 lua/structure spec 존재여부는 install 시점에)
+            if let Err(e) = crate::file_format::config::validate_detector_decl(decl, true) {
+                anyhow::bail!("contributes.detector '{}': {e}", decl.id);
+            }
+        }
+
+        // [[contributes.handler]] 검증.
+        if !self.contributes.handler.is_empty() {
+            let mut seen_handler_ids = HashSet::new();
+            let surface_kinds: Vec<String> = self
+                .surface_kinds
+                .iter()
+                .map(|k| k.kind.clone())
+                .collect();
+            let ipc_prefixes: Vec<String> = self
+                .contributes
+                .ipc_namespace
+                .iter()
+                .map(|n| n.prefix.clone())
+                .collect();
+
+            for decl in &self.contributes.handler {
+                if !seen_handler_ids.insert(decl.id.clone()) {
+                    anyhow::bail!(
+                        "contributes.handler id '{}' declared twice in this manifest",
+                        decl.id
+                    );
+                }
+                if let Err(e) =
+                    crate::file_handler::config::validate_plugin_handler_decl(decl)
+                {
+                    anyhow::bail!("contributes.handler: {e}");
+                }
+                if let Err(e) = crate::file_handler::config::validate_plugin_handler_refs(
+                    decl,
+                    &surface_kinds,
+                    &ipc_prefixes,
+                ) {
+                    anyhow::bail!("contributes.handler: {e}");
+                }
+                // 권한 매칭: file_handler.handle:<detector>
+                let needs = format!("file_handler.handle:{}", decl.detector);
+                if !self.permissions.iter().any(|p| p == &needs) {
+                    anyhow::bail!(
+                        "contributes.handler '{}' on detector '{}' requires permission '{needs}'",
+                        decl.id,
+                        decl.detector
+                    );
+                }
+            }
+        }
+
+        // detector contribute 권한: 신규 정의면 define, 기존 id 재선언이면 extend.
+        // host/다른 plugin 의 detector 목록은 manifest 만으로는 모른다. install 시점에
+        // 더 엄격하게 확인하되, manifest 차원에서는 최소한 둘 중 하나는 가져야 한다고
+        // 강제한다 — 사용자가 plugin install 시 권한 부여 UI 가 의미를 가지도록.
+        for decl in &self.contributes.detector {
+            let has_define = self.permissions.iter().any(|p| p == "file_handler.define");
+            let needs_extend = format!("file_handler.extend:{}", decl.id);
+            let has_extend = self.permissions.iter().any(|p| p == &needs_extend);
+            if !has_define && !has_extend {
+                anyhow::bail!(
+                    "contributes.detector '{}' requires either 'file_handler.define' (new id) \
+                     or '{needs_extend}' (extending existing id)",
+                    decl.id
+                );
+            }
+        }
+
         Ok(())
     }
 
@@ -2768,5 +2898,176 @@ mod tests {
         );
         let m = parse(&s).expect("filter without modifies should parse");
         assert_eq!(m.extends.unwrap().pre_ipc[0].mode, HookMode::Filter);
+    }
+
+    #[test]
+    fn file_handler_define_token_parses() {
+        assert_eq!(
+            Permission::from_token("file_handler.define"),
+            Some(Permission::FileHandlerDefine)
+        );
+        assert_eq!(
+            Permission::FileHandlerDefine.as_token(),
+            "file_handler.define"
+        );
+    }
+
+    #[test]
+    fn file_handler_extend_handle_tokens_parse() {
+        let p = Permission::from_token("file_handler.extend:markdown").unwrap();
+        assert_eq!(p, Permission::FileHandlerExtend("markdown".into()));
+        assert_eq!(p.as_token(), "file_handler.extend:markdown");
+
+        let p = Permission::from_token("file_handler.handle:pdf").unwrap();
+        assert_eq!(p, Permission::FileHandlerHandle("pdf".into()));
+        assert_eq!(p.as_token(), "file_handler.handle:pdf");
+
+        // $directory 는 허용 (실제 등록된 reserved id)
+        assert!(Permission::from_token("file_handler.handle:$directory").is_some());
+    }
+
+    #[test]
+    fn file_handler_unknown_sentinel_token_rejected() {
+        assert!(Permission::from_token("file_handler.handle:$unknown").is_none());
+        assert!(Permission::from_token("file_handler.extend:$unknown").is_none());
+    }
+
+    fn detector_skeleton(perms: &str, extra: &str) -> String {
+        format!(
+            r#"
+            manifest_version = 1
+            id = "com.example.pdf"
+            name = "PDF"
+            version = "0.1"
+            api_version = "1"
+            permissions = [{perms}]
+            [entry]
+            type = "process"
+            command = "x"
+            {extra}
+            "#
+        )
+    }
+
+    #[test]
+    fn detector_define_token_required_for_new_id() {
+        let s = detector_skeleton(
+            r#""file_handler.define""#,
+            r#"
+                [[contributes.detector]]
+                id = "pdf"
+                [[contributes.detector.rule]]
+                kind = "extension"
+                values = ["pdf"]
+            "#,
+        );
+        parse(&s).expect("with file_handler.define should accept new detector");
+    }
+
+    #[test]
+    fn detector_without_define_or_extend_rejected() {
+        let s = detector_skeleton(
+            r#""#,
+            r#"
+                [[contributes.detector]]
+                id = "pdf"
+                [[contributes.detector.rule]]
+                kind = "extension"
+                values = ["pdf"]
+            "#,
+        );
+        let err = parse(&s).unwrap_err().to_string();
+        assert!(err.contains("file_handler.define") || err.contains("file_handler.extend"));
+    }
+
+    #[test]
+    fn detector_reserved_id_rejected_for_plugin() {
+        let s = detector_skeleton(
+            r#""file_handler.define""#,
+            r#"
+                [[contributes.detector]]
+                id = "$mything"
+                [[contributes.detector.rule]]
+                kind = "extension"
+                values = ["x"]
+            "#,
+        );
+        assert!(parse(&s).is_err());
+    }
+
+    #[test]
+    fn handler_requires_handle_permission() {
+        let s = detector_skeleton(
+            r#""file_handler.define", "surface.write""#,
+            r#"
+                [[surface_kinds]]
+                kind = "pdf_view"
+                display_name_i18n_key = "x"
+
+                [[contributes.detector]]
+                id = "pdf"
+                [[contributes.detector.rule]]
+                kind = "extension"
+                values = ["pdf"]
+
+                [[contributes.handler]]
+                id = "viewer"
+                detector = "pdf"
+                priority = 100
+                [contributes.handler.action]
+                kind = "open_surface"
+                surface_kind = "pdf_view"
+            "#,
+        );
+        // permissions 에 file_handler.handle:pdf 가 없으므로 reject
+        let err = parse(&s).unwrap_err().to_string();
+        assert!(err.contains("file_handler.handle:pdf"), "got: {err}");
+    }
+
+    #[test]
+    fn handler_open_surface_cross_ref() {
+        // surface_kind 가 plugin 자체에 없으면 reject
+        let s = detector_skeleton(
+            r#""file_handler.define", "file_handler.handle:pdf", "surface.write""#,
+            r#"
+                [[contributes.detector]]
+                id = "pdf"
+                [[contributes.detector.rule]]
+                kind = "extension"
+                values = ["pdf"]
+
+                [[contributes.handler]]
+                id = "viewer"
+                detector = "pdf"
+                priority = 100
+                [contributes.handler.action]
+                kind = "open_surface"
+                surface_kind = "missing"
+            "#,
+        );
+        assert!(parse(&s).is_err());
+    }
+
+    #[test]
+    fn handler_system_kind_rejected_in_plugin() {
+        let s = detector_skeleton(
+            r#""file_handler.define", "file_handler.handle:pdf""#,
+            r#"
+                [[contributes.detector]]
+                id = "pdf"
+                [[contributes.detector.rule]]
+                kind = "extension"
+                values = ["pdf"]
+
+                [[contributes.handler]]
+                id = "viewer"
+                detector = "pdf"
+                priority = 100
+                [contributes.handler.action]
+                kind = "system"
+            "#,
+        );
+        // serde 가 PluginHandlerActionDecl 의 unknown variant 로 reject
+        assert!(parse(&s).is_err());
     }
 }
