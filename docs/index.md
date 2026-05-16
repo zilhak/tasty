@@ -54,6 +54,9 @@ cmux의 기능을 크로스 플랫폼(Windows, macOS, Linux) GPU 가속 네이�
 | [agent-guide/clipboard.md](agent-guide/clipboard.md) | 클립보드 히스토리 (tool.clipboard.*) 사용 가이드 |
 | [agent-guide/plugins.md](agent-guide/plugins.md) | Plugin 설치/관리 (`tasty plugin ...`) 가이드 |
 | [agent-guide/event-catalog.md](agent-guide/event-catalog.md) | Surface Hook/Plugin 이벤트 카탈로그 |
+| [agent-guide/output.md](agent-guide/output.md) | 터미널 출력 구조화 (parse_since_mark / commands / observer) |
+| [agent-guide/output-parsers.md](agent-guide/output-parsers.md) | 출력 파서 카탈로그 (tasty-output 빌트인 10종) |
+| [agent-guide/approval.md](agent-guide/approval.md) | 휴먼 핸드오프 — approval / diff surface |
 | [agent-guide/linux.md](agent-guide/linux.md) | Linux 사용 가이드 |
 
 ### 개발 AI 에이전트용 (Tasty 개발 가이드)
