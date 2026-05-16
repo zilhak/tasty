@@ -624,7 +624,7 @@ tasty unset global-hook --hook HOOK_ID
 | `telemetry.cap.status` | `Telemetry` | `{ agent? }` → `{ entries: [CostCap + current_value + ratio], count }` |
 | `telemetry.cap.reset` | `Telemetry` | `{ id? } 또는 { agent? }` (둘 중 최소 하나) → `{ reset_ids: [], count }` — 매칭된 cap 들의 `triggered` 비움 |
 
-**Cost Cap 동작 (Phase 4.3a)** — 현재는 CRUD 만 동작하고 평가/액션 발화는 후속 단계(4.3b 이후)에서 구현된다. cap 은 `agent` 단위로 영속 저장되며 (workspace 비종속), `compute_current_value` 가 윈도우 내 raw event sum 을 즉시 계산한다.
+**Cost Cap 동작 (Phase 4.3b 까지)** — `record` / `record_batch` / dispatcher 자동 카운트 직후 inline 으로 cap 평가. agent+metric 가 일치하는 미발화 cap 의 `current_value` (윈도우 내 raw event sum) 가 `threshold` 이상이면 `triggered: { at, value }` 마크. `Notify` 액션은 활성 워크스페이스에 알림 추가. `Stop`/`Pause`/`RequireApproval` 은 현재 `triggered` 기록 + 로그만 — 호출 차단은 후속 sub-phase (4.3c 이후).
 
 `CostCap` 스키마: `{ id, agent, metric, threshold, window, action, created_at, triggered?: { at, value } }`. `triggered` 가 있으면 이미 액션이 발화된 상태로 간주된다 (재발화는 `cap.reset` 필요). (Surface 간 통신)
 

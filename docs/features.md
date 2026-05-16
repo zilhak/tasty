@@ -463,7 +463,7 @@
 
 ## 에이전트 텔레메트리 (Telemetry)
 
-비용·관측·이상 탐지의 기반이 되는 메트릭 수집 계층. `tasty-telemetry` 크레이트가 도메인 로직(이벤트 모델 / 키 컨벤션 / 순수 집계 / Cost Cap 타입)을, 호스트가 `tasty-memory` 영속화와 IPC/CLI 어댑터를 담당한다. 단계 4.1-4.2 는 raw event 기록 / 즉시 집계 / dispatcher 자동 카운트, 4.3a 는 Cost Cap CRUD. cap 평가 (Notify/Stop/Pause/RequireApproval) 와 이상 탐지·자동 요약은 후속 sub-phase 에서 켜진다.
+비용·관측·이상 탐지의 기반이 되는 메트릭 수집 계층. `tasty-telemetry` 크레이트가 도메인 로직(이벤트 모델 / 키 컨벤션 / 순수 집계 / Cost Cap 타입)을, 호스트가 `tasty-memory` 영속화와 IPC/CLI 어댑터를 담당한다. 단계 4.1-4.2 는 raw event 기록 / 즉시 집계 / dispatcher 자동 카운트, 4.3a 는 Cost Cap CRUD, 4.3b 는 record 후 inline cap 평가 + `Notify` 액션 발화. 잔여 액션(Stop/Pause/RequireApproval)·이상 탐지·자동 요약은 후속 sub-phase 에서 켜진다.
 
 ### 핵심 컴포넌트
 - `tasty-telemetry`: `TelemetryEvent` (agent / workspace_id / metric / value / op / ts / tags) + `MetricBucket` (1m/1h/1d 윈도우) + `Op::{Set,Inc,Dec}` + `summarize_events`/`aggregate_into_buckets`/`top_n` 같은 pure aggregation. `validate_metric` (`[a-z][a-z0-9_]*`, 1..=64) / `validate_agent_id` (`[a-zA-Z0-9_-]+`, 1..=64) 으로 키 안전성을 보장
@@ -491,7 +491,9 @@
 - `telemetry.cap.remove` — `{ id }` → `{ removed: true, id }` (없으면 `-32004 not_found`)
 - `telemetry.cap.status` — `{ agent? }` → `{ entries[], count }`. 각 entry 는 cap 본체 + `current_value` (윈도우 내 raw event sum) + `ratio` (current/threshold)
 - `telemetry.cap.reset` — `{ id? }` 또는 `{ agent? }` (둘 중 최소 하나) → `{ reset_ids[], count }`. 매칭된 cap 들의 `triggered` 필드를 비워 액션 재발화 가능 상태로 되돌림
-- 평가 / 액션 발화는 후속 sub-phase 4.3b-e 에서 도입 (CapEvaluator 1s TTL 캐시 → Notify → Stop → RequireApproval+Pause → claude.kill)
+- **평가 (Phase 4.3b)**: `record` / `record_batch` / dispatcher 자동 카운트 직후 inline 으로 cap 평가 — agent+metric 가 일치하는 미발화 cap 들의 `current_value` 를 즉시 계산해 `threshold` 이상이면 `triggered: { at, value }` 마크 후 액션 발화. evaluate 자체는 best-effort warn 로그 — 실패해도 record 응답은 영향 없음
+- **Notify 액션 (Phase 4.3b)**: 활성 워크스페이스에 알림 추가 (`title="Cap '<metric>' 임계 도달"`, body 에 agent/metric/value/threshold/window/cap_id 포함). 차단 없음
+- **잔여 액션 (4.3c 이후)**: `Stop` (claude.kill + 이후 IPC 거부), `Pause` (IPC 거부, reset 으로 해제), `RequireApproval` (approval.request 자동 발행) — 현재는 `triggered` 만 기록되고 액션 발화는 로그로만 남는다
 
 ### 영속화 정책
 - workspace_id 있는 이벤트 → `scope=workspace:<id>`, 없으면 `global`

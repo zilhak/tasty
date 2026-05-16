@@ -43,7 +43,7 @@ fn now_ms() -> u64 {
 /// metric 검증이 `.` 을 허용하지 않으므로 `ipc_calls.<method>` 형태를 피한다).
 ///
 /// 모든 실패는 best-effort. 호스트 stdout 의 IPC 정상 동작을 막지 않는다.
-pub(crate) fn record_ipc_call(state: &AppState, caller: &CallerContext, method: &str) {
+pub(crate) fn record_ipc_call(state: &mut AppState, caller: &CallerContext, method: &str) {
     if method.starts_with("telemetry.") {
         return;
     }
@@ -70,7 +70,9 @@ pub(crate) fn record_ipc_call(state: &AppState, caller: &CallerContext, method: 
     }
     if let Err(e) = persist_event(state, &ev) {
         tracing::warn!("telemetry middleware: record failed: {e}");
+        return;
     }
+    evaluate_caps_after_record(state, &ev);
 }
 
 fn scope_for(workspace_id: Option<u32>) -> Scope {
@@ -177,7 +179,7 @@ pub fn handle_record(
         Ok(ev) => ev,
         Err(e) => return JsonRpcResponse::invalid_params(id, e),
     };
-    match persist_event(state, &ev) {
+    let response = match persist_event(state, &ev) {
         Ok(key) => JsonRpcResponse::success(
             id,
             json!({
@@ -187,8 +189,10 @@ pub fn handle_record(
                 "metric": ev.metric,
             }),
         ),
-        Err(e) => JsonRpcResponse::error(id, -32603, e),
-    }
+        Err(e) => return JsonRpcResponse::error(id, -32603, e),
+    };
+    evaluate_caps_after_record(state, &ev);
+    response
 }
 
 /// `telemetry.record_batch` — 여러 이벤트를 한 번에 기록.
@@ -230,6 +234,9 @@ pub fn handle_record_batch(
             Ok(k) => keys.push(k),
             Err(e) => return JsonRpcResponse::error(id, -32603, e),
         }
+    }
+    for ev in &events {
+        evaluate_caps_after_record(state, ev);
     }
     JsonRpcResponse::success(
         id,
@@ -774,4 +781,101 @@ pub fn handle_cap_reset(
         id,
         json!({ "reset_ids": reset_ids, "count": reset_ids.len() }),
     )
+}
+
+// ============================================================
+// Cap 평가 / 액션 발화 — Phase 4.3b (Notify 만 우선)
+// ============================================================
+
+/// 매 record 후 호출되는 best-effort 후크. agent+metric 이 일치하고 아직
+/// triggered 되지 않은 cap 들을 검사해 임계를 넘으면 `triggered` 마크 + 액션 발화.
+///
+/// 모든 실패는 warn 로그로만 — record 자체의 응답에는 영향이 없다.
+///
+/// Phase 4.3b: `Notify` 만 발화 (단순 알림 + 차단 없음). `Stop`/`Pause`/`RequireApproval`
+/// 는 후속 sub-phase (호출 전 evaluator + dispatcher 거부) 에서 결합한다.
+fn evaluate_caps_after_record(state: &mut AppState, ev: &TelemetryEvent) {
+    let caps = match load_all_caps() {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::warn!("cap eval: load failed: {e}");
+            return;
+        }
+    };
+    for mut cap in caps {
+        if cap.agent != ev.agent || cap.metric != ev.metric {
+            continue;
+        }
+        if cap.triggered.is_some() {
+            continue;
+        }
+        let current = match compute_current_value(&cap) {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::warn!("cap eval: compute failed for {}: {e}", cap.id);
+                continue;
+            }
+        };
+        if current < cap.threshold {
+            continue;
+        }
+        // 임계 초과 — triggered 마크 후 액션 발화.
+        cap.triggered = Some(tasty_telemetry::CapTriggered {
+            at: now_ms(),
+            value: current,
+        });
+        if let Err(e) = save_cap(&cap) {
+            tracing::warn!("cap eval: save failed for {}: {e}", cap.id);
+            continue;
+        }
+        fire_cap_action(state, &cap, current);
+    }
+}
+
+/// cap 액션을 실제 시스템으로 발화. Phase 4.3b 는 `Notify` 만 처리; 나머지 액션은
+/// 미래 sub-phase 에서 결합되며 현재는 로그만 남긴다 (memory 상의 `triggered` 필드는
+/// 이미 기록됐으므로 status 조회로 확인 가능).
+fn fire_cap_action(state: &mut AppState, cap: &CostCap, current: f64) {
+    match cap.action {
+        CapAction::Notify => fire_notify(state, cap, current),
+        CapAction::Stop | CapAction::Pause | CapAction::RequireApproval => {
+            tracing::info!(
+                "cap triggered (action '{:?}' not yet wired in 4.3b): \
+                 cap={} agent={} metric={} value={} threshold={}",
+                cap.action,
+                cap.id,
+                cap.agent,
+                cap.metric,
+                current,
+                cap.threshold,
+            );
+        }
+    }
+}
+
+/// `Notify` 액션: 활성 워크스페이스에 notification 추가 + host event enqueue.
+/// notification.create 핸들러의 단순 경로와 동등하나 IPC 를 거치지 않는다.
+fn fire_notify(state: &mut AppState, cap: &CostCap, current: f64) {
+    let Some(ws) = state.engine.workspaces.get(state.active_workspace) else {
+        tracing::warn!("cap notify: no active workspace, skipping cap {}", cap.id);
+        return;
+    };
+    let ws_id = ws.id;
+    let title = format!("Cap '{}' 임계 도달", cap.metric);
+    let body = format!(
+        "agent={} metric={} value={} ≥ threshold={} (window={:?}, cap={})",
+        cap.agent, cap.metric, current, cap.threshold, cap.window, cap.id,
+    );
+    let created = state
+        .engine
+        .notifications
+        .add(ws_id, 0, title.clone(), body.clone());
+    if let Some(nid) = created {
+        state.enqueue_host_event(crate::state::PendingHostEvent::NotificationCreated {
+            id: nid,
+            title,
+            body,
+            source: "telemetry.cap".to_string(),
+        });
+    }
 }
