@@ -152,6 +152,12 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("memory.bb_delete", plugin(&[MemoryWrite])),
         ("memory.bb_list", plugin(&[MemoryRead])),
         ("memory.bb_exists", plugin(&[MemoryRead])),
+        // ── memory: bb snapshot (Phase 7.4) ───────────────────────────
+        ("memory.bb_snapshot", plugin(&[MemoryWrite])),
+        ("memory.bb_snapshot_get", plugin(&[MemoryRead])),
+        ("memory.bb_snapshot_list", plugin(&[MemoryRead])),
+        ("memory.bb_snapshot_delete", plugin(&[MemoryWrite])),
+        ("memory.bb_snapshot_restore", plugin(&[MemoryWrite])),
         // ── memory: plan (Phase 7.2 — workspace-scoped) ───────────────
         ("memory.plan_create", plugin(&[MemoryWrite])),
         ("memory.plan_get", plugin(&[MemoryRead])),

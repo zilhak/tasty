@@ -1397,6 +1397,49 @@ pub enum MemoryBbCommands {
         #[arg(long)]
         name: String,
     },
+    /// Capture the current bb state as a snapshot (`tasty.bb.<name>.snapshots.<id>`).
+    Snapshot {
+        #[arg(long)]
+        workspace: u32,
+        #[arg(long)]
+        name: String,
+        #[arg(long)]
+        snapshot_id: String,
+    },
+    /// Read a snapshot JSON.
+    SnapshotGet {
+        #[arg(long)]
+        workspace: u32,
+        #[arg(long)]
+        name: String,
+        #[arg(long)]
+        snapshot_id: String,
+    },
+    /// List snapshot ids for a bb.
+    SnapshotList {
+        #[arg(long)]
+        workspace: u32,
+        #[arg(long)]
+        name: String,
+    },
+    /// Delete a snapshot.
+    SnapshotDelete {
+        #[arg(long)]
+        workspace: u32,
+        #[arg(long)]
+        name: String,
+        #[arg(long)]
+        snapshot_id: String,
+    },
+    /// Restore bb fields from a snapshot (replaces current fields).
+    SnapshotRestore {
+        #[arg(long)]
+        workspace: u32,
+        #[arg(long)]
+        name: String,
+        #[arg(long)]
+        snapshot_id: String,
+    },
 }
 
 /// `tasty memory secret ...` 서브커맨드. CLI 는 항상 `_host` owner 로 동작하며,

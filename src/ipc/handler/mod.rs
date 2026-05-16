@@ -286,6 +286,20 @@ fn route_engine_handler(
         "memory.bb_delete" => memory::handle_bb_delete(state, caller, id, &request.params),
         "memory.bb_list" => memory::handle_bb_list(state, caller, id, &request.params),
         "memory.bb_exists" => memory::handle_bb_exists(state, caller, id, &request.params),
+        // memory: bb snapshot (Phase 7.4)
+        "memory.bb_snapshot" => memory::handle_bb_snapshot(state, caller, id, &request.params),
+        "memory.bb_snapshot_get" => {
+            memory::handle_bb_snapshot_get(state, caller, id, &request.params)
+        }
+        "memory.bb_snapshot_list" => {
+            memory::handle_bb_snapshot_list(state, caller, id, &request.params)
+        }
+        "memory.bb_snapshot_delete" => {
+            memory::handle_bb_snapshot_delete(state, caller, id, &request.params)
+        }
+        "memory.bb_snapshot_restore" => {
+            memory::handle_bb_snapshot_restore(state, caller, id, &request.params)
+        }
         // memory: plan (Phase 7.2 — workspace-scoped 선언적 work breakdown)
         "memory.plan_create" => memory::handle_plan_create(state, caller, id, &request.params),
         "memory.plan_get" => memory::handle_plan_get(state, caller, id, &request.params),

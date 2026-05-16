@@ -1706,6 +1706,42 @@ fn memory_bb_command_to_method_params(
             "memory.bb_exists",
             serde_json::json!({ "workspace_id": workspace, "name": name }),
         ),
+        Snapshot { workspace, name, snapshot_id } => (
+            "memory.bb_snapshot",
+            serde_json::json!({
+                "workspace_id": workspace,
+                "name": name,
+                "snapshot_id": snapshot_id,
+            }),
+        ),
+        SnapshotGet { workspace, name, snapshot_id } => (
+            "memory.bb_snapshot_get",
+            serde_json::json!({
+                "workspace_id": workspace,
+                "name": name,
+                "snapshot_id": snapshot_id,
+            }),
+        ),
+        SnapshotList { workspace, name } => (
+            "memory.bb_snapshot_list",
+            serde_json::json!({ "workspace_id": workspace, "name": name }),
+        ),
+        SnapshotDelete { workspace, name, snapshot_id } => (
+            "memory.bb_snapshot_delete",
+            serde_json::json!({
+                "workspace_id": workspace,
+                "name": name,
+                "snapshot_id": snapshot_id,
+            }),
+        ),
+        SnapshotRestore { workspace, name, snapshot_id } => (
+            "memory.bb_snapshot_restore",
+            serde_json::json!({
+                "workspace_id": workspace,
+                "name": name,
+                "snapshot_id": snapshot_id,
+            }),
+        ),
     }
 }
 
