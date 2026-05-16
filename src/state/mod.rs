@@ -504,13 +504,25 @@ impl AppState {
     }
 
     /// Clean up all state associated with a closed surface:
-    /// surface metadata and per-surface host view state.
+    /// surface metadata, per-surface host view state, and memory entries
+    /// scoped to this surface (regular + secret).
     pub(crate) fn cleanup_surface(&mut self, surface_id: u32) {
         if let Err(e) = crate::surface_meta::SurfaceMetaStore::remove(surface_id) {
             tracing::warn!("surface_meta remove failed for surface {surface_id}: {e}");
         }
         self.markdown_views.drop_view(surface_id);
         self.image_views.drop_view(surface_id);
+        let scope = tasty_memory::Scope::Surface(surface_id);
+        tasty_memory::with_store(|s| match s.purge_scope(&scope) {
+            Ok(stats) if stats.regular + stats.secret > 0 => tracing::debug!(
+                surface_id,
+                regular = stats.regular,
+                secret = stats.secret,
+                "memory: purged closed-surface scope",
+            ),
+            Ok(_) => {}
+            Err(e) => tracing::warn!(surface_id, "memory: purge_scope failed: {e}"),
+        });
     }
 
     pub fn active_workspace(&self) -> &crate::model::Workspace {

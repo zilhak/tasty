@@ -128,6 +128,8 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("memory.secret.count", plugin(&[MemorySecret])),
         ("memory.secret.scopes", plugin(&[MemorySecret])),
         ("memory.secret.stats", plugin(&[MemorySecret])),
+        // ── memory: 유지 보수 (host 전용) ─────────────────────────────
+        ("memory.gc", local_only()),
         // ── notification ──────────────────────────────────────────────
         ("notification.list", plugin(&[Notification])),
         ("notification.create", plugin(&[Notification])),

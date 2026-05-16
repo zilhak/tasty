@@ -420,12 +420,25 @@ impl AppState {
             };
             self.engine.push_closed_item(item);
         }
+        let workspace_id = self.engine.workspaces[ws_idx].id;
         self.engine.workspaces.remove(ws_idx);
         if self.active_workspace >= self.engine.workspaces.len()
             && !self.engine.workspaces.is_empty()
         {
             self.active_workspace = self.engine.workspaces.len() - 1;
         }
+        // Workspace scope 의 memory entry 정리 (마지막 surface 가 닫혀 workspace 도 사라지는 경로).
+        let ws_scope = tasty_memory::Scope::Workspace(workspace_id);
+        tasty_memory::with_store(|s| match s.purge_scope(&ws_scope) {
+            Ok(stats) if stats.regular + stats.secret > 0 => tracing::debug!(
+                workspace_id,
+                regular = stats.regular,
+                secret = stats.secret,
+                "memory: purged closed-workspace scope",
+            ),
+            Ok(_) => {}
+            Err(e) => tracing::warn!(workspace_id, "memory: purge_scope failed: {e}"),
+        });
         self.cleanup_surface(surface_id);
         self.engine.mark_layout_dirty();
         true

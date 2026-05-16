@@ -390,6 +390,12 @@ tasty surface-meta list --surface 3   # 특정 서피스 지정
 | `memory.secret.scopes` | _없음_ | 사용 중인 스코프 목록. 응답: `{ scopes: [...] }` |
 | `memory.secret.stats` | `scope?` | 엔트리 갯수 + 저장된 byte 합계. 응답: `{ scope, entries, bytes }` |
 
+#### 유지 보수 (`memory.gc`)
+
+| 메서드 | 파라미터 | 설명 |
+|--------|---------|------|
+| `memory.gc` | _없음_ | 만료된 entry (regular + secret) 일괄 DELETE. **local-only** (plugin 불가). 응답: `{ regular: N, secret: M }`. read 경로는 항상 만료 필터를 거치므로 사용자에게 보이는 동작은 변하지 않고 디스크 + quota 만 회복된다. CLI: `tasty memory gc`. 호스트는 surface/workspace 가 닫힐 때 해당 scope 의 entry 를 자동 정리하므로, 보통은 명시 호출이 불필요하다 — 만료 위주 정리 또는 진단용. |
+
 #### Entry 객체
 
 ```json
@@ -464,6 +470,11 @@ tasty memory secret get --global --key api.token
 tasty memory secret list --global --prefix api.
 tasty memory secret delete --global --key api.token
 tasty memory secret stats
+
+# TTL + GC
+tasty memory put --workspace 7 --key cache --value "..." --ttl 3600   # 1시간 후 만료
+tasty memory put --workspace 7 --key cache --value "..." --expires-at 1715900000000
+tasty memory gc                                                       # 만료 entry 일괄 DELETE
 ```
 
 ### 훅

@@ -209,6 +209,8 @@ fn route_engine_handler(
         "memory.secret.count" => memory::handle_secret_count(state, caller, id, &request.params),
         "memory.secret.scopes" => memory::handle_secret_scopes(state, caller, id, &request.params),
         "memory.secret.stats" => memory::handle_secret_stats(state, caller, id, &request.params),
+        // memory: 유지 보수 (host 전용)
+        "memory.gc" => memory::handle_gc(state, caller, id, &request.params),
         _ => return None,
     })
 }

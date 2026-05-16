@@ -940,6 +940,53 @@ impl MemoryStore {
             })
         }
     }
+
+    // ============================================================
+    // GC / Maintenance
+    // ============================================================
+
+    /// 만료된 entry (regular + secret) 일괄 DELETE. 반환: 삭제된 row 수.
+    /// read 경로는 항상 `expires_at` 필터를 적용하므로 만료 entry 가 노출되진
+    /// 않지만, 디스크에 row 가 남아 quota 와 파일 크기를 부풀린다. 호스트는
+    /// 주기적으로 또는 `memory.gc` 명령으로 이 함수를 호출해 청소한다.
+    pub fn purge_expired(&mut self) -> Result<PurgeStats> {
+        let now = unix_ms_now();
+        let regular = self.conn.execute(
+            "DELETE FROM memory WHERE expires_at IS NOT NULL AND expires_at <= ?1",
+            params![now],
+        )?;
+        let secret = self.conn.execute(
+            "DELETE FROM memory_secret WHERE expires_at IS NOT NULL AND expires_at <= ?1",
+            params![now],
+        )?;
+        Ok(PurgeStats {
+            regular: regular as u64,
+            secret: secret as u64,
+        })
+    }
+
+    /// 특정 scope 의 모든 entry (regular + secret 양쪽) 삭제. surface/window/
+    /// workspace 가 닫힐 때 호스트가 호출해 해당 수명에 묶인 키를 정리한다.
+    pub fn purge_scope(&mut self, scope: &Scope) -> Result<PurgeStats> {
+        let token = scope.as_token();
+        let regular = self
+            .conn
+            .execute("DELETE FROM memory WHERE scope=?1", params![&token])?;
+        let secret = self
+            .conn
+            .execute("DELETE FROM memory_secret WHERE scope=?1", params![&token])?;
+        Ok(PurgeStats {
+            regular: regular as u64,
+            secret: secret as u64,
+        })
+    }
+}
+
+/// GC 결과. regular/secret 영역별 삭제 row 수.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PurgeStats {
+    pub regular: u64,
+    pub secret: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1570,5 +1617,94 @@ mod tests {
             )
             .unwrap();
         assert_eq!(blob, secret.as_bytes());
+    }
+
+    // ---- GC ----
+
+    #[test]
+    fn purge_expired_removes_only_expired_rows() {
+        let mut s = store();
+        let scope = Scope::Workspace(1);
+
+        // 영구 entry
+        s.put(PLUGIN_A, &scope, "permanent", &text("p"), &PutOpts::default())
+            .unwrap();
+        // 이미 만료된 regular entry (expires_at = 과거)
+        s.put(
+            PLUGIN_A,
+            &scope,
+            "expired_reg",
+            &text("r"),
+            &PutOpts {
+                expires_at: Some(1),
+                cas: None,
+            },
+        )
+        .unwrap();
+        // 만료된 secret entry
+        s.put_secret(
+            PLUGIN_B,
+            &scope,
+            "expired_sec",
+            &text("s"),
+            &PutOpts {
+                expires_at: Some(1),
+                cas: None,
+            },
+        )
+        .unwrap();
+
+        // read 시 expired 는 not-found
+        assert!(s.get(&scope, "expired_reg").unwrap().is_none());
+        assert!(s.get_secret(PLUGIN_B, &scope, "expired_sec").unwrap().is_none());
+
+        // purge 전에는 row 가 디스크에 남아 있다
+        let count_before: i64 = s
+            .conn
+            .query_row("SELECT COUNT(*) FROM memory", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count_before, 2);
+
+        let stats = s.purge_expired().unwrap();
+        assert_eq!(stats.regular, 1);
+        assert_eq!(stats.secret, 1);
+
+        let count_after: i64 = s
+            .conn
+            .query_row("SELECT COUNT(*) FROM memory", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count_after, 1, "permanent entry must remain");
+        let sec_after: i64 = s
+            .conn
+            .query_row("SELECT COUNT(*) FROM memory_secret", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(sec_after, 0);
+    }
+
+    #[test]
+    fn purge_scope_clears_both_areas_for_that_scope_only() {
+        let mut s = store();
+        let target = Scope::Surface(7);
+        let other = Scope::Surface(8);
+
+        s.put(PLUGIN_A, &target, "a", &text("x"), &PutOpts::default())
+            .unwrap();
+        s.put_secret(PLUGIN_A, &target, "sa", &text("y"), &PutOpts::default())
+            .unwrap();
+        s.put_secret(PLUGIN_B, &target, "sb", &text("z"), &PutOpts::default())
+            .unwrap();
+
+        // 다른 scope 의 entry 는 건드리지 않는다
+        s.put(PLUGIN_A, &other, "keep", &text("k"), &PutOpts::default())
+            .unwrap();
+
+        let stats = s.purge_scope(&target).unwrap();
+        assert_eq!(stats.regular, 1);
+        assert_eq!(stats.secret, 2);
+
+        assert!(s.get(&target, "a").unwrap().is_none());
+        assert!(s.get_secret(PLUGIN_A, &target, "sa").unwrap().is_none());
+        assert!(s.get_secret(PLUGIN_B, &target, "sb").unwrap().is_none());
+        assert!(s.get(&other, "keep").unwrap().is_some());
     }
 }

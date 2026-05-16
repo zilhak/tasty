@@ -470,6 +470,28 @@ pub fn handle_stats(
     }
 }
 
+/// `memory.gc` — local_only. 만료 entry 일괄 DELETE (regular + secret).
+/// 응답: `{ regular: N, secret: M }`. read 경로는 항상 만료 필터를 거치므로
+/// 사용자에게 보이는 동작은 변하지 않고, 디스크 정리 + quota 회복만 일어난다.
+pub fn handle_gc(
+    _state: &mut AppState,
+    _caller: &CallerContext,
+    id: Value,
+    _params: &Value,
+) -> JsonRpcResponse {
+    if let Err(e) = require_store(&id) {
+        return e;
+    }
+    let result = with_store(|s| s.purge_expired()).expect("memory store present");
+    match result {
+        Ok(stats) => JsonRpcResponse::success(
+            id,
+            json!({ "regular": stats.regular, "secret": stats.secret }),
+        ),
+        Err(e) => map_error(id, e),
+    }
+}
+
 // ============================================================
 // Secret `memory.secret.*` — owner 자동 분기, 응답에 owner 미포함
 // ============================================================

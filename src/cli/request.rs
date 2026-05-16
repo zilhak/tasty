@@ -676,6 +676,7 @@ fn memory_command_to_method_params(
             value,
             value_b64,
             content_type,
+            ttl,
             expires_at,
             cas,
         } => {
@@ -709,6 +710,8 @@ fn memory_command_to_method_params(
             }
             if let Some(t) = expires_at {
                 params["expires_at"] = serde_json::json!(t);
+            } else if let Some(secs) = ttl {
+                params["expires_at"] = serde_json::json!(ttl_to_expires_at(*secs));
             }
             if let Some(v) = cas {
                 params["cas"] = serde_json::json!(v);
@@ -764,8 +767,19 @@ fn memory_command_to_method_params(
             }
             ("memory.stats", p)
         }
+        Gc => ("memory.gc", serde_json::json!({})),
         Secret { command } => memory_secret_command_to_method_params(command),
     }
+}
+
+/// 상대 TTL(초)을 절대 expires_at(unix ms)으로 환산.
+fn ttl_to_expires_at(secs: u64) -> i64 {
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    let add_ms = secs.saturating_mul(1000).min(i64::MAX as u64) as i64;
+    now_ms.saturating_add(add_ms)
 }
 
 fn memory_secret_command_to_method_params(
@@ -784,6 +798,7 @@ fn memory_secret_command_to_method_params(
             value,
             value_b64,
             content_type,
+            ttl,
             expires_at,
             cas,
         } => {
@@ -823,6 +838,8 @@ fn memory_secret_command_to_method_params(
             }
             if let Some(t) = expires_at {
                 params["expires_at"] = serde_json::json!(t);
+            } else if let Some(secs) = ttl {
+                params["expires_at"] = serde_json::json!(ttl_to_expires_at(*secs));
             }
             if let Some(v) = cas {
                 params["cas"] = serde_json::json!(v);

@@ -289,6 +289,9 @@ pub enum MemoryCommands {
         /// application/octet-stream (with --value-b64).
         #[arg(long)]
         content_type: Option<String>,
+        /// Relative TTL in seconds (entry expires `now + ttl` ms). Conflicts with --expires-at.
+        #[arg(long, conflicts_with = "expires_at")]
+        ttl: Option<u64>,
         /// Absolute expiry timestamp (unix ms). No-op if omitted.
         #[arg(long)]
         expires_at: Option<i64>,
@@ -403,6 +406,9 @@ pub enum MemoryCommands {
         #[arg(long, conflicts_with_all = ["scope", "surface", "workspace", "window", "account"])]
         global: bool,
     },
+    /// Garbage-collect expired entries (regular + secret). Reads already filter
+    /// expired rows; this only reclaims disk + quota. Local-only.
+    Gc,
     /// Secret memory store. CLI acts as `_host` owner; no --owner flag exists.
     /// Plugin secret areas are inaccessible from the CLI by design.
     Secret {
@@ -438,6 +444,9 @@ pub enum MemorySecretCommands {
         value_b64: Option<String>,
         #[arg(long)]
         content_type: Option<String>,
+        /// Relative TTL in seconds. Conflicts with --expires-at.
+        #[arg(long, conflicts_with = "expires_at")]
+        ttl: Option<u64>,
         #[arg(long)]
         expires_at: Option<i64>,
         #[arg(long)]
