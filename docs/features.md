@@ -573,7 +573,40 @@ tasty agent task-graph  --workspace-id <id> [--format json|dot]
 
 `--command`/`--metadata`는 인라인 JSON 또는 `@path` (파일 로드). `--on-failure fallback:<task_id>`처럼 `kind`만 단축 표기.
 
-본 sub-phase는 **state 머신 + 영속 + IPC/CLI 표면**만 책임진다. `Ready` task를 실제로 실행하는 스케줄러, blocking `task_await`, reducer 실행, barrier/semaphore/lease/rate-limit는 후속 sub-phase에서 추가된다.
+본 sub-phase는 **state 머신 + 영속 + IPC/CLI 표면**만 책임진다. `Ready` task를 실제로 실행하는 스케줄러, blocking `task_await`, reducer 실행, lease/rate-limit는 후속 sub-phase에서 추가된다.
+
+### Barrier / Semaphore primitive (Phase 5.2)
+
+**poll-based 동기화 게이트와 자원 점유** — `tasty-agent` 크레이트에 `Barrier`/`BarrierState`/`BarrierStore`, `Semaphore`/`AcquireOutcome`/`ReleaseOutcome`/`SemaphoreStore` 정의. 영속 키는 각각 `tasty.agent.barrier.<name>` / `tasty.agent.semaphore.<name>`, scope = `workspace:<id>`.
+
+- **Barrier**: N개 신호가 모일 때까지 기다리는 게이트. 상태 `Open → Closed` (count 충족) 또는 `Open → TimedOut` (timeout 경과). 도장 찍기는 lazy — `signal` / `state` / `list(now_ms)` 호출 시점에 timeout 검사. 별도 스레드/타이머 없음.
+- **Semaphore**: N permit 까지 동시 점유 허용. 같은 holder의 재acquire는 idempotent 성공 (retry-safe). `acquired:false` 응답으로 polling, permit 회복은 `release` (지정 holder가 점유 중일 때만).
+
+이 단계도 **poll-based**다. 호출자가 `*_await`를 반복 호출하며 polling 한다. blocking + queue/wakeup은 scheduler 도입 후 추가.
+
+#### IPC
+
+| method | 권한 | 동작 |
+|---|---|---|
+| `agent.barrier_create` | AgentManage | `workspace_id`/`name`/`count_required≥1`/`timeout_ms?`. 이름 중복은 `-32602` |
+| `agent.barrier_signal` | AgentManage | count_signaled++. 도달 시 `Closed`, timeout 경과 시 `TimedOut` + 거부 |
+| `agent.barrier_await` | AgentManage | 현 단계: `barrier_state`와 동일 (즉시 응답) |
+| `agent.barrier_state` | AgentManage | 현 상태 (조회 시점에 timeout 도장 적용) |
+| `agent.semaphore_create` | AgentManage | `workspace_id`/`name`/`permits≥1` |
+| `agent.semaphore_acquire` | AgentManage | `{ acquired, semaphore }`. 동일 holder는 idempotent |
+| `agent.semaphore_release` | AgentManage | `{ released, semaphore }`. 점유 중이 아니면 no-op |
+
+#### CLI
+
+```
+tasty agent barrier-create   --workspace-id <id> --name <n> --count-required <N> [--timeout-ms <ms>]
+tasty agent barrier-signal   --workspace-id <id> --name <n>
+tasty agent barrier-await    --workspace-id <id> --name <n>
+tasty agent barrier-state    --workspace-id <id> --name <n>
+tasty agent semaphore-create --workspace-id <id> --name <n> --permits <N>
+tasty agent semaphore-acquire --workspace-id <id> --name <n> --holder <h>
+tasty agent semaphore-release --workspace-id <id> --name <n> --holder <h>
+```
 
 ## 설정 시스템
 

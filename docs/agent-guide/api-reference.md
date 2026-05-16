@@ -672,7 +672,23 @@ tasty unset global-hook --hook HOOK_ID
 
 **OnFailure 3종 (kind 필드)**: `abort` (downstream 모두 skipped) / `continue_downstream` (실패를 성공처럼 취급해 진행) / `fallback { task }` (대체 task로 우회 — 호스트가 별도 트리거)
 
-> Phase 5.2+에서 `agent.barrier_*`, `agent.semaphore_*`, `agent.lease_*`, `agent.rate_limit_*`, `agent.task_reduce`가 같은 namespace 안에 추가될 예정. 자세한 design은 `docs/dev-guide/cli-naming.md`의 `agent` 항목과 plan `05-collaboration.md`.
+**Phase 5.2 — Barrier / Semaphore (poll-based 동기화 primitive)**. 본 sub-phase는 모델·영속·IPC/CLI를 제공하며 polling 기반이다. 진정한 blocking + wakeup은 scheduler 도입 후 추가.
+
+| 메서드 | 권한 | 파라미터 → 응답 |
+|--------|------|----------------|
+| `agent.barrier_create` | `AgentManage` | `{ workspace_id, name, count_required≥1, timeout_ms? }` → `Barrier`. 이름 중복 또는 0 카운트는 `-32602 invalid_params` |
+| `agent.barrier_signal` | `AgentManage` | `{ workspace_id, name }` → `Barrier`. count_signaled++. 도달 시 `closed`. timeout 지났으면 자동 `timed_out` + 거부 |
+| `agent.barrier_await` | `AgentManage` | `{ workspace_id, name }` → `Barrier` (즉시 응답 — 본 단계에선 polling 어댑터, scheduler 도입 시 long-poll로) |
+| `agent.barrier_state` | `AgentManage` | `{ workspace_id, name }` → `Barrier` (조회 시 timeout 도장 자동 적용) |
+| `agent.semaphore_create` | `AgentManage` | `{ workspace_id, name, permits≥1 }` → `Semaphore` |
+| `agent.semaphore_acquire` | `AgentManage` | `{ workspace_id, name, holder }` → `{ acquired: bool, semaphore }`. 동일 holder 재시도는 idempotent 성공. permit 소진 시 `acquired: false` |
+| `agent.semaphore_release` | `AgentManage` | `{ workspace_id, name, holder }` → `{ released: bool, semaphore }`. 점유 중이 아니면 `released: false` (no-op) |
+
+**Barrier 스키마**: `{ workspace_id, name, count_required, count_signaled, timeout_ms?, state∈{open,closed,timed_out}, created_at, finished_at? }`
+
+**Semaphore 스키마**: `{ workspace_id, name, permits_total, permits_available, holders: [string], created_at }`
+
+> Phase 5.3+에서 `agent.lease_*`, `agent.rate_limit_*`, `agent.task_reduce`가 같은 namespace 안에 추가될 예정. 자세한 design은 `docs/dev-guide/cli-naming.md`의 `agent` 항목과 plan `05-collaboration.md`.
 
 ### Surface 간 통신
 

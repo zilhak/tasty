@@ -176,6 +176,13 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("agent.task_cancel", plugin(&[AgentManage])),
         ("agent.task_retry", plugin(&[AgentManage])),
         ("agent.task_graph", plugin(&[AgentManage])),
+        ("agent.barrier_create", plugin(&[AgentManage])),
+        ("agent.barrier_signal", plugin(&[AgentManage])),
+        ("agent.barrier_await", plugin(&[AgentManage])),
+        ("agent.barrier_state", plugin(&[AgentManage])),
+        ("agent.semaphore_create", plugin(&[AgentManage])),
+        ("agent.semaphore_acquire", plugin(&[AgentManage])),
+        ("agent.semaphore_release", plugin(&[AgentManage])),
         // ── notification ──────────────────────────────────────────────
         ("notification.list", plugin(&[Notification])),
         ("notification.create", plugin(&[Notification])),
@@ -379,6 +386,26 @@ mod tests {
             "agent.task_cancel",
             "agent.task_retry",
             "agent.task_graph",
+        ] {
+            let m = method_meta(name).unwrap_or_else(|| panic!("registered: {name}"));
+            assert!(m.plugin_callable, "{name} should be plugin-callable");
+            assert!(
+                m.required.contains(&Permission::AgentManage),
+                "{name} should require AgentManage"
+            );
+        }
+    }
+
+    #[test]
+    fn agent_barrier_semaphore_methods_require_agent_manage() {
+        for name in [
+            "agent.barrier_create",
+            "agent.barrier_signal",
+            "agent.barrier_await",
+            "agent.barrier_state",
+            "agent.semaphore_create",
+            "agent.semaphore_acquire",
+            "agent.semaphore_release",
         ] {
             let m = method_meta(name).unwrap_or_else(|| panic!("registered: {name}"));
             assert!(m.plugin_callable, "{name} should be plugin-callable");

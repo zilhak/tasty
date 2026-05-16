@@ -1577,6 +1577,70 @@ fn agent_command_to_method_params(
             "agent.task_graph",
             serde_json::json!({ "workspace_id": *workspace_id, "format": format }),
         ),
+        BarrierCreate {
+            workspace_id,
+            name,
+            count_required,
+            timeout_ms,
+        } => {
+            let mut p = serde_json::json!({
+                "workspace_id": *workspace_id,
+                "name": name,
+                "count_required": *count_required,
+            });
+            if let Some(t) = timeout_ms {
+                p["timeout_ms"] = serde_json::Value::from(*t);
+            }
+            ("agent.barrier_create", p)
+        }
+        BarrierSignal { workspace_id, name } => (
+            "agent.barrier_signal",
+            serde_json::json!({ "workspace_id": *workspace_id, "name": name }),
+        ),
+        BarrierAwait { workspace_id, name } => (
+            "agent.barrier_await",
+            serde_json::json!({ "workspace_id": *workspace_id, "name": name }),
+        ),
+        BarrierState { workspace_id, name } => (
+            "agent.barrier_state",
+            serde_json::json!({ "workspace_id": *workspace_id, "name": name }),
+        ),
+        SemaphoreCreate {
+            workspace_id,
+            name,
+            permits,
+        } => (
+            "agent.semaphore_create",
+            serde_json::json!({
+                "workspace_id": *workspace_id,
+                "name": name,
+                "permits": *permits,
+            }),
+        ),
+        SemaphoreAcquire {
+            workspace_id,
+            name,
+            holder,
+        } => (
+            "agent.semaphore_acquire",
+            serde_json::json!({
+                "workspace_id": *workspace_id,
+                "name": name,
+                "holder": holder,
+            }),
+        ),
+        SemaphoreRelease {
+            workspace_id,
+            name,
+            holder,
+        } => (
+            "agent.semaphore_release",
+            serde_json::json!({
+                "workspace_id": *workspace_id,
+                "name": name,
+                "holder": holder,
+            }),
+        ),
     }
 }
 

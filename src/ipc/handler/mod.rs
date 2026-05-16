@@ -280,6 +280,20 @@ fn route_engine_handler(
         "agent.task_cancel" => agent::handle_task_cancel(state, caller, id, &request.params),
         "agent.task_retry" => agent::handle_task_retry(state, caller, id, &request.params),
         "agent.task_graph" => agent::handle_task_graph(state, caller, id, &request.params),
+        // agent.barrier_* / semaphore_* — Phase 5.2 (poll-based 동기화 primitive)
+        "agent.barrier_create" => agent::handle_barrier_create(state, caller, id, &request.params),
+        "agent.barrier_signal" => agent::handle_barrier_signal(state, caller, id, &request.params),
+        "agent.barrier_await" => agent::handle_barrier_await(state, caller, id, &request.params),
+        "agent.barrier_state" => agent::handle_barrier_state(state, caller, id, &request.params),
+        "agent.semaphore_create" => {
+            agent::handle_semaphore_create(state, caller, id, &request.params)
+        }
+        "agent.semaphore_acquire" => {
+            agent::handle_semaphore_acquire(state, caller, id, &request.params)
+        }
+        "agent.semaphore_release" => {
+            agent::handle_semaphore_release(state, caller, id, &request.params)
+        }
         _ => return None,
     })
 }

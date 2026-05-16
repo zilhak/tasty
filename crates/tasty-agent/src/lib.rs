@@ -11,8 +11,12 @@
 
 #![allow(clippy::result_large_err)]
 
+pub mod barrier;
+pub mod semaphore;
 pub mod task;
 
+pub use barrier::{Barrier, BarrierState, BarrierStore};
+pub use semaphore::{AcquireOutcome, ReleaseOutcome, Semaphore, SemaphoreStore};
 pub use task::{
     OnFailure, ReducerStrategy, Task, TaskCommand, TaskGraph, TaskId, TaskResult, TaskState,
     TaskStore,

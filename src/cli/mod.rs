@@ -264,6 +264,69 @@ pub enum AgentCommands {
         #[arg(long, default_value = "json")]
         format: String,
     },
+    /// Create a barrier (N개 신호가 모일 때까지 대기).
+    BarrierCreate {
+        #[arg(long)]
+        workspace_id: u32,
+        #[arg(long)]
+        name: String,
+        /// Required signal count (must be >= 1).
+        #[arg(long)]
+        count_required: u32,
+        /// Optional timeout in milliseconds (from creation time).
+        #[arg(long)]
+        timeout_ms: Option<u64>,
+    },
+    /// Signal a barrier (count_signaled++).
+    BarrierSignal {
+        #[arg(long)]
+        workspace_id: u32,
+        #[arg(long)]
+        name: String,
+    },
+    /// Poll a barrier's current state.
+    BarrierAwait {
+        #[arg(long)]
+        workspace_id: u32,
+        #[arg(long)]
+        name: String,
+    },
+    /// Read a barrier's current state (alias of barrier_await).
+    BarrierState {
+        #[arg(long)]
+        workspace_id: u32,
+        #[arg(long)]
+        name: String,
+    },
+    /// Create a semaphore with N permits.
+    SemaphoreCreate {
+        #[arg(long)]
+        workspace_id: u32,
+        #[arg(long)]
+        name: String,
+        /// Permit count (must be >= 1).
+        #[arg(long)]
+        permits: u32,
+    },
+    /// Acquire 1 permit. Idempotent for the same holder.
+    SemaphoreAcquire {
+        #[arg(long)]
+        workspace_id: u32,
+        #[arg(long)]
+        name: String,
+        /// Holder id (must be non-empty).
+        #[arg(long)]
+        holder: String,
+    },
+    /// Release a permit. No-op if holder isn't currently holding.
+    SemaphoreRelease {
+        #[arg(long)]
+        workspace_id: u32,
+        #[arg(long)]
+        name: String,
+        #[arg(long)]
+        holder: String,
+    },
 }
 
 #[derive(Subcommand)]
