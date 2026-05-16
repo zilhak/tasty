@@ -20,8 +20,12 @@ use tasty_plugin_sdk::{
 const PLUGIN_ID: &str = "com.tasty.clipboard-history";
 const PLUGIN_VERSION: &str = "0.1.0";
 
-/// "entry-{index}" id prefix — viewer 항목 Button 노드 식별자.
-const ENTRY_PREFIX: &str = "entry-";
+/// `paste-{index}` — 항목 클릭 → 붙여넣기.
+const PASTE_PREFIX: &str = "paste-";
+/// `remove-{index}` — 항목 옆 × 버튼 → 단일 제거.
+const REMOVE_PREFIX: &str = "remove-";
+/// 전체 비우기 버튼 id.
+const CLEAR_ID: &str = "clear-all";
 
 struct ClipboardHistoryPlugin {
     /// `on_start`에서 호스트가 건네준 핸들. open_popup / handle_popup_event에서
@@ -96,17 +100,44 @@ impl Plugin for ClipboardHistoryPlugin {
     }
 
     fn handle_popup_event(&mut self, ctx: PopupEventCtx) -> PopupEventResult {
-        if let UiEvent::Click { node_id } = &ctx.event
-            && let Some(idx_str) = node_id.strip_prefix(ENTRY_PREFIX)
+        let UiEvent::Click { node_id } = &ctx.event else {
+            return PopupEventResult { tree: None, close: false };
+        };
+        let Some(host) = self.host_handle() else {
+            return PopupEventResult { tree: None, close: false };
+        };
+
+        if let Some(idx_str) = node_id.strip_prefix(PASTE_PREFIX)
             && let Ok(idx) = idx_str.parse::<u64>()
         {
-            if let Some(h) = self.host_handle() {
-                if let Err(e) = h.call("tool.clipboard.paste", json!({ "index": idx })) {
-                    tracing::warn!("tool.clipboard.paste failed: {e}");
-                }
+            if let Err(e) = host.call("tool.clipboard.paste", json!({ "index": idx })) {
+                tracing::warn!("tool.clipboard.paste failed: {e}");
             }
             return PopupEventResult { tree: None, close: true };
         }
+
+        if let Some(idx_str) = node_id.strip_prefix(REMOVE_PREFIX)
+            && let Ok(idx) = idx_str.parse::<u64>()
+        {
+            if let Err(e) = host.call("tool.clipboard.remove", json!({ "index": idx })) {
+                tracing::warn!("tool.clipboard.remove failed: {e}");
+            }
+            return PopupEventResult {
+                tree: Some(fetch_and_render(&host)),
+                close: false,
+            };
+        }
+
+        if node_id == CLEAR_ID {
+            if let Err(e) = host.call("tool.clipboard.clear", json!({})) {
+                tracing::warn!("tool.clipboard.clear failed: {e}");
+            }
+            return PopupEventResult {
+                tree: Some(fetch_and_render(&host)),
+                close: false,
+            };
+        }
+
         PopupEventResult { tree: None, close: false }
     }
 
@@ -167,11 +198,24 @@ fn render_entries(list: &Value) -> UiNode {
             }],
         };
     }
-    let mut children: Vec<UiNode> = Vec::with_capacity(entries.len() + 1);
-    children.push(UiNode::Label {
-        text: "Clipboard History".into(),
-        style: Default::default(),
-        color: None,
+    let mut children: Vec<UiNode> = Vec::with_capacity(entries.len() + 2);
+    children.push(UiNode::Hbox {
+        spacing: 8,
+        children: vec![
+            UiNode::Label {
+                text: "Clipboard History".into(),
+                style: Default::default(),
+                color: None,
+            },
+            UiNode::Spacer { size: 0 },
+            UiNode::Button {
+                id: CLEAR_ID.into(),
+                label: "Clear all".into(),
+                enabled: true,
+                style: Default::default(),
+                tooltip_i18n_key: None,
+            },
+        ],
     });
     for e in entries {
         let idx = e.get("index").and_then(|v| v.as_u64()).unwrap_or(0);
@@ -182,12 +226,24 @@ fn render_entries(list: &Value) -> UiNode {
         } else {
             text
         };
-        children.push(UiNode::Button {
-            id: format!("{ENTRY_PREFIX}{idx}"),
-            label,
-            enabled: true,
-            style: Default::default(),
-            tooltip_i18n_key: None,
+        children.push(UiNode::Hbox {
+            spacing: 4,
+            children: vec![
+                UiNode::Button {
+                    id: format!("{PASTE_PREFIX}{idx}"),
+                    label,
+                    enabled: true,
+                    style: Default::default(),
+                    tooltip_i18n_key: None,
+                },
+                UiNode::Button {
+                    id: format!("{REMOVE_PREFIX}{idx}"),
+                    label: "×".into(),
+                    enabled: true,
+                    style: Default::default(),
+                    tooltip_i18n_key: None,
+                },
+            ],
         });
     }
     UiNode::Vbox { spacing: 4, children }
