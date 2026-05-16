@@ -145,6 +145,20 @@ impl ApplicationHandler<AppEvent> for App {
             AppEvent::BusyPoll => {
                 self.poll_busy_states();
             }
+            AppEvent::IdentifyDone {
+                request_id,
+                target,
+                detector,
+            } => {
+                // Phase B: 본격 콜사이트 dispatch 는 Phase C 에서 mouse.rs 에 연결된다.
+                // 그 전까지는 디버그 흔적만 남겨 worker pipeline 이 살아있는지 확인.
+                tracing::debug!(
+                    request_id = %request_id,
+                    target = %target.display(),
+                    detector = ?detector.as_ref().map(|d| d.as_str()),
+                    "IdentifyDone (no consumer yet)",
+                );
+            }
         }
     }
 

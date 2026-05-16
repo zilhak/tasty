@@ -22,6 +22,7 @@ mod file_handler_recent;
 mod global_hooks;
 mod gpu;
 mod html_ui;
+mod identify_worker;
 mod image_ui;
 mod ipc;
 mod layout_persistence;
@@ -144,6 +145,14 @@ enum AppEvent {
     ClipboardChanged(ClipboardData),
     /// ~1초 간격 ticker. 모든 surface의 busy 상태를 다시 평가한다.
     BusyPoll,
+    /// 비동기 파일 식별 결과. `IdentifyWorker::spawn` 의 worker thread 가 완료 시 송신.
+    /// 콜사이트(Phase C 의 mouse.rs 등) 는 보관한 마지막 `request_id` 와 매칭해
+    /// 오래된 결과를 drop 한다.
+    IdentifyDone {
+        request_id: crate::identify_worker::IdentifyRequestId,
+        target: crate::file_format::FileTarget,
+        detector: Option<crate::file_format::DetectorId>,
+    },
 }
 
 /// Tracks an active divider drag operation.
@@ -517,6 +526,12 @@ impl App {
         let mut state =
             crate::state::AppState::new(cols, rows, waker).expect("failed to create app state");
         state.engine.waker_factory = Some(factory.clone());
+        // 비동기 파일 식별 worker. file_format Arc 를 공유하므로 plugin contribute /
+        // user reload 변경이 worker 호출에도 그대로 반영된다.
+        state.engine.identify_worker = Some(Arc::new(crate::identify_worker::IdentifyWorker::new(
+            state.engine.file_format.clone(),
+            self.engine.proxy.clone(),
+        )));
 
         // 첫 윈도우 생성 시 plugin manager 한 번만 초기화.
         if self.plugin_manager.is_none() {

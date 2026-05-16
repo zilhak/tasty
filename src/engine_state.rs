@@ -154,6 +154,10 @@ pub struct EngineState {
     /// 사용자가 picker 에서 직접 고른 handler 의 LRU 기록 (보조 신호).
     /// 부팅 시 디스크에서 로드, 매 선택마다 atomic save.
     pub file_handler_recent: crate::file_handler_recent::RecentPicks,
+    /// 비동기 파일 식별 worker. `App` 이 EventLoopProxy 를 가진 시점에
+    /// `create_app_state` 에서 주입한다 — waker_factory 와 동일 패턴.
+    /// Phase C 의 mouse.rs 콜사이트가 이걸 호출해 deep identify 를 띄운다.
+    pub identify_worker: Option<std::sync::Arc<crate::identify_worker::IdentifyWorker>>,
 
     // ── Layout persistence ──
     pub layout_dirty: crate::layout_persistence::LayoutDirtyTracker,
@@ -229,6 +233,7 @@ impl EngineState {
             file_handler_recent: crate::file_handler_recent::RecentPicks::load(
                 &file_handler_recent_path(),
             ),
+            identify_worker: None,
             layout_dirty: crate::layout_persistence::LayoutDirtyTracker::new(),
             restored_active_workspace: None,
             pending_restore_commands: Vec::new(),
