@@ -187,6 +187,12 @@ pub struct PutOpts {
 pub struct ListOpts {
     pub prefix: Option<String>,
     pub limit: Option<usize>,
+    /// `updated_at >= since` (unix ms). `None` 이면 하한 없음.
+    pub since: Option<i64>,
+    /// `updated_at < until` (unix ms). `None` 이면 상한 없음.
+    pub until: Option<i64>,
+    /// `key ASC` 정렬 후 건너뛸 entry 수. `None` = 0.
+    pub offset: Option<usize>,
 }
 
 /// 변경 이벤트. put / delete / purge 후 호스트가 [`MemoryStore::take_pending_changes`]
@@ -513,25 +519,42 @@ impl MemoryStore {
         Ok(())
     }
 
-    /// 스코프 내 키 리스트. 만료 제외, prefix/limit 옵션. 응답 entry 에 owner 포함.
+    /// 스코프 내 키 리스트. 만료 제외, prefix/since/until/offset/limit 옵션.
+    /// 응답 entry 에 owner 포함. `key ASC` 정렬.
     pub fn list(&self, scope: &Scope, opts: &ListOpts) -> Result<Vec<MemoryEntry>> {
         let scope_token = scope.as_token();
         let now = unix_ms_now();
         let limit = opts.limit.unwrap_or(usize::MAX) as i64;
+        let offset = opts.offset.unwrap_or(0) as i64;
 
+        // 동적 WHERE/parameter 조립. 가독성 우선으로 named-position 대신 `?` 순차 사용.
         let mut sql = String::from(
             "SELECT key, value, content_type, created_at, updated_at, expires_at, version, owner
              FROM memory
-             WHERE scope=?1 AND (expires_at IS NULL OR expires_at > ?2)",
+             WHERE scope=? AND (expires_at IS NULL OR expires_at > ?)",
         );
-        if opts.prefix.is_some() {
-            sql.push_str(" AND key LIKE ?3 ESCAPE '\\'");
+        let mut binds: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+        binds.push(Box::new(scope_token.clone()));
+        binds.push(Box::new(now));
+
+        if let Some(prefix) = &opts.prefix {
+            sql.push_str(" AND key LIKE ? ESCAPE '\\'");
+            binds.push(Box::new(format!("{}%", escape_like(prefix))));
         }
-        sql.push_str(" ORDER BY key ASC LIMIT ?");
-        sql.push_str(if opts.prefix.is_some() { "4" } else { "3" });
+        if let Some(since) = opts.since {
+            sql.push_str(" AND updated_at >= ?");
+            binds.push(Box::new(since));
+        }
+        if let Some(until) = opts.until {
+            sql.push_str(" AND updated_at < ?");
+            binds.push(Box::new(until));
+        }
+        sql.push_str(" ORDER BY key ASC LIMIT ? OFFSET ?");
+        binds.push(Box::new(limit));
+        binds.push(Box::new(offset));
 
         let mut stmt = self.conn.prepare(&sql)?;
-        let mut entries = Vec::new();
+        let params_iter: Vec<&dyn rusqlite::ToSql> = binds.iter().map(|b| b.as_ref()).collect();
         type RegularRow = (String, Vec<u8>, String, i64, i64, Option<i64>, u64, String);
         let map_row = |r: &rusqlite::Row<'_>| -> rusqlite::Result<RegularRow> {
             Ok((
@@ -546,35 +569,20 @@ impl MemoryStore {
             ))
         };
 
-        let push_row =
-            |entries: &mut Vec<MemoryEntry>,
-             row: rusqlite::Result<RegularRow>|
-             -> Result<()> {
-                let (key, bytes, ct, ca, ua, ea, ver, owner) = row?;
-                entries.push(MemoryEntry {
-                    scope: scope_token.clone(),
-                    key,
-                    value: MemoryValue::from_db(&ct, bytes)?,
-                    created_at: ca,
-                    updated_at: ua,
-                    expires_at: ea,
-                    version: ver,
-                    owner: Some(owner),
-                });
-                Ok(())
-            };
-
-        if let Some(prefix) = &opts.prefix {
-            let like = format!("{}%", escape_like(prefix));
-            let rows = stmt.query_map(params![&scope_token, now, like, limit], map_row)?;
-            for row in rows {
-                push_row(&mut entries, row)?;
-            }
-        } else {
-            let rows = stmt.query_map(params![&scope_token, now, limit], map_row)?;
-            for row in rows {
-                push_row(&mut entries, row)?;
-            }
+        let mut entries = Vec::new();
+        let rows = stmt.query_map(params_iter.as_slice(), map_row)?;
+        for row in rows {
+            let (key, bytes, ct, ca, ua, ea, ver, owner) = row?;
+            entries.push(MemoryEntry {
+                scope: scope_token.clone(),
+                key,
+                value: MemoryValue::from_db(&ct, bytes)?,
+                created_at: ca,
+                updated_at: ua,
+                expires_at: ea,
+                version: ver,
+                owner: Some(owner),
+            });
         }
         Ok(entries)
     }
@@ -645,6 +653,133 @@ impl MemoryStore {
                 bytes: bytes as u64,
             })
         }
+    }
+
+    /// JSON path 매칭. `key` 의 entry 가 `application/json` 일 때만 `path` 를
+    /// dot 표기로 lookup 해 `expected` 와 같은 entry 만 반환한다 (Equality 비교).
+    /// list 처럼 prefix/limit/offset 지원.
+    ///
+    /// `path` 형식: `"a.b.c"` — JSON object 의 중첩 필드. 배열 index 는 지원하지
+    /// 않는다 (1.0 에서는 단순함 우선 — jq 가 필요하면 호출자가 `memory.list` 후
+    /// 자체 처리).
+    pub fn query(
+        &self,
+        scope: &Scope,
+        path: &str,
+        expected: &serde_json::Value,
+        opts: &ListOpts,
+    ) -> Result<Vec<MemoryEntry>> {
+        // 1) 일단 list 로 후보 entry 를 모두 수집 (limit/offset 은 후처리 단계에서 적용).
+        let mut list_opts = opts.clone();
+        list_opts.offset = None;
+        list_opts.limit = None;
+        let candidates = self.list(scope, &list_opts)?;
+
+        // 2) JSON entry 만 골라 path lookup → 일치하면 push
+        let mut matched: Vec<MemoryEntry> = candidates
+            .into_iter()
+            .filter(|e| {
+                let MemoryValue::Json(v) = &e.value else { return false };
+                lookup_dot_path(v, path).map(|hit| hit == expected).unwrap_or(false)
+            })
+            .collect();
+
+        let offset = opts.offset.unwrap_or(0);
+        let limit = opts.limit.unwrap_or(usize::MAX);
+        if offset >= matched.len() {
+            return Ok(Vec::new());
+        }
+        let end = (offset + limit).min(matched.len());
+        Ok(matched.drain(offset..end).collect())
+    }
+
+    /// Regular 영역의 모든 entry 를 export. scope 가 `Some` 이면 그 scope 만,
+    /// `None` 이면 전체. 만료 entry 는 포함하지 않음.
+    /// **Secret 영역은 절대 export 하지 않는다** — 명시적으로 plugin 별 격리를 깨야 하므로
+    /// 본 API 는 regular 만 다룬다.
+    pub fn export_regular(&self, scope: Option<&Scope>) -> Result<Vec<MemoryEntry>> {
+        let now = unix_ms_now();
+        let mut entries = Vec::new();
+
+        let mut sql = String::from(
+            "SELECT scope, key, value, content_type, created_at, updated_at, expires_at,
+                    version, owner
+             FROM memory
+             WHERE (expires_at IS NULL OR expires_at > ?)",
+        );
+        let mut binds: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+        binds.push(Box::new(now));
+        if let Some(s) = scope {
+            sql.push_str(" AND scope=?");
+            binds.push(Box::new(s.as_token()));
+        }
+        sql.push_str(" ORDER BY scope ASC, key ASC");
+
+        let mut stmt = self.conn.prepare(&sql)?;
+        let params_iter: Vec<&dyn rusqlite::ToSql> = binds.iter().map(|b| b.as_ref()).collect();
+        let rows = stmt.query_map(params_iter.as_slice(), |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, Vec<u8>>(2)?,
+                r.get::<_, String>(3)?,
+                r.get::<_, i64>(4)?,
+                r.get::<_, i64>(5)?,
+                r.get::<_, Option<i64>>(6)?,
+                r.get::<_, i64>(7)? as u64,
+                r.get::<_, String>(8)?,
+            ))
+        })?;
+        for row in rows {
+            let (scope, key, bytes, ct, ca, ua, ea, ver, owner) = row?;
+            entries.push(MemoryEntry {
+                scope,
+                key,
+                value: MemoryValue::from_db(&ct, bytes)?,
+                created_at: ca,
+                updated_at: ua,
+                expires_at: ea,
+                version: ver,
+                owner: Some(owner),
+            });
+        }
+        Ok(entries)
+    }
+
+    /// Regular 영역으로 import. `replace=true` 면 기존 key 덮어쓰기 (CAS 무시),
+    /// `false` 면 충돌 시 건너뜀. 반환: 적용된 (created+updated) 갯수, skipped 갯수.
+    /// 호출자 owner 가 caller_owner — _host 면 모든 row 변경 가능, plugin 이면 자기
+    /// 영역만. 충돌 시 권한 위반은 `OwnedByOther`.
+    pub fn import_regular(
+        &mut self,
+        caller_owner: &str,
+        entries: &[MemoryEntry],
+        replace: bool,
+    ) -> Result<ImportStats> {
+        validate_owner(caller_owner)?;
+        let mut applied = 0u64;
+        let mut skipped = 0u64;
+        for e in entries {
+            validate_key(&e.key).map_err(MemoryError::InvalidKey)?;
+            let scope = Scope::parse(&e.scope).map_err(MemoryError::InvalidScope)?;
+            let exists_now = self.get(&scope, &e.key)?.is_some();
+            if exists_now && !replace {
+                skipped += 1;
+                continue;
+            }
+            self.put(
+                caller_owner,
+                &scope,
+                &e.key,
+                &e.value,
+                &PutOpts {
+                    expires_at: e.expires_at,
+                    cas: None,
+                },
+            )?;
+            applied += 1;
+        }
+        Ok(ImportStats { applied, skipped })
     }
 
     // ============================================================
@@ -857,20 +992,36 @@ impl MemoryStore {
         let scope_token = scope.as_token();
         let now = unix_ms_now();
         let limit = opts.limit.unwrap_or(usize::MAX) as i64;
+        let offset = opts.offset.unwrap_or(0) as i64;
 
         let mut sql = String::from(
             "SELECT key, value, content_type, created_at, updated_at, expires_at, version
              FROM memory_secret
-             WHERE owner=?1 AND scope=?2 AND (expires_at IS NULL OR expires_at > ?3)",
+             WHERE owner=? AND scope=? AND (expires_at IS NULL OR expires_at > ?)",
         );
-        if opts.prefix.is_some() {
-            sql.push_str(" AND key LIKE ?4 ESCAPE '\\'");
+        let mut binds: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+        binds.push(Box::new(owner.to_string()));
+        binds.push(Box::new(scope_token.clone()));
+        binds.push(Box::new(now));
+
+        if let Some(prefix) = &opts.prefix {
+            sql.push_str(" AND key LIKE ? ESCAPE '\\'");
+            binds.push(Box::new(format!("{}%", escape_like(prefix))));
         }
-        sql.push_str(" ORDER BY key ASC LIMIT ?");
-        sql.push_str(if opts.prefix.is_some() { "5" } else { "4" });
+        if let Some(since) = opts.since {
+            sql.push_str(" AND updated_at >= ?");
+            binds.push(Box::new(since));
+        }
+        if let Some(until) = opts.until {
+            sql.push_str(" AND updated_at < ?");
+            binds.push(Box::new(until));
+        }
+        sql.push_str(" ORDER BY key ASC LIMIT ? OFFSET ?");
+        binds.push(Box::new(limit));
+        binds.push(Box::new(offset));
 
         let mut stmt = self.conn.prepare(&sql)?;
-        let mut entries = Vec::new();
+        let params_iter: Vec<&dyn rusqlite::ToSql> = binds.iter().map(|b| b.as_ref()).collect();
         type SecretRow = (String, Vec<u8>, String, i64, i64, Option<i64>, u64);
         let map_row = |r: &rusqlite::Row<'_>| -> rusqlite::Result<SecretRow> {
             Ok((
@@ -884,9 +1035,9 @@ impl MemoryStore {
             ))
         };
 
-        let push_row = |entries: &mut Vec<MemoryEntry>,
-                        row: rusqlite::Result<SecretRow>|
-         -> Result<()> {
+        let mut entries = Vec::new();
+        let rows = stmt.query_map(params_iter.as_slice(), map_row)?;
+        for row in rows {
             let (entry_key, bytes, ct, ca, ua, ea, ver) = row?;
             entries.push(MemoryEntry {
                 scope: scope_token.clone(),
@@ -898,20 +1049,6 @@ impl MemoryStore {
                 version: ver,
                 owner: None,
             });
-            Ok(())
-        };
-
-        if let Some(prefix) = &opts.prefix {
-            let like = format!("{}%", escape_like(prefix));
-            let rows = stmt.query_map(params![owner, &scope_token, now, like, limit], map_row)?;
-            for row in rows {
-                push_row(&mut entries, row)?;
-            }
-        } else {
-            let rows = stmt.query_map(params![owner, &scope_token, now, limit], map_row)?;
-            for row in rows {
-                push_row(&mut entries, row)?;
-            }
         }
         Ok(entries)
     }
@@ -1072,6 +1209,32 @@ impl MemoryStore {
 pub struct PurgeStats {
     pub regular: u64,
     pub secret: u64,
+}
+
+/// Import 결과. CAS 무시 (replace=true) 또는 충돌 시 skip (replace=false).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ImportStats {
+    /// 적용된 entry 갯수 (신규 + 갱신 합산).
+    pub applied: u64,
+    /// 기존 key 존재 + `replace=false` 로 건너뛴 갯수.
+    pub skipped: u64,
+}
+
+/// JSON 값에서 `"a.b.c"` 형식 dot path 로 nested object 필드 lookup.
+/// 배열 인덱스는 지원하지 않는다.
+pub(crate) fn lookup_dot_path<'a>(
+    value: &'a serde_json::Value,
+    path: &str,
+) -> Option<&'a serde_json::Value> {
+    let mut cur = value;
+    for seg in path.split('.') {
+        if seg.is_empty() {
+            return None;
+        }
+        let obj = cur.as_object()?;
+        cur = obj.get(seg)?;
+    }
+    Some(cur)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1563,7 +1726,7 @@ mod tests {
                 &scope,
                 &ListOpts {
                     prefix: Some("a.".into()),
-                    limit: None,
+                    ..Default::default()
                 },
             )
             .unwrap();
@@ -1575,8 +1738,8 @@ mod tests {
             .list(
                 &scope,
                 &ListOpts {
-                    prefix: None,
                     limit: Some(2),
+                    ..Default::default()
                 },
             )
             .unwrap();
@@ -1878,6 +2041,120 @@ mod tests {
         assert_eq!(changes.len(), 1, "only regular expired key emits event");
         assert_eq!(changes[0].kind, MemoryChangeKind::Expired);
         assert_eq!(changes[0].key, "exp_r");
+    }
+
+    // ---- Pagination + query + export/import ----
+
+    #[test]
+    fn list_supports_offset_limit_since_until() {
+        let mut s = store();
+        let scope = Scope::Workspace(9);
+        for k in ["a", "b", "c", "d", "e"] {
+            s.put(PLUGIN_A, &scope, k, &text(k), &PutOpts::default()).unwrap();
+        }
+        // 전체
+        let all = s.list(&scope, &ListOpts::default()).unwrap();
+        assert_eq!(all.iter().map(|e| e.key.as_str()).collect::<Vec<_>>(), ["a","b","c","d","e"]);
+
+        // offset + limit
+        let page = s
+            .list(
+                &scope,
+                &ListOpts {
+                    offset: Some(1),
+                    limit: Some(2),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        assert_eq!(page.iter().map(|e| e.key.as_str()).collect::<Vec<_>>(), ["b","c"]);
+
+        // since / until — 모두 같은 updated_at 이라 since=now+1 이면 0개
+        let now = unix_ms_now();
+        let future = s
+            .list(
+                &scope,
+                &ListOpts {
+                    since: Some(now + 60_000),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        assert!(future.is_empty());
+    }
+
+    #[test]
+    fn query_filters_by_dot_path_equality() {
+        let mut s = store();
+        let scope = Scope::Workspace(11);
+        let make = |status: &str| {
+            MemoryValue::Json(serde_json::json!({
+                "task": { "status": status, "id": 1 }
+            }))
+        };
+        s.put(PLUGIN_A, &scope, "t.1", &make("open"), &PutOpts::default()).unwrap();
+        s.put(PLUGIN_A, &scope, "t.2", &make("closed"), &PutOpts::default()).unwrap();
+        s.put(PLUGIN_A, &scope, "t.3", &make("open"), &PutOpts::default()).unwrap();
+        // 텍스트 entry 는 query 에서 자동 제외
+        s.put(PLUGIN_A, &scope, "x", &text("not-json"), &PutOpts::default()).unwrap();
+
+        let hits = s
+            .query(
+                &scope,
+                "task.status",
+                &serde_json::json!("open"),
+                &ListOpts::default(),
+            )
+            .unwrap();
+        let mut keys: Vec<&str> = hits.iter().map(|e| e.key.as_str()).collect();
+        keys.sort();
+        assert_eq!(keys, ["t.1", "t.3"]);
+
+        // path 가 존재하지 않으면 0개
+        let none = s
+            .query(
+                &scope,
+                "task.nope",
+                &serde_json::json!("open"),
+                &ListOpts::default(),
+            )
+            .unwrap();
+        assert!(none.is_empty());
+    }
+
+    #[test]
+    fn export_and_import_roundtrip() {
+        let mut s = store();
+        let ws = Scope::Workspace(20);
+        let sf = Scope::Surface(20);
+        s.put(PLUGIN_A, &ws, "alpha", &text("a"), &PutOpts::default()).unwrap();
+        s.put(PLUGIN_A, &sf, "beta", &MemoryValue::Json(serde_json::json!({"v":1})), &PutOpts::default()).unwrap();
+        // Secret entry 가 있어도 export 에는 포함되지 않아야 한다
+        s.put_secret(PLUGIN_A, &ws, "secret_k", &text("hidden"), &PutOpts::default()).unwrap();
+
+        let exported = s.export_regular(None).unwrap();
+        assert_eq!(exported.len(), 2);
+        assert!(exported.iter().all(|e| e.scope != "secret"));
+
+        // 다른 store 로 import
+        let mut s2 = store();
+        let stats = s2.import_regular(HOST_OWNER, &exported, false).unwrap();
+        assert_eq!(stats.applied, 2);
+        assert_eq!(stats.skipped, 0);
+
+        // 두 entry 모두 복원
+        assert!(s2.get(&ws, "alpha").unwrap().is_some());
+        assert!(s2.get(&sf, "beta").unwrap().is_some());
+
+        // 같은 store 에 다시 import (replace=false) → skip
+        let stats = s2.import_regular(HOST_OWNER, &exported, false).unwrap();
+        assert_eq!(stats.applied, 0);
+        assert_eq!(stats.skipped, 2);
+
+        // replace=true → 모두 applied
+        let stats = s2.import_regular(HOST_OWNER, &exported, true).unwrap();
+        assert_eq!(stats.applied, 2);
+        assert_eq!(stats.skipped, 0);
     }
 
     #[test]

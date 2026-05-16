@@ -353,7 +353,7 @@ pub enum MemoryCommands {
         #[arg(long)]
         key: String,
     },
-    /// List entries in a scope (prefix + limit).
+    /// List entries in a scope (prefix + since/until/limit/offset).
     List {
         #[arg(long, conflicts_with_all = ["surface", "workspace", "window", "account", "global"])]
         scope: Option<String>,
@@ -371,6 +371,72 @@ pub enum MemoryCommands {
         prefix: Option<String>,
         #[arg(long)]
         limit: Option<usize>,
+        /// Only entries with `updated_at >= since` (unix ms).
+        #[arg(long)]
+        since: Option<i64>,
+        /// Only entries with `updated_at < until` (unix ms).
+        #[arg(long)]
+        until: Option<i64>,
+        /// Skip the first N matching entries (use with --limit for pagination).
+        #[arg(long)]
+        offset: Option<usize>,
+    },
+    /// Filter JSON entries by a dot-path equality (`--path a.b --equals <json>`).
+    Query {
+        #[arg(long, conflicts_with_all = ["surface", "workspace", "window", "account", "global"])]
+        scope: Option<String>,
+        #[arg(long, conflicts_with_all = ["scope", "workspace", "window", "account", "global"])]
+        surface: Option<u32>,
+        #[arg(long, conflicts_with_all = ["scope", "surface", "window", "account", "global"])]
+        workspace: Option<u32>,
+        #[arg(long, conflicts_with_all = ["scope", "surface", "workspace", "account", "global"])]
+        window: Option<u64>,
+        #[arg(long, conflicts_with_all = ["scope", "surface", "workspace", "window", "global"])]
+        account: Option<String>,
+        #[arg(long, conflicts_with_all = ["scope", "surface", "workspace", "window", "account"])]
+        global: bool,
+        /// Dot path, e.g. `"task.status"`. Only `application/json` entries are inspected.
+        #[arg(long)]
+        path: String,
+        /// JSON literal (or quoted string) to compare for equality.
+        #[arg(long)]
+        equals: String,
+        #[arg(long)]
+        prefix: Option<String>,
+        #[arg(long)]
+        limit: Option<usize>,
+        #[arg(long)]
+        since: Option<i64>,
+        #[arg(long)]
+        until: Option<i64>,
+        #[arg(long)]
+        offset: Option<usize>,
+    },
+    /// Export regular entries to JSON (optional `--scope` filter). Secret area is
+    /// never exported.
+    Export {
+        #[arg(long, conflicts_with_all = ["surface", "workspace", "window", "account", "global"])]
+        scope: Option<String>,
+        #[arg(long, conflicts_with_all = ["scope", "workspace", "window", "account", "global"])]
+        surface: Option<u32>,
+        #[arg(long, conflicts_with_all = ["scope", "surface", "window", "account", "global"])]
+        workspace: Option<u32>,
+        #[arg(long, conflicts_with_all = ["scope", "surface", "workspace", "account", "global"])]
+        window: Option<u64>,
+        #[arg(long, conflicts_with_all = ["scope", "surface", "workspace", "window", "global"])]
+        account: Option<String>,
+        #[arg(long, conflicts_with_all = ["scope", "surface", "workspace", "window", "account"])]
+        global: bool,
+    },
+    /// Import regular entries from a JSON file (output of `memory export`).
+    /// `--replace` overwrites existing keys; default skips conflicts.
+    Import {
+        /// Path to JSON file (entries array, or `{ "entries": [...] }`).
+        #[arg(long)]
+        file: String,
+        /// Overwrite existing keys (default: skip).
+        #[arg(long)]
+        replace: bool,
     },
     /// Count entries in a scope (prefix optional).
     Count {

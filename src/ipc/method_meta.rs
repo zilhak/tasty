@@ -119,6 +119,9 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("memory.count", plugin(&[MemoryRead])),
         ("memory.scopes", plugin(&[MemoryRead])),
         ("memory.stats", plugin(&[MemoryRead])),
+        ("memory.query", plugin(&[MemoryRead])),
+        ("memory.export", plugin(&[MemoryRead])),
+        ("memory.import", plugin(&[MemoryWrite])),
         // ── memory: secret (plugin 별 사전 분할) ──────────────────────
         ("memory.secret.put", plugin(&[MemorySecret])),
         ("memory.secret.get", plugin(&[MemorySecret])),

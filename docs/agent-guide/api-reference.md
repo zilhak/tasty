@@ -369,11 +369,14 @@ tasty surface-meta list --surface 3   # 특정 서피스 지정
 | `memory.put` | `scope, key, value 또는 value_b64, content_type?, expires_at?, cas?` | 저장(upsert). 응답: `{ ok: true, version: N }` |
 | `memory.get` | `scope, key` | 단건 조회. 응답: entry 객체 또는 `null` |
 | `memory.delete` | `scope, key, cas?` | 삭제. 응답: `{ ok: true }` |
-| `memory.list` | `scope, prefix?, limit?` | 엔트리 목록. 응답: `{ entries: [...], count: N }` |
+| `memory.list` | `scope, prefix?, limit?, since?, until?, offset?` | 엔트리 목록. `since`/`until` 은 `updated_at` 의 unix ms 범위, `offset` 으로 `--limit` 와 조합한 페이지네이션. 응답: `{ entries: [...], count: N }` |
 | `memory.exists` | `scope, key` | 존재 여부. 응답: `{ exists: bool }` |
 | `memory.count` | `scope, prefix?` | 갯수. 응답: `{ count: N }` |
 | `memory.scopes` | _없음_ | 사용 중인 스코프 목록. 응답: `{ scopes: [...] }` |
 | `memory.stats` | `scope?` | 엔트리 갯수 + byte 합계. 응답: `{ scope, entries, bytes }` |
+| `memory.query` | `scope, path, equals, prefix?, limit?, since?, until?, offset?` | `application/json` entry 만 대상으로 dot-path 매칭 (`"task.status"` 형식, 배열 인덱스 미지원). `equals` 값과 deep-equality 비교. 응답: `{ entries: [...], count: N }` |
+| `memory.export` | `scope?` | regular 영역을 dump. `scope` 가 있으면 그 scope 만, 없으면 전체. **secret 영역은 절대 export 되지 않는다.** 응답: `{ entries: [...], count: N }` (각 entry 는 `memory.get` 응답과 같은 형태) |
+| `memory.import` | `entries: [...], replace?` | regular 영역으로 entry 입력. CAS 는 무시되며 `replace=false` (기본) 면 충돌 시 skip, `true` 면 덮어쓰기. caller 가 새 owner 가 된다. 응답: `{ applied: N, skipped: M }` |
 
 #### Secret API (`memory.secret.*`)
 
@@ -474,9 +477,18 @@ tasty memory put --surface 3 --key buffer --value @/tmp/buf.txt
 tasty memory get --workspace 7 --key task.plan
 tasty memory delete --workspace 7 --key task.plan --cas 1
 
-# 리스트 + 카운트
+# 리스트 + 카운트 (페이지네이션은 --limit + --offset, 시간 범위는 --since/--until)
 tasty memory list --workspace 7 --prefix task. --limit 50
+tasty memory list --workspace 7 --since 1715800000000 --limit 20 --offset 20
 tasty memory count --workspace 7 --prefix task.
+
+# JSON path 매칭 (application/json entry 만)
+tasty memory query --workspace 7 --path task.status --equals '"open"'
+
+# Export / Import (regular 만 — secret 은 export 안 됨)
+tasty memory export --workspace 7 > workspace.json
+tasty memory import --file workspace.json            # 기존 key 는 skip
+tasty memory import --file workspace.json --replace  # 기존 key 덮어쓰기
 
 # 메타
 tasty memory scopes

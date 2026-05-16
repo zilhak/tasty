@@ -740,7 +740,19 @@ fn memory_command_to_method_params(
                 serde_json::json!({ "scope": scope_token, "key": key }),
             )
         }
-        List { scope, surface, workspace, window, account, global, prefix, limit } => {
+        List {
+            scope,
+            surface,
+            workspace,
+            window,
+            account,
+            global,
+            prefix,
+            limit,
+            since,
+            until,
+            offset,
+        } => {
             let scope_token = require_scope(scope.as_deref(), *surface, *workspace, *window, account.as_deref(), *global);
             let mut p = serde_json::json!({ "scope": scope_token });
             if let Some(pre) = prefix {
@@ -749,7 +761,95 @@ fn memory_command_to_method_params(
             if let Some(l) = limit {
                 p["limit"] = serde_json::json!(l);
             }
+            if let Some(s) = since {
+                p["since"] = serde_json::json!(s);
+            }
+            if let Some(u) = until {
+                p["until"] = serde_json::json!(u);
+            }
+            if let Some(o) = offset {
+                p["offset"] = serde_json::json!(o);
+            }
             ("memory.list", p)
+        }
+        Query {
+            scope,
+            surface,
+            workspace,
+            window,
+            account,
+            global,
+            path,
+            equals,
+            prefix,
+            limit,
+            since,
+            until,
+            offset,
+        } => {
+            let scope_token = require_scope(scope.as_deref(), *surface, *workspace, *window, account.as_deref(), *global);
+            // `--equals` 는 JSON 리터럴로 파싱; 실패하면 문자열 그대로.
+            let equals_val: serde_json::Value = match serde_json::from_str(equals) {
+                Ok(v) => v,
+                Err(_) => serde_json::Value::String(equals.clone()),
+            };
+            let mut p = serde_json::json!({
+                "scope": scope_token,
+                "path": path,
+                "equals": equals_val,
+            });
+            if let Some(pre) = prefix {
+                p["prefix"] = serde_json::json!(pre);
+            }
+            if let Some(l) = limit {
+                p["limit"] = serde_json::json!(l);
+            }
+            if let Some(s) = since {
+                p["since"] = serde_json::json!(s);
+            }
+            if let Some(u) = until {
+                p["until"] = serde_json::json!(u);
+            }
+            if let Some(o) = offset {
+                p["offset"] = serde_json::json!(o);
+            }
+            ("memory.query", p)
+        }
+        Export { scope, surface, workspace, window, account, global } => {
+            let mut p = serde_json::json!({});
+            if let Some(tok) = resolve_scope(scope.as_deref(), *surface, *workspace, *window, account.as_deref(), *global) {
+                p["scope"] = serde_json::json!(tok);
+            }
+            ("memory.export", p)
+        }
+        Import { file, replace } => {
+            let raw = match std::fs::read_to_string(file) {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("Error: failed to read {file}: {e}");
+                    std::process::exit(1);
+                }
+            };
+            let parsed: serde_json::Value = match serde_json::from_str(&raw) {
+                Ok(v) => v,
+                Err(e) => {
+                    eprintln!("Error: {file}: not valid JSON: {e}");
+                    std::process::exit(1);
+                }
+            };
+            // 입력은 배열이거나 `{ "entries": [...] }` 형태 둘 다 허용.
+            let entries = if parsed.is_array() {
+                parsed
+            } else if let Some(arr) = parsed.get("entries") {
+                arr.clone()
+            } else {
+                eprintln!("Error: {file}: expected JSON array or object with 'entries'");
+                std::process::exit(1);
+            };
+            (
+                "memory.import",
+                serde_json::json!({ "entries": entries, "replace": replace }),
+            )
         }
         Count { scope, surface, workspace, window, account, global, prefix } => {
             let scope_token = require_scope(scope.as_deref(), *surface, *workspace, *window, account.as_deref(), *global);

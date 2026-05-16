@@ -200,6 +200,9 @@ fn route_engine_handler(
         "memory.count" => memory::handle_count(state, caller, id, &request.params),
         "memory.scopes" => memory::handle_scopes(state, caller, id, &request.params),
         "memory.stats" => memory::handle_stats(state, caller, id, &request.params),
+        "memory.query" => memory::handle_query(state, caller, id, &request.params),
+        "memory.export" => memory::handle_export(state, caller, id, &request.params),
+        "memory.import" => memory::handle_import(state, caller, id, &request.params),
         // memory: secret (plugin 별 사전 분할)
         "memory.secret.put" => memory::handle_secret_put(state, caller, id, &request.params),
         "memory.secret.get" => memory::handle_secret_get(state, caller, id, &request.params),
