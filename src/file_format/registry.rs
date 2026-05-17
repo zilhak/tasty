@@ -5,12 +5,14 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::RwLock;
 
 use tracing::warn;
 
 use super::config::{validate_detector_decl, DetectorDecl, DetectorRuleDecl};
 use super::evaluator::{evaluate_cheap, evaluate_deep, DeepCtx};
+use super::info::DetectorInfo;
 use super::types::{
     DetectDepth, DetectorId, DetectorRule, DetectorRuleKind, FileFormatDetector, FileTarget,
     RuleOrigin,
@@ -30,6 +32,9 @@ struct DetectorContribution {
 struct Inner {
     /// detector id → 출처별 contribution. install 순서대로 push (host → plugin → user).
     contributions: BTreeMap<DetectorId, Vec<DetectorContribution>>,
+    /// detector id → 최초 install 시점의 monotonic counter 값. 후속 patch 에 의해 변하지
+    /// 않는다 (`install_one` 이 entry 가 비었을 때만 부여).
+    install_order: BTreeMap<DetectorId, u64>,
     /// finalize 결과 cache. dirty 시 lazy 재계산.
     finalized: BTreeMap<DetectorId, FileFormatDetector>,
     dirty: bool,
@@ -37,6 +42,9 @@ struct Inner {
 
 pub struct FileFormatRegistry {
     inner: RwLock<Inner>,
+    /// 다음 install 시 부여할 monotonic 카운터. install_one 이 새 detector id 에 대해
+    /// fetch_add 로 받아온다.
+    next_install_order: AtomicU64,
 }
 
 impl FileFormatRegistry {
@@ -44,9 +52,11 @@ impl FileFormatRegistry {
         Self {
             inner: RwLock::new(Inner {
                 contributions: BTreeMap::new(),
+                install_order: BTreeMap::new(),
                 finalized: BTreeMap::new(),
                 dirty: false,
             }),
+            next_install_order: AtomicU64::new(0),
         }
     }
 
@@ -123,7 +133,13 @@ impl FileFormatRegistry {
             Err(_) => return,
         };
         for decl in decls {
-            install_one(&mut inner, decl, RuleOrigin::HostDefault, false);
+            install_one(
+                &mut inner,
+                &self.next_install_order,
+                decl,
+                RuleOrigin::HostDefault,
+                false,
+            );
         }
         inner.dirty = true;
     }
@@ -149,7 +165,13 @@ impl FileFormatRegistry {
             Err(_) => return,
         };
         for decl in decls {
-            install_one(&mut inner, decl, RuleOrigin::User, false);
+            install_one(
+                &mut inner,
+                &self.next_install_order,
+                decl,
+                RuleOrigin::User,
+                false,
+            );
         }
         inner.dirty = true;
     }
@@ -181,6 +203,7 @@ impl FileFormatRegistry {
             }
             install_one(
                 &mut inner,
+                &self.next_install_order,
                 decl,
                 RuleOrigin::Plugin(plugin_id.to_string()),
                 true,
@@ -230,10 +253,17 @@ impl FileFormatRegistry {
         }
         for id in empty_ids {
             inner.contributions.remove(&id);
+            inner.install_order.remove(&id);
         }
         // 새 user contribution install.
         for decl in decls {
-            install_one(&mut inner, decl, RuleOrigin::User, false);
+            install_one(
+                &mut inner,
+                &self.next_install_order,
+                decl,
+                RuleOrigin::User,
+                false,
+            );
         }
         inner.dirty = true;
     }
@@ -329,6 +359,7 @@ impl FileFormatRegistry {
         }
         for id in empty_ids {
             inner.contributions.remove(&id);
+            inner.install_order.remove(&id);
         }
         inner.dirty = true;
     }
@@ -376,6 +407,7 @@ impl FileFormatRegistry {
                     }
                 }
             }
+            let install_order = inner.install_order.get(id).copied().unwrap_or(u64::MAX);
             next.insert(
                 id.clone(),
                 FileFormatDetector {
@@ -384,11 +416,97 @@ impl FileFormatRegistry {
                     icon,
                     rules,
                     disabled,
+                    install_order,
                 },
             );
         }
         inner.finalized = next;
         inner.dirty = false;
+    }
+}
+
+impl DetectorInfo for FileFormatRegistry {
+    fn advertised_extensions(&self, detector: &DetectorId) -> Vec<String> {
+        self.ensure_finalized();
+        let inner = match self.inner.read() {
+            Ok(g) => g,
+            Err(_) => return Vec::new(),
+        };
+        let Some(det) = inner.finalized.get(detector) else {
+            return Vec::new();
+        };
+        let mut out: Vec<String> = det
+            .rules
+            .iter()
+            .filter_map(|r| match &r.kind {
+                DetectorRuleKind::Extension { values } => Some(values.iter().cloned()),
+                _ => None,
+            })
+            .flatten()
+            .collect();
+        out.sort();
+        out.dedup();
+        out
+    }
+
+    fn detectors_for_extension(&self, ext: &str) -> Vec<DetectorId> {
+        self.ensure_finalized();
+        let ext_lower = ext.trim_start_matches('.').to_ascii_lowercase();
+        if ext_lower.is_empty() {
+            return Vec::new();
+        }
+        let inner = match self.inner.read() {
+            Ok(g) => g,
+            Err(_) => return Vec::new(),
+        };
+        let mut hits: Vec<(u64, DetectorId)> = inner
+            .finalized
+            .iter()
+            .filter(|(_, det)| !det.disabled)
+            .filter_map(|(id, det)| {
+                let advertises = det.rules.iter().any(|r| {
+                    matches!(
+                        &r.kind,
+                        DetectorRuleKind::Extension { values } if values.iter().any(|v| v == &ext_lower),
+                    )
+                });
+                advertises.then(|| (det.install_order, id.clone()))
+            })
+            .collect();
+        hits.sort_by(|(a_ord, a_id), (b_ord, b_id)| a_ord.cmp(b_ord).then_with(|| a_id.cmp(b_id)));
+        hits.into_iter().map(|(_, id)| id).collect()
+    }
+
+    fn all_advertised_extensions(&self) -> Vec<String> {
+        self.ensure_finalized();
+        let inner = match self.inner.read() {
+            Ok(g) => g,
+            Err(_) => return Vec::new(),
+        };
+        let mut out: Vec<String> = inner
+            .finalized
+            .values()
+            .filter(|det| !det.disabled)
+            .flat_map(|det| {
+                det.rules.iter().filter_map(|r| match &r.kind {
+                    DetectorRuleKind::Extension { values } => Some(values.clone()),
+                    _ => None,
+                })
+            })
+            .flatten()
+            .collect();
+        out.sort();
+        out.dedup();
+        out
+    }
+
+    fn is_enabled(&self, detector: &DetectorId) -> bool {
+        self.ensure_finalized();
+        let inner = match self.inner.read() {
+            Ok(g) => g,
+            Err(_) => return false,
+        };
+        inner.finalized.get(detector).is_some_and(|d| !d.disabled)
     }
 }
 
@@ -400,7 +518,16 @@ impl Default for FileFormatRegistry {
 
 /// 같은 id 의 contribution 을 append. 기존 entry 가 있으면 patch semantics 로 메타데이터
 /// 가 마지막 출처에 의해 덮어써진다 (finalize 단계에서 적용).
-fn install_one(inner: &mut Inner, decl: DetectorDecl, origin: RuleOrigin, from_plugin: bool) {
+///
+/// 최초 install 시점에만 `install_order` 카운터 값을 부여. 같은 id 의 후속 patch (다른
+/// origin) 는 install_order 를 변경하지 않는다.
+fn install_one(
+    inner: &mut Inner,
+    counter: &AtomicU64,
+    decl: DetectorDecl,
+    origin: RuleOrigin,
+    from_plugin: bool,
+) {
     // schema 검증
     let validation = validate_detector_decl(&decl, from_plugin);
     let warnings = match validation {
@@ -415,6 +542,10 @@ fn install_one(inner: &mut Inner, decl: DetectorDecl, origin: RuleOrigin, from_p
     }
 
     let id = DetectorId(decl.id.clone());
+    inner
+        .install_order
+        .entry(id.clone())
+        .or_insert_with(|| counter.fetch_add(1, Ordering::SeqCst));
     let entry = inner.contributions.entry(id).or_default();
     // 같은 origin 으로 재install (예: 사용자 설정 reload) 인 경우 기존 동일 origin 제거 후 push.
     entry.retain(|c| c.origin != origin);
@@ -1006,5 +1137,209 @@ mod tests {
             include_str!("defaults/default-file-format.toml"),
         );
         assert_eq!(reg.export_user_config(), "");
+    }
+
+    // ── DetectorInfo trait (Phase E ME1) ───────────────────────────────
+
+    #[test]
+    fn advertised_extensions_returns_only_extension_rule_values() {
+        let reg = FileFormatRegistry::new();
+        // 같은 detector 가 extension + magic 둘 다 가짐. trait 은 extension 만 반환.
+        let user_toml = r#"
+            [[detector]]
+            id = "png"
+            [[detector.rule]]
+            kind = "extension"
+            values = ["png", "PNG"]
+            [[detector.rule]]
+            kind = "magic"
+            offset = 0
+            bytes_hex = "89504E47"
+        "#;
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("u.toml");
+        std::fs::write(&p, user_toml).unwrap();
+        reg.install_user_config(&p);
+
+        let exts = reg.advertised_extensions(&DetectorId("png".into()));
+        // values 는 소문자 정규화됨 → 둘 다 "png" → dedup 결과 1개.
+        assert_eq!(exts, vec!["png".to_string()]);
+
+        // 없는 detector 는 빈 벡터.
+        assert!(reg.advertised_extensions(&DetectorId("nope".into())).is_empty());
+    }
+
+    #[test]
+    fn detectors_for_extension_orders_by_install_order() {
+        let reg = FileFormatRegistry::new();
+        // 1번째 install: "zzz" id (알파벳 후순) 이 먼저 들어옴 → install_order=0.
+        let user_toml_a = r#"
+            [[detector]]
+            id = "zzz"
+            [[detector.rule]]
+            kind = "extension"
+            values = ["md"]
+        "#;
+        let dir = tempfile::tempdir().unwrap();
+        let p1 = dir.path().join("a.toml");
+        std::fs::write(&p1, user_toml_a).unwrap();
+        reg.install_user_config(&p1);
+
+        // 2번째 install (다른 origin — plugin): "aaa" id 가 같은 .md 광고. install_order=1.
+        let decls = vec![DetectorDecl {
+            id: "aaa".into(),
+            display_name_i18n_key: None,
+            icon: None,
+            disabled: false,
+            rule: vec![DetectorRuleDecl::Extension {
+                values: vec!["md".into()],
+            }],
+        }];
+        reg.install_plugin_detectors("com.example.aaa", &decls);
+
+        let hits = reg.detectors_for_extension("md");
+        // install_order 가 작은 zzz 가 먼저, 그 다음 aaa. (알파벳 정렬이 아님)
+        assert_eq!(
+            hits,
+            vec![DetectorId("zzz".into()), DetectorId("aaa".into())]
+        );
+    }
+
+    #[test]
+    fn detectors_for_extension_skips_disabled() {
+        let reg = FileFormatRegistry::new();
+        let user_toml = r#"
+            [[detector]]
+            id = "x"
+            [[detector.rule]]
+            kind = "extension"
+            values = ["md"]
+
+            [[detector]]
+            id = "y"
+            disabled = true
+            [[detector.rule]]
+            kind = "extension"
+            values = ["md"]
+        "#;
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("u.toml");
+        std::fs::write(&p, user_toml).unwrap();
+        reg.install_user_config(&p);
+
+        let hits = reg.detectors_for_extension("md");
+        assert_eq!(hits, vec![DetectorId("x".into())]);
+    }
+
+    #[test]
+    fn detectors_for_extension_accepts_leading_dot_and_uppercase() {
+        let reg = FileFormatRegistry::new();
+        let user_toml = r#"
+            [[detector]]
+            id = "x"
+            [[detector.rule]]
+            kind = "extension"
+            values = ["md"]
+        "#;
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("u.toml");
+        std::fs::write(&p, user_toml).unwrap();
+        reg.install_user_config(&p);
+
+        // 점 prefix / 대문자 입력 모두 정규화 매칭.
+        assert_eq!(reg.detectors_for_extension(".md"), vec![DetectorId("x".into())]);
+        assert_eq!(reg.detectors_for_extension("MD"), vec![DetectorId("x".into())]);
+        // 빈 문자열 / 점만 → 빈 결과.
+        assert!(reg.detectors_for_extension("").is_empty());
+        assert!(reg.detectors_for_extension(".").is_empty());
+    }
+
+    #[test]
+    fn all_advertised_extensions_dedupes_and_sorts() {
+        let reg = FileFormatRegistry::new();
+        let user_toml = r#"
+            [[detector]]
+            id = "a"
+            [[detector.rule]]
+            kind = "extension"
+            values = ["md", "markdown"]
+
+            [[detector]]
+            id = "b"
+            [[detector.rule]]
+            kind = "extension"
+            values = ["mdx", "md"]
+        "#;
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("u.toml");
+        std::fs::write(&p, user_toml).unwrap();
+        reg.install_user_config(&p);
+
+        let exts = reg.all_advertised_extensions();
+        // 알파벳 정렬, dedup.
+        assert_eq!(
+            exts,
+            vec!["markdown".to_string(), "md".to_string(), "mdx".to_string()],
+        );
+    }
+
+    #[test]
+    fn is_enabled_reflects_disabled_field() {
+        let reg = FileFormatRegistry::new();
+        reg.install_host_defaults(
+            include_str!("defaults/default-file-format.toml"),
+        );
+        // host 의 markdown 은 enabled.
+        assert!(reg.is_enabled(&DetectorId("markdown".into())));
+        // 존재하지 않는 detector 는 false.
+        assert!(!reg.is_enabled(&DetectorId("nope".into())));
+
+        // user 가 disable 하면 false.
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("u.toml");
+        std::fs::write(
+            &p,
+            r#"
+                [[detector]]
+                id = "markdown"
+                disabled = true
+            "#,
+        )
+        .unwrap();
+        reg.install_user_config(&p);
+        assert!(!reg.is_enabled(&DetectorId("markdown".into())));
+    }
+
+    #[test]
+    fn install_order_persists_across_patch_from_other_origin() {
+        let reg = FileFormatRegistry::new();
+        // 1번째: host default 로 markdown install (install_order=0).
+        reg.install_host_defaults(
+            include_str!("defaults/default-file-format.toml"),
+        );
+        let initial = reg
+            .detector(&DetectorId("markdown".into()))
+            .unwrap()
+            .install_order;
+        // 2번째: 사용자가 같은 id 에 mdx 추가 → patch. install_order 변하지 않아야 함.
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("u.toml");
+        std::fs::write(
+            &p,
+            r#"
+                [[detector]]
+                id = "markdown"
+                [[detector.rule]]
+                kind = "extension"
+                values = ["mdx"]
+            "#,
+        )
+        .unwrap();
+        reg.install_user_config(&p);
+        let after = reg
+            .detector(&DetectorId("markdown".into()))
+            .unwrap()
+            .install_order;
+        assert_eq!(initial, after);
     }
 }

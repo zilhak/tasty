@@ -242,6 +242,12 @@ impl EngineState {
             input_simulation_enabled: false,
         };
 
+        // (Phase E) FileHandler 가 detector 메타 (광고 확장자 등) 를 조회할 수 있게
+        // FileFormatRegistry 를 DetectorInfo 로 주입. host default 가 이미 로드된 시점.
+        engine
+            .file_handler
+            .attach_detector_info(engine.file_format.clone());
+
         // Re-apply coalesce_ms from actual settings
         engine.notifications =
             NotificationStore::with_coalesce_ms(engine.settings.notification.coalesce_ms);

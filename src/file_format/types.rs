@@ -129,6 +129,10 @@ pub struct FileFormatDetector {
     pub icon: Option<String>,
     pub rules: Vec<DetectorRule>,
     pub disabled: bool,
+    /// 최초 install 시점의 monotonic counter 값. 같은 detector 의 후속 patch 에 의해
+    /// 변하지 않는다. 같은 확장자를 여러 detector 가 광고할 때 우선순위 표가 없으면
+    /// 이 값의 오름차순으로 결정적 순서 부여.
+    pub install_order: u64,
 }
 
 /// identify 평가 깊이.

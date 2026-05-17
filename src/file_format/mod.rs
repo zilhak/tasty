@@ -8,10 +8,12 @@
 
 pub mod config;
 pub(crate) mod evaluator;
+pub mod info;
 pub(crate) mod lua_eval;
 pub mod registry;
 pub mod types;
 
+pub use info::DetectorInfo;
 pub use registry::FileFormatRegistry;
 pub use types::{
     is_valid_detector_id, DetectDepth, DetectorId, DetectorRule, DetectorRuleKind,

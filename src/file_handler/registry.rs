@@ -5,12 +5,12 @@
 //! 마지막 출처가 명시한 필드만 덮어씀).
 
 use std::collections::BTreeMap;
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 
 use serde::Deserialize;
 use tracing::warn;
 
-use crate::file_format::DetectorId;
+use crate::file_format::{DetectorId, DetectorInfo};
 
 use super::config::{
     validate_plugin_handler_decl, HandlerDecl, HandlerDeclError, HostHandlerActionDecl,
@@ -39,6 +39,9 @@ struct Inner {
 
 pub struct FileHandlerRegistry {
     inner: RwLock<Inner>,
+    /// `DetectorInfo` 주입 슬롯. 부팅 시 `attach_detector_info` 1회 호출.
+    /// Settings UI 의 Extension Mapping 탭 등이 detector 의 확장자 광고를 조회할 때 사용.
+    detector_info: RwLock<Option<Arc<dyn DetectorInfo>>>,
 }
 
 impl FileHandlerRegistry {
@@ -49,7 +52,26 @@ impl FileHandlerRegistry {
                 finalized: BTreeMap::new(),
                 dirty: false,
             }),
+            detector_info: RwLock::new(None),
         }
+    }
+
+    /// `DetectorInfo` 주입. 부팅 시 1회만. 중복 호출은 warn + 무시.
+    pub fn attach_detector_info(&self, info: Arc<dyn DetectorInfo>) {
+        let mut slot = match self.detector_info.write() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
+        if slot.is_some() {
+            warn!("FileHandlerRegistry: detector_info already attached, ignoring");
+            return;
+        }
+        *slot = Some(info);
+    }
+
+    /// 주입된 `DetectorInfo` 의 clone. `attach_detector_info` 호출 전이면 `None`.
+    pub fn detector_info(&self) -> Option<Arc<dyn DetectorInfo>> {
+        self.detector_info.read().ok().and_then(|g| g.clone())
     }
 
     pub fn handler(&self, id: &HandlerId) -> Option<FileHandler> {
@@ -957,5 +979,48 @@ mod tests {
         assert_eq!(id.as_str(), "$directory");
         let v = handlers.handlers_for(&id);
         assert!(!v.is_empty(), "host should register a directory handler");
+    }
+
+    // ── DetectorInfo 주입 (Phase E ME1) ──────────────────────────────
+
+    #[test]
+    fn attach_detector_info_stores_arc_and_returns_clone() {
+        use crate::file_format::FileFormatRegistry;
+        let formats = std::sync::Arc::new(FileFormatRegistry::new());
+        formats.install_host_defaults(include_str!(
+            "../file_format/defaults/default-file-format.toml"
+        ));
+
+        let handlers = FileHandlerRegistry::new();
+        assert!(handlers.detector_info().is_none());
+
+        handlers.attach_detector_info(formats.clone());
+        let info = handlers
+            .detector_info()
+            .expect("detector_info should be Some after attach");
+        // 주입된 info 로 markdown 의 광고된 확장자 조회 가능.
+        let exts = info.advertised_extensions(&DetectorId("markdown".into()));
+        assert!(exts.contains(&"md".to_string()));
+    }
+
+    #[test]
+    fn attach_detector_info_second_call_is_ignored() {
+        use crate::file_format::FileFormatRegistry;
+        let formats_a = std::sync::Arc::new(FileFormatRegistry::new());
+        let formats_b = std::sync::Arc::new(FileFormatRegistry::new());
+        formats_a.install_host_defaults(include_str!(
+            "../file_format/defaults/default-file-format.toml"
+        ));
+        // formats_b 는 host default 안 깐 빈 registry.
+
+        let handlers = FileHandlerRegistry::new();
+        handlers.attach_detector_info(formats_a.clone());
+        // 2번째 호출은 무시 → formats_b 가 주입되지 않음.
+        handlers.attach_detector_info(formats_b.clone());
+
+        let info = handlers.detector_info().expect("Some after first attach");
+        // 첫번째 (formats_a) 가 보유한 markdown 광고가 보여야 함.
+        let exts = info.advertised_extensions(&DetectorId("markdown".into()));
+        assert!(!exts.is_empty(), "first registry should still be attached");
     }
 }
