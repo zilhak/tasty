@@ -118,6 +118,9 @@ semver = "1"
 # File type detection (file_format Deep evaluator — magic bytes + MIME)
 infer = { version = "0.16", default-features = false }
 
+# Lua sandbox for file_format Lua detector rules (host/user only)
+mlua = { version = "0.10", features = ["lua54", "vendored", "send"] }
+
 # CLI
 clap = { version = "4", features = ["derive"] }
 

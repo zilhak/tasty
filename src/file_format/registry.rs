@@ -160,9 +160,28 @@ impl FileFormatRegistry {
             Err(_) => return,
         };
         for decl in decls {
+            // Plugin 출처의 Lua detector rule 은 차단: host/user 만 사용자 권한으로
+            // 실행되는 신뢰 영역. plugin 의 임의 Lua 는 sandbox 가 있어도 정책상 금지.
+            let mut decl = decl.clone();
+            let before = decl.rule.len();
+            decl.rule
+                .retain(|r| !matches!(r, DetectorRuleDecl::Lua { .. }));
+            let dropped = before - decl.rule.len();
+            if dropped > 0 {
+                warn!(
+                    plugin = plugin_id,
+                    detector = %decl.id,
+                    dropped,
+                    "file_format: dropping Lua detector rules from plugin (host/user only)",
+                );
+            }
+            if decl.rule.is_empty() {
+                // 모든 rule 이 Lua 였다면 detector 자체 install 의미 없음.
+                continue;
+            }
             install_one(
                 &mut inner,
-                decl.clone(),
+                decl,
                 RuleOrigin::Plugin(plugin_id.to_string()),
                 true,
             );
@@ -355,9 +374,7 @@ fn decl_rule_to_kind(decl: DetectorRuleDecl) -> Option<DetectorRuleKind> {
             DetectorRuleKind::Magic { offset, bytes }
         }
         DetectorRuleDecl::IsDirectory => DetectorRuleKind::IsDirectory,
-        DetectorRuleDecl::Lua { script } => DetectorRuleKind::Lua {
-            script_path: PathBuf::from(script),
-        },
+        DetectorRuleDecl::Lua { script } => DetectorRuleKind::Lua { script },
         DetectorRuleDecl::StructureCheck { spec } => DetectorRuleKind::StructureCheck {
             spec_path: PathBuf::from(spec),
         },
@@ -443,6 +460,51 @@ mod tests {
         // 기존 md 매칭 유지
         let id = reg.identify(&target("a/b.md"), DetectDepth::Cheap);
         assert_eq!(id, Some(DetectorId("markdown".into())));
+    }
+
+    #[test]
+    fn plugin_lua_rule_dropped_with_warn() {
+        let reg = FileFormatRegistry::new();
+        // plugin 이 Lua 와 Extension 을 섞어서 제공. Lua 만 drop 되고 Extension 은 유지.
+        let decls = vec![DetectorDecl {
+            id: "weird-fmt".into(),
+            display_name_i18n_key: None,
+            icon: None,
+            disabled: false,
+            rule: vec![
+                DetectorRuleDecl::Lua {
+                    script: "return true".into(),
+                },
+                DetectorRuleDecl::Extension {
+                    values: vec!["wf".into()],
+                },
+            ],
+        }];
+        reg.install_plugin_detectors("com.example.weird", &decls);
+        // Lua drop 후에도 Extension rule 이 살아 있어 매칭 가능.
+        let id = reg.identify(&target("x.wf"), DetectDepth::Deep);
+        assert_eq!(id, Some(DetectorId("weird-fmt".into())));
+    }
+
+    #[test]
+    fn plugin_lua_only_detector_skipped() {
+        let reg = FileFormatRegistry::new();
+        // Lua 만 들어있는 detector — install 자체가 무의미해서 skip.
+        let decls = vec![DetectorDecl {
+            id: "lua-only".into(),
+            display_name_i18n_key: None,
+            icon: None,
+            disabled: false,
+            rule: vec![DetectorRuleDecl::Lua {
+                script: "return true".into(),
+            }],
+        }];
+        reg.install_plugin_detectors("com.example.lua-only", &decls);
+        // detector 자체가 등록되지 않으므로 어떤 파일에도 안 잡힘.
+        assert_eq!(
+            reg.identify(&target("anything"), DetectDepth::Deep),
+            None
+        );
     }
 
     #[test]

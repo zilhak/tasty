@@ -8,6 +8,7 @@
 
 pub mod config;
 pub(crate) mod evaluator;
+pub(crate) mod lua_eval;
 pub mod registry;
 pub mod types;
 

@@ -98,9 +98,14 @@ pub enum DetectorRuleKind {
     Magic { offset: usize, bytes: Vec<u8> },
     /// path 가 디렉토리인지.
     IsDirectory,
-    /// Lua 평가자 (Phase D). Phase A 는 schema 만.
-    Lua { script_path: PathBuf },
-    /// 구조 체크 (Phase D). Phase A 는 schema 만.
+    /// Lua 평가자. TOML 의 `script = "..."` 문자열 그대로 (인라인 스크립트).
+    /// 평가 시 sandbox Lua VM 에 `target = { path, is_directory, bytes_head?, mime? }`
+    /// 테이블을 넘기고 스크립트의 boolean 리턴을 매치 여부로 사용.
+    ///
+    /// **Plugin 출처 거부**: plugin 매니페스트가 이 kind 를 쓰면 install 단계에서
+    /// drop + warn. host/user 출처만 평가됨.
+    Lua { script: String },
+    /// 구조 체크 (Phase D MD2). Phase D MD1 시점에는 schema 만, evaluator 미구현.
     StructureCheck { spec_path: PathBuf },
     /// 미지의 kind — payload 보존 (forward-compat).
     Unknown {

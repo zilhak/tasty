@@ -1556,7 +1556,8 @@ URI/경로 입력을 받아 **(1) 파일 형식 식별 → (2) 등록된 핸들�
   - `is_directory`: 대상이 디렉토리 (Cheap)
   - `magic`: `offset` + `bytes_hex` 매칭 (Deep, regular file 한정 / FIFO/socket/device skip)
   - `mime`: `infer` 기반 MIME 추정 후 대소문자 무관 비교 (Deep)
-  - `lua` / `structure_check`: stub (Phase C-D 에서 평가)
+  - `lua`: 인라인 Lua 5.4 sandbox 평가 (Deep, host/user TOML 만 — plugin 출처는 install 시 drop+warn). `target = { path, is_directory, bytes_head, mime, has_prefix }` 글로벌 주입. 메모리 cap 8MB, 명령어 cap 1M, `io`/`os`/`debug`/`package`/`require`/`load*`/`dofile` 제거, bytecode 청크 금지
+  - `structure_check`: stub (Phase D MD2 에서 평가)
 - Deep 평가는 한 `identify` 호출당 `DeepCtx` 가 head/MIME 캐시 → 같은 파일을 여러 detector 가 평가해도 IO 는 1회만
 - pre-filter: 디렉토리 대상은 `is_directory` rule 가진 detector 만, 파일 대상은 그 외만 평가 (cross-match 방지)
 - 호스트 default 는 `src/file_format/defaults/default-file-format.toml` 에 정의 — markdown, html, image, `$directory` 등

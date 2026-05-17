@@ -7,7 +7,7 @@ Tasty 는 경로/URI 입력을 두 단계로 라우팅한다:
 
 두 registry 는 **host default + plugin contribute + user TOML** 세 출처를 통합 보관한다. plugin 을 disable/uninstall 해도 host/user 항목은 그대로 남는다.
 
-> **Phase A 상태:** cheap path (확장자/glob/is-directory) 만 평가한다. magic bytes / MIME / Lua / structure-check 는 Phase B-D 에서 본격 구현. mouse.rs 콜사이트 (Ctrl+click 시 picker 자동 표시) 변경도 Phase A 범위 밖 — 현재는 기존 `terminal_link::open_uri` 가 그대로 동작한다.
+> **현재 상태:** cheap path (확장자/glob/is-directory) + deep path (magic bytes / MIME / Lua) 평가 가능. `structure_check` 는 Phase D MD2 에서 구현 예정. mouse.rs 콜사이트 (Ctrl+click 시 picker 자동 표시) 변경은 별도 작업 — 현재는 기존 `terminal_link::open_uri` 가 그대로 동작한다.
 
 ---
 
@@ -48,8 +48,8 @@ bytes_hex = "255044462D"  # %PDF- — Phase B 이상에서 평가
 | `is_directory` | (없음) | ✅ |
 | `magic` | `offset: int`, `bytes_hex: hex string` (대소문자 무관, 짝수 길이) | ✅ Phase B |
 | `mime` | `types: string[]` (예: `["image/png"]`, infer 추정) | ✅ Phase B |
-| `lua` | `script: string` | ⏳ Phase D |
-| `structure_check` | `script: string` | ⏳ Phase C |
+| `lua` | `script: string` (host/user TOML 만) | ✅ Phase D MD1 |
+| `structure_check` | `spec: string` | ⏳ Phase D MD2 |
 
 ### Pre-filter
 
@@ -57,6 +57,37 @@ bytes_hex = "255044462D"  # %PDF- — Phase B 이상에서 평가
 - **파일** 대상은 그 외 detector 만 평가.
 
 cross-match (디렉토리에 markdown 매칭 등) 방지.
+
+### Lua rule (host/user 전용)
+
+```toml
+[[detector.rule]]
+kind = "lua"
+script = """
+if target.has_prefix("%PDF") then return true end
+return false
+"""
+```
+
+`script` 는 인라인 Lua 5.4 코드. 평가 시 sandbox VM 에 다음 글로벌이 주입된다:
+
+| 필드 | 타입 | 비고 |
+|------|------|------|
+| `target.path` | string | 파일 시스템 표시 경로 |
+| `target.is_directory` | bool | 디렉토리 여부 |
+| `target.bytes_head` | string | 최대 8KB head bytes (regular file 만, 그 외 nil) |
+| `target.mime` | string | `infer` 가 추정한 MIME (없으면 nil) |
+| `target.has_prefix(prefix)` | function | `bytes_head` 가 `prefix` 로 시작하는지 |
+
+스크립트는 boolean 을 리턴해야 한다. 그 외 타입은 false 로 처리되고 warn 로그.
+
+**Sandbox 제약**:
+- 메모리 cap **8 MB** — 큰 string/table 폭발 차단.
+- 명령어 cap **1,000,000** — 무한 루프 abort.
+- 위험 글로벌 제거: `io`, `os`, `debug`, `package`, `require`, `dofile`, `loadfile`, `load`, `loadstring`. `string`, `math`, `table` 은 사용 가능.
+- bytecode 청크 금지 (텍스트 전용).
+
+**Plugin 출처 금지**: plugin TOML 의 `kind = "lua"` rule 은 install 단계에서 drop 되고 warn. 신뢰 영역은 host/user 만이다 (사용자가 자기 머신에 직접 적은 스크립트 = 사용자 권한). Lua 와 다른 rule 이 섞인 detector 는 Lua 만 떨어져 나가고 나머지는 정상 install.
 
 ---
 

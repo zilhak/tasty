@@ -1,8 +1,8 @@
 //! detector rule 평가자.
 //!
 //! - **Cheap path**: 확장자/glob/is-directory. file IO 없음. hover/typing 등 hot path 용.
-//! - **Deep path**: magic bytes / MIME 까지. 8KB head read 1회 + `DeepCtx` 에 캐시.
-//!   Lua / structure-check 는 Phase C-D 에서 추가.
+//! - **Deep path**: magic bytes / MIME / Lua. 8KB head read 1회 + `DeepCtx` 에 캐시.
+//!   `structure_check` 는 Phase D MD2 에서 추가.
 //!
 //! `evaluate_cheap` 은 단독 호출 가능. `evaluate_deep` 은 `DeepCtx` 가 필요한데,
 //! 한 `identify` 호출 안에서 detector 여러 개가 같은 파일의 magic/MIME 을 평가해도
@@ -24,13 +24,13 @@ pub struct DeepCtx {
 }
 
 #[derive(Debug, Clone)]
-struct DeepCacheEntry {
+pub(super) struct DeepCacheEntry {
     /// regular file 이면 true. directory / FIFO / socket / device 등은 false.
-    is_regular: bool,
+    pub(super) is_regular: bool,
     /// 최대 `DEEP_HEAD_CAP` 바이트. regular file 이 아니거나 read 실패 시 `None`.
-    head: Option<Vec<u8>>,
+    pub(super) head: Option<Vec<u8>>,
     /// `infer` 가 추정한 MIME. head 가 있을 때만 시도, 매칭 안되면 `None`.
-    mime: Option<String>,
+    pub(super) mime: Option<String>,
 }
 
 impl DeepCtx {
@@ -38,7 +38,7 @@ impl DeepCtx {
         Self::default()
     }
 
-    fn entry(&mut self, target: &FileTarget) -> &DeepCacheEntry {
+    pub(super) fn entry(&mut self, target: &FileTarget) -> &DeepCacheEntry {
         let path = target.as_path().to_path_buf();
         if !self.cache.contains_key(&path) {
             let e = read_entry(&path);
@@ -162,8 +162,10 @@ pub fn evaluate_deep(
             types.iter().any(|t| t.eq_ignore_ascii_case(mime))
         }
 
-        // Phase C-D 에서 평가. 현재는 false.
-        DetectorRuleKind::Lua { .. } | DetectorRuleKind::StructureCheck { .. } => false,
+        DetectorRuleKind::Lua { script } => super::lua_eval::evaluate_lua(script, target, ctx),
+
+        // Phase D MD2 에서 평가. 현재는 false.
+        DetectorRuleKind::StructureCheck { .. } => false,
 
         // cheap kind 는 IO 없이 그대로 평가.
         DetectorRuleKind::Extension { .. }
