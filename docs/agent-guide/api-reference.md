@@ -154,6 +154,12 @@ tasty unset hook --hook HOOK_ID
 tasty notify "메시지" [--title "제목"]
 tasty list notifications
 
+# 파일 핸들러 (~/.tasty/file-handlers.toml)
+tasty file-handler reload                                      # 사용자 TOML 재로드 (host/plugin 항목 영향 없음)
+
+# 사용자 Lua 스크립트 (~/.tasty/init.lua)
+tasty script reload                                            # init.lua 재로드 — 기존 hook 등록 제거 후 새 init.lua 만 살아남음
+
 # 트리 (전체 구조 출력)
 tasty list tree
 
