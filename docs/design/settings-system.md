@@ -24,6 +24,7 @@ Tasty의 설정 시스템 구조. 설정 파일, GUI 설정 윈도우, 카테고
 | Keybindings | 단축키 설정 (서브탭으로 분류) |
 | Language | UI 언어 선택 (en/ko/ja) |
 | Performance | PTY 폴링, 디스크 스왑, 지연 PTY 초기화 |
+| File Handler | Detectors / Handlers / Extension Mapping / Recent picks (`~/.tasty/file-handlers.toml` 사용자 영역 편집) |
 | Misc | tastyrc 편집기 등 기타 |
 
 ## Keybindings 탭 — 서브탭 구조
