@@ -1624,7 +1624,7 @@ URI/경로 입력을 받아 **(1) 파일 형식 식별 → (2) 등록된 핸들�
 - last-writer-wins (host → user 순서 install) — 사용자가 호스트 default 를 덮어쓸 수 있음
 - 빈 `order = []` 는 entry 제거 의도로 해석
 - `identify` 의 cheap path 가 파일 확장자가 있을 때 이 표를 fast path 로 사용 — 표에 적힌 detector 가 enabled + 광고 detector 안에 있으면 1순위로 선택. 표에 없거나 부적격이면 `install_order` 순서로 fallback
-- Settings UI: `File Handler` 탭의 `Extension Mapping` sub-tab — 광고 detector 가 2개 이상인 확장자만 노출. ↑/↓ 버튼으로 재정렬. 새 확장자 직접 입력 가능. "Reset" 으로 entry 제거 → install_order 순으로 복귀
+- Settings UI: `File Handler` 탭의 `Extension Mapping` sub-tab — 기본 노출 대상은 광고 detector 가 2개 이상인 확장자(=실제로 우선순위 의미가 있는 항목)이며, draft 에 추가된 확장자는 candidate 수와 무관하게 함께 노출된다. ↑/↓ 버튼으로 재정렬, 하단 textbox 로 새 확장자 직접 추가 가능, "Reset" 으로 user entry 제거 → host default 가 있으면 그것이, 없으면 `install_order` 순서가 다시 적용된다
 - Settings 저장 시 `save_combined_user_config` 로 `~/.tasty/file-handlers.toml` 에 atomic write — `[[handler]]` 섹션 보존
 
 ### 한계 (현재)

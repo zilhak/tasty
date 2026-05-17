@@ -163,6 +163,11 @@ detector = "pdf"
 priority = 30
 [handler.action]
 kind = "system"
+
+# ── 같은 확장자에 detector 가 여럿일 때 우선순위 ──────
+[[extension_priority]]
+extension = "md"
+order = ["mdx-strict", "markdown"]
 ```
 
 규칙:
@@ -170,6 +175,17 @@ kind = "system"
 - parse 실패 → warn 로그 + 사용자 설정 전체 무시 (host + plugin 만으로 동작).
 - entry 단위 schema 오류 → 그 entry 만 reject, 나머지 적용.
 - `disabled = true` 만 override 한다. `false` 명시는 무시 (다른 출처의 disabled 를 되살리려면 명시값 무관).
+
+### `[[extension_priority]]` 표
+
+같은 확장자를 광고하는 detector 가 둘 이상일 때, 어떤 detector 를 1순위로 쓸지 사용자가 직접 지정한다.
+
+- `extension`: 점 없는 확장자 (`md`, `json`), 대소문자 무시.
+- `order`: detector id 배열. 표에 적힌 detector 가 enabled + 실제로 그 확장자를 광고하면 fast path 로 선택된다.
+- 빈 `order = []` 는 entry 제거 의도 (host default 로 복귀).
+- plugin manifest 는 이 섹션을 못 쓴다 — 사용자 영역.
+- host default 도 같은 형식으로 `default-file-format.toml` 에서 제공 가능. last-writer-wins (host → user 순서 install) 이므로 사용자가 host default 를 덮어쓸 수 있다.
+- Settings UI: `File Handler` 탭의 `Extension Mapping` sub-tab 에서 ↑/↓ 로 편집 가능. Save 시 위 파일에 atomic write 된다 (`[[handler]]` / `[[detector]]` 섹션은 보존).
 
 ---
 

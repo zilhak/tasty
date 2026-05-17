@@ -365,8 +365,8 @@ AI 에이전트 간 자동화 통합 기능. Claude Code 전용 런처, 멀티 �
 ### 파일 핸들러 시스템
 경로/URI 입력을 형식 식별(`FileFormatRegistry`) → 핸들러 디스패치(`FileHandlerRegistry`) 두 단계로 라우팅. host default + plugin contribute + user TOML(`~/.tasty/file-handlers.toml`) 통합. 사용자가 직접 핸들러를 고를 수 있는 picker popup 과 LRU 캐시(`~/.tasty/file-handler-recent.json`) 제공.
 
-**현재 구현된 기능 (Phase A — cheap path):**
-- DetectorRule 종류: `extension`, `path_glob`, `is_directory` (Phase A 평가) / `mime`, `magic`, `lua`, `structure_check` (Phase B-D 예정)
+**현재 구현된 기능:**
+- DetectorRule 종류: `extension`, `path_glob`, `is_directory` (cheap) / `mime`, `magic`, `lua` (deep, 평가 구현됨) / `structure_check` (stub — Phase D MD2 예정)
 - HandlerAction: `OpenSurface { kind, param_key }`, `Ipc { method, owner_plugin_id }`, `System` (OS 기본 열기 — plugin 불가)
 - Contribution-based registry: plugin uninstall 시 그 plugin 의 entry 만 제거, host/user 유지
 - Plugin 매니페스트 `[[contributes.detector]]` / `[[contributes.handler]]` + 권한 토큰 `file_handler.define` / `extend:<id>` / `handle:<id>`
