@@ -84,6 +84,8 @@ pub struct KeybindingSettings {
     pub image_undo: Vec<String>,
     /// Redo in image editor.
     pub image_redo: Vec<String>,
+    /// Toggle the command palette popup.
+    pub toggle_command_palette: Vec<String>,
 }
 
 impl KeybindingSettings {
@@ -190,6 +192,10 @@ impl KeybindingSettings {
         ),
         ("image_undo", "settings.keybindings.image_undo_label"),
         ("image_redo", "settings.keybindings.image_redo_label"),
+        (
+            "toggle_command_palette",
+            "settings.keybindings.toggle_command_palette_label",
+        ),
     ];
 
     /// 필드 id로 Vec<String> 참조를 얻는다.
@@ -240,6 +246,7 @@ impl KeybindingSettings {
             "rename_workspace_subtitle" => self.rename_workspace_subtitle.as_slice(),
             "image_undo" => self.image_undo.as_slice(),
             "image_redo" => self.image_redo.as_slice(),
+            "toggle_command_palette" => self.toggle_command_palette.as_slice(),
             _ => return None,
         })
     }
@@ -291,6 +298,7 @@ impl KeybindingSettings {
             "rename_workspace_subtitle" => &mut self.rename_workspace_subtitle,
             "image_undo" => &mut self.image_undo,
             "image_redo" => &mut self.image_redo,
+            "toggle_command_palette" => &mut self.toggle_command_palette,
             _ => return None,
         })
     }
@@ -555,6 +563,7 @@ impl KeybindingSettings {
             rename_workspace_subtitle: vec!["f4".into()],
             image_undo: vec!["ctrl+z".into(), "alt+z".into()],
             image_redo: vec!["ctrl+shift+z".into(), "alt+shift+z".into()],
+            toggle_command_palette: vec!["ctrl+shift+p".into(), "alt+shift+p".into()],
         }
     }
 
@@ -608,6 +617,7 @@ impl KeybindingSettings {
             rename_workspace_subtitle: vec!["f4".into()],
             image_undo: vec!["alt+z".into()],
             image_redo: vec!["alt+shift+z".into()],
+            toggle_command_palette: vec!["alt+shift+p".into()],
         }
     }
 
@@ -661,6 +671,7 @@ impl KeybindingSettings {
             rename_workspace_subtitle: vec!["f4".into()],
             image_undo: vec!["ctrl+z".into()],
             image_redo: vec!["ctrl+shift+z".into()],
+            toggle_command_palette: vec!["ctrl+shift+p".into()],
         }
     }
 
@@ -714,6 +725,7 @@ impl KeybindingSettings {
             rename_workspace_subtitle: vec!["f4".into()],
             image_undo: vec!["ctrl+z".into()],
             image_redo: vec!["ctrl+shift+z".into()],
+            toggle_command_palette: vec!["ctrl+shift+p".into()],
         }
     }
 

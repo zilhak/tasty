@@ -254,6 +254,14 @@ impl MainWindow {
             }
         }
 
+        // Command palette pending dispatch — popup writes `pending_run` when
+        // user hits Enter or clicks a row. We drain after render so the popup
+        // is already closed by the time the action fires (avoids racing with
+        // any window state the action might mutate).
+        if let Some(cmd_id) = self.state.command_palette.pending_run.take() {
+            self.dispatch_action_by_id(cmd_id);
+        }
+
         // Process pending native context menu (after egui frame, before webview sync)
         self.process_pending_native_menu();
 

@@ -255,6 +255,7 @@ rename_workspace_label = "워크스페이스 이름 변경:"
 rename_workspace_subtitle_label = "워크스페이스 부제목 변경:"
 image_undo_label = "실행 취소:"
 image_redo_label = "다시 실행:"
+toggle_command_palette_label = "명령 팔레트:"
 tab_switch_modifier_label = "탭 전환 수식키:"
 workspace_switch_modifier_label = "워크스페이스 전환 수식키:"
 hint_press_key = "키 조합을 누르세요..."
@@ -462,6 +463,12 @@ no_ports = "이 터미널의 프로세스 트리에서 리스닝 중인 TCP 포�
 refresh = "새로 고침"
 hint = "행을 클릭하면 브라우저에서 열립니다"
 tools_menu_item = "리스닝 포트..."
+
+[command_palette]
+heading = "명령 팔레트"
+placeholder = "명령을 검색하려면 입력하세요…"
+no_results = "일치하는 명령 없음"
+tools_menu_item = "명령 팔레트…"
 
 [update]
 heading = "업데이트 확인"

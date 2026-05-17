@@ -133,6 +133,7 @@ pipeline.rs는 wgpu RenderPipelineDescriptor의 장황한 선언 코드가 대�
 | `info_modal.rs` | 정보성 모달 (about 등) |
 | `layout_context.rs` | UI 그리기 context 헬퍼 |
 | `notification_popup.rs` | 알림 토스트/팝업 변환 |
+| `command_palette_popup.rs` | VS Code 스타일 명령 팔레트 — 쿼리 입력 + 후보 리스트 + Enter 실행 |
 | `port_scanner_popup.rs` | 활성 surface의 listening TCP 포트 뷰어 (`tasty-portscan` 호출) |
 | `search_bar.rs` | 검색 바 UI |
 | `toast.rs` | toast 큐 + 렌더 |

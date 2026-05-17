@@ -142,6 +142,18 @@ pub fn all_defs() -> &'static [PopupDef] {
                 draw_fn: super::port_scanner_popup::draw_port_scanner_popup,
             },
             PopupDef {
+                id: super::command_palette_popup::COMMAND_PALETTE_POPUP_ID,
+                title_key: "command_palette.heading",
+                title_fn: None,
+                default_size: egui::vec2(520.0, 360.0),
+                sizer: None,
+                default_scope: PopupScope::Window,
+                close_on_outside_click: true,
+                headless: false,
+                sticky_focus: true,
+                draw_fn: super::command_palette_popup::draw_command_palette_popup,
+            },
+            PopupDef {
                 id: "tools_menu",
                 title_key: "tools_menu.title",
                 title_fn: None,

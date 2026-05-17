@@ -255,6 +255,7 @@ rename_workspace_label = "ワークスペース名を変更:"
 rename_workspace_subtitle_label = "ワークスペースのサブタイトルを変更:"
 image_undo_label = "元に戻す:"
 image_redo_label = "やり直し:"
+toggle_command_palette_label = "コマンドパレット:"
 tab_switch_modifier_label = "タブ切替修飾キー:"
 workspace_switch_modifier_label = "WS切替修飾キー:"
 hint_press_key = "キーの組み合わせを押してください..."
@@ -462,6 +463,12 @@ no_ports = "このターミナルのプロセスツリーには受信中の TCP 
 refresh = "更新"
 hint = "行をクリックするとブラウザで開きます"
 tools_menu_item = "受信ポート..."
+
+[command_palette]
+heading = "コマンドパレット"
+placeholder = "入力してコマンドを検索…"
+no_results = "一致するコマンドがありません"
+tools_menu_item = "コマンドパレット…"
 
 [update]
 heading = "更新の確認"

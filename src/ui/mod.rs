@@ -1,4 +1,5 @@
 pub(crate) mod approval_popup;
+pub(crate) mod command_palette_popup;
 pub(crate) mod convert_popup;
 pub(crate) mod dialog;
 mod divider;

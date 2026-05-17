@@ -26,6 +26,10 @@ struct BuiltinTool {
 
 const BUILTIN_TOOLS: &[BuiltinTool] = &[
     BuiltinTool {
+        label_key: "command_palette.tools_menu_item",
+        popup_id: super::command_palette_popup::COMMAND_PALETTE_POPUP_ID,
+    },
+    BuiltinTool {
         label_key: "port_scanner.tools_menu_item",
         popup_id: super::port_scanner_popup::PORT_SCANNER_POPUP_ID,
     },
