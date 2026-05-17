@@ -73,6 +73,7 @@ fontconfig = "*"
 tasty-core = { path = "crates/tasty-core" }
 tasty-font = { path = "crates/tasty-font" }
 tasty-hooks = { path = "crates/tasty-hooks" }
+tasty-lua = { path = "crates/tasty-lua" }
 tasty-memory = { path = "crates/tasty-memory" }
 tasty-output = { path = "crates/tasty-output" }
 tasty-approval = { path = "crates/tasty-approval" }

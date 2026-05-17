@@ -158,10 +158,6 @@ impl LuaEngine {
         self.lua.load(source).exec().map_err(LuaEngineError::Eval)
     }
 
-    /// 내부 VM 핸들 노출. 호스트 API 추가 (`tasty.log` 등) 등록에 사용.
-    pub(crate) fn lua(&self) -> &Lua {
-        &self.lua
-    }
 }
 
 #[cfg(test)]

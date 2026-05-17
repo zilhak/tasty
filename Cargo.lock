@@ -4888,6 +4888,7 @@ dependencies = [
  "tasty-core",
  "tasty-font",
  "tasty-hooks",
+ "tasty-lua",
  "tasty-memory",
  "tasty-output",
  "tasty-plugin-protocol",
@@ -4973,6 +4974,7 @@ name = "tasty-lua"
 version = "0.1.0"
 dependencies = [
  "mlua",
+ "notify-rust",
  "serde",
  "serde_json",
  "thiserror 2.0.18",

@@ -333,6 +333,7 @@ impl ApplicationHandler<AppEvent> for App {
                         reason: LifecycleReason::User,
                     };
                     mgr.emit_host_event("window.closed", &payload, EventScope::System);
+                    crate::fire_lua(self.lua_engine.as_ref(), "window.delete.post", &payload);
                 }
                 if self.engine.focused_window_id == Some(id) {
                     self.engine.focused_window_id = self
