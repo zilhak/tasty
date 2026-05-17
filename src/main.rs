@@ -1376,6 +1376,30 @@ impl App {
                 crate::shortcuts::send_app_event(&self.engine.proxy, AppEvent::Shutdown);
                 return true;
             }
+            if cmd.request.method == "script.reload" {
+                let resp_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
+                let response = match self.lua_engine.as_mut() {
+                    None => ipc::protocol::JsonRpcResponse::error(
+                        resp_id,
+                        -32603,
+                        "lua engine not initialized",
+                    ),
+                    Some(engine) => match engine.reload() {
+                        Ok(loaded) => ipc::protocol::JsonRpcResponse::success(
+                            resp_id,
+                            serde_json::json!({ "loaded": loaded }),
+                        ),
+                        Err(e) => ipc::protocol::JsonRpcResponse::error(
+                            resp_id,
+                            -32603,
+                            &format!("lua reload failed: {e}"),
+                        ),
+                    },
+                };
+                send_response(&cmd.response_tx, response);
+                processed = true;
+                continue;
+            }
             if cmd.request.method == "window.create" {
                 crate::shortcuts::send_app_event(&self.engine.proxy, AppEvent::CreateWindow);
                 let response = ipc::protocol::JsonRpcResponse::success(

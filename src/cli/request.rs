@@ -4,7 +4,7 @@ use super::{
     AgentCommands, ApprovalCommands, ClipboardCommands, CloseCommands, Commands, FileHandlerCommands, ListCommands,
     MemoryBbCommands, MemoryCacheCommands, MemoryCommands, MemoryPlanCommands, MemorySecretCommands, MoveCommands, NewCommands, OutputCommands,
     OutputObserveCommands, TelemetryAnomalyCommands, TelemetryCapCommands, TelemetryCommands,
-    PluginCommands, ReadCommands, SendCommands, SetCommands, SurfaceMetaCommands, ToolCommands,
+    PluginCommands, ReadCommands, ScriptCommands, SendCommands, SetCommands, SurfaceMetaCommands, ToolCommands,
     UnsetCommands,
 };
 use crate::ipc::protocol::JsonRpcRequest;
@@ -123,6 +123,7 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
         Commands::Telemetry { command } => telemetry_command_to_method_params(command),
         Commands::Agent { command } => agent_command_to_method_params(command),
         Commands::FileHandler { command } => file_handler_command_to_method_params(command),
+        Commands::Script { command } => script_command_to_method_params(command),
     };
 
     JsonRpcRequest {
@@ -2174,5 +2175,13 @@ fn file_handler_command_to_method_params(
 ) -> (&'static str, serde_json::Value) {
     match command {
         FileHandlerCommands::Reload => ("file_handler.reload", serde_json::Value::Null),
+    }
+}
+
+fn script_command_to_method_params(
+    command: &ScriptCommands,
+) -> (&'static str, serde_json::Value) {
+    match command {
+        ScriptCommands::Reload => ("script.reload", serde_json::Value::Null),
     }
 }

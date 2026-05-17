@@ -35,6 +35,15 @@ end)
 `tasty script reload` (또는 IPC `script.reload`) 로 init.lua 를 재로딩한다.
 재로딩 시 기존 등록은 모두 제거되고 새 등록만 살아남는다.
 
+```sh
+# init.lua 를 수정한 뒤
+tasty script reload
+# → { "loaded": true }   ← 파일이 존재하면 true, 없으면 false
+```
+
+`init.lua` 가 사라진 상태로 reload 해도 에러는 아니다 — 그냥 `loaded: false` 가
+나오고 hook 등록만 비워진다.
+
 ## 이벤트 목록
 
 총 15 개. 모두 사용자가 GUI 로 조작했을 때 또는 polling 이 변화를 감지했을 때

@@ -196,11 +196,23 @@ pub enum Commands {
         #[command(subcommand)]
         command: FileHandlerCommands,
     },
+    /// User script — `~/.tasty/init.lua` 재로드.
+    Script {
+        #[command(subcommand)]
+        command: ScriptCommands,
+    },
 }
 
 #[derive(Subcommand)]
 pub enum FileHandlerCommands {
     /// Reload `~/.tasty/file-handlers.toml`. host/plugin 항목은 영향 없음.
+    Reload,
+}
+
+#[derive(Subcommand)]
+pub enum ScriptCommands {
+    /// Reload `~/.tasty/init.lua`. 기존 hook 등록은 모두 제거되고 새 init.lua 의
+    /// 등록만 살아남는다.
     Reload,
 }
 

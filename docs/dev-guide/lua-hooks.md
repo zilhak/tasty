@@ -128,8 +128,15 @@ LuaLS 의 `Lua.workspace.library` 에 추가하라:
 ## reload
 
 `LuaEngine::reload()` 는 hook registry 를 비우고 같은 init.lua 를 다시 exec.
-사용자가 `tasty script reload` CLI 또는 IPC `script.reload` 로 호출한다 (구현
-위치는 본 가이드와 별개 — CLI/IPC dispatch 표에서 확인).
+
+- IPC: `script.reload` — `local_only` (plugin 호출 불가). 파라미터 없음. 응답
+  `{ "loaded": bool }` — init.lua 가 존재하지 않으면 false.
+- CLI: `tasty script reload`.
+
+라우팅은 일반 IPC 라우터를 거치지 않고 `App::handle_ipc_command` 의 App-level
+early-return 분기 (`script.reload` block, `main.rs::dispatch_ipc_commands`) 에서
+직접 `self.lua_engine.as_mut().reload()` 를 호출한다. 일반 핸들러 시그니처는
+`&mut AppState` 만 받지만 `lua_engine` 은 `App` 필드이므로 별 경로가 필요했다.
 
 ## 디버깅
 

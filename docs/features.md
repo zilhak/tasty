@@ -1639,6 +1639,11 @@ URI/경로 입력을 받아 **(1) 파일 형식 식별 → (2) 등록된 핸들�
 ### EmmyLua stub
 - `crates/tasty-lua/meta/tasty.lua` — LuaLS 의 `workspace.library` 에 추가하면 자동완성/타입체크 가능
 
+### Reload
+- IPC: `script.reload` (local_only, plugin 호출 불가) — `{ loaded: bool }` 반환
+- CLI: `tasty script reload`
+- 재로딩 시 기존 등록 hook 모두 제거 후 같은 init.lua 재실행
+
 ### 한계 (현재)
 - pre 이벤트 없음 — observe-only 에선 의미 없음. intervention 권한 도입 시 추가
 - `tasty.shutdown.post` 없음 — shutdown 시 fire 인프라 별도 필요

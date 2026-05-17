@@ -277,6 +277,10 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("window.close", local_only()),
         ("window.focus", local_only()),
         ("window.list", local_only()),
+        // ── Lua user-script reload — Local only (사용자가 자기 init.lua 를
+        //    재로딩하는 동작). plugin이 다른 사용자의 스크립트를 reload 시킬
+        //    필요는 없으므로 plugin_callable=false.
+        ("script.reload", local_only()),
     ]
 };
 
