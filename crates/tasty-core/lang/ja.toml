@@ -66,8 +66,16 @@ clipboard = "クリップボード"
 notifications = "通知"
 keybindings = "キーバインド"
 language = "言語"
+accessibility = "アクセシビリティ"
 file_handler = "ファイルハンドラ"
 misc = "その他"
+
+[settings.accessibility]
+heading = "アクセシビリティ"
+reduced_motion = "モーションを減らす"
+reduced_motion_desc = "UI のフェード/スライドアニメーションを省略します。トーストのフェードイン/アウトが無効になります。ターミナル出力のアニメーションには影響しません。"
+high_contrast = "ハイコントラスト (準備中)"
+high_contrast_desc = "より強いコントラストのパレットを強制します。まだ実装されていません。"
 
 [settings.file_handler]
 coming_soon = "このサブタブは今後のアップデートで利用可能になります。"

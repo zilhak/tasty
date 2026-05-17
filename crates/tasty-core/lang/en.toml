@@ -66,8 +66,16 @@ clipboard = "Clipboard"
 notifications = "Notifications"
 keybindings = "Keybindings"
 language = "Language"
+accessibility = "Accessibility"
 file_handler = "File Handler"
 misc = "Misc"
+
+[settings.accessibility]
+heading = "Accessibility"
+reduced_motion = "Reduced motion"
+reduced_motion_desc = "Skip UI fade/slide animations. Toast fade-in/out is disabled. Terminal output animations are unaffected."
+high_contrast = "High contrast (coming soon)"
+high_contrast_desc = "Force a higher-contrast palette. Not yet implemented."
 
 [settings.file_handler]
 coming_soon = "This sub-tab will be available in a future update."

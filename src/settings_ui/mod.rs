@@ -62,6 +62,7 @@ enum SettingsTab {
     Keybindings,
     Language,
     Performance,
+    Accessibility,
     FileHandler,
     Misc,
 }
@@ -262,6 +263,7 @@ pub fn draw_settings_panel(
                 (SettingsTab::Keybindings, t("settings.tab.keybindings")),
                 (SettingsTab::Language, t("settings.tab.language")),
                 (SettingsTab::Performance, t("settings.performance.heading")),
+                (SettingsTab::Accessibility, t("settings.tab.accessibility")),
                 (SettingsTab::FileHandler, t("settings.tab.file_handler")),
                 (SettingsTab::Misc, t("settings.tab.misc")),
             ];
@@ -308,6 +310,7 @@ pub fn draw_settings_panel(
                     ),
                     SettingsTab::Language => draw_language_tab(ui, &mut draft),
                     SettingsTab::Performance => draw_performance_tab(ui, &mut draft),
+                    SettingsTab::Accessibility => draw_accessibility_tab(ui, &mut draft),
                     SettingsTab::FileHandler => draw_file_handler_tab(
                         ui,
                         &mut ui_state.file_handler_sub_tab,

@@ -48,6 +48,25 @@ pub struct NotificationSettings {
     pub coalesce_ms: u64,
 }
 
+/// Accessibility 관련 토글. OS 자동 감지(Phase 2)는 미구현 — 현재는 모두 수동 설정.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AccessibilitySettings {
+    /// 활성 시 모든 UI 페이드/슬라이드 애니메이션을 즉시 끝낸다. 토스트 페이드인/페이드아웃은 0ms로 적용.
+    pub reduced_motion: bool,
+    /// 활성 시 강제 고대비 팔레트(아직 미구현 — placeholder). Phase 2에서 Theme 분기 추가 예정.
+    pub high_contrast: bool,
+}
+
+impl Default for AccessibilitySettings {
+    fn default() -> Self {
+        Self {
+            reduced_motion: false,
+            high_contrast: false,
+        }
+    }
+}
+
 /// `~/.tasty/memory.db` 의 quota 정책. 모든 byte cap 은 MiB 단위 정수.
 /// 0 또는 음수는 invalid 로 reject (음수는 serde 단계에서 unsigned 로 차단).
 #[derive(Debug, Clone, Serialize, Deserialize)]

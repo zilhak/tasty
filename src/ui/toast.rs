@@ -119,7 +119,9 @@ impl ToastManager {
 
     /// 매 프레임 호출. 만료된 토스트를 제거하고 살아있는 토스트를 그린다.
     /// `draw_ctx`는 PopupManager가 만든 것을 그대로 공유한다.
-    pub fn draw(&mut self, ctx: &egui::Context, draw_ctx: &LayoutContext) {
+    ///
+    /// `reduced_motion`이 true면 페이드 인/아웃을 0ms로 처리 (시각 자극 최소화).
+    pub fn draw(&mut self, ctx: &egui::Context, draw_ctx: &LayoutContext, reduced_motion: bool) {
         let now = Instant::now();
 
         // 1) 만료된 토스트 제거.
@@ -165,7 +167,14 @@ impl ToastManager {
 
             // 새것부터 그리며 위로 올라간다.
             for t in group.iter().rev() {
-                let alpha = Self::compute_alpha(t, now);
+                let alpha = if reduced_motion {
+                    // 페이드 없음 — lifetime이 남았으면 1.0, 끝났으면 0.0.
+                    let age_ms = now.duration_since(t.spawned_at).as_secs_f32() * 1000.0;
+                    let life_ms = t.lifetime.as_secs_f32() * 1000.0;
+                    if age_ms < life_ms { 1.0 } else { 0.0 }
+                } else {
+                    Self::compute_alpha(t, now)
+                };
                 if alpha <= 0.0 {
                     continue;
                 }

@@ -138,7 +138,7 @@ impl Window for PluginsWindow {
                 surface_rects: Vec::new(),
                 active_tabs: Vec::new(),
             };
-            toasts.draw(ctx, &empty_layout);
+            toasts.draw(ctx, &empty_layout, false);
         });
 
         self.base

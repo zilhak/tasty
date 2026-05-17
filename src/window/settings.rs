@@ -180,6 +180,7 @@ impl Window for SettingsWindow {
 
         let raw_input = self.base.gpu.take_egui_input(&self.base.winit);
         let mut settings = self.settings.clone();
+        let reduced_motion = settings.accessibility.reduced_motion;
         let ui_state = &mut self.settings_ui_state;
         let captured_dt = &mut self.captured_double_tap;
         let toasts = &mut self.toasts;
@@ -207,7 +208,7 @@ impl Window for SettingsWindow {
                 surface_rects: Vec::new(),
                 active_tabs: Vec::new(),
             };
-            toasts.draw(ctx, &empty_layout);
+            toasts.draw(ctx, &empty_layout, reduced_motion);
         });
 
         self.settings = settings;

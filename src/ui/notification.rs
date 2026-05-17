@@ -247,7 +247,8 @@ pub fn draw_popups(
     }
 
     // Toast 렌더링 (popup 위 레이어). 같은 LayoutContext를 공유한다.
-    state.toasts.draw(ctx, &draw_ctx);
+    let reduced_motion = state.engine.settings.accessibility.reduced_motion;
+    state.toasts.draw(ctx, &draw_ctx, reduced_motion);
 }
 
 /// Build LayoutContext from current AppState and layout info.
