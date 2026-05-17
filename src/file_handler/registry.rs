@@ -85,6 +85,13 @@ impl FileHandlerRegistry {
         v
     }
 
+    /// id 로 단건 lookup. picker 가 선택 결과(`HandlerId`) 를 dispatch 할 때 사용.
+    pub fn get(&self, id: &HandlerId) -> Option<FileHandler> {
+        self.ensure_finalized();
+        let inner = self.inner.read().ok()?;
+        inner.finalized.get(id).cloned()
+    }
+
     /// Picker modal 용 — 모든 enabled handler.
     pub fn all_handlers(&self) -> Vec<FileHandler> {
         self.ensure_finalized();

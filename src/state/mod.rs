@@ -285,6 +285,10 @@ pub struct AppState {
     /// `PluginManager::open_popup_instance`로 dispatch.
     pub pending_popup_opens: Vec<(String, String, serde_json::Value)>,
 
+    /// file_handler 디스패치 결과가 plugin IPC method 일 때의 호출 큐.
+    /// `(ipc_method, target)`. App 메인 루프가 drain 해 `PluginManager` 로 forward.
+    pub pending_handler_ipc: Vec<(String, crate::file_format::FileTarget)>,
+
     /// plugin popup 렌더 중 수집된 사용자 입력. App 메인 루프가 drain해
     /// `PluginManager::send_popup_event`로 forward한다.
     pub plugin_popup_events: Vec<(u64, tasty_plugin_protocol::ui_tree::UiEvent)>,
@@ -433,6 +437,9 @@ pub struct PickerHandlerSummary {
 /// frame 끝에 result 를 확인해 실제 핸들러 실행 + RecentPicks 기록을 수행한다.
 #[derive(Debug, Clone)]
 pub struct FileHandlerPickerData {
+    /// 원본 dispatch target. picker 가 닫힌 뒤 host 가 handler 를 실행할 때
+    /// 사용한다 — `target_display` 는 화면용이라 escape/축약이 들어갈 수 있다.
+    pub target: crate::file_format::FileTarget,
     /// 표시용 — picker 헤더에 보일 대상 (예: 파일 경로).
     pub target_display: String,
     /// 탐지된 detector — 없을 수도 있음 ($unknown 등 unmatched).
@@ -533,6 +540,7 @@ impl AppState {
             tool_registry: crate::plugin::tool_registry::ToolRegistry::new(),
             pending_tool_events: Vec::new(),
             pending_popup_opens: Vec::new(),
+            pending_handler_ipc: Vec::new(),
             plugin_popup_events: Vec::new(),
             plugin_popup_closes: Vec::new(),
         })
