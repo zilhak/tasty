@@ -150,14 +150,15 @@ impl ApplicationHandler<AppEvent> for App {
                 target,
                 detector,
             } => {
-                // Phase B: 본격 콜사이트 dispatch 는 Phase C 에서 mouse.rs 에 연결된다.
-                // 그 전까지는 디버그 흔적만 남겨 worker pipeline 이 살아있는지 확인.
                 tracing::debug!(
                     request_id = %request_id,
                     target = %target.display(),
                     detector = ?detector.as_ref().map(|d| d.as_str()),
-                    "IdentifyDone (no consumer yet)",
+                    "IdentifyDone",
                 );
+                if let Some(w) = self.focused_window_mut() {
+                    crate::file_dispatch::apply_identify_result(&mut w.state, target, detector);
+                }
             }
         }
     }
@@ -463,6 +464,8 @@ impl ApplicationHandler<AppEvent> for App {
         self.dispatch_pending_tool_events();
         // 도구 메뉴 ToolAction::OpenPopup 클릭으로 enqueue된 popup open dispatch.
         self.dispatch_pending_popup_opens();
+        // 파일 핸들러 IPC action 큐 drain (Phase C1: warn 로그만, Phase C3: 본격 dispatch).
+        self.dispatch_pending_handler_ipc();
         // 직전 프레임 plugin popup 렌더로 수집된 사용자 입력 / close 사유 forward.
         self.dispatch_plugin_popup_events();
         // PluginsWindow 모달의 사용자 액션을 manager에 적용 + 모달 snapshot 갱신.

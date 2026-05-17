@@ -244,7 +244,18 @@ impl MainWindow {
                         }
                     }
                     if let Some(hovered) = self.hovered_link.clone() {
-                        terminal_link::open_uri(&hovered.uri);
+                        match crate::file_dispatch::parse_link(&hovered.uri) {
+                            crate::file_dispatch::LinkKind::FileTarget(path) => {
+                                crate::file_dispatch::dispatch_file_target(
+                                    &mut self.state,
+                                    crate::file_format::FileTarget::new(path),
+                                    crate::file_format::DetectDepth::Deep,
+                                );
+                            }
+                            crate::file_dispatch::LinkKind::External(uri) => {
+                                terminal_link::open_uri(&uri);
+                            }
+                        }
                     }
                     self.mark_dirty();
                     return;

@@ -257,6 +257,10 @@ impl MainWindow {
         // Process pending native context menu (after egui frame, before webview sync)
         self.process_pending_native_menu();
 
+        // Process file handler picker result (after egui frame — popup may have
+        // written `result` this frame).
+        crate::file_dispatch::consume_picker_result(&mut self.state);
+
         // Process pending file drag (after egui frame)
         if let Some(paths) = self.state.dialogs.pending_file_drag.take() {
             let path_refs: Vec<&str> = paths.iter().map(|s| s.as_str()).collect();

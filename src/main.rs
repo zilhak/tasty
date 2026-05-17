@@ -1979,6 +1979,29 @@ impl App {
         }
     }
 
+    /// file handler IPC action 큐 drain. Phase C1 단계에서는 host default 가
+    /// `OpenSurface` / `System` 만 쓰므로 실제로 들어올 일이 없지만, 들어오면
+    /// warn 으로 남긴다. Phase C3 (explorer plugin) 에서 실제 plugin namespace
+    /// 메서드 dispatch 로 교체 예정.
+    pub(crate) fn dispatch_pending_handler_ipc(&mut self) {
+        let mut drained: Vec<(String, crate::file_format::FileTarget)> = Vec::new();
+        for w in self.windows.values_mut() {
+            if let Some(main) = w.as_main_mut() {
+                drained.append(&mut main.state.pending_handler_ipc);
+            }
+        }
+        for s in &mut self.parked_states {
+            drained.append(&mut s.pending_handler_ipc);
+        }
+        for (method, target) in drained {
+            tracing::warn!(
+                method = %method,
+                target = %target.display(),
+                "file handler IPC action not yet wired (Phase C3 will route to plugin)",
+            );
+        }
+    }
+
     /// `ToolAction::OpenPopup` 클릭으로 enqueue된 popup 큐를 모든 AppState에서 drain해
     /// `PluginManager::open_popup_instance`로 dispatch한다. plugin이 실행 중이 아니면
     /// `open_popup_instance`가 자체적으로 warn 후 무시.
