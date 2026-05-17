@@ -102,6 +102,13 @@ impl RecentPicks {
         &self.entries
     }
 
+    /// 특정 handler id 를 LRU 에서 제거. 없으면 no-op (`false` 반환).
+    pub fn forget(&mut self, id: &HandlerId) -> bool {
+        let before = self.entries.len();
+        self.entries.retain(|e| &e.handler_id != id);
+        self.entries.len() != before
+    }
+
     /// 원자적 쓰기 — `<path>.tmp` 작성 후 rename. fsync 는 안 함 (UX 영향).
     /// 부모 디렉토리는 호출자가 미리 만들어 둠 (없으면 그대로 에러).
     pub fn save_atomic(&self, path: &Path) -> io::Result<()> {
@@ -164,6 +171,25 @@ mod tests {
         let ids: Vec<&str> = rp.list().iter().map(|e| e.handler_id.as_str()).collect();
         assert_eq!(ids, vec!["host/a", "host/b"]);
         assert_eq!(rp.list()[0].last_used_at, 3);
+    }
+
+    #[test]
+    fn forget_removes_entry_returns_true() {
+        let mut rp = RecentPicks::with_cap(3);
+        rp.record_at(&hid("host/a"), 1);
+        rp.record_at(&hid("host/b"), 2);
+        assert!(rp.forget(&hid("host/a")));
+        let ids: Vec<&str> = rp.list().iter().map(|e| e.handler_id.as_str()).collect();
+        assert_eq!(ids, vec!["host/b"]);
+    }
+
+    #[test]
+    fn forget_missing_id_returns_false_noop() {
+        let mut rp = RecentPicks::with_cap(3);
+        rp.record_at(&hid("host/a"), 1);
+        assert!(!rp.forget(&hid("host/missing")));
+        let ids: Vec<&str> = rp.list().iter().map(|e| e.handler_id.as_str()).collect();
+        assert_eq!(ids, vec!["host/a"]);
     }
 
     #[test]

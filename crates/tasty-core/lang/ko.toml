@@ -78,6 +78,37 @@ handlers = "Handler"
 extension_mapping = "확장자 매핑"
 recent_picks = "최근 선택"
 
+[settings.file_handler.common]
+enabled = "활성"
+disabled = "비활성"
+
+[settings.file_handler.detectors]
+description = "등록된 모든 파일 형식 detector. rule 편집은 향후 업데이트에서 제공됩니다."
+empty = "등록된 detector 가 없습니다."
+col_id = "ID"
+col_origin = "출처"
+col_rules = "Rule 종류"
+col_status = "상태"
+
+[settings.file_handler.handlers]
+description = "등록된 모든 파일 handler. priority 가 작을수록 우선합니다. action 편집은 향후 업데이트에서 제공됩니다."
+empty = "등록된 handler 가 없습니다."
+col_priority = "Priority"
+col_id = "ID"
+col_owner = "소유자"
+col_detector = "Detector"
+col_action = "Action"
+col_status = "상태"
+
+[settings.file_handler.recent_picks]
+description = "최근에 파일 picker 에서 직접 고른 handler 목록입니다. Forget 으로 LRU 캐시에서 제거합니다."
+empty = "최근 선택한 handler 가 없습니다."
+forget = "삭제"
+just_now = "방금 전"
+minutes_ago = "{}분 전"
+hours_ago = "{}시간 전"
+days_ago = "{}일 전"
+
 [settings.file_handler.extension_mapping]
 description = "같은 확장자를 광고하는 여러 detector 가 있을 때 어느 것을 우선할지 정합니다. 위에 있는 detector 가 먼저 매칭됩니다."
 no_conflicts = "현재 우선순위 충돌이 있는 확장자가 없습니다."

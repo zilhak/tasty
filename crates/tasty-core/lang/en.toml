@@ -78,6 +78,37 @@ handlers = "Handlers"
 extension_mapping = "Extension Mapping"
 recent_picks = "Recent Picks"
 
+[settings.file_handler.common]
+enabled = "enabled"
+disabled = "disabled"
+
+[settings.file_handler.detectors]
+description = "All registered file format detectors. Editing rules is coming in a future update."
+empty = "No detectors registered."
+col_id = "ID"
+col_origin = "Source"
+col_rules = "Rule kinds"
+col_status = "Status"
+
+[settings.file_handler.handlers]
+description = "All registered file handlers. Lower priority numbers win. Editing actions is coming in a future update."
+empty = "No handlers registered."
+col_priority = "Priority"
+col_id = "ID"
+col_owner = "Owner"
+col_detector = "Detector"
+col_action = "Action"
+col_status = "Status"
+
+[settings.file_handler.recent_picks]
+description = "Handlers you have picked recently from the file picker. Forget removes the entry from the local LRU cache."
+empty = "No recent picks yet."
+forget = "Forget"
+just_now = "just now"
+minutes_ago = "{} min ago"
+hours_ago = "{} hr ago"
+days_ago = "{} days ago"
+
 [settings.file_handler.extension_mapping]
 description = "When multiple detectors claim the same file extension, set the order you prefer. Detectors are listed top-to-bottom in priority order."
 no_conflicts = "No extensions have multiple detectors competing for them right now."

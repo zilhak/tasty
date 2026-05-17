@@ -867,6 +867,8 @@ impl App {
             )
         };
         let user_config_path = tasty_core::paths::tasty_home().map(|d| d.join("file-handlers.toml"));
+        let recent_picks_path =
+            tasty_core::paths::tasty_home().map(|d| d.join("file-handler-recent.json"));
         let mut modal = window::SettingsWindow::new(
             gpu,
             window,
@@ -874,6 +876,7 @@ impl App {
             file_format,
             file_handler,
             user_config_path,
+            recent_picks_path,
         );
         modal.set_plugin_shortcuts(self.snapshot_plugin_shortcuts());
         // On Windows, hidden windows do not receive RedrawRequested events,

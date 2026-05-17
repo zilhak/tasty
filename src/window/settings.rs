@@ -26,6 +26,8 @@ pub struct SettingsWindow {
     file_handler: Arc<FileHandlerRegistry>,
     /// user TOML 저장 경로. CI/CD 등 홈 디렉토리가 없으면 `None` 으로 들어와 저장 skip.
     user_config_path: Option<std::path::PathBuf>,
+    /// `~/.tasty/file-handler-recent.json` — Recent picks sub-tab 의 load/save 대상.
+    recent_picks_path: Option<std::path::PathBuf>,
     shown: bool,
     double_tap: crate::double_tap::DoubleTapDetector,
     captured_double_tap: Option<String>,
@@ -41,6 +43,7 @@ impl SettingsWindow {
         file_format: Arc<FileFormatRegistry>,
         file_handler: Arc<FileHandlerRegistry>,
         user_config_path: Option<std::path::PathBuf>,
+        recent_picks_path: Option<std::path::PathBuf>,
     ) -> Self {
         Self {
             base: WindowBase::new(gpu, winit),
@@ -49,6 +52,7 @@ impl SettingsWindow {
             file_format,
             file_handler,
             user_config_path,
+            recent_picks_path,
             shown: false,
             double_tap: crate::double_tap::DoubleTapDetector::new(),
             captured_double_tap: None,
@@ -184,6 +188,7 @@ impl Window for SettingsWindow {
         let file_format = self.file_format.clone();
         let file_handler = self.file_handler.clone();
         let user_config_path = self.user_config_path.clone();
+        let recent_picks_path = self.recent_picks_path.clone();
         let full_output = self.base.gpu.run_egui(raw_input, |ctx| {
             action = settings_ui::draw_settings_panel(
                 ctx,
@@ -193,6 +198,7 @@ impl Window for SettingsWindow {
                 file_format.as_ref(),
                 file_handler.as_ref(),
                 user_config_path.as_deref(),
+                recent_picks_path.as_deref(),
             );
 
             let empty_layout = LayoutContext {

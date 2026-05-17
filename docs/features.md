@@ -1610,6 +1610,13 @@ URI/경로 입력을 받아 **(1) 파일 형식 식별 → (2) 등록된 핸들�
 - `DetectorRuleKind::Unknown` 의 raw payload 도 round-trip — forward-compat 유지
 - 주석/공백/key 순서는 보존 안 함 (재발급). 사용자 손편집 친화 보존이 필요해지면 `toml_edit` 도입
 
+### Settings UI — FileHandler 탭 (MD3 1단계)
+- `Settings > File Handler` 탭, 4 개 sub-tab
+- **Detectors** (read-only): 등록된 모든 detector 의 id, 출처 (host/plugin/user), rule 종류 요약 (ext/glob/mime/magic/dir/lua/structure), enabled/disabled 상태를 grid 표시
+- **Handlers** (read-only): priority 오름차순 정렬된 handler 목록 — priority, id, owner, detector, action 요약 (`surface:<kind>` / `ipc:<method>` / `system`), 상태
+- **Recent picks**: `~/.tasty/file-handler-recent.json` LRU 표시 + 상대 시간 라벨 (방금/N분/N시간/N일 전) + Forget 버튼 (즉시 atomic write)
+- 한계: detector/handler 추가/편집/disabled toggle modal 은 후속 작업. 현재는 모두 read-only
+
 ### Extension Mapping (Phase E ME4)
 - 같은 확장자를 광고하는 detector 가 여러 개 있을 때 사용자가 직접 우선순위를 정할 수 있는 표 (`[[extension_priority]]`)
 - 호스트 default / 사용자 설정 양쪽에서 정의 가능. plugin manifest 는 이 섹션을 못 씀 — 사용자 영역

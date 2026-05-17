@@ -78,6 +78,37 @@ handlers = "Handler"
 extension_mapping = "拡張子マッピング"
 recent_picks = "最近の選択"
 
+[settings.file_handler.common]
+enabled = "有効"
+disabled = "無効"
+
+[settings.file_handler.detectors]
+description = "登録済みのすべてのファイル形式 detector です。ルール編集は今後のアップデートで提供されます。"
+empty = "登録された detector はありません。"
+col_id = "ID"
+col_origin = "ソース"
+col_rules = "ルール種別"
+col_status = "ステータス"
+
+[settings.file_handler.handlers]
+description = "登録済みのすべてのファイル handler です。priority が小さいほど優先されます。action 編集は今後のアップデートで提供されます。"
+empty = "登録された handler はありません。"
+col_priority = "Priority"
+col_id = "ID"
+col_owner = "オーナー"
+col_detector = "Detector"
+col_action = "Action"
+col_status = "ステータス"
+
+[settings.file_handler.recent_picks]
+description = "ファイルピッカーで最近選んだ handler の一覧です。Forget でローカル LRU から削除します。"
+empty = "最近選んだ handler はまだありません。"
+forget = "削除"
+just_now = "たった今"
+minutes_ago = "{}分前"
+hours_ago = "{}時間前"
+days_ago = "{}日前"
+
 [settings.file_handler.extension_mapping]
 description = "同じ拡張子を要求する複数の detector がある場合、どれを優先するか設定します。上にあるほど優先されます。"
 no_conflicts = "現在、優先順位の競合がある拡張子はありません。"
