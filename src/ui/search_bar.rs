@@ -1,6 +1,7 @@
 use crate::i18n::t;
 use crate::state::AppState;
 use crate::ui::popup::PopupAction;
+use tasty_terminal::search::{SearchError, SearchOptions};
 
 /// Draw the search bar popup content.
 pub fn draw_search_bar(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction {
@@ -62,25 +63,24 @@ pub fn draw_search_bar(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction {
             scroll_to_current_match(state);
         }
 
-        // Match counter
-        let match_text: String = if state.search.query.is_empty() {
-            String::new()
+        // Status text: error > no_matches > match counter
+        let (status_text, status_color) = if state.search.query.is_empty() {
+            (String::new(), theme.subtext0)
+        } else if state.search.last_error.is_some() {
+            (t("search.invalid_regex").to_string(), theme.red)
         } else if state.search.matches.is_empty() {
-            t("search.no_matches").to_string()
+            (t("search.no_matches").to_string(), theme.red)
         } else {
-            t("search.match_count")
+            let text = t("search.match_count")
                 .replace("{current}", &(state.search.current_index + 1).to_string())
-                .replace("{total}", &state.search.matches.len().to_string())
+                .replace("{total}", &state.search.matches.len().to_string());
+            (text, theme.subtext0)
         };
 
-        if !match_text.is_empty() {
+        if !status_text.is_empty() {
             ui.label(
-                egui::RichText::new(&match_text)
-                    .color(if state.search.matches.is_empty() {
-                        theme.red
-                    } else {
-                        theme.subtext0
-                    })
+                egui::RichText::new(&status_text)
+                    .color(status_color)
                     .size(12.0),
             );
         }
@@ -97,17 +97,17 @@ pub fn draw_search_bar(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction {
             }
         }
 
-        // Case sensitivity toggle
-        let case_label = if state.search.case_insensitive { "Aa" } else { "AA" };
-        let case_btn = ui.small_button(
-            egui::RichText::new(case_label).color(if state.search.case_insensitive {
-                theme.subtext0
-            } else {
-                theme.text
-            }),
-        );
-        if case_btn.clicked() {
+        // Option toggles: case / regex / whole-word.
+        if toggle_button(ui, "Aa", !state.search.case_insensitive, t("search.case_tooltip")) {
             state.search.case_insensitive = !state.search.case_insensitive;
+            run_search(state);
+        }
+        if toggle_button(ui, ".*", state.search.regex, t("search.regex_tooltip")) {
+            state.search.regex = !state.search.regex;
+            run_search(state);
+        }
+        if toggle_button(ui, "ab", state.search.whole_word, t("search.whole_word_tooltip")) {
+            state.search.whole_word = !state.search.whole_word;
             run_search(state);
         }
     });
@@ -115,20 +115,43 @@ pub fn draw_search_bar(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction {
     PopupAction::None
 }
 
+/// A small toggle button that visually reflects its `active` state.
+/// Returns true when clicked.
+fn toggle_button(ui: &mut egui::Ui, label: &str, active: bool, tooltip: impl Into<egui::WidgetText>) -> bool {
+    let theme = crate::theme::theme();
+    let color = if active { theme.text } else { theme.subtext0 };
+    let rich = egui::RichText::new(label).color(color);
+    let btn = ui.small_button(rich).on_hover_text(tooltip);
+    btn.clicked()
+}
+
 /// Run search, working around borrow checker by using search fields directly.
 fn run_search(state: &mut AppState) {
     let surface_id = state.search.surface_id;
     let query = state.search.query.clone();
-    let case_insensitive = state.search.case_insensitive;
-    if let Some(terminal) = state.find_terminal_by_id(surface_id) {
-        let options = tasty_terminal::search::SearchOptions { case_insensitive };
-        let matches = terminal.search(&query, &options);
-        state.search.matches = matches;
-        if state.search.matches.is_empty() {
-            state.search.current_index = 0;
-        } else if state.search.current_index >= state.search.matches.len() {
-            state.search.current_index = state.search.matches.len() - 1;
+    let options = SearchOptions {
+        case_insensitive: state.search.case_insensitive,
+        regex: state.search.regex,
+        whole_word: state.search.whole_word,
+    };
+    let result = state
+        .find_terminal_by_id(surface_id)
+        .map(|terminal| terminal.search(&query, &options));
+    match result {
+        Some(Ok(matches)) => {
+            state.search.matches = matches;
+            state.search.last_error = None;
         }
+        Some(Err(SearchError::InvalidRegex(msg))) => {
+            state.search.matches.clear();
+            state.search.last_error = Some(msg);
+        }
+        None => {}
+    }
+    if state.search.matches.is_empty() {
+        state.search.current_index = 0;
+    } else if state.search.current_index >= state.search.matches.len() {
+        state.search.current_index = state.search.matches.len() - 1;
     }
 }
 

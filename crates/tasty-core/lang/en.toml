@@ -460,6 +460,10 @@ ctrl_c_ignored_after_paste = "Ctrl+C suppressed right after paste"
 placeholder = "Search..."
 no_matches = "No matches"
 match_count = "{current}/{total}"
+invalid_regex = "Invalid regex"
+case_tooltip = "Match case"
+regex_tooltip = "Regular expression"
+whole_word_tooltip = "Match whole word"
 
 [theme_error]
 title = "Theme not found"

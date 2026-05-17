@@ -1,4 +1,4 @@
-use tasty_terminal::search::{SearchMatch, SearchOptions};
+use tasty_terminal::search::{SearchError, SearchMatch, SearchOptions};
 
 /// UI-level search state, stored in AppState.
 pub struct SearchState {
@@ -12,6 +12,12 @@ pub struct SearchState {
     pub surface_id: u32,
     /// Whether to ignore case (default: true).
     pub case_insensitive: bool,
+    /// Whether the query is interpreted as a regular expression.
+    pub regex: bool,
+    /// Whether to match whole words only.
+    pub whole_word: bool,
+    /// Last regex compilation error, if any. Cleared on successful runs.
+    pub last_error: Option<String>,
 }
 
 impl SearchState {
@@ -22,16 +28,33 @@ impl SearchState {
             current_index: 0,
             surface_id: 0,
             case_insensitive: true,
+            regex: false,
+            whole_word: false,
+            last_error: None,
+        }
+    }
+
+    fn options(&self) -> SearchOptions {
+        SearchOptions {
+            case_insensitive: self.case_insensitive,
+            regex: self.regex,
+            whole_word: self.whole_word,
         }
     }
 
     /// Run search on the given terminal and update matches.
     pub fn execute(&mut self, terminal: &tasty_terminal::Terminal) {
-        let options = SearchOptions {
-            case_insensitive: self.case_insensitive,
-        };
-        self.matches = terminal.search(&self.query, &options);
-        // Clamp current_index.
+        let options = self.options();
+        match terminal.search(&self.query, &options) {
+            Ok(matches) => {
+                self.matches = matches;
+                self.last_error = None;
+            }
+            Err(SearchError::InvalidRegex(msg)) => {
+                self.matches.clear();
+                self.last_error = Some(msg);
+            }
+        }
         if self.matches.is_empty() {
             self.current_index = 0;
         } else if self.current_index >= self.matches.len() {
@@ -62,6 +85,7 @@ impl SearchState {
         self.query.clear();
         self.matches.clear();
         self.current_index = 0;
+        self.last_error = None;
     }
 
     /// Get the scroll offset needed to show the current match.

@@ -460,6 +460,10 @@ ctrl_c_ignored_after_paste = "貼り付け直後のCtrl+Cを無視しました"
 placeholder = "検索..."
 no_matches = "一致なし"
 match_count = "{current}/{total}"
+invalid_regex = "無効な正規表現"
+case_tooltip = "大文字と小文字を区別"
+regex_tooltip = "正規表現"
+whole_word_tooltip = "単語単位で一致"
 
 [theme_error]
 title = "テーマが見つかりません"
