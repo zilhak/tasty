@@ -37,6 +37,10 @@ const BUILTIN_TOOLS: &[BuiltinTool] = &[
         label_key: "update.tools_menu_item",
         popup_id: super::update_popup::UPDATE_POPUP_ID,
     },
+    BuiltinTool {
+        label_key: "git_viewer.tools_menu_item",
+        popup_id: crate::git_viewer::GIT_VIEWER_POPUP_ID,
+    },
 ];
 
 pub fn draw_tools_menu(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction {

@@ -1788,3 +1788,32 @@ GitHub Releases API를 폴링하여 새 버전이 있는지 확인하고, 발견
 - 토스트: `src/ui/toast.rs::ToastManager::draw(ctx, layout, reduced_motion: bool)` — 알파 계산 분기
 - 설정 UI: `src/settings_ui/tabs.rs::draw_accessibility_tab` (탭 = `SettingsTab::Accessibility`)
 - i18n: `settings.accessibility.*` 키 (en/ko/ja)
+
+## Git 뷰어
+
+### 개요
+**Phase 1 — read-only MVP**: 활성 surface 의 cwd 에서 git repo 를 찾아 상단에는 working tree 변경 목록을, 하단에는 커밋 평면 리스트(또는 선택된 파일의 diff)를 표시한다. 모든 동작은 **read-only** — stage/commit/checkout 등 mutate 작업은 절대 없다 (그건 터미널에서 직접 하라는 정책).
+
+### 트리거
+- 사이드바 도구 메뉴의 `Git` 항목 (port_scanner/update/command_palette 아래 마지막)
+
+### 동작
+- popup 첫 진입 시 `resolve_inherit_cwd()` → `git2::Repository::discover()` 로 repo 탐색
+- 상단(Changes): `M / A / D / R / ? / U` 아이콘 + Theme 색상 (yellow/green/red/blue/overlay0/red), 파일 클릭 → 하단을 diff 패널로 전환
+- 하단 기본(Commits): 최근 200개 커밋, `[oid] (refs?) summary  author  time` 평면 리스트 — **그래프 없음** (Phase 2 로 분리)
+- 하단 diff: working tree vs HEAD 통합 (staged/unstaged 분리 없음). hunk 헤더(blue), `+`(green) / `-`(red) / context(text), 좌측 줄번호. `Back` 버튼으로 log 복귀.
+- `Refresh` 버튼으로 status/log/diff 일괄 재수집 (자동 watch 는 Phase 2)
+- repo 없음/에러 시 안내 메시지 + `tracing::warn!` 로깅
+
+### IPC 노출 없음
+사용자 UI 편의 기능. 에이전트는 터미널에서 `git status`/`git log`/`git diff` 직접 호출하면 충분하므로 IPC 표면에 노출하지 않는다.
+
+### 구현
+- 모듈: `src/git_viewer/{mod,data,status_panel,log_panel,diff_panel}.rs`
+- 의존성: `git2 = "0.19"` (`default-features = false` — HTTPS/SSH 불필요, libgit2 vendored C 빌드)
+- 상태: `state.dialogs.git_viewer: Option<GitViewerState>` — popup close 시 `None` 리셋
+- popup: `GIT_VIEWER_POPUP_ID = "git_viewer"` (720×540, `sticky_focus: false`, `close_on_outside_click: true`)
+- i18n: `[git_viewer]` 섹션 (en/ko/ja)
+
+### Phase 2 로 분리된 항목
+커밋 그래프, staged/unstaged 분리, 커밋 클릭 → 해당 커밋 diff, 브랜치/태그 목록, 자동 새로고침, 백그라운드 스레드 수집, 리사이즈 디바이더.

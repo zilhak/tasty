@@ -491,6 +491,20 @@ up_to_date = "You're up to date."
 checking = "Checking…"
 tools_menu_item = "Check for updates…"
 
+[git_viewer]
+tools_menu_item = "Git"
+heading = "Git"
+no_repo = "No git repository found in the current working directory."
+refresh = "Refresh"
+status_heading = "Changes"
+log_heading = "Commits"
+diff_heading = "Diff"
+back_to_log = "Back"
+no_changes = "No changes."
+no_commits = "No commits."
+loading = "Loading…"
+error = "Error: {0}"
+
 [search]
 placeholder = "Search..."
 no_matches = "No matches"

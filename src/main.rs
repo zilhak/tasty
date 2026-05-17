@@ -22,6 +22,7 @@ mod file_format;
 mod file_handler;
 mod file_handler_recent;
 mod file_handlers_save;
+mod git_viewer;
 mod global_hooks;
 mod gpu;
 mod html_ui;

@@ -391,6 +391,8 @@ pub struct DialogState {
     pub approval_comment_buffer: String,
     /// file_handler_picker popup 의 입력/선택 상태. `None` 이면 popup 미오픈.
     pub file_handler_picker: Option<FileHandlerPickerData>,
+    /// Git viewer popup 의 현재 상태. popup 닫힘 시 `None` 으로 리셋.
+    pub git_viewer: Option<crate::git_viewer::GitViewerState>,
 }
 
 /// Tab drag-and-drop state (UI-only, not persisted).
@@ -442,6 +444,7 @@ impl DialogState {
             pending_approval_ids: VecDeque::new(),
             approval_comment_buffer: String::new(),
             file_handler_picker: None,
+            git_viewer: None,
         }
     }
 
