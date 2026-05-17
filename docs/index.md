@@ -1,6 +1,6 @@
-# Tasty - 기능 계획 문서
+# Tasty 문서 인덱스
 
-cmux의 기능을 크로스 플랫폼(Windows, macOS, Linux) GPU 가속 네이티브 터미널 에뮬레이터로 구현하기 위한 계획 문서.
+크로스 플랫폼 GPU 가속 네이티브 터미널 에뮬레이터. 본 인덱스는 현재 상태 문서로 진입하는 시작점이다. 구현된 기능의 상세는 [features.md](features.md), 설계는 `design/`, 아키텍처는 `architecture/`, 개발 가이드는 `dev-guide/`, 에이전트용 가이드는 `agent-guide/` 에 있다.
 
 ## 설치
 
@@ -8,38 +8,9 @@ cmux의 기능을 크로스 플랫폼(Windows, macOS, Linux) GPU 가속 네이�
 |------|------|
 | [installation.md](installation.md) | 사용자/에이전트 설치 가이드 — OS·아키텍처별 산출물, 설치 방법, 설치 위치 |
 
-## 기능 목록
+## 구현 현황 빠른 안내
 
-| # | 기능 | 문서 | 우선순위 |
-|---|------|------|----------|
-| 01 | [터미널 엔진](#터미널-엔진) | [plans/01-terminal-engine.md](plans/01-terminal-engine.md) | 핵심 |
-| 02 | [워크스페이스 & 탭](#워크스페이스--탭) | [plans/02-workspace-tabs.md](plans/02-workspace-tabs.md) | 핵심 |
-| 03 | [사이드바 메타데이터](#사이드바-메타데이터) | [plans/03-sidebar-metadata.md](plans/03-sidebar-metadata.md) | 핵심 |
-| 04 | [알림 시스템](#알림-시스템) | [plans/04-notification-system.md](plans/04-notification-system.md) | 핵심 |
-| 05 | [분할 패인](#분할-패인) | [plans/05-split-panes.md](plans/05-split-panes.md) | 핵심 |
-| 06 | [CLI 도구](#cli-도구) | [plans/06-cli-tool.md](plans/06-cli-tool.md) | 핵심 |
-| 07 | [소켓 API](#소켓-api) | [plans/07-socket-api.md](plans/07-socket-api.md) | 핵심 |
-| 08 | [세션 복원](#세션-복원) | [plans/08-session-persistence.md](plans/08-session-persistence.md) | 중요 |
-| 09 | [명령 팔레트](#명령-팔레트) | [plans/09-command-palette.md](plans/09-command-palette.md) | 중요 |
-| 10 | [키보드 단축키](#키보드-단축키) | [plans/10-keyboard-shortcuts.md](plans/10-keyboard-shortcuts.md) | 핵심 |
-| 11 | [검색](#검색) | [plans/11-search.md](plans/11-search.md) | 중요 |
-| 12 | [클립보드 통합](#클립보드-통합) | [plans/12-clipboard.md](plans/12-clipboard.md) | 핵심 |
-| 13 | [IME 지원](#ime-지원) | [plans/13-ime-support.md](plans/13-ime-support.md) | 중요 |
-| 14 | [포트 스캐닝](#포트-스캐닝) | [plans/14-port-scanning.md](plans/14-port-scanning.md) | 부가 |
-| 15 | [원격 SSH](#원격-ssh) | [plans/15-remote-ssh.md](plans/15-remote-ssh.md) | 확장 |
-| 16 | [자동 업데이트](#자동-업데이트) | [plans/16-auto-update.md](plans/16-auto-update.md) | 부가 |
-| 17 | [설정 시스템](#설정-시스템) | [plans/17-settings-system.md](plans/17-settings-system.md) | 핵심 |
-| 18 | [Claude Code 통합](#claude-code-통합) | [plans/18-claude-code-integration.md](plans/18-claude-code-integration.md) | 핵심 |
-| 19 | [마크다운 뷰어](#마크다운-뷰어) | [plans/19-markdown-viewer.md](plans/19-markdown-viewer.md) | 부가 |
-| 20 | [윈도우 관리](#윈도우-관리) | [plans/20-window-management.md](plans/20-window-management.md) | 중요 |
-| 21 | [복사 모드](#복사-모드) | [plans/21-copy-mode.md](plans/21-copy-mode.md) | 부가 |
-| 22 | [Surface Hook](#surface-hook) | [plans/22-surface-hooks.md](plans/22-surface-hooks.md) | 중요 |
-| 23 | [Read Mark API](#read-mark-api) | [plans/23-read-mark-api.md](plans/23-read-mark-api.md) | 중요 |
-| 24 | [에이전트 자동화](#에이전트-자동화) | [plans/24-agent-automation.md](plans/24-agent-automation.md) | 핵심 |
-| 25 | [국제화 (i18n)](#국제화-i18n) | - | 중요 |
-| 26 | [타이핑 감지](#타이핑-감지) | - | 중요 |
-| 27 | [추가 Surface 타입](#마크다운-뷰어--파일-탐색기) | - | 부가 |
-| 28 | [Crash Report & 진단](#crash-report--진단) | - | 핵심 |
+본 인덱스의 옛 "기능 목록 표" 는 구현 완료된 항목의 옛 기획 링크로 채워져 있었다. 현재는 모두 [features.md](features.md) 에 흡수되어 있으니, 어떤 기능이 어떻게 구현되어 있는지 확인하려면 그쪽을 본다. (옛 docs/plans/* 파일은 제거되었으며, 아직 미구현인 기획은 `.claude-workspace/plans/archived-from-docs/` 로 옮겨졌다.)
 
 ## AI 에이전트 가이드
 
@@ -144,24 +115,7 @@ cmux의 기능을 크로스 플랫폼(Windows, macOS, Linux) GPU 가속 네이�
 
 구현된 기능의 상세 설명은 [features.md](features.md) 참조.
 
-## 전략 문서
-
-기능 횡단적인 설계 전략 문서.
-
-| 문서 | 설명 |
-|------|------|
-| [GPU 활용 전략](plans/gpu-strategy.md) | 렌더링 아키텍처, 셰이더 설계, 버퍼 전략, 폴백 |
-| [설치 전략](plans/install-strategy.md) | 환경 감지, 설치 스크립트, 하드웨어 프로파일링 |
-| [접근성](plans/accessibility.md) | 키보드 내비게이션, 고대비, 스크린 리더, 색맹 지원 |
-| [에러 처리/로깅](plans/error-logging.md) | 에러 카테고리, tracing 로깅, 크래시 리포팅 |
-| [테스트 전략](plans/testing-strategy.md) | 단위/통합/시각적 회귀 테스트, 벤치마크 |
-
-## 우선순위 정의
-
-- **핵심**: 최소 동작 제품(MVP)에 반드시 포함
-- **중요**: MVP 직후 구현 대상
-- **확장**: 사용자 요구에 따라 구현
-- **부가**: 있으면 좋지만 후순위
+GPU 렌더링·테스트·설치 같은 횡단 주제는 dev-guide 와 design 의 해당 문서로 흡수되었다 (예: `dev-guide/gpu-rendering.md`, `dev-guide/tui-testing.md`, `installation.md`). 아직 미구현인 횡단 기획(접근성 / 추가 에러 정책 등)은 `.claude-workspace/plans/archived-from-docs/` 에서 확인할 수 있다.
 
 ## 기술 스택
 
