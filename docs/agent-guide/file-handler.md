@@ -235,7 +235,7 @@ tasty file-handler reload
 |---------|----------|------|
 | 터미널의 hyperlink ctrl+click | `mouse.rs` → `parse_link` → `dispatch_file_target(Deep)` | `file://` 만 디스패치, http/mailto 등은 webbrowser 위임 |
 | 외부 → Tasty drag&drop | winit `WindowEvent::DroppedFile` → `dispatch_file_target(Deep)` | hover 중 시각 overlay 표시, 다중 파일은 각각 dispatch |
-| explorer plugin 더블클릭 | (Phase C3 예정) | plugin IPC action 경로 |
+| explorer plugin 더블클릭 | tree node `double_clicked()` → `UiEvent::TreeActivate` → plugin `host.call("file_handler.dispatch")` → host `handle_dispatch` → `dispatch_file_target(Deep)` | 디렉토리는 plugin 내부 root 변경, 파일만 host 로 디스패치 |
 
 drag&drop 좌표는 마지막 cursor 위치 기준. 터미널 영역 밖으로 드롭한 파일은
 toast 안내 후 무시된다. 다중 파일을 한 번에 드롭하면 각 파일이 별 surface tab

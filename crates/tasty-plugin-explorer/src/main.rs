@@ -10,8 +10,8 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tasty_plugin_sdk::{
-    ButtonStyle, CommandInvokeCtx, Plugin, SurfaceCreateCtx, SurfaceEventCtx, SurfaceResult,
-    SurfaceRestoreCtx, UiEvent, UiNode,
+    BusHandle, ButtonStyle, CommandInvokeCtx, HostHandle, Plugin, SurfaceCreateCtx,
+    SurfaceEventCtx, SurfaceResult, SurfaceRestoreCtx, UiEvent, UiNode,
     ui::{addressbar, hbox, label, label_color, scroll_v, splitter_id, tree_view, vbox},
 };
 use tasty_plugin_sdk::{SelectionMode, SplitDir, TreeNode};
@@ -281,6 +281,7 @@ fn read_preview(path: &Path) -> Option<String> {
 struct ExplorerPlugin {
     surfaces: BTreeMap<u32, ExplorerSurface>,
     bookmarks: BookmarkStore,
+    host: Option<HostHandle>,
 }
 
 impl ExplorerPlugin {
@@ -288,6 +289,7 @@ impl ExplorerPlugin {
         Self {
             surfaces: BTreeMap::new(),
             bookmarks: BookmarkStore::load(),
+            host: None,
         }
     }
 
@@ -374,6 +376,25 @@ impl Plugin for ExplorerPlugin {
                 surface.selected = selected.first().map(PathBuf::from);
                 surface.refresh_preview();
             }
+            UiEvent::TreeActivate { node_id, path } if node_id == TREE_NODE_ID => {
+                let p = PathBuf::from(&path);
+                if p.is_dir() {
+                    surface.root = p.clone();
+                    surface.expanded.clear();
+                    surface.expanded.insert(p);
+                    surface.selected = None;
+                    surface.preview = None;
+                } else if let Some(host) = self.host.as_ref() {
+                    if let Err(e) = host.call(
+                        "file_handler.dispatch",
+                        serde_json::json!({ "path": path }),
+                    ) {
+                        tracing::warn!(path = %path, "file_handler.dispatch failed: {e}");
+                    }
+                } else {
+                    tracing::warn!("explorer plugin host handle not set; cannot dispatch '{path}'");
+                }
+            }
             UiEvent::AddressbarSubmit { text, .. } => {
                 let p = PathBuf::from(&text);
                 if p.is_dir() {
@@ -444,6 +465,10 @@ impl Plugin for ExplorerPlugin {
 
     fn destroy_surface(&mut self, surface_id: u32) {
         self.surfaces.remove(&surface_id);
+    }
+
+    fn on_start(&mut self, host: HostHandle, _bus: BusHandle) {
+        self.host = Some(host);
     }
 
     fn handle_command(&mut self, ctx: CommandInvokeCtx) -> SurfaceResult {
