@@ -47,23 +47,30 @@ memory.read        memory.write        memory.secret
 notification
 network
 ui.popup           ui.tool_item
+approval
+telemetry
+agent
+file_handler.define
 ```
 
 새 단순 권한을 추가하려면 `Permission` enum 에 variant 를 추가하고 `from_token` / `as_token` match 에 등록한다 (아래 "새 권한 카테고리 추가" 절차 참조).
 
 ### Scope 있는 토큰 (파라미터화 권한)
 
-현재 scope 를 받는 토큰은 정확히 두 개:
+현재 scope 를 받는 토큰:
 
 | 토큰 | scope 의미 | 예 |
 |---|---|---|
 | `ipc.invoke:<prefix>` | 호출 대상 IPC namespace prefix | `ipc.invoke:codex` → codex.* 메서드 호출 가능 |
 | `ext:<plugin_id>` | 확장 대상 plugin 의 reverse-DNS id | `ext:com.tasty.clipboard` → 해당 plugin 의 IPC/event 흐름에 hook |
+| `file_handler.extend:<detector_id>` | 기존 detector 에 rule 추가 | `file_handler.extend:markdown` |
+| `file_handler.handle:<detector_id>` | 기존 detector 에 handler attach | `file_handler.handle:pdf` |
 
 scope 부분의 검증 규칙:
 
-- `ipc.invoke:` 뒤: `is_valid_ipc_prefix()` 통과 (소문자로 시작 + 소문자/숫자/`_`, 1~32자) **그리고** `is_reserved_ipc_prefix()` 거부 (`system`, `surface`, `plugin`, `tab`, `pane`, `workspace`, `split`, `tree`, `hook`, `global_hook`, `message`, `tool`, `notification`, `window`, `debug`, `ui`, `ime`, `ipc`)
+- `ipc.invoke:` 뒤: `is_valid_ipc_prefix()` 통과 (소문자로 시작 + 소문자/숫자/`_`, 1~32자) **그리고** `is_reserved_ipc_prefix()` 거부 (`plugin`, `system`, `surface`, `tab`, `pane`, `workspace`, `split`, `tree`, `hook`, `global_hook`, `message`, `tool`, `notification`, `window`, `debug`, `ui`, `ime`, `ipc`, `memory`, `output`, `approval`)
 - `ext:` 뒤: `is_valid_plugin_id()` 통과 (reverse-DNS 형식, 소문자+숫자+`-`+`.` 의 1~3 segment)
+- `file_handler.extend:` / `file_handler.handle:` 뒤: `is_valid_detector_id()` 통과, `$unknown` 은 거부 (실재하지 않는 sentinel)
 
 조건을 어긋난 토큰이 매니페스트에 들어 있으면 plugin 로드 단계에서 거부된다 (`Permission::from_token` 가 `None` 반환 → `validate_permissions` 에서 reject).
 
