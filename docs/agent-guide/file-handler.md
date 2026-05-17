@@ -227,7 +227,25 @@ tasty file-handler reload
 - 파일이 없으면 user origin 항목 전부 제거 (host + plugin 만 남음).
 - **host / plugin contribution 은 영향 없음** — user 출처 항목만 swap.
 
-## 7. 디버깅
+## 7. 트리거
+
+같은 dispatch 흐름이 들어오는 진입점:
+
+| trigger | 진입 함수 | 비고 |
+|---------|----------|------|
+| 터미널의 hyperlink ctrl+click | `mouse.rs` → `parse_link` → `dispatch_file_target(Deep)` | `file://` 만 디스패치, http/mailto 등은 webbrowser 위임 |
+| 외부 → Tasty drag&drop | winit `WindowEvent::DroppedFile` → `dispatch_file_target(Deep)` | hover 중 시각 overlay 표시, 다중 파일은 각각 dispatch |
+| explorer plugin 더블클릭 | (Phase C3 예정) | plugin IPC action 경로 |
+
+drag&drop 좌표는 마지막 cursor 위치 기준. 터미널 영역 밖으로 드롭한 파일은
+toast 안내 후 무시된다. 다중 파일을 한 번에 드롭하면 각 파일이 별 surface tab
+으로 열린다.
+
+> **에이전트 주의**: drag&drop 은 사용자 입력 재현 동작이므로 IPC/CLI 로
+> 노출되지 않는다. 같은 효과가 필요하면 `tasty surface new ...` 류 명령으로
+> 직접 surface 를 만들 것.
+
+## 8. 디버깅
 
 | 확인 사항 | 방법 |
 |-----------|------|

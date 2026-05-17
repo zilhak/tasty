@@ -12,7 +12,9 @@
 
 use std::path::PathBuf;
 
+use crate::model::PhysicalPx;
 use crate::state::DropHoverState;
+use crate::ui::ToastScope;
 
 use super::MainWindow;
 
@@ -46,5 +48,39 @@ impl MainWindow {
         // pending_file_drops 만 누적.
         self.state.drop_hover = None;
         self.base.dirty = true;
+    }
+
+    /// frame end 에서 호출. 큐를 비우고 각 파일을 `dispatch_file_target(Deep)` 으로
+    /// 보낸다. 좌표는 `cursor_position` 기준 — terminal_rect 외부면 toast 후 무시.
+    pub(crate) fn process_pending_file_drops(&mut self) {
+        let drops = std::mem::take(&mut self.state.pending_file_drops);
+        if drops.is_empty() {
+            return;
+        }
+        let Some(pos) = self.cursor_position else {
+            tracing::warn!(
+                count = drops.len(),
+                "file drop with no cursor position — ignored",
+            );
+            return;
+        };
+        let terminal_rect = self.compute_terminal_rect();
+        let (x, y) = (pos.x as f32, pos.y as f32);
+        if !terminal_rect.contains(PhysicalPx(x), PhysicalPx(y)) {
+            self.state.toasts.push_info(
+                crate::i18n::t("file_drop.outside"),
+                ToastScope::Window,
+            );
+            return;
+        }
+        let _ = self.state.focus_pane_at_position(x, y, terminal_rect);
+        let _ = self.state.focus_surface_at_position(x, y, terminal_rect);
+        for path in drops {
+            crate::file_dispatch::dispatch_file_target(
+                &mut self.state,
+                crate::file_format::FileTarget::new(path),
+                crate::file_format::DetectDepth::Deep,
+            );
+        }
     }
 }

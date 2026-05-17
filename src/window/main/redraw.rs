@@ -261,6 +261,9 @@ impl MainWindow {
         // written `result` this frame).
         crate::file_dispatch::consume_picker_result(&mut self.state);
 
+        // 외부 drag&drop 으로 받은 파일 큐 처리.
+        self.process_pending_file_drops();
+
         // Process pending file drag (after egui frame)
         if let Some(paths) = self.state.dialogs.pending_file_drag.take() {
             let path_refs: Vec<&str> = paths.iter().map(|s| s.as_str()).collect();
