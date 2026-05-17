@@ -64,6 +64,7 @@ cmux의 기능을 크로스 플랫폼(Windows, macOS, Linux) GPU 가속 네이�
 | [agent-guide/blackboard.md](agent-guide/blackboard.md) | 공유 컨텍스트 — Blackboard (`memory.bb_*`, snapshot 포함) |
 | [agent-guide/plan.md](agent-guide/plan.md) | 공유 컨텍스트 — Plan (`memory.plan_*`) + [plan.schema.json](agent-guide/plan.schema.json) |
 | [agent-guide/cache.md](agent-guide/cache.md) | 공유 컨텍스트 — Cache (`memory.cache_*`) |
+| [agent-guide/lua-hooks.md](agent-guide/lua-hooks.md) | `~/.tasty/init.lua` 사용자 hook 가이드 — 등록·이벤트 목록·예제 |
 | [agent-guide/linux.md](agent-guide/linux.md) | Linux 사용 가이드 |
 
 ### 개발 AI 에이전트용 (Tasty 개발 가이드)
@@ -90,6 +91,7 @@ cmux의 기능을 크로스 플랫폼(Windows, macOS, Linux) GPU 가속 네이�
 | [dev-guide/plugin-development.md](dev-guide/plugin-development.md) | Plugin 제작 가이드 — 크레이트 골격, Plugin trait, UI 빌더, snapshot/restore, 빌드/설치 |
 | [dev-guide/plugin-permissions.md](dev-guide/plugin-permissions.md) | Plugin 권한 모델 — method_meta, CallerContext, grant/revoke 흐름 |
 | [dev-guide/plugin-ecosystem.md](dev-guide/plugin-ecosystem.md) | Plugin 생태계 — 번들 plugin 목록과 책임 분담 |
+| [dev-guide/lua-hooks.md](dev-guide/lua-hooks.md) | Lua hook 호스트 매핑 — 이벤트별 발화 site / payload 스키마 / 추가 가이드 |
 
 ## AI 자체 검증 지침
 
@@ -126,6 +128,7 @@ cmux의 기능을 크로스 플랫폼(Windows, macOS, Linux) GPU 가속 네이�
 | [design/linux-system-tray.md](design/linux-system-tray.md) | Linux 시스템 트레이 미지원 결정 — DE 분열, GNOME 기본 미지원, 태스크바 유지로 충분 |
 | [design/busy-indicator.md](design/busy-indicator.md) | 실행 중 표시 — 탭/워크스페이스 busy 판정 정책, 시각 표시, 플랫폼별 foreground 감지 |
 | [design/memory-system.md](design/memory-system.md) | 에이전트 메모리 — regular/secret 두 계층, owner 자동 도출, plugin 별 사전 분할 |
+| [design/lua-hooks.md](design/lua-hooks.md) | Lua hook 설계 — host 전용·observe-only·event matrix·사용자-직접 변경 의미 |
 
 ## 아키텍처 문서
 
