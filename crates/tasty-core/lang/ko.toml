@@ -7,6 +7,7 @@ name = "Tasty"
 ok = "확인"
 cancel = "취소"
 save = "저장"
+add = "추가"
 new_workspace = "+ 새 워크스페이스"
 mark_all_read = "모두 읽음"
 jump_to_workspace = "이동"
@@ -65,7 +66,27 @@ clipboard = "클립보드"
 notifications = "알림"
 keybindings = "단축키"
 language = "언어"
+file_handler = "파일 핸들러"
 misc = "기타"
+
+[settings.file_handler]
+coming_soon = "이 서브탭은 향후 업데이트에서 제공됩니다."
+
+[settings.file_handler.sub]
+detectors = "Detector"
+handlers = "Handler"
+extension_mapping = "확장자 매핑"
+recent_picks = "최근 선택"
+
+[settings.file_handler.extension_mapping]
+description = "같은 확장자를 광고하는 여러 detector 가 있을 때 어느 것을 우선할지 정합니다. 위에 있는 detector 가 먼저 매칭됩니다."
+no_conflicts = "현재 우선순위 충돌이 있는 확장자가 없습니다."
+add_label = "확장자 추가:"
+reset = "초기화"
+reset_tooltip = "이 확장자의 사용자 우선순위를 제거합니다 (install 순서로 복귀)."
+clear = "삭제"
+unregistered = "미설치"
+disabled = "비활성"
 
 [settings.general]
 heading = "일반"

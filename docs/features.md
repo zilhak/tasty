@@ -1605,9 +1605,20 @@ URI/경로 입력을 받아 **(1) 파일 형식 식별 → (2) 등록된 핸들�
 ### User config 직렬화 (MD4)
 - `FileFormatRegistry::export_user_config()` / `FileHandlerRegistry::export_user_config()` — RuleOrigin::User / HandlerOwner::User 만 추려 TOML 문자열로 emit
 - `save_user_config(path)` — tempfile + rename 으로 atomic write. 빈 결과(사용자 항목 0)도 빈 파일로 덮어쓴다
+- `file_handlers_save::save_combined_user_config(file_format, file_handler, path)` — 두 registry 의 user export 를 합쳐 한 파일에 atomic write. Settings UI 에서 한쪽만 저장 시 다른 쪽 섹션이 사라지는 문제 방지
 - patch semantics 보존: user contribution 의 Some 필드만 emit, 호스트/플러그인이 제공한 base 는 미포함
 - `DetectorRuleKind::Unknown` 의 raw payload 도 round-trip — forward-compat 유지
 - 주석/공백/key 순서는 보존 안 함 (재발급). 사용자 손편집 친화 보존이 필요해지면 `toml_edit` 도입
+
+### Extension Mapping (Phase E ME4)
+- 같은 확장자를 광고하는 detector 가 여러 개 있을 때 사용자가 직접 우선순위를 정할 수 있는 표 (`[[extension_priority]]`)
+- 호스트 default / 사용자 설정 양쪽에서 정의 가능. plugin manifest 는 이 섹션을 못 씀 — 사용자 영역
+- TOML: `[[extension_priority]] extension = "md" order = ["mdx-strict", "markdown"]`
+- last-writer-wins (host → user 순서 install) — 사용자가 호스트 default 를 덮어쓸 수 있음
+- 빈 `order = []` 는 entry 제거 의도로 해석
+- `identify` 의 cheap path 가 파일 확장자가 있을 때 이 표를 fast path 로 사용 — 표에 적힌 detector 가 enabled + 광고 detector 안에 있으면 1순위로 선택. 표에 없거나 부적격이면 `install_order` 순서로 fallback
+- Settings UI: `File Handler` 탭의 `Extension Mapping` sub-tab — 광고 detector 가 2개 이상인 확장자만 노출. ↑/↓ 버튼으로 재정렬. 새 확장자 직접 입력 가능. "Reset" 으로 entry 제거 → install_order 순으로 복귀
+- Settings 저장 시 `save_combined_user_config` 로 `~/.tasty/file-handlers.toml` 에 atomic write — `[[handler]]` 섹션 보존
 
 ### 한계 (현재)
 - mouse.rs 콜사이트 변경은 별도 작업 — ctrl+click 시 여전히 기존 `terminal_link::open_uri` 가 동작

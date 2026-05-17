@@ -7,6 +7,7 @@ name = "Tasty"
 ok = "OK"
 cancel = "Cancel"
 save = "Save"
+add = "Add"
 new_workspace = "+ New Workspace"
 mark_all_read = "Mark all read"
 jump_to_workspace = "Jump"
@@ -65,7 +66,27 @@ clipboard = "Clipboard"
 notifications = "Notifications"
 keybindings = "Keybindings"
 language = "Language"
+file_handler = "File Handler"
 misc = "Misc"
+
+[settings.file_handler]
+coming_soon = "This sub-tab will be available in a future update."
+
+[settings.file_handler.sub]
+detectors = "Detectors"
+handlers = "Handlers"
+extension_mapping = "Extension Mapping"
+recent_picks = "Recent Picks"
+
+[settings.file_handler.extension_mapping]
+description = "When multiple detectors claim the same file extension, set the order you prefer. Detectors are listed top-to-bottom in priority order."
+no_conflicts = "No extensions have multiple detectors competing for them right now."
+add_label = "Add extension:"
+reset = "Reset"
+reset_tooltip = "Remove the custom priority for this extension (revert to install order)."
+clear = "Remove"
+unregistered = "not installed"
+disabled = "disabled"
 
 [settings.general]
 heading = "General"

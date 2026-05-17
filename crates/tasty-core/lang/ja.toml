@@ -7,6 +7,7 @@ name = "Tasty"
 ok = "OK"
 cancel = "キャンセル"
 save = "保存"
+add = "追加"
 new_workspace = "+ 新しいワークスペース"
 mark_all_read = "すべて既読"
 jump_to_workspace = "移動"
@@ -65,7 +66,27 @@ clipboard = "クリップボード"
 notifications = "通知"
 keybindings = "キーバインド"
 language = "言語"
+file_handler = "ファイルハンドラ"
 misc = "その他"
+
+[settings.file_handler]
+coming_soon = "このサブタブは今後のアップデートで利用可能になります。"
+
+[settings.file_handler.sub]
+detectors = "Detector"
+handlers = "Handler"
+extension_mapping = "拡張子マッピング"
+recent_picks = "最近の選択"
+
+[settings.file_handler.extension_mapping]
+description = "同じ拡張子を要求する複数の detector がある場合、どれを優先するか設定します。上にあるほど優先されます。"
+no_conflicts = "現在、優先順位の競合がある拡張子はありません。"
+add_label = "拡張子を追加:"
+reset = "リセット"
+reset_tooltip = "この拡張子のユーザー優先順位を削除し、インストール順序に戻します。"
+clear = "削除"
+unregistered = "未インストール"
+disabled = "無効"
 
 [settings.general]
 heading = "一般"

@@ -1,6 +1,9 @@
+mod file_handler_tab;
 mod keybindings_tab;
 mod tabs;
 
+use crate::file_format::{DetectorId, FileFormatRegistry};
+use crate::file_handler::FileHandlerRegistry;
 use crate::i18n::t;
 use crate::plugin::manifest::BindingMode;
 use crate::plugin::registry_state::ShortcutOverride;
@@ -8,6 +11,7 @@ use crate::settings::Settings;
 use crate::ui::popup::{PopupManager, PopupState};
 
 pub use keybindings_tab::{KeyCapture, capture_winit_key_combo};
+use file_handler_tab::{FileHandlerSubTab, draw_file_handler_tab};
 use keybindings_tab::{KeybindingsSubTab, PendingBinding, RecordingSlot, draw_keybindings_tab};
 use tabs::*;
 
@@ -58,6 +62,7 @@ enum SettingsTab {
     Keybindings,
     Language,
     Performance,
+    FileHandler,
     Misc,
 }
 
@@ -74,6 +79,13 @@ pub struct SettingsUiState {
     appearance_sub_tab: AppearanceSubTab,
     /// Active sub-tab within misc.
     misc_sub_tab: MiscSubTab,
+    /// Active sub-tab within FileHandler.
+    file_handler_sub_tab: FileHandlerSubTab,
+    /// FileHandler 탭의 Extension Mapping draft. None 이면 첫 진입 시 registry 에서 초기화.
+    /// 키 = 확장자 (소문자, 점 없음), 값 = 정렬된 detector id 리스트 (빈 리스트 = 클리어).
+    pub(crate) extension_priority_draft: Option<std::collections::BTreeMap<String, Vec<DetectorId>>>,
+    /// 사용자가 새 확장자 추가 시 입력하는 텍스트 (Extension Mapping sub-tab).
+    pub(crate) extension_priority_new_input: String,
     /// Currently previewed preset name in the Preset sub-tab (None = no preview).
     selected_preset: Option<String>,
     /// Pending keybinding assignment waiting for conflict confirmation.
@@ -132,6 +144,9 @@ impl SettingsUiState {
             keybindings_sub_tab: KeybindingsSubTab::General,
             appearance_sub_tab: AppearanceSubTab::General,
             misc_sub_tab: MiscSubTab::Tastyrc,
+            file_handler_sub_tab: FileHandlerSubTab::ExtensionMapping,
+            extension_priority_draft: None,
+            extension_priority_new_input: String::new(),
             selected_preset: None,
             pending_binding: None,
             popups,
@@ -156,6 +171,9 @@ pub fn draw_settings_panel(
     settings: &mut Settings,
     ui_state: &mut SettingsUiState,
     captured_double_tap: &mut Option<String>,
+    file_format: &FileFormatRegistry,
+    file_handler: &FileHandlerRegistry,
+    user_config_path: Option<&std::path::Path>,
 ) -> Option<bool> {
     if ui_state.draft.is_none() {
         ui_state.draft = Some(settings.clone());
@@ -181,6 +199,7 @@ pub fn draw_settings_panel(
                 if ui.button(t("button.cancel")).clicked() {
                     // Cancel: discard bashrc draft so next open reloads from disk.
                     ui_state.bashrc_user_draft = None;
+                    ui_state.extension_priority_draft = None;
                     result = Some(false);
                 }
                 if ui.button(t("button.save")).clicked() {
@@ -194,6 +213,27 @@ pub fn draw_settings_panel(
                     let presets = crate::theme::presets();
                     if let Some(preset) = presets.iter().find(|p| p.id == settings.appearance.theme) {
                         crate::theme::set_theme(preset.theme);
+                    }
+                    // FileHandler 탭의 Extension Mapping draft 를 registry 에 commit + 디스크 저장.
+                    if let Some(draft) = ui_state.extension_priority_draft.take() {
+                        for (ext, order) in &draft {
+                            if order.is_empty() {
+                                file_format.clear_user_extension_priority(ext);
+                            } else {
+                                file_format.set_user_extension_priority(ext, order.clone());
+                            }
+                        }
+                        if let Some(path) = user_config_path {
+                            if let Err(e) = crate::file_handlers_save::save_combined_user_config(
+                                file_format,
+                                file_handler,
+                                path,
+                            ) {
+                                tracing::warn!(
+                                    "extension_priority: save_combined_user_config failed: {e}"
+                                );
+                            }
+                        }
                     }
                     result = Some(true);
                 }
@@ -214,6 +254,7 @@ pub fn draw_settings_panel(
                 (SettingsTab::Keybindings, t("settings.tab.keybindings")),
                 (SettingsTab::Language, t("settings.tab.language")),
                 (SettingsTab::Performance, t("settings.performance.heading")),
+                (SettingsTab::FileHandler, t("settings.tab.file_handler")),
                 (SettingsTab::Misc, t("settings.tab.misc")),
             ];
             for (tab, label) in &tabs {
@@ -259,6 +300,13 @@ pub fn draw_settings_panel(
                     ),
                     SettingsTab::Language => draw_language_tab(ui, &mut draft),
                     SettingsTab::Performance => draw_performance_tab(ui, &mut draft),
+                    SettingsTab::FileHandler => draw_file_handler_tab(
+                        ui,
+                        &mut ui_state.file_handler_sub_tab,
+                        &mut ui_state.extension_priority_draft,
+                        &mut ui_state.extension_priority_new_input,
+                        file_format,
+                    ),
                     SettingsTab::Misc => draw_misc_tab(
                         ui,
                         &mut ui_state.misc_sub_tab,

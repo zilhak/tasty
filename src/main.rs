@@ -20,6 +20,7 @@ mod file_drag;
 mod file_format;
 mod file_handler;
 mod file_handler_recent;
+mod file_handlers_save;
 mod global_hooks;
 mod gpu;
 mod html_ui;
@@ -852,7 +853,28 @@ impl App {
         .expect("failed to initialize GPU for settings");
 
         let modal_window_id = window.id();
-        let mut modal = window::SettingsWindow::new(gpu, window, settings);
+        let (file_format, file_handler) = if let Some(w) = self.focused_window() {
+            (
+                w.state.engine.file_format.clone(),
+                w.state.engine.file_handler.clone(),
+            )
+        } else {
+            // Settings 윈도우가 main 창 없이 열리는 경로는 거의 없지만, fallback 으로 빈 registry 를 만든다.
+            // 이 경로에서는 Settings 의 FileHandler 탭이 비어 보이고 저장도 의미가 없다.
+            (
+                Arc::new(crate::file_format::FileFormatRegistry::new()),
+                Arc::new(crate::file_handler::FileHandlerRegistry::new()),
+            )
+        };
+        let user_config_path = tasty_core::paths::tasty_home().map(|d| d.join("file-handlers.toml"));
+        let mut modal = window::SettingsWindow::new(
+            gpu,
+            window,
+            settings,
+            file_format,
+            file_handler,
+            user_config_path,
+        );
         modal.set_plugin_shortcuts(self.snapshot_plugin_shortcuts());
         // On Windows, hidden windows do not receive RedrawRequested events,
         // so render the first frame immediately instead of waiting for the event loop.

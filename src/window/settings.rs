@@ -2,6 +2,8 @@ use std::sync::Arc;
 
 use winit::event::WindowEvent;
 
+use crate::file_format::FileFormatRegistry;
+use crate::file_handler::FileHandlerRegistry;
 use crate::gpu::GpuState;
 use crate::i18n::t;
 use crate::settings::Settings;
@@ -17,6 +19,13 @@ pub struct SettingsWindow {
     pub base: WindowBase,
     pub settings: Settings,
     settings_ui_state: SettingsUiState,
+    /// `FileHandler` 탭의 Extension Mapping sub-tab 에서 사용. Save 시 user TOML 에 직접 저장.
+    file_format: Arc<FileFormatRegistry>,
+    /// 동일 user TOML 파일 (`~/.tasty/file-handlers.toml`) 의 `[[handler]]` 섹션을 보존하기
+    /// 위해 combined save 시 함께 export.
+    file_handler: Arc<FileHandlerRegistry>,
+    /// user TOML 저장 경로. CI/CD 등 홈 디렉토리가 없으면 `None` 으로 들어와 저장 skip.
+    user_config_path: Option<std::path::PathBuf>,
     shown: bool,
     double_tap: crate::double_tap::DoubleTapDetector,
     captured_double_tap: Option<String>,
@@ -25,11 +34,21 @@ pub struct SettingsWindow {
 }
 
 impl SettingsWindow {
-    pub fn new(gpu: GpuState, winit: Arc<winit::window::Window>, settings: Settings) -> Self {
+    pub fn new(
+        gpu: GpuState,
+        winit: Arc<winit::window::Window>,
+        settings: Settings,
+        file_format: Arc<FileFormatRegistry>,
+        file_handler: Arc<FileHandlerRegistry>,
+        user_config_path: Option<std::path::PathBuf>,
+    ) -> Self {
         Self {
             base: WindowBase::new(gpu, winit),
             settings,
             settings_ui_state: SettingsUiState::new(),
+            file_format,
+            file_handler,
+            user_config_path,
             shown: false,
             double_tap: crate::double_tap::DoubleTapDetector::new(),
             captured_double_tap: None,
@@ -162,8 +181,19 @@ impl Window for SettingsWindow {
         let toasts = &mut self.toasts;
         let mut action: Option<bool> = None;
 
+        let file_format = self.file_format.clone();
+        let file_handler = self.file_handler.clone();
+        let user_config_path = self.user_config_path.clone();
         let full_output = self.base.gpu.run_egui(raw_input, |ctx| {
-            action = settings_ui::draw_settings_panel(ctx, &mut settings, ui_state, captured_dt);
+            action = settings_ui::draw_settings_panel(
+                ctx,
+                &mut settings,
+                ui_state,
+                captured_dt,
+                file_format.as_ref(),
+                file_handler.as_ref(),
+                user_config_path.as_deref(),
+            );
 
             let empty_layout = LayoutContext {
                 active_workspace: 0,
