@@ -170,6 +170,77 @@ impl FileHandlerRegistry {
         inner.dirty = true;
     }
 
+    /// user 출처 contribution 만 모아 TOML 문자열로 직렬화. Settings UI 변경 저장에 사용.
+    ///
+    /// 각 contribution 의 모든 optional 필드 중 `Some(_)` 만 emit (patch semantics 유지).
+    /// id 는 contribution 의 전역 id 그대로 (host/plugin/user 어느 owner 의 base contribution
+    /// 을 patch 하든 그 id 를 유지). 빈 결과는 빈 문자열.
+    pub fn export_user_config(&self) -> String {
+        let inner = match self.inner.read() {
+            Ok(g) => g,
+            Err(_) => return String::new(),
+        };
+        let mut handlers = Vec::<toml::Value>::new();
+        for (id, contribs) in inner.contributions.iter() {
+            let user = contribs.iter().find(|c| matches!(c.owner, HandlerOwner::User));
+            let Some(user) = user else { continue };
+            // 적어도 한 필드가 Some 이어야 user TOML 에 의미 있는 entry 가 됨.
+            if user.detector.is_none()
+                && user.priority.is_none()
+                && user.display_name_i18n_key.is_none()
+                && user.disabled_override.is_none()
+                && user.action.is_none()
+            {
+                continue;
+            }
+            let mut t = toml::value::Table::new();
+            t.insert("id".into(), toml::Value::String(id.as_str().to_string()));
+            if let Some(det) = &user.detector {
+                t.insert("detector".into(), toml::Value::String(det.clone()));
+            }
+            if let Some(p) = user.priority {
+                t.insert("priority".into(), toml::Value::Integer(p as i64));
+            }
+            if let Some(k) = &user.display_name_i18n_key {
+                t.insert(
+                    "display_name_i18n_key".into(),
+                    toml::Value::String(k.clone()),
+                );
+            }
+            if let Some(d) = user.disabled_override {
+                t.insert("disabled".into(), toml::Value::Boolean(d));
+            }
+            if let Some(action) = &user.action {
+                t.insert(
+                    "action".into(),
+                    toml::Value::Table(handler_action_to_toml(action)),
+                );
+            }
+            handlers.push(toml::Value::Table(t));
+        }
+        if handlers.is_empty() {
+            return String::new();
+        }
+        let mut doc = toml::value::Table::new();
+        doc.insert("handler".into(), toml::Value::Array(handlers));
+        toml::to_string(&doc).unwrap_or_default()
+    }
+
+    /// `export_user_config` 결과를 `path` 에 atomic write.
+    pub fn save_user_config(&self, path: &std::path::Path) -> std::io::Result<()> {
+        use std::io::Write;
+        let text = self.export_user_config();
+        let parent = path.parent().unwrap_or_else(|| std::path::Path::new("."));
+        if !parent.exists() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
+        tmp.write_all(text.as_bytes())?;
+        tmp.flush()?;
+        tmp.persist(path).map_err(|e| e.error)?;
+        Ok(())
+    }
+
     pub fn uninstall_plugin(&self, plugin_id: &str) {
         let mut inner = match self.inner.write() {
             Ok(g) => g,
@@ -437,6 +508,36 @@ struct UserHandlerSettingsDecl {
     disabled: Option<bool>,
     #[serde(default)]
     action: Option<UserHandlerActionDecl>,
+}
+
+/// `HandlerAction` 을 user TOML 의 `action = { kind = "...", ... }` 표현으로 역변환.
+/// `UserHandlerActionDecl` 의 serde tag/snake_case 규칙과 1:1.
+fn handler_action_to_toml(action: &HandlerAction) -> toml::value::Table {
+    let mut t = toml::value::Table::new();
+    match action {
+        HandlerAction::OpenSurface {
+            surface_kind,
+            param_key,
+        } => {
+            t.insert("kind".into(), toml::Value::String("open_surface".into()));
+            t.insert(
+                "surface_kind".into(),
+                toml::Value::String(surface_kind.clone()),
+            );
+            t.insert(
+                "param_key".into(),
+                toml::Value::String(param_key.clone()),
+            );
+        }
+        HandlerAction::Ipc { method, .. } => {
+            t.insert("kind".into(), toml::Value::String("ipc".into()));
+            t.insert("method".into(), toml::Value::String(method.clone()));
+        }
+        HandlerAction::System => {
+            t.insert("kind".into(), toml::Value::String("system".into()));
+        }
+    }
+    t
 }
 
 fn parse_host_handler_section(
@@ -723,6 +824,120 @@ mod tests {
         assert_eq!(v.len(), 1);
         assert_eq!(v[0].id.as_str(), "user/pdf-preview");
         assert!(matches!(v[0].action, HandlerAction::System));
+    }
+
+    // ── export_user_config / save_user_config (MD4) ─────────────────────
+
+    #[test]
+    fn export_user_handler_emits_only_user_origin() {
+        let reg = FileHandlerRegistry::new();
+        load_host(&reg);
+        // 사용자가 host/markdown-viewer 를 disable 하고 자기 핸들러 user/my-md 추가.
+        let user_toml = r#"
+            [[handler]]
+            id = "host/markdown-viewer"
+            disabled = true
+
+            [[handler]]
+            id = "user/my-md"
+            detector = "markdown"
+            priority = 20
+            display_name_i18n_key = "user.md"
+            [handler.action]
+            kind = "system"
+        "#;
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("file-handlers.toml");
+        std::fs::write(&p, user_toml).unwrap();
+        reg.install_user_config(&p);
+
+        let exported = reg.export_user_config();
+        assert!(exported.contains("host/markdown-viewer"));
+        assert!(exported.contains("disabled = true"));
+        assert!(exported.contains("user/my-md"));
+        assert!(exported.contains("\"markdown\""));
+        // host default 의 markdown-viewer action(OpenSurface) 는 user 가 손대지 않았으므로
+        // export 결과의 host/markdown-viewer entry 에는 action 이 없어야 한다.
+        let lines: Vec<&str> = exported.split("[[handler]]").collect();
+        let md_section = lines
+            .iter()
+            .find(|s| s.contains("host/markdown-viewer"))
+            .expect("section present");
+        assert!(
+            !md_section.contains("kind = \"open_surface\""),
+            "user export should not leak host action: {md_section}"
+        );
+    }
+
+    #[test]
+    fn export_user_handler_round_trip() {
+        let reg = FileHandlerRegistry::new();
+        load_host(&reg);
+        let user_toml = r#"
+            [[handler]]
+            id = "user/my-md"
+            detector = "markdown"
+            priority = 25
+            [handler.action]
+            kind = "open_surface"
+            surface_kind = "markdown"
+            param_key = "file"
+        "#;
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("file-handlers.toml");
+        std::fs::write(&p, user_toml).unwrap();
+        reg.install_user_config(&p);
+
+        let exported = reg.export_user_config();
+
+        let reg2 = FileHandlerRegistry::new();
+        load_host(&reg2);
+        let p2 = dir.path().join("re-emit.toml");
+        std::fs::write(&p2, &exported).unwrap();
+        reg2.install_user_config(&p2);
+
+        let v1 = reg.handlers_for(&DetectorId("markdown".into()));
+        let v2 = reg2.handlers_for(&DetectorId("markdown".into()));
+        let ids1: Vec<_> = v1.iter().map(|h| h.id.as_str().to_string()).collect();
+        let ids2: Vec<_> = v2.iter().map(|h| h.id.as_str().to_string()).collect();
+        assert_eq!(ids1, ids2);
+        // user/my-md 의 priority 가 보존되었는지
+        let h2 = v2
+            .iter()
+            .find(|h| h.id.as_str() == "user/my-md")
+            .expect("user handler present");
+        assert_eq!(h2.priority, 25);
+    }
+
+    #[test]
+    fn save_user_handler_atomic_write() {
+        let reg = FileHandlerRegistry::new();
+        let user_toml = r#"
+            [[handler]]
+            id = "user/my-md"
+            detector = "markdown"
+            priority = 25
+            [handler.action]
+            kind = "system"
+        "#;
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("src.toml");
+        std::fs::write(&src, user_toml).unwrap();
+        reg.install_user_config(&src);
+
+        let dst = dir.path().join("subdir").join("dst.toml");
+        reg.save_user_config(&dst).unwrap();
+        assert!(dst.exists());
+        let written = std::fs::read_to_string(&dst).unwrap();
+        assert!(written.contains("user/my-md"));
+        assert!(written.contains("kind = \"system\""));
+    }
+
+    #[test]
+    fn export_empty_when_no_user_contributions() {
+        let reg = FileHandlerRegistry::new();
+        load_host(&reg);
+        assert_eq!(reg.export_user_config(), "");
     }
 
     #[test]

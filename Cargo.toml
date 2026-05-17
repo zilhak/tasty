@@ -161,6 +161,9 @@ rfd = "0.15"
 # Utilities
 directories = "6"
 
+# Atomic file writes (user config persistence — file_format / file_handler)
+tempfile = "3"
+
 # SQLite (state.db for bookmarks, recent files, clipboard history 등)
 rusqlite = { version = "0.32", features = ["bundled"] }
 

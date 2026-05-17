@@ -1602,11 +1602,18 @@ URI/경로 입력을 받아 **(1) 파일 형식 식별 → (2) 등록된 핸들�
 - 원자적 쓰기: `<path>.tmp` 작성 → rename. fsync 는 안 함 (UX 영향)
 - LRU dedupe + cap=10. parse 실패 시 빈 리스트로 시작 + warn
 
-### 한계 (Phase A + MB1)
-- mouse.rs 콜사이트 변경은 Phase A 범위 밖 — ctrl+click 시 여전히 기존 `terminal_link::open_uri` 가 동작 (콜사이트 전환은 Phase C 별 plan)
-- Lua / structure-check rule 평가는 stub (Phase C-D 에서 구현)
-- `path_glob` 은 단순 `*` wildcard 만, 본격 globset 도입은 Phase B+
-- Deep 평가는 sync — worker thread 분리 (`AppEvent::IdentifyDone`) 는 MB2 작업
+### User config 직렬화 (MD4)
+- `FileFormatRegistry::export_user_config()` / `FileHandlerRegistry::export_user_config()` — RuleOrigin::User / HandlerOwner::User 만 추려 TOML 문자열로 emit
+- `save_user_config(path)` — tempfile + rename 으로 atomic write. 빈 결과(사용자 항목 0)도 빈 파일로 덮어쓴다
+- patch semantics 보존: user contribution 의 Some 필드만 emit, 호스트/플러그인이 제공한 base 는 미포함
+- `DetectorRuleKind::Unknown` 의 raw payload 도 round-trip — forward-compat 유지
+- 주석/공백/key 순서는 보존 안 함 (재발급). 사용자 손편집 친화 보존이 필요해지면 `toml_edit` 도입
+
+### 한계 (현재)
+- mouse.rs 콜사이트 변경은 별도 작업 — ctrl+click 시 여전히 기존 `terminal_link::open_uri` 가 동작
+- `structure_check` rule 평가는 stub (Phase D MD2)
+- `path_glob` 은 단순 `*` wildcard 만, 본격 globset 도입은 후속
+- Deep 평가는 sync — worker thread 분리 (`AppEvent::IdentifyDone`) 는 별도 작업
 
 ## Lua Hooks (사용자 init.lua)
 

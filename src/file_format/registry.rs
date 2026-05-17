@@ -238,6 +238,83 @@ impl FileFormatRegistry {
         inner.dirty = true;
     }
 
+    /// user 출처 contribution 만 모아 TOML 문자열로 직렬화. Settings UI 가 변경 사항을
+    /// `~/.tasty/file-formats.toml` 에 저장할 때 사용.
+    ///
+    /// host default / plugin contribution 은 포함하지 않는다 (그것들은 자기 출처가 다시
+    /// install 한다). Round-trip 보장 — `parse_detector_section(&export)` 로 원래 user
+    /// contribution 을 그대로 재현 가능. `Unknown` rule 의 raw payload 도 보존.
+    ///
+    /// 주의: TOML 주석/공백/key 순서는 보존하지 않는다 (재발급). 사용자 손편집 친화적
+    /// round-trip 이 필요해지면 `toml_edit` 도입.
+    pub fn export_user_config(&self) -> String {
+        let inner = match self.inner.read() {
+            Ok(g) => g,
+            Err(_) => return String::new(),
+        };
+        let mut doc = toml::value::Table::new();
+        let mut detectors = Vec::<toml::Value>::new();
+        for (id, contribs) in inner.contributions.iter() {
+            let user = contribs.iter().find(|c| matches!(c.origin, RuleOrigin::User));
+            let Some(user) = user else { continue };
+            if user.rules.is_empty()
+                && user.display_name_i18n_key.is_none()
+                && user.icon.is_none()
+                && user.disabled_override.is_none()
+            {
+                continue;
+            }
+            let mut det = toml::value::Table::new();
+            det.insert(
+                "id".to_string(),
+                toml::Value::String(id.as_str().to_string()),
+            );
+            if let Some(k) = &user.display_name_i18n_key {
+                det.insert(
+                    "display_name_i18n_key".to_string(),
+                    toml::Value::String(k.clone()),
+                );
+            }
+            if let Some(icon) = &user.icon {
+                det.insert("icon".to_string(), toml::Value::String(icon.clone()));
+            }
+            if let Some(d) = user.disabled_override {
+                det.insert("disabled".to_string(), toml::Value::Boolean(d));
+            }
+            let rules: Vec<toml::Value> = user
+                .rules
+                .iter()
+                .map(|k| toml::Value::Table(rule_kind_to_toml(k)))
+                .collect();
+            if !rules.is_empty() {
+                det.insert("rule".to_string(), toml::Value::Array(rules));
+            }
+            detectors.push(toml::Value::Table(det));
+        }
+        if detectors.is_empty() {
+            return String::new();
+        }
+        doc.insert("detector".to_string(), toml::Value::Array(detectors));
+        toml::to_string(&doc).unwrap_or_default()
+    }
+
+    /// `export_user_config` 의 결과를 `path` 에 atomic write. tempfile + rename 으로
+    /// 부분 쓰기 방지. 빈 결과 (user contribution 없음) 면 path 가 존재하면 빈 파일로
+    /// 덮어쓴다 — 사용자가 모든 항목을 지웠다는 의미.
+    pub fn save_user_config(&self, path: &Path) -> std::io::Result<()> {
+        use std::io::Write;
+        let text = self.export_user_config();
+        let parent = path.parent().unwrap_or_else(|| Path::new("."));
+        if !parent.exists() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
+        tmp.write_all(text.as_bytes())?;
+        tmp.flush()?;
+        tmp.persist(path).map_err(|e| e.error)?;
+        Ok(())
+    }
+
     pub fn uninstall_plugin(&self, plugin_id: &str) {
         let mut inner = match self.inner.write() {
             Ok(g) => g,
@@ -383,6 +460,66 @@ fn decl_rule_to_kind(decl: DetectorRuleDecl) -> Option<DetectorRuleKind> {
             raw,
         },
     })
+}
+
+/// `DetectorRuleKind` 을 TOML table 로 역직렬화. `parse_detector_section` 의 입력 형식과
+/// 1:1 round-trip. `Unknown` 의 raw payload 는 그대로 보존.
+fn rule_kind_to_toml(kind: &DetectorRuleKind) -> toml::value::Table {
+    let mut t = toml::value::Table::new();
+    match kind {
+        DetectorRuleKind::Extension { values } => {
+            t.insert("kind".into(), toml::Value::String("extension".into()));
+            t.insert(
+                "values".into(),
+                toml::Value::Array(values.iter().cloned().map(toml::Value::String).collect()),
+            );
+        }
+        DetectorRuleKind::PathGlob { pattern } => {
+            t.insert("kind".into(), toml::Value::String("path_glob".into()));
+            t.insert("pattern".into(), toml::Value::String(pattern.clone()));
+        }
+        DetectorRuleKind::Mime { types } => {
+            t.insert("kind".into(), toml::Value::String("mime".into()));
+            t.insert(
+                "types".into(),
+                toml::Value::Array(types.iter().cloned().map(toml::Value::String).collect()),
+            );
+        }
+        DetectorRuleKind::Magic { offset, bytes } => {
+            t.insert("kind".into(), toml::Value::String("magic".into()));
+            t.insert("offset".into(), toml::Value::Integer(*offset as i64));
+            let hex: String = bytes.iter().map(|b| format!("{:02x}", b)).collect();
+            t.insert("bytes_hex".into(), toml::Value::String(hex));
+        }
+        DetectorRuleKind::IsDirectory => {
+            t.insert("kind".into(), toml::Value::String("is_directory".into()));
+        }
+        DetectorRuleKind::Lua { script } => {
+            t.insert("kind".into(), toml::Value::String("lua".into()));
+            t.insert("script".into(), toml::Value::String(script.clone()));
+        }
+        DetectorRuleKind::StructureCheck { spec_path } => {
+            t.insert("kind".into(), toml::Value::String("structure_check".into()));
+            t.insert(
+                "spec".into(),
+                toml::Value::String(spec_path.to_string_lossy().into_owned()),
+            );
+        }
+        DetectorRuleKind::Unknown { kind_name, raw } => {
+            t.insert("kind".into(), toml::Value::String(kind_name.clone()));
+            // raw 는 원래 table 통째였으나 manual parser 에서 모든 키를 보관했으므로
+            // 그대로 평면 복사.
+            if let toml::Value::Table(raw_t) = raw {
+                for (k, v) in raw_t {
+                    if k == "kind" {
+                        continue;
+                    }
+                    t.insert(k.clone(), v.clone());
+                }
+            }
+        }
+    }
+    t
 }
 
 fn hex_to_bytes(hex: &str) -> Option<Vec<u8>> {
@@ -720,5 +857,154 @@ mod tests {
         std::fs::write(&p, user_toml).unwrap();
         reg.install_user_config(&p);
         assert_eq!(reg.identify(&target("a/b.md"), DetectDepth::Cheap), None);
+    }
+
+    // ── export_user_config / save_user_config (MD4) ─────────────────────
+
+    #[test]
+    fn export_emits_user_only_origin() {
+        let reg = FileFormatRegistry::new();
+        reg.install_host_defaults(
+            include_str!("defaults/default-file-format.toml"),
+        );
+        // 사용자가 pdf 추가 + markdown disable.
+        let user_toml = r#"
+            [[detector]]
+            id = "pdf"
+            [[detector.rule]]
+            kind = "extension"
+            values = ["pdf"]
+
+            [[detector]]
+            id = "markdown"
+            disabled = true
+        "#;
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("file-handlers.toml");
+        std::fs::write(&p, user_toml).unwrap();
+        reg.install_user_config(&p);
+
+        let exported = reg.export_user_config();
+        // 호스트 detector 본문 (markdown 의 md 확장자 rule 등) 은 들어가면 안 됨.
+        // 단 user 가 disable 한 markdown id 자체는 등장.
+        assert!(exported.contains("pdf"), "exported = {exported}");
+        assert!(exported.contains("markdown"));
+        assert!(exported.contains("disabled = true"));
+        // 호스트가 markdown 에 부여한 md 확장자는 user 가 만든 게 아니므로 미포함.
+        // (확실히 하기 위해 user 가 등록한 pdf 의 'pdf' 확장자는 있어야).
+        assert!(exported.contains("\"pdf\""));
+    }
+
+    #[test]
+    fn export_round_trip_preserves_user_state() {
+        let reg = FileFormatRegistry::new();
+        reg.install_host_defaults(
+            include_str!("defaults/default-file-format.toml"),
+        );
+        let user_toml = r#"
+            [[detector]]
+            id = "pdf"
+            display_name_i18n_key = "file_format.pdf"
+            icon = "file-pdf"
+            [[detector.rule]]
+            kind = "extension"
+            values = ["pdf"]
+            [[detector.rule]]
+            kind = "magic"
+            offset = 0
+            bytes_hex = "255044462D"
+
+            [[detector]]
+            id = "markdown"
+            disabled = true
+        "#;
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("file-handlers.toml");
+        std::fs::write(&p, user_toml).unwrap();
+        reg.install_user_config(&p);
+
+        let exported = reg.export_user_config();
+
+        // 두 번째 registry 에 export 결과만 user origin 으로 로드.
+        let reg2 = FileFormatRegistry::new();
+        reg2.install_host_defaults(
+            include_str!("defaults/default-file-format.toml"),
+        );
+        let p2 = dir.path().join("export.toml");
+        std::fs::write(&p2, &exported).unwrap();
+        reg2.install_user_config(&p2);
+
+        // identify 결과가 동일해야 함.
+        // pdf 매칭 (extension)
+        assert_eq!(
+            reg.identify(&target("a/b.pdf"), DetectDepth::Cheap),
+            reg2.identify(&target("a/b.pdf"), DetectDepth::Cheap),
+        );
+        // markdown 은 disabled — 둘 다 None
+        assert_eq!(
+            reg.identify(&target("a/b.md"), DetectDepth::Cheap),
+            reg2.identify(&target("a/b.md"), DetectDepth::Cheap),
+        );
+
+        // 메타도 보존 — display_name / icon
+        let pdf = reg2.detector(&DetectorId("pdf".into())).unwrap();
+        assert_eq!(pdf.display_name_i18n_key.as_deref(), Some("file_format.pdf"));
+        assert_eq!(pdf.icon.as_deref(), Some("file-pdf"));
+    }
+
+    #[test]
+    fn export_preserves_unknown_rule_payload() {
+        let reg = FileFormatRegistry::new();
+        // forward-compat: 미지의 kind 도 round-trip 보존.
+        let user_toml = r#"
+            [[detector]]
+            id = "futureproof"
+            [[detector.rule]]
+            kind = "ai_classify"
+            model = "v2"
+            confidence = 0.8
+        "#;
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("file-handlers.toml");
+        std::fs::write(&p, user_toml).unwrap();
+        reg.install_user_config(&p);
+
+        let exported = reg.export_user_config();
+        assert!(exported.contains("ai_classify"));
+        assert!(exported.contains("model"));
+        assert!(exported.contains("\"v2\""));
+        assert!(exported.contains("confidence"));
+    }
+
+    #[test]
+    fn save_user_config_atomic_write() {
+        let reg = FileFormatRegistry::new();
+        let user_toml = r#"
+            [[detector]]
+            id = "pdf"
+            [[detector.rule]]
+            kind = "extension"
+            values = ["pdf"]
+        "#;
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("src.toml");
+        std::fs::write(&src, user_toml).unwrap();
+        reg.install_user_config(&src);
+
+        let dst = dir.path().join("subdir").join("dst.toml");
+        reg.save_user_config(&dst).unwrap();
+        assert!(dst.exists());
+        let written = std::fs::read_to_string(&dst).unwrap();
+        assert!(written.contains("pdf"));
+        assert!(written.contains("\"pdf\""));
+    }
+
+    #[test]
+    fn export_empty_when_no_user_contributions() {
+        let reg = FileFormatRegistry::new();
+        reg.install_host_defaults(
+            include_str!("defaults/default-file-format.toml"),
+        );
+        assert_eq!(reg.export_user_config(), "");
     }
 }
