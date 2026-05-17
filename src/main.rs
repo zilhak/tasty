@@ -2240,6 +2240,7 @@ impl App {
                     name,
                     subtitle,
                     description,
+                    user_direct,
                 } => {
                     let payload = WorkspaceRenamed {
                         workspace_id,
@@ -2248,7 +2249,10 @@ impl App {
                         description,
                     };
                     mgr.emit_host_event("workspace.renamed", &payload, EventScope::System);
-                    fire_lua(lua, "workspace.change.post", &payload);
+                    // 사용자 직접 변경(GUI rename dialog)만 Lua hook 발화 — IPC 경유는 제외.
+                    if user_direct {
+                        fire_lua(lua, "workspace.change.post", &payload);
+                    }
                 }
                 crate::state::PendingHostEvent::TabFocused {
                     tab_id,
@@ -2262,10 +2266,16 @@ impl App {
                     };
                     mgr.emit_host_event("tab.focused", &payload, EventScope::System);
                 }
-                crate::state::PendingHostEvent::TabRenamed { tab_id, title } => {
+                crate::state::PendingHostEvent::TabRenamed {
+                    tab_id,
+                    title,
+                    user_direct,
+                } => {
                     let payload = TabRenamed { tab_id, title };
                     mgr.emit_host_event("tab.renamed", &payload, EventScope::System);
-                    fire_lua(lua, "tab.change.post", &payload);
+                    if user_direct {
+                        fire_lua(lua, "tab.change.post", &payload);
+                    }
                 }
                 crate::state::PendingHostEvent::ProcessExited { surface_id } => {
                     let payload = ProcessExited {
@@ -2632,7 +2642,6 @@ fn main() -> Result<()> {
     );
     fire_lua(app.lua_engine.as_ref(), "tasty.startup.post", &serde_json::Value::Null);
     event_loop.run_app(&mut app)?;
-    fire_lua(app.lua_engine.as_ref(), "tasty.shutdown.pre", &serde_json::Value::Null);
 
     Ok(())
 }

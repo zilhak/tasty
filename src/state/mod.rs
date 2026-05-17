@@ -96,20 +96,28 @@ pub enum PendingHostEvent {
     },
     /// 이름/부제/설명 중 변경된 필드만 `Some`. 호스트 발화 측 어디서나 partial
     /// update가 가능하도록 모두 Optional로 둔다.
+    ///
+    /// `user_direct=true`면 사용자가 GUI 다이얼로그로 직접 변경한 케이스. Lua
+    /// hook 의 `workspace.change.post` 는 user_direct 만 발화한다 (observe-only
+    /// 단계 명세). IPC/CLI 경유 변경은 false 로 들어와 plugin 이벤트 버스만 받는다.
     WorkspaceRenamed {
         workspace_id: u32,
         name: Option<String>,
         subtitle: Option<String>,
         description: Option<String>,
+        user_direct: bool,
     },
     TabFocused {
         tab_id: u32,
         pane_id: u32,
         prev_tab_id: Option<u32>,
     },
+    /// Tab 이름 변경. `user_direct=true`면 사용자가 GUI 다이얼로그로 직접 rename
+    /// 한 케이스 — Lua `tab.change.post` hook 은 user_direct 만 발화한다.
     TabRenamed {
         tab_id: u32,
         title: String,
+        user_direct: bool,
     },
     /// 자식 프로세스 종료. exit_code는 현재 terminal 이벤트가 노출하지 않아 `None` 고정.
     ProcessExited {

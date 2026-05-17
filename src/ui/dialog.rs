@@ -133,6 +133,7 @@ fn apply_rename(state: &mut AppState, target: RenameTarget, buffer: String) {
                         name: Some(buffer),
                         subtitle: None,
                         description: None,
+                        user_direct: true,
                     });
                 }
             }
@@ -148,6 +149,7 @@ fn apply_rename(state: &mut AppState, target: RenameTarget, buffer: String) {
                     name: None,
                     subtitle: Some(buffer),
                     description: None,
+                    user_direct: true,
                 });
             }
         }
@@ -175,6 +177,7 @@ fn apply_rename(state: &mut AppState, target: RenameTarget, buffer: String) {
                 state.enqueue_host_event(crate::state::PendingHostEvent::TabRenamed {
                     tab_id,
                     title,
+                    user_direct: true,
                 });
             }
         }

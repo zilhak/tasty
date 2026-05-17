@@ -99,6 +99,7 @@ pub fn handle_workspace_create(
                     name: renamed_name,
                     subtitle: renamed_subtitle,
                     description: renamed_description,
+                    user_direct: false,
                 });
             }
             let ws = &state.engine.workspaces[idx];
@@ -188,6 +189,7 @@ pub fn handle_workspace_update(
             name: renamed_name,
             subtitle: renamed_subtitle,
             description: renamed_description,
+            user_direct: false,
         });
     }
     state.engine.mark_layout_dirty();
