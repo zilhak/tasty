@@ -1,4 +1,5 @@
 mod clipboard;
+mod file_drop;
 pub(crate) mod ime;
 mod keyboard;
 mod mouse;
@@ -299,6 +300,15 @@ impl Window for MainWindow {
             }
             WindowEvent::MouseWheel { delta, .. } => {
                 self.handle_mouse_wheel(delta, egui_consumed);
+            }
+            WindowEvent::HoveredFile(path) => {
+                self.handle_hovered_file(path);
+            }
+            WindowEvent::HoveredFileCancelled => {
+                self.handle_hovered_file_cancelled();
+            }
+            WindowEvent::DroppedFile(path) => {
+                self.handle_dropped_file(path);
             }
             WindowEvent::RedrawRequested => {
                 self.handle_redraw(ctx.event_loop, ctx.plugin_manager);

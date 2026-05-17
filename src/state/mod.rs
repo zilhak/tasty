@@ -289,6 +289,14 @@ pub struct AppState {
     /// `(ipc_method, target)`. App 메인 루프가 drain 해 `PluginManager` 로 forward.
     pub pending_handler_ipc: Vec<(String, crate::file_format::FileTarget)>,
 
+    /// 외부 drag&drop 으로 파일이 hover 중인 상태. `HoveredFile` 마다 path 누적,
+    /// `HoveredFileCancelled` / `DroppedFile` 시 해제. 비주얼 overlay 의 입력.
+    pub drop_hover: Option<DropHoverState>,
+
+    /// `DroppedFile` 이벤트로 받은 경로 큐. frame end 에서 drain 해
+    /// `file_dispatch::dispatch_file_target` 으로 보낸다.
+    pub pending_file_drops: Vec<std::path::PathBuf>,
+
     /// plugin popup 렌더 중 수집된 사용자 입력. App 메인 루프가 drain해
     /// `PluginManager::send_popup_event`로 forward한다.
     pub plugin_popup_events: Vec<(u64, tasty_plugin_protocol::ui_tree::UiEvent)>,
@@ -376,6 +384,16 @@ pub struct TabDragState {
     pub tab_index: usize,
     /// Current mouse x in logical pixels (for insert position calculation).
     pub current_x: f32,
+}
+
+/// 외부 drag&drop hover 중 누적되는 파일 경로 + 시작 cursor 좌표.
+/// winit `HoveredFile` 이 N 파일에 대해 N번 발화하므로 `paths` 에 누적.
+#[derive(Debug, Clone, Default)]
+pub struct DropHoverState {
+    pub paths: Vec<std::path::PathBuf>,
+    /// hover 시작 시점의 cursor position (physical pixels). `CursorLeft` 또는
+    /// `CursorMoved` 가 drag 중에 발화되지 않을 수 있어 보수적으로 시작점만 기록.
+    pub cursor: Option<(f32, f32)>,
 }
 
 /// Workspace drag-and-drop state (UI-only, not persisted).
@@ -541,6 +559,8 @@ impl AppState {
             pending_tool_events: Vec::new(),
             pending_popup_opens: Vec::new(),
             pending_handler_ipc: Vec::new(),
+            drop_hover: None,
+            pending_file_drops: Vec::new(),
             plugin_popup_events: Vec::new(),
             plugin_popup_closes: Vec::new(),
         })
