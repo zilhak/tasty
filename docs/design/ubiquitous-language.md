@@ -19,7 +19,7 @@ Engine
 │                       └── Pane (독립적인 탭 바)
 │                           └── Tab (= 탭 하나)
 │                               └── 하위 레이아웃 (탭 전환 시 함께 전환)
-│                                   └── Surface (Terminal / Markdown / Explorer / Html / Empty)
+│                                   └── Surface (Terminal / Markdown / Image / Html / Empty / plugin RemoteSurface)
 │
 ├── Popup (window 내부 가상 창)
 └── Toast (window 내부 휘발성 알림)
@@ -96,15 +96,16 @@ Pane 내의 하나의 탭. 내부에 Surface들의 **하위 레이아웃**을 �
 
 Tab 내의 최하위 컨테이너. **타입**을 가지며, 타입에 따라 콘텐츠가 달라진다. 모든 Surface는 고유한 `surface_id`를 가지며, 닫기/포커스/리스트 등의 동작이 타입에 관계없이 동일하게 적용된다.
 
-| 타입 | 설명 | 렌더링 |
-|------|------|--------|
-| Terminal | 쉘 세션 (bash, zsh 등). PTY와 연결 | GPU 셰이더 |
-| Markdown | 마크다운 파일 뷰어 | egui |
-| Explorer | 파일 탐색기 | egui |
-| Html | HTML/웹 뷰어 | 네이티브 WebView |
-| Empty | 빈 surface. 타입 전환 버튼 표시 | egui |
+| 타입 | 출처 | 설명 | 렌더링 |
+|------|------|------|--------|
+| Terminal | host built-in | 쉘 세션 (bash, zsh 등). PTY와 연결 | GPU 셰이더 |
+| Markdown | host built-in | 마크다운 파일 뷰어 | egui |
+| Image | host built-in (kind 는 `com.tasty.image` plugin 이 contribute) | 이미지 뷰어/편집기 | egui + 텍스처 |
+| Html | host built-in | HTML/웹 뷰어 | 네이티브 WebView |
+| Empty | host built-in | 빈 surface. 타입 전환 버튼 표시 | egui |
+| Explorer / 기타 | plugin contribute | plugin 이 `[[contributes.surface_kinds]]` 로 등록한 kind. host 에는 `RemoteSurface` 로 보관 | egui (plugin UI DSL) |
 
-Terminal은 기본 Surface 타입이며 PTY(가상 터미널)와 연결된다. 다른 Surface 타입은 각각의 렌더링 방식으로 콘텐츠를 표시한다.
+Terminal은 기본 Surface 타입이며 PTY(가상 터미널)와 연결된다. plugin contribute 한 surface (예: explorer) 는 plugin 프로세스가 UI tree DSL 로 정의하고 host 가 그것을 egui 로 렌더링한다.
 
 ## 두 레벨의 레이아웃
 
@@ -158,7 +159,7 @@ Pane은 기존 터미널에 대응하는 개념이 없다. 이것이 Tasty의 �
 | Pane | `Pane` | 독립적인 탭 바. 탭 목록 보유 |
 | Tab | `Tab` → `SurfaceLayout` (이진 트리) | 탭 하나의 내용물. Leaf = 단일 surface, Split = 탭 내부 분할 |
 | 하위 레이아웃 | `SurfaceLayout` (이진 트리 enum: Leaf / Split) | Surface 배치 |
-| Surface | `Surface` trait. 구현체: `TerminalSurface`, `MarkdownPanel`, `ExplorerPanel`, `HtmlPanel`, `EmptySurface` | 최하위 컨테이너. 타입별 콘텐츠 |
+| Surface | `Surface` trait. host built-in 구현체: `TerminalSurface`, `MarkdownPanel`, `ImagePanel`, `HtmlPanel`, `EmptySurface`. plugin 제공 surface 는 `RemoteSurface` 로 host 에 보관 | 최하위 컨테이너. 타입별 콘텐츠 |
 | Popup | `PopupDef` + `PopupManager` | Window 내부 가상 창 |
 | Toast | `ToastState` + `ToastManager` | Window 내부 휘발성 알림 |
 | App.windows | `HashMap<WindowId, Box<dyn Window>>` | 모달 포함 모든 윈도우 단일 저장소 |
