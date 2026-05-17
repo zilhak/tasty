@@ -7,6 +7,26 @@ use serde::de::{self, MapAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 use std::fmt;
 
+/// 확장자별 detector 우선순위 표 (Phase E).
+///
+/// host default / user TOML 의 top-level `[[extension_priority]]` 섹션. plugin manifest
+/// 에는 이 variant 자체가 없다.
+///
+/// ```toml
+/// [[extension_priority]]
+/// extension = "md"
+/// order = ["com.example.mdx/mdx-strict", "markdown"]
+/// ```
+///
+/// `order` 에 적힌 detector 가 우선. 표에 없는 detector 는 `install_order` 오름차순으로
+/// 뒤에 붙는다 (`04-lookup-flow.md` 참조). 미설치 detector id 는 silently skip.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ExtensionPriorityDecl {
+    pub extension: String,
+    #[serde(default)]
+    pub order: Vec<String>,
+}
+
 /// detector 정의 TOML entry.
 ///
 /// 같은 id 를 여러 출처(host/plugin/user)가 정의하면 registry merge 시 rule union +

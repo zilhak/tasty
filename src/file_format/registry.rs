@@ -10,7 +10,9 @@ use std::sync::RwLock;
 
 use tracing::warn;
 
-use super::config::{validate_detector_decl, DetectorDecl, DetectorRuleDecl};
+use super::config::{
+    validate_detector_decl, DetectorDecl, DetectorRuleDecl, ExtensionPriorityDecl,
+};
 use super::evaluator::{evaluate_cheap, evaluate_deep, DeepCtx};
 use super::info::DetectorInfo;
 use super::types::{
@@ -29,12 +31,22 @@ struct DetectorContribution {
     rules: Vec<DetectorRuleKind>,
 }
 
+/// 확장자별 우선순위 항목 (출처 메타 포함). user export 시 origin 으로 필터.
+#[derive(Debug, Clone)]
+struct ExtensionPriorityEntry {
+    order: Vec<DetectorId>,
+    origin: RuleOrigin,
+}
+
 struct Inner {
     /// detector id → 출처별 contribution. install 순서대로 push (host → plugin → user).
     contributions: BTreeMap<DetectorId, Vec<DetectorContribution>>,
     /// detector id → 최초 install 시점의 monotonic counter 값. 후속 patch 에 의해 변하지
     /// 않는다 (`install_one` 이 entry 가 비었을 때만 부여).
     install_order: BTreeMap<DetectorId, u64>,
+    /// 확장자별 우선순위 표 (Phase E). 같은 확장자에 둘 이상의 출처가 적으면
+    /// last-writer-wins (install 순서 host → user). user export 시에는 user origin 만 emit.
+    extension_priority: BTreeMap<String, ExtensionPriorityEntry>,
     /// finalize 결과 cache. dirty 시 lazy 재계산.
     finalized: BTreeMap<DetectorId, FileFormatDetector>,
     dirty: bool,
@@ -53,11 +65,20 @@ impl FileFormatRegistry {
             inner: RwLock::new(Inner {
                 contributions: BTreeMap::new(),
                 install_order: BTreeMap::new(),
+                extension_priority: BTreeMap::new(),
                 finalized: BTreeMap::new(),
                 dirty: false,
             }),
             next_install_order: AtomicU64::new(0),
         }
+    }
+
+    /// `extension` 에 대한 사용자 우선순위 표. 적힌 detector id 들 (등록 여부 무관).
+    /// 표에 없으면 `None`.
+    pub fn extension_priority_order(&self, extension: &str) -> Option<Vec<DetectorId>> {
+        let key = extension.trim_start_matches('.').to_ascii_lowercase();
+        let inner = self.inner.read().ok()?;
+        inner.extension_priority.get(&key).map(|e| e.order.clone())
     }
 
     /// detector 조회 — clone 반환.
@@ -128,6 +149,7 @@ impl FileFormatRegistry {
                 return;
             }
         };
+        let priorities = parse_extension_priority_section(toml_text).unwrap_or_default();
         let mut inner = match self.inner.write() {
             Ok(g) => g,
             Err(_) => return,
@@ -140,6 +162,9 @@ impl FileFormatRegistry {
                 RuleOrigin::HostDefault,
                 false,
             );
+        }
+        for p in priorities {
+            install_extension_priority(&mut inner, p, RuleOrigin::HostDefault);
         }
         inner.dirty = true;
     }
@@ -160,6 +185,7 @@ impl FileFormatRegistry {
                 return;
             }
         };
+        let priorities = parse_extension_priority_section(&text).unwrap_or_default();
         let mut inner = match self.inner.write() {
             Ok(g) => g,
             Err(_) => return,
@@ -172,6 +198,9 @@ impl FileFormatRegistry {
                 RuleOrigin::User,
                 false,
             );
+        }
+        for p in priorities {
+            install_extension_priority(&mut inner, p, RuleOrigin::User);
         }
         inner.dirty = true;
     }
@@ -217,19 +246,23 @@ impl FileFormatRegistry {
     /// **Transactional**: 파일 read/parse 단계에서 실패하면 기존 user contribution 을 보존한다
     /// (write lock 잡기 전에 검증). 파일이 없으면 user contribution 만 제거 (= 설정 삭제).
     pub fn reload_user_config(&self, path: &Path) {
-        let decls = match std::fs::read_to_string(path) {
-            Ok(text) => match parse_detector_section(&text) {
-                Ok(d) => d,
-                Err(e) => {
-                    warn!(
-                        path = %path.display(),
-                        error = %e,
-                        "file_format: reload aborted — parse failed, keeping previous user config",
-                    );
-                    return;
-                }
-            },
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        let (decls, priorities) = match std::fs::read_to_string(path) {
+            Ok(text) => {
+                let d = match parse_detector_section(&text) {
+                    Ok(d) => d,
+                    Err(e) => {
+                        warn!(
+                            path = %path.display(),
+                            error = %e,
+                            "file_format: reload aborted — parse failed, keeping previous user config",
+                        );
+                        return;
+                    }
+                };
+                let p = parse_extension_priority_section(&text).unwrap_or_default();
+                (d, p)
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => (Vec::new(), Vec::new()),
             Err(e) => {
                 warn!(
                     path = %path.display(),
@@ -255,6 +288,15 @@ impl FileFormatRegistry {
             inner.contributions.remove(&id);
             inner.install_order.remove(&id);
         }
+        // 기존 user origin extension_priority 모두 제거.
+        let user_keys: Vec<String> = inner
+            .extension_priority
+            .iter()
+            .filter_map(|(k, v)| matches!(v.origin, RuleOrigin::User).then(|| k.clone()))
+            .collect();
+        for k in user_keys {
+            inner.extension_priority.remove(&k);
+        }
         // 새 user contribution install.
         for decl in decls {
             install_one(
@@ -264,6 +306,9 @@ impl FileFormatRegistry {
                 RuleOrigin::User,
                 false,
             );
+        }
+        for p in priorities {
+            install_extension_priority(&mut inner, p, RuleOrigin::User);
         }
         inner.dirty = true;
     }
@@ -321,10 +366,38 @@ impl FileFormatRegistry {
             }
             detectors.push(toml::Value::Table(det));
         }
-        if detectors.is_empty() {
+        // user origin extension_priority emit.
+        let mut priorities = Vec::<toml::Value>::new();
+        for (ext, entry) in inner.extension_priority.iter() {
+            if !matches!(entry.origin, RuleOrigin::User) {
+                continue;
+            }
+            let mut t = toml::value::Table::new();
+            t.insert("extension".into(), toml::Value::String(ext.clone()));
+            t.insert(
+                "order".into(),
+                toml::Value::Array(
+                    entry
+                        .order
+                        .iter()
+                        .map(|id| toml::Value::String(id.as_str().to_string()))
+                        .collect(),
+                ),
+            );
+            priorities.push(toml::Value::Table(t));
+        }
+        if detectors.is_empty() && priorities.is_empty() {
             return String::new();
         }
-        doc.insert("detector".to_string(), toml::Value::Array(detectors));
+        if !detectors.is_empty() {
+            doc.insert("detector".to_string(), toml::Value::Array(detectors));
+        }
+        if !priorities.is_empty() {
+            doc.insert(
+                "extension_priority".to_string(),
+                toml::Value::Array(priorities),
+            );
+        }
         toml::to_string(&doc).unwrap_or_default()
     }
 
@@ -566,6 +639,34 @@ fn install_one(
     });
 }
 
+/// `[[extension_priority]]` 한 entry 등록. 같은 확장자 키에 last-writer-wins
+/// (host → user 순서로 install 되므로 user 가 host 를 덮어쓰는 효과).
+fn install_extension_priority(inner: &mut Inner, decl: ExtensionPriorityDecl, origin: RuleOrigin) {
+    let key = decl.extension.trim_start_matches('.').to_ascii_lowercase();
+    if key.is_empty() {
+        warn!("file_format: extension_priority entry with empty extension — skipped");
+        return;
+    }
+    if decl.order.is_empty() {
+        // 빈 order 는 의미가 없음 — 제거 의도로 해석해 entry 삭제.
+        inner.extension_priority.remove(&key);
+        return;
+    }
+    let mut seen = std::collections::HashSet::new();
+    let order: Vec<DetectorId> = decl
+        .order
+        .into_iter()
+        .filter(|s| !s.is_empty() && seen.insert(s.clone()))
+        .map(DetectorId)
+        .collect();
+    if order.is_empty() {
+        return;
+    }
+    inner
+        .extension_priority
+        .insert(key, ExtensionPriorityEntry { order, origin });
+}
+
 fn decl_rule_to_kind(decl: DetectorRuleDecl) -> Option<DetectorRuleKind> {
     Some(match decl {
         DetectorRuleDecl::Extension { values } => DetectorRuleKind::Extension {
@@ -677,6 +778,19 @@ fn parse_detector_section(toml_text: &str) -> Result<Vec<DetectorDecl>, toml::de
     }
     let w: Wrap = toml::from_str(toml_text)?;
     Ok(w.detectors)
+}
+
+/// host default / user config: `[[extension_priority]]` 섹션. Phase E.
+fn parse_extension_priority_section(
+    toml_text: &str,
+) -> Result<Vec<ExtensionPriorityDecl>, toml::de::Error> {
+    #[derive(serde::Deserialize)]
+    struct Wrap {
+        #[serde(default)]
+        extension_priority: Vec<ExtensionPriorityDecl>,
+    }
+    let w: Wrap = toml::from_str(toml_text)?;
+    Ok(w.extension_priority)
 }
 
 #[cfg(test)]
@@ -1308,6 +1422,253 @@ mod tests {
         .unwrap();
         reg.install_user_config(&p);
         assert!(!reg.is_enabled(&DetectorId("markdown".into())));
+    }
+
+    // ── ExtensionPriority parse/export (Phase E ME2) ───────────────────
+
+    #[test]
+    fn extension_priority_user_config_parsed_and_queryable() {
+        let reg = FileFormatRegistry::new();
+        let user_toml = r#"
+            [[detector]]
+            id = "x"
+            [[detector.rule]]
+            kind = "extension"
+            values = ["md"]
+
+            [[detector]]
+            id = "y"
+            [[detector.rule]]
+            kind = "extension"
+            values = ["md"]
+
+            [[extension_priority]]
+            extension = "md"
+            order = ["y", "x"]
+        "#;
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("u.toml");
+        std::fs::write(&p, user_toml).unwrap();
+        reg.install_user_config(&p);
+
+        let order = reg.extension_priority_order("md").expect("present");
+        assert_eq!(order, vec![DetectorId("y".into()), DetectorId("x".into())]);
+        // 점 prefix, 대문자 정규화도 동일 결과.
+        assert_eq!(reg.extension_priority_order(".MD"), Some(order));
+        // 미정의 확장자는 None.
+        assert!(reg.extension_priority_order("zzz").is_none());
+    }
+
+    #[test]
+    fn extension_priority_user_overrides_host() {
+        let reg = FileFormatRegistry::new();
+        // host default 가 .md 에 ["host-md"] 우선순위 적용.
+        let host_toml = r#"
+            [[detector]]
+            id = "host-md"
+            [[detector.rule]]
+            kind = "extension"
+            values = ["md"]
+
+            [[extension_priority]]
+            extension = "md"
+            order = ["host-md"]
+        "#;
+        reg.install_host_defaults(host_toml);
+        assert_eq!(
+            reg.extension_priority_order("md"),
+            Some(vec![DetectorId("host-md".into())])
+        );
+
+        // user 가 같은 키 덮어쓰기 — last-writer-wins.
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("u.toml");
+        std::fs::write(
+            &p,
+            r#"
+                [[extension_priority]]
+                extension = "md"
+                order = ["user-md"]
+            "#,
+        )
+        .unwrap();
+        reg.install_user_config(&p);
+        assert_eq!(
+            reg.extension_priority_order("md"),
+            Some(vec![DetectorId("user-md".into())])
+        );
+    }
+
+    #[test]
+    fn extension_priority_empty_order_removes_entry() {
+        let reg = FileFormatRegistry::new();
+        // host 가 priority 설치.
+        reg.install_host_defaults(
+            r#"
+                [[extension_priority]]
+                extension = "md"
+                order = ["host-md"]
+            "#,
+        );
+        assert!(reg.extension_priority_order("md").is_some());
+
+        // user 가 빈 order 로 명시 → 제거 의도로 entry 삭제.
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("u.toml");
+        std::fs::write(
+            &p,
+            r#"
+                [[extension_priority]]
+                extension = "md"
+                order = []
+            "#,
+        )
+        .unwrap();
+        reg.install_user_config(&p);
+        assert!(reg.extension_priority_order("md").is_none());
+    }
+
+    #[test]
+    fn extension_priority_exported_only_user_origin() {
+        let reg = FileFormatRegistry::new();
+        reg.install_host_defaults(
+            r#"
+                [[extension_priority]]
+                extension = "md"
+                order = ["host-md"]
+            "#,
+        );
+        // host-only — export 비어야 함.
+        assert_eq!(reg.export_user_config(), "");
+
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("u.toml");
+        std::fs::write(
+            &p,
+            r#"
+                [[extension_priority]]
+                extension = "json"
+                order = ["json-strict", "json"]
+            "#,
+        )
+        .unwrap();
+        reg.install_user_config(&p);
+
+        let exported = reg.export_user_config();
+        // user 가 적은 json 우선순위만 emit.
+        assert!(exported.contains("extension_priority"), "got: {exported}");
+        assert!(exported.contains("\"json\""));
+        assert!(exported.contains("json-strict"));
+        // host 의 md 우선순위는 emit 되지 않아야.
+        assert!(!exported.contains("host-md"), "got: {exported}");
+    }
+
+    #[test]
+    fn extension_priority_round_trip_through_export() {
+        let reg = FileFormatRegistry::new();
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("u.toml");
+        std::fs::write(
+            &p,
+            r#"
+                [[extension_priority]]
+                extension = "md"
+                order = ["mdx-strict", "markdown"]
+
+                [[extension_priority]]
+                extension = "json"
+                order = ["jsonc"]
+            "#,
+        )
+        .unwrap();
+        reg.install_user_config(&p);
+        let exported = reg.export_user_config();
+
+        let reg2 = FileFormatRegistry::new();
+        let p2 = dir.path().join("export.toml");
+        std::fs::write(&p2, &exported).unwrap();
+        reg2.install_user_config(&p2);
+
+        assert_eq!(
+            reg2.extension_priority_order("md"),
+            Some(vec![
+                DetectorId("mdx-strict".into()),
+                DetectorId("markdown".into())
+            ])
+        );
+        assert_eq!(
+            reg2.extension_priority_order("json"),
+            Some(vec![DetectorId("jsonc".into())])
+        );
+    }
+
+    #[test]
+    fn extension_priority_reload_clears_old_user_entries() {
+        let reg = FileFormatRegistry::new();
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("u.toml");
+
+        // 1차: md + json.
+        std::fs::write(
+            &p,
+            r#"
+                [[extension_priority]]
+                extension = "md"
+                order = ["mdx"]
+
+                [[extension_priority]]
+                extension = "json"
+                order = ["json"]
+            "#,
+        )
+        .unwrap();
+        reg.install_user_config(&p);
+        assert!(reg.extension_priority_order("md").is_some());
+        assert!(reg.extension_priority_order("json").is_some());
+
+        // 2차: md 만 (json 제거) → reload.
+        std::fs::write(
+            &p,
+            r#"
+                [[extension_priority]]
+                extension = "md"
+                order = ["mdx"]
+            "#,
+        )
+        .unwrap();
+        reg.reload_user_config(&p);
+        assert!(reg.extension_priority_order("md").is_some());
+        assert!(
+            reg.extension_priority_order("json").is_none(),
+            "user reload should drop previous json entry",
+        );
+    }
+
+    #[test]
+    fn extension_priority_dedupes_duplicate_ids_in_order() {
+        let reg = FileFormatRegistry::new();
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("u.toml");
+        std::fs::write(
+            &p,
+            r#"
+                [[extension_priority]]
+                extension = "md"
+                order = ["a", "b", "a", "b", "c"]
+            "#,
+        )
+        .unwrap();
+        reg.install_user_config(&p);
+
+        let order = reg.extension_priority_order("md").unwrap();
+        assert_eq!(
+            order,
+            vec![
+                DetectorId("a".into()),
+                DetectorId("b".into()),
+                DetectorId("c".into())
+            ]
+        );
     }
 
     #[test]
