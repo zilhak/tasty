@@ -118,12 +118,24 @@ pipeline.rs는 wgpu RenderPipelineDescriptor의 장황한 선언 코드가 대�
 | `sidebar.rs` | 축소/전체 사이드바 렌더링 |
 | `tab_bar.rs` | 패인별 탭 바 (액션 큐 패턴) |
 | `notification.rs` | 알림 패널 (스크롤 목록 + 워크스페이스 점프) |
-| `context_menu.rs` | 우클릭 메뉴 (armed 상태머신) |
 | `dialog.rs` | 워크스페이스 이름변경 + 마크다운 경로 다이얼로그 |
 | `divider.rs` | 분할선 + 서피스 하이라이트 |
 | `egui_panels.rs` | egui 기반 Surface 패널 렌더링 (Markdown/Html/Empty/Image/RemoteSurface). `mem::take` 패턴으로 view store를 임시 추출해 모델과 view 동시 mutable 접근 |
 | `markdown_view.rs` | `MarkdownView`/`MarkdownViewStore` — content, scroll_offset, commonmark_cache 보관. `get_or_init(panel)`이 mtime poll까지 자동 처리 |
-| `image_view.rs` | `ImageView`/`ImageViewStore` — 픽셀, 텍스처, 편집 상태(EditState/DragState/ResizeHandle/FloatingSelection/ActionHistory/StrokeBuilder), brush, popup 버퍼 보관. `bresenham_thick_line`/`blit_image`/`load_image_from_path` 등 헬퍼 자유 함수 |
+| `image_view.rs` | `ImageView`/`ImageViewStore` — 픽셀, 텍스처, 편집 상태(EditState/DragState/ResizeHandle/FloatingSelection/ActionHistory/StrokeBuilder), brush, popup 버퍼 보관 |
+| `popup.rs` / `popup_defs.rs` | `PopupManager` + `PopupDef` 정의. egui::Window 직접 사용 금지, 모든 내부 팝업은 이 시스템으로 |
+| `approval_popup.rs` | approval.request 응답 UI (capability elevation 등) |
+| `convert_popup.rs` | EmptySurface 변환 메뉴 |
+| `drop_overlay.rs` | drag&drop hover overlay |
+| `file_handler_picker_popup.rs` | 파일 핸들러 선택 popup (후보/최근 두 열) |
+| `file_open_popup.rs` | 파일 열기 popup |
+| `font_registry.rs` | 폰트 등록 / 프리뷰 |
+| `info_modal.rs` | 정보성 모달 (about 등) |
+| `layout_context.rs` | UI 그리기 context 헬퍼 |
+| `notification_popup.rs` | 알림 토스트/팝업 변환 |
+| `search_bar.rs` | 검색 바 UI |
+| `toast.rs` | toast 큐 + 렌더 |
+| `tools_menu.rs` | 사이드바 도구 메뉴 (`[[contributes.tool]]` 통합) |
 
 ---
 
@@ -177,16 +189,32 @@ cli/mod.rs는 clap `#[derive(Subcommand)]` enum이 35+ variant를 가진다.
 
 | 파일 | 역할 |
 |------|------|
-| `mod.rs` | handle() dispatch match + 유틸 (apply_meta, resolve_target_param) |
+| `mod.rs` | handle_with_caller() dispatch + 권한 게이트 + audit hook + 유틸 |
 | `workspace.rs` | workspace.list/create/update |
 | `pane.rs` | pane.list/close, split |
 | `tab.rs` | tab.list/create/close (type 파라미터로 markdown/html/image + plugin kind 통합) |
 | `surface.rs` | surface.send/send_key/send_combo/send_to/close/close_self + mark/screen_text/cursor_position |
-| `claude.rs` | claude.launch/spawn/children/parent/kill/respawn/set_idle/set_needs_input/broadcast/wait |
 | `hooks.rs` | hook.set/list/unset, global_hook.set/list/unset, surface.fire_hook |
 | `notification.rs` | notification.list/create |
 | `message.rs` | message.send/read/count/clear |
 | `meta.rs` | surface.meta_set/get/unset/list |
+| `clipboard.rs` | clipboard.read/write |
+| `image.rs` | image.* (host 이미지 viewer API) |
+| `ime.rs` | ime 관련 IPC |
+| `input_source.rs` | input source 전환/조회 |
+| `memory.rs` | memory.* (agent memory CRUD) |
+| `output.rs` | output.* (출력 파서 결과 조회) |
+| `tool.rs` | tool.* (도구 메뉴 invoke / list) |
+| `popup.rs` | popup.show/dismiss/list |
+| `agent.rs` | agent.* (Task/Barrier/Semaphore/Lease/Reducer/RateLimit) |
+| `approval.rs` | approval.request/respond/list/get |
+| `audit.rs` | plugin.audit_query/summary/follow/clear |
+| `session.rs` | session.issue/revoke + capability_elevation 게이트 + claude.* delegation |
+| `telemetry.rs` | telemetry.* (metric record / cap / anomaly) |
+| `file_handler.rs` | file_handler.dispatch / reload |
+| `plugin.rs` | plugin.list/grant/revoke/list_agent_permission/request_permission/audit_* |
+
+> `claude.*` 메서드는 호스트 핸들러가 아니라 `crates/tasty-plugin-claude/` plugin 이 contribute 하는 IPC namespace 다. spawn 시 호스트는 `session.issue` 로 토큰을 발급하고 plugin 이 자식 프로세스를 띄운다.
 
 ---
 
@@ -212,9 +240,10 @@ cli/mod.rs는 clap `#[derive(Subcommand)]` enum이 35+ variant를 가진다.
 
 | 파일 | 역할 |
 |------|------|
-| `mod.rs` | SettingsUiState, draw_settings_panel() (탭 바 + Save/Cancel) |
+| `mod.rs` | SettingsUiState, draw_settings_panel() (탭 바 + Save/Cancel) — Extension Mapping draft commit + save_combined_user_config 호출 포함 |
 | `keybindings_tab.rs` | 키바인딩 캡처 UI (서브탭 5개, key combo 캡처, egui_key_to_string) |
 | `tabs.rs` | General/Appearance/Clipboard/Notification/Language/Performance 탭 렌더링 |
+| `file_handler_tab.rs` | FileHandler 탭 — Detectors / Handlers / Extension Mapping / Recent picks 4 sub-tab |
 
 keybindings_tab.rs의 egui_key_to_string 매핑 테이블은 키 목록을 1:1 나열하는 구조이다.
 
