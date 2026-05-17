@@ -41,6 +41,7 @@ impl LuaEngine {
             init_path: None,
         };
         engine.install_api()?;
+        crate::host_api::install(&engine.lua)?;
         Ok(engine)
     }
 

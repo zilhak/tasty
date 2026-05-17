@@ -19,6 +19,7 @@
 //! 호스트 API 를 우선 권장.
 
 mod engine;
+mod host_api;
 mod sandbox;
 
 pub use engine::{LuaEngine, LuaEngineError};
