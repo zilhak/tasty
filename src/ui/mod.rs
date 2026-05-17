@@ -2,6 +2,7 @@ pub(crate) mod approval_popup;
 pub(crate) mod convert_popup;
 pub(crate) mod dialog;
 mod divider;
+pub(crate) mod drop_overlay;
 mod egui_panels;
 pub mod image_view;
 pub mod markdown_view;

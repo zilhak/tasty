@@ -455,3 +455,8 @@ candidates_heading = "候補"
 recent_heading = "最近の選択"
 open_button = "開く"
 empty = "登録されたハンドラがありません。"
+
+[file_drop]
+hover_label = "ドロップして開く"
+multi_files = "{n}個のファイル"
+outside = "ターミナル領域外にドロップされたファイルは無視されました。"

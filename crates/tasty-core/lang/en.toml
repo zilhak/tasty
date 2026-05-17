@@ -455,3 +455,8 @@ candidates_heading = "Candidates"
 recent_heading = "Recent"
 open_button = "Open"
 empty = "No handlers registered."
+
+[file_drop]
+hover_label = "Drop to open"
+multi_files = "{n} files"
+outside = "File dropped outside the terminal area was ignored."

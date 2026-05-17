@@ -35,6 +35,8 @@ impl GpuState {
                 plugin_manager,
                 canvas_cache,
             );
+            // 외부 drag&drop hover 시각 피드백 — 모든 레이어 위에 그린다.
+            ui::drop_overlay::draw_drop_overlay(ctx, state, terminal_rect, scale_factor);
 
             // Settings UI is now rendered in the modal window (ModalWindow)
         })

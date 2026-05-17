@@ -455,3 +455,8 @@ candidates_heading = "후보"
 recent_heading = "최근 선택"
 open_button = "열기"
 empty = "등록된 핸들러가 없습니다."
+
+[file_drop]
+hover_label = "여기에 드롭하여 열기"
+multi_files = "{n}개 파일"
+outside = "터미널 영역 밖으로 드롭된 파일은 무시되었습니다."
