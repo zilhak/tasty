@@ -222,6 +222,14 @@ pub enum UiEvent {
         path: String,
         expanded: bool,
     },
+    /// 트리 항목의 더블클릭 또는 Enter. `TreeSelect` 가 동일 클릭 시퀀스에서
+    /// 선행 발화한 직후 추가로 도착한다. `path` 는 `TreeSelect.selected` 와 동일
+    /// 형식 (부모 경로를 슬래시로 합친 식별자) — explorer 의 경우 실제
+    /// 파일 / 디렉토리 절대 경로.
+    TreeActivate {
+        node_id: String,
+        path: String,
+    },
     AddressbarChange {
         node_id: String,
         text: String,

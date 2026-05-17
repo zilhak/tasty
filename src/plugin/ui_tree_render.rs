@@ -570,10 +570,17 @@ fn render_tree_node(
         None => n.label.clone(),
     };
     if n.children.is_empty() {
-        if ui.selectable_label(n.selected, label).clicked() {
+        let resp = ui.selectable_label(n.selected, label);
+        if resp.clicked() {
             sink.push_event(UiEvent::TreeSelect {
                 node_id: tree_id.to_string(),
                 selected: vec![path.clone()],
+            });
+        }
+        if resp.double_clicked() {
+            sink.push_event(UiEvent::TreeActivate {
+                node_id: tree_id.to_string(),
+                path: path.clone(),
             });
         }
     } else {
@@ -591,6 +598,12 @@ fn render_tree_node(
             sink.push_event(UiEvent::TreeSelect {
                 node_id: tree_id.to_string(),
                 selected: vec![path.clone()],
+            });
+        }
+        if resp.header_response.double_clicked() {
+            sink.push_event(UiEvent::TreeActivate {
+                node_id: tree_id.to_string(),
+                path: path.clone(),
             });
         }
         // 사용자가 펼침/접음 토글 시 plugin에 알림. 단, immediate-mode 한계로
