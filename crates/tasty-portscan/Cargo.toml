@@ -1,0 +1,22 @@
+[package]
+name = "tasty-portscan"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Cross-platform TCP listening port enumeration for tasty"
+
+[dependencies]
+tracing = "0.1"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_NetworkManagement_IpHelper",
+    "Win32_Networking_WinSock",
+] }
+
+[lints]
+workspace = true

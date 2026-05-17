@@ -4893,6 +4893,7 @@ dependencies = [
  "tasty-memory",
  "tasty-output",
  "tasty-plugin-protocol",
+ "tasty-portscan",
  "tasty-settings",
  "tasty-shm",
  "tasty-telemetry",
@@ -5086,6 +5087,15 @@ dependencies = [
  "tasty-shm",
  "thiserror 1.0.69",
  "tracing",
+]
+
+[[package]]
+name = "tasty-portscan"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "tracing",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

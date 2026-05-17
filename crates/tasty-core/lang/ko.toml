@@ -456,6 +456,13 @@ copied_files = "파일 복사됨"
 cut_files = "파일 잘라냄"
 ctrl_c_ignored_after_paste = "붙여넣기 직후의 Ctrl+C가 무시되었습니다"
 
+[port_scanner]
+heading = "리스닝 포트"
+no_ports = "이 터미널의 프로세스 트리에서 리스닝 중인 TCP 포트가 없습니다."
+refresh = "새로 고침"
+hint = "행을 클릭하면 브라우저에서 열립니다"
+tools_menu_item = "리스닝 포트..."
+
 [search]
 placeholder = "검색..."
 no_matches = "일치 항목 없음"

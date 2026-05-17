@@ -456,6 +456,13 @@ copied_files = "Files copied"
 cut_files = "Files cut"
 ctrl_c_ignored_after_paste = "Ctrl+C suppressed right after paste"
 
+[port_scanner]
+heading = "Listening ports"
+no_ports = "No listening TCP ports in this terminal's process tree."
+refresh = "Refresh"
+hint = "Click a row to open in browser"
+tools_menu_item = "Listening ports..."
+
 [search]
 placeholder = "Search..."
 no_matches = "No matches"

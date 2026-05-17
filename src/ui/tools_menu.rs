@@ -17,6 +17,18 @@ use crate::state::AppState;
 use crate::theme;
 use crate::ui::popup::PopupAction;
 
+/// Built-in tool entries that are not contributed by any plugin.
+/// Currently only the listening-port viewer. Prepended above plugin items.
+struct BuiltinTool {
+    label_key: &'static str,
+    popup_id: &'static str,
+}
+
+const BUILTIN_TOOLS: &[BuiltinTool] = &[BuiltinTool {
+    label_key: "port_scanner.tools_menu_item",
+    popup_id: super::port_scanner_popup::PORT_SCANNER_POPUP_ID,
+}];
+
 pub fn draw_tools_menu(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction {
     if ui.ctx().input(|i| i.key_pressed(egui::Key::Escape)) {
         return PopupAction::Close;
@@ -24,7 +36,36 @@ pub fn draw_tools_menu(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction {
 
     let th = theme::theme();
     let width = ui.available_width();
+
+    // Built-in entries first.
+    let mut open_popup: Option<&'static str> = None;
+    for entry in BUILTIN_TOOLS {
+        let (rect, resp) =
+            ui.allocate_exact_size(egui::vec2(width, 28.0), egui::Sense::click());
+        if resp.hovered() {
+            ui.painter()
+                .rect_filled(rect, 4.0, th.hover_overlay.to_egui_premultiplied());
+        }
+        ui.painter().text(
+            egui::pos2(rect.min.x + 8.0, rect.center().y),
+            egui::Align2::LEFT_CENTER,
+            t(entry.label_key),
+            egui::FontId::proportional(th.font_size_body.value()),
+            if resp.hovered() { th.text.into() } else { th.subtext0.into() },
+        );
+        if resp.clicked() {
+            open_popup = Some(entry.popup_id);
+        }
+    }
+    if let Some(popup_id) = open_popup {
+        state.popups.open(popup_id);
+        return PopupAction::Close;
+    }
+
     let items = state.tool_registry.visible_items();
+    if !items.is_empty() && !BUILTIN_TOOLS.is_empty() {
+        ui.separator();
+    }
 
     let mut clicked: Option<ToolItem> = None;
     for item in &items {

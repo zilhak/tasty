@@ -220,6 +220,9 @@ pub struct AppState {
     pub popups: crate::ui::PopupManager,
     /// Terminal text search state.
     pub search: crate::search_state::SearchState,
+    /// TCP listening port scan cache, keyed by surface_id.
+    /// Refreshed lazily when the ports popup is opened or visible.
+    pub port_scan: tasty_portscan::PortScanCache,
     /// Toast manager for transient in-app notifications (copy feedback, etc.).
     /// 사용자 행동에서만 발사한다. CLI/IPC 경유 동작은 토스트를 만들지 않는다.
     pub toasts: crate::ui::ToastManager,
@@ -560,6 +563,7 @@ impl AppState {
                 pm
             },
             search: crate::search_state::SearchState::new(),
+            port_scan: tasty_portscan::PortScanCache::new(tasty_portscan::DEFAULT_TTL),
             toasts: crate::ui::ToastManager::new(),
             markdown_views: Default::default(),
             image_views: Default::default(),

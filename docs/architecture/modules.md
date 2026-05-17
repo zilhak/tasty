@@ -133,9 +133,10 @@ pipeline.rs는 wgpu RenderPipelineDescriptor의 장황한 선언 코드가 대�
 | `info_modal.rs` | 정보성 모달 (about 등) |
 | `layout_context.rs` | UI 그리기 context 헬퍼 |
 | `notification_popup.rs` | 알림 토스트/팝업 변환 |
+| `port_scanner_popup.rs` | 활성 surface의 listening TCP 포트 뷰어 (`tasty-portscan` 호출) |
 | `search_bar.rs` | 검색 바 UI |
 | `toast.rs` | toast 큐 + 렌더 |
-| `tools_menu.rs` | 사이드바 도구 메뉴 (`[[contributes.tool]]` 통합) |
+| `tools_menu.rs` | 사이드바 도구 메뉴. plugin `[[contributes.tool]]` + 빌트인(`BUILTIN_TOOLS`) prepend |
 
 ---
 

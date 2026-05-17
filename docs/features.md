@@ -1678,3 +1678,35 @@ URI/경로 입력을 받아 **(1) 파일 형식 식별 → (2) 등록된 핸들�
 - pre 이벤트 없음 — observe-only 에선 의미 없음. intervention 권한 도입 시 추가
 - `tasty.shutdown.post` 없음 — shutdown 시 fire 인프라 별도 필요
 - `surface.change.post` 발화 site 없음 — GUI 에서 surface 타입 변경하는 경로 부재
+
+## 리스닝 포트 뷰어
+
+### 개요
+활성 surface의 셸 프로세스 트리에서 TCP LISTEN 중인 포트를 표시. 클릭하면 시스템 기본 브라우저에서 `http://<host>:<port>`를 연다. 5초 TTL 캐시 + 새로 고침 버튼.
+
+### 트리거
+- 사이드바 하단 Tools 메뉴 상단에 `Listening ports...` 빌트인 항목
+- 클릭 시 `port_scanner` popup 오픈 (`PopupScope::Window`, 360x320)
+
+### 동작
+- popup 생성 시 활성 surface의 `shell_pid` 조회 → `tasty_portscan::collect_descendant_pids`로 자손 PID 수집
+- `tasty_portscan::scan_for_pids(pids)` 호출 → `Vec<ListeningPort>` 캐시 저장
+- 각 행: `<port> · <addr> · PID <pid>`. 클릭 시 wildcard(`0.0.0.0`/`::`)는 `localhost`로 치환하여 브라우저 열기
+- 새로 고침 버튼: 캐시 즉시 무효화 후 재스캔
+
+### OS별 백엔드
+- **Linux**: `/proc/net/tcp` + `/proc/net/tcp6` 파싱 (state==0x0A 필터) → inode → `/proc/{pid}/fd/*` symlink 매칭
+- **macOS**: `lsof -nP -iTCP -sTCP:LISTEN -p <pids>` subprocess → human-readable 출력 파싱
+- **Windows**: `GetExtendedTcpTable` Win32 API 호출 (v4: `MIB_TCPTABLE_OWNER_PID`, v6: `MIB_TCP6TABLE_OWNER_PID`, `TCP_TABLE_OWNER_PID_LISTENER` 필터)
+
+### 프로세스 트리
+- **Linux**: `/proc/*/stat`의 ppid 필드 수집 → 부모-자식 맵 → BFS
+- **macOS**: `ps -A -o pid=,ppid=` subprocess
+- **Windows**: `CreateToolhelp32Snapshot` + `Process32FirstW/NextW`
+
+### 구현
+- crate: `tasty-portscan` (lib only, OS별 분기)
+- 캐시: `tasty_portscan::PortScanCache` (5s TTL, surface_id 키)
+- popup: `src/ui/port_scanner_popup.rs`
+- AppState: `port_scan: tasty_portscan::PortScanCache` 필드
+- 트리거: `src/ui/tools_menu.rs`의 `BUILTIN_TOOLS` 항목
