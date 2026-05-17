@@ -235,6 +235,11 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // user TOML 변경 후 재로드. plugin 이 호출할 일은 없으며 (자기 manifest
         // 도 reload 영향 밖이라) local 전용.
         ("file_handler.reload", local_only()),
+        // 임의 경로를 file_handler dispatch 흐름에 진입시킨다. 임의 path 를
+        // 읽고 (handler 가 OpenSurface 면 surface 의 param 으로, System 이면 OS
+        // opener 가 읽음) 처리하므로 FsRead 권한 요구. explorer plugin 더블클릭
+        // 같은 사용처가 주된 caller.
+        ("file_handler.dispatch", plugin(&[FsRead])),
         // ── popup (plugin → host) ─────────────────────────────────────
         // 자기 contribute popup 인스턴스를 명시적으로 닫는다. METHOD_POPUP_CLOSED
         // (host → plugin)와는 다른 방향. plugin은 자기 instance_id만 닫을 수 있다 —
