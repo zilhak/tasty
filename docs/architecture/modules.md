@@ -137,6 +137,7 @@ pipeline.rs는 wgpu RenderPipelineDescriptor의 장황한 선언 코드가 대�
 | `search_bar.rs` | 검색 바 UI |
 | `toast.rs` | toast 큐 + 렌더 |
 | `tools_menu.rs` | 사이드바 도구 메뉴. plugin `[[contributes.tool]]` + 빌트인(`BUILTIN_TOOLS`) prepend |
+| `update_popup.rs` | 새 버전 알림 popup (`tasty-update` GitHub Releases 폴러와 연동) |
 
 ---
 

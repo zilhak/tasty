@@ -24,10 +24,16 @@ struct BuiltinTool {
     popup_id: &'static str,
 }
 
-const BUILTIN_TOOLS: &[BuiltinTool] = &[BuiltinTool {
-    label_key: "port_scanner.tools_menu_item",
-    popup_id: super::port_scanner_popup::PORT_SCANNER_POPUP_ID,
-}];
+const BUILTIN_TOOLS: &[BuiltinTool] = &[
+    BuiltinTool {
+        label_key: "port_scanner.tools_menu_item",
+        popup_id: super::port_scanner_popup::PORT_SCANNER_POPUP_ID,
+    },
+    BuiltinTool {
+        label_key: "update.tools_menu_item",
+        popup_id: super::update_popup::UPDATE_POPUP_ID,
+    },
+];
 
 pub fn draw_tools_menu(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction {
     if ui.ctx().input(|i| i.key_pressed(egui::Key::Escape)) {

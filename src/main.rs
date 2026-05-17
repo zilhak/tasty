@@ -48,6 +48,7 @@ mod theme_bridge;
 mod storage;
 mod surface_meta;
 mod surface_registry;
+mod update_check;
 mod waker_factory_winit;
 #[cfg(windows)]
 mod system_tray;

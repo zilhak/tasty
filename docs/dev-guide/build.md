@@ -16,6 +16,7 @@ tasty/
     ├── tasty-font/                  # 폰트 atlas, 글리프 래스터라이징 + 내장 D2Coding
     ├── tasty-terminal/              # PTY/VTE 파싱 (termwiz 래퍼)
     ├── tasty-portscan/              # 크로스 플랫폼 TCP LISTEN 포트 열거 + 캐시
+    ├── tasty-update/                # GitHub Releases 폴러 + semver 비교 (Phase 1: 알림만)
     ├── tasty-hooks/                 # Surface Hook 매니저
     ├── tasty-memory/                # 에이전트 영속 메모리 (~/.tasty/memory.db, SQLite WAL)
     ├── tasty-shm/                   # 크로스 플랫폼 공유 메모리 + 핸들 전달 (SCM_RIGHTS/DuplicateHandle)

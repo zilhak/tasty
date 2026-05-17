@@ -223,6 +223,8 @@ pub struct AppState {
     /// TCP listening port scan cache, keyed by surface_id.
     /// Refreshed lazily when the ports popup is opened or visible.
     pub port_scan: tasty_portscan::PortScanCache,
+    /// Shared snapshot of background update-check state. Polled hourly.
+    pub update_status: std::sync::Arc<std::sync::Mutex<crate::update_check::UpdateStatus>>,
     /// Toast manager for transient in-app notifications (copy feedback, etc.).
     /// 사용자 행동에서만 발사한다. CLI/IPC 경유 동작은 토스트를 만들지 않는다.
     pub toasts: crate::ui::ToastManager,
@@ -564,6 +566,12 @@ impl AppState {
             },
             search: crate::search_state::SearchState::new(),
             port_scan: tasty_portscan::PortScanCache::new(tasty_portscan::DEFAULT_TTL),
+            update_status: crate::update_check::spawn_poller(
+                "zilhak",
+                "tasty",
+                env!("CARGO_PKG_VERSION"),
+                std::time::Duration::from_secs(60 * 60),
+            ),
             toasts: crate::ui::ToastManager::new(),
             markdown_views: Default::default(),
             image_views: Default::default(),

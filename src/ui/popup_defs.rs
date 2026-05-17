@@ -118,6 +118,18 @@ pub fn all_defs() -> &'static [PopupDef] {
                 draw_fn: super::file_handler_picker_popup::draw_file_handler_picker,
             },
             PopupDef {
+                id: super::update_popup::UPDATE_POPUP_ID,
+                title_key: "update.heading",
+                title_fn: None,
+                default_size: egui::vec2(440.0, 360.0),
+                sizer: None,
+                default_scope: PopupScope::Window,
+                close_on_outside_click: true,
+                headless: false,
+                sticky_focus: false,
+                draw_fn: super::update_popup::draw_update_popup,
+            },
+            PopupDef {
                 id: super::port_scanner_popup::PORT_SCANNER_POPUP_ID,
                 title_key: "port_scanner.heading",
                 title_fn: None,

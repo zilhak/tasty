@@ -463,6 +463,19 @@ refresh = "Refresh"
 hint = "Click a row to open in browser"
 tools_menu_item = "Listening ports..."
 
+[update]
+heading = "Check for updates"
+current_label = "Current version:"
+latest_label = "Latest version:"
+notes_label = "Release notes"
+open_release = "Open release page"
+check_now = "Check now"
+error_label = "Error"
+never_checked = "Not checked yet."
+up_to_date = "You're up to date."
+checking = "Checking…"
+tools_menu_item = "Check for updates…"
+
 [search]
 placeholder = "Search..."
 no_matches = "No matches"

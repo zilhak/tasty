@@ -1710,3 +1710,31 @@ URI/경로 입력을 받아 **(1) 파일 형식 식별 → (2) 등록된 핸들�
 - popup: `src/ui/port_scanner_popup.rs`
 - AppState: `port_scan: tasty_portscan::PortScanCache` 필드
 - 트리거: `src/ui/tools_menu.rs`의 `BUILTIN_TOOLS` 항목
+
+## 자동 업데이트 확인
+
+### 개요
+GitHub Releases API를 폴링하여 새 버전이 있는지 확인하고, 발견 시 popup에 표시한다. **Phase 1 — 알림만**: in-app 다운로드/설치는 없으며, 사용자가 직접 브라우저에서 릴리스 페이지를 연다.
+
+### 트리거
+- Tools 메뉴의 `Check for updates…` 빌트인 항목 (port_scanner 아래)
+- 앱 시작 시 백그라운드 폴러가 1회 즉시 + 이후 1시간 간격으로 자동 폴링
+
+### 동작
+- `tasty_update::check_latest(owner, repo, current_version)` 호출 → `Result<Option<ReleaseInfo>, UpdateError>`
+- 응답이 `Some(ReleaseInfo)` 이면 `latest_version > current_version` 인 경우만 반환 (semver 비교; `v` prefix 자동 제거)
+- popup에서 현재 버전, 최신 버전, 릴리스 노트(스크롤), `Open release page` 버튼, `Check now` 버튼 표시
+- 에러 발생 시 popup에 `Error: <msg>` 빨간 라벨 표시
+
+### 구현
+- crate: `tasty-update` (lib only)
+  - `check_latest(owner, repo, current_version) -> Result<Option<ReleaseInfo>, UpdateError>`
+  - `is_newer(current, remote_tag) -> Result<bool, UpdateError>`
+  - 의존성: `ureq`(HTTP), `serde`, `serde_json`, `semver`, `thiserror`, `tracing`
+- 백그라운드 폴러: `src/update_check.rs`
+  - `UpdateStatus { latest, last_error, last_checked, in_flight }`
+  - `spawn_poller(owner, repo, current, interval) -> Arc<Mutex<UpdateStatus>>` — `std::thread::spawn` + `Arc<Mutex<>>`
+  - `trigger_check(shared, owner, repo, current)` — 수동 새로고침 (in_flight 가드)
+- AppState: `update_status: Arc<Mutex<UpdateStatus>>` 필드 (1시간 간격 폴러 자동 spawn)
+- popup: `src/ui/update_popup.rs` (`update_check` ID, 440x360, `close_on_outside_click`)
+- 트리거: `src/ui/tools_menu.rs`의 `BUILTIN_TOOLS` 항목

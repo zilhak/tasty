@@ -463,6 +463,19 @@ refresh = "새로 고침"
 hint = "행을 클릭하면 브라우저에서 열립니다"
 tools_menu_item = "리스닝 포트..."
 
+[update]
+heading = "업데이트 확인"
+current_label = "현재 버전:"
+latest_label = "최신 버전:"
+notes_label = "릴리스 노트"
+open_release = "릴리스 페이지 열기"
+check_now = "지금 확인"
+error_label = "오류"
+never_checked = "아직 확인하지 않음."
+up_to_date = "최신 버전을 사용 중입니다."
+checking = "확인 중…"
+tools_menu_item = "업데이트 확인…"
+
 [search]
 placeholder = "검색..."
 no_matches = "일치 항목 없음"

@@ -463,6 +463,19 @@ refresh = "更新"
 hint = "行をクリックするとブラウザで開きます"
 tools_menu_item = "受信ポート..."
 
+[update]
+heading = "更新の確認"
+current_label = "現在のバージョン:"
+latest_label = "最新バージョン:"
+notes_label = "リリースノート"
+open_release = "リリースページを開く"
+check_now = "今すぐ確認"
+error_label = "エラー"
+never_checked = "まだ確認していません。"
+up_to_date = "最新バージョンを使用中です。"
+checking = "確認中…"
+tools_menu_item = "更新を確認…"
+
 [search]
 placeholder = "検索..."
 no_matches = "一致なし"

@@ -84,6 +84,7 @@ tasty-settings = { path = "crates/tasty-settings" }
 tasty-shm = { path = "crates/tasty-shm" }
 tasty-terminal = { path = "crates/tasty-terminal" }
 tasty-portscan = { path = "crates/tasty-portscan" }
+tasty-update = { path = "crates/tasty-update" }
 # Window & Input
 winit = "0.30"
 

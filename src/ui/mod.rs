@@ -16,6 +16,7 @@ pub(crate) mod notification_popup;
 pub mod popup;
 pub(crate) mod popup_defs;
 pub(crate) mod port_scanner_popup;
+pub(crate) mod update_popup;
 mod sidebar;
 mod tab_bar;
 pub(crate) mod search_bar;
