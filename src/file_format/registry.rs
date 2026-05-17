@@ -102,10 +102,23 @@ impl FileFormatRegistry {
     /// - `DetectDepth::Cheap`: file IO 없음. 확장자/glob/is-directory 만.
     /// - `DetectDepth::Deep`: 같은 cheap rule 들 + magic/MIME 까지 평가. 한 호출 동안
     ///   `DeepCtx` 로 head/MIME 캐시 → detector 가 여러 magic rule 을 가져도 head 는 1회만 read.
+    ///
+    /// Phase E 의 확장자 fast path: 파일이고 확장자가 있으면 광고 confirmed detector 중
+    /// `extension_priority` 표 + `install_order` 순서로 결정적 1순위 선택. 표 적용 결과가
+    /// 비면 기존 BTreeMap 순회 (PathGlob / IsDirectory / Magic / MIME 등) 로 fallback.
     pub fn identify(&self, target: &FileTarget, depth: DetectDepth) -> Option<DetectorId> {
         self.ensure_finalized();
         let inner = self.inner.read().ok()?;
         let is_dir = target.is_directory();
+
+        // 확장자 fast path — 파일에만 적용. 디렉토리는 IsDirectory pre-filter 로 처리.
+        if !is_dir {
+            if let Some(ext) = path_extension_lowercase(target.as_path()) {
+                if let Some(id) = identify_by_extension_priority(&inner, &ext) {
+                    return Some(id);
+                }
+            }
+        }
 
         let mut deep_ctx = match depth {
             DetectDepth::Deep => Some(DeepCtx::new()),
@@ -637,6 +650,57 @@ fn install_one(
         disabled_override: if decl.disabled { Some(true) } else { None },
         rules: rule_kinds,
     });
+}
+
+/// 파일명에서 마지막 확장자를 추출해 소문자로 반환. 점 없음 / 마지막 점 뒤가 빈 문자열
+/// 이면 `None`.
+fn path_extension_lowercase(path: &Path) -> Option<String> {
+    let ext = path.extension()?.to_str()?;
+    if ext.is_empty() {
+        return None;
+    }
+    Some(ext.to_ascii_lowercase())
+}
+
+/// 확장자 fast path. 광고 confirmed detector 들 중에서:
+/// 1. `extension_priority` 표가 있으면 그 순서대로 첫 enabled + IsDirectory 아닌 detector,
+/// 2. 표에 없거나 표의 detector 들이 모두 부적격이면 install_order 오름차순으로 첫 detector.
+fn identify_by_extension_priority(inner: &Inner, ext: &str) -> Option<DetectorId> {
+    // 광고 매칭 + enabled + IsDirectory 아님.
+    let mut advertised: Vec<(u64, DetectorId)> = inner
+        .finalized
+        .iter()
+        .filter(|(_, det)| !det.disabled)
+        .filter(|(_, det)| {
+            !det.rules
+                .iter()
+                .any(|r| matches!(r.kind, DetectorRuleKind::IsDirectory))
+        })
+        .filter_map(|(id, det)| {
+            let advertises = det.rules.iter().any(|r| {
+                matches!(
+                    &r.kind,
+                    DetectorRuleKind::Extension { values } if values.iter().any(|v| v == ext),
+                )
+            });
+            advertises.then(|| (det.install_order, id.clone()))
+        })
+        .collect();
+    if advertised.is_empty() {
+        return None;
+    }
+    advertised.sort_by(|(a_ord, a_id), (b_ord, b_id)| a_ord.cmp(b_ord).then_with(|| a_id.cmp(b_id)));
+
+    // extension_priority 표 적용 — 표에 적힌 detector 가 advertised 안에 있으면 그것이 먼저.
+    if let Some(entry) = inner.extension_priority.get(ext) {
+        for prio_id in &entry.order {
+            if advertised.iter().any(|(_, id)| id == prio_id) {
+                return Some(prio_id.clone());
+            }
+        }
+    }
+    // fallback: install_order 정렬의 첫 번째.
+    advertised.into_iter().next().map(|(_, id)| id)
 }
 
 /// `[[extension_priority]]` 한 entry 등록. 같은 확장자 키에 last-writer-wins
@@ -1668,6 +1732,175 @@ mod tests {
                 DetectorId("b".into()),
                 DetectorId("c".into())
             ]
+        );
+    }
+
+    // ── identify cheap path cutover (Phase E ME3) ──────────────────────
+
+    #[test]
+    fn identify_uses_extension_priority_table() {
+        let reg = FileFormatRegistry::new();
+        // 두 detector 가 .md 광고. priority 표가 "b" 우선이라 b 가 이김.
+        let user_toml = r#"
+            [[detector]]
+            id = "a"
+            [[detector.rule]]
+            kind = "extension"
+            values = ["md"]
+
+            [[detector]]
+            id = "b"
+            [[detector.rule]]
+            kind = "extension"
+            values = ["md"]
+
+            [[extension_priority]]
+            extension = "md"
+            order = ["b", "a"]
+        "#;
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("u.toml");
+        std::fs::write(&p, user_toml).unwrap();
+        reg.install_user_config(&p);
+
+        let got = reg.identify(&target("hello.md"), DetectDepth::Cheap);
+        assert_eq!(got, Some(DetectorId("b".into())));
+    }
+
+    #[test]
+    fn identify_falls_back_to_install_order_without_priority_table() {
+        let reg = FileFormatRegistry::new();
+        // a 가 먼저 install 됨 → install_order 0. b 가 두번째 → 1.
+        let user_toml = r#"
+            [[detector]]
+            id = "z"
+            [[detector.rule]]
+            kind = "extension"
+            values = ["md"]
+        "#;
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("u.toml");
+        std::fs::write(&p, user_toml).unwrap();
+        reg.install_user_config(&p);
+
+        // 두번째 plugin install — 알파벳상 더 앞이지만 install_order 가 더 큼.
+        let decls = vec![DetectorDecl {
+            id: "a".into(),
+            display_name_i18n_key: None,
+            icon: None,
+            disabled: false,
+            rule: vec![DetectorRuleDecl::Extension {
+                values: vec!["md".into()],
+            }],
+        }];
+        reg.install_plugin_detectors("com.example.a", &decls);
+
+        // priority 표 없음 → install_order 우선 → "z" 가 이김 (알파벳 아닌 install 순).
+        let got = reg.identify(&target("hello.md"), DetectDepth::Cheap);
+        assert_eq!(got, Some(DetectorId("z".into())));
+    }
+
+    #[test]
+    fn identify_priority_entry_with_unknown_id_skips_to_next() {
+        let reg = FileFormatRegistry::new();
+        // priority 표가 미설치 detector "ghost" 를 1순위로 적었지만 그건 무시되고
+        // advertised 후보 중 install_order 첫 번째인 "real" 이 이김.
+        let user_toml = r#"
+            [[detector]]
+            id = "real"
+            [[detector.rule]]
+            kind = "extension"
+            values = ["md"]
+
+            [[extension_priority]]
+            extension = "md"
+            order = ["ghost", "real"]
+        "#;
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("u.toml");
+        std::fs::write(&p, user_toml).unwrap();
+        reg.install_user_config(&p);
+
+        let got = reg.identify(&target("a.md"), DetectDepth::Cheap);
+        assert_eq!(got, Some(DetectorId("real".into())));
+    }
+
+    #[test]
+    fn identify_fast_path_skips_disabled_detectors() {
+        let reg = FileFormatRegistry::new();
+        let user_toml = r#"
+            [[detector]]
+            id = "off"
+            disabled = true
+            [[detector.rule]]
+            kind = "extension"
+            values = ["md"]
+
+            [[detector]]
+            id = "on"
+            [[detector.rule]]
+            kind = "extension"
+            values = ["md"]
+
+            [[extension_priority]]
+            extension = "md"
+            order = ["off", "on"]
+        "#;
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("u.toml");
+        std::fs::write(&p, user_toml).unwrap();
+        reg.install_user_config(&p);
+
+        // priority 1순위가 disabled → 2순위 on 이 이김.
+        let got = reg.identify(&target("a.md"), DetectDepth::Cheap);
+        assert_eq!(got, Some(DetectorId("on".into())));
+    }
+
+    #[test]
+    fn identify_fast_path_does_not_apply_to_directory_target() {
+        let reg = FileFormatRegistry::new();
+        // 호스트 default 의 $directory 가 디렉토리에 매칭되어야 함 (fast path 가 디렉토리에는
+        // 적용되지 않음을 확인).
+        reg.install_host_defaults(
+            include_str!("defaults/default-file-format.toml"),
+        );
+        // 사용자가 .tmp 확장자를 가진 detector 등록.
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("u.toml");
+        std::fs::write(
+            &p,
+            r#"
+                [[detector]]
+                id = "junk"
+                [[detector.rule]]
+                kind = "extension"
+                values = ["tmp"]
+            "#,
+        )
+        .unwrap();
+        reg.install_user_config(&p);
+
+        // 디렉토리 path 가 ".tmp" 로 끝나도 IsDirectory pre-filter 가 우선 — $directory 가 이김.
+        let tmp_dir = dir.path().join("scratch.tmp");
+        std::fs::create_dir_all(&tmp_dir).unwrap();
+        let got = reg.identify(&FileTarget::new(tmp_dir), DetectDepth::Cheap);
+        assert_eq!(got, Some(DetectorId("$directory".into())));
+    }
+
+    #[test]
+    fn identify_existing_tests_still_pass_after_cutover() {
+        // 빠른 회귀 — 기존의 단순 매칭 (host markdown / image) 이 깨지지 않음을 확인.
+        let reg = FileFormatRegistry::new();
+        reg.install_host_defaults(
+            include_str!("defaults/default-file-format.toml"),
+        );
+        assert_eq!(
+            reg.identify(&target("a/b.md"), DetectDepth::Cheap),
+            Some(DetectorId("markdown".into()))
+        );
+        assert_eq!(
+            reg.identify(&target("a/b.png"), DetectDepth::Cheap),
+            Some(DetectorId("image".into()))
         );
     }
 
