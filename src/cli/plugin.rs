@@ -8,7 +8,10 @@ use anyhow::Result;
 use serde_json::{Map, Value, json};
 
 use crate::cli::transport::IpcConnection;
+use crate::file_format::config::DetectorRuleDecl;
+use crate::file_handler::config::PluginHandlerActionDecl;
 use crate::ipc::server::IpcServer;
+use crate::plugin::manifest::Manifest;
 
 fn log_dir() -> Result<PathBuf> {
     tasty_core::paths::tasty_home()
@@ -87,6 +90,84 @@ pub fn run_audit_follow(
         }
         std::thread::sleep(std::time::Duration::from_millis(interval_ms));
     }
+}
+
+/// `tasty plugin doctor <id>` — Plugin manifest 의 contributes.detector / handler 를
+/// 점검해 현재 호스트가 이해하지 못하는 rule kind (= `DetectorRuleDecl::Unknown`) 를
+/// 표시한다. 호스트가 실행 중이지 않아도 작동하는 local-only 명령.
+pub fn run_plugin_doctor(plugin_id: &str) -> Result<()> {
+    let root = crate::plugin::plugin_root()
+        .ok_or_else(|| anyhow::anyhow!("could not determine plugin root directory"))?;
+    let plugin_dir = root.join(plugin_id);
+    if !plugin_dir.join("tasty-plugin.toml").exists() {
+        anyhow::bail!(
+            "plugin '{}' not installed (no manifest at {})",
+            plugin_id,
+            plugin_dir.join("tasty-plugin.toml").display()
+        );
+    }
+    let manifest = Manifest::load(&plugin_dir)
+        .map_err(|e| anyhow::anyhow!("failed to load manifest for '{}': {e}", plugin_id))?;
+
+    println!("Plugin: {}", manifest.id);
+    println!("  name:             {}", manifest.name);
+    println!("  version:          {}", manifest.version);
+    println!("  manifest_version: {}", manifest.manifest_version);
+    println!("  api_version:      {}", manifest.api_version);
+
+    let detectors = &manifest.contributes.detector;
+    println!();
+    println!("Detectors contributed: {}", detectors.len());
+    let mut total_unsupported = 0_usize;
+    for decl in detectors {
+        let total = decl.rule.len();
+        let unsupported: Vec<&DetectorRuleDecl> = decl
+            .rule
+            .iter()
+            .filter(|r| matches!(r, DetectorRuleDecl::Unknown { .. }))
+            .collect();
+        let ok = total - unsupported.len();
+        total_unsupported += unsupported.len();
+        println!(
+            "  - {} (rules: {} OK, {} unsupported)",
+            decl.id,
+            ok,
+            unsupported.len()
+        );
+        for rule in &unsupported {
+            if let DetectorRuleDecl::Unknown { kind_name, .. } = rule {
+                println!(
+                    "      ! rule kind \"{}\" unsupported in this host version",
+                    kind_name
+                );
+            }
+        }
+    }
+
+    let handlers = &manifest.contributes.handler;
+    println!();
+    println!("Handlers contributed: {}", handlers.len());
+    for decl in handlers {
+        let action_summary = match &decl.action {
+            PluginHandlerActionDecl::OpenSurface { surface_kind, .. } => {
+                format!("surface \"{}\"", surface_kind)
+            }
+            PluginHandlerActionDecl::Ipc { method } => format!("ipc \"{}\"", method),
+        };
+        println!(
+            "  - {} → detector \"{}\" → {}",
+            decl.id, decl.detector, action_summary
+        );
+    }
+
+    if total_unsupported > 0 {
+        println!();
+        println!(
+            "{} rule(s) unsupported — they will be ignored. host api_version: see Cargo.toml.",
+            total_unsupported
+        );
+    }
+    Ok(())
 }
 
 pub fn run_plugin_logs(plugin_id: &str, follow: bool) -> Result<()> {

@@ -384,13 +384,14 @@ tasty plugin remove <id>                   # graceful shutdown + 디렉터리 �
 tasty plugin enable <id>                   # 활성화 + spawn
 tasty plugin disable <id>                  # graceful shutdown + plugins.toml 갱신
 tasty plugin logs <id> [--follow]          # ~/.tasty/plugins-logs/<id>.log 출력
+tasty plugin doctor <id>                   # 매니페스트의 detector / handler contribution 진단 (unsupported rule kind 표시)
 tasty plugin permissions <id>              # 매니페스트 + granted 표시
 tasty plugin grant <id> <permission>       # 권한 추가 (매니페스트에 선언된 경우만)
 tasty plugin revoke <id> <permission>      # 권한 제거
 tasty plugin extension list                # 모든 extension의 상태 일람 (active/pending/disabled/conflict)
 ```
 
-`logs`는 호스트 IPC를 거치지 않고 파일을 직접 읽는다 — 호스트가 죽었을 때도 동작.
+`logs` / `doctor`는 호스트 IPC를 거치지 않고 파일/매니페스트를 직접 읽는다 — 호스트가 죽었을 때도 동작.
 
 ## IPC
 

@@ -793,6 +793,12 @@ pub enum PluginCommands {
         #[arg(long)]
         follow: bool,
     },
+    /// Diagnose a plugin's manifest — list contributed detectors / handlers and
+    /// flag rule kinds the current host does not understand.
+    Doctor {
+        /// Plugin id (e.g. com.example.foo).
+        id: String,
+    },
     /// Show a plugin's manifest permissions and currently granted set.
     Permissions {
         /// Plugin id.
@@ -2475,6 +2481,13 @@ pub fn run_client(command: Commands) -> Result<()> {
     } = &command
     {
         return run_plugin_logs(id, *follow);
+    }
+    // plugin doctor is local-only — read manifest from disk, no IPC needed.
+    if let Commands::Plugin {
+        command: PluginCommands::Doctor { id },
+    } = &command
+    {
+        return crate::cli::plugin::run_plugin_doctor(id);
     }
     // plugin audit-follow is a polling loop over plugin.audit_follow IPC.
     if let Commands::Plugin {
