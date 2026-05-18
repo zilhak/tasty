@@ -347,6 +347,13 @@ impl EngineState {
                 terminal.send_key(&cmd);
             }
         }
+        let startup = self.settings.general.startup_command.trim();
+        if !startup.is_empty() {
+            let line = format!("{startup}\n");
+            if let Some(terminal) = self.find_terminal_by_id_mut(surface_id) {
+                terminal.send_key(&line);
+            }
+        }
     }
 
     /// Push a closed item, automatically injecting restore commands from surface metadata.

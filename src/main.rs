@@ -671,15 +671,7 @@ impl App {
         gpu: GpuState,
         settings: crate::settings::Settings,
     ) {
-        let startup_command = settings.general.startup_command.clone();
-        let mut state = self.create_app_state(&gpu, settings.appearance.sidebar_width);
-
-        if !startup_command.is_empty() {
-            if let Some(terminal) = state.focused_terminal_mut() {
-                terminal.send_key(&startup_command);
-                terminal.send_bytes(b"\r");
-            }
-        }
+        let state = self.create_app_state(&gpu, settings.appearance.sidebar_width);
 
         self.engine.start_ipc();
         self.register_window(gpu, state, window);
