@@ -1417,7 +1417,11 @@ Claude Code 등 TUI 앱이 실행 중이던 터미널을 복원할 때, 해당 �
 - `tasty claude install`로 `SessionStart`/`SessionEnd` hook이 등록되면, plugin이 세션 시작 시
   `restore.command` (예: `claude -r <session-id>`) 및 `claude-session-id` 메타키를 surface 메타데이터에
   set/unset 한다. 호스트는 agent-agnostic하게 `restore.command` 값만 읽어 복원에 사용한다.
-- Claude Code의 `${CLAUDE_SESSION_ID}` 치환 기능을 활용하므로 파일 파싱이나 PID 매칭 불필요
+- Claude Code 의 hook 시스템은 hook 명령 실행 시 **stdin 으로 JSON payload**(`session_id`, `message` 등)를
+  전달한다. `tasty claude hook` CLI 가 stdin JSON 을 자동으로 파싱해 `session_id` → `--session`,
+  `message` → `--message` 로 채우므로, settings.json 에 등록되는 명령은 어떤 event 든 `tasty claude
+  hook <event>` 형태로 단순하다. (옛 버전이 `--session ${CLAUDE_SESSION_ID}` 쉘 확장에 기대다 실패하던
+  회귀가 있어, 재 `tasty claude install` 시 옛 entry 는 자동으로 갱신된다.)
 - plugin이 비활성화되거나 `tasty claude install` 없이 사용해도 오류 없이 일반 셸로 복원됨
 - 다른 agent plugin도 `restore.command` 메타키만 set하면 동일한 메커니즘으로 자체 세션 복원을 지원할 수 있음
 

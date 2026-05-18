@@ -536,6 +536,12 @@ pub struct CliSubcommandDecl {
     pub description: Option<String>,
     #[serde(default)]
     pub description_i18n_key: Option<String>,
+    /// true 면 stdin 이 TTY 가 아닐 때 stdin 의 JSON 한 덩이를 읽어, CLI 인자로
+    /// 명시되지 않은 params 필드를 채운다. Claude Code 처럼 hook payload 를
+    /// stdin JSON 으로 전달하는 외부 시스템과 연동할 때 사용. 매칭 키는 각
+    /// `CliArg.stdin_field` 또는 (없으면) `CliArg.name`.
+    #[serde(default)]
+    pub stdin_json: bool,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -561,6 +567,12 @@ pub struct CliArg {
     /// 한 줄 도움말. clap의 `Arg::help`에 그대로 전달된다.
     #[serde(default)]
     pub help: Option<String>,
+    /// subcommand 의 `stdin_json = true` 일 때, stdin JSON 의 어느 키에서
+    /// 이 인자의 fallback 값을 가져올지. 없으면 `name` 을 그대로 키로 쓴다.
+    /// 예: Claude Code hook payload 의 `session_id` 를 `--session` 인자에
+    /// 매핑하려면 `stdin_field = "session_id"`.
+    #[serde(default)]
+    pub stdin_field: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]

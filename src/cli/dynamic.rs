@@ -161,6 +161,15 @@ pub fn matches_to_request(
                 params.insert(arg.name.clone(), v);
             }
         }
+        // `stdin_json = true` 인 서브커맨드는 (stdin 이 TTY 가 아닐 때) stdin 의
+        // JSON 한 덩이를 읽어 CLI 로 명시되지 않은 params 필드를 채운다.
+        // Claude Code 처럼 hook payload 를 stdin JSON 으로 전달하는 외부 시스템
+        // 연동용. CLI 로 직접 지정된 값이 항상 우선.
+        if sub_decl.stdin_json {
+            if let Some(stdin_json) = read_stdin_json() {
+                merge_stdin_params(&mut params, g, &stdin_json);
+            }
+        }
         // claude CLI의 resolve_surface_id와 동일한 폴백 규칙. plugin이 정의한
         // `surface` (u32) 인자가 사용자 입력에 없으면 TASTY_SURFACE_ID env로 채운다.
         let defines_surface = g
@@ -185,6 +194,43 @@ pub fn matches_to_request(
         id: Some(Value::from(1)),
         session_token: std::env::var("TASTY_SESSION_TOKEN").ok().filter(|s| !s.is_empty()),
     })
+}
+
+/// stdin 이 TTY 가 아닐 때 (= pipe / redirect 로 입력이 들어올 때) stdin 전체를
+/// JSON 한 덩이로 파싱한다. TTY 이거나 파싱 실패 시 `None`. blocking read 를
+/// 피하기 위해 TTY 체크를 먼저 한다 — TTY 라면 사용자가 enter 칠 때까지 멈춰
+/// 있을 위험이 있다.
+fn read_stdin_json() -> Option<Value> {
+    use std::io::{IsTerminal, Read};
+    let mut stdin = std::io::stdin();
+    if stdin.is_terminal() {
+        return None;
+    }
+    let mut buf = String::new();
+    if stdin.read_to_string(&mut buf).is_err() || buf.trim().is_empty() {
+        return None;
+    }
+    serde_json::from_str(&buf).ok()
+}
+
+/// CLI 로 지정되지 않은 params 필드를, stdin JSON 의 해당 키에서 꺼내 채운다.
+/// 매칭 키는 `arg.stdin_field` 우선, 없으면 `arg.name`. CLI 가 이미 채운 키는
+/// 건드리지 않는다.
+fn merge_stdin_params(params: &mut Map<String, Value>, group: &CliArgGroup, stdin: &Value) {
+    let Some(obj) = stdin.as_object() else {
+        return;
+    };
+    for arg in group.positional.iter().chain(group.flags.iter()) {
+        if params.contains_key(&arg.name) {
+            continue;
+        }
+        let key = arg.stdin_field.as_deref().unwrap_or(&arg.name);
+        if let Some(v) = obj.get(key) {
+            if !v.is_null() {
+                params.insert(arg.name.clone(), v.clone());
+            }
+        }
+    }
 }
 
 fn extract_value(matches: &ArgMatches, arg: &CliArg) -> Option<Value> {
@@ -224,6 +270,7 @@ mod tests {
                         required: false,
                         default: None,
                         help: None,
+                        stdin_field: None,
                     },
                     CliArg {
                         name: "prompt".into(),
@@ -232,6 +279,7 @@ mod tests {
                         required: false,
                         default: None,
                         help: None,
+                        stdin_field: None,
                     },
                     CliArg {
                         name: "force".into(),
@@ -240,6 +288,7 @@ mod tests {
                         required: false,
                         default: None,
                         help: None,
+                        stdin_field: None,
                     },
                 ],
             },
@@ -254,6 +303,7 @@ mod tests {
                     required: true,
                     default: None,
                     help: None,
+                    stdin_field: None,
                 }],
                 flags: vec![CliArg {
                     name: "timeout".into(),
@@ -262,6 +312,7 @@ mod tests {
                     required: false,
                     default: Some(toml::Value::Integer(60)),
                     help: None,
+                    stdin_field: None,
                 }],
             },
         );
@@ -277,6 +328,7 @@ mod tests {
                         args: "spawn_args".into(),
                         description: None,
                         description_i18n_key: None,
+                        stdin_json: false,
                     },
                     CliSubcommandDecl {
                         name: "broadcast".into(),
@@ -284,6 +336,7 @@ mod tests {
                         args: "broadcast_args".into(),
                         description: None,
                         description_i18n_key: None,
+                        stdin_json: false,
                     },
                 ],
                 arg_groups,
@@ -297,6 +350,90 @@ mod tests {
         augmented
             .try_get_matches_from(std::iter::once("tasty").chain(args.iter().copied()))
             .expect("parse")
+    }
+
+    #[test]
+    fn merge_stdin_uses_stdin_field_alias() {
+        // stdin JSON 의 키 이름이 CLI arg name 과 다른 경우 (`session_id` →
+        // `session`) stdin_field 매핑이 적용되는지 확인. Claude Code hook payload
+        // 의 session_id 가 `--session` 인자로 들어오는 동작이 이걸로 보장된다.
+        let group = CliArgGroup {
+            positional: vec![],
+            flags: vec![
+                CliArg {
+                    name: "session".into(),
+                    ty: CliArgType::String,
+                    flag: Some("--session".into()),
+                    required: false,
+                    default: None,
+                    help: None,
+                    stdin_field: Some("session_id".into()),
+                },
+                CliArg {
+                    name: "message".into(),
+                    ty: CliArgType::String,
+                    flag: Some("--message".into()),
+                    required: false,
+                    default: None,
+                    help: None,
+                    stdin_field: None,
+                },
+            ],
+        };
+        let stdin = serde_json::json!({
+            "session_id": "abc-123",
+            "message": "hi",
+            "irrelevant": 42
+        });
+        let mut params = Map::new();
+        merge_stdin_params(&mut params, &group, &stdin);
+        assert_eq!(params["session"], Value::String("abc-123".into()));
+        assert_eq!(params["message"], Value::String("hi".into()));
+        // CLI arg 에 없는 stdin 키는 params 에 들어오지 않는다.
+        assert!(!params.contains_key("irrelevant"));
+    }
+
+    #[test]
+    fn merge_stdin_does_not_override_cli_explicit() {
+        // CLI 로 명시된 값이 stdin 보다 우선.
+        let group = CliArgGroup {
+            positional: vec![],
+            flags: vec![CliArg {
+                name: "session".into(),
+                ty: CliArgType::String,
+                flag: Some("--session".into()),
+                required: false,
+                default: None,
+                help: None,
+                stdin_field: Some("session_id".into()),
+            }],
+        };
+        let stdin = serde_json::json!({ "session_id": "from-stdin" });
+        let mut params = Map::new();
+        params.insert("session".into(), Value::String("from-cli".into()));
+        merge_stdin_params(&mut params, &group, &stdin);
+        assert_eq!(params["session"], Value::String("from-cli".into()));
+    }
+
+    #[test]
+    fn merge_stdin_ignores_null_fields() {
+        // stdin JSON 에 키가 있어도 값이 null 이면 params 에 넣지 않는다.
+        let group = CliArgGroup {
+            positional: vec![],
+            flags: vec![CliArg {
+                name: "session".into(),
+                ty: CliArgType::String,
+                flag: Some("--session".into()),
+                required: false,
+                default: None,
+                help: None,
+                stdin_field: Some("session_id".into()),
+            }],
+        };
+        let stdin = serde_json::json!({ "session_id": null });
+        let mut params = Map::new();
+        merge_stdin_params(&mut params, &group, &stdin);
+        assert!(!params.contains_key("session"));
     }
 
     #[test]

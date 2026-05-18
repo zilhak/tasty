@@ -44,7 +44,7 @@ subcommands = [
     { name = "respawn",   ipc_method = "claude.respawn",   args = "respawn_args",   description = "Respawn a child Claude instance" },
     { name = "install",   ipc_method = "claude.install",   args = "no_args",        description = "Install tasty hooks into ~/.claude/settings.json" },
     { name = "uninstall", ipc_method = "claude.uninstall", args = "no_args",        description = "Uninstall tasty hooks from ~/.claude/settings.json" },
-    { name = "hook",      ipc_method = "claude.hook",      args = "hook_args",      description = "Claude Code hook integration (called by Claude Code's hook system)" },
+    { name = "hook",      ipc_method = "claude.hook",      args = "hook_args",      stdin_json = true, description = "Claude Code hook integration. Reads JSON payload from stdin (session_id, message) when invoked by Claude Code's hook system." },
 ]
 
 [contributes.cli.arg_groups.launch_args]
@@ -119,8 +119,8 @@ positional = [
 ]
 flags = [
     { name = "surface", type = "u32",    flag = "--surface", required = false, help = "Surface ID the hook is firing for (defaults to caller's TASTY_SURFACE_ID)" },
-    { name = "session", type = "string", flag = "--session", required = false, help = "Claude Code session ID (substituted by Claude Code's ${CLAUDE_SESSION_ID})" },
-    { name = "message", type = "string", flag = "--message", required = false, help = "Hook message text (used for notification token extraction)" },
+    { name = "session", type = "string", flag = "--session", required = false, stdin_field = "session_id", help = "Claude Code session ID. Auto-populated from stdin JSON 'session_id' when Claude Code invokes the hook." },
+    { name = "message", type = "string", flag = "--message", required = false, stdin_field = "message",    help = "Hook message text (used for notification token extraction). Auto-populated from stdin JSON 'message'." },
 ]
 
 [contributes.cli.arg_groups.no_args]

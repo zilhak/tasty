@@ -32,14 +32,15 @@ fn tasty_hook_marker(event_token: &str) -> String {
 /// settings.json에 실제로 기록되는 명령 문자열.
 /// 호스트 코드와 byte-for-byte 동일해야 사용자가 install/uninstall을 반복해도
 /// 같은 entry가 식별되어 idempotent하게 동작한다.
+///
+/// `session_id` 와 `message` 등 hook 별 가변 데이터는 Claude Code 가 stdin 으로
+/// 흘려보내는 JSON payload 에서 `tasty claude hook` CLI 가 직접 읽어 채운다
+/// (매니페스트 `stdin_json = true` + `stdin_field` 매핑). 그래서 명령 문자열은
+/// 어느 event 에서도 동일한 형태로 충분하다.
 fn tasty_hook_command(event_token: &str) -> String {
-    let extra_args = match event_token {
-        "session-start" => " --session ${CLAUDE_SESSION_ID}",
-        _ => "",
-    };
     format!(
-        "[ -n \"$TASTY_SURFACE_ID\" ] && tasty claude hook {}{} || true",
-        event_token, extra_args
+        "[ -n \"$TASTY_SURFACE_ID\" ] && tasty claude hook {} || true",
+        event_token
     )
 }
 
@@ -111,8 +112,33 @@ pub fn install_hooks_in_value(root: &mut Value) -> Result<Vec<&'static str>> {
             .as_array_mut()
             .ok_or_else(|| anyhow::anyhow!("hooks.{} is not an array", event_name))?;
 
-        let already = arr.iter().any(|entry| entry_matches_marker(entry, &marker));
-        if already {
+        // 기존에 marker 가 일치하는 entry 가 있으면, 그 안의 hook 명령 문자열만
+        // canonical 한 새 값으로 갱신한다. 옛 버전이 설치한 잘못된 명령
+        // (예: `tasty claude hook session-start --session ${CLAUDE_SESSION_ID}`)
+        // 이 그대로 남아 hook 이 실패하던 회귀가 다시 재현되지 않게, install 을
+        // 재실행하면 자동으로 최신 형태로 upgrade 된다.
+        let mut upgraded = false;
+        for entry in arr.iter_mut() {
+            if !entry_matches_marker(entry, &marker) {
+                continue;
+            }
+            upgraded = true;
+            if let Some(hooks) = entry.get_mut("hooks").and_then(|h| h.as_array_mut()) {
+                for h in hooks.iter_mut() {
+                    let needs_update = h
+                        .get("command")
+                        .and_then(|c| c.as_str())
+                        .map(|c| c.contains(&marker) && c != command)
+                        .unwrap_or(false);
+                    if needs_update
+                        && let Some(obj) = h.as_object_mut()
+                    {
+                        obj.insert("command".into(), Value::String(command.clone()));
+                    }
+                }
+            }
+        }
+        if upgraded {
             continue;
         }
 
@@ -249,6 +275,43 @@ mod tests {
     }
 
     #[test]
+    fn install_upgrades_stale_command() {
+        // 옛 install 이 남긴 잘못된 SessionStart command 문자열이, 재 install 시
+        // canonical 한 새 형태로 자동 갱신되어야 한다. 사용자가 uninstall→install
+        // 수작업을 하지 않아도 복원이 정상화되도록.
+        let stale_command =
+            "[ -n \"$TASTY_SURFACE_ID\" ] && tasty claude hook session-start --session ${CLAUDE_SESSION_ID} || true";
+        let mut root = json!({
+            "hooks": {
+                "SessionStart": [
+                    {
+                        "matcher": "",
+                        "hooks": [{ "type": "command", "command": stale_command }]
+                    }
+                ]
+            }
+        });
+        let added = install_hooks_in_value(&mut root).expect("install");
+        // 신규 추가가 아니라 in-place upgrade 라서 added 에 SessionStart 는 없다.
+        assert!(!added.contains(&"SessionStart"));
+        let arr = root["hooks"]["SessionStart"].as_array().unwrap();
+        // 중복 entry 가 추가되지 않고 한 개만 남는다.
+        let tasty_count = arr
+            .iter()
+            .filter(|e| {
+                e["hooks"][0]["command"]
+                    .as_str()
+                    .map(|c| c.contains("tasty claude hook session-start"))
+                    .unwrap_or(false)
+            })
+            .count();
+        assert_eq!(tasty_count, 1, "stale entry should be upgraded, not duplicated");
+        let cmd = arr[0]["hooks"][0]["command"].as_str().unwrap();
+        assert_eq!(cmd, tasty_hook_command("session-start"));
+        assert!(!cmd.contains("${CLAUDE_SESSION_ID}"));
+    }
+
+    #[test]
     fn install_is_idempotent() {
         let mut root = json!({});
         install_hooks_in_value(&mut root).expect("install 1");
@@ -328,23 +391,10 @@ mod tests {
         assert!(is_marker_installed_in_value(&root, "Stop", &marker));
     }
 
-    #[test]
-    fn session_start_hook_includes_session_id_placeholder() {
-        let mut root = json!({});
-        install_hooks_in_value(&mut root).expect("install");
-        let arr = root["hooks"]["SessionStart"].as_array().unwrap();
-        assert_eq!(arr.len(), 1);
-        let cmd = arr[0]["hooks"][0]["command"].as_str().unwrap();
-        assert!(
-            cmd.contains("${CLAUDE_SESSION_ID}"),
-            "SessionStart hook should contain ${{CLAUDE_SESSION_ID}} placeholder, got: {}",
-            cmd
-        );
-        assert!(cmd.contains("--session"));
-    }
-
-    /// 호스트 코드의 명령 문자열과 byte-for-byte 동일한지 검증한다. 두 출처가
-    /// 어긋나면 idempotent 식별이 깨져 install/uninstall이 깨끗하지 않다.
+    /// 모든 hook event 의 명령 문자열이 동일한 단순 형태인지 검증한다. session_id
+    /// 등 가변 데이터는 stdin JSON 으로 흐르므로, 명령 자체는 event 토큰만 다르다.
+    /// (옛 버전이 `--session ${CLAUDE_SESSION_ID}` 같은 쉘 확장에 의존하다 동작
+    /// 실패했던 회귀를 막는다.)
     #[test]
     fn hook_command_matches_host_format() {
         assert_eq!(
@@ -353,7 +403,32 @@ mod tests {
         );
         assert_eq!(
             tasty_hook_command("session-start"),
-            "[ -n \"$TASTY_SURFACE_ID\" ] && tasty claude hook session-start --session ${CLAUDE_SESSION_ID} || true"
+            "[ -n \"$TASTY_SURFACE_ID\" ] && tasty claude hook session-start || true"
         );
+        assert_eq!(
+            tasty_hook_command("notification"),
+            "[ -n \"$TASTY_SURFACE_ID\" ] && tasty claude hook notification || true"
+        );
+    }
+
+    /// SessionStart hook 도 다른 hook 과 동일한 단순 명령으로 설치되어야 한다.
+    #[test]
+    fn session_start_hook_uses_simple_command() {
+        let mut root = json!({});
+        install_hooks_in_value(&mut root).expect("install");
+        let arr = root["hooks"]["SessionStart"].as_array().unwrap();
+        assert_eq!(arr.len(), 1);
+        let cmd = arr[0]["hooks"][0]["command"].as_str().unwrap();
+        assert!(
+            !cmd.contains("${CLAUDE_SESSION_ID}"),
+            "SessionStart hook must not contain shell-expansion placeholder anymore (session_id arrives via stdin JSON), got: {}",
+            cmd
+        );
+        assert!(
+            !cmd.contains("--session"),
+            "SessionStart hook must not pass --session via CLI (session_id is read from stdin), got: {}",
+            cmd
+        );
+        assert!(cmd.contains("tasty claude hook session-start"));
     }
 }
