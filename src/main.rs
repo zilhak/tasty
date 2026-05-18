@@ -40,6 +40,7 @@ mod plugin;
 mod plugins_ui;
 mod recent_files;
 mod renderer;
+mod scrollback_store;
 mod search_state;
 mod selection;
 mod terminal_link;

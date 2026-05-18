@@ -147,6 +147,7 @@ impl AppState {
         }
         for surface_id in spawned_ids {
             self.engine.send_fast_init(surface_id);
+            self.engine.apply_pending_scrollback_inject(surface_id);
         }
     }
 

@@ -10,9 +10,54 @@ use crate::scrollback::ScrollbackLine;
 /// Magic + version stamped at the head of every disk scrollback file. Bumped
 /// whenever the on-disk layout changes; old files are simply truncated and
 /// re-created (no backwards compatibility — Tasty is pre-1.0).
-const FILE_MAGIC: &[u8; 4] = b"TSSB";
-const FORMAT_VERSION: u32 = 2;
+pub const FILE_MAGIC: &[u8; 4] = b"TSSB";
+pub const FORMAT_VERSION: u32 = 2;
 const HEADER_LEN: u64 = 8; // 4-byte magic + 4-byte version
+
+/// Serialize a batch of scrollback lines into a self-contained byte blob.
+/// Layout: `FILE_MAGIC | FORMAT_VERSION:u32 | { len:u32 | line_bytes }*`.
+/// Pairs with [`deserialize_lines`]. Used by the host crate's persistence
+/// layer (`~/.tasty/scrollback/*.bin`).
+pub fn serialize_lines(lines: &[ScrollbackLine]) -> Vec<u8> {
+    let mut buf = Vec::with_capacity(HEADER_LEN as usize + lines.len() * 64);
+    buf.extend_from_slice(FILE_MAGIC);
+    buf.extend_from_slice(&FORMAT_VERSION.to_le_bytes());
+    for line in lines {
+        let bytes = serialize_line(line);
+        let len = bytes.len() as u32;
+        buf.extend_from_slice(&len.to_le_bytes());
+        buf.extend_from_slice(&bytes);
+    }
+    buf
+}
+
+/// Parse a byte blob produced by [`serialize_lines`]. Returns `None` if the
+/// header doesn't match or the version is newer than this build supports.
+pub fn deserialize_lines(data: &[u8]) -> Option<Vec<ScrollbackLine>> {
+    if data.len() < HEADER_LEN as usize {
+        return None;
+    }
+    if &data[0..4] != FILE_MAGIC {
+        return None;
+    }
+    let version = u32::from_le_bytes([data[4], data[5], data[6], data[7]]);
+    if version != FORMAT_VERSION {
+        return None;
+    }
+    let mut pos = HEADER_LEN as usize;
+    let mut lines = Vec::new();
+    while pos + 4 <= data.len() {
+        let len =
+            u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]) as usize;
+        pos += 4;
+        if pos + len > data.len() {
+            break;
+        }
+        lines.push(deserialize_line(&data[pos..pos + len]));
+        pos += len;
+    }
+    Some(lines)
+}
 
 /// Disk-backed scrollback storage. Older lines are written to a temp file,
 /// while recent lines remain in memory for fast access.
@@ -302,5 +347,36 @@ mod tests {
         let out = round_trip(ScrollbackLine::new(vec![("W".into(), a)], true));
         assert!(out.wrapped);
         assert_eq!(out.cells[0].0, "W");
+    }
+
+    #[test]
+    fn batch_serialize_round_trip() {
+        let mut bold = CellAttributes::default();
+        bold.set_intensity(Intensity::Bold);
+        let lines = vec![
+            ScrollbackLine::new(vec![("hello".into(), CellAttributes::default())], false),
+            ScrollbackLine::new(vec![("world".into(), bold)], true),
+        ];
+        let bytes = serialize_lines(&lines);
+        let out = deserialize_lines(&bytes).expect("deserialize");
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].cells[0].0, "hello");
+        assert!(!out[0].wrapped);
+        assert_eq!(out[1].cells[0].0, "world");
+        assert!(out[1].wrapped);
+        assert_eq!(out[1].cells[0].1.intensity(), Intensity::Bold);
+    }
+
+    #[test]
+    fn deserialize_rejects_bad_header() {
+        assert!(deserialize_lines(&[]).is_none());
+        assert!(deserialize_lines(b"XXXX\x01\x00\x00\x00").is_none());
+    }
+
+    #[test]
+    fn empty_batch_round_trip() {
+        let bytes = serialize_lines(&[]);
+        let out = deserialize_lines(&bytes).expect("deserialize");
+        assert!(out.is_empty());
     }
 }

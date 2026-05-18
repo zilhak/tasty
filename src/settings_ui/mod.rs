@@ -210,8 +210,17 @@ pub fn draw_settings_panel(
                     result = Some(false);
                 }
                 if ui.button(t("button.save")).clicked() {
+                    let prev_restore_terminal_content =
+                        settings.general.restore_terminal_content;
                     if let Some(draft) = &ui_state.draft {
                         *settings = draft.clone();
+                    }
+                    // restore_terminal_content 를 끈 경우 기존에 쌓인 scrollback
+                    // 파일을 모두 정리 (사용자가 더 이상 안 쓴다고 명시).
+                    if prev_restore_terminal_content
+                        && !settings.general.restore_terminal_content
+                    {
+                        crate::scrollback_store::clear_all();
                     }
                     if let Some(bashrc) = &ui_state.bashrc_user_draft {
                         crate::settings::general::save_user_bashrc(bashrc);

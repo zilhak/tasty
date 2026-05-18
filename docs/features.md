@@ -1392,7 +1392,7 @@ convert popup / pane context menu에서 사라진다.
 - 탭 목록 (이름, explicit_name, active_tab)
 - 서피스 레이아웃 트리 (split direction, ratio)
 - 각 서피스의 타입별 최소 정보:
-  - Terminal: cwd
+  - Terminal: cwd, `restore.command`(있을 때), `scrollback_ref`(설정 `restore_terminal_content` on 일 때)
   - Markdown: file path
   - Explorer: root path
   - Html: url
@@ -1425,8 +1425,26 @@ Claude Code 등 TUI 앱이 실행 중이던 터미널을 복원할 때, 해당 �
 1. **앱 재시작 (레이아웃 복원)**: `restore_layout` 설정 활성화 시, 레이아웃 저장 시점에 세션 ID가 있는 터미널은 `restore_command`를 함께 저장. 복원 시 셸 초기화 후 자동 실행
 2. **닫힌 항목 복원 (Ctrl+Shift+T)**: surface/tab/workspace 닫기 시 `ClosedSurface`에 `restore_command`를 포함하여 스냅샷. 복원 시 셸 시작 후 `restore_command` 자동 실행
 
+### 터미널 내용 복원 (scrollback)
+
+설정 `general.restore_terminal_content` (기본 on) 가 활성화되어 있으면 레이아웃 저장 시 각 터미널의 scrollback (위로 스크롤 가능한 출력 히스토리) 도 함께 보존되어, 앱 재시작 후에도 이전 출력을 그대로 볼 수 있다.
+
+- 저장 위치: `~/.tasty/scrollback/<persist_id>.bin` — `layout.json` 의 `Terminal.scrollback_ref` 가 이 파일을 가리킨다. 직렬화 포맷은 메모리 ↔ 디스크 swap 에 쓰이는 것과 동일 (magic `TSSB`, version 2, line-by-line records).
+- `persist_id` 는 surface 가 처음 capture 될 때 발급되어 `surface-meta` (`scrollback.persist_id`) 에 보관된다. 다음 capture 가 같은 surface 면 같은 파일을 atomic 하게 덮어쓰므로 orphan 누적이 없다.
+- 옵션 OFF: capture 단계에서 디스크 쓰기를 스킵하고, restore 단계에서도 `scrollback_ref` 가 있어도 무시한다.
+- 옵션 ON → OFF 전환: Settings Save 시점에 `~/.tasty/scrollback/` 전체를 비운다 (사용자가 "더 이상 안 쓴다" 라고 명시한 상태).
+- 비활성 워크스페이스 / 다른 탭의 deferred 터미널은 PTY 가 실제로 spawn 되는 시점 (`ensure_active_workspace_initialized` / `ensure_surface_initialized`) 에 큐에서 꺼내 inject 된다.
+- 닫힌 항목 복원 (`Ctrl+Shift+T`) 의 scrollback 은 **옵션과 무관하게 항상** 복원된다 (메모리에 들고 있다가 즉시 재사용; 디스크 쓰기 없음).
+
+#### Lifecycle / 정리
+
+- Surface 닫힘: `surface-meta` 정리 직전에 `scrollback.persist_id` 를 회수해 `~/.tasty/scrollback/<id>.bin` 도 함께 삭제.
+- 앱 시작: `layout.json` 의 모든 `scrollback_ref` 집합을 기준으로 디렉터리를 스캔해 알려지지 않은 `.bin` 파일을 일괄 삭제 (capture 도중 크래시 잔재 정리).
+- 옵션 OFF 전환: 디렉터리 전체 삭제.
+- Atomic rename (`<id>.bin.tmp` → `<id>.bin`) 로 부분 쓰기 잔재를 방지.
+
 ### 저장하지 않는 것
-- 화면 내용 (screen/scrollback)
+- 화면 내용 (visible cells) — scrollback 만 보존하며 현재 화면은 새 셸 프롬프트로 채워진다.
 - PTY 상태, 환경변수, 실행 중인 명령
 - 팝업 상태
 

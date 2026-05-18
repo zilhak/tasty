@@ -338,11 +338,7 @@ impl AppState {
             let pane = ws.pane_layout_mut().find_pane_mut(pane_id).unwrap();
             let tab = &mut pane.tabs[tab_idx];
             if tab.close_surface(surface_id) {
-                if let Err(e) = crate::surface_meta::SurfaceMetaStore::remove(surface_id) {
-                    tracing::warn!(
-                        "surface_meta remove failed for surface {surface_id}: {e}"
-                    );
-                }
+                purge_surface_persistence(surface_id);
                 self.engine.mark_layout_dirty();
                 return true;
             }
@@ -379,11 +375,7 @@ impl AppState {
                 if pane.active_tab >= pane.tabs.len() {
                     pane.active_tab = pane.tabs.len() - 1;
                 }
-                if let Err(e) = crate::surface_meta::SurfaceMetaStore::remove(surface_id) {
-                    tracing::warn!(
-                        "surface_meta remove failed for surface {surface_id}: {e}"
-                    );
-                }
+                purge_surface_persistence(surface_id);
                 self.engine.mark_layout_dirty();
                 return true;
             }
@@ -398,11 +390,7 @@ impl AppState {
                 if let Some(first) = ws.pane_layout().first_pane() {
                     ws.focused_pane = first.id;
                 }
-                if let Err(e) = crate::surface_meta::SurfaceMetaStore::remove(surface_id) {
-                    tracing::warn!(
-                        "surface_meta remove failed for surface {surface_id}: {e}"
-                    );
-                }
+                purge_surface_persistence(surface_id);
                 self.engine.mark_layout_dirty();
                 return true;
             }
@@ -565,5 +553,18 @@ pub(crate) fn default_tab_name_for_kind(kind: &str, params: &Value) -> String {
         "empty" => "Empty".to_string(),
         "terminal" => "terminal".to_string(),
         other => other.to_string(),
+    }
+}
+
+/// Surface 가 닫힐 때 `~/.tasty/scrollback/<id>.bin` 과 surface_meta 를 함께 정리.
+/// 호출 순서가 중요: persist_id 가 surface_meta 에 저장돼 있으므로 remove 보다 먼저 읽는다.
+fn purge_surface_persistence(surface_id: u32) {
+    if let Some(persist_id) =
+        crate::surface_meta::SurfaceMetaStore::get(surface_id, "scrollback.persist_id")
+    {
+        crate::scrollback_store::delete(&persist_id);
+    }
+    if let Err(e) = crate::surface_meta::SurfaceMetaStore::remove(surface_id) {
+        tracing::warn!("surface_meta remove failed for surface {surface_id}: {e}");
     }
 }

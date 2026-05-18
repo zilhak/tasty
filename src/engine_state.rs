@@ -166,6 +166,11 @@ pub struct EngineState {
     /// Restore commands queued during layout restore. (surface_id, command).
     /// Consumed by AppState after shell initialization.
     pub pending_restore_commands: Vec<(u32, String)>,
+    /// Deferred terminal surface 의 scrollback 복원 대기 큐. 값은
+    /// `scrollback_store::read` 결과(없으면 entry 자체가 생략됨). PTY 가
+    /// 실제로 spawn 된 직후 (`ensure_surface_initialized` 또는 즉시 복원
+    /// 경로) entry 를 꺼내 `inject_scrollback` 호출.
+    pub pending_scrollback_inject: HashMap<u32, Vec<tasty_terminal::ScrollbackLine>>,
     /// 첫 plugin pump 후 적용할 layout. plugin이 제공하는 surface kind가
     /// 등록되기 전에 복원하면 사라지므로 한 번 미뤄둔다. `App::apply_pending_layout_restore`가 소비.
     pub pending_layout_restore: Option<crate::layout_persistence::SavedLayout>,
@@ -237,6 +242,7 @@ impl EngineState {
             layout_dirty: crate::layout_persistence::LayoutDirtyTracker::new(),
             restored_active_workspace: None,
             pending_restore_commands: Vec::new(),
+            pending_scrollback_inject: HashMap::new(),
             pending_layout_restore: None,
             #[cfg(debug_assertions)]
             input_simulation_enabled: false,
@@ -264,10 +270,19 @@ impl EngineState {
         let mut restored = false;
         if restore_layout {
             if let Some(saved) = crate::layout_persistence::load_from_disk() {
+                // layout.json 에 남아 있는 scrollback_ref 집합 외의 파일은 모두 orphan.
+                // capture 도중 크래시했거나 옛 surface 의 잔재이므로 삭제해 디스크 leak 방지.
+                let known = saved.collect_scrollback_refs();
+                crate::scrollback_store::gc_orphans(&known);
                 engine.pending_layout_restore = Some(saved);
                 // 첫 화면이 비지 않도록 default workspace는 일단 fallback에서 만들고,
                 // pending_layout_restore가 적용될 때 교체된다.
                 restored = false;
+            } else {
+                // layout.json 자체가 없거나 무효면 알려진 ref 없음 → 모두 orphan.
+                let empty: std::collections::HashSet<String> =
+                    std::collections::HashSet::new();
+                crate::scrollback_store::gc_orphans(&empty);
             }
         }
 
@@ -442,8 +457,24 @@ impl EngineState {
         }
         if spawned {
             self.send_fast_init(surface_id);
+            self.apply_pending_scrollback_inject(surface_id);
         }
         spawned
+    }
+
+    /// Deferred terminal 이 spawn 된 직후 호출. layout 복원 시 큐에 적재된
+    /// scrollback line 들을 해당 surface 의 terminal 에 inject. PTY 가 실제로
+    /// 출력하기 전이라 사용자는 위로 스크롤하면 자연스러운 히스토리를 본다.
+    pub fn apply_pending_scrollback_inject(&mut self, surface_id: u32) {
+        let Some(lines) = self.pending_scrollback_inject.remove(&surface_id) else {
+            return;
+        };
+        if lines.is_empty() {
+            return;
+        }
+        if let Some(terminal) = self.find_terminal_by_id_mut(surface_id) {
+            terminal.inject_scrollback(lines);
+        }
     }
 
     /// Replace the terminal in a TerminalSurface, keeping the surface/layout intact.

@@ -610,6 +610,15 @@ impl AppState {
     /// surface metadata, per-surface host view state, and memory entries
     /// scoped to this surface (regular + secret).
     pub(crate) fn cleanup_surface(&mut self, surface_id: u32) {
+        // surface_meta::remove 가 모든 키를 날리기 전에 scrollback persist_id 를 회수해
+        // `~/.tasty/scrollback/<id>.bin` 파일도 함께 삭제 (디스크 leak 방지).
+        if let Some(persist_id) = crate::surface_meta::SurfaceMetaStore::get(
+            surface_id,
+            "scrollback.persist_id",
+        ) {
+            crate::scrollback_store::delete(&persist_id);
+        }
+        self.engine.pending_scrollback_inject.remove(&surface_id);
         if let Err(e) = crate::surface_meta::SurfaceMetaStore::remove(surface_id) {
             tracing::warn!("surface_meta remove failed for surface {surface_id}: {e}");
         }
