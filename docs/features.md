@@ -1427,7 +1427,7 @@ Claude Code 등 TUI 앱이 실행 중이던 터미널을 복원할 때, 해당 �
 
 ### 터미널 내용 복원 (scrollback)
 
-설정 `general.restore_terminal_content` (기본 on) 가 활성화되어 있으면 레이아웃 저장 시 각 터미널의 scrollback (위로 스크롤 가능한 출력 히스토리) 도 함께 보존되어, 앱 재시작 후에도 이전 출력을 그대로 볼 수 있다.
+설정 `general.restore_terminal_content` (기본 on) 가 활성화되어 있으면 레이아웃 저장 시 각 터미널의 scrollback (위로 스크롤 가능한 출력 히스토리) **과 현재 화면 (visible) 라인** 이 함께 보존되어, 앱 재시작 후에도 이전 출력을 그대로 볼 수 있다. 화면 라인은 scrollback 뒤에 이어 붙여 저장하므로 복원 후 위로 스크롤하면 [이전 scrollback → 이전 화면 → 새 prompt] 순으로 보인다 (trailing blank row 는 capture 시 trim).
 
 - 저장 위치: `~/.tasty/scrollback/<persist_id>.bin` — `layout.json` 의 `Terminal.scrollback_ref` 가 이 파일을 가리킨다. 직렬화 포맷은 메모리 ↔ 디스크 swap 에 쓰이는 것과 동일 (magic `TSSB`, version 2, line-by-line records).
 - `persist_id` 는 surface 가 처음 capture 될 때 발급되어 `surface-meta` (`scrollback.persist_id`) 에 보관된다. 다음 capture 가 같은 surface 면 같은 파일을 atomic 하게 덮어쓰므로 orphan 누적이 없다.

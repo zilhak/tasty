@@ -317,22 +317,27 @@ fn queue_scrollback_for_surface(engine: &mut EngineState, surface_id: u32, persi
     }
 }
 
-/// Surface 의 메모리 scrollback 전체를 `~/.tasty/scrollback/<id>.bin` 으로 덤프하고
-/// `<id>` 를 반환. persist_id 는 surface_meta 의 `scrollback.persist_id` 키에 보관해
-/// 다음 capture 시 동일 ID 를 재사용한다 (orphan 누적 방지).
+/// Surface 의 scrollback + 현재 화면(visible) 을 묶어 `~/.tasty/scrollback/<id>.bin`
+/// 으로 덤프하고 `<id>` 를 반환. persist_id 는 surface_meta 의 `scrollback.persist_id`
+/// 키에 보관해 다음 capture 시 동일 ID 를 재사용한다 (orphan 누적 방지).
 ///
-/// 실패하거나 scrollback 이 비어 있으면 `None`.
+/// 화면 라인은 scrollback 의 뒤에 이어 붙인다 → 복원 시 위로 스크롤하면
+/// [이전 scrollback → 이전 화면 → 새 prompt] 순으로 보인다.
+///
+/// 실패하거나 (scrollback + screen) 양쪽 모두 비어 있으면 `None`.
 fn capture_scrollback_to_disk(terminal: &tasty_terminal::Terminal, surface_id: u32) -> Option<String> {
     let total = terminal.scrollback_len();
-    if total == 0 {
+    let screen = terminal.screen_snapshot_lines();
+    if total == 0 && screen.is_empty() {
         return None;
     }
-    let mut lines = Vec::with_capacity(total);
+    let mut lines = Vec::with_capacity(total + screen.len());
     for i in 0..total {
         if let Some(line) = terminal.scrollback_line_full(i) {
             lines.push(line);
         }
     }
+    lines.extend(screen);
     if lines.is_empty() {
         return None;
     }

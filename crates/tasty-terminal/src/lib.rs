@@ -1185,6 +1185,41 @@ impl Terminal {
         Some(crate::ScrollbackLine::new(cells, wrapped))
     }
 
+    /// Snapshot the current visible screen as `ScrollbackLine` records.
+    /// Trailing blank rows (모두 공백 / 빈 cell) 은 잘라낸다.
+    ///
+    /// 사용처: layout 저장 시 scrollback 라인 뒤에 이어 붙여 디스크에 저장한다.
+    /// 복원 시 `inject_scrollback` 으로 함께 push 하면 다음 세션에서 위로
+    /// 스크롤할 때 이전 화면이 그대로 보인다 (현재 PTY 의 새 prompt 는 그 아래
+    /// 에서 시작).
+    pub fn screen_snapshot_lines(&self) -> Vec<crate::ScrollbackLine> {
+        let surface = self.surface();
+        let cols = self.cols;
+        let lines = surface.screen_lines();
+        let mut result: Vec<crate::ScrollbackLine> = Vec::with_capacity(lines.len());
+        for line in lines.iter() {
+            let cells: Vec<(String, CellAttributes)> = line
+                .visible_cells()
+                .map(|cell| (cell.str().to_string(), cell.attrs().clone()))
+                .collect();
+            let wrapped = Self::line_was_soft_wrapped(line, cols);
+            result.push(crate::ScrollbackLine::new(cells, wrapped));
+        }
+        // Trim trailing blank rows: cells 가 비거나 모두 whitespace-only.
+        while let Some(last) = result.last() {
+            let blank = last
+                .cells
+                .iter()
+                .all(|(s, _)| s.is_empty() || s.chars().all(char::is_whitespace));
+            if blank {
+                result.pop();
+            } else {
+                break;
+            }
+        }
+        result
+    }
+
     /// Inject scrollback lines (oldest first) into this terminal's scrollback buffer.
     /// Used to restore scrollback after recreating a terminal (closed-item / layout restore).
     pub fn inject_scrollback(&mut self, lines: Vec<crate::ScrollbackLine>) {
@@ -1569,5 +1604,37 @@ mod tests {
             Some(false),
             "row0 ended in a hard newline, not a wrap"
         );
+    }
+
+    fn join_line(line: &crate::ScrollbackLine) -> String {
+        line.cells.iter().map(|(s, _)| s.as_str()).collect()
+    }
+
+    #[test]
+    fn screen_snapshot_captures_visible_content() {
+        let mut terminal = test_terminal(10, 4);
+        terminal.process_bytes(b"alpha\r\nbeta\r\ngamma");
+        let snap = terminal.screen_snapshot_lines();
+        // 화면에 3 줄 출력. 마지막 빈 줄들은 trim 되어 3 줄만 남는다.
+        assert_eq!(snap.len(), 3);
+        assert_eq!(join_line(&snap[0]).trim_end(), "alpha");
+        assert_eq!(join_line(&snap[1]).trim_end(), "beta");
+        assert_eq!(join_line(&snap[2]).trim_end(), "gamma");
+    }
+
+    #[test]
+    fn screen_snapshot_trims_trailing_blank_rows() {
+        let mut terminal = test_terminal(10, 6);
+        terminal.process_bytes(b"hello");
+        let snap = terminal.screen_snapshot_lines();
+        // 한 줄만 출력했으니 뒤따르는 5 줄 빈 row 는 모두 잘려야 한다.
+        assert_eq!(snap.len(), 1);
+        assert_eq!(join_line(&snap[0]).trim_end(), "hello");
+    }
+
+    #[test]
+    fn screen_snapshot_empty_terminal_returns_empty_vec() {
+        let terminal = test_terminal(10, 4);
+        assert!(terminal.screen_snapshot_lines().is_empty());
     }
 }
