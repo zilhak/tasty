@@ -671,12 +671,11 @@ impl App {
         gpu: GpuState,
         settings: crate::settings::Settings,
     ) {
-        // memory.db 초기화는 create_app_state 이전에 반드시 호출. layout 복원
-        // 경로가 surface_meta(`scrollback.persist_id`, `restore.command`) 를
-        // 읽고 쓰기 때문에, 초기화 전이면 그 동작이 모두 silent 실패한다.
+        // state.db / memory.db 초기화는 create_app_state 이전에 반드시 호출.
         // 첫 윈도우는 `create_new_window` 를 거치지 않고 곧장 이 함수로 진입하므로
-        // 여기서도 호출이 필요하다. `init_with_config` 는 idempotent — 두 번째
-        // 호출은 no-op.
+        // 여기서도 호출이 필요하다. 두 init 모두 OnceLock 기반 idempotent.
+        let db_init_error = crate::storage::init().err();
+
         let memory_config = tasty_memory::MemoryConfig {
             entry_max_bytes: settings.memory.entry_max_mb.saturating_mul(1024 * 1024),
             secret_quota_per_owner_bytes: settings
@@ -692,7 +691,26 @@ impl App {
             tracing::warn!("memory.db init failed: {e}");
         }
 
-        let state = self.create_app_state(&gpu, settings.appearance.sidebar_width);
+        let mut state = self.create_app_state(&gpu, settings.appearance.sidebar_width);
+
+        // DB 초기화 실패 알림 — create_new_window 와 동일하게 InfoModal 로 안내 후 Exit(1).
+        if let Some(err) = db_init_error {
+            tracing::error!("state.db init failed: {err}");
+            let (key, args) = err.user_message_i18n();
+            let body = match args.len() {
+                0 => crate::i18n::t(key).to_string(),
+                1 => crate::i18n::t_fmt(key, &args[0]),
+                _ => crate::i18n::t_fmt2(key, &args[0], &args[1]),
+            };
+            crate::ui::info_modal::show_info_modal(
+                &mut state,
+                crate::ui::info_modal::InfoModal {
+                    title: crate::i18n::t("db_error.title").to_string(),
+                    body,
+                    on_close: crate::ui::info_modal::InfoModalAction::Exit(1),
+                },
+            );
+        }
 
         self.engine.start_ipc();
         self.register_window(gpu, state, window);
