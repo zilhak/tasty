@@ -630,7 +630,14 @@ impl AppState {
         });
     }
 
+    /// Invariant: caller must ensure `engine.workspaces` is non-empty.
+    /// Parked states (after the last window closes) can have zero workspaces —
+    /// such callers must use `engine.workspaces.is_empty()` checks instead.
     pub fn active_workspace(&self) -> &crate::model::Workspace {
+        debug_assert!(
+            !self.engine.workspaces.is_empty(),
+            "active_workspace called with empty workspaces"
+        );
         let idx = self
             .active_workspace
             .min(self.engine.workspaces.len().saturating_sub(1));
@@ -638,6 +645,10 @@ impl AppState {
     }
 
     pub fn active_workspace_mut(&mut self) -> &mut crate::model::Workspace {
+        debug_assert!(
+            !self.engine.workspaces.is_empty(),
+            "active_workspace_mut called with empty workspaces"
+        );
         let idx = self
             .active_workspace
             .min(self.engine.workspaces.len().saturating_sub(1));
@@ -645,7 +656,11 @@ impl AppState {
     }
 
     /// Get the focused pane in the active workspace, or the first pane as fallback.
+    /// Returns `None` if no workspaces exist (parked state after last-window close).
     pub fn focused_pane(&self) -> Option<&crate::model::Pane> {
+        if self.engine.workspaces.is_empty() {
+            return None;
+        }
         let ws = self.active_workspace();
         let layout = ws.pane_layout();
         layout
@@ -654,7 +669,11 @@ impl AppState {
     }
 
     /// Get the focused pane (mutable) in the active workspace, or the first pane as fallback.
+    /// Returns `None` if no workspaces exist (parked state after last-window close).
     pub fn focused_pane_mut(&mut self) -> Option<&mut crate::model::Pane> {
+        if self.engine.workspaces.is_empty() {
+            return None;
+        }
         let ws = self.active_workspace_mut();
         let focused_id = ws.focused_pane;
         // If focused_id is stale, fall back to the first available pane.
