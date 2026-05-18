@@ -385,6 +385,43 @@ impl SavedSurface {
                 scrollback_ref,
             };
         }
+        // 비활성 탭의 deferred EmptySurface 는 외부로는 Terminal 역할이지만
+        // PTY 가 아직 안 떠 있어 `as_terminal_surface()` 가 None 이다. 이 경우
+        // `DeferredSpawn.working_dir` + surface_meta 의 `scrollback.persist_id`
+        // 를 묶어 다시 SavedSurface::Terminal 로 저장해 round-trip 시 cwd / 세션
+        // 정보가 사라지지 않게 한다.
+        if let Some(es) = surface
+            .as_any()
+            .downcast_ref::<crate::model::EmptySurface>()
+            && es.is_deferred()
+        {
+            let cwd = es
+                .deferred_spawn
+                .as_ref()
+                .and_then(|s| s.working_dir.as_ref())
+                .map(|p| p.to_string_lossy().to_string());
+            // restore.command 는 surface_meta 를 본다. layout 복원 직후 사용자가
+            // 그 탭을 열기 전에는 surface_meta 에 없을 수 있지만, 그 경우는 이전 capture
+            // 의 layout.json 에 이미 restore_command 가 들어있어 다시 deferred 복원
+            // path 가 그 값을 큐에 쌓아두므로 데이터 손실이 발생하진 않는다 (다음 capture
+            // 가 None 으로 덮어쓰지 않도록 surface_meta 에도 미러링한다 — 아래 restore
+            // 단계에서 set 한다).
+            let restore_command =
+                crate::surface_meta::SurfaceMetaStore::get(es.id, "restore.command");
+            // 옵션 on 일 때만 scrollback_ref 를 다음 capture 까지 유지한다.
+            // (옵션 off 면 다음 capture 때 디스크 쓰기를 스킵하므로 ref 도 의미 없음 →
+            //  파일은 startup GC 가 청소한다.)
+            let scrollback_ref = if capture_scrollback {
+                crate::surface_meta::SurfaceMetaStore::get(es.id, "scrollback.persist_id")
+            } else {
+                None
+            };
+            return SavedSurface::Terminal {
+                cwd,
+                restore_command,
+                scrollback_ref,
+            };
+        }
         let kind = surface.kind().to_string();
         if let Some(def) = registry.get(&kind) {
             if let Some(data) = (def.snapshot)(surface) {
@@ -669,6 +706,18 @@ impl SavedSurface {
                     working_dir: cwd.as_ref().map(PathBuf::from),
                 };
                 if let Some(cmd) = restore_command {
+                    // 사용자가 이 탭을 열기 전에 layout 재저장이 일어나면 capture 단계가
+                    // surface_meta 의 restore.command 를 읽는다 (capture_surface 의
+                    // deferred 분기 참조). pending 큐에 있는 명령이 사라지지 않도록 미러링.
+                    if let Err(e) = crate::surface_meta::SurfaceMetaStore::set(
+                        surface_id,
+                        "restore.command",
+                        &cmd,
+                    ) {
+                        tracing::warn!(
+                            "restore: failed to mirror restore.command for surface {surface_id}: {e}"
+                        );
+                    }
                     engine.pending_restore_commands.push((surface_id, cmd));
                 }
                 // Deferred: scrollback 은 PTY 가 실제로 spawn 된 직후 inject 해야 하므로
