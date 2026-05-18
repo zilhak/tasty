@@ -11,6 +11,7 @@ pub(crate) mod evaluator;
 pub mod info;
 pub(crate) mod lua_eval;
 pub mod registry;
+pub(crate) mod structure_eval;
 pub mod types;
 
 pub use config::{DetectorDecl, DetectorDeclError, DetectorRuleDecl};

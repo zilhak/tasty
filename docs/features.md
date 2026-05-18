@@ -1561,7 +1561,7 @@ URI/경로 입력을 받아 **(1) 파일 형식 식별 → (2) 등록된 핸들�
   - `magic`: `offset` + `bytes_hex` 매칭 (Deep, regular file 한정 / FIFO/socket/device skip)
   - `mime`: `infer` 기반 MIME 추정 후 대소문자 무관 비교 (Deep)
   - `lua`: 인라인 Lua 5.4 sandbox 평가 (Deep, host/user TOML 만 — plugin 출처는 install 시 drop+warn). `target = { path, is_directory, bytes_head, mime, has_prefix }` 글로벌 주입. 메모리 cap 8MB, 명령어 cap 1M, `io`/`os`/`debug`/`package`/`require`/`load*`/`dofile` 제거, bytecode 청크 금지
-  - `structure_check`: stub (Phase D MD2 에서 평가)
+  - `structure_check`: 절대 경로의 JSON Schema 파일로 target 의 구조 검증 (Deep). 현재 JSON 입력만 지원 (`.json` 확장자), 5MB 초과 파일은 즉시 false. schema/target 읽기·파싱 실패 시 false + warn 로그
 - Deep 평가는 한 `identify` 호출당 `DeepCtx` 가 head/MIME 캐시 → 같은 파일을 여러 detector 가 평가해도 IO 는 1회만
 - pre-filter: 디렉토리 대상은 `is_directory` rule 가진 detector 만, 파일 대상은 그 외만 평가 (cross-match 방지)
 - 호스트 default 는 `src/file_format/defaults/default-file-format.toml` 에 정의 — markdown, html, image, `$directory` 등
@@ -1638,7 +1638,8 @@ URI/경로 입력을 받아 **(1) 파일 형식 식별 → (2) 등록된 핸들�
 
 ### 한계 (현재)
 - mouse.rs 콜사이트 변경은 별도 작업 — ctrl+click 시 여전히 기존 `terminal_link::open_uri` 가 동작
-- `structure_check` rule 평가는 stub (Phase D MD2)
+- `structure_check` 는 JSON 입력만 지원 — YAML/TOML 은 별도 deps 도입 후
+- 상대 경로의 `spec_path` 는 호스트 CWD 기준으로 해석됨 — plugin 매니페스트 dir 기준 해석은 install 단계에서 수행 필요 (별도 작업)
 - `path_glob` 은 단순 `*` wildcard 만, 본격 globset 도입은 후속
 - Deep 평가는 sync — worker thread 분리 (`AppEvent::IdentifyDone`) 는 별도 작업
 

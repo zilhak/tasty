@@ -1,8 +1,10 @@
 //! detector rule 평가자.
 //!
 //! - **Cheap path**: 확장자/glob/is-directory. file IO 없음. hover/typing 등 hot path 용.
-//! - **Deep path**: magic bytes / MIME / Lua. 8KB head read 1회 + `DeepCtx` 에 캐시.
-//!   `structure_check` 는 Phase D MD2 에서 추가.
+//! - **Deep path**: magic bytes / MIME / Lua / structure-check.
+//!   magic/MIME 은 8KB head read 1회 + `DeepCtx` 에 캐시. structure-check 는
+//!   `structure_eval.rs` 가 5MB cap 으로 전체 파일을 따로 읽는다 (head 8KB 로는
+//!   구조 검증에 부족).
 //!
 //! `evaluate_cheap` 은 단독 호출 가능. `evaluate_deep` 은 `DeepCtx` 가 필요한데,
 //! 한 `identify` 호출 안에서 detector 여러 개가 같은 파일의 magic/MIME 을 평가해도
@@ -164,8 +166,9 @@ pub fn evaluate_deep(
 
         DetectorRuleKind::Lua { script } => super::lua_eval::evaluate_lua(script, target, ctx),
 
-        // Phase D MD2 에서 평가. 현재는 false.
-        DetectorRuleKind::StructureCheck { .. } => false,
+        DetectorRuleKind::StructureCheck { spec_path } => {
+            super::structure_eval::evaluate_structure(spec_path, target)
+        }
 
         // cheap kind 는 IO 없이 그대로 평가.
         DetectorRuleKind::Extension { .. }
