@@ -263,6 +263,104 @@ impl FileHandlerRegistry {
         Ok(())
     }
 
+    /// Settings UI 가 host/plugin handler 를 user-origin override 로 disable/enable.
+    /// 명시적 user 의도 → 항상 `disabled_override = Some(value)`.
+    pub fn set_user_handler_disabled(&self, id: &HandlerId, disabled: bool) {
+        let mut inner = match self.inner.write() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
+        let Some(entry) = inner.contributions.get_mut(id) else {
+            warn!(
+                handler = id.as_str(),
+                "file_handler: set_user_handler_disabled — unknown handler"
+            );
+            return;
+        };
+        if let Some(existing) = entry.iter_mut().find(|c| matches!(c.owner, HandlerOwner::User)) {
+            existing.disabled_override = Some(disabled);
+        } else {
+            entry.push(HandlerContribution {
+                owner: HandlerOwner::User,
+                detector: None,
+                priority: None,
+                display_name_i18n_key: None,
+                disabled_override: Some(disabled),
+                action: None,
+            });
+        }
+        inner.dirty = true;
+    }
+
+    /// User-origin contribution 의 `disabled_override` 만 None 으로 비운다. 다른 user 필드
+    /// (priority/action/detector 등) 는 보존.
+    pub fn clear_user_handler_override(&self, id: &HandlerId) {
+        let mut inner = match self.inner.write() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
+        let Some(entry) = inner.contributions.get_mut(id) else { return };
+        let mut user_empty = false;
+        if let Some(existing) = entry.iter_mut().find(|c| matches!(c.owner, HandlerOwner::User)) {
+            existing.disabled_override = None;
+            user_empty = existing.detector.is_none()
+                && existing.priority.is_none()
+                && existing.display_name_i18n_key.is_none()
+                && existing.action.is_none();
+        }
+        if user_empty {
+            entry.retain(|c| !matches!(c.owner, HandlerOwner::User));
+            if entry.is_empty() {
+                inner.contributions.remove(id);
+            }
+        }
+        inner.dirty = true;
+    }
+
+    /// Settings UI 가 user-origin contribution 전체를 제거. host/plugin 은 보존.
+    pub fn remove_user_handler(&self, id: &HandlerId) {
+        let mut inner = match self.inner.write() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
+        let Some(entry) = inner.contributions.get_mut(id) else { return };
+        entry.retain(|c| !matches!(c.owner, HandlerOwner::User));
+        if entry.is_empty() {
+            inner.contributions.remove(id);
+        }
+        inner.dirty = true;
+    }
+
+    /// Settings UI 가 user-origin handler 를 추가/갱신. 기존 host/plugin 이 있으면 patch.
+    /// id 가 `<owner>/<short>` 형식이어야 하고, action 의 surface_kind/method 등은 호출자가
+    /// 검증한 상태로 넘긴다 (UI 입력 단계에서 후보 dropdown 으로 강제).
+    pub fn upsert_user_handler(
+        &self,
+        decl: UserHandlerUpsertDecl,
+    ) -> Result<(), HandlerDeclError> {
+        if !decl.id.contains('/') {
+            return Err(HandlerDeclError::InvalidShortName(decl.id.clone()));
+        }
+        let mut inner = match self.inner.write() {
+            Ok(g) => g,
+            Err(_) => return Err(HandlerDeclError::InvalidShortName("lock poisoned".into())),
+        };
+        push_contribution(
+            &mut inner,
+            HandlerId(decl.id),
+            HandlerContribution {
+                owner: HandlerOwner::User,
+                detector: decl.detector,
+                priority: decl.priority,
+                display_name_i18n_key: decl.display_name_i18n_key,
+                disabled_override: decl.disabled,
+                action: decl.action.map(Into::into),
+            },
+        );
+        inner.dirty = true;
+        Ok(())
+    }
+
     pub fn uninstall_plugin(&self, plugin_id: &str) {
         let mut inner = match self.inner.write() {
             Ok(g) => g,
@@ -514,6 +612,18 @@ fn same_owner(a: &HandlerOwner, b: &HandlerOwner) -> bool {
         (HandlerOwner::Plugin(x), HandlerOwner::Plugin(y)) => x == y,
         _ => false,
     }
+}
+
+/// Settings UI 가 `upsert_user_handler` 호출에 사용하는 입력. 모든 필드 optional
+/// (patch semantics) — 기존 host/plugin contribution 의 메타데이터를 부분 덮어쓴다.
+#[derive(Debug, Clone)]
+pub struct UserHandlerUpsertDecl {
+    pub id: String,
+    pub detector: Option<String>,
+    pub priority: Option<i32>,
+    pub display_name_i18n_key: Option<String>,
+    pub disabled: Option<bool>,
+    pub action: Option<UserHandlerActionDecl>,
 }
 
 /// User TOML schema. 모든 필드 optional 로 patch 가능.

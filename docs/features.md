@@ -1614,12 +1614,17 @@ URI/경로 입력을 받아 **(1) 파일 형식 식별 → (2) 등록된 핸들�
 - `DetectorRuleKind::Unknown` 의 raw payload 도 round-trip — forward-compat 유지
 - 주석/공백/key 순서는 보존 안 함 (재발급). 사용자 손편집 친화 보존이 필요해지면 `toml_edit` 도입
 
-### Settings UI — FileHandler 탭 (MD3 1단계)
+### Settings UI — FileHandler 탭
 - `Settings > File Handler` 탭, 4 개 sub-tab
-- **Detectors** (read-only): 등록된 모든 detector 의 id, 출처 (host/plugin/user), rule 종류 요약 (ext/glob/mime/magic/dir/lua/structure), enabled/disabled 상태를 grid 표시
-- **Handlers** (read-only): priority 오름차순 정렬된 handler 목록 — priority, id, owner, detector, action 요약 (`surface:<kind>` / `ipc:<method>` / `system`), 상태
+- **Detectors**: 등록된 모든 detector 의 id, 출처 (host/plugin/user), rule 종류 요약 (ext/glob/mime/magic/dir/lua/structure), enabled 토글
+  - Enabled 체크박스 = host/plugin default 를 user-origin override (`disabled_override`) 로 덮어씀
+  - user-origin 항목은 Remove 버튼으로 삭제 가능 (저장 시 적용)
+  - "+ Add user detector" inline form — id + 확장자 (콤마/공백 구분) + 단일 path-glob 으로 간단 정의. 고급 rule (magic / mime / structure-check) 은 TOML 손편집
+- **Handlers**: priority 오름차순 정렬된 handler 목록 — priority, id, owner, detector, action 요약 (`surface:<kind>` / `ipc:<method>` / `system`), enabled 토글
+  - Enabled / Remove 동작은 detector 와 동일 (user-origin 만 Remove 가능)
+  - "+ Add user handler" inline form — short-name (`user/<name>` 으로 저장) + detector dropdown + priority + action kind (open-surface / ipc / system) + 각 kind 별 필드 (surface_kind+param_key / method)
 - **Recent picks**: `~/.tasty/file-handler-recent.json` LRU 표시 + 상대 시간 라벨 (방금/N분/N시간/N일 전) + Forget 버튼 (즉시 atomic write)
-- 한계: detector/handler 추가/편집/disabled toggle modal 은 후속 작업. 현재는 모두 read-only
+- 편집은 `FileHandlerEditDraft` 에 누적되며 Settings 의 Save 버튼이 registry 에 commit + `save_combined_user_config` 로 `~/.tasty/file-handlers.toml` atomic write
 
 ### Extension Mapping (Phase E ME4)
 - 같은 확장자를 광고하는 detector 가 여러 개 있을 때 사용자가 직접 우선순위를 정할 수 있는 표 (`[[extension_priority]]`)

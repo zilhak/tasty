@@ -90,6 +90,9 @@ pub struct SettingsUiState {
     /// FileHandler 탭의 Recent picks sub-tab 캐시. 첫 진입 시 디스크에서 로드.
     /// 모달이 살아있는 동안 메모리상에서 변경 가능. Forget 액션은 즉시 디스크에 atomic save.
     pub(crate) recent_picks_cache: Option<crate::file_handler_recent::RecentPicks>,
+    /// FileHandler 탭의 Detectors/Handlers sub-tab 편집 draft. Save 시 registry 에 commit +
+    /// 디스크 저장. Cancel 시 폐기.
+    pub(crate) fh_edit_draft: file_handler_tab::FileHandlerEditDraft,
     /// Currently previewed preset name in the Preset sub-tab (None = no preview).
     selected_preset: Option<String>,
     /// Pending keybinding assignment waiting for conflict confirmation.
@@ -152,6 +155,7 @@ impl SettingsUiState {
             extension_priority_draft: None,
             extension_priority_new_input: String::new(),
             recent_picks_cache: None,
+            fh_edit_draft: file_handler_tab::FileHandlerEditDraft::default(),
             selected_preset: None,
             pending_binding: None,
             popups,
@@ -209,6 +213,7 @@ pub fn draw_settings_panel(
                     // RecentPicks 의 Forget 액션은 즉시 디스크에 반영되므로 cancel 로 되돌릴 수 없다.
                     // cache 만 폐기 → 다음 진입 시 디스크에서 다시 로드.
                     ui_state.recent_picks_cache = None;
+                    ui_state.fh_edit_draft = file_handler_tab::FileHandlerEditDraft::default();
                     result = Some(false);
                 }
                 if ui.button(t("button.save")).clicked() {
@@ -223,7 +228,9 @@ pub fn draw_settings_panel(
                     if let Some(preset) = presets.iter().find(|p| p.id == settings.appearance.theme) {
                         crate::theme::set_theme(preset.theme);
                     }
-                    // FileHandler 탭의 Extension Mapping draft 를 registry 에 commit + 디스크 저장.
+                    // FileHandler 탭의 Extension Mapping + Detectors/Handlers 편집 draft 를
+                    // registry 에 commit + 디스크 저장.
+                    let mut fh_touched = false;
                     if let Some(draft) = ui_state.extension_priority_draft.take() {
                         for (ext, order) in &draft {
                             if order.is_empty() {
@@ -232,6 +239,16 @@ pub fn draw_settings_panel(
                                 file_format.set_user_extension_priority(ext, order.clone());
                             }
                         }
+                        fh_touched = true;
+                    }
+                    {
+                        let fh = std::mem::take(&mut ui_state.fh_edit_draft);
+                        if fh.has_changes() {
+                            fh.apply(file_format, file_handler);
+                            fh_touched = true;
+                        }
+                    }
+                    if fh_touched {
                         if let Some(path) = user_config_path {
                             if let Err(e) = crate::file_handlers_save::save_combined_user_config(
                                 file_format,
@@ -239,7 +256,7 @@ pub fn draw_settings_panel(
                                 path,
                             ) {
                                 tracing::warn!(
-                                    "extension_priority: save_combined_user_config failed: {e}"
+                                    "file_handler tab: save_combined_user_config failed: {e}"
                                 );
                             }
                         }
@@ -317,6 +334,7 @@ pub fn draw_settings_panel(
                         &mut ui_state.extension_priority_draft,
                         &mut ui_state.extension_priority_new_input,
                         &mut ui_state.recent_picks_cache,
+                        &mut ui_state.fh_edit_draft,
                         file_format,
                         file_handler,
                         recent_picks_path,

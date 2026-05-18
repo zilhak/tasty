@@ -9,7 +9,8 @@ pub mod config;
 pub mod registry;
 pub mod types;
 
-pub use registry::FileHandlerRegistry;
+pub use config::{HandlerDeclError, UserHandlerActionDecl};
+pub use registry::{FileHandlerRegistry, UserHandlerUpsertDecl};
 pub use types::{
     is_valid_handler_short_name, FileHandler, HandlerAction, HandlerId, HandlerOwner,
 };

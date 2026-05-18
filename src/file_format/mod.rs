@@ -13,6 +13,7 @@ pub(crate) mod lua_eval;
 pub mod registry;
 pub mod types;
 
+pub use config::{DetectorDecl, DetectorDeclError, DetectorRuleDecl};
 pub use info::DetectorInfo;
 pub use registry::FileFormatRegistry;
 pub use types::{
