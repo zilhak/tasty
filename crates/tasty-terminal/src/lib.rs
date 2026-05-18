@@ -23,6 +23,7 @@ pub mod test_helpers;
 mod vte_handler;
 
 pub use events::*;
+pub use scrollback::ScrollbackLine;
 
 /// Configuration for creating a new Terminal.
 pub struct TerminalConfig<'a> {
@@ -1175,6 +1176,21 @@ impl Terminal {
     /// wrapped lines on copy. Returns `None` if `index` is out of range.
     pub fn scrollback_line_wrapped(&self, index: usize) -> Option<bool> {
         self.scrollback.line_wrapped(index)
+    }
+
+    /// Get a full scrollback line by index (cells + wrapped flag).
+    pub fn scrollback_line_full(&self, index: usize) -> Option<crate::ScrollbackLine> {
+        let cells = self.scrollback.line_owned(index)?;
+        let wrapped = self.scrollback.line_wrapped(index).unwrap_or(false);
+        Some(crate::ScrollbackLine::new(cells, wrapped))
+    }
+
+    /// Inject scrollback lines (oldest first) into this terminal's scrollback buffer.
+    /// Used to restore scrollback after recreating a terminal (closed-item / layout restore).
+    pub fn inject_scrollback(&mut self, lines: Vec<crate::ScrollbackLine>) {
+        for line in lines {
+            self.scrollback.push_line(line);
+        }
     }
 
     /// Capture the top line(s) from the surface before a scroll change is applied.

@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 use std::path::PathBuf;
 
+use tasty_terminal::ScrollbackLine;
 use termwiz::cell::CellAttributes;
 
 use super::{PaneId, SplitDirection, Surface, SurfaceId, TabId, WorkspaceId};
@@ -20,8 +21,8 @@ pub struct ClosedSurface {
     pub restore_command: Option<String>,
     /// Screen content: rows of (text, attrs) cells.
     pub screen: Vec<Vec<(String, CellAttributes)>>,
-    /// Scrollback buffer (oldest first).
-    pub scrollback: VecDeque<Vec<(String, CellAttributes)>>,
+    /// Scrollback buffer (oldest first). Each line carries cells + soft-wrap flag.
+    pub scrollback: VecDeque<ScrollbackLine>,
 }
 
 /// Snapshot of a closed panel (terminal, tab with split surfaces, etc).
@@ -117,11 +118,11 @@ impl ClosedSurface {
             })
             .collect();
 
-        // Move scrollback data (capture owned copies)
+        // Move scrollback data (capture owned copies with wrapped flag)
         let scrollback_len = terminal.scrollback_len();
         let mut scrollback = VecDeque::with_capacity(scrollback_len);
         for i in 0..scrollback_len {
-            if let Some(line) = terminal.scrollback_line_owned(i) {
+            if let Some(line) = terminal.scrollback_line_full(i) {
                 scrollback.push_back(line);
             }
         }

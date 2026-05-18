@@ -173,6 +173,10 @@ impl AppState {
         )
         .ok()?;
 
+        if !closed.scrollback.is_empty() {
+            terminal.inject_scrollback(closed.scrollback.into_iter().collect());
+        }
+
         if let Some(dir) = closed.cwd.as_deref() {
             let cd_cmd = format!("cd {}\r", shell_escape(dir));
             terminal.send_key(&cd_cmd);
