@@ -671,6 +671,27 @@ impl App {
         gpu: GpuState,
         settings: crate::settings::Settings,
     ) {
+        // memory.db 초기화는 create_app_state 이전에 반드시 호출. layout 복원
+        // 경로가 surface_meta(`scrollback.persist_id`, `restore.command`) 를
+        // 읽고 쓰기 때문에, 초기화 전이면 그 동작이 모두 silent 실패한다.
+        // 첫 윈도우는 `create_new_window` 를 거치지 않고 곧장 이 함수로 진입하므로
+        // 여기서도 호출이 필요하다. `init_with_config` 는 idempotent — 두 번째
+        // 호출은 no-op.
+        let memory_config = tasty_memory::MemoryConfig {
+            entry_max_bytes: settings.memory.entry_max_mb.saturating_mul(1024 * 1024),
+            secret_quota_per_owner_bytes: settings
+                .memory
+                .secret_quota_mb_per_plugin
+                .saturating_mul(1024 * 1024),
+            regular_quota_total_bytes: settings
+                .memory
+                .regular_quota_mb_total
+                .saturating_mul(1024 * 1024),
+        };
+        if let Err(e) = tasty_memory::init_with_config(memory_config) {
+            tracing::warn!("memory.db init failed: {e}");
+        }
+
         let state = self.create_app_state(&gpu, settings.appearance.sidebar_width);
 
         self.engine.start_ipc();
