@@ -56,6 +56,7 @@ pub(crate) enum MiscSubTab {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SettingsTab {
     General,
+    Terminal,
     Appearance,
     Clipboard,
     Notifications,
@@ -274,6 +275,7 @@ pub fn draw_settings_panel(
         ui.horizontal(|ui| {
             let tabs = [
                 (SettingsTab::General, t("settings.tab.general")),
+                (SettingsTab::Terminal, t("settings.tab.terminal")),
                 (SettingsTab::Appearance, t("settings.tab.appearance")),
                 (SettingsTab::Clipboard, t("settings.tab.clipboard")),
                 (SettingsTab::Notifications, t("settings.tab.notifications")),
@@ -302,6 +304,7 @@ pub fn draw_settings_panel(
                 .drag_to_scroll(false)
                 .show(ui, |ui| match active_tab {
                     SettingsTab::General => draw_general_tab(ui, &mut draft),
+                    SettingsTab::Terminal => draw_terminal_tab(ui, &mut draft),
                     SettingsTab::Appearance => draw_appearance_tab(
                         ui,
                         &mut draft,
