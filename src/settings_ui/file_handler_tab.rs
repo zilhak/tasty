@@ -188,15 +188,34 @@ pub(crate) fn draw_file_handler_tab(
     }
 }
 
+/// Sub-tab 상단 intro 블록: 본문 paragraph(wrap) + bullet 리스트.
+fn draw_intro_block(ui: &mut egui::Ui, body_key: &str, bullet_keys: &[&str]) {
+    ui.add_space(4.0);
+    ui.add(egui::Label::new(t(body_key)).wrap());
+    ui.add_space(4.0);
+    for key in bullet_keys {
+        ui.add(egui::Label::new(format!("• {}", t(key))).wrap());
+    }
+    ui.add_space(8.0);
+}
+
 /// Detectors sub-tab — Enabled 토글, user-origin 삭제, user 추가 form.
 fn draw_detectors(
     ui: &mut egui::Ui,
     fh: &mut FileHandlerEditDraft,
     file_format: &FileFormatRegistry,
 ) {
-    ui.add_space(4.0);
-    ui.label(t("settings.file_handler.detectors.description"));
-    ui.add_space(8.0);
+    draw_intro_block(
+        ui,
+        "settings.file_handler.detectors.description",
+        &[
+            "settings.file_handler.detectors.bullet_what",
+            "settings.file_handler.detectors.bullet_rules",
+            "settings.file_handler.detectors.bullet_origin",
+            "settings.file_handler.detectors.bullet_status",
+            "settings.file_handler.detectors.bullet_add",
+        ],
+    );
 
     let ids = file_format.list_detectors();
     if ids.is_empty() {
@@ -390,9 +409,18 @@ fn draw_handlers(
     file_format: &FileFormatRegistry,
     file_handler: &FileHandlerRegistry,
 ) {
-    ui.add_space(4.0);
-    ui.label(t("settings.file_handler.handlers.description"));
-    ui.add_space(8.0);
+    draw_intro_block(
+        ui,
+        "settings.file_handler.handlers.description",
+        &[
+            "settings.file_handler.handlers.bullet_what",
+            "settings.file_handler.handlers.bullet_priority",
+            "settings.file_handler.handlers.bullet_owner",
+            "settings.file_handler.handlers.bullet_action_surface",
+            "settings.file_handler.handlers.bullet_action_ipc",
+            "settings.file_handler.handlers.bullet_action_system",
+        ],
+    );
 
     let ids = file_handler.list_handlers();
     if ids.is_empty() {
@@ -849,9 +877,16 @@ fn draw_extension_mapping(
     }
     let draft_map = draft.as_mut().expect("draft initialized above");
 
-    ui.add_space(4.0);
-    ui.label(t("settings.file_handler.extension_mapping.description"));
-    ui.add_space(8.0);
+    draw_intro_block(
+        ui,
+        "settings.file_handler.extension_mapping.description",
+        &[
+            "settings.file_handler.extension_mapping.bullet_when",
+            "settings.file_handler.extension_mapping.bullet_visibility",
+            "settings.file_handler.extension_mapping.bullet_actions",
+            "settings.file_handler.extension_mapping.bullet_unregistered",
+        ],
+    );
 
     // 표시할 확장자 = (draft 의 확장자) ∪ (모든 광고 확장자 중 1개 이상 candidate 가 있는 것).
     // candidate 가 2개 이상인 경우만 priority 의미가 있으므로 실제 노출은 후자 위주.
