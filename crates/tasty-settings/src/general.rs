@@ -77,6 +77,8 @@ pub struct GeneralSettings {
     pub close_behavior: String,
     /// Save and restore layout (workspaces, panes, tabs) on restart.
     pub restore_layout: bool,
+    /// Restore terminal scrollback content on restart (requires `restore_layout`).
+    pub restore_terminal_content: bool,
     /// 터미널 내 링크 클릭 시 요구되는 수식키. "ctrl" | "alt" | "none".
     /// "none"이면 평범한 클릭으로 링크가 열리므로 텍스트 선택과 구분되지 않는 점에 유의.
     pub link_click_modifier: String,
@@ -126,6 +128,7 @@ impl Default for GeneralSettings {
             inherit_cwd: true,
             close_behavior: "ask".to_string(),
             restore_layout: true,
+            restore_terminal_content: true,
             link_click_modifier: "ctrl".to_string(),
         }
     }

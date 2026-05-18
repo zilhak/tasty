@@ -164,6 +164,7 @@ disabled = "disabled"
 [settings.general]
 heading = "General"
 restore_layout_label = "Restore layout on startup:"
+restore_terminal_content_label = "Restore terminal content on restart:"
 close_behavior_label = "Close behavior:"
 close_behavior_ask = "Ask"
 close_behavior_minimize = "Minimize to background"
