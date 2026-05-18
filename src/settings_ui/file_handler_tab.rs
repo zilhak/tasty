@@ -21,7 +21,6 @@ use crate::file_handler::{
     FileHandlerRegistry, HandlerAction, HandlerId, HandlerOwner, UserHandlerActionDecl,
     UserHandlerUpsertDecl,
 };
-use crate::file_handler_recent::RecentPicks;
 use crate::i18n::t;
 
 /// FileHandler 탭의 sub-tab.
@@ -30,7 +29,6 @@ pub(crate) enum FileHandlerSubTab {
     Detectors,
     Handlers,
     ExtensionMapping,
-    RecentPicks,
 }
 
 /// Detectors / Handlers sub-tab 의 편집 draft. Save 시 `apply` 가 호출되고 Cancel 시 폐기.
@@ -141,11 +139,9 @@ pub(crate) fn draw_file_handler_tab(
     sub_tab: &mut FileHandlerSubTab,
     draft: &mut Option<BTreeMap<String, Vec<DetectorId>>>,
     new_ext_input: &mut String,
-    recent_picks: &mut Option<RecentPicks>,
     fh_draft: &mut FileHandlerEditDraft,
     file_format: &FileFormatRegistry,
     file_handler: &FileHandlerRegistry,
-    recent_picks_path: Option<&std::path::Path>,
 ) {
     ui.horizontal(|ui| {
         for (tab, label_key) in [
@@ -160,10 +156,6 @@ pub(crate) fn draw_file_handler_tab(
             (
                 FileHandlerSubTab::ExtensionMapping,
                 "settings.file_handler.sub.extension_mapping",
-            ),
-            (
-                FileHandlerSubTab::RecentPicks,
-                "settings.file_handler.sub.recent_picks",
             ),
         ] {
             let selected = *sub_tab == tab;
@@ -181,9 +173,6 @@ pub(crate) fn draw_file_handler_tab(
         FileHandlerSubTab::Detectors => draw_detectors(ui, fh_draft, file_format),
         FileHandlerSubTab::Handlers => {
             draw_handlers(ui, fh_draft, file_format, file_handler)
-        }
-        FileHandlerSubTab::RecentPicks => {
-            draw_recent_picks(ui, recent_picks, recent_picks_path)
         }
     }
 }
@@ -714,69 +703,6 @@ fn build_add_handler_decl(form: &AddHandlerForm) -> Result<UserHandlerUpsertDecl
     })
 }
 
-/// Recent picks sub-tab — `~/.tasty/file-handler-recent.json` 의 LRU 목록 + Forget.
-fn draw_recent_picks(
-    ui: &mut egui::Ui,
-    recent_picks: &mut Option<RecentPicks>,
-    path: Option<&std::path::Path>,
-) {
-    if recent_picks.is_none() {
-        let picks = match path {
-            Some(p) => RecentPicks::load(p),
-            None => RecentPicks::default(),
-        };
-        *recent_picks = Some(picks);
-    }
-    let picks = recent_picks.as_mut().expect("loaded above");
-
-    ui.add_space(4.0);
-    ui.label(t("settings.file_handler.recent_picks.description"));
-    ui.add_space(8.0);
-
-    if picks.list().is_empty() {
-        ui.label(t("settings.file_handler.recent_picks.empty"));
-        return;
-    }
-
-    let entries: Vec<(crate::file_handler::HandlerId, i64)> = picks
-        .list()
-        .iter()
-        .map(|e| (e.handler_id.clone(), e.last_used_at))
-        .collect();
-    let now_secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0);
-    let mut to_forget: Option<crate::file_handler::HandlerId> = None;
-    for (id, last_used) in &entries {
-        ui.horizontal(|ui| {
-            ui.label(id.as_str());
-            ui.weak(format!("({})", format_relative_time(now_secs - last_used)));
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui
-                    .small_button(t("settings.file_handler.recent_picks.forget"))
-                    .clicked()
-                {
-                    to_forget = Some(id.clone());
-                }
-            });
-        });
-    }
-    if let Some(id) = to_forget {
-        if picks.forget(&id) {
-            if let Some(p) = path {
-                if let Err(e) = picks.save_atomic(p) {
-                    tracing::warn!(
-                        path = %p.display(),
-                        error = %e,
-                        "recent_picks: forget save failed",
-                    );
-                }
-            }
-        }
-    }
-}
-
 fn detector_origins_summary(rules: &[crate::file_format::DetectorRule]) -> String {
     let mut origins: BTreeSet<String> = BTreeSet::new();
     for r in rules {
@@ -832,30 +758,6 @@ fn handler_action_summary(action: &HandlerAction) -> String {
         HandlerAction::System => "system".into(),
     }
 }
-
-/// 상대 시간을 짧게 표시. UI 라벨이라 정밀도 < 가독성.
-fn format_relative_time(secs_ago: i64) -> String {
-    if secs_ago < 60 {
-        return t("settings.file_handler.recent_picks.just_now").to_string();
-    }
-    if secs_ago < 3600 {
-        return crate::i18n::t_fmt(
-            "settings.file_handler.recent_picks.minutes_ago",
-            &(secs_ago / 60).to_string(),
-        );
-    }
-    if secs_ago < 86400 {
-        return crate::i18n::t_fmt(
-            "settings.file_handler.recent_picks.hours_ago",
-            &(secs_ago / 3600).to_string(),
-        );
-    }
-    crate::i18n::t_fmt(
-        "settings.file_handler.recent_picks.days_ago",
-        &(secs_ago / 86400).to_string(),
-    )
-}
-
 
 /// Extension Mapping sub-tab. 광고된 모든 확장자 + draft 에 있는 확장자를 리스트로 표시,
 /// 각 확장자 옆에 후보 detector 들을 ↑↓ 버튼으로 재정렬 가능.

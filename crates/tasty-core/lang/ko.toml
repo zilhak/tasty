@@ -85,7 +85,6 @@ coming_soon = "이 서브탭은 향후 업데이트에서 제공됩니다."
 detectors = "Detector"
 handlers = "Handler"
 extension_mapping = "확장자 매핑"
-recent_picks = "최근 선택"
 
 [settings.file_handler.common]
 enabled = "활성"
@@ -152,15 +151,6 @@ err_detector_invalid = "Detector ID 형식이 올바르지 않습니다."
 err_priority_invalid = "Priority 는 정수여야 합니다."
 err_surface_kind_empty = "Surface kind 는 필수입니다."
 err_ipc_method_empty = "IPC method 는 필수입니다."
-
-[settings.file_handler.recent_picks]
-description = "최근에 파일 picker 에서 직접 고른 handler 목록입니다. Forget 으로 LRU 캐시에서 제거합니다."
-empty = "최근 선택한 handler 가 없습니다."
-forget = "삭제"
-just_now = "방금 전"
-minutes_ago = "{}분 전"
-hours_ago = "{}시간 전"
-days_ago = "{}일 전"
 
 [settings.file_handler.extension_mapping]
 description = "같은 확장자를 광고하는 여러 detector 가 있을 때 어느 것을 우선할지 정합니다. 위에 있는 detector 가 먼저 매칭됩니다."

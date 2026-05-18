@@ -88,9 +88,6 @@ pub struct SettingsUiState {
     pub(crate) extension_priority_draft: Option<std::collections::BTreeMap<String, Vec<DetectorId>>>,
     /// 사용자가 새 확장자 추가 시 입력하는 텍스트 (Extension Mapping sub-tab).
     pub(crate) extension_priority_new_input: String,
-    /// FileHandler 탭의 Recent picks sub-tab 캐시. 첫 진입 시 디스크에서 로드.
-    /// 모달이 살아있는 동안 메모리상에서 변경 가능. Forget 액션은 즉시 디스크에 atomic save.
-    pub(crate) recent_picks_cache: Option<crate::file_handler_recent::RecentPicks>,
     /// FileHandler 탭의 Detectors/Handlers sub-tab 편집 draft. Save 시 registry 에 commit +
     /// 디스크 저장. Cancel 시 폐기.
     pub(crate) fh_edit_draft: file_handler_tab::FileHandlerEditDraft,
@@ -155,7 +152,6 @@ impl SettingsUiState {
             file_handler_sub_tab: FileHandlerSubTab::ExtensionMapping,
             extension_priority_draft: None,
             extension_priority_new_input: String::new(),
-            recent_picks_cache: None,
             fh_edit_draft: file_handler_tab::FileHandlerEditDraft::default(),
             selected_preset: None,
             pending_binding: None,
@@ -184,7 +180,6 @@ pub fn draw_settings_panel(
     file_format: &FileFormatRegistry,
     file_handler: &FileHandlerRegistry,
     user_config_path: Option<&std::path::Path>,
-    recent_picks_path: Option<&std::path::Path>,
 ) -> Option<bool> {
     if ui_state.draft.is_none() {
         ui_state.draft = Some(settings.clone());
@@ -211,9 +206,6 @@ pub fn draw_settings_panel(
                     // Cancel: discard bashrc draft so next open reloads from disk.
                     ui_state.bashrc_user_draft = None;
                     ui_state.extension_priority_draft = None;
-                    // RecentPicks 의 Forget 액션은 즉시 디스크에 반영되므로 cancel 로 되돌릴 수 없다.
-                    // cache 만 폐기 → 다음 진입 시 디스크에서 다시 로드.
-                    ui_state.recent_picks_cache = None;
                     ui_state.fh_edit_draft = file_handler_tab::FileHandlerEditDraft::default();
                     result = Some(false);
                 }
@@ -336,11 +328,9 @@ pub fn draw_settings_panel(
                         &mut ui_state.file_handler_sub_tab,
                         &mut ui_state.extension_priority_draft,
                         &mut ui_state.extension_priority_new_input,
-                        &mut ui_state.recent_picks_cache,
                         &mut ui_state.fh_edit_draft,
                         file_format,
                         file_handler,
-                        recent_picks_path,
                     ),
                     SettingsTab::Misc => draw_misc_tab(
                         ui,

@@ -85,7 +85,6 @@ coming_soon = "This sub-tab will be available in a future update."
 detectors = "Detectors"
 handlers = "Handlers"
 extension_mapping = "Extension Mapping"
-recent_picks = "Recent Picks"
 
 [settings.file_handler.common]
 enabled = "enabled"
@@ -152,15 +151,6 @@ err_detector_invalid = "Detector ID is invalid."
 err_priority_invalid = "Priority must be an integer."
 err_surface_kind_empty = "Surface kind is required."
 err_ipc_method_empty = "IPC method is required."
-
-[settings.file_handler.recent_picks]
-description = "Handlers you have picked recently from the file picker. Forget removes the entry from the local LRU cache."
-empty = "No recent picks yet."
-forget = "Forget"
-just_now = "just now"
-minutes_ago = "{} min ago"
-hours_ago = "{} hr ago"
-days_ago = "{} days ago"
 
 [settings.file_handler.extension_mapping]
 description = "When multiple detectors claim the same file extension, set the order you prefer. Detectors are listed top-to-bottom in priority order."
