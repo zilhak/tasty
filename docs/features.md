@@ -953,8 +953,8 @@ bb 의 한 시점을 통째로 캡처해 복원. 키 컨벤션 `tasty.bb.<name>.
 
 #### 서피스
 - `surface.list`: 전체 워크스페이스의 서피스 목록 (id, type, pane_id, tab_index, cols/rows). 비터미널 서피스(Markdown, Explorer, Html)도 포함
-- `surface.close`: 서피스 닫기
-- `surface.close_self`: 호출한 서피스 자신을 닫기 (TASTY_SURFACE_ID 기반)
+- `surface.close`: 서피스 닫기. cascade(surface → tab → pane → workspace)로 마지막 워크스페이스의 마지막 서피스까지 닫혀도 윈도우는 종료되지 않으며, 빈 워크스페이스가 새로 생성되어 invariant("열린 윈도우는 ≥1 workspace")가 유지된다 (에이전트가 사용자의 윈도우를 끄는 부작용 방지).
+- `surface.close_self`: 호출한 서피스 자신을 닫기 (TASTY_SURFACE_ID 기반). `surface.close`와 동일한 cascade·자동 재생성 규칙 적용.
 
 #### 입력
 - `surface.send`: 텍스트 전송 (optional surface_id)

@@ -218,6 +218,27 @@ fn close_active_tab_after_add() {
     assert_eq!(tab_count_after, 1);
 }
 
+#[test]
+fn close_surface_by_id_no_snapshot_recreates_when_emptied() {
+    // 마지막 workspace 의 유일 surface 까지 닫아도 workspaces 가 비면 안 된다.
+    // 다음 redraw 의 active_workspace() 호출 패닉을 막기 위한 invariant 회복.
+    let mut state = test_state();
+    assert_eq!(state.engine.workspaces.len(), 1);
+    let surface_ids = collect_surface_ids(&mut state);
+    assert_eq!(surface_ids.len(), 1);
+    let sid = surface_ids[0];
+
+    assert!(state.close_surface_by_id_no_snapshot(sid));
+    assert!(
+        !state.engine.workspaces.is_empty(),
+        "agent-initiated close must not leave the window with zero workspaces"
+    );
+    // 자동 재생성된 workspace 는 새 surface 를 갖는다.
+    let new_surface_ids = collect_surface_ids(&mut state);
+    assert_eq!(new_surface_ids.len(), 1);
+    assert_ne!(new_surface_ids[0], sid);
+}
+
 // ---- workspace operations ----
 
 #[test]

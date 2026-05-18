@@ -266,8 +266,22 @@ impl AppState {
     }
 
     /// Close without saving snapshot (for IPC/agent-initiated closures).
+    ///
+    /// Agent 가 마지막 workspace 까지 닫아 windows 상태가 비어 버리면, 다음
+    /// redraw 가 `active_workspace()` 를 호출하다 패닉한다. 사용자의 window 를
+    /// 에이전트가 끄는 부작용도 피해야 하므로 (CLAUDE.md "사용자 행동과 에이전트
+    /// 행동의 분리"), cascade 결과 workspaces 가 비면 즉시 새 empty workspace
+    /// 를 만들어 invariant 를 유지한다.
     pub fn close_surface_by_id_no_snapshot(&mut self, surface_id: u32) -> bool {
-        self.close_surface_by_id_inner(surface_id, false)
+        let closed = self.close_surface_by_id_inner(surface_id, false);
+        if closed && self.engine.workspaces.is_empty() {
+            if let Err(e) = self.add_workspace() {
+                tracing::warn!(
+                    "close_surface_by_id_no_snapshot: auto-recreate workspace failed: {e}"
+                );
+            }
+        }
+        closed
     }
 
     fn close_surface_by_id_inner(&mut self, surface_id: u32, save_snapshot: bool) -> bool {
