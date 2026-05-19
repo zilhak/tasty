@@ -323,16 +323,8 @@ impl Tab {
         let Some(spawn) = empty.take_deferred_spawn() else {
             return false;
         };
-        let restore_command = spawn.restore_command.clone();
         match spawn_terminal_from_deferred(surface_id, spawn) {
-            Some(mut terminal) => {
-                // PTY 가 막 만들어진 시점이라 shell 은 아직 prompt 도 못 그렸지만,
-                // send_key 가 pty_write 채널에 바이트를 적재해 두면 shell 이 stdin 을
-                // 처음 읽는 순간 그대로 받아간다. BusyPoll(1초) 을 거치지 않고 시작과
-                // 동시에 명령이 실행되도록 inline 으로 주입한다.
-                if let Some(cmd) = restore_command {
-                    terminal.send_key(&format!("{cmd}\r"));
-                }
+            Some(terminal) => {
                 let ts: Box<dyn Surface> = Box::new(TerminalSurface {
                     id: surface_id,
                     terminal,
@@ -507,6 +499,11 @@ fn spawn_terminal_from_deferred(
     let shell_ref = spawn.shell.as_deref();
     let shell_args: Vec<&str> = spawn.shell_args.iter().map(|s| s.as_str()).collect();
     let working_dir = spawn.working_dir.as_deref();
+    // PTY master 의 첫 입력으로 restore_command 를 미리 적재. Terminal::new 가
+    // writer thread spawn 전에 동기 write 하므로, shell 이 stdin 을 처음 read
+    // 하는 순간 이 명령이 들어간다 (예: `claude -r <uuid>\r`).
+    let initial = spawn.restore_command.as_deref().map(|c| format!("{c}\r"));
+    let initial_input = initial.as_deref();
     match Terminal::new(
         tasty_terminal::TerminalConfig {
             cols: spawn.cols,
@@ -515,6 +512,7 @@ fn spawn_terminal_from_deferred(
             args: &shell_args,
             surface_id,
             working_dir,
+            initial_input,
         },
         spawn.waker,
     ) {

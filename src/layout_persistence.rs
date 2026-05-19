@@ -766,6 +766,11 @@ impl SavedSurface {
                 let sh = ShellConfig::from_settings(&engine.settings);
                 let waker = engine.make_waker(surface_id);
                 let working_dir = cwd.as_ref().map(PathBuf::from);
+                // PTY master 의 첫 입력으로 restore_command 를 미리 적재한다.
+                // Terminal::new 가 writer thread spawn 전에 동기 write 하므로,
+                // child shell 이 stdin 을 처음 read 하는 순간 이 바이트가 들어간다.
+                let initial = restore_command.as_deref().map(|c| format!("{c}\r"));
+                let initial_input = initial.as_deref();
                 let mut terminal = match tasty_terminal::Terminal::new(
                     tasty_terminal::TerminalConfig {
                         cols: engine.default_cols,
@@ -774,6 +779,7 @@ impl SavedSurface {
                         args: &sh.args_ref(),
                         surface_id,
                         working_dir: working_dir.as_deref(),
+                        initial_input,
                     },
                     waker,
                 ) {
@@ -801,13 +807,6 @@ impl SavedSurface {
                     }
                 }
                 engine.send_fast_init(surface_id);
-                if let Some(cmd) = restore_command.as_deref() {
-                    // PTY 직생성 직후 inline 으로 주입. BusyPoll(1초) drain 을
-                    // 거치지 않으므로 시작과 동시에 명령이 실행된다. terminal 은
-                    // 아직 engine.workspaces 에 등록되지 않은 로컬 변수이므로 직접
-                    // send_key 를 호출한다.
-                    terminal.send_key(&format!("{cmd}\r"));
-                }
                 Some(Box::new(TerminalSurface {
                     id: surface_id,
                     terminal,

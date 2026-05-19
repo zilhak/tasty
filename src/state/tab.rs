@@ -319,6 +319,7 @@ impl AppState {
                 args: &sh.args_ref(),
                 surface_id,
                 working_dir: cwd.as_deref(),
+                initial_input: None,
             },
             waker,
         ) {

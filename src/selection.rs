@@ -277,6 +277,7 @@ mod tests {
                 args: &[],
                 surface_id: 0,
                 working_dir: None,
+                initial_input: None,
             },
             waker,
         )

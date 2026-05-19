@@ -33,6 +33,12 @@ pub struct TerminalConfig<'a> {
     pub args: &'a [&'a str],
     pub surface_id: u32,
     pub working_dir: Option<&'a std::path::Path>,
+    /// PTY master fd 에 동기적으로 미리 써넣을 바이트. writer thread 가 spawn
+    /// 되기 전에 직접 write_all + flush 되므로, child shell 이 stdin 을 처음 read
+    /// 하는 순간 무조건 이 바이트가 첫 입력으로 들어온다. TUI 세션 복원
+    /// (`claude -r <uuid>\r`) 처럼 spawn 과 동시에 실행되어야 할 명령을 넘기는 용도.
+    /// 호출자는 줄바꿈(`\r`) 등 submit 문자를 직접 포함해야 한다.
+    pub initial_input: Option<&'a str>,
 }
 
 /// Information about a single cell for debug inspection.
@@ -212,6 +218,20 @@ impl Terminal {
 
         let mut pty_writer = pair.master.take_writer()?;
         let mut pty_reader = pair.master.try_clone_reader()?;
+
+        // PTY master 의 첫 바이트로 initial_input 을 동기 write. child 가 stdin 을
+        // 처음 read 하는 순간 이 바이트가 무조건 들어간다. writer thread 의 채널
+        // 경유로는 미세한 race 또는 첫 write 가 지연되는 케이스가 있어, 직접 master
+        // fd 에 써서 timing 을 결정적으로 만든다.
+        if let Some(input) = config.initial_input {
+            if !input.is_empty() {
+                if let Err(e) = pty_writer.write_all(input.as_bytes()) {
+                    tracing::warn!("initial_input write_all failed: {e}");
+                } else if let Err(e) = pty_writer.flush() {
+                    tracing::warn!("initial_input flush failed: {e}");
+                }
+            }
+        }
 
         // Writer thread: drains queued writes to PTY without blocking the main thread.
         let (write_tx, write_rx) = mpsc::channel::<Vec<u8>>();
@@ -1315,6 +1335,7 @@ mod tests {
                 args: &[],
                 surface_id: 0,
                 working_dir: None,
+                initial_input: None,
             },
             waker,
         )

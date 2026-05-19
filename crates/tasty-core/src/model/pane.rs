@@ -59,6 +59,7 @@ impl Pane {
                 args: shell_args,
                 surface_id,
                 working_dir,
+                initial_input: None,
             },
             waker,
         )?;
@@ -96,6 +97,7 @@ impl Pane {
                 args: shell_args,
                 surface_id,
                 working_dir,
+                initial_input: None,
             },
             waker,
         )?;
@@ -130,6 +132,7 @@ impl Pane {
                 args: shell_args,
                 surface_id,
                 working_dir,
+                initial_input: None,
             },
             waker,
         )?;
@@ -217,6 +220,7 @@ impl Pane {
                 args: shell_args,
                 surface_id: new_surface_id,
                 working_dir,
+                initial_input: None,
             },
             waker,
         )?;
@@ -249,6 +253,7 @@ impl Pane {
                 args: shell_args,
                 surface_id: new_surface_id,
                 working_dir,
+                initial_input: None,
             },
             waker,
         )?;

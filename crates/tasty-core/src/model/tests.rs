@@ -600,6 +600,7 @@ fn test_surface_node(id: SurfaceId) -> TerminalSurface {
             args: &[],
             surface_id: id,
             working_dir: None,
+            initial_input: None,
         },
         waker,
     )

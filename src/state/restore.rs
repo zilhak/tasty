@@ -160,6 +160,18 @@ impl AppState {
         let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
         let waker = self.engine.make_waker(surface_id);
 
+        // PTY 의 첫 입력으로 cd + restore_command 를 합쳐 한 번에 주입한다. shell 이
+        // stdin 을 처음 read 하는 순간 이 바이트가 들어가므로, GUI redraw / BusyPoll
+        // 등 추가 트리거 없이 spawn 과 동시에 실행된다.
+        let mut initial = String::new();
+        if let Some(dir) = closed.cwd.as_deref() {
+            initial.push_str(&format!("cd {}\r", shell_escape(dir)));
+        }
+        if let Some(cmd) = closed.restore_command.as_deref() {
+            initial.push_str(&format!("{cmd}\r"));
+        }
+        let initial_input = if initial.is_empty() { None } else { Some(initial.as_str()) };
+
         let mut terminal = tasty_terminal::Terminal::new(
             tasty_terminal::TerminalConfig {
                 cols,
@@ -168,6 +180,7 @@ impl AppState {
                 args: &shell_args,
                 surface_id,
                 working_dir: None,
+                initial_input,
             },
             waker,
         )
@@ -177,19 +190,7 @@ impl AppState {
             terminal.inject_scrollback(closed.scrollback.into_iter().collect());
         }
 
-        if let Some(dir) = closed.cwd.as_deref() {
-            let cd_cmd = format!("cd {}\r", shell_escape(dir));
-            terminal.send_key(&cd_cmd);
-        }
-
         self.engine.send_fast_init(surface_id);
-
-        // TUI 세션 재개용 명령 (plugin-provided, e.g. "claude -r <uuid>") 를
-        // PTY 직생성 직후 inline 으로 주입. BusyPoll(1초) drain 을 거치지 않으므로
-        // 시작과 동시에 명령이 실행된다.
-        if let Some(cmd) = closed.restore_command {
-            terminal.send_key(&format!("{cmd}\r"));
-        }
 
         Some(TerminalSurface {
             id: surface_id,

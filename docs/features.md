@@ -1429,7 +1429,7 @@ Claude Code 등 TUI 앱이 실행 중이던 터미널을 복원할 때, 해당 �
 1. **앱 재시작 (레이아웃 복원)**: `restore_layout` 설정 활성화 시, 레이아웃 저장 시점에 세션 ID가 있는 터미널은 `restore_command`를 함께 저장. 복원 시 셸 초기화 후 자동 실행
 2. **닫힌 항목 복원 (Ctrl+Shift+T)**: surface/tab/workspace 닫기 시 `ClosedSurface`에 `restore_command`를 포함하여 스냅샷. 복원 시 셸 시작 후 `restore_command` 자동 실행
 
-명령 주입 타이밍은 PTY 가 spawn 되는 그 순간이다 — 즉시 복원 경로는 `Terminal::new` 직후 로컬 인스턴스에 `send_key` 로 직접 적재하고, deferred 경로는 `DeferredSpawn.restore_command` 로 들고 있다가 `ensure_initialized` 가 PTY 를 실제로 만든 직후 같은 PTY 인스턴스에 적재한다. 어느 경우든 shell 이 stdin 을 처음 읽는 순간 명령이 그대로 실행되므로, BusyPoll(1초 주기) drain 등 추가 지연 없이 시작과 동시에 복원된다.
+명령 주입 타이밍은 PTY 가 spawn 되는 그 순간이다. `TerminalConfig.initial_input` 으로 `Terminal::new` 에 명령을 넘기면, writer thread 가 시작되기 전에 PTY master fd 에 동기적으로 write_all + flush 된다. 따라서 child shell 이 stdin 을 처음 read 하는 순간 무조건 이 바이트가 첫 입력으로 들어가, GUI redraw / BusyPoll / 워크스페이스 전환 등 추가 트리거 없이 spawn 과 동시에 실행된다. deferred 경로는 `DeferredSpawn.restore_command` 가 `ensure_initialized` 시 `initial_input` 으로 변환되어 동일하게 처리된다.
 
 ### 터미널 내용 복원 (scrollback)
 
