@@ -4,6 +4,7 @@
 mod app_icon;
 mod cli;
 mod click_cursor;
+mod clipboard;
 mod clipboard_history;
 mod command_index;
 mod command_palette;
@@ -111,7 +112,7 @@ impl ClipboardContext {
 }
 
 /// Clipboard data detected by the background polling thread.
-enum ClipboardData {
+pub(crate) enum ClipboardData {
     Text(String),
     Image(crate::clipboard_history::ImageData),
 }
@@ -127,7 +128,7 @@ impl std::fmt::Debug for ClipboardData {
 
 /// Custom events sent to the winit event loop from background threads.
 #[derive(Debug)]
-enum AppEvent {
+pub(crate) enum AppEvent {
     /// PTY reader thread produced output. If targeted_pty_polling is enabled,
     /// contains the surface_id that has new data. Otherwise None (poll all).
     TerminalOutput(Option<u32>),
@@ -2816,50 +2817,7 @@ fn main() -> Result<()> {
 
     // 시스템 클립보드 폴링 스레드. interval은 앱 시작 시점의 설정 값을 사용하며,
     // runtime 변경은 앱 재시작 후 반영된다.
-    {
-        let poll_interval_ms = crate::settings::Settings::load()
-            .clipboard
-            .poll_interval_ms
-            .max(100);
-        let tick_proxy = proxy.clone();
-        std::thread::spawn(move || {
-            let interval = std::time::Duration::from_millis(poll_interval_ms);
-            let mut last_text: Option<String> = None;
-            loop {
-                std::thread::sleep(interval);
-                let Some(mut cb) = arboard::Clipboard::new().ok() else {
-                    continue;
-                };
-                // Try text first, then image
-                if let Ok(text) = cb.get_text() {
-                    if !text.is_empty() {
-                        let changed = last_text.as_ref() != Some(&text);
-                        if changed {
-                            last_text = Some(text.clone());
-                            if tick_proxy
-                                .send_event(AppEvent::ClipboardChanged(ClipboardData::Text(text)))
-                                .is_err()
-                            {
-                                break;
-                            }
-                        }
-                        continue;
-                    }
-                }
-                if let Ok(img) = cb.get_image() {
-                    if let Some(data) = event_handler::encode_clipboard_image(&img) {
-                        last_text = None;
-                        if tick_proxy
-                            .send_event(AppEvent::ClipboardChanged(ClipboardData::Image(data)))
-                            .is_err()
-                        {
-                            break;
-                        }
-                    }
-                }
-            }
-        });
-    }
+    clipboard::poll_thread::spawn(proxy.clone());
 
     // 1초 간격 busy ticker. 메인 스레드가 받아서 모든 surface의 foreground
     // 프로세스를 다시 조회하고 캐시를 갱신한다. PID 조회 자체는 가볍지만
