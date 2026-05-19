@@ -323,8 +323,16 @@ impl Tab {
         let Some(spawn) = empty.take_deferred_spawn() else {
             return false;
         };
+        let restore_command = spawn.restore_command.clone();
         match spawn_terminal_from_deferred(surface_id, spawn) {
-            Some(terminal) => {
+            Some(mut terminal) => {
+                // PTY 가 막 만들어진 시점이라 shell 은 아직 prompt 도 못 그렸지만,
+                // send_key 가 pty_write 채널에 바이트를 적재해 두면 shell 이 stdin 을
+                // 처음 읽는 순간 그대로 받아간다. BusyPoll(1초) 을 거치지 않고 시작과
+                // 동시에 명령이 실행되도록 inline 으로 주입한다.
+                if let Some(cmd) = restore_command {
+                    terminal.send_key(&format!("{cmd}\r"));
+                }
                 let ts: Box<dyn Surface> = Box::new(TerminalSurface {
                     id: surface_id,
                     terminal,

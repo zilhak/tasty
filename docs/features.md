@@ -1429,6 +1429,8 @@ Claude Code 등 TUI 앱이 실행 중이던 터미널을 복원할 때, 해당 �
 1. **앱 재시작 (레이아웃 복원)**: `restore_layout` 설정 활성화 시, 레이아웃 저장 시점에 세션 ID가 있는 터미널은 `restore_command`를 함께 저장. 복원 시 셸 초기화 후 자동 실행
 2. **닫힌 항목 복원 (Ctrl+Shift+T)**: surface/tab/workspace 닫기 시 `ClosedSurface`에 `restore_command`를 포함하여 스냅샷. 복원 시 셸 시작 후 `restore_command` 자동 실행
 
+명령 주입 타이밍은 PTY 가 spawn 되는 그 순간이다 — 즉시 복원 경로는 `Terminal::new` 직후 로컬 인스턴스에 `send_key` 로 직접 적재하고, deferred 경로는 `DeferredSpawn.restore_command` 로 들고 있다가 `ensure_initialized` 가 PTY 를 실제로 만든 직후 같은 PTY 인스턴스에 적재한다. 어느 경우든 shell 이 stdin 을 처음 읽는 순간 명령이 그대로 실행되므로, BusyPoll(1초 주기) drain 등 추가 지연 없이 시작과 동시에 복원된다.
+
 ### 터미널 내용 복원 (scrollback)
 
 설정 `general.restore_terminal_content` (기본 on) 가 활성화되어 있으면 레이아웃 저장 시 각 터미널의 scrollback (위로 스크롤 가능한 출력 히스토리) **과 현재 화면 (visible) 라인** 이 함께 보존되어, 앱 재시작 후에도 이전 출력을 그대로 볼 수 있다. 화면 라인은 scrollback 뒤에 이어 붙여 저장하므로 복원 후 위로 스크롤하면 [이전 scrollback → 이전 화면 → 새 prompt] 순으로 보인다 (trailing blank row 는 capture 시 trim).

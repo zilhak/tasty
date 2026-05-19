@@ -21,6 +21,10 @@ pub struct DeferredSpawn {
     pub rows: usize,
     pub waker: tasty_terminal::Waker,
     pub working_dir: Option<std::path::PathBuf>,
+    /// PTY spawn 직후 즉시 send_key 로 주입할 명령. 줄바꿈은 호출자가 붙이지 않고
+    /// `ensure_initialized` 가 `\r` 를 자동으로 덧붙여 submit 한다. TUI 세션 재개용
+    /// (예: `claude -r <uuid>`).
+    pub restore_command: Option<String>,
 }
 
 impl TerminalSurface {

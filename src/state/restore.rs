@@ -184,9 +184,11 @@ impl AppState {
 
         self.engine.send_fast_init(surface_id);
 
-        // Queue restore command for TUI session resumption (plugin-provided, e.g. "claude -r <uuid>").
+        // TUI 세션 재개용 명령 (plugin-provided, e.g. "claude -r <uuid>") 를
+        // PTY 직생성 직후 inline 으로 주입. BusyPoll(1초) drain 을 거치지 않으므로
+        // 시작과 동시에 명령이 실행된다.
         if let Some(cmd) = closed.restore_command {
-            self.engine.pending_restore_commands.push((surface_id, cmd));
+            terminal.send_key(&format!("{cmd}\r"));
         }
 
         Some(TerminalSurface {

@@ -761,6 +761,7 @@ fn test_deferred_placeholder(id: SurfaceId) -> super::EmptySurface {
         rows: 24,
         waker,
         working_dir: None,
+        restore_command: None,
     };
     super::EmptySurface::new_deferred(id, spawn)
 }

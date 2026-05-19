@@ -702,6 +702,20 @@ impl SavedSurface {
             } if !is_active => {
                 let sh = ShellConfig::from_settings(&engine.settings);
                 let waker = engine.make_waker(surface_id);
+                // capture 단계가 surface_meta 의 restore.command 를 읽으므로
+                // (capture_surface 의 deferred 분기 참조), DeferredSpawn 으로 옮기기
+                // 전에 동일 값을 meta 에도 mirror 한다.
+                if let Some(cmd) = restore_command.as_deref() {
+                    if let Err(e) = crate::surface_meta::SurfaceMetaStore::set(
+                        surface_id,
+                        "restore.command",
+                        cmd,
+                    ) {
+                        tracing::warn!(
+                            "restore: failed to mirror restore.command for surface {surface_id}: {e}"
+                        );
+                    }
+                }
                 let spawn = crate::model::DeferredSpawn {
                     shell: sh.shell_ref().map(|s| s.to_string()),
                     shell_args: sh.args_ref().iter().map(|s| s.to_string()).collect(),
@@ -709,22 +723,9 @@ impl SavedSurface {
                     rows: engine.default_rows,
                     waker,
                     working_dir: cwd.as_ref().map(PathBuf::from),
+                    // PTY 가 실제로 spawn 되는 순간 inline 으로 send_key 된다 (ensure_initialized).
+                    restore_command,
                 };
-                if let Some(cmd) = restore_command {
-                    // 사용자가 이 탭을 열기 전에 layout 재저장이 일어나면 capture 단계가
-                    // surface_meta 의 restore.command 를 읽는다 (capture_surface 의
-                    // deferred 분기 참조). pending 큐에 있는 명령이 사라지지 않도록 미러링.
-                    if let Err(e) = crate::surface_meta::SurfaceMetaStore::set(
-                        surface_id,
-                        "restore.command",
-                        &cmd,
-                    ) {
-                        tracing::warn!(
-                            "restore: failed to mirror restore.command for surface {surface_id}: {e}"
-                        );
-                    }
-                    engine.pending_restore_commands.push((surface_id, cmd));
-                }
                 // Deferred: scrollback 은 PTY 가 실제로 spawn 된 직후 inject 해야 하므로
                 // 큐에 쌓아둔다. `ensure_active_workspace_initialized` /
                 // `ensure_surface_initialized` 가 entry 를 꺼낸다.
@@ -800,8 +801,12 @@ impl SavedSurface {
                     }
                 }
                 engine.send_fast_init(surface_id);
-                if let Some(cmd) = restore_command {
-                    engine.pending_restore_commands.push((surface_id, cmd));
+                if let Some(cmd) = restore_command.as_deref() {
+                    // PTY 직생성 직후 inline 으로 주입. BusyPoll(1초) drain 을
+                    // 거치지 않으므로 시작과 동시에 명령이 실행된다. terminal 은
+                    // 아직 engine.workspaces 에 등록되지 않은 로컬 변수이므로 직접
+                    // send_key 를 호출한다.
+                    terminal.send_key(&format!("{cmd}\r"));
                 }
                 Some(Box::new(TerminalSurface {
                     id: surface_id,

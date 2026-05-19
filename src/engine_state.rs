@@ -163,9 +163,6 @@ pub struct EngineState {
     pub layout_dirty: crate::layout_persistence::LayoutDirtyTracker,
     /// Active workspace index restored from layout.json. Consumed once by AppState::new().
     pub restored_active_workspace: Option<usize>,
-    /// Restore commands queued during layout restore. (surface_id, command).
-    /// Consumed by AppState after shell initialization.
-    pub pending_restore_commands: Vec<(u32, String)>,
     /// Deferred terminal surface 의 scrollback 복원 대기 큐. 값은
     /// `scrollback_store::read` 결과(없으면 entry 자체가 생략됨). PTY 가
     /// 실제로 spawn 된 직후 (`ensure_surface_initialized` 또는 즉시 복원
@@ -241,7 +238,6 @@ impl EngineState {
             identify_worker: None,
             layout_dirty: crate::layout_persistence::LayoutDirtyTracker::new(),
             restored_active_workspace: None,
-            pending_restore_commands: Vec::new(),
             pending_scrollback_inject: HashMap::new(),
             pending_layout_restore: None,
             #[cfg(debug_assertions)]

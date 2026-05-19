@@ -164,6 +164,7 @@ impl Pane {
             rows,
             waker,
             working_dir: working_dir.map(|p| p.to_path_buf()),
+            restore_command: None,
         };
         let placeholder = super::empty_surface::EmptySurface::new_deferred(surface_id, spawn);
         let surface: Box<dyn super::Surface> = Box::new(placeholder);
