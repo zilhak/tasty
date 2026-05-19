@@ -394,6 +394,26 @@ pub struct DialogState {
     pub file_handler_picker: Option<FileHandlerPickerData>,
     /// Git viewer popup 의 현재 상태. popup 닫힘 시 `None` 으로 리셋.
     pub git_viewer: Option<crate::git_viewer::GitViewerState>,
+    /// MainWindow → App 신호: 캡처된 preset 을 저장해 달라는 요청.
+    /// App 메인 루프가 drain 해 store.unique_name + save_* + PresetWindow open 까지 처리.
+    pub pending_preset_save: Option<PendingPresetSave>,
+}
+
+/// MainWindow 가 우클릭 메뉴에서 캡처한 preset 을 App 에 넘기는 1슬롯 큐.
+/// App 이 base_name 으로 unique_name 을 만든 뒤 preset 의 name 필드를 덮어쓰고 저장한다.
+pub enum PendingPresetSave {
+    Workspace {
+        base_name: String,
+        preset: tasty_presets::WorkspacePreset,
+    },
+    Tab {
+        base_name: String,
+        preset: tasty_presets::TabPreset,
+    },
+    Pane {
+        base_name: String,
+        preset: tasty_presets::PanePreset,
+    },
 }
 
 /// Tab drag-and-drop state (UI-only, not persisted).
@@ -446,6 +466,7 @@ impl DialogState {
             approval_comment_buffer: String::new(),
             file_handler_picker: None,
             git_viewer: None,
+            pending_preset_save: None,
         }
     }
 

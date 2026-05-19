@@ -619,3 +619,14 @@ pane = "패인"
 
 [preset.list]
 placeholder = "저장된 프리셋이 여기에 표시됩니다."
+
+[preset.context]
+save_as_workspace_preset = "워크스페이스 프리셋으로 저장"
+save_as_tab_preset = "탭 프리셋으로 저장"
+save_as_pane_preset = "페인 프리셋으로 저장"
+
+[preset.toast]
+saved_workspace = "워크스페이스 프리셋 저장됨"
+saved_tab = "탭 프리셋 저장됨"
+saved_pane = "페인 프리셋 저장됨"
+save_failed = "프리셋 저장 실패"

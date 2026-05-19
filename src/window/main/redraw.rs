@@ -466,6 +466,9 @@ impl MainWindow {
                     MenuItem::separator(),
                     move_left,
                     move_right,
+                    MenuItem::separator(),
+                    MenuItem::new(5, crate::i18n::t("preset.context.save_as_tab_preset")),
+                    MenuItem::new(6, crate::i18n::t("preset.context.save_as_pane_preset")),
                 ];
                 let result =
                     show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
@@ -533,6 +536,26 @@ impl MainWindow {
                             pane.move_tab(tab_index, tab_index + 1);
                         }
                     }
+                    Some(5) => {
+                        if let Err(e) = self.save_tab_preset_from_pane_tab(pane_id, tab_index) {
+                            tracing::warn!("save tab preset failed: {e}");
+                            self.state.toasts.push(
+                                crate::i18n::t("preset.toast.save_failed"),
+                                crate::ui::ToastKind::Error,
+                                crate::ui::ToastScope::Window,
+                            );
+                        }
+                    }
+                    Some(6) => {
+                        if let Err(e) = self.save_pane_preset_from_pane_id(pane_id) {
+                            tracing::warn!("save pane preset failed: {e}");
+                            self.state.toasts.push(
+                                crate::i18n::t("preset.toast.save_failed"),
+                                crate::ui::ToastKind::Error,
+                                crate::ui::ToastScope::Window,
+                            );
+                        }
+                    }
                     _ => {}
                 }
                 self.mark_dirty();
@@ -543,6 +566,8 @@ impl MainWindow {
                     MenuItem::new(2, crate::i18n::t("pane_context_menu.new_markdown")),
                     MenuItem::new(4, crate::i18n::t("pane_context_menu.new_html")),
                     MenuItem::new(5, crate::i18n::t("pane_context_menu.new_image")),
+                    MenuItem::separator(),
+                    MenuItem::new(6, crate::i18n::t("preset.context.save_as_pane_preset")),
                 ];
                 let result =
                     show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
@@ -585,6 +610,16 @@ impl MainWindow {
                             self.state.convert_surface_to_image(surface_id);
                         }
                     }
+                    Some(6) => {
+                        if let Err(e) = self.save_pane_preset_from_pane_id(pane_id) {
+                            tracing::warn!("save pane preset failed: {e}");
+                            self.state.toasts.push(
+                                crate::i18n::t("preset.toast.save_failed"),
+                                crate::ui::ToastKind::Error,
+                                crate::ui::ToastScope::Window,
+                            );
+                        }
+                    }
                     _ => {}
                 }
                 self.mark_dirty();
@@ -611,6 +646,8 @@ impl MainWindow {
                     MenuItem::separator(),
                     move_up,
                     move_down,
+                    MenuItem::separator(),
+                    MenuItem::new(5, crate::i18n::t("preset.context.save_as_workspace_preset")),
                 ];
                 let result =
                     show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
@@ -640,6 +677,16 @@ impl MainWindow {
                             // Move Down
                             if ws_idx + 1 < self.state.engine.workspaces.len() {
                                 self.state.move_workspace(ws_idx, ws_idx + 1);
+                            }
+                        }
+                        Some(5) => {
+                            if let Err(e) = self.save_workspace_preset_from_idx(ws_idx) {
+                                tracing::warn!("save workspace preset failed: {e}");
+                                self.state.toasts.push(
+                                    crate::i18n::t("preset.toast.save_failed"),
+                                    crate::ui::ToastKind::Error,
+                                    crate::ui::ToastScope::Window,
+                                );
                             }
                         }
                         _ => {}

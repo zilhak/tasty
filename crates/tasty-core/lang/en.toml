@@ -619,3 +619,14 @@ pane = "Pane"
 
 [preset.list]
 placeholder = "Saved presets will appear here."
+
+[preset.context]
+save_as_workspace_preset = "Save as workspace preset"
+save_as_tab_preset = "Save as tab preset"
+save_as_pane_preset = "Save as pane preset"
+
+[preset.toast]
+saved_workspace = "Workspace preset saved"
+saved_tab = "Tab preset saved"
+saved_pane = "Pane preset saved"
+save_failed = "Failed to save preset"

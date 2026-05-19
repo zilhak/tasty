@@ -619,3 +619,14 @@ pane = "ペイン"
 
 [preset.list]
 placeholder = "保存されたプリセットがここに表示されます。"
+
+[preset.context]
+save_as_workspace_preset = "ワークスペースプリセットとして保存"
+save_as_tab_preset = "タブプリセットとして保存"
+save_as_pane_preset = "ペインプリセットとして保存"
+
+[preset.toast]
+saved_workspace = "ワークスペースプリセットを保存しました"
+saved_tab = "タブプリセットを保存しました"
+saved_pane = "ペインプリセットを保存しました"
+save_failed = "プリセット保存に失敗"

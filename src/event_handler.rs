@@ -485,6 +485,8 @@ impl ApplicationHandler<AppEvent> for App {
         self.dispatch_plugin_popup_events();
         // PluginsWindow 모달의 사용자 액션을 manager에 적용 + 모달 snapshot 갱신.
         self.process_plugins_window_actions();
+        // MainWindow 우클릭으로 enqueue된 preset 저장 요청 → store 갱신 + PresetWindow 오픈.
+        self.process_pending_preset_save(event_loop);
 
         // Poll system tray menu events (Windows only)
         #[cfg(windows)]

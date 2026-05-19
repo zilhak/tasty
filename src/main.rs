@@ -1338,6 +1338,121 @@ impl App {
         }
     }
 
+    /// MainWindow 가 우클릭으로 enqueue 한 preset 저장 요청을 처리한다.
+    /// store 의 unique_name 으로 충돌 회피 → save_* → 토스트 → PresetWindow 오픈 + select.
+    /// 한 번에 1개 요청만 처리 (컨텍스트 메뉴는 modal 이라 동시 클릭 불가).
+    fn process_pending_preset_save(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
+        use tasty_presets::PresetKind;
+
+        let mut request: Option<(WindowId, crate::state::PendingPresetSave)> = None;
+        for (id, w) in self.windows.iter_mut() {
+            if let Some(main) = w.as_main_mut() {
+                if let Some(req) = main.state.dialogs.pending_preset_save.take() {
+                    request = Some((*id, req));
+                    break;
+                }
+            }
+        }
+        let Some((source_id, req)) = request else {
+            return;
+        };
+
+        // PresetWindow 가 열려 있으면 store 가 거기 있으므로, 잠시 회수했다 다시 넘긴다.
+        // 닫혀 있으면 engine 안의 store 를 그대로 사용.
+        let mut store = if let Some(pwid) = self.preset_window_id {
+            if let Some(pw) = self
+                .windows
+                .get_mut(&pwid)
+                .and_then(|w| w.as_any_mut().downcast_mut::<window::PresetWindow>())
+            {
+                std::mem::take(pw.store_mut())
+            } else {
+                std::mem::take(&mut self.engine.preset_store)
+            }
+        } else {
+            std::mem::take(&mut self.engine.preset_store)
+        };
+
+        let (kind, save_result, name) = match req {
+            crate::state::PendingPresetSave::Workspace { base_name, mut preset } => {
+                let name = store.unique_name(PresetKind::Workspace, &base_name);
+                preset.name = name.clone();
+                let res = store.save_workspace(preset);
+                (PresetKind::Workspace, res.map(|_| ()), name)
+            }
+            crate::state::PendingPresetSave::Tab { base_name, mut preset } => {
+                let name = store.unique_name(PresetKind::Tab, &base_name);
+                preset.name = name.clone();
+                let res = store.save_tab(preset);
+                (PresetKind::Tab, res.map(|_| ()), name)
+            }
+            crate::state::PendingPresetSave::Pane { base_name, mut preset } => {
+                let name = store.unique_name(PresetKind::Pane, &base_name);
+                preset.name = name.clone();
+                let res = store.save_pane(preset);
+                (PresetKind::Pane, res.map(|_| ()), name)
+            }
+        };
+
+        // store 를 원래 자리로 복귀.
+        if let Some(pwid) = self.preset_window_id {
+            if let Some(pw) = self
+                .windows
+                .get_mut(&pwid)
+                .and_then(|w| w.as_any_mut().downcast_mut::<window::PresetWindow>())
+            {
+                *pw.store_mut() = store;
+            } else {
+                self.engine.preset_store = store;
+            }
+        } else {
+            self.engine.preset_store = store;
+        }
+
+        // 결과 토스트는 요청을 보낸 MainWindow 에 푸시.
+        let toast_key = match (&save_result, kind) {
+            (Ok(_), PresetKind::Workspace) => "preset.toast.saved_workspace",
+            (Ok(_), PresetKind::Tab) => "preset.toast.saved_tab",
+            (Ok(_), PresetKind::Pane) => "preset.toast.saved_pane",
+            (Err(_), _) => "preset.toast.save_failed",
+        };
+        let toast_kind = if save_result.is_ok() {
+            crate::ui::ToastKind::Info
+        } else {
+            crate::ui::ToastKind::Error
+        };
+        if let Some(main) = self
+            .windows
+            .get_mut(&source_id)
+            .and_then(|w| w.as_main_mut())
+        {
+            main.state.toasts.push(
+                crate::i18n::t(toast_key),
+                toast_kind,
+                crate::ui::ToastScope::Window,
+            );
+            main.mark_dirty();
+        }
+
+        match save_result {
+            Ok(_) => {
+                self.open_preset_window(event_loop);
+                if let Some(pwid) = self.preset_window_id {
+                    if let Some(pw) = self
+                        .windows
+                        .get_mut(&pwid)
+                        .and_then(|w| w.as_any_mut().downcast_mut::<window::PresetWindow>())
+                    {
+                        pw.select(kind, name);
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::warn!("preset save failed: {e}");
+            }
+        }
+    }
+
     /// Open a modal, registering it in the unified window map.
     /// 모달도 일반 윈도우와 같은 `windows` 맵에 저장되며, `active_modal_id`로 식별된다.
     fn open_modal(&mut self, modal: Box<dyn window::Window>, window_id: WindowId) {
