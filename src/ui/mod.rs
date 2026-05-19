@@ -33,6 +33,7 @@ pub use popup::{PopupAction, PopupManager};
 pub use tab_bar::draw_pane_tab_bars;
 pub use toast::{ToastKind, ToastManager, ToastScope};
 
+use crate::intent::Intent;
 use crate::model::Rect;
 use crate::state::AppState;
 
@@ -78,9 +79,13 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
             state.switch_workspace(i);
         }
         if r.add_ws {
-            if let Err(e) = state.add_workspace() {
-                tracing::warn!("add_workspace failed: {e}");
-            }
+            state.dispatch_intent(
+                Intent::NewWorkspace {
+                    kind: None,
+                    params: serde_json::Value::Null,
+                }
+                .from_user_menu("sidebar_add_workspace"),
+            );
         }
     } else {
         let r = sidebar::draw_full_sidebar(ctx, state, sidebar_width);

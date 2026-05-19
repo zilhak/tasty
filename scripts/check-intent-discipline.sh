@@ -24,6 +24,9 @@ SURFACE_PATTERN='\.(split_surface|close_surface_by_id(_no_snapshot)?|convert_sur
 TAB_PATTERN='\.(add_kind_tab(_to_pane)?|add_markdown_tab|add_html_tab|add_image_tab|add_empty_tab|add_tab_to_pane|close_tab_by_tab_id)\('
 # pane: split_pane (focused 의존 사용자 단축키 전용)
 PANE_PATTERN='\.split_pane\('
+# workspace: add_workspace (사용자 경로). add_workspace_background 는 IPC sync return
+# contract 로 EXEMPT_FILES (ipc/handler/workspace.rs) 에서 직접 호출.
+WORKSPACE_PATTERN='\.add_workspace\('
 
 # 핸들러 본문 + UI/Settings 내부 예외 경로 + IPC handler (sync return contract).
 EXEMPT_FILES=(
@@ -32,14 +35,17 @@ EXEMPT_FILES=(
     "src/intent/surface.rs"
     "src/intent/tab.rs"
     "src/intent/pane.rs"
+    "src/intent/workspace.rs"
     "src/settings_ui/mod.rs"
     "src/state/preset_apply.rs"
     "src/state/pane.rs"
     "src/state/tab.rs"
     "src/state/tests.rs"
+    "src/state/workspace.rs"
     "src/ipc/handler/surface.rs"
     "src/ipc/handler/image.rs"
     "src/ipc/handler/tab.rs"
+    "src/ipc/handler/workspace.rs"
 )
 
 # rg 가 있으면 사용, 없으면 grep -E.
@@ -57,6 +63,7 @@ matches=$({
     $SEARCH "$SURFACE_PATTERN" src/ 2>/dev/null || true
     $SEARCH "$TAB_PATTERN" src/ 2>/dev/null || true
     $SEARCH "$PANE_PATTERN" src/ 2>/dev/null || true
+    $SEARCH "$WORKSPACE_PATTERN" src/ 2>/dev/null || true
 } | grep -v 'is_open\|get_mut\|register\b' \
   | grep -v 'intent-exempt' \
   || true)

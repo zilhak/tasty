@@ -2342,6 +2342,9 @@ impl App {
             Intent::SplitPane { .. } => {
                 crate::intent::pane::handle(state, intent);
             }
+            Intent::NewWorkspace { .. } => {
+                crate::intent::workspace::handle(state, intent);
+            }
             Intent::Noop => {}
         }
     }

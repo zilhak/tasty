@@ -370,9 +370,13 @@ impl MainWindow {
             if has_dt(bindings) {
                 match *action {
                     "new_workspace" => {
-                        if let Err(e) = self.state.add_workspace() {
-                            tracing::warn!("add_workspace failed: {e}");
-                        }
+                        self.state.dispatch_intent(
+                            Intent::NewWorkspace {
+                                kind: None,
+                                params: serde_json::Value::Null,
+                            }
+                            .from_user_shortcut("new_workspace"),
+                        );
                         self.state.resize_all(terminal_rect, cell_w, cell_h);
                     }
                     "close_workspace" => {
@@ -570,9 +574,13 @@ impl MainWindow {
 
         match action_id {
             "new_workspace" => {
-                if let Err(e) = state.add_workspace() {
-                    tracing::warn!("add_workspace failed: {e}");
-                }
+                state.dispatch_intent(
+                    Intent::NewWorkspace {
+                        kind: None,
+                        params: serde_json::Value::Null,
+                    }
+                    .from_user_shortcut("new_workspace"),
+                );
                 state.resize_all(terminal_rect, cell_w, cell_h);
             }
             "new_tab" => {
@@ -956,9 +964,13 @@ impl MainWindow {
         proxy: &winit::event_loop::EventLoopProxy<crate::AppEvent>,
     ) -> bool {
         if matches_any_binding(&kb.new_workspace, key, mods) {
-            if let Err(e) = state.add_workspace() {
-                tracing::warn!("add_workspace failed: {e}");
-            }
+            state.dispatch_intent(
+                Intent::NewWorkspace {
+                    kind: None,
+                    params: serde_json::Value::Null,
+                }
+                .from_user_shortcut("new_workspace"),
+            );
             return true;
         }
         if matches_any_binding(&kb.new_tab, key, mods) {

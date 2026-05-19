@@ -1,4 +1,5 @@
 use crate::i18n::t;
+use crate::intent::Intent;
 use crate::state::AppState;
 use crate::theme;
 
@@ -631,9 +632,13 @@ pub fn draw_full_sidebar(
                         )
                         .clicked()
                     {
-                        if let Err(e) = state.add_workspace() {
-                            tracing::warn!("add_workspace failed: {e}");
-                        }
+                        state.dispatch_intent(
+                            Intent::NewWorkspace {
+                                kind: None,
+                                params: serde_json::Value::Null,
+                            }
+                            .from_user_menu("sidebar_add_workspace"),
+                        );
                     }
                     ui.add_space(4.0);
                 });

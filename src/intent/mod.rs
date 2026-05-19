@@ -14,6 +14,7 @@ pub mod popup;
 pub mod preset;
 pub mod surface;
 pub mod tab;
+pub mod workspace;
 
 #[cfg(debug_assertions)]
 pub mod watch;
@@ -111,6 +112,16 @@ pub enum Intent {
     /// focused pane 을 split. 사용자 단축키 전용 (focused 의존).
     /// S3=B: ratio / focus 변경 API 는 Intent 미마이그레이션.
     SplitPane { direction: SplitDirection },
+
+    // ---- Workspace 도메인 ----
+    /// 새 워크스페이스 생성. `kind` None 이면 "terminal" fallback + active 전환
+    /// (사용자 동작 경로). 명시 kind 지정 시 background 경로 (active 전환 없음).
+    /// IPC `workspace.create` 는 sync return contract 가 필요하므로 직접 호출 유지.
+    /// W1=B: ActivateWorkspace 는 focus 독립성 원칙으로 Intent 미마이그레이션.
+    NewWorkspace {
+        kind: Option<String>,
+        params: serde_json::Value,
+    },
 }
 
 /// Surface 변환 타깃. Terminal 은 host 내장 special case, 나머지는 surface_registry
