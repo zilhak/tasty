@@ -4,8 +4,10 @@
 //! 디스크에 toml 로 저장하고 재사용한다. `ClosedItem` (인메모리 복원) 과 별개.
 
 pub mod model;
+pub mod storage;
 
 pub use model::{
     LayoutPreset, PanePreset, PresetKind, PresetPane, PresetPaneNode, PresetSplitDirection,
     PresetSurface, PresetSurfaceLayout, PresetTab, TabPreset, WorkspacePreset,
 };
+pub use storage::{PresetError, PresetResult, PresetStore};
