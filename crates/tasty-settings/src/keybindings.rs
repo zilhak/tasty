@@ -86,6 +86,12 @@ pub struct KeybindingSettings {
     pub image_redo: Vec<String>,
     /// Toggle the command palette popup.
     pub toggle_command_palette: Vec<String>,
+    /// Open the Apply workspace preset picker.
+    pub apply_workspace_preset: Vec<String>,
+    /// Open the Apply tab preset picker.
+    pub apply_tab_preset: Vec<String>,
+    /// Open the Apply pane preset picker.
+    pub apply_pane_preset: Vec<String>,
 }
 
 impl KeybindingSettings {
@@ -196,6 +202,18 @@ impl KeybindingSettings {
             "toggle_command_palette",
             "settings.keybindings.toggle_command_palette_label",
         ),
+        (
+            "apply_workspace_preset",
+            "settings.keybindings.apply_workspace_preset_label",
+        ),
+        (
+            "apply_tab_preset",
+            "settings.keybindings.apply_tab_preset_label",
+        ),
+        (
+            "apply_pane_preset",
+            "settings.keybindings.apply_pane_preset_label",
+        ),
     ];
 
     /// 필드 id로 Vec<String> 참조를 얻는다.
@@ -247,6 +265,9 @@ impl KeybindingSettings {
             "image_undo" => self.image_undo.as_slice(),
             "image_redo" => self.image_redo.as_slice(),
             "toggle_command_palette" => self.toggle_command_palette.as_slice(),
+            "apply_workspace_preset" => self.apply_workspace_preset.as_slice(),
+            "apply_tab_preset" => self.apply_tab_preset.as_slice(),
+            "apply_pane_preset" => self.apply_pane_preset.as_slice(),
             _ => return None,
         })
     }
@@ -299,6 +320,9 @@ impl KeybindingSettings {
             "image_undo" => &mut self.image_undo,
             "image_redo" => &mut self.image_redo,
             "toggle_command_palette" => &mut self.toggle_command_palette,
+            "apply_workspace_preset" => &mut self.apply_workspace_preset,
+            "apply_tab_preset" => &mut self.apply_tab_preset,
+            "apply_pane_preset" => &mut self.apply_pane_preset,
             _ => return None,
         })
     }
@@ -564,6 +588,9 @@ impl KeybindingSettings {
             image_undo: vec!["ctrl+z".into(), "alt+z".into()],
             image_redo: vec!["ctrl+shift+z".into(), "alt+shift+z".into()],
             toggle_command_palette: vec!["ctrl+shift+p".into(), "alt+shift+p".into()],
+            apply_workspace_preset: Vec::new(),
+            apply_tab_preset: Vec::new(),
+            apply_pane_preset: Vec::new(),
         }
     }
 
@@ -618,6 +645,9 @@ impl KeybindingSettings {
             image_undo: vec!["alt+z".into()],
             image_redo: vec!["alt+shift+z".into()],
             toggle_command_palette: vec!["alt+shift+p".into()],
+            apply_workspace_preset: Vec::new(),
+            apply_tab_preset: Vec::new(),
+            apply_pane_preset: Vec::new(),
         }
     }
 
@@ -672,6 +702,9 @@ impl KeybindingSettings {
             image_undo: vec!["ctrl+z".into()],
             image_redo: vec!["ctrl+shift+z".into()],
             toggle_command_palette: vec!["ctrl+shift+p".into()],
+            apply_workspace_preset: Vec::new(),
+            apply_tab_preset: Vec::new(),
+            apply_pane_preset: Vec::new(),
         }
     }
 
@@ -726,6 +759,9 @@ impl KeybindingSettings {
             image_undo: vec!["ctrl+z".into()],
             image_redo: vec!["ctrl+shift+z".into()],
             toggle_command_palette: vec!["ctrl+shift+p".into()],
+            apply_workspace_preset: Vec::new(),
+            apply_tab_preset: Vec::new(),
+            apply_pane_preset: Vec::new(),
         }
     }
 
@@ -909,7 +945,7 @@ mod tests {
 
     #[test]
     fn general_binding_fields_count() {
-        assert_eq!(KeybindingSettings::GENERAL_BINDING_FIELDS.len(), 44);
+        assert_eq!(KeybindingSettings::GENERAL_BINDING_FIELDS.len(), 47);
     }
 
     #[test]

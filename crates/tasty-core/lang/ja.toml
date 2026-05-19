@@ -307,6 +307,9 @@ rename_workspace_subtitle_label = "ワークスペースのサブタイトルを
 image_undo_label = "元に戻す:"
 image_redo_label = "やり直し:"
 toggle_command_palette_label = "コマンドパレット:"
+apply_workspace_preset_label = "ワークスペースプリセット適用:"
+apply_tab_preset_label = "タブプリセット適用:"
+apply_pane_preset_label = "ペインプリセット適用:"
 tab_switch_modifier_label = "タブ切替修飾キー:"
 workspace_switch_modifier_label = "WS切替修飾キー:"
 hint_press_key = "キーの組み合わせを押してください..."
@@ -630,6 +633,15 @@ saved_workspace = "ワークスペースプリセットを保存しました"
 saved_tab = "タブプリセットを保存しました"
 saved_pane = "ペインプリセットを保存しました"
 save_failed = "プリセット保存に失敗"
+apply_failed = "プリセット適用に失敗"
 
 [preset.tools]
 menu_item = "プリセット"
+
+[preset.popup]
+apply_workspace_title = "ワークスペースプリセット適用"
+apply_tab_title = "タブプリセット適用"
+apply_pane_title = "ペインプリセット適用"
+empty = "保存されたプリセットがありません。"
+apply_button = "適用"
+cancel_button = "キャンセル"

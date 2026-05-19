@@ -307,6 +307,9 @@ rename_workspace_subtitle_label = "워크스페이스 부제목 변경:"
 image_undo_label = "실행 취소:"
 image_redo_label = "다시 실행:"
 toggle_command_palette_label = "명령 팔레트:"
+apply_workspace_preset_label = "워크스페이스 프리셋 적용:"
+apply_tab_preset_label = "탭 프리셋 적용:"
+apply_pane_preset_label = "패인 프리셋 적용:"
 tab_switch_modifier_label = "탭 전환 수식키:"
 workspace_switch_modifier_label = "워크스페이스 전환 수식키:"
 hint_press_key = "키 조합을 누르세요..."
@@ -628,8 +631,17 @@ save_as_pane_preset = "페인 프리셋으로 저장"
 [preset.toast]
 saved_workspace = "워크스페이스 프리셋 저장됨"
 saved_tab = "탭 프리셋 저장됨"
-saved_pane = "페인 프리셋 저장됨"
+saved_pane = "패인 프리셋 저장됨"
 save_failed = "프리셋 저장 실패"
+apply_failed = "프리셋 적용 실패"
 
 [preset.tools]
 menu_item = "프리셋"
+
+[preset.popup]
+apply_workspace_title = "워크스페이스 프리셋 적용"
+apply_tab_title = "탭 프리셋 적용"
+apply_pane_title = "패인 프리셋 적용"
+empty = "저장된 프리셋이 없습니다."
+apply_button = "적용"
+cancel_button = "취소"

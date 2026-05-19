@@ -1116,6 +1116,27 @@ impl MainWindow {
             }
             return true;
         }
+        if matches_any_binding(&kb.apply_workspace_preset, key, mods) {
+            state.dialogs.preset_picker_selected = None;
+            state.popups.open_centered_focused(
+                crate::ui::preset_apply_popup::APPLY_WORKSPACE_POPUP_ID,
+            );
+            return true;
+        }
+        if matches_any_binding(&kb.apply_tab_preset, key, mods) {
+            state.dialogs.preset_picker_selected = None;
+            state.popups.open_centered_focused(
+                crate::ui::preset_apply_popup::APPLY_TAB_POPUP_ID,
+            );
+            return true;
+        }
+        if matches_any_binding(&kb.apply_pane_preset, key, mods) {
+            state.dialogs.preset_picker_selected = None;
+            state.popups.open_centered_focused(
+                crate::ui::preset_apply_popup::APPLY_PANE_POPUP_ID,
+            );
+            return true;
+        }
         if matches_any_binding(&kb.rename_workspace_subtitle, key, mods) {
             let ws_idx = state.active_workspace;
             if let Some(ws) = state.engine.workspaces.get(ws_idx) {

@@ -489,6 +489,8 @@ impl ApplicationHandler<AppEvent> for App {
         self.process_pending_preset_save(event_loop);
         // 도구 메뉴 → "프리셋" 클릭 시 PresetWindow 만 그냥 열기.
         self.process_pending_open_preset_window(event_loop);
+        // 단축키/picker 로부터 enqueue 된 preset 적용 요청 drain.
+        self.process_pending_preset_apply();
 
         // Poll system tray menu events (Windows only)
         #[cfg(windows)]

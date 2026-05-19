@@ -400,6 +400,18 @@ pub struct DialogState {
     /// 도구 메뉴 클릭 등으로 PresetWindow 를 그냥 열어달라는 요청 (선택 없이).
     /// App 메인 루프가 drain 한다.
     pub pending_open_preset_window: bool,
+    /// 프리셋 적용 picker popup 의 현재 하이라이트 (preset name). popup 닫힘 시 None.
+    pub preset_picker_selected: Option<String>,
+    /// MainWindow → App 신호: picker 에서 선택된 preset 을 적용해 달라는 요청.
+    pub pending_preset_apply: Option<PendingPresetApply>,
+}
+
+/// 단축키/picker 로부터 트리거된 preset 적용 요청. App 메인 루프가 drain 해
+/// `state.apply_*_preset` 를 호출한다.
+pub enum PendingPresetApply {
+    Workspace(String),
+    Tab(String),
+    Pane(String),
 }
 
 /// MainWindow 가 우클릭 메뉴에서 캡처한 preset 을 App 에 넘기는 1슬롯 큐.
@@ -471,6 +483,8 @@ impl DialogState {
             git_viewer: None,
             pending_preset_save: None,
             pending_open_preset_window: false,
+            preset_picker_selected: None,
+            pending_preset_apply: None,
         }
     }
 

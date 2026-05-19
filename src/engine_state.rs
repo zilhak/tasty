@@ -175,6 +175,11 @@ pub struct EngineState {
     /// Whether input simulation IPC is enabled (debug builds only, --enable-input-simulation).
     #[cfg(debug_assertions)]
     pub input_simulation_enabled: bool,
+
+    /// Layout preset 디스크 캐시 — App 의 `engine::Engine` 과 동일 Arc 공유.
+    /// `create_app_state` 에서 주입한다.
+    pub preset_store:
+        Option<std::sync::Arc<std::sync::Mutex<tasty_presets::PresetStore>>>,
 }
 
 impl EngineState {
@@ -242,6 +247,7 @@ impl EngineState {
             pending_layout_restore: None,
             #[cfg(debug_assertions)]
             input_simulation_enabled: false,
+            preset_store: None,
         };
 
         // (Phase E) FileHandler 가 detector 메타 (광고 확장자 등) 를 조회할 수 있게

@@ -6,7 +6,7 @@
 //! - 엔진 전역 단일 인스턴스는 `App.preset_window_id` 가 관리
 //! - 편집 즉시 store 가 디스크 동기화 (별도 save 버튼 없음)
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use winit::event::WindowEvent;
 
@@ -23,7 +23,7 @@ use crate::window::{
 
 pub struct PresetWindow {
     pub base: WindowBase,
-    store: PresetStore,
+    store: Arc<Mutex<PresetStore>>,
     active_kind: PresetKind,
     selected_workspace: Option<String>,
     selected_tab: Option<String>,
@@ -33,7 +33,11 @@ pub struct PresetWindow {
 }
 
 impl PresetWindow {
-    pub fn new(gpu: GpuState, winit: Arc<winit::window::Window>, store: PresetStore) -> Self {
+    pub fn new(
+        gpu: GpuState,
+        winit: Arc<winit::window::Window>,
+        store: Arc<Mutex<PresetStore>>,
+    ) -> Self {
         Self {
             base: WindowBase::new(gpu, winit),
             store,
@@ -55,19 +59,6 @@ impl PresetWindow {
             PresetKind::Pane => self.selected_pane = Some(name),
         }
         self.mark_dirty();
-    }
-
-    pub fn store(&self) -> &PresetStore {
-        &self.store
-    }
-
-    pub fn store_mut(&mut self) -> &mut PresetStore {
-        &mut self.store
-    }
-
-    /// 윈도우 close 시 store 회수 (변경된 캐시를 host 측으로 반영).
-    pub fn into_store(self) -> PresetStore {
-        self.store
     }
 }
 
@@ -124,7 +115,7 @@ impl Window for PresetWindow {
         self.base.dirty = false;
 
         let raw_input = self.base.gpu.take_egui_input(&self.base.winit);
-        let store = &mut self.store;
+        let store_arc = self.store.clone();
         let active_kind = &mut self.active_kind;
         let sel_ws = &mut self.selected_workspace;
         let sel_tab = &mut self.selected_tab;
@@ -132,9 +123,22 @@ impl Window for PresetWindow {
         let toasts = &mut self.toasts;
 
         let full_output = self.base.gpu.run_egui(raw_input, |ctx| {
+            let mut store_guard = match store_arc.lock() {
+                Ok(g) => g,
+                Err(poisoned) => {
+                    tracing::warn!("preset_store mutex poisoned; recovering");
+                    poisoned.into_inner()
+                }
+            };
             crate::preset_ui::draw_preset_panel(
-                ctx, store, active_kind, sel_ws, sel_tab, sel_pane,
+                ctx,
+                &mut *store_guard,
+                active_kind,
+                sel_ws,
+                sel_tab,
+                sel_pane,
             );
+            drop(store_guard);
 
             let empty_layout = LayoutContext {
                 active_workspace: 0,
