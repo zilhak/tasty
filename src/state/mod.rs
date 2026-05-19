@@ -396,41 +396,14 @@ pub struct DialogState {
     pub file_handler_picker: Option<FileHandlerPickerData>,
     /// Git viewer popup 의 현재 상태. popup 닫힘 시 `None` 으로 리셋.
     pub git_viewer: Option<crate::git_viewer::GitViewerState>,
-    /// MainWindow → App 신호: 캡처된 preset 을 저장해 달라는 요청.
-    /// App 메인 루프가 drain 해 store.unique_name + save_* + PresetWindow open 까지 처리.
-    pub pending_preset_save: Option<PendingPresetSave>,
-    /// 도구 메뉴 클릭 등으로 PresetWindow 를 그냥 열어달라는 요청 (선택 없이).
-    /// App 메인 루프가 drain 한다.
+    /// 도구 메뉴 클릭 / preset save 후속 — PresetWindow 를 열어달라는 요청.
+    /// `selection` 이 `Some` 이면 PresetWindow 가 열린 뒤 해당 preset 을 선택한다.
+    /// App 메인 루프 `process_pending_open_preset_window` 가 drain.
     pub pending_open_preset_window: bool,
+    /// PresetWindow 가 열린 뒤 자동 선택할 preset. `pending_open_preset_window` 와 함께 사용.
+    pub pending_preset_window_selection: Option<(tasty_presets::PresetKind, String)>,
     /// 프리셋 적용 picker popup 의 현재 하이라이트 (preset name). popup 닫힘 시 None.
     pub preset_picker_selected: Option<String>,
-    /// MainWindow → App 신호: picker 에서 선택된 preset 을 적용해 달라는 요청.
-    pub pending_preset_apply: Option<PendingPresetApply>,
-}
-
-/// 단축키/picker 로부터 트리거된 preset 적용 요청. App 메인 루프가 drain 해
-/// `state.apply_*_preset` 를 호출한다.
-pub enum PendingPresetApply {
-    Workspace(String),
-    Tab(String),
-    Pane(String),
-}
-
-/// MainWindow 가 우클릭 메뉴에서 캡처한 preset 을 App 에 넘기는 1슬롯 큐.
-/// App 이 base_name 으로 unique_name 을 만든 뒤 preset 의 name 필드를 덮어쓰고 저장한다.
-pub enum PendingPresetSave {
-    Workspace {
-        base_name: String,
-        preset: tasty_presets::WorkspacePreset,
-    },
-    Tab {
-        base_name: String,
-        preset: tasty_presets::TabPreset,
-    },
-    Pane {
-        base_name: String,
-        preset: tasty_presets::PanePreset,
-    },
 }
 
 /// Tab drag-and-drop state (UI-only, not persisted).
@@ -482,10 +455,9 @@ impl DialogState {
             approval_comment_buffer: String::new(),
             file_handler_picker: None,
             git_viewer: None,
-            pending_preset_save: None,
+            pending_preset_window_selection: None,
             pending_open_preset_window: false,
             preset_picker_selected: None,
-            pending_preset_apply: None,
         }
     }
 

@@ -487,12 +487,9 @@ impl ApplicationHandler<AppEvent> for App {
         self.dispatch_plugin_popup_events();
         // PluginsWindow 모달의 사용자 액션을 manager에 적용 + 모달 snapshot 갱신.
         self.process_plugins_window_actions();
-        // MainWindow 우클릭으로 enqueue된 preset 저장 요청 → store 갱신 + PresetWindow 오픈.
-        self.process_pending_preset_save(event_loop);
-        // 도구 메뉴 → "프리셋" 클릭 시 PresetWindow 만 그냥 열기.
+        // PresetWindow 열기 + (Intent::SavePreset cascade 시) 선택. preset 저장/적용/삭제/이름변경
+        // 자체는 Intent 큐 (`dispatch_pending_intents`) 가 처리한다.
         self.process_pending_open_preset_window(event_loop);
-        // 단축키/picker 로부터 enqueue 된 preset 적용 요청 drain.
-        self.process_pending_preset_apply();
 
         // Poll system tray menu events (Windows only)
         #[cfg(windows)]

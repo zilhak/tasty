@@ -1,14 +1,20 @@
 //! `preset.*` IPC 핸들러 — layout preset CRUD + apply.
 //!
+//! 모든 mutation 은 `crate::intent::preset` 의 공유 inner 함수를 호출한다.
+//! Intent 큐를 거치지 않는 이유는 IPC 응답이 sync contract (성공/실패 + 결과 data)
+//! 이기 때문 — 두 경로 모두 같은 inner 를 호출해 동작 일관성을 보장한다.
+//!
 //! CLI/IPC 경로는 포커스 독립 — `preset.apply` 는 항상 `ApplyOptions { focus: false }`.
 
 use serde_json::json;
-use tasty_presets::{
-    CaptureOptions, CapturedSurfaceMeta, PanePreset, PresetKind, TabPreset, WorkspacePreset,
-};
+use tasty_presets::{PanePreset, PresetKind, TabPreset, WorkspacePreset};
 
+use crate::intent::ClonedPreset;
+use crate::intent::preset::{
+    ApplyOutcome, PresetMutationError, SaveOutcome, apply_inner, capture_inner, delete_inner,
+    rename_inner, save_inner,
+};
 use crate::ipc::protocol::JsonRpcResponse;
-use crate::model::Surface;
 use crate::state::AppState;
 use crate::state::preset_apply::ApplyOptions;
 
@@ -69,9 +75,7 @@ fn with_store<R>(
         .engine
         .preset_store
         .as_ref()
-        .ok_or_else(|| {
-            JsonRpcResponse::internal_error(id.clone(), "preset_store unavailable")
-        })?;
+        .ok_or_else(|| JsonRpcResponse::internal_error(id.clone(), "preset_store unavailable"))?;
     let guard = match arc.lock() {
         Ok(g) => g,
         Err(p) => {
@@ -82,26 +86,16 @@ fn with_store<R>(
     Ok(f(&guard))
 }
 
-fn with_store_mut<R>(
-    state: &AppState,
-    id: &serde_json::Value,
-    f: impl FnOnce(&mut tasty_presets::PresetStore) -> R,
-) -> Result<R, JsonRpcResponse> {
-    let arc = state
-        .engine
-        .preset_store
-        .as_ref()
-        .ok_or_else(|| {
-            JsonRpcResponse::internal_error(id.clone(), "preset_store unavailable")
-        })?;
-    let mut guard = match arc.lock() {
-        Ok(g) => g,
-        Err(p) => {
-            tracing::warn!("preset_store mutex poisoned; recovering");
-            p.into_inner()
+/// PresetMutationError → JsonRpcResponse 매핑.
+fn mutation_error(id: serde_json::Value, e: PresetMutationError) -> JsonRpcResponse {
+    match &e {
+        PresetMutationError::StoreUnavailable => {
+            JsonRpcResponse::internal_error(id, e.to_string())
         }
-    };
-    Ok(f(&mut guard))
+        PresetMutationError::NotFound { .. }
+        | PresetMutationError::Apply(_)
+        | PresetMutationError::Store(_) => JsonRpcResponse::invalid_params(id, e.to_string()),
+    }
 }
 
 // ── handlers ──────────────────────────────────────────────────────────
@@ -189,47 +183,38 @@ pub fn handle_save(
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    let result: Result<(), String> = match with_store_mut(state, &id, |s| -> Result<(), String> {
-        match kind {
-            PresetKind::Workspace => {
-                let mut preset: WorkspacePreset =
-                    serde_json::from_value(data).map_err(|e| format!("invalid workspace preset: {e}"))?;
-                preset.name = name.clone();
-                if overwrite {
-                    s.save_workspace_overwrite(preset).map_err(|e| e.to_string())
-                } else {
-                    s.save_workspace(preset).map_err(|e| e.to_string())
-                }
+    // 1. data → ClonedPreset 변환.
+    let cloned = match kind {
+        PresetKind::Workspace => match serde_json::from_value::<WorkspacePreset>(data) {
+            Ok(p) => ClonedPreset::Workspace(p),
+            Err(e) => {
+                return JsonRpcResponse::invalid_params(id, format!("invalid workspace preset: {e}"));
             }
-            PresetKind::Tab => {
-                let mut preset: TabPreset =
-                    serde_json::from_value(data).map_err(|e| format!("invalid tab preset: {e}"))?;
-                preset.name = name.clone();
-                if overwrite {
-                    s.save_tab_overwrite(preset).map_err(|e| e.to_string())
-                } else {
-                    s.save_tab(preset).map_err(|e| e.to_string())
-                }
+        },
+        PresetKind::Tab => match serde_json::from_value::<TabPreset>(data) {
+            Ok(p) => ClonedPreset::Tab(p),
+            Err(e) => {
+                return JsonRpcResponse::invalid_params(id, format!("invalid tab preset: {e}"));
             }
-            PresetKind::Pane => {
-                let mut preset: PanePreset =
-                    serde_json::from_value(data).map_err(|e| format!("invalid pane preset: {e}"))?;
-                preset.name = name.clone();
-                if overwrite {
-                    s.save_pane_overwrite(preset).map_err(|e| e.to_string())
-                } else {
-                    s.save_pane(preset).map_err(|e| e.to_string())
-                }
+        },
+        PresetKind::Pane => match serde_json::from_value::<PanePreset>(data) {
+            Ok(p) => ClonedPreset::Pane(p),
+            Err(e) => {
+                return JsonRpcResponse::invalid_params(id, format!("invalid pane preset: {e}"));
             }
-        }
-    }) {
-        Ok(r) => r,
-        Err(e) => return e,
+        },
     };
 
-    match result {
-        Ok(()) => JsonRpcResponse::success(id, json!({ "name": name })),
-        Err(msg) => JsonRpcResponse::invalid_params(id, msg),
+    // 2. 공유 save_inner 호출.
+    match save_inner(state, "", Some(&name), overwrite, cloned) {
+        Ok(SaveOutcome::Saved(saved_name)) => {
+            JsonRpcResponse::success(id, json!({ "name": saved_name }))
+        }
+        Ok(SaveOutcome::SkippedExists) => JsonRpcResponse::invalid_params(
+            id,
+            format!("preset '{name}' already exists (overwrite=false)"),
+        ),
+        Err(e) => mutation_error(id, e),
     }
 }
 
@@ -247,14 +232,9 @@ pub fn handle_delete(
         Err(e) => return e,
     };
 
-    let result = match with_store_mut(state, &id, |s| s.delete(kind, &name)) {
-        Ok(r) => r,
-        Err(e) => return e,
-    };
-
-    match result {
+    match delete_inner(state, kind, &name) {
         Ok(()) => JsonRpcResponse::success(id, json!({ "deleted": true })),
-        Err(e) => JsonRpcResponse::invalid_params(id, e.to_string()),
+        Err(e) => mutation_error(id, e),
     }
 }
 
@@ -276,14 +256,9 @@ pub fn handle_rename(
         Err(e) => return e,
     };
 
-    let result = match with_store_mut(state, &id, |s| s.rename(kind, &from, &to)) {
-        Ok(r) => r,
-        Err(e) => return e,
-    };
-
-    match result {
+    match rename_inner(state, kind, &from, &to) {
         Ok(()) => JsonRpcResponse::success(id, json!({ "renamed": to })),
-        Err(e) => JsonRpcResponse::invalid_params(id, e.to_string()),
+        Err(e) => mutation_error(id, e),
     }
 }
 
@@ -305,153 +280,20 @@ pub fn handle_capture(
         .and_then(|v| v.as_str())
         .map(str::to_string);
 
-    let registry = state.engine.surface_registry.clone();
-    let mut capture = move |s: &dyn Surface| -> Option<CapturedSurfaceMeta> {
-        let def = registry.get(s.kind())?;
-        let params = (def.snapshot)(s)?;
-        Some(CapturedSurfaceMeta {
-            kind: s.kind().to_string(),
-            params,
-        })
+    // 1. capture (read-only on engine).
+    let (cloned, base_name) = match capture_inner(state, kind, source_id) {
+        Ok(v) => v,
+        Err(msg) => return JsonRpcResponse::invalid_params(id, msg),
     };
 
-    // 1. preset 캡처 (필요한 src 를 찾아서 변환)
-    enum Captured {
-        Workspace(WorkspacePreset),
-        Tab(TabPreset),
-        Pane(PanePreset),
-    }
-
-    let (captured, base_name) = match kind {
-        PresetKind::Workspace => {
-            let ws = match state.engine.workspaces.iter().find(|w| w.id == source_id) {
-                Some(w) => w,
-                None => {
-                    return JsonRpcResponse::invalid_params(
-                        id,
-                        format!("Workspace id {source_id} not found"),
-                    );
-                }
-            };
-            let base = if ws.name.is_empty() {
-                "workspace".to_string()
-            } else {
-                ws.name.clone()
-            };
-            match WorkspacePreset::from_workspace(ws, &mut capture, CaptureOptions::default()) {
-                Some(p) => (Captured::Workspace(p), base),
-                None => return JsonRpcResponse::internal_error(id, "workspace capture failed"),
-            }
-        }
-        PresetKind::Tab => {
-            // tab_id 로 검색.
-            let pane_id = match state.find_pane_for_tab(source_id) {
-                Some(p) => p,
-                None => {
-                    return JsonRpcResponse::invalid_params(
-                        id,
-                        format!("Tab id {source_id} not found"),
-                    );
-                }
-            };
-            let mut found: Option<(TabPreset, String)> = None;
-            'outer: for ws in &state.engine.workspaces {
-                if let Some(pane) = ws.pane_layout().find_pane(pane_id) {
-                    for tab in &pane.tabs {
-                        if tab.id == source_id {
-                            let base = tab
-                                .explicit_name
-                                .clone()
-                                .unwrap_or_else(|| tab.name.clone());
-                            let base = if base.is_empty() { "tab".to_string() } else { base };
-                            let preset = match TabPreset::from_tab(
-                                tab,
-                                &mut capture,
-                                CaptureOptions::default(),
-                            ) {
-                                Some(p) => p,
-                                None => {
-                                    return JsonRpcResponse::internal_error(
-                                        id,
-                                        "tab capture failed",
-                                    );
-                                }
-                            };
-                            found = Some((preset, base));
-                            break 'outer;
-                        }
-                    }
-                }
-            }
-            match found {
-                Some((p, base)) => (Captured::Tab(p), base),
-                None => {
-                    return JsonRpcResponse::invalid_params(
-                        id,
-                        format!("Tab id {source_id} not found"),
-                    );
-                }
-            }
-        }
-        PresetKind::Pane => {
-            let mut found: Option<PanePreset> = None;
-            'outer: for ws in &state.engine.workspaces {
-                if let Some(pane) = ws.pane_layout().find_pane(source_id) {
-                    found = match PanePreset::from_pane(
-                        pane,
-                        &mut capture,
-                        CaptureOptions::default(),
-                    ) {
-                        Some(p) => Some(p),
-                        None => {
-                            return JsonRpcResponse::internal_error(id, "pane capture failed");
-                        }
-                    };
-                    break 'outer;
-                }
-            }
-            match found {
-                Some(p) => (Captured::Pane(p), "pane".to_string()),
-                None => {
-                    return JsonRpcResponse::invalid_params(
-                        id,
-                        format!("Pane id {source_id} not found"),
-                    );
-                }
-            }
-        }
-    };
-
-    // 2. store 에 저장 (unique_name 처리)
-    let save_result: Result<String, String> =
-        match with_store_mut(state, &id, |s| -> Result<String, String> {
-            let name = match explicit_name {
-                Some(n) => n,
-                None => s.unique_name(kind, &base_name),
-            };
-            match captured {
-                Captured::Workspace(mut p) => {
-                    p.name = name.clone();
-                    s.save_workspace(p).map_err(|e| e.to_string())?;
-                }
-                Captured::Tab(mut p) => {
-                    p.name = name.clone();
-                    s.save_tab(p).map_err(|e| e.to_string())?;
-                }
-                Captured::Pane(mut p) => {
-                    p.name = name.clone();
-                    s.save_pane(p).map_err(|e| e.to_string())?;
-                }
-            }
-            Ok(name)
-        }) {
-            Ok(r) => r,
-            Err(e) => return e,
-        };
-
-    match save_result {
-        Ok(name) => JsonRpcResponse::success(id, json!({ "name": name })),
-        Err(msg) => JsonRpcResponse::invalid_params(id, msg),
+    // 2. save (overwrite=false; explicit_name=Some 이면 충돌 시 SkippedExists).
+    match save_inner(state, &base_name, explicit_name.as_deref(), false, cloned) {
+        Ok(SaveOutcome::Saved(name)) => JsonRpcResponse::success(id, json!({ "name": name })),
+        Ok(SaveOutcome::SkippedExists) => JsonRpcResponse::invalid_params(
+            id,
+            "preset name already exists (overwrite=false)".to_string(),
+        ),
+        Err(e) => mutation_error(id, e),
     }
 }
 
@@ -477,65 +319,34 @@ pub fn handle_apply(
         .and_then(|v| v.as_u64())
         .map(|v| v as u32);
 
-    // 1. store 에서 clone (락 해제 전에)
-    enum Cloned {
-        Workspace(WorkspacePreset),
-        Tab(TabPreset),
-        Pane(PanePreset),
-    }
-    let cloned = match with_store(state, &id, |s| match kind {
-        PresetKind::Workspace => s.get_workspace(&name).cloned().map(Cloned::Workspace),
-        PresetKind::Tab => s.get_tab(&name).cloned().map(Cloned::Tab),
-        PresetKind::Pane => s.get_pane(&name).cloned().map(Cloned::Pane),
-    }) {
-        Ok(Some(c)) => c,
-        Ok(None) => {
-            return JsonRpcResponse::invalid_params(
-                id,
-                format!("preset not found: {}/{name}", kind.as_str()),
-            );
-        }
-        Err(e) => return e,
-    };
-
-    // 2. apply — focus 항상 false (CLI/IPC 포커스 독립 원칙)
+    // CLI/IPC 포커스 독립 원칙 — focus 항상 false.
     let opts = ApplyOptions { focus: false };
-    match cloned {
-        Cloned::Workspace(p) => match state.apply_workspace_preset(&p, opts) {
-            Ok(idx) => {
-                let ws_id = state.engine.workspaces[idx].id;
-                JsonRpcResponse::success(
-                    id,
-                    json!({
-                        "applied": true,
-                        "kind": "workspace",
-                        "workspace_id": ws_id,
-                    }),
-                )
-            }
-            Err(e) => JsonRpcResponse::internal_error(id, e.to_string()),
-        },
-        Cloned::Tab(p) => match state.apply_tab_preset(&p, target_pane_id, opts) {
-            Ok(tab_id) => JsonRpcResponse::success(
-                id,
-                json!({
-                    "applied": true,
-                    "kind": "tab",
-                    "tab_id": tab_id,
-                }),
-            ),
-            Err(e) => JsonRpcResponse::internal_error(id, e.to_string()),
-        },
-        Cloned::Pane(p) => match state.apply_pane_preset(&p, target_workspace_id, opts) {
-            Ok(pane_id) => JsonRpcResponse::success(
-                id,
-                json!({
-                    "applied": true,
-                    "kind": "pane",
-                    "pane_id": pane_id,
-                }),
-            ),
-            Err(e) => JsonRpcResponse::internal_error(id, e.to_string()),
-        },
+    match apply_inner(state, kind, &name, target_pane_id, target_workspace_id, opts) {
+        Ok(ApplyOutcome::Workspace { workspace_id }) => JsonRpcResponse::success(
+            id,
+            json!({
+                "applied": true,
+                "kind": "workspace",
+                "workspace_id": workspace_id,
+            }),
+        ),
+        Ok(ApplyOutcome::Tab { tab_id }) => JsonRpcResponse::success(
+            id,
+            json!({
+                "applied": true,
+                "kind": "tab",
+                "tab_id": tab_id,
+            }),
+        ),
+        Ok(ApplyOutcome::Pane { pane_id }) => JsonRpcResponse::success(
+            id,
+            json!({
+                "applied": true,
+                "kind": "pane",
+                "pane_id": pane_id,
+            }),
+        ),
+        Err(PresetMutationError::Apply(e)) => JsonRpcResponse::internal_error(id, e.to_string()),
+        Err(e) => mutation_error(id, e),
     }
 }

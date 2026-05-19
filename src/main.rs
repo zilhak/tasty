@@ -215,14 +215,6 @@ struct App {
 }
 
 /// State for the modal window shake animation.
-/// preset apply 시 Mutex 안에서 clone 한 preset 데이터. apply 본체는 mutex lock
-/// 밖에서 `&mut AppState` 로 호출되므로 보더 케이스를 enum 하나로 묶는다.
-enum ClonedPreset {
-    Workspace(tasty_presets::WorkspacePreset),
-    Tab(tasty_presets::TabPreset),
-    Pane(tasty_presets::PanePreset),
-}
-
 struct ModalShake {
     start: std::time::Instant,
     /// Original window position before shake began.
@@ -1341,192 +1333,38 @@ impl App {
         }
     }
 
-    /// 도구 메뉴 클릭 등 MainWindow 가 enqueue 한 "PresetWindow 그냥 열기" 요청 drain.
+    /// 도구 메뉴 클릭 / Intent::SavePreset 후속 — PresetWindow 열기 + (있다면) selection.
+    /// preset 저장/적용 자체는 Intent 핸들러 (`src/intent/preset.rs`) 에서 처리.
     fn process_pending_open_preset_window(
         &mut self,
         event_loop: &winit::event_loop::ActiveEventLoop,
     ) {
-        let mut requested = false;
+        let mut request_open = false;
+        let mut pending_selection: Option<(tasty_presets::PresetKind, String)> = None;
         for w in self.main_windows_iter_mut() {
             if w.state.dialogs.pending_open_preset_window {
                 w.state.dialogs.pending_open_preset_window = false;
-                requested = true;
+                request_open = true;
+            }
+            if let Some(sel) = w.state.dialogs.pending_preset_window_selection.take() {
+                pending_selection = Some(sel);
+                // selection 이 있으면 open 도 암묵적으로 요청.
+                request_open = true;
             }
         }
-        if requested {
-            self.open_preset_window(event_loop);
-        }
-    }
-
-    /// 단축키/picker 가 enqueue 한 preset 적용 요청을 처리한다.
-    /// 1프레임에 최대 1개 (picker 가 동시에 여러 개 enqueue 할 수 없음).
-    fn process_pending_preset_apply(&mut self) {
-        use crate::state::{PendingPresetApply, preset_apply::ApplyOptions};
-        use tasty_presets::PresetKind;
-
-        let mut request: Option<(WindowId, PendingPresetApply)> = None;
-        for (id, w) in self.windows.iter_mut() {
-            if let Some(main) = w.as_main_mut() {
-                if let Some(req) = main.state.dialogs.pending_preset_apply.take() {
-                    request = Some((*id, req));
-                    break;
-                }
-            }
-        }
-        let Some((source_id, req)) = request else {
+        if !request_open {
             return;
-        };
-
-        // preset 데이터를 lock 안에서 clone 해 두고, apply 는 lock 밖에서 수행.
-        let (kind, cloned): (PresetKind, Option<ClonedPreset>) = {
-            let store = match self.engine.preset_store.lock() {
-                Ok(g) => g,
-                Err(poisoned) => {
-                    tracing::warn!("preset_store mutex poisoned; recovering");
-                    poisoned.into_inner()
-                }
-            };
-            match &req {
-                PendingPresetApply::Workspace(name) => (
-                    PresetKind::Workspace,
-                    store.get_workspace(name).cloned().map(ClonedPreset::Workspace),
-                ),
-                PendingPresetApply::Tab(name) => (
-                    PresetKind::Tab,
-                    store.get_tab(name).cloned().map(ClonedPreset::Tab),
-                ),
-                PendingPresetApply::Pane(name) => (
-                    PresetKind::Pane,
-                    store.get_pane(name).cloned().map(ClonedPreset::Pane),
-                ),
-            }
-        };
-
-        let Some(main) = self
-            .windows
-            .get_mut(&source_id)
-            .and_then(|w| w.as_main_mut())
-        else {
-            return;
-        };
-
-        let result: Result<(), crate::state::preset_apply::ApplyError> = match cloned {
-            Some(ClonedPreset::Workspace(p)) => main
-                .state
-                .apply_workspace_preset(&p, ApplyOptions { focus: true })
-                .map(|_| ()),
-            Some(ClonedPreset::Tab(p)) => main
-                .state
-                .apply_tab_preset(&p, None, ApplyOptions { focus: true })
-                .map(|_| ()),
-            Some(ClonedPreset::Pane(p)) => main
-                .state
-                .apply_pane_preset(&p, None, ApplyOptions { focus: true })
-                .map(|_| ()),
-            None => Err(crate::state::preset_apply::ApplyError::Empty),
-        };
-
-        if let Err(e) = &result {
-            tracing::warn!("preset apply failed: {e}");
-            main.state.toasts.push(
-                crate::i18n::t("preset.toast.apply_failed"),
-                crate::ui::ToastKind::Error,
-                crate::ui::ToastScope::Window,
-            );
         }
-        let _ = kind;
-        main.mark_dirty();
-    }
-
-    /// MainWindow 가 우클릭으로 enqueue 한 preset 저장 요청을 처리한다.
-    /// store 의 unique_name 으로 충돌 회피 → save_* → 토스트 → PresetWindow 오픈 + select.
-    /// 한 번에 1개 요청만 처리 (컨텍스트 메뉴는 modal 이라 동시 클릭 불가).
-    fn process_pending_preset_save(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-        use tasty_presets::PresetKind;
-
-        let mut request: Option<(WindowId, crate::state::PendingPresetSave)> = None;
-        for (id, w) in self.windows.iter_mut() {
-            if let Some(main) = w.as_main_mut() {
-                if let Some(req) = main.state.dialogs.pending_preset_save.take() {
-                    request = Some((*id, req));
-                    break;
+        self.open_preset_window(event_loop);
+        if let Some((kind, name)) = pending_selection {
+            if let Some(pwid) = self.preset_window_id {
+                if let Some(pw) = self
+                    .windows
+                    .get_mut(&pwid)
+                    .and_then(|w| w.as_any_mut().downcast_mut::<window::PresetWindow>())
+                {
+                    pw.select(kind, name);
                 }
-            }
-        }
-        let Some((source_id, req)) = request else {
-            return;
-        };
-
-        let (kind, save_result, name) = {
-            let mut store = match self.engine.preset_store.lock() {
-                Ok(g) => g,
-                Err(poisoned) => {
-                    tracing::warn!("preset_store mutex poisoned; recovering");
-                    poisoned.into_inner()
-                }
-            };
-            match req {
-                crate::state::PendingPresetSave::Workspace { base_name, mut preset } => {
-                    let name = store.unique_name(PresetKind::Workspace, &base_name);
-                    preset.name = name.clone();
-                    let res = store.save_workspace(preset);
-                    (PresetKind::Workspace, res.map(|_| ()), name)
-                }
-                crate::state::PendingPresetSave::Tab { base_name, mut preset } => {
-                    let name = store.unique_name(PresetKind::Tab, &base_name);
-                    preset.name = name.clone();
-                    let res = store.save_tab(preset);
-                    (PresetKind::Tab, res.map(|_| ()), name)
-                }
-                crate::state::PendingPresetSave::Pane { base_name, mut preset } => {
-                    let name = store.unique_name(PresetKind::Pane, &base_name);
-                    preset.name = name.clone();
-                    let res = store.save_pane(preset);
-                    (PresetKind::Pane, res.map(|_| ()), name)
-                }
-            }
-        };
-
-        // 결과 토스트는 요청을 보낸 MainWindow 에 푸시.
-        let toast_key = match (&save_result, kind) {
-            (Ok(_), PresetKind::Workspace) => "preset.toast.saved_workspace",
-            (Ok(_), PresetKind::Tab) => "preset.toast.saved_tab",
-            (Ok(_), PresetKind::Pane) => "preset.toast.saved_pane",
-            (Err(_), _) => "preset.toast.save_failed",
-        };
-        let toast_kind = if save_result.is_ok() {
-            crate::ui::ToastKind::Info
-        } else {
-            crate::ui::ToastKind::Error
-        };
-        if let Some(main) = self
-            .windows
-            .get_mut(&source_id)
-            .and_then(|w| w.as_main_mut())
-        {
-            main.state.toasts.push(
-                crate::i18n::t(toast_key),
-                toast_kind,
-                crate::ui::ToastScope::Window,
-            );
-            main.mark_dirty();
-        }
-
-        match save_result {
-            Ok(_) => {
-                self.open_preset_window(event_loop);
-                if let Some(pwid) = self.preset_window_id {
-                    if let Some(pw) = self
-                        .windows
-                        .get_mut(&pwid)
-                        .and_then(|w| w.as_any_mut().downcast_mut::<window::PresetWindow>())
-                    {
-                        pw.select(kind, name);
-                    }
-                }
-            }
-            Err(e) => {
-                tracing::warn!("preset save failed: {e}");
             }
         }
     }
@@ -2486,6 +2324,12 @@ impl App {
             | Intent::ClosePopup { .. }
             | Intent::TogglePopup { .. } => {
                 crate::intent::popup::handle(state, intent);
+            }
+            Intent::ApplyPreset { .. }
+            | Intent::SavePreset { .. }
+            | Intent::DeletePreset { .. }
+            | Intent::RenamePreset { .. } => {
+                crate::intent::preset::handle(state, intent);
             }
             Intent::Noop => {}
         }

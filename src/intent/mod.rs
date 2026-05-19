@@ -9,9 +9,30 @@
 use crate::ui::popup::{PopupId, PopupScope};
 
 pub mod popup;
+pub mod preset;
 
 #[cfg(debug_assertions)]
 pub mod watch;
+
+/// preset Intent 가 운반하는 캡처된 preset payload.
+/// 호출자 (우클릭 / IPC) 가 capture 를 수행한 뒤 핸들러에 그대로 넘긴다 — TODO 01
+/// 결정 P3 (CapturePreset 별도 Intent 미설치) 반영.
+#[derive(Debug, Clone)]
+pub enum ClonedPreset {
+    Workspace(tasty_presets::WorkspacePreset),
+    Tab(tasty_presets::TabPreset),
+    Pane(tasty_presets::PanePreset),
+}
+
+impl ClonedPreset {
+    pub fn kind(&self) -> tasty_presets::PresetKind {
+        match self {
+            ClonedPreset::Workspace(_) => tasty_presets::PresetKind::Workspace,
+            ClonedPreset::Tab(_) => tasty_presets::PresetKind::Tab,
+            ClonedPreset::Pane(_) => tasty_presets::PresetKind::Pane,
+        }
+    }
+}
 
 /// 발화된 Intent. 메인 루프 drain 까지 `AppState::pending_intents` 에 머문다.
 #[derive(Debug, Clone)]
@@ -33,6 +54,33 @@ pub enum Intent {
     ClosePopup { id: PopupId },
     /// popup toggle (열려있으면 닫고, 닫혀있으면 열기).
     TogglePopup { id: PopupId, mode: OpenPopupMode },
+
+    // ---- Preset 도메인 ----
+    /// Preset 적용. focus 정책은 origin 으로 자동 분기 (User=true, Agent=false).
+    ApplyPreset {
+        kind: tasty_presets::PresetKind,
+        name: String,
+    },
+    /// Preset 저장. `explicit_name` 우선, 없으면 `base_name` 으로 `store.unique_name`.
+    /// User origin (우클릭) 은 보통 explicit_name=None + overwrite=false,
+    /// Agent origin (IPC) 은 explicit_name=Some + overwrite 명시.
+    SavePreset {
+        base_name: String,
+        explicit_name: Option<String>,
+        overwrite: bool,
+        preset: ClonedPreset,
+    },
+    /// Preset 삭제.
+    DeletePreset {
+        kind: tasty_presets::PresetKind,
+        name: String,
+    },
+    /// Preset 이름 변경.
+    RenamePreset {
+        kind: tasty_presets::PresetKind,
+        from: String,
+        to: String,
+    },
 }
 
 /// popup open 위치/포커스 정책.

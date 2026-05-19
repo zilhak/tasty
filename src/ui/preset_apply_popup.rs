@@ -10,7 +10,8 @@
 use tasty_presets::PresetKind;
 
 use crate::i18n::t;
-use crate::state::{AppState, PendingPresetApply};
+use crate::intent::Intent;
+use crate::state::AppState;
 use crate::theme;
 use crate::ui::popup::PopupAction;
 
@@ -159,11 +160,9 @@ fn draw_apply_popup(
 
     if apply_clicked {
         if let Some(name) = state.dialogs.preset_picker_selected.clone() {
-            state.dialogs.pending_preset_apply = Some(match kind {
-                PresetKind::Workspace => PendingPresetApply::Workspace(name),
-                PresetKind::Tab => PendingPresetApply::Tab(name),
-                PresetKind::Pane => PendingPresetApply::Pane(name),
-            });
+            state.dispatch_intent(
+                Intent::ApplyPreset { kind, name }.from_user_menu("preset_apply_popup"),
+            );
             state.dialogs.preset_picker_selected = None;
             return PopupAction::Close;
         }

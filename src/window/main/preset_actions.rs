@@ -1,16 +1,16 @@
-//! 우클릭 메뉴 진입점 — Workspace/Tab/Pane 을 캡처해 preset 저장 큐로 넘긴다.
+//! 우클릭 메뉴 진입점 — Workspace/Tab/Pane 을 캡처해 `Intent::SavePreset` 으로 발화한다.
 //!
 //! 본 모듈은 capture 만 수행한다. `PresetStore` 는 App 레벨 (engine::Engine) 에서 관리되므로
-//! `state.dialogs.pending_preset_save` 1슬롯 큐로 App 메인 루프에 넘긴다.
-//! App 이 unique_name 부여 → save_* → PresetWindow 오픈 + select 까지 일괄 처리한다.
+//! `Intent::SavePreset` 으로 발화하면 `src/intent/preset.rs` 핸들러가 unique_name 부여 →
+//! save → PresetWindow 오픈 + select 까지 일괄 처리한다.
 
 use anyhow::{Result, anyhow};
 use tasty_presets::{
     CaptureOptions, CapturedSurfaceMeta, PanePreset, TabPreset, WorkspacePreset,
 };
 
+use crate::intent::{ClonedPreset, Intent};
 use crate::model::Surface;
-use crate::state::PendingPresetSave;
 
 use super::MainWindow;
 
@@ -40,8 +40,15 @@ impl MainWindow {
         let preset = WorkspacePreset::from_workspace(ws, &mut capture, CaptureOptions::default())
             .ok_or_else(|| anyhow!("workspace capture failed"))?;
 
-        self.state.dialogs.pending_preset_save =
-            Some(PendingPresetSave::Workspace { base_name, preset });
+        self.state.dispatch_intent(
+            Intent::SavePreset {
+                base_name,
+                explicit_name: None,
+                overwrite: false,
+                preset: ClonedPreset::Workspace(preset),
+            }
+            .from_user_context_menu(),
+        );
         Ok(())
     }
 
@@ -77,8 +84,15 @@ impl MainWindow {
         let preset = TabPreset::from_tab(tab, &mut capture, CaptureOptions::default())
             .ok_or_else(|| anyhow!("tab capture failed"))?;
 
-        self.state.dialogs.pending_preset_save =
-            Some(PendingPresetSave::Tab { base_name, preset });
+        self.state.dispatch_intent(
+            Intent::SavePreset {
+                base_name,
+                explicit_name: None,
+                overwrite: false,
+                preset: ClonedPreset::Tab(preset),
+            }
+            .from_user_context_menu(),
+        );
         Ok(())
     }
 
@@ -102,8 +116,15 @@ impl MainWindow {
         let preset = PanePreset::from_pane(pane, &mut capture, CaptureOptions::default())
             .ok_or_else(|| anyhow!("pane capture failed"))?;
 
-        self.state.dialogs.pending_preset_save =
-            Some(PendingPresetSave::Pane { base_name, preset });
+        self.state.dispatch_intent(
+            Intent::SavePreset {
+                base_name,
+                explicit_name: None,
+                overwrite: false,
+                preset: ClonedPreset::Pane(preset),
+            }
+            .from_user_context_menu(),
+        );
         Ok(())
     }
 }
