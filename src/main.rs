@@ -79,7 +79,6 @@ pub use tasty_font as font;
 use std::sync::Arc;
 
 use anyhow::Result;
-use clap::Parser;
 use winit::event_loop::EventLoopProxy;
 use winit::window::Window;
 
@@ -181,7 +180,7 @@ struct DividerDrag {
     kind: DividerDragKind,
 }
 
-struct App {
+pub(crate) struct App {
     engine: engine::Engine,
     /// 모든 윈도우(모달 포함). `engine.active_modal_id`로 현재 활성 모달을 식별한다.
     /// 모달도 여기에 들어가며, 모달은 엔진 전역에 최대 1개라는 불변식을 유지한다.
@@ -210,7 +209,7 @@ struct App {
     plugin_manager: Option<plugin::PluginManager>,
     /// 사용자 init.lua 기반 Lua hook 엔진. 부팅 시 1회 생성, `~/.tasty/init.lua` 가
     /// 있으면 로드. observe-only — 호스트 동작에는 영향 없음. 초기화 실패 시 None.
-    lua_engine: Option<tasty_lua::LuaEngine>,
+    pub(crate) lua_engine: Option<tasty_lua::LuaEngine>,
     /// 현재 열려 있는 `PresetWindow` 의 winit window id. modeless editor 윈도우는
     /// 엔진 전역 단일 인스턴스 — 같은 명령이 다시 들어오면 새 윈도우를 만들지 않고
     /// 이 id 의 윈도우로 포커스만 이동한다.
@@ -473,7 +472,7 @@ fn handle_debug_extension_invoke_hook(
 }
 
 impl App {
-    fn new(
+    pub(crate) fn new(
         proxy: EventLoopProxy<AppEvent>,
         port_file: Option<String>,
         #[cfg(debug_assertions)] input_simulation_enabled: bool,
@@ -2754,73 +2753,5 @@ impl App {
 }
 
 fn main() -> Result<()> {
-    boot::os::attach_windows_console_if_needed();
-    boot::os::init_crash_report();
-
-    // Handle -a/--all before clap parsing (clap's -h exits before we can check -a)
-    {
-        let args: Vec<String> = std::env::args().collect();
-        if args.iter().any(|a| a == "-a" || a == "--all") {
-            cli::print_command_tree();
-            return Ok(());
-        }
-    }
-
-    // Parse CLI arguments. 정적 `Cli`가 알 수 없는 서브커맨드라고 실패하면 plugin
-    // CLI 동적 등록에서 한 번 더 매칭 시도. 정적이 항상 우선이므로 plugin이 호스트
-    // 명령을 가릴 수 없다.
-    let cli = match cli::Cli::try_parse() {
-        Ok(cli) => cli,
-        Err(err) => {
-            if matches!(err.kind(), clap::error::ErrorKind::InvalidSubcommand) {
-                if let Some(result) = cli::try_run_plugin_cli() {
-                    return result;
-                }
-            }
-            cli::format_parse_error(err);
-            unreachable!();
-        }
-    };
-
-    boot::locale::init();
-
-    // state.db 초기화는 GUI 부팅 시점(create_new_window)으로 이동됨.
-    // 실패 시 InfoModal로 사용자에게 안내 후 Exit(1).
-
-    // If a subcommand was provided, run in CLI client mode
-    if let Some(command) = cli.command {
-        return cli::run_client(command);
-    }
-
-    // Inside a tasty terminal without subcommand: show help instead of launching GUI
-    if !cli.launch && std::env::var("TASTY_SURFACE_ID").is_ok() {
-        cli::print_augmented_help()?;
-        return Ok(());
-    }
-
-    // Run the GUI
-    let (event_loop, proxy) = boot::event_loop::build()?;
-    boot::os::install_macos_delegate(&proxy);
-
-    // 시스템 클립보드 폴링 스레드 + 1초 busy ticker.
-    clipboard::poll_thread::spawn(proxy.clone());
-    boot::busy_tick::spawn(proxy.clone());
-
-    // CWD는 OSC 7 시퀀스에만 의존한다. 모든 플랫폼 공통.
-    // zsh/fish는 기본 지원, bash는 PROMPT_COMMAND 설정 필요.
-
-    let mut app = App::new(
-        proxy,
-        cli.port_file,
-        #[cfg(debug_assertions)]
-        cli.enable_input_simulation,
-    );
-    crate::hooks::lua::fire(
-        app.lua_engine.as_ref(),
-        "tasty.startup.post",
-        &serde_json::Value::Null,
-    );
-    event_loop.run_app(&mut app)?;
-
-    Ok(())
+    boot::run()
 }
