@@ -1,0 +1,167 @@
+//! `tasty debug ...` CLI → JsonRpcRequest 매핑 (debug + popup + tool + extension + event_bus).
+
+#[cfg(debug_assertions)]
+use crate::cli::commands::{DebugCommands, EventBusCommands};
+
+use super::resolve_surface_id;
+
+pub(super) fn debug_command_to_method_params(command: &DebugCommands) -> (&'static str, serde_json::Value) {
+    match command {
+        DebugCommands::Info => ("debug.info", serde_json::json!({})),
+        DebugCommands::ImeEnable => ("surface.ime_enable", serde_json::json!({})),
+        DebugCommands::ImeDisable => ("surface.ime_disable", serde_json::json!({})),
+        DebugCommands::ImePreedit { text, cursor } => (
+            "surface.ime_preedit",
+            serde_json::json!({ "text": text, "cursor": cursor }),
+        ),
+        DebugCommands::ImeCommit { text } => {
+            ("surface.ime_commit", serde_json::json!({ "text": text }))
+        }
+        DebugCommands::ImeStatus => ("surface.ime_status", serde_json::json!({})),
+        DebugCommands::CellInfo { row, col, surface } => (
+            "debug.cell_info",
+            serde_json::json!({
+                "surface_id": resolve_surface_id(*surface),
+                "row": row,
+                "col": col,
+            }),
+        ),
+        DebugCommands::ScreenAttrs { row, surface } => (
+            "debug.screen_attrs",
+            serde_json::json!({
+                "surface_id": resolve_surface_id(*surface),
+                "row": row,
+            }),
+        ),
+        DebugCommands::GlyphColor {
+            row,
+            col,
+            surface,
+            bg_mode,
+        } => (
+            "debug.glyph_color",
+            serde_json::json!({
+                "surface_id": resolve_surface_id(*surface),
+                "row": row,
+                "col": col,
+                "bg_mode": bg_mode,
+            }),
+        ),
+        DebugCommands::SwitchInputSource { source_id } => (
+            "surface.switch_input_source",
+            serde_json::json!({ "source_id": source_id }),
+        ),
+        DebugCommands::RawKey { keycode } => {
+            ("surface.raw_key", serde_json::json!({ "keycode": keycode }))
+        }
+        DebugCommands::EventBus(sub) => event_bus_command_to_method_params(sub),
+        DebugCommands::Extension(sub) => extension_debug_command_to_method_params(sub),
+        DebugCommands::Tool(sub) => tool_debug_command_to_method_params(sub),
+        DebugCommands::Popup(sub) => popup_debug_command_to_method_params(sub),
+    }
+}
+
+#[cfg(debug_assertions)]
+pub(super) fn popup_debug_command_to_method_params(
+    command: &crate::cli::PopupDebugCommands,
+) -> (&'static str, serde_json::Value) {
+    use crate::cli::PopupDebugCommands;
+    match command {
+        PopupDebugCommands::List => ("debug.popup.list", serde_json::json!({})),
+        PopupDebugCommands::Open {
+            plugin_id,
+            popup_id,
+            context,
+        } => {
+            let ctx_value: serde_json::Value = match context {
+                Some(s) => serde_json::from_str(s).unwrap_or(serde_json::Value::Null),
+                None => serde_json::Value::Null,
+            };
+            (
+                "debug.popup.open",
+                serde_json::json!({
+                    "plugin_id": plugin_id,
+                    "popup_id": popup_id,
+                    "context": ctx_value,
+                }),
+            )
+        }
+        PopupDebugCommands::Close { instance_id } => (
+            "debug.popup.close",
+            serde_json::json!({ "instance_id": instance_id }),
+        ),
+    }
+}
+
+#[cfg(debug_assertions)]
+pub(super) fn tool_debug_command_to_method_params(
+    command: &crate::cli::ToolDebugCommands,
+) -> (&'static str, serde_json::Value) {
+    use crate::cli::ToolDebugCommands;
+    match command {
+        ToolDebugCommands::List => ("debug.tool.list", serde_json::json!({})),
+        ToolDebugCommands::Invoke { key } => {
+            ("debug.tool.invoke", serde_json::json!({ "key": key }))
+        }
+    }
+}
+
+#[cfg(debug_assertions)]
+pub(super) fn extension_debug_command_to_method_params(
+    command: &crate::cli::ExtensionDebugCommands,
+) -> (&'static str, serde_json::Value) {
+    use crate::cli::ExtensionDebugCommands;
+    match command {
+        ExtensionDebugCommands::InvokeHook {
+            extension_id,
+            kind,
+            phase,
+            mode,
+            target,
+            payload,
+        } => {
+            let parsed_payload: serde_json::Value =
+                serde_json::from_str(payload).unwrap_or(serde_json::Value::Null);
+            (
+                "debug.extension.invoke_hook",
+                serde_json::json!({
+                    "extension_id": extension_id,
+                    "kind": kind,
+                    "phase": phase,
+                    "mode": mode,
+                    "target": target,
+                    "payload": parsed_payload,
+                }),
+            )
+        }
+    }
+}
+
+#[cfg(debug_assertions)]
+pub(super) fn event_bus_command_to_method_params(
+    command: &EventBusCommands,
+) -> (&'static str, serde_json::Value) {
+    match command {
+        EventBusCommands::ListSubscribers { key } => (
+            "debug.event_bus.list_subscribers",
+            serde_json::json!({ "key": key }),
+        ),
+        EventBusCommands::Publish {
+            key,
+            payload,
+            scope,
+        } => (
+            "debug.event_bus.publish",
+            serde_json::json!({
+                "key": key,
+                "payload": payload,
+                "scope": scope,
+            }),
+        ),
+        EventBusCommands::Trace { trace_id } => (
+            "debug.event_bus.trace",
+            serde_json::json!({ "trace_id": trace_id }),
+        ),
+    }
+}
+
