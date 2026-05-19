@@ -15,6 +15,7 @@
 //!   단계에서 다운캐스트 메서드 6종 제거).
 
 pub mod builtins;
+pub mod meta;
 
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};

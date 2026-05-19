@@ -15,6 +15,7 @@ pub(crate) mod cli_routing;
 pub(crate) mod event_loop;
 pub(crate) mod locale;
 pub(crate) mod os;
+pub(crate) mod waker;
 
 use crate::{App, cli, clipboard, hooks};
 

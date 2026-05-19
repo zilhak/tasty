@@ -1,3 +1,5 @@
+pub mod state;
+
 use crate::AppEvent;
 use crate::ipc::server::IpcServer;
 use winit::event_loop::EventLoopProxy;

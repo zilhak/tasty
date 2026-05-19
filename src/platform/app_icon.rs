@@ -1,11 +1,11 @@
 //! Embedded application icon for runtime use (window icon, tray icon).
 
 /// 256x256 PNG icon bytes (embedded at compile time).
-pub static ICON_PNG_256: &[u8] = include_bytes!("../assets/icons/icon_256.png");
+pub static ICON_PNG_256: &[u8] = include_bytes!("../../assets/icons/icon_256.png");
 
 /// 32x32 PNG icon bytes for small contexts (tray icon, taskbar).
 #[cfg(windows)]
-pub static ICON_PNG_32: &[u8] = include_bytes!("../assets/icons/icon_32.png");
+pub static ICON_PNG_32: &[u8] = include_bytes!("../../assets/icons/icon_32.png");
 
 /// Decode a PNG byte slice into RGBA pixels and dimensions.
 fn decode_png(png_bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {

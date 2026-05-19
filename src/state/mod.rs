@@ -6,6 +6,8 @@ mod mouse;
 mod pane;
 pub mod preset_apply;
 mod restore;
+pub mod search;
+pub mod selection;
 mod tab;
 #[cfg(test)]
 mod tests;

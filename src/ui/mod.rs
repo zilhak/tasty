@@ -8,6 +8,8 @@ pub mod html;
 pub mod image;
 pub mod markdown;
 pub mod preset;
+pub mod terminal_link;
+pub mod theme_bridge;
 mod divider;
 pub(crate) mod drop_overlay;
 mod egui_panels;
