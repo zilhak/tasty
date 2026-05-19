@@ -1,13 +1,15 @@
 mod binding;
+mod copy_paste;
+mod numeric;
 #[cfg(test)]
 mod tests;
+mod zoom;
 
 use winit::event_loop::EventLoopProxy;
 use winit::keyboard::{Key, KeyCode, ModifiersState, PhysicalKey};
 
 use crate::intent::{Intent, OpenPopupMode};
 use crate::model::SplitDirection;
-use crate::window::Window as _;
 use crate::window::main::MainWindow;
 
 pub(crate) use binding::matches_any_binding;
@@ -710,43 +712,6 @@ impl MainWindow {
         false
     }
 
-    fn handle_copy_shortcut(&mut self, key: &Key, mods: ModifiersState) -> bool {
-        let bindings = self.state.engine.settings.keybindings.copy.clone();
-        if !matches_any_binding(&bindings, key, mods) {
-            return false;
-        }
-        // Paste cooldown: Ctrl+V 직후 짧은 시간 안에 들어온 Ctrl+C는 사용자의
-        // 오타(옆 키 누름)로 간주하고 통째로 무시한다. SIGINT도, 클립보드 복사도
-        // 일어나지 않으며 toast로만 알린다.
-        if let Some(t) = self.last_terminal_paste_at {
-            if t.elapsed() < crate::window::main::PASTE_CTRL_C_COOLDOWN {
-                let scope = crate::ui::ToastScope::Surface(
-                    self.state.focused_surface_id().unwrap_or(0),
-                );
-                self.state.toasts.push_info(
-                    crate::i18n::t("toast.ctrl_c_ignored_after_paste"),
-                    scope,
-                );
-                self.mark_dirty();
-                return true;
-            }
-        }
-        if self.copy_selection_to_clipboard() {
-            self.mark_dirty();
-            return true;
-        }
-        let st = self.state.focused_surface_type();
-        if st.is_kind("markdown") {
-            self.base
-                .gpu
-                .egui_ctx
-                .input_mut(|i| i.events.push(egui::Event::Copy));
-            self.mark_dirty();
-            return true;
-        }
-        false
-    }
-
     fn handle_keybinding_shortcuts(
         state: &mut crate::state::AppState,
         kb: &crate::settings::KeybindingSettings,
@@ -1125,116 +1090,5 @@ impl MainWindow {
         false
     }
 
-    /// Number-key tab/workspace switching (Ctrl+1..9, Alt+1..9).
-    /// Not exposed to the keybinding UI because it is a bank of 9 slots
-    /// governed by the `tab_switch_modifier` / `workspace_switch_modifier`
-    /// settings, not a single bindable combo.
-    fn handle_numeric_switch_shortcuts(
-        state: &mut crate::state::AppState,
-        kb: &crate::settings::KeybindingSettings,
-        key: &Key,
-        ctrl: bool,
-        shift: bool,
-        alt: bool,
-    ) -> bool {
-        if let Key::Character(c) = key {
-            let ch = c.chars().next().unwrap_or('\0');
-            if ch.is_ascii_digit() {
-                let tab_mod = kb.tab_switch_modifier.to_lowercase();
-                let tab_mod_matches = match tab_mod.as_str() {
-                    "alt" => alt && !ctrl && !shift,
-                    _ => ctrl && !shift && !alt,
-                };
-                if tab_mod_matches {
-                    let index = if ch == '0' {
-                        9
-                    } else {
-                        (ch as usize) - ('1' as usize)
-                    };
-                    state.goto_tab_in_pane(index);
-                    return true;
-                }
-
-                let ws_mod = kb.workspace_switch_modifier.to_lowercase();
-                let ws_mod_matches = match ws_mod.as_str() {
-                    "ctrl" => ctrl && !shift && !alt,
-                    _ => alt && !ctrl && !shift,
-                };
-                if ws_mod_matches {
-                    if let Some(digit) = ch.to_digit(10) {
-                        if digit >= 1 && digit <= 9 {
-                            state.switch_workspace((digit - 1) as usize);
-                            return true;
-                        }
-                    }
-                }
-            }
-        }
-
-        false
-    }
-
-    fn handle_paste_shortcut(&mut self, key: &Key, mods: ModifiersState) -> bool {
-        let bindings = self.state.engine.settings.keybindings.paste.clone();
-        if !matches_any_binding(&bindings, key, mods) {
-            return false;
-        }
-        let st = self.state.focused_surface_type();
-        if st.is_kind("image") {
-            if self.paste_to_image() {
-                self.mark_dirty();
-            }
-            return true;
-        }
-        self.paste_to_terminal();
-        self.mark_dirty();
-        true
-    }
-
-    fn handle_zoom_shortcut(
-        state: &mut crate::state::AppState,
-        key: &Key,
-        mods: ModifiersState,
-    ) -> bool {
-        use crate::state::FocusedSurfaceType;
-        let kb = &state.engine.settings.keybindings;
-        let is_zoom_in = matches_any_binding(&kb.zoom_in, key, mods);
-        let is_zoom_out = matches_any_binding(&kb.zoom_out, key, mods);
-        let is_zoom_reset = matches_any_binding(&kb.zoom_reset, key, mods);
-        if !(is_zoom_in || is_zoom_out || is_zoom_reset) {
-            return false;
-        }
-
-        // Pick which surface override the shortcut targets based on focus.
-        let focus = state.focused_surface_type();
-        let appearance = &mut state.engine.settings.appearance;
-        let (override_ref, current_effective_size) = match &focus {
-            FocusedSurfaceType::Terminal => {
-                let size = appearance
-                    .default_font
-                    .apply_override(&appearance.terminal_font)
-                    .font_size;
-                (&mut appearance.terminal_font, size)
-            }
-            FocusedSurfaceType::Kind(k) if k == "markdown" => {
-                let size = appearance
-                    .default_font
-                    .apply_override(&appearance.markdown_font)
-                    .font_size;
-                (&mut appearance.markdown_font, size)
-            }
-            // Other surfaces don't expose a font_size shortcut.
-            _ => return false,
-        };
-
-        if is_zoom_reset {
-            override_ref.font_size = None;
-        } else if is_zoom_in {
-            override_ref.font_size = Some((current_effective_size + 1.0).min(72.0));
-        } else if is_zoom_out {
-            override_ref.font_size = Some((current_effective_size - 1.0).max(6.0));
-        }
-        true
-    }
 }
 
