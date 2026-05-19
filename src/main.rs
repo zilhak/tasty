@@ -10,7 +10,8 @@ mod clipboard;
 mod clipboard_history;
 mod command_index;
 mod command_palette;
-mod crash_report;
+mod platform;
+pub(crate) use platform::crash_report;
 #[cfg(debug_assertions)]
 mod debug_info;
 mod diff_ui;
@@ -36,7 +37,7 @@ mod intent;
 mod ipc;
 mod layout_persistence;
 #[cfg(windows)]
-mod jump_list;
+pub(crate) use platform::jump_list;
 mod markdown_ui;
 mod native_menu;
 mod notification;
@@ -60,13 +61,13 @@ mod surface_registry;
 mod update_check;
 mod waker_factory_winit;
 #[cfg(windows)]
-mod system_tray;
+pub(crate) use platform::system_tray;
 mod ui;
 mod webview;
 pub mod window;
 
 #[cfg(target_os = "macos")]
-mod macos_delegate;
+pub(crate) use platform::macos_delegate;
 
 // Re-export tasty_terminal as terminal for backward compatibility within the crate
 use tasty_terminal as terminal;
