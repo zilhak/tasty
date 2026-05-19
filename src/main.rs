@@ -2,6 +2,7 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 mod app_icon;
+mod boot;
 mod cli;
 mod click_cursor;
 mod clipboard;
@@ -79,7 +80,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use clap::Parser;
-use winit::event_loop::{EventLoop, EventLoopProxy};
+use winit::event_loop::EventLoopProxy;
 use winit::window::Window;
 
 use gpu::GpuState;
@@ -2753,17 +2754,8 @@ impl App {
 }
 
 fn main() -> Result<()> {
-    #[cfg(all(windows, not(debug_assertions)))]
-    {
-        use windows::Win32::System::Console::{ATTACH_PARENT_PROCESS, AttachConsole};
-        // SAFETY: AttachConsole은 thread-safe Win32 호출. main 진입 첫 단계로,
-        // 다른 thread가 아직 spawn되지 않은 시점. 결과 무시는 의도적 (부모가 GUI 셸이면 실패).
-        unsafe {
-            let _ = AttachConsole(ATTACH_PARENT_PROCESS);
-        }
-    }
-
-    crash_report::init();
+    boot::os::attach_windows_console_if_needed();
+    boot::os::init_crash_report();
 
     // Handle -a/--all before clap parsing (clap's -h exits before we can check -a)
     {
@@ -2790,9 +2782,7 @@ fn main() -> Result<()> {
         }
     };
 
-    // Initialize i18n
-    let lang_settings = settings::Settings::load();
-    i18n::init(&lang_settings.general.language);
+    boot::locale::init();
 
     // state.db 초기화는 GUI 부팅 시점(create_new_window)으로 이동됨.
     // 실패 시 InfoModal로 사용자에게 안내 후 Exit(1).
@@ -2809,31 +2799,12 @@ fn main() -> Result<()> {
     }
 
     // Run the GUI
-    let event_loop = EventLoop::<AppEvent>::with_user_event().build()?;
-    let proxy = event_loop.create_proxy();
+    let (event_loop, proxy) = boot::event_loop::build()?;
+    boot::os::install_macos_delegate(&proxy);
 
-    #[cfg(target_os = "macos")]
-    macos_delegate::store_proxy(proxy.clone());
-
-    // 시스템 클립보드 폴링 스레드. interval은 앱 시작 시점의 설정 값을 사용하며,
-    // runtime 변경은 앱 재시작 후 반영된다.
+    // 시스템 클립보드 폴링 스레드 + 1초 busy ticker.
     clipboard::poll_thread::spawn(proxy.clone());
-
-    // 1초 간격 busy ticker. 메인 스레드가 받아서 모든 surface의 foreground
-    // 프로세스를 다시 조회하고 캐시를 갱신한다. PID 조회 자체는 가볍지만
-    // 매 프레임 호출하면 과하므로 별도 스레드에서 ticking만 한다.
-    {
-        let busy_proxy = proxy.clone();
-        std::thread::spawn(move || {
-            let interval = std::time::Duration::from_secs(1);
-            loop {
-                std::thread::sleep(interval);
-                if busy_proxy.send_event(AppEvent::BusyPoll).is_err() {
-                    break;
-                }
-            }
-        });
-    }
+    boot::busy_tick::spawn(proxy.clone());
 
     // CWD는 OSC 7 시퀀스에만 의존한다. 모든 플랫폼 공통.
     // zsh/fish는 기본 지원, bash는 PROMPT_COMMAND 설정 필요.
@@ -2844,7 +2815,11 @@ fn main() -> Result<()> {
         #[cfg(debug_assertions)]
         cli.enable_input_simulation,
     );
-    crate::hooks::lua::fire(app.lua_engine.as_ref(), "tasty.startup.post", &serde_json::Value::Null);
+    crate::hooks::lua::fire(
+        app.lua_engine.as_ref(),
+        "tasty.startup.post",
+        &serde_json::Value::Null,
+    );
     event_loop.run_app(&mut app)?;
 
     Ok(())
