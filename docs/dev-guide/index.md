@@ -16,6 +16,7 @@
 
 | 주제 | 문서 |
 |------|------|
+| 수정 후 자체 검증 (커밋 전에 직접 돌려볼 것) | [self-verification.md](self-verification.md) |
 | 빌드 & 빌드 최적화 | [build.md](build.md) |
 | 릴리스 절차 | [release.md](release.md) |
 | 릴리스 러너 설정 | [release-runners.md](release-runners.md) |
