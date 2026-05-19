@@ -174,15 +174,26 @@ impl From<SavedSplitDirection> for SplitDirection {
 
 // ── Capture: live model → SavedLayout ──
 
+/// 같은 capture 사이클에서 발급/관찰된 persist_id 들을 추적. 중복 발견 시
+/// `capture_scrollback_to_disk` 가 자동으로 fresh ID 를 재발급해 self-heal.
+type SeenRefs = std::collections::HashSet<String>;
+
 impl SavedLayout {
     /// Capture current layout from engine state.
-    pub fn capture(engine: &EngineState, active_workspace: usize) -> Self {
-        let registry = engine.surface_registry.as_ref();
+    ///
+    /// `&mut EngineState` 인 이유: `capture_scrollback_to_disk` 가 새 persist_id 를
+    /// 발급한 경우 surface 인스턴스의 `scrollback_persist_id` 필드에 기록해야
+    /// 다음 capture 가 같은 ID 를 재사용한다 (orphan 누적 방지).
+    pub fn capture(engine: &mut EngineState, active_workspace: usize) -> Self {
+        let registry = engine.surface_registry.clone();
         let capture_scrollback = engine.settings.general.restore_terminal_content;
-        let workspaces = engine
+        let mut seen_refs = SeenRefs::new();
+        let workspaces: Vec<SavedWorkspace> = engine
             .workspaces
-            .iter()
-            .map(|ws| SavedWorkspace::capture(ws, registry, capture_scrollback))
+            .iter_mut()
+            .map(|ws| {
+                SavedWorkspace::capture(ws, registry.as_ref(), capture_scrollback, &mut seen_refs)
+            })
             .collect();
         Self {
             version: LAYOUT_VERSION,
@@ -193,14 +204,20 @@ impl SavedLayout {
 }
 
 impl SavedWorkspace {
-    fn capture(ws: &Workspace, registry: &SurfaceKindRegistry, capture_scrollback: bool) -> Self {
-        let pane_layout = SavedPaneNode::capture(ws.pane_layout(), registry, capture_scrollback);
-        // Find the index of the focused pane among all leaf panes.
+    fn capture(
+        ws: &mut Workspace,
+        registry: &SurfaceKindRegistry,
+        capture_scrollback: bool,
+        seen_refs: &mut SeenRefs,
+    ) -> Self {
+        // Find the index of the focused pane BEFORE taking mut borrow of pane_layout.
         let all_ids = ws.pane_layout().all_pane_ids();
         let focused_pane_index = all_ids
             .iter()
             .position(|&id| id == ws.focused_pane)
             .unwrap_or(0);
+        let pane_layout =
+            SavedPaneNode::capture(ws.pane_layout_mut(), registry, capture_scrollback, seen_refs);
         Self {
             name: ws.name.clone(),
             subtitle: ws.subtitle.clone(),
@@ -212,11 +229,19 @@ impl SavedWorkspace {
 }
 
 impl SavedPaneNode {
-    fn capture(node: &PaneNode, registry: &SurfaceKindRegistry, capture_scrollback: bool) -> Self {
+    fn capture(
+        node: &mut PaneNode,
+        registry: &SurfaceKindRegistry,
+        capture_scrollback: bool,
+        seen_refs: &mut SeenRefs,
+    ) -> Self {
         match node {
-            PaneNode::Leaf(pane) => {
-                SavedPaneNode::Leaf(SavedPane::capture(pane, registry, capture_scrollback))
-            }
+            PaneNode::Leaf(pane) => SavedPaneNode::Leaf(SavedPane::capture(
+                pane,
+                registry,
+                capture_scrollback,
+                seen_refs,
+            )),
             PaneNode::Split {
                 direction,
                 ratio,
@@ -225,41 +250,67 @@ impl SavedPaneNode {
             } => SavedPaneNode::Split {
                 direction: (*direction).into(),
                 ratio: *ratio,
-                first: Box::new(SavedPaneNode::capture(first, registry, capture_scrollback)),
-                second: Box::new(SavedPaneNode::capture(second, registry, capture_scrollback)),
+                first: Box::new(SavedPaneNode::capture(
+                    first,
+                    registry,
+                    capture_scrollback,
+                    seen_refs,
+                )),
+                second: Box::new(SavedPaneNode::capture(
+                    second,
+                    registry,
+                    capture_scrollback,
+                    seen_refs,
+                )),
             },
         }
     }
 }
 
 impl SavedPane {
-    fn capture(pane: &Pane, registry: &SurfaceKindRegistry, capture_scrollback: bool) -> Self {
+    fn capture(
+        pane: &mut Pane,
+        registry: &SurfaceKindRegistry,
+        capture_scrollback: bool,
+        seen_refs: &mut SeenRefs,
+    ) -> Self {
+        let active_tab = pane.active_tab;
         let tabs = pane
             .tabs
-            .iter()
-            .map(|t| SavedTab::capture(t, registry, capture_scrollback))
+            .iter_mut()
+            .map(|t| SavedTab::capture(t, registry, capture_scrollback, seen_refs))
             .collect();
-        Self {
-            tabs,
-            active_tab: pane.active_tab,
-        }
+        Self { tabs, active_tab }
     }
 }
 
 impl SavedTab {
-    fn capture(tab: &Tab, registry: &SurfaceKindRegistry, capture_scrollback: bool) -> Self {
+    fn capture(
+        tab: &mut Tab,
+        registry: &SurfaceKindRegistry,
+        capture_scrollback: bool,
+        seen_refs: &mut SeenRefs,
+    ) -> Self {
+        let name = tab.name.clone();
+        let explicit_name = tab.explicit_name.clone();
         let surface = if tab.is_split() {
-            SavedSurfaceLayout::capture_layout(tab.layout(), registry, capture_scrollback)
-        } else {
-            SavedSurfaceLayout::Leaf(SavedSurface::capture_surface(
-                tab.surface(),
+            SavedSurfaceLayout::capture_layout(
+                tab.layout_mut(),
                 registry,
                 capture_scrollback,
+                seen_refs,
+            )
+        } else {
+            SavedSurfaceLayout::Leaf(SavedSurface::capture_surface(
+                tab.surface_mut(),
+                registry,
+                capture_scrollback,
+                seen_refs,
             ))
         };
         Self {
-            name: tab.name.clone(),
-            explicit_name: tab.explicit_name.clone(),
+            name,
+            explicit_name,
             surface,
         }
     }
@@ -267,14 +318,18 @@ impl SavedTab {
 
 impl SavedSurfaceLayout {
     fn capture_layout(
-        layout: &SurfaceLayout,
+        layout: &mut SurfaceLayout,
         registry: &SurfaceKindRegistry,
         capture_scrollback: bool,
+        seen_refs: &mut SeenRefs,
     ) -> Self {
         match layout {
-            SurfaceLayout::Leaf(surface) => SavedSurfaceLayout::Leaf(
-                SavedSurface::capture_surface(&**surface, registry, capture_scrollback),
-            ),
+            SurfaceLayout::Leaf(surface) => SavedSurfaceLayout::Leaf(SavedSurface::capture_surface(
+                surface.as_mut(),
+                registry,
+                capture_scrollback,
+                seen_refs,
+            )),
             SurfaceLayout::Split {
                 direction,
                 ratio,
@@ -288,11 +343,13 @@ impl SavedSurfaceLayout {
                     first,
                     registry,
                     capture_scrollback,
+                    seen_refs,
                 )),
                 second: Box::new(SavedSurfaceLayout::capture_layout(
                     second,
                     registry,
                     capture_scrollback,
+                    seen_refs,
                 )),
             },
         }
@@ -317,23 +374,32 @@ fn queue_scrollback_for_surface(engine: &mut EngineState, surface_id: u32, persi
     }
 }
 
-/// Surface 의 scrollback + 현재 화면(visible) 을 묶어 `~/.tasty/scrollback/<id>.bin`
-/// 으로 덤프하고 `<id>` 를 반환. persist_id 는 surface_meta 의 `scrollback.persist_id`
-/// 키에 보관해 다음 capture 시 동일 ID 를 재사용한다 (orphan 누적 방지).
+/// `TerminalSurface` 의 scrollback + 현재 화면(visible) 을 묶어
+/// `~/.tasty/scrollback/<id>.bin` 으로 덤프하고 `<id>` 를 반환. persist_id 는
+/// `TerminalSurface.scrollback_persist_id` 필드에 in-memory 로 보관되며 다음
+/// capture 가 같은 ID 를 재사용한다 (orphan 누적 방지). 세션 간 stale meta
+/// 가 다른 surface 에 상속되는 사고가 원천 차단된다.
 ///
 /// 화면 라인은 scrollback 의 뒤에 이어 붙인다 → 복원 시 위로 스크롤하면
 /// [이전 scrollback → 이전 화면 → 새 prompt] 순으로 보인다.
 ///
+/// `seen_refs` 는 같은 capture 사이클에서 이미 사용된 persist_id 집합. 충돌
+/// 발견 시 fresh ID 를 발급해 self-heal 한다 — 과거에 layout.json 에 중복이
+/// 들어간 적이 있어도 다음 첫 capture 가 정리한다.
+///
 /// 실패하거나 (scrollback + screen) 양쪽 모두 비어 있으면 `None`.
-fn capture_scrollback_to_disk(terminal: &tasty_terminal::Terminal, surface_id: u32) -> Option<String> {
-    let total = terminal.scrollback_len();
-    let screen = terminal.screen_snapshot_lines();
+fn capture_scrollback_to_disk(
+    ts: &mut crate::model::TerminalSurface,
+    seen_refs: &mut std::collections::HashSet<String>,
+) -> Option<String> {
+    let total = ts.terminal.scrollback_len();
+    let screen = ts.terminal.screen_snapshot_lines();
     if total == 0 && screen.is_empty() {
         return None;
     }
     let mut lines = Vec::with_capacity(total + screen.len());
     for i in 0..total {
-        if let Some(line) = terminal.scrollback_line_full(i) {
+        if let Some(line) = ts.terminal.scrollback_line_full(i) {
             lines.push(line);
         }
     }
@@ -341,83 +407,116 @@ fn capture_scrollback_to_disk(terminal: &tasty_terminal::Terminal, surface_id: u
     if lines.is_empty() {
         return None;
     }
-    let persist_id =
-        match crate::surface_meta::SurfaceMetaStore::get(surface_id, "scrollback.persist_id") {
-            Some(existing) => existing,
-            None => {
-                let new_id = crate::scrollback_store::new_persist_id();
-                if let Err(e) = crate::surface_meta::SurfaceMetaStore::set(
-                    surface_id,
-                    "scrollback.persist_id",
-                    &new_id,
-                ) {
-                    tracing::warn!(
-                        "scrollback capture: failed to store persist_id for surface {surface_id}: {e}"
-                    );
-                    return None;
-                }
-                new_id
-            }
-        };
+    // 중복 가드: 다른 surface 가 같은 사이클에서 이미 쓴 ID 면 fresh 로 교체.
+    let persist_id = match ts.scrollback_persist_id.clone() {
+        Some(existing) if !seen_refs.contains(&existing) => existing,
+        Some(stale) => {
+            tracing::warn!(
+                "scrollback capture: duplicate persist_id {stale} for surface {} — reassigning fresh",
+                ts.id
+            );
+            let new_id = crate::scrollback_store::new_persist_id();
+            ts.scrollback_persist_id = Some(new_id.clone());
+            new_id
+        }
+        None => {
+            let new_id = crate::scrollback_store::new_persist_id();
+            ts.scrollback_persist_id = Some(new_id.clone());
+            new_id
+        }
+    };
     if let Err(e) = crate::scrollback_store::write(&persist_id, &lines) {
         tracing::warn!(
-            "scrollback capture: write failed for surface {surface_id} ({persist_id}): {e}"
+            "scrollback capture: write failed for surface {} ({persist_id}): {e}",
+            ts.id
         );
         return None;
     }
+    seen_refs.insert(persist_id.clone());
     Some(persist_id)
 }
 
 impl SavedSurface {
     fn capture_surface(
-        surface: &dyn Surface,
+        surface: &mut dyn Surface,
         registry: &SurfaceKindRegistry,
         capture_scrollback: bool,
+        seen_refs: &mut SeenRefs,
     ) -> Self {
-        if let Some(ts) = surface.as_terminal_surface() {
+        if let Some(ts) = surface.as_terminal_surface_mut() {
             let restore_command =
                 crate::surface_meta::SurfaceMetaStore::get(ts.id, "restore.command");
 
+            let cwd = ts.terminal.get_cwd().map(|p| p.to_string_lossy().to_string());
             let scrollback_ref = if capture_scrollback {
-                capture_scrollback_to_disk(&ts.terminal, ts.id)
+                capture_scrollback_to_disk(ts, seen_refs)
             } else {
                 None
             };
 
             return SavedSurface::Terminal {
-                cwd: ts.terminal.get_cwd().map(|p| p.to_string_lossy().to_string()),
+                cwd,
                 restore_command,
                 scrollback_ref,
             };
         }
         // 비활성 탭의 deferred EmptySurface 는 외부로는 Terminal 역할이지만
-        // PTY 가 아직 안 떠 있어 `as_terminal_surface()` 가 None 이다. 이 경우
-        // `DeferredSpawn.working_dir` + surface_meta 의 `scrollback.persist_id`
-        // 를 묶어 다시 SavedSurface::Terminal 로 저장해 round-trip 시 cwd / 세션
-        // 정보가 사라지지 않게 한다.
+        // PTY 가 아직 안 떠 있어 `as_terminal_surface()` 가 None 이다.
+        // `DeferredSpawn` 자체가 들고 있는 cwd / restore_command / persist_id
+        // 를 그대로 옮겨 round-trip 한다.
         if let Some(es) = surface
-            .as_any()
-            .downcast_ref::<crate::model::EmptySurface>()
+            .as_any_mut()
+            .downcast_mut::<crate::model::EmptySurface>()
             && es.is_deferred()
         {
+            let surface_id = es.id;
             let cwd = es
                 .deferred_spawn
                 .as_ref()
                 .and_then(|s| s.working_dir.as_ref())
                 .map(|p| p.to_string_lossy().to_string());
-            // restore.command 는 surface_meta 를 본다. layout 복원 직후 사용자가
-            // 그 탭을 열기 전에는 surface_meta 에 없을 수 있지만, 그 경우는 이전 capture
-            // 의 layout.json 에 이미 restore_command 가 들어있어 다시 deferred 복원
-            // path 가 그 값을 큐에 쌓아두므로 데이터 손실이 발생하진 않는다 (다음 capture
-            // 가 None 으로 덮어쓰지 않도록 surface_meta 에도 미러링한다 — 아래 restore
-            // 단계에서 set 한다).
-            let restore_command =
-                crate::surface_meta::SurfaceMetaStore::get(es.id, "restore.command");
+            let restore_command = es
+                .deferred_spawn
+                .as_ref()
+                .and_then(|s| s.restore_command.clone())
+                .or_else(|| crate::surface_meta::SurfaceMetaStore::get(es.id, "restore.command"));
             // 옵션 on 일 때만 scrollback_ref 를 다음 capture 까지 유지한다.
             // (옵션 off 면 다음 capture 때 디스크 쓰기를 스킵하므로 ref 도 의미 없음 →
             //  파일은 startup GC 가 청소한다.)
             let scrollback_ref = if capture_scrollback {
-                crate::surface_meta::SurfaceMetaStore::get(es.id, "scrollback.persist_id")
+                let stored = es
+                    .deferred_spawn
+                    .as_ref()
+                    .and_then(|s| s.scrollback_persist_id.clone());
+                match stored {
+                    Some(existing) if !seen_refs.contains(&existing) => {
+                        seen_refs.insert(existing.clone());
+                        Some(existing)
+                    }
+                    Some(stale) => {
+                        // PTY 가 안 떠 있어 직접 dump 불가 → 디스크 내용을 fresh
+                        // 파일로 복사하고 새 ID 를 발급. 한쪽이 라이브 surface 였다면
+                        // 그쪽은 이미 자기 데이터로 stale.bin 을 덮어쓴 후다.
+                        let new_id = crate::scrollback_store::new_persist_id();
+                        if let Some(lines) = crate::scrollback_store::read(&stale) {
+                            if let Err(e) = crate::scrollback_store::write(&new_id, &lines) {
+                                tracing::warn!(
+                                    "scrollback capture(deferred): copy {stale} → {new_id} failed for surface {surface_id}: {e}"
+                                );
+                            } else {
+                                tracing::warn!(
+                                    "scrollback capture(deferred): duplicate persist_id {stale} on surface {surface_id} → reassigned to {new_id}"
+                                );
+                            }
+                        }
+                        if let Some(spawn) = es.deferred_spawn.as_mut() {
+                            spawn.scrollback_persist_id = Some(new_id.clone());
+                        }
+                        seen_refs.insert(new_id.clone());
+                        Some(new_id)
+                    }
+                    None => None,
+                }
             } else {
                 None
             };
@@ -429,7 +528,7 @@ impl SavedSurface {
         }
         let kind = surface.kind().to_string();
         if let Some(def) = registry.get(&kind) {
-            if let Some(data) = (def.snapshot)(surface) {
+            if let Some(data) = (def.snapshot)(&*surface) {
                 return SavedSurface::Generic { kind, data };
             }
         }
@@ -716,6 +815,12 @@ impl SavedSurface {
                         );
                     }
                 }
+                // scrollback_ref 가 있으면 PTY spawn 시점에 inject 할 라인을 큐에 쌓고,
+                // 동일한 persist_id 를 DeferredSpawn 에도 들고 있어 spawn 후 새
+                // TerminalSurface 의 scrollback_persist_id 필드로 이관한다.
+                if let Some(persist_id) = scrollback_ref.as_deref() {
+                    queue_scrollback_for_surface(engine, surface_id, persist_id);
+                }
                 let spawn = crate::model::DeferredSpawn {
                     shell: sh.shell_ref().map(|s| s.to_string()),
                     shell_args: sh.args_ref().iter().map(|s| s.to_string()).collect(),
@@ -725,24 +830,8 @@ impl SavedSurface {
                     working_dir: cwd.as_ref().map(PathBuf::from),
                     // PTY 가 실제로 spawn 되는 순간 inline 으로 send_key 된다 (ensure_initialized).
                     restore_command,
+                    scrollback_persist_id: scrollback_ref,
                 };
-                // Deferred: scrollback 은 PTY 가 실제로 spawn 된 직후 inject 해야 하므로
-                // 큐에 쌓아둔다. `ensure_active_workspace_initialized` /
-                // `ensure_surface_initialized` 가 entry 를 꺼낸다.
-                if let Some(persist_id) = scrollback_ref {
-                    queue_scrollback_for_surface(engine, surface_id, &persist_id);
-                    // persist_id 를 surface_meta 에 다시 등록해 다음 capture 가 같은 ID 를
-                    // 재사용하도록 한다 (orphan 누적 방지).
-                    if let Err(e) = crate::surface_meta::SurfaceMetaStore::set(
-                        surface_id,
-                        "scrollback.persist_id",
-                        &persist_id,
-                    ) {
-                        tracing::warn!(
-                            "scrollback restore: failed to store persist_id for surface {surface_id}: {e}"
-                        );
-                    }
-                }
                 let placeholder =
                     crate::model::EmptySurface::new_deferred(surface_id, spawn);
                 Some(Box::new(placeholder))
@@ -789,9 +878,11 @@ impl SavedSurface {
                         return None;
                     }
                 };
-                // 즉시 복원 경로 — scrollback 을 inline 으로 inject.
-                if let Some(persist_id) = scrollback_ref {
-                    if let Some(lines) = crate::scrollback_store::read(&persist_id) {
+                // 즉시 복원 경로 — scrollback 을 inline 으로 inject. persist_id 는
+                // 새 TerminalSurface 의 필드에 직접 들어가 (surface_meta mirror 없이)
+                // 다음 capture 가 같은 ID 를 재사용한다.
+                if let Some(persist_id) = scrollback_ref.as_deref() {
+                    if let Some(lines) = crate::scrollback_store::read(persist_id) {
                         if !lines.is_empty() {
                             terminal.inject_scrollback(lines);
                             // 새 prompt 가 화면 중간부터 시작하도록 visible 상단
@@ -800,21 +891,13 @@ impl SavedSurface {
                             terminal.prefill_visible_from_scrollback(prefill);
                         }
                     }
-                    if let Err(e) = crate::surface_meta::SurfaceMetaStore::set(
-                        surface_id,
-                        "scrollback.persist_id",
-                        &persist_id,
-                    ) {
-                        tracing::warn!(
-                            "scrollback restore: failed to store persist_id for surface {surface_id}: {e}"
-                        );
-                    }
                 }
                 engine.send_fast_init(surface_id);
                 Some(Box::new(TerminalSurface {
                     id: surface_id,
                     terminal,
                     deferred_spawn: None,
+                    scrollback_persist_id: scrollback_ref,
                 }))
             }
             SavedSurface::Generic { kind, data } => {
@@ -848,7 +931,11 @@ fn layout_path() -> Option<PathBuf> {
 }
 
 /// Save layout to disk. Non-blocking best-effort.
-pub fn save_to_disk(engine: &EngineState, active_workspace: usize) {
+///
+/// `&mut EngineState` 인 이유: `SavedLayout::capture` 가 새 persist_id 를 발급하면
+/// 해당 surface 인스턴스의 `scrollback_persist_id` 필드에 기록해 다음 capture 가
+/// 같은 ID 를 재사용한다.
+pub fn save_to_disk(engine: &mut EngineState, active_workspace: usize) {
     let path = match layout_path() {
         Some(p) => p,
         None => {

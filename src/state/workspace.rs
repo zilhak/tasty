@@ -166,8 +166,18 @@ impl AppState {
             crate::model::ClosedItem::from_workspace(&self.engine.workspaces[ws_idx], &mut snap_fn)
         };
         self.engine.push_closed_item(snapshot);
-        // Collect all surface IDs for cleanup
-        let surface_ids = self.engine.workspaces[ws_idx].all_surface_ids();
+        // Collect all (surface_id, persist_id) for cleanup before removing the workspace.
+        let mut targets: Vec<(u32, Option<String>)> = Vec::new();
+        {
+            let ws = &self.engine.workspaces[ws_idx];
+            for pid in ws.pane_layout().all_pane_ids() {
+                if let Some(pane) = ws.pane_layout().find_pane(pid) {
+                    for tab in &pane.tabs {
+                        super::AppState::collect_close_targets(tab, &mut targets);
+                    }
+                }
+            }
+        }
         let workspace_id = self.engine.workspaces[ws_idx].id;
         self.engine.workspaces.remove(ws_idx);
         // Workspace scope 의 memory entry 정리. 안의 surface 들은 아래 cleanup_surface
@@ -190,8 +200,8 @@ impl AppState {
             self.active_workspace = self.engine.workspaces.len() - 1;
         }
         // Cleanup
-        for sid in surface_ids {
-            self.cleanup_surface(sid);
+        for (sid, pid) in targets {
+            self.cleanup_surface(sid, pid);
         }
         self.engine.mark_layout_dirty();
         true

@@ -357,6 +357,19 @@ impl SurfaceLayout {
         }
     }
 
+    /// Visit every leaf Surface (Terminal/Empty/Markdown/etc.) for read-only inspection.
+    /// 닫기 경로에서 leaf 들의 `scrollback_persist_id` 를 추출해 디스크 정리하는 용도로
+    /// 쓰인다.
+    pub fn for_each_surface(&self, f: &mut dyn FnMut(&dyn Surface)) {
+        match self {
+            SurfaceLayout::Leaf(surface) => f(&**surface),
+            SurfaceLayout::Split { first, second, .. } => {
+                first.for_each_surface(f);
+                second.for_each_surface(f);
+            }
+        }
+    }
+
     /// Object-safe version of for_each_terminal_mut (uses &mut dyn FnMut).
     pub fn for_each_terminal_mut_dyn(&mut self, f: &mut dyn FnMut(SurfaceId, &mut Terminal)) {
         match self {

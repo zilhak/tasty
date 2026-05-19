@@ -67,6 +67,7 @@ impl Pane {
             id: surface_id,
             terminal,
             deferred_spawn: None,
+            scrollback_persist_id: None,
         });
         let tab = Tab::new_with_surface(tab_id, "Shell".to_string(), surface);
         Ok(Self {
@@ -105,6 +106,7 @@ impl Pane {
             id: surface_id,
             terminal,
             deferred_spawn: None,
+            scrollback_persist_id: None,
         });
         let tab = Tab::new_with_surface(tab_id, "Shell".to_string(), surface);
         self.tabs.push(tab);
@@ -140,6 +142,7 @@ impl Pane {
             id: surface_id,
             terminal,
             deferred_spawn: None,
+            scrollback_persist_id: None,
         });
         let tab = Tab::new_with_surface(tab_id, "Shell".to_string(), surface);
         self.tabs.push(tab);
@@ -168,6 +171,7 @@ impl Pane {
             waker,
             working_dir: working_dir.map(|p| p.to_path_buf()),
             restore_command: None,
+            scrollback_persist_id: None,
         };
         let placeholder = super::empty_surface::EmptySurface::new_deferred(surface_id, spawn);
         let surface: Box<dyn super::Surface> = Box::new(placeholder);

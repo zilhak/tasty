@@ -240,6 +240,13 @@ impl Tab {
         }
     }
 
+    /// Visit every leaf Surface (read-only). 닫기 경로의 persist_id 수집용.
+    pub fn for_each_surface(&self, f: &mut dyn FnMut(&dyn crate::model::Surface)) {
+        if let Some(layout) = self.layout_opt.as_ref() {
+            layout.for_each_surface(f);
+        }
+    }
+
     /// Collect all terminals (mutable).
     pub fn collect_terminals_mut<'a>(&'a mut self, out: &mut Vec<&'a mut Terminal>) {
         if let Some(layout) = self.layout_opt.as_mut() {
@@ -323,12 +330,16 @@ impl Tab {
         let Some(spawn) = empty.take_deferred_spawn() else {
             return false;
         };
+        // DeferredSpawn 의 scrollback_persist_id 를 spawn 직후 새 TerminalSurface
+        // 로 옮긴다 (spawn 함수가 spawn 을 consume 하므로 미리 빼둔다).
+        let persist_id = spawn.scrollback_persist_id.clone();
         match spawn_terminal_from_deferred(surface_id, spawn) {
             Some(terminal) => {
                 let ts: Box<dyn Surface> = Box::new(TerminalSurface {
                     id: surface_id,
                     terminal,
                     deferred_spawn: None,
+                    scrollback_persist_id: persist_id,
                 });
                 *leaf = ts;
                 true
@@ -399,6 +410,7 @@ impl Tab {
             id: new_surface_id,
             terminal: new_terminal,
             deferred_spawn: None,
+            scrollback_persist_id: None,
         };
         let target = self.focused_surface;
         let old_layout = self.take_layout();
@@ -419,6 +431,7 @@ impl Tab {
             id: new_surface_id,
             terminal: new_terminal,
             deferred_spawn: None,
+            scrollback_persist_id: None,
         };
         let old_layout = self.take_layout();
         let (new_layout, remaining) =

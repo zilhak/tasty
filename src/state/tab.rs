@@ -197,18 +197,14 @@ impl AppState {
 
     /// Close a specific tab by its TabId (cross-workspace). Returns true if closed.
     pub fn close_tab_by_tab_id(&mut self, tab_id: u32) -> bool {
-        // Find the tab and collect surface IDs for cleanup
-        let mut surface_ids = Vec::new();
+        // Find the tab and collect (surface_id, persist_id) for cleanup
+        let mut targets: Vec<(u32, Option<String>)> = Vec::new();
         let mut found_pane_id = None;
-        for workspace in &mut self.engine.workspaces {
+        for workspace in &self.engine.workspaces {
             for &pid in &workspace.pane_layout().all_pane_ids() {
-                if let Some(pane) = workspace.pane_layout_mut().find_pane_mut(pid) {
-                    if let Some(tab_idx) = pane.tabs.iter().position(|t| t.id == tab_id) {
-                        if let Some(tab) = pane.tabs.get_mut(tab_idx) {
-                            tab.for_each_terminal_mut(&mut |sid, _| {
-                                surface_ids.push(sid);
-                            });
-                        }
+                if let Some(pane) = workspace.pane_layout().find_pane(pid) {
+                    if let Some(tab) = pane.tabs.iter().find(|t| t.id == tab_id) {
+                        super::AppState::collect_close_targets(tab, &mut targets);
                         found_pane_id = Some(pid);
                         break;
                     }
@@ -230,8 +226,8 @@ impl AppState {
             false
         };
         if closed {
-            for sid in surface_ids {
-                self.cleanup_surface(sid);
+            for (sid, pid) in targets {
+                self.cleanup_surface(sid, pid);
             }
             self.engine.mark_layout_dirty();
         }
@@ -263,31 +259,25 @@ impl AppState {
 
     /// Close the active tab in the focused pane. Returns true if a tab was closed.
     pub fn close_active_tab(&mut self) -> bool {
-        // Capture tab snapshot before closing (immutable borrow)
-        if let Some(pane) = self.focused_pane() {
+        // Capture tab snapshot + collect persist_ids (immutable borrow).
+        let mut targets: Vec<(u32, Option<String>)> = Vec::new();
+        let snapshot_opt = if let Some(pane) = self.focused_pane() {
             let active = pane.active_tab;
             if let Some(tab) = pane.tabs.get(active) {
-                let snapshot_opt = {
-                    let mut snap_fn = crate::surface_registry::snapshot_fn_for(
-                        &self.engine.surface_registry,
-                    );
-                    crate::model::closed_item::ClosedTab::from_tab(tab, &mut snap_fn)
-                };
-                if let Some(snapshot) = snapshot_opt {
-                    self.engine
-                        .push_closed_item(crate::model::ClosedItem::Tab(snapshot));
-                }
+                super::AppState::collect_close_targets(tab, &mut targets);
+                let mut snap_fn = crate::surface_registry::snapshot_fn_for(
+                    &self.engine.surface_registry,
+                );
+                crate::model::closed_item::ClosedTab::from_tab(tab, &mut snap_fn)
+            } else {
+                None
             }
-        }
-        // Collect surface IDs (mutable borrow)
-        let mut surface_ids = Vec::new();
-        if let Some(pane) = self.focused_pane_mut() {
-            let active = pane.active_tab;
-            if let Some(tab) = pane.tabs.get_mut(active) {
-                tab.for_each_terminal_mut(&mut |sid, _| {
-                    surface_ids.push(sid);
-                });
-            }
+        } else {
+            None
+        };
+        if let Some(snapshot) = snapshot_opt {
+            self.engine
+                .push_closed_item(crate::model::ClosedItem::Tab(snapshot));
         }
         let closed = if let Some(pane) = self.focused_pane_mut() {
             pane.close_active_tab()
@@ -295,8 +285,8 @@ impl AppState {
             false
         };
         if closed {
-            for sid in surface_ids {
-                self.cleanup_surface(sid);
+            for (sid, pid) in targets {
+                self.cleanup_surface(sid, pid);
             }
             self.engine.mark_layout_dirty();
         }
@@ -331,6 +321,7 @@ impl AppState {
             id: surface_id,
             terminal,
             deferred_spawn: None,
+            scrollback_persist_id: None,
         };
         let surface: Box<dyn crate::model::Surface> = Box::new(node);
 

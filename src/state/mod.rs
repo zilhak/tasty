@@ -606,17 +606,38 @@ impl AppState {
             || self.popups.has_any_open()
     }
 
+    /// 닫히는 surface 의 `(surface_id, scrollback_persist_id)` 를 추출. Tab/Pane/Workspace
+    /// 닫기 전에 layout 을 한 번 walk 해 결과를 모아두고, 닫기 후에 `cleanup_surface` 에
+    /// 전달한다. TerminalSurface 와 deferred EmptySurface 두 케이스를 모두 처리한다.
+    pub(crate) fn collect_close_targets(
+        tab: &crate::model::Tab,
+        out: &mut Vec<(u32, Option<String>)>,
+    ) {
+        tab.for_each_surface(&mut |s| {
+            if let Some(ts) = s.as_terminal_surface() {
+                out.push((ts.id, ts.scrollback_persist_id.clone()));
+            } else if let Some(es) =
+                s.as_any().downcast_ref::<crate::model::EmptySurface>()
+            {
+                let pid = es
+                    .deferred_spawn
+                    .as_ref()
+                    .and_then(|sp| sp.scrollback_persist_id.clone());
+                out.push((es.id, pid));
+            }
+        });
+    }
+
     /// Clean up all state associated with a closed surface:
     /// surface metadata, per-surface host view state, and memory entries
     /// scoped to this surface (regular + secret).
-    pub(crate) fn cleanup_surface(&mut self, surface_id: u32) {
-        // surface_meta::remove 가 모든 키를 날리기 전에 scrollback persist_id 를 회수해
-        // `~/.tasty/scrollback/<id>.bin` 파일도 함께 삭제 (디스크 leak 방지).
-        if let Some(persist_id) = crate::surface_meta::SurfaceMetaStore::get(
-            surface_id,
-            "scrollback.persist_id",
-        ) {
-            crate::scrollback_store::delete(&persist_id);
+    ///
+    /// `persist_id` 는 닫히는 surface 가 들고 있던 `scrollback_persist_id` 필드값을
+    /// 호출자가 미리 뽑아 넘긴다. `Some` 일 때만 `~/.tasty/scrollback/<id>.bin` 파일이
+    /// 삭제된다.
+    pub(crate) fn cleanup_surface(&mut self, surface_id: u32, persist_id: Option<String>) {
+        if let Some(pid) = persist_id {
+            crate::scrollback_store::delete(&pid);
         }
         self.engine.pending_scrollback_inject.remove(&surface_id);
         if let Err(e) = crate::surface_meta::SurfaceMetaStore::remove(surface_id) {

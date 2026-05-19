@@ -200,6 +200,7 @@ impl AppState {
             id: surface_id,
             terminal,
             deferred_spawn: None,
+            scrollback_persist_id: None,
         })
     }
 

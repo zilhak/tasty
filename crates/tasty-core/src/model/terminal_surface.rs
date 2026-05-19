@@ -10,6 +10,11 @@ pub struct TerminalSurface {
     /// If lazy init is enabled and terminal hasn't been spawned yet,
     /// this holds the deferred spawn parameters.
     pub deferred_spawn: Option<DeferredSpawn>,
+    /// `~/.tasty/scrollback/<id>.bin` 파일 식별자. layout 저장/복원 시 디스크
+    /// 영속 scrollback 의 키로 사용된다. `None` 이면 아직 디스크에 dump 한
+    /// 적이 없거나 옵션이 꺼져 있는 상태. surface 인스턴스 자체에 살아 있어
+    /// 세션 간 stale meta 가 다른 surface 에 상속되는 일이 없다.
+    pub scrollback_persist_id: Option<String>,
 }
 
 /// Parameters needed to spawn a PTY later (lazy init).
@@ -25,6 +30,10 @@ pub struct DeferredSpawn {
     /// `ensure_initialized` 가 `\r` 를 자동으로 덧붙여 submit 한다. TUI 세션 재개용
     /// (예: `claude -r <uuid>`).
     pub restore_command: Option<String>,
+    /// 복원 시 layout.json 의 scrollback_ref 를 그대로 들고 있다가, PTY 가
+    /// 실제로 spawn 되는 순간 새 `TerminalSurface` 의 `scrollback_persist_id`
+    /// 필드로 이관된다.
+    pub scrollback_persist_id: Option<String>,
 }
 
 impl TerminalSurface {

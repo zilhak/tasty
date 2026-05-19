@@ -609,6 +609,7 @@ fn test_surface_node(id: SurfaceId) -> TerminalSurface {
         id,
         terminal,
         deferred_spawn: None,
+        scrollback_persist_id: None,
     }
 }
 
@@ -763,6 +764,7 @@ fn test_deferred_placeholder(id: SurfaceId) -> super::EmptySurface {
         waker,
         working_dir: None,
         restore_command: None,
+        scrollback_persist_id: None,
     };
     super::EmptySurface::new_deferred(id, spawn)
 }

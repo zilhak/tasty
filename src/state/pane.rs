@@ -174,6 +174,7 @@ impl AppState {
                 id: new_surface_id,
                 terminal,
                 deferred_spawn: None,
+                scrollback_persist_id: None,
             })
         } else {
             self.create_surface_via_registry(kind, new_surface_id, params)?
@@ -206,25 +207,23 @@ impl AppState {
         let ws = self.active_workspace_mut();
         let target_id = ws.focused_pane;
 
-        // Collect all surface IDs in the pane being closed for cleanup.
-        let mut surface_ids = Vec::new();
-        if let Some(pane) = ws.pane_layout_mut().find_pane_mut(target_id) {
-            for tab in &mut pane.tabs {
-                tab.for_each_terminal_mut(&mut |sid, _| {
-                    surface_ids.push(sid);
-                });
+        // Collect all (surface_id, persist_id) in the pane being closed for cleanup.
+        let mut targets: Vec<(u32, Option<String>)> = Vec::new();
+        if let Some(pane) = ws.pane_layout().find_pane(target_id) {
+            for tab in &pane.tabs {
+                Self::collect_close_targets(tab, &mut targets);
             }
         }
 
+        let ws = self.active_workspace_mut();
         let removed = ws.pane_layout_mut().close_pane(target_id);
         if removed {
             // Update focus to the first available pane
             if let Some(first) = ws.pane_layout().first_pane() {
                 ws.focused_pane = first.id;
             }
-            // Surface meta + per-surface view cleanup.
-            for sid in surface_ids {
-                self.cleanup_surface(sid);
+            for (sid, pid) in targets {
+                self.cleanup_surface(sid, pid);
             }
             self.engine.mark_layout_dirty();
         }
@@ -236,25 +235,40 @@ impl AppState {
     /// which handles tab/pane/workspace cascading.
     pub fn close_active_surface(&mut self) -> bool {
         let surface_id;
+        let persist_id;
+        if let Some(pane) = self.focused_pane() {
+            let tab = match pane.tabs.get(pane.active_tab) {
+                Some(t) => t,
+                None => return false,
+            };
+            surface_id = tab.focused_surface;
+            persist_id = tab
+                .find_terminal_surface(surface_id)
+                .and_then(|ts| ts.scrollback_persist_id.clone());
+        } else {
+            return false;
+        }
+        let split_handled;
         if let Some(pane) = self.focused_pane_mut() {
             let tab = match pane.active_tab_mut() {
                 Some(t) => t,
                 None => return false,
             };
-            surface_id = tab.focused_surface;
             if tab.is_split() {
                 if !tab.close_surface(surface_id) {
                     return self.close_surface_by_id(surface_id);
                 }
+                split_handled = true;
             } else {
                 return self.close_surface_by_id(surface_id);
             }
         } else {
             return false;
         }
-        // Surface meta + per-surface view cleanup.
-        self.cleanup_surface(surface_id);
-        self.engine.mark_layout_dirty();
+        if split_handled {
+            self.cleanup_surface(surface_id, persist_id);
+            self.engine.mark_layout_dirty();
+        }
         true
     }
 
@@ -349,11 +363,19 @@ impl AppState {
                         });
                 }
             }
+            // close 이전에 leaf surface 의 persist_id 를 추출해 둔다.
+            let persist_id = {
+                let ws = &self.engine.workspaces[ws_idx];
+                let pane = ws.pane_layout().find_pane(pane_id).unwrap();
+                let tab = &pane.tabs[tab_idx];
+                tab.find_terminal_surface(surface_id)
+                    .and_then(|ts| ts.scrollback_persist_id.clone())
+            };
             let ws = &mut self.engine.workspaces[ws_idx];
             let pane = ws.pane_layout_mut().find_pane_mut(pane_id).unwrap();
             let tab = &mut pane.tabs[tab_idx];
             if tab.close_surface(surface_id) {
-                purge_surface_persistence(surface_id);
+                self.cleanup_surface(surface_id, persist_id);
                 self.engine.mark_layout_dirty();
                 return true;
             }
@@ -383,6 +405,15 @@ impl AppState {
                     }
                 }
             }
+            // tab 의 모든 leaf surface 의 persist_id 수집 후 close.
+            let mut targets: Vec<(u32, Option<String>)> = Vec::new();
+            {
+                let ws = &self.engine.workspaces[ws_idx];
+                let pane = ws.pane_layout().find_pane(pane_id).unwrap();
+                if pane.tabs.len() > 1 {
+                    Self::collect_close_targets(&pane.tabs[tab_idx], &mut targets);
+                }
+            }
             let ws = &mut self.engine.workspaces[ws_idx];
             let pane = ws.pane_layout_mut().find_pane_mut(pane_id).unwrap();
             if pane.tabs.len() > 1 {
@@ -390,7 +421,9 @@ impl AppState {
                 if pane.active_tab >= pane.tabs.len() {
                     pane.active_tab = pane.tabs.len() - 1;
                 }
-                purge_surface_persistence(surface_id);
+                for (sid, pid) in targets {
+                    self.cleanup_surface(sid, pid);
+                }
                 self.engine.mark_layout_dirty();
                 return true;
             }
@@ -399,13 +432,27 @@ impl AppState {
         // Case 3: Last tab in pane -- close the pane
         // (pane snapshot is captured as part of workspace in Case 4/5, or inline here)
         {
+            // pane 내 모든 tab 의 leaf surface persist_id 수집.
+            let mut targets: Vec<(u32, Option<String>)> = Vec::new();
+            {
+                let ws = &self.engine.workspaces[ws_idx];
+                if ws.pane_layout().all_pane_ids().len() > 1 {
+                    if let Some(pane) = ws.pane_layout().find_pane(pane_id) {
+                        for tab in &pane.tabs {
+                            Self::collect_close_targets(tab, &mut targets);
+                        }
+                    }
+                }
+            }
             let ws = &mut self.engine.workspaces[ws_idx];
             if ws.pane_layout().all_pane_ids().len() > 1 {
                 ws.pane_layout_mut().close_pane(pane_id);
                 if let Some(first) = ws.pane_layout().first_pane() {
                     ws.focused_pane = first.id;
                 }
-                purge_surface_persistence(surface_id);
+                for (sid, pid) in targets {
+                    self.cleanup_surface(sid, pid);
+                }
                 self.engine.mark_layout_dirty();
                 return true;
             }
@@ -422,6 +469,18 @@ impl AppState {
                 crate::model::ClosedItem::from_workspace(ws, &mut snap_fn)
             };
             self.engine.push_closed_item(item);
+        }
+        // Workspace 전체의 모든 leaf surface persist_id 수집 (제거 전).
+        let mut targets: Vec<(u32, Option<String>)> = Vec::new();
+        {
+            let ws = &self.engine.workspaces[ws_idx];
+            for pid in ws.pane_layout().all_pane_ids() {
+                if let Some(pane) = ws.pane_layout().find_pane(pid) {
+                    for tab in &pane.tabs {
+                        Self::collect_close_targets(tab, &mut targets);
+                    }
+                }
+            }
         }
         let workspace_id = self.engine.workspaces[ws_idx].id;
         self.engine.workspaces.remove(ws_idx);
@@ -442,7 +501,9 @@ impl AppState {
             Ok(_) => {}
             Err(e) => tracing::warn!(workspace_id, "memory: purge_scope failed: {e}"),
         });
-        self.cleanup_surface(surface_id);
+        for (sid, pid) in targets {
+            self.cleanup_surface(sid, pid);
+        }
         self.engine.mark_layout_dirty();
         true
     }
@@ -492,16 +553,14 @@ impl AppState {
             None => return false,
         };
 
-        // Collect surface IDs for cleanup
-        let mut surface_ids = Vec::new();
+        // Collect (surface_id, persist_id) for cleanup
+        let mut targets: Vec<(u32, Option<String>)> = Vec::new();
         if let Some(pane) = self.engine.workspaces[ws_idx]
-            .pane_layout_mut()
-            .find_pane_mut(pane_id)
+            .pane_layout()
+            .find_pane(pane_id)
         {
-            for tab in &mut pane.tabs {
-                tab.for_each_terminal_mut(&mut |sid, _| {
-                    surface_ids.push(sid);
-                });
+            for tab in &pane.tabs {
+                Self::collect_close_targets(tab, &mut targets);
             }
         }
 
@@ -513,8 +572,8 @@ impl AppState {
                     ws.focused_pane = first.id;
                 }
             }
-            for sid in surface_ids {
-                self.cleanup_surface(sid);
+            for (sid, pid) in targets {
+                self.cleanup_surface(sid, pid);
             }
             self.engine.mark_layout_dirty();
         }
@@ -571,15 +630,3 @@ pub(crate) fn default_tab_name_for_kind(kind: &str, params: &Value) -> String {
     }
 }
 
-/// Surface 가 닫힐 때 `~/.tasty/scrollback/<id>.bin` 과 surface_meta 를 함께 정리.
-/// 호출 순서가 중요: persist_id 가 surface_meta 에 저장돼 있으므로 remove 보다 먼저 읽는다.
-fn purge_surface_persistence(surface_id: u32) {
-    if let Some(persist_id) =
-        crate::surface_meta::SurfaceMetaStore::get(surface_id, "scrollback.persist_id")
-    {
-        crate::scrollback_store::delete(&persist_id);
-    }
-    if let Err(e) = crate::surface_meta::SurfaceMetaStore::remove(surface_id) {
-        tracing::warn!("surface_meta remove failed for surface {surface_id}: {e}");
-    }
-}
