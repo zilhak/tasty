@@ -4,6 +4,7 @@ mod mark;
 mod message;
 mod mouse;
 mod pane;
+pub mod preset_apply;
 mod restore;
 mod tab;
 #[cfg(test)]
