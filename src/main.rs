@@ -25,6 +25,7 @@ mod file_handlers_save;
 mod git_viewer;
 mod global_hooks;
 mod gpu;
+mod hooks;
 mod html_ui;
 mod identify_worker;
 mod image_ui;
@@ -469,47 +470,6 @@ fn handle_debug_extension_invoke_hook(
     );
 }
 
-/// Lua hook 1회 발사 헬퍼. lua 가 None 이거나 직렬화 실패 시 silent no-op.
-pub(crate) fn fire_lua<T: serde::Serialize>(
-    lua: Option<&tasty_lua::LuaEngine>,
-    event: &str,
-    payload: &T,
-) {
-    if let Some(lua) = lua {
-        match serde_json::to_value(payload) {
-            Ok(v) => lua.fire(event, &v),
-            Err(e) => {
-                tracing::warn!(target: "tasty_lua", "fire '{event}' serialize failed: {e}")
-            }
-        }
-    }
-}
-
-/// Lua hook 엔진 부트스트랩. `~/.tasty/init.lua` 가 있으면 로드.
-/// 초기화/로드 실패는 warn 로만 남기고 None 반환 — 호스트 부팅을 막지 않는다.
-fn init_lua_engine() -> Option<tasty_lua::LuaEngine> {
-    let mut engine = match tasty_lua::LuaEngine::new() {
-        Ok(e) => e,
-        Err(e) => {
-            tracing::warn!("lua engine init failed: {e}");
-            return None;
-        }
-    };
-    if let Some(home) = tasty_core::paths::tasty_home() {
-        let init_path = home.join("init.lua");
-        match engine.load_init(&init_path) {
-            Ok(true) => tracing::info!(
-                target: "tasty_lua",
-                "loaded init.lua from {}",
-                init_path.display(),
-            ),
-            Ok(false) => {}
-            Err(e) => tracing::warn!("lua: failed to load init.lua: {e}"),
-        }
-    }
-    Some(engine)
-}
-
 impl App {
     fn new(
         proxy: EventLoopProxy<AppEvent>,
@@ -532,7 +492,7 @@ impl App {
             #[cfg(debug_assertions)]
             input_simulation_enabled,
             plugin_manager: None,
-            lua_engine: init_lua_engine(),
+            lua_engine: crate::hooks::lua::init_engine(),
             preset_window_id: None,
         }
     }
@@ -741,7 +701,7 @@ impl App {
                 modality: WindowModality::Modeless,
             };
             mgr.emit_host_event("window.created", &payload, EventScope::System);
-            fire_lua(self.lua_engine.as_ref(), "window.create.post", &payload);
+            crate::hooks::lua::fire(self.lua_engine.as_ref(), "window.create.post", &payload);
         }
     }
 
@@ -2159,7 +2119,7 @@ impl App {
                 reason: bus_reason,
             };
             mgr.emit_host_event("surface.closed", &payload, EventScope::Surface);
-            fire_lua(lua, "surface.delete.post", &payload);
+            crate::hooks::lua::fire(lua, "surface.delete.post", &payload);
         }
     }
 
@@ -2509,7 +2469,7 @@ impl App {
                         created_by,
                     };
                     mgr.emit_host_event("surface.created", &payload, EventScope::Surface);
-                    fire_lua(lua, "surface.create.post", &payload);
+                    crate::hooks::lua::fire(lua, "surface.create.post", &payload);
                 }
                 crate::state::PendingHostEvent::WorkspaceActivated {
                     workspace_id,
@@ -2537,7 +2497,7 @@ impl App {
                     mgr.emit_host_event("workspace.renamed", &payload, EventScope::System);
                     // 사용자 직접 변경(GUI rename dialog)만 Lua hook 발화 — IPC 경유는 제외.
                     if user_direct {
-                        fire_lua(lua, "workspace.change.post", &payload);
+                        crate::hooks::lua::fire(lua, "workspace.change.post", &payload);
                     }
                 }
                 crate::state::PendingHostEvent::TabFocused {
@@ -2560,7 +2520,7 @@ impl App {
                     let payload = TabRenamed { tab_id, title };
                     mgr.emit_host_event("tab.renamed", &payload, EventScope::System);
                     if user_direct {
-                        fire_lua(lua, "tab.change.post", &payload);
+                        crate::hooks::lua::fire(lua, "tab.change.post", &payload);
                     }
                 }
                 crate::state::PendingHostEvent::ProcessExited { surface_id } => {
@@ -2597,7 +2557,7 @@ impl App {
                         kind,
                     };
                     mgr.emit_host_event("tab.created", &payload, EventScope::System);
-                    fire_lua(lua, "tab.create.post", &payload);
+                    crate::hooks::lua::fire(lua, "tab.create.post", &payload);
                 }
                 crate::state::PendingHostEvent::TabClosed { tab_id, pane_id } => {
                     let payload = TabClosed {
@@ -2606,7 +2566,7 @@ impl App {
                         reason: LifecycleReason::User,
                     };
                     mgr.emit_host_event("tab.closed", &payload, EventScope::System);
-                    fire_lua(lua, "tab.delete.post", &payload);
+                    crate::hooks::lua::fire(lua, "tab.delete.post", &payload);
                 }
                 crate::state::PendingHostEvent::TabMoved {
                     tab_id,
@@ -2630,7 +2590,7 @@ impl App {
                         workspace_id,
                     };
                     mgr.emit_host_event("pane.created", &payload, EventScope::System);
-                    fire_lua(lua, "pane.create.post", &payload);
+                    crate::hooks::lua::fire(lua, "pane.create.post", &payload);
                 }
                 crate::state::PendingHostEvent::PaneClosed { pane_id } => {
                     let payload = PaneClosed {
@@ -2638,7 +2598,7 @@ impl App {
                         reason: LifecycleReason::User,
                     };
                     mgr.emit_host_event("pane.closed", &payload, EventScope::System);
-                    fire_lua(lua, "pane.delete.post", &payload);
+                    crate::hooks::lua::fire(lua, "pane.delete.post", &payload);
                 }
                 crate::state::PendingHostEvent::WorkspaceCreated {
                     workspace_id,
@@ -2651,7 +2611,7 @@ impl App {
                         name,
                     };
                     mgr.emit_host_event("workspace.created", &payload, EventScope::System);
-                    fire_lua(lua, "workspace.create.post", &payload);
+                    crate::hooks::lua::fire(lua, "workspace.create.post", &payload);
                 }
                 crate::state::PendingHostEvent::WorkspaceClosed { workspace_id } => {
                     let payload = WorkspaceClosed {
@@ -2659,7 +2619,7 @@ impl App {
                         reason: LifecycleReason::User,
                     };
                     mgr.emit_host_event("workspace.closed", &payload, EventScope::System);
-                    fire_lua(lua, "workspace.delete.post", &payload);
+                    crate::hooks::lua::fire(lua, "workspace.delete.post", &payload);
                 }
                 crate::state::PendingHostEvent::HookFired {
                     hook_id,
@@ -2926,7 +2886,7 @@ fn main() -> Result<()> {
         #[cfg(debug_assertions)]
         cli.enable_input_simulation,
     );
-    fire_lua(app.lua_engine.as_ref(), "tasty.startup.post", &serde_json::Value::Null);
+    crate::hooks::lua::fire(app.lua_engine.as_ref(), "tasty.startup.post", &serde_json::Value::Null);
     event_loop.run_app(&mut app)?;
 
     Ok(())
