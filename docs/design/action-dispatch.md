@@ -263,6 +263,19 @@ CI 체크 스크립트 `scripts/check-intent-discipline.sh` 로 금지된다. �
 - 신규 코드는 Intent 발화만 허용 (코드 리뷰 규칙).
 - clippy custom lint로 잡을 수 있는 직접 호출 패턴(`state.popups.open*` 등)은 lint 작성 (TODO 05).
 
+### 도메인 진행 상황
+
+| 도메인 | 마이그레이션 | 비고 |
+|--------|------|------|
+| popup | 완료 | `OpenPopup` / `ClosePopup` / `TogglePopup` |
+| preset | 완료 | `Apply` / `Save` / `Delete` / `Rename`. IPC inner-function 공유 패턴 |
+| surface | 완료 | `SplitSurface` / `CloseSurface` / `ConvertSurface`. IPC EXEMPT |
+| tab | 완료 | `NewTab { kind: Option }` / `CloseTab`. IPC EXEMPT |
+| pane | 완료 | `SplitPane` (사용자 단축키 전용). ratio/focus API 는 S3=B 미마이그레이션 |
+| workspace | 부분 | `NewWorkspace`. `CloseWorkspace` 는 cascade 의존, `RenameWorkspace`/`MoveWorkspace` 는 IPC handler 합성형이라 별도 결정 필요 |
+| window | SKIP | WIN1=B per design |
+| settings | SKIP | SET1=B per design |
+
 ## 예시
 
 ### User 단축키 → popup open
