@@ -280,16 +280,30 @@ pub fn apply_convert_action(state: &mut AppState, action: ConvertAction) {
             state.dialogs.markdown_convert_surface_id = Some(surface_id);
             state.dialogs.file_open_pane_id = Some(pane_id);
             state.dialogs.markdown_open_buffer.clear();
-            state.dialogs.pending_popup_open =
-                Some(("markdown_open", popup::PopupScope::Surface(surface_id)));
+            state.dispatch_intent(
+                crate::intent::Intent::OpenPopup {
+                    id: "markdown_open",
+                    mode: crate::intent::OpenPopupMode::WithScope(
+                        popup::PopupScope::Surface(surface_id),
+                    ),
+                }
+                .from_user_menu("convert/markdown"),
+            );
         }
         ConvertAction::Html => {
             let pane_id = state.active_workspace().focused_pane;
             state.dialogs.html_convert_surface_id = Some(surface_id);
             state.dialogs.file_open_pane_id = Some(pane_id);
             state.dialogs.html_open_buffer.clear();
-            state.dialogs.pending_popup_open =
-                Some(("html_open", popup::PopupScope::Surface(surface_id)));
+            state.dispatch_intent(
+                crate::intent::Intent::OpenPopup {
+                    id: "html_open",
+                    mode: crate::intent::OpenPopupMode::WithScope(
+                        popup::PopupScope::Surface(surface_id),
+                    ),
+                }
+                .from_user_menu("convert/html"),
+            );
         }
         ConvertAction::Image => {
             state.convert_surface_to_image(surface_id);

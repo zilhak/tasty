@@ -248,16 +248,18 @@ pub fn draw_popups(
     if approval_closed {
         state.dialogs.approval_comment_buffer.clear();
         if !state.dialogs.pending_approval_ids.is_empty() {
-            state.dialogs.pending_popup_open.get_or_insert((
-                crate::ui::approval_popup::APPROVAL_POPUP_ID,
-                crate::ui::popup::PopupScope::Window,
-            ));
+            // 다음 approval head 를 위해 popup 재발화. Intent dedup 이 이미 열려 있을
+            // 때 무시하므로 안전.
+            state.dispatch_intent(
+                crate::intent::Intent::OpenPopup {
+                    id: crate::ui::approval_popup::APPROVAL_POPUP_ID,
+                    mode: crate::intent::OpenPopupMode::WithScope(
+                        crate::ui::popup::PopupScope::Window,
+                    ),
+                }
+                .from_agent_ipc(),
+            );
         }
-    }
-
-    // Process deferred popup open requests (from popups that open other popups)
-    if let Some((id, scope)) = state.dialogs.pending_popup_open.take() {
-        state.popups.open_with_scope(id, scope);
     }
 
     // Toast 렌더링 (popup 위 레이어). 같은 LayoutContext를 공유한다.

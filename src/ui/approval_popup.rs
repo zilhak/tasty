@@ -238,13 +238,17 @@ pub fn enqueue_approval(state: &mut AppState, record: &ApprovalRecord) {
         .dialogs
         .pending_approval_ids
         .push_back(record.request.id.clone());
-    // 첫 항목이면 popup 을 즉시 연다. 이미 열려 있으면 그대로.
-    if !state.popups.is_open(APPROVAL_POPUP_ID) {
-        state
-            .dialogs
-            .pending_popup_open
-            .get_or_insert((APPROVAL_POPUP_ID, crate::ui::popup::PopupScope::Window));
-    }
+    // 첫 항목이면 popup 을 즉시 연다. 이미 열려 있으면 Intent dedup 으로 무시.
+    // approval 큐는 agent/plugin 발화이므로 origin 은 agent_ipc 로 통일.
+    state.dispatch_intent(
+        crate::intent::Intent::OpenPopup {
+            id: APPROVAL_POPUP_ID,
+            mode: crate::intent::OpenPopupMode::WithScope(
+                crate::ui::popup::PopupScope::Window,
+            ),
+        }
+        .from_agent_ipc(),
+    );
 
     // 알림 채널 동시 발화.
     let severity_prefix = match record.request.severity {

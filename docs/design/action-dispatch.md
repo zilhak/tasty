@@ -199,7 +199,19 @@ plugin manifest의 `[[contributes.popup]]` instance open 큐. 그대로 유지. 
 
 ### `dialogs.pending_popup_open` (popup deferred)
 
-Intent 큐의 도메인 한정 부분 구현. TODO 04에서 흡수.
+~~Intent 큐의 도메인 한정 부분 구현. TODO 04에서 흡수.~~ **TODO 04 에서 제거됨** —
+모든 deferred open 요청은 `state.dispatch_intent(...)` 로 통일.
+
+### `debug.popup.*` IPC 와의 관계
+
+`debug.popup.open` / `debug.popup.close` IPC 핸들러 (`src/ipc/handler/popup.rs`) 는
+**plugin popup instance** (`PluginManager::popup_instances`) 를 대상으로 한다.
+호스트 PopupManager (`state.popups`) Intent 와 **다른 layer** 이며, debug 빌드 한정
+사용자 입력 재현 (CLAUDE.md "사용자 입력 재현 = debug 한정" 원칙) 으로 분류된다.
+
+호스트 popup 자체는 debug 빌드에서도 IPC 로 노출하지 않는다. host popup 직접 조작이
+필요한 시나리오가 생기면 별도 debug IPC (`debug.host_popup.*`) 를 신설하되, 본 TODO
+범위에서는 다루지 않는다.
 
 ### `dialogs.pending_preset_save / pending_preset_apply / pending_open_preset_window` (preset deferred)
 

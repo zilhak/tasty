@@ -378,8 +378,6 @@ pub struct DialogState {
     pub file_popup_cancel: bool,
     /// Error message for file open popup validation
     pub file_open_error: Option<String>,
-    /// Deferred popup open request: (popup_id, scope). Processed after popup draw loop.
-    pub pending_popup_open: Option<(&'static str, crate::ui::popup::PopupScope)>,
     /// Pending file drag request (paths to drag to external apps).
     pub pending_file_drag: Option<Vec<String>>,
     /// Tab drag-and-drop state.
@@ -476,7 +474,6 @@ impl DialogState {
             file_open_pane_id: None,
             file_popup_cancel: false,
             file_open_error: None,
-            pending_popup_open: None,
             pending_file_drag: None,
             tab_drag: None,
             ws_drag: None,
