@@ -155,6 +155,8 @@ pub fn draw_popups(
 
     // Refresh popup titles (i18n) and dynamic sizes each frame. Sizers read
     // in-memory caches so this is cheap.
+    // intent-exempt: 매 프레임 i18n title / size 재계산은 mutation 이 아닌 draw-prep.
+    // Intent 큐로 보내면 1프레임 지연 + 매 프레임 enqueue 라 부적절.
     for def in crate::ui::popup_defs::all_defs() {
         let new_title = if let Some(title_fn) = def.title_fn {
             (title_fn)(state)
@@ -191,7 +193,10 @@ pub fn draw_popups(
 
     state.popups = popups;
 
-    // Close popups requested by draw dispatch or X button / outside click
+    // Close popups requested by draw dispatch or X button / outside click.
+    // intent-exempt: popup self-close (draw_fn 이 Close 반환 / X 버튼 / 외부 클릭) 는
+    // popup 시스템 자체의 lifecycle. Intent 큐를 거치면 시각적 close 가 1프레임 지연되어
+    // X 버튼 클릭이 즉시 반응하지 않는 UX 결함이 생긴다.
     for id in dispatch_closed.iter().chain(draw_result.closed.iter()) {
         state.popups.close(id);
     }

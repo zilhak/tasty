@@ -205,9 +205,14 @@ pub fn draw_egui_panels(
     if let Some(crate::empty_ui::EmptyAction::OpenConvertPopup(sid)) = pending_empty_action {
         state.dialogs.convert_popup = Some(sid);
         state.dialogs.convert_popup_selected = None;
-        state.popups.open_with_scope(
-            "convert_surface",
-            crate::ui::popup::PopupScope::Surface(sid),
+        state.dispatch_intent(
+            crate::intent::Intent::OpenPopup {
+                id: "convert_surface",
+                mode: crate::intent::OpenPopupMode::WithScope(
+                    crate::ui::popup::PopupScope::Surface(sid),
+                ),
+            }
+            .from_user_menu("empty_surface_convert"),
         );
     }
 

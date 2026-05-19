@@ -1,22 +1,43 @@
-//! Popup 도메인 Intent 핸들러. TODO 03 의 마이그레이션이 본 모듈로 들어온다.
+//! Popup 도메인 Intent 핸들러.
 //!
-//! TODO 02 (코어 인프라) 단계에서는 스텁만 두고, 실제 핸들러 본문은 TODO 03 에서 채운다.
+//! 정책 차이 (TODO 01 결정 13 — `docs/design/action-dispatch.md` 참조):
+//! dispatcher 는 origin 정책을 강제하지 않는다. 호출자가 적절한 `OpenPopupMode` 를
+//! 선택하고 (예: agent origin 인데 focus 가 필요 없다면 `Default` 또는 `CenteredFocused`
+//! 대신 focus 없는 변형을 발화), PR 리뷰에서 정책 위반을 잡는다.
+//!
+//! Dedup: 같은 popup id 에 OpenPopup 이 중복 들어오면 이미 열려있을 때 무시.
 
-use super::{DispatchedIntent, Intent};
+use super::{DispatchedIntent, Intent, OpenPopupMode};
 use crate::state::AppState;
 
 /// popup 도메인 분기 핸들러. `dispatch_pending_intents` 에서 호출.
 pub fn handle(state: &mut AppState, intent: &DispatchedIntent) {
     match &intent.body {
-        Intent::OpenPopup { .. } | Intent::ClosePopup { .. } | Intent::TogglePopup { .. } => {
-            // TODO 03: 본문 채우기 (origin.is_user() 분기 + state.popups.open*/close/toggle).
-            tracing::debug!(
-                "intent::popup::handle (stub) — body={:?} origin={:?}",
-                intent.body,
-                intent.origin
-            );
-            let _ = state;
+        Intent::OpenPopup { id, mode } => open(state, id, mode),
+        Intent::ClosePopup { id } => state.popups.close(id),
+        Intent::TogglePopup { id, mode } => {
+            if state.popups.is_open(id) {
+                state.popups.close(id);
+            } else {
+                open(state, id, mode);
+            }
         }
         _ => {}
+    }
+}
+
+fn open(state: &mut AppState, id: &'static str, mode: &OpenPopupMode) {
+    // Dedup: 이미 열려있으면 두 번째 OpenPopup 무시.
+    if state.popups.is_open(id) {
+        return;
+    }
+    match mode {
+        OpenPopupMode::Default => state.popups.open(id),
+        OpenPopupMode::CenteredFocused => state.popups.open_centered_focused(id),
+        OpenPopupMode::WithScope(scope) => state.popups.open_with_scope(id, scope.clone()),
+        OpenPopupMode::AtTopOfScope(scope) => {
+            state.popups.open_at_top_of_scope(id, scope.clone())
+        }
+        OpenPopupMode::AtFocused(pos) => state.popups.open_at_focused(id, *pos),
     }
 }

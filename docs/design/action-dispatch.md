@@ -256,22 +256,23 @@ if matches_any_binding(&kb.toggle_command_palette, key, mods) {
 }
 ```
 
-핸들러(`intent::popup::handle`)가 `origin.is_user() == true`이므로 `state.popups.toggle_centered_focused(id)`를 호출, focus를 가져간다.
+핸들러(`intent::popup::handle`)는 origin 분기 없이 `mode` 그대로 실행 — `state.popups.open_centered_focused(id)` 호출.
 
 ### Agent IPC → popup open (debug 빌드만)
 
 ```rust
 // src/ipc/handler/debug_popup.rs (cfg debug_assertions)
+// agent origin 은 focus 를 가져가지 않는 것이 정책 — Default 또는 focus 없는 변형 사용.
 state.dispatch_intent(
     Intent::OpenPopup {
         id: params.popup_id,
-        mode: OpenPopupMode::CenteredFocused,
+        mode: OpenPopupMode::Default,
     }
     .from_agent_ipc(),
 );
 ```
 
-핸들러가 `origin.is_agent() == true`이므로 `state.popups.open_centered(id)`(focus 없이 센터링)를 호출.
+dispatcher 는 강제 분기를 하지 않으므로, 호출자가 정책에 맞는 `OpenPopupMode` 를 선택할 책임이 있다 (PR 리뷰에서 강제).
 
 ## 관련 문서
 

@@ -486,7 +486,13 @@ impl MainWindow {
                         let target = crate::state::RenameTarget::TabName { pane_id, tab_index };
                         let scope = target.popup_scope();
                         self.state.dialogs.rename = Some((target, current_name));
-                        self.state.popups.open_with_scope("rename", scope);
+                        self.state.dispatch_intent(
+                            crate::intent::Intent::OpenPopup {
+                                id: "rename",
+                                mode: crate::intent::OpenPopupMode::WithScope(scope),
+                            }
+                            .from_user_context_menu(),
+                        );
                     }
                     Some(2) => {
                         // Close
@@ -585,9 +591,14 @@ impl MainWindow {
                             self.state.dialogs.markdown_convert_surface_id = Some(surface_id);
                             self.state.dialogs.file_open_pane_id = Some(pane_id);
                             self.state.dialogs.markdown_open_buffer.clear();
-                            self.state.popups.open_with_scope(
-                                "markdown_open",
-                                crate::ui::popup::PopupScope::Surface(surface_id),
+                            self.state.dispatch_intent(
+                                crate::intent::Intent::OpenPopup {
+                                    id: "markdown_open",
+                                    mode: crate::intent::OpenPopupMode::WithScope(
+                                        crate::ui::popup::PopupScope::Surface(surface_id),
+                                    ),
+                                }
+                                .from_user_context_menu(),
                             );
                         }
                     }
@@ -598,9 +609,14 @@ impl MainWindow {
                             self.state.dialogs.html_convert_surface_id = Some(surface_id);
                             self.state.dialogs.file_open_pane_id = Some(pane_id);
                             self.state.dialogs.html_open_buffer.clear();
-                            self.state.popups.open_with_scope(
-                                "html_open",
-                                crate::ui::popup::PopupScope::Surface(surface_id),
+                            self.state.dispatch_intent(
+                                crate::intent::Intent::OpenPopup {
+                                    id: "html_open",
+                                    mode: crate::intent::OpenPopupMode::WithScope(
+                                        crate::ui::popup::PopupScope::Surface(surface_id),
+                                    ),
+                                }
+                                .from_user_context_menu(),
                             );
                         }
                     }
@@ -658,14 +674,26 @@ impl MainWindow {
                             let target = crate::state::RenameTarget::WorkspaceName { ws_idx };
                             let scope = target.popup_scope();
                             self.state.dialogs.rename = Some((target, name));
-                            self.state.popups.open_with_scope("rename", scope);
+                            self.state.dispatch_intent(
+                                crate::intent::Intent::OpenPopup {
+                                    id: "rename",
+                                    mode: crate::intent::OpenPopupMode::WithScope(scope),
+                                }
+                                .from_user_context_menu(),
+                            );
                         }
                         Some(2) => {
                             let subtitle = self.state.engine.workspaces[ws_idx].subtitle.clone();
                             let target = crate::state::RenameTarget::WorkspaceSubtitle { ws_idx };
                             let scope = target.popup_scope();
                             self.state.dialogs.rename = Some((target, subtitle));
-                            self.state.popups.open_with_scope("rename", scope);
+                            self.state.dispatch_intent(
+                                crate::intent::Intent::OpenPopup {
+                                    id: "rename",
+                                    mode: crate::intent::OpenPopupMode::WithScope(scope),
+                                }
+                                .from_user_context_menu(),
+                            );
                         }
                         Some(3) => {
                             // Move Up

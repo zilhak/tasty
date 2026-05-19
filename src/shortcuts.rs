@@ -1,6 +1,7 @@
 use winit::event_loop::EventLoopProxy;
 use winit::keyboard::{Key, KeyCode, ModifiersState, NamedKey, PhysicalKey};
 
+use crate::intent::{Intent, OpenPopupMode};
 use crate::model::SplitDirection;
 use crate::window::Window as _;
 use crate::window::main::MainWindow;
@@ -319,8 +320,18 @@ impl MainWindow {
             return true;
         }
         if has_dt(&kb.toggle_notifications) {
-            self.state.popups.toggle("notifications");
-            if self.state.popups.is_open("notifications") {
+            // Intent 통과 시 다음 프레임에 처리되므로 is_open 체크는 즉시 수행
+            // 후 toggle Intent 발화. mark_all_read 는 현재 상태 기준 — 다음 프레임
+            // 에 popup 이 열릴 예정이면 미리 읽음 처리.
+            let will_open = !self.state.popups.is_open("notifications");
+            self.state.dispatch_intent(
+                Intent::TogglePopup {
+                    id: "notifications",
+                    mode: OpenPopupMode::Default,
+                }
+                .from_user_shortcut("toggle_notifications_double_tap"),
+            );
+            if will_open {
                 self.state.engine.notifications.mark_all_read();
             }
             return true;
@@ -458,15 +469,26 @@ impl MainWindow {
                         let pane_id = self.state.active_workspace().focused_pane;
                         self.state.dialogs.file_open_pane_id = Some(pane_id);
                         self.state.dialogs.markdown_open_buffer.clear();
-                        self.state.popups.open_centered_focused("markdown_open");
+                        self.state.dispatch_intent(
+                            Intent::OpenPopup {
+                                id: "markdown_open",
+                                mode: OpenPopupMode::CenteredFocused,
+                            }
+                            .from_user_shortcut("open_markdown_double_tap"),
+                        );
                     }
                     "convert_surface" => {
                         if let Some(sid) = self.state.focused_surface_id() {
                             self.state.dialogs.convert_popup = Some(sid);
                             self.state.dialogs.convert_popup_selected = None;
-                            self.state.popups.open_with_scope(
-                                "convert_surface",
-                                crate::ui::popup::PopupScope::Surface(sid),
+                            self.state.dispatch_intent(
+                                Intent::OpenPopup {
+                                    id: "convert_surface",
+                                    mode: OpenPopupMode::WithScope(
+                                        crate::ui::popup::PopupScope::Surface(sid),
+                                    ),
+                                }
+                                .from_user_shortcut("convert_surface_double_tap"),
                             );
                         }
                     }
@@ -476,9 +498,14 @@ impl MainWindow {
                             self.state.dialogs.markdown_convert_surface_id = Some(sid);
                             self.state.dialogs.file_open_pane_id = Some(pane_id);
                             self.state.dialogs.markdown_open_buffer.clear();
-                            self.state.popups.open_with_scope(
-                                "markdown_open",
-                                crate::ui::popup::PopupScope::Surface(sid),
+                            self.state.dispatch_intent(
+                                Intent::OpenPopup {
+                                    id: "markdown_open",
+                                    mode: OpenPopupMode::WithScope(
+                                        crate::ui::popup::PopupScope::Surface(sid),
+                                    ),
+                                }
+                                .from_user_shortcut("convert_to_markdown_double_tap"),
                             );
                         }
                     }
@@ -570,8 +597,15 @@ impl MainWindow {
                 send_app_event(proxy, crate::AppEvent::OpenSettings);
             }
             "toggle_notifications" => {
-                state.popups.toggle("notifications");
-                if state.popups.is_open("notifications") {
+                let will_open = !state.popups.is_open("notifications");
+                state.dispatch_intent(
+                    Intent::TogglePopup {
+                        id: "notifications",
+                        mode: OpenPopupMode::Default,
+                    }
+                    .from_user_shortcut("toggle_notifications"),
+                );
+                if will_open {
                     state.engine.notifications.mark_all_read();
                 }
             }
@@ -656,27 +690,44 @@ impl MainWindow {
             "find" => {
                 if state.popups.is_open("search_bar") {
                     state.search.clear();
-                    state.popups.close("search_bar");
+                    state.dispatch_intent(
+                        Intent::ClosePopup { id: "search_bar" }
+                            .from_user_shortcut("find_close"),
+                    );
                 } else if let Some(sid) = state.focused_surface_id() {
                     state.search.surface_id = sid;
-                    state
-                        .popups
-                        .open_at_top_of_scope("search_bar", PopupScope::Surface(sid));
+                    state.dispatch_intent(
+                        Intent::OpenPopup {
+                            id: "search_bar",
+                            mode: OpenPopupMode::AtTopOfScope(PopupScope::Surface(sid)),
+                        }
+                        .from_user_shortcut("find"),
+                    );
                 }
             }
             "open_markdown" => {
                 let pane_id = state.active_workspace().focused_pane;
                 state.dialogs.file_open_pane_id = Some(pane_id);
                 state.dialogs.markdown_open_buffer.clear();
-                state.popups.open_centered_focused("markdown_open");
+                state.dispatch_intent(
+                    Intent::OpenPopup {
+                        id: "markdown_open",
+                        mode: OpenPopupMode::CenteredFocused,
+                    }
+                    .from_user_shortcut("open_markdown"),
+                );
             }
             "convert_surface" => {
                 if let Some(sid) = state.focused_surface_id() {
                     state.dialogs.convert_popup = Some(sid);
                     state.dialogs.convert_popup_selected = None;
-                    state
-                        .popups
-                        .open_with_scope("convert_surface", PopupScope::Surface(sid));
+                    state.dispatch_intent(
+                        Intent::OpenPopup {
+                            id: "convert_surface",
+                            mode: OpenPopupMode::WithScope(PopupScope::Surface(sid)),
+                        }
+                        .from_user_shortcut("convert_surface"),
+                    );
                 }
             }
             "convert_to_markdown" => {
@@ -685,9 +736,13 @@ impl MainWindow {
                     state.dialogs.markdown_convert_surface_id = Some(sid);
                     state.dialogs.file_open_pane_id = Some(pane_id);
                     state.dialogs.markdown_open_buffer.clear();
-                    state
-                        .popups
-                        .open_with_scope("markdown_open", PopupScope::Surface(sid));
+                    state.dispatch_intent(
+                        Intent::OpenPopup {
+                            id: "markdown_open",
+                            mode: OpenPopupMode::WithScope(PopupScope::Surface(sid)),
+                        }
+                        .from_user_shortcut("convert_to_markdown"),
+                    );
                 }
             }
             "rename_tab" => {
@@ -701,7 +756,13 @@ impl MainWindow {
                         let target = crate::state::RenameTarget::TabName { pane_id, tab_index };
                         let scope = target.popup_scope();
                         state.dialogs.rename = Some((target, current_name));
-                        state.popups.open_with_scope("rename", scope);
+                        state.dispatch_intent(
+                            Intent::OpenPopup {
+                                id: "rename",
+                                mode: OpenPopupMode::WithScope(scope),
+                            }
+                            .from_user_shortcut("rename_tab"),
+                        );
                     }
                 }
             }
@@ -711,7 +772,13 @@ impl MainWindow {
                     let target = crate::state::RenameTarget::WorkspaceName { ws_idx };
                     let scope = target.popup_scope();
                     state.dialogs.rename = Some((target, ws.name.clone()));
-                    state.popups.open_with_scope("rename", scope);
+                    state.dispatch_intent(
+                        Intent::OpenPopup {
+                            id: "rename",
+                            mode: OpenPopupMode::WithScope(scope),
+                        }
+                        .from_user_shortcut("rename_workspace"),
+                    );
                 }
             }
             "rename_workspace_subtitle" => {
@@ -720,7 +787,13 @@ impl MainWindow {
                     let target = crate::state::RenameTarget::WorkspaceSubtitle { ws_idx };
                     let scope = target.popup_scope();
                     state.dialogs.rename = Some((target, ws.subtitle.clone()));
-                    state.popups.open_with_scope("rename", scope);
+                    state.dispatch_intent(
+                        Intent::OpenPopup {
+                            id: "rename",
+                            mode: OpenPopupMode::WithScope(scope),
+                        }
+                        .from_user_shortcut("rename_workspace_subtitle"),
+                    );
                 }
             }
             "image_undo" => {
@@ -903,8 +976,15 @@ impl MainWindow {
             return true;
         }
         if matches_any_binding(&kb.toggle_notifications, key, mods) {
-            state.popups.toggle("notifications");
-            if state.popups.is_open("notifications") {
+            let will_open = !state.popups.is_open("notifications");
+            state.dispatch_intent(
+                Intent::TogglePopup {
+                    id: "notifications",
+                    mode: OpenPopupMode::Default,
+                }
+                .from_user_shortcut("toggle_notifications"),
+            );
+            if will_open {
                 state.engine.notifications.mark_all_read();
             }
             return true;
@@ -912,12 +992,19 @@ impl MainWindow {
         if matches_any_binding(&kb.find, key, mods) {
             if state.popups.is_open("search_bar") {
                 state.search.clear();
-                state.popups.close("search_bar");
+                state.dispatch_intent(
+                    Intent::ClosePopup { id: "search_bar" }.from_user_shortcut("find_close"),
+                );
             } else if let Some(sid) = state.focused_surface_id() {
                 state.search.surface_id = sid;
-                state.popups.open_at_top_of_scope(
-                    "search_bar",
-                    crate::ui::popup::PopupScope::Surface(sid),
+                state.dispatch_intent(
+                    Intent::OpenPopup {
+                        id: "search_bar",
+                        mode: OpenPopupMode::AtTopOfScope(
+                            crate::ui::popup::PopupScope::Surface(sid),
+                        ),
+                    }
+                    .from_user_shortcut("find_open"),
                 );
             }
             return true;
@@ -1007,16 +1094,27 @@ impl MainWindow {
             let pane_id = state.active_workspace().focused_pane;
             state.dialogs.file_open_pane_id = Some(pane_id);
             state.dialogs.markdown_open_buffer.clear();
-            state.popups.open_centered_focused("markdown_open");
+            state.dispatch_intent(
+                Intent::OpenPopup {
+                    id: "markdown_open",
+                    mode: OpenPopupMode::CenteredFocused,
+                }
+                .from_user_shortcut("open_markdown"),
+            );
             return true;
         }
         if matches_any_binding(&kb.convert_surface, key, mods) {
             if let Some(sid) = state.focused_surface_id() {
                 state.dialogs.convert_popup = Some(sid);
                 state.dialogs.convert_popup_selected = None;
-                state.popups.open_with_scope(
-                    "convert_surface",
-                    crate::ui::popup::PopupScope::Surface(sid),
+                state.dispatch_intent(
+                    Intent::OpenPopup {
+                        id: "convert_surface",
+                        mode: OpenPopupMode::WithScope(
+                            crate::ui::popup::PopupScope::Surface(sid),
+                        ),
+                    }
+                    .from_user_shortcut("convert_surface"),
                 );
             }
             return true;
@@ -1027,9 +1125,15 @@ impl MainWindow {
                 state.dialogs.markdown_convert_surface_id = Some(sid);
                 state.dialogs.file_open_pane_id = Some(pane_id);
                 state.dialogs.markdown_open_buffer.clear();
-                state
-                    .popups
-                    .open_with_scope("markdown_open", crate::ui::popup::PopupScope::Surface(sid));
+                state.dispatch_intent(
+                    Intent::OpenPopup {
+                        id: "markdown_open",
+                        mode: OpenPopupMode::WithScope(
+                            crate::ui::popup::PopupScope::Surface(sid),
+                        ),
+                    }
+                    .from_user_shortcut("convert_to_markdown"),
+                );
             }
             return true;
         }
@@ -1069,7 +1173,13 @@ impl MainWindow {
                     let target = crate::state::RenameTarget::TabName { pane_id, tab_index };
                     let scope = target.popup_scope();
                     state.dialogs.rename = Some((target, current_name));
-                    state.popups.open_with_scope("rename", scope);
+                    state.dispatch_intent(
+                        Intent::OpenPopup {
+                            id: "rename",
+                            mode: OpenPopupMode::WithScope(scope),
+                        }
+                        .from_user_shortcut("rename_tab"),
+                    );
                 }
             }
             return true;
@@ -1080,7 +1190,13 @@ impl MainWindow {
                 let target = crate::state::RenameTarget::WorkspaceName { ws_idx };
                 let scope = target.popup_scope();
                 state.dialogs.rename = Some((target, ws.name.clone()));
-                state.popups.open_with_scope("rename", scope);
+                state.dispatch_intent(
+                    Intent::OpenPopup {
+                        id: "rename",
+                        mode: OpenPopupMode::WithScope(scope),
+                    }
+                    .from_user_shortcut("rename_workspace"),
+                );
             }
             return true;
         }
@@ -1105,35 +1221,46 @@ impl MainWindow {
             }
         }
         if matches_any_binding(&kb.toggle_command_palette, key, mods) {
-            if state.popups.is_open(crate::ui::command_palette_popup::COMMAND_PALETTE_POPUP_ID) {
-                state.command_palette.reset();
-                state.popups.close(crate::ui::command_palette_popup::COMMAND_PALETTE_POPUP_ID);
-            } else {
-                state.command_palette.reset();
-                state.popups.open_centered_focused(
-                    crate::ui::command_palette_popup::COMMAND_PALETTE_POPUP_ID,
-                );
-            }
+            state.command_palette.reset();
+            state.dispatch_intent(
+                Intent::TogglePopup {
+                    id: crate::ui::command_palette_popup::COMMAND_PALETTE_POPUP_ID,
+                    mode: OpenPopupMode::CenteredFocused,
+                }
+                .from_user_shortcut("toggle_command_palette"),
+            );
             return true;
         }
         if matches_any_binding(&kb.apply_workspace_preset, key, mods) {
             state.dialogs.preset_picker_selected = None;
-            state.popups.open_centered_focused(
-                crate::ui::preset_apply_popup::APPLY_WORKSPACE_POPUP_ID,
+            state.dispatch_intent(
+                Intent::OpenPopup {
+                    id: crate::ui::preset_apply_popup::APPLY_WORKSPACE_POPUP_ID,
+                    mode: OpenPopupMode::CenteredFocused,
+                }
+                .from_user_shortcut("apply_workspace_preset"),
             );
             return true;
         }
         if matches_any_binding(&kb.apply_tab_preset, key, mods) {
             state.dialogs.preset_picker_selected = None;
-            state.popups.open_centered_focused(
-                crate::ui::preset_apply_popup::APPLY_TAB_POPUP_ID,
+            state.dispatch_intent(
+                Intent::OpenPopup {
+                    id: crate::ui::preset_apply_popup::APPLY_TAB_POPUP_ID,
+                    mode: OpenPopupMode::CenteredFocused,
+                }
+                .from_user_shortcut("apply_tab_preset"),
             );
             return true;
         }
         if matches_any_binding(&kb.apply_pane_preset, key, mods) {
             state.dialogs.preset_picker_selected = None;
-            state.popups.open_centered_focused(
-                crate::ui::preset_apply_popup::APPLY_PANE_POPUP_ID,
+            state.dispatch_intent(
+                Intent::OpenPopup {
+                    id: crate::ui::preset_apply_popup::APPLY_PANE_POPUP_ID,
+                    mode: OpenPopupMode::CenteredFocused,
+                }
+                .from_user_shortcut("apply_pane_preset"),
             );
             return true;
         }
@@ -1143,7 +1270,13 @@ impl MainWindow {
                 let target = crate::state::RenameTarget::WorkspaceSubtitle { ws_idx };
                 let scope = target.popup_scope();
                 state.dialogs.rename = Some((target, ws.subtitle.clone()));
-                state.popups.open_with_scope("rename", scope);
+                state.dispatch_intent(
+                    Intent::OpenPopup {
+                        id: "rename",
+                        mode: OpenPopupMode::WithScope(scope),
+                    }
+                    .from_user_shortcut("rename_workspace_subtitle"),
+                );
             }
             return true;
         }

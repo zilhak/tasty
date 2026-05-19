@@ -348,7 +348,10 @@ pub fn draw_settings_panel(
                     ),
                 });
 
-            // 충돌 감지 시 팝업 열기
+            // 충돌 감지 시 팝업 열기.
+            // intent-exempt: `ui_state.popups` 는 settings 윈도우 내부의 별도 PopupManager.
+            // host Intent 큐(AppState.popups) 와 별개 — sub-modal 내부 lifecycle 이므로
+            // 직접 호출 유지.
             if ui_state.pending_binding.is_some()
                 && !ui_state.popups.is_open("keybinding_conflict")
             {
@@ -368,11 +371,13 @@ pub fn draw_settings_panel(
                         pending.combo,
                     );
                 }
+                // intent-exempt: settings 윈도우 내부 sub-modal close (위 주석 참조).
                 ui_state.popups.close("keybinding_conflict");
             }
             if ui_state.conflict_cancelled {
                 ui_state.conflict_cancelled = false;
                 ui_state.pending_binding = None;
+                // intent-exempt: settings 윈도우 내부 sub-modal close.
                 ui_state.popups.close("keybinding_conflict");
             }
 

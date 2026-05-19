@@ -40,7 +40,10 @@ impl MainWindow {
                 return;
             }
             if self.state.popups.is_open("notifications") {
-                self.state.popups.close("notifications");
+                self.state.dispatch_intent(
+                    crate::intent::Intent::ClosePopup { id: "notifications" }
+                        .from_user_shortcut("escape_close_notifications"),
+                );
                 self.mark_dirty();
                 return;
             }

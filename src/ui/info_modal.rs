@@ -41,11 +41,19 @@ const MAX_HEIGHT: f32 = 360.0;
 const BODY_FONT_SIZE: f32 = 13.0;
 
 /// 큐에 modal 한 건을 추가하고 popup을 연다. 이미 열려 있으면 큐만 추가.
+///
+/// 호출처는 시스템 부트스트랩 (DB 초기화 실패, theme fallback 등) — 사용자 입력에
+/// 의해 발화되지는 않지만, modal 인 만큼 focus 가 필요하다. agent IPC 가 아니므로
+/// `from_user_menu` 와 동일한 user-ish origin 으로 발화 (PR 리뷰에서 정책 분기 결정).
 pub fn show_info_modal(state: &mut AppState, modal: InfoModal) {
     state.dialogs.info_modal_queue.push_back(modal);
-    if !state.popups.is_open(INFO_MODAL_ID) {
-        state.popups.open_centered_focused(INFO_MODAL_ID);
-    }
+    state.dispatch_intent(
+        crate::intent::Intent::OpenPopup {
+            id: INFO_MODAL_ID,
+            mode: crate::intent::OpenPopupMode::CenteredFocused,
+        }
+        .from_user_menu("info_modal"),
+    );
 }
 
 /// PopupDef.title_fn — 큐 head의 title을 popup 타이틀로 사용.

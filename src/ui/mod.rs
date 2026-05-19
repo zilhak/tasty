@@ -44,7 +44,13 @@ fn open_tools_menu(state: &mut AppState, btn_rect: egui::Rect) {
         .unwrap_or(egui::vec2(160.0, 36.0));
     // 버튼 좌측에 맞추고, 버튼 위쪽으로 올라가도록 배치
     let pos = egui::pos2(btn_rect.min.x, btn_rect.min.y - menu_size.y);
-    state.popups.open_at_focused("tools_menu", pos);
+    state.dispatch_intent(
+        crate::intent::Intent::OpenPopup {
+            id: "tools_menu",
+            mode: crate::intent::OpenPopupMode::AtFocused(pos),
+        }
+        .from_user_menu("tools_button"),
+    );
 }
 
 /// Render the egui UI and return the remaining terminal area rect (in physical pixels).
