@@ -477,6 +477,8 @@ impl ApplicationHandler<AppEvent> for App {
         self.dispatch_pending_memory_changes();
         // 도구 메뉴 클릭으로 enqueue된 이벤트 publish.
         self.dispatch_pending_tool_events();
+        // 호스트 내부 Intent 큐 drain (plugin popup 큐 발화 가능하므로 plugin drain 앞).
+        self.dispatch_pending_intents();
         // 도구 메뉴 ToolAction::OpenPopup 클릭으로 enqueue된 popup open dispatch.
         self.dispatch_pending_popup_opens();
         // 파일 핸들러 IPC action 큐 drain (Phase C1: warn 로그만, Phase C3: 본격 dispatch).
