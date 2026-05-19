@@ -1,6 +1,7 @@
 //! `App` — winit `ApplicationHandler` 의 본체. 다중 윈도우 + 모달 + 플러그인 매니저 +
 //! parked AppState 보관. 메서드는 도메인별 서브모듈로 분산되어 있다.
 
+pub(crate) mod dispatch;
 pub(crate) mod modal;
 pub(crate) mod plugin_glue;
 pub(crate) mod window_access;
