@@ -5184,6 +5184,7 @@ dependencies = [
  "tasty-output",
  "tasty-plugin-protocol",
  "tasty-portscan",
+ "tasty-presets",
  "tasty-settings",
  "tasty-shm",
  "tasty-telemetry",
@@ -5387,6 +5388,19 @@ dependencies = [
  "libc",
  "tracing",
  "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "tasty-presets"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tasty-core",
+ "tempfile",
+ "thiserror 2.0.18",
+ "toml 0.8.2",
+ "tracing",
 ]
 
 [[package]]

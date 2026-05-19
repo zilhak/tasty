@@ -1,0 +1,21 @@
+[package]
+name = "tasty-presets"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Layout presets (workspace/tab/pane) for Tasty"
+
+[dependencies]
+tasty-core = { path = "../tasty-core", default-features = false }
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+thiserror = "2"
+tracing = "0.1"
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true
