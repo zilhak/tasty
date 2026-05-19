@@ -55,6 +55,14 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("tab.create", plugin(&[SurfaceWrite])),
         ("tab.close", plugin(&[SurfaceWrite])),
         ("tab.move", plugin(&[SurfaceWrite])),
+        // ── preset (layout preset CRUD + apply) ───────────────────────
+        ("preset.list", plugin(&[SurfaceRead])),
+        ("preset.get", plugin(&[SurfaceRead])),
+        ("preset.save", plugin(&[SurfaceWrite])),
+        ("preset.delete", plugin(&[SurfaceWrite])),
+        ("preset.rename", plugin(&[SurfaceWrite])),
+        ("preset.capture", plugin(&[SurfaceWrite])),
+        ("preset.apply", plugin(&[SurfaceWrite])),
         // ── surface (구조 조작) ───────────────────────────────────────
         ("surface.list", plugin(&[SurfaceRead])),
         ("surface.close", plugin(&[SurfaceWrite])),

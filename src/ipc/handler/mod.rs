@@ -25,6 +25,7 @@ mod notification;
 mod output;
 mod pane;
 pub mod plugin;
+mod preset;
 #[cfg(debug_assertions)]
 pub mod popup;
 mod surface;
@@ -174,6 +175,14 @@ fn route_engine_handler(
         "tab.create" => tab::handle_tab_create(state, id, &request.params),
         "tab.close" => tab::handle_tab_close(state, id, &request.params),
         "tab.move" => tab::handle_tab_move(state, id, &request.params),
+        // preset (layout preset CRUD + apply)
+        "preset.list" => preset::handle_list(state, id, &request.params),
+        "preset.get" => preset::handle_get(state, id, &request.params),
+        "preset.save" => preset::handle_save(state, id, &request.params),
+        "preset.delete" => preset::handle_delete(state, id, &request.params),
+        "preset.rename" => preset::handle_rename(state, id, &request.params),
+        "preset.capture" => preset::handle_capture(state, id, &request.params),
+        "preset.apply" => preset::handle_apply(state, id, &request.params),
         // surface
         "surface.close" => surface::handle_surface_close(state, id, &request.params),
         "surface.close_self" => surface::handle_surface_close_self(state, id, &request.params),

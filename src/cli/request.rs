@@ -4,7 +4,7 @@ use super::{
     AgentCommands, ApprovalCommands, ClipboardCommands, CloseCommands, Commands, FileHandlerCommands, ListCommands,
     MemoryBbCommands, MemoryCacheCommands, MemoryCommands, MemoryPlanCommands, MemorySecretCommands, MoveCommands, NewCommands, OutputCommands,
     OutputObserveCommands, TelemetryAnomalyCommands, TelemetryCapCommands, TelemetryCommands,
-    PluginCommands, ReadCommands, ScriptCommands, SendCommands, SetCommands, SurfaceMetaCommands, ToolCommands,
+    PluginCommands, PresetCommands, ReadCommands, ScriptCommands, SendCommands, SetCommands, SurfaceMetaCommands, ToolCommands,
     UnsetCommands,
 };
 use crate::ipc::protocol::JsonRpcRequest;
@@ -124,6 +124,7 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
         Commands::Agent { command } => agent_command_to_method_params(command),
         Commands::FileHandler { command } => file_handler_command_to_method_params(command),
         Commands::Script { command } => script_command_to_method_params(command),
+        Commands::Preset { command } => preset_command_to_method_params(command),
     };
 
     JsonRpcRequest {
@@ -2185,5 +2186,92 @@ fn script_command_to_method_params(
 ) -> (&'static str, serde_json::Value) {
     match command {
         ScriptCommands::Reload => ("script.reload", serde_json::Value::Null),
+    }
+}
+
+/// Read --file (or "-" for stdin) and parse as JSON.
+fn read_json_file_or_stdin(path: &str) -> Result<serde_json::Value, String> {
+    use std::io::Read;
+    let raw = if path == "-" {
+        let mut buf = String::new();
+        std::io::stdin()
+            .read_to_string(&mut buf)
+            .map_err(|e| format!("stdin read failed: {e}"))?;
+        buf
+    } else {
+        std::fs::read_to_string(path).map_err(|e| format!("file read failed: {e}"))?
+    };
+    serde_json::from_str(&raw).map_err(|e| format!("invalid JSON: {e}"))
+}
+
+fn preset_command_to_method_params(
+    command: &PresetCommands,
+) -> (&'static str, serde_json::Value) {
+    match command {
+        PresetCommands::List { kind } => (
+            "preset.list",
+            serde_json::json!({ "kind": kind }),
+        ),
+        PresetCommands::Get { kind, name } => (
+            "preset.get",
+            serde_json::json!({ "kind": kind, "name": name }),
+        ),
+        PresetCommands::Save {
+            kind,
+            name,
+            file,
+            overwrite,
+        } => {
+            let data = match read_json_file_or_stdin(file) {
+                Ok(v) => v,
+                Err(e) => {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            };
+            (
+                "preset.save",
+                serde_json::json!({
+                    "kind": kind,
+                    "name": name,
+                    "data": data,
+                    "overwrite": overwrite,
+                }),
+            )
+        }
+        PresetCommands::Delete { kind, name } => (
+            "preset.delete",
+            serde_json::json!({ "kind": kind, "name": name }),
+        ),
+        PresetCommands::Rename { kind, from, to } => (
+            "preset.rename",
+            serde_json::json!({ "kind": kind, "from": from, "to": to }),
+        ),
+        PresetCommands::Capture {
+            kind,
+            source_id,
+            name,
+        } => (
+            "preset.capture",
+            serde_json::json!({
+                "kind": kind,
+                "source_id": source_id,
+                "name": name,
+            }),
+        ),
+        PresetCommands::Apply {
+            kind,
+            name,
+            target_pane,
+            target_workspace,
+        } => (
+            "preset.apply",
+            serde_json::json!({
+                "kind": kind,
+                "name": name,
+                "target_pane_id": target_pane,
+                "target_workspace_id": target_workspace,
+            }),
+        ),
     }
 }
