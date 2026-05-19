@@ -68,7 +68,7 @@ fn all_e2e_tests() {
     // notification
     tasty.call(
         "notification.create",
-        json!({"title": "Test", "body": "Hello"}),
+        json!({"title": "Test", "body": "Hello", "surface_id": sid}),
     );
     let notifs = tasty.call("notification.list", json!({}));
     assert!(notifs.as_array().unwrap().len() >= 1);
@@ -125,12 +125,19 @@ fn all_e2e_tests() {
     let output = tasty.wait_for_output(sid, "targeted", Duration::from_secs(5));
     assert!(output.contains("targeted"));
 
-    // send_combo (safe: Alt+X only — no Ctrl+C/Z which disrupts shell)
+    // send_combo
     let result = tasty.call(
         "surface.send_combo",
         json!({"surface_id": sid, "key": "x", "modifiers": ["alt"]}),
     );
     assert_eq!(result["sent"], true);
+    // zsh ZLE 의 경우 Alt+X 는 execute-named-cmd 위젯을 호출하여 prompt 가
+    // "execute: " 로 바뀐다. 후속 테스트가 일반 명령으로 동작하도록 Ctrl+G 로
+    // mode 를 abort 시킨다.
+    tasty.call(
+        "surface.send_combo",
+        json!({"surface_id": sid, "key": "g", "modifiers": ["ctrl"]}),
+    );
 
     // ========== Dim (SGR 2) renderer regression ==========
     // printf is a posix builtin; shell on Windows is cmd.exe by default which does not
@@ -214,7 +221,7 @@ fn all_e2e_tests() {
     let panes_before = tasty.call("pane.list", json!({})).as_array().unwrap().len();
     let split_result = tasty.call(
         "split",
-        json!({"level": "pane", "direction": "vertical", "target": pid}),
+        json!({"level": "pane", "direction": "vertical", "target_pane": pid}),
     );
     let new_pane_id = split_result["new_pane_id"].as_u64().unwrap();
     let panes_after = tasty.call("pane.list", json!({})).as_array().unwrap().len();
