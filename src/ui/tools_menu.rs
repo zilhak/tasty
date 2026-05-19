@@ -169,13 +169,13 @@ pub fn invoke_tool(state: &mut AppState, item: &ToolItem) {
                 .push((event_key.clone(), payload));
         }
         ToolAction::OpenSurface { surface_kind } => {
-            if let Err(e) = state.add_kind_tab(surface_kind, &serde_json::Value::Null) {
-                tracing::warn!(
-                    "invoke_tool: open_surface kind='{}' failed: {}",
-                    surface_kind,
-                    e
-                );
-            }
+            state.dispatch_intent(
+                crate::intent::Intent::NewTab {
+                    kind: Some(surface_kind.clone()),
+                    params: serde_json::Value::Null,
+                }
+                .from_user_menu("tools_menu/open_surface"),
+            );
         }
         ToolAction::OpenPopup { popup_id } => {
             // `<plugin_id>/<popup_id>` 형식. split하여 plugin_manager로 dispatch할

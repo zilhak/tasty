@@ -277,9 +277,13 @@ fn apply_open(state: &mut AppState, file_type: FileType, path: &str) {
                     .file_open_pane_id
                     .unwrap_or(state.active_workspace().focused_pane);
                 state.active_workspace_mut().focused_pane = pane_id;
-                if let Err(e) = state.add_markdown_tab(file_path) {
-                    tracing::warn!("add_markdown_tab failed: {e}");
-                }
+                state.dispatch_intent(
+                    crate::intent::Intent::NewTab {
+                        kind: Some("markdown".to_string()),
+                        params: serde_json::json!({ "file": file_path }),
+                    }
+                    .from_user_menu("file_open/markdown"),
+                );
             }
         }
         FileType::Html => {
@@ -309,9 +313,13 @@ fn apply_open(state: &mut AppState, file_type: FileType, path: &str) {
                     .file_open_pane_id
                     .unwrap_or(state.active_workspace().focused_pane);
                 state.active_workspace_mut().focused_pane = pane_id;
-                if let Err(e) = state.add_html_tab(url) {
-                    tracing::warn!("add_html_tab failed: {e}");
-                }
+                state.dispatch_intent(
+                    crate::intent::Intent::NewTab {
+                        kind: Some("html".to_string()),
+                        params: serde_json::json!({ "url": url }),
+                    }
+                    .from_user_menu("file_open/html"),
+                );
             }
         }
     }

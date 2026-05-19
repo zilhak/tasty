@@ -198,14 +198,13 @@ pub fn execute_handler_action(
         } => {
             let path_str = target.as_path().to_string_lossy().into_owned();
             let params = serde_json::json!({ param_key.as_str(): path_str });
-            if let Err(e) = state.add_kind_tab(surface_kind, &params) {
-                tracing::warn!(
-                    handler = %handler.id,
-                    surface_kind = %surface_kind,
-                    error = %e,
-                    "file_dispatch: add_kind_tab failed",
-                );
-            }
+            state.dispatch_intent(
+                crate::intent::Intent::NewTab {
+                    kind: Some(surface_kind.clone()),
+                    params,
+                }
+                .from_user_menu("file_dispatch"),
+            );
         }
         HandlerAction::Ipc { method, .. } => {
             state

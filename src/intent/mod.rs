@@ -12,6 +12,7 @@ use crate::ui::popup::{PopupId, PopupScope};
 pub mod popup;
 pub mod preset;
 pub mod surface;
+pub mod tab;
 
 #[cfg(debug_assertions)]
 pub mod watch;
@@ -94,6 +95,16 @@ pub enum Intent {
         surface_id: u32,
         target: ConvertTarget,
     },
+
+    // ---- Tab 도메인 ----
+    /// 새 탭 추가. `kind` None 이면 "terminal" fallback.
+    /// focused pane 에 추가 (사용자 동작). ID 명시 경로는 IPC handler 가 직접 처리.
+    NewTab {
+        kind: Option<String>,
+        params: serde_json::Value,
+    },
+    /// 특정 tab 닫기 (ID 지정).
+    CloseTab { tab_id: u32 },
 }
 
 /// Surface 변환 타깃. Terminal 은 host 내장 special case, 나머지는 surface_registry

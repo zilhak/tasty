@@ -20,12 +20,15 @@ PRESET_PATTERN='\.(save_workspace(_overwrite)?|save_tab(_overwrite)?|save_pane(_
 PRESET_PATTERN_DELRENAME='\.(delete|rename)\(\s*PresetKind'
 # surface: split_surface / close_surface_by_id(_no_snapshot) / convert_surface_to_*
 SURFACE_PATTERN='\.(split_surface|close_surface_by_id(_no_snapshot)?|convert_surface_to_(terminal|markdown|image|html|kind))\('
+# tab: add_kind_tab(_to_pane) / add_{markdown,html,image,empty}_tab / add_tab_to_pane / close_tab_by_tab_id
+TAB_PATTERN='\.(add_kind_tab(_to_pane)?|add_markdown_tab|add_html_tab|add_image_tab|add_empty_tab|add_tab_to_pane|close_tab_by_tab_id)\('
 
 # 핸들러 본문 + UI/Settings 내부 예외 경로 + IPC handler (sync return contract).
 EXEMPT_FILES=(
     "src/intent/popup.rs"
     "src/intent/preset.rs"
     "src/intent/surface.rs"
+    "src/intent/tab.rs"
     "src/settings_ui/mod.rs"
     "src/state/preset_apply.rs"
     "src/state/pane.rs"
@@ -33,6 +36,7 @@ EXEMPT_FILES=(
     "src/state/tests.rs"
     "src/ipc/handler/surface.rs"
     "src/ipc/handler/image.rs"
+    "src/ipc/handler/tab.rs"
 )
 
 # rg 가 있으면 사용, 없으면 grep -E.
@@ -48,6 +52,7 @@ matches=$({
     $SEARCH "$PRESET_PATTERN" src/ 2>/dev/null || true
     $SEARCH "$PRESET_PATTERN_DELRENAME" src/ 2>/dev/null || true
     $SEARCH "$SURFACE_PATTERN" src/ 2>/dev/null || true
+    $SEARCH "$TAB_PATTERN" src/ 2>/dev/null || true
 } | grep -v 'is_open\|get_mut\|register\b' \
   | grep -v 'intent-exempt' \
   || true)

@@ -2336,6 +2336,9 @@ impl App {
             | Intent::ConvertSurface { .. } => {
                 crate::intent::surface::handle(state, intent);
             }
+            Intent::NewTab { .. } | Intent::CloseTab { .. } => {
+                crate::intent::tab::handle(state, intent);
+            }
             Intent::Noop => {}
         }
     }
