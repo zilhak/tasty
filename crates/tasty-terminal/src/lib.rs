@@ -126,6 +126,13 @@ pub struct Terminal {
     /// Pending PTY resize: surface is updated immediately, but PTY notification
     /// is throttled to avoid SIGWINCH storms during continuous window drag.
     pending_pty_resize: Option<(usize, usize)>,
+    /// Number of scrollback lines that were pushed by `handle_rows_shrink` and
+    /// are awaiting a symmetric `handle_rows_grow` to restore them. Without
+    /// this counter, every grow would unconditionally pop from scrollback —
+    /// pulling injected/historical lines (e.g. previous-session restore) into
+    /// the visible area even though no corresponding shrink pushed anything,
+    /// causing visible content to accumulate on repeated resize cycles.
+    restorable_scrollback_count: usize,
     /// Timestamp of the last actual PTY resize flush. Used for throttling.
     last_pty_flush: std::time::Instant,
     /// Timestamp of the most recent non-empty PTY output processed by this terminal.
@@ -297,6 +304,7 @@ impl Terminal {
             cached_cwd: None,
             saved_line_tails: Vec::new(),
             pending_pty_resize: None,
+            restorable_scrollback_count: 0,
             last_pty_flush: std::time::Instant::now(),
             last_output_at: std::time::Instant::now(),
             // Start in the past so the first PTY output is never mistaken for echo.
@@ -774,6 +782,8 @@ impl Terminal {
             for line in captured {
                 self.scrollback.push_line(line);
             }
+            // These lines are owed back to a symmetric grow.
+            self.restorable_scrollback_count += count;
             // Shift saved_line_tails
             for _ in 0..count.min(self.saved_line_tails.len()) {
                 self.saved_line_tails.remove(0);
@@ -795,7 +805,15 @@ impl Terminal {
         use termwiz::surface::Position;
 
         let rows_added = new_rows - old_rows;
-        let restore_count = rows_added.min(self.scrollback.memory_len());
+        // Only restore lines that were pushed by a prior shrink. Without this
+        // bound, every grow would unconditionally consume `rows_added` lines
+        // from scrollback — including injected/historical lines (previous-
+        // session restore) and shell-scrolled-off lines — causing visible
+        // content to accumulate on repeated resize cycles when the cursor
+        // sits high with blank rows below.
+        let restore_count = rows_added
+            .min(self.scrollback.memory_len())
+            .min(self.restorable_scrollback_count);
 
         if restore_count == 0 {
             return 0;
@@ -809,6 +827,7 @@ impl Terminal {
             }
         }
         let actual_restored = to_restore.len();
+        self.restorable_scrollback_count -= actual_restored;
         to_restore.reverse(); // oldest first
 
         // Surface is already resized to new_rows.
@@ -1657,5 +1676,61 @@ mod tests {
     fn screen_snapshot_empty_terminal_returns_empty_vec() {
         let terminal = test_terminal(10, 4);
         assert!(terminal.screen_snapshot_lines().is_empty());
+    }
+
+    /// Regression: when scrollback contains injected/historical lines (e.g. from
+    /// a previous session restore) and the cursor sits high with blank rows
+    /// below, repeated shrink→grow cycles must NOT keep pulling fresh lines
+    /// from scrollback into the visible area. Each cycle should be idempotent.
+    #[test]
+    fn resize_ping_pong_does_not_accumulate_visible_lines_when_cursor_is_high() {
+        use crate::ScrollbackLine;
+        use termwiz::cell::CellAttributes;
+
+        let mut terminal = test_terminal(20, 10);
+
+        // Inject 30 historical scrollback lines (simulates previous-session restore).
+        let mut injected = Vec::new();
+        for i in 0..30 {
+            let label = format!("OLD_{i:02}");
+            let cells: Vec<(String, CellAttributes)> = label
+                .chars()
+                .map(|c| (c.to_string(), CellAttributes::default()))
+                .collect();
+            injected.push(ScrollbackLine::new(cells, false));
+        }
+        terminal.inject_scrollback(injected);
+        let initial_scrollback_len = terminal.scrollback_len();
+        assert_eq!(initial_scrollback_len, 30);
+
+        // Move cursor to (0,0) and write a short prompt — cursor stays high,
+        // bottom rows remain blank.
+        terminal.process_bytes(b"\x1b[H$ ");
+
+        // 3 ping-pong cycles: grow → shrink → grow → shrink → grow → shrink.
+        for _ in 0..3 {
+            terminal.resize(20, 14); // grow by 4 rows
+            terminal.resize(20, 10); // shrink back
+        }
+
+        // Scrollback should not have shrunk: handle_rows_grow should not have
+        // popped lines that no corresponding shrink had pushed.
+        assert_eq!(
+            terminal.scrollback_len(),
+            initial_scrollback_len,
+            "scrollback was consumed by grow operations that had no matching shrink push"
+        );
+
+        // The visible screen should still show only the prompt at row 0 plus
+        // blank rows below — no historical OLD_NN lines should have leaked
+        // into the visible area.
+        let lines = terminal.surface().screen_lines();
+        for (row, line) in lines.iter().enumerate() {
+            let text: String = line.visible_cells().map(|c| c.str().to_string()).collect();
+            assert!(
+                !text.contains("OLD_"),
+                "row {row} contains historical scrollback content: {text:?}"
+            );
+        }
     }
 }
