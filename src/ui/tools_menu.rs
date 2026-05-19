@@ -18,28 +18,46 @@ use crate::theme;
 use crate::ui::popup::PopupAction;
 
 /// Built-in tool entries that are not contributed by any plugin.
-/// Currently only the listening-port viewer. Prepended above plugin items.
+/// `action` 으로 popup / 별도 winit 윈도우 오픈을 구분한다.
 struct BuiltinTool {
     label_key: &'static str,
-    popup_id: &'static str,
+    action: BuiltinAction,
+}
+
+enum BuiltinAction {
+    /// 일반 popup 열기.
+    OpenPopup(&'static str),
+    /// 별도 winit 윈도우 열기. 현재 사용처는 PresetWindow 하나.
+    OpenWindow(WindowKind),
+}
+
+#[derive(Debug, Clone, Copy)]
+enum WindowKind {
+    Preset,
 }
 
 const BUILTIN_TOOLS: &[BuiltinTool] = &[
     BuiltinTool {
         label_key: "command_palette.tools_menu_item",
-        popup_id: super::command_palette_popup::COMMAND_PALETTE_POPUP_ID,
+        action: BuiltinAction::OpenPopup(
+            super::command_palette_popup::COMMAND_PALETTE_POPUP_ID,
+        ),
     },
     BuiltinTool {
         label_key: "port_scanner.tools_menu_item",
-        popup_id: super::port_scanner_popup::PORT_SCANNER_POPUP_ID,
+        action: BuiltinAction::OpenPopup(super::port_scanner_popup::PORT_SCANNER_POPUP_ID),
     },
     BuiltinTool {
         label_key: "update.tools_menu_item",
-        popup_id: super::update_popup::UPDATE_POPUP_ID,
+        action: BuiltinAction::OpenPopup(super::update_popup::UPDATE_POPUP_ID),
     },
     BuiltinTool {
         label_key: "git_viewer.tools_menu_item",
-        popup_id: crate::git_viewer::GIT_VIEWER_POPUP_ID,
+        action: BuiltinAction::OpenPopup(crate::git_viewer::GIT_VIEWER_POPUP_ID),
+    },
+    BuiltinTool {
+        label_key: "preset.tools.menu_item",
+        action: BuiltinAction::OpenWindow(WindowKind::Preset),
     },
 ];
 
@@ -53,6 +71,7 @@ pub fn draw_tools_menu(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction {
 
     // Built-in entries first.
     let mut open_popup: Option<&'static str> = None;
+    let mut open_window: Option<WindowKind> = None;
     for entry in BUILTIN_TOOLS {
         let (rect, resp) =
             ui.allocate_exact_size(egui::vec2(width, 28.0), egui::Sense::click());
@@ -68,11 +87,20 @@ pub fn draw_tools_menu(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction {
             if resp.hovered() { th.text.into() } else { th.subtext0.into() },
         );
         if resp.clicked() {
-            open_popup = Some(entry.popup_id);
+            match entry.action {
+                BuiltinAction::OpenPopup(id) => open_popup = Some(id),
+                BuiltinAction::OpenWindow(k) => open_window = Some(k),
+            }
         }
     }
     if let Some(popup_id) = open_popup {
         state.popups.open(popup_id);
+        return PopupAction::Close;
+    }
+    if let Some(kind) = open_window {
+        match kind {
+            WindowKind::Preset => state.dialogs.pending_open_preset_window = true,
+        }
         return PopupAction::Close;
     }
 

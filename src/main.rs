@@ -1338,6 +1338,23 @@ impl App {
         }
     }
 
+    /// 도구 메뉴 클릭 등 MainWindow 가 enqueue 한 "PresetWindow 그냥 열기" 요청 drain.
+    fn process_pending_open_preset_window(
+        &mut self,
+        event_loop: &winit::event_loop::ActiveEventLoop,
+    ) {
+        let mut requested = false;
+        for w in self.main_windows_iter_mut() {
+            if w.state.dialogs.pending_open_preset_window {
+                w.state.dialogs.pending_open_preset_window = false;
+                requested = true;
+            }
+        }
+        if requested {
+            self.open_preset_window(event_loop);
+        }
+    }
+
     /// MainWindow 가 우클릭으로 enqueue 한 preset 저장 요청을 처리한다.
     /// store 의 unique_name 으로 충돌 회피 → save_* → 토스트 → PresetWindow 오픈 + select.
     /// 한 번에 1개 요청만 처리 (컨텍스트 메뉴는 modal 이라 동시 클릭 불가).

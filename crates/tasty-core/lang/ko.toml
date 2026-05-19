@@ -630,3 +630,6 @@ saved_workspace = "워크스페이스 프리셋 저장됨"
 saved_tab = "탭 프리셋 저장됨"
 saved_pane = "페인 프리셋 저장됨"
 save_failed = "프리셋 저장 실패"
+
+[preset.tools]
+menu_item = "프리셋"

@@ -397,6 +397,9 @@ pub struct DialogState {
     /// MainWindow → App 신호: 캡처된 preset 을 저장해 달라는 요청.
     /// App 메인 루프가 drain 해 store.unique_name + save_* + PresetWindow open 까지 처리.
     pub pending_preset_save: Option<PendingPresetSave>,
+    /// 도구 메뉴 클릭 등으로 PresetWindow 를 그냥 열어달라는 요청 (선택 없이).
+    /// App 메인 루프가 drain 한다.
+    pub pending_open_preset_window: bool,
 }
 
 /// MainWindow 가 우클릭 메뉴에서 캡처한 preset 을 App 에 넘기는 1슬롯 큐.
@@ -467,6 +470,7 @@ impl DialogState {
             file_handler_picker: None,
             git_viewer: None,
             pending_preset_save: None,
+            pending_open_preset_window: false,
         }
     }
 

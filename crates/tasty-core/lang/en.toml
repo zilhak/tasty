@@ -630,3 +630,6 @@ saved_workspace = "Workspace preset saved"
 saved_tab = "Tab preset saved"
 saved_pane = "Pane preset saved"
 save_failed = "Failed to save preset"
+
+[preset.tools]
+menu_item = "Presets"
