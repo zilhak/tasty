@@ -245,6 +245,18 @@ plugin owner unicast 계약. **호스트 내부 Intent 가시화에 재사용하
 
 같은 popup id로 OpenPopup이 동일 사이클에 중복 들어오면 핸들러가 `state.popups.is_open(id)` 체크로 두 번째 발화를 무시한다. 큐 push 시점에서는 dedup하지 않는다 (origin/trace_id가 다른 두 발화를 같다고 판단할 근거 없음).
 
+## 마이그레이션 강제력 (intent discipline)
+
+popup 도메인 직접 호출 (`state.popups.open*` / `.close` / `.toggle*`) 은 grep 기반
+CI 체크 스크립트 `scripts/check-intent-discipline.sh` 로 금지된다. 예외는 동일
+라인에 `// intent-exempt: <사유>` 주석을 달아 suppress.
+
+향후 dylint plugin ABI 안정화 시 동등한 clippy custom lint 로 승격. 현재 grep
+체크는 `is_open` / `get_mut` / `register` 등 query API 는 매칭에서 제외한다.
+
+후속 도메인 (preset, surface, tab, ...) 마이그레이션 시 본 스크립트의 패턴/예외
+경로를 확장.
+
 ## 마이그레이션 정책
 
 - 도메인별 점진 적용. 우선순위: popup → preset → surface → tab → pane → workspace.

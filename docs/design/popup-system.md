@@ -89,10 +89,63 @@ pub struct PopupDef {
 
 1. `src/ui/my_popup.rs`에 `pub fn draw_my_popup(ui, state) -> PopupAction` 함수를 정의.
 2. `src/ui/popup_defs.rs`의 `all_defs()`에 `PopupDef { id: "my_popup", title_key: ..., default_size: ..., draw_fn: draw_my_popup, ... }` 항목 추가.
-3. 열기: `state.popups.open("my_popup")` 또는 `state.popups.open_with_scope(...)`
-4. 닫기: `state.popups.close("my_popup")` (또는 draw 함수에서 `PopupAction::Close` 반환)
+3. **열기**: Intent 발화 — `state.dispatch_intent(...)`. 직접 `state.popups.open*` 호출 금지.
+   ```rust
+   state.dispatch_intent(
+       Intent::OpenPopup {
+           id: "my_popup",
+           mode: OpenPopupMode::CenteredFocused,
+       }
+       .from_user_menu("source_id"),
+   );
+   ```
+4. **닫기**: 동일하게 Intent 발화 또는 popup draw 함수에서 `PopupAction::Close` 반환.
+   ```rust
+   state.dispatch_intent(
+       Intent::ClosePopup { id: "my_popup" }.from_user_shortcut("escape"),
+   );
+   ```
 
 추가적으로 `popup_defs`가 재빌드되지 않도록 ID는 **유일**해야 한다.
+
+#### 직접 호출 금지
+
+`state.popups.open*` / `state.popups.close*` / `state.popups.toggle*` 직접 호출은
+금지된다 (clippy custom lint 또는 grep CI 로 강제). 예외 케이스는 `// intent-exempt: <사유>`
+주석을 달아 명시 — 현재 예외:
+- popup 도메인 핸들러 본문 (`src/intent/popup.rs`)
+- popup 시스템 자체의 draw-prep / self-close cleanup (`src/ui/notification.rs`)
+- Settings 윈도우 내부의 별도 `PopupManager` (`src/settings_ui/mod.rs`)
+
+#### OpenPopupMode 종류
+
+| Mode | 용도 |
+|------|------|
+| `Default` | 위치 자유, focus 없음. 일반 알림 패널 등. |
+| `CenteredFocused` | 화면 중앙 + focus. 모달성 다이얼로그 (info_modal, command_palette 등). |
+| `WithScope(scope)` | scope rect 기준 센터링. Surface/Window 종속 popup. |
+| `AtTopOfScope(scope)` | scope 상단 정렬. search bar 등. |
+| `AtFocused(pos)` | 지정 위치. context menu 등. |
+
+#### Origin 메타데이터 선택
+
+| Builder | 사용 시점 |
+|---------|-----------|
+| `.from_user_shortcut(name)` | 키보드 단축키 발화 |
+| `.from_user_menu(name)` | 메뉴/사이드바 버튼/사이드 메뉴 발화 |
+| `.from_user_context_menu()` | 우클릭 컨텍스트 메뉴 발화 |
+| `.from_agent_ipc()` | IPC handler / 시스템 부트스트랩 |
+| `.from_agent_plugin(id)` | plugin 발화 |
+| `.from_agent_cli()` | CLI 서브커맨드 발화 |
+| `.cascaded_from(parent)` | 직전 Intent 의 origin 전파 (cascade 처리) |
+
+#### Agent origin 정책
+
+dispatcher 는 origin 정책을 강제하지 않는다. **개발 규약상** agent origin 발화는
+focus 를 가져가지 않아야 하므로 `CenteredFocused` 대신 `Default` 또는 focus 없는
+변형을 발화해야 한다 (PR 리뷰에서 강제). 자세한 정책 표는 `action-dispatch.md` 참조.
+
+상세 설계: [action-dispatch.md](action-dispatch.md)
 
 ### 등록된 팝업
 

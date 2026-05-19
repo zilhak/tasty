@@ -64,9 +64,23 @@ PopupDef {
 
 ### 3. 팝업 열기
 
+**Intent 큐로 발화** — 직접 `state.popups.open*` 호출은 금지된다 (자세한 이유:
+[design/action-dispatch.md](../design/action-dispatch.md)).
+
 ```rust
-state.popups.open_centered_focused("my_popup");
+use crate::intent::{Intent, OpenPopupMode};
+
+state.dispatch_intent(
+    Intent::OpenPopup {
+        id: "my_popup",
+        mode: OpenPopupMode::CenteredFocused,
+    }
+    .from_user_menu("my_button"),
+);
 ```
+
+발화 origin (`from_user_*` / `from_agent_*`) 과 `OpenPopupMode` 선택 가이드는
+[design/popup-system.md](../design/popup-system.md#팝업-추가-방법) 의 표 참조.
 
 ### 4. 닫기 시 정리
 

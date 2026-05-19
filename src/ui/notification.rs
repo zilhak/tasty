@@ -194,11 +194,11 @@ pub fn draw_popups(
     state.popups = popups;
 
     // Close popups requested by draw dispatch or X button / outside click.
-    // intent-exempt: popup self-close (draw_fn 이 Close 반환 / X 버튼 / 외부 클릭) 는
-    // popup 시스템 자체의 lifecycle. Intent 큐를 거치면 시각적 close 가 1프레임 지연되어
-    // X 버튼 클릭이 즉시 반응하지 않는 UX 결함이 생긴다.
+    // popup self-close (draw_fn 이 Close 반환 / X 버튼 / 외부 클릭) 는 popup 시스템
+    // 자체의 lifecycle. Intent 큐를 거치면 시각적 close 가 1프레임 지연되어 X 버튼
+    // 클릭이 즉시 반응하지 않는 UX 결함이 생긴다.
     for id in dispatch_closed.iter().chain(draw_result.closed.iter()) {
-        state.popups.close(id);
+        state.popups.close(id); // intent-exempt: popup self-close lifecycle.
     }
 
     // Clean up convert_surface dialog state when closed
