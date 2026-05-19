@@ -77,8 +77,6 @@ pub use tasty_settings as settings;
 // Re-export tasty_font as `crate::font` to keep existing reverse imports
 pub use tasty_font as font;
 
-use std::sync::Arc;
-
 use anyhow::Result;
 
 use model::DividerInfo;
@@ -178,7 +176,7 @@ struct DividerDrag {
     kind: DividerDragKind,
 }
 
-pub(crate) use app::{App, ModalShake};
+pub(crate) use app::App;
 
 use winit::window::WindowId;
 
@@ -429,155 +427,6 @@ fn handle_debug_extension_invoke_hook(
 }
 
 impl App {
-    /// PresetWindow 를 연다. 이미 열려 있으면 새 윈도우를 만들지 않고 기존 윈도우에
-    /// 포커스만 옮긴다 (엔진 전역 단일 인스턴스).
-    fn open_preset_window(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-        if let Some(id) = self.preset_window_id {
-            if let Some(w) = self.windows.get(&id) {
-                w.base().winit.focus_window();
-                return;
-            }
-            self.preset_window_id = None;
-        }
-
-        use winit::window::WindowAttributes;
-        let mut attrs = WindowAttributes::default()
-            .with_title(crate::i18n::t("preset.window.title"))
-            .with_inner_size(winit::dpi::LogicalSize::new(960, 640))
-            .with_min_inner_size(winit::dpi::LogicalSize::new(760, 480))
-            .with_visible(false);
-        if let Some(icon) = crate::app_icon::winit_window_icon() {
-            attrs = attrs.with_window_icon(Some(icon));
-        }
-        let window = match event_loop.create_window(attrs) {
-            Ok(w) => Arc::new(w),
-            Err(e) => {
-                tracing::warn!("failed to create preset window: {e}");
-                return;
-            }
-        };
-
-        let appearance = self
-            .focused_window()
-            .map(|w| w.state.engine.settings.appearance.clone())
-            .unwrap_or_else(|| crate::settings::Settings::load().appearance);
-        let gpu = match pollster::block_on(crate::gpu::GpuState::new(
-            window.clone(),
-            &appearance,
-            self.engine.proxy.clone(),
-        )) {
-            Ok(g) => g,
-            Err(e) => {
-                tracing::warn!("failed to init GPU for preset window: {e}");
-                return;
-            }
-        };
-
-        let store = std::sync::Arc::clone(&self.engine.preset_store);
-        let window_id = window.id();
-        let mut preset = window::PresetWindow::new(gpu, window, store);
-        #[cfg(windows)]
-        {
-            use window::Window as _;
-            preset.render();
-        }
-        #[cfg(not(windows))]
-        {
-            use window::Window as _;
-            preset.mark_dirty();
-        }
-        self.windows.insert(window_id, Box::new(preset));
-        self.preset_window_id = Some(window_id);
-        tracing::info!("opened preset window {:?}", window_id);
-    }
-
-    /// PresetWindow close 시 정리. store 는 Arc<Mutex<>> 공유라 별도 회수 불필요.
-    fn on_preset_window_closed(&mut self, window_id: WindowId) {
-        if self.preset_window_id != Some(window_id) {
-            return;
-        }
-        self.preset_window_id = None;
-        self.windows.remove(&window_id);
-    }
-
-
-    /// Open settings as a modal window.
-    fn open_settings_modal(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-        if self.engine.is_modal_active() {
-            return; // Another modal is already open
-        }
-
-        use winit::window::WindowAttributes;
-
-        let mut attrs = WindowAttributes::default()
-            .with_title("Tasty Settings")
-            .with_inner_size(winit::dpi::LogicalSize::new(960, 640))
-            .with_min_inner_size(winit::dpi::LogicalSize::new(960, 640))
-            .with_visible(false); // Start hidden, show after first render
-        if let Some(icon) = crate::app_icon::winit_window_icon() {
-            attrs = attrs.with_window_icon(Some(icon));
-        }
-
-        let window = Arc::new(
-            event_loop
-                .create_window(attrs)
-                .expect("failed to create settings window"),
-        );
-
-        let settings = if let Some(w) = self.focused_window() {
-            w.state.engine.settings.clone()
-        } else {
-            crate::settings::Settings::load()
-        };
-
-        let gpu = pollster::block_on(crate::gpu::GpuState::new(
-            window.clone(),
-            &settings.appearance,
-            self.engine.proxy.clone(),
-        ))
-        .expect("failed to initialize GPU for settings");
-
-        let modal_window_id = window.id();
-        let (file_format, file_handler) = if let Some(w) = self.focused_window() {
-            (
-                w.state.engine.file_format.clone(),
-                w.state.engine.file_handler.clone(),
-            )
-        } else {
-            // Settings 윈도우가 main 창 없이 열리는 경로는 거의 없지만, fallback 으로 빈 registry 를 만든다.
-            // 이 경로에서는 Settings 의 FileHandler 탭이 비어 보이고 저장도 의미가 없다.
-            (
-                Arc::new(crate::file_format::FileFormatRegistry::new()),
-                Arc::new(crate::file_handler::FileHandlerRegistry::new()),
-            )
-        };
-        let user_config_path = tasty_core::paths::tasty_home().map(|d| d.join("file-handlers.toml"));
-        let mut modal = window::SettingsWindow::new(
-            gpu,
-            window,
-            settings,
-            file_format,
-            file_handler,
-            user_config_path,
-        );
-        modal.set_plugin_shortcuts(self.snapshot_plugin_shortcuts());
-        // On Windows, hidden windows do not receive RedrawRequested events,
-        // so render the first frame immediately instead of waiting for the event loop.
-        // On other platforms, mark_dirty() + request_redraw() is sufficient.
-        #[cfg(windows)]
-        {
-            use window::Window as _;
-            modal.render();
-        }
-        #[cfg(not(windows))]
-        {
-            use window::Window as _;
-            modal.mark_dirty();
-        }
-        self.open_modal(Box::new(modal), modal_window_id);
-        tracing::info!("opened settings modal {:?}", modal_window_id);
-    }
-
     /// SettingsWindow가 회수해 온 plugin shortcut override draft를 PluginsConfig에
     /// 반영하고 디스크에 저장. 값이 `Some(ov)`이면 set, `None`이면 clear.
     fn apply_plugin_shortcut_draft(
@@ -713,57 +562,6 @@ impl App {
         plugins_ui::PluginsSnapshot { plugins }
     }
 
-    /// Open the plugins modal window.
-    fn open_plugins_modal(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-        if self.engine.is_modal_active() {
-            return;
-        }
-
-        use winit::window::WindowAttributes;
-
-        let mut attrs = WindowAttributes::default()
-            .with_title("Tasty Plugins")
-            .with_inner_size(winit::dpi::LogicalSize::new(880, 560))
-            .with_min_inner_size(winit::dpi::LogicalSize::new(720, 480))
-            .with_visible(false);
-        if let Some(icon) = crate::app_icon::winit_window_icon() {
-            attrs = attrs.with_window_icon(Some(icon));
-        }
-
-        let window = Arc::new(
-            event_loop
-                .create_window(attrs)
-                .expect("failed to create plugins window"),
-        );
-
-        let appearance = self
-            .focused_window()
-            .map(|w| w.state.engine.settings.appearance.clone())
-            .unwrap_or_else(|| crate::settings::Settings::load().appearance);
-
-        let gpu = pollster::block_on(crate::gpu::GpuState::new(
-            window.clone(),
-            &appearance,
-            self.engine.proxy.clone(),
-        ))
-        .expect("failed to initialize GPU for plugins window");
-
-        let snapshot = self.snapshot_plugins();
-        let modal_window_id = window.id();
-        let mut modal = window::PluginsWindow::new(gpu, window, snapshot);
-        #[cfg(windows)]
-        {
-            use window::Window as _;
-            modal.render();
-        }
-        #[cfg(not(windows))]
-        {
-            use window::Window as _;
-            modal.mark_dirty();
-        }
-        self.open_modal(Box::new(modal), modal_window_id);
-        tracing::info!("opened plugins modal {:?}", modal_window_id);
-    }
 
     /// PluginManager의 현재 `plugin_tool_items()`를 모든 MainWindow의 AppState로
     /// 푸시한다. plugin 라이프사이클 변경 후(install/enable/disable/grant ui.tool_item
@@ -902,111 +700,6 @@ impl App {
         }
     }
 
-    /// 도구 메뉴 클릭 / Intent::SavePreset 후속 — PresetWindow 열기 + (있다면) selection.
-    /// preset 저장/적용 자체는 Intent 핸들러 (`src/intent/preset.rs`) 에서 처리.
-    fn process_pending_open_preset_window(
-        &mut self,
-        event_loop: &winit::event_loop::ActiveEventLoop,
-    ) {
-        let mut request_open = false;
-        let mut pending_selection: Option<(tasty_presets::PresetKind, String)> = None;
-        for w in self.main_windows_iter_mut() {
-            if w.state.dialogs.pending_open_preset_window {
-                w.state.dialogs.pending_open_preset_window = false;
-                request_open = true;
-            }
-            if let Some(sel) = w.state.dialogs.pending_preset_window_selection.take() {
-                pending_selection = Some(sel);
-                // selection 이 있으면 open 도 암묵적으로 요청.
-                request_open = true;
-            }
-        }
-        if !request_open {
-            return;
-        }
-        self.open_preset_window(event_loop);
-        if let Some((kind, name)) = pending_selection {
-            if let Some(pwid) = self.preset_window_id {
-                if let Some(pw) = self
-                    .windows
-                    .get_mut(&pwid)
-                    .and_then(|w| w.as_any_mut().downcast_mut::<window::PresetWindow>())
-                {
-                    pw.select(kind, name);
-                }
-            }
-        }
-    }
-
-    /// Open a modal, registering it in the unified window map.
-    /// 모달도 일반 윈도우와 같은 `windows` 맵에 저장되며, `active_modal_id`로 식별된다.
-    fn open_modal(&mut self, modal: Box<dyn window::Window>, window_id: WindowId) {
-        self.windows.insert(window_id, modal);
-        self.engine.active_modal_id = Some(window_id);
-    }
-
-    /// Close the active modal and handle modal-specific cleanup.
-    fn close_active_modal(&mut self) {
-        let Some(modal_id) = self.engine.active_modal_id.take() else {
-            return;
-        };
-        let Some(mut modal) = self.windows.remove(&modal_id) else {
-            return;
-        };
-        // If it was a settings modal, apply settings to all main windows
-        if let Some(settings_modal) = modal.as_any_mut().downcast_mut::<window::SettingsWindow>() {
-            let new_settings = settings_modal.settings.clone();
-            // Plugin shortcut override draft 회수 — 변경된 키만 plugins.toml에 반영.
-            let plugin_draft = settings_modal.take_plugin_shortcut_draft();
-            // theme/language 변경 감지용 prev 값 — 첫 main window의 현재 설정 기준.
-            // SettingsWindow는 단일 SoT라 prev/new는 글로벌 비교로 충분.
-            let prev_theme = self
-                .main_windows_iter_mut()
-                .next()
-                .map(|w| w.state.engine.settings.appearance.theme.clone());
-            let prev_language = self
-                .main_windows_iter_mut()
-                .next()
-                .map(|w| w.state.engine.settings.general.language.clone());
-            for main in self.main_windows_iter_mut() {
-                main.state.engine.settings = new_settings.clone();
-                main.state.settings_open = false;
-                main.mark_dirty();
-            }
-            if let Err(e) = new_settings.save() {
-                tracing::warn!("failed to save settings: {e}");
-            }
-            self.apply_plugin_shortcut_draft(plugin_draft);
-            // Event Bus 1.0: theme/language 변경 발화.
-            if let Some(mgr) = self.plugin_manager.as_mut() {
-                use tasty_plugin_protocol::EventScope;
-                use tasty_plugin_protocol::events::payloads::{LanguageChanged, ThemeChanged};
-                if prev_theme.as_deref() != Some(new_settings.appearance.theme.as_str()) {
-                    mgr.emit_host_event(
-                        "theme.changed",
-                        &ThemeChanged {
-                            theme_id: new_settings.appearance.theme.clone(),
-                        },
-                        EventScope::System,
-                    );
-                }
-                if prev_language.as_deref() != Some(new_settings.general.language.as_str()) {
-                    mgr.emit_host_event(
-                        "language.changed",
-                        &LanguageChanged {
-                            language_code: new_settings.general.language.clone(),
-                        },
-                        EventScope::System,
-                    );
-                }
-            }
-        } else if modal.as_any().is::<window::PluginsWindow>() {
-            for main in self.main_windows_iter_mut() {
-                main.state.plugins_open = false;
-                main.mark_dirty();
-            }
-        }
-    }
 
     /// Process pending IPC commands. Returns true if any commands were processed.
     fn process_ipc(&mut self) -> bool {

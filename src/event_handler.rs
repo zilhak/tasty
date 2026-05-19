@@ -538,7 +538,7 @@ impl ApplicationHandler<AppEvent> for App {
 
 impl App {
     /// Flush layout persistence if debounce timer has elapsed.
-    fn flush_layout_persistence(&mut self) {
+    pub(crate) fn flush_layout_persistence(&mut self) {
         for w in self.windows.values_mut() {
             let Some(main) = w.as_main_mut() else {
                 continue;
@@ -568,7 +568,7 @@ impl App {
     /// `restore_terminal_content` 가 켜져 있으면 layout 자체가 dirty 가 아니어도
     /// 저장한다. scrollback 은 매 출력마다 dirty 를 마크하지 않는데, 그래야 종료
     /// 시점에 disk 캡처가 일어난다.
-    fn flush_layout_persistence_final(&mut self) {
+    pub(crate) fn flush_layout_persistence_final(&mut self) {
         for w in self.windows.values_mut() {
             let Some(main) = w.as_main_mut() else {
                 continue;
@@ -595,69 +595,6 @@ impl App {
         }
     }
 
-    /// Start a modal shake animation. No-op if already shaking.
-    fn trigger_modal_shake(&mut self) {
-        if self.modal_shake.is_some() {
-            return;
-        }
-        let modal_id = match self.engine.active_modal_id {
-            Some(id) => id,
-            None => return,
-        };
-        let origin = match self.windows.get(&modal_id) {
-            Some(w) => match w.base().winit.outer_position() {
-                Ok(pos) => pos,
-                Err(_) => return,
-            },
-            None => return,
-        };
-        self.modal_shake = Some(crate::ModalShake {
-            start: std::time::Instant::now(),
-            origin,
-        });
-    }
-
-    /// Advance the modal shake animation. Called from about_to_wait.
-    fn tick_modal_shake(&mut self) {
-        const SHAKE_DURATION_MS: u128 = 300;
-        const SHAKE_AMPLITUDE: f64 = 8.0;
-        const SHAKE_FREQUENCY: f64 = 3.0; // full oscillations
-
-        let shake = match &self.modal_shake {
-            Some(s) => s,
-            None => return,
-        };
-        let elapsed_ms = shake.start.elapsed().as_millis();
-        if elapsed_ms >= SHAKE_DURATION_MS {
-            // Animation done — restore original position
-            let origin = shake.origin;
-            let modal_id = self.engine.active_modal_id;
-            self.modal_shake = None;
-            if let Some(id) = modal_id {
-                if let Some(w) = self.windows.get(&id) {
-                    w.base()
-                        .winit
-                        .set_outer_position(winit::dpi::PhysicalPosition::new(origin.x, origin.y));
-                }
-            }
-            return;
-        }
-
-        // Damped sine wave: amplitude * sin(freq * t) * (1 - t)
-        let t = elapsed_ms as f64 / SHAKE_DURATION_MS as f64;
-        let offset_x =
-            (SHAKE_AMPLITUDE * (t * SHAKE_FREQUENCY * 2.0 * std::f64::consts::PI).sin() * (1.0 - t))
-                as i32;
-        let origin = shake.origin;
-        if let Some(id) = self.engine.active_modal_id {
-            if let Some(w) = self.windows.get(&id) {
-                w.base().winit.set_outer_position(
-                    winit::dpi::PhysicalPosition::new(origin.x + offset_x, origin.y),
-                );
-                w.base().winit.request_redraw();
-            }
-        }
-    }
 
     /// Refresh the busy-surface cache for every live AppState. Triggered ~1s
     /// from the background ticker via `AppEvent::BusyPoll`. Marks any window
@@ -730,93 +667,5 @@ impl App {
     }
 
 
-    fn handle_quit_requested(&mut self, event_loop: &ActiveEventLoop) {
-        // If a quit modal is already open, treat as immediate quit
-        let quit_modal_open = self
-            .engine
-            .active_modal_id
-            .and_then(|id| self.windows.get(&id))
-            .map(|m| {
-                m.as_any()
-                    .downcast_ref::<crate::window::QuitWindow>()
-                    .is_some()
-            })
-            .unwrap_or(false);
-        if quit_modal_open {
-            self.close_active_modal();
-            self.flush_layout_persistence_final();
-            event_loop.exit();
-            return;
-        }
-
-        // Get close behavior from settings
-        let behavior = self
-            .focused_window()
-            .map(|w| w.state.engine.settings.general.close_behavior.clone())
-            .or_else(|| {
-                self.parked_states
-                    .first()
-                    .map(|s| s.engine.settings.general.close_behavior.clone())
-            })
-            .unwrap_or_else(|| "ask".to_string());
-
-        match behavior.as_str() {
-            "quit" => {
-                self.flush_layout_persistence_final();
-                event_loop.exit();
-            }
-            "minimize" => {
-                crate::shortcuts::send_app_event(&self.engine.proxy, AppEvent::Minimize);
-            }
-            _ => {
-                // "ask" — close any existing modal, then show quit modal
-                self.close_active_modal();
-                self.open_quit_modal(event_loop);
-            }
-        }
-    }
-
-    fn open_quit_modal(&mut self, event_loop: &ActiveEventLoop) {
-        use winit::window::WindowAttributes;
-
-        let mut attrs = WindowAttributes::default()
-            .with_title("Tasty")
-            .with_inner_size(winit::dpi::LogicalSize::new(400, 200))
-            .with_resizable(false)
-            .with_visible(false);
-        if let Some(icon) = crate::app_icon::winit_window_icon() {
-            attrs = attrs.with_window_icon(Some(icon));
-        }
-
-        let window = std::sync::Arc::new(
-            event_loop
-                .create_window(attrs)
-                .expect("failed to create quit modal window"),
-        );
-
-        let gpu = pollster::block_on(crate::gpu::GpuState::new(
-            window.clone(),
-            &crate::settings::Settings::load().appearance,
-            self.engine.proxy.clone(),
-        ))
-        .expect("failed to initialize GPU for quit modal");
-
-        let window_id = window.id();
-        let mut modal = crate::window::QuitWindow::new(gpu, window);
-        // On Windows, hidden windows do not receive RedrawRequested events,
-        // so render the first frame immediately to make the modal visible.
-        // On other platforms, mark_dirty() + request_redraw() is sufficient.
-        #[cfg(windows)]
-        {
-            use crate::window::Window as _;
-            modal.render();
-        }
-        #[cfg(not(windows))]
-        {
-            use crate::window::Window as _;
-            modal.mark_dirty();
-        }
-        self.open_modal(Box::new(modal), window_id);
-    }
 }
 
