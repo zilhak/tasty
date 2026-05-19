@@ -6,10 +6,12 @@
 //! 메인 루프의 `App::dispatch_pending_intents`가 drain 하여 도메인별 핸들러
 //! (`intent::popup`, `intent::preset`, ...)로 분기한다. fire-and-forget.
 
+use crate::model::SplitDirection;
 use crate::ui::popup::{PopupId, PopupScope};
 
 pub mod popup;
 pub mod preset;
+pub mod surface;
 
 #[cfg(debug_assertions)]
 pub mod watch;
@@ -80,6 +82,28 @@ pub enum Intent {
         kind: tasty_presets::PresetKind,
         from: String,
         to: String,
+    },
+
+    // ---- Surface 도메인 ----
+    /// focused surface 를 split. focused 의존이므로 사용자 단축키 전용 (CLI/IPC 미노출).
+    SplitSurface { direction: SplitDirection },
+    /// Surface 닫기. origin.is_user() 면 snapshot 푸시 (Undo 가능), Agent 면 no_snapshot.
+    CloseSurface { surface_id: u32 },
+    /// Surface 의 kind 변환. Terminal 은 host 내장, 그 외는 plugin 등록 kind.
+    ConvertSurface {
+        surface_id: u32,
+        target: ConvertTarget,
+    },
+}
+
+/// Surface 변환 타깃. Terminal 은 host 내장 special case, 나머지는 surface_registry
+/// 의 kind 로 통합. plugin 이 등록한 kind 도 모두 이 경로로 처리한다.
+#[derive(Debug, Clone)]
+pub enum ConvertTarget {
+    Terminal,
+    Kind {
+        kind: String,
+        params: serde_json::Value,
     },
 }
 

@@ -2331,6 +2331,11 @@ impl App {
             | Intent::RenamePreset { .. } => {
                 crate::intent::preset::handle(state, intent);
             }
+            Intent::SplitSurface { .. }
+            | Intent::CloseSurface { .. }
+            | Intent::ConvertSurface { .. } => {
+                crate::intent::surface::handle(state, intent);
+            }
             Intent::Noop => {}
         }
     }

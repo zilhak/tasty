@@ -229,10 +229,10 @@ pub fn draw_egui_panels(
                     crate::i18n::t("diff.toast.apply_copied").to_string(),
                     crate::ui::ToastScope::Window,
                 );
-                state.close_surface_by_id_no_snapshot(sid);
+                state.close_surface_by_id_no_snapshot(sid); // intent-exempt: diff cleanup, undo 의미 없음
             }
             crate::diff_ui::DiffAction::Reject => {
-                state.close_surface_by_id_no_snapshot(sid);
+                state.close_surface_by_id_no_snapshot(sid); // intent-exempt: diff cleanup, undo 의미 없음
             }
         }
     }

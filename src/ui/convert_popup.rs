@@ -273,7 +273,13 @@ pub fn apply_convert_action(state: &mut AppState, action: ConvertAction) {
 
     match action {
         ConvertAction::Terminal => {
-            state.convert_surface_to_terminal(surface_id);
+            state.dispatch_intent(
+                crate::intent::Intent::ConvertSurface {
+                    surface_id,
+                    target: crate::intent::ConvertTarget::Terminal,
+                }
+                .from_user_menu("convert/terminal"),
+            );
         }
         ConvertAction::Markdown => {
             let pane_id = state.active_workspace().focused_pane;
@@ -306,10 +312,28 @@ pub fn apply_convert_action(state: &mut AppState, action: ConvertAction) {
             );
         }
         ConvertAction::Image => {
-            state.convert_surface_to_image(surface_id);
+            state.dispatch_intent(
+                crate::intent::Intent::ConvertSurface {
+                    surface_id,
+                    target: crate::intent::ConvertTarget::Kind {
+                        kind: "image".to_string(),
+                        params: json!({}),
+                    },
+                }
+                .from_user_menu("convert/image"),
+            );
         }
         ConvertAction::Kind(kind) => {
-            state.convert_surface_to_kind(surface_id, &kind, &json!({}));
+            state.dispatch_intent(
+                crate::intent::Intent::ConvertSurface {
+                    surface_id,
+                    target: crate::intent::ConvertTarget::Kind {
+                        kind,
+                        params: json!({}),
+                    },
+                }
+                .from_user_menu("convert/kind"),
+            );
         }
     }
 }

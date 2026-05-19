@@ -18,13 +18,21 @@ POPUP_PATTERN='\.popups\.(open([_a-z]+)?|close|toggle([_a-z]+)?)\b'
 #         (PresetStore::save_*, save_*_overwrite, delete, rename / AppState::apply_*_preset)
 PRESET_PATTERN='\.(save_workspace(_overwrite)?|save_tab(_overwrite)?|save_pane(_overwrite)?|apply_workspace_preset|apply_tab_preset|apply_pane_preset)\('
 PRESET_PATTERN_DELRENAME='\.(delete|rename)\(\s*PresetKind'
+# surface: split_surface / close_surface_by_id(_no_snapshot) / convert_surface_to_*
+SURFACE_PATTERN='\.(split_surface|close_surface_by_id(_no_snapshot)?|convert_surface_to_(terminal|markdown|image|html|kind))\('
 
-# 핸들러 본문 + UI/Settings 내부 예외 경로.
+# 핸들러 본문 + UI/Settings 내부 예외 경로 + IPC handler (sync return contract).
 EXEMPT_FILES=(
     "src/intent/popup.rs"
     "src/intent/preset.rs"
+    "src/intent/surface.rs"
     "src/settings_ui/mod.rs"
     "src/state/preset_apply.rs"
+    "src/state/pane.rs"
+    "src/state/tab.rs"
+    "src/state/tests.rs"
+    "src/ipc/handler/surface.rs"
+    "src/ipc/handler/image.rs"
 )
 
 # rg 가 있으면 사용, 없으면 grep -E.
@@ -39,6 +47,7 @@ matches=$({
     $SEARCH "$POPUP_PATTERN" src/ 2>/dev/null || true
     $SEARCH "$PRESET_PATTERN" src/ 2>/dev/null || true
     $SEARCH "$PRESET_PATTERN_DELRENAME" src/ 2>/dev/null || true
+    $SEARCH "$SURFACE_PATTERN" src/ 2>/dev/null || true
 } | grep -v 'is_open\|get_mut\|register\b' \
   | grep -v 'intent-exempt' \
   || true)

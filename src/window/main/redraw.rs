@@ -185,7 +185,8 @@ impl MainWindow {
                         crate::state::PendingHostEvent::ProcessExited { surface_id },
                     );
                     let kind = self.state.surface_kind(surface_id);
-                    if self.state.close_surface_by_id_no_snapshot(surface_id) {
+                    if self.state.close_surface_by_id_no_snapshot(surface_id) { // intent-exempt: PTY/process exit cleanup
+
                         if let Some(k) = kind {
                             // ProcessExited는 PTY 종료 등 사용자가 직접 닫은 행위가 아니지만
                             // 에이전트 명령도 아니다. 닫힌 항목 복원 정책상 user-close로 분류한다.
@@ -505,7 +506,8 @@ impl MainWindow {
                             .and_then(|tab| tab.all_surface_ids().first().copied());
                         if let Some(sid) = target_sid {
                             let kind = self.state.surface_kind(sid);
-                            if self.state.close_surface_by_id(sid) {
+                            if self.state.close_surface_by_id(sid) { // intent-exempt: request_close cascade 결과 의존
+
                                 if let Some(k) = kind {
                                     self.state.enqueue_surface_closed(sid, k, true);
                                 }
@@ -623,7 +625,16 @@ impl MainWindow {
                     Some(5) => {
                         self.state.active_workspace_mut().focused_pane = pane_id;
                         if let Some((_tab_id, surface_id)) = self.state.add_empty_tab() {
-                            self.state.convert_surface_to_image(surface_id);
+                            self.state.dispatch_intent(
+                                crate::intent::Intent::ConvertSurface {
+                                    surface_id,
+                                    target: crate::intent::ConvertTarget::Kind {
+                                        kind: "image".to_string(),
+                                        params: serde_json::json!({}),
+                                    },
+                                }
+                                .from_user_context_menu(),
+                            );
                         }
                     }
                     Some(6) => {

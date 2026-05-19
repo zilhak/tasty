@@ -261,7 +261,16 @@ fn apply_open(state: &mut AppState, file_type: FileType, path: &str) {
             let file_path = file_uri_to_local_path(path).unwrap_or_else(|| path.to_string());
             state.recent_files.add_markdown(file_path.clone());
             if let Some(convert_sid) = state.dialogs.markdown_convert_surface_id.take() {
-                state.convert_surface_to_markdown(convert_sid, file_path);
+                state.dispatch_intent(
+                    crate::intent::Intent::ConvertSurface {
+                        surface_id: convert_sid,
+                        target: crate::intent::ConvertTarget::Kind {
+                            kind: "markdown".to_string(),
+                            params: serde_json::json!({ "file_path": file_path }),
+                        },
+                    }
+                    .from_user_menu("convert/markdown_open"),
+                );
             } else {
                 let pane_id = state
                     .dialogs
@@ -284,7 +293,16 @@ fn apply_open(state: &mut AppState, file_type: FileType, path: &str) {
             };
             state.recent_files.add_html(url.clone());
             if let Some(convert_sid) = state.dialogs.html_convert_surface_id.take() {
-                state.convert_surface_to_html(convert_sid, url);
+                state.dispatch_intent(
+                    crate::intent::Intent::ConvertSurface {
+                        surface_id: convert_sid,
+                        target: crate::intent::ConvertTarget::Kind {
+                            kind: "html".to_string(),
+                            params: serde_json::json!({ "url": url }),
+                        },
+                    }
+                    .from_user_menu("convert/html_open"),
+                );
             } else {
                 let pane_id = state
                     .dialogs
