@@ -157,6 +157,18 @@ tasty list notifications
 # 파일 핸들러 (~/.tasty/file-handlers.toml)
 tasty file-handler reload                                      # 사용자 TOML 재로드 (host/plugin 항목 영향 없음)
 
+# 레이아웃 프리셋 (~/.tasty/presets/{workspace,tab,pane}/*.toml)
+# kind: workspace | tab | pane. apply 는 포커스 이동 없음 (CLI 포커스 독립).
+tasty preset list --kind <kind>                                # 이름 목록
+tasty preset get --kind <kind> --name <name>                   # JSON 출력
+tasty preset save --kind <kind> --name <name> --file <path> [--overwrite]  # 파일에서 저장 ("-" = stdin)
+tasty preset delete --kind <kind> --name <name>
+tasty preset rename --kind <kind> --from <a> --to <b>
+tasty preset capture --kind <kind> --source-id <id> [--name <name>]
+# source-id: workspace_id (kind=workspace) / tab_id (kind=tab) / pane_id (kind=pane)
+tasty preset apply --kind <kind> --name <name> [--target-pane <id>] [--target-workspace <id>]
+# target-pane: kind=tab 일 때 대상. target-workspace: kind=pane 일 때 대상.
+
 # 사용자 Lua 스크립트 (~/.tasty/init.lua)
 tasty script reload                                            # init.lua 재로드 — 기존 hook 등록 제거 후 새 init.lua 만 살아남음
 
@@ -266,6 +278,22 @@ tasty claude hook stop --surface 5  # 특정 surface 지정 (또는 TASTY_SURFAC
 | `tab.create` | `pane_id`, `type?`, `cwd?`, `file?`, `path?`, `url?` | 새 탭 생성. type: terminal(기본)/markdown/explorer/html/image |
 | `tab.close` | `tab_id` | 탭 닫기 |
 | `tab.move` | `pane_id, from: number, to: number` | 같은 pane 내에서 탭 순서 변경 (0-based) |
+
+### 레이아웃 프리셋 (`preset.*`)
+
+Workspace / Tab / Pane 레이아웃을 디스크(`~/.tasty/presets/{workspace,tab,pane}/<name>.toml`)에 저장하고 재사용한다. `kind` 값은 `"workspace" | "tab" | "pane"`.
+
+`preset.apply` 는 항상 포커스를 이동하지 않는다 (CLI/IPC 포커스 독립성 원칙). 단축키 호출만 새 인스턴스로 포커스가 이동한다.
+
+| 메서드 | 파라미터 | 설명 | 권한 |
+|--------|---------|------|------|
+| `preset.list` | `kind` | preset 이름 목록. 반환: `{ kind, presets: string[] }` | `SurfaceRead` |
+| `preset.get` | `kind, name` | preset 의 JSON 반환. 반환: `{ kind, name, data }` | `SurfaceRead` |
+| `preset.save` | `kind, name, data, overwrite?: bool` | JSON 객체를 preset 으로 저장. 반환: `{ name }`. `overwrite=false` 일 때 충돌 시 `invalid_params`. | `SurfaceWrite` |
+| `preset.delete` | `kind, name` | preset 삭제. 반환: `{ deleted: true }` | `SurfaceWrite` |
+| `preset.rename` | `kind, from, to` | preset 이름 변경. 반환: `{ renamed }` | `SurfaceWrite` |
+| `preset.capture` | `kind, source_id, name?` | 현재 라이브 workspace/tab/pane 을 캡처해 저장. `source_id` 는 kind 에 따라 workspace_id / tab_id / pane_id. `name` 누락 시 `unique_name` 으로 자동 생성. 반환: `{ name }` | `SurfaceWrite` |
+| `preset.apply` | `kind, name, target_pane_id?, target_workspace_id?` | preset 적용. `kind=tab` 이면 `target_pane_id` 가 대상 pane(누락 시 active workspace 의 focused pane). `kind=pane` 이면 `target_workspace_id` 가 대상 ws(누락 시 active). 반환: `{ applied: true, kind, workspace_id | tab_id | pane_id }` | `SurfaceWrite` |
 
 ### Surface (터미널 상호작용)
 

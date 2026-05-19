@@ -32,3 +32,4 @@ IPC/CLI 전체 메서드는 [api-reference.md](api-reference.md) 참조.
 | 텔레메트리 (관측 / 비용 / 이상 탐지 / 세션 요약) | [telemetry.md](telemetry.md) |
 | 다중 에이전트 협업 (task DAG / barrier / semaphore / lease / reducer / rate-limit) | [agent.md](agent.md) |
 | 권한 / capability_elevation / audit log | [capabilities.md](capabilities.md) |
+| 레이아웃 프리셋 (`preset.*`) | [../features.md#레이아웃-프리셋-layout-presets](../features.md) |

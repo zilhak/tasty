@@ -14,6 +14,9 @@ Tasty의 영속 데이터는 **텍스트 파일과 SQLite 하이브리드**로 �
 | `state.db` | SQLite | 북마크, 최근 파일, 클립보드 히스토리(향후) 등 | 앱 |
 | `state.db-wal`, `state.db-shm` | SQLite | WAL 저널/공유 메모리 보조 파일 | 앱 (자동) |
 | `bookmarks.json.bak`, `recent_files.json.bak` | JSON | 이전 버전에서 이관된 원본(참고 보관) | 앱 (1회성) |
+| `presets/workspace/<name>.toml` | TOML | 워크스페이스 레이아웃 프리셋 (탭/패인/서피스 구조) | 사용자 / 앱 |
+| `presets/tab/<name>.toml` | TOML | 탭 단일 프리셋 (탭 1개 + 하위 분할) | 사용자 / 앱 |
+| `presets/pane/<name>.toml` | TOML | 패인 단일 프리셋 (서피스 분할 트리) | 사용자 / 앱 |
 
 ## SQLite state.db
 

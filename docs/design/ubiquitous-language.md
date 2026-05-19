@@ -141,6 +141,39 @@ Tab 내에서 Surface들이 어떻게 배치되는지를 정의한다 (상하분
 
 Pane은 기존 터미널에 대응하는 개념이 없다. 이것이 Tasty의 고유한 설계.
 
+## Layout Preset
+
+워크스페이스 / 탭 / 페인 레이아웃의 정적 스냅샷. 새 인스턴스 생성을 위한 템플릿.
+
+### 종류
+- **WorkspacePreset**: 워크스페이스 1개 — 상위 레이아웃 + 모든 leaf surface 정의
+- **TabPreset**: 탭 1개 — 이름 + 하위 레이아웃 + 각 surface
+- **PanePreset**: 페인 1개 — 탭 목록 + 활성 탭
+
+세 종류 모두 `LayoutPreset` trait 를 구현하며 `tasty-presets` 크레이트에 정의된다.
+
+### Preset 과 ClosedItem 의 차이
+
+| 측면 | ClosedItem | LayoutPreset |
+|------|-----------|--------------|
+| 목적 | 닫힌 항목을 그대로 복원 (Ctrl+Shift+T) | 미리 정의한 템플릿으로부터 신규 생성 |
+| 보관 | 인메모리 LIFO 스택 (최대 10개) | 디스크 디렉토리 영구 (수 제한 없음) |
+| 데이터 | 스크롤백, screen, restore command 포함 | 구조 + 시작점만 (screen X) |
+| 사용 빈도 | 1회성 (복원 후 소비) | 반복 사용 |
+| 트리거 | 단축키 / 자동 (close 시) | 단축키 + 우클릭 메뉴 + IPC/CLI |
+
+### PresetWindow / EditorWindow
+
+`EditorWindow` 는 Window 의 세 번째 supertrait 계열. ModalWindow / TerminalHostWindow 와 동등하지만 modeless 이면서 종류별 1개 인스턴스로 제한된다.
+
+| Supertrait | Modality | 인스턴스 | 예 |
+|------------|----------|---------|-----|
+| ModalWindow | Modal | 전역 1개 | SettingsWindow, QuitWindow |
+| TerminalHostWindow | Modeless | 다중 | MainWindow |
+| EditorWindow | Modeless | 종류별 1개 | PresetWindow |
+
+PresetWindow 는 사용자가 preset 을 편집하는 EditorWindow. 엔진 전역에 최대 1개 — 두 번째 열기 요청은 기존 윈도우 포커스 이동.
+
 ## 코드 레벨 용어 매핑
 
 | 유비쿼터스 언어 | 코드 (Rust) | 설명 |

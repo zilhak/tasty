@@ -248,6 +248,9 @@ Claude Code 훅 연동, 활동 상태 추적(idle/needs_input/active), 전용 �
 번들 plugin `com.tasty.claude`로 제공되며 호스트는 plugin 등록만 처리한다. `tasty claude hook`
 CLI 서브커맨드로 Claude Code의 훅 시스템에서 직접 호출 가능.
 
+### 레이아웃 프리셋 (Layout Presets)
+Workspace / Tab / Pane 레이아웃과 leaf surface 초기화 파라미터(kind, cwd, 시작 명령어, kind 별 params)를 디스크(`~/.tasty/presets/{workspace,tab,pane}/<name>.toml`)에 저장/재사용. 우클릭 메뉴/단축키로 저장·적용, PresetWindow 에서 편집, IPC `preset.*` 7종 + CLI `tasty preset {list,get,save,delete,rename,capture,apply}` 노출. CLI/IPC apply 는 항상 포커스 이동 없음. 상세: [features.md](features.md).
+
 ### 마크다운 뷰어 & 파일 탐색기
 egui 기반 추가 Surface 타입. 마크다운 뷰어(제목/목록/인용/코드 블록/인라인 서식 렌더링)와 파일 탐색기(트리 + 미리보기)를 탭으로 열 수 있다. IPC/CLI/우클릭 컨텍스트 메뉴로 사용 가능.
 
