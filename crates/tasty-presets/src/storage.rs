@@ -32,7 +32,7 @@ pub enum PresetError {
 
 pub type PresetResult<T> = Result<T, PresetError>;
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct PresetStore {
     root: Option<PathBuf>,
     workspaces: BTreeMap<String, WorkspacePreset>,

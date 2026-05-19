@@ -608,3 +608,14 @@ empty = "登録されたハンドラがありません。"
 hover_label = "ドロップして開く"
 multi_files = "{n}個のファイル"
 outside = "ターミナル領域外にドロップされたファイルは無視されました。"
+
+[preset.window]
+title = "レイアウトプリセット"
+
+[preset.tab]
+workspace = "ワークスペース"
+tab = "タブ"
+pane = "ペイン"
+
+[preset.list]
+placeholder = "保存されたプリセットがここに表示されます。"

@@ -14,6 +14,9 @@ pub struct Engine {
     /// The window that currently has focus (receives IPC commands targeting "focused" window).
     pub focused_window_id: Option<winit::window::WindowId>,
     pub port_file: Option<String>,
+    /// Layout preset 디스크 캐시 (`~/.tasty/presets/`). App 전역 단일 인스턴스.
+    /// `PresetWindow` 가 열릴 때 clone 해서 가져가고, close 시 회수해 덮어쓴다.
+    pub preset_store: tasty_presets::PresetStore,
 }
 
 impl Engine {
@@ -24,6 +27,7 @@ impl Engine {
             active_modal_id: None,
             focused_window_id: None,
             port_file,
+            preset_store: tasty_presets::PresetStore::load_default(),
         }
     }
 

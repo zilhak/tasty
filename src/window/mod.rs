@@ -11,17 +11,21 @@
 //! 실제 구현체는 반드시 `ModalWindow` 또는 `TerminalHostWindow` 중 하나를 거쳐야 한다.
 
 pub mod base;
+pub mod editor;
 pub mod main;
 pub mod modal;
 pub mod plugins;
+pub mod preset;
 pub mod quit;
 pub mod settings;
 pub mod terminal_host;
 
 pub use base::WindowBase;
+pub use editor::EditorWindow;
 pub use main::MainWindow;
 pub use modal::ModalWindow;
 pub use plugins::PluginsWindow;
+pub use preset::PresetWindow;
 pub use quit::QuitWindow;
 pub use settings::SettingsWindow;
 pub use terminal_host::TerminalHostWindow;

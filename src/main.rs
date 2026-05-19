@@ -38,6 +38,7 @@ mod notification;
 mod output_observer;
 mod plugin;
 mod plugins_ui;
+mod preset_ui;
 mod recent_files;
 mod renderer;
 mod scrollback_store;
@@ -206,6 +207,10 @@ struct App {
     /// 사용자 init.lua 기반 Lua hook 엔진. 부팅 시 1회 생성, `~/.tasty/init.lua` 가
     /// 있으면 로드. observe-only — 호스트 동작에는 영향 없음. 초기화 실패 시 None.
     lua_engine: Option<tasty_lua::LuaEngine>,
+    /// 현재 열려 있는 `PresetWindow` 의 winit window id. modeless editor 윈도우는
+    /// 엔진 전역 단일 인스턴스 — 같은 명령이 다시 들어오면 새 윈도우를 만들지 않고
+    /// 이 id 의 윈도우로 포커스만 이동한다.
+    preset_window_id: Option<WindowId>,
 }
 
 /// State for the modal window shake animation.
@@ -527,6 +532,87 @@ impl App {
             input_simulation_enabled,
             plugin_manager: None,
             lua_engine: init_lua_engine(),
+            preset_window_id: None,
+        }
+    }
+
+    /// PresetWindow 를 연다. 이미 열려 있으면 새 윈도우를 만들지 않고 기존 윈도우에
+    /// 포커스만 옮긴다 (엔진 전역 단일 인스턴스).
+    fn open_preset_window(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
+        if let Some(id) = self.preset_window_id {
+            if let Some(w) = self.windows.get(&id) {
+                w.base().winit.focus_window();
+                return;
+            }
+            self.preset_window_id = None;
+        }
+
+        use winit::window::WindowAttributes;
+        let mut attrs = WindowAttributes::default()
+            .with_title(crate::i18n::t("preset.window.title"))
+            .with_inner_size(winit::dpi::LogicalSize::new(960, 640))
+            .with_min_inner_size(winit::dpi::LogicalSize::new(760, 480))
+            .with_visible(false);
+        if let Some(icon) = crate::app_icon::winit_window_icon() {
+            attrs = attrs.with_window_icon(Some(icon));
+        }
+        let window = match event_loop.create_window(attrs) {
+            Ok(w) => Arc::new(w),
+            Err(e) => {
+                tracing::warn!("failed to create preset window: {e}");
+                return;
+            }
+        };
+
+        let appearance = self
+            .focused_window()
+            .map(|w| w.state.engine.settings.appearance.clone())
+            .unwrap_or_else(|| crate::settings::Settings::load().appearance);
+        let gpu = match pollster::block_on(crate::gpu::GpuState::new(
+            window.clone(),
+            &appearance,
+            self.engine.proxy.clone(),
+        )) {
+            Ok(g) => g,
+            Err(e) => {
+                tracing::warn!("failed to init GPU for preset window: {e}");
+                return;
+            }
+        };
+
+        let store = self.engine.preset_store.clone();
+        let window_id = window.id();
+        let mut preset = window::PresetWindow::new(gpu, window, store);
+        #[cfg(windows)]
+        {
+            use window::Window as _;
+            preset.render();
+        }
+        #[cfg(not(windows))]
+        {
+            use window::Window as _;
+            preset.mark_dirty();
+        }
+        self.windows.insert(window_id, Box::new(preset));
+        self.preset_window_id = Some(window_id);
+        tracing::info!("opened preset window {:?}", window_id);
+    }
+
+    /// PresetWindow close 시 store 회수. 호출자는 매칭 확인 후 진입.
+    fn on_preset_window_closed(&mut self, window_id: WindowId) {
+        if self.preset_window_id != Some(window_id) {
+            return;
+        }
+        self.preset_window_id = None;
+        let Some(w) = self.windows.remove(&window_id) else {
+            return;
+        };
+        let any: Box<dyn std::any::Any> = w;
+        match any.downcast::<window::PresetWindow>() {
+            Ok(boxed) => {
+                self.engine.preset_store = boxed.into_store();
+            }
+            Err(_) => tracing::warn!("preset window id matched but type mismatched"),
         }
     }
 

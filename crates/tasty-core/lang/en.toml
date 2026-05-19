@@ -608,3 +608,14 @@ empty = "No handlers registered."
 hover_label = "Drop to open"
 multi_files = "{n} files"
 outside = "File dropped outside the terminal area was ignored."
+
+[preset.window]
+title = "Layout Presets"
+
+[preset.tab]
+workspace = "Workspace"
+tab = "Tab"
+pane = "Pane"
+
+[preset.list]
+placeholder = "Saved presets will appear here."

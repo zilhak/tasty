@@ -608,3 +608,14 @@ empty = "등록된 핸들러가 없습니다."
 hover_label = "여기에 드롭하여 열기"
 multi_files = "{n}개 파일"
 outside = "터미널 영역 밖으로 드롭된 파일은 무시되었습니다."
+
+[preset.window]
+title = "레이아웃 프리셋"
+
+[preset.tab]
+workspace = "워크스페이스"
+tab = "탭"
+pane = "패인"
+
+[preset.list]
+placeholder = "저장된 프리셋이 여기에 표시됩니다."

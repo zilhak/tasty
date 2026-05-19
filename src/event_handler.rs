@@ -409,14 +409,28 @@ impl ApplicationHandler<AppEvent> for App {
                 modal_active,
                 plugin_manager: self.plugin_manager.as_ref(),
             };
-            // MainWindow.handle_event는 현재 항상 WindowAction::None을 반환한다.
-            // Close/CloseWithEvent는 modal 전용 경로(line 274)에서 처리되며 여기로
-            // 흘러오지 않는다. 향후 비-modal 윈도우가 Close를 반환하면 debug에서 잡힌다.
+            // MainWindow.handle_event는 항상 WindowAction::None을 반환한다.
+            // PresetWindow (modeless editor) 는 CloseRequested 에서 Close 를 반환하므로
+            // 이 경로에서 처리한다. 그 외 modal Close 는 위쪽 모달 경로에서 소비된다.
             let action = w.handle_event(event, &mut ctx);
-            debug_assert!(
-                matches!(action, WindowAction::None),
-                "non-modal window returned non-None action"
-            );
+            match action {
+                WindowAction::None => {}
+                WindowAction::Close => {
+                    if self.preset_window_id == Some(id) {
+                        self.on_preset_window_closed(id);
+                        return;
+                    }
+                    debug_assert!(false, "non-modal window returned Close unexpectedly");
+                }
+                WindowAction::CloseWithEvent(app_event) => {
+                    if self.preset_window_id == Some(id) {
+                        self.on_preset_window_closed(id);
+                        crate::shortcuts::send_app_event(&self.engine.proxy, app_event);
+                        return;
+                    }
+                    debug_assert!(false, "non-modal window returned CloseWithEvent unexpectedly");
+                }
+            }
 
             // Check if the window requested to close (e.g. last workspace removed)
             if w.base().close_requested {
