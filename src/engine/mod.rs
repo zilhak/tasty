@@ -1,3 +1,4 @@
+pub mod output_observer;
 pub mod state;
 
 use crate::AppEvent;
