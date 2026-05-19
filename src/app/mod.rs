@@ -2,6 +2,7 @@
 //! parked AppState 보관. 메서드는 도메인별 서브모듈로 분산되어 있다.
 
 pub(crate) mod modal;
+pub(crate) mod plugin_glue;
 pub(crate) mod window_access;
 pub(crate) mod window_lifecycle;
 
