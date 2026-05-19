@@ -60,3 +60,33 @@ call("surface.send", {"text": "ls -la\r"})
 | CLI `tasty send text $'...'` | CR (0x0D) ✅ | `$'text\r'` |
 
 **AI 에이전트가 명령을 실행할 때**: Bash 도구에서 `tasty send text "cat\r"`을 쓰면 리터럴 `\r`이 전송된다. 반드시 `tasty send text "cat" && tasty send key enter` 또는 Python IPC를 사용할 것.
+
+## 응답 읽기: `read_line` 만 쓸 것 (`read_to_end` 금지)
+
+Tasty IPC 서버는 응답을 한 줄(`\n` 종료)로 보낸 뒤 **connection 을 즉시 닫지 않는다**. 즉 client 가 `read_to_end` / TCP EOF 대기로 읽으면 응답을 받았는데도 read timeout 만큼 더 기다린다 (Rust `set_read_timeout(Some(Duration::from_secs(10)))` 면 정확히 10초).
+
+이 함정은 측정 도구 자체가 잘못된 지연 패턴을 만들어내기 때문에 매우 위험하다. "모든 IPC 호출이 정확히 10초씩 걸린다" → "백그라운드 throttling 이다" 같은 잘못된 가설로 시간이 낭비된다.
+
+### Rust
+
+```rust
+// ❌ 금지 — server 가 close 할 때까지 read timeout 만큼 대기
+let mut buf = Vec::new();
+stream.read_to_end(&mut buf).ok();
+
+// ✅ 응답 한 줄만 읽는다
+let mut reader = BufReader::new(&stream);
+let mut line = String::new();
+reader.read_line(&mut line).ok();
+```
+
+### Python
+
+```python
+# ✅ 줄 단위로 읽는다
+f = s.makefile('rb')
+line = f.readline()
+resp = json.loads(line)
+```
+
+`tests/common/mod.rs::call()` 가 표준 구현. 새 테스트나 디버그 repro 도구를 만들 때 이것을 그대로 따른다.

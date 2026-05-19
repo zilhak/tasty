@@ -562,3 +562,28 @@ DECSTBM으로 스크롤 리전 설정 후 리전 내 스크롤 검증.
 - **디버그 IPC는 릴리즈 빌드에 없다** — E2E 테스트는 debug 빌드에서만 실행된다.
 - **TUI 앱 자체의 버그 주의** — TUI 앱이 잘못된 시퀀스를 보내면 테스트가 오염된다. 시나리오는 가능한 한 단순하게 유지할 것.
 - **`--exit` 없이 실행하면 키 입력 대기** — 수동 확인용. E2E 테스트에서는 반드시 `--exit`를 사용한다.
+
+## 사용자 환경 의존: shell 의 ZLE/readline 키 바인딩
+
+E2E 테스트가 spawn 하는 tasty 인스턴스는 `GeneralSettings::detect_shell` 에 따라 **사용자의 로그인 셸**(`/etc/passwd`)을 사용한다. 즉 사용자의 zsh ZLE, bash readline, fish 키 바인딩이 그대로 동작한다. 이 때문에 키 조합 테스트는 사용자 환경에 따라 깨질 수 있다.
+
+### 알려진 shell-disruptive 키 (zsh ZLE 기본)
+
+| 키 조합 | ZLE 위젯 | 결과 |
+|--------|---------|-----|
+| `Alt+X` | `execute-named-cmd` | prompt 가 `execute: ` 로 바뀜. 후속 명령이 위젯 이름 매칭 대상이 되어 일반 명령으로 실행되지 않음 |
+| `Ctrl+R` | `history-incremental-search-backward` | prompt 가 `bck-i-search:` 로 바뀜 |
+| `Ctrl+X Ctrl+E` | `edit-command-line` | `$EDITOR` 가 실행됨 |
+| `Esc Esc` (vi-mode) | `vi-cmd-mode` 진입 | 키 입력 의미가 달라짐 |
+
+bash readline 도 비슷한 함정이 있다 (`Ctrl+R`, `Ctrl+X Ctrl+E`).
+
+### 권장 패턴
+
+- **shell 에 영향을 주지 않는 키만 검증**한다. `surface.send_combo` 자체의 `sent: true` 응답만 검증할 거라면, 굳이 shell 이 해석하는 키를 보낼 필요가 없다.
+- **부득이 disruptive 키를 보내야 하면 ZLE state 를 reset 한다**. zsh 의 경우 `Ctrl+G` (abort) → 빈 명령줄로 복귀. 그 다음 후속 테스트 진행.
+- **검증은 별도 surface 에서 한다**. `tasty.split(...)` 으로 임시 surface 를 만들고 그 안에서 disruptive 키를 보낸 뒤 surface 를 닫는다. 메인 surface 가 깨끗하게 유지된다.
+
+### 증상으로 알아보는 법
+
+stripped 출력에 글자 사이에 `_` 가 끼어 있거나 (`c_l_e_a_r_;_p_r_i_n_t_f_`), BEL (`0x07`) 이 다수 섞여 있으면 zsh ZLE 의 incremental 모드 (execute-named-cmd, history-search 등)에 갇혀 있을 가능성이 높다. 직전에 보낸 키 조합을 의심하라.
