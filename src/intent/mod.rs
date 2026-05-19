@@ -9,6 +9,7 @@
 use crate::model::SplitDirection;
 use crate::ui::popup::{PopupId, PopupScope};
 
+pub mod pane;
 pub mod popup;
 pub mod preset;
 pub mod surface;
@@ -105,6 +106,11 @@ pub enum Intent {
     },
     /// 특정 tab 닫기 (ID 지정).
     CloseTab { tab_id: u32 },
+
+    // ---- Pane 도메인 ----
+    /// focused pane 을 split. 사용자 단축키 전용 (focused 의존).
+    /// S3=B: ratio / focus 변경 API 는 Intent 미마이그레이션.
+    SplitPane { direction: SplitDirection },
 }
 
 /// Surface 변환 타깃. Terminal 은 host 내장 special case, 나머지는 surface_registry

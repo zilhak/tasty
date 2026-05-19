@@ -400,15 +400,21 @@ impl MainWindow {
                         }
                     }
                     "split_pane_vertical" => {
-                        if let Err(e) = self.state.split_pane(SplitDirection::Vertical) {
-                            tracing::warn!("split_pane_vertical failed: {e}");
-                        }
+                        self.state.dispatch_intent(
+                            Intent::SplitPane {
+                                direction: SplitDirection::Vertical,
+                            }
+                            .from_user_shortcut("split_pane_vertical"),
+                        );
                         self.state.resize_all(terminal_rect, cell_w, cell_h);
                     }
                     "split_pane_horizontal" => {
-                        if let Err(e) = self.state.split_pane(SplitDirection::Horizontal) {
-                            tracing::warn!("split_pane_horizontal failed: {e}");
-                        }
+                        self.state.dispatch_intent(
+                            Intent::SplitPane {
+                                direction: SplitDirection::Horizontal,
+                            }
+                            .from_user_shortcut("split_pane_horizontal"),
+                        );
                         self.state.resize_all(terminal_rect, cell_w, cell_h);
                     }
                     "split_surface_vertical" => {
@@ -576,15 +582,21 @@ impl MainWindow {
                 state.resize_all(terminal_rect, cell_w, cell_h);
             }
             "split_pane_vertical" => {
-                if let Err(e) = state.split_pane(SplitDirection::Vertical) {
-                    tracing::warn!("split_pane_vertical failed: {e}");
-                }
+                state.dispatch_intent(
+                    Intent::SplitPane {
+                        direction: SplitDirection::Vertical,
+                    }
+                    .from_user_shortcut("split_pane_vertical"),
+                );
                 state.resize_all(terminal_rect, cell_w, cell_h);
             }
             "split_pane_horizontal" => {
-                if let Err(e) = state.split_pane(SplitDirection::Horizontal) {
-                    tracing::warn!("split_pane_horizontal failed: {e}");
-                }
+                state.dispatch_intent(
+                    Intent::SplitPane {
+                        direction: SplitDirection::Horizontal,
+                    }
+                    .from_user_shortcut("split_pane_horizontal"),
+                );
                 state.resize_all(terminal_rect, cell_w, cell_h);
             }
             "split_surface_vertical" => {
@@ -956,16 +968,22 @@ impl MainWindow {
             return true;
         }
         if matches_any_binding(&kb.split_pane_vertical, key, mods) {
-            if let Err(e) = state.split_pane(SplitDirection::Vertical) {
-                tracing::warn!("split_pane_vertical failed: {e}");
-            }
+            state.dispatch_intent(
+                Intent::SplitPane {
+                    direction: SplitDirection::Vertical,
+                }
+                .from_user_shortcut("split_pane_vertical"),
+            );
             state.resize_all(terminal_rect, cell_w, cell_h);
             return true;
         }
         if matches_any_binding(&kb.split_pane_horizontal, key, mods) {
-            if let Err(e) = state.split_pane(SplitDirection::Horizontal) {
-                tracing::warn!("split_pane_horizontal failed: {e}");
-            }
+            state.dispatch_intent(
+                Intent::SplitPane {
+                    direction: SplitDirection::Horizontal,
+                }
+                .from_user_shortcut("split_pane_horizontal"),
+            );
             state.resize_all(terminal_rect, cell_w, cell_h);
             return true;
         }

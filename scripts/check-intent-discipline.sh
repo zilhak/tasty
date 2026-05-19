@@ -22,6 +22,8 @@ PRESET_PATTERN_DELRENAME='\.(delete|rename)\(\s*PresetKind'
 SURFACE_PATTERN='\.(split_surface|close_surface_by_id(_no_snapshot)?|convert_surface_to_(terminal|markdown|image|html|kind))\('
 # tab: add_kind_tab(_to_pane) / add_{markdown,html,image,empty}_tab / add_tab_to_pane / close_tab_by_tab_id
 TAB_PATTERN='\.(add_kind_tab(_to_pane)?|add_markdown_tab|add_html_tab|add_image_tab|add_empty_tab|add_tab_to_pane|close_tab_by_tab_id)\('
+# pane: split_pane (focused 의존 사용자 단축키 전용)
+PANE_PATTERN='\.split_pane\('
 
 # 핸들러 본문 + UI/Settings 내부 예외 경로 + IPC handler (sync return contract).
 EXEMPT_FILES=(
@@ -29,6 +31,7 @@ EXEMPT_FILES=(
     "src/intent/preset.rs"
     "src/intent/surface.rs"
     "src/intent/tab.rs"
+    "src/intent/pane.rs"
     "src/settings_ui/mod.rs"
     "src/state/preset_apply.rs"
     "src/state/pane.rs"
@@ -53,6 +56,7 @@ matches=$({
     $SEARCH "$PRESET_PATTERN_DELRENAME" src/ 2>/dev/null || true
     $SEARCH "$SURFACE_PATTERN" src/ 2>/dev/null || true
     $SEARCH "$TAB_PATTERN" src/ 2>/dev/null || true
+    $SEARCH "$PANE_PATTERN" src/ 2>/dev/null || true
 } | grep -v 'is_open\|get_mut\|register\b' \
   | grep -v 'intent-exempt' \
   || true)

@@ -2339,6 +2339,9 @@ impl App {
             Intent::NewTab { .. } | Intent::CloseTab { .. } => {
                 crate::intent::tab::handle(state, intent);
             }
+            Intent::SplitPane { .. } => {
+                crate::intent::pane::handle(state, intent);
+            }
             Intent::Noop => {}
         }
     }
