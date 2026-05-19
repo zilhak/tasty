@@ -1267,6 +1267,55 @@ impl Terminal {
         }
     }
 
+    /// Pop up to `count` lines from the back of scrollback and draw them at the
+    /// top of the visible screen, then place the cursor on the row immediately
+    /// below them. Returns the number of lines actually drawn (saturates when
+    /// scrollback is shorter than `count` or `count` exceeds available rows).
+    ///
+    /// 복원 직후 호출용 — 사용자가 "위에 더 있다" 는 사실을 인지하도록 visible
+    /// 영역 상단에 옛 라인을 미리 보여주고 새 prompt 가 그 아래에서 시작하게
+    /// 만든다. PTY 가 첫 prompt 를 출력하기 전에 호출해야 한다.
+    pub fn prefill_visible_from_scrollback(&mut self, count: usize) -> usize {
+        use termwiz::surface::Position;
+
+        let count = count
+            .min(self.scrollback.memory_len())
+            .min(self.rows.saturating_sub(1));
+        if count == 0 {
+            return 0;
+        }
+
+        let mut to_draw: Vec<crate::ScrollbackLine> = Vec::with_capacity(count);
+        for _ in 0..count {
+            if let Some(line) = self.scrollback.pop_back() {
+                to_draw.push(line);
+            }
+        }
+        to_draw.reverse(); // oldest first
+
+        for (row, line) in to_draw.iter().enumerate() {
+            self.primary_surface.add_change(Change::CursorPosition {
+                x: Position::Absolute(0),
+                y: Position::Absolute(row),
+            });
+            for (text, attrs) in &line.cells {
+                self.primary_surface
+                    .add_change(Change::AllAttributes(attrs.clone()));
+                self.primary_surface.add_change(Change::Text(text.clone()));
+            }
+        }
+
+        // Park the cursor on the row right after the prefilled block so the
+        // shell's first prompt is emitted there.
+        let cursor_y = to_draw.len();
+        self.primary_surface.add_change(Change::CursorPosition {
+            x: Position::Absolute(0),
+            y: Position::Absolute(cursor_y),
+        });
+
+        to_draw.len()
+    }
+
     /// Capture the top line(s) from the surface before a scroll change is applied.
     ///
     /// Each captured line is tagged with a `wrapped` flag so the next line is
@@ -1676,6 +1725,73 @@ mod tests {
     fn screen_snapshot_empty_terminal_returns_empty_vec() {
         let terminal = test_terminal(10, 4);
         assert!(terminal.screen_snapshot_lines().is_empty());
+    }
+
+    #[test]
+    fn prefill_visible_from_scrollback_draws_lines_and_parks_cursor() {
+        use crate::ScrollbackLine;
+        use termwiz::cell::CellAttributes;
+
+        let mut terminal = test_terminal(20, 10);
+
+        // Inject 15 historical lines.
+        let mut injected = Vec::new();
+        for i in 0..15 {
+            let label = format!("OLD_{i:02}");
+            let cells: Vec<(String, CellAttributes)> = label
+                .chars()
+                .map(|c| (c.to_string(), CellAttributes::default()))
+                .collect();
+            injected.push(ScrollbackLine::new(cells, false));
+        }
+        terminal.inject_scrollback(injected);
+
+        // Prefill half the visible rows (5 of 10).
+        let drawn = terminal.prefill_visible_from_scrollback(5);
+        assert_eq!(drawn, 5);
+        assert_eq!(terminal.scrollback_len(), 10); // 5 popped
+
+        // Visible rows 0..4 should now hold the popped lines (oldest first).
+        let lines = terminal.surface().screen_lines();
+        for (row, expected_idx) in (10..15).enumerate() {
+            let text: String = lines[row]
+                .visible_cells()
+                .map(|c| c.str().to_string())
+                .collect();
+            let expected = format!("OLD_{expected_idx:02}");
+            assert!(
+                text.starts_with(&expected),
+                "row {row} expected to start with {expected:?}, got {text:?}"
+            );
+        }
+
+        // Cursor parked on row right after prefilled block.
+        assert_eq!(terminal.surface().cursor_position(), (0, 5));
+    }
+
+    #[test]
+    fn prefill_saturates_when_scrollback_is_shorter_than_requested() {
+        use crate::ScrollbackLine;
+        use termwiz::cell::CellAttributes;
+
+        let mut terminal = test_terminal(20, 10);
+
+        let mut injected = Vec::new();
+        for i in 0..3 {
+            let label = format!("OLD_{i}");
+            let cells: Vec<(String, CellAttributes)> = label
+                .chars()
+                .map(|c| (c.to_string(), CellAttributes::default()))
+                .collect();
+            injected.push(ScrollbackLine::new(cells, false));
+        }
+        terminal.inject_scrollback(injected);
+
+        // Request 5, but only 3 are available.
+        let drawn = terminal.prefill_visible_from_scrollback(5);
+        assert_eq!(drawn, 3);
+        assert_eq!(terminal.scrollback_len(), 0);
+        assert_eq!(terminal.surface().cursor_position(), (0, 3));
     }
 
     /// Regression: when scrollback contains injected/historical lines (e.g. from

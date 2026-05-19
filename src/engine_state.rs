@@ -477,6 +477,10 @@ impl EngineState {
         }
         if let Some(terminal) = self.find_terminal_by_id_mut(surface_id) {
             terminal.inject_scrollback(lines);
+            // 새 prompt 가 화면 중간부터 시작하도록 visible 상단 절반에 옛
+            // 라인을 미리 그려둔다.
+            let prefill = terminal.rows() / 2;
+            terminal.prefill_visible_from_scrollback(prefill);
         }
     }
 
