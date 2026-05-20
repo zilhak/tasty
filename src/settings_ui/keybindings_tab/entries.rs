@@ -1,0 +1,177 @@
+use crate::i18n::t;
+use crate::settings::KeybindingSettings;
+
+use super::{KeyCapture, PendingBinding, RecordingSlot};
+
+pub(super) fn draw_keybinding_entries(
+    ui: &mut egui::Ui,
+    keybindings: &mut KeybindingSettings,
+    recording_field: &mut Option<RecordingSlot>,
+    pending_binding: &mut Option<PendingBinding>,
+    captured: &KeyCapture,
+    entries: &[(&str, &str)],
+) {
+    let th = crate::theme::theme();
+    // 충돌 팝업이 떠 있는 동안은 녹화 버튼을 눌러도 녹화 상태로 진입하지 않도록 가드.
+    let can_record = pending_binding.is_none();
+
+    // 녹화된 combo 처리: 녹화 슬롯이 정해져 있을 때만 적용.
+    if let Some(slot) = recording_field.clone() {
+        match captured {
+            KeyCapture::Combo(combo) => {
+                match keybindings.find_conflict(&slot.field_id, combo) {
+                    Some((conflicting, conflicting_idx)) => {
+                        *pending_binding = Some(PendingBinding {
+                            target_field: slot.field_id.clone(),
+                            target_idx: slot.idx,
+                            combo: combo.clone(),
+                            conflicting_field: conflicting.to_string(),
+                            conflicting_idx,
+                        });
+                    }
+                    None => {
+                        keybindings.replace_binding_at(&slot.field_id, slot.idx, combo.clone());
+                    }
+                }
+                *recording_field = None;
+            }
+            KeyCapture::Clear => {
+                // Escape — 녹화 중인 슬롯이 기존 엔트리면 제거, 새 슬롯이면 그냥 취소.
+                let current_len = keybindings
+                    .get_bindings(&slot.field_id)
+                    .map(|v| v.len())
+                    .unwrap_or(0);
+                if slot.idx < current_len {
+                    keybindings.remove_binding(&slot.field_id, slot.idx);
+                }
+                *recording_field = None;
+            }
+            KeyCapture::None => {}
+        }
+    }
+
+    // 버튼/간격 치수. 4px 그리드 준수.
+    const BUTTON_HEIGHT: f32 = 24.0;
+    const BUTTON_WIDTH: f32 = 140.0;
+    const ADD_BUTTON_WIDTH: f32 = 32.0;
+    const LABEL_GAP: f32 = 12.0;
+    const ROW_GAP: f32 = 4.0;
+
+    // 라벨 컬럼 폭을 이 탭에 표시되는 모든 엔트리 중 가장 긴 라벨 기준으로 계산.
+    // 라벨 영역과 버튼 영역이 명확히 분리되고 모든 행에서 정렬되도록 한다.
+    let label_col_width = {
+        let font_id = egui::TextStyle::Body.resolve(ui.style());
+        entries
+            .iter()
+            .map(|(_, label_key)| {
+                let text = t(label_key).to_string();
+                ui.ctx().fonts(|f| {
+                    f.layout_no_wrap(text, font_id.clone(), egui::Color32::WHITE)
+                        .size()
+                        .x
+                })
+            })
+            .fold(0.0_f32, f32::max)
+    };
+
+    for (field_id, label_key) in entries.iter() {
+        ui.horizontal_top(|ui| {
+            // 라벨 컬럼: 고정 폭, 우측 정렬(콜론이 항상 버튼 영역 바로 앞).
+            ui.allocate_ui_with_layout(
+                egui::vec2(label_col_width, BUTTON_HEIGHT),
+                egui::Layout::right_to_left(egui::Align::Center),
+                |ui| {
+                    ui.label(t(label_key));
+                },
+            );
+            ui.add_space(LABEL_GAP);
+
+            // 버튼 영역: 남은 폭을 모두 사용. 폭을 초과하면 자동 줄바꿈.
+            ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing = egui::vec2(ROW_GAP, ROW_GAP);
+
+                let bindings_len = keybindings
+                    .get_bindings(field_id)
+                    .map(|v| v.len())
+                    .unwrap_or(0);
+
+                // 기존 바인딩 각각을 버튼으로 표시.
+                for idx in 0..bindings_len {
+                    let is_recording = matches!(
+                        recording_field,
+                        Some(slot) if slot.field_id == *field_id && slot.idx == idx
+                    );
+                    let current = keybindings
+                        .get_bindings(field_id)
+                        .and_then(|v| v.get(idx))
+                        .cloned()
+                        .unwrap_or_default();
+
+                    let display_text = if is_recording {
+                        t("settings.keybindings.hint_press_key").to_string()
+                    } else {
+                        KeybindingSettings::format_display(&current)
+                    };
+
+                    let bg_color = if is_recording {
+                        th.surface1
+                    } else {
+                        th.surface0
+                    };
+                    let text_color = if is_recording { th.overlay1 } else { th.text };
+
+                    let button = egui::Button::new(
+                        egui::RichText::new(&display_text)
+                            .color(text_color)
+                            .monospace(),
+                    )
+                    .fill(bg_color)
+                    .min_size(egui::vec2(BUTTON_WIDTH, BUTTON_HEIGHT));
+
+                    if ui.add_enabled(can_record, button).clicked() {
+                        *recording_field = Some(RecordingSlot {
+                            field_id: field_id.to_string(),
+                            idx,
+                        });
+                    }
+                }
+
+                // 새 바인딩 추가 버튼. 바인딩이 없을 때는 "없음" 플레이스홀더.
+                let adding = matches!(
+                    recording_field,
+                    Some(slot) if slot.field_id == *field_id && slot.idx == bindings_len
+                );
+                let add_label = if adding {
+                    t("settings.keybindings.hint_press_key").to_string()
+                } else if bindings_len == 0 {
+                    t("settings.keybindings.hint_none").to_string()
+                } else {
+                    "+".to_string()
+                };
+                let add_bg = if adding { th.surface1 } else { th.surface0 };
+                let add_fg = if adding { th.overlay1 } else { th.subtext0 };
+                let add_width = if bindings_len == 0 {
+                    BUTTON_WIDTH
+                } else {
+                    ADD_BUTTON_WIDTH
+                };
+                let add_btn =
+                    egui::Button::new(egui::RichText::new(&add_label).color(add_fg).monospace())
+                        .fill(add_bg)
+                        .min_size(egui::vec2(add_width, BUTTON_HEIGHT));
+                if ui
+                    .add_enabled(can_record, add_btn)
+                    .on_hover_text(t("settings.keybindings.add_binding_button"))
+                    .clicked()
+                {
+                    *recording_field = Some(RecordingSlot {
+                        field_id: field_id.to_string(),
+                        idx: bindings_len,
+                    });
+                }
+            });
+        });
+        ui.add_space(ROW_GAP);
+    }
+}
+
