@@ -1,6 +1,7 @@
 //! `tasty debug ...` CLI → JsonRpcRequest 매핑 (debug + popup + tool + extension + event_bus).
 
-#[cfg(debug_assertions)]
+#![cfg(debug_assertions)]
+
 use crate::cli::commands::{DebugCommands, EventBusCommands};
 
 use super::resolve_surface_id;

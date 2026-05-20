@@ -19,6 +19,7 @@ pub mod telemetry;
 pub use agent::AgentCommands;
 pub use approval::{ApprovalCommands, ApprovalSummaryCommands};
 pub use clipboard::ClipboardCommands;
+#[cfg(debug_assertions)]
 pub use debug::{
     DebugCommands, EventBusCommands, ExtensionDebugCommands, PopupDebugCommands,
     ToolDebugCommands,

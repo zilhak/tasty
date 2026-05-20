@@ -432,7 +432,6 @@ fn unset_command_to_method_params(command: &UnsetCommands) -> (&'static str, ser
     }
 }
 
-#[cfg(debug_assertions)]
 fn surface_meta_command_to_method_params(
     command: &SurfaceMetaCommands,
 ) -> (&'static str, serde_json::Value) {

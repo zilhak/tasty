@@ -1,5 +1,7 @@
 //! `tasty debug ...` subcommand 정의 — Debug + Tool + Popup + Extension + EventBus.
 
+#![cfg(debug_assertions)]
+
 use clap::Subcommand;
 
 #[derive(Subcommand)]
