@@ -332,3 +332,12 @@ fn build_layout_context(
         active_tabs,
     }
 }
+
+/// PopupDef::draw_fn for the notifications panel.
+pub fn draw_notification_popup(
+    ui: &mut egui::Ui,
+    state: &mut AppState,
+) -> crate::ui::popup::PopupAction {
+    draw_notification_content_inner(ui, state);
+    crate::ui::popup::PopupAction::None
+}

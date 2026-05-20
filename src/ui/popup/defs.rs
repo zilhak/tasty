@@ -19,7 +19,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 close_on_outside_click: false,
                 headless: false,
                 sticky_focus: false,
-                draw_fn: super::notification::draw_notification_popup,
+                draw_fn: crate::ui::notification::draw_notification_popup,
             },
             PopupDef {
                 id: "convert_surface",
