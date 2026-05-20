@@ -4,6 +4,15 @@
 
 > Tasty를 **사용하는** AI 에이전트를 위한 가이드는 `docs/agent-guide/`를 참조.
 
+## 최초 셋업 (clone 직후 1회)
+
+```bash
+./scripts/dev-setup.sh
+```
+
+git hooks 디렉토리를 `.githooks/` 로 설정한다. 안 하면 pre-commit / pre-push
+검사가 안 돈다. 상세: [git-hooks.md](git-hooks.md).
+
 ## 환경별 가이드
 
 | 환경 | 문서 |
@@ -16,6 +25,7 @@
 
 | 주제 | 문서 |
 |------|------|
+| 개발 환경 셋업 + git hooks 규칙 | [git-hooks.md](git-hooks.md) |
 | 수정 후 자체 검증 (커밋 전에 직접 돌려볼 것) | [self-verification.md](self-verification.md) |
 | 빌드 & 빌드 최적화 | [build.md](build.md) |
 | 릴리스 절차 | [release.md](release.md) |

@@ -1,13 +1,18 @@
 # Git Hooks
 
 `.githooks/` 디렉토리에 pre-commit / pre-push 훅이 있다. 새로 clone 한 직후
-한 번만 설치한다:
+**개발 환경 셋업 스크립트를 1회 실행**한다:
 
 ```bash
-git config core.hooksPath .githooks
+./scripts/dev-setup.sh
 ```
 
-이후 `git commit` / `git push` 시 자동으로 실행된다. 긴급 우회는 `--no-verify`.
+이 스크립트는 `core.hooksPath` 를 `.githooks/` 로 설정한다 (멱등 — 여러 번
+실행해도 안전). 이후 `git commit` / `git push` 시 자동으로 검사가 실행된다.
+긴급 우회는 `--no-verify`.
+
+> 셋업 안 하면 hook 이 안 돈다. CI 가 같은 검사를 돌리므로 결국 잡히지만, 로컬
+> 피드백을 받으려면 셋업 권장.
 
 ## pre-commit (빠른 검사, 1-3초)
 
