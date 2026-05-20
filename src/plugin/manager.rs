@@ -53,7 +53,6 @@ enum FinalCaller {
 }
 
 /// pending host→plugin request의 종류. 응답 수신 시 어떤 후처리를 할지 식별.
-#[allow(dead_code)]
 enum PendingRequestKind {
     SurfaceCreate { surface_id: u32 },
     SurfaceEvent { surface_id: u32 },
@@ -65,8 +64,7 @@ enum PendingRequestKind {
     PopupOpen { instance_id: u64 },
     /// popup.event IPC 응답 대기. 응답은 [`PopupEventResult`] — 갱신 tree + close 신호.
     PopupEvent { instance_id: u64 },
-    Ping,
-    /// 그 외 (host.hello 등) — 응답 무시.
+    /// 그 외 (host.hello / ping / 등) — 응답 무시.
     Other,
     /// Client IPC 요청을 plugin namespace로 forward한 경우. plugin이 응답을 주면
     /// 보관한 response_tx로 client에 회신한다.
@@ -364,7 +362,6 @@ impl PluginManager {
     /// plugin의 현재 권한 set. 등록되지 않은 plugin은 빈 set.
     /// (외부 caller surface로 노출 — `process_plugin_ipc_calls`는 이미 PendingPluginCall에
     /// 권한을 cache해 사용하므로 직접 호출자는 없다.)
-    #[allow(dead_code)]
     pub fn plugin_permissions(&self, plugin_id: &str) -> Arc<HashSet<Permission>> {
         self.plugin_permissions
             .get(plugin_id)
@@ -1858,7 +1855,7 @@ impl PluginManager {
                     }
                 }
             }
-            PendingRequestKind::Ping | PendingRequestKind::Other => {}
+            PendingRequestKind::Other => {}
             PendingRequestKind::PopupOpen { instance_id } => {
                 let result_value = match resp.result {
                     Some(v) => v,

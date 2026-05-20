@@ -153,14 +153,8 @@ impl CallerContext {
         }
     }
 
-    #[allow(dead_code)]
     pub fn is_plugin(&self) -> bool {
         matches!(self, CallerContext::Plugin { .. })
-    }
-
-    #[allow(dead_code)]
-    pub fn is_agent(&self) -> bool {
-        matches!(self, CallerContext::Agent { .. })
     }
 
     /// 권한 셋 접근. Local/Internal 은 None (무제한이므로 셋 자체가 의미 없음).

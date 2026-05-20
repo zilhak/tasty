@@ -18,9 +18,7 @@ use crate::plugin::ui_tree::{UiEvent, UiNode};
 pub struct SurfaceHandles {
     pub tree: Arc<Mutex<Option<UiNode>>>,
     pub pending_events: Arc<Mutex<Vec<UiEvent>>>,
-    #[allow(dead_code)]
     pub snapshot_cache: Arc<Mutex<Option<Value>>>,
-    #[allow(dead_code)]
     pub invalidated: Arc<Mutex<bool>>,
     pub display_name: Arc<Mutex<String>>,
 }

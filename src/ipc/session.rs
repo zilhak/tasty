@@ -248,7 +248,6 @@ impl<'a> SessionStore<'a> {
     /// (가장 늦은 만료 시점 또는 None=무기한 우선). base permission 에 이미 있는
     /// token 은 grant 가 의미 없으므로 skip 하고 `Ok(false)`.
     /// 알 수 없는 토큰은 InvalidArgument.
-    #[allow(dead_code)] // Phase 6.3b 의 IPC handler 에서 사용 예정.
     pub fn grant_permission(
         &mut self,
         token: &SessionToken,
@@ -300,7 +299,6 @@ impl<'a> SessionStore<'a> {
 
     /// 임시 권한 회수. 해당 grant 가 없으면 `Ok(false)`. base permission 은 건드리지
     /// 않는다 (revoke 의미가 다름 — 발급 시점에 통제).
-    #[allow(dead_code)] // Phase 6.3b 의 IPC handler 에서 사용 예정.
     pub fn revoke_permission(
         &mut self,
         token: &SessionToken,
@@ -324,7 +322,6 @@ impl<'a> SessionStore<'a> {
 
     /// agent_id 로 활성 세션 검색. 동일 agent_id 가 여러 개면 첫 매치 반환.
     /// 만료된 temp grant 는 evict 후 반환.
-    #[allow(dead_code)] // Phase 6.3b 의 IPC handler 에서 사용 예정.
     pub fn find_by_agent_id(
         &mut self,
         agent_id: &str,

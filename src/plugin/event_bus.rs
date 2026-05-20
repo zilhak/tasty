@@ -45,14 +45,12 @@ fn pattern_matches(pattern: &str, key: &str) -> bool {
 
 /// 호스트 측 구독자. 토픽이 매칭되면 mpsc로 envelope를 받아간다.
 /// 호스트 본문이 자기 화면/스토어 갱신용으로 listen할 때 사용.
-#[allow(dead_code)]
 pub struct HostSubscription {
     sub_id: u64,
     pattern: String,
     tx: mpsc::Sender<EventEnvelope>,
 }
 
-#[allow(dead_code)]
 struct PluginSubscription {
     plugin_id: String,
     sub_id: u64,

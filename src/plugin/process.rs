@@ -51,7 +51,6 @@ pub struct PluginProcess {
     pub event_rx: mpsc::Receiver<PluginEvent>,
     last_pong: Arc<Mutex<Instant>>,
     /// 자식 stdout/stderr가 redirect된 파일 경로. 디버깅/검증 시 직접 참조.
-    #[allow(dead_code)]
     pub log_path: PathBuf,
     /// 보조 핸들 채널 상태. 첫 사용 시 Pending → Ready 전이하며 reader 스레드 시작.
     handle_state: Mutex<HandleStreamState>,
@@ -320,7 +319,6 @@ impl PluginProcess {
 
     /// reader 스레드가 누적한 dirty rect를 drain. 호스트 main loop이 frame 합성 직전에
     /// 호출. 반환된 map의 value가 `None`이면 "전체 갱신".
-    #[allow(dead_code)] // 02c-6 통합 테스트에서 사용.
     pub fn take_dirty_rects(&self) -> HashMap<SharedBufferId, Option<Rect>> {
         self.dirty_rects
             .lock()
