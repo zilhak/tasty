@@ -100,7 +100,9 @@ fn parse_spec(params: &Value) -> Result<ObserverSpec, String> {
                 .collect(),
         ),
         _ => {
-            return Err("'kinds' must be an array of strings or comma-separated string".to_string());
+            return Err(
+                "'kinds' must be an array of strings or comma-separated string".to_string(),
+            );
         }
     };
 

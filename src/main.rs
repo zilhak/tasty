@@ -5,7 +5,8 @@ mod app;
 mod boot;
 mod cli;
 mod clipboard;
-mod command;
+mod command_index;
+mod command_palette;
 mod file;
 mod file_drag;
 mod file_format;
@@ -44,8 +45,6 @@ use tasty_terminal as terminal;
 
 pub(crate) use app::App;
 pub(crate) use boot::waker as waker_factory_winit;
-pub(crate) use command::index as command_index;
-pub(crate) use command::palette as command_palette;
 pub(crate) use engine::output_observer;
 pub(crate) use engine::state as engine_state;
 pub(crate) use file::dispatch as file_dispatch;
