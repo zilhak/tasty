@@ -25,7 +25,6 @@ fn audit_err_to_response(id: Value, err: AuditError) -> JsonRpcResponse {
 fn parse_caller_kind(s: &str) -> Option<AuditCallerKind> {
     match s {
         "local" => Some(AuditCallerKind::Local),
-        "internal" => Some(AuditCallerKind::Internal),
         "plugin" => Some(AuditCallerKind::Plugin),
         "agent" => Some(AuditCallerKind::Agent),
         _ => None,

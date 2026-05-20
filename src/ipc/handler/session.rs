@@ -119,7 +119,7 @@ pub fn handle_issue(
     }
 
     let parent = match caller {
-        CallerContext::Local | CallerContext::Internal => None,
+        CallerContext::Local => None,
         CallerContext::Plugin { plugin_id, .. } => Some(plugin_id.clone()),
         CallerContext::Agent { agent_id, .. } => Some(agent_id.clone()),
     };

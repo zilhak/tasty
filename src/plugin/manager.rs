@@ -197,8 +197,6 @@ fn parse_hook_result(resp: &PluginResponse) -> HookOutcome {
 
 struct RemoteSurfaceEntry {
     plugin_id: String,
-    #[allow(dead_code)]
-    kind: String,
     handles: SurfaceHandles,
 }
 
@@ -1201,7 +1199,6 @@ impl PluginManager {
                         surface_id,
                         RemoteSurfaceEntry {
                             plugin_id: plugin_id.clone(),
-                            kind: kind.clone(),
                             handles,
                         },
                     );
@@ -1227,7 +1224,6 @@ impl PluginManager {
                         surface_id,
                         RemoteSurfaceEntry {
                             plugin_id: plugin_id.clone(),
-                            kind: kind.clone(),
                             handles,
                         },
                     );

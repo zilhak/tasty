@@ -230,9 +230,7 @@ pub(crate) fn resolve_caller_from_envelope(
     let perms: HashSet<plugin::manifest::Permission> = session.permission_set();
     Ok(ipc::caller::CallerContext::Agent {
         agent_id: session.agent_id,
-        parent: session.parent,
         permissions: Arc::new(perms),
-        token,
     })
 }
 

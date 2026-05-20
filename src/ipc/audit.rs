@@ -30,7 +30,6 @@ pub enum AuditDecision {
 #[serde(rename_all = "snake_case")]
 pub enum AuditCallerKind {
     Local,
-    Internal,
     Plugin,
     Agent,
 }
@@ -39,7 +38,6 @@ impl AuditCallerKind {
     pub fn from_caller(caller: &CallerContext) -> Self {
         match caller {
             CallerContext::Local => Self::Local,
-            CallerContext::Internal => Self::Internal,
             CallerContext::Plugin { .. } => Self::Plugin,
             CallerContext::Agent { .. } => Self::Agent,
         }

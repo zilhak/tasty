@@ -80,7 +80,6 @@ impl GpuState {
                     .filter(|ime| ime.surface_id == *surface_id && !ime.text.is_empty())
                     .map(|ime| RenderPreedit {
                         text: ime.text.clone(),
-                        cursor: ime.cursor,
                         anchor_col: ime.anchor_col,
                         anchor_row: ime.anchor_row,
                         bg_color: theme.blue.to_float(),
