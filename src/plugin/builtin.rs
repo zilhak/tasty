@@ -19,9 +19,11 @@ use crate::plugin::{discovery, PluginManager};
 /// 한 builtin plugin의 패키지 메타 — id, dev workspace crate 경로, plugin 바이너리 이름.
 struct BuiltinSpec {
     id: &'static str,
-    /// `crates/<crate_dir>/` — dev 빌드의 매니페스트/lang 원본 위치.
+    /// `crates/<crate_dir>/` — dev 빌드의 매니페스트/lang 원본 위치. debug 빌드 전용.
+    #[cfg(debug_assertions)]
     crate_dir: &'static str,
-    /// `target/<profile>/<bin_name>` — dev 빌드된 plugin 실행 바이너리 이름.
+    /// `target/<profile>/<bin_name>` — dev 빌드된 plugin 실행 바이너리 이름. debug 빌드 전용.
+    #[cfg(debug_assertions)]
     bin_name: &'static str,
 }
 
@@ -29,27 +31,37 @@ struct BuiltinSpec {
 const BUILTINS: &[BuiltinSpec] = &[
     BuiltinSpec {
         id: "com.tasty.explorer",
+        #[cfg(debug_assertions)]
         crate_dir: "tasty-plugin-explorer",
+        #[cfg(debug_assertions)]
         bin_name: "tasty-plugin-explorer.exe",
     },
     BuiltinSpec {
         id: "com.tasty.codex",
+        #[cfg(debug_assertions)]
         crate_dir: "tasty-plugin-codex",
+        #[cfg(debug_assertions)]
         bin_name: "tasty-plugin-codex.exe",
     },
     BuiltinSpec {
         id: "com.tasty.claude",
+        #[cfg(debug_assertions)]
         crate_dir: "tasty-plugin-claude",
+        #[cfg(debug_assertions)]
         bin_name: "tasty-plugin-claude.exe",
     },
     BuiltinSpec {
         id: "com.tasty.image",
+        #[cfg(debug_assertions)]
         crate_dir: "tasty-plugin-image",
+        #[cfg(debug_assertions)]
         bin_name: "tasty-plugin-image.exe",
     },
     BuiltinSpec {
         id: "com.tasty.clipboard-history",
+        #[cfg(debug_assertions)]
         crate_dir: "tasty-plugin-clipboard-history",
+        #[cfg(debug_assertions)]
         bin_name: "tasty-plugin-clipboard-history.exe",
     },
 ];
@@ -58,27 +70,37 @@ const BUILTINS: &[BuiltinSpec] = &[
 const BUILTINS: &[BuiltinSpec] = &[
     BuiltinSpec {
         id: "com.tasty.explorer",
+        #[cfg(debug_assertions)]
         crate_dir: "tasty-plugin-explorer",
+        #[cfg(debug_assertions)]
         bin_name: "tasty-plugin-explorer",
     },
     BuiltinSpec {
         id: "com.tasty.codex",
+        #[cfg(debug_assertions)]
         crate_dir: "tasty-plugin-codex",
+        #[cfg(debug_assertions)]
         bin_name: "tasty-plugin-codex",
     },
     BuiltinSpec {
         id: "com.tasty.claude",
+        #[cfg(debug_assertions)]
         crate_dir: "tasty-plugin-claude",
+        #[cfg(debug_assertions)]
         bin_name: "tasty-plugin-claude",
     },
     BuiltinSpec {
         id: "com.tasty.image",
+        #[cfg(debug_assertions)]
         crate_dir: "tasty-plugin-image",
+        #[cfg(debug_assertions)]
         bin_name: "tasty-plugin-image",
     },
     BuiltinSpec {
         id: "com.tasty.clipboard-history",
+        #[cfg(debug_assertions)]
         crate_dir: "tasty-plugin-clipboard-history",
+        #[cfg(debug_assertions)]
         bin_name: "tasty-plugin-clipboard-history",
     },
 ];
@@ -207,6 +229,7 @@ fn sync_dir_if_newer(src: &Path, dst: &Path) -> std::io::Result<()> {
 }
 
 /// src가 dest보다 더 최신이거나 dest가 없으면 복사. 이미 같거나 dest가 더 최신이면 no-op.
+#[cfg(debug_assertions)]
 fn copy_if_newer(src: &Path, dest: &Path) -> std::io::Result<()> {
     if let (Ok(src_meta), Ok(dest_meta)) = (std::fs::metadata(src), std::fs::metadata(dest)) {
         if let (Ok(sm), Ok(dm)) = (src_meta.modified(), dest_meta.modified()) {

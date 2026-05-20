@@ -253,6 +253,7 @@ impl EventBus {
         envelope: EventEnvelope,
         publisher_plugin_id: Option<&str>,
     ) -> Vec<PluginDispatch> {
+        #[cfg_attr(not(debug_assertions), allow(unused_mut))]
         let mut inner = self.inner.lock().expect("event bus poisoned");
         // debug 빌드: trace 링버퍼에 envelope 기록.
         #[cfg(debug_assertions)]

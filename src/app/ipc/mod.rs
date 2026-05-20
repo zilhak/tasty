@@ -31,7 +31,8 @@ pub(crate) enum IpcStep {
     Handled,
     /// 처리됨 + tool registry 재집계 표시.
     HandledDirty,
-    /// `system.shutdown` 만 — loop 즉시 종료, true 반환.
+    /// `system.shutdown` 만 — loop 즉시 종료, true 반환. debug 빌드 전용.
+    #[cfg(debug_assertions)]
     Shutdown,
 }
 
@@ -62,6 +63,7 @@ impl App {
                 }
             };
             match self.ipc_step_app_methods(&cmd, &caller) {
+                #[cfg(debug_assertions)]
                 IpcStep::Shutdown => return true,
                 IpcStep::HandledDirty => {
                     tool_registry_dirty = true;

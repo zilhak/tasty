@@ -45,6 +45,7 @@ pub fn unicode_width(ch: char) -> usize {
 }
 
 use palette::{DEFAULT_FG, compute_cell_colors};
+#[cfg(debug_assertions)]
 pub use palette::compute_cell_colors as resolve_cell_colors;
 use types::{BgInstance, GlyphInstance, Uniforms};
 
