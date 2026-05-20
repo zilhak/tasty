@@ -3,15 +3,10 @@ mod egui_panels;
 mod sidebar;
 mod tab_bar;
 
-pub(crate) mod approval_popup;
-pub(crate) mod command_palette_popup;
-pub(crate) mod convert_popup;
 pub(crate) mod dialog;
 pub mod diff;
 pub(crate) mod drop_overlay;
 pub mod empty;
-pub(crate) mod file_handler_picker_popup;
-pub(crate) mod file_open_popup;
 pub mod font_registry;
 pub mod html;
 pub mod image;
@@ -21,18 +16,13 @@ pub mod layout_context;
 pub mod markdown;
 pub mod markdown_view;
 pub(crate) mod notification;
-pub(crate) mod notification_popup;
 pub mod popup;
-pub(crate) mod popup_defs;
-pub(crate) mod port_scanner_popup;
 pub mod preset;
-pub(crate) mod preset_apply_popup;
 pub(crate) mod search_bar;
 pub mod terminal_link;
 pub mod theme_bridge;
 pub mod toast;
 pub(crate) mod tools_menu;
-pub(crate) mod update_popup;
 
 pub use divider::{draw_pane_dividers, draw_surface_highlights};
 pub use egui_panels::draw_egui_panels;
@@ -48,8 +38,8 @@ use crate::state::AppState;
 
 /// 도구 버튼 위쪽, 좌측에 붙여서 tools_menu 팝업을 연다.
 fn open_tools_menu(state: &mut AppState, btn_rect: egui::Rect) {
-    // tools_menu의 default_size를 popup_defs에서 가져온다
-    let menu_size = popup_defs::find("tools_menu")
+    // tools_menu의 default_size를 popup::defs에서 가져온다
+    let menu_size = popup::defs::find("tools_menu")
         .map(|d| d.default_size)
         .unwrap_or(egui::vec2(160.0, 36.0));
     // 버튼 좌측에 맞추고, 버튼 위쪽으로 올라가도록 배치

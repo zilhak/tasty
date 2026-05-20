@@ -324,7 +324,7 @@ impl MainWindow {
             state.command_palette.reset();
             state.dispatch_intent(
                 Intent::TogglePopup {
-                    id: crate::ui::command_palette_popup::COMMAND_PALETTE_POPUP_ID,
+                    id: crate::ui::popup::command_palette::COMMAND_PALETTE_POPUP_ID,
                     mode: OpenPopupMode::CenteredFocused,
                 }
                 .from_user_shortcut("toggle_command_palette"),
@@ -335,7 +335,7 @@ impl MainWindow {
             state.dialogs.preset_picker_selected = None;
             state.dispatch_intent(
                 Intent::OpenPopup {
-                    id: crate::ui::preset_apply_popup::APPLY_WORKSPACE_POPUP_ID,
+                    id: crate::ui::popup::preset_apply::APPLY_WORKSPACE_POPUP_ID,
                     mode: OpenPopupMode::CenteredFocused,
                 }
                 .from_user_shortcut("apply_workspace_preset"),
@@ -346,7 +346,7 @@ impl MainWindow {
             state.dialogs.preset_picker_selected = None;
             state.dispatch_intent(
                 Intent::OpenPopup {
-                    id: crate::ui::preset_apply_popup::APPLY_TAB_POPUP_ID,
+                    id: crate::ui::popup::preset_apply::APPLY_TAB_POPUP_ID,
                     mode: OpenPopupMode::CenteredFocused,
                 }
                 .from_user_shortcut("apply_tab_preset"),
@@ -357,7 +357,7 @@ impl MainWindow {
             state.dialogs.preset_picker_selected = None;
             state.dispatch_intent(
                 Intent::OpenPopup {
-                    id: crate::ui::preset_apply_popup::APPLY_PANE_POPUP_ID,
+                    id: crate::ui::popup::preset_apply::APPLY_PANE_POPUP_ID,
                     mode: OpenPopupMode::CenteredFocused,
                 }
                 .from_user_shortcut("apply_pane_preset"),

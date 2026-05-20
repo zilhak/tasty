@@ -1,7 +1,19 @@
+pub(crate) mod approval;
+pub(crate) mod command_palette;
+pub(crate) mod convert;
+pub(crate) mod defs;
+mod draw;
+pub(crate) mod file_handler_picker;
+pub(crate) mod file_open;
+pub(crate) mod notification;
+pub(crate) mod port_scanner;
+pub(crate) mod preset_apply;
+pub(crate) mod update;
+
 use crate::state::AppState;
 
 // 참고: 기존 `PopupContent` trait는 PopupDef(데이터 지향)로 대체되었다. 새 popup을
-// 추가하려면 `src/ui/popup_defs.rs`의 `all_defs()`에 항목을 추가하라.
+// 추가하려면 `popup::defs` 의 `all_defs()`에 항목을 추가하라.
 
 /// Unique identifier for a popup instance.
 pub type PopupId = &'static str;
@@ -342,5 +354,3 @@ impl PopupManager {
         self.popups.iter_mut().find(|p| p.id == id)
     }
 }
-
-mod draw;

@@ -578,7 +578,7 @@ impl AppState {
             recent_files: crate::recent_files::RecentFiles::load(),
             popups: {
                 let mut pm = crate::ui::PopupManager::new();
-                for def in crate::ui::popup_defs::all_defs() {
+                for def in crate::ui::popup::defs::all_defs() {
                     pm.register_def(def);
                 }
                 pm

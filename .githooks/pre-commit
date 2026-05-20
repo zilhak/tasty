@@ -37,17 +37,27 @@ check_mod_use_order() {
     if [ -z "$STAGED_RS" ]; then return; fi
     for f in $STAGED_RS; do
         [ -f "$f" ] || continue
-        # top-level (들여쓰기 0) 에서 use 가 나온 뒤 mod 가 나오면 fail
+        # top-level "선언 영역" 안에서만 검사. 영역 = 빈 줄/주석/attribute/use/mod/
+        # extern crate 만 나오는 동안. 첫 코드 토큰 (fn/struct/impl/const/static/
+        # type/trait/enum/macro_rules) 이 나오면 영역 종료 — dispatcher 패턴
+        # (use → fn → 하단 mod tests) 은 정당하므로 통과.
         local violation
         violation=$(awk '
             /^[[:space:]]/ { next }
-            /^(pub(\([^)]*\))?[[:space:]]+)?use[[:space:]]/ { saw_use = NR }
+            /^\/\// { next }
+            /^$/ { next }
+            /^#\[/ { next }
+            /^#!\[/ { next }
+            /^(pub(\([^)]*\))?[[:space:]]+)?use[[:space:]]/ { if (!end_zone) saw_use = NR; next }
+            /^(pub(\([^)]*\))?[[:space:]]+)?extern[[:space:]]+crate[[:space:]]/ { next }
             /^(pub(\([^)]*\))?[[:space:]]+)?mod[[:space:]]/ {
-                if (saw_use) { print NR; exit }
+                if (saw_use && !end_zone) { print NR; exit }
+                next
             }
+            { end_zone = 1 }
         ' "$f")
         if [ -n "$violation" ]; then
-            fail "[A.1 mod/use 순서] $f:$violation — top-level 에서 mod 가 use 뒤에 나옴"
+            fail "[A.1 mod/use 순서] $f:$violation — 선언 영역에서 mod 가 use 뒤에 나옴"
         fi
     done
 }

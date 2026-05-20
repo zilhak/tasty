@@ -40,15 +40,15 @@ enum WindowKind {
 const BUILTIN_TOOLS: &[BuiltinTool] = &[
     BuiltinTool {
         label_key: "command_palette.tools_menu_item",
-        action: BuiltinAction::OpenPopup(super::command_palette_popup::COMMAND_PALETTE_POPUP_ID),
+        action: BuiltinAction::OpenPopup(super::popup::command_palette::COMMAND_PALETTE_POPUP_ID),
     },
     BuiltinTool {
         label_key: "port_scanner.tools_menu_item",
-        action: BuiltinAction::OpenPopup(super::port_scanner_popup::PORT_SCANNER_POPUP_ID),
+        action: BuiltinAction::OpenPopup(super::popup::port_scanner::PORT_SCANNER_POPUP_ID),
     },
     BuiltinTool {
         label_key: "update.tools_menu_item",
-        action: BuiltinAction::OpenPopup(super::update_popup::UPDATE_POPUP_ID),
+        action: BuiltinAction::OpenPopup(super::popup::update::UPDATE_POPUP_ID),
     },
     BuiltinTool {
         label_key: "git_viewer.tools_menu_item",

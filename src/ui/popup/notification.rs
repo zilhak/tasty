@@ -5,6 +5,6 @@ use crate::ui::popup::PopupAction;
 
 /// PopupDef::draw_fn for the notifications panel.
 pub fn draw_notification_popup(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction {
-    super::notification::draw_notification_content_inner(ui, state);
+    crate::ui::notification::draw_notification_content_inner(ui, state);
     PopupAction::None
 }

@@ -157,7 +157,7 @@ pub fn draw_popups(
     // in-memory caches so this is cheap.
     // intent-exempt: 매 프레임 i18n title / size 재계산은 mutation 이 아닌 draw-prep.
     // Intent 큐로 보내면 1프레임 지연 + 매 프레임 enqueue 라 부적절.
-    for def in crate::ui::popup_defs::all_defs() {
+    for def in crate::ui::popup::defs::all_defs() {
         let new_title = if let Some(title_fn) = def.title_fn {
             (title_fn)(state)
         } else {
@@ -179,7 +179,7 @@ pub fn draw_popups(
     let draw_result = popups.draw(
         ctx,
         &mut |id, ui| {
-            if let Some(def) = crate::ui::popup_defs::find(id) {
+            if let Some(def) = crate::ui::popup::defs::find(id) {
                 if matches!((def.draw_fn)(ui, state), crate::ui::PopupAction::Close) {
                     dispatch_closed.push(def.id);
                 }
@@ -229,10 +229,10 @@ pub fn draw_popups(
     // dispatch 결과는 picker draw_fn 안에서 미리 채워두므로, 여기서는 추가 처리 없음.
     // 호스트 본체 layer 가 result 를 소비한 뒤 None 으로 리셋한다.
     let picker_closed = dispatch_closed
-        .contains(&crate::ui::file_handler_picker_popup::PICKER_POPUP_ID)
+        .contains(&crate::ui::popup::file_handler_picker::PICKER_POPUP_ID)
         || draw_result
             .closed
-            .contains(&crate::ui::file_handler_picker_popup::PICKER_POPUP_ID);
+            .contains(&crate::ui::popup::file_handler_picker::PICKER_POPUP_ID);
     if picker_closed {
         if let Some(p) = state.dialogs.file_handler_picker.as_mut() {
             if p.result.is_none() {
@@ -244,10 +244,10 @@ pub fn draw_popups(
 
     // approval popup: 외부 닫기/X 발생 시 큐 head 만 비운다 (정책상 X 는 본문에서
     // 막아 두지만 다른 경로로 닫힐 수 있다). 큐가 남아 있으면 다음 head 로 다시 연다.
-    let approval_closed = dispatch_closed.contains(&crate::ui::approval_popup::APPROVAL_POPUP_ID)
+    let approval_closed = dispatch_closed.contains(&crate::ui::popup::approval::APPROVAL_POPUP_ID)
         || draw_result
             .closed
-            .contains(&crate::ui::approval_popup::APPROVAL_POPUP_ID);
+            .contains(&crate::ui::popup::approval::APPROVAL_POPUP_ID);
     if approval_closed {
         state.dialogs.approval_comment_buffer.clear();
         if !state.dialogs.pending_approval_ids.is_empty() {
@@ -255,7 +255,7 @@ pub fn draw_popups(
             // 때 무시하므로 안전.
             state.dispatch_intent(
                 crate::intent::Intent::OpenPopup {
-                    id: crate::ui::approval_popup::APPROVAL_POPUP_ID,
+                    id: crate::ui::popup::approval::APPROVAL_POPUP_ID,
                     mode: crate::intent::OpenPopupMode::WithScope(
                         crate::ui::popup::PopupScope::Window,
                     ),
