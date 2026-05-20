@@ -1,20 +1,8 @@
-use std::borrow::Cow;
-
-use serde_json::json;
-
-use crate::ipc::alias;
-use crate::ipc::caller::CallerContext;
-use crate::ipc::protocol::{JsonRpcRequest, JsonRpcResponse};
-use crate::state::AppState;
-
-pub mod agent;
-pub mod approval;
-pub mod audit;
-pub mod session;
 mod clipboard;
+#[cfg(debug_assertions)]
+mod debug;
 mod file_handler;
 mod hooks;
-pub mod ime;
 mod image;
 #[cfg(target_os = "macos")]
 mod input_source;
@@ -24,10 +12,7 @@ mod meta;
 mod notification;
 mod output;
 mod pane;
-pub mod plugin;
 mod preset;
-#[cfg(debug_assertions)]
-pub mod popup;
 mod surface;
 mod tab;
 mod telemetry;
@@ -35,8 +20,21 @@ mod telemetry;
 mod tool;
 mod workspace;
 
+pub mod agent;
+pub mod approval;
+pub mod audit;
+pub mod ime;
+pub mod plugin;
 #[cfg(debug_assertions)]
-mod debug;
+pub mod popup;
+pub mod session;
+
+use crate::ipc::alias;
+use crate::ipc::caller::CallerContext;
+use crate::ipc::protocol::{JsonRpcRequest, JsonRpcResponse};
+use crate::state::AppState;
+use serde_json::json;
+use std::borrow::Cow;
 
 /// caller가 명시된 라우터 진입점. CLI/네트워크 IPC는 [`CallerContext::Local`],
 /// plugin process가 호출한 명령은 [`CallerContext::Plugin`]을 전달한다.
