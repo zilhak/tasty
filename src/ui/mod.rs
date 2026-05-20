@@ -1,38 +1,42 @@
+mod divider;
+mod egui_panels;
+mod sidebar;
+mod tab_bar;
+
 pub(crate) mod approval_popup;
 pub(crate) mod command_palette_popup;
 pub(crate) mod convert_popup;
 pub(crate) mod dialog;
 pub mod diff;
-pub mod empty;
-pub mod html;
-pub mod image;
-pub mod markdown;
-pub mod preset;
-pub mod terminal_link;
-pub mod theme_bridge;
-mod divider;
 pub(crate) mod drop_overlay;
-mod egui_panels;
-pub mod image_view;
-pub mod markdown_view;
+pub mod empty;
 pub(crate) mod file_handler_picker_popup;
 pub(crate) mod file_open_popup;
 pub mod font_registry;
+pub mod html;
+pub mod image;
+pub mod image_view;
 pub(crate) mod info_modal;
 pub mod layout_context;
+pub mod markdown;
+pub mod markdown_view;
 pub(crate) mod notification;
 pub(crate) mod notification_popup;
 pub mod popup;
 pub(crate) mod popup_defs;
 pub(crate) mod port_scanner_popup;
+pub mod preset;
 pub(crate) mod preset_apply_popup;
-pub(crate) mod update_popup;
-mod sidebar;
-mod tab_bar;
 pub(crate) mod search_bar;
-pub(crate) mod tools_menu;
+pub mod terminal_link;
+pub mod theme_bridge;
 pub mod toast;
+pub(crate) mod tools_menu;
+pub(crate) mod update_popup;
 
+use crate::intent::Intent;
+use crate::model::Rect;
+use crate::state::AppState;
 pub use divider::{draw_pane_dividers, draw_surface_highlights};
 pub use egui_panels::draw_egui_panels;
 pub use layout_context::LayoutContext;
@@ -40,10 +44,6 @@ pub use notification::draw_popups;
 pub use popup::{PopupAction, PopupManager};
 pub use tab_bar::draw_pane_tab_bars;
 pub use toast::{ToastKind, ToastManager, ToastScope};
-
-use crate::intent::Intent;
-use crate::model::Rect;
-use crate::state::AppState;
 
 /// 도구 버튼 위쪽, 좌측에 붙여서 tools_menu 팝업을 연다.
 fn open_tools_menu(state: &mut AppState, btn_rect: egui::Rect) {

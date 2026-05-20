@@ -9,9 +9,8 @@ use crate::plugin::manifest::BindingMode;
 use crate::plugin::registry_state::ShortcutOverride;
 use crate::settings::Settings;
 use crate::ui::popup::{PopupManager, PopupState};
-
-pub use keybindings_tab::{KeyCapture, capture_winit_key_combo};
 use file_handler_tab::{FileHandlerSubTab, draw_file_handler_tab};
+pub use keybindings_tab::{KeyCapture, capture_winit_key_combo};
 use keybindings_tab::{KeybindingsSubTab, PendingBinding, RecordingSlot, draw_keybindings_tab};
 use tabs::*;
 
