@@ -4,17 +4,19 @@ mod types;
 
 pub mod general;
 
+use std::collections::HashSet;
+use std::fs;
+use std::path::PathBuf;
+
 use anyhow::Result;
+use serde::{Deserialize, Serialize};
+use tasty_core::paths::tasty_home;
+
 pub use appearance::{
     AppearanceSettings, EffectiveFont, FontOverride, FontSettings, HexColor, SurfaceColors,
 };
 pub use general::{GeneralSettings, LinkModifier};
 pub use keybindings::KeybindingSettings;
-use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
-use std::fs;
-use std::path::PathBuf;
-use tasty_core::paths::tasty_home;
 pub use types::{
     AccessibilitySettings, ClipboardSettings, MemorySettings, NotificationSettings,
     PerformanceSettings,

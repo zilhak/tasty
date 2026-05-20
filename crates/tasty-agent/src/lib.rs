@@ -17,6 +17,8 @@ pub mod reducer;
 pub mod semaphore;
 pub mod task;
 
+use thiserror::Error;
+
 pub use barrier::{Barrier, BarrierState, BarrierStore};
 pub use lease::{Lease, LeaseMode, LeaseStore};
 pub use rate_limit::{ConsumeOutcome, RateLimit, RateLimitStore};
@@ -26,7 +28,6 @@ pub use task::{
     OnFailure, ReducerStrategy, Task, TaskCommand, TaskGraph, TaskId, TaskResult, TaskState,
     TaskStore,
 };
-use thiserror::Error;
 
 /// 본 크레이트의 공용 에러.
 #[derive(Debug, Error)]

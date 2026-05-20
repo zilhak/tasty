@@ -29,12 +29,14 @@ pub mod plugin;
 pub mod popup;
 pub mod session;
 
+use std::borrow::Cow;
+
+use serde_json::json;
+
 use crate::ipc::alias;
 use crate::ipc::caller::CallerContext;
 use crate::ipc::protocol::{JsonRpcRequest, JsonRpcResponse};
 use crate::state::AppState;
-use serde_json::json;
-use std::borrow::Cow;
 
 /// caller가 명시된 라우터 진입점. CLI/네트워크 IPC는 [`CallerContext::Local`],
 /// plugin process가 호출한 명령은 [`CallerContext::Plugin`]을 전달한다.

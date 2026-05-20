@@ -34,9 +34,6 @@ pub mod toast;
 pub(crate) mod tools_menu;
 pub(crate) mod update_popup;
 
-use crate::intent::Intent;
-use crate::model::Rect;
-use crate::state::AppState;
 pub use divider::{draw_pane_dividers, draw_surface_highlights};
 pub use egui_panels::draw_egui_panels;
 pub use layout_context::LayoutContext;
@@ -44,6 +41,10 @@ pub use notification::draw_popups;
 pub use popup::{PopupAction, PopupManager};
 pub use tab_bar::draw_pane_tab_bars;
 pub use toast::{ToastKind, ToastManager, ToastScope};
+
+use crate::intent::Intent;
+use crate::model::Rect;
+use crate::state::AppState;
 
 /// 도구 버튼 위쪽, 좌측에 붙여서 tools_menu 팝업을 연다.
 fn open_tools_menu(state: &mut AppState, btn_rect: egui::Rect) {

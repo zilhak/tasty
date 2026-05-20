@@ -14,18 +14,20 @@ pub mod foreground_process;
 pub mod search;
 pub mod test_helpers;
 
-use anyhow::Result;
-pub use events::*;
-use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
-pub use scrollback::ScrollbackLine;
 use std::io::{Read, Write};
 use std::sync::mpsc;
 use std::thread;
+
+use anyhow::Result;
+use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
 use termwiz::cell::CellAttributes;
 use termwiz::escape::Action;
 use termwiz::escape::csi::CSI;
 use termwiz::escape::parser::Parser;
 use termwiz::surface::Surface;
+
+pub use events::*;
+pub use scrollback::ScrollbackLine;
 
 /// Configuration for creating a new Terminal.
 pub struct TerminalConfig<'a> {

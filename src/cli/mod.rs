@@ -9,6 +9,7 @@ pub mod dynamic;
 pub(crate) mod transport;
 
 use clap::{Parser, Subcommand};
+
 pub use commands::*;
 pub use help::{format_parse_error, print_augmented_help, print_command_tree};
 pub use run::{run_client, try_run_plugin_cli};

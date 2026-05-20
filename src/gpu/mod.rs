@@ -7,16 +7,18 @@ mod shell_setup;
 
 pub mod canvas_texture;
 
+use std::sync::Arc;
+
 use anyhow::Result;
+use winit::dpi::PhysicalSize;
+use winit::window::Window;
+use winit::event_loop::EventLoopProxy;
+
 use crate::AppEvent;
 use crate::model::{LogicalPx, PhysicalPx, Rect};
 use crate::renderer::CellRenderer;
 use crate::settings::AppearanceSettings;
 use crate::state::AppState;
-use std::sync::Arc;
-use winit::dpi::PhysicalSize;
-use winit::window::Window;
-use winit::event_loop::EventLoopProxy;
 
 pub struct ImePreeditState {
     pub text: String,

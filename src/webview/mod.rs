@@ -15,6 +15,7 @@ mod windows;
 pub use linux::PlatformWebView;
 #[cfg(target_os = "macos")]
 pub use macos::PlatformWebView;
+
 #[cfg(windows)]
 pub use self::windows::PlatformWebView;
 

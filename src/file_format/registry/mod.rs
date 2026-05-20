@@ -3,28 +3,26 @@
 //! 출처별 contribution 을 따로 보관해 plugin uninstall 시 원본 복원 가능.
 //! finalize 는 incremental — install/uninstall 호출 후 dirty 표시 + identify 시 1회.
 
-mod helpers;
 mod cleanup;
+mod helpers;
 mod install;
 mod io;
 mod priority;
 mod query;
-mod user_edit;
-
 #[cfg(test)]
 mod tests;
-
-use helpers::{
-    decl_rule_to_kind, hex_to_bytes, identify_by_extension_priority, install_extension_priority,
-    install_one, parse_detector_section, parse_extension_priority_section,
-    path_extension_lowercase, rule_kind_eq, rule_kind_to_toml,
-};
+mod user_edit;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::RwLock;
 
+use helpers::{
+    decl_rule_to_kind, hex_to_bytes, identify_by_extension_priority, install_extension_priority,
+    install_one, parse_detector_section, parse_extension_priority_section,
+    path_extension_lowercase, rule_kind_eq, rule_kind_to_toml,
+};
 use tracing::warn;
 
 use super::config::{

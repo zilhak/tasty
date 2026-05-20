@@ -8,6 +8,12 @@ mod selection;
 
 pub(crate) mod ime;
 
+use std::sync::Arc;
+
+use winit::event::WindowEvent;
+use winit::keyboard::ModifiersState;
+use winit::window::CursorIcon;
+
 use crate::gpu::{GpuState, ImePreeditState};
 use crate::model::{PhysicalPx, Rect};
 use crate::selection::TextSelection;
@@ -17,10 +23,6 @@ use crate::window::{
     terminal_host::MODELESS_MODALITY,
 };
 use crate::{AppEvent, ClipboardContext};
-use std::sync::Arc;
-use winit::event::WindowEvent;
-use winit::keyboard::ModifiersState;
-use winit::window::CursorIcon;
 
 /// 메인 터미널 윈도우. 워크스페이스/사이드바/탭을 갖고 터미널 계열 Surface를 호스팅한다.
 /// `TerminalHostWindow` 계열의 대표 구현체.

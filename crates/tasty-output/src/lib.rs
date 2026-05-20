@@ -12,9 +12,10 @@
 
 pub mod parsers;
 
+use std::sync::LazyLock;
+
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::sync::LazyLock;
 
 /// 파싱된 의미 단위 한 건. `kind` 가 파서 ID 와 일치하며 `data` 는 파서별
 /// 구조화된 페이로드 (JSON).

@@ -18,12 +18,14 @@ pub mod preset_apply;
 pub mod search;
 pub mod selection;
 
+use std::collections::VecDeque;
+
+use tasty_terminal::{TerminalEvent, Waker};
+
 use crate::engine_state::EngineState;
 use crate::model::{LogicalPx, PhysicalPx};
 use crate::settings_ui::SettingsUiState;
 use crate::ui::info_modal::InfoModal;
-use std::collections::VecDeque;
-use tasty_terminal::{TerminalEvent, Waker};
 
 /// Type of the currently focused surface, used for keyboard routing.
 ///

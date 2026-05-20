@@ -13,12 +13,13 @@ mod hook;
 mod install;
 mod state;
 
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
 use error_scan::ErrorScanner;
 use handlers::*;
 use serde_json::{json, Value};
 use state::{ChildEntry, ClaudeState};
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
 use tasty_plugin_sdk::{
     EventDispatchCtx, HostHandle, IpcMethodCtx, IpcMethodError, Plugin, SurfaceCreateCtx,
     SurfaceEventCtx, SurfaceResult,

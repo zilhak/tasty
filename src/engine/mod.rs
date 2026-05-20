@@ -1,9 +1,10 @@
 pub mod output_observer;
 pub mod state;
 
+use winit::event_loop::EventLoopProxy;
+
 use crate::AppEvent;
 use crate::ipc::server::IpcServer;
-use winit::event_loop::EventLoopProxy;
 
 /// The central engine that owns IPC server and coordinates windows.
 /// EngineState is currently inside AppState (composition), and will be

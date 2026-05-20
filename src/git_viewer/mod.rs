@@ -8,12 +8,14 @@ pub mod diff_panel;
 pub mod log_panel;
 pub mod status_panel;
 
+use std::path::PathBuf;
+
+pub use data::{DiffData, LogEntry, StatusEntry};
+
 use crate::i18n::t;
 use crate::state::AppState;
 use crate::theme;
 use crate::ui::popup::PopupAction;
-pub use data::{DiffData, LogEntry, StatusEntry};
-use std::path::PathBuf;
 
 pub const GIT_VIEWER_POPUP_ID: &str = "git_viewer";
 

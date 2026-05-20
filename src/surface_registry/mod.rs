@@ -17,10 +17,12 @@
 pub mod builtins;
 pub mod meta;
 
-pub use builtins::register_builtin_kinds;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
+
 use tasty_core::model::{Surface, SurfaceId};
+
+pub use builtins::register_builtin_kinds;
 
 /// `ClosedPanel::from_*` 가족이 받는 snapshot 클로저를 registry 위에서 만든다.
 /// 호출자는 결과를 `&mut`로 가지고 한 capture 트랜잭션 동안 reuse한다.

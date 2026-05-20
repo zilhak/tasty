@@ -17,10 +17,11 @@ mod tree;
 #[cfg(windows)]
 mod windows;
 
-pub use cache::PortScanCache;
 use std::collections::HashSet;
 use std::net::IpAddr;
 use std::time::{Duration, Instant};
+
+pub use cache::PortScanCache;
 pub use tree::collect_descendant_pids;
 
 /// A TCP listening port observed for one process.

@@ -31,8 +31,9 @@ mod platform;
 
 pub mod footer;
 
-pub use error::ShmError;
 use std::sync::atomic::{AtomicU64, Ordering};
+
+pub use error::ShmError;
 
 /// 송신측 PID 식별자. Windows의 `DuplicateHandle`이 peer 프로세스 핸들 테이블에
 /// HANDLE을 복제할 때 필요. Unix에서는 무시된다 (SCM_RIGHTS는 PID 불요).

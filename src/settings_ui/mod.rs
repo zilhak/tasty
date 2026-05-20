@@ -2,6 +2,12 @@ mod file_handler_tab;
 mod keybindings_tab;
 mod tabs;
 
+use file_handler_tab::{FileHandlerSubTab, draw_file_handler_tab};
+use keybindings_tab::{KeybindingsSubTab, PendingBinding, RecordingSlot, draw_keybindings_tab};
+use tabs::*;
+
+pub use keybindings_tab::{KeyCapture, capture_winit_key_combo};
+
 use crate::file_format::{DetectorId, FileFormatRegistry};
 use crate::file_handler::FileHandlerRegistry;
 use crate::i18n::t;
@@ -9,10 +15,6 @@ use crate::plugin::manifest::BindingMode;
 use crate::plugin::registry_state::ShortcutOverride;
 use crate::settings::Settings;
 use crate::ui::popup::{PopupManager, PopupState};
-use file_handler_tab::{FileHandlerSubTab, draw_file_handler_tab};
-pub use keybindings_tab::{KeyCapture, capture_winit_key_combo};
-use keybindings_tab::{KeybindingsSubTab, PendingBinding, RecordingSlot, draw_keybindings_tab};
-use tabs::*;
 
 /// 단계 E: Plugins 서브탭에서 표시할 한 row.
 ///

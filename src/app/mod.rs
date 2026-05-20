@@ -12,11 +12,13 @@ pub(crate) mod plugin_glue;
 pub(crate) mod window_access;
 pub(crate) mod window_lifecycle;
 
-use crate::gpu::GpuState;
-use crate::{AppEvent, engine, plugin, state, window};
 use std::sync::Arc;
+
 use winit::event_loop::EventLoopProxy;
 use winit::window::{Window, WindowId};
+
+use crate::gpu::GpuState;
+use crate::{AppEvent, engine, plugin, state, window};
 
 pub(crate) struct App {
     pub(crate) engine: engine::Engine,
