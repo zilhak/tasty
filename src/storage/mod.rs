@@ -170,12 +170,6 @@ pub fn init() -> Result<(), DbInitError> {
     Ok(())
 }
 
-/// 테스트용: 이미 열린 Db를 싱글톤으로 등록. 이미 등록되어 있으면 no-op.
-#[cfg(test)]
-pub fn init_with(db: Db) {
-    // 동일 OnceLock 패턴 — 이미 등록되었으면 의도적 no-op.
-    let _ = DB.set(Mutex::new(db));
-}
 
 /// 싱글톤 접근. `init()`이 호출되지 않았으면 None.
 pub fn with_db<T>(f: impl FnOnce(&mut Db) -> T) -> Option<T> {
