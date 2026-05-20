@@ -3,23 +3,19 @@
 
 mod app;
 mod boot;
-mod cli;
 mod clipboard;
 mod command_index;
 mod command_palette;
 mod db;
 mod file;
-
 mod git_viewer;
 mod gpu;
-mod hooks;
+mod host_api;
 mod input;
 mod intent;
-mod ipc;
 mod layout_persistence;
 mod native_menu;
 mod platform;
-mod plugin;
 mod plugins_ui;
 mod renderer;
 mod settings_ui;
@@ -29,7 +25,6 @@ mod store;
 mod surface_registry;
 mod ui;
 mod update_check;
-mod webview;
 
 pub mod engine;
 pub mod window;
@@ -49,7 +44,12 @@ pub(crate) use file::dispatch as file_dispatch;
 pub(crate) use file::handler_recent as file_handler_recent;
 pub(crate) use file::handlers_save as file_handlers_save;
 pub(crate) use file::identify_worker;
-pub(crate) use hooks::global as global_hooks;
+pub(crate) use host_api::cli;
+pub(crate) use host_api::hooks;
+pub(crate) use host_api::hooks::global as global_hooks;
+pub(crate) use host_api::ipc;
+pub(crate) use host_api::plugin;
+pub(crate) use host_api::webview;
 pub(crate) use input::click_cursor;
 pub(crate) use input::double_tap;
 pub(crate) use platform::app_icon;
