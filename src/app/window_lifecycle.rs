@@ -145,7 +145,7 @@ impl App {
         // state.db / memory.db 초기화는 create_app_state 이전에 반드시 호출.
         // 첫 윈도우는 `create_new_window` 를 거치지 않고 곧장 이 함수로 진입하므로
         // 여기서도 호출이 필요하다. 두 init 모두 OnceLock 기반 idempotent.
-        let db_init_error = crate::storage::init().err();
+        let db_init_error = crate::db::init().err();
 
         let memory_config = tasty_memory::MemoryConfig {
             entry_max_bytes: settings.memory.entry_max_mb.saturating_mul(1024 * 1024),
@@ -224,7 +224,7 @@ impl App {
 
         // state.db 초기화. 실패하면 InfoModal로 안내 후 종료(Exit 1).
         // create_app_state 이전에 호출해야 plugin/recent_files 등이 정상 동작.
-        let db_init_error = crate::storage::init().err();
+        let db_init_error = crate::db::init().err();
 
         let mut settings = crate::settings::Settings::load();
 

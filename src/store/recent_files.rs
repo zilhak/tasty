@@ -24,7 +24,7 @@ fn now_secs() -> i64 {
 impl RecentFiles {
     /// 앱 시작 시 1회 호출. 이후는 캐시를 사용.
     pub fn load() -> Self {
-        crate::storage::with_db(|db| {
+        crate::db::with_db(|db| {
             let markdown = query_list(
                 &db.conn,
                 "SELECT path FROM recent_markdown ORDER BY opened_at DESC LIMIT ?1",
@@ -43,7 +43,7 @@ impl RecentFiles {
         self.markdown.insert(0, path.clone());
         self.markdown.truncate(MAX_ENTRIES);
         let ts = now_secs();
-        if crate::storage::with_db(|db| upsert_markdown(&db.conn, &path, ts)).is_none() {
+        if crate::db::with_db(|db| upsert_markdown(&db.conn, &path, ts)).is_none() {
             tracing::trace!("recent_files markdown upsert skipped: storage unavailable");
         }
         prune_table("recent_markdown", "path");
@@ -54,7 +54,7 @@ impl RecentFiles {
         self.html.insert(0, url.clone());
         self.html.truncate(MAX_ENTRIES);
         let ts = now_secs();
-        if crate::storage::with_db(|db| upsert_html(&db.conn, &url, ts)).is_none() {
+        if crate::db::with_db(|db| upsert_html(&db.conn, &url, ts)).is_none() {
             tracing::trace!("recent_files html upsert skipped: storage unavailable");
         }
         prune_table("recent_html", "url");
@@ -112,7 +112,7 @@ fn prune_table(table: &str, key_col: &str) {
         table = table,
         key_col = key_col,
     );
-    if crate::storage::with_db(|db| {
+    if crate::db::with_db(|db| {
         if let Err(e) = db.conn.execute(&sql, rusqlite::params![MAX_ENTRIES as i64]) {
             tracing::warn!("prune {table} failed: {e}");
         }
