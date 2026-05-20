@@ -8,10 +8,9 @@ mod numeric;
 mod tests;
 mod zoom;
 
+pub(crate) use binding::matches_any_binding;
 use winit::event_loop::EventLoopProxy;
 use winit::keyboard::{Key, KeyCode, PhysicalKey};
-
-pub(crate) use binding::matches_any_binding;
 
 /// Best-effort `EventLoopProxy::send_event` dispatch.
 ///

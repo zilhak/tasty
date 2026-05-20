@@ -13,12 +13,10 @@ mod scrollback;
 #[cfg(test)]
 mod tests;
 
+use crate::engine_state::EngineState;
 pub use schema::SavedLayout;
-
 use std::path::PathBuf;
 use std::time::Instant;
-
-use crate::engine_state::EngineState;
 
 const DEBOUNCE_MS: u128 = 500;
 pub(super) const LAYOUT_VERSION: u32 = 2;

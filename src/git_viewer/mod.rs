@@ -3,19 +3,17 @@
 //! 결정 사항: read-only 만 (mutate 작업 없음), 그래프 없음 (Phase 1 평면 리스트),
 //! diff 는 working tree vs HEAD 통합. IPC 미노출 — 사용자 UI 편의 기능.
 
-use std::path::PathBuf;
-
 pub mod data;
 pub mod diff_panel;
 pub mod log_panel;
 pub mod status_panel;
 
-pub use data::{DiffData, LogEntry, StatusEntry};
-
 use crate::i18n::t;
 use crate::state::AppState;
 use crate::theme;
 use crate::ui::popup::PopupAction;
+pub use data::{DiffData, LogEntry, StatusEntry};
+use std::path::PathBuf;
 
 pub const GIT_VIEWER_POPUP_ID: &str = "git_viewer";
 

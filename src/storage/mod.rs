@@ -15,13 +15,11 @@
 
 mod migrations;
 
+pub use migrations::DbSchemaError;
+use rusqlite::{Connection, ErrorCode};
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard, OnceLock};
-
-use rusqlite::{Connection, ErrorCode};
-
-pub use migrations::DbSchemaError;
 
 pub struct Db {
     pub conn: Connection,
