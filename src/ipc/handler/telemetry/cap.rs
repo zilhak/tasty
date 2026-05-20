@@ -3,8 +3,8 @@
 use serde_json::{Value, json};
 use tasty_memory::{ListOpts, MemoryValue, PutOpts, Scope, with_store};
 use tasty_telemetry::{
-    CAP_KEY_PREFIX, CapAction, CapWindow, CostCap, EVENT_KEY_PREFIX, Op, TelemetryEvent,
-    cap_key, event_key, summarize_events, validate_agent_id, validate_metric,
+    CAP_KEY_PREFIX, CapAction, CapWindow, CostCap, TelemetryEvent, cap_key, summarize_events,
+    validate_agent_id, validate_metric,
 };
 
 use crate::ipc::caller::CallerContext;

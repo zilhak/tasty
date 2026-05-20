@@ -24,7 +24,6 @@ pub(crate) use ui::diff as diff_ui;
 pub(crate) use ui::empty as empty_ui;
 pub mod engine;
 pub(crate) use engine::state as engine_state;
-pub(crate) use app::event_handler;
 mod file;
 pub(crate) use file::dispatch as file_dispatch;
 pub(crate) use file::handler_recent as file_handler_recent;

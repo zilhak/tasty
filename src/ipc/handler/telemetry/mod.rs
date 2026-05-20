@@ -14,19 +14,15 @@
 //! 단계 4.2+ 에서 dispatcher 미들웨어가 자동으로 ipc.<method> 카운트를
 //! 기록하기 시작한다.
 
-use std::collections::BTreeMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use serde_json::{Map, Value, json};
-use tasty_memory::{ListOpts, MemoryValue, PutOpts, Scope, with_store};
+use serde_json::Value;
+use tasty_memory::{MemoryValue, PutOpts, Scope, with_store};
 use tasty_telemetry::{
-    ANOMALY_KEY_PREFIX, Anomaly, CAP_KEY_PREFIX, CapAction, CapWindow, CostCap,
-    EVENT_KEY_PREFIX, Op, TelemetryEvent, Window, aggregate_into_buckets, anomaly_key, cap_key,
-    event_key, summarize_events, top_n, validate_agent_id, validate_metric,
+    CapAction, Op, TelemetryEvent, event_key, validate_agent_id, validate_metric,
 };
 
 use crate::ipc::caller::CallerContext;
-use crate::ipc::protocol::JsonRpcResponse;
 use crate::state::AppState;
 
 fn now_ms() -> u64 {

@@ -1,7 +1,7 @@
 //! `memory.secret.*` IPC handlers (secret 영역).
 
 use serde_json::{Value, json};
-use tasty_memory::{ListOpts, MemoryArea, MemoryValue, PutOpts, with_store};
+use tasty_memory::{ListOpts, PutOpts, with_store};
 
 use crate::ipc::caller::CallerContext;
 use crate::ipc::protocol::JsonRpcResponse;

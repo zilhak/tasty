@@ -1,7 +1,5 @@
 //! `telemetry.summary` / `telemetry.timeseries` / `telemetry.top` 핸들러.
 
-use std::collections::BTreeMap;
-
 use serde_json::{Map, Value, json};
 use tasty_memory::{ListOpts, MemoryValue, Scope, with_store};
 use tasty_telemetry::{

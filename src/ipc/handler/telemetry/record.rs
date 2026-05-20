@@ -1,15 +1,12 @@
 //! `telemetry.record` / `telemetry.record_batch` 핸들러.
 
 use serde_json::{Value, json};
-use tasty_telemetry::{TelemetryEvent, validate_agent_id, validate_metric};
 
 use crate::ipc::caller::CallerContext;
 use crate::ipc::protocol::JsonRpcResponse;
 use crate::state::AppState;
 
-use super::{
-    build_event, evaluate_caps_after_record, now_ms, parse_tags, persist_event, scope_for,
-};
+use super::{build_event, evaluate_caps_after_record, now_ms, persist_event};
 
 pub fn handle_record(
     state: &mut AppState,

@@ -6,7 +6,7 @@ use serde_json::{Value, json};
 use tasty_memory::{ListOpts, MemoryValue, Scope, with_store};
 
 use super::query::{QueryFilter, collect_events};
-use tasty_telemetry::{ANOMALY_KEY_PREFIX, Anomaly, EVENT_KEY_PREFIX, TelemetryEvent};
+use tasty_telemetry::{ANOMALY_KEY_PREFIX, Anomaly};
 
 use crate::ipc::caller::CallerContext;
 use crate::ipc::protocol::JsonRpcResponse;
