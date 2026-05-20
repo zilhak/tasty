@@ -9,7 +9,6 @@ description = "Cross-platform TCP listening port enumeration for tasty"
 tracing = "0.1"
 
 [target.'cfg(target_os = "macos")'.dependencies]
-libc = "0.2"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = [

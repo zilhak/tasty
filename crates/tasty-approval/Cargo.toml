@@ -8,7 +8,6 @@ description = "Human-handoff approval workflow: request/respond/await with timeo
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tracing = "0.1"
 thiserror = "2"
 
 [lints]
