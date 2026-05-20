@@ -2,7 +2,7 @@
 
 #![cfg(test)]
 
-    use super::*;
+    use crate::*;
 
     #[test]
     fn metric_validation() {
