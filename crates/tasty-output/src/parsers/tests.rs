@@ -2,8 +2,7 @@
 
 #![cfg(test)]
 
-    use super::*;
-    use crate::parse_buffer;
+    use crate::{parse_buffer, ParsedItem};
 
     fn first<'a>(items: &'a [ParsedItem], kind: &str) -> &'a ParsedItem {
         items.iter().find(|i| i.kind == kind).expect("no item")
