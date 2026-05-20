@@ -8,10 +8,6 @@
 //! - macOS: `lsof -iTCP -sTCP:LISTEN -nP -p <pids>` subprocess (no good API in stable Rust)
 //! - Windows: `GetExtendedTcpTable` Win32 API with `TCP_TABLE_OWNER_PID_LISTENER`
 
-use std::collections::HashSet;
-use std::net::IpAddr;
-use std::time::{Duration, Instant};
-
 mod cache;
 #[cfg(target_os = "linux")]
 mod linux;
@@ -22,6 +18,9 @@ mod tree;
 mod windows;
 
 pub use cache::PortScanCache;
+use std::collections::HashSet;
+use std::net::IpAddr;
+use std::time::{Duration, Instant};
 pub use tree::collect_descendant_pids;
 
 /// A TCP listening port observed for one process.

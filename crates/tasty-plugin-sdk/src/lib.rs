@@ -17,7 +17,6 @@ pub mod ui;
 pub use bus::BusHandle;
 pub use error::{PluginError, Result};
 pub use host::HostHandle;
-pub use shared_buffer::SharedBuffer;
 #[allow(deprecated)]
 pub use host::HostCallError;
 pub use plugin::{
@@ -27,9 +26,7 @@ pub use plugin::{
     SurfaceSnapshotCtx,
 };
 pub use runtime::run;
-
-// 자주 쓰이는 wire 타입을 SDK에서 직접 노출 — plugin 작성자가 별도로
-// `tasty-plugin-protocol`을 의존하지 않아도 되도록.
+pub use shared_buffer::SharedBuffer;
 pub use tasty_plugin_protocol::ui_tree::{
     ButtonStyle, LabelStyle, SelectionMode, SplitDir, TreeNode, UiEvent, UiNode,
 };

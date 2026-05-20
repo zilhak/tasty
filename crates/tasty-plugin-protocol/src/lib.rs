@@ -12,9 +12,7 @@ pub mod protocol;
 pub mod ui_tree;
 
 pub use events::{EventEnvelope, EventMeta, EventOrigin, EventScope, LifecycleReason, MAX_HOP};
-
 pub use ipc_method::{IpcInvokeParams, METHOD_IPC_INVOKE};
-
 pub use protocol::{
     AuthAck, AuthAckEnvelope, AuthMessage, CommandInvokeParams, EventDispatchParams,
     ExtensionHookInvokeParams, ExtensionHookKind, ExtensionHookMode, ExtensionHookPhase,

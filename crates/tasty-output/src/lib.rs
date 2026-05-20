@@ -10,12 +10,11 @@
 //! - `prompt_boundary` — OSC 133 `\x1b]133;A` / `B` / `C` / `D` 마커
 //! - `exit_code` — OSC 133 `D;<code>` 페이로드
 
-use std::sync::LazyLock;
+pub mod parsers;
 
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-
-pub mod parsers;
+use std::sync::LazyLock;
 
 /// 파싱된 의미 단위 한 건. `kind` 가 파서 ID 와 일치하며 `data` 는 파서별
 /// 구조화된 페이로드 (JSON).

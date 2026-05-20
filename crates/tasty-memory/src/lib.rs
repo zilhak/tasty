@@ -30,21 +30,20 @@
 //! 동기 콜백. IPC dispatch 는 메인 스레드에서 순차 호출되고, plugin process 호출도
 //! 별도 스레드의 mpsc 경로를 거쳐 결국 메인에서 처리되므로 단일 mutex 로 충분.
 
-pub mod blackboard;
-pub mod cache;
 mod migrations;
-pub mod plan;
 mod scope;
 
+pub mod blackboard;
+pub mod cache;
+pub mod plan;
+
+pub use migrations::{DbSchemaError, SCHEMA_VERSION};
+use rusqlite::{Connection, ErrorCode, OptionalExtension, params};
+pub use scope::{Scope, validate_key};
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
-
-use rusqlite::{Connection, ErrorCode, OptionalExtension, params};
-use serde::{Deserialize, Serialize};
-
-pub use migrations::{DbSchemaError, SCHEMA_VERSION};
-pub use scope::{Scope, validate_key};
 
 /// 단일 값 최대 크기 fallback (1 MiB). config 미주입 시 사용. 실제 cap 은
 /// `MemoryConfig::entry_max_bytes` 가 결정한다.

@@ -6,20 +6,19 @@
 
 #[cfg(target_os = "linux")]
 mod linux;
+#[cfg(target_os = "macos")]
+mod macos;
+#[cfg(windows)]
+mod windows;
+
 #[cfg(target_os = "linux")]
 pub(crate) use linux::{
     PlatformMapping, PlatformPayload, PlatformSendable, create, prepare_send, receive,
 };
-
-#[cfg(target_os = "macos")]
-mod macos;
 #[cfg(target_os = "macos")]
 pub(crate) use macos::{
     PlatformMapping, PlatformPayload, PlatformSendable, create, prepare_send, receive,
 };
-
-#[cfg(windows)]
-mod windows;
 #[cfg(windows)]
 pub(crate) use windows::{
     PlatformMapping, PlatformPayload, PlatformSendable, create, prepare_send, receive,

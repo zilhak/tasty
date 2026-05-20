@@ -24,15 +24,14 @@
 //! / `as_mut_slice`는 `unsafe`다. 호출자는 (1) 동기화가 보장된 시점에 읽고, (2)
 //! 내용을 *코드로 해석하지 않는다*(픽셀/오디오/raw 바이트 외 용도 금지)는 두 조건을
 //! 지켜야 한다.
-
 #![deny(missing_docs)]
 
 mod error;
-pub mod footer;
 mod platform;
 
-pub use error::ShmError;
+pub mod footer;
 
+pub use error::ShmError;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 /// 송신측 PID 식별자. Windows의 `DuplicateHandle`이 peer 프로세스 핸들 테이블에

@@ -8,7 +8,6 @@ pub mod model;
 pub mod storage;
 
 pub use capture::{CaptureFn, CaptureOptions, CapturedSurfaceMeta};
-
 pub use model::{
     LayoutPreset, PanePreset, PresetKind, PresetPane, PresetPaneNode, PresetSplitDirection,
     PresetSurface, PresetSurfaceLayout, PresetTab, TabPreset, WorkspacePreset,

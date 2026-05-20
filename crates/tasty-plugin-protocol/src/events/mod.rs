@@ -8,6 +8,7 @@
 //! `docs/agent-guide/event-catalog.md`가 단일 출처(SoT)다.
 
 mod envelope;
+
 pub mod payloads;
 
 pub use envelope::{EventEnvelope, EventMeta, EventOrigin, EventScope, MAX_HOP, LifecycleReason};
