@@ -8,8 +8,8 @@ use anyhow::Result;
 use serde_json::{Map, Value, json};
 
 use crate::cli::transport::IpcConnection;
-use crate::file_format::config::DetectorRuleDecl;
-use crate::file_handler::config::PluginHandlerActionDecl;
+use crate::file::format::config::DetectorRuleDecl;
+use crate::file::handler::config::PluginHandlerActionDecl;
 use crate::ipc::server::IpcServer;
 use crate::plugin::manifest::Manifest;
 

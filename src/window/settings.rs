@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use winit::event::WindowEvent;
 
-use crate::file_format::FileFormatRegistry;
-use crate::file_handler::FileHandlerRegistry;
+use crate::file::format::FileFormatRegistry;
+use crate::file::handler::FileHandlerRegistry;
 use crate::gpu::GpuState;
 use crate::i18n::t;
 use crate::settings::Settings;

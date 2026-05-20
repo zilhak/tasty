@@ -11,8 +11,8 @@
 
 use std::path::PathBuf;
 
-use crate::file_format::{DetectDepth, DetectorId, FileTarget};
-use crate::file_handler::{FileHandler, HandlerAction, HandlerId};
+use crate::file::format::{DetectDepth, DetectorId, FileTarget};
+use crate::file::handler::{FileHandler, HandlerAction, HandlerId};
 use crate::state::{AppState, FileHandlerPickerData, PickerHandlerSummary};
 
 /// 클릭/드롭된 URI 의 종류.

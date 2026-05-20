@@ -245,8 +245,8 @@ impl MainWindow {
                             crate::file_dispatch::LinkKind::FileTarget(path) => {
                                 crate::file_dispatch::dispatch_file_target(
                                     &mut self.state,
-                                    crate::file_format::FileTarget::new(path),
-                                    crate::file_format::DetectDepth::Deep,
+                                    crate::file::format::FileTarget::new(path),
+                                    crate::file::format::DetectDepth::Deep,
                                 );
                             }
                             crate::file_dispatch::LinkKind::External(uri) => {

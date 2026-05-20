@@ -3,7 +3,7 @@
 #![cfg(test)]
 
 use super::*;
-use crate::file_format::DetectorId;
+use crate::file::format::DetectorId;
 
 fn load_host(reg: &FileHandlerRegistry) {
     reg.install_host_defaults(include_str!("defaults/default-file-handlers.toml"));
@@ -213,7 +213,7 @@ fn all_handlers_returns_every_enabled() {
 // 1) `identify(*.pdf)` 가 user detector 를 반환하고
 // 2) `handlers_for(pdf)` 가 user handler 를 반환하는지 확인.
 
-use crate::file_format::{DetectDepth, FileFormatRegistry, FileTarget};
+use crate::file::format::{DetectDepth, FileFormatRegistry, FileTarget};
 
 fn make_user_toml(toml_text: &str) -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
@@ -225,9 +225,7 @@ fn make_user_toml(toml_text: &str) -> tempfile::TempDir {
 #[test]
 fn user_pdf_detector_and_handler_round_trip() {
     let formats = FileFormatRegistry::new();
-    formats.install_host_defaults(include_str!(
-        "../file_format/defaults/default-file-format.toml"
-    ));
+    formats.install_host_defaults(include_str!("../format/defaults/default-file-format.toml"));
 
     let handlers = FileHandlerRegistry::new();
     load_host(&handlers);
@@ -256,10 +254,10 @@ fn user_pdf_detector_and_handler_round_trip() {
         &FileTarget::new(std::path::PathBuf::from("docs/spec.pdf")),
         DetectDepth::Cheap,
     );
-    assert_eq!(id, Some(crate::file_format::DetectorId("pdf".into())));
+    assert_eq!(id, Some(crate::file::format::DetectorId("pdf".into())));
 
     // handlers_for
-    let v = handlers.handlers_for(&crate::file_format::DetectorId("pdf".into()));
+    let v = handlers.handlers_for(&crate::file::format::DetectorId("pdf".into()));
     assert_eq!(v.len(), 1);
     assert_eq!(v[0].id.as_str(), "user/pdf-preview");
     assert!(matches!(v[0].action, HandlerAction::System));
@@ -382,9 +380,7 @@ fn export_empty_when_no_user_contributions() {
 #[test]
 fn directory_target_does_not_match_file_detectors() {
     let formats = FileFormatRegistry::new();
-    formats.install_host_defaults(include_str!(
-        "../file_format/defaults/default-file-format.toml"
-    ));
+    formats.install_host_defaults(include_str!("../format/defaults/default-file-format.toml"));
     let handlers = FileHandlerRegistry::new();
     load_host(&handlers);
 
@@ -402,11 +398,9 @@ fn directory_target_does_not_match_file_detectors() {
 
 #[test]
 fn attach_detector_info_stores_arc_and_returns_clone() {
-    use crate::file_format::FileFormatRegistry;
+    use crate::file::format::FileFormatRegistry;
     let formats = std::sync::Arc::new(FileFormatRegistry::new());
-    formats.install_host_defaults(include_str!(
-        "../file_format/defaults/default-file-format.toml"
-    ));
+    formats.install_host_defaults(include_str!("../format/defaults/default-file-format.toml"));
 
     let handlers = FileHandlerRegistry::new();
     assert!(handlers.detector_info().is_none());
@@ -422,12 +416,10 @@ fn attach_detector_info_stores_arc_and_returns_clone() {
 
 #[test]
 fn attach_detector_info_second_call_is_ignored() {
-    use crate::file_format::FileFormatRegistry;
+    use crate::file::format::FileFormatRegistry;
     let formats_a = std::sync::Arc::new(FileFormatRegistry::new());
     let formats_b = std::sync::Arc::new(FileFormatRegistry::new());
-    formats_a.install_host_defaults(include_str!(
-        "../file_format/defaults/default-file-format.toml"
-    ));
+    formats_a.install_host_defaults(include_str!("../format/defaults/default-file-format.toml"));
     // formats_b 는 host default 안 깐 빈 registry.
 
     let handlers = FileHandlerRegistry::new();

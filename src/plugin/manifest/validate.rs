@@ -472,7 +472,7 @@ impl Manifest {
         // [[contributes.detector]] 검증.
         let mut seen_detector_ids = HashSet::new();
         for decl in &self.contributes.detector {
-            if !crate::file_format::is_valid_detector_id(&decl.id) {
+            if !crate::file::format::is_valid_detector_id(&decl.id) {
                 anyhow::bail!(
                     "invalid contributes.detector id '{}': must be lowercase ascii + digits + '-', length ≤ 64",
                     decl.id
@@ -491,7 +491,7 @@ impl Manifest {
                 );
             }
             // 각 rule schema 검증 (cross-ref 인 lua/structure spec 존재여부는 install 시점에)
-            if let Err(e) = crate::file_format::config::validate_detector_decl(decl, true) {
+            if let Err(e) = crate::file::format::config::validate_detector_decl(decl, true) {
                 anyhow::bail!("contributes.detector '{}': {e}", decl.id);
             }
         }
@@ -515,10 +515,10 @@ impl Manifest {
                         decl.id
                     );
                 }
-                if let Err(e) = crate::file_handler::config::validate_plugin_handler_decl(decl) {
+                if let Err(e) = crate::file::handler::config::validate_plugin_handler_decl(decl) {
                     anyhow::bail!("contributes.handler: {e}");
                 }
-                if let Err(e) = crate::file_handler::config::validate_plugin_handler_refs(
+                if let Err(e) = crate::file::handler::config::validate_plugin_handler_refs(
                     decl,
                     &surface_kinds,
                     &ipc_prefixes,

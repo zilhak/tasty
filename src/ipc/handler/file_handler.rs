@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::file_format::{DetectDepth, FileTarget};
+use crate::file::format::{DetectDepth, FileTarget};
 use crate::ipc::protocol::JsonRpcResponse;
 use crate::state::AppState;
 

@@ -10,8 +10,8 @@
 use std::io::Write;
 use std::path::Path;
 
-use crate::file_format::FileFormatRegistry;
-use crate::file_handler::FileHandlerRegistry;
+use crate::file::format::FileFormatRegistry;
+use crate::file::handler::FileHandlerRegistry;
 
 /// 두 registry 의 user-origin export 를 합쳐 `path` 에 atomic write.
 /// 빈 결과 (양쪽 모두 user contribution 없음) 면 빈 파일로 덮어쓴다.
@@ -46,8 +46,8 @@ pub fn save_combined_user_config(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::file_format::FileFormatRegistry;
-    use crate::file_handler::FileHandlerRegistry;
+    use crate::file::format::FileFormatRegistry;
+    use crate::file::handler::FileHandlerRegistry;
 
     #[test]
     fn empty_registries_write_empty_file() {
@@ -78,8 +78,8 @@ rule = [{ kind = "extension", values = ["md"] }]
         fmt.set_user_extension_priority(
             "md",
             vec![
-                crate::file_format::DetectorId::new("mdx"),
-                crate::file_format::DetectorId::new("markdown"),
+                crate::file::format::DetectorId::new("mdx"),
+                crate::file::format::DetectorId::new("markdown"),
             ],
         );
         let hnd = FileHandlerRegistry::new();
@@ -98,8 +98,8 @@ rule = [{ kind = "extension", values = ["md"] }]
         assert_eq!(
             order,
             vec![
-                crate::file_format::DetectorId::new("mdx"),
-                crate::file_format::DetectorId::new("markdown"),
+                crate::file::format::DetectorId::new("mdx"),
+                crate::file::format::DetectorId::new("markdown"),
             ]
         );
     }

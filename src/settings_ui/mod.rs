@@ -8,8 +8,8 @@ use tabs::*;
 
 pub use keybindings_tab::{KeyCapture, capture_winit_key_combo};
 
-use crate::file_format::{DetectorId, FileFormatRegistry};
-use crate::file_handler::FileHandlerRegistry;
+use crate::file::format::{DetectorId, FileFormatRegistry};
+use crate::file::handler::FileHandlerRegistry;
 use crate::i18n::t;
 use crate::plugin::manifest::BindingMode;
 use crate::plugin::registry_state::ShortcutOverride;
@@ -252,7 +252,7 @@ pub fn draw_settings_panel(
                     }
                     if fh_touched {
                         if let Some(path) = user_config_path {
-                            if let Err(e) = crate::file_handlers_save::save_combined_user_config(
+                            if let Err(e) = crate::file::handlers_save::save_combined_user_config(
                                 file_format,
                                 file_handler,
                                 path,

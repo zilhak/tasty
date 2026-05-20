@@ -10,7 +10,7 @@ use std::sync::{Arc, RwLock};
 use serde::Deserialize;
 use tracing::warn;
 
-use crate::file_format::{DetectorId, DetectorInfo};
+use crate::file::format::{DetectorId, DetectorInfo};
 
 use super::config::{
     HandlerDecl, HandlerDeclError, HostHandlerActionDecl, PluginHandlerActionDecl,

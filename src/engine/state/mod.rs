@@ -148,12 +148,12 @@ pub struct EngineState {
     // ── File format / handler registries (file-handler-system) ──
     /// 파일 식별기 — host default + plugin contribute + user config 통합.
     /// `PluginManager` 와 같은 Arc 를 공유한다.
-    pub file_format: Arc<crate::file_format::FileFormatRegistry>,
+    pub file_format: Arc<crate::file::format::FileFormatRegistry>,
     /// 파일 핸들러 디스패치 테이블. `PluginManager` 와 같은 Arc 를 공유한다.
-    pub file_handler: Arc<crate::file_handler::FileHandlerRegistry>,
+    pub file_handler: Arc<crate::file::handler::FileHandlerRegistry>,
     /// 사용자가 picker 에서 직접 고른 handler 의 LRU 기록 (보조 신호).
     /// 부팅 시 디스크에서 로드, 매 선택마다 atomic save.
-    pub file_handler_recent: crate::file_handler_recent::RecentPicks,
+    pub file_handler_recent: crate::file::handler_recent::RecentPicks,
     /// 비동기 파일 식별 worker. `App` 이 EventLoopProxy 를 가진 시점에
     /// `create_app_state` 에서 주입한다 — waker_factory 와 동일 패턴.
     /// Phase C 의 mouse.rs 콜사이트가 이걸 호출해 deep identify 를 띄운다.
@@ -217,9 +217,9 @@ impl EngineState {
                 Arc::new(reg)
             },
             file_format: {
-                let reg = crate::file_format::FileFormatRegistry::new();
+                let reg = crate::file::format::FileFormatRegistry::new();
                 reg.install_host_defaults(include_str!(
-                    "../../file_format/defaults/default-file-format.toml"
+                    "../../file/format/defaults/default-file-format.toml"
                 ));
                 if let Some(path) = file_handler_user_config_path() {
                     reg.install_user_config(&path);
@@ -227,16 +227,16 @@ impl EngineState {
                 Arc::new(reg)
             },
             file_handler: {
-                let reg = crate::file_handler::FileHandlerRegistry::new();
+                let reg = crate::file::handler::FileHandlerRegistry::new();
                 reg.install_host_defaults(include_str!(
-                    "../../file_handler/defaults/default-file-handlers.toml"
+                    "../../file/handler/defaults/default-file-handlers.toml"
                 ));
                 if let Some(path) = file_handler_user_config_path() {
                     reg.install_user_config(&path);
                 }
                 Arc::new(reg)
             },
-            file_handler_recent: crate::file_handler_recent::RecentPicks::load(
+            file_handler_recent: crate::file::handler_recent::RecentPicks::load(
                 &file_handler_recent_path(),
             ),
             identify_worker: None,
@@ -365,7 +365,7 @@ impl EngineState {
     }
 
     /// 사용자 picker 선택 기록 — 즉시 디스크에 atomic save. 실패 시 warn 로그.
-    pub fn record_file_handler_pick(&mut self, id: &crate::file_handler::HandlerId) {
+    pub fn record_file_handler_pick(&mut self, id: &crate::file::handler::HandlerId) {
         self.file_handler_recent.record(id);
         let path = file_handler_recent_path();
         if let Err(e) = self.file_handler_recent.save_atomic(&path) {

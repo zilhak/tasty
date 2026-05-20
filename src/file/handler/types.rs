@@ -2,7 +2,7 @@
 //!
 //! `file_format::DetectorId` 만 import 한다 (단방향). evaluator / rule kind 는 모름.
 
-use crate::file_format::DetectorId;
+use crate::file::format::DetectorId;
 
 /// 핸들러의 전역 유일 식별자.
 ///

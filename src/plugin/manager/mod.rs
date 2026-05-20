@@ -277,9 +277,9 @@ pub struct PluginManager {
     pub(super) next_popup_instance_id: u64,
     /// 파일 형식 식별 시스템. plugin enable/disable 시 detector 추가/제거.
     /// 호스트 본문이 EngineState 와 같은 Arc 를 공유.
-    pub file_format: Arc<crate::file_format::FileFormatRegistry>,
+    pub file_format: Arc<crate::file::format::FileFormatRegistry>,
     /// 파일 핸들러 시스템. plugin enable/disable 시 handler 추가/제거.
-    pub file_handler: Arc<crate::file_handler::FileHandlerRegistry>,
+    pub file_handler: Arc<crate::file::handler::FileHandlerRegistry>,
 }
 
 /// 호스트가 추적 중인 popup 인스턴스 한 건. plugin process가 죽으면 함께 제거된다.

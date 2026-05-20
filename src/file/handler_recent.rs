@@ -14,7 +14,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
-use crate::file_handler::HandlerId;
+use crate::file::handler::HandlerId;
 
 /// 기본 보관 개수.
 pub const DEFAULT_CAP: usize = 10;

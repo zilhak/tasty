@@ -11,11 +11,11 @@ use super::helpers::{
     rule_kind_eq, rule_kind_to_toml,
 };
 use super::{DetectorContribution, ExtensionPriorityEntry, FileFormatRegistry};
-use crate::file_format::config::{
+use crate::file::format::config::{
     DetectorDecl, DetectorRuleDecl, ExtensionPriorityDecl, validate_detector_decl,
 };
-use crate::file_format::evaluator::{DeepCtx, evaluate_cheap, evaluate_deep};
-use crate::file_format::types::{
+use crate::file::format::evaluator::{DeepCtx, evaluate_cheap, evaluate_deep};
+use crate::file::format::types::{
     DetectDepth, DetectorId, DetectorRule, DetectorRuleKind, FileFormatDetector, FileTarget,
     RuleOrigin,
 };
@@ -108,7 +108,7 @@ impl FileFormatRegistry {
     pub fn upsert_user_detector(
         &self,
         decl: DetectorDecl,
-    ) -> Result<(), crate::file_format::config::DetectorDeclError> {
+    ) -> Result<(), crate::file::format::config::DetectorDeclError> {
         // user 영역도 `$` 예약 id 는 host 만 정의 가능 → from_plugin = true 와 동일 규칙.
         // 단 user 가 host 의 예약 detector ($directory) 를 patch 하는 시나리오는 있을 수 있어,
         // 이미 등록된 id 면 허용.
@@ -118,14 +118,14 @@ impl FileFormatRegistry {
             .map(|g| g.contributions.contains_key(&DetectorId(decl.id.clone())))
             .unwrap_or(false);
         let from_restricted = !already_exists;
-        let warnings = crate::file_format::config::validate_detector_decl(&decl, from_restricted)?;
+        let warnings = crate::file::format::config::validate_detector_decl(&decl, from_restricted)?;
         for w in warnings {
             warn!(warning = %w, "file_format: user detector decl warning");
         }
         let mut inner = match self.inner.write() {
             Ok(g) => g,
             Err(_) => {
-                return Err(crate::file_format::config::DetectorDeclError::InvalidId(
+                return Err(crate::file::format::config::DetectorDeclError::InvalidId(
                     "lock poisoned".into(),
                 ));
             }

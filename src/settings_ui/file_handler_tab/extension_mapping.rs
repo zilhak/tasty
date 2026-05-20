@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use crate::file_format::{DetectorId, DetectorInfo, FileFormatRegistry};
+use crate::file::format::{DetectorId, DetectorInfo, FileFormatRegistry};
 use crate::i18n::t;
 
 use super::draw_intro_block;

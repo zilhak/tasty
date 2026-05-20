@@ -184,7 +184,7 @@ impl std::error::Error for HandlerDeclError {}
 pub fn validate_plugin_handler_decl(
     decl: &HandlerDecl<PluginHandlerActionDecl>,
 ) -> Result<(), HandlerDeclError> {
-    use crate::file_format::is_valid_detector_id;
+    use crate::file::format::is_valid_detector_id;
 
     if !is_valid_handler_short_name(&decl.id) {
         return Err(HandlerDeclError::InvalidShortName(decl.id.clone()));

@@ -9,9 +9,7 @@ mod command_index;
 mod command_palette;
 mod db;
 mod file;
-mod file_drag;
-mod file_format;
-mod file_handler;
+
 mod git_viewer;
 mod gpu;
 mod hooks;
@@ -156,8 +154,8 @@ pub(crate) enum AppEvent {
     /// 오래된 결과를 drop 한다.
     IdentifyDone {
         request_id: crate::identify_worker::IdentifyRequestId,
-        target: crate::file_format::FileTarget,
-        detector: Option<crate::file_format::DetectorId>,
+        target: crate::file::format::FileTarget,
+        detector: Option<crate::file::format::DetectorId>,
     },
 }
 

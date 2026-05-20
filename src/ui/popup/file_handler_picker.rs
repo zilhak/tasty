@@ -152,7 +152,7 @@ pub fn draw_file_handler_picker(ui: &mut egui::Ui, state: &mut AppState) -> Popu
 
     // ── 두 열 list (좌: 후보 / 우: recent) ────────────────────────────
     // double_click_dispatch: 더블클릭 또는 [열기] 시 dispatch.
-    let mut double_click_dispatch: Option<crate::file_handler::HandlerId> = None;
+    let mut double_click_dispatch: Option<crate::file::handler::HandlerId> = None;
 
     let list_height = {
         let rows = state
@@ -279,7 +279,7 @@ fn draw_handler_list(
     items: &[PickerHandlerSummary],
     col_w: f32,
     state: &mut AppState,
-    double_click_dispatch: &mut Option<crate::file_handler::HandlerId>,
+    double_click_dispatch: &mut Option<crate::file::handler::HandlerId>,
 ) {
     for entry in items {
         let (rect, resp) =

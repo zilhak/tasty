@@ -13,8 +13,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::file_format::{DetectorDecl, DetectorId, FileFormatRegistry};
-use crate::file_handler::{FileHandlerRegistry, HandlerId, UserHandlerUpsertDecl};
+use crate::file::format::{DetectorDecl, DetectorId, FileFormatRegistry};
+use crate::file::handler::{FileHandlerRegistry, HandlerId, UserHandlerUpsertDecl};
 use crate::i18n::t;
 
 /// FileHandler 탭의 sub-tab.

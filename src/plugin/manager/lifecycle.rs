@@ -22,16 +22,16 @@ impl PluginManager {
     pub fn new(waker: tasty_core::SharedWakerFactory) -> Self {
         Self::with_registries(
             waker,
-            Arc::new(crate::file_format::FileFormatRegistry::new()),
-            Arc::new(crate::file_handler::FileHandlerRegistry::new()),
+            Arc::new(crate::file::format::FileFormatRegistry::new()),
+            Arc::new(crate::file::handler::FileHandlerRegistry::new()),
         )
     }
 
     /// EngineState 와 같은 Arc 를 공유하기 위한 생성자.
     pub fn with_registries(
         waker: tasty_core::SharedWakerFactory,
-        file_format: Arc<crate::file_format::FileFormatRegistry>,
-        file_handler: Arc<crate::file_handler::FileHandlerRegistry>,
+        file_format: Arc<crate::file::format::FileFormatRegistry>,
+        file_handler: Arc<crate::file::handler::FileHandlerRegistry>,
     ) -> Self {
         let log_dir = tasty_core::paths::tasty_home()
             .map(|d| d.join("plugins-logs"))

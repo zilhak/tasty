@@ -8,7 +8,7 @@ impl App {
     /// forward 된다. 응답은 무시 (fire-and-forget) — 핸들러 실행 결과는 plugin 자체
     /// 로그/이벤트로 관찰.
     pub(crate) fn dispatch_pending_handler_ipc(&mut self) {
-        let mut drained: Vec<(String, crate::file_format::FileTarget)> = Vec::new();
+        let mut drained: Vec<(String, crate::file::format::FileTarget)> = Vec::new();
         for w in self.windows.values_mut() {
             if let Some(main) = w.as_main_mut() {
                 drained.append(&mut main.state.pending_handler_ipc);

@@ -1,5 +1,5 @@
-use crate::file_format::FileFormatRegistry;
-use crate::file_handler::{
+use crate::file::format::FileFormatRegistry;
+use crate::file::handler::{
     FileHandlerRegistry, HandlerAction, HandlerOwner, UserHandlerActionDecl, UserHandlerUpsertDecl,
 };
 use crate::i18n::t;
@@ -30,7 +30,7 @@ pub(super) fn draw_handlers(
     if ids.is_empty() {
         ui.label(t("settings.file_handler.handlers.empty"));
     } else {
-        let mut rows: Vec<crate::file_handler::FileHandler> = ids
+        let mut rows: Vec<crate::file::handler::FileHandler> = ids
             .iter()
             .filter_map(|id| file_handler.handler(id))
             .collect();
@@ -265,14 +265,14 @@ fn build_add_handler_decl(form: &AddHandlerForm) -> Result<UserHandlerUpsertDecl
     if short.is_empty() {
         return Err(t("settings.file_handler.handlers.err_short_name_empty").to_string());
     }
-    if !crate::file_handler::is_valid_handler_short_name(short) {
+    if !crate::file::handler::is_valid_handler_short_name(short) {
         return Err(t("settings.file_handler.handlers.err_short_name_invalid").to_string());
     }
     let detector = form.detector_id_input.trim();
     if detector.is_empty() {
         return Err(t("settings.file_handler.handlers.err_detector_missing").to_string());
     }
-    if !crate::file_format::is_valid_detector_id(detector) {
+    if !crate::file::format::is_valid_detector_id(detector) {
         return Err(t("settings.file_handler.handlers.err_detector_invalid").to_string());
     }
     let priority_str = form.priority_input.trim();

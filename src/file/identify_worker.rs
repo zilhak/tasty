@@ -12,7 +12,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use winit::event_loop::EventLoopProxy;
 
 use crate::AppEvent;
-use crate::file_format::{DetectDepth, FileFormatRegistry, FileTarget};
+use crate::file::format::{DetectDepth, FileFormatRegistry, FileTarget};
 
 /// 식별 요청 식별자. 콜사이트가 마지막 요청 id 를 보관해 out-of-order 결과를 무시한다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

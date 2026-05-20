@@ -52,8 +52,8 @@ impl App {
             // Settings 윈도우가 main 창 없이 열리는 경로는 거의 없지만, fallback 으로 빈 registry 를 만든다.
             // 이 경로에서는 Settings 의 FileHandler 탭이 비어 보이고 저장도 의미가 없다.
             (
-                Arc::new(crate::file_format::FileFormatRegistry::new()),
-                Arc::new(crate::file_handler::FileHandlerRegistry::new()),
+                Arc::new(crate::file::format::FileFormatRegistry::new()),
+                Arc::new(crate::file::handler::FileHandlerRegistry::new()),
             )
         };
         let user_config_path =

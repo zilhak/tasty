@@ -199,13 +199,13 @@ impl Permission {
                     return Some(Self::Extension(target.to_string()));
                 }
                 if let Some(id) = other.strip_prefix("file_handler.extend:") {
-                    if !crate::file_format::is_valid_detector_id(id) || id == "$unknown" {
+                    if !crate::file::format::is_valid_detector_id(id) || id == "$unknown" {
                         return None;
                     }
                     return Some(Self::FileHandlerExtend(id.to_string()));
                 }
                 if let Some(id) = other.strip_prefix("file_handler.handle:") {
-                    if !crate::file_format::is_valid_detector_id(id) || id == "$unknown" {
+                    if !crate::file::format::is_valid_detector_id(id) || id == "$unknown" {
                         return None;
                     }
                     return Some(Self::FileHandlerHandle(id.to_string()));
@@ -386,14 +386,14 @@ pub struct Contributes {
     /// last-writer-wins (install 순서 host → plugin → user).
     /// `$`-시작 id 는 plugin 이 신규 정의할 수 없음 (manifest validation reject).
     #[serde(default)]
-    pub detector: Vec<crate::file_format::config::DetectorDecl>,
+    pub detector: Vec<crate::file::format::config::DetectorDecl>,
     /// 파일 핸들러 contribute. plugin 은 `OpenSurface` / `Ipc` 만 사용 가능 — `System`
     /// variant 자체가 plugin schema 에 없어 `kind = "system"` 적으면 deserialize 단계에서
     /// reject.
     #[serde(default)]
     pub handler: Vec<
-        crate::file_handler::config::HandlerDecl<
-            crate::file_handler::config::PluginHandlerActionDecl,
+        crate::file::handler::config::HandlerDecl<
+            crate::file::handler::config::PluginHandlerActionDecl,
         >,
     >,
 }

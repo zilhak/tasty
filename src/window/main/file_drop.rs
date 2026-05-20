@@ -75,8 +75,8 @@ impl MainWindow {
         for path in drops {
             crate::file_dispatch::dispatch_file_target(
                 &mut self.state,
-                crate::file_format::FileTarget::new(path),
-                crate::file_format::DetectDepth::Deep,
+                crate::file::format::FileTarget::new(path),
+                crate::file::format::DetectDepth::Deep,
             );
         }
     }

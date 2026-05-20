@@ -312,7 +312,7 @@ pub struct AppState {
 
     /// file_handler 디스패치 결과가 plugin IPC method 일 때의 호출 큐.
     /// `(ipc_method, target)`. App 메인 루프가 drain 해 `PluginManager` 로 forward.
-    pub pending_handler_ipc: Vec<(String, crate::file_format::FileTarget)>,
+    pub pending_handler_ipc: Vec<(String, crate::file::format::FileTarget)>,
 
     /// 외부 drag&drop 으로 파일이 hover 중인 상태. `HoveredFile` 마다 path 누적,
     /// `HoveredFileCancelled` / `DroppedFile` 시 해제. 비주얼 overlay 의 입력.
@@ -475,7 +475,7 @@ impl DialogState {
 /// file_handler picker popup 의 한 행 — handler 요약.
 #[derive(Debug, Clone)]
 pub struct PickerHandlerSummary {
-    pub id: crate::file_handler::HandlerId,
+    pub id: crate::file::handler::HandlerId,
     /// 표시용 라벨. i18n key 가 있으면 번역된 값, 없으면 handler id.
     pub display: String,
 }
@@ -489,17 +489,17 @@ pub struct PickerHandlerSummary {
 pub struct FileHandlerPickerData {
     /// 원본 dispatch target. picker 가 닫힌 뒤 host 가 handler 를 실행할 때
     /// 사용한다 — `target_display` 는 화면용이라 escape/축약이 들어갈 수 있다.
-    pub target: crate::file_format::FileTarget,
+    pub target: crate::file::format::FileTarget,
     /// 표시용 — picker 헤더에 보일 대상 (예: 파일 경로).
     pub target_display: String,
     /// 탐지된 detector — 없을 수도 있음 ($unknown 등 unmatched).
-    pub detector: Option<crate::file_format::DetectorId>,
+    pub detector: Option<crate::file::format::DetectorId>,
     /// 좌측 list 의 후보들 — handler id 사전순.
     pub candidates: Vec<PickerHandlerSummary>,
     /// 우측 list 의 recent handler ids — 현재 등록된 것만, 저장 파일 순서.
     pub recent: Vec<PickerHandlerSummary>,
     /// 현재 선택된 handler. 더블클릭/[열기]로 dispatch.
-    pub selected: Option<crate::file_handler::HandlerId>,
+    pub selected: Option<crate::file::handler::HandlerId>,
     /// dispatch 결과. host 본체 layer 가 frame 끝에서 소비.
     pub result: Option<FileHandlerPickerResult>,
 }
@@ -508,7 +508,7 @@ pub struct FileHandlerPickerData {
 #[derive(Debug, Clone)]
 pub enum FileHandlerPickerResult {
     /// 사용자가 handler 선택. host 본체 layer 가 실행 + recent 기록.
-    Selected(crate::file_handler::HandlerId),
+    Selected(crate::file::handler::HandlerId),
     /// 취소 또는 ESC — dispatch 없음.
     Cancelled,
 }

@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use crate::file_format::{
+use crate::file::format::{
     DetectorDecl, DetectorRuleDecl, DetectorRuleKind, FileFormatRegistry, RuleOrigin,
 };
 use crate::i18n::t;
@@ -179,7 +179,7 @@ fn build_add_detector_decl(form: &AddDetectorForm) -> Result<DetectorDecl, Strin
     if id.is_empty() {
         return Err(t("settings.file_handler.detectors.err_id_empty").to_string());
     }
-    if !crate::file_format::is_valid_detector_id(&id) {
+    if !crate::file::format::is_valid_detector_id(&id) {
         return Err(t("settings.file_handler.detectors.err_id_invalid").to_string());
     }
     let mut rules = Vec::new();
@@ -212,7 +212,7 @@ fn build_add_detector_decl(form: &AddDetectorForm) -> Result<DetectorDecl, Strin
     })
 }
 
-fn detector_origins_summary(rules: &[crate::file_format::DetectorRule]) -> String {
+fn detector_origins_summary(rules: &[crate::file::format::DetectorRule]) -> String {
     let mut origins: BTreeSet<String> = BTreeSet::new();
     for r in rules {
         let label = match &r.origin {
@@ -229,7 +229,7 @@ fn detector_origins_summary(rules: &[crate::file_format::DetectorRule]) -> Strin
     }
 }
 
-fn rule_kinds_summary(rules: &[crate::file_format::DetectorRule]) -> String {
+fn rule_kinds_summary(rules: &[crate::file::format::DetectorRule]) -> String {
     let mut kinds: Vec<&str> = rules
         .iter()
         .map(|r| match &r.kind {
