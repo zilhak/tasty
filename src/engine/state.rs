@@ -219,7 +219,7 @@ impl EngineState {
             file_format: {
                 let reg = crate::file::format::FileFormatRegistry::new();
                 reg.install_host_defaults(include_str!(
-                    "../../file/format/defaults/default-file-format.toml"
+                    "../file/format/defaults/default-file-format.toml"
                 ));
                 if let Some(path) = file_handler_user_config_path() {
                     reg.install_user_config(&path);
@@ -229,7 +229,7 @@ impl EngineState {
             file_handler: {
                 let reg = crate::file::handler::FileHandlerRegistry::new();
                 reg.install_host_defaults(include_str!(
-                    "../../file/handler/defaults/default-file-handlers.toml"
+                    "../file/handler/defaults/default-file-handlers.toml"
                 ));
                 if let Some(path) = file_handler_user_config_path() {
                     reg.install_user_config(&path);

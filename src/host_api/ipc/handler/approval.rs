@@ -316,5 +316,5 @@ pub use respond::handle_respond;
 pub use summary::{handle_summary_get, handle_summary_set};
 
 #[cfg(test)]
-#[path = "tests.rs"]
+#[path = "approval/tests.rs"]
 mod tests;

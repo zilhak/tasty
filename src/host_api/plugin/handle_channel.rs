@@ -570,5 +570,5 @@ mod unix_wire {
 mod windows;
 
 #[cfg(all(test, unix))]
-#[path = "channel_tests.rs"]
+#[path = "handle_channel/channel_tests.rs"]
 mod channel_tests;

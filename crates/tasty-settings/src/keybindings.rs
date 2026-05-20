@@ -102,5 +102,5 @@ mod crud;
 mod presets;
 
 #[cfg(test)]
-#[path = "tests.rs"]
+#[path = "keybindings/tests.rs"]
 mod tests;

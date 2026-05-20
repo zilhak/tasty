@@ -226,5 +226,5 @@ pub use graph::*;
 pub use store::*;
 
 #[cfg(test)]
-#[path = "tests.rs"]
+#[path = "task/tests.rs"]
 mod tests;
