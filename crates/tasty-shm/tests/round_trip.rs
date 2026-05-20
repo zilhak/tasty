@@ -16,7 +16,11 @@ mod unix {
         // payload가 들고 있는 fd를 dup해서 별개 fd를 만들어 송신 흉내.
         // SAFETY: dup syscall. payload.raw_fd()가 유효 fd.
         let dup_fd = unsafe { libc::dup(payload.raw_fd()) };
-        assert!(dup_fd >= 0, "dup failed: {}", std::io::Error::last_os_error());
+        assert!(
+            dup_fd >= 0,
+            "dup failed: {}",
+            std::io::Error::last_os_error()
+        );
         // payload는 여기서 drop되며 자기 fd를 close. dup_fd만 남는다.
         ReceivedPayload::Fd {
             fd: dup_fd,
@@ -75,8 +79,7 @@ mod unix {
         // 4096(정확 1페이지), 4097(경계 + 1), 16384(여러 페이지)
         for &size in &[4096usize, 4097, 16384] {
             let (mem_a, handle) = tasty_shm::create(size).expect("create");
-            let payload =
-                tasty_shm::prepare_send(handle, PeerPid::Same).expect("prepare_send");
+            let payload = tasty_shm::prepare_send(handle, PeerPid::Same).expect("prepare_send");
             let received = send_to_self(payload);
             let mem_b = tasty_shm::receive(received).expect("receive");
 
@@ -105,8 +108,7 @@ mod unix {
         for &size in &[1usize, 3, 17] {
             let (mem_a, handle) = tasty_shm::create(size).expect("create");
             assert_eq!(mem_a.len(), size);
-            let payload =
-                tasty_shm::prepare_send(handle, PeerPid::Same).expect("prepare_send");
+            let payload = tasty_shm::prepare_send(handle, PeerPid::Same).expect("prepare_send");
             let received = send_to_self(payload);
             let mem_b = tasty_shm::receive(received).expect("receive");
             assert_eq!(mem_b.len(), size);
@@ -118,8 +120,7 @@ mod unix {
         // 매핑/언맵을 반복해도 fd가 새지 않음을 검증 (rlimit으로 잡힐 만큼 많이).
         for _ in 0..256 {
             let (mem, handle) = tasty_shm::create(64).expect("create");
-            let payload =
-                tasty_shm::prepare_send(handle, PeerPid::Same).expect("prepare_send");
+            let payload = tasty_shm::prepare_send(handle, PeerPid::Same).expect("prepare_send");
             let received = send_to_self(payload);
             let mem2 = tasty_shm::receive(received).expect("receive");
             drop(mem);
@@ -138,12 +139,10 @@ mod unix {
         // SAFETY: dup syscall. fd 유효.
         let dup = unsafe { libc::dup(fd) };
         assert!(dup >= 0);
-        let _mem_b = tasty_shm::receive(ReceivedPayload::Fd { fd: dup, size })
-            .expect("receive");
+        let _mem_b = tasty_shm::receive(ReceivedPayload::Fd { fd: dup, size }).expect("receive");
         // payload는 함수 끝에서 drop → 원본 fd close. dup된 fd는 _mem_b가 들고 있어 살아있음.
         drop(payload);
     }
-
 }
 
 #[cfg(windows)]
@@ -206,8 +205,7 @@ mod win {
     fn drop_unmaps_without_leak() {
         for _ in 0..256 {
             let (mem, handle) = tasty_shm::create(64).expect("create");
-            let payload =
-                tasty_shm::prepare_send(handle, PeerPid::Same).expect("prepare_send");
+            let payload = tasty_shm::prepare_send(handle, PeerPid::Same).expect("prepare_send");
             let received = send_to_self(payload);
             let mem2 = tasty_shm::receive(received).expect("receive");
             drop(mem);

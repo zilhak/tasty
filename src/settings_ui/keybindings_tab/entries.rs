@@ -174,4 +174,3 @@ pub(super) fn draw_keybinding_entries(
         ui.add_space(ROW_GAP);
     }
 }
-

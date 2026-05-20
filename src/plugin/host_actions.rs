@@ -33,10 +33,7 @@ pub fn is_inheritable(action_id: &str) -> bool {
 /// 주어진 host action id에 매핑되는 `KeybindingSettings`의 키 목록.
 ///
 /// inherit 가능한 4종에만 매핑이 존재한다. 그 외 id는 `None`.
-pub fn host_action_for<'a>(
-    kb: &'a KeybindingSettings,
-    action_id: &str,
-) -> Option<&'a Vec<String>> {
+pub fn host_action_for<'a>(kb: &'a KeybindingSettings, action_id: &str) -> Option<&'a Vec<String>> {
     match action_id {
         "clipboard.copy" => Some(&kb.copy),
         "clipboard.paste" => Some(&kb.paste),
@@ -59,7 +56,10 @@ mod tests {
         // 화이트리스트의 모든 id가 host_action_for로 해석된다.
         let kb = kb();
         for id in INHERITABLE_HOST_ACTIONS {
-            assert!(host_action_for(&kb, id).is_some(), "missing mapping for {id}");
+            assert!(
+                host_action_for(&kb, id).is_some(),
+                "missing mapping for {id}"
+            );
         }
     }
 

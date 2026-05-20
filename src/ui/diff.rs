@@ -36,11 +36,17 @@ pub fn draw_diff(ui: &mut egui::Ui, panel: &DiffPanel) -> Option<DiffAction> {
                     .color(header_color),
             );
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button(crate::i18n::t("diff.button.reject").to_string()).clicked() {
+                if ui
+                    .button(crate::i18n::t("diff.button.reject").to_string())
+                    .clicked()
+                {
                     action = Some(DiffAction::Reject);
                 }
                 if let Some(cmd) = panel.apply_action.as_ref() {
-                    if ui.button(crate::i18n::t("diff.button.apply").to_string()).clicked() {
+                    if ui
+                        .button(crate::i18n::t("diff.button.apply").to_string())
+                        .clicked()
+                    {
                         action = Some(DiffAction::Apply(cmd.clone()));
                     }
                 }

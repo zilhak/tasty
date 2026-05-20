@@ -35,9 +35,10 @@ pub struct HandleClient {
 impl HandleClient {
     /// `env.handle_endpoint`이 있어야 호출된다. 없으면 호출자가 미리 분기.
     pub fn connect(env: &PluginEnv) -> Result<Self> {
-        let endpoint = env.handle_endpoint.as_deref().ok_or_else(|| {
-            PluginError::EnvMissing("TASTY_PLUGIN_HANDLE_ENDPOINT")
-        })?;
+        let endpoint = env
+            .handle_endpoint
+            .as_deref()
+            .ok_or_else(|| PluginError::EnvMissing("TASTY_PLUGIN_HANDLE_ENDPOINT"))?;
         Self::connect_to(endpoint, env)
     }
 
@@ -81,8 +82,7 @@ impl HandleClient {
                 }
             }
             Err(e)
-                if e.kind() == io::ErrorKind::WouldBlock
-                    || e.kind() == io::ErrorKind::TimedOut =>
+                if e.kind() == io::ErrorKind::WouldBlock || e.kind() == io::ErrorKind::TimedOut =>
             {
                 Err(PluginError::HandshakeTimeout)
             }
@@ -221,17 +221,12 @@ impl HandleClientReader {
     /// 다음 한 건을 blocking으로 받는다. `HandleAttach`의 ancillary fd는 같이 반환.
     /// 연결이 닫히면 `HostClosed`.
     #[cfg(unix)]
-    pub fn recv_message(
-        &mut self,
-    ) -> Result<(HandleChannelMessage, Option<std::os::fd::RawFd>)> {
+    pub fn recv_message(&mut self) -> Result<(HandleChannelMessage, Option<std::os::fd::RawFd>)> {
         loop {
             if let Some(nl) = self.carry.iter().position(|&b| b == b'\n') {
                 let line_bytes: Vec<u8> = self.carry.drain(..=nl).collect();
                 let line_str = std::str::from_utf8(&line_bytes[..nl])
-                    .map_err(|e| PluginError::Io(io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        e,
-                    )))?
+                    .map_err(|e| PluginError::Io(io::Error::new(io::ErrorKind::InvalidData, e)))?
                     .trim();
                 if line_str.is_empty() {
                     continue;
@@ -477,8 +472,7 @@ mod tests {
         }
         let mut cmsg_buf = SendCmsgBuf { bytes: [0u8; 64] };
         // SAFETY: CMSG_SPACE는 부수효과 없음.
-        let cmsg_space = unsafe { libc::CMSG_SPACE(mem::size_of::<libc::c_int>() as u32) }
-            as usize;
+        let cmsg_space = unsafe { libc::CMSG_SPACE(mem::size_of::<libc::c_int>() as u32) } as usize;
         // SAFETY: bytes 필드 접근. union 두 필드 같은 메모리 공유.
         msg.msg_control = unsafe { cmsg_buf.bytes.as_mut_ptr() } as *mut _;
         msg.msg_controllen = cmsg_space as _;
@@ -487,8 +481,7 @@ mod tests {
             let cmsg_ptr = libc::CMSG_FIRSTHDR(&msg);
             (*cmsg_ptr).cmsg_level = libc::SOL_SOCKET;
             (*cmsg_ptr).cmsg_type = libc::SCM_RIGHTS;
-            (*cmsg_ptr).cmsg_len =
-                libc::CMSG_LEN(mem::size_of::<libc::c_int>() as u32) as _;
+            (*cmsg_ptr).cmsg_len = libc::CMSG_LEN(mem::size_of::<libc::c_int>() as u32) as _;
             let data_ptr = libc::CMSG_DATA(cmsg_ptr) as *mut libc::c_int;
             std::ptr::write_unaligned(data_ptr, fd);
         }
@@ -521,8 +514,7 @@ mod tests {
         };
         let mut line = serde_json::to_string(&msg).unwrap();
         line.push('\n');
-        test_sendmsg_with_fd(&host_side, line.as_bytes(), send_fd)
-            .expect("sendmsg with fd");
+        test_sendmsg_with_fd(&host_side, line.as_bytes(), send_fd).expect("sendmsg with fd");
 
         // SDK reader는 보통 HandleClient::reader()로 만들어지지만, 테스트에서는 직접 구성.
         let mut reader = HandleClientReader::from_unix(sdk_side);
@@ -552,7 +544,12 @@ mod tests {
         let (mut host_side, sdk_side) = UnixStream::pair().expect("socketpair");
         let msg = HandleChannelMessage::Dirty {
             id: SharedBufferId(3),
-            rect: Some(Rect { x: 1, y: 2, w: 3, h: 4 }),
+            rect: Some(Rect {
+                x: 1,
+                y: 2,
+                w: 3,
+                h: 4,
+            }),
         };
         let line = serde_json::to_string(&msg).unwrap() + "\n";
         host_side.write_all(line.as_bytes()).unwrap();

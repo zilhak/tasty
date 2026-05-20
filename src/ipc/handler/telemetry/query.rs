@@ -11,7 +11,6 @@ use crate::ipc::caller::CallerContext;
 use crate::ipc::protocol::JsonRpcResponse;
 use crate::state::AppState;
 
-
 /// 공통 필터 파라미터. 핸들러 진입에서 파싱 후 events 를 수집한다.
 pub(super) struct QueryFilter {
     pub(super) metric: Option<String>,
@@ -23,11 +22,17 @@ pub(super) struct QueryFilter {
 
 impl QueryFilter {
     fn from_params(params: &Value) -> std::result::Result<Self, String> {
-        let metric = params.get("metric").and_then(|v| v.as_str()).map(String::from);
+        let metric = params
+            .get("metric")
+            .and_then(|v| v.as_str())
+            .map(String::from);
         if let Some(ref m) = metric {
             validate_metric(m).map_err(|e| e.to_string())?;
         }
-        let agent = params.get("agent").and_then(|v| v.as_str()).map(String::from);
+        let agent = params
+            .get("agent")
+            .and_then(|v| v.as_str())
+            .map(String::from);
         if let Some(ref a) = agent {
             validate_agent_id(a).map_err(|e| e.to_string())?;
         }
@@ -77,7 +82,9 @@ impl QueryFilter {
 }
 
 /// 모든 (또는 지정된) scope 에서 telemetry 이벤트를 수집해 필터링한다.
-pub(super) fn collect_events(filter: &QueryFilter) -> std::result::Result<Vec<TelemetryEvent>, String> {
+pub(super) fn collect_events(
+    filter: &QueryFilter,
+) -> std::result::Result<Vec<TelemetryEvent>, String> {
     // workspace_id 가 명시되면 해당 scope 만, 아니면 모든 scope 순회.
     let scopes: Vec<Scope> = if let Some(w) = filter.workspace_id {
         vec![Scope::Workspace(w)]
@@ -169,7 +176,10 @@ pub fn handle_timeseries(
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
-    let window_str = params.get("window").and_then(|v| v.as_str()).unwrap_or("1m");
+    let window_str = params
+        .get("window")
+        .and_then(|v| v.as_str())
+        .unwrap_or("1m");
     let window = match Window::from_str(window_str) {
         Ok(w) => w,
         Err(_) => {

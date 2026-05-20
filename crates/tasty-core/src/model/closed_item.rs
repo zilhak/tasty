@@ -104,7 +104,10 @@ impl ClosedSurface {
     }
 
     /// Capture a snapshot with an optional restore command (e.g. "claude -r <session-id>").
-    pub fn from_surface_node_with_restore(node: &super::TerminalSurface, restore_command: Option<String>) -> Self {
+    pub fn from_surface_node_with_restore(
+        node: &super::TerminalSurface,
+        restore_command: Option<String>,
+    ) -> Self {
         let terminal = &node.terminal;
         let surface = terminal.surface();
         let lines = surface.screen_lines();
@@ -195,7 +198,9 @@ impl ClosedPanel {
     /// 함수도 `None`을 반환한다.
     pub fn from_surface(surface: &dyn Surface, snapshot: SnapshotFn<'_>) -> Option<Self> {
         if let Some(node) = surface.as_terminal_surface() {
-            return Some(ClosedPanel::Terminal(ClosedSurface::from_surface_node(node)));
+            return Some(ClosedPanel::Terminal(ClosedSurface::from_surface_node(
+                node,
+            )));
         }
         let snap = snapshot(surface)?;
         Some(ClosedPanel::Generic {
@@ -272,7 +277,10 @@ impl ClosedItem {
 
 /// Inject restore_command into all ClosedSurface nodes using a lookup function.
 /// Called after capture to populate restore commands from surface metadata.
-pub fn inject_restore_commands(item: &mut ClosedItem, lookup: &dyn Fn(SurfaceId) -> Option<String>) {
+pub fn inject_restore_commands(
+    item: &mut ClosedItem,
+    lookup: &dyn Fn(SurfaceId) -> Option<String>,
+) {
     match item {
         ClosedItem::Surface { surface, .. } => {
             surface.restore_command = lookup(surface.id);
@@ -294,7 +302,10 @@ fn inject_into_panel(panel: &mut ClosedPanel, lookup: &dyn Fn(SurfaceId) -> Opti
     }
 }
 
-fn inject_into_surface_layout(layout: &mut ClosedSurfaceLayout, lookup: &dyn Fn(SurfaceId) -> Option<String>) {
+fn inject_into_surface_layout(
+    layout: &mut ClosedSurfaceLayout,
+    lookup: &dyn Fn(SurfaceId) -> Option<String>,
+) {
     match layout {
         ClosedSurfaceLayout::Single(s) => {
             s.restore_command = lookup(s.id);

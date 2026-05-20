@@ -216,10 +216,7 @@ pub struct PluginResponse {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PluginEvent {
     /// 매니페스트 검증 후 호스트가 받는 첫 메시지.
-    Hello {
-        plugin_id: String,
-        version: String,
-    },
+    Hello { plugin_id: String, version: String },
     /// surface invalidated — 호스트가 다음 프레임에 redraw (단계 06).
     SurfaceInvalidated { surface_id: u32 },
     /// host action 트리거 (단계 06).
@@ -407,7 +404,6 @@ pub enum PopupCloseReason {
     /// 호스트 측에서 강제 닫힘 (plugin disable / unload 등).
     HostShutdown,
 }
-
 
 #[cfg(test)]
 #[path = "protocol_tests.rs"]

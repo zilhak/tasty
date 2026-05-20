@@ -14,8 +14,7 @@ pub struct MarkdownView {
 
 impl MarkdownView {
     pub fn new(file_path: &str) -> Self {
-        let content =
-            std::fs::read_to_string(file_path).unwrap_or_else(|e| format!("Error: {e}"));
+        let content = std::fs::read_to_string(file_path).unwrap_or_else(|e| format!("Error: {e}"));
         Self {
             content,
             scroll_offset: 0.0,

@@ -65,8 +65,7 @@ pub fn handle_secret_get(
         Err(e) => return e,
     };
     let owner = caller.owner().to_string();
-    let result =
-        with_store(|s| s.get_secret(&owner, &scope, &key)).expect("memory store present");
+    let result = with_store(|s| s.get_secret(&owner, &scope, &key)).expect("memory store present");
     match result {
         Ok(Some(entry)) => JsonRpcResponse::success(id, secret_entry_to_json(&entry)),
         Ok(None) => JsonRpcResponse::success(id, Value::Null),

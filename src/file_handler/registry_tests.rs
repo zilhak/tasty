@@ -117,7 +117,10 @@ fn reload_user_config_replaces_user_handlers_keeps_host() {
 
     let v = reg.handlers_for(&DetectorId("markdown".into()));
     // host/markdown-viewer 는 호스트 default priority (= 50) 로 복귀.
-    let mdv = v.iter().find(|h| h.id.as_str() == "host/markdown-viewer").unwrap();
+    let mdv = v
+        .iter()
+        .find(|h| h.id.as_str() == "host/markdown-viewer")
+        .unwrap();
     assert_eq!(mdv.priority, 50);
     // user/my-md 가 잡혀야 함.
     assert!(v.iter().any(|h| h.id.as_str() == "user/my-md"));
@@ -142,18 +145,20 @@ fn reload_user_config_parse_error_keeps_previous_state() {
     )
     .unwrap();
     reg.install_user_config(&p);
-    assert!(reg
-        .handlers_for(&DetectorId("markdown".into()))
-        .iter()
-        .any(|h| h.id.as_str() == "user/my-md"));
+    assert!(
+        reg.handlers_for(&DetectorId("markdown".into()))
+            .iter()
+            .any(|h| h.id.as_str() == "user/my-md")
+    );
 
     // 파일을 깨뜨림 → reload 거부, 기존 user 항목 보존.
     std::fs::write(&p, "[[handler\n id = broken").unwrap();
     reg.reload_user_config(&p);
-    assert!(reg
-        .handlers_for(&DetectorId("markdown".into()))
-        .iter()
-        .any(|h| h.id.as_str() == "user/my-md"));
+    assert!(
+        reg.handlers_for(&DetectorId("markdown".into()))
+            .iter()
+            .any(|h| h.id.as_str() == "user/my-md")
+    );
 }
 
 #[test]
@@ -208,9 +213,7 @@ fn all_handlers_returns_every_enabled() {
 // 1) `identify(*.pdf)` 가 user detector 를 반환하고
 // 2) `handlers_for(pdf)` 가 user handler 를 반환하는지 확인.
 
-use crate::file_format::{
-    DetectDepth, FileFormatRegistry, FileTarget,
-};
+use crate::file_format::{DetectDepth, FileFormatRegistry, FileTarget};
 
 fn make_user_toml(toml_text: &str) -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();

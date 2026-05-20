@@ -169,9 +169,11 @@ impl ExtensionRegistry {
                     classified.push((
                         ext_id,
                         decl,
-                        Some(ExtensionState::Pending(PendingReason::InvalidTargetVersion {
-                            target_version: target.version.clone(),
-                        })),
+                        Some(ExtensionState::Pending(
+                            PendingReason::InvalidTargetVersion {
+                                target_version: target.version.clone(),
+                            },
+                        )),
                     ));
                     continue;
                 }
@@ -230,7 +232,8 @@ impl ExtensionRegistry {
             let state = match cls {
                 Some(s) => s,
                 None => {
-                    let target = target_for(&decl.plugin_id).expect("target present in active candidate");
+                    let target =
+                        target_for(&decl.plugin_id).expect("target present in active candidate");
                     let winner = winners.get(decl.plugin_id.as_str()).copied();
                     if winner == Some(ext_id) {
                         ExtensionState::Active {
@@ -334,13 +337,19 @@ mod tests {
         let mut reg = ExtensionRegistry::new();
         reg.recompute(&[&target, &ext], &never_disabled, &always_granted);
         match reg.state("com.b.ext") {
-            Some(ExtensionState::Active { target_id, target_version }) => {
+            Some(ExtensionState::Active {
+                target_id,
+                target_version,
+            }) => {
                 assert_eq!(target_id, "com.a.target");
                 assert_eq!(target_version, "1.2.0");
             }
             other => panic!("expected Active, got {other:?}"),
         }
-        assert_eq!(reg.active_extension_for_target("com.a.target"), Some("com.b.ext"));
+        assert_eq!(
+            reg.active_extension_for_target("com.a.target"),
+            Some("com.b.ext")
+        );
     }
 
     #[test]
@@ -367,7 +376,11 @@ mod tests {
             Some(mk_extends("com.a.target", ">=1.0.0")),
         );
         let mut reg = ExtensionRegistry::new();
-        reg.recompute(&[&target, &ext], &|id| id == "com.a.target", &always_granted);
+        reg.recompute(
+            &[&target, &ext],
+            &|id| id == "com.a.target",
+            &always_granted,
+        );
         assert_eq!(
             reg.state("com.b.ext"),
             Some(&ExtensionState::Pending(PendingReason::TargetDisabled))
@@ -444,7 +457,10 @@ mod tests {
         let mut reg = ExtensionRegistry::new();
         reg.recompute(&[&target, &b1, &b2], &never_disabled, &always_granted);
         // alpha < beta alphabetically — alpha wins.
-        assert!(matches!(reg.state("com.b.alpha"), Some(ExtensionState::Active { .. })));
+        assert!(matches!(
+            reg.state("com.b.alpha"),
+            Some(ExtensionState::Active { .. })
+        ));
         match reg.state("com.b.beta") {
             Some(ExtensionState::Conflict { other_extension_id }) => {
                 assert_eq!(other_extension_id, "com.b.alpha");
@@ -467,16 +483,26 @@ mod tests {
         );
         let mut reg = ExtensionRegistry::new();
         reg.recompute(&[&target, &ext], &never_disabled, &always_granted);
-        assert!(matches!(reg.state("com.b.ext"), Some(ExtensionState::Active { .. })));
+        assert!(matches!(
+            reg.state("com.b.ext"),
+            Some(ExtensionState::Active { .. })
+        ));
         // user disables target
-        reg.recompute(&[&target, &ext], &|id| id == "com.a.target", &always_granted);
+        reg.recompute(
+            &[&target, &ext],
+            &|id| id == "com.a.target",
+            &always_granted,
+        );
         assert_eq!(
             reg.state("com.b.ext"),
             Some(&ExtensionState::Pending(PendingReason::TargetDisabled))
         );
         // re-enable target
         reg.recompute(&[&target, &ext], &never_disabled, &always_granted);
-        assert!(matches!(reg.state("com.b.ext"), Some(ExtensionState::Active { .. })));
+        assert!(matches!(
+            reg.state("com.b.ext"),
+            Some(ExtensionState::Active { .. })
+        ));
     }
 
     #[test]
@@ -493,7 +519,10 @@ mod tests {
         let ext = mk_manifest("com.b.ext", "0.1.0", Some(decl));
         let mut reg = ExtensionRegistry::new();
         reg.recompute(&[&target, &ext], &never_disabled, &always_granted);
-        assert!(matches!(reg.state("com.b.ext"), Some(ExtensionState::Active { .. })));
+        assert!(matches!(
+            reg.state("com.b.ext"),
+            Some(ExtensionState::Active { .. })
+        ));
     }
 
     #[test]
@@ -509,7 +538,9 @@ mod tests {
         reg.recompute(&[&target, &ext], &never_disabled, &no_grant);
         assert_eq!(
             reg.state("com.b.ext"),
-            Some(&ExtensionState::Pending(PendingReason::PermissionNotGranted))
+            Some(&ExtensionState::Pending(
+                PendingReason::PermissionNotGranted
+            ))
         );
         assert!(reg.active_extension_for_target("com.a.target").is_none());
     }
@@ -541,4 +572,3 @@ mod tests {
         ));
     }
 }
-

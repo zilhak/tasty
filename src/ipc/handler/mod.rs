@@ -193,9 +193,7 @@ fn route_engine_handler(
         "surface.wake" => surface::handle_surface_wake(state, id, &request.params),
         "surface.set_mark" => surface::handle_set_mark(state, id, &request.params),
         "surface.read_since_mark" => surface::handle_read_since_mark(state, id, &request.params),
-        "surface.parse_since_mark" => {
-            surface::handle_parse_since_mark(state, id, &request.params)
-        }
+        "surface.parse_since_mark" => surface::handle_parse_since_mark(state, id, &request.params),
         "surface.commands" => surface::handle_commands(state, id, &request.params),
         "surface.last_command" => surface::handle_last_command(state, id, &request.params),
         "surface.command_at" => surface::handle_command_at(state, id, &request.params),
@@ -255,9 +253,7 @@ fn route_engine_handler(
         "file_handler.reload" => file_handler::handle_reload(state, id),
         // file handler: 임의 경로를 dispatch 흐름에 진입시킴. plugin (예: explorer)
         // 또는 CLI 가 호출. plugin 호출은 FsRead 권한 요구.
-        "file_handler.dispatch" => {
-            file_handler::handle_dispatch(state, id, request.params.clone())
-        }
+        "file_handler.dispatch" => file_handler::handle_dispatch(state, id, request.params.clone()),
         // image surface 조작 — com.tasty.image plugin이 외부에 노출하는 namespace의
         // 호스트 어댑터. plugin 비활성 상태에서도 CLI/직접 IPC로 호출 가능.
         "image.open" => image::handle_open(state, id, &request.params),
@@ -321,9 +317,7 @@ fn route_engine_handler(
         "memory.plan_get" => memory::handle_plan_get(state, caller, id, &request.params),
         "memory.plan_list" => memory::handle_plan_list(state, caller, id, &request.params),
         "memory.plan_delete" => memory::handle_plan_delete(state, caller, id, &request.params),
-        "memory.plan_add_step" => {
-            memory::handle_plan_add_step(state, caller, id, &request.params)
-        }
+        "memory.plan_add_step" => memory::handle_plan_add_step(state, caller, id, &request.params),
         "memory.plan_remove_step" => {
             memory::handle_plan_remove_step(state, caller, id, &request.params)
         }
@@ -399,7 +393,9 @@ fn route_engine_handler(
         "agent.task_reduce" => agent::handle_task_reduce(state, caller, id, &request.params),
         // agent.rate_limit_* — Phase 5.5 (token bucket 시간당 비율 제한)
         "agent.rate_limit_set" => agent::handle_rate_limit_set(state, caller, id, &request.params),
-        "agent.rate_limit_list" => agent::handle_rate_limit_list(state, caller, id, &request.params),
+        "agent.rate_limit_list" => {
+            agent::handle_rate_limit_list(state, caller, id, &request.params)
+        }
         "agent.rate_limit_remove" => {
             agent::handle_rate_limit_remove(state, caller, id, &request.params)
         }
@@ -578,7 +574,10 @@ fn annotate_tree_busy(node: &mut serde_json::Value, state: &AppState) {
         for key in ["panes", "tabs"] {
             if let Some(arr) = obj.get(key).and_then(|v| v.as_array()) {
                 for child in arr {
-                    count += child.get("busy_count").and_then(|v| v.as_u64()).unwrap_or(0);
+                    count += child
+                        .get("busy_count")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0);
                     if child.get("busy").and_then(|v| v.as_bool()).unwrap_or(false)
                         && child.get("busy_count").is_none()
                     {
@@ -589,7 +588,10 @@ fn annotate_tree_busy(node: &mut serde_json::Value, state: &AppState) {
         }
         for key in ["first", "second", "surface"] {
             if let Some(child) = obj.get(key) {
-                count += child.get("busy_count").and_then(|v| v.as_u64()).unwrap_or(0);
+                count += child
+                    .get("busy_count")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
                 if child.get("busy").and_then(|v| v.as_bool()).unwrap_or(false)
                     && child.get("busy_count").is_none()
                 {

@@ -31,7 +31,9 @@ impl PluginManager {
             .flat_map(|pkg| {
                 let plugin_id = pkg.manifest.id.clone();
                 pkg.manifest.contributes.popup.iter().filter_map(move |p| {
-                    if let crate::plugin::manifest::PopupTrigger::Event { event_key: ek } = &p.trigger {
+                    if let crate::plugin::manifest::PopupTrigger::Event { event_key: ek } =
+                        &p.trigger
+                    {
                         if ek == event_key {
                             return Some((plugin_id.clone(), p.id.clone()));
                         }
@@ -172,9 +174,7 @@ impl PluginManager {
                 self.fire_popup_triggers(&key_for_log, &payload);
             }
             Err(e) => {
-                tracing::warn!(
-                    "plugin '{plugin_id}' publish '{key_for_log}' rejected: {e}"
-                );
+                tracing::warn!("plugin '{plugin_id}' publish '{key_for_log}' rejected: {e}");
             }
         }
     }
@@ -195,8 +195,16 @@ impl PluginManager {
         }
         let pkg = self.packages.iter().find(|p| p.manifest.id == ext_id)?;
         let extends = pkg.manifest.extends.as_ref()?;
-        let pre = extends.pre_event.iter().find(|h| h.event == event_key).cloned();
-        let post = extends.post_event.iter().find(|h| h.event == event_key).cloned();
+        let pre = extends
+            .pre_event
+            .iter()
+            .find(|h| h.event == event_key)
+            .cloned();
+        let post = extends
+            .post_event
+            .iter()
+            .find(|h| h.event == event_key)
+            .cloned();
         if pre.is_none() && post.is_none() {
             None
         } else {
@@ -283,17 +291,16 @@ impl PluginManager {
         }
     }
 
-    pub(super) fn send_event_dispatches(&mut self, dispatches: Vec<crate::plugin::event_bus::PluginDispatch>) {
+    pub(super) fn send_event_dispatches(
+        &mut self,
+        dispatches: Vec<crate::plugin::event_bus::PluginDispatch>,
+    ) {
         for d in dispatches {
             let mut req = crate::plugin::event_bus::EventBus::build_dispatch_request(&d);
             req.id = self.next_request_id.fetch_add(1, Ordering::Relaxed);
             if let Some(proc) = self.processes.get(&d.plugin_id) {
                 if let Err(e) = proc.req_tx.send(req) {
-                    tracing::warn!(
-                        "plugin '{}' event.dispatch send failed: {}",
-                        d.plugin_id,
-                        e
-                    );
+                    tracing::warn!("plugin '{}' event.dispatch send failed: {}", d.plugin_id, e);
                 }
             }
         }
@@ -330,5 +337,4 @@ impl PluginManager {
             }
         }
     }
-
 }

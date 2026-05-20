@@ -196,10 +196,7 @@ pub fn handle_list(state: &AppState, id: Value) -> JsonRpcResponse {
 fn collect_image_panels(layout: &crate::model::SurfaceLayout, out: &mut Vec<Value>) {
     match layout {
         crate::model::SurfaceLayout::Leaf(surface) => {
-            if let Some(img) = surface
-                .as_any()
-                .downcast_ref::<crate::model::ImagePanel>()
-            {
+            if let Some(img) = surface.as_any().downcast_ref::<crate::model::ImagePanel>() {
                 out.push(json!({
                     "surface_id": img.id,
                     "path": img.file_path,

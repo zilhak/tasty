@@ -24,13 +24,9 @@ pub enum PluginCommands {
         id: String,
     },
     /// Enable a disabled plugin and start it.
-    Enable {
-        id: String,
-    },
+    Enable { id: String },
     /// Disable a plugin (graceful shutdown if running).
-    Disable {
-        id: String,
-    },
+    Disable { id: String },
     /// Print the contents of a plugin's log file.
     Logs {
         /// Plugin id.

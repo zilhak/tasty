@@ -51,8 +51,7 @@ fn approve_yields_finite_ttl_from_metadata() {
 #[test]
 fn approve_permanently_yields_no_ttl() {
     let rec = elevation_record(json!({}));
-    let (_, _, ttl) =
-        elevation_grant_decision(&rec, "approve_permanently").expect("decision");
+    let (_, _, ttl) = elevation_grant_decision(&rec, "approve_permanently").expect("decision");
     assert_eq!(ttl, None);
 }
 

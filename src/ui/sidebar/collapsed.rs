@@ -184,7 +184,11 @@ pub fn draw_collapsed_sidebar(
                         );
                     }
                     if resp.hovered() {
-                        ui.painter().rect_filled(rect, 4.0, th.hover_overlay.to_egui_premultiplied());
+                        ui.painter().rect_filled(
+                            rect,
+                            4.0,
+                            th.hover_overlay.to_egui_premultiplied(),
+                        );
                     }
                     ui.painter().text(
                         rect.center(),
@@ -212,7 +216,8 @@ pub fn draw_collapsed_sidebar(
                 let (rect, resp) =
                     ui.allocate_exact_size(egui::vec2(32.0, 22.0), egui::Sense::click());
                 if resp.hovered() {
-                    ui.painter().rect_filled(rect, 4.0, th.hover_overlay.to_egui_premultiplied());
+                    ui.painter()
+                        .rect_filled(rect, 4.0, th.hover_overlay.to_egui_premultiplied());
                 }
                 ui.painter().text(
                     rect.center(),
@@ -224,7 +229,6 @@ pub fn draw_collapsed_sidebar(
                 if resp.clicked() {
                     add_ws = true;
                 }
-
             });
         });
 

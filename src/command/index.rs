@@ -137,7 +137,10 @@ mod tests {
 
     #[test]
     fn extract_cmd_from_kvs() {
-        assert_eq!(extract_cmd("aid=1;cmd=ls -la;cl=5"), Some("ls -la".to_string()));
+        assert_eq!(
+            extract_cmd("aid=1;cmd=ls -la;cl=5"),
+            Some("ls -la".to_string())
+        );
         assert_eq!(extract_cmd(""), None);
         assert_eq!(extract_cmd("cmd="), None);
         assert_eq!(extract_cmd("nothing here"), None);

@@ -3,7 +3,7 @@
 //! 모든 호스트 호출은 `ctx.host.call(...)`을 통해 동기로 이루어진다. SDK가 worker
 //! 스레드에서 dispatch하므로 main 스레드가 계속 host로부터 응답을 받을 수 있다.
 
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use tasty_plugin_sdk::{HostHandle, IpcMethodError};
 
 use crate::state::{ChildEntry, CodexState};
@@ -27,10 +27,7 @@ fn optional_u32(params: &Value, key: &str) -> Option<u32> {
 }
 
 fn optional_str(params: &Value, key: &str) -> Option<String> {
-    params
-        .get(key)
-        .and_then(|v| v.as_str())
-        .map(String::from)
+    params.get(key).and_then(|v| v.as_str()).map(String::from)
 }
 
 fn resolve_parent(state: &CodexState, params: &Value) -> Result<u32, IpcMethodError> {
@@ -379,10 +376,7 @@ pub fn handle_respawn(
     }))
 }
 
-pub fn handle_hook(
-    state: &mut CodexState,
-    params: Value,
-) -> Result<Value, IpcMethodError> {
+pub fn handle_hook(state: &mut CodexState, params: Value) -> Result<Value, IpcMethodError> {
     let event = params
         .get("event")
         .and_then(|v| v.as_str())
@@ -435,7 +429,9 @@ fn codex_settings_path() -> Result<std::path::PathBuf, IpcMethodError> {
     let home = std::env::var_os("HOME")
         .or_else(|| std::env::var_os("USERPROFILE"))
         .ok_or_else(|| IpcMethodError::new("HOME env var not set"))?;
-    Ok(std::path::PathBuf::from(home).join(".codex").join("settings.json"))
+    Ok(std::path::PathBuf::from(home)
+        .join(".codex")
+        .join("settings.json"))
 }
 
 fn read_json_or_default(path: &std::path::Path) -> Value {
@@ -459,9 +455,7 @@ const HOOK_EVENTS: &[(&str, &str)] = &[
 ];
 
 fn hook_command(event_kebab: &str) -> String {
-    format!(
-        "tasty codex hook {event_kebab} --surface ${{TASTY_SURFACE_ID}}"
-    )
+    format!("tasty codex hook {event_kebab} --surface ${{TASTY_SURFACE_ID}}")
 }
 
 fn merge_install(mut value: Value) -> Value {

@@ -61,11 +61,7 @@ pub fn handle_dispatch(
     let req: DispatchReq = match serde_json::from_value(params) {
         Ok(r) => r,
         Err(e) => {
-            return JsonRpcResponse::error(
-                id,
-                -32602,
-                format!("invalid params: {e}"),
-            );
+            return JsonRpcResponse::error(id, -32602, format!("invalid params: {e}"));
         }
     };
     let depth = match req.depth.as_str() {

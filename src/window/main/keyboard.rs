@@ -41,8 +41,10 @@ impl MainWindow {
             }
             if self.state.popups.is_open("notifications") {
                 self.state.dispatch_intent(
-                    crate::intent::Intent::ClosePopup { id: "notifications" }
-                        .from_user_shortcut("escape_close_notifications"),
+                    crate::intent::Intent::ClosePopup {
+                        id: "notifications",
+                    }
+                    .from_user_shortcut("escape_close_notifications"),
                 );
                 self.mark_dirty();
                 return;
@@ -136,9 +138,7 @@ impl MainWindow {
                     }
                 }
             }
-            FocusedSurfaceType::Kind(ref kind)
-                if kind == "markdown" || kind == "image" =>
-            {
+            FocusedSurfaceType::Kind(ref kind) if kind == "markdown" || kind == "image" => {
                 // If egui consumed the event (e.g. TextEdit has focus), skip
                 // the PendingKeyEvent queue to avoid double-handling.
                 if !egui_consumed {

@@ -348,17 +348,9 @@ pub enum PendingNativeMenu {
     /// Pane/empty area right-click: Open Markdown... / Open Explorer / Open HTML...
     Pane { pane_id: u32, x: f32, y: f32 },
     /// Workspace right-click in sidebar: Rename title / Rename subtitle
-    Workspace {
-        ws_idx: usize,
-        x: f32,
-        y: f32,
-    },
+    Workspace { ws_idx: usize, x: f32, y: f32 },
     /// Terminal surface right-click: Copy surface id (좌표는 logical px 기준)
-    TerminalSurface {
-        surface_id: u32,
-        x: f32,
-        y: f32,
-    },
+    TerminalSurface { surface_id: u32, x: f32, y: f32 },
 }
 
 /// All transient UI dialog/popup state, grouped to avoid AppState bloat.
@@ -648,9 +640,7 @@ impl AppState {
         tab.for_each_surface(&mut |s| {
             if let Some(ts) = s.as_terminal_surface() {
                 out.push((ts.id, ts.scrollback_persist_id.clone()));
-            } else if let Some(es) =
-                s.as_any().downcast_ref::<crate::model::EmptySurface>()
-            {
+            } else if let Some(es) = s.as_any().downcast_ref::<crate::model::EmptySurface>() {
                 let pid = es
                     .deferred_spawn
                     .as_ref()
@@ -788,8 +778,7 @@ impl AppState {
             return None;
         }
         let sid = self.focused_surface_id()?;
-        self.find_surface_by_id(sid)
-            .and_then(|s| s.source_cwd())
+        self.find_surface_by_id(sid).and_then(|s| s.source_cwd())
     }
 
     /// Get the working directory to inherit from a specific surface, if enabled.

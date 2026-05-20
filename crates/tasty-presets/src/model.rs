@@ -25,9 +25,7 @@ impl PresetKind {
 }
 
 /// 세 preset 종류의 공통 trait.
-pub trait LayoutPreset:
-    Sized + Clone + Serialize + for<'de> Deserialize<'de>
-{
+pub trait LayoutPreset: Sized + Clone + Serialize + for<'de> Deserialize<'de> {
     const KIND: PresetKind;
     fn name(&self) -> &str;
     fn set_name(&mut self, name: String);
@@ -243,8 +241,14 @@ mod tests {
             name: "claude".into(),
             pane: PresetPane {
                 tabs: vec![
-                    PresetTab { explicit_name: None, layout: sample_leaf() },
-                    PresetTab { explicit_name: Some("b".into()), layout: sample_leaf() },
+                    PresetTab {
+                        explicit_name: None,
+                        layout: sample_leaf(),
+                    },
+                    PresetTab {
+                        explicit_name: Some("b".into()),
+                        layout: sample_leaf(),
+                    },
                 ],
                 active_tab: 1,
             },

@@ -97,8 +97,7 @@ fn gc_orphans_in(dir: &Path, known: &HashSet<String>) {
 // ── Public API (uses `~/.tasty/scrollback/`) ──
 
 pub fn write(persist_id: &str, lines: &[ScrollbackLine]) -> io::Result<()> {
-    let dir = scrollback_dir()
-        .ok_or_else(|| io::Error::other("cannot determine tasty home"))?;
+    let dir = scrollback_dir().ok_or_else(|| io::Error::other("cannot determine tasty home"))?;
     write_in(&dir, persist_id, lines)
 }
 

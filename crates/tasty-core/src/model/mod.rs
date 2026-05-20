@@ -132,9 +132,9 @@ mod markdown_panel;
 mod pane;
 mod pane_tree;
 mod surface_layout;
-mod terminal_surface;
 mod surface_trait;
 mod tab;
+mod terminal_surface;
 mod workspace;
 
 pub use closed_item::{ClosedItem, ClosedItemStore};
@@ -145,9 +145,9 @@ pub use image_panel::*;
 pub use markdown_panel::*;
 pub use pane::*;
 pub use pane_tree::*;
-pub use terminal_surface::*;
 pub use surface_trait::Surface;
 pub use tab::Tab;
+pub use terminal_surface::*;
 pub use workspace::*;
 
 #[cfg(test)]

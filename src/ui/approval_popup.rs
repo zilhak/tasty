@@ -42,7 +42,10 @@ pub fn approval_popup_sizer(state: &AppState) -> egui::Vec2 {
         .and_then(|r| r.request.body.as_deref())
         .map(|s| s.chars().count())
         .unwrap_or(0);
-    let choice_count = record.as_ref().map(|r| r.request.choices.len()).unwrap_or(2);
+    let choice_count = record
+        .as_ref()
+        .map(|r| r.request.choices.len())
+        .unwrap_or(2);
     let approx_lines = (body_len as f32 / 60.0).ceil().max(1.0);
     let body_h = approx_lines * BODY_FONT_SIZE * 1.5;
     let buttons_h = (choice_count as f32 / 3.0).ceil() * 32.0;
@@ -92,7 +95,11 @@ pub fn draw_approval_popup(ui: &mut egui::Ui, state: &mut AppState) -> PopupActi
         Severity::Danger => ("approval.severity.danger", th.red.to_egui()),
     };
     ui.horizontal(|ui| {
-        ui.label(egui::RichText::new(t(sev_label_key)).size(11.0).color(sev_color));
+        ui.label(
+            egui::RichText::new(t(sev_label_key))
+                .size(11.0)
+                .color(sev_color),
+        );
         ui.label(
             egui::RichText::new(format!("· {}", record.request.id))
                 .size(11.0)
@@ -216,7 +223,9 @@ fn persist_after_respond(record: &ApprovalRecord) {
         expires_at: None,
         cas: None,
     };
-    if let Some(Err(e)) = with_store(|s| s.put(tasty_memory::HOST_OWNER, &scope, &key, &value, &opts)) {
+    if let Some(Err(e)) =
+        with_store(|s| s.put(tasty_memory::HOST_OWNER, &scope, &key, &value, &opts))
+    {
         tracing::warn!("approval popup: memory put failed: {e}");
     }
 }
@@ -243,9 +252,7 @@ pub fn enqueue_approval(state: &mut AppState, record: &ApprovalRecord) {
     state.dispatch_intent(
         crate::intent::Intent::OpenPopup {
             id: APPROVAL_POPUP_ID,
-            mode: crate::intent::OpenPopupMode::WithScope(
-                crate::ui::popup::PopupScope::Window,
-            ),
+            mode: crate::intent::OpenPopupMode::WithScope(crate::ui::popup::PopupScope::Window),
         }
         .from_agent_ipc(),
     );
@@ -269,5 +276,4 @@ pub fn enqueue_approval(state: &mut AppState, record: &ApprovalRecord) {
         format!("{severity_prefix}{}", record.request.title),
         body,
     );
-
 }

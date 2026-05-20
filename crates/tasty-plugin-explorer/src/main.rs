@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tasty_plugin_sdk::{
     BusHandle, ButtonStyle, CommandInvokeCtx, HostHandle, Plugin, SurfaceCreateCtx,
-    SurfaceEventCtx, SurfaceResult, SurfaceRestoreCtx, UiEvent, UiNode,
+    SurfaceEventCtx, SurfaceRestoreCtx, SurfaceResult, UiEvent, UiNode,
     ui::{addressbar, hbox, label, label_color, scroll_v, splitter_id, tree_view, vbox},
 };
 use tasty_plugin_sdk::{SelectionMode, SplitDir, TreeNode};
@@ -52,8 +52,7 @@ struct BookmarkStore {
 
 impl BookmarkStore {
     fn path() -> Option<PathBuf> {
-        std::env::var_os("TASTY_PLUGIN_DATA_DIR")
-            .map(|d| PathBuf::from(d).join("bookmarks.json"))
+        std::env::var_os("TASTY_PLUGIN_DATA_DIR").map(|d| PathBuf::from(d).join("bookmarks.json"))
     }
 
     fn load() -> Self {
@@ -165,8 +164,7 @@ impl ExplorerSurface {
             .unwrap_or(&self.root)
             .to_string_lossy()
             .to_string();
-        let can_bookmark = self.selected.is_some()
-            && !bookmarks.has(&address_text);
+        let can_bookmark = self.selected.is_some() && !bookmarks.has(&address_text);
         vbox([
             hbox([
                 addressbar(ADDRESSBAR_ID, address_text),
@@ -228,7 +226,11 @@ fn build_node(
     TreeNode {
         id: path.to_string_lossy().to_string(),
         label: name,
-        icon: Some(if is_dir { "\u{1F4C1}".into() } else { "\u{1F4C4}".into() }),
+        icon: Some(if is_dir {
+            "\u{1F4C1}".into()
+        } else {
+            "\u{1F4C4}".into()
+        }),
         expanded: is_expanded,
         selected: is_selected,
         children,
@@ -313,7 +315,6 @@ impl ExplorerPlugin {
             display_name: Some(display_name),
         }
     }
-
 }
 
 impl Plugin for ExplorerPlugin {
@@ -385,10 +386,9 @@ impl Plugin for ExplorerPlugin {
                     surface.selected = None;
                     surface.preview = None;
                 } else if let Some(host) = self.host.as_ref() {
-                    if let Err(e) = host.call(
-                        "file_handler.dispatch",
-                        serde_json::json!({ "path": path }),
-                    ) {
+                    if let Err(e) =
+                        host.call("file_handler.dispatch", serde_json::json!({ "path": path }))
+                    {
                         tracing::warn!(path = %path, "file_handler.dispatch failed: {e}");
                     }
                 } else {
@@ -515,8 +515,7 @@ impl Plugin for ExplorerPlugin {
 fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info".into()),
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
         )
         .init();
     tasty_plugin_sdk::run(ExplorerPlugin::new())

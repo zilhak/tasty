@@ -11,9 +11,14 @@ use super::helpers::{
     rule_kind_eq, rule_kind_to_toml,
 };
 use super::{DetectorContribution, ExtensionPriorityEntry, FileFormatRegistry};
-use crate::file_format::config::{validate_detector_decl, DetectorDecl, DetectorRuleDecl, ExtensionPriorityDecl};
-use crate::file_format::evaluator::{evaluate_cheap, evaluate_deep, DeepCtx};
-use crate::file_format::types::{DetectDepth, DetectorId, DetectorRule, DetectorRuleKind, FileFormatDetector, FileTarget, RuleOrigin};
+use crate::file_format::config::{
+    DetectorDecl, DetectorRuleDecl, ExtensionPriorityDecl, validate_detector_decl,
+};
+use crate::file_format::evaluator::{DeepCtx, evaluate_cheap, evaluate_deep};
+use crate::file_format::types::{
+    DetectDepth, DetectorId, DetectorRule, DetectorRuleKind, FileFormatDetector, FileTarget,
+    RuleOrigin,
+};
 
 impl FileFormatRegistry {
     /// detector 조회 — clone 반환.
@@ -88,5 +93,4 @@ impl FileFormatRegistry {
     }
 
     // ── install / uninstall ────────────────────────────────────────────
-
 }

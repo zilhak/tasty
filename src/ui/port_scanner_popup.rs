@@ -93,13 +93,22 @@ fn draw_port_row(ui: &mut egui::Ui, port: &ListeningPort) -> bool {
         ui.painter()
             .rect_filled(rect, 4.0, th.hover_overlay.to_egui_premultiplied());
     }
-    let label = format!("{}  ·  {}  ·  PID {}", port.port, format_addr(port.addr), port.pid);
+    let label = format!(
+        "{}  ·  {}  ·  PID {}",
+        port.port,
+        format_addr(port.addr),
+        port.pid
+    );
     ui.painter().text(
         egui::pos2(rect.min.x + 8.0, rect.center().y),
         egui::Align2::LEFT_CENTER,
         label,
         egui::FontId::proportional(12.0),
-        if resp.hovered() { th.text.into() } else { th.subtext0.into() },
+        if resp.hovered() {
+            th.text.into()
+        } else {
+            th.subtext0.into()
+        },
     );
     resp.clicked()
 }

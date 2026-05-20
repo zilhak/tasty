@@ -25,17 +25,16 @@ pub(crate) fn apply(lua: &Lua) -> Result<(), LuaEngineError> {
     // C native lib 로드 경로만 제거. 그리고 `dofile` / `loadfile` / `load` /
     // `loadstring` 처럼 임의 코드를 실행하는 표면 중 binary mode 가능한 것들은
     // 제거. user 가 진짜 외부 lua 파일을 불러야 하면 `dofile` 대신 `require` 권장.
-    for key in [
-        "dofile",
-        "loadfile",
-        "load",
-        "loadstring",
-    ] {
-        globals.set(key, mlua::Value::Nil).map_err(LuaEngineError::Init)?;
+    for key in ["dofile", "loadfile", "load", "loadstring"] {
+        globals
+            .set(key, mlua::Value::Nil)
+            .map_err(LuaEngineError::Init)?;
     }
 
     // debug 라이브러리 제거 — registry, upvalue, getlocal 등 native crash 유발 가능.
-    globals.set("debug", mlua::Value::Nil).map_err(LuaEngineError::Init)?;
+    globals
+        .set("debug", mlua::Value::Nil)
+        .map_err(LuaEngineError::Init)?;
 
     // package.loadlib 제거 — native dylib 로드 경로 차단.
     if let Ok(package) = globals.get::<mlua::Table>("package") {

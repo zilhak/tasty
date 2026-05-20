@@ -1,6 +1,5 @@
 //! VTE handler: cursor 도메인.
 
-
 use termwiz::escape::csi::Cursor;
 use termwiz::surface::{Change, Position};
 
@@ -163,5 +162,4 @@ impl Terminal {
             _ => vec![],
         }
     }
-
 }

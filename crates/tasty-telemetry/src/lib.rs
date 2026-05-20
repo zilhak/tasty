@@ -238,7 +238,11 @@ pub fn validate_agent_id(s: &str) -> Result<()> {
 
 /// `tasty.telemetry.event.{ts:013}.{seq:04}`.
 pub fn event_key(ts: u64, seq: u64) -> String {
-    format!("tasty.telemetry.event.{ts:013}.{seq:04}", ts = ts, seq = seq % 10_000)
+    format!(
+        "tasty.telemetry.event.{ts:013}.{seq:04}",
+        ts = ts,
+        seq = seq % 10_000
+    )
 }
 
 /// `tasty.telemetry.bucket.{window}.{metric}.{agent}.{window_start:013}`.
@@ -282,7 +286,6 @@ impl TelemetrySeq {
 // ============================================================
 
 /// 이벤트 목록을 (metric, agent) 별 단일 버킷으로 집계.
-
 mod aggregate;
 mod anomaly;
 mod cap;

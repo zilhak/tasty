@@ -1,7 +1,7 @@
 //! Plugin 명령 단축키 관련 — draft 적용, snapshot, 키 입력 매칭.
 
 use crate::app::App;
-use crate::{plugin, settings_ui, shortcuts, shortcut_override_display};
+use crate::{plugin, settings_ui, shortcut_override_display, shortcuts};
 
 impl App {
     /// SettingsWindow가 회수해 온 plugin shortcut override draft를 PluginsConfig에
@@ -23,16 +23,16 @@ impl App {
         let mut changed = false;
         let mut emit_queue: Vec<(String, String, Option<String>, Option<String>)> = Vec::new();
         for ((plugin_id, command_id), value) in draft {
-            let prev_display = shortcut_override_display(
-                mgr.config.shortcut_override(&plugin_id, &command_id),
-            );
+            let prev_display =
+                shortcut_override_display(mgr.config.shortcut_override(&plugin_id, &command_id));
             let new_display = match &value {
                 Some(ov) => shortcut_override_display(Some(ov)),
                 None => None,
             };
             let local_changed = match value {
                 Some(ov) => {
-                    mgr.config.set_shortcut_override(&plugin_id, &command_id, ov);
+                    mgr.config
+                        .set_shortcut_override(&plugin_id, &command_id, ov);
                     true
                 }
                 None => mgr.config.clear_shortcut_override(&plugin_id, &command_id),
@@ -55,11 +55,7 @@ impl App {
                     shortcut,
                     prev_shortcut,
                 };
-                mgr.emit_host_event(
-                    "command.shortcut_changed",
-                    &payload,
-                    EventScope::System,
-                );
+                mgr.emit_host_event("command.shortcut_changed", &payload, EventScope::System);
             }
         }
     }

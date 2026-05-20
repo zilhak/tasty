@@ -193,10 +193,7 @@ pub(crate) fn handle_surface_wake(
     let was_deferred = state.engine.is_surface_deferred(surface_id);
     let woke = state.engine.ensure_surface_initialized(surface_id);
     if !woke && !was_deferred && state.engine.find_terminal_by_id(surface_id).is_none() {
-        return JsonRpcResponse::invalid_params(
-            id,
-            format!("Surface {} not found", surface_id),
-        );
+        return JsonRpcResponse::invalid_params(id, format!("Surface {} not found", surface_id));
     }
     JsonRpcResponse::success(
         id,

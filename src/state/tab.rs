@@ -76,11 +76,7 @@ impl AppState {
 
     /// Generic kind+params 기반 탭 추가. SurfaceKindRegistry를 통해 surface를 만들고
     /// 포커스된 pane에 부착한다. Returns (tab_id, surface_id) on success.
-    pub fn add_kind_tab(
-        &mut self,
-        kind: &str,
-        params: &Value,
-    ) -> anyhow::Result<(u32, u32)> {
+    pub fn add_kind_tab(&mut self, kind: &str, params: &Value) -> anyhow::Result<(u32, u32)> {
         let tab_id = self.engine.next_ids.next_tab();
         let surface_id = self.engine.next_ids.next_surface();
         let surface = self.create_surface_via_registry(kind, surface_id, params)?;
@@ -265,9 +261,8 @@ impl AppState {
             let active = pane.active_tab;
             if let Some(tab) = pane.tabs.get(active) {
                 super::AppState::collect_close_targets(tab, &mut targets);
-                let mut snap_fn = crate::surface_registry::snapshot_fn_for(
-                    &self.engine.surface_registry,
-                );
+                let mut snap_fn =
+                    crate::surface_registry::snapshot_fn_for(&self.engine.surface_registry);
                 crate::model::closed_item::ClosedTab::from_tab(tab, &mut snap_fn)
             } else {
                 None
@@ -369,12 +364,7 @@ impl AppState {
     /// Plugin이 제공하는 kind(예: "explorer") 변환에 사용된다. 빌트인 중 특수
     /// 파라미터(파일 경로, URL 등)가 필요한 kind는 전용 메서드 (`convert_surface_to_markdown` 등)
     /// 를 사용해야 한다.
-    pub fn convert_surface_to_kind(
-        &mut self,
-        surface_id: u32,
-        kind: &str,
-        params: &Value,
-    ) -> bool {
+    pub fn convert_surface_to_kind(&mut self, surface_id: u32, kind: &str, params: &Value) -> bool {
         let new_surface = match self.create_surface_via_registry(kind, surface_id, params) {
             Ok(s) => s,
             Err(e) => {

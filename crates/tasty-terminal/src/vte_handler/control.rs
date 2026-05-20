@@ -1,9 +1,8 @@
 //! VTE handler: control 도메인.
 
-
 use termwiz::cell::{AttributeChange, CellAttributes};
-use termwiz::escape::csi::{CSI, Sgr};
 use termwiz::escape::ControlCode;
+use termwiz::escape::csi::{CSI, Sgr};
 use termwiz::surface::{Change, Position};
 
 use crate::{Terminal, TerminalEvent, TerminalEventKind};
@@ -83,5 +82,4 @@ impl Terminal {
             }
         }
     }
-
 }

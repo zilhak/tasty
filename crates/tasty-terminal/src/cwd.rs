@@ -83,7 +83,10 @@ fn macos_proc_cwd(pid: u32) -> Option<PathBuf> {
     // assume_init은 zeroed 초기화 후 syscall write로 모든 바이트가 valid 상태.
     let info = unsafe { info.assume_init() };
     let path_bytes = &info.cdir.path;
-    let len = path_bytes.iter().position(|&b| b == 0).unwrap_or(path_bytes.len());
+    let len = path_bytes
+        .iter()
+        .position(|&b| b == 0)
+        .unwrap_or(path_bytes.len());
     if len == 0 {
         return None;
     }

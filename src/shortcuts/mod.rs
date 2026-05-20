@@ -97,6 +97,3 @@ fn focused_image_surface_id(state: &crate::state::AppState) -> Option<u32> {
         .downcast_ref::<crate::model::ImagePanel>()
         .map(|p| p.id)
 }
-
-
-

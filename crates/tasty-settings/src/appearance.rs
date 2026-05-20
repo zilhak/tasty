@@ -62,7 +62,10 @@ impl FontSettings {
     /// Apply per-field override. `None` fields fall back to defaults.
     pub fn apply_override(&self, ov: &FontOverride) -> EffectiveFont {
         EffectiveFont {
-            font_family: ov.font_family.clone().unwrap_or_else(|| self.font_family.clone()),
+            font_family: ov
+                .font_family
+                .clone()
+                .unwrap_or_else(|| self.font_family.clone()),
             font_size: ov.font_size.unwrap_or(self.font_size),
             custom_font_path: ov
                 .custom_font_path

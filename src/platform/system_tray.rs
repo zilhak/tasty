@@ -28,8 +28,8 @@ pub fn create_tray_icon() -> Option<(TrayIcon, TrayMenuIds)> {
 }
 
 fn create_tray_icon_inner() -> Result<(TrayIcon, TrayMenuIds), Box<dyn std::error::Error>> {
-    let icon = crate::app_icon::tray_icon()
-        .ok_or("failed to decode tray icon from embedded PNG")?;
+    let icon =
+        crate::app_icon::tray_icon().ok_or("failed to decode tray icon from embedded PNG")?;
 
     // Build context menu
     let show_item = MenuItem::new("Show Window", true, None);

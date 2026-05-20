@@ -102,4 +102,3 @@ pub fn draw_terminal_tab(ui: &mut egui::Ui, settings: &mut Settings) {
             ui.end_row();
         });
 }
-

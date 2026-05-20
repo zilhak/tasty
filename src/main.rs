@@ -349,18 +349,20 @@ pub(crate) fn handle_debug_extension_invoke_hook(
     let mgr = match mgr {
         Some(m) => m,
         None => {
-            send_response(&response_tx, JsonRpcResponse::error(
-                id,
-                -32000,
-                "plugin manager not initialized",
-            ));
+            send_response(
+                &response_tx,
+                JsonRpcResponse::error(id, -32000, "plugin manager not initialized"),
+            );
             return;
         }
     };
     let extension_id = match params.get("extension_id").and_then(|v| v.as_str()) {
         Some(s) => s.to_string(),
         None => {
-            send_response(&response_tx, JsonRpcResponse::invalid_params(id, "missing 'extension_id'"));
+            send_response(
+                &response_tx,
+                JsonRpcResponse::invalid_params(id, "missing 'extension_id'"),
+            );
             return;
         }
     };
@@ -368,10 +370,13 @@ pub(crate) fn handle_debug_extension_invoke_hook(
         Some("event") => tasty_plugin_protocol::ExtensionHookKind::Event,
         Some("ipc") => tasty_plugin_protocol::ExtensionHookKind::Ipc,
         _ => {
-            send_response(&response_tx, JsonRpcResponse::invalid_params(
-                id,
-                "missing/invalid 'kind' (expected 'event' or 'ipc')",
-            ));
+            send_response(
+                &response_tx,
+                JsonRpcResponse::invalid_params(
+                    id,
+                    "missing/invalid 'kind' (expected 'event' or 'ipc')",
+                ),
+            );
             return;
         }
     };
@@ -379,10 +384,13 @@ pub(crate) fn handle_debug_extension_invoke_hook(
         Some("pre") => tasty_plugin_protocol::ExtensionHookPhase::Pre,
         Some("post") => tasty_plugin_protocol::ExtensionHookPhase::Post,
         _ => {
-            send_response(&response_tx, JsonRpcResponse::invalid_params(
-                id,
-                "missing/invalid 'phase' (expected 'pre' or 'post')",
-            ));
+            send_response(
+                &response_tx,
+                JsonRpcResponse::invalid_params(
+                    id,
+                    "missing/invalid 'phase' (expected 'pre' or 'post')",
+                ),
+            );
             return;
         }
     };
@@ -391,17 +399,23 @@ pub(crate) fn handle_debug_extension_invoke_hook(
         Some("filter") => crate::plugin::manifest::HookMode::Filter,
         Some("observe") => crate::plugin::manifest::HookMode::Observe,
         _ => {
-            send_response(&response_tx, JsonRpcResponse::invalid_params(
-                id,
-                "missing/invalid 'mode' (expected 'transform', 'filter', or 'observe')",
-            ));
+            send_response(
+                &response_tx,
+                JsonRpcResponse::invalid_params(
+                    id,
+                    "missing/invalid 'mode' (expected 'transform', 'filter', or 'observe')",
+                ),
+            );
             return;
         }
     };
     let target = match params.get("target").and_then(|v| v.as_str()) {
         Some(s) => s.to_string(),
         None => {
-            send_response(&response_tx, JsonRpcResponse::invalid_params(id, "missing 'target'"));
+            send_response(
+                &response_tx,
+                JsonRpcResponse::invalid_params(id, "missing 'target'"),
+            );
             return;
         }
     };
@@ -420,7 +434,6 @@ pub(crate) fn handle_debug_extension_invoke_hook(
         response_tx,
     );
 }
-
 
 fn main() -> Result<()> {
     boot::run()

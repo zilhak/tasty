@@ -175,10 +175,7 @@ impl Tab {
 
     /// Whether the layout is a split (more than one surface).
     pub fn is_split(&self) -> bool {
-        matches!(
-            self.layout_opt.as_ref(),
-            Some(SurfaceLayout::Split { .. })
-        )
+        matches!(self.layout_opt.as_ref(), Some(SurfaceLayout::Split { .. }))
     }
 
     /// All surface IDs in this tab.
@@ -473,7 +470,10 @@ impl Tab {
             // For a live TerminalSurface, append pty_ready: true.
             let mut v = self.surface().to_tree_json();
             if v.get("type").and_then(|t| t.as_str()) == Some("Terminal")
-                && !v.as_object().map(|o| o.contains_key("pty_ready")).unwrap_or(false)
+                && !v
+                    .as_object()
+                    .map(|o| o.contains_key("pty_ready"))
+                    .unwrap_or(false)
             {
                 if let Some(obj) = v.as_object_mut() {
                     obj.insert("pty_ready".into(), serde_json::json!(true));

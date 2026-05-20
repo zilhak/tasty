@@ -58,9 +58,7 @@ impl MainWindow {
         // 마우스 아래 surface id를 구하고 그 surface의 terminal을 사용.
         // focused 기반이 아니라 실제 hover 위치의 surface로 판별해야 여러 pane 중
         // 어느 곳이든 동작한다.
-        let surface_id = self
-            .state
-            .surface_id_at_position(x, y, terminal_rect)?;
+        let surface_id = self.state.surface_id_at_position(x, y, terminal_rect)?;
         let terminal = self.state.find_terminal_by_id(surface_id)?;
         let surface_rect = self.state.surface_rect_by_id(surface_id, terminal_rect)?;
 
@@ -228,9 +226,8 @@ impl MainWindow {
                 let (x, y) = (pos.x as f32, pos.y as f32);
                 // 수식키+클릭은 무조건 링크 클릭 동작으로 라우팅.
                 // 링크 위면 열고, 링크 위가 아니면 아무것도 안 함 (selection 시작 안 함).
-                let modifier = LinkModifier::parse(
-                    &self.state.engine.settings.general.link_click_modifier,
-                );
+                let modifier =
+                    LinkModifier::parse(&self.state.engine.settings.general.link_click_modifier);
                 let mods = &self.base.modifiers;
                 let link_mods_match = !matches!(modifier, LinkModifier::None)
                     && modifier.matches(mods.control_key(), mods.alt_key(), mods.super_key());

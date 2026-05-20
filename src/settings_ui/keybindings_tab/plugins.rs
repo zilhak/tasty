@@ -96,7 +96,12 @@ pub(super) fn draw_plugins_subtab(
         ui.label(t("settings.keybindings.plugins.plugin_label"));
         let current_label = selected
             .as_deref()
-            .and_then(|sel| plugin_ids.iter().find(|(id, _)| *id == sel).map(|(_, n)| *n))
+            .and_then(|sel| {
+                plugin_ids
+                    .iter()
+                    .find(|(id, _)| *id == sel)
+                    .map(|(_, n)| *n)
+            })
             .unwrap_or("");
         egui::ComboBox::from_id_salt("plugin_shortcuts_combo")
             .selected_text(current_label)
@@ -183,7 +188,13 @@ fn draw_plugin_command_row(
                 );
             });
         if new_mode != mode {
-            apply_mode_change(row, draft, current_ov.as_ref(), new_mode, manifest_inherit_source);
+            apply_mode_change(
+                row,
+                draft,
+                current_ov.as_ref(),
+                new_mode,
+                manifest_inherit_source,
+            );
         }
     });
 
@@ -199,12 +210,11 @@ fn draw_plugin_command_row(
             RowMode::Inherit => {
                 let active_source: String = match &after_ov {
                     Some(ShortcutOverride::Inherit { source }) => source.clone(),
-                    _ => manifest_inherit_source.unwrap_or("clipboard.copy").to_string(),
+                    _ => manifest_inherit_source
+                        .unwrap_or("clipboard.copy")
+                        .to_string(),
                 };
-                let combo_id = format!(
-                    "plugin_inherit_src::{}::{}",
-                    row.plugin_id, row.command_id
-                );
+                let combo_id = format!("plugin_inherit_src::{}::{}", row.plugin_id, row.command_id);
                 let mut new_source = active_source.clone();
                 egui::ComboBox::from_id_salt(combo_id)
                     .selected_text(&active_source)
@@ -217,7 +227,9 @@ fn draw_plugin_command_row(
                     commit_row_change(
                         draft,
                         row,
-                        Some(ShortcutOverride::Inherit { source: new_source.clone() }),
+                        Some(ShortcutOverride::Inherit {
+                            source: new_source.clone(),
+                        }),
                     );
                 }
                 let resolved = host_actions::host_action_for(host_kb, &active_source)
@@ -319,4 +331,3 @@ fn apply_mode_change(
     };
     commit_row_change(draft, row, new_ov);
 }
-

@@ -255,7 +255,10 @@ mod tests {
         reg.register_plugin(&m);
         assert_eq!(reg.len(), 2);
         assert_eq!(reg.commands_for("com.example.x").len(), 2);
-        assert_eq!(reg.find("com.example.x", "x.refresh").unwrap().command_id, "x.refresh");
+        assert_eq!(
+            reg.find("com.example.x", "x.refresh").unwrap().command_id,
+            "x.refresh"
+        );
     }
 
     #[test]
@@ -327,7 +330,12 @@ mod tests {
         assert_eq!(plugins, vec!["com.example.alpha", "com.example.zebra"]);
     }
 
-    fn entry(plugin: &str, id: &str, mode: BindingMode, default: Option<&str>) -> PluginCommandEntry {
+    fn entry(
+        plugin: &str,
+        id: &str,
+        mode: BindingMode,
+        default: Option<&str>,
+    ) -> PluginCommandEntry {
         PluginCommandEntry {
             plugin_id: plugin.to_string(),
             command_id: id.to_string(),
@@ -342,7 +350,9 @@ mod tests {
     fn effective_user_key_override_wins() {
         let kb = KeybindingSettings::preset_tasty();
         let e = entry("p", "p.refresh", BindingMode::Independent, Some("F5"));
-        let ov = ShortcutOverride::Key { value: vec!["F6".into()] };
+        let ov = ShortcutOverride::Key {
+            value: vec!["F6".into()],
+        };
         match effective_binding(&e, Some(&ov), &kb) {
             EffectiveBinding::Keys(v) => assert_eq!(v, vec!["F6".to_string()]),
             other => panic!("unexpected: {other:?}"),
@@ -354,14 +364,19 @@ mod tests {
         let kb = KeybindingSettings::preset_tasty();
         let e = entry("p", "p.refresh", BindingMode::Independent, Some("F5"));
         let ov = ShortcutOverride::Key { value: vec![] };
-        assert!(matches!(effective_binding(&e, Some(&ov), &kb), EffectiveBinding::None));
+        assert!(matches!(
+            effective_binding(&e, Some(&ov), &kb),
+            EffectiveBinding::None
+        ));
     }
 
     #[test]
     fn effective_user_inherit_override_resolves_host_keys() {
         let kb = KeybindingSettings::preset_tasty();
         let e = entry("p", "p.copy", BindingMode::Independent, None);
-        let ov = ShortcutOverride::Inherit { source: "clipboard.copy".into() };
+        let ov = ShortcutOverride::Inherit {
+            source: "clipboard.copy".into(),
+        };
         match effective_binding(&e, Some(&ov), &kb) {
             EffectiveBinding::Inherit { source, keys } => {
                 assert_eq!(source, "clipboard.copy");
@@ -375,7 +390,9 @@ mod tests {
     fn effective_user_inherit_override_non_inheritable_falls_back_to_manifest() {
         let kb = KeybindingSettings::preset_tasty();
         let e = entry("p", "p.refresh", BindingMode::Independent, Some("F5"));
-        let ov = ShortcutOverride::Inherit { source: "tab.new".into() };
+        let ov = ShortcutOverride::Inherit {
+            source: "tab.new".into(),
+        };
         match effective_binding(&e, Some(&ov), &kb) {
             EffectiveBinding::Keys(v) => assert_eq!(v, vec!["F5".to_string()]),
             other => panic!("unexpected: {other:?}"),
@@ -387,7 +404,10 @@ mod tests {
         let kb = KeybindingSettings::preset_tasty();
         let e = entry("p", "p.refresh", BindingMode::Independent, Some("F5"));
         let ov = ShortcutOverride::None;
-        assert!(matches!(effective_binding(&e, Some(&ov), &kb), EffectiveBinding::None));
+        assert!(matches!(
+            effective_binding(&e, Some(&ov), &kb),
+            EffectiveBinding::None
+        ));
     }
 
     #[test]
@@ -422,13 +442,19 @@ mod tests {
     fn effective_no_override_manifest_independent_without_default() {
         let kb = KeybindingSettings::preset_tasty();
         let e = entry("p", "p.refresh", BindingMode::Independent, None);
-        assert!(matches!(effective_binding(&e, None, &kb), EffectiveBinding::None));
+        assert!(matches!(
+            effective_binding(&e, None, &kb),
+            EffectiveBinding::None
+        ));
     }
 
     #[test]
     fn effective_no_override_manifest_independent_empty_default() {
         let kb = KeybindingSettings::preset_tasty();
         let e = entry("p", "p.refresh", BindingMode::Independent, Some(""));
-        assert!(matches!(effective_binding(&e, None, &kb), EffectiveBinding::None));
+        assert!(matches!(
+            effective_binding(&e, None, &kb),
+            EffectiveBinding::None
+        ));
     }
 }

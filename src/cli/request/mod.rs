@@ -20,11 +20,11 @@ use presets::{
 };
 use telemetry::telemetry_command_to_method_params;
 
-use crate::ipc::protocol::JsonRpcRequest;
 use super::{
     ClipboardCommands, CloseCommands, Commands, ListCommands, MoveCommands, NewCommands,
     ReadCommands, SendCommands, SetCommands, SurfaceMetaCommands, ToolCommands, UnsetCommands,
 };
+use crate::ipc::protocol::JsonRpcRequest;
 
 /// Resolve a target string for split/other commands.
 /// - "this" → numeric surface ID from TASTY_SURFACE_ID env var
@@ -151,7 +151,9 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
         id: Some(serde_json::json!(1)),
         // Phase 6.2 — 자식 agent 가 띄운 CLI 가 env 로 받은 session token 을
         // envelope 에 자동 첨부. 호스트는 이를 검증해 CallerContext::Agent 로 분기.
-        session_token: std::env::var("TASTY_SESSION_TOKEN").ok().filter(|s| !s.is_empty()),
+        session_token: std::env::var("TASTY_SESSION_TOKEN")
+            .ok()
+            .filter(|s| !s.is_empty()),
     }
 }
 
@@ -288,7 +290,9 @@ fn read_command_to_method_params(command: &ReadCommands) -> (&'static str, serde
             });
             if let Some(ids) = parsers {
                 params["parsers"] = serde_json::Value::Array(
-                    ids.iter().map(|s| serde_json::Value::String(s.clone())).collect(),
+                    ids.iter()
+                        .map(|s| serde_json::Value::String(s.clone()))
+                        .collect(),
                 );
             }
             ("surface.parse_since_mark", params)

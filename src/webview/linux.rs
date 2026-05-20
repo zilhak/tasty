@@ -32,11 +32,7 @@ impl PlatformWebView {
             _ => return Err("Not an X11 window (Wayland is not supported)".to_string()),
         };
 
-        let x11_display_ptr = match window
-            .display_handle()
-            .map_err(|e| e.to_string())?
-            .as_raw()
-        {
+        let x11_display_ptr = match window.display_handle().map_err(|e| e.to_string())?.as_raw() {
             RawDisplayHandle::Xlib(d) => d
                 .display
                 .map(|p| p.as_ptr())

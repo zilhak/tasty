@@ -74,9 +74,7 @@ pub fn handle_semaphore_acquire(
         Some(h) if !h.is_empty() => h.to_string(),
         _ => return JsonRpcResponse::invalid_params(id, "Missing or empty 'holder'"),
     };
-    run_semaphore(id, move |store| {
-        store.acquire(workspace_id, &name, &holder)
-    })
+    run_semaphore(id, move |store| store.acquire(workspace_id, &name, &holder))
 }
 
 pub fn handle_semaphore_release(
@@ -97,12 +95,9 @@ pub fn handle_semaphore_release(
         Some(h) if !h.is_empty() => h.to_string(),
         _ => return JsonRpcResponse::invalid_params(id, "Missing or empty 'holder'"),
     };
-    run_semaphore(id, move |store| {
-        store.release(workspace_id, &name, &holder)
-    })
+    run_semaphore(id, move |store| store.release(workspace_id, &name, &holder))
 }
 
 // ============================================================
 // agent.lease_*
 // ============================================================
-

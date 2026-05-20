@@ -50,8 +50,7 @@ pub fn draw_egui_panels(
                 x: pane_rect.x,
                 y: pane_rect.y + tab_bar_h,
                 width: pane_rect.width,
-                height: (pane_rect.height - tab_bar_h)
-                    .max(crate::model::length::PhysicalPx(1.0)),
+                height: (pane_rect.height - tab_bar_h).max(crate::model::length::PhysicalPx(1.0)),
             };
             // egui로 그려지는 surface = terminal 외 모든 종류.
             for r in tab
@@ -145,22 +144,34 @@ pub fn draw_egui_panels(
                 markdown_colors.unfocused_bg.to_egui()
             };
             let view = markdown_views.get_or_init(md_panel);
-            draw_panel_frame(ctx, &format!("md_panel_{}", id_suffix), info, 8, Some(md_bg), |ui| {
-                crate::markdown_ui::draw_markdown(
-                    ui,
-                    view,
-                    key_scroll_y,
-                    &id_suffix,
-                    &markdown_font,
-                );
-            });
-        } else if let Some(html_panel) = surface
-            .as_any()
-            .downcast_ref::<crate::model::HtmlPanel>()
+            draw_panel_frame(
+                ctx,
+                &format!("md_panel_{}", id_suffix),
+                info,
+                8,
+                Some(md_bg),
+                |ui| {
+                    crate::markdown_ui::draw_markdown(
+                        ui,
+                        view,
+                        key_scroll_y,
+                        &id_suffix,
+                        &markdown_font,
+                    );
+                },
+            );
+        } else if let Some(html_panel) = surface.as_any().downcast_ref::<crate::model::HtmlPanel>()
         {
-            draw_panel_frame(ctx, &format!("html_panel_{}", id_suffix), info, 0, None, |ui| {
-                crate::html_ui::draw_html(ui, html_panel);
-            });
+            draw_panel_frame(
+                ctx,
+                &format!("html_panel_{}", id_suffix),
+                info,
+                0,
+                None,
+                |ui| {
+                    crate::html_ui::draw_html(ui, html_panel);
+                },
+            );
         } else if let Some(empty) = surface
             .as_any()
             .downcast_ref::<crate::model::EmptySurface>()
@@ -175,25 +186,44 @@ pub fn draw_egui_panels(
             .downcast_mut::<crate::model::ImagePanel>()
         {
             let view = image_views.get_or_init(image_panel);
-            draw_panel_frame(ctx, &format!("image_panel_{}", id_suffix), info, 4, None, |ui| {
-                crate::image_ui::draw_image(ui, image_panel, view);
-            });
-        } else if let Some(diff_panel) = surface
-            .as_any()
-            .downcast_ref::<crate::model::DiffPanel>()
+            draw_panel_frame(
+                ctx,
+                &format!("image_panel_{}", id_suffix),
+                info,
+                4,
+                None,
+                |ui| {
+                    crate::image_ui::draw_image(ui, image_panel, view);
+                },
+            );
+        } else if let Some(diff_panel) = surface.as_any().downcast_ref::<crate::model::DiffPanel>()
         {
-            draw_panel_frame(ctx, &format!("diff_panel_{}", id_suffix), info, 4, None, |ui| {
-                if let Some(act) = crate::diff_ui::draw_diff(ui, diff_panel) {
-                    pending_diff_action = Some((diff_panel.id, act));
-                }
-            });
+            draw_panel_frame(
+                ctx,
+                &format!("diff_panel_{}", id_suffix),
+                info,
+                4,
+                None,
+                |ui| {
+                    if let Some(act) = crate::diff_ui::draw_diff(ui, diff_panel) {
+                        pending_diff_action = Some((diff_panel.id, act));
+                    }
+                },
+            );
         } else if let Some(remote) = surface
             .as_any()
             .downcast_ref::<crate::plugin::remote_surface::RemoteSurface>()
         {
-            draw_panel_frame(ctx, &format!("remote_panel_{}", id_suffix), info, 4, None, |ui| {
-                crate::plugin::ui_tree_render::render_remote_surface(ui, remote, canvas_cache);
-            });
+            draw_panel_frame(
+                ctx,
+                &format!("remote_panel_{}", id_suffix),
+                info,
+                4,
+                None,
+                |ui| {
+                    crate::plugin::ui_tree_render::render_remote_surface(ui, remote, canvas_cache);
+                },
+            );
         }
     }
 
@@ -222,7 +252,9 @@ pub fn draw_egui_panels(
     if let Some((sid, act)) = pending_diff_action {
         match act {
             crate::diff_ui::DiffAction::Apply(cmd) => {
-                if let Err(e) = arboard::Clipboard::new().and_then(|mut cb| cb.set_text(cmd.clone())) {
+                if let Err(e) =
+                    arboard::Clipboard::new().and_then(|mut cb| cb.set_text(cmd.clone()))
+                {
                     tracing::warn!("diff apply clipboard copy failed: {e}");
                 }
                 state.toasts.push_info(

@@ -12,7 +12,7 @@
 use std::path::PathBuf;
 
 use anyhow::Result;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// tasty가 자동으로 등록하는 Claude Code hook 이벤트 목록.
 /// `(claude_event_name, tasty_hook_token)` 형태. 호스트 `MANAGED_HOOKS`와 동일.
@@ -130,9 +130,7 @@ pub fn install_hooks_in_value(root: &mut Value) -> Result<Vec<&'static str>> {
                         .and_then(|c| c.as_str())
                         .map(|c| c.contains(&marker) && c != command)
                         .unwrap_or(false);
-                    if needs_update
-                        && let Some(obj) = h.as_object_mut()
-                    {
+                    if needs_update && let Some(obj) = h.as_object_mut() {
                         obj.insert("command".into(), Value::String(command.clone()));
                     }
                 }
@@ -174,7 +172,10 @@ pub fn uninstall_hooks_from_value(root: &mut Value) -> Vec<&'static str> {
     for (event_name, event_token) in MANAGED_HOOKS {
         let marker = tasty_hook_marker(event_token);
 
-        let Some(arr) = hooks_obj.get_mut(*event_name).and_then(|v| v.as_array_mut()) else {
+        let Some(arr) = hooks_obj
+            .get_mut(*event_name)
+            .and_then(|v| v.as_array_mut())
+        else {
             continue;
         };
 
@@ -279,8 +280,7 @@ mod tests {
         // 옛 install 이 남긴 잘못된 SessionStart command 문자열이, 재 install 시
         // canonical 한 새 형태로 자동 갱신되어야 한다. 사용자가 uninstall→install
         // 수작업을 하지 않아도 복원이 정상화되도록.
-        let stale_command =
-            "[ -n \"$TASTY_SURFACE_ID\" ] && tasty claude hook session-start --session ${CLAUDE_SESSION_ID} || true";
+        let stale_command = "[ -n \"$TASTY_SURFACE_ID\" ] && tasty claude hook session-start --session ${CLAUDE_SESSION_ID} || true";
         let mut root = json!({
             "hooks": {
                 "SessionStart": [
@@ -305,7 +305,10 @@ mod tests {
                     .unwrap_or(false)
             })
             .count();
-        assert_eq!(tasty_count, 1, "stale entry should be upgraded, not duplicated");
+        assert_eq!(
+            tasty_count, 1,
+            "stale entry should be upgraded, not duplicated"
+        );
         let cmd = arr[0]["hooks"][0]["command"].as_str().unwrap();
         assert_eq!(cmd, tasty_hook_command("session-start"));
         assert!(!cmd.contains("${CLAUDE_SESSION_ID}"));

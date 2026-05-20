@@ -6,14 +6,12 @@
 
 use std::path::Path;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use clap::{Arg, ArgAction, ArgMatches, Command, CommandFactory};
 use serde_json::{Map, Value};
 
 use crate::ipc::protocol::JsonRpcRequest;
-use crate::plugin::manifest::{
-    CliArg, CliArgGroup, CliArgType, CliCommandDecl, Manifest,
-};
+use crate::plugin::manifest::{CliArg, CliArgGroup, CliArgType, CliCommandDecl, Manifest};
 
 /// 한 plugin이 contribute한 CLI 묶음.
 #[derive(Debug, Clone)]
@@ -38,9 +36,7 @@ pub fn discover_plugin_clis(plugins_root: &Path) -> Vec<PluginCliEntry> {
         match Manifest::load(&dir) {
             Ok(manifest) => {
                 for cli in &manifest.contributes.cli {
-                    out.push(PluginCliEntry {
-                        cli: cli.clone(),
-                    });
+                    out.push(PluginCliEntry { cli: cli.clone() });
                 }
             }
             Err(e) => {
@@ -192,7 +188,9 @@ pub fn matches_to_request(
         method: sub_decl.ipc_method.clone(),
         params: Value::Object(params),
         id: Some(Value::from(1)),
-        session_token: std::env::var("TASTY_SESSION_TOKEN").ok().filter(|s| !s.is_empty()),
+        session_token: std::env::var("TASTY_SESSION_TOKEN")
+            .ok()
+            .filter(|s| !s.is_empty()),
     })
 }
 
@@ -525,8 +523,7 @@ subcommands = [
 
         let plugin_bad = dir.path().join("bad");
         std::fs::create_dir_all(&plugin_bad).unwrap();
-        std::fs::write(plugin_bad.join("tasty-plugin.toml"), "not toml at all = {")
-            .unwrap();
+        std::fs::write(plugin_bad.join("tasty-plugin.toml"), "not toml at all = {").unwrap();
 
         let entries = discover_plugin_clis(dir.path());
         let names: Vec<&str> = entries.iter().map(|e| e.cli.name.as_str()).collect();

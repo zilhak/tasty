@@ -43,12 +43,9 @@ fn require_str<'a>(
     key: &str,
     id: &serde_json::Value,
 ) -> Result<&'a str, JsonRpcResponse> {
-    params
-        .get(key)
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| {
-            JsonRpcResponse::invalid_params(id.clone(), format!("Missing '{key}' parameter"))
-        })
+    params.get(key).and_then(|v| v.as_str()).ok_or_else(|| {
+        JsonRpcResponse::invalid_params(id.clone(), format!("Missing '{key}' parameter"))
+    })
 }
 
 fn require_u32(
@@ -71,11 +68,10 @@ fn with_store<R>(
     id: &serde_json::Value,
     f: impl FnOnce(&tasty_presets::PresetStore) -> R,
 ) -> Result<R, JsonRpcResponse> {
-    let arc = state
-        .engine
-        .preset_store
-        .as_ref()
-        .ok_or_else(|| JsonRpcResponse::internal_error(id.clone(), "preset_store unavailable"))?;
+    let arc =
+        state.engine.preset_store.as_ref().ok_or_else(|| {
+            JsonRpcResponse::internal_error(id.clone(), "preset_store unavailable")
+        })?;
     let guard = match arc.lock() {
         Ok(g) => g,
         Err(p) => {
@@ -89,9 +85,7 @@ fn with_store<R>(
 /// PresetMutationError → JsonRpcResponse 매핑.
 fn mutation_error(id: serde_json::Value, e: PresetMutationError) -> JsonRpcResponse {
     match &e {
-        PresetMutationError::StoreUnavailable => {
-            JsonRpcResponse::internal_error(id, e.to_string())
-        }
+        PresetMutationError::StoreUnavailable => JsonRpcResponse::internal_error(id, e.to_string()),
         PresetMutationError::NotFound { .. }
         | PresetMutationError::Apply(_)
         | PresetMutationError::Store(_) => JsonRpcResponse::invalid_params(id, e.to_string()),
@@ -188,7 +182,10 @@ pub fn handle_save(
         PresetKind::Workspace => match serde_json::from_value::<WorkspacePreset>(data) {
             Ok(p) => ClonedPreset::Workspace(p),
             Err(e) => {
-                return JsonRpcResponse::invalid_params(id, format!("invalid workspace preset: {e}"));
+                return JsonRpcResponse::invalid_params(
+                    id,
+                    format!("invalid workspace preset: {e}"),
+                );
             }
         },
         PresetKind::Tab => match serde_json::from_value::<TabPreset>(data) {
@@ -321,7 +318,14 @@ pub fn handle_apply(
 
     // CLI/IPC 포커스 독립 원칙 — focus 항상 false.
     let opts = ApplyOptions { focus: false };
-    match apply_inner(state, kind, &name, target_pane_id, target_workspace_id, opts) {
+    match apply_inner(
+        state,
+        kind,
+        &name,
+        target_pane_id,
+        target_workspace_id,
+        opts,
+    ) {
         Ok(ApplyOutcome::Workspace { workspace_id }) => JsonRpcResponse::success(
             id,
             json!({

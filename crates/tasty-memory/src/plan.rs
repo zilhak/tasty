@@ -176,7 +176,12 @@ fn validate_plan(plan: &Plan) -> Result<()> {
     let adj: HashMap<&str, Vec<&str>> = plan
         .steps
         .iter()
-        .map(|s| (s.id.as_str(), s.depends_on.iter().map(|d| d.as_str()).collect()))
+        .map(|s| {
+            (
+                s.id.as_str(),
+                s.depends_on.iter().map(|d| d.as_str()).collect(),
+            )
+        })
         .collect();
     let mut marks: HashMap<&str, Mark> = HashMap::new();
     for step in &plan.steps {
@@ -244,18 +249,15 @@ pub fn plan_create(
             key,
         });
     }
-    let value = MemoryValue::Json(serde_json::to_value(&plan).map_err(|e| {
-        MemoryError::InvalidContentType(format!("serialize plan: {e}"))
-    })?);
+    let value = MemoryValue::Json(
+        serde_json::to_value(&plan)
+            .map_err(|e| MemoryError::InvalidContentType(format!("serialize plan: {e}")))?,
+    );
     store.put(owner, &scope, &key, &value, &PutOpts::default())
 }
 
 /// plan 조회.
-pub fn plan_get(
-    store: &MemoryStore,
-    workspace_id: u32,
-    plan_id: &str,
-) -> Result<Option<Plan>> {
+pub fn plan_get(store: &MemoryStore, workspace_id: u32, plan_id: &str) -> Result<Option<Plan>> {
     validate_plan_id(plan_id)?;
     let Some(entry) = store.get(&Scope::Workspace(workspace_id), &plan_key(plan_id))? else {
         return Ok(None);
@@ -284,11 +286,7 @@ pub fn plan_list(store: &MemoryStore, workspace_id: u32) -> Result<Vec<String>> 
     let entries = store.list(&Scope::Workspace(workspace_id), &opts)?;
     Ok(entries
         .into_iter()
-        .filter_map(|e| {
-            e.key
-                .strip_prefix(PLAN_KEY_PREFIX)
-                .map(|s| s.to_string())
-        })
+        .filter_map(|e| e.key.strip_prefix(PLAN_KEY_PREFIX).map(|s| s.to_string()))
         .collect())
 }
 
@@ -412,9 +410,10 @@ where
     mutate(&mut plan)?;
     plan.updated_at = now_ms_local();
     validate_plan(&plan)?;
-    let value = MemoryValue::Json(serde_json::to_value(&plan).map_err(|e| {
-        MemoryError::InvalidContentType(format!("serialize plan: {e}"))
-    })?);
+    let value = MemoryValue::Json(
+        serde_json::to_value(&plan)
+            .map_err(|e| MemoryError::InvalidContentType(format!("serialize plan: {e}")))?,
+    );
     let opts = PutOpts {
         expires_at: None,
         cas,
@@ -582,8 +581,8 @@ mod tests {
     fn add_duplicate_step_rejected() {
         let mut s = open();
         plan_create(&mut s, HOST_OWNER, 1, "p", "t", vec![step("a", "1")]).unwrap();
-        let err = plan_add_step(&mut s, HOST_OWNER, 1, "p", step("a", "dup"), None, None)
-            .unwrap_err();
+        let err =
+            plan_add_step(&mut s, HOST_OWNER, 1, "p", step("a", "dup"), None, None).unwrap_err();
         assert!(matches!(err, MemoryError::InvalidKey(_)), "{err:?}");
     }
 

@@ -112,7 +112,10 @@ pub(crate) fn handle_surface_respawn_terminal(
         Err(e) => return JsonRpcResponse::internal_error(id, e.to_string()),
     };
 
-    match state.engine.replace_terminal_by_id(surface_id, new_terminal) {
+    match state
+        .engine
+        .replace_terminal_by_id(surface_id, new_terminal)
+    {
         Ok(()) => JsonRpcResponse::success(id, json!({ "ok": true, "surface_id": surface_id })),
         Err(e) => JsonRpcResponse::invalid_params(id, e.to_string()),
     }
@@ -140,4 +143,3 @@ pub(crate) fn handle_surface_locate(
         }),
     )
 }
-

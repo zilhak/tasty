@@ -5,8 +5,8 @@
 use crate::i18n::t;
 use crate::theme;
 
-use super::data::DiffLineKind;
 use super::GitViewerState;
+use super::data::DiffLineKind;
 
 pub fn draw_diff_panel(ui: &mut egui::Ui, state: &GitViewerState) -> bool {
     let th = theme::theme();
@@ -69,12 +69,9 @@ pub fn draw_diff_panel(ui: &mut egui::Ui, state: &GitViewerState) -> bool {
                         .map(|n| format!("{n:>4}"))
                         .unwrap_or_else(|| "    ".to_string());
                     ui.label(
-                        egui::RichText::new(format!(
-                            "{old_no} {new_no} {prefix} {}",
-                            line.content
-                        ))
-                        .font(font.clone())
-                        .color(color),
+                        egui::RichText::new(format!("{old_no} {new_no} {prefix} {}", line.content))
+                            .font(font.clone())
+                            .color(color),
                     );
                 }
             }

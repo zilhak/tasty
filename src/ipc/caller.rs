@@ -103,7 +103,10 @@ impl std::fmt::Display for CallerError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             CallerError::UnknownMethod(m) => write!(f, "unknown ipc method: {m}"),
-            CallerError::NotPluginCallable { caller_label, method } => {
+            CallerError::NotPluginCallable {
+                caller_label,
+                method,
+            } => {
                 write!(f, "method '{method}' is not callable from '{caller_label}'")
             }
             CallerError::MissingPermission {
@@ -168,12 +171,8 @@ impl CallerContext {
     pub fn agent_id(&self) -> tasty_core::AgentId {
         match self {
             CallerContext::Local => tasty_core::AgentId::from_env(),
-            CallerContext::Plugin { plugin_id, .. } => {
-                tasty_core::AgentId::new(plugin_id.clone())
-            }
-            CallerContext::Agent { agent_id, .. } => {
-                tasty_core::AgentId::new(agent_id.clone())
-            }
+            CallerContext::Plugin { plugin_id, .. } => tasty_core::AgentId::new(plugin_id.clone()),
+            CallerContext::Agent { agent_id, .. } => tasty_core::AgentId::new(agent_id.clone()),
         }
     }
 }
@@ -232,9 +231,11 @@ mod tests {
     fn local_passes_unknown_methods_too() {
         // Local은 method_meta 검사 없이 통과 — 알려지지 않은 메서드도 라우터의
         // method_not_found가 처리하도록 위임.
-        assert!(CallerContext::Local
-            .ensure_allowed("not.a.real.method")
-            .is_ok());
+        assert!(
+            CallerContext::Local
+                .ensure_allowed("not.a.real.method")
+                .is_ok()
+        );
     }
 
     #[test]

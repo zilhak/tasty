@@ -235,7 +235,6 @@ impl ApplicationHandler<AppEvent> for App {
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
-
         // Shell setup mode — handled by App directly
         if self.shell_setup_mode {
             if let WindowEvent::RedrawRequested = &event {
@@ -326,14 +325,18 @@ impl ApplicationHandler<AppEvent> for App {
                 // Multiple windows: just close this one
                 self.windows.remove(&id);
                 if let Some(mgr) = self.plugin_manager.as_mut() {
-                    use tasty_plugin_protocol::{EventScope, LifecycleReason};
                     use tasty_plugin_protocol::events::payloads::WindowClosed;
+                    use tasty_plugin_protocol::{EventScope, LifecycleReason};
                     let payload = WindowClosed {
                         window_id: u64::from(id),
                         reason: LifecycleReason::User,
                     };
                     mgr.emit_host_event("window.closed", &payload, EventScope::System);
-                    crate::hooks::lua::fire(self.lua_engine.as_ref(), "window.delete.post", &payload);
+                    crate::hooks::lua::fire(
+                        self.lua_engine.as_ref(),
+                        "window.delete.post",
+                        &payload,
+                    );
                 }
                 if self.engine.focused_window_id == Some(id) {
                     self.engine.focused_window_id = self
@@ -428,7 +431,10 @@ impl ApplicationHandler<AppEvent> for App {
                         crate::shortcuts::send_app_event(&self.engine.proxy, app_event);
                         return;
                     }
-                    debug_assert!(false, "non-modal window returned CloseWithEvent unexpectedly");
+                    debug_assert!(
+                        false,
+                        "non-modal window returned CloseWithEvent unexpectedly"
+                    );
                 }
             }
 
@@ -451,7 +457,6 @@ impl ApplicationHandler<AppEvent> for App {
                 }
             }
         }
-
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
@@ -535,5 +540,3 @@ impl ApplicationHandler<AppEvent> for App {
         }
     }
 }
-
-

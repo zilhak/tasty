@@ -80,7 +80,9 @@ fn revoke_unknown_returns_false() {
 fn list_returns_alive_only_and_evicts_expired() {
     let (_td, mut mem) = fresh();
     let mut store = SessionStore::new(&mut mem, "_host");
-    let (alive_token, _) = store.issue("alive", None, perms(&[]), Some(10_000), 0).unwrap();
+    let (alive_token, _) = store
+        .issue("alive", None, perms(&[]), Some(10_000), 0)
+        .unwrap();
     let (revoked_token, _) = store.issue("dead", None, perms(&[]), None, 0).unwrap();
     store.revoke(&revoked_token).unwrap();
     let (_expired_token, _) = store.issue("oldie", None, perms(&[]), Some(1), 0).unwrap();
@@ -106,9 +108,7 @@ fn grant_then_revoke_removes_temp() {
     let (token, _) = store
         .issue("a", None, perms(&[Permission::SurfaceRead]), None, 0)
         .unwrap();
-    store
-        .grant_permission(&token, "fs.write", None, 0)
-        .unwrap();
+    store.grant_permission(&token, "fs.write", None, 0).unwrap();
     assert!(store.revoke_permission(&token, "fs.write", 1_000).unwrap());
     // 두 번째 revoke 는 false (이미 없음).
     assert!(!store.revoke_permission(&token, "fs.write", 1_000).unwrap());
@@ -156,9 +156,7 @@ fn grant_none_ttl_overrides_finite() {
         .grant_permission(&token, "fs.write", Some(100), 0)
         .unwrap();
     // None TTL → 무기한으로 격상.
-    store
-        .grant_permission(&token, "fs.write", None, 0)
-        .unwrap();
+    store.grant_permission(&token, "fs.write", None, 0).unwrap();
     let s = store.resolve(&token, 100_000).unwrap().unwrap();
     assert_eq!(s.temp_grants.len(), 1);
     assert_eq!(s.temp_grants[0].expires_at_ms, None);

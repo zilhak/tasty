@@ -11,8 +11,8 @@ use egui::Ui;
 use crate::gpu::canvas_texture::CanvasTextureCache;
 use crate::plugin::remote_surface::RemoteSurface;
 use crate::plugin::ui_tree::{
-    ButtonStyle, CanvasPointerButton, CanvasPointerPhase, LabelStyle, SharedBufferId,
-    SplitDir, TreeNode, UiEvent, UiNode,
+    ButtonStyle, CanvasPointerButton, CanvasPointerPhase, LabelStyle, SharedBufferId, SplitDir,
+    TreeNode, UiEvent, UiNode,
 };
 
 /// 렌더러가 plugin tree를 그리는 동안 사용하는 추상 sink.
@@ -109,12 +109,7 @@ pub fn render_popup_tree(
     render_node(ui, tree, sink, canvas_cache);
 }
 
-fn render_node(
-    ui: &mut Ui,
-    node: &UiNode,
-    sink: &dyn UiSink,
-    canvas_cache: &CanvasTextureCache,
-) {
+fn render_node(ui: &mut Ui, node: &UiNode, sink: &dyn UiSink, canvas_cache: &CanvasTextureCache) {
     match node {
         UiNode::Vbox { spacing, children } => {
             ui.vertical(|ui| {
@@ -379,7 +374,9 @@ fn render_canvas(
 
     // Leave 감지: 직전 frame에 hovered였는데 이번 frame은 아니면 송신.
     let mem_id = egui::Id::new(("canvas_hovered", sink.salt(), node_id));
-    let was_hovered: bool = ui.ctx().memory(|m| m.data.get_temp(mem_id).unwrap_or(false));
+    let was_hovered: bool = ui
+        .ctx()
+        .memory(|m| m.data.get_temp(mem_id).unwrap_or(false));
     let is_hovered = resp.hovered() || resp.dragged() || resp.clicked();
     if was_hovered && !is_hovered {
         // 마지막으로 알려진 hover 위치가 없을 수 있으므로 (-1, -1) 대신 영역 외 표시.
@@ -446,35 +443,47 @@ fn render_splitter(
     let (first_rect, second_rect, handle_rect, axis_size, axis_min) = match direction {
         SplitDir::Horizontal => {
             let split_x = avail.min.x + avail.width() * r;
-            let first_rect =
-                egui::Rect::from_min_max(avail.min, egui::pos2(split_x, avail.max.y));
-            let second_rect =
-                egui::Rect::from_min_max(egui::pos2(split_x, avail.min.y), avail.max);
+            let first_rect = egui::Rect::from_min_max(avail.min, egui::pos2(split_x, avail.max.y));
+            let second_rect = egui::Rect::from_min_max(egui::pos2(split_x, avail.min.y), avail.max);
             let handle_rect = egui::Rect::from_min_max(
                 egui::pos2(split_x - HANDLE_THICKNESS * 0.5, avail.min.y),
                 egui::pos2(split_x + HANDLE_THICKNESS * 0.5, avail.max.y),
             );
-            (first_rect, second_rect, handle_rect, avail.width(), avail.min.x)
+            (
+                first_rect,
+                second_rect,
+                handle_rect,
+                avail.width(),
+                avail.min.x,
+            )
         }
         SplitDir::Vertical => {
             let split_y = avail.min.y + avail.height() * r;
-            let first_rect =
-                egui::Rect::from_min_max(avail.min, egui::pos2(avail.max.x, split_y));
-            let second_rect =
-                egui::Rect::from_min_max(egui::pos2(avail.min.x, split_y), avail.max);
+            let first_rect = egui::Rect::from_min_max(avail.min, egui::pos2(avail.max.x, split_y));
+            let second_rect = egui::Rect::from_min_max(egui::pos2(avail.min.x, split_y), avail.max);
             let handle_rect = egui::Rect::from_min_max(
                 egui::pos2(avail.min.x, split_y - HANDLE_THICKNESS * 0.5),
                 egui::pos2(avail.max.x, split_y + HANDLE_THICKNESS * 0.5),
             );
-            (first_rect, second_rect, handle_rect, avail.height(), avail.min.y)
+            (
+                first_rect,
+                second_rect,
+                handle_rect,
+                avail.height(),
+                avail.min.y,
+            )
         }
     };
 
     ui.scope_builder(egui::UiBuilder::new().max_rect(first_rect), |ui| {
-        ui.push_id("split_first", |ui| render_node(ui, first, sink, canvas_cache));
+        ui.push_id("split_first", |ui| {
+            render_node(ui, first, sink, canvas_cache)
+        });
     });
     ui.scope_builder(egui::UiBuilder::new().max_rect(second_rect), |ui| {
-        ui.push_id("split_second", |ui| render_node(ui, second, sink, canvas_cache));
+        ui.push_id("split_second", |ui| {
+            render_node(ui, second, sink, canvas_cache)
+        });
     });
 
     if let Some(id_str) = id {

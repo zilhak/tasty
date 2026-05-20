@@ -17,8 +17,7 @@ fn root_changelog_has_unreleased_section() {
 #[test]
 fn plugin_protocol_changelog_has_unreleased_section() {
     let path = "crates/tasty-plugin-protocol/CHANGELOG.md";
-    let changelog =
-        std::fs::read_to_string(path).expect("plugin-protocol CHANGELOG must exist");
+    let changelog = std::fs::read_to_string(path).expect("plugin-protocol CHANGELOG must exist");
     assert!(
         changelog.contains("## [Unreleased]"),
         "{path} must contain a `## [Unreleased]` section"

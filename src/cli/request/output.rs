@@ -29,12 +29,16 @@ pub(super) fn output_command_to_method_params(
                 }
                 if let Some(p) = parsers {
                     params["parsers"] = serde_json::Value::Array(
-                        p.iter().map(|s| serde_json::Value::String(s.clone())).collect(),
+                        p.iter()
+                            .map(|s| serde_json::Value::String(s.clone()))
+                            .collect(),
                     );
                 }
                 if let Some(k) = kinds {
                     params["kinds"] = serde_json::Value::Array(
-                        k.iter().map(|s| serde_json::Value::String(s.clone())).collect(),
+                        k.iter()
+                            .map(|s| serde_json::Value::String(s.clone()))
+                            .collect(),
                     );
                 }
                 ("output.observe_start", params)
@@ -51,4 +55,3 @@ pub(super) fn output_command_to_method_params(
         },
     }
 }
-

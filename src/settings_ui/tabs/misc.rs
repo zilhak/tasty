@@ -80,4 +80,3 @@ fn draw_tastyrc_subtab(ui: &mut egui::Ui, bashrc_user_draft: &mut Option<String>
             );
         });
 }
-

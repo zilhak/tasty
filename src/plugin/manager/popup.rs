@@ -85,11 +85,7 @@ impl PluginManager {
 
     /// popup 인스턴스 위에서 발생한 사용자 이벤트를 plugin에 forward.
     /// plugin 응답은 [`PopupEventResult`] — 갱신된 tree와 자체 닫기 요청 플래그.
-    pub fn send_popup_event(
-        &mut self,
-        instance_id: u64,
-        event: &tasty_plugin_protocol::UiEvent,
-    ) {
+    pub fn send_popup_event(&mut self, instance_id: u64, event: &tasty_plugin_protocol::UiEvent) {
         let plugin_id = match self.popup_instances.get(&instance_id) {
             Some(inst) => inst.plugin_id.clone(),
             None => {
@@ -165,5 +161,4 @@ impl PluginManager {
             PendingRequestKind::CommandInvoke { surface_id },
         );
     }
-
 }

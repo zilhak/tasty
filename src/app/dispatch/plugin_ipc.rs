@@ -25,23 +25,12 @@ impl App {
                     .and_then(|v| v.as_u64())
                     .unwrap_or(0);
                 if let Some(mgr) = self.plugin_manager.as_mut() {
-                    let (result, error) = match mgr.create_shared_buffer_for(
-                        &call.plugin_id,
-                        call.call_id,
-                        size,
-                    ) {
-                        Ok(r) => (
-                            serde_json::to_value(&r).ok(),
-                            None,
-                        ),
-                        Err(e) => (None, Some(e)),
-                    };
-                    mgr.send_ipc_result(
-                        &call.plugin_id,
-                        call.call_id,
-                        result,
-                        error,
-                    );
+                    let (result, error) =
+                        match mgr.create_shared_buffer_for(&call.plugin_id, call.call_id, size) {
+                            Ok(r) => (serde_json::to_value(&r).ok(), None),
+                            Err(e) => (None, Some(e)),
+                        };
+                    mgr.send_ipc_result(&call.plugin_id, call.call_id, result, error);
                 }
                 continue;
             }
@@ -58,10 +47,7 @@ impl App {
                     Ok(()) => {
                         let instance_id = call.params.get("instance_id").and_then(|v| v.as_u64());
                         match instance_id {
-                            None => (
-                                None,
-                                Some("popup.close: missing 'instance_id'".to_string()),
-                            ),
+                            None => (None, Some("popup.close: missing 'instance_id'".to_string())),
                             Some(id) => {
                                 let mgr = self.plugin_manager.as_mut();
                                 let owns = mgr

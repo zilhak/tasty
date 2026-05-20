@@ -16,7 +16,13 @@ pub(super) fn persist_anomaly(anomaly: &Anomaly) -> std::result::Result<(), Stri
         cas: None,
     };
     let result = with_store(|s| {
-        s.put(tasty_memory::HOST_OWNER, &Scope::Global, &key, &value, &opts)
+        s.put(
+            tasty_memory::HOST_OWNER,
+            &Scope::Global,
+            &key,
+            &value,
+            &opts,
+        )
     });
     match result {
         Some(Ok(_)) => Ok(()),
@@ -30,8 +36,16 @@ pub(super) fn fire_anomaly_notification(state: &mut AppState, anomaly: &Anomaly)
         return;
     };
     let ws_id = ws.id;
-    let count = anomaly.detail.get("count").and_then(|v| v.as_u64()).unwrap_or(0);
-    let title = format!("이상 탐지: {} ({})", anomaly.kind.as_token(), anomaly.subject);
+    let count = anomaly
+        .detail
+        .get("count")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let title = format!(
+        "이상 탐지: {} ({})",
+        anomaly.kind.as_token(),
+        anomaly.subject
+    );
     let body = format!(
         "agent={} subject={} count={} ({}s 윈도우, anomaly={})",
         anomaly.agent,
@@ -62,8 +76,14 @@ pub fn handle_anomaly_list(
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
-    let agent_filter = params.get("agent").and_then(|v| v.as_str()).map(String::from);
-    let kind_filter = params.get("kind").and_then(|v| v.as_str()).map(String::from);
+    let agent_filter = params
+        .get("agent")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+    let kind_filter = params
+        .get("kind")
+        .and_then(|v| v.as_str())
+        .map(String::from);
     let since = params.get("since").and_then(|v| v.as_u64());
     let until = params.get("until").and_then(|v| v.as_u64());
 
@@ -112,6 +132,9 @@ pub fn handle_anomaly_list(
         out.push(a);
     }
     out.sort_by(|a, b| a.detected_at.cmp(&b.detected_at));
-    let arr: Vec<Value> = out.iter().map(|a| serde_json::to_value(a).unwrap_or(Value::Null)).collect();
+    let arr: Vec<Value> = out
+        .iter()
+        .map(|a| serde_json::to_value(a).unwrap_or(Value::Null))
+        .collect();
     JsonRpcResponse::success(id, json!({ "entries": arr, "count": arr.len() }))
 }

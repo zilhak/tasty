@@ -81,11 +81,10 @@ pub fn handle_notification_create(
             }
         }
     };
-    let created_id =
-        state
-            .engine
-            .notifications
-            .add(ws_id, surface_id, title.clone(), body.clone());
+    let created_id = state
+        .engine
+        .notifications
+        .add(ws_id, surface_id, title.clone(), body.clone());
     if let Some(nid) = created_id {
         state.enqueue_host_event(crate::state::PendingHostEvent::NotificationCreated {
             id: nid,

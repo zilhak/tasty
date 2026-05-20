@@ -33,7 +33,9 @@ pub struct ReducerInput {
 pub fn reduce_in_process(strategy: &ReducerStrategy, inputs: &[ReducerInput]) -> Result<Value> {
     match strategy {
         ReducerStrategy::FirstSuccess => first_success(inputs),
-        ReducerStrategy::All => Ok(Value::Array(inputs.iter().map(|i| i.output.clone()).collect())),
+        ReducerStrategy::All => Ok(Value::Array(
+            inputs.iter().map(|i| i.output.clone()).collect(),
+        )),
         ReducerStrategy::MergeJson => merge_json(inputs),
         ReducerStrategy::ConcatText => concat_text(inputs),
         ReducerStrategy::Custom { .. } => Err(AgentError::InvalidArgument(
@@ -194,10 +196,7 @@ mod tests {
 
     #[test]
     fn concat_text_joins_strings_directly() {
-        let inputs = vec![
-            input(true, json!("hello ")),
-            input(true, json!("world")),
-        ];
+        let inputs = vec![input(true, json!("hello ")), input(true, json!("world"))];
         let out = reduce_in_process(&ReducerStrategy::ConcatText, &inputs).unwrap();
         assert_eq!(out, json!("hello world"));
     }

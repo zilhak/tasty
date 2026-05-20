@@ -165,10 +165,7 @@ impl<'a> SessionStore<'a> {
                 "agent_id must be non-empty".into(),
             ));
         }
-        let permissions: Vec<String> = permissions
-            .into_iter()
-            .map(|p| p.as_token())
-            .collect();
+        let permissions: Vec<String> = permissions.into_iter().map(|p| p.as_token()).collect();
         let expires_at_ms = ttl_ms.map(|t| now_ms.saturating_add(t));
         let session = AgentSession {
             agent_id,
@@ -401,7 +398,6 @@ impl<'a> SessionStore<'a> {
         Ok(alive)
     }
 }
-
 
 #[cfg(test)]
 #[path = "session_tests.rs"]

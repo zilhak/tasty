@@ -3,8 +3,8 @@
 use crate::i18n::t;
 use crate::theme;
 
-use super::data::FileStatus;
 use super::GitViewerState;
+use super::data::FileStatus;
 
 /// 클릭된 파일 인덱스를 반환한다.
 pub fn draw_status_panel(ui: &mut egui::Ui, state: &GitViewerState) -> Option<usize> {

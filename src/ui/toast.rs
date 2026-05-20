@@ -131,7 +131,8 @@ impl ToastManager {
         });
 
         // 2) 스코프가 화면에서 사라진 토스트 제거.
-        self.toasts.retain(|t| Self::scope_rect(&t.scope, draw_ctx, ctx).is_some());
+        self.toasts
+            .retain(|t| Self::scope_rect(&t.scope, draw_ctx, ctx).is_some());
 
         if self.toasts.is_empty() {
             return;

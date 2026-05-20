@@ -5,9 +5,7 @@
 //! save → PresetWindow 오픈 + select 까지 일괄 처리한다.
 
 use anyhow::{Result, anyhow};
-use tasty_presets::{
-    CaptureOptions, CapturedSurfaceMeta, PanePreset, TabPreset, WorkspacePreset,
-};
+use tasty_presets::{CaptureOptions, CapturedSurfaceMeta, PanePreset, TabPreset, WorkspacePreset};
 
 use crate::intent::{ClonedPreset, Intent};
 use crate::model::Surface;
@@ -70,7 +68,11 @@ impl MainWindow {
             .explicit_name
             .clone()
             .unwrap_or_else(|| tab.name.clone());
-        let base_name = if base.is_empty() { "tab".to_string() } else { base };
+        let base_name = if base.is_empty() {
+            "tab".to_string()
+        } else {
+            base
+        };
 
         let registry = self.state.engine.surface_registry.clone();
         let mut capture = move |s: &dyn Surface| -> Option<CapturedSurfaceMeta> {

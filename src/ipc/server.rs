@@ -19,10 +19,7 @@ pub struct IpcCommand {
 /// IPC 응답 송신용 헬퍼. 클라이언트가 응답 전에 연결을 끊었거나 receiver가 drop된
 /// 경우(`SendError`)에는 trace로만 흔적을 남긴다 — 정상적인 take-and-go 케이스라
 /// warn 레벨로 올릴 만한 사건은 아니다.
-pub fn send_response(
-    tx: &mpsc::SyncSender<JsonRpcResponse>,
-    response: JsonRpcResponse,
-) {
+pub fn send_response(tx: &mpsc::SyncSender<JsonRpcResponse>, response: JsonRpcResponse) {
     if let Err(e) = tx.send(response) {
         tracing::trace!("IPC response dropped (client disconnected): {e}");
     }
@@ -151,7 +148,9 @@ impl IpcServer {
                         -32700,
                         format!("Parse error: {}", e),
                     );
-                    if let Err(e) = writeln!(writer, "{}", serde_json::to_string(&err_resp).unwrap()) {
+                    if let Err(e) =
+                        writeln!(writer, "{}", serde_json::to_string(&err_resp).unwrap())
+                    {
                         tracing::trace!("IPC parse-error response write failed: {e}");
                     }
                     if let Err(e) = writer.flush() {

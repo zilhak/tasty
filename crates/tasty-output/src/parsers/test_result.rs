@@ -22,8 +22,9 @@ static PYTEST_RE: LazyLock<Regex> = LazyLock::new(|| {
     // 또는 ===== 5 passed in 0.12s =====
     Regex::new(r"=+\s*(?P<body>[^=]+?)\s+in\s+(?P<dur>[0-9.]+)\s*s\s*=+").unwrap()
 });
-static PYTEST_TOKEN_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?P<n>\d+)\s+(?P<kind>passed|failed|skipped|error|errors|xfailed|xpassed|deselected|warnings?)").unwrap());
+static PYTEST_TOKEN_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?P<n>\d+)\s+(?P<kind>passed|failed|skipped|error|errors|xfailed|xpassed|deselected|warnings?)").unwrap()
+});
 
 static JEST_TESTS_RE: LazyLock<Regex> = LazyLock::new(|| {
     // "Tests:       1 failed, 2 passed, 3 total"
@@ -76,10 +77,7 @@ impl Parser for TestResultParser {
             if counts.is_empty() {
                 return;
             }
-            let failed = counts
-                .get("failed")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0);
+            let failed = counts.get("failed").and_then(|v| v.as_u64()).unwrap_or(0);
             let errors = counts.get("error").and_then(|v| v.as_u64()).unwrap_or(0);
             let status = if failed > 0 || errors > 0 {
                 "failed"
@@ -113,10 +111,7 @@ impl Parser for TestResultParser {
             if counts.is_empty() {
                 return;
             }
-            let failed = counts
-                .get("failed")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0);
+            let failed = counts.get("failed").and_then(|v| v.as_u64()).unwrap_or(0);
             let status = if failed > 0 { "failed" } else { "passed" };
             out.push(ParsedItem {
                 kind: "test_result",
@@ -133,5 +128,3 @@ impl Parser for TestResultParser {
         }
     }
 }
-
-

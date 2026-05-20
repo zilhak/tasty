@@ -13,9 +13,7 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::{Duration, Instant};
 
 use serde_json::json;
-use tasty_plugin_protocol::{
-    HandleChannelMessage, SharedBufferCreateResult, SharedBufferId,
-};
+use tasty_plugin_protocol::{HandleChannelMessage, SharedBufferCreateResult, SharedBufferId};
 #[cfg(unix)]
 use tasty_shm::PeerPid;
 use tasty_shm::SharedMemory;
@@ -54,16 +52,28 @@ pub(super) enum FinalCaller {
 
 /// pending host→plugin request의 종류. 응답 수신 시 어떤 후처리를 할지 식별.
 pub(super) enum PendingRequestKind {
-    SurfaceCreate { surface_id: u32 },
-    SurfaceEvent { surface_id: u32 },
-    SurfaceRestore { surface_id: u32 },
+    SurfaceCreate {
+        surface_id: u32,
+    },
+    SurfaceEvent {
+        surface_id: u32,
+    },
+    SurfaceRestore {
+        surface_id: u32,
+    },
     /// 단계 G: 단축키 매칭으로 plugin command가 트리거된 경우. 응답은
     /// SurfaceResult 형태로 surface tree/display_name을 갱신할 수 있다.
-    CommandInvoke { surface_id: u32 },
+    CommandInvoke {
+        surface_id: u32,
+    },
     /// popup.open IPC 응답 대기. 응답은 [`PopupOpenResult`] — 초기 tree.
-    PopupOpen { instance_id: u64 },
+    PopupOpen {
+        instance_id: u64,
+    },
     /// popup.event IPC 응답 대기. 응답은 [`PopupEventResult`] — 갱신 tree + close 신호.
-    PopupEvent { instance_id: u64 },
+    PopupEvent {
+        instance_id: u64,
+    },
     /// 그 외 (host.hello / ping / 등) — 응답 무시.
     Other,
     /// Client IPC 요청을 plugin namespace로 forward한 경우. plugin이 응답을 주면
@@ -343,10 +353,8 @@ mod tests {
     fn validate_namespace_call_local_caller_allowed_when_target_running() {
         let mut mgr = mgr_with_namespace_owner("com.example.codex", "codex");
         // process 가짜 entry 삽입 — request 전송은 안 한다, 검증만.
-        mgr.processes.insert(
-            "com.example.codex".into(),
-            stub_process(),
-        );
+        mgr.processes
+            .insert("com.example.codex".into(), stub_process());
         let id = mgr
             .validate_namespace_call("codex.spawn", None)
             .expect("local caller should pass");
@@ -365,7 +373,8 @@ mod tests {
     #[test]
     fn validate_namespace_call_self_invocation_rejected() {
         let mut mgr = mgr_with_namespace_owner("com.example.codex", "codex");
-        mgr.processes.insert("com.example.codex".into(), stub_process());
+        mgr.processes
+            .insert("com.example.codex".into(), stub_process());
         let err = mgr
             .validate_namespace_call("codex.spawn", Some("com.example.codex"))
             .unwrap_err();
@@ -376,7 +385,8 @@ mod tests {
     #[test]
     fn validate_namespace_call_plugin_caller_without_grant_denied() {
         let mut mgr = mgr_with_namespace_owner("com.example.codex", "codex");
-        mgr.processes.insert("com.example.codex".into(), stub_process());
+        mgr.processes
+            .insert("com.example.codex".into(), stub_process());
         // caller plugin은 ipc.invoke:codex 권한 없음
         mgr.set_plugin_permissions(
             "com.example.helper",
@@ -393,7 +403,8 @@ mod tests {
     #[test]
     fn validate_namespace_call_plugin_caller_with_grant_allowed() {
         let mut mgr = mgr_with_namespace_owner("com.example.codex", "codex");
-        mgr.processes.insert("com.example.codex".into(), stub_process());
+        mgr.processes
+            .insert("com.example.codex".into(), stub_process());
         mgr.set_plugin_permissions(
             "com.example.helper",
             HashSet::from([Permission::IpcInvoke("codex".into())]),
@@ -414,8 +425,7 @@ mod tests {
     #[test]
     fn create_shared_buffer_rejects_zero_size() {
         let mut mgr = PluginManager::new(empty_waker());
-        mgr.processes
-            .insert("com.example.x".into(), stub_process());
+        mgr.processes.insert("com.example.x".into(), stub_process());
         let err = mgr
             .create_shared_buffer_for("com.example.x", 1, 0)
             .unwrap_err();
@@ -467,16 +477,16 @@ mod tests {
         );
         match parse_hook_result(&resp) {
             HookOutcome::Modified(v) => assert_eq!(v, serde_json::json!({"x": 1})),
-            other => panic!("expected Modified, got {:?}", std::mem::discriminant(&other)),
+            other => panic!(
+                "expected Modified, got {:?}",
+                std::mem::discriminant(&other)
+            ),
         }
     }
 
     #[test]
     fn parse_hook_result_pass_when_modified_null() {
-        let resp = make_response(
-            Some(serde_json::json!({"modified_payload": null})),
-            None,
-        );
+        let resp = make_response(Some(serde_json::json!({"modified_payload": null})), None);
         assert!(matches!(parse_hook_result(&resp), HookOutcome::Pass));
     }
 
@@ -510,13 +520,19 @@ mod tests {
     #[test]
     fn find_active_ipc_hooks_returns_none_when_no_extension() {
         let mgr = mgr_with_namespace_owner("com.example.codex", "codex");
-        assert!(mgr.find_active_ipc_hooks("com.example.codex", "codex.spawn").is_none());
+        assert!(
+            mgr.find_active_ipc_hooks("com.example.codex", "codex.spawn")
+                .is_none()
+        );
     }
 
     #[test]
     fn find_active_event_hooks_returns_none_when_no_extension() {
         let mgr = PluginManager::new(empty_waker());
-        assert!(mgr.find_active_event_hooks("com.example.foo", "foo.bar").is_none());
+        assert!(
+            mgr.find_active_event_hooks("com.example.foo", "foo.bar")
+                .is_none()
+        );
     }
 
     #[cfg(unix)]
@@ -524,8 +540,7 @@ mod tests {
     fn create_shared_buffer_rejects_when_handle_listener_missing() {
         // stub mgr는 handle_listener를 bind하지 않으므로 즉시 거절되어야 한다.
         let mut mgr = PluginManager::new(empty_waker());
-        mgr.processes
-            .insert("com.example.x".into(), stub_process());
+        mgr.processes.insert("com.example.x".into(), stub_process());
         assert!(mgr.handle_listener.is_none());
         let err = mgr
             .create_shared_buffer_for("com.example.x", 1, 4096)
@@ -533,4 +548,3 @@ mod tests {
         assert!(err.contains("handle channel not available"), "got: {err}");
     }
 }
-

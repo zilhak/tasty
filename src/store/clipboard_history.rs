@@ -37,7 +37,9 @@ pub struct ImageData {
 
 impl PartialEq for ImageData {
     fn eq(&self, other: &Self) -> bool {
-        self.width == other.width && self.height == other.height && self.png_bytes == other.png_bytes
+        self.width == other.width
+            && self.height == other.height
+            && self.png_bytes == other.png_bytes
     }
 }
 impl Eq for ImageData {}

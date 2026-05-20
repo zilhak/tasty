@@ -94,13 +94,11 @@ impl GpuState {
                 // Build search match highlights for this surface.
                 let search_highlights = search
                     .filter(|s| s.surface_id == *surface_id && !s.matches.is_empty())
-                    .map(|s| {
-                        crate::renderer::SearchHighlights {
-                            matches: &s.matches,
-                            active_index: s.current_index,
-                            inactive_bg: theme.search_match_bg,
-                            active_bg: theme.search_match_active_bg,
-                        }
+                    .map(|s| crate::renderer::SearchHighlights {
+                        matches: &s.matches,
+                        active_index: s.current_index,
+                        inactive_bg: theme.search_match_bg,
+                        active_bg: theme.search_match_active_bg,
                     });
                 let search_ref = search_highlights.as_ref();
 
@@ -124,21 +122,20 @@ impl GpuState {
                             label: Some("terminal_pass"),
                         });
                 {
-                    let mut render_pass =
-                        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                            label: Some("terminal_pass"),
-                            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                                view,
-                                resolve_target: None,
-                                ops: wgpu::Operations {
-                                    load: wgpu::LoadOp::Load,
-                                    store: wgpu::StoreOp::Store,
-                                },
-                            })],
-                            depth_stencil_attachment: None,
-                            timestamp_writes: None,
-                            occlusion_query_set: None,
-                        });
+                    let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                        label: Some("terminal_pass"),
+                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                            view,
+                            resolve_target: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Load,
+                                store: wgpu::StoreOp::Store,
+                            },
+                        })],
+                        depth_stencil_attachment: None,
+                        timestamp_writes: None,
+                        occlusion_query_set: None,
+                    });
                     self.renderer.render_scissored(
                         &mut render_pass,
                         rect,

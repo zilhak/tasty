@@ -117,5 +117,4 @@ impl AppState {
     pub fn focused_pane_id(&self) -> crate::model::PaneId {
         self.active_workspace().focused_pane
     }
-
 }

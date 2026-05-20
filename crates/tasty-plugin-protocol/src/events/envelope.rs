@@ -128,8 +128,17 @@ mod tests {
 
     #[test]
     fn lifecycle_reason_serializes_snake_case() {
-        assert_eq!(serde_json::to_string(&LifecycleReason::User).unwrap(), "\"user\"");
-        assert_eq!(serde_json::to_string(&LifecycleReason::Ipc).unwrap(), "\"ipc\"");
-        assert_eq!(serde_json::to_string(&LifecycleReason::Crash).unwrap(), "\"crash\"");
+        assert_eq!(
+            serde_json::to_string(&LifecycleReason::User).unwrap(),
+            "\"user\""
+        );
+        assert_eq!(
+            serde_json::to_string(&LifecycleReason::Ipc).unwrap(),
+            "\"ipc\""
+        );
+        assert_eq!(
+            serde_json::to_string(&LifecycleReason::Crash).unwrap(),
+            "\"crash\""
+        );
     }
 }

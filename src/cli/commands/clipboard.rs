@@ -27,4 +27,3 @@ pub enum ClipboardCommands {
     /// Clear all clipboard history.
     Clear,
 }
-

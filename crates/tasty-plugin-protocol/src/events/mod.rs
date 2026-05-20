@@ -11,4 +11,4 @@ mod envelope;
 
 pub mod payloads;
 
-pub use envelope::{EventEnvelope, EventMeta, EventOrigin, EventScope, MAX_HOP, LifecycleReason};
+pub use envelope::{EventEnvelope, EventMeta, EventOrigin, EventScope, LifecycleReason, MAX_HOP};

@@ -10,9 +10,9 @@
 use egui::{Context, Id, Order, Stroke, Vec2};
 use tasty_plugin_protocol::PopupCloseReason;
 
-use super::manifest::PopupAnchor;
-use super::ui_tree_render::{render_popup_tree, PopupSink};
 use super::PluginManager;
+use super::manifest::PopupAnchor;
+use super::ui_tree_render::{PopupSink, render_popup_tree};
 use crate::gpu::canvas_texture::CanvasTextureCache;
 use crate::state::AppState;
 use crate::ui::popup::CONTENT_MARGIN;
@@ -80,10 +80,14 @@ pub fn draw_plugin_popups(
         let pos = anchor_pos(snap.anchor, snap.size, screen_rect, pointer_pos);
         // 화면 경계 내로 clamp.
         let pos = egui::pos2(
-            pos.x
-                .clamp(screen_rect.min.x, (screen_rect.max.x - snap.size.x).max(screen_rect.min.x)),
-            pos.y
-                .clamp(screen_rect.min.y, (screen_rect.max.y - snap.size.y).max(screen_rect.min.y)),
+            pos.x.clamp(
+                screen_rect.min.x,
+                (screen_rect.max.x - snap.size.x).max(screen_rect.min.x),
+            ),
+            pos.y.clamp(
+                screen_rect.min.y,
+                (screen_rect.max.y - snap.size.y).max(screen_rect.min.y),
+            ),
         );
         let rect = egui::Rect::from_min_size(pos, snap.size);
 

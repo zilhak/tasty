@@ -9,12 +9,12 @@ use std::collections::HashMap;
 use std::io::Write;
 use std::net::TcpStream;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
 use std::time::Duration;
 
 use serde_json::Value;
 use tasty_plugin_protocol::{
-    PluginEvent, SharedBufferCreateResult, METHOD_HOST_SHARED_BUFFER_CREATE,
+    METHOD_HOST_SHARED_BUFFER_CREATE, PluginEvent, SharedBufferCreateResult,
 };
 
 use crate::error::PluginError;
@@ -29,8 +29,7 @@ pub(crate) type PendingCalls = Arc<Mutex<HashMap<u64, mpsc::Sender<HostCallResul
 /// `host.shared_buffer.create` RPC와 동일한 call_id로 매칭되는 fd waiter 맵.
 /// 보조 채널 reader가 `HandleAttach`를 받으면 여기 등록된 mpsc로 fd를 push한다.
 #[cfg(unix)]
-pub(crate) type SharedBufferFdPending =
-    Arc<Mutex<HashMap<u64, mpsc::Sender<std::os::fd::RawFd>>>>;
+pub(crate) type SharedBufferFdPending = Arc<Mutex<HashMap<u64, mpsc::Sender<std::os::fd::RawFd>>>>;
 #[cfg(windows)]
 pub(crate) type SharedBufferFdPending = Arc<Mutex<HashMap<u64, mpsc::Sender<u64>>>>;
 
@@ -79,11 +78,7 @@ impl HostHandle {
     }
 
     /// 호스트 IPC 메서드를 동기로 호출한다. 응답까지 [`Self::timeout`]만큼 block.
-    pub fn call(
-        &self,
-        method: impl Into<String>,
-        params: Value,
-    ) -> Result<Value, PluginError> {
+    pub fn call(&self, method: impl Into<String>, params: Value) -> Result<Value, PluginError> {
         let method_str = method.into();
         let call_id = self.next_call_id.fetch_add(1, Ordering::Relaxed);
         self.call_with_id(call_id, method_str, params)
@@ -248,8 +243,7 @@ mod tests {
         // TcpStream::connect로 실제 소켓을 안 만들고 가짜를 만들려면 listener
         // 페어가 필요 — 여기서는 PendingCalls만 검증한다.
         let pending: PendingCalls = Arc::new(Mutex::new(HashMap::new()));
-        let listener =
-            std::net::TcpListener::bind(("127.0.0.1", 0)).expect("bind localhost");
+        let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("bind localhost");
         let port = listener.local_addr().unwrap().port();
         let accept_handle = std::thread::spawn(move || {
             let _accepted = listener.accept();
@@ -293,7 +287,12 @@ mod tests {
         let handle = dummy_handle();
         let (tx, rx) = mpsc::channel::<HostCallResult>();
         handle.pending.lock().unwrap().insert(11, tx);
-        deliver_ipc_result(&handle.pending, 11, Some(serde_json::json!({"ok": 1})), None);
+        deliver_ipc_result(
+            &handle.pending,
+            11,
+            Some(serde_json::json!({"ok": 1})),
+            None,
+        );
         let v = rx.recv().unwrap().unwrap();
         assert_eq!(v, serde_json::json!({"ok": 1}));
     }

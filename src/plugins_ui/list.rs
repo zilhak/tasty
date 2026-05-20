@@ -27,8 +27,7 @@ pub(super) fn draw_list_tab(
             if snapshot.plugins.is_empty() {
                 ui.add_space(16.0);
                 ui.label(
-                    egui::RichText::new(t("plugins.empty"))
-                        .color(egui::Color32::from(th.subtext0)),
+                    egui::RichText::new(t("plugins.empty")).color(egui::Color32::from(th.subtext0)),
                 );
                 return;
             }
@@ -188,10 +187,7 @@ pub(super) fn draw_list_tab(
             ui.add_space(10.0);
             ui.separator();
             ui.add_space(10.0);
-            ui.label(format!(
-                "{}:",
-                t("plugins.install_path")
-            ));
+            ui.label(format!("{}:", t("plugins.install_path")));
             ui.horizontal(|ui| {
                 ui.label(
                     egui::RichText::new(&entry.install_dir)
@@ -219,10 +215,7 @@ pub(super) fn draw_list_tab(
                 } else {
                     "plugins.uninstall_warning"
                 };
-                ui.label(
-                    egui::RichText::new(t(warn_key))
-                        .color(egui::Color32::from(th.peach)),
-                );
+                ui.label(egui::RichText::new(t(warn_key)).color(egui::Color32::from(th.peach)));
                 ui.horizontal(|ui| {
                     if ui.button(t("plugins.uninstall_confirm")).clicked() {
                         actions.push(PluginsAction::Uninstall {
@@ -240,4 +233,3 @@ pub(super) fn draw_list_tab(
         });
     });
 }
-

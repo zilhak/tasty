@@ -148,10 +148,8 @@ impl Window for SettingsWindow {
 
                 // 녹화 중이면 winit에서 직접 키 조합 캡처
                 if is_recording {
-                    let combo = crate::settings_ui::capture_winit_key_combo(
-                        event,
-                        self.base.modifiers,
-                    );
+                    let combo =
+                        crate::settings_ui::capture_winit_key_combo(event, self.base.modifiers);
                     if !matches!(combo, crate::settings_ui::KeyCapture::None) {
                         self.settings_ui_state.captured_winit_combo = Some(combo);
                         self.mark_dirty();

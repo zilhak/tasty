@@ -20,9 +20,8 @@ mod validators;
 pub use package::PluginPackage;
 pub use types::{
     BindingMode, CliArg, CliArgGroup, CliArgType, CliCommandDecl, CliSubcommandDecl, CommandDecl,
-    CommandScope, Contributes, Entry, EventEmittedDecl, EventHookDecl, EventStability,
-    ExtendsDecl, HookMode, IpcHookDecl, IpcNamespaceDecl, Manifest, MenuItemDecl, Permission,
-    PopupAnchor, PopupContribute, PopupSizeHint, PopupTrigger, SurfaceKindDecl,
-    SurfaceKindRendering, ToolAction, ToolContribute, HOOK_TIMEOUT_MS_MAX, HOST_API_VERSION,
-    MANIFEST_VERSION,
+    CommandScope, Contributes, Entry, EventEmittedDecl, EventHookDecl, EventStability, ExtendsDecl,
+    HOOK_TIMEOUT_MS_MAX, HOST_API_VERSION, HookMode, IpcHookDecl, IpcNamespaceDecl,
+    MANIFEST_VERSION, Manifest, MenuItemDecl, Permission, PopupAnchor, PopupContribute,
+    PopupSizeHint, PopupTrigger, SurfaceKindDecl, SurfaceKindRendering, ToolAction, ToolContribute,
 };

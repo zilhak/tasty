@@ -38,10 +38,7 @@ pub fn draw_rename_popup(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction
         RenameTarget::WorkspaceName { ws_idx } | RenameTarget::WorkspaceSubtitle { ws_idx } => {
             *ws_idx < state.engine.workspaces.len()
         }
-        RenameTarget::TabName {
-            pane_id,
-            tab_index,
-        } => state
+        RenameTarget::TabName { pane_id, tab_index } => state
             .active_workspace()
             .pane_layout()
             .find_pane(*pane_id)
@@ -153,10 +150,7 @@ fn apply_rename(state: &mut AppState, target: RenameTarget, buffer: String) {
                 });
             }
         }
-        RenameTarget::TabName {
-            pane_id,
-            tab_index,
-        } => {
+        RenameTarget::TabName { pane_id, tab_index } => {
             let name = buffer.trim().to_string();
             let mut renamed: Option<(u32, String)> = None;
             if let Some(pane) = state

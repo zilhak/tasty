@@ -74,4 +74,3 @@ pub enum CloseCommands {
     #[command(name = "self")]
     CloseSelf,
 }
-

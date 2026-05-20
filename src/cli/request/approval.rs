@@ -29,7 +29,10 @@ pub(super) fn approval_command_to_method_params(
                     .map(|spec| {
                         let mut parts = spec.split(':');
                         let key = parts.next().unwrap_or("").to_string();
-                        let label = parts.next().map(str::to_string).unwrap_or_else(|| key.clone());
+                        let label = parts
+                            .next()
+                            .map(str::to_string)
+                            .unwrap_or_else(|| key.clone());
                         let destructive = matches!(parts.next(), Some("1") | Some("true"));
                         serde_json::json!({
                             "key": key,
@@ -66,7 +69,11 @@ pub(super) fn approval_command_to_method_params(
             }
             ("approval.request", p)
         }
-        Respond { id, choice, comment } => {
+        Respond {
+            id,
+            choice,
+            comment,
+        } => {
             let mut p = serde_json::json!({ "id": id, "choice": choice });
             if let Some(c) = comment {
                 p["comment"] = serde_json::Value::String(c.clone());
@@ -131,7 +138,10 @@ pub(super) fn approval_command_to_method_params(
         Summary { command } => {
             use crate::cli::ApprovalSummaryCommands::*;
             match command {
-                Set { workspace_id, content } => {
+                Set {
+                    workspace_id,
+                    content,
+                } => {
                     let resolved = if let Some(path) = content.strip_prefix('@') {
                         match std::fs::read_to_string(path) {
                             Ok(s) => s,
@@ -156,4 +166,3 @@ pub(super) fn approval_command_to_method_params(
         }
     }
 }
-

@@ -50,14 +50,11 @@ pub fn picker_sizer(state: &AppState) -> egui::Vec2 {
         None => (0, 0),
     };
     let list_rows = cand_n.max(recent_n);
-    let list_height = (list_rows.max(4) as f32 * ITEM_HEIGHT)
-        .clamp(LIST_MIN_HEIGHT, LIST_MAX_HEIGHT);
+    let list_height =
+        (list_rows.max(4) as f32 * ITEM_HEIGHT).clamp(LIST_MIN_HEIGHT, LIST_MAX_HEIGHT);
 
-    let content_height = HEADER_HEIGHT
-        + VERTICAL_PADDING
-        + list_height
-        + VERTICAL_PADDING
-        + BUTTON_ROW_HEIGHT;
+    let content_height =
+        HEADER_HEIGHT + VERTICAL_PADDING + list_height + VERTICAL_PADDING + BUTTON_ROW_HEIGHT;
 
     egui::vec2(
         POPUP_WIDTH,
@@ -191,14 +188,7 @@ pub fn draw_file_handler_picker(ui: &mut egui::Ui, state: &mut AppState) -> Popu
                         .as_ref()
                         .map(|p| p.candidates.clone())
                         .unwrap_or_default();
-                    draw_handler_list(
-                        ui,
-                        &th,
-                        &items,
-                        col_w,
-                        state,
-                        &mut double_click_dispatch,
-                    );
+                    draw_handler_list(ui, &th, &items, col_w, state, &mut double_click_dispatch);
                 });
         });
 
@@ -224,14 +214,7 @@ pub fn draw_file_handler_picker(ui: &mut egui::Ui, state: &mut AppState) -> Popu
                         .as_ref()
                         .map(|p| p.recent.clone())
                         .unwrap_or_default();
-                    draw_handler_list(
-                        ui,
-                        &th,
-                        &items,
-                        col_w,
-                        state,
-                        &mut double_click_dispatch,
-                    );
+                    draw_handler_list(ui, &th, &items, col_w, state, &mut double_click_dispatch);
                 });
         });
     });
@@ -299,10 +282,8 @@ fn draw_handler_list(
     double_click_dispatch: &mut Option<crate::file_handler::HandlerId>,
 ) {
     for entry in items {
-        let (rect, resp) = ui.allocate_exact_size(
-            egui::vec2(col_w, ITEM_HEIGHT),
-            egui::Sense::click(),
-        );
+        let (rect, resp) =
+            ui.allocate_exact_size(egui::vec2(col_w, ITEM_HEIGHT), egui::Sense::click());
 
         let is_selected = state
             .dialogs
@@ -323,7 +304,10 @@ fn draw_handler_list(
         }
 
         ui.painter().text(
-            egui::pos2(rect.min.x + 4.0, rect.center().y - th.font_size_caption.value() / 2.0),
+            egui::pos2(
+                rect.min.x + 4.0,
+                rect.center().y - th.font_size_caption.value() / 2.0,
+            ),
             egui::Align2::LEFT_TOP,
             &entry.display,
             egui::FontId::proportional(th.font_size_caption.value()),

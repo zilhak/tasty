@@ -131,8 +131,8 @@ impl<'de> Visitor<'de> for DetectorRuleDeclVisitor {
                 Ok(DetectorRuleDecl::Lua { script })
             }
             "structure-check" | "structure_check" => {
-                let spec = take_string(&table, "spec")
-                    .ok_or_else(|| de::Error::missing_field("spec"))?;
+                let spec =
+                    take_string(&table, "spec").ok_or_else(|| de::Error::missing_field("spec"))?;
                 Ok(DetectorRuleDecl::StructureCheck { spec })
             }
             other => Ok(DetectorRuleDecl::Unknown {
@@ -233,9 +233,7 @@ pub fn validate_detector_decl(
                 }
             }
             DetectorRuleDecl::Magic { bytes_hex, .. } => {
-                if bytes_hex.len() % 2 != 0
-                    || !bytes_hex.chars().all(|c| c.is_ascii_hexdigit())
-                {
+                if bytes_hex.len() % 2 != 0 || !bytes_hex.chars().all(|c| c.is_ascii_hexdigit()) {
                     return Err(DetectorDeclError::BadMagicHex {
                         detector: decl.id.clone(),
                         got: bytes_hex.clone(),
@@ -272,7 +270,9 @@ mod tests {
     }
 
     fn parse(toml: &str) -> Vec<DetectorDecl> {
-        toml::from_str::<DetectorWrap>(toml).expect("parse").detectors
+        toml::from_str::<DetectorWrap>(toml)
+            .expect("parse")
+            .detectors
     }
 
     #[test]
@@ -331,11 +331,11 @@ mod tests {
             DetectorRuleDecl::Unknown { kind_name, raw } => {
                 assert_eq!(kind_name, "future-thing");
                 let tbl = raw.as_table().unwrap();
-                assert_eq!(tbl.get("magic_field").and_then(|v| v.as_integer()), Some(42));
                 assert_eq!(
-                    tbl.get("another").and_then(|v| v.as_str()),
-                    Some("yes")
+                    tbl.get("magic_field").and_then(|v| v.as_integer()),
+                    Some(42)
                 );
+                assert_eq!(tbl.get("another").and_then(|v| v.as_str()), Some("yes"));
             }
             other => panic!("expected Unknown, got {other:?}"),
         }
@@ -351,7 +351,10 @@ mod tests {
             rule: vec![],
         };
         let res = validate_detector_decl(&decl, true);
-        assert!(matches!(res, Err(DetectorDeclError::ReservedIdFromPlugin(_))));
+        assert!(matches!(
+            res,
+            Err(DetectorDeclError::ReservedIdFromPlugin(_))
+        ));
     }
 
     #[test]

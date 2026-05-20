@@ -43,9 +43,7 @@ pub fn apply_theme_to_egui(theme: &Theme, ctx: &egui::Context, ui_scale: f32) {
     );
     style.text_styles.insert(
         egui::TextStyle::Heading,
-        egui::FontId::proportional(
-            (theme.font_size_heading.value() * ui_scale * 1.15).round_ui(),
-        ),
+        egui::FontId::proportional((theme.font_size_heading.value() * ui_scale * 1.15).round_ui()),
     );
     style.text_styles.insert(
         egui::TextStyle::Button,

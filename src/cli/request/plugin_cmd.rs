@@ -2,14 +2,13 @@
 
 use crate::cli::commands::PluginCommands;
 
-pub(super) fn plugin_command_to_method_params(command: &PluginCommands) -> (&'static str, serde_json::Value) {
+pub(super) fn plugin_command_to_method_params(
+    command: &PluginCommands,
+) -> (&'static str, serde_json::Value) {
     match command {
         PluginCommands::List => ("plugin.list", serde_json::json!({})),
         PluginCommands::Show { id } => ("plugin.show", serde_json::json!({ "id": id })),
-        PluginCommands::Install { path } => (
-            "plugin.install",
-            serde_json::json!({ "path": path }),
-        ),
+        PluginCommands::Install { path } => ("plugin.install", serde_json::json!({ "path": path })),
         PluginCommands::Remove { id } => ("plugin.remove", serde_json::json!({ "id": id })),
         PluginCommands::Enable { id } => ("plugin.enable", serde_json::json!({ "id": id })),
         PluginCommands::Disable { id } => ("plugin.disable", serde_json::json!({ "id": id })),
@@ -17,10 +16,9 @@ pub(super) fn plugin_command_to_method_params(command: &PluginCommands) -> (&'st
         PluginCommands::Logs { .. } => ("plugin.list", serde_json::json!({})),
         // Doctor도 IPC를 거치지 않음 — manifest 를 로컬에서 직접 읽는다.
         PluginCommands::Doctor { .. } => ("plugin.list", serde_json::json!({})),
-        PluginCommands::Permissions { id } => (
-            "plugin.permissions",
-            serde_json::json!({ "id": id }),
-        ),
+        PluginCommands::Permissions { id } => {
+            ("plugin.permissions", serde_json::json!({ "id": id }))
+        }
         PluginCommands::Grant { id, permission } => (
             "plugin.grant",
             serde_json::json!({ "id": id, "permission": permission }),
@@ -65,9 +63,7 @@ pub(super) fn plugin_command_to_method_params(command: &PluginCommands) -> (&'st
             }),
         ),
         PluginCommands::Extension { command } => match command {
-            crate::cli::ExtensionCommands::List => {
-                ("plugin.extension.list", serde_json::json!({}))
-            }
+            crate::cli::ExtensionCommands::List => ("plugin.extension.list", serde_json::json!({})),
         },
         PluginCommands::AuditQuery {
             caller_kind,

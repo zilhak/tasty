@@ -39,14 +39,29 @@ pub struct PluginsSnapshot {
 /// `PluginsWindow`가 메인 루프에 발행하는 동작.
 #[derive(Debug, Clone)]
 pub enum PluginsAction {
-    SetEnabled { id: String, enabled: bool },
-    Grant { id: String, permission: String },
-    Revoke { id: String, permission: String },
-    Uninstall { id: String },
+    SetEnabled {
+        id: String,
+        enabled: bool,
+    },
+    Grant {
+        id: String,
+        permission: String,
+    },
+    Revoke {
+        id: String,
+        permission: String,
+    },
+    Uninstall {
+        id: String,
+    },
     /// 설치 디렉터리를 OS 파일 매니저로 연다.
-    OpenInstallDir { path: String },
+    OpenInstallDir {
+        path: String,
+    },
     /// 외부 디렉터리(`src_path`)를 `~/.tasty/plugins/<id>/`로 복사 설치.
-    Install { src_path: String },
+    Install {
+        src_path: String,
+    },
 }
 
 /// 현재 활성 탭.
@@ -135,7 +150,6 @@ pub fn draw_plugins_panel(
         PluginsTab::Add => draw_add_tab(ctx, snapshot, ui_state, actions),
     }
 }
-
 
 mod add;
 mod list;

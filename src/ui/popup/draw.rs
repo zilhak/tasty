@@ -220,7 +220,11 @@ impl PopupManager {
                 // Close button
                 let is_close_hovered = hovered_close == Some(popup_id);
                 if is_close_hovered {
-                    painter.rect_filled(close_btn_rect, 2.0, th.hover_overlay.to_egui_premultiplied());
+                    painter.rect_filled(
+                        close_btn_rect,
+                        2.0,
+                        th.hover_overlay.to_egui_premultiplied(),
+                    );
                 }
                 let x_size = 5.0;
                 let x_color = if is_close_hovered {

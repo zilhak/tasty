@@ -84,13 +84,8 @@ impl AppState {
             preset.name.clone()
         };
 
-        let mut ws = Workspace::from_restored(
-            ws_id,
-            name,
-            preset.subtitle.clone(),
-            pane_node,
-            focused,
-        );
+        let mut ws =
+            Workspace::from_restored(ws_id, name, preset.subtitle.clone(), pane_node, focused);
         ws.description = preset.description.clone();
         self.engine.workspaces.push(ws);
         let idx = self.engine.workspaces.len() - 1;
@@ -147,8 +142,7 @@ impl AppState {
                 if self.engine.workspaces.is_empty() {
                     return Err(ApplyError::NoActiveWorkspace);
                 }
-                self.active_workspace
-                    .min(self.engine.workspaces.len() - 1)
+                self.active_workspace.min(self.engine.workspaces.len() - 1)
             }
         };
 
@@ -157,9 +151,11 @@ impl AppState {
 
         let ws = &mut self.engine.workspaces[ws_idx];
         let target_pane_id = ws.focused_pane;
-        let remaining =
-            ws.pane_layout_mut()
-                .split_pane_in_place(target_pane_id, SplitDirection::Vertical, new_pane);
+        let remaining = ws.pane_layout_mut().split_pane_in_place(
+            target_pane_id,
+            SplitDirection::Vertical,
+            new_pane,
+        );
         if remaining.is_some() {
             // focused_pane 이 stale 이면 첫 leaf 로 fallback.
             let fallback = ws.pane_layout().first_pane().map(|p| p.id);
@@ -185,10 +181,7 @@ impl AppState {
 
     // ── 내부 helpers ─────────────────────────────────────────────────────
 
-    fn resolve_target_pane(
-        &self,
-        target_pane_id: Option<u32>,
-    ) -> Result<(usize, u32), ApplyError> {
+    fn resolve_target_pane(&self, target_pane_id: Option<u32>) -> Result<(usize, u32), ApplyError> {
         if self.engine.workspaces.is_empty() {
             return Err(ApplyError::NoActiveWorkspace);
         }
@@ -198,9 +191,7 @@ impl AppState {
                 .ok_or(ApplyError::PaneNotFound(pid))?;
             return Ok((ws_idx, pid));
         }
-        let ws_idx = self
-            .active_workspace
-            .min(self.engine.workspaces.len() - 1);
+        let ws_idx = self.active_workspace.min(self.engine.workspaces.len() - 1);
         let ws = &self.engine.workspaces[ws_idx];
         let pid = ws.focused_pane;
         if ws.pane_layout().find_pane(pid).is_some() {

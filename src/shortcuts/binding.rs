@@ -2,11 +2,7 @@
 
 use winit::keyboard::{Key, ModifiersState, NamedKey};
 
-pub(crate) fn matches_any_binding(
-    bindings: &[String],
-    key: &Key,
-    mods: ModifiersState,
-) -> bool {
+pub(crate) fn matches_any_binding(bindings: &[String], key: &Key, mods: ModifiersState) -> bool {
     bindings.iter().any(|b| matches_binding(b, key, mods))
 }
 

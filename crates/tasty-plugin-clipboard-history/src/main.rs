@@ -10,11 +10,11 @@
 
 use std::sync::Mutex;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tasty_plugin_sdk::{
-    bus::BusHandle, host::HostHandle, IpcMethodCtx, IpcMethodError, Plugin, PopupClosedCtx,
-    PopupEventCtx, PopupEventResult, PopupOpenCtx, PopupOpenResult, SurfaceCreateCtx,
-    SurfaceEventCtx, SurfaceResult, UiEvent, UiNode,
+    IpcMethodCtx, IpcMethodError, Plugin, PopupClosedCtx, PopupEventCtx, PopupEventResult,
+    PopupOpenCtx, PopupOpenResult, SurfaceCreateCtx, SurfaceEventCtx, SurfaceResult, UiEvent,
+    UiNode, bus::BusHandle, host::HostHandle,
 };
 
 const PLUGIN_ID: &str = "com.tasty.clipboard-history";
@@ -64,11 +64,17 @@ impl Plugin for ClipboardHistoryPlugin {
     }
 
     fn create_surface(&mut self, _ctx: SurfaceCreateCtx) -> SurfaceResult {
-        SurfaceResult { tree: None, display_name: None }
+        SurfaceResult {
+            tree: None,
+            display_name: None,
+        }
     }
 
     fn handle_event(&mut self, _ctx: SurfaceEventCtx) -> SurfaceResult {
-        SurfaceResult { tree: None, display_name: None }
+        SurfaceResult {
+            tree: None,
+            display_name: None,
+        }
     }
 
     fn open_popup(&mut self, ctx: PopupOpenCtx) -> PopupOpenResult {
@@ -101,10 +107,16 @@ impl Plugin for ClipboardHistoryPlugin {
 
     fn handle_popup_event(&mut self, ctx: PopupEventCtx) -> PopupEventResult {
         let UiEvent::Click { node_id } = &ctx.event else {
-            return PopupEventResult { tree: None, close: false };
+            return PopupEventResult {
+                tree: None,
+                close: false,
+            };
         };
         let Some(host) = self.host_handle() else {
-            return PopupEventResult { tree: None, close: false };
+            return PopupEventResult {
+                tree: None,
+                close: false,
+            };
         };
 
         if let Some(idx_str) = node_id.strip_prefix(PASTE_PREFIX)
@@ -113,7 +125,10 @@ impl Plugin for ClipboardHistoryPlugin {
             if let Err(e) = host.call("tool.clipboard.paste", json!({ "index": idx })) {
                 tracing::warn!("tool.clipboard.paste failed: {e}");
             }
-            return PopupEventResult { tree: None, close: true };
+            return PopupEventResult {
+                tree: None,
+                close: true,
+            };
         }
 
         if let Some(idx_str) = node_id.strip_prefix(REMOVE_PREFIX)
@@ -138,7 +153,10 @@ impl Plugin for ClipboardHistoryPlugin {
             };
         }
 
-        PopupEventResult { tree: None, close: false }
+        PopupEventResult {
+            tree: None,
+            close: false,
+        }
     }
 
     fn on_popup_closed(&mut self, ctx: PopupClosedCtx) {
@@ -219,7 +237,11 @@ fn render_entries(list: &Value) -> UiNode {
     });
     for e in entries {
         let idx = e.get("index").and_then(|v| v.as_u64()).unwrap_or(0);
-        let text = e.get("text").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let text = e
+            .get("text")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
         let label = if text.chars().count() > 80 {
             let truncated: String = text.chars().take(80).collect();
             format!("{truncated}…")
@@ -246,14 +268,16 @@ fn render_entries(list: &Value) -> UiNode {
             ],
         });
     }
-    UiNode::Vbox { spacing: 4, children }
+    UiNode::Vbox {
+        spacing: 4,
+        children,
+    }
 }
 
 fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info".into()),
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
         )
         .init();
     tasty_plugin_sdk::run(ClipboardHistoryPlugin::new())

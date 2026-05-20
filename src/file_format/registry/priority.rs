@@ -11,9 +11,14 @@ use super::helpers::{
     rule_kind_eq, rule_kind_to_toml,
 };
 use super::{DetectorContribution, ExtensionPriorityEntry, FileFormatRegistry};
-use crate::file_format::config::{validate_detector_decl, DetectorDecl, DetectorRuleDecl, ExtensionPriorityDecl};
-use crate::file_format::evaluator::{evaluate_cheap, evaluate_deep, DeepCtx};
-use crate::file_format::types::{DetectDepth, DetectorId, DetectorRule, DetectorRuleKind, FileFormatDetector, FileTarget, RuleOrigin};
+use crate::file_format::config::{
+    DetectorDecl, DetectorRuleDecl, ExtensionPriorityDecl, validate_detector_decl,
+};
+use crate::file_format::evaluator::{DeepCtx, evaluate_cheap, evaluate_deep};
+use crate::file_format::types::{
+    DetectDepth, DetectorId, DetectorRule, DetectorRuleKind, FileFormatDetector, FileTarget,
+    RuleOrigin,
+};
 
 impl FileFormatRegistry {
     /// `extension` 에 대한 사용자 우선순위 표. 적힌 detector id 들 (등록 여부 무관).
@@ -58,5 +63,4 @@ impl FileFormatRegistry {
         };
         inner.extension_priority.keys().cloned().collect()
     }
-
 }

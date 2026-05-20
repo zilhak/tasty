@@ -126,4 +126,3 @@ pub fn handle_rate_limit_status(
         Ok(json!({ "total": filtered.len(), "rate_limits": filtered }))
     })
 }
-

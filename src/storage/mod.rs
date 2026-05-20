@@ -71,10 +71,9 @@ impl DbInitError {
     pub fn user_message_i18n(&self) -> (&'static str, Vec<String>) {
         match self {
             DbInitError::HomeDirMissing => ("db_error.home_missing", vec![]),
-            DbInitError::PermissionDenied(p) => (
-                "db_error.permission_denied",
-                vec![p.display().to_string()],
-            ),
+            DbInitError::PermissionDenied(p) => {
+                ("db_error.permission_denied", vec![p.display().to_string()])
+            }
             DbInitError::Busy(p) => ("db_error.busy", vec![p.display().to_string()]),
             DbInitError::DiskFull => ("db_error.disk_full", vec![]),
             DbInitError::Corrupt(p) => ("db_error.corrupt", vec![p.display().to_string()]),
@@ -97,10 +96,9 @@ impl std::fmt::Display for DbInitError {
             DbInitError::Busy(p) => write!(f, "database busy: {}", p.display()),
             DbInitError::DiskFull => write!(f, "disk full"),
             DbInitError::Corrupt(p) => write!(f, "database corrupted: {}", p.display()),
-            DbInitError::SchemaMismatch { expected, found } => write!(
-                f,
-                "schema mismatch (expected {expected}, found {found})"
-            ),
+            DbInitError::SchemaMismatch { expected, found } => {
+                write!(f, "schema mismatch (expected {expected}, found {found})")
+            }
             DbInitError::Other(msg) => write!(f, "{msg}"),
         }
     }
@@ -169,7 +167,6 @@ pub fn init() -> Result<(), DbInitError> {
     let _ = DB.set(Mutex::new(db));
     Ok(())
 }
-
 
 /// 싱글톤 접근. `init()`이 호출되지 않았으면 None.
 pub fn with_db<T>(f: impl FnOnce(&mut Db) -> T) -> Option<T> {

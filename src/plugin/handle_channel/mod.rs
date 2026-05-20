@@ -8,7 +8,7 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::io::{self, BufRead, BufReader, Write};
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
 use std::time::Duration;
 
 use tasty_plugin_protocol::{AuthAck, AuthAckEnvelope, HandleChannelMessage};
@@ -64,11 +64,7 @@ impl HandleStream {
 
     /// Windows 측 stub. 02c-Windows에서 구현 예정.
     #[cfg(windows)]
-    pub fn send_handle(
-        &mut self,
-        _msg: &HandleChannelMessage,
-        _handle: u64,
-    ) -> io::Result<()> {
+    pub fn send_handle(&mut self, _msg: &HandleChannelMessage, _handle: u64) -> io::Result<()> {
         Err(io::Error::new(
             io::ErrorKind::Unsupported,
             "handle channel send_handle not implemented on Windows yet",
@@ -113,7 +109,6 @@ impl HandleStream {
         Self { inner: stream }
     }
 }
-
 
 /// 보조 채널에서 들어오는 NDJSON 메시지를 한 줄씩 파싱해 돌려준다.
 ///
@@ -181,9 +176,7 @@ impl HandleStreamReader {
     }
 
     #[cfg(windows)]
-    pub fn recv_message(
-        &mut self,
-    ) -> io::Result<(HandleChannelMessage, Option<u64>)> {
+    pub fn recv_message(&mut self) -> io::Result<(HandleChannelMessage, Option<u64>)> {
         Err(io::Error::new(
             io::ErrorKind::Unsupported,
             "handle channel recv_message not implemented on Windows yet",
@@ -219,8 +212,8 @@ impl HandleListener {
             .duration_since(SystemTime::UNIX_EPOCH)
             .map(|d| d.as_nanos())
             .unwrap_or(0);
-        let socket_path = std::env::temp_dir()
-            .join(format!("tasty-handle-{pid}-{:x}.sock", nanos as u64));
+        let socket_path =
+            std::env::temp_dir().join(format!("tasty-handle-{pid}-{:x}.sock", nanos as u64));
 
         // stale 파일이 남아 있으면 unlink. 다음 bind를 위한 idempotent 정리.
         // NotFound는 정상 — 그 외 에러는 bind도 실패할 가능성이 높아 알린다.
@@ -355,10 +348,7 @@ fn handle_incoming_unix(
         tracing::warn!("handle channel: clearing read_timeout failed: {e}");
     }
 
-    let tx_opt = pending
-        .lock()
-        .ok()
-        .and_then(|mut p| p.remove(&auth.token));
+    let tx_opt = pending.lock().ok().and_then(|mut p| p.remove(&auth.token));
 
     match tx_opt {
         Some(tx) => {
@@ -404,8 +394,8 @@ fn send_auth_ack_unix(
             reason: reason.map(|s| s.to_string()),
         },
     };
-    let line = serde_json::to_string(&env)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+    let line =
+        serde_json::to_string(&env).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
     let mut w = stream;
     w.write_all(line.as_bytes())?;
     w.write_all(b"\n")?;
@@ -484,8 +474,7 @@ mod unix_wire {
                 }
                 (*cmsg_ptr).cmsg_level = libc::SOL_SOCKET;
                 (*cmsg_ptr).cmsg_type = libc::SCM_RIGHTS;
-                (*cmsg_ptr).cmsg_len =
-                    libc::CMSG_LEN(mem::size_of::<libc::c_int>() as u32) as _;
+                (*cmsg_ptr).cmsg_len = libc::CMSG_LEN(mem::size_of::<libc::c_int>() as u32) as _;
                 let data_ptr = libc::CMSG_DATA(cmsg_ptr) as *mut libc::c_int;
                 std::ptr::write_unaligned(data_ptr, fd);
             }

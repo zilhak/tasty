@@ -21,14 +21,12 @@ pub use approval::{ApprovalCommands, ApprovalSummaryCommands};
 pub use clipboard::ClipboardCommands;
 #[cfg(debug_assertions)]
 pub use debug::{
-    DebugCommands, EventBusCommands, ExtensionDebugCommands, PopupDebugCommands,
-    ToolDebugCommands,
+    DebugCommands, EventBusCommands, ExtensionDebugCommands, PopupDebugCommands, ToolDebugCommands,
 };
 pub use file_handler::{FileHandlerCommands, ScriptCommands};
 pub use list_set::{ListCommands, SetCommands};
 pub use memory::{
-    MemoryBbCommands, MemoryCacheCommands, MemoryCommands, MemoryPlanCommands,
-    MemorySecretCommands,
+    MemoryBbCommands, MemoryCacheCommands, MemoryCommands, MemoryPlanCommands, MemorySecretCommands,
 };
 pub use move_send::{MoveCommands, SendCommands};
 pub use new_close::{CloseCommands, NewCommands};

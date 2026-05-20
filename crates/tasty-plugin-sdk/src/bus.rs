@@ -12,9 +12,7 @@ use std::net::TcpStream;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use tasty_plugin_protocol::{
-    EventEnvelope, EventMeta, EventOrigin, EventScope, PluginEvent,
-};
+use tasty_plugin_protocol::{EventEnvelope, EventMeta, EventOrigin, EventScope, PluginEvent};
 
 use crate::error::PluginError;
 

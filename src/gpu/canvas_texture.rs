@@ -414,7 +414,15 @@ mod tests {
             h: 30,
         };
         let c = clip_rect(r, 100, 100).unwrap();
-        assert_eq!(c, ClippedRect { x: 5, y: 10, w: 20, h: 30 });
+        assert_eq!(
+            c,
+            ClippedRect {
+                x: 5,
+                y: 10,
+                w: 20,
+                h: 30
+            }
+        );
     }
 
     #[test]
@@ -426,7 +434,15 @@ mod tests {
             h: 50,
         };
         let c = clip_rect(r, 100, 100).unwrap();
-        assert_eq!(c, ClippedRect { x: 90, y: 90, w: 10, h: 10 });
+        assert_eq!(
+            c,
+            ClippedRect {
+                x: 90,
+                y: 90,
+                w: 10,
+                h: 10
+            }
+        );
     }
 
     #[test]

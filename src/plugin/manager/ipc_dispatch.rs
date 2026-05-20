@@ -2,8 +2,8 @@
 //! forward, extension hook 진입 routing, hook backoff/실패 카운터, 최종 응답
 //! 송신 helper.
 
-use std::sync::mpsc;
 use std::sync::atomic::Ordering;
+use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use serde_json::json;
@@ -15,8 +15,8 @@ use crate::plugin::manifest::{HookMode, IpcHookDecl, Permission};
 use crate::plugin::protocol::{self, IpcCallResult, PluginRequest};
 
 use super::{
-    FinalCaller, PendingPluginCall, PendingRequestKind, PluginManager, HOOK_FAIL_BACKOFF,
-    HOOK_FAIL_LIMIT,
+    FinalCaller, HOOK_FAIL_BACKOFF, HOOK_FAIL_LIMIT, PendingPluginCall, PendingRequestKind,
+    PluginManager,
 };
 
 impl PluginManager {
@@ -62,7 +62,10 @@ impl PluginManager {
         let plugin_id = match self.validate_namespace_call(method, caller_plugin_id) {
             Ok(id) => id,
             Err((code, msg)) => {
-                send_response(&response_tx, JsonRpcResponse::error(original_id, code, &msg));
+                send_response(
+                    &response_tx,
+                    JsonRpcResponse::error(original_id, code, &msg),
+                );
                 return;
             }
         };
@@ -123,14 +126,18 @@ impl PluginManager {
     ) {
         let extension_self = match (
             caller_plugin_id.as_deref(),
-            self.extensions.active_extension_for_target(&target_plugin_id),
+            self.extensions
+                .active_extension_for_target(&target_plugin_id),
         ) {
             (Some(c), Some(e)) => c == e,
             _ => false,
         };
 
-        let active_ext_with_hooks =
-            if extension_self { None } else { self.find_active_ipc_hooks(&target_plugin_id, &method) };
+        let active_ext_with_hooks = if extension_self {
+            None
+        } else {
+            self.find_active_ipc_hooks(&target_plugin_id, &method)
+        };
 
         match active_ext_with_hooks {
             Some((ext_id, pre_opt, post_opt)) => {
@@ -272,33 +279,38 @@ impl PluginManager {
         final_caller: FinalCaller,
         post_hook: Option<(String, IpcHookDecl)>,
     ) {
-        let req_id = match self.send_namespace_invoke(
-            &target_plugin_id,
-            &method,
-            &params,
-            caller_plugin_id,
-        ) {
-            Ok(id) => id,
-            Err(msg) => {
-                self.send_final_error(final_caller, -32003, msg);
-                return;
-            }
-        };
+        let req_id =
+            match self.send_namespace_invoke(&target_plugin_id, &method, &params, caller_plugin_id)
+            {
+                Ok(id) => id,
+                Err(msg) => {
+                    self.send_final_error(final_caller, -32003, msg);
+                    return;
+                }
+            };
         let kind = match (final_caller, post_hook) {
-            (FinalCaller::Local { response_tx, original_id }, None) => {
-                PendingRequestKind::NamespaceInvoke {
-                    plugin_id: target_plugin_id,
+            (
+                FinalCaller::Local {
                     response_tx,
                     original_id,
-                }
-            }
-            (FinalCaller::Plugin { caller_plugin_id, call_id }, None) => {
-                PendingRequestKind::PluginToPluginNamespace {
-                    plugin_id: target_plugin_id,
+                },
+                None,
+            ) => PendingRequestKind::NamespaceInvoke {
+                plugin_id: target_plugin_id,
+                response_tx,
+                original_id,
+            },
+            (
+                FinalCaller::Plugin {
                     caller_plugin_id,
                     call_id,
-                }
-            }
+                },
+                None,
+            ) => PendingRequestKind::PluginToPluginNamespace {
+                plugin_id: target_plugin_id,
+                caller_plugin_id,
+                call_id,
+            },
             (fc, Some((ext_id, decl))) => PendingRequestKind::NamespaceInvokeWithPostHook {
                 target_plugin_id,
                 method,
@@ -317,14 +329,13 @@ impl PluginManager {
         target_plugin_id: &str,
         method: &str,
     ) -> Option<(String, Option<IpcHookDecl>, Option<IpcHookDecl>)> {
-        let ext_id = self.extensions.active_extension_for_target(target_plugin_id)?.to_string();
+        let ext_id = self
+            .extensions
+            .active_extension_for_target(target_plugin_id)?
+            .to_string();
         let pkg = self.packages.iter().find(|p| p.manifest.id == ext_id)?;
         let extends = pkg.manifest.extends.as_ref()?;
-        let pre = extends
-            .pre_ipc
-            .iter()
-            .find(|h| h.method == method)
-            .cloned();
+        let pre = extends.pre_ipc.iter().find(|h| h.method == method).cloned();
         let post = extends
             .post_ipc
             .iter()
@@ -347,9 +358,10 @@ impl PluginManager {
         target: &str,
         payload: serde_json::Value,
     ) -> Result<u64, String> {
-        let proc = self.processes.get(extension_plugin_id).ok_or_else(|| {
-            format!("extension plugin '{extension_plugin_id}' is not running")
-        })?;
+        let proc = self
+            .processes
+            .get(extension_plugin_id)
+            .ok_or_else(|| format!("extension plugin '{extension_plugin_id}' is not running"))?;
         let mode_str = match mode {
             HookMode::Transform => "transform",
             HookMode::Filter => "filter",
@@ -382,24 +394,48 @@ impl PluginManager {
     }
 
     /// final_caller로 에러 응답 송신.
-    pub(super) fn send_final_error(&mut self, final_caller: FinalCaller, code: i32, message: String) {
+    pub(super) fn send_final_error(
+        &mut self,
+        final_caller: FinalCaller,
+        code: i32,
+        message: String,
+    ) {
         match final_caller {
-            FinalCaller::Local { response_tx, original_id } => {
-                send_response(&response_tx, JsonRpcResponse::error(original_id, code, &message));
+            FinalCaller::Local {
+                response_tx,
+                original_id,
+            } => {
+                send_response(
+                    &response_tx,
+                    JsonRpcResponse::error(original_id, code, &message),
+                );
             }
-            FinalCaller::Plugin { caller_plugin_id, call_id } => {
+            FinalCaller::Plugin {
+                caller_plugin_id,
+                call_id,
+            } => {
                 self.send_ipc_result(&caller_plugin_id, call_id, None, Some(message));
             }
         }
     }
 
     /// final_caller로 성공 응답 송신.
-    pub(super) fn send_final_success(&mut self, final_caller: FinalCaller, result: serde_json::Value) {
+    pub(super) fn send_final_success(
+        &mut self,
+        final_caller: FinalCaller,
+        result: serde_json::Value,
+    ) {
         match final_caller {
-            FinalCaller::Local { response_tx, original_id } => {
+            FinalCaller::Local {
+                response_tx,
+                original_id,
+            } => {
                 send_response(&response_tx, JsonRpcResponse::success(original_id, result));
             }
-            FinalCaller::Plugin { caller_plugin_id, call_id } => {
+            FinalCaller::Plugin {
+                caller_plugin_id,
+                call_id,
+            } => {
                 self.send_ipc_result(&caller_plugin_id, call_id, Some(result), None);
             }
         }
@@ -421,9 +457,7 @@ impl PluginManager {
             if caller == plugin_id {
                 return Err((
                     -32001,
-                    format!(
-                        "plugin '{caller}' cannot invoke its own namespace method '{method}'"
-                    ),
+                    format!("plugin '{caller}' cannot invoke its own namespace method '{method}'"),
                 ));
             }
             let prefix = method.split('.').next().unwrap_or("");
@@ -444,10 +478,7 @@ impl PluginManager {
             }
         }
         if !self.processes.contains_key(&plugin_id) {
-            return Err((
-                -32002,
-                format!("plugin '{plugin_id}' is not running"),
-            ));
+            return Err((-32002, format!("plugin '{plugin_id}' is not running")));
         }
         Ok(plugin_id)
     }
@@ -489,12 +520,8 @@ impl PluginManager {
             .pending_requests
             .iter()
             .filter_map(|(id, kind)| match kind {
-                PendingRequestKind::NamespaceInvoke {
-                    plugin_id: pid, ..
-                }
-                | PendingRequestKind::PluginToPluginNamespace {
-                    plugin_id: pid, ..
-                }
+                PendingRequestKind::NamespaceInvoke { plugin_id: pid, .. }
+                | PendingRequestKind::PluginToPluginNamespace { plugin_id: pid, .. }
                 | PendingRequestKind::NamespaceInvokeWithPostHook {
                     target_plugin_id: pid,
                     ..
@@ -528,29 +555,21 @@ impl PluginManager {
                     original_id,
                     ..
                 }) => {
-                    send_response(&response_tx, JsonRpcResponse::error(
-                        original_id,
-                        -32004,
-                        &msg,
-                    ));
+                    send_response(
+                        &response_tx,
+                        JsonRpcResponse::error(original_id, -32004, &msg),
+                    );
                 }
                 Some(PendingRequestKind::PluginToPluginNamespace {
                     caller_plugin_id,
                     call_id,
                     ..
                 }) => {
-                    self.send_ipc_result(
-                        &caller_plugin_id,
-                        call_id,
-                        None,
-                        Some(msg),
-                    );
+                    self.send_ipc_result(&caller_plugin_id, call_id, None, Some(msg));
                 }
                 Some(PendingRequestKind::ExtensionPreIpcHook { final_caller, .. })
                 | Some(PendingRequestKind::ExtensionPostIpcHook { final_caller, .. })
-                | Some(PendingRequestKind::NamespaceInvokeWithPostHook {
-                    final_caller, ..
-                }) => {
+                | Some(PendingRequestKind::NamespaceInvokeWithPostHook { final_caller, .. }) => {
                     self.send_final_error(final_caller, -32004, msg);
                 }
                 Some(PendingRequestKind::ExtensionPreEventHook { .. })
@@ -561,5 +580,4 @@ impl PluginManager {
             }
         }
     }
-
 }

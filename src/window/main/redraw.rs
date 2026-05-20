@@ -73,13 +73,12 @@ impl MainWindow {
                         .hook_manager
                         .check_and_fire(surface_id, &hook_events);
                     for hook_id in fired {
-                        self.state.enqueue_host_event(
-                            crate::state::PendingHostEvent::HookFired {
+                        self.state
+                            .enqueue_host_event(crate::state::PendingHostEvent::HookFired {
                                 hook_id,
                                 event_kind: "notification".to_string(),
                                 surface_id,
-                            },
-                        );
+                            });
                     }
                     self.base.dirty = true;
                 }
@@ -121,13 +120,12 @@ impl MainWindow {
                         .hook_manager
                         .check_and_fire(surface_id, &hook_events);
                     for hook_id in fired {
-                        self.state.enqueue_host_event(
-                            crate::state::PendingHostEvent::HookFired {
+                        self.state
+                            .enqueue_host_event(crate::state::PendingHostEvent::HookFired {
                                 hook_id,
                                 event_kind: "bell".to_string(),
                                 surface_id,
-                            },
-                        );
+                            });
                     }
                     self.base.dirty = true;
                 }
@@ -155,7 +153,10 @@ impl MainWindow {
                     self.state.engine.record_internal_copy(data);
                 }
                 crate::terminal::TerminalEventKind::PromptBoundary { phase, payload } => {
-                    self.state.engine.command_index.on_boundary(surface_id, *phase, payload);
+                    self.state
+                        .engine
+                        .command_index
+                        .on_boundary(surface_id, *phase, payload);
                 }
                 crate::terminal::TerminalEventKind::OutputAppended { text } => {
                     self.state
@@ -171,21 +172,22 @@ impl MainWindow {
                         .hook_manager
                         .check_and_fire(surface_id, &hook_events);
                     for hook_id in fired {
-                        self.state.enqueue_host_event(
-                            crate::state::PendingHostEvent::HookFired {
+                        self.state
+                            .enqueue_host_event(crate::state::PendingHostEvent::HookFired {
                                 hook_id,
                                 event_kind: "process-exit".to_string(),
                                 surface_id,
-                            },
-                        );
+                            });
                     }
                     // Event Bus 1.0: `process.exited`. close 발화 이전에 enqueue해야
                     // surface_id를 plugin이 의미 있는 컨텍스트에서 받을 수 있다.
-                    self.state.enqueue_host_event(
-                        crate::state::PendingHostEvent::ProcessExited { surface_id },
-                    );
+                    self.state
+                        .enqueue_host_event(crate::state::PendingHostEvent::ProcessExited {
+                            surface_id,
+                        });
                     let kind = self.state.surface_kind(surface_id);
-                    if self.state.close_surface_by_id_no_snapshot(surface_id) { // intent-exempt: PTY/process exit cleanup
+                    if self.state.close_surface_by_id_no_snapshot(surface_id) {
+                        // intent-exempt: PTY/process exit cleanup
 
                         if let Some(k) = kind {
                             // ProcessExited는 PTY 종료 등 사용자가 직접 닫은 행위가 아니지만
@@ -314,7 +316,9 @@ impl MainWindow {
                     for (tab_idx, tab) in pane.tabs.iter().enumerate() {
                         let surface = tab.surface();
                         if surface.html_url().is_some() {
-                            let Some(sid) = surface.surface_id() else { continue };
+                            let Some(sid) = surface.surface_id() else {
+                                continue;
+                            };
                             all_html_ids.push(sid);
                             // Only visible if: active workspace AND active tab
                             let is_active_tab = tab_idx == pane.active_tab;
@@ -506,7 +510,8 @@ impl MainWindow {
                             .and_then(|tab| tab.all_surface_ids().first().copied());
                         if let Some(sid) = target_sid {
                             let kind = self.state.surface_kind(sid);
-                            if self.state.close_surface_by_id(sid) { // intent-exempt: request_close cascade 결과 의존
+                            if self.state.close_surface_by_id(sid) {
+                                // intent-exempt: request_close cascade 결과 의존
 
                                 if let Some(k) = kind {
                                     self.state.enqueue_surface_closed(sid, k, true);
@@ -589,7 +594,8 @@ impl MainWindow {
                     Some(2) => {
                         // Create empty tab first, then show markdown popup targeting it
                         self.state.active_workspace_mut().focused_pane = pane_id;
-                        if let Some((_tab_id, surface_id)) = self.state.add_empty_tab() { // intent-exempt: surface_id 결과 의존 (후속 convert)
+                        if let Some((_tab_id, surface_id)) = self.state.add_empty_tab() {
+                            // intent-exempt: surface_id 결과 의존 (후속 convert)
 
                             self.state.dialogs.markdown_convert_surface_id = Some(surface_id);
                             self.state.dialogs.file_open_pane_id = Some(pane_id);
@@ -608,7 +614,8 @@ impl MainWindow {
                     Some(4) => {
                         // Create empty tab first, then show HTML popup targeting it
                         self.state.active_workspace_mut().focused_pane = pane_id;
-                        if let Some((_tab_id, surface_id)) = self.state.add_empty_tab() { // intent-exempt: surface_id 결과 의존 (후속 convert)
+                        if let Some((_tab_id, surface_id)) = self.state.add_empty_tab() {
+                            // intent-exempt: surface_id 결과 의존 (후속 convert)
 
                             self.state.dialogs.html_convert_surface_id = Some(surface_id);
                             self.state.dialogs.file_open_pane_id = Some(pane_id);
@@ -626,7 +633,8 @@ impl MainWindow {
                     }
                     Some(5) => {
                         self.state.active_workspace_mut().focused_pane = pane_id;
-                        if let Some((_tab_id, surface_id)) = self.state.add_empty_tab() { // intent-exempt: surface_id 결과 의존 (후속 convert)
+                        if let Some((_tab_id, surface_id)) = self.state.add_empty_tab() {
+                            // intent-exempt: surface_id 결과 의존 (후속 convert)
 
                             self.state.dispatch_intent(
                                 crate::intent::Intent::ConvertSurface {

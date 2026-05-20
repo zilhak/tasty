@@ -32,7 +32,7 @@ pub use builtin::{
 pub use discovery::{discover, plugin_root};
 pub use listener::HostListener;
 pub use manager::PluginManager;
-pub use manifest::{Manifest, PluginPackage, HOST_API_VERSION};
+pub use manifest::{HOST_API_VERSION, Manifest, PluginPackage};
 pub use process::PluginProcess;
 pub use protocol::{AuthMessage, PluginEvent, PluginRequest, PluginResponse};
 pub use registry_state::PluginsConfig;

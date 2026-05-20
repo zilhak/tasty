@@ -61,7 +61,6 @@ pub enum PopupScope {
     Surface(u32),
 }
 
-
 /// State for a single popup instance.
 #[derive(Debug, Clone)]
 pub struct PopupState {
@@ -342,7 +341,6 @@ impl PopupManager {
     pub fn get_mut(&mut self, id: PopupId) -> Option<&mut PopupState> {
         self.popups.iter_mut().find(|p| p.id == id)
     }
-
 }
 
 mod draw;

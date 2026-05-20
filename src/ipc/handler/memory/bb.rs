@@ -11,7 +11,6 @@ use super::{
     entry_to_json, map_error, parse_value, require_store, require_str, require_workspace_id,
 };
 
-
 pub fn handle_bb_create(
     _state: &mut AppState,
     caller: &CallerContext,
@@ -66,10 +65,9 @@ pub fn handle_bb_put(
     };
     let cas = params.get("cas").and_then(|v| v.as_u64());
     let owner = caller.owner().to_string();
-    let result = with_store(|s| {
-        blackboard::bb_put(s, &owner, workspace_id, &name, &field, &value, cas)
-    })
-    .expect("memory store present");
+    let result =
+        with_store(|s| blackboard::bb_put(s, &owner, workspace_id, &name, &field, &value, cas))
+            .expect("memory store present");
     match result {
         Ok(version) => JsonRpcResponse::success(id, json!({ "ok": true, "version": version })),
         Err(e) => map_error(id, e),
@@ -183,10 +181,9 @@ pub fn handle_bb_delete_field(
     };
     let cas = params.get("cas").and_then(|v| v.as_u64());
     let owner = caller.owner().to_string();
-    let result = with_store(|s| {
-        blackboard::bb_delete_field(s, &owner, workspace_id, &name, &field, cas)
-    })
-    .expect("memory store present");
+    let result =
+        with_store(|s| blackboard::bb_delete_field(s, &owner, workspace_id, &name, &field, cas))
+            .expect("memory store present");
     match result {
         Ok(()) => JsonRpcResponse::success(id, json!({ "ok": true })),
         Err(e) => map_error(id, e),
@@ -214,9 +211,7 @@ pub fn handle_bb_delete(
     let result = with_store(|s| blackboard::bb_delete(s, &owner, workspace_id, &name))
         .expect("memory store present");
     match result {
-        Ok(removed) => {
-            JsonRpcResponse::success(id, json!({ "ok": true, "removed": removed }))
-        }
+        Ok(removed) => JsonRpcResponse::success(id, json!({ "ok": true, "removed": removed })),
         Err(e) => map_error(id, e),
     }
 }
@@ -234,12 +229,10 @@ pub fn handle_bb_list(
         Ok(v) => v,
         Err(e) => return e,
     };
-    let result = with_store(|s| blackboard::bb_list(s, workspace_id))
-        .expect("memory store present");
+    let result =
+        with_store(|s| blackboard::bb_list(s, workspace_id)).expect("memory store present");
     match result {
-        Ok(names) => {
-            JsonRpcResponse::success(id, json!({ "names": names, "count": names.len() }))
-        }
+        Ok(names) => JsonRpcResponse::success(id, json!({ "names": names, "count": names.len() })),
         Err(e) => map_error(id, e),
     }
 }
@@ -293,10 +286,9 @@ pub fn handle_bb_snapshot(
         Err(e) => return e,
     };
     let owner = caller.owner().to_string();
-    let result = with_store(|s| {
-        blackboard::bb_snapshot(s, &owner, workspace_id, &name, &snapshot_id)
-    })
-    .expect("memory store present");
+    let result =
+        with_store(|s| blackboard::bb_snapshot(s, &owner, workspace_id, &name, &snapshot_id))
+            .expect("memory store present");
     match result {
         Ok(version) => JsonRpcResponse::success(id, json!({ "ok": true, "version": version })),
         Err(e) => map_error(id, e),
@@ -356,9 +348,7 @@ pub fn handle_bb_snapshot_list(
     let result = with_store(|s| blackboard::bb_snapshot_list(s, workspace_id, &name))
         .expect("memory store present");
     match result {
-        Ok(ids) => {
-            JsonRpcResponse::success(id, json!({ "snapshot_ids": ids, "count": ids.len() }))
-        }
+        Ok(ids) => JsonRpcResponse::success(id, json!({ "snapshot_ids": ids, "count": ids.len() })),
         Err(e) => map_error(id, e),
     }
 }
@@ -422,9 +412,7 @@ pub fn handle_bb_snapshot_restore(
     })
     .expect("memory store present");
     match result {
-        Ok(restored) => {
-            JsonRpcResponse::success(id, json!({ "ok": true, "restored": restored }))
-        }
+        Ok(restored) => JsonRpcResponse::success(id, json!({ "ok": true, "restored": restored })),
         Err(e) => map_error(id, e),
     }
 }
@@ -435,4 +423,3 @@ pub fn handle_bb_snapshot_restore(
 //
 // 워크스페이스 단위 선언적 work breakdown. 한 plan = `tasty.plan.<plan_id>`
 // JSON entry 한 개. step state 변경마다 전체 plan put 1 회.
-

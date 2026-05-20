@@ -153,10 +153,8 @@ impl PluginsConfig {
 
     /// plugin grant entry를 매니페스트 권한으로 초기화. 첫 설치/재설치 시 호출.
     pub fn set_granted(&mut self, id: &str, tokens: Vec<String>) {
-        self.grants.insert(
-            id.to_string(),
-            PluginGrants { granted: tokens },
-        );
+        self.grants
+            .insert(id.to_string(), PluginGrants { granted: tokens });
     }
 
     /// 단일 권한 추가 (없으면). 권한이 새로 추가됐는지 반환.
@@ -181,8 +179,14 @@ impl PluginsConfig {
     }
 
     /// 사용자가 plugin command 단축키에 적용한 override를 조회. 없으면 None.
-    pub fn shortcut_override(&self, plugin_id: &str, command_id: &str) -> Option<&ShortcutOverride> {
-        self.keybindings.get(plugin_id).and_then(|m| m.get(command_id))
+    pub fn shortcut_override(
+        &self,
+        plugin_id: &str,
+        command_id: &str,
+    ) -> Option<&ShortcutOverride> {
+        self.keybindings
+            .get(plugin_id)
+            .and_then(|m| m.get(command_id))
     }
 
     /// override를 설정. 같은 키가 있으면 덮어씀.
@@ -247,7 +251,10 @@ mod tests {
     #[test]
     fn set_granted_replaces_entire_list() {
         let mut cfg = PluginsConfig::default();
-        cfg.set_granted("com.example.x", vec!["fs.read".into(), "surface.read".into()]);
+        cfg.set_granted(
+            "com.example.x",
+            vec!["fs.read".into(), "surface.read".into()],
+        );
         let g = cfg.granted_permissions("com.example.x");
         assert_eq!(g.len(), 2);
         cfg.set_granted("com.example.x", vec!["fs.write".into()]);
@@ -283,18 +290,26 @@ mod tests {
     #[test]
     fn shortcut_override_round_trip() {
         let mut cfg = PluginsConfig::default();
-        assert!(cfg.shortcut_override("com.example.x", "x.refresh").is_none());
+        assert!(
+            cfg.shortcut_override("com.example.x", "x.refresh")
+                .is_none()
+        );
         cfg.set_shortcut_override(
             "com.example.x",
             "x.refresh",
-            ShortcutOverride::Key { value: vec!["F6".into()] },
+            ShortcutOverride::Key {
+                value: vec!["F6".into()],
+            },
         );
         match cfg.shortcut_override("com.example.x", "x.refresh") {
             Some(ShortcutOverride::Key { value }) => assert_eq!(value, &vec!["F6".to_string()]),
             other => panic!("unexpected: {other:?}"),
         }
         assert!(cfg.clear_shortcut_override("com.example.x", "x.refresh"));
-        assert!(cfg.shortcut_override("com.example.x", "x.refresh").is_none());
+        assert!(
+            cfg.shortcut_override("com.example.x", "x.refresh")
+                .is_none()
+        );
         // plugin 항목이 비면 자체 제거됨
         assert!(!cfg.keybindings.contains_key("com.example.x"));
     }
@@ -305,18 +320,18 @@ mod tests {
         cfg.set_shortcut_override(
             "com.example.x",
             "x.refresh",
-            ShortcutOverride::Key { value: vec!["F6".into()] },
+            ShortcutOverride::Key {
+                value: vec!["F6".into()],
+            },
         );
         cfg.set_shortcut_override(
             "com.example.x",
             "x.copy",
-            ShortcutOverride::Inherit { source: "clipboard.copy".into() },
+            ShortcutOverride::Inherit {
+                source: "clipboard.copy".into(),
+            },
         );
-        cfg.set_shortcut_override(
-            "com.example.x",
-            "x.paste",
-            ShortcutOverride::None,
-        );
+        cfg.set_shortcut_override("com.example.x", "x.paste", ShortcutOverride::None);
         let s = toml::to_string_pretty(&cfg).unwrap();
         let restored: PluginsConfig = toml::from_str(&s).unwrap();
         assert!(matches!(

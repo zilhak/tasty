@@ -39,7 +39,9 @@ impl MarkdownPanel {
         }
         self.last_check = Instant::now();
 
-        let current = std::fs::metadata(&self.file_path).and_then(|m| m.modified()).ok()?;
+        let current = std::fs::metadata(&self.file_path)
+            .and_then(|m| m.modified())
+            .ok()?;
         let changed = self.last_mtime.map_or(true, |prev| current != prev);
         if !changed {
             return None;

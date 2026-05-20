@@ -224,7 +224,9 @@ pub mod record;
 pub mod session;
 
 pub use anomaly::handle_anomaly_list;
-pub use cap::{handle_cap_list, handle_cap_remove, handle_cap_reset, handle_cap_set, handle_cap_status};
+pub use cap::{
+    handle_cap_list, handle_cap_remove, handle_cap_reset, handle_cap_set, handle_cap_status,
+};
 pub use query::{handle_summary, handle_timeseries, handle_top};
 pub use record::{handle_record, handle_record_batch};
 pub use session::handle_session_summary;

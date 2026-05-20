@@ -40,9 +40,7 @@ enum WindowKind {
 const BUILTIN_TOOLS: &[BuiltinTool] = &[
     BuiltinTool {
         label_key: "command_palette.tools_menu_item",
-        action: BuiltinAction::OpenPopup(
-            super::command_palette_popup::COMMAND_PALETTE_POPUP_ID,
-        ),
+        action: BuiltinAction::OpenPopup(super::command_palette_popup::COMMAND_PALETTE_POPUP_ID),
     },
     BuiltinTool {
         label_key: "port_scanner.tools_menu_item",
@@ -74,8 +72,7 @@ pub fn draw_tools_menu(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction {
     let mut open_popup: Option<&'static str> = None;
     let mut open_window: Option<WindowKind> = None;
     for entry in BUILTIN_TOOLS {
-        let (rect, resp) =
-            ui.allocate_exact_size(egui::vec2(width, 28.0), egui::Sense::click());
+        let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, 28.0), egui::Sense::click());
         if resp.hovered() {
             ui.painter()
                 .rect_filled(rect, 4.0, th.hover_overlay.to_egui_premultiplied());
@@ -85,7 +82,11 @@ pub fn draw_tools_menu(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction {
             egui::Align2::LEFT_CENTER,
             t(entry.label_key),
             egui::FontId::proportional(th.font_size_body.value()),
-            if resp.hovered() { th.text.into() } else { th.subtext0.into() },
+            if resp.hovered() {
+                th.text.into()
+            } else {
+                th.subtext0.into()
+            },
         );
         if resp.clicked() {
             match entry.action {
@@ -121,8 +122,7 @@ pub fn draw_tools_menu(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction {
 
     let mut clicked: Option<ToolItem> = None;
     for item in &items {
-        let (rect, resp) =
-            ui.allocate_exact_size(egui::vec2(width, 28.0), egui::Sense::click());
+        let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, 28.0), egui::Sense::click());
         if resp.hovered() {
             ui.painter()
                 .rect_filled(rect, 4.0, th.hover_overlay.to_egui_premultiplied());
@@ -142,7 +142,11 @@ pub fn draw_tools_menu(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction {
             egui::Align2::LEFT_CENTER,
             label,
             egui::FontId::proportional(th.font_size_body.value()),
-            if resp.hovered() { th.text.into() } else { th.subtext0.into() },
+            if resp.hovered() {
+                th.text.into()
+            } else {
+                th.subtext0.into()
+            },
         );
         if resp.clicked() {
             clicked = Some(item.clone());
@@ -164,9 +168,7 @@ pub fn invoke_tool(state: &mut AppState, item: &ToolItem) {
     match &item.action {
         ToolAction::Event { event_key } => {
             let payload = serde_json::json!({ "tool_id": item.key });
-            state
-                .pending_tool_events
-                .push((event_key.clone(), payload));
+            state.pending_tool_events.push((event_key.clone(), payload));
         }
         ToolAction::OpenSurface { surface_kind } => {
             state.dispatch_intent(

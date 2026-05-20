@@ -105,9 +105,11 @@ impl AppState {
             }
         };
         let ws = self.active_workspace_mut();
-        let updated = ws
-            .pane_layout_mut()
-            .update_ratio_for_rect(divider.split_rect, new_ratio, terminal_rect);
+        let updated = ws.pane_layout_mut().update_ratio_for_rect(
+            divider.split_rect,
+            new_ratio,
+            terminal_rect,
+        );
         if updated {
             self.engine.mark_layout_dirty();
         }
@@ -158,9 +160,9 @@ impl AppState {
             None => return false,
         };
 
-        let updated = tab
-            .layout_mut()
-            .update_ratio_for_rect(divider.split_rect, new_ratio, content_rect);
+        let updated =
+            tab.layout_mut()
+                .update_ratio_for_rect(divider.split_rect, new_ratio, content_rect);
         if updated {
             self.engine.mark_layout_dirty();
         }

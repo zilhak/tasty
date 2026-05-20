@@ -122,4 +122,3 @@ fn prune_table(table: &str, key_col: &str) {
         tracing::trace!("recent_files prune skipped: storage unavailable");
     }
 }
-

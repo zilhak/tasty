@@ -11,10 +11,7 @@ use crate::plugin::PluginManager;
 /// `debug.popup.list` — 매니페스트로 contribute된 popup 목록 + 현재 열린 인스턴스.
 pub fn handle_list(mgr: Option<&PluginManager>, id: serde_json::Value) -> JsonRpcResponse {
     let Some(mgr) = mgr else {
-        return JsonRpcResponse::success(
-            id,
-            json!({ "contributes": [], "instances": [] }),
-        );
+        return JsonRpcResponse::success(id, json!({ "contributes": [], "instances": [] }));
     };
     let contributes: Vec<_> = mgr
         .plugin_popup_contributes()
@@ -44,7 +41,10 @@ pub fn handle_list(mgr: Option<&PluginManager>, id: serde_json::Value) -> JsonRp
             })
         })
         .collect();
-    JsonRpcResponse::success(id, json!({ "contributes": contributes, "instances": instances }))
+    JsonRpcResponse::success(
+        id,
+        json!({ "contributes": contributes, "instances": instances }),
+    )
 }
 
 /// `debug.popup.open` — `{ plugin_id, popup_id, context? }`로 popup 인스턴스 강제 open.

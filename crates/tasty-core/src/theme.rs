@@ -92,11 +92,11 @@ impl Theme {
     /// Catppuccin Mocha dark theme (const so it can initialize the global RwLock).
     pub const DARK: Self = Self {
         // Surfaces
-        crust: HexColor::from_rgb(17, 17, 27), // #11111b
-        mantle: HexColor::from_rgb(24, 24, 37), // #181825
-        base: HexColor::from_rgb(30, 30, 46),  // #1e1e2e
-        surface0: HexColor::from_rgb(49, 50, 68), // #313244
-        surface1: HexColor::from_rgb(69, 71, 90), // #45475a
+        crust: HexColor::from_rgb(17, 17, 27),     // #11111b
+        mantle: HexColor::from_rgb(24, 24, 37),    // #181825
+        base: HexColor::from_rgb(30, 30, 46),      // #1e1e2e
+        surface0: HexColor::from_rgb(49, 50, 68),  // #313244
+        surface1: HexColor::from_rgb(69, 71, 90),  // #45475a
         surface2: HexColor::from_rgb(88, 91, 112), // #585b70
 
         // Overlays
@@ -111,26 +111,26 @@ impl Theme {
         placeholder: HexColor::from_rgb(108, 112, 134), // overlay0 #6c7086
 
         // Accent colors
-        blue: HexColor::from_rgb(137, 180, 250), // #89b4fa
-        green: HexColor::from_rgb(166, 227, 161), // #a6e3a1
-        red: HexColor::from_rgb(243, 139, 168),  // #f38ba8
+        blue: HexColor::from_rgb(137, 180, 250),   // #89b4fa
+        green: HexColor::from_rgb(166, 227, 161),  // #a6e3a1
+        red: HexColor::from_rgb(243, 139, 168),    // #f38ba8
         yellow: HexColor::from_rgb(249, 226, 175), // #f9e2af
-        peach: HexColor::from_rgb(250, 179, 135), // #fab387
-        mauve: HexColor::from_rgb(203, 166, 247), // #cba6f7
-        teal: HexColor::from_rgb(148, 226, 213), // #94e2d5
-        sky: HexColor::from_rgb(137, 220, 235),  // #89dceb
+        peach: HexColor::from_rgb(250, 179, 135),  // #fab387
+        mauve: HexColor::from_rgb(203, 166, 247),  // #cba6f7
+        teal: HexColor::from_rgb(148, 226, 213),   // #94e2d5
+        sky: HexColor::from_rgb(137, 220, 235),    // #89dceb
         lavender: HexColor::from_rgb(180, 190, 254), // #b4befe
         flamingo: HexColor::from_rgb(242, 205, 205), // #f2cdcd
-        pink: HexColor::from_rgb(245, 194, 231), // #f5c2e7
+        pink: HexColor::from_rgb(245, 194, 231),   // #f5c2e7
         maroon: HexColor::from_rgb(235, 160, 172), // #eba0ac
         rosewater: HexColor::from_rgb(245, 224, 220), // #f5e0dc
 
         // Semantic — premultiplied sRGB bytes for legacy parity. 과거의
         // `Color32::from_rgba_premultiplied(20,20,20,20)` 등을 비트 동일하게 보존한다.
         // 호출자는 `.to_egui_premultiplied()`로 변환할 것.
-        hover_overlay: HexColor::from_rgba(20, 20, 20, 20),   // white-ish ~8%
-        active_overlay: HexColor::from_rgba(31, 31, 31, 31),  // white-ish ~12%
-        separator: HexColor::from_rgba(20, 20, 20, 20),       // white-ish ~8%
+        hover_overlay: HexColor::from_rgba(20, 20, 20, 20), // white-ish ~8%
+        active_overlay: HexColor::from_rgba(31, 31, 31, 31), // white-ish ~12%
+        separator: HexColor::from_rgba(20, 20, 20, 20),     // white-ish ~8%
 
         // UI Typography
         font_size_caption: LogicalPx(11.0),
@@ -157,7 +157,7 @@ impl Theme {
         terminal_fg: [0.804, 0.839, 0.957, 1.0], // Text #cdd6f4
         terminal_bg: [0.118, 0.118, 0.180, 1.0], // Base #1e1e2e
         selection_bg: [0.345, 0.357, 0.439, 1.0], // Surface2 #585b70
-        search_match_bg: [0.976, 0.886, 0.686, 0.3],     // yellow with 30% alpha
+        search_match_bg: [0.976, 0.886, 0.686, 0.3], // yellow with 30% alpha
         search_match_active_bg: [0.976, 0.886, 0.686, 0.7], // yellow with 70% alpha
         ansi_colors: [
             [0.176, 0.176, 0.271], // 0: black      (Surface1 #45475a)
@@ -182,9 +182,9 @@ impl Theme {
     /// Catppuccin Latte light theme.
     pub const LATTE: Self = Self {
         // Surfaces
-        crust: HexColor::from_rgb(220, 224, 232),    // #dce0e8
-        mantle: HexColor::from_rgb(230, 233, 239),   // #e6e9ef
-        base: HexColor::from_rgb(239, 241, 245),     // #eff1f5
+        crust: HexColor::from_rgb(220, 224, 232),  // #dce0e8
+        mantle: HexColor::from_rgb(230, 233, 239), // #e6e9ef
+        base: HexColor::from_rgb(239, 241, 245),   // #eff1f5
         surface0: HexColor::from_rgb(204, 208, 218), // #ccd0da
         surface1: HexColor::from_rgb(188, 192, 204), // #bcc0cc
         surface2: HexColor::from_rgb(172, 176, 190), // #acb0be
@@ -245,7 +245,7 @@ impl Theme {
         terminal_fg: [0.298, 0.310, 0.412, 1.0], // Text #4c4f69
         terminal_bg: [0.937, 0.945, 0.961, 1.0], // Base #eff1f5
         selection_bg: [0.675, 0.686, 0.714, 1.0], // Surface0 #acb0be
-        search_match_bg: [0.875, 0.557, 0.114, 0.3],     // yellow with 30% alpha
+        search_match_bg: [0.875, 0.557, 0.114, 0.3], // yellow with 30% alpha
         search_match_active_bg: [0.875, 0.557, 0.114, 0.7], // yellow with 70% alpha
         ansi_colors: [
             [0.675, 0.686, 0.714], // 0: black      (Surface1 #bcc0cc)
@@ -296,20 +296,20 @@ pub fn presets() -> Vec<ThemePreset> {
             label: "Catppuccin Latte",
             theme: Theme::LATTE,
             terminal_colors: SurfaceColors {
-                focused_bg: HexColor::from_rgb(255, 255, 255),  // #ffffff
-                focused_fg: HexColor::from_rgb(76, 79, 105),    // #4c4f69
+                focused_bg: HexColor::from_rgb(255, 255, 255), // #ffffff
+                focused_fg: HexColor::from_rgb(76, 79, 105),   // #4c4f69
                 unfocused_bg: HexColor::from_rgb(230, 233, 239), // #e6e9ef
                 unfocused_fg: HexColor::from_rgb(108, 111, 133), // #6c6f85
             },
             markdown_colors: SurfaceColors {
-                focused_bg: HexColor::from_rgb(255, 255, 255),  // #ffffff
-                focused_fg: HexColor::from_rgb(76, 79, 105),    // #4c4f69
+                focused_bg: HexColor::from_rgb(255, 255, 255), // #ffffff
+                focused_fg: HexColor::from_rgb(76, 79, 105),   // #4c4f69
                 unfocused_bg: HexColor::from_rgb(230, 233, 239), // #e6e9ef
                 unfocused_fg: HexColor::from_rgb(108, 111, 133), // #6c6f85
             },
             explorer_colors: SurfaceColors {
-                focused_bg: HexColor::from_rgb(255, 255, 255),  // #ffffff
-                focused_fg: HexColor::from_rgb(76, 79, 105),    // #4c4f69
+                focused_bg: HexColor::from_rgb(255, 255, 255), // #ffffff
+                focused_fg: HexColor::from_rgb(76, 79, 105),   // #4c4f69
                 unfocused_bg: HexColor::from_rgb(230, 233, 239), // #e6e9ef
                 unfocused_fg: HexColor::from_rgb(108, 111, 133), // #6c6f85
             },
@@ -322,7 +322,9 @@ static THEME: std::sync::RwLock<Theme> = std::sync::RwLock::new(Theme::DARK);
 
 /// Get the current theme (read lock).
 pub fn theme() -> std::sync::RwLockReadGuard<'static, Theme> {
-    THEME.read().unwrap_or_else(|poisoned| poisoned.into_inner())
+    THEME
+        .read()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 /// Replace the current theme at runtime.

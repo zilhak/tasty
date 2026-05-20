@@ -202,11 +202,8 @@ fn zoom_in_increments_terminal_font_size_override_only() {
     state.engine.settings.appearance.terminal_font.font_size = None;
     state.engine.settings.appearance.markdown_font.font_size = None;
     state.engine.settings.appearance.explorer_font.font_size = None;
-    let consumed = MainWindow::handle_zoom_shortcut(
-        &mut state,
-        &k_char("="),
-        ModifiersState::CONTROL,
-    );
+    let consumed =
+        MainWindow::handle_zoom_shortcut(&mut state, &k_char("="), ModifiersState::CONTROL);
     assert!(consumed);
     let app = &state.engine.settings.appearance;
     assert_eq!(app.terminal_font.font_size, Some(15.0));
@@ -221,11 +218,8 @@ fn zoom_in_increments_terminal_font_size_override_only() {
 fn zoom_out_decrements_terminal_font_size_override() {
     let mut state = fresh_state();
     state.engine.settings.appearance.terminal_font.font_size = Some(20.0);
-    let consumed = MainWindow::handle_zoom_shortcut(
-        &mut state,
-        &k_char("-"),
-        ModifiersState::CONTROL,
-    );
+    let consumed =
+        MainWindow::handle_zoom_shortcut(&mut state, &k_char("-"), ModifiersState::CONTROL);
     assert!(consumed);
     assert_eq!(
         state.engine.settings.appearance.terminal_font.font_size,
@@ -237,25 +231,26 @@ fn zoom_out_decrements_terminal_font_size_override() {
 fn zoom_reset_clears_terminal_font_size_override() {
     let mut state = fresh_state();
     state.engine.settings.appearance.terminal_font.font_size = Some(20.0);
-    let consumed = MainWindow::handle_zoom_shortcut(
-        &mut state,
-        &k_char("0"),
-        ModifiersState::CONTROL,
-    );
+    let consumed =
+        MainWindow::handle_zoom_shortcut(&mut state, &k_char("0"), ModifiersState::CONTROL);
     assert!(consumed);
     // Reset → override removed (surface returns to default_font).
-    assert!(state.engine.settings.appearance.terminal_font.font_size.is_none());
+    assert!(
+        state
+            .engine
+            .settings
+            .appearance
+            .terminal_font
+            .font_size
+            .is_none()
+    );
 }
 
 #[test]
 fn zoom_in_clamps_at_72px() {
     let mut state = fresh_state();
     state.engine.settings.appearance.terminal_font.font_size = Some(71.5);
-    MainWindow::handle_zoom_shortcut(
-        &mut state,
-        &k_char("="),
-        ModifiersState::CONTROL,
-    );
+    MainWindow::handle_zoom_shortcut(&mut state, &k_char("="), ModifiersState::CONTROL);
     assert_eq!(
         state.engine.settings.appearance.terminal_font.font_size,
         Some(72.0)
@@ -266,11 +261,7 @@ fn zoom_in_clamps_at_72px() {
 fn zoom_out_clamps_at_6px() {
     let mut state = fresh_state();
     state.engine.settings.appearance.terminal_font.font_size = Some(6.5);
-    MainWindow::handle_zoom_shortcut(
-        &mut state,
-        &k_char("-"),
-        ModifiersState::CONTROL,
-    );
+    MainWindow::handle_zoom_shortcut(&mut state, &k_char("-"), ModifiersState::CONTROL);
     assert_eq!(
         state.engine.settings.appearance.terminal_font.font_size,
         Some(6.0)

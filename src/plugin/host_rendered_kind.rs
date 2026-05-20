@@ -8,7 +8,7 @@
 //! 매칭되는 `(kind, plugin_id)` 쌍만 허용한다. 매칭 실패 시 등록을 거부하고 warn
 //! 로그를 남긴다.
 
-use crate::surface_registry::{builtins, SurfaceKindRegistry};
+use crate::surface_registry::{SurfaceKindRegistry, builtins};
 
 /// `(kind, plugin_id)` 쌍이 host-rendered로 허용된 조합인지 확인.
 fn is_host_rendered_allowed(kind: &str, plugin_id: &str) -> bool {
@@ -80,23 +80,39 @@ mod tests {
     #[test]
     fn register_returns_false_for_unauthorized() {
         let reg = SurfaceKindRegistry::new();
-        assert!(!register_host_rendered_kind(&reg, "com.example.evil", "image"));
+        assert!(!register_host_rendered_kind(
+            &reg,
+            "com.example.evil",
+            "image"
+        ));
         assert!(!reg.contains("image"));
     }
 
     #[test]
     fn register_succeeds_for_image_plugin() {
         let reg = SurfaceKindRegistry::new();
-        assert!(register_host_rendered_kind(&reg, "com.tasty.image", "image"));
+        assert!(register_host_rendered_kind(
+            &reg,
+            "com.tasty.image",
+            "image"
+        ));
         assert!(reg.contains("image"));
     }
 
     #[test]
     fn register_is_idempotent() {
         let reg = SurfaceKindRegistry::new();
-        assert!(register_host_rendered_kind(&reg, "com.tasty.image", "image"));
+        assert!(register_host_rendered_kind(
+            &reg,
+            "com.tasty.image",
+            "image"
+        ));
         // 두 번째 호출: registry에 이미 있으므로 no-op + 성공 반환.
-        assert!(register_host_rendered_kind(&reg, "com.tasty.image", "image"));
+        assert!(register_host_rendered_kind(
+            &reg,
+            "com.tasty.image",
+            "image"
+        ));
         assert!(reg.contains("image"));
     }
 }

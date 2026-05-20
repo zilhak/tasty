@@ -149,11 +149,7 @@ impl<'a> LeaseStore<'a> {
 
     /// 워크스페이스의 모든 lease. `now_ms` 가 있으면 만료된 lease 는 evict 한 뒤
     /// 결과에서도 제외한다 (영속도 제거).
-    pub fn list(
-        &mut self,
-        workspace_id: WorkspaceId,
-        now_ms: Option<u64>,
-    ) -> Result<Vec<Lease>> {
+    pub fn list(&mut self, workspace_id: WorkspaceId, now_ms: Option<u64>) -> Result<Vec<Lease>> {
         let scope = Scope::Workspace(workspace_id);
         let opts = ListOpts {
             prefix: Some(LEASE_KEY_PREFIX.to_string()),

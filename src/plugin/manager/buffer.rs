@@ -70,9 +70,7 @@ impl PluginManager {
             .ok_or_else(|| format!("plugin '{plugin_id}' is not running"))?;
         // 보조 채널이 없으면 핸들 전송이 불가능. 즉시 거절.
         if self.handle_listener.is_none() {
-            return Err(
-                "shared_buffer.create: host handle channel not available".into(),
-            );
+            return Err("shared_buffer.create: host handle channel not available".into());
         }
 
         let (mem, sendable) = tasty_shm::create(size as usize)
@@ -102,9 +100,7 @@ impl PluginManager {
                 ));
             }
             None => {
-                return Err(
-                    "shared_buffer.create: plugin handle channel not connected".into(),
-                );
+                return Err("shared_buffer.create: plugin handle channel not connected".into());
             }
         }
         // SharedMemory를 매니저가 보관 — Drop이 일어나면 OS region이 회수되므로
@@ -133,5 +129,4 @@ impl PluginManager {
     ) -> Result<SharedBufferCreateResult, String> {
         Err("shared_buffer.create: windows host-side not implemented".into())
     }
-
 }

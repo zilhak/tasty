@@ -44,11 +44,7 @@ pub fn user_len(total: usize) -> usize {
 ///
 /// 영역 길이가 `SIZE` 미만이면 빈 슬라이스 반환.
 pub fn user_slice(raw: &[u8]) -> &[u8] {
-    if raw.len() < SIZE {
-        &[]
-    } else {
-        &raw[SIZE..]
-    }
+    if raw.len() < SIZE { &[] } else { &raw[SIZE..] }
 }
 
 /// 전체 영역 raw mutable slice에서 user data 부분을 잘라낸다.

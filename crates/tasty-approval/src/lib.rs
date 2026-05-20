@@ -52,8 +52,14 @@ impl ApprovalId {
     /// 편의가 우선).
     pub fn generate() -> Self {
         let now = SystemTime::now();
-        let ms = now.duration_since(UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0) as u64;
-        let nanos = now.duration_since(UNIX_EPOCH).map(|d| d.subsec_nanos()).unwrap_or(0) as u64;
+        let ms = now
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0) as u64;
+        let nanos = now
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.subsec_nanos())
+            .unwrap_or(0) as u64;
         let mixed = (ms << 24) | (nanos & 0xFF_FFFF);
         let s = encode_crockford(mixed);
         Self(format!("req_{}", &s[..12]))
@@ -383,9 +389,7 @@ impl ApprovalStore {
         let record = ApprovalRecord::new(request);
         let mut g = self.inner.lock().expect("approval store mutex");
         if g.records.contains_key(&id) {
-            return Err(ApprovalError::InvalidRequest(format!(
-                "duplicate id: {id}"
-            )));
+            return Err(ApprovalError::InvalidRequest(format!("duplicate id: {id}")));
         }
         g.records.insert(id.clone(), record.clone());
         Ok(StateChange {
@@ -507,9 +511,15 @@ impl ApprovalStore {
             },
         };
         Ok(match result {
-            WaitResult::Responded { choice, by, comment } => {
-                WaitOutcome::Responded { choice, by, comment }
-            }
+            WaitResult::Responded {
+                choice,
+                by,
+                comment,
+            } => WaitOutcome::Responded {
+                choice,
+                by,
+                comment,
+            },
             WaitResult::TimedOut { default_choice } => WaitOutcome::TimedOut { default_choice },
             WaitResult::Cancelled => WaitOutcome::Cancelled,
         })
@@ -532,7 +542,11 @@ impl ApprovalStore {
                 };
                 if let Some(outcome) = terminal_to_outcome(&record.state) {
                     return match outcome {
-                        WaitOutcome::Responded { choice, by, comment } => WaitResult::Responded {
+                        WaitOutcome::Responded {
+                            choice,
+                            by,
+                            comment,
+                        } => WaitResult::Responded {
                             choice,
                             by,
                             comment,
@@ -593,7 +607,12 @@ impl ApprovalStore {
 fn terminal_to_outcome(state: &ApprovalState) -> Option<WaitOutcome> {
     match state {
         ApprovalState::Pending => None,
-        ApprovalState::Responded { choice, by, comment, .. } => Some(WaitOutcome::Responded {
+        ApprovalState::Responded {
+            choice,
+            by,
+            comment,
+            ..
+        } => Some(WaitOutcome::Responded {
             choice: choice.clone(),
             by: by.clone(),
             comment: comment.clone(),
@@ -611,7 +630,6 @@ fn now_ms() -> u64 {
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0)
 }
-
 
 #[cfg(test)]
 #[path = "lib_tests.rs"]

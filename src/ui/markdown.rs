@@ -43,11 +43,7 @@ pub fn draw_markdown(
             visuals.code_bg_color = th.surface0.into();
 
             let content = view.content.clone();
-            egui_commonmark::CommonMarkViewer::new().show(
-                ui,
-                &mut view.commonmark_cache,
-                &content,
-            );
+            egui_commonmark::CommonMarkViewer::new().show(ui, &mut view.commonmark_cache, &content);
 
             // Trailing space so the last line doesn't visually collide with the
             // panel's bottom inner_margin when scrolled to the end.

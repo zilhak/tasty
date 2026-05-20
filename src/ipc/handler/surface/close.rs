@@ -60,4 +60,3 @@ pub(crate) fn handle_surface_close_self(
         )
     }
 }
-

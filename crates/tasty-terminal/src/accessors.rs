@@ -2,10 +2,11 @@
 
 use termwiz::surface::Surface;
 
-use crate::{cwd, foreground_process, Terminal, TerminalEvent, BUSY_OUTPUT_WINDOW, INPUT_ECHO_WINDOW};
+use crate::{
+    BUSY_OUTPUT_WINDOW, INPUT_ECHO_WINDOW, Terminal, TerminalEvent, cwd, foreground_process,
+};
 
 impl Terminal {
-
     pub fn surface(&self) -> &Surface {
         if self.use_alternate {
             self.alternate_surface
@@ -139,5 +140,4 @@ impl Terminal {
     }
 
     // ---- Public getters for terminal state ----
-
 }

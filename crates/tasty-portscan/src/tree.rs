@@ -73,7 +73,9 @@ fn build_ppid_table() -> std::io::Result<PpidTable> {
 fn build_ppid_table() -> std::io::Result<PpidTable> {
     // `ps -A -o pid=,ppid=` is portable and avoids a libproc binding.
     use std::process::Command;
-    let output = Command::new("ps").args(["-A", "-o", "pid=,ppid="]).output()?;
+    let output = Command::new("ps")
+        .args(["-A", "-o", "pid=,ppid="])
+        .output()?;
     if !output.status.success() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::Other,
@@ -102,7 +104,8 @@ fn build_ppid_table() -> std::io::Result<PpidTable> {
     use std::mem::MaybeUninit;
     use windows_sys::Win32::Foundation::CloseHandle;
     use windows_sys::Win32::System::Diagnostics::ToolHelp::{
-        CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW, TH32CS_SNAPPROCESS,
+        CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW,
+        TH32CS_SNAPPROCESS,
     };
 
     let mut table: PpidTable = HashMap::new();
@@ -173,6 +176,9 @@ mod tests {
                 break;
             }
         }
-        assert!(found_self, "ps/proc must list our own pid as a child of some parent");
+        assert!(
+            found_self,
+            "ps/proc must list our own pid as a child of some parent"
+        );
     }
 }

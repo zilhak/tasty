@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use tracing::warn;
 
 use super::super::config::{
-    validate_detector_decl, DetectorDecl, DetectorRuleDecl, ExtensionPriorityDecl,
+    DetectorDecl, DetectorRuleDecl, ExtensionPriorityDecl, validate_detector_decl,
 };
 use super::super::types::{DetectorId, DetectorRule, DetectorRuleKind, RuleOrigin};
 use super::{DetectorContribution, ExtensionPriorityEntry, Inner};
@@ -94,7 +94,8 @@ pub(super) fn identify_by_extension_priority(inner: &Inner, ext: &str) -> Option
     if advertised.is_empty() {
         return None;
     }
-    advertised.sort_by(|(a_ord, a_id), (b_ord, b_id)| a_ord.cmp(b_ord).then_with(|| a_id.cmp(b_id)));
+    advertised
+        .sort_by(|(a_ord, a_id), (b_ord, b_id)| a_ord.cmp(b_ord).then_with(|| a_id.cmp(b_id)));
 
     // extension_priority 표 적용 — 표에 적힌 detector 가 advertised 안에 있으면 그것이 먼저.
     if let Some(entry) = inner.extension_priority.get(ext) {
@@ -110,7 +111,11 @@ pub(super) fn identify_by_extension_priority(inner: &Inner, ext: &str) -> Option
 
 /// `[[extension_priority]]` 한 entry 등록. 같은 확장자 키에 last-writer-wins
 /// (host → user 순서로 install 되므로 user 가 host 를 덮어쓰는 효과).
-pub(super) fn install_extension_priority(inner: &mut Inner, decl: ExtensionPriorityDecl, origin: RuleOrigin) {
+pub(super) fn install_extension_priority(
+    inner: &mut Inner,
+    decl: ExtensionPriorityDecl,
+    origin: RuleOrigin,
+) {
     let key = decl.extension.trim_start_matches('.').to_ascii_lowercase();
     if key.is_empty() {
         warn!("file_format: extension_priority entry with empty extension — skipped");
@@ -156,10 +161,9 @@ pub(super) fn decl_rule_to_kind(decl: DetectorRuleDecl) -> Option<DetectorRuleKi
         DetectorRuleDecl::StructureCheck { spec } => DetectorRuleKind::StructureCheck {
             spec_path: PathBuf::from(spec),
         },
-        DetectorRuleDecl::Unknown { kind_name, raw } => DetectorRuleKind::Unknown {
-            kind_name,
-            raw,
-        },
+        DetectorRuleDecl::Unknown { kind_name, raw } => {
+            DetectorRuleKind::Unknown { kind_name, raw }
+        }
     })
 }
 
@@ -239,7 +243,9 @@ pub(super) fn rule_kind_eq(a: &DetectorRuleKind, b: &DetectorRuleKind) -> bool {
 }
 
 /// host default / user config 공통 표면: `[[detector]]` 섹션을 가진 TOML.
-pub(super) fn parse_detector_section(toml_text: &str) -> Result<Vec<DetectorDecl>, toml::de::Error> {
+pub(super) fn parse_detector_section(
+    toml_text: &str,
+) -> Result<Vec<DetectorDecl>, toml::de::Error> {
     #[derive(serde::Deserialize)]
     struct Wrap {
         #[serde(default, rename = "detector")]
@@ -261,4 +267,3 @@ pub(super) fn parse_extension_priority_section(
     let w: Wrap = toml::from_str(toml_text)?;
     Ok(w.extension_priority)
 }
-

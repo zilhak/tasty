@@ -166,15 +166,18 @@ mod tests {
         // SAFETY: fd는 payload가 살아있는 동안 유효하다. libc::dup은 OS 콜로 새 fd를 반환.
         let dup_fd = unsafe { libc::dup(fd) };
         assert!(dup_fd >= 0, "dup failed");
-        let host_mem = tasty_shm::receive(tasty_shm::ReceivedPayload::Fd { fd: dup_fd, size: total })
-            .expect("host receive");
+        let host_mem = tasty_shm::receive(tasty_shm::ReceivedPayload::Fd {
+            fd: dup_fd,
+            size: total,
+        })
+        .expect("host receive");
         // payload는 더 필요 없음.
         drop(payload);
 
         let (plugin_sock, host_sock) = UnixStream::pair().expect("socketpair");
-        let writer = Arc::new(Mutex::new(crate::handle_channel::HandleClient::from_unix_stream(
-            plugin_sock,
-        )));
+        let writer = Arc::new(Mutex::new(
+            crate::handle_channel::HandleClient::from_unix_stream(plugin_sock),
+        ));
         let buffer = SharedBuffer::new(SharedBufferId(42), plugin_mem, writer);
         let host_reader = BufReader::new(host_sock);
         (buffer, host_mem, host_reader)
@@ -199,7 +202,12 @@ mod tests {
         unsafe {
             buf.as_mut_slice()[0] = 0xAB;
         }
-        let rect = Some(Rect { x: 0, y: 0, w: 8, h: 8 });
+        let rect = Some(Rect {
+            x: 0,
+            y: 0,
+            w: 8,
+            h: 8,
+        });
         buf.commit(rect).expect("commit");
 
         assert_eq!(buf.generation(), 1);

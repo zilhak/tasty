@@ -9,11 +9,7 @@ use crate::ipc::protocol::JsonRpcResponse;
 use crate::output_observer::{ObserverError, ObserverSpec, SinkSpec};
 use crate::state::AppState;
 
-pub fn handle_observe_start(
-    state: &mut AppState,
-    id: Value,
-    params: &Value,
-) -> JsonRpcResponse {
+pub fn handle_observe_start(state: &mut AppState, id: Value, params: &Value) -> JsonRpcResponse {
     let spec = match parse_spec(params) {
         Ok(s) => s,
         Err(e) => return JsonRpcResponse::invalid_params(id, e),
@@ -31,11 +27,7 @@ pub fn handle_observe_start(
     }
 }
 
-pub fn handle_observe_stop(
-    state: &mut AppState,
-    id: Value,
-    params: &Value,
-) -> JsonRpcResponse {
+pub fn handle_observe_stop(state: &mut AppState, id: Value, params: &Value) -> JsonRpcResponse {
     let observer_id = match params.get("observer_id").and_then(|v| v.as_u64()) {
         Some(v) => v,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'observer_id'"),
@@ -63,7 +55,10 @@ pub fn handle_observe_info(state: &AppState, id: Value, params: &Value) -> JsonR
 }
 
 fn parse_spec(params: &Value) -> Result<ObserverSpec, String> {
-    let surface_id = params.get("surface_id").and_then(|v| v.as_u64()).map(|v| v as u32);
+    let surface_id = params
+        .get("surface_id")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32);
 
     let parsers: Vec<String> = match params.get("parsers") {
         None | Some(Value::Null) => Vec::new(),
@@ -80,7 +75,11 @@ fn parse_spec(params: &Value) -> Result<ObserverSpec, String> {
             .map(|t| t.trim().to_string())
             .filter(|t| !t.is_empty())
             .collect(),
-        _ => return Err("'parsers' must be an array of strings or a comma-separated string".to_string()),
+        _ => {
+            return Err(
+                "'parsers' must be an array of strings or a comma-separated string".to_string(),
+            );
+        }
     };
 
     let kinds: Option<Vec<String>> = match params.get("kinds") {
@@ -100,7 +99,9 @@ fn parse_spec(params: &Value) -> Result<ObserverSpec, String> {
                 .filter(|t| !t.is_empty())
                 .collect(),
         ),
-        _ => return Err("'kinds' must be an array of strings or comma-separated string".to_string()),
+        _ => {
+            return Err("'kinds' must be an array of strings or comma-separated string".to_string());
+        }
     };
 
     let sink_obj = params
@@ -126,7 +127,11 @@ fn parse_spec(params: &Value) -> Result<ObserverSpec, String> {
                 .map(PathBuf::from);
             SinkSpec::File { path }
         }
-        other => return Err(format!("unknown sink type '{other}' (expected 'memory' or 'file')")),
+        other => {
+            return Err(format!(
+                "unknown sink type '{other}' (expected 'memory' or 'file')"
+            ));
+        }
     };
 
     Ok(ObserverSpec {

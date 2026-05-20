@@ -10,9 +10,8 @@ use crate::state::AppState;
 use super::{map_error, require_store, require_str, require_workspace_id};
 
 fn parse_plan_step(v: &Value, id: &Value) -> Result<plan_mod::PlanStep, JsonRpcResponse> {
-    serde_json::from_value(v.clone()).map_err(|e| {
-        JsonRpcResponse::invalid_params(id.clone(), format!("invalid step JSON: {e}"))
-    })
+    serde_json::from_value(v.clone())
+        .map_err(|e| JsonRpcResponse::invalid_params(id.clone(), format!("invalid step JSON: {e}")))
 }
 
 fn parse_plan_step_state(s: &str, id: &Value) -> Result<plan_mod::PlanStepState, JsonRpcResponse> {
@@ -63,10 +62,9 @@ pub fn handle_plan_create(
         }
     };
     let owner = caller.owner().to_string();
-    let result = with_store(|s| {
-        plan_mod::plan_create(s, &owner, workspace_id, &plan_id, &title, steps)
-    })
-    .expect("memory store present");
+    let result =
+        with_store(|s| plan_mod::plan_create(s, &owner, workspace_id, &plan_id, &title, steps))
+            .expect("memory store present");
     match result {
         Ok(version) => JsonRpcResponse::success(id, json!({ "ok": true, "version": version })),
         Err(e) => map_error(id, e),
@@ -115,12 +113,10 @@ pub fn handle_plan_list(
         Ok(v) => v,
         Err(e) => return e,
     };
-    let result = with_store(|s| plan_mod::plan_list(s, workspace_id))
-        .expect("memory store present");
+    let result =
+        with_store(|s| plan_mod::plan_list(s, workspace_id)).expect("memory store present");
     match result {
-        Ok(plans) => {
-            JsonRpcResponse::success(id, json!({ "plans": plans, "count": plans.len() }))
-        }
+        Ok(plans) => JsonRpcResponse::success(id, json!({ "plans": plans, "count": plans.len() })),
         Err(e) => map_error(id, e),
     }
 }
@@ -295,4 +291,3 @@ pub fn handle_plan_update_step(
 // ============================================================
 // Cache `memory.cache_*` — Phase 7.3
 // ============================================================
-

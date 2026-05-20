@@ -7,7 +7,6 @@ use termwiz::surface::Change;
 use crate::Terminal;
 
 impl Terminal {
-
     pub fn resize(&mut self, cols: usize, rows: usize) {
         if self.cols == cols && self.rows == rows {
             return;
@@ -260,7 +259,12 @@ impl Terminal {
 
     /// Before termwiz truncates lines, capture cells that would be lost (cols shrinking)
     /// or merge saved tails back when cols grow.
-    pub(crate) fn save_or_restore_line_tails(&mut self, old_cols: usize, new_cols: usize, new_rows: usize) {
+    pub(crate) fn save_or_restore_line_tails(
+        &mut self,
+        old_cols: usize,
+        new_cols: usize,
+        new_rows: usize,
+    ) {
         let lines = self.primary_surface.screen_lines();
         let line_count = lines.len();
 

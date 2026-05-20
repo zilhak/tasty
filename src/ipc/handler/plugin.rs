@@ -1,7 +1,7 @@
 //! Plugin IPC handlers — `App`이 `PluginManager`를 들고 있으므로 일반 핸들러 라우팅
 //! (`&mut AppState`)와 별도로, `App::process_ipc`에서 직접 호출된다.
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::ipc::protocol::JsonRpcResponse;
 use crate::plugin::manifest::Permission;
@@ -30,11 +30,7 @@ pub fn handle_list(mgr: Option<&PluginManager>, id: Value) -> JsonRpcResponse {
     JsonRpcResponse::success(id, json!({ "plugins": arr }))
 }
 
-pub fn handle_show(
-    mgr: Option<&PluginManager>,
-    id: Value,
-    params: &Value,
-) -> JsonRpcResponse {
+pub fn handle_show(mgr: Option<&PluginManager>, id: Value, params: &Value) -> JsonRpcResponse {
     let mgr = match mgr {
         Some(m) => m,
         None => return JsonRpcResponse::error(id, -32000, "plugin manager not initialized"),
@@ -93,17 +89,19 @@ pub fn handle_show(
         .iter()
         .map(|c| {
             let override_repr =
-                mgr.config.shortcut_override(&plugin_id, &c.id).map(|ov| match ov {
-                    crate::plugin::registry_state::ShortcutOverride::Key { value } => {
-                        json!({ "mode": "key", "value": value })
-                    }
-                    crate::plugin::registry_state::ShortcutOverride::Inherit { source } => {
-                        json!({ "mode": "inherit", "source": source })
-                    }
-                    crate::plugin::registry_state::ShortcutOverride::None => {
-                        json!({ "mode": "none" })
-                    }
-                });
+                mgr.config
+                    .shortcut_override(&plugin_id, &c.id)
+                    .map(|ov| match ov {
+                        crate::plugin::registry_state::ShortcutOverride::Key { value } => {
+                            json!({ "mode": "key", "value": value })
+                        }
+                        crate::plugin::registry_state::ShortcutOverride::Inherit { source } => {
+                            json!({ "mode": "inherit", "source": source })
+                        }
+                        crate::plugin::registry_state::ShortcutOverride::None => {
+                            json!({ "mode": "none" })
+                        }
+                    });
             json!({
                 "id": c.id,
                 "title_i18n_key": c.title_i18n_key,
@@ -129,10 +127,10 @@ pub fn handle_show(
         .map(|n| json!({ "prefix": n.prefix }))
         .collect();
 
-    let extension_state =
-        mgr.extensions
-            .state(&plugin_id)
-            .map(|s| extension_state_to_json(s));
+    let extension_state = mgr
+        .extensions
+        .state(&plugin_id)
+        .map(|s| extension_state_to_json(s));
 
     let extends = manifest.extends.as_ref().map(|d| {
         let to_event_hook = |h: &crate::plugin::manifest::EventHookDecl| {
@@ -316,7 +314,11 @@ pub fn handle_install(
         return JsonRpcResponse::error(
             id,
             -32002,
-            &format!("plugin '{}' already installed at {}", manifest.id, dest.display()),
+            &format!(
+                "plugin '{}' already installed at {}",
+                manifest.id,
+                dest.display()
+            ),
         );
     }
     if let Err(e) = std::fs::create_dir_all(&dest_root) {
@@ -344,10 +346,17 @@ pub fn handle_install(
     }
     if !mgr.config.is_disabled(&manifest.id) {
         if let Err(e) = mgr.enable(&manifest.id) {
-            return JsonRpcResponse::error(id, -32000, &format!("enable after install failed: {e}"));
+            return JsonRpcResponse::error(
+                id,
+                -32000,
+                &format!("enable after install failed: {e}"),
+            );
         }
     }
-    JsonRpcResponse::success(id, json!({ "installed": manifest.id, "path": dest.to_string_lossy() }))
+    JsonRpcResponse::success(
+        id,
+        json!({ "installed": manifest.id, "path": dest.to_string_lossy() }),
+    )
 }
 
 pub fn handle_remove(
@@ -372,11 +381,7 @@ pub fn handle_remove(
         None => return JsonRpcResponse::error(id, -32000, "could not resolve plugins directory"),
     };
     if !plugin_dir.exists() {
-        return JsonRpcResponse::error(
-            id,
-            -32003,
-            &format!("plugin '{plugin_id}' not installed"),
-        );
+        return JsonRpcResponse::error(id, -32003, &format!("plugin '{plugin_id}' not installed"));
     }
     if let Err(e) = std::fs::remove_dir_all(&plugin_dir) {
         return JsonRpcResponse::error(id, -32000, &format!("remove dir failed: {e}"));
@@ -471,11 +476,7 @@ pub fn handle_permissions(
     )
 }
 
-pub fn handle_grant(
-    mgr: Option<&mut PluginManager>,
-    id: Value,
-    params: &Value,
-) -> JsonRpcResponse {
+pub fn handle_grant(mgr: Option<&mut PluginManager>, id: Value, params: &Value) -> JsonRpcResponse {
     let mgr = match mgr {
         Some(m) => m,
         None => return JsonRpcResponse::error(id, -32000, "plugin manager not initialized"),
@@ -505,9 +506,7 @@ pub fn handle_grant(
         return JsonRpcResponse::error(
             id,
             -32002,
-            &format!(
-                "plugin '{plugin_id}' does not declare permission '{token}' in its manifest"
-            ),
+            &format!("plugin '{plugin_id}' does not declare permission '{token}' in its manifest"),
         );
     }
     let added = mgr.config.grant(&plugin_id, &token);
@@ -557,7 +556,12 @@ pub fn handle_revoke(
 
 /// 매니페스트 + granted를 다시 교집합하여 manager의 in-memory 권한 set을 갱신.
 fn refresh_plugin_permissions(mgr: &mut PluginManager, plugin_id: &str) {
-    let Some(pkg) = mgr.packages.iter().find(|p| p.manifest.id == plugin_id).cloned() else {
+    let Some(pkg) = mgr
+        .packages
+        .iter()
+        .find(|p| p.manifest.id == plugin_id)
+        .cloned()
+    else {
         return;
     };
     let granted = mgr.config.granted_permissions(plugin_id);

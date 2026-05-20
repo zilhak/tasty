@@ -20,9 +20,7 @@ use super::MainWindow;
 
 impl MainWindow {
     pub(crate) fn handle_hovered_file(&mut self, path: PathBuf) {
-        let cursor = self
-            .cursor_position
-            .map(|p| (p.x as f32, p.y as f32));
+        let cursor = self.cursor_position.map(|p| (p.x as f32, p.y as f32));
         match self.state.drop_hover.as_mut() {
             Some(s) => s.paths.push(path),
             None => {
@@ -67,10 +65,9 @@ impl MainWindow {
         let terminal_rect = self.compute_terminal_rect();
         let (x, y) = (pos.x as f32, pos.y as f32);
         if !terminal_rect.contains(PhysicalPx(x), PhysicalPx(y)) {
-            self.state.toasts.push_info(
-                crate::i18n::t("file_drop.outside"),
-                ToastScope::Window,
-            );
+            self.state
+                .toasts
+                .push_info(crate::i18n::t("file_drop.outside"), ToastScope::Window);
             return;
         }
         let _ = self.state.focus_pane_at_position(x, y, terminal_rect);

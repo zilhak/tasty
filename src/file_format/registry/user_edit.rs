@@ -11,9 +11,14 @@ use super::helpers::{
     rule_kind_eq, rule_kind_to_toml,
 };
 use super::{DetectorContribution, ExtensionPriorityEntry, FileFormatRegistry};
-use crate::file_format::config::{validate_detector_decl, DetectorDecl, DetectorRuleDecl, ExtensionPriorityDecl};
-use crate::file_format::evaluator::{evaluate_cheap, evaluate_deep, DeepCtx};
-use crate::file_format::types::{DetectDepth, DetectorId, DetectorRule, DetectorRuleKind, FileFormatDetector, FileTarget, RuleOrigin};
+use crate::file_format::config::{
+    DetectorDecl, DetectorRuleDecl, ExtensionPriorityDecl, validate_detector_decl,
+};
+use crate::file_format::evaluator::{DeepCtx, evaluate_cheap, evaluate_deep};
+use crate::file_format::types::{
+    DetectDepth, DetectorId, DetectorRule, DetectorRuleKind, FileFormatDetector, FileTarget,
+    RuleOrigin,
+};
 
 impl FileFormatRegistry {
     /// Settings UI 가 host/plugin detector 를 user-origin override 로 disable/enable.
@@ -33,7 +38,10 @@ impl FileFormatRegistry {
         };
         // 같은 detector 에 이미 user contribution 이 있으면 (rules/메타 포함) 그 disabled_override 만
         // 갱신해 다른 필드를 보존. 없으면 disabled-only contribution 신규 push.
-        if let Some(existing) = entry.iter_mut().find(|c| matches!(c.origin, RuleOrigin::User)) {
+        if let Some(existing) = entry
+            .iter_mut()
+            .find(|c| matches!(c.origin, RuleOrigin::User))
+        {
             existing.disabled_override = Some(disabled);
         } else {
             entry.push(DetectorContribution {
@@ -54,9 +62,14 @@ impl FileFormatRegistry {
             Ok(g) => g,
             Err(_) => return,
         };
-        let Some(entry) = inner.contributions.get_mut(id) else { return };
+        let Some(entry) = inner.contributions.get_mut(id) else {
+            return;
+        };
         let mut empty_user = false;
-        if let Some(existing) = entry.iter_mut().find(|c| matches!(c.origin, RuleOrigin::User)) {
+        if let Some(existing) = entry
+            .iter_mut()
+            .find(|c| matches!(c.origin, RuleOrigin::User))
+        {
             existing.disabled_override = None;
             empty_user = existing.rules.is_empty()
                 && existing.display_name_i18n_key.is_none()
@@ -79,7 +92,9 @@ impl FileFormatRegistry {
             Ok(g) => g,
             Err(_) => return,
         };
-        let Some(entry) = inner.contributions.get_mut(id) else { return };
+        let Some(entry) = inner.contributions.get_mut(id) else {
+            return;
+        };
         entry.retain(|c| !matches!(c.origin, RuleOrigin::User));
         if entry.is_empty() {
             inner.contributions.remove(id);
@@ -197,5 +212,4 @@ impl FileFormatRegistry {
         }
         inner.dirty = true;
     }
-
 }

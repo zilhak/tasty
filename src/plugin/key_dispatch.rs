@@ -98,12 +98,7 @@ pub fn dispatch_plugin_command(
             source_surface_id: Some(surface_id),
             trigger: CommandTrigger::Shortcut,
         };
-        mgr.emit_host_event_to_plugin(
-            plugin_id,
-            "command.invoked",
-            &payload,
-            EventScope::System,
-        );
+        mgr.emit_host_event_to_plugin(plugin_id, "command.invoked", &payload, EventScope::System);
     }
     mgr.send_command_invoke(plugin_id, surface_id, command_id);
 }

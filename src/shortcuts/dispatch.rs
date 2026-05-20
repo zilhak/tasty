@@ -109,8 +109,7 @@ impl MainWindow {
                 if state.engine.workspaces.is_empty() {
                     self.request_close();
                 } else {
-                    self.state
-                        .resize_all(terminal_rect, cell_w, cell_h);
+                    self.state.resize_all(terminal_rect, cell_w, cell_h);
                 }
                 return true;
             }
@@ -144,9 +143,7 @@ impl MainWindow {
                 return true;
             }
             "close_active" => {
-                if !state.close_active_tab()
-                    && !state.close_active_pane()
-                {
+                if !state.close_active_tab() && !state.close_active_pane() {
                     state.close_active_workspace();
                 }
                 if state.engine.workspaces.is_empty() {
@@ -174,8 +171,7 @@ impl MainWindow {
                 if state.popups.is_open("search_bar") {
                     state.search.clear();
                     state.dispatch_intent(
-                        Intent::ClosePopup { id: "search_bar" }
-                            .from_user_shortcut("find_close"),
+                        Intent::ClosePopup { id: "search_bar" }.from_user_shortcut("find_close"),
                     );
                 } else if let Some(sid) = state.focused_surface_id() {
                     state.search.surface_id = sid;
@@ -230,9 +226,7 @@ impl MainWindow {
             }
             "rename_tab" => {
                 let pane_id = state.active_workspace().focused_pane;
-                if let Some(pane) =
-                    state.active_workspace().pane_layout().find_pane(pane_id)
-                {
+                if let Some(pane) = state.active_workspace().pane_layout().find_pane(pane_id) {
                     let tab_index = pane.active_tab;
                     if let Some(tab) = pane.tabs.get(tab_index) {
                         let current_name = tab.display_name();

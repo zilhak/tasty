@@ -133,20 +133,17 @@ pub(crate) fn publish_capability_elevation(
     reason: Option<&str>,
 ) -> Option<ApprovalRecord> {
     // 이미 같은 agent+permission 으로 Pending elevation 이 있으면 재사용.
-    if let Some(existing) = state
-        .engine
-        .approval_store
-        .list()
-        .into_iter()
-        .find(|r| {
-            matches!(r.state, tasty_approval::ApprovalState::Pending)
-                && r.request.metadata.get("kind").and_then(|v| v.as_str())
-                    == Some("capability_elevation")
-                && r.request.metadata.get("agent_id").and_then(|v| v.as_str()) == Some(agent_id)
-                && r.request.metadata.get("permission").and_then(|v| v.as_str())
-                    == Some(permission)
-        })
-    {
+    if let Some(existing) = state.engine.approval_store.list().into_iter().find(|r| {
+        matches!(r.state, tasty_approval::ApprovalState::Pending)
+            && r.request.metadata.get("kind").and_then(|v| v.as_str())
+                == Some("capability_elevation")
+            && r.request.metadata.get("agent_id").and_then(|v| v.as_str()) == Some(agent_id)
+            && r.request
+                .metadata
+                .get("permission")
+                .and_then(|v| v.as_str())
+                == Some(permission)
+    }) {
         return Some(existing);
     }
 
@@ -219,8 +216,7 @@ pub(crate) fn elevation_grant_decision(
     record: &ApprovalRecord,
     choice: &str,
 ) -> Option<(String, String, Option<u64>)> {
-    if record.request.metadata.get("kind").and_then(|v| v.as_str())
-        != Some("capability_elevation")
+    if record.request.metadata.get("kind").and_then(|v| v.as_str()) != Some("capability_elevation")
     {
         return None;
     }
@@ -292,7 +288,6 @@ pub(super) fn apply_elevation_grant_if_any(record: &ApprovalRecord, choice: &str
         }
     }
 }
-
 
 /// `approval.cancel` — 종료되지 않은 요청을 취소.
 /// state 가 가진 timestamp(있다면) 를 추출.

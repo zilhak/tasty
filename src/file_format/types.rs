@@ -108,10 +108,7 @@ pub enum DetectorRuleKind {
     /// 구조 체크 (Phase D MD2). Phase D MD1 시점에는 schema 만, evaluator 미구현.
     StructureCheck { spec_path: PathBuf },
     /// 미지의 kind — payload 보존 (forward-compat).
-    Unknown {
-        kind_name: String,
-        raw: toml::Value,
-    },
+    Unknown { kind_name: String, raw: toml::Value },
 }
 
 /// detector 의 rule 항목.

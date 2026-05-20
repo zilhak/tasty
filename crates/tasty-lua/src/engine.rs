@@ -69,9 +69,7 @@ impl LuaEngine {
                 Ok(())
             })
             .map_err(LuaEngineError::Init)?;
-        tasty_table
-            .set("on", on)
-            .map_err(LuaEngineError::Init)?;
+        tasty_table.set("on", on).map_err(LuaEngineError::Init)?;
 
         self.lua
             .globals()
@@ -157,7 +155,6 @@ impl LuaEngine {
     pub fn eval(&self, source: &str) -> Result<(), LuaEngineError> {
         self.lua.load(source).exec().map_err(LuaEngineError::Eval)
     }
-
 }
 
 #[cfg(test)]

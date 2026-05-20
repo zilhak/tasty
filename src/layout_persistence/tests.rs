@@ -91,7 +91,6 @@ fn v2_generic_round_trips() {
 
 #[test]
 fn unknown_variant_is_rejected() {
-    let result: Result<SavedSurface, _> =
-        serde_json::from_str(r#"{"Bogus":{}}"#);
+    let result: Result<SavedSurface, _> = serde_json::from_str(r#"{"Bogus":{}}"#);
     assert!(result.is_err());
 }

@@ -40,8 +40,7 @@ fn url_regex() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
         // 스킴 + 호스트/경로. URL 끝에 붙을 수 있는 구두점(. , ; : ) ] } " ' !) 은 후처리에서 제거.
-        Regex::new(r"(?i)\b(?:https?|ftp|file)://[^\s<>\[\]\{\}\\^`|]+")
-            .expect("URL regex compile")
+        Regex::new(r"(?i)\b(?:https?|ftp|file)://[^\s<>\[\]\{\}\\^`|]+").expect("URL regex compile")
     })
 }
 
@@ -240,16 +239,12 @@ fn append_regex_matches(
             continue;
         };
         // 마지막 셀의 width 계산: 원문에서 해당 char를 얻어야 함.
-        let end_ch = text[..end_byte]
-            .chars()
-            .next_back()
-            .unwrap_or(' ');
+        let end_ch = text[..end_byte].chars().next_back().unwrap_or(' ');
         let end_col = last_start_col + unicode_width(end_ch).saturating_sub(1);
 
         // 이미 OSC8이 덮고 있으면 스킵.
         let overlap = out.iter().any(|s| {
-            s.absolute_row == absolute_row
-                && !(end_col < s.start_col || start_col > s.end_col)
+            s.absolute_row == absolute_row && !(end_col < s.start_col || start_col > s.end_col)
         });
         if overlap {
             continue;
@@ -367,8 +362,7 @@ fn append_path_matches(
         let end_ch = text[..end_byte].chars().next_back().unwrap_or(' ');
         let end_col = last_start_col + unicode_width(end_ch).saturating_sub(1);
         let overlap = out.iter().any(|s| {
-            s.absolute_row == absolute_row
-                && !(end_col < s.start_col || start_col > s.end_col)
+            s.absolute_row == absolute_row && !(end_col < s.start_col || start_col > s.end_col)
         });
         if overlap {
             continue;
@@ -409,7 +403,9 @@ mod tests {
             ("C:/Users/a.txt yay", "C:/Users/a.txt"),
         ];
         for (input, expected) in cases {
-            let caps = re.captures(input).unwrap_or_else(|| panic!("no match: {input}"));
+            let caps = re
+                .captures(input)
+                .unwrap_or_else(|| panic!("no match: {input}"));
             let m = caps
                 .name("rel")
                 .or_else(|| caps.name("unix"))

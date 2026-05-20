@@ -28,8 +28,7 @@ pub fn convert_popup_default_size() -> egui::Vec2 {
 fn convert_popup_size_for(count: usize) -> egui::Vec2 {
     let count = count.max(1);
     let item_spacing = 3.0;
-    let content_h =
-        count as f32 * ITEM_HEIGHT + (count.saturating_sub(1)) as f32 * item_spacing;
+    let content_h = count as f32 * ITEM_HEIGHT + (count.saturating_sub(1)) as f32 * item_spacing;
     egui::vec2(
         200.0,
         popup::TITLE_BAR_HEIGHT + popup::CONTENT_MARGIN * 2.0 + content_h,
@@ -239,7 +238,8 @@ pub fn draw_convert_content(ui: &mut egui::Ui, state: &mut AppState) -> Option<C
 
         let highlight = (!is_current && resp.hovered()) || is_selected;
         if highlight {
-            ui.painter().rect_filled(rect, 0.0, th.hover_overlay.to_egui_premultiplied());
+            ui.painter()
+                .rect_filled(rect, 0.0, th.hover_overlay.to_egui_premultiplied());
         }
         if !is_current && resp.hovered() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
@@ -289,9 +289,9 @@ pub fn apply_convert_action(state: &mut AppState, action: ConvertAction) {
             state.dispatch_intent(
                 crate::intent::Intent::OpenPopup {
                     id: "markdown_open",
-                    mode: crate::intent::OpenPopupMode::WithScope(
-                        popup::PopupScope::Surface(surface_id),
-                    ),
+                    mode: crate::intent::OpenPopupMode::WithScope(popup::PopupScope::Surface(
+                        surface_id,
+                    )),
                 }
                 .from_user_menu("convert/markdown"),
             );
@@ -304,9 +304,9 @@ pub fn apply_convert_action(state: &mut AppState, action: ConvertAction) {
             state.dispatch_intent(
                 crate::intent::Intent::OpenPopup {
                     id: "html_open",
-                    mode: crate::intent::OpenPopupMode::WithScope(
-                        popup::PopupScope::Surface(surface_id),
-                    ),
+                    mode: crate::intent::OpenPopupMode::WithScope(popup::PopupScope::Surface(
+                        surface_id,
+                    )),
                 }
                 .from_user_menu("convert/html"),
             );
@@ -361,13 +361,32 @@ fn action_for_kind(kind: &str) -> ConvertAction {
 fn letter_key_to_char(key: &egui::Key) -> Option<char> {
     use egui::Key;
     Some(match key {
-        Key::A => 'A', Key::B => 'B', Key::C => 'C', Key::D => 'D',
-        Key::E => 'E', Key::F => 'F', Key::G => 'G', Key::H => 'H',
-        Key::I => 'I', Key::J => 'J', Key::K => 'K', Key::L => 'L',
-        Key::M => 'M', Key::N => 'N', Key::O => 'O', Key::P => 'P',
-        Key::Q => 'Q', Key::R => 'R', Key::S => 'S', Key::T => 'T',
-        Key::U => 'U', Key::V => 'V', Key::W => 'W', Key::X => 'X',
-        Key::Y => 'Y', Key::Z => 'Z',
+        Key::A => 'A',
+        Key::B => 'B',
+        Key::C => 'C',
+        Key::D => 'D',
+        Key::E => 'E',
+        Key::F => 'F',
+        Key::G => 'G',
+        Key::H => 'H',
+        Key::I => 'I',
+        Key::J => 'J',
+        Key::K => 'K',
+        Key::L => 'L',
+        Key::M => 'M',
+        Key::N => 'N',
+        Key::O => 'O',
+        Key::P => 'P',
+        Key::Q => 'Q',
+        Key::R => 'R',
+        Key::S => 'S',
+        Key::T => 'T',
+        Key::U => 'U',
+        Key::V => 'V',
+        Key::W => 'W',
+        Key::X => 'X',
+        Key::Y => 'Y',
+        Key::Z => 'Z',
         _ => return None,
     })
 }

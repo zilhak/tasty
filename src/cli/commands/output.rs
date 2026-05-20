@@ -48,6 +48,3 @@ pub enum OutputObserveCommands {
         observer: u64,
     },
 }
-
-
-

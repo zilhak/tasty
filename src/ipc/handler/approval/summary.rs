@@ -58,13 +58,10 @@ pub fn handle_summary_get(
                 }),
             )
         }
-        Some(Ok(None)) => JsonRpcResponse::success(
-            id,
-            json!({ "workspace_id": workspace_id, "content": null }),
-        ),
+        Some(Ok(None)) => {
+            JsonRpcResponse::success(id, json!({ "workspace_id": workspace_id, "content": null }))
+        }
         Some(Err(e)) => JsonRpcResponse::error(id, -32603, format!("summary get failed: {e}")),
         None => JsonRpcResponse::error(id, -32603, "memory store unavailable"),
     }
 }
-
-

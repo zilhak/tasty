@@ -18,7 +18,7 @@ use std::time::Duration;
 
 use error_scan::ErrorScanner;
 use handlers::*;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use state::{ChildEntry, ClaudeState};
 use tasty_plugin_sdk::{
     EventDispatchCtx, HostHandle, IpcMethodCtx, IpcMethodError, Plugin, SurfaceCreateCtx,
@@ -120,7 +120,12 @@ impl Plugin for ClaudePlugin {
         if ctx.envelope.key != "surface.closed" {
             return;
         }
-        let sid = match ctx.envelope.payload.get("surface_id").and_then(|v| v.as_u64()) {
+        let sid = match ctx
+            .envelope
+            .payload
+            .get("surface_id")
+            .and_then(|v| v.as_u64())
+        {
             Some(v) => v as u32,
             None => return,
         };
@@ -163,7 +168,6 @@ impl Plugin for ClaudePlugin {
 // 후 CLI 출력 회귀가 없다. param 키 이름 / 응답 필드 / 누락된 surface_id의 에러
 // 분기까지 1:1 보존한다.
 
-
 fn error_scan_loop(scanner: Arc<Mutex<ErrorScanner>>, host: HostHandle) {
     loop {
         std::thread::sleep(ERROR_SCAN_INTERVAL);
@@ -191,8 +195,7 @@ fn error_scan_loop(scanner: Arc<Mutex<ErrorScanner>>, host: HostHandle) {
 fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info".into()),
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
         )
         .init();
     tasty_plugin_sdk::run(ClaudePlugin::new())

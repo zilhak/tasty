@@ -31,7 +31,11 @@ impl App {
         for action in actions {
             match action {
                 plugins_ui::PluginsAction::SetEnabled { id, enabled } => {
-                    let result = if enabled { mgr.enable(&id) } else { mgr.disable(&id) };
+                    let result = if enabled {
+                        mgr.enable(&id)
+                    } else {
+                        mgr.disable(&id)
+                    };
                     if let Err(e) = result {
                         tracing::warn!("plugins modal: set_enabled({id}, {enabled}) failed: {e}");
                     }
@@ -117,8 +121,7 @@ impl App {
 
         let snapshot = self.snapshot_plugins();
         if let Some(modal) = self.windows.get_mut(&modal_id) {
-            if let Some(plugins_window) =
-                modal.as_any_mut().downcast_mut::<window::PluginsWindow>()
+            if let Some(plugins_window) = modal.as_any_mut().downcast_mut::<window::PluginsWindow>()
             {
                 plugins_window.refresh_snapshot(snapshot);
                 for (msg, kind) in pending_toasts {

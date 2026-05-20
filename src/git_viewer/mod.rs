@@ -168,10 +168,7 @@ pub fn draw_git_viewer_popup(ui: &mut egui::Ui, state: &mut AppState) -> PopupAc
     // repo 없음
     if gv.repo_path.is_none() {
         ui.centered_and_justified(|ui| {
-            ui.label(
-                egui::RichText::new(t("git_viewer.no_repo"))
-                    .color(th.subtext0),
-            );
+            ui.label(egui::RichText::new(t("git_viewer.no_repo")).color(th.subtext0));
         });
         return PopupAction::None;
     }

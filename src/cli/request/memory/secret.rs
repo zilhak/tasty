@@ -66,30 +66,92 @@ pub(super) fn memory_secret_command_to_method_params(
             }
             ("memory.secret.put", params)
         }
-        Get { scope, surface, workspace, window, account, global, key } => {
-            let scope_token = require_scope(scope.as_deref(), *surface, *workspace, *window, account.as_deref(), *global);
+        Get {
+            scope,
+            surface,
+            workspace,
+            window,
+            account,
+            global,
+            key,
+        } => {
+            let scope_token = require_scope(
+                scope.as_deref(),
+                *surface,
+                *workspace,
+                *window,
+                account.as_deref(),
+                *global,
+            );
             (
                 "memory.secret.get",
                 serde_json::json!({ "scope": scope_token, "key": key }),
             )
         }
-        Delete { scope, surface, workspace, window, account, global, key, cas } => {
-            let scope_token = require_scope(scope.as_deref(), *surface, *workspace, *window, account.as_deref(), *global);
+        Delete {
+            scope,
+            surface,
+            workspace,
+            window,
+            account,
+            global,
+            key,
+            cas,
+        } => {
+            let scope_token = require_scope(
+                scope.as_deref(),
+                *surface,
+                *workspace,
+                *window,
+                account.as_deref(),
+                *global,
+            );
             let mut p = serde_json::json!({ "scope": scope_token, "key": key });
             if let Some(c) = cas {
                 p["cas"] = serde_json::json!(c);
             }
             ("memory.secret.delete", p)
         }
-        Exists { scope, surface, workspace, window, account, global, key } => {
-            let scope_token = require_scope(scope.as_deref(), *surface, *workspace, *window, account.as_deref(), *global);
+        Exists {
+            scope,
+            surface,
+            workspace,
+            window,
+            account,
+            global,
+            key,
+        } => {
+            let scope_token = require_scope(
+                scope.as_deref(),
+                *surface,
+                *workspace,
+                *window,
+                account.as_deref(),
+                *global,
+            );
             (
                 "memory.secret.exists",
                 serde_json::json!({ "scope": scope_token, "key": key }),
             )
         }
-        List { scope, surface, workspace, window, account, global, prefix, limit } => {
-            let scope_token = require_scope(scope.as_deref(), *surface, *workspace, *window, account.as_deref(), *global);
+        List {
+            scope,
+            surface,
+            workspace,
+            window,
+            account,
+            global,
+            prefix,
+            limit,
+        } => {
+            let scope_token = require_scope(
+                scope.as_deref(),
+                *surface,
+                *workspace,
+                *window,
+                account.as_deref(),
+                *global,
+            );
             let mut p = serde_json::json!({ "scope": scope_token });
             if let Some(pre) = prefix {
                 p["prefix"] = serde_json::json!(pre);
@@ -99,8 +161,23 @@ pub(super) fn memory_secret_command_to_method_params(
             }
             ("memory.secret.list", p)
         }
-        Count { scope, surface, workspace, window, account, global, prefix } => {
-            let scope_token = require_scope(scope.as_deref(), *surface, *workspace, *window, account.as_deref(), *global);
+        Count {
+            scope,
+            surface,
+            workspace,
+            window,
+            account,
+            global,
+            prefix,
+        } => {
+            let scope_token = require_scope(
+                scope.as_deref(),
+                *surface,
+                *workspace,
+                *window,
+                account.as_deref(),
+                *global,
+            );
             let mut p = serde_json::json!({ "scope": scope_token });
             if let Some(pre) = prefix {
                 p["prefix"] = serde_json::json!(pre);
@@ -108,13 +185,26 @@ pub(super) fn memory_secret_command_to_method_params(
             ("memory.secret.count", p)
         }
         Scopes => ("memory.secret.scopes", serde_json::json!({})),
-        Stats { scope, surface, workspace, window, account, global } => {
+        Stats {
+            scope,
+            surface,
+            workspace,
+            window,
+            account,
+            global,
+        } => {
             let mut p = serde_json::json!({});
-            if let Some(tok) = resolve_scope(scope.as_deref(), *surface, *workspace, *window, account.as_deref(), *global) {
+            if let Some(tok) = resolve_scope(
+                scope.as_deref(),
+                *surface,
+                *workspace,
+                *window,
+                account.as_deref(),
+                *global,
+            ) {
                 p["scope"] = serde_json::json!(tok);
             }
             ("memory.secret.stats", p)
         }
     }
 }
-

@@ -41,5 +41,4 @@ impl AppState {
             .filter(|sid| self.engine.busy_surfaces.contains(sid))
             .count()
     }
-
 }

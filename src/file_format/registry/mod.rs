@@ -15,8 +15,8 @@ mod user_edit;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::RwLock;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use helpers::{
     decl_rule_to_kind, hex_to_bytes, identify_by_extension_priority, install_extension_priority,
@@ -26,9 +26,9 @@ use helpers::{
 use tracing::warn;
 
 use super::config::{
-    validate_detector_decl, DetectorDecl, DetectorRuleDecl, ExtensionPriorityDecl,
+    DetectorDecl, DetectorRuleDecl, ExtensionPriorityDecl, validate_detector_decl,
 };
-use super::evaluator::{evaluate_cheap, evaluate_deep, DeepCtx};
+use super::evaluator::{DeepCtx, evaluate_cheap, evaluate_deep};
 use super::info::DetectorInfo;
 use super::types::{
     DetectDepth, DetectorId, DetectorRule, DetectorRuleKind, FileFormatDetector, FileTarget,
@@ -89,11 +89,7 @@ impl FileFormatRegistry {
     }
 
     pub(super) fn ensure_finalized(&self) {
-        let needs_finalize = self
-            .inner
-            .read()
-            .map(|g| g.dirty)
-            .unwrap_or(false);
+        let needs_finalize = self.inner.read().map(|g| g.dirty).unwrap_or(false);
         if !needs_finalize {
             return;
         }

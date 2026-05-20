@@ -2,7 +2,6 @@
 
 use super::{fill_hline, fill_vline};
 
-
 // ---- box drawing -----------------------------------------------------------
 
 /// Line weight for each of the four directions.
@@ -389,4 +388,3 @@ fn draw_diagonal_back(bitmap: &mut [u8], w: u32, h: u32) {
         }
     }
 }
-

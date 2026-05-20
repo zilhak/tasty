@@ -73,10 +73,7 @@ impl SavedLayout {
         }
     }
 
-    fn collect_kinds_in_pane(
-        node: &SavedPaneNode,
-        out: &mut std::collections::HashSet<String>,
-    ) {
+    fn collect_kinds_in_pane(node: &SavedPaneNode, out: &mut std::collections::HashSet<String>) {
         match node {
             SavedPaneNode::Leaf(pane) => {
                 for tab in &pane.tabs {
@@ -305,8 +302,7 @@ impl SavedSurface {
                     restore_command,
                     scrollback_persist_id: scrollback_ref,
                 };
-                let placeholder =
-                    crate::model::EmptySurface::new_deferred(surface_id, spawn);
+                let placeholder = crate::model::EmptySurface::new_deferred(surface_id, spawn);
                 Some(Box::new(placeholder))
             }
             other => other.restore_immediate_inner(engine, surface_id),

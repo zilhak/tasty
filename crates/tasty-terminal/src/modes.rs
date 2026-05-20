@@ -202,5 +202,4 @@ impl Terminal {
     }
 
     // ---- Scrollback buffer methods (delegated to Scrollback) ----
-
 }

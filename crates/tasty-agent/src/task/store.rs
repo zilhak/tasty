@@ -6,8 +6,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use tasty_core::model::WorkspaceId;
 use tasty_memory::{ListOpts, MemoryStore, MemoryValue, PutOpts, Scope};
 
+use super::{
+    OnFailure, TASK_KEY_PREFIX, Task, TaskCommand, TaskGraph, TaskId, TaskResult, TaskState,
+    apply_on_failure, is_valid_transition, task_key,
+};
 use crate::{AgentError, Result};
-use super::{apply_on_failure, is_valid_transition, task_key, OnFailure, TaskGraph, TASK_KEY_PREFIX, Task, TaskCommand, TaskId, TaskResult, TaskState};
 
 pub struct TaskStore<'a> {
     mem: &'a mut MemoryStore,
@@ -253,9 +256,7 @@ impl<'a> TaskStore<'a> {
                 continue;
             }
             let target = match graph.evaluate_readiness(&d_id) {
-                Some(TaskState::Skipped) => {
-                    apply_on_failure(&d_task, &all_now)
-                }
+                Some(TaskState::Skipped) => apply_on_failure(&d_task, &all_now),
                 other => other,
             };
             if let Some(next) = target
@@ -352,4 +353,3 @@ impl<'a> TaskStore<'a> {
         Ok(task)
     }
 }
-

@@ -76,7 +76,13 @@ pub fn draw_appearance_tab(
         // ── Right: sub-tab content ──
         ui.vertical(|ui| match *sub_tab {
             AppearanceSubTab::Theme => {
-                draw_appearance_theme(ui, settings, font_families, font_filter, preview_font_loaded);
+                draw_appearance_theme(
+                    ui,
+                    settings,
+                    font_families,
+                    font_filter,
+                    preview_font_loaded,
+                );
             }
             AppearanceSubTab::General => {
                 draw_appearance_general(ui, settings);
@@ -304,10 +310,7 @@ impl SurfaceFontTarget {
         }
     }
 
-    fn colors<'a>(
-        self,
-        app: &'a crate::settings::AppearanceSettings,
-    ) -> &'a SurfaceColors {
+    fn colors<'a>(self, app: &'a crate::settings::AppearanceSettings) -> &'a SurfaceColors {
         match self {
             SurfaceFontTarget::Terminal => &app.terminal_colors,
             SurfaceFontTarget::Markdown => &app.markdown_colors,
@@ -375,12 +378,7 @@ fn draw_color_row(ui: &mut egui::Ui, label: &str, color: &mut HexColor) {
         );
         if egui_color != color.to_egui() {
             // egui 픽커가 alpha를 안 건드리므로 RGB만 수확.
-            *color = HexColor::from_rgba(
-                egui_color.r(),
-                egui_color.g(),
-                egui_color.b(),
-                color.a,
-            );
+            *color = HexColor::from_rgba(egui_color.r(), egui_color.g(), egui_color.b(), color.a);
         }
         let mut hex = color.to_hex();
         let response = ui.add(egui::TextEdit::singleline(&mut hex).desired_width(80.0));
@@ -394,7 +392,11 @@ fn draw_color_row(ui: &mut egui::Ui, label: &str, color: &mut HexColor) {
 }
 
 /// Draw color settings for a SurfaceColors (focused/unfocused bg/fg).
-fn draw_surface_colors(ui: &mut egui::Ui, id_salt: &str, colors: &mut crate::settings::SurfaceColors) {
+fn draw_surface_colors(
+    ui: &mut egui::Ui,
+    id_salt: &str,
+    colors: &mut crate::settings::SurfaceColors,
+) {
     let th = crate::theme::theme();
 
     ui.label(
@@ -408,8 +410,16 @@ fn draw_surface_colors(ui: &mut egui::Ui, id_salt: &str, colors: &mut crate::set
         .num_columns(2)
         .spacing([12.0, 8.0])
         .show(ui, |ui| {
-            draw_color_row(ui, t("settings.appearance.colors.bg_label"), &mut colors.focused_bg);
-            draw_color_row(ui, t("settings.appearance.colors.fg_label"), &mut colors.focused_fg);
+            draw_color_row(
+                ui,
+                t("settings.appearance.colors.bg_label"),
+                &mut colors.focused_bg,
+            );
+            draw_color_row(
+                ui,
+                t("settings.appearance.colors.fg_label"),
+                &mut colors.focused_fg,
+            );
         });
 
     ui.add_space(12.0);
@@ -425,8 +435,16 @@ fn draw_surface_colors(ui: &mut egui::Ui, id_salt: &str, colors: &mut crate::set
         .num_columns(2)
         .spacing([12.0, 8.0])
         .show(ui, |ui| {
-            draw_color_row(ui, t("settings.appearance.colors.bg_label"), &mut colors.unfocused_bg);
-            draw_color_row(ui, t("settings.appearance.colors.fg_label"), &mut colors.unfocused_fg);
+            draw_color_row(
+                ui,
+                t("settings.appearance.colors.bg_label"),
+                &mut colors.unfocused_bg,
+            );
+            draw_color_row(
+                ui,
+                t("settings.appearance.colors.fg_label"),
+                &mut colors.unfocused_fg,
+            );
         });
 }
 
@@ -550,7 +568,14 @@ fn font_settings_grid(
         .spacing([12.0, 8.0])
         .show(ui, |ui| {
             ui.label(t("settings.appearance.font_family_label"));
-            font_family_picker(ui, &mut font.font_family, font_families, font_filter, salt, true);
+            font_family_picker(
+                ui,
+                &mut font.font_family,
+                font_families,
+                font_filter,
+                salt,
+                true,
+            );
             ui.end_row();
 
             ui.label(t("settings.appearance.custom_font_label"));
@@ -606,7 +631,12 @@ fn font_override_grid(
         .show(ui, |ui| {
             // ── Font family ──
             ui.label(t("settings.appearance.font_family_label"));
-            override_checkbox(ui, &mut ov.font_family, || default.font_family.clone(), salt);
+            override_checkbox(
+                ui,
+                &mut ov.font_family,
+                || default.font_family.clone(),
+                salt,
+            );
             let mut family_value = ov
                 .font_family
                 .clone()
@@ -707,8 +737,12 @@ fn font_override_grid(
 
 /// "Use default" checkbox: checked when override is None.
 /// Toggling on → set to None; toggling off → seed with the current default.
-fn override_checkbox<T, F>(ui: &mut egui::Ui, slot: &mut Option<T>, default_provider: F, _salt: &str)
-where
+fn override_checkbox<T, F>(
+    ui: &mut egui::Ui,
+    slot: &mut Option<T>,
+    default_provider: F,
+    _salt: &str,
+) where
     F: FnOnce() -> T,
 {
     let mut use_default = slot.is_none();
@@ -775,7 +809,10 @@ fn draw_font_preview(
     } else {
         let key = format!("{}|{}", eff.font_family, eff.custom_font_path);
         let failed_marker = format!("\x00:{}", key);
-        let cached = preview_font_loaded.get(&slot_name).cloned().unwrap_or_default();
+        let cached = preview_font_loaded
+            .get(&slot_name)
+            .cloned()
+            .unwrap_or_default();
         if cached == key {
             egui::FontFamily::Name(slot_name.clone().into())
         } else if cached == failed_marker {
@@ -783,8 +820,10 @@ fn draw_font_preview(
         } else {
             // First attempt this frame: rebuild the full FontDefinitions
             // (surface families + this preview slot) and install it.
-            let fonts =
-                crate::ui::font_registry::build_font_definitions(appearance, Some((&slot_name, eff)));
+            let fonts = crate::ui::font_registry::build_font_definitions(
+                appearance,
+                Some((&slot_name, eff)),
+            );
             ui.ctx().set_fonts(fonts);
             // set_fonts() replaces the entire FontDefinitions, so other
             // preview slots are no longer registered. Clear them so they
@@ -877,4 +916,3 @@ fn draw_font_preview(
         .color(th.subtext0),
     );
 }
-

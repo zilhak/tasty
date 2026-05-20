@@ -1,8 +1,10 @@
 use crate::file_format::FileFormatRegistry;
-use crate::file_handler::{FileHandlerRegistry, HandlerAction, HandlerOwner, UserHandlerActionDecl, UserHandlerUpsertDecl};
+use crate::file_handler::{
+    FileHandlerRegistry, HandlerAction, HandlerOwner, UserHandlerActionDecl, UserHandlerUpsertDecl,
+};
 use crate::i18n::t;
 
-use super::{draw_intro_block, AddHandlerActionKind, AddHandlerForm, FileHandlerEditDraft};
+use super::{AddHandlerActionKind, AddHandlerForm, FileHandlerEditDraft, draw_intro_block};
 
 /// Handlers sub-tab — Enabled 토글, user-origin 삭제, user 추가 form.
 pub(super) fn draw_handlers(
@@ -285,14 +287,16 @@ fn build_add_handler_decl(form: &AddHandlerForm) -> Result<UserHandlerUpsertDecl
         AddHandlerActionKind::OpenSurface => {
             let sk = form.action_surface_kind.trim();
             if sk.is_empty() {
-                return Err(
-                    t("settings.file_handler.handlers.err_surface_kind_empty").to_string()
-                );
+                return Err(t("settings.file_handler.handlers.err_surface_kind_empty").to_string());
             }
             let pk = form.action_param_key.trim();
             UserHandlerActionDecl::OpenSurface {
                 surface_kind: sk.to_string(),
-                param_key: if pk.is_empty() { "file".to_string() } else { pk.to_string() },
+                param_key: if pk.is_empty() {
+                    "file".to_string()
+                } else {
+                    pk.to_string()
+                },
             }
         }
         AddHandlerActionKind::Ipc => {
@@ -331,4 +335,3 @@ fn handler_action_summary(action: &HandlerAction) -> String {
         HandlerAction::System => "system".into(),
     }
 }
-

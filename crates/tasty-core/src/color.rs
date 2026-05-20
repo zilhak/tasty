@@ -33,18 +33,31 @@ impl HexColor {
 
     /// 채널 접근자 (egui::Color32 호환을 위한 method-style getter).
     #[inline]
-    pub const fn r(self) -> u8 { self.r }
+    pub const fn r(self) -> u8 {
+        self.r
+    }
     #[inline]
-    pub const fn g(self) -> u8 { self.g }
+    pub const fn g(self) -> u8 {
+        self.g
+    }
     #[inline]
-    pub const fn b(self) -> u8 { self.b }
+    pub const fn b(self) -> u8 {
+        self.b
+    }
     #[inline]
-    pub const fn a(self) -> u8 { self.a }
+    pub const fn a(self) -> u8 {
+        self.a
+    }
 
     /// Replace alpha channel (straight).
     #[inline]
     pub const fn with_alpha(self, a: u8) -> Self {
-        Self { r: self.r, g: self.g, b: self.b, a }
+        Self {
+            r: self.r,
+            g: self.g,
+            b: self.b,
+            a,
+        }
     }
 
     /// Multiply alpha by `factor` (saturating). RGB는 보존되며, premultiplied로
@@ -52,7 +65,12 @@ impl HexColor {
     #[inline]
     pub fn gamma_multiply(self, factor: f32) -> Self {
         let a = ((self.a as f32) * factor).clamp(0.0, 255.0) as u8;
-        Self { r: self.r, g: self.g, b: self.b, a }
+        Self {
+            r: self.r,
+            g: self.g,
+            b: self.b,
+            a,
+        }
     }
 
     /// Convert to GPU-friendly `[r, g, b, a]` floats in `0..=1`.
@@ -126,7 +144,8 @@ impl Serialize for HexColor {
 impl<'de> Deserialize<'de> for HexColor {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let s = String::deserialize(deserializer)?;
-        Self::from_hex(&s).ok_or_else(|| serde::de::Error::custom(format!("invalid hex color: {s}")))
+        Self::from_hex(&s)
+            .ok_or_else(|| serde::de::Error::custom(format!("invalid hex color: {s}")))
     }
 }
 
@@ -144,9 +163,9 @@ impl SurfaceColors {
     /// Terminal defaults: Catppuccin Mocha base/text.
     pub fn terminal_default() -> Self {
         Self {
-            focused_bg: HexColor::from_rgb(0, 0, 0),       // #000000
-            focused_fg: HexColor::from_rgb(205, 214, 244),  // #cdd6f4
-            unfocused_bg: HexColor::from_rgb(30, 30, 46),   // #1e1e2e
+            focused_bg: HexColor::from_rgb(0, 0, 0),         // #000000
+            focused_fg: HexColor::from_rgb(205, 214, 244),   // #cdd6f4
+            unfocused_bg: HexColor::from_rgb(30, 30, 46),    // #1e1e2e
             unfocused_fg: HexColor::from_rgb(166, 173, 200), // #a6adc8
         }
     }
@@ -154,7 +173,7 @@ impl SurfaceColors {
     /// Markdown defaults.
     pub fn markdown_default() -> Self {
         Self {
-            focused_bg: HexColor::from_rgb(0, 0, 0),        // #000000
+            focused_bg: HexColor::from_rgb(0, 0, 0),         // #000000
             focused_fg: HexColor::from_rgb(205, 214, 244),   // #cdd6f4
             unfocused_bg: HexColor::from_rgb(24, 24, 37),    // #181825
             unfocused_fg: HexColor::from_rgb(166, 173, 200), // #a6adc8
@@ -164,7 +183,7 @@ impl SurfaceColors {
     /// Explorer defaults.
     pub fn explorer_default() -> Self {
         Self {
-            focused_bg: HexColor::from_rgb(0, 0, 0),        // #000000
+            focused_bg: HexColor::from_rgb(0, 0, 0),         // #000000
             focused_fg: HexColor::from_rgb(205, 214, 244),   // #cdd6f4
             unfocused_bg: HexColor::from_rgb(24, 24, 37),    // #181825
             unfocused_fg: HexColor::from_rgb(166, 173, 200), // #a6adc8

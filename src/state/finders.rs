@@ -111,5 +111,4 @@ impl AppState {
     pub fn find_terminal_by_id_mut(&mut self, surface_id: u32) -> Option<&mut Terminal> {
         self.engine.find_terminal_by_id_mut(surface_id)
     }
-
 }

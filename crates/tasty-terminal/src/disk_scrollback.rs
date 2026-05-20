@@ -216,8 +216,8 @@ fn deserialize_line(data: &[u8]) -> ScrollbackLine {
     let wrapped = data[0] != 0;
     pos += 1;
 
-    let cell_count = u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
-        as usize;
+    let cell_count =
+        u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]) as usize;
     pos += 4;
 
     let mut cells = Vec::with_capacity(cell_count);

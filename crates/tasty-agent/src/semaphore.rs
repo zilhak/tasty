@@ -66,8 +66,13 @@ impl<'a> SemaphoreStore<'a> {
     fn put(&mut self, s: &Semaphore) -> Result<()> {
         let scope = Scope::Workspace(s.workspace_id);
         let value = MemoryValue::Json(serde_json::to_value(s)?);
-        self.mem
-            .put(&self.owner, &scope, &semaphore_key(&s.name), &value, &PutOpts::default())?;
+        self.mem.put(
+            &self.owner,
+            &scope,
+            &semaphore_key(&s.name),
+            &value,
+            &PutOpts::default(),
+        )?;
         Ok(())
     }
 
@@ -140,7 +145,9 @@ impl<'a> SemaphoreStore<'a> {
         holder: &str,
     ) -> Result<AcquireOutcome> {
         if holder.is_empty() {
-            return Err(AgentError::InvalidArgument("holder must be non-empty".into()));
+            return Err(AgentError::InvalidArgument(
+                "holder must be non-empty".into(),
+            ));
         }
         let mut s = self
             .get(workspace_id, name)?

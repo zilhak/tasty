@@ -7,7 +7,14 @@ pub(super) fn memory_cache_command_to_method_params(
 ) -> (&'static str, serde_json::Value) {
     use MemoryCacheCommands::*;
     match command {
-        Put { workspace, key, value, value_b64, content_type, ttl } => {
+        Put {
+            workspace,
+            key,
+            value,
+            value_b64,
+            content_type,
+            ttl,
+        } => {
             let mut p = serde_json::json!({
                 "workspace_id": workspace,
                 "key": key,
@@ -55,4 +62,3 @@ pub(super) fn memory_cache_command_to_method_params(
         ),
     }
 }
-

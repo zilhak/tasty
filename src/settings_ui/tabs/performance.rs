@@ -43,4 +43,3 @@ pub fn draw_performance_tab(ui: &mut egui::Ui, settings: &mut Settings) {
             .color(egui::Color32::GRAY),
     );
 }
-

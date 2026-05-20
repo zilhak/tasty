@@ -65,7 +65,9 @@ impl App {
             plugin::install_builtins_if_needed(&mut mgr);
             mgr.packages = plugin::discover();
             mgr.discover_and_start();
-            state.tool_registry.set_plugin_items(mgr.plugin_tool_items());
+            state
+                .tool_registry
+                .set_plugin_items(mgr.plugin_tool_items());
             self.plugin_manager = Some(mgr);
         }
 
@@ -248,20 +250,19 @@ impl App {
         // Apply saved theme preset at startup. theme 이름이 preset에 없으면
         // catppuccin-mocha로 fallback하고 사용자에게 InfoModal로 알린다.
         let presets = crate::theme::presets();
-        let invalid_theme_name = if let Some(preset) =
-            presets.iter().find(|p| p.id == settings.appearance.theme)
-        {
-            crate::theme::set_theme(preset.theme);
-            None
-        } else {
-            let invalid = settings.appearance.theme.clone();
-            let fallback_id = "catppuccin-mocha";
-            settings.appearance.theme = fallback_id.to_string();
-            if let Some(default_preset) = presets.iter().find(|p| p.id == fallback_id) {
-                crate::theme::set_theme(default_preset.theme);
-            }
-            Some(invalid)
-        };
+        let invalid_theme_name =
+            if let Some(preset) = presets.iter().find(|p| p.id == settings.appearance.theme) {
+                crate::theme::set_theme(preset.theme);
+                None
+            } else {
+                let invalid = settings.appearance.theme.clone();
+                let fallback_id = "catppuccin-mocha";
+                settings.appearance.theme = fallback_id.to_string();
+                if let Some(default_preset) = presets.iter().find(|p| p.id == fallback_id) {
+                    crate::theme::set_theme(default_preset.theme);
+                }
+                Some(invalid)
+            };
         let gpu = pollster::block_on(crate::gpu::GpuState::new(
             window.clone(),
             &settings.appearance,

@@ -108,9 +108,9 @@ impl MainWindow {
                 state.dispatch_intent(
                     Intent::OpenPopup {
                         id: "search_bar",
-                        mode: OpenPopupMode::AtTopOfScope(
-                            crate::ui::popup::PopupScope::Surface(sid),
-                        ),
+                        mode: OpenPopupMode::AtTopOfScope(crate::ui::popup::PopupScope::Surface(
+                            sid,
+                        )),
                     }
                     .from_user_shortcut("find_open"),
                 );
@@ -218,9 +218,7 @@ impl MainWindow {
                 state.dispatch_intent(
                     Intent::OpenPopup {
                         id: "convert_surface",
-                        mode: OpenPopupMode::WithScope(
-                            crate::ui::popup::PopupScope::Surface(sid),
-                        ),
+                        mode: OpenPopupMode::WithScope(crate::ui::popup::PopupScope::Surface(sid)),
                     }
                     .from_user_shortcut("convert_surface"),
                 );
@@ -236,9 +234,7 @@ impl MainWindow {
                 state.dispatch_intent(
                     Intent::OpenPopup {
                         id: "markdown_open",
-                        mode: OpenPopupMode::WithScope(
-                            crate::ui::popup::PopupScope::Surface(sid),
-                        ),
+                        mode: OpenPopupMode::WithScope(crate::ui::popup::PopupScope::Surface(sid)),
                     }
                     .from_user_shortcut("convert_to_markdown"),
                 );
@@ -270,11 +266,7 @@ impl MainWindow {
         }
         if matches_any_binding(&kb.rename_tab, key, mods) {
             let pane_id = state.active_workspace().focused_pane;
-            if let Some(pane) = state
-                .active_workspace()
-                .pane_layout()
-                .find_pane(pane_id)
-            {
+            if let Some(pane) = state.active_workspace().pane_layout().find_pane(pane_id) {
                 let tab_index = pane.active_tab;
                 if let Some(tab) = pane.tabs.get(tab_index) {
                     let current_name = tab.display_name();
@@ -390,5 +382,4 @@ impl MainWindow {
         }
         false
     }
-
 }

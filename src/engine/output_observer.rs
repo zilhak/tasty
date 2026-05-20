@@ -401,7 +401,11 @@ fn default_file_path(id: ObserverId) -> Result<PathBuf, ObserverError> {
 
 // ── workers ──────────────────────────────────────────────────────────────
 
-fn run_memory_sink(observer_id: ObserverId, max_records: usize, rx: std::sync::mpsc::Receiver<ParsedItem>) {
+fn run_memory_sink(
+    observer_id: ObserverId,
+    max_records: usize,
+    rx: std::sync::mpsc::Receiver<ParsedItem>,
+) {
     use tasty_memory::{HOST_OWNER, MemoryValue, PutOpts, Scope, with_store};
     let mut written_keys: std::collections::VecDeque<String> =
         std::collections::VecDeque::with_capacity(max_records.min(1024));
@@ -441,14 +445,20 @@ fn run_memory_sink(observer_id: ObserverId, max_records: usize, rx: std::sync::m
                 tracing::warn!("observer {observer_id} memory put failed: {e}");
             }
             None => {
-                tracing::warn!("observer {observer_id} memory store not initialised; stopping sink");
+                tracing::warn!(
+                    "observer {observer_id} memory store not initialised; stopping sink"
+                );
                 return;
             }
         }
     }
 }
 
-fn run_file_sink(observer_id: ObserverId, mut file: File, rx: std::sync::mpsc::Receiver<ParsedItem>) {
+fn run_file_sink(
+    observer_id: ObserverId,
+    mut file: File,
+    rx: std::sync::mpsc::Receiver<ParsedItem>,
+) {
     while let Ok(item) = rx.recv() {
         let now = unix_ms_now();
         let record = json!({

@@ -57,23 +57,22 @@ pub(crate) fn handle_parse_since_mark(
             .iter()
             .filter_map(|v| v.as_str().map(str::to_string))
             .collect(),
-        Some(serde_json::Value::String(s)) => {
-            s.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect()
-        }
-        _ => tasty_output::DEFAULT_PARSER_IDS.iter().map(|s| s.to_string()).collect(),
+        Some(serde_json::Value::String(s)) => s
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect(),
+        _ => tasty_output::DEFAULT_PARSER_IDS
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
     };
 
     let text = state.read_since_mark(Some(surface_id), false);
-    let items = match tasty_output::parse_buffer(
-        &text,
-        parser_ids.iter().map(String::as_str),
-    ) {
+    let items = match tasty_output::parse_buffer(&text, parser_ids.iter().map(String::as_str)) {
         Ok(v) => v,
         Err(unknown) => {
-            return JsonRpcResponse::invalid_params(
-                id,
-                format!("unknown parser: '{unknown}'"),
-            );
+            return JsonRpcResponse::invalid_params(id, format!("unknown parser: '{unknown}'"));
         }
     };
 
@@ -86,4 +85,3 @@ pub(crate) fn handle_parse_since_mark(
         }),
     )
 }
-

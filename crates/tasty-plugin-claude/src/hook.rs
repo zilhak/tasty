@@ -12,7 +12,7 @@
 //! state 변이와 host 측 side effect 계산을 [`apply_hook`]으로 분리해 단위
 //! 테스트에서는 host 호출을 모킹하지 않고도 분기 로직을 검증할 수 있게 했다.
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tasty_plugin_sdk::{HostHandle, IpcMethodError};
 
 use crate::state::ClaudeState;
@@ -21,7 +21,10 @@ use crate::state::ClaudeState;
 #[derive(Debug, Clone, PartialEq)]
 pub enum HostCall {
     /// `surface.fire_hook { surface_id, event }`
-    FireHook { surface_id: u32, event: &'static str },
+    FireHook {
+        surface_id: u32,
+        event: &'static str,
+    },
     /// `surface.meta.set { surface_id, key, value }`
     MetaSet {
         surface_id: u32,
@@ -29,10 +32,7 @@ pub enum HostCall {
         value: String,
     },
     /// `surface.meta.unset { surface_id, key }`
-    MetaUnset {
-        surface_id: u32,
-        key: &'static str,
-    },
+    MetaUnset { surface_id: u32, key: &'static str },
     /// `telemetry.record { metric, value, op, workspace_id?, agent?, tags? }`
     ///
     /// Phase 4.6 — claude hook 이 자동 발행하는 메트릭. `agent` 는
@@ -56,12 +56,17 @@ pub fn handle_claude_hook(
         .ok_or_else(|| IpcMethodError::invalid_params("missing 'event'"))?;
 
     let surface_id = resolve_surface_id(params)?;
-    let session = params.get("session").and_then(|v| v.as_str()).map(String::from);
+    let session = params
+        .get("session")
+        .and_then(|v| v.as_str())
+        .map(String::from);
     let message = params.get("message").and_then(|v| v.as_str());
     let now_ms = now_ms();
 
     let mut calls = apply_hook(state, event, surface_id, session.as_deref())?;
-    calls.extend(telemetry_for_hook(state, event, surface_id, message, now_ms));
+    calls.extend(telemetry_for_hook(
+        state, event, surface_id, message, now_ms,
+    ));
     state.save();
 
     for call in calls {
@@ -144,7 +149,11 @@ fn extract_tokens(text: &str) -> Option<u64> {
                 }
                 if j > start {
                     let after_ok = j == bytes.len() || !bytes[j].is_ascii_alphanumeric();
-                    if after_ok && let Ok(n) = std::str::from_utf8(&bytes[start..j]).unwrap().parse::<u64>() {
+                    if after_ok
+                        && let Ok(n) = std::str::from_utf8(&bytes[start..j])
+                            .unwrap()
+                            .parse::<u64>()
+                    {
                         return Some(n);
                     }
                 }
@@ -300,7 +309,10 @@ mod tests {
         assert_eq!(state.state_of(7), "idle");
         assert!(matches!(
             calls.as_slice(),
-            [HostCall::FireHook { surface_id: 7, event: "claude-idle" }]
+            [HostCall::FireHook {
+                surface_id: 7,
+                event: "claude-idle"
+            }]
         ));
     }
 
@@ -393,14 +405,8 @@ mod tests {
 
     #[test]
     fn resolve_surface_id_prefers_explicit_param() {
-        assert_eq!(
-            resolve_surface_id(&json!({ "surface": 42 })).unwrap(),
-            42
-        );
-        assert_eq!(
-            resolve_surface_id(&json!({ "surface_id": 7 })).unwrap(),
-            7
-        );
+        assert_eq!(resolve_surface_id(&json!({ "surface": 42 })).unwrap(), 42);
+        assert_eq!(resolve_surface_id(&json!({ "surface_id": 7 })).unwrap(), 7);
     }
 
     #[test]
@@ -460,8 +466,7 @@ mod tests {
     #[test]
     fn telemetry_notification_no_match_no_record() {
         let mut state = ClaudeState::default();
-        let calls =
-            telemetry_for_hook(&mut state, "notification", 1, Some("approval needed"), 0);
+        let calls = telemetry_for_hook(&mut state, "notification", 1, Some("approval needed"), 0);
         assert!(calls.is_empty());
     }
 

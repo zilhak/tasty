@@ -93,10 +93,7 @@ pub fn draw_keybindings_tab(
                             KeybindingsSubTab::Pane,
                             t("settings.keybindings.subtab.pane"),
                         ),
-                        (
-                            KeybindingsSubTab::Tab,
-                            t("settings.keybindings.subtab.tab"),
-                        ),
+                        (KeybindingsSubTab::Tab, t("settings.keybindings.subtab.tab")),
                         (
                             KeybindingsSubTab::Surface,
                             t("settings.keybindings.subtab.surface"),
@@ -415,7 +412,6 @@ pub fn draw_keybindings_tab(
             }
         }); // end vertical
     }); // end horizontal_top
-
 }
 
 fn modifier_display(modifier: &str) -> &str {
@@ -426,7 +422,6 @@ fn modifier_display(modifier: &str) -> &str {
 }
 
 /// Preset 서브탭: 좌측 프리셋 목록, 우측 미리보기 테이블 + 적용 버튼.
-
 mod capture;
 mod entries;
 mod plugins;

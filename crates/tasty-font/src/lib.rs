@@ -10,12 +10,10 @@ use cosmic_text::{
 pub const D2CODING_FAMILY: &str = "D2Coding ligature";
 
 /// D2Coding ligature Regular ttf bytes embedded at compile time (OFL 1.1).
-pub const D2CODING_REGULAR_TTF: &[u8] =
-    include_bytes!("../assets/D2Coding-ligature-Regular.ttf");
+pub const D2CODING_REGULAR_TTF: &[u8] = include_bytes!("../assets/D2Coding-ligature-Regular.ttf");
 
 /// D2Coding ligature Bold ttf bytes embedded at compile time (OFL 1.1).
-pub const D2CODING_BOLD_TTF: &[u8] =
-    include_bytes!("../assets/D2Coding-ligature-Bold.ttf");
+pub const D2CODING_BOLD_TTF: &[u8] = include_bytes!("../assets/D2Coding-ligature-Bold.ttf");
 
 /// Font metrics for monospace grid layout.
 pub struct FontMetrics {
@@ -591,7 +589,15 @@ fn fill_rect(bitmap: &mut [u8], w: u32, _h: u32, x0: u32, y0: u32, x1: u32, y1: 
 }
 
 /// Fill a horizontal line of given thickness centred at cy, from x0 to x1.
-pub(crate) fn fill_hline(bitmap: &mut [u8], w: u32, h: u32, x0: u32, x1: u32, cy: u32, thickness: u32) {
+pub(crate) fn fill_hline(
+    bitmap: &mut [u8],
+    w: u32,
+    h: u32,
+    x0: u32,
+    x1: u32,
+    cy: u32,
+    thickness: u32,
+) {
     let half = thickness / 2;
     let y0 = cy.saturating_sub(half);
     let y1 = (cy + thickness - half).min(h);
@@ -599,7 +605,15 @@ pub(crate) fn fill_hline(bitmap: &mut [u8], w: u32, h: u32, x0: u32, x1: u32, cy
 }
 
 /// Fill a vertical line of given thickness centred at cx, from y0 to y1.
-pub(crate) fn fill_vline(bitmap: &mut [u8], w: u32, h: u32, y0: u32, y1: u32, cx: u32, thickness: u32) {
+pub(crate) fn fill_vline(
+    bitmap: &mut [u8],
+    w: u32,
+    h: u32,
+    y0: u32,
+    y1: u32,
+    cx: u32,
+    thickness: u32,
+) {
     let half = thickness / 2;
     let x0 = cx.saturating_sub(half);
     let x1 = (cx + thickness - half).min(w);

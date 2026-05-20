@@ -52,7 +52,15 @@ pub(super) fn save_cap(cap: &CostCap) -> std::result::Result<(), String> {
         expires_at: None,
         cas: None,
     };
-    let result = with_store(|s| s.put(tasty_memory::HOST_OWNER, &Scope::Global, &key, &value, &opts));
+    let result = with_store(|s| {
+        s.put(
+            tasty_memory::HOST_OWNER,
+            &Scope::Global,
+            &key,
+            &value,
+            &opts,
+        )
+    });
     match result {
         Some(Ok(_)) => Ok(()),
         Some(Err(e)) => Err(format!("memory put failed: {e}")),
@@ -88,10 +96,7 @@ pub fn handle_cap_set(
     let threshold = match params.get("threshold").and_then(|v| v.as_f64()) {
         Some(t) if t > 0.0 => t,
         _ => {
-            return JsonRpcResponse::invalid_params(
-                id,
-                "'threshold' must be a positive number",
-            );
+            return JsonRpcResponse::invalid_params(id, "'threshold' must be a positive number");
         }
     };
     let window_str = params
@@ -144,7 +149,10 @@ pub fn handle_cap_list(
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
-    let agent_filter = params.get("agent").and_then(|v| v.as_str()).map(String::from);
+    let agent_filter = params
+        .get("agent")
+        .and_then(|v| v.as_str())
+        .map(String::from);
     let mut caps = match load_all_caps() {
         Ok(c) => c,
         Err(e) => return JsonRpcResponse::error(id, -32603, e),
@@ -171,9 +179,7 @@ pub fn handle_cap_remove(
     let key = cap_key(&cap_id_str);
     let result = with_store(|s| s.delete(tasty_memory::HOST_OWNER, &Scope::Global, &key, None));
     match result {
-        Some(Ok(())) => {
-            JsonRpcResponse::success(id, json!({ "removed": true, "id": cap_id_str }))
-        }
+        Some(Ok(())) => JsonRpcResponse::success(id, json!({ "removed": true, "id": cap_id_str })),
         Some(Err(tasty_memory::MemoryError::NotFound { .. })) => {
             JsonRpcResponse::error(id, -32004, format!("not_found: {cap_id_str}"))
         }
@@ -216,7 +222,10 @@ pub fn handle_cap_status(
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
-    let agent_filter = params.get("agent").and_then(|v| v.as_str()).map(String::from);
+    let agent_filter = params
+        .get("agent")
+        .and_then(|v| v.as_str())
+        .map(String::from);
     let caps = match load_all_caps() {
         Ok(c) => c,
         Err(e) => return JsonRpcResponse::error(id, -32603, e),
@@ -264,7 +273,10 @@ pub fn handle_cap_reset(
     params: &Value,
 ) -> JsonRpcResponse {
     let by_id = params.get("id").and_then(|v| v.as_str()).map(String::from);
-    let by_agent = params.get("agent").and_then(|v| v.as_str()).map(String::from);
+    let by_agent = params
+        .get("agent")
+        .and_then(|v| v.as_str())
+        .map(String::from);
     if by_id.is_none() && by_agent.is_none() {
         return JsonRpcResponse::invalid_params(id, "Provide 'id' or 'agent'");
     }
@@ -423,7 +435,10 @@ pub(super) fn fire_require_approval(state: &mut AppState, cap: &CostCap, current
             );
         }
         Err(e) => {
-            tracing::warn!("cap require_approval: approval.request failed for cap={}: {e}", cap.id);
+            tracing::warn!(
+                "cap require_approval: approval.request failed for cap={}: {e}",
+                cap.id
+            );
         }
     }
 }
@@ -458,4 +473,3 @@ pub(super) fn fire_notify(state: &mut AppState, cap: &CostCap, current: f64) {
 // ============================================================
 // Anomaly — Phase 4.4
 // ============================================================
-

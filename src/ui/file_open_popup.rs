@@ -165,7 +165,11 @@ fn draw_file_open_content(
                         egui::Sense::click(),
                     );
                     if resp.hovered() {
-                        ui.painter().rect_filled(rect, 0.0, th.hover_overlay.to_egui_premultiplied());
+                        ui.painter().rect_filled(
+                            rect,
+                            0.0,
+                            th.hover_overlay.to_egui_premultiplied(),
+                        );
                         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
                     }
                     ui.painter().text(

@@ -27,11 +27,8 @@ fn validate_cache_key(key: &str) -> Result<()> {
         )));
     }
     for (i, c) in key.bytes().enumerate() {
-        let ok = c.is_ascii_lowercase()
-            || c.is_ascii_digit()
-            || c == b'.'
-            || c == b'_'
-            || c == b'-';
+        let ok =
+            c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'.' || c == b'_' || c == b'-';
         if !ok {
             return Err(MemoryError::InvalidKey(format!(
                 "cache key: invalid char {:?} at {i}",
@@ -76,11 +73,7 @@ pub fn cache_put(
 }
 
 /// 캐시 entry 조회. 만료 / 미존재 → `Ok(None)`.
-pub fn cache_get(
-    store: &MemoryStore,
-    workspace_id: u32,
-    key: &str,
-) -> Result<Option<MemoryEntry>> {
+pub fn cache_get(store: &MemoryStore, workspace_id: u32, key: &str) -> Result<Option<MemoryEntry>> {
     validate_cache_key(key)?;
     store.get(&Scope::Workspace(workspace_id), &storage_key(key))
 }
@@ -105,11 +98,7 @@ pub fn cache_invalidate(
 /// workspace 의 모든 캐시 entry 삭제 (owner 가 modify 권한 있는 entry 만).
 ///
 /// Returns: 삭제된 entry 수.
-pub fn cache_clear(
-    store: &mut MemoryStore,
-    owner: &str,
-    workspace_id: u32,
-) -> Result<usize> {
+pub fn cache_clear(store: &mut MemoryStore, owner: &str, workspace_id: u32) -> Result<usize> {
     let scope = Scope::Workspace(workspace_id);
     let opts = ListOpts {
         prefix: Some(CACHE_KEY_PREFIX.to_string()),
@@ -133,11 +122,7 @@ pub fn cache_list(store: &MemoryStore, workspace_id: u32) -> Result<Vec<String>>
     let entries = store.list(&Scope::Workspace(workspace_id), &opts)?;
     Ok(entries
         .into_iter()
-        .filter_map(|e| {
-            e.key
-                .strip_prefix(CACHE_KEY_PREFIX)
-                .map(|s| s.to_string())
-        })
+        .filter_map(|e| e.key.strip_prefix(CACHE_KEY_PREFIX).map(|s| s.to_string()))
         .collect())
 }
 
@@ -171,7 +156,15 @@ mod tests {
     #[test]
     fn invalidate_removes_entry() {
         let mut s = open();
-        cache_put(&mut s, HOST_OWNER, 1, "k", &MemoryValue::Text("x".into()), 60).unwrap();
+        cache_put(
+            &mut s,
+            HOST_OWNER,
+            1,
+            "k",
+            &MemoryValue::Text("x".into()),
+            60,
+        )
+        .unwrap();
         cache_invalidate(&mut s, HOST_OWNER, 1, "k").unwrap();
         assert!(cache_get(&s, 1, "k").unwrap().is_none());
     }
@@ -185,8 +178,24 @@ mod tests {
     #[test]
     fn clear_removes_only_cache_entries() {
         let mut s = open();
-        cache_put(&mut s, HOST_OWNER, 1, "a", &MemoryValue::Text("1".into()), 60).unwrap();
-        cache_put(&mut s, HOST_OWNER, 1, "b", &MemoryValue::Text("2".into()), 60).unwrap();
+        cache_put(
+            &mut s,
+            HOST_OWNER,
+            1,
+            "a",
+            &MemoryValue::Text("1".into()),
+            60,
+        )
+        .unwrap();
+        cache_put(
+            &mut s,
+            HOST_OWNER,
+            1,
+            "b",
+            &MemoryValue::Text("2".into()),
+            60,
+        )
+        .unwrap();
         // 다른 키도 추가해서 캐시만 삭제되는지 검증.
         s.put(
             HOST_OWNER,
@@ -206,8 +215,24 @@ mod tests {
     #[test]
     fn list_returns_unprefixed_keys() {
         let mut s = open();
-        cache_put(&mut s, HOST_OWNER, 1, "alpha", &MemoryValue::Text("x".into()), 60).unwrap();
-        cache_put(&mut s, HOST_OWNER, 1, "beta", &MemoryValue::Text("y".into()), 60).unwrap();
+        cache_put(
+            &mut s,
+            HOST_OWNER,
+            1,
+            "alpha",
+            &MemoryValue::Text("x".into()),
+            60,
+        )
+        .unwrap();
+        cache_put(
+            &mut s,
+            HOST_OWNER,
+            1,
+            "beta",
+            &MemoryValue::Text("y".into()),
+            60,
+        )
+        .unwrap();
         let keys = cache_list(&s, 1).unwrap();
         assert_eq!(keys, vec!["alpha".to_string(), "beta".to_string()]);
     }
@@ -215,8 +240,15 @@ mod tests {
     #[test]
     fn ttl_zero_rejected() {
         let mut s = open();
-        let err = cache_put(&mut s, HOST_OWNER, 1, "k", &MemoryValue::Text("x".into()), 0)
-            .unwrap_err();
+        let err = cache_put(
+            &mut s,
+            HOST_OWNER,
+            1,
+            "k",
+            &MemoryValue::Text("x".into()),
+            0,
+        )
+        .unwrap_err();
         assert!(matches!(err, MemoryError::InvalidKey(_)), "{err:?}");
     }
 
@@ -227,7 +259,17 @@ mod tests {
         assert!(cache_put(&mut s, HOST_OWNER, 1, "", &v, 60).is_err());
         assert!(cache_put(&mut s, HOST_OWNER, 1, "UPPER", &v, 60).is_err());
         assert!(cache_put(&mut s, HOST_OWNER, 1, "with space", &v, 60).is_err());
-        assert!(cache_put(&mut s, HOST_OWNER, 1, &"a".repeat(CACHE_KEY_MAX + 1), &v, 60).is_err());
+        assert!(
+            cache_put(
+                &mut s,
+                HOST_OWNER,
+                1,
+                &"a".repeat(CACHE_KEY_MAX + 1),
+                &v,
+                60
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -252,8 +294,24 @@ mod tests {
     #[test]
     fn list_isolated_by_workspace() {
         let mut s = open();
-        cache_put(&mut s, HOST_OWNER, 1, "a", &MemoryValue::Text("x".into()), 60).unwrap();
-        cache_put(&mut s, HOST_OWNER, 2, "b", &MemoryValue::Text("y".into()), 60).unwrap();
+        cache_put(
+            &mut s,
+            HOST_OWNER,
+            1,
+            "a",
+            &MemoryValue::Text("x".into()),
+            60,
+        )
+        .unwrap();
+        cache_put(
+            &mut s,
+            HOST_OWNER,
+            2,
+            "b",
+            &MemoryValue::Text("y".into()),
+            60,
+        )
+        .unwrap();
         assert_eq!(cache_list(&s, 1).unwrap(), vec!["a".to_string()]);
         assert_eq!(cache_list(&s, 2).unwrap(), vec!["b".to_string()]);
     }

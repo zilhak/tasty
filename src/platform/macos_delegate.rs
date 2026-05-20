@@ -8,7 +8,7 @@ use std::sync::OnceLock;
 
 use objc2::rc::Retained;
 use objc2::runtime::{AnyClass, AnyObject, Bool, Sel};
-use objc2::{msg_send, sel, AnyThread};
+use objc2::{AnyThread, msg_send, sel};
 use objc2_app_kit::{NSApplication, NSMenu, NSMenuItem};
 use objc2_foundation::{MainThreadMarker, NSString};
 use winit::event_loop::EventLoopProxy;

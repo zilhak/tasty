@@ -50,11 +50,7 @@ fn session_err_to_response(id: Value, err: SessionError) -> JsonRpcResponse {
 ///   까지 유효.
 ///
 /// 응답: `{ token, agent_id, expires_at_ms? }`.
-pub fn handle_issue(
-    caller: &CallerContext,
-    id: Value,
-    params: &Value,
-) -> JsonRpcResponse {
+pub fn handle_issue(caller: &CallerContext, id: Value, params: &Value) -> JsonRpcResponse {
     let agent_id = match params.get("agent_id").and_then(|v| v.as_str()) {
         Some(s) if !s.is_empty() => s.to_string(),
         _ => {
@@ -511,19 +507,14 @@ mod tests {
 
     #[test]
     fn grant_agent_rejects_missing_agent_id() {
-        let resp = handle_grant_agent_permission(
-            json!(1),
-            &json!({ "permission": "fs.write" }),
-        );
+        let resp = handle_grant_agent_permission(json!(1), &json!({ "permission": "fs.write" }));
         assert_eq!(resp.error.unwrap().code, -32602);
     }
 
     #[test]
     fn grant_agent_rejects_empty_permission() {
-        let resp = handle_grant_agent_permission(
-            json!(1),
-            &json!({ "agent_id": "a", "permission": "" }),
-        );
+        let resp =
+            handle_grant_agent_permission(json!(1), &json!({ "agent_id": "a", "permission": "" }));
         assert_eq!(resp.error.unwrap().code, -32602);
     }
 
@@ -540,8 +531,7 @@ mod tests {
 
     #[test]
     fn revoke_agent_rejects_missing_fields() {
-        let resp =
-            handle_revoke_agent_permission(json!(1), &json!({ "permission": "fs.write" }));
+        let resp = handle_revoke_agent_permission(json!(1), &json!({ "permission": "fs.write" }));
         assert_eq!(resp.error.unwrap().code, -32602);
         let resp = handle_revoke_agent_permission(json!(1), &json!({ "agent_id": "a" }));
         assert_eq!(resp.error.unwrap().code, -32602);
@@ -564,4 +554,3 @@ mod tests {
         }
     }
 }
-

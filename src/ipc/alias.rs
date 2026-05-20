@@ -59,10 +59,7 @@ mod tests {
         use crate::ipc::method_meta::METHOD_TABLE;
         for (_old, new) in ALIASES {
             let found = METHOD_TABLE.iter().any(|(name, _)| name == new);
-            assert!(
-                found,
-                "alias target '{new}' must exist in METHOD_TABLE"
-            );
+            assert!(found, "alias target '{new}' must exist in METHOD_TABLE");
         }
     }
 }

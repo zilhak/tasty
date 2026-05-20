@@ -16,7 +16,7 @@ use std::net::TcpStream;
 use std::time::Duration;
 
 use tasty_plugin_protocol::{
-    protocol::AuthAckEnvelope, AuthMessage, PluginEvent, PluginRequest, PluginResponse,
+    AuthMessage, PluginEvent, PluginRequest, PluginResponse, protocol::AuthAckEnvelope,
 };
 
 use crate::env::PluginEnv;
@@ -393,5 +393,4 @@ mod tests {
         );
         handle.join().expect("fake host thread");
     }
-
 }

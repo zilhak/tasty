@@ -51,9 +51,7 @@ pub struct SurfaceKindDef {
     /// html은 `"url"`).
     #[allow(clippy::type_complexity)]
     pub create: Arc<
-        dyn Fn(SurfaceId, &serde_json::Value) -> anyhow::Result<Box<dyn Surface>>
-            + Send
-            + Sync,
+        dyn Fn(SurfaceId, &serde_json::Value) -> anyhow::Result<Box<dyn Surface>> + Send + Sync,
     >,
 
     /// 영속화된 데이터(`SavedSurface::Generic.data`)에서 surface를 복원한다.
@@ -63,9 +61,7 @@ pub struct SurfaceKindDef {
     /// terminal builtin의 `restore`는 호출되지 않는다 (안전한 sentinel을 반환).
     #[allow(clippy::type_complexity)]
     pub restore: Arc<
-        dyn Fn(SurfaceId, &serde_json::Value) -> anyhow::Result<Box<dyn Surface>>
-            + Send
-            + Sync,
+        dyn Fn(SurfaceId, &serde_json::Value) -> anyhow::Result<Box<dyn Surface>> + Send + Sync,
     >,
 
     /// surface의 직렬화 가능한 영속 데이터를 반환한다. `None`이면 영속화에서 제외.

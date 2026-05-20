@@ -58,7 +58,7 @@ fn read_entry(path: &std::path::Path) -> DeepCacheEntry {
                 is_regular: false,
                 head: None,
                 mime: None,
-            }
+            };
         }
     };
     if !meta.is_file() {
@@ -128,11 +128,7 @@ pub fn evaluate_cheap(rule: &DetectorRuleKind, target: &FileTarget) -> bool {
 /// Deep 평가. cheap kind 는 `evaluate_cheap` 으로 위임, magic/MIME 만 새로 처리.
 ///
 /// `ctx` 는 같은 `identify` 호출 안에서 재사용. head/metadata 가 캐시된다.
-pub fn evaluate_deep(
-    rule: &DetectorRuleKind,
-    target: &FileTarget,
-    ctx: &mut DeepCtx,
-) -> bool {
+pub fn evaluate_deep(rule: &DetectorRuleKind, target: &FileTarget, ctx: &mut DeepCtx) -> bool {
     match rule {
         DetectorRuleKind::Magic { offset, bytes } => {
             // safety: regular file 아닌 경우 read entry 가 is_regular=false 로 표시.

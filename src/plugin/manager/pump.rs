@@ -16,8 +16,8 @@ use crate::plugin::process::PluginProcess;
 use crate::plugin::protocol::{self, PluginEvent};
 
 use super::{
-    PendingPluginCall, PendingRequestKind, PluginManager, RemoteSurfaceEntry, HEALTHCHECK_TIMEOUT,
-    PING_INTERVAL,
+    HEALTHCHECK_TIMEOUT, PING_INTERVAL, PendingPluginCall, PendingRequestKind, PluginManager,
+    RemoteSurfaceEntry,
 };
 
 impl PluginManager {
@@ -33,10 +33,7 @@ impl PluginManager {
         for (id, proc) in &self.processes {
             while let Ok(ev) = proc.event_rx.try_recv() {
                 match ev {
-                    PluginEvent::Hello {
-                        plugin_id,
-                        version,
-                    } => {
+                    PluginEvent::Hello { plugin_id, version } => {
                         hello_log.push((plugin_id.clone(), version));
                         if !self.registered_plugins.contains(&plugin_id) {
                             to_register.push(plugin_id);
@@ -115,9 +112,7 @@ impl PluginManager {
             if let Some(registry) = self.surface_registry.clone() {
                 let tx = self.host_cmd_tx.clone();
                 for plugin_id in &to_register {
-                    if let Some(pkg) =
-                        self.packages.iter().find(|p| &p.manifest.id == plugin_id)
-                    {
+                    if let Some(pkg) = self.packages.iter().find(|p| &p.manifest.id == plugin_id) {
                         for decl in &pkg.manifest.surface_kinds {
                             match decl.rendering {
                                 crate::plugin::manifest::SurfaceKindRendering::Remote => {
@@ -291,5 +286,4 @@ impl PluginManager {
             }
         }
     }
-
 }

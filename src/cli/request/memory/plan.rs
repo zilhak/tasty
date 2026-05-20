@@ -1,13 +1,16 @@
 use crate::cli::commands::MemoryPlanCommands;
 
-
-
 pub(super) fn memory_plan_command_to_method_params(
     command: &MemoryPlanCommands,
 ) -> (&'static str, serde_json::Value) {
     use MemoryPlanCommands::*;
     match command {
-        Create { workspace, plan_id, title, steps } => {
+        Create {
+            workspace,
+            plan_id,
+            title,
+            steps,
+        } => {
             let mut p = serde_json::json!({
                 "workspace_id": workspace,
                 "plan_id": plan_id,
@@ -37,7 +40,13 @@ pub(super) fn memory_plan_command_to_method_params(
             "memory.plan_delete",
             serde_json::json!({ "workspace_id": workspace, "plan_id": plan_id }),
         ),
-        AddStep { workspace, plan_id, step, position, cas } => {
+        AddStep {
+            workspace,
+            plan_id,
+            step,
+            position,
+            cas,
+        } => {
             let step_v: serde_json::Value = match serde_json::from_str(step) {
                 Ok(v) => v,
                 Err(e) => {
@@ -58,7 +67,12 @@ pub(super) fn memory_plan_command_to_method_params(
             }
             ("memory.plan_add_step", p)
         }
-        RemoveStep { workspace, plan_id, step_id, cas } => {
+        RemoveStep {
+            workspace,
+            plan_id,
+            step_id,
+            cas,
+        } => {
             let mut p = serde_json::json!({
                 "workspace_id": workspace,
                 "plan_id": plan_id,
@@ -69,7 +83,15 @@ pub(super) fn memory_plan_command_to_method_params(
             }
             ("memory.plan_remove_step", p)
         }
-        UpdateStep { workspace, plan_id, step_id, state, notes, clear_notes, cas } => {
+        UpdateStep {
+            workspace,
+            plan_id,
+            step_id,
+            state,
+            notes,
+            clear_notes,
+            cas,
+        } => {
             let mut p = serde_json::json!({
                 "workspace_id": workspace,
                 "plan_id": plan_id,
@@ -90,4 +112,3 @@ pub(super) fn memory_plan_command_to_method_params(
         }
     }
 }
-

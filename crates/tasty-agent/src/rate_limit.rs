@@ -127,11 +127,7 @@ impl<'a> RateLimitStore<'a> {
     }
 
     /// (agent, metric) pair 로 찾아본다 — `set` 의 upsert 매칭에 사용.
-    pub fn find_by_agent_metric(
-        &self,
-        agent: &str,
-        metric: &str,
-    ) -> Result<Option<RateLimit>> {
+    pub fn find_by_agent_metric(&self, agent: &str, metric: &str) -> Result<Option<RateLimit>> {
         let all = self.list()?;
         Ok(all
             .into_iter()
@@ -289,14 +285,10 @@ mod tests {
             .set("a1", "ipc_calls", 3, 60_000, None, 1_000_000)
             .unwrap();
         for i in 0..3 {
-            let r = store
-                .try_consume("a1", "ipc_calls", 1, 1_000_000)
-                .unwrap();
+            let r = store.try_consume("a1", "ipc_calls", 1, 1_000_000).unwrap();
             assert!(r.allowed, "consume #{i} should be allowed");
         }
-        let r = store
-            .try_consume("a1", "ipc_calls", 1, 1_000_000)
-            .unwrap();
+        let r = store.try_consume("a1", "ipc_calls", 1, 1_000_000).unwrap();
         assert!(!r.allowed, "4th consume should be throttled");
         assert_eq!(r.tokens_left, 0.0);
     }

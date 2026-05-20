@@ -90,11 +90,8 @@ pub fn validate_key(key: &str) -> Result<(), String> {
         return Err(format!("key too long: {} > 256", key.len()));
     }
     for (i, c) in key.bytes().enumerate() {
-        let ok = c.is_ascii_lowercase()
-            || c.is_ascii_digit()
-            || c == b'.'
-            || c == b'_'
-            || c == b'-';
+        let ok =
+            c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'.' || c == b'_' || c == b'-';
         if !ok {
             return Err(format!("invalid char at {i}: {:?}", c as char));
         }
@@ -124,7 +121,14 @@ mod tests {
 
     #[test]
     fn scope_parse_rejects_invalid() {
-        for bad in ["", "garbage", "surface:", "surface:abc", "window:-1", "account:"] {
+        for bad in [
+            "",
+            "garbage",
+            "surface:",
+            "surface:abc",
+            "window:-1",
+            "account:",
+        ] {
             assert!(Scope::parse(bad).is_err(), "should reject: {bad}");
         }
     }
@@ -137,7 +141,13 @@ mod tests {
 
     #[test]
     fn key_validation_accepts_normal() {
-        for k in ["a", "task.123.plan", "tasty.role", "plugin.codex.last-run", "x-y_z.0"] {
+        for k in [
+            "a",
+            "task.123.plan",
+            "tasty.role",
+            "plugin.codex.last-run",
+            "x-y_z.0",
+        ] {
             validate_key(k).expect(k);
         }
     }

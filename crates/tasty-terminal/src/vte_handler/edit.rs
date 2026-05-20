@@ -1,6 +1,5 @@
 //! VTE handler: edit 도메인.
 
-
 use termwiz::cell::unicode_column_width;
 use termwiz::color::ColorAttribute;
 use termwiz::escape::csi::{Edit, EraseInDisplay, EraseInLine};
@@ -235,5 +234,4 @@ impl Terminal {
             }
         }
     }
-
 }

@@ -685,8 +685,12 @@ impl MemoryStore {
         let mut matched: Vec<MemoryEntry> = candidates
             .into_iter()
             .filter(|e| {
-                let MemoryValue::Json(v) = &e.value else { return false };
-                lookup_dot_path(v, path).map(|hit| hit == expected).unwrap_or(false)
+                let MemoryValue::Json(v) = &e.value else {
+                    return false;
+                };
+                lookup_dot_path(v, path)
+                    .map(|hit| hit == expected)
+                    .unwrap_or(false)
             })
             .collect();
 
@@ -891,12 +895,7 @@ impl MemoryStore {
 
     /// Secret get. 응답 entry 의 `owner` 필드는 `None` 으로 두어 plugin 에게
     /// 추상화 누수를 만들지 않는다.
-    pub fn get_secret(
-        &self,
-        owner: &str,
-        scope: &Scope,
-        key: &str,
-    ) -> Result<Option<MemoryEntry>> {
+    pub fn get_secret(&self, owner: &str, scope: &Scope, key: &str) -> Result<Option<MemoryEntry>> {
         validate_owner(owner)?;
         validate_key(key).map_err(MemoryError::InvalidKey)?;
         let scope_token = scope.as_token();
@@ -1177,9 +1176,7 @@ impl MemoryStore {
         let token = scope.as_token();
         // Regular keys 발화용 수집 (secret 은 발화 안 함).
         let cleared_keys: Vec<String> = {
-            let mut stmt = self
-                .conn
-                .prepare("SELECT key FROM memory WHERE scope=?1")?;
+            let mut stmt = self.conn.prepare("SELECT key FROM memory WHERE scope=?1")?;
             let rows = stmt.query_map(params![&token], |r| r.get::<_, String>(0))?;
             rows.collect::<rusqlite::Result<Vec<_>>>()?
         };
@@ -1429,7 +1426,6 @@ fn serialize_value(value: &MemoryValue) -> Result<Vec<u8>> {
         .to_bytes()
         .map_err(|e| MemoryError::InvalidContentType(e.to_string()))
 }
-
 
 #[cfg(test)]
 mod tests;

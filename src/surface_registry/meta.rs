@@ -54,7 +54,9 @@ impl SurfaceMetaStore {
 
     /// 키 get. 만료/없음/비문자열 값은 `None`.
     pub fn get(surface_id: u32, key: &str) -> Option<String> {
-        let entry = with_store(|s| s.get(&Scope::Surface(surface_id), key))?.ok().flatten()?;
+        let entry = with_store(|s| s.get(&Scope::Surface(surface_id), key))?
+            .ok()
+            .flatten()?;
         match entry.value {
             MemoryValue::Text(s) => Some(s),
             MemoryValue::Json(v) => {
@@ -76,10 +78,8 @@ impl SurfaceMetaStore {
 
     /// 키 unset. 기존 파일 기반 구현은 키가 없어도 silently OK 였으므로 NotFound 무시.
     pub fn unset(surface_id: u32, key: &str) -> io::Result<()> {
-        let result = with_store(|s| {
-            s.delete(HOST_OWNER, &Scope::Surface(surface_id), key, None)
-        })
-        .ok_or_else(store_unavailable)?;
+        let result = with_store(|s| s.delete(HOST_OWNER, &Scope::Surface(surface_id), key, None))
+            .ok_or_else(store_unavailable)?;
         match result {
             Ok(()) => Ok(()),
             Err(MemoryError::NotFound { .. }) => Ok(()),
@@ -90,7 +90,10 @@ impl SurfaceMetaStore {
     /// 키 list. 문자열로 변환 가능한 값만 반환.
     pub fn list(surface_id: u32) -> HashMap<String, String> {
         let entries = match with_store(|s| {
-            s.list(&Scope::Surface(surface_id), &tasty_memory::ListOpts::default())
+            s.list(
+                &Scope::Surface(surface_id),
+                &tasty_memory::ListOpts::default(),
+            )
         }) {
             Some(Ok(v)) => v,
             Some(Err(e)) => {

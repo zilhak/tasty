@@ -6,7 +6,9 @@ use crate::cli::commands::{DebugCommands, EventBusCommands};
 
 use super::resolve_surface_id;
 
-pub(super) fn debug_command_to_method_params(command: &DebugCommands) -> (&'static str, serde_json::Value) {
+pub(super) fn debug_command_to_method_params(
+    command: &DebugCommands,
+) -> (&'static str, serde_json::Value) {
     match command {
         DebugCommands::Info => ("debug.info", serde_json::json!({})),
         DebugCommands::ImeEnable => ("surface.ime_enable", serde_json::json!({})),
@@ -165,4 +167,3 @@ pub(super) fn event_bus_command_to_method_params(
         ),
     }
 }
-

@@ -8,9 +8,7 @@
 //! 본 모듈에서 `terminal.get_cwd()` 로 직접 추출. startup_command 는 capture
 //! 시점에는 None — 사용자가 PresetWindow 에서 편집한다.
 
-use tasty_core::model::{
-    Pane, PaneNode, SurfaceLayout, Tab, Workspace,
-};
+use tasty_core::model::{Pane, PaneNode, SurfaceLayout, Tab, Workspace};
 
 use crate::model::{
     PanePreset, PresetPane, PresetPaneNode, PresetSplitDirection, PresetSurface,
@@ -28,8 +26,8 @@ pub struct CapturedSurfaceMeta {
 ///
 /// 호출자(본 바이너리) 가 만들어 넘긴다. 비-terminal surface 의 kind/params 추출용.
 /// None 반환 시 leaf 전체가 None 으로 전파 → 해당 preset 캡처 실패.
-pub type CaptureFn<'a> = &'a mut dyn FnMut(&dyn tasty_core::model::Surface)
-    -> Option<CapturedSurfaceMeta>;
+pub type CaptureFn<'a> =
+    &'a mut dyn FnMut(&dyn tasty_core::model::Surface) -> Option<CapturedSurfaceMeta>;
 
 #[derive(Debug, Default, Clone)]
 pub struct CaptureOptions {
@@ -146,7 +144,10 @@ fn capture_surface(
     let meta = capture_fn(surface)?;
     // terminal kind 면 cwd 추출. 다른 kind 는 params 만.
     let (cwd, startup_command) = if let Some(ts) = surface.as_terminal_surface() {
-        let cwd = ts.terminal.get_cwd().map(|p| p.to_string_lossy().to_string());
+        let cwd = ts
+            .terminal
+            .get_cwd()
+            .map(|p| p.to_string_lossy().to_string());
         (cwd, None)
     } else {
         (None, None)

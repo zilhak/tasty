@@ -54,12 +54,8 @@ pub fn register_remote_kind(
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| kind_static.to_string());
-            let surface = RemoteSurface::new(
-                sid,
-                kind_static,
-                plugin_id_for_create.clone(),
-                initial_name,
-            );
+            let surface =
+                RemoteSurface::new(sid, kind_static, plugin_id_for_create.clone(), initial_name);
             let handles = surface.handles();
             if let Err(e) = tx_create.send(HostCmd::RemoteSurfaceCreated {
                 surface_id: sid,

@@ -372,6 +372,5 @@ impl Terminal {
     }
 }
 
-
 #[cfg(test)]
 mod tests;

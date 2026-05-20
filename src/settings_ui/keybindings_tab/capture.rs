@@ -1,4 +1,3 @@
-
 use super::KeyCapture;
 
 pub fn capture_winit_key_combo(
@@ -40,8 +39,8 @@ pub fn capture_winit_key_combo(
     }
 
     // 물리 키에서 키 이름 결정 (IME/Option 변환에 영향받지 않도록)
-    let key_name = physical_key_to_name(&event.physical_key)
-        .or_else(|| named_key_to_name(&event.logical_key));
+    let key_name =
+        physical_key_to_name(&event.physical_key).or_else(|| named_key_to_name(&event.logical_key));
     let Some(key_name) = key_name else {
         return KeyCapture::None;
     };

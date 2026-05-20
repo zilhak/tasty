@@ -62,12 +62,7 @@ impl Terminal {
             for i in scrollback_start..scrollback_total {
                 let line_text = self
                     .scrollback_line_owned(i)
-                    .map(|cells| {
-                        cells
-                            .iter()
-                            .map(|(s, _)| s.as_str())
-                            .collect::<String>()
-                    })
+                    .map(|cells| cells.iter().map(|(s, _)| s.as_str()).collect::<String>())
                     .unwrap_or_default();
                 result.push_str(line_text.trim_end());
                 result.push('\n');
@@ -230,5 +225,4 @@ impl Terminal {
             }
         }
     }
-
 }

@@ -106,8 +106,7 @@ impl PluginManager {
         // command registry에 모든 발견된 plugin의 commands를 등록.
         // disabled 여부와 무관 — 설정 UI는 비활성 plugin도 단축키 항목을
         // 보여줘야 사용자가 미리 키를 잡아둘 수 있다.
-        self.command_registry =
-            crate::plugin::command_registry::PluginCommandRegistry::new();
+        self.command_registry = crate::plugin::command_registry::PluginCommandRegistry::new();
         for pkg in &self.packages {
             self.command_registry.register_plugin(&pkg.manifest);
             // i18n namespace 등록 — 비활성 plugin도 설정 UI에서 command title을
@@ -173,10 +172,7 @@ impl PluginManager {
         let listener = match &self.listener {
             Some(l) => l,
             None => {
-                tracing::warn!(
-                    "plugin '{}' start skipped — no listener",
-                    pkg.manifest.id
-                );
+                tracing::warn!("plugin '{}' start skipped — no listener", pkg.manifest.id);
                 return;
             }
         };
@@ -205,9 +201,7 @@ impl PluginManager {
                 }
                 // manifest의 ipc_namespace contribute를 registry에 흡수.
                 for ns in &pkg.manifest.contributes.ipc_namespace {
-                    if let Err(e) =
-                        self.ipc_namespaces.register(&pkg.manifest.id, &ns.prefix)
-                    {
+                    if let Err(e) = self.ipc_namespaces.register(&pkg.manifest.id, &ns.prefix) {
                         tracing::warn!(
                             "plugin '{}' ipc namespace registration failed: {}",
                             pkg.manifest.id,

@@ -16,7 +16,9 @@
 
 ## pre-commit (빠른 검사, 1-3초)
 
-staged 된 `.rs` 파일만 검사 (변경 없는 파일은 건너뜀).
+staged 된 `.rs` 파일만 검사. **C.6/C.8/C.9/C.11/C.12 는 staged diff 의 추가 line
+만 검사** — 기존 코드는 통과시키고 새로 도입된 위반만 잡는다. A.1 (mod/use 순서)
+와 A.2 (cargo fmt) 는 파일 전체/워크스페이스 검사.
 
 | ID | 검사 | 목적 |
 |----|------|------|
@@ -32,8 +34,8 @@ staged 된 `.rs` 파일만 검사 (변경 없는 파일은 건너뜀).
 
 - **C.8 색상**: `src/theme.rs`, `crates/tasty-core/src/theme/` — Theme 정의 자체.
 - **C.9 egui::Window**: `src/ui/popup/`, `src/ui/popup_defs.rs` — popup 인프라.
-- **C.11 println**: `src/main.rs`, `src/cli/`, `src/boot/cli_routing.rs` — CLI 출력
-  자체가 본질.
+- **C.11 println**: `src/main.rs`, `src/cli/`, `src/boot/cli_routing.rs`,
+  `crates/tasty-tui-simulator/` — CLI 출력 자체가 본질.
 
 ## pre-push (무거운 검사, 수십초)
 

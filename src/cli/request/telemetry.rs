@@ -203,10 +203,7 @@ pub(super) fn telemetry_cap_command_to_method_params(
             }
             ("telemetry.cap.list", p)
         }
-        Remove { id } => (
-            "telemetry.cap.remove",
-            serde_json::json!({ "id": id }),
-        ),
+        Remove { id } => ("telemetry.cap.remove", serde_json::json!({ "id": id })),
         Status { agent } => {
             let mut p = serde_json::json!({});
             if let Some(a) = agent {
@@ -231,8 +228,6 @@ pub(super) fn telemetry_cap_command_to_method_params(
     }
 }
 
-
 // ============================================================
 // agent.task_* CLI mapping
 // ============================================================
-

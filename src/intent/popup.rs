@@ -35,9 +35,7 @@ fn open(state: &mut AppState, id: &'static str, mode: &OpenPopupMode) {
         OpenPopupMode::Default => state.popups.open(id),
         OpenPopupMode::CenteredFocused => state.popups.open_centered_focused(id),
         OpenPopupMode::WithScope(scope) => state.popups.open_with_scope(id, scope.clone()),
-        OpenPopupMode::AtTopOfScope(scope) => {
-            state.popups.open_at_top_of_scope(id, scope.clone())
-        }
+        OpenPopupMode::AtTopOfScope(scope) => state.popups.open_at_top_of_scope(id, scope.clone()),
         OpenPopupMode::AtFocused(pos) => state.popups.open_at_focused(id, *pos),
     }
 }
@@ -70,17 +68,26 @@ mod tests {
     #[test]
     fn second_open_intent_for_same_id_is_deduped() {
         let mut state = make_state();
-        handle(&mut state, &dispatched_open("test_popup", OpenPopupMode::Default));
+        handle(
+            &mut state,
+            &dispatched_open("test_popup", OpenPopupMode::Default),
+        );
         assert!(state.popups.is_open("test_popup"));
         // 두 번째 동일 id OpenPopup — dedup 무시 (state 변동 없음).
-        handle(&mut state, &dispatched_open("test_popup", OpenPopupMode::CenteredFocused));
+        handle(
+            &mut state,
+            &dispatched_open("test_popup", OpenPopupMode::CenteredFocused),
+        );
         assert!(state.popups.is_open("test_popup"));
     }
 
     #[test]
     fn close_intent_closes_popup() {
         let mut state = make_state();
-        handle(&mut state, &dispatched_open("test_popup", OpenPopupMode::Default));
+        handle(
+            &mut state,
+            &dispatched_open("test_popup", OpenPopupMode::Default),
+        );
         assert!(state.popups.is_open("test_popup"));
         handle(&mut state, &dispatched_close("test_popup"));
         assert!(!state.popups.is_open("test_popup"));
@@ -105,10 +112,7 @@ mod tests {
         let mut state = make_state();
         handle(
             &mut state,
-            &dispatched_open(
-                "test_popup",
-                OpenPopupMode::WithScope(PopupScope::Window),
-            ),
+            &dispatched_open("test_popup", OpenPopupMode::WithScope(PopupScope::Window)),
         );
         assert!(state.popups.is_open("test_popup"));
     }

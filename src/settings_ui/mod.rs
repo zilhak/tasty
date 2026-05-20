@@ -86,7 +86,8 @@ pub struct SettingsUiState {
     file_handler_sub_tab: FileHandlerSubTab,
     /// FileHandler 탭의 Extension Mapping draft. None 이면 첫 진입 시 registry 에서 초기화.
     /// 키 = 확장자 (소문자, 점 없음), 값 = 정렬된 detector id 리스트 (빈 리스트 = 클리어).
-    pub(crate) extension_priority_draft: Option<std::collections::BTreeMap<String, Vec<DetectorId>>>,
+    pub(crate) extension_priority_draft:
+        Option<std::collections::BTreeMap<String, Vec<DetectorId>>>,
     /// 사용자가 새 확장자 추가 시 입력하는 텍스트 (Extension Mapping sub-tab).
     pub(crate) extension_priority_new_input: String,
     /// FileHandler 탭의 Detectors/Handlers sub-tab 편집 draft. Save 시 registry 에 commit +
@@ -211,16 +212,13 @@ pub fn draw_settings_panel(
                     result = Some(false);
                 }
                 if ui.button(t("button.save")).clicked() {
-                    let prev_restore_terminal_content =
-                        settings.general.restore_terminal_content;
+                    let prev_restore_terminal_content = settings.general.restore_terminal_content;
                     if let Some(draft) = &ui_state.draft {
                         *settings = draft.clone();
                     }
                     // restore_terminal_content 를 끈 경우 기존에 쌓인 scrollback
                     // 파일을 모두 정리 (사용자가 더 이상 안 쓴다고 명시).
-                    if prev_restore_terminal_content
-                        && !settings.general.restore_terminal_content
-                    {
+                    if prev_restore_terminal_content && !settings.general.restore_terminal_content {
                         crate::scrollback_store::clear_all();
                     }
                     if let Some(bashrc) = &ui_state.bashrc_user_draft {
@@ -228,7 +226,8 @@ pub fn draw_settings_panel(
                     }
                     // Apply the selected theme preset at runtime
                     let presets = crate::theme::presets();
-                    if let Some(preset) = presets.iter().find(|p| p.id == settings.appearance.theme) {
+                    if let Some(preset) = presets.iter().find(|p| p.id == settings.appearance.theme)
+                    {
                         crate::theme::set_theme(preset.theme);
                     }
                     // FileHandler 탭의 Extension Mapping + Detectors/Handlers 편집 draft 를
@@ -353,8 +352,7 @@ pub fn draw_settings_panel(
             // intent-exempt: `ui_state.popups` 는 settings 윈도우 내부의 별도 PopupManager.
             // host Intent 큐(AppState.popups) 와 별개 — sub-modal 내부 lifecycle 이므로
             // 직접 호출 유지.
-            if ui_state.pending_binding.is_some()
-                && !ui_state.popups.is_open("keybinding_conflict")
+            if ui_state.pending_binding.is_some() && !ui_state.popups.is_open("keybinding_conflict")
             {
                 ui_state.popups.open_centered_focused("keybinding_conflict");
             }

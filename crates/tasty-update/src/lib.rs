@@ -100,7 +100,10 @@ pub fn check_latest(
         return Ok(None);
     }
 
-    let tag_clean = release.tag_name.strip_prefix('v').unwrap_or(&release.tag_name);
+    let tag_clean = release
+        .tag_name
+        .strip_prefix('v')
+        .unwrap_or(&release.tag_name);
     let parsed = Version::parse(tag_clean).map_err(|e| UpdateError::InvalidRemote {
         tag: release.tag_name.clone(),
         source: e,

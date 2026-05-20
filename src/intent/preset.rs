@@ -403,12 +403,9 @@ pub fn capture_inner(
                             } else {
                                 base
                             };
-                            let preset = TabPreset::from_tab(
-                                tab,
-                                &mut capture,
-                                CaptureOptions::default(),
-                            )
-                            .ok_or_else(|| "tab capture failed".to_string())?;
+                            let preset =
+                                TabPreset::from_tab(tab, &mut capture, CaptureOptions::default())
+                                    .ok_or_else(|| "tab capture failed".to_string())?;
                             return Ok((ClonedPreset::Tab(preset), base));
                         }
                     }

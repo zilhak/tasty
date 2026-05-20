@@ -173,7 +173,6 @@ pub fn draw_image(ui: &mut egui::Ui, panel: &mut ImagePanel, view: &mut ImageVie
     }
 }
 
-
 mod controls;
 mod popups;
 mod selection;

@@ -10,10 +10,7 @@ use crate::window;
 impl App {
     /// PresetWindow 를 연다. 이미 열려 있으면 새 윈도우를 만들지 않고 기존 윈도우에
     /// 포커스만 옮긴다 (엔진 전역 단일 인스턴스).
-    pub(crate) fn open_preset_window(
-        &mut self,
-        event_loop: &winit::event_loop::ActiveEventLoop,
-    ) {
+    pub(crate) fn open_preset_window(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         if let Some(id) = self.preset_window_id {
             if let Some(w) = self.windows.get(&id) {
                 w.base().winit.focus_window();

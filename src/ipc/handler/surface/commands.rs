@@ -16,16 +16,16 @@ pub(crate) fn handle_commands(
         Ok(sid) => sid,
         Err(e) => return e,
     };
-    let limit = params.get("limit").and_then(|v| v.as_u64()).map(|v| v as usize);
+    let limit = params
+        .get("limit")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as usize);
     let since = params.get("since").and_then(|v| v.as_i64());
     let entries = match read_command_entries(surface_id, limit, since) {
         Ok(v) => v,
         Err(e) => return e.into_response(id),
     };
-    JsonRpcResponse::success(
-        id,
-        json!({ "surface_id": surface_id, "commands": entries }),
-    )
+    JsonRpcResponse::success(id, json!({ "surface_id": surface_id, "commands": entries }))
 }
 
 /// `surface.last_command` — 가장 최근 record. 없으면 `null`.
@@ -43,10 +43,7 @@ pub(crate) fn handle_last_command(
         Err(e) => return e.into_response(id),
     };
     let last = entries.into_iter().next_back();
-    JsonRpcResponse::success(
-        id,
-        json!({ "surface_id": surface_id, "command": last }),
-    )
+    JsonRpcResponse::success(id, json!({ "surface_id": surface_id, "command": last }))
 }
 
 /// `surface.command_at` — 0-based 인덱스 (음수면 끝에서부터). 범위 밖이면 `null`.
@@ -128,4 +125,3 @@ fn read_command_entries(
         .collect();
     Ok(out)
 }
-

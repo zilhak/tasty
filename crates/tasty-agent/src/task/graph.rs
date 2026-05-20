@@ -52,10 +52,7 @@ impl<'a> TaskGraph<'a> {
                     0 => self.dfs_cycle(dep_ref, color, stack)?,
                     1 => {
                         // cycle: stack의 dep_ref 이후 부분을 반환
-                        let from = stack
-                            .iter()
-                            .position(|t| *t == dep_ref)
-                            .unwrap_or(0);
+                        let from = stack.iter().position(|t| *t == dep_ref).unwrap_or(0);
                         let cycle: Vec<TaskId> =
                             stack[from..].iter().map(|t| (*t).clone()).collect();
                         return Err(AgentError::DependencyCycle(cycle));
@@ -144,5 +141,3 @@ impl<'a> TaskGraph<'a> {
 // ============================================================
 // 영속 (memory-backed)
 // ============================================================
-
-

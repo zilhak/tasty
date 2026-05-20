@@ -66,9 +66,7 @@ impl App {
     ) {
         use crate::intent::Intent;
         match &intent.body {
-            Intent::OpenPopup { .. }
-            | Intent::ClosePopup { .. }
-            | Intent::TogglePopup { .. } => {
+            Intent::OpenPopup { .. } | Intent::ClosePopup { .. } | Intent::TogglePopup { .. } => {
                 crate::intent::popup::handle(state, intent);
             }
             Intent::ApplyPreset { .. }

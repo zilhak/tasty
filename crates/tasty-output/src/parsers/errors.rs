@@ -145,8 +145,9 @@ static PY_FRAME_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"^\s*File "(?P<path>[^"]+)", line (?P<line>\d+)(?:, in (?P<func>.+))?\s*$"#)
         .unwrap()
 });
-static PY_EXC_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^(?P<exc>[A-Z][A-Za-z0-9_.]*Error|[A-Z][A-Za-z0-9_.]*Exception|Exception|KeyboardInterrupt|SystemExit|StopIteration|GeneratorExit)(?::\s*(?P<msg>.+))?$").unwrap());
+static PY_EXC_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^(?P<exc>[A-Z][A-Za-z0-9_.]*Error|[A-Z][A-Za-z0-9_.]*Exception|Exception|KeyboardInterrupt|SystemExit|StopIteration|GeneratorExit)(?::\s*(?P<msg>.+))?$").unwrap()
+});
 
 static RUST_PANIC_HEAD: LazyLock<Regex> = LazyLock::new(|| {
     // thread 'main' panicked at 'msg', src/main.rs:10:5
@@ -174,10 +175,7 @@ static NODE_FRAME_RE: LazyLock<Regex> = LazyLock::new(|| {
 
 static JAVA_FRAME_RE: LazyLock<Regex> = LazyLock::new(|| {
     // "    at com.example.Foo.bar(Foo.java:42)"
-    Regex::new(
-        r"^\s*at\s+(?P<func>[\w.$<>]+)\((?P<file>[^:)]+)(?::(?P<line>\d+))?\)\s*$",
-    )
-    .unwrap()
+    Regex::new(r"^\s*at\s+(?P<func>[\w.$<>]+)\((?P<file>[^:)]+)(?::(?P<line>\d+))?\)\s*$").unwrap()
 });
 
 impl Parser for StackTraceParser {
@@ -254,8 +252,7 @@ impl Parser for StackTraceParser {
             if let Some(caps) = RUST_PANIC_HEAD.captures(line) {
                 let start = i;
                 let panic_path = caps.name("path").unwrap().as_str().to_string();
-                let panic_line: Option<u32> =
-                    caps.name("line").unwrap().as_str().parse().ok();
+                let panic_line: Option<u32> = caps.name("line").unwrap().as_str().parse().ok();
                 let panic_col: Option<u32> = caps.name("col").unwrap().as_str().parse().ok();
                 let thread = caps.name("thread").unwrap().as_str().to_string();
                 let msg = caps.name("msg").map(|m| m.as_str().to_string());
@@ -344,4 +341,3 @@ impl Parser for StackTraceParser {
 // ============================================================
 // test_result (single-line summaries, but parser-level)
 // ============================================================
-

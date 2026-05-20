@@ -3,10 +3,15 @@ use serde_json::{Value, json};
 use crate::ipc::caller::CallerContext;
 use crate::ipc::protocol::JsonRpcResponse;
 use crate::state::AppState;
-use tasty_agent::{AgentError, OnFailure, ReducerInput, ReducerStrategy, Task, TaskCommand, TaskGraph, TaskId, TaskState, TaskStore, reduce_with_custom};
+use tasty_agent::{
+    AgentError, OnFailure, ReducerInput, ReducerStrategy, Task, TaskCommand, TaskGraph, TaskId,
+    TaskState, TaskStore, reduce_with_custom,
+};
 use tasty_memory::with_store;
 
-use super::{agent_err_to_response, escape_dot, now_ms, run_store, task_id_param, workspace_id_param};
+use super::{
+    agent_err_to_response, escape_dot, now_ms, run_store, task_id_param, workspace_id_param,
+};
 
 pub fn handle_task_create(
     state: &mut AppState,
@@ -48,7 +53,15 @@ pub fn handle_task_create(
 
     let ts = now_ms();
     run_store(state, id, move |store| {
-        store.create(workspace_id, name, command, depends_on, on_failure, metadata, ts)
+        store.create(
+            workspace_id,
+            name,
+            command,
+            depends_on,
+            on_failure,
+            metadata,
+            ts,
+        )
     })
 }
 
@@ -121,7 +134,9 @@ pub fn handle_task_get(
         None => JsonRpcResponse::error(id, -32603, "memory store not initialized"),
         Some(Err(e)) => agent_err_to_response(id, e),
         Some(Ok(None)) => JsonRpcResponse::error(id, -32004, &format!("task not found: {task_id}")),
-        Some(Ok(Some(t))) => JsonRpcResponse::success(id, serde_json::to_value(t).unwrap_or(Value::Null)),
+        Some(Ok(Some(t))) => {
+            JsonRpcResponse::success(id, serde_json::to_value(t).unwrap_or(Value::Null))
+        }
     }
 }
 
@@ -282,9 +297,9 @@ pub fn handle_task_graph(
             let edges: Vec<Value> = tasks
                 .iter()
                 .flat_map(|t| {
-                    t.depends_on.iter().map(move |d| {
-                        json!({"from": d, "to": t.id})
-                    })
+                    t.depends_on
+                        .iter()
+                        .map(move |d| json!({"from": d, "to": t.id}))
                 })
                 .collect();
             JsonRpcResponse::success(
@@ -345,10 +360,7 @@ pub fn handle_task_reduce(
                 Err(e) => return Err(e),
             };
             let succeeded = matches!(task.state, TaskState::Succeeded);
-            let output = task
-                .result
-                .and_then(|r| r.output)
-                .unwrap_or(Value::Null);
+            let output = task.result.and_then(|r| r.output).unwrap_or(Value::Null);
             out.push(ReducerInput { succeeded, output });
         }
         Ok(out)

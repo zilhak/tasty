@@ -7,14 +7,14 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use super::types::{
-    HookMode, Manifest, Permission, PopupTrigger, ToolAction, HOOK_TIMEOUT_MS_MAX,
-    HOST_API_VERSION, MANIFEST_VERSION,
+    HOOK_TIMEOUT_MS_MAX, HOST_API_VERSION, HookMode, MANIFEST_VERSION, Manifest, Permission,
+    PopupTrigger, ToolAction,
 };
 use super::validators::{
     event_pattern_covers, event_pattern_namespace, is_reserved_cli_name,
-    is_reserved_event_namespace, is_reserved_ipc_prefix, is_valid_cli_name,
-    is_valid_event_key, is_valid_event_pattern, is_valid_ipc_prefix, is_valid_kind,
-    is_valid_plugin_id, is_valid_tool_id,
+    is_reserved_event_namespace, is_reserved_ipc_prefix, is_valid_cli_name, is_valid_event_key,
+    is_valid_event_pattern, is_valid_ipc_prefix, is_valid_kind, is_valid_plugin_id,
+    is_valid_tool_id,
 };
 
 impl Manifest {
@@ -98,11 +98,7 @@ impl Manifest {
             anyhow::bail!("extends.plugin_id must differ from this plugin's own id");
         }
         if let Err(e) = semver::VersionReq::parse(&decl.version_req) {
-            anyhow::bail!(
-                "invalid extends.version_req '{}': {}",
-                decl.version_req,
-                e
-            );
+            anyhow::bail!("invalid extends.version_req '{}': {}", decl.version_req, e);
         }
         if decl.api_version != HOST_API_VERSION {
             anyhow::bail!(
@@ -265,10 +261,7 @@ impl Manifest {
                 anyhow::bail!("cli name '{}' is reserved by the host", cli.name);
             }
             if !seen_cli_names.insert(cli.name.clone()) {
-                anyhow::bail!(
-                    "cli name '{}' declared twice in this manifest",
-                    cli.name
-                );
+                anyhow::bail!("cli name '{}' declared twice in this manifest", cli.name);
             }
 
             let mut seen_sub_names = HashSet::new();
@@ -352,11 +345,7 @@ impl Manifest {
 
         // [[contributes.tool]] 검증.
         if !self.contributes.tool.is_empty() {
-            if !self
-                .permissions
-                .iter()
-                .any(|p| p == "ui.tool_item")
-            {
+            if !self.permissions.iter().any(|p| p == "ui.tool_item") {
                 anyhow::bail!(
                     "[[contributes.tool]] requires permission 'ui.tool_item' to be declared in manifest permissions[]"
                 );
@@ -459,8 +448,12 @@ impl Manifest {
 
             // [[contributes.tool]] action.open_popup이 이 plugin의 popup id를 가리킬 때
             // 해당 id가 실제로 존재해야 한다.
-            let popup_ids: HashSet<&str> =
-                self.contributes.popup.iter().map(|p| p.id.as_str()).collect();
+            let popup_ids: HashSet<&str> = self
+                .contributes
+                .popup
+                .iter()
+                .map(|p| p.id.as_str())
+                .collect();
             for tool in &self.contributes.tool {
                 if let ToolAction::OpenPopup { popup_id } = &tool.action {
                     if let Some(local_id) = popup_id.strip_prefix(&format!("{}/", self.id))
@@ -506,11 +499,8 @@ impl Manifest {
         // [[contributes.handler]] 검증.
         if !self.contributes.handler.is_empty() {
             let mut seen_handler_ids = HashSet::new();
-            let surface_kinds: Vec<String> = self
-                .surface_kinds
-                .iter()
-                .map(|k| k.kind.clone())
-                .collect();
+            let surface_kinds: Vec<String> =
+                self.surface_kinds.iter().map(|k| k.kind.clone()).collect();
             let ipc_prefixes: Vec<String> = self
                 .contributes
                 .ipc_namespace
@@ -525,9 +515,7 @@ impl Manifest {
                         decl.id
                     );
                 }
-                if let Err(e) =
-                    crate::file_handler::config::validate_plugin_handler_decl(decl)
-                {
+                if let Err(e) = crate::file_handler::config::validate_plugin_handler_decl(decl) {
                     anyhow::bail!("contributes.handler: {e}");
                 }
                 if let Err(e) = crate::file_handler::config::validate_plugin_handler_refs(

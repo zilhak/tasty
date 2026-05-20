@@ -17,13 +17,11 @@ impl MainWindow {
         // 일어나지 않으며 toast로만 알린다.
         if let Some(t) = self.last_terminal_paste_at {
             if t.elapsed() < crate::window::main::PASTE_CTRL_C_COOLDOWN {
-                let scope = crate::ui::ToastScope::Surface(
-                    self.state.focused_surface_id().unwrap_or(0),
-                );
-                self.state.toasts.push_info(
-                    crate::i18n::t("toast.ctrl_c_ignored_after_paste"),
-                    scope,
-                );
+                let scope =
+                    crate::ui::ToastScope::Surface(self.state.focused_surface_id().unwrap_or(0));
+                self.state
+                    .toasts
+                    .push_info(crate::i18n::t("toast.ctrl_c_ignored_after_paste"), scope);
                 self.mark_dirty();
                 return true;
             }

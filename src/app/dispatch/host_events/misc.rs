@@ -43,7 +43,11 @@ pub(super) fn emit_hook_fired(
     let payload = HookFired {
         hook_id: hook_id.to_string(),
         event_kind,
-        surface_id: if surface_id != 0 { Some(surface_id) } else { None },
+        surface_id: if surface_id != 0 {
+            Some(surface_id)
+        } else {
+            None
+        },
         payload: serde_json::Value::Null,
     };
     mgr.emit_host_event("hook.fired", &payload, scope);

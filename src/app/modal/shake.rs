@@ -53,15 +53,18 @@ impl App {
 
         // Damped sine wave: amplitude * sin(freq * t) * (1 - t)
         let t = elapsed_ms as f64 / SHAKE_DURATION_MS as f64;
-        let offset_x =
-            (SHAKE_AMPLITUDE * (t * SHAKE_FREQUENCY * 2.0 * std::f64::consts::PI).sin() * (1.0 - t))
-                as i32;
+        let offset_x = (SHAKE_AMPLITUDE
+            * (t * SHAKE_FREQUENCY * 2.0 * std::f64::consts::PI).sin()
+            * (1.0 - t)) as i32;
         let origin = shake.origin;
         if let Some(id) = self.engine.active_modal_id {
             if let Some(w) = self.windows.get(&id) {
-                w.base().winit.set_outer_position(
-                    winit::dpi::PhysicalPosition::new(origin.x + offset_x, origin.y),
-                );
+                w.base()
+                    .winit
+                    .set_outer_position(winit::dpi::PhysicalPosition::new(
+                        origin.x + offset_x,
+                        origin.y,
+                    ));
                 w.base().winit.request_redraw();
             }
         }

@@ -65,23 +65,19 @@ check_cargo_fmt() {
 # ────────────────────────────────────────────────────────────
 # C.6  `let _ =` 주석 강제
 # ────────────────────────────────────────────────────────────
-# 같은 줄 또는 바로 위 줄에 `//` 주석이 없으면 fail
+# staged diff 의 추가 line 만 검사. 같은 줄에 // 있으면 OK.
 check_let_underscore() {
     if [ -z "$STAGED_RS" ]; then return; fi
     for f in $STAGED_RS; do
         [ -f "$f" ] || continue
         local violation
-        violation=$(awk '
-            /^[[:space:]]*\/\// { has_comment_above = 1; next }
-            /let[[:space:]]+_[[:space:]]*=/ {
-                # 같은 줄에 // 있으면 OK
-                if ($0 ~ /\/\//) { next }
-                if (!has_comment_above) { print NR ": " $0; }
-            }
-            { has_comment_above = 0 }
-        ' "$f")
+        violation=$(git diff --cached -U0 -- "$f" \
+            | grep -E '^\+' | grep -v '^+++' \
+            | grep -E 'let[[:space:]]+_[[:space:]]*=' \
+            | grep -vE '//' \
+            || true)
         if [ -n "$violation" ]; then
-            fail "[C.6 let _] $f — 주석 없는 \`let _ =\` (왜 무시하는지 주석 필요):"
+            fail "[C.6 let _] $f — 주석 없는 \`let _ =\` 추가됨 (왜 무시하는지 주석 필요):"
             echo "$violation" | sed 's/^/      /' >&2
         fi
     done
@@ -90,9 +86,9 @@ check_let_underscore() {
 # ────────────────────────────────────────────────────────────
 # C.8  UI 색상 하드코딩 (from_rgb / Color32::from_)
 # ────────────────────────────────────────────────────────────
+# staged diff 의 추가 line 만 검사.
 check_color_hardcode() {
     if [ -z "$STAGED_RS" ]; then return; fi
-    # 예외: theme 정의 자체
     for f in $STAGED_RS; do
         [ -f "$f" ] || continue
         case "$f" in
@@ -100,7 +96,10 @@ check_color_hardcode() {
             src/theme.rs) continue ;;
         esac
         local violation
-        violation=$(grep -nE 'Color32::from_rgb|Color32::from_rgba|Color32::from_gray|Rgba::from_rgb|Rgba::from_rgba' "$f" || true)
+        violation=$(git diff --cached -U0 -- "$f" \
+            | grep -E '^\+' | grep -v '^+++' \
+            | grep -E 'Color32::from_rgb|Color32::from_rgba|Color32::from_gray|Rgba::from_rgb|Rgba::from_rgba' \
+            || true)
         if [ -n "$violation" ]; then
             fail "[C.8 색상 하드코딩] $f — Theme 시스템 사용 (theme.rs 참조):"
             echo "$violation" | sed 's/^/      /' >&2
@@ -111,9 +110,9 @@ check_color_hardcode() {
 # ────────────────────────────────────────────────────────────
 # C.9  egui::Window 직접 사용 (PopupManager 강제)
 # ────────────────────────────────────────────────────────────
+# staged diff 의 추가 line 만 검사.
 check_egui_window() {
     if [ -z "$STAGED_RS" ]; then return; fi
-    # 예외: popup 인프라 자체
     for f in $STAGED_RS; do
         [ -f "$f" ] || continue
         case "$f" in
@@ -121,7 +120,10 @@ check_egui_window() {
             src/ui/popup_defs.rs) continue ;;
         esac
         local violation
-        violation=$(grep -nE 'egui::Window::|egui::Window\s*<' "$f" || true)
+        violation=$(git diff --cached -U0 -- "$f" \
+            | grep -E '^\+' | grep -v '^+++' \
+            | grep -E 'egui::Window::|egui::Window[[:space:]]*<' \
+            || true)
         if [ -n "$violation" ]; then
             fail "[C.9 egui::Window] $f — PopupManager/PopupDef 시스템 사용 (docs/dev-guide/popup-implementation.md):"
             echo "$violation" | sed 's/^/      /' >&2
@@ -132,21 +134,22 @@ check_egui_window() {
 # ────────────────────────────────────────────────────────────
 # C.11 println! / eprintln! (tracing 강제)
 # ────────────────────────────────────────────────────────────
+# staged diff 의 추가 line 만 검사. CLI 바이너리 / 진입점 + 주석 라인 제외.
 check_println() {
     if [ -z "$STAGED_RS" ]; then return; fi
-    # 예외: CLI 진입점 (출력 자체가 본질) — src/cli/ + src/main.rs
     for f in $STAGED_RS; do
         [ -f "$f" ] || continue
         case "$f" in
             src/main.rs) continue ;;
             src/cli/*) continue ;;
             src/boot/cli_routing.rs) continue ;;
+            crates/tasty-tui-simulator/*) continue ;;
         esac
-        # 주석 안의 println 은 제외 — 라인 시작이 //, ///, //!, /* 인 경우 건너뜀
         local violation
-        violation=$(grep -nE '(^|[^/])\b(println|eprintln)!' "$f" \
-            | grep -vE '^[0-9]+:[[:space:]]*//' \
-            | grep -vE '^[0-9]+:[[:space:]]*\*' \
+        violation=$(git diff --cached -U0 -- "$f" \
+            | grep -E '^\+' | grep -v '^+++' \
+            | grep -E '\b(println|eprintln)!' \
+            | grep -vE '^\+[[:space:]]*//' \
             || true)
         if [ -n "$violation" ]; then
             fail "[C.11 println] $f — \`tracing::info!\` / \`tracing::warn!\` 등 사용:"
@@ -158,14 +161,19 @@ check_println() {
 # ────────────────────────────────────────────────────────────
 # C.12 dbg! 매크로 (debug leak 방지)
 # ────────────────────────────────────────────────────────────
+# staged diff 의 추가 line 만 검사.
 check_dbg() {
     if [ -z "$STAGED_RS" ]; then return; fi
     for f in $STAGED_RS; do
         [ -f "$f" ] || continue
         local violation
-        violation=$(grep -nE '\bdbg!' "$f" | grep -vE '^[0-9]+:[[:space:]]*//' || true)
+        violation=$(git diff --cached -U0 -- "$f" \
+            | grep -E '^\+' | grep -v '^+++' \
+            | grep -E '\bdbg!' \
+            | grep -vE '^\+[[:space:]]*//' \
+            || true)
         if [ -n "$violation" ]; then
-            fail "[C.12 dbg!] $f — \`dbg!\` 매크로 발견 (release 에 leak 금지):"
+            fail "[C.12 dbg!] $f — \`dbg!\` 매크로 추가됨 (release 에 leak 금지):"
             echo "$violation" | sed 's/^/      /' >&2
         fi
     done

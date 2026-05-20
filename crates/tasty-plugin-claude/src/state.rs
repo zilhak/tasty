@@ -104,10 +104,7 @@ impl ClaudeState {
     }
 
     pub fn list_children(&self, parent: u32) -> &[ChildEntry] {
-        self.children
-            .get(&parent)
-            .map(Vec::as_slice)
-            .unwrap_or(&[])
+        self.children.get(&parent).map(Vec::as_slice).unwrap_or(&[])
     }
 
     pub fn find_child(&self, parent: u32, index: u32) -> Option<&ChildEntry> {
@@ -236,8 +233,7 @@ impl ClaudeState {
     /// 사용자가 spawn pane을 닫았을 때 호출. 매핑을 제거해 다음 spawn에서
     /// 새 pane을 만들도록 한다.
     pub fn clear_spawn_pane(&mut self, parent_surface_id: u32, workspace_id: u32) {
-        self.spawn_panes
-            .remove(&(parent_surface_id, workspace_id));
+        self.spawn_panes.remove(&(parent_surface_id, workspace_id));
     }
 
     /// `--surface`가 주어지지 않았을 때 사용. 자식 보유 부모가 정확히 한 개일 때만

@@ -53,10 +53,7 @@ fn draw_add_input(
 
     if let Some(err) = &ui_state.add_error {
         ui.add_space(6.0);
-        ui.label(
-            egui::RichText::new(err)
-                .color(egui::Color32::from(th.red)),
-        );
+        ui.label(egui::RichText::new(err).color(egui::Color32::from(th.red)));
     }
 
     ui.add_space(20.0);
@@ -147,10 +144,7 @@ fn draw_add_preview(
 
             if let Some(msg) = &preview.already_installed {
                 ui.add_space(10.0);
-                ui.label(
-                    egui::RichText::new(msg)
-                        .color(egui::Color32::from(th.peach)),
-                );
+                ui.label(egui::RichText::new(msg).color(egui::Color32::from(th.peach)));
             }
         });
 

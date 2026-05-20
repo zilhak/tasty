@@ -15,10 +15,7 @@ use crate::engine::LuaEngineError;
 /// 등록한다 — 분리 이유는 `tasty.on` 이 dispatcher 와 강하게 결합된 반면 여기 API 는
 /// 단순 OS shim 이라 격리할 수 있어서.
 pub(crate) fn install(lua: &Lua) -> Result<(), LuaEngineError> {
-    let tasty: Table = lua
-        .globals()
-        .get("tasty")
-        .map_err(LuaEngineError::Init)?;
+    let tasty: Table = lua.globals().get("tasty").map_err(LuaEngineError::Init)?;
 
     let log = lua
         .create_function(|_, msg: String| {
@@ -81,7 +78,9 @@ pub(crate) fn install(lua: &Lua) -> Result<(), LuaEngineError> {
             Ok(())
         })
         .map_err(LuaEngineError::Init)?;
-    tasty.set("run_cli", run_cli).map_err(LuaEngineError::Init)?;
+    tasty
+        .set("run_cli", run_cli)
+        .map_err(LuaEngineError::Init)?;
 
     Ok(())
 }
@@ -102,9 +101,7 @@ fn value_to_args(v: Value) -> Result<Vec<String>, &'static str> {
             for i in 1..=len {
                 let item: Value = t.get(i).map_err(|_| "table get failed")?;
                 match item {
-                    Value::String(s) => {
-                        out.push(s.to_str().map_err(|_| "non-utf8")?.to_string())
-                    }
+                    Value::String(s) => out.push(s.to_str().map_err(|_| "non-utf8")?.to_string()),
                     Value::Integer(n) => out.push(n.to_string()),
                     Value::Number(n) => out.push(n.to_string()),
                     Value::Boolean(b) => out.push(b.to_string()),
@@ -135,9 +132,7 @@ mod tests {
         let engine = LuaEngine::new().unwrap();
         // 실제 spawn 은 current_exe 가 tasty binary 가 아닐 수도 있으니 결과 무시.
         // Lua 측에서 함수 호출이 에러 없이 끝나는지만 확인.
-        engine
-            .eval(r#"tasty.run_cli({"list", "info"})"#)
-            .unwrap();
+        engine.eval(r#"tasty.run_cli({"list", "info"})"#).unwrap();
         engine.eval(r#"tasty.run_cli("noop")"#).unwrap();
         engine.eval("tasty.run_cli(nil)").unwrap();
     }

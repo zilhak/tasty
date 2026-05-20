@@ -7,7 +7,11 @@ pub(super) fn memory_bb_command_to_method_params(
 ) -> (&'static str, serde_json::Value) {
     use MemoryBbCommands::*;
     match command {
-        Create { workspace, name, schema } => {
+        Create {
+            workspace,
+            name,
+            schema,
+        } => {
             let mut p = serde_json::json!({ "workspace_id": workspace, "name": name });
             if let Some(raw) = schema.as_deref() {
                 let v: serde_json::Value = match serde_json::from_str(raw) {
@@ -62,7 +66,11 @@ pub(super) fn memory_bb_command_to_method_params(
             }
             ("memory.bb_put", p)
         }
-        Get { workspace, name, field } => (
+        Get {
+            workspace,
+            name,
+            field,
+        } => (
             "memory.bb_get",
             serde_json::json!({ "workspace_id": workspace, "name": name, "field": field }),
         ),
@@ -74,7 +82,12 @@ pub(super) fn memory_bb_command_to_method_params(
             "memory.bb_get_meta",
             serde_json::json!({ "workspace_id": workspace, "name": name }),
         ),
-        DeleteField { workspace, name, field, cas } => {
+        DeleteField {
+            workspace,
+            name,
+            field,
+            cas,
+        } => {
             let mut p = serde_json::json!({
                 "workspace_id": workspace,
                 "name": name,
@@ -97,7 +110,11 @@ pub(super) fn memory_bb_command_to_method_params(
             "memory.bb_exists",
             serde_json::json!({ "workspace_id": workspace, "name": name }),
         ),
-        Snapshot { workspace, name, snapshot_id } => (
+        Snapshot {
+            workspace,
+            name,
+            snapshot_id,
+        } => (
             "memory.bb_snapshot",
             serde_json::json!({
                 "workspace_id": workspace,
@@ -105,7 +122,11 @@ pub(super) fn memory_bb_command_to_method_params(
                 "snapshot_id": snapshot_id,
             }),
         ),
-        SnapshotGet { workspace, name, snapshot_id } => (
+        SnapshotGet {
+            workspace,
+            name,
+            snapshot_id,
+        } => (
             "memory.bb_snapshot_get",
             serde_json::json!({
                 "workspace_id": workspace,
@@ -117,7 +138,11 @@ pub(super) fn memory_bb_command_to_method_params(
             "memory.bb_snapshot_list",
             serde_json::json!({ "workspace_id": workspace, "name": name }),
         ),
-        SnapshotDelete { workspace, name, snapshot_id } => (
+        SnapshotDelete {
+            workspace,
+            name,
+            snapshot_id,
+        } => (
             "memory.bb_snapshot_delete",
             serde_json::json!({
                 "workspace_id": workspace,
@@ -125,7 +150,11 @@ pub(super) fn memory_bb_command_to_method_params(
                 "snapshot_id": snapshot_id,
             }),
         ),
-        SnapshotRestore { workspace, name, snapshot_id } => (
+        SnapshotRestore {
+            workspace,
+            name,
+            snapshot_id,
+        } => (
             "memory.bb_snapshot_restore",
             serde_json::json!({
                 "workspace_id": workspace,
@@ -135,4 +164,3 @@ pub(super) fn memory_bb_command_to_method_params(
         ),
     }
 }
-

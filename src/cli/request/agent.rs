@@ -41,7 +41,10 @@ pub(super) fn agent_command_to_method_params(
             }
             ("agent.task_create", p)
         }
-        TaskList { workspace_id, state } => {
+        TaskList {
+            workspace_id,
+            state,
+        } => {
             let mut p = serde_json::json!({ "workspace_id": *workspace_id });
             if let Some(s) = state {
                 p["state"] = serde_json::Value::String(s.clone());
@@ -72,7 +75,10 @@ pub(super) fn agent_command_to_method_params(
                 "reset_downstream": *reset_downstream,
             }),
         ),
-        TaskGraph { workspace_id, format } => (
+        TaskGraph {
+            workspace_id,
+            format,
+        } => (
             "agent.task_graph",
             serde_json::json!({ "workspace_id": *workspace_id, "format": format }),
         ),
@@ -212,10 +218,7 @@ pub(super) fn agent_command_to_method_params(
             ("agent.rate_limit_set", p)
         }
         RateLimitList => ("agent.rate_limit_list", serde_json::json!({})),
-        RateLimitRemove { id } => (
-            "agent.rate_limit_remove",
-            serde_json::json!({ "id": id }),
-        ),
+        RateLimitRemove { id } => ("agent.rate_limit_remove", serde_json::json!({ "id": id })),
         RateLimitStatus { agent, metric } => {
             let mut p = serde_json::json!({});
             if let Some(a) = agent {
@@ -273,4 +276,3 @@ fn parse_on_failure(s: &str) -> serde_json::Value {
         serde_json::json!({ "kind": s })
     }
 }
-

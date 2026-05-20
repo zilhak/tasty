@@ -13,9 +13,7 @@ use windows_sys::Win32::Foundation::{
 use windows_sys::Win32::System::Memory::{
     CreateFileMappingW, FILE_MAP_ALL_ACCESS, MapViewOfFile, PAGE_READWRITE, UnmapViewOfFile,
 };
-use windows_sys::Win32::System::Threading::{
-    GetCurrentProcess, OpenProcess, PROCESS_DUP_HANDLE,
-};
+use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcess, PROCESS_DUP_HANDLE};
 
 use crate::{PeerPid, ReceivedPayload, SendableHandle, SharedMemory, ShmError};
 
@@ -116,9 +114,7 @@ pub(crate) fn create(size: usize) -> Result<(SharedMemory, SendableHandle), ShmE
 
     // 현재 프로세스에 view 매핑.
     // SAFETY: MapViewOfFile. handle은 방금 만든 유효 매핑.
-    let view = unsafe {
-        MapViewOfFile(mapping_handle.as_raw(), FILE_MAP_ALL_ACCESS, 0, 0, size)
-    };
+    let view = unsafe { MapViewOfFile(mapping_handle.as_raw(), FILE_MAP_ALL_ACCESS, 0, 0, size) };
     if view.Value.is_null() {
         return Err(ShmError::Os(io::Error::last_os_error()));
     }

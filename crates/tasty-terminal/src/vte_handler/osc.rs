@@ -1,8 +1,7 @@
 //! VTE handler: osc 도메인.
 
-
-use termwiz::escape::csi::Device;
 use termwiz::escape::OperatingSystemCommand;
+use termwiz::escape::csi::Device;
 
 use crate::{Terminal, TerminalEvent, TerminalEventKind};
 
@@ -153,5 +152,4 @@ impl Terminal {
             _ => {}
         }
     }
-
 }

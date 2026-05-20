@@ -31,11 +31,7 @@ pub fn draw_apply_pane_popup(ui: &mut egui::Ui, state: &mut AppState) -> PopupAc
     draw_apply_popup(ui, state, PresetKind::Pane)
 }
 
-fn draw_apply_popup(
-    ui: &mut egui::Ui,
-    state: &mut AppState,
-    kind: PresetKind,
-) -> PopupAction {
+fn draw_apply_popup(ui: &mut egui::Ui, state: &mut AppState, kind: PresetKind) -> PopupAction {
     if ui.ctx().input(|i| i.key_pressed(egui::Key::Escape)) {
         state.dialogs.preset_picker_selected = None;
         return PopupAction::Close;
@@ -97,11 +93,8 @@ fn draw_apply_popup(
                 .max_height(220.0)
                 .show(ui, |ui| {
                     for name in &names {
-                        let is_selected = state
-                            .dialogs
-                            .preset_picker_selected
-                            .as_deref()
-                            == Some(name.as_str());
+                        let is_selected =
+                            state.dialogs.preset_picker_selected.as_deref() == Some(name.as_str());
                         let full_width = ui.available_width();
                         let (rect, resp) = ui.allocate_exact_size(
                             egui::vec2(full_width, 22.0),
@@ -125,7 +118,11 @@ fn draw_apply_popup(
                             egui::Align2::LEFT_CENTER,
                             name,
                             egui::FontId::proportional(12.0),
-                            if is_selected { th.text.into() } else { th.subtext0.into() },
+                            if is_selected {
+                                th.text.into()
+                            } else {
+                                th.subtext0.into()
+                            },
                         );
                         if resp.clicked() {
                             state.dialogs.preset_picker_selected = Some(name.clone());
@@ -140,8 +137,7 @@ fn draw_apply_popup(
 
         ui.separator();
         ui.horizontal(|ui| {
-            let can_apply = !names.is_empty()
-                && state.dialogs.preset_picker_selected.is_some();
+            let can_apply = !names.is_empty() && state.dialogs.preset_picker_selected.is_some();
             if ui
                 .add_enabled(can_apply, egui::Button::new(t("preset.popup.apply_button")))
                 .clicked()

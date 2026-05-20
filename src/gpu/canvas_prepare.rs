@@ -24,10 +24,10 @@ use std::sync::atomic::Ordering;
 
 use tasty_plugin_protocol::{PixelFilter, PixelFormat, Rect, SharedBufferId, UiNode};
 
-use super::canvas_texture::CanvasKey;
 use super::GpuState;
-use crate::plugin::remote_surface::RemoteSurface;
+use super::canvas_texture::CanvasKey;
 use crate::plugin::PluginManager;
+use crate::plugin::remote_surface::RemoteSurface;
 use crate::state::AppState;
 
 struct PendingCanvas {
@@ -142,10 +142,7 @@ impl GpuState {
 /// 활성 workspace에서 visible plugin Canvas 노드 일람 + 모든 plugin popup instance.
 ///
 /// 본 함수는 GPU 자원에 손대지 않는다 — 순수 데이터 수집. 다음 단계에서 ensure + upload.
-fn collect_canvas_requests(
-    state: &AppState,
-    plugin_manager: &PluginManager,
-) -> Vec<PendingCanvas> {
+fn collect_canvas_requests(state: &AppState, plugin_manager: &PluginManager) -> Vec<PendingCanvas> {
     let mut out: Vec<PendingCanvas> = Vec::new();
     let ws = state.active_workspace();
     let pane_ids = ws.pane_layout().all_pane_ids();
@@ -161,10 +158,7 @@ fn collect_canvas_requests(
             let Some(surface) = layout.find_surface(sid) else {
                 continue;
             };
-            let Some(remote) = surface
-                .as_any()
-                .downcast_ref::<RemoteSurface>()
-            else {
+            let Some(remote) = surface.as_any().downcast_ref::<RemoteSurface>() else {
                 continue;
             };
             let Ok(tree_opt) = remote.tree.lock() else {

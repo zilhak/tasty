@@ -2,7 +2,9 @@
 
 use tasty_plugin_protocol::EventScope;
 use tasty_plugin_protocol::LifecycleReason;
-use tasty_plugin_protocol::events::payloads::{TabClosed, TabCreated, TabFocused, TabMoved, TabRenamed};
+use tasty_plugin_protocol::events::payloads::{
+    TabClosed, TabCreated, TabFocused, TabMoved, TabRenamed,
+};
 
 use crate::plugin::PluginManager;
 

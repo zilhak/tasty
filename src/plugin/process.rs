@@ -12,14 +12,14 @@ use std::collections::HashMap;
 use std::io::{self, BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, Instant};
 
 use tasty_plugin_protocol::{HandleChannelMessage, Rect, SharedBufferId};
 
 use crate::plugin::handle_channel::{HandleListener, HandleStream, HandleStreamReader};
 use crate::plugin::listener::HostListener;
-use crate::plugin::manifest::{PluginPackage, HOST_API_VERSION};
+use crate::plugin::manifest::{HOST_API_VERSION, PluginPackage};
 use crate::plugin::protocol::{PluginEvent, PluginRequest, PluginResponse};
 
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
@@ -181,11 +181,7 @@ impl PluginProcess {
                     let line = match serde_json::to_string(&req) {
                         Ok(s) => s,
                         Err(e) => {
-                            tracing::warn!(
-                                "plugin '{}' request encode error: {}",
-                                plugin_id_tx,
-                                e
-                            );
+                            tracing::warn!("plugin '{}' request encode error: {}", plugin_id_tx, e);
                             continue;
                         }
                     };
@@ -463,9 +459,7 @@ fn aux_reader_loop(
             Ok((HandleChannelMessage::Ping { seq }, _)) => {
                 if let Ok(mut w) = writer.lock() {
                     if let Err(e) = w.send_message(&HandleChannelMessage::Pong { seq }) {
-                        tracing::warn!(
-                            "plugin '{plugin_id}' aux Pong send failed: {e}"
-                        );
+                        tracing::warn!("plugin '{plugin_id}' aux Pong send failed: {e}");
                     }
                 }
             }
@@ -473,9 +467,7 @@ fn aux_reader_loop(
                 // 호스트가 Ping을 보내지 않으므로 정상 시나리오에서는 도착하지 않는다.
             }
             Ok((HandleChannelMessage::HandleAttach { .. }, aux)) => {
-                tracing::warn!(
-                    "plugin '{plugin_id}' sent unexpected HandleAttach on aux channel"
-                );
+                tracing::warn!("plugin '{plugin_id}' sent unexpected HandleAttach on aux channel");
                 #[cfg(unix)]
                 if let Some(fd) = aux {
                     // SAFETY: 동행 fd가 있다면 우리가 SCM_RIGHTS로 받은 새 fd 소유권.
@@ -490,9 +482,7 @@ fn aux_reader_loop(
             }
             Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => break,
             Err(e) => {
-                tracing::warn!(
-                    "plugin '{plugin_id}' aux channel reader error: {e}"
-                );
+                tracing::warn!("plugin '{plugin_id}' aux channel reader error: {e}");
                 break;
             }
         }
@@ -581,18 +571,54 @@ mod tests {
 
     #[test]
     fn union_rect_combines_bbox() {
-        let a = Rect { x: 0, y: 0, w: 10, h: 10 };
-        let b = Rect { x: 5, y: 5, w: 10, h: 10 };
+        let a = Rect {
+            x: 0,
+            y: 0,
+            w: 10,
+            h: 10,
+        };
+        let b = Rect {
+            x: 5,
+            y: 5,
+            w: 10,
+            h: 10,
+        };
         let u = union_rect(a, b);
-        assert_eq!(u, Rect { x: 0, y: 0, w: 15, h: 15 });
+        assert_eq!(
+            u,
+            Rect {
+                x: 0,
+                y: 0,
+                w: 15,
+                h: 15
+            }
+        );
     }
 
     #[test]
     fn union_rect_disjoint_gives_outer_bbox() {
-        let a = Rect { x: 0, y: 0, w: 4, h: 4 };
-        let b = Rect { x: 10, y: 10, w: 5, h: 5 };
+        let a = Rect {
+            x: 0,
+            y: 0,
+            w: 4,
+            h: 4,
+        };
+        let b = Rect {
+            x: 10,
+            y: 10,
+            w: 5,
+            h: 5,
+        };
         let u = union_rect(a, b);
-        assert_eq!(u, Rect { x: 0, y: 0, w: 15, h: 15 });
+        assert_eq!(
+            u,
+            Rect {
+                x: 0,
+                y: 0,
+                w: 15,
+                h: 15
+            }
+        );
     }
 
     #[test]
@@ -602,7 +628,16 @@ mod tests {
         let id = SharedBufferId(1);
         merge_dirty(&map, id, None);
         // 이후 Some이 와도 None 유지.
-        merge_dirty(&map, id, Some(Rect { x: 0, y: 0, w: 2, h: 2 }));
+        merge_dirty(
+            &map,
+            id,
+            Some(Rect {
+                x: 0,
+                y: 0,
+                w: 2,
+                h: 2,
+            }),
+        );
         assert_eq!(map.lock().unwrap().get(&id).copied(), Some(None));
     }
 
@@ -611,10 +646,36 @@ mod tests {
         let map: Arc<Mutex<HashMap<SharedBufferId, Option<Rect>>>> =
             Arc::new(Mutex::new(HashMap::new()));
         let id = SharedBufferId(2);
-        merge_dirty(&map, id, Some(Rect { x: 0, y: 0, w: 5, h: 5 }));
-        merge_dirty(&map, id, Some(Rect { x: 10, y: 10, w: 5, h: 5 }));
+        merge_dirty(
+            &map,
+            id,
+            Some(Rect {
+                x: 0,
+                y: 0,
+                w: 5,
+                h: 5,
+            }),
+        );
+        merge_dirty(
+            &map,
+            id,
+            Some(Rect {
+                x: 10,
+                y: 10,
+                w: 5,
+                h: 5,
+            }),
+        );
         let got = map.lock().unwrap().get(&id).copied().flatten();
-        assert_eq!(got, Some(Rect { x: 0, y: 0, w: 15, h: 15 }));
+        assert_eq!(
+            got,
+            Some(Rect {
+                x: 0,
+                y: 0,
+                w: 15,
+                h: 15
+            })
+        );
     }
 
     #[test]
@@ -622,7 +683,16 @@ mod tests {
         let map: Arc<Mutex<HashMap<SharedBufferId, Option<Rect>>>> =
             Arc::new(Mutex::new(HashMap::new()));
         let id = SharedBufferId(3);
-        merge_dirty(&map, id, Some(Rect { x: 0, y: 0, w: 5, h: 5 }));
+        merge_dirty(
+            &map,
+            id,
+            Some(Rect {
+                x: 0,
+                y: 0,
+                w: 5,
+                h: 5,
+            }),
+        );
         merge_dirty(&map, id, None);
         assert_eq!(map.lock().unwrap().get(&id).copied(), Some(None));
     }

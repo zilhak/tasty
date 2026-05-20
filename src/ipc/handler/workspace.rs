@@ -90,9 +90,7 @@ pub fn handle_workspace_create(
             }
             state.engine.mark_layout_dirty();
             let workspace_id = state.engine.workspaces[idx].id;
-            if renamed_name.is_some()
-                || renamed_subtitle.is_some()
-                || renamed_description.is_some()
+            if renamed_name.is_some() || renamed_subtitle.is_some() || renamed_description.is_some()
             {
                 state.enqueue_host_event(crate::state::PendingHostEvent::WorkspaceRenamed {
                     workspace_id,

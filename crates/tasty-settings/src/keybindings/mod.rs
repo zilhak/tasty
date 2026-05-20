@@ -1,4 +1,3 @@
-
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -93,14 +92,11 @@ pub struct KeybindingSettings {
     pub apply_pane_preset: Vec<String>,
 }
 
-
 impl Default for KeybindingSettings {
     fn default() -> Self {
         Self::preset_tasty()
     }
 }
-
-
 
 mod crud;
 mod presets;

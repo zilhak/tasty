@@ -375,9 +375,7 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{
-        PresetPane, PresetPaneNode, PresetSurface, PresetSurfaceLayout, PresetTab,
-    };
+    use crate::model::{PresetPane, PresetPaneNode, PresetSurface, PresetSurfaceLayout, PresetTab};
     use tempfile::tempdir;
 
     fn ws(name: &str) -> WorkspacePreset {
@@ -488,7 +486,10 @@ mod tests {
     fn unique_name_sanitizes_input() {
         let tmp = tempdir().unwrap();
         let s = PresetStore::load_from(tmp.path().into());
-        assert_eq!(s.unique_name(PresetKind::Workspace, "my workspace"), "my-workspace");
+        assert_eq!(
+            s.unique_name(PresetKind::Workspace, "my workspace"),
+            "my-workspace"
+        );
         assert_eq!(s.unique_name(PresetKind::Workspace, ""), "workspace");
         assert_eq!(s.unique_name(PresetKind::Workspace, "../etc/x"), "etcx");
     }
@@ -498,7 +499,11 @@ mod tests {
         let tmp = tempdir().unwrap();
         std::fs::create_dir_all(tmp.path().join("workspace")).unwrap();
         // garbage toml
-        std::fs::write(tmp.path().join("workspace/bad.toml"), b"this is not toml [[[").unwrap();
+        std::fs::write(
+            tmp.path().join("workspace/bad.toml"),
+            b"this is not toml [[[",
+        )
+        .unwrap();
         // valid one
         std::fs::write(
             tmp.path().join("workspace/good.toml"),

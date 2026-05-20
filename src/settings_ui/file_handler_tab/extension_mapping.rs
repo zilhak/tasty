@@ -39,8 +39,7 @@ pub(super) fn draw_extension_mapping(
     // 표시할 확장자 = (draft 의 확장자) ∪ (모든 광고 확장자 중 1개 이상 candidate 가 있는 것).
     // candidate 가 2개 이상인 경우만 priority 의미가 있으므로 실제 노출은 후자 위주.
     let all_exts = file_format.all_advertised_extensions();
-    let mut visible: std::collections::BTreeSet<String> =
-        draft_map.keys().cloned().collect();
+    let mut visible: std::collections::BTreeSet<String> = draft_map.keys().cloned().collect();
     for ext in &all_exts {
         let candidates = file_format.detectors_for_extension(ext);
         if candidates.len() >= 2 {
@@ -73,8 +72,8 @@ pub(super) fn draw_extension_mapping(
             .trim()
             .trim_start_matches('.')
             .to_ascii_lowercase();
-        let enabled = !normalized.is_empty()
-            && !file_format.detectors_for_extension(&normalized).is_empty();
+        let enabled =
+            !normalized.is_empty() && !file_format.detectors_for_extension(&normalized).is_empty();
         if ui
             .add_enabled(enabled, egui::Button::new(t("button.add")))
             .clicked()
@@ -137,9 +136,7 @@ fn draw_extension_row(
                 if draft_map.contains_key(ext) {
                     if ui
                         .small_button(t("settings.file_handler.extension_mapping.reset"))
-                        .on_hover_text(t(
-                            "settings.file_handler.extension_mapping.reset_tooltip",
-                        ))
+                        .on_hover_text(t("settings.file_handler.extension_mapping.reset_tooltip"))
                         .clicked()
                     {
                         draft_map.insert(ext.to_string(), Vec::new());
@@ -155,10 +152,7 @@ fn draw_extension_row(
                 ui.horizontal(|ui| {
                     let up_enabled = i > 0 && in_candidates;
                     let down_enabled = i + 1 < len && in_candidates;
-                    if ui
-                        .add_enabled(up_enabled, egui::Button::new("▲"))
-                        .clicked()
-                    {
+                    if ui.add_enabled(up_enabled, egui::Button::new("▲")).clicked() {
                         move_up = Some(i);
                     }
                     if ui

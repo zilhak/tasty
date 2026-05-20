@@ -8,7 +8,7 @@ use std::fmt;
 
 use serde::Deserialize;
 
-use super::types::{is_valid_handler_short_name, HandlerAction};
+use super::types::{HandlerAction, is_valid_handler_short_name};
 
 fn default_param_key() -> String {
     "file".to_string()
@@ -76,9 +76,13 @@ pub enum UserHandlerActionDecl {
 impl From<HostHandlerActionDecl> for HandlerAction {
     fn from(d: HostHandlerActionDecl) -> Self {
         match d {
-            HostHandlerActionDecl::OpenSurface { surface_kind, param_key } => {
-                HandlerAction::OpenSurface { surface_kind, param_key }
-            }
+            HostHandlerActionDecl::OpenSurface {
+                surface_kind,
+                param_key,
+            } => HandlerAction::OpenSurface {
+                surface_kind,
+                param_key,
+            },
             HostHandlerActionDecl::Ipc { method } => HandlerAction::Ipc {
                 method,
                 owner_plugin_id: String::new(), // host IPC 는 1단계 미사용. 실 호출 시 검증.
@@ -92,9 +96,13 @@ impl From<HostHandlerActionDecl> for HandlerAction {
 impl PluginHandlerActionDecl {
     pub fn into_handler_action(self, owner_plugin_id: &str) -> HandlerAction {
         match self {
-            PluginHandlerActionDecl::OpenSurface { surface_kind, param_key } => {
-                HandlerAction::OpenSurface { surface_kind, param_key }
-            }
+            PluginHandlerActionDecl::OpenSurface {
+                surface_kind,
+                param_key,
+            } => HandlerAction::OpenSurface {
+                surface_kind,
+                param_key,
+            },
             PluginHandlerActionDecl::Ipc { method } => HandlerAction::Ipc {
                 method,
                 owner_plugin_id: owner_plugin_id.to_string(),
@@ -106,9 +114,13 @@ impl PluginHandlerActionDecl {
 impl From<UserHandlerActionDecl> for HandlerAction {
     fn from(d: UserHandlerActionDecl) -> Self {
         match d {
-            UserHandlerActionDecl::OpenSurface { surface_kind, param_key } => {
-                HandlerAction::OpenSurface { surface_kind, param_key }
-            }
+            UserHandlerActionDecl::OpenSurface {
+                surface_kind,
+                param_key,
+            } => HandlerAction::OpenSurface {
+                surface_kind,
+                param_key,
+            },
             UserHandlerActionDecl::Ipc { method } => HandlerAction::Ipc {
                 method,
                 owner_plugin_id: String::new(), // user 영역은 method 만으로 plugin 추적
@@ -123,9 +135,18 @@ impl From<UserHandlerActionDecl> for HandlerAction {
 pub enum HandlerDeclError {
     InvalidShortName(String),
     DetectorIsUnknownSentinel(String),
-    InvalidDetectorId { handler: String, detector: String },
-    OpenSurfaceSurfaceKindUnknown { handler: String, surface_kind: String },
-    IpcMethodOutsideOwnNamespace { handler: String, method: String },
+    InvalidDetectorId {
+        handler: String,
+        detector: String,
+    },
+    OpenSurfaceSurfaceKindUnknown {
+        handler: String,
+        surface_kind: String,
+    },
+    IpcMethodOutsideOwnNamespace {
+        handler: String,
+        method: String,
+    },
 }
 
 impl fmt::Display for HandlerDeclError {
@@ -139,11 +160,13 @@ impl fmt::Display for HandlerDeclError {
                 f,
                 "handler '{h}': detector = '$unknown' is not allowed — there is no such detector"
             ),
-            Self::InvalidDetectorId { handler, detector } => write!(
-                f,
-                "handler '{handler}': invalid detector id '{detector}'"
-            ),
-            Self::OpenSurfaceSurfaceKindUnknown { handler, surface_kind } => write!(
+            Self::InvalidDetectorId { handler, detector } => {
+                write!(f, "handler '{handler}': invalid detector id '{detector}'")
+            }
+            Self::OpenSurfaceSurfaceKindUnknown {
+                handler,
+                surface_kind,
+            } => write!(
                 f,
                 "handler '{handler}': surface_kind '{surface_kind}' is not declared by this plugin"
             ),
@@ -195,9 +218,9 @@ pub fn validate_plugin_handler_refs(
             }
         }
         PluginHandlerActionDecl::Ipc { method } => {
-            let ok = plugin_ipc_prefixes.iter().any(|p| {
-                method == p || method.starts_with(&format!("{p}."))
-            });
+            let ok = plugin_ipc_prefixes
+                .iter()
+                .any(|p| method == p || method.starts_with(&format!("{p}.")));
             if !ok {
                 return Err(HandlerDeclError::IpcMethodOutsideOwnNamespace {
                     handler: decl.id.clone(),
@@ -260,8 +283,10 @@ mod tests {
         "#;
         let err = parse_plugin(t).expect_err("plugin must reject system");
         // serde 의 unknown variant 메시지 (정확한 문자열 의존 X — Err 인지만 확인)
-        assert!(format!("{err}").to_lowercase().contains("system")
-            || format!("{err}").to_lowercase().contains("unknown variant"));
+        assert!(
+            format!("{err}").to_lowercase().contains("system")
+                || format!("{err}").to_lowercase().contains("unknown variant")
+        );
     }
 
     #[test]
@@ -279,7 +304,10 @@ mod tests {
         let h = parse_plugin(t).expect("parse");
         assert_eq!(h.handlers[0].id, "viewer");
         match &h.handlers[0].action {
-            PluginHandlerActionDecl::OpenSurface { surface_kind, param_key } => {
+            PluginHandlerActionDecl::OpenSurface {
+                surface_kind,
+                param_key,
+            } => {
                 assert_eq!(surface_kind, "pdf_view");
                 assert_eq!(param_key, "file");
             }
@@ -383,7 +411,10 @@ mod tests {
             method: "mine.open".into(),
         };
         match decl.into_handler_action("com.example.x") {
-            HandlerAction::Ipc { owner_plugin_id, method } => {
+            HandlerAction::Ipc {
+                owner_plugin_id,
+                method,
+            } => {
                 assert_eq!(owner_plugin_id, "com.example.x");
                 assert_eq!(method, "mine.open");
             }

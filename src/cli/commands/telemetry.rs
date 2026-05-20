@@ -166,4 +166,3 @@ pub enum TelemetryCapCommands {
         agent: Option<String>,
     },
 }
-

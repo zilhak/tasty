@@ -81,10 +81,7 @@ impl CodexState {
     }
 
     pub fn list_children(&self, parent: u32) -> &[ChildEntry] {
-        self.children
-            .get(&parent)
-            .map(Vec::as_slice)
-            .unwrap_or(&[])
+        self.children.get(&parent).map(Vec::as_slice).unwrap_or(&[])
     }
 
     pub fn find_child(&self, parent: u32, index: u32) -> Option<&ChildEntry> {

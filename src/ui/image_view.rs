@@ -410,10 +410,7 @@ impl ImageView {
     }
 
     pub fn start_stroke(&mut self) {
-        if let EditState::Drawing {
-            current_stroke, ..
-        } = &mut self.edit_state
-        {
+        if let EditState::Drawing { current_stroke, .. } = &mut self.edit_state {
             *current_stroke = Some(StrokeBuilder {
                 points: Vec::new(),
                 brush_size: self.brush_size,
@@ -451,10 +448,7 @@ impl ImageView {
 
         bresenham_thick_line(layer, from, to, radius, color, w, h);
 
-        if let EditState::Drawing {
-            current_stroke, ..
-        } = &mut self.edit_state
-        {
+        if let EditState::Drawing { current_stroke, .. } = &mut self.edit_state {
             if let Some(stroke) = current_stroke {
                 stroke.points.push((from, to));
             }
@@ -706,7 +700,6 @@ pub fn fill_circle(
         }
     }
 }
-
 
 #[cfg(test)]
 #[path = "image_view_tests.rs"]

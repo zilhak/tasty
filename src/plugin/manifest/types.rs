@@ -4,9 +4,7 @@ use std::collections::HashMap;
 
 use serde::Deserialize;
 
-use super::validators::{
-    is_reserved_ipc_prefix, is_valid_ipc_prefix, is_valid_plugin_id,
-};
+use super::validators::{is_reserved_ipc_prefix, is_valid_ipc_prefix, is_valid_plugin_id};
 
 /// 호스트가 지원하는 plugin protocol 메이저 버전.
 /// plugin 매니페스트의 `api_version`과 일치해야 한다.
@@ -393,9 +391,11 @@ pub struct Contributes {
     /// variant 자체가 plugin schema 에 없어 `kind = "system"` 적으면 deserialize 단계에서
     /// reject.
     #[serde(default)]
-    pub handler: Vec<crate::file_handler::config::HandlerDecl<
-        crate::file_handler::config::PluginHandlerActionDecl,
-    >>,
+    pub handler: Vec<
+        crate::file_handler::config::HandlerDecl<
+            crate::file_handler::config::PluginHandlerActionDecl,
+        >,
+    >,
 }
 
 /// Plugin이 contribute하는 popup의 정의.

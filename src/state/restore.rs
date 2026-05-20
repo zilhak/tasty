@@ -170,7 +170,11 @@ impl AppState {
         if let Some(cmd) = closed.restore_command.as_deref() {
             initial.push_str(&format!("{cmd}\r"));
         }
-        let initial_input = if initial.is_empty() { None } else { Some(initial.as_str()) };
+        let initial_input = if initial.is_empty() {
+            None
+        } else {
+            Some(initial.as_str())
+        };
 
         let mut terminal = tasty_terminal::Terminal::new(
             tasty_terminal::TerminalConfig {
@@ -204,10 +208,7 @@ impl AppState {
         })
     }
 
-    fn rebuild_surface_layout(
-        &mut self,
-        closed: ClosedSurfaceLayout,
-    ) -> Option<SurfaceLayout> {
+    fn rebuild_surface_layout(&mut self, closed: ClosedSurfaceLayout) -> Option<SurfaceLayout> {
         match closed {
             ClosedSurfaceLayout::Single(surface) => {
                 let node = self.rebuild_surface_node(surface)?;

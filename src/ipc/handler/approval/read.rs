@@ -26,11 +26,7 @@ pub fn handle_cancel(
 /// 안에서 이 함수를 호출하고, 응답을 `response_tx` 로 보낸다.
 ///
 /// `timeout_ms` 가 0 또는 null 이면 record 의 `timeout_ms` 사용, 그것도 없으면 무한 대기.
-pub fn await_blocking(
-    store: &ApprovalStore,
-    rpc_id: Value,
-    params: &Value,
-) -> JsonRpcResponse {
+pub fn await_blocking(store: &ApprovalStore, rpc_id: Value, params: &Value) -> JsonRpcResponse {
     let req_id = match params.get("id").and_then(|v| v.as_str()) {
         Some(s) if !s.is_empty() => ApprovalId(s.to_string()),
         _ => return JsonRpcResponse::invalid_params(rpc_id, "Missing 'id'"),
@@ -46,7 +42,11 @@ pub fn await_blocking(
         persist_record(&record);
     }
     match outcome {
-        Ok(WaitOutcome::Responded { choice, by, comment }) => JsonRpcResponse::success(
+        Ok(WaitOutcome::Responded {
+            choice,
+            by,
+            comment,
+        }) => JsonRpcResponse::success(
             rpc_id,
             json!({
                 "outcome": "responded",
@@ -151,7 +151,10 @@ pub fn handle_history(
         .get("decision")
         .and_then(|v| v.as_str())
         .map(str::to_string);
-    let state_filter = params.get("state").and_then(|v| v.as_str()).map(str::to_string);
+    let state_filter = params
+        .get("state")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
     let limit = params
         .get("limit")
         .and_then(|v| v.as_u64())
@@ -163,7 +166,12 @@ pub fn handle_history(
         Some(Err(e)) => {
             return JsonRpcResponse::error(id, -32603, format!("memory scopes failed: {e}"));
         }
-        None => return JsonRpcResponse::success(id, json!({ "entries": [], "count": 0, "returned": 0 })),
+        None => {
+            return JsonRpcResponse::success(
+                id,
+                json!({ "entries": [], "count": 0, "returned": 0 }),
+            );
+        }
     };
 
     let mut collected: Vec<ApprovalRecord> = Vec::new();
@@ -191,8 +199,12 @@ pub fn handle_history(
             if entry.key == "tasty.approval.summary" {
                 continue;
             }
-            let MemoryValue::Json(v) = entry.value else { continue };
-            let Ok(record) = serde_json::from_value::<ApprovalRecord>(v) else { continue };
+            let MemoryValue::Json(v) = entry.value else {
+                continue;
+            };
+            let Ok(record) = serde_json::from_value::<ApprovalRecord>(v) else {
+                continue;
+            };
             collected.push(record);
         }
     }
@@ -241,4 +253,3 @@ pub fn handle_history(
         json!({ "entries": arr, "count": total, "returned": returned }),
     )
 }
-

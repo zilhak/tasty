@@ -52,7 +52,9 @@ pub fn draw_command_palette_popup(ui: &mut egui::Ui, state: &mut AppState) -> Po
 
         let resp = ui.add(
             egui::TextEdit::singleline(&mut state.command_palette.query)
-                .hint_text(crate::theme_bridge::hint_text(t("command_palette.placeholder")))
+                .hint_text(crate::theme_bridge::hint_text(t(
+                    "command_palette.placeholder",
+                )))
                 .desired_width(ui.available_width() - 8.0)
                 .font(egui::TextStyle::Body),
         );
@@ -149,10 +151,6 @@ fn label_for(cmd: &PaletteCommand) -> String {
 }
 
 fn first_binding(state: &AppState, action_id: &str) -> Option<String> {
-    let bindings = state
-        .engine
-        .settings
-        .keybindings
-        .get_bindings(action_id)?;
+    let bindings = state.engine.settings.keybindings.get_bindings(action_id)?;
     bindings.first().cloned()
 }

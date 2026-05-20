@@ -107,9 +107,7 @@ pub fn handle_paste(state: &mut AppState, id: Value, params: &Value) -> JsonRpcR
                         ),
                     }
                 }
-                Err(e) => {
-                    JsonRpcResponse::internal_error(id, format!("Failed to decode PNG: {e}"))
-                }
+                Err(e) => JsonRpcResponse::internal_error(id, format!("Failed to decode PNG: {e}")),
             }
         }
     }
@@ -130,4 +128,3 @@ pub fn handle_clear(state: &mut AppState, id: Value) -> JsonRpcResponse {
     state.engine.clipboard_history.clear();
     JsonRpcResponse::success(id, json!({ "ok": true }))
 }
-

@@ -90,8 +90,13 @@ impl<'a> BarrierStore<'a> {
     fn put(&mut self, b: &Barrier) -> Result<()> {
         let scope = Scope::Workspace(b.workspace_id);
         let value = MemoryValue::Json(serde_json::to_value(b)?);
-        self.mem
-            .put(&self.owner, &scope, &barrier_key(&b.name), &value, &PutOpts::default())?;
+        self.mem.put(
+            &self.owner,
+            &scope,
+            &barrier_key(&b.name),
+            &value,
+            &PutOpts::default(),
+        )?;
         Ok(())
     }
 
@@ -201,12 +206,7 @@ impl<'a> BarrierStore<'a> {
     }
 
     /// 현 상태 조회 (timeout 도장 포함).
-    pub fn state(
-        &mut self,
-        workspace_id: WorkspaceId,
-        name: &str,
-        now_ms: u64,
-    ) -> Result<Barrier> {
+    pub fn state(&mut self, workspace_id: WorkspaceId, name: &str, now_ms: u64) -> Result<Barrier> {
         let mut b = self
             .get(workspace_id, name)?
             .ok_or_else(|| AgentError::InvalidArgument(format!("barrier not found: {name}")))?;

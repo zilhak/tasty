@@ -137,7 +137,9 @@ impl App {
     ) -> IpcStep {
         let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
         let response = match cmd.request.method.as_str() {
-            "plugin.list" => host_ipc::handler::plugin::handle_list(self.plugin_manager.as_ref(), id),
+            "plugin.list" => {
+                host_ipc::handler::plugin::handle_list(self.plugin_manager.as_ref(), id)
+            }
             "plugin.show" => host_ipc::handler::plugin::handle_show(
                 self.plugin_manager.as_ref(),
                 id,
@@ -191,8 +193,12 @@ impl App {
                 host_ipc::handler::session::handle_list_agent_permissions(id, &cmd.request.params)
             }
             "plugin.audit_query" => host_ipc::handler::audit::handle_query(id, &cmd.request.params),
-            "plugin.audit_summary" => host_ipc::handler::audit::handle_summary(id, &cmd.request.params),
-            "plugin.audit_follow" => host_ipc::handler::audit::handle_follow(id, &cmd.request.params),
+            "plugin.audit_summary" => {
+                host_ipc::handler::audit::handle_summary(id, &cmd.request.params)
+            }
+            "plugin.audit_follow" => {
+                host_ipc::handler::audit::handle_follow(id, &cmd.request.params)
+            }
             "plugin.audit_clear" => host_ipc::handler::audit::handle_clear(id, &cmd.request.params),
             "plugin.request_permission" => {
                 // 첫 main window 의 state 를 빌려 사용 (모든 window 가 같은 approval_store
@@ -228,7 +234,11 @@ impl App {
                 | "plugin.revoke"
         );
         send_response(&cmd.response_tx, response);
-        if dirty { IpcStep::HandledDirty } else { IpcStep::Handled }
+        if dirty {
+            IpcStep::HandledDirty
+        } else {
+            IpcStep::Handled
+        }
     }
 
     /// `approval.await`: blocking. Arc<ApprovalStore> 만 worker thread 로 클론.
@@ -248,8 +258,7 @@ impl App {
                 let params = cmd.request.params.clone();
                 let response_tx = cmd.response_tx.clone();
                 std::thread::spawn(move || {
-                    let resp =
-                        host_ipc::handler::approval::await_blocking(&store, rpc_id, &params);
+                    let resp = host_ipc::handler::approval::await_blocking(&store, rpc_id, &params);
                     send_response(&response_tx, resp);
                 });
             }

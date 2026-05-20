@@ -58,8 +58,12 @@ impl Parser for PathParser {
                     continue;
                 }
             }
-            let line_n = caps.name("line").and_then(|m| m.as_str().parse::<u32>().ok());
-            let col_n = caps.name("col").and_then(|m| m.as_str().parse::<u32>().ok());
+            let line_n = caps
+                .name("line")
+                .and_then(|m| m.as_str().parse::<u32>().ok());
+            let col_n = caps
+                .name("col")
+                .and_then(|m| m.as_str().parse::<u32>().ok());
             out.push(ParsedItem {
                 kind: "path",
                 line: line_idx,
@@ -82,9 +86,8 @@ impl Parser for PathParser {
 
 pub struct UrlParser;
 
-static URL_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"(?P<scheme>https?|ftp|ssh|file)://[^\s'"<>()\[\]]+"#).unwrap()
-});
+static URL_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"(?P<scheme>https?|ftp|ssh|file)://[^\s'"<>()\[\]]+"#).unwrap());
 
 impl Parser for UrlParser {
     fn id(&self) -> &'static str {
@@ -159,4 +162,3 @@ impl Parser for OscLinkParser {
 // ============================================================
 // osc_notification (OSC 9 / OSC 777)
 // ============================================================
-

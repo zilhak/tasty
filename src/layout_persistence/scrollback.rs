@@ -9,9 +9,7 @@ pub(super) fn queue_scrollback_for_surface(
 ) {
     match crate::scrollback_store::read(persist_id) {
         Some(lines) if !lines.is_empty() => {
-            engine
-                .pending_scrollback_inject
-                .insert(surface_id, lines);
+            engine.pending_scrollback_inject.insert(surface_id, lines);
         }
         Some(_) => {}
         None => {
@@ -83,4 +81,3 @@ pub(super) fn capture_scrollback_to_disk(
     seen_refs.insert(persist_id.clone());
     Some(persist_id)
 }
-

@@ -207,10 +207,7 @@ mod tests {
         let p = write_tmp(&dir, "report.weird-ext", b"data");
         let p_str = p.display().to_string();
         let mut ctx = DeepCtx::new();
-        let script = format!(
-            r#"return target.path == {}"#,
-            quote(&p_str)
-        );
+        let script = format!(r#"return target.path == {}"#, quote(&p_str));
         assert!(evaluate_lua(&script, &FileTarget::new(p), &mut ctx));
     }
 
@@ -236,7 +233,11 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let p = write_tmp(&dir, "x.txt", b"hello");
         let mut ctx = DeepCtx::new();
-        assert!(!evaluate_lua("this is not lua", &FileTarget::new(p), &mut ctx));
+        assert!(!evaluate_lua(
+            "this is not lua",
+            &FileTarget::new(p),
+            &mut ctx
+        ));
     }
 
     #[test]

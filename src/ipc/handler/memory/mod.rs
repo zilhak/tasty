@@ -17,10 +17,7 @@ pub use cache::*;
 pub use plan::*;
 pub use secret::*;
 
-pub(super) fn require_workspace_id(
-    params: &Value,
-    id: &Value,
-) -> Result<u32, JsonRpcResponse> {
+pub(super) fn require_workspace_id(params: &Value, id: &Value) -> Result<u32, JsonRpcResponse> {
     params
         .get("workspace_id")
         .and_then(|v| v.as_u64())
@@ -385,8 +382,7 @@ pub fn handle_delete(
     };
     let cas = params.get("cas").and_then(|v| v.as_u64());
     let owner = caller.owner().to_string();
-    let result =
-        with_store(|s| s.delete(&owner, &scope, &key, cas)).expect("memory store present");
+    let result = with_store(|s| s.delete(&owner, &scope, &key, cas)).expect("memory store present");
     match result {
         Ok(()) => JsonRpcResponse::success(id, json!({ "ok": true })),
         Err(e) => map_error(id, e),

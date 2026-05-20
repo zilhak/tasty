@@ -11,11 +11,7 @@ use tasty_plugin_protocol::events::payloads::{
 
 use crate::plugin::PluginManager;
 
-pub(super) fn emit_focused(
-    mgr: &mut PluginManager,
-    surface_id: u32,
-    prev_surface_id: Option<u32>,
-) {
+pub(super) fn emit_focused(mgr: &mut PluginManager, surface_id: u32, prev_surface_id: Option<u32>) {
     let payload = SurfaceFocused {
         surface_id,
         prev_surface_id,

@@ -78,12 +78,11 @@ impl Settings {
         match fs::read_to_string(&path) {
             Ok(contents) => {
                 // TOML을 Value로 먼저 파싱하여 keybindings 키 목록 추출
-                let existing_kb_keys: HashSet<String> =
-                    toml::from_str::<toml::Value>(&contents)
-                        .ok()
-                        .and_then(|v| v.get("keybindings").and_then(|kb| kb.as_table().cloned()))
-                        .map(|t| t.keys().cloned().collect())
-                        .unwrap_or_default();
+                let existing_kb_keys: HashSet<String> = toml::from_str::<toml::Value>(&contents)
+                    .ok()
+                    .and_then(|v| v.get("keybindings").and_then(|kb| kb.as_table().cloned()))
+                    .map(|t| t.keys().cloned().collect())
+                    .unwrap_or_default();
 
                 match toml::from_str::<Settings>(&contents) {
                     Ok(mut settings) => {

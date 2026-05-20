@@ -16,9 +16,9 @@ pub mod ui;
 
 pub use bus::BusHandle;
 pub use error::{PluginError, Result};
-pub use host::HostHandle;
 #[allow(deprecated)]
 pub use host::HostCallError;
+pub use host::HostHandle;
 pub use plugin::{
     CommandInvokeCtx, EventDispatchCtx, ExtensionHookCtx, ExtensionHookOutcome, IpcMethodCtx,
     IpcMethodError, Plugin, PopupClosedCtx, PopupEventCtx, PopupEventResult, PopupOpenCtx,

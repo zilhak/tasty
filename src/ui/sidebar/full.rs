@@ -351,8 +351,11 @@ pub fn draw_full_sidebar(
                             }
 
                             // Draw ghost card at mouse position
-                            if let Some(name) =
-                                state.engine.workspaces.get(drag.ws_idx).map(|w| w.name.clone())
+                            if let Some(name) = state
+                                .engine
+                                .workspaces
+                                .get(drag.ws_idx)
+                                .map(|w| w.name.clone())
                             {
                                 if let Some((_, first_rect)) = ws_card_rects.first() {
                                     let ghost_rect = egui::Rect::from_min_size(

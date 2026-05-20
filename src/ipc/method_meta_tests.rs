@@ -37,10 +37,7 @@ fn all_registered_methods_match_naming_policy() {
              (or registered in ROOT_EXCEPTIONS)"
         );
         for part in &parts {
-            assert!(
-                !part.is_empty(),
-                "method '{name}' has empty segment"
-            );
+            assert!(!part.is_empty(), "method '{name}' has empty segment");
             assert!(
                 part.chars()
                     .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_'),

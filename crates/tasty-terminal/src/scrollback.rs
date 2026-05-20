@@ -2,8 +2,8 @@ use std::collections::VecDeque;
 
 use termwiz::cell::CellAttributes;
 
-use crate::disk_scrollback;
 use crate::Terminal;
+use crate::disk_scrollback;
 use termwiz::surface::Change;
 
 /// One scrollback line with its cells and a soft-wrap flag.
@@ -366,5 +366,4 @@ impl Terminal {
             _ => {}
         }
     }
-
 }

@@ -13,9 +13,7 @@ use std::path::PathBuf;
 
 use crate::file_format::{DetectDepth, DetectorId, FileTarget};
 use crate::file_handler::{FileHandler, HandlerAction, HandlerId};
-use crate::state::{
-    AppState, FileHandlerPickerData, PickerHandlerSummary,
-};
+use crate::state::{AppState, FileHandlerPickerData, PickerHandlerSummary};
 
 /// 클릭/드롭된 URI 의 종류.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -103,7 +101,10 @@ pub fn dispatch_file_target(state: &mut AppState, target: FileTarget, depth: Det
                 tracing::warn!(
                     "file_dispatch: identify_worker not injected — falling back to cheap",
                 );
-                let detector = state.engine.file_format.identify(&target, DetectDepth::Cheap);
+                let detector = state
+                    .engine
+                    .file_format
+                    .identify(&target, DetectDepth::Cheap);
                 apply_identify_result(state, target, detector);
             }
         }
@@ -186,11 +187,7 @@ fn handler_to_summary(h: &FileHandler) -> PickerHandlerSummary {
 
 /// 단일 handler action 을 실행. OpenSurface 는 즉시, Ipc 는 큐로, System 은
 /// webbrowser 위임.
-pub fn execute_handler_action(
-    state: &mut AppState,
-    handler: &FileHandler,
-    target: &FileTarget,
-) {
+pub fn execute_handler_action(state: &mut AppState, handler: &FileHandler, target: &FileTarget) {
     match &handler.action {
         HandlerAction::OpenSurface {
             surface_kind,

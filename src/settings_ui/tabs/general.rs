@@ -43,4 +43,3 @@ pub fn draw_general_tab(ui: &mut egui::Ui, settings: &mut Settings) {
             ui.end_row();
         });
 }
-

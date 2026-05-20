@@ -1,9 +1,8 @@
-
-use egui::emath::GuiRounding as _;
 use crate::i18n::t;
-use crate::theme;
 use crate::model::ImagePanel;
+use crate::theme;
 use crate::ui::image_view::ImageView;
+use egui::emath::GuiRounding as _;
 
 pub(super) fn draw_viewer_controls(
     ui: &mut egui::Ui,
@@ -127,7 +126,10 @@ pub(super) fn draw_edit_controls(
     // Undo button
     let undo_enabled = view.can_undo();
     if ui
-        .add_enabled(undo_enabled, egui::Button::new("↶").min_size(egui::vec2(24.0, 20.0)))
+        .add_enabled(
+            undo_enabled,
+            egui::Button::new("↶").min_size(egui::vec2(24.0, 20.0)),
+        )
         .on_hover_text(t("image_viewer.undo"))
         .clicked()
     {
@@ -137,7 +139,10 @@ pub(super) fn draw_edit_controls(
     // Redo button
     let redo_enabled = view.can_redo();
     if ui
-        .add_enabled(redo_enabled, egui::Button::new("↷").min_size(egui::vec2(24.0, 20.0)))
+        .add_enabled(
+            redo_enabled,
+            egui::Button::new("↷").min_size(egui::vec2(24.0, 20.0)),
+        )
         .on_hover_text(t("image_viewer.redo"))
         .clicked()
     {
@@ -198,4 +203,3 @@ pub(super) fn draw_zoom_controls(ui: &mut egui::Ui, view: &mut ImageView, th: &t
         view.zoom = (view.zoom / 1.25).max(0.1);
     }
 }
-

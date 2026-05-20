@@ -11,7 +11,6 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use tasty_core::model::{SurfaceId, WorkspaceId};
 
-
 /// Task의 고유 식별자. 형식 `t-<timestamp_ms>-<seq>` (예: `t-1716800000123-7`).
 /// 호스트가 본 크레이트 외부에서 임의 문자열로 생성해도 무방하지만, 본 모듈의
 /// 헬퍼는 위 형식으로 발급한다.
@@ -135,7 +134,9 @@ pub enum ReducerStrategy {
     MergeJson,
     ConcatText,
     /// shell 명령으로 결과 배열 stdin 전달, stdout이 최종.
-    Custom { command: String },
+    Custom {
+        command: String,
+    },
 }
 
 /// Task 실행 결과. `Succeeded`/`Failed` 상태에서만 채워진다.
@@ -217,7 +218,6 @@ pub(super) fn apply_on_failure(task: &Task, _all: &[Task]) -> Option<TaskState> 
         OnFailure::Fallback { .. } => None,
     }
 }
-
 
 mod graph;
 mod store;

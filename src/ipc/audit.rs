@@ -292,10 +292,7 @@ impl<'a> AuditStore<'a> {
         if let Some(cap) = limit {
             out.truncate(cap);
         }
-        let next = out
-            .last()
-            .map(|r| (r.ts_ms, r.seq))
-            .unwrap_or(cursor);
+        let next = out.last().map(|r| (r.ts_ms, r.seq)).unwrap_or(cursor);
         Ok((out, next.0, next.1))
     }
 
@@ -330,10 +327,7 @@ impl<'a> AuditStore<'a> {
     }
 }
 
-fn top_counts(
-    map: std::collections::BTreeMap<String, u64>,
-    top_n: usize,
-) -> Vec<(String, u64)> {
+fn top_counts(map: std::collections::BTreeMap<String, u64>, top_n: usize) -> Vec<(String, u64)> {
     let mut v: Vec<(String, u64)> = map.into_iter().collect();
     v.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
     if top_n > 0 {
@@ -389,7 +383,14 @@ mod tests {
         (td, mem)
     }
 
-    fn rec(ts: u64, seq: u64, kind: AuditCallerKind, caller: &str, method: &str, dec: AuditDecision) -> AuditRecord {
+    fn rec(
+        ts: u64,
+        seq: u64,
+        kind: AuditCallerKind,
+        caller: &str,
+        method: &str,
+        dec: AuditDecision,
+    ) -> AuditRecord {
         AuditRecord {
             ts_ms: ts,
             seq,
@@ -406,9 +407,36 @@ mod tests {
     fn append_and_list_in_order() {
         let (_td, mut mem) = fresh();
         let mut store = AuditStore::new(&mut mem, "_host");
-        store.append(&rec(2_000, 0, AuditCallerKind::Agent, "child:1", "surface.list", AuditDecision::Allow)).unwrap();
-        store.append(&rec(1_000, 0, AuditCallerKind::Agent, "child:1", "memory.put", AuditDecision::Deny)).unwrap();
-        store.append(&rec(1_000, 1, AuditCallerKind::Agent, "child:1", "memory.put", AuditDecision::Allow)).unwrap();
+        store
+            .append(&rec(
+                2_000,
+                0,
+                AuditCallerKind::Agent,
+                "child:1",
+                "surface.list",
+                AuditDecision::Allow,
+            ))
+            .unwrap();
+        store
+            .append(&rec(
+                1_000,
+                0,
+                AuditCallerKind::Agent,
+                "child:1",
+                "memory.put",
+                AuditDecision::Deny,
+            ))
+            .unwrap();
+        store
+            .append(&rec(
+                1_000,
+                1,
+                AuditCallerKind::Agent,
+                "child:1",
+                "memory.put",
+                AuditDecision::Allow,
+            ))
+            .unwrap();
         let all = store.list(0, 10_000).unwrap();
         assert_eq!(all.len(), 3);
         assert_eq!(all[0].ts_ms, 1_000);
@@ -420,8 +448,26 @@ mod tests {
     fn retention_evicts_old() {
         let (_td, mut mem) = fresh();
         let mut store = AuditStore::new(&mut mem, "_host");
-        store.append(&rec(1_000, 0, AuditCallerKind::Agent, "a", "x.y", AuditDecision::Allow)).unwrap();
-        store.append(&rec(50_000, 0, AuditCallerKind::Agent, "a", "x.y", AuditDecision::Allow)).unwrap();
+        store
+            .append(&rec(
+                1_000,
+                0,
+                AuditCallerKind::Agent,
+                "a",
+                "x.y",
+                AuditDecision::Allow,
+            ))
+            .unwrap();
+        store
+            .append(&rec(
+                50_000,
+                0,
+                AuditCallerKind::Agent,
+                "a",
+                "x.y",
+                AuditDecision::Allow,
+            ))
+            .unwrap();
         // retention=10000, now=51000 → cutoff=41000. ts=1000 (오래됨) 만 evict.
         let alive = store.list(10_000, 51_000).unwrap();
         assert_eq!(alive.len(), 1);
@@ -432,35 +478,89 @@ mod tests {
     fn query_filters_by_caller_method_decision_time() {
         let (_td, mut mem) = fresh();
         let mut store = AuditStore::new(&mut mem, "_host");
-        store.append(&rec(1, 0, AuditCallerKind::Agent, "a", "memory.put", AuditDecision::Allow)).unwrap();
-        store.append(&rec(2, 0, AuditCallerKind::Agent, "a", "memory.get", AuditDecision::Allow)).unwrap();
-        store.append(&rec(3, 0, AuditCallerKind::Agent, "b", "memory.put", AuditDecision::Deny)).unwrap();
-        store.append(&rec(4, 0, AuditCallerKind::Plugin, "p", "memory.put", AuditDecision::Allow)).unwrap();
+        store
+            .append(&rec(
+                1,
+                0,
+                AuditCallerKind::Agent,
+                "a",
+                "memory.put",
+                AuditDecision::Allow,
+            ))
+            .unwrap();
+        store
+            .append(&rec(
+                2,
+                0,
+                AuditCallerKind::Agent,
+                "a",
+                "memory.get",
+                AuditDecision::Allow,
+            ))
+            .unwrap();
+        store
+            .append(&rec(
+                3,
+                0,
+                AuditCallerKind::Agent,
+                "b",
+                "memory.put",
+                AuditDecision::Deny,
+            ))
+            .unwrap();
+        store
+            .append(&rec(
+                4,
+                0,
+                AuditCallerKind::Plugin,
+                "p",
+                "memory.put",
+                AuditDecision::Allow,
+            ))
+            .unwrap();
 
         // caller_id="a" 만.
-        let q = AuditQuery { caller_id: Some("a".into()), ..Default::default() };
+        let q = AuditQuery {
+            caller_id: Some("a".into()),
+            ..Default::default()
+        };
         assert_eq!(store.query(&q, 0, 100).unwrap().len(), 2);
 
         // method prefix "memory." (모두 매칭).
-        let q = AuditQuery { method_prefix: Some("memory.".into()), ..Default::default() };
+        let q = AuditQuery {
+            method_prefix: Some("memory.".into()),
+            ..Default::default()
+        };
         assert_eq!(store.query(&q, 0, 100).unwrap().len(), 4);
 
         // method prefix "memory.put" 만.
-        let q = AuditQuery { method_prefix: Some("memory.put".into()), ..Default::default() };
+        let q = AuditQuery {
+            method_prefix: Some("memory.put".into()),
+            ..Default::default()
+        };
         assert_eq!(store.query(&q, 0, 100).unwrap().len(), 3);
 
         // decision=Deny 만.
-        let q = AuditQuery { decision: Some(AuditDecision::Deny), ..Default::default() };
+        let q = AuditQuery {
+            decision: Some(AuditDecision::Deny),
+            ..Default::default()
+        };
         let denies = store.query(&q, 0, 100).unwrap();
         assert_eq!(denies.len(), 1);
         assert_eq!(denies[0].caller_id, "b");
 
         // since=3 (ts 3,4 만).
-        let q = AuditQuery { since_ms: Some(3), ..Default::default() };
+        let q = AuditQuery {
+            since_ms: Some(3),
+            ..Default::default()
+        };
         assert_eq!(store.query(&q, 0, 100).unwrap().len(), 2);
 
         // limit=2.
-        let q = AuditQuery { limit: Some(2), ..Default::default() };
+        let q = AuditQuery {
+            limit: Some(2),
+            ..Default::default()
+        };
         assert_eq!(store.query(&q, 0, 100).unwrap().len(), 2);
     }
 
@@ -473,10 +573,24 @@ mod tests {
             ("a", "memory.put", AuditDecision::Allow),
             ("a", "memory.get", AuditDecision::Deny),
             ("b", "surface.list", AuditDecision::Allow),
-        ].iter().enumerate() {
-            store.append(&rec(i as u64, 0, AuditCallerKind::Agent, caller, method, *dec)).unwrap();
+        ]
+        .iter()
+        .enumerate()
+        {
+            store
+                .append(&rec(
+                    i as u64,
+                    0,
+                    AuditCallerKind::Agent,
+                    caller,
+                    method,
+                    *dec,
+                ))
+                .unwrap();
         }
-        let s = store.summary(&AuditQuery::default(), 0, 1_000_000, 10).unwrap();
+        let s = store
+            .summary(&AuditQuery::default(), 0, 1_000_000, 10)
+            .unwrap();
         assert_eq!(s.total, 4);
         assert_eq!(s.allow, 3);
         assert_eq!(s.deny, 1);
@@ -491,26 +605,59 @@ mod tests {
         let (_td, mut mem) = fresh();
         let mut store = AuditStore::new(&mut mem, "_host");
         for (ts, seq) in [(10, 0), (10, 1), (20, 0), (30, 0)] {
-            store.append(&rec(ts, seq, AuditCallerKind::Agent, "a", "x.y", AuditDecision::Allow)).unwrap();
+            store
+                .append(&rec(
+                    ts,
+                    seq,
+                    AuditCallerKind::Agent,
+                    "a",
+                    "x.y",
+                    AuditDecision::Allow,
+                ))
+                .unwrap();
         }
         // 초기 호출: cursor 없음 → 빈 + latest 커서.
-        let (recs, next_ts, next_seq) = store.follow(&AuditQuery::default(), None, None, 0, 1_000, None).unwrap();
+        let (recs, next_ts, next_seq) = store
+            .follow(&AuditQuery::default(), None, None, 0, 1_000, None)
+            .unwrap();
         assert!(recs.is_empty());
         assert_eq!((next_ts, next_seq), (30, 0));
 
         // 새 record 가 들어옴.
-        store.append(&rec(40, 0, AuditCallerKind::Agent, "a", "x.y", AuditDecision::Allow)).unwrap();
-        store.append(&rec(40, 1, AuditCallerKind::Agent, "a", "x.y", AuditDecision::Allow)).unwrap();
+        store
+            .append(&rec(
+                40,
+                0,
+                AuditCallerKind::Agent,
+                "a",
+                "x.y",
+                AuditDecision::Allow,
+            ))
+            .unwrap();
+        store
+            .append(&rec(
+                40,
+                1,
+                AuditCallerKind::Agent,
+                "a",
+                "x.y",
+                AuditDecision::Allow,
+            ))
+            .unwrap();
 
         // 직전 커서 (30, 0) 으로 다시 호출 → 40,0 과 40,1 만.
-        let (recs, next_ts, next_seq) = store.follow(&AuditQuery::default(), Some(30), Some(0), 0, 1_000, None).unwrap();
+        let (recs, next_ts, next_seq) = store
+            .follow(&AuditQuery::default(), Some(30), Some(0), 0, 1_000, None)
+            .unwrap();
         assert_eq!(recs.len(), 2);
         assert_eq!((recs[0].ts_ms, recs[0].seq), (40, 0));
         assert_eq!((recs[1].ts_ms, recs[1].seq), (40, 1));
         assert_eq!((next_ts, next_seq), (40, 1));
 
         // 또 호출 → 새 게 없으면 빈 + 커서 그대로.
-        let (recs, next_ts, next_seq) = store.follow(&AuditQuery::default(), Some(40), Some(1), 0, 1_000, None).unwrap();
+        let (recs, next_ts, next_seq) = store
+            .follow(&AuditQuery::default(), Some(40), Some(1), 0, 1_000, None)
+            .unwrap();
         assert!(recs.is_empty());
         assert_eq!((next_ts, next_seq), (40, 1));
     }
@@ -519,17 +666,49 @@ mod tests {
     fn follow_respects_filter_and_limit() {
         let (_td, mut mem) = fresh();
         let mut store = AuditStore::new(&mut mem, "_host");
-        store.append(&rec(10, 0, AuditCallerKind::Agent, "a", "memory.put", AuditDecision::Allow)).unwrap();
-        store.append(&rec(11, 0, AuditCallerKind::Agent, "b", "surface.list", AuditDecision::Deny)).unwrap();
-        store.append(&rec(12, 0, AuditCallerKind::Agent, "a", "memory.get", AuditDecision::Allow)).unwrap();
+        store
+            .append(&rec(
+                10,
+                0,
+                AuditCallerKind::Agent,
+                "a",
+                "memory.put",
+                AuditDecision::Allow,
+            ))
+            .unwrap();
+        store
+            .append(&rec(
+                11,
+                0,
+                AuditCallerKind::Agent,
+                "b",
+                "surface.list",
+                AuditDecision::Deny,
+            ))
+            .unwrap();
+        store
+            .append(&rec(
+                12,
+                0,
+                AuditCallerKind::Agent,
+                "a",
+                "memory.get",
+                AuditDecision::Allow,
+            ))
+            .unwrap();
 
         // 필터 caller=a, cursor=(0,0).
-        let q = AuditQuery { caller_id: Some("a".into()), ..Default::default() };
+        let q = AuditQuery {
+            caller_id: Some("a".into()),
+            ..Default::default()
+        };
         let (recs, _, _) = store.follow(&q, Some(0), Some(0), 0, 1_000, None).unwrap();
         assert_eq!(recs.len(), 2);
 
         // limit=1.
-        let (recs, next_ts, next_seq) = store.follow(&q, Some(0), Some(0), 0, 1_000, Some(1)).unwrap();
+        let (recs, next_ts, next_seq) = store
+            .follow(&q, Some(0), Some(0), 0, 1_000, Some(1))
+            .unwrap();
         assert_eq!(recs.len(), 1);
         assert_eq!((next_ts, next_seq), (10, 0)); // 첫 매칭만.
     }
@@ -539,7 +718,16 @@ mod tests {
         let (_td, mut mem) = fresh();
         let mut store = AuditStore::new(&mut mem, "_host");
         for ts in [1, 10, 100, 1000] {
-            store.append(&rec(ts, 0, AuditCallerKind::Agent, "a", "x.y", AuditDecision::Allow)).unwrap();
+            store
+                .append(&rec(
+                    ts,
+                    0,
+                    AuditCallerKind::Agent,
+                    "a",
+                    "x.y",
+                    AuditDecision::Allow,
+                ))
+                .unwrap();
         }
         // before_ms=50 → ts<50 인 1,10 만 삭제.
         let removed = store.clear(Some(50)).unwrap();

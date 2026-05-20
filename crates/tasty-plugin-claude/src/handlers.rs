@@ -3,7 +3,7 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tasty_plugin_sdk::{HostHandle, IpcMethodError, SurfaceResult};
 
 use crate::error_scan::ErrorScanner;
@@ -17,7 +17,10 @@ pub(crate) fn require_surface_id(params: &Value) -> Result<u32, IpcMethodError> 
         .ok_or_else(|| IpcMethodError::invalid_params("Missing required 'surface_id' parameter"))
 }
 
-pub(crate) fn handle_set_idle_state(state: &mut ClaudeState, params: &Value) -> Result<Value, IpcMethodError> {
+pub(crate) fn handle_set_idle_state(
+    state: &mut ClaudeState,
+    params: &Value,
+) -> Result<Value, IpcMethodError> {
     let surface_id = params
         .get("surface_id")
         .and_then(|v| v.as_u64())
@@ -44,9 +47,7 @@ pub(crate) fn handle_set_needs_input(
     let needs_input = params
         .get("needs_input")
         .and_then(|v| v.as_bool())
-        .ok_or_else(|| {
-            IpcMethodError::invalid_params("Missing 'needs_input' parameter (bool)")
-        })?;
+        .ok_or_else(|| IpcMethodError::invalid_params("Missing 'needs_input' parameter (bool)"))?;
     state.set_needs_input(surface_id, needs_input);
     state.save();
     Ok(json!({ "ok": true }))
@@ -69,10 +70,7 @@ pub(crate) fn handle_children(
             .and_then(|v| v.as_u64())
             .map(|v| v as u32);
         let Some(sid) = sid else { continue };
-        if let Ok(resp) = host.call(
-            "surface.foreground_process",
-            json!({ "surface_id": sid }),
-        ) {
+        if let Ok(resp) = host.call("surface.foreground_process", json!({ "surface_id": sid })) {
             if let Some(name) = resp.get("name").and_then(|v| v.as_str()) {
                 entry["foreground_process"] = json!(name);
             }
@@ -147,7 +145,11 @@ pub(crate) enum WaitDecision {
 }
 
 /// state만으로 결정 가능한 wait 분기. host IPC 없이 단위 테스트 가능.
-pub(crate) fn wait_decide(state: &ClaudeState, parent_surface_id: u32, child_index: u32) -> WaitDecision {
+pub(crate) fn wait_decide(
+    state: &ClaudeState,
+    parent_surface_id: u32,
+    child_index: u32,
+) -> WaitDecision {
     match state.find_child(parent_surface_id, child_index) {
         Some(c) => WaitDecision::CheckExistence(c.child_surface_id),
         None => WaitDecision::Exited,
@@ -182,10 +184,7 @@ pub(crate) fn handle_kill(
         })?;
 
     let locate = host
-        .call(
-            "surface.locate",
-            json!({ "surface_id": child_surface_id }),
-        )
+        .call("surface.locate", json!({ "surface_id": child_surface_id }))
         .map_err(|e| IpcMethodError::new(format!("surface.locate failed: {e}")))?;
     let pane_id = locate
         .get("pane_id")
@@ -235,7 +234,10 @@ pub(crate) fn handle_broadcast(
         .get("text")
         .and_then(|v| v.as_str())
         .ok_or_else(|| IpcMethodError::invalid_params("Missing 'text' parameter"))?;
-    let role_filter = params.get("role").and_then(|v| v.as_str()).map(String::from);
+    let role_filter = params
+        .get("role")
+        .and_then(|v| v.as_str())
+        .map(String::from);
 
     let child_ids = broadcast_targets(state, parent_surface_id, role_filter.as_deref());
 
@@ -349,7 +351,10 @@ pub(crate) fn handle_launch(
         .and_then(|v| v.as_u64())
         .map(|v| v as u32)
         .ok_or_else(|| IpcMethodError::new("workspace.create returned no 'id'"))?;
-    let surface_id = ws_resp.get("surface_id").and_then(|v| v.as_u64()).map(|v| v as u32);
+    let surface_id = ws_resp
+        .get("surface_id")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32);
 
     if let Some(sid) = surface_id {
         if let Some(dir) = directory.as_deref() {
@@ -414,11 +419,11 @@ pub(crate) fn handle_respawn(
         .and_then(|v| v.as_u64())
         .map(|v| v as u32)
         .ok_or_else(|| IpcMethodError::invalid_params("Missing 'child_index' parameter"))?;
-    let cwd = params
-        .get("cwd")
+    let cwd = params.get("cwd").and_then(|v| v.as_str()).map(String::from);
+    let role = params
+        .get("role")
         .and_then(|v| v.as_str())
         .map(String::from);
-    let role = params.get("role").and_then(|v| v.as_str()).map(String::from);
     let nickname = params
         .get("nickname")
         .and_then(|v| v.as_str())
@@ -600,9 +605,7 @@ pub(crate) fn handle_spawn(
     params: &Value,
 ) -> Result<Value, IpcMethodError> {
     let parent_surface_id = caller_surface_id(params).ok_or_else(|| {
-        IpcMethodError::invalid_params(
-            "Cannot determine parent surface. Set TASTY_SURFACE_ID.",
-        )
+        IpcMethodError::invalid_params("Cannot determine parent surface. Set TASTY_SURFACE_ID.")
     })?;
     let workspace_param = params
         .get("workspace")
@@ -610,7 +613,10 @@ pub(crate) fn handle_spawn(
         .ok_or_else(|| IpcMethodError::invalid_params("Missing required '--workspace' parameter"))?
         .to_string();
     let cwd = params.get("cwd").and_then(|v| v.as_str()).map(String::from);
-    let role = params.get("role").and_then(|v| v.as_str()).map(String::from);
+    let role = params
+        .get("role")
+        .and_then(|v| v.as_str())
+        .map(String::from);
     let nickname = params
         .get("nickname")
         .and_then(|v| v.as_str())
@@ -660,13 +666,16 @@ pub(crate) fn caller_surface_id(params: &Value) -> Option<u32> {
 }
 
 /// 호스트 `resolve_workspace` 1:1. target이 숫자면 id, 아니면 name으로 매칭.
-pub(crate) fn resolve_workspace_id(host: &HostHandle, target: &str) -> Result<Option<u32>, IpcMethodError> {
+pub(crate) fn resolve_workspace_id(
+    host: &HostHandle,
+    target: &str,
+) -> Result<Option<u32>, IpcMethodError> {
     let ws_list = host
         .call("workspace.list", json!({}))
         .map_err(IpcMethodError::from)?;
-    let arr = ws_list.as_array().ok_or_else(|| {
-        IpcMethodError::new("workspace.list returned non-array")
-    })?;
+    let arr = ws_list
+        .as_array()
+        .ok_or_else(|| IpcMethodError::new("workspace.list returned non-array"))?;
     if let Ok(target_id) = target.parse::<u32>() {
         for w in arr {
             if w.get("id").and_then(|v| v.as_u64()) == Some(target_id as u64) {
@@ -744,7 +753,10 @@ pub(crate) fn resolve_or_create_spawn_pane(
 /// 호스트 `find_and_spawn_in_pane` 1:1. spawn pane 안에서 첫 빈 slot(< 4개의
 /// surface)을 찾아 surface-level split으로 새 surface를 만들고 ID 반환. 모든
 /// 탭이 가득 차면 새 탭을 만든다.
-pub(crate) fn find_and_spawn_in_pane(host: &HostHandle, spawn_pane_id: u32) -> Result<u32, IpcMethodError> {
+pub(crate) fn find_and_spawn_in_pane(
+    host: &HostHandle,
+    spawn_pane_id: u32,
+) -> Result<u32, IpcMethodError> {
     let tabs = collect_pane_tab_surfaces(host, spawn_pane_id)?;
 
     // 첫 < 4 인 tab에서 split target을 결정.
@@ -887,4 +899,3 @@ pub(crate) fn handle_parent(state: &ClaudeState, params: &Value) -> Result<Value
         })),
     }
 }
-

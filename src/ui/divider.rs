@@ -43,13 +43,12 @@ pub fn draw_surface_highlights(
     ));
     for (_pane_id, _pane_rect, surface_regions) in &regions {
         for r in surface_regions {
-            if state
-                .engine
-                .notifications
-                .is_surface_highlighted(r.id)
-            {
+            if state.engine.notifications.is_surface_highlighted(r.id) {
                 let egui_rect = egui::Rect::from_min_size(
-                    egui::pos2(r.rect.x.value() / scale_factor, r.rect.y.value() / scale_factor),
+                    egui::pos2(
+                        r.rect.x.value() / scale_factor,
+                        r.rect.y.value() / scale_factor,
+                    ),
                     egui::vec2(
                         r.rect.width.value() / scale_factor,
                         r.rect.height.value() / scale_factor,

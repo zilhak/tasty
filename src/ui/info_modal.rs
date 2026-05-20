@@ -78,8 +78,8 @@ pub fn info_modal_sizer(state: &AppState) -> egui::Vec2 {
     let approx_lines = (body_len as f32 / 60.0).ceil().max(2.0);
     let line_h = BODY_FONT_SIZE * 1.5;
     let body_h = approx_lines * line_h;
-    let total_h = (TITLE_BAR_HEIGHT + CONTENT_MARGIN * 2.0 + body_h + 48.0)
-        .clamp(MIN_HEIGHT, MAX_HEIGHT);
+    let total_h =
+        (TITLE_BAR_HEIGHT + CONTENT_MARGIN * 2.0 + body_h + 48.0).clamp(MIN_HEIGHT, MAX_HEIGHT);
     egui::vec2(DEFAULT_WIDTH, total_h)
 }
 
@@ -104,19 +104,15 @@ pub fn draw_info_modal(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction {
             .size(BODY_FONT_SIZE),
     );
 
-    let mut confirm = ctx.input(|i| {
-        i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Escape)
-    });
+    let mut confirm =
+        ctx.input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Escape));
 
-    ui.with_layout(
-        egui::Layout::bottom_up(egui::Align::RIGHT),
-        |ui| {
-            ui.add_space(4.0);
-            if ui.button(t("button.ok")).clicked() {
-                confirm = true;
-            }
-        },
-    );
+    ui.with_layout(egui::Layout::bottom_up(egui::Align::RIGHT), |ui| {
+        ui.add_space(4.0);
+        if ui.button(t("button.ok")).clicked() {
+            confirm = true;
+        }
+    });
 
     if !confirm {
         return PopupAction::None;

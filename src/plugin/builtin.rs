@@ -14,7 +14,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::plugin::manifest::Manifest;
-use crate::plugin::{discovery, PluginManager};
+use crate::plugin::{PluginManager, discovery};
 
 /// 한 builtin plugin의 패키지 메타 — id, dev workspace crate 경로, plugin 바이너리 이름.
 struct BuiltinSpec {

@@ -37,16 +37,19 @@ pub(super) fn task_id_param(params: &Value, id: &Value) -> Result<TaskId, JsonRp
         .get("id")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
-        .ok_or_else(|| JsonRpcResponse::invalid_params(id.clone(), "Missing required 'id' (task id)"))
+        .ok_or_else(|| {
+            JsonRpcResponse::invalid_params(id.clone(), "Missing required 'id' (task id)")
+        })
 }
 
 pub(super) fn agent_err_to_response(id: Value, err: AgentError) -> JsonRpcResponse {
     use AgentError::*;
     match err {
         TaskNotFound(_) => JsonRpcResponse::error(id, -32004, &err.to_string()),
-        DependencyCycle(_) | UnknownDependency(_) | InvalidArgument(_) | InvalidTransition { .. } => {
-            JsonRpcResponse::invalid_params(id, err.to_string())
-        }
+        DependencyCycle(_)
+        | UnknownDependency(_)
+        | InvalidArgument(_)
+        | InvalidTransition { .. } => JsonRpcResponse::invalid_params(id, err.to_string()),
         AlreadyTerminal(_) => JsonRpcResponse::error(id, -32008, &err.to_string()),
         LeaseConflict { .. } => JsonRpcResponse::error(id, -32009, &err.to_string()),
         Memory(_) | Serde(_) => JsonRpcResponse::error(id, -32603, &err.to_string()),
@@ -92,7 +95,6 @@ pub(super) fn name_param(params: &Value, id: &Value) -> Result<String, JsonRpcRe
         .map(|s| s.to_string())
         .ok_or_else(|| JsonRpcResponse::invalid_params(id.clone(), "Missing required 'name'"))
 }
-
 
 mod barrier;
 mod lease;

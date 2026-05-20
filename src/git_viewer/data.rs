@@ -149,10 +149,7 @@ pub fn collect_log(repo: &Repository, limit: usize) -> Result<Vec<LogEntry>> {
             Ok(c) => c,
             Err(_) => continue,
         };
-        let summary = commit
-            .summary()
-            .unwrap_or("(no message)")
-            .to_string();
+        let summary = commit.summary().unwrap_or("(no message)").to_string();
         let author = commit.author();
         let author_name = author.name().unwrap_or("(unknown)").to_string();
         let time = format_time(commit.time());
@@ -169,10 +166,7 @@ pub fn collect_log(repo: &Repository, limit: usize) -> Result<Vec<LogEntry>> {
 }
 
 pub fn collect_diff(repo: &Repository, path: &str) -> Result<DiffData> {
-    let head_tree = repo
-        .head()
-        .and_then(|r| r.peel_to_tree())
-        .ok();
+    let head_tree = repo.head().and_then(|r| r.peel_to_tree()).ok();
 
     let mut diff_opts = git2::DiffOptions::new();
     diff_opts.pathspec(path).context_lines(3);

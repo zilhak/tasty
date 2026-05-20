@@ -60,8 +60,12 @@ impl SavedWorkspace {
             .iter()
             .position(|&id| id == ws.focused_pane)
             .unwrap_or(0);
-        let pane_layout =
-            SavedPaneNode::capture(ws.pane_layout_mut(), registry, capture_scrollback, seen_refs);
+        let pane_layout = SavedPaneNode::capture(
+            ws.pane_layout_mut(),
+            registry,
+            capture_scrollback,
+            seen_refs,
+        );
         Self {
             name: ws.name.clone(),
             subtitle: ws.subtitle.clone(),
@@ -168,12 +172,14 @@ impl SavedSurfaceLayout {
         seen_refs: &mut SeenRefs,
     ) -> Self {
         match layout {
-            SurfaceLayout::Leaf(surface) => SavedSurfaceLayout::Leaf(SavedSurface::capture_surface(
-                surface.as_mut(),
-                registry,
-                capture_scrollback,
-                seen_refs,
-            )),
+            SurfaceLayout::Leaf(surface) => {
+                SavedSurfaceLayout::Leaf(SavedSurface::capture_surface(
+                    surface.as_mut(),
+                    registry,
+                    capture_scrollback,
+                    seen_refs,
+                ))
+            }
             SurfaceLayout::Split {
                 direction,
                 ratio,
@@ -213,7 +219,10 @@ impl SavedSurface {
             let restore_command =
                 crate::surface_meta::SurfaceMetaStore::get(ts.id, "restore.command");
 
-            let cwd = ts.terminal.get_cwd().map(|p| p.to_string_lossy().to_string());
+            let cwd = ts
+                .terminal
+                .get_cwd()
+                .map(|p| p.to_string_lossy().to_string());
             let scrollback_ref = if capture_scrollback {
                 capture_scrollback_to_disk(ts, seen_refs)
             } else {

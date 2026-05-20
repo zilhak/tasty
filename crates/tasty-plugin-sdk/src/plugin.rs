@@ -27,8 +27,8 @@
 //! ```
 
 use serde_json::Value;
-use tasty_plugin_protocol::ui_tree::UiEvent;
 pub use tasty_plugin_protocol::SurfaceResult;
+use tasty_plugin_protocol::ui_tree::UiEvent;
 pub use tasty_plugin_protocol::{PopupEventResult, PopupOpenResult};
 
 use crate::host::HostHandle;

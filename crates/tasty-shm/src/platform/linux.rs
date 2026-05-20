@@ -57,13 +57,7 @@ pub(crate) fn create(size: usize) -> Result<(SharedMemory, SendableHandle), ShmE
 
     // SAFETY: memfd_create syscall. name pointer는 위에서 만든 CString이 유효.
     // 반환값은 새 fd 또는 -1 (errno 설정).
-    let raw_fd = unsafe {
-        libc::syscall(
-            libc::SYS_memfd_create,
-            name.as_ptr(),
-            libc::MFD_CLOEXEC,
-        )
-    };
+    let raw_fd = unsafe { libc::syscall(libc::SYS_memfd_create, name.as_ptr(), libc::MFD_CLOEXEC) };
     if raw_fd < 0 {
         return Err(ShmError::Os(io::Error::last_os_error()));
     }

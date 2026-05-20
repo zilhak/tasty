@@ -40,4 +40,3 @@ pub fn draw_clipboard_tab(ui: &mut egui::Ui, settings: &mut Settings) {
             .color(th.yellow),
     );
 }
-

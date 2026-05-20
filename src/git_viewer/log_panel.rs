@@ -37,32 +37,17 @@ pub fn draw_log_panel(ui: &mut egui::Ui, state: &GitViewerState) {
                         } else {
                             th.yellow
                         };
-                        ui.label(
-                            egui::RichText::new(format!("({r})"))
-                                .small()
-                                .color(color),
-                        );
+                        ui.label(egui::RichText::new(format!("({r})")).small().color(color));
                     }
-                    ui.label(
-                        egui::RichText::new(&entry.summary)
-                            .small()
-                            .color(th.text),
-                    );
-                    ui.with_layout(
-                        egui::Layout::right_to_left(egui::Align::Center),
-                        |ui| {
-                            ui.label(
-                                egui::RichText::new(&entry.time)
-                                    .small()
-                                    .color(th.subtext0),
-                            );
-                            ui.label(
-                                egui::RichText::new(&entry.author)
-                                    .small()
-                                    .color(th.subtext0),
-                            );
-                        },
-                    );
+                    ui.label(egui::RichText::new(&entry.summary).small().color(th.text));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.label(egui::RichText::new(&entry.time).small().color(th.subtext0));
+                        ui.label(
+                            egui::RichText::new(&entry.author)
+                                .small()
+                                .color(th.subtext0),
+                        );
+                    });
                 });
             }
         });

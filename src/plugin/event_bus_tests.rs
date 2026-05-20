@@ -105,7 +105,10 @@ fn plugin_publish_rejected_at_hop_overflow() {
 fn plugin_subscribe_requires_permission() {
     let bus = EventBus::new();
     bus.set_plugin_permissions("p1", vec!["surface.*".into()], vec![]);
-    assert!(bus.subscribe_plugin("p1", 1, "surface.created".into()).is_ok());
+    assert!(
+        bus.subscribe_plugin("p1", 1, "surface.created".into())
+            .is_ok()
+    );
     assert!(bus.subscribe_plugin("p1", 2, "tab.created".into()).is_err());
     assert!(bus.subscribe_plugin("p1", 3, "surface.*".into()).is_ok());
 }
@@ -152,7 +155,8 @@ fn debug_list_subscribers_matches_subscribed_plugins() {
     bus.set_plugin_permissions("p1", vec!["surface.*".into()], vec![]);
     bus.set_plugin_permissions("p2", vec!["surface.closed".into()], vec![]);
     bus.subscribe_plugin("p1", 1, "surface.*".into()).unwrap();
-    bus.subscribe_plugin("p2", 7, "surface.closed".into()).unwrap();
+    bus.subscribe_plugin("p2", 7, "surface.closed".into())
+        .unwrap();
     let subs = bus.debug_list_subscribers("surface.closed");
     assert_eq!(subs.len(), 2);
     assert!(subs.iter().any(|(p, _, _)| p == "p1"));

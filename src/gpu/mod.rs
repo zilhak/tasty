@@ -11,8 +11,8 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use winit::dpi::PhysicalSize;
-use winit::window::Window;
 use winit::event_loop::EventLoopProxy;
+use winit::window::Window;
 
 use crate::AppEvent;
 use crate::model::{LogicalPx, PhysicalPx, Rect};

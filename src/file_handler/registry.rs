@@ -13,11 +13,11 @@ use tracing::warn;
 use crate::file_format::{DetectorId, DetectorInfo};
 
 use super::config::{
-    validate_plugin_handler_decl, HandlerDecl, HandlerDeclError, HostHandlerActionDecl,
-    PluginHandlerActionDecl, UserHandlerActionDecl,
+    HandlerDecl, HandlerDeclError, HostHandlerActionDecl, PluginHandlerActionDecl,
+    UserHandlerActionDecl, validate_plugin_handler_decl,
 };
 use super::types::{
-    is_valid_handler_short_name, FileHandler, HandlerAction, HandlerId, HandlerOwner,
+    FileHandler, HandlerAction, HandlerId, HandlerOwner, is_valid_handler_short_name,
 };
 
 #[derive(Debug, Clone)]
@@ -204,7 +204,9 @@ impl FileHandlerRegistry {
         };
         let mut handlers = Vec::<toml::Value>::new();
         for (id, contribs) in inner.contributions.iter() {
-            let user = contribs.iter().find(|c| matches!(c.owner, HandlerOwner::User));
+            let user = contribs
+                .iter()
+                .find(|c| matches!(c.owner, HandlerOwner::User));
             let Some(user) = user else { continue };
             // 적어도 한 필드가 Some 이어야 user TOML 에 의미 있는 entry 가 됨.
             if user.detector.is_none()
@@ -277,7 +279,10 @@ impl FileHandlerRegistry {
             );
             return;
         };
-        if let Some(existing) = entry.iter_mut().find(|c| matches!(c.owner, HandlerOwner::User)) {
+        if let Some(existing) = entry
+            .iter_mut()
+            .find(|c| matches!(c.owner, HandlerOwner::User))
+        {
             existing.disabled_override = Some(disabled);
         } else {
             entry.push(HandlerContribution {
@@ -299,9 +304,14 @@ impl FileHandlerRegistry {
             Ok(g) => g,
             Err(_) => return,
         };
-        let Some(entry) = inner.contributions.get_mut(id) else { return };
+        let Some(entry) = inner.contributions.get_mut(id) else {
+            return;
+        };
         let mut user_empty = false;
-        if let Some(existing) = entry.iter_mut().find(|c| matches!(c.owner, HandlerOwner::User)) {
+        if let Some(existing) = entry
+            .iter_mut()
+            .find(|c| matches!(c.owner, HandlerOwner::User))
+        {
             existing.disabled_override = None;
             user_empty = existing.detector.is_none()
                 && existing.priority.is_none()
@@ -323,7 +333,9 @@ impl FileHandlerRegistry {
             Ok(g) => g,
             Err(_) => return,
         };
-        let Some(entry) = inner.contributions.get_mut(id) else { return };
+        let Some(entry) = inner.contributions.get_mut(id) else {
+            return;
+        };
         entry.retain(|c| !matches!(c.owner, HandlerOwner::User));
         if entry.is_empty() {
             inner.contributions.remove(id);
@@ -334,10 +346,7 @@ impl FileHandlerRegistry {
     /// Settings UI 가 user-origin handler 를 추가/갱신. 기존 host/plugin 이 있으면 patch.
     /// id 가 `<owner>/<short>` 형식이어야 하고, action 의 surface_kind/method 등은 호출자가
     /// 검증한 상태로 넘긴다 (UI 입력 단계에서 후보 dropdown 으로 강제).
-    pub fn upsert_user_handler(
-        &self,
-        decl: UserHandlerUpsertDecl,
-    ) -> Result<(), HandlerDeclError> {
+    pub fn upsert_user_handler(&self, decl: UserHandlerUpsertDecl) -> Result<(), HandlerDeclError> {
         if !decl.id.contains('/') {
             return Err(HandlerDeclError::InvalidShortName(decl.id.clone()));
         }
@@ -427,11 +436,7 @@ impl FileHandlerRegistry {
     }
 
     fn ensure_finalized(&self) {
-        let needs = self
-            .inner
-            .read()
-            .map(|g| g.dirty)
-            .unwrap_or(false);
+        let needs = self.inner.read().map(|g| g.dirty).unwrap_or(false);
         if !needs {
             return;
         }
@@ -445,7 +450,9 @@ impl FileHandlerRegistry {
         let mut next = BTreeMap::new();
         for (id, contribs) in inner.contributions.iter() {
             // 1번째 contribution 이 base — detector / action 필수
-            let Some(base) = contribs.first() else { continue };
+            let Some(base) = contribs.first() else {
+                continue;
+            };
             let mut detector = base.detector.clone();
             let mut priority = base.priority;
             let mut display = base.display_name_i18n_key.clone();
@@ -527,7 +534,10 @@ fn owner_rank(owner: &HandlerOwner) -> u8 {
 fn install_host(inner: &mut Inner, decl: HandlerDecl<HostHandlerActionDecl>) {
     let id_str = format!("host/{}", decl.id);
     if !is_valid_handler_short_name(&decl.id) {
-        warn!(short_name = decl.id.as_str(), "file_handler: invalid host handler short-name");
+        warn!(
+            short_name = decl.id.as_str(),
+            "file_handler: invalid host handler short-name"
+        );
         return;
     }
     push_contribution(
@@ -544,11 +554,7 @@ fn install_host(inner: &mut Inner, decl: HandlerDecl<HostHandlerActionDecl>) {
     );
 }
 
-fn install_plugin(
-    inner: &mut Inner,
-    plugin_id: &str,
-    decl: HandlerDecl<PluginHandlerActionDecl>,
-) {
+fn install_plugin(inner: &mut Inner, plugin_id: &str, decl: HandlerDecl<PluginHandlerActionDecl>) {
     if let Err(e) = validate_plugin_handler_decl(&decl) {
         warn!(plugin = plugin_id, error = %e, "file_handler: rejecting plugin handler decl");
         return;
@@ -656,10 +662,7 @@ fn handler_action_to_toml(action: &HandlerAction) -> toml::value::Table {
                 "surface_kind".into(),
                 toml::Value::String(surface_kind.clone()),
             );
-            t.insert(
-                "param_key".into(),
-                toml::Value::String(param_key.clone()),
-            );
+            t.insert("param_key".into(), toml::Value::String(param_key.clone()));
         }
         HandlerAction::Ipc { method, .. } => {
             t.insert("kind".into(), toml::Value::String("ipc".into()));
@@ -695,7 +698,6 @@ fn parse_user_handler_section(
     let w: Wrap = toml::from_str(toml_text)?;
     Ok(w.handlers)
 }
-
 
 #[cfg(test)]
 #[path = "registry_tests.rs"]

@@ -324,7 +324,10 @@ fn all_e2e_tests() {
     let pr = plain_fg["r"].as_f64().unwrap();
     let pg = plain_fg["g"].as_f64().unwrap();
     let pb = plain_fg["b"].as_f64().unwrap();
-    assert!(pr > 0.5 && pg > 0.5 && pb > 0.5, "plain fg should be bright");
+    assert!(
+        pr > 0.5 && pg > 0.5 && pb > 0.5,
+        "plain fg should be bright"
+    );
 
     // palette::compute_cell_colors blends fg toward bg for Intensity::Half,
     // so the dim cell's fg must differ from a plain cell's fg on the same row.

@@ -4,7 +4,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::{ListOpts, MemoryError, MemoryStore, MemoryValue, PutOpts, Result, Scope};
 
-use super::{bb_exists, bb_get_all, bb_get_meta, field_key, meta_key, validate_bb_name, validate_field_name, BB_KEY_PREFIX, BB_NAME_MAX, validate_name_inner};
+use super::{
+    BB_KEY_PREFIX, BB_NAME_MAX, bb_exists, bb_get_all, bb_get_meta, field_key, meta_key,
+    validate_bb_name, validate_field_name, validate_name_inner,
+};
 
 /// 한 필드의 직렬화된 페이로드.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -156,12 +159,11 @@ pub fn bb_snapshot(
     validate_snapshot_id(snapshot_id)?;
     let scope = Scope::Workspace(workspace_id);
 
-    let meta_entry = bb_get_meta(store, workspace_id, bb)?.ok_or_else(|| {
-        MemoryError::NotFound {
+    let meta_entry =
+        bb_get_meta(store, workspace_id, bb)?.ok_or_else(|| MemoryError::NotFound {
             scope: scope.as_token(),
             key: meta_key(bb),
-        }
-    })?;
+        })?;
     let meta = match meta_entry.value {
         MemoryValue::Json(v) => Some(v),
         _ => None,
@@ -195,9 +197,10 @@ pub fn bb_snapshot(
         meta,
         fields,
     };
-    let value = MemoryValue::Json(serde_json::to_value(&snap).map_err(|e| {
-        MemoryError::InvalidContentType(format!("serialize snapshot: {e}"))
-    })?);
+    let value = MemoryValue::Json(
+        serde_json::to_value(&snap)
+            .map_err(|e| MemoryError::InvalidContentType(format!("serialize snapshot: {e}")))?,
+    );
     store.put(owner, &scope, &key, &value, &PutOpts::default())
 }
 
@@ -210,8 +213,10 @@ pub fn bb_snapshot_get(
 ) -> Result<Option<BlackboardSnapshot>> {
     validate_bb_name(bb)?;
     validate_snapshot_id(snapshot_id)?;
-    let Some(entry) =
-        store.get(&Scope::Workspace(workspace_id), &snapshot_key(bb, snapshot_id))?
+    let Some(entry) = store.get(
+        &Scope::Workspace(workspace_id),
+        &snapshot_key(bb, snapshot_id),
+    )?
     else {
         return Ok(None);
     };
@@ -227,11 +232,7 @@ pub fn bb_snapshot_get(
 }
 
 /// bb 의 snapshot id 목록 (정렬).
-pub fn bb_snapshot_list(
-    store: &MemoryStore,
-    workspace_id: u32,
-    bb: &str,
-) -> Result<Vec<String>> {
+pub fn bb_snapshot_list(store: &MemoryStore, workspace_id: u32, bb: &str) -> Result<Vec<String>> {
     validate_bb_name(bb)?;
     let prefix = snapshot_prefix(bb);
     let opts = ListOpts {
@@ -362,8 +363,8 @@ pub(super) fn now_ms_local() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::super::*;
-    use crate::*;
     use crate::HOST_OWNER;
+    use crate::*;
 
     fn open() -> MemoryStore {
         MemoryStore::open_in_memory().expect("open in memory")
@@ -375,7 +376,9 @@ mod tests {
         let schema = serde_json::json!({ "status": "string" });
         bb_create(&mut s, HOST_OWNER, 1, "tasks", Some(schema.clone())).unwrap();
         let meta = bb_get_meta(&s, 1, "tasks").unwrap().expect("meta");
-        let MemoryValue::Json(v) = &meta.value else { panic!("expected json") };
+        let MemoryValue::Json(v) = &meta.value else {
+            panic!("expected json")
+        };
         assert_eq!(v["name"], "tasks");
         assert_eq!(v["schema"], schema);
         assert_eq!(v["created_by"], HOST_OWNER);
@@ -422,7 +425,16 @@ mod tests {
     fn cas_conflict_on_put() {
         let mut s = open();
         bb_create(&mut s, HOST_OWNER, 1, "bb", None).unwrap();
-        bb_put(&mut s, HOST_OWNER, 1, "bb", "f", &MemoryValue::Text("a".into()), None).unwrap();
+        bb_put(
+            &mut s,
+            HOST_OWNER,
+            1,
+            "bb",
+            "f",
+            &MemoryValue::Text("a".into()),
+            None,
+        )
+        .unwrap();
         let err = bb_put(
             &mut s,
             HOST_OWNER,
@@ -440,8 +452,26 @@ mod tests {
     fn get_all_returns_fields_excluding_meta() {
         let mut s = open();
         bb_create(&mut s, HOST_OWNER, 1, "bb", None).unwrap();
-        bb_put(&mut s, HOST_OWNER, 1, "bb", "a", &MemoryValue::Text("1".into()), None).unwrap();
-        bb_put(&mut s, HOST_OWNER, 1, "bb", "b", &MemoryValue::Text("2".into()), None).unwrap();
+        bb_put(
+            &mut s,
+            HOST_OWNER,
+            1,
+            "bb",
+            "a",
+            &MemoryValue::Text("1".into()),
+            None,
+        )
+        .unwrap();
+        bb_put(
+            &mut s,
+            HOST_OWNER,
+            1,
+            "bb",
+            "b",
+            &MemoryValue::Text("2".into()),
+            None,
+        )
+        .unwrap();
         let all = bb_get_all(&s, 1, "bb").unwrap();
         assert_eq!(all.len(), 2);
         assert_eq!(all[0].key, field_key("bb", "a"));
@@ -452,7 +482,16 @@ mod tests {
     fn delete_field_leaves_meta() {
         let mut s = open();
         bb_create(&mut s, HOST_OWNER, 1, "bb", None).unwrap();
-        bb_put(&mut s, HOST_OWNER, 1, "bb", "a", &MemoryValue::Text("1".into()), None).unwrap();
+        bb_put(
+            &mut s,
+            HOST_OWNER,
+            1,
+            "bb",
+            "a",
+            &MemoryValue::Text("1".into()),
+            None,
+        )
+        .unwrap();
         bb_delete_field(&mut s, HOST_OWNER, 1, "bb", "a", None).unwrap();
         assert!(bb_get(&s, 1, "bb", "a").unwrap().is_none());
         assert!(bb_exists(&s, 1, "bb").unwrap());
@@ -462,8 +501,26 @@ mod tests {
     fn delete_removes_everything() {
         let mut s = open();
         bb_create(&mut s, HOST_OWNER, 1, "bb", None).unwrap();
-        bb_put(&mut s, HOST_OWNER, 1, "bb", "a", &MemoryValue::Text("1".into()), None).unwrap();
-        bb_put(&mut s, HOST_OWNER, 1, "bb", "b", &MemoryValue::Text("2".into()), None).unwrap();
+        bb_put(
+            &mut s,
+            HOST_OWNER,
+            1,
+            "bb",
+            "a",
+            &MemoryValue::Text("1".into()),
+            None,
+        )
+        .unwrap();
+        bb_put(
+            &mut s,
+            HOST_OWNER,
+            1,
+            "bb",
+            "b",
+            &MemoryValue::Text("2".into()),
+            None,
+        )
+        .unwrap();
         let removed = bb_delete(&mut s, HOST_OWNER, 1, "bb").unwrap();
         assert_eq!(removed, 3);
         assert!(!bb_exists(&s, 1, "bb").unwrap());
@@ -475,7 +532,16 @@ mod tests {
         let mut s = open();
         bb_create(&mut s, HOST_OWNER, 1, "alpha", None).unwrap();
         bb_create(&mut s, HOST_OWNER, 1, "beta", None).unwrap();
-        bb_put(&mut s, HOST_OWNER, 1, "alpha", "f", &MemoryValue::Text("x".into()), None).unwrap();
+        bb_put(
+            &mut s,
+            HOST_OWNER,
+            1,
+            "alpha",
+            "f",
+            &MemoryValue::Text("x".into()),
+            None,
+        )
+        .unwrap();
         let names = bb_list(&s, 1).unwrap();
         assert_eq!(names, vec!["alpha".to_string(), "beta".to_string()]);
     }
@@ -503,8 +569,26 @@ mod tests {
     fn snapshot_then_get_roundtrip() {
         let mut s = open();
         bb_create(&mut s, HOST_OWNER, 1, "bb", None).unwrap();
-        bb_put(&mut s, HOST_OWNER, 1, "bb", "a", &MemoryValue::Text("1".into()), None).unwrap();
-        bb_put(&mut s, HOST_OWNER, 1, "bb", "b", &MemoryValue::Text("2".into()), None).unwrap();
+        bb_put(
+            &mut s,
+            HOST_OWNER,
+            1,
+            "bb",
+            "a",
+            &MemoryValue::Text("1".into()),
+            None,
+        )
+        .unwrap();
+        bb_put(
+            &mut s,
+            HOST_OWNER,
+            1,
+            "bb",
+            "b",
+            &MemoryValue::Text("2".into()),
+            None,
+        )
+        .unwrap();
         bb_snapshot(&mut s, HOST_OWNER, 1, "bb", "v1").unwrap();
         let snap = bb_snapshot_get(&s, 1, "bb", "v1").unwrap().expect("snap");
         assert_eq!(snap.bb_name, "bb");
@@ -554,13 +638,49 @@ mod tests {
     fn restore_replaces_current_fields() {
         let mut s = open();
         bb_create(&mut s, HOST_OWNER, 1, "bb", None).unwrap();
-        bb_put(&mut s, HOST_OWNER, 1, "bb", "a", &MemoryValue::Text("1".into()), None).unwrap();
-        bb_put(&mut s, HOST_OWNER, 1, "bb", "b", &MemoryValue::Text("2".into()), None).unwrap();
+        bb_put(
+            &mut s,
+            HOST_OWNER,
+            1,
+            "bb",
+            "a",
+            &MemoryValue::Text("1".into()),
+            None,
+        )
+        .unwrap();
+        bb_put(
+            &mut s,
+            HOST_OWNER,
+            1,
+            "bb",
+            "b",
+            &MemoryValue::Text("2".into()),
+            None,
+        )
+        .unwrap();
         bb_snapshot(&mut s, HOST_OWNER, 1, "bb", "v1").unwrap();
 
         // 이후에 변경된 상태.
-        bb_put(&mut s, HOST_OWNER, 1, "bb", "a", &MemoryValue::Text("modified".into()), None).unwrap();
-        bb_put(&mut s, HOST_OWNER, 1, "bb", "c", &MemoryValue::Text("new".into()), None).unwrap();
+        bb_put(
+            &mut s,
+            HOST_OWNER,
+            1,
+            "bb",
+            "a",
+            &MemoryValue::Text("modified".into()),
+            None,
+        )
+        .unwrap();
+        bb_put(
+            &mut s,
+            HOST_OWNER,
+            1,
+            "bb",
+            "c",
+            &MemoryValue::Text("new".into()),
+            None,
+        )
+        .unwrap();
         bb_delete_field(&mut s, HOST_OWNER, 1, "bb", "b", None).unwrap();
 
         let restored = bb_snapshot_restore(&mut s, HOST_OWNER, 1, "bb", "v1").unwrap();
@@ -577,7 +697,16 @@ mod tests {
     fn restore_recreates_missing_bb() {
         let mut s = open();
         bb_create(&mut s, HOST_OWNER, 1, "bb", None).unwrap();
-        bb_put(&mut s, HOST_OWNER, 1, "bb", "a", &MemoryValue::Text("1".into()), None).unwrap();
+        bb_put(
+            &mut s,
+            HOST_OWNER,
+            1,
+            "bb",
+            "a",
+            &MemoryValue::Text("1".into()),
+            None,
+        )
+        .unwrap();
         bb_snapshot(&mut s, HOST_OWNER, 1, "bb", "v1").unwrap();
         // bb 본체 (meta + fields) 삭제. snapshot 은 별도라 보존됨.
         bb_delete(&mut s, HOST_OWNER, 1, "bb").unwrap();
@@ -591,10 +720,20 @@ mod tests {
     fn restore_recreates_when_meta_alone_removed() {
         let mut s = open();
         bb_create(&mut s, HOST_OWNER, 1, "bb", None).unwrap();
-        bb_put(&mut s, HOST_OWNER, 1, "bb", "a", &MemoryValue::Text("1".into()), None).unwrap();
+        bb_put(
+            &mut s,
+            HOST_OWNER,
+            1,
+            "bb",
+            "a",
+            &MemoryValue::Text("1".into()),
+            None,
+        )
+        .unwrap();
         bb_snapshot(&mut s, HOST_OWNER, 1, "bb", "v1").unwrap();
         // meta 만 직접 삭제하고 snapshot 은 그대로 둠.
-        s.delete(HOST_OWNER, &Scope::Workspace(1), &meta_key("bb"), None).unwrap();
+        s.delete(HOST_OWNER, &Scope::Workspace(1), &meta_key("bb"), None)
+            .unwrap();
         assert!(!bb_exists(&s, 1, "bb").unwrap());
 
         bb_snapshot_restore(&mut s, HOST_OWNER, 1, "bb", "v1").unwrap();
@@ -619,7 +758,16 @@ mod tests {
     fn owner_enforced_on_put() {
         let mut s = open();
         bb_create(&mut s, HOST_OWNER, 1, "bb", None).unwrap();
-        bb_put(&mut s, "plugin.a", 1, "bb", "f", &MemoryValue::Text("a".into()), None).unwrap();
+        bb_put(
+            &mut s,
+            "plugin.a",
+            1,
+            "bb",
+            "f",
+            &MemoryValue::Text("a".into()),
+            None,
+        )
+        .unwrap();
         let err = bb_put(
             &mut s,
             "plugin.b",

@@ -14,7 +14,8 @@ pub(super) fn draw_floating_selection(
     let th = theme::theme();
 
     let (sel_screen_rect, has_texture) = if let EditState::FloatingSelection {
-        ref mut selection, ..
+        ref mut selection,
+        ..
     } = view.edit_state
     {
         if selection.texture.is_none() {
@@ -29,7 +30,8 @@ pub(super) fn draw_floating_selection(
         let sel_y = img_rect.min.y + selection.position.y * effective_zoom;
         let sel_w = selection.size[0] as f32 * effective_zoom;
         let sel_h = selection.size[1] as f32 * effective_zoom;
-        let sel_rect = egui::Rect::from_min_size(egui::pos2(sel_x, sel_y), egui::vec2(sel_w, sel_h));
+        let sel_rect =
+            egui::Rect::from_min_size(egui::pos2(sel_x, sel_y), egui::vec2(sel_w, sel_h));
 
         if let Some(ref tex) = selection.texture {
             let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
@@ -117,10 +119,10 @@ pub(super) fn draw_floating_selection(
                         initial_rect,
                     } => {
                         let delta = pos - drag_start_pos;
-                        let new_w = ((initial_rect.width() + delta.x).max(10.0) / effective_zoom)
-                            as usize;
-                        let new_h = ((initial_rect.height() + delta.y).max(10.0) / effective_zoom)
-                            as usize;
+                        let new_w =
+                            ((initial_rect.width() + delta.x).max(10.0) / effective_zoom) as usize;
+                        let new_h =
+                            ((initial_rect.height() + delta.y).max(10.0) / effective_zoom) as usize;
                         selection.size = [new_w.max(1), new_h.max(1)];
                     }
                     DragState::Idle => {}
@@ -190,4 +192,3 @@ pub(super) fn resize_handle_rects(
         ),
     ]
 }
-

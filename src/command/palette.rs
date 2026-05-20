@@ -26,10 +26,7 @@ pub fn all_commands() -> Vec<PaletteCommand> {
     KeybindingSettings::GENERAL_BINDING_FIELDS
         .iter()
         .filter(|(id, _)| *id != "toggle_command_palette")
-        .map(|(id, label_key)| PaletteCommand {
-            id,
-            label_key,
-        })
+        .map(|(id, label_key)| PaletteCommand { id, label_key })
         .collect()
 }
 

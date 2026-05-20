@@ -3,8 +3,8 @@
 
 #![allow(unused_imports)]
 
+pub use tasty_plugin_protocol::SharedBufferId;
 pub use tasty_plugin_protocol::ui_tree::{
     ButtonStyle, CanvasPointerButton, CanvasPointerPhase, LabelStyle, PixelFilter, PixelFormat,
     SelectionMode, SplitDir, TreeNode, UiEvent, UiNode,
 };
-pub use tasty_plugin_protocol::SharedBufferId;

@@ -107,4 +107,3 @@ fn collect_surface_layout_info(
         }
     }
 }
-

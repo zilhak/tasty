@@ -1,6 +1,5 @@
 //! `tasty-telemetry` aggregation — events → buckets, summary, top.
 
-
 use serde::{Deserialize, Serialize};
 
 use super::{MetricBucket, Op, TelemetryEvent, Window};
@@ -53,10 +52,7 @@ pub fn fold_events_into_bucket(
 }
 
 /// 이벤트 목록을 (metric, agent, window_start) 그룹으로 모아 윈도우별 버킷 리스트로.
-pub fn aggregate_into_buckets(
-    events: Vec<TelemetryEvent>,
-    window: Window,
-) -> Vec<MetricBucket> {
+pub fn aggregate_into_buckets(events: Vec<TelemetryEvent>, window: Window) -> Vec<MetricBucket> {
     use std::collections::HashMap;
     let mut grouped: HashMap<(String, String, u64, Option<u32>), Vec<TelemetryEvent>> =
         HashMap::new();
@@ -177,7 +173,11 @@ pub fn top_n(events: Vec<TelemetryEvent>, by: &str, limit: usize) -> Vec<TopEntr
         .into_iter()
         .map(|(key, (sum, count))| TopEntry { key, sum, count })
         .collect();
-    out.sort_by(|a, b| b.sum.partial_cmp(&a.sum).unwrap_or(std::cmp::Ordering::Equal));
+    out.sort_by(|a, b| {
+        b.sum
+            .partial_cmp(&a.sum)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     out.truncate(limit);
     out
 }
@@ -185,7 +185,6 @@ pub fn top_n(events: Vec<TelemetryEvent>, by: &str, limit: usize) -> Vec<TopEntr
 // ============================================================
 // Tests
 // ============================================================
-
 
 #[cfg(test)]
 #[path = "lib_tests.rs"]

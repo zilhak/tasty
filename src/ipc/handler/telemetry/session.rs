@@ -250,8 +250,12 @@ pub(super) fn render_summary_markdown(s: &SessionSummary) -> String {
     let _ = writeln!(
         out,
         "- 기간: {} ~ {}",
-        s.since.map(|v| v.to_string()).unwrap_or_else(|| "(시작 없음)".into()),
-        s.until.map(|v| v.to_string()).unwrap_or_else(|| "(끝 없음)".into()),
+        s.since
+            .map(|v| v.to_string())
+            .unwrap_or_else(|| "(시작 없음)".into()),
+        s.until
+            .map(|v| v.to_string())
+            .unwrap_or_else(|| "(끝 없음)".into()),
     );
     let _ = writeln!(out);
 

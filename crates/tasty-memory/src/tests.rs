@@ -44,15 +44,42 @@ fn put_get_delete_roundtrip() {
 #[test]
 fn scopes_are_isolated() {
     let mut s = store();
-    s.put(HOST_OWNER, &Scope::Surface(1), "k", &text("s1"), &PutOpts::default())
-        .unwrap();
-    s.put(HOST_OWNER, &Scope::Surface(2), "k", &text("s2"), &PutOpts::default())
-        .unwrap();
-    s.put(HOST_OWNER, &Scope::Global, "k", &text("g"), &PutOpts::default())
-        .unwrap();
-    assert_eq!(s.get(&Scope::Surface(1), "k").unwrap().unwrap().value, text("s1"));
-    assert_eq!(s.get(&Scope::Surface(2), "k").unwrap().unwrap().value, text("s2"));
-    assert_eq!(s.get(&Scope::Global, "k").unwrap().unwrap().value, text("g"));
+    s.put(
+        HOST_OWNER,
+        &Scope::Surface(1),
+        "k",
+        &text("s1"),
+        &PutOpts::default(),
+    )
+    .unwrap();
+    s.put(
+        HOST_OWNER,
+        &Scope::Surface(2),
+        "k",
+        &text("s2"),
+        &PutOpts::default(),
+    )
+    .unwrap();
+    s.put(
+        HOST_OWNER,
+        &Scope::Global,
+        "k",
+        &text("g"),
+        &PutOpts::default(),
+    )
+    .unwrap();
+    assert_eq!(
+        s.get(&Scope::Surface(1), "k").unwrap().unwrap().value,
+        text("s1")
+    );
+    assert_eq!(
+        s.get(&Scope::Surface(2), "k").unwrap().unwrap().value,
+        text("s2")
+    );
+    assert_eq!(
+        s.get(&Scope::Global, "k").unwrap().unwrap().value,
+        text("g")
+    );
 }
 
 #[test]
@@ -194,8 +221,14 @@ fn entry_max_configurable() {
         ..MemoryConfig::default()
     })
     .unwrap();
-    s.put(HOST_OWNER, &Scope::Global, "k", &text("0123456789ab"), &PutOpts::default())
-        .unwrap();
+    s.put(
+        HOST_OWNER,
+        &Scope::Global,
+        "k",
+        &text("0123456789ab"),
+        &PutOpts::default(),
+    )
+    .unwrap();
     let err = s
         .put(
             HOST_OWNER,
@@ -217,11 +250,23 @@ fn regular_quota_exceeded() {
     })
     .unwrap();
     // 12 byte 저장: 합산 12 ≤ 20 통과.
-    s.put(HOST_OWNER, &Scope::Global, "a", &text("0123456789ab"), &PutOpts::default())
-        .unwrap();
+    s.put(
+        HOST_OWNER,
+        &Scope::Global,
+        "a",
+        &text("0123456789ab"),
+        &PutOpts::default(),
+    )
+    .unwrap();
     // 새 entry 12 byte 추가 시 projected=24 → 거부.
     let err = s
-        .put(HOST_OWNER, &Scope::Global, "b", &text("0123456789ab"), &PutOpts::default())
+        .put(
+            HOST_OWNER,
+            &Scope::Global,
+            "b",
+            &text("0123456789ab"),
+            &PutOpts::default(),
+        )
         .unwrap_err();
     match err {
         MemoryError::QuotaExceeded { area, used, limit } => {
@@ -232,8 +277,14 @@ fn regular_quota_exceeded() {
         other => panic!("expected QuotaExceeded, got {other:?}"),
     }
     // 기존 entry 의 in-place 갱신은 existing_size 만큼 차감 후 평가 → 같은 크기면 통과.
-    s.put(HOST_OWNER, &Scope::Global, "a", &text("ABCDEFGHIJKL"), &PutOpts::default())
-        .unwrap();
+    s.put(
+        HOST_OWNER,
+        &Scope::Global,
+        "a",
+        &text("ABCDEFGHIJKL"),
+        &PutOpts::default(),
+    )
+    .unwrap();
 }
 
 #[test]
@@ -245,10 +296,22 @@ fn secret_quota_exceeded_per_owner() {
         ..MemoryConfig::default()
     })
     .unwrap();
-    s.put_secret(PLUGIN_A, &Scope::Global, "a", &text("0123456789ab"), &PutOpts::default())
-        .unwrap();
+    s.put_secret(
+        PLUGIN_A,
+        &Scope::Global,
+        "a",
+        &text("0123456789ab"),
+        &PutOpts::default(),
+    )
+    .unwrap();
     let err = s
-        .put_secret(PLUGIN_A, &Scope::Global, "b", &text("0123456789ab"), &PutOpts::default())
+        .put_secret(
+            PLUGIN_A,
+            &Scope::Global,
+            "b",
+            &text("0123456789ab"),
+            &PutOpts::default(),
+        )
         .unwrap_err();
     assert!(matches!(
         err,
@@ -258,15 +321,27 @@ fn secret_quota_exceeded_per_owner() {
         }
     ));
     // Plugin B 영역은 독립.
-    s.put_secret(PLUGIN_B, &Scope::Global, "a", &text("0123456789ab"), &PutOpts::default())
-        .unwrap();
+    s.put_secret(
+        PLUGIN_B,
+        &Scope::Global,
+        "a",
+        &text("0123456789ab"),
+        &PutOpts::default(),
+    )
+    .unwrap();
 }
 
 #[test]
 fn invalid_key_rejected() {
     let mut s = store();
     let err = s
-        .put(HOST_OWNER, &Scope::Global, "BAD", &text("x"), &PutOpts::default())
+        .put(
+            HOST_OWNER,
+            &Scope::Global,
+            "BAD",
+            &text("x"),
+            &PutOpts::default(),
+        )
         .unwrap_err();
     assert!(matches!(err, MemoryError::InvalidKey(_)));
 }
@@ -283,7 +358,9 @@ fn invalid_owner_rejected() {
 #[test]
 fn delete_missing_returns_not_found() {
     let mut s = store();
-    let err = s.delete(HOST_OWNER, &Scope::Global, "ghost", None).unwrap_err();
+    let err = s
+        .delete(HOST_OWNER, &Scope::Global, "ghost", None)
+        .unwrap_err();
     assert!(matches!(err, MemoryError::NotFound { .. }));
 }
 
@@ -330,10 +407,22 @@ fn list_prefix_and_limit() {
 fn secret_isolated_between_owners() {
     let mut s = store();
     let scope = Scope::Global;
-    s.put_secret(PLUGIN_A, &scope, "tok", &text("A-token"), &PutOpts::default())
-        .unwrap();
-    s.put_secret(PLUGIN_B, &scope, "tok", &text("B-token"), &PutOpts::default())
-        .unwrap();
+    s.put_secret(
+        PLUGIN_A,
+        &scope,
+        "tok",
+        &text("A-token"),
+        &PutOpts::default(),
+    )
+    .unwrap();
+    s.put_secret(
+        PLUGIN_B,
+        &scope,
+        "tok",
+        &text("B-token"),
+        &PutOpts::default(),
+    )
+    .unwrap();
 
     // 같은 (scope, key)지만 owner별로 분리 — Plugin A는 자기 값만 본다.
     let a = s.get_secret(PLUGIN_A, &scope, "tok").unwrap().unwrap();
@@ -344,7 +433,9 @@ fn secret_isolated_between_owners() {
     assert_eq!(b.value, text("B-token"));
 
     // Plugin A가 자기 영역만 본다.
-    let list_a = s.list_secret(PLUGIN_A, &scope, &ListOpts::default()).unwrap();
+    let list_a = s
+        .list_secret(PLUGIN_A, &scope, &ListOpts::default())
+        .unwrap();
     assert_eq!(list_a.len(), 1);
 
     let scopes_a = s.scopes_secret(PLUGIN_A).unwrap();
@@ -403,10 +494,22 @@ fn secret_cas_and_versioning() {
 #[test]
 fn secret_stats_per_owner() {
     let mut s = store();
-    s.put_secret(PLUGIN_A, &Scope::Global, "a", &text("xx"), &PutOpts::default())
-        .unwrap();
-    s.put_secret(PLUGIN_B, &Scope::Global, "a", &text("zzzz"), &PutOpts::default())
-        .unwrap();
+    s.put_secret(
+        PLUGIN_A,
+        &Scope::Global,
+        "a",
+        &text("xx"),
+        &PutOpts::default(),
+    )
+    .unwrap();
+    s.put_secret(
+        PLUGIN_B,
+        &Scope::Global,
+        "a",
+        &text("zzzz"),
+        &PutOpts::default(),
+    )
+    .unwrap();
 
     // stats 는 평문 byte 를 그대로 보고한다 (암호화 안 함).
     let a = s.stats_secret(PLUGIN_A, None).unwrap();
@@ -451,8 +554,14 @@ fn purge_expired_removes_only_expired_rows() {
     let scope = Scope::Workspace(1);
 
     // 영구 entry
-    s.put(PLUGIN_A, &scope, "permanent", &text("p"), &PutOpts::default())
-        .unwrap();
+    s.put(
+        PLUGIN_A,
+        &scope,
+        "permanent",
+        &text("p"),
+        &PutOpts::default(),
+    )
+    .unwrap();
     // 이미 만료된 regular entry (expires_at = 과거)
     s.put(
         PLUGIN_A,
@@ -480,7 +589,11 @@ fn purge_expired_removes_only_expired_rows() {
 
     // read 시 expired 는 not-found
     assert!(s.get(&scope, "expired_reg").unwrap().is_none());
-    assert!(s.get_secret(PLUGIN_B, &scope, "expired_sec").unwrap().is_none());
+    assert!(
+        s.get_secret(PLUGIN_B, &scope, "expired_sec")
+            .unwrap()
+            .is_none()
+    );
 
     // purge 전에는 row 가 디스크에 남아 있다
     let count_before: i64 = s
@@ -540,7 +653,9 @@ fn put_records_created_then_updated_change() {
     let scope = Scope::Workspace(3);
     let _ = s.take_pending_changes();
 
-    let v1 = s.put(PLUGIN_A, &scope, "k", &text("v1"), &PutOpts::default()).unwrap();
+    let v1 = s
+        .put(PLUGIN_A, &scope, "k", &text("v1"), &PutOpts::default())
+        .unwrap();
     let changes = s.take_pending_changes();
     assert_eq!(changes.len(), 1);
     assert_eq!(changes[0].kind, MemoryChangeKind::Created);
@@ -548,7 +663,9 @@ fn put_records_created_then_updated_change() {
     assert_eq!(changes[0].scope, scope.as_token());
     assert_eq!(changes[0].version, Some(v1));
 
-    let v2 = s.put(PLUGIN_A, &scope, "k", &text("v2"), &PutOpts::default()).unwrap();
+    let v2 = s
+        .put(PLUGIN_A, &scope, "k", &text("v2"), &PutOpts::default())
+        .unwrap();
     let changes = s.take_pending_changes();
     assert_eq!(changes.len(), 1);
     assert_eq!(changes[0].kind, MemoryChangeKind::Updated);
@@ -562,7 +679,8 @@ fn put_records_created_then_updated_change() {
 fn delete_records_deleted_change() {
     let mut s = store();
     let scope = Scope::Workspace(3);
-    s.put(PLUGIN_A, &scope, "k", &text("v"), &PutOpts::default()).unwrap();
+    s.put(PLUGIN_A, &scope, "k", &text("v"), &PutOpts::default())
+        .unwrap();
     let _ = s.take_pending_changes();
 
     s.delete(PLUGIN_A, &scope, "k", None).unwrap();
@@ -597,7 +715,10 @@ fn purge_expired_records_expired_changes_for_regular_only() {
         &scope,
         "exp_r",
         &text("r"),
-        &PutOpts { expires_at: Some(1), cas: None },
+        &PutOpts {
+            expires_at: Some(1),
+            cas: None,
+        },
     )
     .unwrap();
     s.put_secret(
@@ -605,7 +726,10 @@ fn purge_expired_records_expired_changes_for_regular_only() {
         &scope,
         "exp_s",
         &text("s"),
-        &PutOpts { expires_at: Some(1), cas: None },
+        &PutOpts {
+            expires_at: Some(1),
+            cas: None,
+        },
     )
     .unwrap();
     let _ = s.take_pending_changes();
@@ -626,11 +750,15 @@ fn list_supports_offset_limit_since_until() {
     let mut s = store();
     let scope = Scope::Workspace(9);
     for k in ["a", "b", "c", "d", "e"] {
-        s.put(PLUGIN_A, &scope, k, &text(k), &PutOpts::default()).unwrap();
+        s.put(PLUGIN_A, &scope, k, &text(k), &PutOpts::default())
+            .unwrap();
     }
     // 전체
     let all = s.list(&scope, &ListOpts::default()).unwrap();
-    assert_eq!(all.iter().map(|e| e.key.as_str()).collect::<Vec<_>>(), ["a","b","c","d","e"]);
+    assert_eq!(
+        all.iter().map(|e| e.key.as_str()).collect::<Vec<_>>(),
+        ["a", "b", "c", "d", "e"]
+    );
 
     // offset + limit
     let page = s
@@ -643,7 +771,10 @@ fn list_supports_offset_limit_since_until() {
             },
         )
         .unwrap();
-    assert_eq!(page.iter().map(|e| e.key.as_str()).collect::<Vec<_>>(), ["b","c"]);
+    assert_eq!(
+        page.iter().map(|e| e.key.as_str()).collect::<Vec<_>>(),
+        ["b", "c"]
+    );
 
     // since / until — 모두 같은 updated_at 이라 since=now+1 이면 0개
     let now = unix_ms_now();
@@ -668,11 +799,27 @@ fn query_filters_by_dot_path_equality() {
             "task": { "status": status, "id": 1 }
         }))
     };
-    s.put(PLUGIN_A, &scope, "t.1", &make("open"), &PutOpts::default()).unwrap();
-    s.put(PLUGIN_A, &scope, "t.2", &make("closed"), &PutOpts::default()).unwrap();
-    s.put(PLUGIN_A, &scope, "t.3", &make("open"), &PutOpts::default()).unwrap();
+    s.put(PLUGIN_A, &scope, "t.1", &make("open"), &PutOpts::default())
+        .unwrap();
+    s.put(
+        PLUGIN_A,
+        &scope,
+        "t.2",
+        &make("closed"),
+        &PutOpts::default(),
+    )
+    .unwrap();
+    s.put(PLUGIN_A, &scope, "t.3", &make("open"), &PutOpts::default())
+        .unwrap();
     // 텍스트 entry 는 query 에서 자동 제외
-    s.put(PLUGIN_A, &scope, "x", &text("not-json"), &PutOpts::default()).unwrap();
+    s.put(
+        PLUGIN_A,
+        &scope,
+        "x",
+        &text("not-json"),
+        &PutOpts::default(),
+    )
+    .unwrap();
 
     let hits = s
         .query(
@@ -703,10 +850,25 @@ fn export_and_import_roundtrip() {
     let mut s = store();
     let ws = Scope::Workspace(20);
     let sf = Scope::Surface(20);
-    s.put(PLUGIN_A, &ws, "alpha", &text("a"), &PutOpts::default()).unwrap();
-    s.put(PLUGIN_A, &sf, "beta", &MemoryValue::Json(serde_json::json!({"v":1})), &PutOpts::default()).unwrap();
+    s.put(PLUGIN_A, &ws, "alpha", &text("a"), &PutOpts::default())
+        .unwrap();
+    s.put(
+        PLUGIN_A,
+        &sf,
+        "beta",
+        &MemoryValue::Json(serde_json::json!({"v":1})),
+        &PutOpts::default(),
+    )
+    .unwrap();
     // Secret entry 가 있어도 export 에는 포함되지 않아야 한다
-    s.put_secret(PLUGIN_A, &ws, "secret_k", &text("hidden"), &PutOpts::default()).unwrap();
+    s.put_secret(
+        PLUGIN_A,
+        &ws,
+        "secret_k",
+        &text("hidden"),
+        &PutOpts::default(),
+    )
+    .unwrap();
 
     let exported = s.export_regular(None).unwrap();
     assert_eq!(exported.len(), 2);
@@ -737,9 +899,12 @@ fn export_and_import_roundtrip() {
 fn purge_scope_records_deleted_for_each_regular_key() {
     let mut s = store();
     let scope = Scope::Surface(11);
-    s.put(PLUGIN_A, &scope, "a", &text("x"), &PutOpts::default()).unwrap();
-    s.put(PLUGIN_A, &scope, "b", &text("y"), &PutOpts::default()).unwrap();
-    s.put_secret(PLUGIN_A, &scope, "sa", &text("z"), &PutOpts::default()).unwrap();
+    s.put(PLUGIN_A, &scope, "a", &text("x"), &PutOpts::default())
+        .unwrap();
+    s.put(PLUGIN_A, &scope, "b", &text("y"), &PutOpts::default())
+        .unwrap();
+    s.put_secret(PLUGIN_A, &scope, "sa", &text("z"), &PutOpts::default())
+        .unwrap();
     let _ = s.take_pending_changes();
 
     s.purge_scope(&scope).unwrap();

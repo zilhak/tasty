@@ -68,10 +68,8 @@ impl Translations {
             language
         );
 
-        let base: HashMap<String, &'static str> = strings
-            .into_iter()
-            .map(|(k, v)| (k, leak_str(v)))
-            .collect();
+        let base: HashMap<String, &'static str> =
+            strings.into_iter().map(|(k, v)| (k, leak_str(v))).collect();
 
         Self {
             base,
@@ -162,10 +160,8 @@ impl Translations {
             }
         }
 
-        let leaked: HashMap<String, &'static str> = strings
-            .into_iter()
-            .map(|(k, v)| (k, leak_str(v)))
-            .collect();
+        let leaked: HashMap<String, &'static str> =
+            strings.into_iter().map(|(k, v)| (k, leak_str(v))).collect();
 
         let count = leaked.len();
         if let Ok(mut ns) = self.namespaces.write() {

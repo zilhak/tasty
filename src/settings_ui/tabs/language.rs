@@ -40,4 +40,3 @@ fn language_display_name(code: &str) -> &str {
         _ => code,
     }
 }
-

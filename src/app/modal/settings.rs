@@ -7,10 +7,7 @@ use crate::window;
 
 impl App {
     /// Open settings as a modal window.
-    pub(crate) fn open_settings_modal(
-        &mut self,
-        event_loop: &winit::event_loop::ActiveEventLoop,
-    ) {
+    pub(crate) fn open_settings_modal(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         if self.engine.is_modal_active() {
             return; // Another modal is already open
         }
@@ -59,7 +56,8 @@ impl App {
                 Arc::new(crate::file_handler::FileHandlerRegistry::new()),
             )
         };
-        let user_config_path = tasty_core::paths::tasty_home().map(|d| d.join("file-handlers.toml"));
+        let user_config_path =
+            tasty_core::paths::tasty_home().map(|d| d.join("file-handlers.toml"));
         let mut modal = window::SettingsWindow::new(
             gpu,
             window,

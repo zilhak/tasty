@@ -51,9 +51,9 @@ impl AppState {
     /// 이벤트를 enqueue. tab 전환 경로(클릭, next/prev/goto 단축키, close 후 인접
     /// 탭으로 shift, pane 전환에 의한 focused tab 변화 등)가 여럿이라 polling 채택.
     pub fn detect_tab_focus_change(&mut self) {
-        let current = self.focused_pane().and_then(|pane| {
-            pane.tabs.get(pane.active_tab).map(|tab| (pane.id, tab.id))
-        });
+        let current = self
+            .focused_pane()
+            .and_then(|pane| pane.tabs.get(pane.active_tab).map(|tab| (pane.id, tab.id)));
         if current == self.last_focused_tab {
             return;
         }
@@ -154,17 +154,17 @@ impl AppState {
 
         for (pane_id, workspace_id) in &current {
             if !prev.contains_key(pane_id) {
-                self.pending_host_events.push(PendingHostEvent::PaneCreated {
-                    pane_id: *pane_id,
-                    workspace_id: *workspace_id,
-                });
+                self.pending_host_events
+                    .push(PendingHostEvent::PaneCreated {
+                        pane_id: *pane_id,
+                        workspace_id: *workspace_id,
+                    });
             }
         }
         for pane_id in prev.keys() {
             if !current.contains_key(pane_id) {
-                self.pending_host_events.push(PendingHostEvent::PaneClosed {
-                    pane_id: *pane_id,
-                });
+                self.pending_host_events
+                    .push(PendingHostEvent::PaneClosed { pane_id: *pane_id });
             }
         }
 
@@ -251,18 +251,18 @@ impl AppState {
 
         for (surface_id, (tab_id, pane_id, workspace_id, kind)) in &current {
             if !prev.contains_key(surface_id) {
-                self.pending_host_events.push(PendingHostEvent::SurfaceCreated {
-                    surface_id: *surface_id,
-                    kind,
-                    tab_id: *tab_id,
-                    pane_id: *pane_id,
-                    workspace_id: *workspace_id,
-                    created_by_plugin: None,
-                });
+                self.pending_host_events
+                    .push(PendingHostEvent::SurfaceCreated {
+                        surface_id: *surface_id,
+                        kind,
+                        tab_id: *tab_id,
+                        pane_id: *pane_id,
+                        workspace_id: *workspace_id,
+                        created_by_plugin: None,
+                    });
             }
         }
 
         self.last_surface_locations = Some(current);
     }
-
 }

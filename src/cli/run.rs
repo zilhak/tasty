@@ -64,7 +64,10 @@ fn run_dynamic_client(request: crate::ipc::protocol::JsonRpcRequest) -> Result<(
     let mut conn = IpcConnection::new(stream)?;
     match conn.send(&request) {
         Ok(value) => {
-            println!("{}", serde_json::to_string_pretty(&value).unwrap_or_default());
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&value).unwrap_or_default()
+            );
             Ok(())
         }
         Err(e) => {

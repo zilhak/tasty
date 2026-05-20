@@ -36,14 +36,23 @@ pub fn draw_pane_tab_bars(
                 Some(p) => p,
                 None => continue,
             };
-            let tab_has_notification: Vec<bool> = pane.tabs.iter().map(|t| {
-                let sids = t.all_surface_ids();
-                state.engine.notifications.has_highlighted_surface(&sids)
-            }).collect();
-            let tab_is_busy: Vec<bool> = pane.tabs.iter().map(|t| {
-                let sids = t.all_surface_ids();
-                sids.iter().any(|sid| state.engine.busy_surfaces.contains(sid))
-            }).collect();
+            let tab_has_notification: Vec<bool> = pane
+                .tabs
+                .iter()
+                .map(|t| {
+                    let sids = t.all_surface_ids();
+                    state.engine.notifications.has_highlighted_surface(&sids)
+                })
+                .collect();
+            let tab_is_busy: Vec<bool> = pane
+                .tabs
+                .iter()
+                .map(|t| {
+                    let sids = t.all_surface_ids();
+                    sids.iter()
+                        .any(|sid| state.engine.busy_surfaces.contains(sid))
+                })
+                .collect();
             infos.push(PaneTabInfo {
                 pane_id,
                 tab_names: pane.tabs.iter().map(|t| t.display_name()).collect(),
@@ -164,7 +173,8 @@ pub fn draw_pane_tab_bars(
                                 }
 
                                 let is_active = i == info.active_tab;
-                                let has_notif = info.tab_has_notification.get(i).copied().unwrap_or(false);
+                                let has_notif =
+                                    info.tab_has_notification.get(i).copied().unwrap_or(false);
                                 let is_busy = info.tab_is_busy.get(i).copied().unwrap_or(false);
                                 let tab_bg = if is_active { th.base } else { bg };
                                 let text_color = if is_active {
@@ -268,10 +278,7 @@ pub fn draw_pane_tab_bars(
                                         ));
                                     }
                                     if resp.drag_started_by(egui::PointerButton::Primary) {
-                                        actions.push((
-                                            info.pane_id,
-                                            PaneTabAction::DragStart(i),
-                                        ));
+                                        actions.push((info.pane_id, PaneTabAction::DragStart(i)));
                                     }
                                     if resp.dragged_by(egui::PointerButton::Primary) {
                                         if let Some(pos) = resp.interact_pointer_pos() {
@@ -282,10 +289,7 @@ pub fn draw_pane_tab_bars(
                                         }
                                     }
                                     if resp.drag_stopped_by(egui::PointerButton::Primary) {
-                                        actions.push((
-                                            info.pane_id,
-                                            PaneTabAction::DragEnd,
-                                        ));
+                                        actions.push((info.pane_id, PaneTabAction::DragEnd));
                                     }
                                 }
 
@@ -561,7 +565,8 @@ fn compute_drop_index(
     let content_x = mouse_x - pane_logical_x + scroll_offset;
     // Each tab occupies tab_w + separator_w (except the first which has no leading separator)
     let slot = content_x / (tab_w + separator_w);
-    slot.round().clamp(0.0, (tab_count.saturating_sub(1)) as f32) as usize
+    slot.round()
+        .clamp(0.0, (tab_count.saturating_sub(1)) as f32) as usize
 }
 
 enum PaneTabAction {

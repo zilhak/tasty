@@ -960,4 +960,3 @@ fn source_cwd_empty_surface_is_none() {
     let e = EmptySurface::new(1);
     assert_eq!(e.source_cwd(), None);
 }
-

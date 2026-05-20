@@ -64,7 +64,11 @@ pub fn handle_lease_acquire(
         Err(e) => return e,
     };
     let ttl_ms = params.get("ttl_ms").and_then(|v| v.as_u64());
-    let mode = match params.get("mode").and_then(|v| v.as_str()).unwrap_or("fail") {
+    let mode = match params
+        .get("mode")
+        .and_then(|v| v.as_str())
+        .unwrap_or("fail")
+    {
         "fail" => LeaseMode::Fail,
         "block" => LeaseMode::Block,
         other => {
@@ -123,4 +127,3 @@ pub fn handle_lease_list(
 // ============================================================
 // agent.task_reduce — 다른 task 결과 합성
 // ============================================================
-

@@ -1,6 +1,6 @@
 use super::pane_tree::FocusDirection;
-use super::terminal_surface::TerminalSurface;
 use super::surface_trait::Surface;
+use super::terminal_surface::TerminalSurface;
 use super::{DividerInfo, PhysicalPx, Rect, SURFACE_BORDER_WIDTH, SplitDirection, SurfaceId};
 use tasty_terminal::Terminal;
 
@@ -58,9 +58,7 @@ impl SurfaceLayout {
                 },
                 None,
             ),
-            SurfaceLayout::Leaf(surface) => {
-                (SurfaceLayout::Leaf(surface), Some(new_surface))
-            }
+            SurfaceLayout::Leaf(surface) => (SurfaceLayout::Leaf(surface), Some(new_surface)),
             SurfaceLayout::Split {
                 direction: d,
                 ratio,

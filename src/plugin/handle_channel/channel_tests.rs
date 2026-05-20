@@ -111,8 +111,8 @@ fn shared_buffer_roundtrip_via_handle_channel() {
 
     // host: shm 영역 생성 + sendable 핸들 준비.
     let (host_mem, sendable) = tasty_shm::create(4096).expect("shm create");
-    let payload = tasty_shm::prepare_send(sendable, tasty_shm::PeerPid::Same)
-        .expect("prepare_send");
+    let payload =
+        tasty_shm::prepare_send(sendable, tasty_shm::PeerPid::Same).expect("prepare_send");
 
     // host → plugin: HandleAttach + SCM_RIGHTS(fd).
     let id = SharedBufferId(7);
@@ -127,13 +127,11 @@ fn shared_buffer_roundtrip_via_handle_channel() {
 
     // plugin 측: raw socket에서 recvmsg로 fd를 받는다.
     let mut buf = [0u8; 4096];
-    let (n, fds) =
-        unix_wire::recv_with_fd(&plugin_raw, &mut buf).expect("plugin recv");
+    let (n, fds) = unix_wire::recv_with_fd(&plugin_raw, &mut buf).expect("plugin recv");
     assert!(n > 0);
     assert_eq!(fds.len(), 1, "정확히 fd 1개가 도착");
     let line = std::str::from_utf8(&buf[..n]).expect("utf8").trim();
-    let got_msg: HandleChannelMessage =
-        serde_json::from_str(line).expect("decode HandleAttach");
+    let got_msg: HandleChannelMessage = serde_json::from_str(line).expect("decode HandleAttach");
     assert_eq!(got_msg, attach);
 
     // plugin 측: 받은 fd를 tasty_shm::receive로 매핑.
@@ -154,17 +152,24 @@ fn shared_buffer_roundtrip_via_handle_channel() {
     // host 측에서도 같은 영역이 보여야 한다.
     // SAFETY: plugin 쪽이 write를 마쳤고 후속 동시 mutate 없음.
     let host_view = unsafe { host_mem.as_slice() };
-    assert!(host_view.iter().all(|&b| b == 0xAB), "공유 매핑이 동일해야 함");
+    assert!(
+        host_view.iter().all(|&b| b == 0xAB),
+        "공유 매핑이 동일해야 함"
+    );
 
     // plugin → host: Dirty 메시지 송신 (raw write, fd 없이).
     let dirty = HandleChannelMessage::Dirty {
         id,
-        rect: Some(Rect { x: 0, y: 0, w: 32, h: 32 }),
+        rect: Some(Rect {
+            x: 0,
+            y: 0,
+            w: 32,
+            h: 32,
+        }),
     };
     let mut dirty_line = serde_json::to_string(&dirty).expect("encode dirty");
     dirty_line.push('\n');
-    unix_wire::send_with_fd(&plugin_raw, dirty_line.as_bytes(), None)
-        .expect("plugin send dirty");
+    unix_wire::send_with_fd(&plugin_raw, dirty_line.as_bytes(), None).expect("plugin send dirty");
 
     // host: HandleStreamReader로 Dirty 디코드.
     let mut reader = host_reader_stream;
@@ -208,8 +213,7 @@ fn auth_flow_rejects_unknown_token() {
             assert!(ack.contains("\"ok\":false"));
         });
 
-        let stream =
-            listener.expect_connection("expected-token", Duration::from_millis(800));
+        let stream = listener.expect_connection("expected-token", Duration::from_millis(800));
         assert!(stream.is_none(), "expected no stream (token mismatch)");
     });
 }

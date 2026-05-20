@@ -162,7 +162,10 @@ fn accepts_full_manifest() {
     assert_eq!(m.permissions.len(), 2);
     assert_eq!(m.contributes.commands.len(), 1);
     // binding_mode 미지정 → Independent 기본값
-    assert_eq!(m.contributes.commands[0].binding_mode, BindingMode::Independent);
+    assert_eq!(
+        m.contributes.commands[0].binding_mode,
+        BindingMode::Independent
+    );
     // lang_dir 미지정 → "lang" 기본값
     assert_eq!(m.lang_dir, "lang");
 }
@@ -184,7 +187,10 @@ fn binding_mode_independent() {
         binding_mode = "independent"
     "#;
     let m = parse(s).expect("should parse");
-    assert_eq!(m.contributes.commands[0].binding_mode, BindingMode::Independent);
+    assert_eq!(
+        m.contributes.commands[0].binding_mode,
+        BindingMode::Independent
+    );
 }
 
 #[test]
@@ -559,16 +565,14 @@ fn bundled_image_plugin_manifest_validates() {
     assert_eq!(m.id, "com.tasty.image");
     assert_eq!(m.surface_kinds.len(), 1);
     assert_eq!(m.surface_kinds[0].kind, "image");
-    assert_eq!(
-        m.surface_kinds[0].rendering,
-        SurfaceKindRendering::Host
-    );
+    assert_eq!(m.surface_kinds[0].rendering, SurfaceKindRendering::Host);
     // ipc_namespace prefix가 "image"여야 하고 cli 매핑이 모두 image.* 메서드.
-    assert!(m
-        .contributes
-        .ipc_namespace
-        .iter()
-        .any(|n| n.prefix == "image"));
+    assert!(
+        m.contributes
+            .ipc_namespace
+            .iter()
+            .any(|n| n.prefix == "image")
+    );
     assert!(m.contributes.cli.iter().any(|c| c.name == "image"));
 }
 
@@ -662,7 +666,10 @@ fn event_subscribe_rejects_bare_wildcard() {
         command = "x"
     "#;
     let err = parse(s).unwrap_err().to_string();
-    assert!(err.contains("invalid event_subscribe pattern"), "got: {err}");
+    assert!(
+        err.contains("invalid event_subscribe pattern"),
+        "got: {err}"
+    );
 }
 
 #[test]
@@ -1116,7 +1123,10 @@ fn extends_requires_ext_permission_in_manifest() {
             timeout_ms = 100
         "#,
     )
-    .replace("permissions = [\"ext:com.tasty.clipboard\"]", "permissions = []");
+    .replace(
+        "permissions = [\"ext:com.tasty.clipboard\"]",
+        "permissions = []",
+    );
     let err = parse(&s).unwrap_err().to_string();
     assert!(err.contains("ext:com.tasty.clipboard"), "got: {err}");
 }

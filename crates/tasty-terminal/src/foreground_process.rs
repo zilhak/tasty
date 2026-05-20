@@ -235,6 +235,9 @@ mod windows_smoke {
     fn current_process_resolves() {
         let pid = std::process::id();
         let info = get_foreground_process(pid);
-        eprintln!("foreground for self pid {pid}: {:?}", info.map(|i| (i.name, i.pid)));
+        eprintln!(
+            "foreground for self pid {pid}: {:?}",
+            info.map(|i| (i.name, i.pid))
+        );
     }
 }

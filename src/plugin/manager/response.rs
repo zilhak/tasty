@@ -12,7 +12,7 @@ use crate::plugin::manifest::{EventHookDecl, HookMode, IpcHookDecl};
 use crate::plugin::protocol::{self, IpcCallResult, PluginResponse, SurfaceResult};
 
 use super::{
-    parse_hook_result, FinalCaller, HookOutcome, PendingRequestKind, PluginManager, TargetOutcome,
+    FinalCaller, HookOutcome, PendingRequestKind, PluginManager, TargetOutcome, parse_hook_result,
 };
 
 impl PluginManager {
@@ -35,7 +35,10 @@ impl PluginManager {
     pub(super) fn handle_plugin_response(&mut self, plugin_id: &str, resp: PluginResponse) {
         let kind = self.pending_requests.remove(&resp.id);
         if let Some(err) = &resp.error {
-            tracing::warn!("plugin '{plugin_id}' response error (id={}): {err}", resp.id);
+            tracing::warn!(
+                "plugin '{plugin_id}' response error (id={}): {err}",
+                resp.id
+            );
         }
         let kind = match kind {
             Some(k) => k,
@@ -53,9 +56,7 @@ impl PluginManager {
                 let parsed: SurfaceResult = match serde_json::from_value(result_value) {
                     Ok(p) => p,
                     Err(e) => {
-                        tracing::warn!(
-                            "plugin '{plugin_id}' surface response decode error: {e}"
-                        );
+                        tracing::warn!("plugin '{plugin_id}' surface response decode error: {e}");
                         return;
                     }
                 };
@@ -262,11 +263,14 @@ impl PluginManager {
         response_tx: mpsc::SyncSender<JsonRpcResponse>,
     ) {
         if !self.processes.contains_key(extension_id) {
-            send_response(&response_tx, JsonRpcResponse::error(
-                original_id,
-                -32002,
-                &format!("extension '{extension_id}' is not running"),
-            ));
+            send_response(
+                &response_tx,
+                JsonRpcResponse::error(
+                    original_id,
+                    -32002,
+                    &format!("extension '{extension_id}' is not running"),
+                ),
+            );
             return;
         }
         match self.send_extension_invoke_hook(extension_id, kind, phase, mode, target, payload) {
@@ -280,7 +284,10 @@ impl PluginManager {
                 );
             }
             Err(msg) => {
-                send_response(&response_tx, JsonRpcResponse::error(original_id, -32003, &msg));
+                send_response(
+                    &response_tx,
+                    JsonRpcResponse::error(original_id, -32003, &msg),
+                );
             }
         }
     }
@@ -312,7 +319,12 @@ impl PluginManager {
         if let (HookMode::Transform, HookOutcome::Modified(new_payload)) = (mode, outcome) {
             envelope.payload = new_payload;
         }
-        self.fan_out_then_post(&publisher_plugin_id, envelope, extension_plugin_id, post_hook);
+        self.fan_out_then_post(
+            &publisher_plugin_id,
+            envelope,
+            extension_plugin_id,
+            post_hook,
+        );
     }
 
     /// pre-hook 응답을 처리. mode에 따라 transform/filter/observe 적용 후 target에 forward.
@@ -347,9 +359,7 @@ impl PluginManager {
 
         // filter mode에서 block이면 호출 자체 차단.
         if matches!(mode, HookMode::Filter) && matches!(outcome, HookOutcome::Block) {
-            let msg = format!(
-                "extension '{extension_plugin_id}' filtered out method '{method}'"
-            );
+            let msg = format!("extension '{extension_plugin_id}' filtered out method '{method}'");
             // post-hook이 있어도 filter block이면 target 호출이 일어나지 않으므로 post도 skip.
             self.send_final_error(final_caller, -32001, msg);
             return;
@@ -434,11 +444,7 @@ impl PluginManager {
                 | PendingRequestKind::ExtensionPostIpcHook { deadline, .. }
                 | PendingRequestKind::ExtensionPreEventHook { deadline, .. }
                 | PendingRequestKind::ExtensionPostEventHook { deadline, .. } => {
-                    if now >= *deadline {
-                        Some(*id)
-                    } else {
-                        None
-                    }
+                    if now >= *deadline { Some(*id) } else { None }
                 }
                 _ => None,
             })
@@ -538,7 +544,11 @@ impl PluginManager {
         self.finalize_target_outcome(final_caller, final_outcome);
     }
 
-    pub(super) fn finalize_target_outcome(&mut self, final_caller: FinalCaller, outcome: TargetOutcome) {
+    pub(super) fn finalize_target_outcome(
+        &mut self,
+        final_caller: FinalCaller,
+        outcome: TargetOutcome,
+    ) {
         match outcome {
             TargetOutcome::Ok(v) => self.send_final_success(final_caller, v),
             TargetOutcome::Err { message, code } => {
@@ -546,5 +556,4 @@ impl PluginManager {
             }
         }
     }
-
 }

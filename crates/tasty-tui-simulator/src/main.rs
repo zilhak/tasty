@@ -466,7 +466,11 @@ fn scenario_colors_inline(out: &mut io::Stdout) {
     write!(out, "\x1b[0m").unwrap();
     // Row 2: TrueColor
     write!(out, "\x1b[3;1H").unwrap();
-    write!(out, "\x1b[38;2;255;0;0mR\x1b[38;2;0;255;0mG\x1b[38;2;0;0;255mB\x1b[0m").unwrap();
+    write!(
+        out,
+        "\x1b[38;2;255;0;0mR\x1b[38;2;0;255;0mG\x1b[38;2;0;0;255mB\x1b[0m"
+    )
+    .unwrap();
 }
 
 fn scenario_attrs_inline(out: &mut io::Stdout) {

@@ -31,4 +31,3 @@ pub fn draw_notifications_tab(ui: &mut egui::Ui, settings: &mut Settings) {
             ui.end_row();
         });
 }
-

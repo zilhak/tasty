@@ -1,9 +1,11 @@
 use std::collections::BTreeSet;
 
-use crate::file_format::{DetectorDecl, DetectorRuleDecl, DetectorRuleKind, FileFormatRegistry, RuleOrigin};
+use crate::file_format::{
+    DetectorDecl, DetectorRuleDecl, DetectorRuleKind, FileFormatRegistry, RuleOrigin,
+};
 use crate::i18n::t;
 
-use super::{draw_intro_block, AddDetectorForm, FileHandlerEditDraft};
+use super::{AddDetectorForm, FileHandlerEditDraft, draw_intro_block};
 
 /// Detectors sub-tab — Enabled 토글, user-origin 삭제, user 추가 form.
 pub(super) fn draw_detectors(
@@ -40,7 +42,9 @@ pub(super) fn draw_detectors(
                 ui.end_row();
 
                 for id in &ids {
-                    let Some(det) = file_format.detector(id) else { continue };
+                    let Some(det) = file_format.detector(id) else {
+                        continue;
+                    };
                     // 효과 상태: draft 우선, 없으면 registry 상태.
                     let want_enabled = fh
                         .detector_enabled
@@ -247,4 +251,3 @@ fn rule_kinds_summary(rules: &[crate::file_format::DetectorRule]) -> String {
         kinds.join(", ")
     }
 }
-

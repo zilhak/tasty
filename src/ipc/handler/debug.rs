@@ -273,10 +273,7 @@ pub(super) fn handle_debug_inject_mouse(
         None => return JsonRpcResponse::invalid_params(id, "Missing 'row' parameter"),
     };
     // button: 0=left, 1=middle, 2=right. Default: 0
-    let button = params
-        .get("button")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(0);
+    let button = params.get("button").and_then(|v| v.as_u64()).unwrap_or(0);
     // event_type: "press", "release", "move". Default: "press"
     let event_type = params
         .get("event_type")
@@ -323,9 +320,7 @@ pub(super) fn handle_debug_inject_key(
             for i in (0..hex.len()).step_by(2) {
                 match u8::from_str_radix(&hex[i..i.min(hex.len()).max(i + 2)], 16) {
                     Ok(b) => result.push(b),
-                    Err(_) => {
-                        return JsonRpcResponse::invalid_params(id, "Invalid hex in 'bytes'")
-                    }
+                    Err(_) => return JsonRpcResponse::invalid_params(id, "Invalid hex in 'bytes'"),
                 }
             }
             result
@@ -333,7 +328,7 @@ pub(super) fn handle_debug_inject_key(
         None => match params.get("text").and_then(|v| v.as_str()) {
             Some(t) => t.as_bytes().to_vec(),
             None => {
-                return JsonRpcResponse::invalid_params(id, "Missing 'bytes' or 'text' parameter")
+                return JsonRpcResponse::invalid_params(id, "Missing 'bytes' or 'text' parameter");
             }
         },
     };
@@ -345,4 +340,3 @@ pub(super) fn handle_debug_inject_key(
         JsonRpcResponse::invalid_params(id, format!("Surface {} not found", surface_id))
     }
 }
-

@@ -14,5 +14,3 @@ pub enum ScriptCommands {
     /// 등록만 살아남는다.
     Reload,
 }
-
-

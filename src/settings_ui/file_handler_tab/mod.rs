@@ -55,11 +55,7 @@ impl FileHandlerEditDraft {
             || !self.add_handler.is_empty()
     }
 
-    pub fn apply(
-        self,
-        file_format: &FileFormatRegistry,
-        file_handler: &FileHandlerRegistry,
-    ) {
+    pub fn apply(self, file_format: &FileFormatRegistry, file_handler: &FileHandlerRegistry) {
         for (id, enabled) in &self.detector_enabled {
             // enabled = true 인데 detector 가 host/plugin default 로 이미 enabled 면 user
             // override 를 굳이 추가하지 않는다 (불필요한 user contribution 회피). 그러나
@@ -165,9 +161,7 @@ pub(crate) fn draw_file_handler_tab(
             draw_extension_mapping(ui, draft, new_ext_input, file_format)
         }
         FileHandlerSubTab::Detectors => draw_detectors(ui, fh_draft, file_format),
-        FileHandlerSubTab::Handlers => {
-            draw_handlers(ui, fh_draft, file_format, file_handler)
-        }
+        FileHandlerSubTab::Handlers => draw_handlers(ui, fh_draft, file_format, file_handler),
     }
 }
 
@@ -181,7 +175,6 @@ pub(super) fn draw_intro_block(ui: &mut egui::Ui, body_key: &str, bullet_keys: &
     }
     ui.add_space(8.0);
 }
-
 
 mod detectors;
 mod extension_mapping;

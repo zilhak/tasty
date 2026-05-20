@@ -299,7 +299,9 @@ mod tests {
 
     #[test]
     fn cascade_preserves_origin_and_trace_id() {
-        let parent = Intent::Noop.from_user_shortcut("approve").with_trace_id("t1");
+        let parent = Intent::Noop
+            .from_user_shortcut("approve")
+            .with_trace_id("t1");
         let child = Intent::Noop.cascaded_from(&parent);
         assert!(matches!(
             child.origin,

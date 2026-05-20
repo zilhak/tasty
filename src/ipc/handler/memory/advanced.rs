@@ -1,7 +1,7 @@
 //! 메모리 도메인 IPC 핸들러의 advanced 그룹: gc / query / export / import.
 
-use serde_json::{json, Value};
-use tasty_memory::{with_store, ListOpts, MemoryEntry, MemoryValue};
+use serde_json::{Value, json};
+use tasty_memory::{ListOpts, MemoryEntry, MemoryValue, with_store};
 
 use crate::ipc::caller::CallerContext;
 use crate::ipc::protocol::JsonRpcResponse;
@@ -175,9 +175,9 @@ fn parse_export_entry(ev: &Value) -> Result<MemoryEntry, String> {
             None => return Err(format!("entry '{key}': kind=json requires 'value'")),
         },
         "binary" => match ev.get("value_b64").and_then(|v| v.as_str()) {
-            Some(b64) => MemoryValue::Binary(
-                decode_b64(b64).map_err(|e| format!("entry '{key}': {e}"))?,
-            ),
+            Some(b64) => {
+                MemoryValue::Binary(decode_b64(b64).map_err(|e| format!("entry '{key}': {e}"))?)
+            }
             None => return Err(format!("entry '{key}': kind=binary requires 'value_b64'")),
         },
         other => return Err(format!("entry '{key}': unknown kind '{other}'")),
@@ -198,6 +198,3 @@ fn parse_export_entry(ev: &Value) -> Result<MemoryEntry, String> {
 // ============================================================
 // Secret `memory.secret.*` — owner 자동 분기, 응답에 owner 미포함
 // ============================================================
-
-
-

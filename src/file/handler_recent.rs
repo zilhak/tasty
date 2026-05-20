@@ -120,8 +120,7 @@ impl RecentPicks {
         let payload = Persisted {
             entries: self.entries.clone(),
         };
-        let json = serde_json::to_string_pretty(&payload)
-            .map_err(io::Error::other)?;
+        let json = serde_json::to_string_pretty(&payload).map_err(io::Error::other)?;
 
         let tmp = tmp_path_for(path);
         std::fs::write(&tmp, json)?;

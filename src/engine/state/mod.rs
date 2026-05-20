@@ -178,8 +178,7 @@ pub struct EngineState {
 
     /// Layout preset 디스크 캐시 — App 의 `engine::Engine` 과 동일 Arc 공유.
     /// `create_app_state` 에서 주입한다.
-    pub preset_store:
-        Option<std::sync::Arc<std::sync::Mutex<tasty_presets::PresetStore>>>,
+    pub preset_store: Option<std::sync::Arc<std::sync::Mutex<tasty_presets::PresetStore>>>,
 }
 
 impl EngineState {
@@ -282,8 +281,7 @@ impl EngineState {
                 restored = false;
             } else {
                 // layout.json 자체가 없거나 무효면 알려진 ref 없음 → 모두 orphan.
-                let empty: std::collections::HashSet<String> =
-                    std::collections::HashSet::new();
+                let empty: std::collections::HashSet<String> = std::collections::HashSet::new();
                 crate::scrollback_store::gc_orphans(&empty);
             }
         }

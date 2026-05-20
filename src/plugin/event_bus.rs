@@ -25,8 +25,7 @@ use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 
 use tasty_plugin_protocol::{
-    EventDispatchParams, EventEnvelope, EventOrigin, METHOD_EVENT_DISPATCH, MAX_HOP,
-    PluginRequest,
+    EventDispatchParams, EventEnvelope, EventOrigin, MAX_HOP, METHOD_EVENT_DISPATCH, PluginRequest,
 };
 
 /// 패턴 매칭 헬퍼. 검증된 패턴은 정확 key 또는 `<segs>.*` 형태로 정규화돼 있다고 가정.
@@ -193,11 +192,7 @@ impl EventBus {
     /// 호스트/다른 plugin 구독자는 무시. `command.invoked`처럼 의도적으로 owner만 받아야 하는
     /// 이벤트에 사용한다. 구독 권한도 검사하지 않는다 (호스트가 명시적으로 보내는 메시지).
     /// 반환값은 송신용 [`PluginDispatch`] (sub_id=0 sentinel).
-    pub fn unicast_to_plugin(
-        &self,
-        plugin_id: &str,
-        envelope: EventEnvelope,
-    ) -> PluginDispatch {
+    pub fn unicast_to_plugin(&self, plugin_id: &str, envelope: EventEnvelope) -> PluginDispatch {
         PluginDispatch {
             plugin_id: plugin_id.to_string(),
             sub_id: 0,
@@ -360,10 +355,22 @@ fn pattern_covers(allowed: &str, requested: &str) -> bool {
 
 #[derive(Debug)]
 pub enum EventBusError {
-    SubscribeDenied { plugin_id: String, pattern: String },
-    PublishDenied { plugin_id: String, key: String },
-    OriginMismatch { plugin_id: String, envelope_origin: EventOrigin },
-    HopExceeded { key: String, hop: u8 },
+    SubscribeDenied {
+        plugin_id: String,
+        pattern: String,
+    },
+    PublishDenied {
+        plugin_id: String,
+        key: String,
+    },
+    OriginMismatch {
+        plugin_id: String,
+        envelope_origin: EventOrigin,
+    },
+    HopExceeded {
+        key: String,
+        hop: u8,
+    },
 }
 
 impl std::fmt::Display for EventBusError {
@@ -392,7 +399,6 @@ impl std::fmt::Display for EventBusError {
 }
 
 impl std::error::Error for EventBusError {}
-
 
 #[cfg(test)]
 #[path = "event_bus_tests.rs"]

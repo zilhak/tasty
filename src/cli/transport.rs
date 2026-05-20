@@ -5,7 +5,6 @@ use anyhow::Result;
 
 use crate::ipc::protocol::{JsonRpcRequest, JsonRpcResponse};
 
-
 /// A reusable IPC connection that keeps a single BufReader across multiple requests.
 pub struct IpcConnection {
     writer: TcpStream,
@@ -43,4 +42,3 @@ impl IpcConnection {
         }
     }
 }
-

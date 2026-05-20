@@ -9,7 +9,7 @@
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
 use std::time::Duration;
 
 use crate::plugin::protocol::{AuthAck, AuthAckEnvelope, AuthMessage};
@@ -100,10 +100,7 @@ fn handle_incoming(
     if let Err(e) = stream.set_read_timeout(None) {
         tracing::warn!("plugin listener: clearing read_timeout failed: {e}");
     }
-    let tx_opt = pending
-        .lock()
-        .ok()
-        .and_then(|mut p| p.remove(&auth.token));
+    let tx_opt = pending.lock().ok().and_then(|mut p| p.remove(&auth.token));
     match tx_opt {
         Some(tx) => {
             if let Err(e) = send_auth_ack(&stream, true, None) {

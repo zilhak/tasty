@@ -1,6 +1,5 @@
 //! `tasty-telemetry` anomaly detection 도메인.
 
-
 use serde::{Deserialize, Serialize};
 
 pub const ANOMALY_KEY_PREFIX: &str = "tasty.telemetry.anomaly.";
@@ -105,7 +104,11 @@ impl AnomalyDetector {
         }
 
         // dedup — 같은 (agent, CallBurst, method) 가 쿨다운 내에 이미 emit 됐다면 skip.
-        let dedup_key = (agent.to_string(), AnomalyKind::CallBurst, method.to_string());
+        let dedup_key = (
+            agent.to_string(),
+            AnomalyKind::CallBurst,
+            method.to_string(),
+        );
         {
             let mut last = self.last_emitted.lock().ok()?;
             if let Some(&prev) = last.get(&dedup_key)

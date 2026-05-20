@@ -9,8 +9,8 @@
 
 use serde_json::Value;
 use tasty_plugin_sdk::{
-    host::HostHandle, IpcMethodCtx, IpcMethodError, Plugin, SurfaceCreateCtx, SurfaceEventCtx,
-    SurfaceResult,
+    IpcMethodCtx, IpcMethodError, Plugin, SurfaceCreateCtx, SurfaceEventCtx, SurfaceResult,
+    host::HostHandle,
 };
 
 const PLUGIN_ID: &str = "com.tasty.image";
@@ -44,13 +44,8 @@ impl Plugin for ImagePlugin {
 
     fn handle_ipc_method(&mut self, ctx: IpcMethodCtx) -> Result<Value, IpcMethodError> {
         match ctx.method.as_str() {
-            "image.open"
-            | "image.save"
-            | "image.export_png"
-            | "image.next"
-            | "image.prev"
-            | "image.paste"
-            | "image.list" => trampoline(&ctx.host, &ctx.method, ctx.params),
+            "image.open" | "image.save" | "image.export_png" | "image.next" | "image.prev"
+            | "image.paste" | "image.list" => trampoline(&ctx.host, &ctx.method, ctx.params),
             other => Err(IpcMethodError::not_found(other)),
         }
     }
@@ -65,8 +60,7 @@ fn trampoline(host: &HostHandle, method: &str, params: Value) -> Result<Value, I
 fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info".into()),
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
         )
         .init();
     tasty_plugin_sdk::run(ImagePlugin)

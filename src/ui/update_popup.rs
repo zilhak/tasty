@@ -39,11 +39,7 @@ pub fn draw_update_popup(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction
             Some(info) => {
                 ui.horizontal(|ui| {
                     ui.label(egui::RichText::new(t("update.latest_label")).color(th.subtext0));
-                    ui.label(
-                        egui::RichText::new(&info.version)
-                            .color(th.green)
-                            .strong(),
-                    );
+                    ui.label(egui::RichText::new(&info.version).color(th.green).strong());
                 });
                 ui.separator();
                 ui.label(
@@ -56,9 +52,7 @@ pub fn draw_update_popup(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction
                     .show(ui, |ui| {
                         ui.add(
                             egui::Label::new(
-                                egui::RichText::new(&info.body)
-                                    .color(th.text)
-                                    .size(12.0),
+                                egui::RichText::new(&info.body).color(th.text).size(12.0),
                             )
                             .wrap(),
                         );

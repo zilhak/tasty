@@ -203,12 +203,11 @@ pub fn create(size: usize) -> Result<(SharedMemory, SendableHandle), ShmError> {
 ///
 /// 호출 후 본 핸들은 소비되어 재사용 불가. peer는 Windows에서만 의미를 가진다
 /// (`DuplicateHandle` 대상 PID).
-pub fn prepare_send(
-    handle: SendableHandle,
-    peer: PeerPid,
-) -> Result<TransportPayload, ShmError> {
-    platform::prepare_send(handle.inner, handle.size, peer)
-        .map(|inner| TransportPayload { inner, size: handle.size })
+pub fn prepare_send(handle: SendableHandle, peer: PeerPid) -> Result<TransportPayload, ShmError> {
+    platform::prepare_send(handle.inner, handle.size, peer).map(|inner| TransportPayload {
+        inner,
+        size: handle.size,
+    })
 }
 
 /// 받은 transport 페이로드로부터 현재 프로세스에 영역을 매핑한다.

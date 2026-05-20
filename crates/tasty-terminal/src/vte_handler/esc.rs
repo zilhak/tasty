@@ -1,6 +1,5 @@
 //! VTE handler: esc 도메인.
 
-
 use termwiz::cell::CellAttributes;
 use termwiz::color::ColorAttribute;
 use termwiz::escape::esc::{Esc, EscCode};
@@ -49,5 +48,4 @@ impl Terminal {
             _ => vec![],
         }
     }
-
 }

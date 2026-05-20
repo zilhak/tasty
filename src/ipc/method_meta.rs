@@ -350,7 +350,6 @@ pub fn method_meta(method: &str) -> Option<MethodMeta> {
     None
 }
 
-
 #[cfg(test)]
 #[path = "method_meta_tests.rs"]
 mod tests;

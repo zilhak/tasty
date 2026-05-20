@@ -39,10 +39,9 @@ pub fn handle_cache_put(
         }
     };
     let owner = caller.owner().to_string();
-    let result = with_store(|s| {
-        cache_mod::cache_put(s, &owner, workspace_id, &key, &value, ttl_secs)
-    })
-    .expect("memory store present");
+    let result =
+        with_store(|s| cache_mod::cache_put(s, &owner, workspace_id, &key, &value, ttl_secs))
+            .expect("memory store present");
     match result {
         Ok(version) => JsonRpcResponse::success(id, json!({ "ok": true, "version": version })),
         Err(e) => map_error(id, e),
@@ -66,8 +65,8 @@ pub fn handle_cache_get(
         Ok(s) => s.to_string(),
         Err(e) => return e,
     };
-    let result = with_store(|s| cache_mod::cache_get(s, workspace_id, &key))
-        .expect("memory store present");
+    let result =
+        with_store(|s| cache_mod::cache_get(s, workspace_id, &key)).expect("memory store present");
     match result {
         Ok(Some(entry)) => JsonRpcResponse::success(id, entry_to_json(&entry)),
         Ok(None) => JsonRpcResponse::success(id, Value::Null),
@@ -118,9 +117,7 @@ pub fn handle_cache_clear(
     let result = with_store(|s| cache_mod::cache_clear(s, &owner, workspace_id))
         .expect("memory store present");
     match result {
-        Ok(removed) => {
-            JsonRpcResponse::success(id, json!({ "ok": true, "removed": removed }))
-        }
+        Ok(removed) => JsonRpcResponse::success(id, json!({ "ok": true, "removed": removed })),
         Err(e) => map_error(id, e),
     }
 }
@@ -138,12 +135,10 @@ pub fn handle_cache_list(
         Ok(v) => v,
         Err(e) => return e,
     };
-    let result = with_store(|s| cache_mod::cache_list(s, workspace_id))
-        .expect("memory store present");
+    let result =
+        with_store(|s| cache_mod::cache_list(s, workspace_id)).expect("memory store present");
     match result {
-        Ok(keys) => {
-            JsonRpcResponse::success(id, json!({ "keys": keys, "count": keys.len() }))
-        }
+        Ok(keys) => JsonRpcResponse::success(id, json!({ "keys": keys, "count": keys.len() })),
         Err(e) => map_error(id, e),
     }
 }

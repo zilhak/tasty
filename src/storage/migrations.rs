@@ -74,8 +74,7 @@ impl From<rusqlite::Error> for DbSchemaError {
 
 /// 새 DB라면 schema를 적용하고, 같은 버전이면 no-op, 다른 버전이면 mismatch.
 pub fn ensure_schema(conn: &mut Connection) -> Result<(), DbSchemaError> {
-    let current: u32 =
-        conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
+    let current: u32 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
 
     if current == 0 {
         let tx = conn.transaction()?;
@@ -152,6 +151,9 @@ mod tests {
         let mut conn = Connection::open_in_memory().unwrap();
         conn.pragma_update(None, "user_version", 2u32).unwrap();
         let err = ensure_schema(&mut conn).unwrap_err();
-        assert!(matches!(err, DbSchemaError::SchemaMismatch { found: 2, .. }));
+        assert!(matches!(
+            err,
+            DbSchemaError::SchemaMismatch { found: 2, .. }
+        ));
     }
 }

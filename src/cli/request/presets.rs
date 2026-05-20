@@ -39,10 +39,7 @@ pub(super) fn preset_command_to_method_params(
     command: &PresetCommands,
 ) -> (&'static str, serde_json::Value) {
     match command {
-        PresetCommands::List { kind } => (
-            "preset.list",
-            serde_json::json!({ "kind": kind }),
-        ),
+        PresetCommands::List { kind } => ("preset.list", serde_json::json!({ "kind": kind })),
         PresetCommands::Get { kind, name } => (
             "preset.get",
             serde_json::json!({ "kind": kind, "name": name }),

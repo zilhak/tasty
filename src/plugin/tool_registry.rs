@@ -117,11 +117,7 @@ mod tests {
         let keys: Vec<_> = items.iter().map(|i| i.key.as_str()).collect();
         assert_eq!(
             keys,
-            vec![
-                "com.example.b/c",
-                "com.example.a/a",
-                "com.example.a/b",
-            ]
+            vec!["com.example.b/c", "com.example.a/a", "com.example.a/b",]
         );
     }
 

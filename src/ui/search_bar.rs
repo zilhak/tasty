@@ -25,7 +25,11 @@ pub fn draw_search_bar(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction {
         );
 
         // Auto-focus the input field
-        if response.gained_focus() || ui.ctx().input(|i| i.key_pressed(egui::Key::F) && i.modifiers.command) {
+        if response.gained_focus()
+            || ui
+                .ctx()
+                .input(|i| i.key_pressed(egui::Key::F) && i.modifiers.command)
+        {
             response.request_focus();
         }
         // Always keep focus on the text field while search is open
@@ -98,7 +102,12 @@ pub fn draw_search_bar(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction {
         }
 
         // Option toggles: case / regex / whole-word.
-        if toggle_button(ui, "Aa", !state.search.case_insensitive, t("search.case_tooltip")) {
+        if toggle_button(
+            ui,
+            "Aa",
+            !state.search.case_insensitive,
+            t("search.case_tooltip"),
+        ) {
             state.search.case_insensitive = !state.search.case_insensitive;
             run_search(state);
         }
@@ -106,7 +115,12 @@ pub fn draw_search_bar(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction {
             state.search.regex = !state.search.regex;
             run_search(state);
         }
-        if toggle_button(ui, "ab", state.search.whole_word, t("search.whole_word_tooltip")) {
+        if toggle_button(
+            ui,
+            "ab",
+            state.search.whole_word,
+            t("search.whole_word_tooltip"),
+        ) {
             state.search.whole_word = !state.search.whole_word;
             run_search(state);
         }
@@ -117,7 +131,12 @@ pub fn draw_search_bar(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction {
 
 /// A small toggle button that visually reflects its `active` state.
 /// Returns true when clicked.
-fn toggle_button(ui: &mut egui::Ui, label: &str, active: bool, tooltip: impl Into<egui::WidgetText>) -> bool {
+fn toggle_button(
+    ui: &mut egui::Ui,
+    label: &str,
+    active: bool,
+    tooltip: impl Into<egui::WidgetText>,
+) -> bool {
     let theme = crate::theme::theme();
     let color = if active { theme.text } else { theme.subtext0 };
     let rich = egui::RichText::new(label).color(color);
