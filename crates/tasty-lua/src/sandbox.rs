@@ -6,18 +6,6 @@ use mlua::Lua;
 
 use crate::engine::LuaEngineError;
 
-/// 명령어 N개마다 instruction hook 이 호출되어 cap 초과 검사. 너무 작으면 매 hook
-/// 비용으로 느려지고, 너무 크면 무한 루프 감지 지연. 100만 정도면 일반 hook
-/// 콜백은 즉시 끝나고, 무한 루프는 1초 안에 잡힌다. L2 dispatcher 에서 사용.
-#[allow(dead_code)]
-pub(crate) const INSTRUCTION_CHECK_INTERVAL: u32 = 1_000_000;
-
-/// 전체 hook 콜 1회 당 cap (instruction 단위). 사용자 script 가 한 이벤트 발화에서
-/// 무한 루프에 빠지더라도 이 cap 만큼만 돌고 abort. 충분히 큼 (정상 hook 은
-/// 보통 수천 명령어).
-#[allow(dead_code)]
-pub(crate) const INSTRUCTION_BUDGET: u64 = 100_000_000;
-
 /// Lua VM 의 메모리 사용 한계. user script 가 거대한 string/table 을 만들지 못하게.
 /// 32MB — 정상적인 hook 작업에는 충분. 데이터 처리는 외부 도구로 위임 권장.
 pub(crate) const MEMORY_LIMIT_BYTES: usize = 32 * 1024 * 1024;

@@ -394,7 +394,4 @@ mod tests {
         handle.join().expect("fake host thread");
     }
 
-    /// keep the unused TcpStream import legitimate (env_for/spawn_fake_host references TcpStream indirectly via std).
-    #[allow(dead_code)]
-    fn _ensure_tcpstream_used(_s: TcpStream) {}
 }
