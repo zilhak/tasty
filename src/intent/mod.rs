@@ -6,18 +6,17 @@
 //! 메인 루프의 `App::dispatch_pending_intents`가 drain 하여 도메인별 핸들러
 //! (`intent::popup`, `intent::preset`, ...)로 분기한다. fire-and-forget.
 
-use crate::model::SplitDirection;
-use crate::ui::popup::{PopupId, PopupScope};
-
 pub mod pane;
 pub mod popup;
 pub mod preset;
 pub mod surface;
 pub mod tab;
-pub mod workspace;
-
 #[cfg(debug_assertions)]
 pub mod watch;
+pub mod workspace;
+
+use crate::model::SplitDirection;
+use crate::ui::popup::{PopupId, PopupScope};
 
 /// preset Intent 가 운반하는 캡처된 preset payload.
 /// 호출자 (우클릭 / IPC) 가 capture 를 수행한 뒤 핸들러에 그대로 넘긴다 — TODO 01

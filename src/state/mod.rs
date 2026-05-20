@@ -1,28 +1,28 @@
+mod accessors;
+mod busy;
+mod detect;
+mod finders;
 mod focus;
 mod layout;
 mod mark;
 mod message;
 mod mouse;
 mod pane;
-pub mod preset_apply;
 mod restore;
-pub mod search;
-pub mod selection;
 mod tab;
-mod accessors;
-mod busy;
-mod detect;
-mod finders;
 #[cfg(test)]
 mod tests;
 mod workspace;
 
-use std::collections::VecDeque;
+pub mod preset_apply;
+pub mod search;
+pub mod selection;
 
 use crate::engine_state::EngineState;
 use crate::model::{LogicalPx, PhysicalPx};
 use crate::settings_ui::SettingsUiState;
 use crate::ui::info_modal::InfoModal;
+use std::collections::VecDeque;
 use tasty_terminal::{TerminalEvent, Waker};
 
 /// Type of the currently focused surface, used for keyboard routing.

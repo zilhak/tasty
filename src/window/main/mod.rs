@@ -1,17 +1,12 @@
 mod clipboard;
 mod file_drop;
-pub(crate) mod ime;
 mod keyboard;
 mod mouse;
 mod preset_actions;
 mod redraw;
 mod selection;
 
-use std::sync::Arc;
-
-use winit::event::WindowEvent;
-use winit::keyboard::ModifiersState;
-use winit::window::CursorIcon;
+pub(crate) mod ime;
 
 use crate::gpu::{GpuState, ImePreeditState};
 use crate::model::{PhysicalPx, Rect};
@@ -22,6 +17,10 @@ use crate::window::{
     terminal_host::MODELESS_MODALITY,
 };
 use crate::{AppEvent, ClipboardContext};
+use std::sync::Arc;
+use winit::event::WindowEvent;
+use winit::keyboard::ModifiersState;
+use winit::window::CursorIcon;
 
 /// 메인 터미널 윈도우. 워크스페이스/사이드바/탭을 갖고 터미널 계열 Surface를 호스팅한다.
 /// `TerminalHostWindow` 계열의 대표 구현체.
