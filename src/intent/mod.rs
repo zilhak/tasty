@@ -261,35 +261,6 @@ impl DispatchedIntent {
     }
 }
 
-/// envelope `meta.origin` 표현. Event Bus 1.0 envelope 와 1:1 매핑.
-///
-/// User → host, Agent::Plugin(id) → plugin, 그 외 Agent → host.
-#[allow(dead_code)] // TODO 03 이후 bridge 에서 사용.
-pub fn envelope_origin(intent: &DispatchedIntent) -> serde_json::Value {
-    match &intent.origin {
-        IntentOrigin::User { .. } => serde_json::json!({ "kind": "host" }),
-        IntentOrigin::Agent { source } => match source {
-            AgentSource::Plugin(id) => serde_json::json!({ "kind": "plugin", "plugin_id": id }),
-            AgentSource::Ipc | AgentSource::Cli => serde_json::json!({ "kind": "host" }),
-        },
-    }
-}
-
-/// envelope `meta.trace_id`. `Some` 이면 그대로, `None` 이면 새 ID 발급
-/// (`PluginManager` 의 host event 패턴과 동일한 `i{n:x}` 형식).
-#[allow(dead_code)] // TODO 03 이후 bridge 에서 사용.
-pub fn envelope_trace_id(intent: &DispatchedIntent) -> String {
-    intent.trace_id.clone().unwrap_or_else(new_trace_id)
-}
-
-#[allow(dead_code)] // TODO 03 이후 bridge 에서 사용.
-fn new_trace_id() -> String {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    static SEQ: AtomicU64 = AtomicU64::new(0);
-    let n = SEQ.fetch_add(1, Ordering::Relaxed);
-    format!("i{n:x}")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -325,43 +296,6 @@ mod tests {
         assert!(!user.origin.is_agent());
         assert!(agent.origin.is_agent());
         assert!(!agent.origin.is_user());
-    }
-
-    #[test]
-    fn envelope_origin_user_is_host() {
-        let i = Intent::Noop.from_user_shortcut("x");
-        let v = envelope_origin(&i);
-        assert_eq!(v, serde_json::json!({ "kind": "host" }));
-    }
-
-    #[test]
-    fn envelope_origin_plugin_is_plugin() {
-        let i = Intent::Noop.from_agent_plugin("p1");
-        let v = envelope_origin(&i);
-        assert_eq!(v, serde_json::json!({ "kind": "plugin", "plugin_id": "p1" }));
-    }
-
-    #[test]
-    fn envelope_origin_ipc_cli_is_host() {
-        let ipc = Intent::Noop.from_agent_ipc();
-        let cli = Intent::Noop.from_agent_cli();
-        assert_eq!(envelope_origin(&ipc), serde_json::json!({ "kind": "host" }));
-        assert_eq!(envelope_origin(&cli), serde_json::json!({ "kind": "host" }));
-    }
-
-    #[test]
-    fn trace_id_some_preserved() {
-        let i = Intent::Noop.from_user_shortcut("x").with_trace_id("abc");
-        assert_eq!(envelope_trace_id(&i), "abc");
-    }
-
-    #[test]
-    fn trace_id_none_generates_id() {
-        let i = Intent::Noop.from_user_shortcut("x");
-        let id = envelope_trace_id(&i);
-        // `i<hex>` 형식.
-        assert!(id.starts_with('i'));
-        assert!(id.len() > 1);
     }
 
     #[test]

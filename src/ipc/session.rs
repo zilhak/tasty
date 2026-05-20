@@ -82,25 +82,11 @@ impl AgentSession {
     pub fn permission_set(&self) -> HashSet<Permission> {
         // now 미지정 호출 호환을 위해 만료 검사 없이 모두 합친다 — 만료된 항목은
         // store level 에서 evict 후 호출돼야 한다. 호출자가 만료를 신경 쓰지 않는
-        // 진단/덤프 용도면 stale 가 섞일 수 있으니 `effective_permission_set` 권장.
+        // 만료된 temp grant 도 그대로 포함됨 — resolve 가 store 에서 만료 처리한
+        // 후 호출되는 것이 일반 흐름.
         self.permissions
             .iter()
             .chain(self.temp_grants.iter().map(|g| &g.permission))
-            .filter_map(|t| Permission::from_token(t))
-            .collect()
-    }
-
-    /// `now_ms` 시점의 effective 권한. 만료된 temp grant 는 제외.
-    #[allow(dead_code)] // Phase 6.3b 의 IPC handler 에서 사용 예정.
-    pub fn effective_permission_set(&self, now_ms: u64) -> HashSet<Permission> {
-        self.permissions
-            .iter()
-            .chain(
-                self.temp_grants
-                    .iter()
-                    .filter(|g| !g.is_expired(now_ms))
-                    .map(|g| &g.permission),
-            )
             .filter_map(|t| Permission::from_token(t))
             .collect()
     }
@@ -516,22 +502,6 @@ mod tests {
     }
 
     #[test]
-    fn grant_then_effective_set_includes_temp() {
-        let (_td, mut mem) = fresh();
-        let mut store = SessionStore::new(&mut mem, "_host");
-        let (token, _) = store
-            .issue("a", None, perms(&[Permission::SurfaceRead]), None, 0)
-            .unwrap();
-        assert!(store
-            .grant_permission(&token, "fs.write", Some(10_000), 1_000)
-            .unwrap());
-        let s = store.resolve(&token, 2_000).unwrap().unwrap();
-        let eff = s.effective_permission_set(2_000);
-        assert!(eff.contains(&Permission::SurfaceRead));
-        assert!(eff.contains(&Permission::FsWrite));
-    }
-
-    #[test]
     fn grant_then_revoke_removes_temp() {
         let (_td, mut mem) = fresh();
         let mut store = SessionStore::new(&mut mem, "_host");
@@ -545,7 +515,7 @@ mod tests {
         // 두 번째 revoke 는 false (이미 없음).
         assert!(!store.revoke_permission(&token, "fs.write", 1_000).unwrap());
         let s = store.resolve(&token, 1_000).unwrap().unwrap();
-        assert!(!s.effective_permission_set(1_000).contains(&Permission::FsWrite));
+        assert!(s.temp_grants.is_empty(), "revoked grant removed from store");
     }
 
     #[test]
@@ -559,7 +529,6 @@ mod tests {
         // now=1_000 → grant 만료 (now>=expires).
         let s = store.resolve(&token, 1_000).unwrap().unwrap();
         assert!(s.temp_grants.is_empty(), "expired grant evicted on resolve");
-        assert!(!s.effective_permission_set(1_000).contains(&Permission::FsWrite));
     }
 
     #[test]
@@ -578,7 +547,6 @@ mod tests {
         let s = store.resolve(&token, 200).unwrap().unwrap();
         assert_eq!(s.temp_grants.len(), 1);
         assert_eq!(s.temp_grants[0].expires_at_ms, Some(10_000));
-        assert!(s.effective_permission_set(200).contains(&Permission::FsWrite));
     }
 
     #[test]
