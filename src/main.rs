@@ -2,86 +2,84 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 mod app;
-pub(crate) use platform::app_icon;
 mod boot;
 mod cli;
-mod input;
-pub(crate) use input::click_cursor;
-pub(crate) use input::double_tap;
 mod clipboard;
-mod store;
-pub(crate) use store::clipboard_history;
-pub(crate) use store::recent_files;
-pub(crate) use store::scrollback as scrollback_store;
 mod command;
-pub(crate) use command::index as command_index;
-pub(crate) use command::palette as command_palette;
-mod platform;
-pub(crate) use platform::crash_report;
-#[cfg(debug_assertions)]
-pub(crate) use platform::debug_info;
-pub(crate) use ui::diff as diff_ui;
-pub(crate) use ui::empty as empty_ui;
-pub mod engine;
-pub(crate) use engine::state as engine_state;
 mod file;
-pub(crate) use file::dispatch as file_dispatch;
-pub(crate) use file::handler_recent as file_handler_recent;
-pub(crate) use file::handlers_save as file_handlers_save;
 mod file_drag;
 mod file_format;
 mod file_handler;
 mod git_viewer;
 mod gpu;
 mod hooks;
-pub(crate) use hooks::global as global_hooks;
-pub(crate) use ui::html as html_ui;
-pub(crate) use file::identify_worker;
-pub(crate) use ui::image as image_ui;
+mod input;
 mod intent;
 mod ipc;
 mod layout_persistence;
-#[cfg(windows)]
-pub(crate) use platform::jump_list;
-pub(crate) use ui::markdown as markdown_ui;
 mod native_menu;
-pub(crate) use store::notification;
-pub(crate) use engine::output_observer;
+mod platform;
 mod plugin;
 mod plugins_ui;
-pub(crate) use ui::preset as preset_ui;
 mod renderer;
 mod settings_ui;
 mod shortcuts;
 mod state;
-pub(crate) use state::search as search_state;
-pub(crate) use state::selection;
-mod surface_registry;
-pub(crate) use surface_registry::meta as surface_meta;
 mod storage;
-mod update_check;
-pub(crate) use ui::terminal_link;
-pub(crate) use ui::theme_bridge;
-pub(crate) use boot::waker as waker_factory_winit;
-#[cfg(windows)]
-pub(crate) use platform::system_tray;
+mod store;
+mod surface_registry;
 mod ui;
+mod update_check;
 mod webview;
+
+pub mod engine;
 pub mod window;
 
+use anyhow::Result;
+
+pub use tasty_core::{i18n, model, paths, theme};
+pub use tasty_font as font;
+pub use tasty_settings as settings;
+use tasty_terminal as terminal;
+
+pub(crate) use app::App;
+pub(crate) use boot::waker as waker_factory_winit;
+pub(crate) use command::index as command_index;
+pub(crate) use command::palette as command_palette;
+pub(crate) use engine::output_observer;
+pub(crate) use engine::state as engine_state;
+pub(crate) use file::dispatch as file_dispatch;
+pub(crate) use file::handler_recent as file_handler_recent;
+pub(crate) use file::handlers_save as file_handlers_save;
+pub(crate) use file::identify_worker;
+pub(crate) use hooks::global as global_hooks;
+pub(crate) use input::click_cursor;
+pub(crate) use input::double_tap;
+pub(crate) use platform::app_icon;
+pub(crate) use platform::crash_report;
+#[cfg(debug_assertions)]
+pub(crate) use platform::debug_info;
+#[cfg(windows)]
+pub(crate) use platform::jump_list;
 #[cfg(target_os = "macos")]
 pub(crate) use platform::macos_delegate;
-
-// Re-export tasty_terminal as terminal for backward compatibility within the crate
-use tasty_terminal as terminal;
-// Re-export tasty_core modules so existing `crate::model::...` etc. paths keep working
-pub use tasty_core::{i18n, model, paths, theme};
-// Re-export tasty_settings as `crate::settings` to keep existing reverse imports
-pub use tasty_settings as settings;
-// Re-export tasty_font as `crate::font` to keep existing reverse imports
-pub use tasty_font as font;
-
-use anyhow::Result;
+#[cfg(windows)]
+pub(crate) use platform::system_tray;
+pub(crate) use state::search as search_state;
+pub(crate) use state::selection;
+pub(crate) use store::clipboard_history;
+pub(crate) use store::notification;
+pub(crate) use store::recent_files;
+pub(crate) use store::scrollback as scrollback_store;
+pub(crate) use surface_registry::meta as surface_meta;
+pub(crate) use ui::diff as diff_ui;
+pub(crate) use ui::empty as empty_ui;
+pub(crate) use ui::html as html_ui;
+pub(crate) use ui::image as image_ui;
+pub(crate) use ui::markdown as markdown_ui;
+pub(crate) use ui::preset as preset_ui;
+pub(crate) use ui::terminal_link;
+pub(crate) use ui::theme_bridge;
 
 use model::DividerInfo;
 
@@ -178,8 +176,6 @@ struct DividerDrag {
     info: DividerInfo,
     kind: DividerDragKind,
 }
-
-pub(crate) use app::App;
 
 /// Phase 6.2c — envelope 의 `session_token` 필드를 보고 caller 를 결정한다.
 ///
