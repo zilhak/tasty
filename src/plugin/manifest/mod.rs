@@ -8,7 +8,6 @@
 //!
 //! 본 모듈은 sub-module 로만 분할되어 있고, 외부에서는 기존과 동일한
 //! `crate::plugin::manifest::<Type>` 경로로 사용 가능하도록 `pub use` 로 재노출한다.
-
 #![allow(dead_code)]
 
 mod package;

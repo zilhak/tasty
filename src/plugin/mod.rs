@@ -1,5 +1,4 @@
 //! Plugin 시스템 — 외부 plugin 프로세스의 매니페스트 파싱·디스커버리·생명주기 관리.
-
 #![allow(unused_imports)]
 
 pub mod builtin;
@@ -17,13 +16,13 @@ pub mod key_dispatch;
 pub mod listener;
 pub mod manager;
 pub mod manifest;
+pub mod popup_render;
 pub mod process;
 pub mod protocol;
 pub mod registry_state;
 pub mod remote_kind;
 pub mod remote_surface;
 pub mod tool_registry;
-pub mod popup_render;
 pub mod ui_tree;
 pub mod ui_tree_render;
 
