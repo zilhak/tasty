@@ -3,8 +3,8 @@
 
 pub(crate) mod busy;
 pub(crate) mod clipboard_record;
-pub(crate) mod event_handler;
 pub(crate) mod dispatch;
+pub(crate) mod event_handler;
 pub(crate) mod ipc;
 pub(crate) mod modal;
 pub(crate) mod persistence;
@@ -12,13 +12,11 @@ pub(crate) mod plugin_glue;
 pub(crate) mod window_access;
 pub(crate) mod window_lifecycle;
 
-use std::sync::Arc;
-
-use winit::event_loop::EventLoopProxy;
-use winit::window::{Window, WindowId};
-
 use crate::gpu::GpuState;
 use crate::{AppEvent, engine, plugin, state, window};
+use std::sync::Arc;
+use winit::event_loop::EventLoopProxy;
+use winit::window::{Window, WindowId};
 
 pub(crate) struct App {
     pub(crate) engine: engine::Engine,

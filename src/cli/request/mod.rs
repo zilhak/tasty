@@ -9,6 +9,7 @@ mod telemetry;
 
 use agent::agent_command_to_method_params;
 use approval::approval_command_to_method_params;
+use crate::ipc::protocol::JsonRpcRequest;
 #[cfg(debug_assertions)]
 use debug::debug_command_to_method_params;
 use memory::memory_command_to_method_params;
@@ -18,13 +19,11 @@ use presets::{
     file_handler_command_to_method_params, preset_command_to_method_params,
     script_command_to_method_params,
 };
-use telemetry::telemetry_command_to_method_params;
-
 use super::{
     ClipboardCommands, CloseCommands, Commands, ListCommands, MoveCommands, NewCommands,
     ReadCommands, SendCommands, SetCommands, SurfaceMetaCommands, ToolCommands, UnsetCommands,
 };
-use crate::ipc::protocol::JsonRpcRequest;
+use telemetry::telemetry_command_to_method_params;
 
 /// Resolve a target string for split/other commands.
 /// - "this" → numeric surface ID from TASTY_SURFACE_ID env var

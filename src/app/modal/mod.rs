@@ -9,11 +9,10 @@ pub(crate) mod quit;
 pub(crate) mod settings;
 pub(crate) mod shake;
 
-use winit::window::WindowId;
-
 use crate::app::App;
 use crate::window;
 use crate::window::Window as _;
+use winit::window::WindowId;
 
 impl App {
     /// Open a modal, registering it in the unified window map.
