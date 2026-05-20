@@ -10,12 +10,11 @@ mod handlers;
 mod state;
 
 use serde_json::Value;
+use state::CodexState;
 use tasty_plugin_sdk::{
     IpcMethodCtx, IpcMethodError, Plugin, SurfaceCreateCtx, SurfaceEventCtx, SurfaceResult,
     ui::{label, label_color, vbox},
 };
-
-use state::CodexState;
 
 const PLUGIN_ID: &str = "com.tasty.codex";
 const PLUGIN_VERSION: &str = "0.1.0";

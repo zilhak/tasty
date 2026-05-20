@@ -8,24 +8,21 @@
 //! 호스트 코드에는 의존하지 않으며 `tasty-plugin-sdk`만 사용한다.
 
 mod error_scan;
+mod handlers;
 mod hook;
 mod install;
 mod state;
 
+use error_scan::ErrorScanner;
+use handlers::*;
+use serde_json::{json, Value};
+use state::{ChildEntry, ClaudeState};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-
-use serde_json::{json, Value};
 use tasty_plugin_sdk::{
     EventDispatchCtx, HostHandle, IpcMethodCtx, IpcMethodError, Plugin, SurfaceCreateCtx,
     SurfaceEventCtx, SurfaceResult,
 };
-
-use error_scan::ErrorScanner;
-use state::{ChildEntry, ClaudeState};
-
-mod handlers;
-use handlers::*;
 
 const PLUGIN_ID: &str = "com.tasty.claude";
 const PLUGIN_VERSION: &str = "0.1.0";
