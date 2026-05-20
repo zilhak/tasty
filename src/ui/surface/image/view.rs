@@ -702,5 +702,5 @@ pub fn fill_circle(
 }
 
 #[cfg(test)]
-#[path = "image_view_tests.rs"]
+#[path = "view_tests.rs"]
 mod tests;

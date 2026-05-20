@@ -71,12 +71,12 @@ pub(crate) use store::notification;
 pub(crate) use store::recent_files;
 pub(crate) use store::scrollback as scrollback_store;
 pub(crate) use surface_registry::meta as surface_meta;
-pub(crate) use ui::diff as diff_ui;
-pub(crate) use ui::empty as empty_ui;
-pub(crate) use ui::html as html_ui;
-pub(crate) use ui::image as image_ui;
-pub(crate) use ui::markdown as markdown_ui;
 pub(crate) use ui::preset as preset_ui;
+pub(crate) use ui::surface::diff as diff_ui;
+pub(crate) use ui::surface::empty as empty_ui;
+pub(crate) use ui::surface::html as html_ui;
+pub(crate) use ui::surface::image as image_ui;
+pub(crate) use ui::surface::markdown as markdown_ui;
 pub(crate) use ui::terminal_link;
 pub(crate) use ui::theme_bridge;
 

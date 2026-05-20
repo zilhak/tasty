@@ -1,7 +1,7 @@
 use crate::i18n::t;
 use crate::model::ImagePanel;
 use crate::theme;
-use crate::ui::image_view::ImageView;
+use crate::ui::surface::image::view::ImageView;
 
 pub(super) fn draw_new_image_popup(ui: &mut egui::Ui, view: &mut ImageView, th: &theme::Theme) {
     ui.vertical_centered(|ui| {

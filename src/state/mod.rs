@@ -289,11 +289,11 @@ pub struct AppState {
 
     /// Per-surface host view state for `MarkdownPanel` (content cache, scroll, commonmark cache).
     /// `MarkdownPanel` itself only holds `file_path` + reload tracking; everything GUI-bound lives here.
-    pub markdown_views: crate::ui::markdown_view::MarkdownViewStore,
+    pub markdown_views: crate::ui::surface::markdown::view::MarkdownViewStore,
 
     /// Per-surface host view state for `ImagePanel` (pixel buffer, textures, edit state,
     /// undo history, brush settings, popup buffers).
-    pub image_views: crate::ui::image_view::ImageViewStore,
+    pub image_views: crate::ui::surface::image::view::ImageViewStore,
 
     /// 사이드바 도구 메뉴 항목. 활성 plugin의 `[[contributes.tool]]`
     /// 항목을 합쳐 관리. PluginManager가 plugin 라이프사이클 변경 시

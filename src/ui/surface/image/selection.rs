@@ -1,6 +1,6 @@
 use crate::model::ImagePanel;
 use crate::theme;
-use crate::ui::image_view::{DragState, EditState, ImageView, ResizeHandle};
+use crate::ui::surface::image::view::{DragState, EditState, ImageView, ResizeHandle};
 
 /// Render a floating selection overlay and handle mouse interactions.
 pub(super) fn draw_floating_selection(

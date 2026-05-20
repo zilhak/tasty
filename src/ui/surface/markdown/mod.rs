@@ -1,9 +1,12 @@
-/// Markdown renderer using egui_commonmark.
-/// Supports CommonMark spec: tables, checkboxes, links, code blocks, etc.
+//! Markdown renderer using egui_commonmark.
+//! Supports CommonMark spec: tables, checkboxes, links, code blocks, etc.
+
+pub mod view;
+
 use crate::settings::EffectiveFont;
 use crate::theme;
 use crate::ui::font_registry;
-use crate::ui::markdown_view::MarkdownView;
+use view::MarkdownView;
 
 /// Draw a Markdown surface from its host-side view: scroll area + content render.
 /// The caller (egui_panels) is responsible for refreshing `view.content` from the

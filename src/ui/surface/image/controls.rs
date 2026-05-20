@@ -1,7 +1,7 @@
 use crate::i18n::t;
 use crate::model::ImagePanel;
 use crate::theme;
-use crate::ui::image_view::ImageView;
+use crate::ui::surface::image::view::ImageView;
 use egui::emath::GuiRounding as _;
 
 pub(super) fn draw_viewer_controls(

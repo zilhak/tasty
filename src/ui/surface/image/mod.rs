@@ -1,7 +1,7 @@
 use crate::i18n::t;
 use crate::model::ImagePanel;
 use crate::theme;
-use crate::ui::image_view::{EditState, ImageView};
+use crate::ui::surface::image::view::{EditState, ImageView};
 
 /// Render the image viewer/editor panel using model + host view.
 pub fn draw_image(ui: &mut egui::Ui, panel: &mut ImagePanel, view: &mut ImageView) {
@@ -176,6 +176,7 @@ pub fn draw_image(ui: &mut egui::Ui, panel: &mut ImagePanel, view: &mut ImageVie
 mod controls;
 mod popups;
 mod selection;
+pub mod view;
 
 use controls::*;
 use popups::*;
