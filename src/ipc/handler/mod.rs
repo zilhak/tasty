@@ -136,10 +136,6 @@ pub fn handle_with_caller(
         return resp;
     }
 
-    if let Some(resp) = route_gui_handler(state, request, id.clone()) {
-        return resp;
-    }
-
     #[cfg(debug_assertions)]
     if let Some(resp) = route_debug_handler(state, request, id.clone()) {
         return resp;
@@ -413,18 +409,6 @@ fn route_engine_handler(
         "session.list" => session::handle_list(id),
         _ => return None,
     })
-}
-
-/// GUI-dependent handlers — UI 상태(popups/dialogs)를 직접 만지므로 권한 게이트
-/// 대상 외부에 있다. release 빌드에서는 비어 있다 — 사용자 입력 재현용 GUI
-/// 동작은 모두 debug 전용으로 격리됨.
-#[allow(unused_variables)]
-fn route_gui_handler(
-    state: &mut AppState,
-    request: &JsonRpcRequest,
-    id: serde_json::Value,
-) -> Option<JsonRpcResponse> {
-    None
 }
 
 #[cfg(debug_assertions)]

@@ -17,7 +17,7 @@
 //! 일은 없고, 동일 detector 가 여러 파일에 적용될 때 reuse 가치는 작다. 비용
 //! 측정 후 필요해지면 `lua_pool` 로 확장.
 
-use mlua::{ChunkMode, Function, Lua, Table, Value};
+use mlua::{ChunkMode, Lua, Table, Value};
 
 use super::evaluator::DeepCtx;
 use super::types::FileTarget;
@@ -147,12 +147,6 @@ fn build_target_table(
     t.set("has_prefix", has_prefix)?;
 
     Ok(t)
-}
-
-// Function 미사용 경고 회피용 (현재 코드에선 직접 안 쓰이지만 향후 helper 추가 시 필요).
-#[allow(dead_code)]
-fn _unused_function_type() -> Option<Function> {
-    None
 }
 
 #[cfg(test)]
