@@ -138,3 +138,69 @@ impl Terminal {
         }
     }
 }
+
+impl Terminal {
+    /// Whether application cursor keys mode is active (DECCKM).
+    pub fn application_cursor_keys(&self) -> bool {
+        self.application_cursor_keys
+    }
+
+    /// Whether the cursor is visible (DECTCEM).
+    pub fn cursor_visible(&self) -> bool {
+        self.cursor_visible
+    }
+
+    /// Whether bracketed paste mode is active.
+    pub fn bracketed_paste(&self) -> bool {
+        self.bracketed_paste
+    }
+
+    /// Current mouse tracking mode.
+    pub fn mouse_tracking(&self) -> MouseTrackingMode {
+        self.mouse_tracking
+    }
+
+    /// Whether SGR mouse encoding is active.
+    pub fn sgr_mouse(&self) -> bool {
+        self.sgr_mouse
+    }
+
+    /// Whether focus tracking is active.
+    pub fn focus_tracking(&self) -> bool {
+        self.focus_tracking
+    }
+
+    /// Whether the alternate screen is active.
+    pub fn is_alternate_screen(&self) -> bool {
+        self.use_alternate
+    }
+
+    /// Scan the active surface for an isolated reverse-video cell.
+    ///
+    /// Some TUIs (notably Ink-based ones like Claude Code) hide the real terminal
+    /// cursor with `\e[?25l` and draw their own "fake cursor" by emitting a single
+    /// cell with the reverse-video attribute (`\e[7m`). This scan detects that cell
+    /// so we can use its position as the IME preedit anchor.
+    ///
+    /// Returns the cell position only when a **single** reverse-video cell exists.
+    /// Multi-cell reverse regions (selection highlight, inverse-painted UI) are
+    /// ambiguous and return None.
+    pub fn find_fake_cursor_cell(&self) -> Option<(usize, usize)> {
+        let surface = self.surface();
+        let mut found: Option<(usize, usize)> = None;
+        for (row_idx, line) in surface.screen_lines().iter().enumerate() {
+            for cell_ref in line.visible_cells() {
+                if cell_ref.attrs().reverse() {
+                    if found.is_some() {
+                        return None; // two or more — ambiguous
+                    }
+                    found = Some((cell_ref.cell_index(), row_idx));
+                }
+            }
+        }
+        found
+    }
+
+    // ---- Scrollback buffer methods (delegated to Scrollback) ----
+
+}
