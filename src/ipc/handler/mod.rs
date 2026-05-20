@@ -464,7 +464,7 @@ fn require_pane_id(
 }
 
 /// Extract optional caller_surface_id from params.
-fn caller_surface_id(params: &serde_json::Value) -> Option<u32> {
+pub(super) fn caller_surface_id(params: &serde_json::Value) -> Option<u32> {
     params
         .get("caller_surface_id")
         .and_then(|v| v.as_u64())

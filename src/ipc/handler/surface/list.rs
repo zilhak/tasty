@@ -1,0 +1,110 @@
+use serde_json::json;
+
+use crate::ipc::protocol::JsonRpcResponse;
+use crate::state::AppState;
+
+pub(crate) fn handle_surface_list(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {
+    let mut surfaces = Vec::new();
+    for ws in &state.engine.workspaces {
+        for &pane_id in &ws.pane_layout().all_pane_ids() {
+            if let Some(pane) = ws.pane_layout().find_pane(pane_id) {
+                for (tab_idx, tab) in pane.tabs.iter().enumerate() {
+                    collect_tab_surface_info(state, tab, pane_id, ws.id, tab_idx, &mut surfaces);
+                }
+            }
+        }
+    }
+    JsonRpcResponse::success(id, json!(surfaces))
+}
+
+fn collect_tab_surface_info(
+    state: &AppState,
+    tab: &crate::model::Tab,
+    pane_id: u32,
+    workspace_id: u32,
+    tab_idx: usize,
+    out: &mut Vec<serde_json::Value>,
+) {
+    if tab.is_split() {
+        // Split tab: iterate through the layout
+        collect_surface_layout_info(state, tab.layout(), pane_id, workspace_id, tab_idx, out);
+    } else {
+        // Single surface tab
+        let surface = tab.surface();
+        if let Some(node) = surface.as_terminal_surface() {
+            let mut entry = json!({
+                "id": node.id,
+                "pane_id": pane_id,
+                "workspace_id": workspace_id,
+                "tab_index": tab_idx,
+                "type": "Terminal",
+                "cols": node.terminal.cols(),
+                "rows": node.terminal.rows(),
+                "busy": state.is_surface_busy(node.id),
+                "pty_ready": true,
+            });
+            if let Some(fg) = node.terminal.foreground_process_info() {
+                entry["foreground_process"] = json!(fg.name);
+                entry["foreground_pid"] = json!(fg.pid);
+            }
+            out.push(entry);
+        } else if let Some(id) = surface.surface_id() {
+            // Non-terminal surfaces (Markdown, Explorer, Html, Empty)
+            // EmptySurface placeholders backing a deferred terminal still
+            // expose `type: "Terminal"` so agents can target them like any
+            // other terminal — they just report `pty_ready: false` until the
+            // PTY is spawned (auto on send, manual via `tasty wake`).
+            let deferred = tab.is_surface_deferred(id);
+            let mut entry = json!({
+                "id": id,
+                "pane_id": pane_id,
+                "workspace_id": workspace_id,
+                "tab_index": tab_idx,
+                "type": if deferred { "Terminal" } else { surface.type_name() },
+                "busy": false,
+            });
+            if deferred {
+                entry["pty_ready"] = json!(false);
+            }
+            out.push(entry);
+        }
+    }
+}
+
+fn collect_surface_layout_info(
+    state: &AppState,
+    layout: &crate::model::SurfaceLayout,
+    pane_id: u32,
+    workspace_id: u32,
+    tab_idx: usize,
+    out: &mut Vec<serde_json::Value>,
+) {
+    match layout {
+        crate::model::SurfaceLayout::Leaf(surface) => {
+            let id = surface.surface_id().unwrap_or(0);
+            let mut entry = json!({
+                "id": id,
+                "pane_id": pane_id,
+                "workspace_id": workspace_id,
+                "tab_index": tab_idx,
+                "type": surface.type_name(),
+                "busy": state.is_surface_busy(id),
+            });
+            if let Some(terminal) = surface.focused_terminal() {
+                entry["cols"] = json!(terminal.cols());
+                entry["rows"] = json!(terminal.rows());
+                entry["pty_ready"] = json!(true);
+                if let Some(fg) = terminal.foreground_process_info() {
+                    entry["foreground_process"] = json!(fg.name);
+                    entry["foreground_pid"] = json!(fg.pid);
+                }
+            }
+            out.push(entry);
+        }
+        crate::model::SurfaceLayout::Split { first, second, .. } => {
+            collect_surface_layout_info(state, first, pane_id, workspace_id, tab_idx, out);
+            collect_surface_layout_info(state, second, pane_id, workspace_id, tab_idx, out);
+        }
+    }
+}
+
