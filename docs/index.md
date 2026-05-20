@@ -63,6 +63,7 @@
 | [dev-guide/plugin-permissions.md](dev-guide/plugin-permissions.md) | Plugin 권한 모델 — method_meta, CallerContext, grant/revoke 흐름 |
 | [dev-guide/plugin-ecosystem.md](dev-guide/plugin-ecosystem.md) | Plugin 생태계 — 번들 plugin 목록과 책임 분담 |
 | [dev-guide/lua-hooks.md](dev-guide/lua-hooks.md) | Lua hook 호스트 매핑 — 이벤트별 발화 site / payload 스키마 / 추가 가이드 |
+| [dev-guide/git-hooks.md](dev-guide/git-hooks.md) | pre-commit / pre-push 훅 규칙 — 설치, 검사 목록, 예외 |
 
 ## AI 자체 검증 지침
 

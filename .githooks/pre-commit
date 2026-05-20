@@ -1,0 +1,192 @@
+#!/usr/bin/env bash
+# Tasty pre-commit hook — 빠른 검사 7종.
+#
+# 설치: `git config core.hooksPath .githooks` 1회 실행.
+# bypass: `git commit --no-verify` (긴급 시).
+#
+# 검사 목록:
+#   A.1  mod/use 선언 순서 (mod 다 먼저, use 다 나중)
+#   A.2  cargo fmt --check
+#   C.6  `let _ =` 주석 강제
+#   C.8  UI 색상 하드코딩 (from_rgb / Color32::from_) — Theme 강제
+#   C.9  egui::Window 직접 사용 — PopupManager 강제
+#   C.11 println! / eprintln! — tracing 강제
+#   C.12 dbg! — debug leak 방지
+#
+# 무거운 검사 (cargo clippy, cargo check) 는 pre-push 에서.
+
+set -e
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+# staged 된 .rs 파일 목록
+STAGED_RS=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.rs$' || true)
+
+red()    { printf '\033[31m%s\033[0m\n' "$*" >&2; }
+yellow() { printf '\033[33m%s\033[0m\n' "$*" >&2; }
+green()  { printf '\033[32m%s\033[0m\n' "$*"; }
+
+FAIL=0
+fail() { red "  ✘ $*"; FAIL=1; }
+
+# ────────────────────────────────────────────────────────────
+# A.1  mod/use 선언 순서
+# ────────────────────────────────────────────────────────────
+check_mod_use_order() {
+    if [ -z "$STAGED_RS" ]; then return; fi
+    for f in $STAGED_RS; do
+        [ -f "$f" ] || continue
+        # top-level (들여쓰기 0) 에서 use 가 나온 뒤 mod 가 나오면 fail
+        local violation
+        violation=$(awk '
+            /^[[:space:]]/ { next }
+            /^(pub(\([^)]*\))?[[:space:]]+)?use[[:space:]]/ { saw_use = NR }
+            /^(pub(\([^)]*\))?[[:space:]]+)?mod[[:space:]]/ {
+                if (saw_use) { print NR; exit }
+            }
+        ' "$f")
+        if [ -n "$violation" ]; then
+            fail "[A.1 mod/use 순서] $f:$violation — top-level 에서 mod 가 use 뒤에 나옴"
+        fi
+    done
+}
+
+# ────────────────────────────────────────────────────────────
+# A.2  cargo fmt --check
+# ────────────────────────────────────────────────────────────
+check_cargo_fmt() {
+    if [ -z "$STAGED_RS" ]; then return; fi
+    if ! cargo fmt --check 2>/dev/null; then
+        fail "[A.2 cargo fmt] 포맷 위반. \`cargo fmt\` 실행 후 다시 staging."
+    fi
+}
+
+# ────────────────────────────────────────────────────────────
+# C.6  `let _ =` 주석 강제
+# ────────────────────────────────────────────────────────────
+# 같은 줄 또는 바로 위 줄에 `//` 주석이 없으면 fail
+check_let_underscore() {
+    if [ -z "$STAGED_RS" ]; then return; fi
+    for f in $STAGED_RS; do
+        [ -f "$f" ] || continue
+        local violation
+        violation=$(awk '
+            /^[[:space:]]*\/\// { has_comment_above = 1; next }
+            /let[[:space:]]+_[[:space:]]*=/ {
+                # 같은 줄에 // 있으면 OK
+                if ($0 ~ /\/\//) { next }
+                if (!has_comment_above) { print NR ": " $0; }
+            }
+            { has_comment_above = 0 }
+        ' "$f")
+        if [ -n "$violation" ]; then
+            fail "[C.6 let _] $f — 주석 없는 \`let _ =\` (왜 무시하는지 주석 필요):"
+            echo "$violation" | sed 's/^/      /' >&2
+        fi
+    done
+}
+
+# ────────────────────────────────────────────────────────────
+# C.8  UI 색상 하드코딩 (from_rgb / Color32::from_)
+# ────────────────────────────────────────────────────────────
+check_color_hardcode() {
+    if [ -z "$STAGED_RS" ]; then return; fi
+    # 예외: theme 정의 자체
+    for f in $STAGED_RS; do
+        [ -f "$f" ] || continue
+        case "$f" in
+            crates/tasty-core/src/theme/*) continue ;;
+            src/theme.rs) continue ;;
+        esac
+        local violation
+        violation=$(grep -nE 'Color32::from_rgb|Color32::from_rgba|Color32::from_gray|Rgba::from_rgb|Rgba::from_rgba' "$f" || true)
+        if [ -n "$violation" ]; then
+            fail "[C.8 색상 하드코딩] $f — Theme 시스템 사용 (theme.rs 참조):"
+            echo "$violation" | sed 's/^/      /' >&2
+        fi
+    done
+}
+
+# ────────────────────────────────────────────────────────────
+# C.9  egui::Window 직접 사용 (PopupManager 강제)
+# ────────────────────────────────────────────────────────────
+check_egui_window() {
+    if [ -z "$STAGED_RS" ]; then return; fi
+    # 예외: popup 인프라 자체
+    for f in $STAGED_RS; do
+        [ -f "$f" ] || continue
+        case "$f" in
+            src/ui/popup/*) continue ;;
+            src/ui/popup_defs.rs) continue ;;
+        esac
+        local violation
+        violation=$(grep -nE 'egui::Window::|egui::Window\s*<' "$f" || true)
+        if [ -n "$violation" ]; then
+            fail "[C.9 egui::Window] $f — PopupManager/PopupDef 시스템 사용 (docs/dev-guide/popup-implementation.md):"
+            echo "$violation" | sed 's/^/      /' >&2
+        fi
+    done
+}
+
+# ────────────────────────────────────────────────────────────
+# C.11 println! / eprintln! (tracing 강제)
+# ────────────────────────────────────────────────────────────
+check_println() {
+    if [ -z "$STAGED_RS" ]; then return; fi
+    # 예외: CLI 진입점 (출력 자체가 본질) — src/cli/ + src/main.rs
+    for f in $STAGED_RS; do
+        [ -f "$f" ] || continue
+        case "$f" in
+            src/main.rs) continue ;;
+            src/cli/*) continue ;;
+            src/boot/cli_routing.rs) continue ;;
+        esac
+        # 주석 안의 println 은 제외 — 라인 시작이 //, ///, //!, /* 인 경우 건너뜀
+        local violation
+        violation=$(grep -nE '(^|[^/])\b(println|eprintln)!' "$f" \
+            | grep -vE '^[0-9]+:[[:space:]]*//' \
+            | grep -vE '^[0-9]+:[[:space:]]*\*' \
+            || true)
+        if [ -n "$violation" ]; then
+            fail "[C.11 println] $f — \`tracing::info!\` / \`tracing::warn!\` 등 사용:"
+            echo "$violation" | sed 's/^/      /' >&2
+        fi
+    done
+}
+
+# ────────────────────────────────────────────────────────────
+# C.12 dbg! 매크로 (debug leak 방지)
+# ────────────────────────────────────────────────────────────
+check_dbg() {
+    if [ -z "$STAGED_RS" ]; then return; fi
+    for f in $STAGED_RS; do
+        [ -f "$f" ] || continue
+        local violation
+        violation=$(grep -nE '\bdbg!' "$f" | grep -vE '^[0-9]+:[[:space:]]*//' || true)
+        if [ -n "$violation" ]; then
+            fail "[C.12 dbg!] $f — \`dbg!\` 매크로 발견 (release 에 leak 금지):"
+            echo "$violation" | sed 's/^/      /' >&2
+        fi
+    done
+}
+
+# ────────────────────────────────────────────────────────────
+# 실행
+# ────────────────────────────────────────────────────────────
+check_mod_use_order
+check_cargo_fmt
+check_let_underscore
+check_color_hardcode
+check_egui_window
+check_println
+check_dbg
+
+if [ "$FAIL" -ne 0 ]; then
+    echo >&2
+    red "✘ pre-commit 검사 실패. 위 항목을 수정하거나 \`git commit --no-verify\` 로 우회."
+    exit 1
+fi
+
+green "✓ pre-commit 검사 통과"
+exit 0

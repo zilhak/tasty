@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# Tasty pre-push hook — 무거운 검사 2종.
+#
+# 설치: `git config core.hooksPath .githooks` 1회 실행.
+# bypass: `git push --no-verify` (긴급 시).
+#
+# 검사 목록:
+#   B.4  cargo clippy --workspace --all-targets -- -D clippy::correctness
+#   B.5  cargo check --workspace --all-targets
+
+set -e
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+red()    { printf '\033[31m%s\033[0m\n' "$*" >&2; }
+green()  { printf '\033[32m%s\033[0m\n' "$*"; }
+yellow() { printf '\033[33m%s\033[0m\n' "$*" >&2; }
+
+FAIL=0
+
+# ────────────────────────────────────────────────────────────
+# B.5  cargo check
+# ────────────────────────────────────────────────────────────
+yellow "▸ cargo check --workspace --all-targets"
+if ! cargo check --workspace --all-targets 2>&1 | tail -5; then
+    red "✘ cargo check 실패"
+    FAIL=1
+fi
+
+# ────────────────────────────────────────────────────────────
+# B.4  cargo clippy — correctness 그룹만 error 로
+# ────────────────────────────────────────────────────────────
+yellow "▸ cargo clippy --workspace --all-targets -- -D clippy::correctness"
+if ! cargo clippy --workspace --all-targets -- -D clippy::correctness 2>&1 | tail -5; then
+    red "✘ cargo clippy 실패 (correctness 그룹)"
+    FAIL=1
+fi
+
+if [ "$FAIL" -ne 0 ]; then
+    red "✘ pre-push 검사 실패. 위 항목을 수정하거나 \`git push --no-verify\` 로 우회."
+    exit 1
+fi
+
+green "✓ pre-push 검사 통과"
+exit 0
