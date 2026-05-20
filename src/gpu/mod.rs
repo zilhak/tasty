@@ -1,24 +1,22 @@
 mod canvas_prepare;
-pub mod canvas_texture;
 mod egui_bridge;
 mod fonts;
 mod render_pass;
 mod screenshot;
 mod shell_setup;
 
-use std::sync::Arc;
+pub mod canvas_texture;
 
 use anyhow::Result;
-use winit::dpi::PhysicalSize;
-use winit::window::Window;
-
-use winit::event_loop::EventLoopProxy;
-
 use crate::AppEvent;
 use crate::model::{LogicalPx, PhysicalPx, Rect};
 use crate::renderer::CellRenderer;
 use crate::settings::AppearanceSettings;
 use crate::state::AppState;
+use std::sync::Arc;
+use winit::dpi::PhysicalSize;
+use winit::window::Window;
+use winit::event_loop::EventLoopProxy;
 
 pub struct ImePreeditState {
     pub text: String,

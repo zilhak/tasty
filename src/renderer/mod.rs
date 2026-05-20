@@ -1,3 +1,9 @@
+mod line_render;
+mod palette;
+mod pipeline;
+mod shaders;
+mod types;
+
 use termwiz::surface::Surface;
 
 use crate::font::{FontConfig, GlyphAtlas, GlyphKey};
@@ -12,12 +18,6 @@ pub struct SearchHighlights<'a> {
     pub inactive_bg: [f32; 4],
     pub active_bg: [f32; 4],
 }
-
-mod line_render;
-mod palette;
-mod pipeline;
-mod shaders;
-mod types;
 
 /// Check if a character is a wide (2-cell) character (CJK, fullwidth, etc.)
 pub fn unicode_width(ch: char) -> usize {

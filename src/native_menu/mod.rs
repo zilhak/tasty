@@ -3,23 +3,19 @@
 //! Uses OS-native menus (NSMenu on macOS, Win32 TrackPopupMenu on Windows,
 //! GTK Menu on Linux) so they render above native child views (WebView).
 
+#[cfg(target_os = "linux")]
+mod linux;
 #[cfg(target_os = "macos")]
 mod macos;
-
-#[cfg(target_os = "macos")]
-pub use macos::show_context_menu;
-
 #[cfg(windows)]
 mod windows;
 
-#[cfg(windows)]
-pub use windows::show_context_menu;
-
-#[cfg(target_os = "linux")]
-mod linux;
-
 #[cfg(target_os = "linux")]
 pub use linux::show_context_menu;
+#[cfg(target_os = "macos")]
+pub use macos::show_context_menu;
+#[cfg(windows)]
+pub use windows::show_context_menu;
 
 /// A single item in a native context menu.
 pub struct MenuItem {
