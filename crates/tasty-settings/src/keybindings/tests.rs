@@ -2,7 +2,8 @@
 
 #![cfg(test)]
 
-    use super::*;
+    use std::collections::HashSet;
+use super::*;
 
     #[test]
     fn preset_by_name_matches_preset_tasty() {
