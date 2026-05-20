@@ -2,7 +2,9 @@
 
 #![cfg(test)]
 
-    use super::*;
+    use std::sync::atomic::AtomicU64;
+use crate::{AgentError, Result};
+use super::*;
     use tasty_memory::MemoryStore;
     use tempfile::TempDir;
 
