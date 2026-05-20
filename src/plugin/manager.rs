@@ -814,14 +814,6 @@ impl PluginManager {
         Err("shared_buffer.create: windows host-side not implemented".into())
     }
 
-    /// register_remote_kind에 전달하는 채널 sender. 내부적으로 hello 처리에서
-    /// 자체 사용하므로 외부 caller가 직접 쓰지는 않지만, 통합 테스트에서 surface 등록을
-    /// 흉내낼 때 노출 필요.
-    #[allow(dead_code)]
-    pub fn host_cmd_sender(&self) -> Sender<HostCmd> {
-        self.host_cmd_tx.clone()
-    }
-
     pub fn set_surface_registry(&mut self, registry: Arc<SurfaceKindRegistry>) {
         self.surface_registry = Some(registry);
     }
@@ -2627,12 +2619,6 @@ impl PluginManager {
             }
         }
         out
-    }
-
-    /// 호스트 listener의 포트. 디버깅·테스트용.
-    #[allow(dead_code)]
-    pub fn listener_port(&self) -> Option<u16> {
-        self.listener.as_ref().map(|l| l.port())
     }
 
     /// `[[contributes.popup]]` 항목을 활성 + `ui.popup` grant된 plugin에서만

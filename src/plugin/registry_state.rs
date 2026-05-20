@@ -128,13 +128,6 @@ impl PluginsConfig {
         }
     }
 
-    #[allow(dead_code)]
-    pub fn unmark_builtin_removed(&mut self, id: &str) -> bool {
-        let before = self.removed_builtins.ids.len();
-        self.removed_builtins.ids.retain(|x| x != id);
-        before != self.removed_builtins.ids.len()
-    }
-
     pub fn enable(&mut self, id: &str) -> bool {
         let before = self.disabled.ids.len();
         self.disabled.ids.retain(|x| x != id);

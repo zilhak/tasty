@@ -40,7 +40,6 @@ impl MenuItem {
         }
     }
 
-    #[allow(dead_code)]
     pub fn disabled(id: u32, label: impl Into<String>) -> Self {
         Self {
             id,
@@ -49,7 +48,6 @@ impl MenuItem {
         }
     }
 
-    #[allow(dead_code)]
     pub fn separator() -> Self {
         Self {
             id: 0,

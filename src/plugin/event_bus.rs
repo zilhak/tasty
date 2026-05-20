@@ -144,12 +144,6 @@ impl EventBus {
         sub_id
     }
 
-    #[allow(dead_code)]
-    pub fn unsubscribe_host(&self, sub_id: u64) {
-        let mut inner = self.inner.lock().expect("event bus poisoned");
-        inner.host_subs.retain(|s| s.sub_id != sub_id);
-    }
-
     /// plugin이 `event.subscribe` IPC로 등록한 구독. 매니페스트 권한과 매칭되지 않으면 `Err`.
     /// 같은 `(plugin_id, sub_id)` 페어로 다시 호출되면 마지막 호출이 이긴다.
     pub fn subscribe_plugin(

@@ -111,8 +111,6 @@ impl RemoteSurface {
         crate::plugin::host_cmd::SurfaceHandles {
             tree: self.tree.clone(),
             pending_events: self.pending_events.clone(),
-            snapshot_cache: self.snapshot_cache.clone(),
-            invalidated: self.invalidated.clone(),
             display_name: self.display_name.clone(),
         }
     }

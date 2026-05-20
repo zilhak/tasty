@@ -114,13 +114,6 @@ impl HandleStream {
     }
 }
 
-#[cfg(windows)]
-impl HandleStream {
-    #[allow(dead_code)]
-    fn from_pipe(stream: platform::PipeServerStream) -> Self {
-        Self { inner: stream }
-    }
-}
 
 /// 보조 채널에서 들어오는 NDJSON 메시지를 한 줄씩 파싱해 돌려준다.
 ///
