@@ -4,6 +4,7 @@
 pub(crate) mod busy;
 pub(crate) mod clipboard_record;
 pub(crate) mod dispatch;
+pub(crate) mod event;
 pub(crate) mod event_handler;
 pub(crate) mod ipc;
 pub(crate) mod modal;
