@@ -616,7 +616,6 @@ pub(crate) fn default_tab_name_for_kind(kind: &str, params: &Value) -> String {
             .and_then(|v| v.as_str())
             .map(|p| basename_or(p, "Explorer"))
             .unwrap_or_else(|| "Explorer".to_string()),
-        "html" => "HTML".to_string(),
         "image" => params
             .get("file")
             .and_then(|v| v.as_str())
