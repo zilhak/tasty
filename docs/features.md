@@ -108,9 +108,9 @@
 - Pane: **독립적인 탭 바**를 가진 화면 영역. 여러 Tab을 포함
 - Tab: 탭 하나. `SurfaceLayout`을 직접 소유. 단일 Leaf = 분할 안 된 상태, Split = 탭 내부 분할
 - Surface trait: 모든 콘텐츠 타입의 공통 인터페이스. 각 타입이 독립 struct로 구현. **`tasty-core`는 GUI-free** — 모델은 식별 정보와 직렬화 가능한 상태만 보유한다 (egui는 optional `egui-compat` feature, 헤드리스 플러그인은 비활성 가능)
-  - `kind()`: 소문자 식별자 — 호스트 빌트인 4종(`"terminal"`, `"markdown"`, `"html"`, `"empty"`) + plugin 등록 kind(예: `"explorer"`, `"image"`). IPC/registry/플러그인이 식별자로 사용
+  - `kind()`: 소문자 식별자 — 호스트 빌트인 4종(`"terminal"`, `"markdown"`, `"empty"`, `"diff"`) + plugin 등록 kind(예: `"explorer"`, `"image"`). IPC/registry/플러그인이 식별자로 사용
   - `type_name()`: 표시용 라벨. 식별 비교 금지
-  - `html_url()`: HtmlPanel만 `Some(&url)` 반환. native WebView 동기화가 다운캐스트 없이 사용
+  - `webview_url()`: webview-enabled surface(plugin) 가 자신의 URL 을 반환. host 의 native WebView 동기화 가 다운캐스트 없이 generic 으로 사용
   - TerminalSurface: 단일 PTY 터미널
   - MarkdownPanel, HtmlPanel, EmptySurface: 호스트 빌트인 비터미널 콘텐츠
   - ImagePanel: `com.tasty.image` plugin이 host-rendered kind로 등록하는 비터미널 콘텐츠
@@ -149,7 +149,7 @@
 - Terminal: OSC 7로 알린 cwd
 - Explorer: `root_path` (주소바 편집 텍스트는 무시)
 - Markdown: 열려 있는 파일의 부모 디렉터리
-- HTML(`file://` 또는 로컬 절대경로): URL이 가리키는 파일의 부모 디렉터리. 그 외(http/https/about/data 등)는 None
+- HTML (com.tasty.html plugin): URL 의 부모 디렉터리는 plugin 측에서 결정
 - Image / Empty: None (ClipboardViewer 는 surface 가 아닌 plugin popup 으로 이전됨)
 
 `general.inherit_cwd` 설정(default true)을 false로 바꾸면 모든 단축키 경로에서 fallback이 비활성화되어 셸의 home에서 시작한다. IPC/CLI에서 명시적으로 전달한 `cwd` 인자는 이 설정과 무관하게 그대로 사용된다.
@@ -253,11 +253,11 @@
 - **탭/워크스페이스 우클릭 이동**: 탭 우클릭 → Move Left / Move Right, 워크스페이스 우클릭 → Move Up / Move Down. 끝에 있으면 비활성화
 - 관련 모델 메서드: `Rect::contains()`, `PaneNode::find_divider_at()`, `PaneNode::update_ratio_for_rect()`, `SurfaceLayout::find_divider_at()`, `SurfaceLayout::update_ratio_for_rect()`, `SurfaceLayout::find_surface_at()`
 
-### 추가 Surface 타입 (Markdown / HTML / Empty + plugin 기반 Explorer)
+### 추가 Surface 타입 (Markdown / Empty + plugin 기반 Explorer, HTML, Image)
 - 모든 Surface 타입은 고유 surface_id를 가지며, 닫기/포커스/리스트 등 공통 surface 동작이 동일하게 적용됨
 - Markdown/Empty: 호스트가 egui로 렌더링
 - Explorer: **com.tasty.explorer 기본 제공 plugin**이 RemoteSurface로 제공 — UiTree 트리를 IPC로 호스트에 전송, 호스트는 egui로 그대로 렌더링
-- HTML: OS 네이티브 WebView (macOS: WKWebView, Windows: WebView2, Linux: WebKitGTK)를 wgpu 윈도우 위에 child view로 오버레이
+- HTML: **com.tasty.html plugin** 이 webview-enabled surface kind 로 등록. host 는 OS 네이티브 WebView (macOS: WKWebView, Windows: WebView2, Linux: WebKitGTK) 토대만 제공 (`crate::webview::*`) 하고, html 도메인 로직은 모두 plugin 안. plugin 이 `webview.set_url(surface_id, url)` IPC 로 URL 제어.
 - Empty: 빈 placeholder. 중앙에 타입 전환 버튼 표시
 
 #### Markdown Viewer
@@ -304,7 +304,7 @@
 - 기본값 미설정 (설정 UI에서 Pane 서브탭에서 바인딩 가능)
 
 #### Surface 타입 전환
-- `convert_surface` 단축키 (기본 `Alt+'`): Surface 스코프 팝업으로 전환 메뉴 표시. **항목은 `SurfaceKindRegistry`에 등록된 모든 kind에서 동적으로 enumerate된다** — 빌트인 Terminal(T)/Markdown(M)/HTML(H) + plugin 제공 kind (예: Image(I), Explorer(E)). `empty` 같은 시스템 kind는 제외. 팝업 크기는 항목 수에 맞춰 sizer가 매 프레임 재계산
+- `convert_surface` 단축키 (기본 `Alt+'`): Surface 스코프 팝업으로 전환 메뉴 표시. **항목은 `SurfaceKindRegistry`에 등록된 모든 kind에서 동적으로 enumerate된다** — 빌트인 Terminal(T)/Markdown(M) + plugin 제공 kind (예: Image(I), Explorer(E)). `empty` 같은 시스템 kind는 제외. 팝업 크기는 항목 수에 맞춰 sizer가 매 프레임 재계산
 - `convert_to_markdown`: 직접 전환 단축키 (기본값 없음, 설정에서 할당)
 - 현재 타입과 동일한 항목은 체크 표시 + 비활성
 - Markdown 전환 시 파일 경로 입력 다이얼로그 표시
@@ -327,7 +327,7 @@
 - 비활성 워크스페이스/탭의 WebView는 자동 hidden
 
 #### IPC/CLI 지원
-- IPC: `tab.create`에 `type` 파라미터로 통합 (`terminal` / `markdown` / `explorer` / `html`)
+- IPC: `tab.create`에 `type` 파라미터로 통합 (`terminal` / `markdown` / `explorer` + plugin contribute)
 - CLI: `tasty new tab --pane <PANE> --type html --url <URL>`
 
 #### Diff Surface
@@ -984,7 +984,7 @@ bb 의 한 시점을 통째로 캡처해 복원. 키 컨벤션 `tasty.bb.<name>.
 
 #### 패인
 - `pane.list`: 전체 워크스페이스의 패인 목록 (포커스 여부, 탭 수)
-- `split`: 통합 분할 명령. `level`(pane/surface), `target_surface`(surface ID/nickname) 또는 `target_pane`(pane ID)으로 대상 지정, `direction`(vertical/horizontal), `type`(terminal/markdown/explorer/html) 파라미터. pane/surface 레벨 모두 비터미널 타입 지원. 포커스 이동 없음
+- `split`: 통합 분할 명령. `level`(pane/surface), `target_surface`(surface ID/nickname) 또는 `target_pane`(pane ID)으로 대상 지정, `direction`(vertical/horizontal), `type`(terminal/markdown/explorer + plugin contribute) 파라미터. pane/surface 레벨 모두 비터미널 타입 지원. 포커스 이동 없음
 - `pane.close`: 패인 닫기 (unsplit)
 
 #### 탭
