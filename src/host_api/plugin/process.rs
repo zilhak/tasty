@@ -104,6 +104,7 @@ impl PluginProcess {
             .env("TASTY_HOST_IPC_PORT", listener.port().to_string())
             .env("TASTY_PLUGIN_TOKEN", &token)
             .env("TASTY_PLUGIN_DIR", &package.dir)
+            .env("TASTY_LOCALE", tasty_core::i18n::current_language())
             .current_dir(&package.dir)
             .stdin(Stdio::null())
             .stdout(Stdio::from(log_file))

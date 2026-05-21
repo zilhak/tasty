@@ -346,6 +346,7 @@ mod tests {
             data_dir: None,
             config_path: None,
             log_path: None,
+            locale: "en".into(),
             handle_endpoint: Some(endpoint.to_string()),
         }
     }

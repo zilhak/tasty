@@ -202,6 +202,15 @@ pub fn t(key: &str) -> &str {
     TRANSLATIONS.get().map(|tr| tr.get(key)).unwrap_or(key)
 }
 
+/// 활성 language code. 부팅 시 [`init`]에 전달된 값. 미초기화면 `"en"` fallback.
+/// 호스트가 plugin spawn 시 `TASTY_LOCALE` 환경변수로 전달하는 등에 사용.
+pub fn current_language() -> &'static str {
+    TRANSLATIONS
+        .get()
+        .map(|tr| tr.language.as_str())
+        .unwrap_or("en")
+}
+
 /// Get a translated string with a format argument.
 pub fn t_fmt(key: &str, arg: &str) -> String {
     TRANSLATIONS

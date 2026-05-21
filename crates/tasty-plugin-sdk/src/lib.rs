@@ -9,16 +9,19 @@ pub mod env;
 pub mod error;
 pub mod handle_channel;
 pub mod host;
+pub mod i18n;
 pub mod plugin;
 pub mod runtime;
 pub mod shared_buffer;
 pub mod ui;
 
 pub use bus::BusHandle;
+pub use env::PluginEnv;
 pub use error::{PluginError, Result};
 #[allow(deprecated)]
 pub use host::HostCallError;
 pub use host::HostHandle;
+pub use i18n::Translator;
 pub use plugin::{
     CommandInvokeCtx, EventDispatchCtx, ExtensionHookCtx, ExtensionHookOutcome, IpcMethodCtx,
     IpcMethodError, Plugin, PopupClosedCtx, PopupEventCtx, PopupEventResult, PopupOpenCtx,

@@ -5308,6 +5308,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "tasty-plugin-git-viewer"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "git2",
+ "serde_json",
+ "tasty-plugin-sdk",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "tasty-plugin-html"
 version = "0.1.0"
 dependencies = [
@@ -5344,7 +5356,9 @@ dependencies = [
  "serde_json",
  "tasty-plugin-protocol",
  "tasty-shm",
+ "tempfile",
  "thiserror 1.0.69",
+ "toml 0.8.2",
  "tracing",
 ]
 
