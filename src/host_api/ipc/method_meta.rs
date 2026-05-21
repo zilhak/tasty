@@ -69,6 +69,8 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("surface.close_self", plugin(&[SurfaceWrite])),
         // tree/meta는 read 권한
         ("tree", plugin(&[SurfaceRead])),
+        // webview — plugin 이 webview-enabled surface 의 URL 설정. SurfaceWrite 권한.
+        ("webview.set_url", plugin(&[SurfaceWrite])),
         ("surface.meta.get", plugin(&[SurfaceRead])),
         ("surface.meta.list", plugin(&[SurfaceRead])),
         ("surface.meta.set", plugin(&[SurfaceWrite])),

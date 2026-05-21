@@ -118,7 +118,10 @@ pub trait Surface: Any {
     /// webview URL accessor. webview overlay 를 사용하는 surface kind 가 자신의
     /// URL 을 반환. host 의 `sync_webviews` 가 이 메서드로 surface 별 URL 을
     /// 식별. 일반 surface 는 default `None` 반환.
-    fn webview_url(&self) -> Option<&str> {
+    ///
+    /// `Option<String>` 시그니처는 plugin RemoteSurface 가 lock 으로 보관한 URL
+    /// 캐시를 owned 로 cloning 해 반환할 수 있게 한다.
+    fn webview_url(&self) -> Option<String> {
         None
     }
 

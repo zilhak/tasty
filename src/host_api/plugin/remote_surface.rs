@@ -36,6 +36,9 @@ pub struct RemoteSurface {
     pub invalidated: Arc<Mutex<bool>>,
     /// 탭 제목 등에 표시되는 이름. plugin이 surface.create / event 응답에서 갱신 가능.
     pub display_name: Arc<Mutex<String>>,
+    /// webview-enabled kind 인 경우 plugin 이 `webview.set_url` 로 전달한 URL.
+    /// host 의 sync_webviews 가 매 프레임 이 값을 읽어 native webview 동기화.
+    pub webview_url: Arc<Mutex<Option<String>>>,
 }
 
 impl RemoteSurface {
@@ -54,6 +57,14 @@ impl RemoteSurface {
             snapshot_cache: Arc::new(Mutex::new(None)),
             invalidated: Arc::new(Mutex::new(true)),
             display_name: Arc::new(Mutex::new(initial_name)),
+            webview_url: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    /// `webview.set_url` IPC 가 호출 — webview-enabled kind 의 surface 만 의미 있음.
+    pub fn set_webview_url(&self, url: Option<String>) {
+        if let Ok(mut slot) = self.webview_url.lock() {
+            *slot = url;
         }
     }
 
@@ -136,6 +147,10 @@ impl Surface for RemoteSurface {
             .lock()
             .map(|n| n.clone())
             .unwrap_or_else(|_| self.kind_static.to_string())
+    }
+
+    fn webview_url(&self) -> Option<String> {
+        self.webview_url.lock().ok().and_then(|g| g.clone())
     }
 
     fn to_tree_json(&self) -> serde_json::Value {

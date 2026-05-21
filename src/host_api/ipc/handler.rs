@@ -18,6 +18,7 @@ mod tab;
 mod telemetry;
 #[cfg(debug_assertions)]
 mod tool;
+mod webview;
 mod workspace;
 
 pub mod agent;
@@ -224,6 +225,8 @@ fn route_engine_handler(
         "global_hook.set" => hooks::handle_global_hook_set(state, id, &request.params),
         "global_hook.list" => hooks::handle_global_hook_list(state, id),
         "global_hook.unset" => hooks::handle_global_hook_unset(state, id, &request.params),
+        // webview (plugin 이 webview-enabled surface 의 URL/navigation 제어)
+        "webview.set_url" => webview::handle_set_url(state, id, &request.params),
         // tree
         "tree" => handle_tree(state, id),
         // message
