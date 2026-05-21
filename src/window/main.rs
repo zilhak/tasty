@@ -77,7 +77,7 @@ pub(crate) struct HoveredLink {
 }
 
 impl MainWindow {
-    pub fn new(
+    pub(crate) fn new(
         gpu: GpuState,
         state: AppState,
         window: Arc<winit::window::Window>,

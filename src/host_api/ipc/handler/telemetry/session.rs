@@ -56,7 +56,7 @@ pub fn handle_session_summary(
 
 /// 집계 결과. workspace_id / since / until 은 입력 그대로 echo.
 #[derive(serde::Serialize)]
-struct SessionSummary {
+pub(super) struct SessionSummary {
     workspace_id: Option<u32>,
     since: Option<u64>,
     until: Option<u64>,
@@ -69,7 +69,7 @@ struct SessionSummary {
 }
 
 #[derive(Default, serde::Serialize)]
-struct ApprovalCounts {
+pub(super) struct ApprovalCounts {
     total: u64,
     pending: u64,
     responded: u64,
