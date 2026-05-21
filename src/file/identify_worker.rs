@@ -31,7 +31,7 @@ pub struct IdentifyWorker {
 }
 
 impl IdentifyWorker {
-    pub fn new(registry: Arc<FileFormatRegistry>, proxy: EventLoopProxy<AppEvent>) -> Self {
+    pub(crate) fn new(registry: Arc<FileFormatRegistry>, proxy: EventLoopProxy<AppEvent>) -> Self {
         Self {
             registry,
             proxy,

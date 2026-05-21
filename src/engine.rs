@@ -11,7 +11,7 @@ use crate::ipc::server::IpcServer;
 /// fully extracted in a later phase when IPC handlers are updated.
 pub struct Engine {
     pub ipc_server: Option<IpcServer>,
-    pub proxy: EventLoopProxy<AppEvent>,
+    pub(crate) proxy: EventLoopProxy<AppEvent>,
     /// When Some, a modal window is active and all other windows should ignore input.
     /// At most one modal can exist at a time.
     pub active_modal_id: Option<winit::window::WindowId>,
@@ -24,7 +24,7 @@ pub struct Engine {
 }
 
 impl Engine {
-    pub fn new(proxy: EventLoopProxy<AppEvent>, port_file: Option<String>) -> Self {
+    pub(crate) fn new(proxy: EventLoopProxy<AppEvent>, port_file: Option<String>) -> Self {
         Self {
             ipc_server: None,
             proxy,

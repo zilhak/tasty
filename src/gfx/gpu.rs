@@ -55,7 +55,7 @@ pub struct GpuState {
 }
 
 impl GpuState {
-    pub async fn new(
+    pub(crate) async fn new(
         window: Arc<Window>,
         appearance: &AppearanceSettings,
         proxy: EventLoopProxy<AppEvent>,
