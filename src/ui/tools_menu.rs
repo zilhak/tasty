@@ -51,10 +51,6 @@ const BUILTIN_TOOLS: &[BuiltinTool] = &[
         action: BuiltinAction::OpenPopup(super::popup::update::UPDATE_POPUP_ID),
     },
     BuiltinTool {
-        label_key: "git_viewer.tools_menu_item",
-        action: BuiltinAction::OpenPopup(crate::git_viewer::GIT_VIEWER_POPUP_ID),
-    },
-    BuiltinTool {
         label_key: "preset.tools.menu_item",
         action: BuiltinAction::OpenWindow(WindowKind::Preset),
     },

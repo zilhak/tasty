@@ -110,9 +110,6 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # Error Handling
 anyhow = "1"
 
-# Git viewer (read-only libgit2 bindings — HTTPS/SSH 불필요)
-git2 = { version = "0.19", default-features = false }
-
 # Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

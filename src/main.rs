@@ -8,7 +8,6 @@ mod command_palette;
 mod db;
 mod file;
 mod gfx;
-mod git_viewer;
 mod host_api;
 mod input;
 mod intent;

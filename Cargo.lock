@@ -5117,7 +5117,6 @@ dependencies = [
  "egui_commonmark",
  "enigo",
  "gdkx11",
- "git2",
  "gtk",
  "image",
  "infer",

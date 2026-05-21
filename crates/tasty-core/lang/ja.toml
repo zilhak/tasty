@@ -537,20 +537,6 @@ up_to_date = "最新バージョンを使用中です。"
 checking = "確認中…"
 tools_menu_item = "更新を確認…"
 
-[git_viewer]
-tools_menu_item = "Git"
-heading = "Git"
-no_repo = "現在の作業ディレクトリで git リポジトリが見つかりませんでした。"
-refresh = "更新"
-status_heading = "変更"
-log_heading = "コミット"
-diff_heading = "Diff"
-back_to_log = "戻る"
-no_changes = "変更なし。"
-no_commits = "コミットなし。"
-loading = "読み込み中…"
-error = "エラー: {0}"
-
 [search]
 placeholder = "検索..."
 no_matches = "一致なし"

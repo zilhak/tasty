@@ -390,8 +390,6 @@ pub struct DialogState {
     pub approval_comment_buffer: String,
     /// file_handler_picker popup 의 입력/선택 상태. `None` 이면 popup 미오픈.
     pub file_handler_picker: Option<FileHandlerPickerData>,
-    /// Git viewer popup 의 현재 상태. popup 닫힘 시 `None` 으로 리셋.
-    pub git_viewer: Option<crate::git_viewer::GitViewerState>,
     /// 도구 메뉴 클릭 / preset save 후속 — PresetWindow 를 열어달라는 요청.
     /// `selection` 이 `Some` 이면 PresetWindow 가 열린 뒤 해당 preset 을 선택한다.
     /// App 메인 루프 `process_pending_open_preset_window` 가 drain.
@@ -448,7 +446,6 @@ impl DialogState {
             pending_approval_ids: VecDeque::new(),
             approval_comment_buffer: String::new(),
             file_handler_picker: None,
-            git_viewer: None,
             pending_preset_window_selection: None,
             pending_open_preset_window: false,
             preset_picker_selected: None,

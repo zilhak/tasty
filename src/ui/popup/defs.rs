@@ -142,18 +142,6 @@ pub fn all_defs() -> &'static [PopupDef] {
                 draw_fn: super::command_palette::draw_command_palette_popup,
             },
             PopupDef {
-                id: crate::git_viewer::GIT_VIEWER_POPUP_ID,
-                title_key: "git_viewer.heading",
-                title_fn: None,
-                default_size: egui::vec2(720.0, 540.0),
-                sizer: None,
-                default_scope: PopupScope::Window,
-                close_on_outside_click: true,
-                headless: false,
-                sticky_focus: false,
-                draw_fn: crate::git_viewer::draw_git_viewer_popup,
-            },
-            PopupDef {
                 id: super::preset_apply::APPLY_WORKSPACE_POPUP_ID,
                 title_key: "preset.popup.apply_workspace_title",
                 title_fn: None,

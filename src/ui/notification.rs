@@ -216,15 +216,6 @@ pub fn draw_popups(
         state.dialogs.rename = None;
     }
 
-    // Clean up git_viewer state when popup closes (X 버튼/외부 클릭/Escape).
-    let git_viewer_closed = dispatch_closed.contains(&crate::git_viewer::GIT_VIEWER_POPUP_ID)
-        || draw_result
-            .closed
-            .contains(&crate::git_viewer::GIT_VIEWER_POPUP_ID);
-    if git_viewer_closed {
-        state.dialogs.git_viewer = None;
-    }
-
     // file_handler_picker — X 버튼 또는 외부 닫기는 dispatch 없이 닫힘으로 간주.
     // dispatch 결과는 picker draw_fn 안에서 미리 채워두므로, 여기서는 추가 처리 없음.
     // 호스트 본체 layer 가 result 를 소비한 뒤 None 으로 리셋한다.
