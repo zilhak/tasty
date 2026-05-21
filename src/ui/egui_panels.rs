@@ -160,18 +160,6 @@ pub fn draw_egui_panels(
                     );
                 },
             );
-        } else if let Some(html_panel) = surface.as_any().downcast_ref::<crate::model::HtmlPanel>()
-        {
-            draw_panel_frame(
-                ctx,
-                &format!("html_panel_{}", id_suffix),
-                info,
-                0,
-                None,
-                |ui| {
-                    crate::html_ui::draw_html(ui, html_panel);
-                },
-            );
         } else if let Some(empty) = surface
             .as_any()
             .downcast_ref::<crate::model::EmptySurface>()

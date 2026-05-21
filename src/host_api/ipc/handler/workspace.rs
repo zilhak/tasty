@@ -54,19 +54,6 @@ pub fn handle_workspace_create(
                 );
             }
         }
-        "html" => {
-            if params
-                .get("url")
-                .and_then(|v| v.as_str())
-                .map(str::is_empty)
-                .unwrap_or(true)
-            {
-                return JsonRpcResponse::invalid_params(
-                    id,
-                    "Missing 'url' parameter for html type",
-                );
-            }
-        }
         _ => {}
     }
     match state.add_workspace_background(cwd, kind, params) {

@@ -364,14 +364,10 @@ pub struct DialogState {
     pub convert_popup: Option<u32>,
     /// Keyboard-selected index in the convert popup menu
     pub convert_popup_selected: Option<usize>,
-    /// Convert to html: target surface id
-    pub html_convert_surface_id: Option<u32>,
     /// Pending native context menu
     pub pending_native_menu: Option<PendingNativeMenu>,
     /// Markdown open popup: path buffer
     pub markdown_open_buffer: String,
-    /// HTML open popup: url buffer
-    pub html_open_buffer: String,
     /// Which pane the file open popup was triggered from
     pub file_open_pane_id: Option<u32>,
     /// Internal flag for cancel button in file open popups
@@ -440,10 +436,8 @@ impl DialogState {
             markdown_convert_surface_id: None,
             convert_popup: None,
             convert_popup_selected: None,
-            html_convert_surface_id: None,
             pending_native_menu: None,
             markdown_open_buffer: String::new(),
-            html_open_buffer: String::new(),
             file_open_pane_id: None,
             file_popup_cancel: false,
             file_open_error: None,

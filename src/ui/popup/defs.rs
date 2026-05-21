@@ -46,18 +46,6 @@ pub fn all_defs() -> &'static [PopupDef] {
                 draw_fn: super::file_open::draw_markdown_open_popup,
             },
             PopupDef {
-                id: "html_open",
-                title_key: "dialog.html.title",
-                title_fn: None,
-                default_size: egui::vec2(360.0, 200.0),
-                sizer: Some(super::file_open::html_popup_sizer),
-                default_scope: PopupScope::Window,
-                close_on_outside_click: false,
-                headless: false,
-                sticky_focus: false,
-                draw_fn: super::file_open::draw_html_open_popup,
-            },
-            PopupDef {
                 id: "rename",
                 title_key: "rename_dialog.tab_heading",
                 title_fn: Some(crate::ui::dialog::rename_popup_title),

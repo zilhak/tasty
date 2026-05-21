@@ -904,52 +904,6 @@ fn source_cwd_markdown_returns_parent_dir() {
 }
 
 #[test]
-fn source_cwd_html_file_uri_returns_parent() {
-    #[cfg(windows)]
-    {
-        let html = HtmlPanel::new(1, "file:///C:/a/b.html".to_string());
-        assert_eq!(html.source_cwd(), Some(std::path::PathBuf::from("C:\\a")));
-    }
-    #[cfg(not(windows))]
-    {
-        let html = HtmlPanel::new(1, "file:///home/x/y.html".to_string());
-        assert_eq!(html.source_cwd(), Some(std::path::PathBuf::from("/home/x")));
-    }
-}
-
-#[test]
-fn source_cwd_html_absolute_path_returns_parent() {
-    #[cfg(windows)]
-    {
-        let html = HtmlPanel::new(1, "C:\\a\\b.html".to_string());
-        assert_eq!(html.source_cwd(), Some(std::path::PathBuf::from("C:\\a")));
-    }
-    #[cfg(not(windows))]
-    {
-        let html = HtmlPanel::new(1, "/home/x/y.html".to_string());
-        assert_eq!(html.source_cwd(), Some(std::path::PathBuf::from("/home/x")));
-    }
-}
-
-#[test]
-fn source_cwd_html_remote_url_is_none() {
-    let html = HtmlPanel::new(1, "https://example.com".to_string());
-    assert_eq!(html.source_cwd(), None);
-}
-
-#[test]
-fn source_cwd_html_about_blank_is_none() {
-    let html = HtmlPanel::new(1, "about:blank".to_string());
-    assert_eq!(html.source_cwd(), None);
-}
-
-#[test]
-fn source_cwd_html_empty_is_none() {
-    let html = HtmlPanel::new(1, String::new());
-    assert_eq!(html.source_cwd(), None);
-}
-
-#[test]
 fn source_cwd_image_is_none() {
     let img = ImagePanel::new_blank(1);
     assert_eq!(img.source_cwd(), None);

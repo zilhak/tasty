@@ -71,7 +71,6 @@ pub(crate) use surface_registry::meta as surface_meta;
 pub(crate) use ui::preset as preset_ui;
 pub(crate) use ui::surface::diff as diff_ui;
 pub(crate) use ui::surface::empty as empty_ui;
-pub(crate) use ui::surface::html as html_ui;
 pub(crate) use ui::surface::image as image_ui;
 pub(crate) use ui::surface::markdown as markdown_ui;
 pub(crate) use ui::terminal_link;

@@ -63,17 +63,6 @@ fn convert(state: &mut AppState, surface_id: u32, target: &ConvertTarget) {
                 "image" => {
                     state.convert_surface_to_image(surface_id);
                 }
-                "html" => {
-                    let Some(url) = params
-                        .get("url")
-                        .and_then(|v| v.as_str())
-                        .map(str::to_string)
-                    else {
-                        tracing::warn!("convert html: missing or invalid 'url' param: {params}");
-                        return;
-                    };
-                    state.convert_surface_to_html(surface_id, url);
-                }
                 _ => {
                     state.convert_surface_to_kind(surface_id, kind, params);
                 }

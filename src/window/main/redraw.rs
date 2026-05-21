@@ -611,26 +611,6 @@ impl MainWindow {
                             );
                         }
                     }
-                    Some(4) => {
-                        // Create empty tab first, then show HTML popup targeting it
-                        self.state.active_workspace_mut().focused_pane = pane_id;
-                        if let Some((_tab_id, surface_id)) = self.state.add_empty_tab() {
-                            // intent-exempt: surface_id 결과 의존 (후속 convert)
-
-                            self.state.dialogs.html_convert_surface_id = Some(surface_id);
-                            self.state.dialogs.file_open_pane_id = Some(pane_id);
-                            self.state.dialogs.html_open_buffer.clear();
-                            self.state.dispatch_intent(
-                                crate::intent::Intent::OpenPopup {
-                                    id: "html_open",
-                                    mode: crate::intent::OpenPopupMode::WithScope(
-                                        crate::ui::popup::PopupScope::Surface(surface_id),
-                                    ),
-                                }
-                                .from_user_context_menu(),
-                            );
-                        }
-                    }
                     Some(5) => {
                         self.state.active_workspace_mut().focused_pane = pane_id;
                         if let Some((_tab_id, surface_id)) = self.state.add_empty_tab() {

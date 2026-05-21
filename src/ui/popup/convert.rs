@@ -9,7 +9,7 @@ const ITEM_HEIGHT: f32 = 24.0;
 /// 빌트인 비표시 kind (변환 메뉴에 등장하면 안 됨).
 const HIDDEN_KINDS: &[&str] = &["empty"];
 /// 빌트인 우선 표시 순서. 이 목록에 없는 kind는 알파벳순으로 뒤따른다.
-const PREFERRED_ORDER: &[&str] = &["terminal", "markdown", "html", "image"];
+const PREFERRED_ORDER: &[&str] = &["terminal", "markdown", "image"];
 
 /// Sizer: 등록된 변환 가능 kind 수에 맞춰 popup 크기를 계산.
 /// notification.rs가 프레임마다 호출하므로 plugin이 새 kind를 등록한 직후
@@ -296,21 +296,6 @@ pub fn apply_convert_action(state: &mut AppState, action: ConvertAction) {
                 .from_user_menu("convert/markdown"),
             );
         }
-        ConvertAction::Html => {
-            let pane_id = state.active_workspace().focused_pane;
-            state.dialogs.html_convert_surface_id = Some(surface_id);
-            state.dialogs.file_open_pane_id = Some(pane_id);
-            state.dialogs.html_open_buffer.clear();
-            state.dispatch_intent(
-                crate::intent::Intent::OpenPopup {
-                    id: "html_open",
-                    mode: crate::intent::OpenPopupMode::WithScope(popup::PopupScope::Surface(
-                        surface_id,
-                    )),
-                }
-                .from_user_menu("convert/html"),
-            );
-        }
         ConvertAction::Image => {
             state.dispatch_intent(
                 crate::intent::Intent::ConvertSurface {
@@ -342,7 +327,6 @@ pub fn apply_convert_action(state: &mut AppState, action: ConvertAction) {
 pub enum ConvertAction {
     Terminal,
     Markdown,
-    Html,
     Image,
     /// Plugin이 제공하는 kind 또는 별도 인자 없이 생성 가능한 kind.
     Kind(String),
@@ -352,7 +336,6 @@ fn action_for_kind(kind: &str) -> ConvertAction {
     match kind {
         "terminal" => ConvertAction::Terminal,
         "markdown" => ConvertAction::Markdown,
-        "html" => ConvertAction::Html,
         "image" => ConvertAction::Image,
         other => ConvertAction::Kind(other.to_string()),
     }

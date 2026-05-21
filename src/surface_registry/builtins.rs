@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use serde_json::{Value, json};
 
-use tasty_core::model::{DiffPanel, EmptySurface, HtmlPanel, ImagePanel, MarkdownPanel, Surface};
+use tasty_core::model::{DiffPanel, EmptySurface, ImagePanel, MarkdownPanel, Surface};
 
 use super::{SurfaceKindDef, SurfaceKindRegistry};
 
@@ -20,7 +20,6 @@ use super::{SurfaceKindDef, SurfaceKindRegistry};
 pub fn register_builtin_kinds(registry: &SurfaceKindRegistry) {
     register_terminal(registry);
     register_markdown(registry);
-    register_html(registry);
     register_empty(registry);
     register_diff(registry);
 }
@@ -68,33 +67,6 @@ fn register_markdown(registry: &SurfaceKindRegistry) {
         snapshot: Arc::new(|s: &dyn Surface| {
             let md = s.as_any().downcast_ref::<MarkdownPanel>()?;
             Some(json!({"path": md.file_path}))
-        }),
-    });
-}
-
-// ── Html ────────────────────────────────────────────────────────────────────
-
-fn register_html(registry: &SurfaceKindRegistry) {
-    registry.register(SurfaceKindDef {
-        kind: "html",
-        display_name_i18n_key: "surface.kind.html",
-        create: Arc::new(|sid, params| {
-            let url = params
-                .get("url")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| anyhow::anyhow!("missing 'url' for html surface"))?;
-            Ok(Box::new(HtmlPanel::new(sid, url.to_string())) as Box<dyn Surface>)
-        }),
-        restore: Arc::new(|sid, data| {
-            let url = data
-                .get("url")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| anyhow::anyhow!("missing 'url' in html snapshot"))?;
-            Ok(Box::new(HtmlPanel::new(sid, url.to_string())) as Box<dyn Surface>)
-        }),
-        snapshot: Arc::new(|s| {
-            let html = s.as_any().downcast_ref::<HtmlPanel>()?;
-            Some(json!({"url": html.url}))
         }),
     });
 }
@@ -247,15 +219,6 @@ mod tests {
         assert_eq!(snap["path"], "/tmp/y.md");
         let restored = (def.restore)(7, &snap).unwrap();
         assert_eq!(restored.kind(), "markdown");
-    }
-
-    #[test]
-    fn html_create_requires_url() {
-        let reg = registry_with_builtins();
-        let def = reg.get("html").unwrap();
-        assert!((def.create)(1, &json!({})).is_err());
-        let s = (def.create)(1, &json!({"url": "https://example.com"})).unwrap();
-        assert_eq!(s.kind(), "html");
     }
 
     #[test]

@@ -1,6 +1,6 @@
-//! 최근 연 Markdown / HTML 저장소.
+//! 최근 연 Markdown 저장소.
 //!
-//! 저장: `~/.tasty/state.db` (SQLite) — `recent_markdown` / `recent_html` 테이블.
+//! 저장: `~/.tasty/state.db` (SQLite) — `recent_markdown` 테이블.
 //! 인메모리 캐시(`AppState.recent_files`)가 매 뮤테이션마다 DB에 반영된다.
 
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -11,7 +11,6 @@ const MAX_ENTRIES: usize = 10;
 #[derive(serde::Serialize, serde::Deserialize, Default, Clone)]
 pub struct RecentFiles {
     pub markdown: Vec<String>,
-    pub html: Vec<String>,
 }
 
 fn now_secs() -> i64 {
@@ -29,11 +28,7 @@ impl RecentFiles {
                 &db.conn,
                 "SELECT path FROM recent_markdown ORDER BY opened_at DESC LIMIT ?1",
             );
-            let html = query_list(
-                &db.conn,
-                "SELECT url FROM recent_html ORDER BY opened_at DESC LIMIT ?1",
-            );
-            Self { markdown, html }
+            Self { markdown }
         })
         .unwrap_or_default()
     }
@@ -47,17 +42,6 @@ impl RecentFiles {
             tracing::trace!("recent_files markdown upsert skipped: storage unavailable");
         }
         prune_table("recent_markdown", "path");
-    }
-
-    pub fn add_html(&mut self, url: String) {
-        self.html.retain(|u| u != &url);
-        self.html.insert(0, url.clone());
-        self.html.truncate(MAX_ENTRIES);
-        let ts = now_secs();
-        if crate::db::with_db(|db| upsert_html(&db.conn, &url, ts)).is_none() {
-            tracing::trace!("recent_files html upsert skipped: storage unavailable");
-        }
-        prune_table("recent_html", "url");
     }
 }
 
@@ -88,16 +72,6 @@ fn upsert_markdown(conn: &rusqlite::Connection, path: &str, ts: i64) {
         rusqlite::params![path, ts],
     ) {
         tracing::warn!("recent_markdown upsert failed: {e}");
-    }
-}
-
-fn upsert_html(conn: &rusqlite::Connection, url: &str, ts: i64) {
-    if let Err(e) = conn.execute(
-        "INSERT INTO recent_html(url, opened_at) VALUES(?1, ?2)
-         ON CONFLICT(url) DO UPDATE SET opened_at=excluded.opened_at",
-        rusqlite::params![url, ts],
-    ) {
-        tracing::warn!("recent_html upsert failed: {e}");
     }
 }
 

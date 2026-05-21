@@ -116,11 +116,6 @@ impl AppState {
             .map(|_| ())
     }
 
-    /// Add an HTML viewer tab in the focused pane.
-    pub fn add_html_tab(&mut self, url: String) -> anyhow::Result<()> {
-        self.add_kind_tab("html", &json!({"url": url})).map(|_| ())
-    }
-
     /// Add an empty placeholder tab in the focused pane. Returns (tab_id, surface_id).
     pub fn add_empty_tab(&mut self) -> Option<(u32, u32)> {
         self.add_kind_tab("empty", &Value::Null).ok()
@@ -351,13 +346,6 @@ impl AppState {
         let surface: Box<dyn crate::model::Surface> =
             Box::new(crate::model::ImagePanel::new_blank(surface_id));
         self.replace_surface_for_id(surface_id, surface, Some(Some("Image".to_string())))
-    }
-
-    /// Convert a surface to Html type.
-    pub fn convert_surface_to_html(&mut self, surface_id: u32, url: String) -> bool {
-        let surface: Box<dyn crate::model::Surface> =
-            Box::new(crate::model::HtmlPanel::new(surface_id, url));
-        self.replace_surface_for_id(surface_id, surface, Some(Some("HTML".to_string())))
     }
 
     /// Convert a surface to an arbitrary registered kind via the surface registry.

@@ -20,11 +20,6 @@ const SCHEMA_SQL: &str = r#"
         opened_at INTEGER NOT NULL
     );
 
-    CREATE TABLE IF NOT EXISTS recent_html (
-        url TEXT PRIMARY KEY,
-        opened_at INTEGER NOT NULL
-    );
-
     -- 클립보드 히스토리 테이블(스키마 자리만 확보).
     -- 실제 write 연결은 후속 작업에서.
     CREATE TABLE IF NOT EXISTS clipboard_history (
@@ -106,12 +101,12 @@ mod tests {
 
         let count: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('meta','recent_markdown','recent_html','clipboard_history')",
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('meta','recent_markdown','clipboard_history')",
                 [],
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(count, 4);
+        assert_eq!(count, 3);
 
         let ver: u32 = conn
             .pragma_query_value(None, "user_version", |r| r.get(0))
