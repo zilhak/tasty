@@ -1,4 +1,5 @@
 mod clipboard;
+mod divider_drag;
 mod file_drop;
 mod keyboard;
 mod mouse;
@@ -7,6 +8,8 @@ mod redraw;
 mod selection;
 
 pub(crate) mod ime;
+
+pub(crate) use divider_drag::{DividerDrag, DividerDragKind};
 
 use std::sync::Arc;
 
@@ -30,7 +33,7 @@ pub struct MainWindow {
     pub base: WindowBase,
     pub(crate) state: AppState,
     pub(crate) cursor_position: Option<winit::dpi::PhysicalPosition<f64>>,
-    pub(crate) dragging_divider: Option<crate::DividerDrag>,
+    pub(crate) dragging_divider: Option<DividerDrag>,
     pub(crate) clipboard: Option<ClipboardContext>,
     pub(crate) ime_preedit: Option<ImePreeditState>,
     pub(crate) proxy: winit::event_loop::EventLoopProxy<AppEvent>,

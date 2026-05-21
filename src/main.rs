@@ -159,21 +159,6 @@ pub(crate) enum AppEvent {
     },
 }
 
-/// Tracks an active divider drag operation.
-#[derive(Clone, Copy)]
-enum DividerDragKind {
-    /// Dragging a pane-level split divider.
-    Pane,
-    /// Dragging a surface-level split divider (within a tab).
-    Surface,
-}
-
-#[derive(Clone, Copy)]
-struct DividerDrag {
-    info: DividerInfo,
-    kind: DividerDragKind,
-}
-
 /// Phase 6.2c — envelope 의 `session_token` 필드를 보고 caller 를 결정한다.
 ///
 /// - `session_token` 가 None → `CallerContext::Local`
