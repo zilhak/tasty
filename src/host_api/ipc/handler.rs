@@ -1,6 +1,8 @@
 mod clipboard;
 #[cfg(debug_assertions)]
 mod debug;
+#[cfg(debug_assertions)]
+pub(crate) mod debug_plugin;
 mod file_handler;
 mod hooks;
 mod image;

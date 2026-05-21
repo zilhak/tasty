@@ -3,14 +3,14 @@
 use crate::app::App;
 use crate::app::ipc::IpcStep;
 use crate::ipc as host_ipc;
+use crate::ipc::handler::debug_plugin;
 use crate::ipc::server::{IpcCommand, send_response};
-use crate::{handle_debug_event_bus, handle_debug_extension_invoke_hook};
 
 impl App {
     pub(crate) fn ipc_step_debug(&mut self, cmd: &IpcCommand) -> IpcStep {
         if cmd.request.method.starts_with("debug.event_bus.") {
             let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
-            let response = handle_debug_event_bus(
+            let response = debug_plugin::handle_event_bus(
                 self.plugin_manager.as_mut(),
                 &cmd.request.method,
                 &cmd.request.params,
@@ -21,7 +21,7 @@ impl App {
         }
         if cmd.request.method == "debug.extension.invoke_hook" {
             let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
-            handle_debug_extension_invoke_hook(
+            debug_plugin::handle_extension_invoke_hook(
                 self.plugin_manager.as_mut(),
                 &cmd.request.params,
                 id,
