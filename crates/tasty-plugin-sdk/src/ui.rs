@@ -96,6 +96,38 @@ pub fn label_color(text: impl Into<String>, color: impl Into<String>) -> UiNode 
     }
 }
 
+/// Monospace 본문 라벨 — diff/log/code 표시용.
+pub fn label_mono(text: impl Into<String>) -> UiNode {
+    UiNode::Label {
+        text: text.into(),
+        style: LabelStyle::Mono,
+        color: None,
+    }
+}
+
+/// Monospace 본문 + 색 — diff `+`/`-` 줄, status 컬럼 prefix 등.
+pub fn label_mono_color(text: impl Into<String>, color: impl Into<String>) -> UiNode {
+    UiNode::Label {
+        text: text.into(),
+        style: LabelStyle::Mono,
+        color: Some(color.into()),
+    }
+}
+
+/// 클릭 가능한 행. 자식 노드 그룹을 통째로 한 hit 영역으로 묶고, `selected = true`면
+/// 호스트가 강조 배경을 깔아준다. 클릭 시 `UiEvent::Click { node_id: id }` 발화.
+pub fn selectable_row(
+    id: impl Into<String>,
+    selected: bool,
+    children: impl IntoIterator<Item = UiNode>,
+) -> UiNode {
+    UiNode::SelectableRow {
+        id: id.into(),
+        selected,
+        children: children.into_iter().collect(),
+    }
+}
+
 pub fn icon(name: impl Into<String>) -> UiNode {
     UiNode::Icon { name: name.into() }
 }

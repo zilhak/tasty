@@ -209,6 +209,11 @@ fn collect_canvases_in_node(node: &UiNode, plugin_id: &str, out: &mut Vec<Pendin
             collect_canvases_in_node(first, plugin_id, out);
             collect_canvases_in_node(second, plugin_id, out);
         }
+        UiNode::SelectableRow { children, .. } => {
+            for c in children {
+                collect_canvases_in_node(c, plugin_id, out);
+            }
+        }
         UiNode::Label { .. }
         | UiNode::Icon { .. }
         | UiNode::Button { .. }

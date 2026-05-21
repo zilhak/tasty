@@ -168,6 +168,7 @@ fn render_node(ui: &mut Ui, node: &UiNode, sink: &dyn UiSink, canvas_cache: &Can
                 LabelStyle::Caption => rt.small(),
                 LabelStyle::Heading => rt.heading(),
                 LabelStyle::Dim => rt.color(egui::Color32::GRAY),
+                LabelStyle::Mono => rt.monospace(),
             };
             if let Some(c) = color.as_deref() {
                 if let Some(parsed) = parse_color_token(c) {
@@ -267,6 +268,47 @@ fn render_node(ui: &mut Ui, node: &UiNode, sink: &dyn UiSink, canvas_cache: &Can
                 id.as_deref(),
             );
         }
+        UiNode::SelectableRow {
+            id,
+            selected,
+            children,
+        } => {
+            render_selectable_row(ui, id, *selected, children, sink, canvas_cache);
+        }
+    }
+}
+
+/// 클릭 가능한 행. selected=true이면 hover 오버레이 색으로 배경을 깔고, frame 전체를
+/// click sense로 묶어 자식이 어디를 누르든 동일 `Click` 이벤트를 발화한다.
+fn render_selectable_row(
+    ui: &mut Ui,
+    id: &str,
+    selected: bool,
+    children: &[UiNode],
+    sink: &dyn UiSink,
+    canvas_cache: &CanvasTextureCache,
+) {
+    let th = crate::theme::theme();
+    let bg = if selected {
+        th.hover_overlay.to_egui_premultiplied()
+    } else {
+        egui::Color32::TRANSPARENT
+    };
+    let frame_resp = egui::Frame::new()
+        .fill(bg)
+        .corner_radius(2.0)
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                for (i, c) in children.iter().enumerate() {
+                    ui.push_id(i, |ui| render_node(ui, c, sink, canvas_cache));
+                }
+            });
+        });
+    let resp = frame_resp.response.interact(egui::Sense::click());
+    if resp.clicked() {
+        sink.push_event(UiEvent::Click {
+            node_id: id.to_string(),
+        });
     }
 }
 
@@ -642,6 +684,7 @@ fn parse_color_token(token: &str) -> Option<egui::Color32> {
         "text" => egui::Color32::from_rgb(205, 214, 244),
         "subtext1" => egui::Color32::from_rgb(186, 194, 222),
         "subtext0" => egui::Color32::from_rgb(166, 173, 200),
+        "overlay0" => crate::theme::theme().overlay0.to_egui(),
         "blue" => egui::Color32::from_rgb(137, 180, 250),
         "green" => egui::Color32::from_rgb(166, 227, 161),
         "red" => egui::Color32::from_rgb(243, 139, 168),

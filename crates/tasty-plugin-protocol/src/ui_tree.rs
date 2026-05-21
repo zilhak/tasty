@@ -46,7 +46,7 @@ pub enum UiNode {
         text: String,
         #[serde(default)]
         style: LabelStyle,
-        /// `text|subtext0|subtext1|blue|green|red|yellow` 또는 `#aabbcc`.
+        /// `text|subtext0|subtext1|overlay0|blue|green|red|yellow` 또는 `#aabbcc`.
         #[serde(default)]
         color: Option<String>,
     },
@@ -83,6 +83,16 @@ pub enum UiNode {
     },
     Spacer {
         size: u32,
+    },
+
+    /// 클릭 가능한 컨테이너 행. `selected = true`이면 호스트가 hover 오버레이 배경을
+    /// 깐다. 사용자가 클릭하면 [`UiEvent::Click`]이 `node_id = id`로 발화된다.
+    /// 자식은 임의 UiNode (보통 hbox로 multi-span 라벨을 구성).
+    SelectableRow {
+        id: String,
+        #[serde(default)]
+        selected: bool,
+        children: Vec<UiNode>,
     },
 
     /// SharedBuffer에 plugin이 직접 그린 raster를 노출하는 텍스처 영역.
@@ -144,6 +154,8 @@ pub enum LabelStyle {
     Caption,
     Heading,
     Dim,
+    /// Monospace 폰트 본문 — diff/log/code 표시용. 색은 별도 `color` 필드로.
+    Mono,
 }
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -391,6 +403,44 @@ mod tests {
             selection_mode: SelectionMode::Single,
         };
         let s = serde_json::to_string(&n).unwrap();
+        let parsed: UiNode = serde_json::from_str(&s).unwrap();
+        assert_eq!(parsed, n);
+    }
+
+    #[test]
+    fn label_mono_round_trip() {
+        let n = UiNode::Label {
+            text: "+ added".into(),
+            style: LabelStyle::Mono,
+            color: Some("green".into()),
+        };
+        let s = serde_json::to_string(&n).unwrap();
+        assert!(s.contains("\"style\":\"mono\""));
+        let parsed: UiNode = serde_json::from_str(&s).unwrap();
+        assert_eq!(parsed, n);
+    }
+
+    #[test]
+    fn selectable_row_round_trip() {
+        let n = UiNode::SelectableRow {
+            id: "row.0".into(),
+            selected: true,
+            children: vec![
+                UiNode::Label {
+                    text: " M ".into(),
+                    style: LabelStyle::Mono,
+                    color: Some("yellow".into()),
+                },
+                UiNode::Label {
+                    text: "src/foo.rs".into(),
+                    style: LabelStyle::Mono,
+                    color: None,
+                },
+            ],
+        };
+        let s = serde_json::to_string(&n).unwrap();
+        assert!(s.contains("\"type\":\"selectable_row\""));
+        assert!(s.contains("\"selected\":true"));
         let parsed: UiNode = serde_json::from_str(&s).unwrap();
         assert_eq!(parsed, n);
     }
