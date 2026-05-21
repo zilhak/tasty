@@ -290,7 +290,7 @@ pub struct SurfaceKindDecl {
     pub rendering: SurfaceKindRendering,
 }
 
-/// surface kind의 렌더링 방식. plugin 매니페스트 `rendering = "host" | "remote"`.
+/// surface kind의 렌더링 방식. plugin 매니페스트 `rendering = "host" | "remote" | "webview"`.
 #[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum SurfaceKindRendering {
@@ -300,6 +300,10 @@ pub enum SurfaceKindRendering {
     /// 호스트 본문이 직접 egui로 그린다. 매니페스트는 등록(메타데이터)만 담당하고
     /// 픽셀 처리는 호스트가 한다. 호스트 화이트리스트 매칭이 필요하다.
     Host,
+    /// 호스트가 OS-level native WebView overlay 로 surface 영역을 자동 관리한다.
+    /// plugin 은 `webview.set_url(surface_id, url)` 등 IPC 로 URL/navigation 만 제어.
+    /// host 는 어떤 컨텐츠 (html/svg/...) 인지 모름 — webview 토대만 제공.
+    Webview,
 }
 
 /// Plugin extension 선언. 대상(plugin_id + version_req) 하나에 대해
