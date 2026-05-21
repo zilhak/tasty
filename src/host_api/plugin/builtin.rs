@@ -71,6 +71,13 @@ const BUILTINS: &[BuiltinSpec] = &[
         #[cfg(debug_assertions)]
         bin_name: "tasty-plugin-html.exe",
     },
+    BuiltinSpec {
+        id: "com.tasty.git-viewer",
+        #[cfg(debug_assertions)]
+        crate_dir: "tasty-plugin-git-viewer",
+        #[cfg(debug_assertions)]
+        bin_name: "tasty-plugin-git-viewer.exe",
+    },
 ];
 
 #[cfg(not(windows))]
@@ -116,6 +123,13 @@ const BUILTINS: &[BuiltinSpec] = &[
         crate_dir: "tasty-plugin-html",
         #[cfg(debug_assertions)]
         bin_name: "tasty-plugin-html",
+    },
+    BuiltinSpec {
+        id: "com.tasty.git-viewer",
+        #[cfg(debug_assertions)]
+        crate_dir: "tasty-plugin-git-viewer",
+        #[cfg(debug_assertions)]
+        bin_name: "tasty-plugin-git-viewer",
     },
 ];
 

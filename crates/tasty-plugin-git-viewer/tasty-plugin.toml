@@ -1,0 +1,25 @@
+manifest_version = 1
+id = "com.tasty.git-viewer"
+name = "Git Viewer"
+version = "0.1.0"
+description = "Read-only git status / log / diff popup"
+api_version = "1"
+permissions = ["ui.popup", "ui.tool_item", "fs.read"]
+lang_dir = "lang"
+
+[entry]
+type = "process"
+command = "tasty-plugin-git-viewer"
+
+[[contributes.popup]]
+id = "viewer"
+trigger = { kind = "ipc" }
+size_hint = { width = 720, height = 540 }
+anchor = "screen-center"
+dismiss_on_outside_click = true
+
+[[contributes.tool]]
+id = "open-viewer"
+label_i18n_key = "git_viewer.tools_menu_item"
+action = { kind = "open_popup", popup_id = "com.tasty.git-viewer/viewer" }
+order_hint = 130
