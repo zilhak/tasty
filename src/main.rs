@@ -227,21 +227,6 @@ pub(crate) fn resolve_caller_from_envelope(
     })
 }
 
-/// `ShortcutOverride`를 `command.shortcut_changed` payload용 단순 문자열로 변환.
-/// `Key` 모드의 다중 키는 `, `로 join, `Inherit`는 `@source`로 표기, 비어 있거나
-/// `None` 모드는 `None` 반환. 정확한 상태는 plugin이 IPC로 재조회한다.
-pub(crate) fn shortcut_override_display(
-    ov: Option<&plugin::registry_state::ShortcutOverride>,
-) -> Option<String> {
-    use plugin::registry_state::ShortcutOverride;
-    match ov? {
-        ShortcutOverride::Key { value } if !value.is_empty() => Some(value.join(", ")),
-        ShortcutOverride::Key { .. } => None,
-        ShortcutOverride::Inherit { source } => Some(format!("@{source}")),
-        ShortcutOverride::None => None,
-    }
-}
-
 /// debug 빌드 한정 — `debug.event_bus.*` IPC 처리. PluginManager의 EventBus를
 /// 직접 조회/조작한다. release 빌드에는 컴파일되지 않는다.
 #[cfg(debug_assertions)]

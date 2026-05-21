@@ -215,6 +215,18 @@ impl PluginsConfig {
     }
 }
 
+/// `ShortcutOverride` 를 `command.shortcut_changed` payload 용 단순 문자열로 변환.
+/// `Key` 모드의 다중 키는 `, ` 로 join, `Inherit` 는 `@source` 로 표기, 비어 있거나
+/// `None` 모드는 `None` 반환. 정확한 상태는 plugin이 IPC로 재조회한다.
+pub fn shortcut_override_display(ov: Option<&ShortcutOverride>) -> Option<String> {
+    match ov? {
+        ShortcutOverride::Key { value } if !value.is_empty() => Some(value.join(", ")),
+        ShortcutOverride::Key { .. } => None,
+        ShortcutOverride::Inherit { source } => Some(format!("@{source}")),
+        ShortcutOverride::None => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

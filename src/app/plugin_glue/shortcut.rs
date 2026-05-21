@@ -1,7 +1,8 @@
 //! Plugin 명령 단축키 관련 — draft 적용, snapshot, 키 입력 매칭.
 
 use crate::app::App;
-use crate::{plugin, settings_ui, shortcut_override_display, shortcuts};
+use crate::plugin::registry_state::shortcut_override_display;
+use crate::{plugin, settings_ui, shortcuts};
 
 impl App {
     /// SettingsWindow가 회수해 온 plugin shortcut override draft를 PluginsConfig에
