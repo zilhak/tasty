@@ -16,8 +16,6 @@ mod intent;
 mod layout_persistence;
 mod native_menu;
 mod platform;
-mod plugins_ui;
-mod settings_ui;
 mod state;
 mod store;
 mod surface_registry;
@@ -78,6 +76,8 @@ pub(crate) use ui::surface::image as image_ui;
 pub(crate) use ui::surface::markdown as markdown_ui;
 pub(crate) use ui::terminal_link;
 pub(crate) use ui::theme_bridge;
+pub(crate) use window::plugins::ui as plugins_ui;
+pub(crate) use window::settings::ui as settings_ui;
 
 use model::DividerInfo;
 

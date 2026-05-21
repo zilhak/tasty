@@ -1,3 +1,5 @@
+pub mod ui;
+
 use std::sync::Arc;
 
 use winit::event::WindowEvent;

@@ -5,6 +5,8 @@
 //! `App::process_plugins_window_actions()`가 큐를 비우고 manager에 적용한 뒤,
 //! 새 snapshot을 모달에 다시 주입한다.
 
+pub mod ui;
+
 use std::sync::Arc;
 
 use winit::event::WindowEvent;
