@@ -34,6 +34,7 @@ use tasty_terminal as terminal;
 
 pub(crate) use app::App;
 pub(crate) use boot::waker as waker_factory_winit;
+pub(crate) use clipboard::{ClipboardContext, ClipboardData};
 pub(crate) use engine::output_observer;
 pub(crate) use engine::state as engine_state;
 pub(crate) use file::dispatch as file_dispatch;
@@ -79,46 +80,6 @@ pub(crate) use window::plugins::ui as plugins_ui;
 pub(crate) use window::settings::ui as settings_ui;
 
 use model::DividerInfo;
-
-/// Wrapper for the system clipboard (arboard).
-struct ClipboardContext {
-    inner: arboard::Clipboard,
-}
-
-impl ClipboardContext {
-    fn new() -> Option<Self> {
-        arboard::Clipboard::new().ok().map(|c| Self { inner: c })
-    }
-
-    fn get_text(&mut self) -> Option<String> {
-        self.inner.get_text().ok()
-    }
-
-    fn get_image(&mut self) -> Option<arboard::ImageData<'static>> {
-        self.inner.get_image().ok()
-    }
-
-    fn set_text(&mut self, text: &str) {
-        if let Err(e) = self.inner.set_text(text.to_string()) {
-            tracing::warn!("clipboard set_text failed: {e}");
-        }
-    }
-}
-
-/// Clipboard data detected by the background polling thread.
-pub(crate) enum ClipboardData {
-    Text(String),
-    Image(crate::clipboard_history::ImageData),
-}
-
-impl std::fmt::Debug for ClipboardData {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ClipboardData::Text(t) => write!(f, "Text({}B)", t.len()),
-            ClipboardData::Image(img) => write!(f, "Image({}x{})", img.width, img.height),
-        }
-    }
-}
 
 /// Custom events sent to the winit event loop from background threads.
 #[derive(Debug)]
