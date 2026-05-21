@@ -10,7 +10,7 @@ pub mod extension_registry;
 pub mod handle_channel;
 pub mod host_actions;
 pub mod host_cmd;
-pub mod host_rendered_kind;
+// (moved to surface_registry/host_rendered)
 pub mod ipc_namespace;
 pub mod key_dispatch;
 pub mod listener;

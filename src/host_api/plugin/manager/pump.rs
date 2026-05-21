@@ -124,7 +124,7 @@ impl PluginManager {
                                     );
                                 }
                                 crate::plugin::manifest::SurfaceKindRendering::Host => {
-                                    crate::plugin::host_rendered_kind::register_host_rendered_kind(
+                                    crate::surface_registry::host_rendered::register_host_rendered_kind(
                                         &registry, plugin_id, &decl.kind,
                                     );
                                 }

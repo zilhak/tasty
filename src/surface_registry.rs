@@ -182,3 +182,4 @@ mod tests {
         assert!(!reg.contains("clipboard_viewer"));
     }
 }
+pub mod host_rendered;
