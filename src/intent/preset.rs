@@ -17,8 +17,29 @@
 //!   + `pending_preset_window_selection` 으로 main loop 에 신호.
 //! - **List/Get**: read-only — Intent 큐 안 거치고 IPC handler 가 직접 처리.
 
-use super::{ClonedPreset, DispatchedIntent, Intent};
+use super::{DispatchedIntent, Intent};
 use crate::model::Surface;
+
+/// preset Intent 가 운반하는 캡처된 preset payload.
+/// 호출자 (우클릭 / IPC) 가 capture 를 수행한 뒤 핸들러에 그대로 넘긴다 — TODO 01
+/// 결정 P3 (CapturePreset 별도 Intent 미설치) 반영.
+#[derive(Debug, Clone)]
+pub enum ClonedPreset {
+    Workspace(tasty_presets::WorkspacePreset),
+    Tab(tasty_presets::TabPreset),
+    Pane(tasty_presets::PanePreset),
+}
+
+impl ClonedPreset {
+    pub fn kind(&self) -> tasty_presets::PresetKind {
+        match self {
+            ClonedPreset::Workspace(_) => tasty_presets::PresetKind::Workspace,
+            ClonedPreset::Tab(_) => tasty_presets::PresetKind::Tab,
+            ClonedPreset::Pane(_) => tasty_presets::PresetKind::Pane,
+        }
+    }
+}
+
 use crate::state::AppState;
 use crate::state::preset_apply::{ApplyError, ApplyOptions};
 use tasty_presets::{

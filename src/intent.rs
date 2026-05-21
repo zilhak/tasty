@@ -18,25 +18,7 @@ pub mod workspace;
 use crate::model::SplitDirection;
 use crate::ui::popup::{PopupId, PopupScope};
 
-/// preset Intent 가 운반하는 캡처된 preset payload.
-/// 호출자 (우클릭 / IPC) 가 capture 를 수행한 뒤 핸들러에 그대로 넘긴다 — TODO 01
-/// 결정 P3 (CapturePreset 별도 Intent 미설치) 반영.
-#[derive(Debug, Clone)]
-pub enum ClonedPreset {
-    Workspace(tasty_presets::WorkspacePreset),
-    Tab(tasty_presets::TabPreset),
-    Pane(tasty_presets::PanePreset),
-}
-
-impl ClonedPreset {
-    pub fn kind(&self) -> tasty_presets::PresetKind {
-        match self {
-            ClonedPreset::Workspace(_) => tasty_presets::PresetKind::Workspace,
-            ClonedPreset::Tab(_) => tasty_presets::PresetKind::Tab,
-            ClonedPreset::Pane(_) => tasty_presets::PresetKind::Pane,
-        }
-    }
-}
+pub use preset::ClonedPreset;
 
 /// 발화된 Intent. 메인 루프 drain 까지 `AppState::pending_intents` 에 머문다.
 #[derive(Debug, Clone)]
