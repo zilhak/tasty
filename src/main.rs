@@ -18,7 +18,6 @@ mod native_menu;
 mod platform;
 mod plugins_ui;
 mod settings_ui;
-mod shortcuts;
 mod state;
 mod store;
 mod surface_registry;
@@ -53,6 +52,7 @@ pub(crate) use host_api::plugin;
 pub(crate) use host_api::webview;
 pub(crate) use input::click_cursor;
 pub(crate) use input::double_tap;
+pub(crate) use input::shortcuts;
 pub(crate) use platform::app_icon;
 pub(crate) use platform::crash_report;
 #[cfg(debug_assertions)]
