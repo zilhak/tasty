@@ -1,0 +1,41 @@
+manifest_version = 1
+id = "com.tasty.html"
+name = "HTML Viewer"
+version = "0.1.0"
+description = "HTML viewer surface. Uses tasty's native WebView overlay toolkit."
+api_version = "1"
+permissions = [
+    "surface.read",
+    "surface.write",
+]
+lang_dir = "lang"
+
+[entry]
+type = "process"
+command = "tasty-plugin-html"
+
+[[surface_kinds]]
+kind = "html"
+display_name_i18n_key = "surface.kind.html"
+icon = "🌐"
+rendering = "webview"
+
+[[contributes.ipc_namespace]]
+prefix = "html"
+description_i18n_key = "html.namespace.desc"
+
+[[contributes.cli]]
+name = "html"
+description = "HTML viewer commands"
+description_i18n_key = "html.cli.desc"
+subcommands = [
+    { name = "open", ipc_method = "html.open", args = "open_args", description = "Open a URL as HTML surface in the focused tab" },
+]
+
+[contributes.cli.arg_groups.open_args]
+positional = [
+    { name = "url", type = "string", required = true, help = "URL (http://, https://, file://) or local path" },
+]
+flags = [
+    { name = "surface", type = "u32", flag = "--surface", required = false, help = "Target surface ID (default: convert focused)" },
+]

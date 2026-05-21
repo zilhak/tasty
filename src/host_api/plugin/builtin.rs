@@ -64,6 +64,13 @@ const BUILTINS: &[BuiltinSpec] = &[
         #[cfg(debug_assertions)]
         bin_name: "tasty-plugin-clipboard-history.exe",
     },
+    BuiltinSpec {
+        id: "com.tasty.html",
+        #[cfg(debug_assertions)]
+        crate_dir: "tasty-plugin-html",
+        #[cfg(debug_assertions)]
+        bin_name: "tasty-plugin-html.exe",
+    },
 ];
 
 #[cfg(not(windows))]
@@ -102,6 +109,13 @@ const BUILTINS: &[BuiltinSpec] = &[
         crate_dir: "tasty-plugin-clipboard-history",
         #[cfg(debug_assertions)]
         bin_name: "tasty-plugin-clipboard-history",
+    },
+    BuiltinSpec {
+        id: "com.tasty.html",
+        #[cfg(debug_assertions)]
+        crate_dir: "tasty-plugin-html",
+        #[cfg(debug_assertions)]
+        bin_name: "tasty-plugin-html",
     },
 ];
 

@@ -1,0 +1,6 @@
+[surface.kind]
+html = "HTML"
+
+[html]
+"namespace.desc" = "HTML 뷰어 surface namespace"
+"cli.desc" = "HTML 뷰어 명령어"
