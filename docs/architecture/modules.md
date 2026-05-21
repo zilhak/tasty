@@ -139,7 +139,6 @@ pipeline.rs는 wgpu RenderPipelineDescriptor의 장황한 선언 코드가 대�
 | `toast.rs` | toast 큐 + 렌더 |
 | `tools_menu.rs` | 사이드바 도구 메뉴. plugin `[[contributes.tool]]` + 빌트인(`BUILTIN_TOOLS`) prepend |
 | `update_popup.rs` | 새 버전 알림 popup (`tasty-update` GitHub Releases 폴러와 연동) |
-| `git_viewer/` | Git 뷰어 popup (`git2` 기반 read-only). `mod.rs` (popup 본체 + 상태), `data.rs` (status/log/diff 수집), `status_panel.rs`, `log_panel.rs` (평면 리스트, 그래프 없음), `diff_panel.rs` |
 
 ---
 
