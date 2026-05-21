@@ -42,7 +42,7 @@ pub struct GpuState {
     pub(super) config: wgpu::SurfaceConfiguration,
     pub(super) size: PhysicalSize<u32>,
     pub(super) renderer: CellRenderer,
-    pub(super) egui_ctx: egui::Context,
+    pub(crate) egui_ctx: egui::Context,
     pub(super) egui_state: egui_winit::State,
     pub(super) egui_renderer: egui_wgpu::Renderer,
     pub(super) scale_factor: f32,
