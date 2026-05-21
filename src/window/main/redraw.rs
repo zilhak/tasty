@@ -315,7 +315,7 @@ impl MainWindow {
                 if let Some(pane) = ws.pane_layout().find_pane(*pane_id) {
                     for (tab_idx, tab) in pane.tabs.iter().enumerate() {
                         let surface = tab.surface();
-                        if surface.html_url().is_some() {
+                        if surface.webview_url().is_some() {
                             let Some(sid) = surface.surface_id() else {
                                 continue;
                             };
@@ -348,7 +348,7 @@ impl MainWindow {
         for &sid in &all_html_ids {
             if !self.webviews.contains_key(&sid) {
                 // Find the URL for this surface
-                let url = self.find_html_url(sid);
+                let url = self.find_webview_url(sid);
                 match crate::webview::PlatformWebView::new(
                     self.base.winit.as_ref(),
                     active_html
@@ -408,14 +408,14 @@ impl MainWindow {
     }
 
     /// Find the URL for an Html panel by surface ID.
-    fn find_html_url(&self, surface_id: u32) -> Option<String> {
+    fn find_webview_url(&self, surface_id: u32) -> Option<String> {
         for ws in &self.state.engine.workspaces {
             for &pid in &ws.pane_layout().all_pane_ids() {
                 if let Some(pane) = ws.pane_layout().find_pane(pid) {
                     for tab in &pane.tabs {
                         let surface = tab.surface();
                         if surface.surface_id() == Some(surface_id) {
-                            if let Some(url) = surface.html_url() {
+                            if let Some(url) = surface.webview_url() {
                                 return Some(url.to_string());
                             }
                         }

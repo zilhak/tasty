@@ -57,7 +57,7 @@ impl Surface for HtmlPanel {
             self.url.clone()
         }
     }
-    fn html_url(&self) -> Option<&str> {
+    fn webview_url(&self) -> Option<&str> {
         Some(&self.url)
     }
     fn source_cwd(&self) -> Option<PathBuf> {

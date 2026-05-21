@@ -115,10 +115,10 @@ pub trait Surface: Any {
         self.type_name().to_string()
     }
 
-    /// HtmlPanel URL accessor. Returns `Some(&url)` for HTML surfaces, `None` for others.
-    /// 호스트의 native WebView 동기화(`sync_webviews`/`find_html_url`)가 이 메서드로
-    /// 식별·URL을 함께 얻어 `as_html()` 다운캐스트 의존을 줄인다.
-    fn html_url(&self) -> Option<&str> {
+    /// webview URL accessor. webview overlay 를 사용하는 surface kind 가 자신의
+    /// URL 을 반환. host 의 `sync_webviews` 가 이 메서드로 surface 별 URL 을
+    /// 식별. 일반 surface 는 default `None` 반환.
+    fn webview_url(&self) -> Option<&str> {
         None
     }
 
