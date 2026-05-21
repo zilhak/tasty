@@ -366,3 +366,56 @@ mod tests {
         ));
     }
 }
+
+/// Phase 6.2c — envelope 의 `session_token` 필드를 보고 caller 를 결정한다.
+///
+/// - `session_token` 가 None → `CallerContext::Local`
+/// - 형식이 잘못된 토큰(64-char hex 아님) → `Err(deny)`
+/// - 유효 형식이지만 store 에 없음/만료/revoked → `Err(deny)` (Local fallback 금지)
+/// - 유효 → `CallerContext::Agent { ... }`
+///
+/// memory store 가 초기화되지 않은 경우 (`with_store` 가 `None`): 토큰이 있어도
+/// 검증 불가이므로 `Err(deny)` 로 막는다 — 부팅 초기의 가장된 호출을 막는다.
+pub(crate) fn resolve_caller_from_envelope(
+    request: &crate::ipc::protocol::JsonRpcRequest,
+) -> Result<CallerContext, crate::ipc::protocol::JsonRpcResponse> {
+    use std::collections::HashSet;
+    use std::sync::Arc;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let token_str = match request.session_token.as_deref() {
+        None => return Ok(CallerContext::Local),
+        Some(s) => s,
+    };
+    let id = request.id.clone().unwrap_or(serde_json::Value::Null);
+    let deny = |msg: &str| {
+        crate::ipc::protocol::JsonRpcResponse::error(
+            id.clone(),
+            -32001,
+            &format!("permission_denied: {msg}"),
+        )
+    };
+    let token = match SessionToken::from_str(token_str) {
+        Some(t) => t,
+        None => return Err(deny("invalid session_token format (expect 64 hex chars)")),
+    };
+    let now_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    let resolved = tasty_memory::with_store(|mem| {
+        let mut store = crate::ipc::session::SessionStore::new(mem, tasty_memory::HOST_OWNER);
+        store.resolve(&token, now_ms)
+    });
+    let session = match resolved {
+        None => return Err(deny("memory store not initialized")),
+        Some(Err(e)) => return Err(deny(&format!("session lookup failed: {e}"))),
+        Some(Ok(None)) => return Err(deny("session_token unknown/expired/revoked")),
+        Some(Ok(Some(s))) => s,
+    };
+    let perms: HashSet<crate::plugin::manifest::Permission> = session.permission_set();
+    Ok(CallerContext::Agent {
+        agent_id: session.agent_id,
+        permissions: Arc::new(perms),
+    })
+}

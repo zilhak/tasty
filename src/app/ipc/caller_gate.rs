@@ -6,8 +6,8 @@
 
 use crate::app::App;
 use crate::ipc as host_ipc;
+use crate::ipc::caller::resolve_caller_from_envelope;
 use crate::ipc::server::{IpcCommand, send_response};
-use crate::resolve_caller_from_envelope;
 
 impl App {
     /// 반환: Some(caller) = 통과, None = 응답이 이미 전송된 거부.
