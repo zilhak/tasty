@@ -182,11 +182,19 @@ pub fn invoke_tool(state: &mut AppState, item: &ToolItem) {
         ToolAction::OpenPopup { popup_id } => {
             // `<plugin_id>/<popup_id>` 형식. split하여 plugin_manager로 dispatch할
             // 수 있도록 pending_popup_opens에 enqueue. App 메인 루프가 drain.
+            //
+            // 사용자 메뉴 클릭은 활성 surface 컨텍스트에 매여 있으므로 context payload에
+            // 활성 surface의 상속 cwd를 실어 plugin이 popup.open 단계에서 사용할 수 있게
+            // 한다. cwd 미상이면 `null`.
             if let Some((plugin_id, local_id)) = popup_id.split_once('/') {
+                let cwd = state
+                    .resolve_inherit_cwd()
+                    .map(|p| p.to_string_lossy().into_owned());
+                let context = serde_json::json!({ "cwd": cwd });
                 state.pending_popup_opens.push((
                     plugin_id.to_string(),
                     local_id.to_string(),
-                    serde_json::Value::Null,
+                    context,
                 ));
             } else {
                 tracing::warn!(
