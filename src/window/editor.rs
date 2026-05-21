@@ -11,6 +11,6 @@
 
 use crate::window::{Modality, Window};
 
-pub trait EditorWindow: Window {}
+pub(crate) trait EditorWindow: Window {}
 
-pub const EDITOR_MODALITY: Modality = Modality::Modeless;
+pub(crate) const EDITOR_MODALITY: Modality = Modality::Modeless;

@@ -7,7 +7,7 @@ use crate::window::{Modality, Window, WindowAction};
 /// - 활성 시 다른 윈도우의 입력을 차단
 /// - 생성 직후엔 invisible, 첫 프레임 렌더 이후 show (깜빡임 방지)
 /// - Esc 입력 시 기본적으로 닫힘
-pub trait ModalWindow: Window {
+pub(crate) trait ModalWindow: Window {
     /// 첫 프레임이 렌더되었는지.
     fn shown(&self) -> bool;
     fn set_shown(&mut self, v: bool);
@@ -28,4 +28,4 @@ pub trait ModalWindow: Window {
 
 /// 모달 구현체가 `Window::modality`에 반환해야 하는 값.
 /// (blanket impl로 자동화하면 BaseWindow와 겹치므로 각 구현체에서 한 줄 반환.)
-pub const MODAL_MODALITY: Modality = Modality::Modal;
+pub(crate) const MODAL_MODALITY: Modality = Modality::Modal;
