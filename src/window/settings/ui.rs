@@ -252,7 +252,7 @@ pub fn draw_settings_panel(
                     }
                     if fh_touched {
                         if let Some(path) = user_config_path {
-                            if let Err(e) = crate::file::handlers_save::save_combined_user_config(
+                            if let Err(e) = crate::file::handler::save::save_combined_user_config(
                                 file_format,
                                 file_handler,
                                 path,

@@ -4,6 +4,4 @@ pub mod dispatch;
 pub mod drag;
 pub mod format;
 pub mod handler;
-pub mod handler_recent;
-pub mod handlers_save;
 pub mod identify_worker;

@@ -153,7 +153,7 @@ pub struct EngineState {
     pub file_handler: Arc<crate::file::handler::FileHandlerRegistry>,
     /// 사용자가 picker 에서 직접 고른 handler 의 LRU 기록 (보조 신호).
     /// 부팅 시 디스크에서 로드, 매 선택마다 atomic save.
-    pub file_handler_recent: crate::file::handler_recent::RecentPicks,
+    pub file_handler_recent: crate::file::handler::recent::RecentPicks,
     /// 비동기 파일 식별 worker. `App` 이 EventLoopProxy 를 가진 시점에
     /// `create_app_state` 에서 주입한다 — waker_factory 와 동일 패턴.
     /// Phase C 의 mouse.rs 콜사이트가 이걸 호출해 deep identify 를 띄운다.
@@ -236,7 +236,7 @@ impl EngineState {
                 }
                 Arc::new(reg)
             },
-            file_handler_recent: crate::file::handler_recent::RecentPicks::load(
+            file_handler_recent: crate::file::handler::recent::RecentPicks::load(
                 &file_handler_recent_path(),
             ),
             identify_worker: None,

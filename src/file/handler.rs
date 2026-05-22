@@ -5,7 +5,9 @@
 #![allow(dead_code, unused_imports)]
 
 pub mod config;
+pub mod recent;
 pub mod registry;
+pub mod save;
 pub mod types;
 
 pub use config::{HandlerDeclError, UserHandlerActionDecl};

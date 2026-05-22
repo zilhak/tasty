@@ -32,8 +32,6 @@ pub(crate) use engine::output_observer;
 pub(crate) use engine::state as engine_state;
 pub(crate) use engine::surface_registry::meta as surface_meta;
 pub(crate) use file::dispatch as file_dispatch;
-pub(crate) use file::handler_recent as file_handler_recent;
-pub(crate) use file::handlers_save as file_handlers_save;
 pub(crate) use file::identify_worker;
 pub(crate) use gfx::gpu;
 pub(crate) use gfx::renderer;
