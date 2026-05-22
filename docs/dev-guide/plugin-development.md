@@ -904,6 +904,28 @@ label_i18n_key = "tools_menu.clipboard_history"
 
 호스트가 합쳐 표시하는 surface kind 이름 (`surface.kind.<own_kind>`) 은 예외다 — host UI 가 같은 key 공간을 사용하므로 이 채널만 plugin 이 `surface.kind.<kind>` 키를 자기 lang 파일에서 정의한다. 그 외의 host namespace (`tools_menu.*`, `settings.*`, `popup.*` 등) 는 침범하지 않는다.
 
+### Plugin process 내부에서 i18n 사용
+
+매니페스트의 `*_i18n_key` 필드는 호스트가 `t()` 로 lookup 해 그리지만, **plugin process 가 직접 그리는 UI 텍스트** (예: `UiNode::Label { text }`, `display_name`, button label) 는 plugin 자신이 번역해야 한다. plugin process 는 host 의 i18n 전역 카탈로그에 접근할 수 없으므로 SDK 가 같은 lang 파일을 다시 읽어주는 [`tasty_plugin_sdk::i18n::Translator`] 를 제공한다.
+
+```rust
+use tasty_plugin_sdk::{PluginEnv, Translator};
+
+fn main() -> anyhow::Result<()> {
+    // ... tracing_subscriber init ...
+    let env = PluginEnv::load()?;
+    let tr = Translator::from_plugin_env(&env);
+    tasty_plugin_sdk::run(MyPlugin::new(tr))
+}
+```
+
+- `Translator::from_plugin_env` 는 `env.plugin_dir/lang/en.toml` 을 base 로 읽고, `env.locale != "en"` 이면 `<locale>.toml` 을 overlay 한다 (host 카탈로그와 동일 규칙). 누락 시 키 자체 반환.
+- 호스트가 spawn 시 `TASTY_LOCALE` 환경변수를 주입한다. 따로 사용자에게 묻거나 settings 파일을 직접 읽을 필요 없음.
+- 빌더/렌더 함수에 `&Translator` 를 명시 인자로 전달한다 — 전역 OnceLock 패턴은 plugin process 의 hot-reload / 테스트 격리에 방해된다.
+- `tr.t(key)` 는 `&str` 을, `tr.t_fmt(key, arg)` 는 `{}` 첫 occurrence 치환을, `tr.t_replace(key, token, value)` 는 임의 토큰 치환을 한다.
+
+자유 텍스트(고유명사, 브랜드명, 시스템 식별자, 패턴 매칭용 영문 문자열 등)는 번역 면제 — 무리하게 lang 키로 빼지 않는다.
+
 ### Cargo 의존성
 
 ```toml
