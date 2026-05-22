@@ -4,3 +4,9 @@ explorer = "Explorer"
 [explorer.cmd]
 refresh = "Refresh tree"
 go_up = "Go up to parent directory"
+
+[explorer.ui]
+preview_placeholder = "Select a file to preview"
+bookmarks_heading = "★ Bookmarks"
+bookmarks_empty = "(empty)"
+default_display_name = "Files"

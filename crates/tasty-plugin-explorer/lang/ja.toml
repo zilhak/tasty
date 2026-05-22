@@ -4,3 +4,9 @@ explorer = "エクスプローラー"
 [explorer.cmd]
 refresh = "ツリーを更新"
 go_up = "親ディレクトリへ移動"
+
+[explorer.ui]
+preview_placeholder = "プレビューするファイルを選択"
+bookmarks_heading = "★ ブックマーク"
+bookmarks_empty = "(空)"
+default_display_name = "ファイル"

@@ -10,8 +10,8 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tasty_plugin_sdk::{
-    BusHandle, ButtonStyle, CommandInvokeCtx, HostHandle, Plugin, SurfaceCreateCtx,
-    SurfaceEventCtx, SurfaceRestoreCtx, SurfaceResult, UiEvent, UiNode,
+    BusHandle, ButtonStyle, CommandInvokeCtx, HostHandle, Plugin, PluginEnv, SurfaceCreateCtx,
+    SurfaceEventCtx, SurfaceRestoreCtx, SurfaceResult, Translator, UiEvent, UiNode,
     ui::{addressbar, hbox, label, label_color, scroll_v, splitter_id, tree_view, vbox},
 };
 use tasty_plugin_sdk::{SelectionMode, SplitDir, TreeNode};
@@ -126,7 +126,7 @@ impl ExplorerSurface {
         }
     }
 
-    fn build_tree(&self, bookmarks: &BookmarkStore) -> UiNode {
+    fn build_tree(&self, bookmarks: &BookmarkStore, tr: &Translator) -> UiNode {
         let root_node = build_node(&self.root, &self.expanded, &self.selected, 0);
         let tree_pane = scroll_v(tree_view(
             TREE_NODE_ID,
@@ -134,7 +134,7 @@ impl ExplorerSurface {
             SelectionMode::Single,
         ));
 
-        let bookmark_pane = scroll_v(build_bookmarks_section(bookmarks));
+        let bookmark_pane = scroll_v(build_bookmarks_section(bookmarks, tr));
 
         let left_column = splitter_id(
             LEFT_SPLIT_ID,
@@ -146,7 +146,7 @@ impl ExplorerSurface {
 
         let preview = match &self.preview {
             Some(text) => label(text.clone()),
-            None => label_color("Select a file to preview", "subtext0"),
+            None => label_color(tr.t("explorer.ui.preview_placeholder"), "subtext0"),
         };
         let preview_pane = scroll_v(preview);
 
@@ -179,15 +179,18 @@ impl ExplorerSurface {
     }
 }
 
-fn build_bookmarks_section(bookmarks: &BookmarkStore) -> UiNode {
+fn build_bookmarks_section(bookmarks: &BookmarkStore, tr: &Translator) -> UiNode {
     if bookmarks.entries.is_empty() {
         return vbox([
-            label_color("\u{2605} Bookmarks", "subtext1"),
-            label_color("(empty)", "subtext0"),
+            label_color(tr.t("explorer.ui.bookmarks_heading"), "subtext1"),
+            label_color(tr.t("explorer.ui.bookmarks_empty"), "subtext0"),
         ]);
     }
     let mut children: Vec<UiNode> = Vec::with_capacity(1 + bookmarks.entries.len());
-    children.push(label_color("\u{2605} Bookmarks", "subtext1"));
+    children.push(label_color(
+        tr.t("explorer.ui.bookmarks_heading"),
+        "subtext1",
+    ));
     for (i, bm) in bookmarks.entries.iter().enumerate() {
         let nav_id = format!("{BOOKMARK_NAV_PREFIX}{i}");
         let rm_id = format!("{BOOKMARK_RM_PREFIX}{i}");
@@ -284,14 +287,16 @@ struct ExplorerPlugin {
     surfaces: BTreeMap<u32, ExplorerSurface>,
     bookmarks: BookmarkStore,
     host: Option<HostHandle>,
+    tr: Translator,
 }
 
 impl ExplorerPlugin {
-    fn new() -> Self {
+    fn new(tr: Translator) -> Self {
         Self {
             surfaces: BTreeMap::new(),
             bookmarks: BookmarkStore::load(),
             host: None,
+            tr,
         }
     }
 
@@ -309,9 +314,9 @@ impl ExplorerPlugin {
             .root
             .file_name()
             .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_else(|| "Files".to_string());
+            .unwrap_or_else(|| self.tr.t("explorer.ui.default_display_name").to_string());
         SurfaceResult {
-            tree: Some(surface.build_tree(&self.bookmarks)),
+            tree: Some(surface.build_tree(&self.bookmarks, &self.tr)),
             display_name: Some(display_name),
         }
     }
@@ -447,7 +452,7 @@ impl Plugin for ExplorerPlugin {
             _ => {}
         }
         SurfaceResult {
-            tree: Some(surface.build_tree(&self.bookmarks)),
+            tree: Some(surface.build_tree(&self.bookmarks, &self.tr)),
             display_name: None,
         }
     }
@@ -500,7 +505,7 @@ impl Plugin for ExplorerPlugin {
         };
         if result {
             SurfaceResult {
-                tree: Some(surface.build_tree(&self.bookmarks)),
+                tree: Some(surface.build_tree(&self.bookmarks, &self.tr)),
                 display_name: None,
             }
         } else {
@@ -518,5 +523,7 @@ fn main() -> anyhow::Result<()> {
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
         )
         .init();
-    tasty_plugin_sdk::run(ExplorerPlugin::new())
+    let env = PluginEnv::load()?;
+    let tr = Translator::from_plugin_env(&env);
+    tasty_plugin_sdk::run(ExplorerPlugin::new(tr))
 }
