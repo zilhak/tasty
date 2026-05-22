@@ -393,5 +393,6 @@ fn file_handler_recent_path() -> std::path::PathBuf {
 
 mod busy;
 mod finders;
+mod message;
 mod pty;
 mod terminal_finders;

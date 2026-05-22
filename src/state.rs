@@ -3,7 +3,6 @@ mod detect;
 mod focus;
 mod layout;
 mod mark;
-mod message;
 mod mouse;
 mod pane;
 mod restore;

@@ -22,7 +22,7 @@ pub fn handle_message_send(
         Some(f) => f as u32,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'from_surface_id'"),
     };
-    let msg_id = state.send_message(from, to, content);
+    let msg_id = state.engine.send_message(from, to, content);
     JsonRpcResponse::success(
         id,
         json!({ "id": msg_id, "from_surface_id": from, "to_surface_id": to }),
@@ -46,7 +46,7 @@ pub fn handle_message_read(
         .get("peek")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
-    let messages = state.read_messages(surface_id, from, peek);
+    let messages = state.engine.read_messages(surface_id, from, peek);
     let result: Vec<_> = messages
         .iter()
         .map(|m| json!({ "id": m.id, "from_surface_id": m.from_surface_id, "content": m.content }))
@@ -63,7 +63,7 @@ pub fn handle_message_count(
         Ok(sid) => sid,
         Err(e) => return e,
     };
-    let count = state.message_count(surface_id);
+    let count = state.engine.message_count(surface_id);
     JsonRpcResponse::success(id, json!({ "count": count, "surface_id": surface_id }))
 }
 
@@ -76,6 +76,6 @@ pub fn handle_message_clear(
         Ok(sid) => sid,
         Err(e) => return e,
     };
-    state.clear_messages(surface_id);
+    state.engine.clear_messages(surface_id);
     JsonRpcResponse::success(id, json!({ "cleared": true, "surface_id": surface_id }))
 }
