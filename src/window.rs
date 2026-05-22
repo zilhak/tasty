@@ -21,7 +21,6 @@ pub mod settings;
 pub mod terminal_host;
 
 pub(crate) use base::WindowBase;
-pub(crate) use editor::EditorWindow;
 pub(crate) use main::MainWindow;
 pub(crate) use modal::ModalWindow;
 pub(crate) use plugins::PluginsWindow;
@@ -46,6 +45,12 @@ use winit::event_loop::ActiveEventLoop;
 use crate::AppEvent;
 
 /// 윈도우의 모달리티.
+///
+/// 도메인 용어(`docs/design/ubiquitous-language.md`): Window는 modality
+/// (Modeless/Modal)와 계열(ModalWindow/TerminalHostWindow)을 속성으로 갖는다.
+/// 현재 trait dispatch 경로에서 호출 0이지만 5개 구현체가 `fn modality()`로
+/// 반환하는 도메인 표현이라 보존한다. modal 활성 판정 dispatch가 도입되면 활성화.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Modality {
     /// 일반 윈도우. 다른 윈도우와 독립적으로 포커스됨.
@@ -89,15 +94,21 @@ pub(crate) mod sealed {
 pub(crate) trait Window: sealed::Sealed + std::any::Any {
     fn base(&self) -> &WindowBase;
     fn base_mut(&mut self) -> &mut WindowBase;
+    /// 도메인 표현 보존. trait dispatch 호출 0이지만 5개 구현체가 채워둠.
+    /// modal 활성 판정 dispatch가 도입되면 활성화.
+    #[allow(dead_code)]
     fn modality(&self) -> Modality;
 
     fn handle_event(&mut self, event: WindowEvent, ctx: &mut WindowCtx<'_>) -> WindowAction;
     fn render(&mut self);
 
     /// 모달 계열 다운캐스트. 모달이 아니면 `None`.
+    /// 도메인 placeholder — `ModalWindow` 다운캐스트 dispatch가 도입되면 활성화.
+    #[allow(dead_code)]
     fn as_modal(&self) -> Option<&dyn ModalWindow> {
         None
     }
+    #[allow(dead_code)]
     fn as_modal_mut(&mut self) -> Option<&mut dyn ModalWindow> {
         None
     }

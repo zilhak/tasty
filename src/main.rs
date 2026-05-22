@@ -70,8 +70,6 @@ pub(crate) use ui::theme_bridge;
 pub(crate) use window::plugins::ui as plugins_ui;
 pub(crate) use window::settings::ui as settings_ui;
 
-use model::DividerInfo;
-
 fn main() -> Result<()> {
     boot::run()
 }

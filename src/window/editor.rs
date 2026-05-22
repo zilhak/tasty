@@ -11,6 +11,11 @@
 
 use crate::window::{Modality, Window};
 
+/// `impl EditorWindow for PresetWindow {}` 가 존재하지만 trait object 사용 0.
+/// 도메인 계열 표현(`docs/design/ubiquitous-language.md`)과 미래 에디터(키바인딩/테마)
+/// placeholder로 보존.
+#[allow(dead_code)]
 pub(crate) trait EditorWindow: Window {}
 
+#[allow(dead_code)]
 pub(crate) const EDITOR_MODALITY: Modality = Modality::Modeless;
