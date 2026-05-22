@@ -12,9 +12,9 @@ use std::sync::Mutex;
 
 use serde_json::{Value, json};
 use tasty_plugin_sdk::{
-    IpcMethodCtx, IpcMethodError, Plugin, PopupClosedCtx, PopupEventCtx, PopupEventResult,
-    PopupOpenCtx, PopupOpenResult, SurfaceCreateCtx, SurfaceEventCtx, SurfaceResult, UiEvent,
-    UiNode, bus::BusHandle, host::HostHandle,
+    IpcMethodCtx, IpcMethodError, Plugin, PluginEnv, PopupClosedCtx, PopupEventCtx,
+    PopupEventResult, PopupOpenCtx, PopupOpenResult, SurfaceCreateCtx, SurfaceEventCtx,
+    SurfaceResult, Translator, UiEvent, UiNode, bus::BusHandle, host::HostHandle,
 };
 
 const PLUGIN_ID: &str = "com.tasty.clipboard-history";
@@ -33,13 +33,16 @@ struct ClipboardHistoryPlugin {
     host: Mutex<Option<HostHandle>>,
     /// 현재 떠 있는 viewer instance_id. Some이면 추가 open 요청에 placeholder만 표시.
     current_instance: Mutex<Option<u64>>,
+    /// plugin 자체 i18n 카탈로그.
+    tr: Translator,
 }
 
 impl ClipboardHistoryPlugin {
-    fn new() -> Self {
+    fn new(tr: Translator) -> Self {
         Self {
             host: Mutex::new(None),
             current_instance: Mutex::new(None),
+            tr,
         }
     }
 
@@ -88,7 +91,7 @@ impl Plugin for ClipboardHistoryPlugin {
             let tree = UiNode::Vbox {
                 spacing: 8,
                 children: vec![UiNode::Label {
-                    text: "Clipboard viewer is already open".into(),
+                    text: self.tr.t("clipboard_history.popup.already_open").into(),
                     style: Default::default(),
                     color: Some("subtext0".into()),
                 }],
@@ -99,8 +102,8 @@ impl Plugin for ClipboardHistoryPlugin {
         drop(guard);
 
         let tree = match self.host_handle() {
-            Some(h) => fetch_and_render(&h),
-            None => build_loading_tree(),
+            Some(h) => fetch_and_render(&h, &self.tr),
+            None => build_loading_tree(&self.tr),
         };
         PopupOpenResult { tree: Some(tree) }
     }
@@ -138,7 +141,7 @@ impl Plugin for ClipboardHistoryPlugin {
                 tracing::warn!("tool.clipboard.remove failed: {e}");
             }
             return PopupEventResult {
-                tree: Some(fetch_and_render(&host)),
+                tree: Some(fetch_and_render(&host, &self.tr)),
                 close: false,
             };
         }
@@ -148,7 +151,7 @@ impl Plugin for ClipboardHistoryPlugin {
                 tracing::warn!("tool.clipboard.clear failed: {e}");
             }
             return PopupEventResult {
-                tree: Some(fetch_and_render(&host)),
+                tree: Some(fetch_and_render(&host, &self.tr)),
                 close: false,
             };
         }
@@ -173,26 +176,26 @@ impl Plugin for ClipboardHistoryPlugin {
     }
 }
 
-fn build_loading_tree() -> UiNode {
+fn build_loading_tree(tr: &Translator) -> UiNode {
     UiNode::Vbox {
         spacing: 8,
         children: vec![UiNode::Label {
-            text: "Loading clipboard history…".into(),
+            text: tr.t("clipboard_history.popup.loading").into(),
             style: Default::default(),
             color: Some("subtext0".into()),
         }],
     }
 }
 
-fn fetch_and_render(host: &HostHandle) -> UiNode {
+fn fetch_and_render(host: &HostHandle, tr: &Translator) -> UiNode {
     match host.call("tool.clipboard.list", json!({ "limit": 50 })) {
-        Ok(v) => render_entries(&v),
+        Ok(v) => render_entries(&v, tr),
         Err(e) => {
             tracing::warn!("tool.clipboard.list failed: {e}");
             UiNode::Vbox {
                 spacing: 8,
                 children: vec![UiNode::Label {
-                    text: "Failed to load clipboard history".into(),
+                    text: tr.t("clipboard_history.popup.load_failed").into(),
                     style: Default::default(),
                     color: Some("red".into()),
                 }],
@@ -201,16 +204,16 @@ fn fetch_and_render(host: &HostHandle) -> UiNode {
     }
 }
 
-fn render_entries(list: &Value) -> UiNode {
+fn render_entries(list: &Value, tr: &Translator) -> UiNode {
     let entries = list.get("entries").and_then(|v| v.as_array());
     let Some(entries) = entries else {
-        return build_loading_tree();
+        return build_loading_tree(tr);
     };
     if entries.is_empty() {
         return UiNode::Vbox {
             spacing: 8,
             children: vec![UiNode::Label {
-                text: "No clipboard entries yet".into(),
+                text: tr.t("clipboard_history.popup.empty").into(),
                 style: Default::default(),
                 color: Some("subtext0".into()),
             }],
@@ -221,14 +224,14 @@ fn render_entries(list: &Value) -> UiNode {
         spacing: 8,
         children: vec![
             UiNode::Label {
-                text: "Clipboard History".into(),
+                text: tr.t("clipboard_history.popup.title").into(),
                 style: Default::default(),
                 color: None,
             },
             UiNode::Spacer { size: 0 },
             UiNode::Button {
                 id: CLEAR_ID.into(),
-                label: "Clear all".into(),
+                label: tr.t("clipboard_history.popup.clear_all").into(),
                 enabled: true,
                 style: Default::default(),
                 tooltip_i18n_key: None,
@@ -280,5 +283,7 @@ fn main() -> anyhow::Result<()> {
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
         )
         .init();
-    tasty_plugin_sdk::run(ClipboardHistoryPlugin::new())
+    let env = PluginEnv::load()?;
+    let tr = Translator::from_plugin_env(&env);
+    tasty_plugin_sdk::run(ClipboardHistoryPlugin::new(tr))
 }
