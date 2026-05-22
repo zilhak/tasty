@@ -35,13 +35,13 @@ fn find_terminal_by_id_exists() {
     let surface_ids = collect_surface_ids(&mut state);
     assert!(!surface_ids.is_empty());
     let first_id = surface_ids[0];
-    assert!(state.find_terminal_by_id(first_id).is_some());
+    assert!(state.engine.find_terminal_by_id(first_id).is_some());
 }
 
 #[test]
 fn find_terminal_by_id_nonexistent() {
     let state = test_state();
-    assert!(state.find_terminal_by_id(9999).is_none());
+    assert!(state.engine.find_terminal_by_id(9999).is_none());
 }
 
 #[test]
@@ -55,9 +55,9 @@ fn find_terminal_by_id_after_split() {
     let all_ids = collect_surface_ids(&mut state);
     assert_eq!(all_ids.len(), 2);
 
-    assert!(state.find_terminal_by_id(original_id).is_some());
+    assert!(state.engine.find_terminal_by_id(original_id).is_some());
     let new_id = *all_ids.iter().find(|&&id| id != original_id).unwrap();
-    assert!(state.find_terminal_by_id(new_id).is_some());
+    assert!(state.engine.find_terminal_by_id(new_id).is_some());
 }
 
 #[test]
@@ -71,9 +71,9 @@ fn find_terminal_by_id_across_tabs() {
     let all_ids = collect_all_surface_ids(&mut state);
     assert_eq!(all_ids.len(), 2);
 
-    assert!(state.find_terminal_by_id(first_id).is_some());
+    assert!(state.engine.find_terminal_by_id(first_id).is_some());
     let second_id = *all_ids.iter().find(|&&id| id != first_id).unwrap();
-    assert!(state.find_terminal_by_id(second_id).is_some());
+    assert!(state.engine.find_terminal_by_id(second_id).is_some());
 }
 
 // ---- focus_pane ----

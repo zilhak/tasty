@@ -157,7 +157,7 @@ fn refresh_if_stale(state: &mut AppState, surface_id: u32) {
 }
 
 fn shell_pid_for_surface(state: &AppState, surface_id: u32) -> Option<u32> {
-    let terminal = state.find_terminal_by_id(surface_id)?;
+    let terminal = state.engine.find_terminal_by_id(surface_id)?;
     terminal.process_id()
 }
 

@@ -19,6 +19,7 @@ pub(crate) fn handle_screen_text(
         .and_then(|v| v.as_u64())
         .map(|v| v as usize);
     let text = state
+        .engine
         .find_terminal_by_id(surface_id)
         .map(|t| match lines {
             Some(n) => t.screen_text_lines(n),
@@ -37,7 +38,7 @@ pub(crate) fn handle_cursor_position(
         Ok(sid) => sid,
         Err(e) => return e,
     };
-    if let Some(terminal) = state.find_terminal_by_id(surface_id) {
+    if let Some(terminal) = state.engine.find_terminal_by_id(surface_id) {
         let (x, y) = terminal.surface().cursor_position();
         JsonRpcResponse::success(id, json!({ "x": x, "y": y, "surface_id": surface_id }))
     } else {
@@ -58,6 +59,7 @@ pub(crate) fn handle_foreground_process(
         Err(e) => return e,
     };
     let (name, pid) = state
+        .engine
         .find_terminal_by_id(surface_id)
         .and_then(|t| t.foreground_process_info())
         .map(|fg| (Some(fg.name.clone()), Some(fg.pid)))

@@ -24,7 +24,7 @@ impl AppState {
                 cwd.as_deref(),
             )?;
         }
-        self.send_fast_init(surface_id);
+        self.engine.send_fast_init(surface_id);
         self.engine.mark_layout_dirty();
         Ok(())
     }
@@ -68,7 +68,7 @@ impl AppState {
                     cwd.as_deref(),
                 )?;
             }
-            self.send_fast_init(surface_id);
+            self.engine.send_fast_init(surface_id);
         }
         self.engine.mark_layout_dirty();
         Ok(())
@@ -166,7 +166,7 @@ impl AppState {
                     cwd.as_deref(),
                 )?;
             }
-            self.send_fast_init(surface_id);
+            self.engine.send_fast_init(surface_id);
         }
         self.engine.mark_layout_dirty();
         Ok(())
@@ -318,7 +318,7 @@ impl AppState {
         // Clear explicit_name when converting back to Terminal (auto-derived from CWD).
         let replaced = self.replace_surface_for_id(surface_id, surface, Some(None));
         if replaced {
-            self.send_fast_init(surface_id);
+            self.engine.send_fast_init(surface_id);
         }
         replaced
     }

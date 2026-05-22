@@ -309,7 +309,7 @@ impl MainWindow {
             Some(s) if !s.is_empty() => s.clone(),
             _ => return false,
         };
-        let text = if let Some(terminal) = self.state.find_terminal_by_id(sel.surface_id) {
+        let text = if let Some(terminal) = self.state.engine.find_terminal_by_id(sel.surface_id) {
             selection::extract_selected_text(terminal, &sel)
         } else {
             return false;

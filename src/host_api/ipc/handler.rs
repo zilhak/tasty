@@ -620,7 +620,7 @@ fn handle_is_typing(
         Ok(sid) => sid,
         Err(e) => return e,
     };
-    let typing = state.is_typing(surface_id);
+    let typing = state.engine.is_typing(surface_id);
     let idle_seconds = if let Some(last) = state.engine.last_key_input.get(&surface_id) {
         last.elapsed().as_secs_f64()
     } else {
@@ -653,11 +653,11 @@ fn handle_send_wait_idle(
         Some(t) => t.to_string(),
         None => return JsonRpcResponse::invalid_params(id, "Missing 'text' parameter"),
     };
-    if state.is_typing(surface_id) {
+    if state.engine.is_typing(surface_id) {
         return JsonRpcResponse::success(id, json!({ "sent": false, "reason": "typing" }));
     }
     state.engine.ensure_surface_initialized(surface_id);
-    if let Some(terminal) = state.find_terminal_by_id_mut(surface_id) {
+    if let Some(terminal) = state.engine.find_terminal_by_id_mut(surface_id) {
         terminal.send_key(&text);
         JsonRpcResponse::success(id, json!({ "sent": true }))
     } else {

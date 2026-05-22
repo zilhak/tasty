@@ -100,7 +100,7 @@ pub(crate) fn handle_surface_send(
         None => return JsonRpcResponse::invalid_params(id, "Missing 'text' parameter"),
     };
     state.engine.ensure_surface_initialized(surface_id);
-    if let Some(terminal) = state.find_terminal_by_id_mut(surface_id) {
+    if let Some(terminal) = state.engine.find_terminal_by_id_mut(surface_id) {
         terminal.send_key(text);
         JsonRpcResponse::success(id, json!({ "sent": true, "surface_id": surface_id }))
     } else {
@@ -155,7 +155,7 @@ pub(crate) fn handle_surface_send_key(
             // Parse modifier+key combos like "ctrl+c", "alt+x"
             if let Some(combo_bytes) = parse_key_combo(other) {
                 combo_bytes
-            } else if let Some(terminal) = state.find_terminal_by_id_mut(surface_id) {
+            } else if let Some(terminal) = state.engine.find_terminal_by_id_mut(surface_id) {
                 terminal.send_key(other);
                 return JsonRpcResponse::success(
                     id,
@@ -169,7 +169,7 @@ pub(crate) fn handle_surface_send_key(
             }
         }
     };
-    if let Some(terminal) = state.find_terminal_by_id_mut(surface_id) {
+    if let Some(terminal) = state.engine.find_terminal_by_id_mut(surface_id) {
         terminal.send_bytes(&bytes);
     }
     JsonRpcResponse::success(id, json!({ "sent": true, "surface_id": surface_id }))
@@ -249,7 +249,7 @@ pub(crate) fn handle_surface_send_combo(
         bytes_to_send.extend_from_slice(key.as_bytes());
     }
 
-    let terminal = state.find_terminal_by_id_mut(surface_id);
+    let terminal = state.engine.find_terminal_by_id_mut(surface_id);
 
     if let Some(terminal) = terminal {
         terminal.send_bytes(&bytes_to_send);
@@ -275,7 +275,7 @@ pub(crate) fn handle_surface_send_to(
         None => return JsonRpcResponse::invalid_params(id, "Missing 'surface_id' parameter"),
     };
     state.engine.ensure_surface_initialized(surface_id);
-    if let Some(terminal) = state.find_terminal_by_id_mut(surface_id) {
+    if let Some(terminal) = state.engine.find_terminal_by_id_mut(surface_id) {
         terminal.send_key(text);
         JsonRpcResponse::success(id, json!({ "sent": true }))
     } else {

@@ -57,7 +57,7 @@ impl MainWindow {
         // focused 기반이 아니라 실제 hover 위치의 surface로 판별해야 여러 pane 중
         // 어느 곳이든 동작한다.
         let surface_id = self.state.surface_id_at_position(x, y, terminal_rect)?;
-        let terminal = self.state.find_terminal_by_id(surface_id)?;
+        let terminal = self.state.engine.find_terminal_by_id(surface_id)?;
         let surface_rect = self.state.surface_rect_by_id(surface_id, terminal_rect)?;
 
         let (cols, rows) = terminal.surface().dimensions();
@@ -198,7 +198,7 @@ impl MainWindow {
                 else {
                     return;
                 };
-                if self.state.find_terminal_by_id(surface_id).is_none() {
+                if self.state.engine.find_terminal_by_id(surface_id).is_none() {
                     return;
                 }
                 let sf = self.base.gpu.scale_factor() as f32;
@@ -344,7 +344,7 @@ impl MainWindow {
                 .or_else(|| self.state.focused_surface_id());
 
             if let Some(surface_id) = target_id {
-                if let Some(terminal) = self.state.find_terminal_by_id_mut(surface_id) {
+                if let Some(terminal) = self.state.engine.find_terminal_by_id_mut(surface_id) {
                     let lines = match delta {
                         MouseScrollDelta::LineDelta(_, y) => y as i32,
                         MouseScrollDelta::PixelDelta(pos) => (pos.y / 20.0) as i32,

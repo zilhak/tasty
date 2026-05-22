@@ -1,8 +1,6 @@
 //! ID → 컬렉션 entry lookup 헬퍼. surface / pane / tab / terminal / workspace 가
 //! 어느 워크스페이스/패인에 속해 있는지 찾아 (&T, &mut T) 또는 인덱스 형태로 반환.
 
-use tasty_terminal::Terminal;
-
 use super::AppState;
 
 impl AppState {
@@ -100,15 +98,5 @@ impl AppState {
             }
         }
         None
-    }
-
-    /// Find a terminal by its surface ID across all workspaces (immutable).
-    pub fn find_terminal_by_id(&self, surface_id: u32) -> Option<&Terminal> {
-        self.engine.find_terminal_by_id(surface_id)
-    }
-
-    /// Find a terminal by its surface ID across all workspaces (mutable).
-    pub fn find_terminal_by_id_mut(&mut self, surface_id: u32) -> Option<&mut Terminal> {
-        self.engine.find_terminal_by_id_mut(surface_id)
     }
 }

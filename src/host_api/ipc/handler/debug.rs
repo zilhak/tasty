@@ -30,7 +30,7 @@ pub(super) fn handle_debug_cell_info(
         Some(c) => c as usize,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'col' parameter"),
     };
-    if let Some(terminal) = state.find_terminal_by_id(surface_id) {
+    if let Some(terminal) = state.engine.find_terminal_by_id(surface_id) {
         if let Some(info) = terminal.cell_info(row, col) {
             JsonRpcResponse::success(id, cell_info_to_json(&info))
         } else {
@@ -77,7 +77,7 @@ pub(super) fn handle_debug_screen_attrs(
         Some(r) => r as usize,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'row' parameter"),
     };
-    if let Some(terminal) = state.find_terminal_by_id(surface_id) {
+    if let Some(terminal) = state.engine.find_terminal_by_id(surface_id) {
         let cells: Vec<_> = terminal
             .row_cells(row)
             .into_iter()
@@ -129,7 +129,7 @@ pub(super) fn handle_debug_feed_bytes(
     } else {
         return JsonRpcResponse::invalid_params(id, "Missing 'bytes' or 'text' parameter");
     };
-    let Some(terminal) = state.find_terminal_by_id_mut(surface_id) else {
+    let Some(terminal) = state.engine.find_terminal_by_id_mut(surface_id) else {
         return JsonRpcResponse::invalid_params(id, format!("Surface {} not found", surface_id));
     };
     terminal.process_bytes(&bytes);
@@ -188,7 +188,7 @@ pub(super) fn handle_debug_glyph_color(
             );
         }
     };
-    let Some(terminal) = state.find_terminal_by_id(surface_id) else {
+    let Some(terminal) = state.engine.find_terminal_by_id(surface_id) else {
         return JsonRpcResponse::invalid_params(id, format!("Surface {} not found", surface_id));
     };
     let Some(attrs) = terminal.cell_attrs(row, col) else {
@@ -291,7 +291,7 @@ pub(super) fn handle_debug_inject_mouse(
     // SGR mouse encoding: ESC [ < Cb ; Cx ; Cy M/m (1-indexed)
     let seq = format!("\x1b[<{};{};{}{}", cb, col + 1, row + 1, suffix);
 
-    if let Some(terminal) = state.find_terminal_by_id_mut(surface_id) {
+    if let Some(terminal) = state.engine.find_terminal_by_id_mut(surface_id) {
         terminal.send_key(&seq);
         JsonRpcResponse::success(id, json!({"sent": true}))
     } else {
@@ -333,7 +333,7 @@ pub(super) fn handle_debug_inject_key(
         },
     };
 
-    if let Some(terminal) = state.find_terminal_by_id_mut(surface_id) {
+    if let Some(terminal) = state.engine.find_terminal_by_id_mut(surface_id) {
         terminal.send_key(&String::from_utf8_lossy(&bytes));
         JsonRpcResponse::success(id, json!({"sent": true}))
     } else {

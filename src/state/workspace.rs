@@ -36,7 +36,7 @@ impl AppState {
         )?;
         self.engine.workspaces.push(ws);
         self.active_workspace = self.engine.workspaces.len() - 1;
-        self.send_fast_init(surface_id);
+        self.engine.send_fast_init(surface_id);
         self.engine.mark_layout_dirty();
         Ok(())
     }
@@ -93,7 +93,7 @@ impl AppState {
         self.engine.workspaces.push(ws);
         let idx = self.engine.workspaces.len() - 1;
         if is_terminal {
-            self.send_fast_init(surface_id);
+            self.engine.send_fast_init(surface_id);
         }
         self.engine.mark_layout_dirty();
         Ok(idx)

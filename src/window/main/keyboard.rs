@@ -156,7 +156,7 @@ impl MainWindow {
         }
 
         if let Some(sid) = typing_surface_id {
-            self.state.record_typing(sid);
+            self.state.engine.record_typing(sid);
         }
     }
 

@@ -154,6 +154,7 @@ fn run_search(state: &mut AppState) {
         whole_word: state.search.whole_word,
     };
     let result = state
+        .engine
         .find_terminal_by_id(surface_id)
         .map(|terminal| terminal.search(&query, &options));
     match result {
@@ -186,11 +187,11 @@ fn focused_terminal_surface_id(state: &AppState) -> u32 {
 
 fn scroll_to_current_match(state: &mut AppState) {
     let surface_id = state.search.surface_id;
-    if let Some(terminal) = state.find_terminal_by_id(surface_id) {
+    if let Some(terminal) = state.engine.find_terminal_by_id(surface_id) {
         let scrollback_len = terminal.scrollback_len();
         let screen_rows = terminal.rows();
         if let Some(offset) = state.search.scroll_to_current(scrollback_len, screen_rows) {
-            if let Some(terminal) = state.find_terminal_by_id_mut(surface_id) {
+            if let Some(terminal) = state.engine.find_terminal_by_id_mut(surface_id) {
                 terminal.set_scroll_offset(offset);
             }
         }

@@ -32,7 +32,7 @@ impl AppState {
         ws.pane_layout_mut()
             .split_pane_in_place(target_pane_id, direction, new_pane);
         ws.focused_pane = new_pane_id;
-        self.send_fast_init(new_surface_id);
+        self.engine.send_fast_init(new_surface_id);
         self.engine.mark_layout_dirty();
         self.enqueue_host_event(super::PendingHostEvent::PaneSplit {
             original_pane: target_pane_id,
@@ -127,7 +127,7 @@ impl AppState {
         ws.pane_layout_mut()
             .split_pane_in_place(resolved_pane_id, direction, new_pane);
 
-        self.send_fast_init(new_surface_id);
+        self.engine.send_fast_init(new_surface_id);
         self.engine.mark_layout_dirty();
         self.enqueue_host_event(super::PendingHostEvent::PaneSplit {
             original_pane: resolved_pane_id,
@@ -197,7 +197,7 @@ impl AppState {
             }
         }
 
-        self.send_fast_init(new_surface_id);
+        self.engine.send_fast_init(new_surface_id);
         self.engine.mark_layout_dirty();
         Ok(new_surface_id)
     }
@@ -534,7 +534,7 @@ impl AppState {
         ws.pane_layout_mut()
             .split_pane_in_place(target_pane_id, direction, new_pane);
         ws.focused_pane = new_pane_id;
-        self.send_fast_init(new_surface_id);
+        self.engine.send_fast_init(new_surface_id);
         self.engine.mark_layout_dirty();
         self.enqueue_host_event(super::PendingHostEvent::PaneSplit {
             original_pane: target_pane_id,

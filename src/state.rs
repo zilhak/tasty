@@ -705,27 +705,6 @@ impl AppState {
     // 등)는 ExplorerPanel과 함께 제거됨 — 동일 동작을 com.tasty.explorer plugin이
     // 자체 RemoteSurface 안에서 처리한다.
 
-    /// Record that the user typed on the given surface (updates last_key_input timestamp).
-    pub fn record_typing(&mut self, surface_id: u32) {
-        self.engine
-            .last_key_input
-            .insert(surface_id, std::time::Instant::now());
-    }
-
-    /// Returns true if the surface received key input within the last 5 seconds.
-    pub fn is_typing(&self, surface_id: u32) -> bool {
-        if let Some(last) = self.engine.last_key_input.get(&surface_id) {
-            last.elapsed().as_secs_f64() < 5.0
-        } else {
-            false
-        }
-    }
-
-    /// Send fast-mode init command to a terminal by surface ID and apply scrollback limit.
-    pub(crate) fn send_fast_init(&mut self, surface_id: u32) {
-        self.engine.send_fast_init(surface_id);
-    }
-
     /// Surface가 close되기 직전에 `kind` 식별자를 얻는다. plugin lifecycle 알림에
     /// payload로 채워 보낸다. None이면 lifecycle 알림을 발행하지 않는다.
     pub fn surface_kind(&self, surface_id: u32) -> Option<&'static str> {
