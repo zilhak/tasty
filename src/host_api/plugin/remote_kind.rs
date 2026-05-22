@@ -11,10 +11,10 @@ use std::sync::mpsc::Sender;
 
 use tasty_core::model::Surface;
 
+use crate::engine::surface_registry::{SurfaceKindDef, SurfaceKindRegistry};
 use crate::plugin::host_cmd::HostCmd;
 use crate::plugin::manifest::SurfaceKindDecl;
 use crate::plugin::remote_surface::RemoteSurface;
-use crate::surface_registry::{SurfaceKindDef, SurfaceKindRegistry};
 
 /// kind 문자열을 정적화하여 반환. 같은 입력에 대해 leak이 반복되지 않도록
 /// caller가 한 번만 호출하도록 보장해야 한다 (PluginManager가 hello 1회당 호출).

@@ -5,9 +5,9 @@
 
 use serde_json::json;
 
+use crate::engine::surface_registry::SurfaceKindRegistry;
 use crate::engine_state::EngineState;
 use crate::model::{Pane, PaneNode, Surface, SurfaceLayout, Tab, Workspace};
-use crate::surface_registry::SurfaceKindRegistry;
 
 use super::LAYOUT_VERSION;
 use super::schema::{

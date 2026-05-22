@@ -161,7 +161,7 @@ impl AppState {
         // Capture workspace snapshot before closing
         let snapshot = {
             let mut snap_fn =
-                crate::surface_registry::snapshot_fn_for(&self.engine.surface_registry);
+                crate::engine::surface_registry::snapshot_fn_for(&self.engine.surface_registry);
             crate::model::ClosedItem::from_workspace(&self.engine.workspaces[ws_idx], &mut snap_fn)
         };
         self.engine.push_closed_item(snapshot);

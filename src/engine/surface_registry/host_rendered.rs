@@ -8,7 +8,7 @@
 //! 매칭되는 `(kind, plugin_id)` 쌍만 허용한다. 매칭 실패 시 등록을 거부하고 warn
 //! 로그를 남긴다.
 
-use crate::surface_registry::{SurfaceKindRegistry, builtins};
+use crate::engine::surface_registry::{SurfaceKindRegistry, builtins};
 
 /// `(kind, plugin_id)` 쌍이 host-rendered로 허용된 조합인지 확인.
 fn is_host_rendered_allowed(kind: &str, plugin_id: &str) -> bool {

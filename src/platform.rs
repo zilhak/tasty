@@ -8,5 +8,6 @@ pub mod debug_info;
 pub mod jump_list;
 #[cfg(target_os = "macos")]
 pub mod macos_delegate;
+pub mod native_menu;
 #[cfg(windows)]
 pub mod system_tray;

@@ -391,8 +391,9 @@ impl AppState {
                 let pane = ws.pane_layout().find_pane(pane_id).unwrap();
                 if pane.tabs.len() > 1 {
                     let snapshot_opt = {
-                        let mut snap_fn =
-                            crate::surface_registry::snapshot_fn_for(&self.engine.surface_registry);
+                        let mut snap_fn = crate::engine::surface_registry::snapshot_fn_for(
+                            &self.engine.surface_registry,
+                        );
                         crate::model::closed_item::ClosedTab::from_tab(
                             &pane.tabs[tab_idx],
                             &mut snap_fn,
@@ -462,7 +463,7 @@ impl AppState {
         if save_snapshot {
             let item = {
                 let mut snap_fn =
-                    crate::surface_registry::snapshot_fn_for(&self.engine.surface_registry);
+                    crate::engine::surface_registry::snapshot_fn_for(&self.engine.surface_registry);
                 let ws = &self.engine.workspaces[ws_idx];
                 crate::model::ClosedItem::from_workspace(ws, &mut snap_fn)
             };

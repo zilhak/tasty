@@ -222,7 +222,7 @@ mod tests {
         let state = AppState::new(80, 24, waker).unwrap();
         // image kind는 본래 com.tasty.image plugin이 hello 시 등록한다. 단위 테스트는
         // plugin 프로세스를 띄우지 않으므로 host whitelist 등록을 직접 호출한다.
-        crate::surface_registry::builtins::register_image(&state.engine.surface_registry);
+        crate::engine::surface_registry::builtins::register_image(&state.engine.surface_registry);
         state
     }
 

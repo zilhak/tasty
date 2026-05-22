@@ -12,7 +12,7 @@ impl App {
             if main.state.engine.settings.general.restore_layout
                 && main.state.engine.layout_dirty.should_flush()
             {
-                crate::layout_persistence::save_to_disk(
+                crate::engine::layout_persistence::save_to_disk(
                     &mut main.state.engine,
                     main.state.active_workspace,
                 );
@@ -23,7 +23,7 @@ impl App {
             if state.engine.settings.general.restore_layout
                 && state.engine.layout_dirty.should_flush()
             {
-                crate::layout_persistence::save_to_disk(&mut state.engine, 0);
+                crate::engine::layout_persistence::save_to_disk(&mut state.engine, 0);
                 state.engine.layout_dirty.clear();
             }
         }
@@ -43,7 +43,7 @@ impl App {
             let should_save = g.restore_layout
                 && (main.state.engine.layout_dirty.is_dirty() || g.restore_terminal_content);
             if should_save {
-                crate::layout_persistence::save_to_disk(
+                crate::engine::layout_persistence::save_to_disk(
                     &mut main.state.engine,
                     main.state.active_workspace,
                 );
@@ -55,7 +55,7 @@ impl App {
             let should_save = g.restore_layout
                 && (state.engine.layout_dirty.is_dirty() || g.restore_terminal_content);
             if should_save {
-                crate::layout_persistence::save_to_disk(&mut state.engine, 0);
+                crate::engine::layout_persistence::save_to_disk(&mut state.engine, 0);
                 state.engine.layout_dirty.clear();
             }
         }

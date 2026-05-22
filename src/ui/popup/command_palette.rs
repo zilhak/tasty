@@ -4,9 +4,9 @@
 //! 선택하고 Enter로 실행한다. 실행 시 `state.command_palette.pending_run`에 action_id를
 //! 적재하고 popup을 닫는다. 실제 dispatch는 `MainWindow`가 다음 프레임 시작에 수행한다.
 
-use crate::command_palette::{self, PaletteCommand};
 use crate::i18n::t;
 use crate::state::AppState;
+use crate::state::command_palette::{self, PaletteCommand};
 use crate::theme;
 use crate::ui::popup::PopupAction;
 

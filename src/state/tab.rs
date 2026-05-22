@@ -257,7 +257,7 @@ impl AppState {
             if let Some(tab) = pane.tabs.get(active) {
                 super::AppState::collect_close_targets(tab, &mut targets);
                 let mut snap_fn =
-                    crate::surface_registry::snapshot_fn_for(&self.engine.surface_registry);
+                    crate::engine::surface_registry::snapshot_fn_for(&self.engine.surface_registry);
                 crate::model::closed_item::ClosedTab::from_tab(tab, &mut snap_fn)
             } else {
                 None

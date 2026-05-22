@@ -8,13 +8,13 @@ use std::sync::atomic::AtomicU64;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
+use crate::engine::surface_registry::SurfaceKindRegistry;
 use crate::plugin::handle_channel::HandleListener;
 use crate::plugin::ipc_namespace::IpcNamespaceRegistry;
 use crate::plugin::listener::HostListener;
 use crate::plugin::manifest::{Permission, PluginPackage};
 use crate::plugin::process::PluginProcess;
 use crate::plugin::registry_state::PluginsConfig;
-use crate::surface_registry::SurfaceKindRegistry;
 
 use super::{PluginManager, RESTART_FAILURE_LIMIT, RESTART_FAILURE_WINDOW};
 

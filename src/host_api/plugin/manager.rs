@@ -18,6 +18,7 @@ use tasty_plugin_protocol::{HandleChannelMessage, SharedBufferCreateResult, Shar
 use tasty_shm::PeerPid;
 use tasty_shm::SharedMemory;
 
+use crate::engine::surface_registry::SurfaceKindRegistry;
 use crate::ipc::protocol::JsonRpcResponse;
 use crate::ipc::server::send_response;
 use crate::plugin::handle_channel::HandleListener;
@@ -30,7 +31,6 @@ use crate::plugin::protocol::{
     self, IpcCallResult, PluginEvent, PluginRequest, PluginResponse, SurfaceResult,
 };
 use crate::plugin::registry_state::PluginsConfig;
-use crate::surface_registry::SurfaceKindRegistry;
 
 pub(super) const HEALTHCHECK_TIMEOUT: Duration = Duration::from_secs(60);
 pub(super) const PING_INTERVAL: Duration = Duration::from_secs(15);

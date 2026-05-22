@@ -429,7 +429,7 @@ impl MainWindow {
     /// Process pending native context menu request.
     /// Called after egui frame so we have access to the window handle.
     fn process_pending_native_menu(&mut self) {
-        use crate::native_menu::{MenuItem, show_context_menu};
+        use crate::platform::native_menu::{MenuItem, show_context_menu};
         use crate::state::PendingNativeMenu;
 
         let pending = match self.state.dialogs.pending_native_menu.take() {

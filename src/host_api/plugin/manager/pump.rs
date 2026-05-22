@@ -124,14 +124,14 @@ impl PluginManager {
                                     );
                                 }
                                 crate::plugin::manifest::SurfaceKindRendering::Host => {
-                                    crate::surface_registry::host_rendered::register_host_rendered_kind(
+                                    crate::engine::surface_registry::host_rendered::register_host_rendered_kind(
                                         &registry, plugin_id, &decl.kind,
                                     );
                                 }
                                 crate::plugin::manifest::SurfaceKindRendering::Webview => {
                                     // webview-enabled flag 등록 + remote_kind 로 surface 자체 등록
                                     // (host 는 surface struct 정의 없음 — generic RemoteSurface)
-                                    crate::surface_registry::webview_kind::register_webview_kind(
+                                    crate::engine::surface_registry::webview_kind::register_webview_kind(
                                         plugin_id, &decl.kind,
                                     );
                                     crate::plugin::remote_kind::register_remote_kind(

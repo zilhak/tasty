@@ -103,7 +103,7 @@ pub fn draw_update_popup(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction
 }
 
 fn trigger_check(state: &AppState) {
-    crate::update_check::trigger_check(
+    crate::state::update_check::trigger_check(
         state.update_status.clone(),
         "zilhak",
         "tasty",

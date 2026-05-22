@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::engine::surface_registry::SurfaceKindRegistry;
 use crate::global_hooks::GlobalHookManager;
 use crate::model::Workspace;
 use crate::notification::NotificationStore;
 use crate::settings::Settings;
 use crate::state::SurfaceMessage;
-use crate::surface_registry::SurfaceKindRegistry;
 use tasty_hooks::HookManager;
 use tasty_terminal::Waker;
 
@@ -106,7 +106,7 @@ pub struct EngineState {
 
     /// OSC 133 기반 명령 인덱서. PromptBoundary 이벤트가 도달할 때마다 호스트가
     /// 호출해 per-surface 상태를 업데이트하고, D phase 에서 memory 에 record 영속.
-    pub command_index: crate::command_index::CommandIndex,
+    pub command_index: crate::engine::command_index::CommandIndex,
 
     /// 출력 옵저버 라우터. OutputAppended 이벤트마다 dispatch 호출.
     pub observer_router: crate::output_observer::ObserverRouter,
@@ -160,7 +160,7 @@ pub struct EngineState {
     pub identify_worker: Option<std::sync::Arc<crate::identify_worker::IdentifyWorker>>,
 
     // ── Layout persistence ──
-    pub layout_dirty: crate::layout_persistence::LayoutDirtyTracker,
+    pub layout_dirty: crate::engine::layout_persistence::LayoutDirtyTracker,
     /// Active workspace index restored from layout.json. Consumed once by AppState::new().
     pub restored_active_workspace: Option<usize>,
     /// Deferred terminal surface 의 scrollback 복원 대기 큐. 값은
@@ -170,7 +170,7 @@ pub struct EngineState {
     pub pending_scrollback_inject: HashMap<u32, Vec<tasty_terminal::ScrollbackLine>>,
     /// 첫 plugin pump 후 적용할 layout. plugin이 제공하는 surface kind가
     /// 등록되기 전에 복원하면 사라지므로 한 번 미뤄둔다. `App::apply_pending_layout_restore`가 소비.
-    pub pending_layout_restore: Option<crate::layout_persistence::SavedLayout>,
+    pub pending_layout_restore: Option<crate::engine::layout_persistence::SavedLayout>,
 
     /// Whether input simulation IPC is enabled (debug builds only, --enable-input-simulation).
     #[cfg(debug_assertions)]
@@ -200,7 +200,7 @@ impl EngineState {
             global_hook_manager: GlobalHookManager::new(),
             closed_items: crate::model::ClosedItemStore::new(),
             clipboard_history: crate::clipboard_history::ClipboardHistory::new(100),
-            command_index: crate::command_index::CommandIndex::new(),
+            command_index: crate::engine::command_index::CommandIndex::new(),
             observer_router: crate::output_observer::ObserverRouter::new(),
             approval_store: std::sync::Arc::new(tasty_approval::ApprovalStore::new()),
             telemetry_seq: std::sync::Arc::new(tasty_telemetry::TelemetrySeq::new()),
@@ -213,7 +213,7 @@ impl EngineState {
             waker_factory: None,
             surface_registry: {
                 let reg = SurfaceKindRegistry::new();
-                crate::surface_registry::register_builtin_kinds(&reg);
+                crate::engine::surface_registry::register_builtin_kinds(&reg);
                 Arc::new(reg)
             },
             file_format: {
@@ -240,7 +240,7 @@ impl EngineState {
                 &file_handler_recent_path(),
             ),
             identify_worker: None,
-            layout_dirty: crate::layout_persistence::LayoutDirtyTracker::new(),
+            layout_dirty: crate::engine::layout_persistence::LayoutDirtyTracker::new(),
             restored_active_workspace: None,
             pending_scrollback_inject: HashMap::new(),
             pending_layout_restore: None,
@@ -270,7 +270,7 @@ impl EngineState {
         // 지연한다 (`App::apply_pending_layout_restore`).
         let mut restored = false;
         if restore_layout {
-            if let Some(saved) = crate::layout_persistence::load_from_disk() {
+            if let Some(saved) = crate::engine::layout_persistence::load_from_disk() {
                 // layout.json 에 남아 있는 scrollback_ref 집합 외의 파일은 모두 orphan.
                 // capture 도중 크래시했거나 옛 surface 의 잔재이므로 삭제해 디스크 leak 방지.
                 let known = saved.collect_scrollback_refs();

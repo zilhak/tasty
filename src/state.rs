@@ -14,9 +14,11 @@ mod tab;
 mod tests;
 mod workspace;
 
+pub mod command_palette;
 pub mod preset_apply;
 pub mod search;
 pub mod selection;
+pub mod update_check;
 
 use std::collections::VecDeque;
 
@@ -233,10 +235,10 @@ pub struct AppState {
     /// Refreshed lazily when the ports popup is opened or visible.
     pub port_scan: tasty_portscan::PortScanCache,
     /// Shared snapshot of background update-check state. Polled hourly.
-    pub update_status: std::sync::Arc<std::sync::Mutex<crate::update_check::UpdateStatus>>,
+    pub update_status: std::sync::Arc<std::sync::Mutex<crate::state::update_check::UpdateStatus>>,
     /// Command palette UI state — query buffer, selection cursor, and a pending
     /// dispatch slot that MainWindow drains each frame.
-    pub command_palette: crate::command_palette::CommandPaletteState,
+    pub command_palette: crate::state::command_palette::CommandPaletteState,
     /// Toast manager for transient in-app notifications (copy feedback, etc.).
     /// 사용자 행동에서만 발사한다. CLI/IPC 경유 동작은 토스트를 만들지 않는다.
     pub toasts: crate::ui::ToastManager,
@@ -576,13 +578,13 @@ impl AppState {
             },
             search: crate::search_state::SearchState::new(),
             port_scan: tasty_portscan::PortScanCache::new(tasty_portscan::DEFAULT_TTL),
-            update_status: crate::update_check::spawn_poller(
+            update_status: crate::state::update_check::spawn_poller(
                 "zilhak",
                 "tasty",
                 env!("CARGO_PKG_VERSION"),
                 std::time::Duration::from_secs(60 * 60),
             ),
-            command_palette: crate::command_palette::CommandPaletteState::default(),
+            command_palette: crate::state::command_palette::CommandPaletteState::default(),
             toasts: crate::ui::ToastManager::new(),
             markdown_views: Default::default(),
             image_views: Default::default(),
