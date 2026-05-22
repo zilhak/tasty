@@ -99,4 +99,9 @@ impl EngineState {
         }
         None
     }
+
+    /// Find a workspace index by its workspace ID.
+    pub fn find_workspace_index_for_id(&self, ws_id: u32) -> Option<usize> {
+        self.workspaces.iter().position(|w| w.id == ws_id)
+    }
 }

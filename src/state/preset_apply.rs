@@ -136,6 +136,7 @@ impl AppState {
     ) -> Result<u32, ApplyError> {
         let ws_idx = match target_workspace_id {
             Some(id) => self
+                .engine
                 .find_workspace_index_for_id(id)
                 .ok_or(ApplyError::WorkspaceNotFound(id))?,
             None => {
@@ -204,10 +205,6 @@ impl AppState {
             .map(|p| p.id)
             .ok_or(ApplyError::Empty)?;
         Ok((ws_idx, first))
-    }
-
-    fn find_workspace_index_for_id(&self, ws_id: u32) -> Option<usize> {
-        self.engine.workspaces.iter().position(|w| w.id == ws_id)
     }
 
     fn build_pane_node(&mut self, node: &PresetPaneNode) -> Result<PaneNode, ApplyError> {

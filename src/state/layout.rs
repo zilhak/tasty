@@ -109,12 +109,6 @@ impl AppState {
         None
     }
 
-    /// Update stored grid dimensions.
-    pub fn update_grid_size(&mut self, cols: usize, rows: usize) {
-        self.engine.default_cols = cols;
-        self.engine.default_rows = rows;
-    }
-
     /// Resize all terminals in all workspaces and all tabs to match a given terminal rect.
     pub fn resize_all(&mut self, terminal_rect: Rect, cell_width: f32, cell_height: f32) {
         let tab_bar_h = self.tab_bar_height;

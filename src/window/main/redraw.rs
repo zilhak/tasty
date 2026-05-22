@@ -31,7 +31,7 @@ impl MainWindow {
         }
 
         // Collect terminal events
-        let events = self.state.collect_events();
+        let events = self.state.engine.collect_events();
         for event in &events {
             let surface_id = event.surface_id;
             match &event.kind {
@@ -139,7 +139,7 @@ impl MainWindow {
                     self.base.dirty = true;
                 }
                 crate::terminal::TerminalEventKind::CwdChanged(_) => {
-                    self.state.refresh_tab_display_name(surface_id);
+                    self.state.engine.refresh_tab_display_name(surface_id);
                     // 사용자가 `cd` 로 디렉토리를 옮기면 다음 layout 저장 (debounce
                     // 또는 종료) 가 새 cwd 를 디스크에 반영하도록 dirty 마킹. 이게
                     // 빠지면 split 직후의 cwd 가 영원히 stale 로 남는다.
@@ -207,7 +207,7 @@ impl MainWindow {
             self.base.gpu.resize(new_size);
             let terminal_rect = self.compute_terminal_rect();
             let (cols, rows) = self.base.gpu.grid_size_for_rect(&terminal_rect);
-            self.state.update_grid_size(cols, rows);
+            self.state.engine.update_grid_size(cols, rows);
             // Schedule another redraw to verify scale factor has stabilized.
             self.base.dirty = true;
         }

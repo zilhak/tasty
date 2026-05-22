@@ -19,7 +19,7 @@ pub mod update_check;
 
 use std::collections::VecDeque;
 
-use tasty_terminal::{TerminalEvent, Waker};
+use tasty_terminal::Waker;
 
 use crate::engine_state::EngineState;
 use crate::model::{LogicalPx, PhysicalPx};
@@ -763,40 +763,5 @@ impl AppState {
         self.engine
             .find_surface_by_id(surface_id)
             .and_then(|s| s.source_cwd())
-    }
-
-    /// Refresh the cached display name of the tab containing a given surface ID.
-    pub fn refresh_tab_display_name(&mut self, surface_id: u32) {
-        for workspace in &mut self.engine.workspaces {
-            let pane_ids = workspace.pane_layout().all_pane_ids();
-            for pid in pane_ids {
-                if let Some(pane) = workspace.pane_layout_mut().find_pane_mut(pid) {
-                    for tab in &mut pane.tabs {
-                        if tab.contains_surface(surface_id) {
-                            tab.refresh_display_name();
-                            return;
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    /// Collect events from all terminals in ALL workspaces (not just active).
-    /// Each event includes the surface_id that generated it.
-    pub fn collect_events(&mut self) -> Vec<TerminalEvent> {
-        let mut all_events = Vec::new();
-        for workspace in &mut self.engine.workspaces {
-            workspace
-                .pane_layout_mut()
-                .for_each_terminal_mut(&mut |sid, terminal| {
-                    let mut events = terminal.take_events();
-                    for event in &mut events {
-                        event.surface_id = sid;
-                    }
-                    all_events.extend(events);
-                });
-        }
-        all_events
     }
 }

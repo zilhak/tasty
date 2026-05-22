@@ -378,6 +378,31 @@ impl EngineState {
     }
 }
 
+impl EngineState {
+    /// Refresh the cached display name of the tab containing a given surface ID.
+    pub fn refresh_tab_display_name(&mut self, surface_id: u32) {
+        for workspace in &mut self.workspaces {
+            let pane_ids = workspace.pane_layout().all_pane_ids();
+            for pid in pane_ids {
+                if let Some(pane) = workspace.pane_layout_mut().find_pane_mut(pid) {
+                    for tab in &mut pane.tabs {
+                        if tab.contains_surface(surface_id) {
+                            tab.refresh_display_name();
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Update stored grid dimensions.
+    pub fn update_grid_size(&mut self, cols: usize, rows: usize) {
+        self.default_cols = cols;
+        self.default_rows = rows;
+    }
+}
+
 /// `~/.tasty/file-handlers.toml` — 사용자 detector/handler 설정. 부팅 시 1회 로드.
 fn file_handler_user_config_path() -> Option<std::path::PathBuf> {
     tasty_core::paths::tasty_home().map(|d| d.join("file-handlers.toml"))
