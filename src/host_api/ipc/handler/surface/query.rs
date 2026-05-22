@@ -135,7 +135,7 @@ pub(crate) fn handle_surface_locate(
         Ok(sid) => sid,
         Err(e) => return e,
     };
-    let pane_id = state.find_pane_for_surface(surface_id);
+    let pane_id = state.engine.find_pane_for_surface(surface_id);
     JsonRpcResponse::success(
         id,
         json!({

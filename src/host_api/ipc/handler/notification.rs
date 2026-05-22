@@ -52,7 +52,7 @@ pub fn handle_notification_create(
         None => {
             // 1. surface_id가 주어지면 그 surface가 속한 워크스페이스로 라우팅
             if surface_id > 0 {
-                if let Some((idx, _)) = state.find_workspace_index_for_surface(surface_id) {
+                if let Some((idx, _)) = state.engine.find_workspace_index_for_surface(surface_id) {
                     state.engine.workspaces[idx].id
                 } else {
                     return JsonRpcResponse::invalid_params(

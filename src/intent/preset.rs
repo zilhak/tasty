@@ -409,6 +409,7 @@ pub fn capture_inner(
         }
         PresetKind::Tab => {
             let pane_id = state
+                .engine
                 .find_pane_for_tab(source_id)
                 .ok_or_else(|| format!("Tab id {source_id} not found"))?;
             for ws in &state.engine.workspaces {

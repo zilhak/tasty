@@ -161,7 +161,7 @@ pub fn draw_collapsed_sidebar(
                         .engine
                         .notifications
                         .has_highlighted_surface(&ws_surface_ids);
-                    let ws_busy_count = state.busy_count(&ws_surface_ids);
+                    let ws_busy_count = state.engine.busy_count(&ws_surface_ids);
                     let label = format!("{}", i + 1);
                     let bg = if is_active { th.surface0 } else { th.mantle };
                     let text_color = if is_active {

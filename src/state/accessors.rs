@@ -98,7 +98,7 @@ impl AppState {
     /// Find an image panel by its surface ID across all workspaces (mutable).
     /// Used by IPC handlers that target a specific surface — focus-independent.
     pub fn image_panel_mut(&mut self, surface_id: u32) -> Option<&mut crate::model::ImagePanel> {
-        let (ws_idx, pid) = self.find_workspace_index_for_surface(surface_id)?;
+        let (ws_idx, pid) = self.engine.find_workspace_index_for_surface(surface_id)?;
         let workspace = self.engine.workspaces.get_mut(ws_idx)?;
         let pane = workspace.pane_layout_mut().find_pane_mut(pid)?;
         for tab in &mut pane.tabs {

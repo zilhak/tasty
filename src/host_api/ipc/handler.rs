@@ -474,7 +474,7 @@ pub(super) fn caller_surface_id(params: &serde_json::Value) -> Option<u32> {
 
 /// Check if a surface belongs to a pane (directly or in any tab).
 fn surface_belongs_to_pane(state: &AppState, surface_id: u32, pane_id: u32) -> bool {
-    state.find_pane_for_surface(surface_id) == Some(pane_id)
+    state.engine.find_pane_for_surface(surface_id) == Some(pane_id)
 }
 
 /// Apply metadata key-value pairs to a surface.
@@ -535,7 +535,7 @@ fn handle_tree(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {
         .map(|(i, ws)| {
             let mut t = ws.to_tree_json();
             t["active"] = json!(i == state.active_workspace);
-            t["busy_count"] = json!(state.busy_count(&ws.all_surface_ids()));
+            t["busy_count"] = json!(state.engine.busy_count(&ws.all_surface_ids()));
             annotate_tree_busy(&mut t, state);
             t
         })
@@ -555,7 +555,10 @@ fn annotate_tree_busy(node: &mut serde_json::Value, state: &AppState) {
             && obj.get("id").is_some();
         if is_leaf {
             if let Some(sid) = obj.get("id").and_then(|v| v.as_u64()) {
-                obj.insert("busy".into(), json!(state.is_surface_busy(sid as u32)));
+                obj.insert(
+                    "busy".into(),
+                    json!(state.engine.is_surface_busy(sid as u32)),
+                );
             }
             return;
         }

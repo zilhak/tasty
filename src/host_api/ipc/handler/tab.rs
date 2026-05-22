@@ -27,7 +27,7 @@ pub fn handle_tab_list(
         Ok(pid) => pid,
         Err(e) => return e,
     };
-    let tabs: Vec<_> = if let Some(pane) = state.find_pane_by_id(pane_id) {
+    let tabs: Vec<_> = if let Some(pane) = state.engine.find_pane_by_id(pane_id) {
         pane.tabs
             .iter()
             .enumerate()
@@ -41,7 +41,7 @@ pub fn handle_tab_list(
                     "name": tab.name,
                     "active": i == pane.active_tab,
                     "type": surface_type,
-                    "busy_count": state.busy_count(&sids),
+                    "busy_count": state.engine.busy_count(&sids),
                 });
                 if let Some(sid) = surface_id {
                     entry["surface_id"] = json!(sid);
@@ -65,7 +65,7 @@ pub fn handle_tab_create(
         Err(e) => return e,
     };
 
-    if state.find_pane_by_id(pane_id).is_none() {
+    if state.engine.find_pane_by_id(pane_id).is_none() {
         return JsonRpcResponse::invalid_params(id, format!("Pane {} not found", pane_id));
     }
 
@@ -108,6 +108,7 @@ pub fn handle_tab_create(
     match result {
         Ok(_) => {
             let (tab_count, active_tab) = state
+                .engine
                 .find_pane_by_id(pane_id)
                 .map(|p| (p.tabs.len(), p.active_tab))
                 .unwrap_or((0, 0));
@@ -137,7 +138,7 @@ pub fn handle_tab_close(
     // Prevent closing a tab that contains the caller
     if let Some(caller) = super::caller_surface_id(params) {
         // Find which pane contains this tab
-        if let Some(pane_id) = state.find_pane_for_tab(tab_id) {
+        if let Some(pane_id) = state.engine.find_pane_for_tab(tab_id) {
             if super::surface_belongs_to_pane(state, caller, pane_id) {
                 return JsonRpcResponse::invalid_params(
                     id,

@@ -83,7 +83,7 @@ impl AppState {
                     for tab in &pane.tabs {
                         let kind = tab
                             .focused_surface_id()
-                            .and_then(|sid| self.find_surface_by_id(sid))
+                            .and_then(|sid| self.engine.find_surface_by_id(sid))
                             .map(|s| s.kind().to_string())
                             .unwrap_or_else(|| "unknown".to_string());
                         current.insert(tab.id, (pane_id, workspace_id, kind));

@@ -1,7 +1,5 @@
 mod accessors;
-mod busy;
 mod detect;
-mod finders;
 mod focus;
 mod layout;
 mod mark;
@@ -708,7 +706,7 @@ impl AppState {
     /// Surface가 close되기 직전에 `kind` 식별자를 얻는다. plugin lifecycle 알림에
     /// payload로 채워 보낸다. None이면 lifecycle 알림을 발행하지 않는다.
     pub fn surface_kind(&self, surface_id: u32) -> Option<&'static str> {
-        self.find_surface_by_id(surface_id).map(|s| s.kind())
+        self.engine.find_surface_by_id(surface_id).map(|s| s.kind())
     }
 
     /// Surface close lifecycle 알림 큐에 항목을 추가한다. App 메인 루프가
@@ -750,7 +748,9 @@ impl AppState {
             return None;
         }
         let sid = self.focused_surface_id()?;
-        self.find_surface_by_id(sid).and_then(|s| s.source_cwd())
+        self.engine
+            .find_surface_by_id(sid)
+            .and_then(|s| s.source_cwd())
     }
 
     /// Get the working directory to inherit from a specific surface, if enabled.
@@ -761,7 +761,8 @@ impl AppState {
         if !self.engine.settings.general.inherit_cwd {
             return None;
         }
-        self.find_surface_by_id(surface_id)
+        self.engine
+            .find_surface_by_id(surface_id)
             .and_then(|s| s.source_cwd())
     }
 

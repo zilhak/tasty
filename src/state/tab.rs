@@ -101,7 +101,7 @@ impl AppState {
         let surface_id = self.engine.next_ids.next_surface();
         let surface = self.create_surface_via_registry(kind, surface_id, params)?;
         let name = super::pane::default_tab_name_for_kind(kind, params);
-        if let Some(pane) = self.find_pane_by_id_mut(pane_id) {
+        if let Some(pane) = self.engine.find_pane_by_id_mut(pane_id) {
             pane.add_surface_tab(tab_id, name, surface);
             self.engine.mark_layout_dirty();
             Ok((tab_id, surface_id))
@@ -128,7 +128,7 @@ impl AppState {
         explicit_cwd: Option<std::path::PathBuf>,
     ) -> anyhow::Result<()> {
         let cwd = explicit_cwd.or_else(|| {
-            let pane = self.find_pane_by_id(pane_id)?;
+            let pane = self.engine.find_pane_by_id(pane_id)?;
             let tab = pane.tabs.get(pane.active_tab)?;
             let sid = tab.focused_surface_id()?;
             self.resolve_inherit_cwd_from_surface(sid)
@@ -141,7 +141,7 @@ impl AppState {
         let waker = self.engine.make_waker(surface_id);
 
         if self.engine.settings.performance.lazy_pty_init {
-            if let Some(pane) = self.find_pane_by_id_mut(pane_id) {
+            if let Some(pane) = self.engine.find_pane_by_id_mut(pane_id) {
                 pane.add_tab_deferred(
                     tab_id,
                     surface_id,
@@ -154,7 +154,7 @@ impl AppState {
                 );
             }
         } else {
-            if let Some(pane) = self.find_pane_by_id_mut(pane_id) {
+            if let Some(pane) = self.engine.find_pane_by_id_mut(pane_id) {
                 pane.add_tab_background_with_shell(
                     tab_id,
                     surface_id,
@@ -180,7 +180,7 @@ impl AppState {
         surface: Box<dyn crate::model::Surface>,
     ) {
         let tab_id = self.engine.next_ids.next_tab();
-        if let Some(pane) = self.find_pane_by_id_mut(pane_id) {
+        if let Some(pane) = self.engine.find_pane_by_id_mut(pane_id) {
             pane.add_surface_tab(tab_id, name, surface);
             self.engine.mark_layout_dirty();
         }
@@ -211,7 +211,7 @@ impl AppState {
             None => return false,
         };
 
-        let closed = if let Some(pane) = self.find_pane_by_id_mut(pane_id) {
+        let closed = if let Some(pane) = self.engine.find_pane_by_id_mut(pane_id) {
             pane.close_tab_by_id(tab_id)
         } else {
             false

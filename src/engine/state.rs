@@ -391,5 +391,7 @@ fn file_handler_recent_path() -> std::path::PathBuf {
         .unwrap_or_else(|| std::env::temp_dir().join("tasty-file-handler-recent.json"))
 }
 
+mod busy;
+mod finders;
 mod pty;
 mod terminal_finders;

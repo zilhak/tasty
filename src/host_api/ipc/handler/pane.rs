@@ -49,7 +49,7 @@ pub fn handle_pane_close(
         }
     }
 
-    if state.find_pane_by_id(pane_id).is_none() {
+    if state.engine.find_pane_by_id(pane_id).is_none() {
         return JsonRpcResponse::invalid_params(id, format!("Pane {} not found", pane_id));
     }
 
@@ -167,7 +167,7 @@ pub fn handle_split(
                 Some(pid)
             } else if let Some(sid) = target_surface_id {
                 // Find the pane containing the given surface
-                state.find_pane_for_surface(sid)
+                state.engine.find_pane_for_surface(sid)
             } else {
                 None
             };

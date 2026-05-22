@@ -40,7 +40,7 @@ fn collect_tab_surface_info(
                 "type": "Terminal",
                 "cols": node.terminal.cols(),
                 "rows": node.terminal.rows(),
-                "busy": state.is_surface_busy(node.id),
+                "busy": state.engine.is_surface_busy(node.id),
                 "pty_ready": true,
             });
             if let Some(fg) = node.terminal.foreground_process_info() {
@@ -88,7 +88,7 @@ fn collect_surface_layout_info(
                 "workspace_id": workspace_id,
                 "tab_index": tab_idx,
                 "type": surface.type_name(),
-                "busy": state.is_surface_busy(id),
+                "busy": state.engine.is_surface_busy(id),
             });
             if let Some(terminal) = surface.focused_terminal() {
                 entry["cols"] = json!(terminal.cols());

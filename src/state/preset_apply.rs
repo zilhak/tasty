@@ -187,6 +187,7 @@ impl AppState {
         }
         if let Some(pid) = target_pane_id {
             let ws_idx = self
+                .engine
                 .find_workspace_index_for_pane(pid)
                 .ok_or(ApplyError::PaneNotFound(pid))?;
             return Ok((ws_idx, pid));

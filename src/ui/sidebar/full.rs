@@ -180,7 +180,7 @@ pub fn draw_full_sidebar(
                             .engine
                             .notifications
                             .has_highlighted_surface(&ws_surface_ids);
-                        let ws_busy_count = state.busy_count(&ws_surface_ids);
+                        let ws_busy_count = state.engine.busy_count(&ws_surface_ids);
 
                         let bg = if is_active {
                             th.surface0.to_egui()

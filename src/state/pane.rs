@@ -81,6 +81,7 @@ impl AppState {
         let (ws_idx, resolved_pane_id) = match target_pane_id {
             Some(pid) => {
                 let ws_idx = self
+                    .engine
                     .find_workspace_index_for_pane(pid)
                     .ok_or_else(|| anyhow::anyhow!("pane {} not found", pid))?;
                 (ws_idx, pid)
@@ -183,6 +184,7 @@ impl AppState {
         match target_surface_id {
             Some(sid) => {
                 let (ws_idx, pane_id) = self
+                    .engine
                     .find_workspace_index_for_surface(sid)
                     .ok_or_else(|| anyhow::anyhow!("surface {} not found", sid))?;
                 let ws = &mut self.engine.workspaces[ws_idx];
@@ -301,7 +303,7 @@ impl AppState {
 
     fn close_surface_by_id_inner(&mut self, surface_id: u32, save_snapshot: bool) -> bool {
         // Find which workspace and pane contain this surface
-        let (ws_idx, pane_id) = match self.find_workspace_index_for_surface(surface_id) {
+        let (ws_idx, pane_id) = match self.engine.find_workspace_index_for_surface(surface_id) {
             Some(v) => v,
             None => return false,
         };
@@ -547,7 +549,7 @@ impl AppState {
     /// Close a specific pane by its ID (across all workspaces).
     /// Returns true if the pane was found and removed.
     pub fn close_pane_by_id(&mut self, pane_id: u32) -> bool {
-        let ws_idx = match self.find_workspace_index_for_pane(pane_id) {
+        let ws_idx = match self.engine.find_workspace_index_for_pane(pane_id) {
             Some(idx) => idx,
             None => return false,
         };
