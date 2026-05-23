@@ -10,22 +10,38 @@ pub struct TastyInstance {
     process: Child,
     port: u16,
     port_file: PathBuf,
+    isolated_home: PathBuf,
 }
 
 impl TastyInstance {
     pub fn spawn() -> Self {
-        let port_file = std::env::temp_dir().join(format!(
-            "tasty-test-{}-{}.port",
+        let unique = format!(
+            "{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
                 .as_nanos()
-        ));
+        );
+        let port_file = std::env::temp_dir().join(format!("tasty-test-{}.port", unique));
+
+        // 격리된 HOME — 사용자의 ~/.zshrc / oh-my-zsh / p10k / ~/.tasty/ 등이
+        // e2e PTY shell 에 새어들어와 prompt 형태와 ZLE binding 을 바꾸는 일을
+        // 차단한다. tasty 본 바이너리의 paths 도 모두 HOME 기반이라 같이 격리됨.
+        let isolated_home = std::env::temp_dir().join(format!("tasty-test-home-{}", unique));
+        std::fs::create_dir_all(&isolated_home).expect("failed to create isolated home");
+        // 빈 .zshrc — zsh 가 사용자 customization 안 보게. ZDOTDIR 이 이 디렉토리를
+        // 가리키므로 zsh 는 여기서 rc 를 찾는다.
+        std::fs::write(isolated_home.join(".zshrc"), "").ok();
+        std::fs::write(isolated_home.join(".bashrc"), "").ok();
 
         let process = Command::new(env!("CARGO_BIN_EXE_tasty"))
             .arg("--port-file")
             .arg(port_file.to_str().unwrap())
+            .env("HOME", &isolated_home)
+            .env("ZDOTDIR", &isolated_home)
+            .env_remove("OH_MY_ZSH")
+            .env_remove("ZSH")
             .spawn()
             .expect("failed to spawn tasty");
 
@@ -47,6 +63,7 @@ impl TastyInstance {
             process,
             port,
             port_file,
+            isolated_home,
         };
 
         // Wait until the shell is actually ready (has screen content).
@@ -241,5 +258,6 @@ impl Drop for TastyInstance {
         }
         let _ = self.process.wait();
         let _ = std::fs::remove_file(&self.port_file);
+        let _ = std::fs::remove_dir_all(&self.isolated_home);
     }
 }

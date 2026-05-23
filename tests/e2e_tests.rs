@@ -132,16 +132,15 @@ fn all_e2e_tests() {
     );
     assert_eq!(result["sent"], true);
     // zsh ZLE 의 경우 Alt+X 는 execute-named-cmd 위젯을 호출하여 prompt 가
-    // "execute: " 로 바뀐다. 후속 테스트가 일반 명령으로 동작하도록 모드를
-    // abort 시킨다. Ctrl+G 는 일부 zsh customization (oh-my-zsh, p10k 등) 에서
-    // rebind 돼 풀리지 않는 경우가 있어 Ctrl+C 로 강제 interrupt — execute-named-cmd
-    // 모드를 항상 빠져나오게 한다.
+    // "execute: " 로 바뀐다. 후속 테스트가 일반 명령으로 동작하도록 Ctrl+G 로
+    // mode 를 abort 시킨다. (사용자 dotfile 이 ^G 를 rebind 할 수 있으나,
+    // 본 테스트는 HOME/ZDOTDIR 을 격리해 stock zsh 동작을 보장한다.)
     tasty.call(
         "surface.send_combo",
-        json!({"surface_id": sid, "key": "c", "modifiers": ["ctrl"]}),
+        json!({"surface_id": sid, "key": "g", "modifiers": ["ctrl"]}),
     );
-    // sleep 대신 sentinel echo 로 prompt 가 명령을 정상적으로 받을 수 있는
-    // 상태인지 deterministic 하게 확인 — abort 가 풀렸으면 sentinel 이 출력된다.
+    // sentinel echo 로 abort 가 실제로 풀려 prompt 가 명령을 받을 수 있는
+    // 상태인지 deterministic 하게 확인.
     tasty.set_mark(sid);
     tasty.send_text(sid, "echo __abort_ok__\n");
     tasty.wait_for_output(sid, "__abort_ok__", Duration::from_secs(3));
