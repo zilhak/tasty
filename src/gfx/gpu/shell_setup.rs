@@ -11,8 +11,6 @@ impl GpuState {
         window: &Window,
         shell_path: &mut String,
     ) -> Result<ShellSetupAction, wgpu::SurfaceError> {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         let _th = crate::theme::theme();
         let output = self.surface.get_current_texture()?;
         let view = output

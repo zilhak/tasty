@@ -44,44 +44,32 @@ impl ActionHistory {
     }
 
     pub fn push(&mut self, action: DrawAction) {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         self.actions.push(action);
         self.redo_stack.clear();
     }
 
     pub fn undo(&mut self) -> Option<DrawAction> {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         let a = self.actions.pop()?;
         self.redo_stack.push(a.clone());
         Some(a)
     }
 
     pub fn redo(&mut self) -> Option<DrawAction> {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         let a = self.redo_stack.pop()?;
         self.actions.push(a.clone());
         Some(a)
     }
 
     pub fn can_undo(&self) -> bool {
-        let engine = &self.engine_state;
-        let _ = engine;
         !self.actions.is_empty()
     }
 
     pub fn can_redo(&self) -> bool {
-        let engine = &self.engine_state;
-        let _ = engine;
         !self.redo_stack.is_empty()
     }
 
     /// Replay all actions onto a fresh transparent layer.
     pub fn replay(&self, base_size: [usize; 2]) -> ColorImage {
-        let engine = &self.engine_state;
-        let _ = engine;
         let mut layer = ColorImage::new(base_size, Color32::TRANSPARENT);
         let [w, h] = base_size;
         for action in &self.actions {
@@ -227,16 +215,12 @@ impl ImageView {
 
     /// True when an editing session is active (drawing or floating selection).
     pub fn is_editing(&self) -> bool {
-        let engine = &self.engine_state;
-        let _ = engine;
         !matches!(self.edit_state, EditState::Inactive)
     }
 
     /// Lazy-load pixel data on first render. Cheap to call repeatedly. Returns true
     /// if the view freshly initialised pixels (caller may want to invalidate textures).
     pub fn ensure_loaded(&mut self, panel: &ImagePanel) -> bool {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         if self.original_image.is_some() {
             return false;
         }
@@ -257,8 +241,6 @@ impl ImageView {
 
     /// Reload from `panel.file_path` regardless of mtime, exiting any edit session.
     pub fn reload_from_disk(&mut self, panel: &ImagePanel) {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         if let Some(ref path) = panel.file_path {
             let (img, mtime) = load_image_from_path(path);
             self.original_image = img;
@@ -270,8 +252,6 @@ impl ImageView {
     /// After a navigation step (`step_prev`/`step_next`) updated `panel.file_path`,
     /// load the new file and reset zoom/pan/edit state.
     pub fn load_after_navigation(&mut self, panel: &ImagePanel) {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         if self.is_editing() {
             return;
         }
@@ -288,8 +268,6 @@ impl ImageView {
 
     /// Enter edit mode by allocating a transparent overlay matching the original size.
     pub fn enter_edit_mode(&mut self) {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         if let Some(ref img) = self.original_image {
             let [w, h] = img.size;
             self.draw_layer = Some(ColorImage::new([w, h], Color32::TRANSPARENT));
@@ -305,8 +283,6 @@ impl ImageView {
 
     /// Exit edit mode, discarding the draw layer.
     pub fn exit_edit_mode(&mut self) {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         self.edit_state = EditState::Inactive;
         self.draw_layer = None;
         self.draw_texture = None;
@@ -318,8 +294,6 @@ impl ImageView {
     /// enter edit mode. The caller (UI button) typically reads width/height from
     /// `new_image_width`/`new_image_height` buffers.
     pub fn create_blank_canvas(&mut self, width: usize, height: usize) {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         self.original_image = Some(ColorImage::new([width, height], Color32::WHITE));
         self.texture = None;
         self.zoom = 1.0;
@@ -330,8 +304,6 @@ impl ImageView {
 
     /// Paste an image as a floating selection.
     pub fn paste_image(&mut self, image: ColorImage) {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         let size = image.size;
 
         let make_selection = |img: ColorImage, sz: [usize; 2]| FloatingSelection {
@@ -383,8 +355,6 @@ impl ImageView {
     }
 
     pub fn commit_floating(&mut self) {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         if let EditState::FloatingSelection {
             selection,
             mut history,
@@ -404,8 +374,6 @@ impl ImageView {
     }
 
     pub fn cancel_floating(&mut self) {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         if let EditState::FloatingSelection { history, .. } =
             std::mem::replace(&mut self.edit_state, EditState::Inactive)
         {
@@ -442,8 +410,6 @@ impl ImageView {
     }
 
     pub fn start_stroke(&mut self) {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         if let EditState::Drawing { current_stroke, .. } = &mut self.edit_state {
             *current_stroke = Some(StrokeBuilder {
                 points: Vec::new(),
@@ -454,8 +420,6 @@ impl ImageView {
     }
 
     pub fn finish_stroke(&mut self) {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         if let EditState::Drawing {
             history,
             current_stroke,
@@ -474,8 +438,6 @@ impl ImageView {
     }
 
     pub fn draw_line(&mut self, from: Pos2, to: Pos2) {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         let layer = match self.draw_layer.as_mut() {
             Some(l) => l,
             None => return,
@@ -496,8 +458,6 @@ impl ImageView {
     }
 
     pub fn undo(&mut self) {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         if matches!(self.edit_state, EditState::FloatingSelection { .. }) {
             self.commit_floating();
         }
@@ -512,8 +472,6 @@ impl ImageView {
     }
 
     pub fn redo(&mut self) {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         if matches!(self.edit_state, EditState::FloatingSelection { .. }) {
             self.commit_floating();
         }
@@ -528,8 +486,6 @@ impl ImageView {
     }
 
     pub fn can_undo(&self) -> bool {
-        let engine = &self.engine_state;
-        let _ = engine;
         match &self.edit_state {
             EditState::Drawing { history, .. } => history.can_undo(),
             EditState::FloatingSelection { .. } => true, // commit + undo
@@ -538,8 +494,6 @@ impl ImageView {
     }
 
     pub fn can_redo(&self) -> bool {
-        let engine = &self.engine_state;
-        let _ = engine;
         match &self.edit_state {
             EditState::Drawing { history, .. } => history.can_redo(),
             EditState::FloatingSelection { .. } => false,
@@ -549,8 +503,6 @@ impl ImageView {
 
     /// Save the composited image (original + overlay + active floating selection) as PNG.
     pub fn save_png(&self, path: &str) -> Result<(), String> {
-        let engine = &self.engine_state;
-        let _ = engine;
         let original = self.original_image.as_ref().ok_or("No image to save")?;
         let [w, h] = original.size;
 
@@ -598,8 +550,6 @@ pub struct ImageViewStore {
 
 impl ImageViewStore {
     pub fn get_or_init(&mut self, panel: &mut ImagePanel) -> &mut ImageView {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         let view = self.views.entry(panel.id).or_insert_with(ImageView::new);
         view.ensure_loaded(panel);
         view
@@ -609,14 +559,10 @@ impl ImageViewStore {
     /// (i.e. the surface has not been rendered). Used by shortcut handlers that only need
     /// to act on an already-active view (undo/redo, paste).
     pub fn get_mut(&mut self, sid: SurfaceId) -> Option<&mut ImageView> {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         self.views.get_mut(&sid)
     }
 
     pub fn drop_view(&mut self, sid: SurfaceId) {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         self.views.remove(&sid);
     }
 }

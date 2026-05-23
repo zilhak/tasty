@@ -14,16 +14,16 @@ impl MainWindow {
     ///
     /// Returns true if the action was recognized and dispatched. Unknown action_id는 false.
     pub(crate) fn dispatch_action_by_id(&mut self, action_id: &str) -> bool {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         use crate::model::SplitDirection;
         use crate::ui::popup::PopupScope;
 
         let terminal_rect = self.compute_terminal_rect();
         let cell_w = self.base.gpu.cell_width();
         let cell_h = self.base.gpu.cell_height();
-        let proxy = &self.proxy;
+        let proxy = self.proxy.clone();
+        let proxy = &proxy;
         let state = &mut self.state;
+        let engine = &mut self.engine_state;
 
         match action_id {
             "new_workspace" => {
@@ -111,7 +111,7 @@ impl MainWindow {
                 if engine.workspaces.is_empty() {
                     self.request_close();
                 } else {
-                    self.state.resize_all(engine, engine, terminal_rect, cell_w, cell_h);
+                    self.state.resize_all(engine, terminal_rect, cell_w, cell_h);
                 }
                 return true;
             }
@@ -122,7 +122,7 @@ impl MainWindow {
                 if engine.workspaces.is_empty() {
                     self.request_close();
                 } else {
-                    self.state.resize_all(engine, engine, terminal_rect, cell_w, cell_h);
+                    self.state.resize_all(engine, terminal_rect, cell_w, cell_h);
                 }
                 return true;
             }
@@ -140,7 +140,7 @@ impl MainWindow {
                 if engine.workspaces.is_empty() {
                     self.request_close();
                 } else {
-                    self.state.resize_all(engine, engine, terminal_rect, cell_w, cell_h);
+                    self.state.resize_all(engine, terminal_rect, cell_w, cell_h);
                 }
                 return true;
             }
@@ -151,7 +151,7 @@ impl MainWindow {
                 if engine.workspaces.is_empty() {
                     self.request_close();
                 } else {
-                    self.state.resize_all(engine, engine, terminal_rect, cell_w, cell_h);
+                    self.state.resize_all(engine, terminal_rect, cell_w, cell_h);
                 }
                 return true;
             }
@@ -304,8 +304,6 @@ impl MainWindow {
 
     /// Handle keyboard shortcuts. Returns true if the event was consumed by a shortcut.
     pub(crate) fn handle_shortcut(&mut self, key: &Key, mods: ModifiersState) -> bool {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         let ctrl = mods.control_key();
         let shift = mods.shift_key();
         #[cfg(target_os = "macos")]
@@ -322,12 +320,12 @@ impl MainWindow {
             return true;
         }
 
-        let kb = self.engine_state.settings.keybindings.clone();
+        let kb = engine.settings.keybindings.clone();
 
         // Configurable keybinding shortcuts
         if Self::handle_keybinding_shortcuts(
             &mut self.state,
-            &mut self.engine_state,
+            &mut engine,
             &kb,
             key,
             mods,
@@ -336,7 +334,7 @@ impl MainWindow {
             cell_h,
             &self.proxy,
         ) {
-            if self.engine_state.workspaces.is_empty() {
+            if engine.workspaces.is_empty() {
                 self.request_close();
             }
             self.base.dirty = true;
@@ -345,7 +343,7 @@ impl MainWindow {
 
         // Numeric tab/workspace switching (Ctrl+1..9 / Alt+1..9)
         if Self::handle_numeric_switch_shortcuts(&mut self.state, &kb, key, ctrl, shift, alt) {
-            if self.engine_state.workspaces.is_empty() {
+            if engine.workspaces.is_empty() {
                 self.request_close();
             }
             self.base.dirty = true;

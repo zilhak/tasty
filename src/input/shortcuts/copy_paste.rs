@@ -8,9 +8,7 @@ use crate::window::main::MainWindow;
 
 impl MainWindow {
     pub(super) fn handle_copy_shortcut(&mut self, key: &Key, mods: ModifiersState) -> bool {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
-        let bindings = self.engine_state.settings.keybindings.copy.clone();
+        let bindings = engine.settings.keybindings.copy.clone();
         if !matches_any_binding(&bindings, key, mods) {
             return false;
         }
@@ -45,9 +43,7 @@ impl MainWindow {
     }
 
     pub(super) fn handle_paste_shortcut(&mut self, key: &Key, mods: ModifiersState) -> bool {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
-        let bindings = self.engine_state.settings.keybindings.paste.clone();
+        let bindings = engine.settings.keybindings.paste.clone();
         if !matches_any_binding(&bindings, key, mods) {
             return false;
         }

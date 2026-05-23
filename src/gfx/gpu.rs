@@ -194,8 +194,6 @@ impl GpuState {
     }
 
     pub fn resize(&mut self, new_size: PhysicalSize<u32>) {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         if new_size.width == 0 || new_size.height == 0 {
             return;
         }
@@ -213,8 +211,6 @@ impl GpuState {
         window: &Window,
         event: &winit::event::WindowEvent,
     ) -> (bool, bool) {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         let response = self.egui_state.on_window_event(window, event);
         (response.consumed, response.repaint)
     }
@@ -229,8 +225,6 @@ impl GpuState {
         link_hover: Option<(u32, &crate::terminal_link::LinkHighlight)>,
         plugin_manager: Option<&crate::plugin::PluginManager>,
     ) -> Result<(), wgpu::SurfaceError> {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         let render_start = std::time::Instant::now();
 
         // 1. Prepare layout
@@ -408,8 +402,6 @@ impl GpuState {
     }
 
     fn compute_terminal_rect(&self, sidebar_width: LogicalPx) -> Rect {
-        let engine = &self.engine_state;
-        let _ = engine;
         crate::model::compute_terminal_rect(
             PhysicalPx(self.size.width as f32),
             PhysicalPx(self.size.height as f32),
@@ -423,8 +415,6 @@ impl GpuState {
         state: &AppState,
         terminal_rect: Rect,
     ) -> (Vec<(u32, Rect)>, Vec<Rect>, Option<u32>) {
-        let engine = &self.engine_state;
-        let _ = engine;
         let pane_layout = state.active_workspace(engine).pane_layout();
         let pane_rects: Vec<(u32, Rect)> = pane_layout.compute_rects(terminal_rect);
         let mut dividers: Vec<Rect> = pane_layout.collect_dividers(terminal_rect);
@@ -449,73 +439,51 @@ impl GpuState {
 
     /// Compute grid size for a given rect.
     pub fn grid_size_for_rect(&self, rect: &Rect) -> (usize, usize) {
-        let engine = &self.engine_state;
-        let _ = engine;
         self.renderer.grid_size_for_rect(rect)
     }
 
     pub fn cell_width(&self) -> f32 {
-        let engine = &self.engine_state;
-        let _ = engine;
         self.renderer.cell_width()
     }
 
     pub fn cell_height(&self) -> f32 {
-        let engine = &self.engine_state;
-        let _ = engine;
         self.renderer.cell_height()
     }
 
     pub fn size(&self) -> PhysicalSize<u32> {
-        let engine = &self.engine_state;
-        let _ = engine;
         self.size
     }
 
     pub fn scale_factor(&self) -> f32 {
-        let engine = &self.engine_state;
-        let _ = engine;
         self.scale_factor
     }
 
     pub fn egui_frame_nr(&self) -> u64 {
-        let engine = &self.engine_state;
-        let _ = engine;
         self.egui_ctx.cumulative_pass_nr()
     }
 
     /// Get egui's actual pixels_per_point (what it uses for rendering).
     pub fn egui_pixels_per_point(&self) -> f32 {
-        let engine = &self.engine_state;
-        let _ = engine;
         self.egui_ctx.pixels_per_point()
     }
 
     /// Get egui's zoom factor.
     pub fn egui_zoom_factor(&self) -> f32 {
-        let engine = &self.engine_state;
-        let _ = engine;
         self.egui_ctx.zoom_factor()
     }
 
     /// Whether egui-winit currently allows IME on the window.
     pub fn egui_ime_allowed(&self) -> bool {
-        let engine = &self.engine_state;
-        let _ = engine;
         self.egui_state.allow_ime()
     }
 
     /// Get the wgpu surface config dimensions.
     pub fn surface_config_size(&self) -> (u32, u32) {
-        let engine = &self.engine_state;
-        let _ = engine;
         (self.config.width, self.config.height)
     }
 
     /// Update the scale factor (e.g., when the window moves between monitors with different DPI).
     pub fn update_scale_factor(&mut self, new_scale_factor: f32) {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         self.scale_factor = new_scale_factor;
         // Reset egui zoom to 1.0 so that egui_winit's native_pixels_per_point
         // (provided via take_egui_input each frame) is used directly.
@@ -529,8 +497,6 @@ impl GpuState {
     /// Re-sync scale factor from the window and resize if it changed.
     /// Returns true if scale factor was updated.
     pub fn sync_scale_factor(&mut self, window: &Window) -> bool {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         let current_sf = window.scale_factor() as f32;
         if (current_sf - self.scale_factor).abs() > f32::EPSILON {
             self.update_scale_factor(current_sf);

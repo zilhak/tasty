@@ -197,7 +197,7 @@ impl MainWindow {
     pub(super) fn move_cursor_to_click(&mut self, x: f32, y: f32, terminal_rect: &Rect) {
         let engine = &mut self.engine_state;
         let _ = &mut *engine;
-        if !self.engine_state.settings.general.click_to_move_cursor {
+        if !engine.settings.general.click_to_move_cursor {
             return;
         }
 
@@ -321,7 +321,7 @@ impl MainWindow {
             Some(s) if !s.is_empty() => s.clone(),
             _ => return false,
         };
-        let text = if let Some(terminal) = self.engine_state.find_terminal_by_id(sel.surface_id) {
+        let text = if let Some(terminal) = engine.find_terminal_by_id(sel.surface_id) {
             selection::extract_selected_text(terminal, &sel)
         } else {
             return false;
@@ -332,7 +332,7 @@ impl MainWindow {
         if let Some(cb) = &mut self.clipboard {
             cb.set_text(&text);
         }
-        self.engine_state.record_internal_copy(&text);
+        engine.record_internal_copy(&text);
         self.state.toasts.push_info(
             crate::i18n::t("toast.copied"),
             crate::ui::ToastScope::Surface(sel.surface_id),

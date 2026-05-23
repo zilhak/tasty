@@ -48,8 +48,6 @@ impl GpuState {
         state: &AppState,
         plugin_manager: &PluginManager,
     ) {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         let pending = collect_canvas_requests(state, plugin_manager);
         if pending.is_empty() {
             return;

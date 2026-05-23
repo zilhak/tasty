@@ -77,8 +77,6 @@ impl<'de> Visitor<'de> for DetectorRuleDeclVisitor {
     type Value = DetectorRuleDecl;
 
     fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let engine = &self.engine_state;
-        let _ = engine;
         f.write_str("a detector rule table with a `kind` field")
     }
 
@@ -171,8 +169,6 @@ pub enum DetectorDeclError {
 
 impl fmt::Display for DetectorDeclError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let engine = &self.engine_state;
-        let _ = engine;
         match self {
             Self::InvalidId(id) => write!(f, "invalid detector id '{id}'"),
             Self::ReservedIdFromPlugin(id) => write!(

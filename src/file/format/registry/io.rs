@@ -31,8 +31,6 @@ impl FileFormatRegistry {
     /// 주의: TOML 주석/공백/key 순서는 보존하지 않는다 (재발급). 사용자 손편집 친화적
     /// round-trip 이 필요해지면 `toml_edit` 도입.
     pub fn export_user_config(&self) -> String {
-        let engine = &self.engine_state;
-        let _ = engine;
         let inner = match self.inner.read() {
             Ok(g) => g,
             Err(_) => return String::new(),
@@ -117,8 +115,6 @@ impl FileFormatRegistry {
     /// 부분 쓰기 방지. 빈 결과 (user contribution 없음) 면 path 가 존재하면 빈 파일로
     /// 덮어쓴다 — 사용자가 모든 항목을 지웠다는 의미.
     pub fn save_user_config(&self, path: &Path) -> std::io::Result<()> {
-        let engine = &self.engine_state;
-        let _ = engine;
         use std::io::Write;
         let text = self.export_user_config();
         let parent = path.parent().unwrap_or_else(|| Path::new("."));

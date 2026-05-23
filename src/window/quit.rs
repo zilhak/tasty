@@ -29,46 +29,30 @@ impl QuitWindow {
 
 impl Window for QuitWindow {
     fn base(&self) -> &WindowBase {
-        let engine = &self.engine_state;
-        let _ = engine;
         &self.base
     }
     fn base_mut(&mut self) -> &mut WindowBase {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         &mut self.base
     }
     fn modality(&self) -> Modality {
-        let engine = &self.engine_state;
-        let _ = engine;
         MODAL_MODALITY
     }
 
     fn as_modal(&self) -> Option<&dyn ModalWindow> {
-        let engine = &self.engine_state;
-        let _ = engine;
         Some(self)
     }
     fn as_modal_mut(&mut self) -> Option<&mut dyn ModalWindow> {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         Some(self)
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
-        let engine = &self.engine_state;
-        let _ = engine;
         self
     }
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         self
     }
 
     fn handle_event(&mut self, event: WindowEvent, _ctx: &mut WindowCtx<'_>) -> WindowAction {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         let (_, egui_repaint) = self.base.gpu.handle_egui_event(&self.base.winit, &event);
         if egui_repaint {
             self.mark_dirty();
@@ -105,8 +89,6 @@ impl Window for QuitWindow {
     }
 
     fn render(&mut self) {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         if !self.base.dirty {
             return;
         }
@@ -176,13 +158,9 @@ impl Window for QuitWindow {
 
 impl ModalWindow for QuitWindow {
     fn shown(&self) -> bool {
-        let engine = &self.engine_state;
-        let _ = engine;
         self.shown
     }
     fn set_shown(&mut self, v: bool) {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         self.shown = v;
     }
 }

@@ -95,7 +95,7 @@ pub fn handle_tab_create(
                 .get("cwd")
                 .and_then(|v| v.as_str())
                 .map(std::path::PathBuf::from);
-            state.add_tab_to_pane(engine, engine, pane_id, cwd)
+            state.add_tab_to_pane(engine, pane_id, cwd)
         }
         other => {
             // markdown/html/explorer/image/empty + plugin remote_kind
@@ -150,7 +150,7 @@ pub fn handle_tab_close(
         }
     }
 
-    let closed = state.close_tab_by_tab_id(engine, engine, tab_id);
+    let closed = state.close_tab_by_tab_id(engine, tab_id);
 
     if closed {
         JsonRpcResponse::success(id, json!({ "closed": true, "tab_id": tab_id }))

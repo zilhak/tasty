@@ -43,18 +43,27 @@ impl App {
             for intent in batch {
                 #[cfg(debug_assertions)]
                 crate::intent::watch::observe(&intent);
-                Self::dispatch_one_intent(&mut main.state, &intent);
+                Self::dispatch_one_intent(&mut main.state, &mut main.engine_state, &intent);
             }
             main.mark_dirty();
         }
-        for (idx, batch) in parked_batches {
-            let Some(state) = self.parked_states.get_mut(idx) else {
-                continue;
-            };
-            for intent in batch {
-                #[cfg(debug_assertions)]
-                crate::intent::watch::observe(&intent);
-                Self::dispatch_one_intent(state, &intent);
+        if !parked_batches.is_empty() {
+            // parked AppState 들은 engine 이 분리되어 있지 않으므로, App.engine_state
+            // 를 임시로 빌려와 사용한다. parked 가 있을 때 App.engine_state 가 비어
+            // 있는 경로는 없다는 invariant 하에 expect 처리.
+            let engine = self
+                .engine_state
+                .as_mut()
+                .expect("App.engine_state must be present for parked dispatch");
+            for (idx, batch) in parked_batches {
+                let Some(state) = self.parked_states.get_mut(idx) else {
+                    continue;
+                };
+                for intent in batch {
+                    #[cfg(debug_assertions)]
+                    crate::intent::watch::observe(&intent);
+                    Self::dispatch_one_intent(state, engine, &intent);
+                }
             }
         }
     }
@@ -62,6 +71,7 @@ impl App {
     /// 단일 Intent 를 도메인 핸들러로 분기한다.
     fn dispatch_one_intent(
         state: &mut crate::state::AppState,
+        engine: &mut crate::engine_state::EngineState,
         intent: &crate::intent::DispatchedIntent,
     ) {
         use crate::intent::Intent;
@@ -73,21 +83,21 @@ impl App {
             | Intent::SavePreset { .. }
             | Intent::DeletePreset { .. }
             | Intent::RenamePreset { .. } => {
-                crate::intent::preset::handle(state, intent);
+                crate::intent::preset::handle(state, engine, intent);
             }
             Intent::SplitSurface { .. }
             | Intent::CloseSurface { .. }
             | Intent::ConvertSurface { .. } => {
-                crate::intent::surface::handle(state, intent);
+                crate::intent::surface::handle(state, engine, intent);
             }
             Intent::NewTab { .. } | Intent::CloseTab { .. } => {
-                crate::intent::tab::handle(state, intent);
+                crate::intent::tab::handle(state, engine, intent);
             }
             Intent::SplitPane { .. } => {
-                crate::intent::pane::handle(state, intent);
+                crate::intent::pane::handle(state, engine, intent);
             }
             Intent::NewWorkspace { .. } => {
-                crate::intent::workspace::handle(state, intent);
+                crate::intent::workspace::handle(state, engine, intent);
             }
             Intent::Noop => {}
         }

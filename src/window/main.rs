@@ -286,7 +286,7 @@ impl Window for MainWindow {
                 let terminal_rect = self.compute_terminal_rect();
                 let (cols, rows) = self.base.gpu.grid_size_for_rect(&terminal_rect);
                 self.engine_state.update_grid_size(cols, rows);
-                self.state.resize_all(engine, engine, 
+                self.state.resize_all(engine, 
                     terminal_rect,
                     self.base.gpu.cell_width(),
                     self.base.gpu.cell_height(),

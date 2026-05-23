@@ -23,8 +23,6 @@ impl MarkdownView {
     }
 
     pub fn replace_content(&mut self, new_content: String) {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         self.content = new_content;
     }
 }
@@ -39,8 +37,6 @@ impl MarkdownViewStore {
     /// refreshing `content` if the panel reports a reload. Creates the view on first
     /// access using the panel's current `file_path`.
     pub fn get_or_init(&mut self, panel: &mut MarkdownPanel) -> &mut MarkdownView {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         let view = self
             .views
             .entry(panel.id)
@@ -52,8 +48,6 @@ impl MarkdownViewStore {
     }
 
     pub fn drop_view(&mut self, sid: SurfaceId) {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         self.views.remove(&sid);
     }
 }

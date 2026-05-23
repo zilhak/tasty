@@ -151,8 +151,6 @@ pub enum HandlerDeclError {
 
 impl fmt::Display for HandlerDeclError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let engine = &self.engine_state;
-        let _ = engine;
         match self {
             Self::InvalidShortName(s) => write!(
                 f,

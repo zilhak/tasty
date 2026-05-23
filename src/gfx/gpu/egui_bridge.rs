@@ -16,8 +16,6 @@ impl GpuState {
         terminal_rect: Rect,
         plugin_manager: Option<&crate::plugin::PluginManager>,
     ) -> egui::FullOutput {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         let raw_input = self.egui_state.take_egui_input(window);
         let scale_factor = self.scale_factor;
         let canvas_cache = &self.canvas_textures;
@@ -45,8 +43,6 @@ impl GpuState {
     }
 
     pub(super) fn post_egui_update(&mut self, state: &AppState, prev_theme: &str) {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         let ui_scale = engine.settings.appearance.ui_scale_factor();
         if engine.settings.appearance.theme != prev_theme {
             self.refresh_theme(&engine.settings.appearance.theme, ui_scale);
@@ -89,8 +85,6 @@ impl GpuState {
 
     /// Re-apply the theme from settings. Called after settings are saved.
     pub fn refresh_theme(&self, theme: &str, ui_scale: f32) {
-        let engine = &self.engine_state;
-        let _ = engine;
         Self::apply_theme(&self.egui_ctx, theme, ui_scale);
     }
 
@@ -98,8 +92,6 @@ impl GpuState {
 
     /// Take egui input from a window.
     pub fn take_egui_input(&mut self, window: &Window) -> egui::RawInput {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         self.egui_state.take_egui_input(window)
     }
 
@@ -109,15 +101,11 @@ impl GpuState {
         raw_input: egui::RawInput,
         ui_fn: impl FnMut(&egui::Context),
     ) -> egui::FullOutput {
-        let engine = &self.engine_state;
-        let _ = engine;
         self.egui_ctx.run(raw_input, ui_fn)
     }
 
     /// Finish an egui frame: tessellate, render, present.
     pub fn finish_egui_frame(&mut self, window: &Window, full_output: egui::FullOutput) {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         // egui-winit disables IME when no egui text field is focused
         // (calls set_ime_allowed(false) when self.allow_ime differs from
         // ime.is_some()). The terminal always needs IME active.

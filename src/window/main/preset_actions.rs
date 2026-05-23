@@ -16,7 +16,7 @@ impl MainWindow {
     pub(crate) fn save_workspace_preset_from_idx(&mut self, ws_idx: usize) -> Result<()> {
         let engine = &mut self.engine_state;
         let _ = &mut *engine;
-        let ws = self.engine_state
+        let ws = engine
             .workspaces
             .get(ws_idx)
             .ok_or_else(|| anyhow!("workspace idx {ws_idx} out of range"))?;
@@ -26,7 +26,7 @@ impl MainWindow {
             ws.name.clone()
         };
 
-        let registry = self.engine_state.surface_registry.clone();
+        let registry = engine.surface_registry.clone();
         let mut capture = move |s: &dyn Surface| -> Option<CapturedSurfaceMeta> {
             let def = registry.get(s.kind())?;
             let params = (def.snapshot)(s)?;
@@ -76,7 +76,7 @@ impl MainWindow {
             base
         };
 
-        let registry = self.engine_state.surface_registry.clone();
+        let registry = engine.surface_registry.clone();
         let mut capture = move |s: &dyn Surface| -> Option<CapturedSurfaceMeta> {
             let def = registry.get(s.kind())?;
             let params = (def.snapshot)(s)?;
@@ -110,7 +110,7 @@ impl MainWindow {
             .ok_or_else(|| anyhow!("pane {pane_id} not found"))?;
         let base_name = "pane".to_string();
 
-        let registry = self.engine_state.surface_registry.clone();
+        let registry = engine.surface_registry.clone();
         let mut capture = move |s: &dyn Surface| -> Option<CapturedSurfaceMeta> {
             let def = registry.get(s.kind())?;
             let params = (def.snapshot)(s)?;

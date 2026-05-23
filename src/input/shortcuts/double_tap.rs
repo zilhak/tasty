@@ -12,9 +12,7 @@ impl MainWindow {
         &mut self,
         dt: crate::double_tap::DoubleTapKey,
     ) -> bool {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
-        let kb = self.engine_state.settings.keybindings.clone();
+        let kb = engine.settings.keybindings.clone();
         let dt_str = dt.binding_str();
 
         let has_dt = |bindings: &[String]| bindings.iter().any(|b| b == dt_str);
@@ -35,7 +33,7 @@ impl MainWindow {
                 .from_user_shortcut("toggle_notifications_double_tap"),
             );
             if will_open {
-                self.engine_state.notifications.mark_all_read();
+                engine.notifications.mark_all_read();
             }
             return true;
         }
@@ -69,6 +67,8 @@ impl MainWindow {
             (&kb.prev_tab, "prev_tab"),
         ];
 
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
         for (bindings, action) in &bindings_to_check {
             if has_dt(bindings) {
                 match *action {
@@ -80,30 +80,30 @@ impl MainWindow {
                             }
                             .from_user_shortcut("new_workspace"),
                         );
-                        self.state.resize_all(engine, engine, terminal_rect, cell_w, cell_h);
+                        self.state.resize_all(engine, terminal_rect, cell_w, cell_h);
                     }
                     "close_workspace" => {
                         self.state.close_active_workspace(engine);
-                        if self.engine_state.workspaces.is_empty() {
+                        if engine.workspaces.is_empty() {
                             self.request_close();
                         } else {
-                            self.state.resize_all(engine, engine, terminal_rect, cell_w, cell_h);
+                            self.state.resize_all(engine, terminal_rect, cell_w, cell_h);
                         }
                     }
                     "new_tab" => {
                         if let Err(e) = self.state.add_tab(engine) {
                             tracing::warn!("add_tab failed: {e}");
                         }
-                        self.state.resize_all(engine, engine, terminal_rect, cell_w, cell_h);
+                        self.state.resize_all(engine, terminal_rect, cell_w, cell_h);
                     }
                     "close_pane" => {
                         if !self.state.close_active_pane(engine) {
                             self.state.close_active_workspace(engine);
                         }
-                        if self.engine_state.workspaces.is_empty() {
+                        if engine.workspaces.is_empty() {
                             self.request_close();
                         } else {
-                            self.state.resize_all(engine, engine, terminal_rect, cell_w, cell_h);
+                            self.state.resize_all(engine, terminal_rect, cell_w, cell_h);
                         }
                     }
                     "split_pane_vertical" => {
@@ -113,7 +113,7 @@ impl MainWindow {
                             }
                             .from_user_shortcut("split_pane_vertical"),
                         );
-                        self.state.resize_all(engine, engine, terminal_rect, cell_w, cell_h);
+                        self.state.resize_all(engine, terminal_rect, cell_w, cell_h);
                     }
                     "split_pane_horizontal" => {
                         self.state.dispatch_intent(
@@ -122,7 +122,7 @@ impl MainWindow {
                             }
                             .from_user_shortcut("split_pane_horizontal"),
                         );
-                        self.state.resize_all(engine, engine, terminal_rect, cell_w, cell_h);
+                        self.state.resize_all(engine, terminal_rect, cell_w, cell_h);
                     }
                     "split_surface_vertical" => {
                         self.state.dispatch_intent(
@@ -131,7 +131,7 @@ impl MainWindow {
                             }
                             .from_user_shortcut("split_surface_vertical"),
                         );
-                        self.state.resize_all(engine, engine, terminal_rect, cell_w, cell_h);
+                        self.state.resize_all(engine, terminal_rect, cell_w, cell_h);
                     }
                     "split_surface_horizontal" => {
                         self.state.dispatch_intent(
@@ -140,7 +140,7 @@ impl MainWindow {
                             }
                             .from_user_shortcut("split_surface_horizontal"),
                         );
-                        self.state.resize_all(engine, engine, terminal_rect, cell_w, cell_h);
+                        self.state.resize_all(engine, terminal_rect, cell_w, cell_h);
                     }
                     "focus_pane_next" => {
                         self.state.move_pane_focus_forward(engine);
@@ -156,7 +156,7 @@ impl MainWindow {
                     }
                     "close_surface" => {
                         let target_sid = self.state.focused_surface_id(engine);
-                        let target_kind = target_sid.and_then(|s| self.state.surface_kind(engine, engine, s));
+                        let target_kind = target_sid.and_then(|s| self.state.surface_kind(engine, s));
                         let closed = self.state.close_active_surface(engine);
                         if closed {
                             if let (Some(sid), Some(k)) = (target_sid, target_kind) {
@@ -165,15 +165,15 @@ impl MainWindow {
                         } else if !self.state.close_active_pane(engine) {
                             self.state.close_active_workspace(engine);
                         }
-                        if self.engine_state.workspaces.is_empty() {
+                        if engine.workspaces.is_empty() {
                             self.request_close();
                         } else {
-                            self.state.resize_all(engine, engine, terminal_rect, cell_w, cell_h);
+                            self.state.resize_all(engine, terminal_rect, cell_w, cell_h);
                         }
                     }
                     "restore_closed" => {
                         self.state.restore_closed_item(engine);
-                        self.state.resize_all(engine, engine, terminal_rect, cell_w, cell_h);
+                        self.state.resize_all(engine, terminal_rect, cell_w, cell_h);
                     }
                     "quit" => {
                         send_app_event(&self.proxy, crate::AppEvent::QuitRequested);
@@ -240,10 +240,10 @@ impl MainWindow {
                                 self.state.close_active_workspace(engine);
                             }
                         }
-                        if self.engine_state.workspaces.is_empty() {
+                        if engine.workspaces.is_empty() {
                             self.request_close();
                         } else {
-                            self.state.resize_all(engine, engine, terminal_rect, cell_w, cell_h);
+                            self.state.resize_all(engine, terminal_rect, cell_w, cell_h);
                         }
                     }
                     "next_tab" => {

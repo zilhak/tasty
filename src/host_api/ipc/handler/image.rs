@@ -20,7 +20,7 @@ pub fn handle_open(state: &mut AppState, engine: &mut crate::engine_state::Engin
         Some(p) => p.to_string(),
         None => return JsonRpcResponse::invalid_params(id, "Missing required 'path' parameter"),
     };
-    let ok = state.convert_surface_to_kind(engine, engine, sid, "image", &json!({ "file": path.clone() }));
+    let ok = state.convert_surface_to_kind(engine, sid, "image", &json!({ "file": path.clone() }));
     if !ok {
         return JsonRpcResponse::invalid_params(id, format!("Surface {sid} not found"));
     }
@@ -42,7 +42,7 @@ pub fn handle_save(state: &mut AppState, engine: &mut crate::engine_state::Engin
         .map(String::from);
     let final_path = match explicit {
         Some(p) => p,
-        None => match state.image_panel_mut(engine, engine, sid).and_then(|p| p.save_path()) {
+        None => match state.image_panel_mut(engine, sid).and_then(|p| p.save_path()) {
             Some(p) => p,
             None => {
                 return JsonRpcResponse::invalid_params(
@@ -64,7 +64,7 @@ pub fn handle_save(state: &mut AppState, engine: &mut crate::engine_state::Engin
     };
     match result {
         Ok(()) => {
-            if let Some(panel) = state.image_panel_mut(engine, engine, sid) {
+            if let Some(panel) = state.image_panel_mut(engine, sid) {
                 if panel.is_blank() {
                     panel.assign_file_path(final_path.clone());
                 }
@@ -106,7 +106,7 @@ fn step_navigation(
     };
 
     let mut image_views = std::mem::take(&mut state.image_views);
-    let result = if let Some(panel) = state.image_panel_mut(engine, engine, sid) {
+    let result = if let Some(panel) = state.image_panel_mut(engine, sid) {
         let new_path = if forward {
             panel.step_next()
         } else {
@@ -163,7 +163,7 @@ pub fn handle_paste(state: &mut AppState, engine: &mut crate::engine_state::Engi
     };
 
     let mut image_views = std::mem::take(&mut state.image_views);
-    let pasted = if let Some(panel) = state.image_panel_mut(engine, engine, sid) {
+    let pasted = if let Some(panel) = state.image_panel_mut(engine, sid) {
         let view = image_views.get_or_init(panel);
         view.paste_image(color_image);
         true
@@ -327,7 +327,7 @@ mod tests {
         let mut state = make_state();
         let sid = first_surface_id(&mut state);
         // Convert to image (blank canvas — no file).
-        assert!(state.convert_surface_to_kind(engine, engine, sid, "image", &json!({})));
+        assert!(state.convert_surface_to_kind(engine, sid, "image", &json!({})));
 
         let resp = handle_list(&state, Value::Null);
         let v = resp.result.expect("list ok");
@@ -341,7 +341,7 @@ mod tests {
         let mut state = make_state();
         let sid = first_surface_id(&mut state);
         // Convert to image but never render → no ImageView in store.
-        assert!(state.convert_surface_to_kind(engine, engine, sid, "image", &json!({})));
+        assert!(state.convert_surface_to_kind(engine, sid, "image", &json!({})));
 
         let resp = handle_save(
             &mut state,

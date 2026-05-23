@@ -60,8 +60,6 @@ pub struct RenderPreedit {
 impl RenderPreedit {
     /// Returns the exclusive end column of the preedit text.
     fn end_col(&self) -> usize {
-        let engine = &self.engine_state;
-        let _ = engine;
         let mut col = self.anchor_col;
         for ch in self.text.chars() {
             col += unicode_width(ch);
@@ -71,8 +69,6 @@ impl RenderPreedit {
 
     /// Check if a cell at (col, row) is covered by the preedit overlay.
     fn covers(&self, col: usize, row: usize) -> bool {
-        let engine = &self.engine_state;
-        let _ = engine;
         row == self.anchor_row && col >= self.anchor_col && col < self.end_col()
     }
 }
@@ -103,8 +99,6 @@ pub struct CellRenderer {
 impl CellRenderer {
     /// Update uniforms when viewport is resized.
     pub fn resize(&self, queue: &wgpu::Queue, width: u32, height: u32) {
-        let engine = &self.engine_state;
-        let _ = engine;
         let uniforms = Uniforms {
             cell_size: [
                 self.font_config.metrics.cell_width,
@@ -130,8 +124,6 @@ impl CellRenderer {
         link: Option<&LinkHighlight>,
         search: Option<&SearchHighlights<'_>>,
     ) {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         let (cols, rows) = surface.dimensions();
         let lines = surface.screen_lines();
 
@@ -298,8 +290,6 @@ impl CellRenderer {
 
     /// Compute terminal grid size from a viewport rect (physical pixels).
     pub fn grid_size_for_rect(&self, rect: &Rect) -> (usize, usize) {
-        let engine = &self.engine_state;
-        let _ = engine;
         let cell_w = self.font_config.metrics.cell_width.max(1.0);
         let cell_h = self.font_config.metrics.cell_height.max(1.0);
         let cols = (rect.width.value() / cell_w).floor() as usize;
@@ -322,8 +312,6 @@ impl CellRenderer {
         link: Option<&LinkHighlight>,
         search: Option<&SearchHighlights<'_>>,
     ) {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         let uniforms = Uniforms {
             cell_size: [
                 self.font_config.metrics.cell_width,
@@ -473,8 +461,6 @@ impl CellRenderer {
         rows: usize,
         scroll_offset: usize,
     ) {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         let Some(preedit) = preedit else {
             return;
         };
@@ -578,15 +564,11 @@ impl CellRenderer {
 
     /// Get cell width in pixels.
     pub fn cell_width(&self) -> f32 {
-        let engine = &self.engine_state;
-        let _ = engine;
         self.font_config.metrics.cell_width
     }
 
     /// Get cell height in pixels.
     pub fn cell_height(&self) -> f32 {
-        let engine = &self.engine_state;
-        let _ = engine;
         self.font_config.metrics.cell_height
     }
 }

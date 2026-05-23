@@ -41,8 +41,6 @@ impl DeepCtx {
     }
 
     pub(super) fn entry(&mut self, target: &FileTarget) -> &DeepCacheEntry {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         let path = target.as_path().to_path_buf();
         if !self.cache.contains_key(&path) {
             let e = read_entry(&path);

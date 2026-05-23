@@ -14,10 +14,6 @@ pub(crate) trait ModalWindow: Window {
 
     /// 첫 렌더 후 윈도우를 가시화한다. 렌더 메서드 끝에서 호출한다.
     fn reveal_after_first_render(&mut self) {
-        let engine = &self.engine_state;
-        let _ = engine;
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         if !self.shown() {
             self.base().winit.set_visible(true);
             self.set_shown(true);
@@ -26,8 +22,6 @@ pub(crate) trait ModalWindow: Window {
 
     /// Esc 키가 눌렸을 때의 기본 동작. 구현체가 override 가능.
     fn on_escape(&mut self) -> WindowAction {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         WindowAction::Close
     }
 }

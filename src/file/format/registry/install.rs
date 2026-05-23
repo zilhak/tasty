@@ -22,8 +22,6 @@ use crate::file::format::types::{
 
 impl FileFormatRegistry {
     pub fn install_host_defaults(&self, toml_text: &str) {
-        let engine = &self.engine_state;
-        let _ = engine;
         let decls = match parse_detector_section(toml_text) {
             Ok(d) => d,
             Err(e) => {
@@ -52,8 +50,6 @@ impl FileFormatRegistry {
     }
 
     pub fn install_user_config(&self, path: &Path) {
-        let engine = &self.engine_state;
-        let _ = engine;
         let text = match std::fs::read_to_string(path) {
             Ok(s) => s,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return,
@@ -90,8 +86,6 @@ impl FileFormatRegistry {
     }
 
     pub fn install_plugin_detectors(&self, plugin_id: &str, decls: &[DetectorDecl]) {
-        let engine = &self.engine_state;
-        let _ = engine;
         let mut inner = match self.inner.write() {
             Ok(g) => g,
             Err(_) => return,

@@ -23,16 +23,12 @@ impl HandlerId {
     }
 
     pub fn as_str(&self) -> &str {
-        let engine = &self.engine_state;
-        let _ = engine;
         &self.0
     }
 }
 
 impl std::fmt::Display for HandlerId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let engine = &self.engine_state;
-        let _ = engine;
         f.write_str(&self.0)
     }
 }
@@ -57,8 +53,6 @@ pub enum HandlerOwner {
 impl HandlerOwner {
     /// HandlerId prefix segment 추출 (e.g. `host`, `<plugin_id>`, `user`).
     pub fn prefix(&self) -> &str {
-        let engine = &self.engine_state;
-        let _ = engine;
         match self {
             Self::Host => "host",
             Self::Plugin(id) => id.as_str(),

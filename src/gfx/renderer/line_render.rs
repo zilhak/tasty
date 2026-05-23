@@ -25,8 +25,6 @@ impl CellRenderer {
         link: Option<&LinkHighlight>,
         search: Option<&super::SearchHighlights<'_>>,
     ) {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         let (mut bg_color, mut fg_color) = compute_cell_colors(attrs, default_bg);
 
         // Selection: override bg color
@@ -104,8 +102,6 @@ impl CellRenderer {
         link: Option<&LinkHighlight>,
         search: Option<&super::SearchHighlights<'_>>,
     ) {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         let mut col_idx: usize = 0;
         for (text, attrs) in line.iter() {
             if col_idx >= cols {
@@ -152,8 +148,6 @@ impl CellRenderer {
         link: Option<&LinkHighlight>,
         search: Option<&super::SearchHighlights<'_>>,
     ) {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         let mut last_col = 0usize;
         for cell_ref in line.visible_cells() {
             let col_idx = cell_ref.cell_index();

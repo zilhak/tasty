@@ -22,7 +22,7 @@ impl MainWindow {
             )
         });
 
-        let modifier = LinkModifier::parse(&self.engine_state.settings.general.link_click_modifier);
+        let modifier = LinkModifier::parse(&engine.settings.general.link_click_modifier);
         let mods = &self.base.modifiers;
         let matches_mods = modifier.matches(mods.control_key(), mods.alt_key(), mods.super_key());
 
@@ -61,7 +61,7 @@ impl MainWindow {
         // focused 기반이 아니라 실제 hover 위치의 surface로 판별해야 여러 pane 중
         // 어느 곳이든 동작한다.
         let surface_id = self.state.surface_id_at_position(engine, x, y, terminal_rect)?;
-        let terminal = self.engine_state.find_terminal_by_id(surface_id)?;
+        let terminal = engine.find_terminal_by_id(surface_id)?;
         let surface_rect = self.state.surface_rect_by_id(engine, surface_id, terminal_rect)?;
 
         let (cols, rows) = terminal.surface().dimensions();
@@ -142,7 +142,7 @@ impl MainWindow {
                 }
             };
             if changed {
-                self.state.resize_all(engine, engine, 
+                self.state.resize_all(engine, 
                     terminal_rect,
                     self.base.gpu.cell_width(),
                     self.base.gpu.cell_height(),
@@ -206,7 +206,7 @@ impl MainWindow {
                 else {
                     return;
                 };
-                if self.engine_state.find_terminal_by_id(surface_id).is_none() {
+                if engine.find_terminal_by_id(surface_id).is_none() {
                     return;
                 }
                 let sf = self.base.gpu.scale_factor() as f32;
@@ -233,7 +233,7 @@ impl MainWindow {
                 // 수식키+클릭은 무조건 링크 클릭 동작으로 라우팅.
                 // 링크 위면 열고, 링크 위가 아니면 아무것도 안 함 (selection 시작 안 함).
                 let modifier =
-                    LinkModifier::parse(&self.engine_state.settings.general.link_click_modifier);
+                    LinkModifier::parse(&engine.settings.general.link_click_modifier);
                 let mods = &self.base.modifiers;
                 let link_mods_match = !matches!(modifier, LinkModifier::None)
                     && modifier.matches(mods.control_key(), mods.alt_key(), mods.super_key());
@@ -313,7 +313,7 @@ impl MainWindow {
                 } else if button_state == ElementState::Released {
                     if self.dragging_divider.is_some() {
                         self.dragging_divider = None;
-                        self.state.resize_all(engine, engine, 
+                        self.state.resize_all(engine, 
                             terminal_rect,
                             self.base.gpu.cell_width(),
                             self.base.gpu.cell_height(),
@@ -354,7 +354,7 @@ impl MainWindow {
                 .or_else(|| self.state.focused_surface_id(engine));
 
             if let Some(surface_id) = target_id {
-                if let Some(terminal) = self.engine_state.find_terminal_by_id_mut(surface_id) {
+                if let Some(terminal) = engine.find_terminal_by_id_mut(surface_id) {
                     let lines = match delta {
                         MouseScrollDelta::LineDelta(_, y) => y as i32,
                         MouseScrollDelta::PixelDelta(pos) => (pos.y / 20.0) as i32,

@@ -79,8 +79,6 @@ impl CanvasTextureCache {
         format: PixelFormat,
         filter: PixelFilter,
     ) -> TextureId {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         if let Some(e) = self.entries.get(key) {
             if e.width == width && e.height == height && e.format == format && e.filter == filter {
                 return e.egui_id;
@@ -108,8 +106,6 @@ impl CanvasTextureCache {
         atomic_gen: u64,
         dirty: Option<Rect>,
     ) {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         let Some(e) = self.entries.get_mut(key) else {
             tracing::warn!(?key, "canvas upload: entry missing");
             return;
@@ -179,8 +175,6 @@ impl CanvasTextureCache {
     /// linear scan: 한 윈도우 내 활성 plugin canvas 개수는 보통 < 10이라 충분히 빠르다.
     /// hash 기반 키로 바꾸려면 `Cow<str>` 또는 `Borrow` 트릭이 필요해서 의도적으로 단순 구현.
     pub fn get(&self, plugin_id: &str, buffer_id: SharedBufferId) -> Option<TextureId> {
-        let engine = &self.engine_state;
-        let _ = engine;
         self.entries
             .iter()
             .find(|(k, _)| k.plugin_id == plugin_id && k.buffer_id == buffer_id)

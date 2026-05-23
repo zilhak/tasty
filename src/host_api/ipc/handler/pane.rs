@@ -54,7 +54,7 @@ pub fn handle_pane_close(
         return JsonRpcResponse::invalid_params(id, format!("Pane {} not found", pane_id));
     }
 
-    let closed = state.close_pane_by_id(engine, engine, pane_id);
+    let closed = state.close_pane_by_id(engine, pane_id);
 
     if closed {
         JsonRpcResponse::success(id, json!({ "closed": true, "pane_id": pane_id }))
@@ -174,7 +174,7 @@ pub fn handle_split(
                 None
             };
 
-            match state.split_pane_targeted(engine, engine, resolved_pane_id, direction, cwd, kind, params) {
+            match state.split_pane_targeted(engine, resolved_pane_id, direction, cwd, kind, params) {
                 Ok((new_pane_id, new_surface_id)) => {
                     apply_meta(new_surface_id, meta);
                     JsonRpcResponse::success(
@@ -200,7 +200,7 @@ pub fn handle_split(
                 }
             };
 
-            match state.split_surface_targeted(engine, engine, Some(sid), direction, cwd, kind, params) {
+            match state.split_surface_targeted(engine, Some(sid), direction, cwd, kind, params) {
                 Ok(new_surface_id) => {
                     apply_meta(new_surface_id, meta);
                     JsonRpcResponse::success(

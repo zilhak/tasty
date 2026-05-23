@@ -56,7 +56,7 @@ pub fn handle_workspace_create(
         }
         _ => {}
     }
-    match state.add_workspace_background(engine, engine, cwd, kind, params) {
+    match state.add_workspace_background(engine, cwd, kind, params) {
         Ok(idx) => {
             let mut renamed_name: Option<String> = None;
             let mut renamed_subtitle: Option<String> = None;
@@ -206,7 +206,7 @@ pub fn handle_workspace_move(
         None => return JsonRpcResponse::invalid_params(id, "Missing 'to_index' parameter"),
     };
 
-    let moved = state.move_workspace(engine, engine, from, to);
+    let moved = state.move_workspace(engine, from, to);
     if moved {
         engine.mark_layout_dirty();
     }

@@ -47,8 +47,6 @@ pub(crate) struct FileHandlerEditDraft {
 
 impl FileHandlerEditDraft {
     pub fn has_changes(&self) -> bool {
-        let engine = &self.engine_state;
-        let _ = engine;
         !self.detector_enabled.is_empty()
             || !self.handler_enabled.is_empty()
             || !self.remove_detector.is_empty()

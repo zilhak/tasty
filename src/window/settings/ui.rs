@@ -131,8 +131,6 @@ pub struct SettingsUiState {
 impl SettingsUiState {
     /// 단축키 녹화 중인지 여부.
     pub fn is_recording(&self) -> bool {
-        let engine = &self.engine_state;
-        let _ = engine;
         self.recording_field.is_some()
     }
 

@@ -48,16 +48,12 @@ impl PluginsWindow {
 
     /// 메인 루프가 actions를 적용한 뒤 호출하여 화면을 새 데이터로 갱신.
     pub fn refresh_snapshot(&mut self, snapshot: PluginsSnapshot) {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         self.snapshot = snapshot;
         self.mark_dirty();
     }
 
     /// 모달 윈도우 영역에 toast를 띄운다. `Add` 탭에서 설치 성공/실패 알림 등에 사용.
     pub fn push_toast(&mut self, message: impl Into<String>, kind: crate::ui::ToastKind) {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         self.toasts
             .push(message, kind, crate::ui::ToastScope::Window);
         self.mark_dirty();
@@ -66,46 +62,30 @@ impl PluginsWindow {
 
 impl Window for PluginsWindow {
     fn base(&self) -> &WindowBase {
-        let engine = &self.engine_state;
-        let _ = engine;
         &self.base
     }
     fn base_mut(&mut self) -> &mut WindowBase {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         &mut self.base
     }
     fn modality(&self) -> Modality {
-        let engine = &self.engine_state;
-        let _ = engine;
         MODAL_MODALITY
     }
 
     fn as_modal(&self) -> Option<&dyn ModalWindow> {
-        let engine = &self.engine_state;
-        let _ = engine;
         Some(self)
     }
     fn as_modal_mut(&mut self) -> Option<&mut dyn ModalWindow> {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         Some(self)
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
-        let engine = &self.engine_state;
-        let _ = engine;
         self
     }
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         self
     }
 
     fn handle_event(&mut self, event: WindowEvent, _ctx: &mut WindowCtx<'_>) -> WindowAction {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         let (_, egui_repaint) = self.base.gpu.handle_egui_event(&self.base.winit, &event);
         if egui_repaint {
             self.mark_dirty();
@@ -140,8 +120,6 @@ impl Window for PluginsWindow {
     }
 
     fn render(&mut self) {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         if !self.base.dirty {
             return;
         }
@@ -184,13 +162,9 @@ impl Window for PluginsWindow {
 
 impl ModalWindow for PluginsWindow {
     fn shown(&self) -> bool {
-        let engine = &self.engine_state;
-        let _ = engine;
         self.shown
     }
     fn set_shown(&mut self, v: bool) {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         self.shown = v;
     }
 }

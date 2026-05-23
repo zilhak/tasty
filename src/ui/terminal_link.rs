@@ -32,8 +32,6 @@ pub struct LinkSpan {
 impl LinkSpan {
     /// (col, absolute_row)가 이 링크 범위 안에 있는지.
     pub fn contains(&self, col: usize, absolute_row: usize) -> bool {
-        let engine = &self.engine_state;
-        let _ = engine;
         self.absolute_row == absolute_row && col >= self.start_col && col <= self.end_col
     }
 }
@@ -296,8 +294,6 @@ pub struct LinkHighlight {
 
 impl LinkHighlight {
     pub fn covers(&self, col: usize, absolute_row: usize) -> bool {
-        let engine = &self.engine_state;
-        let _ = engine;
         self.absolute_row == absolute_row && col >= self.start_col && col <= self.end_col
     }
 }

@@ -23,16 +23,12 @@ use crate::file::format::types::{
 impl FileFormatRegistry {
     /// detector 조회 — clone 반환.
     pub fn detector(&self, id: &DetectorId) -> Option<FileFormatDetector> {
-        let engine = &self.engine_state;
-        let _ = engine;
         self.ensure_finalized();
         let inner = self.inner.read().ok()?;
         inner.finalized.get(id).cloned()
     }
 
     pub fn list_detectors(&self) -> Vec<DetectorId> {
-        let engine = &self.engine_state;
-        let _ = engine;
         self.ensure_finalized();
         let inner = match self.inner.read() {
             Ok(g) => g,
@@ -51,8 +47,6 @@ impl FileFormatRegistry {
     /// `extension_priority` 표 + `install_order` 순서로 결정적 1순위 선택. 표 적용 결과가
     /// 비면 기존 BTreeMap 순회 (PathGlob / IsDirectory / Magic / MIME 등) 로 fallback.
     pub fn identify(&self, target: &FileTarget, depth: DetectDepth) -> Option<DetectorId> {
-        let engine = &self.engine_state;
-        let _ = engine;
         self.ensure_finalized();
         let inner = self.inner.read().ok()?;
         let is_dir = target.is_directory();

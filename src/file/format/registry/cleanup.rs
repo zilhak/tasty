@@ -22,8 +22,6 @@ use crate::file::format::types::{
 
 impl FileFormatRegistry {
     pub fn uninstall_plugin(&self, plugin_id: &str) {
-        let engine = &self.engine_state;
-        let _ = engine;
         let mut inner = match self.inner.write() {
             Ok(g) => g,
             Err(_) => return,

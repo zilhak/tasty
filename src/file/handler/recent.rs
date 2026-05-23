@@ -82,15 +82,11 @@ impl RecentPicks {
 
     /// LRU 앞으로 옮긴다. 같은 id 가 있으면 dedupe. cap 초과 시 가장 오래된 entry drop.
     pub fn record(&mut self, id: &HandlerId) {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         self.record_at(id, now_secs());
     }
 
     /// 테스트용 — 명시적 timestamp.
     fn record_at(&mut self, id: &HandlerId, ts: i64) {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         self.entries.retain(|e| &e.handler_id != id);
         self.entries.insert(
             0,
@@ -103,15 +99,11 @@ impl RecentPicks {
     }
 
     pub fn list(&self) -> &[RecentEntry] {
-        let engine = &self.engine_state;
-        let _ = engine;
         &self.entries
     }
 
     /// 특정 handler id 를 LRU 에서 제거. 없으면 no-op (`false` 반환).
     pub fn forget(&mut self, id: &HandlerId) -> bool {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         let before = self.entries.len();
         self.entries.retain(|e| &e.handler_id != id);
         self.entries.len() != before
@@ -120,8 +112,6 @@ impl RecentPicks {
     /// 원자적 쓰기 — `<path>.tmp` 작성 후 rename. fsync 는 안 함 (UX 영향).
     /// 부모 디렉토리는 호출자가 미리 만들어 둠 (없으면 그대로 에러).
     pub fn save_atomic(&self, path: &Path) -> io::Result<()> {
-        let engine = &self.engine_state;
-        let _ = engine;
         if let Some(parent) = path.parent() {
             if !parent.as_os_str().is_empty() {
                 std::fs::create_dir_all(parent)?;

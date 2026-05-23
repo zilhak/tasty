@@ -32,8 +32,6 @@ pub enum ClonedPreset {
 
 impl ClonedPreset {
     pub fn kind(&self) -> tasty_presets::PresetKind {
-        let engine = &self.engine_state;
-        let _ = engine;
         match self {
             ClonedPreset::Workspace(_) => tasty_presets::PresetKind::Workspace,
             ClonedPreset::Tab(_) => tasty_presets::PresetKind::Tab,
@@ -52,9 +50,13 @@ use tasty_presets::{
 // ───────────────────────────────── Intent dispatcher ─────────────────────────────────
 
 /// preset 도메인 분기 핸들러. `dispatch_pending_intents` 에서 호출.
-pub fn handle(state: &mut AppState, intent: &DispatchedIntent) {
+pub fn handle(
+    state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
+    intent: &DispatchedIntent,
+) {
     match &intent.body {
-        Intent::ApplyPreset { kind, name } => apply(state, intent, *kind, name),
+        Intent::ApplyPreset { kind, name } => apply(state, engine, intent, *kind, name),
         Intent::SavePreset {
             base_name,
             explicit_name,
@@ -62,24 +64,31 @@ pub fn handle(state: &mut AppState, intent: &DispatchedIntent) {
             preset,
         } => save(
             state,
+            engine,
             intent,
             base_name,
             explicit_name.as_deref(),
             *overwrite,
             preset,
         ),
-        Intent::DeletePreset { kind, name } => delete(state, *kind, name),
-        Intent::RenamePreset { kind, from, to } => rename(state, *kind, from, to),
+        Intent::DeletePreset { kind, name } => delete(state, engine, *kind, name),
+        Intent::RenamePreset { kind, from, to } => rename(state, engine, *kind, from, to),
         _ => {}
     }
 }
 
-fn apply(state: &mut AppState, intent: &DispatchedIntent, kind: PresetKind, name: &str) {
+fn apply(
+    state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
+    intent: &DispatchedIntent,
+    kind: PresetKind,
+    name: &str,
+) {
     // P1: focus 정책은 origin 으로 자동 분기.
     let focus = intent.origin.is_user();
     let options = ApplyOptions { focus };
 
-    if let Err(e) = apply_inner(state, kind, name, None, None, options) {
+    if let Err(e) = apply_inner(state, engine, kind, name, None, None, options) {
         tracing::warn!("preset apply failed: {e}");
         state.toasts.push(
             crate::i18n::t("preset.toast.apply_failed"),
@@ -99,7 +108,7 @@ fn save(
     preset: &ClonedPreset,
 ) {
     let kind = preset.kind();
-    let save_result = save_inner(state, base_name, explicit_name, overwrite, preset.clone());
+    let save_result = save_inner(state, engine, base_name, explicit_name, overwrite, preset.clone());
 
     let toast_key = match (&save_result, kind) {
         (Ok(_), PresetKind::Workspace) => "preset.toast.saved_workspace",
@@ -135,14 +144,25 @@ fn save(
     }
 }
 
-fn delete(state: &mut AppState, kind: PresetKind, name: &str) {
-    if let Err(e) = delete_inner(state, kind, name) {
+fn delete(
+    state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
+    kind: PresetKind,
+    name: &str,
+) {
+    if let Err(e) = delete_inner(state, engine, kind, name) {
         tracing::warn!("preset delete failed: {e}");
     }
 }
 
-fn rename(state: &mut AppState, kind: PresetKind, from: &str, to: &str) {
-    if let Err(e) = rename_inner(state, kind, from, to) {
+fn rename(
+    state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
+    kind: PresetKind,
+    from: &str,
+    to: &str,
+) {
+    if let Err(e) = rename_inner(state, engine, kind, from, to) {
         tracing::warn!("preset rename failed: {e}");
     }
 }
@@ -176,8 +196,6 @@ pub enum PresetMutationError {
 
 impl std::fmt::Display for PresetMutationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let engine = &self.engine_state;
-        let _ = engine;
         match self {
             Self::StoreUnavailable => write!(f, "preset_store unavailable"),
             Self::NotFound { kind, name } => {
@@ -231,7 +249,7 @@ pub fn apply_inner(
     target_workspace_id: Option<u32>,
     options: ApplyOptions,
 ) -> Result<ApplyOutcome, PresetMutationError> {
-    let cloned = clone_preset_from_store(state, kind, name)?.ok_or_else(|| {
+    let cloned = clone_preset_from_store(state, engine, kind, name)?.ok_or_else(|| {
         PresetMutationError::NotFound {
             kind,
             name: name.to_string(),
@@ -241,20 +259,20 @@ pub fn apply_inner(
     match cloned {
         ClonedPreset::Workspace(p) => {
             let idx = state
-                .apply_workspace_preset(&p, options)
+                .apply_workspace_preset(engine, &p, options)
                 .map_err(PresetMutationError::Apply)?;
             let workspace_id = engine.workspaces[idx].id;
             Ok(ApplyOutcome::Workspace { workspace_id })
         }
         ClonedPreset::Tab(p) => {
             let tab_id = state
-                .apply_tab_preset(&p, target_pane_id, options)
+                .apply_tab_preset(engine, &p, target_pane_id, options)
                 .map_err(PresetMutationError::Apply)?;
             Ok(ApplyOutcome::Tab { tab_id })
         }
         ClonedPreset::Pane(p) => {
             let pane_id = state
-                .apply_pane_preset(&p, target_workspace_id, options)
+                .apply_pane_preset(engine, &p, target_workspace_id, options)
                 .map_err(PresetMutationError::Apply)?;
             Ok(ApplyOutcome::Pane { pane_id })
         }
