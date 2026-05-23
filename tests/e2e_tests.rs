@@ -132,12 +132,17 @@ fn all_e2e_tests() {
     );
     assert_eq!(result["sent"], true);
     // zsh ZLE 의 경우 Alt+X 는 execute-named-cmd 위젯을 호출하여 prompt 가
-    // "execute: " 로 바뀐다. 후속 테스트가 일반 명령으로 동작하도록 Ctrl+G 로
-    // mode 를 abort 시킨다.
+    // "execute: " 로 바뀐다. 후속 테스트가 일반 명령으로 동작하도록 모드를
+    // abort 시킨다. Ctrl+G 는 일부 zsh customization (oh-my-zsh, p10k 등) 에서
+    // rebind 돼 풀리지 않는 경우가 있어 Ctrl+C 로 강제 interrupt — execute-named-cmd
+    // 모드를 항상 빠져나오게 한다.
     tasty.call(
         "surface.send_combo",
-        json!({"surface_id": sid, "key": "g", "modifiers": ["ctrl"]}),
+        json!({"surface_id": sid, "key": "c", "modifiers": ["ctrl"]}),
     );
+    // shell 이 prompt 를 재출력할 시간 — 후속 send_text 가 같은 line buffer 에
+    // 끼어들지 않게 한 프레임 정도 대기.
+    std::thread::sleep(Duration::from_millis(100));
 
     // ========== Dim (SGR 2) renderer regression ==========
     // printf is a posix builtin; shell on Windows is cmd.exe by default which does not
