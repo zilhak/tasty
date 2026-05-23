@@ -8,8 +8,6 @@ impl MainWindow {
     /// Extend the current selection (or create one from last click) to the given position.
     /// Used for Shift+Click range selection.
     pub(super) fn extend_selection(&mut self, x: f32, y: f32, terminal_rect: &Rect) {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         if let Some((point, surface_id)) = self.mouse_to_grid(x, y, terminal_rect) {
             if let Some(sel) = &mut self.text_selection {
                 // Existing selection: keep anchor, move cursor
@@ -37,8 +35,6 @@ impl MainWindow {
 
     /// Start a new text selection from the given pixel position.
     pub(super) fn start_selection(&mut self, x: f32, y: f32, terminal_rect: &Rect) {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         if let Some((point, surface_id)) = self.mouse_to_grid(x, y, terminal_rect) {
             // Detect multi-click
             let now = std::time::Instant::now();
@@ -119,7 +115,6 @@ impl MainWindow {
     /// Find word boundaries around the given column in the given absolute row.
     fn find_word_bounds(&self, col: usize, absolute_row: usize) -> (usize, usize) {
         let engine = &self.engine_state;
-        let _ = engine;
         let terminal = match self.state.focused_terminal(engine) {
             Some(t) => t,
             None => return (col, col),
@@ -194,7 +189,6 @@ impl MainWindow {
     /// Move the terminal cursor to the clicked position using the click_cursor module.
     pub(super) fn move_cursor_to_click(&mut self, x: f32, y: f32, terminal_rect: &Rect) {
         let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         if !engine.settings.general.click_to_move_cursor {
             return;
         }
@@ -289,7 +283,6 @@ impl MainWindow {
         terminal_rect: &Rect,
     ) -> Option<(SelectionPoint, u32)> {
         let engine = &self.engine_state;
-        let _ = engine;
         let terminal = self.state.focused_terminal(engine)?;
         let surface_id = self.state.focused_surface_id(engine)?;
         // Use the actual content rect (after tab bar) instead of the raw pane rect
@@ -312,7 +305,6 @@ impl MainWindow {
     /// Copy the current selection to clipboard. Selection is preserved.
     pub fn copy_selection_to_clipboard(&mut self) -> bool {
         let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         let sel = match &self.text_selection {
             Some(s) if !s.is_empty() => s.clone(),
             _ => return false,

@@ -15,7 +15,6 @@ use super::MainWindow;
 impl MainWindow {
     pub(crate) fn save_workspace_preset_from_idx(&mut self, ws_idx: usize) -> Result<()> {
         let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         let ws = engine
             .workspaces
             .get(ws_idx)
@@ -56,7 +55,6 @@ impl MainWindow {
         tab_index: usize,
     ) -> Result<()> {
         let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         let ws = self.state.active_workspace(engine);
         let pane = ws
             .pane_layout()
@@ -102,7 +100,6 @@ impl MainWindow {
 
     pub(crate) fn save_pane_preset_from_pane_id(&mut self, pane_id: u32) -> Result<()> {
         let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         let ws = self.state.active_workspace(engine);
         let pane = ws
             .pane_layout()

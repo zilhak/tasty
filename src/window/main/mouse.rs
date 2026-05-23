@@ -12,7 +12,6 @@ impl MainWindow {
     /// 변경이 있으면 true를 반환 (렌더 dirty 플래그를 켜기 위함).
     pub(crate) fn update_hovered_link(&mut self) -> bool {
         let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         let prev = self.hovered_link.as_ref().map(|h| {
             (
                 h.surface_id,
@@ -49,7 +48,6 @@ impl MainWindow {
 
     fn compute_hovered_link(&self) -> Option<HoveredLink> {
         let engine = &self.engine_state;
-        let _ = engine;
         let pos = self.cursor_position?;
         let terminal_rect = self.compute_terminal_rect();
         let x = pos.x as f32;

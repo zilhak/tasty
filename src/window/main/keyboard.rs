@@ -353,8 +353,6 @@ impl MainWindow {
     }
 
     pub(super) fn handle_ime(&mut self, ime_event: winit::event::Ime, egui_consumed: bool) {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         super::ime::handle_event(self, ime_event, egui_consumed);
     }
 }

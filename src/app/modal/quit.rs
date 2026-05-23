@@ -31,6 +31,11 @@ impl App {
             .values()
             .find_map(|w| w.as_main().map(|m| m.engine_state.settings.general.close_behavior.clone()))
             .or_else(|| {
+                self.parked_states
+                    .first()
+                    .map(|(_, e)| e.settings.general.close_behavior.clone())
+            })
+            .or_else(|| {
                 self.engine_state
                     .as_ref()
                     .map(|e| e.settings.general.close_behavior.clone())

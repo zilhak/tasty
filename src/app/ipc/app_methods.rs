@@ -249,6 +249,11 @@ impl App {
             .values()
             .find_map(|w| w.as_main().map(|w| w.engine_state.approval_store.clone()))
             .or_else(|| {
+                self.parked_states
+                    .first()
+                    .map(|(_, e)| e.approval_store.clone())
+            })
+            .or_else(|| {
                 self.engine_state
                     .as_ref()
                     .map(|e| e.approval_store.clone())

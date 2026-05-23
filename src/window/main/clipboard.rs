@@ -7,7 +7,6 @@ impl MainWindow {
     /// Returns true if an image was pasted.
     pub fn paste_to_image(&mut self) -> bool {
         let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         let image = match &mut self.clipboard {
             Some(cb) => cb.get_image(),
             None => return false,
@@ -47,7 +46,6 @@ impl MainWindow {
 
     pub fn paste_to_terminal(&mut self) {
         let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         // Try text first
         let text = match &mut self.clipboard {
             Some(cb) => cb.get_text(),

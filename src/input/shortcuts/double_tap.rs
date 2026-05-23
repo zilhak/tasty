@@ -68,7 +68,6 @@ impl MainWindow {
         ];
 
         let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         for (bindings, action) in &bindings_to_check {
             if has_dt(bindings) {
                 match *action {
