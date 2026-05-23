@@ -61,40 +61,76 @@ impl App {
             return IpcStep::Handled;
         }
         if cmd.request.method == "window.close" {
-            if let Some(focused_id) = self.engine.focused_window_id {
-                self.windows.remove(&focused_id);
-                self.engine.focused_window_id = self.windows.keys().next().copied();
-            }
-            let response = host_ipc::protocol::JsonRpcResponse::success(
-                cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
-                serde_json::json!({"closed": true}),
-            );
+            // CLAUDE.md "포커스 독립": id 로 직접 지정. focused 의존 금지.
+            let target_id = cmd.request.params.get("id").and_then(|v| v.as_u64());
+            let response_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
+            let response = match target_id {
+                None => host_ipc::protocol::JsonRpcResponse::error(
+                    response_id,
+                    -32602,
+                    "Missing 'id' parameter (u64). focused 의존은 금지.",
+                ),
+                Some(id_u64) => {
+                    let target = self
+                        .windows
+                        .keys()
+                        .copied()
+                        .find(|w| u64::from(*w) == id_u64);
+                    match target {
+                        Some(tid) => {
+                            self.windows.remove(&tid);
+                            if self.engine.focused_window_id == Some(tid) {
+                                self.engine.focused_window_id =
+                                    self.windows.keys().next().copied();
+                            }
+                            host_ipc::protocol::JsonRpcResponse::success(
+                                response_id,
+                                serde_json::json!({"closed": true, "id": id_u64}),
+                            )
+                        }
+                        None => host_ipc::protocol::JsonRpcResponse::error(
+                            response_id,
+                            -32602,
+                            format!("Window id {id_u64} not found"),
+                        ),
+                    }
+                }
+            };
             send_response(&cmd.response_tx, response);
             return IpcStep::Handled;
         }
+        // window.focus 는 사용자 입력 재현 (단축키/마우스 클릭 영역) 으로 분류.
+        // CLAUDE.md: "CLI/IPC로 포커스·활성 탭·활성 워크스페이스를 전환하는 명령은
+        // 존재하지 않는다." → release 빌드에 노출 안 함. debug 빌드만 유지.
+        #[cfg(debug_assertions)]
         if cmd.request.method == "window.focus" {
-            let target = cmd
-                .request
-                .params
-                .get("id")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            let mut found = false;
-            for (id, w) in &self.windows {
-                if w.as_main().is_none() {
-                    continue; // 모달은 focus 대상이 아님
+            let target_id = cmd.request.params.get("id").and_then(|v| v.as_u64());
+            let response_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
+            let response = match target_id {
+                None => host_ipc::protocol::JsonRpcResponse::error(
+                    response_id,
+                    -32602,
+                    "Missing 'id' parameter (u64)",
+                ),
+                Some(id_u64) => {
+                    let mut found = false;
+                    for (id, w) in &self.windows {
+                        if w.as_main().is_none() {
+                            continue;
+                        }
+                        if u64::from(*id) == id_u64 {
+                            w.base().winit.focus_window();
+                            self.engine.focused_window_id = Some(*id);
+                            found = true;
+                            break;
+                        }
+                    }
+                    host_ipc::protocol::JsonRpcResponse::success(
+                        response_id,
+                        serde_json::json!({"focused": found, "id": id_u64}),
+                    )
                 }
-                if format!("{:?}", id) == target {
-                    w.base().winit.focus_window();
-                    self.engine.focused_window_id = Some(*id);
-                    found = true;
-                    break;
-                }
-            }
-            let response = host_ipc::protocol::JsonRpcResponse::success(
-                cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
-                serde_json::json!({"focused": found}),
-            );
+            };
             send_response(&cmd.response_tx, response);
             return IpcStep::Handled;
         }
@@ -106,7 +142,7 @@ impl App {
                 .filter_map(|(id, w)| {
                     let main = w.as_main()?;
                     Some(serde_json::json!({
-                        "id": format!("{:?}", id),
+                        "id": u64::from(*id),
                         "focused": focused_id == Some(*id),
                         "title": main.state.active_workspace(&main.engine_state).name,
                     }))

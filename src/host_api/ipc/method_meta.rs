@@ -285,8 +285,9 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("plugin.audit_clear", local_only()),
         ("window.create", local_only()),
         ("window.close", local_only()),
-        ("window.focus", local_only()),
         ("window.list", local_only()),
+        // window.focus 는 debug 빌드 전용 (DEBUG_METHODS 참조).
+        // CLAUDE.md: 포커스 전환은 사용자 단축키/마우스 입력 영역.
         // ── Lua user-script reload — Local only (사용자가 자기 init.lua 를
         //    재로딩하는 동작). plugin이 다른 사용자의 스크립트를 reload 시킬
         //    필요는 없으므로 plugin_callable=false.
@@ -324,6 +325,8 @@ pub const DEBUG_METHODS: &[(&str, MethodMeta)] = &[
     ("debug.event_bus.publish", local_only()),
     ("debug.event_bus.trace", local_only()),
     ("debug.extension.invoke_hook", local_only()),
+    // 사용자 입력 재현 — 포커스 전환은 단축키/마우스 영역.
+    ("window.focus", local_only()),
 ];
 #[cfg(not(debug_assertions))]
 pub const DEBUG_METHODS: &[(&str, MethodMeta)] = &[];
