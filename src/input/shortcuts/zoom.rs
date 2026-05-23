@@ -8,6 +8,7 @@ use crate::window::main::MainWindow;
 impl MainWindow {
     pub(super) fn handle_zoom_shortcut(
         state: &mut crate::state::AppState,
+        engine: &mut crate::engine_state::EngineState,
         key: &Key,
         mods: ModifiersState,
     ) -> bool {

@@ -19,16 +19,20 @@ use crate::ui::popup::PopupAction;
 
 pub const PORT_SCANNER_POPUP_ID: &str = "port_scanner";
 
-pub fn draw_port_scanner_popup(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction {
+pub fn draw_port_scanner_popup(
+    ui: &mut egui::Ui,
+    state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
+) -> PopupAction {
     if ui.ctx().input(|i| i.key_pressed(egui::Key::Escape)) {
         return PopupAction::Close;
     }
 
     let th = theme::theme();
-    let surface_id = focused_terminal_surface_id(state);
+    let surface_id = focused_terminal_surface_id(state, engine);
 
     // Refresh cache lazily.
-    refresh_if_stale(state, surface_id);
+    refresh_if_stale(state, engine, surface_id);
 
     ui.vertical(|ui| {
         ui.spacing_mut().item_spacing.y = 4.0;
@@ -69,7 +73,7 @@ pub fn draw_port_scanner_popup(ui: &mut egui::Ui, state: &mut AppState) -> Popup
         ui.horizontal(|ui| {
             if ui.button(t("port_scanner.refresh")).clicked() {
                 state.port_scan.forget(surface_id);
-                refresh_if_stale(state, surface_id);
+                refresh_if_stale(state, engine, surface_id);
             }
             ui.label(
                 egui::RichText::new(t("port_scanner.hint"))
@@ -137,12 +141,16 @@ fn open_in_browser(port: &ListeningPort) {
     }
 }
 
-fn refresh_if_stale(state: &mut AppState, surface_id: u32) {
+fn refresh_if_stale(
+    state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
+    surface_id: u32,
+) {
     let now = Instant::now();
     if !state.port_scan.needs_refresh(surface_id, now) {
         return;
     }
-    let shell_pid = match shell_pid_for_surface(state, surface_id) {
+    let shell_pid = match shell_pid_for_surface(state, engine, surface_id) {
         Some(p) => p,
         None => {
             state.port_scan.insert(surface_id, Vec::new(), now);
@@ -156,12 +164,19 @@ fn refresh_if_stale(state: &mut AppState, surface_id: u32) {
     state.port_scan.insert(surface_id, ports, now);
 }
 
-fn shell_pid_for_surface(state: &AppState, surface_id: u32) -> Option<u32> {
+fn shell_pid_for_surface(
+    _state: &AppState,
+    engine: &crate::engine_state::EngineState,
+    surface_id: u32,
+) -> Option<u32> {
     let terminal = engine.find_terminal_by_id(surface_id)?;
     terminal.process_id()
 }
 
-fn focused_terminal_surface_id(state: &AppState) -> u32 {
+fn focused_terminal_surface_id(
+    state: &AppState,
+    engine: &crate::engine_state::EngineState,
+) -> u32 {
     let ws = state.active_workspace(engine);
     let pane_id = ws.focused_pane;
     ws.pane_layout()

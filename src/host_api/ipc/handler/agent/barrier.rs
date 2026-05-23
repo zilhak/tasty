@@ -104,7 +104,7 @@ pub fn handle_barrier_await(
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
-    handle_barrier_state(state, caller, id, params)
+    handle_barrier_state(state, engine, caller, id, params)
 }
 
 // ============================================================

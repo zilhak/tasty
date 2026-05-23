@@ -77,7 +77,7 @@ pub(super) fn recalc_anchor(w: &mut MainWindow) {
         return;
     };
     let surface_id = preedit.surface_id;
-    let Some(terminal) = w.engine.find_terminal_by_id(surface_id) else {
+    let Some(terminal) = w.engine_state.find_terminal_by_id(surface_id) else {
         return;
     };
 
@@ -112,10 +112,10 @@ pub(super) fn flush_preedit(w: &mut MainWindow) {
             return;
         }
     };
-    if let Some(terminal) = w.engine.find_terminal_by_id_mut(preedit.surface_id) {
+    if let Some(terminal) = w.engine_state.find_terminal_by_id_mut(preedit.surface_id) {
         terminal.send_key(&preedit.text);
     }
-    w.engine.record_typing(preedit.surface_id);
+    w.engine_state.record_typing(preedit.surface_id);
     w.ime_cursor_advance = 0;
     w.ime_advance_base = (0, 0);
     w.mark_dirty();
@@ -202,7 +202,7 @@ pub(crate) fn ipc_commit(w: &mut MainWindow, text: &str) {
         terminal.send_key(text);
     }
     if let Some(sid) = sid {
-        w.engine.record_typing(sid);
+        w.engine_state.record_typing(sid);
     }
     w.mark_dirty();
 }
@@ -284,7 +284,7 @@ fn on_commit(w: &mut MainWindow, text: String) {
         terminal.send_key(&text);
     }
     if let Some(sid) = sid {
-        w.engine.record_typing(sid);
+        w.engine_state.record_typing(sid);
     }
     w.mark_dirty();
 }

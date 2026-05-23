@@ -19,7 +19,10 @@ const MAX_HEIGHT: f32 = 480.0;
 const BODY_FONT_SIZE: f32 = 13.0;
 
 /// PopupDef.title_fn — 큐 head 의 title 을 popup 타이틀로 사용.
-pub fn approval_popup_title(state: &AppState) -> String {
+pub fn approval_popup_title(
+    state: &AppState,
+    engine: &crate::engine_state::EngineState,
+) -> String {
     let Some(id) = state.dialogs.pending_approval_ids.front() else {
         return t("approval.popup.title").to_string();
     };
@@ -31,7 +34,10 @@ pub fn approval_popup_title(state: &AppState) -> String {
 }
 
 /// PopupDef.sizer — body 길이 + 선택지 수에 따라 height 추정.
-pub fn approval_popup_sizer(state: &AppState) -> egui::Vec2 {
+pub fn approval_popup_sizer(
+    state: &AppState,
+    engine: &crate::engine_state::EngineState,
+) -> egui::Vec2 {
     let Some(id) = state.dialogs.pending_approval_ids.front() else {
         return egui::vec2(DEFAULT_WIDTH, MIN_HEIGHT);
     };
@@ -54,7 +60,11 @@ pub fn approval_popup_sizer(state: &AppState) -> egui::Vec2 {
 }
 
 /// PopupDef.draw_fn — 큐 head 의 record 를 렌더링하고 선택지 클릭/숫자 키로 응답.
-pub fn draw_approval_popup(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction {
+pub fn draw_approval_popup(
+    ui: &mut egui::Ui,
+    state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
+) -> PopupAction {
     let th = theme::theme();
     let ctx = ui.ctx().clone();
 
@@ -232,7 +242,11 @@ fn persist_after_respond(record: &ApprovalRecord) {
 /// 새 approval 이 생성되면 호출. 큐에 push 하고 popup 이 닫혀 있으면 연다.
 /// danger severity 는 priority 가 높지만 현재 PopupManager 는 priority API 가
 /// 없으므로 동일 popup_id 로 처리 — 추후 popup-implementation 확장 시 분기.
-pub fn enqueue_approval(state: &mut AppState, record: &ApprovalRecord) {
+pub fn enqueue_approval(
+    state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
+    record: &ApprovalRecord,
+) {
     // 같은 id 가 이미 큐에 있으면 중복 push 회피.
     if state
         .dialogs

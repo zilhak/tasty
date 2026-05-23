@@ -33,15 +33,24 @@ impl App {
         let focused_id = self.engine.focused_window_id;
         if let Some(id) = focused_id {
             if let Some(w) = self.windows.get_mut(&id).and_then(|w| w.as_main_mut()) {
-                let response =
-                    host_ipc::handler::handle_with_caller(&mut w.state, &cmd.request, caller);
+                let response = host_ipc::handler::handle_with_caller(
+                    &mut w.state,
+                    &mut w.engine_state,
+                    &cmd.request,
+                    caller,
+                );
                 send_response(&cmd.response_tx, response);
                 w.base.dirty = true;
                 return IpcStep::Handled;
             }
         }
-        if let Some(state) = self.parked_states.first_mut() {
-            let response = host_ipc::handler::handle_with_caller(state, &cmd.request, caller);
+        // parked AppState 는 engine 이 분리돼 있지 않으므로 App.engine_state 를 빌려 사용.
+        if let (Some(state), Some(engine)) = (
+            self.parked_states.first_mut(),
+            self.engine_state.as_mut(),
+        ) {
+            let response =
+                host_ipc::handler::handle_with_caller(state, engine, &cmd.request, caller);
             send_response(&cmd.response_tx, response);
         }
         IpcStep::Handled

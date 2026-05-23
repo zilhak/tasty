@@ -19,19 +19,36 @@ pub const APPLY_WORKSPACE_POPUP_ID: &str = "apply_workspace_preset";
 pub const APPLY_TAB_POPUP_ID: &str = "apply_tab_preset";
 pub const APPLY_PANE_POPUP_ID: &str = "apply_pane_preset";
 
-pub fn draw_apply_workspace_popup(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction {
-    draw_apply_popup(ui, state, PresetKind::Workspace)
+pub fn draw_apply_workspace_popup(
+    ui: &mut egui::Ui,
+    state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
+) -> PopupAction {
+    draw_apply_popup(ui, state, engine, PresetKind::Workspace)
 }
 
-pub fn draw_apply_tab_popup(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction {
-    draw_apply_popup(ui, state, PresetKind::Tab)
+pub fn draw_apply_tab_popup(
+    ui: &mut egui::Ui,
+    state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
+) -> PopupAction {
+    draw_apply_popup(ui, state, engine, PresetKind::Tab)
 }
 
-pub fn draw_apply_pane_popup(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction {
-    draw_apply_popup(ui, state, PresetKind::Pane)
+pub fn draw_apply_pane_popup(
+    ui: &mut egui::Ui,
+    state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
+) -> PopupAction {
+    draw_apply_popup(ui, state, engine, PresetKind::Pane)
 }
 
-fn draw_apply_popup(ui: &mut egui::Ui, state: &mut AppState, kind: PresetKind) -> PopupAction {
+fn draw_apply_popup(
+    ui: &mut egui::Ui,
+    state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
+    kind: PresetKind,
+) -> PopupAction {
     if ui.ctx().input(|i| i.key_pressed(egui::Key::Escape)) {
         state.dialogs.preset_picker_selected = None;
         return PopupAction::Close;

@@ -154,7 +154,7 @@ pub fn draw_popups(
     scale_factor: f32,
 ) {
     // Build scope context for popup visibility/clamping
-    let draw_ctx = build_layout_context(state, pane_rects, terminal_rect, scale_factor);
+    let draw_ctx = build_layout_context(state, engine, pane_rects, terminal_rect, scale_factor);
 
     // Refresh popup titles (i18n) and dynamic sizes each frame. Sizers read
     // in-memory caches so this is cheap.
@@ -162,11 +162,11 @@ pub fn draw_popups(
     // Intent 큐로 보내면 1프레임 지연 + 매 프레임 enqueue 라 부적절.
     for def in crate::ui::popup::defs::all_defs() {
         let new_title = if let Some(title_fn) = def.title_fn {
-            (title_fn)(state)
+            (title_fn)(state, engine)
         } else {
             crate::i18n::t(def.title_key).to_string()
         };
-        let new_size = def.sizer.map(|f| f(state));
+        let new_size = def.sizer.map(|f| f(state, engine));
         if let Some(p) = state.popups.get_mut(def.id) {
             p.title = new_title;
             if let Some(sz) = new_size {
@@ -183,7 +183,7 @@ pub fn draw_popups(
         ctx,
         &mut |id, ui| {
             if let Some(def) = crate::ui::popup::defs::find(id) {
-                if matches!((def.draw_fn)(ui, state), crate::ui::PopupAction::Close) {
+                if matches!((def.draw_fn)(ui, state, engine), crate::ui::PopupAction::Close) {
                     dispatch_closed.push(def.id);
                 }
             }

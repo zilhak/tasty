@@ -11,13 +11,17 @@ const HORIZONTAL_MARGIN: f32 = 8.0;
 const ITEM_SPACING_Y: f32 = 4.0;
 
 /// Sizer for markdown open popup — uses AppState.recent_files cache (no disk IO).
-pub fn markdown_popup_sizer(state: &AppState) -> egui::Vec2 {
+pub fn markdown_popup_sizer(state: &AppState, engine: &crate::engine_state::EngineState) -> egui::Vec2 {
     compute_popup_size(state.recent_files.markdown.len())
 }
 
 /// PopupDef::draw_fn entry for markdown open popup.
-pub fn draw_markdown_open_popup(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction {
-    draw_file_open_content(ui, state)
+pub fn draw_markdown_open_popup(
+    ui: &mut egui::Ui,
+    state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
+) -> PopupAction {
+    draw_file_open_content(ui, state, engine)
 }
 
 fn compute_popup_size(recent_count: usize) -> egui::Vec2 {
@@ -37,7 +41,7 @@ fn compute_popup_size(recent_count: usize) -> egui::Vec2 {
     )
 }
 
-fn draw_file_open_content(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction {
+fn draw_file_open_content(ui: &mut egui::Ui, state: &mut AppState, engine: &mut crate::engine_state::EngineState) -> PopupAction {
     let th = theme::theme();
     let ctx = ui.ctx().clone();
 
@@ -184,7 +188,7 @@ fn draw_file_open_content(ui: &mut egui::Ui, state: &mut AppState) -> PopupActio
                 return PopupAction::None;
             }
             state.dialogs.file_open_error = None;
-            apply_open(state, &path_value);
+            apply_open(state, engine, &path_value);
             clear_dialog_state(state);
             return PopupAction::Close;
         }
@@ -193,7 +197,11 @@ fn draw_file_open_content(ui: &mut egui::Ui, state: &mut AppState) -> PopupActio
     PopupAction::None
 }
 
-fn apply_open(state: &mut AppState, path: &str) {
+fn apply_open(
+    state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
+    path: &str,
+) {
     let file_path = file_uri_to_local_path(path).unwrap_or_else(|| path.to_string());
     state.recent_files.add_markdown(file_path.clone());
     if let Some(convert_sid) = state.dialogs.markdown_convert_surface_id.take() {

@@ -277,7 +277,7 @@ impl MainWindow {
             }
             "image_undo" => {
                 if state.focused_surface_type(engine).is_kind("image") {
-                    if let Some(sid) = focused_image_surface_id(state) {
+                    if let Some(sid) = focused_image_surface_id(state, engine) {
                         if let Some(view) = state.image_views.get_mut(sid) {
                             view.undo();
                         }
@@ -286,7 +286,7 @@ impl MainWindow {
             }
             "image_redo" => {
                 if state.focused_surface_type(engine).is_kind("image") {
-                    if let Some(sid) = focused_image_surface_id(state) {
+                    if let Some(sid) = focused_image_surface_id(state, engine) {
                         if let Some(view) = state.image_views.get_mut(sid) {
                             view.redo();
                         }
@@ -320,12 +320,12 @@ impl MainWindow {
             return true;
         }
 
-        let kb = engine.settings.keybindings.clone();
+        let kb = self.engine_state.settings.keybindings.clone();
 
         // Configurable keybinding shortcuts
         if Self::handle_keybinding_shortcuts(
             &mut self.state,
-            &mut engine,
+            &mut self.engine_state,
             &kb,
             key,
             mods,
@@ -334,7 +334,7 @@ impl MainWindow {
             cell_h,
             &self.proxy,
         ) {
-            if engine.workspaces.is_empty() {
+            if self.engine_state.workspaces.is_empty() {
                 self.request_close();
             }
             self.base.dirty = true;
@@ -342,8 +342,16 @@ impl MainWindow {
         }
 
         // Numeric tab/workspace switching (Ctrl+1..9 / Alt+1..9)
-        if Self::handle_numeric_switch_shortcuts(&mut self.state, &kb, key, ctrl, shift, alt) {
-            if engine.workspaces.is_empty() {
+        if Self::handle_numeric_switch_shortcuts(
+            &mut self.state,
+            &mut self.engine_state,
+            &kb,
+            key,
+            ctrl,
+            shift,
+            alt,
+        ) {
+            if self.engine_state.workspaces.is_empty() {
                 self.request_close();
             }
             self.base.dirty = true;
@@ -356,7 +364,7 @@ impl MainWindow {
         }
 
         // Zoom
-        if Self::handle_zoom_shortcut(&mut self.state, key, mods) {
+        if Self::handle_zoom_shortcut(&mut self.state, &mut self.engine_state, key, mods) {
             self.base.dirty = true;
             return true;
         }

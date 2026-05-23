@@ -10,15 +10,21 @@
 //!   원칙. 사용자 단축키/클릭으로만 가능.
 
 use super::{DispatchedIntent, Intent};
+use crate::engine_state::EngineState;
 use crate::state::AppState;
 
-pub fn handle(state: &mut AppState, intent: &DispatchedIntent) {
+pub fn handle(state: &mut AppState, engine: &mut EngineState, intent: &DispatchedIntent) {
     if let Intent::NewWorkspace { kind, params } = &intent.body {
-        new_workspace(state, kind.as_deref(), params);
+        new_workspace(state, engine, kind.as_deref(), params);
     }
 }
 
-fn new_workspace(state: &mut AppState, kind: Option<&str>, params: &serde_json::Value) {
+fn new_workspace(
+    state: &mut AppState,
+    engine: &mut EngineState,
+    kind: Option<&str>,
+    params: &serde_json::Value,
+) {
     let kind = kind.unwrap_or("terminal");
     if kind == "terminal" && params.is_null() {
         // 사용자 경로 — active 전환 포함.

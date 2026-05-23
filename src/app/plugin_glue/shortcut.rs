@@ -125,7 +125,7 @@ impl App {
             return false;
         }
         let Some((plugin_id, surface_id)) =
-            plugin::key_dispatch::focused_plugin_surface(&main.state)
+            plugin::key_dispatch::focused_plugin_surface(&main.state, &main.engine_state)
         else {
             return false;
         };

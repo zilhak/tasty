@@ -6,16 +6,17 @@
 //!   전용 cascade (`close_active_pane` 등) 도 그대로 직접 호출 유지.
 
 use super::{DispatchedIntent, Intent};
+use crate::engine_state::EngineState;
 use crate::model::SplitDirection;
 use crate::state::AppState;
 
-pub fn handle(state: &mut AppState, intent: &DispatchedIntent) {
+pub fn handle(state: &mut AppState, engine: &mut EngineState, intent: &DispatchedIntent) {
     if let Intent::SplitPane { direction } = &intent.body {
-        split(state, *direction);
+        split(state, engine, *direction);
     }
 }
 
-fn split(state: &mut AppState, direction: SplitDirection) {
+fn split(state: &mut AppState, engine: &mut EngineState, direction: SplitDirection) {
     if let Err(e) = state.split_pane(engine, direction) {
         tracing::warn!("split_pane failed: {e}");
     }

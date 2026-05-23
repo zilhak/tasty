@@ -12,7 +12,7 @@ impl MainWindow {
         &mut self,
         dt: crate::double_tap::DoubleTapKey,
     ) -> bool {
-        let kb = engine.settings.keybindings.clone();
+        let kb = self.engine_state.settings.keybindings.clone();
         let dt_str = dt.binding_str();
 
         let has_dt = |bindings: &[String]| bindings.iter().any(|b| b == dt_str);
@@ -33,7 +33,7 @@ impl MainWindow {
                 .from_user_shortcut("toggle_notifications_double_tap"),
             );
             if will_open {
-                engine.notifications.mark_all_read();
+                self.engine_state.notifications.mark_all_read();
             }
             return true;
         }

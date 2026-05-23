@@ -12,7 +12,11 @@ use crate::ui::popup::PopupAction;
 
 pub const COMMAND_PALETTE_POPUP_ID: &str = "command_palette";
 
-pub fn draw_command_palette_popup(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction {
+pub fn draw_command_palette_popup(
+    ui: &mut egui::Ui,
+    state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
+) -> PopupAction {
     let th = theme::theme();
 
     if ui.ctx().input(|i| i.key_pressed(egui::Key::Escape)) {
@@ -113,7 +117,7 @@ pub fn draw_command_palette_popup(ui: &mut egui::Ui, state: &mut AppState) -> Po
                         );
 
                         // Shortcut text (first binding) on the right.
-                        if let Some(shortcut) = first_binding(state, cmd.id) {
+                        if let Some(shortcut) = first_binding(state, engine, cmd.id) {
                             ui.painter().text(
                                 egui::pos2(rect.max.x - 8.0, rect.center().y),
                                 egui::Align2::RIGHT_CENTER,
@@ -150,7 +154,11 @@ fn label_for(cmd: &PaletteCommand) -> String {
     raw.trim_end_matches(':').to_string()
 }
 
-fn first_binding(state: &AppState, action_id: &str) -> Option<String> {
+fn first_binding(
+    _state: &AppState,
+    engine: &crate::engine_state::EngineState,
+    action_id: &str,
+) -> Option<String> {
     let bindings = engine.settings.keybindings.get_bindings(action_id)?;
     bindings.first().cloned()
 }

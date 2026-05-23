@@ -77,7 +77,7 @@ pub fn handle_dispatch(
         }
     };
     let target = FileTarget::new(PathBuf::from(&req.path));
-    crate::file_dispatch::dispatch_file_target(state, target, depth);
+    crate::file_dispatch::dispatch_file_target(state, engine, target, depth);
     JsonRpcResponse::success(
         id,
         json!({

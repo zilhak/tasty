@@ -25,7 +25,7 @@ pub fn handle_record(
         Ok(ev) => ev,
         Err(e) => return JsonRpcResponse::invalid_params(id, e),
     };
-    let response = match persist_event(state, &ev) {
+    let response = match persist_event(engine, &ev) {
         Ok(key) => JsonRpcResponse::success(
             id,
             json!({
@@ -37,7 +37,7 @@ pub fn handle_record(
         ),
         Err(e) => return JsonRpcResponse::error(id, -32603, e),
     };
-    evaluate_caps_after_record(state, &ev);
+    evaluate_caps_after_record(state, engine, &ev);
     response
 }
 
@@ -76,13 +76,13 @@ pub fn handle_record_batch(
     }
     let mut keys = Vec::with_capacity(events.len());
     for ev in &events {
-        match persist_event(state, ev) {
+        match persist_event(engine, ev) {
             Ok(k) => keys.push(k),
             Err(e) => return JsonRpcResponse::error(id, -32603, e),
         }
     }
     for ev in &events {
-        evaluate_caps_after_record(state, ev);
+        evaluate_caps_after_record(state, engine, ev);
     }
     JsonRpcResponse::success(
         id,

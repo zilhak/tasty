@@ -87,7 +87,10 @@ pub(crate) fn physical_key_to_logical(physical: &PhysicalKey) -> Option<Key> {
 
 /// 바인딩 목록 중 하나라도 매칭되면 true.
 /// Returns the surface ID of the focused image surface, if any.
-fn focused_image_surface_id(state: &crate::state::AppState) -> Option<u32> {
+fn focused_image_surface_id(
+    state: &crate::state::AppState,
+    engine: &crate::engine_state::EngineState,
+) -> Option<u32> {
     let pane = state.focused_pane(engine)?;
     let tab = pane.tabs.get(pane.active_tab)?;
     let focused = tab.focused_surface;

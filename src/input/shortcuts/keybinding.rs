@@ -303,7 +303,7 @@ impl MainWindow {
         }
         if matches_any_binding(&kb.image_undo, key, mods) {
             if state.focused_surface_type(engine).is_kind("image") {
-                if let Some(sid) = focused_image_surface_id(state) {
+                if let Some(sid) = focused_image_surface_id(state, engine) {
                     if let Some(view) = state.image_views.get_mut(sid) {
                         view.undo();
                     }
@@ -313,7 +313,7 @@ impl MainWindow {
         }
         if matches_any_binding(&kb.image_redo, key, mods) {
             if state.focused_surface_type(engine).is_kind("image") {
-                if let Some(sid) = focused_image_surface_id(state) {
+                if let Some(sid) = focused_image_surface_id(state, engine) {
                     if let Some(view) = state.image_views.get_mut(sid) {
                         view.redo();
                     }

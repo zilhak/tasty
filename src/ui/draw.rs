@@ -1,5 +1,6 @@
 //! UI 전체 진입점 — sidebar 를 그리고 남은 terminal 영역 Rect 를 반환.
 
+use crate::engine_state::EngineState;
 use crate::intent::Intent;
 use crate::model::Rect;
 use crate::state::AppState;
@@ -7,13 +8,18 @@ use crate::state::AppState;
 use super::sidebar;
 
 /// Render the egui UI and return the remaining terminal area rect (in physical pixels).
-pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> Rect {
+pub fn draw_ui(
+    ctx: &egui::Context,
+    state: &mut AppState,
+    engine: &mut EngineState,
+    scale_factor: f32,
+) -> Rect {
     let sidebar_width = state.sidebar_width.value();
 
     if !state.sidebar_visible {
         // Sidebar hidden — skip rendering entirely
     } else if state.sidebar_collapsed {
-        let r = sidebar::draw_collapsed_sidebar(ctx, state, sidebar_width);
+        let r = sidebar::draw_collapsed_sidebar(ctx, state, engine, sidebar_width);
 
         if r.expand_clicked {
             state.sidebar_collapsed = false;
@@ -40,7 +46,7 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
             );
         }
     } else {
-        let r = sidebar::draw_full_sidebar(ctx, state, sidebar_width);
+        let r = sidebar::draw_full_sidebar(ctx, state, engine, sidebar_width);
 
         if r.collapse_clicked {
             state.sidebar_collapsed = true;

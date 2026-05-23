@@ -11,7 +11,6 @@ impl MainWindow {
         _event_loop: &ActiveEventLoop,
         plugin_manager: Option<&PluginManager>,
     ) {
-        let engine = &mut self.engine_state;
         // Check if settings button was clicked (ui.rs sets state.settings_open = true)
         if self.state.settings_open {
             self.state.settings_open = false;
@@ -26,12 +25,13 @@ impl MainWindow {
         // When targeted_pty_polling is off, process all terminals every frame.
         // When on, individual terminals are processed via TerminalOutput(Some(id)) events,
         // but we still call process_all() as a safety net (it's a no-op if channels are empty).
-        if self.state.process_all(engine) {
+        if self.state.process_all(&mut self.engine_state) {
             self.recalc_ime_preedit_anchor();
             self.base.dirty = true;
         }
 
         // Collect terminal events
+        let engine = &mut self.engine_state;
         let events = engine.collect_events();
         for event in &events {
             let surface_id = event.surface_id;
@@ -196,7 +196,7 @@ impl MainWindow {
             self.base.gpu.resize(new_size);
             let terminal_rect = self.compute_terminal_rect();
             let (cols, rows) = self.base.gpu.grid_size_for_rect(&terminal_rect);
-            engine.update_grid_size(cols, rows);
+            self.engine_state.update_grid_size(cols, rows);
             // Schedule another redraw to verify scale factor has stabilized.
             self.base.dirty = true;
         }
@@ -207,11 +207,10 @@ impl MainWindow {
         // is cheap: terminal.resize() early-returns when cols/rows are unchanged.
         {
             let terminal_rect = self.compute_terminal_rect();
-            self.state.resize_all(engine, 
-                terminal_rect,
-                self.base.gpu.cell_width(),
-                self.base.gpu.cell_height(),
-            );
+            let cell_w = self.base.gpu.cell_width();
+            let cell_h = self.base.gpu.cell_height();
+            self.state
+                .resize_all(&mut self.engine_state, terminal_rect, cell_w, cell_h);
         }
 
         // Render
@@ -264,7 +263,7 @@ impl MainWindow {
 
         // Process file handler picker result (after egui frame — popup may have
         // written `result` this frame).
-        crate::file_dispatch::consume_picker_result(&mut self.state);
+        crate::file_dispatch::consume_picker_result(&mut self.state, &mut self.engine_state);
 
         // 외부 drag&drop 으로 받은 파일 큐 처리.
         self.process_pending_file_drops();
@@ -289,10 +288,10 @@ impl MainWindow {
     /// Creates webviews for new Html panels, destroys removed ones,
     /// updates bounds and visibility based on active workspace/tab.
     fn sync_webviews(&mut self) {
-        let engine = &mut self.engine_state;
         let terminal_rect = self.compute_terminal_rect();
         let scale_factor = self.base.gpu.scale_factor() as f64;
         let tab_bar_h = self.state.tab_bar_height.value() as f64;
+        let engine = &mut self.engine_state;
 
         // Collect all Html surface IDs and their visibility/bounds
         let active_ws = self.state.active_workspace;
@@ -515,9 +514,7 @@ impl MainWindow {
                     Some(3) => {
                         // Move Left
                         if tab_index > 0 {
-                            if let Some(pane) = self
-                                .state
-                                .active_workspace_mut()
+                            if let Some(pane) = self.state.active_workspace_mut(&mut self.engine_state)
                                 .pane_layout_mut()
                                 .find_pane_mut(pane_id)
                             {
@@ -527,9 +524,7 @@ impl MainWindow {
                     }
                     Some(4) => {
                         // Move Right
-                        if let Some(pane) = self
-                            .state
-                            .active_workspace_mut()
+                        if let Some(pane) = self.state.active_workspace_mut(&mut self.engine_state)
                             .pane_layout_mut()
                             .find_pane_mut(pane_id)
                         {

@@ -113,14 +113,10 @@ impl MainWindow {
 
     /// Request this window to close (will be handled by the event loop).
     pub(crate) fn request_close(&mut self) {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         self.base.close_requested = true;
     }
 
     pub fn compute_terminal_rect(&self) -> Rect {
-        let engine = &self.engine_state;
-        let _ = engine;
         let size = self.base.gpu.size();
         crate::model::compute_terminal_rect(
             PhysicalPx(size.width as f32),
@@ -133,34 +129,27 @@ impl MainWindow {
     /// 현재 preedit이 있으면 원래 surface에 확정 전송하고 IME 상태를 리셋한다.
     /// 단축키 소비/포커스 전환 직전에 호출.
     pub(crate) fn flush_ime_preedit(&mut self) {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         ime::flush_preedit(self);
     }
 
     /// 현재 preedit을 PTY로 보내지 않고 버린다.
     /// 팝업/오버레이가 열릴 때 사용.
     pub(crate) fn clear_ime_preedit(&mut self) {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         ime::clear_preedit(self);
     }
 
     /// PTY 출력 처리 후 cursor가 움직였을 수 있을 때 preedit anchor를 재계산한다.
     pub(crate) fn recalc_ime_preedit_anchor(&mut self) {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         ime::recalc_anchor(self);
     }
 
     pub(crate) fn update_ime_cursor_area(&self) {
-        let engine = &self.engine_state;
-        let _ = engine;
         let Some(preedit) = &self.ime_preedit else {
             return;
         };
         let terminal_rect = self.compute_terminal_rect();
-        let Some(cell_rect) = self.state.surface_cell_rect(engine, 
+        let Some(cell_rect) = self.state.surface_cell_rect(
+            &self.engine_state,
             terminal_rect,
             preedit.surface_id,
             preedit.anchor_col,
@@ -187,35 +176,23 @@ impl MainWindow {
 
 impl Window for MainWindow {
     fn base(&self) -> &WindowBase {
-        let engine = &self.engine_state;
-        let _ = engine;
         &self.base
     }
     fn base_mut(&mut self) -> &mut WindowBase {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         &mut self.base
     }
     fn modality(&self) -> Modality {
-        let engine = &self.engine_state;
-        let _ = engine;
         MODELESS_MODALITY
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
-        let engine = &self.engine_state;
-        let _ = engine;
         self
     }
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         self
     }
 
     fn handle_event(&mut self, event: WindowEvent, ctx: &mut WindowCtx<'_>) -> WindowAction {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         // If a modal is active, block all input events before they reach egui.
         // Only allow non-input events (resize, redraw, scale factor, focus) through.
         if ctx.modal_active {
@@ -247,7 +224,7 @@ impl Window for MainWindow {
         // Non-terminal surfaces (Explorer, Markdown) use egui widgets (TextEdit etc.)
         // that need direct keyboard events from egui's input system.
         let egui_surface = matches!(
-            self.state.focused_surface_type(engine),
+            self.state.focused_surface_type(&self.engine_state),
             FocusedSurfaceType::Kind(ref k) if k == "explorer" || k == "markdown"
         );
 
@@ -286,11 +263,10 @@ impl Window for MainWindow {
                 let terminal_rect = self.compute_terminal_rect();
                 let (cols, rows) = self.base.gpu.grid_size_for_rect(&terminal_rect);
                 self.engine_state.update_grid_size(cols, rows);
-                self.state.resize_all(engine, 
-                    terminal_rect,
-                    self.base.gpu.cell_width(),
-                    self.base.gpu.cell_height(),
-                );
+                let cell_w = self.base.gpu.cell_width();
+                let cell_h = self.base.gpu.cell_height();
+                self.state
+                    .resize_all(&mut self.engine_state, terminal_rect, cell_w, cell_h);
                 self.mark_dirty();
             }
             WindowEvent::Focused(focused) => {
@@ -358,8 +334,6 @@ impl Window for MainWindow {
     }
 
     fn render(&mut self) {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         // 메인 윈도우는 별도 진입점인 handle_redraw 경로로 렌더한다.
         // Window::render는 트레잇 디스패치 호환을 위해 존재하며 현재 Main
         // 창에서는 호출되지 않는다.

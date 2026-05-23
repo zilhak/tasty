@@ -11,7 +11,11 @@ use crate::ui::popup::PopupAction;
 
 pub const UPDATE_POPUP_ID: &str = "update_check";
 
-pub fn draw_update_popup(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction {
+pub fn draw_update_popup(
+    ui: &mut egui::Ui,
+    state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
+) -> PopupAction {
     if ui.ctx().input(|i| i.key_pressed(egui::Key::Escape)) {
         return PopupAction::Close;
     }

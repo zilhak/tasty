@@ -8,17 +8,23 @@
 //! - **CloseTab**: ID 지정. close_tab_by_tab_id 호출. fire-and-forget.
 
 use super::{DispatchedIntent, Intent};
+use crate::engine_state::EngineState;
 use crate::state::AppState;
 
-pub fn handle(state: &mut AppState, intent: &DispatchedIntent) {
+pub fn handle(state: &mut AppState, engine: &mut EngineState, intent: &DispatchedIntent) {
     match &intent.body {
-        Intent::NewTab { kind, params } => new_tab(state, kind.as_deref(), params),
-        Intent::CloseTab { tab_id } => close_tab(state, *tab_id),
+        Intent::NewTab { kind, params } => new_tab(state, engine, kind.as_deref(), params),
+        Intent::CloseTab { tab_id } => close_tab(state, engine, *tab_id),
         _ => {}
     }
 }
 
-fn new_tab(state: &mut AppState, kind: Option<&str>, params: &serde_json::Value) {
+fn new_tab(
+    state: &mut AppState,
+    engine: &mut EngineState,
+    kind: Option<&str>,
+    params: &serde_json::Value,
+) {
     let kind = kind.unwrap_or("terminal");
     if kind == "terminal" {
         // terminal 은 host PTY spawn 경로 (cwd None → 기본 inherit).
@@ -31,6 +37,6 @@ fn new_tab(state: &mut AppState, kind: Option<&str>, params: &serde_json::Value)
     }
 }
 
-fn close_tab(state: &mut AppState, tab_id: u32) {
+fn close_tab(state: &mut AppState, engine: &mut EngineState, tab_id: u32) {
     state.close_tab_by_tab_id(engine, tab_id);
 }

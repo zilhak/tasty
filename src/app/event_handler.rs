@@ -146,7 +146,14 @@ impl ApplicationHandler<AppEvent> for App {
                     "IdentifyDone",
                 );
                 if let Some(w) = self.focused_window_mut() {
-                    crate::file_dispatch::apply_identify_result(&mut w.state, target, detector);
+                    if let Some(main) = w.as_main_mut() {
+                        crate::file_dispatch::apply_identify_result(
+                            &mut main.state,
+                            &mut main.engine_state,
+                            target,
+                            detector,
+                        );
+                    }
                 }
             }
         }

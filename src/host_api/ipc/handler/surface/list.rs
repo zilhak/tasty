@@ -9,7 +9,7 @@ pub(crate) fn handle_surface_list(state: &AppState, engine: &crate::engine_state
         for &pane_id in &ws.pane_layout().all_pane_ids() {
             if let Some(pane) = ws.pane_layout().find_pane(pane_id) {
                 for (tab_idx, tab) in pane.tabs.iter().enumerate() {
-                    collect_tab_surface_info(state, tab, pane_id, ws.id, tab_idx, &mut surfaces);
+                    collect_tab_surface_info(state, engine, tab, pane_id, ws.id, tab_idx, &mut surfaces);
                 }
             }
         }
@@ -28,7 +28,7 @@ fn collect_tab_surface_info(
 ) {
     if tab.is_split() {
         // Split tab: iterate through the layout
-        collect_surface_layout_info(state, tab.layout(), pane_id, workspace_id, tab_idx, out);
+        collect_surface_layout_info(state, engine, tab.layout(), pane_id, workspace_id, tab_idx, out);
     } else {
         // Single surface tab
         let surface = tab.surface();
@@ -104,8 +104,8 @@ fn collect_surface_layout_info(
             out.push(entry);
         }
         crate::model::SurfaceLayout::Split { first, second, .. } => {
-            collect_surface_layout_info(state, first, pane_id, workspace_id, tab_idx, out);
-            collect_surface_layout_info(state, second, pane_id, workspace_id, tab_idx, out);
+            collect_surface_layout_info(state, engine, first, pane_id, workspace_id, tab_idx, out);
+            collect_surface_layout_info(state, engine, second, pane_id, workspace_id, tab_idx, out);
         }
     }
 }

@@ -31,13 +31,17 @@ impl App {
         tracing::warn!("ipc agent caller denied: {e}");
         let rpc_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
         // Phase 6.5a audit: app-level dispatcher 의 deny 도 기록.
-        if let Some(st) = self
+        if let Some(main) = self
             .windows
-            .values()
-            .find_map(|w| w.as_main().map(|m| &m.state))
+            .values_mut()
+            .find_map(|w| w.as_main_mut())
         {
-            let ws = st.engine_state.workspaces.get(st.active_workspace).map(|w| w.id);
-            let seq = st.engine_state.telemetry_seq.next();
+            let ws = main
+                .engine_state
+                .workspaces
+                .get(main.state.active_workspace)
+                .map(|w| w.id);
+            let seq = main.engine_state.telemetry_seq.next();
             host_ipc::audit::record(
                 &caller,
                 &cmd.request.method,
@@ -58,13 +62,14 @@ impl App {
             let agent_id = agent_id.clone();
             let perm_token = permission.as_token();
             let method = cmd.request.method.clone();
-            let main_state = self
+            let main = self
                 .windows
                 .values_mut()
-                .find_map(|w| w.as_main_mut().map(|m| &mut m.state));
-            if let Some(st) = main_state {
+                .find_map(|w| w.as_main_mut());
+            if let Some(m) = main {
                 if let Some(rec) = host_ipc::handler::approval::publish_capability_elevation(
-                    st,
+                    &mut m.state,
+                    &mut m.engine_state,
                     &agent_id,
                     &method,
                     &perm_token,

@@ -206,7 +206,7 @@ impl AppState {
         };
 
         // Account for tab bar height
-        let ws = self.active_workspace();
+        let ws = self.active_workspace(engine);
         let _tab_count = ws
             .pane_layout()
             .find_pane(focused_id)
@@ -220,7 +220,7 @@ impl AppState {
             height: (pane_rect.height - tab_bar_h).max(PhysicalPx(1.0)),
         };
 
-        let ws = self.active_workspace_mut();
+        let ws = self.active_workspace_mut(engine);
         let pane = match ws.pane_layout_mut().find_pane_mut(focused_id) {
             Some(p) => p,
             None => return false,

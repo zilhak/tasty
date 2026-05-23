@@ -445,7 +445,7 @@ pub(super) fn fire_require_approval(
     match engine.approval_store.request(req) {
         Ok(change) => {
             crate::ipc::handler::approval::persist_record(&change.record);
-            crate::ui::popup::approval::enqueue_approval(state, &change.record);
+            crate::ui::popup::approval::enqueue_approval(state, engine, &change.record);
             tracing::info!(
                 "cap require_approval: issued approval id={} for cap={}",
                 change.record.request.id.as_str(),

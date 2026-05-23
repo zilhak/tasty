@@ -157,8 +157,6 @@ impl MainWindow {
         button: MouseButton,
         egui_consumed: bool,
     ) {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         let overlay_open = self.state.settings_open;
         if egui_consumed || overlay_open || self.state.popup_hovered {
             // Even when egui consumes the event (e.g. egui-rendered panels),
@@ -172,13 +170,10 @@ impl MainWindow {
                 if let Some(pos) = self.cursor_position {
                     let (x, y) = (pos.x as f32, pos.y as f32);
                     if terminal_rect.contains(PhysicalPx(x), PhysicalPx(y)) {
-                        if self.state.focus_pane_at_position(engine, x, y, terminal_rect) {
-                            self.base.dirty = true;
-                        }
-                        // Also update surface focus within the tab so that
-                        // clicking on an egui-rendered panel (Explorer, Markdown)
-                        // correctly moves keyboard target to that surface.
-                        if self.state.focus_surface_at_position(engine, x, y, terminal_rect) {
+                        let engine = &mut self.engine_state;
+                        let changed_pane = self.state.focus_pane_at_position(engine, x, y, terminal_rect);
+                        let changed_surf = self.state.focus_surface_at_position(engine, x, y, terminal_rect);
+                        if changed_pane || changed_surf {
                             self.base.dirty = true;
                         }
                     }
@@ -200,6 +195,8 @@ impl MainWindow {
                 if !terminal_rect.contains(PhysicalPx(x), PhysicalPx(y)) {
                     return;
                 }
+                let sf = self.base.gpu.scale_factor() as f32;
+                let engine = &mut self.engine_state;
                 let Some(surface_id) = self.state.surface_id_at_position(engine, x, y, terminal_rect)
                 else {
                     return;
@@ -207,7 +204,6 @@ impl MainWindow {
                 if engine.find_terminal_by_id(surface_id).is_none() {
                     return;
                 }
-                let sf = self.base.gpu.scale_factor() as f32;
                 self.state.dialogs.pending_native_menu =
                     Some(crate::state::PendingNativeMenu::TerminalSurface {
                         surface_id,
@@ -230,17 +226,20 @@ impl MainWindow {
                 let (x, y) = (pos.x as f32, pos.y as f32);
                 // 수식키+클릭은 무조건 링크 클릭 동작으로 라우팅.
                 // 링크 위면 열고, 링크 위가 아니면 아무것도 안 함 (selection 시작 안 함).
-                let modifier =
-                    LinkModifier::parse(&engine.settings.general.link_click_modifier);
+                let modifier = LinkModifier::parse(
+                    &self.engine_state.settings.general.link_click_modifier,
+                );
                 let mods = &self.base.modifiers;
                 let link_mods_match = !matches!(modifier, LinkModifier::None)
                     && modifier.matches(mods.control_key(), mods.alt_key(), mods.super_key());
                 if link_mods_match && button_state == ElementState::Pressed {
                     if terminal_rect.contains(PhysicalPx(x), PhysicalPx(y)) {
-                        if self.state.focus_pane_at_position(engine, x, y, terminal_rect) {
-                            self.base.dirty = true;
-                        }
-                        if self.state.focus_surface_at_position(engine, x, y, terminal_rect) {
+                        let engine = &mut self.engine_state;
+                        let changed_pane =
+                            self.state.focus_pane_at_position(engine, x, y, terminal_rect);
+                        let changed_surf =
+                            self.state.focus_surface_at_position(engine, x, y, terminal_rect);
+                        if changed_pane || changed_surf {
                             self.base.dirty = true;
                         }
                     }
@@ -249,7 +248,7 @@ impl MainWindow {
                             crate::file_dispatch::LinkKind::FileTarget(path) => {
                                 crate::file_dispatch::dispatch_file_target(
                                     &mut self.state,
-                                    engine,
+                                    &mut self.engine_state,
                                     crate::file::format::FileTarget::new(path),
                                     crate::file::format::DetectDepth::Deep,
                                 );
@@ -264,12 +263,17 @@ impl MainWindow {
                 }
                 if button_state == ElementState::Pressed {
                     let threshold = 4.0;
-                    let pane_div = self
-                        .state
-                        .find_pane_divider_at(engine, x, y, terminal_rect, threshold);
-                    let surf_div =
+                    let engine = &mut self.engine_state;
+                    let pane_div =
                         self.state
-                            .find_surface_divider_at(engine, x, y, terminal_rect, threshold);
+                            .find_pane_divider_at(engine, x, y, terminal_rect, threshold);
+                    let surf_div = self.state.find_surface_divider_at(
+                        engine,
+                        x,
+                        y,
+                        terminal_rect,
+                        threshold,
+                    );
                     if let Some(info) = pane_div {
                         self.dragging_divider = Some(DividerDrag {
                             info,
@@ -282,24 +286,26 @@ impl MainWindow {
                         });
                     } else {
                         let old_surface = self.state.focused_surface_id(engine);
-                        if self.state.focus_pane_at_position(engine, x, y, terminal_rect) {
+                        let changed_pane =
+                            self.state.focus_pane_at_position(engine, x, y, terminal_rect);
+                        let changed_surf =
+                            self.state.focus_surface_at_position(engine, x, y, terminal_rect);
+                        if changed_pane || changed_surf {
                             self.base.dirty = true;
                         }
-                        if self.state.focus_surface_at_position(engine, x, y, terminal_rect) {
-                            self.base.dirty = true;
-                        }
-                        if self.ime_preedit.is_some()
-                            && self.state.focused_surface_id(engine) != old_surface
-                        {
-                            self.flush_ime_preedit();
-                        }
-
+                        let ime_active = self.ime_preedit.is_some();
+                        let need_flush =
+                            ime_active && self.state.focused_surface_id(engine) != old_surface;
                         // Start text selection (only if not mouse-tracking or Shift held)
                         let mouse_tracking = self
                             .state
                             .focused_terminal(engine)
                             .map(|t| t.mouse_tracking())
                             .unwrap_or(tasty_terminal::MouseTrackingMode::None);
+                        drop(engine);
+                        if need_flush {
+                            self.flush_ime_preedit();
+                        }
                         let shift = self.base.modifiers.shift_key();
                         if mouse_tracking == tasty_terminal::MouseTrackingMode::None || shift {
                             if shift {
@@ -312,11 +318,11 @@ impl MainWindow {
                 } else if button_state == ElementState::Released {
                     if self.dragging_divider.is_some() {
                         self.dragging_divider = None;
-                        self.state.resize_all(engine, 
-                            terminal_rect,
-                            self.base.gpu.cell_width(),
-                            self.base.gpu.cell_height(),
-                        );
+                        let cell_w = self.base.gpu.cell_width();
+                        let cell_h = self.base.gpu.cell_height();
+                        let engine = &mut self.engine_state;
+                        self.state
+                            .resize_all(engine, terminal_rect, cell_w, cell_h);
                         self.base.dirty = true;
                     }
                     // Finish selection drag
@@ -335,8 +341,6 @@ impl MainWindow {
     }
 
     pub(super) fn handle_mouse_wheel(&mut self, delta: MouseScrollDelta, egui_consumed: bool) {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         let overlay_open = self.state.settings_open;
         if egui_consumed {
             self.mark_dirty();
@@ -344,6 +348,7 @@ impl MainWindow {
         if !egui_consumed && !overlay_open && !self.state.popup_hovered {
             // Find the surface under the cursor, falling back to the focused surface
             let terminal_rect = self.compute_terminal_rect();
+            let engine = &mut self.engine_state;
             let target_id = self
                 .cursor_position
                 .and_then(|pos| {

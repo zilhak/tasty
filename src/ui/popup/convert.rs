@@ -14,8 +14,8 @@ const PREFERRED_ORDER: &[&str] = &["terminal", "markdown", "image"];
 /// Sizer: 등록된 변환 가능 kind 수에 맞춰 popup 크기를 계산.
 /// notification.rs가 프레임마다 호출하므로 plugin이 새 kind를 등록한 직후
 /// 자동으로 popup 높이가 맞춰진다.
-pub fn convert_popup_sizer(state: &AppState) -> egui::Vec2 {
-    let count = enumerate_convertible_kinds(state).len();
+pub fn convert_popup_sizer(state: &AppState, engine: &crate::engine_state::EngineState) -> egui::Vec2 {
+    let count = enumerate_convertible_kinds(state, engine).len();
     convert_popup_size_for(count)
 }
 
@@ -36,11 +36,15 @@ fn convert_popup_size_for(count: usize) -> egui::Vec2 {
 }
 
 /// PopupDef::draw_fn entry point for the convert surface popup.
-pub fn draw_convert_popup(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction {
-    match draw_convert_content(ui, state) {
+pub fn draw_convert_popup(
+    ui: &mut egui::Ui,
+    state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
+) -> PopupAction {
+    match draw_convert_content(ui, state, engine) {
         Some(ConvertResult::Close) => PopupAction::Close,
         Some(ConvertResult::Action(action)) => {
-            apply_convert_action(state, action);
+            apply_convert_action(state, engine, action);
             PopupAction::Close
         }
         None => PopupAction::None,
@@ -60,7 +64,10 @@ struct ConvertItem {
 /// - label: `convert_popup.<kind>`가 번역되어 있으면 그 값, 아니면 registry의
 ///   `display_name_i18n_key`, 그것도 미번역이면 kind 자체를 대문자로.
 /// - shortcut: kind 첫 글자(영문)을 대문자 단축키로. 충돌 시 뒷 항목은 단축키 없음.
-fn enumerate_convertible_kinds(state: &AppState) -> Vec<ConvertItem> {
+fn enumerate_convertible_kinds(
+    state: &AppState,
+    engine: &crate::engine_state::EngineState,
+) -> Vec<ConvertItem> {
     let snapshot = engine.surface_registry.kinds_snapshot();
     let mut kinds: Vec<&'static str> = snapshot
         .iter()
@@ -81,7 +88,7 @@ fn enumerate_convertible_kinds(state: &AppState) -> Vec<ConvertItem> {
     let mut used_shortcuts: Vec<char> = Vec::new();
     let mut items = Vec::with_capacity(kinds.len());
     for kind in kinds {
-        let label = resolve_label(state, kind);
+        let label = resolve_label(state, engine, kind);
         let shortcut = kind
             .chars()
             .next()
@@ -100,7 +107,11 @@ fn enumerate_convertible_kinds(state: &AppState) -> Vec<ConvertItem> {
     items
 }
 
-fn resolve_label(state: &AppState, kind: &str) -> String {
+fn resolve_label(
+    state: &AppState,
+    engine: &crate::engine_state::EngineState,
+    kind: &str,
+) -> String {
     let popup_key = format!("convert_popup.{kind}");
     let tr = t(&popup_key);
     if tr != popup_key.as_str() {
@@ -133,14 +144,18 @@ pub enum ConvertResult {
 }
 
 /// Draw the convert surface popup content inside PopupManager.
-pub fn draw_convert_content(ui: &mut egui::Ui, state: &mut AppState) -> Option<ConvertResult> {
+pub fn draw_convert_content(
+    ui: &mut egui::Ui,
+    state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
+) -> Option<ConvertResult> {
     let surface_id = state.dialogs.convert_popup?;
 
     let th = theme::theme();
-    let current_kind = current_surface_kind(state, surface_id);
+    let current_kind = current_surface_kind(state, engine, surface_id);
     let popup_w = ui.available_width();
 
-    let items = enumerate_convertible_kinds(state);
+    let items = enumerate_convertible_kinds(state, engine);
     let selectable_indices: Vec<usize> = items
         .iter()
         .enumerate()
@@ -266,7 +281,11 @@ pub fn draw_convert_content(ui: &mut egui::Ui, state: &mut AppState) -> Option<C
 }
 
 /// Apply the convert action to the state.
-pub fn apply_convert_action(state: &mut AppState, action: ConvertAction) {
+pub fn apply_convert_action(
+    state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
+    action: ConvertAction,
+) {
     let Some(surface_id) = state.dialogs.convert_popup else {
         return;
     };
@@ -376,7 +395,11 @@ fn letter_key_to_char(key: &egui::Key) -> Option<char> {
 
 /// Get the current surface kind for a specific surface ID.
 /// Split tab의 leaf surface도 정확히 식별한다.
-fn current_surface_kind(state: &AppState, surface_id: u32) -> Option<&'static str> {
+fn current_surface_kind(
+    _state: &AppState,
+    engine: &crate::engine_state::EngineState,
+    surface_id: u32,
+) -> Option<&'static str> {
     for ws in &engine.workspaces {
         for &pid in &ws.pane_layout().all_pane_ids() {
             if let Some(pane) = ws.pane_layout().find_pane(pid) {

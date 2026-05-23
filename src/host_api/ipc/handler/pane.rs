@@ -42,7 +42,7 @@ pub fn handle_pane_close(
 
     // Prevent closing a pane that contains the caller
     if let Some(caller) = super::caller_surface_id(params) {
-        if super::surface_belongs_to_pane(state, caller, pane_id) {
+        if super::surface_belongs_to_pane(engine, caller, pane_id) {
             return JsonRpcResponse::invalid_params(
                 id,
                 "Cannot close a pane that contains your own surface. Close all other surfaces in the pane first, then use 'tasty close self'.",

@@ -377,8 +377,7 @@ pub fn draw_pane_tab_bars(
         match action {
             PaneTabAction::SwitchTab(idx) => {
                 let mut to_wake: Vec<u32> = Vec::new();
-                if let Some(pane) = state
-                    .active_workspace_mut()
+                if let Some(pane) = state.active_workspace_mut(engine)
                     .pane_layout_mut()
                     .find_pane_mut(pane_id)
                 {
@@ -398,8 +397,7 @@ pub fn draw_pane_tab_bars(
                 }
             }
             PaneTabAction::ScrollLeft => {
-                if let Some(pane) = state
-                    .active_workspace_mut()
+                if let Some(pane) = state.active_workspace_mut(engine)
                     .pane_layout_mut()
                     .find_pane_mut(pane_id)
                 {
@@ -407,8 +405,7 @@ pub fn draw_pane_tab_bars(
                 }
             }
             PaneTabAction::ScrollRight => {
-                if let Some(pane) = state
-                    .active_workspace_mut()
+                if let Some(pane) = state.active_workspace_mut(engine)
                     .pane_layout_mut()
                     .find_pane_mut(pane_id)
                 {
@@ -460,8 +457,7 @@ pub fn draw_pane_tab_bars(
                                 pane_info.logical_w,
                             );
                             if target != drag.tab_index {
-                                if let Some(pane) = state
-                                    .active_workspace_mut()
+                                if let Some(pane) = state.active_workspace_mut(engine)
                                     .pane_layout_mut()
                                     .find_pane_mut(pane_id)
                                 {

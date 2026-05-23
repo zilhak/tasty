@@ -15,7 +15,12 @@ use crate::state::AppState;
 
 /// Collect debug information from the running tasty instance.
 /// Modify this function freely — add whatever you need to diagnose issues.
-pub fn collect(state: &AppState, gpu: Option<&GpuState>, ime_active: bool) -> Value {
+pub fn collect(
+    state: &AppState,
+    engine: &crate::engine_state::EngineState,
+    gpu: Option<&GpuState>,
+    ime_active: bool,
+) -> Value {
     let mut info = serde_json::Map::new();
 
     // -- Basic state --

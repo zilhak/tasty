@@ -7,6 +7,7 @@ use crate::window::main::MainWindow;
 impl MainWindow {
     pub(super) fn handle_numeric_switch_shortcuts(
         state: &mut crate::state::AppState,
+        engine: &mut crate::engine_state::EngineState,
         kb: &crate::settings::KeybindingSettings,
         key: &Key,
         ctrl: bool,

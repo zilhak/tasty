@@ -4,7 +4,11 @@ use crate::ui::popup::PopupAction;
 use tasty_terminal::search::{SearchError, SearchOptions};
 
 /// Draw the search bar popup content.
-pub fn draw_search_bar(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction {
+pub fn draw_search_bar(
+    ui: &mut egui::Ui,
+    state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
+) -> PopupAction {
     let theme = crate::theme::theme();
 
     // Escape → close
@@ -39,9 +43,9 @@ pub fn draw_search_bar(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction {
 
         // Run search when query changes
         if response.changed() {
-            let surface_id = focused_terminal_surface_id(state);
+            let surface_id = focused_terminal_surface_id(state, engine);
             state.search.surface_id = surface_id;
-            run_search(state);
+            run_search(state, engine);
         }
 
         // Enter → next match, Shift+Enter → prev match
@@ -54,17 +58,17 @@ pub fn draw_search_bar(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction {
             } else {
                 state.search.next_match();
             }
-            scroll_to_current_match(state);
+            scroll_to_current_match(state, engine);
         }
 
         // Up/Down arrow navigation
         if ui.ctx().input(|i| i.key_pressed(egui::Key::ArrowUp)) {
             state.search.prev_match();
-            scroll_to_current_match(state);
+            scroll_to_current_match(state, engine);
         }
         if ui.ctx().input(|i| i.key_pressed(egui::Key::ArrowDown)) {
             state.search.next_match();
-            scroll_to_current_match(state);
+            scroll_to_current_match(state, engine);
         }
 
         // Status text: error > no_matches > match counter
@@ -93,11 +97,11 @@ pub fn draw_search_bar(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction {
         if !state.search.matches.is_empty() {
             if ui.small_button("▲").clicked() {
                 state.search.prev_match();
-                scroll_to_current_match(state);
+                scroll_to_current_match(state, engine);
             }
             if ui.small_button("▼").clicked() {
                 state.search.next_match();
-                scroll_to_current_match(state);
+                scroll_to_current_match(state, engine);
             }
         }
 
@@ -109,11 +113,11 @@ pub fn draw_search_bar(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction {
             t("search.case_tooltip"),
         ) {
             state.search.case_insensitive = !state.search.case_insensitive;
-            run_search(state);
+            run_search(state, engine);
         }
         if toggle_button(ui, ".*", state.search.regex, t("search.regex_tooltip")) {
             state.search.regex = !state.search.regex;
-            run_search(state);
+            run_search(state, engine);
         }
         if toggle_button(
             ui,
@@ -122,7 +126,7 @@ pub fn draw_search_bar(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction {
             t("search.whole_word_tooltip"),
         ) {
             state.search.whole_word = !state.search.whole_word;
-            run_search(state);
+            run_search(state, engine);
         }
     });
 
@@ -145,7 +149,7 @@ fn toggle_button(
 }
 
 /// Run search, working around borrow checker by using search fields directly.
-fn run_search(state: &mut AppState) {
+fn run_search(state: &mut AppState, engine: &crate::engine_state::EngineState) {
     let surface_id = state.search.surface_id;
     let query = state.search.query.clone();
     let options = SearchOptions {
@@ -174,7 +178,10 @@ fn run_search(state: &mut AppState) {
     }
 }
 
-fn focused_terminal_surface_id(state: &AppState) -> u32 {
+fn focused_terminal_surface_id(
+    state: &AppState,
+    engine: &crate::engine_state::EngineState,
+) -> u32 {
     let ws = state.active_workspace(engine);
     let pane_id = ws.focused_pane;
     ws.pane_layout()
@@ -184,7 +191,10 @@ fn focused_terminal_surface_id(state: &AppState) -> u32 {
         .unwrap_or(0)
 }
 
-fn scroll_to_current_match(state: &mut AppState) {
+fn scroll_to_current_match(
+    state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
+) {
     let surface_id = state.search.surface_id;
     if let Some(terminal) = engine.find_terminal_by_id(surface_id) {
         let scrollback_len = terminal.scrollback_len();

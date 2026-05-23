@@ -5,7 +5,12 @@ use crate::state::AppState;
 use super::GpuState;
 
 impl GpuState {
-    pub(super) fn render_clear_pass(&self, view: &wgpu::TextureView, state: &AppState) {
+    pub(super) fn render_clear_pass(
+        &self,
+        view: &wgpu::TextureView,
+        _state: &AppState,
+        engine: &crate::engine_state::EngineState,
+    ) {
         let bg_alpha = engine.settings.appearance.background_opacity as f64;
         let th = crate::theme::theme();
         let bg = th.base.to_float();

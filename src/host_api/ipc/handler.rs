@@ -627,7 +627,6 @@ fn annotate_tree_busy(node: &mut serde_json::Value, engine: &EngineState) {
 
 fn handle_is_typing(
     _state: &AppState,
-    _engine: &crate::engine_state::EngineState,
     engine: &EngineState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -658,7 +657,6 @@ fn handle_is_typing(
 
 fn handle_send_wait_idle(
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::EngineState,
     engine: &mut EngineState,
     id: serde_json::Value,
     params: &serde_json::Value,

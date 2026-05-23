@@ -46,9 +46,10 @@ impl GpuState {
     pub(super) fn prepare_plugin_canvases(
         &mut self,
         state: &AppState,
+        engine: &crate::engine_state::EngineState,
         plugin_manager: &PluginManager,
     ) {
-        let pending = collect_canvas_requests(state, plugin_manager);
+        let pending = collect_canvas_requests(state, engine, plugin_manager);
         if pending.is_empty() {
             return;
         }
@@ -142,7 +143,11 @@ impl GpuState {
 /// 활성 workspace에서 visible plugin Canvas 노드 일람 + 모든 plugin popup instance.
 ///
 /// 본 함수는 GPU 자원에 손대지 않는다 — 순수 데이터 수집. 다음 단계에서 ensure + upload.
-fn collect_canvas_requests(state: &AppState, plugin_manager: &PluginManager) -> Vec<PendingCanvas> {
+fn collect_canvas_requests(
+    state: &AppState,
+    engine: &crate::engine_state::EngineState,
+    plugin_manager: &PluginManager,
+) -> Vec<PendingCanvas> {
     let mut out: Vec<PendingCanvas> = Vec::new();
     let ws = state.active_workspace(engine);
     let pane_ids = ws.pane_layout().all_pane_ids();
@@ -209,17 +214,13 @@ fn collect_canvases_in_node(node: &UiNode, plugin_id: &str, out: &mut Vec<Pendin
             collect_canvases_in_node(first, plugin_id, out);
             collect_canvases_in_node(second, plugin_id, out);
         }
-        UiNode::SelectableRow { children, .. } => {
-            for c in children {
-                collect_canvases_in_node(c, plugin_id, out);
-            }
-        }
         UiNode::Label { .. }
         | UiNode::Icon { .. }
         | UiNode::Button { .. }
         | UiNode::Tree { .. }
         | UiNode::Addressbar { .. }
         | UiNode::TextPreview { .. }
-        | UiNode::Spacer { .. } => {}
+        | UiNode::Spacer { .. }
+        | UiNode::SelectableRow { .. } => {}
     }
 }

@@ -260,7 +260,7 @@ pub(super) fn handle_debug_inject_mouse(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    if let Err(e) = require_input_simulation(state, &id) {
+    if let Err(e) = require_input_simulation(state, engine, &id) {
         return e;
     }
     let surface_id = match require_surface_id(params, &id) {
@@ -311,7 +311,7 @@ pub(super) fn handle_debug_inject_key(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    if let Err(e) = require_input_simulation(state, &id) {
+    if let Err(e) = require_input_simulation(state, engine, &id) {
         return e;
     }
     let surface_id = match require_surface_id(params, &id) {

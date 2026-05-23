@@ -102,7 +102,7 @@ pub fn handle_tab_create(
             // 모두 SurfaceKindRegistry로 일원화. 등록되지 않은 kind면 Err 반환되어
             // 사용자에게 unknown surface kind 메시지가 전달된다.
             state
-                .add_kind_tab_to_pane(pane_id, other, &params)
+                .add_kind_tab_to_pane(engine, pane_id, other, &params)
                 .map(|_| ())
         }
     };
@@ -141,7 +141,7 @@ pub fn handle_tab_close(
     if let Some(caller) = super::caller_surface_id(params) {
         // Find which pane contains this tab
         if let Some(pane_id) = engine.find_pane_for_tab(tab_id) {
-            if super::surface_belongs_to_pane(state, caller, pane_id) {
+            if super::surface_belongs_to_pane(engine, caller, pane_id) {
                 return JsonRpcResponse::invalid_params(
                     id,
                     "Cannot close a tab that contains your own surface. Use 'tasty close self' instead.",
@@ -182,7 +182,7 @@ pub fn handle_tab_move(
     };
 
     if let Some(pane) = state
-        .active_workspace_mut()
+        .active_workspace_mut(engine)
         .pane_layout_mut()
         .find_pane_mut(pane_id)
     {

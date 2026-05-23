@@ -80,17 +80,17 @@ pub fn handle_export_png(state: &mut AppState, engine: &mut crate::engine_state:
     if params.get("path").and_then(|v| v.as_str()).is_none() {
         return JsonRpcResponse::invalid_params(id, "Missing required 'path' parameter");
     }
-    handle_save(state, id, params)
+    handle_save(state, engine, id, params)
 }
 
 /// `image.next { surface_id }` — 디렉터리 내 다음 이미지로 이동.
 pub fn handle_next(state: &mut AppState, engine: &mut crate::engine_state::EngineState, id: Value, params: &Value) -> JsonRpcResponse {
-    step_navigation(state, id, params, true)
+    step_navigation(state, engine, id, params, true)
 }
 
 /// `image.prev { surface_id }` — 디렉터리 내 이전 이미지로 이동.
 pub fn handle_prev(state: &mut AppState, engine: &mut crate::engine_state::EngineState, id: Value, params: &Value) -> JsonRpcResponse {
-    step_navigation(state, id, params, false)
+    step_navigation(state, engine, id, params, false)
 }
 
 fn step_navigation(

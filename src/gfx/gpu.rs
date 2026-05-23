@@ -243,7 +243,8 @@ impl GpuState {
             self.renderer.cell_height(),
         );
 
-        let (pane_rects, dividers, focused_surface_id) = self.prepare_layout(state, terminal_rect);
+        let (pane_rects, dividers, focused_surface_id) =
+            self.prepare_layout(state, engine, terminal_rect);
 
         // Clear notification highlight on the currently focused surface
         if let Some(sid) = focused_surface_id {
@@ -265,7 +266,7 @@ impl GpuState {
 
         // 2b. Plugin Canvas 텍스처 prepare. egui 프레임 시작 전 GPU 자원 갱신.
         if let Some(mgr) = plugin_manager {
-            self.prepare_plugin_canvases(state, mgr);
+            self.prepare_plugin_canvases(state, engine, mgr);
         }
 
         // 3. Run egui frame (UI drawing)
@@ -348,7 +349,7 @@ impl GpuState {
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
-        self.render_clear_pass(&view, state);
+        self.render_clear_pass(&view, state, engine);
         let clear_ms = t0.elapsed().as_secs_f64() * 1000.0;
 
         let t0 = std::time::Instant::now();
@@ -415,6 +416,7 @@ impl GpuState {
     fn prepare_layout(
         &self,
         state: &AppState,
+        engine: &crate::engine_state::EngineState,
         terminal_rect: Rect,
     ) -> (Vec<(u32, Rect)>, Vec<Rect>, Option<u32>) {
         let pane_layout = state.active_workspace(engine).pane_layout();

@@ -56,7 +56,11 @@ const BUILTIN_TOOLS: &[BuiltinTool] = &[
     },
 ];
 
-pub fn draw_tools_menu(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction {
+pub fn draw_tools_menu(
+    ui: &mut egui::Ui,
+    state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
+) -> PopupAction {
     if ui.ctx().input(|i| i.key_pressed(egui::Key::Escape)) {
         return PopupAction::Close;
     }
@@ -150,7 +154,7 @@ pub fn draw_tools_menu(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction {
     }
 
     if let Some(item) = clicked {
-        invoke_tool(state, &item);
+        invoke_tool(state, engine, &item);
         return PopupAction::Close;
     }
     PopupAction::None
@@ -160,7 +164,11 @@ pub fn draw_tools_menu(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction {
 ///
 /// 이 함수는 사용자 클릭에서만 호출된다 (포커스 의존 동작 — focused pane에 surface
 /// 추가). IPC 경유 `debug.tool.invoke`는 별도 경로로 pane/tab id를 명시한다.
-pub fn invoke_tool(state: &mut AppState, item: &ToolItem) {
+pub fn invoke_tool(
+    state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
+    item: &ToolItem,
+) {
     match &item.action {
         ToolAction::Event { event_key } => {
             let payload = serde_json::json!({ "tool_id": item.key });
@@ -184,7 +192,7 @@ pub fn invoke_tool(state: &mut AppState, item: &ToolItem) {
             // 한다. cwd 미상이면 `null`.
             if let Some((plugin_id, local_id)) = popup_id.split_once('/') {
                 let cwd = state
-                    .resolve_inherit_cwd()
+                    .resolve_inherit_cwd(engine)
                     .map(|p| p.to_string_lossy().into_owned());
                 let context = serde_json::json!({ "cwd": cwd });
                 state.pending_popup_opens.push((

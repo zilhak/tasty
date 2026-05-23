@@ -289,8 +289,7 @@ impl App {
         let mut state = if !self.parked_states.is_empty() {
             let parked = self.parked_states.remove(0);
             tracing::info!(
-                "restoring parked state with {} workspace(s), {} remaining",
-                parked.engine.workspaces.len(),
+                "restoring parked state, {} remaining",
                 self.parked_states.len()
             );
             parked

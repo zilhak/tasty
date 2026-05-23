@@ -215,7 +215,7 @@ pub fn handle_task_await(
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
-    handle_task_get(state, caller, id, params)
+    handle_task_get(state, engine, caller, id, params)
 }
 
 // ============================================================

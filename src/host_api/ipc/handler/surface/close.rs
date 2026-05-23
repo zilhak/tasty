@@ -24,8 +24,8 @@ pub(crate) fn handle_surface_close(
             );
         }
     }
-    let kind = state.surface_kind(engine, engine, surface_id);
-    if state.close_surface_by_id_no_snapshot(engine, engine, surface_id) {
+    let kind = state.surface_kind(engine, surface_id);
+    if state.close_surface_by_id_no_snapshot(engine, surface_id) {
         if let Some(k) = kind {
             state.enqueue_surface_closed(surface_id, k, false);
         }
@@ -49,8 +49,8 @@ pub(crate) fn handle_surface_close_self(
         Ok(sid) => sid,
         Err(e) => return e,
     };
-    let kind = state.surface_kind(engine, engine, surface_id);
-    if state.close_surface_by_id_no_snapshot(engine, engine, surface_id) {
+    let kind = state.surface_kind(engine, surface_id);
+    if state.close_surface_by_id_no_snapshot(engine, surface_id) {
         if let Some(k) = kind {
             state.enqueue_surface_closed(surface_id, k, false);
         }

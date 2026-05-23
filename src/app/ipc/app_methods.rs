@@ -108,7 +108,7 @@ impl App {
                     Some(serde_json::json!({
                         "id": format!("{:?}", id),
                         "focused": focused_id == Some(*id),
-                        "title": main.state.active_workspace(engine).name,
+                        "title": main.state.active_workspace(&main.engine_state).name,
                     }))
                 })
                 .collect();
@@ -204,13 +204,14 @@ impl App {
                 // 첫 main window 의 state 를 빌려 사용 (모든 window 가 같은 approval_store
                 // Arc 공유). main 이 하나도 없으면 elevation popup 표시 자체가 의미 없으므로
                 // internal_error.
-                let main_state = self
+                let main = self
                     .windows
                     .values_mut()
-                    .find_map(|w| w.as_main_mut().map(|m| &mut m.state));
-                match main_state {
-                    Some(st) => host_ipc::handler::session::handle_request_permission(
-                        st,
+                    .find_map(|w| w.as_main_mut());
+                match main {
+                    Some(m) => host_ipc::handler::session::handle_request_permission(
+                        &mut m.state,
+                        &mut m.engine_state,
                         caller,
                         id,
                         &cmd.request.params,
@@ -248,9 +249,9 @@ impl App {
             .values()
             .find_map(|w| w.as_main().map(|w| w.engine_state.approval_store.clone()))
             .or_else(|| {
-                self.parked_states
-                    .first()
-                    .map(|s| s.engine_state.approval_store.clone())
+                self.engine_state
+                    .as_ref()
+                    .map(|e| e.approval_store.clone())
             });
         let rpc_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
         match store_opt {

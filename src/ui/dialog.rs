@@ -9,7 +9,7 @@ pub fn rename_popup_default_size() -> egui::Vec2 {
 }
 
 /// Dynamic title for the rename popup (based on RenameTarget).
-pub fn rename_popup_title(state: &AppState) -> String {
+pub fn rename_popup_title(state: &AppState, engine: &crate::engine_state::EngineState) -> String {
     state
         .dialogs
         .rename
