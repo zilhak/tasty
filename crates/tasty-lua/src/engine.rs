@@ -271,13 +271,11 @@ mod tests {
     #[test]
     fn reload_re_executes_init_and_clears_old_hooks() {
         let mut engine = LuaEngine::new().expect("init");
-        // pid + thread id 로 디렉토리를 유니크화 — 동일 머신에서 병렬/반복 실행 시
-        // 같은 init.lua 를 두고 race 가 나지 않게 격리.
-        let dir = std::env::temp_dir().join(format!(
-            "tasty-lua-reload-test-{}-{:?}",
-            std::process::id(),
-            std::thread::current().id()
-        ));
+        // pid 로 디렉토리 유니크화 — 같은 머신에서 cargo test 가 동시 실행될 때
+        // 동일 init.lua 를 두고 race 가 나지 않게 격리. (테스트 자체가 1개라
+        // 한 binary 안에서 중복 실행 경로 없음 — thread id 까지는 불필요.)
+        let dir =
+            std::env::temp_dir().join(format!("tasty-lua-reload-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).ok();
         let path = dir.join("init.lua");
 
