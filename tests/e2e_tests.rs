@@ -446,4 +446,100 @@ fn all_e2e_tests() {
             .get("error")
             .is_some()
     );
+
+    // ========== Multi-window: owner-based routing + list 전체 순회 ==========
+    // 두 번째 main window 를 생성하고, focused 가 새 윈도우로 전환되어도
+    // 첫 윈도우의 surface 가 IPC 로 접근 가능한지 검증. CLAUDE.md "포커스 독립".
+    let ids_before: std::collections::HashSet<u64> = tasty
+        .call("surface.list", json!({}))
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|s| s["id"].as_u64())
+        .collect();
+
+    let create_resp = tasty.call("window.create", json!({}));
+    assert_eq!(create_resp["scheduled"], true);
+
+    // 새 윈도우의 PTY shell 이 surface.list 에 등장할 때까지 polling.
+    let start = std::time::Instant::now();
+    let new_sid = loop {
+        let arr = tasty
+            .call("surface.list", json!({}))
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        let new_ids: Vec<u64> = arr
+            .iter()
+            .filter_map(|s| s["id"].as_u64())
+            .filter(|id| !ids_before.contains(id))
+            .collect();
+        if let Some(&id) = new_ids.first() {
+            // pty_ready 까지 기다리기.
+            if arr
+                .iter()
+                .any(|s| s["id"].as_u64() == Some(id) && s["pty_ready"].as_bool() == Some(true))
+            {
+                break id;
+            }
+        }
+        if start.elapsed() > Duration::from_secs(10) {
+            panic!("second window surface did not appear in 10s. surface.list = {arr:?}");
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    };
+
+    // surface.list 전체 순회 — 두 surface 모두 보여야.
+    let surfaces = tasty
+        .call("surface.list", json!({}))
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    assert!(
+        surfaces.iter().any(|s| s["id"].as_u64() == Some(sid)),
+        "surface.list 가 첫 윈도우의 surface={sid} 를 빠뜨림: {surfaces:?}"
+    );
+    assert!(
+        surfaces.iter().any(|s| s["id"].as_u64() == Some(new_sid)),
+        "surface.list 가 두번째 윈도우의 surface={new_sid} 를 빠뜨림: {surfaces:?}"
+    );
+
+    // workspace.list / pane.list 도 전체 순회.
+    let workspaces = tasty
+        .call("workspace.list", json!({}))
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    assert!(
+        workspaces.len() >= 2,
+        "workspace.list 가 모든 engine 의 workspace 를 합쳐 반환해야: {workspaces:?}"
+    );
+
+    // owner-based routing: focused 가 새 윈도우인 상태에서 첫 윈도우 surface 에 IPC.
+    // (focus 는 사용자 단축키 영역이라 IPC 로 전환 안 함 — 자동 focus 가 새 윈도우.)
+    tasty.set_mark(sid);
+    let send_first = tasty.call(
+        "surface.send",
+        json!({"surface_id": sid, "text": "echo W1_owner_route\n"}),
+    );
+    assert_eq!(
+        send_first["sent"], true,
+        "owner-based routing 으로 첫 윈도우 surface 에 send 가능해야: {send_first:?}"
+    );
+    let out = tasty.wait_for_output(sid, "W1_owner_route", Duration::from_secs(5));
+    assert!(
+        out.contains("W1_owner_route"),
+        "첫 윈도우 surface 가 명령을 실행하지 못함: {out:?}"
+    );
+
+    // 두 번째 윈도우 surface 에도 send 동작.
+    tasty.set_mark(new_sid);
+    let send_second = tasty.call(
+        "surface.send",
+        json!({"surface_id": new_sid, "text": "echo W2_owner_route\n"}),
+    );
+    assert_eq!(send_second["sent"], true);
+    let out2 = tasty.wait_for_output(new_sid, "W2_owner_route", Duration::from_secs(5));
+    assert!(out2.contains("W2_owner_route"));
 }
