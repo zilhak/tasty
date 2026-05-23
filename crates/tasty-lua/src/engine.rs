@@ -271,7 +271,13 @@ mod tests {
     #[test]
     fn reload_re_executes_init_and_clears_old_hooks() {
         let mut engine = LuaEngine::new().expect("init");
-        let dir = std::env::temp_dir().join("tasty-lua-reload-test");
+        // pid + thread id 로 디렉토리를 유니크화 — 동일 머신에서 병렬/반복 실행 시
+        // 같은 init.lua 를 두고 race 가 나지 않게 격리.
+        let dir = std::env::temp_dir().join(format!(
+            "tasty-lua-reload-test-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
         std::fs::create_dir_all(&dir).ok();
         let path = dir.join("init.lua");
 
@@ -304,6 +310,6 @@ mod tests {
         engine
             .eval("assert(_G.from_old == false and _G.from_new == true)")
             .unwrap();
-        std::fs::remove_file(&path).ok();
+        std::fs::remove_dir_all(&dir).ok();
     }
 }
