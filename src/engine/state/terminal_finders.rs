@@ -3,6 +3,25 @@ use tasty_terminal::Terminal;
 use super::EngineState;
 
 impl EngineState {
+    /// Check if this engine owns a surface with the given id (any kind, not just terminal).
+    pub fn has_surface(&self, surface_id: u32) -> bool {
+        self.workspaces
+            .iter()
+            .any(|ws| ws.all_surface_ids().contains(&surface_id))
+    }
+
+    /// Check if this engine owns a workspace with the given id.
+    pub fn has_workspace(&self, workspace_id: u32) -> bool {
+        self.workspaces.iter().any(|ws| ws.id == workspace_id)
+    }
+
+    /// Check if this engine owns a pane with the given id.
+    pub fn has_pane(&self, pane_id: u32) -> bool {
+        self.workspaces
+            .iter()
+            .any(|ws| ws.pane_layout().all_pane_ids().contains(&pane_id))
+    }
+
     /// Find a terminal by surface ID (immutable).
     pub fn find_terminal_by_id(&self, surface_id: u32) -> Option<&Terminal> {
         for workspace in &self.workspaces {

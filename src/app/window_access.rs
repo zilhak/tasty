@@ -3,6 +3,8 @@
 //! IPC / 키보드 라우팅의 일반 대상은 모달이 아닌 `MainWindow`. 모달 활성 여부와는
 //! 별개로 `engine.focused_window_id` 로 추적되는 윈도우만 반환한다.
 
+use winit::window::WindowId;
+
 use crate::app::App;
 use crate::window;
 
@@ -41,5 +43,42 @@ impl App {
             }
         }
         self.parked_states.first().map(|(_, e)| e)
+    }
+
+    /// Surface 를 가진 MainWindow 의 WindowId 를 반환. windows main 순회 후 못 찾으면
+    /// None (parked 는 별도로 fallback 처리).
+    pub(crate) fn find_main_with_surface(&self, surface_id: u32) -> Option<WindowId> {
+        for (wid, w) in &self.windows {
+            if let Some(m) = w.as_main() {
+                if m.engine_state.has_surface(surface_id) {
+                    return Some(*wid);
+                }
+            }
+        }
+        None
+    }
+
+    /// Workspace 를 가진 MainWindow 의 WindowId 를 반환.
+    pub(crate) fn find_main_with_workspace(&self, workspace_id: u32) -> Option<WindowId> {
+        for (wid, w) in &self.windows {
+            if let Some(m) = w.as_main() {
+                if m.engine_state.has_workspace(workspace_id) {
+                    return Some(*wid);
+                }
+            }
+        }
+        None
+    }
+
+    /// Pane 을 가진 MainWindow 의 WindowId 를 반환.
+    pub(crate) fn find_main_with_pane(&self, pane_id: u32) -> Option<WindowId> {
+        for (wid, w) in &self.windows {
+            if let Some(m) = w.as_main() {
+                if m.engine_state.has_pane(pane_id) {
+                    return Some(*wid);
+                }
+            }
+        }
+        None
     }
 }

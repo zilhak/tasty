@@ -10,6 +10,7 @@ pub(crate) mod ipc;
 pub(crate) mod modal;
 pub(crate) mod persistence;
 pub(crate) mod plugin_glue;
+pub(crate) mod request_owner;
 pub(crate) mod window_access;
 pub(crate) mod window_lifecycle;
 

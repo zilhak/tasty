@@ -5,6 +5,7 @@
 pub(crate) mod handler_ipc;
 pub(crate) mod host_events;
 pub(crate) mod intents;
+pub(crate) mod list_global;
 pub(crate) mod memory_changes;
 pub(crate) mod plugin_ipc;
 pub(crate) mod plugin_popup_events;

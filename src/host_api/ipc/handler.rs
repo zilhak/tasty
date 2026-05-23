@@ -13,15 +13,15 @@ mod message;
 mod meta;
 mod notification;
 mod output;
-mod pane;
+pub(crate) mod pane;
 mod preset;
-mod surface;
+pub(crate) mod surface;
 mod tab;
 mod telemetry;
 #[cfg(debug_assertions)]
 mod tool;
 mod webview;
-mod workspace;
+pub(crate) mod workspace;
 
 pub mod agent;
 pub mod approval;

@@ -29,9 +29,18 @@ impl App {
             }
         }
 
-        // focused MainWindow 또는 parked state 로 라우팅.
-        let focused_id = self.engine.focused_window_id;
-        if let Some(id) = focused_id {
+        // list 류는 모든 engine 결과를 합쳐 반환 (포커스 독립 원칙).
+        if let Some(resp) = self.dispatch_list_global(&cmd.request) {
+            send_response(&cmd.response_tx, resp);
+            return IpcStep::Handled;
+        }
+
+        // owner main → focused main → parked owner → parked[0] 순으로 라우팅
+        // (CLAUDE.md "포커스 독립" 원칙).
+        let target_id = self
+            .find_request_owner(&cmd.request.params)
+            .or(self.engine.focused_window_id);
+        if let Some(id) = target_id {
             if let Some(w) = self.windows.get_mut(&id).and_then(|w| w.as_main_mut()) {
                 let response = host_ipc::handler::handle_with_caller(
                     &mut w.state,
@@ -43,6 +52,23 @@ impl App {
                 w.base.dirty = true;
                 return IpcStep::Handled;
             }
+        }
+        // parked owner 검사
+        let owner_in_parked = crate::app::request_owner::params_resource_id(&cmd.request.params)
+            .and_then(|(_, rid)| {
+                self.parked_states
+                    .iter_mut()
+                    .find(|(_, e)| match rid.kind {
+                        crate::app::request_owner::Kind::Surface => e.has_surface(rid.id),
+                        crate::app::request_owner::Kind::Workspace => e.has_workspace(rid.id),
+                        crate::app::request_owner::Kind::Pane => e.has_pane(rid.id),
+                    })
+            });
+        if let Some((state, engine)) = owner_in_parked {
+            let response =
+                host_ipc::handler::handle_with_caller(state, engine, &cmd.request, caller);
+            send_response(&cmd.response_tx, response);
+            return IpcStep::Handled;
         }
         if let Some((state, engine)) = self.parked_states.first_mut() {
             let response =
