@@ -105,7 +105,7 @@ pub fn handle_list(
         Ok(k) => k,
         Err(e) => return e,
     };
-    let names = match with_store(state, &id, |s| s.list(kind)) {
+    let names = match with_store(state, engine, &id, |s| s.list(kind)) {
         Ok(v) => v,
         Err(e) => return e,
     };
@@ -127,7 +127,7 @@ pub fn handle_get(
         Err(e) => return e,
     };
 
-    let data = match with_store(state, &id, |s| -> Result<serde_json::Value, String> {
+    let data = match with_store(state, engine, &id, |s| -> Result<serde_json::Value, String> {
         match kind {
             PresetKind::Workspace => s
                 .get_workspace(&name)
@@ -207,7 +207,7 @@ pub fn handle_save(
     };
 
     // 2. 공유 save_inner 호출.
-    match save_inner(state, "", Some(&name), overwrite, cloned) {
+    match save_inner(state, engine, "", Some(&name), overwrite, cloned) {
         Ok(SaveOutcome::Saved(saved_name)) => {
             JsonRpcResponse::success(id, json!({ "name": saved_name }))
         }
@@ -234,7 +234,7 @@ pub fn handle_delete(
         Err(e) => return e,
     };
 
-    match delete_inner(state, kind, &name) {
+    match delete_inner(state, engine, kind, &name) {
         Ok(()) => JsonRpcResponse::success(id, json!({ "deleted": true })),
         Err(e) => mutation_error(id, e),
     }
@@ -259,7 +259,7 @@ pub fn handle_rename(
         Err(e) => return e,
     };
 
-    match rename_inner(state, kind, &from, &to) {
+    match rename_inner(state, engine, kind, &from, &to) {
         Ok(()) => JsonRpcResponse::success(id, json!({ "renamed": to })),
         Err(e) => mutation_error(id, e),
     }
@@ -285,13 +285,13 @@ pub fn handle_capture(
         .map(str::to_string);
 
     // 1. capture (read-only on engine).
-    let (cloned, base_name) = match capture_inner(state, kind, source_id) {
+    let (cloned, base_name) = match capture_inner(state, engine, kind, source_id) {
         Ok(v) => v,
         Err(msg) => return JsonRpcResponse::invalid_params(id, msg),
     };
 
     // 2. save (overwrite=false; explicit_name=Some 이면 충돌 시 SkippedExists).
-    match save_inner(state, &base_name, explicit_name.as_deref(), false, cloned) {
+    match save_inner(state, engine, &base_name, explicit_name.as_deref(), false, cloned) {
         Ok(SaveOutcome::Saved(name)) => JsonRpcResponse::success(id, json!({ "name": name })),
         Ok(SaveOutcome::SkippedExists) => JsonRpcResponse::invalid_params(
             id,
@@ -328,6 +328,7 @@ pub fn handle_apply(
     let opts = ApplyOptions { focus: false };
     match apply_inner(
         state,
+        engine,
         kind,
         &name,
         target_pane_id,

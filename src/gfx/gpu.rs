@@ -219,6 +219,7 @@ impl GpuState {
     pub fn render(
         &mut self,
         state: &mut AppState,
+        engine: &mut crate::engine_state::EngineState,
         window: &Window,
         preedit: Option<&ImePreeditState>,
         selection: Option<&crate::selection::TextSelection>,
@@ -271,6 +272,7 @@ impl GpuState {
         let t0 = std::time::Instant::now();
         let mut full_output = self.run_egui_frame(
             state,
+            engine,
             window,
             &pane_rects,
             &dividers,
@@ -296,7 +298,7 @@ impl GpuState {
 
         // 4. Post-egui updates (theme/font refresh)
         let t0 = std::time::Instant::now();
-        self.post_egui_update(state, &prev_theme);
+        self.post_egui_update(engine, &prev_theme);
         let post_egui_ms = t0.elapsed().as_secs_f64() * 1000.0;
 
         // egui-winit disables IME when no egui text field is focused

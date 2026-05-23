@@ -6,7 +6,11 @@ use crate::theme;
 
 /// Draw notification panel content inside a popup Ui.
 /// Called by the notifications popup's `draw_fn` (see popup_defs).
-pub(crate) fn draw_notification_content_inner(ui: &mut egui::Ui, state: &mut AppState) {
+pub(crate) fn draw_notification_content_inner(
+    ui: &mut egui::Ui,
+    state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
+) {
     let th = theme::theme();
 
     // Header with mark-all-read button
@@ -330,6 +334,6 @@ pub fn draw_notification_popup(
     state: &mut AppState,
     engine: &mut crate::engine_state::EngineState,
 ) -> crate::ui::popup::PopupAction {
-    draw_notification_content_inner(ui, state);
+    draw_notification_content_inner(ui, state, engine);
     crate::ui::popup::PopupAction::None
 }

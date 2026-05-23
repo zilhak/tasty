@@ -19,7 +19,11 @@ pub fn rename_popup_title(state: &AppState) -> String {
 }
 
 /// Draw function for the rename popup (PopupDef draw_fn).
-pub fn draw_rename_popup(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction {
+pub fn draw_rename_popup(
+    ui: &mut egui::Ui,
+    state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
+) -> PopupAction {
     let th = theme::theme();
     let ctx = ui.ctx().clone();
 
@@ -39,7 +43,7 @@ pub fn draw_rename_popup(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction
             *ws_idx < engine.workspaces.len()
         }
         RenameTarget::TabName { pane_id, tab_index } => state
-            .active_workspace()
+            .active_workspace(engine)
             .pane_layout()
             .find_pane(*pane_id)
             .is_some_and(|p| *tab_index < p.tabs.len()),
@@ -109,14 +113,19 @@ pub fn draw_rename_popup(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction
 
     if confirm {
         let (target, buffer) = state.dialogs.rename.take().unwrap();
-        apply_rename(state, target, buffer);
+        apply_rename(state, engine, target, buffer);
         return PopupAction::Close;
     }
 
     PopupAction::None
 }
 
-fn apply_rename(state: &mut AppState, target: RenameTarget, buffer: String) {
+fn apply_rename(
+    state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
+    target: RenameTarget,
+    buffer: String,
+) {
     match target {
         RenameTarget::WorkspaceName { ws_idx } => {
             if !buffer.is_empty() {
@@ -154,7 +163,7 @@ fn apply_rename(state: &mut AppState, target: RenameTarget, buffer: String) {
             let name = buffer.trim().to_string();
             let mut renamed: Option<(u32, String)> = None;
             if let Some(pane) = state
-                .active_workspace_mut()
+                .active_workspace_mut(engine)
                 .pane_layout_mut()
                 .find_pane_mut(pane_id)
             {

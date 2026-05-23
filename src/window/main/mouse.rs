@@ -97,8 +97,6 @@ impl MainWindow {
         position: winit::dpi::PhysicalPosition<f64>,
         egui_consumed: bool,
     ) {
-        let engine = &mut self.engine_state;
-        let _ = &mut *engine;
         self.cursor_position = Some(position);
         let overlay_open = self.state.settings_open;
         if egui_consumed || overlay_open || self.state.popup_hovered {
@@ -131,22 +129,22 @@ impl MainWindow {
         }
 
         if let Some(drag) = self.dragging_divider {
+            let cell_w = self.base.gpu.cell_width();
+            let cell_h = self.base.gpu.cell_height();
+            let engine = &mut self.engine_state;
             let changed = match drag.kind {
                 DividerDragKind::Pane => {
                     self.state
-                        .update_pane_divider(&drag.info, x, y, terminal_rect)
+                        .update_pane_divider(engine, &drag.info, x, y, terminal_rect)
                 }
                 DividerDragKind::Surface => {
                     self.state
-                        .update_surface_divider(&drag.info, x, y, terminal_rect)
+                        .update_surface_divider(engine, &drag.info, x, y, terminal_rect)
                 }
             };
             if changed {
-                self.state.resize_all(engine, 
-                    terminal_rect,
-                    self.base.gpu.cell_width(),
-                    self.base.gpu.cell_height(),
-                );
+                self.state.resize_all(engine, terminal_rect, cell_w, cell_h);
+                drop(engine);
                 self.mark_dirty();
             }
         }
@@ -251,6 +249,7 @@ impl MainWindow {
                             crate::file_dispatch::LinkKind::FileTarget(path) => {
                                 crate::file_dispatch::dispatch_file_target(
                                     &mut self.state,
+                                    engine,
                                     crate::file::format::FileTarget::new(path),
                                     crate::file::format::DetectDepth::Deep,
                                 );
@@ -267,10 +266,10 @@ impl MainWindow {
                     let threshold = 4.0;
                     let pane_div = self
                         .state
-                        .find_pane_divider_at(x, y, terminal_rect, threshold);
+                        .find_pane_divider_at(engine, x, y, terminal_rect, threshold);
                     let surf_div =
                         self.state
-                            .find_surface_divider_at(x, y, terminal_rect, threshold);
+                            .find_surface_divider_at(engine, x, y, terminal_rect, threshold);
                     if let Some(info) = pane_div {
                         self.dragging_divider = Some(DividerDrag {
                             info,
@@ -298,7 +297,7 @@ impl MainWindow {
                         // Start text selection (only if not mouse-tracking or Shift held)
                         let mouse_tracking = self
                             .state
-                            .focused_terminal()
+                            .focused_terminal(engine)
                             .map(|t| t.mouse_tracking())
                             .unwrap_or(tasty_terminal::MouseTrackingMode::None);
                         let shift = self.base.modifiers.shift_key();

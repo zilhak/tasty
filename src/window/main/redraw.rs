@@ -224,6 +224,7 @@ impl MainWindow {
                 .map(|h| (h.surface_id, &h.highlight));
             match self.base.gpu.render(
                 &mut self.state,
+                &mut self.engine_state,
                 &self.base.winit,
                 self.ime_preedit.as_ref(),
                 self.text_selection.as_ref(),

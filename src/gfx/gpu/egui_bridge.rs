@@ -10,6 +10,7 @@ impl GpuState {
     pub(super) fn run_egui_frame(
         &mut self,
         state: &mut AppState,
+        engine: &mut crate::engine_state::EngineState,
         window: &Window,
         pane_rects: &[(u32, Rect)],
         dividers: &[Rect],
@@ -21,28 +22,33 @@ impl GpuState {
         let canvas_cache = &self.canvas_textures;
 
         self.egui_ctx.run(raw_input, |ctx| {
-            ui::draw_ui(ctx, state, scale_factor);
+            ui::draw_ui(ctx, state, engine, scale_factor);
             ui::draw_pane_dividers(ctx, dividers, scale_factor);
-            ui::draw_surface_highlights(ctx, state, terminal_rect, scale_factor);
-            ui::draw_pane_tab_bars(ctx, state, pane_rects, scale_factor);
-            ui::draw_egui_panels(ctx, state, pane_rects, scale_factor, canvas_cache);
+            ui::draw_surface_highlights(ctx, state, engine, terminal_rect, scale_factor);
+            ui::draw_pane_tab_bars(ctx, state, engine, pane_rects, scale_factor);
+            ui::draw_egui_panels(ctx, state, engine, pane_rects, scale_factor, canvas_cache);
             // Context menus are now handled via native OS menus (see process_pending_native_menu)
-            ui::draw_popups(ctx, state, pane_rects, terminal_rect, scale_factor);
+            ui::draw_popups(ctx, state, engine, pane_rects, terminal_rect, scale_factor);
             // Plugin popup 인스턴스(동적 instance_id) — host PopupManager와 별도 경로.
             crate::plugin::popup_render::draw_plugin_popups(
                 ctx,
                 state,
+                engine,
                 plugin_manager,
                 canvas_cache,
             );
             // 외부 drag&drop hover 시각 피드백 — 모든 레이어 위에 그린다.
-            ui::drop_overlay::draw_drop_overlay(ctx, state, terminal_rect, scale_factor);
+            ui::drop_overlay::draw_drop_overlay(ctx, state, engine, terminal_rect, scale_factor);
 
             // Settings UI is now rendered in the modal window (ModalWindow)
         })
     }
 
-    pub(super) fn post_egui_update(&mut self, state: &AppState, prev_theme: &str) {
+    pub(super) fn post_egui_update(
+        &mut self,
+        engine: &crate::engine_state::EngineState,
+        prev_theme: &str,
+    ) {
         let ui_scale = engine.settings.appearance.ui_scale_factor();
         if engine.settings.appearance.theme != prev_theme {
             self.refresh_theme(&engine.settings.appearance.theme, ui_scale);

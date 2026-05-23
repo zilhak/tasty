@@ -88,11 +88,16 @@ fn hex_val(b: u8) -> Option<u8> {
 /// - `Cheap`: 호출 thread 에서 즉시 식별 → handler 실행.
 /// - `Deep`: `IdentifyWorker::spawn` 으로 thread 분리. 결과는 `AppEvent::IdentifyDone`
 ///   으로 main thread 에 도착, `apply_identify_result` 가 동일 흐름으로 재진입.
-pub fn dispatch_file_target(state: &mut AppState, target: FileTarget, depth: DetectDepth) {
+pub fn dispatch_file_target(
+    state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
+    target: FileTarget,
+    depth: DetectDepth,
+) {
     match depth {
         DetectDepth::Cheap => {
             let detector = engine.file_format.identify(&target, depth);
-            apply_identify_result(state, target, detector);
+            apply_identify_result(state, engine, target, detector);
         }
         DetectDepth::Deep => {
             if let Some(worker) = engine.identify_worker.clone() {
@@ -101,10 +106,8 @@ pub fn dispatch_file_target(state: &mut AppState, target: FileTarget, depth: Det
                 tracing::warn!(
                     "file_dispatch: identify_worker not injected — falling back to cheap",
                 );
-                let detector = engine
-                    .file_format
-                    .identify(&target, DetectDepth::Cheap);
-                apply_identify_result(state, target, detector);
+                let detector = engine.file_format.identify(&target, DetectDepth::Cheap);
+                apply_identify_result(state, engine, target, detector);
             }
         }
     }
@@ -123,12 +126,12 @@ pub fn apply_identify_result(
         None => Vec::new(),
     };
     if handlers.is_empty() {
-        open_picker(state, target, detector, Vec::new());
+        open_picker(state, engine, target, detector, Vec::new());
         return;
     }
     // 정렬 1순위가 자동 선택. 단일 / 복수 동일 — 첫 항목 dispatch.
     let first = handlers.into_iter().next().expect("non-empty checked");
-    execute_handler_action(state, &first, &target);
+    execute_handler_action(state, engine, &first, &target);
 }
 
 /// Picker popup 을 띄운다. 후보가 비어도 호출 — empty-state UI 가 보여진다.
@@ -187,7 +190,12 @@ fn handler_to_summary(h: &FileHandler) -> PickerHandlerSummary {
 
 /// 단일 handler action 을 실행. OpenSurface 는 즉시, Ipc 는 큐로, System 은
 /// webbrowser 위임.
-pub fn execute_handler_action(state: &mut AppState, handler: &FileHandler, target: &FileTarget) {
+pub fn execute_handler_action(
+    state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
+    handler: &FileHandler,
+    target: &FileTarget,
+) {
     match &handler.action {
         HandlerAction::OpenSurface {
             surface_kind,
@@ -227,7 +235,10 @@ fn path_to_file_uri(abs: &std::path::Path) -> String {
 
 /// Picker 결과를 소비해 handler 실행 + recent 기록. App 메인 루프 (frame end) 가
 /// 매 frame 호출. 결과가 없으면 no-op.
-pub fn consume_picker_result(state: &mut AppState) {
+pub fn consume_picker_result(
+    state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
+) {
     let Some(data) = state.dialogs.file_handler_picker.as_mut() else {
         return;
     };
@@ -242,7 +253,7 @@ pub fn consume_picker_result(state: &mut AppState) {
     use crate::state::FileHandlerPickerResult;
     match result {
         FileHandlerPickerResult::Selected(handler_id) => {
-            dispatch_by_handler_id(state, &handler_id, &target);
+            dispatch_by_handler_id(state, engine, &handler_id, &target);
             engine.record_file_handler_pick(&handler_id);
         }
         FileHandlerPickerResult::Cancelled => {
@@ -251,9 +262,14 @@ pub fn consume_picker_result(state: &mut AppState) {
     }
 }
 
-fn dispatch_by_handler_id(state: &mut AppState, id: &HandlerId, target: &FileTarget) {
+fn dispatch_by_handler_id(
+    state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
+    id: &HandlerId,
+    target: &FileTarget,
+) {
     match engine.file_handler.get(id) {
-        Some(handler) => execute_handler_action(state, &handler, target),
+        Some(handler) => execute_handler_action(state, engine, &handler, target),
         None => {
             tracing::warn!(
                 handler_id = %id,
