@@ -60,11 +60,21 @@ impl App {
                     src.telemetry_seq.clone(),
                     src.anomaly_detector.clone(),
                     src.agent_seq.clone(),
+                    src.next_ids.clone(),
                 )
             });
 
-            let mut engine = crate::engine_state::EngineState::new(cols, rows, waker.clone())
-                .expect("failed to create engine state");
+            // IdGenerator 는 EngineState::new 시점에 default workspace 만들면서
+            // 첫 ID 들 발급하므로, **생성 전에** source 의 next_ids 를 주입해야
+            // workspace_id/pane_id/tab_id/surface_id 충돌이 안 난다.
+            let shared_ids = shared.as_ref().map(|s| s.9.clone());
+            let mut engine = crate::engine_state::EngineState::new_with_ids(
+                cols,
+                rows,
+                waker.clone(),
+                shared_ids,
+            )
+            .expect("failed to create engine state");
             engine.waker_factory = Some(factory.clone());
             if let Some((
                 surface_registry,
@@ -76,6 +86,7 @@ impl App {
                 telemetry_seq,
                 anomaly_detector,
                 agent_seq,
+                _next_ids,
             )) = shared
             {
                 engine.surface_registry = surface_registry;
@@ -87,6 +98,7 @@ impl App {
                 engine.telemetry_seq = telemetry_seq;
                 engine.anomaly_detector = anomaly_detector;
                 engine.agent_seq = agent_seq;
+                // next_ids 는 위에서 이미 생성 시점에 주입됨.
             } else {
                 // 첫 부팅 — identify_worker 와 preset_store 는 App proxy 가 필요.
                 engine.identify_worker =

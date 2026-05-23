@@ -11,45 +11,46 @@ use tasty_hooks::HookManager;
 use tasty_terminal::Waker;
 
 /// ID generator for workspaces, panes, tabs, and surfaces.
+///
+/// 각 카운터는 `Arc<AtomicU32>` 로, 여러 EngineState 가 같은 ID 공간을 공유한다.
+/// multi-window 시 두 engine 이 동일 ID 를 발급하면 IPC routing 이 불정확해지므로
+/// 글로벌 유니크가 필요. `Clone` 으로 새 engine 에 같은 Arc 를 넘긴다.
+#[derive(Clone)]
 pub struct IdGenerator {
-    workspace: u32,
-    pane: u32,
-    tab: u32,
-    surface: u32,
+    workspace: Arc<std::sync::atomic::AtomicU32>,
+    pane: Arc<std::sync::atomic::AtomicU32>,
+    tab: Arc<std::sync::atomic::AtomicU32>,
+    surface: Arc<std::sync::atomic::AtomicU32>,
 }
 
 impl IdGenerator {
     pub fn new() -> Self {
+        use std::sync::atomic::AtomicU32;
         Self {
-            workspace: 1,
-            pane: 1,
-            tab: 1,
-            surface: 1,
+            workspace: Arc::new(AtomicU32::new(1)),
+            pane: Arc::new(AtomicU32::new(1)),
+            tab: Arc::new(AtomicU32::new(1)),
+            surface: Arc::new(AtomicU32::new(1)),
         }
     }
 
-    pub fn next_workspace(&mut self) -> u32 {
-        let id = self.workspace;
-        self.workspace += 1;
-        id
+    pub fn next_workspace(&self) -> u32 {
+        self.workspace
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     }
 
-    pub fn next_pane(&mut self) -> u32 {
-        let id = self.pane;
-        self.pane += 1;
-        id
+    pub fn next_pane(&self) -> u32 {
+        self.pane
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     }
 
-    pub fn next_tab(&mut self) -> u32 {
-        let id = self.tab;
-        self.tab += 1;
-        id
+    pub fn next_tab(&self) -> u32 {
+        self.tab.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     }
 
-    pub fn next_surface(&mut self) -> u32 {
-        let id = self.surface;
-        self.surface += 1;
-        id
+    pub fn next_surface(&self) -> u32 {
+        self.surface
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     }
 }
 
@@ -184,13 +185,25 @@ pub struct EngineState {
 impl EngineState {
     /// Create a new EngineState with default settings.
     pub fn new(cols: usize, rows: usize, waker: Waker) -> anyhow::Result<Self> {
+        Self::new_with_ids(cols, rows, waker, None)
+    }
+
+    /// 새 EngineState 를 만들 때 기존 ID 공간(Arc<AtomicU32> 들)을 공유받는 변형.
+    /// multi-window 시 두 번째 main 의 첫 workspace 가 첫 engine 과 ID 충돌하지
+    /// 않게 한다. `shared_ids=None` 이면 새 IdGenerator 로 1부터 시작.
+    pub fn new_with_ids(
+        cols: usize,
+        rows: usize,
+        waker: Waker,
+        shared_ids: Option<IdGenerator>,
+    ) -> anyhow::Result<Self> {
         let settings = Settings::load();
         let restore_layout = settings.general.restore_layout;
 
         // Create engine with empty workspaces first; we'll fill them below.
         let mut engine = Self {
             workspaces: Vec::new(),
-            next_ids: IdGenerator::new(),
+            next_ids: shared_ids.unwrap_or_else(IdGenerator::new),
             default_cols: cols,
             default_rows: rows,
             waker: waker.clone(),
