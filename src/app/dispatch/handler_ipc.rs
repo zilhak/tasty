@@ -14,7 +14,7 @@ impl App {
                 drained.append(&mut main.state.pending_handler_ipc);
             }
         }
-        for s in &mut self.parked_states {
+        for (s, _engine) in &mut self.parked_states {
             drained.append(&mut s.pending_handler_ipc);
         }
         if drained.is_empty() {

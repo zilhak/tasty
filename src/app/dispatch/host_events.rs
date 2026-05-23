@@ -15,17 +15,9 @@ use crate::state::PendingHostEvent;
 impl App {
     pub(crate) fn dispatch_pending_host_events(&mut self) {
         let mut drained: Vec<PendingHostEvent> = Vec::new();
-        let Self {
-            windows,
-            parked_states,
-            engine_state,
-            ..
-        } = self;
-        let engine = engine_state
-            .as_mut()
-            .expect("App.engine_state must be initialized");
-        for (win_id, w) in windows.iter_mut() {
+        for (win_id, w) in self.windows.iter_mut() {
             if let Some(main) = w.as_main_mut() {
+                let engine = &mut main.engine_state;
                 main.state.detect_focus_change(engine);
                 main.state.detect_workspace_activation(engine);
                 main.state.detect_tab_focus_change(engine);
@@ -36,7 +28,8 @@ impl App {
                 drained.extend(main.state.take_pending_host_events());
             }
         }
-        for s in parked_states.iter_mut() {
+        // parked (AppState, EngineState) 쌍은 자기 짝의 engine 으로 detect.
+        for (s, engine) in self.parked_states.iter_mut() {
             s.detect_focus_change(engine);
             s.detect_workspace_activation(engine);
             s.detect_tab_focus_change(engine);

@@ -44,11 +44,7 @@ impl App {
                 return IpcStep::Handled;
             }
         }
-        // parked AppState 는 engine 이 분리돼 있지 않으므로 App.engine_state 를 빌려 사용.
-        if let (Some(state), Some(engine)) = (
-            self.parked_states.first_mut(),
-            self.engine_state.as_mut(),
-        ) {
+        if let Some((state, engine)) = self.parked_states.first_mut() {
             let response =
                 host_ipc::handler::handle_with_caller(state, engine, &cmd.request, caller);
             send_response(&cmd.response_tx, response);

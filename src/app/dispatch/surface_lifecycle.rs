@@ -19,7 +19,7 @@ impl App {
                 drained.extend(main.state.take_pending_lifecycle_events());
             }
         }
-        for s in &mut self.parked_states {
+        for (s, _engine) in &mut self.parked_states {
             drained.extend(s.take_pending_lifecycle_events());
         }
         if drained.is_empty() {

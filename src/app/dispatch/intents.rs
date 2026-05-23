@@ -25,7 +25,7 @@ impl App {
                 }
             }
         }
-        for (idx, s) in self.parked_states.iter_mut().enumerate() {
+        for (idx, (s, _)) in self.parked_states.iter_mut().enumerate() {
             let batch = s.take_pending_intents();
             if !batch.is_empty() {
                 parked_batches.push((idx, batch));
@@ -47,23 +47,14 @@ impl App {
             }
             main.mark_dirty();
         }
-        if !parked_batches.is_empty() {
-            // parked AppState 들은 engine 이 분리되어 있지 않으므로, App.engine_state
-            // 를 임시로 빌려와 사용한다. parked 가 있을 때 App.engine_state 가 비어
-            // 있는 경로는 없다는 invariant 하에 expect 처리.
-            let engine = self
-                .engine_state
-                .as_mut()
-                .expect("App.engine_state must be present for parked dispatch");
-            for (idx, batch) in parked_batches {
-                let Some(state) = self.parked_states.get_mut(idx) else {
-                    continue;
-                };
-                for intent in batch {
-                    #[cfg(debug_assertions)]
-                    crate::intent::watch::observe(&intent);
-                    Self::dispatch_one_intent(state, engine, &intent);
-                }
+        for (idx, batch) in parked_batches {
+            let Some((state, engine)) = self.parked_states.get_mut(idx) else {
+                continue;
+            };
+            for intent in batch {
+                #[cfg(debug_assertions)]
+                crate::intent::watch::observe(&intent);
+                Self::dispatch_one_intent(state, engine, &intent);
             }
         }
     }
@@ -112,23 +103,19 @@ impl App {
         caller: &ipc::caller::CallerContext,
     ) -> ipc::protocol::JsonRpcResponse {
         let focused_id = self.engine.focused_window_id;
-        let Self {
-            windows,
-            parked_states,
-            engine_state,
-            ..
-        } = self;
-        let engine = engine_state
-            .as_mut()
-            .expect("App.engine_state must be initialized");
         if let Some(id) = focused_id {
-            if let Some(w) = windows.get_mut(&id).and_then(|w| w.as_main_mut()) {
-                let response = ipc::handler::handle_with_caller(&mut w.state, engine, request, caller);
+            if let Some(w) = self.windows.get_mut(&id).and_then(|w| w.as_main_mut()) {
+                let response = ipc::handler::handle_with_caller(
+                    &mut w.state,
+                    &mut w.engine_state,
+                    request,
+                    caller,
+                );
                 w.base.dirty = true;
                 return response;
             }
         }
-        if let Some(state) = parked_states.first_mut() {
+        if let Some((state, engine)) = self.parked_states.first_mut() {
             return ipc::handler::handle_with_caller(state, engine, request, caller);
         }
         let id = request.id.clone().unwrap_or(serde_json::Value::Null);

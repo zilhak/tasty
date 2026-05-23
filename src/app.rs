@@ -28,7 +28,11 @@ pub(crate) struct App {
     pub(crate) windows: std::collections::HashMap<WindowId, Box<dyn window::Window>>,
     /// Parked AppStates: preserved when all windows are closed so PTY sessions survive.
     /// Moved into new windows when created, or used directly for IPC.
-    pub(crate) parked_states: Vec<state::AppState>,
+    /// 윈도우가 파킹되면 그 MainWindow 가 갖고 있던 (AppState, EngineState) 쌍을
+    /// 통째로 보관한다. dock reopen / 트레이 복귀 시 짝지어 꺼내 새 MainWindow 에
+    /// 재주입한다. engine 만 분리해 보관하면 워크스페이스/설정/scrollback 등이
+    /// 사라지므로 반드시 쌍으로 보존한다.
+    pub(crate) parked_states: Vec<(state::AppState, crate::engine_state::EngineState)>,
     // Shell setup mode (before terminal is created)
     pub(crate) shell_setup_mode: bool,
     pub(crate) shell_setup_path: String,
@@ -95,15 +99,30 @@ impl App {
         }
     }
 
+    /// EngineState 접근자. 부팅 시 `App.engine_state` 에 들어 있다가 첫 MainWindow
+    /// 등록 시 그쪽으로 이동한다. 이 헬퍼는 두 위치 중 살아있는 쪽을 찾아 반환한다.
+    /// 어디에도 없으면 panic — 호출 경로가 invariant 를 깬 것.
     pub(crate) fn engine_state(&self) -> &crate::engine_state::EngineState {
-        self.engine_state
-            .as_ref()
-            .expect("App.engine_state accessed before initialization")
+        if let Some(e) = self.engine_state.as_ref() {
+            return e;
+        }
+        for w in self.windows.values() {
+            if let Some(main) = w.as_main() {
+                return &main.engine_state;
+            }
+        }
+        panic!("App.engine_state accessed before initialization");
     }
 
     pub(crate) fn engine_state_mut(&mut self) -> &mut crate::engine_state::EngineState {
-        self.engine_state
-            .as_mut()
-            .expect("App.engine_state accessed before initialization")
+        if self.engine_state.is_some() {
+            return self.engine_state.as_mut().unwrap();
+        }
+        for w in self.windows.values_mut() {
+            if let Some(main) = w.as_main_mut() {
+                return &mut main.engine_state;
+            }
+        }
+        panic!("App.engine_state accessed before initialization");
     }
 }

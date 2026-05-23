@@ -286,19 +286,32 @@ impl App {
         .expect("failed to initialize GPU");
 
         // Reuse parked state if available (restoring previous session)
-        let mut state = if !self.parked_states.is_empty() {
+        let (mut state, parked_engine) = if !self.parked_states.is_empty() {
             let parked = self.parked_states.remove(0);
             tracing::info!(
                 "restoring parked state, {} remaining",
                 self.parked_states.len()
             );
-            parked
+            let (st, eng) = parked;
+            (st, Some(eng))
         } else {
-            self.create_app_state(&gpu, settings.appearance.sidebar_width)
+            let st = self.create_app_state(&gpu, settings.appearance.sidebar_width);
+            (st, None)
+        };
+
+        // 새 윈도우의 engine: parked 가 있으면 그쪽을 재사용, 없으면 App.engine_state
+        // 를 take. 그래도 없으면 새로 만들어야 하지만 호출 경로 상 invariant 보장.
+        // (multi-MainWindow 시점에는 두 번째 등록부터 engine 부족 — 후속 작업 영역.)
+        let mut engine_state = if let Some(e) = parked_engine {
+            e
+        } else {
+            self.engine_state
+                .take()
+                .expect("App.engine_state must be present to register a main window")
         };
 
         // Ensure at least one workspace exists for the new window
-        state.ensure_workspace_exists(self.engine_state_mut());
+        state.ensure_workspace_exists(&mut engine_state);
 
         // DB 초기화 실패 알림. 가장 먼저 푸시해서 큐 head에 둠 → [확인] 시 Exit(1).
         if let Some(err) = db_init_error {
@@ -331,10 +344,6 @@ impl App {
             );
         }
 
-        let engine_state = self
-            .engine_state
-            .take()
-            .expect("App.engine_state must be present to register a main window");
         self.register_window(gpu, state, engine_state, window);
         tracing::info!("created new window {:?}", self.engine.focused_window_id);
     }

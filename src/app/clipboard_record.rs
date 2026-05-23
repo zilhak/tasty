@@ -6,8 +6,16 @@ impl App {
     /// Record clipboard data from the background polling thread into all engines.
     pub(crate) fn record_clipboard_data(&mut self, data: crate::ClipboardData) {
         let source = crate::clipboard_history::ClipboardSource::System;
-        let engine = self.engine_state_mut();
-        if engine.settings.clipboard.history_enabled {
+        let engines = self
+            .windows
+            .values_mut()
+            .filter_map(|w| w.as_main_mut())
+            .map(|m| &mut m.engine_state)
+            .chain(self.parked_states.iter_mut().map(|(_, e)| e));
+        for engine in engines {
+            if !engine.settings.clipboard.history_enabled {
+                continue;
+            }
             match &data {
                 crate::ClipboardData::Text(text) => {
                     engine.clipboard_history.record(text.clone(), source);

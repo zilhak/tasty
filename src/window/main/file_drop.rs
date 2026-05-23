@@ -70,10 +70,11 @@ impl MainWindow {
                 .push_info(crate::i18n::t("file_drop.outside"), ToastScope::Window);
             return;
         }
-        let engine = &mut self.engine_state;
-        let _ = self.state.focus_pane_at_position(engine, x, y, terminal_rect);
-        let _ = self.state.focus_surface_at_position(engine, x, y, terminal_rect);
-        drop(engine);
+        {
+            let engine = &mut self.engine_state;
+            let _ = self.state.focus_pane_at_position(engine, x, y, terminal_rect);
+            let _ = self.state.focus_surface_at_position(engine, x, y, terminal_rect);
+        }
         for path in drops {
             crate::file_dispatch::dispatch_file_target(
                 &mut self.state,

@@ -13,7 +13,7 @@ impl App {
                 drained.append(&mut main.state.pending_popup_opens);
             }
         }
-        for s in &mut self.parked_states {
+        for (s, _engine) in &mut self.parked_states {
             drained.append(&mut s.pending_popup_opens);
         }
         if drained.is_empty() {

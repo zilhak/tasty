@@ -131,20 +131,24 @@ impl MainWindow {
         if let Some(drag) = self.dragging_divider {
             let cell_w = self.base.gpu.cell_width();
             let cell_h = self.base.gpu.cell_height();
-            let engine = &mut self.engine_state;
-            let changed = match drag.kind {
-                DividerDragKind::Pane => {
-                    self.state
-                        .update_pane_divider(engine, &drag.info, x, y, terminal_rect)
+            let changed = {
+                let engine = &mut self.engine_state;
+                let changed = match drag.kind {
+                    DividerDragKind::Pane => {
+                        self.state
+                            .update_pane_divider(engine, &drag.info, x, y, terminal_rect)
+                    }
+                    DividerDragKind::Surface => {
+                        self.state
+                            .update_surface_divider(engine, &drag.info, x, y, terminal_rect)
+                    }
+                };
+                if changed {
+                    self.state.resize_all(engine, terminal_rect, cell_w, cell_h);
                 }
-                DividerDragKind::Surface => {
-                    self.state
-                        .update_surface_divider(engine, &drag.info, x, y, terminal_rect)
-                }
+                changed
             };
             if changed {
-                self.state.resize_all(engine, terminal_rect, cell_w, cell_h);
-                drop(engine);
                 self.mark_dirty();
             }
         }
@@ -285,24 +289,27 @@ impl MainWindow {
                             kind: DividerDragKind::Surface,
                         });
                     } else {
-                        let old_surface = self.state.focused_surface_id(engine);
-                        let changed_pane =
-                            self.state.focus_pane_at_position(engine, x, y, terminal_rect);
-                        let changed_surf =
-                            self.state.focus_surface_at_position(engine, x, y, terminal_rect);
-                        if changed_pane || changed_surf {
-                            self.base.dirty = true;
-                        }
-                        let ime_active = self.ime_preedit.is_some();
-                        let need_flush =
-                            ime_active && self.state.focused_surface_id(engine) != old_surface;
-                        // Start text selection (only if not mouse-tracking or Shift held)
-                        let mouse_tracking = self
-                            .state
-                            .focused_terminal(engine)
-                            .map(|t| t.mouse_tracking())
-                            .unwrap_or(tasty_terminal::MouseTrackingMode::None);
-                        drop(engine);
+                        let (need_flush, mouse_tracking) = {
+                            let old_surface = self.state.focused_surface_id(engine);
+                            let changed_pane =
+                                self.state.focus_pane_at_position(engine, x, y, terminal_rect);
+                            let changed_surf = self
+                                .state
+                                .focus_surface_at_position(engine, x, y, terminal_rect);
+                            if changed_pane || changed_surf {
+                                self.base.dirty = true;
+                            }
+                            let ime_active = self.ime_preedit.is_some();
+                            let need_flush = ime_active
+                                && self.state.focused_surface_id(engine) != old_surface;
+                            // Start text selection (only if not mouse-tracking or Shift held)
+                            let mouse_tracking = self
+                                .state
+                                .focused_terminal(engine)
+                                .map(|t| t.mouse_tracking())
+                                .unwrap_or(tasty_terminal::MouseTrackingMode::None);
+                            (need_flush, mouse_tracking)
+                        };
                         if need_flush {
                             self.flush_ime_preedit();
                         }

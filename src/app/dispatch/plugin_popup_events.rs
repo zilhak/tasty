@@ -14,7 +14,7 @@ impl App {
                 drained_closes.append(&mut main.state.plugin_popup_closes);
             }
         }
-        for s in &mut self.parked_states {
+        for (s, _engine) in &mut self.parked_states {
             drained_events.append(&mut s.plugin_popup_events);
             drained_closes.append(&mut s.plugin_popup_closes);
         }
