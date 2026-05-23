@@ -9,11 +9,12 @@ use crate::theme;
 pub fn draw_pane_tab_bars(
     ctx: &egui::Context,
     state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
     pane_rects: &[(u32, Rect)],
     scale_factor: f32,
 ) {
     let th = theme::theme();
-    let focused_pane_id = state.focused_pane_id();
+    let focused_pane_id = state.focused_pane_id(engine);
 
     struct PaneTabInfo {
         pane_id: u32,
@@ -30,7 +31,7 @@ pub fn draw_pane_tab_bars(
 
     let mut infos = Vec::new();
     {
-        let ws = state.active_workspace();
+        let ws = state.active_workspace(engine);
         for &(pane_id, pane_rect) in pane_rects {
             let pane = match ws.pane_layout().find_pane(pane_id) {
                 Some(p) => p,
@@ -41,7 +42,7 @@ pub fn draw_pane_tab_bars(
                 .iter()
                 .map(|t| {
                     let sids = t.all_surface_ids();
-                    state.engine.notifications.has_highlighted_surface(&sids)
+                    engine.notifications.has_highlighted_surface(&sids)
                 })
                 .collect();
             let tab_is_busy: Vec<bool> = pane
@@ -50,7 +51,7 @@ pub fn draw_pane_tab_bars(
                 .map(|t| {
                     let sids = t.all_surface_ids();
                     sids.iter()
-                        .any(|sid| state.engine.busy_surfaces.contains(sid))
+                        .any(|sid| engine.busy_surfaces.contains(sid))
                 })
                 .collect();
             infos.push(PaneTabInfo {
@@ -387,12 +388,12 @@ pub fn draw_pane_tab_bars(
                     }
                 }
                 for sid in to_wake {
-                    state.engine.ensure_surface_initialized(sid);
+                    engine.ensure_surface_initialized(sid);
                 }
             }
             PaneTabAction::AddTab => {
-                state.active_workspace_mut().focused_pane = pane_id;
-                if let Err(e) = state.add_tab() {
+                state.active_workspace_mut(engine).focused_pane = pane_id;
+                if let Err(e) = state.add_tab(engine) {
                     tracing::warn!("add_tab failed: {e}");
                 }
             }

@@ -22,36 +22,25 @@ impl ApplicationHandler<AppEvent> for App {
                 if let Some(sid) = surface_id {
                     // Targeted polling: process only the specific terminal, then wake its window
                     let mut found = false;
-                    for w in self.windows.values_mut() {
-                        let Some(main) = w.as_main_mut() else {
-                            continue;
-                        };
-                        if main.state.engine.find_terminal_by_id(sid).is_some() {
-                            main.state.engine.process_surface(sid);
+                    if self.engine_state().find_terminal_by_id(sid).is_some() {
+                        self.engine_state_mut().process_surface(sid);
+                        for w in self.windows.values_mut() {
+                            let Some(main) = w.as_main_mut() else {
+                                continue;
+                            };
                             main.recalc_ime_preedit_anchor();
                             main.mark_dirty();
                             found = true;
                             break;
                         }
                     }
-                    // If no window has this surface, it might be in the parked states
-                    if !found {
-                        for state in &mut self.parked_states {
-                            if state.engine.find_terminal_by_id(sid).is_some() {
-                                state.engine.process_surface(sid);
-                                break;
-                            }
-                        }
-                    }
+                    let _ = found;
                 } else {
-                    // Fallback: window_id not matched — wake all windows
+                    // Fallback: window_id not matched — wake all windows and process all
                     for w in self.windows.values_mut() {
                         w.mark_dirty();
                     }
-                    // Also process parked state terminals
-                    for state in &mut self.parked_states {
-                        state.engine.process_all();
-                    }
+                    self.engine_state_mut().process_all();
                 }
             }
             AppEvent::IpcReady => {
@@ -288,11 +277,20 @@ impl ApplicationHandler<AppEvent> for App {
         // Modal handling — 활성 모달을 대상으로 한 이벤트
         if let Some(modal_id) = self.engine.active_modal_id {
             if id == modal_id {
-                let action = if let Some(modal) = self.windows.get_mut(&id) {
+                let Self {
+                    windows,
+                    plugin_manager,
+                    engine_state,
+                    ..
+                } = self;
+                let action = if let Some(modal) = windows.get_mut(&id) {
                     let mut ctx = WindowCtx {
                         event_loop,
                         modal_active: false,
-                        plugin_manager: self.plugin_manager.as_ref(),
+                        plugin_manager: plugin_manager.as_ref(),
+                        engine_state: engine_state
+                            .as_mut()
+                            .expect("App.engine_state must be initialized"),
                     };
                     modal.handle_event(event, &mut ctx)
                 } else {
@@ -405,17 +403,32 @@ impl ApplicationHandler<AppEvent> for App {
             return;
         }
 
-        if let Some(w) = self.windows.get_mut(&id) {
-            let modal_active = self.engine.is_modal_active();
-            let mut ctx = WindowCtx {
-                event_loop,
-                modal_active,
-                plugin_manager: self.plugin_manager.as_ref(),
-            };
-            // MainWindow.handle_event는 항상 WindowAction::None을 반환한다.
-            // PresetWindow (modeless editor) 는 CloseRequested 에서 Close 를 반환하므로
-            // 이 경로에서 처리한다. 그 외 modal Close 는 위쪽 모달 경로에서 소비된다.
-            let action = w.handle_event(event, &mut ctx);
+        let modal_active = self.engine.is_modal_active();
+        let action = {
+            let Self {
+                windows,
+                plugin_manager,
+                engine_state,
+                ..
+            } = self;
+            if let Some(w) = windows.get_mut(&id) {
+                let mut ctx = WindowCtx {
+                    event_loop,
+                    modal_active,
+                    plugin_manager: plugin_manager.as_ref(),
+                    engine_state: engine_state
+                        .as_mut()
+                        .expect("App.engine_state must be initialized"),
+                };
+                // MainWindow.handle_event는 항상 WindowAction::None을 반환한다.
+                // PresetWindow (modeless editor) 는 CloseRequested 에서 Close 를 반환하므로
+                // 이 경로에서 처리한다. 그 외 modal Close 는 위쪽 모달 경로에서 소비된다.
+                w.handle_event(event, &mut ctx)
+            } else {
+                WindowAction::None
+            }
+        };
+        if self.windows.contains_key(&id) {
             match action {
                 WindowAction::None => {}
                 WindowAction::Close => {
@@ -439,7 +452,12 @@ impl ApplicationHandler<AppEvent> for App {
             }
 
             // Check if the window requested to close (e.g. last workspace removed)
-            if w.base().close_requested {
+            let close_requested = self
+                .windows
+                .get(&id)
+                .map(|w| w.base().close_requested)
+                .unwrap_or(false);
+            if close_requested {
                 if let Some(w) = self.windows.remove(&id) {
                     if self.windows.values().all(|w| w.as_main().is_none()) {
                         if let Some(main_box) = crate::window::unbox_main(w) {
@@ -519,20 +537,7 @@ impl ApplicationHandler<AppEvent> for App {
         // Flush deferred PTY resizes (throttled to 100ms intervals).
         // If any terminal still has a pending resize (throttled), request a redraw
         // so we retry on the next frame.
-        let mut any_pending = false;
-        for w in self.windows.values_mut() {
-            let Some(main) = w.as_main_mut() else {
-                continue;
-            };
-            if main.state.engine.flush_all_pty_resizes() {
-                any_pending = true;
-            }
-        }
-        for state in &mut self.parked_states {
-            if state.engine.flush_all_pty_resizes() {
-                any_pending = true;
-            }
-        }
+        let any_pending = self.engine_state_mut().flush_all_pty_resizes();
         if any_pending {
             for w in self.windows.values() {
                 w.base().winit.request_redraw();

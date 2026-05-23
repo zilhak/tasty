@@ -305,6 +305,7 @@ fn require_store(id: &Value) -> Result<(), JsonRpcResponse> {
 
 pub fn handle_put(
     _state: &mut AppState,
+    _engine: &mut crate::engine_state::EngineState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -340,6 +341,7 @@ pub fn handle_put(
 
 pub fn handle_get(
     _state: &mut AppState,
+    _engine: &mut crate::engine_state::EngineState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -365,6 +367,7 @@ pub fn handle_get(
 
 pub fn handle_delete(
     _state: &mut AppState,
+    _engine: &mut crate::engine_state::EngineState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -391,6 +394,7 @@ pub fn handle_delete(
 
 pub fn handle_list(
     _state: &mut AppState,
+    _engine: &mut crate::engine_state::EngineState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -430,6 +434,7 @@ pub fn handle_list(
 
 pub fn handle_exists(
     _state: &mut AppState,
+    _engine: &mut crate::engine_state::EngineState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -454,6 +459,7 @@ pub fn handle_exists(
 
 pub fn handle_count(
     _state: &mut AppState,
+    _engine: &mut crate::engine_state::EngineState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -475,6 +481,7 @@ pub fn handle_count(
 
 pub fn handle_scopes(
     _state: &mut AppState,
+    _engine: &mut crate::engine_state::EngineState,
     _caller: &CallerContext,
     id: Value,
     _params: &Value,
@@ -491,6 +498,7 @@ pub fn handle_scopes(
 
 pub fn handle_stats(
     _state: &mut AppState,
+    _engine: &mut crate::engine_state::EngineState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,

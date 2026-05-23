@@ -36,8 +36,8 @@ impl App {
             .values()
             .find_map(|w| w.as_main().map(|m| &m.state))
         {
-            let ws = st.engine.workspaces.get(st.active_workspace).map(|w| w.id);
-            let seq = st.engine.telemetry_seq.next();
+            let ws = st.engine_state.workspaces.get(st.active_workspace).map(|w| w.id);
+            let seq = st.engine_state.telemetry_seq.next();
             host_ipc::audit::record(
                 &caller,
                 &cmd.request.method,

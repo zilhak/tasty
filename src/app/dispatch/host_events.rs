@@ -15,31 +15,35 @@ use crate::state::PendingHostEvent;
 impl App {
     pub(crate) fn dispatch_pending_host_events(&mut self) {
         let mut drained: Vec<PendingHostEvent> = Vec::new();
-        for (win_id, w) in self.windows.iter_mut() {
+        let Self {
+            windows,
+            parked_states,
+            engine_state,
+            ..
+        } = self;
+        let engine = engine_state
+            .as_mut()
+            .expect("App.engine_state must be initialized");
+        for (win_id, w) in windows.iter_mut() {
             if let Some(main) = w.as_main_mut() {
-                main.state.detect_focus_change();
-                main.state.detect_workspace_activation();
-                main.state.detect_tab_focus_change();
-                main.state.detect_tab_lifecycle();
-                main.state.detect_pane_lifecycle();
-                main.state.detect_workspace_lifecycle(u64::from(*win_id));
-                main.state.detect_surface_lifecycle();
+                main.state.detect_focus_change(engine);
+                main.state.detect_workspace_activation(engine);
+                main.state.detect_tab_focus_change(engine);
+                main.state.detect_tab_lifecycle(engine);
+                main.state.detect_pane_lifecycle(engine);
+                main.state.detect_workspace_lifecycle(engine, u64::from(*win_id));
+                main.state.detect_surface_lifecycle(engine);
                 drained.extend(main.state.take_pending_host_events());
             }
         }
-        for s in &mut self.parked_states {
-            s.detect_focus_change();
-            s.detect_workspace_activation();
-            s.detect_tab_focus_change();
-            s.detect_tab_lifecycle();
-            s.detect_pane_lifecycle();
-            // parked AppState은 더 이상 window에 붙어있지 않으므로 workspace.created
-            // 발화에 의미 있는 window_id를 채울 수 없다. workspace.closed만 의도하는
-            // 경우라도 polling은 새 workspace를 detect할 수 없게 베이스라인부터
-            // 비교가 필요하다. window 분리 직전의 detect에서 이미 베이스라인이
-            // 형성됐다고 가정하고 동일 호출 — window_id는 0 (sentinel).
-            s.detect_workspace_lifecycle(0);
-            s.detect_surface_lifecycle();
+        for s in parked_states.iter_mut() {
+            s.detect_focus_change(engine);
+            s.detect_workspace_activation(engine);
+            s.detect_tab_focus_change(engine);
+            s.detect_tab_lifecycle(engine);
+            s.detect_pane_lifecycle(engine);
+            s.detect_workspace_lifecycle(engine, 0);
+            s.detect_surface_lifecycle(engine);
             drained.extend(s.take_pending_host_events());
         }
         if drained.is_empty() {

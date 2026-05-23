@@ -21,7 +21,7 @@ pub fn collect(state: &AppState, gpu: Option<&GpuState>, ime_active: bool) -> Va
     // -- Basic state --
     info.insert(
         "workspace_count".into(),
-        json!(state.engine.workspaces.len()),
+        json!(engine.workspaces.len()),
     );
     info.insert("active_workspace".into(), json!(state.active_workspace));
 
@@ -36,7 +36,7 @@ pub fn collect(state: &AppState, gpu: Option<&GpuState>, ime_active: bool) -> Va
     }
 
     // -- Font settings (per-surface effective values) --
-    let appearance = &state.engine.settings.appearance;
+    let appearance = &engine.settings.appearance;
     let term_eff = appearance.effective_terminal_font();
     let md_eff = appearance.effective_markdown_font();
     info.insert(

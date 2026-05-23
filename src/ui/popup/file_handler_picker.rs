@@ -279,6 +279,7 @@ fn draw_handler_list(
     items: &[PickerHandlerSummary],
     col_w: f32,
     state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
     double_click_dispatch: &mut Option<crate::file::handler::HandlerId>,
 ) {
     for entry in items {

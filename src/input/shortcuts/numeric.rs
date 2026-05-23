@@ -27,7 +27,7 @@ impl MainWindow {
                     } else {
                         (ch as usize) - ('1' as usize)
                     };
-                    state.goto_tab_in_pane(index);
+                    state.goto_tab_in_pane(engine, index);
                     return true;
                 }
 
@@ -39,7 +39,7 @@ impl MainWindow {
                 if ws_mod_matches {
                     if let Some(digit) = ch.to_digit(10) {
                         if digit >= 1 && digit <= 9 {
-                            state.switch_workspace((digit - 1) as usize);
+                            state.switch_workspace(engine, (digit - 1) as usize);
                             return true;
                         }
                     }

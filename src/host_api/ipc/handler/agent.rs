@@ -56,12 +56,18 @@ pub(super) fn agent_err_to_response(id: Value, err: AgentError) -> JsonRpcRespon
     }
 }
 
-pub(super) fn run_store<F, R>(state: &mut AppState, id: Value, f: F) -> JsonRpcResponse
+pub(super) fn run_store<F, R>(
+    _state: &mut AppState,
+    _engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::EngineState,
+    id: Value,
+    f: F,
+) -> JsonRpcResponse
 where
     F: FnOnce(&mut TaskStore<'_>) -> Result<R, AgentError>,
     R: serde::Serialize,
 {
-    let seq = state.engine.agent_seq.clone();
+    let seq = engine.agent_seq.clone();
     let result = with_store(|mem| {
         let mut store = TaskStore::new(mem, tasty_memory::HOST_OWNER, seq.as_ref());
         f(&mut store)

@@ -4,7 +4,7 @@
 //! Enter 로 적용하면 `DialogState::pending_preset_apply` 에 enqueue 한다.
 //! App 메인 루프가 drain 해 `state.apply_*_preset` 를 호출한다.
 //!
-//! preset 목록 자체는 `state.engine.preset_store: Option<Arc<Mutex<PresetStore>>>` 에서
+//! preset 목록 자체는 `engine.preset_store: Option<Arc<Mutex<PresetStore>>>` 에서
 //! 매 프레임 lock 으로 읽는다.
 
 use tasty_presets::PresetKind;
@@ -38,7 +38,7 @@ fn draw_apply_popup(ui: &mut egui::Ui, state: &mut AppState, kind: PresetKind) -
     }
 
     let th = theme::theme();
-    let names: Vec<String> = match state.engine.preset_store.as_ref() {
+    let names: Vec<String> = match engine.preset_store.as_ref() {
         Some(arc) => match arc.lock() {
             Ok(g) => g.list(kind),
             Err(poisoned) => poisoned.into_inner().list(kind),

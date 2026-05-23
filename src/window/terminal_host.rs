@@ -21,6 +21,8 @@ pub(crate) trait TerminalHostWindow: Window {
     /// 사이드바(워크스페이스 목록)를 가지는지. 기본 true.
     /// StandaloneSurfaceWindow 등은 override.
     fn has_sidebar(&self) -> bool {
+        let engine = &self.engine_state;
+        let _ = engine;
         true
     }
 }

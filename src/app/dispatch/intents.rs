@@ -102,15 +102,24 @@ impl App {
         caller: &ipc::caller::CallerContext,
     ) -> ipc::protocol::JsonRpcResponse {
         let focused_id = self.engine.focused_window_id;
+        let Self {
+            windows,
+            parked_states,
+            engine_state,
+            ..
+        } = self;
+        let engine = engine_state
+            .as_mut()
+            .expect("App.engine_state must be initialized");
         if let Some(id) = focused_id {
-            if let Some(w) = self.windows.get_mut(&id).and_then(|w| w.as_main_mut()) {
-                let response = ipc::handler::handle_with_caller(&mut w.state, request, caller);
+            if let Some(w) = windows.get_mut(&id).and_then(|w| w.as_main_mut()) {
+                let response = ipc::handler::handle_with_caller(&mut w.state, engine, request, caller);
                 w.base.dirty = true;
                 return response;
             }
         }
-        if let Some(state) = self.parked_states.first_mut() {
-            return ipc::handler::handle_with_caller(state, request, caller);
+        if let Some(state) = parked_states.first_mut() {
+            return ipc::handler::handle_with_caller(state, engine, request, caller);
         }
         let id = request.id.clone().unwrap_or(serde_json::Value::Null);
         ipc::protocol::JsonRpcResponse::error(id, -32000, "no application state available")

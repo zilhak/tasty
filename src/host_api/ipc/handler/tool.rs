@@ -12,7 +12,7 @@ use crate::plugin::tool_registry::ToolSource;
 use crate::state::AppState;
 
 /// `debug.tool.list` — 현재 도구 메뉴에 표시되는 모든 항목을 정렬된 순서로 반환.
-pub fn handle_list(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {
+pub fn handle_list(state: &AppState, engine: &crate::engine_state::EngineState, id: serde_json::Value) -> JsonRpcResponse {
     let items: Vec<_> = state
         .tool_registry
         .visible_items()
@@ -52,6 +52,7 @@ pub fn handle_list(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {
 /// 항목을 찾지 못하면 invalid_params로 거부.
 pub fn handle_invoke(
     state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {

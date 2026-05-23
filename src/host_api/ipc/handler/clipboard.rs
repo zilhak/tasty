@@ -6,8 +6,8 @@
 use serde_json::{Value, json};
 
 use crate::clipboard_history::ClipboardSource;
+use crate::engine_state::EngineState;
 use crate::ipc::protocol::JsonRpcResponse;
-use crate::state::AppState;
 
 fn source_str(s: ClipboardSource) -> &'static str {
     match s {
@@ -16,14 +16,13 @@ fn source_str(s: ClipboardSource) -> &'static str {
     }
 }
 
-pub fn handle_list(state: &AppState, id: Value, params: &Value) -> JsonRpcResponse {
+pub fn handle_list(engine: &EngineState, id: Value, params: &Value) -> JsonRpcResponse {
     let limit = params
         .get("limit")
         .and_then(|v| v.as_u64())
         .map(|n| n as usize);
-    let total = state.engine.clipboard_history.len();
-    let entries: Vec<Value> = state
-        .engine
+    let total = engine.clipboard_history.len();
+    let entries: Vec<Value> = engine
         .clipboard_history
         .entries()
         .take(limit.unwrap_or(usize::MAX))
@@ -41,12 +40,12 @@ pub fn handle_list(state: &AppState, id: Value, params: &Value) -> JsonRpcRespon
     JsonRpcResponse::success(id, json!({ "total": total, "entries": entries }))
 }
 
-pub fn handle_get(state: &AppState, id: Value, params: &Value) -> JsonRpcResponse {
+pub fn handle_get(engine: &EngineState, id: Value, params: &Value) -> JsonRpcResponse {
     let idx = match params.get("index").and_then(|v| v.as_u64()) {
         Some(n) => n as usize,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'index'"),
     };
-    match state.engine.clipboard_history.get(idx) {
+    match engine.clipboard_history.get(idx) {
         Some(e) => JsonRpcResponse::success(
             id,
             json!({
@@ -61,14 +60,14 @@ pub fn handle_get(state: &AppState, id: Value, params: &Value) -> JsonRpcRespons
     }
 }
 
-pub fn handle_paste(state: &mut AppState, id: Value, params: &Value) -> JsonRpcResponse {
+pub fn handle_paste(engine: &mut EngineState, id: Value, params: &Value) -> JsonRpcResponse {
     use crate::clipboard_history::ClipboardContent;
 
     let idx = match params.get("index").and_then(|v| v.as_u64()) {
         Some(n) => n as usize,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'index'"),
     };
-    let content = match state.engine.clipboard_history.get(idx) {
+    let content = match engine.clipboard_history.get(idx) {
         Some(e) => e.content.clone(),
         None => return JsonRpcResponse::invalid_params(id, format!("Index {idx} out of range")),
     };
@@ -76,7 +75,7 @@ pub fn handle_paste(state: &mut AppState, id: Value, params: &Value) -> JsonRpcR
         ClipboardContent::Text(text) => {
             match arboard::Clipboard::new().and_then(|mut cb| cb.set_text(text.clone())) {
                 Ok(()) => {
-                    state.engine.record_internal_copy(&text);
+                    engine.record_internal_copy(&text);
                     JsonRpcResponse::success(id, json!({ "ok": true, "index": idx }))
                 }
                 Err(e) => {
@@ -95,7 +94,7 @@ pub fn handle_paste(state: &mut AppState, id: Value, params: &Value) -> JsonRpcR
                     };
                     match arboard::Clipboard::new().and_then(|mut cb| cb.set_image(arboard_img)) {
                         Ok(()) => {
-                            state.engine.clipboard_history.record_image(
+                            engine.clipboard_history.record_image(
                                 img,
                                 crate::clipboard_history::ClipboardSource::Internal,
                             );
@@ -113,18 +112,18 @@ pub fn handle_paste(state: &mut AppState, id: Value, params: &Value) -> JsonRpcR
     }
 }
 
-pub fn handle_remove(state: &mut AppState, id: Value, params: &Value) -> JsonRpcResponse {
+pub fn handle_remove(engine: &mut EngineState, id: Value, params: &Value) -> JsonRpcResponse {
     let idx = match params.get("index").and_then(|v| v.as_u64()) {
         Some(n) => n as usize,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'index'"),
     };
-    match state.engine.clipboard_history.remove_at(idx) {
+    match engine.clipboard_history.remove_at(idx) {
         Some(_) => JsonRpcResponse::success(id, json!({ "ok": true, "index": idx })),
         None => JsonRpcResponse::invalid_params(id, format!("Index {idx} out of range")),
     }
 }
 
-pub fn handle_clear(state: &mut AppState, id: Value) -> JsonRpcResponse {
-    state.engine.clipboard_history.clear();
+pub fn handle_clear(engine: &mut EngineState, id: Value) -> JsonRpcResponse {
+    engine.clipboard_history.clear();
     JsonRpcResponse::success(id, json!({ "ok": true }))
 }

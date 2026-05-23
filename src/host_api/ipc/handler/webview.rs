@@ -10,7 +10,7 @@ use crate::ipc::protocol::JsonRpcResponse;
 use crate::state::AppState;
 
 /// `webview.set_url(surface_id, url)` — webview-enabled kind 의 RemoteSurface 에 URL 설정.
-pub fn handle_set_url(state: &mut AppState, id: Value, params: &Value) -> JsonRpcResponse {
+pub fn handle_set_url(state: &mut AppState, engine: &mut crate::engine_state::EngineState, id: Value, params: &Value) -> JsonRpcResponse {
     let sid = match params.get("surface_id").and_then(|v| v.as_u64()) {
         Some(s) => s as u32,
         None => return JsonRpcResponse::invalid_params(id, "missing 'surface_id'"),
@@ -21,7 +21,7 @@ pub fn handle_set_url(state: &mut AppState, id: Value, params: &Value) -> JsonRp
     };
 
     // surface_id 와 일치하는 RemoteSurface 찾기 + set_webview_url 호출.
-    for ws in &state.engine.workspaces {
+    for ws in &engine.workspaces {
         for &pid in &ws.pane_layout().all_pane_ids() {
             if let Some(pane) = ws.pane_layout().find_pane(pid) {
                 for tab in &pane.tabs {

@@ -8,6 +8,8 @@ impl MainWindow {
     /// Extend the current selection (or create one from last click) to the given position.
     /// Used for Shift+Click range selection.
     pub(super) fn extend_selection(&mut self, x: f32, y: f32, terminal_rect: &Rect) {
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
         if let Some((point, surface_id)) = self.mouse_to_grid(x, y, terminal_rect) {
             if let Some(sel) = &mut self.text_selection {
                 // Existing selection: keep anchor, move cursor
@@ -35,6 +37,8 @@ impl MainWindow {
 
     /// Start a new text selection from the given pixel position.
     pub(super) fn start_selection(&mut self, x: f32, y: f32, terminal_rect: &Rect) {
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
         if let Some((point, surface_id)) = self.mouse_to_grid(x, y, terminal_rect) {
             // Detect multi-click
             let now = std::time::Instant::now();
@@ -116,7 +120,9 @@ impl MainWindow {
 
     /// Find word boundaries around the given column in the given absolute row.
     fn find_word_bounds(&self, col: usize, absolute_row: usize) -> (usize, usize) {
-        let terminal = match self.state.focused_terminal() {
+        let engine = &self.engine_state;
+        let _ = engine;
+        let terminal = match self.state.focused_terminal(engine) {
             Some(t) => t,
             None => return (col, col),
         };
@@ -189,7 +195,9 @@ impl MainWindow {
 
     /// Move the terminal cursor to the clicked position using the click_cursor module.
     pub(super) fn move_cursor_to_click(&mut self, x: f32, y: f32, terminal_rect: &Rect) {
-        if !self.state.engine.settings.general.click_to_move_cursor {
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
+        if !self.engine_state.settings.general.click_to_move_cursor {
             return;
         }
 
@@ -208,12 +216,12 @@ impl MainWindow {
 
         // Commit any in-progress IME composition before moving cursor
         if let Some(preedit) = self.ime_preedit.take() {
-            if let Some(terminal) = self.state.focused_terminal_mut() {
+            if let Some(terminal) = self.state.focused_terminal_mut(engine) {
                 terminal.send_key(&preedit.text);
             }
         }
 
-        let terminal = match self.state.focused_terminal() {
+        let terminal = match self.state.focused_terminal(engine) {
             Some(t) => t,
             None => return,
         };
@@ -225,7 +233,7 @@ impl MainWindow {
 
         let (cols, rows) = terminal.surface().dimensions();
         // Use the actual content rect (after tab bar) instead of the raw pane rect
-        let surface_rect = match self.state.focused_surface_rect(*terminal_rect) {
+        let surface_rect = match self.state.focused_surface_rect(engine, *terminal_rect) {
             Some(r) => r,
             None => return,
         };
@@ -264,7 +272,7 @@ impl MainWindow {
         }
 
         // Determine arrow escape sequence
-        let terminal = self.state.focused_terminal_mut().unwrap();
+        let terminal = self.state.focused_terminal_mut(engine).unwrap();
         let app_cursor = terminal.application_cursor_keys();
         let arrow: &'static [u8] = if going_right {
             if app_cursor { b"\x1bOC" } else { b"\x1b[C" }
@@ -284,10 +292,12 @@ impl MainWindow {
         y: f32,
         terminal_rect: &Rect,
     ) -> Option<(SelectionPoint, u32)> {
-        let terminal = self.state.focused_terminal()?;
-        let surface_id = self.state.focused_surface_id()?;
+        let engine = &self.engine_state;
+        let _ = engine;
+        let terminal = self.state.focused_terminal(engine)?;
+        let surface_id = self.state.focused_surface_id(engine)?;
         // Use the actual content rect (after tab bar) instead of the raw pane rect
-        let surface_rect = self.state.focused_surface_rect(*terminal_rect)?;
+        let surface_rect = self.state.focused_surface_rect(engine, *terminal_rect)?;
         let (cols, rows) = terminal.surface().dimensions();
         let point = selection::pixel_to_grid(
             x,
@@ -305,11 +315,13 @@ impl MainWindow {
 
     /// Copy the current selection to clipboard. Selection is preserved.
     pub fn copy_selection_to_clipboard(&mut self) -> bool {
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
         let sel = match &self.text_selection {
             Some(s) if !s.is_empty() => s.clone(),
             _ => return false,
         };
-        let text = if let Some(terminal) = self.state.engine.find_terminal_by_id(sel.surface_id) {
+        let text = if let Some(terminal) = self.engine_state.find_terminal_by_id(sel.surface_id) {
             selection::extract_selected_text(terminal, &sel)
         } else {
             return false;
@@ -320,7 +332,7 @@ impl MainWindow {
         if let Some(cb) = &mut self.clipboard {
             cb.set_text(&text);
         }
-        self.state.engine.record_internal_copy(&text);
+        self.engine_state.record_internal_copy(&text);
         self.state.toasts.push_info(
             crate::i18n::t("toast.copied"),
             crate::ui::ToastScope::Surface(sel.surface_id),

@@ -60,11 +60,15 @@ impl SettingsWindow {
     }
 
     pub fn render_settings(&mut self) {
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
         self.render();
     }
 
     /// Plugins 서브탭에서 표시할 plugin command snapshot을 주입한다.
     pub fn set_plugin_shortcuts(&mut self, snapshot: PluginShortcutSnapshot) {
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
         self.settings_ui_state.plugin_shortcuts = snapshot;
     }
 
@@ -76,36 +80,54 @@ impl SettingsWindow {
         (String, String),
         Option<crate::plugin::registry_state::ShortcutOverride>,
     > {
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
         std::mem::take(&mut self.settings_ui_state.plugin_shortcuts_draft)
     }
 }
 
 impl Window for SettingsWindow {
     fn base(&self) -> &WindowBase {
+        let engine = &self.engine_state;
+        let _ = engine;
         &self.base
     }
     fn base_mut(&mut self) -> &mut WindowBase {
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
         &mut self.base
     }
     fn modality(&self) -> Modality {
+        let engine = &self.engine_state;
+        let _ = engine;
         MODAL_MODALITY
     }
 
     fn as_modal(&self) -> Option<&dyn ModalWindow> {
+        let engine = &self.engine_state;
+        let _ = engine;
         Some(self)
     }
     fn as_modal_mut(&mut self) -> Option<&mut dyn ModalWindow> {
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
         Some(self)
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
+        let engine = &self.engine_state;
+        let _ = engine;
         self
     }
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
         self
     }
 
     fn handle_event(&mut self, event: WindowEvent, _ctx: &mut WindowCtx<'_>) -> WindowAction {
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
         // 녹화 중이면 키보드 이벤트를 egui에 전달하지 않는다.
         // egui가 Cmd+C 등을 시맨틱 커맨드(Copy)로 소비하면 캡처가 안 되기 때문.
         let is_recording = self.settings_ui_state.is_recording();
@@ -169,6 +191,8 @@ impl Window for SettingsWindow {
     }
 
     fn render(&mut self) {
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
         if !self.base.dirty {
             return;
         }
@@ -234,9 +258,13 @@ impl Window for SettingsWindow {
 
 impl ModalWindow for SettingsWindow {
     fn shown(&self) -> bool {
+        let engine = &self.engine_state;
+        let _ = engine;
         self.shown
     }
     fn set_shown(&mut self, v: bool) {
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
         self.shown = v;
     }
 }

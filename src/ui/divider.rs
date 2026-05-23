@@ -32,18 +32,19 @@ pub fn draw_pane_dividers(ctx: &egui::Context, dividers: &[Rect], scale_factor: 
 pub fn draw_surface_highlights(
     ctx: &egui::Context,
     state: &AppState,
+    engine: &crate::engine_state::EngineState,
     terminal_rect: Rect,
     scale_factor: f32,
 ) {
     let th = theme::theme();
-    let regions = state.surface_regions(terminal_rect);
+    let regions = state.surface_regions(engine, terminal_rect);
     let painter = ctx.layer_painter(egui::LayerId::new(
         egui::Order::Middle,
         egui::Id::new("surface_highlights"),
     ));
     for (_pane_id, _pane_rect, surface_regions) in &regions {
         for r in surface_regions {
-            if state.engine.notifications.is_surface_highlighted(r.id) {
+            if engine.notifications.is_surface_highlighted(r.id) {
                 let egui_rect = egui::Rect::from_min_size(
                     egui::pos2(
                         r.rect.x.value() / scale_factor,

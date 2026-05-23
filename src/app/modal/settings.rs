@@ -30,7 +30,7 @@ impl App {
         );
 
         let settings = if let Some(w) = self.focused_window() {
-            w.state.engine.settings.clone()
+            w.engine_state.settings.clone()
         } else {
             crate::settings::Settings::load()
         };
@@ -45,8 +45,8 @@ impl App {
         let modal_window_id = window.id();
         let (file_format, file_handler) = if let Some(w) = self.focused_window() {
             (
-                w.state.engine.file_format.clone(),
-                w.state.engine.file_handler.clone(),
+                w.engine_state.file_format.clone(),
+                w.engine_state.file_handler.clone(),
             )
         } else {
             // Settings 윈도우가 main 창 없이 열리는 경로는 거의 없지만, fallback 으로 빈 registry 를 만든다.

@@ -11,6 +11,8 @@ impl MainWindow {
         event: &winit::event::KeyEvent,
         egui_consumed: bool,
     ) {
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
         // Feed all key events (Press + Release) to the double-tap detector
         self.double_tap
             .on_key_event(&event.logical_key, event.state == ElementState::Pressed);
@@ -88,8 +90,8 @@ impl MainWindow {
         }
 
         // ── Central keyboard dispatch: route to exactly one surface ──
-        let surface_type = self.state.focused_surface_type();
-        let typing_surface_id = self.state.focused_surface_id();
+        let surface_type = self.state.focused_surface_type(engine);
+        let typing_surface_id = self.state.focused_surface_id(engine);
 
         match surface_type {
             FocusedSurfaceType::Terminal => {
@@ -106,7 +108,7 @@ impl MainWindow {
                 } else {
                     &event.text
                 };
-                if let Some(terminal) = self.state.focused_terminal_mut() {
+                if let Some(terminal) = self.state.focused_terminal_mut(engine) {
                     // When modifiers are held, prefer the physical key for Ctrl+letter
                     // handling so that IME composition (e.g. Korean 'ㅊ' for 'c') doesn't
                     // prevent control characters from being sent.
@@ -156,7 +158,7 @@ impl MainWindow {
         }
 
         if let Some(sid) = typing_surface_id {
-            self.state.engine.record_typing(sid);
+            self.engine_state.record_typing(sid);
         }
     }
 
@@ -353,6 +355,8 @@ impl MainWindow {
     }
 
     pub(super) fn handle_ime(&mut self, ime_event: winit::event::Ime, egui_consumed: bool) {
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
         super::ime::handle_event(self, ime_event, egui_consumed);
     }
 }

@@ -115,6 +115,8 @@ impl EditableRegion {
     /// Clicks up to 1 row above/below the region are clamped to the boundary.
     /// Clicks further away are rejected (returns None).
     pub fn clamp(&self, row: usize, col: usize) -> Option<(usize, usize)> {
+        let engine = &self.engine_state;
+        let _ = engine;
         let margin = 1; // allow 1 row outside
 
         if row + margin < self.start_row || row > self.end_row + margin {

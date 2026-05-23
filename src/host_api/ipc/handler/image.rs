@@ -11,7 +11,7 @@ use crate::state::AppState;
 use super::require_surface_id;
 
 /// `image.open { surface_id, path }` — surface를 image kind로 (재)설정 + 파일 로드.
-pub fn handle_open(state: &mut AppState, id: Value, params: &Value) -> JsonRpcResponse {
+pub fn handle_open(state: &mut AppState, engine: &mut crate::engine_state::EngineState, id: Value, params: &Value) -> JsonRpcResponse {
     let sid = match require_surface_id(params, &id) {
         Ok(v) => v,
         Err(e) => return e,
@@ -20,7 +20,7 @@ pub fn handle_open(state: &mut AppState, id: Value, params: &Value) -> JsonRpcRe
         Some(p) => p.to_string(),
         None => return JsonRpcResponse::invalid_params(id, "Missing required 'path' parameter"),
     };
-    let ok = state.convert_surface_to_kind(sid, "image", &json!({ "file": path.clone() }));
+    let ok = state.convert_surface_to_kind(engine, engine, sid, "image", &json!({ "file": path.clone() }));
     if !ok {
         return JsonRpcResponse::invalid_params(id, format!("Surface {sid} not found"));
     }
@@ -31,7 +31,7 @@ pub fn handle_open(state: &mut AppState, id: Value, params: &Value) -> JsonRpcRe
 
 /// `image.save { surface_id, path? }` — 현재 픽셀 버퍼를 PNG로 저장. path 생략 시
 /// `ImagePanel::save_path()` 사용 (열려 있는 파일의 `.png` 확장자 버전).
-pub fn handle_save(state: &mut AppState, id: Value, params: &Value) -> JsonRpcResponse {
+pub fn handle_save(state: &mut AppState, engine: &mut crate::engine_state::EngineState, id: Value, params: &Value) -> JsonRpcResponse {
     let sid = match require_surface_id(params, &id) {
         Ok(v) => v,
         Err(e) => return e,
@@ -42,7 +42,7 @@ pub fn handle_save(state: &mut AppState, id: Value, params: &Value) -> JsonRpcRe
         .map(String::from);
     let final_path = match explicit {
         Some(p) => p,
-        None => match state.image_panel_mut(sid).and_then(|p| p.save_path()) {
+        None => match state.image_panel_mut(engine, engine, sid).and_then(|p| p.save_path()) {
             Some(p) => p,
             None => {
                 return JsonRpcResponse::invalid_params(
@@ -64,7 +64,7 @@ pub fn handle_save(state: &mut AppState, id: Value, params: &Value) -> JsonRpcRe
     };
     match result {
         Ok(()) => {
-            if let Some(panel) = state.image_panel_mut(sid) {
+            if let Some(panel) = state.image_panel_mut(engine, engine, sid) {
                 if panel.is_blank() {
                     panel.assign_file_path(final_path.clone());
                 }
@@ -76,7 +76,7 @@ pub fn handle_save(state: &mut AppState, id: Value, params: &Value) -> JsonRpcRe
 }
 
 /// `image.export_png { surface_id, path }` — `save`와 동일하되 path 필수.
-pub fn handle_export_png(state: &mut AppState, id: Value, params: &Value) -> JsonRpcResponse {
+pub fn handle_export_png(state: &mut AppState, engine: &mut crate::engine_state::EngineState, id: Value, params: &Value) -> JsonRpcResponse {
     if params.get("path").and_then(|v| v.as_str()).is_none() {
         return JsonRpcResponse::invalid_params(id, "Missing required 'path' parameter");
     }
@@ -84,17 +84,18 @@ pub fn handle_export_png(state: &mut AppState, id: Value, params: &Value) -> Jso
 }
 
 /// `image.next { surface_id }` — 디렉터리 내 다음 이미지로 이동.
-pub fn handle_next(state: &mut AppState, id: Value, params: &Value) -> JsonRpcResponse {
+pub fn handle_next(state: &mut AppState, engine: &mut crate::engine_state::EngineState, id: Value, params: &Value) -> JsonRpcResponse {
     step_navigation(state, id, params, true)
 }
 
 /// `image.prev { surface_id }` — 디렉터리 내 이전 이미지로 이동.
-pub fn handle_prev(state: &mut AppState, id: Value, params: &Value) -> JsonRpcResponse {
+pub fn handle_prev(state: &mut AppState, engine: &mut crate::engine_state::EngineState, id: Value, params: &Value) -> JsonRpcResponse {
     step_navigation(state, id, params, false)
 }
 
 fn step_navigation(
     state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
     id: Value,
     params: &Value,
     forward: bool,
@@ -105,7 +106,7 @@ fn step_navigation(
     };
 
     let mut image_views = std::mem::take(&mut state.image_views);
-    let result = if let Some(panel) = state.image_panel_mut(sid) {
+    let result = if let Some(panel) = state.image_panel_mut(engine, engine, sid) {
         let new_path = if forward {
             panel.step_next()
         } else {
@@ -132,7 +133,7 @@ fn step_navigation(
 }
 
 /// `image.paste { surface_id }` — 시스템 클립보드의 이미지를 floating selection으로 paste.
-pub fn handle_paste(state: &mut AppState, id: Value, params: &Value) -> JsonRpcResponse {
+pub fn handle_paste(state: &mut AppState, engine: &mut crate::engine_state::EngineState, id: Value, params: &Value) -> JsonRpcResponse {
     let sid = match require_surface_id(params, &id) {
         Ok(v) => v,
         Err(e) => return e,
@@ -162,7 +163,7 @@ pub fn handle_paste(state: &mut AppState, id: Value, params: &Value) -> JsonRpcR
     };
 
     let mut image_views = std::mem::take(&mut state.image_views);
-    let pasted = if let Some(panel) = state.image_panel_mut(sid) {
+    let pasted = if let Some(panel) = state.image_panel_mut(engine, engine, sid) {
         let view = image_views.get_or_init(panel);
         view.paste_image(color_image);
         true
@@ -179,9 +180,9 @@ pub fn handle_paste(state: &mut AppState, id: Value, params: &Value) -> JsonRpcR
 }
 
 /// `image.list` — 열린 모든 image surface 목록.
-pub fn handle_list(state: &AppState, id: Value) -> JsonRpcResponse {
+pub fn handle_list(state: &AppState, engine: &crate::engine_state::EngineState, id: Value) -> JsonRpcResponse {
     let mut entries: Vec<Value> = Vec::new();
-    for workspace in &state.engine.workspaces {
+    for workspace in &engine.workspaces {
         for pid in workspace.pane_layout().all_pane_ids() {
             if let Some(pane) = workspace.pane_layout().find_pane(pid) {
                 for tab in &pane.tabs {
@@ -222,7 +223,7 @@ mod tests {
         let state = AppState::new(80, 24, waker).unwrap();
         // image kind는 본래 com.tasty.image plugin이 hello 시 등록한다. 단위 테스트는
         // plugin 프로세스를 띄우지 않으므로 host whitelist 등록을 직접 호출한다.
-        crate::engine::surface_registry::builtins::register_image(&state.engine.surface_registry);
+        crate::engine::surface_registry::builtins::register_image(&engine.surface_registry);
         state
     }
 
@@ -326,7 +327,7 @@ mod tests {
         let mut state = make_state();
         let sid = first_surface_id(&mut state);
         // Convert to image (blank canvas — no file).
-        assert!(state.convert_surface_to_kind(sid, "image", &json!({})));
+        assert!(state.convert_surface_to_kind(engine, engine, sid, "image", &json!({})));
 
         let resp = handle_list(&state, Value::Null);
         let v = resp.result.expect("list ok");
@@ -340,7 +341,7 @@ mod tests {
         let mut state = make_state();
         let sid = first_surface_id(&mut state);
         // Convert to image but never render → no ImageView in store.
-        assert!(state.convert_surface_to_kind(sid, "image", &json!({})));
+        assert!(state.convert_surface_to_kind(engine, engine, sid, "image", &json!({})));
 
         let resp = handle_save(
             &mut state,

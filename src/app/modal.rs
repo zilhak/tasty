@@ -41,13 +41,13 @@ impl App {
             let prev_theme = self
                 .main_windows_iter_mut()
                 .next()
-                .map(|w| w.state.engine.settings.appearance.theme.clone());
+                .map(|w| w.engine_state.settings.appearance.theme.clone());
             let prev_language = self
                 .main_windows_iter_mut()
                 .next()
-                .map(|w| w.state.engine.settings.general.language.clone());
+                .map(|w| w.engine_state.settings.general.language.clone());
             for main in self.main_windows_iter_mut() {
-                main.state.engine.settings = new_settings.clone();
+                main.engine_state.settings = new_settings.clone();
                 main.state.settings_open = false;
                 main.mark_dirty();
             }

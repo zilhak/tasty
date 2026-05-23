@@ -11,7 +11,7 @@ pub(crate) fn draw_notification_content_inner(ui: &mut egui::Ui, state: &mut App
 
     // Header with mark-all-read button
     ui.horizontal(|ui| {
-        let unread = state.engine.notifications.unread_count();
+        let unread = engine.notifications.unread_count();
         ui.label(
             egui::RichText::new(t_fmt(
                 "notification_panel.unread_count",
@@ -22,7 +22,7 @@ pub(crate) fn draw_notification_content_inner(ui: &mut egui::Ui, state: &mut App
         );
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if ui.small_button(t("button.mark_all_read")).clicked() {
-                state.engine.notifications.mark_all_read();
+                engine.notifications.mark_all_read();
             }
         });
     });
@@ -33,7 +33,7 @@ pub(crate) fn draw_notification_content_inner(ui: &mut egui::Ui, state: &mut App
         .auto_shrink([false, false])
         .drag_to_scroll(false)
         .show(ui, |ui| {
-            let notification_count = state.engine.notifications.all().len();
+            let notification_count = engine.notifications.all().len();
             if notification_count == 0 {
                 ui.centered_and_justified(|ui| {
                     ui.label(
@@ -45,8 +45,7 @@ pub(crate) fn draw_notification_content_inner(ui: &mut egui::Ui, state: &mut App
             }
 
             let now = Instant::now();
-            let entries: Vec<_> = state
-                .engine
+            let entries: Vec<_> = engine
                 .notifications
                 .all()
                 .rev()
@@ -60,8 +59,7 @@ pub(crate) fn draw_notification_content_inner(ui: &mut egui::Ui, state: &mut App
                         format!("{}h ago", elapsed.as_secs() / 3600)
                     };
 
-                    let ws_name = state
-                        .engine
+                    let ws_name = engine
                         .workspaces
                         .iter()
                         .find(|ws| ws.id == n.source_workspace)
@@ -132,11 +130,11 @@ pub(crate) fn draw_notification_content_inner(ui: &mut egui::Ui, state: &mut App
             }
 
             if let Some(id) = mark_read_id {
-                state.engine.notifications.mark_read(id);
+                engine.notifications.mark_read(id);
             }
             if let Some(ws_id) = jump_to_ws {
-                if let Some(idx) = state.engine.workspaces.iter().position(|ws| ws.id == ws_id) {
-                    state.switch_workspace(idx);
+                if let Some(idx) = engine.workspaces.iter().position(|ws| ws.id == ws_id) {
+                    state.switch_workspace(engine, idx);
                 }
             }
         });
@@ -146,6 +144,7 @@ pub(crate) fn draw_notification_content_inner(ui: &mut egui::Ui, state: &mut App
 pub fn draw_popups(
     ctx: &egui::Context,
     state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
     pane_rects: &[(u32, crate::model::Rect)],
     terminal_rect: crate::model::Rect,
     scale_factor: f32,
@@ -257,13 +256,14 @@ pub fn draw_popups(
     }
 
     // Toast 렌더링 (popup 위 레이어). 같은 LayoutContext를 공유한다.
-    let reduced_motion = state.engine.settings.accessibility.reduced_motion;
+    let reduced_motion = engine.settings.accessibility.reduced_motion;
     state.toasts.draw(ctx, &draw_ctx, reduced_motion);
 }
 
 /// Build LayoutContext from current AppState and layout info.
 fn build_layout_context(
     state: &AppState,
+    engine: &crate::engine_state::EngineState,
     pane_rects: &[(u32, crate::model::Rect)],
     terminal_rect: crate::model::Rect,
     scale_factor: f32,
@@ -289,7 +289,7 @@ fn build_layout_context(
 
     // Compute surface rects using surface_regions
     let mut surface_rects = Vec::new();
-    for (_pane_id, _pane_rect, regions) in state.surface_regions(terminal_rect) {
+    for (_pane_id, _pane_rect, regions) in state.surface_regions(engine, terminal_rect) {
         for r in regions {
             surface_rects.push((
                 r.id,
@@ -309,7 +309,7 @@ fn build_layout_context(
 
     // Collect active tab indices
     let mut active_tabs = Vec::new();
-    let ws = state.active_workspace();
+    let ws = state.active_workspace(engine);
     for &pid in &ws.pane_layout().all_pane_ids() {
         if let Some(pane) = ws.pane_layout().find_pane(pid) {
             active_tabs.push((pid, pane.active_tab));
@@ -328,6 +328,7 @@ fn build_layout_context(
 pub fn draw_notification_popup(
     ui: &mut egui::Ui,
     state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
 ) -> crate::ui::popup::PopupAction {
     draw_notification_content_inner(ui, state);
     crate::ui::popup::PopupAction::None

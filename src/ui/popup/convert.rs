@@ -61,7 +61,7 @@ struct ConvertItem {
 ///   `display_name_i18n_key`, 그것도 미번역이면 kind 자체를 대문자로.
 /// - shortcut: kind 첫 글자(영문)을 대문자 단축키로. 충돌 시 뒷 항목은 단축키 없음.
 fn enumerate_convertible_kinds(state: &AppState) -> Vec<ConvertItem> {
-    let snapshot = state.engine.surface_registry.kinds_snapshot();
+    let snapshot = engine.surface_registry.kinds_snapshot();
     let mut kinds: Vec<&'static str> = snapshot
         .iter()
         .map(|(k, _)| *k)
@@ -106,7 +106,7 @@ fn resolve_label(state: &AppState, kind: &str) -> String {
     if tr != popup_key.as_str() {
         return tr.to_string();
     }
-    if let Some(def) = state.engine.surface_registry.get(kind) {
+    if let Some(def) = engine.surface_registry.get(kind) {
         let key = def.display_name_i18n_key;
         let tr = t(key);
         if tr != key {
@@ -282,7 +282,7 @@ pub fn apply_convert_action(state: &mut AppState, action: ConvertAction) {
             );
         }
         ConvertAction::Markdown => {
-            let pane_id = state.active_workspace().focused_pane;
+            let pane_id = state.active_workspace(engine).focused_pane;
             state.dialogs.markdown_convert_surface_id = Some(surface_id);
             state.dialogs.file_open_pane_id = Some(pane_id);
             state.dialogs.markdown_open_buffer.clear();
@@ -377,7 +377,7 @@ fn letter_key_to_char(key: &egui::Key) -> Option<char> {
 /// Get the current surface kind for a specific surface ID.
 /// Split tab의 leaf surface도 정확히 식별한다.
 fn current_surface_kind(state: &AppState, surface_id: u32) -> Option<&'static str> {
-    for ws in &state.engine.workspaces {
+    for ws in &engine.workspaces {
         for &pid in &ws.pane_layout().all_pane_ids() {
             if let Some(pane) = ws.pane_layout().find_pane(pid) {
                 for tab in &pane.tabs {

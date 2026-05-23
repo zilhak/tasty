@@ -79,6 +79,7 @@ pub(crate) struct WindowCtx<'a> {
     /// 현재 active plugin manager. 메인 윈도우가 frame prepare 시 plugin canvas의
     /// SharedMemory와 dirty rect에 접근하기 위해 사용한다. plugin 비활성 빌드/초기 시점에는 None.
     pub(crate) plugin_manager: Option<&'a crate::plugin::PluginManager>,
+    pub(crate) engine_state: &'a mut crate::engine_state::EngineState,
 }
 
 /// Sealed 모듈 — 외부에서 `Window`를 직접 구현하지 못하게 차단한다.

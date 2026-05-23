@@ -89,6 +89,8 @@ impl FileFormatRegistry {
     }
 
     pub(super) fn ensure_finalized(&self) {
+        let engine = &self.engine_state;
+        let _ = engine;
         let needs_finalize = self.inner.read().map(|g| g.dirty).unwrap_or(false);
         if !needs_finalize {
             return;
@@ -147,6 +149,8 @@ impl FileFormatRegistry {
 
 impl DetectorInfo for FileFormatRegistry {
     fn advertised_extensions(&self, detector: &DetectorId) -> Vec<String> {
+        let engine = &self.engine_state;
+        let _ = engine;
         self.ensure_finalized();
         let inner = match self.inner.read() {
             Ok(g) => g,
@@ -170,6 +174,8 @@ impl DetectorInfo for FileFormatRegistry {
     }
 
     fn detectors_for_extension(&self, ext: &str) -> Vec<DetectorId> {
+        let engine = &self.engine_state;
+        let _ = engine;
         self.ensure_finalized();
         let ext_lower = ext.trim_start_matches('.').to_ascii_lowercase();
         if ext_lower.is_empty() {
@@ -198,6 +204,8 @@ impl DetectorInfo for FileFormatRegistry {
     }
 
     fn all_advertised_extensions(&self) -> Vec<String> {
+        let engine = &self.engine_state;
+        let _ = engine;
         self.ensure_finalized();
         let inner = match self.inner.read() {
             Ok(g) => g,
@@ -221,6 +229,8 @@ impl DetectorInfo for FileFormatRegistry {
     }
 
     fn is_enabled(&self, detector: &DetectorId) -> bool {
+        let engine = &self.engine_state;
+        let _ = engine;
         self.ensure_finalized();
         let inner = match self.inner.read() {
             Ok(g) => g,

@@ -7,6 +7,7 @@ use super::require_surface_id;
 
 pub(crate) fn handle_screen_text(
     state: &AppState,
+    engine: &crate::engine_state::EngineState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -18,8 +19,7 @@ pub(crate) fn handle_screen_text(
         .get("lines")
         .and_then(|v| v.as_u64())
         .map(|v| v as usize);
-    let text = state
-        .engine
+    let text = engine
         .find_terminal_by_id(surface_id)
         .map(|t| match lines {
             Some(n) => t.screen_text_lines(n),
@@ -31,6 +31,7 @@ pub(crate) fn handle_screen_text(
 
 pub(crate) fn handle_cursor_position(
     state: &AppState,
+    engine: &crate::engine_state::EngineState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -38,7 +39,7 @@ pub(crate) fn handle_cursor_position(
         Ok(sid) => sid,
         Err(e) => return e,
     };
-    if let Some(terminal) = state.engine.find_terminal_by_id(surface_id) {
+    if let Some(terminal) = engine.find_terminal_by_id(surface_id) {
         let (x, y) = terminal.surface().cursor_position();
         JsonRpcResponse::success(id, json!({ "x": x, "y": y, "surface_id": surface_id }))
     } else {
@@ -51,6 +52,7 @@ pub(crate) fn handle_cursor_position(
 /// 터미널이 없으면 `name`/`pid`가 모두 `null`로 반환된다.
 pub(crate) fn handle_foreground_process(
     state: &AppState,
+    engine: &crate::engine_state::EngineState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -58,8 +60,7 @@ pub(crate) fn handle_foreground_process(
         Ok(sid) => sid,
         Err(e) => return e,
     };
-    let (name, pid) = state
-        .engine
+    let (name, pid) = engine
         .find_terminal_by_id(surface_id)
         .and_then(|t| t.foreground_process_info())
         .map(|fg| (Some(fg.name.clone()), Some(fg.pid)))
@@ -82,6 +83,7 @@ pub(crate) fn handle_foreground_process(
 /// surface.send로 `claude` 명령을 재송신한다.
 pub(crate) fn handle_surface_respawn_terminal(
     state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -94,10 +96,10 @@ pub(crate) fn handle_surface_respawn_terminal(
         .and_then(|v| v.as_str())
         .map(std::path::PathBuf::from);
 
-    let cols = state.engine.default_cols;
-    let rows = state.engine.default_rows;
-    let sh = crate::engine_state::ShellConfig::from_settings(&state.engine.settings);
-    let waker = state.engine.make_waker(surface_id);
+    let cols = engine.default_cols;
+    let rows = engine.default_rows;
+    let sh = crate::engine_state::ShellConfig::from_settings(&engine.settings);
+    let waker = engine.make_waker(surface_id);
     let new_terminal = match tasty_terminal::Terminal::new(
         tasty_terminal::TerminalConfig {
             cols,
@@ -114,8 +116,7 @@ pub(crate) fn handle_surface_respawn_terminal(
         Err(e) => return JsonRpcResponse::internal_error(id, e.to_string()),
     };
 
-    match state
-        .engine
+    match engine
         .replace_terminal_by_id(surface_id, new_terminal)
     {
         Ok(()) => JsonRpcResponse::success(id, json!({ "ok": true, "surface_id": surface_id })),
@@ -128,6 +129,7 @@ pub(crate) fn handle_surface_respawn_terminal(
 /// 살아있는지 확인하기 위해 사용한다.
 pub(crate) fn handle_surface_locate(
     state: &AppState,
+    engine: &crate::engine_state::EngineState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -135,7 +137,7 @@ pub(crate) fn handle_surface_locate(
         Ok(sid) => sid,
         Err(e) => return e,
     };
-    let pane_id = state.engine.find_pane_for_surface(surface_id);
+    let pane_id = engine.find_pane_for_surface(surface_id);
     JsonRpcResponse::success(
         id,
         json!({

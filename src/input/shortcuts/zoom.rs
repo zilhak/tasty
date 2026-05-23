@@ -12,7 +12,7 @@ impl MainWindow {
         mods: ModifiersState,
     ) -> bool {
         use crate::state::FocusedSurfaceType;
-        let kb = &state.engine.settings.keybindings;
+        let kb = &engine.settings.keybindings;
         let is_zoom_in = matches_any_binding(&kb.zoom_in, key, mods);
         let is_zoom_out = matches_any_binding(&kb.zoom_out, key, mods);
         let is_zoom_reset = matches_any_binding(&kb.zoom_reset, key, mods);
@@ -21,8 +21,8 @@ impl MainWindow {
         }
 
         // Pick which surface override the shortcut targets based on focus.
-        let focus = state.focused_surface_type();
-        let appearance = &mut state.engine.settings.appearance;
+        let focus = state.focused_surface_type(engine);
+        let appearance = &mut engine.settings.appearance;
         let (override_ref, current_effective_size) = match &focus {
             FocusedSurfaceType::Terminal => {
                 let size = appearance

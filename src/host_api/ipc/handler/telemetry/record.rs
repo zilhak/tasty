@@ -10,13 +10,13 @@ use super::{build_event, evaluate_caps_after_record, now_ms, persist_event};
 
 pub fn handle_record(
     state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
     let default_agent = caller.agent_id();
-    let default_ws = state
-        .engine
+    let default_ws = engine
         .workspaces
         .get(state.active_workspace)
         .map(|ws| ws.id);
@@ -47,6 +47,7 @@ pub fn handle_record(
 /// 모든 이벤트는 동일한 호출 ts 를 공유하며, seq 만 단조 증가하여 정렬을 보장한다.
 pub fn handle_record_batch(
     state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -58,8 +59,7 @@ pub fn handle_record_batch(
         return JsonRpcResponse::success(id, json!({ "recorded": 0, "keys": [] }));
     }
     let default_agent = caller.agent_id();
-    let default_ws = state
-        .engine
+    let default_ws = engine
         .workspaces
         .get(state.active_workspace)
         .map(|ws| ws.id);

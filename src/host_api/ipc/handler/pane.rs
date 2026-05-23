@@ -6,9 +6,9 @@ use crate::state::AppState;
 
 use super::{apply_meta, require_pane_id};
 
-pub fn handle_pane_list(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {
+pub fn handle_pane_list(state: &AppState, engine: &crate::engine_state::EngineState, id: serde_json::Value) -> JsonRpcResponse {
     let mut panes = Vec::new();
-    for ws in &state.engine.workspaces {
+    for ws in &engine.workspaces {
         let pane_ids = ws.pane_layout().all_pane_ids();
         let focused = ws.focused_pane;
         for &pid in &pane_ids {
@@ -31,6 +31,7 @@ pub fn handle_pane_list(state: &AppState, id: serde_json::Value) -> JsonRpcRespo
 
 pub fn handle_pane_close(
     state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -49,11 +50,11 @@ pub fn handle_pane_close(
         }
     }
 
-    if state.engine.find_pane_by_id(pane_id).is_none() {
+    if engine.find_pane_by_id(pane_id).is_none() {
         return JsonRpcResponse::invalid_params(id, format!("Pane {} not found", pane_id));
     }
 
-    let closed = state.close_pane_by_id(pane_id);
+    let closed = state.close_pane_by_id(engine, engine, pane_id);
 
     if closed {
         JsonRpcResponse::success(id, json!({ "closed": true, "pane_id": pane_id }))
@@ -91,6 +92,7 @@ fn resolve_surface_target(params: &serde_json::Value) -> Option<u32> {
 
 pub fn handle_split(
     state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -167,12 +169,12 @@ pub fn handle_split(
                 Some(pid)
             } else if let Some(sid) = target_surface_id {
                 // Find the pane containing the given surface
-                state.engine.find_pane_for_surface(sid)
+                engine.find_pane_for_surface(sid)
             } else {
                 None
             };
 
-            match state.split_pane_targeted(resolved_pane_id, direction, cwd, kind, params) {
+            match state.split_pane_targeted(engine, engine, resolved_pane_id, direction, cwd, kind, params) {
                 Ok((new_pane_id, new_surface_id)) => {
                     apply_meta(new_surface_id, meta);
                     JsonRpcResponse::success(
@@ -198,7 +200,7 @@ pub fn handle_split(
                 }
             };
 
-            match state.split_surface_targeted(Some(sid), direction, cwd, kind, params) {
+            match state.split_surface_targeted(engine, engine, Some(sid), direction, cwd, kind, params) {
                 Ok(new_surface_id) => {
                     apply_meta(new_surface_id, meta);
                     JsonRpcResponse::success(

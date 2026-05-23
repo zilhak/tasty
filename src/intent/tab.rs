@@ -22,15 +22,15 @@ fn new_tab(state: &mut AppState, kind: Option<&str>, params: &serde_json::Value)
     let kind = kind.unwrap_or("terminal");
     if kind == "terminal" {
         // terminal 은 host PTY spawn 경로 (cwd None → 기본 inherit).
-        let pane_id = state.active_workspace().focused_pane;
-        if let Err(e) = state.add_tab_to_pane(pane_id, None) {
+        let pane_id = state.active_workspace(engine).focused_pane;
+        if let Err(e) = state.add_tab_to_pane(engine, pane_id, None) {
             tracing::warn!("NewTab terminal failed: {e}");
         }
-    } else if let Err(e) = state.add_kind_tab(kind, params) {
+    } else if let Err(e) = state.add_kind_tab(engine, kind, params) {
         tracing::warn!("NewTab kind={kind} failed: {e}");
     }
 }
 
 fn close_tab(state: &mut AppState, tab_id: u32) {
-    state.close_tab_by_tab_id(tab_id);
+    state.close_tab_by_tab_id(engine, tab_id);
 }

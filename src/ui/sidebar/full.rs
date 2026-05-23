@@ -14,6 +14,7 @@ pub struct FullSidebarResult {
 pub fn draw_full_sidebar(
     ctx: &egui::Context,
     state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
     sidebar_width: f32,
 ) -> FullSidebarResult {
     let th = theme::theme();
@@ -167,20 +168,19 @@ pub fn draw_full_sidebar(
                     ui.add_space(4.0);
 
                     let active_ws = state.active_workspace;
-                    let ws_count = state.engine.workspaces.len();
+                    let ws_count = engine.workspaces.len();
                     let mut ws_card_rects: Vec<(usize, egui::Rect)> = Vec::new();
 
                     for i in 0..ws_count {
                         let is_active = i == active_ws;
-                        let name = state.engine.workspaces[i].name.clone();
-                        let subtitle = state.engine.workspaces[i].subtitle.clone();
-                        let description = state.engine.workspaces[i].description.clone();
-                        let ws_surface_ids = state.engine.workspaces[i].all_surface_ids();
-                        let ws_has_highlight = state
-                            .engine
+                        let name = engine.workspaces[i].name.clone();
+                        let subtitle = engine.workspaces[i].subtitle.clone();
+                        let description = engine.workspaces[i].description.clone();
+                        let ws_surface_ids = engine.workspaces[i].all_surface_ids();
+                        let ws_has_highlight = engine
                             .notifications
                             .has_highlighted_surface(&ws_surface_ids);
-                        let ws_busy_count = state.engine.busy_count(&ws_surface_ids);
+                        let ws_busy_count = engine.busy_count(&ws_surface_ids);
 
                         let bg = if is_active {
                             th.surface0.to_egui()
@@ -274,7 +274,7 @@ pub fn draw_full_sidebar(
                             response.response.interact(egui::Sense::click_and_drag());
 
                         if card_response.clicked() {
-                            state.switch_workspace(i);
+                            state.switch_workspace(engine, i);
                         }
 
                         if card_response.secondary_clicked() {
@@ -325,7 +325,7 @@ pub fn draw_full_sidebar(
                                 .unwrap_or(ws_card_rects.len().saturating_sub(1));
                             let target = target.min(ws_count.saturating_sub(1));
                             if target != drag.ws_idx {
-                                state.move_workspace(drag.ws_idx, target);
+                                state.move_workspace(engine, drag.ws_idx, target);
                             }
                         } else {
                             // Draw insert marker
@@ -351,8 +351,7 @@ pub fn draw_full_sidebar(
                             }
 
                             // Draw ghost card at mouse position
-                            if let Some(name) = state
-                                .engine
+                            if let Some(name) = engine
                                 .workspaces
                                 .get(drag.ws_idx)
                                 .map(|w| w.name.clone())

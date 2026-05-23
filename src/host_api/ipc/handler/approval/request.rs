@@ -4,6 +4,7 @@ use super::*;
 
 pub fn handle_request(
     state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -77,9 +78,8 @@ pub fn handle_request(
         .map(|v| v as u32)
         .or_else(|| {
             // 미지정이면 활성 워크스페이스로 fallback (편의).
-            state
-                .engine
-                .workspaces
+            engine
+        .workspaces
                 .get(state.active_workspace)
                 .map(|ws| ws.id)
         });
@@ -106,7 +106,7 @@ pub fn handle_request(
         metadata,
     };
 
-    match state.engine.approval_store.request(req) {
+    match engine.approval_store.request(req) {
         Ok(change) => {
             persist_record(&change.record);
             crate::ui::popup::approval::enqueue_approval(state, &change.record);

@@ -76,6 +76,8 @@ impl ToastManager {
 
     /// 토스트 발사. 사용자 행동에서만 호출되어야 한다.
     pub fn push(&mut self, message: impl Into<String>, kind: ToastKind, scope: ToastScope) {
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
         let message = message.into();
         let now = Instant::now();
 
@@ -114,6 +116,8 @@ impl ToastManager {
 
     /// 편의 헬퍼: Info 토스트.
     pub fn push_info(&mut self, message: impl Into<String>, scope: ToastScope) {
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
         self.push(message, ToastKind::Info, scope);
     }
 
@@ -122,6 +126,8 @@ impl ToastManager {
     ///
     /// `reduced_motion`이 true면 페이드 인/아웃을 0ms로 처리 (시각 자극 최소화).
     pub fn draw(&mut self, ctx: &egui::Context, draw_ctx: &LayoutContext, reduced_motion: bool) {
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
         let now = Instant::now();
 
         // 1) 만료된 토스트 제거.

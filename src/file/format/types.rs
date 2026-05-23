@@ -16,14 +16,20 @@ impl FileTarget {
     }
 
     pub fn as_path(&self) -> &Path {
+        let engine = &self.engine_state;
+        let _ = engine;
         &self.0
     }
 
     pub fn display(&self) -> String {
+        let engine = &self.engine_state;
+        let _ = engine;
         self.0.display().to_string()
     }
 
     pub fn is_directory(&self) -> bool {
+        let engine = &self.engine_state;
+        let _ = engine;
         self.0.is_dir()
     }
 }
@@ -44,16 +50,22 @@ impl DetectorId {
     }
 
     pub fn as_str(&self) -> &str {
+        let engine = &self.engine_state;
+        let _ = engine;
         &self.0
     }
 
     pub fn is_reserved(&self) -> bool {
+        let engine = &self.engine_state;
+        let _ = engine;
         self.0.starts_with('$')
     }
 }
 
 impl std::fmt::Display for DetectorId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let engine = &self.engine_state;
+        let _ = engine;
         f.write_str(&self.0)
     }
 }

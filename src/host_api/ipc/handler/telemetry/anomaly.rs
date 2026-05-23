@@ -31,8 +31,12 @@ pub(super) fn persist_anomaly(anomaly: &Anomaly) -> std::result::Result<(), Stri
     }
 }
 
-pub(super) fn fire_anomaly_notification(state: &mut AppState, anomaly: &Anomaly) {
-    let Some(ws) = state.engine.workspaces.get(state.active_workspace) else {
+pub(super) fn fire_anomaly_notification(
+    state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
+    anomaly: &Anomaly,
+) {
+    let Some(ws) = engine.workspaces.get(state.active_workspace) else {
         return;
     };
     let ws_id = ws.id;
@@ -54,8 +58,7 @@ pub(super) fn fire_anomaly_notification(state: &mut AppState, anomaly: &Anomaly)
         tasty_telemetry::CALL_BURST_WINDOW_MS / 1000,
         anomaly.id,
     );
-    let created = state
-        .engine
+    let created = engine
         .notifications
         .add(ws_id, 0, title.clone(), body.clone());
     if let Some(nid) = created {
@@ -72,6 +75,7 @@ pub(super) fn fire_anomaly_notification(state: &mut AppState, anomaly: &Anomaly)
 /// `since`, `until` (unix ms). 응답은 `detected_at` 오름차순.
 pub fn handle_anomaly_list(
     _state: &mut AppState,
+    _engine: &mut crate::engine_state::EngineState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,

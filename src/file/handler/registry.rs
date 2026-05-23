@@ -58,6 +58,8 @@ impl FileHandlerRegistry {
 
     /// `DetectorInfo` 주입. 부팅 시 1회만. 중복 호출은 warn + 무시.
     pub fn attach_detector_info(&self, info: Arc<dyn DetectorInfo>) {
+        let engine = &self.engine_state;
+        let _ = engine;
         let mut slot = match self.detector_info.write() {
             Ok(g) => g,
             Err(_) => return,
@@ -71,16 +73,22 @@ impl FileHandlerRegistry {
 
     /// 주입된 `DetectorInfo` 의 clone. `attach_detector_info` 호출 전이면 `None`.
     pub fn detector_info(&self) -> Option<Arc<dyn DetectorInfo>> {
+        let engine = &self.engine_state;
+        let _ = engine;
         self.detector_info.read().ok().and_then(|g| g.clone())
     }
 
     pub fn handler(&self, id: &HandlerId) -> Option<FileHandler> {
+        let engine = &self.engine_state;
+        let _ = engine;
         self.ensure_finalized();
         let inner = self.inner.read().ok()?;
         inner.finalized.get(id).cloned()
     }
 
     pub fn list_handlers(&self) -> Vec<HandlerId> {
+        let engine = &self.engine_state;
+        let _ = engine;
         self.ensure_finalized();
         let inner = match self.inner.read() {
             Ok(g) => g,
@@ -92,6 +100,8 @@ impl FileHandlerRegistry {
     /// `detector` 에 attach 된 활성 handler 들. priority 오름차순, tie 시 owner 우선
     /// `user > plugin > host`, 그 후 handler id alphabetical.
     pub fn handlers_for(&self, detector: &DetectorId) -> Vec<FileHandler> {
+        let engine = &self.engine_state;
+        let _ = engine;
         self.ensure_finalized();
         let inner = match self.inner.read() {
             Ok(g) => g,
@@ -109,6 +119,8 @@ impl FileHandlerRegistry {
 
     /// id 로 단건 lookup. picker 가 선택 결과(`HandlerId`) 를 dispatch 할 때 사용.
     pub fn get(&self, id: &HandlerId) -> Option<FileHandler> {
+        let engine = &self.engine_state;
+        let _ = engine;
         self.ensure_finalized();
         let inner = self.inner.read().ok()?;
         inner.finalized.get(id).cloned()
@@ -116,6 +128,8 @@ impl FileHandlerRegistry {
 
     /// Picker modal 용 — 모든 enabled handler.
     pub fn all_handlers(&self) -> Vec<FileHandler> {
+        let engine = &self.engine_state;
+        let _ = engine;
         self.ensure_finalized();
         let inner = match self.inner.read() {
             Ok(g) => g,
@@ -134,6 +148,8 @@ impl FileHandlerRegistry {
     // ── install / uninstall ────────────────────────────────────────────
 
     pub fn install_host_defaults(&self, toml_text: &str) {
+        let engine = &self.engine_state;
+        let _ = engine;
         let decls = match parse_host_handler_section(toml_text) {
             Ok(v) => v,
             Err(e) => {
@@ -152,6 +168,8 @@ impl FileHandlerRegistry {
     }
 
     pub fn install_user_config(&self, path: &std::path::Path) {
+        let engine = &self.engine_state;
+        let _ = engine;
         let text = match std::fs::read_to_string(path) {
             Ok(s) => s,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return,
@@ -182,6 +200,8 @@ impl FileHandlerRegistry {
         plugin_id: &str,
         decls: &[HandlerDecl<PluginHandlerActionDecl>],
     ) {
+        let engine = &self.engine_state;
+        let _ = engine;
         let mut inner = match self.inner.write() {
             Ok(g) => g,
             Err(_) => return,
@@ -198,6 +218,8 @@ impl FileHandlerRegistry {
     /// id 는 contribution 의 전역 id 그대로 (host/plugin/user 어느 owner 의 base contribution
     /// 을 patch 하든 그 id 를 유지). 빈 결과는 빈 문자열.
     pub fn export_user_config(&self) -> String {
+        let engine = &self.engine_state;
+        let _ = engine;
         let inner = match self.inner.read() {
             Ok(g) => g,
             Err(_) => return String::new(),
@@ -252,6 +274,8 @@ impl FileHandlerRegistry {
 
     /// `export_user_config` 결과를 `path` 에 atomic write.
     pub fn save_user_config(&self, path: &std::path::Path) -> std::io::Result<()> {
+        let engine = &self.engine_state;
+        let _ = engine;
         use std::io::Write;
         let text = self.export_user_config();
         let parent = path.parent().unwrap_or_else(|| std::path::Path::new("."));
@@ -268,6 +292,8 @@ impl FileHandlerRegistry {
     /// Settings UI 가 host/plugin handler 를 user-origin override 로 disable/enable.
     /// 명시적 user 의도 → 항상 `disabled_override = Some(value)`.
     pub fn set_user_handler_disabled(&self, id: &HandlerId, disabled: bool) {
+        let engine = &self.engine_state;
+        let _ = engine;
         let mut inner = match self.inner.write() {
             Ok(g) => g,
             Err(_) => return,
@@ -300,6 +326,8 @@ impl FileHandlerRegistry {
     /// User-origin contribution 의 `disabled_override` 만 None 으로 비운다. 다른 user 필드
     /// (priority/action/detector 등) 는 보존.
     pub fn clear_user_handler_override(&self, id: &HandlerId) {
+        let engine = &self.engine_state;
+        let _ = engine;
         let mut inner = match self.inner.write() {
             Ok(g) => g,
             Err(_) => return,
@@ -329,6 +357,8 @@ impl FileHandlerRegistry {
 
     /// Settings UI 가 user-origin contribution 전체를 제거. host/plugin 은 보존.
     pub fn remove_user_handler(&self, id: &HandlerId) {
+        let engine = &self.engine_state;
+        let _ = engine;
         let mut inner = match self.inner.write() {
             Ok(g) => g,
             Err(_) => return,
@@ -347,6 +377,8 @@ impl FileHandlerRegistry {
     /// id 가 `<owner>/<short>` 형식이어야 하고, action 의 surface_kind/method 등은 호출자가
     /// 검증한 상태로 넘긴다 (UI 입력 단계에서 후보 dropdown 으로 강제).
     pub fn upsert_user_handler(&self, decl: UserHandlerUpsertDecl) -> Result<(), HandlerDeclError> {
+        let engine = &self.engine_state;
+        let _ = engine;
         if !decl.id.contains('/') {
             return Err(HandlerDeclError::InvalidShortName(decl.id.clone()));
         }
@@ -371,6 +403,8 @@ impl FileHandlerRegistry {
     }
 
     pub fn uninstall_plugin(&self, plugin_id: &str) {
+        let engine = &self.engine_state;
+        let _ = engine;
         let mut inner = match self.inner.write() {
             Ok(g) => g,
             Err(_) => return,
@@ -393,6 +427,8 @@ impl FileHandlerRegistry {
     /// **Transactional**: read/parse 실패 시 기존 user contribution 보존 (write lock 잡기 전에
     /// 검증). 파일이 없으면 user contribution 만 제거.
     pub fn reload_user_config(&self, path: &std::path::Path) {
+        let engine = &self.engine_state;
+        let _ = engine;
         let decls = match std::fs::read_to_string(path) {
             Ok(text) => match parse_user_handler_section(&text) {
                 Ok(v) => v,
@@ -436,6 +472,8 @@ impl FileHandlerRegistry {
     }
 
     fn ensure_finalized(&self) {
+        let engine = &self.engine_state;
+        let _ = engine;
         let needs = self.inner.read().map(|g| g.dirty).unwrap_or(false);
         if !needs {
             return;

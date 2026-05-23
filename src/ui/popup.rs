@@ -155,14 +155,20 @@ impl PopupState {
     }
 
     fn popup_rect(&self) -> egui::Rect {
+        let engine = &self.engine_state;
+        let _ = engine;
         egui::Rect::from_min_size(self.pos, self.size)
     }
 
     fn title_rect(&self) -> egui::Rect {
+        let engine = &self.engine_state;
+        let _ = engine;
         egui::Rect::from_min_size(self.pos, egui::vec2(self.size.x, TITLE_BAR_HEIGHT))
     }
 
     fn content_rect(&self) -> egui::Rect {
+        let engine = &self.engine_state;
+        let _ = engine;
         let popup = self.popup_rect();
         let top_offset = if self.headless {
             CONTENT_MARGIN
@@ -176,6 +182,8 @@ impl PopupState {
     }
 
     fn close_btn_rect(&self) -> egui::Rect {
+        let engine = &self.engine_state;
+        let _ = engine;
         let title = self.title_rect();
         let size = 20.0;
         let center = egui::pos2(title.max.x - size * 0.5 - 4.0, title.center().y);
@@ -184,6 +192,8 @@ impl PopupState {
 
     /// Clamp position so popup stays within the given screen rect.
     fn clamp_to_screen(&mut self, screen: egui::Rect) {
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
         self.size.x = self.size.x.min(screen.width());
         self.size.y = self.size.y.min(screen.height());
         self.pos.x = self
@@ -211,6 +221,8 @@ impl PopupManager {
     /// Register a popup from a PopupDef. title은 `t()`로 번역하여 사용하며,
     /// 이후 locale이 바뀌면 draw 루프에서 재번역된다(draw_popups 참고).
     pub fn register_def(&mut self, def: &PopupDef) {
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
         if self.popups.iter().any(|p| p.id == def.id) {
             return;
         }
@@ -225,6 +237,8 @@ impl PopupManager {
     /// `sizer`가 정의된 popup에 한해 open 직전 크기를 재계산한다. caller가 사이즈
     /// 갱신 후 `open*` 계열을 호출하는 규약.
     pub fn refresh_size(&mut self, id: PopupId, size: egui::Vec2) {
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
         if let Some(p) = self.popups.iter_mut().find(|p| p.id == id) {
             p.size = size;
         }
@@ -232,6 +246,8 @@ impl PopupManager {
 
     /// Register a popup. Call once during init. Does nothing if already registered.
     pub fn register(&mut self, popup: PopupState) {
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
         if !self.popups.iter().any(|p| p.id == popup.id) {
             self.popups.push(popup);
         }
@@ -239,6 +255,8 @@ impl PopupManager {
 
     /// Open a popup by id, bringing it to the front.
     pub fn open(&mut self, id: PopupId) {
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
         if let Some(i) = self.popups.iter().position(|p| p.id == id) {
             self.popups[i].open = true;
             let popup = self.popups.remove(i);
@@ -248,6 +266,8 @@ impl PopupManager {
 
     /// Open a popup centered on screen, with focus.
     pub fn open_centered_focused(&mut self, id: PopupId) {
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
         if let Some(i) = self.popups.iter().position(|p| p.id == id) {
             self.popups[i].open = true;
             self.popups[i].focused = true;
@@ -260,6 +280,8 @@ impl PopupManager {
     /// Open a popup centered on screen **without** focus (agent-initiated).
     /// 사용자의 포커스를 훔치지 않는다. CLI/IPC 경유 open에 사용.
     pub fn open_centered(&mut self, id: PopupId) {
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
         if let Some(i) = self.popups.iter().position(|p| p.id == id) {
             self.popups[i].open = true;
             self.popups[i].focused = false;
@@ -271,6 +293,8 @@ impl PopupManager {
 
     /// Open a popup centered within a specific scope, with focus.
     pub fn open_with_scope(&mut self, id: PopupId, scope: PopupScope) {
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
         if let Some(i) = self.popups.iter().position(|p| p.id == id) {
             self.popups[i].open = true;
             self.popups[i].focused = true;
@@ -284,6 +308,8 @@ impl PopupManager {
     /// Open a popup at the top of a specific scope, with focus.
     /// scope rect의 상단에 가로 중앙 정렬로 배치한다.
     pub fn open_at_top_of_scope(&mut self, id: PopupId, scope: PopupScope) {
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
         if let Some(i) = self.popups.iter().position(|p| p.id == id) {
             self.popups[i].open = true;
             self.popups[i].focused = true;
@@ -297,6 +323,8 @@ impl PopupManager {
 
     /// Open a popup at a specific position, with focus.
     pub fn open_at_focused(&mut self, id: PopupId, pos: egui::Pos2) {
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
         if let Some(i) = self.popups.iter().position(|p| p.id == id) {
             self.popups[i].open = true;
             self.popups[i].focused = true;
@@ -309,6 +337,8 @@ impl PopupManager {
 
     /// Close a popup by id.
     pub fn close(&mut self, id: PopupId) {
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
         if let Some(p) = self.popups.iter_mut().find(|p| p.id == id) {
             p.open = false;
             p.dragging = false;
@@ -318,6 +348,8 @@ impl PopupManager {
 
     /// Toggle a popup open/closed.
     pub fn toggle(&mut self, id: PopupId) {
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
         if self.is_open(id) {
             self.close(id);
         } else {
@@ -327,21 +359,29 @@ impl PopupManager {
 
     /// Check if a popup is open.
     pub fn is_open(&self, id: PopupId) -> bool {
+        let engine = &self.engine_state;
+        let _ = engine;
         self.popups.iter().any(|p| p.id == id && p.open)
     }
 
     /// Check if any popup currently has keyboard focus.
     pub fn has_focused(&self) -> bool {
+        let engine = &self.engine_state;
+        let _ = engine;
         self.popups.iter().any(|p| p.open && p.focused)
     }
 
     /// Check if any popup is currently open.
     pub fn has_any_open(&self) -> bool {
+        let engine = &self.engine_state;
+        let _ = engine;
         self.popups.iter().any(|p| p.open)
     }
 
     /// Bring a popup to the front (topmost z-order).
     fn bring_to_front(&mut self, id: PopupId) {
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
         if let Some(i) = self.popups.iter().position(|p| p.id == id) {
             let popup = self.popups.remove(i);
             self.popups.push(popup);
@@ -350,6 +390,8 @@ impl PopupManager {
 
     /// Get mutable access to a popup's state.
     pub fn get_mut(&mut self, id: PopupId) -> Option<&mut PopupState> {
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
         self.popups.iter_mut().find(|p| p.id == id)
     }
 }

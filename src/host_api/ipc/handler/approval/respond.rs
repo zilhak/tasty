@@ -4,6 +4,7 @@ use super::*;
 
 pub fn handle_respond(
     state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -22,8 +23,7 @@ pub fn handle_respond(
         .map(str::to_string);
     let by = responder_from_caller(caller);
 
-    match state
-        .engine
+    match engine
         .approval_store
         .respond(&req_id, choice.clone(), by, comment)
     {

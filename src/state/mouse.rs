@@ -1,12 +1,14 @@
 use crate::model::{DividerInfo, PhysicalPx, Rect, SplitDirection};
 
 use super::AppState;
+use crate::engine_state::EngineState;
 
 impl AppState {
     /// Determine the cursor icon for the winit (non-egui) area at the given position.
     /// Checks dividers first, then asks the surface. Returns None if not over any winit area.
     pub fn winit_cursor_icon_at(
         &self,
+        engine: &EngineState,
         x: f32,
         y: f32,
         terminal_rect: Rect,
@@ -18,8 +20,10 @@ impl AppState {
 
         // 1. Divider check
         let divider = self
-            .find_pane_divider_at(x, y, terminal_rect, divider_threshold)
-            .or_else(|| self.find_surface_divider_at(x, y, terminal_rect, divider_threshold));
+            .find_pane_divider_at(engine, x, y, terminal_rect, divider_threshold)
+            .or_else(|| {
+                self.find_surface_divider_at(engine, x, y, terminal_rect, divider_threshold)
+            });
         if let Some(info) = divider {
             return Some(match info.direction {
                 SplitDirection::Vertical => egui::CursorIcon::ResizeHorizontal,
@@ -28,7 +32,7 @@ impl AppState {
         }
 
         // 2. Surface check — terminal surface는 텍스트 커서, 그 외는 기본.
-        for (_pane_id, _pane_rect, regions) in &self.surface_regions(terminal_rect) {
+        for (_pane_id, _pane_rect, regions) in &self.surface_regions(engine, terminal_rect) {
             for r in regions {
                 if r.rect.contains(PhysicalPx(x), PhysicalPx(y)) {
                     let _local = (x - r.rect.x.value(), y - r.rect.y.value());
@@ -47,12 +51,13 @@ impl AppState {
     /// Find a pane-level divider at the given position.
     pub fn find_pane_divider_at(
         &self,
+        engine: &EngineState,
         x: f32,
         y: f32,
         terminal_rect: Rect,
         threshold: f32,
     ) -> Option<DividerInfo> {
-        let ws = self.active_workspace();
+        let ws = self.active_workspace(engine);
         ws.pane_layout()
             .find_divider_at(x, y, terminal_rect, threshold)
     }
@@ -60,12 +65,13 @@ impl AppState {
     /// Find a surface-level divider at the given position (within the focused pane's panel).
     pub fn find_surface_divider_at(
         &self,
+        engine: &EngineState,
         x: f32,
         y: f32,
         terminal_rect: Rect,
         threshold: f32,
     ) -> Option<DividerInfo> {
-        let ws = self.active_workspace();
+        let ws = self.active_workspace(engine);
         let focused_id = ws.focused_pane;
         let pane_rects = ws.pane_layout().compute_rects(terminal_rect);
 
@@ -91,6 +97,7 @@ impl AppState {
     /// Update a pane-level split ratio based on a divider drag.
     pub fn update_pane_divider(
         &mut self,
+        engine: &mut EngineState,
         divider: &DividerInfo,
         x: f32,
         y: f32,
@@ -104,14 +111,14 @@ impl AppState {
                 (PhysicalPx(y) - divider.split_rect.y).value() / divider.split_rect.height.value()
             }
         };
-        let ws = self.active_workspace_mut();
+        let ws = self.active_workspace_mut(engine);
         let updated = ws.pane_layout_mut().update_ratio_for_rect(
             divider.split_rect,
             new_ratio,
             terminal_rect,
         );
         if updated {
-            self.engine.mark_layout_dirty();
+            engine.mark_layout_dirty();
         }
         updated
     }
@@ -119,6 +126,7 @@ impl AppState {
     /// Update a surface-level split ratio based on a divider drag.
     pub fn update_surface_divider(
         &mut self,
+        engine: &mut EngineState,
         divider: &DividerInfo,
         x: f32,
         y: f32,
@@ -134,7 +142,7 @@ impl AppState {
         };
 
         let tab_bar_h = self.tab_bar_height;
-        let ws = self.active_workspace_mut();
+        let ws = self.active_workspace_mut(engine);
         let focused_id = ws.focused_pane;
         let pane_rects = ws.pane_layout().compute_rects(terminal_rect);
 
@@ -164,7 +172,7 @@ impl AppState {
             tab.layout_mut()
                 .update_ratio_for_rect(divider.split_rect, new_ratio, content_rect);
         if updated {
-            self.engine.mark_layout_dirty();
+            engine.mark_layout_dirty();
         }
         updated
     }

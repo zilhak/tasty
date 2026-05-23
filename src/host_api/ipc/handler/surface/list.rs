@@ -3,9 +3,9 @@ use serde_json::json;
 use crate::ipc::protocol::JsonRpcResponse;
 use crate::state::AppState;
 
-pub(crate) fn handle_surface_list(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {
+pub(crate) fn handle_surface_list(state: &AppState, engine: &crate::engine_state::EngineState, id: serde_json::Value) -> JsonRpcResponse {
     let mut surfaces = Vec::new();
-    for ws in &state.engine.workspaces {
+    for ws in &engine.workspaces {
         for &pane_id in &ws.pane_layout().all_pane_ids() {
             if let Some(pane) = ws.pane_layout().find_pane(pane_id) {
                 for (tab_idx, tab) in pane.tabs.iter().enumerate() {
@@ -19,6 +19,7 @@ pub(crate) fn handle_surface_list(state: &AppState, id: serde_json::Value) -> Js
 
 fn collect_tab_surface_info(
     state: &AppState,
+    engine: &crate::engine_state::EngineState,
     tab: &crate::model::Tab,
     pane_id: u32,
     workspace_id: u32,
@@ -40,7 +41,7 @@ fn collect_tab_surface_info(
                 "type": "Terminal",
                 "cols": node.terminal.cols(),
                 "rows": node.terminal.rows(),
-                "busy": state.engine.is_surface_busy(node.id),
+                "busy": engine.is_surface_busy(node.id),
                 "pty_ready": true,
             });
             if let Some(fg) = node.terminal.foreground_process_info() {
@@ -73,6 +74,7 @@ fn collect_tab_surface_info(
 
 fn collect_surface_layout_info(
     state: &AppState,
+    engine: &crate::engine_state::EngineState,
     layout: &crate::model::SurfaceLayout,
     pane_id: u32,
     workspace_id: u32,
@@ -88,7 +90,7 @@ fn collect_surface_layout_info(
                 "workspace_id": workspace_id,
                 "tab_index": tab_idx,
                 "type": surface.type_name(),
-                "busy": state.engine.is_surface_busy(id),
+                "busy": engine.is_surface_busy(id),
             });
             if let Some(terminal) = surface.focused_terminal() {
                 entry["cols"] = json!(terminal.cols());

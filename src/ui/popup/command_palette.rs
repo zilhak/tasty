@@ -151,6 +151,6 @@ fn label_for(cmd: &PaletteCommand) -> String {
 }
 
 fn first_binding(state: &AppState, action_id: &str) -> Option<String> {
-    let bindings = state.engine.settings.keybindings.get_bindings(action_id)?;
+    let bindings = engine.settings.keybindings.get_bindings(action_id)?;
     bindings.first().cloned()
 }

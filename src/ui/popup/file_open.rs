@@ -211,8 +211,8 @@ fn apply_open(state: &mut AppState, path: &str) {
         let pane_id = state
             .dialogs
             .file_open_pane_id
-            .unwrap_or(state.active_workspace().focused_pane);
-        state.active_workspace_mut().focused_pane = pane_id;
+            .unwrap_or(state.active_workspace(engine).focused_pane);
+        state.active_workspace_mut(engine).focused_pane = pane_id;
         state.dispatch_intent(
             crate::intent::Intent::NewTab {
                 kind: Some("markdown".to_string()),

@@ -14,6 +14,8 @@ impl MainWindow {
     ///
     /// Returns true if the action was recognized and dispatched. Unknown action_id는 false.
     pub(crate) fn dispatch_action_by_id(&mut self, action_id: &str) -> bool {
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
         use crate::model::SplitDirection;
         use crate::ui::popup::PopupScope;
 
@@ -32,13 +34,13 @@ impl MainWindow {
                     }
                     .from_user_shortcut("new_workspace"),
                 );
-                state.resize_all(terminal_rect, cell_w, cell_h);
+                state.resize_all(engine, terminal_rect, cell_w, cell_h);
             }
             "new_tab" => {
-                if let Err(e) = state.add_tab() {
+                if let Err(e) = state.add_tab(engine) {
                     tracing::warn!("add_tab failed: {e}");
                 }
-                state.resize_all(terminal_rect, cell_w, cell_h);
+                state.resize_all(engine, terminal_rect, cell_w, cell_h);
             }
             "split_pane_vertical" => {
                 state.dispatch_intent(
@@ -47,7 +49,7 @@ impl MainWindow {
                     }
                     .from_user_shortcut("split_pane_vertical"),
                 );
-                state.resize_all(terminal_rect, cell_w, cell_h);
+                state.resize_all(engine, terminal_rect, cell_w, cell_h);
             }
             "split_pane_horizontal" => {
                 state.dispatch_intent(
@@ -56,7 +58,7 @@ impl MainWindow {
                     }
                     .from_user_shortcut("split_pane_horizontal"),
                 );
-                state.resize_all(terminal_rect, cell_w, cell_h);
+                state.resize_all(engine, terminal_rect, cell_w, cell_h);
             }
             "split_surface_vertical" => {
                 state.dispatch_intent(
@@ -65,7 +67,7 @@ impl MainWindow {
                     }
                     .from_user_shortcut("split_surface_vertical"),
                 );
-                state.resize_all(terminal_rect, cell_w, cell_h);
+                state.resize_all(engine, terminal_rect, cell_w, cell_h);
             }
             "split_surface_horizontal" => {
                 state.dispatch_intent(
@@ -74,7 +76,7 @@ impl MainWindow {
                     }
                     .from_user_shortcut("split_surface_horizontal"),
                 );
-                state.resize_all(terminal_rect, cell_w, cell_h);
+                state.resize_all(engine, terminal_rect, cell_w, cell_h);
             }
             "toggle_settings" => {
                 send_app_event(proxy, crate::AppEvent::OpenSettings);
@@ -89,7 +91,7 @@ impl MainWindow {
                     .from_user_shortcut("toggle_notifications"),
                 );
                 if will_open {
-                    state.engine.notifications.mark_all_read();
+                    engine.notifications.mark_all_read();
                 }
             }
             "toggle_clipboard_viewer" => {
@@ -105,63 +107,63 @@ impl MainWindow {
                 state.sidebar_collapsed = !state.sidebar_collapsed;
             }
             "close_workspace" => {
-                state.close_active_workspace();
-                if state.engine.workspaces.is_empty() {
+                state.close_active_workspace(engine);
+                if engine.workspaces.is_empty() {
                     self.request_close();
                 } else {
-                    self.state.resize_all(terminal_rect, cell_w, cell_h);
+                    self.state.resize_all(engine, engine, terminal_rect, cell_w, cell_h);
                 }
                 return true;
             }
             "close_pane" => {
-                if !state.close_active_pane() {
-                    state.close_active_workspace();
+                if !state.close_active_pane(engine) {
+                    state.close_active_workspace(engine);
                 }
-                if state.engine.workspaces.is_empty() {
+                if engine.workspaces.is_empty() {
                     self.request_close();
                 } else {
-                    self.state.resize_all(terminal_rect, cell_w, cell_h);
+                    self.state.resize_all(engine, engine, terminal_rect, cell_w, cell_h);
                 }
                 return true;
             }
             "close_surface" => {
-                let target_sid = state.focused_surface_id();
-                let target_kind = target_sid.and_then(|s| state.surface_kind(s));
-                let closed = state.close_active_surface();
+                let target_sid = state.focused_surface_id(engine);
+                let target_kind = target_sid.and_then(|s| state.surface_kind(engine, s));
+                let closed = state.close_active_surface(engine);
                 if closed {
                     if let (Some(sid), Some(k)) = (target_sid, target_kind) {
                         state.enqueue_surface_closed(sid, k, true);
                     }
-                } else if !state.close_active_pane() {
-                    state.close_active_workspace();
+                } else if !state.close_active_pane(engine) {
+                    state.close_active_workspace(engine);
                 }
-                if state.engine.workspaces.is_empty() {
+                if engine.workspaces.is_empty() {
                     self.request_close();
                 } else {
-                    self.state.resize_all(terminal_rect, cell_w, cell_h);
+                    self.state.resize_all(engine, engine, terminal_rect, cell_w, cell_h);
                 }
                 return true;
             }
             "close_active" => {
-                if !state.close_active_tab() && !state.close_active_pane() {
-                    state.close_active_workspace();
+                if !state.close_active_tab(engine) && !state.close_active_pane(engine) {
+                    state.close_active_workspace(engine);
                 }
-                if state.engine.workspaces.is_empty() {
+                if engine.workspaces.is_empty() {
                     self.request_close();
                 } else {
-                    self.state.resize_all(terminal_rect, cell_w, cell_h);
+                    self.state.resize_all(engine, engine, terminal_rect, cell_w, cell_h);
                 }
                 return true;
             }
-            "focus_pane_next" => state.move_pane_focus_forward(),
-            "focus_pane_prev" => state.move_pane_focus_backward(),
-            "focus_surface_next" => state.move_surface_focus_forward(),
-            "focus_surface_prev" => state.move_surface_focus_backward(),
-            "next_tab" => state.next_tab_in_pane(),
-            "prev_tab" => state.prev_tab_in_pane(),
+            "focus_pane_next" => state.move_pane_focus_forward(engine),
+            "focus_pane_prev" => state.move_pane_focus_backward(engine),
+            "focus_surface_next" => state.move_surface_focus_forward(engine),
+            "focus_surface_prev" => state.move_surface_focus_backward(engine),
+            "next_tab" => state.next_tab_in_pane(engine),
+            "prev_tab" => state.prev_tab_in_pane(engine),
             "restore_closed" => {
-                state.restore_closed_item();
-                state.resize_all(terminal_rect, cell_w, cell_h);
+                state.restore_closed_item(engine);
+                state.resize_all(engine, terminal_rect, cell_w, cell_h);
             }
             "quit" => send_app_event(proxy, crate::AppEvent::QuitRequested),
             "quit_immediate" => send_app_event(proxy, crate::AppEvent::Shutdown),
@@ -173,7 +175,7 @@ impl MainWindow {
                     state.dispatch_intent(
                         Intent::ClosePopup { id: "search_bar" }.from_user_shortcut("find_close"),
                     );
-                } else if let Some(sid) = state.focused_surface_id() {
+                } else if let Some(sid) = state.focused_surface_id(engine) {
                     state.search.surface_id = sid;
                     state.dispatch_intent(
                         Intent::OpenPopup {
@@ -185,7 +187,7 @@ impl MainWindow {
                 }
             }
             "open_markdown" => {
-                let pane_id = state.active_workspace().focused_pane;
+                let pane_id = state.active_workspace(engine).focused_pane;
                 state.dialogs.file_open_pane_id = Some(pane_id);
                 state.dialogs.markdown_open_buffer.clear();
                 state.dispatch_intent(
@@ -197,7 +199,7 @@ impl MainWindow {
                 );
             }
             "convert_surface" => {
-                if let Some(sid) = state.focused_surface_id() {
+                if let Some(sid) = state.focused_surface_id(engine) {
                     state.dialogs.convert_popup = Some(sid);
                     state.dialogs.convert_popup_selected = None;
                     state.dispatch_intent(
@@ -210,8 +212,8 @@ impl MainWindow {
                 }
             }
             "convert_to_markdown" => {
-                if let Some(sid) = state.focused_surface_id() {
-                    let pane_id = state.active_workspace().focused_pane;
+                if let Some(sid) = state.focused_surface_id(engine) {
+                    let pane_id = state.active_workspace(engine).focused_pane;
                     state.dialogs.markdown_convert_surface_id = Some(sid);
                     state.dialogs.file_open_pane_id = Some(pane_id);
                     state.dialogs.markdown_open_buffer.clear();
@@ -225,8 +227,8 @@ impl MainWindow {
                 }
             }
             "rename_tab" => {
-                let pane_id = state.active_workspace().focused_pane;
-                if let Some(pane) = state.active_workspace().pane_layout().find_pane(pane_id) {
+                let pane_id = state.active_workspace(engine).focused_pane;
+                if let Some(pane) = state.active_workspace(engine).pane_layout().find_pane(pane_id) {
                     let tab_index = pane.active_tab;
                     if let Some(tab) = pane.tabs.get(tab_index) {
                         let current_name = tab.display_name();
@@ -245,7 +247,7 @@ impl MainWindow {
             }
             "rename_workspace" => {
                 let ws_idx = state.active_workspace;
-                if let Some(ws) = state.engine.workspaces.get(ws_idx) {
+                if let Some(ws) = engine.workspaces.get(ws_idx) {
                     let target = crate::state::RenameTarget::WorkspaceName { ws_idx };
                     let scope = target.popup_scope();
                     state.dialogs.rename = Some((target, ws.name.clone()));
@@ -260,7 +262,7 @@ impl MainWindow {
             }
             "rename_workspace_subtitle" => {
                 let ws_idx = state.active_workspace;
-                if let Some(ws) = state.engine.workspaces.get(ws_idx) {
+                if let Some(ws) = engine.workspaces.get(ws_idx) {
                     let target = crate::state::RenameTarget::WorkspaceSubtitle { ws_idx };
                     let scope = target.popup_scope();
                     state.dialogs.rename = Some((target, ws.subtitle.clone()));
@@ -274,7 +276,7 @@ impl MainWindow {
                 }
             }
             "image_undo" => {
-                if state.focused_surface_type().is_kind("image") {
+                if state.focused_surface_type(engine).is_kind("image") {
                     if let Some(sid) = focused_image_surface_id(state) {
                         if let Some(view) = state.image_views.get_mut(sid) {
                             view.undo();
@@ -283,7 +285,7 @@ impl MainWindow {
                 }
             }
             "image_redo" => {
-                if state.focused_surface_type().is_kind("image") {
+                if state.focused_surface_type(engine).is_kind("image") {
                     if let Some(sid) = focused_image_surface_id(state) {
                         if let Some(view) = state.image_views.get_mut(sid) {
                             view.redo();
@@ -302,6 +304,8 @@ impl MainWindow {
 
     /// Handle keyboard shortcuts. Returns true if the event was consumed by a shortcut.
     pub(crate) fn handle_shortcut(&mut self, key: &Key, mods: ModifiersState) -> bool {
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
         let ctrl = mods.control_key();
         let shift = mods.shift_key();
         #[cfg(target_os = "macos")]
@@ -318,11 +322,12 @@ impl MainWindow {
             return true;
         }
 
-        let kb = self.state.engine.settings.keybindings.clone();
+        let kb = self.engine_state.settings.keybindings.clone();
 
         // Configurable keybinding shortcuts
         if Self::handle_keybinding_shortcuts(
             &mut self.state,
+            &mut self.engine_state,
             &kb,
             key,
             mods,
@@ -331,7 +336,7 @@ impl MainWindow {
             cell_h,
             &self.proxy,
         ) {
-            if self.state.engine.workspaces.is_empty() {
+            if self.engine_state.workspaces.is_empty() {
                 self.request_close();
             }
             self.base.dirty = true;
@@ -340,7 +345,7 @@ impl MainWindow {
 
         // Numeric tab/workspace switching (Ctrl+1..9 / Alt+1..9)
         if Self::handle_numeric_switch_shortcuts(&mut self.state, &kb, key, ctrl, shift, alt) {
-            if self.state.engine.workspaces.is_empty() {
+            if self.engine_state.workspaces.is_empty() {
                 self.request_close();
             }
             self.base.dirty = true;

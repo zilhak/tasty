@@ -5,13 +5,14 @@
 //! 있으면 `pending_host_events` 큐에 `PendingHostEvent` 를 enqueue 한다.
 
 use super::{AppState, PendingHostEvent};
+use crate::engine_state::EngineState;
 
 impl AppState {
     /// 현재 focused surface id를 마지막 기록과 비교해 달라졌다면 `SurfaceFocused`
     /// 이벤트를 enqueue하고 기록을 갱신한다. focus 전환 경로(키/마우스/IPC/탭/워크
     /// 스페이스)가 많아 각각 hook하는 대신 main loop tick에서 polling으로 처리한다.
-    pub fn detect_focus_change(&mut self) {
-        let current = self.focused_surface_id();
+    pub fn detect_focus_change(&mut self, engine: &EngineState) {
+        let current = self.focused_surface_id(engine);
         if current == self.last_focused_surface_id {
             return;
         }
@@ -28,9 +29,8 @@ impl AppState {
     /// 현재 활성 워크스페이스 ID를 마지막 기록과 비교해 달라졌다면 `WorkspaceActivated`
     /// 이벤트를 enqueue한다. workspace 활성화 경로(사이드바 클릭, 단축키, IPC 등)가
     /// 여럿이라 focused와 동일하게 polling으로 처리.
-    pub fn detect_workspace_activation(&mut self) {
-        let current = self
-            .engine
+    pub fn detect_workspace_activation(&mut self, engine: &EngineState) {
+        let current = engine
             .workspaces
             .get(self.active_workspace)
             .map(|w| w.id);
@@ -50,9 +50,9 @@ impl AppState {
     /// focused pane의 active tab을 마지막 기록과 비교해 달라졌다면 `TabFocused`
     /// 이벤트를 enqueue. tab 전환 경로(클릭, next/prev/goto 단축키, close 후 인접
     /// 탭으로 shift, pane 전환에 의한 focused tab 변화 등)가 여럿이라 polling 채택.
-    pub fn detect_tab_focus_change(&mut self) {
+    pub fn detect_tab_focus_change(&mut self, engine: &EngineState) {
         let current = self
-            .focused_pane()
+            .focused_pane(engine)
             .and_then(|pane| pane.tabs.get(pane.active_tab).map(|tab| (pane.id, tab.id)));
         if current == self.last_focused_tab {
             return;
@@ -72,18 +72,18 @@ impl AppState {
     /// 마지막 스냅샷과 비교해 `TabCreated`/`TabClosed`/`TabMoved` 이벤트를 enqueue한다.
     /// 첫 호출(스냅샷이 `None`)에서는 이벤트를 발화하지 않고 베이스라인만 기록한다 —
     /// 앱 시작 시 이미 로드된 탭들이 잘못 `tab.created`로 보고되지 않도록 하기 위함.
-    pub fn detect_tab_lifecycle(&mut self) {
+    pub fn detect_tab_lifecycle(&mut self, engine: &EngineState) {
         use std::collections::HashMap;
 
         let mut current: HashMap<u32, (u32, u32, String)> = HashMap::new();
-        for ws in &self.engine.workspaces {
+        for ws in &engine.workspaces {
             let workspace_id = ws.id;
             for pane_id in ws.pane_layout().all_pane_ids() {
                 if let Some(pane) = ws.pane_layout().find_pane(pane_id) {
                     for tab in &pane.tabs {
                         let kind = tab
                             .focused_surface_id()
-                            .and_then(|sid| self.engine.find_surface_by_id(sid))
+                            .and_then(|sid| engine.find_surface_by_id(sid))
                             .map(|s| s.kind().to_string())
                             .unwrap_or_else(|| "unknown".to_string());
                         current.insert(tab.id, (pane_id, workspace_id, kind));
@@ -134,11 +134,11 @@ impl AppState {
 
     /// Pane 생성/종료를 polling으로 감지. `last_tab_locations`와 동일하게 첫 호출
     /// 에서는 베이스라인만 기록한다.
-    pub fn detect_pane_lifecycle(&mut self) {
+    pub fn detect_pane_lifecycle(&mut self, engine: &EngineState) {
         use std::collections::HashMap;
 
         let mut current: HashMap<u32, u32> = HashMap::new();
-        for ws in &self.engine.workspaces {
+        for ws in &engine.workspaces {
             for pane_id in ws.pane_layout().all_pane_ids() {
                 current.insert(pane_id, ws.id);
             }
@@ -174,11 +174,11 @@ impl AppState {
     /// Workspace 생성/종료를 polling으로 감지. `window_id`는 caller가 전달하며
     /// (이 `AppState`가 속한 main window의 winit::WindowId를 u64로 변환), 신규
     /// workspace가 발견되면 `WorkspaceCreated`에 채워 넣는다.
-    pub fn detect_workspace_lifecycle(&mut self, window_id: u64) {
+    pub fn detect_workspace_lifecycle(&mut self, engine: &EngineState, window_id: u64) {
         use std::collections::HashMap;
 
         let mut current: HashMap<u32, String> = HashMap::new();
-        for ws in &self.engine.workspaces {
+        for ws in &engine.workspaces {
             current.insert(ws.id, ws.name.clone());
         }
 
@@ -217,11 +217,11 @@ impl AppState {
     /// 향후 plugin spawn IPC 핸들러에서 별도로 `Agent { source_plugin }` 컨텍스트를
     /// 채워 직접 enqueue하는 경로를 둘 예정. surface.closed는 별도 큐가 처리하므로
     /// 여기서는 생성만 감지.
-    pub fn detect_surface_lifecycle(&mut self) {
+    pub fn detect_surface_lifecycle(&mut self, engine: &EngineState) {
         use std::collections::HashMap;
 
         let mut current: HashMap<u32, (u32, u32, u32, &'static str)> = HashMap::new();
-        for ws in &self.engine.workspaces {
+        for ws in &engine.workspaces {
             let workspace_id = ws.id;
             for pane_id in ws.pane_layout().all_pane_ids() {
                 if let Some(pane) = ws.pane_layout().find_pane(pane_id) {

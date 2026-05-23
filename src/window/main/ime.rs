@@ -73,7 +73,7 @@ pub(super) fn recalc_anchor(w: &mut MainWindow) {
         return;
     };
     let surface_id = preedit.surface_id;
-    let Some(terminal) = w.state.engine.find_terminal_by_id(surface_id) else {
+    let Some(terminal) = w.engine.find_terminal_by_id(surface_id) else {
         return;
     };
 
@@ -106,10 +106,10 @@ pub(super) fn flush_preedit(w: &mut MainWindow) {
             return;
         }
     };
-    if let Some(terminal) = w.state.engine.find_terminal_by_id_mut(preedit.surface_id) {
+    if let Some(terminal) = w.engine.find_terminal_by_id_mut(preedit.surface_id) {
         terminal.send_key(&preedit.text);
     }
-    w.state.engine.record_typing(preedit.surface_id);
+    w.engine.record_typing(preedit.surface_id);
     w.ime_cursor_advance = 0;
     w.ime_advance_base = (0, 0);
     w.mark_dirty();
@@ -142,9 +142,9 @@ pub(crate) fn ipc_set_preedit(
     text: String,
     cursor: Option<(usize, usize)>,
 ) -> Option<(usize, usize, u32)> {
-    let surface_id = w.state.focused_surface_id()?;
+    let surface_id = w.state.focused_surface_id(engine)?;
     let (col, row, cols) = {
-        let terminal = w.state.focused_terminal()?;
+        let terminal = w.state.focused_terminal(engine)?;
         let (col, row) = terminal.surface().cursor_position();
         (col, row, terminal.cols())
     };
@@ -175,7 +175,7 @@ pub(crate) fn ipc_set_preedit(
 
 pub(crate) fn ipc_commit(w: &mut MainWindow, text: &str) {
     if w.ime_cursor_advance == 0 {
-        if let Some(terminal) = w.state.focused_terminal() {
+        if let Some(terminal) = w.state.focused_terminal(engine) {
             w.ime_advance_base = terminal.surface().cursor_position();
         }
     }
@@ -183,12 +183,12 @@ pub(crate) fn ipc_commit(w: &mut MainWindow, text: &str) {
         w.ime_cursor_advance += crate::renderer::unicode_width(ch);
     }
     w.ime_preedit = None;
-    let sid = w.state.focused_surface_id();
-    if let Some(terminal) = w.state.focused_terminal_mut() {
+    let sid = w.state.focused_surface_id(engine);
+    if let Some(terminal) = w.state.focused_terminal_mut(engine) {
         terminal.send_key(text);
     }
     if let Some(sid) = sid {
-        w.state.engine.record_typing(sid);
+        w.engine.record_typing(sid);
     }
     w.mark_dirty();
 }
@@ -229,7 +229,7 @@ fn on_preedit(w: &mut MainWindow, text: String, cursor: Option<(usize, usize)>) 
         return;
     }
 
-    let surface_id = w.state.focused_surface_id();
+    let surface_id = w.state.focused_surface_id(engine);
     let anchor = reconcile_and_compute_anchor(w);
 
     w.ime_preedit = match (surface_id, anchor) {
@@ -248,7 +248,7 @@ fn on_preedit(w: &mut MainWindow, text: String, cursor: Option<(usize, usize)>) 
 
 fn on_commit(w: &mut MainWindow, text: String) {
     if w.ime_cursor_advance == 0 {
-        if let Some(terminal) = w.state.focused_terminal() {
+        if let Some(terminal) = w.state.focused_terminal(engine) {
             w.ime_advance_base = reference_cursor(terminal);
         }
     }
@@ -257,12 +257,12 @@ fn on_commit(w: &mut MainWindow, text: String) {
     }
     w.ime_preedit = None;
 
-    let sid = w.state.focused_surface_id();
-    if let Some(terminal) = w.state.focused_terminal_mut() {
+    let sid = w.state.focused_surface_id(engine);
+    if let Some(terminal) = w.state.focused_terminal_mut(engine) {
         terminal.send_key(&text);
     }
     if let Some(sid) = sid {
-        w.state.engine.record_typing(sid);
+        w.engine.record_typing(sid);
     }
     w.mark_dirty();
 }
@@ -297,7 +297,7 @@ fn advanced_anchor(col: usize, row: usize, cols: usize, advance: usize) -> (usiz
 }
 
 fn reconcile_and_compute_anchor(w: &mut MainWindow) -> Option<(usize, usize)> {
-    let terminal = w.state.focused_terminal()?;
+    let terminal = w.state.focused_terminal(engine)?;
     let cols = terminal.cols();
 
     // 참조 좌표 선택: TUI(cursor 숨김 + 단일 reverse-video 셀)면 fake cursor,

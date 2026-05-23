@@ -14,6 +14,7 @@ use super::{decode_b64, entry_to_json, map_error, optional_scope, require_scope,
 /// 사용자에게 보이는 동작은 변하지 않고, 디스크 정리 + quota 회복만 일어난다.
 pub fn handle_gc(
     _state: &mut AppState,
+    _engine: &mut crate::engine_state::EngineState,
     _caller: &CallerContext,
     id: Value,
     _params: &Value,
@@ -36,6 +37,7 @@ pub fn handle_gc(
 /// 그리고 list 와 동일한 `prefix`/`since`/`until`/`limit`/`offset`.
 pub fn handle_query(
     _state: &mut AppState,
+    _engine: &mut crate::engine_state::EngineState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -88,6 +90,7 @@ pub fn handle_query(
 /// Secret 은 export 하지 않는다. 응답: `{ entries: [...], count: N }`.
 pub fn handle_export(
     _state: &mut AppState,
+    _engine: &mut crate::engine_state::EngineState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -114,6 +117,7 @@ pub fn handle_export(
 /// 응답: `{ applied: N, skipped: M }`.
 pub fn handle_import(
     _state: &mut AppState,
+    _engine: &mut crate::engine_state::EngineState,
     caller: &CallerContext,
     id: Value,
     params: &Value,

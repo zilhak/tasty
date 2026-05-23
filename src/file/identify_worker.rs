@@ -20,6 +20,8 @@ pub struct IdentifyRequestId(pub u64);
 
 impl std::fmt::Display for IdentifyRequestId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let engine = &self.engine_state;
+        let _ = engine;
         write!(f, "{}", self.0)
     }
 }
@@ -46,6 +48,8 @@ impl IdentifyWorker {
     /// 보장되지 않는다 — 콜사이트는 자신이 보관한 마지막 `IdentifyRequestId` 와 비교해
     /// 오래된 결과를 drop 해야 한다.
     pub fn spawn(&self, target: FileTarget, depth: DetectDepth) -> IdentifyRequestId {
+        let engine = &self.engine_state;
+        let _ = engine;
         let id = IdentifyRequestId(self.next_id.fetch_add(1, Ordering::Relaxed));
         let registry = self.registry.clone();
         let proxy = self.proxy.clone();

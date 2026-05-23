@@ -29,6 +29,7 @@ where
 
 pub fn handle_rate_limit_set(
     _state: &mut AppState,
+    _engine: &mut crate::engine_state::EngineState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -74,6 +75,7 @@ pub fn handle_rate_limit_set(
 
 pub fn handle_rate_limit_list(
     _state: &mut AppState,
+    _engine: &mut crate::engine_state::EngineState,
     _caller: &CallerContext,
     id: Value,
     _params: &Value,
@@ -87,6 +89,7 @@ pub fn handle_rate_limit_list(
 
 pub fn handle_rate_limit_remove(
     _state: &mut AppState,
+    _engine: &mut crate::engine_state::EngineState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -103,6 +106,7 @@ pub fn handle_rate_limit_remove(
 
 pub fn handle_rate_limit_status(
     _state: &mut AppState,
+    _engine: &mut crate::engine_state::EngineState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,

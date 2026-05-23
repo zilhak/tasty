@@ -6,7 +6,9 @@ use super::GpuState;
 
 impl GpuState {
     pub(super) fn render_clear_pass(&self, view: &wgpu::TextureView, state: &AppState) {
-        let bg_alpha = state.engine.settings.appearance.background_opacity as f64;
+        let engine = &self.engine_state;
+        let _ = engine;
+        let bg_alpha = engine.settings.appearance.background_opacity as f64;
         let th = crate::theme::theme();
         let bg = th.base.to_float();
 
@@ -50,6 +52,8 @@ impl GpuState {
         link_hover: Option<(u32, &crate::terminal_link::LinkHighlight)>,
         search: Option<&crate::search_state::SearchState>,
     ) {
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
         let theme = crate::theme::theme();
 
         // Each terminal needs its own encoder + submit cycle because
@@ -155,6 +159,8 @@ impl GpuState {
         paint_jobs: &[egui::ClippedPrimitive],
         screen_descriptor: &egui_wgpu::ScreenDescriptor,
     ) {
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
         for (id, image_delta) in &textures_delta.set {
             self.egui_renderer
                 .update_texture(&self.device, &self.queue, *id, image_delta);

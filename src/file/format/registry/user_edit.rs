@@ -25,6 +25,8 @@ impl FileFormatRegistry {
     /// 명시적 user 의도를 표현하므로 항상 `disabled_override = Some(value)` 로 push 한다.
     /// "default 로 되돌리기" 는 `clear_user_detector_override` 또는 `remove_user_detector`.
     pub fn set_user_detector_disabled(&self, id: &DetectorId, disabled: bool) {
+        let engine = &self.engine_state;
+        let _ = engine;
         let mut inner = match self.inner.write() {
             Ok(g) => g,
             Err(_) => return,
@@ -58,6 +60,8 @@ impl FileFormatRegistry {
     /// User-origin contribution 의 `disabled_override` 만 None 으로 비운다. 다른 user 필드
     /// (rule/메타) 는 보존. user 가 명시적 disable 의도를 철회할 때 사용.
     pub fn clear_user_detector_override(&self, id: &DetectorId) {
+        let engine = &self.engine_state;
+        let _ = engine;
         let mut inner = match self.inner.write() {
             Ok(g) => g,
             Err(_) => return,
@@ -88,6 +92,8 @@ impl FileFormatRegistry {
     /// Settings UI 가 user-origin contribution 전체를 제거. host/plugin 은 보존.
     /// 해당 detector 의 다른 출처가 없었다면 (= user-only) detector 전체가 사라진다.
     pub fn remove_user_detector(&self, id: &DetectorId) {
+        let engine = &self.engine_state;
+        let _ = engine;
         let mut inner = match self.inner.write() {
             Ok(g) => g,
             Err(_) => return,
@@ -109,6 +115,8 @@ impl FileFormatRegistry {
         &self,
         decl: DetectorDecl,
     ) -> Result<(), crate::file::format::config::DetectorDeclError> {
+        let engine = &self.engine_state;
+        let _ = engine;
         // user 영역도 `$` 예약 id 는 host 만 정의 가능 → from_plugin = true 와 동일 규칙.
         // 단 user 가 host 의 예약 detector ($directory) 를 patch 하는 시나리오는 있을 수 있어,
         // 이미 등록된 id 면 허용.
@@ -146,6 +154,8 @@ impl FileFormatRegistry {
     /// **Transactional**: 파일 read/parse 단계에서 실패하면 기존 user contribution 을 보존한다
     /// (write lock 잡기 전에 검증). 파일이 없으면 user contribution 만 제거 (= 설정 삭제).
     pub fn reload_user_config(&self, path: &Path) {
+        let engine = &self.engine_state;
+        let _ = engine;
         let (decls, priorities) = match std::fs::read_to_string(path) {
             Ok(text) => {
                 let d = match parse_detector_section(&text) {

@@ -7,42 +7,55 @@
 //! - **CloseSurface**: origin.is_user() 면 snapshot 푸시 (Undo 가능),
 //!   Agent 면 no_snapshot. C1=B / C2 결정.
 //! - **ConvertSurface**: target 분기.
-//!   - `Terminal` → `state.convert_surface_to_terminal(sid)`.
+//!   - `Terminal` → `state.convert_surface_to_terminal(engine, sid)`.
 //!   - `Kind { kind, params }` → 빌트인 wrapper (markdown/image/html) 가 있으면 그쪽,
 //!     없으면 generic `convert_surface_to_kind` 호출.
 
 use super::{ConvertTarget, DispatchedIntent, Intent};
+use crate::engine_state::EngineState;
 use crate::model::SplitDirection;
 use crate::state::AppState;
 
-pub fn handle(state: &mut AppState, intent: &DispatchedIntent) {
+pub fn handle(state: &mut AppState, engine: &mut EngineState, intent: &DispatchedIntent) {
     match &intent.body {
-        Intent::SplitSurface { direction } => split(state, *direction),
-        Intent::CloseSurface { surface_id } => close(state, intent, *surface_id),
-        Intent::ConvertSurface { surface_id, target } => convert(state, *surface_id, target),
+        Intent::SplitSurface { direction } => split(state, engine, *direction),
+        Intent::CloseSurface { surface_id } => close(state, engine, intent, *surface_id),
+        Intent::ConvertSurface { surface_id, target } => {
+            convert(state, engine, *surface_id, target)
+        }
         _ => {}
     }
 }
 
-fn split(state: &mut AppState, direction: SplitDirection) {
-    if let Err(e) = state.split_surface(direction) {
+fn split(state: &mut AppState, engine: &mut EngineState, direction: SplitDirection) {
+    if let Err(e) = state.split_surface(engine, direction) {
         tracing::warn!("split_surface failed: {e}");
     }
 }
 
-fn close(state: &mut AppState, intent: &DispatchedIntent, surface_id: u32) {
+fn close(
+    state: &mut AppState,
+    engine: &mut EngineState,
+    intent: &DispatchedIntent,
+    surface_id: u32,
+) {
     // C1=B / C2: 사용자 동작만 closed-tab restore stack (snapshot) 에 push.
     if intent.origin.is_user() {
-        state.close_surface_by_id(surface_id);
+        state.close_surface_by_id(engine, surface_id);
     } else {
-        state.close_surface_by_id_no_snapshot(surface_id);
+        state.close_surface_by_id_no_snapshot(engine, surface_id);
     }
 }
 
-fn convert(state: &mut AppState, surface_id: u32, target: &ConvertTarget) {
+fn convert(
+    state: &mut AppState,
+    engine: &mut EngineState,
+    surface_id: u32,
+    target: &ConvertTarget,
+) {
     match target {
         ConvertTarget::Terminal => {
-            state.convert_surface_to_terminal(surface_id);
+            state.convert_surface_to_terminal(engine, surface_id);
         }
         ConvertTarget::Kind { kind, params } => {
             // 빌트인 wrapper: 파라미터 모양이 정해진 변환은 전용 메서드로.
@@ -58,13 +71,13 @@ fn convert(state: &mut AppState, surface_id: u32, target: &ConvertTarget) {
                         );
                         return;
                     };
-                    state.convert_surface_to_markdown(surface_id, file_path);
+                    state.convert_surface_to_markdown(engine, surface_id, file_path);
                 }
                 "image" => {
-                    state.convert_surface_to_image(surface_id);
+                    state.convert_surface_to_image(engine, surface_id);
                 }
                 _ => {
-                    state.convert_surface_to_kind(surface_id, kind, params);
+                    state.convert_surface_to_kind(engine, surface_id, kind, params);
                 }
             }
         }

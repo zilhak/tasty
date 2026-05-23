@@ -7,6 +7,7 @@ use super::require_surface_id;
 
 pub(crate) fn handle_surface_close(
     state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -23,8 +24,8 @@ pub(crate) fn handle_surface_close(
             );
         }
     }
-    let kind = state.surface_kind(surface_id);
-    if state.close_surface_by_id_no_snapshot(surface_id) {
+    let kind = state.surface_kind(engine, engine, engine, surface_id);
+    if state.close_surface_by_id_no_snapshot(engine, engine, engine, surface_id) {
         if let Some(k) = kind {
             state.enqueue_surface_closed(surface_id, k, false);
         }
@@ -40,6 +41,7 @@ pub(crate) fn handle_surface_close(
 /// Close the calling surface itself. Only way for a surface to close itself.
 pub(crate) fn handle_surface_close_self(
     state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -47,8 +49,8 @@ pub(crate) fn handle_surface_close_self(
         Ok(sid) => sid,
         Err(e) => return e,
     };
-    let kind = state.surface_kind(surface_id);
-    if state.close_surface_by_id_no_snapshot(surface_id) {
+    let kind = state.surface_kind(engine, engine, engine, surface_id);
+    if state.close_surface_by_id_no_snapshot(engine, engine, engine, surface_id) {
         if let Some(k) = kind {
             state.enqueue_surface_closed(surface_id, k, false);
         }

@@ -38,7 +38,7 @@ impl App {
 
         let appearance = self
             .focused_window()
-            .map(|w| w.state.engine.settings.appearance.clone())
+            .map(|w| w.engine_state.settings.appearance.clone())
             .unwrap_or_else(|| crate::settings::Settings::load().appearance);
         let gpu = match pollster::block_on(crate::gpu::GpuState::new(
             window.clone(),

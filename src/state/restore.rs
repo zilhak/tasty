@@ -1,3 +1,4 @@
+use crate::engine_state::EngineState;
 use crate::model::closed_item::*;
 use crate::model::{Pane, PaneNode, Surface, SurfaceLayout, Tab, TerminalSurface, Workspace};
 
@@ -31,59 +32,66 @@ impl RebuildResult {
 impl AppState {
     /// Restore the most recently closed item. Returns true if something was restored.
     /// Focus moves to the restored item.
-    pub fn restore_closed_item(&mut self) -> bool {
-        let item = match self.engine.closed_items.pop() {
+    pub fn restore_closed_item(&mut self, engine: &mut EngineState) -> bool {
+        let item = match engine.closed_items.pop() {
             Some(item) => item,
             None => return false,
         };
 
         let result = match item {
-            ClosedItem::Surface { surface, tab_name } => self.restore_surface(surface, tab_name),
-            ClosedItem::Tab(tab) => self.restore_tab(tab),
+            ClosedItem::Surface { surface, tab_name } => {
+                self.restore_surface(engine, surface, tab_name)
+            }
+            ClosedItem::Tab(tab) => self.restore_tab(engine, tab),
             ClosedItem::Workspace {
                 name,
                 subtitle,
                 pane_layout,
                 focused_pane,
                 ..
-            } => self.restore_workspace(name, subtitle, pane_layout, focused_pane),
+            } => self.restore_workspace(engine, name, subtitle, pane_layout, focused_pane),
         };
         if result {
-            self.engine.mark_layout_dirty();
+            engine.mark_layout_dirty();
         }
         result
     }
 
-    fn restore_surface(&mut self, closed: ClosedSurface, tab_name: String) -> bool {
-        let node = match self.rebuild_surface_node(closed) {
+    fn restore_surface(
+        &mut self,
+        engine: &mut EngineState,
+        closed: ClosedSurface,
+        tab_name: String,
+    ) -> bool {
+        let node = match self.rebuild_surface_node(engine, closed) {
             Some(n) => n,
             None => return false,
         };
-        let tab_id = self.engine.next_ids.next_tab();
+        let tab_id = engine.next_ids.next_tab();
         let surface: Box<dyn Surface> = Box::new(node);
         let tab = Tab::new_with_surface(tab_id, tab_name, surface);
 
         // Add to focused pane
-        self.ensure_workspace_exists();
-        if let Some(pane) = self.focused_pane_mut() {
+        self.ensure_workspace_exists(engine);
+        if let Some(pane) = self.focused_pane_mut(engine) {
             pane.tabs.push(tab);
             pane.active_tab = pane.tabs.len() - 1;
         }
         true
     }
 
-    fn restore_tab(&mut self, closed_tab: ClosedTab) -> bool {
-        let result = match self.rebuild_surface(closed_tab.panel) {
+    fn restore_tab(&mut self, engine: &mut EngineState, closed_tab: ClosedTab) -> bool {
+        let result = match self.rebuild_surface(engine, closed_tab.panel) {
             Some(r) => r,
             None => return false,
         };
 
-        let tab_id = self.engine.next_ids.next_tab();
+        let tab_id = engine.next_ids.next_tab();
         let name = closed_tab.explicit_name.unwrap_or(closed_tab.name);
         let tab = result.into_tab(tab_id, name);
 
-        self.ensure_workspace_exists();
-        if let Some(pane) = self.focused_pane_mut() {
+        self.ensure_workspace_exists(engine);
+        if let Some(pane) = self.focused_pane_mut(engine) {
             pane.tabs.push(tab);
             pane.active_tab = pane.tabs.len() - 1;
         }
@@ -92,13 +100,14 @@ impl AppState {
 
     fn restore_workspace(
         &mut self,
+        engine: &mut EngineState,
         name: String,
         subtitle: String,
         closed_layout: ClosedPaneNode,
         focused_pane: u32,
     ) -> bool {
-        let ws_id = self.engine.next_ids.next_workspace();
-        let pane_node = match self.rebuild_pane_node(closed_layout) {
+        let ws_id = engine.next_ids.next_workspace();
+        let pane_node = match self.rebuild_pane_node(engine, closed_layout) {
             Some(n) => n,
             None => return false,
         };
@@ -112,30 +121,34 @@ impl AppState {
         };
 
         let ws = Workspace::from_restored(ws_id, name, subtitle, pane_node, actual_focused);
-        self.engine.workspaces.push(ws);
-        self.active_workspace = self.engine.workspaces.len() - 1;
+        engine.workspaces.push(ws);
+        self.active_workspace = engine.workspaces.len() - 1;
         true
     }
 
     // ── Rebuild helpers ──
 
-    fn rebuild_surface(&mut self, closed: ClosedPanel) -> Option<RebuildResult> {
+    fn rebuild_surface(
+        &mut self,
+        engine: &mut EngineState,
+        closed: ClosedPanel,
+    ) -> Option<RebuildResult> {
         match closed {
             ClosedPanel::Terminal(surface) => {
-                let node = self.rebuild_surface_node(surface)?;
+                let node = self.rebuild_surface_node(engine, surface)?;
                 Some(RebuildResult::Single(Box::new(node)))
             }
             ClosedPanel::Tab {
                 layout,
                 focused_surface: _,
             } => {
-                let rebuilt_layout = self.rebuild_surface_layout(layout)?;
+                let rebuilt_layout = self.rebuild_surface_layout(engine, layout)?;
                 let first_id = rebuilt_layout.first_surface_id().unwrap_or(0);
                 Some(RebuildResult::Layout(rebuilt_layout, first_id))
             }
             ClosedPanel::Generic { kind, snapshot } => {
-                let id = self.engine.next_ids.next_surface();
-                let def = self.engine.surface_registry.get(&kind)?;
+                let id = engine.next_ids.next_surface();
+                let def = engine.surface_registry.get(&kind)?;
                 match (def.restore)(id, &snapshot) {
                     Ok(surface) => Some(RebuildResult::Single(surface)),
                     Err(e) => {
@@ -147,18 +160,22 @@ impl AppState {
         }
     }
 
-    fn rebuild_surface_node(&mut self, closed: ClosedSurface) -> Option<TerminalSurface> {
-        let surface_id = self.engine.next_ids.next_surface();
-        let cols = self.engine.default_cols;
-        let rows = self.engine.default_rows;
-        let shell = if self.engine.settings.general.shell.is_empty() {
+    fn rebuild_surface_node(
+        &mut self,
+        engine: &mut EngineState,
+        closed: ClosedSurface,
+    ) -> Option<TerminalSurface> {
+        let surface_id = engine.next_ids.next_surface();
+        let cols = engine.default_cols;
+        let rows = engine.default_rows;
+        let shell = if engine.settings.general.shell.is_empty() {
             None
         } else {
-            Some(self.engine.settings.general.shell.clone())
+            Some(engine.settings.general.shell.clone())
         };
-        let shell_args_owned = self.engine.settings.general.effective_shell_args();
+        let shell_args_owned = engine.settings.general.effective_shell_args();
         let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
-        let waker = self.engine.make_waker(surface_id);
+        let waker = engine.make_waker(surface_id);
 
         // PTY 의 첫 입력으로 cd + restore_command 를 합쳐 한 번에 주입한다. shell 이
         // stdin 을 처음 read 하는 순간 이 바이트가 들어가므로, GUI redraw / BusyPoll
@@ -198,7 +215,7 @@ impl AppState {
             terminal.prefill_visible_from_scrollback(prefill);
         }
 
-        self.engine.send_fast_init(surface_id);
+        engine.send_fast_init(surface_id);
 
         Some(TerminalSurface {
             id: surface_id,
@@ -208,10 +225,14 @@ impl AppState {
         })
     }
 
-    fn rebuild_surface_layout(&mut self, closed: ClosedSurfaceLayout) -> Option<SurfaceLayout> {
+    fn rebuild_surface_layout(
+        &mut self,
+        engine: &mut EngineState,
+        closed: ClosedSurfaceLayout,
+    ) -> Option<SurfaceLayout> {
         match closed {
             ClosedSurfaceLayout::Single(surface) => {
-                let node = self.rebuild_surface_node(surface)?;
+                let node = self.rebuild_surface_node(engine, surface)?;
                 Some(SurfaceLayout::Leaf(Box::new(node)))
             }
             ClosedSurfaceLayout::Split {
@@ -220,8 +241,8 @@ impl AppState {
                 first,
                 second,
             } => {
-                let first = self.rebuild_surface_layout(*first)?;
-                let second = self.rebuild_surface_layout(*second)?;
+                let first = self.rebuild_surface_layout(engine, *first)?;
+                let second = self.rebuild_surface_layout(engine, *second)?;
                 Some(SurfaceLayout::Split {
                     direction,
                     ratio,
@@ -233,10 +254,14 @@ impl AppState {
         }
     }
 
-    fn rebuild_pane_node(&mut self, closed: ClosedPaneNode) -> Option<PaneNode> {
+    fn rebuild_pane_node(
+        &mut self,
+        engine: &mut EngineState,
+        closed: ClosedPaneNode,
+    ) -> Option<PaneNode> {
         match closed {
             ClosedPaneNode::Leaf(closed_pane) => {
-                let pane = self.rebuild_pane(closed_pane)?;
+                let pane = self.rebuild_pane(engine, closed_pane)?;
                 Some(PaneNode::Leaf(pane))
             }
             ClosedPaneNode::Split {
@@ -245,8 +270,8 @@ impl AppState {
                 first,
                 second,
             } => {
-                let first = self.rebuild_pane_node(*first)?;
-                let second = self.rebuild_pane_node(*second)?;
+                let first = self.rebuild_pane_node(engine, *first)?;
+                let second = self.rebuild_pane_node(engine, *second)?;
                 Some(PaneNode::Split {
                     direction,
                     ratio,
@@ -257,12 +282,12 @@ impl AppState {
         }
     }
 
-    fn rebuild_pane(&mut self, closed: ClosedPane) -> Option<Pane> {
-        let pane_id = self.engine.next_ids.next_pane();
+    fn rebuild_pane(&mut self, engine: &mut EngineState, closed: ClosedPane) -> Option<Pane> {
+        let pane_id = engine.next_ids.next_pane();
         let mut tabs = Vec::new();
         for closed_tab in closed.tabs {
-            let result = self.rebuild_surface(closed_tab.panel)?;
-            let tab_id = self.engine.next_ids.next_tab();
+            let result = self.rebuild_surface(engine, closed_tab.panel)?;
+            let tab_id = engine.next_ids.next_tab();
             let name = closed_tab.explicit_name.unwrap_or(closed_tab.name);
             tabs.push(result.into_tab(tab_id, name));
         }

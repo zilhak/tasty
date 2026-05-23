@@ -17,6 +17,7 @@ pub struct CollapsedSidebarResult {
 pub fn draw_collapsed_sidebar(
     ctx: &egui::Context,
     state: &AppState,
+    engine: &crate::engine_state::EngineState,
     sidebar_width: f32,
 ) -> CollapsedSidebarResult {
     let th = theme::theme();
@@ -153,15 +154,14 @@ pub fn draw_collapsed_sidebar(
                 ui.add_space(4.0);
 
                 let active_ws = state.active_workspace;
-                let ws_count = state.engine.workspaces.len();
+                let ws_count = engine.workspaces.len();
                 for i in 0..ws_count {
                     let is_active = i == active_ws;
-                    let ws_surface_ids = state.engine.workspaces[i].all_surface_ids();
-                    let ws_has_highlight = state
-                        .engine
+                    let ws_surface_ids = engine.workspaces[i].all_surface_ids();
+                    let ws_has_highlight = engine
                         .notifications
                         .has_highlighted_surface(&ws_surface_ids);
-                    let ws_busy_count = state.engine.busy_count(&ws_surface_ids);
+                    let ws_busy_count = engine.busy_count(&ws_surface_ids);
                     let label = format!("{}", i + 1);
                     let bg = if is_active { th.surface0 } else { th.mantle };
                     let text_color = if is_active {

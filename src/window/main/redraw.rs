@@ -11,6 +11,7 @@ impl MainWindow {
         _event_loop: &ActiveEventLoop,
         plugin_manager: Option<&PluginManager>,
     ) {
+        let engine = &mut self.engine_state;
         // Check if settings button was clicked (ui.rs sets state.settings_open = true)
         if self.state.settings_open {
             self.state.settings_open = false;
@@ -25,31 +26,29 @@ impl MainWindow {
         // When targeted_pty_polling is off, process all terminals every frame.
         // When on, individual terminals are processed via TerminalOutput(Some(id)) events,
         // but we still call process_all() as a safety net (it's a no-op if channels are empty).
-        if self.state.process_all() {
+        if self.state.process_all(engine) {
             self.recalc_ime_preedit_anchor();
             self.base.dirty = true;
         }
 
         // Collect terminal events
-        let events = self.state.engine.collect_events();
+        let events = self.engine_state.collect_events();
         for event in &events {
             let surface_id = event.surface_id;
             match &event.kind {
                 crate::terminal::TerminalEventKind::Notification { title, body } => {
-                    if self.state.engine.settings.notification.enabled
-                        && self.state.engine.settings.notification.system_notification
+                    if self.engine_state.settings.notification.enabled
+                        && self.engine_state.settings.notification.system_notification
                         && !self.base.focused
-                        && self
-                            .state
-                            .engine
+                        && self.engine_state
                             .notifications
                             .should_send_system_notification()
                     {
                         crate::notification::send_system_notification(title, body);
                     }
-                    if self.state.engine.settings.notification.enabled {
-                        let ws_id = self.state.active_workspace().id;
-                        let created_id = self.state.engine.notifications.add(
+                    if self.engine_state.settings.notification.enabled {
+                        let ws_id = self.state.active_workspace(engine).id;
+                        let created_id = self.engine_state.notifications.add(
                             ws_id,
                             surface_id,
                             title.clone(),
@@ -67,9 +66,7 @@ impl MainWindow {
                         }
                     }
                     let hook_events = vec![tasty_hooks::HookEvent::Notification];
-                    let fired = self
-                        .state
-                        .engine
+                    let fired = self.engine_state
                         .hook_manager
                         .check_and_fire(surface_id, &hook_events);
                     for hook_id in fired {
@@ -83,9 +80,9 @@ impl MainWindow {
                     self.base.dirty = true;
                 }
                 crate::terminal::TerminalEventKind::BellRing => {
-                    if self.state.engine.settings.notification.enabled {
-                        let ws_id = self.state.active_workspace().id;
-                        let created_id = self.state.engine.notifications.add(
+                    if self.engine_state.settings.notification.enabled {
+                        let ws_id = self.state.active_workspace(engine).id;
+                        let created_id = self.engine_state.notifications.add(
                             ws_id,
                             surface_id,
                             "Bell".to_string(),
@@ -102,21 +99,17 @@ impl MainWindow {
                             );
                         }
                     }
-                    if self.state.engine.settings.notification.enabled
-                        && self.state.engine.settings.notification.system_notification
+                    if self.engine_state.settings.notification.enabled
+                        && self.engine_state.settings.notification.system_notification
                         && !self.base.focused
-                        && self
-                            .state
-                            .engine
+                        && self.engine_state
                             .notifications
                             .should_send_system_notification()
                     {
                         crate::notification::send_system_notification("Tasty", "Bell");
                     }
                     let hook_events = vec![tasty_hooks::HookEvent::Bell];
-                    let fired = self
-                        .state
-                        .engine
+                    let fired = self.engine_state
                         .hook_manager
                         .check_and_fire(surface_id, &hook_events);
                     for hook_id in fired {
@@ -139,36 +132,32 @@ impl MainWindow {
                     self.base.dirty = true;
                 }
                 crate::terminal::TerminalEventKind::CwdChanged(_) => {
-                    self.state.engine.refresh_tab_display_name(surface_id);
+                    self.engine_state.refresh_tab_display_name(surface_id);
                     // 사용자가 `cd` 로 디렉토리를 옮기면 다음 layout 저장 (debounce
                     // 또는 종료) 가 새 cwd 를 디스크에 반영하도록 dirty 마킹. 이게
                     // 빠지면 split 직후의 cwd 가 영원히 stale 로 남는다.
-                    self.state.engine.mark_layout_dirty();
+                    self.engine_state.mark_layout_dirty();
                     self.base.dirty = true;
                 }
                 crate::terminal::TerminalEventKind::ClipboardSet(data) => {
                     if let Some(cb) = &mut self.clipboard {
                         cb.set_text(data);
                     }
-                    self.state.engine.record_internal_copy(data);
+                    self.engine_state.record_internal_copy(data);
                 }
                 crate::terminal::TerminalEventKind::PromptBoundary { phase, payload } => {
-                    self.state
-                        .engine
+                    self.engine_state
                         .command_index
                         .on_boundary(surface_id, *phase, payload);
                 }
                 crate::terminal::TerminalEventKind::OutputAppended { text } => {
-                    self.state
-                        .engine
+                    self.engine_state
                         .observer_router
                         .dispatch_text(surface_id, text);
                 }
                 crate::terminal::TerminalEventKind::ProcessExited => {
                     let hook_events = vec![tasty_hooks::HookEvent::ProcessExit];
-                    let fired = self
-                        .state
-                        .engine
+                    let fired = self.engine_state
                         .hook_manager
                         .check_and_fire(surface_id, &hook_events);
                     for hook_id in fired {
@@ -185,8 +174,8 @@ impl MainWindow {
                         .enqueue_host_event(crate::state::PendingHostEvent::ProcessExited {
                             surface_id,
                         });
-                    let kind = self.state.surface_kind(surface_id);
-                    if self.state.close_surface_by_id_no_snapshot(surface_id) {
+                    let kind = self.state.surface_kind(engine, engine, surface_id);
+                    if self.state.close_surface_by_id_no_snapshot(engine, engine, surface_id) {
                         // intent-exempt: PTY/process exit cleanup
 
                         if let Some(k) = kind {
@@ -207,7 +196,7 @@ impl MainWindow {
             self.base.gpu.resize(new_size);
             let terminal_rect = self.compute_terminal_rect();
             let (cols, rows) = self.base.gpu.grid_size_for_rect(&terminal_rect);
-            self.state.engine.update_grid_size(cols, rows);
+            self.engine_state.update_grid_size(cols, rows);
             // Schedule another redraw to verify scale factor has stabilized.
             self.base.dirty = true;
         }
@@ -218,7 +207,7 @@ impl MainWindow {
         // is cheap: terminal.resize() early-returns when cols/rows are unchanged.
         {
             let terminal_rect = self.compute_terminal_rect();
-            self.state.resize_all(
+            self.state.resize_all(engine, engine, 
                 terminal_rect,
                 self.base.gpu.cell_width(),
                 self.base.gpu.cell_height(),
@@ -299,6 +288,7 @@ impl MainWindow {
     /// Creates webviews for new Html panels, destroys removed ones,
     /// updates bounds and visibility based on active workspace/tab.
     fn sync_webviews(&mut self) {
+        let engine = &mut self.engine_state;
         let terminal_rect = self.compute_terminal_rect();
         let scale_factor = self.base.gpu.scale_factor() as f64;
         let tab_bar_h = self.state.tab_bar_height.value() as f64;
@@ -309,7 +299,7 @@ impl MainWindow {
             std::collections::HashMap::new();
         let mut all_html_ids: Vec<u32> = Vec::new();
 
-        for (ws_idx, ws) in self.state.engine.workspaces.iter().enumerate() {
+        for (ws_idx, ws) in self.engine_state.workspaces.iter().enumerate() {
             let pane_rects = ws.pane_layout().compute_rects(terminal_rect);
             for (pane_id, pane_rect) in &pane_rects {
                 if let Some(pane) = ws.pane_layout().find_pane(*pane_id) {
@@ -409,7 +399,8 @@ impl MainWindow {
 
     /// Find the URL for an Html panel by surface ID.
     fn find_webview_url(&self, surface_id: u32) -> Option<String> {
-        for ws in &self.state.engine.workspaces {
+        let engine = &self.engine_state;
+        for ws in &self.engine_state.workspaces {
             for &pid in &ws.pane_layout().all_pane_ids() {
                 if let Some(pane) = ws.pane_layout().find_pane(pid) {
                     for tab in &pane.tabs {
@@ -429,6 +420,7 @@ impl MainWindow {
     /// Process pending native context menu request.
     /// Called after egui frame so we have access to the window handle.
     fn process_pending_native_menu(&mut self) {
+        let engine = &mut self.engine_state;
         use crate::platform::native_menu::{MenuItem, show_context_menu};
         use crate::state::PendingNativeMenu;
 
@@ -509,8 +501,8 @@ impl MainWindow {
                             .and_then(|p| p.tabs.get(tab_index))
                             .and_then(|tab| tab.all_surface_ids().first().copied());
                         if let Some(sid) = target_sid {
-                            let kind = self.state.surface_kind(sid);
-                            if self.state.close_surface_by_id(sid) {
+                            let kind = self.state.surface_kind(engine, engine, sid);
+                            if self.state.close_surface_by_id(engine, engine, sid) {
                                 // intent-exempt: request_close cascade 결과 의존
 
                                 if let Some(k) = kind {
@@ -519,7 +511,7 @@ impl MainWindow {
                                 // 마지막 workspace 까지 닫혔다면 keyboard close 와 동일하게
                                 // window 종료를 요청한다 (그렇지 않으면 다음 redraw 가
                                 // active_workspace() 호출에서 패닉).
-                                if self.state.engine.workspaces.is_empty() {
+                                if self.engine_state.workspaces.is_empty() {
                                     self.request_close();
                                 }
                             }
@@ -586,15 +578,15 @@ impl MainWindow {
                     show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
                 match result {
                     Some(1) => {
-                        self.state.active_workspace_mut().focused_pane = pane_id;
-                        if let Err(e) = self.state.add_tab() {
+                        self.state.active_workspace_mut(engine).focused_pane = pane_id;
+                        if let Err(e) = self.state.add_tab(engine) {
                             tracing::warn!("add_tab from context menu failed: {e}");
                         }
                     }
                     Some(2) => {
                         // Create empty tab first, then show markdown popup targeting it
-                        self.state.active_workspace_mut().focused_pane = pane_id;
-                        if let Some((_tab_id, surface_id)) = self.state.add_empty_tab() {
+                        self.state.active_workspace_mut(engine).focused_pane = pane_id;
+                        if let Some((_tab_id, surface_id)) = self.state.add_empty_tab(engine) {
                             // intent-exempt: surface_id 결과 의존 (후속 convert)
 
                             self.state.dialogs.markdown_convert_surface_id = Some(surface_id);
@@ -612,8 +604,8 @@ impl MainWindow {
                         }
                     }
                     Some(5) => {
-                        self.state.active_workspace_mut().focused_pane = pane_id;
-                        if let Some((_tab_id, surface_id)) = self.state.add_empty_tab() {
+                        self.state.active_workspace_mut(engine).focused_pane = pane_id;
+                        if let Some((_tab_id, surface_id)) = self.state.add_empty_tab(engine) {
                             // intent-exempt: surface_id 결과 의존 (후속 convert)
 
                             self.state.dispatch_intent(
@@ -643,7 +635,7 @@ impl MainWindow {
                 self.mark_dirty();
             }
             PendingNativeMenu::Workspace { ws_idx, x, y } => {
-                let ws_count = self.state.engine.workspaces.len();
+                let ws_count = self.engine_state.workspaces.len();
                 let can_move_up = ws_idx > 0;
                 let can_move_down = ws_idx + 1 < ws_count;
 
@@ -669,10 +661,10 @@ impl MainWindow {
                 ];
                 let result =
                     show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
-                if ws_idx < self.state.engine.workspaces.len() {
+                if ws_idx < self.engine_state.workspaces.len() {
                     match result {
                         Some(1) => {
-                            let name = self.state.engine.workspaces[ws_idx].name.clone();
+                            let name = self.engine_state.workspaces[ws_idx].name.clone();
                             let target = crate::state::RenameTarget::WorkspaceName { ws_idx };
                             let scope = target.popup_scope();
                             self.state.dialogs.rename = Some((target, name));
@@ -685,7 +677,7 @@ impl MainWindow {
                             );
                         }
                         Some(2) => {
-                            let subtitle = self.state.engine.workspaces[ws_idx].subtitle.clone();
+                            let subtitle = self.engine_state.workspaces[ws_idx].subtitle.clone();
                             let target = crate::state::RenameTarget::WorkspaceSubtitle { ws_idx };
                             let scope = target.popup_scope();
                             self.state.dialogs.rename = Some((target, subtitle));
@@ -700,13 +692,13 @@ impl MainWindow {
                         Some(3) => {
                             // Move Up
                             if ws_idx > 0 {
-                                self.state.move_workspace(ws_idx, ws_idx - 1);
+                                self.state.move_workspace(engine, ws_idx, ws_idx - 1);
                             }
                         }
                         Some(4) => {
                             // Move Down
-                            if ws_idx + 1 < self.state.engine.workspaces.len() {
-                                self.state.move_workspace(ws_idx, ws_idx + 1);
+                            if ws_idx + 1 < self.engine_state.workspaces.len() {
+                                self.state.move_workspace(engine, ws_idx, ws_idx + 1);
                             }
                         }
                         Some(5) => {

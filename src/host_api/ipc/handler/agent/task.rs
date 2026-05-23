@@ -15,6 +15,7 @@ use super::{
 
 pub fn handle_task_create(
     state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -52,7 +53,7 @@ pub fn handle_task_create(
     let metadata = params.get("metadata").cloned().unwrap_or(Value::Null);
 
     let ts = now_ms();
-    run_store(state, id, move |store| {
+    run_store(state, engine, id, move |store| {
         store.create(
             workspace_id,
             name,
@@ -71,6 +72,7 @@ pub fn handle_task_create(
 
 pub fn handle_task_list(
     state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -84,7 +86,7 @@ pub fn handle_task_list(
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
 
-    let seq = state.engine.agent_seq.clone();
+    let seq = engine.agent_seq.clone();
     let result: Option<Result<Vec<Task>, AgentError>> = with_store(|mem| {
         let store = TaskStore::new(mem, tasty_memory::HOST_OWNER, seq.as_ref());
         store.list(workspace_id)
@@ -113,6 +115,7 @@ pub fn handle_task_list(
 
 pub fn handle_task_get(
     state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -125,7 +128,7 @@ pub fn handle_task_get(
         Ok(t) => t,
         Err(e) => return e,
     };
-    let seq = state.engine.agent_seq.clone();
+    let seq = engine.agent_seq.clone();
     let result = with_store(|mem| {
         let store = TaskStore::new(mem, tasty_memory::HOST_OWNER, seq.as_ref());
         store.get(workspace_id, &task_id)
@@ -146,6 +149,7 @@ pub fn handle_task_get(
 
 pub fn handle_task_cancel(
     state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -159,7 +163,7 @@ pub fn handle_task_cancel(
         Err(e) => return e,
     };
     let ts = now_ms();
-    run_store(state, id, move |store| {
+    run_store(state, engine, id, move |store| {
         let (task, cascaded) = store.cancel(workspace_id, &task_id, ts)?;
         Ok::<_, AgentError>(json!({
             "task": task,
@@ -174,6 +178,7 @@ pub fn handle_task_cancel(
 
 pub fn handle_task_retry(
     state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -191,7 +196,7 @@ pub fn handle_task_retry(
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
     let ts = now_ms();
-    run_store(state, id, move |store| {
+    run_store(state, engine, id, move |store| {
         store.retry(workspace_id, &task_id, reset_downstream, ts)
     })
 }
@@ -205,6 +210,7 @@ pub fn handle_task_retry(
 // scheduler 도입 시 별도 구현.
 pub fn handle_task_await(
     state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -218,6 +224,7 @@ pub fn handle_task_await(
 
 pub fn handle_task_graph(
     state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -232,7 +239,7 @@ pub fn handle_task_graph(
         .unwrap_or("json")
         .to_string();
 
-    let seq = state.engine.agent_seq.clone();
+    let seq = engine.agent_seq.clone();
     let result = with_store(|mem| {
         let store = TaskStore::new(mem, tasty_memory::HOST_OWNER, seq.as_ref());
         store.list(workspace_id)
@@ -317,6 +324,7 @@ pub fn handle_task_graph(
 
 pub fn handle_task_reduce(
     state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -349,7 +357,7 @@ pub fn handle_task_reduce(
     };
 
     // 1단계: task 결과 수집 (memory access 안에서).
-    let seq = state.engine.agent_seq.clone();
+    let seq = engine.agent_seq.clone();
     let collected: Option<Result<Vec<ReducerInput>, AgentError>> = with_store(|mem| {
         let store = TaskStore::new(mem, tasty_memory::HOST_OWNER, seq.as_ref());
         let mut out: Vec<ReducerInput> = Vec::with_capacity(inputs.len());

@@ -52,6 +52,8 @@ impl PresetWindow {
 
     /// 우클릭/IPC 진입 시 특정 preset 선택 상태로 열기 위한 helper.
     pub fn select(&mut self, kind: PresetKind, name: String) {
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
         self.active_kind = kind;
         match kind {
             PresetKind::Workspace => self.selected_workspace = Some(name),
@@ -64,23 +66,35 @@ impl PresetWindow {
 
 impl Window for PresetWindow {
     fn base(&self) -> &WindowBase {
+        let engine = &self.engine_state;
+        let _ = engine;
         &self.base
     }
     fn base_mut(&mut self) -> &mut WindowBase {
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
         &mut self.base
     }
     fn modality(&self) -> Modality {
+        let engine = &self.engine_state;
+        let _ = engine;
         EDITOR_MODALITY
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
+        let engine = &self.engine_state;
+        let _ = engine;
         self
     }
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
         self
     }
 
     fn handle_event(&mut self, event: WindowEvent, _ctx: &mut WindowCtx<'_>) -> WindowAction {
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
         let (_, repaint) = self.base.gpu.handle_egui_event(&self.base.winit, &event);
         if repaint {
             self.mark_dirty();
@@ -109,6 +123,8 @@ impl Window for PresetWindow {
     }
 
     fn render(&mut self) {
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
         if !self.base.dirty {
             return;
         }

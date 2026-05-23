@@ -1,7 +1,7 @@
 //! Workspace 도메인 Intent 핸들러.
 //!
 //! 정책:
-//! - **NewWorkspace**: `kind` None or "terminal" + params empty → `state.add_workspace()`
+//! - **NewWorkspace**: `kind` None or "terminal" + params empty → `state.add_workspace(engine)`
 //!   (사용자 단축키 경로: active 전환 포함). 그 외 kind/params → `add_workspace_background`
 //!   (background 경로). IPC `workspace.create` 는 sync return contract 때문에 직접 호출.
 //! - **CloseWorkspace**: 미마이그레이션. 사용자 단축키의 cascade 가 `request_close` 결과
@@ -22,10 +22,10 @@ fn new_workspace(state: &mut AppState, kind: Option<&str>, params: &serde_json::
     let kind = kind.unwrap_or("terminal");
     if kind == "terminal" && params.is_null() {
         // 사용자 경로 — active 전환 포함.
-        if let Err(e) = state.add_workspace() {
+        if let Err(e) = state.add_workspace(engine) {
             tracing::warn!("NewWorkspace terminal failed: {e}");
         }
-    } else if let Err(e) = state.add_workspace_background(None, kind, params) {
+    } else if let Err(e) = state.add_workspace_background(engine, None, kind, params) {
         tracing::warn!("NewWorkspace kind={kind} failed: {e}");
     }
 }

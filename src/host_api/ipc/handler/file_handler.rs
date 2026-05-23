@@ -13,10 +13,10 @@ use crate::file::format::{DetectDepth, FileTarget};
 use crate::ipc::protocol::JsonRpcResponse;
 use crate::state::AppState;
 
-pub fn handle_reload(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {
+pub fn handle_reload(state: &AppState, engine: &crate::engine_state::EngineState, id: serde_json::Value) -> JsonRpcResponse {
     let path = user_config_path();
-    state.engine.file_format.reload_user_config(&path);
-    state.engine.file_handler.reload_user_config(&path);
+    engine.file_format.reload_user_config(&path);
+    engine.file_handler.reload_user_config(&path);
     let exists = path.exists();
     JsonRpcResponse::success(
         id,
@@ -55,6 +55,7 @@ fn default_depth() -> String {
 ///   handler 실행은 `AppEvent::IdentifyDone` 경로로 진행.
 pub fn handle_dispatch(
     state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
     id: serde_json::Value,
     params: serde_json::Value,
 ) -> JsonRpcResponse {

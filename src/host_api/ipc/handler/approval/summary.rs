@@ -4,6 +4,7 @@ use super::*;
 
 pub fn handle_summary_set(
     _state: &mut AppState,
+    _engine: &mut crate::engine_state::EngineState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -32,6 +33,7 @@ pub fn handle_summary_set(
 /// `approval.summary.get` — workspace 의 요약을 반환. 없으면 `content: null`.
 pub fn handle_summary_get(
     _state: &mut AppState,
+    _engine: &mut crate::engine_state::EngineState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,

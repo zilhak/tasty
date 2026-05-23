@@ -23,8 +23,7 @@ pub fn approval_popup_title(state: &AppState) -> String {
     let Some(id) = state.dialogs.pending_approval_ids.front() else {
         return t("approval.popup.title").to_string();
     };
-    state
-        .engine
+    engine
         .approval_store
         .get(id)
         .map(|r| r.request.title)
@@ -36,7 +35,7 @@ pub fn approval_popup_sizer(state: &AppState) -> egui::Vec2 {
     let Some(id) = state.dialogs.pending_approval_ids.front() else {
         return egui::vec2(DEFAULT_WIDTH, MIN_HEIGHT);
     };
-    let record = state.engine.approval_store.get(id);
+    let record = engine.approval_store.get(id);
     let body_len = record
         .as_ref()
         .and_then(|r| r.request.body.as_deref())
@@ -63,7 +62,7 @@ pub fn draw_approval_popup(ui: &mut egui::Ui, state: &mut AppState) -> PopupActi
         return PopupAction::Close;
     };
 
-    let Some(record) = state.engine.approval_store.get(&current_id) else {
+    let Some(record) = engine.approval_store.get(&current_id) else {
         // record 가 사라졌으면 큐에서도 제거하고 다음.
         state.dialogs.pending_approval_ids.pop_front();
         state.dialogs.approval_comment_buffer.clear();
@@ -184,7 +183,7 @@ pub fn draw_approval_popup(ui: &mut egui::Ui, state: &mut AppState) -> PopupActi
         } else {
             Some(state.dialogs.approval_comment_buffer.trim().to_string())
         };
-        let store = state.engine.approval_store.clone();
+        let store = engine.approval_store.clone();
         match store.respond(&current_id, choice_key, Responder::User, comment) {
             Ok(change) => {
                 persist_after_respond(&change.record);
@@ -270,7 +269,7 @@ pub fn enqueue_approval(state: &mut AppState, record: &ApprovalRecord) {
         .unwrap_or_else(|| t("approval.notification.body_fallback").to_string());
     let workspace = record.request.workspace_id.unwrap_or(0);
     let surface = record.request.surface_id.unwrap_or(0);
-    let _ = state.engine.notifications.add(
+    let _ = engine.notifications.add(
         workspace,
         surface,
         format!("{severity_prefix}{}", record.request.title),

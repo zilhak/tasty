@@ -20,6 +20,8 @@ use super::MainWindow;
 
 impl MainWindow {
     pub(crate) fn handle_hovered_file(&mut self, path: PathBuf) {
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
         let cursor = self.cursor_position.map(|p| (p.x as f32, p.y as f32));
         match self.state.drop_hover.as_mut() {
             Some(s) => s.paths.push(path),
@@ -34,12 +36,16 @@ impl MainWindow {
     }
 
     pub(crate) fn handle_hovered_file_cancelled(&mut self) {
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
         if self.state.drop_hover.take().is_some() {
             self.base.dirty = true;
         }
     }
 
     pub(crate) fn handle_dropped_file(&mut self, path: PathBuf) {
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
         self.state.pending_file_drops.push(path);
         // OS 가 DroppedFile 후 HoveredFileCancelled 를 보장하지 않을 수 있으므로
         // 명시 해제. 다중 파일 drop 의 경우 첫 DroppedFile 에서 정리되고 이후
@@ -51,6 +57,8 @@ impl MainWindow {
     /// frame end 에서 호출. 큐를 비우고 각 파일을 `dispatch_file_target(Deep)` 으로
     /// 보낸다. 좌표는 `cursor_position` 기준 — terminal_rect 외부면 toast 후 무시.
     pub(crate) fn process_pending_file_drops(&mut self) {
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
         let drops = std::mem::take(&mut self.state.pending_file_drops);
         if drops.is_empty() {
             return;
@@ -70,8 +78,8 @@ impl MainWindow {
                 .push_info(crate::i18n::t("file_drop.outside"), ToastScope::Window);
             return;
         }
-        let _ = self.state.focus_pane_at_position(x, y, terminal_rect);
-        let _ = self.state.focus_surface_at_position(x, y, terminal_rect);
+        let _ = self.state.focus_pane_at_position(engine, x, y, terminal_rect);
+        let _ = self.state.focus_surface_at_position(engine, x, y, terminal_rect);
         for path in drops {
             crate::file_dispatch::dispatch_file_target(
                 &mut self.state,

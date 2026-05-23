@@ -4,6 +4,7 @@ use super::*;
 
 pub fn handle_cancel(
     state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -12,7 +13,7 @@ pub fn handle_cancel(
         Some(s) if !s.is_empty() => ApprovalId(s.to_string()),
         _ => return JsonRpcResponse::invalid_params(id, "Missing 'id'"),
     };
-    match state.engine.approval_store.cancel(&req_id) {
+    match engine.approval_store.cancel(&req_id) {
         Ok(change) => {
             persist_record(&change.record);
             JsonRpcResponse::success(id, record_to_json(&change.record))
@@ -72,6 +73,7 @@ pub fn await_blocking(store: &ApprovalStore, rpc_id: Value, params: &Value) -> J
 /// `approval.get` — 단일 record 조회.
 pub fn handle_get(
     state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -80,7 +82,7 @@ pub fn handle_get(
         Some(s) if !s.is_empty() => ApprovalId(s.to_string()),
         _ => return JsonRpcResponse::invalid_params(id, "Missing 'id'"),
     };
-    match state.engine.approval_store.get(&req_id) {
+    match engine.approval_store.get(&req_id) {
         Some(rec) => JsonRpcResponse::success(id, record_to_json(&rec)),
         None => JsonRpcResponse::success(id, Value::Null),
     }
@@ -90,6 +92,7 @@ pub fn handle_get(
 /// `workspace_id`.
 pub fn handle_list(
     state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -100,7 +103,7 @@ pub fn handle_list(
         .and_then(|v| v.as_u64())
         .map(|v| v as u32);
 
-    let mut records = state.engine.approval_store.list();
+    let mut records = engine.approval_store.list();
     if let Some(f) = state_filter {
         records.retain(|r| {
             use tasty_approval::ApprovalState as S;
@@ -133,6 +136,7 @@ pub fn handle_list(
 /// 응답: `{ entries: [...], count, returned }`.
 pub fn handle_history(
     _state: &mut AppState,
+    _engine: &mut crate::engine_state::EngineState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,

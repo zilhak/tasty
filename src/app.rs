@@ -48,6 +48,9 @@ pub(crate) struct App {
     /// Plugin host manager. None until the first AppState is created
     /// (which provides the WakerFactory).
     pub(crate) plugin_manager: Option<plugin::PluginManager>,
+    /// Sessionwide engine state — workspaces, settings, hooks, registries.
+    /// None until the first MainWindow lifecycle initializes it; Some after.
+    pub(crate) engine_state: Option<crate::engine_state::EngineState>,
     /// 사용자 init.lua 기반 Lua hook 엔진. 부팅 시 1회 생성, `~/.tasty/init.lua` 가
     /// 있으면 로드. observe-only — 호스트 동작에는 영향 없음. 초기화 실패 시 None.
     pub(crate) lua_engine: Option<tasty_lua::LuaEngine>,
@@ -86,8 +89,21 @@ impl App {
             #[cfg(debug_assertions)]
             input_simulation_enabled,
             plugin_manager: None,
+            engine_state: None,
             lua_engine: crate::hooks::lua::init_engine(),
             preset_window_id: None,
         }
+    }
+
+    pub(crate) fn engine_state(&self) -> &crate::engine_state::EngineState {
+        self.engine_state
+            .as_ref()
+            .expect("App.engine_state accessed before initialization")
+    }
+
+    pub(crate) fn engine_state_mut(&mut self) -> &mut crate::engine_state::EngineState {
+        self.engine_state
+            .as_mut()
+            .expect("App.engine_state accessed before initialization")
     }
 }

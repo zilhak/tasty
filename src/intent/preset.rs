@@ -32,6 +32,8 @@ pub enum ClonedPreset {
 
 impl ClonedPreset {
     pub fn kind(&self) -> tasty_presets::PresetKind {
+        let engine = &self.engine_state;
+        let _ = engine;
         match self {
             ClonedPreset::Workspace(_) => tasty_presets::PresetKind::Workspace,
             ClonedPreset::Tab(_) => tasty_presets::PresetKind::Tab,
@@ -89,6 +91,7 @@ fn apply(state: &mut AppState, intent: &DispatchedIntent, kind: PresetKind, name
 
 fn save(
     state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
     intent: &DispatchedIntent,
     base_name: &str,
     explicit_name: Option<&str>,
@@ -173,6 +176,8 @@ pub enum PresetMutationError {
 
 impl std::fmt::Display for PresetMutationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let engine = &self.engine_state;
+        let _ = engine;
         match self {
             Self::StoreUnavailable => write!(f, "preset_store unavailable"),
             Self::NotFound { kind, name } => {
@@ -189,11 +194,11 @@ impl std::error::Error for PresetMutationError {}
 /// preset_store 잠금 + clone. lock 안 ↔ apply 본체를 분리해 critical section 을 짧게 유지.
 fn clone_preset_from_store(
     state: &AppState,
+    engine: &crate::engine_state::EngineState,
     kind: PresetKind,
     name: &str,
 ) -> Result<Option<ClonedPreset>, PresetMutationError> {
-    let arc = state
-        .engine
+    let arc = engine
         .preset_store
         .as_ref()
         .ok_or(PresetMutationError::StoreUnavailable)?;
@@ -219,6 +224,7 @@ fn clone_preset_from_store(
 /// `target_pane_id` / `target_workspace_id` 는 tab/pane apply 시에만 의미가 있다.
 pub fn apply_inner(
     state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
     kind: PresetKind,
     name: &str,
     target_pane_id: Option<u32>,
@@ -237,7 +243,7 @@ pub fn apply_inner(
             let idx = state
                 .apply_workspace_preset(&p, options)
                 .map_err(PresetMutationError::Apply)?;
-            let workspace_id = state.engine.workspaces[idx].id;
+            let workspace_id = engine.workspaces[idx].id;
             Ok(ApplyOutcome::Workspace { workspace_id })
         }
         ClonedPreset::Tab(p) => {
@@ -259,13 +265,13 @@ pub fn apply_inner(
 /// 없으면 `base_name` 기반 unique_name 자동 부여.
 pub fn save_inner(
     state: &AppState,
+    engine: &crate::engine_state::EngineState,
     base_name: &str,
     explicit_name: Option<&str>,
     overwrite: bool,
     preset: ClonedPreset,
 ) -> Result<SaveOutcome, PresetMutationError> {
-    let arc = state
-        .engine
+    let arc = engine
         .preset_store
         .as_ref()
         .ok_or(PresetMutationError::StoreUnavailable)?;
@@ -330,11 +336,11 @@ pub fn save_inner(
 
 pub fn delete_inner(
     state: &AppState,
+    engine: &crate::engine_state::EngineState,
     kind: PresetKind,
     name: &str,
 ) -> Result<(), PresetMutationError> {
-    let arc = state
-        .engine
+    let arc = engine
         .preset_store
         .as_ref()
         .ok_or(PresetMutationError::StoreUnavailable)?;
@@ -350,12 +356,12 @@ pub fn delete_inner(
 
 pub fn rename_inner(
     state: &AppState,
+    engine: &crate::engine_state::EngineState,
     kind: PresetKind,
     from: &str,
     to: &str,
 ) -> Result<(), PresetMutationError> {
-    let arc = state
-        .engine
+    let arc = engine
         .preset_store
         .as_ref()
         .ok_or(PresetMutationError::StoreUnavailable)?;
@@ -376,10 +382,11 @@ pub fn rename_inner(
 /// `Intent::SavePreset { preset: ClonedPreset, .. }` 로 발화하므로 별도 경로.
 pub fn capture_inner(
     state: &AppState,
+    engine: &crate::engine_state::EngineState,
     kind: PresetKind,
     source_id: u32,
 ) -> Result<(ClonedPreset, String), String> {
-    let registry = state.engine.surface_registry.clone();
+    let registry = engine.surface_registry.clone();
     let mut capture = move |s: &dyn Surface| -> Option<CapturedSurfaceMeta> {
         let def = registry.get(s.kind())?;
         let params = (def.snapshot)(s)?;
@@ -391,8 +398,7 @@ pub fn capture_inner(
 
     match kind {
         PresetKind::Workspace => {
-            let ws = state
-                .engine
+            let ws = engine
                 .workspaces
                 .iter()
                 .find(|w| w.id == source_id)
@@ -408,11 +414,10 @@ pub fn capture_inner(
             Ok((ClonedPreset::Workspace(preset), base))
         }
         PresetKind::Tab => {
-            let pane_id = state
-                .engine
+            let pane_id = engine
                 .find_pane_for_tab(source_id)
                 .ok_or_else(|| format!("Tab id {source_id} not found"))?;
-            for ws in &state.engine.workspaces {
+            for ws in &engine.workspaces {
                 if let Some(pane) = ws.pane_layout().find_pane(pane_id) {
                     for tab in &pane.tabs {
                         if tab.id == source_id {
@@ -436,7 +441,7 @@ pub fn capture_inner(
             Err(format!("Tab id {source_id} not found"))
         }
         PresetKind::Pane => {
-            for ws in &state.engine.workspaces {
+            for ws in &engine.workspaces {
                 if let Some(pane) = ws.pane_layout().find_pane(source_id) {
                     let preset =
                         PanePreset::from_pane(pane, &mut capture, CaptureOptions::default())

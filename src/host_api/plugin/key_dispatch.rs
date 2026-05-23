@@ -18,7 +18,7 @@ use crate::shortcuts::matches_any_binding;
 
 /// Focused surface가 RemoteSurface인 경우 (plugin_id, surface_id) 튜플 반환.
 pub fn focused_plugin_surface(state: &crate::state::AppState) -> Option<(String, u32)> {
-    let pane = state.focused_pane()?;
+    let pane = state.focused_pane(engine)?;
     let tab = pane.tabs.get(pane.active_tab)?;
     let focused = tab.focused_surface;
     let surface = tab.layout().find_surface(focused)?;

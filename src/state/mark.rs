@@ -1,10 +1,11 @@
 use super::AppState;
+use crate::engine_state::EngineState;
 
 impl AppState {
     /// Set a read mark on the focused terminal (or a specific surface).
-    pub fn set_mark(&mut self, surface_id: Option<u32>) {
+    pub fn set_mark(&mut self, engine: &mut EngineState, surface_id: Option<u32>) {
         if let Some(target_sid) = surface_id {
-            for workspace in &mut self.engine.workspaces {
+            for workspace in &mut engine.workspaces {
                 let mut found = false;
                 workspace
                     .pane_layout_mut()
@@ -18,16 +19,21 @@ impl AppState {
                     return;
                 }
             }
-        } else if let Some(terminal) = self.focused_terminal_mut() {
+        } else if let Some(terminal) = self.focused_terminal_mut(engine) {
             terminal.set_mark();
         }
     }
 
     /// Read since mark on the focused terminal (or a specific surface).
-    pub fn read_since_mark(&mut self, surface_id: Option<u32>, strip_ansi: bool) -> String {
+    pub fn read_since_mark(
+        &mut self,
+        engine: &mut EngineState,
+        surface_id: Option<u32>,
+        strip_ansi: bool,
+    ) -> String {
         if let Some(target_sid) = surface_id {
             let mut result = None;
-            for workspace in &mut self.engine.workspaces {
+            for workspace in &mut engine.workspaces {
                 workspace
                     .pane_layout_mut()
                     .for_each_terminal_mut(&mut |sid, terminal| {
@@ -40,7 +46,7 @@ impl AppState {
                 }
             }
             result.unwrap_or_default()
-        } else if let Some(terminal) = self.focused_terminal_mut() {
+        } else if let Some(terminal) = self.focused_terminal_mut(engine) {
             terminal.read_since_mark(strip_ansi)
         } else {
             String::new()

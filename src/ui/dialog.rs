@@ -36,7 +36,7 @@ pub fn draw_rename_popup(ui: &mut egui::Ui, state: &mut AppState) -> PopupAction
     // Validate target still exists.
     let valid = match target {
         RenameTarget::WorkspaceName { ws_idx } | RenameTarget::WorkspaceSubtitle { ws_idx } => {
-            *ws_idx < state.engine.workspaces.len()
+            *ws_idx < engine.workspaces.len()
         }
         RenameTarget::TabName { pane_id, tab_index } => state
             .active_workspace()
@@ -120,8 +120,8 @@ fn apply_rename(state: &mut AppState, target: RenameTarget, buffer: String) {
     match target {
         RenameTarget::WorkspaceName { ws_idx } => {
             if !buffer.is_empty() {
-                let workspace_id = state.engine.workspaces.get(ws_idx).map(|w| w.id);
-                if let Some(ws) = state.engine.workspaces.get_mut(ws_idx) {
+                let workspace_id = engine.workspaces.get(ws_idx).map(|w| w.id);
+                if let Some(ws) = engine.workspaces.get_mut(ws_idx) {
                     ws.name = buffer.clone();
                 }
                 if let Some(workspace_id) = workspace_id {
@@ -136,8 +136,8 @@ fn apply_rename(state: &mut AppState, target: RenameTarget, buffer: String) {
             }
         }
         RenameTarget::WorkspaceSubtitle { ws_idx } => {
-            let workspace_id = state.engine.workspaces.get(ws_idx).map(|w| w.id);
-            if let Some(ws) = state.engine.workspaces.get_mut(ws_idx) {
+            let workspace_id = engine.workspaces.get(ws_idx).map(|w| w.id);
+            if let Some(ws) = engine.workspaces.get_mut(ws_idx) {
                 ws.subtitle = buffer.clone();
             }
             if let Some(workspace_id) = workspace_id {
@@ -176,5 +176,5 @@ fn apply_rename(state: &mut AppState, target: RenameTarget, buffer: String) {
             }
         }
     }
-    state.engine.mark_layout_dirty();
+    engine.mark_layout_dirty();
 }

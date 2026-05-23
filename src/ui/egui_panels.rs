@@ -24,6 +24,7 @@ struct EguiPanelInfo {
 pub fn draw_egui_panels(
     ctx: &egui::Context,
     state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
     pane_rects: &[(u32, Rect)],
     scale_factor: f32,
     canvas_cache: &crate::gpu::canvas_texture::CanvasTextureCache,
@@ -31,7 +32,7 @@ pub fn draw_egui_panels(
     // First pass: gather info about egui-rendered panels (read-only).
     let mut infos = Vec::new();
     {
-        let ws = state.active_workspace();
+        let ws = state.active_workspace(engine);
         let focused_pane_id = ws.focused_pane;
         let tab_bar_h = state.tab_bar_height;
         for &(pane_id, pane_rect) in pane_rects {
@@ -81,11 +82,11 @@ pub fn draw_egui_panels(
     let mut pending_empty_action: Option<crate::empty_ui::EmptyAction> = None;
     let mut pending_diff_action: Option<(u32, crate::diff_ui::DiffAction)> = None;
 
-    let markdown_colors = state.engine.settings.appearance.markdown_colors.clone();
-    let markdown_font = state.engine.settings.appearance.effective_markdown_font();
+    let markdown_colors = engine.settings.appearance.markdown_colors.clone();
+    let markdown_font = engine.settings.appearance.effective_markdown_font();
 
     // Temporarily extract view stores so we can hold a `&mut View` from
-    // the store at the same time as `&mut Panel` from `state.engine.workspaces`.
+    // the store at the same time as `&mut Panel` from `engine.workspaces`.
     // (Same pattern used below for clipboard_history.)
     let mut markdown_views = std::mem::take(&mut state.markdown_views);
     let mut image_views = std::mem::take(&mut state.image_views);
@@ -97,7 +98,7 @@ pub fn draw_egui_panels(
                 format!("surface_{}", sid)
             });
 
-        let ws = state.active_workspace_mut();
+        let ws = state.active_workspace_mut(engine);
         let pane = match ws.pane_layout_mut().find_pane_mut(info.pane_id) {
             Some(p) => p,
             None => continue,
@@ -249,10 +250,10 @@ pub fn draw_egui_panels(
                     crate::i18n::t("diff.toast.apply_copied").to_string(),
                     crate::ui::ToastScope::Window,
                 );
-                state.close_surface_by_id_no_snapshot(sid); // intent-exempt: diff cleanup, undo 의미 없음
+                state.close_surface_by_id_no_snapshot(engine, sid); // intent-exempt: diff cleanup, undo 의미 없음
             }
             crate::diff_ui::DiffAction::Reject => {
-                state.close_surface_by_id_no_snapshot(sid); // intent-exempt: diff cleanup, undo 의미 없음
+                state.close_surface_by_id_no_snapshot(engine, sid); // intent-exempt: diff cleanup, undo 의미 없음
             }
         }
     }

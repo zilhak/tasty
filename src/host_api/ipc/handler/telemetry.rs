@@ -84,7 +84,12 @@ pub(crate) fn check_cap_block(caller: &CallerContext, _method: &str) -> Option<S
 /// metric 검증이 `.` 을 허용하지 않으므로 `ipc_calls.<method>` 형태를 피한다).
 ///
 /// 모든 실패는 best-effort. 호스트 stdout 의 IPC 정상 동작을 막지 않는다.
-pub(crate) fn record_ipc_call(state: &mut AppState, caller: &CallerContext, method: &str) {
+pub(crate) fn record_ipc_call(
+    state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
+    caller: &CallerContext,
+    method: &str,
+) {
     if method.starts_with("telemetry.") {
         return;
     }
@@ -92,11 +97,7 @@ pub(crate) fn record_ipc_call(state: &mut AppState, caller: &CallerContext, meth
     if agent.is_host() {
         return;
     }
-    let ws = state
-        .engine
-        .workspaces
-        .get(state.active_workspace)
-        .map(|w| w.id);
+    let ws = engine.workspaces.first().map(|w| w.id);
     let ts = now_ms();
     let ev = match TelemetryEvent::new(agent.as_str(), "ipc_calls", 1.0, Op::Inc, ts) {
         Ok(e) => e,
@@ -109,26 +110,32 @@ pub(crate) fn record_ipc_call(state: &mut AppState, caller: &CallerContext, meth
     if let Some(w) = ws {
         ev = ev.with_workspace(w);
     }
-    if let Err(e) = persist_event(state, &ev) {
+    if let Err(e) = persist_event(engine, &ev) {
         tracing::warn!("telemetry middleware: record failed: {e}");
         return;
     }
-    evaluate_caps_after_record(state, &ev);
-    detect_anomalies_after_ipc(state, agent.as_str(), method, ts);
+    evaluate_caps_after_record(state, engine, &ev);
+    detect_anomalies_after_ipc(state, engine, agent.as_str(), method, ts);
 }
 
 /// IPC 호출 후 anomaly 검출 (Phase 4.4). `AnomalyDetector::record_call` 이 burst
 /// 임계를 넘는다고 보고하면 host 가 영속 + notification 으로 알린다.
-fn detect_anomalies_after_ipc(state: &mut AppState, agent: &str, method: &str, ts: u64) {
-    let seq = state.engine.telemetry_seq.next();
-    let detector = state.engine.anomaly_detector.clone();
+fn detect_anomalies_after_ipc(
+    state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
+    agent: &str,
+    method: &str,
+    ts: u64,
+) {
+    let seq = engine.telemetry_seq.next();
+    let detector = engine.anomaly_detector.clone();
     let Some(anomaly) = detector.record_call(agent, method, ts, seq) else {
         return;
     };
     if let Err(e) = persist_anomaly(&anomaly) {
         tracing::warn!("anomaly persist failed: {e}");
     }
-    fire_anomaly_notification(state, &anomaly);
+    fire_anomaly_notification(state, engine, &anomaly);
 }
 
 fn scope_for(workspace_id: Option<u32>) -> Scope {
@@ -200,8 +207,11 @@ fn build_event(
 
 /// 이벤트를 memory store 에 저장. seq 가 매 이벤트마다 새로 발급되어 동일
 /// ms 안에서 key 가 충돌하지 않는다.
-fn persist_event(state: &AppState, ev: &TelemetryEvent) -> std::result::Result<String, String> {
-    let seq = state.engine.telemetry_seq.next();
+fn persist_event(
+    engine: &mut crate::engine_state::EngineState,
+    ev: &TelemetryEvent,
+) -> std::result::Result<String, String> {
+    let seq = engine.telemetry_seq.next();
     let key = event_key(ev.ts, seq);
     let scope = scope_for(ev.workspace_id);
     let value = MemoryValue::Json(serde_json::to_value(ev).map_err(|e| e.to_string())?);

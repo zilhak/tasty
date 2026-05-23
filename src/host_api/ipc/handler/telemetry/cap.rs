@@ -14,9 +14,9 @@ use crate::state::AppState;
 use super::now_ms;
 use super::query::{QueryFilter, collect_events};
 
-pub(super) fn generate_cap_id(state: &AppState) -> String {
+pub(super) fn generate_cap_id(engine: &mut crate::engine_state::EngineState) -> String {
     let ts = now_ms();
-    let seq = state.engine.telemetry_seq.next();
+    let seq = engine.telemetry_seq.next();
     format!("cap_{ts:013}{seq:04}", ts = ts, seq = seq % 10_000)
 }
 
@@ -75,6 +75,7 @@ pub(super) fn cap_to_json(cap: &CostCap) -> Value {
 /// `telemetry.cap.set` — cap 등록.
 pub fn handle_cap_set(
     state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -127,7 +128,7 @@ pub fn handle_cap_set(
     };
 
     let cap = CostCap {
-        id: generate_cap_id(state),
+        id: generate_cap_id(engine),
         agent,
         metric,
         threshold,
@@ -145,6 +146,7 @@ pub fn handle_cap_set(
 /// `telemetry.cap.list` — 전체 cap. 필터: `agent`.
 pub fn handle_cap_list(
     _state: &mut AppState,
+    _engine: &mut crate::engine_state::EngineState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -168,6 +170,7 @@ pub fn handle_cap_list(
 /// `telemetry.cap.remove` — cap 삭제.
 pub fn handle_cap_remove(
     _state: &mut AppState,
+    _engine: &mut crate::engine_state::EngineState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -218,6 +221,7 @@ pub(super) fn compute_current_value(cap: &CostCap) -> std::result::Result<f64, S
 /// `telemetry.cap.status` — agent 별 cap 들의 현재 값/임계/triggered 상태.
 pub fn handle_cap_status(
     _state: &mut AppState,
+    _engine: &mut crate::engine_state::EngineState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -268,6 +272,7 @@ pub fn handle_cap_status(
 /// `telemetry.cap.reset` — `triggered` 상태 제거. `id` 또는 `agent` 둘 중 하나 필수.
 pub fn handle_cap_reset(
     _state: &mut AppState,
+    _engine: &mut crate::engine_state::EngineState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -318,7 +323,11 @@ pub fn handle_cap_reset(
 ///
 /// Phase 4.3b: `Notify` 만 발화 (단순 알림 + 차단 없음). `Stop`/`Pause`/`RequireApproval`
 /// 는 후속 sub-phase (호출 전 evaluator + dispatcher 거부) 에서 결합한다.
-pub(super) fn evaluate_caps_after_record(state: &mut AppState, ev: &TelemetryEvent) {
+pub(super) fn evaluate_caps_after_record(
+    state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
+    ev: &TelemetryEvent,
+) {
     let caps = match load_all_caps() {
         Ok(c) => c,
         Err(e) => {
@@ -352,22 +361,27 @@ pub(super) fn evaluate_caps_after_record(state: &mut AppState, ev: &TelemetryEve
             tracing::warn!("cap eval: save failed for {}: {e}", cap.id);
             continue;
         }
-        fire_cap_action(state, &cap, current);
+        fire_cap_action(state, engine, &cap, current);
     }
 }
 
 /// cap 액션을 실제 시스템으로 발화. Phase 4.3b 는 `Notify` 만 처리; 나머지 액션은
 /// 미래 sub-phase 에서 결합되며 현재는 로그만 남긴다 (memory 상의 `triggered` 필드는
 /// 이미 기록됐으므로 status 조회로 확인 가능).
-pub(super) fn fire_cap_action(state: &mut AppState, cap: &CostCap, current: f64) {
+pub(super) fn fire_cap_action(
+    state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
+    cap: &CostCap,
+    current: f64,
+) {
     match cap.action {
-        CapAction::Notify => fire_notify(state, cap, current),
-        CapAction::RequireApproval => fire_require_approval(state, cap, current),
+        CapAction::Notify => fire_notify(state, engine, cap, current),
+        CapAction::RequireApproval => fire_require_approval(state, engine, cap, current),
         CapAction::Stop | CapAction::Pause => {
             // 차단은 dispatcher 의 check_cap_block 이 담당. 여기서는 사용자에게
             // 사실을 알리는 알림만 함께 띄운다 — 차단된 plugin 이 침묵 속에 멈춰
             // 보이지 않도록.
-            fire_notify(state, cap, current);
+            fire_notify(state, engine, cap, current);
             tracing::info!(
                 "cap triggered (action {:?}): cap={} agent={} metric={} value={} threshold={}",
                 cap.action,
@@ -389,9 +403,13 @@ pub(super) fn fire_cap_action(state: &mut AppState, cap: &CostCap, current: f64)
 /// 매 호출마다 새 approval 을 발행하지 않고, **cap-당 1회**만 발행 (triggered 가
 /// 비어 있을 때만 fire_cap_action 가 호출되므로 자연스럽게 단발). 추가 발행이
 /// 필요하면 `cap.reset` 후 다음 record 가 임계를 다시 넘을 때 fire 된다.
-pub(super) fn fire_require_approval(state: &mut AppState, cap: &CostCap, current: f64) {
-    let ws_id = state
-        .engine
+pub(super) fn fire_require_approval(
+    state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
+    cap: &CostCap,
+    current: f64,
+) {
+    let ws_id = engine
         .workspaces
         .get(state.active_workspace)
         .map(|w| w.id);
@@ -424,7 +442,7 @@ pub(super) fn fire_require_approval(state: &mut AppState, cap: &CostCap, current
             "threshold": cap.threshold,
         }),
     };
-    match state.engine.approval_store.request(req) {
+    match engine.approval_store.request(req) {
         Ok(change) => {
             crate::ipc::handler::approval::persist_record(&change.record);
             crate::ui::popup::approval::enqueue_approval(state, &change.record);
@@ -445,8 +463,13 @@ pub(super) fn fire_require_approval(state: &mut AppState, cap: &CostCap, current
 
 /// `Notify` 액션: 활성 워크스페이스에 notification 추가 + host event enqueue.
 /// notification.create 핸들러의 단순 경로와 동등하나 IPC 를 거치지 않는다.
-pub(super) fn fire_notify(state: &mut AppState, cap: &CostCap, current: f64) {
-    let Some(ws) = state.engine.workspaces.get(state.active_workspace) else {
+pub(super) fn fire_notify(
+    state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
+    cap: &CostCap,
+    current: f64,
+) {
+    let Some(ws) = engine.workspaces.get(state.active_workspace) else {
         tracing::warn!("cap notify: no active workspace, skipping cap {}", cap.id);
         return;
     };
@@ -456,8 +479,7 @@ pub(super) fn fire_notify(state: &mut AppState, cap: &CostCap, current: f64) {
         "agent={} metric={} value={} ≥ threshold={} (window={:?}, cap={})",
         cap.agent, cap.metric, current, cap.threshold, cap.window, cap.id,
     );
-    let created = state
-        .engine
+    let created = engine
         .notifications
         .add(ws_id, 0, title.clone(), body.clone());
     if let Some(nid) = created {

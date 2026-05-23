@@ -7,6 +7,7 @@ use super::require_surface_id;
 
 pub(crate) fn handle_set_mark(
     state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -15,12 +16,13 @@ pub(crate) fn handle_set_mark(
         Err(e) => return e,
     };
 
-    state.set_mark(Some(surface_id));
+    state.set_mark(engine, engine, engine, Some(surface_id));
     JsonRpcResponse::success(id, json!({ "ok": true, "surface_id": surface_id }))
 }
 
 pub(crate) fn handle_read_since_mark(
     state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -34,7 +36,7 @@ pub(crate) fn handle_read_since_mark(
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    let text = state.read_since_mark(Some(surface_id), strip_ansi);
+    let text = state.read_since_mark(engine, engine, engine, Some(surface_id), strip_ansi);
     JsonRpcResponse::success(id, json!({ "text": text, "surface_id": surface_id }))
 }
 
@@ -44,6 +46,7 @@ pub(crate) fn handle_read_since_mark(
 /// (strip_ansi=false) 를 항상 입력으로 한다.
 pub(crate) fn handle_parse_since_mark(
     state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -68,7 +71,7 @@ pub(crate) fn handle_parse_since_mark(
             .collect(),
     };
 
-    let text = state.read_since_mark(Some(surface_id), false);
+    let text = state.read_since_mark(engine, engine, engine, Some(surface_id), false);
     let items = match tasty_output::parse_buffer(&text, parser_ids.iter().map(String::as_str)) {
         Ok(v) => v,
         Err(unknown) => {

@@ -10,6 +10,7 @@ use tasty_presets::{
     TabPreset, WorkspacePreset,
 };
 
+use crate::engine_state::EngineState;
 use crate::model::{
     Pane, PaneNode, SplitDirection, Surface, SurfaceLayout, Tab, TerminalSurface, Workspace,
 };
@@ -69,17 +70,18 @@ impl AppState {
     /// 반환은 새 워크스페이스의 인덱스.
     pub fn apply_workspace_preset(
         &mut self,
+        engine: &mut EngineState,
         preset: &WorkspacePreset,
         opts: ApplyOptions,
     ) -> Result<usize, ApplyError> {
-        let ws_id = self.engine.next_ids.next_workspace();
-        let pane_node = self.build_pane_node(&preset.layout)?;
+        let ws_id = engine.next_ids.next_workspace();
+        let pane_node = self.build_pane_node(engine, &preset.layout)?;
 
         let all_pane_ids = pane_node.all_pane_ids();
         let focused = *all_pane_ids.first().ok_or(ApplyError::Empty)?;
 
         let name = if preset.name.is_empty() {
-            format!("Workspace {}", self.engine.workspaces.len() + 1)
+            format!("Workspace {}", engine.workspaces.len() + 1)
         } else {
             preset.name.clone()
         };
@@ -87,13 +89,13 @@ impl AppState {
         let mut ws =
             Workspace::from_restored(ws_id, name, preset.subtitle.clone(), pane_node, focused);
         ws.description = preset.description.clone();
-        self.engine.workspaces.push(ws);
-        let idx = self.engine.workspaces.len() - 1;
+        engine.workspaces.push(ws);
+        let idx = engine.workspaces.len() - 1;
 
         if opts.focus {
             self.active_workspace = idx;
         }
-        self.engine.mark_layout_dirty();
+        engine.mark_layout_dirty();
         Ok(idx)
     }
 
@@ -101,16 +103,17 @@ impl AppState {
     /// 의 focused_pane 에 새 탭을 push. 반환은 새 tab_id.
     pub fn apply_tab_preset(
         &mut self,
+        engine: &mut EngineState,
         preset: &TabPreset,
         target_pane_id: Option<u32>,
         opts: ApplyOptions,
     ) -> Result<u32, ApplyError> {
-        let (ws_idx, pane_id) = self.resolve_target_pane(target_pane_id)?;
+        let (ws_idx, pane_id) = self.resolve_target_pane(engine, target_pane_id)?;
 
-        let tab = self.build_tab(&preset.tab)?;
+        let tab = self.build_tab(engine, &preset.tab)?;
         let tab_id = tab.id;
 
-        let ws = &mut self.engine.workspaces[ws_idx];
+        let ws = &mut engine.workspaces[ws_idx];
         let pane = ws
             .pane_layout_mut()
             .find_pane_mut(pane_id)
@@ -121,7 +124,7 @@ impl AppState {
             pane.active_tab = new_idx;
         }
 
-        self.engine.mark_layout_dirty();
+        engine.mark_layout_dirty();
         Ok(tab_id)
     }
 
@@ -130,27 +133,27 @@ impl AppState {
     /// 반환은 새 pane_id.
     pub fn apply_pane_preset(
         &mut self,
+        engine: &mut EngineState,
         preset: &PanePreset,
         target_workspace_id: Option<u32>,
         opts: ApplyOptions,
     ) -> Result<u32, ApplyError> {
         let ws_idx = match target_workspace_id {
-            Some(id) => self
-                .engine
+            Some(id) => engine
                 .find_workspace_index_for_id(id)
                 .ok_or(ApplyError::WorkspaceNotFound(id))?,
             None => {
-                if self.engine.workspaces.is_empty() {
+                if engine.workspaces.is_empty() {
                     return Err(ApplyError::NoActiveWorkspace);
                 }
-                self.active_workspace.min(self.engine.workspaces.len() - 1)
+                self.active_workspace.min(engine.workspaces.len() - 1)
             }
         };
 
-        let new_pane = self.build_pane(&preset.pane)?;
+        let new_pane = self.build_pane(engine, &preset.pane)?;
         let new_pane_id = new_pane.id;
 
-        let ws = &mut self.engine.workspaces[ws_idx];
+        let ws = &mut engine.workspaces[ws_idx];
         let target_pane_id = ws.focused_pane;
         let remaining = ws.pane_layout_mut().split_pane_in_place(
             target_pane_id,
@@ -176,25 +179,28 @@ impl AppState {
             ws.focused_pane = new_pane_id;
         }
 
-        self.engine.mark_layout_dirty();
+        engine.mark_layout_dirty();
         Ok(new_pane_id)
     }
 
     // ── 내부 helpers ─────────────────────────────────────────────────────
 
-    fn resolve_target_pane(&self, target_pane_id: Option<u32>) -> Result<(usize, u32), ApplyError> {
-        if self.engine.workspaces.is_empty() {
+    fn resolve_target_pane(
+        &self,
+        engine: &EngineState,
+        target_pane_id: Option<u32>,
+    ) -> Result<(usize, u32), ApplyError> {
+        if engine.workspaces.is_empty() {
             return Err(ApplyError::NoActiveWorkspace);
         }
         if let Some(pid) = target_pane_id {
-            let ws_idx = self
-                .engine
+            let ws_idx = engine
                 .find_workspace_index_for_pane(pid)
                 .ok_or(ApplyError::PaneNotFound(pid))?;
             return Ok((ws_idx, pid));
         }
-        let ws_idx = self.active_workspace.min(self.engine.workspaces.len() - 1);
-        let ws = &self.engine.workspaces[ws_idx];
+        let ws_idx = self.active_workspace.min(engine.workspaces.len() - 1);
+        let ws = &engine.workspaces[ws_idx];
         let pid = ws.focused_pane;
         if ws.pane_layout().find_pane(pid).is_some() {
             return Ok((ws_idx, pid));
@@ -207,10 +213,14 @@ impl AppState {
         Ok((ws_idx, first))
     }
 
-    fn build_pane_node(&mut self, node: &PresetPaneNode) -> Result<PaneNode, ApplyError> {
+    fn build_pane_node(
+        &mut self,
+        engine: &mut EngineState,
+        node: &PresetPaneNode,
+    ) -> Result<PaneNode, ApplyError> {
         match node {
             PresetPaneNode::Leaf { pane } => {
-                let p = self.build_pane(pane)?;
+                let p = self.build_pane(engine, pane)?;
                 Ok(PaneNode::Leaf(p))
             }
             PresetPaneNode::Split {
@@ -219,8 +229,8 @@ impl AppState {
                 first,
                 second,
             } => {
-                let f = self.build_pane_node(first)?;
-                let s = self.build_pane_node(second)?;
+                let f = self.build_pane_node(engine, first)?;
+                let s = self.build_pane_node(engine, second)?;
                 Ok(PaneNode::Split {
                     direction: SplitDirection::from(*direction),
                     ratio: ratio.clamp(0.05, 0.95),
@@ -231,14 +241,18 @@ impl AppState {
         }
     }
 
-    fn build_pane(&mut self, preset: &PresetPane) -> Result<Pane, ApplyError> {
+    fn build_pane(
+        &mut self,
+        engine: &mut EngineState,
+        preset: &PresetPane,
+    ) -> Result<Pane, ApplyError> {
         if preset.tabs.is_empty() {
             return Err(ApplyError::Empty);
         }
-        let pane_id = self.engine.next_ids.next_pane();
+        let pane_id = engine.next_ids.next_pane();
         let mut tabs = Vec::with_capacity(preset.tabs.len());
         for preset_tab in &preset.tabs {
-            tabs.push(self.build_tab(preset_tab)?);
+            tabs.push(self.build_tab(engine, preset_tab)?);
         }
         let active_tab = preset.active_tab.min(tabs.len() - 1);
         Ok(Pane {
@@ -249,9 +263,13 @@ impl AppState {
         })
     }
 
-    fn build_tab(&mut self, preset: &PresetTab) -> Result<Tab, ApplyError> {
-        let tab_id = self.engine.next_ids.next_tab();
-        let layout = self.build_surface_layout(&preset.layout)?;
+    fn build_tab(
+        &mut self,
+        engine: &mut EngineState,
+        preset: &PresetTab,
+    ) -> Result<Tab, ApplyError> {
+        let tab_id = engine.next_ids.next_tab();
+        let layout = self.build_surface_layout(engine, &preset.layout)?;
         let focused_surface = layout.first_surface_id().ok_or(ApplyError::Empty)?;
 
         let auto_name = preset_default_tab_name(&preset.layout);
@@ -279,11 +297,12 @@ impl AppState {
 
     fn build_surface_layout(
         &mut self,
+        engine: &mut EngineState,
         preset: &PresetSurfaceLayout,
     ) -> Result<SurfaceLayout, ApplyError> {
         match preset {
             PresetSurfaceLayout::Leaf { surface } => {
-                let s = self.build_leaf_surface(surface)?;
+                let s = self.build_leaf_surface(engine, surface)?;
                 Ok(SurfaceLayout::Leaf(s))
             }
             PresetSurfaceLayout::Split {
@@ -292,8 +311,8 @@ impl AppState {
                 first,
                 second,
             } => {
-                let f = self.build_surface_layout(first)?;
-                let s = self.build_surface_layout(second)?;
+                let f = self.build_surface_layout(engine, first)?;
+                let s = self.build_surface_layout(engine, second)?;
                 Ok(SurfaceLayout::Split {
                     direction: SplitDirection::from(*direction),
                     ratio: ratio.clamp(0.05, 0.95),
@@ -307,12 +326,13 @@ impl AppState {
 
     fn build_leaf_surface(
         &mut self,
+        engine: &mut EngineState,
         preset: &PresetSurface,
     ) -> Result<Box<dyn Surface>, ApplyError> {
-        let surface_id = self.engine.next_ids.next_surface();
+        let surface_id = engine.next_ids.next_surface();
         if preset.kind == "terminal" {
-            let terminal = self.build_terminal(surface_id, preset)?;
-            self.engine.send_fast_init(surface_id);
+            let terminal = self.build_terminal(engine, surface_id, preset)?;
+            engine.send_fast_init(surface_id);
             return Ok(Box::new(TerminalSurface {
                 id: surface_id,
                 terminal,
@@ -321,29 +341,30 @@ impl AppState {
             }));
         }
 
-        if !self.engine.surface_registry.contains(&preset.kind) {
+        if !engine.surface_registry.contains(&preset.kind) {
             return Err(ApplyError::UnknownKind(preset.kind.clone()));
         }
-        self.create_surface_via_registry(&preset.kind, surface_id, &preset.params)
+        self.create_surface_via_registry(engine, &preset.kind, surface_id, &preset.params)
             .map_err(ApplyError::Other)
     }
 
     fn build_terminal(
         &self,
+        engine: &EngineState,
         surface_id: u32,
         preset: &PresetSurface,
     ) -> Result<tasty_terminal::Terminal, ApplyError> {
-        let cols = self.engine.default_cols;
-        let rows = self.engine.default_rows;
-        let shell_string = self.engine.settings.general.shell.clone();
+        let cols = engine.default_cols;
+        let rows = engine.default_rows;
+        let shell_string = engine.settings.general.shell.clone();
         let shell = if shell_string.is_empty() {
             None
         } else {
             Some(shell_string)
         };
-        let shell_args_owned = self.engine.settings.general.effective_shell_args();
+        let shell_args_owned = engine.settings.general.effective_shell_args();
         let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
-        let waker = self.engine.make_waker(surface_id);
+        let waker = engine.make_waker(surface_id);
 
         // restore.rs:163-184 와 동일 — cwd 와 startup_command 를 합쳐 PTY 첫 입력으로 주입.
         let mut initial = String::new();

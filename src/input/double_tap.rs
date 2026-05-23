@@ -12,6 +12,8 @@ pub enum DoubleTapKey {
 impl DoubleTapKey {
     /// The binding string for this double-tap (e.g. "shift+shift").
     pub fn binding_str(&self) -> &'static str {
+        let engine = &self.engine_state;
+        let _ = engine;
         match self {
             DoubleTapKey::Shift => "shift+shift",
             DoubleTapKey::Ctrl => "ctrl+ctrl",
@@ -53,6 +55,8 @@ impl DoubleTapDetector {
 
     /// Call on every KeyboardInput event (both Press and Release).
     pub fn on_key_event(&mut self, key: &Key, pressed: bool) {
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
         let modifier = Self::as_modifier(key);
 
         if pressed {
@@ -94,6 +98,8 @@ impl DoubleTapDetector {
 
     /// Take the fired double-tap event (if any). Returns None if no double-tap occurred.
     pub fn take(&mut self) -> Option<DoubleTapKey> {
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
         self.fired.take()
     }
 

@@ -295,6 +295,8 @@ impl CellRenderer {
         custom_font_path: &str,
         line_height: f32,
     ) {
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
         self.font_config
             .reconfigure(font_size, font_family, custom_font_path, line_height);
         self.atlas = GlyphAtlas::new(device);

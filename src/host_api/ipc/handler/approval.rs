@@ -127,13 +127,14 @@ pub(super) fn record_to_json(record: &ApprovalRecord) -> Value {
 /// `approval.request` — 새 요청 생성. 응답: `{ id, state, record }`.
 pub(crate) fn publish_capability_elevation(
     state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
     agent_id: &str,
     method: &str,
     permission: &str,
     reason: Option<&str>,
 ) -> Option<ApprovalRecord> {
     // 이미 같은 agent+permission 으로 Pending elevation 이 있으면 재사용.
-    if let Some(existing) = state.engine.approval_store.list().into_iter().find(|r| {
+    if let Some(existing) = engine.approval_store.list().into_iter().find(|r| {
         matches!(r.state, tasty_approval::ApprovalState::Pending)
             && r.request.metadata.get("kind").and_then(|v| v.as_str())
                 == Some("capability_elevation")
@@ -147,8 +148,7 @@ pub(crate) fn publish_capability_elevation(
         return Some(existing);
     }
 
-    let workspace_id = state
-        .engine
+    let workspace_id = engine
         .workspaces
         .get(state.active_workspace)
         .map(|ws| ws.id);
@@ -198,7 +198,7 @@ pub(crate) fn publish_capability_elevation(
         metadata,
     };
 
-    match state.engine.approval_store.request(req) {
+    match engine.approval_store.request(req) {
         Ok(change) => {
             persist_record(&change.record);
             crate::ui::popup::approval::enqueue_approval(state, &change.record);

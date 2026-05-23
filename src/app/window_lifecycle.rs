@@ -40,74 +40,78 @@ impl App {
         );
         let waker: crate::terminal::Waker = factory.make_default_waker();
 
-        let mut state =
-            crate::state::AppState::new(cols, rows, waker).expect("failed to create app state");
-        state.engine.waker_factory = Some(factory.clone());
-        // 비동기 파일 식별 worker. file_format Arc 를 공유하므로 plugin contribute /
-        // user reload 변경이 worker 호출에도 그대로 반영된다.
-        state.engine.identify_worker = Some(Arc::new(crate::identify_worker::IdentifyWorker::new(
-            state.engine.file_format.clone(),
-            self.engine.proxy.clone(),
-        )));
+        // EngineState를 App 직속에 1회 init.
+        if self.engine_state.is_none() {
+            let mut engine = crate::engine_state::EngineState::new(cols, rows, waker.clone())
+                .expect("failed to create engine state");
+            engine.waker_factory = Some(factory.clone());
+            engine.identify_worker = Some(Arc::new(crate::identify_worker::IdentifyWorker::new(
+                engine.file_format.clone(),
+                self.engine.proxy.clone(),
+            )));
+            #[cfg(debug_assertions)]
+            {
+                engine.input_simulation_enabled = self.input_simulation_enabled;
+            }
+            engine.preset_store = Some(self.engine.preset_store.clone());
+            self.engine_state = Some(engine);
+        }
 
-        // 첫 윈도우 생성 시 plugin manager 한 번만 초기화.
         if self.plugin_manager.is_none() {
-            // EngineState 와 같은 file_format / file_handler Arc 를 공유해
-            // plugin enable/disable 시 EngineState 가 보유한 registry 가 그대로 갱신되도록 한다.
-            let mut mgr = plugin::PluginManager::with_registries(
-                factory,
-                state.engine.file_format.clone(),
-                state.engine.file_handler.clone(),
-            );
-            mgr.set_surface_registry(state.engine.surface_registry.clone());
-            // 기본 제공 플러그인이 설치되지 않았으면 번들에서 복사. 사용자가
-            // 명시적으로 제거한 항목 (`removed_builtins`)은 건드리지 않는다.
+            let (file_format, file_handler, surface_registry) = {
+                let engine = self.engine_state();
+                (
+                    engine.file_format.clone(),
+                    engine.file_handler.clone(),
+                    engine.surface_registry.clone(),
+                )
+            };
+            let mut mgr = plugin::PluginManager::with_registries(factory, file_format, file_handler);
+            mgr.set_surface_registry(surface_registry);
             plugin::install_builtins_if_needed(&mut mgr);
             mgr.packages = plugin::discover();
             mgr.discover_and_start();
-            state
-                .tool_registry
-                .set_plugin_items(mgr.plugin_tool_items());
             self.plugin_manager = Some(mgr);
         }
 
-        // pending_layout_restore가 있으면, plugin이 surface_kinds를 등록할 시간을
-        // 잠깐 주고 적용한다. 시간 내에 hello가 도착하지 않은 plugin이 제공하는
-        // kind는 복원에서 일단 skip되며, 추후 정상 흐름으로 새로 만들 수 있다.
-        if let Some(saved) = state.engine.pending_layout_restore.take() {
-            if let Some(mgr) = self.plugin_manager.as_mut() {
+        let saved_layout = self.engine_state_mut().pending_layout_restore.take();
+        let restored_idx_after_layout = if let Some(saved) = saved_layout {
+            {
                 use std::time::{Duration, Instant};
                 let deadline = Instant::now() + Duration::from_millis(300);
                 let needed: Vec<String> = saved.required_plugin_kinds();
                 while Instant::now() < deadline {
-                    mgr.pump();
-                    let registered_all = needed
-                        .iter()
-                        .all(|k| state.engine.surface_registry.get(k).is_some());
+                    if let Some(mgr) = self.plugin_manager.as_mut() {
+                        mgr.pump();
+                    }
+                    let registered_all = {
+                        let engine = self.engine_state();
+                        needed.iter().all(|k| engine.surface_registry.get(k).is_some())
+                    };
                     if registered_all {
                         break;
                     }
                     std::thread::sleep(Duration::from_millis(20));
                 }
             }
-            if saved.restore(&mut state.engine) {
+            let engine = self.engine_state_mut();
+            if saved.restore(engine) {
                 tracing::info!("Layout restored from layout.json (deferred)");
-                // AppState::new 시점에는 layout이 아직 복원되지 않아 state.active_workspace=0.
-                // restore가 끝난 지금 실제 활성 인덱스로 sync해야 사용자가 보는 화면이
-                // 일치한다 (sync 없으면 첫 화면이 비활성 workspace[0]의 deferred
-                // placeholder들로 채워진다).
-                if let Some(restored_idx) = state.engine.restored_active_workspace.take() {
-                    state.switch_workspace(restored_idx);
-                }
+                engine.restored_active_workspace.take()
+            } else {
+                None
             }
+        } else {
+            None
+        };
+
+        let mut state = crate::state::AppState::new(self.engine_state_mut());
+        if let Some(restored_idx) = restored_idx_after_layout {
+            state.switch_workspace(self.engine_state_mut(), restored_idx);
         }
-        #[cfg(debug_assertions)]
-        {
-            state.engine.input_simulation_enabled = self.input_simulation_enabled;
+        if let Some(mgr) = self.plugin_manager.as_ref() {
+            state.tool_registry.set_plugin_items(mgr.plugin_tool_items());
         }
-        // App 의 preset_store Arc 를 EngineState 에 공유. apply popup / 우클릭 저장 등이
-        // MainWindow 컨텍스트에서 lock 한 번으로 직접 접근할 수 있게 한다.
-        state.engine.preset_store = Some(self.engine.preset_store.clone());
         state
     }
 
@@ -116,10 +120,17 @@ impl App {
         &mut self,
         gpu: GpuState,
         state: crate::state::AppState,
+        engine_state: crate::engine_state::EngineState,
         window: Arc<Window>,
     ) {
         let window_id = window.id();
-        let main = window::main::MainWindow::new(gpu, state, window, self.engine.proxy.clone());
+        let main = window::main::MainWindow::new(
+            gpu,
+            state,
+            engine_state,
+            window,
+            self.engine.proxy.clone(),
+        );
         self.windows.insert(window_id, Box::new(main));
         self.engine.focused_window_id = Some(window_id);
         if let Some(mgr) = self.plugin_manager.as_mut() {
@@ -184,7 +195,11 @@ impl App {
         }
 
         self.engine.start_ipc();
-        self.register_window(gpu, state, window);
+        let engine_state = self
+            .engine_state
+            .take()
+            .expect("App.engine_state must be present to register a main window");
+        self.register_window(gpu, state, engine_state, window);
         // Event Bus 1.0: `system.startup_complete`는 부팅 완료 직후 1회 발화.
         // init_app_state는 첫 윈도우 등록 시 한 번만 호출되므로 별도 once 가드 불필요.
         if let Some(mgr) = self.plugin_manager.as_mut() {
@@ -284,7 +299,7 @@ impl App {
         };
 
         // Ensure at least one workspace exists for the new window
-        state.ensure_workspace_exists();
+        state.ensure_workspace_exists(self.engine_state_mut());
 
         // DB 초기화 실패 알림. 가장 먼저 푸시해서 큐 head에 둠 → [확인] 시 Exit(1).
         if let Some(err) = db_init_error {
@@ -317,7 +332,11 @@ impl App {
             );
         }
 
-        self.register_window(gpu, state, window);
+        let engine_state = self
+            .engine_state
+            .take()
+            .expect("App.engine_state must be present to register a main window");
+        self.register_window(gpu, state, engine_state, window);
         tracing::info!("created new window {:?}", self.engine.focused_window_id);
     }
 }

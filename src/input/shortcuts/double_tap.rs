@@ -12,7 +12,9 @@ impl MainWindow {
         &mut self,
         dt: crate::double_tap::DoubleTapKey,
     ) -> bool {
-        let kb = self.state.engine.settings.keybindings.clone();
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
+        let kb = self.engine_state.settings.keybindings.clone();
         let dt_str = dt.binding_str();
 
         let has_dt = |bindings: &[String]| bindings.iter().any(|b| b == dt_str);
@@ -33,7 +35,7 @@ impl MainWindow {
                 .from_user_shortcut("toggle_notifications_double_tap"),
             );
             if will_open {
-                self.state.engine.notifications.mark_all_read();
+                self.engine_state.notifications.mark_all_read();
             }
             return true;
         }
@@ -78,30 +80,30 @@ impl MainWindow {
                             }
                             .from_user_shortcut("new_workspace"),
                         );
-                        self.state.resize_all(terminal_rect, cell_w, cell_h);
+                        self.state.resize_all(engine, engine, terminal_rect, cell_w, cell_h);
                     }
                     "close_workspace" => {
-                        self.state.close_active_workspace();
-                        if self.state.engine.workspaces.is_empty() {
+                        self.state.close_active_workspace(engine);
+                        if self.engine_state.workspaces.is_empty() {
                             self.request_close();
                         } else {
-                            self.state.resize_all(terminal_rect, cell_w, cell_h);
+                            self.state.resize_all(engine, engine, terminal_rect, cell_w, cell_h);
                         }
                     }
                     "new_tab" => {
-                        if let Err(e) = self.state.add_tab() {
+                        if let Err(e) = self.state.add_tab(engine) {
                             tracing::warn!("add_tab failed: {e}");
                         }
-                        self.state.resize_all(terminal_rect, cell_w, cell_h);
+                        self.state.resize_all(engine, engine, terminal_rect, cell_w, cell_h);
                     }
                     "close_pane" => {
-                        if !self.state.close_active_pane() {
-                            self.state.close_active_workspace();
+                        if !self.state.close_active_pane(engine) {
+                            self.state.close_active_workspace(engine);
                         }
-                        if self.state.engine.workspaces.is_empty() {
+                        if self.engine_state.workspaces.is_empty() {
                             self.request_close();
                         } else {
-                            self.state.resize_all(terminal_rect, cell_w, cell_h);
+                            self.state.resize_all(engine, engine, terminal_rect, cell_w, cell_h);
                         }
                     }
                     "split_pane_vertical" => {
@@ -111,7 +113,7 @@ impl MainWindow {
                             }
                             .from_user_shortcut("split_pane_vertical"),
                         );
-                        self.state.resize_all(terminal_rect, cell_w, cell_h);
+                        self.state.resize_all(engine, engine, terminal_rect, cell_w, cell_h);
                     }
                     "split_pane_horizontal" => {
                         self.state.dispatch_intent(
@@ -120,7 +122,7 @@ impl MainWindow {
                             }
                             .from_user_shortcut("split_pane_horizontal"),
                         );
-                        self.state.resize_all(terminal_rect, cell_w, cell_h);
+                        self.state.resize_all(engine, engine, terminal_rect, cell_w, cell_h);
                     }
                     "split_surface_vertical" => {
                         self.state.dispatch_intent(
@@ -129,7 +131,7 @@ impl MainWindow {
                             }
                             .from_user_shortcut("split_surface_vertical"),
                         );
-                        self.state.resize_all(terminal_rect, cell_w, cell_h);
+                        self.state.resize_all(engine, engine, terminal_rect, cell_w, cell_h);
                     }
                     "split_surface_horizontal" => {
                         self.state.dispatch_intent(
@@ -138,40 +140,40 @@ impl MainWindow {
                             }
                             .from_user_shortcut("split_surface_horizontal"),
                         );
-                        self.state.resize_all(terminal_rect, cell_w, cell_h);
+                        self.state.resize_all(engine, engine, terminal_rect, cell_w, cell_h);
                     }
                     "focus_pane_next" => {
-                        self.state.move_pane_focus_forward();
+                        self.state.move_pane_focus_forward(engine);
                     }
                     "focus_pane_prev" => {
-                        self.state.move_pane_focus_backward();
+                        self.state.move_pane_focus_backward(engine);
                     }
                     "focus_surface_next" => {
-                        self.state.move_surface_focus_forward();
+                        self.state.move_surface_focus_forward(engine);
                     }
                     "focus_surface_prev" => {
-                        self.state.move_surface_focus_backward();
+                        self.state.move_surface_focus_backward(engine);
                     }
                     "close_surface" => {
-                        let target_sid = self.state.focused_surface_id();
-                        let target_kind = target_sid.and_then(|s| self.state.surface_kind(s));
-                        let closed = self.state.close_active_surface();
+                        let target_sid = self.state.focused_surface_id(engine);
+                        let target_kind = target_sid.and_then(|s| self.state.surface_kind(engine, engine, s));
+                        let closed = self.state.close_active_surface(engine);
                         if closed {
                             if let (Some(sid), Some(k)) = (target_sid, target_kind) {
                                 self.state.enqueue_surface_closed(sid, k, true);
                             }
-                        } else if !self.state.close_active_pane() {
-                            self.state.close_active_workspace();
+                        } else if !self.state.close_active_pane(engine) {
+                            self.state.close_active_workspace(engine);
                         }
-                        if self.state.engine.workspaces.is_empty() {
+                        if self.engine_state.workspaces.is_empty() {
                             self.request_close();
                         } else {
-                            self.state.resize_all(terminal_rect, cell_w, cell_h);
+                            self.state.resize_all(engine, engine, terminal_rect, cell_w, cell_h);
                         }
                     }
                     "restore_closed" => {
-                        self.state.restore_closed_item();
-                        self.state.resize_all(terminal_rect, cell_w, cell_h);
+                        self.state.restore_closed_item(engine);
+                        self.state.resize_all(engine, engine, terminal_rect, cell_w, cell_h);
                     }
                     "quit" => {
                         send_app_event(&self.proxy, crate::AppEvent::QuitRequested);
@@ -183,7 +185,7 @@ impl MainWindow {
                         send_app_event(&self.proxy, crate::AppEvent::Minimize);
                     }
                     "open_markdown" => {
-                        let pane_id = self.state.active_workspace().focused_pane;
+                        let pane_id = self.state.active_workspace(engine).focused_pane;
                         self.state.dialogs.file_open_pane_id = Some(pane_id);
                         self.state.dialogs.markdown_open_buffer.clear();
                         self.state.dispatch_intent(
@@ -195,7 +197,7 @@ impl MainWindow {
                         );
                     }
                     "convert_surface" => {
-                        if let Some(sid) = self.state.focused_surface_id() {
+                        if let Some(sid) = self.state.focused_surface_id(engine) {
                             self.state.dialogs.convert_popup = Some(sid);
                             self.state.dialogs.convert_popup_selected = None;
                             self.state.dispatch_intent(
@@ -210,8 +212,8 @@ impl MainWindow {
                         }
                     }
                     "convert_to_markdown" => {
-                        if let Some(sid) = self.state.focused_surface_id() {
-                            let pane_id = self.state.active_workspace().focused_pane;
+                        if let Some(sid) = self.state.focused_surface_id(engine) {
+                            let pane_id = self.state.active_workspace(engine).focused_pane;
                             self.state.dialogs.markdown_convert_surface_id = Some(sid);
                             self.state.dialogs.file_open_pane_id = Some(pane_id);
                             self.state.dialogs.markdown_open_buffer.clear();
@@ -233,22 +235,22 @@ impl MainWindow {
                         // swap으로 복구할 예정.
                     }
                     "close_active" => {
-                        if !self.state.close_active_tab() {
-                            if !self.state.close_active_pane() {
-                                self.state.close_active_workspace();
+                        if !self.state.close_active_tab(engine) {
+                            if !self.state.close_active_pane(engine) {
+                                self.state.close_active_workspace(engine);
                             }
                         }
-                        if self.state.engine.workspaces.is_empty() {
+                        if self.engine_state.workspaces.is_empty() {
                             self.request_close();
                         } else {
-                            self.state.resize_all(terminal_rect, cell_w, cell_h);
+                            self.state.resize_all(engine, engine, terminal_rect, cell_w, cell_h);
                         }
                     }
                     "next_tab" => {
-                        self.state.next_tab_in_pane();
+                        self.state.next_tab_in_pane(engine);
                     }
                     "prev_tab" => {
-                        self.state.prev_tab_in_pane();
+                        self.state.prev_tab_in_pane(engine);
                     }
                     _ => {}
                 }

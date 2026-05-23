@@ -28,11 +28,11 @@ impl App {
         // Get close behavior from settings
         let behavior = self
             .focused_window()
-            .map(|w| w.state.engine.settings.general.close_behavior.clone())
+            .map(|w| w.engine_state.settings.general.close_behavior.clone())
             .or_else(|| {
                 self.parked_states
                     .first()
-                    .map(|s| s.engine.settings.general.close_behavior.clone())
+                    .map(|s| s.engine_state.settings.general.close_behavior.clone())
             })
             .unwrap_or_else(|| "ask".to_string());
 

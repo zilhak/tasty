@@ -11,6 +11,8 @@ impl MainWindow {
     /// 현재 마우스 좌표와 수식키 상태로 hovered_link를 갱신한다.
     /// 변경이 있으면 true를 반환 (렌더 dirty 플래그를 켜기 위함).
     pub(crate) fn update_hovered_link(&mut self) -> bool {
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
         let prev = self.hovered_link.as_ref().map(|h| {
             (
                 h.surface_id,
@@ -20,7 +22,7 @@ impl MainWindow {
             )
         });
 
-        let modifier = LinkModifier::parse(&self.state.engine.settings.general.link_click_modifier);
+        let modifier = LinkModifier::parse(&self.engine_state.settings.general.link_click_modifier);
         let mods = &self.base.modifiers;
         let matches_mods = modifier.matches(mods.control_key(), mods.alt_key(), mods.super_key());
 
@@ -46,6 +48,8 @@ impl MainWindow {
     }
 
     fn compute_hovered_link(&self) -> Option<HoveredLink> {
+        let engine = &self.engine_state;
+        let _ = engine;
         let pos = self.cursor_position?;
         let terminal_rect = self.compute_terminal_rect();
         let x = pos.x as f32;
@@ -56,9 +60,9 @@ impl MainWindow {
         // 마우스 아래 surface id를 구하고 그 surface의 terminal을 사용.
         // focused 기반이 아니라 실제 hover 위치의 surface로 판별해야 여러 pane 중
         // 어느 곳이든 동작한다.
-        let surface_id = self.state.surface_id_at_position(x, y, terminal_rect)?;
-        let terminal = self.state.engine.find_terminal_by_id(surface_id)?;
-        let surface_rect = self.state.surface_rect_by_id(surface_id, terminal_rect)?;
+        let surface_id = self.state.surface_id_at_position(engine, x, y, terminal_rect)?;
+        let terminal = self.engine_state.find_terminal_by_id(surface_id)?;
+        let surface_rect = self.state.surface_rect_by_id(engine, surface_id, terminal_rect)?;
 
         let (cols, rows) = terminal.surface().dimensions();
         let point = crate::selection::pixel_to_grid(
@@ -93,6 +97,8 @@ impl MainWindow {
         position: winit::dpi::PhysicalPosition<f64>,
         egui_consumed: bool,
     ) {
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
         self.cursor_position = Some(position);
         let overlay_open = self.state.settings_open;
         if egui_consumed || overlay_open || self.state.popup_hovered {
@@ -136,7 +142,7 @@ impl MainWindow {
                 }
             };
             if changed {
-                self.state.resize_all(
+                self.state.resize_all(engine, engine, 
                     terminal_rect,
                     self.base.gpu.cell_width(),
                     self.base.gpu.cell_height(),
@@ -153,6 +159,8 @@ impl MainWindow {
         button: MouseButton,
         egui_consumed: bool,
     ) {
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
         let overlay_open = self.state.settings_open;
         if egui_consumed || overlay_open || self.state.popup_hovered {
             // Even when egui consumes the event (e.g. egui-rendered panels),
@@ -166,13 +174,13 @@ impl MainWindow {
                 if let Some(pos) = self.cursor_position {
                     let (x, y) = (pos.x as f32, pos.y as f32);
                     if terminal_rect.contains(PhysicalPx(x), PhysicalPx(y)) {
-                        if self.state.focus_pane_at_position(x, y, terminal_rect) {
+                        if self.state.focus_pane_at_position(engine, x, y, terminal_rect) {
                             self.base.dirty = true;
                         }
                         // Also update surface focus within the tab so that
                         // clicking on an egui-rendered panel (Explorer, Markdown)
                         // correctly moves keyboard target to that surface.
-                        if self.state.focus_surface_at_position(x, y, terminal_rect) {
+                        if self.state.focus_surface_at_position(engine, x, y, terminal_rect) {
                             self.base.dirty = true;
                         }
                     }
@@ -194,11 +202,11 @@ impl MainWindow {
                 if !terminal_rect.contains(PhysicalPx(x), PhysicalPx(y)) {
                     return;
                 }
-                let Some(surface_id) = self.state.surface_id_at_position(x, y, terminal_rect)
+                let Some(surface_id) = self.state.surface_id_at_position(engine, x, y, terminal_rect)
                 else {
                     return;
                 };
-                if self.state.engine.find_terminal_by_id(surface_id).is_none() {
+                if self.engine_state.find_terminal_by_id(surface_id).is_none() {
                     return;
                 }
                 let sf = self.base.gpu.scale_factor() as f32;
@@ -225,16 +233,16 @@ impl MainWindow {
                 // 수식키+클릭은 무조건 링크 클릭 동작으로 라우팅.
                 // 링크 위면 열고, 링크 위가 아니면 아무것도 안 함 (selection 시작 안 함).
                 let modifier =
-                    LinkModifier::parse(&self.state.engine.settings.general.link_click_modifier);
+                    LinkModifier::parse(&self.engine_state.settings.general.link_click_modifier);
                 let mods = &self.base.modifiers;
                 let link_mods_match = !matches!(modifier, LinkModifier::None)
                     && modifier.matches(mods.control_key(), mods.alt_key(), mods.super_key());
                 if link_mods_match && button_state == ElementState::Pressed {
                     if terminal_rect.contains(PhysicalPx(x), PhysicalPx(y)) {
-                        if self.state.focus_pane_at_position(x, y, terminal_rect) {
+                        if self.state.focus_pane_at_position(engine, x, y, terminal_rect) {
                             self.base.dirty = true;
                         }
-                        if self.state.focus_surface_at_position(x, y, terminal_rect) {
+                        if self.state.focus_surface_at_position(engine, x, y, terminal_rect) {
                             self.base.dirty = true;
                         }
                     }
@@ -274,15 +282,15 @@ impl MainWindow {
                             kind: DividerDragKind::Surface,
                         });
                     } else {
-                        let old_surface = self.state.focused_surface_id();
-                        if self.state.focus_pane_at_position(x, y, terminal_rect) {
+                        let old_surface = self.state.focused_surface_id(engine);
+                        if self.state.focus_pane_at_position(engine, x, y, terminal_rect) {
                             self.base.dirty = true;
                         }
-                        if self.state.focus_surface_at_position(x, y, terminal_rect) {
+                        if self.state.focus_surface_at_position(engine, x, y, terminal_rect) {
                             self.base.dirty = true;
                         }
                         if self.ime_preedit.is_some()
-                            && self.state.focused_surface_id() != old_surface
+                            && self.state.focused_surface_id(engine) != old_surface
                         {
                             self.flush_ime_preedit();
                         }
@@ -305,7 +313,7 @@ impl MainWindow {
                 } else if button_state == ElementState::Released {
                     if self.dragging_divider.is_some() {
                         self.dragging_divider = None;
-                        self.state.resize_all(
+                        self.state.resize_all(engine, engine, 
                             terminal_rect,
                             self.base.gpu.cell_width(),
                             self.base.gpu.cell_height(),
@@ -328,6 +336,8 @@ impl MainWindow {
     }
 
     pub(super) fn handle_mouse_wheel(&mut self, delta: MouseScrollDelta, egui_consumed: bool) {
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
         let overlay_open = self.state.settings_open;
         if egui_consumed {
             self.mark_dirty();
@@ -339,12 +349,12 @@ impl MainWindow {
                 .cursor_position
                 .and_then(|pos| {
                     let (x, y) = (pos.x as f32, pos.y as f32);
-                    self.state.surface_id_at_position(x, y, terminal_rect)
+                    self.state.surface_id_at_position(engine, x, y, terminal_rect)
                 })
-                .or_else(|| self.state.focused_surface_id());
+                .or_else(|| self.state.focused_surface_id(engine));
 
             if let Some(surface_id) = target_id {
-                if let Some(terminal) = self.state.engine.find_terminal_by_id_mut(surface_id) {
+                if let Some(terminal) = self.engine_state.find_terminal_by_id_mut(surface_id) {
                     let lines = match delta {
                         MouseScrollDelta::LineDelta(_, y) => y as i32,
                         MouseScrollDelta::PixelDelta(pos) => (pos.y / 20.0) as i32,

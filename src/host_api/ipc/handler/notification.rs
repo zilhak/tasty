@@ -3,9 +3,8 @@ use serde_json::json;
 use crate::ipc::protocol::JsonRpcResponse;
 use crate::state::AppState;
 
-pub fn handle_notification_list(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {
-    let notifications: Vec<_> = state
-        .engine
+pub fn handle_notification_list(state: &AppState, engine: &crate::engine_state::EngineState, id: serde_json::Value) -> JsonRpcResponse {
+    let notifications: Vec<_> = engine
         .notifications
         .all()
         .rev()
@@ -26,6 +25,7 @@ pub fn handle_notification_list(state: &AppState, id: serde_json::Value) -> Json
 
 pub fn handle_notification_create(
     state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -52,8 +52,8 @@ pub fn handle_notification_create(
         None => {
             // 1. surface_id가 주어지면 그 surface가 속한 워크스페이스로 라우팅
             if surface_id > 0 {
-                if let Some((idx, _)) = state.engine.find_workspace_index_for_surface(surface_id) {
-                    state.engine.workspaces[idx].id
+                if let Some((idx, _)) = engine.find_workspace_index_for_surface(surface_id) {
+                    engine.workspaces[idx].id
                 } else {
                     return JsonRpcResponse::invalid_params(
                         id,
@@ -64,13 +64,13 @@ pub fn handle_notification_create(
                     );
                 }
             // 2. 워크스페이스가 정확히 1개면 자동 사용 (호환성 폴백, 1버전 유지 예정)
-            } else if state.engine.workspaces.len() == 1 {
+            } else if engine.workspaces.len() == 1 {
                 tracing::warn!(
                     "notification.create called without 'workspace_id' or 'surface_id'; \
                      auto-routing to the only workspace. \
                      This fallback will be removed in a future version."
                 );
-                state.engine.workspaces[0].id
+                engine.workspaces[0].id
             } else {
                 return JsonRpcResponse::invalid_params(
                     id,
@@ -81,8 +81,7 @@ pub fn handle_notification_create(
             }
         }
     };
-    let created_id = state
-        .engine
+    let created_id = engine
         .notifications
         .add(ws_id, surface_id, title.clone(), body.clone());
     if let Some(nid) = created_id {

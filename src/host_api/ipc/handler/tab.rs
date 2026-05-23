@@ -20,6 +20,7 @@ fn require_tab_id(
 
 pub fn handle_tab_list(
     state: &AppState,
+    engine: &crate::engine_state::EngineState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -27,7 +28,7 @@ pub fn handle_tab_list(
         Ok(pid) => pid,
         Err(e) => return e,
     };
-    let tabs: Vec<_> = if let Some(pane) = state.engine.find_pane_by_id(pane_id) {
+    let tabs: Vec<_> = if let Some(pane) = engine.find_pane_by_id(pane_id) {
         pane.tabs
             .iter()
             .enumerate()
@@ -41,7 +42,7 @@ pub fn handle_tab_list(
                     "name": tab.name,
                     "active": i == pane.active_tab,
                     "type": surface_type,
-                    "busy_count": state.engine.busy_count(&sids),
+                    "busy_count": engine.busy_count(&sids),
                 });
                 if let Some(sid) = surface_id {
                     entry["surface_id"] = json!(sid);
@@ -57,6 +58,7 @@ pub fn handle_tab_list(
 
 pub fn handle_tab_create(
     state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -65,7 +67,7 @@ pub fn handle_tab_create(
         Err(e) => return e,
     };
 
-    if state.engine.find_pane_by_id(pane_id).is_none() {
+    if engine.find_pane_by_id(pane_id).is_none() {
         return JsonRpcResponse::invalid_params(id, format!("Pane {} not found", pane_id));
     }
 
@@ -93,7 +95,7 @@ pub fn handle_tab_create(
                 .get("cwd")
                 .and_then(|v| v.as_str())
                 .map(std::path::PathBuf::from);
-            state.add_tab_to_pane(pane_id, cwd)
+            state.add_tab_to_pane(engine, engine, pane_id, cwd)
         }
         other => {
             // markdown/html/explorer/image/empty + plugin remote_kind
@@ -107,9 +109,8 @@ pub fn handle_tab_create(
 
     match result {
         Ok(_) => {
-            let (tab_count, active_tab) = state
-                .engine
-                .find_pane_by_id(pane_id)
+            let (tab_count, active_tab) = engine
+        .find_pane_by_id(pane_id)
                 .map(|p| (p.tabs.len(), p.active_tab))
                 .unwrap_or((0, 0));
             JsonRpcResponse::success(
@@ -127,6 +128,7 @@ pub fn handle_tab_create(
 
 pub fn handle_tab_close(
     state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -138,7 +140,7 @@ pub fn handle_tab_close(
     // Prevent closing a tab that contains the caller
     if let Some(caller) = super::caller_surface_id(params) {
         // Find which pane contains this tab
-        if let Some(pane_id) = state.engine.find_pane_for_tab(tab_id) {
+        if let Some(pane_id) = engine.find_pane_for_tab(tab_id) {
             if super::surface_belongs_to_pane(state, caller, pane_id) {
                 return JsonRpcResponse::invalid_params(
                     id,
@@ -148,7 +150,7 @@ pub fn handle_tab_close(
         }
     }
 
-    let closed = state.close_tab_by_tab_id(tab_id);
+    let closed = state.close_tab_by_tab_id(engine, engine, tab_id);
 
     if closed {
         JsonRpcResponse::success(id, json!({ "closed": true, "tab_id": tab_id }))
@@ -162,6 +164,7 @@ pub fn handle_tab_close(
 
 pub fn handle_tab_move(
     state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {

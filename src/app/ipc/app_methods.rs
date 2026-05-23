@@ -108,7 +108,7 @@ impl App {
                     Some(serde_json::json!({
                         "id": format!("{:?}", id),
                         "focused": focused_id == Some(*id),
-                        "title": main.state.active_workspace().name,
+                        "title": main.state.active_workspace(engine).name,
                     }))
                 })
                 .collect();
@@ -246,11 +246,11 @@ impl App {
         let store_opt = self
             .windows
             .values()
-            .find_map(|w| w.as_main().map(|w| w.state.engine.approval_store.clone()))
+            .find_map(|w| w.as_main().map(|w| w.engine_state.approval_store.clone()))
             .or_else(|| {
                 self.parked_states
                     .first()
-                    .map(|s| s.engine.approval_store.clone())
+                    .map(|s| s.engine_state.approval_store.clone())
             });
         let rpc_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
         match store_opt {

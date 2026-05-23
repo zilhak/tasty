@@ -48,6 +48,8 @@ impl GpuState {
         state: &AppState,
         plugin_manager: &PluginManager,
     ) {
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
         let pending = collect_canvas_requests(state, plugin_manager);
         if pending.is_empty() {
             return;
@@ -144,7 +146,7 @@ impl GpuState {
 /// 본 함수는 GPU 자원에 손대지 않는다 — 순수 데이터 수집. 다음 단계에서 ensure + upload.
 fn collect_canvas_requests(state: &AppState, plugin_manager: &PluginManager) -> Vec<PendingCanvas> {
     let mut out: Vec<PendingCanvas> = Vec::new();
-    let ws = state.active_workspace();
+    let ws = state.active_workspace(engine);
     let pane_ids = ws.pane_layout().all_pane_ids();
     for pane_id in pane_ids {
         let Some(pane) = ws.pane_layout().find_pane(pane_id) else {

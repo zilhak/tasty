@@ -137,7 +137,7 @@ impl App {
         } else {
             ke.logical_key.clone()
         };
-        let host_kb = main.state.engine.settings.keybindings.clone();
+        let host_kb = main.engine_state.settings.keybindings.clone();
         let cmd_id = {
             let Some(mgr) = self.plugin_manager.as_ref() else {
                 return false;

@@ -15,6 +15,8 @@ impl PopupManager {
         content_fn: &mut dyn FnMut(&str, &mut egui::Ui),
         draw_ctx: Option<&LayoutContext>,
     ) -> PopupDrawResult {
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
         let th = theme::theme();
         let screen_rect = ctx.screen_rect();
         let mut closed: Vec<PopupId> = Vec::new();

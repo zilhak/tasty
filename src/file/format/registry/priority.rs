@@ -24,6 +24,8 @@ impl FileFormatRegistry {
     /// `extension` 에 대한 사용자 우선순위 표. 적힌 detector id 들 (등록 여부 무관).
     /// 표에 없으면 `None`.
     pub fn extension_priority_order(&self, extension: &str) -> Option<Vec<DetectorId>> {
+        let engine = &self.engine_state;
+        let _ = engine;
         let key = extension.trim_start_matches('.').to_ascii_lowercase();
         let inner = self.inner.read().ok()?;
         inner.extension_priority.get(&key).map(|e| e.order.clone())
@@ -32,6 +34,8 @@ impl FileFormatRegistry {
     /// Settings UI 가 확장자 우선순위를 변경할 때 호출. `RuleOrigin::User` 로 entry 를
     /// 덮어쓴다 (last-writer-wins). `order` 가 비면 entry 제거.
     pub fn set_user_extension_priority(&self, extension: &str, order: Vec<DetectorId>) {
+        let engine = &self.engine_state;
+        let _ = engine;
         let mut inner = match self.inner.write() {
             Ok(g) => g,
             Err(_) => return,
@@ -46,6 +50,8 @@ impl FileFormatRegistry {
     /// 사용자가 명시적으로 우선순위를 해제. `extension_priority` 표에서 해당 entry 삭제.
     /// (host default 가 있던 entry 라 해도 함께 제거 — single-entry 구조)
     pub fn clear_user_extension_priority(&self, extension: &str) {
+        let engine = &self.engine_state;
+        let _ = engine;
         let key = extension.trim_start_matches('.').to_ascii_lowercase();
         let mut inner = match self.inner.write() {
             Ok(g) => g,
@@ -57,6 +63,8 @@ impl FileFormatRegistry {
     /// 등록된 모든 `extension_priority` entry 의 키 (`md`, `json` 등). UI 에서 "현재 표가
     /// 있는 확장자" 를 보여주기 위해 사용.
     pub fn extension_priority_keys(&self) -> Vec<String> {
+        let engine = &self.engine_state;
+        let _ = engine;
         let inner = match self.inner.read() {
             Ok(g) => g,
             Err(_) => return Vec::new(),

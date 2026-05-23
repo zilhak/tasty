@@ -1,11 +1,12 @@
+use crate::engine_state::EngineState;
 use crate::model::{FocusDirection, PhysicalPx};
 
 use super::AppState;
 
 impl AppState {
     /// Move focus forward: within the active tab's split first, then between panes.
-    pub fn move_focus_forward(&mut self) {
-        let ws = self.active_workspace_mut();
+    pub fn move_focus_forward(&mut self, engine: &mut EngineState) {
+        let ws = self.active_workspace_mut(engine);
         let pane_id = ws.focused_pane;
 
         // Try to move within a split tab first
@@ -19,13 +20,13 @@ impl AppState {
         }
 
         // Not in a multi-surface tab, move between panes
-        let ws = self.active_workspace_mut();
+        let ws = self.active_workspace_mut(engine);
         ws.focused_pane = ws.pane_layout().next_pane_id(ws.focused_pane);
     }
 
     /// Move focus backward: within the active tab's split first, then between panes.
-    pub fn move_focus_backward(&mut self) {
-        let ws = self.active_workspace_mut();
+    pub fn move_focus_backward(&mut self, engine: &mut EngineState) {
+        let ws = self.active_workspace_mut(engine);
         let pane_id = ws.focused_pane;
 
         // Try to move within a split tab first
@@ -39,14 +40,14 @@ impl AppState {
         }
 
         // Not in a multi-surface tab, move between panes
-        let ws = self.active_workspace_mut();
+        let ws = self.active_workspace_mut(engine);
         ws.focused_pane = ws.pane_layout().prev_pane_id(ws.focused_pane);
     }
 
     /// Move focus in a spatial direction (left/right/up/down).
     /// First tries to move within a split tab, then moves between panes.
-    pub fn move_focus_direction(&mut self, direction: FocusDirection) {
-        let ws = self.active_workspace_mut();
+    pub fn move_focus_direction(&mut self, engine: &mut EngineState, direction: FocusDirection) {
+        let ws = self.active_workspace_mut(engine);
         let pane_id = ws.focused_pane;
 
         // Try to move within a split tab first
@@ -60,7 +61,7 @@ impl AppState {
         }
 
         // Try to move between panes
-        let ws = self.active_workspace_mut();
+        let ws = self.active_workspace_mut(engine);
         if let Some(target_pane_id) = ws
             .pane_layout()
             .directional_focus(ws.focused_pane, direction)
@@ -70,21 +71,21 @@ impl AppState {
     }
 
     /// Move focus to the next pane only (skip surface group logic).
-    pub fn move_pane_focus_forward(&mut self) {
-        let ws = self.active_workspace_mut();
+    pub fn move_pane_focus_forward(&mut self, engine: &mut EngineState) {
+        let ws = self.active_workspace_mut(engine);
         ws.focused_pane = ws.pane_layout().next_pane_id(ws.focused_pane);
     }
 
     /// Move focus to the previous pane only (skip surface group logic).
-    pub fn move_pane_focus_backward(&mut self) {
-        let ws = self.active_workspace_mut();
+    pub fn move_pane_focus_backward(&mut self, engine: &mut EngineState) {
+        let ws = self.active_workspace_mut(engine);
         ws.focused_pane = ws.pane_layout().prev_pane_id(ws.focused_pane);
     }
 
     /// Move focus to the next surface within the current tab's split.
     /// Does nothing if not in a multi-surface tab.
-    pub fn move_surface_focus_forward(&mut self) {
-        let ws = self.active_workspace_mut();
+    pub fn move_surface_focus_forward(&mut self, engine: &mut EngineState) {
+        let ws = self.active_workspace_mut(engine);
         let pane_id = ws.focused_pane;
         if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
             if let Some(tab) = pane.active_tab_mut() {
@@ -95,8 +96,8 @@ impl AppState {
 
     /// Move focus to the previous surface within the current tab's split.
     /// Does nothing if not in a multi-surface tab.
-    pub fn move_surface_focus_backward(&mut self) {
-        let ws = self.active_workspace_mut();
+    pub fn move_surface_focus_backward(&mut self, engine: &mut EngineState) {
+        let ws = self.active_workspace_mut(engine);
         let pane_id = ws.focused_pane;
         if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
             if let Some(tab) = pane.active_tab_mut() {
@@ -107,8 +108,8 @@ impl AppState {
 
     /// Set the focused pane in the active workspace to the given pane_id.
     /// Returns true if the pane exists.
-    pub fn focus_pane(&mut self, pane_id: u32) -> bool {
-        let ws = self.active_workspace_mut();
+    pub fn focus_pane(&mut self, engine: &mut EngineState, pane_id: u32) -> bool {
+        let ws = self.active_workspace_mut(engine);
         if ws.pane_layout().find_pane(pane_id).is_some() {
             ws.focused_pane = pane_id;
             true
@@ -120,11 +121,11 @@ impl AppState {
     /// Find which pane contains the surface, focus that pane, and if it's in a split tab,
     /// focus that surface. Searches all workspaces, not just the active one.
     /// Returns true if found.
-    pub fn focus_surface(&mut self, surface_id: u32) -> bool {
+    pub fn focus_surface(&mut self, engine: &mut EngineState, surface_id: u32) -> bool {
         // Search all workspaces for the surface.
         let mut found_ws_idx = None;
         let mut found_pane_id = None;
-        for (ws_idx, ws) in self.engine.workspaces.iter().enumerate() {
+        for (ws_idx, ws) in engine.workspaces.iter().enumerate() {
             let pane_ids = ws.pane_layout().all_pane_ids();
             for pid in pane_ids {
                 if let Some(pane) = ws.pane_layout().find_pane(pid) {
@@ -146,7 +147,7 @@ impl AppState {
         // Switch to the workspace containing the surface.
         self.active_workspace = ws_idx;
         // Focus the pane.
-        let ws = self.active_workspace_mut();
+        let ws = self.active_workspace_mut(engine);
         ws.focused_pane = pane_id;
         // If the active tab contains this surface, focus it within the tab.
         if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
@@ -163,17 +164,18 @@ impl AppState {
     /// Returns true if focus changed.
     pub fn focus_pane_at_position(
         &mut self,
+        engine: &mut EngineState,
         x: f32,
         y: f32,
         terminal_rect: crate::model::Rect,
     ) -> bool {
-        let ws = self.active_workspace();
+        let ws = self.active_workspace(engine);
         let pane_rects = ws.pane_layout().compute_rects(terminal_rect);
         for (pane_id, rect) in pane_rects {
             if rect.contains(PhysicalPx(x), PhysicalPx(y)) {
-                let old = self.active_workspace().focused_pane;
+                let old = self.active_workspace(engine).focused_pane;
                 if old != pane_id {
-                    self.active_workspace_mut().focused_pane = pane_id;
+                    self.active_workspace_mut(engine).focused_pane = pane_id;
                     return true;
                 }
                 return false;
@@ -187,11 +189,12 @@ impl AppState {
     /// Returns true if focus changed.
     pub fn focus_surface_at_position(
         &mut self,
+        engine: &mut EngineState,
         x: f32,
         y: f32,
         terminal_rect: crate::model::Rect,
     ) -> bool {
-        let ws = self.active_workspace();
+        let ws = self.active_workspace(engine);
         let focused_id = ws.focused_pane;
         let pane_rects = ws.pane_layout().compute_rects(terminal_rect);
 

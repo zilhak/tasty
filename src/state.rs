@@ -203,9 +203,6 @@ pub enum PendingHostEvent {
 // IdGenerator is now in engine_state.rs
 
 pub struct AppState {
-    /// Engine-level shared state (workspaces, terminals, settings, hooks, etc.)
-    pub engine: EngineState,
-
     // ── Window-level UI state ──
     pub active_workspace: usize,
     /// Whether the settings window is open.
@@ -538,12 +535,10 @@ impl RenameTarget {
 
 impl AppState {
     /// Creates initial state with one workspace, one pane, one tab, one terminal.
-    pub fn new(cols: usize, rows: usize, waker: Waker) -> anyhow::Result<Self> {
-        let mut engine = EngineState::new(cols, rows, waker)?;
+    pub fn new(engine: &mut EngineState) -> Self {
         let sidebar_width = engine.settings.appearance.sidebar_width;
         let active_workspace = engine.restored_active_workspace.take().unwrap_or(0);
-        Ok(Self {
-            engine,
+        Self {
             active_workspace,
             settings_open: false,
             plugins_open: false,
@@ -594,7 +589,7 @@ impl AppState {
             plugin_popup_events: Vec::new(),
             plugin_popup_closes: Vec::new(),
             pending_intents: Vec::new(),
-        })
+        }
     }
 
     /// Intent 발화. `App::dispatch_pending_intents` 가 메인 루프에서 drain.
@@ -647,18 +642,23 @@ impl AppState {
     /// `persist_id` 는 닫히는 surface 가 들고 있던 `scrollback_persist_id` 필드값을
     /// 호출자가 미리 뽑아 넘긴다. `Some` 일 때만 `~/.tasty/scrollback/<id>.bin` 파일이
     /// 삭제된다.
-    pub(crate) fn cleanup_surface(&mut self, surface_id: u32, persist_id: Option<String>) {
+    pub(crate) fn cleanup_surface(
+        &mut self,
+        engine: &mut EngineState,
+        surface_id: u32,
+        persist_id: Option<String>,
+    ) {
         if let Some(pid) = persist_id {
             crate::scrollback_store::delete(&pid);
         }
-        self.engine.pending_scrollback_inject.remove(&surface_id);
+        engine.pending_scrollback_inject.remove(&surface_id);
         if let Err(e) = crate::surface_meta::SurfaceMetaStore::remove(surface_id) {
             tracing::warn!("surface_meta remove failed for surface {surface_id}: {e}");
         }
         self.markdown_views.drop_view(surface_id);
         self.image_views.drop_view(surface_id);
-        self.engine.command_index.drop_surface(surface_id);
-        self.engine.observer_router.drop_surface(surface_id);
+        engine.command_index.drop_surface(surface_id);
+        engine.observer_router.drop_surface(surface_id);
         let scope = tasty_memory::Scope::Surface(surface_id);
         tasty_memory::with_store(|s| match s.purge_scope(&scope) {
             Ok(stats) if stats.regular + stats.secret > 0 => tracing::debug!(
@@ -673,8 +673,8 @@ impl AppState {
     }
 
     /// Determine the type of the currently focused surface.
-    pub fn focused_surface_type(&self) -> FocusedSurfaceType {
-        let pane = match self.focused_pane() {
+    pub fn focused_surface_type(&self, engine: &EngineState) -> FocusedSurfaceType {
+        let pane = match self.focused_pane(engine) {
             Some(p) => p,
             None => return FocusedSurfaceType::None,
         };
@@ -704,8 +704,8 @@ impl AppState {
 
     /// Surface가 close되기 직전에 `kind` 식별자를 얻는다. plugin lifecycle 알림에
     /// payload로 채워 보낸다. None이면 lifecycle 알림을 발행하지 않는다.
-    pub fn surface_kind(&self, surface_id: u32) -> Option<&'static str> {
-        self.engine.find_surface_by_id(surface_id).map(|s| s.kind())
+    pub fn surface_kind(&self, engine: &EngineState, surface_id: u32) -> Option<&'static str> {
+        engine.find_surface_by_id(surface_id).map(|s| s.kind())
     }
 
     /// Surface close lifecycle 알림 큐에 항목을 추가한다. App 메인 루프가
@@ -742,25 +742,24 @@ impl AppState {
     ///
     /// 사용자가 현재 포커스한 surface 본인의 `source_cwd()`를 사용한다.
     /// (terminal/explorer/markdown/html → 자체 cwd, image/empty/clipboard → None)
-    pub(crate) fn resolve_inherit_cwd(&self) -> Option<std::path::PathBuf> {
-        if !self.engine.settings.general.inherit_cwd || self.engine.workspaces.is_empty() {
+    pub(crate) fn resolve_inherit_cwd(&self, engine: &EngineState) -> Option<std::path::PathBuf> {
+        if !engine.settings.general.inherit_cwd || engine.workspaces.is_empty() {
             return None;
         }
-        let sid = self.focused_surface_id()?;
-        self.engine
-            .find_surface_by_id(sid)
-            .and_then(|s| s.source_cwd())
+        let sid = self.focused_surface_id(engine)?;
+        engine.find_surface_by_id(sid).and_then(|s| s.source_cwd())
     }
 
     /// Get the working directory to inherit from a specific surface, if enabled.
     pub(crate) fn resolve_inherit_cwd_from_surface(
         &self,
+        engine: &EngineState,
         surface_id: u32,
     ) -> Option<std::path::PathBuf> {
-        if !self.engine.settings.general.inherit_cwd {
+        if !engine.settings.general.inherit_cwd {
             return None;
         }
-        self.engine
+        engine
             .find_surface_by_id(surface_id)
             .and_then(|s| s.source_cwd())
     }

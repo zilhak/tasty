@@ -14,9 +14,9 @@ use super::MainWindow;
 
 impl MainWindow {
     pub(crate) fn save_workspace_preset_from_idx(&mut self, ws_idx: usize) -> Result<()> {
-        let ws = self
-            .state
-            .engine
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
+        let ws = self.engine_state
             .workspaces
             .get(ws_idx)
             .ok_or_else(|| anyhow!("workspace idx {ws_idx} out of range"))?;
@@ -26,7 +26,7 @@ impl MainWindow {
             ws.name.clone()
         };
 
-        let registry = self.state.engine.surface_registry.clone();
+        let registry = self.engine_state.surface_registry.clone();
         let mut capture = move |s: &dyn Surface| -> Option<CapturedSurfaceMeta> {
             let def = registry.get(s.kind())?;
             let params = (def.snapshot)(s)?;
@@ -55,7 +55,9 @@ impl MainWindow {
         pane_id: u32,
         tab_index: usize,
     ) -> Result<()> {
-        let ws = self.state.active_workspace();
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
+        let ws = self.state.active_workspace(engine);
         let pane = ws
             .pane_layout()
             .find_pane(pane_id)
@@ -74,7 +76,7 @@ impl MainWindow {
             base
         };
 
-        let registry = self.state.engine.surface_registry.clone();
+        let registry = self.engine_state.surface_registry.clone();
         let mut capture = move |s: &dyn Surface| -> Option<CapturedSurfaceMeta> {
             let def = registry.get(s.kind())?;
             let params = (def.snapshot)(s)?;
@@ -99,14 +101,16 @@ impl MainWindow {
     }
 
     pub(crate) fn save_pane_preset_from_pane_id(&mut self, pane_id: u32) -> Result<()> {
-        let ws = self.state.active_workspace();
+        let engine = &mut self.engine_state;
+        let _ = &mut *engine;
+        let ws = self.state.active_workspace(engine);
         let pane = ws
             .pane_layout()
             .find_pane(pane_id)
             .ok_or_else(|| anyhow!("pane {pane_id} not found"))?;
         let base_name = "pane".to_string();
 
-        let registry = self.state.engine.surface_registry.clone();
+        let registry = self.engine_state.surface_registry.clone();
         let mut capture = move |s: &dyn Surface| -> Option<CapturedSurfaceMeta> {
             let def = registry.get(s.kind())?;
             let params = (def.snapshot)(s)?;

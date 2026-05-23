@@ -16,7 +16,7 @@ pub fn handle(state: &mut AppState, intent: &DispatchedIntent) {
 }
 
 fn split(state: &mut AppState, direction: SplitDirection) {
-    if let Err(e) = state.split_pane(direction) {
+    if let Err(e) = state.split_pane(engine, direction) {
         tracing::warn!("split_pane failed: {e}");
     }
 }

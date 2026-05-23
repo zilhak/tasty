@@ -3,9 +3,8 @@ use serde_json::json;
 use crate::ipc::protocol::JsonRpcResponse;
 use crate::state::AppState;
 
-pub fn handle_workspace_list(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {
-    let workspaces: Vec<_> = state
-        .engine
+pub fn handle_workspace_list(state: &AppState, engine: &crate::engine_state::EngineState, id: serde_json::Value) -> JsonRpcResponse {
+    let workspaces: Vec<_> = engine
         .workspaces
         .iter()
         .enumerate()
@@ -18,7 +17,7 @@ pub fn handle_workspace_list(state: &AppState, id: serde_json::Value) -> JsonRpc
                 "description": ws.description,
                 "active": i == state.active_workspace,
                 "pane_count": ws.pane_layout().all_pane_ids().len(),
-                "busy_count": state.engine.busy_count(&sids),
+                "busy_count": engine.busy_count(&sids),
             })
         })
         .collect();
@@ -27,6 +26,7 @@ pub fn handle_workspace_list(state: &AppState, id: serde_json::Value) -> JsonRpc
 
 pub fn handle_workspace_create(
     state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -56,27 +56,27 @@ pub fn handle_workspace_create(
         }
         _ => {}
     }
-    match state.add_workspace_background(cwd, kind, params) {
+    match state.add_workspace_background(engine, engine, cwd, kind, params) {
         Ok(idx) => {
             let mut renamed_name: Option<String> = None;
             let mut renamed_subtitle: Option<String> = None;
             let mut renamed_description: Option<String> = None;
             if let Some(name) = params.get("name").and_then(|v| v.as_str()) {
                 if !name.is_empty() {
-                    state.engine.workspaces[idx].name = name.to_string();
+                    engine.workspaces[idx].name = name.to_string();
                     renamed_name = Some(name.to_string());
                 }
             }
             if let Some(subtitle) = params.get("subtitle").and_then(|v| v.as_str()) {
-                state.engine.workspaces[idx].subtitle = subtitle.to_string();
+                engine.workspaces[idx].subtitle = subtitle.to_string();
                 renamed_subtitle = Some(subtitle.to_string());
             }
             if let Some(desc) = params.get("description").and_then(|v| v.as_str()) {
-                state.engine.workspaces[idx].description = desc.to_string();
+                engine.workspaces[idx].description = desc.to_string();
                 renamed_description = Some(desc.to_string());
             }
-            state.engine.mark_layout_dirty();
-            let workspace_id = state.engine.workspaces[idx].id;
+            engine.mark_layout_dirty();
+            let workspace_id = engine.workspaces[idx].id;
             if renamed_name.is_some() || renamed_subtitle.is_some() || renamed_description.is_some()
             {
                 state.enqueue_host_event(crate::state::PendingHostEvent::WorkspaceRenamed {
@@ -87,7 +87,7 @@ pub fn handle_workspace_create(
                     user_direct: false,
                 });
             }
-            let ws = &state.engine.workspaces[idx];
+            let ws = &engine.workspaces[idx];
             let surface_id = {
                 let pane_id = ws.focused_pane;
                 ws.pane_layout()
@@ -113,15 +113,15 @@ pub fn handle_workspace_create(
 
 pub fn handle_workspace_update(
     state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
     let idx = if let Some(i) = params.get("index").and_then(|v| v.as_u64()) {
         i as usize
     } else if let Some(ws_id) = params.get("id").and_then(|v| v.as_u64()) {
-        match state
-            .engine
-            .workspaces
+        match engine
+        .workspaces
             .iter()
             .position(|ws| ws.id == ws_id as u32)
         {
@@ -137,13 +137,13 @@ pub fn handle_workspace_update(
         return JsonRpcResponse::invalid_params(id, "Missing required 'id' or 'index' parameter");
     };
 
-    if idx >= state.engine.workspaces.len() {
+    if idx >= engine.workspaces.len() {
         return JsonRpcResponse::invalid_params(
             id,
             format!(
                 "Workspace index {} out of range (0..{})",
                 idx,
-                state.engine.workspaces.len()
+                engine.workspaces.len()
             ),
         );
     }
@@ -153,7 +153,7 @@ pub fn handle_workspace_update(
     let mut renamed_description: Option<String> = None;
     let workspace_id;
     {
-        let ws = &mut state.engine.workspaces[idx];
+        let ws = &mut engine.workspaces[idx];
         workspace_id = ws.id;
         if let Some(name) = params.get("name").and_then(|v| v.as_str()) {
             ws.name = name.to_string();
@@ -177,8 +177,8 @@ pub fn handle_workspace_update(
             user_direct: false,
         });
     }
-    state.engine.mark_layout_dirty();
-    let ws = &state.engine.workspaces[idx];
+    engine.mark_layout_dirty();
+    let ws = &engine.workspaces[idx];
     JsonRpcResponse::success(
         id,
         json!({
@@ -193,6 +193,7 @@ pub fn handle_workspace_update(
 
 pub fn handle_workspace_move(
     state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -205,9 +206,9 @@ pub fn handle_workspace_move(
         None => return JsonRpcResponse::invalid_params(id, "Missing 'to_index' parameter"),
     };
 
-    let moved = state.move_workspace(from, to);
+    let moved = state.move_workspace(engine, engine, from, to);
     if moved {
-        state.engine.mark_layout_dirty();
+        engine.mark_layout_dirty();
     }
     JsonRpcResponse::success(id, json!({ "moved": moved }))
 }

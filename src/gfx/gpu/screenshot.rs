@@ -3,6 +3,8 @@ use super::GpuState;
 impl GpuState {
     /// Capture the current frame texture to a PNG file.
     pub(super) fn capture_frame_to_png(&self, texture: &wgpu::Texture, path: &std::path::Path) {
+        let engine = &self.engine_state;
+        let _ = engine;
         let width = self.size.width;
         let height = self.size.height;
         let bytes_per_pixel = 4u32;

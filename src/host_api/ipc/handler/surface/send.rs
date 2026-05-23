@@ -88,6 +88,7 @@ fn parse_key_combo(input: &str) -> Option<Vec<u8>> {
 
 pub(crate) fn handle_surface_send(
     state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -99,8 +100,8 @@ pub(crate) fn handle_surface_send(
         Some(t) => t,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'text' parameter"),
     };
-    state.engine.ensure_surface_initialized(surface_id);
-    if let Some(terminal) = state.engine.find_terminal_by_id_mut(surface_id) {
+    engine.ensure_surface_initialized(surface_id);
+    if let Some(terminal) = engine.find_terminal_by_id_mut(surface_id) {
         terminal.send_key(text);
         JsonRpcResponse::success(id, json!({ "sent": true, "surface_id": surface_id }))
     } else {
@@ -110,6 +111,7 @@ pub(crate) fn handle_surface_send(
 
 pub(crate) fn handle_surface_send_key(
     state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -122,7 +124,7 @@ pub(crate) fn handle_surface_send_key(
         None => return JsonRpcResponse::invalid_params(id, "Missing 'key' parameter"),
     };
 
-    state.engine.ensure_surface_initialized(surface_id);
+    engine.ensure_surface_initialized(surface_id);
 
     let bytes: Vec<u8> = match key {
         "enter" => b"\r".to_vec(),
@@ -155,7 +157,7 @@ pub(crate) fn handle_surface_send_key(
             // Parse modifier+key combos like "ctrl+c", "alt+x"
             if let Some(combo_bytes) = parse_key_combo(other) {
                 combo_bytes
-            } else if let Some(terminal) = state.engine.find_terminal_by_id_mut(surface_id) {
+            } else if let Some(terminal) = engine.find_terminal_by_id_mut(surface_id) {
                 terminal.send_key(other);
                 return JsonRpcResponse::success(
                     id,
@@ -169,7 +171,7 @@ pub(crate) fn handle_surface_send_key(
             }
         }
     };
-    if let Some(terminal) = state.engine.find_terminal_by_id_mut(surface_id) {
+    if let Some(terminal) = engine.find_terminal_by_id_mut(surface_id) {
         terminal.send_bytes(&bytes);
     }
     JsonRpcResponse::success(id, json!({ "sent": true, "surface_id": surface_id }))
@@ -183,6 +185,7 @@ pub(crate) fn handle_surface_send_key(
 /// deferred placeholder.
 pub(crate) fn handle_surface_wake(
     state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -190,9 +193,9 @@ pub(crate) fn handle_surface_wake(
         Ok(sid) => sid,
         Err(e) => return e,
     };
-    let was_deferred = state.engine.is_surface_deferred(surface_id);
-    let woke = state.engine.ensure_surface_initialized(surface_id);
-    if !woke && !was_deferred && state.engine.find_terminal_by_id(surface_id).is_none() {
+    let was_deferred = engine.is_surface_deferred(surface_id);
+    let woke = engine.ensure_surface_initialized(surface_id);
+    if !woke && !was_deferred && engine.find_terminal_by_id(surface_id).is_none() {
         return JsonRpcResponse::invalid_params(id, format!("Surface {} not found", surface_id));
     }
     JsonRpcResponse::success(
@@ -203,6 +206,7 @@ pub(crate) fn handle_surface_wake(
 
 pub(crate) fn handle_surface_send_combo(
     state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -227,7 +231,7 @@ pub(crate) fn handle_surface_send_combo(
     let has_ctrl = modifiers.iter().any(|m| m == "ctrl");
     let has_alt = modifiers.iter().any(|m| m == "alt");
 
-    state.engine.ensure_surface_initialized(surface_id);
+    engine.ensure_surface_initialized(surface_id);
 
     let mut bytes_to_send: Vec<u8> = Vec::new();
 
@@ -249,7 +253,7 @@ pub(crate) fn handle_surface_send_combo(
         bytes_to_send.extend_from_slice(key.as_bytes());
     }
 
-    let terminal = state.engine.find_terminal_by_id_mut(surface_id);
+    let terminal = engine.find_terminal_by_id_mut(surface_id);
 
     if let Some(terminal) = terminal {
         terminal.send_bytes(&bytes_to_send);
@@ -263,6 +267,7 @@ pub(crate) fn handle_surface_send_combo(
 
 pub(crate) fn handle_surface_send_to(
     state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -274,8 +279,8 @@ pub(crate) fn handle_surface_send_to(
         Some(sid) => sid as u32,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'surface_id' parameter"),
     };
-    state.engine.ensure_surface_initialized(surface_id);
-    if let Some(terminal) = state.engine.find_terminal_by_id_mut(surface_id) {
+    engine.ensure_surface_initialized(surface_id);
+    if let Some(terminal) = engine.find_terminal_by_id_mut(surface_id) {
         terminal.send_key(text);
         JsonRpcResponse::success(id, json!({ "sent": true }))
     } else {

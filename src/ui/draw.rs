@@ -28,7 +28,7 @@ pub fn draw_ui(ctx: &egui::Context, state: &mut AppState, scale_factor: f32) -> 
             sidebar::tools::open_tools_menu(state, btn_rect);
         }
         if let Some(i) = r.switch_ws {
-            state.switch_workspace(i);
+            state.switch_workspace(engine, i);
         }
         if r.add_ws {
             state.dispatch_intent(

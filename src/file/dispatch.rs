@@ -91,18 +91,17 @@ fn hex_val(b: u8) -> Option<u8> {
 pub fn dispatch_file_target(state: &mut AppState, target: FileTarget, depth: DetectDepth) {
     match depth {
         DetectDepth::Cheap => {
-            let detector = state.engine.file_format.identify(&target, depth);
+            let detector = engine.file_format.identify(&target, depth);
             apply_identify_result(state, target, detector);
         }
         DetectDepth::Deep => {
-            if let Some(worker) = state.engine.identify_worker.clone() {
+            if let Some(worker) = engine.identify_worker.clone() {
                 let _id = worker.spawn(target, depth);
             } else {
                 tracing::warn!(
                     "file_dispatch: identify_worker not injected — falling back to cheap",
                 );
-                let detector = state
-                    .engine
+                let detector = engine
                     .file_format
                     .identify(&target, DetectDepth::Cheap);
                 apply_identify_result(state, target, detector);
@@ -115,11 +114,12 @@ pub fn dispatch_file_target(state: &mut AppState, target: FileTarget, depth: Det
 /// `AppEvent::IdentifyDone` 핸들러 양쪽이 호출.
 pub fn apply_identify_result(
     state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
     target: FileTarget,
     detector: Option<DetectorId>,
 ) {
     let handlers = match &detector {
-        Some(d) => state.engine.file_handler.handlers_for(d),
+        Some(d) => engine.file_handler.handlers_for(d),
         None => Vec::new(),
     };
     if handlers.is_empty() {
@@ -134,12 +134,12 @@ pub fn apply_identify_result(
 /// Picker popup 을 띄운다. 후보가 비어도 호출 — empty-state UI 가 보여진다.
 fn open_picker(
     state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
     target: FileTarget,
     detector: Option<DetectorId>,
     candidates: Vec<FileHandler>,
 ) {
-    let recent_ids: Vec<HandlerId> = state
-        .engine
+    let recent_ids: Vec<HandlerId> = engine
         .file_handler_recent
         .list()
         .iter()
@@ -147,7 +147,7 @@ fn open_picker(
         .collect();
     let recent: Vec<_> = recent_ids
         .iter()
-        .filter_map(|id| state.engine.file_handler.get(id))
+        .filter_map(|id| engine.file_handler.get(id))
         .map(|h| handler_to_summary(&h))
         .collect();
     let cand: Vec<_> = candidates.iter().map(handler_to_summary).collect();
@@ -243,7 +243,7 @@ pub fn consume_picker_result(state: &mut AppState) {
     match result {
         FileHandlerPickerResult::Selected(handler_id) => {
             dispatch_by_handler_id(state, &handler_id, &target);
-            state.engine.record_file_handler_pick(&handler_id);
+            engine.record_file_handler_pick(&handler_id);
         }
         FileHandlerPickerResult::Cancelled => {
             // recent 갱신 없음.
@@ -252,7 +252,7 @@ pub fn consume_picker_result(state: &mut AppState) {
 }
 
 fn dispatch_by_handler_id(state: &mut AppState, id: &HandlerId, target: &FileTarget) {
-    match state.engine.file_handler.get(id) {
+    match engine.file_handler.get(id) {
         Some(handler) => execute_handler_action(state, &handler, target),
         None => {
             tracing::warn!(
