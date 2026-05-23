@@ -36,20 +36,33 @@ impl App {
             let new_settings = settings_modal.settings.clone();
             // Plugin shortcut override draft 회수 — 변경된 키만 plugins.toml에 반영.
             let plugin_draft = settings_modal.take_plugin_shortcut_draft();
-            // theme/language 변경 감지용 prev 값 — 첫 main window의 현재 설정 기준.
+            // theme/language 변경 감지용 prev 값 — 첫 main / parked / boot engine 순.
             // SettingsWindow는 단일 SoT라 prev/new는 글로벌 비교로 충분.
             let prev_theme = self
                 .main_windows_iter_mut()
                 .next()
                 .map(|w| w.engine_state.settings.appearance.theme.clone());
+            let prev_theme = prev_theme.or_else(|| {
+                self.parked_states
+                    .first()
+                    .map(|(_, e)| e.settings.appearance.theme.clone())
+            });
             let prev_language = self
                 .main_windows_iter_mut()
                 .next()
                 .map(|w| w.engine_state.settings.general.language.clone());
+            let prev_language = prev_language.or_else(|| {
+                self.parked_states
+                    .first()
+                    .map(|(_, e)| e.settings.general.language.clone())
+            });
             for main in self.main_windows_iter_mut() {
                 main.engine_state.settings = new_settings.clone();
                 main.state.settings_open = false;
                 main.mark_dirty();
+            }
+            for (_, engine) in self.parked_states.iter_mut() {
+                engine.settings = new_settings.clone();
             }
             if let Err(e) = new_settings.save() {
                 tracing::warn!("failed to save settings: {e}");
