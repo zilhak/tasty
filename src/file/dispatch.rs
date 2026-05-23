@@ -192,7 +192,7 @@ fn handler_to_summary(h: &FileHandler) -> PickerHandlerSummary {
 /// webbrowser 위임.
 pub fn execute_handler_action(
     state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    _engine: &mut crate::engine_state::EngineState,
     handler: &FileHandler,
     target: &FileTarget,
 ) {

@@ -180,7 +180,7 @@ pub fn handle_paste(state: &mut AppState, engine: &mut crate::engine_state::Engi
 }
 
 /// `image.list` — 열린 모든 image surface 목록.
-pub fn handle_list(state: &AppState, engine: &crate::engine_state::EngineState, id: Value) -> JsonRpcResponse {
+pub fn handle_list(_state: &AppState, engine: &crate::engine_state::EngineState, id: Value) -> JsonRpcResponse {
     let mut entries: Vec<Value> = Vec::new();
     for workspace in &engine.workspaces {
         for pid in workspace.pane_layout().all_pane_ids() {

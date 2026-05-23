@@ -42,8 +42,7 @@ fn find_terminal_by_id_exists() {
 
 #[test]
 fn find_terminal_by_id_nonexistent() {
-    let (state, engine) = test_state();
-    let _ = &engine;
+    let (_state, engine) = test_state();
     assert!(engine.find_terminal_by_id(9999).is_none());
 }
 

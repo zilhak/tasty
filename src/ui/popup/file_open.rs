@@ -11,7 +11,7 @@ const HORIZONTAL_MARGIN: f32 = 8.0;
 const ITEM_SPACING_Y: f32 = 4.0;
 
 /// Sizer for markdown open popup — uses AppState.recent_files cache (no disk IO).
-pub fn markdown_popup_sizer(state: &AppState, engine: &crate::engine_state::EngineState) -> egui::Vec2 {
+pub fn markdown_popup_sizer(state: &AppState, _engine: &crate::engine_state::EngineState) -> egui::Vec2 {
     compute_popup_size(state.recent_files.markdown.len())
 }
 

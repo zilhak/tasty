@@ -6,7 +6,7 @@ use crate::state::AppState;
 use super::require_surface_id;
 
 pub(crate) fn handle_screen_text(
-    state: &AppState,
+    _state: &AppState,
     engine: &crate::engine_state::EngineState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -30,7 +30,7 @@ pub(crate) fn handle_screen_text(
 }
 
 pub(crate) fn handle_cursor_position(
-    state: &AppState,
+    _state: &AppState,
     engine: &crate::engine_state::EngineState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -51,7 +51,7 @@ pub(crate) fn handle_cursor_position(
 /// 플러그인이 `claude` 같은 자식 프로세스가 살아있는지 판단하기 위해 사용한다.
 /// 터미널이 없으면 `name`/`pid`가 모두 `null`로 반환된다.
 pub(crate) fn handle_foreground_process(
-    state: &AppState,
+    _state: &AppState,
     engine: &crate::engine_state::EngineState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -82,7 +82,7 @@ pub(crate) fn handle_foreground_process(
 /// 플러그인이 claude.respawn에서 사용. 그 핸들러는 본 IPC로 PTY를 갈아끼운 뒤
 /// surface.send로 `claude` 명령을 재송신한다.
 pub(crate) fn handle_surface_respawn_terminal(
-    state: &mut AppState,
+    _state: &mut AppState,
     engine: &mut crate::engine_state::EngineState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -128,7 +128,7 @@ pub(crate) fn handle_surface_respawn_terminal(
 /// 플러그인이 자기 자식 surface를 죽이거나 wait할 때, 호스트 트리에 여전히
 /// 살아있는지 확인하기 위해 사용한다.
 pub(crate) fn handle_surface_locate(
-    state: &AppState,
+    _state: &AppState,
     engine: &crate::engine_state::EngineState,
     id: serde_json::Value,
     params: &serde_json::Value,

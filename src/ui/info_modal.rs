@@ -87,7 +87,7 @@ pub fn info_modal_sizer(state: &AppState, _engine: &crate::engine_state::EngineS
 pub fn draw_info_modal(
     ui: &mut egui::Ui,
     state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    _engine: &mut crate::engine_state::EngineState,
 ) -> PopupAction {
     let th = theme::theme();
     let ctx = ui.ctx().clone();

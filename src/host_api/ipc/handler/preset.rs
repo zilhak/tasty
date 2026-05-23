@@ -64,7 +64,7 @@ fn require_u32(
 
 /// `engine.preset_store` 가 None 이면 internal_error.
 fn with_store<R>(
-    state: &AppState,
+    _state: &AppState,
     engine: &crate::engine_state::EngineState,
     id: &serde_json::Value,
     f: impl FnOnce(&tasty_presets::PresetStore) -> R,

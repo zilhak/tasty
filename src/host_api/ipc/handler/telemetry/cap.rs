@@ -74,7 +74,7 @@ pub(super) fn cap_to_json(cap: &CostCap) -> Value {
 
 /// `telemetry.cap.set` — cap 등록.
 pub fn handle_cap_set(
-    state: &mut AppState,
+    _state: &mut AppState,
     engine: &mut crate::engine_state::EngineState,
     _caller: &CallerContext,
     id: Value,

@@ -3,7 +3,7 @@ use serde_json::json;
 use crate::ipc::protocol::JsonRpcResponse;
 use crate::state::AppState;
 
-pub fn handle_notification_list(state: &AppState, engine: &crate::engine_state::EngineState, id: serde_json::Value) -> JsonRpcResponse {
+pub fn handle_notification_list(_state: &AppState, engine: &crate::engine_state::EngineState, id: serde_json::Value) -> JsonRpcResponse {
     let notifications: Vec<_> = engine
         .notifications
         .all()

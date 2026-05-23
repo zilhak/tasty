@@ -108,7 +108,7 @@ fn enumerate_convertible_kinds(
 }
 
 fn resolve_label(
-    state: &AppState,
+    _state: &AppState,
     engine: &crate::engine_state::EngineState,
     kind: &str,
 ) -> String {

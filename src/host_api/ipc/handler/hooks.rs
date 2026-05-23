@@ -6,7 +6,7 @@ use crate::ipc::protocol::JsonRpcResponse;
 use crate::state::AppState;
 
 pub(crate) fn handle_hook_set(
-    state: &mut AppState,
+    _state: &mut AppState,
     engine: &mut crate::engine_state::EngineState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -51,7 +51,7 @@ pub(crate) fn handle_hook_set(
 }
 
 pub(crate) fn handle_hook_list(
-    state: &AppState,
+    _state: &AppState,
     engine: &crate::engine_state::EngineState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -80,7 +80,7 @@ pub(crate) fn handle_hook_list(
 }
 
 pub(crate) fn handle_hook_unset(
-    state: &mut AppState,
+    _state: &mut AppState,
     engine: &mut crate::engine_state::EngineState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -95,7 +95,7 @@ pub(crate) fn handle_hook_unset(
 }
 
 pub(crate) fn handle_global_hook_set(
-    state: &mut AppState,
+    _state: &mut AppState,
     engine: &mut crate::engine_state::EngineState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -134,7 +134,7 @@ pub(crate) fn handle_global_hook_set(
     JsonRpcResponse::success(id, json!({ "hook_id": hook_id }))
 }
 
-pub(crate) fn handle_global_hook_list(state: &AppState, engine: &crate::engine_state::EngineState, id: serde_json::Value) -> JsonRpcResponse {
+pub(crate) fn handle_global_hook_list(_state: &AppState, engine: &crate::engine_state::EngineState, id: serde_json::Value) -> JsonRpcResponse {
     let hooks: Vec<_> = engine
         .global_hook_manager
         .list()
@@ -152,7 +152,7 @@ pub(crate) fn handle_global_hook_list(state: &AppState, engine: &crate::engine_s
 }
 
 pub(crate) fn handle_global_hook_unset(
-    state: &mut AppState,
+    _state: &mut AppState,
     engine: &mut crate::engine_state::EngineState,
     id: serde_json::Value,
     params: &serde_json::Value,

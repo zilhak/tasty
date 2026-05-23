@@ -87,7 +87,7 @@ fn parse_key_combo(input: &str) -> Option<Vec<u8>> {
 }
 
 pub(crate) fn handle_surface_send(
-    state: &mut AppState,
+    _state: &mut AppState,
     engine: &mut crate::engine_state::EngineState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -110,7 +110,7 @@ pub(crate) fn handle_surface_send(
 }
 
 pub(crate) fn handle_surface_send_key(
-    state: &mut AppState,
+    _state: &mut AppState,
     engine: &mut crate::engine_state::EngineState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -184,7 +184,7 @@ pub(crate) fn handle_surface_send_key(
 /// `invalid_params` if the surface_id refers to neither a live terminal nor a
 /// deferred placeholder.
 pub(crate) fn handle_surface_wake(
-    state: &mut AppState,
+    _state: &mut AppState,
     engine: &mut crate::engine_state::EngineState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -205,7 +205,7 @@ pub(crate) fn handle_surface_wake(
 }
 
 pub(crate) fn handle_surface_send_combo(
-    state: &mut AppState,
+    _state: &mut AppState,
     engine: &mut crate::engine_state::EngineState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -266,7 +266,7 @@ pub(crate) fn handle_surface_send_combo(
 // handle_pane_focus / handle_surface_focus removed: focus is user-only.
 
 pub(crate) fn handle_surface_send_to(
-    state: &mut AppState,
+    _state: &mut AppState,
     engine: &mut crate::engine_state::EngineState,
     id: serde_json::Value,
     params: &serde_json::Value,

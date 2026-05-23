@@ -71,7 +71,7 @@ pub fn handle_task_create(
 // ============================================================
 
 pub fn handle_task_list(
-    state: &mut AppState,
+    _state: &mut AppState,
     engine: &mut crate::engine_state::EngineState,
     _caller: &CallerContext,
     id: Value,
@@ -114,7 +114,7 @@ pub fn handle_task_list(
 // ============================================================
 
 pub fn handle_task_get(
-    state: &mut AppState,
+    _state: &mut AppState,
     engine: &mut crate::engine_state::EngineState,
     _caller: &CallerContext,
     id: Value,
@@ -223,7 +223,7 @@ pub fn handle_task_await(
 // ============================================================
 
 pub fn handle_task_graph(
-    state: &mut AppState,
+    _state: &mut AppState,
     engine: &mut crate::engine_state::EngineState,
     _caller: &CallerContext,
     id: Value,
@@ -323,7 +323,7 @@ pub fn handle_task_graph(
 }
 
 pub fn handle_task_reduce(
-    state: &mut AppState,
+    _state: &mut AppState,
     engine: &mut crate::engine_state::EngineState,
     _caller: &CallerContext,
     id: Value,

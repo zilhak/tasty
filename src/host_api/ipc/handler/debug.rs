@@ -14,7 +14,7 @@ use crate::state::AppState;
 use super::require_surface_id;
 
 pub(super) fn handle_debug_cell_info(
-    state: &AppState,
+    _state: &AppState,
     engine: &crate::engine_state::EngineState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -66,7 +66,7 @@ pub(super) fn cell_info_to_json(info: &tasty_terminal::CellInfo) -> serde_json::
 
 #[cfg(debug_assertions)]
 pub(super) fn handle_debug_screen_attrs(
-    state: &AppState,
+    _state: &AppState,
     engine: &crate::engine_state::EngineState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -105,7 +105,7 @@ pub(super) fn handle_debug_screen_attrs(
 /// `\xHH` escape support disabled — the text is fed verbatim).
 #[cfg(debug_assertions)]
 pub(super) fn handle_debug_feed_bytes(
-    state: &mut AppState,
+    _state: &mut AppState,
     engine: &mut crate::engine_state::EngineState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -148,7 +148,7 @@ pub(super) fn handle_debug_feed_bytes(
 /// will report colors that match the (broken) GPU output, exposing the gap.
 #[cfg(debug_assertions)]
 pub(super) fn handle_debug_glyph_color(
-    state: &AppState,
+    _state: &AppState,
     engine: &crate::engine_state::EngineState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -236,7 +236,7 @@ pub(super) fn rgba_to_json(rgba: [f32; 4]) -> serde_json::Value {
 
 #[cfg(debug_assertions)]
 pub(super) fn require_input_simulation(
-    state: &AppState,
+    _state: &AppState,
     engine: &crate::engine_state::EngineState,
     id: &serde_json::Value,
 ) -> Result<(), JsonRpcResponse> {

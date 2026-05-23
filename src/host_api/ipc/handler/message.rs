@@ -6,7 +6,7 @@ use crate::state::AppState;
 use super::require_surface_id;
 
 pub fn handle_message_send(
-    state: &mut AppState,
+    _state: &mut AppState,
     engine: &mut crate::engine_state::EngineState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -31,7 +31,7 @@ pub fn handle_message_send(
 }
 
 pub fn handle_message_read(
-    state: &mut AppState,
+    _state: &mut AppState,
     engine: &mut crate::engine_state::EngineState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -57,7 +57,7 @@ pub fn handle_message_read(
 }
 
 pub fn handle_message_count(
-    state: &AppState,
+    _state: &AppState,
     engine: &crate::engine_state::EngineState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -71,7 +71,7 @@ pub fn handle_message_count(
 }
 
 pub fn handle_message_clear(
-    state: &mut AppState,
+    _state: &mut AppState,
     engine: &mut crate::engine_state::EngineState,
     id: serde_json::Value,
     params: &serde_json::Value,

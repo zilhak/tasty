@@ -211,7 +211,7 @@ impl std::error::Error for PresetMutationError {}
 
 /// preset_store 잠금 + clone. lock 안 ↔ apply 본체를 분리해 critical section 을 짧게 유지.
 fn clone_preset_from_store(
-    state: &AppState,
+    _state: &AppState,
     engine: &crate::engine_state::EngineState,
     kind: PresetKind,
     name: &str,
@@ -282,7 +282,7 @@ pub fn apply_inner(
 /// Preset 저장. `explicit_name` 이 있으면 사용 (overwrite=false 면 충돌 시 skip),
 /// 없으면 `base_name` 기반 unique_name 자동 부여.
 pub fn save_inner(
-    state: &AppState,
+    _state: &AppState,
     engine: &crate::engine_state::EngineState,
     base_name: &str,
     explicit_name: Option<&str>,
@@ -353,7 +353,7 @@ pub fn save_inner(
 }
 
 pub fn delete_inner(
-    state: &AppState,
+    _state: &AppState,
     engine: &crate::engine_state::EngineState,
     kind: PresetKind,
     name: &str,
@@ -373,7 +373,7 @@ pub fn delete_inner(
 }
 
 pub fn rename_inner(
-    state: &AppState,
+    _state: &AppState,
     engine: &crate::engine_state::EngineState,
     kind: PresetKind,
     from: &str,
@@ -399,7 +399,7 @@ pub fn rename_inner(
 /// IPC `preset.capture` 가 사용. UI 우클릭 경로는 자신이 직접 capture 한 뒤
 /// `Intent::SavePreset { preset: ClonedPreset, .. }` 로 발화하므로 별도 경로.
 pub fn capture_inner(
-    state: &AppState,
+    _state: &AppState,
     engine: &crate::engine_state::EngineState,
     kind: PresetKind,
     source_id: u32,

@@ -19,7 +19,7 @@ fn require_tab_id(
 }
 
 pub fn handle_tab_list(
-    state: &AppState,
+    _state: &AppState,
     engine: &crate::engine_state::EngineState,
     id: serde_json::Value,
     params: &serde_json::Value,

@@ -3,7 +3,7 @@
 use super::*;
 
 pub fn handle_cancel(
-    state: &mut AppState,
+    _state: &mut AppState,
     engine: &mut crate::engine_state::EngineState,
     _caller: &CallerContext,
     id: Value,
@@ -72,7 +72,7 @@ pub fn await_blocking(store: &ApprovalStore, rpc_id: Value, params: &Value) -> J
 
 /// `approval.get` — 단일 record 조회.
 pub fn handle_get(
-    state: &mut AppState,
+    _state: &mut AppState,
     engine: &mut crate::engine_state::EngineState,
     _caller: &CallerContext,
     id: Value,
@@ -91,7 +91,7 @@ pub fn handle_get(
 /// `approval.list` — 전체 record. 필터: `state` (pending|responded|timed_out|cancelled|terminal),
 /// `workspace_id`.
 pub fn handle_list(
-    state: &mut AppState,
+    _state: &mut AppState,
     engine: &mut crate::engine_state::EngineState,
     _caller: &CallerContext,
     id: Value,

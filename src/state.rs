@@ -19,8 +19,6 @@ pub mod update_check;
 
 use std::collections::VecDeque;
 
-use tasty_terminal::Waker;
-
 use crate::engine_state::EngineState;
 use crate::model::{LogicalPx, PhysicalPx};
 use crate::settings_ui::SettingsUiState;
