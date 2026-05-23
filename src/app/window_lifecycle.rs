@@ -42,18 +42,64 @@ impl App {
 
         // EngineState를 App 직속에 1회 init.
         if self.engine_state.is_none() {
+            // 두 번째 main window 생성 시: 첫 engine 의 글로벌 Arc 들을 공유한다.
+            // surface_registry 는 plugin_manager 가 첫 부팅 시 set 한 것과 같은
+            // Arc 여야 plugin 이 register 한 surface kind 가 두 번째 윈도우에서도
+            // 보임. file_format / file_handler 도 동일 — plugin contribute 한
+            // file 동작이 두번째 윈도우에서 누락 안 되도록.
+            //
+            // 첫 부팅 시점에는 source 없음 → EngineState::new 의 기본 Arc 사용.
+            let shared = self.any_main_engine().map(|src| {
+                (
+                    src.surface_registry.clone(),
+                    src.file_format.clone(),
+                    src.file_handler.clone(),
+                    src.identify_worker.clone(),
+                    src.preset_store.clone(),
+                    src.approval_store.clone(),
+                    src.telemetry_seq.clone(),
+                    src.anomaly_detector.clone(),
+                    src.agent_seq.clone(),
+                )
+            });
+
             let mut engine = crate::engine_state::EngineState::new(cols, rows, waker.clone())
                 .expect("failed to create engine state");
             engine.waker_factory = Some(factory.clone());
-            engine.identify_worker = Some(Arc::new(crate::identify_worker::IdentifyWorker::new(
-                engine.file_format.clone(),
-                self.engine.proxy.clone(),
-            )));
+            if let Some((
+                surface_registry,
+                file_format,
+                file_handler,
+                identify_worker,
+                preset_store,
+                approval_store,
+                telemetry_seq,
+                anomaly_detector,
+                agent_seq,
+            )) = shared
+            {
+                engine.surface_registry = surface_registry;
+                engine.file_format = file_format;
+                engine.file_handler = file_handler;
+                engine.identify_worker = identify_worker;
+                engine.preset_store = preset_store;
+                engine.approval_store = approval_store;
+                engine.telemetry_seq = telemetry_seq;
+                engine.anomaly_detector = anomaly_detector;
+                engine.agent_seq = agent_seq;
+            } else {
+                // 첫 부팅 — identify_worker 와 preset_store 는 App proxy 가 필요.
+                engine.identify_worker =
+                    Some(Arc::new(crate::identify_worker::IdentifyWorker::new(
+                        engine.file_format.clone(),
+                        self.engine.proxy.clone(),
+                    )));
+                engine.preset_store = Some(self.engine.preset_store.clone());
+            }
             #[cfg(debug_assertions)]
             {
                 engine.input_simulation_enabled = self.input_simulation_enabled;
             }
-            engine.preset_store = Some(self.engine.preset_store.clone());
             self.engine_state = Some(engine);
         }
 
@@ -300,8 +346,9 @@ impl App {
         };
 
         // 새 윈도우의 engine: parked 가 있으면 그쪽을 재사용, 없으면 App.engine_state
-        // 를 take. 그래도 없으면 새로 만들어야 하지만 호출 경로 상 invariant 보장.
-        // (multi-MainWindow 시점에는 두 번째 등록부터 engine 부족 — 후속 작업 영역.)
+        // 를 take. create_app_state 가 항상 self.engine_state 를 set 하므로
+        // 두 번째 main window 생성 시에도 새 engine 이 만들어져 들어와 있음
+        // (글로벌 Arc 들은 첫 engine 과 공유 — create_app_state 의 shared 분기 참조).
         let mut engine_state = if let Some(e) = parked_engine {
             e
         } else {
