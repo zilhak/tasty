@@ -140,9 +140,11 @@ fn all_e2e_tests() {
         "surface.send_combo",
         json!({"surface_id": sid, "key": "c", "modifiers": ["ctrl"]}),
     );
-    // shell 이 prompt 를 재출력할 시간 — 후속 send_text 가 같은 line buffer 에
-    // 끼어들지 않게 한 프레임 정도 대기.
-    std::thread::sleep(Duration::from_millis(100));
+    // sleep 대신 sentinel echo 로 prompt 가 명령을 정상적으로 받을 수 있는
+    // 상태인지 deterministic 하게 확인 — abort 가 풀렸으면 sentinel 이 출력된다.
+    tasty.set_mark(sid);
+    tasty.send_text(sid, "echo __abort_ok__\n");
+    tasty.wait_for_output(sid, "__abort_ok__", Duration::from_secs(3));
 
     // ========== Dim (SGR 2) renderer regression ==========
     // printf is a posix builtin; shell on Windows is cmd.exe by default which does not
