@@ -218,19 +218,23 @@ mod tests {
     use super::*;
     use crate::state::AppState;
 
-    fn make_state() -> AppState {
+    fn make_state() -> (AppState, crate::engine_state::EngineState) {
         let waker: crate::terminal::Waker = std::sync::Arc::new(|| {});
-        let state = AppState::new(80, 24, waker).unwrap();
+        let mut engine = crate::engine_state::EngineState::new(80, 24, waker).unwrap();
+        let state = AppState::new(&mut engine);
         // image kind는 본래 com.tasty.image plugin이 hello 시 등록한다. 단위 테스트는
         // plugin 프로세스를 띄우지 않으므로 host whitelist 등록을 직접 호출한다.
         crate::engine::surface_registry::builtins::register_image(&engine.surface_registry);
-        state
+        (state, engine)
     }
 
-    fn first_surface_id(state: &mut AppState) -> u32 {
+    fn first_surface_id(
+        state: &mut AppState,
+        engine: &mut crate::engine_state::EngineState,
+    ) -> u32 {
         let mut ids = Vec::new();
         state
-            .active_workspace_mut()
+            .active_workspace_mut(engine)
             .pane_layout_mut()
             .for_each_terminal_mut(&mut |sid, _| ids.push(sid));
         ids[0]
@@ -252,36 +256,38 @@ mod tests {
 
     #[test]
     fn open_converts_surface_to_image_with_path() {
-        let mut state = make_state();
-        let sid = first_surface_id(&mut state);
+        let (mut state, mut engine) = make_state();
+        let sid = first_surface_id(&mut state, &mut engine);
         let tmp = tempfile::tempdir().unwrap();
         let path = write_blank_png(tmp.path(), "a.png");
 
         let resp = handle_open(
             &mut state,
+            &mut engine,
             Value::Null,
             &json!({ "surface_id": sid, "path": path.clone() }),
         );
         assert!(resp.result.is_some(), "open failed: {resp:?}");
         let panel = state
-            .image_panel_mut(sid)
+            .image_panel_mut(&mut engine, sid)
             .expect("surface is now ImagePanel");
         assert_eq!(panel.file_path.as_deref(), Some(path.as_str()));
     }
 
     #[test]
     fn open_rejects_missing_path() {
-        let mut state = make_state();
-        let sid = first_surface_id(&mut state);
-        let resp = handle_open(&mut state, Value::Null, &json!({ "surface_id": sid }));
+        let (mut state, mut engine) = make_state();
+        let sid = first_surface_id(&mut state, &mut engine);
+        let resp = handle_open(&mut state, &mut engine, Value::Null, &json!({ "surface_id": sid }));
         assert!(resp.error.is_some());
     }
 
     #[test]
     fn open_rejects_unknown_surface() {
-        let mut state = make_state();
+        let (mut state, mut engine) = make_state();
         let resp = handle_open(
             &mut state,
+            &mut engine,
             Value::Null,
             &json!({ "surface_id": 999_999, "path": "/tmp/x.png" }),
         );
@@ -290,8 +296,8 @@ mod tests {
 
     #[test]
     fn next_prev_wrap_around_in_directory() {
-        let mut state = make_state();
-        let sid = first_surface_id(&mut state);
+        let (mut state, mut engine) = make_state();
+        let sid = first_surface_id(&mut state, &mut engine);
         let tmp = tempfile::tempdir().unwrap();
         let a = write_blank_png(tmp.path(), "a.png");
         let b = write_blank_png(tmp.path(), "b.png");
@@ -301,35 +307,36 @@ mod tests {
         // dir_images by scanning the directory.
         let resp = handle_open(
             &mut state,
+            &mut engine,
             Value::Null,
             &json!({ "surface_id": sid, "path": a }),
         );
         assert!(resp.result.is_some());
 
-        let resp = handle_next(&mut state, Value::Null, &json!({ "surface_id": sid }));
+        let resp = handle_next(&mut state, &mut engine, Value::Null, &json!({ "surface_id": sid }));
         let v = resp.result.expect("next ok");
         assert_eq!(v["path"], b);
 
-        let resp = handle_next(&mut state, Value::Null, &json!({ "surface_id": sid }));
+        let resp = handle_next(&mut state, &mut engine, Value::Null, &json!({ "surface_id": sid }));
         assert_eq!(resp.result.unwrap()["path"], c);
 
         // wrap forward
-        let resp = handle_next(&mut state, Value::Null, &json!({ "surface_id": sid }));
+        let resp = handle_next(&mut state, &mut engine, Value::Null, &json!({ "surface_id": sid }));
         resp.result.expect("wraps to first");
 
         // step back
-        let resp = handle_prev(&mut state, Value::Null, &json!({ "surface_id": sid }));
+        let resp = handle_prev(&mut state, &mut engine, Value::Null, &json!({ "surface_id": sid }));
         resp.result.expect("prev ok");
     }
 
     #[test]
     fn list_finds_image_surfaces() {
-        let mut state = make_state();
-        let sid = first_surface_id(&mut state);
+        let (mut state, mut engine) = make_state();
+        let sid = first_surface_id(&mut state, &mut engine);
         // Convert to image (blank canvas — no file).
-        assert!(state.convert_surface_to_kind(engine, sid, "image", &json!({})));
+        assert!(state.convert_surface_to_kind(&mut engine, sid, "image", &json!({})));
 
-        let resp = handle_list(&state, Value::Null);
+        let resp = handle_list(&state, &engine, Value::Null);
         let v = resp.result.expect("list ok");
         let entries = v["entries"].as_array().unwrap();
         assert_eq!(entries.len(), 1);
@@ -338,13 +345,14 @@ mod tests {
 
     #[test]
     fn save_rejects_without_view() {
-        let mut state = make_state();
-        let sid = first_surface_id(&mut state);
+        let (mut state, mut engine) = make_state();
+        let sid = first_surface_id(&mut state, &mut engine);
         // Convert to image but never render → no ImageView in store.
-        assert!(state.convert_surface_to_kind(engine, sid, "image", &json!({})));
+        assert!(state.convert_surface_to_kind(&mut engine, sid, "image", &json!({})));
 
         let resp = handle_save(
             &mut state,
+            &mut engine,
             Value::Null,
             &json!({ "surface_id": sid, "path": "/tmp/x.png" }),
         );

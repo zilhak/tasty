@@ -249,7 +249,8 @@ mod tests {
 
     fn make_state() -> AppState {
         let waker: crate::terminal::Waker = std::sync::Arc::new(|| {});
-        AppState::new(80, 24, waker).unwrap()
+        let mut engine = crate::engine_state::EngineState::new(80, 24, waker).unwrap();
+        AppState::new(&mut engine)
     }
 
     #[test]
