@@ -34,6 +34,11 @@ impl App {
             send_response(&cmd.response_tx, resp);
             return IpcStep::Handled;
         }
+        // clipboard clear/remove 는 모든 engine 에 broadcast.
+        if let Some(resp) = self.dispatch_clipboard_global(&cmd.request) {
+            send_response(&cmd.response_tx, resp);
+            return IpcStep::Handled;
+        }
 
         // owner main → focused main → parked owner → parked[0] 순으로 라우팅
         // (CLAUDE.md "포커스 독립" 원칙).

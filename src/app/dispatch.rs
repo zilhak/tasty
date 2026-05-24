@@ -2,6 +2,7 @@
 //!
 //! 한 프레임에 한 번씩 호출되어 직전 프레임에 쌓인 도메인별 큐를 drain → emit.
 
+pub(crate) mod clipboard_global;
 pub(crate) mod handler_ipc;
 pub(crate) mod host_events;
 pub(crate) mod intents;
