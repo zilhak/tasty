@@ -24,6 +24,7 @@ pub use types::{
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[derive(Default)]
 pub struct Settings {
     pub general: GeneralSettings,
     pub appearance: AppearanceSettings,
@@ -33,21 +34,6 @@ pub struct Settings {
     pub performance: PerformanceSettings,
     pub memory: MemorySettings,
     pub accessibility: AccessibilitySettings,
-}
-
-impl Default for Settings {
-    fn default() -> Self {
-        Self {
-            general: GeneralSettings::default(),
-            appearance: AppearanceSettings::default(),
-            clipboard: ClipboardSettings::default(),
-            notification: NotificationSettings::default(),
-            keybindings: KeybindingSettings::default(),
-            performance: PerformanceSettings::default(),
-            memory: MemorySettings::default(),
-            accessibility: AccessibilitySettings::default(),
-        }
-    }
 }
 
 // ---- Settings file operations ----
@@ -60,10 +46,10 @@ impl Settings {
 
     /// Ensure the config directory exists.
     pub fn ensure_config_dir() -> Result<()> {
-        if let Some(path) = Self::config_path() {
-            if let Some(parent) = path.parent() {
-                fs::create_dir_all(parent)?;
-            }
+        if let Some(path) = Self::config_path()
+            && let Some(parent) = path.parent()
+        {
+            fs::create_dir_all(parent)?;
         }
         Ok(())
     }

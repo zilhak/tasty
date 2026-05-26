@@ -371,11 +371,12 @@ impl GlyphAtlas {
         queue: &wgpu::Queue,
     ) -> Option<AtlasEntry> {
         // Try builtin rendering for block elements and box drawing characters
-        if !key.bold && !key.italic {
-            if let Some(entry) = self.rasterize_builtin_glyph(key.ch, font_config, queue) {
-                self.cache.insert(key, entry);
-                return Some(entry);
-            }
+        if !key.bold
+            && !key.italic
+            && let Some(entry) = self.rasterize_builtin_glyph(key.ch, font_config, queue)
+        {
+            self.cache.insert(key, entry);
+            return Some(entry);
         }
 
         let font_size = font_config.metrics.font_size;

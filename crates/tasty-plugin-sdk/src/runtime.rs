@@ -248,10 +248,10 @@ fn handle_reader_loop(
                 },
                 HandleChannelMessage::Ping { seq } => {
                     let pong = HandleChannelMessage::Pong { seq };
-                    if let Ok(mut w) = writer.lock() {
-                        if let Err(e) = w.send_message(&pong) {
-                            tracing::warn!("handle channel: pong send failed: {e}");
-                        }
+                    if let Ok(mut w) = writer.lock()
+                        && let Err(e) = w.send_message(&pong)
+                    {
+                        tracing::warn!("handle channel: pong send failed: {e}");
                     }
                 }
                 HandleChannelMessage::Pong { .. } => {

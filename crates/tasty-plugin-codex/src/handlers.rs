@@ -277,10 +277,10 @@ pub fn handle_broadcast(
 
     let mut sent_ids: Vec<u32> = Vec::new();
     for child in state.list_children(parent) {
-        if let Some(r) = role_filter {
-            if child.role.as_deref() != Some(r) {
-                continue;
-            }
+        if let Some(r) = role_filter
+            && child.role.as_deref() != Some(r)
+        {
+            continue;
         }
         if let Err(e) = host_call(
             host,

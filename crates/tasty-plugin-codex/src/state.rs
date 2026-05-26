@@ -53,10 +53,10 @@ impl CodexState {
         let Some(path) = self.path.as_ref() else {
             return;
         };
-        if let Some(parent) = path.parent() {
-            if let Err(e) = std::fs::create_dir_all(parent) {
-                tracing::warn!("codex state mkdir {} failed: {e}", parent.display());
-            }
+        if let Some(parent) = path.parent()
+            && let Err(e) = std::fs::create_dir_all(parent)
+        {
+            tracing::warn!("codex state mkdir {} failed: {e}", parent.display());
         }
         match serde_json::to_string_pretty(self) {
             Ok(text) => {

@@ -51,10 +51,10 @@ impl TastyInstance {
             if start.elapsed() > Duration::from_secs(10) {
                 panic!("tasty failed to start within 10 seconds");
             }
-            if let Ok(content) = std::fs::read_to_string(&port_file) {
-                if let Ok(port) = content.trim().parse::<u16>() {
-                    break port;
-                }
+            if let Ok(content) = std::fs::read_to_string(&port_file)
+                && let Ok(port) = content.trim().parse::<u16>()
+            {
+                break port;
             }
             std::thread::sleep(Duration::from_millis(100));
         };

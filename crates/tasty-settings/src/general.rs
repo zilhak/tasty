@@ -162,16 +162,16 @@ impl GeneralSettings {
         #[cfg(not(windows))]
         {
             // 1. Check /etc/passwd for the user's login shell (most authoritative after chsh)
-            if let Some(login_shell) = Self::login_shell_from_passwd() {
-                if std::path::Path::new(&login_shell).exists() {
-                    return Some(login_shell);
-                }
+            if let Some(login_shell) = Self::login_shell_from_passwd()
+                && std::path::Path::new(&login_shell).exists()
+            {
+                return Some(login_shell);
             }
             // 2. Fall back to $SHELL env var
-            if let Ok(shell) = std::env::var("SHELL") {
-                if std::path::Path::new(&shell).exists() {
-                    return Some(shell);
-                }
+            if let Ok(shell) = std::env::var("SHELL")
+                && std::path::Path::new(&shell).exists()
+            {
+                return Some(shell);
             }
             // 3. Common paths
             for path in &["/bin/zsh", "/bin/bash", "/bin/sh"] {
@@ -193,12 +193,11 @@ impl GeneralSettings {
         for line in std::io::BufReader::new(file).lines() {
             let line = line.ok()?;
             let fields: Vec<&str> = line.split(':').collect();
-            if fields.len() >= 7 {
-                if let Ok(entry_uid) = fields[2].parse::<u32>() {
-                    if entry_uid == uid {
-                        return Some(fields[6].to_string());
-                    }
-                }
+            if fields.len() >= 7
+                && let Ok(entry_uid) = fields[2].parse::<u32>()
+                && entry_uid == uid
+            {
+                return Some(fields[6].to_string());
             }
         }
         None
@@ -295,11 +294,11 @@ pub fn save_user_bashrc(user_content: &str) {
     let user_path = tasty_bashrc_user_path();
     let compiled_path = tasty_bashrc_path();
     let p = std::path::Path::new(&user_path);
-    if let Some(parent) = p.parent() {
-        if let Err(e) = std::fs::create_dir_all(parent) {
-            tracing::warn!("create_dir_all for bashrc failed: {e}");
-            return;
-        }
+    if let Some(parent) = p.parent()
+        && let Err(e) = std::fs::create_dir_all(parent)
+    {
+        tracing::warn!("create_dir_all for bashrc failed: {e}");
+        return;
     }
     if let Err(e) = std::fs::write(&user_path, user_content) {
         tracing::warn!("write bashrc.user failed: {e}");

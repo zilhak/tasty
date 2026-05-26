@@ -63,7 +63,7 @@ fn all_e2e_tests() {
 
     // tab.list
     let tabs = tasty.call("tab.list", json!({"pane_id": pid}));
-    assert!(tabs["tabs"].as_array().unwrap().len() >= 1);
+    assert!(!tabs["tabs"].as_array().unwrap().is_empty());
 
     // notification
     tasty.call(
@@ -71,7 +71,7 @@ fn all_e2e_tests() {
         json!({"title": "Test", "body": "Hello", "surface_id": sid}),
     );
     let notifs = tasty.call("notification.list", json!({}));
-    assert!(notifs.as_array().unwrap().len() >= 1);
+    assert!(!notifs.as_array().unwrap().is_empty());
 
     // ========== Terminal I/O ==========
 

@@ -75,10 +75,10 @@ impl ClaudeState {
         let Some(path) = self.path.as_ref() else {
             return;
         };
-        if let Some(parent) = path.parent() {
-            if let Err(e) = std::fs::create_dir_all(parent) {
-                tracing::warn!("claude state dir {} create failed: {e}", parent.display());
-            }
+        if let Some(parent) = path.parent()
+            && let Err(e) = std::fs::create_dir_all(parent)
+        {
+            tracing::warn!("claude state dir {} create failed: {e}", parent.display());
         }
         match serde_json::to_string_pretty(self) {
             Ok(text) => {

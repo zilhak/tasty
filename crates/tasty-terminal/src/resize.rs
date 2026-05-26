@@ -283,7 +283,7 @@ impl Terminal {
                     .collect();
                 // Prepend to any previously saved tail for this line
                 if !self.saved_line_tails[i].is_empty() {
-                    tail_cells.extend(self.saved_line_tails[i].drain(..));
+                    tail_cells.append(&mut self.saved_line_tails[i]);
                 }
                 self.saved_line_tails[i] = tail_cells;
             }

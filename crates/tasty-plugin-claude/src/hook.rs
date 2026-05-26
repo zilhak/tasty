@@ -206,19 +206,19 @@ pub fn apply_hook(
         "prompt-submit" | "session-start" | "active" => {
             // set_idle(false)는 needs_input도 함께 clear (state invariant).
             state.set_idle(surface_id, false);
-            if event == "session-start" {
-                if let Some(session_id) = session {
-                    calls.push(HostCall::MetaSet {
-                        surface_id,
-                        key: "claude-session-id",
-                        value: session_id.to_string(),
-                    });
-                    calls.push(HostCall::MetaSet {
-                        surface_id,
-                        key: "restore.command",
-                        value: format!("claude -r {session_id}"),
-                    });
-                }
+            if event == "session-start"
+                && let Some(session_id) = session
+            {
+                calls.push(HostCall::MetaSet {
+                    surface_id,
+                    key: "claude-session-id",
+                    value: session_id.to_string(),
+                });
+                calls.push(HostCall::MetaSet {
+                    surface_id,
+                    key: "restore.command",
+                    value: format!("claude -r {session_id}"),
+                });
             }
         }
         other => {
@@ -274,10 +274,10 @@ fn resolve_surface_id(params: &Value) -> Result<u32, IpcMethodError> {
     {
         return Ok(sid as u32);
     }
-    if let Ok(env) = std::env::var("TASTY_SURFACE_ID") {
-        if let Ok(sid) = env.parse::<u32>() {
-            return Ok(sid);
-        }
+    if let Ok(env) = std::env::var("TASTY_SURFACE_ID")
+        && let Ok(sid) = env.parse::<u32>()
+    {
+        return Ok(sid);
     }
     Err(IpcMethodError::invalid_params(
         "no surface id (pass --surface or set TASTY_SURFACE_ID)",

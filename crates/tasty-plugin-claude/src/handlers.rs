@@ -1,10 +1,9 @@
 //! `tasty-claude` 의 IPC handler fn 들 — 외부 plugin SDK 진입점.
 
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 use serde_json::{Value, json};
-use tasty_plugin_sdk::{HostHandle, IpcMethodError, SurfaceResult};
+use tasty_plugin_sdk::{HostHandle, IpcMethodError};
 
 use crate::error_scan::ErrorScanner;
 use crate::state::{ChildEntry, ClaudeState};
@@ -684,10 +683,10 @@ pub(crate) fn resolve_workspace_id(
         }
     }
     for w in arr {
-        if w.get("name").and_then(|v| v.as_str()) == Some(target) {
-            if let Some(id) = w.get("id").and_then(|v| v.as_u64()) {
-                return Ok(Some(id as u32));
-            }
+        if w.get("name").and_then(|v| v.as_str()) == Some(target)
+            && let Some(id) = w.get("id").and_then(|v| v.as_u64())
+        {
+            return Ok(Some(id as u32));
         }
     }
     Ok(None)

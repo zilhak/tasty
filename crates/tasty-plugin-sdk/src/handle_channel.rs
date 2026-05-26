@@ -38,7 +38,7 @@ impl HandleClient {
         let endpoint = env
             .handle_endpoint
             .as_deref()
-            .ok_or_else(|| PluginError::EnvMissing("TASTY_PLUGIN_HANDLE_ENDPOINT"))?;
+            .ok_or(PluginError::EnvMissing("TASTY_PLUGIN_HANDLE_ENDPOINT"))?;
         Self::connect_to(endpoint, env)
     }
 
@@ -370,10 +370,10 @@ mod tests {
     fn connect_succeeds_when_host_acks_ok() {
         let path = unique_socket_path("ok");
         // 이전 테스트 잔여 socket 제거 (NotFound는 정상).
-        if let Err(e) = std::fs::remove_file(&path) {
-            if e.kind() != std::io::ErrorKind::NotFound {
-                panic!("pre-cleanup {} failed: {e}", path.display());
-            }
+        if let Err(e) = std::fs::remove_file(&path)
+            && e.kind() != std::io::ErrorKind::NotFound
+        {
+            panic!("pre-cleanup {} failed: {e}", path.display());
         }
         let listener = UnixListener::bind(&path).unwrap();
         let path_clone = path.clone();
@@ -388,10 +388,10 @@ mod tests {
             thread::sleep(Duration::from_millis(200));
             drop(stream);
             // cleanup — server thread 종료 시 socket file 삭제. NotFound는 정상.
-            if let Err(e) = std::fs::remove_file(&path_clone) {
-                if e.kind() != std::io::ErrorKind::NotFound {
-                    tracing::trace!("post-test socket cleanup failed: {e}");
-                }
+            if let Err(e) = std::fs::remove_file(&path_clone)
+                && e.kind() != std::io::ErrorKind::NotFound
+            {
+                tracing::trace!("post-test socket cleanup failed: {e}");
             }
         });
         let env = env_for(path.to_str().unwrap());
@@ -403,10 +403,10 @@ mod tests {
     #[test]
     fn connect_returns_rejected_when_host_acks_false() {
         let path = unique_socket_path("reject");
-        if let Err(e) = std::fs::remove_file(&path) {
-            if e.kind() != std::io::ErrorKind::NotFound {
-                panic!("pre-cleanup {} failed: {e}", path.display());
-            }
+        if let Err(e) = std::fs::remove_file(&path)
+            && e.kind() != std::io::ErrorKind::NotFound
+        {
+            panic!("pre-cleanup {} failed: {e}", path.display());
         }
         let listener = UnixListener::bind(&path).unwrap();
         let path_clone = path.clone();
@@ -423,10 +423,10 @@ mod tests {
             .expect("fake host: reject");
             stream.flush().expect("fake host: flush");
             thread::sleep(Duration::from_millis(50));
-            if let Err(e) = std::fs::remove_file(&path_clone) {
-                if e.kind() != std::io::ErrorKind::NotFound {
-                    tracing::trace!("post-test socket cleanup failed: {e}");
-                }
+            if let Err(e) = std::fs::remove_file(&path_clone)
+                && e.kind() != std::io::ErrorKind::NotFound
+            {
+                tracing::trace!("post-test socket cleanup failed: {e}");
             }
         });
         let env = env_for(path.to_str().unwrap());

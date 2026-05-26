@@ -19,7 +19,7 @@ use std::time::Duration;
 use error_scan::ErrorScanner;
 use handlers::*;
 use serde_json::{Value, json};
-use state::{ChildEntry, ClaudeState};
+use state::ClaudeState;
 use tasty_plugin_sdk::{
     EventDispatchCtx, HostHandle, IpcMethodCtx, IpcMethodError, Plugin, SurfaceCreateCtx,
     SurfaceEventCtx, SurfaceResult,

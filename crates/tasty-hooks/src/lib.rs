@@ -104,6 +104,12 @@ pub struct HookManager {
     next_id: HookId,
 }
 
+impl Default for HookManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl HookManager {
     pub fn new() -> Self {
         Self {
@@ -147,7 +153,7 @@ impl HookManager {
     pub fn list_hooks(&self, surface_id: Option<u32>) -> Vec<&SurfaceHook> {
         self.hooks
             .iter()
-            .filter(|h| surface_id.map_or(true, |id| h.surface_id == id))
+            .filter(|h| surface_id.is_none_or(|id| h.surface_id == id))
             .collect()
     }
 

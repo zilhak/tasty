@@ -104,10 +104,7 @@ impl<'a> TaskGraph<'a> {
         }
         let mut any_failed = false;
         for dep_id in &task.depends_on {
-            let dep = match self.tasks.get(dep_id) {
-                Some(d) => d,
-                None => return None,
-            };
+            let dep = self.tasks.get(dep_id)?;
             match &dep.state {
                 TaskState::Succeeded => {}
                 TaskState::Failed { .. } | TaskState::Cancelled | TaskState::Skipped => {

@@ -77,10 +77,10 @@ fn build_ppid_table() -> std::io::Result<PpidTable> {
         .args(["-A", "-o", "pid=,ppid="])
         .output()?;
     if !output.status.success() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("ps exited with {}", output.status),
-        ));
+        return Err(std::io::Error::other(format!(
+            "ps exited with {}",
+            output.status
+        )));
     }
     let text = String::from_utf8_lossy(&output.stdout);
     let mut table: PpidTable = HashMap::new();

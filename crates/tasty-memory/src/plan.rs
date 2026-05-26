@@ -30,18 +30,14 @@ pub const PLAN_STEP_MAX: usize = 256;
 /// Plan step state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum PlanStepState {
+    #[default]
     Pending,
     InProgress,
     Completed,
     Failed,
     Skipped,
-}
-
-impl Default for PlanStepState {
-    fn default() -> Self {
-        PlanStepState::Pending
-    }
 }
 
 /// Plan step. ordering 은 `depends_on` 으로 표현 — 배열 순서는 표시 순서일 뿐.

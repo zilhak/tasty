@@ -140,10 +140,10 @@ impl Scrollback {
     pub(crate) fn flush_to_disk(&mut self) {
         while self.lines.len() > self.limit {
             if let Some(ds) = &mut self.disk {
-                if let Some(line) = self.lines.pop_front() {
-                    if let Err(e) = ds.push_lines(&[line]) {
-                        tracing::warn!("disk scrollback push failed: {e}");
-                    }
+                if let Some(line) = self.lines.pop_front()
+                    && let Err(e) = ds.push_lines(&[line])
+                {
+                    tracing::warn!("disk scrollback push failed: {e}");
                 }
             } else {
                 self.lines.pop_front();

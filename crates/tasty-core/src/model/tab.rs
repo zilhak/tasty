@@ -54,23 +54,23 @@ impl Tab {
             return;
         }
         let terminal = self.focused_terminal();
-        if let Some(terminal) = terminal {
-            if let Some(cwd) = terminal.get_cwd() {
-                if let Some(home) = dirs_home() {
-                    if cwd == home {
-                        self.cached_display_name = Some("~".to_string());
-                        return;
-                    }
-                }
-                let path_str = cwd.to_string_lossy();
-                if path_str == "/" {
-                    self.cached_display_name = Some("/".to_string());
-                    return;
-                }
-                if let Some(name) = cwd.file_name() {
-                    self.cached_display_name = Some(name.to_string_lossy().to_string());
-                    return;
-                }
+        if let Some(terminal) = terminal
+            && let Some(cwd) = terminal.get_cwd()
+        {
+            if let Some(home) = dirs_home()
+                && cwd == home
+            {
+                self.cached_display_name = Some("~".to_string());
+                return;
+            }
+            let path_str = cwd.to_string_lossy();
+            if path_str == "/" {
+                self.cached_display_name = Some("/".to_string());
+                return;
+            }
+            if let Some(name) = cwd.file_name() {
+                self.cached_display_name = Some(name.to_string_lossy().to_string());
+                return;
             }
         }
         self.cached_display_name = None;
@@ -127,10 +127,10 @@ impl Tab {
             return leaf;
         }
         // Fallback: first leaf
-        if let Some(first_id) = layout.first_surface_id() {
-            if let Some(leaf) = layout.find_surface(first_id) {
-                return leaf;
-            }
+        if let Some(first_id) = layout.first_surface_id()
+            && let Some(leaf) = layout.find_surface(first_id)
+        {
+            return leaf;
         }
         panic!("BUG: layout has no surfaces");
     }
@@ -203,10 +203,7 @@ impl Tab {
     pub fn focused_terminal_mut(&mut self) -> Option<&mut Terminal> {
         let id = self.focused_surface;
         let layout = self.layout_opt.as_mut()?;
-        if layout.find_terminal(id).is_none() {
-            // focused_surface is not a terminal; don't change focus
-            return None;
-        }
+        layout.find_terminal(id)?;
         layout.find_terminal_mut(id)
     }
 
@@ -258,10 +255,11 @@ impl Tab {
         let old_layout = self.take_layout();
         let (new_layout, found) = old_layout.close_surface(target_id);
         self.put_layout(new_layout);
-        if found && self.focused_surface == target_id {
-            if let Some(first_id) = self.layout().first_surface_id() {
-                self.focused_surface = first_id;
-            }
+        if found
+            && self.focused_surface == target_id
+            && let Some(first_id) = self.layout().first_surface_id()
+        {
+            self.focused_surface = first_id;
         }
         found
     }
@@ -474,10 +472,9 @@ impl Tab {
                     .as_object()
                     .map(|o| o.contains_key("pty_ready"))
                     .unwrap_or(false)
+                && let Some(obj) = v.as_object_mut()
             {
-                if let Some(obj) = v.as_object_mut() {
-                    obj.insert("pty_ready".into(), serde_json::json!(true));
-                }
+                obj.insert("pty_ready".into(), serde_json::json!(true));
             }
             v
         };
@@ -492,10 +489,10 @@ impl Tab {
 fn collect_deferred_ids(layout: &SurfaceLayout, out: &mut Vec<SurfaceId>) {
     match layout {
         SurfaceLayout::Leaf(surface) => {
-            if let Some(empty) = surface.as_any().downcast_ref::<super::EmptySurface>() {
-                if empty.is_deferred() {
-                    out.push(empty.id);
-                }
+            if let Some(empty) = surface.as_any().downcast_ref::<super::EmptySurface>()
+                && empty.is_deferred()
+            {
+                out.push(empty.id);
             }
         }
         SurfaceLayout::Split { first, second, .. } => {

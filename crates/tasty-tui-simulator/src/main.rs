@@ -155,7 +155,7 @@ fn interactive_mode() {
                 write!(out, "{args}\r\n").unwrap();
             }
             "newline" => {
-                write!(out, "\n").unwrap();
+                writeln!(out).unwrap();
             }
             "cr" => {
                 write!(out, "\r").unwrap();
@@ -177,7 +177,7 @@ fn interactive_mode() {
             }
             "fg" => {
                 // fg <color> — palette index or r;g;b
-                if let Some(idx) = args.parse::<u8>().ok() {
+                if let Ok(idx) = args.parse::<u8>() {
                     write!(out, "\x1b[38;5;{idx}m").unwrap();
                 } else {
                     // Assume r;g;b format
@@ -185,7 +185,7 @@ fn interactive_mode() {
                 }
             }
             "bg" => {
-                if let Some(idx) = args.parse::<u8>().ok() {
+                if let Ok(idx) = args.parse::<u8>() {
                     write!(out, "\x1b[48;5;{idx}m").unwrap();
                 } else {
                     write!(out, "\x1b[48;2;{args}m").unwrap();
@@ -255,7 +255,7 @@ fn interactive_mode() {
             }
             "underline-color" => {
                 // underline-color <N> for palette, or "<r;g;b>" for truecolor
-                if let Some(idx) = args.parse::<u8>().ok() {
+                if let Ok(idx) = args.parse::<u8>() {
                     write!(out, "\x1b[58:5:{idx}m").unwrap();
                 } else if !args.is_empty() {
                     write!(out, "\x1b[58:2::{args}m").unwrap();

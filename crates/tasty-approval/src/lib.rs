@@ -175,16 +175,12 @@ impl ApprovalChoice {
 /// 위험도. UI/notification 채널 선택에 사용.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum Severity {
+    #[default]
     Info,
     Warn,
     Danger,
-}
-
-impl Default for Severity {
-    fn default() -> Self {
-        Severity::Info
-    }
 }
 
 /// 요청 본문.

@@ -78,10 +78,10 @@ impl Translator {
 
 /// 재귀 toml table → 평면 dot-key 평탄화. host의 `Translations::parse_toml_into`와 동일.
 fn parse_toml_into(map: &mut HashMap<String, String>, source: &str) {
-    if let Ok(value) = source.parse::<toml::Value>() {
-        if let Some(table) = value.as_table() {
-            flatten(map, "", table);
-        }
+    if let Ok(value) = source.parse::<toml::Value>()
+        && let Some(table) = value.as_table()
+    {
+        flatten(map, "", table);
     }
 }
 

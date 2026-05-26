@@ -72,19 +72,15 @@ impl TaskState {
 /// Task가 실패했을 때 downstream 처리 정책.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[derive(Default)]
 pub enum OnFailure {
     /// downstream 모두 `Skipped`로.
+    #[default]
     Abort,
     /// downstream을 정상 진행 (의존성 실패를 성공처럼 취급).
     ContinueDownstream,
     /// 다른 task를 fallback으로 실행. 그 fallback이 Succeed하면 downstream이 정상 진행.
     Fallback { task: TaskId },
-}
-
-impl Default for OnFailure {
-    fn default() -> Self {
-        OnFailure::Abort
-    }
 }
 
 /// Task가 실행할 동작.

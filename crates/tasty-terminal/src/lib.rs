@@ -207,17 +207,17 @@ impl Terminal {
         }
 
         // Add tasty's own binary directory to PATH so `tasty` CLI works inside the terminal
-        if let Ok(exe_path) = std::env::current_exe() {
-            if let Some(exe_dir) = exe_path.parent() {
-                let exe_dir_str = exe_dir.to_string_lossy();
-                let sep = if cfg!(windows) { ";" } else { ":" };
-                let new_path = if let Ok(existing) = std::env::var("PATH") {
-                    format!("{}{}{}", exe_dir_str, sep, existing)
-                } else {
-                    exe_dir_str.to_string()
-                };
-                cmd.env("PATH", new_path);
-            }
+        if let Ok(exe_path) = std::env::current_exe()
+            && let Some(exe_dir) = exe_path.parent()
+        {
+            let exe_dir_str = exe_dir.to_string_lossy();
+            let sep = if cfg!(windows) { ";" } else { ":" };
+            let new_path = if let Ok(existing) = std::env::var("PATH") {
+                format!("{}{}{}", exe_dir_str, sep, existing)
+            } else {
+                exe_dir_str.to_string()
+            };
+            cmd.env("PATH", new_path);
         }
 
         if let Some(dir) = working_dir {
@@ -234,13 +234,13 @@ impl Terminal {
         // 처음 read 하는 순간 이 바이트가 무조건 들어간다. writer thread 의 채널
         // 경유로는 미세한 race 또는 첫 write 가 지연되는 케이스가 있어, 직접 master
         // fd 에 써서 timing 을 결정적으로 만든다.
-        if let Some(input) = config.initial_input {
-            if !input.is_empty() {
-                if let Err(e) = pty_writer.write_all(input.as_bytes()) {
-                    tracing::warn!("initial_input write_all failed: {e}");
-                } else if let Err(e) = pty_writer.flush() {
-                    tracing::warn!("initial_input flush failed: {e}");
-                }
+        if let Some(input) = config.initial_input
+            && !input.is_empty()
+        {
+            if let Err(e) = pty_writer.write_all(input.as_bytes()) {
+                tracing::warn!("initial_input write_all failed: {e}");
+            } else if let Err(e) = pty_writer.flush() {
+                tracing::warn!("initial_input flush failed: {e}");
             }
         }
 

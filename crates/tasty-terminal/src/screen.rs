@@ -110,9 +110,12 @@ impl Terminal {
         for cell in lines[row].visible_cells() {
             if cell.cell_index() == col {
                 let attrs = cell.attrs();
-                let width = if cell.str().chars().next().map_or(false, |c| {
-                    unicode_width::UnicodeWidthChar::width(c).unwrap_or(1) > 1
-                }) {
+                let width = if cell
+                    .str()
+                    .chars()
+                    .next()
+                    .is_some_and(|c| unicode_width::UnicodeWidthChar::width(c).unwrap_or(1) > 1)
+                {
                     2
                 } else {
                     1
@@ -135,9 +138,12 @@ impl Terminal {
             .visible_cells()
             .map(|cell| {
                 let attrs = cell.attrs();
-                let width = if cell.str().chars().next().map_or(false, |c| {
-                    unicode_width::UnicodeWidthChar::width(c).unwrap_or(1) > 1
-                }) {
+                let width = if cell
+                    .str()
+                    .chars()
+                    .next()
+                    .is_some_and(|c| unicode_width::UnicodeWidthChar::width(c).unwrap_or(1) > 1)
+                {
                     2
                 } else {
                     1

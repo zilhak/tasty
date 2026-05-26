@@ -161,11 +161,11 @@ impl<'a> LeaseStore<'a> {
         for e in entries {
             if let MemoryValue::Json(v) = e.value {
                 let lease: Lease = serde_json::from_value(v)?;
-                if let Some(now) = now_ms {
-                    if lease.is_expired(now) {
-                        expired.push(lease.resource.clone());
-                        continue;
-                    }
+                if let Some(now) = now_ms
+                    && lease.is_expired(now)
+                {
+                    expired.push(lease.resource.clone());
+                    continue;
                 }
                 alive.push(lease);
             }

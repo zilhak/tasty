@@ -333,17 +333,17 @@ impl<'a> TaskStore<'a> {
         if reset_downstream {
             let downstream = TaskGraph::build(&all).transitive_downstream(id);
             for d_id in downstream {
-                if let Some(mut d) = self.get(workspace_id, &d_id)? {
-                    if matches!(
+                if let Some(mut d) = self.get(workspace_id, &d_id)?
+                    && matches!(
                         d.state,
                         TaskState::Skipped | TaskState::Failed { .. } | TaskState::Cancelled
-                    ) {
-                        d.state = TaskState::Waiting;
-                        d.started_at = None;
-                        d.finished_at = None;
-                        d.result = None;
-                        self.put(&d)?;
-                    }
+                    )
+                {
+                    d.state = TaskState::Waiting;
+                    d.started_at = None;
+                    d.finished_at = None;
+                    d.result = None;
+                    self.put(&d)?;
                 }
             }
             // downstream 모두 갱신했으니 cascade 한번 더

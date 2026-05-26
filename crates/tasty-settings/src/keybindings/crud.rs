@@ -324,10 +324,10 @@ impl KeybindingSettings {
             if *id == field_id {
                 continue;
             }
-            if let Some(bindings) = self.get_bindings(id) {
-                if let Some(idx) = bindings.iter().position(|b| b == combo) {
-                    return Some((id, idx));
-                }
+            if let Some(bindings) = self.get_bindings(id)
+                && let Some(idx) = bindings.iter().position(|b| b == combo)
+            {
+                return Some((id, idx));
             }
         }
         None
@@ -342,12 +342,12 @@ impl KeybindingSettings {
         // 먼저 모든 사용자 설정 바인딩을 수집
         let mut user_combos: HashSet<String> = HashSet::new();
         for (field_id, _) in Self::GENERAL_BINDING_FIELDS {
-            if existing_keys.contains(*field_id) {
-                if let Some(bindings) = self.get_bindings(field_id) {
-                    for combo in bindings {
-                        if !combo.is_empty() {
-                            user_combos.insert(combo.clone());
-                        }
+            if existing_keys.contains(*field_id)
+                && let Some(bindings) = self.get_bindings(field_id)
+            {
+                for combo in bindings {
+                    if !combo.is_empty() {
+                        user_combos.insert(combo.clone());
                     }
                 }
             }

@@ -55,11 +55,11 @@ impl Translations {
         }
 
         // Overlay user's custom translation file if it exists
-        if let Some(user_path) = Self::user_lang_path(language) {
-            if let Ok(content) = std::fs::read_to_string(&user_path) {
-                Self::parse_toml_into(&mut strings, &content);
-                tracing::info!("loaded user translations from {}", user_path.display());
-            }
+        if let Some(user_path) = Self::user_lang_path(language)
+            && let Ok(content) = std::fs::read_to_string(&user_path)
+        {
+            Self::parse_toml_into(&mut strings, &content);
+            tracing::info!("loaded user translations from {}", user_path.display());
         }
 
         tracing::info!(
@@ -113,12 +113,12 @@ impl Translations {
     /// Get a translated string by key. Falls back to the key itself if not found.
     pub fn get<'a>(&'a self, key: &'a str) -> &'a str {
         if let Some(s) = self.base.get(key) {
-            return *s;
+            return s;
         }
         if let Ok(ns) = self.namespaces.read() {
             for map in ns.values() {
                 if let Some(s) = map.get(key) {
-                    return *s;
+                    return s;
                 }
             }
         }

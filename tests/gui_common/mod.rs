@@ -109,10 +109,10 @@ impl GuiTestInstance {
             if start.elapsed() > Duration::from_secs(15) {
                 panic!("tasty GUI failed to write port file within 15 seconds");
             }
-            if let Ok(content) = std::fs::read_to_string(&port_file) {
-                if let Ok(port) = content.trim().parse::<u16>() {
-                    break port;
-                }
+            if let Ok(content) = std::fs::read_to_string(&port_file)
+                && let Ok(port) = content.trim().parse::<u16>()
+            {
+                break port;
             }
             std::thread::sleep(Duration::from_millis(100));
         };

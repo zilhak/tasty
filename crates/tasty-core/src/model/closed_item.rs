@@ -336,6 +336,12 @@ pub struct ClosedItemStore {
     items: VecDeque<ClosedItem>,
 }
 
+impl Default for ClosedItemStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ClosedItemStore {
     pub fn new() -> Self {
         Self {
