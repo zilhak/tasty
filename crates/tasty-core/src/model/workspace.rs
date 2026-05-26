@@ -1,5 +1,4 @@
 use super::{Pane, PaneId, PaneNode, SurfaceId, TabId, WorkspaceId};
-use tasty_terminal::Waker;
 
 /// Workspace - one sidebar item. Contains a PaneLayout (binary split tree of Panes).
 pub struct Workspace {
@@ -17,27 +16,12 @@ impl Workspace {
     pub fn new_with_shell(
         id: WorkspaceId,
         name: String,
-        cols: usize,
-        rows: usize,
         pane_id: PaneId,
         tab_id: TabId,
         surface_id: SurfaceId,
-        shell: Option<&str>,
-        shell_args: &[&str],
-        waker: Waker,
-        working_dir: Option<&std::path::Path>,
+        spawn: super::pane::ShellSpawnOpts<'_>,
     ) -> anyhow::Result<Self> {
-        let pane = Pane::new_with_shell(
-            pane_id,
-            tab_id,
-            surface_id,
-            cols,
-            rows,
-            shell,
-            shell_args,
-            waker,
-            working_dir,
-        )?;
+        let pane = Pane::new_with_shell(pane_id, tab_id, surface_id, spawn)?;
         let focused_pane = pane_id;
         Ok(Self {
             id,

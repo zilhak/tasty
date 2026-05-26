@@ -17,12 +17,14 @@ impl AppState {
             pane.add_tab_with_shell(
                 tab_id,
                 surface_id,
-                cols,
-                rows,
-                sh.shell_ref(),
-                &sh.args_ref(),
-                waker,
-                cwd.as_deref(),
+                crate::model::ShellSpawnOpts {
+                    cols: cols,
+                    rows: rows,
+                    shell: sh.shell_ref(),
+                    shell_args: &sh.args_ref(),
+                    waker: waker,
+                    working_dir: cwd.as_deref(),
+                },
             )?;
         }
         engine.send_fast_init(surface_id);
@@ -49,12 +51,14 @@ impl AppState {
                 pane.add_tab_deferred(
                     tab_id,
                     surface_id,
-                    sh.shell_ref(),
-                    &sh.args_ref(),
-                    cols,
-                    rows,
-                    waker,
-                    cwd.as_deref(),
+                    crate::model::ShellSpawnOpts {
+                        cols: cols,
+                        rows: rows,
+                        shell: sh.shell_ref(),
+                        shell_args: &sh.args_ref(),
+                        waker: waker,
+                        working_dir: cwd.as_deref(),
+                    },
                 );
             }
         } else {
@@ -62,12 +66,14 @@ impl AppState {
                 pane.add_tab_background_with_shell(
                     tab_id,
                     surface_id,
-                    cols,
-                    rows,
-                    sh.shell_ref(),
-                    &sh.args_ref(),
-                    waker,
-                    cwd.as_deref(),
+                    crate::model::ShellSpawnOpts {
+                        cols: cols,
+                        rows: rows,
+                        shell: sh.shell_ref(),
+                        shell_args: &sh.args_ref(),
+                        waker: waker,
+                        working_dir: cwd.as_deref(),
+                    },
                 )?;
             }
             engine.send_fast_init(surface_id);
@@ -158,12 +164,14 @@ impl AppState {
                 pane.add_tab_deferred(
                     tab_id,
                     surface_id,
-                    sh.shell_ref(),
-                    &sh.args_ref(),
-                    cols,
-                    rows,
-                    waker,
-                    cwd.as_deref(),
+                    crate::model::ShellSpawnOpts {
+                        cols: cols,
+                        rows: rows,
+                        shell: sh.shell_ref(),
+                        shell_args: &sh.args_ref(),
+                        waker: waker,
+                        working_dir: cwd.as_deref(),
+                    },
                 );
             }
         } else {
@@ -171,12 +179,14 @@ impl AppState {
                 pane.add_tab_background_with_shell(
                     tab_id,
                     surface_id,
-                    cols,
-                    rows,
-                    sh.shell_ref(),
-                    &sh.args_ref(),
-                    waker,
-                    cwd.as_deref(),
+                    crate::model::ShellSpawnOpts {
+                        cols: cols,
+                        rows: rows,
+                        shell: sh.shell_ref(),
+                        shell_args: &sh.args_ref(),
+                        waker: waker,
+                        working_dir: cwd.as_deref(),
+                    },
                 )?;
             }
             engine.send_fast_init(surface_id);

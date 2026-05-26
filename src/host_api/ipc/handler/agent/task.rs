@@ -54,15 +54,15 @@ pub fn handle_task_create(
 
     let ts = now_ms();
     run_store(state, engine, id, move |store| {
-        store.create(
+        store.create(tasty_agent::task::TaskCreateOpts {
             workspace_id,
             name,
             command,
             depends_on,
             on_failure,
             metadata,
-            ts,
-        )
+            now_ms: ts,
+        })
     })
 }
 

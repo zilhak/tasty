@@ -1,6 +1,23 @@
 use super::tab::Tab;
 use super::{PaneId, SplitDirection, SurfaceId, TabId, TerminalSurface};
 use tasty_terminal::{Terminal, Waker};
+
+/// Pane 의 shell-spawning 함수들이 공유하는 옵션 묶음.
+///
+/// `new_with_shell`, `add_tab_with_shell`, `add_tab_background_with_shell`,
+/// `add_tab_deferred`, `split_active_surface_with_shell`,
+/// `split_surface_by_id_with_shell` 6개 함수가 모두 `(cols, rows, shell,
+/// shell_args, waker, working_dir)` 6 인자를 가져 너무 많았다 (`too_many_arguments`).
+/// 공통 옵션을 struct 로 묶어 각 함수 시그니처 인자 수를 lint 임계값 내로 줄임.
+pub struct ShellSpawnOpts<'a> {
+    pub cols: usize,
+    pub rows: usize,
+    pub shell: Option<&'a str>,
+    pub shell_args: &'a [&'a str],
+    pub waker: Waker,
+    pub working_dir: Option<&'a std::path::Path>,
+}
+
 /// A screen region with its own independent tab bar.
 pub struct Pane {
     pub id: PaneId,
@@ -44,24 +61,19 @@ impl Pane {
         id: PaneId,
         tab_id: TabId,
         surface_id: SurfaceId,
-        cols: usize,
-        rows: usize,
-        shell: Option<&str>,
-        shell_args: &[&str],
-        waker: Waker,
-        working_dir: Option<&std::path::Path>,
+        spawn: ShellSpawnOpts<'_>,
     ) -> anyhow::Result<Self> {
         let terminal = Terminal::new(
             tasty_terminal::TerminalConfig {
-                cols,
-                rows,
-                shell,
-                args: shell_args,
+                cols: spawn.cols,
+                rows: spawn.rows,
+                shell: spawn.shell,
+                args: spawn.shell_args,
                 surface_id,
-                working_dir,
+                working_dir: spawn.working_dir,
                 initial_input: None,
             },
-            waker,
+            spawn.waker,
         )?;
         let surface: Box<dyn super::Surface> = Box::new(TerminalSurface {
             id: surface_id,
@@ -83,24 +95,19 @@ impl Pane {
         &mut self,
         tab_id: TabId,
         surface_id: SurfaceId,
-        cols: usize,
-        rows: usize,
-        shell: Option<&str>,
-        shell_args: &[&str],
-        waker: Waker,
-        working_dir: Option<&std::path::Path>,
+        spawn: ShellSpawnOpts<'_>,
     ) -> anyhow::Result<()> {
         let terminal = Terminal::new(
             tasty_terminal::TerminalConfig {
-                cols,
-                rows,
-                shell,
-                args: shell_args,
+                cols: spawn.cols,
+                rows: spawn.rows,
+                shell: spawn.shell,
+                args: spawn.shell_args,
                 surface_id,
-                working_dir,
+                working_dir: spawn.working_dir,
                 initial_input: None,
             },
-            waker,
+            spawn.waker,
         )?;
         let surface: Box<dyn super::Surface> = Box::new(TerminalSurface {
             id: surface_id,
@@ -119,24 +126,19 @@ impl Pane {
         &mut self,
         tab_id: TabId,
         surface_id: SurfaceId,
-        cols: usize,
-        rows: usize,
-        shell: Option<&str>,
-        shell_args: &[&str],
-        waker: Waker,
-        working_dir: Option<&std::path::Path>,
+        spawn: ShellSpawnOpts<'_>,
     ) -> anyhow::Result<()> {
         let terminal = Terminal::new(
             tasty_terminal::TerminalConfig {
-                cols,
-                rows,
-                shell,
-                args: shell_args,
+                cols: spawn.cols,
+                rows: spawn.rows,
+                shell: spawn.shell,
+                args: spawn.shell_args,
                 surface_id,
-                working_dir,
+                working_dir: spawn.working_dir,
                 initial_input: None,
             },
-            waker,
+            spawn.waker,
         )?;
         let surface: Box<dyn super::Surface> = Box::new(TerminalSurface {
             id: surface_id,
@@ -156,20 +158,19 @@ impl Pane {
         &mut self,
         tab_id: TabId,
         surface_id: SurfaceId,
-        shell: Option<&str>,
-        shell_args: &[&str],
-        cols: usize,
-        rows: usize,
-        waker: Waker,
-        working_dir: Option<&std::path::Path>,
+        spawn_opts: ShellSpawnOpts<'_>,
     ) {
         let spawn = super::terminal_surface::DeferredSpawn {
-            shell: shell.map(|s| s.to_string()),
-            shell_args: shell_args.iter().map(|s| s.to_string()).collect(),
-            cols,
-            rows,
-            waker,
-            working_dir: working_dir.map(|p| p.to_path_buf()),
+            shell: spawn_opts.shell.map(|s| s.to_string()),
+            shell_args: spawn_opts
+                .shell_args
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+            cols: spawn_opts.cols,
+            rows: spawn_opts.rows,
+            waker: spawn_opts.waker,
+            working_dir: spawn_opts.working_dir.map(|p| p.to_path_buf()),
             restore_command: None,
             scrollback_persist_id: None,
         };
@@ -209,24 +210,19 @@ impl Pane {
         &mut self,
         direction: SplitDirection,
         new_surface_id: SurfaceId,
-        cols: usize,
-        rows: usize,
-        shell: Option<&str>,
-        shell_args: &[&str],
-        waker: Waker,
-        working_dir: Option<&std::path::Path>,
+        spawn: ShellSpawnOpts<'_>,
     ) -> anyhow::Result<()> {
         let new_terminal = Terminal::new(
             tasty_terminal::TerminalConfig {
-                cols,
-                rows,
-                shell,
-                args: shell_args,
+                cols: spawn.cols,
+                rows: spawn.rows,
+                shell: spawn.shell,
+                args: spawn.shell_args,
                 surface_id: new_surface_id,
-                working_dir,
+                working_dir: spawn.working_dir,
                 initial_input: None,
             },
-            waker,
+            spawn.waker,
         )?;
         if self.tabs.is_empty() {
             return Ok(()); // nothing to split
@@ -242,24 +238,19 @@ impl Pane {
         target_surface_id: SurfaceId,
         direction: SplitDirection,
         new_surface_id: SurfaceId,
-        cols: usize,
-        rows: usize,
-        shell: Option<&str>,
-        shell_args: &[&str],
-        waker: Waker,
-        working_dir: Option<&std::path::Path>,
+        spawn: ShellSpawnOpts<'_>,
     ) -> anyhow::Result<()> {
         let new_terminal = Terminal::new(
             tasty_terminal::TerminalConfig {
-                cols,
-                rows,
-                shell,
-                args: shell_args,
+                cols: spawn.cols,
+                rows: spawn.rows,
+                shell: spawn.shell,
+                args: spawn.shell_args,
                 surface_id: new_surface_id,
-                working_dir,
+                working_dir: spawn.working_dir,
                 initial_input: None,
             },
-            waker,
+            spawn.waker,
         )?;
         for tab in &mut self.tabs {
             if tab.find_terminal(target_surface_id).is_some() {

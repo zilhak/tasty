@@ -351,17 +351,28 @@ pub fn plan_remove_step(
     })
 }
 
-/// step state 갱신 (+ notes 옵션). notes = Some(None) 은 해제, Some(Some(s)) 는 set.
-pub fn plan_update_step(
-    store: &mut MemoryStore,
-    owner: &str,
-    workspace_id: u32,
-    plan_id: &str,
-    step_id: &str,
-    new_state: Option<PlanStepState>,
-    notes: Option<Option<String>>,
-    cas: Option<u64>,
-) -> Result<u64> {
+/// `plan_update_step` 의 인자 묶음. notes = Some(None) 은 해제, Some(Some(s)) 는 set.
+pub struct PlanUpdateStepOpts<'a> {
+    pub owner: &'a str,
+    pub workspace_id: u32,
+    pub plan_id: &'a str,
+    pub step_id: &'a str,
+    pub new_state: Option<PlanStepState>,
+    pub notes: Option<Option<String>>,
+    pub cas: Option<u64>,
+}
+
+/// step state 갱신 (+ notes 옵션).
+pub fn plan_update_step(store: &mut MemoryStore, opts: PlanUpdateStepOpts<'_>) -> Result<u64> {
+    let PlanUpdateStepOpts {
+        owner,
+        workspace_id,
+        plan_id,
+        step_id,
+        new_state,
+        notes,
+        cas,
+    } = opts;
     update_plan(store, owner, workspace_id, plan_id, cas, |plan| {
         let step = plan
             .steps
@@ -517,13 +528,15 @@ mod tests {
         plan_create(&mut s, HOST_OWNER, 1, "p", "t", vec![step("a", "x")]).unwrap();
         plan_update_step(
             &mut s,
-            HOST_OWNER,
-            1,
-            "p",
-            "a",
-            Some(PlanStepState::InProgress),
-            None,
-            None,
+            PlanUpdateStepOpts {
+                owner: HOST_OWNER,
+                workspace_id: 1,
+                plan_id: "p",
+                step_id: "a",
+                new_state: Some(PlanStepState::InProgress),
+                notes: None,
+                cas: None,
+            },
         )
         .unwrap();
         let plan = plan_get(&s, 1, "p").unwrap().unwrap();
@@ -536,19 +549,33 @@ mod tests {
         plan_create(&mut s, HOST_OWNER, 1, "p", "t", vec![step("a", "x")]).unwrap();
         plan_update_step(
             &mut s,
-            HOST_OWNER,
-            1,
-            "p",
-            "a",
-            None,
-            Some(Some("hello".into())),
-            None,
+            PlanUpdateStepOpts {
+                owner: HOST_OWNER,
+                workspace_id: 1,
+                plan_id: "p",
+                step_id: "a",
+                new_state: None,
+                notes: Some(Some("hello".into())),
+                cas: None,
+            },
         )
         .unwrap();
         let plan = plan_get(&s, 1, "p").unwrap().unwrap();
         assert_eq!(plan.steps[0].notes.as_deref(), Some("hello"));
 
-        plan_update_step(&mut s, HOST_OWNER, 1, "p", "a", None, Some(None), None).unwrap();
+        plan_update_step(
+            &mut s,
+            PlanUpdateStepOpts {
+                owner: HOST_OWNER,
+                workspace_id: 1,
+                plan_id: "p",
+                step_id: "a",
+                new_state: None,
+                notes: Some(None),
+                cas: None,
+            },
+        )
+        .unwrap();
         let plan = plan_get(&s, 1, "p").unwrap().unwrap();
         assert!(plan.steps[0].notes.is_none());
     }
@@ -633,13 +660,15 @@ mod tests {
         plan_create(&mut s, HOST_OWNER, 1, "p", "t", vec![step("a", "1")]).unwrap();
         let err = plan_update_step(
             &mut s,
-            HOST_OWNER,
-            1,
-            "p",
-            "a",
-            Some(PlanStepState::Completed),
-            None,
-            Some(99),
+            PlanUpdateStepOpts {
+                owner: HOST_OWNER,
+                workspace_id: 1,
+                plan_id: "p",
+                step_id: "a",
+                new_state: Some(PlanStepState::Completed),
+                notes: None,
+                cas: Some(99),
+            },
         )
         .unwrap_err();
         assert!(matches!(err, MemoryError::CasConflict { .. }), "{err:?}");

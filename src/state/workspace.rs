@@ -25,15 +25,17 @@ impl AppState {
         let ws = Workspace::new_with_shell(
             ws_id,
             name,
-            engine.default_cols,
-            engine.default_rows,
             pane_id,
             tab_id,
             surface_id,
-            shell,
-            &shell_args,
-            engine.make_waker(surface_id),
-            cwd.as_deref(),
+            crate::model::ShellSpawnOpts {
+                cols: engine.default_cols,
+                rows: engine.default_rows,
+                shell: shell,
+                shell_args: &shell_args,
+                waker: engine.make_waker(surface_id),
+                working_dir: cwd.as_deref(),
+            },
         )?;
         engine.workspaces.push(ws);
         self.active_workspace = engine.workspaces.len() - 1;
@@ -73,15 +75,17 @@ impl AppState {
             Workspace::new_with_shell(
                 ws_id,
                 name,
-                engine.default_cols,
-                engine.default_rows,
                 pane_id,
                 tab_id,
                 surface_id,
-                shell,
-                &shell_args,
-                engine.make_waker(surface_id),
-                cwd.as_deref(),
+                crate::model::ShellSpawnOpts {
+                    cols: engine.default_cols,
+                    rows: engine.default_rows,
+                    shell: shell,
+                    shell_args: &shell_args,
+                    waker: engine.make_waker(surface_id),
+                    working_dir: cwd.as_deref(),
+                },
             )?
         } else if kind == "empty" {
             anyhow::bail!("Cannot create workspace with empty surface kind");

@@ -18,6 +18,20 @@ pub struct TaskStore<'a> {
     seq: &'a AtomicU64,
 }
 
+/// [`TaskStore::create`] 인자 묶음.
+///
+/// `name` 은 String 으로 받음 — 기존의 `impl Into<String>` 은 generic 이지만 Opts struct
+/// 안에 두려면 명시 타입 필요. 호출자가 `&str` 이면 `.into()` 또는 `.to_string()` 호출.
+pub struct TaskCreateOpts {
+    pub workspace_id: WorkspaceId,
+    pub name: String,
+    pub command: TaskCommand,
+    pub depends_on: Vec<TaskId>,
+    pub on_failure: OnFailure,
+    pub metadata: serde_json::Value,
+    pub now_ms: u64,
+}
+
 impl<'a> TaskStore<'a> {
     /// `owner`는 memory의 owner 필드로 들어간다. 호스트는 보통 `"_host"`를 쓴다.
     pub fn new(mem: &'a mut MemoryStore, owner: impl Into<String>, seq: &'a AtomicU64) -> Self {
@@ -85,16 +99,16 @@ impl<'a> TaskStore<'a> {
 
     /// 신규 task 생성. 사이클 검출 + 초기 state 계산 후 영속.
     /// `now_ms`는 호스트가 주입 (테스트 결정성).
-    pub fn create(
-        &mut self,
-        workspace_id: WorkspaceId,
-        name: impl Into<String>,
-        command: TaskCommand,
-        depends_on: Vec<TaskId>,
-        on_failure: OnFailure,
-        metadata: serde_json::Value,
-        now_ms: u64,
-    ) -> Result<Task> {
+    pub fn create(&mut self, opts: TaskCreateOpts) -> Result<Task> {
+        let TaskCreateOpts {
+            workspace_id,
+            name,
+            command,
+            depends_on,
+            on_failure,
+            metadata,
+            now_ms,
+        } = opts;
         let id = self.new_id(now_ms);
         let mut existing = self.list(workspace_id)?;
 
@@ -109,7 +123,7 @@ impl<'a> TaskStore<'a> {
         let mut new_task = Task {
             id: id.clone(),
             workspace_id,
-            name: name.into(),
+            name,
             command,
             depends_on,
             state: TaskState::Waiting,

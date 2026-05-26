@@ -308,15 +308,17 @@ impl EngineState {
             let ws = Workspace::new_with_shell(
                 ws_id,
                 "Workspace 1".to_string(),
-                cols,
-                rows,
                 pane_id,
                 tab_id,
                 surface_id,
-                sh.shell_ref(),
-                &sh.args_ref(),
-                waker,
-                None,
+                crate::model::ShellSpawnOpts {
+                    cols: cols,
+                    rows: rows,
+                    shell: sh.shell_ref(),
+                    shell_args: &sh.args_ref(),
+                    waker: waker,
+                    working_dir: None,
+                },
             )?;
             engine.workspaces = vec![ws];
             engine.send_fast_init(surface_id);

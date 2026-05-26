@@ -27,15 +27,15 @@ fn create_single_task_starts_ready() {
     let (_td, mut mem, seq) = fresh_store();
     let mut store = TaskStore::new(&mut mem, "_host", &seq);
     let t = store
-        .create(
-            1,
-            "a",
-            run_cmd(),
-            vec![],
-            OnFailure::Abort,
-            serde_json::Value::Null,
-            1000,
-        )
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "a".to_string(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1000,
+        })
         .unwrap();
     assert_eq!(t.state, TaskState::Ready);
     assert_eq!(t.workspace_id, 1);
@@ -46,37 +46,37 @@ fn linear_dag_transitions_downstream() {
     let (_td, mut mem, seq) = fresh_store();
     let mut store = TaskStore::new(&mut mem, "_host", &seq);
     let a = store
-        .create(
-            1,
-            "A",
-            run_cmd(),
-            vec![],
-            OnFailure::Abort,
-            serde_json::Value::Null,
-            1000,
-        )
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "A".to_string(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1000,
+        })
         .unwrap();
     let b = store
-        .create(
-            1,
-            "B",
-            run_cmd(),
-            vec![a.id.clone()],
-            OnFailure::Abort,
-            serde_json::Value::Null,
-            1001,
-        )
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "B".to_string(),
+            command: run_cmd(),
+            depends_on: vec![a.id.clone()],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1001,
+        })
         .unwrap();
     let c = store
-        .create(
-            1,
-            "C",
-            run_cmd(),
-            vec![b.id.clone()],
-            OnFailure::Abort,
-            serde_json::Value::Null,
-            1002,
-        )
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "C".to_string(),
+            command: run_cmd(),
+            depends_on: vec![b.id.clone()],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1002,
+        })
         .unwrap();
     assert_eq!(a.state, TaskState::Ready);
     assert_eq!(b.state, TaskState::Waiting);
@@ -100,48 +100,48 @@ fn diamond_dag_parallel_then_join() {
     let (_td, mut mem, seq) = fresh_store();
     let mut store = TaskStore::new(&mut mem, "_host", &seq);
     let a = store
-        .create(
-            1,
-            "A",
-            run_cmd(),
-            vec![],
-            OnFailure::Abort,
-            serde_json::Value::Null,
-            1000,
-        )
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "A".to_string(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1000,
+        })
         .unwrap();
     let b = store
-        .create(
-            1,
-            "B",
-            run_cmd(),
-            vec![a.id.clone()],
-            OnFailure::Abort,
-            serde_json::Value::Null,
-            1001,
-        )
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "B".to_string(),
+            command: run_cmd(),
+            depends_on: vec![a.id.clone()],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1001,
+        })
         .unwrap();
     let c = store
-        .create(
-            1,
-            "C",
-            run_cmd(),
-            vec![a.id.clone()],
-            OnFailure::Abort,
-            serde_json::Value::Null,
-            1002,
-        )
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "C".to_string(),
+            command: run_cmd(),
+            depends_on: vec![a.id.clone()],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1002,
+        })
         .unwrap();
     let d = store
-        .create(
-            1,
-            "D",
-            run_cmd(),
-            vec![b.id.clone(), c.id.clone()],
-            OnFailure::Abort,
-            serde_json::Value::Null,
-            1003,
-        )
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "D".to_string(),
+            command: run_cmd(),
+            depends_on: vec![b.id.clone(), c.id.clone()],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1003,
+        })
         .unwrap();
 
     store.set_state(1, &a.id, TaskState::Running, 2000).unwrap();
@@ -187,26 +187,26 @@ fn abort_propagates_skip() {
     let (_td, mut mem, seq) = fresh_store();
     let mut store = TaskStore::new(&mut mem, "_host", &seq);
     let a = store
-        .create(
-            1,
-            "A",
-            run_cmd(),
-            vec![],
-            OnFailure::Abort,
-            serde_json::Value::Null,
-            1000,
-        )
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "A".to_string(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1000,
+        })
         .unwrap();
     let b = store
-        .create(
-            1,
-            "B",
-            run_cmd(),
-            vec![a.id.clone()],
-            OnFailure::Abort,
-            serde_json::Value::Null,
-            1001,
-        )
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "B".to_string(),
+            command: run_cmd(),
+            depends_on: vec![a.id.clone()],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1001,
+        })
         .unwrap();
     store.set_state(1, &a.id, TaskState::Running, 2000).unwrap();
     store
@@ -228,26 +228,26 @@ fn continue_downstream_keeps_going() {
     let (_td, mut mem, seq) = fresh_store();
     let mut store = TaskStore::new(&mut mem, "_host", &seq);
     let a = store
-        .create(
-            1,
-            "A",
-            run_cmd(),
-            vec![],
-            OnFailure::Abort,
-            serde_json::Value::Null,
-            1000,
-        )
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "A".to_string(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1000,
+        })
         .unwrap();
     let b = store
-        .create(
-            1,
-            "B",
-            run_cmd(),
-            vec![a.id.clone()],
-            OnFailure::ContinueDownstream,
-            serde_json::Value::Null,
-            1001,
-        )
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "B".to_string(),
+            command: run_cmd(),
+            depends_on: vec![a.id.clone()],
+            on_failure: OnFailure::ContinueDownstream,
+            metadata: serde_json::Value::Null,
+            now_ms: 1001,
+        })
         .unwrap();
     store.set_state(1, &a.id, TaskState::Running, 2000).unwrap();
     store
@@ -264,38 +264,38 @@ fn cycle_detected() {
     // 직접 사이클을 만들 수 없으니, 내부 함수로 시도.
     // A -> B (created with dep A) ; 만약 A를 update해서 dep=B 추가하면 cycle.
     let a = store
-        .create(
-            1,
-            "A",
-            run_cmd(),
-            vec![],
-            OnFailure::Abort,
-            serde_json::Value::Null,
-            1000,
-        )
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "A".to_string(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1000,
+        })
         .unwrap();
     let b = store
-        .create(
-            1,
-            "B",
-            run_cmd(),
-            vec![a.id.clone()],
-            OnFailure::Abort,
-            serde_json::Value::Null,
-            1001,
-        )
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "B".to_string(),
+            command: run_cmd(),
+            depends_on: vec![a.id.clone()],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1001,
+        })
         .unwrap();
     // create 시 unknown dep는 거부
     let err = store
-        .create(
-            1,
-            "X",
-            run_cmd(),
-            vec!["nonexistent".into()],
-            OnFailure::Abort,
-            serde_json::Value::Null,
-            1002,
-        )
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "X".to_string(),
+            command: run_cmd(),
+            depends_on: vec!["nonexistent".into()],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1002,
+        })
         .unwrap_err();
     assert!(matches!(err, AgentError::UnknownDependency(_)));
 
@@ -314,15 +314,15 @@ fn cancel_pending_task() {
     let (_td, mut mem, seq) = fresh_store();
     let mut store = TaskStore::new(&mut mem, "_host", &seq);
     let a = store
-        .create(
-            1,
-            "A",
-            run_cmd(),
-            vec![],
-            OnFailure::Abort,
-            serde_json::Value::Null,
-            1000,
-        )
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "A".to_string(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1000,
+        })
         .unwrap();
     let (cancelled, _) = store.cancel(1, &a.id, 1500).unwrap();
     assert_eq!(cancelled.state, TaskState::Cancelled);
@@ -334,15 +334,15 @@ fn retry_resets_state() {
     let (_td, mut mem, seq) = fresh_store();
     let mut store = TaskStore::new(&mut mem, "_host", &seq);
     let a = store
-        .create(
-            1,
-            "A",
-            run_cmd(),
-            vec![],
-            OnFailure::Abort,
-            serde_json::Value::Null,
-            1000,
-        )
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "A".to_string(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1000,
+        })
         .unwrap();
     store.set_state(1, &a.id, TaskState::Running, 2000).unwrap();
     store
@@ -358,26 +358,26 @@ fn retry_with_reset_downstream() {
     let (_td, mut mem, seq) = fresh_store();
     let mut store = TaskStore::new(&mut mem, "_host", &seq);
     let a = store
-        .create(
-            1,
-            "A",
-            run_cmd(),
-            vec![],
-            OnFailure::Abort,
-            serde_json::Value::Null,
-            1000,
-        )
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "A".to_string(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1000,
+        })
         .unwrap();
     let b = store
-        .create(
-            1,
-            "B",
-            run_cmd(),
-            vec![a.id.clone()],
-            OnFailure::Abort,
-            serde_json::Value::Null,
-            1001,
-        )
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "B".to_string(),
+            command: run_cmd(),
+            depends_on: vec![a.id.clone()],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1001,
+        })
         .unwrap();
     store.set_state(1, &a.id, TaskState::Running, 2000).unwrap();
     store
@@ -401,39 +401,39 @@ fn fallback_triggers_when_main_fails() {
     let (_td, mut mem, seq) = fresh_store();
     let mut store = TaskStore::new(&mut mem, "_host", &seq);
     let a_prime = store
-        .create(
-            1,
-            "A_prime",
-            run_cmd(),
-            vec![],
-            OnFailure::Abort,
-            serde_json::Value::Null,
-            1000,
-        )
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "A_prime".to_string(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1000,
+        })
         .unwrap();
     let a = store
-        .create(
-            1,
-            "A",
-            run_cmd(),
-            vec![],
-            OnFailure::Fallback {
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "A".to_string(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Fallback {
                 task: a_prime.id.clone(),
             },
-            serde_json::Value::Null,
-            1001,
-        )
+            metadata: serde_json::Value::Null,
+            now_ms: 1001,
+        })
         .unwrap();
     let c = store
-        .create(
-            1,
-            "C",
-            run_cmd(),
-            vec![a.id.clone()],
-            OnFailure::Abort,
-            serde_json::Value::Null,
-            1002,
-        )
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "C".to_string(),
+            command: run_cmd(),
+            depends_on: vec![a.id.clone()],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1002,
+        })
         .unwrap();
     // A 실패 시 A_prime 도 이미 Ready 였으므로 변화 없음, C 는 Waiting 유지 (fallback 대기).
     store.set_state(1, &a.id, TaskState::Running, 2000).unwrap();
@@ -459,39 +459,39 @@ fn fallback_success_propagates_to_main_downstream() {
     let (_td, mut mem, seq) = fresh_store();
     let mut store = TaskStore::new(&mut mem, "_host", &seq);
     let a_prime = store
-        .create(
-            1,
-            "A_prime",
-            run_cmd(),
-            vec![],
-            OnFailure::Abort,
-            serde_json::Value::Null,
-            1000,
-        )
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "A_prime".to_string(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1000,
+        })
         .unwrap();
     let a = store
-        .create(
-            1,
-            "A",
-            run_cmd(),
-            vec![],
-            OnFailure::Fallback {
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "A".to_string(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Fallback {
                 task: a_prime.id.clone(),
             },
-            serde_json::Value::Null,
-            1001,
-        )
+            metadata: serde_json::Value::Null,
+            now_ms: 1001,
+        })
         .unwrap();
     let c = store
-        .create(
-            1,
-            "C",
-            run_cmd(),
-            vec![a.id.clone()],
-            OnFailure::Abort,
-            serde_json::Value::Null,
-            1002,
-        )
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "C".to_string(),
+            command: run_cmd(),
+            depends_on: vec![a.id.clone()],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1002,
+        })
         .unwrap();
     store.set_state(1, &a.id, TaskState::Running, 2000).unwrap();
     store
@@ -520,39 +520,39 @@ fn fallback_failure_also_skips_main_downstream() {
     let (_td, mut mem, seq) = fresh_store();
     let mut store = TaskStore::new(&mut mem, "_host", &seq);
     let a_prime = store
-        .create(
-            1,
-            "A_prime",
-            run_cmd(),
-            vec![],
-            OnFailure::Abort,
-            serde_json::Value::Null,
-            1000,
-        )
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "A_prime".to_string(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1000,
+        })
         .unwrap();
     let a = store
-        .create(
-            1,
-            "A",
-            run_cmd(),
-            vec![],
-            OnFailure::Fallback {
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "A".to_string(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Fallback {
                 task: a_prime.id.clone(),
             },
-            serde_json::Value::Null,
-            1001,
-        )
+            metadata: serde_json::Value::Null,
+            now_ms: 1001,
+        })
         .unwrap();
     let c = store
-        .create(
-            1,
-            "C",
-            run_cmd(),
-            vec![a.id.clone()],
-            OnFailure::Abort,
-            serde_json::Value::Null,
-            1002,
-        )
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "C".to_string(),
+            command: run_cmd(),
+            depends_on: vec![a.id.clone()],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1002,
+        })
         .unwrap();
     store.set_state(1, &a.id, TaskState::Running, 2000).unwrap();
     store
@@ -591,37 +591,37 @@ fn list_returns_all_tasks() {
     let (_td, mut mem, seq) = fresh_store();
     let mut store = TaskStore::new(&mut mem, "_host", &seq);
     store
-        .create(
-            1,
-            "A",
-            run_cmd(),
-            vec![],
-            OnFailure::Abort,
-            serde_json::Value::Null,
-            1000,
-        )
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "A".to_string(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1000,
+        })
         .unwrap();
     store
-        .create(
-            1,
-            "B",
-            run_cmd(),
-            vec![],
-            OnFailure::Abort,
-            serde_json::Value::Null,
-            1001,
-        )
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "B".to_string(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1001,
+        })
         .unwrap();
     store
-        .create(
-            2,
-            "C",
-            run_cmd(),
-            vec![],
-            OnFailure::Abort,
-            serde_json::Value::Null,
-            1002,
-        )
+        .create(TaskCreateOpts {
+            workspace_id: 2,
+            name: "C".to_string(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1002,
+        })
         .unwrap();
     let ws1 = store.list(1).unwrap();
     assert_eq!(ws1.len(), 2);

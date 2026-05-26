@@ -279,13 +279,15 @@ pub fn handle_plan_update_step(
     let result = with_store(|s| {
         plan_mod::plan_update_step(
             s,
-            &owner,
-            workspace_id,
-            &plan_id,
-            &step_id,
-            new_state,
-            notes_arg,
-            cas,
+            plan_mod::PlanUpdateStepOpts {
+                owner: &owner,
+                workspace_id,
+                plan_id: &plan_id,
+                step_id: &step_id,
+                new_state,
+                notes: notes_arg,
+                cas,
+            },
         )
     })
     .expect("memory store present");

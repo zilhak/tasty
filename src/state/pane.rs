@@ -24,12 +24,14 @@ impl AppState {
             new_pane_id,
             new_tab_id,
             new_surface_id,
-            cols,
-            rows,
-            sh.shell_ref(),
-            &sh.args_ref(),
-            engine.make_waker(new_surface_id),
-            cwd.as_deref(),
+            crate::model::ShellSpawnOpts {
+                cols: cols,
+                rows: rows,
+                shell: sh.shell_ref(),
+                shell_args: &sh.args_ref(),
+                waker: engine.make_waker(new_surface_id),
+                working_dir: cwd.as_deref(),
+            },
         )?;
 
         let ws = self.active_workspace_mut(engine);
@@ -121,12 +123,14 @@ impl AppState {
                 new_pane_id,
                 new_tab_id,
                 new_surface_id,
-                cols,
-                rows,
-                sh.shell_ref(),
-                &sh.args_ref(),
-                engine.make_waker(new_surface_id),
-                cwd.as_deref(),
+                crate::model::ShellSpawnOpts {
+                    cols: cols,
+                    rows: rows,
+                    shell: sh.shell_ref(),
+                    shell_args: &sh.args_ref(),
+                    waker: engine.make_waker(new_surface_id),
+                    working_dir: cwd.as_deref(),
+                },
             )?
         } else {
             let surface = self.create_surface_via_registry(engine, kind, new_surface_id, params)?;
@@ -542,12 +546,14 @@ impl AppState {
             new_pane_id,
             new_tab_id,
             new_surface_id,
-            cols,
-            rows,
-            sh.shell_ref(),
-            &sh.args_ref(),
-            engine.make_waker(new_surface_id),
-            None,
+            crate::model::ShellSpawnOpts {
+                cols: cols,
+                rows: rows,
+                shell: sh.shell_ref(),
+                shell_args: &sh.args_ref(),
+                waker: engine.make_waker(new_surface_id),
+                working_dir: None,
+            },
         )?;
 
         let ws = self.active_workspace_mut(engine);
