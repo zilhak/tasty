@@ -3,8 +3,14 @@
 //! `tasty-core::theme::Theme`은 egui와 독립적인 모델이다.
 //! egui Visuals/Style 적용처럼 GUI 라이브러리에 직접 의존하는 헬퍼는
 //! 호스트 측인 이 모듈에 모은다.
+//!
+//! 라이트/다크 베이스는 `theme.is_light` 로 분기하고, 그 위에 모든 위젯 색상
+//! (stroke 포함), selection, hyperlink, error/warn, code_bg, faint_bg 를 명시적으로
+//! 덮어쓴다. 베이스 기본값에 의존하는 필드를 남기지 않아 라이트 ↔ 다크 전환 시
+//! 일부 위젯이 어울리지 않는 톤으로 남는 문제를 막는다.
 
 use egui::emath::GuiRounding as _;
+use tasty_core::color::HexColor;
 use tasty_core::theme::Theme;
 
 /// `TextEdit::hint_text`에 넘길 placeholder 텍스트를 디자인 시스템의
@@ -16,22 +22,78 @@ pub fn hint_text(text: impl Into<String>) -> egui::RichText {
     egui::RichText::new(text).color(egui::Color32::from(th.placeholder))
 }
 
+#[inline]
+fn stroke1(c: HexColor) -> egui::Stroke {
+    egui::Stroke::new(1.0, c)
+}
+
 /// Apply this theme to an egui context with UI scale factor.
 pub fn apply_theme_to_egui(theme: &Theme, ctx: &egui::Context, ui_scale: f32) {
-    let mut visuals = egui::Visuals::dark();
+    // ── 베이스: 라이트/다크 분기 ──
+    // light()/dark() 의 기본값에 의존하는 필드는 아래에서 거의 모두 덮어쓴다.
+    // 그래도 베이스를 맞춰두면 shadow / text_cursor 등 우리가 매핑하지 않는
+    // 잔여 필드가 적절한 톤으로 남는다.
+    let mut visuals = if theme.is_light {
+        egui::Visuals::light()
+    } else {
+        egui::Visuals::dark()
+    };
+
+    // ── Panel / Window / Extreme ──
     visuals.panel_fill = theme.mantle.into();
     visuals.window_fill = theme.base.into();
-    visuals.window_stroke = egui::Stroke::new(1.0, theme.surface0);
+    visuals.window_stroke = stroke1(theme.surface0);
     visuals.extreme_bg_color = theme.crust.into();
+    visuals.faint_bg_color = theme.surface0.into();
+    visuals.code_bg_color = theme.surface0.into();
+
+    // ── Widget 상태별 색상 ──
+    // 베이스가 light/dark 라도, fg_stroke 가 다크 기본값으로 남으면 라이트 배경에서
+    // 거의 안 보인다. 5가지 상태(noninteractive/inactive/hovered/active/open) 모두
+    // bg/weak_bg/bg_stroke/fg_stroke 를 명시한다.
+    visuals.widgets.noninteractive.bg_fill = theme.mantle.into();
+    visuals.widgets.noninteractive.weak_bg_fill = theme.mantle.into();
+    visuals.widgets.noninteractive.bg_stroke = stroke1(theme.surface0);
+    visuals.widgets.noninteractive.fg_stroke = stroke1(theme.text);
+
     visuals.widgets.inactive.bg_fill = theme.base.into();
-    visuals.widgets.inactive.bg_stroke = egui::Stroke::new(1.0, theme.surface0);
+    visuals.widgets.inactive.weak_bg_fill = theme.base.into();
+    visuals.widgets.inactive.bg_stroke = stroke1(theme.surface0);
+    visuals.widgets.inactive.fg_stroke = stroke1(theme.text);
+
     visuals.widgets.hovered.bg_fill = theme.surface0.into();
-    visuals.widgets.hovered.bg_stroke = egui::Stroke::new(1.0, theme.surface1);
+    visuals.widgets.hovered.weak_bg_fill = theme.surface0.into();
+    visuals.widgets.hovered.bg_stroke = stroke1(theme.surface1);
+    visuals.widgets.hovered.fg_stroke = stroke1(theme.text);
+
     visuals.widgets.active.bg_fill = theme.surface1.into();
+    visuals.widgets.active.weak_bg_fill = theme.surface1.into();
+    visuals.widgets.active.bg_stroke = stroke1(theme.surface2);
+    visuals.widgets.active.fg_stroke = stroke1(theme.text);
+
+    visuals.widgets.open.bg_fill = theme.surface1.into();
+    visuals.widgets.open.weak_bg_fill = theme.surface1.into();
+    visuals.widgets.open.bg_stroke = stroke1(theme.surface2);
+    visuals.widgets.open.fg_stroke = stroke1(theme.text);
+
+    // ── Selection ──
+    // blue 의 ~31% alpha. straight RGBA → to_egui() 가 gamma-aware premultiply.
+    visuals.selection.bg_fill = theme.blue.with_alpha(80).to_egui();
+    visuals.selection.stroke = stroke1(theme.blue);
+
+    // ── 의미 색상 ──
+    visuals.hyperlink_color = theme.blue.into();
+    visuals.error_fg_color = theme.red.into();
+    visuals.warn_fg_color = theme.yellow.into();
+
+    // ── 텍스트 ──
+    // override_text_color 를 박으면 egui 의 weak_text_color() 도 이 색의
+    // gamma_multiply 로 파생되므로 라이트/다크 모두 자연스럽게 동작.
     visuals.override_text_color = Some(theme.text.into());
+
     ctx.set_visuals(visuals);
 
-    // Apply scaled UI text sizes and spacing
+    // ── Style: 폰트 / spacing ──
     let mut style = (*ctx.style()).clone();
     style.text_styles.insert(
         egui::TextStyle::Body,
