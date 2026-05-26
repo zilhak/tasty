@@ -87,6 +87,24 @@ let bg = GpuRgba::dangerously_force_from_array([srgba.0, srgba.1, srgba.2, srgba
 2. **theme 색의 alpha 변형이면**: `theme().X.with_alpha(N).to_egui()` (UI) 또는 `theme().X.to_gpu_rgba()` 후 alpha 처리
 3. **외부 입력이면**: `dangerously_force_from_array` 호출 + 사유 주석 + `#[allow]`
 
+## 컴파일 타임 hex 검증 — `hex!` 매크로
+
+const HexColor 정의 시 [`tasty_type_appearance::hex!`] 매크로 사용 시 잘못된 hex 가
+빌드 에러로 잡힌다.
+
+```rust
+use tasty_type_appearance::{color::HexColor, hex};
+
+pub const BRAND: HexColor = hex!("#89b4fa");          // OK
+pub const TRANSLUCENT: HexColor = hex!("#89b4fa80");  // OK (alpha)
+pub const SHORT: HexColor = hex!("#abc");             // OK (3-digit shorthand)
+// pub const BAD: HexColor = hex!("#zzz");            // ← compile error
+```
+
+`HexColor::from_hex_const` 는 `from_hex` 의 const fn 버전. `u8::from_str_radix` 가
+stable const fn 이 아니라 byte 단위 nibble lookup 으로 구현. 동작은 `from_hex` 와
+동일 (round-trip 테스트로 보장).
+
 ## 추가 가드
 
 - **GPU 버퍼 struct 필드 타입은 항상 newtype** (`GpuRgba`/`GpuRgb`). raw `[f32; 4]` 금지.

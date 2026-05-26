@@ -151,30 +151,127 @@ impl HexColor {
     /// 3-digit shorthand expands each nibble (e.g. `#abc` → `#aabbcc`).
     /// 6-digit form is opaque (alpha=255); 8-digit preserves alpha.
     pub fn from_hex(hex: &str) -> Option<Self> {
-        let hex = hex.strip_prefix('#').unwrap_or(hex);
-        match hex.len() {
+        Self::from_hex_const(hex)
+    }
+
+    /// `from_hex` 의 const fn 버전. [`hex!`] 매크로가 컴파일 타임 검증에 사용.
+    ///
+    /// byte 단위 hex digit 변환 — `u8::from_str_radix` 가 stable const fn 이
+    /// 아니므로 직접 작성. 동작은 [`Self::from_hex`] 와 동일.
+    pub const fn from_hex_const(hex: &str) -> Option<Self> {
+        let bytes = hex.as_bytes();
+        let (off, len) = if !bytes.is_empty() && bytes[0] == b'#' {
+            (1, bytes.len() - 1)
+        } else {
+            (0, bytes.len())
+        };
+        match len {
             3 => {
-                let r = u8::from_str_radix(&hex[0..1], 16).ok()?;
-                let g = u8::from_str_radix(&hex[1..2], 16).ok()?;
-                let b = u8::from_str_radix(&hex[2..3], 16).ok()?;
+                let r = match hex_nibble(bytes, off) {
+                    Some(v) => v,
+                    None => return None,
+                };
+                let g = match hex_nibble(bytes, off + 1) {
+                    Some(v) => v,
+                    None => return None,
+                };
+                let b = match hex_nibble(bytes, off + 2) {
+                    Some(v) => v,
+                    None => return None,
+                };
                 Some(Self::from_rgb(r * 17, g * 17, b * 17))
             }
             6 => {
-                let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
-                let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
-                let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
+                let r = match hex_pair(bytes, off) {
+                    Some(v) => v,
+                    None => return None,
+                };
+                let g = match hex_pair(bytes, off + 2) {
+                    Some(v) => v,
+                    None => return None,
+                };
+                let b = match hex_pair(bytes, off + 4) {
+                    Some(v) => v,
+                    None => return None,
+                };
                 Some(Self::from_rgb(r, g, b))
             }
             8 => {
-                let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
-                let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
-                let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
-                let a = u8::from_str_radix(&hex[6..8], 16).ok()?;
+                let r = match hex_pair(bytes, off) {
+                    Some(v) => v,
+                    None => return None,
+                };
+                let g = match hex_pair(bytes, off + 2) {
+                    Some(v) => v,
+                    None => return None,
+                };
+                let b = match hex_pair(bytes, off + 4) {
+                    Some(v) => v,
+                    None => return None,
+                };
+                let a = match hex_pair(bytes, off + 6) {
+                    Some(v) => v,
+                    None => return None,
+                };
                 Some(Self::from_rgba(r, g, b, a))
             }
             _ => None,
         }
     }
+}
+
+/// hex digit 한 글자 → 0..=15. const 컨텍스트에서 작동.
+const fn hex_nibble(bytes: &[u8], i: usize) -> Option<u8> {
+    if i >= bytes.len() {
+        return None;
+    }
+    match bytes[i] {
+        b'0'..=b'9' => Some(bytes[i] - b'0'),
+        b'a'..=b'f' => Some(bytes[i] - b'a' + 10),
+        b'A'..=b'F' => Some(bytes[i] - b'A' + 10),
+        _ => None,
+    }
+}
+
+/// hex digit 두 글자 → 0..=255. const 컨텍스트에서 작동.
+const fn hex_pair(bytes: &[u8], i: usize) -> Option<u8> {
+    let hi = match hex_nibble(bytes, i) {
+        Some(v) => v,
+        None => return None,
+    };
+    let lo = match hex_nibble(bytes, i + 1) {
+        Some(v) => v,
+        None => return None,
+    };
+    Some(hi * 16 + lo)
+}
+
+/// 컴파일 타임에 hex 문자열을 검증해서 [`HexColor`] const 로 expansion.
+///
+/// `pub const X: HexColor = hex!("#1e1e2e");` 처럼 const 컨텍스트에서 사용 가능.
+/// 잘못된 hex 는 빌드 에러로 잡힌다 — 런타임 검증 불필요.
+///
+/// 지원 포맷: `#RGB`, `#RRGGBB`, `#RRGGBBAA` (leading `#` 선택).
+///
+/// # 예시
+///
+/// ```
+/// use tasty_type_appearance::{color::HexColor, hex};
+///
+/// pub const BRAND: HexColor = hex!("#89b4fa");
+/// pub const TRANSLUCENT: HexColor = hex!("#89b4fa80");
+/// ```
+#[macro_export]
+macro_rules! hex {
+    ($s:literal) => {{
+        const COLOR: $crate::color::HexColor = match $crate::color::HexColor::from_hex_const($s) {
+            ::core::option::Option::Some(c) => c,
+            ::core::option::Option::None => {
+                panic!(concat!("invalid hex color literal: ", $s))
+            }
+        };
+        COLOR
+    }};
 }
 
 #[cfg(feature = "egui-compat")]
@@ -345,6 +442,38 @@ mod tests {
     fn to_hex_drops_alpha_when_opaque() {
         let c = HexColor::from_rgba(0x12, 0x34, 0x56, 0xff);
         assert_eq!(c.to_hex(), "#123456");
+    }
+
+    #[test]
+    fn from_hex_const_matches_from_hex() {
+        let cases = ["#abc", "#abcdef", "#abcdef80", "abc", "abcdef", "abcdef80"];
+        for s in cases {
+            assert_eq!(HexColor::from_hex(s), HexColor::from_hex_const(s), "{s}",);
+        }
+    }
+
+    #[test]
+    fn hex_macro_basic() {
+        const C: HexColor = crate::hex!("#1e1e2e");
+        assert_eq!(C, HexColor::from_rgb(0x1e, 0x1e, 0x2e));
+    }
+
+    #[test]
+    fn hex_macro_with_alpha() {
+        const C: HexColor = crate::hex!("#1e1e2e80");
+        assert_eq!(C, HexColor::from_rgba(0x1e, 0x1e, 0x2e, 0x80));
+    }
+
+    #[test]
+    fn hex_macro_shorthand() {
+        const C: HexColor = crate::hex!("#abc");
+        assert_eq!(C, HexColor::from_rgb(0xaa, 0xbb, 0xcc));
+    }
+
+    #[test]
+    fn hex_macro_without_hash() {
+        const C: HexColor = crate::hex!("89b4fa");
+        assert_eq!(C, HexColor::from_rgb(0x89, 0xb4, 0xfa));
     }
 
     #[test]
