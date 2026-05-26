@@ -14,7 +14,10 @@ const PREFERRED_ORDER: &[&str] = &["terminal", "markdown", "image"];
 /// Sizer: 등록된 변환 가능 kind 수에 맞춰 popup 크기를 계산.
 /// notification.rs가 프레임마다 호출하므로 plugin이 새 kind를 등록한 직후
 /// 자동으로 popup 높이가 맞춰진다.
-pub fn convert_popup_sizer(state: &AppState, engine: &crate::engine_state::EngineState) -> egui::Vec2 {
+pub fn convert_popup_sizer(
+    state: &AppState,
+    engine: &crate::engine_state::EngineState,
+) -> egui::Vec2 {
     let count = enumerate_convertible_kinds(state, engine).len();
     convert_popup_size_for(count)
 }

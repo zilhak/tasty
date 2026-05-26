@@ -19,10 +19,7 @@ const MAX_HEIGHT: f32 = 480.0;
 const BODY_FONT_SIZE: f32 = 13.0;
 
 /// PopupDef.title_fn — 큐 head 의 title 을 popup 타이틀로 사용.
-pub fn approval_popup_title(
-    state: &AppState,
-    engine: &crate::engine_state::EngineState,
-) -> String {
+pub fn approval_popup_title(state: &AppState, engine: &crate::engine_state::EngineState) -> String {
     let Some(id) = state.dialogs.pending_approval_ids.front() else {
         return t("approval.popup.title").to_string();
     };

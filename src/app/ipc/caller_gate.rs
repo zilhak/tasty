@@ -31,11 +31,7 @@ impl App {
         tracing::warn!("ipc agent caller denied: {e}");
         let rpc_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
         // Phase 6.5a audit: app-level dispatcher 의 deny 도 기록.
-        if let Some(main) = self
-            .windows
-            .values_mut()
-            .find_map(|w| w.as_main_mut())
-        {
+        if let Some(main) = self.windows.values_mut().find_map(|w| w.as_main_mut()) {
             let ws = main
                 .engine_state
                 .workspaces
@@ -62,10 +58,7 @@ impl App {
             let agent_id = agent_id.clone();
             let perm_token = permission.as_token();
             let method = cmd.request.method.clone();
-            let main = self
-                .windows
-                .values_mut()
-                .find_map(|w| w.as_main_mut());
+            let main = self.windows.values_mut().find_map(|w| w.as_main_mut());
             if let Some(m) = main {
                 if let Some(rec) = host_ipc::handler::approval::publish_capability_elevation(
                     &mut m.state,

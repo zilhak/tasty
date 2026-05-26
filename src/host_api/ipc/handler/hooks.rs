@@ -128,13 +128,15 @@ pub(crate) fn handle_global_hook_set(
         .and_then(|v| v.as_str())
         .map(String::from);
 
-    let hook_id = engine
-        .global_hook_manager
-        .add(condition, command, label);
+    let hook_id = engine.global_hook_manager.add(condition, command, label);
     JsonRpcResponse::success(id, json!({ "hook_id": hook_id }))
 }
 
-pub(crate) fn handle_global_hook_list(_state: &AppState, engine: &crate::engine_state::EngineState, id: serde_json::Value) -> JsonRpcResponse {
+pub(crate) fn handle_global_hook_list(
+    _state: &AppState,
+    engine: &crate::engine_state::EngineState,
+    id: serde_json::Value,
+) -> JsonRpcResponse {
     let hooks: Vec<_> = engine
         .global_hook_manager
         .list()

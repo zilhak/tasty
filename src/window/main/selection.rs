@@ -77,7 +77,9 @@ impl MainWindow {
                     )
                 }
                 SelectionMode::Line => {
-                    let cols = self.state.focused_terminal(&self.engine_state)
+                    let cols = self
+                        .state
+                        .focused_terminal(&self.engine_state)
                         .map(|t| t.surface().dimensions().0)
                         .unwrap_or(80);
                     (
@@ -196,7 +198,9 @@ impl MainWindow {
         // Only move cursor when a shell is in the foreground.
         // Non-shell programs have their own cursor semantics that don't match
         // terminal grid positions, so arrow-key injection would be incorrect.
-        let is_shell = self.state.focused_terminal(&self.engine_state)
+        let is_shell = self
+            .state
+            .focused_terminal(&self.engine_state)
             .and_then(|t| t.foreground_process_info())
             .map(|info| crate::click_cursor::is_shell_process(&info.name))
             .unwrap_or(false);
@@ -223,7 +227,10 @@ impl MainWindow {
 
         let (cols, rows) = terminal.surface().dimensions();
         // Use the actual content rect (after tab bar) instead of the raw pane rect
-        let surface_rect = match self.state.focused_surface_rect(&self.engine_state, *terminal_rect) {
+        let surface_rect = match self
+            .state
+            .focused_surface_rect(&self.engine_state, *terminal_rect)
+        {
             Some(r) => r,
             None => return,
         };
@@ -262,7 +269,10 @@ impl MainWindow {
         }
 
         // Determine arrow escape sequence
-        let terminal = self.state.focused_terminal_mut(&mut self.engine_state).unwrap();
+        let terminal = self
+            .state
+            .focused_terminal_mut(&mut self.engine_state)
+            .unwrap();
         let app_cursor = terminal.application_cursor_keys();
         let arrow: &'static [u8] = if going_right {
             if app_cursor { b"\x1bOC" } else { b"\x1b[C" }

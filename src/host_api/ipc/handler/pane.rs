@@ -6,7 +6,11 @@ use crate::state::AppState;
 
 use super::{apply_meta, require_pane_id};
 
-pub fn handle_pane_list(_state: &AppState, engine: &crate::engine_state::EngineState, id: serde_json::Value) -> JsonRpcResponse {
+pub fn handle_pane_list(
+    _state: &AppState,
+    engine: &crate::engine_state::EngineState,
+    id: serde_json::Value,
+) -> JsonRpcResponse {
     let mut panes = Vec::new();
     for ws in &engine.workspaces {
         let pane_ids = ws.pane_layout().all_pane_ids();
@@ -174,7 +178,8 @@ pub fn handle_split(
                 None
             };
 
-            match state.split_pane_targeted(engine, resolved_pane_id, direction, cwd, kind, params) {
+            match state.split_pane_targeted(engine, resolved_pane_id, direction, cwd, kind, params)
+            {
                 Ok((new_pane_id, new_surface_id)) => {
                     apply_meta(new_surface_id, meta);
                     JsonRpcResponse::success(

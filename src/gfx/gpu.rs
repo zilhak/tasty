@@ -237,7 +237,8 @@ impl GpuState {
             engine.settings.appearance.scaled_sidebar_width()
         };
         let terminal_rect = self.compute_terminal_rect(state.sidebar_width);
-        state.resize_all(engine, 
+        state.resize_all(
+            engine,
             terminal_rect,
             self.renderer.cell_width(),
             self.renderer.cell_height(),

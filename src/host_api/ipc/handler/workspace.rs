@@ -3,7 +3,11 @@ use serde_json::json;
 use crate::ipc::protocol::JsonRpcResponse;
 use crate::state::AppState;
 
-pub fn handle_workspace_list(state: &AppState, engine: &crate::engine_state::EngineState, id: serde_json::Value) -> JsonRpcResponse {
+pub fn handle_workspace_list(
+    state: &AppState,
+    engine: &crate::engine_state::EngineState,
+    id: serde_json::Value,
+) -> JsonRpcResponse {
     let workspaces: Vec<_> = engine
         .workspaces
         .iter()
@@ -121,7 +125,7 @@ pub fn handle_workspace_update(
         i as usize
     } else if let Some(ws_id) = params.get("id").and_then(|v| v.as_u64()) {
         match engine
-        .workspaces
+            .workspaces
             .iter()
             .position(|ws| ws.id == ws_id as u32)
         {

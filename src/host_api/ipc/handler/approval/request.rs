@@ -79,7 +79,7 @@ pub fn handle_request(
         .or_else(|| {
             // 미지정이면 활성 워크스페이스로 fallback (편의).
             engine
-        .workspaces
+                .workspaces
                 .get(state.active_workspace)
                 .map(|ws| ws.id)
         });

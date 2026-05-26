@@ -409,10 +409,7 @@ pub(super) fn fire_require_approval(
     cap: &CostCap,
     current: f64,
 ) {
-    let ws_id = engine
-        .workspaces
-        .get(state.active_workspace)
-        .map(|w| w.id);
+    let ws_id = engine.workspaces.get(state.active_workspace).map(|w| w.id);
     let title = format!("Cap '{}' — 승인 필요", cap.metric);
     let body = format!(
         "agent={} metric={} value={} ≥ threshold={} (window={:?}, cap={}). \

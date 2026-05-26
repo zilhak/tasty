@@ -29,7 +29,10 @@ impl App {
         let behavior = self
             .windows
             .values()
-            .find_map(|w| w.as_main().map(|m| m.engine_state.settings.general.close_behavior.clone()))
+            .find_map(|w| {
+                w.as_main()
+                    .map(|m| m.engine_state.settings.general.close_behavior.clone())
+            })
             .or_else(|| {
                 self.parked_states
                     .first()

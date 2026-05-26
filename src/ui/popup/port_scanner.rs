@@ -173,10 +173,7 @@ fn shell_pid_for_surface(
     terminal.process_id()
 }
 
-fn focused_terminal_surface_id(
-    state: &AppState,
-    engine: &crate::engine_state::EngineState,
-) -> u32 {
+fn focused_terminal_surface_id(state: &AppState, engine: &crate::engine_state::EngineState) -> u32 {
     let ws = state.active_workspace(engine);
     let pane_id = ws.focused_pane;
     ws.pane_layout()

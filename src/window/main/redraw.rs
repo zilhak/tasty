@@ -40,9 +40,7 @@ impl MainWindow {
                     if engine.settings.notification.enabled
                         && engine.settings.notification.system_notification
                         && !self.base.focused
-                        && engine
-                            .notifications
-                            .should_send_system_notification()
+                        && engine.notifications.should_send_system_notification()
                     {
                         crate::notification::send_system_notification(title, body);
                     }
@@ -66,9 +64,7 @@ impl MainWindow {
                         }
                     }
                     let hook_events = vec![tasty_hooks::HookEvent::Notification];
-                    let fired = engine
-                        .hook_manager
-                        .check_and_fire(surface_id, &hook_events);
+                    let fired = engine.hook_manager.check_and_fire(surface_id, &hook_events);
                     for hook_id in fired {
                         self.state
                             .enqueue_host_event(crate::state::PendingHostEvent::HookFired {
@@ -102,16 +98,12 @@ impl MainWindow {
                     if engine.settings.notification.enabled
                         && engine.settings.notification.system_notification
                         && !self.base.focused
-                        && engine
-                            .notifications
-                            .should_send_system_notification()
+                        && engine.notifications.should_send_system_notification()
                     {
                         crate::notification::send_system_notification("Tasty", "Bell");
                     }
                     let hook_events = vec![tasty_hooks::HookEvent::Bell];
-                    let fired = engine
-                        .hook_manager
-                        .check_and_fire(surface_id, &hook_events);
+                    let fired = engine.hook_manager.check_and_fire(surface_id, &hook_events);
                     for hook_id in fired {
                         self.state
                             .enqueue_host_event(crate::state::PendingHostEvent::HookFired {
@@ -151,15 +143,11 @@ impl MainWindow {
                         .on_boundary(surface_id, *phase, payload);
                 }
                 crate::terminal::TerminalEventKind::OutputAppended { text } => {
-                    engine
-                        .observer_router
-                        .dispatch_text(surface_id, text);
+                    engine.observer_router.dispatch_text(surface_id, text);
                 }
                 crate::terminal::TerminalEventKind::ProcessExited => {
                     let hook_events = vec![tasty_hooks::HookEvent::ProcessExit];
-                    let fired = engine
-                        .hook_manager
-                        .check_and_fire(surface_id, &hook_events);
+                    let fired = engine.hook_manager.check_and_fire(surface_id, &hook_events);
                     for hook_id in fired {
                         self.state
                             .enqueue_host_event(crate::state::PendingHostEvent::HookFired {
@@ -175,7 +163,10 @@ impl MainWindow {
                             surface_id,
                         });
                     let kind = self.state.surface_kind(engine, surface_id);
-                    if self.state.close_surface_by_id_no_snapshot(engine, surface_id) {
+                    if self
+                        .state
+                        .close_surface_by_id_no_snapshot(engine, surface_id)
+                    {
                         // intent-exempt: PTY/process exit cleanup
 
                         if let Some(k) = kind {
@@ -436,7 +427,9 @@ impl MainWindow {
                 x,
                 y,
             } => {
-                let tab_count = self.state.active_workspace(engine)
+                let tab_count = self
+                    .state
+                    .active_workspace(engine)
                     .pane_layout()
                     .find_pane(pane_id)
                     .map(|p| p.tabs.len())
@@ -470,7 +463,9 @@ impl MainWindow {
                 match result {
                     Some(1) => {
                         // Rename
-                        let current_name = self.state.active_workspace(engine)
+                        let current_name = self
+                            .state
+                            .active_workspace(engine)
                             .pane_layout()
                             .find_pane(pane_id)
                             .and_then(|p| p.tabs.get(tab_index))
@@ -489,7 +484,9 @@ impl MainWindow {
                     }
                     Some(2) => {
                         // Close
-                        let target_sid = self.state.active_workspace(engine)
+                        let target_sid = self
+                            .state
+                            .active_workspace(engine)
                             .pane_layout()
                             .find_pane(pane_id)
                             .and_then(|p| p.tabs.get(tab_index))
@@ -514,7 +511,9 @@ impl MainWindow {
                     Some(3) => {
                         // Move Left
                         if tab_index > 0 {
-                            if let Some(pane) = self.state.active_workspace_mut(&mut self.engine_state)
+                            if let Some(pane) = self
+                                .state
+                                .active_workspace_mut(&mut self.engine_state)
                                 .pane_layout_mut()
                                 .find_pane_mut(pane_id)
                             {
@@ -524,7 +523,9 @@ impl MainWindow {
                     }
                     Some(4) => {
                         // Move Right
-                        if let Some(pane) = self.state.active_workspace_mut(&mut self.engine_state)
+                        if let Some(pane) = self
+                            .state
+                            .active_workspace_mut(&mut self.engine_state)
                             .pane_layout_mut()
                             .find_pane_mut(pane_id)
                         {

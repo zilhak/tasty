@@ -110,7 +110,7 @@ pub fn handle_tab_create(
     match result {
         Ok(_) => {
             let (tab_count, active_tab) = engine
-        .find_pane_by_id(pane_id)
+                .find_pane_by_id(pane_id)
                 .map(|p| (p.tabs.len(), p.active_tab))
                 .unwrap_or((0, 0));
             JsonRpcResponse::success(

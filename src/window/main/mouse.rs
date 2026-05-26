@@ -58,9 +58,13 @@ impl MainWindow {
         // 마우스 아래 surface id를 구하고 그 surface의 terminal을 사용.
         // focused 기반이 아니라 실제 hover 위치의 surface로 판별해야 여러 pane 중
         // 어느 곳이든 동작한다.
-        let surface_id = self.state.surface_id_at_position(engine, x, y, terminal_rect)?;
+        let surface_id = self
+            .state
+            .surface_id_at_position(engine, x, y, terminal_rect)?;
         let terminal = engine.find_terminal_by_id(surface_id)?;
-        let surface_rect = self.state.surface_rect_by_id(engine, surface_id, terminal_rect)?;
+        let surface_rect = self
+            .state
+            .surface_rect_by_id(engine, surface_id, terminal_rect)?;
 
         let (cols, rows) = terminal.surface().dimensions();
         let point = crate::selection::pixel_to_grid(
@@ -173,8 +177,12 @@ impl MainWindow {
                     let (x, y) = (pos.x as f32, pos.y as f32);
                     if terminal_rect.contains(PhysicalPx(x), PhysicalPx(y)) {
                         let engine = &mut self.engine_state;
-                        let changed_pane = self.state.focus_pane_at_position(engine, x, y, terminal_rect);
-                        let changed_surf = self.state.focus_surface_at_position(engine, x, y, terminal_rect);
+                        let changed_pane =
+                            self.state
+                                .focus_pane_at_position(engine, x, y, terminal_rect);
+                        let changed_surf =
+                            self.state
+                                .focus_surface_at_position(engine, x, y, terminal_rect);
                         if changed_pane || changed_surf {
                             self.base.dirty = true;
                         }
@@ -199,7 +207,9 @@ impl MainWindow {
                 }
                 let sf = self.base.gpu.scale_factor() as f32;
                 let engine = &mut self.engine_state;
-                let Some(surface_id) = self.state.surface_id_at_position(engine, x, y, terminal_rect)
+                let Some(surface_id) =
+                    self.state
+                        .surface_id_at_position(engine, x, y, terminal_rect)
                 else {
                     return;
                 };
@@ -228,9 +238,8 @@ impl MainWindow {
                 let (x, y) = (pos.x as f32, pos.y as f32);
                 // 수식키+클릭은 무조건 링크 클릭 동작으로 라우팅.
                 // 링크 위면 열고, 링크 위가 아니면 아무것도 안 함 (selection 시작 안 함).
-                let modifier = LinkModifier::parse(
-                    &self.engine_state.settings.general.link_click_modifier,
-                );
+                let modifier =
+                    LinkModifier::parse(&self.engine_state.settings.general.link_click_modifier);
                 let mods = &self.base.modifiers;
                 let link_mods_match = !matches!(modifier, LinkModifier::None)
                     && modifier.matches(mods.control_key(), mods.alt_key(), mods.super_key());
@@ -238,9 +247,11 @@ impl MainWindow {
                     if terminal_rect.contains(PhysicalPx(x), PhysicalPx(y)) {
                         let engine = &mut self.engine_state;
                         let changed_pane =
-                            self.state.focus_pane_at_position(engine, x, y, terminal_rect);
+                            self.state
+                                .focus_pane_at_position(engine, x, y, terminal_rect);
                         let changed_surf =
-                            self.state.focus_surface_at_position(engine, x, y, terminal_rect);
+                            self.state
+                                .focus_surface_at_position(engine, x, y, terminal_rect);
                         if changed_pane || changed_surf {
                             self.base.dirty = true;
                         }
@@ -269,13 +280,9 @@ impl MainWindow {
                     let pane_div =
                         self.state
                             .find_pane_divider_at(engine, x, y, terminal_rect, threshold);
-                    let surf_div = self.state.find_surface_divider_at(
-                        engine,
-                        x,
-                        y,
-                        terminal_rect,
-                        threshold,
-                    );
+                    let surf_div =
+                        self.state
+                            .find_surface_divider_at(engine, x, y, terminal_rect, threshold);
                     if let Some(info) = pane_div {
                         self.dragging_divider = Some(DividerDrag {
                             info,
@@ -290,16 +297,17 @@ impl MainWindow {
                         let (need_flush, mouse_tracking) = {
                             let old_surface = self.state.focused_surface_id(engine);
                             let changed_pane =
-                                self.state.focus_pane_at_position(engine, x, y, terminal_rect);
-                            let changed_surf = self
-                                .state
-                                .focus_surface_at_position(engine, x, y, terminal_rect);
+                                self.state
+                                    .focus_pane_at_position(engine, x, y, terminal_rect);
+                            let changed_surf =
+                                self.state
+                                    .focus_surface_at_position(engine, x, y, terminal_rect);
                             if changed_pane || changed_surf {
                                 self.base.dirty = true;
                             }
                             let ime_active = self.ime_preedit.is_some();
-                            let need_flush = ime_active
-                                && self.state.focused_surface_id(engine) != old_surface;
+                            let need_flush =
+                                ime_active && self.state.focused_surface_id(engine) != old_surface;
                             // Start text selection (only if not mouse-tracking or Shift held)
                             let mouse_tracking = self
                                 .state
@@ -326,8 +334,7 @@ impl MainWindow {
                         let cell_w = self.base.gpu.cell_width();
                         let cell_h = self.base.gpu.cell_height();
                         let engine = &mut self.engine_state;
-                        self.state
-                            .resize_all(engine, terminal_rect, cell_w, cell_h);
+                        self.state.resize_all(engine, terminal_rect, cell_w, cell_h);
                         self.base.dirty = true;
                     }
                     // Finish selection drag
@@ -358,7 +365,8 @@ impl MainWindow {
                 .cursor_position
                 .and_then(|pos| {
                     let (x, y) = (pos.x as f32, pos.y as f32);
-                    self.state.surface_id_at_position(engine, x, y, terminal_rect)
+                    self.state
+                        .surface_id_at_position(engine, x, y, terminal_rect)
                 })
                 .or_else(|| self.state.focused_surface_id(engine));
 

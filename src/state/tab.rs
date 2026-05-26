@@ -368,11 +368,7 @@ impl AppState {
     }
 
     /// Convert a surface to Image type (blank canvas).
-    pub fn convert_surface_to_image(
-        &mut self,
-        engine: &mut EngineState,
-        surface_id: u32,
-    ) -> bool {
+    pub fn convert_surface_to_image(&mut self, engine: &mut EngineState, surface_id: u32) -> bool {
         let surface: Box<dyn crate::model::Surface> =
             Box::new(crate::model::ImagePanel::new_blank(surface_id));
         self.replace_surface_for_id(engine, surface_id, surface, Some(Some("Image".to_string())))

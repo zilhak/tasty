@@ -9,7 +9,10 @@ fn test_state() -> (AppState, crate::engine_state::EngineState) {
 }
 
 /// 현재 활성 워크스페이스의 모든 surface ID를 수집한다.
-fn collect_surface_ids(state: &mut AppState, engine: &mut crate::engine_state::EngineState) -> Vec<u32> {
+fn collect_surface_ids(
+    state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
+) -> Vec<u32> {
     let mut ids = Vec::new();
     let ws = state.active_workspace_mut(engine);
     ws.pane_layout_mut().for_each_terminal_mut(&mut |sid, _| {
@@ -19,7 +22,10 @@ fn collect_surface_ids(state: &mut AppState, engine: &mut crate::engine_state::E
 }
 
 /// 모든 워크스페이스에 걸쳐 surface ID를 수집한다.
-fn collect_all_surface_ids(_state: &mut AppState, engine: &mut crate::engine_state::EngineState) -> Vec<u32> {
+fn collect_all_surface_ids(
+    _state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
+) -> Vec<u32> {
     let mut ids = Vec::new();
     for ws in &mut engine.workspaces {
         ws.pane_layout_mut().for_each_terminal_mut(&mut |sid, _| {
@@ -52,7 +58,9 @@ fn find_terminal_by_id_after_split() {
     let original_ids = collect_surface_ids(&mut state, &mut engine);
     let original_id = original_ids[0];
 
-    state.split_pane(&mut engine, SplitDirection::Vertical).unwrap();
+    state
+        .split_pane(&mut engine, SplitDirection::Vertical)
+        .unwrap();
 
     let all_ids = collect_surface_ids(&mut state, &mut engine);
     assert_eq!(all_ids.len(), 2);
@@ -83,7 +91,9 @@ fn find_terminal_by_id_across_tabs() {
 #[test]
 fn focus_pane_valid() {
     let (mut state, mut engine) = test_state();
-    state.split_pane(&mut engine, SplitDirection::Vertical).unwrap();
+    state
+        .split_pane(&mut engine, SplitDirection::Vertical)
+        .unwrap();
 
     let pane_ids = state.active_workspace(&engine).pane_layout().all_pane_ids();
     assert_eq!(pane_ids.len(), 2);
@@ -104,17 +114,27 @@ fn focus_pane_invalid() {
 #[test]
 fn focus_pane_preserves_state() {
     let (mut state, mut engine) = test_state();
-    state.split_pane(&mut engine, SplitDirection::Vertical).unwrap();
+    state
+        .split_pane(&mut engine, SplitDirection::Vertical)
+        .unwrap();
 
     let ws_count_before = engine.workspaces.len();
-    let tab_count_before = state.active_workspace(&engine).pane_layout().all_pane_ids().len();
+    let tab_count_before = state
+        .active_workspace(&engine)
+        .pane_layout()
+        .all_pane_ids()
+        .len();
 
     let pane_ids = state.active_workspace(&engine).pane_layout().all_pane_ids();
     state.focus_pane(&mut engine, pane_ids[0]);
 
     assert_eq!(engine.workspaces.len(), ws_count_before);
     assert_eq!(
-        state.active_workspace(&engine).pane_layout().all_pane_ids().len(),
+        state
+            .active_workspace(&engine)
+            .pane_layout()
+            .all_pane_ids()
+            .len(),
         tab_count_before
     );
 }
@@ -140,7 +160,9 @@ fn focus_surface_changes_pane_focus() {
     let (mut state, mut engine) = test_state();
 
     // split 후 두 번째 pane의 surface ID를 구한다
-    state.split_pane(&mut engine, SplitDirection::Vertical).unwrap();
+    state
+        .split_pane(&mut engine, SplitDirection::Vertical)
+        .unwrap();
 
     let pane_ids = state.active_workspace(&engine).pane_layout().all_pane_ids();
     let first_pane_id = pane_ids[0];
@@ -174,15 +196,25 @@ fn close_active_pane_single_fails() {
 #[test]
 fn close_active_pane_after_split() {
     let (mut state, mut engine) = test_state();
-    state.split_pane(&mut engine, SplitDirection::Vertical).unwrap();
+    state
+        .split_pane(&mut engine, SplitDirection::Vertical)
+        .unwrap();
 
     assert_eq!(
-        state.active_workspace(&engine).pane_layout().all_pane_ids().len(),
+        state
+            .active_workspace(&engine)
+            .pane_layout()
+            .all_pane_ids()
+            .len(),
         2
     );
     assert!(state.close_active_pane(&mut engine));
     assert_eq!(
-        state.active_workspace(&engine).pane_layout().all_pane_ids().len(),
+        state
+            .active_workspace(&engine)
+            .pane_layout()
+            .all_pane_ids()
+            .len(),
         1
     );
 }
@@ -199,7 +231,8 @@ fn close_active_tab_after_add() {
     state.add_tab(&mut engine).unwrap();
 
     let pane_id = state.active_workspace(&engine).focused_pane;
-    let tab_count = state.active_workspace(&engine)
+    let tab_count = state
+        .active_workspace(&engine)
         .pane_layout()
         .find_pane(pane_id)
         .unwrap()
@@ -209,7 +242,8 @@ fn close_active_tab_after_add() {
 
     assert!(state.close_active_tab(&mut engine));
 
-    let tab_count_after = state.active_workspace(&engine)
+    let tab_count_after = state
+        .active_workspace(&engine)
         .pane_layout()
         .find_pane(pane_id)
         .unwrap()
@@ -280,7 +314,9 @@ fn move_focus_forward_single_pane() {
 #[test]
 fn move_focus_forward_two_panes() {
     let (mut state, mut engine) = test_state();
-    state.split_pane(&mut engine, SplitDirection::Vertical).unwrap();
+    state
+        .split_pane(&mut engine, SplitDirection::Vertical)
+        .unwrap();
 
     let pane_ids = state.active_workspace(&engine).pane_layout().all_pane_ids();
     assert_eq!(pane_ids.len(), 2);
@@ -308,7 +344,9 @@ fn resolve_inherit_cwd_from_markdown_surface() {
     let (root, file) = ("C:\\workspace\\proj", "C:\\workspace\\proj\\readme.md");
     #[cfg(not(windows))]
     let (root, file) = ("/workspace/proj", "/workspace/proj/readme.md");
-    state.add_markdown_tab(&mut engine, file.to_string()).unwrap();
+    state
+        .add_markdown_tab(&mut engine, file.to_string())
+        .unwrap();
 
     let mut sid_opt = None;
     for ws in &engine.workspaces {
@@ -340,7 +378,9 @@ fn resolve_inherit_cwd_from_surface_respects_toggle_off() {
     let file = "C:\\workspace\\proj\\readme.md";
     #[cfg(not(windows))]
     let file = "/workspace/proj/readme.md";
-    state.add_markdown_tab(&mut engine, file.to_string()).unwrap();
+    state
+        .add_markdown_tab(&mut engine, file.to_string())
+        .unwrap();
 
     let mut sid_opt = None;
     for ws in &engine.workspaces {

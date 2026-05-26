@@ -164,8 +164,12 @@ fn route_engine_handler(
         "system.info" => handle_system_info(state, engine, id),
         // workspace
         "workspace.list" => workspace::handle_workspace_list(state, engine, id),
-        "workspace.create" => workspace::handle_workspace_create(state, engine, id, &request.params),
-        "workspace.update" => workspace::handle_workspace_update(state, engine, id, &request.params),
+        "workspace.create" => {
+            workspace::handle_workspace_create(state, engine, id, &request.params)
+        }
+        "workspace.update" => {
+            workspace::handle_workspace_update(state, engine, id, &request.params)
+        }
         "workspace.move" => workspace::handle_workspace_move(state, engine, id, &request.params),
         // pane / split
         "pane.list" => pane::handle_pane_list(state, engine, id),
@@ -186,16 +190,24 @@ fn route_engine_handler(
         "preset.apply" => preset::handle_apply(state, engine, id, &request.params),
         // surface
         "surface.close" => surface::handle_surface_close(state, engine, id, &request.params),
-        "surface.close_self" => surface::handle_surface_close_self(state, engine, id, &request.params),
+        "surface.close_self" => {
+            surface::handle_surface_close_self(state, engine, id, &request.params)
+        }
         "surface.list" => surface::handle_surface_list(state, engine, id),
         "surface.send" => surface::handle_surface_send(state, engine, id, &request.params),
         "surface.send_key" => surface::handle_surface_send_key(state, engine, id, &request.params),
-        "surface.send_combo" => surface::handle_surface_send_combo(state, engine, id, &request.params),
+        "surface.send_combo" => {
+            surface::handle_surface_send_combo(state, engine, id, &request.params)
+        }
         "surface.send_to" => surface::handle_surface_send_to(state, engine, id, &request.params),
         "surface.wake" => surface::handle_surface_wake(state, engine, id, &request.params),
         "surface.set_mark" => surface::handle_set_mark(state, engine, id, &request.params),
-        "surface.read_since_mark" => surface::handle_read_since_mark(state, engine, id, &request.params),
-        "surface.parse_since_mark" => surface::handle_parse_since_mark(state, engine, id, &request.params),
+        "surface.read_since_mark" => {
+            surface::handle_read_since_mark(state, engine, id, &request.params)
+        }
+        "surface.parse_since_mark" => {
+            surface::handle_parse_since_mark(state, engine, id, &request.params)
+        }
         "surface.commands" => surface::handle_commands(state, engine, id, &request.params),
         "surface.last_command" => surface::handle_last_command(state, engine, id, &request.params),
         "surface.command_at" => surface::handle_command_at(state, engine, id, &request.params),
@@ -204,7 +216,9 @@ fn route_engine_handler(
         "output.observe_list" => output::handle_observe_list(state, engine, id),
         "output.observe_info" => output::handle_observe_info(state, engine, id, &request.params),
         "surface.screen_text" => surface::handle_screen_text(state, engine, id, &request.params),
-        "surface.cursor_position" => surface::handle_cursor_position(state, engine, id, &request.params),
+        "surface.cursor_position" => {
+            surface::handle_cursor_position(state, engine, id, &request.params)
+        }
         "surface.foreground_process" => {
             surface::handle_foreground_process(state, engine, id, &request.params)
         }
@@ -257,7 +271,9 @@ fn route_engine_handler(
         "file_handler.reload" => file_handler::handle_reload(state, engine, id),
         // file handler: 임의 경로를 dispatch 흐름에 진입시킴. plugin (예: explorer)
         // 또는 CLI 가 호출. plugin 호출은 FsRead 권한 요구.
-        "file_handler.dispatch" => file_handler::handle_dispatch(state, engine, id, request.params.clone()),
+        "file_handler.dispatch" => {
+            file_handler::handle_dispatch(state, engine, id, request.params.clone())
+        }
         // image surface 조작 — com.tasty.image plugin이 외부에 노출하는 namespace의
         // 호스트 어댑터. plugin 비활성 상태에서도 CLI/직접 IPC로 호출 가능.
         "image.open" => image::handle_open(state, engine, id, &request.params),
@@ -280,22 +296,42 @@ fn route_engine_handler(
         "memory.export" => memory::handle_export(state, engine, caller, id, &request.params),
         "memory.import" => memory::handle_import(state, engine, caller, id, &request.params),
         // memory: secret (plugin 별 사전 분할)
-        "memory.secret.put" => memory::handle_secret_put(state, engine, caller, id, &request.params),
-        "memory.secret.get" => memory::handle_secret_get(state, engine, caller, id, &request.params),
-        "memory.secret.delete" => memory::handle_secret_delete(state, engine, caller, id, &request.params),
-        "memory.secret.list" => memory::handle_secret_list(state, engine, caller, id, &request.params),
-        "memory.secret.exists" => memory::handle_secret_exists(state, engine, caller, id, &request.params),
-        "memory.secret.count" => memory::handle_secret_count(state, engine, caller, id, &request.params),
-        "memory.secret.scopes" => memory::handle_secret_scopes(state, engine, caller, id, &request.params),
-        "memory.secret.stats" => memory::handle_secret_stats(state, engine, caller, id, &request.params),
+        "memory.secret.put" => {
+            memory::handle_secret_put(state, engine, caller, id, &request.params)
+        }
+        "memory.secret.get" => {
+            memory::handle_secret_get(state, engine, caller, id, &request.params)
+        }
+        "memory.secret.delete" => {
+            memory::handle_secret_delete(state, engine, caller, id, &request.params)
+        }
+        "memory.secret.list" => {
+            memory::handle_secret_list(state, engine, caller, id, &request.params)
+        }
+        "memory.secret.exists" => {
+            memory::handle_secret_exists(state, engine, caller, id, &request.params)
+        }
+        "memory.secret.count" => {
+            memory::handle_secret_count(state, engine, caller, id, &request.params)
+        }
+        "memory.secret.scopes" => {
+            memory::handle_secret_scopes(state, engine, caller, id, &request.params)
+        }
+        "memory.secret.stats" => {
+            memory::handle_secret_stats(state, engine, caller, id, &request.params)
+        }
         // memory: 유지 보수 (host 전용)
         "memory.gc" => memory::handle_gc(state, engine, caller, id, &request.params),
         // memory: blackboard (Phase 7.1 — workspace-scoped 키-값 컬렉션)
         "memory.bb_create" => memory::handle_bb_create(state, engine, caller, id, &request.params),
         "memory.bb_put" => memory::handle_bb_put(state, engine, caller, id, &request.params),
         "memory.bb_get" => memory::handle_bb_get(state, engine, caller, id, &request.params),
-        "memory.bb_get_all" => memory::handle_bb_get_all(state, engine, caller, id, &request.params),
-        "memory.bb_get_meta" => memory::handle_bb_get_meta(state, engine, caller, id, &request.params),
+        "memory.bb_get_all" => {
+            memory::handle_bb_get_all(state, engine, caller, id, &request.params)
+        }
+        "memory.bb_get_meta" => {
+            memory::handle_bb_get_meta(state, engine, caller, id, &request.params)
+        }
         "memory.bb_delete_field" => {
             memory::handle_bb_delete_field(state, engine, caller, id, &request.params)
         }
@@ -303,7 +339,9 @@ fn route_engine_handler(
         "memory.bb_list" => memory::handle_bb_list(state, engine, caller, id, &request.params),
         "memory.bb_exists" => memory::handle_bb_exists(state, engine, caller, id, &request.params),
         // memory: bb snapshot (Phase 7.4)
-        "memory.bb_snapshot" => memory::handle_bb_snapshot(state, engine, caller, id, &request.params),
+        "memory.bb_snapshot" => {
+            memory::handle_bb_snapshot(state, engine, caller, id, &request.params)
+        }
         "memory.bb_snapshot_get" => {
             memory::handle_bb_snapshot_get(state, engine, caller, id, &request.params)
         }
@@ -317,11 +355,17 @@ fn route_engine_handler(
             memory::handle_bb_snapshot_restore(state, engine, caller, id, &request.params)
         }
         // memory: plan (Phase 7.2 — workspace-scoped 선언적 work breakdown)
-        "memory.plan_create" => memory::handle_plan_create(state, engine, caller, id, &request.params),
+        "memory.plan_create" => {
+            memory::handle_plan_create(state, engine, caller, id, &request.params)
+        }
         "memory.plan_get" => memory::handle_plan_get(state, engine, caller, id, &request.params),
         "memory.plan_list" => memory::handle_plan_list(state, engine, caller, id, &request.params),
-        "memory.plan_delete" => memory::handle_plan_delete(state, engine, caller, id, &request.params),
-        "memory.plan_add_step" => memory::handle_plan_add_step(state, engine, caller, id, &request.params),
+        "memory.plan_delete" => {
+            memory::handle_plan_delete(state, engine, caller, id, &request.params)
+        }
+        "memory.plan_add_step" => {
+            memory::handle_plan_add_step(state, engine, caller, id, &request.params)
+        }
         "memory.plan_remove_step" => {
             memory::handle_plan_remove_step(state, engine, caller, id, &request.params)
         }
@@ -334,8 +378,12 @@ fn route_engine_handler(
         "memory.cache_invalidate" => {
             memory::handle_cache_invalidate(state, engine, caller, id, &request.params)
         }
-        "memory.cache_clear" => memory::handle_cache_clear(state, engine, caller, id, &request.params),
-        "memory.cache_list" => memory::handle_cache_list(state, engine, caller, id, &request.params),
+        "memory.cache_clear" => {
+            memory::handle_cache_clear(state, engine, caller, id, &request.params)
+        }
+        "memory.cache_list" => {
+            memory::handle_cache_list(state, engine, caller, id, &request.params)
+        }
         // approval (휴먼 핸드오프) — await 는 process_ipc 에서 worker thread 로 분리 처리.
         "approval.request" => approval::handle_request(state, engine, caller, id, &request.params),
         "approval.respond" => approval::handle_respond(state, engine, caller, id, &request.params),
@@ -343,22 +391,40 @@ fn route_engine_handler(
         "approval.get" => approval::handle_get(state, engine, caller, id, &request.params),
         "approval.list" => approval::handle_list(state, engine, caller, id, &request.params),
         "approval.history" => approval::handle_history(state, engine, caller, id, &request.params),
-        "approval.summary.set" => approval::handle_summary_set(state, engine, caller, id, &request.params),
-        "approval.summary.get" => approval::handle_summary_get(state, engine, caller, id, &request.params),
+        "approval.summary.set" => {
+            approval::handle_summary_set(state, engine, caller, id, &request.params)
+        }
+        "approval.summary.get" => {
+            approval::handle_summary_get(state, engine, caller, id, &request.params)
+        }
         // telemetry (관측 / 비용) — 단계 4.1
         "telemetry.record" => telemetry::handle_record(state, engine, caller, id, &request.params),
         "telemetry.record_batch" => {
             telemetry::handle_record_batch(state, engine, caller, id, &request.params)
         }
-        "telemetry.summary" => telemetry::handle_summary(state, engine, caller, id, &request.params),
-        "telemetry.timeseries" => telemetry::handle_timeseries(state, engine, caller, id, &request.params),
+        "telemetry.summary" => {
+            telemetry::handle_summary(state, engine, caller, id, &request.params)
+        }
+        "telemetry.timeseries" => {
+            telemetry::handle_timeseries(state, engine, caller, id, &request.params)
+        }
         "telemetry.top" => telemetry::handle_top(state, engine, caller, id, &request.params),
         // telemetry.cap — Phase 4.3 (CRUD; eval/action wiring 은 후속)
-        "telemetry.cap.set" => telemetry::handle_cap_set(state, engine, caller, id, &request.params),
-        "telemetry.cap.list" => telemetry::handle_cap_list(state, engine, caller, id, &request.params),
-        "telemetry.cap.remove" => telemetry::handle_cap_remove(state, engine, caller, id, &request.params),
-        "telemetry.cap.status" => telemetry::handle_cap_status(state, engine, caller, id, &request.params),
-        "telemetry.cap.reset" => telemetry::handle_cap_reset(state, engine, caller, id, &request.params),
+        "telemetry.cap.set" => {
+            telemetry::handle_cap_set(state, engine, caller, id, &request.params)
+        }
+        "telemetry.cap.list" => {
+            telemetry::handle_cap_list(state, engine, caller, id, &request.params)
+        }
+        "telemetry.cap.remove" => {
+            telemetry::handle_cap_remove(state, engine, caller, id, &request.params)
+        }
+        "telemetry.cap.status" => {
+            telemetry::handle_cap_status(state, engine, caller, id, &request.params)
+        }
+        "telemetry.cap.reset" => {
+            telemetry::handle_cap_reset(state, engine, caller, id, &request.params)
+        }
         // telemetry.anomaly — Phase 4.4 (영속 anomaly 조회만; 검출은 dispatcher 후크)
         "telemetry.anomaly.list" => {
             telemetry::handle_anomaly_list(state, engine, caller, id, &request.params)
@@ -368,18 +434,30 @@ fn route_engine_handler(
             telemetry::handle_session_summary(state, engine, caller, id, &request.params)
         }
         // agent.task_* — Phase 5.1 (DAG + state 머신)
-        "agent.task_create" => agent::handle_task_create(state, engine, caller, id, &request.params),
+        "agent.task_create" => {
+            agent::handle_task_create(state, engine, caller, id, &request.params)
+        }
         "agent.task_list" => agent::handle_task_list(state, engine, caller, id, &request.params),
         "agent.task_get" => agent::handle_task_get(state, engine, caller, id, &request.params),
         "agent.task_await" => agent::handle_task_await(state, engine, caller, id, &request.params),
-        "agent.task_cancel" => agent::handle_task_cancel(state, engine, caller, id, &request.params),
+        "agent.task_cancel" => {
+            agent::handle_task_cancel(state, engine, caller, id, &request.params)
+        }
         "agent.task_retry" => agent::handle_task_retry(state, engine, caller, id, &request.params),
         "agent.task_graph" => agent::handle_task_graph(state, engine, caller, id, &request.params),
         // agent.barrier_* / semaphore_* — Phase 5.2 (poll-based 동기화 primitive)
-        "agent.barrier_create" => agent::handle_barrier_create(state, engine, caller, id, &request.params),
-        "agent.barrier_signal" => agent::handle_barrier_signal(state, engine, caller, id, &request.params),
-        "agent.barrier_await" => agent::handle_barrier_await(state, engine, caller, id, &request.params),
-        "agent.barrier_state" => agent::handle_barrier_state(state, engine, caller, id, &request.params),
+        "agent.barrier_create" => {
+            agent::handle_barrier_create(state, engine, caller, id, &request.params)
+        }
+        "agent.barrier_signal" => {
+            agent::handle_barrier_signal(state, engine, caller, id, &request.params)
+        }
+        "agent.barrier_await" => {
+            agent::handle_barrier_await(state, engine, caller, id, &request.params)
+        }
+        "agent.barrier_state" => {
+            agent::handle_barrier_state(state, engine, caller, id, &request.params)
+        }
         "agent.semaphore_create" => {
             agent::handle_semaphore_create(state, engine, caller, id, &request.params)
         }
@@ -390,13 +468,21 @@ fn route_engine_handler(
             agent::handle_semaphore_release(state, engine, caller, id, &request.params)
         }
         // agent.lease_* — Phase 5.3 (협조적 점유 마커 + TTL)
-        "agent.lease_acquire" => agent::handle_lease_acquire(state, engine, caller, id, &request.params),
-        "agent.lease_release" => agent::handle_lease_release(state, engine, caller, id, &request.params),
+        "agent.lease_acquire" => {
+            agent::handle_lease_acquire(state, engine, caller, id, &request.params)
+        }
+        "agent.lease_release" => {
+            agent::handle_lease_release(state, engine, caller, id, &request.params)
+        }
         "agent.lease_list" => agent::handle_lease_list(state, engine, caller, id, &request.params),
         // agent.task_reduce — Phase 5.4 (결과 합성: first_success / all / merge_json / concat_text / custom)
-        "agent.task_reduce" => agent::handle_task_reduce(state, engine, caller, id, &request.params),
+        "agent.task_reduce" => {
+            agent::handle_task_reduce(state, engine, caller, id, &request.params)
+        }
         // agent.rate_limit_* — Phase 5.5 (token bucket 시간당 비율 제한)
-        "agent.rate_limit_set" => agent::handle_rate_limit_set(state, engine, caller, id, &request.params),
+        "agent.rate_limit_set" => {
+            agent::handle_rate_limit_set(state, engine, caller, id, &request.params)
+        }
         "agent.rate_limit_list" => {
             agent::handle_rate_limit_list(state, engine, caller, id, &request.params)
         }
@@ -424,10 +510,14 @@ fn route_debug_handler(
     Some(match request.method.as_str() {
         "ui.state" => handle_ui_state(state, engine, id),
         "debug.cell_info" => debug::handle_debug_cell_info(state, engine, id, &request.params),
-        "debug.screen_attrs" => debug::handle_debug_screen_attrs(state, engine, id, &request.params),
+        "debug.screen_attrs" => {
+            debug::handle_debug_screen_attrs(state, engine, id, &request.params)
+        }
         "debug.glyph_color" => debug::handle_debug_glyph_color(state, engine, id, &request.params),
         "debug.feed_bytes" => debug::handle_debug_feed_bytes(state, engine, id, &request.params),
-        "debug.inject_mouse" => debug::handle_debug_inject_mouse(state, engine, id, &request.params),
+        "debug.inject_mouse" => {
+            debug::handle_debug_inject_mouse(state, engine, id, &request.params)
+        }
         "debug.inject_key" => debug::handle_debug_inject_key(state, engine, id, &request.params),
         // 도구 메뉴 — 사용자 클릭 자동화. release 미노출.
         "debug.tool.list" => tool::handle_list(state, engine, id),
@@ -566,10 +656,7 @@ fn annotate_tree_busy(node: &mut serde_json::Value, engine: &EngineState) {
             && obj.get("id").is_some();
         if is_leaf {
             if let Some(sid) = obj.get("id").and_then(|v| v.as_u64()) {
-                obj.insert(
-                    "busy".into(),
-                    json!(engine.is_surface_busy(sid as u32)),
-                );
+                obj.insert("busy".into(), json!(engine.is_surface_busy(sid as u32)));
             }
             return;
         }

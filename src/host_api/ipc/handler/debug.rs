@@ -172,13 +172,13 @@ pub(super) fn handle_debug_glyph_color(
         .unwrap_or("focused");
     let default_bg = match bg_mode {
         "focused" => engine
-        .settings
+            .settings
             .appearance
             .terminal_colors
             .focused_bg
             .to_float(),
         "unfocused" => engine
-        .settings
+            .settings
             .appearance
             .terminal_colors
             .unfocused_bg

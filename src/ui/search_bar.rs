@@ -178,10 +178,7 @@ fn run_search(state: &mut AppState, engine: &crate::engine_state::EngineState) {
     }
 }
 
-fn focused_terminal_surface_id(
-    state: &AppState,
-    engine: &crate::engine_state::EngineState,
-) -> u32 {
+fn focused_terminal_surface_id(state: &AppState, engine: &crate::engine_state::EngineState) -> u32 {
     let ws = state.active_workspace(engine);
     let pane_id = ws.focused_pane;
     ws.pane_layout()
@@ -191,10 +188,7 @@ fn focused_terminal_surface_id(
         .unwrap_or(0)
 }
 
-fn scroll_to_current_match(
-    state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
-) {
+fn scroll_to_current_match(state: &mut AppState, engine: &mut crate::engine_state::EngineState) {
     let surface_id = state.search.surface_id;
     if let Some(terminal) = engine.find_terminal_by_id(surface_id) {
         let scrollback_len = terminal.scrollback_len();

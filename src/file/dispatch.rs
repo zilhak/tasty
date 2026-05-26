@@ -235,10 +235,7 @@ fn path_to_file_uri(abs: &std::path::Path) -> String {
 
 /// Picker 결과를 소비해 handler 실행 + recent 기록. App 메인 루프 (frame end) 가
 /// 매 frame 호출. 결과가 없으면 no-op.
-pub fn consume_picker_result(
-    state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
-) {
+pub fn consume_picker_result(state: &mut AppState, engine: &mut crate::engine_state::EngineState) {
     let Some(data) = state.dialogs.file_handler_picker.as_mut() else {
         return;
     };

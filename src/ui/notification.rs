@@ -183,7 +183,10 @@ pub fn draw_popups(
         ctx,
         &mut |id, ui| {
             if let Some(def) = crate::ui::popup::defs::find(id) {
-                if matches!((def.draw_fn)(ui, state, engine), crate::ui::PopupAction::Close) {
+                if matches!(
+                    (def.draw_fn)(ui, state, engine),
+                    crate::ui::PopupAction::Close
+                ) {
                     dispatch_closed.push(def.id);
                 }
             }

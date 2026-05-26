@@ -23,7 +23,8 @@ impl App {
                 main.state.detect_tab_focus_change(engine);
                 main.state.detect_tab_lifecycle(engine);
                 main.state.detect_pane_lifecycle(engine);
-                main.state.detect_workspace_lifecycle(engine, u64::from(*win_id));
+                main.state
+                    .detect_workspace_lifecycle(engine, u64::from(*win_id));
                 main.state.detect_surface_lifecycle(engine);
                 drained.extend(main.state.take_pending_host_events());
             }

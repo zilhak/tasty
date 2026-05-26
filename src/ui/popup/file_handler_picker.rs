@@ -192,7 +192,15 @@ pub fn draw_file_handler_picker(
                         .as_ref()
                         .map(|p| p.candidates.clone())
                         .unwrap_or_default();
-                    draw_handler_list(ui, &th, &items, col_w, state, engine, &mut double_click_dispatch);
+                    draw_handler_list(
+                        ui,
+                        &th,
+                        &items,
+                        col_w,
+                        state,
+                        engine,
+                        &mut double_click_dispatch,
+                    );
                 });
         });
 
@@ -218,7 +226,15 @@ pub fn draw_file_handler_picker(
                         .as_ref()
                         .map(|p| p.recent.clone())
                         .unwrap_or_default();
-                    draw_handler_list(ui, &th, &items, col_w, state, engine, &mut double_click_dispatch);
+                    draw_handler_list(
+                        ui,
+                        &th,
+                        &items,
+                        col_w,
+                        state,
+                        engine,
+                        &mut double_click_dispatch,
+                    );
                 });
         });
     });

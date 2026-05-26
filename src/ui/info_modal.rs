@@ -67,7 +67,10 @@ pub fn info_modal_title(state: &AppState, _engine: &crate::engine_state::EngineS
 }
 
 /// PopupDef.sizer — body 길이에 따라 height를 조정.
-pub fn info_modal_sizer(state: &AppState, _engine: &crate::engine_state::EngineState) -> egui::Vec2 {
+pub fn info_modal_sizer(
+    state: &AppState,
+    _engine: &crate::engine_state::EngineState,
+) -> egui::Vec2 {
     let body_len = state
         .dialogs
         .info_modal_queue

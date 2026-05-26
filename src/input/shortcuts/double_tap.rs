@@ -155,7 +155,8 @@ impl MainWindow {
                     }
                     "close_surface" => {
                         let target_sid = self.state.focused_surface_id(engine);
-                        let target_kind = target_sid.and_then(|s| self.state.surface_kind(engine, s));
+                        let target_kind =
+                            target_sid.and_then(|s| self.state.surface_kind(engine, s));
                         let closed = self.state.close_active_surface(engine);
                         if closed {
                             if let (Some(sid), Some(k)) = (target_sid, target_kind) {

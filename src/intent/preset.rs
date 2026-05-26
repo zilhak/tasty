@@ -108,7 +108,14 @@ fn save(
     preset: &ClonedPreset,
 ) {
     let kind = preset.kind();
-    let save_result = save_inner(state, engine, base_name, explicit_name, overwrite, preset.clone());
+    let save_result = save_inner(
+        state,
+        engine,
+        base_name,
+        explicit_name,
+        overwrite,
+        preset.clone(),
+    );
 
     let toast_key = match (&save_result, kind) {
         (Ok(_), PresetKind::Workspace) => "preset.toast.saved_workspace",

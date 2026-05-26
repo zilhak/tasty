@@ -50,11 +50,7 @@ impl AppState {
 
     /// Get the actual content rect for the focused surface (accounting for tab bar).
     /// Returns None if no surface is focused.
-    pub fn focused_surface_rect(
-        &self,
-        engine: &EngineState,
-        terminal_rect: Rect,
-    ) -> Option<Rect> {
+    pub fn focused_surface_rect(&self, engine: &EngineState, terminal_rect: Rect) -> Option<Rect> {
         let surface_id = self.focused_surface_id(engine)?;
         for (_pane_id, _pane_rect, regions) in &self.surface_regions(engine, terminal_rect) {
             for r in regions {

@@ -3,13 +3,25 @@ use serde_json::json;
 use crate::ipc::protocol::JsonRpcResponse;
 use crate::state::AppState;
 
-pub(crate) fn handle_surface_list(state: &AppState, engine: &crate::engine_state::EngineState, id: serde_json::Value) -> JsonRpcResponse {
+pub(crate) fn handle_surface_list(
+    state: &AppState,
+    engine: &crate::engine_state::EngineState,
+    id: serde_json::Value,
+) -> JsonRpcResponse {
     let mut surfaces = Vec::new();
     for ws in &engine.workspaces {
         for &pane_id in &ws.pane_layout().all_pane_ids() {
             if let Some(pane) = ws.pane_layout().find_pane(pane_id) {
                 for (tab_idx, tab) in pane.tabs.iter().enumerate() {
-                    collect_tab_surface_info(state, engine, tab, pane_id, ws.id, tab_idx, &mut surfaces);
+                    collect_tab_surface_info(
+                        state,
+                        engine,
+                        tab,
+                        pane_id,
+                        ws.id,
+                        tab_idx,
+                        &mut surfaces,
+                    );
                 }
             }
         }
@@ -28,7 +40,15 @@ fn collect_tab_surface_info(
 ) {
     if tab.is_split() {
         // Split tab: iterate through the layout
-        collect_surface_layout_info(state, engine, tab.layout(), pane_id, workspace_id, tab_idx, out);
+        collect_surface_layout_info(
+            state,
+            engine,
+            tab.layout(),
+            pane_id,
+            workspace_id,
+            tab_idx,
+            out,
+        );
     } else {
         // Single surface tab
         let surface = tab.surface();

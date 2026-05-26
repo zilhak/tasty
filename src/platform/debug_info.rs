@@ -24,10 +24,7 @@ pub fn collect(
     let mut info = serde_json::Map::new();
 
     // -- Basic state --
-    info.insert(
-        "workspace_count".into(),
-        json!(engine.workspaces.len()),
-    );
+    info.insert("workspace_count".into(), json!(engine.workspaces.len()));
     info.insert("active_workspace".into(), json!(state.active_workspace));
 
     // -- GPU / scale factor --

@@ -11,7 +11,12 @@ use crate::state::AppState;
 use super::require_surface_id;
 
 /// `image.open { surface_id, path }` — surface를 image kind로 (재)설정 + 파일 로드.
-pub fn handle_open(state: &mut AppState, engine: &mut crate::engine_state::EngineState, id: Value, params: &Value) -> JsonRpcResponse {
+pub fn handle_open(
+    state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
     let sid = match require_surface_id(params, &id) {
         Ok(v) => v,
         Err(e) => return e,
@@ -31,7 +36,12 @@ pub fn handle_open(state: &mut AppState, engine: &mut crate::engine_state::Engin
 
 /// `image.save { surface_id, path? }` — 현재 픽셀 버퍼를 PNG로 저장. path 생략 시
 /// `ImagePanel::save_path()` 사용 (열려 있는 파일의 `.png` 확장자 버전).
-pub fn handle_save(state: &mut AppState, engine: &mut crate::engine_state::EngineState, id: Value, params: &Value) -> JsonRpcResponse {
+pub fn handle_save(
+    state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
     let sid = match require_surface_id(params, &id) {
         Ok(v) => v,
         Err(e) => return e,
@@ -42,7 +52,10 @@ pub fn handle_save(state: &mut AppState, engine: &mut crate::engine_state::Engin
         .map(String::from);
     let final_path = match explicit {
         Some(p) => p,
-        None => match state.image_panel_mut(engine, sid).and_then(|p| p.save_path()) {
+        None => match state
+            .image_panel_mut(engine, sid)
+            .and_then(|p| p.save_path())
+        {
             Some(p) => p,
             None => {
                 return JsonRpcResponse::invalid_params(
@@ -76,7 +89,12 @@ pub fn handle_save(state: &mut AppState, engine: &mut crate::engine_state::Engin
 }
 
 /// `image.export_png { surface_id, path }` — `save`와 동일하되 path 필수.
-pub fn handle_export_png(state: &mut AppState, engine: &mut crate::engine_state::EngineState, id: Value, params: &Value) -> JsonRpcResponse {
+pub fn handle_export_png(
+    state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
     if params.get("path").and_then(|v| v.as_str()).is_none() {
         return JsonRpcResponse::invalid_params(id, "Missing required 'path' parameter");
     }
@@ -84,12 +102,22 @@ pub fn handle_export_png(state: &mut AppState, engine: &mut crate::engine_state:
 }
 
 /// `image.next { surface_id }` — 디렉터리 내 다음 이미지로 이동.
-pub fn handle_next(state: &mut AppState, engine: &mut crate::engine_state::EngineState, id: Value, params: &Value) -> JsonRpcResponse {
+pub fn handle_next(
+    state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
     step_navigation(state, engine, id, params, true)
 }
 
 /// `image.prev { surface_id }` — 디렉터리 내 이전 이미지로 이동.
-pub fn handle_prev(state: &mut AppState, engine: &mut crate::engine_state::EngineState, id: Value, params: &Value) -> JsonRpcResponse {
+pub fn handle_prev(
+    state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
     step_navigation(state, engine, id, params, false)
 }
 
@@ -133,7 +161,12 @@ fn step_navigation(
 }
 
 /// `image.paste { surface_id }` — 시스템 클립보드의 이미지를 floating selection으로 paste.
-pub fn handle_paste(state: &mut AppState, engine: &mut crate::engine_state::EngineState, id: Value, params: &Value) -> JsonRpcResponse {
+pub fn handle_paste(
+    state: &mut AppState,
+    engine: &mut crate::engine_state::EngineState,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
     let sid = match require_surface_id(params, &id) {
         Ok(v) => v,
         Err(e) => return e,
@@ -180,7 +213,11 @@ pub fn handle_paste(state: &mut AppState, engine: &mut crate::engine_state::Engi
 }
 
 /// `image.list` — 열린 모든 image surface 목록.
-pub fn handle_list(_state: &AppState, engine: &crate::engine_state::EngineState, id: Value) -> JsonRpcResponse {
+pub fn handle_list(
+    _state: &AppState,
+    engine: &crate::engine_state::EngineState,
+    id: Value,
+) -> JsonRpcResponse {
     let mut entries: Vec<Value> = Vec::new();
     for workspace in &engine.workspaces {
         for pid in workspace.pane_layout().all_pane_ids() {
@@ -278,7 +315,12 @@ mod tests {
     fn open_rejects_missing_path() {
         let (mut state, mut engine) = make_state();
         let sid = first_surface_id(&mut state, &mut engine);
-        let resp = handle_open(&mut state, &mut engine, Value::Null, &json!({ "surface_id": sid }));
+        let resp = handle_open(
+            &mut state,
+            &mut engine,
+            Value::Null,
+            &json!({ "surface_id": sid }),
+        );
         assert!(resp.error.is_some());
     }
 
@@ -313,19 +355,39 @@ mod tests {
         );
         assert!(resp.result.is_some());
 
-        let resp = handle_next(&mut state, &mut engine, Value::Null, &json!({ "surface_id": sid }));
+        let resp = handle_next(
+            &mut state,
+            &mut engine,
+            Value::Null,
+            &json!({ "surface_id": sid }),
+        );
         let v = resp.result.expect("next ok");
         assert_eq!(v["path"], b);
 
-        let resp = handle_next(&mut state, &mut engine, Value::Null, &json!({ "surface_id": sid }));
+        let resp = handle_next(
+            &mut state,
+            &mut engine,
+            Value::Null,
+            &json!({ "surface_id": sid }),
+        );
         assert_eq!(resp.result.unwrap()["path"], c);
 
         // wrap forward
-        let resp = handle_next(&mut state, &mut engine, Value::Null, &json!({ "surface_id": sid }));
+        let resp = handle_next(
+            &mut state,
+            &mut engine,
+            Value::Null,
+            &json!({ "surface_id": sid }),
+        );
         resp.result.expect("wraps to first");
 
         // step back
-        let resp = handle_prev(&mut state, &mut engine, Value::Null, &json!({ "surface_id": sid }));
+        let resp = handle_prev(
+            &mut state,
+            &mut engine,
+            Value::Null,
+            &json!({ "surface_id": sid }),
+        );
         resp.result.expect("prev ok");
     }
 

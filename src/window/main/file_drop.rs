@@ -72,8 +72,13 @@ impl MainWindow {
         }
         {
             let engine = &mut self.engine_state;
-            let _ = self.state.focus_pane_at_position(engine, x, y, terminal_rect);
-            let _ = self.state.focus_surface_at_position(engine, x, y, terminal_rect);
+            // best-effort focus 이동. drop 좌표에 pane/surface 가 없으면 현재 focus 유지.
+            let _pane_focus = self
+                .state
+                .focus_pane_at_position(engine, x, y, terminal_rect);
+            let _surface_focus = self
+                .state
+                .focus_surface_at_position(engine, x, y, terminal_rect);
         }
         for path in drops {
             crate::file_dispatch::dispatch_file_target(

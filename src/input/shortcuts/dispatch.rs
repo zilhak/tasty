@@ -228,7 +228,11 @@ impl MainWindow {
             }
             "rename_tab" => {
                 let pane_id = state.active_workspace(engine).focused_pane;
-                if let Some(pane) = state.active_workspace(engine).pane_layout().find_pane(pane_id) {
+                if let Some(pane) = state
+                    .active_workspace(engine)
+                    .pane_layout()
+                    .find_pane(pane_id)
+                {
                     let tab_index = pane.active_tab;
                     if let Some(tab) = pane.tabs.get(tab_index) {
                         let current_name = tab.display_name();

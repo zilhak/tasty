@@ -13,7 +13,11 @@ use crate::file::format::{DetectDepth, FileTarget};
 use crate::ipc::protocol::JsonRpcResponse;
 use crate::state::AppState;
 
-pub fn handle_reload(_state: &AppState, engine: &crate::engine_state::EngineState, id: serde_json::Value) -> JsonRpcResponse {
+pub fn handle_reload(
+    _state: &AppState,
+    engine: &crate::engine_state::EngineState,
+    id: serde_json::Value,
+) -> JsonRpcResponse {
     let path = user_config_path();
     engine.file_format.reload_user_config(&path);
     engine.file_handler.reload_user_config(&path);

@@ -69,10 +69,10 @@ fn with_store<R>(
     id: &serde_json::Value,
     f: impl FnOnce(&tasty_presets::PresetStore) -> R,
 ) -> Result<R, JsonRpcResponse> {
-    let arc =
-        engine.preset_store.as_ref().ok_or_else(|| {
-            JsonRpcResponse::internal_error(id.clone(), "preset_store unavailable")
-        })?;
+    let arc = engine
+        .preset_store
+        .as_ref()
+        .ok_or_else(|| JsonRpcResponse::internal_error(id.clone(), "preset_store unavailable"))?;
     let guard = match arc.lock() {
         Ok(g) => g,
         Err(p) => {
@@ -127,22 +127,27 @@ pub fn handle_get(
         Err(e) => return e,
     };
 
-    let data = match with_store(state, engine, &id, |s| -> Result<serde_json::Value, String> {
-        match kind {
-            PresetKind::Workspace => s
-                .get_workspace(&name)
-                .map(|p| serde_json::to_value(p).map_err(|e| e.to_string()))
-                .ok_or_else(|| format!("preset not found: workspace/{name}"))?,
-            PresetKind::Tab => s
-                .get_tab(&name)
-                .map(|p| serde_json::to_value(p).map_err(|e| e.to_string()))
-                .ok_or_else(|| format!("preset not found: tab/{name}"))?,
-            PresetKind::Pane => s
-                .get_pane(&name)
-                .map(|p| serde_json::to_value(p).map_err(|e| e.to_string()))
-                .ok_or_else(|| format!("preset not found: pane/{name}"))?,
-        }
-    }) {
+    let data = match with_store(
+        state,
+        engine,
+        &id,
+        |s| -> Result<serde_json::Value, String> {
+            match kind {
+                PresetKind::Workspace => s
+                    .get_workspace(&name)
+                    .map(|p| serde_json::to_value(p).map_err(|e| e.to_string()))
+                    .ok_or_else(|| format!("preset not found: workspace/{name}"))?,
+                PresetKind::Tab => s
+                    .get_tab(&name)
+                    .map(|p| serde_json::to_value(p).map_err(|e| e.to_string()))
+                    .ok_or_else(|| format!("preset not found: tab/{name}"))?,
+                PresetKind::Pane => s
+                    .get_pane(&name)
+                    .map(|p| serde_json::to_value(p).map_err(|e| e.to_string()))
+                    .ok_or_else(|| format!("preset not found: pane/{name}"))?,
+            }
+        },
+    ) {
         Ok(Ok(v)) => v,
         Ok(Err(msg)) => return JsonRpcResponse::invalid_params(id, msg),
         Err(e) => return e,
@@ -291,7 +296,14 @@ pub fn handle_capture(
     };
 
     // 2. save (overwrite=false; explicit_name=Some 이면 충돌 시 SkippedExists).
-    match save_inner(state, engine, &base_name, explicit_name.as_deref(), false, cloned) {
+    match save_inner(
+        state,
+        engine,
+        &base_name,
+        explicit_name.as_deref(),
+        false,
+        cloned,
+    ) {
         Ok(SaveOutcome::Saved(name)) => JsonRpcResponse::success(id, json!({ "name": name })),
         Ok(SaveOutcome::SkippedExists) => JsonRpcResponse::invalid_params(
             id,

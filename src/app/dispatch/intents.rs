@@ -135,13 +135,11 @@ impl App {
         // parked 도 owner 검사 후 fallback.
         let owner_in_parked = crate::app::request_owner::params_resource_id(&request.params)
             .and_then(|(_, rid)| {
-                self.parked_states
-                    .iter_mut()
-                    .find(|(_, e)| match rid.kind {
-                        crate::app::request_owner::Kind::Surface => e.has_surface(rid.id),
-                        crate::app::request_owner::Kind::Workspace => e.has_workspace(rid.id),
-                        crate::app::request_owner::Kind::Pane => e.has_pane(rid.id),
-                    })
+                self.parked_states.iter_mut().find(|(_, e)| match rid.kind {
+                    crate::app::request_owner::Kind::Surface => e.has_surface(rid.id),
+                    crate::app::request_owner::Kind::Workspace => e.has_workspace(rid.id),
+                    crate::app::request_owner::Kind::Pane => e.has_pane(rid.id),
+                })
             });
         if let Some((state, engine)) = owner_in_parked {
             return ipc::handler::handle_with_caller(state, engine, request, caller);

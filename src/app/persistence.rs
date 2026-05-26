@@ -47,8 +47,8 @@ impl App {
         }
         for (state, engine) in self.parked_states.iter_mut() {
             let g = &engine.settings.general;
-            let should_save = g.restore_layout
-                && (engine.layout_dirty.is_dirty() || g.restore_terminal_content);
+            let should_save =
+                g.restore_layout && (engine.layout_dirty.is_dirty() || g.restore_terminal_content);
             if should_save {
                 crate::engine::layout_persistence::save_to_disk(engine, state.active_workspace);
                 engine.layout_dirty.clear();

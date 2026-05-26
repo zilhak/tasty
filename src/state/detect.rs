@@ -30,10 +30,7 @@ impl AppState {
     /// 이벤트를 enqueue한다. workspace 활성화 경로(사이드바 클릭, 단축키, IPC 등)가
     /// 여럿이라 focused와 동일하게 polling으로 처리.
     pub fn detect_workspace_activation(&mut self, engine: &EngineState) {
-        let current = engine
-            .workspaces
-            .get(self.active_workspace)
-            .map(|w| w.id);
+        let current = engine.workspaces.get(self.active_workspace).map(|w| w.id);
         if current == self.last_active_workspace_id {
             return;
         }

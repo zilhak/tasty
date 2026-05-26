@@ -40,8 +40,7 @@ impl IdGenerator {
     }
 
     pub fn next_pane(&self) -> u32 {
-        self.pane
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        self.pane.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     }
 
     pub fn next_tab(&self) -> u32 {
