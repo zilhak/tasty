@@ -236,12 +236,10 @@ impl ApplicationHandler<AppEvent> for App {
         }
 
         window.set_ime_allowed(true);
-        self.init_app_state(
-            window,
-            gpu,
-            init_settings,
-            normalize_report.invalid_theme_name,
-        );
+        self.init_app_state(window, gpu, init_settings);
+        // invalid_theme_name 보고는 init_app_state 가 직접 수행하므로 normalize_report 는 더
+        // 이상 여기서 소비되지 않는다. 변수 자체는 normalize 호출 결과 보존용으로 둔다.
+        drop(normalize_report);
 
         #[cfg(windows)]
         crate::jump_list::setup_jump_list();
@@ -275,12 +273,10 @@ impl ApplicationHandler<AppEvent> for App {
                             self.shell_setup_mode = false;
                             let window = self.shell_setup_window.take().unwrap();
                             let gpu = self.shell_setup_gpu.take().unwrap();
-                            self.init_app_state(
-                                window,
-                                gpu,
-                                settings,
-                                normalize_report.invalid_theme_name,
-                            );
+                            self.init_app_state(window, gpu, settings);
+                            // invalid_theme_name 처리는 init_app_state 내부로 이동했으므로
+                            // normalize_report 는 여기서 별도 소비할 필요 없음.
+                            drop(normalize_report);
                             if let Some(w) = self.focused_window_mut() {
                                 w.mark_dirty();
                             }

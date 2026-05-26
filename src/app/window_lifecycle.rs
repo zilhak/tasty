@@ -16,6 +16,30 @@ use crate::app::App;
 use crate::gpu::GpuState;
 use crate::{plugin, window};
 
+/// 부팅 흐름의 테마 적용. `tasty-themes` 의 디스크 초기화 + 전역 Theme 설치를 한 단계로 묶는다.
+///
+/// 반환: `settings.appearance.theme` 가 디스크/캐시에 없어 mocha 로 fallback 된 경우 원래 요청 id.
+/// (호출자가 InfoModal 로 사용자에게 알린다.)
+fn boot_apply_theme(appearance: &mut tasty_settings::AppearanceSettings) -> Option<String> {
+    if let Err(e) = tasty_themes::first_run_init() {
+        tracing::warn!("themes first_run_init failed: {e}");
+    }
+    if let Err(e) = tasty_themes::ensure_mocha_exists() {
+        tracing::warn!("ensure_mocha_exists failed: {e}");
+    }
+    if let Err(e) = tasty_themes::rescan() {
+        tracing::warn!("themes rescan failed: {e}");
+    }
+    let requested = appearance.theme.clone();
+    tasty_themes::apply_theme(appearance, &requested);
+    tasty_themes::install_global(appearance);
+    if appearance.theme != requested {
+        Some(requested)
+    } else {
+        None
+    }
+}
+
 impl App {
     /// Create an AppState from a GPU state, computing grid size from the sidebar width.
     pub(crate) fn create_app_state(
@@ -211,14 +235,13 @@ impl App {
 
     /// Initialize the full app state (terminal, IPC server, etc.) after shell is confirmed.
     ///
-    /// `invalid_theme_name` carries the original theme name if [`Settings::normalize`]
-    /// replaced it. When `Some`, the user is notified via InfoModal.
+    /// 테마 디스크 초기화·적용은 이 함수 내부에서 수행되며, 요청된 theme id 가
+    /// fallback 되었으면 InfoModal 로 사용자에게 알린다.
     pub(crate) fn init_app_state(
         &mut self,
         window: Arc<Window>,
         gpu: GpuState,
-        settings: crate::settings::Settings,
-        invalid_theme_name: Option<String>,
+        mut settings: crate::settings::Settings,
     ) {
         // state.db / memory.db 초기화는 create_app_state 이전에 반드시 호출.
         // 첫 윈도우는 `create_new_window` 를 거치지 않고 곧장 이 함수로 진입하므로
@@ -240,13 +263,10 @@ impl App {
             tracing::warn!("memory.db init failed: {e}");
         }
 
-        // Apply theme preset to global. settings 는 caller 가 이미 normalize 했으므로
-        // preset 매칭이 보장되지만, 안전망으로 매칭 실패 시 글로벌 default 를 유지한다.
-        if let Some(preset) = crate::theme::presets()
-            .iter()
-            .find(|p| p.id == settings.appearance.theme)
-        {
-            crate::theme::set_theme(preset.theme);
+        // Apply theme via tasty-themes (first-run init, fallback, partial accumulation, global install).
+        let invalid_theme_name = boot_apply_theme(&mut settings.appearance);
+        if let Err(e) = settings.save() {
+            tracing::warn!("failed to persist settings after theme apply: {e}");
         }
 
         let mut state = self.create_app_state(&gpu, settings.appearance.sidebar_width);
@@ -358,14 +378,13 @@ impl App {
             tracing::warn!("memory.db init failed: {e}");
         }
 
-        // Apply theme preset to global. settings 는 위에서 normalize 했으므로 매칭 보장.
-        if let Some(preset) = crate::theme::presets()
-            .iter()
-            .find(|p| p.id == settings.appearance.theme)
-        {
-            crate::theme::set_theme(preset.theme);
+        // Apply theme via tasty-themes (first-run init, fallback, partial accumulation, global install).
+        let invalid_theme_name = boot_apply_theme(&mut settings.appearance);
+        if invalid_theme_name.is_some() || normalize_report.changed {
+            if let Err(e) = settings.save() {
+                tracing::warn!("failed to persist settings after theme apply: {e}");
+            }
         }
-        let invalid_theme_name = normalize_report.invalid_theme_name;
         let gpu = pollster::block_on(crate::gpu::GpuState::new(
             window.clone(),
             &settings.appearance,

@@ -78,7 +78,7 @@ impl GpuState {
                 // Build selection info for this surface
                 let sel_info = selection
                     .filter(|s| s.surface_id == *surface_id && !s.is_empty())
-                    .map(|s| (s.normalized(), theme.selection_bg));
+                    .map(|s| (s.normalized(), theme.selection_bg.to_float()));
                 let sel_ref = sel_info.as_ref();
 
                 let render_preedit = preedit
@@ -102,8 +102,8 @@ impl GpuState {
                     .map(|s| crate::renderer::SearchHighlights {
                         matches: &s.matches,
                         active_index: s.current_index,
-                        inactive_bg: theme.search_match_bg,
-                        active_bg: theme.search_match_active_bg,
+                        inactive_bg: theme.search_match_bg.to_float(),
+                        active_bg: theme.search_match_active_bg.to_float(),
                     });
                 let search_ref = search_highlights.as_ref();
 

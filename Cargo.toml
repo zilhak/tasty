@@ -82,6 +82,7 @@ tasty-agent = { path = "crates/tasty-agent" }
 tasty-plugin-protocol = { path = "crates/tasty-plugin-protocol" }
 tasty-presets = { path = "crates/tasty-presets" }
 tasty-settings = { path = "crates/tasty-settings" }
+tasty-themes = { path = "crates/tasty-themes" }
 tasty-shm = { path = "crates/tasty-shm" }
 tasty-terminal = { path = "crates/tasty-terminal" }
 tasty-portscan = { path = "crates/tasty-portscan" }

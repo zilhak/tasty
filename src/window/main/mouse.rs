@@ -85,7 +85,7 @@ impl MainWindow {
             end_col: span.end_col,
             absolute_row: span.absolute_row,
             fg: th.blue.to_float(),
-            bg: th.selection_bg,
+            bg: th.selection_bg.to_float(),
         };
         Some(HoveredLink {
             surface_id,

@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use tasty_core::model::LogicalPx;
+use tasty_core::theme::{MOCHA_FALLBACK_COLORS, PartialColors, ThemeApplyContext, ThemeColors};
 
 pub use tasty_core::color::{HexColor, SurfaceColors};
 
@@ -83,7 +84,15 @@ impl FontSettings {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AppearanceSettings {
+    /// 현재 선택된 테마 id (파일명 stem = `~/.tasty/themes/<id>.toml`).
     pub theme: String,
+    /// 누적된 테마 기본값. 테마 변경 시 새 테마의 partial 이 이 위에 덮어쓰여진다.
+    /// 첫 실행 시 mocha 풀 세트로 시드.
+    pub theme_base: ThemeColors,
+    /// 사용자가 픽커로 직접 손댄 흔적. 테마 변경 시 클리어.
+    pub theme_overrides: PartialColors,
+    /// 현재 라이트/다크 플래그. 테마 파일이 명시하면 그 값으로 갱신.
+    pub theme_is_light: bool,
     pub background_opacity: f32,
     pub sidebar_width: LogicalPx,
     /// UI scale: "small", "medium", or "large". Affects all egui UI elements.
@@ -105,7 +114,10 @@ pub struct AppearanceSettings {
 impl Default for AppearanceSettings {
     fn default() -> Self {
         Self {
-            theme: "catppuccin-mocha".to_string(),
+            theme: "mocha".to_string(),
+            theme_base: MOCHA_FALLBACK_COLORS,
+            theme_overrides: PartialColors::default(),
+            theme_is_light: false,
             background_opacity: 1.0,
             sidebar_width: LogicalPx(180.0),
             ui_scale: "medium".to_string(),
@@ -117,6 +129,33 @@ impl Default for AppearanceSettings {
             markdown_colors: SurfaceColors::markdown_default(),
             explorer_colors: SurfaceColors::explorer_default(),
         }
+    }
+}
+
+impl ThemeApplyContext for AppearanceSettings {
+    fn theme_id(&self) -> &str {
+        &self.theme
+    }
+    fn set_theme_id(&mut self, id: &str) {
+        self.theme = id.to_string();
+    }
+    fn theme_base(&self) -> &ThemeColors {
+        &self.theme_base
+    }
+    fn theme_base_mut(&mut self) -> &mut ThemeColors {
+        &mut self.theme_base
+    }
+    fn theme_overrides(&self) -> &PartialColors {
+        &self.theme_overrides
+    }
+    fn theme_overrides_mut(&mut self) -> &mut PartialColors {
+        &mut self.theme_overrides
+    }
+    fn theme_is_light(&self) -> bool {
+        self.theme_is_light
+    }
+    fn set_theme_is_light(&mut self, v: bool) {
+        self.theme_is_light = v;
     }
 }
 

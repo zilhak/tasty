@@ -1,0 +1,20 @@
+[package]
+name = "tasty-themes"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Theme file loading, disk persistence, and partial-merge tools for Tasty"
+
+[dependencies]
+tasty-core = { path = "../tasty-core", default-features = false }
+
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+thiserror = "2"
+tracing = "0.1"
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true

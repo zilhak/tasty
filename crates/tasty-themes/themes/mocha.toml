@@ -1,0 +1,63 @@
+# Catppuccin Mocha — 기본 다크 테마.
+# 빌트인 fallback. ~/.tasty/themes/mocha.toml 이 없거나 파싱 실패 시
+# 이 파일의 내용이 자동으로 다시 풀린다.
+#
+# 모든 색상 필드는 optional. 누락된 필드는 이전에 적용된 테마 값을 유지한다.
+
+label = "Catppuccin Mocha"
+is_light = false
+
+[palette]
+crust    = "#11111b"
+mantle   = "#181825"
+base     = "#1e1e2e"
+surface0 = "#313244"
+surface1 = "#45475a"
+surface2 = "#585b70"
+overlay0 = "#6c7086"
+overlay1 = "#7f849c"
+overlay2 = "#9399b2"
+text     = "#cdd6f4"
+subtext1 = "#bac2de"
+subtext0 = "#a6adc8"
+placeholder = "#6c7086"
+
+[accent]
+blue      = "#89b4fa"
+green     = "#a6e3a1"
+red       = "#f38ba8"
+yellow    = "#f9e2af"
+peach     = "#fab387"
+mauve     = "#cba6f7"
+teal      = "#94e2d5"
+sky       = "#89dceb"
+lavender  = "#b4befe"
+flamingo  = "#f2cdcd"
+pink      = "#f5c2e7"
+maroon    = "#eba0ac"
+rosewater = "#f5e0dc"
+
+[terminal]
+fg = "#cdd6f4"
+bg = "#1e1e2e"
+selection_bg = "#585b70"
+search_match_bg = "#f9e2af4d"          # yellow @ ~30% alpha
+search_match_active_bg = "#f9e2afb3"   # yellow @ ~70% alpha
+
+[ansi]
+black   = "#45475a"   # surface1
+red     = "#f38ba8"
+green   = "#a6e3a1"
+yellow  = "#f9e2af"
+blue    = "#89b4fa"
+magenta = "#cba6f7"
+cyan    = "#94e2d5"
+white   = "#bac2de"   # subtext1
+bright_black   = "#6c7086"   # overlay0
+bright_red     = "#f38ba8"
+bright_green   = "#a6e3a1"
+bright_yellow  = "#f9e2af"
+bright_blue    = "#89b4fa"
+bright_magenta = "#cba6f7"
+bright_cyan    = "#89dceb"   # sky
+bright_white   = "#cdd6f4"   # text

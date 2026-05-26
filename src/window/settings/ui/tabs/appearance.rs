@@ -134,15 +134,18 @@ fn draw_appearance_theme(
     );
     ui.add_space(8.0);
 
-    let presets = crate::theme::presets();
-    for preset in &presets {
-        let is_current = settings.appearance.theme == preset.id;
-        let response = ui.selectable_label(is_current, preset.label);
+    // ~/.tasty/themes/ 의 디스크 변경을 settings 화면 진입 시 한 번 더 반영.
+    if let Err(e) = tasty_themes::rescan() {
+        tracing::warn!("themes rescan failed: {e}");
+    }
+    let entries = tasty_themes::scan_themes();
+    for entry in &entries {
+        let is_current = settings.appearance.theme == entry.id;
+        let response = ui.selectable_label(is_current, &entry.label);
         if response.clicked() && !is_current {
-            settings.appearance.theme = preset.id.to_string();
-            settings.appearance.terminal_colors = preset.terminal_colors.clone();
-            settings.appearance.markdown_colors = preset.markdown_colors.clone();
-            settings.appearance.explorer_colors = preset.explorer_colors.clone();
+            // 테마 변경 = base 누적 + overrides 클리어. 적용은 settings 저장 후
+            // (modal::on_save) GPU bridge 가 install_global 로 반영.
+            tasty_themes::apply_theme(&mut settings.appearance, &entry.id);
         }
     }
 

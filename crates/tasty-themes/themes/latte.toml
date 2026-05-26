@@ -1,0 +1,63 @@
+# Catppuccin Latte — 기본 라이트 테마.
+# 빌트인이지만 fallback 은 없다. ~/.tasty/themes/latte.toml 을 사용자가 지우면
+# 사라진다 (사용자 의도 존중).
+#
+# 모든 색상 필드는 optional. 누락된 필드는 이전에 적용된 테마 값을 유지한다.
+
+label = "Catppuccin Latte"
+is_light = true
+
+[palette]
+crust    = "#dce0e8"
+mantle   = "#e6e9ef"
+base     = "#eff1f5"
+surface0 = "#ccd0da"
+surface1 = "#bcc0cc"
+surface2 = "#acb0be"
+overlay0 = "#9ca0b0"
+overlay1 = "#8c8fa1"
+overlay2 = "#7c7f93"
+text     = "#4c4f69"
+subtext1 = "#5c5f77"
+subtext0 = "#6c6f85"
+placeholder = "#9ca0b0"
+
+[accent]
+blue      = "#1e66f5"
+green     = "#40a02b"
+red       = "#d20f39"
+yellow    = "#df8e1d"
+peach     = "#fe640b"
+mauve     = "#8839ef"
+teal      = "#179299"
+sky       = "#04a5e5"
+lavender  = "#7287fd"
+flamingo  = "#dd7878"
+pink      = "#ea76cb"
+maroon    = "#e64553"
+rosewater = "#dc8a78"
+
+[terminal]
+fg = "#4c4f69"
+bg = "#eff1f5"
+selection_bg = "#acb0be"
+search_match_bg = "#df8e1d4d"          # yellow @ ~30% alpha
+search_match_active_bg = "#df8e1db3"   # yellow @ ~70% alpha
+
+[ansi]
+black   = "#bcc0cc"   # surface1
+red     = "#d20f39"
+green   = "#40a02b"
+yellow  = "#df8e1d"
+blue    = "#1e66f5"
+magenta = "#8839ef"
+cyan    = "#179299"
+white   = "#5c5f77"   # subtext1
+bright_black   = "#9ca0b0"   # overlay0
+bright_red     = "#d20f39"
+bright_green   = "#40a02b"
+bright_yellow  = "#df8e1d"
+bright_blue    = "#1e66f5"
+bright_magenta = "#8839ef"
+bright_cyan    = "#04a5e5"   # sky
+bright_white   = "#4c4f69"   # text

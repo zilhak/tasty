@@ -126,15 +126,21 @@ impl Settings {
     pub fn normalize(&mut self) -> NormalizeReport {
         let mut report = NormalizeReport::default();
 
-        // appearance.theme — invalid: popup + fallback to catppuccin-mocha.
-        let preset_ids: Vec<&'static str> =
-            tasty_core::theme::presets().iter().map(|p| p.id).collect();
-        if !preset_ids.contains(&self.appearance.theme.as_str()) {
-            let invalid = std::mem::take(&mut self.appearance.theme);
-            self.appearance.theme = "catppuccin-mocha".to_string();
-            tracing::warn!("invalid theme \"{invalid}\" → catppuccin-mocha");
-            report.invalid_theme_name = Some(invalid);
-            report.changed = true;
+        // appearance.theme — legacy id 매핑.
+        // 실제 valid 검증/fallback 은 부팅 흐름의 `tasty_themes::apply_theme()` 가 담당.
+        // (settings 가 어떤 id 가 valid 인지 직접 알 필요 없음.)
+        match self.appearance.theme.as_str() {
+            "catppuccin-mocha" => {
+                self.appearance.theme = "mocha".to_string();
+                tracing::info!("migrated legacy theme id catppuccin-mocha → mocha");
+                report.changed = true;
+            }
+            "catppuccin-latte" => {
+                self.appearance.theme = "latte".to_string();
+                tracing::info!("migrated legacy theme id catppuccin-latte → latte");
+                report.changed = true;
+            }
+            _ => {}
         }
 
         // appearance.ui_scale
@@ -299,7 +305,7 @@ ui_scale = "large"
     #[test]
     fn settings_theme_default() {
         let settings = Settings::default();
-        assert_eq!(settings.appearance.theme, "catppuccin-mocha");
+        assert_eq!(settings.appearance.theme, "mocha");
     }
 
     #[test]
@@ -351,22 +357,34 @@ ui_scale = "large"
     }
 
     #[test]
-    fn normalize_invalid_theme_reports_and_fixes() {
-        let mut settings = Settings::default();
-        settings.appearance.theme = "dark".to_string();
-        let report = settings.normalize();
-        assert!(report.changed);
-        assert_eq!(report.invalid_theme_name.as_deref(), Some("dark"));
-        assert_eq!(settings.appearance.theme, "catppuccin-mocha");
+    fn normalize_migrates_legacy_theme_ids() {
+        for (legacy, expected) in [("catppuccin-mocha", "mocha"), ("catppuccin-latte", "latte")] {
+            let mut settings = Settings::default();
+            settings.appearance.theme = legacy.to_string();
+            let report = settings.normalize();
+            assert!(report.changed, "{legacy} should be migrated");
+            assert_eq!(settings.appearance.theme, expected);
+        }
     }
 
     #[test]
-    fn normalize_known_themes_pass_through() {
-        for theme in ["catppuccin-mocha", "catppuccin-latte"] {
+    fn normalize_does_not_touch_unknown_theme_ids() {
+        // valid 검증은 부팅 흐름의 apply_theme 에서 처리. settings 는 단순 매핑만 한다.
+        let mut settings = Settings::default();
+        settings.appearance.theme = "my-custom-theme".to_string();
+        let report = settings.normalize();
+        // 마이그레이션 대상이 아니라 변경 없음 (다른 enum 필드들도 valid 였다고 가정).
+        assert!(!report.changed);
+        assert_eq!(settings.appearance.theme, "my-custom-theme");
+    }
+
+    #[test]
+    fn normalize_current_ids_pass_through() {
+        for theme in ["mocha", "latte"] {
             let mut settings = Settings::default();
             settings.appearance.theme = theme.to_string();
             let report = settings.normalize();
-            assert!(!report.changed, "theme {theme} should be accepted");
+            assert!(!report.changed, "theme {theme} should be accepted as-is");
             assert_eq!(settings.appearance.theme, theme);
         }
     }

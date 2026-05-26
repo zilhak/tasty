@@ -5153,6 +5153,7 @@ dependencies = [
  "tasty-shm",
  "tasty-telemetry",
  "tasty-terminal",
+ "tasty-themes",
  "tasty-update",
  "tempfile",
  "termwiz",
@@ -5426,6 +5427,18 @@ dependencies = [
  "tracing",
  "unicode-width 0.2.2",
  "windows 0.61.3",
+]
+
+[[package]]
+name = "tasty-themes"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "tasty-core",
+ "tempfile",
+ "thiserror 2.0.18",
+ "toml 0.8.2",
+ "tracing",
 ]
 
 [[package]]

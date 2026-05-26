@@ -110,21 +110,42 @@ impl HexColor {
         egui::Color32::from_rgba_premultiplied(self.r, self.g, self.b, self.a)
     }
 
-    /// `#RRGGBB` (alpha is dropped — for settings persistence).
+    /// Serialize to `#RRGGBB` (alpha=255) or `#RRGGBBAA` (otherwise).
     pub fn to_hex(self) -> String {
-        format!("#{:02x}{:02x}{:02x}", self.r, self.g, self.b)
+        if self.a == 255 {
+            format!("#{:02x}{:02x}{:02x}", self.r, self.g, self.b)
+        } else {
+            format!("#{:02x}{:02x}{:02x}{:02x}", self.r, self.g, self.b, self.a)
+        }
     }
 
-    /// Parse `#RRGGBB` or `RRGGBB`. Returns opaque (alpha=255) on success.
+    /// Parse `#RGB`, `#RRGGBB`, or `#RRGGBBAA` (leading `#` optional).
+    /// 3-digit shorthand expands each nibble (e.g. `#abc` → `#aabbcc`).
+    /// 6-digit form is opaque (alpha=255); 8-digit preserves alpha.
     pub fn from_hex(hex: &str) -> Option<Self> {
         let hex = hex.strip_prefix('#').unwrap_or(hex);
-        if hex.len() != 6 {
-            return None;
+        match hex.len() {
+            3 => {
+                let r = u8::from_str_radix(&hex[0..1], 16).ok()?;
+                let g = u8::from_str_radix(&hex[1..2], 16).ok()?;
+                let b = u8::from_str_radix(&hex[2..3], 16).ok()?;
+                Some(Self::from_rgb(r * 17, g * 17, b * 17))
+            }
+            6 => {
+                let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
+                let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
+                let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
+                Some(Self::from_rgb(r, g, b))
+            }
+            8 => {
+                let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
+                let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
+                let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
+                let a = u8::from_str_radix(&hex[6..8], 16).ok()?;
+                Some(Self::from_rgba(r, g, b, a))
+            }
+            _ => None,
         }
-        let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
-        let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
-        let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
-        Some(Self::from_rgb(r, g, b))
     }
 }
 
@@ -207,6 +228,43 @@ mod tests {
         assert_eq!(c.to_hex(), "#123456");
         assert_eq!(HexColor::from_hex("#123456"), Some(c));
         assert_eq!(HexColor::from_hex("123456"), Some(c));
+    }
+
+    #[test]
+    fn from_hex_shorthand_3_digit() {
+        // #abc → #aabbcc
+        assert_eq!(
+            HexColor::from_hex("#abc"),
+            Some(HexColor::from_rgb(0xaa, 0xbb, 0xcc))
+        );
+        assert_eq!(
+            HexColor::from_hex("f09"),
+            Some(HexColor::from_rgb(0xff, 0x00, 0x99))
+        );
+    }
+
+    #[test]
+    fn from_hex_8_digit_preserves_alpha() {
+        let c = HexColor::from_hex("#1234567f").unwrap();
+        assert_eq!(c, HexColor::from_rgba(0x12, 0x34, 0x56, 0x7f));
+        // round-trip
+        assert_eq!(c.to_hex(), "#1234567f");
+    }
+
+    #[test]
+    fn to_hex_drops_alpha_when_opaque() {
+        let c = HexColor::from_rgba(0x12, 0x34, 0x56, 0xff);
+        assert_eq!(c.to_hex(), "#123456");
+    }
+
+    #[test]
+    fn from_hex_rejects_bad_lengths() {
+        assert_eq!(HexColor::from_hex(""), None);
+        assert_eq!(HexColor::from_hex("#12"), None);
+        assert_eq!(HexColor::from_hex("#12345"), None);
+        assert_eq!(HexColor::from_hex("#1234567"), None);
+        assert_eq!(HexColor::from_hex("#123456789"), None);
+        assert_eq!(HexColor::from_hex("#zzz"), None);
     }
 
     #[cfg(feature = "egui-compat")]

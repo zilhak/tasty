@@ -71,6 +71,9 @@ impl App {
             if let Err(e) = new_settings.save() {
                 tracing::warn!("failed to save settings: {e}");
             }
+            // 새 settings 의 두 레이어로 전역 Theme 인스턴스 재구성.
+            // (테마 선택, 픽커 편집 등 어떤 변경이든 한 곳에서 반영.)
+            tasty_themes::install_global(&new_settings.appearance);
             self.apply_plugin_shortcut_draft(plugin_draft);
             // Event Bus 1.0: theme/language 변경 발화.
             if let Some(mgr) = self.plugin_manager.as_mut() {

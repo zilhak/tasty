@@ -224,12 +224,9 @@ pub fn draw_settings_panel(
                     if let Some(bashrc) = &ui_state.bashrc_user_draft {
                         crate::settings::general::save_user_bashrc(bashrc);
                     }
-                    // Apply the selected theme preset at runtime
-                    let presets = crate::theme::presets();
-                    if let Some(preset) = presets.iter().find(|p| p.id == settings.appearance.theme)
-                    {
-                        crate::theme::set_theme(preset.theme);
-                    }
+                    // 선택된 테마 즉시 적용 — 설정 화면에서 콤보 선택은 이미 apply_theme 으로
+                    // base/overrides 를 갱신했고, 여기서는 전역 Theme 인스턴스만 install.
+                    tasty_themes::install_global(&settings.appearance);
                     // FileHandler 탭의 Extension Mapping + Detectors/Handlers 편집 draft 를
                     // registry 에 commit + 디스크 저장.
                     let mut fh_touched = false;
