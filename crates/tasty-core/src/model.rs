@@ -1,6 +1,7 @@
-pub mod length;
-
-pub use length::{LogicalPx, PhysicalPx};
+// LogicalPx / PhysicalPx 는 별 leaf crate `tasty-type-geometry` 에서 정의되며
+// 여기서 재수출된다. 호출자는 `tasty_core::model::LogicalPx` 또는
+// `tasty_type_geometry::length::LogicalPx` 어느 쪽으로도 import 가능.
+pub use tasty_type_geometry::length::{self, LogicalPx, PhysicalPx};
 
 pub type WorkspaceId = u32;
 pub type PaneId = u32;

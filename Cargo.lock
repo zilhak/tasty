@@ -5202,6 +5202,7 @@ dependencies = [
  "serde_json",
  "tasty-terminal",
  "tasty-type-appearance",
+ "tasty-type-geometry",
  "termwiz",
  "toml 0.8.2",
  "tracing",
@@ -5455,6 +5456,13 @@ version = "0.1.0"
 dependencies = [
  "bytemuck",
  "egui",
+ "serde",
+]
+
+[[package]]
+name = "tasty-type-geometry"
+version = "0.1.0"
+dependencies = [
  "serde",
 ]
 

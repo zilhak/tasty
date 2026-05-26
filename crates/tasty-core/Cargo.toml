@@ -16,6 +16,7 @@ egui-compat = ["tasty-type-appearance/egui-compat"]
 # Workspace crates
 tasty-terminal = { path = "../tasty-terminal" }
 tasty-type-appearance = { path = "../tasty-type-appearance", default-features = false }
+tasty-type-geometry = { path = "../tasty-type-geometry" }
 
 # Cell attributes for closed-item history
 termwiz = "0.22"

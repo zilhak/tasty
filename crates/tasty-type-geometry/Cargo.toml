@@ -1,0 +1,12 @@
+[package]
+name = "tasty-type-geometry"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Geometry primitives for Tasty — LogicalPx/PhysicalPx (and future Rect/Size). Leaf crate — must not depend on any other tasty-* crate."
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+
+[lints]
+workspace = true
