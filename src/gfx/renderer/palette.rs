@@ -4,7 +4,7 @@
 //! 매 프레임 시작 시 한 번 `theme().ansi_palette()` + `theme().terminal_fg.to_gpu_rgba()`
 //! 로 추출해 reference 로 넘겨주면, 셀별 lookup 비용은 ANSI 16 인덱싱뿐이다.
 
-use tasty_core::color::{GpuRgb, GpuRgba};
+use tasty_type_appearance::color::{GpuRgb, GpuRgba};
 use termwiz::cell::CellAttributes;
 use termwiz::color::ColorAttribute;
 

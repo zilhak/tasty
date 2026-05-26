@@ -10,8 +10,8 @@
 //! 일부 위젯이 어울리지 않는 톤으로 남는 문제를 막는다.
 
 use egui::emath::GuiRounding as _;
-use tasty_core::color::HexColor;
 use tasty_core::theme::Theme;
+use tasty_type_appearance::color::HexColor;
 
 /// `TextEdit::hint_text`에 넘길 placeholder 텍스트를 디자인 시스템의
 /// `Theme::placeholder` 색상으로 래핑한다. egui의 기본 `weak_text_color`는

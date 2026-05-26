@@ -236,7 +236,7 @@ pub(super) fn handle_debug_glyph_color(
 }
 
 #[cfg(debug_assertions)]
-pub(super) fn rgba_to_json(rgba: tasty_core::color::GpuRgba) -> serde_json::Value {
+pub(super) fn rgba_to_json(rgba: tasty_type_appearance::color::GpuRgba) -> serde_json::Value {
     let rgba = rgba.as_array();
     json!({
         "r": rgba[0],

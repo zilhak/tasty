@@ -1,6 +1,6 @@
-// LogicalPx / PhysicalPx 는 별 leaf crate `tasty-type-geometry` 에서 정의되며
-// 여기서 재수출된다. 호출자는 `tasty_core::model::LogicalPx` 또는
-// `tasty_type_geometry::length::LogicalPx` 어느 쪽으로도 import 가능.
+// LogicalPx / PhysicalPx 는 별 leaf crate `tasty-type-geometry` 에 정의되어 있다.
+// 본 바이너리의 group import 호환성을 위해 재수출 유지.
+// 새 코드는 `tasty_type_geometry::length::*` 직접 import 권장.
 pub use tasty_type_geometry::length::{self, LogicalPx, PhysicalPx};
 
 pub type WorkspaceId = u32;

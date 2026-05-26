@@ -12,9 +12,9 @@
 
 use std::path::PathBuf;
 
-use crate::model::PhysicalPx;
 use crate::state::DropHoverState;
 use crate::ui::ToastScope;
+use tasty_type_geometry::length::PhysicalPx;
 
 use super::MainWindow;
 

@@ -235,7 +235,7 @@ mod tests {
         let settings = Settings::default();
         assert!(!settings.general.shell.is_empty());
         assert!(settings.appearance.default_font.font_size > 0.0);
-        assert!(settings.appearance.sidebar_width > tasty_core::model::LogicalPx(0.0));
+        assert!(settings.appearance.sidebar_width > tasty_type_geometry::length::LogicalPx(0.0));
     }
 
     #[test]

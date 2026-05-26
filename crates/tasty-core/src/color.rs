@@ -6,16 +6,16 @@
 //! Color types shared between theme and settings.
 //!
 //! `HexColor` 와 GPU 색 newtype (`GpuRgba`, `GpuRgb`) 은 별 leaf crate
-//! (`tasty-type-appearance`) 에서 정의되며 여기서 재수출된다. 호출자는
-//! `tasty_core::color::HexColor` 또는 `tasty_type_appearance::color::HexColor`
-//! 어느 쪽으로도 import 가능.
+//! (`tasty-type-appearance`) 에 정의되어 있다 — 직접 import:
+//! `use tasty_type_appearance::color::HexColor`.
 //!
 //! `SurfaceColors` 는 surface 종류별 focused/unfocused 배경·전경 색상 묶음 —
 //! 도메인 의미가 있어 tasty-core 에 남는다.
 
 use serde::{Deserialize, Serialize};
 
-// Appearance primitive 재수출. 호출자가 tasty_core::color 한 경로로 모든 색 타입에 접근.
+// Appearance primitive 재수출 — 본 바이너리의 광범위한 group import 호환성 유지.
+// 새 코드는 `tasty_type_appearance::color::*` 직접 import 권장 (외부 crate 들은 이미 그러함).
 pub use tasty_type_appearance::color::{GpuRgb, GpuRgba, HexColor};
 
 /// Per-surface-type color settings for focused / unfocused states.

@@ -45,17 +45,17 @@ impl App {
     pub(crate) fn create_app_state(
         &mut self,
         gpu: &GpuState,
-        sidebar_width: crate::model::LogicalPx,
+        sidebar_width: tasty_type_geometry::length::LogicalPx,
     ) -> crate::state::AppState {
         let sf = gpu.scale_factor();
         let size = gpu.size();
         let sidebar_w = sidebar_width.to_physical(sf);
         let terminal_rect = crate::model::PhysicalRect {
             x: sidebar_w,
-            y: crate::model::PhysicalPx(0.0),
-            width: (crate::model::PhysicalPx(size.width as f32) - sidebar_w)
-                .max(crate::model::PhysicalPx(1.0)),
-            height: crate::model::PhysicalPx(size.height as f32),
+            y: tasty_type_geometry::length::PhysicalPx(0.0),
+            width: (tasty_type_geometry::length::PhysicalPx(size.width as f32) - sidebar_w)
+                .max(tasty_type_geometry::length::PhysicalPx(1.0)),
+            height: tasty_type_geometry::length::PhysicalPx(size.height as f32),
         };
         let (cols, rows) = gpu.grid_size_for_rect(&terminal_rect);
 

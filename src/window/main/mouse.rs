@@ -1,11 +1,11 @@
 use winit::event::{ElementState, MouseButton, MouseScrollDelta};
 
 use super::{DividerDrag, DividerDragKind, HoveredLink, MainWindow};
-use crate::model::PhysicalPx;
 use crate::settings::LinkModifier;
 use crate::terminal_link::{self, LinkHighlight};
 use crate::theme;
 use crate::window::Window;
+use tasty_type_geometry::length::PhysicalPx;
 
 impl MainWindow {
     /// 현재 마우스 좌표와 수식키 상태로 hovered_link를 갱신한다.

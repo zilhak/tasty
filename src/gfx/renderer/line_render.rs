@@ -1,4 +1,4 @@
-use tasty_core::color::{GpuRgb, GpuRgba};
+use tasty_type_appearance::color::{GpuRgb, GpuRgba};
 use termwiz::cell::CellAttributes;
 
 use crate::font::GlyphKey;

@@ -63,7 +63,7 @@ pub fn draw_ui(
     }
 
     // Compute remaining terminal area in physical pixels
-    use crate::model::length::PhysicalPx;
+    use tasty_type_geometry::length::PhysicalPx;
     let screen_rect = ctx.screen_rect();
     let terminal_x = PhysicalPx(sidebar_width * scale_factor);
     let terminal_y = PhysicalPx(0.0);

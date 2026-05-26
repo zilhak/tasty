@@ -51,7 +51,8 @@ pub fn draw_egui_panels(
                 x: pane_rect.x,
                 y: pane_rect.y + tab_bar_h,
                 width: pane_rect.width,
-                height: (pane_rect.height - tab_bar_h).max(crate::model::length::PhysicalPx(1.0)),
+                height: (pane_rect.height - tab_bar_h)
+                    .max(tasty_type_geometry::length::PhysicalPx(1.0)),
             };
             // egui로 그려지는 surface = terminal 외 모든 종류.
             for r in tab

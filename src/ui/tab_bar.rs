@@ -364,7 +364,7 @@ pub fn draw_pane_tab_bars(
     }
 
     if let Some(h) = measured_tab_bar_height {
-        state.tab_bar_height = crate::model::length::PhysicalPx(h);
+        state.tab_bar_height = tasty_type_geometry::length::PhysicalPx(h);
     }
 
     // Apply actions

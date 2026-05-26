@@ -4,7 +4,7 @@ mod pipeline;
 mod shaders;
 mod types;
 
-use tasty_core::color::{GpuRgb, GpuRgba};
+use tasty_type_appearance::color::{GpuRgb, GpuRgba};
 use termwiz::surface::Surface;
 
 use crate::font::{FontConfig, GlyphAtlas, GlyphKey};

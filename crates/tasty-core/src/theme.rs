@@ -20,9 +20,9 @@
 //! `theme().spacing_sm` / `theme().is_light` 처럼 한 단계로 접근한다.
 //! 색상 직렬화·partial 표현은 `ThemeColors` / `PartialColors` 에서 분리.
 
-use crate::color::{GpuRgb, HexColor};
-use crate::model::LogicalPx;
 use serde::{Deserialize, Serialize};
+use tasty_type_appearance::color::{GpuRgb, HexColor};
+use tasty_type_geometry::length::LogicalPx;
 
 // ============================================================================
 //  ThemeSizing — 모든 테마 공통

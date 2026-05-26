@@ -1,5 +1,5 @@
 use bytemuck::{Pod, Zeroable};
-use tasty_core::color::GpuRgba;
+use tasty_type_appearance::color::GpuRgba;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]

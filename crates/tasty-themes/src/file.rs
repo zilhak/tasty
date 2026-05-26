@@ -4,8 +4,8 @@
 //! 사용자가 일부 색상만 정의한 partial 테마도 자연스럽게 적용된다.
 
 use serde::Deserialize;
-use tasty_core::color::HexColor;
 use tasty_core::theme::PartialColors;
+use tasty_type_appearance::color::HexColor;
 use thiserror::Error;
 
 /// TOML 파일 표현. 모든 sub-table 과 필드 optional.

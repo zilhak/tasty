@@ -5154,6 +5154,8 @@ dependencies = [
  "tasty-telemetry",
  "tasty-terminal",
  "tasty-themes",
+ "tasty-type-appearance",
+ "tasty-type-geometry",
  "tasty-update",
  "tempfile",
  "termwiz",
@@ -5392,6 +5394,8 @@ dependencies = [
  "libc",
  "serde",
  "tasty-core",
+ "tasty-type-appearance",
+ "tasty-type-geometry",
  "toml 0.8.2",
  "tracing",
 ]
@@ -5436,6 +5440,7 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "tasty-core",
+ "tasty-type-appearance",
  "tempfile",
  "thiserror 2.0.18",
  "toml 0.8.2",

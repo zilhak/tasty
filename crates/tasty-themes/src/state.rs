@@ -81,8 +81,8 @@ fn apply_inner<C: ThemeApplyContext>(ctx: &mut C, id: &str, allow_recursion: boo
 #[allow(clippy::disallowed_methods)]
 mod tests {
     use super::*;
-    use tasty_core::color::HexColor;
     use tasty_core::theme::{PartialColors, ThemeColors};
+    use tasty_type_appearance::color::HexColor;
 
     /// 테스트용 ctx — `AppearanceSettings` 의 핵심 필드만 흉내낸다.
     struct TestCtx {
