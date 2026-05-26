@@ -1,31 +1,17 @@
+//! Terminal cell color resolution.
+//!
+//! ANSI 16색 팔레트와 default fg 는 현재 적용된 `Theme` 에서 받아온다. 호출자가
+//! 매 프레임 시작 시 한 번 `theme().ansi_palette()` + `theme().terminal_fg.to_float()`
+//! 로 추출해 reference 로 넘겨주면, 셀별 lookup 비용은 ANSI 16 인덱싱뿐이다.
+
 use termwiz::cell::CellAttributes;
 use termwiz::color::ColorAttribute;
 
-pub(crate) const DEFAULT_FG: [f32; 4] = [0.804, 0.839, 0.957, 1.0]; // Text #cdd6f4
-
-/// Catppuccin Mocha 16-color ANSI palette.
-pub(crate) const ANSI_COLORS: [[f32; 3]; 16] = [
-    [0.176, 0.176, 0.271], // 0: black      (Surface1 #45475a)
-    [0.953, 0.545, 0.659], // 1: red         (#f38ba8)
-    [0.651, 0.890, 0.631], // 2: green       (#a6e3a1)
-    [0.976, 0.886, 0.686], // 3: yellow      (#f9e2af)
-    [0.537, 0.706, 0.980], // 4: blue        (#89b4fa)
-    [0.796, 0.651, 0.969], // 5: magenta     (#cba6f7)
-    [0.580, 0.886, 0.835], // 6: cyan        (#94e2d5)
-    [0.729, 0.761, 0.882], // 7: white       (Subtext1 #bac2de)
-    [0.424, 0.439, 0.537], // 8: bright black(Overlay0 #6c7086)
-    [0.953, 0.545, 0.659], // 9: bright red  (#f38ba8)
-    [0.651, 0.890, 0.631], // 10: bright green(#a6e3a1)
-    [0.976, 0.886, 0.686], // 11: bright yellow(#f9e2af)
-    [0.537, 0.706, 0.980], // 12: bright blue(#89b4fa)
-    [0.796, 0.651, 0.969], // 13: bright magenta(#cba6f7)
-    [0.537, 0.784, 0.922], // 14: bright cyan(Sky #89dceb)
-    [0.804, 0.839, 0.957], // 15: bright white(Text #cdd6f4)
-];
-
-pub(crate) fn palette_index_to_rgb(idx: u8) -> [f32; 3] {
+/// 216-color cube + 24 grayscale 영역은 ANSI 16 와 무관 (xterm 표준). 그래서
+/// `ansi` 인자는 16색 슬라이스만 받는다.
+pub(crate) fn palette_index_to_rgb(idx: u8, ansi: &[[f32; 3]; 16]) -> [f32; 3] {
     if idx < 16 {
-        ANSI_COLORS[idx as usize]
+        ansi[idx as usize]
     } else if idx < 232 {
         // 216-color cube: 6x6x6
         let idx = idx - 16;
@@ -51,16 +37,21 @@ pub(crate) fn palette_index_to_rgb(idx: u8) -> [f32; 3] {
 /// **based purely on its `CellAttributes`**.
 ///
 /// Includes:
-/// - foreground/background lookup against `default_bg` and `DEFAULT_FG`
+/// - foreground/background lookup against `default_bg` and `default_fg`
 /// - SGR 7 (reverse) swap
 /// - SGR 2 (`Intensity::Half`) — fg is lerped 50:50 toward bg so the glyph
 ///   fades into the surrounding background. Applied after the reverse swap.
 ///
 /// Does NOT include:
 /// - per-cell context overrides (selection bg, link highlight, cursor swap, IME preedit)
-pub fn compute_cell_colors(attrs: &CellAttributes, default_bg: [f32; 4]) -> ([f32; 4], [f32; 4]) {
-    let mut bg = color_attr_to_rgba(&attrs.background(), default_bg);
-    let mut fg = color_attr_to_rgba(&attrs.foreground(), DEFAULT_FG);
+pub fn compute_cell_colors(
+    attrs: &CellAttributes,
+    default_bg: [f32; 4],
+    default_fg: [f32; 4],
+    ansi: &[[f32; 3]; 16],
+) -> ([f32; 4], [f32; 4]) {
+    let mut bg = color_attr_to_rgba(&attrs.background(), default_bg, ansi);
+    let mut fg = color_attr_to_rgba(&attrs.foreground(), default_fg, ansi);
     if attrs.reverse() {
         std::mem::swap(&mut bg, &mut fg);
     }
@@ -72,11 +63,15 @@ pub fn compute_cell_colors(attrs: &CellAttributes, default_bg: [f32; 4]) -> ([f3
     (bg, fg)
 }
 
-pub(crate) fn color_attr_to_rgba(attr: &ColorAttribute, default: [f32; 4]) -> [f32; 4] {
+pub(crate) fn color_attr_to_rgba(
+    attr: &ColorAttribute,
+    default: [f32; 4],
+    ansi: &[[f32; 3]; 16],
+) -> [f32; 4] {
     match attr {
         ColorAttribute::Default => default,
         ColorAttribute::PaletteIndex(idx) => {
-            let [r, g, b] = palette_index_to_rgb(*idx);
+            let [r, g, b] = palette_index_to_rgb(*idx, ansi);
             [r, g, b, 1.0]
         }
         ColorAttribute::TrueColorWithPaletteFallback(srgba, _) => {
@@ -92,13 +87,17 @@ mod tests {
     use termwiz::cell::Intensity;
     use termwiz::color::{ColorAttribute, SrgbaTuple};
 
+    /// 테스트용 더미 ANSI 16색 팔레트.
+    const TEST_ANSI: [[f32; 3]; 16] = [[0.0; 3]; 16];
+    const TEST_DEFAULT_FG: [f32; 4] = [0.8, 0.8, 0.95, 1.0];
+
     #[test]
     fn normal_intensity_keeps_default_fg() {
         let attrs = CellAttributes::default();
         let bg = [0.0, 0.0, 0.0, 1.0];
-        let (out_bg, out_fg) = compute_cell_colors(&attrs, bg);
+        let (out_bg, out_fg) = compute_cell_colors(&attrs, bg, TEST_DEFAULT_FG, &TEST_ANSI);
         assert_eq!(out_bg, bg);
-        assert_eq!(out_fg, DEFAULT_FG);
+        assert_eq!(out_fg, TEST_DEFAULT_FG);
     }
 
     #[test]
@@ -106,14 +105,14 @@ mod tests {
         let mut attrs = CellAttributes::default();
         attrs.set_intensity(Intensity::Half);
         let bg = [0.0, 0.0, 0.0, 1.0];
-        let (out_bg, out_fg) = compute_cell_colors(&attrs, bg);
+        let (out_bg, out_fg) = compute_cell_colors(&attrs, bg, TEST_DEFAULT_FG, &TEST_ANSI);
         assert_eq!(out_bg, bg);
-        // DEFAULT_FG = [0.804, 0.839, 0.957, 1.0], lerped 50:50 toward [0,0,0]
-        assert!((out_fg[0] - DEFAULT_FG[0] * 0.5).abs() < 1e-6);
-        assert!((out_fg[1] - DEFAULT_FG[1] * 0.5).abs() < 1e-6);
-        assert!((out_fg[2] - DEFAULT_FG[2] * 0.5).abs() < 1e-6);
+        // TEST_DEFAULT_FG lerped 50:50 toward [0,0,0]
+        assert!((out_fg[0] - TEST_DEFAULT_FG[0] * 0.5).abs() < 1e-6);
+        assert!((out_fg[1] - TEST_DEFAULT_FG[1] * 0.5).abs() < 1e-6);
+        assert!((out_fg[2] - TEST_DEFAULT_FG[2] * 0.5).abs() < 1e-6);
         assert_eq!(out_fg[3], 1.0);
-        assert_ne!(out_fg, DEFAULT_FG);
+        assert_ne!(out_fg, TEST_DEFAULT_FG);
     }
 
     #[test]
@@ -128,11 +127,27 @@ mod tests {
             0.0, 0.0, 0.0, 1.0,
         )));
         let default_bg = [0.5, 0.5, 0.5, 1.0];
-        let (bg, fg) = compute_cell_colors(&attrs, default_bg);
+        let (bg, fg) = compute_cell_colors(&attrs, default_bg, TEST_DEFAULT_FG, &TEST_ANSI);
         // After reverse: bg=[1,1,1], fg=[0,0,0]. After dim (lerp toward bg): fg=[0.5,0.5,0.5].
         assert_eq!(bg, [1.0, 1.0, 1.0, 1.0]);
         assert!((fg[0] - 0.5).abs() < 1e-6);
         assert!((fg[1] - 0.5).abs() < 1e-6);
         assert!((fg[2] - 0.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn palette_index_picks_from_ansi_for_index_below_16() {
+        let mut ansi = [[0.0; 3]; 16];
+        ansi[1] = [0.9, 0.2, 0.2]; // ANSI red
+        let rgb = palette_index_to_rgb(1, &ansi);
+        assert_eq!(rgb, [0.9, 0.2, 0.2]);
+    }
+
+    #[test]
+    fn palette_index_color_cube_independent_of_ansi() {
+        let ansi = [[1.0; 3]; 16]; // ANSI 다 흰색
+        // 16 (color cube start) 은 ANSI 영향 받지 않아야.
+        let rgb = palette_index_to_rgb(16, &ansi);
+        assert_eq!(rgb, [0.0, 0.0, 0.0]);
     }
 }

@@ -647,6 +647,32 @@ impl Theme {
         self.active_overlay = a;
         self.separator = s;
     }
+
+    /// GPU 렌더러용 ANSI 16색 팔레트 (`[r, g, b]` floats in `0..=1`).
+    /// 인덱스 순서: black, red, green, yellow, blue, magenta, cyan, white,
+    /// bright_black, bright_red, bright_green, bright_yellow, bright_blue,
+    /// bright_magenta, bright_cyan, bright_white.
+    pub fn ansi_palette(&self) -> [[f32; 3]; 16] {
+        let rgb = |c: HexColor| [c.r as f32 / 255.0, c.g as f32 / 255.0, c.b as f32 / 255.0];
+        [
+            rgb(self.ansi_black),
+            rgb(self.ansi_red),
+            rgb(self.ansi_green),
+            rgb(self.ansi_yellow),
+            rgb(self.ansi_blue),
+            rgb(self.ansi_magenta),
+            rgb(self.ansi_cyan),
+            rgb(self.ansi_white),
+            rgb(self.ansi_bright_black),
+            rgb(self.ansi_bright_red),
+            rgb(self.ansi_bright_green),
+            rgb(self.ansi_bright_yellow),
+            rgb(self.ansi_bright_blue),
+            rgb(self.ansi_bright_magenta),
+            rgb(self.ansi_bright_cyan),
+            rgb(self.ansi_bright_white),
+        ]
+    }
 }
 
 // ============================================================================

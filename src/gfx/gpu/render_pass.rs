@@ -74,6 +74,11 @@ impl GpuState {
                 } else {
                     settings.terminal_colors.unfocused_bg.to_float()
                 };
+                let fg = if is_focused {
+                    settings.terminal_colors.focused_fg.to_float()
+                } else {
+                    settings.terminal_colors.unfocused_fg.to_float()
+                };
 
                 // Build selection info for this surface
                 let sel_info = selection
@@ -114,6 +119,7 @@ impl GpuState {
                     self.size.width,
                     self.size.height,
                     bg,
+                    fg,
                     is_focused,
                     sel_ref,
                     render_preedit_ref,

@@ -10,6 +10,7 @@ use super::{CellRenderer, unicode_width};
 
 impl CellRenderer {
     /// Render a single cell into instance buffers (shared logic for both line types).
+    #[allow(clippy::too_many_arguments)]
     fn render_cell(
         &mut self,
         col_idx: usize,
@@ -19,13 +20,15 @@ impl CellRenderer {
         width: usize,
         cols: usize,
         default_bg: [f32; 4],
+        default_fg: [f32; 4],
+        ansi: &[[f32; 3]; 16],
         queue: &wgpu::Queue,
         selection: Option<&(NormalizedSelection, [f32; 4])>,
         absolute_row: usize,
         link: Option<&LinkHighlight>,
         search: Option<&super::SearchHighlights<'_>>,
     ) {
-        let (mut bg_color, mut fg_color) = compute_cell_colors(attrs, default_bg);
+        let (mut bg_color, mut fg_color) = compute_cell_colors(attrs, default_bg, default_fg, ansi);
 
         // Selection: override bg color
         if let Some((sel, sel_bg)) = selection {
@@ -90,12 +93,15 @@ impl CellRenderer {
 
     /// Render a single scrollback line (stored as Vec<(String, CellAttributes)>).
     /// Fills remaining columns with default_bg.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn render_scrollback_line(
         &mut self,
         line: &[(String, CellAttributes)],
         row_idx: usize,
         cols: usize,
         default_bg: [f32; 4],
+        default_fg: [f32; 4],
+        ansi: &[[f32; 3]; 16],
         queue: &wgpu::Queue,
         selection: Option<&(NormalizedSelection, [f32; 4])>,
         absolute_row: usize,
@@ -117,6 +123,8 @@ impl CellRenderer {
                 width,
                 cols,
                 default_bg,
+                default_fg,
+                ansi,
                 queue,
                 selection,
                 absolute_row,
@@ -136,12 +144,15 @@ impl CellRenderer {
 
     /// Render a single surface line (from termwiz screen_lines).
     /// Fills remaining columns with default_bg.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn render_surface_line(
         &mut self,
         line: &termwiz::surface::line::Line,
         row_idx: usize,
         cols: usize,
         default_bg: [f32; 4],
+        default_fg: [f32; 4],
+        ansi: &[[f32; 3]; 16],
         queue: &wgpu::Queue,
         selection: Option<&(NormalizedSelection, [f32; 4])>,
         absolute_row: usize,
@@ -169,6 +180,8 @@ impl CellRenderer {
                 width,
                 cols,
                 default_bg,
+                default_fg,
+                ansi,
                 queue,
                 selection,
                 absolute_row,

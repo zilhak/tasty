@@ -46,7 +46,7 @@ pub fn unicode_width(ch: char) -> usize {
 
 #[cfg(debug_assertions)]
 pub use palette::compute_cell_colors as resolve_cell_colors;
-use palette::{DEFAULT_FG, compute_cell_colors};
+use palette::compute_cell_colors;
 use types::{BgInstance, GlyphInstance, Uniforms};
 
 pub struct RenderPreedit {
@@ -112,11 +112,14 @@ impl CellRenderer {
     }
 
     /// Build instance data from the terminal surface with a custom default background.
+    #[allow(clippy::too_many_arguments)]
     pub fn prepare_with_bg(
         &mut self,
         surface: &Surface,
         queue: &wgpu::Queue,
         default_bg: [f32; 4],
+        default_fg: [f32; 4],
+        ansi: &[[f32; 3]; 16],
         cursor: Option<(usize, usize, bool)>,
         selection: Option<&(NormalizedSelection, [f32; 4])>,
         row_offset: usize,
@@ -148,7 +151,8 @@ impl CellRenderer {
                     }
                     _ => false,
                 };
-                let (mut bg_color, mut fg_color) = compute_cell_colors(attrs, default_bg);
+                let (mut bg_color, mut fg_color) =
+                    compute_cell_colors(attrs, default_bg, default_fg, ansi);
                 if is_cursor {
                     std::mem::swap(&mut bg_color, &mut fg_color);
                 }
@@ -239,7 +243,7 @@ impl CellRenderer {
                 };
                 let bg = if is_cursor {
                     // Cursor on empty cell: swap fg/bg (block cursor)
-                    DEFAULT_FG
+                    default_fg
                 } else {
                     default_bg
                 };
@@ -298,6 +302,7 @@ impl CellRenderer {
     }
 
     /// Prepare instance data for a terminal with scrollback support.
+    #[allow(clippy::too_many_arguments)]
     pub fn prepare_terminal_viewport(
         &mut self,
         terminal: &tasty_terminal::Terminal,
@@ -306,12 +311,16 @@ impl CellRenderer {
         screen_width: u32,
         screen_height: u32,
         default_bg: [f32; 4],
+        default_fg: [f32; 4],
         show_cursor: bool,
         selection: Option<&(NormalizedSelection, [f32; 4])>,
         preedit: Option<&RenderPreedit>,
         link: Option<&LinkHighlight>,
         search: Option<&SearchHighlights<'_>>,
     ) {
+        // ANSI 16 팔레트는 매 프레임 1회 추출 — 셀별 lock 비용 회피.
+        let ansi = crate::theme::theme().ansi_palette();
+        let ansi = &ansi;
         let uniforms = Uniforms {
             cell_size: [
                 self.font_config.metrics.cell_width,
@@ -351,6 +360,8 @@ impl CellRenderer {
                 terminal.surface(),
                 queue,
                 default_bg,
+                default_fg,
+                ansi,
                 cursor,
                 selection,
                 row_offset,
@@ -391,6 +402,8 @@ impl CellRenderer {
                         row_idx,
                         cols,
                         default_bg,
+                        default_fg,
+                        ansi,
                         queue,
                         selection,
                         source_line,
@@ -406,6 +419,8 @@ impl CellRenderer {
                         row_idx,
                         cols,
                         default_bg,
+                        default_fg,
+                        ansi,
                         queue,
                         selection,
                         source_line,

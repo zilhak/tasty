@@ -170,19 +170,35 @@ pub(super) fn handle_debug_glyph_color(
         .get("bg_mode")
         .and_then(|v| v.as_str())
         .unwrap_or("focused");
-    let default_bg = match bg_mode {
-        "focused" => engine
-            .settings
-            .appearance
-            .terminal_colors
-            .focused_bg
-            .to_float(),
-        "unfocused" => engine
-            .settings
-            .appearance
-            .terminal_colors
-            .unfocused_bg
-            .to_float(),
+    let (default_bg, default_fg) = match bg_mode {
+        "focused" => (
+            engine
+                .settings
+                .appearance
+                .terminal_colors
+                .focused_bg
+                .to_float(),
+            engine
+                .settings
+                .appearance
+                .terminal_colors
+                .focused_fg
+                .to_float(),
+        ),
+        "unfocused" => (
+            engine
+                .settings
+                .appearance
+                .terminal_colors
+                .unfocused_bg
+                .to_float(),
+            engine
+                .settings
+                .appearance
+                .terminal_colors
+                .unfocused_fg
+                .to_float(),
+        ),
         other => {
             return JsonRpcResponse::invalid_params(
                 id,
@@ -190,6 +206,7 @@ pub(super) fn handle_debug_glyph_color(
             );
         }
     };
+    let ansi = crate::theme::theme().ansi_palette();
     let Some(terminal) = engine.find_terminal_by_id(surface_id) else {
         return JsonRpcResponse::invalid_params(id, format!("Surface {} not found", surface_id));
     };
@@ -203,7 +220,7 @@ pub(super) fn handle_debug_glyph_color(
             }),
         );
     };
-    let (bg, fg) = crate::renderer::resolve_cell_colors(&attrs, default_bg);
+    let (bg, fg) = crate::renderer::resolve_cell_colors(&attrs, default_bg, default_fg, &ansi);
     JsonRpcResponse::success(
         id,
         json!({
