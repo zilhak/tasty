@@ -1,7 +1,7 @@
 # 색 생성 정책
 
 Tasty 의 색 데이터는 **단 두 출처**에서만 만들어진다. 그 외 경로는 컴파일 단계
-(`tasty-type-color` newtype) + clippy lint (`clippy.toml::disallowed-methods`)
+(`tasty-type-appearance` newtype) + clippy lint (`clippy.toml::disallowed-methods`)
 조합으로 차단된다.
 
 ## 원칙
@@ -21,10 +21,10 @@ Tasty 의 색 데이터는 **단 두 출처**에서만 만들어진다. 그 외 
 
 외부 입력은 명시적 `dangerously_force_from_array` 호출 + 사유 주석 필수.
 
-## 컴파일 시 강제 — `tasty-type-color` newtype
+## 컴파일 시 강제 — `tasty-type-appearance` newtype
 
 ```rust
-// crates/tasty-type-color/src/color.rs
+// crates/tasty-type-appearance/src/color.rs
 #[repr(transparent)]
 pub struct GpuRgba([f32; 4]);  // private field
 
@@ -70,7 +70,8 @@ let bg = GpuRgba::dangerously_force_from_array([srgba.0, srgba.1, srgba.2, srgba
 
 | 위치 | 사유 | 처리 |
 |------|------|------|
-| `tasty-core::color` | HexColor 생성/변환 헬퍼 본거지 | 모듈 상단 `#![allow]` |
+| `tasty-type-appearance::color` | HexColor / GpuRgba 본거지, egui 변환 헬퍼 | 모듈 상단 `#![allow]` |
+| `tasty-core::color` | SurfaceColors 기본값(mocha 색 직접 정의) | 모듈 상단 `#![allow]` |
 | `tasty-core::theme` | 색상 const 정의 (MOCHA_FALLBACK_COLORS) | 모듈 상단 `#![allow]` |
 | `tasty-themes::file/state` tests | 테스트 더미 색 | 테스트 모듈 `#[allow]` |
 | settings 색 picker | 사용자 입력 → HexColor | 라인별 `#[allow]` + 주석 |
@@ -95,5 +96,5 @@ let bg = GpuRgba::dangerously_force_from_array([srgba.0, srgba.1, srgba.2, srgba
 ## 관련
 
 - `docs/design/theme-system.md` — 테마 두 레이어 모델
-- `crates/tasty-type-color/` — newtype 정의
+- `crates/tasty-type-appearance/` — newtype 정의
 - `clippy.toml` — disallowed-methods 정책

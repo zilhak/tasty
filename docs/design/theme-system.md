@@ -147,7 +147,7 @@ surface_colors 픽커는 기존 그대로 — `settings.appearance.terminal_colo
 ## 색 생성 경로 강제 — newtype + clippy
 
 색을 디자인하는 경로는 컴파일 단계 + lint 양쪽으로 단일화된다. GPU 버퍼
-struct (`BgInstance.bg_color: GpuRgba` 등) 는 `tasty-type-color` 의 newtype 을
+struct (`BgInstance.bg_color: GpuRgba` 등) 는 `tasty-type-appearance` 의 newtype 을
 받으므로 `[f32; 4]` array literal 대입이 컴파일 에러. `HexColor::from_rgb` /
 `egui::Color32::from_rgb*` 직접 호출도 clippy 로 차단된다.
 

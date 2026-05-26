@@ -5198,11 +5198,10 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "directories",
- "egui",
  "serde",
  "serde_json",
  "tasty-terminal",
- "tasty-type-color",
+ "tasty-type-appearance",
  "termwiz",
  "toml 0.8.2",
  "tracing",
@@ -5451,10 +5450,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "tasty-type-color"
+name = "tasty-type-appearance"
 version = "0.1.0"
 dependencies = [
  "bytemuck",
+ "egui",
+ "serde",
 ]
 
 [[package]]

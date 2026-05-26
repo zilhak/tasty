@@ -1,0 +1,23 @@
+[package]
+name = "tasty-type-appearance"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Appearance/color primitives for Tasty — HexColor, GpuRgba/GpuRgb newtypes. Leaf crate — must not depend on any other tasty-* crate."
+
+[features]
+# Default: include thin egui Color32 conversion helpers on HexColor.
+# Disable in plugin/headless processes that don't link egui:
+#   tasty-type-appearance = { path = "...", default-features = false }
+default = ["egui-compat"]
+egui-compat = ["dep:egui"]
+
+[dependencies]
+bytemuck = { version = "1", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+
+# Optional egui Color32 conversion shim. Gated behind `egui-compat`.
+egui = { version = "0.31", optional = true }
+
+[lints]
+workspace = true

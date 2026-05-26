@@ -11,8 +11,8 @@
 # - 그림 브러시/픽셀 추출 (사용자 입력)
 
 disallowed-methods = [
-    { path = "tasty_core::color::HexColor::from_rgb", reason = "테마 색은 themes/*.toml 또는 const 에서만. 사용자 입력이면 #[allow] + 주석." },
-    { path = "tasty_core::color::HexColor::from_rgba", reason = "동상." },
+    { path = "tasty_type_appearance::color::HexColor::from_rgb", reason = "테마 색은 themes/*.toml 또는 const 에서만. 사용자 입력이면 #[allow] + 주석." },
+    { path = "tasty_type_appearance::color::HexColor::from_rgba", reason = "동상." },
     { path = "egui::Color32::from_rgb", reason = "theme().X 또는 .with_alpha(N).to_egui() 사용." },
     { path = "egui::Color32::from_rgba_unmultiplied", reason = "외부 픽셀 데이터 변환은 #[allow] + 주석." },
     { path = "egui::Color32::from_rgba_premultiplied", reason = "premultiplied 의미 색은 theme().X.to_egui_premultiplied()." },

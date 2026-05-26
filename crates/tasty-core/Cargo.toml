@@ -6,19 +6,16 @@ license = "MIT"
 description = "Shared data types, theme, i18n and path helpers for Tasty"
 
 [features]
-# Default: include thin egui Color32 conversion helpers on `HexColor` (used by the host bin).
+# Default: include thin egui Color32 conversion helpers on `HexColor` (forwarded to tasty-type-appearance).
 # Disable in plugin/headless processes that don't link egui:
 #   tasty-core = { path = "...", default-features = false }
 default = ["egui-compat"]
-egui-compat = ["dep:egui"]
+egui-compat = ["tasty-type-appearance/egui-compat"]
 
 [dependencies]
 # Workspace crates
 tasty-terminal = { path = "../tasty-terminal" }
-tasty-type-color = { path = "../tasty-type-color" }
-
-# Optional egui Color32 conversion shim (color.rs only). Gated behind `egui-compat`.
-egui = { version = "0.31", optional = true }
+tasty-type-appearance = { path = "../tasty-type-appearance", default-features = false }
 
 # Cell attributes for closed-item history
 termwiz = "0.22"
