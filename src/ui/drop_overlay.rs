@@ -40,22 +40,14 @@ pub fn draw_drop_overlay(
     let painter = ctx.layer_painter(layer);
 
     // 반투명 fill — theme.blue 의 12% alpha.
-    let fill = {
-        let mut c = theme.blue.to_egui();
-        c[3] = 31; // 0.12 * 255
-        egui::Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3])
-    };
+    let fill = theme.blue.with_alpha(31).to_egui();
     painter.rect_filled(rect, theme.corner_radius.value(), fill);
 
     // 1px 보더 — theme.blue, alpha 0.6.
-    let stroke = {
-        let mut c = theme.blue.to_egui();
-        c[3] = 153; // 0.6 * 255
-        egui::Stroke::new(
-            theme.border_width.value(),
-            egui::Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3]),
-        )
-    };
+    let stroke = egui::Stroke::new(
+        theme.border_width.value(),
+        theme.blue.with_alpha(153).to_egui(),
+    );
     painter.rect_stroke(
         rect.shrink(theme.spacing_sm.value()),
         theme.corner_radius.value(),

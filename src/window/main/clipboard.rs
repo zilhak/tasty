@@ -19,6 +19,8 @@ impl MainWindow {
         // Convert arboard::ImageData → egui::ColorImage
         let w = image.width;
         let h = image.height;
+        // 외부 입력 (클립보드에서 받은 이미지 픽셀). 정당한 dangerously 사용처.
+        #[allow(clippy::disallowed_methods)]
         let pixels: Vec<egui::Color32> = image
             .bytes
             .chunks_exact(4)

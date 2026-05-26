@@ -1,3 +1,8 @@
+// 이 모듈은 색상 const (`MOCHA_FALLBACK_COLORS`, `derive_overlays`) 정의의 본거지다.
+// 외부에서는 차단되는 `HexColor::from_rgb` / `from_rgba` 호출이 여기서는 의도된 사용 —
+// theme 자체를 정의하는 곳이므로 lint 예외.
+#![allow(clippy::disallowed_methods)]
+
 //! Live theme state — the single source of truth UI code reads from.
 //!
 //! ```text
@@ -15,7 +20,7 @@
 //! `theme().spacing_sm` / `theme().is_light` 처럼 한 단계로 접근한다.
 //! 색상 직렬화·partial 표현은 `ThemeColors` / `PartialColors` 에서 분리.
 
-use crate::color::HexColor;
+use crate::color::{GpuRgb, HexColor};
 use crate::model::LogicalPx;
 use serde::{Deserialize, Serialize};
 
@@ -648,29 +653,28 @@ impl Theme {
         self.separator = s;
     }
 
-    /// GPU 렌더러용 ANSI 16색 팔레트 (`[r, g, b]` floats in `0..=1`).
+    /// GPU 렌더러용 ANSI 16색 팔레트.
     /// 인덱스 순서: black, red, green, yellow, blue, magenta, cyan, white,
     /// bright_black, bright_red, bright_green, bright_yellow, bright_blue,
     /// bright_magenta, bright_cyan, bright_white.
-    pub fn ansi_palette(&self) -> [[f32; 3]; 16] {
-        let rgb = |c: HexColor| [c.r as f32 / 255.0, c.g as f32 / 255.0, c.b as f32 / 255.0];
+    pub fn ansi_palette(&self) -> [GpuRgb; 16] {
         [
-            rgb(self.ansi_black),
-            rgb(self.ansi_red),
-            rgb(self.ansi_green),
-            rgb(self.ansi_yellow),
-            rgb(self.ansi_blue),
-            rgb(self.ansi_magenta),
-            rgb(self.ansi_cyan),
-            rgb(self.ansi_white),
-            rgb(self.ansi_bright_black),
-            rgb(self.ansi_bright_red),
-            rgb(self.ansi_bright_green),
-            rgb(self.ansi_bright_yellow),
-            rgb(self.ansi_bright_blue),
-            rgb(self.ansi_bright_magenta),
-            rgb(self.ansi_bright_cyan),
-            rgb(self.ansi_bright_white),
+            self.ansi_black.to_gpu_rgb(),
+            self.ansi_red.to_gpu_rgb(),
+            self.ansi_green.to_gpu_rgb(),
+            self.ansi_yellow.to_gpu_rgb(),
+            self.ansi_blue.to_gpu_rgb(),
+            self.ansi_magenta.to_gpu_rgb(),
+            self.ansi_cyan.to_gpu_rgb(),
+            self.ansi_white.to_gpu_rgb(),
+            self.ansi_bright_black.to_gpu_rgb(),
+            self.ansi_bright_red.to_gpu_rgb(),
+            self.ansi_bright_green.to_gpu_rgb(),
+            self.ansi_bright_yellow.to_gpu_rgb(),
+            self.ansi_bright_blue.to_gpu_rgb(),
+            self.ansi_bright_magenta.to_gpu_rgb(),
+            self.ansi_bright_cyan.to_gpu_rgb(),
+            self.ansi_bright_white.to_gpu_rgb(),
         ]
     }
 }

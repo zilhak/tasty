@@ -210,12 +210,8 @@ pub fn draw_pane_tab_bars(
                                     let dot_color: egui::Color32 = if is_active {
                                         th.green.into()
                                     } else {
-                                        egui::Color32::from_rgba_unmultiplied(
-                                            th.green.r(),
-                                            th.green.g(),
-                                            th.green.b(),
-                                            180,
-                                        )
+                                        // 비활성 dot: theme green + ~70% alpha.
+                                        th.green.with_alpha(180).to_egui()
                                     };
                                     painter.circle_filled(dot_center, dot_radius, dot_color);
                                 }
@@ -526,18 +522,9 @@ pub fn draw_pane_tab_bars(
                     egui::pos2(drag.current_x - tab_w / 2.0, pane_logical_y),
                     egui::vec2(tab_w, bar_h),
                 );
-                let ghost_bg = egui::Color32::from_rgba_unmultiplied(
-                    th.base.r(),
-                    th.base.g(),
-                    th.base.b(),
-                    180,
-                );
-                let ghost_fg = egui::Color32::from_rgba_unmultiplied(
-                    th.text.r(),
-                    th.text.g(),
-                    th.text.b(),
-                    180,
-                );
+                // Tab drag ghost: theme 색 + ~70% alpha.
+                let ghost_bg = th.base.with_alpha(180).to_egui();
+                let ghost_fg = th.text.with_alpha(180).to_egui();
                 overlay_painter.rect_filled(ghost_rect, 0.0, ghost_bg);
                 overlay_painter.text(
                     ghost_rect.center(),

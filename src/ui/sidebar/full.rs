@@ -362,18 +362,9 @@ pub fn draw_full_sidebar(
                                         ),
                                         first_rect.size(),
                                     );
-                                    let ghost_bg = egui::Color32::from_rgba_unmultiplied(
-                                        th.surface0.r(),
-                                        th.surface0.g(),
-                                        th.surface0.b(),
-                                        180,
-                                    );
-                                    let ghost_fg = egui::Color32::from_rgba_unmultiplied(
-                                        th.text.r(),
-                                        th.text.g(),
-                                        th.text.b(),
-                                        180,
-                                    );
+                                    // Ghost drag preview: theme 색 + ~70% alpha.
+                                    let ghost_bg = th.surface0.with_alpha(180).to_egui();
+                                    let ghost_fg = th.text.with_alpha(180).to_egui();
                                     ui.painter().rect_filled(ghost_rect, 4.0, ghost_bg);
                                     ui.painter().text(
                                         ghost_rect.center(),

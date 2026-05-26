@@ -189,7 +189,8 @@ fn render_node(ui: &mut Ui, node: &UiNode, sink: &dyn UiSink, canvas_cache: &Can
         } => {
             let mut btn = egui::Button::new(label);
             if let ButtonStyle::Primary = style {
-                btn = btn.fill(egui::Color32::from_rgb(48, 92, 222));
+                // Primary 버튼: theme 의 강조 파랑.
+                btn = btn.fill(crate::theme::theme().blue);
             }
             let resp = ui.add_enabled(*enabled, btn);
             let resp = match tooltip_i18n_key {
@@ -312,11 +313,9 @@ fn render_canvas(
             );
         }
         None => {
-            ui.painter().rect_filled(
-                rect,
-                0.0,
-                egui::Color32::from_rgba_unmultiplied(40, 40, 40, 255),
-            );
+            // canvas 미할당 시 placeholder fill — theme.surface0 사용.
+            ui.painter()
+                .rect_filled(rect, 0.0, crate::theme::theme().surface0);
         }
     }
 
@@ -640,18 +639,22 @@ fn parse_color_token(token: &str) -> Option<egui::Color32> {
             let r = u8::from_str_radix(&stripped[0..2], 16).ok()?;
             let g = u8::from_str_radix(&stripped[2..4], 16).ok()?;
             let b = u8::from_str_radix(&stripped[4..6], 16).ok()?;
-            return Some(egui::Color32::from_rgb(r, g, b));
+            // 외부 입력 (plugin 이 명시한 hex 색) — 정당한 dangerously 사용처.
+            #[allow(clippy::disallowed_methods)]
+            let color = egui::Color32::from_rgb(r, g, b);
+            return Some(color);
         }
     }
+    let th = crate::theme::theme();
     Some(match token {
-        "text" => egui::Color32::from_rgb(205, 214, 244),
-        "subtext1" => egui::Color32::from_rgb(186, 194, 222),
-        "subtext0" => egui::Color32::from_rgb(166, 173, 200),
-        "overlay0" => crate::theme::theme().overlay0.to_egui(),
-        "blue" => egui::Color32::from_rgb(137, 180, 250),
-        "green" => egui::Color32::from_rgb(166, 227, 161),
-        "red" => egui::Color32::from_rgb(243, 139, 168),
-        "yellow" => egui::Color32::from_rgb(249, 226, 175),
+        "text" => th.text.to_egui(),
+        "subtext1" => th.subtext1.to_egui(),
+        "subtext0" => th.subtext0.to_egui(),
+        "overlay0" => th.overlay0.to_egui(),
+        "blue" => th.blue.to_egui(),
+        "green" => th.green.to_egui(),
+        "red" => th.red.to_egui(),
+        "yellow" => th.yellow.to_egui(),
         _ => return None,
     })
 }

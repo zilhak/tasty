@@ -381,7 +381,11 @@ fn draw_color_row(ui: &mut egui::Ui, label: &str, color: &mut HexColor) {
         );
         if egui_color != color.to_egui() {
             // egui 픽커가 alpha를 안 건드리므로 RGB만 수확.
-            *color = HexColor::from_rgba(egui_color.r(), egui_color.g(), egui_color.b(), color.a);
+            // 사용자 입력 (color picker) → HexColor — 정당한 외부 입력.
+            #[allow(clippy::disallowed_methods)]
+            let new_color =
+                HexColor::from_rgba(egui_color.r(), egui_color.g(), egui_color.b(), color.a);
+            *color = new_color;
         }
         let mut hex = color.to_hex();
         let response = ui.add(egui::TextEdit::singleline(&mut hex).desired_width(80.0));

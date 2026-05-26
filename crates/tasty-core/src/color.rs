@@ -1,11 +1,24 @@
+// 이 모듈은 `HexColor` 생성/변환의 본거지이자, egui 와의 변환 헬퍼(`to_egui` 등)
+// 의 정의 위치다. 외부 호출자에게는 차단되는 함수들 (`HexColor::from_rgb` /
+// `Color32::from_rgba_unmultiplied` 등) 이 여기 정의 내부에서는 정상적으로 사용된다.
+#![allow(clippy::disallowed_methods)]
+
 //! Color types shared between theme and settings.
 //!
 //! `HexColor`는 `#RRGGBB` 문자열로 직렬화되는 색상 래퍼.
 //! 내부 표현은 **straight (unmultiplied) RGBA u8**이며, `to_egui()`로 egui가
 //! 기대하는 premultiplied `Color32`로 변환된다.
 //! `SurfaceColors`는 surface 종류별 focused/unfocused 배경·전경 색상 묶음.
+//!
+//! GPU 색 newtype (`GpuRgba`, `GpuRgb`) 은 별 leaf crate (`tasty-type-color`)
+//! 에서 정의되며 여기서 재수출된다. 호출자는 `tasty_core::color::GpuRgba` 또는
+//! `tasty_type_color::color::GpuRgba` 어느 쪽으로도 import 가능.
 
 use serde::{Deserialize, Serialize};
+
+// GPU 색 newtype 재수출. theme 색을 GPU 표현으로 변환하는 헬퍼(`HexColor::to_gpu_*`)
+// 가 이 모듈에 있으므로 같은 경로로 import 가능하게 한다.
+pub use tasty_type_color::color::{GpuRgb, GpuRgba};
 
 /// Straight (unmultiplied) RGBA color stored as u8 components.
 ///
@@ -75,6 +88,9 @@ impl HexColor {
 
     /// Convert to GPU-friendly `[r, g, b, a]` floats in `0..=1`.
     /// Components are returned **straight** (not premultiplied).
+    ///
+    /// **Deprecated for new GPU buffer writes** — 새 코드는 [`Self::to_gpu_rgba`] 사용.
+    /// 이 메서드는 디버그 출력(`rgba_to_json`) 등 raw array 가 필요한 경계 케이스용.
     pub fn to_float(self) -> [f32; 4] {
         [
             self.r as f32 / 255.0,
@@ -82,6 +98,31 @@ impl HexColor {
             self.b as f32 / 255.0,
             self.a as f32 / 255.0,
         ]
+    }
+
+    /// theme 색 → GPU 표현 변환. **정상 변환 경로**.
+    ///
+    /// GPU buffer struct(`BgInstance.bg_color` 등) 와 렌더러 함수 시그니처는 모두
+    /// [`GpuRgba`] 를 받으므로 호출자는 이 메서드를 거쳐야 한다.
+    pub const fn to_gpu_rgba(self) -> GpuRgba {
+        // `GpuRgba` private 필드는 외부 crate(tasty-core) 에서 접근 불가 — `dangerously_force_*`
+        // 만이 유일한 생성 경로. 이 호출은 "theme HexColor → GPU 표현" 이라는 정상 변환 구현이라
+        // 예외적으로 허용된다 (`#[allow(clippy::disallowed_methods)]` 는 Phase H 의 clippy 정책에서 처리).
+        GpuRgba::dangerously_force_from_array([
+            self.r as f32 / 255.0,
+            self.g as f32 / 255.0,
+            self.b as f32 / 255.0,
+            self.a as f32 / 255.0,
+        ])
+    }
+
+    /// theme 색 → GPU 3채널 표현 (ANSI 팔레트 등). **정상 변환 경로**.
+    pub const fn to_gpu_rgb(self) -> GpuRgb {
+        GpuRgb::dangerously_force_from_array([
+            self.r as f32 / 255.0,
+            self.g as f32 / 255.0,
+            self.b as f32 / 255.0,
+        ])
     }
 
     /// Convert to `egui::Color32` (gamma-aware premultiplication via

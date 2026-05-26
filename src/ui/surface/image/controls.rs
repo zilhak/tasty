@@ -171,7 +171,10 @@ pub(super) fn draw_edit_controls(
         view.brush_color.b(),
     ];
     if ui.color_edit_button_srgb(&mut color_arr).changed() {
-        view.brush_color = egui::Color32::from_rgb(color_arr[0], color_arr[1], color_arr[2]);
+        // 사용자 입력 (브러시 색 picker). 정당한 dangerously 사용처.
+        #[allow(clippy::disallowed_methods)]
+        let new_color = egui::Color32::from_rgb(color_arr[0], color_arr[1], color_arr[2]);
+        view.brush_color = new_color;
     }
 
     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {

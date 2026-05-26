@@ -288,8 +288,8 @@ pub struct LinkHighlight {
     pub start_col: usize,
     pub end_col: usize,
     pub absolute_row: usize,
-    pub fg: [f32; 4],
-    pub bg: [f32; 4],
+    pub fg: tasty_core::color::GpuRgba,
+    pub bg: tasty_core::color::GpuRgba,
 }
 
 impl LinkHighlight {

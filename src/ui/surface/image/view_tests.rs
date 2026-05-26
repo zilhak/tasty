@@ -12,6 +12,8 @@ fn drop_view_removes_entry() {
     assert!(store.views.is_empty());
 }
 
+// 테스트 더미 — 정상 운영 경로 아님.
+#[allow(clippy::disallowed_methods)]
 #[test]
 fn alpha_blend_transparent_fg_returns_bg() {
     let bg = Color32::from_rgba_unmultiplied(50, 100, 150, 200);
@@ -19,6 +21,7 @@ fn alpha_blend_transparent_fg_returns_bg() {
     assert_eq!(alpha_blend(bg, fg), bg);
 }
 
+#[allow(clippy::disallowed_methods)]
 #[test]
 fn alpha_blend_opaque_fg_replaces_bg() {
     let bg = Color32::from_rgb(10, 20, 30);

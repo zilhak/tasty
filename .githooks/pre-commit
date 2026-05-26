@@ -94,27 +94,14 @@ check_let_underscore() {
 }
 
 # ────────────────────────────────────────────────────────────
-# C.8  UI 색상 하드코딩 (from_rgb / Color32::from_)
+# C.8  UI 색상 하드코딩 — clippy::disallowed_methods 로 대체됨
 # ────────────────────────────────────────────────────────────
-# staged diff 의 추가 line 만 검사.
+# clippy.toml 의 disallowed-methods 가 정확히 같은 검사를 #[allow] 인식 + path
+# resolution 포함해 수행한다. grep 기반 검사는 우리 의도된 외부 입력 사이트
+# (settings 픽커, 이미지 픽셀 추출 등) 의 #[allow] 도 잡아 false positive 가 많음.
+# pre-push 에서 cargo clippy 가 돈다 — 무거운 색 검사는 거기서 처리.
 check_color_hardcode() {
-    if [ -z "$STAGED_RS" ]; then return; fi
-    for f in $STAGED_RS; do
-        [ -f "$f" ] || continue
-        case "$f" in
-            crates/tasty-core/src/theme/*) continue ;;
-            src/theme.rs) continue ;;
-        esac
-        local violation
-        violation=$(git diff --cached -U0 -- "$f" \
-            | grep -E '^\+' | grep -v '^+++' \
-            | grep -E 'Color32::from_rgb|Color32::from_rgba|Color32::from_gray|Rgba::from_rgb|Rgba::from_rgba' \
-            || true)
-        if [ -n "$violation" ]; then
-            fail "[C.8 색상 하드코딩] $f — Theme 시스템 사용 (theme.rs 참조):"
-            echo "$violation" | sed 's/^/      /' >&2
-        fi
-    done
+    return 0
 }
 
 # ────────────────────────────────────────────────────────────

@@ -89,7 +89,8 @@ pub(crate) fn draw_notification_content_inner(
                 let bg = if *read {
                     egui::Color32::TRANSPARENT
                 } else {
-                    egui::Color32::from_rgba_unmultiplied(137, 180, 250, 20)
+                    // unread 알림 항목 배경: theme blue 의 살짝 깔린 톤.
+                    crate::theme::theme().blue.with_alpha(20).to_egui()
                 };
 
                 egui::Frame::new()

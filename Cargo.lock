@@ -5202,6 +5202,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tasty-terminal",
+ "tasty-type-color",
  "termwiz",
  "toml 0.8.2",
  "tracing",
@@ -5447,6 +5448,13 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "crossterm",
+]
+
+[[package]]
+name = "tasty-type-color"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
 ]
 
 [[package]]

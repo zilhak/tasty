@@ -177,13 +177,13 @@ pub(super) fn handle_debug_glyph_color(
                 .appearance
                 .terminal_colors
                 .focused_bg
-                .to_float(),
+                .to_gpu_rgba(),
             engine
                 .settings
                 .appearance
                 .terminal_colors
                 .focused_fg
-                .to_float(),
+                .to_gpu_rgba(),
         ),
         "unfocused" => (
             engine
@@ -191,13 +191,13 @@ pub(super) fn handle_debug_glyph_color(
                 .appearance
                 .terminal_colors
                 .unfocused_bg
-                .to_float(),
+                .to_gpu_rgba(),
             engine
                 .settings
                 .appearance
                 .terminal_colors
                 .unfocused_fg
-                .to_float(),
+                .to_gpu_rgba(),
         ),
         other => {
             return JsonRpcResponse::invalid_params(
@@ -236,7 +236,8 @@ pub(super) fn handle_debug_glyph_color(
 }
 
 #[cfg(debug_assertions)]
-pub(super) fn rgba_to_json(rgba: [f32; 4]) -> serde_json::Value {
+pub(super) fn rgba_to_json(rgba: tasty_core::color::GpuRgba) -> serde_json::Value {
+    let rgba = rgba.as_array();
     json!({
         "r": rgba[0],
         "g": rgba[1],

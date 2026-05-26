@@ -185,6 +185,8 @@ pub fn handle_paste(
         }
     };
 
+    // 외부 입력 (IPC 로 받은 이미지 바이트) → ColorImage 픽셀.
+    #[allow(clippy::disallowed_methods)]
     let pixels: Vec<egui::Color32> = image
         .bytes
         .chunks_exact(4)

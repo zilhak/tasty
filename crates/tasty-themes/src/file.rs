@@ -164,6 +164,8 @@ impl ThemeFile {
 }
 
 #[cfg(test)]
+// 테스트 더미 색 생성 — 정상 운영 경로 아님.
+#[allow(clippy::disallowed_methods)]
 mod tests {
     use super::*;
     use tasty_core::theme::MOCHA_FALLBACK_COLORS;

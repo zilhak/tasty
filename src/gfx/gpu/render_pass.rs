@@ -13,7 +13,7 @@ impl GpuState {
     ) {
         let bg_alpha = engine.settings.appearance.background_opacity as f64;
         let th = crate::theme::theme();
-        let bg = th.base.to_float();
+        let bg = th.base.to_gpu_rgba();
 
         let mut encoder = self
             .device
@@ -28,9 +28,9 @@ impl GpuState {
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: bg[0] as f64,
-                            g: bg[1] as f64,
-                            b: bg[2] as f64,
+                            r: bg.r() as f64,
+                            g: bg.g() as f64,
+                            b: bg.b() as f64,
                             a: bg_alpha,
                         }),
                         store: wgpu::StoreOp::Store,
@@ -70,20 +70,20 @@ impl GpuState {
                 let rect = &region.rect;
                 let is_focused = focused_surface_id == Some(*surface_id);
                 let bg = if is_focused {
-                    settings.terminal_colors.focused_bg.to_float()
+                    settings.terminal_colors.focused_bg.to_gpu_rgba()
                 } else {
-                    settings.terminal_colors.unfocused_bg.to_float()
+                    settings.terminal_colors.unfocused_bg.to_gpu_rgba()
                 };
                 let fg = if is_focused {
-                    settings.terminal_colors.focused_fg.to_float()
+                    settings.terminal_colors.focused_fg.to_gpu_rgba()
                 } else {
-                    settings.terminal_colors.unfocused_fg.to_float()
+                    settings.terminal_colors.unfocused_fg.to_gpu_rgba()
                 };
 
                 // Build selection info for this surface
                 let sel_info = selection
                     .filter(|s| s.surface_id == *surface_id && !s.is_empty())
-                    .map(|s| (s.normalized(), theme.selection_bg.to_float()));
+                    .map(|s| (s.normalized(), theme.selection_bg.to_gpu_rgba()));
                 let sel_ref = sel_info.as_ref();
 
                 let render_preedit = preedit
@@ -92,8 +92,8 @@ impl GpuState {
                         text: ime.text.clone(),
                         anchor_col: ime.anchor_col,
                         anchor_row: ime.anchor_row,
-                        bg_color: theme.blue.to_float(),
-                        fg_color: theme.base.to_float(),
+                        bg_color: theme.blue.to_gpu_rgba(),
+                        fg_color: theme.base.to_gpu_rgba(),
                     });
                 let render_preedit_ref = render_preedit.as_ref();
 
@@ -107,8 +107,8 @@ impl GpuState {
                     .map(|s| crate::renderer::SearchHighlights {
                         matches: &s.matches,
                         active_index: s.current_index,
-                        inactive_bg: theme.search_match_bg.to_float(),
-                        active_bg: theme.search_match_active_bg.to_float(),
+                        inactive_bg: theme.search_match_bg.to_gpu_rgba(),
+                        active_bg: theme.search_match_active_bg.to_gpu_rgba(),
                     });
                 let search_ref = search_highlights.as_ref();
 

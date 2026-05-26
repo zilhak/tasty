@@ -4,6 +4,7 @@ mod pipeline;
 mod shaders;
 mod types;
 
+use tasty_core::color::{GpuRgb, GpuRgba};
 use termwiz::surface::Surface;
 
 use crate::font::{FontConfig, GlyphAtlas, GlyphKey};
@@ -15,8 +16,8 @@ use crate::terminal_link::LinkHighlight;
 pub struct SearchHighlights<'a> {
     pub matches: &'a [tasty_terminal::search::SearchMatch],
     pub active_index: usize,
-    pub inactive_bg: [f32; 4],
-    pub active_bg: [f32; 4],
+    pub inactive_bg: GpuRgba,
+    pub active_bg: GpuRgba,
 }
 
 /// Check if a character is a wide (2-cell) character (CJK, fullwidth, etc.)
@@ -53,8 +54,8 @@ pub struct RenderPreedit {
     pub text: String,
     pub anchor_col: usize,
     pub anchor_row: usize,
-    pub bg_color: [f32; 4],
-    pub fg_color: [f32; 4],
+    pub bg_color: GpuRgba,
+    pub fg_color: GpuRgba,
 }
 
 impl RenderPreedit {
@@ -117,11 +118,11 @@ impl CellRenderer {
         &mut self,
         surface: &Surface,
         queue: &wgpu::Queue,
-        default_bg: [f32; 4],
-        default_fg: [f32; 4],
-        ansi: &[[f32; 3]; 16],
+        default_bg: GpuRgba,
+        default_fg: GpuRgba,
+        ansi: &[GpuRgb; 16],
         cursor: Option<(usize, usize, bool)>,
-        selection: Option<&(NormalizedSelection, [f32; 4])>,
+        selection: Option<&(NormalizedSelection, GpuRgba)>,
         row_offset: usize,
         preedit: Option<&RenderPreedit>,
         link: Option<&LinkHighlight>,
@@ -310,10 +311,10 @@ impl CellRenderer {
         viewport: &Rect,
         screen_width: u32,
         screen_height: u32,
-        default_bg: [f32; 4],
-        default_fg: [f32; 4],
+        default_bg: GpuRgba,
+        default_fg: GpuRgba,
         show_cursor: bool,
-        selection: Option<&(NormalizedSelection, [f32; 4])>,
+        selection: Option<&(NormalizedSelection, GpuRgba)>,
         preedit: Option<&RenderPreedit>,
         link: Option<&LinkHighlight>,
         search: Option<&SearchHighlights<'_>>,

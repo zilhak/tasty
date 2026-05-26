@@ -1,19 +1,20 @@
 //! Terminal cell color resolution.
 //!
 //! ANSI 16색 팔레트와 default fg 는 현재 적용된 `Theme` 에서 받아온다. 호출자가
-//! 매 프레임 시작 시 한 번 `theme().ansi_palette()` + `theme().terminal_fg.to_float()`
+//! 매 프레임 시작 시 한 번 `theme().ansi_palette()` + `theme().terminal_fg.to_gpu_rgba()`
 //! 로 추출해 reference 로 넘겨주면, 셀별 lookup 비용은 ANSI 16 인덱싱뿐이다.
 
+use tasty_core::color::{GpuRgb, GpuRgba};
 use termwiz::cell::CellAttributes;
 use termwiz::color::ColorAttribute;
 
 /// 216-color cube + 24 grayscale 영역은 ANSI 16 와 무관 (xterm 표준). 그래서
 /// `ansi` 인자는 16색 슬라이스만 받는다.
-pub(crate) fn palette_index_to_rgb(idx: u8, ansi: &[[f32; 3]; 16]) -> [f32; 3] {
+pub(crate) fn palette_index_to_rgb(idx: u8, ansi: &[GpuRgb; 16]) -> GpuRgb {
     if idx < 16 {
         ansi[idx as usize]
     } else if idx < 232 {
-        // 216-color cube: 6x6x6
+        // 216-color cube: 6x6x6. xterm 표준 색 큐브 — 외부에서 정의된 픽셀 데이터로 간주.
         let idx = idx - 16;
         let r = (idx / 36) % 6;
         let g = (idx / 6) % 6;
@@ -25,11 +26,13 @@ pub(crate) fn palette_index_to_rgb(idx: u8, ansi: &[[f32; 3]; 16]) -> [f32; 3] {
                 (55.0 + 40.0 * v as f32) / 255.0
             }
         };
-        [to_f(r), to_f(g), to_f(b)]
+        // 외부 입력 (xterm ANSI 표준 색 큐브 정의) — dangerously_force 정당 사용처.
+        GpuRgb::dangerously_force_from_array([to_f(r), to_f(g), to_f(b)])
     } else {
-        // 24 grayscale: 232..=255
+        // 24 grayscale: 232..=255. xterm 표준.
         let level = (8 + 10 * (idx - 232) as u16) as f32 / 255.0;
-        [level, level, level]
+        // 외부 입력 (xterm ANSI 표준 grayscale 정의) — dangerously_force 정당 사용처.
+        GpuRgb::dangerously_force_from_array([level, level, level])
     }
 }
 
@@ -46,38 +49,51 @@ pub(crate) fn palette_index_to_rgb(idx: u8, ansi: &[[f32; 3]; 16]) -> [f32; 3] {
 /// - per-cell context overrides (selection bg, link highlight, cursor swap, IME preedit)
 pub fn compute_cell_colors(
     attrs: &CellAttributes,
-    default_bg: [f32; 4],
-    default_fg: [f32; 4],
-    ansi: &[[f32; 3]; 16],
-) -> ([f32; 4], [f32; 4]) {
+    default_bg: GpuRgba,
+    default_fg: GpuRgba,
+    ansi: &[GpuRgb; 16],
+) -> (GpuRgba, GpuRgba) {
     let mut bg = color_attr_to_rgba(&attrs.background(), default_bg, ansi);
     let mut fg = color_attr_to_rgba(&attrs.foreground(), default_fg, ansi);
     if attrs.reverse() {
         std::mem::swap(&mut bg, &mut fg);
     }
     if attrs.intensity() == termwiz::cell::Intensity::Half {
-        fg[0] = (fg[0] + bg[0]) * 0.5;
-        fg[1] = (fg[1] + bg[1]) * 0.5;
-        fg[2] = (fg[2] + bg[2]) * 0.5;
+        let bg_a = bg.as_array();
+        let fg_a = fg.as_array();
+        // dim: fg 를 50% lerp toward bg. lerp 결과는 "theme 색에서 파생된 변형" 으로 간주 —
+        // theme 의 두 색에서 만들어진 보간값이라 dangerously_force 정당 사용처.
+        fg = GpuRgba::dangerously_force_from_array([
+            (fg_a[0] + bg_a[0]) * 0.5,
+            (fg_a[1] + bg_a[1]) * 0.5,
+            (fg_a[2] + bg_a[2]) * 0.5,
+            fg_a[3],
+        ]);
     }
     (bg, fg)
 }
 
 pub(crate) fn color_attr_to_rgba(
     attr: &ColorAttribute,
-    default: [f32; 4],
-    ansi: &[[f32; 3]; 16],
-) -> [f32; 4] {
+    default: GpuRgba,
+    ansi: &[GpuRgb; 16],
+) -> GpuRgba {
     match attr {
         ColorAttribute::Default => default,
         ColorAttribute::PaletteIndex(idx) => {
-            let [r, g, b] = palette_index_to_rgb(*idx, ansi);
-            [r, g, b, 1.0]
+            let rgb = palette_index_to_rgb(*idx, ansi).as_array();
+            // ANSI palette → RGBA (alpha=1.0). palette 의 모든 GpuRgb 는 theme 또는 xterm 표준
+            // 정의에서 온 색이라 alpha 만 1.0 으로 패딩하는 것은 변환 본질에 해당.
+            GpuRgba::dangerously_force_from_array([rgb[0], rgb[1], rgb[2], 1.0])
         }
         ColorAttribute::TrueColorWithPaletteFallback(srgba, _) => {
-            [srgba.0, srgba.1, srgba.2, srgba.3]
+            // 외부 입력 (termwiz ANSI true-color escape) — 사용자 터미널 입력.
+            GpuRgba::dangerously_force_from_array([srgba.0, srgba.1, srgba.2, srgba.3])
         }
-        ColorAttribute::TrueColorWithDefaultFallback(srgba) => [srgba.0, srgba.1, srgba.2, srgba.3],
+        ColorAttribute::TrueColorWithDefaultFallback(srgba) => {
+            // 외부 입력 (termwiz ANSI true-color escape) — 사용자 터미널 입력.
+            GpuRgba::dangerously_force_from_array([srgba.0, srgba.1, srgba.2, srgba.3])
+        }
     }
 }
 
@@ -87,32 +103,41 @@ mod tests {
     use termwiz::cell::Intensity;
     use termwiz::color::{ColorAttribute, SrgbaTuple};
 
-    /// 테스트용 더미 ANSI 16색 팔레트.
-    const TEST_ANSI: [[f32; 3]; 16] = [[0.0; 3]; 16];
-    const TEST_DEFAULT_FG: [f32; 4] = [0.8, 0.8, 0.95, 1.0];
+    /// 테스트용 더미 ANSI 팔레트. 테스트 외 사용 금지.
+    fn test_ansi() -> [GpuRgb; 16] {
+        [GpuRgb::dangerously_force_from_array([0.0; 3]); 16]
+    }
+    fn test_default_fg() -> GpuRgba {
+        // 테스트 더미 — dangerously_force 정당.
+        GpuRgba::dangerously_force_from_array([0.8, 0.8, 0.95, 1.0])
+    }
 
     #[test]
     fn normal_intensity_keeps_default_fg() {
         let attrs = CellAttributes::default();
-        let bg = [0.0, 0.0, 0.0, 1.0];
-        let (out_bg, out_fg) = compute_cell_colors(&attrs, bg, TEST_DEFAULT_FG, &TEST_ANSI);
+        // 테스트 더미.
+        let bg = GpuRgba::dangerously_force_from_array([0.0, 0.0, 0.0, 1.0]);
+        let fg = test_default_fg();
+        let (out_bg, out_fg) = compute_cell_colors(&attrs, bg, fg, &test_ansi());
         assert_eq!(out_bg, bg);
-        assert_eq!(out_fg, TEST_DEFAULT_FG);
+        assert_eq!(out_fg, fg);
     }
 
     #[test]
     fn dim_lerps_fg_halfway_toward_bg() {
         let mut attrs = CellAttributes::default();
         attrs.set_intensity(Intensity::Half);
-        let bg = [0.0, 0.0, 0.0, 1.0];
-        let (out_bg, out_fg) = compute_cell_colors(&attrs, bg, TEST_DEFAULT_FG, &TEST_ANSI);
+        let bg = GpuRgba::dangerously_force_from_array([0.0, 0.0, 0.0, 1.0]);
+        let fg = test_default_fg();
+        let (out_bg, out_fg) = compute_cell_colors(&attrs, bg, fg, &test_ansi());
         assert_eq!(out_bg, bg);
-        // TEST_DEFAULT_FG lerped 50:50 toward [0,0,0]
-        assert!((out_fg[0] - TEST_DEFAULT_FG[0] * 0.5).abs() < 1e-6);
-        assert!((out_fg[1] - TEST_DEFAULT_FG[1] * 0.5).abs() < 1e-6);
-        assert!((out_fg[2] - TEST_DEFAULT_FG[2] * 0.5).abs() < 1e-6);
-        assert_eq!(out_fg[3], 1.0);
-        assert_ne!(out_fg, TEST_DEFAULT_FG);
+        let fg_a = fg.as_array();
+        let out_fg_a = out_fg.as_array();
+        // fg lerped 50:50 toward [0,0,0]
+        assert!((out_fg_a[0] - fg_a[0] * 0.5).abs() < 1e-6);
+        assert!((out_fg_a[1] - fg_a[1] * 0.5).abs() < 1e-6);
+        assert!((out_fg_a[2] - fg_a[2] * 0.5).abs() < 1e-6);
+        assert_eq!(out_fg_a[3], 1.0);
     }
 
     #[test]
@@ -126,28 +151,32 @@ mod tests {
         attrs.set_background(ColorAttribute::TrueColorWithDefaultFallback(SrgbaTuple(
             0.0, 0.0, 0.0, 1.0,
         )));
-        let default_bg = [0.5, 0.5, 0.5, 1.0];
-        let (bg, fg) = compute_cell_colors(&attrs, default_bg, TEST_DEFAULT_FG, &TEST_ANSI);
+        // 테스트 더미.
+        let default_bg = GpuRgba::dangerously_force_from_array([0.5, 0.5, 0.5, 1.0]);
+        let (bg, fg) = compute_cell_colors(&attrs, default_bg, test_default_fg(), &test_ansi());
+        let bg_a = bg.as_array();
+        let fg_a = fg.as_array();
         // After reverse: bg=[1,1,1], fg=[0,0,0]. After dim (lerp toward bg): fg=[0.5,0.5,0.5].
-        assert_eq!(bg, [1.0, 1.0, 1.0, 1.0]);
-        assert!((fg[0] - 0.5).abs() < 1e-6);
-        assert!((fg[1] - 0.5).abs() < 1e-6);
-        assert!((fg[2] - 0.5).abs() < 1e-6);
+        assert_eq!(bg_a, [1.0, 1.0, 1.0, 1.0]);
+        assert!((fg_a[0] - 0.5).abs() < 1e-6);
+        assert!((fg_a[1] - 0.5).abs() < 1e-6);
+        assert!((fg_a[2] - 0.5).abs() < 1e-6);
     }
 
     #[test]
     fn palette_index_picks_from_ansi_for_index_below_16() {
-        let mut ansi = [[0.0; 3]; 16];
-        ansi[1] = [0.9, 0.2, 0.2]; // ANSI red
+        let mut ansi = test_ansi();
+        // 테스트 더미.
+        ansi[1] = GpuRgb::dangerously_force_from_array([0.9, 0.2, 0.2]);
         let rgb = palette_index_to_rgb(1, &ansi);
-        assert_eq!(rgb, [0.9, 0.2, 0.2]);
+        assert_eq!(rgb.as_array(), [0.9, 0.2, 0.2]);
     }
 
     #[test]
     fn palette_index_color_cube_independent_of_ansi() {
-        let ansi = [[1.0; 3]; 16]; // ANSI 다 흰색
-        // 16 (color cube start) 은 ANSI 영향 받지 않아야.
+        // ANSI 다 흰색이어도 16(color cube 시작) 은 영향 받지 않아야.
+        let ansi = [GpuRgb::dangerously_force_from_array([1.0; 3]); 16];
         let rgb = palette_index_to_rgb(16, &ansi);
-        assert_eq!(rgb, [0.0, 0.0, 0.0]);
+        assert_eq!(rgb.as_array(), [0.0, 0.0, 0.0]);
     }
 }

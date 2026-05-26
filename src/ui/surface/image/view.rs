@@ -580,6 +580,8 @@ pub fn load_image_from_path(path: &str) -> (Option<ColorImage>, Option<SystemTim
 
     let rgba = img.to_rgba8();
     let (w, h) = rgba.dimensions();
+    // 외부 입력 (이미지 파일 픽셀) → Color32. 정당한 dangerously 사용처.
+    #[allow(clippy::disallowed_methods)]
     let pixels: Vec<Color32> = rgba
         .pixels()
         .map(|p| Color32::from_rgba_unmultiplied(p[0], p[1], p[2], p[3]))
@@ -608,7 +610,11 @@ pub fn alpha_blend(bg: Color32, fg: Color32) -> Color32 {
     let r = (fg.r() as f32 * fa + bg.r() as f32 * ba * (1.0 - fa)) / out_a;
     let g = (fg.g() as f32 * fa + bg.g() as f32 * ba * (1.0 - fa)) / out_a;
     let b = (fg.b() as f32 * fa + bg.b() as f32 * ba * (1.0 - fa)) / out_a;
-    Color32::from_rgba_unmultiplied(r as u8, g as u8, b as u8, (out_a * 255.0) as u8)
+    // alpha 합성 결과 — 입력 두 색의 변형. 정당한 dangerously 사용처.
+    #[allow(clippy::disallowed_methods)]
+    {
+        Color32::from_rgba_unmultiplied(r as u8, g as u8, b as u8, (out_a * 255.0) as u8)
+    }
 }
 
 /// Draw a thick line using Bresenham's algorithm with circle brush.
