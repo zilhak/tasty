@@ -201,7 +201,15 @@ impl ApplicationHandler<AppEvent> for App {
                 .expect("failed to create window"),
         );
 
-        let init_settings = crate::settings::Settings::load();
+        let mut init_settings = crate::settings::Settings::load();
+        // Validate enum-like fields up-front so GPU init and downstream consumers
+        // see normalized values, and so disk reflects fallback (no recurring popups).
+        let normalize_report = init_settings.normalize();
+        if normalize_report.changed {
+            if let Err(e) = init_settings.save() {
+                tracing::warn!("failed to persist normalized settings: {e}");
+            }
+        }
 
         let gpu = pollster::block_on(crate::gpu::GpuState::new(
             window.clone(),
@@ -210,7 +218,6 @@ impl ApplicationHandler<AppEvent> for App {
         ))
         .expect("failed to initialize GPU");
 
-        let mut init_settings = init_settings;
         if !init_settings.general.is_shell_valid() {
             if let Some(detected) = crate::settings::GeneralSettings::detect_bash() {
                 tracing::info!("configured shell invalid; auto-detected bash at {detected}");
@@ -229,7 +236,12 @@ impl ApplicationHandler<AppEvent> for App {
         }
 
         window.set_ime_allowed(true);
-        self.init_app_state(window, gpu, init_settings);
+        self.init_app_state(
+            window,
+            gpu,
+            init_settings,
+            normalize_report.invalid_theme_name,
+        );
 
         #[cfg(windows)]
         crate::jump_list::setup_jump_list();
@@ -255,6 +267,7 @@ impl ApplicationHandler<AppEvent> for App {
                         Ok(crate::gpu::ShellSetupAction::None) => {}
                         Ok(crate::gpu::ShellSetupAction::Confirmed) => {
                             let mut settings = crate::settings::Settings::load();
+                            let normalize_report = settings.normalize();
                             settings.general.shell = self.shell_setup_path.clone();
                             if let Err(e) = settings.save() {
                                 tracing::error!("failed to save settings: {e}");
@@ -262,7 +275,12 @@ impl ApplicationHandler<AppEvent> for App {
                             self.shell_setup_mode = false;
                             let window = self.shell_setup_window.take().unwrap();
                             let gpu = self.shell_setup_gpu.take().unwrap();
-                            self.init_app_state(window, gpu, settings);
+                            self.init_app_state(
+                                window,
+                                gpu,
+                                settings,
+                                normalize_report.invalid_theme_name,
+                            );
                             if let Some(w) = self.focused_window_mut() {
                                 w.mark_dirty();
                             }

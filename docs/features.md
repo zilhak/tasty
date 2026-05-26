@@ -822,6 +822,8 @@ bb 의 한 시점을 통째로 캡처해 복원. 키 컨벤션 `tasty.bb.<name>.
 - `Settings::load()`: 설정 파일 로드, 없으면 기본값 반환
 - `Settings::save()`: 설정 디렉토리 자동 생성 후 TOML 형식으로 저장
 - `Settings::config_path()`: 플랫폼 독립적 설정 파일 경로 반환
+- `Settings::normalize()`: enum-like 필드(`appearance.theme`, `appearance.ui_scale`, `appearance.*_font.font_scale_mode`, `general.shell_mode`, `general.close_behavior`, `general.link_click_modifier`)에 알려진 값 외의 문자열이 있으면 안전한 기본값으로 치환하고 `NormalizeReport`를 반환. theme 만 popup 안내용으로 원래 값을 `invalid_theme_name`에 담아 호출자에게 전달하고, 그 외 필드는 `tracing::warn`만 남기며 silently fix. `general.language`는 사용자가 `~/.tasty/lang/{code}.toml` 로 임의 코드를 추가할 수 있으므로 정규화 대상에서 제외
+- 부팅 경로(첫 윈도우 `init_app_state`, 새 윈도우 `create_new_window`, shell-setup 종료)에서는 `Settings::load()` 직후 `normalize()`를 호출하고 `report.changed`면 즉시 `save()`. 결과로 디스크의 invalid 값이 한 번에 정리되어, 다음 부팅·다음 윈도우에서 같은 popup·warning이 반복되지 않음
 - 앱 시작 시 자동 로드, AppState에 통합
 
 ### 설정 연동
@@ -834,7 +836,7 @@ bb 의 한 시점을 통째로 캡처해 복원. 키 컨벤션 `tasty.bb.<name>.
 - `custom_font_path`: 커스텀 폰트 파일(.ttf/.otf) 경로. 지정 시 FontSystem 또는 egui FontDefinitions에 해당 파일을 추가 로드한 후 `font_family`로 참조 가능
 - `line_height`: 행간 배수. 1.0(기본, 틈 없음 - ASCII 아트에 최적) ~ 2.0. 값이 클수록 행 간격이 넓어짐
 - `font_scale_mode`: "auto"는 `font_size * scale_factor`(고DPI에서 동일 물리 크기 유지), "fixed"는 픽셀 크기 고정
-- `settings.appearance.theme`: 테마 프리셋 ID. "catppuccin-mocha"(기본 다크), "catppuccin-latte"(라이트). 설정 저장 시 `set_theme()`로 런타임 반영. 알려지지 않은 ID는 첫 윈도우 생성 시 InfoModal 안내 후 기본값(catppuccin-mocha)으로 fallback
+- `settings.appearance.theme`: 테마 프리셋 ID. "catppuccin-mocha"(기본 다크), "catppuccin-latte"(라이트). 설정 저장 시 `set_theme()`로 런타임 반영. 알려지지 않은 ID는 윈도우 생성 시 InfoModal 안내 후 기본값(catppuccin-mocha)으로 fallback되고 디스크에도 즉시 정정 저장되어 popup이 반복되지 않음 (`Settings::normalize` 참조)
 - `settings.appearance.background_opacity`: wgpu clear color의 알파 값으로 적용. 0.0(투명)~1.0(불투명)
 - `settings.appearance.terminal_colors`: 터미널 surface의 focused/unfocused 배경색·글자색 (HexColor, 기본 focused_bg `#000000`)
 - `settings.appearance.markdown_colors`: 마크다운 surface의 focused/unfocused 배경색·글자색

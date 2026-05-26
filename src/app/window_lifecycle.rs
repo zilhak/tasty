@@ -124,7 +124,8 @@ impl App {
                     engine.surface_registry.clone(),
                 )
             };
-            let mut mgr = plugin::PluginManager::with_registries(factory, file_format, file_handler);
+            let mut mgr =
+                plugin::PluginManager::with_registries(factory, file_format, file_handler);
             mgr.set_surface_registry(surface_registry);
             plugin::install_builtins_if_needed(&mut mgr);
             mgr.packages = plugin::discover();
@@ -144,7 +145,9 @@ impl App {
                     }
                     let registered_all = {
                         let engine = self.engine_state();
-                        needed.iter().all(|k| engine.surface_registry.get(k).is_some())
+                        needed
+                            .iter()
+                            .all(|k| engine.surface_registry.get(k).is_some())
                     };
                     if registered_all {
                         break;
@@ -168,7 +171,9 @@ impl App {
             state.switch_workspace(self.engine_state_mut(), restored_idx);
         }
         if let Some(mgr) = self.plugin_manager.as_ref() {
-            state.tool_registry.set_plugin_items(mgr.plugin_tool_items());
+            state
+                .tool_registry
+                .set_plugin_items(mgr.plugin_tool_items());
         }
         state
     }
@@ -205,11 +210,15 @@ impl App {
     }
 
     /// Initialize the full app state (terminal, IPC server, etc.) after shell is confirmed.
+    ///
+    /// `invalid_theme_name` carries the original theme name if [`Settings::normalize`]
+    /// replaced it. When `Some`, the user is notified via InfoModal.
     pub(crate) fn init_app_state(
         &mut self,
         window: Arc<Window>,
         gpu: GpuState,
         settings: crate::settings::Settings,
+        invalid_theme_name: Option<String>,
     ) {
         // state.db / memory.db 초기화는 create_app_state 이전에 반드시 호출.
         // 첫 윈도우는 `create_new_window` 를 거치지 않고 곧장 이 함수로 진입하므로
@@ -231,6 +240,15 @@ impl App {
             tracing::warn!("memory.db init failed: {e}");
         }
 
+        // Apply theme preset to global. settings 는 caller 가 이미 normalize 했으므로
+        // preset 매칭이 보장되지만, 안전망으로 매칭 실패 시 글로벌 default 를 유지한다.
+        if let Some(preset) = crate::theme::presets()
+            .iter()
+            .find(|p| p.id == settings.appearance.theme)
+        {
+            crate::theme::set_theme(preset.theme);
+        }
+
         let mut state = self.create_app_state(&gpu, settings.appearance.sidebar_width);
 
         // DB 초기화 실패 알림 — create_new_window 와 동일하게 InfoModal 로 안내 후 Exit(1).
@@ -248,6 +266,18 @@ impl App {
                     title: crate::i18n::t("db_error.title").to_string(),
                     body,
                     on_close: crate::ui::info_modal::InfoModalAction::Exit(1),
+                },
+            );
+        }
+
+        // Theme fallback 알림 — normalize 가 잘못된 theme 이름을 정정한 경우.
+        if let Some(invalid) = invalid_theme_name {
+            crate::ui::info_modal::show_info_modal(
+                &mut state,
+                crate::ui::info_modal::InfoModal {
+                    title: crate::i18n::t("theme_error.title").to_string(),
+                    body: crate::i18n::t_fmt("theme_error.body", &invalid),
+                    on_close: crate::ui::info_modal::InfoModalAction::Continue,
                 },
             );
         }
@@ -300,6 +330,14 @@ impl App {
         let db_init_error = crate::db::init().err();
 
         let mut settings = crate::settings::Settings::load();
+        // 모든 enum-like 필드 정규화. invalid 가 있었으면 즉시 파일에 반영해서
+        // 다음 부팅에 같은 popup / 잘못된 동작이 재발하지 않게 한다.
+        let normalize_report = settings.normalize();
+        if normalize_report.changed {
+            if let Err(e) = settings.save() {
+                tracing::warn!("failed to persist normalized settings: {e}");
+            }
+        }
 
         // memory.db 초기화. state.db와 독립 파일(~/.tasty/memory.db). 현재는
         // 에이전트 memory.* IPC만 의존하므로 실패해도 앱을 종료시키지 않는다 —
@@ -320,22 +358,14 @@ impl App {
             tracing::warn!("memory.db init failed: {e}");
         }
 
-        // Apply saved theme preset at startup. theme 이름이 preset에 없으면
-        // catppuccin-mocha로 fallback하고 사용자에게 InfoModal로 알린다.
-        let presets = crate::theme::presets();
-        let invalid_theme_name =
-            if let Some(preset) = presets.iter().find(|p| p.id == settings.appearance.theme) {
-                crate::theme::set_theme(preset.theme);
-                None
-            } else {
-                let invalid = settings.appearance.theme.clone();
-                let fallback_id = "catppuccin-mocha";
-                settings.appearance.theme = fallback_id.to_string();
-                if let Some(default_preset) = presets.iter().find(|p| p.id == fallback_id) {
-                    crate::theme::set_theme(default_preset.theme);
-                }
-                Some(invalid)
-            };
+        // Apply theme preset to global. settings 는 위에서 normalize 했으므로 매칭 보장.
+        if let Some(preset) = crate::theme::presets()
+            .iter()
+            .find(|p| p.id == settings.appearance.theme)
+        {
+            crate::theme::set_theme(preset.theme);
+        }
+        let invalid_theme_name = normalize_report.invalid_theme_name;
         let gpu = pollster::block_on(crate::gpu::GpuState::new(
             window.clone(),
             &settings.appearance,
