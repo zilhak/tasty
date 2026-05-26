@@ -16,10 +16,11 @@ pub use ipc_method::{IpcInvokeParams, METHOD_IPC_INVOKE};
 pub use protocol::{
     AuthAck, AuthAckEnvelope, AuthMessage, CommandInvokeParams, EventDispatchParams,
     ExtensionHookInvokeParams, ExtensionHookKind, ExtensionHookMode, ExtensionHookPhase,
-    ExtensionHookResult, HandleChannelMessage, IpcCallResult, PluginEvent, PluginRequest,
-    PluginResponse, PopupCloseReason, PopupClosedParams, PopupEventParams, PopupEventResult,
-    PopupOpenParams, PopupOpenResult, Rect, SharedBufferCreateParams, SharedBufferCreateResult,
-    SharedBufferDirtyParams, SharedBufferId, SurfaceEventParams, SurfaceResult,
+    ExtensionHookResult, HandleChannelMessage, IpcCallResult, PixelRect, PluginEvent,
+    PluginRequest, PluginResponse, PopupCloseReason, PopupClosedParams, PopupEventParams,
+    PopupEventResult, PopupOpenParams, PopupOpenResult, SharedBufferCreateParams,
+    SharedBufferCreateResult, SharedBufferDirtyParams, SharedBufferId, SurfaceEventParams,
+    SurfaceResult,
 };
 pub use protocol::{
     METHOD_COMMAND_INVOKE, METHOD_EVENT_DISPATCH, METHOD_EXTENSION_INVOKE_HOOK, METHOD_HOST_HELLO,

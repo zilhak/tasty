@@ -1,6 +1,6 @@
 use egui::emath::GuiRounding as _;
 
-use crate::model::Rect;
+use crate::model::PhysicalRect;
 use crate::state::AppState;
 use crate::theme;
 
@@ -10,7 +10,7 @@ pub fn draw_pane_tab_bars(
     ctx: &egui::Context,
     state: &mut AppState,
     engine: &mut crate::engine_state::EngineState,
-    pane_rects: &[(u32, Rect)],
+    pane_rects: &[(u32, PhysicalRect)],
     scale_factor: f32,
 ) {
     let th = theme::theme();

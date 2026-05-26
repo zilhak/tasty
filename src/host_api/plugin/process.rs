@@ -15,7 +15,7 @@ use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, Instant};
 
-use tasty_plugin_protocol::{HandleChannelMessage, Rect, SharedBufferId};
+use tasty_plugin_protocol::{HandleChannelMessage, PixelRect, SharedBufferId};
 
 use crate::plugin::handle_channel::{HandleListener, HandleStream, HandleStreamReader};
 use crate::plugin::listener::HostListener;
@@ -57,7 +57,7 @@ pub struct PluginProcess {
     /// reader 스레드가 누적하는 dirty rect. `Some(rect)`는 union된 영역, `None`은
     /// "전체 갱신" sticky flag. 호스트 main loop이 frame 합성 시 `take_dirty_rects`로
     /// drain한다.
-    dirty_rects: Arc<Mutex<HashMap<SharedBufferId, Option<Rect>>>>,
+    dirty_rects: Arc<Mutex<HashMap<SharedBufferId, Option<PixelRect>>>>,
 }
 
 #[cfg(test)]
@@ -316,7 +316,7 @@ impl PluginProcess {
 
     /// reader 스레드가 누적한 dirty rect를 drain. 호스트 main loop이 frame 합성 직전에
     /// 호출. 반환된 map의 value가 `None`이면 "전체 갱신".
-    pub fn take_dirty_rects(&self) -> HashMap<SharedBufferId, Option<Rect>> {
+    pub fn take_dirty_rects(&self) -> HashMap<SharedBufferId, Option<PixelRect>> {
         self.dirty_rects
             .lock()
             .map(|mut m| std::mem::take(&mut *m))
@@ -448,7 +448,7 @@ fn handle_incoming_line(
 /// EOF가 도착하면 (plugin 종료/재시작 또는 정상 shutdown) 조용히 종료.
 fn aux_reader_loop(
     mut reader: HandleStreamReader,
-    dirty: Arc<Mutex<HashMap<SharedBufferId, Option<Rect>>>>,
+    dirty: Arc<Mutex<HashMap<SharedBufferId, Option<PixelRect>>>>,
     writer: Arc<Mutex<HandleStream>>,
     plugin_id: String,
 ) {
@@ -493,9 +493,9 @@ fn aux_reader_loop(
 /// 한 buffer의 dirty 상태를 incoming rect와 union한다. value가 `None`이면 "전체 갱신"
 /// sticky flag — 더 이상 좁히지 않는다.
 fn merge_dirty(
-    map: &Arc<Mutex<HashMap<SharedBufferId, Option<Rect>>>>,
+    map: &Arc<Mutex<HashMap<SharedBufferId, Option<PixelRect>>>>,
     id: SharedBufferId,
-    incoming: Option<Rect>,
+    incoming: Option<PixelRect>,
 ) {
     let Ok(mut m) = map.lock() else {
         return;
@@ -514,14 +514,14 @@ fn merge_dirty(
     }
 }
 
-/// 두 정수 rect의 bounding union. tasty-plugin-protocol의 Rect는 (x, y, w, h)이고
+/// 두 정수 rect의 bounding union. tasty-plugin-protocol의 PixelRect는 (x, y, w, h)이고
 /// w/h=0은 invalid 취급이지만 reader는 wire 그대로 union한다 (필터링은 호출자).
-fn union_rect(a: Rect, b: Rect) -> Rect {
+fn union_rect(a: PixelRect, b: PixelRect) -> PixelRect {
     let x1 = a.x.min(b.x);
     let y1 = a.y.min(b.y);
     let x2 = a.x.saturating_add(a.w).max(b.x.saturating_add(b.w));
     let y2 = a.y.saturating_add(a.h).max(b.y.saturating_add(b.h));
-    Rect {
+    PixelRect {
         x: x1,
         y: y1,
         w: x2.saturating_sub(x1),
@@ -572,13 +572,13 @@ mod tests {
 
     #[test]
     fn union_rect_combines_bbox() {
-        let a = Rect {
+        let a = PixelRect {
             x: 0,
             y: 0,
             w: 10,
             h: 10,
         };
-        let b = Rect {
+        let b = PixelRect {
             x: 5,
             y: 5,
             w: 10,
@@ -587,7 +587,7 @@ mod tests {
         let u = union_rect(a, b);
         assert_eq!(
             u,
-            Rect {
+            PixelRect {
                 x: 0,
                 y: 0,
                 w: 15,
@@ -598,13 +598,13 @@ mod tests {
 
     #[test]
     fn union_rect_disjoint_gives_outer_bbox() {
-        let a = Rect {
+        let a = PixelRect {
             x: 0,
             y: 0,
             w: 4,
             h: 4,
         };
-        let b = Rect {
+        let b = PixelRect {
             x: 10,
             y: 10,
             w: 5,
@@ -613,7 +613,7 @@ mod tests {
         let u = union_rect(a, b);
         assert_eq!(
             u,
-            Rect {
+            PixelRect {
                 x: 0,
                 y: 0,
                 w: 15,
@@ -624,7 +624,7 @@ mod tests {
 
     #[test]
     fn merge_dirty_full_is_sticky() {
-        let map: Arc<Mutex<HashMap<SharedBufferId, Option<Rect>>>> =
+        let map: Arc<Mutex<HashMap<SharedBufferId, Option<PixelRect>>>> =
             Arc::new(Mutex::new(HashMap::new()));
         let id = SharedBufferId(1);
         merge_dirty(&map, id, None);
@@ -632,7 +632,7 @@ mod tests {
         merge_dirty(
             &map,
             id,
-            Some(Rect {
+            Some(PixelRect {
                 x: 0,
                 y: 0,
                 w: 2,
@@ -644,13 +644,13 @@ mod tests {
 
     #[test]
     fn merge_dirty_some_unions_with_existing() {
-        let map: Arc<Mutex<HashMap<SharedBufferId, Option<Rect>>>> =
+        let map: Arc<Mutex<HashMap<SharedBufferId, Option<PixelRect>>>> =
             Arc::new(Mutex::new(HashMap::new()));
         let id = SharedBufferId(2);
         merge_dirty(
             &map,
             id,
-            Some(Rect {
+            Some(PixelRect {
                 x: 0,
                 y: 0,
                 w: 5,
@@ -660,7 +660,7 @@ mod tests {
         merge_dirty(
             &map,
             id,
-            Some(Rect {
+            Some(PixelRect {
                 x: 10,
                 y: 10,
                 w: 5,
@@ -670,7 +670,7 @@ mod tests {
         let got = map.lock().unwrap().get(&id).copied().flatten();
         assert_eq!(
             got,
-            Some(Rect {
+            Some(PixelRect {
                 x: 0,
                 y: 0,
                 w: 15,
@@ -681,13 +681,13 @@ mod tests {
 
     #[test]
     fn merge_dirty_some_then_full_becomes_full() {
-        let map: Arc<Mutex<HashMap<SharedBufferId, Option<Rect>>>> =
+        let map: Arc<Mutex<HashMap<SharedBufferId, Option<PixelRect>>>> =
             Arc::new(Mutex::new(HashMap::new()));
         let id = SharedBufferId(3);
         merge_dirty(
             &map,
             id,
-            Some(Rect {
+            Some(PixelRect {
                 x: 0,
                 y: 0,
                 w: 5,

@@ -1,5 +1,5 @@
 use crate::engine_state::EngineState;
-use crate::model::{PaneId, PhysicalPx, Rect, SurfaceRegion};
+use crate::model::{PaneId, PhysicalPx, PhysicalRect, SurfaceRegion};
 
 use super::AppState;
 
@@ -23,8 +23,8 @@ impl AppState {
     pub fn surface_regions<'a>(
         &self,
         engine: &'a EngineState,
-        terminal_rect: Rect,
-    ) -> Vec<(PaneId, Rect, Vec<SurfaceRegion<'a>>)> {
+        terminal_rect: PhysicalRect,
+    ) -> Vec<(PaneId, PhysicalRect, Vec<SurfaceRegion<'a>>)> {
         let ws = self.active_workspace(engine);
         let pane_rects = ws.pane_layout().compute_rects(terminal_rect);
 
@@ -32,7 +32,7 @@ impl AppState {
         for (pane_id, pane_rect) in pane_rects {
             if let Some(pane) = ws.pane_layout().find_pane(pane_id) {
                 let tab_bar_h = self.tab_bar_height;
-                let content_rect = Rect {
+                let content_rect = PhysicalRect {
                     x: pane_rect.x,
                     y: pane_rect.y + tab_bar_h,
                     width: pane_rect.width,
@@ -50,7 +50,11 @@ impl AppState {
 
     /// Get the actual content rect for the focused surface (accounting for tab bar).
     /// Returns None if no surface is focused.
-    pub fn focused_surface_rect(&self, engine: &EngineState, terminal_rect: Rect) -> Option<Rect> {
+    pub fn focused_surface_rect(
+        &self,
+        engine: &EngineState,
+        terminal_rect: PhysicalRect,
+    ) -> Option<PhysicalRect> {
         let surface_id = self.focused_surface_id(engine)?;
         for (_pane_id, _pane_rect, regions) in &self.surface_regions(engine, terminal_rect) {
             for r in regions {
@@ -66,17 +70,17 @@ impl AppState {
     pub fn surface_cell_rect(
         &self,
         engine: &EngineState,
-        terminal_rect: Rect,
+        terminal_rect: PhysicalRect,
         surface_id: u32,
         col: usize,
         row: usize,
         cell_w: f32,
         cell_h: f32,
-    ) -> Option<Rect> {
+    ) -> Option<PhysicalRect> {
         for (_pane_id, _pane_rect, regions) in &self.surface_regions(engine, terminal_rect) {
             for r in regions {
                 if r.id == surface_id {
-                    return Some(Rect {
+                    return Some(PhysicalRect {
                         x: r.rect.x + PhysicalPx(col as f32 * cell_w),
                         y: r.rect.y + PhysicalPx(row as f32 * cell_h),
                         width: PhysicalPx(cell_w.max(1.0)),
@@ -93,8 +97,8 @@ impl AppState {
         &self,
         engine: &EngineState,
         surface_id: u32,
-        terminal_rect: Rect,
-    ) -> Option<Rect> {
+        terminal_rect: PhysicalRect,
+    ) -> Option<PhysicalRect> {
         for (_pane_id, _pane_rect, regions) in &self.surface_regions(engine, terminal_rect) {
             for r in regions {
                 if r.id == surface_id {
@@ -111,7 +115,7 @@ impl AppState {
         engine: &EngineState,
         x: f32,
         y: f32,
-        terminal_rect: Rect,
+        terminal_rect: PhysicalRect,
     ) -> Option<u32> {
         for (_pane_id, _pane_rect, regions) in &self.surface_regions(engine, terminal_rect) {
             for r in regions {
@@ -127,7 +131,7 @@ impl AppState {
     pub fn resize_all(
         &mut self,
         engine: &mut EngineState,
-        terminal_rect: Rect,
+        terminal_rect: PhysicalRect,
         cell_width: f32,
         cell_height: f32,
     ) {
@@ -136,7 +140,7 @@ impl AppState {
             let pane_rects = ws.pane_layout().compute_rects(terminal_rect);
             for (pane_id, pane_rect) in pane_rects {
                 if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
-                    let content_rect = Rect {
+                    let content_rect = PhysicalRect {
                         x: pane_rect.x,
                         y: pane_rect.y + tab_bar_h,
                         width: pane_rect.width,

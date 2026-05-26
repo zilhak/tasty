@@ -14,7 +14,7 @@ impl PluginManager {
     pub fn take_plugin_dirty_rects(
         &self,
         plugin_id: &str,
-    ) -> HashMap<SharedBufferId, Option<tasty_plugin_protocol::Rect>> {
+    ) -> HashMap<SharedBufferId, Option<tasty_plugin_protocol::PixelRect>> {
         self.processes
             .get(plugin_id)
             .map(|p| p.take_dirty_rects())

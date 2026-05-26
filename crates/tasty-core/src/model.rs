@@ -15,28 +15,28 @@ pub const SURFACE_BORDER_WIDTH: PhysicalPx = PhysicalPx(1.0);
 
 /// A pixel rectangle in physical (device) pixels, used for viewport/scissor calculations.
 #[derive(Debug, Clone, Copy)]
-pub struct Rect {
+pub struct PhysicalRect {
     pub x: PhysicalPx,
     pub y: PhysicalPx,
     pub width: PhysicalPx,
     pub height: PhysicalPx,
 }
 
-impl Rect {
+impl PhysicalRect {
     /// Check if a point (x, y) is inside this rectangle.
     pub fn contains(&self, x: PhysicalPx, y: PhysicalPx) -> bool {
         x >= self.x && x < self.x + self.width && y >= self.y && y < self.y + self.height
     }
 
     /// Check if two rects are approximately equal (within 1px tolerance).
-    pub fn approx_eq(&self, other: &Rect) -> bool {
+    pub fn approx_eq(&self, other: &PhysicalRect) -> bool {
         (self.x - other.x).abs() < PhysicalPx(1.0)
             && (self.y - other.y).abs() < PhysicalPx(1.0)
             && (self.width - other.width).abs() < PhysicalPx(1.0)
             && (self.height - other.height).abs() < PhysicalPx(1.0)
     }
 
-    pub fn split(self, direction: SplitDirection, ratio: f32) -> (Rect, Rect) {
+    pub fn split(self, direction: SplitDirection, ratio: f32) -> (PhysicalRect, PhysicalRect) {
         self.split_with_gap(direction, ratio, PANE_BORDER_WIDTH)
     }
 
@@ -45,20 +45,20 @@ impl Rect {
         direction: SplitDirection,
         ratio: f32,
         gap: PhysicalPx,
-    ) -> (Rect, Rect) {
+    ) -> (PhysicalRect, PhysicalRect) {
         match direction {
             SplitDirection::Vertical => {
                 let usable = (self.width - gap).max(PhysicalPx(0.0));
                 let first_w = (usable * ratio).floor();
                 let second_w = usable - first_w;
                 (
-                    Rect {
+                    PhysicalRect {
                         x: self.x,
                         y: self.y,
                         width: first_w,
                         height: self.height,
                     },
-                    Rect {
+                    PhysicalRect {
                         x: self.x + first_w + gap,
                         y: self.y,
                         width: second_w,
@@ -71,13 +71,13 @@ impl Rect {
                 let first_h = (usable * ratio).floor();
                 let second_h = usable - first_h;
                 (
-                    Rect {
+                    PhysicalRect {
                         x: self.x,
                         y: self.y,
                         width: self.width,
                         height: first_h,
                     },
-                    Rect {
+                    PhysicalRect {
                         x: self.x,
                         y: self.y + first_h + gap,
                         width: self.width,
@@ -101,7 +101,7 @@ pub struct DividerInfo {
     /// The direction of the split this divider belongs to.
     pub direction: SplitDirection,
     /// The rect of the parent split node that owns this divider.
-    pub split_rect: Rect,
+    pub split_rect: PhysicalRect,
 }
 
 /// Compute the terminal area rectangle (everything right of the sidebar) in physical pixels.
@@ -112,11 +112,11 @@ pub fn compute_terminal_rect(
     surface_height: PhysicalPx,
     sidebar_width: LogicalPx,
     scale_factor: f32,
-) -> Rect {
+) -> PhysicalRect {
     let sw = sidebar_width
         .to_physical(scale_factor)
         .min(surface_width - PhysicalPx(1.0));
-    Rect {
+    PhysicalRect {
         x: sw,
         y: PhysicalPx(0.0),
         width: (surface_width - sw).max(PhysicalPx(1.0)),

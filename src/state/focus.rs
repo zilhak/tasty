@@ -167,7 +167,7 @@ impl AppState {
         engine: &mut EngineState,
         x: f32,
         y: f32,
-        terminal_rect: crate::model::Rect,
+        terminal_rect: crate::model::PhysicalRect,
     ) -> bool {
         let ws = self.active_workspace(engine);
         let pane_rects = ws.pane_layout().compute_rects(terminal_rect);
@@ -192,7 +192,7 @@ impl AppState {
         engine: &mut EngineState,
         x: f32,
         y: f32,
-        terminal_rect: crate::model::Rect,
+        terminal_rect: crate::model::PhysicalRect,
     ) -> bool {
         let ws = self.active_workspace(engine);
         let focused_id = ws.focused_pane;
@@ -213,7 +213,7 @@ impl AppState {
             .map(|p| p.tabs.len())
             .unwrap_or(0);
         let tab_bar_h = self.tab_bar_height;
-        let content_rect = crate::model::Rect {
+        let content_rect = crate::model::PhysicalRect {
             x: pane_rect.x,
             y: pane_rect.y + tab_bar_h,
             width: pane_rect.width,

@@ -19,7 +19,7 @@ impl MainWindow {
         kb: &crate::settings::KeybindingSettings,
         key: &Key,
         mods: ModifiersState,
-        terminal_rect: crate::model::Rect,
+        terminal_rect: crate::model::PhysicalRect,
         cell_w: f32,
         cell_h: f32,
         proxy: &winit::event_loop::EventLoopProxy<crate::AppEvent>,

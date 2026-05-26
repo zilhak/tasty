@@ -16,11 +16,11 @@ fn lp(v: f32) -> LogicalPx {
     LogicalPx(v)
 }
 
-// ---- Rect tests ----
+// ---- PhysicalRect tests ----
 
 #[test]
 fn rect_contains_inside() {
-    let r = Rect {
+    let r = PhysicalRect {
         x: px(10.0),
         y: px(20.0),
         width: px(100.0),
@@ -31,7 +31,7 @@ fn rect_contains_inside() {
 
 #[test]
 fn rect_contains_at_origin() {
-    let r = Rect {
+    let r = PhysicalRect {
         x: px(10.0),
         y: px(20.0),
         width: px(100.0),
@@ -42,7 +42,7 @@ fn rect_contains_at_origin() {
 
 #[test]
 fn rect_contains_outside_left() {
-    let r = Rect {
+    let r = PhysicalRect {
         x: px(10.0),
         y: px(20.0),
         width: px(100.0),
@@ -53,7 +53,7 @@ fn rect_contains_outside_left() {
 
 #[test]
 fn rect_contains_outside_bottom() {
-    let r = Rect {
+    let r = PhysicalRect {
         x: px(10.0),
         y: px(20.0),
         width: px(100.0),
@@ -64,7 +64,7 @@ fn rect_contains_outside_bottom() {
 
 #[test]
 fn rect_contains_at_boundary_exclusive() {
-    let r = Rect {
+    let r = PhysicalRect {
         x: px(0.0),
         y: px(0.0),
         width: px(100.0),
@@ -78,7 +78,7 @@ fn rect_contains_at_boundary_exclusive() {
 
 #[test]
 fn rect_split_vertical() {
-    let r = Rect {
+    let r = PhysicalRect {
         x: px(0.0),
         y: px(0.0),
         width: px(200.0),
@@ -97,7 +97,7 @@ fn rect_split_vertical() {
 
 #[test]
 fn rect_split_horizontal() {
-    let r = Rect {
+    let r = PhysicalRect {
         x: px(0.0),
         y: px(0.0),
         width: px(200.0),
@@ -116,7 +116,7 @@ fn rect_split_horizontal() {
 
 #[test]
 fn rect_split_unequal_ratio() {
-    let r = Rect {
+    let r = PhysicalRect {
         x: px(0.0),
         y: px(0.0),
         width: px(300.0),
@@ -132,13 +132,13 @@ fn rect_split_unequal_ratio() {
 
 #[test]
 fn rect_approx_eq() {
-    let r1 = Rect {
+    let r1 = PhysicalRect {
         x: px(10.0),
         y: px(20.0),
         width: px(100.0),
         height: px(50.0),
     };
-    let r2 = Rect {
+    let r2 = PhysicalRect {
         x: px(10.5),
         y: px(20.3),
         width: px(100.2),
@@ -149,13 +149,13 @@ fn rect_approx_eq() {
 
 #[test]
 fn rect_not_approx_eq() {
-    let r1 = Rect {
+    let r1 = PhysicalRect {
         x: px(10.0),
         y: px(20.0),
         width: px(100.0),
         height: px(50.0),
     };
-    let r2 = Rect {
+    let r2 = PhysicalRect {
         x: px(12.0),
         y: px(20.0),
         width: px(100.0),
@@ -175,7 +175,7 @@ fn pane_node_compute_rects_single() {
         tab_scroll_offset: 0.0,
     };
     let node = PaneNode::Leaf(pane);
-    let rect = Rect {
+    let rect = PhysicalRect {
         x: px(0.0),
         y: px(0.0),
         width: px(800.0),
@@ -207,7 +207,7 @@ fn pane_node_compute_rects_split() {
         first: Box::new(PaneNode::Leaf(p1)),
         second: Box::new(PaneNode::Leaf(p2)),
     };
-    let rect = Rect {
+    let rect = PhysicalRect {
         x: px(0.0),
         y: px(0.0),
         width: px(800.0),
@@ -340,7 +340,7 @@ fn pane_node_find_divider_at_vertical() {
         first: Box::new(PaneNode::Leaf(p1)),
         second: Box::new(PaneNode::Leaf(p2)),
     };
-    let rect = Rect {
+    let rect = PhysicalRect {
         x: px(0.0),
         y: px(0.0),
         width: px(800.0),
@@ -532,8 +532,8 @@ fn pane_node_close_pane_not_found() {
 #[test]
 fn surface_layout_find_surface_at() {
     // Cannot easily test with real terminals, but we can test the layout structure
-    // This test validates the basic Rect-based lookup
-    let rect = Rect {
+    // This test validates the basic PhysicalRect-based lookup
+    let rect = PhysicalRect {
         x: px(0.0),
         y: px(0.0),
         width: px(100.0),

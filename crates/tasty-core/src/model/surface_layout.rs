@@ -1,13 +1,15 @@
 use super::pane_tree::FocusDirection;
 use super::surface_trait::Surface;
 use super::terminal_surface::TerminalSurface;
-use super::{DividerInfo, PhysicalPx, Rect, SURFACE_BORDER_WIDTH, SplitDirection, SurfaceId};
+use super::{
+    DividerInfo, PhysicalPx, PhysicalRect, SURFACE_BORDER_WIDTH, SplitDirection, SurfaceId,
+};
 use tasty_terminal::Terminal;
 
 /// A surface and its screen region, returned by `surface_regions()`.
 pub struct SurfaceRegion<'a> {
     pub id: SurfaceId,
-    pub rect: Rect,
+    pub rect: PhysicalRect,
     pub surface: &'a dyn Surface,
 }
 
@@ -270,7 +272,7 @@ impl SurfaceLayout {
     }
 
     /// Collect regions for all surfaces with their Surface trait references.
-    pub fn surface_regions(&self, rect: Rect) -> Vec<SurfaceRegion<'_>> {
+    pub fn surface_regions(&self, rect: PhysicalRect) -> Vec<SurfaceRegion<'_>> {
         match self {
             SurfaceLayout::Leaf(surface) => {
                 if let Some(id) = surface.surface_id() {
@@ -298,7 +300,7 @@ impl SurfaceLayout {
         }
     }
 
-    pub fn resize_all(&mut self, rect: Rect, cell_width: f32, cell_height: f32) {
+    pub fn resize_all(&mut self, rect: PhysicalRect, cell_width: f32, cell_height: f32) {
         match self {
             SurfaceLayout::Leaf(surface) => {
                 surface.resize_all(rect, cell_width, cell_height);
@@ -381,7 +383,7 @@ impl SurfaceLayout {
         }
     }
 
-    pub fn collect_dividers(&self, rect: Rect) -> Vec<Rect> {
+    pub fn collect_dividers(&self, rect: PhysicalRect) -> Vec<PhysicalRect> {
         match self {
             SurfaceLayout::Leaf(_) => vec![],
             SurfaceLayout::Split {
@@ -394,13 +396,13 @@ impl SurfaceLayout {
                 let gap = SURFACE_BORDER_WIDTH;
                 let (r1, r2) = rect.split_with_gap(*direction, *ratio, gap);
                 let divider = match direction {
-                    SplitDirection::Vertical => Rect {
+                    SplitDirection::Vertical => PhysicalRect {
                         x: r1.x + r1.width,
                         y: rect.y,
                         width: gap,
                         height: rect.height,
                     },
-                    SplitDirection::Horizontal => Rect {
+                    SplitDirection::Horizontal => PhysicalRect {
                         x: rect.x,
                         y: r1.y + r1.height,
                         width: rect.width,
@@ -419,7 +421,7 @@ impl SurfaceLayout {
         &self,
         x: f32,
         y: f32,
-        rect: Rect,
+        rect: PhysicalRect,
         threshold: f32,
     ) -> Option<DividerInfo> {
         match self {
@@ -463,9 +465,9 @@ impl SurfaceLayout {
 
     pub fn update_ratio_for_rect(
         &mut self,
-        split_rect: Rect,
+        split_rect: PhysicalRect,
         new_ratio: f32,
-        current_rect: Rect,
+        current_rect: PhysicalRect,
     ) -> bool {
         match self {
             SurfaceLayout::Leaf(_) => false,
@@ -561,7 +563,7 @@ impl SurfaceLayout {
         matches!(dir, FocusDirection::Left | FocusDirection::Up)
     }
 
-    pub fn find_surface_at(&self, x: f32, y: f32, rect: Rect) -> Option<SurfaceId> {
+    pub fn find_surface_at(&self, x: f32, y: f32, rect: PhysicalRect) -> Option<SurfaceId> {
         match self {
             SurfaceLayout::Leaf(surface) => {
                 if rect.contains(PhysicalPx(x), PhysicalPx(y)) {

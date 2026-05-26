@@ -153,9 +153,9 @@ pub struct SharedBufferId(pub u64);
 /// 픽셀(또는 추후 다른 단위) 좌표계의 정수 사각형. shared buffer dirty 영역 표현에 사용.
 ///
 /// 비어 있는 rect(`w == 0 || h == 0`)는 "갱신 없음"이 아니라 "유효하지 않음"으로 간주.
-/// "전체 갱신"은 `Option<Rect>::None`으로 표현한다.
+/// "전체 갱신"은 `Option<PixelRect>::None`으로 표현한다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
-pub struct Rect {
+pub struct PixelRect {
     pub x: u32,
     pub y: u32,
     pub w: u32,
@@ -186,7 +186,7 @@ pub struct SharedBufferDirtyParams {
     pub id: SharedBufferId,
     /// `None`이면 전체 영역이 dirty.
     #[serde(default)]
-    pub rect: Option<Rect>,
+    pub rect: Option<PixelRect>,
 }
 
 /// 호스트 → plugin 요청.
@@ -336,7 +336,7 @@ pub enum HandleChannelMessage {
         id: SharedBufferId,
         /// `None`이면 전체 영역.
         #[serde(default)]
-        rect: Option<Rect>,
+        rect: Option<PixelRect>,
     },
 }
 

@@ -50,7 +50,7 @@ impl App {
         let sf = gpu.scale_factor();
         let size = gpu.size();
         let sidebar_w = sidebar_width.to_physical(sf);
-        let terminal_rect = crate::model::Rect {
+        let terminal_rect = crate::model::PhysicalRect {
             x: sidebar_w,
             y: crate::model::PhysicalPx(0.0),
             width: (crate::model::PhysicalPx(size.width as f32) - sidebar_w)

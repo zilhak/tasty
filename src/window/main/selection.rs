@@ -1,4 +1,4 @@
-use crate::model::Rect;
+use crate::model::PhysicalRect;
 use crate::selection::{self, SelectionMode, SelectionPoint, TextSelection};
 use crate::window::Window;
 
@@ -7,7 +7,7 @@ use super::MainWindow;
 impl MainWindow {
     /// Extend the current selection (or create one from last click) to the given position.
     /// Used for Shift+Click range selection.
-    pub(super) fn extend_selection(&mut self, x: f32, y: f32, terminal_rect: &Rect) {
+    pub(super) fn extend_selection(&mut self, x: f32, y: f32, terminal_rect: &PhysicalRect) {
         if let Some((point, surface_id)) = self.mouse_to_grid(x, y, terminal_rect) {
             if let Some(sel) = &mut self.text_selection {
                 // Existing selection: keep anchor, move cursor
@@ -34,7 +34,7 @@ impl MainWindow {
     }
 
     /// Start a new text selection from the given pixel position.
-    pub(super) fn start_selection(&mut self, x: f32, y: f32, terminal_rect: &Rect) {
+    pub(super) fn start_selection(&mut self, x: f32, y: f32, terminal_rect: &PhysicalRect) {
         if let Some((point, surface_id)) = self.mouse_to_grid(x, y, terminal_rect) {
             // Detect multi-click
             let now = std::time::Instant::now();
@@ -189,7 +189,7 @@ impl MainWindow {
     }
 
     /// Move the terminal cursor to the clicked position using the click_cursor module.
-    pub(super) fn move_cursor_to_click(&mut self, x: f32, y: f32, terminal_rect: &Rect) {
+    pub(super) fn move_cursor_to_click(&mut self, x: f32, y: f32, terminal_rect: &PhysicalRect) {
         let engine = &mut self.engine_state;
         if !engine.settings.general.click_to_move_cursor {
             return;
@@ -290,7 +290,7 @@ impl MainWindow {
         &self,
         x: f32,
         y: f32,
-        terminal_rect: &Rect,
+        terminal_rect: &PhysicalRect,
     ) -> Option<(SelectionPoint, u32)> {
         let engine = &self.engine_state;
         let terminal = self.state.focused_terminal(engine)?;

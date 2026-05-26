@@ -22,7 +22,7 @@
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 
-use tasty_plugin_protocol::{PixelFilter, PixelFormat, Rect, SharedBufferId, UiNode};
+use tasty_plugin_protocol::{PixelFilter, PixelFormat, PixelRect, SharedBufferId, UiNode};
 
 use super::GpuState;
 use super::canvas_texture::CanvasKey;
@@ -56,7 +56,7 @@ impl GpuState {
 
         // plugin 별 dirty rect를 한 번 drain. 동일 plugin이 여러 canvas를 가지면 한
         // 묶음으로 받아 각 buffer_id별 lookup.
-        let mut dirty_per_plugin: HashMap<String, HashMap<SharedBufferId, Option<Rect>>> =
+        let mut dirty_per_plugin: HashMap<String, HashMap<SharedBufferId, Option<PixelRect>>> =
             HashMap::new();
         for c in &pending {
             if !dirty_per_plugin.contains_key(&c.plugin_id) {

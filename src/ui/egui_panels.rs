@@ -1,7 +1,7 @@
 use egui::emath::GuiRounding as _;
 use winit::keyboard::{Key, NamedKey};
 
-use crate::model::Rect;
+use crate::model::PhysicalRect;
 use crate::state::{AppState, PendingKeyEvent};
 use crate::theme;
 
@@ -25,7 +25,7 @@ pub fn draw_egui_panels(
     ctx: &egui::Context,
     state: &mut AppState,
     engine: &mut crate::engine_state::EngineState,
-    pane_rects: &[(u32, Rect)],
+    pane_rects: &[(u32, PhysicalRect)],
     scale_factor: f32,
     canvas_cache: &crate::gpu::canvas_texture::CanvasTextureCache,
 ) {
@@ -47,7 +47,7 @@ pub fn draw_egui_panels(
 
             // Collect non-GPU-rendered surfaces from this tab.
             let focused_surface_in_tab = tab.focused_surface;
-            let content_rect = Rect {
+            let content_rect = PhysicalRect {
                 x: pane_rect.x,
                 y: pane_rect.y + tab_bar_h,
                 width: pane_rect.width,

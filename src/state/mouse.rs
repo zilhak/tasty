@@ -1,4 +1,4 @@
-use crate::model::{DividerInfo, PhysicalPx, Rect, SplitDirection};
+use crate::model::{DividerInfo, PhysicalPx, PhysicalRect, SplitDirection};
 
 use super::AppState;
 use crate::engine_state::EngineState;
@@ -11,7 +11,7 @@ impl AppState {
         engine: &EngineState,
         x: f32,
         y: f32,
-        terminal_rect: Rect,
+        terminal_rect: PhysicalRect,
         divider_threshold: f32,
     ) -> Option<egui::CursorIcon> {
         if !terminal_rect.contains(PhysicalPx(x), PhysicalPx(y)) {
@@ -54,7 +54,7 @@ impl AppState {
         engine: &EngineState,
         x: f32,
         y: f32,
-        terminal_rect: Rect,
+        terminal_rect: PhysicalRect,
         threshold: f32,
     ) -> Option<DividerInfo> {
         let ws = self.active_workspace(engine);
@@ -68,7 +68,7 @@ impl AppState {
         engine: &EngineState,
         x: f32,
         y: f32,
-        terminal_rect: Rect,
+        terminal_rect: PhysicalRect,
         threshold: f32,
     ) -> Option<DividerInfo> {
         let ws = self.active_workspace(engine);
@@ -83,7 +83,7 @@ impl AppState {
 
         let pane = ws.pane_layout().find_pane(focused_id)?;
         let tab_bar_h = self.tab_bar_height;
-        let content_rect = Rect {
+        let content_rect = PhysicalRect {
             x: pane_rect.x,
             y: pane_rect.y + tab_bar_h,
             width: pane_rect.width,
@@ -101,7 +101,7 @@ impl AppState {
         divider: &DividerInfo,
         x: f32,
         y: f32,
-        terminal_rect: Rect,
+        terminal_rect: PhysicalRect,
     ) -> bool {
         let new_ratio = match divider.direction {
             SplitDirection::Vertical => {
@@ -130,7 +130,7 @@ impl AppState {
         divider: &DividerInfo,
         x: f32,
         y: f32,
-        terminal_rect: Rect,
+        terminal_rect: PhysicalRect,
     ) -> bool {
         let new_ratio = match divider.direction {
             SplitDirection::Vertical => {
@@ -156,7 +156,7 @@ impl AppState {
             Some(p) => p,
             None => return false,
         };
-        let content_rect = Rect {
+        let content_rect = PhysicalRect {
             x: pane_rect.x,
             y: pane_rect.y + tab_bar_h,
             width: pane_rect.width,

@@ -4,7 +4,7 @@
 //! shell prompt / command line is), and moves the cursor to a clicked position
 //! within that region by sending arrow key sequences.
 
-use crate::model::Rect;
+use crate::model::PhysicalRect;
 
 /// The editable region of a terminal surface — the contiguous area of the
 /// current (possibly soft-wrapped) command line, from the first wrapped row
@@ -183,7 +183,7 @@ pub fn is_shell_process(name: &str) -> bool {
 pub fn pixel_to_grid(
     x: f32,
     y: f32,
-    viewport: &Rect,
+    viewport: &PhysicalRect,
     cell_width: f32,
     cell_height: f32,
     cols: usize,

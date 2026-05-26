@@ -103,7 +103,7 @@ fn send_handle_delivers_fd_via_scm_rights() {
 #[test]
 fn shared_buffer_roundtrip_via_handle_channel() {
     use std::os::unix::io::AsRawFd;
-    use tasty_plugin_protocol::{Rect, SharedBufferId};
+    use tasty_plugin_protocol::{PixelRect, SharedBufferId};
 
     let (host_raw, plugin_raw) = UnixStream::pair().expect("socketpair");
     let mut host_stream = HandleStream::from_unix(host_raw);
@@ -160,7 +160,7 @@ fn shared_buffer_roundtrip_via_handle_channel() {
     // plugin → host: Dirty 메시지 송신 (raw write, fd 없이).
     let dirty = HandleChannelMessage::Dirty {
         id,
-        rect: Some(Rect {
+        rect: Some(PixelRect {
             x: 0,
             y: 0,
             w: 32,

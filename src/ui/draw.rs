@@ -1,8 +1,8 @@
-//! UI 전체 진입점 — sidebar 를 그리고 남은 terminal 영역 Rect 를 반환.
+//! UI 전체 진입점 — sidebar 를 그리고 남은 terminal 영역 PhysicalRect 를 반환.
 
 use crate::engine_state::EngineState;
 use crate::intent::Intent;
-use crate::model::Rect;
+use crate::model::PhysicalRect;
 use crate::state::AppState;
 
 use super::sidebar;
@@ -13,7 +13,7 @@ pub fn draw_ui(
     state: &mut AppState,
     engine: &mut EngineState,
     scale_factor: f32,
-) -> Rect {
+) -> PhysicalRect {
     let sidebar_width = state.sidebar_width.value();
 
     if !state.sidebar_visible {
@@ -70,7 +70,7 @@ pub fn draw_ui(
     let terminal_width = PhysicalPx((screen_rect.width() - sidebar_width) * scale_factor);
     let terminal_height = PhysicalPx(screen_rect.height() * scale_factor);
 
-    Rect {
+    PhysicalRect {
         x: terminal_x,
         y: terminal_y,
         width: PhysicalPx(terminal_width.value().max(1.0)),

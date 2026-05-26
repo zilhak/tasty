@@ -1,6 +1,6 @@
 pub use super::surface_layout::{SurfaceLayout, SurfaceRegion};
 use super::surface_trait::Surface;
-use super::{PhysicalPx, Rect, SurfaceId};
+use super::{PhysicalPx, PhysicalRect, SurfaceId};
 use tasty_terminal::Terminal;
 
 /// Single terminal instance (Surface type: Terminal).
@@ -95,7 +95,7 @@ impl Surface for TerminalSurface {
         }
     }
 
-    fn resize_all(&mut self, rect: Rect, cell_width: f32, cell_height: f32) {
+    fn resize_all(&mut self, rect: PhysicalRect, cell_width: f32, cell_height: f32) {
         let cols = (rect.width / cell_width)
             .floor()
             .max(PhysicalPx(1.0))

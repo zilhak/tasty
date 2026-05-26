@@ -1,4 +1,4 @@
-use crate::model::Rect;
+use crate::model::PhysicalRect;
 
 /// A point in the terminal grid using absolute row coordinates.
 /// absolute_row 0 = oldest scrollback line, scrollback_len = first screen row.
@@ -74,7 +74,7 @@ impl TextSelection {
 pub fn pixel_to_grid(
     mouse_x: f32,
     mouse_y: f32,
-    viewport: &Rect,
+    viewport: &PhysicalRect,
     cell_width: f32,
     cell_height: f32,
     cols: usize,

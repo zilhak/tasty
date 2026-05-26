@@ -4,7 +4,7 @@
 //! "Drop to open" 라벨 + 1px 보더를 그린다. `HoveredFileCancelled` /
 //! `DroppedFile` 직후 사라진다.
 
-use crate::model::Rect;
+use crate::model::PhysicalRect;
 use crate::state::AppState;
 
 /// drop hover overlay 를 egui 프레임 마지막에 그린다 (popup 위, plugin popup 아래).
@@ -12,7 +12,7 @@ pub fn draw_drop_overlay(
     ctx: &egui::Context,
     state: &AppState,
     _engine: &crate::engine_state::EngineState,
-    terminal_rect: Rect,
+    terminal_rect: PhysicalRect,
     scale_factor: f32,
 ) {
     let Some(hover) = state.drop_hover.as_ref() else {

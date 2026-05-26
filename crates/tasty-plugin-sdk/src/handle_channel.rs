@@ -540,12 +540,12 @@ mod tests {
     fn reader_decodes_plain_dirty_without_fd() {
         use std::io::Write;
         use std::os::unix::net::UnixStream;
-        use tasty_plugin_protocol::{Rect, SharedBufferId};
+        use tasty_plugin_protocol::{PixelRect, SharedBufferId};
 
         let (mut host_side, sdk_side) = UnixStream::pair().expect("socketpair");
         let msg = HandleChannelMessage::Dirty {
             id: SharedBufferId(3),
-            rect: Some(Rect {
+            rect: Some(PixelRect {
                 x: 1,
                 y: 2,
                 w: 3,

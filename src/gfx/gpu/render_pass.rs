@@ -1,4 +1,4 @@
-use crate::model::Rect;
+use crate::model::PhysicalRect;
 use crate::renderer::RenderPreedit;
 use crate::state::AppState;
 
@@ -47,7 +47,7 @@ impl GpuState {
     pub(super) fn render_terminals(
         &mut self,
         view: &wgpu::TextureView,
-        regions: &[(u32, Rect, Vec<crate::model::SurfaceRegion<'_>>)],
+        regions: &[(u32, PhysicalRect, Vec<crate::model::SurfaceRegion<'_>>)],
         focused_surface_id: Option<u32>,
         selection: Option<&crate::selection::TextSelection>,
         settings: &crate::settings::AppearanceSettings,

@@ -1,4 +1,4 @@
-use super::{DividerInfo, Pane, PaneId, Rect, SplitDirection, SurfaceId};
+use super::{DividerInfo, Pane, PaneId, PhysicalRect, SplitDirection, SurfaceId};
 use tasty_terminal::Terminal;
 
 /// Directional focus movement.
@@ -140,7 +140,7 @@ impl PaneNode {
     }
 
     /// Compute pixel rectangles for each Pane given a total rect.
-    pub fn compute_rects(&self, rect: Rect) -> Vec<(PaneId, Rect)> {
+    pub fn compute_rects(&self, rect: PhysicalRect) -> Vec<(PaneId, PhysicalRect)> {
         match self {
             PaneNode::Leaf(pane) => vec![(pane.id, rect)],
             PaneNode::Split {
@@ -158,8 +158,8 @@ impl PaneNode {
     }
 
     /// Collect divider rectangles (the gap between split panes).
-    /// Each returned Rect is the thin strip that should be drawn as a border.
-    pub fn collect_dividers(&self, rect: Rect) -> Vec<Rect> {
+    /// Each returned PhysicalRect is the thin strip that should be drawn as a border.
+    pub fn collect_dividers(&self, rect: PhysicalRect) -> Vec<PhysicalRect> {
         match self {
             PaneNode::Leaf(_) => vec![],
             PaneNode::Split {
@@ -172,13 +172,13 @@ impl PaneNode {
                 let (r1, r2) = rect.split(*direction, *ratio);
                 // The divider sits in the gap between r1 and r2
                 let divider = match direction {
-                    SplitDirection::Vertical => Rect {
+                    SplitDirection::Vertical => PhysicalRect {
                         x: r1.x + r1.width,
                         y: rect.y,
                         width: gap,
                         height: rect.height,
                     },
-                    SplitDirection::Horizontal => Rect {
+                    SplitDirection::Horizontal => PhysicalRect {
                         x: rect.x,
                         y: r1.y + r1.height,
                         width: rect.width,
@@ -320,7 +320,7 @@ impl PaneNode {
         &self,
         x: f32,
         y: f32,
-        rect: Rect,
+        rect: PhysicalRect,
         threshold: f32,
     ) -> Option<DividerInfo> {
         match self {
@@ -462,9 +462,9 @@ impl PaneNode {
     /// Returns true if a matching split was found and updated.
     pub fn update_ratio_for_rect(
         &mut self,
-        split_rect: Rect,
+        split_rect: PhysicalRect,
         new_ratio: f32,
-        current_rect: Rect,
+        current_rect: PhysicalRect,
     ) -> bool {
         match self {
             PaneNode::Leaf(_) => false,

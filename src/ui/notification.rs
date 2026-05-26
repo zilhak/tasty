@@ -150,8 +150,8 @@ pub fn draw_popups(
     ctx: &egui::Context,
     state: &mut AppState,
     engine: &mut crate::engine_state::EngineState,
-    pane_rects: &[(u32, crate::model::Rect)],
-    terminal_rect: crate::model::Rect,
+    pane_rects: &[(u32, crate::model::PhysicalRect)],
+    terminal_rect: crate::model::PhysicalRect,
     scale_factor: f32,
 ) {
     // Build scope context for popup visibility/clamping
@@ -272,8 +272,8 @@ pub fn draw_popups(
 fn build_layout_context(
     state: &AppState,
     engine: &crate::engine_state::EngineState,
-    pane_rects: &[(u32, crate::model::Rect)],
-    terminal_rect: crate::model::Rect,
+    pane_rects: &[(u32, crate::model::PhysicalRect)],
+    terminal_rect: crate::model::PhysicalRect,
     scale_factor: f32,
 ) -> crate::ui::LayoutContext {
     let active_workspace = state.active_workspace;

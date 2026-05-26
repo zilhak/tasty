@@ -27,7 +27,7 @@
 use std::collections::HashMap;
 
 use egui::TextureId;
-use tasty_plugin_protocol::{PixelFilter, PixelFormat, Rect, SharedBufferId};
+use tasty_plugin_protocol::{PixelFilter, PixelFormat, PixelRect, SharedBufferId};
 
 /// Plugin id + SharedBufferId의 페어. 호스트 내부에서 한 cache entry를 식별.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -104,7 +104,7 @@ impl CanvasTextureCache {
         queue: &wgpu::Queue,
         user_data: &[u8],
         atomic_gen: u64,
-        dirty: Option<Rect>,
+        dirty: Option<PixelRect>,
     ) {
         let Some(e) = self.entries.get_mut(key) else {
             tracing::warn!(?key, "canvas upload: entry missing");
@@ -114,7 +114,7 @@ impl CanvasTextureCache {
             return;
         }
         let bpp = e.format.bytes_per_pixel();
-        let rect = dirty.unwrap_or(Rect {
+        let rect = dirty.unwrap_or(PixelRect {
             x: 0,
             y: 0,
             w: e.width,
@@ -243,7 +243,7 @@ struct ClippedRect {
 }
 
 /// rect을 (0,0)-(tex_w,tex_h) 사각형에 클램프. 결과 너비/높이가 0이면 None.
-fn clip_rect(r: Rect, tex_w: u32, tex_h: u32) -> Option<ClippedRect> {
+fn clip_rect(r: PixelRect, tex_w: u32, tex_h: u32) -> Option<ClippedRect> {
     if r.x >= tex_w || r.y >= tex_h {
         return None;
     }
@@ -407,7 +407,7 @@ mod tests {
 
     #[test]
     fn clip_rect_within_bounds() {
-        let r = Rect {
+        let r = PixelRect {
             x: 5,
             y: 10,
             w: 20,
@@ -427,7 +427,7 @@ mod tests {
 
     #[test]
     fn clip_rect_clamps_overflow() {
-        let r = Rect {
+        let r = PixelRect {
             x: 90,
             y: 90,
             w: 50,
@@ -447,7 +447,7 @@ mod tests {
 
     #[test]
     fn clip_rect_origin_out_returns_none() {
-        let r = Rect {
+        let r = PixelRect {
             x: 100,
             y: 50,
             w: 10,
@@ -455,7 +455,7 @@ mod tests {
         };
         assert_eq!(clip_rect(r, 100, 100), None);
 
-        let r = Rect {
+        let r = PixelRect {
             x: 50,
             y: 100,
             w: 10,
@@ -466,7 +466,7 @@ mod tests {
 
     #[test]
     fn clip_rect_zero_size_returns_none() {
-        let r = Rect {
+        let r = PixelRect {
             x: 10,
             y: 10,
             w: 0,

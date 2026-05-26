@@ -32,6 +32,9 @@
       <sourceFolder url="file://$MODULE_DIR$/tests" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/crates/tasty-plugin-git-viewer/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/crates/tasty-themes/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/tasty-type-appearance/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/tasty-type-color/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/tasty-type-geometry/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
     </content>
     <orderEntry type="inheritedJdk" />

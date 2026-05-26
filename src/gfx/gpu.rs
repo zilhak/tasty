@@ -15,7 +15,7 @@ use winit::event_loop::EventLoopProxy;
 use winit::window::Window;
 
 use crate::AppEvent;
-use crate::model::{LogicalPx, PhysicalPx, Rect};
+use crate::model::{LogicalPx, PhysicalPx, PhysicalRect};
 use crate::renderer::CellRenderer;
 use crate::settings::AppearanceSettings;
 use crate::state::AppState;
@@ -405,7 +405,7 @@ impl GpuState {
         Ok(())
     }
 
-    fn compute_terminal_rect(&self, sidebar_width: LogicalPx) -> Rect {
+    fn compute_terminal_rect(&self, sidebar_width: LogicalPx) -> PhysicalRect {
         crate::model::compute_terminal_rect(
             PhysicalPx(self.size.width as f32),
             PhysicalPx(self.size.height as f32),
@@ -418,17 +418,17 @@ impl GpuState {
         &self,
         state: &AppState,
         engine: &crate::engine_state::EngineState,
-        terminal_rect: Rect,
-    ) -> (Vec<(u32, Rect)>, Vec<Rect>, Option<u32>) {
+        terminal_rect: PhysicalRect,
+    ) -> (Vec<(u32, PhysicalRect)>, Vec<PhysicalRect>, Option<u32>) {
         let pane_layout = state.active_workspace(engine).pane_layout();
-        let pane_rects: Vec<(u32, Rect)> = pane_layout.compute_rects(terminal_rect);
-        let mut dividers: Vec<Rect> = pane_layout.collect_dividers(terminal_rect);
+        let pane_rects: Vec<(u32, PhysicalRect)> = pane_layout.compute_rects(terminal_rect);
+        let mut dividers: Vec<PhysicalRect> = pane_layout.collect_dividers(terminal_rect);
 
         let focused_surface_id = state.focused_surface_id(engine);
         for (pane_id, pane_rect) in &pane_rects {
             if let Some(pane) = pane_layout.find_pane(*pane_id) {
                 let tab_bar_h = state.tab_bar_height;
-                let content_rect = Rect {
+                let content_rect = PhysicalRect {
                     x: pane_rect.x,
                     y: pane_rect.y + tab_bar_h,
                     width: pane_rect.width,
@@ -443,7 +443,7 @@ impl GpuState {
     }
 
     /// Compute grid size for a given rect.
-    pub fn grid_size_for_rect(&self, rect: &Rect) -> (usize, usize) {
+    pub fn grid_size_for_rect(&self, rect: &PhysicalRect) -> (usize, usize) {
         self.renderer.grid_size_for_rect(rect)
     }
 

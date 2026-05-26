@@ -24,7 +24,7 @@
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 
-use tasty_plugin_protocol::{HandleChannelMessage, Rect, SharedBufferId};
+use tasty_plugin_protocol::{HandleChannelMessage, PixelRect, SharedBufferId};
 use tasty_shm::SharedMemory;
 
 use crate::error::PluginError;
@@ -112,7 +112,7 @@ impl SharedBuffer {
     ///    수 있게 되고, 보조 채널로 dirty rect가 송신된다.
     ///
     /// `rect`가 `None`이면 전체 영역이 dirty.
-    pub fn commit(&self, rect: Option<Rect>) -> Result<(), PluginError> {
+    pub fn commit(&self, rect: Option<PixelRect>) -> Result<(), PluginError> {
         // SAFETY: footer atomic 접근. SharedMemory 영역은 mmap 페이지 정렬이라 8B aligned.
         unsafe {
             tasty_shm::footer::fetch_add(self.mem.as_slice(), 1, Ordering::Release);
@@ -133,7 +133,7 @@ impl SharedBuffer {
     /// hatch다.
     ///
     /// [`commit`]: Self::commit
-    pub fn mark_dirty(&self, rect: Option<Rect>) -> Result<(), PluginError> {
+    pub fn mark_dirty(&self, rect: Option<PixelRect>) -> Result<(), PluginError> {
         let msg = HandleChannelMessage::Dirty { id: self.id, rect };
         let mut w = self
             .handle_writer
@@ -202,7 +202,7 @@ mod tests {
         unsafe {
             buf.as_mut_slice()[0] = 0xAB;
         }
-        let rect = Some(Rect {
+        let rect = Some(PixelRect {
             x: 0,
             y: 0,
             w: 8,

@@ -145,7 +145,7 @@ fn shared_buffer_dirty_omits_rect_when_none() {
 fn shared_buffer_dirty_with_rect_round_trip() {
     let p = SharedBufferDirtyParams {
         id: SharedBufferId(11),
-        rect: Some(Rect {
+        rect: Some(PixelRect {
             x: 10,
             y: 20,
             w: 40,
@@ -192,7 +192,7 @@ fn handle_channel_handle_attach_round_trip() {
 fn handle_channel_dirty_with_rect_round_trip() {
     let msg = HandleChannelMessage::Dirty {
         id: SharedBufferId(2),
-        rect: Some(Rect {
+        rect: Some(PixelRect {
             x: 1,
             y: 2,
             w: 3,

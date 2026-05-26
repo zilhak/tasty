@@ -1,7 +1,7 @@
 use std::any::Any;
 use std::path::PathBuf;
 
-use super::{Rect, SurfaceId, TerminalSurface};
+use super::{PhysicalRect, SurfaceId, TerminalSurface};
 use tasty_terminal::Terminal;
 
 /// Common behavior for all Surface types.
@@ -70,7 +70,7 @@ pub trait Surface: Any {
     }
 
     /// Resize all terminals to fit the given rect.
-    fn resize_all(&mut self, _rect: Rect, _cell_width: f32, _cell_height: f32) {}
+    fn resize_all(&mut self, _rect: PhysicalRect, _cell_width: f32, _cell_height: f32) {}
 
     /// Collect all terminals (mutable). Object-safe signature.
     fn collect_terminals_mut<'a>(&'a mut self, _out: &mut Vec<&'a mut Terminal>) {}

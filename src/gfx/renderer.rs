@@ -8,7 +8,7 @@ use tasty_core::color::{GpuRgb, GpuRgba};
 use termwiz::surface::Surface;
 
 use crate::font::{FontConfig, GlyphAtlas, GlyphKey};
-use crate::model::Rect;
+use crate::model::PhysicalRect;
 use crate::selection::NormalizedSelection;
 use crate::terminal_link::LinkHighlight;
 
@@ -294,7 +294,7 @@ impl CellRenderer {
     }
 
     /// Compute terminal grid size from a viewport rect (physical pixels).
-    pub fn grid_size_for_rect(&self, rect: &Rect) -> (usize, usize) {
+    pub fn grid_size_for_rect(&self, rect: &PhysicalRect) -> (usize, usize) {
         let cell_w = self.font_config.metrics.cell_width.max(1.0);
         let cell_h = self.font_config.metrics.cell_height.max(1.0);
         let cols = (rect.width.value() / cell_w).floor() as usize;
@@ -308,7 +308,7 @@ impl CellRenderer {
         &mut self,
         terminal: &tasty_terminal::Terminal,
         queue: &wgpu::Queue,
-        viewport: &Rect,
+        viewport: &PhysicalRect,
         screen_width: u32,
         screen_height: u32,
         default_bg: GpuRgba,
@@ -551,7 +551,7 @@ impl CellRenderer {
     pub fn render_scissored<'a>(
         &'a self,
         render_pass: &mut wgpu::RenderPass<'a>,
-        viewport: &Rect,
+        viewport: &PhysicalRect,
         surface_width: u32,
         surface_height: u32,
     ) {

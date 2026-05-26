@@ -18,7 +18,7 @@ use winit::keyboard::ModifiersState;
 use winit::window::CursorIcon;
 
 use crate::gpu::{GpuState, ImePreeditState};
-use crate::model::{PhysicalPx, Rect};
+use crate::model::{PhysicalPx, PhysicalRect};
 use crate::selection::TextSelection;
 use crate::state::{AppState, FocusedSurfaceType};
 use crate::window::{
@@ -116,7 +116,7 @@ impl MainWindow {
         self.base.close_requested = true;
     }
 
-    pub fn compute_terminal_rect(&self) -> Rect {
+    pub fn compute_terminal_rect(&self) -> PhysicalRect {
         let size = self.base.gpu.size();
         crate::model::compute_terminal_rect(
             PhysicalPx(size.width as f32),

@@ -1,6 +1,6 @@
 use winit::window::Window;
 
-use crate::model::Rect;
+use crate::model::PhysicalRect;
 use crate::state::AppState;
 use crate::ui;
 
@@ -12,9 +12,9 @@ impl GpuState {
         state: &mut AppState,
         engine: &mut crate::engine_state::EngineState,
         window: &Window,
-        pane_rects: &[(u32, Rect)],
-        dividers: &[Rect],
-        terminal_rect: Rect,
+        pane_rects: &[(u32, PhysicalRect)],
+        dividers: &[PhysicalRect],
+        terminal_rect: PhysicalRect,
         plugin_manager: Option<&crate::plugin::PluginManager>,
     ) -> egui::FullOutput {
         let raw_input = self.egui_state.take_egui_input(window);

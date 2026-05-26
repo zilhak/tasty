@@ -1,11 +1,11 @@
 use egui::emath::GuiRounding as _;
 
-use crate::model::Rect;
+use crate::model::PhysicalRect;
 use crate::state::AppState;
 use crate::theme;
 
 /// Draw pane dividers (borders between split panes).
-pub fn draw_pane_dividers(ctx: &egui::Context, dividers: &[Rect], scale_factor: f32) {
+pub fn draw_pane_dividers(ctx: &egui::Context, dividers: &[PhysicalRect], scale_factor: f32) {
     let th = theme::theme();
     if dividers.is_empty() {
         return;
@@ -33,7 +33,7 @@ pub fn draw_surface_highlights(
     ctx: &egui::Context,
     state: &AppState,
     engine: &crate::engine_state::EngineState,
-    terminal_rect: Rect,
+    terminal_rect: PhysicalRect,
     scale_factor: f32,
 ) {
     let th = theme::theme();

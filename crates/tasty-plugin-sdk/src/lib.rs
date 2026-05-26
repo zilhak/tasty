@@ -35,5 +35,5 @@ pub use tasty_plugin_protocol::ui_tree::{
 };
 pub use tasty_plugin_protocol::{
     EventEnvelope, EventMeta, EventOrigin, EventScope, ExtensionHookKind, ExtensionHookMode,
-    ExtensionHookPhase, LifecycleReason, PluginEvent, Rect, SharedBufferId,
+    ExtensionHookPhase, LifecycleReason, PixelRect, PluginEvent, SharedBufferId,
 };

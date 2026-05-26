@@ -299,14 +299,14 @@ impl Tab {
     }
 
     /// Resize all surfaces within the layout.
-    pub fn resize_all(&mut self, rect: super::Rect, cell_width: f32, cell_height: f32) {
+    pub fn resize_all(&mut self, rect: super::PhysicalRect, cell_width: f32, cell_height: f32) {
         if let Some(layout) = self.layout_opt.as_mut() {
             layout.resize_all(rect, cell_width, cell_height);
         }
     }
 
     /// All surface regions with Surface trait references.
-    pub fn surface_regions(&self, rect: super::Rect) -> Vec<super::SurfaceRegion<'_>> {
+    pub fn surface_regions(&self, rect: super::PhysicalRect) -> Vec<super::SurfaceRegion<'_>> {
         self.layout().surface_regions(rect)
     }
 
