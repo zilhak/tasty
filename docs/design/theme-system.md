@@ -1,190 +1,181 @@
 # Tasty 테마 시스템
 
-## 개념
+## 핵심 모델
 
-테마는 **미리 정의해놓은 설정값 세트**일 뿐이다. 실제 동작은 사용자의 설정값(`AppearanceSettings`)에 의해 결정된다. 테마 프리셋을 선택하면 해당 설정값이 일괄 적용되고, 이후 사용자가 개별적으로 커스텀할 수 있다.
-
-## 구조
-
-### 두 가지 계층
-
-1. **`Theme` (전역 UI 색상)** — egui 위젯, 사이드바, 탭 바 등 Tasty UI 전체의 색상·크기·간격을 정의. `static RwLock<Theme>`으로 런타임 교체 가능.
-2. **`SurfaceColors` (설정값)** — 터미널/마크다운/익스플로러 각각의 focused/unfocused 배경색·글자색. `AppearanceSettings`에 저장되며 사용자가 직접 수정 가능.
-
-### 테마 프리셋 (`ThemePreset`)
-
-`Theme` + 3종 `SurfaceColors`를 묶은 것. `theme::presets()`로 목록을 얻는다.
-
-| 프리셋 ID | 이름 | 계열 |
-|-----------|------|------|
-| `catppuccin-mocha` | Catppuccin Mocha | 다크 (기본) |
-| `catppuccin-latte` | Catppuccin Latte | 라이트 |
-
-프리셋 선택 시 동작:
-1. `settings.appearance.theme`에 프리셋 ID 저장
-2. `settings.appearance.terminal_colors/markdown_colors/explorer_colors`를 프리셋 기본값으로 초기화
-3. 설정 저장 시 `set_theme(preset.theme)`으로 전역 UI 색상 적용
-
-### 흐름
-
-```
-프리셋 선택 → settings에 색상값 복사 → 저장 시 set_theme() 호출
-                                          ↓
-                                    전역 Theme 교체 (UI 색상)
-                                    settings 저장 (surface 색상)
-                                          ↓
-앱 시작 → settings 로드 → 프리셋 ID로 Theme 적용
+```text
+[ 디스크 ] ~/.tasty/themes/<id>.toml          ← partial TOML, 파일명 stem = id
+                  │
+                  ▼  (사용자가 settings 에서 테마 선택)
+[ tasty-themes ] apply_theme(settings, id)
+                  ├── settings.theme_base.apply_partial(file)   ← 누락 필드는 보존
+                  └── settings.theme_overrides.clear()
+                  │
+                  ▼  (사용자가 픽커로 색 변경)
+              theme_overrides.field = Some(new)
+                  │
+                  ▼
+              resolve(settings) = theme_base ▷ theme_overrides
+                                  + is_light 도출 overlay + SIZING
+                  │
+                  ▼
+[ tasty-core ]   전역 Theme 인스턴스 (한 개)
+                  │
+                  ▼
+              theme().crust / theme().spacing_sm / theme().is_light  ← UI 코드
 ```
 
-## 규칙
+## 두 레이어
 
-### UI 색상은 항상 `theme()`에서 가져온다
+`AppearanceSettings` 에 직렬화되는 두 색상 레이어:
 
-UI 코드에서 `egui::Color32::from_rgb(...)` 등으로 색상을 하드코딩하지 않는다.
+| 레이어 | 타입 | 의미 | 테마 변경 시 |
+|--------|------|------|--------------|
+| `theme_base` | `ThemeColors` (풀 세트) | 지금까지 적용된 테마들의 누적 결과 | partial 덮어쓰기로 누적 |
+| `theme_overrides` | `PartialColors` (모든 필드 `Option`) | 사용자가 픽커로 손댄 흔적 | **클리어** |
+
+실제 화면에 적용되는 색상 = `theme_base ▷ theme_overrides` (override 의 `Some` 필드만 덮어쓰기).
+
+### 누적의 효과
+
+partial 테마(일부 색상만 정의)를 적용하면 누락된 필드는 이전 상태에서 유지된다.
+
+예: mocha 적용 → custom(`accent.blue = #00ff00` 만 정의된 partial) 적용
+- `theme_base.blue` = `#00ff00` 으로 갱신
+- 그 외 모든 색상은 mocha 값 그대로
+
+다음에 또 다른 partial `custom2(red = #ff0000)` 적용:
+- `theme_base.blue` = `#00ff00` (유지)
+- `theme_base.red` = `#ff0000` (덮어쓰기)
+- 나머지는 mocha
+
+## Crate 책임
+
+| crate | 책임 | IO |
+|-------|------|----|
+| `tasty-core::theme` | `Theme`, `ThemeColors`, `PartialColors`, `ThemeSizing`, `MOCHA_FALLBACK*` const, 전역 `RwLock<Theme>`, `theme()/set_theme()/mutate_theme()`, `ThemeApplyContext` trait | **없음** |
+| `tasty-core::color` | `HexColor` (`#RRGGBB` / `#RRGGBBAA` 직렬화) | 없음 |
+| `tasty-themes` | `ThemeFile` (TOML 표면), `MOCHA_TOML_TEXT` / `LATTE_TOML_TEXT` 임베드, scan/load/apply/resolve/install, `ensure_mocha_exists` / `first_run_init` | **있음** (`~/.tasty/themes/`) |
+| `tasty-settings::appearance` | `AppearanceSettings.theme / theme_base / theme_overrides / theme_is_light` 필드. `ThemeApplyContext` 구현 | settings IO |
+| 본 바이너리 | `tasty_themes::*` 호출 (부팅, modal save, settings UI) | — |
+
+의존: `tasty-themes → tasty-core ← tasty-settings`. 순환 없음.
+
+## 빌트인 테마 정책
+
+- **mocha**: 항상 존재 보장.
+  - `tasty-themes` 에 `MOCHA_FALLBACK_COLORS: ThemeColors` const + `MOCHA_TOML_TEXT` (`include_str!`) 임베드.
+  - 부팅 시 `ensure_mocha_exists()` 가 `~/.tasty/themes/mocha.toml` 없거나 파싱 실패면 임베드 텍스트를 다시 풀어둔다.
+  - `load_theme("mocha")` 가 어떤 이유로든 실패해도 const 가 fallback.
+  - unit test 가 `parse(MOCHA_TOML_TEXT) == MOCHA_FALLBACK_COLORS` 를 강제 — 임베드 텍스트와 const 가 어긋나면 빌드 시 실패.
+- **latte**: first-run 1회만 자동 풀어둠.
+  - `first_run_init()` 이 `~/.tasty/themes/` 가 완전히 비어있을 때만 `LATTE_TOML_TEXT` 도 같이 쓴다.
+  - 사용자가 명시적으로 `latte.toml` 만 지웠다면 의도 존중하고 다시 풀지 않음.
+  - fallback 없음. 지워지면 사라짐.
+- **사용자 테마**: 로드 실패 시 mocha 로 fallback.
+
+## ThemeFile TOML 포맷
+
+`~/.tasty/themes/<id>.toml` (파일명 stem = id):
+
+```toml
+label = "표시할 이름"   # 선택. 없으면 id 그대로.
+is_light = false        # 선택. 없으면 이전 is_light 보존.
+
+[palette]
+crust = "#11111b"
+mantle = "#181825"
+# ... (모든 색상 optional)
+
+[accent]
+blue = "#89b4fa"
+# ...
+
+[terminal]
+fg = "#cdd6f4"
+bg = "#1e1e2e"
+selection_bg = "#585b70"
+search_match_bg = "#f9e2af4d"          # 8자리 hex 로 alpha 지정 가능
+search_match_active_bg = "#f9e2afb3"
+
+[ansi]
+black = "#45475a"
+red = "#f38ba8"
+# ... (16 키: black..white + bright_black..bright_white)
+```
+
+**모든 색상 필드는 optional**. 일부만 정의한 partial 테마도 정상 동작 — 누락 필드는 이전 base 의 값을 유지한다.
+
+`hover_overlay` / `active_overlay` / `separator` 같은 반투명 의미 색은 TOML 에 없다. `is_light` 로부터 자동 도출 (라이트 = 검정 +8%/+12%, 다크 = 흰색 +8%/+12%).
+
+UI 크기/간격(`spacing_*`, `border_width`, `item_height_*`, `font_size_*` 등)도 TOML 에 없다. 모든 테마 공통 `tasty_core::theme::SIZING` const.
+
+### HexColor 형식
+
+- `#RGB` (3자리 단축) — `#abc` = `#aabbcc`
+- `#RRGGBB` (6자리, alpha=255)
+- `#RRGGBBAA` (8자리, alpha 보존)
+
+leading `#` 은 optional. 직렬화는 alpha=255 면 6자리, 아니면 8자리.
+
+## 부팅 흐름
+
+`src/app/window_lifecycle.rs::boot_apply_theme()`:
+
+1. `first_run_init()` — themes 폴더가 완전히 빈 상태였으면 mocha + latte 풀어둠.
+2. `ensure_mocha_exists()` — mocha 누락/파싱 실패 시 임베드 텍스트로 복구.
+3. `rescan()` — 디스크 스캔 결과를 캐시에 반영.
+4. `apply_theme(&mut settings.appearance, &settings.appearance.theme)` — 요청 id 적용. 실패 시 mocha fallback.
+5. `install_global(&settings.appearance)` — `resolve()` 결과를 전역 Theme 에 박는다.
+6. 요청 id 와 적용된 id 가 다르면 InfoModal 로 사용자에게 알린다.
+
+## 사용자 액션
+
+### 테마 선택 (settings UI > Appearance > Theme)
+
+`src/window/settings/ui/tabs/appearance.rs::draw_appearance_theme()`:
+1. `tasty_themes::rescan()` — settings 화면 진입 시 디스크 변경 반영.
+2. `scan_themes()` 결과를 `selectable_label` 로 나열.
+3. 선택 시 `tasty_themes::apply_theme(&mut settings.appearance, &entry.id)` 호출.
+4. settings 저장 시 (modal close 시) `install_global` 로 전역 Theme 갱신.
+
+### 색상 픽커 편집 (현재: surface_colors 만)
+
+surface_colors 픽커는 기존 그대로 — `settings.appearance.terminal_colors` 등을 직접 변경.
+
+**theme_overrides 픽커는 Phase 1 범위 밖**. palette/accent 전 필드 픽커는 별도 후속.
+
+## UI 코드의 색상 접근 규칙
 
 ```rust
-// BAD
-let color = egui::Color32::from_rgb(80, 140, 255);
+// ✅ 올바름
+let th = tasty_core::theme::theme();
+ui.painter().rect_filled(rect, 0.0, th.blue);          // → Color32 (From<HexColor>)
+let bg = th.terminal_bg.to_float();                    // GPU 셰이더용
+ui.label(egui::RichText::new("x").color(th.text));
+let pad = th.spacing_sm;                                // sizing 도 같은 방식
+let light = th.is_light;                                // 플래그
 
-// GOOD
-let th = crate::theme::theme();
-let color = th.blue;
+// ❌ 금지
+let color = egui::Color32::from_rgb(80, 140, 255);     // 하드코딩
 ```
 
-### `Theme` 필드 타입과 변환 헬퍼
-
-`Theme`의 모든 색상 필드는 GUI-free `HexColor { r, g, b, a: u8 }` (straight RGBA, unmultiplied) 타입이다. egui로 넘길 때는 두 변환 헬퍼 중 하나를 쓴다:
-
-| 변환 | 동작 | 사용처 |
-|------|------|--------|
-| `c.to_egui()` | `Color32::from_rgba_unmultiplied` 위임 (sRGB-aware premultiplication) | 일반 색상 (대부분) |
-| `c.to_egui_premultiplied()` | `Color32::from_rgba_premultiplied` 위임 (저장된 바이트를 그대로 사용) | hover/active overlay, separator 등 premultiplied 바이트로 저장된 반투명 색상 |
-| `c.to_float()` | `[f32; 4]` straight RGBA | GPU 셰이더 입력 |
-
-`From<HexColor> for egui::Color32` impl이 있어서 `painter.rect_filled(rect, 0.0, th.blue)` 같은 호출 사이트에서는 `.into()`만 써도 된다.
-
-### Surface 배경색·글자색은 설정값에서 가져온다
-
-터미널/마크다운/익스플로러의 배경색·글자색은 `theme()`이 아니라 `settings.appearance.terminal_colors` 등에서 가져온다. 사용자가 커스텀한 값이 반영되어야 하기 때문이다.
+`hover_overlay` / `active_overlay` / `separator` 만은 **premultiplied 바이트**로 저장되므로 변환 메서드를 골라 써야 한다:
 
 ```rust
-// BAD — 테마에서 직접 가져옴 (사용자 커스텀 무시)
-let bg = th.terminal_bg;
-
-// GOOD — 설정값에서 가져옴
-let bg = settings.terminal_colors.focused_bg.to_float();
-```
-
-### egui premultiplied alpha 주의
-
-`HexColor`를 거치므로 일반 호출에서는 `c.to_egui()`만 쓰면 된다 (내부적으로 `from_rgba_unmultiplied`로 위임).
-
-다만 `Theme`의 `hover_overlay` / `active_overlay` / `separator`는 **premultiplied 바이트**를 저장하는 예외다(`HexColor::from_rgba(20, 20, 20, 20)` 등). 이들은 호출 사이트에서 반드시 `c.to_egui_premultiplied()`를 사용해야 시각 결과가 보존된다. `to_egui()`로 잘못 넘기면 sRGB-aware premultiplication이 한 번 더 적용되어 색이 바뀐다.
-
-```rust
-// 일반 색상
-ui.painter().rect_filled(rect, 0.0, th.blue.to_egui());
-// 또는 .into()
-ui.painter().rect_filled(rect, 0.0, th.blue);
-
-// hover/active overlay는 premultiplied
+// ✅ premultiplied 전용 변환
 ui.painter().rect_filled(rect, 0.0, th.hover_overlay.to_egui_premultiplied());
+
+// ❌ 일반 변환 쓰면 sRGB-aware premultiplication 이 한 번 더 적용되어 색이 어긋남
+ui.painter().rect_filled(rect, 0.0, th.hover_overlay.to_egui());
 ```
 
-## `Theme` 필드 레퍼런스
+## 새 테마 추가하기
 
-### 배경/표면
+사용자 입장에서:
 
-| 변수 | 용도 |
-|------|------|
-| `crust` | 가장 깊은 배경, 패널 뒤 |
-| `mantle` | 사이드바 배경 |
-| `base` | 메인 배경 |
-| `surface0` | 카드, 호버 배경, 비활성 보더 |
-| `surface1` | 선택 항목, 활성 보더 |
-| `surface2` | 강조 배경 |
+1. `~/.tasty/themes/mocha.toml` 등을 복사해 `my-theme.toml` 로 이름 변경.
+2. 원하는 색상 수정. 일부만 바꾸고 싶으면 다른 필드는 지워도 됨 — partial 적용된다.
+3. Tasty 재시작 또는 Settings > Appearance > Theme 진입 (자동 rescan).
+4. 목록에서 `my-theme` 선택.
 
-### 오버레이
-
-| 변수 | 용도 |
-|------|------|
-| `overlay0` | 비활성 텍스트, 힌트 |
-| `overlay1` | 보조 아이콘 |
-| `overlay2` | 덜 중요한 텍스트 |
-
-### 텍스트
-
-| 변수 | 용도 |
-|------|------|
-| `text` | 주요 텍스트 |
-| `subtext1` | 보조 텍스트 |
-| `subtext0` | 비활성 텍스트, 설명 |
-| `placeholder` | 입력 위젯 placeholder/hint text. 본문보다 충분히 흐려 입력값과 구분되어야 함. 호스트 측 `theme_bridge::hint_text(s)` 헬퍼로 `TextEdit::hint_text`에 전달. |
-
-### 강조색
-
-| 변수 | 용도 |
-|------|------|
-| `blue` | 주요 강조, 포커스, 링크, 알림 |
-| `green` | 성공, 확인 |
-| `red` | 에러, 위험 |
-| `yellow` | 경고 |
-| `peach` | 주의 |
-| `mauve` | 보라 강조 |
-| `teal` | 정보 |
-| `sky` | 하늘색 강조 |
-| `lavender` | 연보라 |
-| `pink` | 분홍 |
-| `flamingo` | 따뜻한 분홍 |
-| `maroon` | 어두운 분홍 |
-| `rosewater` | 가장 따뜻한 색 |
-
-### 의미적 색상
-
-| 변수 | 용도 |
-|------|------|
-| `hover_overlay` | 호버 시 배경 오버레이 (~8%) |
-| `active_overlay` | 눌림 시 배경 오버레이 (~12%) |
-| `separator` | 구분선 (~8%) |
-
-### 타이포그래피 (UI 전용)
-
-| 변수 | 값 | 용도 |
-|------|-----|------|
-| `font_size_caption` | 11px | 캡션, 배지, 상태 |
-| `font_size_body` | 13px | 본문, 라벨, 버튼 |
-| `font_size_heading` | 13px | 섹션 헤더 (세미볼드로 구분) |
-| `font_size_max` | 14px | UI 텍스트 최대 크기 |
-
-### UI 크기
-
-| 변수 | 값 | 용도 |
-|------|-----|------|
-| `border_width` | 1px | 모든 보더 두께 |
-| `corner_radius` | 4px | 기본 둥근 모서리 |
-| `item_height_tree` | 22px | 트리 항목 |
-| `item_height_interactive` | 28px | 버튼, 입력 필드, 메뉴 항목 |
-| `item_height_tab` | 24px | 탭 |
-
-### 간격 (4px 그리드)
-
-| 변수 | 값 | 용도 |
-|------|-----|------|
-| `spacing_xs` | 4px | 타이트 내부 패딩 |
-| `spacing_sm` | 8px | 기본 패딩, 관련 요소 간 |
-| `spacing_md` | 12px | 카드 내부, 리스트 항목 |
-| `spacing_lg` | 16px | 섹션 패딩 |
-| `spacing_xl` | 24px | 주요 섹션 사이 |
-
-## 새 프리셋 추가 시
-
-1. `src/theme.rs`에 `Theme::NEW_NAME` const 추가
-2. `presets()` 함수에 `ThemePreset` 항목 추가
-3. 이 문서의 프리셋 표에 추가
-
-## 새 `Theme` 필드 추가 시
-
-1. `Theme` 구조체에 필드 추가
-2. 모든 const 프리셋 (`DARK`, `LATTE` 등)에 값 설정
-3. 이 문서의 레퍼런스에 추가
-4. UI 코드에서 `th.새변수`로 사용
+빌트인 fallback 을 명시적으로 복원하려면 `~/.tasty/themes/mocha.toml` 을 지우고 재시작.

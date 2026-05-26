@@ -36,6 +36,7 @@
 | [agent-guide/plan.md](agent-guide/plan.md) | 공유 컨텍스트 — Plan (`memory.plan_*`) + [plan.schema.json](agent-guide/plan.schema.json) |
 | [agent-guide/cache.md](agent-guide/cache.md) | 공유 컨텍스트 — Cache (`memory.cache_*`) |
 | [agent-guide/lua-hooks.md](agent-guide/lua-hooks.md) | `~/.tasty/init.lua` 사용자 hook 가이드 — 등록·이벤트 목록·예제 |
+| [agent-guide/themes.md](agent-guide/themes.md) | 테마 파일 추가/관리 — `~/.tasty/themes/*.toml` partial TOML 포맷 |
 | [agent-guide/linux.md](agent-guide/linux.md) | Linux 사용 가이드 |
 
 ### 개발 AI 에이전트용 (Tasty 개발 가이드)
