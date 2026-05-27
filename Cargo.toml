@@ -19,7 +19,7 @@ unsafe_op_in_unsafe_fn = "deny"
 
 [package]
 name = "tasty"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2024"
 authors = ["zilhak <zilhak1@gmail.com>"]
 license = "MIT"

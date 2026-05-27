@@ -841,9 +841,7 @@ bb 의 한 시점을 통째로 캡처해 복원. 키 컨벤션 `tasty.bb.<name>.
 - `settings.appearance.theme_overrides`: 사용자가 픽커로 직접 손댄 색상 흔적 (`PartialColors`, 모든 필드 `Option`). 테마 변경 시 클리어
 - `settings.appearance.theme_is_light`: 라이트/다크 플래그. `hover_overlay` / `active_overlay` / `separator` 같은 반투명 의미 색이 이 값에서 자동 도출됨
 - `settings.appearance.background_opacity`: wgpu clear color의 알파 값으로 적용. 0.0(투명)~1.0(불투명)
-- `settings.appearance.terminal_colors`: 터미널 surface의 focused/unfocused 배경색·글자색 (HexColor, 기본 focused_bg `#000000`)
-- `settings.appearance.markdown_colors`: 마크다운 surface의 focused/unfocused 배경색·글자색
-- `settings.appearance.explorer_colors`: 익스플로러 surface의 focused/unfocused 배경색·글자색
+- surface 종류별(focused/unfocused × bg/fg) 색은 `theme.surface_themes` map 에 들어있다. 빌트인 mocha 가 `"terminal"`, `"markdown"` entry 를 채우고, theme TOML 의 `[surfaces.<id>]` sub-table 로 사용자/plugin 이 추가 가능. 렌더러는 `theme().surface(id)` 로 접근하며 미정의 id 는 `FALLBACK_SURFACE` 로 안전하게 동작
 - `settings.appearance.sidebar_width`: 사이드바 너비가 UI, GPU 렌더러, 터미널 rect 계산에 반영. 렌더 루프에서 설정값과 자동 동기화
 - `settings.clipboard.history_enabled`: 클립보드 히스토리 기록 여부
 - `settings.clipboard.history_max`: 히스토리 최대 항목 수 (기본 100)

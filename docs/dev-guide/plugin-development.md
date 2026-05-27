@@ -1018,6 +1018,28 @@ cat ~/.tasty/plugins-logs/com.example.myplugin.log
 
 호스트의 plugin manager 로그는 호스트의 stderr 또는 `RUST_LOG=tasty::plugin=debug`로 활성화.
 
+## 8-1. Theme 색 정의 (선택)
+
+Plugin 이 자기만의 surface kind 를 등록할 때, theme TOML 의 `[surfaces.<plugin-surface-id>]` sub-table 을 통해 색을 정의할 수 있다.
+
+빌트인 mocha/latte 와 사용자 테마는 plugin 의 surface id 를 미리 모르므로, 그 색은 비어있을 수 있다. 그래도 plugin 은 안전하게 동작한다 — 호스트의 `theme().surface(id)` 가 정의되지 않은 id 에 대해 `FALLBACK_SURFACE` (검은 배경 + Catppuccin Mocha 톤 글자) 를 반환한다.
+
+빌트인 테마와 함께 색을 배포하려면:
+
+- 사용자에게 안내해서 `~/.tasty/themes/mocha.toml` (또는 자기 테마 파일) 에 다음 같은 sub-table 을 추가하도록 한다:
+
+  ```toml
+  [surfaces.my-plugin]
+  focused_bg = "#0a0e14"
+  focused_fg = "#cdd6f4"
+  unfocused_bg = "#15191f"
+  unfocused_fg = "#a6adc8"
+  ```
+
+- 향후 host 가 plugin 매니페스트에서 surface 색 default 를 받아 자동 등록하는 메커니즘이 도입되면 이 단계가 자동화된다 (현재는 수동).
+
+Plugin 렌더링 코드에서 색에 접근하려면 호스트가 제공한 host actions 또는 IPC 를 거친다. 직접 `tasty-themes` 를 의존하면 호스트와 별도 프로세스라 의미 없으니, 호스트로부터 색을 전달받는 형태로 설계할 것.
+
 ## 9. 검증 체크리스트
 
 - [ ] `cargo build --release -p my-plugin` 성공

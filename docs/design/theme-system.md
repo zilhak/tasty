@@ -54,8 +54,8 @@ partial 테마(일부 색상만 정의)를 적용하면 누락된 필드는 이�
 
 | crate | 책임 | IO |
 |-------|------|----|
-| `tasty-type-appearance::color` | `HexColor` (`#RRGGBB` / `#RRGGBBAA` 직렬화), `GpuRgba`/`GpuRgb` newtype, `SurfaceColors` (focused/unfocused bg/fg 묶음) | 없음 |
-| `tasty-type-appearance::theme` | `Theme`, `ThemeColors`, `PartialColors`, `ThemeSizing`/`SIZING`, 인스턴스 메서드 (`with_colors`/`extract_colors`/`apply_colors`/`set_is_light`/`ansi_palette`/`apply_partial`), `derive_overlays` | 없음 |
+| `tasty-type-appearance::color` | `HexColor` (`#RRGGBB` / `#RRGGBBAA` 직렬화), `GpuRgba`/`GpuRgb` newtype | 없음 |
+| `tasty-type-appearance::theme` | `Theme`, `ThemeColors`, `PartialColors`, `ThemeSizing`/`SIZING`, `SurfaceTheme`/`PartialSurfaceTheme` + `FALLBACK_SURFACE`, 인스턴스 메서드 (`with_colors`/`extract_colors`/`apply_colors`/`set_is_light`/`ansi_palette`/`apply_partial`/`Theme::surface(id)`), `derive_overlays` | 없음 |
 | `tasty-themes` | `MOCHA_FALLBACK_COLORS`/`MOCHA_FALLBACK` const, 전역 `RwLock<Theme>` + `theme()/set_theme()/mutate_theme()`, `ThemeApplyContext` trait, `ThemeFile` (TOML 표면), `MOCHA_TOML_TEXT`/`LATTE_TOML_TEXT` 임베드, scan/load/apply/resolve/install, `ensure_mocha_exists`/`first_run_init` | **있음** (`~/.tasty/themes/`) |
 | `tasty-settings::appearance` | `AppearanceSettings.theme / theme_base / theme_overrides / theme_is_light` 필드, `ThemeApplyContext` 구현 | settings IO |
 | 본 바이너리 | `crate::theme::*` (= `tasty_themes::*`) 호출 (부팅, modal save, settings UI) | — |
@@ -99,8 +99,6 @@ blue = "#89b4fa"
 # ...
 
 [terminal]
-fg = "#cdd6f4"
-bg = "#1e1e2e"
 selection_bg = "#585b70"
 search_match_bg = "#f9e2af4d"          # 8자리 hex 로 alpha 지정 가능
 search_match_active_bg = "#f9e2afb3"
@@ -109,9 +107,35 @@ search_match_active_bg = "#f9e2afb3"
 black = "#45475a"
 red = "#f38ba8"
 # ... (16 키: black..white + bright_black..bright_white)
+
+[surfaces.terminal]
+focused_bg = "#000000"
+focused_fg = "#cdd6f4"
+unfocused_bg = "#1e1e2e"
+unfocused_fg = "#a6adc8"
+
+[surfaces.markdown]
+focused_bg = "#000000"
+focused_fg = "#cdd6f4"
+unfocused_bg = "#181825"
+unfocused_fg = "#a6adc8"
 ```
 
-**모든 색상 필드는 optional**. 일부만 정의한 partial 테마도 정상 동작 — 누락 필드는 이전 base 의 값을 유지한다.
+**모든 색상 필드는 optional**. 일부만 정의한 partial 테마도 정상 동작 — 누락 필드는 이전 base 의 값을 유지한다. `[surfaces.<id>]` sub-table 도 entry 단위 merge — 빌트인 mocha 의 `surface_themes` 위에 `[surfaces.terminal]` 의 일부 필드만 덮어쓸 수 있다.
+
+### Plugin 의 surface kind 확장
+
+`[surfaces.<id>]` 의 `<id>` 는 미리 정의된 enum 이 아니라 자유 문자열이다. plugin 이 자기 surface kind 를 등록하면 그 id 로 sub-table 을 정의할 수 있다. 예:
+
+```toml
+[surfaces.acme-chat]
+focused_bg = "#0a0e14"
+focused_fg = "#cdd6f4"
+unfocused_bg = "#15191f"
+unfocused_fg = "#a6adc8"
+```
+
+`theme().surface(id)` 가 해당 id 를 찾으면 그 SurfaceTheme 을, 못 찾으면 `FALLBACK_SURFACE` (검은 배경 + Mocha 톤 글자) 를 리턴한다. 즉 plugin 이 색을 정의하지 않아도 안전하게 동작한다.
 
 `hover_overlay` / `active_overlay` / `separator` 같은 반투명 의미 색은 TOML 에 없다. `is_light` 로부터 자동 도출 (라이트 = 검정 +8%/+12%, 다크 = 흰색 +8%/+12%).
 
@@ -148,7 +172,7 @@ leading `#` 은 optional. 직렬화는 alpha=255 면 6자리, 아니면 8자리.
 
 ### 색상 픽커 편집 (현재: surface_colors 만)
 
-surface_colors 픽커는 기존 그대로 — `settings.appearance.terminal_colors` 등을 직접 변경.
+surface 색 picker 는 v0.6.0 에서 제거됐다. theme TOML 의 `[surfaces.<id>]` sub-table 을 직접 편집하면 된다. 향후 palette/accent 전체에 대한 override picker 가 도입되면 surface 색도 함께 다뤄질 예정.
 
 **theme_overrides 픽커는 Phase 1 범위 밖**. palette/accent 전 필드 픽커는 별도 후속.
 

@@ -26,7 +26,7 @@ Tasty는 Cargo 워크스페이스 기반 크로스 플랫폼 GPU 가속 터미�
 | `tasty` (본 바이너리, `src/`) | 윈도우/Engine/Window 계층, UI/GPU, IPC 라우터, CLI |
 | `tasty-core` | **GUI-free** 공용 도메인 데이터 (`model`, `i18n`, `paths`, `agent_id`, `waker`) |
 | `tasty-type-geometry` | 길이/도형 primitive (LogicalPx, PhysicalPx, Rect 등). type-\* layer leaf |
-| `tasty-type-appearance` | appearance schema/primitive: HexColor/GpuRgba/GpuRgb, ThemeColors/PartialColors/ThemeSizing/Theme + impl, SurfaceColors, derive_overlays. type-\* layer |
+| `tasty-type-appearance` | appearance schema/primitive: HexColor/GpuRgba/GpuRgb, ThemeColors/PartialColors/ThemeSizing/Theme + impl, SurfaceTheme/PartialSurfaceTheme + FALLBACK_SURFACE, derive_overlays. type-\* layer |
 | `tasty-themes` | 빌트인 mocha fallback const, 전역 `RwLock<Theme>` + `theme()/set_theme()`, `ThemeApplyContext` trait, TOML 로딩/스캔/저장 |
 | `tasty-settings` | 설정 스키마/직렬화 (appearance/keybindings/general/...) |
 | `tasty-font` | 폰트 atlas, 글리프 래스터라이징, 내장 D2Coding |

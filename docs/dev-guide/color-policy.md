@@ -9,18 +9,19 @@ Tasty 의 색 데이터는 **단 두 출처**에서만 만들어진다. 그 외 
 ```text
 정상 출처:
 1. ~/.tasty/themes/<id>.toml                          ← 사용자/빌트인 테마 파일
-2. tasty-themes::fallback                             ← MOCHA_FALLBACK_COLORS
-3. tasty-type-appearance::theme 의 const fn           ← derive_overlays
-4. tasty-type-appearance::color::SurfaceColors::*_default()
-                                                       ← surface 종류별 기본 색
+                                                        (palette/accent/terminal/ansi/[surfaces.<id>])
+2. tasty-themes::fallback                             ← mocha_fallback_colors() (빌트인 surface_themes 포함)
+3. tasty-type-appearance::theme 의 const / const fn    ← derive_overlays, FALLBACK_SURFACE
 
 외부 입력 (예외):
 - termwiz ANSI true-color escape       (palette.rs)
-- 사용자 색 picker                      (settings UI, image controls)
 - 디스크 이미지/클립보드 픽셀           (image/view.rs, clipboard.rs)
 - 이전 세션 scrollback 직렬화 데이터    (disk_scrollback.rs)
 - 테스트 더미                           (모든 #[cfg(test)])
 ```
+
+v0.6.0 부터 settings UI 의 surface 색 picker 는 제거됐다. 사용자가 surface 색을
+바꾸려면 theme TOML 의 `[surfaces.<id>]` 를 직접 편집해야 한다.
 
 외부 입력은 명시적 `dangerously_force_from_array` 호출 + 사유 주석 필수.
 
@@ -73,11 +74,10 @@ let bg = GpuRgba::dangerously_force_from_array([srgba.0, srgba.1, srgba.2, srgba
 
 | 위치 | 사유 | 처리 |
 |------|------|------|
-| `tasty-type-appearance::color` | HexColor/GpuRgba 본거지, egui 변환 헬퍼, SurfaceColors 기본값 | 모듈 상단 `#![allow]` |
-| `tasty-type-appearance::theme` | Theme schema + derive_overlays const fn (overlay 색 from_rgba 직접) | 모듈 상단 `#![allow]` |
-| `tasty-themes::fallback` | MOCHA_FALLBACK_COLORS 정의 (빌트인 mocha 색 직접) | 모듈 상단 `#![allow]` |
+| `tasty-type-appearance::color` | HexColor/GpuRgba 본거지, egui 변환 헬퍼 | 모듈 상단 `#![allow]` |
+| `tasty-type-appearance::theme` | Theme schema + derive_overlays / FALLBACK_SURFACE const (overlay 색 from_rgba 직접) | 모듈 상단 `#![allow]` |
+| `tasty-themes::fallback` | mocha_fallback_colors() + 빌트인 surface_themes 정의 | 모듈 상단 `#![allow]` |
 | `tasty-themes::file/state` tests | 테스트 더미 색 | 테스트 모듈 `#[allow]` |
-| settings 색 picker | 사용자 입력 → HexColor | 라인별 `#[allow]` + 주석 |
 | 이미지 픽셀 추출 / 그림 브러시 | 외부 입력 | 라인별 `#[allow]` + 주석 |
 | plugin protocol hex token (#RRGGBB) | plugin 명시 색 | 라인별 `#[allow]` + 주석 |
 
