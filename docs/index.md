@@ -65,6 +65,9 @@
 | [dev-guide/plugin-ecosystem.md](dev-guide/plugin-ecosystem.md) | Plugin 생태계 — 번들 plugin 목록과 책임 분담 |
 | [dev-guide/lua-hooks.md](dev-guide/lua-hooks.md) | Lua hook 호스트 매핑 — 이벤트별 발화 site / payload 스키마 / 추가 가이드 |
 | [dev-guide/git-hooks.md](dev-guide/git-hooks.md) | pre-commit / pre-push 훅 규칙 — 설치, 검사 목록, 예외 |
+| [dev-guide/i18n.md](dev-guide/i18n.md) | 국제화 정책 — `t()` API, lang 파일 위치, 새 문자열 추가 절차 |
+| [dev-guide/error-handling.md](dev-guide/error-handling.md) | 에러 처리 정책 — `Result` 무시 금지, `tracing::warn!`/`error!` 사용 규칙 |
+| [dev-guide/commit-convention.md](dev-guide/commit-convention.md) | Conventional Commits 형식, type 목록, 단위 분할 기준 |
 
 ## AI 자체 검증 지침
 

@@ -220,3 +220,34 @@ ui.painter().rect_filled(rect, 0.0, th.hover_overlay.to_egui());
 4. 목록에서 `my-theme` 선택.
 
 빌트인 fallback 을 명시적으로 복원하려면 `~/.tasty/themes/mocha.toml` 을 지우고 재시작.
+
+## UI 디자인 규칙 (필수)
+
+테마 메커니즘 위에 얹히는 **시각 정책**. 모든 색상·크기·간격 값은 `Theme` 에서 가져오고, 아래 규칙은 새 UI 를 그릴 때 따라야 하는 기준이다.
+
+| 항목 | 규칙 |
+|------|------|
+| 기본 빌트인 테마 | Mocha (fallback 보장) + Latte (first-run 자동 풀림) |
+| 색상 팔레트 | Catppuccin Mocha 톤을 기준으로 함 |
+| 모든 간격 | 4px 그리드 — `spacing_xs`/`sm`/`md`/`lg` 만 사용 |
+| UI 폰트 최대 크기 | 14px (`font_size_body`) |
+| 보더 두께 | 항상 1px (`border_width`) |
+| 호버 오버레이 | `theme().hover_overlay` 사용 (라이트=검정 8%, 다크=흰색 8% 자동 도출). 직접 값 쓰지 말 것 |
+| 활성 오버레이 | `theme().active_overlay` (12% overlay) |
+| 텍스트 대비 | 최소 4.5:1. 위반 시 [`ai-verification/visual-verification.md`](../ai-verification/visual-verification.md) 의 색상 대비 체크리스트 적용 |
+| 터미널 콘텐츠 애니메이션 | **0ms**. 터미널 셀/스크롤 영역엔 어떤 transition 도 넣지 않는다 — 입력 응답성 우선 |
+| UI 위젯 애니메이션 | 짧게 (보통 100–150ms). 사용자 입력 직후의 시각 피드백에 한정 |
+
+위 값 중 코드에 하드코딩으로 등장하는 곳이 발견되면 `Theme` 의 해당 필드로 옮긴다. 새 시각 규칙이 필요해지면 본 표에 추가한 뒤 `Theme` 에 필드를 신설한다.
+
+### 호버 오버레이 변환 주의
+
+`hover_overlay` / `active_overlay` / `separator` 는 **premultiplied 바이트**로 저장되므로 egui 에 넘길 때 변환 메서드를 골라야 한다:
+
+```rust
+// ✅ premultiplied 전용
+ui.painter().rect_filled(rect, 0.0, th.hover_overlay.to_egui_premultiplied());
+
+// ❌ 일반 변환을 쓰면 sRGB-aware premultiplication 이 한 번 더 적용되어 색이 어긋남
+ui.painter().rect_filled(rect, 0.0, th.hover_overlay.to_egui());
+```

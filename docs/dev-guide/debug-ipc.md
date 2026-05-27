@@ -57,6 +57,56 @@ CLI 서브커맨드도 동일하게 debug 빌드에서만 등록된다. 예를 �
 5. 본 문서에 메서드를 추가한다.
 6. **`docs/agent-guide/`에는 작성하지 않는다.** 릴리스 에셋에 포함되지 않아야 한다.
 
+## 디버그 코드 격리 정책 (필수)
+
+디버그 전용 코드는 **분리된 소스 파일** 에 모은다. 다른 기능 사이에 끼어 있으면 안 된다. 기준은 한 줄: *"이 폴더를 통째로 지우고 컴파일 에러 몇 개만 정리하면 디버그 기능이 깨끗하게 사라지는가?"* 그게 되면 격리 OK.
+
+### 권장 구조
+
+```
+src/host_api/
+├── ipc/handler/debug/        ← 디버그 IPC 핸들러는 모두 이 디렉토리 안
+│   ├── mod.rs               (route_debug_handler 정의, 모듈 헤더에 #![cfg(debug_assertions)])
+│   ├── cell_info.rs
+│   ├── inject_input.rs
+│   ├── popup.rs              (사용자 트리거 popup 의 IPC 시뮬레이션)
+│   ├── tool.rs               (도구 메뉴 클릭 시뮬레이션)
+│   └── event_bus.rs
+└── cli/commands/debug/      ← 디버그 CLI 서브커맨드도 같은 패턴
+    ├── mod.rs
+    └── ...
+```
+
+### 규칙
+
+- **파일 첫 줄에 `#![cfg(debug_assertions)]`** — 모듈 통째로 release 빌드에서 사라진다.
+- **다른 기능의 일부분으로 끼우지 말 것**: 일반 핸들러 파일 (`pane.rs`, `surface.rs` 등) 중간에 `#[cfg(debug_assertions)] fn debug_xxx()` 함수를 추가하지 않는다. 그 함수도 `debug/` 디렉토리로 분리한다.
+- **외부 표면에 남는 cfg 가드는 router 분기 한 줄뿐**:
+  ```rust
+  // src/host_api/ipc/handler.rs (release 에서도 컴파일되는 router)
+  #[cfg(debug_assertions)]
+  if let Some(resp) = debug::route_debug_handler(state, request, id.clone()) {
+      return resp;
+  }
+  ```
+- **삭제 가능성 테스트**: 디버그 기능을 정리할 일이 생겼을 때, `debug/` 디렉토리를 삭제 → 컴파일 에러로 노출된 cfg-guard 호출처 몇 줄을 제거 → 그 외 다른 변경이 필요하면 격리가 깨진 것이다.
+
+### 예외: 매니페스트 데이터의 dev-only 필드
+
+플러그인 매니페스트나 빌트인 spec 처럼 **데이터 구조의 필드 하나만 dev 빌드 전용**인 경우는 분리 대상이 아니다. 예:
+
+```rust
+struct BuiltinSpec {
+    id: &'static str,
+    #[cfg(debug_assertions)]
+    crate_dir: &'static str,
+    #[cfg(debug_assertions)]
+    bin_name: &'static str,
+}
+```
+
+이건 *디버그 동작* 이 아니라 *dev 빌드 데이터 차이* 다. 같은 룰을 적용하면 오히려 데이터 구조가 찢어진다.
+
 ## release 빌드에서의 동작
 
 release 빌드(`cargo build --release` 또는 `--profile dist`)에서는:
