@@ -14,8 +14,8 @@
 //! - `Closed/TimedOut`: 종착 상태. signal 거부.
 
 use serde::{Deserialize, Serialize};
-use tasty_core::model::WorkspaceId;
 use tasty_memory::{ListOpts, MemoryStore, MemoryValue, PutOpts, Scope};
+use tasty_utils::id::WorkspaceId;
 
 use crate::{AgentError, Result};
 

@@ -9,7 +9,7 @@
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
-use tasty_core::model::{SurfaceId, WorkspaceId};
+use tasty_utils::id::{SurfaceId, WorkspaceId};
 
 /// Task의 고유 식별자. 형식 `t-<timestamp_ms>-<seq>` (예: `t-1716800000123-7`).
 /// 호스트가 본 크레이트 외부에서 임의 문자열로 생성해도 무방하지만, 본 모듈의

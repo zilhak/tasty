@@ -14,8 +14,8 @@
 //!   가 점유 중이 아니면 no-op (idempotent).
 
 use serde::{Deserialize, Serialize};
-use tasty_core::model::WorkspaceId;
 use tasty_memory::{ListOpts, MemoryStore, MemoryValue, PutOpts, Scope};
+use tasty_utils::id::WorkspaceId;
 
 use crate::{AgentError, Result};
 

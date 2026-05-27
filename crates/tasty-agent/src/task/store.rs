@@ -3,8 +3,8 @@
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use tasty_core::model::WorkspaceId;
 use tasty_memory::{ListOpts, MemoryStore, MemoryValue, PutOpts, Scope};
+use tasty_utils::id::WorkspaceId;
 
 use super::{
     OnFailure, TASK_KEY_PREFIX, Task, TaskCommand, TaskGraph, TaskId, TaskResult, TaskState,

@@ -21,8 +21,8 @@
 //! - `release` 는 점유 holder 만 가능; 다른 holder 가 `release` 호출하면 no-op.
 
 use serde::{Deserialize, Serialize};
-use tasty_core::model::WorkspaceId;
 use tasty_memory::{ListOpts, MemoryStore, MemoryValue, PutOpts, Scope};
+use tasty_utils::id::WorkspaceId;
 
 use crate::{AgentError, Result};
 
