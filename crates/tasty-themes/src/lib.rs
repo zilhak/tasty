@@ -1,7 +1,7 @@
 //! Theme file loading, disk persistence, partial-merge, 전역 인스턴스.
 //!
 //! `tasty-type-appearance::theme` 는 schema (Theme/ThemeColors/PartialColors/
-//! ThemeSizing/SurfaceColors) 와 인스턴스 메서드만 갖는다. 이 crate 는 그 위에
+//! ThemeSizing/SurfaceTheme) 와 인스턴스 메서드만 갖는다. 이 crate 는 그 위에
 //! 도메인/IO 책임을 얹는다.
 //!
 //! 책임:
@@ -35,11 +35,12 @@ pub use store::{
     rewrite_mocha_fallback, themes_dir,
 };
 
-pub use tasty_type_appearance::color::SurfaceColors;
 /// type-appearance 의 theme schema 를 themes 경로로도 재수출.
 /// 본 바이너리의 `crate::theme::*` 호출처가 schema 와 IO 양쪽을 한 모듈에서 보는
 /// 기존 사용 패턴을 그대로 유지한다.
-pub use tasty_type_appearance::theme::{PartialColors, SIZING, Theme, ThemeColors, ThemeSizing};
+pub use tasty_type_appearance::theme::{
+    PartialColors, PartialSurfaceTheme, SIZING, SurfaceTheme, Theme, ThemeColors, ThemeSizing,
+};
 
 /// Embedded built-in `mocha.toml` text. Written to disk on first run / after
 /// detecting a missing or corrupt mocha file.

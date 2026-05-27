@@ -1,15 +1,16 @@
 // 이 모듈은 `HexColor` 생성/변환의 본거지이자, egui 와의 변환 헬퍼(`to_egui` 등)
-// 의 정의 위치다. `SurfaceColors::*_default` 가 mocha/latte 색을 직접 정의하므로
-// `HexColor::from_rgb` 사용이 정당. 외부 호출자에게는 차단되는 함수들이 여기 정의
-// 내부에서는 정상적으로 사용된다.
+// 의 정의 위치다. 외부 호출자에게는 차단되는 `HexColor::from_rgb` /
+// `Color32::from_rgba_unmultiplied` 등이 여기 정의 내부에서는 정상적으로 사용된다.
 #![allow(clippy::disallowed_methods)]
 
-//! Appearance/color primitives + per-surface color schema.
+//! Appearance color primitives.
 //!
 //! - [`HexColor`] — `#RRGGBB(AA)` 직렬화 색상 (settings/theme 파일에 저장되는 모양)
 //! - [`GpuRgba`] / [`GpuRgb`] — GPU 셰이더 입력용 newtype (private field 로 array
 //!   literal 직접 대입 차단)
-//! - [`SurfaceColors`] — surface 종류별 focused/unfocused 배경·전경 묶음 schema
+//!
+//! surface 종류별 색 묶음 (focused/unfocused × bg/fg) 은 [`crate::theme::SurfaceTheme`]
+//! 에 정의돼 있다.
 //!
 //! 색 생성 강제 모델은 `docs/dev-guide/color-policy.md` 참고.
 
@@ -403,58 +404,6 @@ impl GpuRgb {
     #[inline]
     pub const fn dangerously_force_from_array(arr: [f32; 3]) -> Self {
         Self(arr)
-    }
-}
-
-// ============================================================================
-//  SurfaceColors — surface 종류별 focused / unfocused 색 묶음
-// ============================================================================
-
-/// Per-surface-type color settings for focused / unfocused states.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct SurfaceColors {
-    pub focused_bg: HexColor,
-    pub focused_fg: HexColor,
-    pub unfocused_bg: HexColor,
-    pub unfocused_fg: HexColor,
-}
-
-impl SurfaceColors {
-    /// Terminal defaults: Catppuccin Mocha base/text.
-    pub fn terminal_default() -> Self {
-        Self {
-            focused_bg: HexColor::from_rgb(0, 0, 0),         // #000000
-            focused_fg: HexColor::from_rgb(205, 214, 244),   // #cdd6f4
-            unfocused_bg: HexColor::from_rgb(30, 30, 46),    // #1e1e2e
-            unfocused_fg: HexColor::from_rgb(166, 173, 200), // #a6adc8
-        }
-    }
-
-    /// Markdown defaults.
-    pub fn markdown_default() -> Self {
-        Self {
-            focused_bg: HexColor::from_rgb(0, 0, 0),         // #000000
-            focused_fg: HexColor::from_rgb(205, 214, 244),   // #cdd6f4
-            unfocused_bg: HexColor::from_rgb(24, 24, 37),    // #181825
-            unfocused_fg: HexColor::from_rgb(166, 173, 200), // #a6adc8
-        }
-    }
-
-    /// Explorer defaults.
-    pub fn explorer_default() -> Self {
-        Self {
-            focused_bg: HexColor::from_rgb(0, 0, 0),         // #000000
-            focused_fg: HexColor::from_rgb(205, 214, 244),   // #cdd6f4
-            unfocused_bg: HexColor::from_rgb(24, 24, 37),    // #181825
-            unfocused_fg: HexColor::from_rgb(166, 173, 200), // #a6adc8
-        }
-    }
-}
-
-impl Default for SurfaceColors {
-    fn default() -> Self {
-        Self::terminal_default()
     }
 }
 

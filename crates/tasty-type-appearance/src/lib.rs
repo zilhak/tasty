@@ -8,8 +8,8 @@
 //! - [`color::HexColor`] — `#RRGGBB(AA)` 직렬화 색상 래퍼 (straight RGBA u8)
 //! - [`color::GpuRgba`] — wgpu vertex buffer 에 직접 들어가는 straight RGBA `[f32; 4]` newtype
 //! - [`color::GpuRgb`]  — 3채널 변형 (ANSI 팔레트용)
-//! - [`color::SurfaceColors`] — surface 종류별 focused/unfocused 묶음 schema
-//! - [`theme::ThemeColors`] / [`theme::PartialColors`] — 47 필드 색상 풀세트 schema + Option-wrap partial
+//! - [`theme::SurfaceTheme`] / [`theme::PartialSurfaceTheme`] — surface 종류별 focused/unfocused × bg/fg
+//! - [`theme::ThemeColors`] / [`theme::PartialColors`] — 색상 풀세트 schema + Option-wrap partial
 //! - [`theme::ThemeSizing`] / [`theme::SIZING`] — UI 폭/높이/간격 공통 const
 //! - [`theme::Theme`] — 평평한 인스턴스 (색 + sizing + 도출 overlay + is_light)
 //!
