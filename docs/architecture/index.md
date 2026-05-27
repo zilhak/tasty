@@ -24,7 +24,10 @@ Tasty는 Cargo 워크스페이스 기반 크로스 플랫폼 GPU 가속 터미�
 | 크레이트 | 책임 |
 |----------|------|
 | `tasty` (본 바이너리, `src/`) | 윈도우/Engine/Window 계층, UI/GPU, IPC 라우터, CLI |
-| `tasty-core` | 공용 데이터 모델 (`model`, `theme`, `i18n`, `paths`, `color`) |
+| `tasty-core` | **GUI-free** 공용 도메인 데이터 (`model`, `i18n`, `paths`, `agent_id`, `waker`) |
+| `tasty-type-geometry` | 길이/도형 primitive (LogicalPx, PhysicalPx, Rect 등). type-\* layer leaf |
+| `tasty-type-appearance` | appearance schema/primitive: HexColor/GpuRgba/GpuRgb, ThemeColors/PartialColors/ThemeSizing/Theme + impl, SurfaceColors, derive_overlays. type-\* layer |
+| `tasty-themes` | 빌트인 mocha fallback const, 전역 `RwLock<Theme>` + `theme()/set_theme()`, `ThemeApplyContext` trait, TOML 로딩/스캔/저장 |
 | `tasty-settings` | 설정 스키마/직렬화 (appearance/keybindings/general/...) |
 | `tasty-font` | 폰트 atlas, 글리프 래스터라이징, 내장 D2Coding |
 | `tasty-terminal` | PTY + termwiz VTE 래퍼 |
@@ -40,9 +43,10 @@ Tasty는 Cargo 워크스페이스 기반 크로스 플랫폼 GPU 가속 터미�
 | `tasty-plugin-clipboard-history` | 번들 plugin: 클립보드 히스토리 (tool.clipboard.*) |
 | `tasty-tui-simulator` | E2E TUI 테스트용 시뮬레이터 |
 
-본 바이너리는 `pub use tasty_core::{model, theme, i18n, paths};`,
-`pub use tasty_settings as settings;`, `pub use tasty_font as font;` 식으로
-재수출하므로 `crate::model::X` 같은 기존 경로가 그대로 동작한다.
+본 바이너리는 `pub use tasty_core::{model, i18n, paths};`,
+`pub use tasty_themes as theme;`, `pub use tasty_settings as settings;`,
+`pub use tasty_font as font;` 식으로 재수출하므로
+`crate::model::X` / `crate::theme::theme()` 같은 기존 경로가 그대로 동작한다.
 
 ## 본 바이너리 모듈 (`src/`)
 
@@ -129,21 +133,29 @@ main.rs
 └── cli/                             ← CLI 클라이언트 (GUI와 독립)
 
 workspace 크레이트:
-tasty-core ← (의존 없음, 다른 거의 모든 크레이트의 base)
-tasty-settings ← tasty-core
-tasty-font ← tasty-core
-tasty-terminal ← tasty-core
-tasty-hooks ← tasty-core
-tasty-memory ← (rusqlite + serde, OS 의존 없음)
-tasty-shm ← (OS API만)
+
+# type-* layer (primitive/schema, leaf 그룹)
+tasty-type-geometry  ← (의존 없음)
+tasty-type-appearance ← tasty-type-geometry
+   ※ type-* 끼리만 의존 가능. 도메인/IO crate 의존 금지. 그룹 내 순환 금지.
+
+# 도메인/IO layer
+tasty-core      ← tasty-terminal, tasty-type-geometry  (GUI-free; appearance 모름)
+tasty-themes    ← tasty-core, tasty-type-appearance    (전역 Theme + TOML IO)
+tasty-settings  ← tasty-core, tasty-themes, tasty-type-*
+tasty-font      ← tasty-core
+tasty-terminal  ← (외부 deps 만)
+tasty-hooks     ← tasty-core
+tasty-memory    ← (rusqlite + serde, OS 의존 없음)
+tasty-shm       ← (OS API만)
 tasty-plugin-protocol ← tasty-core, tasty-shm
-tasty-plugin-sdk ← tasty-plugin-protocol, tasty-shm
+tasty-plugin-sdk      ← tasty-plugin-protocol, tasty-shm
 tasty-plugin-{claude,codex,image,explorer,clipboard-history}
               ← tasty-plugin-sdk
 tasty (binary) ← 모든 위 크레이트
 ```
 
-순환 의존 없음. tasty-core가 최하위, 본 바이너리가 최상위.
+순환 의존 없음. type-\* 가 leaf 그룹, tasty-core 가 도메인 leaf, 본 바이너리가 최상위.
 
 ## 데이터 흐름
 

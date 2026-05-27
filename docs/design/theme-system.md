@@ -18,7 +18,7 @@
                                   + is_light 도출 overlay + SIZING
                   │
                   ▼
-[ tasty-core ]   전역 Theme 인스턴스 (한 개)
+[ tasty-themes ] 전역 Theme 인스턴스 (한 개, RwLock)
                   │
                   ▼
               theme().crust / theme().spacing_sm / theme().is_light  ← UI 코드
@@ -50,20 +50,28 @@ partial 테마(일부 색상만 정의)를 적용하면 누락된 필드는 이�
 
 ## Crate 책임
 
+색상/시각 schema 와 그 위의 도메인/IO 가 명확히 분리된다.
+
 | crate | 책임 | IO |
 |-------|------|----|
-| `tasty-core::theme` | `Theme`, `ThemeColors`, `PartialColors`, `ThemeSizing`, `MOCHA_FALLBACK*` const, 전역 `RwLock<Theme>`, `theme()/set_theme()/mutate_theme()`, `ThemeApplyContext` trait | **없음** |
-| `tasty-core::color` | `HexColor` (`#RRGGBB` / `#RRGGBBAA` 직렬화) | 없음 |
-| `tasty-themes` | `ThemeFile` (TOML 표면), `MOCHA_TOML_TEXT` / `LATTE_TOML_TEXT` 임베드, scan/load/apply/resolve/install, `ensure_mocha_exists` / `first_run_init` | **있음** (`~/.tasty/themes/`) |
-| `tasty-settings::appearance` | `AppearanceSettings.theme / theme_base / theme_overrides / theme_is_light` 필드. `ThemeApplyContext` 구현 | settings IO |
-| 본 바이너리 | `tasty_themes::*` 호출 (부팅, modal save, settings UI) | — |
+| `tasty-type-appearance::color` | `HexColor` (`#RRGGBB` / `#RRGGBBAA` 직렬화), `GpuRgba`/`GpuRgb` newtype, `SurfaceColors` (focused/unfocused bg/fg 묶음) | 없음 |
+| `tasty-type-appearance::theme` | `Theme`, `ThemeColors`, `PartialColors`, `ThemeSizing`/`SIZING`, 인스턴스 메서드 (`with_colors`/`extract_colors`/`apply_colors`/`set_is_light`/`ansi_palette`/`apply_partial`), `derive_overlays` | 없음 |
+| `tasty-themes` | `MOCHA_FALLBACK_COLORS`/`MOCHA_FALLBACK` const, 전역 `RwLock<Theme>` + `theme()/set_theme()/mutate_theme()`, `ThemeApplyContext` trait, `ThemeFile` (TOML 표면), `MOCHA_TOML_TEXT`/`LATTE_TOML_TEXT` 임베드, scan/load/apply/resolve/install, `ensure_mocha_exists`/`first_run_init` | **있음** (`~/.tasty/themes/`) |
+| `tasty-settings::appearance` | `AppearanceSettings.theme / theme_base / theme_overrides / theme_is_light` 필드, `ThemeApplyContext` 구현 | settings IO |
+| 본 바이너리 | `crate::theme::*` (= `tasty_themes::*`) 호출 (부팅, modal save, settings UI) | — |
 
-의존: `tasty-themes → tasty-core ← tasty-settings`. 순환 없음.
+의존:
+```
+tasty-type-geometry ← tasty-type-appearance ← tasty-themes ← tasty-settings
+                                                       ↖
+                                                         core (paths/i18n 만)
+```
+순환 없음. `tasty-core` 는 시각 schema 를 알지 않는다 (GUI-free).
 
 ## 빌트인 테마 정책
 
 - **mocha**: 항상 존재 보장.
-  - `tasty-themes` 에 `MOCHA_FALLBACK_COLORS: ThemeColors` const + `MOCHA_TOML_TEXT` (`include_str!`) 임베드.
+  - `tasty-themes::fallback` 에 `MOCHA_FALLBACK_COLORS: ThemeColors` const + `MOCHA_TOML_TEXT` (`include_str!`) 임베드.
   - 부팅 시 `ensure_mocha_exists()` 가 `~/.tasty/themes/mocha.toml` 없거나 파싱 실패면 임베드 텍스트를 다시 풀어둔다.
   - `load_theme("mocha")` 가 어떤 이유로든 실패해도 const 가 fallback.
   - unit test 가 `parse(MOCHA_TOML_TEXT) == MOCHA_FALLBACK_COLORS` 를 강제 — 임베드 텍스트와 const 가 어긋나면 빌드 시 실패.
@@ -107,7 +115,7 @@ red = "#f38ba8"
 
 `hover_overlay` / `active_overlay` / `separator` 같은 반투명 의미 색은 TOML 에 없다. `is_light` 로부터 자동 도출 (라이트 = 검정 +8%/+12%, 다크 = 흰색 +8%/+12%).
 
-UI 크기/간격(`spacing_*`, `border_width`, `item_height_*`, `font_size_*` 등)도 TOML 에 없다. 모든 테마 공통 `tasty_core::theme::SIZING` const.
+UI 크기/간격(`spacing_*`, `border_width`, `item_height_*`, `font_size_*` 등)도 TOML 에 없다. 모든 테마 공통 `tasty_type_appearance::theme::SIZING` const.
 
 ### HexColor 형식
 
@@ -156,8 +164,8 @@ struct (`BgInstance.bg_color: GpuRgba` 등) 는 `tasty-type-appearance` 의 newt
 ## UI 코드의 색상 접근 규칙
 
 ```rust
-// ✅ 올바름
-let th = tasty_core::theme::theme();
+// ✅ 올바름 — 본 바이너리는 crate::theme 재수출을 통한다 (= tasty_themes::theme())
+let th = crate::theme::theme();
 ui.painter().rect_filled(rect, 0.0, th.blue);          // → Color32 (From<HexColor>)
 let bg = th.terminal_bg.to_float();                    // GPU 셰이더용
 ui.label(egui::RichText::new("x").color(th.text));

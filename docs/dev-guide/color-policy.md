@@ -8,8 +8,11 @@ Tasty 의 색 데이터는 **단 두 출처**에서만 만들어진다. 그 외 
 
 ```text
 정상 출처:
-1. ~/.tasty/themes/<id>.toml          ← 사용자/빌트인 테마 파일
-2. tasty-core::theme 의 const         ← MOCHA_FALLBACK_COLORS, derive_overlays
+1. ~/.tasty/themes/<id>.toml                          ← 사용자/빌트인 테마 파일
+2. tasty-themes::fallback                             ← MOCHA_FALLBACK_COLORS
+3. tasty-type-appearance::theme 의 const fn           ← derive_overlays
+4. tasty-type-appearance::color::SurfaceColors::*_default()
+                                                       ← surface 종류별 기본 색
 
 외부 입력 (예외):
 - termwiz ANSI true-color escape       (palette.rs)
@@ -70,9 +73,9 @@ let bg = GpuRgba::dangerously_force_from_array([srgba.0, srgba.1, srgba.2, srgba
 
 | 위치 | 사유 | 처리 |
 |------|------|------|
-| `tasty-type-appearance::color` | HexColor / GpuRgba 본거지, egui 변환 헬퍼 | 모듈 상단 `#![allow]` |
-| `tasty-core::color` | SurfaceColors 기본값(mocha 색 직접 정의) | 모듈 상단 `#![allow]` |
-| `tasty-core::theme` | 색상 const 정의 (MOCHA_FALLBACK_COLORS) | 모듈 상단 `#![allow]` |
+| `tasty-type-appearance::color` | HexColor/GpuRgba 본거지, egui 변환 헬퍼, SurfaceColors 기본값 | 모듈 상단 `#![allow]` |
+| `tasty-type-appearance::theme` | Theme schema + derive_overlays const fn (overlay 색 from_rgba 직접) | 모듈 상단 `#![allow]` |
+| `tasty-themes::fallback` | MOCHA_FALLBACK_COLORS 정의 (빌트인 mocha 색 직접) | 모듈 상단 `#![allow]` |
 | `tasty-themes::file/state` tests | 테스트 더미 색 | 테스트 모듈 `#[allow]` |
 | settings 색 picker | 사용자 입력 → HexColor | 라인별 `#[allow]` + 주석 |
 | 이미지 픽셀 추출 / 그림 브러시 | 외부 입력 | 라인별 `#[allow]` + 주석 |
@@ -81,7 +84,7 @@ let bg = GpuRgba::dangerously_force_from_array([srgba.0, srgba.1, srgba.2, srgba
 ## 새 색을 도입할 때
 
 1. **테마 색이면**:
-   - 빌트인: `crates/tasty-themes/themes/*.toml` 또는 `tasty-core::theme::MOCHA_FALLBACK_COLORS` 추가
+   - 빌트인: `crates/tasty-themes/themes/*.toml` 또는 `tasty_themes::MOCHA_FALLBACK_COLORS` 추가
    - 사용자 테마: `~/.tasty/themes/*.toml`
    - UI 코드는 `theme().X.into()` (egui::Color32) 또는 `theme().X.to_gpu_rgba()` (GPU 버퍼)
 2. **theme 색의 alpha 변형이면**: `theme().X.with_alpha(N).to_egui()` (UI) 또는 `theme().X.to_gpu_rgba()` 후 alpha 처리

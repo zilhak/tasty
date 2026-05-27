@@ -8,7 +8,7 @@
 
 **책임:** Workspace → PaneNode → Pane → Tab → SurfaceLayout의 계층 데이터 구조 정의. 레이아웃 계산(Rect 분할, 디바이더 탐색), 터미널 순회, 리사이즈.
 
-**GUI-free.** `tasty-core` 크레이트는 기본적으로 egui/wgpu/image 등 GUI 라이브러리를 *데이터 구조에서* 사용하지 않는다. `tasty-terminal` + `serde` + `termwiz` + `directories`만 참조한다. egui와의 변환은 optional feature `egui-compat` (default 활성)으로 격리되어 있어, 헤드리스 플러그인 프로세스는 `tasty-core = { default-features = false }`로 컴파일 가능하다.
+**GUI-free.** `tasty-core` 크레이트는 egui/wgpu/image 등 GUI 라이브러리는 물론, 색/시각 schema (`tasty-type-appearance`) 도 의존하지 않는다. `tasty-terminal` + `tasty-type-geometry` (LogicalPx/PhysicalPx) + `serde` + `termwiz` + `directories` 정도만 참조한다. 시각 표현은 `tasty-type-appearance::theme` (schema) + `tasty-themes` (전역 인스턴스 + IO) 가 책임지고, core 는 그 결과를 모른다.
 
 | 파일 | 역할 |
 |------|------|
@@ -262,7 +262,7 @@ keybindings_tab.rs의 egui_key_to_string 매핑 테이블은 키 목록을 1:1 �
 | `engine_state.rs` | 270 | EngineState (워크스페이스 Vec, 설정, HookManager, 알림, waker factory) |
 | `shortcuts.rs` | 439 | 키보드 단축키: physical→logical 변환, binding 매칭, 카테고리별 핸들러 |
 | `font.rs` | 408 | FontConfig (cosmic-text 측정) + GlyphAtlas (shelf packing + 래스터라이징) |
-| `theme_bridge.rs` | ~50 | `apply_theme_to_egui()` — `tasty_core::Theme`을 egui Visuals/Style/TextStyle/Stroke로 변환. 호스트 측에 위치해 GUI 의존 격리. Theme 구조체 자체는 `tasty-core/src/theme.rs`에 있다 (`HexColor` 필드 사용, GUI-free) |
+| `theme_bridge.rs` | ~50 | `apply_theme_to_egui()` — `tasty_type_appearance::theme::Theme`을 egui Visuals/Style/TextStyle/Stroke로 변환. 호스트 측에 위치해 GUI 의존 격리. Theme 구조체 자체는 `tasty-type-appearance/src/theme.rs`에 있다 (`HexColor` + `LogicalPx` 필드 사용, GUI-free schema). 전역 인스턴스 IO 는 `tasty-themes` 가 담당 |
 | `selection.rs` | 220 | NormalizedSelection, 좌표 정규화, is_selected() |
 | `click_cursor.rs` | 217 | 클릭 좌표 → 터미널 그리드 → 커서 이동 명령 생성 |
 | `notification.rs` | 248 | NotificationStore (FIFO, 병합, 읽음 추적) + OS 네이티브 알림 |

@@ -11,7 +11,10 @@ tasty/
 ├── Cargo.toml                       # 본 바이너리 + workspace 정의
 ├── src/                             # tasty 바이너리 크레이트 (UI/window/state/ipc 등)
 └── crates/
-    ├── tasty-core/                  # 공용 데이터 타입 (model, theme, i18n, paths, color)
+    ├── tasty-type-geometry/         # type-* layer: 길이 primitive (LogicalPx/PhysicalPx 등)
+    ├── tasty-type-appearance/       # type-* layer: 색 primitive + theme schema + SurfaceColors
+    ├── tasty-core/                  # GUI-free 공용 도메인 (model, i18n, paths, agent_id, waker)
+    ├── tasty-themes/                # 빌트인 mocha fallback, 전역 RwLock<Theme>, ThemeApplyContext, TOML 로딩
     ├── tasty-settings/              # 설정 스키마/직렬화 (appearance/keybindings/general/...)
     ├── tasty-font/                  # 폰트 atlas, 글리프 래스터라이징 + 내장 D2Coding
     ├── tasty-terminal/              # PTY/VTE 파싱 (termwiz 래퍼)
@@ -30,9 +33,20 @@ tasty/
     └── tasty-tui-simulator/         # E2E TUI 테스트용 시뮬레이터
 ```
 
-본 바이너리(src/)에서는 `pub use tasty_core::{model, theme, i18n, paths};`,
-`pub use tasty_settings as settings;`, `pub use tasty_font as font;` 식으로
-재수출하므로 `crate::model::X` 같은 기존 경로가 그대로 동작한다.
+본 바이너리(src/)에서는 `pub use tasty_core::{model, i18n, paths};`,
+`pub use tasty_themes as theme;`, `pub use tasty_settings as settings;`,
+`pub use tasty_font as font;` 식으로 재수출하므로
+`crate::model::X` / `crate::theme::theme()` 같은 기존 경로가 그대로 동작한다.
+
+### type-\* layer 의존 규약 (필수)
+
+`tasty-type-*` 그룹은 **primitive/schema layer** 를 이룬다.
+
+- 그룹 내부 의존은 자유. 예: `tasty-type-appearance → tasty-type-geometry`.
+- **도메인/IO crate 의존 금지.** `tasty-core`, `tasty-themes`, `tasty-settings`, 본 바이너리 등은 의존하면 안 된다.
+- **그룹 내 순환 금지.** `tasty-type-geometry → tasty-type-appearance` 같은 역방향 의존을 만들지 않는다.
+
+새 type-\* crate 를 추가할 때도 이 3원칙을 그대로 따른다. type-\* 와 그 외 crate 의 분리가 의존 그래프 위에서 한 방향으로 유지되어 순환 위험이 0 이 된다.
 
 번들 plugin은 컴파일 시 본 바이너리에 정적으로 링크되거나 별도 dylib으로
 제공된다. 자세한 plugin 빌드/설치는 `dev-guide/plugin-development.md`,

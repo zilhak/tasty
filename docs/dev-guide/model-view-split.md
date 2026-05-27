@@ -2,6 +2,8 @@
 
 `tasty-core`의 surface 모델은 GUI-free다 (egui/wgpu 직접 사용 금지). 휘발성 GUI 상태(텍스처, 캐시, 편집 세션, 스크롤, 팝업 버퍼 등)는 호스트 측 **View** 구조체에 둔다. 이 문서는 새 surface 타입을 추가하거나 기존 surface에 뷰 상태를 추가할 때 따라야 할 패턴을 정리한다.
 
+`tasty-core` 는 `tasty-type-appearance` 조차 의존하지 않는다 — 색/시각 schema 는 view 영역이라 `tasty-type-appearance::theme` 가 갖고, 전역 인스턴스와 IO 는 `tasty-themes` 가 갖는다. core 가 유일하게 의존하는 type-\* crate 는 `tasty-type-geometry` 뿐이며 이는 LogicalPx/PhysicalPx 같은 픽셀 단위 wrapper 라서 GUI-free 원칙과 무관하다.
+
 ## 왜 분리하나
 
 - **플러그인 호환성**: 모델은 직렬화 가능한 식별 정보만 보유하므로 플러그인 프로세스가 동일 모델을 그대로 쓸 수 있다.
