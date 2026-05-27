@@ -1,9 +1,9 @@
 use serde::{Deserialize, Serialize};
-use tasty_core::theme::{MOCHA_FALLBACK_COLORS, PartialColors, ThemeApplyContext, ThemeColors};
+use tasty_themes::{MOCHA_FALLBACK_COLORS, ThemeApplyContext};
+use tasty_type_appearance::theme::{PartialColors, ThemeColors};
 use tasty_type_geometry::length::LogicalPx;
 
-pub use tasty_core::color::SurfaceColors;
-pub use tasty_type_appearance::color::HexColor;
+pub use tasty_type_appearance::color::{HexColor, SurfaceColors};
 
 /// Default font settings applied when a surface override field is `None`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
