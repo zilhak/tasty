@@ -12,7 +12,7 @@
 //! - **영속 IO**: 호스트가 `tasty_memory::with_store` 로 read/write
 //! - **rollup task**: 호스트가 tokio interval 로 주기 호출
 //! - **dispatcher 통합 / cap 평가 캐시**: 호스트 `src/ipc/handler` 측
-//! - **agent 식별**: 호스트가 [`tasty_core::AgentId::from_caller`] 등으로 도출
+//! - **agent 식별**: 호스트가 [`AgentId::from_caller`] 등으로 도출
 //!
 //! ## 4.1 범위
 //!
@@ -22,13 +22,15 @@
 //!
 //! 자세한 스키마는 `.claude-workspace/plans/ai-first-depth/04-observability.md`.
 
+pub mod agent_id;
+
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-pub use tasty_core::AgentId;
+pub use agent_id::AgentId;
 
 // ============================================================
 // Error

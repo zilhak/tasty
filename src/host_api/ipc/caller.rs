@@ -168,11 +168,15 @@ impl CallerContext {
     /// - `Agent` → 호스트-부여 `agent_id` (verifiable, session token 검증 통과)
     /// - `Plugin` → manifest 의 `plugin_id`
     /// - `Local` → env `TASTY_AGENT_ID` (없으면 `_host`)
-    pub fn agent_id(&self) -> tasty_core::AgentId {
+    pub fn agent_id(&self) -> tasty_telemetry::AgentId {
         match self {
-            CallerContext::Local => tasty_core::AgentId::from_env(),
-            CallerContext::Plugin { plugin_id, .. } => tasty_core::AgentId::new(plugin_id.clone()),
-            CallerContext::Agent { agent_id, .. } => tasty_core::AgentId::new(agent_id.clone()),
+            CallerContext::Local => tasty_telemetry::AgentId::from_env(),
+            CallerContext::Plugin { plugin_id, .. } => {
+                tasty_telemetry::AgentId::new(plugin_id.clone())
+            }
+            CallerContext::Agent { agent_id, .. } => {
+                tasty_telemetry::AgentId::new(agent_id.clone())
+            }
         }
     }
 }
