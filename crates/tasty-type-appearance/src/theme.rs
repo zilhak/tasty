@@ -152,9 +152,11 @@ pub const SIZING: ThemeSizing = ThemeSizing {
 /// `hover_overlay` / `active_overlay` / `separator` 같은 반투명 의미 색은 여기 없다.
 /// 그건 `is_light` 에서 자동 도출되므로 `Theme` 인스턴스에서만 보유한다.
 ///
-/// 모든 필드가 `HexColor`. 터미널 fg/bg 나 ansi 도 hex 로 통일했고, GPU 셰이더에
-/// 넘길 때만 `.to_float()` 한다.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+/// 모든 색 필드가 `HexColor`. ansi 는 hex 로 통일했고, GPU 셰이더에 넘길 때만
+/// `.to_float()` 한다. surface 종류별(focused/unfocused × bg/fg) 색은
+/// `surface_themes` map 안에 `SurfaceTheme` 으로 담는다 — plugin 이 자기 id 로
+/// 추가 가능.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ThemeColors {
     // ── Surfaces (low → high elevation) ──
     pub crust: HexColor,
@@ -190,9 +192,7 @@ pub struct ThemeColors {
     pub maroon: HexColor,
     pub rosewater: HexColor,
 
-    // ── Terminal surface ──
-    pub terminal_fg: HexColor,
-    pub terminal_bg: HexColor,
+    // ── Terminal-specific 색 (다른 surface 가 selection 기능을 가지면 SurfaceTheme 로 흡수) ──
     pub selection_bg: HexColor,
     pub search_match_bg: HexColor,
     pub search_match_active_bg: HexColor,
@@ -214,6 +214,13 @@ pub struct ThemeColors {
     pub ansi_bright_magenta: HexColor,
     pub ansi_bright_cyan: HexColor,
     pub ansi_bright_white: HexColor,
+
+    // ── surface kind 별 색 묶음 ──
+    /// surface kind id ("terminal", "markdown", plugin id 등) → `SurfaceTheme`.
+    /// theme TOML 의 `[surfaces.<id>]` sub-table 에서 정의. apply_partial 시
+    /// entry 단위 merge.
+    #[serde(default)]
+    pub surface_themes: BTreeMap<String, SurfaceTheme>,
 }
 
 /// `ThemeColors` 의 모든 필드를 `Option<HexColor>` 로 감싼 표현.
@@ -222,7 +229,7 @@ pub struct ThemeColors {
 /// - 외부 TOML 의 partial 테마 정의 (`ThemeFile` 에서 변환)
 ///
 /// `ThemeColors::apply_partial()` 로 `Some` 필드만 base 에 덮어쓴다.
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct PartialColors {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -278,10 +285,6 @@ pub struct PartialColors {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rosewater: Option<HexColor>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub terminal_fg: Option<HexColor>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub terminal_bg: Option<HexColor>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub selection_bg: Option<HexColor>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub search_match_bg: Option<HexColor>,
@@ -319,6 +322,10 @@ pub struct PartialColors {
     pub ansi_bright_cyan: Option<HexColor>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ansi_bright_white: Option<HexColor>,
+
+    /// surface kind 별 partial 색. entry 단위로 base 의 `SurfaceTheme` 위에 덮어쓴다.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub surface_themes: BTreeMap<String, PartialSurfaceTheme>,
 }
 
 impl PartialColors {
@@ -414,12 +421,6 @@ impl ThemeColors {
         if let Some(v) = p.rosewater {
             self.rosewater = v;
         }
-        if let Some(v) = p.terminal_fg {
-            self.terminal_fg = v;
-        }
-        if let Some(v) = p.terminal_bg {
-            self.terminal_bg = v;
-        }
         if let Some(v) = p.selection_bg {
             self.selection_bg = v;
         }
@@ -477,6 +478,13 @@ impl ThemeColors {
         if let Some(v) = p.ansi_bright_white {
             self.ansi_bright_white = v;
         }
+        // surface_themes: entry 단위 merge. base 에 없는 id 면 default 위에 partial 적용.
+        for (id, partial_st) in &p.surface_themes {
+            self.surface_themes
+                .entry(id.clone())
+                .or_default()
+                .apply_partial(partial_st);
+        }
     }
 }
 
@@ -488,7 +496,8 @@ impl ThemeColors {
 /// (예: `theme().crust`, `theme().spacing_sm`, `theme().is_light`).
 ///
 /// `ThemeColors` 의 모든 필드를 펼쳐 담고, sizing/플래그/도출 색상을 함께 보유.
-#[derive(Debug, Clone, Copy)]
+/// surface kind 별 색은 `surface_themes` map — `surface(id)` 헬퍼로 접근 권장.
+#[derive(Debug, Clone)]
 pub struct Theme {
     // ── ThemeColors 와 동일 필드 (펼친 형태) ──
     pub crust: HexColor,
@@ -517,8 +526,6 @@ pub struct Theme {
     pub pink: HexColor,
     pub maroon: HexColor,
     pub rosewater: HexColor,
-    pub terminal_fg: HexColor,
-    pub terminal_bg: HexColor,
     pub selection_bg: HexColor,
     pub search_match_bg: HexColor,
     pub search_match_active_bg: HexColor,
@@ -566,6 +573,11 @@ pub struct Theme {
 
     // ── 라이트/다크 플래그 ──
     pub is_light: bool,
+
+    // ── surface kind 별 색 묶음 ──
+    /// `"terminal"`, `"markdown"`, 또는 plugin 등록 id → `SurfaceTheme`.
+    /// 호출자는 보통 [`Theme::surface`] 헬퍼를 통해 접근 (없는 id 는 `FALLBACK_SURFACE`).
+    pub surface_themes: BTreeMap<String, SurfaceTheme>,
 }
 
 /// `is_light` 에 따른 hover/active/separator 도출.
@@ -588,7 +600,8 @@ const fn derive_overlays(is_light: bool) -> (HexColor, HexColor, HexColor) {
 
 impl Theme {
     /// `ThemeColors` + `is_light` 로 풀 인스턴스 빌드. SIZING 은 const 에서 복사.
-    pub const fn with_colors(c: ThemeColors, is_light: bool) -> Self {
+    /// `surface_themes` 가 `BTreeMap` 이라 더 이상 `const fn` 일 수 없다.
+    pub fn with_colors(c: ThemeColors, is_light: bool) -> Self {
         let (hover_overlay, active_overlay, separator) = derive_overlays(is_light);
         Self {
             crust: c.crust,
@@ -617,8 +630,6 @@ impl Theme {
             pink: c.pink,
             maroon: c.maroon,
             rosewater: c.rosewater,
-            terminal_fg: c.terminal_fg,
-            terminal_bg: c.terminal_bg,
             selection_bg: c.selection_bg,
             search_match_bg: c.search_match_bg,
             search_match_active_bg: c.search_match_active_bg,
@@ -657,11 +668,19 @@ impl Theme {
             spacing_lg: SIZING.spacing_lg,
             spacing_xl: SIZING.spacing_xl,
             is_light,
+            surface_themes: c.surface_themes,
         }
     }
 
+    /// surface kind id 로 SurfaceTheme 조회. 없으면 [`FALLBACK_SURFACE`] 를 가리킨다.
+    /// theme 이 정상 적용된 상태에서는 항상 빌트인 entry (`"terminal"`, `"markdown"`) 가
+    /// 존재한다.
+    pub fn surface(&self, id: &str) -> &SurfaceTheme {
+        self.surface_themes.get(id).unwrap_or(&FALLBACK_SURFACE)
+    }
+
     /// 현재 색상 스냅샷을 `ThemeColors` 로 추출.
-    pub const fn extract_colors(&self) -> ThemeColors {
+    pub fn extract_colors(&self) -> ThemeColors {
         ThemeColors {
             crust: self.crust,
             mantle: self.mantle,
@@ -689,8 +708,6 @@ impl Theme {
             pink: self.pink,
             maroon: self.maroon,
             rosewater: self.rosewater,
-            terminal_fg: self.terminal_fg,
-            terminal_bg: self.terminal_bg,
             selection_bg: self.selection_bg,
             search_match_bg: self.search_match_bg,
             search_match_active_bg: self.search_match_active_bg,
@@ -710,13 +727,14 @@ impl Theme {
             ansi_bright_magenta: self.ansi_bright_magenta,
             ansi_bright_cyan: self.ansi_bright_cyan,
             ansi_bright_white: self.ansi_bright_white,
+            surface_themes: self.surface_themes.clone(),
         }
     }
 
     /// `ThemeColors` 의 색상 필드만 자신에게 덮어쓴다 (sizing / is_light / 도출 색상은 보존).
     /// is_light 변경이 필요하면 `set_is_light()` 도 호출할 것.
     pub fn apply_colors(&mut self, c: &ThemeColors) {
-        let next = Self::with_colors(*c, self.is_light);
+        let next = Self::with_colors(c.clone(), self.is_light);
         // 색상 + 도출 overlay 만 갱신 (is_light/sizing 은 보존되지만 next 와 동일).
         *self = next;
     }
@@ -766,7 +784,8 @@ mod tests {
 
     /// 모든 필드가 같은 색인 schema-level dummy. 빌트인 테마 색 의존 없이
     /// apply_partial / with_colors / extract_colors 동작만 검증.
-    const fn dummy_colors() -> ThemeColors {
+    /// `surface_themes` 가 BTreeMap 이라 `const fn` 일 수 없다.
+    fn dummy_colors() -> ThemeColors {
         let c = HexColor::from_rgb(0x12, 0x34, 0x56);
         ThemeColors {
             crust: c,
@@ -795,8 +814,6 @@ mod tests {
             pink: c,
             maroon: c,
             rosewater: c,
-            terminal_fg: c,
-            terminal_bg: c,
             selection_bg: c,
             search_match_bg: c,
             search_match_active_bg: c,
@@ -816,6 +833,7 @@ mod tests {
             ansi_bright_magenta: c,
             ansi_bright_cyan: c,
             ansi_bright_white: c,
+            surface_themes: BTreeMap::new(),
         }
     }
 
@@ -863,15 +881,49 @@ mod tests {
         variant.blue = HexColor::from_rgb(0x00, 0xff, 0x00);
         variant.red = HexColor::from_rgb(0xff, 0x00, 0xff);
 
-        let t = Theme::with_colors(variant, true);
+        let t = Theme::with_colors(variant.clone(), true);
         let c = t.extract_colors();
         assert_eq!(c, variant);
 
         let mut t2 = Theme::with_colors(dummy_colors(), false);
         t2.apply_colors(&c);
-        // apply_colors 는 `*self = Self::with_colors(*c, self.is_light)` 이므로 is_light 보존.
+        // apply_colors 는 with_colors(clone, self.is_light) 이므로 is_light 보존.
         assert!(!t2.is_light);
         assert_eq!(t2.extract_colors(), variant);
+    }
+
+    #[test]
+    fn apply_partial_merges_surface_themes_entry_wise() {
+        let mut base = dummy_colors();
+        base.surface_themes
+            .insert("terminal".to_string(), FALLBACK_SURFACE.clone());
+
+        let mut partial = PartialColors::default();
+        let mut p_st = PartialSurfaceTheme::default();
+        p_st.focused_bg = Some(HexColor::from_rgb(0x11, 0x22, 0x33));
+        partial.surface_themes.insert("terminal".to_string(), p_st);
+        // 또 base 에 없는 id 도 partial 만으로 등장 가능 — default 위에 입혀짐
+        let mut p_md = PartialSurfaceTheme::default();
+        p_md.focused_fg = Some(HexColor::from_rgb(0xaa, 0xbb, 0xcc));
+        partial.surface_themes.insert("markdown".to_string(), p_md);
+
+        base.apply_partial(&partial);
+
+        let term = base
+            .surface_themes
+            .get("terminal")
+            .expect("terminal exists");
+        assert_eq!(term.focused_bg, HexColor::from_rgb(0x11, 0x22, 0x33));
+        // partial 이 안 건드린 focused_fg 는 base (FALLBACK_SURFACE) 값
+        assert_eq!(term.focused_fg, FALLBACK_SURFACE.focused_fg);
+
+        let md = base
+            .surface_themes
+            .get("markdown")
+            .expect("markdown created");
+        assert_eq!(md.focused_fg, HexColor::from_rgb(0xaa, 0xbb, 0xcc));
+        // base 에 없던 id 라 default(FALLBACK_SURFACE) 위에 입혔으니 그 외 필드는 fallback
+        assert_eq!(md.focused_bg, FALLBACK_SURFACE.focused_bg);
     }
 
     #[test]
