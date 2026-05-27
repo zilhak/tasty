@@ -12,9 +12,7 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use tasty_core::paths::tasty_home;
 
-pub use appearance::{
-    AppearanceSettings, EffectiveFont, FontOverride, FontSettings, HexColor, SurfaceColors,
-};
+pub use appearance::{AppearanceSettings, EffectiveFont, FontOverride, FontSettings, HexColor};
 pub use general::{GeneralSettings, LinkModifier};
 pub use keybindings::KeybindingSettings;
 pub use types::{

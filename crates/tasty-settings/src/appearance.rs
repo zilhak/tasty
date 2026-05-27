@@ -1,9 +1,9 @@
 use serde::{Deserialize, Serialize};
-use tasty_themes::{MOCHA_FALLBACK_COLORS, ThemeApplyContext};
+use tasty_themes::{ThemeApplyContext, mocha_fallback_colors};
 use tasty_type_appearance::theme::{PartialColors, ThemeColors};
 use tasty_type_geometry::length::LogicalPx;
 
-pub use tasty_type_appearance::color::{HexColor, SurfaceColors};
+pub use tasty_type_appearance::color::HexColor;
 
 /// Default font settings applied when a surface override field is `None`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -106,17 +106,13 @@ pub struct AppearanceSettings {
     pub markdown_font: FontOverride,
     /// Explorer surface font override (per-field).
     pub explorer_font: FontOverride,
-    /// Per-surface-type color overrides.
-    pub terminal_colors: SurfaceColors,
-    pub markdown_colors: SurfaceColors,
-    pub explorer_colors: SurfaceColors,
 }
 
 impl Default for AppearanceSettings {
     fn default() -> Self {
         Self {
             theme: "mocha".to_string(),
-            theme_base: MOCHA_FALLBACK_COLORS,
+            theme_base: mocha_fallback_colors(),
             theme_overrides: PartialColors::default(),
             theme_is_light: false,
             background_opacity: 1.0,
@@ -126,9 +122,6 @@ impl Default for AppearanceSettings {
             terminal_font: FontOverride::default(),
             markdown_font: FontOverride::default(),
             explorer_font: FontOverride::default(),
-            terminal_colors: SurfaceColors::terminal_default(),
-            markdown_colors: SurfaceColors::markdown_default(),
-            explorer_colors: SurfaceColors::explorer_default(),
         }
     }
 }
