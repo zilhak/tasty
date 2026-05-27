@@ -1,6 +1,6 @@
 //! Theme ↔ egui 변환 어댑터.
 //!
-//! `tasty-core::theme::Theme`은 egui와 독립적인 모델이다.
+//! `tasty_type_appearance::theme::Theme`은 egui와 독립적인 schema 다.
 //! egui Visuals/Style 적용처럼 GUI 라이브러리에 직접 의존하는 헬퍼는
 //! 호스트 측인 이 모듈에 모은다.
 //!
@@ -10,15 +10,15 @@
 //! 일부 위젯이 어울리지 않는 톤으로 남는 문제를 막는다.
 
 use egui::emath::GuiRounding as _;
-use tasty_core::theme::Theme;
 use tasty_type_appearance::color::HexColor;
+use tasty_type_appearance::theme::Theme;
 
 /// `TextEdit::hint_text`에 넘길 placeholder 텍스트를 디자인 시스템의
 /// `Theme::placeholder` 색상으로 래핑한다. egui의 기본 `weak_text_color`는
 /// `override_text_color`(우리는 `Theme::text`로 설정)에서 파생되므로 다크
 /// 테마에서도 본문과 비슷한 밝기로 나오기 쉽다 — 명시적으로 색을 박는다.
 pub fn hint_text(text: impl Into<String>) -> egui::RichText {
-    let th = tasty_core::theme::theme();
+    let th = crate::theme::theme();
     egui::RichText::new(text).color(egui::Color32::from(th.placeholder))
 }
 
