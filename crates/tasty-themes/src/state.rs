@@ -3,12 +3,13 @@
 //!
 //! 이 crate 의 "이벤트에서 인스턴스를 수정/merge" 책임의 본체.
 
+use crate::apply_context::ThemeApplyContext;
+use crate::fallback::MOCHA_FALLBACK_COLORS;
 use crate::file::ThemeFile;
+use crate::global::set_theme;
 use crate::scan::scan_themes;
 use crate::store::{BUILTIN_MOCHA_ID, rewrite_mocha_fallback};
-use tasty_core::theme::{
-    MOCHA_FALLBACK_COLORS, Theme, ThemeApplyContext, set_theme as core_set_theme,
-};
+use tasty_type_appearance::theme::Theme;
 
 /// 두 레이어를 합쳐 실제 적용될 `Theme` 인스턴스를 만든다.
 /// `theme_base` 위에 `theme_overrides` 의 `Some` 필드만 덮어쓴 결과.
@@ -18,9 +19,9 @@ pub fn resolve<C: ThemeApplyContext>(ctx: &C) -> Theme {
     Theme::with_colors(colors, ctx.theme_is_light())
 }
 
-/// `resolve()` 결과를 `tasty-core` 의 전역 `Theme` 에 박는다.
+/// `resolve()` 결과를 전역 `Theme` 에 박는다.
 pub fn install_global<C: ThemeApplyContext>(ctx: &C) {
-    core_set_theme(resolve(ctx));
+    set_theme(resolve(ctx));
 }
 
 /// id 로 테마를 적용한다.
@@ -81,8 +82,8 @@ fn apply_inner<C: ThemeApplyContext>(ctx: &mut C, id: &str, allow_recursion: boo
 #[allow(clippy::disallowed_methods)]
 mod tests {
     use super::*;
-    use tasty_core::theme::{PartialColors, ThemeColors};
     use tasty_type_appearance::color::HexColor;
+    use tasty_type_appearance::theme::{PartialColors, ThemeColors};
 
     /// 테스트용 ctx — `AppearanceSettings` 의 핵심 필드만 흉내낸다.
     struct TestCtx {

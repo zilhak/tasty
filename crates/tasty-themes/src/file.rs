@@ -4,8 +4,8 @@
 //! 사용자가 일부 색상만 정의한 partial 테마도 자연스럽게 적용된다.
 
 use serde::Deserialize;
-use tasty_core::theme::PartialColors;
 use tasty_type_appearance::color::HexColor;
+use tasty_type_appearance::theme::PartialColors;
 use thiserror::Error;
 
 /// TOML 파일 표현. 모든 sub-table 과 필드 optional.
@@ -168,7 +168,7 @@ impl ThemeFile {
 #[allow(clippy::disallowed_methods)]
 mod tests {
     use super::*;
-    use tasty_core::theme::MOCHA_FALLBACK_COLORS;
+    use crate::MOCHA_FALLBACK_COLORS;
 
     /// 빌트인 mocha.toml 텍스트가 `MOCHA_FALLBACK_COLORS` const 와 완전히 일치하는지 확인.
     /// 어긋나면 런타임에 사용자가 보는 색상과 fallback 이 달라진다.
