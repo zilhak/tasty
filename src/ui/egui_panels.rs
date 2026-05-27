@@ -83,7 +83,7 @@ pub fn draw_egui_panels(
     let mut pending_empty_action: Option<crate::empty_ui::EmptyAction> = None;
     let mut pending_diff_action: Option<(u32, crate::diff_ui::DiffAction)> = None;
 
-    let markdown_colors = crate::theme::theme().surface("markdown").clone();
+    let markdown_surface = crate::theme::theme().surface("markdown").clone();
     let markdown_font = engine.settings.appearance.effective_markdown_font();
 
     // Temporarily extract view stores so we can hold a `&mut View` from
@@ -141,9 +141,9 @@ pub fn draw_egui_panels(
                 0.0
             };
             let md_bg = if info.is_keyboard_target {
-                markdown_colors.focused_bg.to_egui()
+                markdown_surface.focused_bg.to_egui()
             } else {
-                markdown_colors.unfocused_bg.to_egui()
+                markdown_surface.unfocused_bg.to_egui()
             };
             let view = markdown_views.get_or_init(md_panel);
             draw_panel_frame(
