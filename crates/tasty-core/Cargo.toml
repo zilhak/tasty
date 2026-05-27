@@ -3,19 +3,11 @@ name = "tasty-core"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
-description = "Shared data types, theme, i18n and path helpers for Tasty"
-
-[features]
-# Default: include thin egui Color32 conversion helpers on `HexColor` (forwarded to tasty-type-appearance).
-# Disable in plugin/headless processes that don't link egui:
-#   tasty-core = { path = "...", default-features = false }
-default = ["egui-compat"]
-egui-compat = ["tasty-type-appearance/egui-compat"]
+description = "GUI-free shared domain data types (model/i18n/paths/agent_id/waker) for Tasty"
 
 [dependencies]
-# Workspace crates
+# Workspace crates — type-* layer 만 의존. 시각/색은 의존하지 않는다 (GUI-free).
 tasty-terminal = { path = "../tasty-terminal" }
-tasty-type-appearance = { path = "../tasty-type-appearance", default-features = false }
 tasty-type-geometry = { path = "../tasty-type-geometry" }
 
 # Cell attributes for closed-item history
