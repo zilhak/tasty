@@ -5462,6 +5462,7 @@ dependencies = [
  "bytemuck",
  "egui",
  "serde",
+ "tasty-type-geometry",
 ]
 
 [[package]]

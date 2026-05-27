@@ -3,7 +3,7 @@ name = "tasty-type-appearance"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
-description = "Appearance/color primitives for Tasty — HexColor, GpuRgba/GpuRgb newtypes. Leaf crate — must not depend on any other tasty-* crate."
+description = "Appearance schema/primitives for Tasty — HexColor/GpuRgba/GpuRgb color primitives, ThemeColors/PartialColors/SurfaceColors/ThemeSizing/Theme schema. Type-layer crate — may depend only on other `tasty-type-*` crates; must not depend on any tasty-* crate outside the type-* group; must not introduce cycles among type-* crates."
 
 [features]
 # Default: include thin egui Color32 conversion helpers on HexColor.
@@ -13,6 +13,9 @@ default = ["egui-compat"]
 egui-compat = ["dep:egui"]
 
 [dependencies]
+# Type-layer crate. type-* 그룹 내부 의존은 허용 (순환 금지).
+tasty-type-geometry = { path = "../tasty-type-geometry" }
+
 bytemuck = { version = "1", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 
