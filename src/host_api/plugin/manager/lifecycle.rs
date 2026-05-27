@@ -112,7 +112,7 @@ impl PluginManager {
             // i18n namespace 등록 — 비활성 plugin도 설정 UI에서 command title을
             // 번역해서 보여줘야 하므로 disabled 여부와 무관하게 등록한다.
             let lang_dir = pkg.dir.join(&pkg.manifest.lang_dir);
-            tasty_core::i18n::register_namespace(&pkg.manifest.id, &lang_dir);
+            crate::i18n::register_namespace(&pkg.manifest.id, &lang_dir);
         }
 
         self.recompute_extensions();

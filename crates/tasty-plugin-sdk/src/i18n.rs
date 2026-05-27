@@ -3,7 +3,7 @@
 //! Plugin process는 host의 i18n catalog에 접근할 수 없으므로 자기 lang/ 디렉터리에서
 //! 직접 toml을 읽어 평면 key→value 맵을 만든다.
 //!
-//! 동작은 host의 [`tasty_core::i18n::Translations`]와 동일하게 — base = `en.toml`,
+//! 동작은 host 의 `i18n::Translations` (본 바이너리 `src/i18n.rs`) 와 동일하게 — base = `en.toml`,
 //! 활성 locale 파일이 있으면 그 위에 overlay. 키 미스 시 키 자체 반환.
 //!
 //! ```ignore

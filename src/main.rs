@@ -7,6 +7,7 @@ mod db;
 mod file;
 mod gfx;
 mod host_api;
+mod i18n;
 mod input;
 mod intent;
 mod platform;
@@ -20,7 +21,7 @@ pub mod window;
 
 use anyhow::Result;
 
-pub use tasty_core::{i18n, model};
+pub use tasty_core::model;
 pub use tasty_font as font;
 pub use tasty_settings as settings;
 use tasty_terminal as terminal;
