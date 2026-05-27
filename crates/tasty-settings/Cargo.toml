@@ -11,6 +11,7 @@ tasty-core = { path = "../tasty-core" }
 tasty-themes = { path = "../tasty-themes" }
 tasty-type-appearance = { path = "../tasty-type-appearance", default-features = false }
 tasty-type-geometry = { path = "../tasty-type-geometry" }
+tasty-utils = { path = "../tasty-utils" }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }

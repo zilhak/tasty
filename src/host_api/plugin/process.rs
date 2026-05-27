@@ -124,7 +124,7 @@ impl PluginProcess {
 
         // plugin별 격리 디렉터리. 디렉터리 생성은 호스트가 미리 보장한다 — plugin이
         // fs.write 권한 없이도 자기 영역만은 자유롭게 쓸 수 있도록.
-        if let Some(home) = tasty_core::paths::tasty_home() {
+        if let Some(home) = tasty_utils::path::tasty_home() {
             let data_dir = home.join("plugin-data").join(&package.manifest.id);
             let config_path = home
                 .join("plugin-config")

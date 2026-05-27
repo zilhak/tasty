@@ -43,7 +43,7 @@ pub struct PresetStore {
 impl PresetStore {
     /// `~/.tasty/presets/` 에서 모든 preset 을 로드. 디렉토리 없으면 빈 store.
     pub fn load_default() -> Self {
-        let root = match tasty_core::paths::tasty_home() {
+        let root = match tasty_utils::path::tasty_home() {
             Some(home) => home.join("presets"),
             None => {
                 tracing::warn!("tasty_home unavailable; preset store starts empty");

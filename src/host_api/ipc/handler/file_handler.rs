@@ -34,7 +34,7 @@ pub fn handle_reload(
 /// `~/.tasty/file-handlers.toml`. 홈 디렉토리 결정 실패 시 임시 경로 — 그 경우
 /// `exists` 가 false 로 돌아오므로 caller 가 인지 가능.
 fn user_config_path() -> std::path::PathBuf {
-    tasty_core::paths::tasty_home()
+    tasty_utils::path::tasty_home()
         .map(|d| d.join("file-handlers.toml"))
         .unwrap_or_else(|| std::env::temp_dir().join("tasty-file-handlers.toml"))
 }

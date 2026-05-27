@@ -27,7 +27,7 @@ const EXT: &str = "bin";
 
 /// Return `~/.tasty/scrollback/`. `None` 이면 home 디렉터리를 알 수 없음.
 pub fn scrollback_dir() -> Option<PathBuf> {
-    tasty_core::paths::tasty_home().map(|h| h.join(SUBDIR))
+    tasty_utils::path::tasty_home().map(|h| h.join(SUBDIR))
 }
 
 fn file_path_in(dir: &Path, persist_id: &str) -> Option<PathBuf> {

@@ -14,7 +14,7 @@ use crate::ipc::server::IpcServer;
 use crate::plugin::manifest::Manifest;
 
 fn log_dir() -> Result<PathBuf> {
-    tasty_core::paths::tasty_home()
+    tasty_utils::path::tasty_home()
         .map(|d| d.join("plugins-logs"))
         .ok_or_else(|| anyhow::anyhow!("could not determine tasty home directory"))
 }

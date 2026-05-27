@@ -419,13 +419,13 @@ impl EngineState {
 
 /// `~/.tasty/file-handlers.toml` — 사용자 detector/handler 설정. 부팅 시 1회 로드.
 fn file_handler_user_config_path() -> Option<std::path::PathBuf> {
-    tasty_core::paths::tasty_home().map(|d| d.join("file-handlers.toml"))
+    tasty_utils::path::tasty_home().map(|d| d.join("file-handlers.toml"))
 }
 
 /// `~/.tasty/file-handler-recent.json` — picker 선택 LRU. 부팅 시 로드, 매 선택마다 save.
 /// 홈을 못 찾으면 (CI 등) 임시 경로로 fallback — save 가 안 되더라도 in-memory 동작.
 fn file_handler_recent_path() -> std::path::PathBuf {
-    tasty_core::paths::tasty_home()
+    tasty_utils::path::tasty_home()
         .map(|d| d.join("file-handler-recent.json"))
         .unwrap_or_else(|| std::env::temp_dir().join("tasty-file-handler-recent.json"))
 }

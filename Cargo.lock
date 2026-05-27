@@ -5157,6 +5157,7 @@ dependencies = [
  "tasty-type-appearance",
  "tasty-type-geometry",
  "tasty-update",
+ "tasty-utils",
  "tempfile",
  "termwiz",
  "toml 0.8.2",
@@ -5199,11 +5200,11 @@ name = "tasty-core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "directories",
  "serde",
  "serde_json",
  "tasty-terminal",
  "tasty-type-geometry",
+ "tasty-utils",
  "termwiz",
  "toml 0.8.2",
  "tracing",
@@ -5379,6 +5380,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tasty-core",
+ "tasty-utils",
  "tempfile",
  "thiserror 2.0.18",
  "toml 0.8.2",
@@ -5396,6 +5398,7 @@ dependencies = [
  "tasty-themes",
  "tasty-type-appearance",
  "tasty-type-geometry",
+ "tasty-utils",
  "toml 0.8.2",
  "tracing",
 ]
@@ -5441,6 +5444,7 @@ dependencies = [
  "serde",
  "tasty-core",
  "tasty-type-appearance",
+ "tasty-utils",
  "tempfile",
  "thiserror 2.0.18",
  "toml 0.8.2",
@@ -5481,6 +5485,13 @@ dependencies = [
  "thiserror 2.0.18",
  "tracing",
  "ureq",
+]
+
+[[package]]
+name = "tasty-utils"
+version = "0.1.0"
+dependencies = [
+ "directories",
 ]
 
 [[package]]

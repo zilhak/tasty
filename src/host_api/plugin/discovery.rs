@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use crate::plugin::manifest::{Manifest, PluginPackage};
 
 pub fn plugin_root() -> Option<PathBuf> {
-    tasty_core::paths::tasty_home().map(|d| d.join("plugins"))
+    tasty_utils::path::tasty_home().map(|d| d.join("plugins"))
 }
 
 /// `~/.tasty/plugins/`를 스캔하여 매니페스트 파싱 성공한 plugin들을 반환.

@@ -1,0 +1,12 @@
+[package]
+name = "tasty-utils"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Cross-cutting utility helpers for Tasty — path resolution, etc. Small leaf crate, must not depend on any tasty-* crate."
+
+[dependencies]
+directories = "6"
+
+[lints]
+workspace = true

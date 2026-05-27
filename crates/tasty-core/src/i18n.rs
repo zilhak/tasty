@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{OnceLock, RwLock};
 
-use crate::paths::tasty_home;
+use tasty_utils::path::tasty_home;
 
 /// Global translation store, initialized once at startup.
 static TRANSLATIONS: OnceLock<Translations> = OnceLock::new();

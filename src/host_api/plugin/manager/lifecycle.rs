@@ -33,7 +33,7 @@ impl PluginManager {
         file_format: Arc<crate::file::format::FileFormatRegistry>,
         file_handler: Arc<crate::file::handler::FileHandlerRegistry>,
     ) -> Self {
-        let log_dir = tasty_core::paths::tasty_home()
+        let log_dir = tasty_utils::path::tasty_home()
             .map(|d| d.join("plugins-logs"))
             .unwrap_or_else(|| PathBuf::from("./plugin-logs"));
         if let Err(e) = std::fs::create_dir_all(&log_dir) {

@@ -8,6 +8,7 @@ description = "Theme file loading, disk persistence, and partial-merge tools for
 [dependencies]
 tasty-core = { path = "../tasty-core", default-features = false }
 tasty-type-appearance = { path = "../tasty-type-appearance", default-features = false }
+tasty-utils = { path = "../tasty-utils" }
 
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"

@@ -28,7 +28,7 @@ pub enum ThemeStoreError {
 
 /// `~/.tasty/themes/` 절대 경로. `tasty_home()` 이 None 이면 에러.
 pub fn themes_dir() -> Result<PathBuf, ThemeStoreError> {
-    tasty_core::paths::tasty_home()
+    tasty_utils::path::tasty_home()
         .map(|home| home.join("themes"))
         .ok_or(ThemeStoreError::HomeUnavailable)
 }

@@ -19,11 +19,12 @@ pub mod window;
 
 use anyhow::Result;
 
-pub use tasty_core::{i18n, model, paths};
+pub use tasty_core::{i18n, model};
 pub use tasty_font as font;
 pub use tasty_settings as settings;
 use tasty_terminal as terminal;
 pub use tasty_themes as theme;
+pub use tasty_utils::path as paths;
 
 pub(crate) use app::App;
 pub(crate) use app::event::AppEvent;

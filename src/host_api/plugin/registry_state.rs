@@ -75,7 +75,7 @@ pub struct PluginGrants {
 
 impl PluginsConfig {
     fn path() -> Option<PathBuf> {
-        tasty_core::paths::tasty_home().map(|d| d.join(FILE_NAME))
+        tasty_utils::path::tasty_home().map(|d| d.join(FILE_NAME))
     }
 
     pub fn load() -> Self {

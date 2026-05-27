@@ -26,7 +26,7 @@ pub(crate) fn init_engine() -> Option<tasty_lua::LuaEngine> {
             return None;
         }
     };
-    if let Some(home) = tasty_core::paths::tasty_home() {
+    if let Some(home) = tasty_utils::path::tasty_home() {
         let init_path = home.join("init.lua");
         match engine.load_init(&init_path) {
             Ok(true) => tracing::info!(

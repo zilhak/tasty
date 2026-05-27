@@ -85,6 +85,7 @@ tasty-settings = { path = "crates/tasty-settings" }
 tasty-themes = { path = "crates/tasty-themes" }
 tasty-type-appearance = { path = "crates/tasty-type-appearance" }
 tasty-type-geometry = { path = "crates/tasty-type-geometry" }
+tasty-utils = { path = "crates/tasty-utils" }
 tasty-shm = { path = "crates/tasty-shm" }
 tasty-terminal = { path = "crates/tasty-terminal" }
 tasty-portscan = { path = "crates/tasty-portscan" }

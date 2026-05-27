@@ -57,7 +57,7 @@ impl App {
             )
         };
         let user_config_path =
-            tasty_core::paths::tasty_home().map(|d| d.join("file-handlers.toml"));
+            tasty_utils::path::tasty_home().map(|d| d.join("file-handlers.toml"));
         let mut modal = window::SettingsWindow::new(
             gpu,
             window,

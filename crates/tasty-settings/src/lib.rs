@@ -10,7 +10,7 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use tasty_core::paths::tasty_home;
+use tasty_utils::path::tasty_home;
 
 pub use appearance::{AppearanceSettings, EffectiveFont, FontOverride, FontSettings, HexColor};
 pub use general::{GeneralSettings, LinkModifier};

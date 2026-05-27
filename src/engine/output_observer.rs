@@ -391,7 +391,7 @@ fn entry_to_info(id: ObserverId, entry: &ObserverEntry) -> ObserverInfo {
 }
 
 fn default_file_path(id: ObserverId) -> Result<PathBuf, ObserverError> {
-    let home = tasty_core::paths::tasty_home()
+    let home = tasty_utils::path::tasty_home()
         .ok_or_else(|| ObserverError::InvalidPath("no $HOME / tasty home".to_string()))?;
     let dir = home.join("observers");
     std::fs::create_dir_all(&dir)
