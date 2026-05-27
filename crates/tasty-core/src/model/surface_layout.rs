@@ -1,4 +1,4 @@
-use super::pane_tree::FocusDirection;
+use super::FocusDirection;
 use super::surface_trait::Surface;
 use super::terminal_surface::TerminalSurface;
 use super::{

@@ -1,7 +1,9 @@
 // LogicalPx / PhysicalPx 는 별 leaf crate `tasty-type-geometry` 에 정의되어 있다.
 // 본 바이너리의 group import 호환성을 위해 재수출 유지.
 // 새 코드는 `tasty_type_geometry::length::*` 직접 import 권장.
+pub use tasty_type_geometry::direction::{FocusDirection, SplitDirection};
 pub use tasty_type_geometry::length::{self, LogicalPx, PhysicalPx};
+pub use tasty_type_geometry::rect::{DividerInfo, PhysicalRect};
 
 // 식별자 alias 는 tasty-utils::id 로 이전됨. 본 모듈은 호환을 위해 재수출 유지.
 // 새 코드는 `tasty_utils::id::*` 직접 import 권장.
@@ -11,97 +13,6 @@ pub use tasty_utils::id::{PaneId, SurfaceId, TabId, WorkspaceId};
 pub const PANE_BORDER_WIDTH: PhysicalPx = PhysicalPx(2.0);
 /// Gap in physical pixels between split surfaces (within a tab).
 pub const SURFACE_BORDER_WIDTH: PhysicalPx = PhysicalPx(1.0);
-
-/// A pixel rectangle in physical (device) pixels, used for viewport/scissor calculations.
-#[derive(Debug, Clone, Copy)]
-pub struct PhysicalRect {
-    pub x: PhysicalPx,
-    pub y: PhysicalPx,
-    pub width: PhysicalPx,
-    pub height: PhysicalPx,
-}
-
-impl PhysicalRect {
-    /// Check if a point (x, y) is inside this rectangle.
-    pub fn contains(&self, x: PhysicalPx, y: PhysicalPx) -> bool {
-        x >= self.x && x < self.x + self.width && y >= self.y && y < self.y + self.height
-    }
-
-    /// Check if two rects are approximately equal (within 1px tolerance).
-    pub fn approx_eq(&self, other: &PhysicalRect) -> bool {
-        (self.x - other.x).abs() < PhysicalPx(1.0)
-            && (self.y - other.y).abs() < PhysicalPx(1.0)
-            && (self.width - other.width).abs() < PhysicalPx(1.0)
-            && (self.height - other.height).abs() < PhysicalPx(1.0)
-    }
-
-    pub fn split(self, direction: SplitDirection, ratio: f32) -> (PhysicalRect, PhysicalRect) {
-        self.split_with_gap(direction, ratio, PANE_BORDER_WIDTH)
-    }
-
-    pub fn split_with_gap(
-        self,
-        direction: SplitDirection,
-        ratio: f32,
-        gap: PhysicalPx,
-    ) -> (PhysicalRect, PhysicalRect) {
-        match direction {
-            SplitDirection::Vertical => {
-                let usable = (self.width - gap).max(PhysicalPx(0.0));
-                let first_w = (usable * ratio).floor();
-                let second_w = usable - first_w;
-                (
-                    PhysicalRect {
-                        x: self.x,
-                        y: self.y,
-                        width: first_w,
-                        height: self.height,
-                    },
-                    PhysicalRect {
-                        x: self.x + first_w + gap,
-                        y: self.y,
-                        width: second_w,
-                        height: self.height,
-                    },
-                )
-            }
-            SplitDirection::Horizontal => {
-                let usable = (self.height - gap).max(PhysicalPx(0.0));
-                let first_h = (usable * ratio).floor();
-                let second_h = usable - first_h;
-                (
-                    PhysicalRect {
-                        x: self.x,
-                        y: self.y,
-                        width: self.width,
-                        height: first_h,
-                    },
-                    PhysicalRect {
-                        x: self.x,
-                        y: self.y + first_h + gap,
-                        width: self.width,
-                        height: second_h,
-                    },
-                )
-            }
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum SplitDirection {
-    Horizontal,
-    Vertical,
-}
-
-/// Information about a divider (split border) that the cursor is near.
-#[derive(Debug, Clone, Copy)]
-pub struct DividerInfo {
-    /// The direction of the split this divider belongs to.
-    pub direction: SplitDirection,
-    /// The rect of the parent split node that owns this divider.
-    pub split_rect: PhysicalRect,
-}
 
 /// Compute the terminal area rectangle (everything right of the sidebar) in physical pixels.
 ///

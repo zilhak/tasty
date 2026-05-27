@@ -84,7 +84,7 @@ fn rect_split_vertical() {
         width: px(200.0),
         height: px(100.0),
     };
-    let (r1, r2) = r.split(SplitDirection::Vertical, 0.5);
+    let (r1, r2) = r.split_with_gap(SplitDirection::Vertical, 0.5, PANE_BORDER_WIDTH);
     let gap = PANE_BORDER_WIDTH;
     let usable = px(200.0) - gap;
     assert_eq!(r1.x, px(0.0));
@@ -103,7 +103,7 @@ fn rect_split_horizontal() {
         width: px(200.0),
         height: px(100.0),
     };
-    let (r1, r2) = r.split(SplitDirection::Horizontal, 0.5);
+    let (r1, r2) = r.split_with_gap(SplitDirection::Horizontal, 0.5, PANE_BORDER_WIDTH);
     let gap = PANE_BORDER_WIDTH;
     let usable = px(100.0) - gap;
     assert_eq!(r1.y, px(0.0));
@@ -122,7 +122,7 @@ fn rect_split_unequal_ratio() {
         width: px(300.0),
         height: px(100.0),
     };
-    let (r1, r2) = r.split(SplitDirection::Vertical, 0.3);
+    let (r1, r2) = r.split_with_gap(SplitDirection::Vertical, 0.3, PANE_BORDER_WIDTH);
     let gap = PANE_BORDER_WIDTH;
     let usable = px(300.0) - gap;
     assert_eq!(r1.width, (usable * 0.3).floor());

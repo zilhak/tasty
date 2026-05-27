@@ -1,14 +1,5 @@
-use super::{DividerInfo, Pane, PaneId, PhysicalRect, SplitDirection, SurfaceId};
+use super::{DividerInfo, FocusDirection, Pane, PaneId, PhysicalRect, SplitDirection, SurfaceId};
 use tasty_terminal::Terminal;
-
-/// Directional focus movement.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FocusDirection {
-    Left,
-    Right,
-    Up,
-    Down,
-}
 
 /// Which side of a split we descended into while building a path.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -149,7 +140,8 @@ impl PaneNode {
                 first,
                 second,
             } => {
-                let (r1, r2) = rect.split(*direction, *ratio);
+                let (r1, r2) =
+                    rect.split_with_gap(*direction, *ratio, crate::model::PANE_BORDER_WIDTH);
                 let mut result = first.compute_rects(r1);
                 result.extend(second.compute_rects(r2));
                 result
@@ -169,7 +161,8 @@ impl PaneNode {
                 second,
             } => {
                 let gap = super::PANE_BORDER_WIDTH;
-                let (r1, r2) = rect.split(*direction, *ratio);
+                let (r1, r2) =
+                    rect.split_with_gap(*direction, *ratio, crate::model::PANE_BORDER_WIDTH);
                 // The divider sits in the gap between r1 and r2
                 let divider = match direction {
                     SplitDirection::Vertical => PhysicalRect {
@@ -331,7 +324,8 @@ impl PaneNode {
                 first,
                 second,
             } => {
-                let (r1, r2) = rect.split(*direction, *ratio);
+                let (r1, r2) =
+                    rect.split_with_gap(*direction, *ratio, crate::model::PANE_BORDER_WIDTH);
                 let divider_pos = match direction {
                     SplitDirection::Vertical => (r1.x + r1.width).value(),
                     SplitDirection::Horizontal => (r1.y + r1.height).value(),
@@ -478,7 +472,11 @@ impl PaneNode {
                     *ratio = new_ratio.clamp(0.1, 0.9);
                     return true;
                 }
-                let (r1, r2) = current_rect.split(*direction, *ratio);
+                let (r1, r2) = current_rect.split_with_gap(
+                    *direction,
+                    *ratio,
+                    crate::model::PANE_BORDER_WIDTH,
+                );
                 first.update_ratio_for_rect(split_rect, new_ratio, r1)
                     || second.update_ratio_for_rect(split_rect, new_ratio, r2)
             }

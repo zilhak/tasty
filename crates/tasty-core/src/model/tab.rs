@@ -1,4 +1,4 @@
-use super::pane_tree::FocusDirection;
+use super::FocusDirection;
 use super::surface_layout::SurfaceLayout;
 use super::surface_trait::Surface;
 use super::{SplitDirection, SurfaceId, TabId, TerminalSurface};
