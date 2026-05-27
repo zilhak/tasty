@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use tasty_core::WakerFactory;
+use crate::waker::WakerFactory;
 use tasty_terminal::Waker;
 use winit::event_loop::EventLoopProxy;
 

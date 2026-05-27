@@ -13,6 +13,7 @@ mod platform;
 mod state;
 mod store;
 mod ui;
+mod waker;
 
 pub mod engine;
 pub mod window;

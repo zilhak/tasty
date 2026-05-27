@@ -59,7 +59,7 @@ impl App {
         };
         let (cols, rows) = gpu.grid_size_for_rect(&terminal_rect);
 
-        let factory: tasty_core::SharedWakerFactory = Arc::new(
+        let factory: crate::waker::SharedWakerFactory = Arc::new(
             crate::waker_factory_winit::WinitWakerFactory::new(self.engine.proxy.clone()),
         );
         let waker: crate::terminal::Waker = factory.make_default_waker();

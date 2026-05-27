@@ -1,8 +1,11 @@
 //! PTY 출력 도착 등 비동기 이벤트가 발생했을 때 메인 루프를 깨우는 메커니즘.
 //!
-//! 본체(`tasty` 바이너리)는 winit `EventLoopProxy`로 구현하고, 헤드리스/플러그인
-//! 호스트 컨텍스트에서는 mpsc 채널 등 다른 메커니즘을 쓸 수 있다. `tasty-core`는
-//! 추상 trait만 정의하여 winit 의존을 본체로 격리한다.
+//! `WinitWakerFactory` (boot/waker.rs) 가 winit `EventLoopProxy` 로 구현한다.
+//! `NoopWakerFactory` 는 plugin manager 등이 wake 없이 동작할 때 쓰는 no-op.
+//!
+//! 이 추상은 *GUI 이벤트 루프 패턴* 에 종속된 것 — 진짜 headless 영역에선 PTY
+//! 리더가 *깨움* 이 아니라 다른 방식으로 동작. 그래서 이 trait 은 본 바이너리에
+//! 살고 외부 crate 가 의존하지 않는다.
 
 use std::sync::Arc;
 
@@ -26,6 +29,9 @@ pub trait WakerFactory: Send + Sync + 'static {
 pub type SharedWakerFactory = Arc<dyn WakerFactory>;
 
 /// 깨움이 필요 없는 컨텍스트(헤드리스 테스트 등)용 no-op 구현.
+/// 현재 호출처는 plugin manager 의 `#[cfg(test)]` 코드 뿐 — release 빌드에서는
+/// dead 가 자연스러움.
+#[allow(dead_code)]
 pub struct NoopWakerFactory;
 
 impl WakerFactory for NoopWakerFactory {

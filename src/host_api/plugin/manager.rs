@@ -214,7 +214,7 @@ pub struct PluginManager {
     pub packages: Vec<PluginPackage>,
     pub processes: HashMap<String, PluginProcess>,
     pub config: PluginsConfig,
-    pub(super) waker: tasty_core::SharedWakerFactory,
+    pub(super) waker: crate::waker::SharedWakerFactory,
     pub(super) listener: Option<HostListener>,
     /// 보조 핸들 채널 listener. shared buffer 핸들 전송에 사용. Windows에서는 02c까지
     /// `None`으로 유지된다 (HandleListener::bind가 Unsupported를 반환).
@@ -325,9 +325,9 @@ mod tests {
     use super::*;
     use crate::plugin::process::PluginProcess;
 
-    fn empty_waker() -> tasty_core::SharedWakerFactory {
+    fn empty_waker() -> crate::waker::SharedWakerFactory {
         // headless 환경에서 PluginManager가 사용하는 waker — 실제 wake는 no-op로 충분.
-        Arc::new(tasty_core::waker::NoopWakerFactory)
+        Arc::new(crate::waker::NoopWakerFactory)
     }
 
     /// validate_namespace_call의 분기를 직접 검증하기 위한 mgr 초기화.

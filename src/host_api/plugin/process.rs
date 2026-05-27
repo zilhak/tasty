@@ -88,7 +88,7 @@ impl PluginProcess {
         listener: &HostListener,
         handle_listener: Option<&HandleListener>,
         log_dir: &Path,
-        waker: tasty_core::SharedWakerFactory,
+        waker: crate::waker::SharedWakerFactory,
     ) -> anyhow::Result<Self> {
         let token = generate_token();
         std::fs::create_dir_all(log_dir).ok();

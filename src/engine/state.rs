@@ -136,7 +136,7 @@ pub struct EngineState {
     /// Targeted waker creation. winit `EventLoopProxy`를 직접 들지 않고 trait 뒤로
     /// 추상화하여 헤드리스/플러그인 호스트 컨텍스트에서도 동일 인터페이스를 쓴다.
     /// `App`이 EngineState 생성 후 본체에서 `WinitWakerFactory`를 주입한다.
-    pub waker_factory: Option<tasty_core::SharedWakerFactory>,
+    pub waker_factory: Option<crate::waker::SharedWakerFactory>,
 
     // ── CWD polling (round-robin) ──
     // macOS/Linux 전용. Windows에서는 폴링을 돌지 않아 필드 자체가 없음.
