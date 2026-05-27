@@ -50,12 +50,13 @@ impl GpuState {
         regions: &[(u32, PhysicalRect, Vec<crate::model::SurfaceRegion<'_>>)],
         focused_surface_id: Option<u32>,
         selection: Option<&crate::selection::TextSelection>,
-        settings: &crate::settings::AppearanceSettings,
+        _settings: &crate::settings::AppearanceSettings,
         preedit: Option<&super::ImePreeditState>,
         link_hover: Option<(u32, &crate::terminal_link::LinkHighlight)>,
         search: Option<&crate::search_state::SearchState>,
     ) {
         let theme = crate::theme::theme();
+        let term_surface = theme.surface("terminal");
 
         // Each terminal needs its own encoder + submit cycle because
         // prepare_terminal_viewport writes to shared GPU buffers via queue.write_buffer().
@@ -70,14 +71,14 @@ impl GpuState {
                 let rect = &region.rect;
                 let is_focused = focused_surface_id == Some(*surface_id);
                 let bg = if is_focused {
-                    settings.terminal_colors.focused_bg.to_gpu_rgba()
+                    term_surface.focused_bg.to_gpu_rgba()
                 } else {
-                    settings.terminal_colors.unfocused_bg.to_gpu_rgba()
+                    term_surface.unfocused_bg.to_gpu_rgba()
                 };
                 let fg = if is_focused {
-                    settings.terminal_colors.focused_fg.to_gpu_rgba()
+                    term_surface.focused_fg.to_gpu_rgba()
                 } else {
-                    settings.terminal_colors.unfocused_fg.to_gpu_rgba()
+                    term_surface.unfocused_fg.to_gpu_rgba()
                 };
 
                 // Build selection info for this surface

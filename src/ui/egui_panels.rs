@@ -83,7 +83,7 @@ pub fn draw_egui_panels(
     let mut pending_empty_action: Option<crate::empty_ui::EmptyAction> = None;
     let mut pending_diff_action: Option<(u32, crate::diff_ui::DiffAction)> = None;
 
-    let markdown_colors = engine.settings.appearance.markdown_colors.clone();
+    let markdown_colors = crate::theme::theme().surface("markdown").clone();
     let markdown_font = engine.settings.appearance.effective_markdown_font();
 
     // Temporarily extract view stores so we can hold a `&mut View` from

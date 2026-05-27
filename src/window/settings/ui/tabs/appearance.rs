@@ -1,9 +1,8 @@
 use std::collections::HashMap;
 
 use crate::i18n::t;
-use crate::settings::{
-    EffectiveFont, FontOverride, FontSettings, HexColor, Settings, SurfaceColors,
-};
+use crate::settings::{EffectiveFont, FontOverride, FontSettings, HexColor, Settings};
+use tasty_type_appearance::theme::SurfaceTheme;
 
 /// Draw a label followed by a (?) icon with tooltip. For use inside Grid rows.
 fn label_with_tooltip(ui: &mut egui::Ui, label: &str, tooltip: &str) {
@@ -182,10 +181,11 @@ fn draw_appearance_theme(
             "default",
         );
         let preview_eff = effective_from_settings(&settings.appearance.default_font);
+        let preview_colors = crate::theme::theme().surface("terminal").clone();
         draw_font_preview(
             &mut columns[1],
             &preview_eff,
-            &settings.appearance.terminal_colors,
+            &preview_colors,
             &settings.appearance,
             "default",
             preview_font_loaded,
@@ -278,11 +278,8 @@ fn draw_appearance_terminal(
         SurfaceFontTarget::Terminal,
     );
 
-    ui.add_space(16.0);
-    ui.separator();
-    ui.add_space(8.0);
-
-    draw_surface_colors(ui, "terminal", &mut settings.appearance.terminal_colors);
+    // Note: surface 색 picker 가 사라졌다. theme TOML
+    // (`~/.tasty/themes/<id>.toml` 의 `[surfaces.terminal]`) 에서 직접 편집.
 }
 
 #[derive(Clone, Copy)]
@@ -313,10 +310,10 @@ impl SurfaceFontTarget {
         }
     }
 
-    fn colors<'a>(self, app: &'a crate::settings::AppearanceSettings) -> &'a SurfaceColors {
+    fn surface_id(self) -> &'static str {
         match self {
-            SurfaceFontTarget::Terminal => &app.terminal_colors,
-            SurfaceFontTarget::Markdown => &app.markdown_colors,
+            SurfaceFontTarget::Terminal => "terminal",
+            SurfaceFontTarget::Markdown => "markdown",
         }
     }
 }
@@ -356,7 +353,7 @@ fn draw_surface_font_section(
         );
 
         let eff = target.effective(&settings.appearance);
-        let colors = target.colors(&settings.appearance).clone();
+        let colors = crate::theme::theme().surface(target.surface_id()).clone();
         draw_font_preview(
             &mut columns[1],
             &eff,
@@ -369,6 +366,9 @@ fn draw_surface_font_section(
 }
 
 /// Draw a single color row: label + color picker button + hex text input.
+/// 현재 사용처 없음 — surface 색 picker 가 사라지면서 dead.
+/// 향후 theme override picker (palette / accent 등) 도입 시 부활시킨다.
+#[allow(dead_code)]
 fn draw_color_row(ui: &mut egui::Ui, label: &str, color: &mut HexColor) {
     ui.label(label);
     ui.horizontal(|ui| {
@@ -398,63 +398,6 @@ fn draw_color_row(ui: &mut egui::Ui, label: &str, color: &mut HexColor) {
     ui.end_row();
 }
 
-/// Draw color settings for a SurfaceColors (focused/unfocused bg/fg).
-fn draw_surface_colors(
-    ui: &mut egui::Ui,
-    id_salt: &str,
-    colors: &mut crate::settings::SurfaceColors,
-) {
-    let th = crate::theme::theme();
-
-    ui.label(
-        egui::RichText::new(t("settings.appearance.colors.focused_heading"))
-            .strong()
-            .color(th.text),
-    );
-    ui.end_row();
-
-    egui::Grid::new(format!("{}_focused_grid", id_salt))
-        .num_columns(2)
-        .spacing([12.0, 8.0])
-        .show(ui, |ui| {
-            draw_color_row(
-                ui,
-                t("settings.appearance.colors.bg_label"),
-                &mut colors.focused_bg,
-            );
-            draw_color_row(
-                ui,
-                t("settings.appearance.colors.fg_label"),
-                &mut colors.focused_fg,
-            );
-        });
-
-    ui.add_space(12.0);
-
-    ui.label(
-        egui::RichText::new(t("settings.appearance.colors.unfocused_heading"))
-            .strong()
-            .color(th.text),
-    );
-    ui.end_row();
-
-    egui::Grid::new(format!("{}_unfocused_grid", id_salt))
-        .num_columns(2)
-        .spacing([12.0, 8.0])
-        .show(ui, |ui| {
-            draw_color_row(
-                ui,
-                t("settings.appearance.colors.bg_label"),
-                &mut colors.unfocused_bg,
-            );
-            draw_color_row(
-                ui,
-                t("settings.appearance.colors.fg_label"),
-                &mut colors.unfocused_fg,
-            );
-        });
-}
-
 /// Appearance > Markdown: font override + color settings.
 fn draw_appearance_markdown(
     ui: &mut egui::Ui,
@@ -472,11 +415,8 @@ fn draw_appearance_markdown(
         SurfaceFontTarget::Markdown,
     );
 
-    ui.add_space(16.0);
-    ui.separator();
-    ui.add_space(8.0);
-
-    draw_surface_colors(ui, "markdown", &mut settings.appearance.markdown_colors);
+    // Note: surface 색 picker 가 사라졌다. theme TOML
+    // (`~/.tasty/themes/<id>.toml` 의 `[surfaces.markdown]`) 에서 직접 편집.
 }
 
 /// Placeholder for sub-tabs not yet populated with settings.
@@ -792,7 +732,7 @@ fn font_scale_mode_combo(ui: &mut egui::Ui, value: &mut String, salt: &str, enab
 fn draw_font_preview(
     ui: &mut egui::Ui,
     eff: &EffectiveFont,
-    colors: &SurfaceColors,
+    colors: &SurfaceTheme,
     appearance: &crate::settings::AppearanceSettings,
     slot: &str,
     preview_font_loaded: &mut HashMap<String, String>,

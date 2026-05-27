@@ -170,34 +170,16 @@ pub(super) fn handle_debug_glyph_color(
         .get("bg_mode")
         .and_then(|v| v.as_str())
         .unwrap_or("focused");
+    let theme = crate::theme::theme();
+    let term_surface = theme.surface("terminal");
     let (default_bg, default_fg) = match bg_mode {
         "focused" => (
-            engine
-                .settings
-                .appearance
-                .terminal_colors
-                .focused_bg
-                .to_gpu_rgba(),
-            engine
-                .settings
-                .appearance
-                .terminal_colors
-                .focused_fg
-                .to_gpu_rgba(),
+            term_surface.focused_bg.to_gpu_rgba(),
+            term_surface.focused_fg.to_gpu_rgba(),
         ),
         "unfocused" => (
-            engine
-                .settings
-                .appearance
-                .terminal_colors
-                .unfocused_bg
-                .to_gpu_rgba(),
-            engine
-                .settings
-                .appearance
-                .terminal_colors
-                .unfocused_fg
-                .to_gpu_rgba(),
+            term_surface.unfocused_bg.to_gpu_rgba(),
+            term_surface.unfocused_fg.to_gpu_rgba(),
         ),
         other => {
             return JsonRpcResponse::invalid_params(
@@ -206,7 +188,7 @@ pub(super) fn handle_debug_glyph_color(
             );
         }
     };
-    let ansi = crate::theme::theme().ansi_palette();
+    let ansi = theme.ansi_palette();
     let Some(terminal) = engine.find_terminal_by_id(surface_id) else {
         return JsonRpcResponse::invalid_params(id, format!("Surface {} not found", surface_id));
     };
