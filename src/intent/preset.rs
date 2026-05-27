@@ -40,12 +40,12 @@ impl ClonedPreset {
     }
 }
 
+use crate::intent::preset_capture::{
+    capture_pane_preset, capture_tab_preset, capture_workspace_preset,
+};
 use crate::state::AppState;
 use crate::state::preset_apply::{ApplyError, ApplyOptions};
-use tasty_presets::{
-    CaptureOptions, CapturedSurfaceMeta, PanePreset, PresetError, PresetKind, TabPreset,
-    WorkspacePreset,
-};
+use tasty_presets::{CapturedSurfaceMeta, PresetError, PresetKind};
 
 // ───────────────────────────────── Intent dispatcher ─────────────────────────────────
 
@@ -433,9 +433,8 @@ pub fn capture_inner(
             } else {
                 ws.name.clone()
             };
-            let preset =
-                WorkspacePreset::from_workspace(ws, &mut capture, CaptureOptions::default())
-                    .ok_or_else(|| "workspace capture failed".to_string())?;
+            let preset = capture_workspace_preset(ws, None, &mut capture)
+                .ok_or_else(|| "workspace capture failed".to_string())?;
             Ok((ClonedPreset::Workspace(preset), base))
         }
         PresetKind::Tab => {
@@ -455,9 +454,8 @@ pub fn capture_inner(
                             } else {
                                 base
                             };
-                            let preset =
-                                TabPreset::from_tab(tab, &mut capture, CaptureOptions::default())
-                                    .ok_or_else(|| "tab capture failed".to_string())?;
+                            let preset = capture_tab_preset(tab, None, &mut capture)
+                                .ok_or_else(|| "tab capture failed".to_string())?;
                             return Ok((ClonedPreset::Tab(preset), base));
                         }
                     }
@@ -468,9 +466,8 @@ pub fn capture_inner(
         PresetKind::Pane => {
             for ws in &engine.workspaces {
                 if let Some(pane) = ws.pane_layout().find_pane(source_id) {
-                    let preset =
-                        PanePreset::from_pane(pane, &mut capture, CaptureOptions::default())
-                            .ok_or_else(|| "pane capture failed".to_string())?;
+                    let preset = capture_pane_preset(pane, None, &mut capture)
+                        .ok_or_else(|| "pane capture failed".to_string())?;
                     return Ok((ClonedPreset::Pane(preset), "pane".to_string()));
                 }
             }

@@ -6,7 +6,6 @@ license = "MIT"
 description = "Layout presets (workspace/tab/pane) for Tasty"
 
 [dependencies]
-tasty-core = { path = "../tasty-core", default-features = false }
 tasty-utils = { path = "../tasty-utils" }
 
 serde = { version = "1", features = ["derive"] }

@@ -6,14 +6,23 @@
 //! 로 명시 — CLI/IPC 는 false (포커스 독립), 단축키 호출만 true.
 
 use tasty_presets::{
-    PanePreset, PresetPane, PresetPaneNode, PresetSurface, PresetSurfaceLayout, PresetTab,
-    TabPreset, WorkspacePreset,
+    PanePreset, PresetPane, PresetPaneNode, PresetSplitDirection, PresetSurface,
+    PresetSurfaceLayout, PresetTab, TabPreset, WorkspacePreset,
 };
 
 use crate::engine_state::EngineState;
 use crate::model::{
     Pane, PaneNode, SplitDirection, Surface, SurfaceLayout, Tab, TerminalSurface, Workspace,
 };
+
+/// PresetSplitDirection → live SplitDirection. presets crate 는 외부 enum 을 모르므로
+/// 본 바이너리 측에서 변환한다.
+fn from_preset_split(d: PresetSplitDirection) -> SplitDirection {
+    match d {
+        PresetSplitDirection::Horizontal => SplitDirection::Horizontal,
+        PresetSplitDirection::Vertical => SplitDirection::Vertical,
+    }
+}
 
 use super::AppState;
 
@@ -232,7 +241,7 @@ impl AppState {
                 let f = self.build_pane_node(engine, first)?;
                 let s = self.build_pane_node(engine, second)?;
                 Ok(PaneNode::Split {
-                    direction: SplitDirection::from(*direction),
+                    direction: from_preset_split(*direction),
                     ratio: ratio.clamp(0.05, 0.95),
                     first: Box::new(f),
                     second: Box::new(s),
@@ -314,7 +323,7 @@ impl AppState {
                 let f = self.build_surface_layout(engine, first)?;
                 let s = self.build_surface_layout(engine, second)?;
                 Ok(SurfaceLayout::Split {
-                    direction: SplitDirection::from(*direction),
+                    direction: from_preset_split(*direction),
                     ratio: ratio.clamp(0.05, 0.95),
                     first: Box::new(f),
                     second: Box::new(s),

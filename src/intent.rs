@@ -9,6 +9,7 @@
 pub mod pane;
 pub mod popup;
 pub mod preset;
+pub mod preset_capture;
 pub mod surface;
 pub mod tab;
 #[cfg(debug_assertions)]

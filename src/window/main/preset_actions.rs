@@ -5,8 +5,11 @@
 //! save → PresetWindow 오픈 + select 까지 일괄 처리한다.
 
 use anyhow::{Result, anyhow};
-use tasty_presets::{CaptureOptions, CapturedSurfaceMeta, PanePreset, TabPreset, WorkspacePreset};
+use tasty_presets::CapturedSurfaceMeta;
 
+use crate::intent::preset_capture::{
+    capture_pane_preset, capture_tab_preset, capture_workspace_preset,
+};
 use crate::intent::{ClonedPreset, Intent};
 use crate::model::Surface;
 
@@ -34,7 +37,7 @@ impl MainWindow {
                 params,
             })
         };
-        let preset = WorkspacePreset::from_workspace(ws, &mut capture, CaptureOptions::default())
+        let preset = capture_workspace_preset(ws, None, &mut capture)
             .ok_or_else(|| anyhow!("workspace capture failed"))?;
 
         self.state.dispatch_intent(
@@ -83,7 +86,7 @@ impl MainWindow {
                 params,
             })
         };
-        let preset = TabPreset::from_tab(tab, &mut capture, CaptureOptions::default())
+        let preset = capture_tab_preset(tab, None, &mut capture)
             .ok_or_else(|| anyhow!("tab capture failed"))?;
 
         self.state.dispatch_intent(
@@ -116,7 +119,7 @@ impl MainWindow {
                 params,
             })
         };
-        let preset = PanePreset::from_pane(pane, &mut capture, CaptureOptions::default())
+        let preset = capture_pane_preset(pane, None, &mut capture)
             .ok_or_else(|| anyhow!("pane capture failed"))?;
 
         self.state.dispatch_intent(

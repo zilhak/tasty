@@ -31,32 +31,16 @@ pub trait LayoutPreset: Sized + Clone + Serialize + for<'de> Deserialize<'de> {
     fn set_name(&mut self, name: String);
 }
 
-// ── Split direction (serde 호환 별도 enum) ────────────────────────────────
+// ── Split direction (serde 호환 직렬화 enum) ──────────────────────────────
 
-/// `tasty_core::model::SplitDirection` 의 직렬화용 거울.
+/// 분할 방향의 디스크 직렬화 표현. 라이브 트리의 `SplitDirection` 과 같은 의미.
+/// 변환 (From/Into) 은 *본 바이너리의 capture / apply 모듈* 에서 담당한다.
+/// presets crate 자체는 어떤 외부 enum 도 모른다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum PresetSplitDirection {
     Horizontal,
     Vertical,
-}
-
-impl From<tasty_core::model::SplitDirection> for PresetSplitDirection {
-    fn from(d: tasty_core::model::SplitDirection) -> Self {
-        match d {
-            tasty_core::model::SplitDirection::Horizontal => Self::Horizontal,
-            tasty_core::model::SplitDirection::Vertical => Self::Vertical,
-        }
-    }
-}
-
-impl From<PresetSplitDirection> for tasty_core::model::SplitDirection {
-    fn from(d: PresetSplitDirection) -> Self {
-        match d {
-            PresetSplitDirection::Horizontal => Self::Horizontal,
-            PresetSplitDirection::Vertical => Self::Vertical,
-        }
-    }
 }
 
 // ── Surface ──────────────────────────────────────────────────────────────

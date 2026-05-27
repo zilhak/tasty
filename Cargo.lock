@@ -5380,7 +5380,6 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
- "tasty-core",
  "tasty-utils",
  "tempfile",
  "thiserror 2.0.18",
