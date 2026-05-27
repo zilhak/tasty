@@ -22,7 +22,84 @@
 
 use crate::color::{GpuRgb, HexColor};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use tasty_type_geometry::length::LogicalPx;
+
+// ============================================================================
+//  SurfaceTheme — surface kind 별 focused/unfocused 색 묶음
+// ============================================================================
+
+/// 한 surface 종류의 색 묶음. `Theme.surface_themes` 안에 `id -> SurfaceTheme` 으로 보관.
+///
+/// terminal 특유의 selection / search_match 색은 여기 들지 않는다 — Theme 의 top-level
+/// 필드에 남아있고, 다른 surface 가 그 기능을 가질 때 sub-struct 로 흡수한다.
+///
+/// plugin 이 자기 surface kind 를 등록하면 그 id 로 SurfaceTheme 을 추가할 수 있다.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SurfaceTheme {
+    pub focused_bg: HexColor,
+    pub focused_fg: HexColor,
+    pub unfocused_bg: HexColor,
+    pub unfocused_fg: HexColor,
+}
+
+impl Default for SurfaceTheme {
+    fn default() -> Self {
+        FALLBACK_SURFACE.clone()
+    }
+}
+
+/// `SurfaceTheme` 의 모든 필드를 `Option` 으로 감싼 partial. theme TOML 의 `[surfaces.<id>]`
+/// sub-table 과 `theme_overrides` 양쪽에 쓰인다.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct PartialSurfaceTheme {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub focused_bg: Option<HexColor>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub focused_fg: Option<HexColor>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unfocused_bg: Option<HexColor>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unfocused_fg: Option<HexColor>,
+}
+
+impl PartialSurfaceTheme {
+    pub fn is_empty(&self) -> bool {
+        self.focused_bg.is_none()
+            && self.focused_fg.is_none()
+            && self.unfocused_bg.is_none()
+            && self.unfocused_fg.is_none()
+    }
+}
+
+impl SurfaceTheme {
+    /// `Some(v)` 인 필드만 자기 자신에 덮어쓴다. (None 은 보존)
+    pub fn apply_partial(&mut self, p: &PartialSurfaceTheme) {
+        if let Some(v) = p.focused_bg {
+            self.focused_bg = v;
+        }
+        if let Some(v) = p.focused_fg {
+            self.focused_fg = v;
+        }
+        if let Some(v) = p.unfocused_bg {
+            self.unfocused_bg = v;
+        }
+        if let Some(v) = p.unfocused_fg {
+            self.unfocused_fg = v;
+        }
+    }
+}
+
+/// surface_themes 에 해당 id 가 없을 때 호출자가 쓸 수 있는 안전한 fallback.
+/// 모든 surface 가 검은 배경 + 흰 글자로 동작한다. theme 이 정상 적용된 상태에서는
+/// 절대 도달하지 않으며, 부팅 직후 / 잘못된 plugin 등록 케이스의 마지막 보루.
+pub const FALLBACK_SURFACE: SurfaceTheme = SurfaceTheme {
+    focused_bg: HexColor::from_rgb(0, 0, 0),
+    focused_fg: HexColor::from_rgb(0xcd, 0xd6, 0xf4),
+    unfocused_bg: HexColor::from_rgb(0x1e, 0x1e, 0x2e),
+    unfocused_fg: HexColor::from_rgb(0xa6, 0xad, 0xc8),
+};
 
 // ============================================================================
 //  ThemeSizing — 모든 테마 공통
@@ -795,5 +872,31 @@ mod tests {
         // apply_colors 는 `*self = Self::with_colors(*c, self.is_light)` 이므로 is_light 보존.
         assert!(!t2.is_light);
         assert_eq!(t2.extract_colors(), variant);
+    }
+
+    #[test]
+    fn surface_theme_apply_partial_overwrites_only_some_fields() {
+        let mut base = FALLBACK_SURFACE.clone();
+        let original_fg = base.focused_fg;
+        let mut partial = PartialSurfaceTheme::default();
+        partial.focused_bg = Some(HexColor::from_rgb(0xff, 0x00, 0x00));
+        base.apply_partial(&partial);
+        assert_eq!(base.focused_bg, HexColor::from_rgb(0xff, 0x00, 0x00));
+        // focused_fg 는 건드리지 않음
+        assert_eq!(base.focused_fg, original_fg);
+    }
+
+    #[test]
+    fn partial_surface_theme_default_is_empty() {
+        let p = PartialSurfaceTheme::default();
+        assert!(p.is_empty());
+    }
+
+    #[test]
+    fn fallback_surface_is_dark_friendly() {
+        // 모든 surface 가 안전하게 동작하려면 fallback 이 검은 배경 + 가독성 있는 fg 여야 한다.
+        assert_eq!(FALLBACK_SURFACE.focused_bg.r, 0);
+        assert_eq!(FALLBACK_SURFACE.focused_bg.g, 0);
+        assert_eq!(FALLBACK_SURFACE.focused_bg.b, 0);
     }
 }
