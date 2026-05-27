@@ -38,11 +38,22 @@ maroon    = "#e64553"
 rosewater = "#dc8a78"
 
 [terminal]
-fg = "#4c4f69"
-bg = "#eff1f5"
 selection_bg = "#acb0be"
 search_match_bg = "#df8e1d4d"          # yellow @ ~30% alpha
 search_match_active_bg = "#df8e1db3"   # yellow @ ~70% alpha
+
+# surface kind 별 focused/unfocused × bg/fg.
+[surfaces.terminal]
+focused_bg   = "#ffffff"
+focused_fg   = "#4c4f69"   # = text
+unfocused_bg = "#eff1f5"   # = base
+unfocused_fg = "#6c6f85"   # = subtext0
+
+[surfaces.markdown]
+focused_bg   = "#ffffff"
+focused_fg   = "#4c4f69"
+unfocused_bg = "#e6e9ef"   # = mantle
+unfocused_fg = "#6c6f85"
 
 [ansi]
 black   = "#bcc0cc"   # surface1

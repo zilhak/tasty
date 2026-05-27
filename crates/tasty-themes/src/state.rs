@@ -4,7 +4,7 @@
 //! 이 crate 의 "이벤트에서 인스턴스를 수정/merge" 책임의 본체.
 
 use crate::apply_context::ThemeApplyContext;
-use crate::fallback::MOCHA_FALLBACK_COLORS;
+use crate::fallback::mocha_fallback_colors;
 use crate::file::ThemeFile;
 use crate::global::set_theme;
 use crate::scan::scan_themes;
@@ -14,7 +14,7 @@ use tasty_type_appearance::theme::Theme;
 /// 두 레이어를 합쳐 실제 적용될 `Theme` 인스턴스를 만든다.
 /// `theme_base` 위에 `theme_overrides` 의 `Some` 필드만 덮어쓴 결과.
 pub fn resolve<C: ThemeApplyContext>(ctx: &C) -> Theme {
-    let mut colors = *ctx.theme_base();
+    let mut colors = ctx.theme_base().clone();
     colors.apply_partial(ctx.theme_overrides());
     Theme::with_colors(colors, ctx.theme_is_light())
 }
@@ -59,8 +59,8 @@ fn apply_inner<C: ThemeApplyContext>(ctx: &mut C, id: &str, allow_recursion: boo
         let const_file = ThemeFile::parse(crate::MOCHA_TOML_TEXT)
             .expect("embedded mocha.toml must parse (compile-time guaranteed)");
         let (partial, is_light) = const_file.to_partial();
-        // mocha 는 풀 세트라 base 가 통째로 덮어쓰여진다 — 안전을 위해 먼저 fallback const 로 초기화.
-        *ctx.theme_base_mut() = MOCHA_FALLBACK_COLORS;
+        // mocha 는 풀 세트라 base 가 통째로 덮어쓰여진다 — 안전을 위해 먼저 fallback 로 초기화.
+        *ctx.theme_base_mut() = mocha_fallback_colors();
         ctx.theme_base_mut().apply_partial(&partial);
         if let Some(l) = is_light {
             ctx.set_theme_is_light(l);
@@ -97,7 +97,7 @@ mod tests {
         fn mocha() -> Self {
             Self {
                 id: "mocha".to_string(),
-                base: MOCHA_FALLBACK_COLORS,
+                base: mocha_fallback_colors(),
                 overrides: PartialColors::default(),
                 is_light: false,
             }
@@ -138,7 +138,7 @@ mod tests {
         let t = resolve(&ctx);
         assert_eq!(t.blue, HexColor::from_rgb(0, 0xff, 0));
         // 그 외 필드는 base 그대로
-        assert_eq!(t.crust, MOCHA_FALLBACK_COLORS.crust);
+        assert_eq!(t.crust, mocha_fallback_colors().crust);
         assert!(!t.is_light);
     }
 

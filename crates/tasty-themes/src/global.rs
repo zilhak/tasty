@@ -3,16 +3,22 @@
 //! `tasty-themes` 의 `apply_theme()` / `install_global()` 가 `resolve()` 결과를
 //! `set_theme()` 으로 박아 넣고, 그 외 코드(특히 UI/렌더러) 는 `theme()` 으로
 //! 읽기만 한다.
+//!
+//! `Theme` 이 `BTreeMap` 을 들고 있어서 const 생성자가 사라졌다. `RwLock` 초기값을
+//! `LazyLock` 으로 감싸 첫 접근 시 `mocha_fallback()` 으로 초기화한다.
 
-use crate::fallback::MOCHA_FALLBACK;
+use std::sync::{LazyLock, RwLock, RwLockReadGuard};
+
 use tasty_type_appearance::theme::Theme;
 
+use crate::fallback::mocha_fallback;
+
 /// Global theme instance. Mutable at runtime via [`set_theme`].
-static THEME: std::sync::RwLock<Theme> = std::sync::RwLock::new(MOCHA_FALLBACK);
+static THEME: LazyLock<RwLock<Theme>> = LazyLock::new(|| RwLock::new(mocha_fallback()));
 
 /// Get the current theme (read lock). Poisoned 락도 그냥 풀어서 반환한다 —
 /// 쓰기 측이 panic 했더라도 읽기는 안전하다.
-pub fn theme() -> std::sync::RwLockReadGuard<'static, Theme> {
+pub fn theme() -> RwLockReadGuard<'static, Theme> {
     THEME
         .read()
         .unwrap_or_else(|poisoned| poisoned.into_inner())

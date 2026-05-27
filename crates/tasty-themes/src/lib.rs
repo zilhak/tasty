@@ -5,7 +5,7 @@
 //! 도메인/IO 책임을 얹는다.
 //!
 //! 책임:
-//! - 빌트인 Catppuccin Mocha fallback const (`MOCHA_FALLBACK_COLORS`, `MOCHA_FALLBACK`)
+//! - 빌트인 Catppuccin Mocha fallback (`mocha_fallback_colors()`, `mocha_fallback()`)
 //! - 전역 `Theme` 인스턴스 (`theme()` / `set_theme()` / `mutate_theme()`)
 //! - `~/.tasty/themes/` 의 TOML 파일 스캔/로드
 //! - mocha 누락/파싱 실패 시 자동 복구
@@ -25,7 +25,7 @@ mod store;
 // 공개 표면 — 외부 사용자(본 바이너리, settings) 는 여기 재수출만 본다.
 
 pub use apply_context::ThemeApplyContext;
-pub use fallback::{MOCHA_FALLBACK, MOCHA_FALLBACK_COLORS};
+pub use fallback::{mocha_fallback, mocha_fallback_colors};
 pub use file::{ParseError, ThemeFile};
 pub use global::{mutate_theme, set_theme, theme};
 pub use scan::{ThemeEntry, rescan, scan_themes};

@@ -38,11 +38,23 @@ maroon    = "#eba0ac"
 rosewater = "#f5e0dc"
 
 [terminal]
-fg = "#cdd6f4"
-bg = "#1e1e2e"
 selection_bg = "#585b70"
 search_match_bg = "#f9e2af4d"          # yellow @ ~30% alpha
 search_match_active_bg = "#f9e2afb3"   # yellow @ ~70% alpha
+
+# surface kind 별 focused/unfocused × bg/fg. plugin 이 자기 surface id 에 대한 색을
+# 정의하려면 [surfaces.<plugin-id>] 형태로 추가하면 된다.
+[surfaces.terminal]
+focused_bg   = "#000000"
+focused_fg   = "#cdd6f4"   # = text
+unfocused_bg = "#1e1e2e"   # = base
+unfocused_fg = "#a6adc8"   # = subtext0
+
+[surfaces.markdown]
+focused_bg   = "#000000"
+focused_fg   = "#cdd6f4"   # = text
+unfocused_bg = "#181825"   # = mantle (terminal 보다 한 단계 더 어두운 톤)
+unfocused_fg = "#a6adc8"   # = subtext0
 
 [ansi]
 black   = "#45475a"   # surface1

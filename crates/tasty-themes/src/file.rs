@@ -3,9 +3,11 @@
 //! 누락된 필드는 `apply_partial` 로 base 에 반영될 때 그냥 무시되므로,
 //! 사용자가 일부 색상만 정의한 partial 테마도 자연스럽게 적용된다.
 
+use std::collections::BTreeMap;
+
 use serde::Deserialize;
 use tasty_type_appearance::color::HexColor;
-use tasty_type_appearance::theme::PartialColors;
+use tasty_type_appearance::theme::{PartialColors, PartialSurfaceTheme};
 use thiserror::Error;
 
 /// TOML 파일 표현. 모든 sub-table 과 필드 optional.
@@ -25,6 +27,11 @@ pub struct ThemeFile {
     pub terminal: TerminalSection,
     #[serde(default)]
     pub ansi: AnsiSection,
+    /// `[surfaces.<id>]` sub-tables. id 는 surface kind ("terminal", "markdown",
+    /// plugin id 등). 빌트인 미정의 id 도 그대로 파싱돼 `PartialColors.surface_themes`
+    /// 로 흘러 들어가므로 plugin 확장이 자연스럽다.
+    #[serde(default)]
+    pub surfaces: BTreeMap<String, PartialSurfaceTheme>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -63,11 +70,11 @@ pub struct AccentSection {
     pub rosewater: Option<HexColor>,
 }
 
+/// `[terminal]` sub-table — terminal-specific 색 (모든 surface 공통 아님).
+/// 셀의 default fg/bg 는 `[surfaces.terminal]` 로 옮겨갔다.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct TerminalSection {
-    pub fg: Option<HexColor>,
-    pub bg: Option<HexColor>,
     pub selection_bg: Option<HexColor>,
     pub search_match_bg: Option<HexColor>,
     pub search_match_active_bg: Option<HexColor>,
@@ -137,8 +144,6 @@ impl ThemeFile {
             pink: self.accent.pink,
             maroon: self.accent.maroon,
             rosewater: self.accent.rosewater,
-            terminal_fg: self.terminal.fg,
-            terminal_bg: self.terminal.bg,
             selection_bg: self.terminal.selection_bg,
             search_match_bg: self.terminal.search_match_bg,
             search_match_active_bg: self.terminal.search_match_active_bg,
@@ -158,6 +163,7 @@ impl ThemeFile {
             ansi_bright_magenta: self.ansi.bright_magenta,
             ansi_bright_cyan: self.ansi.bright_cyan,
             ansi_bright_white: self.ansi.bright_white,
+            surface_themes: self.surfaces.clone(),
         };
         (p, self.is_light)
     }
@@ -168,9 +174,9 @@ impl ThemeFile {
 #[allow(clippy::disallowed_methods)]
 mod tests {
     use super::*;
-    use crate::MOCHA_FALLBACK_COLORS;
+    use crate::mocha_fallback_colors;
 
-    /// 빌트인 mocha.toml 텍스트가 `MOCHA_FALLBACK_COLORS` const 와 완전히 일치하는지 확인.
+    /// 빌트인 mocha.toml 텍스트가 `mocha_fallback_colors()` 와 완전히 일치하는지 확인.
     /// 어긋나면 런타임에 사용자가 보는 색상과 fallback 이 달라진다.
     #[test]
     fn builtin_mocha_toml_matches_fallback_const() {
@@ -180,13 +186,13 @@ mod tests {
         let (partial, _) = file.to_partial();
 
         // 빈 base 에 partial 을 적용하면 풀 세트로 채워져야 한다 (mocha 는 풀 세트).
-        let mut base = MOCHA_FALLBACK_COLORS;
-        // base 를 일부러 다르게 만든 뒤 partial 적용 결과가 MOCHA_FALLBACK_COLORS 와 같은지 확인.
+        let mut base = mocha_fallback_colors();
+        // base 를 일부러 다르게 만든 뒤 partial 적용 결과가 mocha_fallback_colors() 와 같은지 확인.
         base.crust = HexColor::from_rgb(0, 0, 0);
         base.text = HexColor::from_rgb(0, 0, 0);
         base.apply_partial(&partial);
 
-        assert_eq!(base, MOCHA_FALLBACK_COLORS);
+        assert_eq!(base, mocha_fallback_colors());
     }
 
     #[test]
