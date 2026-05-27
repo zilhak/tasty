@@ -117,7 +117,9 @@ fn value_to_args(v: Value) -> Result<Vec<String>, &'static str> {
 
 #[cfg(test)]
 mod tests {
+    use super::value_to_args;
     use crate::LuaEngine;
+    use mlua::Lua;
 
     #[test]
     fn log_function_callable() {
@@ -127,13 +129,43 @@ mod tests {
             .unwrap();
     }
 
+    // `tasty.run_cli` 를 Lua 에서 직접 호출하는 테스트는 두지 않는다 —
+    // `current_exe()` 가 test binary (e.g. `tasty_lua-<hash>`) 일 때,
+    // spawn 된 자식이 또 동일 test binary 를 실행하며 재귀적으로 자기 자신을
+    // spawn 하는 fork bomb 이 발생한다. detach + orphan 조합이라 cargo test
+    // 종료 후에도 영구 자가복제 한다.
+    //
+    // args 파싱은 `value_to_args` 단위 테스트로 커버한다.
     #[test]
-    fn run_cli_accepts_table_args() {
-        let engine = LuaEngine::new().unwrap();
-        // 실제 spawn 은 current_exe 가 tasty binary 가 아닐 수도 있으니 결과 무시.
-        // Lua 측에서 함수 호출이 에러 없이 끝나는지만 확인.
-        engine.eval(r#"tasty.run_cli({"list", "info"})"#).unwrap();
-        engine.eval(r#"tasty.run_cli("noop")"#).unwrap();
-        engine.eval("tasty.run_cli(nil)").unwrap();
+    fn value_to_args_string() {
+        let lua = Lua::new();
+        let v = lua.create_string("hello").unwrap();
+        assert_eq!(
+            value_to_args(mlua::Value::String(v)).unwrap(),
+            vec!["hello"]
+        );
+    }
+
+    #[test]
+    fn value_to_args_table() {
+        let lua = Lua::new();
+        let t = lua
+            .load(r#"return {"list", "info", 42, true}"#)
+            .eval::<mlua::Table>()
+            .unwrap();
+        assert_eq!(
+            value_to_args(mlua::Value::Table(t)).unwrap(),
+            vec!["list", "info", "42", "true"]
+        );
+    }
+
+    #[test]
+    fn value_to_args_nil_is_empty() {
+        assert!(value_to_args(mlua::Value::Nil).unwrap().is_empty());
+    }
+
+    #[test]
+    fn value_to_args_rejects_other_types() {
+        assert!(value_to_args(mlua::Value::Boolean(true)).is_err());
     }
 }
