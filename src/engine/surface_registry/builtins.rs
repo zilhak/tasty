@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use serde_json::{Value, json};
 
-use tasty_core::model::{DiffPanel, EmptySurface, ImagePanel, MarkdownPanel, Surface};
+use crate::model::{DiffPanel, EmptySurface, ImagePanel, MarkdownPanel, Surface};
 
 use super::{SurfaceKindDef, SurfaceKindRegistry};
 

@@ -20,7 +20,7 @@ pub mod meta;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
-use tasty_core::model::{Surface, SurfaceId};
+use crate::model::{Surface, SurfaceId};
 
 pub use builtins::register_builtin_kinds;
 

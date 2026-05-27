@@ -6,7 +6,6 @@ license = "MIT"
 description = "Agent collaboration primitives: tasks (DAG), barrier, semaphore, lease, reducer, rate-limit (Phase 5)"
 
 [dependencies]
-tasty-core = { path = "../tasty-core" }
 tasty-memory = { path = "../tasty-memory" }
 tasty-utils = { path = "../tasty-utils" }
 serde = { version = "1", features = ["derive"] }

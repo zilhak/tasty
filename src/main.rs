@@ -10,18 +10,38 @@ mod host_api;
 mod i18n;
 mod input;
 mod intent;
+mod model;
 mod platform;
 mod state;
 mod store;
 mod ui;
 mod waker;
 
+/// `Surface::as_any` / `as_any_mut` 구현을 한 줄로 채우는 매크로.
+///
+/// ```ignore
+/// impl Surface for MyPanel {
+///     crate::impl_surface_any!();
+///     // ... 다른 메서드들 ...
+/// }
+/// ```
+#[macro_export]
+macro_rules! impl_surface_any {
+    () => {
+        fn as_any(&self) -> &dyn ::std::any::Any {
+            self
+        }
+        fn as_any_mut(&mut self) -> &mut dyn ::std::any::Any {
+            self
+        }
+    };
+}
+
 pub mod engine;
 pub mod window;
 
 use anyhow::Result;
 
-pub use tasty_core::model;
 pub use tasty_font as font;
 pub use tasty_settings as settings;
 use tasty_terminal as terminal;

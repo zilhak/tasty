@@ -7,7 +7,6 @@ description = "Settings types and persistence for Tasty (appearance, keybindings
 
 [dependencies]
 # Workspace crates
-tasty-core = { path = "../tasty-core" }
 tasty-themes = { path = "../tasty-themes" }
 tasty-type-appearance = { path = "../tasty-type-appearance", default-features = false }
 tasty-type-geometry = { path = "../tasty-type-geometry" }

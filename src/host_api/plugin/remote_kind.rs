@@ -9,7 +9,7 @@
 use std::sync::Arc;
 use std::sync::mpsc::Sender;
 
-use tasty_core::model::Surface;
+use crate::model::Surface;
 
 use crate::engine::surface_registry::{SurfaceKindDef, SurfaceKindRegistry};
 use crate::plugin::host_cmd::HostCmd;

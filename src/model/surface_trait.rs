@@ -18,7 +18,7 @@ pub trait Surface: Any {
     /// Any-cast accessor. Used by the surface registry's render/snapshot/restore
     /// closures and other callers that need to recover the concrete surface type
     /// without a per-kind downcast method on the trait.
-    /// 모든 구현체는 `tasty_core::impl_surface_any!()` 매크로 한 줄로 채울 수 있다.
+    /// 모든 구현체는 `crate::impl_surface_any!()` 매크로 한 줄로 채울 수 있다.
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
 

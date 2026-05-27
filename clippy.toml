@@ -1,12 +1,12 @@
 # Tasty 워크스페이스 clippy 정책.
 #
 # disallowed-methods: 색을 "디자인" 하는 함수의 우연한 호출을 차단.
-# 정상 경로는 단 두 가지뿐 — `~/.tasty/themes/*.toml` 또는 tasty-core 의 const.
+# 정상 경로는 단 두 가지뿐 — `~/.tasty/themes/*.toml` 또는 tasty-themes 의 const.
 #
 # 예외가 필요한 곳 (파일/함수 단위로 `#[allow(clippy::disallowed_methods)]` 부여):
-# - tasty-core::theme  (색상 const 정의 본거지)
-# - tasty-core::color  (HexColor 변환 헬퍼 내부)
-# - tasty-themes 테스트 더미
+# - tasty-type-appearance::theme  (색상 const 정의 본거지)
+# - tasty-type-appearance::color  (HexColor 변환 헬퍼 내부)
+# - tasty-themes::fallback        (MOCHA_FALLBACK_COLORS 정의)
 # - settings 픽커 (사용자 입력 → HexColor)
 # - 그림 브러시/픽셀 추출 (사용자 입력)
 

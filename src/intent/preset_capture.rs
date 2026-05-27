@@ -12,7 +12,7 @@
 //! 본 모듈에서 `terminal.get_cwd()` 로 직접 추출. startup_command 는 capture
 //! 시점에는 None — 사용자가 PresetWindow 에서 편집한다.
 
-use tasty_core::model::{Pane, PaneNode, SplitDirection, Surface, SurfaceLayout, Tab, Workspace};
+use crate::model::{Pane, PaneNode, SplitDirection, Surface, SurfaceLayout, Tab, Workspace};
 use tasty_presets::{
     CapturedSurfaceMeta, PanePreset, PresetPane, PresetPaneNode, PresetSplitDirection,
     PresetSurface, PresetSurfaceLayout, PresetTab, TabPreset, WorkspacePreset,

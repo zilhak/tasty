@@ -2,7 +2,7 @@
 // 본 바이너리의 group import 호환성을 위해 재수출 유지.
 // 새 코드는 `tasty_type_geometry::length::*` 직접 import 권장.
 pub use tasty_type_geometry::direction::{FocusDirection, SplitDirection};
-pub use tasty_type_geometry::length::{self, LogicalPx, PhysicalPx};
+pub use tasty_type_geometry::length::{LogicalPx, PhysicalPx};
 pub use tasty_type_geometry::rect::{DividerInfo, PhysicalRect};
 
 // 식별자 alias 는 tasty-utils::id 로 이전됨. 본 모듈은 호환을 위해 재수출 유지.

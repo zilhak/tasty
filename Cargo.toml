@@ -70,7 +70,6 @@ fontconfig = "*"
 
 [dependencies]
 # Workspace crates
-tasty-core = { path = "crates/tasty-core" }
 tasty-font = { path = "crates/tasty-font" }
 tasty-hooks = { path = "crates/tasty-hooks" }
 tasty-lua = { path = "crates/tasty-lua" }

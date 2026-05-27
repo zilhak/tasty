@@ -16,8 +16,8 @@
 
 use std::sync::{Arc, Mutex};
 
+use crate::model::{Surface, SurfaceId};
 use serde_json::Value;
-use tasty_core::model::{Surface, SurfaceId};
 
 use crate::plugin::ui_tree::{UiEvent, UiNode};
 
@@ -128,7 +128,7 @@ impl RemoteSurface {
 }
 
 impl Surface for RemoteSurface {
-    tasty_core::impl_surface_any!();
+    crate::impl_surface_any!();
 
     fn kind(&self) -> &'static str {
         self.kind_static
