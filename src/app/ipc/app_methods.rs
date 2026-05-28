@@ -25,7 +25,7 @@ impl App {
                 serde_json::json!({"shutdown": true}),
             );
             send_response(&cmd.response_tx, response);
-            crate::shortcuts::send_app_event(&self.engine.proxy, AppEvent::Shutdown);
+            crate::shortcuts::send_app_event(&self.view.proxy, AppEvent::Shutdown);
             return IpcStep::Shutdown;
         }
         if cmd.request.method == "script.reload" {
@@ -52,7 +52,7 @@ impl App {
             return IpcStep::Handled;
         }
         if cmd.request.method == "window.create" {
-            crate::shortcuts::send_app_event(&self.engine.proxy, AppEvent::CreateWindow);
+            crate::shortcuts::send_app_event(&self.view.proxy, AppEvent::CreateWindow);
             let response = host_ipc::protocol::JsonRpcResponse::success(
                 cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
                 serde_json::json!({"scheduled": true}),

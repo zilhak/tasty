@@ -37,7 +37,7 @@ impl App {
         let gpu = pollster::block_on(crate::gpu::GpuState::new(
             window.clone(),
             &appearance,
-            self.engine.proxy.clone(),
+            self.view.proxy.clone(),
         ))
         .expect("failed to initialize GPU for plugins window");
 

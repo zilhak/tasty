@@ -214,7 +214,7 @@ impl ApplicationHandler<AppEvent> for App {
         let gpu = pollster::block_on(crate::gpu::GpuState::new(
             window.clone(),
             &init_settings.appearance,
-            self.engine.proxy.clone(),
+            self.view.proxy.clone(),
         ))
         .expect("failed to initialize GPU");
 
@@ -329,7 +329,7 @@ impl ApplicationHandler<AppEvent> for App {
                     }
                     WindowAction::CloseWithEvent(app_event) => {
                         self.close_active_modal();
-                        crate::shortcuts::send_app_event(&self.engine.proxy, app_event);
+                        crate::shortcuts::send_app_event(&self.view.proxy, app_event);
                     }
                 }
                 return;
@@ -457,7 +457,7 @@ impl ApplicationHandler<AppEvent> for App {
                 WindowAction::CloseWithEvent(app_event) => {
                     if self.preset_window_id == Some(id) {
                         self.on_preset_window_closed(id);
-                        crate::shortcuts::send_app_event(&self.engine.proxy, app_event);
+                        crate::shortcuts::send_app_event(&self.view.proxy, app_event);
                         return;
                     }
                     debug_assert!(
@@ -536,11 +536,11 @@ impl ApplicationHandler<AppEvent> for App {
         if let Some(ref ids) = self.tray_menu_ids {
             if let Some(menu_id) = crate::system_tray::poll_menu_event() {
                 if menu_id == ids.show_window {
-                    crate::shortcuts::send_app_event(&self.engine.proxy, AppEvent::TrayShowWindow);
+                    crate::shortcuts::send_app_event(&self.view.proxy, AppEvent::TrayShowWindow);
                 } else if menu_id == ids.new_window {
-                    crate::shortcuts::send_app_event(&self.engine.proxy, AppEvent::CreateWindow);
+                    crate::shortcuts::send_app_event(&self.view.proxy, AppEvent::CreateWindow);
                 } else if menu_id == ids.quit {
-                    crate::shortcuts::send_app_event(&self.engine.proxy, AppEvent::Shutdown);
+                    crate::shortcuts::send_app_event(&self.view.proxy, AppEvent::Shutdown);
                 }
             }
         }

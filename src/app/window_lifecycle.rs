@@ -60,7 +60,7 @@ impl App {
         let (cols, rows) = gpu.grid_size_for_rect(&terminal_rect);
 
         let factory: crate::waker::SharedWakerFactory = Arc::new(
-            crate::waker_factory_winit::WinitWakerFactory::new(self.engine.proxy.clone()),
+            crate::waker_factory_winit::WinitWakerFactory::new(self.view.proxy.clone()),
         );
         let waker: crate::terminal::Waker = factory.make_default_waker();
 
@@ -128,7 +128,7 @@ impl App {
                 engine.identify_worker =
                     Some(Arc::new(crate::identify_worker::IdentifyWorker::new(
                         engine.file_format.clone(),
-                        self.engine.proxy.clone(),
+                        self.view.proxy.clone(),
                     )));
                 engine.preset_store = Some(self.core.preset_store.clone());
             }
@@ -216,7 +216,7 @@ impl App {
             state,
             engine_state,
             window,
-            self.engine.proxy.clone(),
+            self.view.proxy.clone(),
         );
         self.windows.insert(window_id, Box::new(main));
         self.engine.focused_window_id = Some(window_id);
@@ -302,7 +302,7 @@ impl App {
             );
         }
 
-        self.engine.start_ipc();
+        self.engine.start_ipc(&self.view.proxy);
         let engine_state = self
             .engine_state
             .take()
@@ -388,7 +388,7 @@ impl App {
         let gpu = pollster::block_on(crate::gpu::GpuState::new(
             window.clone(),
             &settings.appearance,
-            self.engine.proxy.clone(),
+            self.view.proxy.clone(),
         ))
         .expect("failed to initialize GPU");
 

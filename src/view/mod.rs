@@ -1,20 +1,24 @@
 //! `View` — GUI 어댑터. winit 윈도우, egui, modal/focus 식별자, event loop proxy
 //! 등 *사용자의 화면* 측면을 모은다.
 //!
-//! Phase C 의 strangler fig 마이그레이션 중. 현재는 빈 골격이며, sub-step 마다
-//! 한 필드씩 이동:
-//! - C.1.2 — proxy: EventLoopProxy<AppEvent>
+//! Phase C 의 strangler fig 마이그레이션 중. sub-step 마다 한 필드씩 이동:
+//! - C.1.2 — proxy: EventLoopProxy<AppEvent>  ← 현재
 //! - C.1.3 — active_modal_id
 //! - C.1.4 — focused_window_id
 //! - C.4.x — windows HashMap, View trait
 
-#[allow(dead_code)]
+use winit::event_loop::EventLoopProxy;
+
+use crate::AppEvent;
+
 pub(crate) struct View {
-    // sub-step 마다 한 필드씩 추가됨.
+    /// winit event loop 의 proxy. AppEvent 를 enqueue 하기 위한 채널.
+    /// View 영역은 GUI 어댑터로서 winit 과 직접 결합되어 있다.
+    pub proxy: EventLoopProxy<AppEvent>,
 }
 
 impl View {
-    pub(crate) fn new() -> Self {
-        Self {}
+    pub(crate) fn new(proxy: EventLoopProxy<AppEvent>) -> Self {
+        Self { proxy }
     }
 }

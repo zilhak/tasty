@@ -14,7 +14,6 @@ use crate::ipc::server::IpcServer;
 /// fully extracted in a later phase when IPC handlers are updated.
 pub struct Engine {
     pub ipc_server: Option<IpcServer>,
-    pub(crate) proxy: EventLoopProxy<AppEvent>,
     /// When Some, a modal window is active and all other windows should ignore input.
     /// At most one modal can exist at a time.
     pub active_modal_id: Option<winit::window::WindowId>,
@@ -24,19 +23,18 @@ pub struct Engine {
 }
 
 impl Engine {
-    pub(crate) fn new(proxy: EventLoopProxy<AppEvent>, port_file: Option<String>) -> Self {
+    pub(crate) fn new(port_file: Option<String>) -> Self {
         Self {
             ipc_server: None,
-            proxy,
             active_modal_id: None,
             focused_window_id: None,
             port_file,
         }
     }
 
-    /// Start the IPC server.
-    pub fn start_ipc(&mut self) {
-        let ipc_proxy = self.proxy.clone();
+    /// Start the IPC server. `proxy` 는 View 가 보유한 EventLoopProxy.
+    pub(crate) fn start_ipc(&mut self, proxy: &EventLoopProxy<AppEvent>) {
+        let ipc_proxy = proxy.clone();
         let ipc_waker: crate::ipc::server::IpcWaker = std::sync::Arc::new(move || {
             crate::shortcuts::send_app_event(&ipc_proxy, AppEvent::IpcReady);
         });

@@ -34,7 +34,6 @@ pub(crate) struct App {
     pub(crate) hub: Hub,
     /// Phase C — GUI 어댑터. `Engine.{proxy, active_modal_id, focused_window_id}`
     /// 및 `windows` HashMap 이 이쪽으로 이동.
-    #[allow(dead_code)]
     pub(crate) view: View,
     pub(crate) engine: engine::Engine,
     /// 모든 윈도우(모달 포함). `engine.active_modal_id`로 현재 활성 모달을 식별한다.
@@ -94,8 +93,8 @@ impl App {
         Self {
             core: Core::new(),
             hub: Hub::new(),
-            view: View::new(),
-            engine: engine::Engine::new(proxy.clone(), port_file),
+            view: View::new(proxy.clone()),
+            engine: engine::Engine::new(port_file),
             windows: std::collections::HashMap::new(),
             parked_states: Vec::new(),
             shell_setup_mode: false,

@@ -43,7 +43,7 @@ impl App {
         let gpu = match pollster::block_on(crate::gpu::GpuState::new(
             window.clone(),
             &appearance,
-            self.engine.proxy.clone(),
+            self.view.proxy.clone(),
         )) {
             Ok(g) => g,
             Err(e) => {

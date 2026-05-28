@@ -51,7 +51,7 @@ impl App {
                 event_loop.exit();
             }
             "minimize" => {
-                crate::shortcuts::send_app_event(&self.engine.proxy, AppEvent::Minimize);
+                crate::shortcuts::send_app_event(&self.view.proxy, AppEvent::Minimize);
             }
             _ => {
                 // "ask" — close any existing modal, then show quit modal
@@ -82,7 +82,7 @@ impl App {
         let gpu = pollster::block_on(crate::gpu::GpuState::new(
             window.clone(),
             &crate::settings::Settings::load().appearance,
-            self.engine.proxy.clone(),
+            self.view.proxy.clone(),
         ))
         .expect("failed to initialize GPU for quit modal");
 
