@@ -131,13 +131,6 @@ impl App {
                         self.view.proxy.clone(),
                     )));
                 engine.preset_store = Some(self.core.preset_store.clone());
-                // Phase C.2.5 — Core 가 singleton owner. EngineState::new 가 만든
-                // 4 Arc 를 버리고 Core 의 Arc 로 교체. 결과적으로 모든 EngineState
-                // 인스턴스가 Core 의 같은 Arc 를 share.
-                engine.telemetry_seq = self.core.telemetry_seq.clone();
-                engine.anomaly_detector = self.core.anomaly_detector.clone();
-                engine.approval_store = self.core.approval_store.clone();
-                engine.agent_seq = self.core.agent_seq.clone();
             }
             #[cfg(debug_assertions)]
             {
