@@ -21,9 +21,6 @@ pub struct Engine {
     /// The window that currently has focus (receives IPC commands targeting "focused" window).
     pub focused_window_id: Option<winit::window::WindowId>,
     pub port_file: Option<String>,
-    /// Layout preset 디스크 캐시 (`~/.tasty/presets/`). App 전역 단일 인스턴스.
-    /// `Arc<Mutex<>>` 로 MainWindow / PresetWindow 모두에 공유한다 — 단일 source of truth.
-    pub preset_store: std::sync::Arc<std::sync::Mutex<tasty_presets::PresetStore>>,
 }
 
 impl Engine {
@@ -34,9 +31,6 @@ impl Engine {
             active_modal_id: None,
             focused_window_id: None,
             port_file,
-            preset_store: std::sync::Arc::new(std::sync::Mutex::new(
-                tasty_presets::PresetStore::load_default(),
-            )),
         }
     }
 

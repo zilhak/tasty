@@ -4,16 +4,20 @@
 //! `EngineState` 의 필드를 sub-step 마다 한 그룹씩 이동시킨다. 마이그레이션
 //! 계획은 `.claude-workspace/plans/phase-c-strangler-restructure.md`.
 
-#[allow(dead_code)]
+use std::sync::{Arc, Mutex};
+
 pub(crate) struct Core {
-    // sub-step 마다 한 필드씩 추가됨.
-    // C.1.1 — preset_store
-    // C.2.1 — workspaces, next_ids, default_cols/rows, waker, waker_factory
-    // ... (plan 참조)
+    /// Layout preset 디스크 캐시 (`~/.tasty/presets/`). App 전역 단일 인스턴스.
+    /// `Arc<Mutex<>>` 로 MainWindow / PresetWindow / EngineState 모두에 공유한다 —
+    /// 단일 source of truth.
+    pub preset_store: Arc<Mutex<tasty_presets::PresetStore>>,
+    // sub-step 마다 더 추가됨 (plan 참조).
 }
 
 impl Core {
     pub(crate) fn new() -> Self {
-        Self {}
+        Self {
+            preset_store: Arc::new(Mutex::new(tasty_presets::PresetStore::load_default())),
+        }
     }
 }

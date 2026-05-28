@@ -28,7 +28,6 @@ use crate::{AppEvent, engine, plugin, state, window};
 pub(crate) struct App {
     /// Phase C — 도메인 본체. 마이그레이션 중에는 빈 골격, sub-step 마다 한 필드씩
     /// `Engine` / `EngineState` 에서 이쪽으로 이동한다.
-    #[allow(dead_code)]
     pub(crate) core: Core,
     /// Phase C — 외부 통신 표면. `Engine.{ipc_server, port_file}` 가 이쪽으로 이동.
     #[allow(dead_code)]
