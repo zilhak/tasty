@@ -29,6 +29,14 @@ impl App {
             CoreEvent::SettingsUpdated(new_settings) => {
                 self.cascade_settings_updated(new_settings);
             }
+            CoreEvent::NotificationPushRequested {
+                ws_id,
+                surface_id,
+                title,
+                body,
+            } => {
+                self.cascade_notification_pushed(ws_id, surface_id, title, body);
+            }
         }
     }
 
@@ -93,6 +101,44 @@ impl App {
                     EventScope::System,
                 );
             }
+        }
+    }
+
+    /// Notification cascade — workspace 라우팅 후 store.add + host event enqueue.
+    /// 옛 IPC handler (`handler/notification.rs`) 의 mutate 경로 이동.
+    fn cascade_notification_pushed(
+        &mut self,
+        ws_id: u32,
+        surface_id: u32,
+        title: String,
+        body: String,
+    ) {
+        let Some(wid) = self.find_main_with_workspace(ws_id) else {
+            tracing::warn!(
+                ws_id,
+                "cascade NotificationPushRequested: workspace not found"
+            );
+            return;
+        };
+        let Some(window) = self.windows.get_mut(&wid) else {
+            return;
+        };
+        let Some(main) = window.as_main_mut() else {
+            return;
+        };
+
+        let created_id =
+            main.engine_state
+                .notifications
+                .add(ws_id, surface_id, title.clone(), body.clone());
+        if let Some(nid) = created_id {
+            main.state
+                .enqueue_host_event(crate::state::PendingHostEvent::NotificationCreated {
+                    id: nid,
+                    title,
+                    body,
+                    source: "host".to_string(),
+                });
         }
     }
 }

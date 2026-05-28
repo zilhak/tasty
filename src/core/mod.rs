@@ -71,6 +71,17 @@ impl Core {
                 // coalesce) 는 후속 sub-step (호출처 전환과 함께) 에서 통합.
                 Ok(vec![CoreEvent::SettingsUpdated(new_settings)])
             }
+            CoreIntent::PushNotification {
+                ws_id,
+                surface_id,
+                title,
+                body,
+            } => Ok(vec![CoreEvent::NotificationPushRequested {
+                ws_id,
+                surface_id,
+                title,
+                body,
+            }]),
         }
     }
 }
