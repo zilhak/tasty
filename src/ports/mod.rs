@@ -10,7 +10,7 @@
 //!
 //! - **External crate 의존** — 본 모듈 (`src/ports/`).
 //!   PtyService, FileSystem, Clock, ClipboardSystem, ProcessSpawner, HomeDirectory,
-//!   NotificationBackend, IpcServerPort, TerminalWaker.
+//!   IpcServerPort, TerminalWaker.
 //!
 //! - **Internal crate trait (4 port)** — 각 워크스페이스 crate 안.
 //!   `tasty_memory::MemoryStorage`, `tasty_presets::PresetStorage`,
@@ -27,6 +27,5 @@ pub mod fs;
 pub mod home;
 pub mod inbound;
 pub mod ipc_server;
-pub mod notification;
 pub mod process;
 pub mod pty;

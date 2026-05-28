@@ -22,8 +22,6 @@ pub struct NotificationStore {
     notifications: std::collections::VecDeque<Notification>,
     max_count: usize,
     next_id: u64,
-    /// Rate limiter: last time a system notification was sent.
-    last_system_notification: Option<Instant>,
     /// Coalesce window in milliseconds.
     coalesce_ms: u64,
     /// Surfaces that have unread notifications (border highlight).
@@ -37,7 +35,6 @@ impl NotificationStore {
             notifications: std::collections::VecDeque::new(),
             max_count: 100,
             next_id: 1,
-            last_system_notification: None,
             coalesce_ms,
             highlighted_surfaces: HashSet::new(),
         }
@@ -149,38 +146,6 @@ impl NotificationStore {
             .iter()
             .any(|id| self.highlighted_surfaces.contains(id))
     }
-
-    /// Check if we should send a system notification (rate limited to 1/sec).
-    pub fn should_send_system_notification(&mut self) -> bool {
-        let now = Instant::now();
-        if let Some(last) = self.last_system_notification {
-            if now.duration_since(last) < Duration::from_secs(1) {
-                return false;
-            }
-        }
-        self.last_system_notification = Some(now);
-        true
-    }
-}
-
-/// Send an OS-level desktop notification.
-/// Runs in a background thread to avoid blocking the main thread
-/// (notify_rust uses synchronous OS APIs that can stall for seconds).
-pub fn send_system_notification(title: &str, body: &str) {
-    let title = title.to_string();
-    let body = body.to_string();
-    std::thread::spawn(move || {
-        // OS 알림 백엔드(DBus/Notification Center/Windows toast)가 없는 환경
-        // (가상머신, headless SSH 등)에서는 항상 실패. trace로만 남긴다.
-        if let Err(e) = notify_rust::Notification::new()
-            .summary(&title)
-            .body(&body)
-            .appname("Tasty")
-            .show()
-        {
-            tracing::trace!("system notification failed: {e}");
-        }
-    });
 }
 
 #[cfg(test)]

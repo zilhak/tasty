@@ -34,7 +34,6 @@ pub struct PerformanceSettings {
 #[serde(default)]
 pub struct NotificationSettings {
     pub enabled: bool,
-    pub system_notification: bool,
     pub sound: bool,
     pub coalesce_ms: u64,
 }
@@ -87,7 +86,6 @@ impl Default for NotificationSettings {
     fn default() -> Self {
         Self {
             enabled: true,
-            system_notification: true,
             sound: false,
             coalesce_ms: 500,
         }

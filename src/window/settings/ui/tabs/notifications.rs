@@ -9,10 +9,6 @@ pub fn draw_notifications_tab(ui: &mut egui::Ui, settings: &mut Settings) {
         t("settings.notifications.enabled"),
     );
     ui.checkbox(
-        &mut settings.notification.system_notification,
-        t("settings.notifications.system_notification"),
-    );
-    ui.checkbox(
         &mut settings.notification.sound,
         t("settings.notifications.sound"),
     );

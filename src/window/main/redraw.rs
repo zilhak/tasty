@@ -37,13 +37,6 @@ impl MainWindow {
             let surface_id = event.surface_id;
             match &event.kind {
                 crate::terminal::TerminalEventKind::Notification { title, body } => {
-                    if engine.settings.notification.enabled
-                        && engine.settings.notification.system_notification
-                        && !self.base.focused
-                        && engine.notifications.should_send_system_notification()
-                    {
-                        crate::notification::send_system_notification(title, body);
-                    }
                     if engine.settings.notification.enabled {
                         let ws_id = self.state.active_workspace(engine).id;
                         let created_id = engine.notifications.add(
@@ -94,13 +87,6 @@ impl MainWindow {
                                 },
                             );
                         }
-                    }
-                    if engine.settings.notification.enabled
-                        && engine.settings.notification.system_notification
-                        && !self.base.focused
-                        && engine.notifications.should_send_system_notification()
-                    {
-                        crate::notification::send_system_notification("Tasty", "Bell");
                     }
                     let hook_events = vec![tasty_hooks::HookEvent::Bell];
                     let fired = engine.hook_manager.check_and_fire(surface_id, &hook_events);

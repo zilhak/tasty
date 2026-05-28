@@ -33,21 +33,6 @@ pub(crate) fn install(lua: &Lua) -> Result<(), LuaEngineError> {
         .map_err(LuaEngineError::Init)?;
     tasty.set("warn", warn).map_err(LuaEngineError::Init)?;
 
-    let notify = lua
-        .create_function(|_, (title, body): (String, Option<String>)| {
-            let mut n = notify_rust::Notification::new();
-            n.summary(&title);
-            if let Some(b) = body.as_deref() {
-                n.body(b);
-            }
-            if let Err(e) = n.show() {
-                tracing::warn!(target: "tasty_lua", "notify failed: {e}");
-            }
-            Ok(())
-        })
-        .map_err(LuaEngineError::Init)?;
-    tasty.set("notify", notify).map_err(LuaEngineError::Init)?;
-
     let run_cli = lua
         .create_function(|_, args: Value| {
             let args = match value_to_args(args) {

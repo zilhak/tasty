@@ -257,7 +257,6 @@ poll_interval_restart_notice = "폴링 주기 변경은 재시작 후 적용됩�
 [settings.notifications]
 heading = "알림"
 enabled = "알림 활성화"
-system_notification = "시스템 알림 (OS 기본)"
 sound = "소리"
 coalesce_interval_label = "알림 병합 간격 (ms):"
 

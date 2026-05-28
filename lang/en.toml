@@ -257,7 +257,6 @@ poll_interval_restart_notice = "Poll interval requires restart to apply."
 [settings.notifications]
 heading = "Notifications"
 enabled = "Notifications enabled"
-system_notification = "System notifications (OS native)"
 sound = "Sound"
 coalesce_interval_label = "Coalesce interval (ms):"
 

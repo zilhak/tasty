@@ -257,7 +257,6 @@ poll_interval_restart_notice = "ポーリング間隔の変更は再起動後に
 [settings.notifications]
 heading = "通知"
 enabled = "通知を有効化"
-system_notification = "システム通知 (OS標準)"
 sound = "サウンド"
 coalesce_interval_label = "通知統合間隔 (ms):"
 
