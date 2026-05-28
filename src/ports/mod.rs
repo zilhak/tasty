@@ -10,7 +10,12 @@
 //!
 //! - **External crate 의존** — 본 모듈 (`src/ports/`).
 //!   PtyService, FileSystem, Clock, ClipboardSystem, ProcessSpawner, HomeDirectory,
-//!   IpcServerPort, TerminalWaker.
+//!   TerminalWaker.
+//!
+//! ## Hub 의 외부 통신
+//!
+//! TCP IPC server 는 `src/host_api/ipc/server.rs` 의 `IpcServer` 가 자체 완결.
+//! port 화 의미 작아 Hub 가 *직접 보유* — Core 외부 영역.
 //!
 //! - **Internal crate trait (4 port)** — 각 워크스페이스 crate 안.
 //!   `tasty_memory::MemoryStorage`, `tasty_presets::PresetStorage`,
@@ -26,6 +31,5 @@ pub mod clock;
 pub mod fs;
 pub mod home;
 pub mod inbound;
-pub mod ipc_server;
 pub mod process;
 pub mod pty;

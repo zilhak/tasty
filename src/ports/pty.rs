@@ -1,19 +1,26 @@
-//! PtyService port — terminal PTY spawn + IO + state.
+//! PtyService port — terminal PTY spawn 의 외부 자원 추상화.
 //!
-//! Production adapter 가 `portable-pty` + `tasty-terminal` 조합 wrap. Test mock 은
-//! deterministic in-process simulator.
+//! Production adapter 가 `portable-pty` + `tasty-terminal::Terminal::new` 조합 wrap.
+//! Test mock 은 deterministic in-process simulator (tasty-terminal::testing 의 mock 사용).
+//!
+//! ## 관련 trait 위치
+//!
+//! - `PtyService` (외부 자원 spawn 추상화) — 본 module
+//! - `TerminalWaker` (winit proxy 의존) — 본 module
+//! - `TerminalProcess` (Terminal 객체의 동작 trait) — **`tasty_terminal::TerminalProcess`**
+//!   (internal crate 자체 정의)
 
-use tasty_terminal::{ScrollbackLine, TerminalConfig, TerminalEvent};
+use std::sync::Arc;
 
-/// Terminal PTY 의 생성 + 관리.
+use tasty_terminal::{TerminalConfig, TerminalProcess};
+
+/// Terminal PTY 의 생성. `Box<dyn TerminalProcess>` 반환 — trait 통해 다형성.
 #[allow(dead_code)]
 pub trait PtyService: Send + Sync {
-    /// 새 PTY 를 fork+exec 하고 VTE 파서로 wrap 한 `TerminalProcess` 반환.
-    /// `waker` 는 PTY output 도착 시 호출됨.
     fn spawn(
         &self,
         config: TerminalConfig<'_>,
-        waker: std::sync::Arc<dyn TerminalWaker>,
+        waker: Arc<dyn TerminalWaker>,
     ) -> anyhow::Result<Box<dyn TerminalProcess>>;
 }
 
@@ -22,52 +29,4 @@ pub trait PtyService: Send + Sync {
 pub trait TerminalWaker: Send + Sync {
     /// 특정 surface 의 PTY output 도착 알림.
     fn wake(&self, surface_id: Option<u32>);
-}
-
-/// 살아 있는 terminal 인스턴스. Drop 시 SIGHUP → child exit.
-#[allow(dead_code)]
-pub trait TerminalProcess: Send {
-    // ─── 입력 ───
-    fn send_bytes(&mut self, bytes: &[u8]) -> anyhow::Result<()>;
-    fn send_key(&mut self, text: &str) -> anyhow::Result<()>;
-
-    // ─── 처리 ───
-    /// PTY read + VTE parse. 새 data 있으면 true.
-    fn process(&mut self) -> bool;
-
-    /// 누적된 VTE event 들 (OSC, prompt boundary, title, exit 등) 꺼냄.
-    fn take_events(&mut self) -> Vec<TerminalEvent>;
-
-    // ─── resize ───
-    fn resize(&mut self, cols: usize, rows: usize) -> anyhow::Result<()>;
-    fn flush_pty_resize(&mut self);
-    fn has_pending_pty_resize(&self) -> bool;
-    fn force_flush_pty_resize(&mut self);
-
-    // ─── 화면 read ───
-    fn screen_text(&self) -> String;
-    fn screen_text_lines(&self, n: usize) -> String;
-    fn cursor_position(&self) -> (usize, usize);
-    fn cursor_visible(&self) -> bool;
-    fn cols(&self) -> usize;
-    fn rows(&self) -> usize;
-    fn foreground_process_info(&self) -> Option<ForegroundProcess>;
-    fn cwd(&self) -> Option<String>;
-
-    // ─── mark (per-terminal internal) ───
-    fn set_mark(&mut self);
-    fn read_since_mark(&mut self, strip_ansi: bool) -> String;
-
-    // ─── scrollback ───
-    fn set_scrollback_limit(&mut self, n: usize);
-    fn enable_disk_scrollback(&mut self, surface_id: u32);
-    fn inject_scrollback(&mut self, lines: Vec<ScrollbackLine>);
-    fn prefill_visible_from_scrollback(&mut self, n: usize);
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Clone)]
-pub struct ForegroundProcess {
-    pub name: String,
-    pub pid: u32,
 }

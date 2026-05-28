@@ -3,6 +3,8 @@ mod events;
 mod io;
 mod modes;
 mod output_buffer;
+mod port;
+mod port_impl;
 mod resize;
 mod screen;
 mod scrollback;
@@ -27,6 +29,7 @@ use termwiz::escape::parser::Parser;
 use termwiz::surface::Surface;
 
 pub use events::*;
+pub use port::TerminalProcess;
 pub use scrollback::ScrollbackLine;
 
 /// Configuration for creating a new Terminal.
